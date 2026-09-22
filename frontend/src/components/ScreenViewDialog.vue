@@ -607,10 +607,10 @@ export default {
     },
 
     handleKeyDown(event) {
-      if (!this.controlEnabled || event.isComposing) return
-      event.preventDefault()
+      if (!this.controlEnabled) return
       const key = this.normalizeKeyboardKey(event.key, event.code)
       if (!key) return
+      event.preventDefault()
       this.sendScreenInput({
         action: 'key_down',
         key,
@@ -619,10 +619,10 @@ export default {
     },
 
     handleKeyUp(event) {
-      if (!this.controlEnabled || event.isComposing) return
-      event.preventDefault()
+      if (!this.controlEnabled) return
       const key = this.normalizeKeyboardKey(event.key, event.code)
       if (!key) return
+      event.preventDefault()
       this.sendScreenInput({ action: 'key_up', key })
     },
 
@@ -657,6 +657,37 @@ export default {
     const baseKey = baseKeysByCode[code]
     if (baseKey) return baseKey
   }
+
+  // Windows/Chromium 在中文 IME 状态下可能把标点键报告为 Process、
+  // Unidentified 或全角字符。只在原始 event.key 不能按原协议发送时，
+  // 才使用物理 code 兜底；正常英文 ASCII 路径完全保持不变。
+  const imeBaseKey = baseKeysByCode[code]
+  if (imeBaseKey && (
+    original === 'Process' ||
+    original === 'Unidentified' ||
+    original.length === 0 ||
+    (original.length === 1 && !/^[\x20-\x7E]$/.test(original))
+  )) {
+    return imeBaseKey
+  }
+
+  // 少数 IME/浏览器不会提供稳定的 code，补最常见中文标点兜底。
+  // 返回的仍是原协议使用的基础物理键，由远端 Windows 当前输入法解释。
+  const imePunctuationAliases = {
+    '，': ',',
+    '。': '.',
+    '？': '/',
+    '；': ';',
+    '：': ';',
+    '【': '[',
+    '】': ']',
+    '、': '\\',
+    '‘': "'",
+    '’': "'",
+    '“': "'",
+    '”': "'",
+  }
+  if (imePunctuationAliases[original]) return imePunctuationAliases[original]
 
   const aliases = {
     ' ': 'space',
