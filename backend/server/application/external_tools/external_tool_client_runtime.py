@@ -89,10 +89,27 @@ class ExternalToolClientLifecycleRuntime(ExternalToolRuntimeComponent):
         del tab_id
         return self.remote_execution_service.run_foreground_json_command(client_id, command, task_type='external_tool', source='web_external_tool')
 
-    def start_client_instance(self, client_id: str, tool_id: str, params: dict | None = None, tab_id: str = '', instance_id: str = '', install_if_needed: bool = False, platform_alias: str = '', arch: str = '') -> dict:
+    def resolve_client_launcher(self, client_id: str, tool_id: str, tab_id: str = '', platform_alias: str = '', arch: str = '') -> dict:
+        meta = self.catalog_service.get_tool(tool_id)
+        payload = self.payload_builder.build_client_launcher_payload(
+            meta,
+            platform_alias=platform_alias,
+            arch=arch,
+        )
+        command = f'external_tool_resolve_launcher {self.payload_builder.encode_payload_arg(payload)}'
+        return self._run_client_lifecycle_command(client_id, command, tab_id=tab_id)
+
+    def start_client_instance(self, client_id: str, tool_id: str, params: dict | None = None, tab_id: str = '', instance_id: str = '', install_if_needed: bool = False, platform_alias: str = '', arch: str = '', launcher_override: dict | None = None) -> dict:
         del install_if_needed
         meta = self.catalog_service.get_tool(tool_id)
-        payload = self.payload_builder.build_client_start_payload(meta, params=params, instance_id=instance_id, platform_alias=platform_alias, arch=arch)
+        payload = self.payload_builder.build_client_start_payload(
+            meta,
+            params=params,
+            instance_id=instance_id,
+            platform_alias=platform_alias,
+            arch=arch,
+            launcher_override=launcher_override,
+        )
         resolved_instance_id = str(payload.get('instance_id') or instance_id or 'default').strip()
         command = f'external_tool_start {self.payload_builder.encode_payload_arg(payload)}'
 
@@ -135,11 +152,18 @@ class ExternalToolClientLifecycleRuntime(ExternalToolRuntimeComponent):
 
         return result
 
-    def preview_client_instance_command(self, client_id: str, tool_id: str, params: dict | None = None, tab_id: str = '', instance_id: str = '', platform_alias: str = '', arch: str = '') -> dict:
+    def preview_client_instance_command(self, client_id: str, tool_id: str, params: dict | None = None, tab_id: str = '', instance_id: str = '', platform_alias: str = '', arch: str = '', launcher_override: dict | None = None) -> dict:
         meta = self.catalog_service.get_tool(tool_id)
         if str(meta.get('execution') or '').strip().lower() != 'daemon':
             raise ValueError('command preview is only available for daemon instances')
-        payload = self.payload_builder.build_client_start_payload(meta, params=params, instance_id=instance_id, platform_alias=platform_alias, arch=arch)
+        payload = self.payload_builder.build_client_start_payload(
+            meta,
+            params=params,
+            instance_id=instance_id,
+            platform_alias=platform_alias,
+            arch=arch,
+            launcher_override=launcher_override,
+        )
         command = f'external_tool_preview {self.payload_builder.encode_payload_arg(payload)}'
         return self._run_client_lifecycle_command(client_id, command, tab_id=tab_id)
 

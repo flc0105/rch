@@ -1,5 +1,6 @@
 import json
 
+from client.external_tools.launcher import resolve_external_tool_launcher
 from client.external_tools.service import ExternalToolClientService
 from core.utils.decorator import desc
 from client.commands.runtime.interrupts import interruptible
@@ -41,6 +42,16 @@ class CommandExternalToolMixin:
             return self._json_result(self.external_tool_service.uninstall_payload(payload))
         except Exception as e:
             return 0, f'Failed to uninstall external tool: {e}'
+
+    @desc('Resolve the launcher executable for an external tool module', group='runtime', suggest=False)
+    @interruptible()
+    def external_tool_resolve_launcher(self, arg=''):
+        try:
+            payload = self._decode_external_tool_payload(arg)
+            launcher = payload.get('launcher') if isinstance(payload.get('launcher'), dict) else {}
+            return self._json_result(resolve_external_tool_launcher(launcher))
+        except Exception as e:
+            return 0, f'Failed to resolve external tool launcher: {e}'
 
     @desc('Start an external tool instance', group='runtime', suggest=False)
     @interruptible()

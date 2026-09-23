@@ -35,7 +35,11 @@ class ExternalToolDaemonInstance(ExternalToolCommon):
             else item
             for index, item in enumerate(argv)
         ]
-        argv = apply_external_tool_launcher(argv, payload.get('launcher'))
+        argv = apply_external_tool_launcher(
+            argv,
+            payload.get('launcher'),
+            launcher_override=payload.get('launcher_override'),
+        )
 
         cwd = self.expand_path(runtime.get('cwd') or os.getcwd())
         stdout = self.expand_path(runtime.get('stdout') or '~/.ops/external_tools/runtime/stdout.log')

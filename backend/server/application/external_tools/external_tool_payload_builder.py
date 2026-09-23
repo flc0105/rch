@@ -43,6 +43,34 @@ class ExternalToolClientPayloadBuilder(ExternalToolRuntimeComponent):
         launcher = exec_item.get('launcher')
         return dict(launcher) if isinstance(launcher, dict) else {}
 
+    @staticmethod
+    def _launcher_override(value) -> dict:
+        if not isinstance(value, dict):
+            return {}
+        executable = str(value.get('executable') or '').strip()
+        return {'executable': executable} if executable else {}
+
+    def build_client_launcher_payload(self, meta: dict, platform_alias: str = '', arch: str = '') -> dict:
+        package = meta.get('package_meta') or self.catalog_service.get_package(meta.get('package_id') or '')
+        platform_value, arch_value = self._require_target(
+            platform_alias,
+            arch,
+            f'client launcher {meta.get("tool_id") or meta.get("id") or "unknown"}',
+        )
+        exec_name = self.install_support._primary_exec_name(package, meta)
+        launcher = self._exec_launcher(package, exec_name)
+        if not launcher or str(launcher.get('type') or 'direct').strip().lower() in ('', 'direct'):
+            raise ValueError('external tool module does not use a configurable launcher')
+        return {
+            'action': 'resolve_launcher',
+            'tool_id': meta.get('tool_id') or '',
+            'package_id': meta.get('package_id') or package.get('id') or '',
+            'module_id': meta.get('id') or '',
+            'platform': platform_value,
+            'arch': arch_value,
+            'launcher': launcher,
+        }
+
     def build_client_install_payload(self, package: dict, platform_alias: str, arch: str) -> dict:
         platform_value, arch_value = self._require_target(platform_alias, arch, f'client package {package.get("id") or "unknown"}')
         logger.info(
@@ -69,7 +97,7 @@ class ExternalToolClientPayloadBuilder(ExternalToolRuntimeComponent):
             action='install',
         )
 
-    def build_client_start_payload(self, meta: dict, params: dict | None = None, instance_id: str = '', install_if_needed: bool = False, require_required_params: bool = True, platform_alias: str = '', arch: str = '') -> dict:
+    def build_client_start_payload(self, meta: dict, params: dict | None = None, instance_id: str = '', install_if_needed: bool = False, require_required_params: bool = True, platform_alias: str = '', arch: str = '', launcher_override: dict | None = None) -> dict:
         del install_if_needed
         package = meta.get('package_meta') or self.catalog_service.get_package(meta.get('package_id') or '')
         platform_value, arch_value = self._require_target(platform_alias, arch, f'client module {meta.get("tool_id") or meta.get("id") or "unknown"}')
@@ -114,6 +142,9 @@ class ExternalToolClientPayloadBuilder(ExternalToolRuntimeComponent):
         launcher = self._exec_launcher(package, exec_name)
         if launcher:
             payload['launcher'] = launcher
+            override = self._launcher_override(launcher_override)
+            if override:
+                payload['launcher_override'] = override
         return payload
 
     def build_client_oneshot_payload(self, meta: dict, params: dict | None = None, platform_alias: str = '', arch: str = '') -> dict:

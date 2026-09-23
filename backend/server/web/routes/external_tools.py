@@ -136,6 +136,19 @@ def create_external_tool_blueprint(server_instance):
             default_error_status=500,
         )
 
+    @blueprint.post('/api/connections/<client_id>/external-tools/<tool_id>/launcher')
+    def resolve_client_launcher(client_id, tool_id):
+        def _execute():
+            ctx = request_context.client_payload(client_id, get_json_payload(), tab_id=get_optional_tab_id())
+            return client_lifecycle_api.resolve_client_launcher(
+                client_id,
+                tool_id,
+                tab_id=ctx.tab_id,
+                platform_alias=ctx.platform_alias,
+                arch=ctx.arch,
+            )
+        return responder.json_endpoint(_execute, default_error_status=500)
+
     @blueprint.post('/api/connections/<client_id>/external-tools/<tool_id>/instances/start')
     def start_client_instance(client_id, tool_id):
         def _execute():
@@ -148,6 +161,7 @@ def create_external_tool_blueprint(server_instance):
                 tab_id=ctx.tab_id,
                 platform_alias=ctx.platform_alias,
                 arch=ctx.arch,
+                launcher_override=ctx.payload.get('launcher_override'),
             )
         return responder.json_endpoint(_execute, default_error_status=500)
 
@@ -163,6 +177,7 @@ def create_external_tool_blueprint(server_instance):
                 tab_id=ctx.tab_id,
                 platform_alias=ctx.platform_alias,
                 arch=ctx.arch,
+                launcher_override=ctx.payload.get('launcher_override'),
             )
         return responder.json_endpoint(_execute, default_error_status=500)
 

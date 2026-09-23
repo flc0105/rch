@@ -130,6 +130,15 @@ export function installClientTool(clientId, toolId, payload = {}, headers = {}) 
   )
 }
 
+export function resolveClientLauncher(clientId, toolId, payload = {}, headers = {}) {
+  return postJson(
+    `/api/connections/${encodeURIComponent(clientId)}/external-tools/${encodeURIComponent(toolId)}/launcher`,
+    payload,
+    headers,
+    'Failed to resolve client launcher',
+  )
+}
+
 export function startClientInstance(clientId, toolId, payload = {}, headers = {}) {
   return postJson(
     `/api/connections/${encodeURIComponent(clientId)}/external-tools/${encodeURIComponent(toolId)}/instances/start`,

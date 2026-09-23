@@ -605,6 +605,27 @@
       </div>
 
       <el-form label-position="top" class="external-tool-param-form">
+        <el-form-item v-if="pendingLauncherConfig" label="Launcher">
+          <el-input
+            v-model="launcherExecutable"
+            :disabled="launcherResolving"
+            :placeholder="launcherResolving ? 'Resolving launcher on client...' : 'Launcher executable'"
+            clearable
+            @input="markLauncherOverrideDirty"
+          >
+            <template #append>
+              <el-button
+                :disabled="launcherResolving || !launcherDefaultExecutable"
+                @click="resetLauncherExecutable"
+              >
+                Reset
+              </el-button>
+            </template>
+          </el-input>
+          <div class="external-tool-param-help">
+            {{ launcherResolveError || 'Resolved on the selected client. Editing this executable overrides only this run.' }}
+          </div>
+        </el-form-item>
         <el-form-item
           v-for="param in pendingParams"
           :key="param.name"
@@ -878,6 +899,11 @@ export default {
       pendingToolId: '',
       pendingStartMode: 'run',
       paramForm: {},
+      launcherExecutable: '',
+      launcherDefaultExecutable: '',
+      launcherResolving: false,
+      launcherResolveError: '',
+      launcherOverrideDirty: false,
       paramPresets: [],
       selectedParamPresetId: '__module_defaults__',
       remoteFilePickerVisible: false,
@@ -1046,6 +1072,11 @@ export default {
 
     pendingParams() {
       return Array.isArray(this.pendingItem?.params) ? this.pendingItem.params : []
+    },
+
+    pendingLauncherConfig() {
+      if (this.isPendingOneshot) return null
+      return this.getModuleLauncher(this.pendingItem)
     },
 
     pendingRemoteFileParamMultiple() {
@@ -1368,6 +1399,16 @@ export default {
 
     getPackageForModule(module) {
       return module?.package_meta || this.getPackageById(module?.package_id || '') || module
+    },
+
+    getModuleLauncher(module) {
+      if (!module) return null
+      const execName = String(module.exec || '').trim()
+      const execs = module.package_execs && typeof module.package_execs === 'object' ? module.package_execs : {}
+      const execItem = execName && execs[execName] && typeof execs[execName] === 'object' ? execs[execName] : {}
+      const launcher = execItem.launcher && typeof execItem.launcher === 'object' ? execItem.launcher : null
+      const launcherType = String(launcher?.type || 'direct').trim().toLowerCase()
+      return launcher && launcherType !== 'direct' ? launcher : null
     },
 
     getModuleExecution(module) {
@@ -2165,6 +2206,72 @@ async loadAllClientInstances(deviceId = '', showToast = true) {
     //   return params
     // },
 
+    resetLauncherFormState() {
+      this.launcherExecutable = ''
+      this.launcherDefaultExecutable = ''
+      this.launcherResolving = false
+      this.launcherResolveError = ''
+      this.launcherOverrideDirty = false
+    },
+
+    markLauncherOverrideDirty() {
+      this.launcherOverrideDirty = true
+    },
+
+    resetLauncherExecutable() {
+      this.launcherExecutable = this.launcherDefaultExecutable
+      this.launcherOverrideDirty = false
+    },
+
+    buildLauncherOverride() {
+      if (!this.pendingLauncherConfig || !this.launcherOverrideDirty) return null
+      const executable = String(this.launcherExecutable || '').trim()
+      const defaultExecutable = String(this.launcherDefaultExecutable || '').trim()
+      if (executable === defaultExecutable) return null
+      if (!executable) throw new Error('Launcher executable is required')
+      return { executable }
+    },
+
+    async loadPendingLauncher(item) {
+      if (!this.getModuleLauncher(item) || this.isOneshotModule(item)) return
+
+      const toolId = String(item?.id || '').trim()
+      try {
+        this.launcherResolving = true
+        this.launcherResolveError = ''
+        const targetDeviceId = this.normalizeDeviceId(this.getActionDeviceId(this.getPackageForModule(item)))
+        if (!targetDeviceId) throw new Error('Please select a target machine')
+
+        const requestPlatform = this.getPlatformForConnectionId(targetDeviceId)
+        const requestArch = this.getArchForConnectionId(targetDeviceId)
+        if (!requestPlatform || !requestArch) {
+          throw new Error(`Unable to resolve target platform/arch for client ${targetDeviceId}`)
+        }
+
+        const data = await externalToolsApi.resolveClientLauncher(
+          targetDeviceId,
+          toolId,
+          { platform: requestPlatform, arch: requestArch },
+          this.buildJsonHeaders(),
+        )
+        if (String(this.pendingToolId || '').trim() !== toolId) return
+
+        const executable = String(data?.executable || '').trim()
+        if (!executable) throw new Error('Client returned an empty launcher executable')
+        this.launcherDefaultExecutable = executable
+        this.launcherExecutable = executable
+        this.launcherOverrideDirty = false
+      } catch (e) {
+        if (String(this.pendingToolId || '').trim() !== toolId) return
+        this.launcherDefaultExecutable = ''
+        this.launcherExecutable = ''
+        this.launcherOverrideDirty = false
+        this.launcherResolveError = `Default launcher unavailable: ${e.message || e}`
+      } finally {
+        if (String(this.pendingToolId || '').trim() === toolId) this.launcherResolving = false
+      }
+    },
+
     buildStartParams() {
       const params = {}
       for (const param of this.pendingParams || []) {
@@ -2206,8 +2313,10 @@ async loadAllClientInstances(deviceId = '', showToast = true) {
       this.paramForm = this.buildParamDefaults(item)
       this.paramPresets = []
       this.selectedParamPresetId = '__module_defaults__'
+      this.resetLauncherFormState()
       this.startDialogVisible = true
       this.loadParamPresets(item)
+      this.loadPendingLauncher(item)
     },
 
     resetStartDialog() {
@@ -2219,6 +2328,7 @@ async loadAllClientInstances(deviceId = '', showToast = true) {
       this.pendingToolId = ''
       this.pendingStartMode = 'run'
       this.paramForm = {}
+      this.resetLauncherFormState()
       this.paramPresets = []
       this.selectedParamPresetId = '__module_defaults__'
     },
@@ -2694,15 +2804,19 @@ async uninstallClientTool(item, deviceId) {
           throw new Error(`Unable to resolve target platform/arch for client ${targetDeviceId}`)
         }
 
+        const launcherOverride = this.buildLauncherOverride()
+        const requestPayload = {
+          params,
+          instance_id: instanceId,
+          platform: requestPlatform,
+          arch: requestArch,
+        }
+        if (launcherOverride) requestPayload.launcher_override = launcherOverride
+
         const data = await externalToolsApi.previewClientInstanceCommand(
           targetDeviceId,
           item.id,
-          {
-            params,
-            instance_id: instanceId,
-            platform: requestPlatform,
-            arch: requestArch,
-          },
+          requestPayload,
           this.buildJsonHeaders(),
         )
         const shellCommand = String(data?.shell_command || data?.command || '').trim()
@@ -2746,7 +2860,8 @@ async uninstallClientTool(item, deviceId) {
         }
 
         const instanceId = this.deriveInstanceId(params)
-        await this.startClientInstance(item, params, instanceId, false)
+        const launcherOverride = this.buildLauncherOverride()
+        await this.startClientInstance(item, params, instanceId, false, '', launcherOverride)
         this.resetStartDialog()
       } catch (e) {
         ElMessage.error(e.message || 'Failed to run external tool')
@@ -2756,7 +2871,7 @@ async uninstallClientTool(item, deviceId) {
     },
 
 
-    async startClientInstance(item, params, instanceId, installIfNeeded = false, deviceId = '') {
+    async startClientInstance(item, params, instanceId, installIfNeeded = false, deviceId = '', launcherOverride = null) {
       const targetDeviceId = this.normalizeDeviceId(deviceId || this.getActionDeviceId(this.getPackageForModule(item)))
       if (!targetDeviceId) throw new Error('Please select a target machine')
 
@@ -2769,16 +2884,19 @@ async uninstallClientTool(item, deviceId) {
       })
       if (!requestPlatform || !requestArch) throw new Error(`Unable to resolve target platform/arch for client ${targetDeviceId}`)
 
+      const requestPayload = {
+        params,
+        instance_id: instanceId,
+        install_if_needed: false,
+        platform: requestPlatform,
+        arch: requestArch,
+      }
+      if (launcherOverride) requestPayload.launcher_override = launcherOverride
+
       const data = await externalToolsApi.startClientInstance(
         targetDeviceId,
         item.id,
-        {
-          params,
-          instance_id: instanceId,
-          install_if_needed: false,
-          platform: requestPlatform,
-          arch: requestArch,
-        },
+        requestPayload,
         this.buildJsonHeaders(),
       )
       ElMessage.success(data?.message || 'Client instance started')
