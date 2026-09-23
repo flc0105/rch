@@ -37,6 +37,12 @@ class ExternalToolClientPayloadBuilder(ExternalToolRuntimeComponent):
             download_url = f'/api/external-tools/packages/{filename}'
         return download_url
 
+    def _exec_launcher(self, package: dict, exec_name: str) -> dict:
+        execs = package.get('execs') if isinstance(package.get('execs'), dict) else {}
+        exec_item = execs.get(exec_name) if isinstance(execs.get(exec_name), dict) else {}
+        launcher = exec_item.get('launcher')
+        return dict(launcher) if isinstance(launcher, dict) else {}
+
     def build_client_install_payload(self, package: dict, platform_alias: str, arch: str) -> dict:
         platform_value, arch_value = self._require_target(platform_alias, arch, f'client package {package.get("id") or "unknown"}')
         logger.info(
@@ -90,7 +96,7 @@ class ExternalToolClientPayloadBuilder(ExternalToolRuntimeComponent):
         config_payload = config_payload_from_rendered(rendered_meta, lambda value: self._render_value(value, context))
         exec_name = self.install_support._primary_exec_name(package, meta)
         rel_path = (context.get('exec') or {}).get(exec_name) or ''
-        return build_shared_client_module_payload(
+        payload = build_shared_client_module_payload(
             meta,
             context,
             action='start',
@@ -105,6 +111,10 @@ class ExternalToolClientPayloadBuilder(ExternalToolRuntimeComponent):
             lifecycle=rendered_meta.get('lifecycle') or {},
             install_if_needed=False,
         )
+        launcher = self._exec_launcher(package, exec_name)
+        if launcher:
+            payload['launcher'] = launcher
+        return payload
 
     def build_client_oneshot_payload(self, meta: dict, params: dict | None = None, platform_alias: str = '', arch: str = '') -> dict:
         if str(meta.get('execution') or '').strip().lower() != 'oneshot':
@@ -136,7 +146,7 @@ class ExternalToolClientPayloadBuilder(ExternalToolRuntimeComponent):
         config_payload = config_payload_from_rendered(rendered_meta, lambda value: self._render_value(value, context))
         exec_name = self.install_support._primary_exec_name(package, meta)
         rel_path = (context.get('exec') or {}).get(exec_name) or ''
-        return build_shared_client_module_payload(
+        payload = build_shared_client_module_payload(
             meta,
             context,
             action='oneshot',
@@ -153,6 +163,10 @@ class ExternalToolClientPayloadBuilder(ExternalToolRuntimeComponent):
             run_id=run_id,
             timeout_sec=self.process_state._oneshot_timeout_sec(meta, runtime),
         )
+        launcher = self._exec_launcher(package, exec_name)
+        if launcher:
+            payload['launcher'] = launcher
+        return payload
 
     def build_client_payload(self, meta: dict, params: dict | None = None) -> dict:
         return self.build_client_start_payload(meta, params=params)
@@ -202,6 +216,14 @@ class ExternalToolClientPayloadBuilder(ExternalToolRuntimeComponent):
         package_file = self._package_file(package, context.get('package_key') or '')
         filename = str(package_file.get('filename') or '').strip()
         rel_path = self.catalog_service.resolve_exec_rel_path(package, exec_name, context.get('package_key') or '')
+        payload_exec_options = {
+            'arg_mode': exec_options.get('arg_mode') or exec_item.get('arg_mode') or 'raw_append',
+            'cwd': cwd or exec_options.get('cwd') or exec_item.get('cwd') or '',
+            'timeout_sec': exec_options.get('timeout_sec') if exec_options.get('timeout_sec') is not None else exec_item.get('timeout_sec'),
+        }
+        launcher = self._exec_launcher(package, exec_name)
+        if launcher:
+            payload_exec_options['launcher'] = launcher
         return build_shared_client_exec_payload(
             package,
             context,
@@ -211,10 +233,6 @@ class ExternalToolClientPayloadBuilder(ExternalToolRuntimeComponent):
             executable_rel_path=rel_path,
             skip_if_exists=self.install_support._client_skip_path(package, context),
             exec_name=exec_name,
-            exec_options={
-                'arg_mode': exec_options.get('arg_mode') or exec_item.get('arg_mode') or 'raw_append',
-                'cwd': cwd or exec_options.get('cwd') or exec_item.get('cwd') or '',
-                'timeout_sec': exec_options.get('timeout_sec') if exec_options.get('timeout_sec') is not None else exec_item.get('timeout_sec'),
-            },
+            exec_options=payload_exec_options,
             raw_args=raw_args,
         )

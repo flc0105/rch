@@ -5,6 +5,7 @@ import time
 
 from client.commands.runtime.context import CommandCancelledError, CommandTimeoutError
 from client.external_tools.common import ExternalToolCommon
+from client.external_tools.launcher import apply_external_tool_launcher
 
 
 class ExternalToolCliExec(ExternalToolCommon):
@@ -45,6 +46,7 @@ class ExternalToolCliExec(ExternalToolCommon):
             argv = [executable_path] + [str(item) for item in argv_extra]
 
             exec_options = payload.get('exec_options') if isinstance(payload.get('exec_options'), dict) else {}
+            argv = apply_external_tool_launcher(argv, exec_options.get('launcher'))
             cwd = self.expand_path(exec_options.get('cwd') or os.getcwd())
             if not os.path.isdir(cwd):
                 raise FileNotFoundError(f'external tool cli cwd does not exist: {cwd}')

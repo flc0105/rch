@@ -6,6 +6,7 @@ import time
 from types import SimpleNamespace
 
 from client.external_tools.common import ExternalToolCommon
+from client.external_tools.launcher import apply_external_tool_launcher
 from core.external_tools.files import tail_text_file
 from core.external_tools.processes import (
     is_pid_alive,
@@ -34,6 +35,7 @@ class ExternalToolDaemonInstance(ExternalToolCommon):
             else item
             for index, item in enumerate(argv)
         ]
+        argv = apply_external_tool_launcher(argv, payload.get('launcher'))
 
         cwd = self.expand_path(runtime.get('cwd') or os.getcwd())
         stdout = self.expand_path(runtime.get('stdout') or '~/.ops/external_tools/runtime/stdout.log')
