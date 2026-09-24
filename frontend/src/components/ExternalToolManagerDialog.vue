@@ -1075,7 +1075,6 @@ export default {
     },
 
     pendingLauncherConfig() {
-      if (this.isPendingOneshot) return null
       return this.getModuleLauncher(this.pendingItem)
     },
 
@@ -2233,7 +2232,7 @@ async loadAllClientInstances(deviceId = '', showToast = true) {
     },
 
     async loadPendingLauncher(item) {
-      if (!this.getModuleLauncher(item) || this.isOneshotModule(item)) return
+      if (!this.getModuleLauncher(item)) return
 
       const toolId = String(item?.id || '').trim()
       try {
@@ -2298,13 +2297,6 @@ async loadAllClientInstances(deviceId = '', showToast = true) {
       }
 
       return params
-    },
-
-    deriveInstanceId(params) {
-      const raw = params.instance_name || params.instance_id || (
-        params.proxy_name && params.remote_port ? `${params.proxy_name}-${params.remote_port}` : ''
-      ) || (params.bind_port ? `frps-${params.bind_port}` : 'default')
-      return String(raw || 'default').trim().replace(/[^A-Za-z0-9_.-]+/g, '-').replace(/^[._-]+|[._-]+$/g, '') || 'default'
     },
 
     openStartDialog(item, mode = 'run') {
@@ -2794,7 +2786,6 @@ async uninstallClientTool(item, deviceId) {
       try {
         this.previewingCommand = true
         const params = this.buildStartParams()
-        const instanceId = this.deriveInstanceId(params)
         const targetDeviceId = this.normalizeDeviceId(this.getActionDeviceId(this.getPackageForModule(item)))
         if (!targetDeviceId) throw new Error('Please select a target machine')
 
@@ -2807,7 +2798,6 @@ async uninstallClientTool(item, deviceId) {
         const launcherOverride = this.buildLauncherOverride()
         const requestPayload = {
           params,
-          instance_id: instanceId,
           platform: requestPlatform,
           arch: requestArch,
         }
@@ -2821,6 +2811,7 @@ async uninstallClientTool(item, deviceId) {
         )
         const shellCommand = String(data?.shell_command || data?.command || '').trim()
         if (!shellCommand) throw new Error('Preview returned an empty command')
+        const instanceId = String(data?.instance_id || 'default').trim() || 'default'
 
         this.showDetailDialog({
           title: `Preview Command - ${item.display_name || item.id}`,
@@ -2853,15 +2844,14 @@ async uninstallClientTool(item, deviceId) {
         this.submitting = true
         const params = this.buildStartParams()
         if (this.isOneshotModule(item)) {
-          const result = await this.runClientOneshot(item, params)
+          const result = await this.runClientOneshot(item, params, '', this.buildLauncherOverride())
           this.resetStartDialog()
           this.openOneshotResultDialog(item, result)
           return
         }
 
-        const instanceId = this.deriveInstanceId(params)
         const launcherOverride = this.buildLauncherOverride()
-        await this.startClientInstance(item, params, instanceId, false, '', launcherOverride)
+        await this.startClientInstance(item, params, '', false, '', launcherOverride)
         this.resetStartDialog()
       } catch (e) {
         ElMessage.error(e.message || 'Failed to run external tool')
@@ -2886,11 +2876,11 @@ async uninstallClientTool(item, deviceId) {
 
       const requestPayload = {
         params,
-        instance_id: instanceId,
         install_if_needed: false,
         platform: requestPlatform,
         arch: requestArch,
       }
+      if (instanceId) requestPayload.instance_id = instanceId
       if (launcherOverride) requestPayload.launcher_override = launcherOverride
 
       const data = await externalToolsApi.startClientInstance(
@@ -2905,7 +2895,7 @@ async uninstallClientTool(item, deviceId) {
     },
 
 
-    async runClientOneshot(item, params, deviceId = '') {
+    async runClientOneshot(item, params, deviceId = '', launcherOverride = null) {
       const targetDeviceId = this.normalizeDeviceId(deviceId || this.getActionDeviceId(this.getPackageForModule(item)))
       if (!targetDeviceId) throw new Error('Please select a target machine')
 
@@ -2918,14 +2908,17 @@ async uninstallClientTool(item, deviceId) {
       })
       if (!requestPlatform || !requestArch) throw new Error(`Unable to resolve target platform/arch for client ${targetDeviceId}`)
 
+      const requestPayload = {
+        params,
+        platform: requestPlatform,
+        arch: requestArch,
+      }
+      if (launcherOverride) requestPayload.launcher_override = launcherOverride
+
       const data = await externalToolsApi.runClientOneshot(
         targetDeviceId,
         item.id,
-        {
-          params,
-          platform: requestPlatform,
-          arch: requestArch,
-        },
+        requestPayload,
         this.buildJsonHeaders(),
       )
       if (data?.install) this.setInstallStatus(this.getPackageForModule(item), targetDeviceId, data.install)

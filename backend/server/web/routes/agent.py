@@ -123,17 +123,6 @@ def create_agent_blueprint(server_instance):
             default_error_status=500,
         )
 
-    @blueprint.delete('/api/agent/cleanup')
-    def cleanup_agent_build():
-        """清理构建临时文件"""
-
-        def _execute():
-            payload = get_json_payload()
-            work_dir = (payload.get('work_dir') or '').strip()
-            return agent_api.cleanup_agent_build(work_dir)
-
-        return responder.json_endpoint(_execute)
-
     @blueprint.post('/api/agent/bootstrap')
     @allow_anonymous
     def generate_bootstrap():

@@ -2,6 +2,7 @@ import os
 import time
 
 from client.external_tools.common import ExternalToolCommon
+from core.external_tools.paths import EXTERNAL_TOOLS_PACKAGE_CACHE_ROOT
 
 
 class ExternalToolCache(ExternalToolCommon):
@@ -12,7 +13,7 @@ class ExternalToolCache(ExternalToolCommon):
         filename = os.path.basename(str(package.get('filename') or '').strip())
         if not filename:
             raise ValueError('package.filename is required')
-        cache_dir = self.expand_path('~/.ops/external_tools/packages')
+        cache_dir = self.expand_path(EXTERNAL_TOOLS_PACKAGE_CACHE_ROOT)
         return cache_dir, os.path.join(cache_dir, filename)
 
     def cache_info(self, payload: dict) -> dict:
@@ -20,7 +21,7 @@ class ExternalToolCache(ExternalToolCommon):
             cache_dir, archive_path = self.package_cache_path(payload)
         except Exception as e:
             return {
-                'cache_dir': self.expand_path('~/.ops/external_tools/packages'),
+                'cache_dir': self.expand_path(EXTERNAL_TOOLS_PACKAGE_CACHE_ROOT),
                 'cache_path': '',
                 'cached': False,
                 'exists': False,

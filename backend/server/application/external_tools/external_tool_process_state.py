@@ -1,6 +1,7 @@
 import os
 from datetime import datetime
 
+from core.external_tools.paths import EXTERNAL_TOOLS_RUNTIME_ROOT, external_tool_oneshot_runtime_parts
 from server.application.external_tools.external_tool_runtime_component import ExternalToolRuntimeComponent
 
 
@@ -28,7 +29,10 @@ class ExternalToolProcessState(ExternalToolRuntimeComponent):
     def _apply_client_oneshot_context(self, context: dict, meta: dict, run_id: str) -> dict:
         package_id = str(meta.get('package_id') or '').strip()
         module_id = str(meta.get('id') or meta.get('module_id') or '').strip()
-        run_dir = os.path.join('~/.ops/external_tools/runtime', package_id, module_id, 'oneshot', run_id).replace('\\', '/')
+        run_dir = os.path.join(
+            EXTERNAL_TOOLS_RUNTIME_ROOT,
+            *external_tool_oneshot_runtime_parts(package_id, module_id, run_id),
+        ).replace('\\', '/')
         context['run_id'] = run_id
         context['instance_id'] = ''
         context['instance_name'] = ''

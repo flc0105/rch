@@ -2,6 +2,11 @@ import os
 import re
 from typing import Any
 
+from core.external_tools.paths import (
+    EXTERNAL_TOOLS_INSTALL_ROOT,
+    EXTERNAL_TOOLS_RUNTIME_ROOT,
+    external_tool_instance_runtime_parts,
+)
 from server.application.external_tools.external_tool_runtime_component import ExternalToolRuntimeComponent
 
 class ExternalToolContextRuntime(ExternalToolRuntimeComponent):
@@ -86,7 +91,10 @@ class ExternalToolContextRuntime(ExternalToolRuntimeComponent):
         module_id = str(meta.get('id') or meta.get('module_id') or '').strip()
         tool_id = str(meta.get('tool_id') or f'{package_id}.{module_id}').strip()
         tool_runtime_dir = os.path.join(runtime_root, package_id, module_id)
-        instance_runtime_dir = os.path.join(tool_runtime_dir, 'instances', resolved_instance_id)
+        instance_runtime_dir = os.path.join(
+            runtime_root,
+            *external_tool_instance_runtime_parts(package_id, module_id, resolved_instance_id),
+        )
         context.update({
             'id': tool_id,
             'tool_id': tool_id,
@@ -109,8 +117,8 @@ class ExternalToolContextRuntime(ExternalToolRuntimeComponent):
     def build_client_package_context(self, package: dict, platform_alias: str, arch: str) -> dict:
         context = self._package_base_context(
             package,
-            install_root='~/.ops/external_tools/installed',
-            runtime_root='~/.ops/external_tools/runtime',
+            install_root=EXTERNAL_TOOLS_INSTALL_ROOT,
+            runtime_root=EXTERNAL_TOOLS_RUNTIME_ROOT,
             platform_alias=platform_alias,
             arch=arch,
         )
@@ -119,8 +127,8 @@ class ExternalToolContextRuntime(ExternalToolRuntimeComponent):
         context = self._module_base_context(
             meta,
             params,
-            install_root='~/.ops/external_tools/installed',
-            runtime_root='~/.ops/external_tools/runtime',
+            install_root=EXTERNAL_TOOLS_INSTALL_ROOT,
+            runtime_root=EXTERNAL_TOOLS_RUNTIME_ROOT,
             instance_id=instance_id,
             side='client',
             platform_alias=platform_alias,

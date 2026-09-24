@@ -4,6 +4,7 @@ import logging
 import os
 import shlex
 
+from core.external_tools.paths import EXTERNAL_TOOLS_RUNTIME_ROOT, external_tool_instance_runtime_parts
 from core.external_tools.payload import (
     client_action_payload,
     client_exec_payload as build_shared_client_exec_payload,
@@ -147,7 +148,7 @@ class ExternalToolClientPayloadBuilder(ExternalToolRuntimeComponent):
                 payload['launcher_override'] = override
         return payload
 
-    def build_client_oneshot_payload(self, meta: dict, params: dict | None = None, platform_alias: str = '', arch: str = '') -> dict:
+    def build_client_oneshot_payload(self, meta: dict, params: dict | None = None, platform_alias: str = '', arch: str = '', launcher_override: dict | None = None) -> dict:
         if str(meta.get('execution') or '').strip().lower() != 'oneshot':
             raise ValueError(f'module {meta.get("tool_id") or meta.get("id") or "unknown"} execution is not oneshot')
         package = meta.get('package_meta') or self.catalog_service.get_package(meta.get('package_id') or '')
@@ -197,6 +198,9 @@ class ExternalToolClientPayloadBuilder(ExternalToolRuntimeComponent):
         launcher = self._exec_launcher(package, exec_name)
         if launcher:
             payload['launcher'] = launcher
+            override = self._launcher_override(launcher_override)
+            if override:
+                payload['launcher_override'] = override
         return payload
 
     def build_client_payload(self, meta: dict, params: dict | None = None) -> dict:
@@ -208,7 +212,10 @@ class ExternalToolClientPayloadBuilder(ExternalToolRuntimeComponent):
         package_id = meta.get('package_id') or ''
         module_id = meta.get('id') or ''
         sanitized = self._sanitize_instance_id(instance_id)
-        runtime_dir = os.path.join('~/.ops/external_tools/runtime', package_id, module_id, 'instances', sanitized)
+        runtime_dir = os.path.join(
+            EXTERNAL_TOOLS_RUNTIME_ROOT,
+            *external_tool_instance_runtime_parts(package_id, module_id, sanitized),
+        ).replace('\\', '/')
         runtime = {'pid_file': os.path.join(runtime_dir, 'tool.pid'), 'stdout': os.path.join(runtime_dir, 'stdout.log'), 'stderr': 'stdout', 'state_file': os.path.join(runtime_dir, 'state.json')}
         return client_action_payload(
             meta,

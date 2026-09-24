@@ -192,6 +192,7 @@ def create_external_tool_blueprint(server_instance):
                 tab_id=ctx.tab_id,
                 platform_alias=ctx.platform_alias,
                 arch=ctx.arch,
+                launcher_override=ctx.payload.get('launcher_override'),
             )
         return responder.json_endpoint(_execute, default_error_status=500)
 

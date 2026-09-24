@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Any
 from client.runtime.sdk import context
 from client.runtime.sdk.context import get_command_owner
+from core.external_tools.paths import EXTERNAL_TOOLS_INSTALL_ROOT, EXTERNAL_TOOLS_RUNTIME_ROOT
 from core.external_tools.payload import client_exec_payload
 from core.external_tools.platform import normalize_arch, normalize_platform
 from core.external_tools.selector import (
@@ -215,9 +216,9 @@ def _client_package_context(package: dict, package_key: str) -> dict:
         'arch': _target_arch(),
         'package_key': package_key,
         'package_root': package_file.get('root') or '',
-        'external_tools_root': '~/.ops/external_tools/installed',
-        'external_tools_runtime': '~/.ops/external_tools/runtime',
-        'runtime_dir': '~/.ops/external_tools/runtime',
+        'external_tools_root': EXTERNAL_TOOLS_INSTALL_ROOT,
+        'external_tools_runtime': EXTERNAL_TOOLS_RUNTIME_ROOT,
+        'runtime_dir': EXTERNAL_TOOLS_RUNTIME_ROOT,
     }
     install_template = _safe_text((package.get('install') or {}).get('install_dir'))
     if not install_template:

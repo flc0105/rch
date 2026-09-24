@@ -28,8 +28,16 @@ class WebExternalToolClientLifecycleApi:
     def preview_client_instance_command(self, client_id: str, tool_id: str, params=None, tab_id: str = '', instance_id: str = '', platform_alias: str = '', arch: str = '', launcher_override=None):
         return self.runtime_service.client_lifecycle_runtime.preview_client_instance_command(client_id, tool_id, params=params, tab_id=tab_id, instance_id=instance_id, platform_alias=platform_alias, arch=arch, launcher_override=launcher_override)
 
-    def run_client_oneshot(self, client_id: str, tool_id: str, params=None, tab_id: str = '', platform_alias: str = '', arch: str = ''):
-        return self.runtime_service.client_lifecycle_runtime.run_client_oneshot(client_id, tool_id, params=params, tab_id=tab_id, platform_alias=platform_alias, arch=arch)
+    def run_client_oneshot(self, client_id: str, tool_id: str, params=None, tab_id: str = '', platform_alias: str = '', arch: str = '', launcher_override=None):
+        return self.runtime_service.client_lifecycle_runtime.run_client_oneshot(
+            client_id,
+            tool_id,
+            params=params,
+            tab_id=tab_id,
+            platform_alias=platform_alias,
+            arch=arch,
+            launcher_override=launcher_override,
+        )
 
     def stop_client_instance(self, client_id: str, tool_id: str, instance_id: str, params=None, tab_id: str = ''):
         return self.runtime_service.client_lifecycle_runtime.stop_client_instance(client_id, tool_id, instance_id=instance_id, params=params, tab_id=tab_id)

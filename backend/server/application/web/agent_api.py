@@ -14,7 +14,6 @@ class WebAgentApi:
     - 提供 Agent build 能力
     - 提供构建产物定位能力
     - 提供构建产物列表/删除能力
-    - 提供构建临时目录清理能力
     - 提供 Go loader 上报落盘能力
     """
 
@@ -83,7 +82,6 @@ class WebAgentApi:
                 })
             raise
 
-        record['work_dir'] = str(build_result.get('work_dir') or '').strip()
         record['warnings'] = build_result.get('warnings') or []
 
         if self.event_bus is not None:
@@ -189,8 +187,3 @@ class WebAgentApi:
             download_name='bootstrap.ps1',
             mimetype='text/plain',
         )
-
-    def cleanup_agent_build(self, work_dir: str):
-        if work_dir:
-            self.agent_builder.cleanup(work_dir)
-        return {'cleaned': True}

@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from client.external_tools.common import ExternalToolCommon
 from client.external_tools.launcher import apply_external_tool_launcher
 from core.external_tools.files import tail_text_file
+from core.external_tools.paths import EXTERNAL_TOOLS_RUNTIME_ROOT, external_tool_instances_runtime_parts
 from core.external_tools.processes import (
     is_pid_alive,
     read_pid_file,
@@ -42,13 +43,13 @@ class ExternalToolDaemonInstance(ExternalToolCommon):
         )
 
         cwd = self.expand_path(runtime.get('cwd') or os.getcwd())
-        stdout = self.expand_path(runtime.get('stdout') or '~/.ops/external_tools/runtime/stdout.log')
+        stdout = self.expand_path(runtime.get('stdout') or os.path.join(EXTERNAL_TOOLS_RUNTIME_ROOT, 'stdout.log'))
         stderr = runtime.get('stderr') or 'stdout'
 
         if stderr != 'stdout':
             stderr = self.expand_path(stderr)
 
-        pid_file = self.expand_path(runtime.get('pid_file') or '~/.ops/external_tools/runtime/tool.pid')
+        pid_file = self.expand_path(runtime.get('pid_file') or os.path.join(EXTERNAL_TOOLS_RUNTIME_ROOT, 'tool.pid'))
         state_file = self.expand_path(
             runtime.get('state_file') or os.path.join(os.path.dirname(pid_file), 'state.json')
         )
@@ -152,7 +153,7 @@ class ExternalToolDaemonInstance(ExternalToolCommon):
         if state_file:
             return self.expand_path(state_file)
 
-        pid_file = self.expand_path(runtime.get('pid_file') or '~/.ops/external_tools/runtime/tool.pid')
+        pid_file = self.expand_path(runtime.get('pid_file') or os.path.join(EXTERNAL_TOOLS_RUNTIME_ROOT, 'tool.pid'))
         return os.path.join(os.path.dirname(pid_file), 'state.json')
 
     def pid_file_from_payload(self, payload: dict) -> str:
@@ -370,8 +371,8 @@ class ExternalToolDaemonInstance(ExternalToolCommon):
 
     def list_instances_payload(self, payload: dict) -> dict:
         tool_id, package_id, module_id = self.runtime_parts_from_payload(payload)
-        runtime_root = self.expand_path('~/.ops/external_tools/runtime')
-        instances_dir = os.path.join(runtime_root, package_id, module_id, 'instances') if module_id else os.path.join(runtime_root, package_id, 'instances')
+        runtime_root = self.expand_path(EXTERNAL_TOOLS_RUNTIME_ROOT)
+        instances_dir = os.path.join(runtime_root, *external_tool_instances_runtime_parts(package_id, module_id))
         items = []
 
         if os.path.isdir(instances_dir):
@@ -454,14 +455,14 @@ class ExternalToolDaemonInstance(ExternalToolCommon):
         }
 
     def has_running_instances_for_package(self, package_id: str) -> bool:
-        runtime_root = self.expand_path('~/.ops/external_tools/runtime')
+        runtime_root = self.expand_path(EXTERNAL_TOOLS_RUNTIME_ROOT)
         package_dir = os.path.join(runtime_root, str(package_id or '').strip())
 
         if not os.path.isdir(package_dir):
             return False
 
         for module_id in os.listdir(package_dir):
-            instances_dir = os.path.join(package_dir, module_id, 'instances')
+            instances_dir = os.path.join(runtime_root, *external_tool_instances_runtime_parts(package_id, module_id))
             if not os.path.isdir(instances_dir):
                 continue
             tool_id = f'{package_id}.{module_id}'
@@ -490,7 +491,7 @@ class ExternalToolDaemonInstance(ExternalToolCommon):
         return False
 
     def list_instances_all_payload(self, payload: dict) -> dict:
-        runtime_root = self.expand_path('~/.ops/external_tools/runtime')
+        runtime_root = self.expand_path(EXTERNAL_TOOLS_RUNTIME_ROOT)
         tools = payload.get('tools') or []
 
         tool_specs = []
@@ -524,7 +525,7 @@ class ExternalToolDaemonInstance(ExternalToolCommon):
             display_name = spec.get('display_name') or tool_id
             package_id = spec.get('package_id') or (tool_id.split('.', 1)[0] if '.' in tool_id else tool_id)
             module_id = spec.get('module_id') or (tool_id.split('.', 1)[1] if '.' in tool_id else '')
-            instances_dir = os.path.join(runtime_root, package_id, module_id, 'instances') if module_id else os.path.join(runtime_root, package_id, 'instances')
+            instances_dir = os.path.join(runtime_root, *external_tool_instances_runtime_parts(package_id, module_id))
             tool_items = []
             by_tool[tool_id] = tool_items
 

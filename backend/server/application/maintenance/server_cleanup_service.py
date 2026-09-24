@@ -184,15 +184,16 @@ class ServerCleanupService:
         ]
 
     def _snapshot_agent_build_temp(self) -> list[str]:
-        work_dirs = []
-        seen = set()
-        for record in self.agent_output_registry.list_outputs():
-            work_dir = os.path.abspath(str(record.get('work_dir') or '').strip()) if record.get('work_dir') else ''
-            if not work_dir or work_dir in seen or not self._is_owned_agent_work_dir(work_dir):
-                continue
-            seen.add(work_dir)
-            work_dirs.append(work_dir)
-        return work_dirs
+        temp_root = os.path.abspath(tempfile.gettempdir())
+        if not os.path.isdir(temp_root):
+            return []
+        return [
+            os.path.join(temp_root, name)
+            for name in sorted(os.listdir(temp_root))
+            if name.startswith('agent_build_')
+            and self._is_owned_agent_work_dir(os.path.join(temp_root, name))
+            and os.path.isdir(os.path.join(temp_root, name))
+        ]
 
     def _snapshot_agent_transient_outputs(self) -> list[str]:
         return [

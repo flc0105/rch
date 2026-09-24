@@ -86,7 +86,6 @@ class AgentOutputRegistry:
             'file_transfer_port': int(payload.get('file_transfer_port') or 0),
             'server_web_scheme': str(payload.get('server_web_scheme') or 'http').strip() or 'http',
             'server_web_host': str(payload.get('server_web_host') or payload.get('server_host') or '').strip(),
-            'work_dir': str(build_result.get('work_dir') or '').strip(),
             'warnings': build_result.get('warnings') or [],
         }
         self._write_metadata(file_name, record)
@@ -119,7 +118,6 @@ class AgentOutputRegistry:
             'file_transfer_port': int(metadata.get('file_transfer_port') or 0),
             'server_web_scheme': str(metadata.get('server_web_scheme') or 'http').strip() or 'http',
             'server_web_host': str(metadata.get('server_web_host') or metadata.get('server_host') or '').strip(),
-            'work_dir': str(metadata.get('work_dir') or '').strip(),
             'warnings': metadata.get('warnings') or [],
         }
         return record

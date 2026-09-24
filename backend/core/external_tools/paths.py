@@ -6,6 +6,10 @@ from typing import Any, Callable
 
 _INSTANCE_PATTERN = re.compile(r'[^A-Za-z0-9_.-]+')
 
+EXTERNAL_TOOLS_INSTALL_ROOT = '~/.ops/external_tools/installed'
+EXTERNAL_TOOLS_RUNTIME_ROOT = '~/.ops/external_tools/runtime'
+EXTERNAL_TOOLS_PACKAGE_CACHE_ROOT = '~/.ops/external_tools/packages'
+
 
 def expand_path(path: Any) -> str:
     return os.path.abspath(os.path.expandvars(os.path.expanduser(str(path or '').strip())))
@@ -15,6 +19,25 @@ def sanitize_instance_id(value: Any) -> str:
     text = str(value or '').strip()
     text = _INSTANCE_PATTERN.sub('-', text).strip('.-_')
     return (text or 'default')[:96]
+
+
+def external_tool_instances_runtime_parts(package_id: Any, module_id: Any) -> tuple[str, ...]:
+    package = str(package_id or '').strip()
+    module = str(module_id or '').strip()
+    if module:
+        return package, module, 'instances'
+    return package, 'instances'
+
+
+def external_tool_instance_runtime_parts(package_id: Any, module_id: Any, instance_id: Any) -> tuple[str, ...]:
+    return (*external_tool_instances_runtime_parts(package_id, module_id), sanitize_instance_id(instance_id))
+
+
+def external_tool_oneshot_runtime_parts(package_id: Any, module_id: Any, run_id: Any) -> tuple[str, ...]:
+    package = str(package_id or '').strip()
+    module = str(module_id or '').strip()
+    run = sanitize_instance_id(run_id)
+    return package, module, 'oneshot', run
 
 
 def render_path_list(values: Any) -> list[str]:

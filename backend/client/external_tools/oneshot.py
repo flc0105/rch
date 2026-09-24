@@ -2,13 +2,14 @@ import os
 import time
 
 from client.external_tools.common import ExternalToolCommon
+from client.external_tools.launcher import apply_external_tool_launcher
 from core.external_tools.processes import run_foreground_process
 
 
 class ExternalToolOneshot(ExternalToolCommon):
     """One-shot external tool execution operations."""
 
-    def run_foreground(self, runtime: dict, timeout_sec=None) -> dict:
+    def run_foreground(self, runtime: dict, timeout_sec=None, launcher=None, launcher_override=None) -> dict:
         cwd = self.expand_path(runtime.get('cwd') or os.getcwd())
         if not os.path.isdir(cwd):
             raise FileNotFoundError(f'external tool cwd does not exist: {cwd}')
@@ -23,6 +24,11 @@ class ExternalToolOneshot(ExternalToolCommon):
             for index, item in enumerate(argv)
         ]
         self.chmod(argv[0])
+        argv = apply_external_tool_launcher(
+            argv,
+            launcher,
+            launcher_override=launcher_override,
+        )
 
         try:
             timeout_value = None if timeout_sec in ('', None) else float(timeout_sec)
@@ -46,7 +52,8 @@ class ExternalToolOneshot(ExternalToolCommon):
         if str(payload.get('execution') or payload.get('action') or '').strip().lower() not in ('oneshot',):
             raise ValueError('external tool payload execution must be oneshot')
 
-        runtime = self.build_runtime(payload)
+        self.validate_package_payload(payload, 'oneshot')
+        runtime = payload.get('runtime') or {}
         if payload.get('install_if_needed', True):
             package_info = self.download_package(payload)
             install_info = self.install_if_needed(payload, package_info)
@@ -63,7 +70,12 @@ class ExternalToolOneshot(ExternalToolCommon):
 
         config_info = self.write_config(payload)
         timeout_sec = payload.get('timeout_sec') or (payload.get('runtime') or {}).get('timeout_sec')
-        run_result = self.run_foreground(runtime, timeout_sec=timeout_sec)
+        run_result = self.run_foreground(
+            runtime,
+            timeout_sec=timeout_sec,
+            launcher=payload.get('launcher'),
+            launcher_override=payload.get('launcher_override'),
+        )
         success = run_result.get('returncode') == 0 and not run_result.get('timed_out')
 
         return {

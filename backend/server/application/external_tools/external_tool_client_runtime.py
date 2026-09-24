@@ -167,9 +167,15 @@ class ExternalToolClientLifecycleRuntime(ExternalToolRuntimeComponent):
         command = f'external_tool_preview {self.payload_builder.encode_payload_arg(payload)}'
         return self._run_client_lifecycle_command(client_id, command, tab_id=tab_id)
 
-    def run_client_oneshot(self, client_id: str, tool_id: str, params: dict | None = None, tab_id: str = '', platform_alias: str = '', arch: str = '') -> dict:
+    def run_client_oneshot(self, client_id: str, tool_id: str, params: dict | None = None, tab_id: str = '', platform_alias: str = '', arch: str = '', launcher_override: dict | None = None) -> dict:
         meta = self.catalog_service.get_tool(tool_id)
-        payload = self.payload_builder.build_client_oneshot_payload(meta, params=params, platform_alias=platform_alias, arch=arch)
+        payload = self.payload_builder.build_client_oneshot_payload(
+            meta,
+            params=params,
+            platform_alias=platform_alias,
+            arch=arch,
+            launcher_override=launcher_override,
+        )
         command = f'external_tool_oneshot {self.payload_builder.encode_payload_arg(payload)}'
         return self._run_client_lifecycle_command(client_id, command, tab_id=tab_id)
 
