@@ -16,6 +16,7 @@ class AgentBuilder:
 
     EXCLUDE_DIRS = {'venv', '__pycache__', '.git', 'node_modules', 'dist', 'build', '.idea', '.vscode' } #'runtime'
     EXCLUDE_EXTENSIONS = {'.pyc', '.pyo', '.pyd'}
+    EXCLUDE_FILE_PATTERNS = {'nohup.out', 'nohup.out.*'}
     BUNDLE_INCLUDE_PATHS = CLIENT_BUNDLE_SOURCE_PATHS
     SUPPORTED_TARGETS = {'win', 'mac', 'linux'}
     SUPPORTED_BUILDERS = {'pyinstaller', 'go', 'go_loader', 'bundle'}
@@ -179,7 +180,8 @@ class AgentBuilder:
             src, dst,
             ignore=shutil.ignore_patterns(
                 *[f'*/{d}' for d in self.EXCLUDE_DIRS],
-                *[f'*{ext}' for ext in self.EXCLUDE_EXTENSIONS]
+                *[f'*{ext}' for ext in self.EXCLUDE_EXTENSIONS],
+                *self.EXCLUDE_FILE_PATTERNS,
             ),
             ignore_dangling_symlinks=True
         )

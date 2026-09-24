@@ -11,6 +11,10 @@ from server.application.execution.execution_context import ExecutionContext
 from server.connection.client_session import ClientSession
 
 
+class _ConsoleInputUnavailable(Exception):
+    pass
+
+
 class ServerCommandShell:
     def __init__(self, server):
         self.server = server
@@ -205,6 +209,27 @@ class ServerCommandShell:
         sys.stdout.write('\033[2J\033[H')
         sys.stdout.flush()
 
+    def _read_console_input(self, prompt: str) -> str:
+        """
+        读取交互输入；stdin 在 nohup/后台场景不可用时退出交互路径。
+        """
+        try:
+            return colored_input(prompt)
+        except (EOFError, OSError) as exc:
+            raise _ConsoleInputUnavailable(f'{type(exc).__name__}: {exc}') from exc
+
+    def _wait_without_console(self):
+        """
+        后台运行时保持主线程存活，避免 daemon 服务线程随主线程退出。
+        """
+        while True:
+            try:
+                time.sleep(3600)
+            except KeyboardInterrupt:
+                print(Colors.RESET)
+                self.server.socket.close()
+                return
+
     def _print_unread_messages(self, session: ClientSession):
         """
         输出连接的未读消息
@@ -330,7 +355,7 @@ class ServerCommandShell:
         try:
             while 1:
                 try:
-                    cmd = colored_input('{}> '.format(session.session_info.cwd))
+                    cmd = self._read_console_input('{}> '.format(session.session_info.cwd))
                     cmd = (cmd or '').strip()
 
                     if not cmd:
@@ -356,8 +381,12 @@ class ServerCommandShell:
                         return
 
                     self._execute_interactive_command(session, command_executor, cmd)
+                except _ConsoleInputUnavailable:
+                    raise
                 except Exception as e:
                     print_error(f'{e.__class__.__name__}: {e}')
+        except _ConsoleInputUnavailable:
+            raise
         except socket.error:
             print_error('[-] Connection closed')
         except KeyboardInterrupt:
@@ -434,7 +463,7 @@ class ServerCommandShell:
         """
         while 1:
             try:
-                cmd = colored_input('server> ')
+                cmd = self._read_console_input('server> ')
                 cmd = (cmd or '').strip()
 
                 if not cmd:
@@ -445,6 +474,10 @@ class ServerCommandShell:
                 print(Colors.RESET)
                 self.server.socket.close()
                 sys.exit(0)
+            except _ConsoleInputUnavailable as e:
+                write(0, f'[-] Console input unavailable; continuing without interactive console ({e})')
+                self._wait_without_console()
+                return
             except Exception as e:
                 write(0, f'[-] {type(e).__name__}: {e}')
             finally:
