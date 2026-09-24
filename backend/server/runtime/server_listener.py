@@ -1,3 +1,4 @@
+import errno
 import json
 import socket
 import threading
@@ -8,8 +9,34 @@ from server.connection.transport.client_transport import ClientTransport
 
 
 class ServerListener:
+    _CLOSED_SOCKET_ERRNOS = {
+        errno.EBADF,
+        errno.EINVAL,
+        getattr(errno, 'ENOTSOCK', 88),
+        10038,  # Windows WSAENOTSOCK
+    }
+
     def __init__(self, server):
         self.server = server
+        self._stop_event = threading.Event()
+
+    def stop(self):
+        """
+        停止监听。关闭 socket 用于唤醒阻塞中的 accept()。
+        """
+        self._stop_event.set()
+        try:
+            self.server.socket.shutdown()
+        except OSError:
+            pass
+        finally:
+            try:
+                self.server.socket.close()
+            except OSError:
+                pass
+
+    def _is_closed_socket_error(self, exc: OSError) -> bool:
+        return getattr(exc, 'errno', None) in self._CLOSED_SOCKET_ERRNOS
 
     def _bind_server_socket(self):
         """
@@ -170,11 +197,15 @@ class ServerListener:
             logger.error('Error binding socket: {}'.format(e))
             return
 
-        while 1:
+        while not self._stop_event.is_set():
             try:
                 session = self._accept_connection()
                 if session is None:
                     continue
                 self._start_connection_handler(session)
-            except socket.error as e:
+            except OSError as e:
+                if self._stop_event.is_set() or self._is_closed_socket_error(e):
+                    return
                 logger.error(e)
+                # 避免持续性 accept 错误形成 CPU / 日志热循环。
+                time.sleep(0.1)

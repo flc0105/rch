@@ -24,6 +24,9 @@ class RCHSocket:
     def accept(self) -> tuple:
         return self.socket.accept()
 
+    def shutdown(self) -> None:
+        self.socket.shutdown(socket.SHUT_RDWR)
+
     def close(self) -> None:
         self.socket.close()
 
