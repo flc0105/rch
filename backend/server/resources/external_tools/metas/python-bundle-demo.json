@@ -1,0 +1,87 @@
+{
+  "id": "python-bundle-demo",
+  "name": "python-bundle-demo",
+  "display_name": "Python Bundle Demo",
+  "description": "Demo Flask static web server launched with the Python runtime used by the client.",
+  "version": "1.0.0",
+  "category": "demo",
+  "tags": [
+    "python",
+    "flask",
+    "bundle",
+    "demo"
+  ],
+  "platform_packages": {
+    "common-all": {
+      "platform": "*",
+      "arch": "all",
+      "filename": "python-bundle-demo-v1.0.0-common-all.zip",
+      "download_url": "/api/external-tools/packages/python-bundle-demo-v1.0.0-common-all.zip",
+      "root": ""
+    }
+  },
+  "execs": {
+    "python-bundle-demo": {
+      "paths": {
+        "common-all": "app.py"
+      },
+      "description": "Run the Flask demo from the source bundle.",
+      "launcher": {
+        "type": "client_python",
+        "prefix_args": [
+          "-u"
+        ]
+      }
+    }
+  },
+  "install": {
+    "install_dir": "{{external_tools_root}}/{{package_id}}/{{version}}/{{package_key}}"
+  },
+  "modules": [
+    {
+      "id": "web",
+      "name": "python-bundle-demo-web",
+      "display_name": "Python Bundle Demo Web",
+      "description": "Serves the bundled static demo page with Flask.",
+      "execution": "daemon",
+      "exec": "python-bundle-demo",
+      "params": [
+        {
+          "name": "port",
+          "label": "HTTP Port",
+          "type": "integer",
+          "required": true,
+          "default": 18080,
+          "min": 1,
+          "max": 65535,
+          "description": "HTTP listen port for the Flask demo server."
+        }
+      ],
+      "runtime": {
+        "cwd": "{{install_dir}}/{{package_root}}",
+        "argv": [
+          "{{bin_python_bundle_demo}}",
+          "--host",
+          "0.0.0.0",
+          "--port",
+          "{{port}}"
+        ],
+        "stdout": "{{instance_runtime_dir}}/stdout.log",
+        "stderr": "stdout",
+        "pid_file": "{{instance_runtime_dir}}/tool.pid",
+        "state_file": "{{instance_runtime_dir}}/state.json"
+      },
+      "lifecycle": {
+        "stop": {
+          "type": "signal",
+          "signal": "TERM",
+          "timeout_sec": 5,
+          "kill_after_timeout": true
+        },
+        "status": {
+          "type": "pid_file"
+        }
+      }
+    }
+  ]
+}

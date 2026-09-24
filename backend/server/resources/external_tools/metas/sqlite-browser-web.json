@@ -1,0 +1,132 @@
+{
+  "id": "sqlite-browser-web",
+  "name": "sqlite-browser-web",
+  "display_name": "SQLite Browser Web",
+  "description": "Dependency-free browser UI for opening, inspecting and editing SQLite databases on the Client filesystem or uploaded from the browser.",
+  "version": "1.0.0",
+  "category": "database",
+  "tags": [
+    "sqlite",
+    "database",
+    "browser",
+    "web",
+    "python",
+    "bundle"
+  ],
+  "platform_packages": {
+    "common-all": {
+      "platform": "*",
+      "arch": "all",
+      "filename": "sqlite-browser-web-v1.0.0-common-all.zip",
+      "download_url": "/api/external-tools/packages/sqlite-browser-web-v1.0.0-common-all.zip",
+      "root": "",
+      "notes": "Pure Python source bundle. Requires only the Client Python standard library with sqlite3 support."
+    }
+  },
+  "execs": {
+    "sqlite-browser-web": {
+      "paths": {
+        "common-all": "app.py"
+      },
+      "description": "Run the dependency-free SQLite browser with the Python runtime used by the Client.",
+      "launcher": {
+        "type": "client_python",
+        "prefix_args": [
+          "-u"
+        ]
+      }
+    }
+  },
+  "install": {
+    "install_dir": "{{external_tools_root}}/{{package_id}}/{{version}}/{{package_key}}"
+  },
+  "modules": [
+    {
+      "id": "web",
+      "name": "sqlite-browser-web",
+      "display_name": "SQLite Browser Web",
+      "description": "Starts a persistent SQLite browser. Choose a Client-side database or upload one after opening the Web UI.",
+      "execution": "daemon",
+      "exec": "sqlite-browser-web",
+      "params": [
+        {
+          "name": "instance_name",
+          "label": "Instance Name",
+          "type": "string",
+          "required": true,
+          "default": "sqlite-browser-18082",
+          "description": "Unique name for this browser instance. It controls log, state and uploaded-file isolation."
+        },
+        {
+          "name": "address",
+          "label": "Listen Address",
+          "type": "string",
+          "required": true,
+          "default": "0.0.0.0",
+          "description": "HTTP listen address. Use 127.0.0.1 when remote network access is not required."
+        },
+        {
+          "name": "port",
+          "label": "Listen Port",
+          "type": "integer",
+          "required": true,
+          "default": 18082,
+          "min": 1,
+          "max": 65535,
+          "description": "HTTP port for the SQLite browser."
+        },
+        {
+          "name": "page_size",
+          "label": "Rows Per Page",
+          "type": "integer",
+          "required": true,
+          "default": 100,
+          "min": 10,
+          "max": 1000,
+          "description": "Number of rows shown per table page."
+        },
+        {
+          "name": "max_upload_mb",
+          "label": "Max Upload (MiB)",
+          "type": "integer",
+          "required": true,
+          "default": 256,
+          "min": 1,
+          "max": 4096,
+          "description": "Maximum SQLite database size accepted by browser upload."
+        }
+      ],
+      "runtime": {
+        "cwd": "{{install_dir}}/{{package_root}}",
+        "argv": [
+          "{{bin_sqlite_browser_web}}",
+          "--host",
+          "{{address}}",
+          "--port",
+          "{{port}}",
+          "--upload-dir",
+          "{{instance_runtime_dir}}/uploads",
+          "--page-size",
+          "{{page_size}}",
+          "--max-upload-mb",
+          "{{max_upload_mb}}"
+        ],
+        "stdout": "{{instance_runtime_dir}}/stdout.log",
+        "stderr": "stdout",
+        "pid_file": "{{instance_runtime_dir}}/tool.pid",
+        "state_file": "{{instance_runtime_dir}}/state.json"
+      },
+      "lifecycle": {
+        "stop": {
+          "type": "signal",
+          "signal": "TERM",
+          "timeout_sec": 5,
+          "kill_after_timeout": true
+        },
+        "status": {
+          "type": "pid_file"
+        }
+      }
+    }
+  ]
+}

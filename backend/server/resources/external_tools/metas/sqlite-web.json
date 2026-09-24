@@ -1,0 +1,134 @@
+{
+  "id": "sqlite-web",
+  "name": "sqlite-web",
+  "display_name": "SQLite Web",
+  "description": "Community-maintained sqlite-web browser for inspecting and editing SQLite databases, with runtime upload and Client filesystem loading enabled.",
+  "version": "0.8.1-xt1",
+  "category": "database",
+  "tags": [
+    "sqlite",
+    "database",
+    "browser",
+    "web",
+    "python"
+  ],
+  "source": "https://github.com/coleifer/sqlite-web",
+  "platform_packages": {
+    "common-all": {
+      "platform": "*",
+      "arch": "all",
+      "filename": "sqlite-web-v0.8.1-xt1-common-all.zip",
+      "download_url": "/api/external-tools/packages/sqlite-web-v0.8.1-xt1-common-all.zip",
+      "root": "",
+      "notes": "Thin xt adapter for sqlite-web 0.8.1. Uses Client Python >=3.9. First start installs pinned dependencies into bundle-local vendor/pyX.Y using pip; later starts reuse them."
+    }
+  },
+  "execs": {
+    "sqlite-web": {
+      "paths": {
+        "common-all": "app.py"
+      },
+      "description": "Run community sqlite-web using the Python runtime selected for the Client.",
+      "launcher": {
+        "type": "client_python",
+        "prefix_args": [
+          "-u"
+        ]
+      }
+    }
+  },
+  "install": {
+    "install_dir": "{{external_tools_root}}/{{package_id}}/{{version}}/{{package_key}}"
+  },
+  "modules": [
+    {
+      "id": "web",
+      "name": "sqlite-web",
+      "display_name": "SQLite Web",
+      "description": "Starts sqlite-web without binding the tool to a user database at launch. Open a Client-side path or upload a database from the browser after the Web UI starts.",
+      "execution": "daemon",
+      "exec": "sqlite-web",
+      "params": [
+        {
+          "name": "instance_name",
+          "label": "Instance Name",
+          "type": "string",
+          "required": true,
+          "default": "sqlite-web-18082",
+          "description": "Unique name for this sqlite-web instance and its runtime/upload directory."
+        },
+        {
+          "name": "address",
+          "label": "Listen Address",
+          "type": "string",
+          "required": true,
+          "default": "0.0.0.0",
+          "description": "HTTP listen address. Use 127.0.0.1 unless the database editor must be reachable remotely."
+        },
+        {
+          "name": "port",
+          "label": "Listen Port",
+          "type": "integer",
+          "required": true,
+          "default": 18082,
+          "min": 1,
+          "max": 65535,
+          "description": "HTTP port for sqlite-web."
+        },
+        {
+          "name": "rows_per_page",
+          "label": "Rows Per Page",
+          "type": "integer",
+          "required": true,
+          "default": 50,
+          "min": 1,
+          "max": 1000,
+          "description": "sqlite-web content-page pagination size."
+        },
+        {
+          "name": "query_rows_per_page",
+          "label": "Query Rows Per Page",
+          "type": "integer",
+          "required": true,
+          "default": 1000,
+          "min": 1,
+          "max": 10000,
+          "description": "sqlite-web query-result pagination size."
+        }
+      ],
+      "runtime": {
+        "cwd": "{{install_dir}}/{{package_root}}",
+        "argv": [
+          "{{bin_sqlite_web}}",
+          "--runtime-dir",
+          "{{instance_runtime_dir}}",
+          "--",
+          "--host",
+          "{{address}}",
+          "--port",
+          "{{port}}",
+          "--rows-per-page",
+          "{{rows_per_page}}",
+          "--query-rows-per-page",
+          "{{query_rows_per_page}}",
+          "--foreign-keys"
+        ],
+        "stdout": "{{instance_runtime_dir}}/stdout.log",
+        "stderr": "stdout",
+        "pid_file": "{{instance_runtime_dir}}/tool.pid",
+        "state_file": "{{instance_runtime_dir}}/state.json"
+      },
+      "lifecycle": {
+        "stop": {
+          "type": "signal",
+          "signal": "TERM",
+          "timeout_sec": 5,
+          "kill_after_timeout": true
+        },
+        "status": {
+          "type": "pid_file"
+        }
+      }
+    }
+  ]
+}

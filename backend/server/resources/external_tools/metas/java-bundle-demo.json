@@ -1,0 +1,86 @@
+{
+  "id": "java-bundle-demo",
+  "name": "java-bundle-demo",
+  "display_name": "Java Bundle Demo",
+  "description": "Demo static web server launched from a JAR with the system Java runtime.",
+  "version": "1.0.0",
+  "category": "demo",
+  "tags": [
+    "java",
+    "jar",
+    "bundle",
+    "demo"
+  ],
+  "platform_packages": {
+    "common-all": {
+      "platform": "*",
+      "arch": "all",
+      "filename": "java-bundle-demo-v1.0.0-common-all.zip",
+      "download_url": "/api/external-tools/packages/java-bundle-demo-v1.0.0-common-all.zip",
+      "root": ""
+    }
+  },
+  "execs": {
+    "java-bundle-demo": {
+      "paths": {
+        "common-all": "java-bundle-demo.jar"
+      },
+      "description": "Run the demo JAR with the system Java runtime.",
+      "launcher": {
+        "type": "system",
+        "command": "java",
+        "prefix_args": [
+          "-jar"
+        ]
+      }
+    }
+  },
+  "install": {
+    "install_dir": "{{external_tools_root}}/{{package_id}}/{{version}}/{{package_key}}"
+  },
+  "modules": [
+    {
+      "id": "web",
+      "name": "java-bundle-demo-web",
+      "display_name": "Java Bundle Demo Web",
+      "description": "Serves the static demo page with the JDK built-in HTTP server.",
+      "execution": "daemon",
+      "exec": "java-bundle-demo",
+      "params": [
+        {
+          "name": "port",
+          "label": "HTTP Port",
+          "type": "integer",
+          "required": true,
+          "default": 18081,
+          "min": 1,
+          "max": 65535,
+          "description": "HTTP listen port for the Java demo server."
+        }
+      ],
+      "runtime": {
+        "cwd": "{{install_dir}}/{{package_root}}",
+        "argv": [
+          "{{bin_java_bundle_demo}}",
+          "--port",
+          "{{port}}"
+        ],
+        "stdout": "{{instance_runtime_dir}}/stdout.log",
+        "stderr": "stdout",
+        "pid_file": "{{instance_runtime_dir}}/tool.pid",
+        "state_file": "{{instance_runtime_dir}}/state.json"
+      },
+      "lifecycle": {
+        "stop": {
+          "type": "signal",
+          "signal": "TERM",
+          "timeout_sec": 5,
+          "kill_after_timeout": true
+        },
+        "status": {
+          "type": "pid_file"
+        }
+      }
+    }
+  ]
+}
