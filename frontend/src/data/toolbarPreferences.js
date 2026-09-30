@@ -36,13 +36,38 @@ export const DEFAULT_TOOLBAR_PREFERENCES = {
     'one-liners',
     'quick-actions',
   ],
+  quick_actions_pinned: [],
 }
 
 export function cloneToolbarPreferences(preferences = DEFAULT_TOOLBAR_PREFERENCES) {
   return {
     toolbar: [...(preferences?.toolbar || [])],
     more: [...(preferences?.more || [])],
+    quick_actions_pinned: (preferences?.quick_actions_pinned || []).map((item) => ({
+      platform: String(item?.platform || '').trim(),
+      alias: String(item?.alias || '').trim(),
+    })).filter((item) => item.platform && item.alias),
   }
+}
+
+export function quickActionPinKey(platform, alias) {
+  return `${String(platform || '').trim()}\u0000${String(alias || '').trim()}`
+}
+
+export function normalizeQuickActionPins(value) {
+  if (!Array.isArray(value)) return []
+  const result = []
+  const seen = new Set()
+  value.forEach((item) => {
+    const platform = String(item?.platform || '').trim().toLowerCase()
+    const alias = String(item?.alias || '').trim()
+    if (!platform || !alias) return
+    const key = quickActionPinKey(platform, alias)
+    if (seen.has(key)) return
+    seen.add(key)
+    result.push({ platform, alias })
+  })
+  return result
 }
 
 export function normalizeToolbarPreferences(preferences = {}) {
@@ -63,6 +88,7 @@ export function normalizeToolbarPreferences(preferences = {}) {
   const normalized = {
     toolbar: normalizeList(preferences?.toolbar),
     more: normalizeList(preferences?.more),
+    quick_actions_pinned: normalizeQuickActionPins(preferences?.quick_actions_pinned),
   }
 
   TOOLBAR_ACTION_CATALOG.forEach((action) => {

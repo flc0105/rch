@@ -63,7 +63,44 @@
 
     <div class="terminal-tools">
       <template v-for="action in toolbarActions" :key="action.id">
+        <el-dropdown
+          v-if="action.id === 'quick-actions' && (toolbarPreferences.quick_actions_pinned || []).length > 0"
+          trigger="hover"
+          placement="bottom-start"
+          @visible-change="handleQuickActionsDropdownVisible"
+          @command="handleQuickActionsDropdownCommand"
+        >
+          <el-button
+            size="small"
+            :class="['tool-btn', 'ml-0', { 'tool-btn-accent': action.accent }]"
+            :disabled="isActionDisabled(action.id)"
+            @click="runAction(action.id)"
+          >
+            {{ action.label }}
+          </el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item v-if="quickActionsLoading" disabled>
+                Loading…
+              </el-dropdown-item>
+              <el-dropdown-item v-else-if="pinnedQuickActions.length === 0" disabled>
+                No pinned actions
+              </el-dropdown-item>
+              <template v-else>
+                <el-dropdown-item
+                  v-for="(item, index) in pinnedQuickActions"
+                  :key="`${item.platform}:${item.alias}`"
+                  :command="String(index)"
+                >
+                  {{ pinnedQuickActionLabel(item) }}
+                </el-dropdown-item>
+              </template>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+
         <el-button
+          v-else
           size="small"
           :class="['tool-btn', 'ml-0', { 'tool-btn-accent': action.accent }]"
           :disabled="isActionDisabled(action.id)"
@@ -137,6 +174,7 @@
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { killConnection as killConnectionApi } from '../api/connectionsApi.js'
 import { loadToolbarPreferences } from '../api/toolbarPreferencesApi.js'
+import { listQuickActions } from '../api/quickActionsApi.js'
 import {
   DEFAULT_TOOLBAR_PREFERENCES,
   TOOLBAR_ACTION_CATALOG,
@@ -190,6 +228,7 @@ export default {
     'open-processes',
     'open-one-liners',
     'open-quick-actions',
+    'run-quick-action',
     'open-settings',
     'clear',
     'bottom',
@@ -198,6 +237,8 @@ export default {
   data() {
     return {
       toolbarPreferences: cloneToolbarPreferences(DEFAULT_TOOLBAR_PREFERENCES),
+      quickActionsLoading: false,
+      pinnedQuickActions: [],
     }
   },
 
@@ -221,6 +262,12 @@ export default {
     },
     moreActions() {
       return this.actionsForIds(this.toolbarPreferences.more)
+    },
+  },
+
+  watch: {
+    selectedId() {
+      this.pinnedQuickActions = []
     },
   },
 
@@ -258,6 +305,50 @@ export default {
       }
     },
 
+
+    async loadPinnedQuickActions() {
+      const pins = this.toolbarPreferences?.quick_actions_pinned || []
+      if (!this.selectedId || this.currentConnectionOffline || pins.length === 0) {
+        this.pinnedQuickActions = []
+        return
+      }
+      this.quickActionsLoading = true
+      try {
+        const data = await listQuickActions(this.selectedId)
+        const byKey = new Map(
+          (Array.isArray(data.items) ? data.items : []).map((item) => [
+            `${String(item?.platform || '').trim()}\u0000${String(item?.alias || '').trim()}`,
+            item,
+          ]),
+        )
+        this.pinnedQuickActions = pins
+          .map((pin) => byKey.get(`${pin.platform}\u0000${pin.alias}`))
+          .filter((item) => item && item.in_current_scope === true)
+      } catch (e) {
+        this.pinnedQuickActions = []
+        ElMessage.warning(e.message || 'Failed to load pinned Quick Actions')
+      } finally {
+        this.quickActionsLoading = false
+      }
+    },
+    handleQuickActionsDropdownVisible(visible) {
+      if (visible) void this.loadPinnedQuickActions()
+    },
+    handleQuickActionsDropdownCommand(command) {
+      const index = Number.parseInt(String(command ?? ''), 10)
+      const item = Number.isInteger(index) ? this.pinnedQuickActions[index] : null
+      if (!item) {
+        ElMessage.warning('Quick Action is unavailable')
+        return
+      }
+      this.$emit('run-quick-action', item)
+    },
+    pinnedQuickActionLabel(item) {
+      const duplicates = this.pinnedQuickActions.filter((candidate) => candidate.alias === item.alias).length
+      if (duplicates <= 1) return item.alias
+      const platformLabels = { common: 'Common', win: 'Windows', mac: 'macOS', linux: 'Linux', ios: 'iOS' }
+      return `${item.alias} · ${platformLabels[item.platform] || item.platform}`
+    },
     async killConnection() {
       if (!this.selectedId) {
         ElMessage.warning('Please select a device')

@@ -136,6 +136,7 @@
                   @open-processes="openProcessDialog"
                   @open-one-liners="openOneLinersDialog"
                   @open-quick-actions="openQuickActionsDialog"
+                  @run-quick-action="runPinnedQuickAction"
                   @open-settings="openSettingsDialog"
                   @clear="clearOutput"
                   @bottom="scrollToBottom"
@@ -362,6 +363,7 @@
     :get-tab-scoped-headers="getTabScopedHeaders"
     @append-output="appendOutput"
     @set-active-task="setActiveTask"
+    @toolbar-pins-updated="refreshToolbarPreferences"
   />
 
   <DeviceGroupManagerDialog
@@ -668,6 +670,10 @@ export default {
 
     openQuickActionsDialog() {
       return this.$refs.quickActionsDialogRef?.open()
+    },
+
+    runPinnedQuickAction(item) {
+      return this.$refs.quickActionsDialogRef?.runPinnedAction(item)
     },
 
     handleQuickActionCommandResult(payload = {}) {

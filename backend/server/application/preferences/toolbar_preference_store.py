@@ -8,6 +8,7 @@ DEFAULT_TOOLBAR_PREFERENCES = {
     'more': [
         'external-tools', 'jobs', 'agents', 'processes', 'keychains', 'one-liners', 'quick-actions',
     ],
+    'quick_actions_pinned': [],
 }
 
 _ALLOWED_ACTION_IDS = tuple(DEFAULT_TOOLBAR_PREFERENCES['toolbar'] + DEFAULT_TOOLBAR_PREFERENCES['more'])
@@ -41,6 +42,27 @@ class ToolbarPreferenceStore:
             result.append(action_id)
         return result
 
+
+    @staticmethod
+    def _normalize_quick_action_pins(value) -> list[dict]:
+        if not isinstance(value, list):
+            return []
+        result = []
+        seen = set()
+        for item in value:
+            if not isinstance(item, dict):
+                continue
+            platform = str(item.get('platform') or '').strip().lower()
+            alias = str(item.get('alias') or '').strip()
+            if not platform or not alias:
+                continue
+            key = (platform, alias)
+            if key in seen:
+                continue
+            seen.add(key)
+            result.append({'platform': platform, 'alias': alias})
+        return result
+
     def _normalize(self, payload: dict) -> dict:
         source = payload if isinstance(payload, dict) else {}
         toolbar = self._normalize_list(source.get('toolbar'))
@@ -54,4 +76,8 @@ class ToolbarPreferenceStore:
             else:
                 more.append(action_id)
             used.add(action_id)
-        return {'toolbar': toolbar, 'more': more}
+        return {
+            'toolbar': toolbar,
+            'more': more,
+            'quick_actions_pinned': self._normalize_quick_action_pins(source.get('quick_actions_pinned')),
+        }

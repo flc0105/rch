@@ -150,6 +150,14 @@
           placeholder="Use <parameter> placeholders to render a run form"
         />
       </el-form-item>
+
+      <el-form-item label="Toolbar shortcut">
+        <el-switch
+          v-model="editorForm.pinned"
+          active-text="Pin to Quick Actions dropdown"
+          :disabled="toolbarPinsLoading"
+        />
+      </el-form-item>
     </el-form>
 
     <template #footer>
@@ -182,6 +190,7 @@
       <div class="quick-action-parameter-actions">
         <el-button @click="parameterVisible = false">Cancel</el-button>
         <el-dropdown
+          v-if="pendingRunAllowTerminal"
           split-button
           type="primary"
           :disabled="runSubmitting"
@@ -197,6 +206,14 @@
             </el-dropdown-menu>
           </template>
         </el-dropdown>
+        <el-button
+          v-else
+          type="primary"
+          :loading="runSubmitting"
+          @click="submitParameterRun"
+        >
+          Run
+        </el-button>
       </div>
     </template>
   </el-dialog>
@@ -237,6 +254,15 @@
 
 <script>
 import { ElMessage, ElMessageBox } from 'element-plus'
+import {
+  loadToolbarPreferences,
+  saveToolbarPreferences,
+} from '../api/toolbarPreferencesApi.js'
+import {
+  cloneToolbarPreferences,
+  normalizeToolbarPreferences,
+  quickActionPinKey,
+} from '../data/toolbarPreferences.js'
 import {
   createQuickAction,
   deleteQuickAction,
@@ -327,7 +353,7 @@ export default {
     },
   },
 
-  emits: ['append-output', 'set-active-task'],
+  emits: ['append-output', 'set-active-task', 'toolbar-pins-updated'],
 
   data() {
     return {
@@ -349,11 +375,15 @@ export default {
         platform: 'common',
         alias: '',
         command: '',
+        pinned: false,
       },
+      toolbarPinsLoading: false,
+      toolbarPreferences: normalizeToolbarPreferences({}),
 
       parameterVisible: false,
       pendingRunItem: null,
       pendingRunPresentation: 'dialog',
+      pendingRunAllowTerminal: true,
       parameterValues: [],
 
       resultVisible: false,
@@ -435,8 +465,63 @@ export default {
             return
           }
           void this.loadItems()
+          void this.loadToolbarPinPreferences()
         })
       })
+    },
+    async loadToolbarPinPreferences() {
+      this.toolbarPinsLoading = true
+      try {
+        this.toolbarPreferences = cloneToolbarPreferences(
+          normalizeToolbarPreferences(await loadToolbarPreferences()),
+        )
+        if (this.editorVisible && this.editorMode === 'edit' && this.editorOriginal) {
+          this.editorForm.pinned = this.isActionPinned(
+            this.editorOriginal.platform,
+            this.editorOriginal.alias,
+          )
+        }
+      } catch (e) {
+        ElMessage.warning(e.message || 'Failed to load Quick Actions toolbar pins')
+      } finally {
+        this.toolbarPinsLoading = false
+      }
+    },
+    isActionPinned(platform, alias) {
+      const key = quickActionPinKey(platform, alias)
+      return (this.toolbarPreferences?.quick_actions_pinned || []).some(
+        item => quickActionPinKey(item.platform, item.alias) === key,
+      )
+    },
+    async saveActionPin(original, next, pinned) {
+      const preferences = cloneToolbarPreferences(
+        normalizeToolbarPreferences(await loadToolbarPreferences()),
+      )
+      const originalKey = original ? quickActionPinKey(original.platform, original.alias) : ''
+      const nextKey = quickActionPinKey(next.platform, next.alias)
+      const pins = (preferences.quick_actions_pinned || []).filter((item) => {
+        const key = quickActionPinKey(item.platform, item.alias)
+        return key !== originalKey && key !== nextKey
+      })
+      if (pinned) pins.push({ platform: next.platform, alias: next.alias })
+      preferences.quick_actions_pinned = pins
+      const saved = normalizeToolbarPreferences(await saveToolbarPreferences(preferences))
+      this.toolbarPreferences = cloneToolbarPreferences(saved)
+      this.$emit('toolbar-pins-updated', saved)
+    },
+    async removeActionPin(row) {
+      const preferences = cloneToolbarPreferences(
+        normalizeToolbarPreferences(await loadToolbarPreferences()),
+      )
+      const key = quickActionPinKey(row?.platform, row?.alias)
+      const pins = (preferences.quick_actions_pinned || []).filter(
+        item => quickActionPinKey(item.platform, item.alias) !== key,
+      )
+      if (pins.length === (preferences.quick_actions_pinned || []).length) return
+      preferences.quick_actions_pinned = pins
+      const saved = normalizeToolbarPreferences(await saveToolbarPreferences(preferences))
+      this.toolbarPreferences = cloneToolbarPreferences(saved)
+      this.$emit('toolbar-pins-updated', saved)
     },
     async loadItems() {
       if (!this.selectedId) return
@@ -462,6 +547,7 @@ export default {
         platform: this.currentPlatform || 'common',
         alias: '',
         command: '',
+        pinned: false,
       }
       this.editorVisible = true
     },
@@ -475,6 +561,7 @@ export default {
         platform: row.platform,
         alias: row.alias,
         command: row.command,
+        pinned: this.isActionPinned(row.platform, row.alias),
       }
       this.editorVisible = true
     },
@@ -499,22 +586,32 @@ export default {
 
       this.saving = true
       try {
+        const original = this.editorMode === 'edit' ? { ...this.editorOriginal } : null
+        const next = {
+          platform: this.editorForm.platform,
+          alias: normalized.alias,
+        }
         if (this.editorMode === 'create') {
           await createQuickAction(this.selectedId, {
-            platform: this.editorForm.platform,
-            alias: normalized.alias,
+            platform: next.platform,
+            alias: next.alias,
             command: normalized.command,
           })
           ElMessage.success('Quick Action created')
         } else {
           await updateQuickAction(this.selectedId, {
-            original_platform: this.editorOriginal?.platform,
-            original_alias: this.editorOriginal?.alias,
-            platform: this.editorForm.platform,
-            alias: normalized.alias,
+            original_platform: original?.platform,
+            original_alias: original?.alias,
+            platform: next.platform,
+            alias: next.alias,
             command: normalized.command,
           })
           ElMessage.success('Quick Action updated')
+        }
+        try {
+          await this.saveActionPin(original, next, this.editorForm.pinned === true)
+        } catch (pinError) {
+          ElMessage.warning(pinError.message || 'Quick Action saved, but toolbar pin was not updated')
         }
         this.editorVisible = false
         await this.loadItems()
@@ -535,6 +632,11 @@ export default {
           platform: row.platform,
           alias: row.alias,
         })
+        try {
+          await this.removeActionPin(row)
+        } catch (pinError) {
+          ElMessage.warning(pinError.message || 'Quick Action deleted, but toolbar pin cleanup failed')
+        }
         ElMessage.success('Quick Action deleted')
         await this.loadItems()
       } catch (e) {
@@ -545,11 +647,20 @@ export default {
     handleRunCommand(row, command) {
       if (command === 'terminal') this.requestRun(row, 'terminal')
     },
-    requestRun(row, presentation = 'dialog') {
+    runPinnedAction(row) {
+      if (!row?.platform || !row?.alias) {
+        ElMessage.warning('Quick Action is unavailable')
+        return
+      }
+      this.requestRun(row, 'dialog', { allowTerminal: false })
+    },
+    requestRun(row, presentation = 'dialog', options = {}) {
+      const allowTerminal = options.allowTerminal !== false
       const parameters = Array.isArray(row.parameters) ? row.parameters : []
       if (parameters.length > 0) {
         this.pendingRunItem = row
         this.pendingRunPresentation = presentation
+        this.pendingRunAllowTerminal = allowTerminal
         this.parameterValues = parameters.map(() => '')
         this.parameterVisible = true
         return
