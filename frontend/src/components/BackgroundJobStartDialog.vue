@@ -30,16 +30,25 @@
             :model-value="executionMode"
             @update:model-value="$emit('update-execution-mode', $event)"
           >
-            <el-radio value="inproc">
+            <el-radio
+              value="inproc"
+              :disabled="!isExecutionModeAllowed('inproc')"
+            >
               In-process (Thread)
             </el-radio>
-            <el-radio value="subprocess">
+            <el-radio
+              value="subprocess"
+              :disabled="!isExecutionModeAllowed('subprocess')"
+            >
               Subprocess
             </el-radio>
           </el-radio-group>
 
           <div class="hint-text background-job-param-hint">
             In-process keeps direct access to the Client runtime. Subprocess isolates the Job and can be force-stopped.
+            <template v-if="allowedExecutionModes.length === 1">
+              This job only allows {{ formatExecutionModeLabel(allowedExecutionModes[0]) }}.
+            </template>
           </div>
         </el-form-item>
 
@@ -197,6 +206,27 @@ export default {
   },
 
   computed: {
+    allowedExecutionModes() {
+      const metadata = this.item?.metadata || {}
+      const execution = metadata.execution && typeof metadata.execution === 'object' && !Array.isArray(metadata.execution)
+        ? metadata.execution
+        : {}
+      const source = Array.isArray(execution.allowed)
+        ? execution.allowed
+        : (Array.isArray(metadata.allowed) ? metadata.allowed : ['inproc', 'subprocess'])
+      const result = []
+      const seen = new Set()
+
+      for (const item of source) {
+        const mode = String(item || '').trim().toLowerCase()
+        if (!['inproc', 'subprocess'].includes(mode) || seen.has(mode)) continue
+        seen.add(mode)
+        result.push(mode)
+      }
+
+      return result.length ? result : ['inproc', 'subprocess']
+    },
+
     pendingRemoteFileParamMultiple() {
       const param = this.pendingRemoteFileParam || {}
       const type = String(param.type || '').trim().toLowerCase()
@@ -219,6 +249,16 @@ export default {
   },
 
   methods: {
+    isExecutionModeAllowed(mode) {
+      return this.allowedExecutionModes.includes(String(mode || '').trim().toLowerCase())
+    },
+
+    formatExecutionModeLabel(mode) {
+      return String(mode || '').trim().toLowerCase() === 'subprocess'
+        ? 'Subprocess'
+        : 'In-process (Thread)'
+    },
+
     forwardAppendOutput(clientId, line, kind) {
       this.$emit('append-output', clientId, line, kind)
     },

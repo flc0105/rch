@@ -702,6 +702,11 @@ export default {
           platforms: [],
           params: [],
           execution_mode: 'inproc',
+          allowed: ['inproc', 'subprocess'],
+          execution: {
+            default: 'inproc',
+            allowed: ['inproc', 'subprocess'],
+          },
         }
       }
 
@@ -718,15 +723,46 @@ export default {
         }
       }
 
+      const executionMeta = metadata.execution && typeof metadata.execution === 'object' && !Array.isArray(metadata.execution)
+        ? metadata.execution
+        : {}
+      const rawAllowed = Array.isArray(executionMeta.allowed)
+        ? executionMeta.allowed
+        : (Array.isArray(metadata.allowed) ? metadata.allowed : null)
+      const allowed = []
+      const seenAllowed = new Set()
+
+      for (const item of rawAllowed || ['inproc', 'subprocess']) {
+        const normalizedMode = String(item || '').trim().toLowerCase() === 'subprocess'
+          ? 'subprocess'
+          : (String(item || '').trim().toLowerCase() === 'inproc' ? 'inproc' : '')
+        if (!normalizedMode || seenAllowed.has(normalizedMode)) continue
+        seenAllowed.add(normalizedMode)
+        allowed.push(normalizedMode)
+      }
+
+      if (!allowed.length) {
+        allowed.push('inproc', 'subprocess')
+      }
+
+      const requestedDefault = String(metadata.execution_mode || executionMeta.default || '').trim().toLowerCase() === 'subprocess'
+        ? 'subprocess'
+        : 'inproc'
+      const executionMode = allowed.includes(requestedDefault) ? requestedDefault : allowed[0]
+
       return {
         ...metadata,
         name: String(metadata.name || '').trim(),
         display_name: String(metadata.display_name || '').trim(),
         description: String(metadata.description || '').trim(),
         platforms: this.normalizeJobPlatforms(metadata.platforms),
-        execution_mode: String(metadata.execution_mode || '').trim().toLowerCase() === 'subprocess'
-          ? 'subprocess'
-          : 'inproc',
+        execution_mode: executionMode,
+        allowed,
+        execution: {
+          ...executionMeta,
+          default: executionMode,
+          allowed,
+        },
         params: Array.isArray(metadata.params)
           ? metadata.params.map(item => normalizeParam(item)).filter(Boolean)
           : [],
@@ -975,9 +1011,12 @@ export default {
     },
 
     updateBackgroundJobExecutionMode(value) {
-      this.backgroundJobExecutionMode = String(value || '').trim().toLowerCase() === 'subprocess'
+      const nextMode = String(value || '').trim().toLowerCase() === 'subprocess'
         ? 'subprocess'
         : 'inproc'
+      const metadata = this.normalizeJobMetadata(this.pendingStartJobModule?.metadata || {})
+      if (!metadata.allowed.includes(nextMode)) return
+      this.backgroundJobExecutionMode = nextMode
     },
 
     coerceBackgroundJobParamValue(param, rawValue) {
@@ -1116,6 +1155,10 @@ export default {
       try {
         this.backgroundJobStartSubmitting = true
         const params = this.buildBackgroundJobStartParams(item)
+        const metadata = this.normalizeJobMetadata(item.metadata || {})
+        if (!metadata.allowed.includes(this.backgroundJobExecutionMode)) {
+          throw new Error(`Execution mode ${this.backgroundJobExecutionMode} is not supported by this job`)
+        }
         await this.submitBackgroundJobStart(item.job_name, params, this.backgroundJobExecutionMode)
         ElMessage.success(`Start request submitted: ${item.display_name || item.job_name}`)
         this.activeTab = 'jobs'

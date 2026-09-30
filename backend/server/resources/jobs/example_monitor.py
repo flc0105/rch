@@ -16,7 +16,11 @@ JOB_METADATA = {
             "description": "Heartbeat interval in seconds"
         }
     ],
-    "execution_mode": "inproc"
+    "execution": {
+    "default": "subprocess",
+    "allowed": ["subprocess"]
+}
+
 }
 
 import platform

@@ -1,5 +1,7 @@
 import os
 
+from core.utils.job_metadata import normalize_job_execution_allowed, normalize_job_execution_mode
+
 
 class WebJobApi:
     """
@@ -91,6 +93,17 @@ class WebJobApi:
             text = text[:-3]
         return os.path.basename(text)
 
+    def _get_job_metadata(self, job_name: str) -> dict:
+        target = str(job_name or '').strip().replace('\\', '/').removesuffix('.py')
+        for item in self.list_jobs() or []:
+            if not isinstance(item, dict):
+                continue
+            candidate = str(item.get('job_name') or item.get('name') or '').strip().replace('\\', '/').removesuffix('.py')
+            if candidate == target:
+                metadata = item.get('metadata') or {}
+                return metadata if isinstance(metadata, dict) else {}
+        return {}
+
     def start_background_job(self, client_id: str, job_name: str, params=None, execution_mode: str = 'inproc'):
         normalized_job_name = (job_name or '').strip()
         if not normalized_job_name:
@@ -100,14 +113,24 @@ class WebJobApi:
             job_key = self._normalize_job_key(normalized_job_name)
             raise ValueError(f'Job is already running: {job_key}')
 
+        metadata = self._get_job_metadata(normalized_job_name)
+        metadata_default = str(metadata.get('execution_mode') or 'inproc').strip() or 'inproc'
+        normalized_mode = normalize_job_execution_mode(execution_mode, default=metadata_default)
+        allowed_modes = normalize_job_execution_allowed(metadata.get('allowed'))
+        if normalized_mode not in allowed_modes:
+            raise ValueError(
+                f'Execution mode "{normalized_mode}" is not supported by background job '
+                f'"{normalized_job_name}"; allowed: {allowed_modes}'
+            )
+
         result = self.background_job_service.start_job(
             client_id,
             normalized_job_name,
             params=params,
-            execution_mode=execution_mode,
+            execution_mode=normalized_mode,
         )
         if isinstance(result, dict):
             result['job_name'] = normalized_job_name
             result['params'] = dict(params or {}) if isinstance(params, dict) else {}
-            result['execution_mode'] = str(result.get('execution_mode') or execution_mode or 'inproc')
+            result['execution_mode'] = str(result.get('execution_mode') or normalized_mode or 'inproc')
         return result

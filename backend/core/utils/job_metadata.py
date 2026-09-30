@@ -50,6 +50,9 @@ _JOB_EXECUTION_MODE_ALIASES = {
 }
 
 
+
+_JOB_EXECUTION_MODES = ('inproc', 'subprocess')
+
 def _safe_literal_eval(node):
     try:
         return ast.literal_eval(node)
@@ -173,6 +176,34 @@ def normalize_job_execution_mode(value, default: str = 'inproc') -> str:
     return normalized
 
 
+def normalize_job_execution_allowed(value=None) -> list[str]:
+    if value is None:
+        return list(_JOB_EXECUTION_MODES)
+
+    if isinstance(value, str):
+        candidates = [value]
+    elif isinstance(value, (list, tuple, set)):
+        candidates = list(value)
+    else:
+        raise ValueError('Background job allowed execution modes must be a string or list')
+
+    if not candidates:
+        raise ValueError('Background job allowed execution modes cannot be empty')
+
+    result = []
+    seen = set()
+    for item in candidates:
+        normalized = normalize_job_execution_mode(item)
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        result.append(normalized)
+
+    if not result:
+        raise ValueError('Background job allowed execution modes cannot be empty')
+    return result
+
+
 def _normalize_param_type(value: str) -> str:
     text = str(value or 'string').strip().lower()
     return _PARAM_TYPE_ALIASES.get(text, text or 'string')
@@ -217,14 +248,33 @@ def normalize_job_metadata(metadata: dict | None, fallback_name: str = '') -> di
     description = str(metadata.get('description') or '').strip()
     platforms = normalize_job_platforms(metadata.get('platforms'))
 
+    execution_meta = metadata.get('execution')
     execution_value = metadata.get('execution_mode')
+    execution_default_explicit = execution_value not in (None, '')
     if execution_value in (None, ''):
-        execution_meta = metadata.get('execution')
         if isinstance(execution_meta, dict):
             execution_value = execution_meta.get('default') or execution_meta.get('mode')
+            execution_default_explicit = execution_value not in (None, '')
         elif isinstance(execution_meta, str):
             execution_value = execution_meta
-    execution_mode = normalize_job_execution_mode(execution_value, default='inproc')
+            execution_default_explicit = execution_value not in (None, '')
+
+    allowed_value = None
+    if isinstance(execution_meta, dict) and 'allowed' in execution_meta:
+        allowed_value = execution_meta.get('allowed')
+    elif 'allowed' in metadata:
+        allowed_value = metadata.get('allowed')
+    allowed_execution_modes = normalize_job_execution_allowed(allowed_value)
+
+    if execution_default_explicit:
+        execution_mode = normalize_job_execution_mode(execution_value, default='inproc')
+        if execution_mode not in allowed_execution_modes:
+            raise ValueError(
+                f'Background job default execution mode "{execution_mode}" is not allowed: '
+                f'{allowed_execution_modes}'
+            )
+    else:
+        execution_mode = 'inproc' if 'inproc' in allowed_execution_modes else allowed_execution_modes[0]
 
     params = []
     for item in metadata.get('params') or []:
@@ -237,6 +287,11 @@ def normalize_job_metadata(metadata: dict | None, fallback_name: str = '') -> di
     normalized['description'] = description
     normalized['platforms'] = platforms
     normalized['execution_mode'] = execution_mode
+    normalized['allowed'] = list(allowed_execution_modes)
+    normalized_execution = deepcopy(execution_meta) if isinstance(execution_meta, dict) else {}
+    normalized_execution['default'] = execution_mode
+    normalized_execution['allowed'] = list(allowed_execution_modes)
+    normalized['execution'] = normalized_execution
     normalized['params'] = params
 
     return normalized

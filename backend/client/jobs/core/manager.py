@@ -15,6 +15,7 @@ from client.jobs.core.runtime import JobRuntime
 from client.runtime.sdk.context import use_script_sdk_context
 from client.runtime.temp_workspace import cleanup_temp_path
 from core.utils.job_metadata import (
+    normalize_job_execution_allowed,
     normalize_job_execution_mode,
     read_job_metadata_from_file,
     resolve_job_params,
@@ -69,6 +70,12 @@ class JobManager:
 
         metadata_default = str((job_metadata or {}).get('execution_mode') or 'inproc').strip() or 'inproc'
         resolved_mode = normalize_job_execution_mode(execution_mode, default=metadata_default)
+        allowed_modes = normalize_job_execution_allowed((job_metadata or {}).get('allowed'))
+        if resolved_mode not in allowed_modes:
+            raise ValueError(
+                f'Execution mode "{resolved_mode}" is not supported by background job "{module_name}"; '
+                f'allowed: {allowed_modes}'
+            )
         return job_metadata, resolved_params, resolved_mode
 
     def _load_job_instance_from_file(

@@ -19,7 +19,11 @@ JOB_METADATA = {
             "default": True,
             "description": "Upload clipboard images when available"
         }
-    ]
+    ],
+    "execution": {
+    "default": "inproc",
+    "allowed": ["subprocess", "inproc"]
+}
 }
 
 import hashlib
