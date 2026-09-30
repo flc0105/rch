@@ -56,6 +56,10 @@ class ScreenViewManager:
             'frame_height': 0,
             'origin_x': 0,
             'origin_y': 0,
+            'input_width': 0,
+            'input_height': 0,
+            'input_origin_x': 0,
+            'input_origin_y': 0,
             'pressed_keys': set(),
             'pressed_buttons': set(),
             'pyautogui_failsafe': None,
@@ -223,12 +227,22 @@ class ScreenViewManager:
         if action == 'prepare':
             self._ensure_windows_input_allowed(action)
             pyautogui = self._get_pyautogui()
-            input_width, input_height = pyautogui.size()
 
-            # macOS Retina 截图使用物理像素，而 PyAutoGUI 使用逻辑坐标。
+            # 截图像素尺寸和系统输入坐标尺寸不一定相同。macOS Retina 与
+            # Windows DPI 缩放都会出现这种情况，因此控制开启时单独记录
+            # 输入坐标空间，鼠标位置仍通过归一化坐标映射，协议无需变化。
             if sys.platform == 'darwin':
+                input_width, input_height = pyautogui.size()
                 item['input_width'] = int(input_width)
                 item['input_height'] = int(input_height)
+                item['input_origin_x'] = 0
+                item['input_origin_y'] = 0
+            elif sys.platform.startswith('win'):
+                origin_x, origin_y, input_width, input_height = self._get_windows_input_geometry(pyautogui)
+                item['input_width'] = int(input_width)
+                item['input_height'] = int(input_height)
+                item['input_origin_x'] = int(origin_x)
+                item['input_origin_y'] = int(origin_y)
 
             if item.get('pyautogui_failsafe') is None:
                 item['pyautogui_failsafe'] = bool(getattr(pyautogui, 'FAILSAFE', True))
@@ -350,8 +364,8 @@ class ScreenViewManager:
         if sys.platform == 'darwin':
             width = int(item.get('input_width') or 0)
             height = int(item.get('input_height') or 0)
-            origin_x = 0
-            origin_y = 0
+            origin_x = int(item.get('input_origin_x') or 0)
+            origin_y = int(item.get('input_origin_y') or 0)
 
             if width <= 0 or height <= 0:
                 try:
@@ -361,6 +375,21 @@ class ScreenViewManager:
                 except Exception as e:
                     raise RuntimeError(
                         f'Unable to resolve macOS input geometry: {e}'
+                    ) from e
+        elif sys.platform.startswith('win'):
+            width = int(item.get('input_width') or 0)
+            height = int(item.get('input_height') or 0)
+            origin_x = int(item.get('input_origin_x') or 0)
+            origin_y = int(item.get('input_origin_y') or 0)
+
+            if width <= 0 or height <= 0:
+                try:
+                    origin_x, origin_y, width, height = self._get_windows_input_geometry(
+                        self._get_pyautogui()
+                    )
+                except Exception as e:
+                    raise RuntimeError(
+                        f'Unable to resolve Windows input geometry: {e}'
                     ) from e
 
         if width <= 0 or height <= 0:
@@ -379,6 +408,24 @@ class ScreenViewManager:
         y = origin_y + int(round(normalized_y * max(0, height - 1)))
 
         return x, y
+
+    @staticmethod
+    def _get_windows_input_geometry(pyautogui):
+        try:
+            import ctypes
+
+            user32 = ctypes.windll.user32
+            origin_x = int(user32.GetSystemMetrics(76))
+            origin_y = int(user32.GetSystemMetrics(77))
+            width = int(user32.GetSystemMetrics(78))
+            height = int(user32.GetSystemMetrics(79))
+            if width > 0 and height > 0:
+                return origin_x, origin_y, width, height
+        except Exception:
+            pass
+
+        width, height = pyautogui.size()
+        return 0, 0, int(width), int(height)
 
     def _ensure_windows_input_allowed(self, action: str, x=None, y=None):
         if not sys.platform.startswith('win'):

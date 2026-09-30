@@ -10,6 +10,24 @@
     @close="handleDialogClose"
     @closed="handleDialogClosed"
   >
+    <template #header>
+      <div class="screen-view-dialog-header">
+        <span class="screen-view-dialog-title">Screen View</span>
+        <el-tooltip :content="fullscreen ? 'Exit Fullscreen' : 'Fullscreen'" placement="bottom">
+          <el-icon
+            class="screen-view-fullscreen-icon"
+            role="button"
+            tabindex="0"
+            @click="toggleFullscreen"
+            @keydown.enter.prevent="toggleFullscreen"
+            @keydown.space.prevent="toggleFullscreen"
+          >
+            <FullScreen />
+          </el-icon>
+        </el-tooltip>
+      </div>
+    </template>
+
     <div class="screen-view-body">
       <div class="screen-view-toolbar">
         <div class="screen-view-toolbar-left">
@@ -62,16 +80,14 @@
             @change="handleControlToggle"
           />
 
+          <el-button size="small" @click="$emit('open-clipboard')">Clipboard</el-button>
+
           <el-dropdown trigger="click" @command="handleMoreCommand">
             <el-button size="small">More</el-button>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item command="clipboard">Clipboard</el-dropdown-item>
                 <el-dropdown-item command="screenshot" :disabled="!frameReady">Screenshot</el-dropdown-item>
                 <el-dropdown-item command="restart" :disabled="loading">Restart</el-dropdown-item>
-                <el-dropdown-item command="fullscreen">
-                  {{ fullscreen ? 'Exit Fullscreen' : 'Fullscreen' }}
-                </el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
@@ -128,14 +144,12 @@
       </div>
     </div>
 
-    <template #footer>
-      <el-button size="small" @click="visible = false">Close</el-button>
-    </template>
   </el-dialog>
 </template>
 
 <script>
 import { ElMessage } from 'element-plus'
+import { FullScreen } from '@element-plus/icons-vue'
 import * as screenViewApi from '../api/screenViewApi.js'
 import FullJpegScreenRenderer from './screen/FullJpegScreenRenderer.vue'
 import KeyframeDeltaScreenRenderer from './screen/KeyframeDeltaScreenRenderer.vue'
@@ -416,33 +430,10 @@ export default {
     return
   }
 
-  if (command === 'clipboard') {
-    this.$emit('open-clipboard')
-    return
-  }
-
   if (command === 'restart') {
     await this.restartView()
-    return
-  }
-
-  if (command === 'fullscreen') {
-    this.toggleFullscreen()
   }
 },
-    // async handleMoreCommand(command) {
-    //   if (command === 'clipboard') {
-    //     this.$emit('open-clipboard')
-    //     return
-    //   }
-    //   if (command === 'restart') {
-    //     await this.restartView()
-    //     return
-    //   }
-    //   if (command === 'fullscreen') {
-    //     this.toggleFullscreen()
-    //   }
-    // },
 
     async handleControlToggle(enabled) {
       if (!enabled) {
@@ -1035,6 +1026,35 @@ export default {
 </script>
 
 <style scoped>
+.screen-view-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-right: 34px;
+}
+
+.screen-view-dialog-title {
+  color: var(--el-text-color-primary);
+  font-size: var(--el-dialog-title-font-size);
+  line-height: var(--el-dialog-font-line-height);
+}
+
+.screen-view-fullscreen-icon {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  color: var(--el-color-info);
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.screen-view-fullscreen-icon:hover,
+.screen-view-fullscreen-icon:focus-visible {
+  color: var(--el-color-primary);
+  outline: none;
+}
+
 .screen-view-body {
   display: flex;
   flex-direction: column;
@@ -1190,9 +1210,6 @@ export default {
   flex-direction: column !important;
 }
 
-.screen-view-dialog.screen-view-dialog-fullscreen .el-dialog__footer {
-  flex: 0 0 auto !important;
-}
 
 .screen-view-dialog.screen-view-dialog-fullscreen .screen-view-body {
   flex: 1 1 auto !important;
