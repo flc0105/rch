@@ -30,6 +30,14 @@ JOB_METADATA = {
             'description': 'Also probe Notification Center accessibility banners for WeChat text.',
         },
         {
+            'name': 'fusion_wait_seconds',
+            'type': 'number',
+            'default': 1.5,
+            'min': 0.5,
+            'max': 5,
+            'description': 'Wait briefly before using a banner as fallback when no badge update arrives.',
+        },
+        {
             'name': 'debug_ax',
             'type': 'boolean',
             'default': True,
@@ -52,6 +60,18 @@ _BADGE_PATTERNS = (
     re.compile(r'(\d{1,4})\s*(?:unread|条(?:新)?消息|消息)', re.IGNORECASE),
     re.compile(r'(?:unread|未读|消息)[^\d]{0,8}(\d{1,4})', re.IGNORECASE),
 )
+_BANNER_PLACEHOLDERS = {
+    'body',
+    'title',
+    'subtitle',
+    'message',
+    'notification',
+    'notification body',
+    'notification title',
+    'close',
+    'options',
+    'show',
+}
 
 
 def _safe_text(value) -> str:
@@ -114,6 +134,32 @@ def _row_texts(row: dict) -> list[str]:
     return result
 
 
+def _row_banner_texts(row: dict) -> list[str]:
+    # AXIdentifier values such as literal `body`/`title` are control metadata,
+    # not message text. Keep identifiers for diagnostics, but never promote
+    # them to user-visible notification content.
+    result = []
+    for key in ('title', 'description', 'value', 'help'):
+        value = _safe_text(row.get(key))
+        if value and value not in result:
+            result.append(value)
+    return result
+
+
+def _banner_preview(texts: list[str]) -> str:
+    for value in reversed(texts):
+        cleaned = _safe_text(value)
+        lowered = cleaned.casefold()
+        if not cleaned:
+            continue
+        if any(hint == lowered for hint in _WECHAT_NAME_HINTS):
+            continue
+        if lowered in _BANNER_PLACEHOLDERS:
+            continue
+        return cleaned
+    return ''
+
+
 def _extract_badge_count(rows: list[dict]) -> tuple[int | None, dict | None]:
     for row in rows:
         role = _safe_text(row.get('role'))
@@ -167,8 +213,10 @@ class WechatMacosMessageEvent(Job):
         self._last_badge_count = None
         self._badge_initialized = False
         self._last_extra_signature = None
-        self._last_banner_signatures = set()
-        self._last_emit_at = 0.0
+        self._active_banner_signatures = set()
+        self._banners_initialized = False
+        self._pending_banner = None
+        self._last_badge_emit_at = 0.0
 
     def _load_frameworks(self):
         from Cocoa import NSWorkspace
@@ -213,18 +261,25 @@ class WechatMacosMessageEvent(Job):
             if row.get('subrole') not in _BANNER_SUBROLES:
                 continue
             banner_rows = _walk_ax(ax, element, max_depth=5, max_nodes=90)
-            texts = []
-            seen = set()
+            visible_texts = []
+            detection_texts = []
+            seen_visible = set()
+            seen_detection = set()
             for banner_row in banner_rows:
                 for value in _row_texts(banner_row):
-                    if value and value not in seen:
-                        seen.add(value)
-                        texts.append(value)
-            lowered = ' | '.join(texts).casefold()
+                    if value and value not in seen_detection:
+                        seen_detection.add(value)
+                        detection_texts.append(value)
+                for value in _row_banner_texts(banner_row):
+                    if value and value not in seen_visible:
+                        seen_visible.add(value)
+                        visible_texts.append(value)
+            lowered = ' | '.join(detection_texts).casefold()
             if not any(hint in lowered for hint in _WECHAT_NAME_HINTS):
                 continue
             banners.append({
-                'texts': texts[:24],
+                'texts': visible_texts[:24],
+                'signature_texts': detection_texts[:24],
                 'subroles': sorted({
                     item.get('subrole') for item in banner_rows
                     if item.get('subrole')
@@ -233,7 +288,7 @@ class WechatMacosMessageEvent(Job):
         return banners
 
     def _emit_badge_increase(self, old_count, new_count, probe):
-        message = f'WeChat unread badge: {old_count} -> {new_count}'
+        message = f'WeChat unread messages: {new_count}'
         data = {
             'source': 'macos_menu_bar_badge',
             'previous_count': old_count,
@@ -244,34 +299,68 @@ class WechatMacosMessageEvent(Job):
             'matched': probe.get('matched_row') or {},
         }
         events.emit('app.wechat.message_received', data=data, message=message)
-        self._last_emit_at = time.monotonic()
         self.send_to_server(1, f'Device event emitted: {message}', 0)
 
-    def _emit_banner(self, banner: dict):
-        texts = [str(value) for value in banner.get('texts') or [] if str(value).strip()]
-        signature = tuple(texts)
-        if not signature or signature in self._last_banner_signatures:
-            return
-        self._last_banner_signatures.add(signature)
-        if len(self._last_banner_signatures) > 20:
-            self._last_banner_signatures = {signature}
+    def _queue_banner_fallback(self, banner: dict, fusion_wait_seconds: float):
+        now = time.monotonic()
+        if now - self._last_badge_emit_at < fusion_wait_seconds:
+            self.send_to_server(
+                1,
+                'WeChat banner suppressed because a badge notification was just emitted',
+                0,
+            )
+            return False
 
-        # Prefer the last non-app-name text as a compact preview.
-        preview = ''
-        for value in reversed(texts):
-            lowered = value.casefold()
-            if any(hint == lowered for hint in _WECHAT_NAME_HINTS):
-                continue
-            preview = value
-            break
-        message = 'WeChat notification received' + (f': {preview}' if preview else '')
+        texts = [str(value) for value in banner.get('texts') or [] if str(value).strip()]
+        preview = _banner_preview(texts)
+        self._pending_banner = {
+            'banner': banner,
+            'preview': preview,
+            'observed_at': now,
+        }
+        kind = 'content' if preview else 'generic'
+        self.send_to_server(
+            1,
+            f'WeChat {kind} banner pending badge-priority fallback: wait={fusion_wait_seconds:.2f}s',
+            0,
+        )
+        return True
+
+    def _flush_pending_banner(self, fusion_wait_seconds: float, *, force: bool = False) -> bool:
+        pending = self._pending_banner
+        if pending is None:
+            return False
+        age = time.monotonic() - float(pending.get('observed_at') or 0.0)
+        if not force and age < fusion_wait_seconds:
+            return False
+
+        banner = pending.get('banner') or {}
+        preview = _safe_text(pending.get('preview'))
+        texts = [str(value) for value in banner.get('texts') or [] if str(value).strip()]
+        if preview:
+            message = f'WeChat notification received: {preview}'
+            content_available = True
+        else:
+            message = 'WeChat received a new message'
+            content_available = False
         events.emit(
             'app.wechat.message_received',
-            data={'source': 'macos_notification_banner', 'texts': texts, 'subroles': banner.get('subroles') or []},
+            data={
+                'source': 'macos_notification_banner',
+                'texts': texts,
+                'subroles': banner.get('subroles') or [],
+                'content_available': content_available,
+            },
             message=message,
         )
-        self._last_emit_at = time.monotonic()
+        self._pending_banner = None
         self.send_to_server(1, f'Device event emitted: {message}', 0)
+        return True
+
+    def _handle_new_banner(self, banner: dict, fusion_wait_seconds: float) -> bool:
+        # Badge is the proven, clean macOS signal.  Banners are fallback only:
+        # they wait briefly for a badge update and can never delay or cancel it.
+        return self._queue_banner_fallback(banner, fusion_wait_seconds)
 
     def run(self):
         if sys.platform != 'darwin':
@@ -283,6 +372,7 @@ class WechatMacosMessageEvent(Job):
         failed = False
         interval = float(self.get_job_param('interval', 1.0) or 1.0)
         monitor_banners = bool(self.get_job_param('monitor_banners', True))
+        fusion_wait_seconds = float(self.get_job_param('fusion_wait_seconds', 1.5) or 1.5)
         debug_ax = bool(self.get_job_param('debug_ax', True))
 
         try:
@@ -329,7 +419,19 @@ class WechatMacosMessageEvent(Job):
                         self.send_to_server(1, f'WeChat badge changed: {old_count!r} -> {count!r}', 0)
                         if count is not None and count > int(old_count or 0):
                             try:
+                                # Badge updates are authoritative and immediate.  A
+                                # banner may be absent, delayed, malformed, or fail
+                                # to probe; none of those conditions may swallow the
+                                # already-proven AXTitle unread-count signal.
                                 self._emit_badge_increase(old_count, count, probe)
+                                self._last_badge_emit_at = time.monotonic()
+                                if self._pending_banner is not None:
+                                    self.send_to_server(
+                                        1,
+                                        'Pending WeChat banner fallback cancelled by badge notification',
+                                        0,
+                                    )
+                                    self._pending_banner = None
                             except Exception as exc:
                                 self.send_to_server(0, f'Badge Device event emit failed: {exc}', 0)
                 else:
@@ -339,14 +441,38 @@ class WechatMacosMessageEvent(Job):
                 if monitor_banners:
                     try:
                         banners = self._banner_probe(workspace, ax)
-                        for banner in banners:
-                            # Avoid a second notification if the badge path emitted almost simultaneously.
-                            if time.monotonic() - self._last_emit_at < 2.5:
-                                continue
-                            self._emit_banner(banner)
+                        active_signatures = {
+                            tuple(banner.get('signature_texts') or banner.get('texts') or [])
+                            for banner in banners
+                            if tuple(banner.get('signature_texts') or banner.get('texts') or [])
+                        }
+                        if not self._banners_initialized:
+                            self._active_banner_signatures = active_signatures
+                            self._banners_initialized = True
+                            if debug_ax:
+                                self.send_to_server(
+                                    1,
+                                    f'WeChat banner baseline: active={len(active_signatures)}',
+                                    0,
+                                )
+                        else:
+                            for banner in banners:
+                                signature = tuple(
+                                    banner.get('signature_texts') or banner.get('texts') or []
+                                )
+                                if signature and signature not in self._active_banner_signatures:
+                                    self._handle_new_banner(banner, fusion_wait_seconds)
+                            self._active_banner_signatures = active_signatures
+                        self._flush_pending_banner(fusion_wait_seconds)
                     except Exception as exc:
                         if debug_ax:
                             self.send_to_server(0, f'Notification banner probe failed: {exc}', 0)
+                    # The fallback timer is independent of banner-probe success.
+                    # A failed AX scan must never strand a pending notification.
+                    try:
+                        self._flush_pending_banner(fusion_wait_seconds)
+                    except Exception as exc:
+                        self.send_to_server(0, f'Banner fallback emit failed: {exc}', 0)
 
                 self.stop_event.wait(interval)
         except Exception as exc:

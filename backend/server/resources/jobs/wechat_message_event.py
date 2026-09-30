@@ -325,31 +325,39 @@ def _collect_sessions_from_root(root_control, *, limit: int = 40, include_debug:
 
 
 def _choose_message_candidate(current: list[dict], previous: dict[str, dict]) -> dict | None:
-    if not current:
+    if not current or not previous:
         return None
 
     changed = []
-    unread = []
     for session in current:
-        count = int(session.get('unread_count') or 0)
-        if count <= 0:
+        key = _safe_text(session.get('key'))
+        if not key or key not in previous:
+            # Unknown sessions are not safe to attribute to the current FLASH.
+            # They may simply have moved into the visible UIA session window.
             continue
-        unread.append(session)
-        old = previous.get(session.get('key') or '') or {}
-        old_count = int(old.get('unread_count') or 0)
-        old_summary = _safe_text(old.get('summary'))
-        summary = _safe_text(session.get('summary'))
-        if count > old_count or (summary and summary != old_summary):
-            changed.append(session)
 
-    candidates = changed or unread
-    if not candidates:
+        count = int(session.get('unread_count') or 0)
+        old_count = int((previous.get(key) or {}).get('unread_count') or 0)
+        if count <= old_count:
+            continue
+
+        candidate = dict(session)
+        candidate['unread_delta'] = count - old_count
+        changed.append(candidate)
+
+    if not changed:
         return None
 
-    # Preserve the order exposed by the session list. The newest/most-relevant
-    # session is commonly near the top after a shell flash.
-    candidates.sort(key=lambda item: int(item.get('order') or 0))
-    return candidates[0]
+    # Message attribution is based only on a positive unread-count delta.
+    # Summary/ValuePattern changes are enrichment after a session is selected,
+    # never evidence that an old/muted conversation received this FLASH.
+    changed.sort(
+        key=lambda item: (
+            -int(item.get('unread_delta') or 0),
+            int(item.get('order') or 0),
+        )
+    )
+    return changed[0]
 
 
 def _snapshot_map(sessions: list[dict]) -> dict[str, dict]:
@@ -369,6 +377,8 @@ class WechatMessageEvent(Job):
         self._hwnd = 0
         self._class_name = ''
         self._last_sessions = {}
+        self._startup_baseline_ready = False
+        self._next_baseline_retry_at = 0.0
         self._last_emit_signature = None
         self._last_emit_at = 0.0
         self._last_emit_process_key = ''
@@ -432,9 +442,20 @@ class WechatMessageEvent(Job):
 
             self.send_to_server(1, 'WeChat shell-hook message watcher started', 0)
 
+            # Establish a real unread baseline before the first FLASH whenever
+            # possible.  Minimized WeChat windows are still valid UIA roots, so
+            # startup discovery includes hidden top-level WeChat windows.  If UIA
+            # is not ready yet, retry only during this startup-baseline phase and
+            # stop polling as soon as one real session snapshot is available.
+            self._try_startup_baseline(force_log=True)
+            self._next_baseline_retry_at = time.monotonic() + 0.5
+
             while not self.stop_event.is_set():
                 if win32gui.PumpWaitingMessages():
                     break
+                if not self._startup_baseline_ready and time.monotonic() >= self._next_baseline_retry_at:
+                    self._try_startup_baseline(force_log=False)
+                    self._next_baseline_retry_at = time.monotonic() + 1.0
                 self._drain_shell_events(dedupe_seconds)
                 self.stop_event.wait(0.05)
 
@@ -521,6 +542,7 @@ class WechatMessageEvent(Job):
             sessions, enrichment = self._read_wechat_sessions(hwnd, include_debug=False)
             if sessions:
                 self._last_sessions = _snapshot_map(sessions)
+                self._startup_baseline_ready = True
             self.send_to_server(
                 1,
                 f'UIA baseline: sessions={len(sessions)} matched={bool(enrichment.get("matched"))} '
@@ -549,17 +571,19 @@ class WechatMessageEvent(Job):
                 'sender': candidate.get('sender') or '',
                 'summary': candidate.get('summary') or '',
                 'unread_count': int(candidate.get('unread_count') or 0),
+                'unread_delta': int(candidate.get('unread_delta') or 0),
                 'automation_id': candidate.get('automation_id') or '',
             }
 
         sender = _safe_text((data.get('session') or {}).get('sender'))
         summary = _safe_text((data.get('session') or {}).get('summary'))
         unread_count = int((data.get('session') or {}).get('unread_count') or 0)
+        unread_delta = int((data.get('session') or {}).get('unread_delta') or 0)
         if candidate:
             self.send_to_server(
                 1,
                 f'UIA FLASH: sessions={len(sessions)} sender={sender!r} unread={unread_count} '
-                f'summary={summary[:160]!r}',
+                f'delta=+{unread_delta} summary={summary[:160]!r}',
                 0,
             )
         else:
@@ -598,10 +622,15 @@ class WechatMessageEvent(Job):
             )
         )
         if elapsed < dedupe_seconds and (same_signature or crosses_generic_boundary):
+            # Treat repeated identical FLASH notifications as one burst.  Refresh
+            # the quiet-gap timer on every duplicate so a long Windows taskbar
+            # flash sequence cannot emit again just because the original emit is
+            # older than dedupe_seconds.
+            self._last_emit_at = now
             self.send_to_server(
                 1,
                 f'Duplicate WeChat FLASH suppressed: process={process_name} '
-                f'elapsed={elapsed:.2f}s signature={signature!r}',
+                f'quiet_gap={elapsed:.2f}s signature={signature!r}',
                 0,
             )
             return
@@ -627,6 +656,25 @@ class WechatMessageEvent(Job):
             self.send_to_server(1, f'Device event emitted: {message}', 0)
         except Exception as exc:
             self.send_to_server(0, f'Device event emit failed: {exc}', 0)
+
+    def _try_startup_baseline(self, *, force_log: bool = False) -> bool:
+        if self._startup_baseline_ready:
+            return True
+        sessions, enrichment = self._read_wechat_sessions(0, include_debug=False)
+        if sessions:
+            self._last_sessions = _snapshot_map(sessions)
+            self._startup_baseline_ready = True
+        if force_log or sessions:
+            label = 'UIA startup baseline' if force_log else 'UIA startup baseline ready'
+            self.send_to_server(
+                1,
+                f'{label}: sessions={len(sessions)} '
+                f'matched={bool(enrichment.get("matched"))} '
+                f'window={int(enrichment.get("window_hwnd") or 0)} '
+                f'error={_safe_text(enrichment.get("error"))!r}',
+                0,
+            )
+        return self._startup_baseline_ready
 
     def _get_uia_module(self):
         if self._uia_module is not None:
@@ -703,8 +751,9 @@ class WechatMessageEvent(Job):
 
         def callback(hwnd, _):
             try:
-                if not win32gui.IsWindowVisible(hwnd):
-                    return
+                # A minimized/hidden WeChat top-level window can still expose the
+                # full session list through UI Automation.  Filtering to visible
+                # windows made the startup baseline miss exactly that common state.
                 add(hwnd)
             except Exception:
                 return
