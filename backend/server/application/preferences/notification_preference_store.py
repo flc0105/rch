@@ -49,6 +49,23 @@ class NotificationPreferenceStore:
         self.settings.write(normalized)
         return normalized
 
+    def is_delivery_enabled(self, notification_key: str) -> bool:
+        """Return whether a projected notification should be actively delivered.
+
+        Durable Notification Center history is intentionally independent from this
+        preference. Consumers such as the Desktop Notifier use this decision only
+        at the delivery boundary.
+        """
+        preferences = self.get_preferences()
+        if preferences.get('enabled') is False:
+            return False
+
+        normalized_key = str(notification_key or '').strip()
+        if not normalized_key:
+            return True
+        events = preferences.get('events') if isinstance(preferences.get('events'), dict) else {}
+        return events.get(normalized_key) is not False
+
     @staticmethod
     def _normalize_bool(value, default: bool) -> bool:
         return value if isinstance(value, bool) else default

@@ -21,6 +21,7 @@ def create_notification_stream_blueprint(server_instance):
     blueprint = Blueprint('notification_stream', __name__)
     web_service = server_instance.web_service
     notification_api = web_service.notification_history_api
+    notification_preferences_api = web_service.notification_preferences_api
     event_bus = web_service.event_bus
 
     @blueprint.get('/api/notifications/stream')
@@ -31,6 +32,19 @@ def create_notification_stream_blueprint(server_instance):
             or ''
         ).strip()
         q = event_bus.subscribe(event_types={'notification_center_updated'})
+
+        def encode_delivery(notification: dict, notification_id: str) -> str:
+            notification_key = str(notification.get('notification_key') or '').strip()
+            if notification_preferences_api.is_delivery_enabled(notification_key):
+                return _encode_sse('notification', notification, notification_id)
+            # Advance the durable SSE cursor even when this notification is muted.
+            # Otherwise a later reconnect would replay an old muted record after
+            # the user changed preferences.
+            return _encode_sse('cursor', {
+                'notification_id': notification_id,
+                'notification_key': notification_key,
+                'reason': 'disabled_by_preference',
+            }, notification_id)
 
         def event_stream():
             replayed_ids = set()
@@ -51,7 +65,7 @@ def create_notification_stream_blueprint(server_instance):
                             if not notification_id:
                                 continue
                             replayed_ids.add(notification_id)
-                            yield _encode_sse('notification', notification, notification_id)
+                            yield encode_delivery(notification, notification_id)
 
                 while True:
                     try:
@@ -78,7 +92,7 @@ def create_notification_stream_blueprint(server_instance):
                         replayed_ids.discard(notification_id)
                         continue
 
-                    yield _encode_sse('notification', notification, notification_id)
+                    yield encode_delivery(notification, notification_id)
             finally:
                 event_bus.unsubscribe(q)
 

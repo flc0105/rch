@@ -66,7 +66,8 @@
     "pause_pid": "kill -STOP <pid>",
     "resume_pid": "kill -CONT <pid>",
     "list_path": "echo $PATH | tr ':' '\\n'",
-    "show_power_assertions": "pmset -g assertions"
+    "show_power_assertions": "pmset -g assertions",
+    "notifier": "nohup /Library/Frameworks/Python.framework/Versions/3.10/bin/python3 /Users/flc/PycharmProjects/rch/desktop_notifier/run.py --tray --config /Users/flc/PycharmProjects/rch/desktop_notifier/config.json &"
   },
   "linux": {},
   "ios": {}

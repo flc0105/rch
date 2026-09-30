@@ -112,6 +112,12 @@ class NotificationStreamRuntime:
                         logger.warning('Server no longer has the local SSE cursor; continuing from live events')
                         self.state.clear()
                         continue
+                    if event.event == 'cursor':
+                        cursor_id = str(event.event_id or '').strip()
+                        if cursor_id:
+                            self.state.update(cursor_id)
+                            logger.debug('Notification cursor advanced without desktop delivery: %s', cursor_id)
+                        continue
                     if event.event != 'notification':
                         continue
 

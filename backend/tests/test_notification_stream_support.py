@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 from server.application.preferences.notification_history_store import NotificationHistoryStore
+from server.application.preferences.notification_preference_store import NotificationPreferenceStore
 from server.persistence.rch_database import RchDatabase
 from server.web.event_bus import WebEventBus
 
@@ -60,6 +61,41 @@ class NotificationEventBusFilterTests(unittest.TestCase):
 
         bus.publish('notification_center_updated', {'action': 'added', 'notification': {'id': 'n1'}})
         self.assertEqual('notification_center_updated', notifications.get_nowait()['event'])
+
+
+class NotificationPreferenceDeliveryTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.database = RchDatabase(str(Path(self.tmp.name) / 'rch.db'))
+        self.store = NotificationPreferenceStore(self.database)
+
+    def tearDown(self):
+        self.database.close_thread_connection()
+        self.tmp.cleanup()
+
+    def test_default_and_unknown_notification_keys_are_delivered(self):
+        self.assertTrue(self.store.is_delivery_enabled('device_event'))
+        self.assertTrue(self.store.is_delivery_enabled('future_notification_key'))
+        self.assertTrue(self.store.is_delivery_enabled(''))
+
+    def test_global_notification_switch_disables_desktop_delivery(self):
+        self.store.save_preferences({'enabled': False})
+
+        self.assertFalse(self.store.is_delivery_enabled('device_event'))
+        self.assertFalse(self.store.is_delivery_enabled('future_notification_key'))
+
+    def test_event_notification_switch_disables_only_that_delivery(self):
+        self.store.save_preferences({
+            'enabled': True,
+            'events': {
+                'device_event': False,
+                'connection_online': True,
+            },
+        })
+
+        self.assertFalse(self.store.is_delivery_enabled('device_event'))
+        self.assertTrue(self.store.is_delivery_enabled('connection_online'))
+
 
 
 if __name__ == '__main__':

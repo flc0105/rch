@@ -8,6 +8,9 @@ class WebNotificationPreferencesApi:
     def get_preferences(self):
         return self.preference_store.get_preferences()
 
+    def is_delivery_enabled(self, notification_key: str) -> bool:
+        return self.preference_store.is_delivery_enabled(notification_key)
+
     def save_preferences(self, payload: dict):
         preferences = self.preference_store.save_preferences(payload or {})
         if self.event_bus is not None:
