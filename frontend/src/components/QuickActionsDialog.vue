@@ -2,106 +2,114 @@
   <el-dialog
     v-model="visible"
     title="Quick Actions"
-    width="980px"
+    width="920px"
+    top="6vh"
+    class="fixed-dialog quick-actions-dialog"
+    modal-class="quick-actions-overlay"
     destroy-on-close
   >
-    <div class="quick-actions-toolbar">
-      <div class="quick-actions-toolbar-left">
-        <el-select v-model="filterPlatform" class="platform-filter" :disabled="loading">
-          <el-option :label="currentFilterLabel" value="current" />
-          <el-option label="All platforms" value="all" />
-          <el-option
-            v-for="platform in supportedPlatforms"
-            :key="platform"
-            :label="platformLabel(platform)"
-            :value="platform"
-          />
-        </el-select>
+    <div class="fixed-dialog-body quick-actions-body">
+      <div class="quick-actions-toolbar">
+        <div class="quick-actions-toolbar-left">
+          <el-select v-model="filterPlatform" class="platform-filter" :disabled="loading">
+            <el-option label="Current" value="current" />
+            <el-option
+              v-for="platform in supportedPlatforms"
+              :key="platform"
+              :label="platformLabel(platform)"
+              :value="platform"
+            />
+          </el-select>
 
-        <el-input
-          v-model="searchText"
-          clearable
-          class="quick-actions-search"
-          placeholder="Filter alias or command"
-        />
+          <el-input
+            v-model="searchText"
+            clearable
+            class="quick-actions-search"
+            placeholder="Filter alias or command"
+          />
+        </div>
+
+        <el-button type="primary" @click="openCreateDialog">
+          New Action
+        </el-button>
       </div>
 
-      <el-button type="primary" @click="openCreateDialog">
-        New Action
-      </el-button>
-    </div>
-
-    <el-table
-      v-loading="loading"
-      :data="filteredItems"
-      empty-text="No Quick Actions"
-      class="quick-actions-table"
-    >
-      <el-table-column label="Platform" width="120">
-        <template #default="{ row }">
-          <el-tag size="small" :type="row.platform === 'common' ? 'info' : 'primary'">
-            {{ platformLabel(row.platform) }}
-          </el-tag>
-        </template>
-      </el-table-column>
-
-      <el-table-column prop="alias" label="Action" min-width="140" />
-
-      <el-table-column label="Command" min-width="330">
-        <template #default="{ row }">
-          <div class="command-cell">
-            <code>{{ row.command }}</code>
-            <el-tag
-              v-if="row.overridden"
-              size="small"
-              type="warning"
-              effect="plain"
-            >
-              Overridden by {{ platformLabel(currentPlatform) }}
-            </el-tag>
-          </div>
-        </template>
-      </el-table-column>
-
-      <el-table-column label="Params" width="90" align="center">
-        <template #default="{ row }">
-          {{ Array.isArray(row.parameters) ? row.parameters.length : 0 }}
-        </template>
-      </el-table-column>
-
-      <el-table-column label="Run" width="150" align="center">
-        <template #default="{ row }">
-          <el-dropdown
-            split-button
-            size="small"
-            type="primary"
-            :disabled="runSubmitting"
-            @click="requestRun(row, 'dialog')"
-            @command="command => handleRunCommand(row, command)"
-          >
-            Run
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item command="terminal">
-                  Run in Terminal
-                </el-dropdown-item>
-              </el-dropdown-menu>
+      <div class="quick-actions-table-shell">
+        <el-table
+          v-loading="loading"
+          :data="filteredItems"
+          empty-text="No Quick Actions"
+          class="quick-actions-table"
+          height="100%"
+          table-layout="fixed"
+        >
+          <el-table-column label="Action" min-width="165">
+            <template #default="{ row }">
+              <div class="action-cell">
+                <span class="action-name">{{ row.alias }}</span>
+                <el-tag
+                  v-if="showCommonTag(row)"
+                  size="small"
+                  type="info"
+                  effect="plain"
+                  class="common-origin-tag"
+                  :title="commonTagTitle(row)"
+                >
+                  Common
+                </el-tag>
+              </div>
             </template>
-          </el-dropdown>
-        </template>
-      </el-table-column>
+          </el-table-column>
 
-      <el-table-column label="Manage" width="150" align="right">
-        <template #default="{ row }">
-          <el-button size="small" @click="openEditDialog(row)">
-            Edit
-          </el-button>
-          <el-button size="small" type="danger" plain @click="deleteItem(row)">
-            Delete
-          </el-button>
-        </template>
-      </el-table-column>
-    </el-table>
+          <el-table-column label="Command" min-width="360">
+            <template #default="{ row }">
+              <el-tooltip
+                :content="row.command"
+                placement="top"
+                :show-after="250"
+                :disabled="!isOverflowing(commandOverflowKey(row))"
+                popper-class="quick-actions-command-tooltip"
+              >
+                <code v-overflow-state="commandOverflowKey(row)" class="command-cell">{{ row.command }}</code>
+              </el-tooltip>
+            </template>
+          </el-table-column>
+
+          <el-table-column label="Run" width="120" align="center">
+            <template #default="{ row }">
+              <el-dropdown
+                split-button
+                size="small"
+                type="primary"
+                :disabled="runSubmitting"
+                @click="requestRun(row, 'dialog')"
+                @command="command => handleRunCommand(row, command)"
+              >
+                Run
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item command="terminal">
+                      Run in Terminal
+                    </el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+            </template>
+          </el-table-column>
+
+          <el-table-column label="Manage" width="145" align="right">
+            <template #default="{ row }">
+              <el-button size="small" @click="openEditDialog(row)">
+                Edit
+              </el-button>
+              <el-button size="small" type="danger" plain @click="deleteItem(row)">
+                Delete
+              </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+    </div>
 
     <template #footer>
       <el-button @click="visible = false">Close</el-button>
@@ -171,23 +179,25 @@
     </el-form>
 
     <template #footer>
-      <el-button @click="parameterVisible = false">Cancel</el-button>
-      <el-dropdown
-        split-button
-        type="primary"
-        :disabled="runSubmitting"
-        @click="submitParameterRun"
-        @command="handleParameterRunCommand"
-      >
-        {{ pendingRunPresentation === 'terminal' ? 'Run in Terminal' : 'Run' }}
-        <template #dropdown>
-          <el-dropdown-menu>
-            <el-dropdown-item :command="pendingRunPresentation === 'terminal' ? 'dialog' : 'terminal'">
-              {{ pendingRunPresentation === 'terminal' ? 'Run with Result Dialog' : 'Run in Terminal' }}
-            </el-dropdown-item>
-          </el-dropdown-menu>
-        </template>
-      </el-dropdown>
+      <div class="quick-action-parameter-actions">
+        <el-button @click="parameterVisible = false">Cancel</el-button>
+        <el-dropdown
+          split-button
+          type="primary"
+          :disabled="runSubmitting"
+          @click="submitParameterRun"
+          @command="handleParameterRunCommand"
+        >
+          {{ pendingRunPresentation === 'terminal' ? 'Run in Terminal' : 'Run' }}
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item :command="pendingRunPresentation === 'terminal' ? 'dialog' : 'terminal'">
+                {{ pendingRunPresentation === 'terminal' ? 'Run with Result Dialog' : 'Run in Terminal' }}
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+      </div>
     </template>
   </el-dialog>
 
@@ -198,10 +208,22 @@
     append-to-body
   >
     <div class="quick-action-result-meta">
-      <el-tag :type="resultStatusType" size="small">
+      <el-tag :type="resultStatusType" size="small" class="quick-action-result-status">
         {{ activeRun.status || 'Running' }}
       </el-tag>
-      <code v-if="activeRun.resolvedCommand">{{ activeRun.resolvedCommand }}</code>
+      <div v-if="activeRun.resolvedCommand" class="quick-action-result-command-shell">
+        <el-tooltip
+          :content="activeRun.resolvedCommand"
+          placement="top"
+          :show-after="250"
+          :disabled="!isOverflowing('result-command')"
+          popper-class="quick-actions-command-tooltip"
+        >
+          <code v-overflow-state="'result-command'" class="quick-action-result-command">
+            {{ activeRun.resolvedCommand }}
+          </code>
+        </el-tooltip>
+      </div>
     </div>
 
     <pre class="quick-action-result-output">{{ activeRun.output || (activeRun.complete ? '(no output)' : 'Running…') }}</pre>
@@ -231,6 +253,43 @@ const PLATFORM_LABELS = {
   ios: 'iOS',
 }
 
+function configureOverflowState(el, binding) {
+  el.__quickActionOverflowInstance = binding.instance
+  el.__quickActionOverflowKey = String(binding.value || '')
+
+  const apply = () => {
+    const overflowing = el.scrollWidth > el.clientWidth + 1
+    el.classList.toggle('is-overflowing', overflowing)
+    el.__quickActionOverflowInstance?.setOverflowState?.(el.__quickActionOverflowKey, overflowing)
+  }
+
+  el.__quickActionOverflowApply = apply
+  requestAnimationFrame(apply)
+}
+
+const overflowStateDirective = {
+  mounted(el, binding) {
+    configureOverflowState(el, binding)
+    if (typeof ResizeObserver === 'function') {
+      el.__quickActionOverflowObserver = new ResizeObserver(() => {
+        el.__quickActionOverflowApply?.()
+      })
+      el.__quickActionOverflowObserver.observe(el)
+    }
+  },
+  updated(el, binding) {
+    configureOverflowState(el, binding)
+  },
+  unmounted(el) {
+    el.__quickActionOverflowInstance?.setOverflowState?.(el.__quickActionOverflowKey, false)
+    el.__quickActionOverflowObserver?.disconnect()
+    delete el.__quickActionOverflowObserver
+    delete el.__quickActionOverflowApply
+    delete el.__quickActionOverflowInstance
+    delete el.__quickActionOverflowKey
+  },
+}
+
 function emptyRun() {
   return {
     runId: '',
@@ -248,6 +307,10 @@ function emptyRun() {
 
 export default {
   name: 'QuickActionsDialog',
+
+  directives: {
+    overflowState: overflowStateDirective,
+  },
 
   props: {
     selectedId: {
@@ -295,14 +358,11 @@ export default {
 
       resultVisible: false,
       activeRun: emptyRun(),
+      overflowStates: {},
     }
   },
 
   computed: {
-    currentFilterLabel() {
-      if (!this.currentPlatform || this.currentPlatform === 'common') return 'Current · Common'
-      return `Current · Common + ${this.platformLabel(this.currentPlatform)}`
-    },
     filteredItems() {
       const keyword = String(this.searchText || '').trim().toLowerCase()
       const defaultSet = new Set(this.defaultPlatforms || ['common'])
@@ -311,12 +371,12 @@ export default {
         let platformMatches = true
         if (this.filterPlatform === 'current') {
           platformMatches = defaultSet.has(item.platform)
-        } else if (this.filterPlatform !== 'all') {
+        } else {
           platformMatches = item.platform === this.filterPlatform
         }
         if (!platformMatches) return false
         if (!keyword) return true
-        return `${item.alias || ''} ${item.command || ''} ${item.platform || ''}`.toLowerCase().includes(keyword)
+        return `${item.alias || ''} ${item.command || ''}`.toLowerCase().includes(keyword)
       })
     },
     pendingRunParameters() {
@@ -336,6 +396,25 @@ export default {
   methods: {
     platformLabel(platform) {
       return PLATFORM_LABELS[String(platform || '').trim().toLowerCase()] || String(platform || 'Unknown')
+    },
+    showCommonTag(row) {
+      return this.filterPlatform === 'current' && row?.platform === 'common'
+    },
+    commonTagTitle(row) {
+      if (row?.overridden && this.currentPlatform && this.currentPlatform !== 'common') {
+        return `Common definition · overridden by ${this.platformLabel(this.currentPlatform)} for normal alias resolution`
+      }
+      return 'Common definition'
+    },
+    commandOverflowKey(row) {
+      return `table-command:${JSON.stringify([row?.platform || '', row?.alias || ''])}`
+    },
+    setOverflowState(key, overflowing) {
+      if (!key) return
+      this.overflowStates[key] = overflowing === true
+    },
+    isOverflowing(key) {
+      return this.overflowStates[key] === true
     },
     async open() {
       if (!this.selectedId) {
@@ -561,8 +640,21 @@ export default {
       if (!this.activeRun.resolvedCommand) {
         this.activeRun.resolvedCommand = String(metadata.quick_action_resolved_command || '')
       }
-      this.activeRun.output += String(payload.text || '')
+      this.appendResultChunk(payload.text)
       return true
+    },
+    appendResultChunk(text) {
+      const chunk = String(text ?? '').replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+      if (!chunk) return
+
+      const current = String(this.activeRun.output || '')
+      if (!current) {
+        this.activeRun.output = chunk
+        return
+      }
+
+      const separator = current.endsWith('\n') || chunk.startsWith('\n') ? '' : '\n'
+      this.activeRun.output = `${current}${separator}${chunk}`
     },
     handleCommandComplete(payload = {}) {
       const metadata = payload.metadata && typeof payload.metadata === 'object' ? payload.metadata : {}
@@ -604,12 +696,20 @@ export default {
 </script>
 
 <style scoped>
+.quick-actions-body {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 .quick-actions-toolbar {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 }
 
 .quick-actions-toolbar-left {
@@ -617,41 +717,102 @@ export default {
   align-items: center;
   gap: 10px;
   min-width: 0;
-  flex: 1;
+  flex: 1 1 auto;
 }
 
 .platform-filter {
-  width: 220px;
+  flex: 0 0 145px;
+  width: 145px;
 }
 
 .quick-actions-search {
-  max-width: 360px;
+  flex: 1 1 auto;
+  min-width: 180px;
+  max-width: none;
 }
 
-.quick-actions-table code,
-.quick-action-result-meta code {
+.quick-actions-table-shell {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.action-cell {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.action-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.common-origin-tag {
+  flex: 0 0 auto;
+  opacity: 0.72;
+}
+
+.quick-action-parameter-actions {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.command-cell,
+.quick-action-result-command {
   font-family: var(--el-font-family-monospace, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
-  white-space: pre-wrap;
-  word-break: break-word;
+}
+
+.command-cell.is-overflowing,
+.quick-action-result-command.is-overflowing {
+  cursor: help;
 }
 
 .command-cell {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  display: block;
   min-width: 0;
-}
-
-.command-cell code {
-  min-width: 0;
-  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: default;
+  color: var(--el-text-color-regular);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .quick-action-result-meta {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 10px;
+  min-width: 0;
   margin-bottom: 12px;
+}
+
+.quick-action-result-status {
+  flex: 0 0 auto;
+}
+
+.quick-action-result-command-shell {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.quick-action-result-command {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: default;
+  color: var(--el-text-color-regular);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .quick-action-result-output {
@@ -666,5 +827,75 @@ export default {
   white-space: pre-wrap;
   word-break: break-word;
   font-family: var(--el-font-family-monospace, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
+}
+</style>
+
+
+<style>
+.quick-actions-overlay .el-overlay-dialog {
+  overflow: hidden !important;
+}
+
+.quick-actions-overlay .el-dialog {
+  width: 920px !important;
+  max-width: calc(100vw - 32px) !important;
+  height: 640px !important;
+  max-height: calc(100vh - 12vh) !important;
+  margin-top: 6vh !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+}
+
+.quick-actions-overlay .el-dialog__header,
+.quick-actions-overlay .el-dialog__footer {
+  flex: 0 0 auto !important;
+}
+
+.quick-actions-overlay .el-dialog__body {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+  padding-top: 12px !important;
+  padding-bottom: 12px !important;
+}
+
+.quick-actions-overlay .fixed-dialog-body,
+.quick-actions-overlay .quick-actions-table-shell,
+.quick-actions-overlay .quick-actions-table,
+.quick-actions-overlay .quick-actions-table .el-table__inner-wrapper,
+.quick-actions-overlay .quick-actions-table .el-scrollbar,
+.quick-actions-overlay .quick-actions-table .el-scrollbar__wrap {
+  min-height: 0 !important;
+}
+
+.quick-actions-overlay .quick-actions-table,
+.quick-actions-overlay .quick-actions-table .el-table__inner-wrapper,
+.quick-actions-overlay .quick-actions-table .el-scrollbar,
+.quick-actions-overlay .quick-actions-table .el-scrollbar__wrap {
+  height: 100% !important;
+}
+
+.quick-actions-overlay .quick-actions-table .el-scrollbar__wrap {
+  overflow-y: auto !important;
+  overflow-x: auto !important;
+}
+
+.quick-actions-command-tooltip {
+  max-width: min(680px, calc(100vw - 48px));
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--el-font-family-monospace, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
+}
+
+@media (max-width: 768px), (max-height: 720px) {
+  .quick-actions-overlay .el-dialog {
+    width: 100vw !important;
+    max-width: 100vw !important;
+    height: 100vh !important;
+    max-height: 100vh !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+  }
 }
 </style>

@@ -7,24 +7,34 @@
     append-to-body
     :class="screenDialogClass"
     modal-class="screen-view-overlay"
+    :show-close="false"
     @close="handleDialogClose"
     @closed="handleDialogClosed"
   >
     <template #header>
       <div class="screen-view-dialog-header">
         <span class="screen-view-dialog-title">Screen View</span>
-        <el-tooltip :content="fullscreen ? 'Exit Fullscreen' : 'Fullscreen'" placement="bottom">
-          <el-icon
-            class="screen-view-fullscreen-icon"
-            role="button"
-            tabindex="0"
-            @click="toggleFullscreen"
-            @keydown.enter.prevent="toggleFullscreen"
-            @keydown.space.prevent="toggleFullscreen"
+        <div class="screen-view-header-actions">
+          <el-tooltip :content="fullscreen ? 'Exit Fullscreen' : 'Fullscreen'" placement="bottom">
+            <button
+              type="button"
+              class="screen-view-header-action"
+              :aria-label="fullscreen ? 'Exit Fullscreen' : 'Fullscreen'"
+              @click="toggleFullscreen"
+            >
+              <el-icon><FullScreen /></el-icon>
+            </button>
+          </el-tooltip>
+          <button
+            type="button"
+            class="screen-view-header-action"
+            aria-label="Close"
+            title="Close"
+            @click="visible = false"
           >
-            <FullScreen />
-          </el-icon>
-        </el-tooltip>
+            <el-icon><Close /></el-icon>
+          </button>
+        </div>
       </div>
     </template>
 
@@ -149,7 +159,7 @@
 
 <script>
 import { ElMessage } from 'element-plus'
-import { FullScreen } from '@element-plus/icons-vue'
+import { Close, FullScreen } from '@element-plus/icons-vue'
 import * as screenViewApi from '../api/screenViewApi.js'
 import FullJpegScreenRenderer from './screen/FullJpegScreenRenderer.vue'
 import KeyframeDeltaScreenRenderer from './screen/KeyframeDeltaScreenRenderer.vue'
@@ -157,6 +167,8 @@ import KeyframeDeltaScreenRenderer from './screen/KeyframeDeltaScreenRenderer.vu
 export default {
   name: 'ScreenViewDialog',
   components: {
+    Close,
+    FullScreen,
     FullJpegScreenRenderer,
     KeyframeDeltaScreenRenderer,
   },
@@ -1027,11 +1039,11 @@ export default {
 
 <style scoped>
 .screen-view-dialog-header {
+  width: 100%;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding-right: 34px;
 }
 
 .screen-view-dialog-title {
@@ -1040,19 +1052,40 @@ export default {
   line-height: var(--el-dialog-font-line-height);
 }
 
-.screen-view-fullscreen-icon {
+.screen-view-header-actions {
   flex: 0 0 auto;
-  width: 20px;
-  height: 20px;
-  color: var(--el-color-info);
-  cursor: pointer;
-  transition: color 0.15s ease;
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
-.screen-view-fullscreen-icon:hover,
-.screen-view-fullscreen-icon:focus-visible {
+.screen-view-header-action {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--el-color-info);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.screen-view-header-action:hover,
+.screen-view-header-action:focus-visible {
   color: var(--el-color-primary);
+  background: var(--el-fill-color-light);
   outline: none;
+}
+
+.screen-view-header-action .el-icon {
+  width: 18px;
+  height: 18px;
 }
 
 .screen-view-body {

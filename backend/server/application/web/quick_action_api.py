@@ -53,6 +53,11 @@ class WebQuickActionApi:
 
     def list_quick_actions(self, client_id: str) -> dict:
         session = self._get_session(client_id)
+
+        # aliases.json 可能被 CLI 之外的方式直接编辑。每次列表请求都重新从磁盘
+        # 加载一次，确保 Quick Actions 打开/刷新列表时展示本地最新定义。
+        self.alias_manager.load_aliases()
+
         current_platform = self.alias_manager.get_platform_for_connection(session) or 'common'
         grouped = self.alias_manager.list_aliases_grouped()
         current_aliases = grouped.get(current_platform) or {}
