@@ -137,51 +137,12 @@
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { killConnection as killConnectionApi } from '../api/connectionsApi.js'
 import { loadToolbarPreferences } from '../api/toolbarPreferencesApi.js'
-
-const ACTION_CATALOG = [
-  { id: 'remote-files', label: 'Remote Files', accent: true },
-  { id: 'artifacts', label: 'Artifacts', accent: true },
-  { id: 'info', label: 'Info' },
-  { id: 'scripts', label: 'Scripts' },
-  { id: 'history', label: 'History' },
-  { id: 'pty', label: 'PTY' },
-  { id: 'screen-view', label: 'Screen View' },
-  { id: 'clipboard', label: 'Clipboard' },
-  { id: 'external-tools', label: 'External Tools' },
-  { id: 'jobs', label: 'Jobs' },
-  { id: 'agents', label: 'Agents' },
-  { id: 'processes', label: 'Processes' },
-  { id: 'keychains', label: 'Keychains' },
-  { id: 'one-liners', label: 'One-liners' },
-]
-
-const DEFAULT_TOOLBAR_PREFERENCES = {
-  toolbar: [
-    'remote-files',
-    'artifacts',
-    'info',
-    'scripts',
-    'history',
-    'pty',
-    'screen-view',
-    'clipboard',
-  ],
-  more: [
-    'external-tools',
-    'jobs',
-    'agents',
-    'processes',
-    'keychains',
-    'one-liners',
-  ],
-}
-
-function cloneToolbarPreferences(preferences) {
-  return {
-    toolbar: [...(preferences?.toolbar || [])],
-    more: [...(preferences?.more || [])],
-  }
-}
+import {
+  DEFAULT_TOOLBAR_PREFERENCES,
+  TOOLBAR_ACTION_CATALOG,
+  cloneToolbarPreferences,
+  normalizeToolbarPreferences,
+} from '../data/toolbarPreferences.js'
 
 export default {
   name: 'TerminalToolbar',
@@ -228,6 +189,7 @@ export default {
     'open-clipboard',
     'open-processes',
     'open-one-liners',
+    'open-quick-actions',
     'open-settings',
     'clear',
     'bottom',
@@ -271,36 +233,10 @@ export default {
       return cloneToolbarPreferences(preferences)
     },
     normalizePreferences(preferences) {
-      const allowed = new Set(ACTION_CATALOG.map((item) => item.id))
-      const used = new Set()
-      const normalizeList = (value) => {
-        if (!Array.isArray(value)) return []
-        const result = []
-        value.forEach((item) => {
-          const id = String(item || '').trim()
-          if (!allowed.has(id) || used.has(id)) return
-          used.add(id)
-          result.push(id)
-        })
-        return result
-      }
-
-      const normalized = {
-        toolbar: normalizeList(preferences?.toolbar),
-        more: normalizeList(preferences?.more),
-      }
-
-      ACTION_CATALOG.forEach((action) => {
-        if (used.has(action.id)) return
-        const section = DEFAULT_TOOLBAR_PREFERENCES.toolbar.includes(action.id) ? 'toolbar' : 'more'
-        normalized[section].push(action.id)
-        used.add(action.id)
-      })
-
-      return normalized
+      return normalizeToolbarPreferences(preferences)
     },
     actionsForIds(ids) {
-      const byId = new Map(ACTION_CATALOG.map((item) => [item.id, item]))
+      const byId = new Map(TOOLBAR_ACTION_CATALOG.map((item) => [item.id, item]))
       return (ids || []).map((id) => byId.get(id)).filter(Boolean)
     },
     isActionDisabled(actionId) {
@@ -310,6 +246,7 @@ export default {
         'screen-view',
         'clipboard',
         'processes',
+        'quick-actions',
       ].includes(actionId) && this.deviceActionDisabled
     },
     async loadManagedToolbar() {
@@ -363,6 +300,7 @@ export default {
         'jobs',
         'agents',
         'processes',
+        'quick-actions',
         'one-liners',
       ]
       if (resourceActions.includes(normalizedAction)) {
@@ -410,6 +348,7 @@ export default {
         agents: 'open-agents',
         processes: 'open-processes',
         'one-liners': 'open-one-liners',
+        'quick-actions': 'open-quick-actions',
       }
       const eventName = eventMap[normalizedCommand]
 

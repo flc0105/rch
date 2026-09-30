@@ -64,11 +64,20 @@ class WebCommandExecutionApi:
             foreground_source=foreground_source,
         )
 
-    def submit_web_command(self, client_id: str, command: str, tab_id: str = ''):
+    def submit_web_command(
+            self,
+            client_id: str,
+            command: str,
+            tab_id: str = '',
+            metadata: dict | None = None,
+            source: str = 'web',
+    ):
         return self.task_service.submit_web_command(
             self._normalize_client_id(client_id),
             self._normalize_command(command),
             tab_id=(tab_id or '').strip(),
+            metadata=dict(metadata or {}),
+            source=str(source or 'web').strip() or 'web',
         )
 
     def get_runtime_config(self, client_id: str):

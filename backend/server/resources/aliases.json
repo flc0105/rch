@@ -31,7 +31,10 @@
     "kill_pid": "taskkill /pid <pid> /f",
     "kill_name": "taskkill /im <name> /f",
     "md5": "certUtil -hashfile <file> MD5",
-    "computer_info": "wmic computersystem get manufacturer,model"
+    "computer_info": "wmic computersystem get manufacturer,model",
+    "is_admin": "net session >nul 2>&1 && echo Administrator || echo Not Administrator",
+    "is_admin2": "fltmc >nul 2>&1 && echo Administrator || echo Not Administrator",
+    "is_admin_ps": "powershell.exe ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)"
   },
   "mac": {
     "ll": "ls -la",

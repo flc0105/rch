@@ -593,16 +593,25 @@ export default {
 
             es.addEventListener('command_result', (event) => {
                 const payload = JSON.parse(event.data);
-                this.appendOutput(payload.client_id, payload.text || '', '', {
-                    task_id: payload.task_id || '',
-                    command: payload.command || '',
-                    command_id: payload.command_id ?? null,
-                    metadata: payload.metadata && typeof payload.metadata === 'object' ? payload.metadata : {},
-                });
+                const metadata = payload.metadata && typeof payload.metadata === 'object' ? payload.metadata : {};
+                const isQuickActionDialog = metadata.quick_action === true && metadata.quick_action_presentation === 'dialog';
+                const handledByQuickActionDialog = isQuickActionDialog
+                    ? this.handleQuickActionCommandResult?.({...payload, metadata}) === true
+                    : false;
+
+                if (!handledByQuickActionDialog) {
+                    this.appendOutput(payload.client_id, payload.text || '', '', {
+                        task_id: payload.task_id || '',
+                        command: payload.command || '',
+                        command_id: payload.command_id ?? null,
+                        metadata,
+                    });
+                }
             });
 
             es.addEventListener('command_complete', async (event) => {
                 const payload = JSON.parse(event.data);
+                const metadata = payload.metadata && typeof payload.metadata === 'object' ? {...payload.metadata} : {};
                 const statusText = String(payload.status || '').trim();
 
                 let finishText = 'Failed';
@@ -616,17 +625,27 @@ export default {
                     finishKind = 'success';
                 }
 
-                this.appendOutput(
-    payload.client_id,
-    formatTerminalCommandFinishedLine(payload.command, finishText),
-    finishKind,
-    {
-        task_id: payload.task_id || '',
-        command: payload.command || '',
-        command_id: payload.command_id ?? payload.source_command_id ?? null,
-        metadata: payload.metadata && typeof payload.metadata === 'object' ? { ...payload.metadata } : {},
-    }
-);
+                const isQuickActionDialog = metadata.quick_action === true && metadata.quick_action_presentation === 'dialog';
+                const handledByQuickActionDialog = isQuickActionDialog
+                    ? this.handleQuickActionCommandComplete?.({...payload, metadata}) === true
+                    : false;
+
+                if (!handledByQuickActionDialog) {
+                    const finishedCommand = metadata.quick_action === true
+                        ? (metadata.quick_action_display_command || payload.command)
+                        : payload.command;
+                    this.appendOutput(
+                        payload.client_id,
+                        formatTerminalCommandFinishedLine(finishedCommand, finishText),
+                        finishKind,
+                        {
+                            task_id: payload.task_id || '',
+                            command: payload.command || '',
+                            command_id: payload.command_id ?? payload.source_command_id ?? null,
+                            metadata,
+                        }
+                    );
+                }
 
                 // this.clearActiveTask(payload.client_id, payload.task_id);
                 this.markTaskCompleted(payload.client_id, payload.task_id);

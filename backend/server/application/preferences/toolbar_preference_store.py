@@ -6,7 +6,7 @@ DEFAULT_TOOLBAR_PREFERENCES = {
         'remote-files', 'artifacts', 'info', 'scripts', 'history', 'pty', 'screen-view', 'clipboard',
     ],
     'more': [
-        'external-tools', 'jobs', 'agents', 'processes', 'keychains', 'one-liners',
+        'external-tools', 'jobs', 'agents', 'processes', 'keychains', 'one-liners', 'quick-actions',
     ],
 }
 

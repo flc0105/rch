@@ -191,7 +191,14 @@ class WebTaskService:
             'command': request.command,
         }
 
-    def submit_web_command(self, client_id: str, command: str, tab_id: str = ''):
+    def submit_web_command(
+            self,
+            client_id: str,
+            command: str,
+            tab_id: str = '',
+            metadata: dict | None = None,
+            source: str = 'web',
+    ):
         return self._submit_request(
             WebExecutionTaskRequest(
                 client_id=client_id,
@@ -199,7 +206,8 @@ class WebTaskService:
                 task_type=TASK_TYPE_COMMAND,
                 runner_name='run_command_task',
                 tab_id=tab_id,
-                source='web',
+                source=str(source or 'web').strip() or 'web',
+                metadata=dict(metadata or {}),
             )
         )
 

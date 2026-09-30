@@ -200,18 +200,11 @@ class AliasBuiltinSupport:
     alias 子命令支持：
 
     - alias / alias resolve
-    - alias set [--platform common|win|mac|linux] name = command
-    - alias unset [--platform common|win|mac|linux] name
-    - alias list [--platform common|win|mac|linux] [--json]
+    - alias set [--platform <supported>] name = command
+    - alias unset [--platform <supported>] name
+    - alias list [--platform <supported>] [--json]
     - alias reload
     """
-
-    VALID_PLATFORMS = ('common', 'win', 'mac', 'linux')
-
-    PLATFORM_OPTION_PATTERN = re.compile(
-        r'^(?:--platform|-p)\s+(common|win|mac|linux)\b',
-        re.IGNORECASE,
-    )
 
     ANY_PLATFORM_OPTION_PATTERN = re.compile(
         r'^(?:--platform|-p)\s+(\S+)\b',
@@ -229,21 +222,21 @@ class AliasBuiltinSupport:
 
     def _parse_platform_option(self, arg_text: str) -> tuple[str, str]:
         text = str(arg_text or '').strip()
-        matched = self.PLATFORM_OPTION_PATTERN.match(text)
-        if matched is not None:
-            platform_name = matched.group(1).lower()
-            remaining = text[matched.end():].strip()
-            return platform_name, remaining
+        matched = self.ANY_PLATFORM_OPTION_PATTERN.match(text)
+        if matched is None:
+            return '', text
 
-        any_matched = self.ANY_PLATFORM_OPTION_PATTERN.match(text)
-        if any_matched is not None:
-            invalid_platform = any_matched.group(1)
+        raw_platform = matched.group(1)
+        try:
+            platform_name = self.alias_manager.normalize_platform(raw_platform)
+        except ValueError:
             raise ValueError(
-                f"Unsupported platform: {invalid_platform}. "
-                f"Supported platforms: {', '.join(self.VALID_PLATFORMS)}"
+                f"Unsupported platform: {raw_platform}. "
+                f"Supported platforms: {', '.join(self.alias_manager.get_supported_platforms())}"
             )
 
-        return '', text
+        remaining = text[matched.end():].strip()
+        return platform_name, remaining
 
     def _resolve_target_platform(self, platform_name: str) -> str:
         return platform_name or 'common'
@@ -264,10 +257,10 @@ class AliasBuiltinSupport:
     def _get_runtime_platform(self) -> str:
         """
         直接复用 AliasManager 的连接平台识别逻辑。
-        如果是 ios/android/unknown，返回空串，resolve 时只显示 common。
+        未映射到受支持平台时返回空串，resolve 时只显示 common。
         """
         platform_name = self.alias_manager.get_platform_for_connection(self.conn)
-        if platform_name in self.VALID_PLATFORMS:
+        if platform_name in self.alias_manager.get_supported_platforms():
             return platform_name
         return ''
 
@@ -318,7 +311,7 @@ class AliasBuiltinSupport:
         """
         alias list:
         - 默认显示所有平台原始配置
-        - 支持 --platform common|win|mac|linux
+        - 支持 AliasManager 定义的全部平台
         - 不支持 --platform all
         """
         if platform_name:
@@ -328,7 +321,7 @@ class AliasBuiltinSupport:
         grouped = self.alias_manager.list_aliases_grouped() or {}
         rows = []
 
-        for current_platform in self.VALID_PLATFORMS:
+        for current_platform in self.alias_manager.get_supported_platforms():
             alias_map = grouped.get(current_platform) or {}
             rows.extend(self._normalize_alias_rows(alias_map, current_platform))
 
@@ -373,7 +366,7 @@ class AliasBuiltinSupport:
 
         if not remaining_text or '=' not in remaining_text:
             raise ValueError(
-                "Expected format: alias set [--platform common|win|mac|linux] name = command"
+                f"Expected format: alias set [--platform {'|'.join(self.alias_manager.get_supported_platforms())}] name = command"
             )
 
         try:
@@ -411,7 +404,7 @@ class AliasBuiltinSupport:
         platform_name, remaining_text = self._parse_platform_option(arg)
         if remaining_text:
             raise ValueError(
-                "Expected format: alias list [--platform common|win|mac|linux] [--json]"
+                f"Expected format: alias list [--platform {'|'.join(self.alias_manager.get_supported_platforms())}] [--json]"
             )
 
         payload = self._build_list_alias_payload(platform_name=platform_name)

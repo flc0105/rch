@@ -241,20 +241,23 @@ class AliasCommandCompletionProvider(CommandCompletionProvider):
     source = 'server_alias'
     group = 'alias'
 
-    MENU_ITEMS = (
-        ('alias resolve', 'Show resolved aliases for current client platform'),
-        ('alias set ', 'Create or update an alias: alias set [--platform common|win|mac|linux|ios] name = command'),
-        ('alias unset ', 'Remove an alias: alias unset [--platform common|win|mac|linux|ios] name'),
-        ('alias list', 'List all platform aliases'),
-        ('alias reload', 'Reload alias definitions'),
-    )
+    def __init__(self, alias_manager):
+        self.alias_manager = alias_manager
 
     def complete(self, context: CompletionContext) -> list[CompletionCandidate]:
         return self._build_candidates()
 
     def _build_candidates(self) -> list[CompletionCandidate]:
+        platforms = '|'.join(self.alias_manager.get_supported_platforms())
+        menu_items = (
+            ('alias resolve', 'Show resolved aliases for current client platform'),
+            ('alias set ', f'Create or update an alias: alias set [--platform {platforms}] name = command'),
+            ('alias unset ', f'Remove an alias: alias unset [--platform {platforms}] name'),
+            ('alias list', 'List all platform aliases'),
+            ('alias reload', 'Reload alias definitions'),
+        )
         result = []
-        for index, (insert_text, description) in enumerate(self.MENU_ITEMS):
+        for index, (insert_text, description) in enumerate(menu_items):
             result.append(CompletionCandidate(
                 title=insert_text,
                 insert_text=insert_text,

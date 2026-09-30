@@ -13,6 +13,7 @@ export const TOOLBAR_ACTION_CATALOG = [
   { id: 'processes', label: 'Processes' },
   { id: 'keychains', label: 'Keychains' },
   { id: 'one-liners', label: 'One-liners' },
+  { id: 'quick-actions', label: 'Quick Actions' },
 ]
 
 export const DEFAULT_TOOLBAR_PREFERENCES = {
@@ -33,6 +34,7 @@ export const DEFAULT_TOOLBAR_PREFERENCES = {
     'processes',
     'keychains',
     'one-liners',
+    'quick-actions',
   ],
 }
 

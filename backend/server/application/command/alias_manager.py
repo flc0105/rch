@@ -20,6 +20,7 @@ class AliasManager:
     }
     # QUERY_PLATFORMS = SUPPORTED_PLATFORMS + ('all',)
     QUERY_PLATFORMS = SUPPORTED_PLATFORMS
+
     def __init__(self):
         self.alias_path = ALIAS_PATH
         self.aliases = self._create_empty_aliases()
@@ -27,13 +28,7 @@ class AliasManager:
 
     # ------------------ 持久化 ------------------ #
     def _create_empty_aliases(self):
-        return {
-            'common': {},
-            'win': {},
-            'mac': {},
-            'linux': {},
-            'ios': {}
-        }
+        return {platform_name: {} for platform_name in self.SUPPORTED_PLATFORMS}
 
     def _read_alias_file(self):
         """
@@ -49,7 +44,7 @@ class AliasManager:
         with open(self.alias_path, 'w', encoding='utf-8') as file_obj:
             json.dump(aliases, file_obj, indent=2, ensure_ascii=False)
 
-    def _normalize_platform(
+    def normalize_platform(
             self,
             platform_name: str,
             allow_empty: bool = False,
@@ -74,8 +69,12 @@ class AliasManager:
 
         return normalized
 
+    # 兼容现有内部调用；新的跨模块调用使用公开 normalize_platform。
+    def _normalize_platform(self, *args, **kwargs):
+        return self.normalize_platform(*args, **kwargs)
 
-
+    def get_supported_platforms(self) -> tuple[str, ...]:
+        return tuple(self.SUPPORTED_PLATFORMS)
 
     def _normalize_alias_payload(self, payload) -> dict:
         normalized = self._create_empty_aliases()
@@ -119,8 +118,9 @@ class AliasManager:
     def get_platform_for_connection(self, conn=None) -> str:
         session_info = getattr(conn, 'session_info', None)
         os_type = str(getattr(session_info, 'os_type', '') or '').strip().lower()
-        return self._normalize_platform(
-            os_type,
+        os_alias = str(getattr(session_info, 'os_alias', '') or '').strip().lower()
+        return self.normalize_platform(
+            os_alias or os_type,
             allow_empty=True,
             allow_unknown=True,
         )
@@ -139,7 +139,7 @@ class AliasManager:
         """添加别名"""
         alias_name = str(alias or '').strip()
         command_text = str(command or '').strip()
-        platform_name = self._normalize_platform(platform)
+        platform_name = self.normalize_platform(platform)
 
         if not alias_name or not command_text:
             raise ValueError("Alias and command cannot be empty")
@@ -148,13 +148,47 @@ class AliasManager:
         self.aliases[platform_name][alias_name] = command_text
         self.save_aliases()
 
+    def update_alias(
+            self,
+            original_alias: str,
+            alias: str,
+            command: str,
+            original_platform: str = 'common',
+            platform: str = 'common',
+    ):
+        """更新 alias；跨名称/平台移动时只进行一次持久化。"""
+        original_name = str(original_alias or '').strip()
+        alias_name = str(alias or '').strip()
+        command_text = str(command or '').strip()
+        original_platform_name = self.normalize_platform(original_platform)
+        platform_name = self.normalize_platform(platform)
+
+        if not original_name:
+            raise ValueError('original alias is required')
+        if not alias_name or not command_text:
+            raise ValueError('Alias and command cannot be empty')
+
+        original_map = self.aliases.get(original_platform_name) or {}
+        if original_name not in original_map:
+            raise KeyError(f"Alias '{original_name}' does not exist in {original_platform_name}")
+
+        destination_map = self.aliases.setdefault(platform_name, {})
+        moving = original_name != alias_name or original_platform_name != platform_name
+        if moving and alias_name in destination_map:
+            raise ValueError(f"Alias '{alias_name}' already exists in {platform_name}")
+
+        if moving:
+            del original_map[original_name]
+        destination_map[alias_name] = command_text
+        self.save_aliases()
+
     def remove_alias(self, alias, platform: str = ''):
         """移除别名"""
         alias_name = str(alias or '').strip()
         if not alias_name:
             raise KeyError("Alias name cannot be empty")
 
-        platform_name = self._normalize_platform(platform, allow_empty=True)
+        platform_name = self.normalize_platform(platform, allow_empty=True)
         removed = False
         target_platforms = (platform_name,) if platform_name else self.SUPPORTED_PLATFORMS
 
@@ -174,21 +208,27 @@ class AliasManager:
         """返回格式化的别名列表"""
         return self.get_effective_aliases(conn)
 
-
     def list_aliases_for_platform(self, platform: str, conn=None) -> dict:
-        platform_name = self._normalize_platform(platform, allow_empty=True, allow_all=True)
+        platform_name = self.normalize_platform(platform, allow_empty=True, allow_all=True)
         if platform_name == 'all':
             return self.list_aliases_grouped()
         if not platform_name:
             return self.list_aliases(conn=conn)
         return dict(self.aliases.get(platform_name) or {})
 
-
     def list_aliases_grouped(self):
         return {
             platform_name: dict(self.aliases.get(platform_name) or {})
             for platform_name in self.SUPPORTED_PLATFORMS
         }
+
+    def get_alias_definition(self, alias: str, platform: str) -> str:
+        alias_name = str(alias or '').strip()
+        platform_name = self.normalize_platform(platform)
+        command = (self.aliases.get(platform_name) or {}).get(alias_name)
+        if not command:
+            raise KeyError(f"Alias '{alias_name}' not found in {platform_name}")
+        return command
 
     # ------------------ 参数解析 ------------------ #
     def _get_alias_template(self, alias, conn=None):
@@ -207,6 +247,17 @@ class AliasManager:
         """
         return re.findall(self.PLACEHOLDER_PATTERN, command)
 
+    def extract_parameters(self, command: str) -> list[dict]:
+        parameters = []
+        for index, placeholder in enumerate(self._extract_required_args(str(command or ''))):
+            raw_name = str(placeholder or '')[1:-1].strip()
+            parameters.append({
+                'name': raw_name or f'arg{index + 1}',
+                'placeholder': placeholder,
+                'position': index,
+            })
+        return parameters
+
     def _parse_provided_args(self, args=""):
         """
         解析用户实际传入的参数
@@ -218,7 +269,8 @@ class AliasManager:
         依次替换命令模板中的占位符
         """
         for arg in provided_args:
-            command = re.sub(self.PLACEHOLDER_PATTERN, arg, command, count=1)
+            replacement = str(arg)
+            command = re.sub(self.PLACEHOLDER_PATTERN, lambda _match, value=replacement: value, command, count=1)
         return command
 
     def _validate_alias_args(self, required_args: list, provided_args: list):
@@ -233,6 +285,23 @@ class AliasManager:
         if provided_args:
             raise ValueError('This alias does not accept arguments')
 
+    def resolve_alias_definition(self, alias: str, provided_args: list, platform: str) -> dict:
+        alias_name = str(alias or '').strip()
+        platform_name = self.normalize_platform(platform)
+        command = self.get_alias_definition(alias_name, platform_name)
+        required_args = self._extract_required_args(command)
+        normalized_args = [str(item) for item in (provided_args or [])]
+
+        self._validate_alias_args(required_args, normalized_args)
+        expanded_command = self._replace_placeholders(command, normalized_args)
+        return {
+            'alias': alias_name,
+            'command': expanded_command,
+            'template': command,
+            'platform': platform_name,
+            'parameters': self.extract_parameters(command),
+            'arguments': normalized_args,
+        }
 
     def resolve_alias(self, alias, args="", conn=None) -> dict:
         alias_name = str(alias or '').strip()

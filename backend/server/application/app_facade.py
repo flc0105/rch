@@ -32,6 +32,7 @@ class ServerWebService:
         self.server_cleanup_api = self.assembly.server_cleanup_api
         self.command_catalog_api = self.assembly.command_catalog_api
         self.command_execution_api = self.assembly.command_execution_api
+        self.quick_action_api = self.assembly.quick_action_api
         self.command_history_api = self.assembly.command_history_api
         self.external_tool_api = self.assembly.external_tool_api
         self.job_api = self.assembly.job_api

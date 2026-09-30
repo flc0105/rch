@@ -7,7 +7,7 @@ from server.application.completion.command_completion_providers import (
     HistoryCommandCompletionProvider,
     HttpctlCommandCompletionProvider,
     RemoteClientCommandCompletionProvider,
-AliasCommandCompletionProvider,
+    AliasCommandCompletionProvider,
 )
 
 
@@ -28,7 +28,7 @@ class ServerCommandCompletionService:
                 server=server,
                 command_history=server.command_history,
             ),
-            AliasCommandCompletionProvider(),
+            AliasCommandCompletionProvider(server.alias_manager),
             HttpctlCommandCompletionProvider(),
             ExecScriptCommandCompletionProvider(
                 server=server,

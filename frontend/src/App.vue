@@ -135,6 +135,7 @@
                   @open-clipboard="openClipboardDialog"
                   @open-processes="openProcessDialog"
                   @open-one-liners="openOneLinersDialog"
+                  @open-quick-actions="openQuickActionsDialog"
                   @open-settings="openSettingsDialog"
                   @clear="clearOutput"
                   @bottom="scrollToBottom"
@@ -354,6 +355,15 @@
     ref="oneLinersDialogRef"
   />
 
+  <QuickActionsDialog
+    ref="quickActionsDialogRef"
+    :selected-id="selectedId"
+    :current-connection="currentConnection"
+    :get-tab-scoped-headers="getTabScopedHeaders"
+    @append-output="appendOutput"
+    @set-active-task="setActiveTask"
+  />
+
   <DeviceGroupManagerDialog
     ref="deviceGroupManagerDialogRef"
     :groups="deviceGroups"
@@ -412,6 +422,7 @@ import PtyDialog from './components/PtyDialog.vue'
 import ScreenViewDialog from './components/ScreenViewDialog.vue'
 import ClipboardDialog from './components/ClipboardDialog.vue'
 import OneLinersDialog from './components/OneLinersDialog.vue'
+import QuickActionsDialog from './components/QuickActionsDialog.vue'
 import DeviceGroupManagerDialog from './components/DeviceGroupManagerDialog.vue'
 import SettingsDialog from './components/SettingsDialog.vue'
 import NotificationCenterDrawer from './components/NotificationCenterDrawer.vue'
@@ -428,6 +439,7 @@ export default {
     ClipboardDialog,
     ScreenViewDialog,
     OneLinersDialog,
+    QuickActionsDialog,
     ArrowDown,
     ArrowUp,
     Bell,
@@ -652,6 +664,18 @@ export default {
 
     openOneLinersDialog() {
       return this.$refs.oneLinersDialogRef?.open()
+    },
+
+    openQuickActionsDialog() {
+      return this.$refs.quickActionsDialogRef?.open()
+    },
+
+    handleQuickActionCommandResult(payload = {}) {
+      return this.$refs.quickActionsDialogRef?.handleCommandResult(payload) === true
+    },
+
+    handleQuickActionCommandComplete(payload = {}) {
+      return this.$refs.quickActionsDialogRef?.handleCommandComplete(payload) === true
     },
 
     openDeviceGroupManagerDialog() {

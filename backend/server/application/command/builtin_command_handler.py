@@ -42,7 +42,7 @@ class BuiltinCommandHandler:
         {
             'name': 'alias',
             'template': 'alias ',
-            'help': 'alias set|unset|list|resolve|reload [--platform win|mac|linux|common]',
+            'help': 'alias set|unset|list|resolve|reload [--platform supported-platform]',
             'source': 'server'
         },
         {

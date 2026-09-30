@@ -20,6 +20,7 @@ from server.web.routes.external_tools import create_external_tool_blueprint
 from server.web.routes.keychains import create_keychain_blueprint
 from server.web.routes.connections import create_connections_blueprint
 from server.web.routes.pinned_paths import create_pinned_path_blueprint
+from server.web.routes.quick_actions import create_quick_actions_blueprint
 from server.web.routes.remote_files import create_remote_files_blueprint
 from server.web.routes.scripts import create_script_blueprint
 from server.web.routes.stream_control import create_stream_control_blueprint
@@ -60,6 +61,7 @@ def create_app(server_instance):
     app.register_blueprint(create_background_job_blueprint(server_instance))
     app.register_blueprint(create_remote_files_blueprint(server_instance))
     app.register_blueprint(create_pinned_path_blueprint(server_instance))
+    app.register_blueprint(create_quick_actions_blueprint(server_instance))
     app.register_blueprint(create_system_inspection_blueprint(server_instance))
     app.register_blueprint(create_command_history_blueprint(server_instance))
     app.register_blueprint(create_external_tool_blueprint(server_instance))
