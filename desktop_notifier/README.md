@@ -49,15 +49,19 @@ Test local notification delivery before connecting to RCH:
 python run.py --config ./config.json --test-notification
 ```
 
-Then start the resident listener:
+Then start the resident listener. By default it runs headless, matching the original notifier behavior and creating no menu-bar icon:
 
 ```bash
 python run.py --config ./config.json
 ```
 
-On macOS this now creates a native menu-bar status item without requiring an `.app` bundle. The Python process stays attached to whichever shell/launcher started it, while AppKit runs as an accessory application so no normal Dock window is required.
+On macOS, add `--tray` when you want the native menu-bar UI:
 
-The menu contains:
+```bash
+python run.py --config ./config.json --tray
+```
+
+The Python process stays attached to whichever shell/launcher started it. With `--tray`, AppKit runs as an accessory application so no normal Dock window is required. The menu contains:
 
 ```text
 RCH Notifier
@@ -74,7 +78,7 @@ Quit
 
 When the SSE connection is down the status changes to `○ Disconnected`; during automatic backoff an additional line such as `Retrying in 8s...` is shown. `Reconnect` interrupts the current SSE response/backoff and reconnects immediately. `Test Notification` reuses the configured macOS notification backend.
 
-The process keeps a streaming HTTP connection open. It does **not** poll Notification Center. If the network connection is lost it reconnects with exponential backoff from 1 second up to the configured maximum.
+Both modes keep the same streaming HTTP connection open. They do **not** poll Notification Center. If the network connection is lost the notifier reconnects with exponential backoff from 1 second up to the configured maximum.
 
 ## macOS backend behavior
 
@@ -112,3 +116,4 @@ The client writes `state.json` beside the selected config file. Delete that file
 ## Windows
 
 The shared SSE/config/cursor code is cross-platform. The current Windows backend uses PowerShell and Windows Runtime Toast APIs as a first-pass implementation. It is intentionally not described as production-ready until tested on Windows.
+

@@ -71,6 +71,8 @@ _BANNER_PLACEHOLDERS = {
     'close',
     'options',
     'show',
+    'show details',
+    'hide details',
 }
 
 
@@ -144,6 +146,21 @@ def _row_banner_texts(row: dict) -> list[str]:
         if value and value not in result:
             result.append(value)
     return result
+
+
+def _is_wechat_banner_source(texts: list[str]) -> bool:
+    # Notification Center exposes app/source labels alongside message content.
+    # Match a standalone WeChat label, never a substring inside RCH's own
+    # notification text (for example "WeChat unread messages: 1").
+    normalized = {
+        _safe_text(value).casefold()
+        for value in texts
+        if _safe_text(value)
+    }
+    return (
+        any(hint in normalized for hint in _WECHAT_NAME_HINTS)
+        or any(bundle in normalized for bundle in _WECHAT_BUNDLE_HINTS)
+    )
 
 
 def _banner_preview(texts: list[str]) -> str:
@@ -274,8 +291,7 @@ class WechatMacosMessageEvent(Job):
                     if value and value not in seen_visible:
                         seen_visible.add(value)
                         visible_texts.append(value)
-            lowered = ' | '.join(detection_texts).casefold()
-            if not any(hint in lowered for hint in _WECHAT_NAME_HINTS):
+            if not _is_wechat_banner_source(detection_texts):
                 continue
             banners.append({
                 'texts': visible_texts[:24],

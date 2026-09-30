@@ -19,6 +19,7 @@ def _build_parser():
     parser.add_argument('--config', type=Path, default=None, help='Path to notifier config JSON')
     parser.add_argument('--init-config', action='store_true', help='Create a starter config and exit')
     parser.add_argument('--test-notification', action='store_true', help='Show a local test notification and exit')
+    parser.add_argument('--tray', action='store_true', help='Show the macOS menu bar UI; default is headless')
     parser.add_argument('--verbose', action='store_true', help='Enable debug logging')
     return parser
 
@@ -108,7 +109,10 @@ def main(argv=None):
     runtime = NotificationStreamRuntime(config=config, state=state, backend=backend)
     logger.info('RCH Desktop Notifier started; backend=%s', getattr(backend, 'active_mode', 'unknown'))
 
-    if platform.system().lower() == 'darwin':
+    if args.tray:
+        if platform.system().lower() != 'darwin':
+            logger.error('--tray is currently supported only on macOS')
+            return 1
         try:
             return _run_macos_menu(config, backend, runtime)
         except Exception as exc:
