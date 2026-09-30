@@ -77,7 +77,7 @@ class ProcessStartEvent(Job):
 
         try:
             previous = _process_snapshot(target)
-            last_emit_at = 0.0
+            last_launch_activity_at = 0.0
             self.send_to_server(1, f'Process watcher started: target={target!r} baseline={len(previous)}', 0)
 
             while not self.stop_event.wait(interval):
@@ -85,7 +85,9 @@ class ProcessStartEvent(Job):
                 new_items = [current[pid] for pid in sorted(set(current) - set(previous))]
                 if new_items:
                     now = time.monotonic()
-                    if now - last_emit_at >= dedupe_seconds:
+                    quiet_gap = now - last_launch_activity_at
+                    is_new_launch = last_launch_activity_at <= 0 or quiet_gap >= dedupe_seconds
+                    if is_new_launch:
                         primary = new_items[0]
                         display = primary.get('name') or os.path.basename(primary.get('exe') or '') or target
                         message = f'Process started: {display}'
@@ -95,7 +97,7 @@ class ProcessStartEvent(Job):
                                 data={'target': target, 'process': primary, 'processes': new_items},
                                 message=message,
                             )
-                            last_emit_at = now
+                            last_launch_activity_at = now
                             self.send_to_server(
                                 1,
                                 f'Device event emitted: {message} pid={primary.get("pid")} grouped={len(new_items)}',
@@ -104,7 +106,14 @@ class ProcessStartEvent(Job):
                         except Exception as exc:
                             self.send_to_server(0, f'Device event emit failed: {exc}', 0)
                     else:
-                        self.send_to_server(1, f'Process launch helper(s) suppressed: count={len(new_items)}', 0)
+                        self.send_to_server(
+                            1,
+                            f'Process launch helper(s) suppressed: count={len(new_items)} quiet_gap={quiet_gap:.2f}s',
+                            0,
+                        )
+                        # Every matching child/helper extends the launch burst. A new notification is
+                        # allowed only after the target has been quiet for dedupe_seconds.
+                        last_launch_activity_at = now
                 previous = current
         except Exception as exc:
             failed = True
