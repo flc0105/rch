@@ -6,6 +6,7 @@ from unittest.mock import Mock, patch
 
 from rch_notifier.backends.macos import MacOSNotificationBackend
 from rch_notifier.config import load_config
+from rch_notifier.menu_bar_macos import MacOSMenuBar, _server_display
 from rch_notifier.state import CursorState
 
 
@@ -31,6 +32,17 @@ class ConfigAndStateTests(unittest.TestCase):
             self.assertEqual('n42', CursorState(path).last_event_id)
             state.clear()
             self.assertEqual('', CursorState(path).last_event_id)
+
+
+class MenuBarHelpersTests(unittest.TestCase):
+    def test_server_display_uses_host_without_scheme_or_port(self):
+        self.assertEqual('192.168.1.20', _server_display('http://192.168.1.20:8085'))
+
+    def test_connection_status_is_retained_before_appkit_starts(self):
+        menu = MacOSMenuBar(server_url='http://server:8085', backend=Mock(), runtime=Mock())
+        menu.update_connection(True, None)
+        self.assertEqual((True, None), menu._pending_connection)
+
 
 
 class MacBackendTests(unittest.TestCase):

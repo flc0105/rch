@@ -1,16 +1,13 @@
 import argparse
 import logging
+import platform
 import signal
-import sys
 import threading
-import time
 from pathlib import Path
-
-import requests
 
 from .backends import create_notification_backend
 from .config import default_config_path, default_state_path, load_config, write_example_config
-from .sse import NotificationSseClient, SseAuthenticationError
+from .runtime import NotificationStreamRuntime
 from .state import CursorState
 
 
@@ -33,53 +30,41 @@ def _configure_logging(verbose: bool):
     )
 
 
-def _run_stream(config, state, backend, stop_event):
-    client = NotificationSseClient(url=config.stream_url, token=config.token)
-    delay = config.reconnect_initial_seconds
+def _run_headless(runtime: NotificationStreamRuntime) -> int:
+    def stop_handler(_signum, _frame):
+        runtime.stop()
 
-    while not stop_event.is_set():
-        cursor = state.last_event_id
-        logger.info('Connecting to %s%s', config.stream_url, f' after {cursor}' if cursor else '')
-        try:
-            for event in client.events(cursor):
-                if stop_event.is_set():
-                    return 0
-                if event.event == 'ping':
-                    continue
-                if event.event == 'reset':
-                    logger.warning('Server no longer has the local SSE cursor; continuing from live events')
-                    state.clear()
-                    continue
-                if event.event != 'notification':
-                    continue
+    signal.signal(signal.SIGINT, stop_handler)
+    signal.signal(signal.SIGTERM, stop_handler)
+    return runtime.run()
 
-                notification = event.json()
-                notification_id = str(notification.get('id') or event.event_id or '').strip()
-                if not notification_id:
-                    logger.warning('Ignoring notification without an id')
-                    continue
 
-                backend.notify(notification)
-                state.update(notification_id)
-                logger.info('Notification delivered: %s', notification.get('title') or notification_id)
-                delay = config.reconnect_initial_seconds
+def _run_macos_menu(config, backend, runtime: NotificationStreamRuntime) -> int:
+    from .menu_bar_macos import MacOSMenuBar
 
-            if stop_event.is_set():
-                return 0
-            raise RuntimeError('SSE stream ended')
-        except SseAuthenticationError:
-            logger.error('Authentication failed. Check the notifier token in the config.')
-            return 2
-        except requests.RequestException as exc:
-            logger.warning('SSE connection error: %s', exc)
-        except Exception as exc:
-            logger.warning('Notifier stream/delivery error: %s', exc, exc_info=logger.isEnabledFor(logging.DEBUG))
+    menu = MacOSMenuBar(server_url=config.server_url, backend=backend, runtime=runtime)
+    runtime.set_status_callback(menu.update_connection)
 
-        if stop_event.wait(delay):
-            return 0
-        delay = min(config.reconnect_max_seconds, max(config.reconnect_initial_seconds, delay * 2))
+    worker = threading.Thread(
+        target=runtime.run,
+        name='rch-notifier-sse',
+        daemon=True,
+    )
 
-    return 0
+    def stop_handler(_signum, _frame):
+        menu.request_quit()
+
+    signal.signal(signal.SIGINT, stop_handler)
+    signal.signal(signal.SIGTERM, stop_handler)
+
+    worker.start()
+    try:
+        menu.run()
+    finally:
+        runtime.stop()
+        worker.join(timeout=5)
+
+    return runtime.exit_code
 
 
 def main(argv=None):
@@ -120,13 +105,14 @@ def main(argv=None):
         return 0
 
     state = CursorState(default_state_path(config_path))
-    stop_event = threading.Event()
-
-    def stop_handler(_signum, _frame):
-        stop_event.set()
-
-    signal.signal(signal.SIGINT, stop_handler)
-    signal.signal(signal.SIGTERM, stop_handler)
-
+    runtime = NotificationStreamRuntime(config=config, state=state, backend=backend)
     logger.info('RCH Desktop Notifier started; backend=%s', getattr(backend, 'active_mode', 'unknown'))
-    return _run_stream(config, state, backend, stop_event)
+
+    if platform.system().lower() == 'darwin':
+        try:
+            return _run_macos_menu(config, backend, runtime)
+        except Exception as exc:
+            logger.error('macOS menu bar failed to start: %s', exc, exc_info=args.verbose)
+            return 1
+
+    return _run_headless(runtime)

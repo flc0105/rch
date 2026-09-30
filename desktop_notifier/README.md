@@ -55,6 +55,25 @@ Then start the resident listener:
 python run.py --config ./config.json
 ```
 
+On macOS this now creates a native menu-bar status item without requiring an `.app` bundle. The Python process stays attached to whichever shell/launcher started it, while AppKit runs as an accessory application so no normal Dock window is required.
+
+The menu contains:
+
+```text
+RCH Notifier
+─────────────
+● Connected
+Server: 192.168.1.20
+
+Open RCH
+Test Notification
+Reconnect
+
+Quit
+```
+
+When the SSE connection is down the status changes to `○ Disconnected`; during automatic backoff an additional line such as `Retrying in 8s...` is shown. `Reconnect` interrupts the current SSE response/backoff and reconnects immediately. `Test Notification` reuses the configured macOS notification backend.
+
 The process keeps a streaming HTTP connection open. It does **not** poll Notification Center. If the network connection is lost it reconnects with exponential backoff from 1 second up to the configured maximum.
 
 ## macOS backend behavior

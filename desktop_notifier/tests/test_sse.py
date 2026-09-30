@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import Mock
 
 from rch_notifier.sse import NotificationSseClient, parse_sse_lines
 
@@ -41,6 +42,9 @@ class _FakeResponse:
     def raise_for_status(self):
         return None
 
+    def close(self):
+        return None
+
     def iter_lines(self, **_kwargs):
         return iter(['id: next', 'event: notification', 'data: {"id":"next"}', ''])
 
@@ -55,13 +59,27 @@ class _FakeSession:
 
 
 class NotificationSseClientTests(unittest.TestCase):
+    def test_close_active_response_shuts_down_underlying_socket(self):
+        sock = Mock()
+        response = Mock()
+        response.raw._connection.sock = sock
+        client = NotificationSseClient(url='http://server/api/notifications/stream', token='secret', session=_FakeSession())
+        client._set_active_response(response)
+
+        client.close_active_response()
+
+        self.assertTrue(sock.shutdown.called)
+        sock.close.assert_called_once_with()
+
     def test_last_event_id_and_bearer_token_are_sent(self):
         session = _FakeSession()
+        opened = []
         client = NotificationSseClient(url='http://server/api/notifications/stream', token='secret', session=session)
-        events = list(client.events('cursor-1'))
+        events = list(client.events('cursor-1', on_open=lambda: opened.append(True)))
         self.assertEqual('Bearer secret', session.last_headers['Authorization'])
         self.assertEqual('cursor-1', session.last_headers['Last-Event-ID'])
         self.assertEqual('next', events[0].event_id)
+        self.assertEqual([True], opened)
 
 
 if __name__ == '__main__':

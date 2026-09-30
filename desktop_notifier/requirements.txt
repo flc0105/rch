@@ -1,2 +1,3 @@
 requests~=2.32.4
 pyobjc-framework-UserNotifications; sys_platform == "darwin"
+pyobjc-framework-Cocoa; sys_platform == "darwin"
