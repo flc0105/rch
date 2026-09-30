@@ -95,18 +95,38 @@ def create_background_job_blueprint(server_instance):
             default_error_status=500,
         )
 
+    @blueprint.get('/api/connections/<client_id>/background-jobs/<job_id>')
+    def get_background_job(client_id, job_id):
+        return responder.json_endpoint(
+            lambda: job_api.get_background_job(client_id, job_id),
+            default_error_status=500,
+        )
+
+    @blueprint.delete('/api/connections/<client_id>/background-jobs/<job_id>')
+    def delete_background_job_record(client_id, job_id):
+        return responder.json_endpoint(
+            lambda: job_api.delete_background_job_record(client_id, job_id),
+            default_error_status=500,
+        )
+
     @blueprint.post('/api/connections/<client_id>/background-jobs/start')
     def start_background_job(client_id):
         def _execute():
             payload = get_json_payload()
             job_name = (payload.get('job_name') or '').strip()
             params = payload.get('params') or {}
+            execution_mode = str(payload.get('execution_mode') or 'inproc').strip() or 'inproc'
             if not job_name:
                 raise ValueError('job_name is required')
             if params is not None and not isinstance(params, dict):
                 raise ValueError('params must be an object')
 
-            return job_api.start_background_job(client_id, job_name, params=params)
+            return job_api.start_background_job(
+                client_id,
+                job_name,
+                params=params,
+                execution_mode=execution_mode,
+            )
 
         return responder.json_endpoint(_execute, default_error_status=500)
 

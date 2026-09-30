@@ -39,6 +39,12 @@ class WebJobApi:
     def list_background_jobs(self, client_id: str):
         return self.background_job_service.list_jobs(client_id)
 
+    def get_background_job(self, client_id: str, job_id: str):
+        return self.background_job_service.get_job(client_id, job_id)
+
+    def delete_background_job_record(self, client_id: str, job_id: str):
+        return self.background_job_service.delete_job_record(client_id, job_id)
+
     def list_available_background_jobs(self, client_id: str):
         return self.background_job_service.list_available_jobs(client_id)
 
@@ -85,7 +91,7 @@ class WebJobApi:
             text = text[:-3]
         return os.path.basename(text)
 
-    def start_background_job(self, client_id: str, job_name: str, params=None):
+    def start_background_job(self, client_id: str, job_name: str, params=None, execution_mode: str = 'inproc'):
         normalized_job_name = (job_name or '').strip()
         if not normalized_job_name:
             raise ValueError('job_name is required')
@@ -94,8 +100,14 @@ class WebJobApi:
             job_key = self._normalize_job_key(normalized_job_name)
             raise ValueError(f'Job is already running: {job_key}')
 
-        result = self.background_job_service.start_job(client_id, normalized_job_name, params=params)
+        result = self.background_job_service.start_job(
+            client_id,
+            normalized_job_name,
+            params=params,
+            execution_mode=execution_mode,
+        )
         if isinstance(result, dict):
             result['job_name'] = normalized_job_name
             result['params'] = dict(params or {}) if isinstance(params, dict) else {}
+            result['execution_mode'] = str(result.get('execution_mode') or execution_mode or 'inproc')
         return result

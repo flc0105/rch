@@ -155,7 +155,7 @@ class ServerApplicationAssembly:
             transfer_service=self.transfer_service,
         )
 
-        self.background_job_store = BackgroundJobStore()
+        self.background_job_store = BackgroundJobStore(self.server.database)
         self.job_catalog_service = JobCatalogService(SCRIPT_JOBS_PATH)
         self.script_catalog_service = ScriptCatalogService(SCRIPT_PATH)
         self.external_tool_catalog_service = ExternalToolCatalogService(
@@ -169,6 +169,7 @@ class ServerApplicationAssembly:
             job_store=self.background_job_store,
             remote_execution_service=self.remote_execution_service,
             job_catalog_service=self.job_catalog_service,
+            server=self.server,
         )
 
         self.pinned_path_store = PinnedPathStore(self.server.database)

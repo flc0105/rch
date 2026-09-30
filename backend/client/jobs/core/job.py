@@ -29,8 +29,18 @@ class Job(ABC):
         self.hostname = ''
         self.job_metadata = {}
         self.job_params = {}
+        self.execution_mode = 'inproc'
 
-    def bind_context(self, server, command_id, client_id=None, job_key='', job_metadata=None, job_params=None):
+    def bind_context(
+        self,
+        server,
+        command_id,
+        client_id=None,
+        job_key='',
+        job_metadata=None,
+        job_params=None,
+        execution_mode='inproc',
+    ):
         """
         绑定运行上下文
         """
@@ -41,6 +51,7 @@ class Job(ABC):
         self.hostname = ''
         self.job_metadata = dict(job_metadata or {})
         self.job_params = dict(job_params or {})
+        self.execution_mode = str(execution_mode or 'inproc').strip() or 'inproc'
         try:
             self.hostname = (getattr(server, 'info', {}) or {}).get('hostname', '') or ''
         except Exception:
@@ -63,6 +74,10 @@ class Job(ABC):
         return f'{display_base}#{self.job_id[:8]}'
 
     def _build_report_payload(self, event_type: str, **extra) -> dict:
+        worker_name = threading.current_thread().name
+        if self.execution_mode == 'subprocess':
+            worker_name = f'Process-{os.getpid()}:{worker_name}'
+
         payload = {
             'event_type': event_type,
             'client_id': self.client_id or '',
@@ -71,7 +86,9 @@ class Job(ABC):
             'job_name': self.job_name,
             'job_key': self.job_key,
             'display_name': self._build_display_name(),
-            'thread_name': threading.current_thread().name,
+            'thread_name': worker_name,
+            'execution_mode': self.execution_mode,
+            'params': dict(self.job_params or {}),
         }
         payload.update(extra)
         return payload

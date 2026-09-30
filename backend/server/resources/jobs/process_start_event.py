@@ -36,6 +36,7 @@ JOB_METADATA = {
             'description': 'Group helper processes spawned during one application launch.',
         },
     ],
+    "execution_mode": "subprocess"
 }
 
 

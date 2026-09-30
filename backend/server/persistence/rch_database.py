@@ -8,7 +8,7 @@ from datetime import datetime
 class RchDatabase:
     """Shared SQLite persistence for Server-managed structured runtime data."""
 
-    SCHEMA_VERSION = 1
+    SCHEMA_VERSION = 2
 
     def __init__(self, db_path: str):
         self.db_path = os.path.abspath(db_path)
@@ -95,6 +95,13 @@ class RchDatabase:
                     conn.execute(
                         'INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)',
                         (1, datetime.now().isoformat()),
+                    )
+                    current_version = 1
+                if current_version < 2:
+                    self._apply_schema_v2(conn)
+                    conn.execute(
+                        'INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)',
+                        (2, datetime.now().isoformat()),
                     )
                 conn.commit()
             except Exception:
@@ -260,6 +267,64 @@ class RchDatabase:
             )
             ''',
             'CREATE INDEX idx_external_tool_presets_tool_name ON external_tool_presets(tool_id, name COLLATE NOCASE)',
+        ]
+        for statement in statements:
+            conn.execute(statement)
+
+    @staticmethod
+    def _apply_schema_v2(conn: sqlite3.Connection):
+        statements = [
+            '''
+            CREATE TABLE background_jobs (
+                job_id TEXT PRIMARY KEY,
+                machine_id TEXT NOT NULL DEFAULT '',
+                client_id TEXT NOT NULL DEFAULT '',
+                hostname TEXT NOT NULL DEFAULT '',
+                job_name TEXT NOT NULL DEFAULT '',
+                job_key TEXT NOT NULL DEFAULT '',
+                display_name TEXT NOT NULL DEFAULT '',
+                thread_name TEXT NOT NULL DEFAULT '',
+                command_id INTEGER,
+                execution_mode TEXT NOT NULL DEFAULT 'inproc',
+                state TEXT NOT NULL DEFAULT 'unknown',
+                created_at TEXT NOT NULL DEFAULT '',
+                started_at TEXT NOT NULL DEFAULT '',
+                stopped_at TEXT NOT NULL DEFAULT '',
+                updated_at TEXT NOT NULL DEFAULT '',
+                last_message TEXT NOT NULL DEFAULT '',
+                message_count INTEGER NOT NULL DEFAULT 0,
+                file_count INTEGER NOT NULL DEFAULT 0,
+                params_json TEXT NOT NULL DEFAULT '{}'
+            )
+            ''',
+            'CREATE INDEX idx_background_jobs_machine_updated ON background_jobs(machine_id, updated_at DESC, job_id DESC)',
+            'CREATE INDEX idx_background_jobs_machine_state ON background_jobs(machine_id, state, updated_at DESC)',
+            'CREATE INDEX idx_background_jobs_client_updated ON background_jobs(client_id, updated_at DESC, job_id DESC)',
+            '''
+            CREATE TABLE background_job_messages (
+                message_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                job_id TEXT NOT NULL,
+                status INTEGER NOT NULL DEFAULT 1,
+                text TEXT NOT NULL DEFAULT '',
+                eof INTEGER NOT NULL DEFAULT 0,
+                event_time TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT '',
+                FOREIGN KEY(job_id) REFERENCES background_jobs(job_id) ON DELETE CASCADE
+            )
+            ''',
+            'CREATE INDEX idx_background_job_messages_job_id ON background_job_messages(job_id, message_id ASC)',
+            '''
+            CREATE TABLE background_job_files (
+                association_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                job_id TEXT NOT NULL,
+                artifact_id TEXT NOT NULL,
+                event_time TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT '',
+                FOREIGN KEY(job_id) REFERENCES background_jobs(job_id) ON DELETE CASCADE,
+                UNIQUE(job_id, artifact_id)
+            )
+            ''',
+            'CREATE INDEX idx_background_job_files_job_id ON background_job_files(job_id, association_id ASC)',
         ]
         for statement in statements:
             conn.execute(statement)

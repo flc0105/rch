@@ -1,10 +1,9 @@
 class BackgroundJobViewService:
     """
-    后台任务视图服务。
+    Background job presentation layer.
 
-    职责：
-    - 解析 job file 引用的 artifact 展示状态
-    - 构造对外展示用 job 视图
+    Summary list queries stay lightweight. Artifact resolution and message/file
+    expansion happen only when a single job detail is requested.
     """
 
     def __init__(self, store):
@@ -21,6 +20,7 @@ class BackgroundJobViewService:
                     'artifact_type': artifact.get('artifact_type', copied.get('artifact_type', '')),
                     'category': artifact.get('category', copied.get('category', '')),
                     'hostname': artifact.get('hostname', copied.get('hostname', '')),
+                    'machine_id': artifact.get('machine_id', copied.get('machine_id', '')),
                     'client_id': artifact.get('client_id', copied.get('client_id', '')),
                     'original_name': artifact.get('original_name', copied.get('original_name', '')),
                     'stored_name': artifact.get('stored_name', copied.get('stored_name', '')),
@@ -29,7 +29,6 @@ class BackgroundJobViewService:
                     'download_url': artifact.get('download_url', copied.get('download_url', '')),
                     'raw_url': artifact.get('raw_url', copied.get('raw_url', '')),
                     'preview_url': artifact.get('preview_url', copied.get('preview_url', '')),
-                    # 'source_type': artifact.get('source_type', copied.get('source_type', '')),
                     'is_available': artifact.get('is_available', True),
                     'status_text': artifact.get('status_text', ''),
                 })
@@ -39,19 +38,20 @@ class BackgroundJobViewService:
                 copied['status_text'] = copied.get('status_text') or 'Artifact removed'
                 return copied
 
-        copied['is_available'] = bool(copied.get('download_url'))
-        copied['status_text'] = '' if copied['is_available'] else 'File removed'
+        copied['is_available'] = False
+        copied['status_text'] = copied.get('status_text') or 'Artifact removed'
         return copied
 
-    def get_jobs_for_client(self, client_id: str) -> list[dict]:
-        items = self.store.list_raw_jobs_for_client(client_id)
+    def get_jobs_for_scope(self, machine_id: str = '', client_id: str = '') -> list[dict]:
+        # Summary rows intentionally do not expand messages/files.
+        return self.store.list_raw_jobs(machine_id=machine_id, client_id=client_id)
 
-        for item in items:
-            files = [self._resolve_job_file_view(file_item) for file_item in item.get('files') or []]
-            item['files'] = files
-            item['file_count'] = len(files)
+    def get_job_for_scope(self, job_id: str, machine_id: str = '', client_id: str = '') -> dict | None:
+        item = self.store.get_raw_job(job_id, machine_id=machine_id, client_id=client_id)
+        if item is None:
+            return None
 
-        items.sort(key=lambda item: item.get('updated_at', ''), reverse=True)
-        return items
-
-
+        files = [self._resolve_job_file_view(file_item) for file_item in item.get('files') or []]
+        item['files'] = files
+        item['file_count'] = len(files)
+        return item

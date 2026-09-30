@@ -204,7 +204,7 @@
                 v-if="!sortedBackgroundJobs.length && !backgroundJobsLoading"
                 class="empty-state"
               >
-                No background jobs reported for this connection
+                No background jobs reported for this device
               </div>
 
               <div
@@ -266,10 +266,20 @@
                       size="small"
                       type="danger"
                       plain
-                      :disabled="!job.job_key || job.state === 'stopped'"
+                      :disabled="!job.job_key || !isBackgroundJobActive(job)"
                       @click="stopBackgroundJob(job)"
                     >
                       Stop
+                    </el-button>
+
+                    <el-button
+                      size="small"
+                      type="danger"
+                      plain
+                      :disabled="isBackgroundJobActive(job)"
+                      @click="deleteBackgroundJob(job)"
+                    >
+                      Delete
                     </el-button>
                   </div>
                 </div>
@@ -288,11 +298,13 @@
     :params="pendingStartJobModule?.metadata?.params || []"
     :param-form="backgroundJobParamForm || {}"
     :submitting="backgroundJobStartSubmitting"
+    :execution-mode="backgroundJobExecutionMode"
     :selected-id="selectedId"
     :get-tab-scoped-headers="getTabScopedHeaders"
     :is-job-supported-for-current-connection="isJobSupportedForCurrentConnection"
     :format-job-platform-label="formatJobPlatformLabel"
     @update-param="updateBackgroundJobParam"
+    @update-execution-mode="updateBackgroundJobExecutionMode"
     @append-output="forwardAppendOutput"
     @set-active-task="forwardSetActiveTask"
     @upload-started="$emit('upload-started', $event)"
@@ -303,6 +315,7 @@
   <BackgroundJobDetailDialog
     v-model:visible="backgroundJobDetailDialogVisible"
     :item="selectedBackgroundJob"
+    :loading="backgroundJobDetailLoading"
     :current-connection="currentConnection"
     :messages="selectedBackgroundJobMessagesDesc || []"
     :files="selectedBackgroundJob?.files || []"
@@ -312,6 +325,7 @@
     :format-background-job-message-text="formatBackgroundJobMessageText"
     :format-bytes="formatBytes"
     @stop-job="stopBackgroundJob"
+    @delete-job="deleteBackgroundJob"
     @open-message="openBackgroundJobMessageDialog"
     @preview-file="$emit('preview-file', $event)"
   />
@@ -385,7 +399,9 @@ export default {
       backgroundJobs: [],
       backgroundJobsRefreshTimer: null,
       backgroundJobDetailDialogVisible: false,
+      backgroundJobDetailLoading: false,
       selectedBackgroundJobId: '',
+      selectedBackgroundJobDetail: null,
       activeTab: 'modules',
       backgroundJobMessageDialogVisible: false,
       selectedBackgroundJobMessage: {},
@@ -394,6 +410,7 @@ export default {
       backgroundJobStartSubmitting: false,
       pendingStartJobModule: null,
       backgroundJobParamForm: {},
+      backgroundJobExecutionMode: 'inproc',
       backgroundJobPlatformFilter: '',
       backgroundJobModuleSearchText: '',
     }
@@ -411,8 +428,13 @@ export default {
     // },
 
     selectedBackgroundJob() {
-  return this.backgroundJobs.find(item => item.job_id === this.selectedBackgroundJobId) || null
-},
+      const summary = this.backgroundJobs.find(item => item.job_id === this.selectedBackgroundJobId) || null
+      const detail = this.selectedBackgroundJobDetail
+      if (detail && detail.job_id === this.selectedBackgroundJobId) {
+        return summary ? { ...summary, ...detail } : detail
+      }
+      return summary
+    },
 
     sortedBackgroundJobs() {
       return [...this.backgroundJobs].sort((a, b) => {
@@ -545,6 +567,8 @@ export default {
     backgroundJobDetailDialogVisible(value) {
       if (!value) {
         this.selectedBackgroundJobId = ''
+        this.selectedBackgroundJobDetail = null
+        this.backgroundJobDetailLoading = false
       }
     },
 
@@ -677,6 +701,7 @@ export default {
           description: '',
           platforms: [],
           params: [],
+          execution_mode: 'inproc',
         }
       }
 
@@ -699,6 +724,9 @@ export default {
         display_name: String(metadata.display_name || '').trim(),
         description: String(metadata.description || '').trim(),
         platforms: this.normalizeJobPlatforms(metadata.platforms),
+        execution_mode: String(metadata.execution_mode || '').trim().toLowerCase() === 'subprocess'
+          ? 'subprocess'
+          : 'inproc',
         params: Array.isArray(metadata.params)
           ? metadata.params.map(item => normalizeParam(item)).filter(Boolean)
           : [],
@@ -922,13 +950,10 @@ export default {
         return
       }
 
-      if (!this.hasBackgroundJobParams(item)) {
-        this.startBackgroundJob(item.job_name)
-        return
-      }
-
+      const metadata = this.normalizeJobMetadata(item?.metadata || {})
       this.pendingStartJobModule = item
       this.backgroundJobParamForm = this.buildBackgroundJobParamDefaults(item)
+      this.backgroundJobExecutionMode = metadata.execution_mode || 'inproc'
       this.backgroundJobStartDialogVisible = true
     },
 
@@ -937,6 +962,7 @@ export default {
       this.backgroundJobStartSubmitting = false
       this.pendingStartJobModule = null
       this.backgroundJobParamForm = {}
+      this.backgroundJobExecutionMode = 'inproc'
     },
 
     updateBackgroundJobParam(name, value) {
@@ -946,6 +972,12 @@ export default {
         ...this.backgroundJobParamForm,
         [name]: value,
       }
+    },
+
+    updateBackgroundJobExecutionMode(value) {
+      this.backgroundJobExecutionMode = String(value || '').trim().toLowerCase() === 'subprocess'
+        ? 'subprocess'
+        : 'inproc'
     },
 
     coerceBackgroundJobParamValue(param, rawValue) {
@@ -1047,7 +1079,7 @@ export default {
       return headers
     },
 
-    async submitBackgroundJobStart(jobName, params = {}) {
+    async submitBackgroundJobStart(jobName, params = {}, executionMode = 'inproc') {
       const normalized = String(jobName || '').trim()
       if (!normalized) {
         ElMessage.warning('Invalid job name')
@@ -1057,7 +1089,11 @@ export default {
       const res = await fetch(`/api/connections/${encodeURIComponent(this.selectedId)}/background-jobs/start`, {
         method: 'POST',
         headers: this.buildJsonHeaders(),
-        body: JSON.stringify({ job_name: normalized, params }),
+        body: JSON.stringify({
+          job_name: normalized,
+          params,
+          execution_mode: String(executionMode || '').trim().toLowerCase() === 'subprocess' ? 'subprocess' : 'inproc',
+        }),
       })
 
       const json = await res.json()
@@ -1080,7 +1116,7 @@ export default {
       try {
         this.backgroundJobStartSubmitting = true
         const params = this.buildBackgroundJobStartParams(item)
-        await this.submitBackgroundJobStart(item.job_name, params)
+        await this.submitBackgroundJobStart(item.job_name, params, this.backgroundJobExecutionMode)
         ElMessage.success(`Start request submitted: ${item.display_name || item.job_name}`)
         this.activeTab = 'jobs'
         this.closeBackgroundJobStartDialog()
@@ -1138,6 +1174,8 @@ export default {
           if (!exists) {
             this.backgroundJobDetailDialogVisible = false
             this.selectedBackgroundJobId = ''
+          } else if (this.backgroundJobDetailDialogVisible) {
+            await this.loadBackgroundJobDetail(this.selectedBackgroundJobId, { silent: true })
           }
         }
       } catch (e) {
@@ -1145,6 +1183,37 @@ export default {
         ElMessage.error(e.message || 'Failed to load background jobs')
       } finally {
         this.backgroundJobsLoading = false
+      }
+    },
+
+    async loadBackgroundJobDetail(jobId, { silent = false } = {}) {
+      const normalizedJobId = String(jobId || '').trim()
+      if (!this.selectedId || !normalizedJobId) return
+
+      if (!silent) {
+        this.backgroundJobDetailLoading = true
+      }
+
+      try {
+        const res = await fetch(
+          `/api/connections/${encodeURIComponent(this.selectedId)}/background-jobs/${encodeURIComponent(normalizedJobId)}`
+        )
+        const json = await res.json()
+        if (!res.ok || json.code !== 0) {
+          throw new Error(json.message || 'Failed to load background job detail')
+        }
+
+        if (this.selectedBackgroundJobId === normalizedJobId) {
+          this.selectedBackgroundJobDetail = json.data || null
+        }
+      } catch (e) {
+        if (!silent) {
+          ElMessage.error(e.message || 'Failed to load background job detail')
+        }
+      } finally {
+        if (!silent) {
+          this.backgroundJobDetailLoading = false
+        }
       }
     },
 
@@ -1159,7 +1228,7 @@ export default {
       }, 200)
     },
 
-    async startBackgroundJob(jobName, params = {}) {
+    async startBackgroundJob(jobName, params = {}, executionMode = 'inproc') {
       if (!this.selectedId) {
         ElMessage.warning('Please select a device')
         return
@@ -1172,7 +1241,7 @@ export default {
       }
 
       try {
-        await this.submitBackgroundJobStart(normalized, params)
+        await this.submitBackgroundJobStart(normalized, params, executionMode)
         ElMessage.success(`Start request submitted: ${normalized}`)
         this.activeTab = 'jobs'
         setTimeout(() => this.loadBackgroundJobs(), 500)
@@ -1218,10 +1287,61 @@ export default {
       }
     },
 
-    openBackgroundJobDetail(job) {
+    async openBackgroundJobDetail(job) {
       if (!job || !job.job_id) return
       this.selectedBackgroundJobId = job.job_id
+      this.selectedBackgroundJobDetail = { ...job, messages: [], files: [] }
       this.backgroundJobDetailDialogVisible = true
+      await this.loadBackgroundJobDetail(job.job_id)
+    },
+
+    isBackgroundJobActive(job) {
+      const state = String(job?.state || '').trim().toLowerCase()
+      return state === 'running' || state === 'stopping'
+    },
+
+    async deleteBackgroundJob(job) {
+      const jobId = String(job?.job_id || '').trim()
+      if (!this.selectedId || !jobId) {
+        ElMessage.warning('Invalid background job')
+        return
+      }
+      if (this.isBackgroundJobActive(job)) {
+        ElMessage.warning('Stop the background job before deleting its record')
+        return
+      }
+
+      try {
+        await ElMessageBox.confirm(
+          `Delete record "${job.display_name || job.job_name || job.job_key || jobId}"?`,
+          'Delete Background Job Record',
+          {
+            type: 'warning',
+            confirmButtonText: 'Delete',
+            cancelButtonText: 'Cancel',
+          }
+        )
+
+        const res = await fetch(
+          `/api/connections/${encodeURIComponent(this.selectedId)}/background-jobs/${encodeURIComponent(jobId)}`,
+          { method: 'DELETE' }
+        )
+        const json = await res.json()
+        if (!res.ok || json.code !== 0) {
+          throw new Error(json.message || 'Failed to delete background job record')
+        }
+
+        if (this.selectedBackgroundJobId === jobId) {
+          this.backgroundJobDetailDialogVisible = false
+          this.selectedBackgroundJobId = ''
+          this.selectedBackgroundJobDetail = null
+        }
+        await this.loadBackgroundJobs()
+        ElMessage.success('Background job record deleted')
+      } catch (e) {
+        if (e === 'cancel' || e === 'close' || e?.toString?.().includes('cancel')) return
+        ElMessage.error(e.message || 'Failed to delete background job record')
+      }
     },
 
     openBackgroundJobMessageDialog(message) {

@@ -22,22 +22,26 @@ class CommandJobMixin:
             return {
                 'job_name': job_name,
                 'job_params': job_params,
+                'execution_mode': str(payload.get('execution_mode') or '').strip(),
                 'raw_payload': payload,
             }
 
         return {
             'job_name': self._normalize_job_name(payload),
             'job_params': {},
+            'execution_mode': '',
             'raw_payload': None,
         }
 
     def _format_runtime_start_message(self, runtime, title: str) -> str:
         display_name = getattr(runtime, 'display_name', '') or title
-        thread_name = getattr(getattr(runtime, 'thread', None), 'name', '') or 'unknown'
         job_key = getattr(runtime, 'job_key', '') or display_name
+        execution_mode = getattr(runtime, 'execution_mode', 'inproc') or 'inproc'
+        worker_name = getattr(runtime, 'worker_name', '') or 'unknown'
         return (
             f'{title}: {display_name}\n'
-            f'Thread: {thread_name}\n'
+            f'Mode: {execution_mode}\n'
+            f'Worker: {worker_name}\n'
             f'Use "stop_job {job_key}" to request stop'
         )
 
@@ -54,14 +58,20 @@ class CommandJobMixin:
                 result.append(normalized_name)
         return result
 
-    def _start_remote_job_by_name(self, job_name: str, job_manager, job_params=None):
+    def _start_remote_job_by_name(self, job_name: str, job_manager, job_params=None, execution_mode=''):
         normalized = self._normalize_job_name(job_name)
         if not normalized:
             raise ValueError('job name is required')
 
         self._send_interim_result(1, f'Fetching job: {normalized}')
         script_content = self._fetch_remote_job(normalized)
-        return self._start_from_script_content(script_content, normalized, job_manager, job_params=job_params)
+        return self._start_from_script_content(
+            script_content,
+            normalized,
+            job_manager,
+            job_params=job_params,
+            execution_mode=execution_mode,
+        )
 
     def _attach_remote_runtime_metadata(self, runtime, temp_path: str, job_name: str):
         normalized_job_name = self._normalize_job_name(job_name)
@@ -91,13 +101,19 @@ class CommandJobMixin:
 
         normalized = request_info['job_name']
         job_params = request_info['job_params']
+        execution_mode = request_info['execution_mode']
 
         if not normalized:
             return 0, 'Usage: start_job <job_name>'
 
         self._send_interim_result(1, f'Preparing background job: {normalized}')
         try:
-            runtime = self._start_remote_job_by_name(normalized, job_manager, job_params=job_params)
+            runtime = self._start_remote_job_by_name(
+                normalized,
+                job_manager,
+                job_params=job_params,
+                execution_mode=execution_mode,
+            )
             self._send_final_result(1, self._format_runtime_start_message(runtime, 'Background job started'))
             return None
         except Exception as e:
@@ -181,7 +197,14 @@ class CommandJobMixin:
         except Exception as e:
             return 0, f'Failed to stop background jobs: {e}'
 
-    def _start_from_script_content(self, script_content: str, script_name: str, job_manager, job_params=None):
+    def _start_from_script_content(
+        self,
+        script_content: str,
+        script_name: str,
+        job_manager,
+        job_params=None,
+        execution_mode='',
+    ):
         """
         从脚本内容启动任务。
         """
@@ -206,6 +229,7 @@ class CommandJobMixin:
                 self.command_id,
                 job_params=job_params,
                 cleanup_path=temp_dir,
+                execution_mode=execution_mode,
             )
             self._attach_remote_runtime_metadata(runtime, temp_path, normalized_job_name)
             return runtime

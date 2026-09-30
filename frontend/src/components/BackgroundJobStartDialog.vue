@@ -25,6 +25,24 @@
       </div>
 
       <el-form label-position="top">
+        <el-form-item label="Execution mode">
+          <el-radio-group
+            :model-value="executionMode"
+            @update:model-value="$emit('update-execution-mode', $event)"
+          >
+            <el-radio value="inproc">
+              In-process (Thread)
+            </el-radio>
+            <el-radio value="subprocess">
+              Subprocess
+            </el-radio>
+          </el-radio-group>
+
+          <div class="hint-text background-job-param-hint">
+            In-process keeps direct access to the Client runtime. Subprocess isolates the Job and can be force-stopped.
+          </div>
+        </el-form-item>
+
         <el-form-item
           v-for="param in params"
           :key="`job-param-${param.name}`"
@@ -138,6 +156,10 @@ export default {
       type: Boolean,
       default: false,
     },
+    executionMode: {
+      type: String,
+      default: 'inproc',
+    },
     selectedId: {
       type: [String, Number],
       default: '',
@@ -159,6 +181,7 @@ export default {
   emits: [
     'update:visible',
     'update-param',
+    'update-execution-mode',
     'append-output',
     'set-active-task',
     'upload-started',

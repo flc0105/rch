@@ -37,6 +37,18 @@ _REMOTE_PATH_MULTI_PARAM_TYPES = {
     'remote_folders',
 }
 
+_JOB_EXECUTION_MODE_ALIASES = {
+    'inproc': 'inproc',
+    'in_process': 'inproc',
+    'in-process': 'inproc',
+    'thread': 'inproc',
+    'threaded': 'inproc',
+    'subprocess': 'subprocess',
+    'sub_process': 'subprocess',
+    'sub-process': 'subprocess',
+    'process': 'subprocess',
+}
+
 
 def _safe_literal_eval(node):
     try:
@@ -150,6 +162,17 @@ def is_platform_supported(target_platform: str, allowed_platforms) -> bool:
     return bool(normalized_target and normalized_target in normalized_allowed)
 
 
+def normalize_job_execution_mode(value, default: str = 'inproc') -> str:
+    fallback = _JOB_EXECUTION_MODE_ALIASES.get(str(default or 'inproc').strip().lower(), 'inproc')
+    text = str(value or '').strip().lower()
+    if not text:
+        return fallback
+    normalized = _JOB_EXECUTION_MODE_ALIASES.get(text)
+    if not normalized:
+        raise ValueError(f'Unsupported background job execution mode: {value}')
+    return normalized
+
+
 def _normalize_param_type(value: str) -> str:
     text = str(value or 'string').strip().lower()
     return _PARAM_TYPE_ALIASES.get(text, text or 'string')
@@ -194,6 +217,15 @@ def normalize_job_metadata(metadata: dict | None, fallback_name: str = '') -> di
     description = str(metadata.get('description') or '').strip()
     platforms = normalize_job_platforms(metadata.get('platforms'))
 
+    execution_value = metadata.get('execution_mode')
+    if execution_value in (None, ''):
+        execution_meta = metadata.get('execution')
+        if isinstance(execution_meta, dict):
+            execution_value = execution_meta.get('default') or execution_meta.get('mode')
+        elif isinstance(execution_meta, str):
+            execution_value = execution_meta
+    execution_mode = normalize_job_execution_mode(execution_value, default='inproc')
+
     params = []
     for item in metadata.get('params') or []:
         normalized_item = _normalize_param_spec(item)
@@ -204,6 +236,7 @@ def normalize_job_metadata(metadata: dict | None, fallback_name: str = '') -> di
     normalized['display_name'] = display_name
     normalized['description'] = description
     normalized['platforms'] = platforms
+    normalized['execution_mode'] = execution_mode
     normalized['params'] = params
 
     return normalized

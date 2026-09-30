@@ -9,6 +9,7 @@
   >
     <div
       v-if="item"
+      v-loading="loading"
       class="fixed-dialog-body"
     >
       <div class="background-job-detail-head">
@@ -46,10 +47,20 @@
             size="small"
             type="danger"
             plain
-            :disabled="!item.job_key || item.state === 'stopped'"
+            :disabled="!item.job_key || !isActive"
             @click="$emit('stop-job', item)"
           >
             Stop
+          </el-button>
+
+          <el-button
+            size="small"
+            type="danger"
+            plain
+            :disabled="isActive"
+            @click="$emit('delete-job', item)"
+          >
+            Delete
           </el-button>
         </div>
       </div>
@@ -91,7 +102,14 @@
         </div>
 
         <div class="background-job-stat">
-          <div class="background-job-stat-label">Thread</div>
+          <div class="background-job-stat-label">Mode</div>
+          <div class="background-job-stat-value mono">
+            {{ item.execution_mode || 'inproc' }}
+          </div>
+        </div>
+
+        <div class="background-job-stat">
+          <div class="background-job-stat-label">Worker</div>
           <div class="background-job-stat-value mono">
             {{ item.thread_name || '-' }}
           </div>
@@ -203,6 +221,10 @@ export default {
       type: Boolean,
       default: false,
     },
+    loading: {
+      type: Boolean,
+      default: false,
+    },
     item: {
       type: Object,
       default: null,
@@ -244,6 +266,7 @@ export default {
   emits: [
     'update:visible',
     'stop-job',
+    'delete-job',
     'open-message',
     'preview-file',
   ],
@@ -255,6 +278,11 @@ export default {
 
     safeFiles() {
       return Array.isArray(this.files) ? this.files : []
+    },
+
+    isActive() {
+      const state = String(this.item?.state || '').trim().toLowerCase()
+      return state === 'running' || state === 'stopping'
     },
   },
 
@@ -284,8 +312,8 @@ export default {
           job_key: String(this.item.job_key || ''),
           display_name: String(this.item.display_name || ''),
           client_id: String(this.item.client_id || this.currentConnection?.client_id || ''),
-          hostname: String(this.currentConnection?.hostname || ''),
-          machine_id: String(this.currentConnection?.machine_id || ''),
+          hostname: String(this.item.hostname || this.currentConnection?.hostname || ''),
+          machine_id: String(this.item.machine_id || this.currentConnection?.machine_id || ''),
           started_at: this.formatJobOutputTime(this.item.started_at),
           stopped_at: this.formatJobOutputTime(this.item.stopped_at),
         },
@@ -306,6 +334,8 @@ export default {
             content: JSON.stringify(output, null, 2),
             category: 'job_output',
             client_id: String(this.item.client_id || ''),
+            hostname: String(this.item.hostname || this.currentConnection?.hostname || ''),
+            machine_id: String(this.item.machine_id || this.currentConnection?.machine_id || ''),
             source: 'background_job_detail',
             source_command: sourceCommand,
             job_id: String(this.item.job_id || ''),
