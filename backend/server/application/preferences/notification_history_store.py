@@ -110,6 +110,35 @@ class NotificationHistoryStore:
                 'notifications': [self._row_to_notification(row) for row in rows],
             }
 
+    def get_notifications_after(self, notification_id: str) -> dict:
+        """Return notifications inserted after a durable SSE cursor.
+
+        SQLite rowid is used only as the local insertion-order cursor. The public
+        SSE cursor remains the notification id, so clients never depend on the
+        database implementation detail.
+        """
+        normalized_id = self._normalize_string(notification_id, 200)
+        if not normalized_id:
+            return {'cursor_found': False, 'notifications': []}
+
+        with self._lock:
+            conn = self.database.connection()
+            cursor_row = conn.execute(
+                'SELECT rowid AS notification_rowid FROM notifications WHERE id = ?',
+                (normalized_id,),
+            ).fetchone()
+            if cursor_row is None:
+                return {'cursor_found': False, 'notifications': []}
+
+            rows = conn.execute(
+                'SELECT * FROM notifications WHERE rowid > ? ORDER BY rowid ASC',
+                (int(cursor_row['notification_rowid']),),
+            ).fetchall()
+            return {
+                'cursor_found': True,
+                'notifications': [self._row_to_notification(row) for row in rows],
+            }
+
     def add_notification(self, payload: dict) -> tuple[dict, bool]:
         notification = self._normalize_notification(payload)
         event_id = notification.get('event_id') or ''

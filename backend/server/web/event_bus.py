@@ -29,11 +29,22 @@ class WebEventBus:
     def set_notification_recorder(self, recorder):
         self._notification_recorder = recorder
 
-    def subscribe(self, tab_id: str = '') -> queue.Queue:
+    def subscribe(self, tab_id: str = '', event_types=None) -> queue.Queue:
         q = queue.Queue()
+        normalized_event_types = None
+        if event_types:
+            normalized_event_types = {
+                str(value or '').strip()
+                for value in event_types
+                if str(value or '').strip()
+            }
+            if not normalized_event_types:
+                normalized_event_types = None
+
         subscriber = {
             'queue': q,
             'tab_id': str(tab_id or '').strip(),
+            'event_types': normalized_event_types,
         }
         with self._lock:
             self._subscribers.append(subscriber)
@@ -46,7 +57,11 @@ class WebEventBus:
                 if item.get('queue') is not q
             ]
 
-    def _should_deliver(self, subscriber: dict, target_tab_id: str) -> bool:
+    def _should_deliver(self, subscriber: dict, target_tab_id: str, event_type: str) -> bool:
+        normalized_event_types = subscriber.get('event_types')
+        if normalized_event_types is not None and str(event_type or '').strip() not in normalized_event_types:
+            return False
+
         normalized_target_tab_id = str(target_tab_id or '').strip()
         if not normalized_target_tab_id:
             return True
@@ -100,7 +115,7 @@ class WebEventBus:
             subscribers = list(self._subscribers)
 
         for subscriber in subscribers:
-            if not self._should_deliver(subscriber, target_tab_id):
+            if not self._should_deliver(subscriber, target_tab_id, event_item.get('event')):
                 continue
 
             q = subscriber.get('queue')

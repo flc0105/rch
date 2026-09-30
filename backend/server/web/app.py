@@ -29,6 +29,7 @@ from server.web.routes.terminal import create_terminal_blueprint
 from server.web.routes.toolbar_preferences import create_toolbar_preferences_blueprint
 from server.web.routes.notification_preferences import create_notification_preferences_blueprint
 from server.web.routes.notification_history import create_notification_history_blueprint
+from server.web.routes.notification_stream import create_notification_stream_blueprint
 from server.web.routes.screen_view import create_screen_view_blueprint
 from server.web.routes.server_cleanup import create_server_cleanup_blueprint
 from server.web.routes.clipboard import create_clipboard_blueprint
@@ -56,6 +57,7 @@ def create_app(server_instance):
     app.register_blueprint(create_toolbar_preferences_blueprint(server_instance))
     app.register_blueprint(create_notification_preferences_blueprint(server_instance))
     app.register_blueprint(create_notification_history_blueprint(server_instance))
+    app.register_blueprint(create_notification_stream_blueprint(server_instance))
     app.register_blueprint(create_server_cleanup_blueprint(server_instance))
     app.register_blueprint(create_command_execution_blueprint(server_instance))
     app.register_blueprint(create_stream_control_blueprint(server_instance))

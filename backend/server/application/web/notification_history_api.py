@@ -8,6 +8,9 @@ class WebNotificationHistoryApi:
     def get_history(self):
         return self.history_store.get_history()
 
+    def get_notifications_after(self, notification_id: str):
+        return self.history_store.get_notifications_after(notification_id)
+
     def delete_notification(self, notification_id: str):
         deleted = self.history_store.delete_notification(notification_id)
         if deleted and self.event_bus is not None:
