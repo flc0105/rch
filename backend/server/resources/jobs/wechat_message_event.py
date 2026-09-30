@@ -27,6 +27,12 @@ JOB_METADATA = {
             'max': 30,
             'description': 'Suppress duplicate shell-flash/message notifications inside this window.',
         },
+        {
+            'name': 'debug_uia',
+            'type': 'boolean',
+            'default': True,
+            'description': 'Log matched WeChat session accessibility fields when preview text is missing.',
+        },
     ],
 }
 
@@ -142,25 +148,94 @@ def _iter_descendants(root_control, *, max_depth: int = 9, max_nodes: int = 2500
             pending.append((child, depth + 1))
 
 
+def _read_control_text_fields(control) -> list[tuple[str, str]]:
+    fields = []
+    seen = set()
+
+    def add(source: str, value):
+        text = _safe_text(value)
+        if not text or text in seen:
+            return
+        seen.add(text)
+        fields.append((source, text))
+
+    for attr_name in ('Name', 'HelpText'):
+        try:
+            add(attr_name, getattr(control, attr_name, ''))
+        except Exception:
+            pass
+
+    try:
+        pattern = control.GetValuePattern()
+        if pattern is not None:
+            add('ValuePattern.Value', getattr(pattern, 'Value', ''))
+    except Exception:
+        pass
+
+    try:
+        legacy = control.GetLegacyIAccessiblePattern()
+        if legacy is not None:
+            add('Legacy.Name', getattr(legacy, 'Name', ''))
+            add('Legacy.Value', getattr(legacy, 'Value', ''))
+            add('Legacy.Description', getattr(legacy, 'Description', ''))
+    except Exception:
+        pass
+
+    return fields
+
+
 def _collect_texts(control, *, max_depth: int = 3, max_nodes: int = 120) -> list[str]:
     values = []
     seen = set()
 
-    own_name = _safe_text(getattr(control, 'Name', ''))
-    if own_name:
-        values.append(own_name)
-        seen.add(own_name)
+    for _, value in _read_control_text_fields(control):
+        if value not in seen:
+            seen.add(value)
+            values.append(value)
 
     for child in _iter_descendants(control, max_depth=max_depth, max_nodes=max_nodes):
-        value = _safe_text(getattr(child, 'Name', ''))
-        if not value or value in seen:
-            continue
-        seen.add(value)
-        values.append(value)
+        for _, value in _read_control_text_fields(child):
+            if value in seen:
+                continue
+            seen.add(value)
+            values.append(value)
     return values
 
 
-def _session_from_control(control, index: int) -> dict | None:
+def _control_debug_rows(control, *, max_depth: int = 3, max_nodes: int = 36) -> list[dict]:
+    rows = []
+    pending = [(control, 0)]
+    visited = 0
+    while pending and visited < max_nodes:
+        item, depth = pending.pop(0)
+        visited += 1
+        row = {
+            'depth': depth,
+            'control_type': _safe_text(getattr(item, 'ControlTypeName', '')),
+            'automation_id': _safe_text(getattr(item, 'AutomationId', '')),
+            'class_name': _safe_text(getattr(item, 'ClassName', '')),
+            'fields': _read_control_text_fields(item),
+        }
+        rows.append(row)
+        if depth >= max_depth:
+            continue
+        try:
+            children = list(item.GetChildren() or [])
+        except Exception:
+            children = []
+        pending.extend((child, depth + 1) for child in children)
+    return rows
+
+
+def _format_debug_row(row: dict) -> str:
+    fields = ', '.join(f'{source}={value!r}' for source, value in row.get('fields') or [])
+    return (
+        f"depth={int(row.get('depth') or 0)} type={row.get('control_type')!r} "
+        f"id={row.get('automation_id')!r} class={row.get('class_name')!r} fields=[{fields}]"
+    )
+
+
+def _session_from_control(control, index: int, *, include_debug: bool = False) -> dict | None:
     automation_id = _safe_text(getattr(control, 'AutomationId', ''))
     control_type = _safe_text(getattr(control, 'ControlTypeName', ''))
     own_name = _safe_text(getattr(control, 'Name', ''))
@@ -212,7 +287,7 @@ def _session_from_control(control, index: int) -> dict | None:
         summary = summary[:500]
 
     key = automation_id or sender or f'index:{index}'
-    return {
+    result = {
         'key': key,
         'automation_id': automation_id,
         'sender': sender,
@@ -221,15 +296,18 @@ def _session_from_control(control, index: int) -> dict | None:
         'raw_name': own_name,
         'order': index,
     }
+    if include_debug:
+        result['debug_rows'] = _control_debug_rows(control)
+    return result
 
 
-def _collect_sessions_from_root(root_control, *, limit: int = 40) -> list[dict]:
+def _collect_sessions_from_root(root_control, *, limit: int = 40, include_debug: bool = False) -> list[dict]:
     sessions = []
     seen = set()
 
     for control in _iter_descendants(root_control):
         try:
-            session = _session_from_control(control, len(sessions))
+            session = _session_from_control(control, len(sessions), include_debug=include_debug)
         except Exception:
             continue
         if not session:
@@ -440,7 +518,7 @@ class WechatMessageEvent(Job):
         if code in (HSHELL_WINDOWACTIVATED, HSHELL_RUDEAPPACTIVATED):
             # Activation is useful as a cheap resync point. We only touch UIA on
             # shell events, and activation itself never emits a received-message event.
-            sessions, enrichment = self._read_wechat_sessions(hwnd)
+            sessions, enrichment = self._read_wechat_sessions(hwnd, include_debug=False)
             if sessions:
                 self._last_sessions = _snapshot_map(sessions)
             self.send_to_server(
@@ -455,7 +533,8 @@ class WechatMessageEvent(Job):
         if code != HSHELL_FLASH:
             return
 
-        sessions, enrichment = self._read_wechat_sessions(hwnd)
+        debug_uia = bool(self.get_job_param('debug_uia', True))
+        sessions, enrichment = self._read_wechat_sessions(hwnd, include_debug=debug_uia)
         candidate = _choose_message_candidate(sessions, self._last_sessions)
         if sessions:
             self._last_sessions = _snapshot_map(sessions)
@@ -491,6 +570,12 @@ class WechatMessageEvent(Job):
                 f'error={_safe_text(enrichment.get("error"))!r}',
                 0,
             )
+
+        if candidate and debug_uia and not summary:
+            debug_rows = list(candidate.get('debug_rows') or [])
+            self.send_to_server(1, f'UIA SESSION DEBUG: sender={sender!r} rows={len(debug_rows)}', 0)
+            for row in debug_rows[:36]:
+                self.send_to_server(1, 'UIA NODE ' + _format_debug_row(row), 0)
 
         # A single WeChat notification can produce more than one HSHELL_FLASH,
         # sometimes through different WeChat-owned HWNDs.  Candidate-backed
@@ -557,7 +642,7 @@ class WechatMessageEvent(Job):
             self._uia_import_error = str(exc)
             return None
 
-    def _read_wechat_sessions(self, triggered_hwnd: int) -> tuple[list[dict], dict]:
+    def _read_wechat_sessions(self, triggered_hwnd: int, *, include_debug: bool = False) -> tuple[list[dict], dict]:
         auto = self._get_uia_module()
         if auto is None:
             return [], {
@@ -576,7 +661,7 @@ class WechatMessageEvent(Job):
                 root = auto.ControlFromHandle(hwnd)
                 if not root:
                     continue
-                sessions = _collect_sessions_from_root(root)
+                sessions = _collect_sessions_from_root(root, include_debug=include_debug)
                 if len(sessions) > len(best_sessions):
                     best_sessions = sessions
                     best_hwnd = hwnd
