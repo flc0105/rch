@@ -4,6 +4,7 @@ import threading
 from typing import Dict, List
 
 from client.jobs.core.runtime import JobRuntime
+from client.runtime.sdk.context import use_script_sdk_context
 from client.runtime.temp_workspace import cleanup_temp_path
 from core.utils.job_metadata import read_job_metadata_from_file, resolve_job_params
 from core.utils.reflection import get_main_class
@@ -104,9 +105,22 @@ class JobManager:
             raise RuntimeError(f'Job is already running: {job_key}')
 
         job_instance = self._load_job_instance_from_file(full_path, job_name, command_id, job_params=job_params)
+
         def _run_job():
+            sdk_context = {
+                'client_id': job_instance.client_id or '',
+                'command_id': job_instance.command_id if job_instance.command_id is not None else '',
+                'hostname': job_instance.hostname or '',
+                'source_type': 'background_job',
+                'source_id': job_instance.job_id,
+                'source_name': job_instance.job_key or job_instance.job_name,
+                'job_id': job_instance.job_id,
+                'job_name': job_instance.job_name,
+                'job_key': job_instance.job_key,
+            }
             try:
-                job_instance.run()
+                with use_script_sdk_context(None, {'__context__': sdk_context}):
+                    job_instance.run()
             finally:
                 if cleanup_path:
                     cleanup_temp_path(cleanup_path)

@@ -33,6 +33,7 @@ from server.web.routes.screen_view import create_screen_view_blueprint
 from server.web.routes.server_cleanup import create_server_cleanup_blueprint
 from server.web.routes.clipboard import create_clipboard_blueprint
 from server.web.routes.device_monitor import create_device_monitor_blueprint
+from server.web.routes.device_events import create_device_events_blueprint
 from server.web.routes.transfers import create_transfers_blueprint
 
 
@@ -73,6 +74,7 @@ def create_app(server_instance):
     app.register_blueprint(create_screen_view_blueprint(server_instance))
     app.register_blueprint(create_clipboard_blueprint(server_instance))
     app.register_blueprint(create_device_monitor_blueprint(server_instance))
+    app.register_blueprint(create_device_events_blueprint(server_instance))
     app.register_blueprint(create_transfers_blueprint(server_instance))
 
     @app.before_request

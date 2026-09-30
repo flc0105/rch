@@ -286,6 +286,13 @@ class ClientApiClient:
             timeout=timeout,
         )
 
+    def post_device_event(self, payload: dict, *, timeout=10):
+        return self.post_json(
+            '/api/device-events',
+            json=payload,
+            timeout=timeout,
+        )
+
     def upload_file_source(
         self,
         file_source,

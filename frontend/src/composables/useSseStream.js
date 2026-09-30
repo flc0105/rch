@@ -536,6 +536,30 @@ export default {
                 }
             });
 
+            es.addEventListener('device_event', (event) => {
+                const payload = JSON.parse(event.data || '{}');
+                const deviceName = payload.hostname || getConnectionLabel(payload.client_id);
+                const kind = String(payload.kind || 'device.event').trim() || 'device.event';
+                const detail = String(payload.message || kind).trim() || kind;
+
+                this.showSseNotification('device_event', {
+                    title: 'Device Event',
+                    message: `${deviceName} · ${detail}`,
+                    type: 'info',
+                    duration: 6000,
+                }, {
+                    eventId: event.lastEventId,
+                    context: {
+                        client_id: payload.client_id || '',
+                        event_id: payload.event_id || '',
+                        kind,
+                        occurred_at: payload.occurred_at || '',
+                        source: payload.source || {},
+                        data: payload.data || {},
+                    },
+                });
+            });
+
             es.addEventListener('connection_online', (event) => {
                 const payload = JSON.parse(event.data);
                 const conn = payload.connection;

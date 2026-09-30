@@ -4,6 +4,7 @@ export const DEFAULT_SSE_NOTIFICATION_PREFERENCES = {
   events: {
     connection_online: true,
     connection_offline: true,
+    device_event: true,
     artifact_created: true,
     file_transfer_started: false,
     file_transfer_stopped: false,
@@ -36,6 +37,7 @@ export const SSE_NOTIFICATION_GROUPS = [
     items: [
       { key: 'connection_online', label: 'Device online' },
       { key: 'connection_offline', label: 'Device offline' },
+      { key: 'device_event', label: 'Device events' },
     ],
   },
   {

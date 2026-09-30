@@ -7,6 +7,7 @@ DEFAULT_NOTIFICATION_PREFERENCES = {
     'events': {
         'connection_online': True,
         'connection_offline': True,
+        'device_event': True,
         'artifact_created': True,
         'file_transfer_started': False,
         'file_transfer_stopped': False,

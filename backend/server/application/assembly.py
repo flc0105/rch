@@ -11,6 +11,7 @@ from server.application.connection.connection_service import WebConnectionServic
 from server.application.connection.recent_device_store import RecentDeviceStore
 from server.application.connection.device_group_store import DeviceGroupStore
 from server.application.execution.remote_execution_service import RemoteExecutionService
+from server.application.device_events.device_event_service import DeviceEventService
 from server.application.external_tools.external_tool_catalog_service import ExternalToolCatalogService
 from server.application.external_tools.external_tool_runtime_service import ExternalToolRuntimeService
 from server.application.external_tools.external_tool_param_preset_store import ExternalToolParamPresetStore
@@ -38,6 +39,7 @@ from server.application.web.artifact_api import WebArtifactApi
 from server.application.web.command_catalog_api import WebCommandCatalogApi
 from server.application.web.command_execution_api import WebCommandExecutionApi
 from server.application.web.command_history_api import WebCommandHistoryApi
+from server.application.web.device_event_api import WebDeviceEventApi
 from server.application.web.external_tool_api import WebExternalToolApi
 from server.application.web.connection_api import WebConnectionApi
 from server.application.web.job_api import WebJobApi
@@ -88,6 +90,10 @@ class ServerApplicationAssembly:
 
         # ------------------ shared infrastructure ------------------ #
         self.event_bus = WebEventBus()
+        self.device_event_service = DeviceEventService(
+            server=self.server,
+            event_bus=self.event_bus,
+        )
         self.task_store = WebTaskStore()
         self.transfer_service = TransferService(self.event_bus)
 
@@ -247,6 +253,10 @@ class ServerApplicationAssembly:
 
         self.command_history_api = WebCommandHistoryApi(
             server=self.server,
+        )
+
+        self.device_event_api = WebDeviceEventApi(
+            device_event_service=self.device_event_service,
         )
 
         self.job_api = WebJobApi(

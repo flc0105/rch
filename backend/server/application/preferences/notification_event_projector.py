@@ -15,6 +15,7 @@ class NotificationEventProjector:
         'pty_lifecycle',
         'screen_view_lifecycle',
         'artifact_created',
+        'device_event',
     }
 
     def __init__(self, *, history_store, server):
@@ -75,6 +76,29 @@ class NotificationEventProjector:
                 'error_count': error_count,
             },
             actions=actions,
+        )
+
+
+    def _build_device_event(self, payload):
+        client_id = str(payload.get('client_id') or '').strip()
+        device = str(payload.get('hostname') or '').strip() or self._device_name(client_id)
+        kind = str(payload.get('kind') or 'device.event').strip() or 'device.event'
+        message = str(payload.get('message') or '').strip() or kind
+        display_message = f'{device} · {message}' if device else message
+        return self._notification(
+            'device_event',
+            'Device Event',
+            display_message,
+            'info',
+            {
+                'client_id': client_id,
+                'hostname': payload.get('hostname') or '',
+                'event_id': payload.get('event_id') or '',
+                'kind': kind,
+                'occurred_at': payload.get('occurred_at') or '',
+                'source': payload.get('source') if isinstance(payload.get('source'), dict) else {},
+                'data': payload.get('data') if isinstance(payload.get('data'), dict) else {},
+            },
         )
 
     def _build_connection_online(self, payload):
