@@ -262,7 +262,17 @@ class ScreenViewManager:
         if action == 'mouse_move':
             x, y = self._resolve_pointer(item, payload)
             self._ensure_windows_input_allowed(action, x=x, y=y)
-            pyautogui.moveTo(x, y, duration=0, _pause=False)
+            if sys.platform.startswith('win'):
+                try:
+                    self._send_windows_mouse_move(item, x, y)
+                except Exception as e:
+                    # Keep the old SetCursorPos-backed path as a best-effort
+                    # fallback, but prefer SendInput so Windows shell hover
+                    # tracking sees a synthesized mouse-move input event.
+                    logger.debug(f'Windows SendInput mouse move failed, falling back: {e}')
+                    pyautogui.moveTo(x, y, duration=0, _pause=False)
+            else:
+                pyautogui.moveTo(x, y, duration=0, _pause=False)
             return
 
         if action in ('mouse_down', 'mouse_up'):
@@ -426,6 +436,86 @@ class ScreenViewManager:
 
         width, height = pyautogui.size()
         return 0, 0, int(width), int(height)
+
+    @staticmethod
+    def _normalize_windows_absolute_pointer(value: int, origin: int, size: int) -> int:
+        size = int(size or 0)
+        if size <= 1:
+            return 0
+        relative = int(value) - int(origin)
+        normalized = int(round((relative * 65535) / (size - 1)))
+        return max(0, min(65535, normalized))
+
+    def _send_windows_mouse_move(self, item: dict, x: int, y: int):
+        """Inject a Windows mouse-move event across the virtual desktop.
+
+        PyAutoGUI's Windows move path calls SetCursorPos(), which moves the
+        cursor but is not equivalent to an injected mouse input stream.  Shell
+        UI such as taskbar thumbnail hover tracking behaves more like local/VNC
+        input when the move is sent through SendInput.
+        """
+        import ctypes
+        from ctypes import wintypes
+
+        origin_x = int(item.get('input_origin_x') or 0)
+        origin_y = int(item.get('input_origin_y') or 0)
+        width = int(item.get('input_width') or 0)
+        height = int(item.get('input_height') or 0)
+        if width <= 0 or height <= 0:
+            origin_x, origin_y, width, height = self._get_windows_input_geometry(
+                self._get_pyautogui()
+            )
+
+        dx = self._normalize_windows_absolute_pointer(x, origin_x, width)
+        dy = self._normalize_windows_absolute_pointer(y, origin_y, height)
+
+        class MouseInput(ctypes.Structure):
+            _fields_ = [
+                ('dx', wintypes.LONG),
+                ('dy', wintypes.LONG),
+                ('mouseData', wintypes.DWORD),
+                ('dwFlags', wintypes.DWORD),
+                ('time', wintypes.DWORD),
+                ('dwExtraInfo', ctypes.c_size_t),
+            ]
+
+        class Input(ctypes.Structure):
+            _fields_ = [
+                ('type', wintypes.DWORD),
+                ('mi', MouseInput),
+            ]
+
+        mouseeventf_move = 0x0001
+        mouseeventf_move_nocoalesce = 0x2000
+        mouseeventf_virtualdesk = 0x4000
+        mouseeventf_absolute = 0x8000
+        input_mouse = 0
+
+        user32 = ctypes.WinDLL('user32', use_last_error=True)
+        user32.SendInput.argtypes = [wintypes.UINT, ctypes.POINTER(Input), ctypes.c_int]
+        user32.SendInput.restype = wintypes.UINT
+
+        event = Input(
+            type=input_mouse,
+            mi=MouseInput(
+                dx=dx,
+                dy=dy,
+                mouseData=0,
+                dwFlags=(
+                    mouseeventf_move
+                    | mouseeventf_move_nocoalesce
+                    | mouseeventf_virtualdesk
+                    | mouseeventf_absolute
+                ),
+                time=0,
+                dwExtraInfo=0,
+            ),
+        )
+        ctypes.set_last_error(0)
+        sent = int(user32.SendInput(1, ctypes.byref(event), ctypes.sizeof(Input)))
+        if sent != 1:
+            error = ctypes.get_last_error()
+            raise OSError(error, 'SendInput mouse move failed')
 
     def _ensure_windows_input_allowed(self, action: str, x=None, y=None):
         if not sys.platform.startswith('win'):

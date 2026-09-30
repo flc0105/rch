@@ -22,10 +22,10 @@ JOB_METADATA = {
         {
             'name': 'dedupe_seconds',
             'type': 'number',
-            'default': 1.5,
+            'default': 3.0,
             'min': 0.2,
             'max': 30,
-            'description': 'Suppress identical message notifications inside this window.',
+            'description': 'Suppress duplicate shell-flash/message notifications inside this window.',
         },
     ],
 }
@@ -293,6 +293,7 @@ class WechatMessageEvent(Job):
         self._last_sessions = {}
         self._last_emit_signature = None
         self._last_emit_at = 0.0
+        self._last_emit_process_key = ''
         self._uia_module = None
         self._uia_import_error = ''
 
@@ -311,7 +312,7 @@ class WechatMessageEvent(Job):
         self.mark_running()
         failed = False
         hinstance = 0
-        dedupe_seconds = float(self.get_job_param('dedupe_seconds', 1.5) or 1.5)
+        dedupe_seconds = float(self.get_job_param('dedupe_seconds', 3.0) or 3.0)
         pythoncom.CoInitialize()
 
         try:
@@ -422,12 +423,33 @@ class WechatMessageEvent(Job):
         if not is_wechat:
             return
 
+        event_name = {
+            HSHELL_WINDOWACTIVATED: 'ACTIVATE',
+            HSHELL_RUDEAPPACTIVATED: 'RUDE_ACTIVATE',
+            HSHELL_FLASH: 'FLASH',
+        }.get(code, str(code))
+        process_name = _safe_text(window_info.get('process')) or 'WeChat'
+        process_key = os.path.basename(process_name).lower() or 'wechat'
+        self.send_to_server(
+            1,
+            f'Shell {event_name}: process={process_name} hwnd={int(hwnd or 0)} '
+            f'title={_safe_text(window_info.get("title"))!r}',
+            0,
+        )
+
         if code in (HSHELL_WINDOWACTIVATED, HSHELL_RUDEAPPACTIVATED):
             # Activation is useful as a cheap resync point. We only touch UIA on
             # shell events, and activation itself never emits a received-message event.
-            sessions, _ = self._read_wechat_sessions(hwnd)
+            sessions, enrichment = self._read_wechat_sessions(hwnd)
             if sessions:
                 self._last_sessions = _snapshot_map(sessions)
+            self.send_to_server(
+                1,
+                f'UIA baseline: sessions={len(sessions)} matched={bool(enrichment.get("matched"))} '
+                f'window={int(enrichment.get("window_hwnd") or 0)} '
+                f'error={_safe_text(enrichment.get("error"))!r}',
+                0,
+            )
             return
 
         if code != HSHELL_FLASH:
@@ -454,12 +476,53 @@ class WechatMessageEvent(Job):
         sender = _safe_text((data.get('session') or {}).get('sender'))
         summary = _safe_text((data.get('session') or {}).get('summary'))
         unread_count = int((data.get('session') or {}).get('unread_count') or 0)
-        signature = (sender, summary, unread_count) if candidate else ('generic', int(hwnd or 0))
+        if candidate:
+            self.send_to_server(
+                1,
+                f'UIA FLASH: sessions={len(sessions)} sender={sender!r} unread={unread_count} '
+                f'summary={summary[:160]!r}',
+                0,
+            )
+        else:
+            self.send_to_server(
+                1,
+                f'UIA FLASH fallback: sessions={len(sessions)} matched={bool(enrichment.get("matched"))} '
+                f'window={int(enrichment.get("window_hwnd") or 0)} '
+                f'error={_safe_text(enrichment.get("error"))!r}',
+                0,
+            )
+
+        # A single WeChat notification can produce more than one HSHELL_FLASH,
+        # sometimes through different WeChat-owned HWNDs.  Candidate-backed
+        # events keep their semantic signature, while generic fallback uses the
+        # process rather than HWND so those sibling flashes collapse together.
+        signature = (sender, summary, unread_count) if candidate else ('generic', process_key)
         now = time.monotonic()
-        if self._last_emit_signature == signature and now - self._last_emit_at < dedupe_seconds:
+        elapsed = now - self._last_emit_at
+        same_signature = self._last_emit_signature == signature
+        crosses_generic_boundary = (
+            self._last_emit_process_key == process_key
+            and elapsed < dedupe_seconds
+            and (
+                not candidate
+                or (
+                    isinstance(self._last_emit_signature, tuple)
+                    and self._last_emit_signature
+                    and self._last_emit_signature[0] == 'generic'
+                )
+            )
+        )
+        if elapsed < dedupe_seconds and (same_signature or crosses_generic_boundary):
+            self.send_to_server(
+                1,
+                f'Duplicate WeChat FLASH suppressed: process={process_name} '
+                f'elapsed={elapsed:.2f}s signature={signature!r}',
+                0,
+            )
             return
 
         self._last_emit_signature = signature
+        self._last_emit_process_key = process_key
         self._last_emit_at = now
 
         if sender and summary:
@@ -476,6 +539,7 @@ class WechatMessageEvent(Job):
                 data=data,
                 message=message,
             )
+            self.send_to_server(1, f'Device event emitted: {message}', 0)
         except Exception as exc:
             self.send_to_server(0, f'Device event emit failed: {exc}', 0)
 
