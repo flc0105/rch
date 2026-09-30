@@ -1,0 +1,8 @@
+{
+  "server_url": "http://127.0.0.1:8085",
+  "token": "627D3547-E8F4-4705-AABC-D42EB872F4D6",
+  "sound": true,
+  "backend": "auto",
+  "reconnect_initial_seconds": 1,
+  "reconnect_max_seconds": 30
+}

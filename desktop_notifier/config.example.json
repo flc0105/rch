@@ -1,0 +1,8 @@
+{
+  "server_url": "http://127.0.0.1:8085",
+  "token": "REPLACE_WITH_RCH_ADMIN_API_TOKEN",
+  "sound": true,
+  "backend": "auto",
+  "reconnect_initial_seconds": 1,
+  "reconnect_max_seconds": 30
+}
