@@ -416,15 +416,27 @@ export default {
     isOverflowing(key) {
       return this.overflowStates[key] === true
     },
-    async open() {
+    open() {
       if (!this.selectedId) {
         ElMessage.warning('Please select a device')
         return
       }
-      this.visible = true
       this.filterPlatform = 'current'
       this.searchText = ''
-      await this.loadItems()
+      this.loading = true
+      this.visible = true
+
+      // Render the dialog/loading state first, then start the remote list request.
+      // This keeps opening responsive even when alias reload/listing takes longer.
+      this.$nextTick(() => {
+        requestAnimationFrame(() => {
+          if (!this.visible) {
+            this.loading = false
+            return
+          }
+          void this.loadItems()
+        })
+      })
     },
     async loadItems() {
       if (!this.selectedId) return
