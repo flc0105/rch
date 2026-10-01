@@ -76,3 +76,32 @@ def platform_key(platform_alias: Any, arch: Any) -> str:
     if not platform_value or not arch_value:
         return ''
     return f'{platform_value}-{arch_value}'
+
+
+def normalize_platforms(values, *, wildcard: bool = True) -> list[str]:
+    if values is None:
+        return []
+    if isinstance(values, str):
+        candidates = [values]
+    elif isinstance(values, (list, tuple, set)):
+        candidates = list(values)
+    else:
+        return []
+
+    result = []
+    seen = set()
+    for item in candidates:
+        normalized = normalize_platform_alias(item, wildcard=wildcard)
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        result.append(normalized)
+    return result
+
+
+def is_platform_supported(target_platform, allowed_platforms) -> bool:
+    normalized_allowed = normalize_platforms(allowed_platforms, wildcard=True)
+    if not normalized_allowed or '*' in normalized_allowed:
+        return True
+    normalized_target = normalize_platform_alias(target_platform, wildcard=True)
+    return bool(normalized_target and normalized_target in normalized_allowed)

@@ -691,6 +691,7 @@ Current script system highlights:
 - structured execution via `/api/connections/<client_id>/scripts/run`
 - legacy command-style execution through `exec <script>`
 - parameter normalization before execution when metadata declares params
+- Script and Job parameter schemas share one coercion/limits core while retaining their own execution and picker policies
 
 This makes scripts well-suited for:
 
