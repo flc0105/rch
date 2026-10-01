@@ -3,13 +3,11 @@ import os
 import platform
 import re
 import shutil
-import socket as socket_module
 import sys
 
 from client.config.config import CLIENT_BUILD_VERSION
 from client.runtime.client_util import get_executable_path, get_system_paths, wrap_path
-from core.device.machine_identity import build_machine_identity_payload
-from core.platform.platform_identity import detect_platform_info
+from core.device.local_identity import get_local_identity
 from core.utils.formatting import get_readable_time, get_time
 
 
@@ -169,14 +167,8 @@ class CommandVariableResolver:
             self._static_cache[key] = factory()
         return self._static_cache[key]
 
-    def _get_machine_identity(self):
-        return self._get_static('machine_identity', build_machine_identity_payload)
-
-    def _get_machine_info(self):
-        return self._get_machine_identity().get('raw_components') or {}
-
-    def _get_platform_info(self):
-        return self._get_static('platform_info', detect_platform_info)
+    def _get_local_identity(self):
+        return self._get_static('local_identity', get_local_identity)
 
     def _get_exec_path(self, _command_id=None):
         return wrap_path(os.path.realpath(sys.executable))
@@ -220,7 +212,7 @@ class CommandVariableResolver:
         raise CommandVariableResolutionError('No supported shell found')
 
     def _get_hostname(self, _command_id=None):
-        return socket_module.gethostname()
+        return self._get_local_identity().hostname
 
     def _get_command_id(self, command_id=None):
         return '' if command_id is None else command_id
@@ -229,7 +221,7 @@ class CommandVariableResolver:
         return getattr(self.connection, 'client_id', '') or ''
 
     def _get_machine_id(self, _command_id=None):
-        return self._get_machine_identity().get('machine_id_hash') or ''
+        return self._get_local_identity().machine_id
 
     def _get_build_version(self, _command_id=None):
         return CLIENT_BUILD_VERSION
@@ -238,25 +230,25 @@ class CommandVariableResolver:
         return platform.python_version()
 
     def _get_platform_alias(self, _command_id=None):
-        return self._get_platform_info().alias
+        return self._get_local_identity().os_alias
 
     def _get_os_type(self, _command_id=None):
-        return self._get_platform_info().display_name
+        return self._get_local_identity().os_type
 
     def _get_os_name(self, _command_id=None):
-        return self._get_machine_info().get('os_name') or ''
+        return self._get_local_identity().os_name
 
     def _get_os_version(self, _command_id=None):
-        return self._get_machine_info().get('os_version') or ''
+        return self._get_local_identity().os_version
 
     def _get_arch(self, _command_id=None):
-        return self._get_machine_info().get('arch') or ''
+        return self._get_local_identity().arch
 
     def _get_manufacturer(self, _command_id=None):
-        return self._get_machine_info().get('manufacturer') or ''
+        return self._get_local_identity().manufacturer
 
     def _get_model(self, _command_id=None):
-        return self._get_machine_info().get('model') or ''
+        return self._get_local_identity().model
 
     def _get_timestamp(self, _command_id=None):
         return get_time()

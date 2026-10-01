@@ -1,10 +1,19 @@
 import ctypes
 import os
 import socket
-import sys
 import threading
 import time
 
+from core.device.local_identity import get_local_identity
+from core.protocol.monitor import (
+    MONITOR_DEFAULT_INTERVALS,
+    MONITOR_MAX_INTERVAL_SECONDS,
+    MONITOR_MIN_INTERVAL_SECONDS,
+    MONITOR_SUPPORTED_CHANNELS,
+    normalize_monitor_channels,
+    normalize_monitor_intervals,
+    normalize_monitor_options,
+)
 from core.protocol.message_types import (
     MSG_TYPE_MONITOR_CLOSED,
     MSG_TYPE_MONITOR_ERROR,
@@ -21,33 +30,14 @@ class DeviceMonitorManager:
     不同 channel 使用各自采样周期，避免低频指标跟随 CPU / Network 高频刷新。
     """
 
-    SUPPORTED_CHANNELS = {
-        'system',
-        'storage',
-        'network',
-        'battery',
-        'processes',
-        'apps',
-        'process_detail',
-        'process_connections',
-        'process_open_files',
-    }
-    DEFAULT_INTERVALS = {
-        'system': 0.5,
-        'network': 0.5,
-        'storage': 5.0,
-        'battery': 5.0,
-        'processes': 1.0,
-        'apps': 1.0,
-        'process_detail': 1.0,
-        'process_connections': 2.0,
-        'process_open_files': 3.0,
-    }
-    MIN_INTERVAL_SECONDS = 0.25
-    MAX_INTERVAL_SECONDS = 60.0
+    SUPPORTED_CHANNELS = MONITOR_SUPPORTED_CHANNELS
+    DEFAULT_INTERVALS = MONITOR_DEFAULT_INTERVALS
+    MIN_INTERVAL_SECONDS = MONITOR_MIN_INTERVAL_SECONDS
+    MAX_INTERVAL_SECONDS = MONITOR_MAX_INTERVAL_SECONDS
 
     def __init__(self, connection):
         self.connection = connection
+        self._os_alias = get_local_identity().os_alias
         self._lock = threading.RLock()
         self._sessions = {}
         self._process_service = None
@@ -57,9 +47,9 @@ class DeviceMonitorManager:
         if not monitor_session_id:
             return
 
-        normalized_channels = self._normalize_channels(channels)
-        normalized_intervals = self._normalize_intervals(intervals, normalized_channels)
-        normalized_options = self._normalize_options(options)
+        normalized_channels = normalize_monitor_channels(channels)
+        normalized_intervals = normalize_monitor_intervals(intervals, normalized_channels)
+        normalized_options = normalize_monitor_options(options)
 
         self.close_session(monitor_session_id, notify=False)
 
@@ -95,10 +85,10 @@ class DeviceMonitorManager:
             if not item:
                 return
 
-            next_channels = self._normalize_channels(
+            next_channels = normalize_monitor_channels(
                 item.get('channels') if channels is None else channels
             )
-            next_intervals = self._normalize_intervals(
+            next_intervals = normalize_monitor_intervals(
                 item.get('intervals') if intervals is None else intervals,
                 next_channels,
             )
@@ -106,7 +96,7 @@ class DeviceMonitorManager:
             item['intervals'] = next_intervals
             if options is not None:
                 previous_pid = self._read_process_pid_option(item)
-                item['options'] = self._normalize_options(options)
+                item['options'] = normalize_monitor_options(options)
                 if self._read_process_pid_option(item) != previous_pid:
                     item['process_cache'] = {}
                     item['process_cpu_primed'] = set()
@@ -260,12 +250,12 @@ class DeviceMonitorManager:
     def _collect_apps(self) -> dict:
         service = self._get_process_service()
         try:
-            if sys.platform.startswith('win'):
+            if self._os_alias == 'win':
                 items = service.list_windows_apps()
-            elif sys.platform == 'darwin':
+            elif self._os_alias == 'mac':
                 items = service.list_macos_app()
             else:
-                raise Exception('Unsupported os:' + str(sys.platform))
+                raise Exception('Unsupported os:' + str(self._os_alias))
             return {'items': items or []}
         except Exception as e:
             return {'items': [], 'error': str(e) or 'Failed to list applications'}
@@ -328,7 +318,7 @@ class DeviceMonitorManager:
 
         # macOS 下 psutil 的非阻塞 CPU 采样偶尔会出现单帧 0.0。
         # 仅过滤孤立的 0% 毛刺；如果连续两帧都是 0%，则按真实 0% 显示。
-        if sys.platform == 'darwin':
+        if self._os_alias == 'mac':
             now = time.monotonic()
             state = getattr(self, '_mac_cpu_deglitch_state', None)
 
@@ -451,7 +441,7 @@ class DeviceMonitorManager:
         # psutil 对 / 的 used/percent 可能只反映 sealed System Volume，
         # 但 total/free 又是共享 container 语义，导致三者无法相加。
         # Dashboard 的系统盘卡片按 container 容量展示，保证 used + free = total。
-        if sys.platform == 'darwin' and mountpoint == '/' and fstype == 'apfs' and total > 0:
+        if self._os_alias == 'mac' and mountpoint == '/' and fstype == 'apfs' and total > 0:
             free = max(0, min(free, total))
             used = max(0, total - free)
             percent = round((used / total) * 100.0, 1)
@@ -556,10 +546,10 @@ class DeviceMonitorManager:
         mountpoint = str(partition.mountpoint or '').strip()
         fstype = str(partition.fstype or '').strip().lower()
 
-        if sys.platform == 'darwin':
+        if self._os_alias == 'mac':
             return mountpoint == '/' or mountpoint.startswith('/Volumes/')
 
-        if sys.platform.startswith('win'):
+        if self._os_alias == 'win':
             drive_type = self._windows_drive_type(mountpoint)
             return drive_type not in (0, 1, 5)
 
@@ -573,7 +563,7 @@ class DeviceMonitorManager:
         mountpoint = str(partition.mountpoint or '').strip()
         fstype = str(partition.fstype or '').strip().lower()
 
-        if sys.platform.startswith('win'):
+        if self._os_alias == 'win':
             drive_type = self._windows_drive_type(mountpoint)
             kind_map = {
                 2: 'removable',
@@ -590,7 +580,7 @@ class DeviceMonitorManager:
                 'system': bool(system_drive and current_drive == system_drive),
             }
 
-        if sys.platform == 'darwin':
+        if self._os_alias == 'mac':
             network_fs = {'smbfs', 'nfs', 'afpfs', 'webdav'}
             if mountpoint == '/':
                 return {'name': 'System Volume', 'kind': 'system', 'system': True}
@@ -610,7 +600,7 @@ class DeviceMonitorManager:
         }
 
     def _windows_drive_type(self, mountpoint: str) -> int:
-        if not sys.platform.startswith('win'):
+        if self._os_alias != 'win':
             return 0
         try:
             root = mountpoint
@@ -621,7 +611,7 @@ class DeviceMonitorManager:
             return 3
 
     def _windows_volume_label(self, mountpoint: str) -> str:
-        if not sys.platform.startswith('win'):
+        if self._os_alias != 'win':
             return ''
         try:
             root = mountpoint
@@ -659,32 +649,6 @@ class DeviceMonitorManager:
         if seconds < 0 or seconds in unknown_values:
             return None
         return seconds
-
-    def _normalize_channels(self, channels) -> list[str]:
-        raw = channels if isinstance(channels, (list, tuple, set)) else []
-        normalized = []
-        for channel in raw:
-            name = str(channel or '').strip().lower()
-            if name in self.SUPPORTED_CHANNELS and name not in normalized:
-                normalized.append(name)
-        return normalized or ['system', 'storage', 'network', 'battery']
-
-    def _normalize_intervals(self, intervals, channels) -> dict:
-        raw = intervals if isinstance(intervals, dict) else {}
-        result = {}
-        for channel in channels:
-            default = self.DEFAULT_INTERVALS[channel]
-            try:
-                value = float(raw.get(channel, default))
-            except Exception:
-                value = default
-            result[channel] = max(self.MIN_INTERVAL_SECONDS, min(self.MAX_INTERVAL_SECONDS, value))
-        return result
-
-    def _normalize_options(self, options) -> dict:
-        if not isinstance(options, dict):
-            return {}
-        return dict(options)
 
     def _send(self, payload: dict):
         self.connection.send(payload)

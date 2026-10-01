@@ -1,4 +1,3 @@
-import json
 import sqlite3
 import threading
 import time
@@ -6,6 +5,7 @@ import uuid
 from datetime import datetime
 
 
+from core.utils.json_utils import compact_json_dumps, json_loads_typed
 class NotificationHistoryStore:
     """Server-side durable Notification Center history in rch.db."""
 
@@ -30,18 +30,6 @@ class NotificationHistoryStore:
             return int(datetime.fromisoformat(normalized).timestamp() * 1000)
         except Exception:
             return int(time.time() * 1000)
-
-    @staticmethod
-    def _json_dumps(value) -> str:
-        return json.dumps(value, ensure_ascii=False, separators=(',', ':'))
-
-    @staticmethod
-    def _json_loads(value, default):
-        try:
-            parsed = json.loads(value or '')
-            return parsed if isinstance(parsed, type(default)) else default
-        except Exception:
-            return default
 
     def _normalize_notification(self, payload: dict, *, allow_missing_event_id: bool = False) -> dict:
         source = payload if isinstance(payload, dict) else {}
@@ -96,8 +84,8 @@ class NotificationHistoryStore:
             'title': row['title'],
             'message': row['message'],
             'shown_at': row['shown_at'],
-            'context': self._json_loads(row['context_json'], {}),
-            'actions': self._json_loads(row['actions_json'], []),
+            'context': json_loads_typed(row['context_json'], {}),
+            'actions': json_loads_typed(row['actions_json'], []),
         }
 
     def get_history(self) -> dict:
@@ -164,8 +152,8 @@ class NotificationHistoryStore:
                     (
                         notification['id'], event_id or None, notification['notification_key'], notification['type'],
                         notification['title'], notification['message'], notification['shown_at'],
-                        self._shown_at_ms(notification['shown_at']), self._json_dumps(notification['context']),
-                        self._json_dumps(notification['actions']),
+                        self._shown_at_ms(notification['shown_at']), compact_json_dumps(notification['context']),
+                        compact_json_dumps(notification['actions']),
                     ),
                 )
             except sqlite3.IntegrityError:

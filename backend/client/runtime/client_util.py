@@ -5,7 +5,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from core.platform.platform_identity import detect_platform_alias, detect_platform_name
+from core.device.local_identity import get_local_identity
 
 
 def check_privilege():
@@ -100,8 +100,9 @@ def get_exec_and_args():
 
 def get_system_paths():
     # 获取系统路径
+    platform_alias = get_local_identity().os_alias
     system_paths = {}
-    if detect_platform_alias() == 'win':
+    if platform_alias == 'win':
         system_paths['root'] = 'C:\\'
     else:
         system_paths['root'] = '/'
@@ -114,7 +115,7 @@ def get_system_paths():
     import tempfile
     system_paths['temp'] = str(tempfile.gettempdir())
 
-    if detect_platform_alias() == 'ios':
+    if platform_alias == 'ios':
         from client.commands.platform.utils.ios_util import get_icloud_path, read_info_plist
         system_paths['icloud'] = get_icloud_path(read_info_plist())
 
@@ -241,7 +242,7 @@ def ensure_directory(path: str) -> str:
 
 def get_client_bundle_release_dir() -> str:
     # update 命令默认下载目录
-    if detect_platform_name().lower() != 'ios':
+    if get_local_identity().os_alias != 'ios':
         return ensure_directory(os.path.join(str(Path.home()), 'client_bundle', 'releases'))
     else:
         return ensure_directory(os.path.join(str(Path.home()), 'Documents', 'client_bundle', 'releases'))

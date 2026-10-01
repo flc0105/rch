@@ -1,5 +1,6 @@
 from datetime import datetime
 
+from core.utils.datetime_utils import parse_iso_datetime
 from core.client_revision import build_client_revision_manifest
 from server.connection.client_session import ClientSession
 from server.connection.transport.client_transport import ClientTransport
@@ -37,21 +38,12 @@ class WebConnectionService:
     def _now(self):
         return datetime.now()
 
-    def _safe_parse_iso(self, value: str):
-        text = str(value or '').strip()
-        if not text:
-            return None
-        try:
-            return datetime.fromisoformat(text)
-        except Exception:
-            return None
-
     def _build_connection_state(self, session: ClientSession) -> str:
-        disconnected_at = self._safe_parse_iso(session.context.disconnected_at)
+        disconnected_at = parse_iso_datetime(session.context.disconnected_at)
         if disconnected_at is not None:
             return 'offline'
 
-        last_seen_at = self._safe_parse_iso(session.context.last_seen_at)
+        last_seen_at = parse_iso_datetime(session.context.last_seen_at)
         if last_seen_at is None:
             return 'online'
 
@@ -354,7 +346,7 @@ class WebConnectionService:
 
         def _session_sort_value(item):
             value = item.get('connected_at') or ''
-            return self._safe_parse_iso(value) or datetime.min
+            return parse_iso_datetime(value) or datetime.min
 
         sessions.sort(key=_session_sort_value, reverse=True)
 

@@ -1,6 +1,6 @@
-import json
 
 
+from core.utils.json_utils import compact_json_dumps, json_loads_dict
 class PinnedCommandStore:
     """SQLite-backed machine-level pinned command registry."""
 
@@ -41,18 +41,6 @@ class PinnedCommandStore:
         copied.pop('output_records', None)
         return copied
 
-    @staticmethod
-    def _json_loads(value) -> dict:
-        try:
-            payload = json.loads(value or '{}')
-            return payload if isinstance(payload, dict) else {}
-        except Exception:
-            return {}
-
-    @staticmethod
-    def _json_dumps(value) -> str:
-        return json.dumps(value or {}, ensure_ascii=False, separators=(',', ':'))
-
     def get_items(self, machine_id: str) -> list:
         rows = self.database.connection().execute(
             '''
@@ -68,7 +56,7 @@ class PinnedCommandStore:
                 'command': row['command'],
                 'pinned_at': row['pinned_at'],
                 'pin_order': int(row['pin_order'] or 0),
-                'snapshot': self._sanitize_snapshot(self._json_loads(row['snapshot_json']), row['command']),
+                'snapshot': self._sanitize_snapshot(json_loads_dict(row['snapshot_json']), row['command']),
             }
             for row in rows
         ]
@@ -110,15 +98,15 @@ class PinnedCommandStore:
                 INSERT INTO pinned_commands(machine_id, command, pinned_at, pin_order, snapshot_json)
                 VALUES (?, ?, ?, ?, ?)
                 ''',
-                (machine_id_text, command_text, self._now_text(), next_order, self._json_dumps(snapshot)),
+                (machine_id_text, command_text, self._now_text(), next_order, compact_json_dumps(snapshot or {})),
             )
             return True
 
-        current_snapshot = self._json_loads(existing['snapshot_json'])
+        current_snapshot = json_loads_dict(existing['snapshot_json'])
         if snapshot and snapshot != current_snapshot:
             conn.execute(
                 'UPDATE pinned_commands SET snapshot_json = ? WHERE machine_id = ? AND command = ?',
-                (self._json_dumps(snapshot), machine_id_text, command_text),
+                (compact_json_dumps(snapshot or {}), machine_id_text, command_text),
             )
             return True
         return False

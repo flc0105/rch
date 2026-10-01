@@ -1,7 +1,7 @@
-import json
 import threading
 from datetime import datetime
 
+from core.utils.json_utils import json_dumps_or_default, json_loads_or_default
 from server.application.jobs.background_job_view_service import BackgroundJobViewService
 
 
@@ -27,20 +27,6 @@ class BackgroundJobStore:
     def _now_iso(self) -> str:
         return datetime.now().isoformat()
 
-    def _json_dumps(self, value) -> str:
-        try:
-            return json.dumps(value if value is not None else {}, ensure_ascii=False)
-        except Exception:
-            return '{}'
-
-    def _json_loads(self, value, default=None):
-        fallback = {} if default is None else default
-        try:
-            parsed = json.loads(str(value or ''))
-            return parsed
-        except Exception:
-            return fallback
-
     def _row_to_job(self, row) -> dict | None:
         if row is None:
             return None
@@ -49,7 +35,7 @@ class BackgroundJobStore:
         item['command_id'] = item.get('command_id')
         item['message_count'] = int(item.get('message_count', 0) or 0)
         item['file_count'] = int(item.get('file_count', 0) or 0)
-        item['params'] = self._json_loads(item.pop('params_json', '{}'), {})
+        item['params'] = json_loads_or_default(item.pop('params_json', '{}'), {})
         return item
 
     def _build_default_job(self, payload: dict) -> dict:
@@ -108,7 +94,7 @@ class BackgroundJobStore:
                     job['job_name'], job['job_key'], job['display_name'], job['thread_name'],
                     job['command_id'], job['execution_mode'], job['state'], job['created_at'],
                     job['started_at'], job['stopped_at'], job['updated_at'], job['last_message'],
-                    job['message_count'], job['file_count'], self._json_dumps(job['params']),
+                    job['message_count'], job['file_count'], json_dumps_or_default(job['params']),
                 ),
             )
         else:
@@ -139,7 +125,7 @@ class BackgroundJobStore:
                     updates['machine_id'], updates['client_id'], updates['hostname'],
                     updates['job_name'], updates['job_key'], updates['display_name'],
                     updates['thread_name'], updates['command_id'], updates['execution_mode'],
-                    self._json_dumps(updates['params']), updates['updated_at'], job_id,
+                    json_dumps_or_default(updates['params']), updates['updated_at'], job_id,
                 ),
             )
 

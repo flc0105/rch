@@ -259,12 +259,17 @@ def _detect_os_display_version(platform_info) -> str:
     return _safe_text(platform.version() or platform.release() or '')
 
 
-def _detect_machine_identity_components() -> dict:
-    platform_info = detect_platform_info()
+def detect_machine_identity_components(platform_info=None) -> dict:
+    platform_info = platform_info or detect_platform_info()
 
     hostname = _safe_text(platform.node()).strip()
     os_name = platform_info.display_name
-    os_version = _detect_os_display_version(platform_info)
+    os_version = ''
+    if platform_info.alias == PlatformAlias.LINUX.value:
+        os_name, os_version = _detect_linux_distribution_name_and_version()
+    else:
+        os_version = _detect_os_display_version(platform_info)
+
     arch = _safe_text(platform.machine()).strip()
     if platform_info.alias == PlatformAlias.IOS.value:
         arch = _detect_ios_arch()
@@ -279,7 +284,6 @@ def _detect_machine_identity_components() -> dict:
         manufacturer, model = _detect_macos_manufacturer_and_model()
         native_id = _detect_macos_native_id()
     elif platform_info.alias == PlatformAlias.LINUX.value:
-        os_name, os_version = _detect_linux_distribution_name_and_version()
         manufacturer, model = _detect_linux_manufacturer_and_model()
         native_id = _detect_linux_native_id()
     elif platform_info.alias == PlatformAlias.IOS.value:
@@ -297,8 +301,13 @@ def _detect_machine_identity_components() -> dict:
     }
 
 
-def build_machine_identity_payload() -> dict:
-    raw = _detect_machine_identity_components()
+def _detect_machine_identity_components() -> dict:
+    # Backward-compatible private alias; new runtime code should use get_local_identity().
+    return detect_machine_identity_components()
+
+
+def build_machine_identity_payload(raw_components=None) -> dict:
+    raw = dict(raw_components) if isinstance(raw_components, dict) else detect_machine_identity_components()
 
     normalized = {
         'hostname': _normalize_machine_fingerprint_value(raw.get('hostname')),

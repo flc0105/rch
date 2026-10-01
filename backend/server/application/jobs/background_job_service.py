@@ -1,9 +1,9 @@
-import base64
 import json
 import os
 import threading
 from datetime import datetime
 
+from core.protocol.structured_arg_codec import encode_structured_arg
 from core.utils.job_metadata import normalize_job_execution_mode
 
 
@@ -32,11 +32,6 @@ class BackgroundJobService:
         self._lifecycle_event_keys = set()
         self._lifecycle_lock = threading.RLock()
 
-    def _encode_payload_arg(self, payload: dict) -> str:
-        raw = json.dumps(payload, ensure_ascii=False).encode('utf-8')
-        encoded = base64.urlsafe_b64encode(raw).decode('utf-8')
-        return f'__json__:{encoded}'
-
     def _build_start_job_command(self, job_name: str, params=None, execution_mode: str = 'inproc') -> str:
         normalized_job_name = str(job_name or '').strip()
         normalized_params = dict(params or {}) if isinstance(params, dict) else {}
@@ -50,7 +45,7 @@ class BackgroundJobService:
             'params': normalized_params,
             'execution_mode': normalized_mode,
         }
-        return f'start_job {self._encode_payload_arg(payload)}'
+        return f'start_job {encode_structured_arg(payload)}'
 
     def _serialize_available_job(self, job_item: dict) -> dict:
         job_name = str(job_item.get('job_name') or job_item.get('name') or job_item.get('job_key') or '').strip()

@@ -3,7 +3,7 @@
 import json
 
 from client.commands.common.services.process.process_service import ProcessService
-from core.platform.platform_identity import detect_platform_alias
+from core.device.local_identity import get_local_identity
 from core.utils.command_output import StructuredCommandResult, render_structured_result
 from core.utils.decorator import desc
 
@@ -58,7 +58,7 @@ class CommandProcessMixin:
         """
         try:
             apps = []
-            current_platform = detect_platform_alias()
+            current_platform = get_local_identity().os_alias
             if current_platform == 'win':
                 apps = self._get_process_service().list_windows_apps()
             elif current_platform == 'mac':

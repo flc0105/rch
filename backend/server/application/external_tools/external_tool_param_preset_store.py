@@ -1,10 +1,10 @@
-import json
 import sqlite3
 import threading
 import uuid
 from datetime import datetime
 
 
+from core.utils.json_utils import clone_json_value, compact_json_dumps, json_loads_dict
 class ExternalToolParamPresetStore:
     """External Tool parameter presets stored in shared rch.db."""
 
@@ -29,27 +29,15 @@ class ExternalToolParamPresetStore:
         if not isinstance(params, dict):
             raise ValueError('params must be an object')
         try:
-            return json.loads(json.dumps(params, ensure_ascii=False))
+            return clone_json_value(params)
         except Exception as exc:
             raise ValueError(f'params must be JSON serializable: {exc}') from exc
-
-    @staticmethod
-    def _decode_params(value: str) -> dict:
-        try:
-            payload = json.loads(value or '{}')
-            return payload if isinstance(payload, dict) else {}
-        except Exception:
-            return {}
-
-    @staticmethod
-    def _encode_params(value: dict) -> str:
-        return json.dumps(value, ensure_ascii=False, separators=(',', ':'))
 
     def _row_to_item(self, row) -> dict:
         return {
             'preset_id': row['preset_id'],
             'name': row['name'],
-            'params': self._decode_params(row['params_json']),
+            'params': json_loads_dict(row['params_json']),
             'created_at': row['created_at'],
             'updated_at': row['updated_at'],
         }
@@ -97,7 +85,7 @@ class ExternalToolParamPresetStore:
                     '''INSERT INTO external_tool_presets(preset_id, tool_id, name, params_json, created_at, updated_at)
                        VALUES (?, ?, ?, ?, ?, ?)''',
                     (
-                        item['preset_id'], tool_id_text, name_text, self._encode_params(params_copy),
+                        item['preset_id'], tool_id_text, name_text, compact_json_dumps(params_copy),
                         now_text, now_text,
                     ),
                 )
@@ -122,14 +110,14 @@ class ExternalToolParamPresetStore:
             name_text = str(name).strip() if name else row['name']
             if not name_text:
                 raise ValueError('preset name is required')
-            params_copy = self._copy_params(params) if params is not None else self._decode_params(row['params_json'])
+            params_copy = self._copy_params(params) if params is not None else json_loads_dict(row['params_json'])
             self._assert_unique_name(conn, tool_id_text, name_text, exclude_preset_id=preset_id_text)
             updated_at = self._now_text()
             try:
                 conn.execute(
                     '''UPDATE external_tool_presets SET name = ?, params_json = ?, updated_at = ?
                        WHERE tool_id = ? AND preset_id = ?''',
-                    (name_text, self._encode_params(params_copy), updated_at, tool_id_text, preset_id_text),
+                    (name_text, compact_json_dumps(params_copy), updated_at, tool_id_text, preset_id_text),
                 )
             except sqlite3.IntegrityError as exc:
                 raise ValueError(f'Preset already exists: {name_text}') from exc

@@ -1,6 +1,6 @@
 import os
 
-from client.commands.arguments.structured_codec import StructuredArgCodec
+from core.protocol.structured_arg_codec import StructuredArgCodec
 
 
 class PathResolver:

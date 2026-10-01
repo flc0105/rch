@@ -1,5 +1,3 @@
-import platform as _platform
-import socket
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -39,52 +37,13 @@ def _safe_text(value) -> str:
     return '' if value is None else str(value).strip()
 
 
-def _detect_machine_identity() -> dict:
+def _get_local_identity():
     try:
-        from core.device.machine_identity import build_machine_identity_payload
+        from core.device.local_identity import get_local_identity
 
-        payload = build_machine_identity_payload()
-        return payload if isinstance(payload, dict) else {}
+        return get_local_identity()
     except Exception:
-        return {}
-
-
-def _detect_machine_components() -> dict:
-    try:
-        from core.device.machine_identity import _detect_machine_identity_components
-
-        payload = _detect_machine_identity_components()
-        return payload if isinstance(payload, dict) else {}
-    except Exception:
-        return {}
-
-
-def _detect_platform_info() -> dict:
-    try:
-        from core.platform.platform_identity import detect_platform_info
-
-        info = detect_platform_info()
-        return {
-            'alias': _safe_text(getattr(info, 'alias', '')),
-            'display_name': _safe_text(getattr(info, 'display_name', '')),
-            'system_name': _safe_text(getattr(info, 'system_name', '')),
-        }
-    except Exception:
-        system_name = _safe_text(_platform.system()) or 'Unknown'
-        return {
-            'alias': system_name.lower(),
-            'display_name': system_name,
-            'system_name': system_name,
-        }
-
-
-def _detect_arch() -> str:
-    try:
-        from core.platform.normalization import normalize_arch
-
-        return _safe_text(normalize_arch(_platform.machine()))
-    except Exception:
-        return _safe_text(_platform.machine()).lower()
+        return None
 
 
 def get_current_context() -> ScriptSdkRuntimeContext:
@@ -113,15 +72,16 @@ def get_command_id():
 
 def get_hostname() -> str:
     value = _safe_text(get_current_context().get('hostname', ''))
-    return value or socket.gethostname()
+    identity = _get_local_identity()
+    return _safe_text(getattr(identity, 'hostname', ''))
 
 
 def get_machine_id() -> str:
     value = _safe_text(get_current_context().get('machine_id', ''))
     if value:
         return value
-    payload = _detect_machine_identity()
-    return _safe_text(payload.get('machine_id_hash') or payload.get('machine_id'))
+    identity = _get_local_identity()
+    return _safe_text(getattr(identity, 'machine_id', ''))
 
 
 def get_os_alias() -> str:
@@ -131,22 +91,24 @@ def get_os_alias() -> str:
     value = _safe_text(get_current_context().get('platform', ''))
     if value:
         return value
-    return _safe_text(_detect_platform_info().get('alias'))
+    identity = _get_local_identity()
+    return _safe_text(getattr(identity, 'os_alias', ''))
 
 
 def get_os_type() -> str:
     value = _safe_text(get_current_context().get('os_type', ''))
     if value:
         return value
-    return _safe_text(_detect_platform_info().get('display_name'))
+    identity = _get_local_identity()
+    return _safe_text(getattr(identity, 'os_type', ''))
 
 
 def get_os_ver() -> str:
     value = _safe_text(get_current_context().get('os_ver', ''))
     if value:
         return value
-    machine_info = _detect_machine_components()
-    return _safe_text(machine_info.get('os_version'))
+    identity = _get_local_identity()
+    return _safe_text(getattr(identity, 'os_version', ''))
 
 
 # def get_platform() -> str:
@@ -154,7 +116,11 @@ def get_os_ver() -> str:
 
 
 def get_arch() -> str:
-    return _safe_text(get_current_context().get('arch', '')) or _detect_arch()
+    value = _safe_text(get_current_context().get('arch', ''))
+    if value:
+        return value
+    identity = _get_local_identity()
+    return _safe_text(getattr(identity, 'arch', ''))
 
 
 def get_script_name() -> str:

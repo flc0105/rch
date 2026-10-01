@@ -1,8 +1,17 @@
 import base64
-import sys
 import threading
 import time
 
+from core.device.local_identity import get_local_identity
+from core.protocol.screen import (
+    SCREEN_DEFAULT_FPS,
+    SCREEN_MAX_FPS,
+    SCREEN_MAX_QUALITY,
+    SCREEN_MIN_FPS,
+    SCREEN_MIN_QUALITY,
+    normalize_screen_fps,
+    normalize_screen_quality,
+)
 from client.screen.frame_strategies.factory import build_screen_frame_strategy
 from core.protocol.message_types import (
     MSG_TYPE_SCREEN_CLOSED,
@@ -18,24 +27,25 @@ class ScreenViewManager:
     """
     Client 端只读屏幕预览管理器。
 
-    当前只负责截图和帧传输，不接收鼠标/键盘输入。
-    控制能力作为独立可选输入通道附加在预览会话上，默认不启用。
+    负责截图、帧传输与可选鼠标/键盘输入通道。
+    平台相关行为统一使用本机 identity，而不是在各方法重复判断 sys.platform。
     """
 
-    MIN_FPS = 1
-    MAX_FPS = 30
-    MIN_QUALITY = 20
-    MAX_QUALITY = 95
+    MIN_FPS = SCREEN_MIN_FPS
+    MAX_FPS = SCREEN_MAX_FPS
+    MIN_QUALITY = SCREEN_MIN_QUALITY
+    MAX_QUALITY = SCREEN_MAX_QUALITY
     INPUT_BUTTONS = {'left', 'middle', 'right'}
 
     def __init__(self, connection):
         self.connection = connection
+        self._os_alias = get_local_identity().os_alias
         self._lock = threading.RLock()
         self._input_lock = threading.RLock()
         self._sessions = {}
         self._windows_input_guard = None
 
-    def open_session(self, screen_session_id: str, fps: int = 4, quality: int = 60):
+    def open_session(self, screen_session_id: str, fps: int = SCREEN_DEFAULT_FPS, quality: int = 60):
         session_id = str(screen_session_id or '').strip()
         if not session_id:
             return False
@@ -45,8 +55,8 @@ class ScreenViewManager:
 
         item = {
             'screen_session_id': session_id,
-            'fps': self._normalize_fps(fps),
-            'quality': self._normalize_quality(quality),
+            'fps': normalize_screen_fps(fps),
+            'quality': normalize_screen_quality(quality),
             'frame_strategy': frame_strategy,
             'frame_strategy_name': frame_strategy.name,
             'stop_event': threading.Event(),
@@ -93,9 +103,9 @@ class ScreenViewManager:
             if not item:
                 return False
             if fps is not None:
-                item['fps'] = self._normalize_fps(fps)
+                item['fps'] = normalize_screen_fps(fps)
             if quality is not None:
-                item['quality'] = self._normalize_quality(quality)
+                item['quality'] = normalize_screen_quality(quality)
         return True
 
     def close_session(self, screen_session_id: str, notify: bool = True):
@@ -231,13 +241,13 @@ class ScreenViewManager:
             # 截图像素尺寸和系统输入坐标尺寸不一定相同。macOS Retina 与
             # Windows DPI 缩放都会出现这种情况，因此控制开启时单独记录
             # 输入坐标空间，鼠标位置仍通过归一化坐标映射，协议无需变化。
-            if sys.platform == 'darwin':
+            if self._os_alias == 'mac':
                 input_width, input_height = pyautogui.size()
                 item['input_width'] = int(input_width)
                 item['input_height'] = int(input_height)
                 item['input_origin_x'] = 0
                 item['input_origin_y'] = 0
-            elif sys.platform.startswith('win'):
+            elif self._os_alias == 'win':
                 origin_x, origin_y, input_width, input_height = self._get_windows_input_geometry(pyautogui)
                 item['input_width'] = int(input_width)
                 item['input_height'] = int(input_height)
@@ -262,7 +272,7 @@ class ScreenViewManager:
         if action == 'mouse_move':
             x, y = self._resolve_pointer(item, payload)
             self._ensure_windows_input_allowed(action, x=x, y=y)
-            if sys.platform.startswith('win'):
+            if self._os_alias == 'win':
                 try:
                     self._send_windows_mouse_move(item, x, y)
                 except Exception as e:
@@ -294,7 +304,7 @@ class ScreenViewManager:
             x, y = self._resolve_pointer(item, payload)
             self._ensure_windows_input_allowed(action, x=x, y=y)
             pyautogui.moveTo(x, y, duration=0, _pause=False)
-            if sys.platform.startswith('win'):
+            if self._os_alias == 'win':
                 # Win32 一格滚轮需要 WHEEL_DELTA(120)，绕过 PyAutoGUI Windows 的原始 delta 注入问题。
                 import win32api
                 import win32con
@@ -371,7 +381,7 @@ class ScreenViewManager:
         origin_x = int(item.get('origin_x') or 0)
         origin_y = int(item.get('origin_y') or 0)
 
-        if sys.platform == 'darwin':
+        if self._os_alias == 'mac':
             width = int(item.get('input_width') or 0)
             height = int(item.get('input_height') or 0)
             origin_x = int(item.get('input_origin_x') or 0)
@@ -386,7 +396,7 @@ class ScreenViewManager:
                     raise RuntimeError(
                         f'Unable to resolve macOS input geometry: {e}'
                     ) from e
-        elif sys.platform.startswith('win'):
+        elif self._os_alias == 'win':
             width = int(item.get('input_width') or 0)
             height = int(item.get('input_height') or 0)
             origin_x = int(item.get('input_origin_x') or 0)
@@ -518,7 +528,7 @@ class ScreenViewManager:
             raise OSError(error, 'SendInput mouse move failed')
 
     def _ensure_windows_input_allowed(self, action: str, x=None, y=None):
-        if not sys.platform.startswith('win'):
+        if self._os_alias != 'win':
             return
 
         if self._windows_input_guard is None:
@@ -555,7 +565,7 @@ class ScreenViewManager:
         if not key:
             return ''
         if key == 'meta':
-            if sys.platform == 'darwin':
+            if self._os_alias == 'mac':
                 return 'command'
             return 'win'
         aliases = {
@@ -604,7 +614,7 @@ class ScreenViewManager:
             raise RuntimeError(f'Screen capture failed: {e}')
 
     def _capture_origin(self, image):
-        if not sys.platform.startswith('win'):
+        if self._os_alias != 'win':
             return 0, 0
         try:
             import ctypes
@@ -619,16 +629,3 @@ class ScreenViewManager:
             pass
         return 0, 0
 
-    def _normalize_fps(self, value) -> int:
-        try:
-            normalized = int(value)
-        except Exception:
-            normalized = 4
-        return max(self.MIN_FPS, min(self.MAX_FPS, normalized))
-
-    def _normalize_quality(self, value) -> int:
-        try:
-            normalized = int(value)
-        except Exception:
-            normalized = 60
-        return max(self.MIN_QUALITY, min(self.MAX_QUALITY, normalized))

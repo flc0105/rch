@@ -1,8 +1,9 @@
+from core.utils.network import normalize_mac_address
 from client.commands.common.providers.ifconfig_provider import (
     GetifaddrsIfconfigProvider,
     WindowsPsutilIfconfigProvider,
 )
-from core.platform.platform_identity import detect_platform_alias
+from core.device.local_identity import get_local_identity
 from core.utils.command_output import StructuredCommandResult
 
 
@@ -35,7 +36,7 @@ class NetworkInterfaceService:
         )
 
     def collect_ifconfig_rows(self):
-        platform_alias = detect_platform_alias()
+        platform_alias = get_local_identity().os_alias
 
         if platform_alias in ('ios', 'mac', 'linux'):
             provider = GetifaddrsIfconfigProvider(platform_alias)
@@ -75,7 +76,7 @@ class NetworkInterfaceService:
             if not ips:
                 continue
 
-            mac = self._normalize_mac(row.get('mac') or '')
+            mac = normalize_mac_address(row.get('mac') or '')
 
             key = (name, tuple(ips), mac)
 
@@ -181,43 +182,6 @@ class NetworkInterfaceService:
             return False
 
         return True
-
-    def _normalize_mac(self, value):
-        text = str(value or '').strip().lower().replace('-', ':')
-
-        if not text:
-            return ''
-
-        if ':' in text:
-            parts = [part.zfill(2) for part in text.split(':') if part]
-        else:
-            compact = ''.join(
-                ch for ch in text
-                if ch in '0123456789abcdef'
-            )
-
-            if len(compact) != 12:
-                return ''
-
-            parts = [
-                compact[index:index + 2]
-                for index in range(0, 12, 2)
-            ]
-
-        if len(parts) != 6:
-            return ''
-
-        for part in parts:
-            if len(part) != 2:
-                return ''
-
-            if any(ch not in '0123456789abcdef' for ch in part):
-                return ''
-
-        if parts == ['00', '00', '00', '00', '00', '00']:
-            return ''
-
-        return ':'.join(parts)
 
     def _interface_sort_key(self, name):
         lower = str(name or '').lower()

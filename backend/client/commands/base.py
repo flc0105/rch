@@ -3,7 +3,7 @@ from abc import ABC
 from client.commands.common.services.filesystem.archive_service import ArchiveService
 from client.commands.common.services.filesystem.file_system_service import FileSystemService
 from client.commands.common.services.filesystem.path_resolver import PathResolver
-from client.commands.arguments.structured_codec import StructuredArgCodec
+from core.protocol.structured_arg_codec import StructuredArgCodec
 from client.http.client_api import ClientApiClient
 from client.config.runtime_config import COMMAND_DEFAULT_TIMEOUT
 from core.utils.output_marker import info, success, warning, error

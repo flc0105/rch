@@ -2,6 +2,7 @@ import glob
 import os
 import re
 
+from core.protocol.structured_arg_codec import encode_structured_arg
 from core.command_completion.models import CompletionCandidate, CompletionContext
 from core.platform.normalization import normalize_platform_alias
 from core.command_completion.provider import CommandCompletionProvider
@@ -458,12 +459,7 @@ class RemoteClientCommandCompletionProvider(CommandCompletionProvider):
         return payload
 
     def _build_command(self, payload: dict) -> str:
-        import base64
-        import json
-
-        raw = json.dumps(payload, ensure_ascii=False).encode('utf-8')
-        encoded = base64.urlsafe_b64encode(raw).decode('utf-8')
-        return f'command_completions __json__:{encoded}'
+        return f'command_completions {encode_structured_arg(payload)}'
 
     def _candidate_from_payload(self, item: dict) -> CompletionCandidate:
         title = str(item.get('title') or item.get('template') or item.get('value') or item.get('name') or '').strip()

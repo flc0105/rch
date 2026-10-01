@@ -1,8 +1,9 @@
-import json
 import threading
 from datetime import datetime
 
 
+from core.utils.datetime_utils import parse_iso_datetime
+from core.utils.json_utils import compact_json_dumps, json_loads_dict
 class ConnectionHistoryStore:
     """SQLite-backed machine/client connection lifecycle history."""
 
@@ -24,31 +25,9 @@ class ConnectionHistoryStore:
     def _now_iso() -> str:
         return datetime.now().isoformat()
 
-    @staticmethod
-    def _safe_parse_iso(value: str):
-        text = str(value or '').strip()
-        if not text:
-            return None
-        try:
-            return datetime.fromisoformat(text)
-        except Exception:
-            return None
-
     def _to_ms(self, value: str) -> int:
-        parsed = self._safe_parse_iso(value)
+        parsed = parse_iso_datetime(value)
         return int(parsed.timestamp() * 1000) if parsed is not None else 0
-
-    @staticmethod
-    def _json_dumps(value) -> str:
-        return json.dumps(value or {}, ensure_ascii=False, separators=(',', ':'))
-
-    @staticmethod
-    def _json_loads(value) -> dict:
-        try:
-            payload = json.loads(value or '{}')
-            return payload if isinstance(payload, dict) else {}
-        except Exception:
-            return {}
 
     def _build_snapshot(self, connection: dict, previous: dict | None = None) -> dict:
         previous = previous if isinstance(previous, dict) else {}
@@ -66,7 +45,7 @@ class ConnectionHistoryStore:
         return result
 
     def _row_to_session(self, row, *, now_iso: str = '') -> dict:
-        snapshot = self._json_loads(row['snapshot_json'])
+        snapshot = json_loads_dict(row['snapshot_json'])
         result = dict(snapshot)
         result.update({
             'machine_id': row['machine_id'],
@@ -82,8 +61,8 @@ class ConnectionHistoryStore:
         })
         if not str(result.get('disconnected_at') or '').strip():
             result['connection_state'] = 'online'
-            start = self._safe_parse_iso(result.get('connected_at'))
-            end = self._safe_parse_iso(now_iso or self._now_iso())
+            start = parse_iso_datetime(result.get('connected_at'))
+            end = parse_iso_datetime(now_iso or self._now_iso())
             if start is not None and end is not None:
                 result['duration_ms'] = max(int((end - start).total_seconds() * 1000), 0)
         return result
@@ -99,7 +78,7 @@ class ConnectionHistoryStore:
             'SELECT * FROM connection_sessions WHERE machine_id = ? AND client_id = ?',
             (machine_id, client_id),
         ).fetchone()
-        previous_snapshot = self._json_loads(existing['snapshot_json']) if existing else {}
+        previous_snapshot = json_loads_dict(existing['snapshot_json']) if existing else {}
         snapshot = self._build_snapshot(connection, previous_snapshot)
         last_seen_at = str(connection.get('last_seen_at') or connected_at).strip()
 
@@ -112,7 +91,7 @@ class ConnectionHistoryStore:
                     disconnect_reason, tracking_source, snapshot_json
                 ) VALUES (?, ?, ?, ?, '', 0, ?, 0, 'online', '', 'connection_lifecycle', ?)
                 ''',
-                (machine_id, client_id, connected_at, self._to_ms(connected_at), last_seen_at, self._json_dumps(snapshot)),
+                (machine_id, client_id, connected_at, self._to_ms(connected_at), last_seen_at, compact_json_dumps(snapshot or {})),
             )
             return
 
@@ -127,7 +106,7 @@ class ConnectionHistoryStore:
             ''',
             (
                 original_connected_at, self._to_ms(original_connected_at), last_seen_at,
-                self._json_dumps(snapshot), machine_id, client_id,
+                compact_json_dumps(snapshot or {}), machine_id, client_id,
             ),
         )
 
@@ -150,22 +129,22 @@ class ConnectionHistoryStore:
                 self._record_connected_tx(conn, connection)
                 return
 
-            snapshot = self._build_snapshot(connection, self._json_loads(row['snapshot_json']))
+            snapshot = self._build_snapshot(connection, json_loads_dict(row['snapshot_json']))
             last_seen_at = str(connection.get('last_seen_at') or row['last_seen_at'] or '').strip()
             disconnected_at = str(row['disconnected_at'] or '').strip()
             duration_ms = int(row['duration_ms'] or 0)
             state = row['connection_state']
             if not disconnected_at:
                 state = 'online'
-                start = self._safe_parse_iso(row['connected_at'])
-                end = self._safe_parse_iso(self._now_iso())
+                start = parse_iso_datetime(row['connected_at'])
+                end = parse_iso_datetime(self._now_iso())
                 if start is not None and end is not None:
                     duration_ms = max(int((end - start).total_seconds() * 1000), 0)
 
             conn.execute(
                 '''UPDATE connection_sessions SET last_seen_at = ?, duration_ms = ?, connection_state = ?, snapshot_json = ?
                    WHERE machine_id = ? AND client_id = ?''',
-                (last_seen_at, duration_ms, state, self._json_dumps(snapshot), machine_id, client_id),
+                (last_seen_at, duration_ms, state, compact_json_dumps(snapshot or {}), machine_id, client_id),
             )
 
     def reconcile_active_sessions(self, machine_id: str, active_client_ids: set[str]):
@@ -183,8 +162,8 @@ class ConnectionHistoryStore:
                 if str(row['client_id'] or '').strip() in active_ids:
                     continue
                 disconnected_at = str(row['last_seen_at'] or row['connected_at'] or self._now_iso()).strip()
-                start = self._safe_parse_iso(row['connected_at'])
-                end = self._safe_parse_iso(disconnected_at)
+                start = parse_iso_datetime(row['connected_at'])
+                end = parse_iso_datetime(disconnected_at)
                 duration_ms = max(int((end - start).total_seconds() * 1000), 0) if start and end else 0
                 conn.execute(
                     '''UPDATE connection_sessions SET disconnected_at = ?, disconnected_at_ms = ?, duration_ms = ?,
@@ -212,9 +191,9 @@ class ConnectionHistoryStore:
                     (machine_id, client_id),
                 ).fetchone()
 
-            snapshot = self._build_snapshot(connection, self._json_loads(row['snapshot_json']))
-            start = self._safe_parse_iso(row['connected_at'])
-            end = self._safe_parse_iso(disconnected_at)
+            snapshot = self._build_snapshot(connection, json_loads_dict(row['snapshot_json']))
+            start = parse_iso_datetime(row['connected_at'])
+            end = parse_iso_datetime(disconnected_at)
             duration_ms = max(int((end - start).total_seconds() * 1000), 0) if start and end else 0
             last_seen_at = str(connection.get('last_seen_at') or row['last_seen_at'] or '').strip()
             conn.execute(
@@ -226,7 +205,7 @@ class ConnectionHistoryStore:
                 ''',
                 (
                     disconnected_at, self._to_ms(disconnected_at), last_seen_at, duration_ms,
-                    self._json_dumps(snapshot), machine_id, client_id,
+                    compact_json_dumps(snapshot or {}), machine_id, client_id,
                 ),
             )
 

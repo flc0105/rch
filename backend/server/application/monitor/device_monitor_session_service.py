@@ -3,6 +3,15 @@ import time
 import uuid
 from datetime import datetime
 
+from core.protocol.monitor import (
+    MONITOR_DEFAULT_INTERVALS,
+    MONITOR_MAX_INTERVAL_SECONDS,
+    MONITOR_MIN_INTERVAL_SECONDS,
+    MONITOR_SUPPORTED_CHANNELS,
+    normalize_monitor_channels,
+    normalize_monitor_intervals,
+    normalize_monitor_options,
+)
 from core.protocol.message_types import (
     MSG_TYPE_MONITOR_CLOSE,
     MSG_TYPE_MONITOR_CONFIG,
@@ -19,30 +28,10 @@ class DeviceMonitorSessionService:
     同时存在多个独立 monitor session，避免不同视图互相抢占采样周期。
     """
 
-    SUPPORTED_CHANNELS = {
-        'system',
-        'storage',
-        'network',
-        'battery',
-        'processes',
-        'apps',
-        'process_detail',
-        'process_connections',
-        'process_open_files',
-    }
-    DEFAULT_INTERVALS = {
-        'system': 0.5,
-        'network': 0.5,
-        'storage': 5.0,
-        'battery': 5.0,
-        'processes': 1.0,
-        'apps': 1.0,
-        'process_detail': 1.0,
-        'process_connections': 2.0,
-        'process_open_files': 3.0,
-    }
-    MIN_INTERVAL_SECONDS = 0.25
-    MAX_INTERVAL_SECONDS = 60.0
+    SUPPORTED_CHANNELS = MONITOR_SUPPORTED_CHANNELS
+    DEFAULT_INTERVALS = MONITOR_DEFAULT_INTERVALS
+    MIN_INTERVAL_SECONDS = MONITOR_MIN_INTERVAL_SECONDS
+    MAX_INTERVAL_SECONDS = MONITOR_MAX_INTERVAL_SECONDS
 
     def __init__(self, server, event_bus):
         self.server = server
@@ -58,9 +47,9 @@ class DeviceMonitorSessionService:
 
         session = self.server.get_target_connection_by_client_id(client_id)
         monitor_session_id = str(uuid.uuid4())
-        normalized_channels = self._normalize_channels(channels)
-        normalized_intervals = self._normalize_intervals(intervals, normalized_channels)
-        normalized_options = self._normalize_options(options)
+        normalized_channels = normalize_monitor_channels(channels)
+        normalized_intervals = normalize_monitor_intervals(intervals, normalized_channels)
+        normalized_options = normalize_monitor_options(options)
         item = {
             'monitor_session_id': monitor_session_id,
             'client_id': client_id,
@@ -97,15 +86,15 @@ class DeviceMonitorSessionService:
     def update_session(self, monitor_session_id: str, tab_id: str, channels=None, intervals=None, options=None) -> dict:
         item = self._get_required_for_tab(monitor_session_id, tab_id)
         with self._lock:
-            next_channels = self._normalize_channels(item['channels'] if channels is None else channels)
-            next_intervals = self._normalize_intervals(
+            next_channels = normalize_monitor_channels(item['channels'] if channels is None else channels)
+            next_intervals = normalize_monitor_intervals(
                 item['intervals'] if intervals is None else intervals,
                 next_channels,
             )
             item['channels'] = next_channels
             item['intervals'] = next_intervals
             if options is not None:
-                item['options'] = self._normalize_options(options)
+                item['options'] = normalize_monitor_options(options)
             next_options = dict(item.get('options') or {})
 
         session = self.server.get_target_connection_by_client_id(item['client_id'])
@@ -142,9 +131,9 @@ class DeviceMonitorSessionService:
             item['status'] = 'open'
             item['opened_at'] = time.time()
             if isinstance(channels, list):
-                item['channels'] = self._normalize_channels(channels)
+                item['channels'] = normalize_monitor_channels(channels)
             if isinstance(intervals, dict):
-                item['intervals'] = self._normalize_intervals(intervals, item['channels'])
+                item['intervals'] = normalize_monitor_intervals(intervals, item['channels'])
             event_item = self._serialize(item)
 
         self._publish_status(event_item, 'open')
@@ -277,28 +266,3 @@ class DeviceMonitorSessionService:
             raise PermissionError('Device monitor session belongs to another tab')
         return item
 
-    def _normalize_channels(self, channels) -> list[str]:
-        raw = channels if isinstance(channels, (list, tuple, set)) else []
-        normalized = []
-        for channel in raw:
-            name = str(channel or '').strip().lower()
-            if name in self.SUPPORTED_CHANNELS and name not in normalized:
-                normalized.append(name)
-        return normalized or ['system', 'storage', 'network', 'battery']
-
-    def _normalize_intervals(self, intervals, channels) -> dict:
-        raw = intervals if isinstance(intervals, dict) else {}
-        result = {}
-        for channel in channels:
-            default = self.DEFAULT_INTERVALS[channel]
-            try:
-                value = float(raw.get(channel, default))
-            except Exception:
-                value = default
-            result[channel] = max(self.MIN_INTERVAL_SECONDS, min(self.MAX_INTERVAL_SECONDS, value))
-        return result
-
-    def _normalize_options(self, options) -> dict:
-        if not isinstance(options, dict):
-            return {}
-        return dict(options)

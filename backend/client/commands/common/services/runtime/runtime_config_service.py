@@ -2,6 +2,7 @@ import ast
 import sys
 from dataclasses import dataclass
 
+from client.config.runtime_config_utils import format_runtime_config_value
 from client.config import runtime_config
 from client.config.runtime_config_store import (
     clear_runtime_overrides,
@@ -322,13 +323,7 @@ class RuntimeConfigService:
         return self.is_known_config_key(key) and self.is_exposed_key(key)
 
     def format_value(self, value) -> str:
-        if isinstance(value, str):
-            return repr(value)
-        if isinstance(value, bool):
-            return 'True' if value else 'False'
-        if value is None:
-            return 'None'
-        return str(value)
+        return format_runtime_config_value(value)
 
     def coerce_value(self, raw_value: str, reference_value):
         text = str(raw_value or '').strip()

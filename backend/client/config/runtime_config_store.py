@@ -1,9 +1,9 @@
 import json
 import os
-import sys
 import tempfile
 
 from client.runtime.temp_workspace import register_temp_path, release_temp_path, cleanup_temp_path
+from core.platform.platform_identity import detect_platform_alias
 
 
 CONFIG_ENV_NAME = 'RUNTIME_CONFIG_PATH'
@@ -28,16 +28,17 @@ def get_runtime_config_path() -> str:
 
 
 def get_runtime_config_dir() -> str:
-    if os.name == 'nt':
+    platform_alias = detect_platform_alias()
+    if platform_alias == 'win':
         base_dir = os.environ.get('APPDATA', '').strip()
         if not base_dir:
             base_dir = os.path.join(os.path.expanduser('~'), 'AppData', 'Roaming')
         return os.path.join(base_dir, APP_DIR_NAME)
 
-    if sys.platform == 'darwin':
+    if platform_alias == 'mac':
         return os.path.join(os.path.expanduser('~'), 'Library', 'Application Support', APP_DIR_NAME)
 
-    if sys.platform == 'ios':
+    if platform_alias == 'ios':
         return os.path.join(os.path.expanduser('~/Documents'), f'.{APP_DIR_NAME}')
 
     base_dir = os.environ.get('XDG_CONFIG_HOME', '').strip()

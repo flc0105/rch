@@ -2,6 +2,7 @@ import os
 import time
 
 from core.protocol.message_router_base import BaseMessageRouter
+from core.protocol.screen import SCREEN_DEFAULT_FPS
 from core.protocol.message_types import MSG_TYPE_CANCEL_ACK, MSG_TYPE_HEARTBEAT_ACK
 
 
@@ -78,7 +79,7 @@ class ClientInboundMessageRouter(BaseMessageRouter):
     def handle_screen_open_message(self, data: dict):
         self.connection.runtime.screen_view_manager.open_session(
             data.get('screen_session_id') or '',
-            fps=data.get('fps') or 4,
+            fps=data.get('fps') or SCREEN_DEFAULT_FPS,
             quality=data.get('quality') or 60,
         )
         return None

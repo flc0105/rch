@@ -1,5 +1,6 @@
 from flask import Blueprint, request
 
+from core.protocol.screen import SCREEN_DEFAULT_FPS
 from server.web.api_response import WebApiResponder
 from server.web.request_parsers import get_json_payload
 
@@ -15,7 +16,7 @@ def create_screen_view_blueprint(server_instance):
             payload = get_json_payload()
             result = screen_view_api.open_screen_view(
                 client_id,
-                fps=payload.get('fps') or 4,
+                fps=payload.get('fps') or SCREEN_DEFAULT_FPS,
                 quality=payload.get('quality') or 60,
             )
             result['ws_path'] = (

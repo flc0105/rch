@@ -61,26 +61,17 @@ class CommandExecutionMixin:
         context['client_id'] = getattr(socket_obj, 'client_id', '') or ''
         context['command_id'] = self.command_id if self.command_id is not None else ''
         try:
-            import platform
-            import socket
             from client.runtime.client_util import get_system_paths
-            from core.device.machine_identity import (
-                _detect_machine_identity_components,
-                build_machine_identity_payload,
-            )
-            from core.platform.normalization import normalize_arch
-            from core.platform.platform_identity import detect_platform_info
+            from core.device.local_identity import get_local_identity
 
-            platform_info = detect_platform_info()
-            machine_identity = build_machine_identity_payload()
-            machine_info = _detect_machine_identity_components()
-            context['hostname'] = socket.gethostname()
-            context['machine_id'] = machine_identity.get('machine_id_hash') or ''
-            context['platform'] = platform_info.alias
-            context['os_alias'] = platform_info.alias
-            context['os_type'] = platform_info.display_name
-            context['os_ver'] = machine_info.get('os_version') or ''
-            context['arch'] = normalize_arch(platform.machine())
+            identity = get_local_identity()
+            context['hostname'] = identity.hostname
+            context['machine_id'] = identity.machine_id
+            context['platform'] = identity.os_alias
+            context['os_alias'] = identity.os_alias
+            context['os_type'] = identity.os_type
+            context['os_ver'] = identity.os_version
+            context['arch'] = identity.arch
             context['system_paths'] = get_system_paths()
         except Exception:
             pass

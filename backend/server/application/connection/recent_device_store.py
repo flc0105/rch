@@ -1,8 +1,8 @@
-import json
 import threading
 from datetime import datetime
 
 
+from core.utils.json_utils import compact_json_dumps, json_loads_dict
 class RecentDeviceStore:
     """
     最近见过的设备缓存。
@@ -42,12 +42,7 @@ class RecentDeviceStore:
         ).fetchall()
         result = {}
         for row in rows:
-            try:
-                record = json.loads(row['snapshot_json'] or '{}')
-            except Exception:
-                record = {}
-            if not isinstance(record, dict):
-                record = {}
+            record = json_loads_dict(row['snapshot_json'])
             record.update({
                 'recent_device_key': row['machine_key'],
                 'machine_id': row['machine_id'],
@@ -58,7 +53,7 @@ class RecentDeviceStore:
                 'recent_updated_at': row['recent_updated_at'],
                 'machine_alias': row['machine_alias'],
                 'device_hidden_by_machine': bool(row['device_hidden_by_machine']),
-                'hidden_client_ids': json.loads(row['hidden_client_ids_json'] or '{}'),
+                'hidden_client_ids': json_loads_dict(row['hidden_client_ids_json']),
             })
             result[row['machine_key']] = record
         return result
@@ -70,16 +65,8 @@ class RecentDeviceStore:
         ).fetchone()
         if row is None:
             return None
-        try:
-            record = json.loads(row['snapshot_json'] or '{}')
-        except Exception:
-            record = {}
-        if not isinstance(record, dict):
-            record = {}
-        try:
-            hidden_client_ids = json.loads(row['hidden_client_ids_json'] or '{}')
-        except Exception:
-            hidden_client_ids = {}
+        record = json_loads_dict(row['snapshot_json'])
+        hidden_client_ids = json_loads_dict(row['hidden_client_ids_json'])
         record.update({
             'recent_device_key': row['machine_key'],
             'machine_id': row['machine_id'],
@@ -129,8 +116,8 @@ class RecentDeviceStore:
                 str(record.get('recent_updated_at') or ''),
                 str(record.get('machine_alias') or '').strip(),
                 int(bool(record.get('device_hidden_by_machine'))),
-                json.dumps(hidden_client_ids, ensure_ascii=False, separators=(',', ':')),
-                json.dumps(snapshot, ensure_ascii=False, separators=(',', ':')),
+                compact_json_dumps(hidden_client_ids),
+                compact_json_dumps(snapshot),
             ),
         )
 

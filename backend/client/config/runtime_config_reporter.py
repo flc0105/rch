@@ -1,16 +1,8 @@
+from client.config.runtime_config_utils import format_runtime_config_value
 from client.config import runtime_config
 from client.config.runtime_config_store import get_runtime_config_path
 from core.utils.logger import logger
 
-
-def _format_runtime_value(value) -> str:
-    if isinstance(value, str):
-        return repr(value)
-    if isinstance(value, bool):
-        return 'True' if value else 'False'
-    if value is None:
-        return 'None'
-    return str(value)
 
 
 def log_runtime_config_overrides_if_any():
@@ -40,8 +32,8 @@ def log_runtime_config_overrides_if_any():
         current_value = getattr(runtime_config, key, None)
         default_value = defaults.get(key, '<unknown>')
         lines.append(
-            f'  {key} = {_format_runtime_value(current_value)} '
-            f'(default={_format_runtime_value(default_value)})'
+            f'  {key} = {format_runtime_config_value(current_value)} '
+            f'(default={format_runtime_config_value(default_value)})'
         )
 
     logger.warning('\n'.join(lines))

@@ -1,5 +1,5 @@
 from client.commands.arguments.registry import ArgumentCommandRegistry
-from core.platform.platform_identity import detect_platform_alias
+from core.device.local_identity import get_local_identity
 
 
 class CommandCatalog:
@@ -36,7 +36,7 @@ class CommandCatalog:
         """
         # return platform.system().lower()
         # return detect_platform_name().lower()
-        return detect_platform_alias()
+        return get_local_identity().os_alias
 
     def _load_platform_command_class(self):
         """

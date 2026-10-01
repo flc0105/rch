@@ -1,5 +1,6 @@
 import threading
 
+from core.utils.timeouts import normalize_positive_timeout
 from client.commands.runtime.context import CommandExecutionContext
 
 
@@ -16,19 +17,6 @@ class CommandExecutionContextStore:
         self._execution_contexts = {}
         self._context_lock = threading.RLock()
 
-    def normalize_timeout(self, timeout):
-        if timeout in (None, ''):
-            return None
-
-        try:
-            value = float(timeout)
-        except Exception:
-            return None
-
-        if value <= 0:
-            return None
-        return value
-
     def extract_timeout(self, options=None):
         if not isinstance(options, dict):
             return None
@@ -37,13 +25,13 @@ class CommandExecutionContextStore:
         # COMMAND_DEFAULT_TIMEOUT 作为兜底 fallback 在 CommandRuntimeMixin 内处理，
         # 避免创建 context 时就覆盖 shell / stream / HTTP 的专用 timeout。
         if '_timeout' in options:
-            return self.normalize_timeout(options.get('_timeout'))
+            return normalize_positive_timeout(options.get('_timeout'))
         if 'timeout' in options:
-            return self.normalize_timeout(options.get('timeout'))
+            return normalize_positive_timeout(options.get('timeout'))
         return None
 
     def get_or_create(self, command_id, timeout=None):
-        normalized_timeout = self.normalize_timeout(timeout)
+        normalized_timeout = normalize_positive_timeout(timeout)
 
         with self._context_lock:
             context = self._execution_contexts.get(command_id)

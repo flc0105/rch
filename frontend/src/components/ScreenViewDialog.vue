@@ -149,7 +149,7 @@
 
         <div v-else-if="!frameReady" class="screen-view-empty">
           <div class="screen-view-empty-title">Waiting for screen frames…</div>
-          <div class="screen-view-empty-text">View mode is active. Enable Control to send mouse and keyboard input.</div>
+          <div class="screen-view-empty-text">Waiting for the first frame. Control is enabled by default when input is available.</div>
         </div>
       </div>
     </div>
@@ -204,12 +204,12 @@ export default {
       frameWidth: 0,
       frameHeight: 0,
       frameBytes: 0,
-      controlEnabled: false,
+      controlEnabled: true,
       controlError: '',
       pendingPointerMove: null,
       pointerMoveTimer: null,
       lastPointerMoveSentAt: 0,
-      fps: 4,
+      fps: 15,
       quality: 60,
       targetClientId: '',
       targetLabel: '-',
@@ -336,7 +336,7 @@ export default {
       this.frameWidth = 0
       this.frameHeight = 0
       this.frameBytes = 0
-      this.controlEnabled = false
+      this.controlEnabled = true
       this.controlError = ''
       this.screenWsReady = false
       this.removeControlSafetyListeners()
@@ -486,6 +486,16 @@ export default {
     },
 
     applyControlPayload(payload = {}) {
+      if (Object.prototype.hasOwnProperty.call(payload, 'control_enabled')) {
+        const nextEnabled = !!payload.control_enabled
+        if (nextEnabled) {
+          this.controlEnabled = true
+          this.installControlSafetyListeners()
+        } else if (this.controlEnabled) {
+          this.disableControl(false)
+        }
+      }
+
       const error = String(payload.control_error || '').trim()
       if (!error || error === this.controlError) return
       this.controlError = error

@@ -5,6 +5,7 @@ from typing import Optional
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.wsgi import WSGIMiddleware
 
+from core.protocol.screen import SCREEN_DEFAULT_FPS
 from server.web.app import create_app
 
 
@@ -172,7 +173,7 @@ def create_asgi_app(server_instance):
                         'height': payload.get('height') or 0,
                         'frame_bytes': payload.get('frame_bytes') or 0,
                         'captured_at': payload.get('captured_at') or 0,
-                        'fps': payload.get('fps') or 4,
+                        'fps': payload.get('fps') or SCREEN_DEFAULT_FPS,
                         'quality': payload.get('quality') or 60,
                         'control_enabled': bool(payload.get('control_enabled')),
                         'control_error': payload.get('control_error') or '',

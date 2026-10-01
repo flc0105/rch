@@ -1,7 +1,7 @@
 from client.commands.common.providers.netstat_provider import (
     PsutilNetstatProvider,
 )
-from core.platform.platform_identity import detect_platform_alias
+from core.device.local_identity import get_local_identity
 from core.utils.command_output import (
     StructuredCommandResult,
     render_structured_result,
@@ -48,7 +48,7 @@ class NetstatService:
         )
 
     def collect_netstat_rows(self, port=None):
-        platform_alias = detect_platform_alias()
+        platform_alias = get_local_identity().os_alias
 
         if platform_alias == 'ios':
             raise RuntimeError('netstat is unsupported on iOS')

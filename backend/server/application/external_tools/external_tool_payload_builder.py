@@ -1,4 +1,5 @@
-import base64
+from core.protocol.structured_arg_codec import encode_structured_arg
+
 import json
 import logging
 import os
@@ -28,9 +29,7 @@ class ExternalToolClientPayloadBuilder(ExternalToolRuntimeComponent):
         self.process_state = process_state
 
     def encode_payload_arg(self, payload: dict) -> str:
-        raw = json.dumps(payload, ensure_ascii=False).encode('utf-8')
-        encoded = base64.urlsafe_b64encode(raw).decode('utf-8')
-        return f'__json__:{encoded}'
+        return encode_structured_arg(payload)
 
     def _client_download_url(self, filename: str, package_file: dict) -> str:
         download_url = str(package_file.get('download_url') or '').strip()

@@ -1,6 +1,6 @@
-import base64
 import json
 
+from core.protocol.structured_arg_codec import encode_structured_arg
 from core.utils.script_metadata import resolve_script_params
 from server.application.auth.script_grant_service import SCRIPT_GRANT_REQUEST_KEY
 
@@ -70,11 +70,6 @@ class WebScriptApi:
     def delete_script(self, script_name: str):
         return self.script_catalog_service.delete_script(script_name)
 
-    def _encode_payload_arg(self, payload: dict) -> str:
-        raw = json.dumps(payload, ensure_ascii=False).encode('utf-8')
-        encoded = base64.urlsafe_b64encode(raw).decode('utf-8')
-        return f'__json__:{encoded}'
-
     def _build_script_grant_request(self, metadata: dict, script_name: str) -> dict:
         api_grants = metadata.get('api_grants') if isinstance(metadata, dict) else None
         if not api_grants:
@@ -110,6 +105,6 @@ class WebScriptApi:
             payload['script_grant_request'] = grant_request
         return self.command_execution_api.submit_web_command(
             client_id,
-            f'run_script {self._encode_payload_arg(payload)}',
+            f'run_script {encode_structured_arg(payload)}',
             tab_id=tab_id,
         )

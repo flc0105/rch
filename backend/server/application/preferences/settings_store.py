@@ -1,8 +1,8 @@
-import json
 import threading
 import time
 
 
+from core.utils.json_utils import compact_json_dumps, json_loads_dict
 class SettingsStore:
     """Small JSON-valued namespaces persisted in the shared rch.db settings table."""
 
@@ -21,15 +21,11 @@ class SettingsStore:
             ).fetchone()
             if row is None:
                 return {}
-            try:
-                payload = json.loads(row['value_json'] or '{}')
-                return payload if isinstance(payload, dict) else {}
-            except Exception:
-                return {}
+            return json_loads_dict(row['value_json'])
 
     def write(self, payload: dict):
         value = payload if isinstance(payload, dict) else {}
-        encoded = json.dumps(value, ensure_ascii=False, separators=(',', ':'))
+        encoded = compact_json_dumps(value)
         with self._lock:
             self.database.connection().execute(
                 '''

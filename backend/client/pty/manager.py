@@ -4,7 +4,7 @@ import threading
 
 from client.pty.backends.unix_pty_backend import UnixPtyBackend
 from client.pty.backends.windows_pty_backend import WindowsPtyBackend
-from core.platform.platform_identity import detect_platform_alias
+from core.device.local_identity import get_local_identity
 from core.protocol.message_types import (
     MSG_TYPE_PTY_CLOSED,
     MSG_TYPE_PTY_ERROR,
@@ -47,7 +47,7 @@ class PtyManager:
                 rows=rows,
             )
 
-        if detect_platform_alias() == 'ios':
+        if get_local_identity().os_alias == 'ios':
             self.send_error(pty_session_id, 'iOS is not supported')
             return False
 

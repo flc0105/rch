@@ -1,8 +1,10 @@
+from core.protocol.screen import SCREEN_DEFAULT_FPS
+
 class WebScreenViewApi:
     def __init__(self, screen_view_session_service):
         self.screen_view_session_service = screen_view_session_service
 
-    def open_screen_view(self, client_id: str, *, fps: int = 4, quality: int = 60) -> dict:
+    def open_screen_view(self, client_id: str, *, fps: int = SCREEN_DEFAULT_FPS, quality: int = 60) -> dict:
         return self.screen_view_session_service.create_session(client_id, fps=fps, quality=quality)
 
     def update_screen_view(self, screen_session_id: str, *, fps=None, quality=None) -> dict:

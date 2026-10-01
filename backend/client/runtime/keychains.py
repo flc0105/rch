@@ -108,10 +108,9 @@ def _normalize_scope(scope: str) -> str:
 
 def _get_current_machine_id() -> str:
     try:
-        from core.device.machine_identity import build_machine_identity_payload
+        from core.device.local_identity import get_local_identity
 
-        payload = build_machine_identity_payload()
-        return _safe_text(payload.get('machine_id_hash'))
+        return _safe_text(get_local_identity().machine_id)
     except Exception as exc:
         raise KeychainError(f'Failed to detect current machine id: {exc}') from exc
 

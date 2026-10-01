@@ -4,6 +4,16 @@ import time
 import uuid
 from datetime import datetime
 
+from core.protocol.screen import (
+    SCREEN_DEFAULT_CONTROL_ENABLED,
+    SCREEN_DEFAULT_FPS,
+    SCREEN_MAX_FPS,
+    SCREEN_MAX_QUALITY,
+    SCREEN_MIN_FPS,
+    SCREEN_MIN_QUALITY,
+    normalize_screen_fps,
+    normalize_screen_quality,
+)
 from core.protocol.message_types import (
     MSG_TYPE_SCREEN_CLOSE,
     MSG_TYPE_SCREEN_CONFIG,
@@ -14,16 +24,16 @@ from core.protocol.message_types import (
 
 class ScreenViewSessionService:
     """
-    Server 端只读屏幕预览会话。
+    Server 端屏幕预览与输入控制会话。
 
     只保留每个会话的最新一帧，避免实时预览产生无意义的帧积压。
     Delta 模式额外保留当前 Keyframe，以便丢弃中间 Delta 后仍能恢复最新画面。
     """
 
-    MIN_FPS = 1
-    MAX_FPS = 30
-    MIN_QUALITY = 20
-    MAX_QUALITY = 95
+    MIN_FPS = SCREEN_MIN_FPS
+    MAX_FPS = SCREEN_MAX_FPS
+    MIN_QUALITY = SCREEN_MIN_QUALITY
+    MAX_QUALITY = SCREEN_MAX_QUALITY
 
     def __init__(self, server, event_bus=None):
         self.server = server
@@ -31,7 +41,7 @@ class ScreenViewSessionService:
         self._lock = threading.RLock()
         self._sessions = {}
 
-    def create_session(self, client_id: str, fps: int = 4, quality: int = 60) -> dict:
+    def create_session(self, client_id: str, fps: int = SCREEN_DEFAULT_FPS, quality: int = 60) -> dict:
         client_id = str(client_id or '').strip()
         session = self.server.get_target_connection_by_client_id(client_id)
         self._cleanup_expired_sessions()
@@ -45,8 +55,8 @@ class ScreenViewSessionService:
             'created_at': time.time(),
             'opened_at': 0,
             'closed_at': 0,
-            'fps': self._normalize_fps(fps),
-            'quality': self._normalize_quality(quality),
+            'fps': normalize_screen_fps(fps),
+            'quality': normalize_screen_quality(quality),
             'seq': 0,
             'frame_strategy': '',
             'base_frame': None,
@@ -56,7 +66,7 @@ class ScreenViewSessionService:
             'frame_bytes': 0,
             'captured_at': 0,
             'error': '',
-            'control_enabled': False,
+            'control_enabled': SCREEN_DEFAULT_CONTROL_ENABLED,
             'control_error': '',
             'open_notified': False,
             'close_notified': False,
@@ -91,13 +101,14 @@ class ScreenViewSessionService:
             'fps': item['fps'],
             'quality': item['quality'],
             'frame_strategy': item['frame_strategy'],
+            'control_enabled': bool(item['control_enabled']),
             'ws_token': item['ws_token'],
         }
 
     def update_settings(self, screen_session_id: str, fps=None, quality=None) -> dict:
         item = self._get_required(screen_session_id)
-        next_fps = self._normalize_fps(item['fps'] if fps is None else fps)
-        next_quality = self._normalize_quality(item['quality'] if quality is None else quality)
+        next_fps = normalize_screen_fps(item['fps'] if fps is None else fps)
+        next_quality = normalize_screen_quality(item['quality'] if quality is None else quality)
 
         with self._lock:
             item['fps'] = next_fps
@@ -165,7 +176,7 @@ class ScreenViewSessionService:
                 'height': int(item.get('height') or 0),
                 'frame_bytes': int(item.get('frame_bytes') or 0),
                 'captured_at': item.get('captured_at') or 0,
-                'fps': int(item.get('fps') or 4),
+                'fps': int(item.get('fps') or SCREEN_DEFAULT_FPS),
                 'quality': int(item.get('quality') or 60),
                 'error': item.get('error') or '',
                 'control_enabled': bool(item.get('control_enabled')),
@@ -174,6 +185,7 @@ class ScreenViewSessionService:
 
     def handle_client_opened(self, screen_session_id: str, fps=None, quality=None, frame_strategy=''):
         event_item = None
+        control_item = None
         with self._lock:
             item = self._sessions.get(str(screen_session_id or ''))
             if not item:
@@ -182,13 +194,17 @@ class ScreenViewSessionService:
             item['opened_at'] = time.time()
             item['frame_strategy'] = self._normalize_frame_strategy(frame_strategy)
             if fps is not None:
-                item['fps'] = self._normalize_fps(fps)
+                item['fps'] = normalize_screen_fps(fps)
             if quality is not None:
-                item['quality'] = self._normalize_quality(quality)
+                item['quality'] = normalize_screen_quality(quality)
+            if item.get('control_enabled'):
+                control_item = dict(item)
             if not item.get('open_notified'):
                 item['open_notified'] = True
                 event_item = dict(item)
 
+        if control_item:
+            self._send_input_event(control_item, {'action': 'prepare'})
         if event_item:
             self._publish_screen_lifecycle_event(event_item, state='started')
 
@@ -541,16 +557,3 @@ class ScreenViewSessionService:
             return strategy
         return ''
 
-    def _normalize_fps(self, value) -> int:
-        try:
-            normalized = int(value)
-        except Exception:
-            normalized = 4
-        return max(self.MIN_FPS, min(self.MAX_FPS, normalized))
-
-    def _normalize_quality(self, value) -> int:
-        try:
-            normalized = int(value)
-        except Exception:
-            normalized = 60
-        return max(self.MIN_QUALITY, min(self.MAX_QUALITY, normalized))

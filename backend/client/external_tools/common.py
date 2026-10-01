@@ -1,5 +1,4 @@
 import os
-import platform
 
 from core.external_tools.files import read_json_file_or_empty, write_json_file
 from core.external_tools.paths import (
@@ -15,7 +14,7 @@ from core.external_tools.paths import (
 from core.platform.normalization import normalize_arch, normalize_platform
 from core.external_tools.target import runtime_parts_from_payload as parse_runtime_parts_from_payload
 from core.external_tools.target import validate_payload_target
-from core.platform.platform_identity import detect_platform_alias
+from core.device.local_identity import get_local_identity
 
 
 class ExternalToolCommon:
@@ -40,8 +39,9 @@ class ExternalToolCommon:
         return normalize_arch(value)
 
     def local_target(self) -> tuple[str, str]:
-        local_platform = self.normalize_platform(detect_platform_alias())
-        local_arch = self.normalize_arch(platform.machine())
+        identity = get_local_identity()
+        local_platform = self.normalize_platform(identity.os_alias)
+        local_arch = self.normalize_arch(identity.arch)
         if not local_platform or not local_arch:
             raise ValueError(f'unable to detect local platform/arch, got {local_platform or "unknown"}/{local_arch or "unknown"}')
         return local_platform, local_arch

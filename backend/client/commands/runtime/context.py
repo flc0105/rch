@@ -3,6 +3,7 @@ import time
 from typing import Callable
 
 
+from core.utils.timeouts import normalize_positive_timeout
 class CommandCancelledError(RuntimeError):
     """
     命令取消异常。
@@ -32,7 +33,7 @@ class CommandExecutionContext:
     def __init__(self, command_id: int, timeout: float | None = None):
         self.command_id = command_id
         self.started_at = time.monotonic()
-        self.timeout = self._normalize_timeout(timeout)
+        self.timeout = normalize_positive_timeout(timeout)
         self.cancel_event = threading.Event()
 
         self._lock = threading.RLock()
@@ -41,22 +42,9 @@ class CommandExecutionContext:
         self._cancel_supported = True
         self._cancel_unsupported_message = ''
 
-    def _normalize_timeout(self, timeout) -> float | None:
-        if timeout in (None, ''):
-            return None
-
-        try:
-            value = float(timeout)
-        except Exception:
-            return None
-
-        if value <= 0:
-            return None
-        return value
-
     def set_timeout(self, timeout) -> None:
         with self._lock:
-            self.timeout = self._normalize_timeout(timeout)
+            self.timeout = normalize_positive_timeout(timeout)
 
     def set_cancel_policy(self, supported: bool = True, message: str = '') -> None:
         with self._lock:
@@ -87,7 +75,7 @@ class CommandExecutionContext:
     def remaining_timeout(self, fallback_timeout=None) -> float | None:
         effective_timeout = self.timeout
         if effective_timeout is None:
-            effective_timeout = self._normalize_timeout(fallback_timeout)
+            effective_timeout = normalize_positive_timeout(fallback_timeout)
 
         if effective_timeout is None:
             return None
@@ -169,7 +157,7 @@ class CommandExecutionContext:
         if self.is_timeout_expired(fallback_timeout=fallback_timeout):
             timeout_value = self.timeout
             if timeout_value is None:
-                timeout_value = self._normalize_timeout(fallback_timeout)
+                timeout_value = normalize_positive_timeout(fallback_timeout)
             if timeout_value is None:
                 timeout_value = 0
             raise CommandTimeoutError(f'Command timed out after {timeout_value:g}s')

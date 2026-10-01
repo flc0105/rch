@@ -1,8 +1,6 @@
 import os
 import platform
-import socket
 
-from client.commands.platform.utils.ios_util import get_ios_process_info
 from client.config.config import (
     CLIENT_BUILD_VERSION,
     CLIENT_SOURCE_REVISION,
@@ -16,11 +14,7 @@ from client.config.runtime_config import (
     REMOTE_HTTP_WATCHDOG_ENABLED,
 )
 from core.client_revision import build_client_revision_manifest
-from core.device.machine_identity import (
-    _detect_machine_identity_components,
-    build_machine_identity_payload,
-)
-from core.platform.platform_identity import detect_platform_info
+from core.device.local_identity import get_local_identity
 from client.runtime.client_util import check_privilege, get_executable_path, get_system_paths
 
 
@@ -56,30 +50,27 @@ class ClientInfoBuilder:
         """
         构造客户端基础信息
         """
-        platform_info = detect_platform_info()
-        machine_identity = build_machine_identity_payload()
-        machine_info = _detect_machine_identity_components()
-        process_info = self._build_process_info(platform_info)
+        identity = get_local_identity()
+        process_info = self._build_process_info(identity.os_alias)
         revision_manifest = _get_client_revision_manifest()
 
         info = {
             'id': self.client_id,
             'type': 'info',
 
-            'os_type': platform_info.display_name,
-            'os_alias': platform_info.alias,
-            'os_full': platform.platform(),
-            'os_name': machine_info.get('os_name'),
-            'os_ver': machine_info.get('os_version'),
+            'os_type': identity.os_type,
+            'os_alias': identity.os_alias,
+            'os_full': identity.os_full,
+            'os_name': identity.os_name,
+            'os_ver': identity.os_version,
 
+            'arch': identity.arch,
+            'manufacturer': identity.manufacturer,
+            'model': identity.model,
 
-            'arch': machine_info.get('arch'),
-            'manufacturer': machine_info.get('manufacturer'),
-            'model': machine_info.get('model'),
-
-            'hostname': socket.gethostname(),
-            'machine_id': machine_identity['machine_id_hash'],
-            'machine_fingerprint_basis': machine_identity['fingerprint_basis'],
+            'hostname': identity.hostname,
+            'machine_id': identity.machine_id,
+            'machine_fingerprint_basis': identity.fingerprint_basis,
             'build_version': CLIENT_BUILD_VERSION,
             'client_revision': revision_manifest.get('revision') or '',
             'client_revision_parts': dict(revision_manifest.get('parts') or {}),
@@ -126,9 +117,11 @@ class ClientInfoBuilder:
             variable_manifest = []
         return variable_manifest
 
-    def _build_process_info(self, platform_info):
+    def _build_process_info(self, os_alias: str):
         try:
-            if platform_info.alias == 'ios':
+            if os_alias == 'ios':
+                from client.commands.platform.utils.ios_util import get_ios_process_info
+
                 ios_process_info = get_ios_process_info()
                 username = ios_process_info.get('username')
                 process_name = ios_process_info.get('process_name')

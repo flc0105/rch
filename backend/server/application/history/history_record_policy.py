@@ -1,5 +1,7 @@
 import re
 
+from core.protocol.structured_arg_codec import JSON_PREFIX
+
 
 class CommandHistoryRecordPolicy:
     """
@@ -19,7 +21,7 @@ class CommandHistoryRecordPolicy:
     - alias / gopin 这类用户输入快捷命令保留原始输入，不在这里改写
     """
 
-    JSON_PAYLOAD_PREFIX = '__json__:'
+    JSON_PAYLOAD_PREFIX = JSON_PREFIX
 
     HISTORY_REPLAY_PATTERN = re.compile(r'^(?:history\s+run\s+\d+|!\d+)$', re.IGNORECASE)
     HISTORY_META_PATTERN = re.compile(r'^history(?:\s+clear)?$', re.IGNORECASE)

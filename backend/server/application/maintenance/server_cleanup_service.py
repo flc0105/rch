@@ -6,6 +6,7 @@ import tempfile
 import uuid
 from datetime import datetime, timezone
 
+from core.utils.filesystem import safe_file_size
 from core.utils.logger import logger
 from core.utils.formatting import format_bytes_precise
 
@@ -228,9 +229,9 @@ class ServerCleanupService:
     def _cleanup_notifications(self, notification_ids) -> dict:
         result = self._new_item_result('notifications')
         file_path = getattr(self.notification_history_api.history_store, 'file_path', '')
-        before_size = self._safe_file_size(file_path)
+        before_size = safe_file_size(file_path)
         cleanup_result = self.notification_history_api.cleanup_notifications(notification_ids or [])
-        after_size = self._safe_file_size(file_path)
+        after_size = safe_file_size(file_path)
 
         removed = cleanup_result.get('removed') if isinstance(cleanup_result, dict) else []
         removed = removed if isinstance(removed, list) else []
@@ -279,8 +280,8 @@ class ServerCleanupService:
                 self.agent_output_registry.metadata_dir,
                 f'{file_name}.json',
             ))
-            output_size = self._safe_file_size(file_path)
-            metadata_size = self._safe_file_size(metadata_path)
+            output_size = safe_file_size(file_path)
+            metadata_size = safe_file_size(metadata_path)
             try:
                 self.agent_output_registry.delete_output(file_name)
             except Exception as exc:
@@ -366,7 +367,7 @@ class ServerCleanupService:
     def _remove_path(self, path: str, result: dict):
         abs_path = os.path.abspath(path)
         if os.path.isfile(abs_path) or os.path.islink(abs_path):
-            size = self._safe_file_size(abs_path)
+            size = safe_file_size(abs_path)
             try:
                 os.remove(abs_path)
             except Exception as exc:
@@ -392,7 +393,7 @@ class ServerCleanupService:
             dir_count += len(dir_names)
             for name in names:
                 file_path = os.path.join(current_root, name)
-                size = self._safe_file_size(file_path)
+                size = safe_file_size(file_path)
                 total_size += size
                 files.append((os.path.abspath(file_path), size))
 
@@ -430,13 +431,6 @@ class ServerCleanupService:
             )
         except Exception:
             return False
-
-    @staticmethod
-    def _safe_file_size(path: str) -> int:
-        try:
-            return int(os.path.getsize(path)) if path and os.path.isfile(path) else 0
-        except Exception:
-            return 0
 
     @staticmethod
     def _new_item_result(name: str) -> dict:

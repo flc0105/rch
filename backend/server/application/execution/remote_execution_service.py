@@ -1,6 +1,4 @@
-import base64
-import json
-
+from core.protocol.structured_arg_codec import encode_structured_arg
 from server.application.command.command_types import COMMAND_TYPE_COMMAND
 from server.application.execution.command_stream_service import CommandStreamService
 from server.application.execution.foreground_execution_service import ForegroundExecutionService
@@ -47,13 +45,8 @@ class RemoteExecutionService:
     def get_connection(self, target):
         return self.command_stream_service.get_connection(target)
 
-    def _encode_payload_arg(self, payload: dict) -> str:
-        raw = json.dumps(payload, ensure_ascii=False).encode('utf-8')
-        encoded = base64.urlsafe_b64encode(raw).decode('utf-8')
-        return f'__json__:{encoded}'
-
     def _build_http_receive_command(self, payload: dict) -> str:
-        return f'{self.HTTP_RECEIVE_COMMAND_NAME} {self._encode_payload_arg(payload)}'
+        return f'{self.HTTP_RECEIVE_COMMAND_NAME} {encode_structured_arg(payload)}'
 
     def create_history_entry(self, target, command: str, source: str = 'cli', should_record: bool = True, task_type: str = '') -> str:
         session = self.get_connection(target)

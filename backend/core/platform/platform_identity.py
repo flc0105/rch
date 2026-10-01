@@ -3,6 +3,8 @@ import sys
 from dataclasses import dataclass
 from enum import Enum
 
+from core.platform.normalization import normalize_platform_alias
+
 
 class PlatformAlias(str, Enum):
     WIN = 'win'
@@ -19,29 +21,28 @@ class PlatformInfo:
     system_name: str
 
 
-_PLATFORM_INFO_MAP = {
-    'Windows': PlatformInfo(alias=PlatformAlias.WIN.value, display_name='Windows', system_name='Windows'),
-    'Linux': PlatformInfo(alias=PlatformAlias.LINUX.value, display_name='Linux', system_name='Linux'),
-}
 
 
 def detect_platform_info() -> PlatformInfo:
-    system_name = platform.system()
+    system_name = platform.system() or 'Unknown'
 
-    if system_name == 'Darwin':
-        if sys.platform == 'ios':
-            return PlatformInfo(alias=PlatformAlias.IOS.value, display_name='iOS', system_name=system_name)
-        return PlatformInfo(alias=PlatformAlias.MAC.value, display_name='macOS', system_name=system_name)
+    if system_name == 'Darwin' and sys.platform == 'ios':
+        return PlatformInfo(alias=PlatformAlias.IOS.value, display_name='iOS', system_name=system_name)
 
-    if system_name in _PLATFORM_INFO_MAP:
-        return _PLATFORM_INFO_MAP[system_name]
+    alias = normalize_platform_alias(system_name, infer=True) or PlatformAlias.UNKNOWN.value
+    if alias == PlatformAlias.MAC.value:
+        display_name = 'macOS'
+    elif alias == PlatformAlias.WIN.value:
+        display_name = 'Windows'
+    elif alias == PlatformAlias.LINUX.value:
+        display_name = 'Linux'
+    elif alias == PlatformAlias.IOS.value:
+        display_name = 'iOS'
+    else:
+        alias = PlatformAlias.UNKNOWN.value
+        display_name = system_name
 
-    normalized_system_name = system_name or 'Unknown'
-    return PlatformInfo(
-        alias=PlatformAlias.UNKNOWN.value,
-        display_name=normalized_system_name,
-        system_name=normalized_system_name,
-    )
+    return PlatformInfo(alias=alias, display_name=display_name, system_name=system_name)
 
 
 def detect_platform_alias() -> str:

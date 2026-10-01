@@ -1,6 +1,4 @@
-import base64
-import json
-
+from core.protocol.structured_arg_codec import encode_structured_arg
 from core.protocol.message_types import MSG_TYPE_TRANSFER_START
 
 
@@ -26,15 +24,10 @@ class WebRemoteFileService:
         self.artifact_service = artifact_service
         self.transfer_service = transfer_service
 
-    def _encode_payload_arg(self, payload: dict) -> str:
-        raw = json.dumps(payload, ensure_ascii=False).encode('utf-8')
-        encoded = base64.urlsafe_b64encode(raw).decode('utf-8')
-        return f'__json__:{encoded}'
-
     def _build_command(self, name: str, payload: dict | None = None) -> str:
         if not payload:
             return name
-        return f'{name} {self._encode_payload_arg(payload)}'
+        return f'{name} {encode_structured_arg(payload)}'
 
     def browse_directory(
             self,
@@ -522,3 +515,4 @@ class WebRemoteFileService:
             }
         else:
             raise ValueError('File is not a text file or cannot be edited')
+

@@ -1,7 +1,6 @@
 import json
 import os
 import shutil
-import sys
 import uuid
 from client.runtime.temp_workspace import make_client_temp_dir, cleanup_temp_path
 from pathlib import Path
@@ -14,6 +13,7 @@ from client.clipboard.adapters.macos import MacOSClipboardAdapter
 from client.clipboard.adapters.unsupported import UnsupportedClipboardAdapter
 from client.clipboard.adapters.windows import WindowsClipboardAdapter
 from client.http.client_api import ClientApiClient
+from core.device.local_identity import get_local_identity
 from core.protocol.message_types import MSG_TYPE_CLIPBOARD_RESULT
 
 
@@ -24,24 +24,25 @@ class ClipboardManager:
     def __init__(self, connection):
         self.connection = connection
         self.client_api = ClientApiClient()
+        self._os_alias = get_local_identity().os_alias
         self._macos_console_identity = self._get_macos_console_identity()
         self.staging_dir = self._resolve_staging_dir(self.DEFAULT_STAGING_DIR)
         self.adapter = self._build_adapter()
         self._clear_staging_on_startup()
 
     def _build_adapter(self):
-        if sys.platform == 'win32':
+        if self._os_alias == 'win':
             return WindowsClipboardAdapter()
-        if sys.platform == 'darwin':
+        if self._os_alias == 'mac':
             return MacOSClipboardAdapter()
-        if sys.platform == 'ios':
+        if self._os_alias == 'ios':
             return iOSClipboardAdapter()
-        return UnsupportedClipboardAdapter(sys.platform)
+        return UnsupportedClipboardAdapter(self._os_alias)
 
     def get_capabilities(self) -> dict:
         caps = self.adapter.get_capabilities()
         return {
-            'platform': sys.platform,
+            'platform': self._os_alias,
             'text': bool(caps.get('text')),
             'image': bool(caps.get('image')),
             'files': bool(caps.get('files')),
@@ -473,9 +474,8 @@ class ClipboardManager:
         except Exception:
             pass
 
-    @staticmethod
-    def _get_macos_console_identity():
-        if sys.platform != 'darwin':
+    def _get_macos_console_identity(self):
+        if self._os_alias != 'mac':
             return None
 
         try:
@@ -530,7 +530,7 @@ class ClipboardManager:
 
         # macOS 上 "~" 表示当前 GUI 用户，而不是后台 Client 用户。
         if (
-            sys.platform == 'darwin'
+            self._os_alias == 'mac'
             and identity
             and configured.startswith('~')
         ):
@@ -574,7 +574,7 @@ class ClipboardManager:
         )
 
         if (
-            sys.platform == 'darwin'
+            self._os_alias == 'mac'
             and identity
             and home
         ):
@@ -634,7 +634,7 @@ class ClipboardManager:
         path: str,
     ):
         if (
-            sys.platform != 'darwin'
+            self._os_alias != 'mac'
             or not os.path.exists(path)
         ):
             return

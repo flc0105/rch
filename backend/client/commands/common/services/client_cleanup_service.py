@@ -3,6 +3,7 @@ import os
 import shutil
 import tempfile
 
+from core.utils.filesystem import safe_file_size
 from client.config.runtime_config_store import get_runtime_config_path
 from client.runtime.client_util import get_client_bundle_release_dir
 from client.runtime.temp_workspace import (
@@ -257,7 +258,7 @@ class ClientCleanupService:
             return
 
         if os.path.isfile(path) or os.path.islink(path):
-            size = self._safe_file_size(path)
+            size = safe_file_size(path)
             try:
                 os.remove(path)
             except FileNotFoundError:
@@ -280,7 +281,7 @@ class ClientCleanupService:
             dir_count += len(dir_names)
             for file_name in file_names:
                 file_count += 1
-                total_size += self._safe_file_size(os.path.join(current_root, file_name))
+                total_size += safe_file_size(os.path.join(current_root, file_name))
 
         try:
             shutil.rmtree(path)
@@ -298,13 +299,6 @@ class ClientCleanupService:
     def _ensure_not_interrupted(self):
         if self.ensure_not_interrupted is not None:
             self.ensure_not_interrupted()
-
-    @staticmethod
-    def _safe_file_size(path: str) -> int:
-        try:
-            return int(os.path.getsize(path)) if os.path.isfile(path) else 0
-        except Exception:
-            return 0
 
     @staticmethod
     def _prune_empty_directory(path: str):

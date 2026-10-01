@@ -1,10 +1,10 @@
-import base64
 import glob
 import json
 import os
 import re
 import shlex
 
+from core.protocol.structured_arg_codec import decode_structured_arg, encode_structured_arg
 from core.external_tools.install_status import is_installed_status, normalize_install_status
 from core.utils.command_output import (
     StructuredCommandResult,
@@ -119,16 +119,10 @@ class ScriptBuiltinSupport:
         return self.plan_builder.build_script_plan(script_text, scan_args(script_args))
 
     def _decode_script_payload_arg(self, raw):
-        text = str(raw or '').strip()
-        prefix = '__json__:'
-        if not text.startswith(prefix):
-            raise ValueError('Invalid run_script payload')
-        encoded = text[len(prefix):]
         try:
-            decoded = base64.urlsafe_b64decode(encoded.encode()).decode('utf-8')
-            return json.loads(decoded)
+            return decode_structured_arg(raw, require_prefix=True)
         except Exception as e:
-            raise ValueError(f'Invalid run_script payload: {e}')
+            raise ValueError(f'Invalid run_script payload: {e}') from e
 
     def execute_script_file(self, filename: str):
         parts = shlex.split(filename)
@@ -721,11 +715,6 @@ class ExternalToolCliBuiltinSupport:
         info = getattr(self.conn, 'session_info', None)
         return str(getattr(info, 'cwd', '') if info is not None else '').strip()
 
-    def _encode_payload_arg(self, payload: dict) -> str:
-        raw = json.dumps(payload, ensure_ascii=False).encode('utf-8')
-        encoded = base64.urlsafe_b64encode(raw).decode('utf-8')
-        return f'__json__:{encoded}'
-
     def _split_first_token(self, text: str) -> tuple[str, str]:
         raw = str(text or '').strip()
         if not raw:
@@ -800,7 +789,7 @@ class ExternalToolCliBuiltinSupport:
         if not payloads:
             return {}
 
-        command = f'external_tool_install_statuses {self._encode_payload_arg({"tools": payloads})}'
+        command = f'external_tool_install_statuses {encode_structured_arg({"tools": payloads})}'
         try:
             status, text = self._collect_nested_command_text(command)
             if not status:
@@ -890,14 +879,14 @@ class ExternalToolCliBuiltinSupport:
     def _which(self, exec_name: str):
         target = self._resolve_exec_target(exec_name)
         payload = self._build_client_payload(target, raw_args='')
-        command = f'external_tool_which {self._encode_payload_arg(payload)}'
+        command = f'external_tool_which {encode_structured_arg(payload)}'
         for item in self._iter_nested_command(command):
             yield item
 
     def _run_exec(self, exec_name: str, raw_args: str):
         target = self._resolve_exec_target(exec_name)
         payload = self._build_client_payload(target, raw_args=raw_args)
-        command = f'external_tool_exec {self._encode_payload_arg(payload)}'
+        command = f'external_tool_exec {encode_structured_arg(payload)}'
         for item in self._iter_nested_command(command):
             yield item
 

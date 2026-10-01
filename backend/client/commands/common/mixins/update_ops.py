@@ -20,7 +20,7 @@ from client.config.config import (
     SERVER_WEB_SCHEME,
 )
 from core.external_tools.archive import safe_extract_zip_archive
-from core.platform.platform_identity import detect_platform_alias
+from core.device.local_identity import get_local_identity
 from client.runtime.client_util import (
     build_bundle_extract_dir,
     get_client_bundle_release_dir,
@@ -408,7 +408,7 @@ class CommandUpdateMixin:
             rchclient_path = os.path.join(extract_dir, 'rchclient.py')
             self._send_info(f'Preparing to launch script: {rchclient_path}', 0)
 
-            if detect_platform_alias() == 'ios':
+            if get_local_identity().os_alias == 'ios':
                 self._send_success(
                     f'iOS detected, please restart Pythonista app and manually run script: {rchclient_path}',
                     eof=1,

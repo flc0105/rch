@@ -1,9 +1,9 @@
-import json
 import threading
 import time
 import uuid
 from datetime import datetime
 
+from core.utils.json_utils import compact_json_dumps, json_loads_typed
 from server.application.history.history_view_service import HistoryViewService
 from server.application.history.history_write_service import HistoryWriteService
 from server.application.history.pinned_command_store import PinnedCommandStore
@@ -126,18 +126,6 @@ class CommandHistoryStore:
             return
         entry['duration_ms'] = max(int((end_dt - start_dt).total_seconds() * 1000), 0)
 
-    @staticmethod
-    def _json_dumps(value) -> str:
-        return json.dumps(value, ensure_ascii=False, separators=(',', ':'))
-
-    @staticmethod
-    def _json_loads(value, default):
-        try:
-            parsed = json.loads(value or '')
-            return parsed if isinstance(parsed, type(default)) else default
-        except Exception:
-            return default
-
     def _row_to_entry(self, row) -> dict | None:
         if row is None:
             return None
@@ -167,10 +155,10 @@ class CommandHistoryStore:
             'output_stored_char_count': int(row['output_stored_char_count'] or 0),
             'output_truncated': bool(row['output_truncated']),
             'output_record_seq': int(row['output_record_seq'] or 0),
-            'output_records': self._json_loads(row['output_records_json'], []),
+            'output_records': json_loads_typed(row['output_records_json'], []),
             'has_files': bool(row['has_files']),
             'file_count': int(row['file_count'] or 0),
-            'files': self._json_loads(row['files_json'], []),
+            'files': json_loads_typed(row['files_json'], []),
         }
 
     def _insert_entry(self, entry: dict):
@@ -194,8 +182,8 @@ class CommandHistoryStore:
                 int(entry.get('output_line_count', 0) or 0), int(entry.get('output_chunk_count', 0) or 0),
                 int(entry.get('output_char_count', 0) or 0), int(entry.get('output_stored_char_count', 0) or 0),
                 int(bool(entry.get('output_truncated'))), int(entry.get('output_record_seq', 0) or 0),
-                self._json_dumps(entry.get('output_records') or []), int(bool(entry.get('has_files'))),
-                int(entry.get('file_count', 0) or 0), self._json_dumps(entry.get('files') or []),
+                compact_json_dumps(entry.get('output_records') or []), int(bool(entry.get('has_files'))),
+                int(entry.get('file_count', 0) or 0), compact_json_dumps(entry.get('files') or []),
             ),
         )
         entry['_started_at_ms'] = started_at_ms
@@ -232,9 +220,9 @@ class CommandHistoryStore:
                 entry.get('output_summary', ''), int(entry.get('output_line_count', 0) or 0),
                 int(entry.get('output_chunk_count', 0) or 0), int(entry.get('output_char_count', 0) or 0),
                 int(entry.get('output_stored_char_count', 0) or 0), int(bool(entry.get('output_truncated'))),
-                int(entry.get('output_record_seq', 0) or 0), self._json_dumps(entry.get('output_records') or []),
+                int(entry.get('output_record_seq', 0) or 0), compact_json_dumps(entry.get('output_records') or []),
                 int(bool(entry.get('has_files'))), int(entry.get('file_count', 0) or 0),
-                self._json_dumps(entry.get('files') or []), entry.get('machine_id', ''), entry.get('entry_id', ''),
+                compact_json_dumps(entry.get('files') or []), entry.get('machine_id', ''), entry.get('entry_id', ''),
             ),
         )
 
@@ -284,7 +272,7 @@ class CommandHistoryStore:
             (
                 entry.get('machine_id', ''), entry.get('command', ''), entry.get('entry_id', ''),
                 entry.get('time') or entry.get('started_at') or self._now_text(), started_at_ms,
-                use_count, self._json_dumps(snapshot),
+                use_count, compact_json_dumps(snapshot),
             ),
         )
         self._trim_recents(entry.get('machine_id', ''))
@@ -313,7 +301,7 @@ class CommandHistoryStore:
                WHERE machine_id = ? AND command = ? AND last_entry_id = ?''',
             (
                 entry.get('entry_id', ''), entry.get('time') or entry.get('started_at') or '',
-                self._json_dumps(snapshot), entry.get('machine_id', ''), entry.get('command', ''),
+                compact_json_dumps(snapshot), entry.get('machine_id', ''), entry.get('command', ''),
                 entry.get('entry_id', ''),
             ),
         )
@@ -354,7 +342,7 @@ class CommandHistoryStore:
             ''',
             (
                 machine_id, command, entry['entry_id'], entry.get('time') or entry.get('started_at') or '',
-                int(row['started_at_ms'] or 0), int(count_row[0] if count_row else 1), self._json_dumps(snapshot),
+                int(row['started_at_ms'] or 0), int(count_row[0] if count_row else 1), compact_json_dumps(snapshot),
             ),
         )
         self._trim_recents(machine_id)
@@ -372,7 +360,7 @@ class CommandHistoryStore:
         ).fetchall()
         result = []
         for row in rows:
-            snapshot = self._json_loads(row['snapshot_json'], {})
+            snapshot = json_loads_typed(row['snapshot_json'], {})
             snapshot['command'] = row['command']
             snapshot['last_entry_id'] = row['last_entry_id']
             snapshot['time'] = snapshot.get('time') or row['last_used_at']

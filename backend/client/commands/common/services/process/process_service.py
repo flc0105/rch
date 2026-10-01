@@ -1,7 +1,7 @@
 import json
 from datetime import datetime
 
-from core.platform.platform_identity import detect_platform_alias
+from core.device.local_identity import get_local_identity
 
 
 class ProcessService:
@@ -282,7 +282,7 @@ class ProcessService:
             pid = int(pid.strip())
             proc = psutil.Process(pid)
 
-            if detect_platform_alias() == 'win':
+            if get_local_identity().os_alias == 'win':
                 proc.kill()
             else:
                 proc.terminate()
