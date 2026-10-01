@@ -7,6 +7,7 @@ from server.application.command.builtin_command_support import (
     UploadBuiltinSupport, ExternalToolCliBuiltinSupport,
 )
 from server.application.command.command_output_builtin_support import CommandOutputBuiltinSupport
+from server.application.command.command_notify_builtin_support import CommandNotifyBuiltinSupport
 from server.application.command.control_builtin_support import ControlBuiltinSupport
 
 
@@ -77,6 +78,12 @@ class BuiltinCommandHandler:
             'source': 'server'
         },
         {
+            'name': 'notify',
+            'template': 'notify ',
+            'help': 'notify <client-command> | Run a client command and notify when it finishes',
+            'source': 'server'
+        },
+        {
             'name': 'xt',
             'template': 'xt ',
             'help': 'xt list|info|which|<alias> [--] <raw args> | External tool CLI facade',
@@ -116,6 +123,12 @@ class BuiltinCommandHandler:
             conn=self.conn,
             plan_builder=self.plan_builder,
             plan_executor_factory=self.plan_executor_factory,
+            history_entry_id_provider=self.history_entry_id_provider,
+        )
+        self.command_notify_support = CommandNotifyBuiltinSupport(
+            server=self.server,
+            conn=self.conn,
+            plan_builder=self.plan_builder,
             history_entry_id_provider=self.history_entry_id_provider,
         )
 
@@ -185,6 +198,10 @@ class BuiltinCommandHandler:
 
     def saveout(self, command):
         for item in self.command_output_support.saveout(command):
+            yield item
+
+    def notify(self, command):
+        for item in self.command_notify_support.notify(command):
             yield item
 
     def xt(self, arg=''):

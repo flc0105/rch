@@ -83,6 +83,32 @@ class NotificationEventProjector:
         client_id = str(payload.get('client_id') or '').strip()
         device = str(payload.get('hostname') or '').strip() or self._device_name(client_id)
         kind = str(payload.get('kind') or 'device.event').strip() or 'device.event'
+        data = payload.get('data') if isinstance(payload.get('data'), dict) else {}
+        context = {
+            'client_id': client_id,
+            'hostname': payload.get('hostname') or '',
+            'event_id': payload.get('event_id') or '',
+            'kind': kind,
+            'occurred_at': payload.get('occurred_at') or '',
+            'source': payload.get('source') if isinstance(payload.get('source'), dict) else {},
+            'data': data,
+        }
+
+        if kind == 'command.notify.finished':
+            status = str(data.get('status') or '').strip().lower()
+            duration_ms = max(0, int(data.get('duration_ms') or 0))
+            succeeded = status == 'success'
+            notify_message = str(payload.get('message') or '').strip()
+            if not notify_message:
+                notify_message = f'{"Success" if succeeded else "Failed"} · {duration_ms / 1000:.1f}s'
+            return self._notification(
+                'device_event',
+                'Command Completed' if succeeded else 'Command Failed',
+                notify_message,
+                'success' if succeeded else 'error',
+                context,
+            )
+
         message = str(payload.get('message') or '').strip() or kind
         display_message = f'{device} · {message}' if device else message
         return self._notification(
@@ -90,15 +116,7 @@ class NotificationEventProjector:
             'Device Event',
             display_message,
             'info',
-            {
-                'client_id': client_id,
-                'hostname': payload.get('hostname') or '',
-                'event_id': payload.get('event_id') or '',
-                'kind': kind,
-                'occurred_at': payload.get('occurred_at') or '',
-                'source': payload.get('source') if isinstance(payload.get('source'), dict) else {},
-                'data': payload.get('data') if isinstance(payload.get('data'), dict) else {},
-            },
+            context,
         )
 
     def _build_connection_online(self, payload):

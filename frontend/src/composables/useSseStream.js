@@ -541,6 +541,28 @@ export default {
                 const deviceName = payload.hostname || getConnectionLabel(payload.client_id);
                 const kind = String(payload.kind || 'device.event').trim() || 'device.event';
                 const detail = String(payload.message || kind).trim() || kind;
+                const context = {
+                    client_id: payload.client_id || '',
+                    event_id: payload.event_id || '',
+                    kind,
+                    occurred_at: payload.occurred_at || '',
+                    source: payload.source || {},
+                    data: payload.data || {},
+                };
+
+                if (kind === 'command.notify.finished') {
+                    const succeeded = String(context.data.status || '').trim().toLowerCase() === 'success';
+                    this.showSseNotification('device_event', {
+                        title: succeeded ? 'Command Completed' : 'Command Failed',
+                        message: detail,
+                        type: succeeded ? 'success' : 'error',
+                        duration: succeeded ? 5000 : 7000,
+                    }, {
+                        eventId: event.lastEventId,
+                        context,
+                    });
+                    return;
+                }
 
                 this.showSseNotification('device_event', {
                     title: 'Device Event',
@@ -549,14 +571,7 @@ export default {
                     duration: 6000,
                 }, {
                     eventId: event.lastEventId,
-                    context: {
-                        client_id: payload.client_id || '',
-                        event_id: payload.event_id || '',
-                        kind,
-                        occurred_at: payload.occurred_at || '',
-                        source: payload.source || {},
-                        data: payload.data || {},
-                    },
+                    context,
                 });
             });
 
