@@ -1,3 +1,4 @@
+from core.utils.formatting import format_bytes_precise
 from datetime import datetime, timezone
 
 
@@ -48,7 +49,7 @@ class NotificationEventProjector:
         message_parts = [
             f'{removed_files} file{"" if removed_files == 1 else "s"}',
             f'{removed_records} record{"" if removed_records == 1 else "s"}',
-            self._format_bytes(bytes_freed),
+            format_bytes_precise(bytes_freed),
         ]
         if error_count:
             message_parts.append(f'{error_count} error{"" if error_count == 1 else "s"}')
@@ -379,13 +380,3 @@ class NotificationEventProjector:
             'actions': actions or [],
         }
 
-    @staticmethod
-    def _format_bytes(value: int) -> str:
-        size = max(0, int(value or 0))
-        if size < 1024:
-            return f'{size} B'
-        if size < 1024 * 1024:
-            return f'{size / 1024:.1f} KB'
-        if size < 1024 * 1024 * 1024:
-            return f'{size / (1024 * 1024):.2f} MB'
-        return f'{size / (1024 * 1024 * 1024):.2f} GB'

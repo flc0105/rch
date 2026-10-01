@@ -7,6 +7,7 @@ import uuid
 from datetime import datetime, timezone
 
 from core.utils.logger import logger
+from core.utils.formatting import format_bytes_precise
 
 
 class ServerCleanupService:
@@ -460,17 +461,6 @@ class ServerCleanupService:
     def _iso_time(epoch_value: float) -> str:
         return datetime.fromtimestamp(float(epoch_value), tz=timezone.utc).isoformat().replace('+00:00', 'Z')
 
-    @staticmethod
-    def _format_bytes(value: int) -> str:
-        size = max(0, int(value or 0))
-        if size < 1024:
-            return f'{size} B'
-        if size < 1024 * 1024:
-            return f'{size / 1024:.1f} KB'
-        if size < 1024 * 1024 * 1024:
-            return f'{size / (1024 * 1024):.2f} MB'
-        return f'{size / (1024 * 1024 * 1024):.2f} GB'
-
     def _build_summary(self, *, run_id: str, trigger: str, started_at: str, finished_at: str,
                        duration_ms: int, item_results: list[dict]) -> dict:
         return {
@@ -501,7 +491,7 @@ class ServerCleanupService:
             f'  Removed files: {summary.get("removed_files", 0)}',
             f'  Removed directories: {summary.get("removed_dirs", 0)}',
             f'  Removed records: {summary.get("removed_records", 0)}',
-            f'  Freed size: {self._format_bytes(summary.get("bytes_freed", 0))} ({summary.get("bytes_freed", 0)} bytes)',
+            f'  Freed size: {format_bytes_precise(summary.get("bytes_freed", 0))} ({summary.get("bytes_freed", 0)} bytes)',
             f'  Errors: {summary.get("error_count", 0)}',
         ]
 
@@ -512,7 +502,7 @@ class ServerCleanupService:
                 f'  Removed files: {item.get("removed_files", 0)}',
                 f'  Removed directories: {item.get("removed_dirs", 0)}',
                 f'  Removed records: {item.get("removed_records", 0)}',
-                f'  Freed size: {self._format_bytes(item.get("bytes_freed", 0))} ({item.get("bytes_freed", 0)} bytes)',
+                f'  Freed size: {format_bytes_precise(item.get("bytes_freed", 0))} ({item.get("bytes_freed", 0)} bytes)',
             ])
             if item.get('skipped'):
                 lines.append(f'  Skipped: {item.get("skip_reason", "")}')
@@ -522,7 +512,7 @@ class ServerCleanupService:
                 suffix = f' · {detail}' if detail else ''
                 lines.append(
                     f'  {str(entry.get("kind") or "item").upper()} '
-                    f'{self._format_bytes(size)} · {entry.get("path", "")}{suffix}'
+                    f'{format_bytes_precise(size)} · {entry.get("path", "")}{suffix}'
                 )
             for error in item.get('errors') or []:
                 lines.append(f'  ERROR · {error}')

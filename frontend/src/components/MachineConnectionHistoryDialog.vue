@@ -227,6 +227,7 @@
 </template>
 
 <script>
+import { formatDateTimeStandard } from '../utils/formatters.js'
 import { ElMessage } from 'element-plus'
 import { getMachineConnectionCommands, getMachineConnectionHistory } from '../api/connectionsApi.js'
 
@@ -332,9 +333,7 @@ export default {
     },
 
     formatDateTime(value) {
-      const text = String(value || '').trim()
-      if (!text) return '-'
-      return text.replace('T', ' ').split('.')[0]
+      return formatDateTimeStandard(value)
     },
 
     formatDuration(durationMs) {

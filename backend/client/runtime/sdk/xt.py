@@ -7,7 +7,7 @@ from client.runtime.sdk import context
 from client.runtime.sdk.context import get_command_owner
 from core.external_tools.paths import EXTERNAL_TOOLS_INSTALL_ROOT, EXTERNAL_TOOLS_RUNTIME_ROOT
 from core.external_tools.payload import client_exec_payload
-from core.external_tools.platform import normalize_arch, normalize_platform
+from core.platform.normalization import normalize_arch, normalize_platform
 from core.external_tools.selector import (
     package_arch_matches,
     package_platform_matches,

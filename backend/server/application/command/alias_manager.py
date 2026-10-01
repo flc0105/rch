@@ -2,6 +2,7 @@ import json
 import re
 import shlex
 
+from core.platform.normalization import normalize_platform_alias
 from server.config.config import ALIAS_PATH
 
 
@@ -9,16 +10,6 @@ class AliasManager:
     PLACEHOLDER_PATTERN = r'<.*?>'
     NAMED_PARAMETER_PATTERN = re.compile(r'^[A-Za-z_][A-Za-z0-9_-]*$')
     SUPPORTED_PLATFORMS = ('common', 'win', 'mac', 'linux', 'ios')
-    OS_PLATFORM_MAP = {
-        'windows': 'win',
-        'win': 'win',
-        # 兼容旧值 Darwin，但内部统一落到 mac
-        'darwin': 'mac',
-        'mac': 'mac',
-        'macos': 'mac',
-        'linux': 'linux',
-        'ios': 'ios'
-    }
     # QUERY_PLATFORMS = SUPPORTED_PLATFORMS + ('all',)
     QUERY_PLATFORMS = SUPPORTED_PLATFORMS
 
@@ -58,7 +49,7 @@ class AliasManager:
                 return ''
             return 'common'
 
-        normalized = self.OS_PLATFORM_MAP.get(text, text)
+        normalized = normalize_platform_alias(text)
 
         if allow_all and normalized == 'all':
             return 'all'

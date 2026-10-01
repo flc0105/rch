@@ -134,6 +134,7 @@
 </template>
 
 <script>
+import { formatDateTimeLocal } from '../utils/formatters.js'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Bell,
@@ -237,23 +238,7 @@ export default {
     },
 
     formatDateTime(value) {
-      const date = value instanceof Date ? value : new Date(value)
-      if (Number.isNaN(date.getTime())) return '-'
-
-      const pad = number => String(number).padStart(2, '0')
-      return [
-        date.getFullYear(),
-        '-',
-        pad(date.getMonth() + 1),
-        '-',
-        pad(date.getDate()),
-        ' ',
-        pad(date.getHours()),
-        ':',
-        pad(date.getMinutes()),
-        ':',
-        pad(date.getSeconds()),
-      ].join('')
+      return formatDateTimeLocal(value)
     },
 
     emitNotificationAction(notification, action) {

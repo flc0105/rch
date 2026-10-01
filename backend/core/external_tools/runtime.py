@@ -1,7 +1,7 @@
 import os
 from typing import Any, Callable
 
-from core.external_tools.platform import normalize_arch, normalize_platform
+from core.platform.normalization import normalize_arch, normalize_platform
 from core.external_tools.paths import expand_path
 
 

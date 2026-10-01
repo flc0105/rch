@@ -12,7 +12,7 @@ from core.external_tools.paths import (
     sanitize_instance_id,
     should_expand_argv_item,
 )
-from core.external_tools.platform import normalize_arch, normalize_platform
+from core.platform.normalization import normalize_arch, normalize_platform
 from core.external_tools.target import runtime_parts_from_payload as parse_runtime_parts_from_payload
 from core.external_tools.target import validate_payload_target
 from core.platform.platform_identity import detect_platform_alias

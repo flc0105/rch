@@ -4,6 +4,7 @@ import tempfile
 from datetime import datetime
 
 from server.config.config import WEB_FILE_TRANSFER_PORT, WEB_PORT
+from core.platform.normalization import normalize_arch
 
 
 class WebAgentApi:
@@ -120,11 +121,8 @@ class WebAgentApi:
     def get_server_platform(self):
         system = platform.system()
         target_os = self.agent_builder.PYINSTALLER_PLATFORM_MAP.get(system, 'mac')
-        machine = platform.machine().lower()
-        if machine in {'arm64', 'aarch64'}:
-            target_arch = 'arm64'
-        else:
-            target_arch = 'amd64'
+        machine = normalize_arch(platform.machine())
+        target_arch = machine if machine in {'arm64', 'amd64'} else 'amd64'
         return {
             'system': system,
             'target_os': target_os,

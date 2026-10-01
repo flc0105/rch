@@ -497,6 +497,7 @@
 </template>
 
 <script>
+import { formatBytesHuman, formatDateTimeStandard as formatDateTimeStandardValue } from '../utils/formatters.js'
 import { ElMessage } from 'element-plus'
 
 export default {
@@ -923,15 +924,7 @@ export default {
     },
 
     formatBytes(value) {
-      const numeric = Number(value)
-      if (!Number.isFinite(numeric) || numeric < 0) return '—'
-      if (numeric === 0) return '0 B'
-
-      const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
-      const index = Math.min(Math.floor(Math.log(numeric) / Math.log(1024)), units.length - 1)
-      const scaled = numeric / (1024 ** index)
-      const digits = scaled >= 100 || index === 0 ? 0 : (scaled >= 10 ? 1 : 2)
-      return `${scaled.toFixed(digits)} ${units[index]}`
+      return formatBytesHuman(value, { precision: 'adaptive', maxUnit: 'PB', invalid: '—', nonPositiveAsZero: false })
     },
 
     formatUsagePair(used, total) {
@@ -1085,11 +1078,7 @@ export default {
     },
 
     formatDateTimeStandard(value) {
-      const text = String(value || '').trim()
-      if (!text) return '-'
-
-      const normalized = text.replace('T', ' ').split('.')[0]
-      return normalized || '-'
+      return formatDateTimeStandardValue(value)
     },
 
     formatRttText(conn) {

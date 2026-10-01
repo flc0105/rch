@@ -87,6 +87,7 @@
 </template>
 
 <script>
+import { formatBytesHuman } from '../utils/formatters.js'
 export default {
   name: 'DragUploadDialog',
 
@@ -209,20 +210,7 @@ export default {
     },
 
     formatFileSize(value) {
-      const size = Number(value || 0)
-      if (!Number.isFinite(size) || size <= 0) return '0 B'
-
-      const units = ['B', 'KB', 'MB', 'GB', 'TB']
-      let nextSize = size
-      let unitIndex = 0
-
-      while (nextSize >= 1024 && unitIndex < units.length - 1) {
-        nextSize /= 1024
-        unitIndex += 1
-      }
-
-      const digits = unitIndex === 0 ? 0 : 1
-      return `${nextSize.toFixed(digits)} ${units[unitIndex]}`
+      return formatBytesHuman(value, { precision: 'one', maxUnit: 'TB', invalid: '0 B', nonPositiveAsZero: true })
     },
 
     resetDragState() {

@@ -171,6 +171,7 @@
 </template>
 
 <script>
+import { formatBytesHuman } from '../utils/formatters.js'
 import { ElMessage } from 'element-plus'
 import { Loading } from '@element-plus/icons-vue'
 import {
@@ -534,15 +535,7 @@ export default {
       this.clearComposer()
     },
     formatBytes(value) {
-      let size = Number(value || 0)
-      if (!Number.isFinite(size) || size <= 0) return '0 B'
-      const units = ['B', 'KB', 'MB', 'GB', 'TB']
-      let unit = 0
-      while (size >= 1024 && unit < units.length - 1) {
-        size /= 1024
-        unit += 1
-      }
-      return `${size >= 10 || unit === 0 ? size.toFixed(0) : size.toFixed(1)} ${units[unit]}`
+      return formatBytesHuman(value, { precision: 'compact', maxUnit: 'TB', invalid: '0 B', nonPositiveAsZero: true })
     },
   },
 }

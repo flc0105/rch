@@ -1,7 +1,6 @@
 import os
 import traceback
 
-from core.utils.terminal import Colors
 
 
 def completer(text, state):
@@ -46,34 +45,3 @@ def cd(path: str):
     if os.path.exists(path):
         os.chdir(path)
     return os.getcwd()
-
-
-def colored_input(text: str):
-    """
-    彩色输入
-    :param text: 输入提示文本
-    :return: 用户输入的内容
-    """
-    inp = input(Colors.RESET + text + Colors.BRIGHT_YELLOW)
-    print(Colors.RESET, end='', flush=True)
-    return inp
-
-
-def print_error(text):
-    """
-     打印错误信息
-     :param text: 错误信息
-     """
-    print(f'{Colors.BRIGHT_RED}{text}{Colors.RESET}')
-
-
-def write(status: int, result: str):
-    """
-    在控制台输出结果
-    :param status: 0或者1
-    :param result: 结果
-    """
-    if not status:
-        result = Colors.BRIGHT_RED + result + Colors.RESET
-    print(result)
-

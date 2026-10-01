@@ -836,6 +836,7 @@
 </template>
 
 <script>
+import { formatBytesHuman, formatDateTimeShort } from '../utils/formatters.js'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import * as externalToolsApi from '../api/externalToolsApi.js'
 import RemoteFilePicker from './RemoteFilePicker.vue'
@@ -2589,16 +2590,7 @@ async uninstallClientTool(item, deviceId) {
     },
 
     formatBytes(value) {
-      const size = Number(value || 0)
-      if (!Number.isFinite(size) || size <= 0) return '0 B'
-      const units = ['B', 'KB', 'MB', 'GB']
-      let n = size
-      let i = 0
-      while (n >= 1024 && i < units.length - 1) {
-        n /= 1024
-        i += 1
-      }
-      return `${n.toFixed(i === 0 ? 0 : 1)} ${units[i]}`
+      return formatBytesHuman(value, { precision: 'one', maxUnit: 'GB', invalid: '0 B', nonPositiveAsZero: true })
     },
 
     formatExecMap(value) {
@@ -3088,9 +3080,7 @@ async uninstallClientTool(item, deviceId) {
     },
 
     shortTime(value) {
-      const text = String(value || '').trim()
-      if (!text) return '-'
-      return text.replace('T', ' ').slice(0, 19)
+      return formatDateTimeShort(value)
     },
 
     async stopInstance(row) {

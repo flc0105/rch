@@ -44,6 +44,57 @@ def get_size(size_in_bytes: float, suffix: str = "B") -> str:
     return f"{size_in_bytes:.2f}E{suffix}"
 
 
+def format_bytes(
+        size_in_bytes,
+        *,
+        decimals: int = 2,
+        trim_trailing_zeros: bool = True,
+        separator: str = ' ',
+        unit_decimals: Mapping[str, int] | None = None,
+        max_unit: str = 'PB',
+) -> str:
+    """Format byte counts for human-facing output with configurable precision."""
+    try:
+        size = max(float(size_in_bytes or 0), 0.0)
+    except (TypeError, ValueError):
+        size = 0.0
+
+    units = ('B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB')
+    try:
+        max_index = units.index(str(max_unit or 'PB').upper())
+    except ValueError:
+        max_index = units.index('PB')
+
+    unit_index = 0
+    while size >= 1024 and unit_index < max_index:
+        size /= 1024.0
+        unit_index += 1
+
+    unit = units[unit_index]
+    precision = 0 if unit_index == 0 else max(0, int(decimals))
+    if unit_decimals and unit in unit_decimals:
+        precision = max(0, int(unit_decimals[unit]))
+
+    if precision == 0:
+        text = str(int(round(size)))
+    else:
+        text = f'{size:.{precision}f}'
+        if trim_trailing_zeros:
+            text = text.rstrip('0').rstrip('.')
+
+    return f'{text}{separator}{unit}'
+
+
+def format_bytes_precise(size_in_bytes) -> str:
+    """Legacy detailed storage display: B=0dp, KB=1dp, MB/GB=2dp."""
+    return format_bytes(
+        size_in_bytes,
+        unit_decimals={'B': 0, 'KB': 1, 'MB': 2, 'GB': 2},
+        trim_trailing_zeros=False,
+        max_unit='GB',
+    )
+
+
 def draw_progress_bar(progress: int, total: int, bar_len: int = 50) -> None:
     if total <= 0:
         return

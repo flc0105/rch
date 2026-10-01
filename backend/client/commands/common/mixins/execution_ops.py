@@ -68,7 +68,7 @@ class CommandExecutionMixin:
                 _detect_machine_identity_components,
                 build_machine_identity_payload,
             )
-            from core.external_tools.platform import normalize_arch
+            from core.platform.normalization import normalize_arch
             from core.platform.platform_identity import detect_platform_info
 
             platform_info = detect_platform_info()

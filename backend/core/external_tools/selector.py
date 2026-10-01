@@ -1,7 +1,7 @@
 import logging
 from typing import Any
 
-from core.external_tools.platform import normalize_arch, normalize_platform, platform_key
+from core.platform.normalization import normalize_arch, normalize_platform, platform_key
 
 
 logger = logging.getLogger(__name__)

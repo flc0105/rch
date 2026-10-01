@@ -7,6 +7,7 @@ from client.commands.runtime.context import CommandCancelledError
 from client.commands.strategies.http_transfer.factory import build_http_transfer_strategy
 from client.http.client_api import ClientApiClient
 from core.protocol.message_types import MSG_TYPE_TRANSFER_UPDATE
+from core.utils.formatting import format_bytes
 from core.utils.output_marker import success
 
 
@@ -58,21 +59,8 @@ class CommandHttpFileTransferService:
     def parse_http_upload_response(self, response):
         return self.client_api.try_parse_json(response)
 
-    def _format_file_size(self, size_bytes: int) -> str:
-        size = max(int(size_bytes or 0), 0)
-        if size < 1024:
-            return f'{size} B'
-
-        value = float(size)
-        for unit in ('KB', 'MB', 'GB', 'TB'):
-            value /= 1024.0
-            if value < 1024 or unit == 'TB':
-                text = f'{value:.2f}'.rstrip('0').rstrip('.')
-                return f'{text} {unit}'
-        return f'{size} B'
-
     def build_http_upload_start_message(self, file_path: str, file_size: int) -> str:
-        return f'Uploading: {os.path.basename(file_path)} ({self._format_file_size(file_size)})'
+        return f'Uploading: {os.path.basename(file_path)} ({format_bytes(file_size, max_unit='TB')})'
 
     def build_http_upload_success_message(self, payload, file_path: str, fallback_message: str):
         data = payload.get('data') if isinstance(payload, dict) and isinstance(payload.get('data'), dict) else {}

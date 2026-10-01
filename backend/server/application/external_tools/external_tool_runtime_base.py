@@ -8,7 +8,7 @@ from core.external_tools.paths import (
     should_expand_argv_item,
 )
 from core.external_tools.params import resolve_params as resolve_external_tool_params
-from core.external_tools.platform import normalize_arch, normalize_platform
+from core.platform.normalization import normalize_arch, normalize_platform
 from core.external_tools.runtime import missing_exec_paths as find_missing_exec_paths
 from core.external_tools.runtime import resolved_exec_context as build_resolved_exec_context
 from core.external_tools.runtime import select_module_runtime_for_platform

@@ -205,6 +205,7 @@
 </template>
 
 <script>
+import { formatDateTimePreserveFraction } from '../utils/formatters.js'
 import { ElMessage } from 'element-plus'
 
 export default {
@@ -288,11 +289,8 @@ export default {
 
   methods: {
     formatJobOutputTime(value) {
-      const text = String(value || '').trim()
-      if (!text) return ''
-
-      // 与前端时间显示保持一致，但保留原始小数秒。
-      return text.replace('T', ' ')
+      // 与前端标准时间显示保持一致，但保留原始小数秒。
+      return formatDateTimePreserveFraction(value)
     },
 
     async saveOutputToArtifact() {

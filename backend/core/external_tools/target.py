@@ -1,6 +1,6 @@
 from typing import Any
 
-from core.external_tools.platform import normalize_arch, normalize_platform
+from core.platform.normalization import normalize_arch, normalize_platform
 
 
 def require_target(platform_alias: Any, arch: Any, context: str) -> tuple[str, str]:

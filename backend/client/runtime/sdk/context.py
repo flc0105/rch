@@ -80,7 +80,7 @@ def _detect_platform_info() -> dict:
 
 def _detect_arch() -> str:
     try:
-        from core.external_tools.platform import normalize_arch
+        from core.platform.normalization import normalize_arch
 
         return _safe_text(normalize_arch(_platform.machine()))
     except Exception:

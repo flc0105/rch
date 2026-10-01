@@ -142,6 +142,7 @@
 </template>
 
 <script>
+import { formatBytesHuman } from '../utils/formatters.js'
 import {
   CircleCheckFilled,
   CircleCloseFilled,
@@ -298,20 +299,7 @@ export default {
     },
 
     formatBytes(value) {
-      const bytes = Number(value)
-      if (!Number.isFinite(bytes) || bytes < 0) return '—'
-      if (bytes < 1024) return `${Math.round(bytes)} B`
-
-      const units = ['KB', 'MB', 'GB', 'TB']
-      let amount = bytes
-      let unitIndex = -1
-      do {
-        amount /= 1024
-        unitIndex += 1
-      } while (amount >= 1024 && unitIndex < units.length - 1)
-
-      const digits = amount >= 100 ? 0 : amount >= 10 ? 1 : 2
-      return `${amount.toFixed(digits)} ${units[unitIndex]}`
+      return formatBytesHuman(value, { precision: 'adaptive', maxUnit: 'TB', invalid: '—', nonPositiveAsZero: false })
     },
 
     formatRate(value) {

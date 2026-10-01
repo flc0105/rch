@@ -10,6 +10,7 @@ from uuid import uuid4
 
 from core.client_revision import CLIENT_BUNDLE_SOURCE_PATHS, build_client_revision_manifest
 from core.utils.logger import logger
+from core.platform.normalization import normalize_arch
 
 
 class AgentBuilder:
@@ -478,9 +479,7 @@ const BundleReportAPIPath = "/api/agent/loader/report"
         return current_target
 
     def _normalize_goarch(self, arch: str) -> str:
-        value = (arch or '').strip().lower()
-        aliases = {'x86_64': 'amd64', 'amd64': 'amd64', 'arm64': 'arm64', 'aarch64': 'arm64', 'x64': 'amd64'}
-        return aliases.get(value, value)
+        return normalize_arch(arch)
 
     def _describe_target(self, target_os: str) -> str:
         mapping = {'win': 'Windows', 'mac': 'macOS', 'linux': 'Linux', 'bundle': 'Bundle'}

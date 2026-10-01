@@ -3,6 +3,7 @@ import os
 import re
 
 from core.command_completion.models import CompletionCandidate, CompletionContext
+from core.platform.normalization import normalize_platform_alias
 from core.command_completion.provider import CommandCompletionProvider
 from server.application.history.history_record_policy import CommandHistoryRecordPolicy
 from server.config.config import SCRIPT_PATH
@@ -44,29 +45,7 @@ class ServerCompletionSessionMixin:
         return str(getattr(session_info, 'arch', '') if session_info is not None else '').strip()
 
     def _normalize_platform_alias(self, value) -> str:
-        text = str(value or '').strip().lower()
-
-        if not text:
-            return ''
-        if text in {'windows', 'win', 'win32', 'nt'}:
-            return 'win'
-        if text in {'darwin', 'mac', 'macos', 'osx'}:
-            return 'mac'
-        if text in {'linux', 'ubuntu', 'debian', 'centos', 'fedora', 'redhat', 'rhel', 'alpine', 'arch'}:
-            return 'linux'
-        if text in {'ios', 'iphone', 'ipad', 'iphoneos', 'ipados'}:
-            return 'ios'
-
-        if 'win' in text:
-            return 'win'
-        if 'darwin' in text or 'mac' in text:
-            return 'mac'
-        if 'linux' in text or re.search(r'(ubuntu|debian|centos|fedora|redhat|rhel|alpine|arch)', text):
-            return 'linux'
-        if 'ios' in text or 'iphone' in text or 'ipad' in text:
-            return 'ios'
-
-        return text
+        return normalize_platform_alias(value, infer=True)
 
 
 class GopinCommandCompletionProvider(ServerCompletionSessionMixin, CommandCompletionProvider):
