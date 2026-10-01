@@ -356,6 +356,9 @@ class AliasBuiltinSupport:
         if str(arg or '').strip():
             raise ValueError("alias resolve does not accept any arguments")
 
+        # aliases.json may be edited directly outside the CLI/Web API.
+        # Query commands should always reflect the latest persisted definitions.
+        self.alias_manager.load_aliases()
         payload = self._build_resolved_alias_payload()
         yield self._render_table_result(payload, output_format)
 
@@ -407,6 +410,8 @@ class AliasBuiltinSupport:
                 f"Expected format: alias list [--platform {'|'.join(self.alias_manager.get_supported_platforms())}] [--json]"
             )
 
+        # Keep explicit list queries in sync with direct aliases.json edits.
+        self.alias_manager.load_aliases()
         payload = self._build_list_alias_payload(platform_name=platform_name)
         yield self._render_table_result(payload, output_format)
 
