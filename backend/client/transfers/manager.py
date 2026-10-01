@@ -4,6 +4,7 @@ import threading
 from client.commands.base import CommandRuntimeMixin
 from client.commands.common.services.filesystem.archive_service import ArchiveService
 from client.commands.common.services.filesystem.path_resolver import PathResolver
+from client.commands.common.services.filesystem.preview_image_service import PreviewImageService
 from client.commands.common.services.transfer.http_file_transfer_service import CommandHttpFileTransferService
 from client.commands.runtime.context import CommandCancelledError, CommandExecutionContext
 from client.config import runtime_config
@@ -32,6 +33,7 @@ class _TransferTaskOwner(CommandRuntimeMixin):
             iter_interruptible=self._iter_interruptible,
         )
         self._client_api = ClientApiClient()
+        self._preview_image_service = PreviewImageService()
 
     @property
     def path_resolver(self):
@@ -44,6 +46,10 @@ class _TransferTaskOwner(CommandRuntimeMixin):
     @property
     def client_api(self):
         return self._client_api
+
+    @property
+    def preview_image_service(self):
+        return self._preview_image_service
 
     def _send_info(self, _result, _eof=0):
         # 独立 Transfer 没有 command result stream；实时状态统一走 transfer_update。
@@ -64,11 +70,13 @@ class ClientTransferManager:
     """
 
     OP_CLIENT_TO_SERVER_FILE = 'client_to_server_file'
+    OP_CLIENT_TO_SERVER_PREVIEW = 'client_to_server_preview'
     OP_CLIENT_TO_SERVER_ZIP = 'client_to_server_zip'
     OP_SERVER_TO_CLIENT_FILE = 'server_to_client_file'
 
     SUPPORTED_OPERATIONS = {
         OP_CLIENT_TO_SERVER_FILE,
+        OP_CLIENT_TO_SERVER_PREVIEW,
         OP_CLIENT_TO_SERVER_ZIP,
         OP_SERVER_TO_CLIENT_FILE,
     }
@@ -185,6 +193,8 @@ class ClientTransferManager:
 
             if operation == self.OP_CLIENT_TO_SERVER_FILE:
                 self._run_client_to_server_file(service, owner, transfer_id, payload)
+            elif operation == self.OP_CLIENT_TO_SERVER_PREVIEW:
+                self._run_client_to_server_preview(service, owner, transfer_id, payload)
             elif operation == self.OP_CLIENT_TO_SERVER_ZIP:
                 self._run_client_to_server_zip(service, owner, transfer_id, payload)
             elif operation == self.OP_SERVER_TO_CLIENT_FILE:
@@ -223,6 +233,20 @@ class ClientTransferManager:
             extra=payload.get('extra') if isinstance(payload.get('extra'), dict) else None,
             transfer_id=transfer_id,
         )
+
+    def _run_client_to_server_preview(self, service, owner, transfer_id: str, payload: dict):
+        source_path = owner.path_resolver.require_existing_file_from_arg(payload.get('path') or '')
+        prepared_file = owner.preview_image_service.prepare_upload_file(source_path)
+        try:
+            service.upload_single_file_to_server_result(
+                prepared_file.upload_path,
+                artifact_type='previews',
+                category='preview_cache',
+                extra=prepared_file.extra,
+                transfer_id=transfer_id,
+            )
+        finally:
+            owner.preview_image_service.cleanup_upload_file(prepared_file)
 
     def _run_client_to_server_zip(self, service, owner, transfer_id: str, payload: dict):
         raw_paths = payload.get('paths') or []

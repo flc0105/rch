@@ -57,11 +57,13 @@ class WebRemoteFileApi:
         client_id: str,
         path: str,
         history_entry_id: str = '',
+        tab_id: str = '',
     ):
         return self.remote_file_service.preview_file(
             client_id,
             path,
             history_entry_id=history_entry_id,
+            tab_id=tab_id,
         )
 
     def download_remote_file(

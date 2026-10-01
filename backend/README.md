@@ -752,6 +752,8 @@ Current characteristics:
 - effective alias lookup applies the relevant platform overlay
 - placeholder names are the parameter identity; repeated placeholders such as `<path> ... <path>` reuse the same value
 - positional invocation remains supported, following each unique parameter name in first-appearance order
+- terminal invocation also supports named arguments as `--name value` or `--name=value`; named keys must match `[A-Za-z_][A-Za-z0-9_-]*`
+- use a leading `--` to force positional mode when the first positional value itself starts with `--`
 
 Examples:
 
@@ -761,7 +763,7 @@ alias --platform win desk = cd <path>
 unalias ll
 ```
 
-Important nuance: alias placeholders stay intentionally simple. Parameters are bound by placeholder name, while positional invocation is retained as a shorthand using unique parameter names in first-appearance order. This is not a full shell macro engine.
+Important nuance: alias placeholders stay intentionally simple. Parameters are bound by placeholder name, while positional invocation is retained as a shorthand using unique parameter names in first-appearance order. Named invocation is an input convenience only; it normalizes into the same resolver rather than creating a second parameter system. This is not a full shell macro engine.
 
 ---
 
@@ -1971,6 +1973,7 @@ ZIP entry reading supports inspecting text content without first extracting the 
 - image compression option before preview upload
 - image resolution / metadata / EXIF display where supported
 - preview cache
+- preview uploads use the structured Client TransferManager / Server TransferService path; artifact IDs are carried in transfer metadata rather than parsed from human terminal text
 
 ### Occupied-file process inspection
 

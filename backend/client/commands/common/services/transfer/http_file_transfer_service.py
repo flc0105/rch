@@ -7,7 +7,7 @@ from client.commands.runtime.context import CommandCancelledError
 from client.commands.strategies.http_transfer.factory import build_http_transfer_strategy
 from client.http.client_api import ClientApiClient
 from core.protocol.message_types import MSG_TYPE_TRANSFER_UPDATE
-from core.utils.output_marker import info, success
+from core.utils.output_marker import success
 
 
 class CommandHttpFileTransferService:
@@ -58,35 +58,27 @@ class CommandHttpFileTransferService:
     def parse_http_upload_response(self, response):
         return self.client_api.try_parse_json(response)
 
+    def _format_file_size(self, size_bytes: int) -> str:
+        size = max(int(size_bytes or 0), 0)
+        if size < 1024:
+            return f'{size} B'
+
+        value = float(size)
+        for unit in ('KB', 'MB', 'GB', 'TB'):
+            value /= 1024.0
+            if value < 1024 or unit == 'TB':
+                text = f'{value:.2f}'.rstrip('0').rstrip('.')
+                return f'{text} {unit}'
+        return f'{size} B'
+
+    def build_http_upload_start_message(self, file_path: str, file_size: int) -> str:
+        return f'Uploading: {os.path.basename(file_path)} ({self._format_file_size(file_size)})'
+
     def build_http_upload_success_message(self, payload, file_path: str, fallback_message: str):
-        if not isinstance(payload, dict):
-            return fallback_message
-
-        message = payload.get('message') or fallback_message
-        data = payload.get('data') or {}
-
-        original_name = data.get('original_name') or os.path.basename(file_path)
-        stored_name = data.get('stored_name') or ''
-        artifact_id = data.get('artifact_id') or ''
-        download_url = data.get('download_url') or ''
-
-        # lines = [message, f'Original: {original_name}']
-        # if stored_name:
-        #     lines.append(f'Stored: {stored_name}')
-        # if artifact_id:
-        #     lines.append(f'Artifact ID: {artifact_id}')
-        # if download_url:
-        #     lines.append(f'Download URL: {download_url}')
-
-        lines = [success(message), info(f'Original: {original_name}')]
-        if stored_name:
-            lines.append(info(f'Stored: {stored_name}'))
-        if artifact_id:
-            lines.append(info(f'Artifact ID: {artifact_id}'))
-        if download_url:
-            lines.append(info(f'Download URL: {download_url}'))
-
-        return '\n'.join(lines)
+        data = payload.get('data') if isinstance(payload, dict) and isinstance(payload.get('data'), dict) else {}
+        original_name = str(data.get('original_name') or os.path.basename(file_path)).strip()
+        display_name = original_name or os.path.basename(file_path)
+        return success(f'Upload completed: {display_name}')
 
     def _send_transfer_update(self, transfer_id: str, **payload):
         normalized_transfer_id = str(transfer_id or '').strip()
@@ -200,8 +192,7 @@ class CommandHttpFileTransferService:
         strategy = self.get_transfer_strategy()
         progress_supported = strategy.get_mode_name() != 'legacy'
 
-        self.owner._send_info(f'Preparing HTTP upload: {file_path}', 0)
-        self.owner._send_info(f'File size: {file_size} bytes', 0)
+        self.owner._send_info(self.build_http_upload_start_message(file_path, file_size), 0)
 
         if transfer_id and send_preparing:
             self._send_transfer_update(

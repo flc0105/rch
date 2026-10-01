@@ -192,7 +192,7 @@ def create_remote_files_blueprint(server_instance):
             path = (payload.get('path') or '').strip()
             if not path:
                 raise ValueError('path is required')
-            return remote_file_api.preview_remote_file(client_id, path)
+            return remote_file_api.preview_remote_file(client_id, path, tab_id=get_optional_tab_id())
 
         return responder.json_endpoint(_execute, default_error_status=500)
 

@@ -7,6 +7,7 @@ from server.config.config import ALIAS_PATH
 
 class AliasManager:
     PLACEHOLDER_PATTERN = r'<.*?>'
+    NAMED_PARAMETER_PATTERN = re.compile(r'^[A-Za-z_][A-Za-z0-9_-]*$')
     SUPPORTED_PLATFORMS = ('common', 'win', 'mac', 'linux', 'ios')
     OS_PLATFORM_MAP = {
         'windows': 'win',
@@ -268,11 +269,69 @@ class AliasManager:
             parameters.append(occurrence)
         return parameters
 
-    def _parse_provided_args(self, args=""):
+    def _parse_provided_args(self, args="", required_args: list | None = None):
+        """解析 alias 调用参数。
+
+        默认保留原有 positional 调用；当首个 token 以 ``--`` 开头时进入 named
+        模式，支持 ``--name value`` 与 ``--name=value``。named 模式最终仍按模板
+        参数首次出现顺序归一化为 list，后续复用同一套 resolver。
         """
-        解析用户实际传入的参数
-        """
-        return shlex.split(args) if args else []
+        tokens = shlex.split(args) if args else []
+        if not tokens:
+            return []
+
+        if not tokens[0].startswith('--') or tokens[0] == '--':
+            return tokens[1:] if tokens[0] == '--' else tokens
+
+        required = [str(item or '').strip() for item in (required_args or [])]
+        if not required:
+            raise ValueError('This alias does not accept arguments')
+
+        invalid_names = [
+            name for name in required
+            if not self.NAMED_PARAMETER_PATTERN.fullmatch(name)
+        ]
+        if invalid_names:
+            raise ValueError(
+                'Named invocation requires parameter names matching '
+                '[A-Za-z_][A-Za-z0-9_-]*: ' + invalid_names[0]
+            )
+
+        bindings = {}
+        index = 0
+        while index < len(tokens):
+            token = tokens[index]
+            if not token.startswith('--') or token == '--':
+                raise ValueError('Cannot mix positional and named arguments')
+
+            option = token[2:]
+            if '=' in option:
+                name, value = option.split('=', 1)
+            else:
+                name = option
+                index += 1
+                if index >= len(tokens) or tokens[index].startswith('--'):
+                    raise ValueError(f'Missing value for argument: {name or "<empty>"}')
+                value = tokens[index]
+
+            if not self.NAMED_PARAMETER_PATTERN.fullmatch(name or ''):
+                raise ValueError(
+                    'Invalid argument name: '
+                    f'{name or "<empty>"}; expected [A-Za-z_][A-Za-z0-9_-]*'
+                )
+            if name not in required:
+                raise ValueError(f'Unknown argument: {name}')
+            if name in bindings:
+                raise ValueError(f'Duplicate argument: {name}')
+
+            bindings[name] = value
+            index += 1
+
+        for name in required:
+            if name not in bindings:
+                raise ValueError(f'Missing argument: {name}')
+
+        return [bindings[name] for name in required]
 
     def _replace_placeholders(self, command: str, required_args: list, provided_args: list):
         """按参数名绑定值；模板中重复出现的同名占位符复用同一个值。"""
@@ -326,7 +385,7 @@ class AliasManager:
         alias_name = str(alias or '').strip()
         command = self._get_alias_template(alias_name, conn=conn)
         required_args = self._extract_required_args(command)
-        provided_args = self._parse_provided_args(args)
+        provided_args = self._parse_provided_args(args, required_args=required_args)
 
         self._validate_alias_args(required_args, provided_args)
         expanded_command = self._replace_placeholders(command, required_args, provided_args)

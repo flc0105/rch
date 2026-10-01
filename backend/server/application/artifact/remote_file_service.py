@@ -11,8 +11,8 @@ class WebRemoteFileService:
     当前文件链路：
     - 普通下载：进入 artifact files 区
     - 预览下载：进入 artifact previews 区
-    - client 在命令结果文本中返回 Artifact ID
-    - server 再根据 Artifact ID 查询 artifact
+    - download / preview 文件搬运统一使用 Client TransferManager
+    - artifact_id 通过结构化 transfer_update 回传，不依赖人类命令输出文本
 
     规则：
     - 所有这里发往 client 且同步等待结果流的前台请求
@@ -20,8 +20,6 @@ class WebRemoteFileService:
     - Remote File Browser 的 download/download-as-zip 例外：文件搬运由 Client TransferManager
       独立执行，不占 command foreground slot；其他同步文件操作仍保持原有 foreground 规则
     """
-
-    RESULT_ARTIFACT_ID_PREFIX = 'Artifact ID:'
 
     def __init__(self, remote_execution_service, artifact_service, transfer_service=None):
         self.remote_execution_service = remote_execution_service
@@ -37,81 +35,6 @@ class WebRemoteFileService:
         if not payload:
             return name
         return f'{name} {self._encode_payload_arg(payload)}'
-
-    def _strip_output_marker(self, line: str) -> str:
-        value = str(line or '').strip()
-        for marker in ('[*]', '[+]', '[!]', '[-]'):
-            if value.startswith(marker):
-                return value[len(marker):].strip()
-        return value
-
-    '''
-    TODO: 重构 remote file / artifact 返回链路，移除从命令输出文本中解析 Artifact ID 的脆弱逻辑。
-    
-    当前问题：
-    server 端 remote_file_service 在执行 download / preview / screenshot 等远程文件类命令后，需要知道 client 上传到 server 的 artifact_id。现在的实现方式是：client 上传成功后，把 Artifact ID 写进人类可读输出文本里，例如：
-    
-        Artifact ID: xxx
-        [*] Artifact ID: xxx
-    
-    然后 server 再从 result text 里逐行解析 Artifact ID。这个逻辑非常脆弱，CLI 输出格式、output marker、文案、换行、语言变化都会影响机器逻辑。例如加入 output marker 后，原本只识别 "Artifact ID:" 的解析逻辑会失败，导致报错：
-    
-        Remote file command completed, but Artifact ID was not found in result text
-    
-    短期修复：
-    当前先在 remote_file_service.py 里兼容 output marker，解析 Artifact ID 前去掉行首的 [*] / [+] / [!] / [-] 等 marker。
-    
-    长期重构目标：
-    机器字段 artifact_id 不应该依赖 CLI 文本解析。需要把远程文件命令的“人类输出”和“机器结果”分离。
-    
-    可选重构方案：
-    1. 给 command result 协议增加 metadata 字段：
-       - text: 给 CLI / Web terminal 展示
-       - metadata.artifact_id: 给 server 机器逻辑读取
-       - metadata.artifact: artifact 详情
-    
-    2. 或者让远程文件命令最后一次 eof=1 result 返回结构化 JSON，server 只解析 final result，不解析中间日志。
-       注意：不能把 JSON 直接展示到 CLI，需要展示 message 或保留原人类输出。
-    
-    涉及文件：
-    - backend/server/application/artifact/remote_file_service.py
-      当前从 result text 中提取 Artifact ID 的地方。
-    - backend/client/commands/common/services/transfer/http_file_transfer_service.py
-      当前生成 Artifact ID / Download URL 人类输出的地方。
-    - backend/client/connection/server_connection.py
-      如果采用 metadata 方案，需要扩展 send_result 协议。
-    - backend/server/application/execution/command_stream_service.py
-      如果采用 final JSON 方案，需要支持读取最后一次 eof=1 result。
-    - backend/server/application/execution/remote_execution_service.py
-      remote file 调用方需要拿结构化结果，而不是普通拼接文本。
-    
-    重构原则：
-    - CLI 输出保持原样，不要为了机器解析破坏用户可读输出。
-    - artifact_id 必须通过结构化字段传递，不再从 stdout / result text 里拆字符串。
-    - 中间日志可以继续走 text。
-    - remote file / preview / screenshot 这类 artifact 命令统一走结构化结果。
-    - 普通命令执行链路尽量不受影响。
-    '''
-
-    def _extract_artifact_id_from_result_text(self, text: str) -> str:
-        lines = [self._strip_output_marker(line) for line in str(text or '').splitlines()]
-        for line in lines:
-            if line.startswith(self.RESULT_ARTIFACT_ID_PREFIX):
-                return line[len(self.RESULT_ARTIFACT_ID_PREFIX):].strip()
-        return ''
-
-    def _resolve_artifact_from_result_text(self, result_text: str) -> dict:
-        artifact_id = self._extract_artifact_id_from_result_text(result_text)
-        if not artifact_id:
-            raise RuntimeError(
-                'Remote file command completed, but Artifact ID was not found in result text'
-            )
-
-        artifact = self.artifact_service.get_artifact_by_id(artifact_id)
-        if not isinstance(artifact, dict) or not artifact.get('artifact_id'):
-            raise RuntimeError('Artifact was not found after HTTP upload completed')
-
-        return artifact
 
     def browse_directory(
             self,
@@ -503,23 +426,52 @@ class WebRemoteFileService:
             'message': result_text,
         }
 
-    def preview_file(self, client_id: str, path: str, history_entry_id: str = '') -> dict:
+    def preview_file(
+            self,
+            client_id: str,
+            path: str,
+            history_entry_id: str = '',
+            tab_id: str = '',
+    ) -> dict:
         if not (path or '').strip():
             raise ValueError('path is required')
+        if self.transfer_service is None:
+            raise RuntimeError('transfer_service is not available')
 
         normalized_path = path.strip()
-        command = self._build_command('preview_path', {'path': normalized_path})
-
-        result_text = self.remote_execution_service.run_foreground_text_command(
-            client_id,
-            command,
-            history_entry_id=history_entry_id,
-            task_type='remote_file',
-            source='web_remote_file',
+        session = self.remote_execution_service.get_connection(client_id)
+        hostname = getattr(session.session_info, 'hostname', '') or ''
+        filename = normalized_path.replace('\\', '/').rstrip('/').split('/')[-1]
+        transfer = self.transfer_service.create_transfer(
+            client_id=client_id,
+            direction='client_to_server',
+            filename=filename,
+            hostname=hostname,
+            source_path=normalized_path,
+            destination_path='Artifacts / Previews',
+            tab_id=tab_id,
+            stage='preparing',
+            metadata={
+                'source': 'remote_file_preview',
+                'transport': 'client_transfer_manager',
+            },
         )
-        artifact = self._resolve_artifact_from_result_text(result_text)
+        transfer_id = transfer.get('transfer_id') or ''
 
-        return self.artifact_service.build_preview_payload(artifact.get('artifact_id', ''))
+        try:
+            self._start_client_transfer(
+                session,
+                transfer_id,
+                'client_to_server_preview',
+                {'path': normalized_path},
+            )
+            _, artifact = self._wait_for_transfer_artifact(transfer_id)
+            return self.artifact_service.build_preview_payload(artifact.get('artifact_id', ''))
+        except Exception as exc:
+            current = self.transfer_service.get_transfer(transfer_id)
+            if current and current.get('state') == 'running':
+                self.transfer_service.fail_transfer(transfer_id, str(exc), client_id=client_id)
+            raise
 
     def save_file_content(self, client_id: str, path: str, content: str, encoding: str = 'utf-8') -> dict:
         """
