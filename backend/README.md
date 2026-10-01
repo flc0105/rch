@@ -750,7 +750,8 @@ Current characteristics:
 - aliases are stored persistently in JSON
 - supports platform groups: `common`, `win`, and `mac`
 - effective alias lookup applies the relevant platform overlay
-- supports simple positional placeholder parameters such as `<path>` / `<name>`
+- placeholder names are the parameter identity; repeated placeholders such as `<path> ... <path>` reuse the same value
+- positional invocation remains supported, following each unique parameter name in first-appearance order
 
 Examples:
 
@@ -760,7 +761,7 @@ alias --platform win desk = cd <path>
 unalias ll
 ```
 
-Important nuance: alias placeholders are intentionally simple and positional. This is not a full shell macro engine.
+Important nuance: alias placeholders stay intentionally simple. Parameters are bound by placeholder name, while positional invocation is retained as a shorthand using unique parameter names in first-appearance order. This is not a full shell macro engine.
 
 ---
 
@@ -971,7 +972,7 @@ Below is a reorganized roadmap based on current priorities and project direction
 
 - [ ] Fix background jobs currently depending on HTTP so they can also work correctly in CLI mode
 - [ ] Fix stream cancellation for `exec script` mode so the stream actually closes when cancelled
-- [ ] Fix alias resolution to match by name instead of argument count, and support reusing the same variable multiple times
+- [x] Fix alias resolution to match by name instead of argument count, and support reusing the same variable multiple times
 - [x] Fix occasional `client is busy` errors during process listing and process kill operations
 
 ### Shell, execution, and terminal improvements

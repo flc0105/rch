@@ -9,7 +9,15 @@
     "rch_uuid": "pyexec_collect import uuid;print(uuid.uuid4())",
     "cwd": "pyexec_collect import os;print(os.getcwd())",
     "rch_paste": "pyexec_collect import pyperclip; print(pyperclip.paste())",
-    "rch_copy": "pyexec_collect import pyperclip;pyperclip.copy(\"<text>\")"
+    "rch_copy": "pyexec_collect import pyperclip;pyperclip.copy(\"<text>\")",
+
+    "test_noargs": "pyexec_collect print('no-args-ok')",
+    "test_one": "pyexec_collect print('value=<value>')",
+    "test_repeat3": "pyexec_collect print('<word>|<word>|<word>')",
+    "test_pair_repeat": "pyexec_collect print('left=<left> | right=<right> | left_again=<left> | right_again=<right>')",
+    "test_first_seen_order": "pyexec_collect print('second=<second> | first=<first> | second_again=<second> | first_again=<first>')",
+    "test_mix3": "pyexec_collect print('a=<a> | b=<b> | a2=<a> | c=<c> | b2=<b> | a3=<a>')",
+    "test_space": "pyexec_collect print('text=[<text>]')"
   },
   "win": {
     "list_av": "powershell Get-CimInstance -Namespace root/SecurityCenter2 -ClassName AntivirusProduct ^| Select-Object displayName",
@@ -67,7 +75,25 @@
     "resume_pid": "kill -CONT <pid>",
     "list_path": "echo $PATH | tr ':' '\\n'",
     "show_power_assertions": "pmset -g assertions",
-    "notifier": "nohup /Library/Frameworks/Python.framework/Versions/3.10/bin/python3 /Users/flc/PycharmProjects/rch/desktop_notifier/run.py --tray --config /Users/flc/PycharmProjects/rch/desktop_notifier/config.json &"
+    "notifier": "nohup /Library/Frameworks/Python.framework/Versions/3.10/bin/python3 /Users/flc/PycharmProjects/rch/desktop_notifier/run.py --tray --config /Users/flc/PycharmProjects/rch/desktop_notifier/config.json &",
+    "rg": "grep -RInHi -I \"<keyword>\" .",
+
+
+        "host_probe": "read sh -c 'echo \"=== <host> ===\"; echo \"Ping count: <count>\"; ping -c <count> \"<host>\"; echo \"--- DNS ---\"; dscacheutil -q host -a name \"<host>\"'",
+
+    "path_info": "read sh -c 'echo \"=== <path> ===\"; ls -ld \"<path>\"; echo \"--- file ---\"; file \"<path>\"; echo \"--- stat ---\"; stat -f \"size=%z bytes | mode=%Sp | modified=%Sm\" -t \"%Y-%m-%d %H:%M:%S\" \"<path>\"'",
+
+    "port_probe": "read sh -c 'echo \"=== TCP <port> ===\"; echo \"--- listeners ---\"; lsof -nP -iTCP:<port> -sTCP:LISTEN || true; echo \"--- all connections ---\"; lsof -nP -iTCP:<port> || true'",
+
+    "http_probe": "read sh -c 'echo \"=== <url> ===\"; curl -L -sS -o /dev/null -w \"HTTP: %{http_code}\\nRemote: %{remote_ip}\\nDNS: %{time_namelookup}s\\nConnect: %{time_connect}s\\nTTFB: %{time_starttransfer}s\\nTotal: %{time_total}s\\n\" \"<url>\"'",
+
+    "git_summary": "read sh -c 'cd \"<path>\" && echo \"=== <path> ===\" && git status --short --branch && echo \"--- latest commit ---\" && git log -1 --oneline'",
+
+    "find_in": "read grep -RInHi -I \"<keyword>\" \"<path>\"",
+
+    "sha256": "read shasum -a 256 \"<file>\"",
+
+    "disk_for": "read df -h \"<path>\""
   },
   "linux": {},
   "ios": {}

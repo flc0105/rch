@@ -91,8 +91,11 @@ class CommandNotifyBuiltinSupport:
 
             for item in executor():
                 status = item[0] if item else 0
-                if int(status or 0) == 0:
-                    final_ok = False
+                # 远程结果流的 status 表示当前结果块状态；read 等流式命令可能先
+                # 产生 stderr(status=0)，随后以最终 EOF 结果(status=1)正常完成。
+                # 与 CommandStreamService.collect_result 保持一致，以最后一个状态
+                # 作为整个被包装命令的最终状态，避免中间 stderr 永久判失败。
+                final_ok = int(status or 0) != 0
                 yield item
 
             terminal = True

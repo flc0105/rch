@@ -122,7 +122,7 @@ class CommandNotifyBuiltinSupportTests(unittest.TestCase):
         self.assertEqual(COMMAND_TYPE_COMMAND, self.plans[0]['command_type'])
         self._assert_success_event()
 
-    def test_notify_marks_failed_when_inner_stream_contains_error(self):
+    def test_notify_marks_failed_when_final_stream_status_is_error(self):
         self.plan_results['shell false'] = [
             (1, 'starting'),
             (0, 'Command exited with code 1'),
@@ -134,6 +134,20 @@ class CommandNotifyBuiltinSupportTests(unittest.TestCase):
         payload = self.ingest.call_args.args[0]
         self.assertEqual('failed', payload['data']['status'])
         self.assertTrue(payload['message'].startswith('Failed · '))
+
+    def test_notify_uses_final_stream_status_after_intermediate_stderr(self):
+        self.plan_results['read example'] = [
+            (1, 'stdout line'),
+            (0, 'warning on stderr'),
+            (1, 'Command completed'),
+        ]
+
+        output = list(self.support.notify('read example'))
+
+        self.assertEqual(self.plan_results['read example'], output)
+        payload = self.ingest.call_args.args[0]
+        self.assertEqual('success', payload['data']['status'])
+        self.assertTrue(payload['message'].startswith('Success · '))
 
     def test_notify_usage_does_not_emit_event(self):
         self.assertEqual([(0, 'Usage: notify <client-command>')], list(self.support.notify('')))

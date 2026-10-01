@@ -241,21 +241,31 @@ class AliasManager:
             raise KeyError(f"Alias '{alias_name}' not found")
         return command
 
-    def _extract_required_args(self, command: str):
-        """
-        提取命令模板中的占位参数
-        """
-        return re.findall(self.PLACEHOLDER_PATTERN, command)
-
-    def extract_parameters(self, command: str) -> list[dict]:
-        parameters = []
-        for index, placeholder in enumerate(self._extract_required_args(str(command or ''))):
+    def _extract_parameter_occurrences(self, command: str) -> list[dict]:
+        """提取模板中的全部占位符，并保留它们的出现位置。"""
+        occurrences = []
+        for index, placeholder in enumerate(re.findall(self.PLACEHOLDER_PATTERN, str(command or ''))):
             raw_name = str(placeholder or '')[1:-1].strip()
-            parameters.append({
+            occurrences.append({
                 'name': raw_name or f'arg{index + 1}',
                 'placeholder': placeholder,
                 'position': index,
             })
+        return occurrences
+
+    def _extract_required_args(self, command: str):
+        """按首次出现顺序返回唯一参数名；同名占位符共享一个参数。"""
+        return [parameter['name'] for parameter in self.extract_parameters(command)]
+
+    def extract_parameters(self, command: str) -> list[dict]:
+        parameters = []
+        seen_names = set()
+        for occurrence in self._extract_parameter_occurrences(command):
+            parameter_name = occurrence['name']
+            if parameter_name in seen_names:
+                continue
+            seen_names.add(parameter_name)
+            parameters.append(occurrence)
         return parameters
 
     def _parse_provided_args(self, args=""):
@@ -264,14 +274,23 @@ class AliasManager:
         """
         return shlex.split(args) if args else []
 
-    def _replace_placeholders(self, command: str, provided_args: list):
-        """
-        依次替换命令模板中的占位符
-        """
-        for arg in provided_args:
-            replacement = str(arg)
-            command = re.sub(self.PLACEHOLDER_PATTERN, lambda _match, value=replacement: value, command, count=1)
-        return command
+    def _replace_placeholders(self, command: str, required_args: list, provided_args: list):
+        """按参数名绑定值；模板中重复出现的同名占位符复用同一个值。"""
+        bindings = {
+            parameter_name: str(value)
+            for parameter_name, value in zip(required_args, provided_args)
+        }
+        occurrence_index = 0
+
+        def replace(match):
+            nonlocal occurrence_index
+            placeholder = match.group(0)
+            raw_name = placeholder[1:-1].strip()
+            parameter_name = raw_name or f'arg{occurrence_index + 1}'
+            occurrence_index += 1
+            return bindings[parameter_name]
+
+        return re.sub(self.PLACEHOLDER_PATTERN, replace, command)
 
     def _validate_alias_args(self, required_args: list, provided_args: list):
         """
@@ -293,7 +312,7 @@ class AliasManager:
         normalized_args = [str(item) for item in (provided_args or [])]
 
         self._validate_alias_args(required_args, normalized_args)
-        expanded_command = self._replace_placeholders(command, normalized_args)
+        expanded_command = self._replace_placeholders(command, required_args, normalized_args)
         return {
             'alias': alias_name,
             'command': expanded_command,
@@ -310,7 +329,7 @@ class AliasManager:
         provided_args = self._parse_provided_args(args)
 
         self._validate_alias_args(required_args, provided_args)
-        expanded_command = self._replace_placeholders(command, provided_args)
+        expanded_command = self._replace_placeholders(command, required_args, provided_args)
         return {
             'alias': alias_name,
             'command': expanded_command,
