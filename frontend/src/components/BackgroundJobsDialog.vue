@@ -343,6 +343,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import BackgroundJobStartDialog from './BackgroundJobStartDialog.vue'
 import BackgroundJobDetailDialog from './BackgroundJobDetailDialog.vue'
 import BackgroundJobMessageDialog from './BackgroundJobMessageDialog.vue'
+import { cloneParamValue, normalizeParamSpecs, normalizeParamType } from '../utils/parameterSchema.js'
 
 export default {
   name: 'BackgroundJobsDialog',
@@ -710,19 +711,6 @@ export default {
         }
       }
 
-      const normalizeParam = (item = {}) => {
-        const name = String(item.name || '').trim()
-        if (!name) return null
-
-        return {
-          ...item,
-          name,
-          type: String(item.type || 'string').trim().toLowerCase() || 'string',
-          required: !!item.required,
-          description: String(item.description || '').trim(),
-        }
-      }
-
       const executionMeta = metadata.execution && typeof metadata.execution === 'object' && !Array.isArray(metadata.execution)
         ? metadata.execution
         : {}
@@ -763,9 +751,7 @@ export default {
           default: executionMode,
           allowed,
         },
-        params: Array.isArray(metadata.params)
-          ? metadata.params.map(item => normalizeParam(item)).filter(Boolean)
-          : [],
+        params: normalizeParamSpecs(metadata.params),
       }
     },
 
@@ -946,17 +932,22 @@ export default {
       const result = {}
 
       for (const param of metadata.params || []) {
-        const type = String(param?.type || 'string').trim().toLowerCase()
-
-        if (Object.prototype.hasOwnProperty.call(param, 'default')) {
-          const defaultValue = param.default
-          if (['remote_files', 'remote_folders'].includes(type) && Array.isArray(defaultValue)) {
-            result[param.name] = [...defaultValue]
+        const type = normalizeParamType(param?.type)
+        const hasDefault = Object.prototype.hasOwnProperty.call(param, 'default') && param.default !== null && param.default !== undefined
+        if (hasDefault) {
+          if (['remote_files', 'remote_folders'].includes(type)) {
+            result[param.name] = Array.isArray(param.default) ? cloneParamValue(param.default) : []
+          } else if (type === 'boolean') {
+            result[param.name] = param.default === true || String(param.default).toLowerCase() === 'true'
           } else {
-            result[param.name] = defaultValue === null || defaultValue === undefined ? '' : defaultValue
+            result[param.name] = cloneParamValue(param.default)
           }
+        } else if (['remote_files', 'remote_folders'].includes(type)) {
+          result[param.name] = []
+        } else if (type === 'boolean') {
+          result[param.name] = false
         } else {
-          result[param.name] = ['remote_files', 'remote_folders'].includes(type) ? [] : ''
+          result[param.name] = ''
         }
       }
 
@@ -1020,22 +1011,23 @@ export default {
     },
 
     coerceBackgroundJobParamValue(param, rawValue) {
-      const type = String(param?.type || 'string').trim().toLowerCase()
+      const type = normalizeParamType(param?.type)
 
       if (['remote_files', 'remote_folders'].includes(type)) {
-        return Array.isArray(rawValue)
-          ? rawValue.map(item => String(item || '').trim()).filter(Boolean)
-          : String(rawValue || '').split(',').map(item => item.trim()).filter(Boolean)
+        if (!Array.isArray(rawValue)) throw new Error(`Param "${param.name}" must be a path list`)
+        return rawValue.map(item => String(item || '').trim()).filter(Boolean)
       }
 
       if (['remote_file', 'remote_folder'].includes(type)) {
-        if (Array.isArray(rawValue)) return String(rawValue[0] || '').trim()
+        if (Array.isArray(rawValue)) throw new Error(`Param "${param.name}" must be a single path`)
         return String(rawValue || '').trim()
       }
 
-      const value = rawValue === null || rawValue === undefined ? '' : String(rawValue).trim()
+      if (type === 'boolean') return !!rawValue
+      if (type === 'textarea') return rawValue === null || rawValue === undefined ? '' : String(rawValue)
 
-      if (type === 'integer' || type === 'int') {
+      const value = rawValue === null || rawValue === undefined ? '' : String(rawValue).trim()
+      if (type === 'integer') {
         if (!/^-?\d+$/.test(value)) {
           throw new Error(`Param "${param.name}" must be an integer`)
         }
@@ -1044,36 +1036,31 @@ export default {
         if (param.min !== undefined && parsed < Number(param.min)) {
           throw new Error(`Param "${param.name}" must be >= ${param.min}`)
         }
-
         if (param.max !== undefined && parsed > Number(param.max)) {
           throw new Error(`Param "${param.name}" must be <= ${param.max}`)
         }
-
         return parsed
       }
 
-      if (type === 'number' || type === 'float') {
+      if (type === 'number') {
         const parsed = Number(value)
         if (Number.isNaN(parsed)) {
           throw new Error(`Param "${param.name}" must be a number`)
         }
-
         if (param.min !== undefined && parsed < Number(param.min)) {
           throw new Error(`Param "${param.name}" must be >= ${param.min}`)
         }
-
         if (param.max !== undefined && parsed > Number(param.max)) {
           throw new Error(`Param "${param.name}" must be <= ${param.max}`)
         }
-
         return parsed
       }
 
-      if (type === 'boolean' || type === 'bool') {
-        const lowered = value.toLowerCase()
-        if (['1', 'true', 'yes', 'on'].includes(lowered)) return true
-        if (['0', 'false', 'no', 'off'].includes(lowered)) return false
-        throw new Error(`Param "${param.name}" must be true/false`)
+      if (type === 'select') {
+        if (Array.isArray(param.options) && param.options.length && !param.options.map(String).includes(value)) {
+          throw new Error(`Param "${param.name}" has invalid option`)
+        }
+        return value
       }
 
       return value
@@ -1086,7 +1073,7 @@ export default {
       for (const param of metadata.params || []) {
         const hasValue = Object.prototype.hasOwnProperty.call(this.backgroundJobParamForm, param.name)
         const rawValue = hasValue ? this.backgroundJobParamForm[param.name] : ''
-        const type = String(param.type || 'string').trim().toLowerCase()
+        const type = normalizeParamType(param.type)
         const hasRemoteMultiValue = ['remote_files', 'remote_folders'].includes(type) && Array.isArray(rawValue) && rawValue.length > 0
         const textValue = rawValue === null || rawValue === undefined ? '' : String(rawValue).trim()
 

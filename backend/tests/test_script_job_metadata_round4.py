@@ -1,10 +1,6 @@
 import unittest
 
-from core.metadata.parameters import (
-    coerce_path_list_csv_or_sequence,
-    coerce_path_list_literal_or_single,
-    normalize_param_spec,
-)
+from core.metadata.parameters import coerce_path_list, normalize_param_spec
 from core.platform.normalization import is_platform_supported, normalize_platforms
 from core.utils.job_metadata import (
     coerce_job_param_value,
@@ -26,36 +22,55 @@ from core.utils.script_metadata import (
 
 
 class ScriptJobMetadataRound4Tests(unittest.TestCase):
-    def test_shared_param_spec_keeps_script_option_normalization_policy(self):
-        spec = {'name': ' mode ', 'type': 'select', 'options': ('a', 'b')}
-        script_spec = normalize_param_spec(spec, normalize_options=True)
-        job_spec = normalize_param_spec(spec, normalize_options=False)
+    def test_shared_param_spec_normalizes_label_options_and_textarea(self):
+        spec = normalize_param_spec({
+            'name': ' notes ',
+            'type': 'multiline',
+            'label': ' Notes ',
+            'options': ('a', 'b'),
+        })
+        self.assertEqual('notes', spec['name'])
+        self.assertEqual('Notes', spec['label'])
+        self.assertEqual('textarea', spec['type'])
+        self.assertEqual(['a', 'b'], spec['options'])
 
-        self.assertEqual('mode', script_spec['name'])
-        self.assertEqual(['a', 'b'], script_spec['options'])
-        self.assertEqual(('a', 'b'), job_spec['options'])
+        default_label = normalize_param_spec({'name': 'mode', 'type': 'select', 'options': ('a', 'b')})
+        self.assertEqual('mode', default_label['label'])
+        self.assertEqual(['a', 'b'], default_label['options'])
 
     def test_script_and_job_share_boolean_number_and_limit_semantics(self):
         for coerce in (coerce_script_param_value, coerce_job_param_value):
             self.assertTrue(coerce({'name': 'enabled', 'type': 'bool'}, 'yes'))
             self.assertEqual(3, coerce({'name': 'count', 'type': 'int', 'min': 1, 'max': 5}, '3'))
+            self.assertEqual(3.5, coerce({'name': 'ratio', 'type': 'number'}, '3.5'))
             with self.assertRaisesRegex(ValueError, 'Invalid boolean param: enabled'):
                 coerce({'name': 'enabled', 'type': 'bool'}, 'maybe')
             with self.assertRaisesRegex(ValueError, 'must be >= 2'):
                 coerce({'name': 'count', 'type': 'int', 'min': 2}, '1')
 
-    def test_script_select_validation_remains_script_specific(self):
+    def test_script_and_job_share_select_validation(self):
         spec = {'name': 'mode', 'type': 'select', 'options': ['a', 'b']}
-        self.assertEqual('a', coerce_script_param_value(spec, 'a'))
-        with self.assertRaisesRegex(ValueError, 'Invalid option for mode: c'):
-            coerce_script_param_value(spec, 'c')
-        self.assertEqual('c', coerce_job_param_value(spec, 'c'))
+        for coerce in (coerce_script_param_value, coerce_job_param_value):
+            self.assertEqual('a', coerce(spec, 'a'))
+            with self.assertRaisesRegex(ValueError, 'Invalid option for mode: c'):
+                coerce(spec, 'c')
 
-    def test_remote_path_list_policies_remain_intentionally_different(self):
-        self.assertEqual(['/a', '/b'], coerce_path_list_literal_or_single('["/a", "/b"]', 'paths'))
-        self.assertEqual(['/a,/b'], coerce_path_list_literal_or_single('/a,/b', 'paths'))
-        self.assertEqual(['/a', '/b'], coerce_path_list_csv_or_sequence('/a,/b', 'paths'))
-        self.assertEqual(['["/a"', '"/b"]'], coerce_path_list_csv_or_sequence('["/a", "/b"]', 'paths'))
+    def test_remote_path_lists_are_canonical_arrays_only(self):
+        self.assertEqual(['/a', '/b'], coerce_path_list(['/a', '/b'], 'paths'))
+        with self.assertRaisesRegex(ValueError, 'Invalid path list param: paths'):
+            coerce_path_list(('/a', '/b'), 'paths')
+        with self.assertRaisesRegex(ValueError, 'Invalid path list param: paths'):
+            coerce_path_list('/a,/b', 'paths')
+        with self.assertRaisesRegex(ValueError, 'Invalid path list param: paths'):
+            coerce_path_list('["/a", "/b"]', 'paths')
+
+        meta = {'params': [{'name': 'paths', 'type': 'remote_files'}]}
+        self.assertEqual({'paths': ['/a', '/b']}, resolve_script_params(meta, {'paths': ['/a', '/b']}))
+        self.assertEqual({'paths': ['/a', '/b']}, resolve_job_params(meta, {'paths': ['/a', '/b']}))
+        with self.assertRaisesRegex(ValueError, 'Invalid path list param: paths'):
+            resolve_script_params(meta, {'paths': '/a,/b'})
+        with self.assertRaisesRegex(ValueError, 'Invalid path list param: paths'):
+            resolve_job_params(meta, {'paths': '/a,/b'})
 
     def test_required_error_messages_and_extra_params_are_preserved(self):
         script_meta = {'params': [{'name': 'count', 'type': 'int', 'required': True}]}
@@ -78,13 +93,19 @@ class ScriptJobMetadataRound4Tests(unittest.TestCase):
         self.assertFalse(is_job_platform_supported('win', ['mac']))
 
     def test_script_metadata_source_and_param_behavior(self):
-        source = '''\nSCRIPT_METADATA = {\n    "name": "demo",\n    "platforms": ["Darwin", "Ubuntu"],\n    "params": [\n        {"name": "count", "type": "int", "required": True, "min": 1, "max": 5},\n        {"name": "mode", "type": "select", "options": ("a", "b"), "default": "a"},\n        {"name": "paths", "type": "remote_files"},\n    ],\n}\n'''
+        source = '''\nSCRIPT_METADATA = {\n    "name": "demo",\n    "platforms": ["Darwin", "Ubuntu"],\n    "params": [\n        {"name": "count", "type": "int", "required": True, "min": 1, "max": 5},\n        {"name": "mode", "type": "select", "options": ("a", "b"), "default": "a"},\n        {"name": "notes", "type": "textarea", "label": "Notes"},\n        {"name": "paths", "type": "remote_files"},\n    ],\n}\n'''
         metadata = read_script_metadata_from_source(source)
         self.assertEqual(['mac', 'linux'], metadata['platforms'])
         self.assertEqual(['a', 'b'], metadata['params'][1]['options'])
+        self.assertEqual('Notes', metadata['params'][2]['label'])
         self.assertEqual(
-            {'count': 3, 'mode': 'b', 'paths': ['/a', '/b']},
-            resolve_script_params(metadata, {'count': '3', 'mode': 'b', 'paths': '["/a", "/b"]'}),
+            {'count': 3, 'mode': 'b', 'notes': ' hello\nworld ', 'paths': ['/a', '/b']},
+            resolve_script_params(metadata, {
+                'count': '3',
+                'mode': 'b',
+                'notes': ' hello\nworld ',
+                'paths': ['/a', '/b'],
+            }),
         )
 
     def test_job_execution_mode_aliases_remain_job_specific(self):
@@ -95,14 +116,21 @@ class ScriptJobMetadataRound4Tests(unittest.TestCase):
             normalize_job_execution_mode('unknown')
 
     def test_job_metadata_source_class_and_execution_policy_stay_job_specific(self):
-        source = '''\nclass DemoJob:\n    JOB_METADATA = {\n        "name": "demo-job",\n        "platforms": ["macOS"],\n        "execution": {"default": "subprocess", "allowed": ["inproc", "subprocess"]},\n        "params": [\n            {"name": "count", "type": "int", "required": True, "min": 1, "max": 5},\n            {"name": "paths", "type": "remote_files"},\n        ],\n    }\n'''
+        source = '''\nclass DemoJob:\n    JOB_METADATA = {\n        "name": "demo-job",\n        "platforms": ["macOS"],\n        "execution": {"default": "subprocess", "allowed": ["inproc", "subprocess"]},\n        "params": [\n            {"name": "count", "type": "int", "required": True, "min": 1, "max": 5},\n            {"name": "mode", "type": "select", "options": ["fast", "safe"]},\n            {"name": "notes", "type": "textarea", "label": "Notes"},\n            {"name": "paths", "type": "remote_files"},\n        ],\n    }\n'''
         metadata = read_job_metadata_from_source(source)
         self.assertEqual('subprocess', metadata['execution_mode'])
         self.assertEqual(['inproc', 'subprocess'], metadata['allowed'])
         self.assertEqual(['mac'], metadata['platforms'])
+        self.assertEqual(['fast', 'safe'], metadata['params'][1]['options'])
+        self.assertEqual('Notes', metadata['params'][2]['label'])
         self.assertEqual(
-            {'count': 3, 'paths': ['/a', '/b']},
-            resolve_job_params(metadata, {'count': '3', 'paths': '/a,/b'}),
+            {'count': 3, 'mode': 'safe', 'notes': 'notes', 'paths': ['/a', '/b']},
+            resolve_job_params(metadata, {
+                'count': '3',
+                'mode': 'safe',
+                'notes': 'notes',
+                'paths': ['/a', '/b'],
+            }),
         )
 
     def test_normalized_metadata_retains_existing_shape(self):

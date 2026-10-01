@@ -626,60 +626,14 @@
             {{ launcherResolveError || 'Resolved on the selected client. Editing this executable overrides only this run.' }}
           </div>
         </el-form-item>
-        <el-form-item
+        <ParamFormField
           v-for="param in pendingParams"
           :key="param.name"
-          :label="formatParamLabel(param)"
-        >
-          <div
-            v-if="isRemoteFileParam(param)"
-            class="external-tool-file-param"
-          >
-            <el-input
-              :model-value="formatRemoteFileParamValue(paramForm[param.name])"
-              :placeholder="param.description || param.name"
-              readonly
-            >
-              <template #append>
-                <el-button @click="openRemoteFilePicker(param)">
-                  Browse
-                </el-button>
-              </template>
-            </el-input>
-          </div>
-
-          <el-switch
-            v-else-if="normalizeParamType(param.type) === 'boolean'"
-            v-model="paramForm[param.name]"
-          />
-
-          <el-input-number
-            v-else-if="normalizeParamType(param.type) === 'integer'"
-            v-model="paramForm[param.name]"
-            :placeholder="param.description || param.name"
-            controls-position="right"
-            class="external-tool-number"
-          />
-
-          <el-input
-            v-else-if="normalizeParamType(param.type) === 'textarea'"
-            v-model="paramForm[param.name]"
-            type="textarea"
-            :rows="8"
-            :placeholder="param.description || param.name"
-          />
-
-          <el-input
-            v-else
-            v-model="paramForm[param.name]"
-            :placeholder="param.description || param.name"
-            clearable
-          />
-
-          <div v-if="param.description" class="external-tool-param-help">
-            {{ param.description }}
-          </div>
-        </el-form-item>
+          :param="param"
+          :model-value="paramForm[param.name]"
+          @update:model-value="paramForm[param.name] = $event"
+          @browse="openRemoteFilePicker"
+        />
 
         <div v-if="!pendingParams.length" class="external-tool-empty small">
           This tool has no runtime params.
@@ -840,11 +794,14 @@ import { formatBytesHuman, formatDateTimeShort } from '../utils/formatters.js'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import * as externalToolsApi from '../api/externalToolsApi.js'
 import RemoteFilePicker from './RemoteFilePicker.vue'
+import ParamFormField from './ParamFormField.vue'
+import { cloneParamValue, isRemoteMultiParam, normalizeParamSpecs, normalizeParamType, remoteParamInitialPath, remoteParamSelectionMode } from '../utils/parameterSchema.js'
 
 export default {
   name: 'ExternalToolManagerDialog',
 
   components: {
+    ParamFormField,
     RemoteFilePicker,
   },
 
@@ -1072,7 +1029,7 @@ export default {
     },
 
     pendingParams() {
-      return Array.isArray(this.pendingItem?.params) ? this.pendingItem.params : []
+      return normalizeParamSpecs(this.pendingItem?.params)
     },
 
     pendingLauncherConfig() {
@@ -1080,23 +1037,15 @@ export default {
     },
 
     pendingRemoteFileParamMultiple() {
-      const param = this.pendingRemoteFileParam || {}
-      const type = String(param.type || '').trim().toLowerCase()
-      return !!(param.multiple || ['remote_files', 'remote_folders'].includes(type))
+      return isRemoteMultiParam(this.pendingRemoteFileParam || {})
     },
 
     pendingRemoteFileParamSelectionMode() {
-      const param = this.pendingRemoteFileParam || {}
-      const explicitMode = String(param.selection_mode || param.selectionMode || '').trim().toLowerCase()
-      if (explicitMode === 'folder') return 'folder'
-
-      const type = String(param.type || '').trim().toLowerCase()
-      return ['remote_folder', 'remote_folders'].includes(type) ? 'folder' : 'file'
+      return remoteParamSelectionMode(this.pendingRemoteFileParam || {})
     },
 
     pendingRemoteFileParamInitialPath() {
-      const param = this.pendingRemoteFileParam || {}
-      return String(param.initial_path || param.initialPath || param.base_path || param.basePath || '').trim()
+      return remoteParamInitialPath(this.pendingRemoteFileParam || {})
     },
 
     pendingExecution() {
@@ -1938,21 +1887,6 @@ async loadAllClientInstances(deviceId = '', showToast = true) {
       ].map(value => String(value || '').toLowerCase()).join(' ')
     },
 
-    isRemoteFileParam(param) {
-      const type = String(param?.type || '').trim().toLowerCase()
-      return [
-        'remote_file',
-        'remote_files',
-        'remote_folder',
-        'remote_folders',
-      ].includes(type)
-    },
-
-    formatRemoteFileParamValue(value) {
-      if (Array.isArray(value)) return value.join(', ')
-      return value === null || value === undefined ? '' : String(value)
-    },
-
     openRemoteFilePicker(param) {
       if (!param || !param.name) return
 
@@ -1991,54 +1925,20 @@ async loadAllClientInstances(deviceId = '', showToast = true) {
       })
     },
 
-    normalizeParamType(type) {
-      const value = String(type || 'string').trim().toLowerCase()
-      if (value === 'int' || value === 'number') return 'integer'
-      if (value === 'bool') return 'boolean'
-      if (value === 'multiline' || value === 'text') return 'textarea'
-      return value || 'string'
-    },
-
-    formatParamLabel(param) {
-      const label = param.label || param.name
-      const required = param.required ? ' *' : ''
-      return `${label}${required}`
-    },
-
-    // buildParamDefaults(item) {
-    //   const form = {}
-    //   for (const param of item?.params || []) {
-    //     const name = String(param?.name || '').trim()
-    //     if (!name) continue
-    //     if (name === 'instance_name' && (param.default === undefined || param.default === null || String(param.default).trim() === '')) {
-    //       form[name] = this.defaultInstanceName(item)
-    //     } else if (param.default !== undefined && param.default !== null) {
-    //       form[name] = param.default
-    //     } else if (this.normalizeParamType(param.type) === 'boolean') {
-    //       form[name] = false
-    //     } else {
-    //       form[name] = ''
-    //     }
-    //   }
-    //   return form
-    // },
-
     buildParamDefaults(item) {
       const form = {}
-      for (const param of item?.params || []) {
+      for (const param of normalizeParamSpecs(item?.params)) {
         const name = String(param?.name || '').trim()
         if (!name) continue
 
-        const type = String(param?.type || 'string').trim().toLowerCase()
+        const type = normalizeParamType(param?.type)
         if (name === 'instance_name' && (param.default === undefined || param.default === null || String(param.default).trim() === '')) {
           form[name] = this.defaultInstanceName(item)
         } else if (param.default !== undefined && param.default !== null) {
-          form[name] = ['remote_files', 'remote_folders'].includes(type) && Array.isArray(param.default)
-            ? [...param.default]
-            : param.default
+          form[name] = cloneParamValue(param.default)
         } else if (['remote_files', 'remote_folders'].includes(type)) {
           form[name] = []
-        } else if (this.normalizeParamType(param.type) === 'boolean') {
+        } else if (type === 'boolean') {
           form[name] = false
         } else {
           form[name] = ''
@@ -2048,21 +1948,13 @@ async loadAllClientInstances(deviceId = '', showToast = true) {
     },
 
 
-    cloneParamPresetValue(value) {
-      if (Array.isArray(value)) return value.map(item => this.cloneParamPresetValue(item))
-      if (value && typeof value === 'object') {
-        return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, this.cloneParamPresetValue(item)]))
-      }
-      return value
-    },
-
     applyParamPreset(preset) {
       const item = this.pendingItem
       const form = this.buildParamDefaults(item)
       const params = preset?.params && typeof preset.params === 'object' ? preset.params : {}
       for (const [name, value] of Object.entries(params)) {
         if (!Object.prototype.hasOwnProperty.call(form, name)) continue
-        form[name] = this.cloneParamPresetValue(value)
+        form[name] = cloneParamValue(value)
       }
       this.paramForm = form
     },
@@ -2278,7 +2170,7 @@ async loadAllClientInstances(deviceId = '', showToast = true) {
         const name = String(param?.name || '').trim()
         if (!name) continue
 
-        const type = String(param?.type || 'string').trim().toLowerCase()
+        const type = normalizeParamType(param?.type)
         let value = this.paramForm[name]
 
         const hasRemoteMultiValue = ['remote_files', 'remote_folders'].includes(type) && Array.isArray(value) && value.length > 0
@@ -2287,11 +2179,17 @@ async loadAllClientInstances(deviceId = '', showToast = true) {
         }
 
         if (['remote_files', 'remote_folders'].includes(type)) {
-          params[name] = Array.isArray(value)
-            ? value.map(item => String(item || '').trim()).filter(Boolean)
-            : String(value || '').split(',').map(item => item.trim()).filter(Boolean)
+          if (!Array.isArray(value)) throw new Error(`Param ${name} must be a path list`)
+          params[name] = value.map(item => String(item || '').trim()).filter(Boolean)
         } else if (['remote_file', 'remote_folder'].includes(type)) {
-          params[name] = Array.isArray(value) ? String(value[0] || '').trim() : String(value || '').trim()
+          if (Array.isArray(value)) throw new Error(`Param ${name} must be a single path`)
+          params[name] = String(value || '').trim()
+        } else if (type === 'select') {
+          const text = value === null || value === undefined ? '' : String(value)
+          if (Array.isArray(param.options) && param.options.length && !param.options.map(String).includes(text)) {
+            throw new Error(`Param ${name} has invalid option`)
+          }
+          params[name] = value
         } else {
           params[name] = value
         }
@@ -4051,9 +3949,6 @@ formatVersionLabel(version) {
   padding-right: 4px;
 }
 
-.external-tool-number {
-  width: 100%;
-}
 
 .external-tool-param-help {
   margin-top: 4px;
@@ -4441,9 +4336,6 @@ formatVersionLabel(version) {
     grid-template-columns: 1fr;
     gap: 4px;
   }
-}
-.external-tool-file-param {
-  width: 100%;
 }
 
 </style>

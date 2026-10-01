@@ -1,12 +1,7 @@
 import ast
 from copy import deepcopy
 
-from core.metadata.parameters import (
-    coerce_param_value,
-    coerce_path_list_literal_or_single,
-    normalize_param_specs,
-    resolve_param_values,
-)
+from core.metadata.parameters import coerce_param_value, normalize_param_specs, resolve_param_values
 from core.metadata.source import extract_metadata_from_module_ast
 from core.platform.normalization import normalize_platform_alias, normalize_platforms
 
@@ -57,17 +52,12 @@ def normalize_script_metadata(metadata: dict | None, fallback_name: str = '') ->
     normalized['category'] = category
     normalized['tags'] = tags
     normalized['platforms'] = normalize_script_platforms(metadata.get('platforms'))
-    normalized['params'] = normalize_param_specs(metadata.get('params'), normalize_options=True)
+    normalized['params'] = normalize_param_specs(metadata.get('params'))
     return normalized
 
 
 def coerce_script_param_value(spec: dict, value):
-    return coerce_param_value(
-        spec,
-        value,
-        validate_select=True,
-        path_list_coercer=coerce_path_list_literal_or_single,
-    )
+    return coerce_param_value(spec, value)
 
 
 def resolve_script_params(metadata: dict | None, raw_params: dict | None) -> dict:

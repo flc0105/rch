@@ -3,7 +3,6 @@ from copy import deepcopy
 
 from core.metadata.parameters import (
     coerce_param_value,
-    coerce_path_list_csv_or_sequence,
     normalize_param_specs,
     resolve_param_values,
 )
@@ -146,17 +145,12 @@ def normalize_job_metadata(metadata: dict | None, fallback_name: str = '') -> di
     normalized_execution['default'] = execution_mode
     normalized_execution['allowed'] = list(allowed_execution_modes)
     normalized['execution'] = normalized_execution
-    normalized['params'] = normalize_param_specs(metadata.get('params'), normalize_options=False)
+    normalized['params'] = normalize_param_specs(metadata.get('params'))
     return normalized
 
 
 def coerce_job_param_value(spec: dict, value):
-    return coerce_param_value(
-        spec,
-        value,
-        validate_select=False,
-        path_list_coercer=coerce_path_list_csv_or_sequence,
-    )
+    return coerce_param_value(spec, value)
 
 
 def resolve_job_params(metadata: dict | None, raw_params: dict | None) -> dict:

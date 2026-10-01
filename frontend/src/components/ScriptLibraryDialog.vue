@@ -270,6 +270,7 @@
 import { ElMessage, ElMessageBox } from 'element-plus'
 import ScriptRunDialog from './ScriptRunDialog.vue'
 import { TERMINAL_RUN_SCRIPT_PREFIX } from '../composables/terminalMarkers.js'
+import { cloneParamValue, normalizeParamSpecs, normalizeParamType } from '../utils/parameterSchema.js'
 
 export default {
   name: 'ScriptLibraryDialog',
@@ -912,20 +913,6 @@ getPreferredScriptDirectoryForCurrentConnection() {
         return { name: '', display_name: '', description: '', platforms: [], params: [], category: '', tags: [] }
       }
 
-      const normalizeParam = (item = {}) => {
-        const name = String(item.name || '').trim()
-        if (!name) return null
-
-        return {
-          ...item,
-          name,
-          type: String(item.type || 'string').trim().toLowerCase() || 'string',
-          required: !!item.required,
-          description: String(item.description || '').trim(),
-          options: Array.isArray(item.options) ? item.options : [],
-        }
-      }
-
       return {
         ...metadata,
         name: String(metadata.name || '').trim(),
@@ -934,7 +921,7 @@ getPreferredScriptDirectoryForCurrentConnection() {
         category: String(metadata.category || '').trim(),
         tags: Array.isArray(metadata.tags) ? metadata.tags : [],
         platforms: this.normalizeScriptPlatforms(metadata.platforms),
-        params: Array.isArray(metadata.params) ? metadata.params.map(normalizeParam).filter(Boolean) : [],
+        params: normalizeParamSpecs(metadata.params),
       }
     },
 
@@ -1041,11 +1028,22 @@ getPreferredScriptDirectoryForCurrentConnection() {
       const result = {}
 
       for (const param of metadata.params || []) {
-        const defaultValue = Object.prototype.hasOwnProperty.call(param, 'default') ? param.default : ''
-        if ((param.type || '').toLowerCase() === 'boolean') {
-          result[param.name] = defaultValue === true || String(defaultValue).toLowerCase() === 'true'
+        const type = normalizeParamType(param.type)
+        const hasDefault = Object.prototype.hasOwnProperty.call(param, 'default') && param.default !== null && param.default !== undefined
+        if (hasDefault) {
+          if (['remote_files', 'remote_folders'].includes(type)) {
+            result[param.name] = Array.isArray(param.default) ? cloneParamValue(param.default) : []
+          } else if (type === 'boolean') {
+            result[param.name] = param.default === true || String(param.default).toLowerCase() === 'true'
+          } else {
+            result[param.name] = cloneParamValue(param.default)
+          }
+        } else if (['remote_files', 'remote_folders'].includes(type)) {
+          result[param.name] = []
+        } else if (type === 'boolean') {
+          result[param.name] = false
         } else {
-          result[param.name] = defaultValue === null || defaultValue === undefined ? '' : String(defaultValue)
+          result[param.name] = ''
         }
       }
 
@@ -1062,8 +1060,22 @@ getPreferredScriptDirectoryForCurrentConnection() {
     },
 
     coerceScriptParamValue(param, rawValue) {
-      const type = String(param?.type || 'string').trim().toLowerCase()
+      const type = normalizeParamType(param?.type)
       if (type === 'boolean') return !!rawValue
+
+      if (['remote_files', 'remote_folders'].includes(type)) {
+        if (!Array.isArray(rawValue)) throw new Error(`Param "${param.name}" must be a path list`)
+        return rawValue.map(item => String(item || '').trim()).filter(Boolean)
+      }
+
+      if (['remote_file', 'remote_folder'].includes(type)) {
+        if (Array.isArray(rawValue)) throw new Error(`Param "${param.name}" must be a single path`)
+        return String(rawValue || '').trim()
+      }
+
+      if (type === 'textarea') {
+        return rawValue === null || rawValue === undefined ? '' : String(rawValue)
+      }
 
       const value = rawValue === null || rawValue === undefined ? '' : String(rawValue).trim()
       if (type === 'integer') {
@@ -1084,14 +1096,10 @@ getPreferredScriptDirectoryForCurrentConnection() {
       }
 
       if (type === 'select') {
-        if (Array.isArray(param.options) && param.options.length && !param.options.includes(value)) {
+        if (Array.isArray(param.options) && param.options.length && !param.options.map(String).includes(value)) {
           throw new Error(`Param "${param.name}" has invalid option`)
         }
         return value
-      }
-
-      if (['remote_file', 'remote_files', 'remote_folder', 'remote_folders'].includes(type) && Array.isArray(rawValue)) {
-        return rawValue.map(item => String(item || '').trim()).filter(Boolean)
       }
 
       return value
@@ -1103,10 +1111,11 @@ getPreferredScriptDirectoryForCurrentConnection() {
 
       for (const param of metadata.params || []) {
         const rawValue = this.scriptParamForm[param.name]
-        const type = String(param.type || 'string').toLowerCase()
+        const type = normalizeParamType(param.type)
+        const hasRemoteMultiValue = ['remote_files', 'remote_folders'].includes(type) && Array.isArray(rawValue) && rawValue.length > 0
         const textValue = type === 'boolean' ? rawValue : String(rawValue === null || rawValue === undefined ? '' : rawValue).trim()
 
-        if ((type !== 'boolean' && !textValue) || (type === 'boolean' && rawValue === undefined)) {
+        if ((!hasRemoteMultiValue && type !== 'boolean' && !textValue) || (type === 'boolean' && rawValue === undefined)) {
           if (param.required && (param.default === undefined || param.default === null || String(param.default).trim() === '')) {
             throw new Error(`Missing required param: ${param.name}`)
           }

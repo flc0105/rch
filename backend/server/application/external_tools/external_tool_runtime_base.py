@@ -7,7 +7,7 @@ from core.external_tools.paths import (
     sanitize_instance_id,
     should_expand_argv_item,
 )
-from core.external_tools.params import resolve_params as resolve_external_tool_params
+from core.metadata.parameters import coerce_param_value, normalize_param_specs, resolve_param_values
 from core.platform.normalization import normalize_arch, normalize_platform
 from core.external_tools.runtime import missing_exec_paths as find_missing_exec_paths
 from core.external_tools.runtime import resolved_exec_context as build_resolved_exec_context
@@ -56,7 +56,15 @@ class ExternalToolRuntimeBase:
     def _sanitize_instance_id(self, value: Any) -> str:
         return sanitize_instance_id(value)
     def resolve_params(self, meta: dict, params: dict | None, require_required: bool = True) -> dict:
-        return resolve_external_tool_params(meta, params, require_required=require_required)
+        specs = normalize_param_specs(meta.get('params') if isinstance(meta, dict) else [])
+        return resolve_param_values(
+            specs,
+            params,
+            coerce_value=coerce_param_value,
+            missing_required_message=lambda name: f'param {name} is required',
+            require_required=require_required,
+            include_missing=True,
+        )
     def _select_package_key(self, package: dict, platform_alias: str = '', arch: str = '') -> str:
         return self.catalog_service.select_package_key(package, platform_alias=platform_alias, arch=arch)
     def _package_file(self, package: dict, package_key: str) -> dict:

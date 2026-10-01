@@ -2,26 +2,9 @@ import os
 from copy import deepcopy
 from typing import Any
 
+from core.metadata.parameters import normalize_param_specs
 from core.platform.normalization import normalize_arch, normalize_platform, platform_key
 
-
-def normalize_param(item: Any) -> dict:
-    if not isinstance(item, dict):
-        return {}
-    name = str(item.get('name') or '').strip()
-    if not name:
-        return {}
-    param = dict(item)
-    param['name'] = name
-    param['type'] = str(item.get('type') or 'string').strip().lower() or 'string'
-    param['required'] = bool(item.get('required'))
-    param['description'] = str(item.get('description') or '').strip()
-    return param
-
-
-def normalize_params(values: Any) -> list[dict]:
-    source = values if isinstance(values, list) else []
-    return [param for param in (normalize_param(item) for item in source) if param]
 
 
 def normalize_compatible_targets(values: Any, package_key: str) -> list[dict]:
@@ -149,8 +132,8 @@ def normalize_module(package: dict, item: Any) -> dict:
     if module['exec'] not in (package.get('execs') or {}):
         raise ValueError(f'module {module_id} references unknown exec: {module["exec"]}')
 
-    common_params = normalize_params(package.get('params'))
-    module_params = normalize_params(module.get('params'))
+    common_params = normalize_param_specs(package.get('params'))
+    module_params = normalize_param_specs(module.get('params'))
     module['params'] = common_params + module_params
     module['config'] = module.get('config') if isinstance(module.get('config'), dict) else {}
     module['runtime'] = module.get('runtime') if isinstance(module.get('runtime'), dict) else {}
@@ -200,7 +183,7 @@ def normalize_meta(meta: dict, path: str = '') -> dict:
     item['version'] = str(item.get('version') or '').strip()
     item['category'] = str(item.get('category') or '').strip()
     item['tags'] = item.get('tags') if isinstance(item.get('tags'), list) else []
-    item['params'] = normalize_params(item.get('params'))
+    item['params'] = normalize_param_specs(item.get('params'))
 
     platform_packages = normalize_platform_packages(item)
     item['platform_packages'] = platform_packages

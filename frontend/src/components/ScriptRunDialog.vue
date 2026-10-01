@@ -48,80 +48,14 @@
   class="script-run-form"
   @submit.prevent="$emit('confirm')"
 >
-        <el-form-item
+        <ParamFormField
           v-for="param in paramSpecs"
           :key="`script-param-${param.name}`"
-          :label="`${param.name} (${param.type || 'string'})`"
-          class="script-run-form-item"
-        >
-          <el-switch
-            v-if="param.type === 'boolean'"
-            :model-value="paramForm[param.name]"
-            @update:model-value="$emit('update-param', param.name, $event)"
-          />
-
-          <el-select
-            v-else-if="param.type === 'select' && param.options && param.options.length"
-            :model-value="paramForm[param.name]"
-            class="script-run-control script-run-select"
-            @update:model-value="$emit('update-param', param.name, $event)"
-          >
-            <el-option
-              v-for="option in param.options"
-              :key="`${param.name}-${option}`"
-              :label="option"
-              :value="option"
-            />
-          </el-select>
-
-          <div
-            v-else-if="isRemoteFileParam(param)"
-            class="script-run-file-param"
-          >
-            <el-input
-              :model-value="formatRemoteFileParamValue(paramForm[param.name])"
-              :placeholder="param.description || param.name"
-              class="script-run-control"
-              readonly
-            >
-              <template #append>
-                <el-button @click="openRemoteFilePicker(param)">
-                  Browse
-                </el-button>
-              </template>
-            </el-input>
-          </div>
-
-          <el-input
-            v-else
-            :model-value="paramForm[param.name]"
-            :placeholder="param.description || param.name"
-            class="script-run-control"
-            @update:model-value="$emit('update-param', param.name, $event)"
-          />
-
-          <div class="hint-text script-run-param-hint">
-            {{ param.description || 'No description' }}
-
-            <template v-if="param.required">
-              · required
-            </template>
-
-            <template
-              v-if="param.default !== undefined && param.default !== null && param.type !== 'boolean'"
-            >
-              · default: {{ param.default }}
-            </template>
-
-            <template v-if="param.min !== undefined">
-              · min: {{ param.min }}
-            </template>
-
-            <template v-if="param.max !== undefined">
-              · max: {{ param.max }}
-            </template>
-          </div>
-        </el-form-item>
+          :param="param"
+          :model-value="paramForm[param.name]"
+          @update:model-value="$emit('update-param', param.name, $event)"
+          @browse="openRemoteFilePicker"
+        />
       </el-form>
 
       <div
@@ -166,11 +100,14 @@
 
 <script>
 import RemoteFilePicker from './RemoteFilePicker.vue'
+import ParamFormField from './ParamFormField.vue'
+import { isRemoteMultiParam, remoteParamInitialPath, remoteParamSelectionMode } from '../utils/parameterSchema.js'
 
 export default {
   name: 'ScriptRunDialog',
 
   components: {
+    ParamFormField,
     RemoteFilePicker,
   },
 
@@ -240,23 +177,15 @@ export default {
 
   computed: {
     pendingRemoteFileParamMultiple() {
-      const param = this.pendingRemoteFileParam || {}
-      const type = String(param.type || '').trim().toLowerCase()
-      return !!(param.multiple || ['remote_files', 'remote_folders'].includes(type))
+      return isRemoteMultiParam(this.pendingRemoteFileParam || {})
     },
 
     pendingRemoteFileParamSelectionMode() {
-      const param = this.pendingRemoteFileParam || {}
-      const explicitMode = String(param.selection_mode || param.selectionMode || '').trim().toLowerCase()
-      if (explicitMode === 'folder') return 'folder'
-
-      const type = String(param.type || '').trim().toLowerCase()
-      return ['remote_folder', 'remote_folders'].includes(type) ? 'folder' : 'file'
+      return remoteParamSelectionMode(this.pendingRemoteFileParam || {})
     },
 
     pendingRemoteFileParamInitialPath() {
-      const param = this.pendingRemoteFileParam || {}
-      return String(param.initial_path || param.initialPath || param.base_path || param.basePath || '').trim()
+      return remoteParamInitialPath(this.pendingRemoteFileParam || {})
     },
   },
 
@@ -278,21 +207,6 @@ export default {
 
     loadRemoteFilePickerDirectory(path = '') {
       return this.$refs.remoteFilePickerRef?.loadRemoteDirectory(path || '', 1)
-    },
-
-    isRemoteFileParam(param) {
-      const type = String(param?.type || '').trim().toLowerCase()
-      return [
-        'remote_file',
-        'remote_files',
-        'remote_folder',
-        'remote_folders',
-      ].includes(type)
-    },
-
-    formatRemoteFileParamValue(value) {
-      if (Array.isArray(value)) return value.join(', ')
-      return value === null || value === undefined ? '' : String(value)
     },
 
     openRemoteFilePicker(param) {
@@ -352,29 +266,6 @@ export default {
   padding-right: 4px;
 }
 
-.script-run-form-item {
-  margin-bottom: 16px;
-}
-
-.script-run-control,
-.script-run-select {
-  width: 100%;
-}
-
-.script-run-file-param {
-  width: 100%;
-}
-/*
-.script-run-control :deep(.el-input__wrapper),
-.script-run-select :deep(.el-select__wrapper) {
-  min-height: 34px;
-  border-radius: 10px;
-}*/
-
-.script-run-param-hint {
-  margin-top: 6px;
-  line-height: 1.5;
-}
 
 .script-run-empty {
   min-height: 96px;

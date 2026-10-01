@@ -52,55 +52,14 @@
           </div>
         </el-form-item>
 
-        <el-form-item
+        <ParamFormField
           v-for="param in params"
           :key="`job-param-${param.name}`"
-          :label="`${param.name} (${param.type || 'string'})`"
-        >
-          <div
-            v-if="isRemoteFileParam(param)"
-            class="background-job-file-param"
-          >
-            <el-input
-              :model-value="formatRemoteFileParamValue(paramForm[param.name])"
-              :placeholder="param.description || param.name"
-              readonly
-            >
-              <template #append>
-                <el-button @click="openRemoteFilePicker(param)">
-                  Browse
-                </el-button>
-              </template>
-            </el-input>
-          </div>
-
-          <el-input
-            v-else
-            :model-value="paramForm[param.name]"
-            :placeholder="param.description || param.name"
-            @update:model-value="$emit('update-param', param.name, $event)"
-          />
-
-          <div class="hint-text background-job-param-hint">
-            {{ param.description || 'No description' }}
-
-            <template v-if="param.required">
-              · required
-            </template>
-
-            <template v-if="param.default !== undefined && param.default !== null">
-              · default: {{ param.default }}
-            </template>
-
-            <template v-if="param.min !== undefined">
-              · min: {{ param.min }}
-            </template>
-
-            <template v-if="param.max !== undefined">
-              · max: {{ param.max }}
-            </template>
-          </div>
-        </el-form-item>
+          :param="param"
+          :model-value="paramForm[param.name]"
+          @update:model-value="$emit('update-param', param.name, $event)"
+          @browse="openRemoteFilePicker"
+        />
       </el-form>
     </div>
 
@@ -136,11 +95,14 @@
 
 <script>
 import RemoteFilePicker from './RemoteFilePicker.vue'
+import ParamFormField from './ParamFormField.vue'
+import { isRemoteMultiParam, remoteParamInitialPath, remoteParamSelectionMode } from '../utils/parameterSchema.js'
 
 export default {
   name: 'BackgroundJobStartDialog',
 
   components: {
+    ParamFormField,
     RemoteFilePicker,
   },
 
@@ -228,23 +190,15 @@ export default {
     },
 
     pendingRemoteFileParamMultiple() {
-      const param = this.pendingRemoteFileParam || {}
-      const type = String(param.type || '').trim().toLowerCase()
-      return !!(param.multiple || ['remote_files', 'remote_folders'].includes(type))
+      return isRemoteMultiParam(this.pendingRemoteFileParam || {})
     },
 
     pendingRemoteFileParamSelectionMode() {
-      const param = this.pendingRemoteFileParam || {}
-      const explicitMode = String(param.selection_mode || param.selectionMode || '').trim().toLowerCase()
-      if (explicitMode === 'folder') return 'folder'
-
-      const type = String(param.type || '').trim().toLowerCase()
-      return ['remote_folder', 'remote_folders'].includes(type) ? 'folder' : 'file'
+      return remoteParamSelectionMode(this.pendingRemoteFileParam || {})
     },
 
     pendingRemoteFileParamInitialPath() {
-      const param = this.pendingRemoteFileParam || {}
-      return String(param.initial_path || param.initialPath || param.base_path || param.basePath || '').trim()
+      return remoteParamInitialPath(this.pendingRemoteFileParam || {})
     },
   },
 
@@ -278,21 +232,6 @@ export default {
       return this.$refs.remoteFilePickerRef?.loadRemoteDirectory(path || '', 1)
     },
 
-    isRemoteFileParam(param) {
-      const type = String(param?.type || '').trim().toLowerCase()
-      return [
-        'remote_file',
-        'remote_files',
-        'remote_folder',
-        'remote_folders',
-      ].includes(type)
-    },
-
-    formatRemoteFileParamValue(value) {
-      if (Array.isArray(value)) return value.join(', ')
-      return value === null || value === undefined ? '' : String(value)
-    },
-
     openRemoteFilePicker(param) {
       if (!param || !param.name) return
 
@@ -317,9 +256,6 @@ export default {
   margin-bottom: 12px;
 }
 
-.background-job-file-param {
-  width: 100%;
-}
 
 .background-job-param-hint {
   margin-top: 6px;

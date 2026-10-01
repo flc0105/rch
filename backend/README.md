@@ -691,7 +691,10 @@ Current script system highlights:
 - structured execution via `/api/connections/<client_id>/scripts/run`
 - legacy command-style execution through `exec <script>`
 - parameter normalization before execution when metadata declares params
-- Script and Job parameter schemas share one coercion/limits core while retaining their own execution and picker policies
+- Script, Job, and External Tool runtime parameters share one canonical schema/coercion core
+- shared parameter types: `string`, `textarea`, `integer`, `number`, `boolean`, `select`, `remote_file`, `remote_files`, `remote_folder`, `remote_folders`
+- `label` falls back to `name`, and `select` uses `options` consistently across all three surfaces
+- multi-path parameters (`remote_files` / `remote_folders`) use structured arrays such as `["/a", "/b"]`; string/CSV compatibility forms are not accepted
 
 This makes scripts well-suited for:
 
@@ -2141,6 +2144,7 @@ Metadata-driven packages/modules support:
 - logs
 - remove stopped runtime data
 - parameter presets/profiles
+- the same shared runtime parameter schema used by Scripts and Jobs
 - preview/dry-run of the final command
 - SSE lifecycle notifications
 
