@@ -64,6 +64,7 @@ class WebTaskService:
                 request.client_id,
                 request.command,
                 tab_id=request.tab_id,
+                session_info=getattr(conn, 'session_info', None),
             )
         except Exception:
             if entry_id:

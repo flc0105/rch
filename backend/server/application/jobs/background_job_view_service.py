@@ -32,5 +32,4 @@ class BackgroundJobViewService:
 
         files = [self._resolve_job_file_view(file_item) for file_item in item.get('files') or []]
         item['files'] = files
-        item['file_count'] = len(files)
         return item

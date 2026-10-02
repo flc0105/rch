@@ -30,7 +30,9 @@ class CommandStreamService:
         final_status = 1
         parts = []
 
-        for status, text in result_iter:
+        for item in result_iter:
+            status = item[0]
+            text = item[1] if len(item) > 1 else ''
             final_status = status
             if text is not None:
                 parts.append(str(text))

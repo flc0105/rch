@@ -9,7 +9,7 @@
   >
     <div class="fixed-dialog-body">
       <div class="background-job-full-message-time">
-        {{ formatDateTimeStandard(safeMessage.time) || '-' }}
+        {{ formatDateTimeStandard(safeMessage.created_at) || '-' }}
       </div>
 
       <pre

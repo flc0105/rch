@@ -246,7 +246,7 @@
                     </div>
 
                     <div class="background-job-summary-stats">
-                      <span>{{ formatBackgroundJobDuration(job.duration_seconds) }}</span>
+                      <span>{{ formatBackgroundJobDuration(job) }}</span>
                       <span>{{ job.message_count || 0 }} msgs</span>
                       <span>{{ job.file_count || 0 }} files</span>
                       <span>{{ formatDateTimeStandard(job.started_at) || '-' }}</span>
@@ -344,6 +344,7 @@ import BackgroundJobStartDialog from './BackgroundJobStartDialog.vue'
 import BackgroundJobDetailDialog from './BackgroundJobDetailDialog.vue'
 import BackgroundJobMessageDialog from './BackgroundJobMessageDialog.vue'
 import { cloneParamValue, normalizeParamSpecs, normalizeParamType } from '../utils/parameterSchema.js'
+import { diffDateTimeMs } from '../utils/formatters.js'
 
 export default {
   name: 'BackgroundJobsDialog',
@@ -532,8 +533,8 @@ export default {
         : []
 
       return [...messages].sort((a, b) => {
-        const ta = String(a.time || '')
-        const tb = String(b.time || '')
+        const ta = String(a.created_at || '')
+        const tb = String(b.created_at || '')
         return tb.localeCompare(ta)
       })
     },
@@ -1521,8 +1522,10 @@ export default {
       return 'info'
     },
 
-    formatBackgroundJobDuration(totalSeconds) {
-      const seconds = Number(totalSeconds || 0)
+    formatBackgroundJobDuration(jobOrSeconds) {
+      const seconds = jobOrSeconds && typeof jobOrSeconds === 'object'
+        ? Math.floor(diffDateTimeMs(jobOrSeconds.started_at, jobOrSeconds.finished_at) / 1000)
+        : Number(jobOrSeconds || 0)
       if (!seconds) return '0s'
 
       const hours = Math.floor(seconds / 3600)

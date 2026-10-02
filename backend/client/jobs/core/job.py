@@ -2,6 +2,7 @@ import json
 import os
 import threading
 import uuid
+from datetime import datetime
 from abc import ABC, abstractmethod
 
 from client.http.client_api import ClientApiClient
@@ -69,10 +70,6 @@ class Job(ABC):
     def get_job_param(self, name: str, default=None):
         return (self.job_params or {}).get(name, default)
 
-    def _build_display_name(self) -> str:
-        display_base = self.job_key or self.job_name or 'job'
-        return f'{display_base}#{self.job_id[:8]}'
-
     def _build_report_payload(self, event_type: str, **extra) -> dict:
         worker_name = threading.current_thread().name
         if self.execution_mode == 'subprocess':
@@ -85,10 +82,10 @@ class Job(ABC):
             'job_id': self.job_id,
             'job_name': self.job_name,
             'job_key': self.job_key,
-            'display_name': self._build_display_name(),
             'thread_name': worker_name,
             'execution_mode': self.execution_mode,
             'params': dict(self.job_params or {}),
+            'time': datetime.now().isoformat(),
         }
         payload.update(extra)
         return payload

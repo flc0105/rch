@@ -5,12 +5,10 @@ class PinnedCommandStore:
     """SQLite-backed machine-level pinned command registry."""
 
     SNAPSHOT_FIELDS = (
-        'entry_id', 'time', 'started_at', 'finished_at', 'duration_ms', 'command',
-        'raw_command', 'source', 'status', 'final_status', 'hostname', 'machine_id',
-        'client_id', 'addr', 'cwd_start', 'cwd_end', 'has_output', 'output_summary',
-        'output_line_count', 'output_chunk_count', 'output_char_count',
-        'output_stored_char_count', 'output_truncated', 'output_record_seq',
-        'has_files', 'file_count', 'files',
+        'entry_id', 'created_at', 'started_at', 'updated_at', 'finished_at', 'command',
+        'raw_command', 'source', 'status', 'hostname', 'machine_id', 'client_id', 'addr',
+        'cwd_start', 'cwd_end', 'output_line_count', 'output_chunk_count', 'output_char_count',
+        'output_truncated', 'files',
     )
 
     def __init__(self, database, now_text_provider):
@@ -20,13 +18,6 @@ class PinnedCommandStore:
     def _now_text(self) -> str:
         return self.now_text_provider()
 
-    @staticmethod
-    def _normalize_int(value, default: int = 0) -> int:
-        try:
-            return int(value or default)
-        except Exception:
-            return default
-
     def _sanitize_snapshot(self, snapshot: dict | None, command: str = '') -> dict:
         source = snapshot if isinstance(snapshot, dict) else {}
         copied = {field: source.get(field) for field in self.SNAPSHOT_FIELDS if field in source}
@@ -34,10 +25,8 @@ class PinnedCommandStore:
         copied['command'] = command_text
         copied['raw_command'] = str(copied.get('raw_command') or command_text).strip()
         copied['status'] = str(copied.get('status') or '').strip()
-        copied['time'] = str(copied.get('time') or '').strip()
+        copied['created_at'] = str(copied.get('created_at') or '').strip()
         copied['files'] = list(copied.get('files') or [])
-        copied['file_count'] = self._normalize_int(copied.get('file_count'), len(copied['files']))
-        copied['has_files'] = bool(copied.get('has_files') or copied['file_count'] > 0)
         copied.pop('output_records', None)
         return copied
 

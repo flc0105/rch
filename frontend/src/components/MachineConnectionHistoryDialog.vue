@@ -117,7 +117,7 @@
                 >
                   <el-table-column label="Time" width="160">
                     <template #default="commandScope">
-                      {{ formatDateTime(commandScope.row.time) }}
+                      {{ formatDateTime(commandScope.row.started_at || commandScope.row.created_at) }}
                     </template>
                   </el-table-column>
                   <el-table-column label="Status" width="90">
@@ -137,7 +137,7 @@
                   </el-table-column>
                   <el-table-column label="Duration" width="105">
                     <template #default="commandScope">
-                      {{ formatDuration(commandScope.row.duration_ms) }}
+                      {{ formatDuration(commandDurationMs(commandScope.row)) }}
                     </template>
                   </el-table-column>
                 </el-table>
@@ -227,7 +227,7 @@
 </template>
 
 <script>
-import { formatDateTimeStandard } from '../utils/formatters.js'
+import { diffDateTimeMs, formatDateTimeStandard } from '../utils/formatters.js'
 import { ElMessage } from 'element-plus'
 import { getMachineConnectionCommands, getMachineConnectionHistory } from '../api/connectionsApi.js'
 
@@ -334,6 +334,10 @@ export default {
 
     formatDateTime(value) {
       return formatDateTimeStandard(value)
+    },
+
+    commandDurationMs(row) {
+      return diffDateTimeMs(row?.started_at || row?.created_at, row?.finished_at)
     },
 
     formatDuration(durationMs) {

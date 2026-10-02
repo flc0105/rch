@@ -7,10 +7,10 @@ from core.utils.json_utils import compact_json_dumps, json_loads_typed
 from server.application.history.history_view_service import HistoryViewService
 from server.application.history.history_write_service import HistoryWriteService
 from server.application.history.pinned_command_store import PinnedCommandStore
+from server.models.records import LifecycleRecordBase, OutputRecordBase
 from server.config.config import (
     COMMAND_HISTORY_MAX_OUTPUT_RECORD_CHARS,
     COMMAND_HISTORY_MAX_OUTPUT_RECORDS,
-    COMMAND_HISTORY_MAX_OUTPUT_SUMMARY_CHARS,
     COMMAND_HISTORY_RECENT_LIMIT,
 )
 
@@ -19,65 +19,50 @@ class CommandHistoryStore:
     """SQLite-backed command execution / recent / pinned history store."""
 
     MAX_OUTPUT_RECORD_CHARS = COMMAND_HISTORY_MAX_OUTPUT_RECORD_CHARS
-    MAX_OUTPUT_SUMMARY_CHARS = COMMAND_HISTORY_MAX_OUTPUT_SUMMARY_CHARS
     MAX_OUTPUT_RECORDS = COMMAND_HISTORY_MAX_OUTPUT_RECORDS
     RECENT_LIMIT = COMMAND_HISTORY_RECENT_LIMIT
-    TIME_FORMAT = '%Y-%m-%d %H:%M:%S'
 
     def __init__(self, database):
         self.database = database
         self._lock = threading.RLock()
         self.artifact_service = None
-        self.pinned_store = PinnedCommandStore(database, self._now_text)
+        self.pinned_store = PinnedCommandStore(database, self._now_iso)
         self.write_service = HistoryWriteService(self)
         self.view_service = HistoryViewService(self)
 
-    def _now_text(self) -> str:
-        return datetime.now().strftime(self.TIME_FORMAT)
+    def _now_iso(self) -> str:
+        return datetime.now().isoformat()
 
     def _now_ms(self) -> int:
         return int(time.time() * 1000)
 
-    def _parse_time_text(self, value: str):
-        text = str(value or '').strip()
-        if not text:
-            return None
-        try:
-            return datetime.strptime(text, self.TIME_FORMAT)
-        except Exception:
-            return None
-
     def _build_entry(self, conn, command: str, source: str) -> dict:
         session_info = getattr(conn, 'session_info', None)
-        started_text = self._now_text()
+        now = self._now_iso()
+        lifecycle = LifecycleRecordBase(
+            machine_id=getattr(session_info, 'machine_id', '') or 'unknown_machine',
+            client_id=getattr(session_info, 'client_id', '') or '',
+            hostname=getattr(session_info, 'hostname', '') or 'unknown_host',
+            addr=getattr(session_info, 'addr', '') or '',
+            created_at=now,
+            started_at=now,
+            updated_at=now,
+            finished_at='',
+        ).to_dict()
         return {
+            **lifecycle,
             'entry_id': uuid.uuid4().hex,
-            'time': started_text,
-            'started_at': started_text,
-            'finished_at': '',
-            'duration_ms': 0,
             'command': command,
             'raw_command': command,
             'source': source,
             'status': 'running',
-            'final_status': '',
-            'hostname': getattr(session_info, 'hostname', '') or 'unknown_host',
-            'machine_id': getattr(session_info, 'machine_id', '') or 'unknown_machine',
-            'client_id': getattr(session_info, 'client_id', '') or '',
-            'addr': getattr(session_info, 'addr', '') or '',
             'cwd_start': getattr(session_info, 'cwd', '') or '',
             'cwd_end': '',
-            'has_output': False,
-            'output_summary': '',
             'output_line_count': 0,
             'output_chunk_count': 0,
             'output_char_count': 0,
-            'output_stored_char_count': 0,
             'output_truncated': False,
-            'output_record_seq': 0,
             'output_records': [],
-            'has_files': False,
-            'file_count': 0,
             'files': [],
         }
 
@@ -97,34 +82,17 @@ class CommandHistoryStore:
             return 0
         return max(len(text.splitlines()), 1)
 
-    def _build_output_summary(self, entry: dict) -> str:
-        if entry.get('has_files'):
-            file_count = int(entry.get('file_count', 0) or 0)
-            if file_count > 0:
-                return f'Produced {file_count} file(s)'
+    @staticmethod
+    def _normalize_output_records(records) -> list[dict]:
+        return [
+            OutputRecordBase.from_dict(item).to_dict()
+            for item in (records or [])
+            if isinstance(item, dict)
+        ]
 
-        for item in reversed(entry.get('output_records') or []):
-            text = self._safe_text(item.get('text')).strip()
-            if not text:
-                continue
-            if '\n' not in text and '\r' not in text:
-                return text[:self.MAX_OUTPUT_SUMMARY_CHARS]
-            break
-
-        status = entry.get('status') or ''
-        if status == 'success':
-            return 'Command completed'
-        if status == 'error':
-            return 'Command failed'
-        return 'No output'
-
-    def _update_duration(self, entry: dict):
-        start_dt = self._parse_time_text(entry.get('started_at') or '')
-        end_dt = self._parse_time_text(entry.get('finished_at') or '')
-        if start_dt is None or end_dt is None:
-            entry['duration_ms'] = 0
-            return
-        entry['duration_ms'] = max(int((end_dt - start_dt).total_seconds() * 1000), 0)
+    @staticmethod
+    def _stored_output_char_count(records) -> int:
+        return sum(len(str(item.get('text') or '')) for item in (records or []) if isinstance(item, dict))
 
     def _row_to_entry(self, row) -> dict | None:
         if row is None:
@@ -132,32 +100,25 @@ class CommandHistoryStore:
         return {
             '_started_at_ms': int(row['started_at_ms'] or 0),
             'entry_id': row['entry_id'],
-            'time': row['time_text'],
+            'created_at': row['created_at'],
             'started_at': row['started_at'],
+            'updated_at': row['updated_at'],
             'finished_at': row['finished_at'],
-            'duration_ms': int(row['duration_ms'] or 0),
             'command': row['command'],
             'raw_command': row['raw_command'],
             'source': row['source'],
             'status': row['status'],
-            'final_status': row['final_status'],
             'hostname': row['hostname'],
             'machine_id': row['machine_id'],
             'client_id': row['client_id'],
             'addr': row['addr'],
             'cwd_start': row['cwd_start'],
             'cwd_end': row['cwd_end'],
-            'has_output': bool(row['has_output']),
-            'output_summary': row['output_summary'],
             'output_line_count': int(row['output_line_count'] or 0),
             'output_chunk_count': int(row['output_chunk_count'] or 0),
             'output_char_count': int(row['output_char_count'] or 0),
-            'output_stored_char_count': int(row['output_stored_char_count'] or 0),
             'output_truncated': bool(row['output_truncated']),
-            'output_record_seq': int(row['output_record_seq'] or 0),
-            'output_records': json_loads_typed(row['output_records_json'], []),
-            'has_files': bool(row['has_files']),
-            'file_count': int(row['file_count'] or 0),
+            'output_records': self._normalize_output_records(json_loads_typed(row['output_records_json'], [])),
             'files': json_loads_typed(row['files_json'], []),
         }
 
@@ -167,23 +128,19 @@ class CommandHistoryStore:
             '''
             INSERT INTO command_executions (
                 entry_id, machine_id, client_id, hostname, addr, command, raw_command,
-                source, status, final_status, time_text, started_at, started_at_ms,
-                finished_at, finished_at_ms, duration_ms, cwd_start, cwd_end,
-                has_output, output_summary, output_line_count, output_chunk_count,
-                output_char_count, output_stored_char_count, output_truncated,
-                output_record_seq, output_records_json, has_files, file_count, files_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                source, status, created_at, started_at, started_at_ms, updated_at,
+                finished_at, cwd_start, cwd_end, output_line_count, output_chunk_count,
+                output_char_count, output_truncated, output_records_json, files_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''',
             (
                 entry['entry_id'], entry['machine_id'], entry['client_id'], entry['hostname'], entry['addr'],
-                entry['command'], entry['raw_command'], entry['source'], entry['status'], entry['final_status'],
-                entry['time'], entry['started_at'], started_at_ms, int(entry.get('duration_ms', 0) or 0),
-                entry['cwd_start'], entry['cwd_end'], int(bool(entry.get('has_output'))), entry['output_summary'],
-                int(entry.get('output_line_count', 0) or 0), int(entry.get('output_chunk_count', 0) or 0),
-                int(entry.get('output_char_count', 0) or 0), int(entry.get('output_stored_char_count', 0) or 0),
-                int(bool(entry.get('output_truncated'))), int(entry.get('output_record_seq', 0) or 0),
-                compact_json_dumps(entry.get('output_records') or []), int(bool(entry.get('has_files'))),
-                int(entry.get('file_count', 0) or 0), compact_json_dumps(entry.get('files') or []),
+                entry['command'], entry['raw_command'], entry['source'], entry['status'], entry['created_at'],
+                entry['started_at'], started_at_ms, entry['updated_at'], entry['finished_at'], entry['cwd_start'],
+                entry['cwd_end'], int(entry.get('output_line_count', 0) or 0),
+                int(entry.get('output_chunk_count', 0) or 0), int(entry.get('output_char_count', 0) or 0),
+                int(bool(entry.get('output_truncated'))), compact_json_dumps(entry.get('output_records') or []),
+                compact_json_dumps(entry.get('files') or []),
             ),
         )
         entry['_started_at_ms'] = started_at_ms
@@ -197,31 +154,23 @@ class CommandHistoryStore:
         return self._row_to_entry(row)
 
     def _update_entry(self, entry: dict):
-        finished_at = str(entry.get('finished_at') or '')
-        finished_dt = self._parse_time_text(finished_at) if finished_at else None
-        finished_at_ms = int(finished_dt.timestamp() * 1000) if finished_dt is not None else 0
         self.database.connection().execute(
             '''
             UPDATE command_executions SET
                 client_id = ?, hostname = ?, addr = ?, command = ?, raw_command = ?, source = ?,
-                status = ?, final_status = ?, time_text = ?, started_at = ?, finished_at = ?,
-                finished_at_ms = ?, duration_ms = ?, cwd_start = ?, cwd_end = ?, has_output = ?,
-                output_summary = ?, output_line_count = ?, output_chunk_count = ?, output_char_count = ?,
-                output_stored_char_count = ?, output_truncated = ?, output_record_seq = ?,
-                output_records_json = ?, has_files = ?, file_count = ?, files_json = ?
+                status = ?, created_at = ?, started_at = ?, updated_at = ?, finished_at = ?,
+                cwd_start = ?, cwd_end = ?, output_line_count = ?, output_chunk_count = ?,
+                output_char_count = ?, output_truncated = ?, output_records_json = ?, files_json = ?
             WHERE machine_id = ? AND entry_id = ?
             ''',
             (
                 entry.get('client_id', ''), entry.get('hostname', ''), entry.get('addr', ''),
                 entry.get('command', ''), entry.get('raw_command', ''), entry.get('source', ''),
-                entry.get('status', ''), entry.get('final_status', ''), entry.get('time', ''),
-                entry.get('started_at', ''), finished_at, finished_at_ms, int(entry.get('duration_ms', 0) or 0),
-                entry.get('cwd_start', ''), entry.get('cwd_end', ''), int(bool(entry.get('has_output'))),
-                entry.get('output_summary', ''), int(entry.get('output_line_count', 0) or 0),
+                entry.get('status', ''), entry.get('created_at', ''), entry.get('started_at', ''),
+                entry.get('updated_at', ''), entry.get('finished_at', ''), entry.get('cwd_start', ''),
+                entry.get('cwd_end', ''), int(entry.get('output_line_count', 0) or 0),
                 int(entry.get('output_chunk_count', 0) or 0), int(entry.get('output_char_count', 0) or 0),
-                int(entry.get('output_stored_char_count', 0) or 0), int(bool(entry.get('output_truncated'))),
-                int(entry.get('output_record_seq', 0) or 0), compact_json_dumps(entry.get('output_records') or []),
-                int(bool(entry.get('has_files'))), int(entry.get('file_count', 0) or 0),
+                int(bool(entry.get('output_truncated'))), compact_json_dumps(entry.get('output_records') or []),
                 compact_json_dumps(entry.get('files') or []), entry.get('machine_id', ''), entry.get('entry_id', ''),
             ),
         )
@@ -271,7 +220,7 @@ class CommandHistoryStore:
             ''',
             (
                 entry.get('machine_id', ''), entry.get('command', ''), entry.get('entry_id', ''),
-                entry.get('time') or entry.get('started_at') or self._now_text(), started_at_ms,
+                entry.get('created_at') or entry.get('started_at') or self._now_iso(), started_at_ms,
                 use_count, compact_json_dumps(snapshot),
             ),
         )
@@ -300,7 +249,7 @@ class CommandHistoryStore:
                SET last_entry_id = ?, last_used_at = ?, snapshot_json = ?
                WHERE machine_id = ? AND command = ? AND last_entry_id = ?''',
             (
-                entry.get('entry_id', ''), entry.get('time') or entry.get('started_at') or '',
+                entry.get('entry_id', ''), entry.get('created_at') or entry.get('started_at') or '',
                 compact_json_dumps(snapshot), entry.get('machine_id', ''), entry.get('command', ''),
                 entry.get('entry_id', ''),
             ),
@@ -341,7 +290,7 @@ class CommandHistoryStore:
                 snapshot_json = excluded.snapshot_json
             ''',
             (
-                machine_id, command, entry['entry_id'], entry.get('time') or entry.get('started_at') or '',
+                machine_id, command, entry['entry_id'], entry.get('created_at') or entry.get('started_at') or '',
                 int(row['started_at_ms'] or 0), int(count_row[0] if count_row else 1), compact_json_dumps(snapshot),
             ),
         )
@@ -363,7 +312,8 @@ class CommandHistoryStore:
             snapshot = json_loads_typed(row['snapshot_json'], {})
             snapshot['command'] = row['command']
             snapshot['last_entry_id'] = row['last_entry_id']
-            snapshot['time'] = snapshot.get('time') or row['last_used_at']
+            snapshot['last_used_at'] = row['last_used_at']
+            snapshot['created_at'] = snapshot.get('created_at') or row['last_used_at']
             snapshot['use_count'] = int(row['use_count'] or 0)
             result.append(snapshot)
         return result

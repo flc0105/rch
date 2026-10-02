@@ -94,14 +94,14 @@
               </el-table-column>
 
               <el-table-column
-                prop="time"
+                prop="last_used_at"
                 label="Last Used"
                 width="240"
                 show-overflow-tooltip
               >
                 <template #default="{ row }">
                   <div class="ellipsis">
-                    {{ row.time || '-' }}
+                    {{ formatDateTimeStandard(row.last_used_at || row.created_at || row.started_at) || '-' }}
                   </div>
                 </template>
               </el-table-column>
@@ -249,7 +249,7 @@
               >
                 <div
                   v-for="row in filteredCommandHistoryItems"
-                  :key="`${row.index}-${row.command}-${row.time}`"
+                  :key="`${row.index}-${row.command}-${row.last_used_at || row.created_at || row.started_at}`"
                   class="mobile-file-card quick-history-card"
                 >
                   <div class="mobile-file-card-top">
@@ -277,7 +277,7 @@
                         <div class="mobile-file-meta-item">
                           <div class="mobile-file-meta-label">Last Used</div>
                           <div class="mobile-file-meta-value">
-                            {{ row.time || '-' }}
+                            {{ formatDateTimeStandard(row.last_used_at || row.created_at || row.started_at) || '-' }}
                           </div>
                         </div>
                       </div>
@@ -373,11 +373,11 @@
                       </el-tag>
 
                       <el-tag
-                        v-if="item.has_files"
+                        v-if="Array.isArray(item.files) && item.files.length"
                         type="primary"
                         size="small"
                       >
-                        📎 {{ item.file_count || 0 }}
+                        📎 {{ (item.files || []).length }}
                       </el-tag>
 
                       <el-tag
@@ -402,7 +402,7 @@
 <!--                    <div class="execution-history-stat-item">-->
 <!--                      <span class="execution-history-stat-label">Duration</span>-->
 <!--                      <span class="execution-history-stat-value">-->
-<!--                        {{ formatCommandExecutionDuration(item.duration_ms) }}-->
+<!--                        {{ formatCommandExecutionDuration(item) }}-->
 <!--                      </span>-->
 <!--                    </div>-->
 
@@ -484,6 +484,7 @@
     :output-sort-order="commandExecutionOutputSortOrder"
     :build-command-execution-status-tag-type="buildCommandExecutionStatusTagType"
     :format-command-execution-duration="formatCommandExecutionDuration"
+    :format-date-time-standard="formatDateTimeStandard"
     :build-command-execution-summary="buildCommandExecutionSummary"
     :format-command-execution-record-text="formatCommandExecutionRecordText"
     :get-command-execution-file-status-text="getCommandExecutionFileStatusText"
@@ -498,6 +499,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import CommandExecutionDetailDialog from './CommandExecutionDetailDialog.vue'
 import {EditPen} from "@element-plus/icons-vue";
 import { Star, StarFilled, ArrowUp, ArrowDown, Select } from '@element-plus/icons-vue'
+import { diffDateTimeMs } from '../utils/formatters.js'
 
 export default {
   name: 'CommandHistoryDialog',
@@ -1130,11 +1132,16 @@ Star,
       return 'info'
     },
 
-    formatCommandExecutionDuration(durationMs) {
-      const ms = Number(durationMs || 0)
+    formatCommandExecutionDuration(entryOrDuration) {
+      const ms = entryOrDuration && typeof entryOrDuration === 'object'
+        ? diffDateTimeMs(
+          entryOrDuration.started_at || entryOrDuration.created_at,
+          entryOrDuration.finished_at,
+        )
+        : Number(entryOrDuration || 0)
 
       if (!ms) return '0ms'
-      if (ms < 1000) return `${ms}ms`
+      if (ms < 1000) return `${Math.floor(ms)}ms`
 
       const totalSeconds = Math.floor(ms / 1000)
       const hours = Math.floor(totalSeconds / 3600)
@@ -1151,11 +1158,22 @@ Star,
     },
 
     buildCommandExecutionSummary(item) {
-      const summary = String(item && item.output_summary || '').trim()
+      const calculatedSummary = String(item?.output_summary || '').trim()
+      if (calculatedSummary) return calculatedSummary
 
-      if (summary) return summary
-      if (item && item.has_files) return `Produced ${item.file_count || 0} file(s)`
+      const files = Array.isArray(item?.files) ? item.files : []
+      if (files.length) return `Produced ${files.length} file(s)`
 
+      const records = Array.isArray(item?.output_records) ? item.output_records : []
+      for (let index = records.length - 1; index >= 0; index -= 1) {
+        const text = String(records[index]?.text || '').trim()
+        if (!text) continue
+        if (!text.includes('\n') && !text.includes('\r')) return text
+        break
+      }
+
+      if (String(item?.status || '').toLowerCase() === 'success') return 'Command completed'
+      if (String(item?.status || '').toLowerCase() === 'error') return 'Command failed'
       return 'No output'
     },
 

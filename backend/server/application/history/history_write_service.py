@@ -1,4 +1,5 @@
 from server.models.artifact import ArtifactReference
+from server.models.records import OutputRecordBase
 
 
 class HistoryWriteService:
@@ -36,33 +37,32 @@ class HistoryWriteService:
             if entry is None:
                 return
 
-            entry['has_output'] = bool(entry.get('has_output')) or bool(output_text)
             entry['output_chunk_count'] = int(entry.get('output_chunk_count', 0) or 0) + 1
             entry['output_line_count'] = int(entry.get('output_line_count', 0) or 0) + self.store._count_output_lines(output_text)
             entry['output_char_count'] = int(entry.get('output_char_count', 0) or 0) + len(output_text)
+            entry['updated_at'] = self.store._now_iso()
 
             records = entry.setdefault('output_records', [])
-            stored_char_count = int(entry.get('output_stored_char_count', 0) or 0)
+            stored_char_count = self.store._stored_output_char_count(records)
             remaining_chars = max(self.store.MAX_OUTPUT_RECORD_CHARS - stored_char_count, 0)
-            next_seq = int(entry.get('output_record_seq', 0) or 0) + 1
-            entry['output_record_seq'] = next_seq
-
+            next_seq = int(entry.get('output_chunk_count', 0) or 0)
             if output_text and remaining_chars > 0 and len(records) < self.store.MAX_OUTPUT_RECORDS:
                 stored_text = output_text[:remaining_chars]
                 if len(stored_text) < len(output_text):
                     entry['output_truncated'] = True
-                records.append({
-                    'seq': next_seq,
-                    'status': status,
-                    'text': stored_text,
-                    'time': self.store._now_text(),
-                    'eof': eof,
-                })
-                entry['output_stored_char_count'] = stored_char_count + len(stored_text)
+
+                records.append(
+                    OutputRecordBase(
+                        seq=next_seq,
+                        status=int(status or 0),
+                        text=stored_text,
+                        eof=int(eof or 0),
+                        created_at=entry['updated_at'],
+                    ).to_dict()
+                )
             elif output_text:
                 entry['output_truncated'] = True
 
-            entry['output_summary'] = self.store._build_output_summary(entry)
             self.store._update_entry(entry)
             self.store._update_recent_snapshot_if_present(entry)
 
@@ -78,9 +78,7 @@ class HistoryWriteService:
 
             files = entry.setdefault('files', [])
             files.append(ArtifactReference.from_dict(file_info).to_dict())
-            entry['has_files'] = True
-            entry['file_count'] = len(files)
-            entry['output_summary'] = self.store._build_output_summary(entry)
+            entry['updated_at'] = self.store._now_iso()
             self.store._update_entry(entry)
             self.store._update_recent_snapshot_if_present(entry)
 
@@ -101,6 +99,7 @@ class HistoryWriteService:
                 return False
 
             entry['command'] = command_text
+            entry['updated_at'] = self.store._now_iso()
             if not str(entry.get('raw_command') or '').strip():
                 entry['raw_command'] = old_command
             self.store._update_entry(entry)
@@ -118,17 +117,15 @@ class HistoryWriteService:
             if entry is None:
                 return
 
+            finished_at = self.store._now_iso()
             entry['status'] = status
-            entry['final_status'] = status
-            entry['finished_at'] = self.store._now_text()
+            entry['updated_at'] = finished_at
+            entry['finished_at'] = finished_at
             entry['cwd_end'] = (
                 cwd_end
                 or getattr(getattr(conn, 'session_info', None), 'cwd', '')
                 or entry.get('cwd_end', '')
             )
-            entry['time'] = entry.get('time') or self.store._now_text()
-            self.store._update_duration(entry)
-            entry['output_summary'] = self.store._build_output_summary(entry)
             self.store._update_entry(entry)
             self.store._update_recent_snapshot_if_present(entry)
 

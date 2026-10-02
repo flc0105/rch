@@ -109,24 +109,10 @@ class BackgroundJobService:
             'message': text,
         }
 
-    def _calc_duration_seconds(self, started_at: str, stopped_at: str, state: str) -> int:
-        if not started_at:
-            return 0
-
-        try:
-            start_dt = datetime.fromisoformat(started_at)
-            end_text = stopped_at
-            if not end_text and state not in ('stopped', 'error', 'interrupted'):
-                end_text = datetime.now().isoformat()
-            end_dt = datetime.fromisoformat(end_text) if end_text else datetime.now()
-            return max(int((end_dt - start_dt).total_seconds()), 0)
-        except Exception:
-            return 0
-
-    def _resolve_client_context(self, client_id: str) -> tuple[str, str]:
+    def _resolve_client_context(self, client_id: str) -> tuple[str, str, str]:
         client_id_text = str(client_id or '').strip()
         if not client_id_text:
-            return '', ''
+            return '', '', ''
 
         if self.server is not None:
             try:
@@ -134,8 +120,9 @@ class BackgroundJobService:
                 info = getattr(session, 'session_info', None)
                 machine_id = str(getattr(info, 'machine_id', '') or '').strip()
                 hostname = str(getattr(info, 'hostname', '') or '').strip()
+                addr = str(getattr(info, 'addr', '') or '').strip()
                 if machine_id:
-                    return machine_id, hostname
+                    return machine_id, hostname, addr
             except Exception:
                 pass
 
@@ -149,31 +136,34 @@ class BackgroundJobService:
             ).fetchone()
             if row is not None and str(row['machine_id'] or '').strip():
                 hostname = ''
+                addr = ''
                 try:
                     snapshot = json.loads(str(row['snapshot_json'] or '{}'))
-                    hostname = str(snapshot.get('hostname') or '').strip() if isinstance(snapshot, dict) else ''
+                    if isinstance(snapshot, dict):
+                        hostname = str(snapshot.get('hostname') or '').strip()
+                        addr = str(snapshot.get('addr') or '').strip()
                 except Exception:
-                    hostname = ''
-                return str(row['machine_id'] or '').strip(), hostname
+                    pass
+                return str(row['machine_id'] or '').strip(), hostname, addr
 
             row = conn.execute(
-                '''
-                SELECT machine_id, snapshot_json
-                FROM connection_sessions
-                WHERE client_id = ?
-                ORDER BY connected_at_ms DESC
-                LIMIT 1
-                ''',
+                'SELECT machine_id, snapshot_json '
+                'FROM connection_sessions '
+                'WHERE client_id = ? '
+                'ORDER BY connected_at_ms DESC LIMIT 1',
                 (client_id_text,),
             ).fetchone()
             if row is not None and str(row['machine_id'] or '').strip():
                 hostname = ''
+                addr = ''
                 try:
                     snapshot = json.loads(str(row['snapshot_json'] or '{}'))
-                    hostname = str(snapshot.get('hostname') or '').strip() if isinstance(snapshot, dict) else ''
+                    if isinstance(snapshot, dict):
+                        hostname = str(snapshot.get('hostname') or '').strip()
+                        addr = str(snapshot.get('addr') or '').strip()
                 except Exception:
-                    hostname = ''
-                return str(row['machine_id'] or '').strip(), hostname
+                    pass
+                return str(row['machine_id'] or '').strip(), hostname, addr
         except Exception:
             pass
 
@@ -183,48 +173,53 @@ class BackgroundJobService:
                 return (
                     str(previous[0].get('machine_id') or '').strip(),
                     str(previous[0].get('hostname') or '').strip(),
+                    str(previous[0].get('addr') or '').strip(),
                 )
         except Exception:
             pass
 
-        return '', ''
+        return '', '', ''
 
     def _enrich_report_payload(self, payload: dict) -> dict:
         enriched = dict(payload or {})
         client_id = str(enriched.get('client_id') or '').strip()
-        machine_id, hostname = self._resolve_client_context(client_id)
+        machine_id, hostname, addr = self._resolve_client_context(client_id)
         if machine_id and not str(enriched.get('machine_id') or '').strip():
             enriched['machine_id'] = machine_id
         if hostname and not str(enriched.get('hostname') or '').strip():
             enriched['hostname'] = hostname
+        if addr and not str(enriched.get('addr') or '').strip():
+            enriched['addr'] = addr
         return enriched
 
     def _serialize_job(self, job: dict, *, include_details: bool = False) -> dict:
-        state = job.get('state', '')
-        started_at = job.get('started_at', '')
-        stopped_at = job.get('stopped_at', '')
+        job_id = str(job.get('job_id') or '')
+        job_name = str(job.get('job_name') or '')
+        job_key = str(job.get('job_key') or '')
+        display_base = job_key or job_name or 'job'
 
         result = {
-            'job_id': job.get('job_id', ''),
+            'job_id': job_id,
             'machine_id': job.get('machine_id', ''),
             'client_id': job.get('client_id', ''),
             'hostname': job.get('hostname', ''),
-            'job_name': job.get('job_name', ''),
-            'job_key': job.get('job_key', ''),
-            'display_name': job.get('display_name', ''),
+            'addr': job.get('addr', ''),
+            'job_name': job_name,
+            'job_key': job_key,
+            'display_name': f'{display_base}#{job_id[:8]}' if job_id else display_base,
             'thread_name': job.get('thread_name', ''),
             'command_id': job.get('command_id'),
             'execution_mode': job.get('execution_mode', 'inproc'),
-            'state': state,
+            'state': job.get('state', ''),
             'created_at': job.get('created_at', ''),
-            'started_at': started_at,
-            'stopped_at': stopped_at,
+            'started_at': job.get('started_at', ''),
             'updated_at': job.get('updated_at', ''),
-            'duration_seconds': self._calc_duration_seconds(started_at, stopped_at, state),
-            'last_message': job.get('last_message', ''),
-            'message_count': job.get('message_count', 0),
-            'file_count': job.get('file_count', 0),
+            'finished_at': job.get('finished_at', ''),
         }
+        if 'message_count' in job:
+            result['message_count'] = int(job.get('message_count') or 0)
+        if 'file_count' in job:
+            result['file_count'] = int(job.get('file_count') or 0)
         if include_details:
             result['params'] = dict(job.get('params') or {})
             result['messages'] = list(job.get('messages') or [])
@@ -232,7 +227,7 @@ class BackgroundJobService:
         return result
 
     def list_jobs(self, client_id: str) -> list[dict]:
-        machine_id, _hostname = self._resolve_client_context(client_id)
+        machine_id, _hostname, _addr = self._resolve_client_context(client_id)
         jobs = self.job_store.get_jobs_for_scope(machine_id=machine_id, client_id=client_id)
         return [self._serialize_job(job) for job in jobs]
 
@@ -241,7 +236,7 @@ class BackgroundJobService:
         if not job_id_text:
             raise ValueError('job_id is required')
 
-        machine_id, _hostname = self._resolve_client_context(client_id)
+        machine_id, _hostname, _addr = self._resolve_client_context(client_id)
         job = self.job_store.get_job_for_scope(job_id_text, machine_id=machine_id, client_id=client_id)
         if job is None:
             raise FileNotFoundError(f'Background job not found: {job_id_text}')
@@ -253,7 +248,7 @@ class BackgroundJobService:
         if state in ('running', 'stopping'):
             raise ValueError('Stop the background job before deleting its record')
 
-        machine_id, _hostname = self._resolve_client_context(client_id)
+        machine_id, _hostname, _addr = self._resolve_client_context(client_id)
         deleted = self.job_store.delete_job(job_id, machine_id=machine_id, client_id=client_id)
         if deleted is None:
             raise FileNotFoundError(f'Background job not found: {job_id}')
@@ -320,8 +315,7 @@ class BackgroundJobService:
             'state': state,
             'status': state,
             'started_at': serialized_job.get('started_at', ''),
-            'stopped_at': serialized_job.get('stopped_at', ''),
-            'duration_seconds': serialized_job.get('duration_seconds', 0),
+            'finished_at': serialized_job.get('finished_at', ''),
             'time': datetime.now().isoformat(),
         })
 

@@ -336,4 +336,5 @@ class ServerApplicationAssembly:
         现在收口到 assembly，避免 Facade 同时承担装配职责。
         """
         self.background_job_store.artifact_service = self.artifact_service
+        self.background_job_store.backfill_file_snapshots(self.artifact_service.list_artifacts())
         self.server.command_history.artifact_service = self.artifact_service

@@ -17,7 +17,7 @@
     "test_first_seen_order": "pyexec_collect print('second=<second> | first=<first> | second_again=<second> | first_again=<first>')",
     "test_mix3": "pyexec_collect print('a=<a> | b=<b> | a2=<a> | c=<c> | b2=<b> | a3=<a>')",
     "test_space": "pyexec_collect print('text=[<text>]')",
-    "gitlog": "git log --date=short --pretty=format:\"%h %cd %s\""
+    "gitlog": "git log --date=format:'%Y-%m-%d %H:%M:%S' --pretty=format:\"%h %cd %s\""
   },
   "win": {
     "list_av": "powershell Get-CimInstance -Namespace root/SecurityCenter2 -ClassName AntivirusProduct ^| Select-Object displayName",

@@ -15,7 +15,6 @@ class WebTaskRunner:
 
     职责：
     - 消费任务执行事件
-    - 写 task chunks
     - 推送 SSE
     - 写 history
     - 统一结束收尾
@@ -97,7 +96,6 @@ class WebTaskRunner:
         )
 
     def _publish_task_result(self, context: TaskExecutionContext, status: int, text: str):
-        self.task_store.append_chunk(context.task_id, status, text)
         target_tab_id = self._get_task_tab_id(context)
 
         self.event_bus.publish(

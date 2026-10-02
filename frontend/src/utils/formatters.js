@@ -78,3 +78,18 @@ export function formatBytesHuman(size, options = {}) {
 
   return `${scaled.toFixed(digits)} ${units[index]}`
 }
+
+export function diffDateTimeMs(startValue, endValue = '') {
+  const normalize = value => String(value || '').trim().replace(' ', 'T')
+  const startText = normalize(startValue)
+  if (!startText) return 0
+
+  const startMs = Date.parse(startText)
+  if (!Number.isFinite(startMs)) return 0
+
+  const endText = normalize(endValue)
+  const endMs = endText ? Date.parse(endText) : Date.now()
+  if (!Number.isFinite(endMs)) return 0
+
+  return Math.max(endMs - startMs, 0)
+}

@@ -34,28 +34,28 @@
         <div class="background-job-stat">
           <div class="background-job-stat-label">Duration</div>
           <div class="background-job-stat-value">
-            {{ formatCommandExecutionDuration(entry.duration_ms) }}
+            {{ formatCommandExecutionDuration(entry) }}
           </div>
         </div>
 
         <div class="background-job-stat">
           <div class="background-job-stat-label">Started</div>
           <div class="background-job-stat-value">
-            {{ entry.started_at || '-' }}
+            {{ formatDateTimeStandard(entry.started_at) || '-' }}
           </div>
         </div>
 
         <div class="background-job-stat">
           <div class="background-job-stat-label">Finished</div>
           <div class="background-job-stat-value">
-            {{ entry.finished_at || '-' }}
+            {{ formatDateTimeStandard(entry.finished_at) || '-' }}
           </div>
         </div>
 
         <div class="background-job-stat">
           <div class="background-job-stat-label">Files</div>
           <div class="background-job-stat-value">
-            {{ entry.file_count || 0 }}
+            {{ (entry.files || []).length }}
           </div>
         </div>
       </div>
@@ -88,7 +88,7 @@
               class="background-job-message-item"
             >
               <div class="background-job-message-time">
-                {{ record.time || '-' }}
+                {{ formatDateTimeStandard(record.created_at) || '-' }}
               </div>
 
               <div
@@ -134,7 +134,7 @@
 
                 <div class="background-job-file-meta">
                   <span>{{ formatBytes(file.size || 0) }}</span>
-                  <span>{{ file.created_at || '-' }}</span>
+                  <span>{{ formatDateTimeStandard(file.created_at) || '-' }}</span>
                   <span v-if="getCommandExecutionFileStatusText(file)">
                     [{{ getCommandExecutionFileStatusText(file) }}]
                   </span>
@@ -206,6 +206,11 @@ export default {
     },
 
     formatCommandExecutionDuration: {
+      type: Function,
+      required: true,
+    },
+
+    formatDateTimeStandard: {
       type: Function,
       required: true,
     },

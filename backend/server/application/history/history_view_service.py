@@ -1,7 +1,11 @@
 import base64
 import json
 from server.application.artifact.artifact_reference_view_projector import ArtifactReferenceViewProjector
-from server.config.config import COMMAND_HISTORY_MAX_PAGE_SIZE, COMMAND_HISTORY_PAGE_SIZE
+from server.config.config import (
+    COMMAND_HISTORY_MAX_OUTPUT_SUMMARY_CHARS,
+    COMMAND_HISTORY_MAX_PAGE_SIZE,
+    COMMAND_HISTORY_PAGE_SIZE,
+)
 
 
 class HistoryViewService:
@@ -25,9 +29,28 @@ class HistoryViewService:
         copied.pop('_started_at_ms', None)
         files = [self._resolve_artifact_file_view(file_item) for file_item in item.get('files') or []]
         copied['files'] = files
-        copied['file_count'] = len(files)
-        copied['has_files'] = bool(files)
         return copied
+
+    @staticmethod
+    def _build_output_summary(item: dict) -> str:
+        files = list(item.get('files') or [])
+        if files:
+            return f'Produced {len(files)} file(s)'
+
+        for record in reversed(item.get('output_records') or []):
+            text = str(record.get('text') or '').strip()
+            if not text:
+                continue
+            if '\n' not in text and '\r' not in text:
+                return text[:COMMAND_HISTORY_MAX_OUTPUT_SUMMARY_CHARS]
+            break
+
+        status = str(item.get('status') or '').strip().lower()
+        if status == 'success':
+            return 'Command completed'
+        if status == 'error':
+            return 'Command failed'
+        return 'No output'
 
     @staticmethod
     def _apply_quick_history_move_flags(pinned_items: list, normal_items: list):
@@ -43,21 +66,29 @@ class HistoryViewService:
         snapshot = pinned_item.get('snapshot') if isinstance(pinned_item.get('snapshot'), dict) else {}
         source_item = latest_entry if isinstance(latest_entry, dict) else snapshot
         copied = dict(source_item or {})
+        output_summary = self._build_output_summary(copied)
         copied.pop('output_records', None)
         copied['command'] = command_text
         copied['raw_command'] = str(copied.get('raw_command') or command_text).strip()
         copied['is_pinned'] = True
         copied['pinned_at'] = str(pinned_item.get('pinned_at') or '').strip()
         copied['pin_order'] = int(pinned_item.get('pin_order', 0) or 0)
-        return self._refresh_file_status_for_view(copied)
+        copied = self._refresh_file_status_for_view(copied)
+        copied['output_summary'] = output_summary
+        return copied
 
-    def _build_normal_quick_item(self, item: dict) -> dict:
-        copied = dict(item)
+    def _build_normal_quick_item(self, item: dict, latest_entry: dict | None = None) -> dict:
+        copied = dict(item or {})
+        if isinstance(latest_entry, dict):
+            copied.update(latest_entry)
+        output_summary = self._build_output_summary(copied)
         copied.pop('output_records', None)
         copied['is_pinned'] = False
         copied['pinned_at'] = ''
         copied['pin_order'] = 0
-        return self._refresh_file_status_for_view(copied)
+        copied = self._refresh_file_status_for_view(copied)
+        copied['output_summary'] = output_summary
+        return copied
 
     def _build_quick_history(self, machine_id: str) -> list:
         pinned_source_items = self.store.pinned_store.get_items(machine_id)
@@ -72,11 +103,13 @@ class HistoryViewService:
                 )
             )
 
-        normal_items = [
-            self._build_normal_quick_item(item)
-            for item in self.store._list_recents(machine_id)
-            if str(item.get('command') or '').strip() not in pinned_commands
-        ]
+        normal_items = []
+        for item in self.store._list_recents(machine_id):
+            command = str(item.get('command') or '').strip()
+            if command in pinned_commands:
+                continue
+            latest_entry = self.store._get_entry(machine_id, str(item.get('last_entry_id') or '').strip())
+            normal_items.append(self._build_normal_quick_item(item, latest_entry))
         self._apply_quick_history_move_flags(pinned_items, normal_items)
         result = pinned_items + normal_items
         for index, item in enumerate(result, start=1):
@@ -86,6 +119,7 @@ class HistoryViewService:
     def _build_execution_entry_view(self, entry: dict, index: int = 0) -> dict:
         copied = self._refresh_file_status_for_view(entry)
         copied['output_records'] = list(entry.get('output_records') or [])
+        copied['output_summary'] = self._build_output_summary(copied)
         if index > 0:
             copied['index'] = index
         return copied
@@ -163,10 +197,11 @@ class HistoryViewService:
         page_rows = rows[:page_limit]
         items = [
             {
-                'time': row['started_at'] or '',
+                'created_at': row['created_at'] or '',
+                'started_at': row['started_at'] or '',
+                'finished_at': row['finished_at'] or '',
                 'status': row['status'] or '',
                 'command': row['command'] or '',
-                'duration_ms': int(row['duration_ms'] or 0),
             }
             for row in page_rows
         ]

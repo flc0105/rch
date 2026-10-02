@@ -729,8 +729,8 @@ Execution history preserves the full run record:
 - no de-duplication
 - full command status
 - start/end working directory details
-- output records
-- duration and completion state
+- output records with per-chunk `status`, `eof`, sequence, and timestamp metadata
+- lifecycle timestamps (`created_at` / `started_at` / `updated_at` / `finished_at`), with duration derived when displayed
 - associated file/artifact references
 
 This makes execution history the audit/trace view, while quick history is the reuse/favorites view.
@@ -971,7 +971,7 @@ Below is a reorganized roadmap based on current priorities and project direction
 - [x] Unify history queries around **hostname** as the primary lookup model
 - [x] Add a centralized whitelist/annotation-based policy to decide which commands should be recorded in history
 - [ ] Introduce a consistent exception/error model across server and client layers
-- [ ] Refactor duplicated fields and behaviors across **history / task / job** models
+- [x] Refactor duplicated fields and behaviors across **history / task / job** models with shared lifecycle/output record bases and derived presentation fields
 - [ ] Rebuild the front end with **Vite + Vue 3**
 
 ### High-priority fixes

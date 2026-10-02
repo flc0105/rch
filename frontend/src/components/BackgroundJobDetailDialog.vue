@@ -69,21 +69,21 @@
         <div class="background-job-stat">
           <div class="background-job-stat-label">Duration</div>
           <div class="background-job-stat-value">
-            {{ formatBackgroundJobDuration(item.duration_seconds) }}
+            {{ formatBackgroundJobDuration(item) }}
           </div>
         </div>
 
         <div class="background-job-stat">
           <div class="background-job-stat-label">Messages</div>
           <div class="background-job-stat-value">
-            {{ item.message_count || 0 }}
+            {{ safeMessages.length }}
           </div>
         </div>
 
         <div class="background-job-stat">
           <div class="background-job-stat-label">Files</div>
           <div class="background-job-stat-value">
-            {{ item.file_count || 0 }}
+            {{ safeFiles.length }}
           </div>
         </div>
 
@@ -97,7 +97,7 @@
         <div class="background-job-stat">
           <div class="background-job-stat-label">Stopped</div>
           <div class="background-job-stat-value">
-            {{ formatDateTimeStandard(item.stopped_at) || '-' }}
+            {{ formatDateTimeStandard(item.finished_at) || '-' }}
           </div>
         </div>
 
@@ -130,7 +130,7 @@
               @click="$emit('open-message', message)"
             >
               <div class="background-job-message-time">
-                {{ formatDateTimeStandard(message.time) || '-' }}
+                {{ formatDateTimeStandard(message.created_at) || '-' }}
               </div>
 
               <div
@@ -168,12 +168,16 @@
 
                 <div class="background-job-file-meta">
                   <span>{{ formatBytes(file.size || 0) }}</span>
-                  <span>{{ formatDateTimeStandard(file.time) || '-' }}</span>
+                  <span>{{ formatDateTimeStandard(file.created_at) || '-' }}</span>
+                  <span v-if="getBackgroundJobFileStatusText(file)">
+                    [{{ getBackgroundJobFileStatusText(file) }}]
+                  </span>
                 </div>
               </div>
 
               <div class="background-job-file-actions">
                 <a
+                  v-if="file.download_url && file.is_available"
                   class="table-action-link"
                   style="cursor: pointer"
                   @click="$emit('preview-file', file)"
@@ -182,6 +186,7 @@
                 </a>
 
                 <a
+                  v-if="file.download_url && file.is_available"
                   class="table-action-link"
                   :href="file.download_url"
                   target="_blank"
@@ -293,13 +298,18 @@ export default {
       return formatDateTimePreserveFraction(value)
     },
 
+    getBackgroundJobFileStatusText(file) {
+      if (!file) return ''
+      return file.is_available ? '' : (file.status_text || 'File removed')
+    },
+
     async saveOutputToArtifact() {
       if (!this.item || !this.safeMessages.length || this.saveOutputLoading) return
 
       const records = [...this.safeMessages]
-        .sort((a, b) => String(a?.time || '').localeCompare(String(b?.time || '')))
+        .sort((a, b) => String(a?.created_at || '').localeCompare(String(b?.created_at || '')))
         .map(message => ({
-          time: this.formatJobOutputTime(message?.time),
+          time: this.formatJobOutputTime(message?.created_at),
           message: this.formatBackgroundJobMessageText(message?.text || ''),
         }))
 
@@ -313,7 +323,7 @@ export default {
           hostname: String(this.item.hostname || this.currentConnection?.hostname || ''),
           machine_id: String(this.item.machine_id || this.currentConnection?.machine_id || ''),
           started_at: this.formatJobOutputTime(this.item.started_at),
-          stopped_at: this.formatJobOutputTime(this.item.stopped_at),
+          finished_at: this.formatJobOutputTime(this.item.finished_at),
         },
         records,
       }
