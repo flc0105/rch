@@ -1,7 +1,6 @@
 import base64
 import json
-import os
-
+from server.application.artifact.artifact_reference_view_projector import ArtifactReferenceViewProjector
 from server.config.config import COMMAND_HISTORY_MAX_PAGE_SIZE, COMMAND_HISTORY_PAGE_SIZE
 
 
@@ -10,42 +9,16 @@ class HistoryViewService:
 
     def __init__(self, store):
         self.store = store
+        self.artifact_view_projector = ArtifactReferenceViewProjector()
 
     def _resolve_artifact_file_view(self, file_item: dict) -> dict:
-        copied = dict(file_item)
-        artifact_id = str(copied.get('artifact_id') or '').strip()
-
-        if artifact_id and self.store.artifact_service is not None:
-            try:
-                artifact = self.store.artifact_service.get_artifact_by_id(artifact_id)
-                copied.update({
-                    'artifact_type': artifact.get('artifact_type', copied.get('artifact_type', '')),
-                    'category': artifact.get('category', copied.get('category', '')),
-                    'hostname': artifact.get('hostname', copied.get('hostname', '')),
-                    'machine_id': artifact.get('machine_id', copied.get('machine_id', '')),
-                    'client_id': artifact.get('client_id', copied.get('client_id', '')),
-                    'original_name': artifact.get('original_name', copied.get('original_name', '')),
-                    'stored_name': artifact.get('stored_name', copied.get('stored_name', '')),
-                    'saved_path': artifact.get('saved_path', copied.get('saved_path', '')),
-                    'size': artifact.get('size', copied.get('size', 0)),
-                    'created_at': artifact.get('created_at', copied.get('created_at', '')),
-                    'download_url': artifact.get('download_url', copied.get('download_url', '')),
-                    'raw_url': artifact.get('raw_url', copied.get('raw_url', '')),
-                    'preview_url': artifact.get('preview_url', copied.get('preview_url', '')),
-                    'is_available': artifact.get('is_available', True),
-                    'status_text': artifact.get('status_text', ''),
-                })
-                return copied
-            except Exception:
-                copied['is_available'] = False
-                copied['status_text'] = copied.get('status_text') or 'Artifact removed'
-                return copied
-
-        saved_path = copied.get('saved_path', '')
-        is_available = bool(saved_path) and os.path.isfile(saved_path)
-        copied['is_available'] = is_available
-        copied['status_text'] = '' if is_available else 'File removed'
-        return copied
+        return self.artifact_view_projector.project(
+            file_item,
+            self.store.artifact_service,
+            path_key='saved_path',
+            allow_local_path_fallback=True,
+            include_created_at=True,
+        )
 
     def _refresh_file_status_for_view(self, item: dict) -> dict:
         copied = dict(item)

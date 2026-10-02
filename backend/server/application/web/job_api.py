@@ -1,6 +1,5 @@
-import os
 
-from core.utils.job_metadata import normalize_job_execution_allowed, normalize_job_execution_mode
+from core.utils.job_metadata import normalize_job_key, normalize_job_execution_allowed, normalize_job_execution_mode
 
 
 class WebJobApi:
@@ -87,18 +86,12 @@ class WebJobApi:
         normalized.sort(key=lambda item: item.get('job_name', '').lower())
         return normalized
 
-    def _normalize_job_key(self, value: str) -> str:
-        text = str(value or '').strip().replace('\\', '/')
-        if text.endswith('.py'):
-            text = text[:-3]
-        return os.path.basename(text)
-
     def _get_job_metadata(self, job_name: str) -> dict:
-        target = str(job_name or '').strip().replace('\\', '/').removesuffix('.py')
+        target = normalize_job_key(job_name)
         for item in self.list_jobs() or []:
             if not isinstance(item, dict):
                 continue
-            candidate = str(item.get('job_name') or item.get('name') or '').strip().replace('\\', '/').removesuffix('.py')
+            candidate = normalize_job_key(item.get('job_name') or item.get('name') or '')
             if candidate == target:
                 metadata = item.get('metadata') or {}
                 return metadata if isinstance(metadata, dict) else {}
@@ -110,7 +103,7 @@ class WebJobApi:
             raise ValueError('job_name is required')
 
         if self.background_job_service.has_active_job(client_id, normalized_job_name):
-            job_key = self._normalize_job_key(normalized_job_name)
+            job_key = normalize_job_key(normalized_job_name)
             raise ValueError(f'Job is already running: {job_key}')
 
         metadata = self._get_job_metadata(normalized_job_name)

@@ -1,4 +1,5 @@
 import ast
+import os
 from copy import deepcopy
 
 from core.metadata.parameters import (
@@ -49,6 +50,13 @@ def read_job_metadata_from_file(file_path: str, fallback_name: str = '') -> dict
     except Exception:
         return {}
 
+
+
+def normalize_job_key(value: str) -> str:
+    text = str(value or '').strip().replace('\\', '/')
+    if text.endswith('.py'):
+        text = text[:-3]
+    return os.path.basename(text)
 
 def normalize_job_platform(value: str) -> str:
     return normalize_platform_alias(value, wildcard=True)

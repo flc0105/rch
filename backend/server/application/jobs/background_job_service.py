@@ -1,10 +1,9 @@
 import json
-import os
 import threading
 from datetime import datetime
 
 from core.protocol.structured_arg_codec import encode_structured_arg
-from core.utils.job_metadata import normalize_job_execution_mode
+from core.utils.job_metadata import normalize_job_key, normalize_job_execution_mode
 
 
 class BackgroundJobService:
@@ -326,19 +325,13 @@ class BackgroundJobService:
             'time': datetime.now().isoformat(),
         })
 
-    def _normalize_job_key(self, value: str) -> str:
-        text = str(value or '').strip().replace('\\', '/')
-        if text.endswith('.py'):
-            text = text[:-3]
-        return os.path.basename(text)
-
     def has_active_job(self, client_id: str, job_name: str) -> bool:
-        target_key = self._normalize_job_key(job_name)
+        target_key = normalize_job_key(job_name)
         if not target_key:
             return False
 
         for item in self.list_jobs(client_id):
-            job_key = self._normalize_job_key(item.get('job_key') or item.get('job_name') or '')
+            job_key = normalize_job_key(item.get('job_key') or item.get('job_name') or '')
             state = str(item.get('state') or '').strip().lower()
             if job_key == target_key and state in ('running', 'stopping'):
                 return True

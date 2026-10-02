@@ -1,4 +1,4 @@
-from server.models.history import HistoryFileRef
+from server.models.artifact import ArtifactReference
 
 
 class HistoryWriteService:
@@ -77,7 +77,7 @@ class HistoryWriteService:
                 return
 
             files = entry.setdefault('files', [])
-            files.append(HistoryFileRef.from_dict(file_info).to_dict())
+            files.append(ArtifactReference.from_dict(file_info).to_dict())
             entry['has_files'] = True
             entry['file_count'] = len(files)
             entry['output_summary'] = self.store._build_output_summary(entry)

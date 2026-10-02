@@ -3,14 +3,11 @@ import os
 from flask import Blueprint, request, send_file
 
 from server.web.api_response import WebApiResponder
+from server.web.artifact_upload import save_uploaded_artifact_from_request
 from server.web.auth_guard import allow_anonymous
 from server.web.request_parsers import (
     get_json_payload,
-    get_optional_form_text,
     get_optional_tab_id,
-    get_required_upload,
-    parse_optional_int_form,
-    parse_optional_json_form,
 )
 
 
@@ -114,38 +111,10 @@ def create_artifacts_blueprint(server_instance):
     @blueprint.post('/api/files/upload')
     @allow_anonymous
     def upload_file():
-        def _execute():
-            upload = get_required_upload()
-            artifact_type = get_optional_form_text('artifact_type', 'files')
-            category = get_optional_form_text('category', '')
-            client_id = get_optional_form_text('client_id', '')
-            hostname = get_optional_form_text('hostname', '')
-            machine_id = get_optional_form_text('machine_id', '')
-            job_id = get_optional_form_text('job_id', '')
-            job_name = get_optional_form_text('job_name', '')
-            job_key = get_optional_form_text('job_key', '')
-            # source_type = get_optional_form_text('source_type', 'client_upload')
-            # related_path = get_optional_form_text('related_path', '')
-            source_command_id = parse_optional_int_form('source_command_id')
-            transfer_buffer_size = parse_optional_int_form('transfer_buffer_size')
-            extra = parse_optional_json_form('extra')
-            return artifact_api.save_http_uploaded_file(
-                upload,
-                artifact_type=artifact_type,
-                category=category,
-                client_id=client_id,
-                hostname=hostname,
-                machine_id=machine_id,
-                job_id=job_id,
-                job_name=job_name,
-                job_key=job_key,
-                # source_type=source_type,
-                # related_path=related_path,
-                source_command_id=source_command_id,
-                transfer_buffer_size=transfer_buffer_size,
-                extra=extra,
-            )
-        return responder.json_endpoint(_execute, default_error_status=500)
+        return responder.json_endpoint(
+            lambda: save_uploaded_artifact_from_request(artifact_api),
+            default_error_status=500,
+        )
 
 
     @blueprint.post('/api/artifacts/<artifact_id>/send-to-client')

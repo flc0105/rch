@@ -6,12 +6,7 @@ from flask import Flask, request, send_file
 from core.transfer_settings import DEFAULT_HTTP_TRANSFER_BUFFER_SIZE
 from server.config.config import WEB_HTTP_UPLOAD_MAX_BYTES
 from server.web.api_response import WebApiResponder
-from server.web.request_parsers import (
-    get_optional_form_text,
-    get_required_upload,
-    parse_optional_int_form,
-    parse_optional_json_form,
-)
+from server.web.artifact_upload import save_uploaded_artifact_from_request
 
 
 def create_file_transfer_app(server_instance):
@@ -154,35 +149,10 @@ def create_file_transfer_app(server_instance):
 
     @app.post('/api/files/upload')
     def upload_file():
-        def _execute():
-            upload = get_required_upload()
-            artifact_type = get_optional_form_text('artifact_type', 'files')
-            category = get_optional_form_text('category', '')
-            client_id = get_optional_form_text('client_id', '')
-            hostname = get_optional_form_text('hostname', '')
-            machine_id = get_optional_form_text('machine_id', '')
-            job_id = get_optional_form_text('job_id', '')
-            job_name = get_optional_form_text('job_name', '')
-            job_key = get_optional_form_text('job_key', '')
-            source_command_id = parse_optional_int_form('source_command_id')
-            transfer_buffer_size = parse_optional_int_form('transfer_buffer_size')
-            extra = parse_optional_json_form('extra')
-            return artifact_api.save_http_uploaded_file(
-                upload,
-                artifact_type=artifact_type,
-                category=category,
-                client_id=client_id,
-                hostname=hostname,
-                machine_id=machine_id,
-                job_id=job_id,
-                job_name=job_name,
-                job_key=job_key,
-                source_command_id=source_command_id,
-                transfer_buffer_size=transfer_buffer_size,
-                extra=extra,
-            )
-
-        return responder.json_endpoint(_execute, default_error_status=500)
+        return responder.json_endpoint(
+            lambda: save_uploaded_artifact_from_request(artifact_api),
+            default_error_status=500,
+        )
 
     @app.get('/api/upload-tmp/<temp_id>/<filename>')
     def download_upload_tmp_file(temp_id, filename):
