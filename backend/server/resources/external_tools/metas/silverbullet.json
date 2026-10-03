@@ -1,0 +1,131 @@
+{
+  "id": "silverbullet",
+  "name": "silverbullet",
+  "display_name": "SilverBullet",
+  "description": "Self-hosted SilverBullet knowledge base server in classic single-space mode.",
+  "version": "2.11.1",
+  "category": "notes",
+  "tags": [
+    "silverbullet",
+    "notes",
+    "knowledge-base",
+    "markdown",
+    "web"
+  ],
+  "source": "https://github.com/silverbulletmd/silverbullet",
+  "platform_packages": {
+    "darwin-arm64": {
+      "platform": "mac",
+      "arch": "arm64",
+      "filename": "silverbullet-v2.11.1-darwin-arm64.zip",
+      "download_url": "/api/external-tools/packages/silverbullet-v2.11.1-darwin-arm64.zip",
+      "source": "https://github.com/silverbulletmd/silverbullet/releases/download/2.11.1/silverbullet-server-darwin-aarch64.zip",
+      "source_filename": "silverbullet-server-darwin-aarch64.zip",
+      "root": "",
+      "repacked": false,
+      "notes": "Upstream macOS Apple Silicon server archive. Rename the upstream archive to the project-standard filename; archive root contains the silverbullet executable."
+    }
+  },
+  "execs": {
+    "silverbullet": {
+      "paths": {
+        "darwin-arm64": "silverbullet"
+      }
+    }
+  },
+  "install": {
+    "install_dir": "{{external_tools_root}}/{{package_id}}/{{version}}/{{package_key}}"
+  },
+  "modules": [
+    {
+      "id": "main",
+      "name": "silverbullet",
+      "display_name": "SilverBullet",
+      "description": "Starts SilverBullet in classic single-space mode for a selected Client-side folder.",
+      "execution": "daemon",
+      "exec": "silverbullet",
+      "params": [
+        {
+          "name": "instance_name",
+          "label": "Instance Name",
+          "type": "string",
+          "required": true,
+          "default": "silverbullet-3000",
+          "description": "Unique name for this SilverBullet instance. It controls log/pid/state isolation."
+        },
+        {
+          "name": "address",
+          "label": "Listen Address",
+          "type": "string",
+          "required": true,
+          "default": "0.0.0.0",
+          "description": "HTTP listen address. Use 127.0.0.1 for local-only access or 0.0.0.0 for LAN/external browser access."
+        },
+        {
+          "name": "port",
+          "label": "Listen Port",
+          "type": "integer",
+          "required": true,
+          "default": 3000,
+          "min": 1,
+          "max": 65535,
+          "description": "HTTP port for SilverBullet."
+        },
+        {
+          "name": "username",
+          "label": "Username",
+          "type": "string",
+          "required": true,
+          "default": "admin",
+          "description": "Single-space login username used to build SB_USER=username:password."
+        },
+        {
+          "name": "password",
+          "label": "Password",
+          "type": "string",
+          "required": true,
+          "default": "admin",
+          "description": "Single-space login password used to build SB_USER=username:password."
+        },
+        {
+          "name": "space_dir",
+          "label": "Space Directory",
+          "type": "remote_folder",
+          "required": true,
+          "default": "~/Documents/Typora",
+          "initial_path": "~",
+          "description": "Client-side folder used as the SilverBullet single space. Home-relative paths such as ~/Documents/Typora are supported; Browse opens from the remote user home."
+        }
+      ],
+      "runtime": {
+        "cwd": "{{install_dir}}/{{package_root}}",
+        "argv": [
+          "/usr/bin/env",
+          "SB_USER={{username}}:{{password}}",
+          "{{bin_silverbullet}}",
+          "--single",
+          "-L",
+          "{{address}}",
+          "-p",
+          "{{port}}",
+          "{{space_dir}}"
+        ],
+        "stdout": "{{instance_runtime_dir}}/stdout.log",
+        "stderr": "stdout",
+        "pid_file": "{{instance_runtime_dir}}/tool.pid",
+        "state_file": "{{instance_runtime_dir}}/state.json"
+      },
+      "lifecycle": {
+        "stop": {
+          "type": "signal",
+          "signal": "TERM",
+          "timeout_sec": 5,
+          "kill_after_timeout": true
+        },
+        "status": {
+          "type": "pid_file"
+        }
+      }
+    }
+  ]
+}
