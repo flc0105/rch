@@ -1045,7 +1045,8 @@ export default {
     },
 
     pendingRemoteFileParamInitialPath() {
-      return remoteParamInitialPath(this.pendingRemoteFileParam || {})
+      const param = this.pendingRemoteFileParam || {}
+      return remoteParamInitialPath(param, this.paramForm?.[param.name])
     },
 
     pendingExecution() {
