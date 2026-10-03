@@ -6,7 +6,12 @@ import shutil
 import sys
 
 from client.config.config import CLIENT_BUILD_VERSION
-from client.runtime.client_util import get_executable_path, get_system_paths, wrap_path
+from client.runtime.client_util import (
+    get_executable_path,
+    get_runtime_root,
+    get_system_paths,
+    wrap_path,
+)
 from core.device.local_identity import get_local_identity
 from core.utils.formatting import get_readable_time, get_time
 
@@ -42,6 +47,7 @@ class CommandVariableResolver:
         self._rch_variables = {
             'exec_path': ('Current Client process executable path.', self._get_exec_path),
             'launch_command': ('Current Client launch command.', self._get_launch_command),
+            'runtime': ('RCH Client runtime root directory.', self._get_runtime),
             'pid': ('Current Client process ID.', self._get_pid),
             'uid': ('Current Client user name, equivalent to getuid.', self._get_uid),
             'cwd': ('Current Client working directory.', self._get_cwd),
@@ -175,6 +181,9 @@ class CommandVariableResolver:
 
     def _get_launch_command(self, _command_id=None):
         return get_executable_path()
+
+    def _get_runtime(self, _command_id=None):
+        return get_runtime_root()
 
     def _get_pid(self, _command_id=None):
         return os.getpid()

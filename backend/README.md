@@ -1508,6 +1508,7 @@ Current built-ins include:
 ```text
 ${rch:exec_path}
 ${rch:launch_command}
+${rch:runtime}
 ${rch:pid}
 ${rch:uid}
 ${rch:cwd}
@@ -1529,6 +1530,8 @@ ${rch:model}
 ${rch:timestamp}
 ${rch:datetime}
 ```
+
+`${rch:runtime}` resolves to the Client runtime root: the directory containing `rchclient.py` in source mode, or the Client executable directory in a frozen build.
 
 Examples:
 
@@ -2440,6 +2443,7 @@ The unified Clipboard dialog has Get/Send flows.
 - does not automatically download every remote file to Server
 - files are downloaded when explicitly requested
 - directories can be downloaded as ZIP
+- Download All preserves existing single-item behavior (files directly, directories as ZIP) and automatically packages multiple Clipboard paths as one ZIP
 
 ### Send
 
@@ -2858,7 +2862,6 @@ Current genuine future work includes:
 - unified retention/cleanup policy
 - formal event taxonomy and tab/global delivery scope
 - Rules/Alerts engine
-- Clipboard “Download All” with automatic archive
 - Quick Actions backed by alias/custom command
 - Remote PDF preview
 - later Word/Excel preview

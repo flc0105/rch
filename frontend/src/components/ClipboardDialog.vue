@@ -55,7 +55,19 @@
       </template>
 
       <template v-else-if="remoteKind === 'files'">
-        <div class="clipboard-section-label">Files · {{ remoteFiles.length }}</div>
+        <div class="clipboard-files-toolbar">
+          <div class="clipboard-section-label clipboard-files-label">Files · {{ remoteFiles.length }}</div>
+          <el-button
+            v-if="remoteFiles.length"
+            size="small"
+            :loading="remoteDownloadAllLoading"
+            :disabled="hasRemoteFileDownloadInProgress"
+            :title="remoteFiles.length > 1 ? 'Multiple items are automatically packaged as ZIP' : ''"
+            @click="downloadAllRemoteFiles"
+          >
+            Download All
+          </el-button>
+        </div>
         <div v-if="remoteFiles.length" class="clipboard-file-list">
           <div v-for="(file, index) in remoteFiles" :key="`${file.path}-${index}`" class="clipboard-file-row">
             <div class="clipboard-file-main">
@@ -68,6 +80,7 @@
             <el-button
               size="small"
               :loading="!!remoteDownloadingPaths[file.path]"
+              :disabled="remoteDownloadAllLoading"
               @click="downloadRemoteFile(file)"
             >
               Download
@@ -177,6 +190,7 @@ import { Loading } from '@element-plus/icons-vue'
 import {
   downloadRemoteClipboardDirectory,
   downloadRemoteClipboardFile,
+  downloadRemoteClipboardFiles,
   getClipboardCapabilities,
   getRemoteClipboard,
   setRemoteClipboardFiles,
@@ -205,6 +219,7 @@ export default {
       remoteImageArtifact: null,
       remoteFiles: [],
       remoteDownloadingPaths: {},
+      remoteDownloadAllLoading: false,
       remoteError: '',
       sendText: '',
       sendFiles: [],
@@ -230,6 +245,9 @@ export default {
       }
       return String(this.sendText || '').length > 0 && this.capabilities.text !== false
     },
+    hasRemoteFileDownloadInProgress() {
+      return Object.keys(this.remoteDownloadingPaths || {}).length > 0
+    },
   },
   methods: {
     async open() {
@@ -237,6 +255,7 @@ export default {
       this.visible = true
       this.resetRemotePayload()
       this.remoteDownloadingPaths = {}
+      this.remoteDownloadAllLoading = false
       this.clearComposer()
       await this.loadCapabilities()
       await this.loadRemoteClipboard()
@@ -358,6 +377,44 @@ export default {
         ElMessage.error(e.message || 'Download failed')
       } finally {
         delete this.remoteDownloadingPaths[path]
+      }
+    },
+    async downloadAllRemoteFiles() {
+      if (!this.selectedId || this.remoteDownloadAllLoading || this.hasRemoteFileDownloadInProgress) return
+
+      const files = (Array.isArray(this.remoteFiles) ? this.remoteFiles : [])
+        .filter((file) => String(file?.path || '').trim())
+      if (!files.length) return
+
+      if (files.length === 1) {
+        await this.downloadRemoteFile(files[0])
+        return
+      }
+
+      this.remoteDownloadAllLoading = true
+      try {
+        ElMessage.success({
+          message: `Preparing ZIP download: ${files.length} clipboard items`,
+          duration: 1800,
+        })
+        const headers = typeof this.getTabScopedHeaders === 'function'
+          ? this.getTabScopedHeaders()
+          : {}
+        const result = await downloadRemoteClipboardFiles(
+          this.selectedId,
+          files.map((file) => String(file.path)),
+          headers,
+        )
+        const artifact = result?.artifact || result?.file || null
+        if (!artifact?.artifact_id) {
+          throw new Error('ZIP download finished, but artifact was not found')
+        }
+        this.downloadArtifact(artifact)
+        this.$emit('artifacts-maybe-changed')
+      } catch (e) {
+        ElMessage.error(e.message || 'Download all failed')
+      } finally {
+        this.remoteDownloadAllLoading = false
       }
     },
     async readLocalClipboard() {
@@ -532,6 +589,7 @@ export default {
       this.sending = false
       this.resetRemotePayload()
       this.remoteDownloadingPaths = {}
+      this.remoteDownloadAllLoading = false
       this.clearComposer()
     },
     formatBytes(value) {
@@ -544,6 +602,7 @@ export default {
 <style scoped>
 .clipboard-head,
 .clipboard-footer,
+.clipboard-files-toolbar,
 .clipboard-file-row,
 .clipboard-send-tools,
 .clipboard-file-meta {
@@ -551,7 +610,8 @@ export default {
   align-items: center;
 }
 .clipboard-head,
-.clipboard-footer {
+.clipboard-footer,
+.clipboard-files-toolbar {
   justify-content: space-between;
   gap: 12px;
 }
@@ -560,6 +620,8 @@ export default {
 .clipboard-body { min-height: 260px; }
 .clipboard-loading { min-height: 240px; display: flex; gap: 9px; align-items: center; justify-content: center; opacity: .68; }
 .clipboard-section-label { margin-bottom: 8px; font-size: 12px; font-weight: 600; opacity: .72; text-transform: uppercase; letter-spacing: .04em; }
+.clipboard-files-label { margin-bottom: 0; }
+.clipboard-files-toolbar { margin-bottom: 8px; }
 .clipboard-actions { margin-top: 12px; display: flex; justify-content: flex-end; gap: 8px; }
 .clipboard-image-shell { max-height: 430px; overflow: auto; border: 1px solid var(--el-border-color-light); border-radius: 8px; background: rgba(0,0,0,.025); text-align: center; }
 .clipboard-image-shell img { display: block; max-width: 100%; margin: 0 auto; }

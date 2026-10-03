@@ -89,3 +89,12 @@ export function downloadRemoteClipboardDirectory(clientId, path, headers = {}) {
     {},
   )
 }
+
+export function downloadRemoteClipboardFiles(clientId, paths = [], headers = {}) {
+  const url = `/api/connections/${encodeURIComponent(clientId)}/remote-files/download-zip`
+  return apiData(
+    url,
+    jsonRequestOptions('POST', { paths, archive_name: '' }, headers),
+    {},
+  )
+}

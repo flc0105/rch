@@ -49,6 +49,20 @@ def get_executable_path():
         return f'{executable} {argv}'
 
 
+def get_runtime_root() -> str:
+    """
+    获取 RCH Client 运行时根目录。
+
+    - 源码模式：rchclient.py（即当前启动脚本）所在目录
+    - 打包模式：当前 Client 可执行文件所在目录
+    """
+    if getattr(sys, 'frozen', False):
+        return os.path.dirname(os.path.realpath(sys.executable))
+
+    script_path = os.path.realpath(sys.argv[0])
+    return os.path.dirname(script_path)
+
+
 def get_executable_path_for_shell():
     """返回 (shell, args) 元组，用于 ShellExecuteW"""
     executable = wrap_path(os.path.realpath(sys.executable))
