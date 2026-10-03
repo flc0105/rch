@@ -18,13 +18,13 @@ class PathResolver:
         return self.iter_interruptible(iterable, check_interval=check_interval)
 
     def validate_directory_exists(self, path):
-        directory = os.path.abspath(path)
+        directory = os.path.abspath(os.path.expanduser(path))
         if not os.path.isdir(directory):
             raise FileNotFoundError(f'Directory not found: {directory}')
         return directory
 
     def validate_file_exists(self, path):
-        file_path = os.path.abspath(path)
+        file_path = os.path.abspath(os.path.expanduser(path))
         if not os.path.isfile(file_path):
             raise FileNotFoundError(f'File not found: {file_path}')
         return file_path
@@ -35,23 +35,24 @@ class PathResolver:
         if not raw_path:
             raw_path = '.'
 
-        if os.path.isabs(raw_path):
-            return os.path.abspath(raw_path)
+        expanded_path = os.path.expanduser(raw_path)
+        if os.path.isabs(expanded_path):
+            return os.path.abspath(expanded_path)
 
-        return os.path.abspath(os.path.join(os.getcwd(), raw_path))
+        return os.path.abspath(os.path.join(os.getcwd(), expanded_path))
 
     def build_parent_path(self, path: str):
-        current = os.path.abspath(path)
+        current = os.path.abspath(os.path.expanduser(path))
         parent = os.path.dirname(current)
         if parent == current:
             return None
         return parent
 
     def to_abs_path(self, path: str) -> str:
-        return os.path.abspath(path)
+        return os.path.abspath(os.path.expanduser(path))
 
     def is_file_path(self, path: str) -> bool:
-        return os.path.isfile(path)
+        return os.path.isfile(os.path.expanduser(path))
 
     def get_current_directory(self) -> str:
         return os.getcwd()
