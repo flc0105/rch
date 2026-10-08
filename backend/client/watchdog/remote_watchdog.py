@@ -10,7 +10,7 @@ import urllib.request
 
 from client.runtime.client_util import spawn_new_instance, is_process_alive
 
-HTTP_CONTROL_COMMANDS = {'stop', 'restart', 'start'}
+HTTP_CONTROL_COMMANDS = {'kill', 'relaunch', 'clone'}
 
 def _build_remote_watchdog_file_logger(log_file_path: str):
     logger_name = f'remote_watchdog_file_logger::{os.path.abspath(log_file_path)}'
@@ -168,15 +168,15 @@ class RemoteHttpWatchdogMonitor:
     def _execute_command(self, command: str):
         command_text = str(command or '').strip().lower()
 
-        if command_text == 'stop':
+        if command_text == 'kill':
             self.action_executor.kill_parent_and_exit()
             return
 
-        if command_text == 'restart':
+        if command_text == 'relaunch':
             self.action_executor.restart_parent_and_exit()
             return
 
-        if command_text == 'start':
+        if command_text == 'clone':
             self.action_executor.spawn_new_instance()
             return
 

@@ -2,7 +2,7 @@ import threading
 from datetime import datetime
 
 
-HTTP_CONTROL_COMMANDS = {'stop', 'restart', 'start'}
+HTTP_CONTROL_COMMANDS = {'kill', 'relaunch', 'clone'}
 
 
 class ControlCommandStore:

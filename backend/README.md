@@ -285,7 +285,7 @@ It runs in the shared watchdog worker and polls a dedicated HTTP endpoint:
 
 - server side queues control actions per client
 - client watchdog polls independently of the main socket command stream
-- currently supported remote control actions are `kill`, `spawn`, and `reset`
+- currently supported remote control actions are `kill`, `relaunch`, and `clone`
 
 This means the server can still deliver watchdog control commands even when the normal interactive command channel is blocked, busy, or no longer trusted to be the only control path.
 
@@ -303,10 +303,10 @@ The main client process periodically feeds heartbeat state to a local heartbeat 
 
 In short:
 
-- **remote watchdog** = independent remote control channel (`kill` / `spawn` / `reset`)
+- **remote watchdog** = independent remote control channel (`kill` / `relaunch` / `clone`)
 - **local watchdog** = local crash/hang recovery for the client process itself
 
-A `watchdog` client command also returns a JSON status payload describing the runtime watchdog state.
+The `watchdog` client command shows a flat key/value runtime status by default; `watchdog --json` returns the same flat dictionary as JSON.
 
 ### Shell-like commands vs `acmd`
 
@@ -1149,7 +1149,7 @@ The Server terminal has its own command layer in addition to Client commands and
 | `history` | Show quick command history | Supports `history run <index>`, `history clear`, and the `!<index>` shortcut |
 | `gopin [name]` | List or jump to a machine-scoped pinned remote path | Resolves the saved path into a real `cd` command while preserving the original `gopin` text in history |
 | `rtt` | Show heartbeat RTT / last-seen state | Reads the live connection/session metrics |
-| `httpctl stop|restart|start` | Queue an independent HTTP control action for the selected Client | Does not depend on the normal command socket remaining usable |
+| `httpctl kill|relaunch|clone` | Queue an independent HTTP control action for the selected Client | Does not depend on the normal command socket remaining usable |
 | `saveout <client-command>` | Run a Client command and save the complete output as an Artifact | Creates a `command_output` Artifact and records source metadata |
 | `xt ...` | External Tool CLI facade | Supports list/info/which/direct execution of already-installed external-tool executables |
 
@@ -1342,7 +1342,7 @@ set
 help
 ```
 
-- `watchdog` returns the current guard/watchdog runtime state as JSON.
+- `watchdog` displays the flat guard/watchdog runtime status; use `watchdog --json` for flat JSON.
 - `update` builds/downloads/extracts/starts the newest bundle.
 - `update --keep-old` leaves the current Client alive after the new Client successfully starts.
 - `clean_releases` removes obsolete local bundle releases and ZIPs.
@@ -1378,7 +1378,7 @@ The following tables are generated from current `@desc(...)` declarations with `
 | `reset` | `session` | Restart client process and reconnect |
 | `spawn_instance` | `session` | Start a new client instance without exiting current process |
 | `update` | `session` | Build, download, extract and launch the latest client bundle; use --keep-old to retain current client |
-| `watchdog` | `session` | Show watchdog runtime status as JSON |
+| `watchdog` | `session` | Show flat watchdog runtime status (`--json` supported) |
 | `cd` | `shell` | Change working directory |
 | `pyexec_collect` | `shell` | Execute Python code and collect output |
 | `pyexec_stream` | `shell` | Execute Python code with streaming output |
@@ -1613,22 +1613,22 @@ GET /api/connections/<client_id>/control
 for one of:
 
 ```text
-stop
-restart
-start
+kill
+relaunch
+clone
 ```
 
 The Server can queue those actions with:
 
 ```text
-httpctl stop
-httpctl restart
-httpctl start
+httpctl kill
+httpctl relaunch
+httpctl clone
 ```
 
 or the corresponding control API.
 
-This path exists specifically so the Server can still request stop/restart/start when the main command socket is blocked, broken, or unusable.
+This path exists specifically so the Server can still request kill/relaunch/clone when the main command socket is blocked, broken, or unusable.
 
 The remote watchdog:
 
@@ -1663,7 +1663,7 @@ The main Client command:
 watchdog
 ```
 
-returns the current watchdog/guard runtime status.
+returns the current watchdog/guard runtime status as a flat key/value listing. `watchdog --json` outputs the same fields as a flat JSON object.
 
 ---
 

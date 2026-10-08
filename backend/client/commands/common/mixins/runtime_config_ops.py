@@ -93,22 +93,18 @@ class CommandRuntimeConfigMixin:
             side_effects = self._apply_runtime_config_side_effects(result.key, result.new_value)
 
             lines = [
-                success(f'{result.key} updated\n'),
-                info(f'Old: {self.runtime_config_service.format_value(result.old_value)}\n'),
-                info(f'New: {self.runtime_config_service.format_value(result.new_value)}\n'),
-                info(f'Default: {self.runtime_config_service.format_value(result.default_value)}\n'),
-                info(f'Source: {result.source}\n'),
+                success(f'{result.key} updated'),
+                info(
+                    f'Value: {self.runtime_config_service.format_value(result.old_value)}'
+                    f' → {self.runtime_config_service.format_value(result.new_value)}'
+                ),
+                info(
+                    f'Default: {self.runtime_config_service.format_value(result.default_value)}'
+                    f'  |  Source: {result.source}'
+                ),
             ]
-
-            if result.override_removed:
-                lines.append(info('Override: removed because value equals runtime_config.py default\n'))
-            else:
-                lines.append(info('Override: stored because value differs from runtime_config.py default\n'))
-
-            for side_effect in side_effects:
-                lines.append(warning(f'{side_effect}\n'))
-
-            return 1, ''.join(lines).rstrip('\n')
+            lines.extend(side_effects)
+            return 1, '\n'.join(lines)
         except Exception as e:
             return 0, error(f'Failed to set runtime config: {e}')
 

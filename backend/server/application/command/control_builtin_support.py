@@ -7,17 +7,17 @@ from server.application.connection.control_command_store import (
 
 
 HTTP_CONTROL_ACTIONS = {
-    'stop': {
-        'label': 'Stop client',
-        'description': 'stop current client through the independent HTTP control channel',
+    'kill': {
+        'label': 'Kill',
+        'description': 'Terminate the current agent process via remote watchdog.',
     },
-    'restart': {
-        'label': 'Restart client',
-        'description': 'restart current client through the independent HTTP control channel',
+    'relaunch': {
+        'label': 'Relaunch',
+        'description': 'Launch a replacement agent, then terminate the current agent process.',
     },
-    'start': {
-        'label': 'Start client',
-        'description': 'start a new client instance through the independent HTTP control channel',
+    'clone': {
+        'label': 'Clone',
+        'description': 'Launch another agent instance without stopping the current one.',
     },
 }
 

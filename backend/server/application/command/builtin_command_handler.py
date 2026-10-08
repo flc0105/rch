@@ -67,7 +67,7 @@ class BuiltinCommandHandler:
         {
             'name': 'httpctl',
             'template': 'httpctl ',
-            'help': 'httpctl stop|restart|start | Client HTTP control channel',
+            'help': 'httpctl kill|relaunch|clone | Client HTTP control channel',
             'source': 'server'
         },
 

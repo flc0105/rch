@@ -260,9 +260,9 @@ class HttpctlCommandCompletionProvider(CommandCompletionProvider):
     group = 'control'
 
     ACTIONS = (
-        ('stop', 'Stop current client through the independent HTTP control channel'),
-        ('restart', 'Restart current client through the independent HTTP control channel'),
-        ('start', 'Start a new client instance through the independent HTTP control channel'),
+        ('kill', 'Terminate the current agent process via remote watchdog.'),
+        ('relaunch', 'Launch a replacement agent, then terminate the current agent process.'),
+        ('clone', 'Launch another agent instance without stopping the current one.'),
     )
 
     def complete(self, context: CompletionContext) -> list[CompletionCandidate]:

@@ -456,9 +456,9 @@ export default {
       const normalizedCommand = String(command || '').trim().toLowerCase()
 
       const httpCommandMap = {
-        'http-stop': 'stop',
-        'http-restart': 'restart',
-        'http-start': 'start',
+        'http-kill': 'kill',
+        'http-relaunch': 'relaunch',
+        'http-clone': 'clone',
       }
       const httpCommand = httpCommandMap[normalizedCommand]
       if (httpCommand) {
