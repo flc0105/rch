@@ -11,3 +11,26 @@
 *.py[cod]
 .DS_Store
 **/.DS_Store
+
+
+# Python virtual environments
+.venv/
+venv/
+
+# Background process output
+nohup.out
+
+# Backend runtime logs
+/backend/runtime/cleanup_logs/
+
+# Backend runtime database
+/backend/runtime/rch.db
+/backend/runtime/rch.db-shm
+/backend/runtime/rch.db-wal
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# macOS temporary files
+.DS_Store

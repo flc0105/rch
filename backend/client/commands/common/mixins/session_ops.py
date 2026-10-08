@@ -12,7 +12,7 @@ class CommandSessionMixin:
 
     @desc('Terminate current session', group='session')
     @interruptible()
-    def kill(self):
+    def kill_connection(self):
         self.socket.close()
         sys.exit(0)
 

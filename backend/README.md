@@ -1319,13 +1319,13 @@ and is exposed through Client Runtime Configuration.
 ### Session lifecycle commands
 
 ```text
-kill
+kill_connection
 reset
 reexec
 spawn_instance
 ```
 
-- `kill` terminates the current Client session/process.
+- `kill_connection` terminates the current Client session/process.
 - `reset` starts a fresh Client process and reconnects.
 - `reexec` replaces the current process image.
 - `spawn_instance` launches an additional Client instance without terminating the current one.
@@ -1373,7 +1373,7 @@ The following tables are generated from current `@desc(...)` declarations with `
 | `set` | `runtime` | Show or update client runtime config |
 | `clean_releases` | `session` | Clean outdated client bundle release directories and ZIP files |
 | `help` | `session` | Show available commands |
-| `kill` | `session` | Terminate current session |
+| `kill_connection` | `session` | Terminate current session |
 | `reexec` | `session` | Restart current process by exec replacement |
 | `reset` | `session` | Restart client process and reconnect |
 | `spawn_instance` | `session` | Start a new client instance without exiting current process |

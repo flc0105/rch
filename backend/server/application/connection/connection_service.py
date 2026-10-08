@@ -412,7 +412,7 @@ class WebConnectionService:
 
         if session is not None:
             try:
-                session.send_command('kill')
+                session.send_command('kill_connection')
             except Exception:
                 pass
 
