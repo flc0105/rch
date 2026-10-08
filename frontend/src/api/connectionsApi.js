@@ -50,6 +50,14 @@ export function getWatchdogStatus(clientId) {
   return apiData(`/api/connections/${encodeURIComponent(clientId)}/watchdog`, {}, {})
 }
 
+export function updateRuntimeConfig(clientId, key, value) {
+  return apiData(
+    `/api/connections/${encodeURIComponent(clientId)}/runtime-config/${encodeURIComponent(key)}`,
+    jsonRequestOptions('PUT', { value }),
+    {},
+  )
+}
+
 export function getHttpControlActions() {
   return apiData('/api/httpctl/actions', {}, [])
 }

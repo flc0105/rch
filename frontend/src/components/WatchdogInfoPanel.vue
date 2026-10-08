@@ -3,7 +3,6 @@
     <div class="watchdog-panel-scroll">
       <header class="watchdog-heading">
         <div>
-          <div class="watchdog-eyebrow">AGENT SUPERVISION</div>
           <h3>Watchdog</h3>
           <p>Health and recovery controls for this connection</p>
         </div>
@@ -40,9 +39,18 @@
                 <h4>Remote control</h4>
                 <p>Responds to HTTP management commands</p>
               </div>
-              <span class="watchdog-state-tag" :class="{ 'is-on': status.remote_enabled }">
-                {{ status.remote_enabled ? 'Enabled' : 'Disabled' }}
-              </span>
+              <div class="watchdog-card-controls">
+                <span class="watchdog-state-tag" :class="{ 'is-on': status.remote_enabled }">
+                  {{ status.remote_enabled ? 'Enabled' : 'Disabled' }}
+                </span>
+                <el-switch
+                  :model-value="Boolean(status.remote_enabled)"
+                  :loading="togglingMode === 'remote'"
+                  :disabled="!canToggleMode"
+                  aria-label="Toggle remote control watchdog"
+                  @change="value => toggleMode('remote', value)"
+                />
+              </div>
             </div>
             <div class="watchdog-card-stats">
               <div>
@@ -62,9 +70,18 @@
                 <h4>Local recovery</h4>
                 <p>Monitors agent heartbeats on this device</p>
               </div>
-              <span class="watchdog-state-tag" :class="{ 'is-on': status.local_enabled }">
-                {{ status.local_enabled ? 'Enabled' : 'Disabled' }}
-              </span>
+              <div class="watchdog-card-controls">
+                <span class="watchdog-state-tag" :class="{ 'is-on': status.local_enabled }">
+                  {{ status.local_enabled ? 'Enabled' : 'Disabled' }}
+                </span>
+                <el-switch
+                  :model-value="Boolean(status.local_enabled)"
+                  :loading="togglingMode === 'local'"
+                  :disabled="!canToggleMode"
+                  aria-label="Toggle local recovery watchdog"
+                  @change="value => toggleMode('local', value)"
+                />
+              </div>
             </div>
             <div class="watchdog-card-stats">
               <div>
@@ -155,6 +172,7 @@ import {
   getWatchdogStatus,
   getHttpControlActions,
   queueHttpControlAction,
+  updateRuntimeConfig,
 } from '../api/connectionsApi.js'
 
 export default {
@@ -172,6 +190,7 @@ export default {
       actionsLoading: false,
       actionsError: '',
       pendingAction: '',
+      togglingMode: '',
       expandedSections: [],
     }
   },
@@ -199,8 +218,12 @@ export default {
     connectionOffline() {
       return this.currentConnection?.connection_state === 'offline' || Boolean(this.currentConnection?.disconnected_at)
     },
-    canControl() {
+    canToggleMode() {
       return !this.connectionOffline && !this.loading && !this.error &&
+        Boolean(this.status) && !this.togglingMode && !this.pendingAction
+    },
+    canControl() {
+      return !this.connectionOffline && !this.loading && !this.error && !this.togglingMode &&
         Boolean(this.status?.remote_enabled && this.status?.watchdog_alive)
     },
     actionHint() {
@@ -218,6 +241,34 @@ export default {
   methods: {
     duration(value) {
       return value == null || !Number.isFinite(Number(value)) ? '—' : `${value} s`
+    },
+    async toggleMode(mode, enabled) {
+      if (!this.canToggleMode || !['remote', 'local'].includes(mode) || typeof enabled !== 'boolean') return
+      const clientId = this.clientId
+      const key = mode === 'remote' ? 'REMOTE_HTTP_WATCHDOG_ENABLED' : 'LOCAL_WATCHDOG_ENABLED'
+      const label = mode === 'remote' ? 'Remote control' : 'Local recovery'
+      if (this.status[`${mode}_enabled`] === enabled) return
+
+      this.togglingMode = mode
+      try {
+        // Reuse the Configuration UI endpoint; the backend executes the existing set command.
+        await updateRuntimeConfig(clientId, key, enabled)
+        if (clientId !== this.clientId) return
+        await this.loadStatus()
+        if (this.error || !this.status) {
+          ElMessage.warning(`${label} updated, but status could not be refreshed`)
+        } else if (this.status[`${mode}_enabled`] !== enabled) {
+          ElMessage.warning(`${label} setting saved; refresh to verify its runtime state`)
+        } else {
+          ElMessage.success(`${label} ${enabled ? 'enabled' : 'disabled'}`)
+        }
+      } catch (error) {
+        if (clientId === this.clientId) {
+          ElMessage.error(error.message || `Failed to update ${label.toLowerCase()}`)
+        }
+      } finally {
+        this.togglingMode = ''
+      }
     },
     async loadStatus() {
       if (!this.clientId || this.loading) return
@@ -288,8 +339,7 @@ export default {
 .watchdog-panel { height: 100%; min-height: 0; display: flex; flex-direction: column; color: var(--text); }
 .watchdog-panel-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 2px 4px 18px 0; }
 .watchdog-heading { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; margin-bottom: 18px; }
-.watchdog-eyebrow { color: #8a96a8; font-size: 10px; font-weight: 700; letter-spacing: .12em; }
-.watchdog-heading h3 { font-size: 20px; margin: 3px 0 4px; font-weight: 700; }
+.watchdog-heading h3 { font-size: 20px; margin: 0 0 4px; font-weight: 700; }
 .watchdog-heading p, .watchdog-card-head p { margin: 0; color: var(--muted); font-size: 12px; }
 .watchdog-loading { padding: 18px; }
 .watchdog-unavailable { padding: 28px 16px; border: 1px dashed #cbd5e1; border-radius: 12px; display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
@@ -310,6 +360,7 @@ export default {
 .watchdog-mode-card { border: 1px solid rgba(15,23,42,.08); border-radius: 14px; padding: 18px; background: #fff; min-width: 0; }
 .watchdog-card-head { display: flex; justify-content: space-between; gap: 10px; min-height: 52px; }
 .watchdog-card-head h4 { font-size: 14px; margin: 0 0 6px; }
+.watchdog-card-controls { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
 .watchdog-card-head p { line-height: 1.4; }
 .watchdog-state-tag { background: #f1f5f9; color: #64748b; padding: 3px 9px; border-radius: 999px; font-size: 11px; height: fit-content; white-space: nowrap; }
 .watchdog-state-tag.is-on { background: #dcfce7; color: #15803d; }
@@ -319,11 +370,12 @@ export default {
 .watchdog-card-stats strong { font-size: 13px; font-weight: 600; }
 .watchdog-feeder { color: #64748b; font-size: 11px; margin: 12px 0 0; overflow-wrap: anywhere; }
 .watchdog-details { margin-top: 14px; border: 1px solid rgba(15,23,42,.07); border-radius: 12px; background: #f8fafc; padding: 0 16px; }
-.watchdog-details-top { display: flex; justify-content: space-between; align-items: center; padding: 13px 0; font-size: 12px; color: #64748b; }
+.watchdog-details-top { display: flex; justify-content: space-between; align-items: center; padding: 13px 0; border-bottom: 1px solid #e2e8f0; font-size: 12px; color: #64748b; }
 .watchdog-details-top strong { color: var(--text); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
-.watchdog-diagnostics { --el-collapse-border-color: #e2e8f0; }
+.watchdog-diagnostics { border: none; --el-collapse-border-color: transparent; }
 .watchdog-diagnostics :deep(.el-collapse-item__header), .watchdog-diagnostics :deep(.el-collapse-item__wrap) { background: transparent; }
-.watchdog-diagnostics :deep(.el-collapse-item__header) { color: #64748b; font-size: 12px; height: 37px; }
+.watchdog-diagnostics :deep(.el-collapse-item__header) { color: #64748b; font-size: 12px; height: 37px; border-bottom: none; }
+.watchdog-diagnostics :deep(.el-collapse-item__wrap) { border-bottom: none; }
 .watchdog-path-list { display: flex; flex-direction: column; gap: 12px; padding: 2px 0 12px; }
 .watchdog-path-list > div { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .watchdog-path-list span { color: #64748b; font-size: 11px; }
