@@ -32,6 +32,13 @@ def create_command_execution_blueprint(server_instance):
 
         return responder.json_endpoint(_execute, default_error_status=500)
 
+    @blueprint.get('/api/connections/<client_id>/watchdog')
+    def get_watchdog_status(client_id):
+        return responder.json_endpoint(
+            lambda: command_execution_api.get_watchdog_status(client_id),
+            default_error_status=500,
+        )
+
     @blueprint.get('/api/connections/<client_id>/runtime-config')
     def get_runtime_config(client_id):
         return responder.json_endpoint(

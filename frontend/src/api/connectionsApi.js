@@ -46,6 +46,22 @@ export function sendCommand(clientId, command, headers = {}) {
   )
 }
 
+export function getWatchdogStatus(clientId) {
+  return apiData(`/api/connections/${encodeURIComponent(clientId)}/watchdog`, {}, {})
+}
+
+export function getHttpControlActions() {
+  return apiData('/api/httpctl/actions', {}, [])
+}
+
+export function queueHttpControlAction(clientId, action) {
+  return apiData(
+    `/api/connections/${encodeURIComponent(clientId)}/control`,
+    jsonRequestOptions('POST', { command: action }),
+    {},
+  )
+}
+
 export function getCommandCandidates(clientId) {
   return apiData(`/api/connections/${encodeURIComponent(clientId)}/command-candidates`, {}, [])
 }

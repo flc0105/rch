@@ -80,6 +80,16 @@ class WebCommandExecutionApi:
             source=str(source or 'web').strip() or 'web',
         )
 
+    def get_watchdog_status(self, client_id: str):
+        if self.remote_execution_service is None:
+            raise RuntimeError('remote_execution_service is not available')
+        return self.remote_execution_service.run_foreground_json_command(
+            self._normalize_client_id(client_id),
+            'watchdog --json',
+            task_type='watchdog_status',
+            source='web_watchdog_status',
+        )
+
     def get_runtime_config(self, client_id: str):
         if self.remote_execution_service is None:
             raise RuntimeError('remote_execution_service is not available')

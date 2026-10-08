@@ -238,6 +238,18 @@
         </el-tab-pane>
 
         <el-tab-pane
+          label="Watchdog"
+          name="watchdog"
+          class="connection-info-tab-pane"
+        >
+          <WatchdogInfoPanel
+            v-if="infoVisible && activeTab === 'watchdog'"
+            :client-id="selectedId"
+            :current-connection="currentConnection"
+          />
+        </el-tab-pane>
+
+        <el-tab-pane
           label="Commands"
           name="commands"
           class="connection-info-tab-pane connection-info-command-tab"
@@ -499,9 +511,11 @@
 <script>
 import { formatBytesHuman, formatDateTimeStandard as formatDateTimeStandardValue } from '../utils/formatters.js'
 import { ElMessage } from 'element-plus'
+import WatchdogInfoPanel from './WatchdogInfoPanel.vue'
 
 export default {
   name: 'ConnectionInfoDialogs',
+  components: { WatchdogInfoPanel },
 
   props: {
     selectedId: {

@@ -4,6 +4,7 @@ from datetime import datetime
 
 from flask import Blueprint, Response, request, stream_with_context
 
+from server.application.command.control_builtin_support import HTTP_CONTROL_ACTIONS
 from server.application.connection.control_command_store import (
     HTTP_CONTROL_COMMANDS,
     get_control_command_store,
@@ -19,6 +20,16 @@ def create_stream_control_blueprint(server_instance):
     web_service = server_instance.web_service
     responder = WebApiResponder()
     control_command_store = get_control_command_store()
+
+    @blueprint.get('/api/httpctl/actions')
+    def list_http_control_actions():
+        return responder.json_endpoint(
+            lambda: [
+                {'action': action, **spec}
+                for action, spec in HTTP_CONTROL_ACTIONS.items()
+                if action in HTTP_CONTROL_COMMANDS
+            ],
+        )
 
     @blueprint.get('/api/connections/<client_id>/control')
     @allow_anonymous
