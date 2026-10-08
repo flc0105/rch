@@ -60,7 +60,7 @@ class CommandHttpFileTransferService:
         return self.client_api.try_parse_json(response)
 
     def build_http_upload_start_message(self, file_path: str, file_size: int) -> str:
-        return f'Uploading: {os.path.basename(file_path)} ({format_bytes(file_size, max_unit='TB')})'
+        return f"Uploading: {os.path.basename(file_path)} ({format_bytes(file_size, max_unit='TB')})"
 
     def build_http_upload_success_message(self, payload, file_path: str, fallback_message: str):
         data = payload.get('data') if isinstance(payload, dict) and isinstance(payload.get('data'), dict) else {}

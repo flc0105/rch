@@ -224,6 +224,15 @@ UPLOAD_BASE_URL = f"{{SERVER_WEB_SCHEME}}://{{SERVER_WEB_HOST}}:{{SERVER_WEB_POR
 FILE_TRANSFER_BASE_URL = f"{{SERVER_WEB_SCHEME}}://{{SERVER_WEB_HOST}}:{{SERVER_FILE_TRANSFER_PORT}}"
 
 CLIENT_BUILD_VERSION = "{build_version}"
+RUNTIME_CONFIG = {{
+    'server_host': SERVER_HOST,
+    'server_port': SERVER_PORT,
+    'server_web_scheme': SERVER_WEB_SCHEME,
+    'server_web_host': SERVER_WEB_HOST,
+    'server_web_port': SERVER_WEB_PORT,
+    'server_file_transfer_port': SERVER_FILE_TRANSFER_PORT,
+    'client_build_version': CLIENT_BUILD_VERSION,
+}}
 CLIENT_SOURCE_REVISION = "{client_revision}"
 CLIENT_SOURCE_REVISION_PARTS = {client_revision_parts}
 CLIENT_SOURCE_REVISION_FILES = {client_revision_files}
