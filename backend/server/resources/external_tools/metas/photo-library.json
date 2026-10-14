@@ -1,0 +1,127 @@
+{
+  "id": "photo-library",
+  "name": "photo-library",
+  "display_name": "Photo Library",
+  "description": "Photo Library Flask web application (Python bundle). Data and storage can live outside the installed package.",
+  "version": "2026.10.14",
+  "category": "web",
+  "tags": [
+    "photo",
+    "library",
+    "web",
+    "flask",
+    "python"
+  ],
+  "platform_packages": {
+    "common-all": {
+      "platform": "*",
+      "arch": "all",
+      "filename": "photo-library-v2026.10.14-common-all.zip",
+      "download_url": "/api/external-tools/packages/photo-library-v2026.10.14-common-all.zip",
+      "root": "",
+      "notes": "Source-only Python bundle; first start installs requirements with pip into bundle-local vendor/pyX.Y. Requires Python, pip and initial network access."
+    }
+  },
+  "execs": {
+    "photo-library": {
+      "paths": {
+        "common-all": "app.py"
+      },
+      "description": "Run Photo Library via Client Python",
+      "launcher": {
+        "type": "client_python",
+        "prefix_args": [
+          "-u"
+        ]
+      }
+    }
+  },
+  "install": {
+    "install_dir": "{{external_tools_root}}/{{package_id}}/{{version}}/{{package_key}}"
+  },
+  "modules": [
+    {
+      "id": "web",
+      "name": "photo-library-web",
+      "display_name": "Photo Library Web",
+      "description": "Runs Photo Library with configurable HTTP bind and optional persistent data/storage roots. Clear either directory field to use the original project-local directory.",
+      "execution": "daemon",
+      "exec": "photo-library",
+      "params": [
+        {
+          "name": "instance_name",
+          "label": "Instance Name",
+          "type": "string",
+          "required": true,
+          "default": "photo-library-8081",
+          "description": "Unique instance name (use separate data/storage locations for separate instances)."
+        },
+        {
+          "name": "address",
+          "label": "Listen Address",
+          "type": "string",
+          "required": true,
+          "default": "127.0.0.1",
+          "description": "127.0.0.1 for local use; 0.0.0.0 exposes the web service to the LAN (secure it before doing so)."
+        },
+        {
+          "name": "port",
+          "label": "Listen Port",
+          "type": "integer",
+          "required": true,
+          "default": 8081,
+          "min": 1,
+          "max": 65535,
+          "description": "HTTP server port; must be free on the Client machine."
+        },
+        {
+          "name": "data_dir",
+          "label": "Data Directory (optional)",
+          "type": "string",
+          "required": false,
+          "allow_empty": true,
+          "default": "/Volumes/T7/Projects/photo_library/data",
+          "description": "Existing Client-side directory for photo_library.db, custom_helpers.py and final_metadata_settings.json. Clear to use the bundled project/data directory."
+        },
+        {
+          "name": "storage_dir",
+          "label": "Storage Directory (optional)",
+          "type": "string",
+          "required": false,
+          "allow_empty": true,
+          "default": "/Volumes/T7/Projects/photo_library/storage",
+          "description": "Existing Client-side storage root (uploads, thumbnails, compressed, library_cache). Clear to use bundled project/storage."
+        }
+      ],
+      "runtime": {
+        "cwd": "{{install_dir}}/{{package_root}}",
+        "argv": [
+          "{{bin_photo_library}}",
+          "--address",
+          "{{address}}",
+          "--port",
+          "{{port}}",
+          "--data-dir",
+          "{{data_dir}}",
+          "--storage-dir",
+          "{{storage_dir}}"
+        ],
+        "stdout": "{{instance_runtime_dir}}/stdout.log",
+        "stderr": "stdout",
+        "pid_file": "{{instance_runtime_dir}}/tool.pid",
+        "state_file": "{{instance_runtime_dir}}/state.json"
+      },
+      "lifecycle": {
+        "stop": {
+          "type": "signal",
+          "signal": "TERM",
+          "timeout_sec": 5,
+          "kill_after_timeout": true
+        },
+        "status": {
+          "type": "pid_file"
+        }
+      }
+    }
+  ]
+}
