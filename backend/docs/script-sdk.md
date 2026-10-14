@@ -447,3 +447,44 @@ if mode == 'Execute' and context.confirm('Continue?'):
 Selections are restricted to the offered strings. Secret values are returned only
 to the running Client script, never in a UI SSE event. Normal command/script
 execution remains unchanged unless the new APIs are explicitly called.
+
+### Structured Preview → Approval
+
+Use `context.approve_preview()` for **structured execution plans** rather than adding a table to a text-only `context.confirm()` prompt. This is opt-in and requires `SCRIPT_METADATA["api_grants"]` to include `"interactions:request"` like the existing input functions. It displays an Element Plus summary, table and collapsible details; only explicit approval returns `True`.
+
+```python
+from client.runtime.sdk import context
+
+plan = {
+    'summary': [
+        {'label': 'Files', 'value': '12'},
+        {'label': 'Total size', 'value': '64 MiB'},
+    ],
+    'columns': [{'key': 'path', 'label': 'Path'}, {'key': 'size', 'label': 'Size'}],
+    'rows': [
+        {'path': 'Documents', 'size': '18 MiB'},
+        {'path': 'Projects', 'size': '46 MiB'},
+    ],
+    'details': [{'title': 'Full scan details', 'content': 'The exact previewed entries...'}],
+    'notice': 'Please review the scanned entries before continuing.',
+}
+if not context.approve_preview('Execute this plan?', plan, title='Backup preview', timeout=180):
+    raise SystemExit('Not approved')
+# Execute only the validated plan; verify targets have not changed.
+```
+
+RCH builtins use `self.interactions.approve_preview(message, plan, title=..., timeout=...)` with the same data format. Test via the harmless `interaction_preview_demo` builtin or Script `mac/recon/personal_mac_backup_preview`.
+
+Presentation constraints: `summary` up to 16 label/value entries; `columns` up to 8 `{key,label}` pairs; `rows` up to 100 dictionaries keyed by declared column keys; `details` up to 16 `{title,content}` entries. All values are plain strings, not HTML. Only the preview UI changes: existing `confirm`, `ask`, `select`, and `secret` remain unchanged. Reject/timeout returns `False`. A preview approves a request, **not** a persistent server-side plan: the caller must verify its own actual targets before executing.
+
+Client shell-like process commands are registered with `@desc` and use positional arguments:
+
+- `kill_by_port <port> [-9]` (e.g. `kill_by_port 9999`); an omitted port prompts for input.
+- `kill_process_preview <pid|name> [-9]` (e.g. `kill_process_preview 30565`); an omitted target prompts for PID/name input.
+
+Both commands run **on the connected Client**, never on the Server host, and call the same structured Preview/Approval Broker using a short-lived grant bound to the active Client command. Command candidates insert only the command name. The legacy `kill_process` is unchanged. A `-9` suffix selects SIGKILL; default is SIGTERM. No signal is sent without approval and identity revalidation.
+
+Mac backup scripts remain separately callable:
+`mac/recon/personal_mac_backup` (direct),
+`mac/recon/personal_mac_backup_preview_simple` (plain confirmation), and
+`mac/recon/personal_mac_backup_preview` (structured approval).

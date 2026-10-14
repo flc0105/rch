@@ -79,6 +79,64 @@ class CommandProcessMixin:
             return 0, str(e)
 
 
+    @desc('kill_by_port <port> [-9] | Inspect a listening port, preview and approve termination', group='process')
+    def kill_by_port(self, arg=''):
+        """Client-native interactive operation. No Server builtin or nested pyexec."""
+        return self._run_approved_process_command(arg, by_port=True)
+
+    @desc('kill_process_preview <pid|name> [-9] | Preview and approve process termination', group='process')
+    def kill_process_preview(self, arg=''):
+        """Separate from the original kill_process; the latter remains unchanged."""
+        return self._run_approved_process_command(arg, by_port=False)
+
+    def _run_approved_process_command(self, arg='', *, by_port=False):
+        from client.commands.common.services.process.approved_process_service import (
+            ClientCommandInteractions, ProcessApprovalError, parse_target,
+            find_targets, build_preview, terminate_verified,
+        )
+        import shlex
+
+        ui = ClientCommandInteractions(self)
+        try:
+            self._set_timeout(240)
+            text = str(arg or '').strip()
+            if not text:
+                if by_port:
+                    self._send_interim_result(1, '[PROCESS] Waiting for port input...')
+                    text = ui.ask('Enter a listening port:', title='Port to inspect')
+                else:
+                    choice = ui.select('Find a process using:', ['PID', 'Name'], title='Process lookup')
+                    text = ui.ask(f'Enter {choice}:', title='Process to inspect')
+                    # PID and name are distinguished automatically, except a numeric name;
+                    # numeric names require specifying an actual PID instead.
+                    text = shlex.quote(text) if choice == 'Name' else text
+            criteria = parse_target(text, by_port=by_port)
+            target = (f'port {criteria["port"]}' if by_port else
+                      f'PID {criteria["pid"]}' if 'pid' in criteria else criteria['name'])
+            self._send_interim_result(1, f'[PROCESS] Inspecting {target} on the connected Client...')
+            rows = find_targets(criteria)
+            if not rows:
+                return 0, f'No matching process found for {target} on the connected Client (or insufficient permissions).'
+            if len(rows) > 1:
+                labels = [f'{row["pid"]}: {row["name"]} ({row["user"]})' for row in rows]
+                selected = ui.select('Choose exactly one process:', labels, title='Process selection')
+                row = rows[labels.index(selected)]
+            else:
+                row = rows[0]
+            if row['pid'] <= 1 or row['pid'] == __import__('os').getpid():
+                raise ProcessApprovalError('Protected process')
+            self._send_interim_result(1, f'[PROCESS] Preview ready: PID={row["pid"]} {row["name"]}')
+            if not ui.approve('Approve termination of this Client process?',
+                              build_preview(row, force=criteria['force'], port=criteria.get('port'))):
+                return 1, 'Termination rejected; no signal sent.'
+            self._ensure_not_interrupted(fallback_timeout=240)
+            signame = terminate_verified(row, force=criteria['force'], port=criteria.get('port'))
+            return 1, f'{signame} sent to PID {row["pid"]} on the connected Client (exit not guaranteed).'
+        except (ValueError, ProcessApprovalError, OSError) as exc:
+            return 0, f'Process operation cancelled/failed: {exc}'
+        except Exception as exc:
+            return 0, f'Process operation failed: {exc}'
+
     def _acmd_ps_common(self, args_dict, payload=None):
         """
         acmd ps 公共实现。

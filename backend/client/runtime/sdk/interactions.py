@@ -7,7 +7,7 @@ class ScriptSdkInteractionError(RuntimeError):
     pass
 
 
-def _request(kind, message, *, title='', timeout=90, placeholder='', options=None):
+def _request(kind, message, *, title='', timeout=90, placeholder='', options=None, preview=None):
     if not context.get_script_grant_token():
         raise ScriptSdkInteractionError(
             'Interaction requires SCRIPT_METADATA api_grants: ["interactions:request"]'
@@ -19,7 +19,7 @@ def _request(kind, message, *, title='', timeout=90, placeholder='', options=Non
         '/api/interactions/client/request',
         json={'kind': kind, 'title': str(title), 'message': str(message),
               'placeholder': str(placeholder), 'timeout_seconds': timeout,
-              'options': options if options is not None else []},
+              'options': options if options is not None else [], 'preview': preview},
         timeout=timeout + 15,
     )
     if not isinstance(data, dict):
@@ -48,3 +48,9 @@ def select(message: str, options, *, title='Choose an option', timeout=90) -> st
     if result.get('status') != 'answered' or result.get('value') not in options:
         raise ScriptSdkInteractionError(f'Selection not supplied ({result.get("status")})')
     return result['value']
+
+
+def approve_preview(message: str, preview: dict, *, title='Review execution plan', timeout=90) -> bool:
+    """Approve a plain-data preview (summary, columns/rows, collapsible details)."""
+    result = _request('preview', message, title=title, timeout=timeout, preview=preview)
+    return result.get('status') == 'answered' and result.get('value') is True

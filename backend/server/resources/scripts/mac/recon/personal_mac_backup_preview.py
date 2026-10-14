@@ -256,10 +256,26 @@ def main(params):
         emit('Nothing to back up; no archive created.', warning=True)
         return {'uploaded': False, 'warnings': warnings}
 
-    summary = (f'Back up {file_count} previously scanned files ({formatted_size(size_total)}) '
-               f'from {len(selected)} selected items and upload to Artifact?\n\n'
-               + '\n'.join(lines))
-    if not context.confirm(summary, title='Approve personal Mac backup', timeout=180):
+    preview = {
+        'summary': [
+            {'label': 'Backup items', 'value': str(len(selected))},
+            {'label': 'Total files', 'value': str(file_count)},
+            {'label': 'Uncompressed size', 'value': formatted_size(size_total)},
+            {'label': 'Warnings', 'value': str(len(warnings))},
+        ],
+        'columns': [{'key': 'item', 'label': 'Backup item'},
+                    {'key': 'files', 'label': 'Files'},
+                    {'key': 'size', 'label': 'Size'}],
+        'rows': [{'item': item['label'],
+                  'files': str(counts[item['label']]['files']),
+                  'size': formatted_size(counts[item['label']]['bytes'])}
+                 for item in selected[:100]],
+        'details': ([{'title': 'Warnings', 'content': '\n'.join(warnings[:100])[:4000]}]
+                    if warnings else []),
+        'notice': 'Approval uploads only the scanned snapshot; changed files will be skipped.',
+    }
+    if not context.approve_preview('Upload the scanned backup to Artifact?', preview,
+                                   title='Personal Mac backup plan', timeout=180):
         emit('Not approved — no ZIP was created or uploaded.')
         return {'uploaded': False, 'reason': 'rejected', 'warnings': warnings}
 

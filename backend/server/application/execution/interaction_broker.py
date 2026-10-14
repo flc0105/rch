@@ -15,8 +15,61 @@ class InteractionBroker:
     def _public(item):
         return {key: item[key] for key in (
             'interaction_id', 'task_id', 'client_id', 'tab_id', 'kind', 'title', 'message',
-            'timeout_seconds', 'placeholder', 'options',
+            'timeout_seconds', 'placeholder', 'options', 'preview',
         )}
+
+    @staticmethod
+    def _normalize_preview(value):
+        """Small, plain-text-only presentation schema; never accepts HTML/JS."""
+        if not isinstance(value, dict):
+            raise ValueError('Preview must be an object')
+        if set(value) - {'summary', 'columns', 'rows', 'details', 'notice'}:
+            raise ValueError('Unsupported preview field')
+        def short(value, limit=500):
+            if not isinstance(value, str) or len(value) > limit:
+                raise ValueError('Preview text is invalid or too long')
+            return value
+        result = {'summary': [], 'columns': [], 'rows': [], 'details': [], 'notice': ''}
+        summary = value.get('summary', [])
+        if not isinstance(summary, list) or len(summary) > 16:
+            raise ValueError('Preview summary must be a list of <=16 entries')
+        for pair in summary:
+            if not isinstance(pair, dict):
+                raise ValueError('Invalid preview summary entry')
+            result['summary'].append({'label': short(pair.get('label'), 100),
+                                      'value': short(pair.get('value'), 1000)})
+        if len(result['summary']) > 16:
+            raise ValueError('Preview summary exceeds 16 entries')
+        columns = value.get('columns', [])
+        if not isinstance(columns, list) or len(columns) > 8:
+            raise ValueError('Preview columns must be a list of <=8 items')
+        for column in columns:
+            if not isinstance(column, dict):
+                raise ValueError('Invalid preview column')
+            key = short(column.get('key'), 40)
+            if not key or not key.replace('_', '').isalnum():
+                raise ValueError('Preview column key must be alphanumeric')
+            result['columns'].append({'key': key, 'label': short(column.get('label'), 100)})
+        keys = [col['key'] for col in result['columns']]
+        if len(set(keys)) != len(keys):
+            raise ValueError('Duplicate preview columns')
+        rows = value.get('rows', [])
+        if not isinstance(rows, list) or len(rows) > 100 or (rows and not keys):
+            raise ValueError('Preview rows require columns (max 100 rows)')
+        for row in rows:
+            if not isinstance(row, dict) or set(row) - set(keys):
+                raise ValueError('Preview row contains unknown fields')
+            result['rows'].append({key: short(row.get(key, ''), 500) for key in keys})
+        details = value.get('details', [])
+        if not isinstance(details, list) or len(details) > 16:
+            raise ValueError('Preview details must be a list of <=16 items')
+        for detail in details:
+            if not isinstance(detail, dict):
+                raise ValueError('Invalid preview detail')
+            result['details'].append({'title': short(detail.get('title'), 120),
+                                      'content': short(detail.get('content'), 4000)})
+        result['notice'] = short(value.get('notice', ''), 1000)
+        return result
 
     def pending(self, tab_id):
         with self._lock:
@@ -24,8 +77,8 @@ class InteractionBroker:
                     if item['tab_id'] == str(tab_id or '').strip() and not item['event'].is_set()]
 
     def request(self, *, task_id, client_id, tab_id, kind, message, title='',
-                timeout_seconds=90, placeholder='', options=None, is_active=None):
-        if kind not in ('confirm', 'input', 'secret', 'select'):
+                timeout_seconds=90, placeholder='', options=None, preview=None, is_active=None):
+        if kind not in ('confirm', 'input', 'secret', 'select', 'preview'):
             raise ValueError('Unsupported interaction kind')
         if not str(task_id or '').strip() or not str(client_id or '').strip():
             raise ValueError('An active task is required for interaction')
@@ -39,13 +92,14 @@ class InteractionBroker:
             options = list(options)
         else:
             options = []
+        preview = self._normalize_preview(preview) if kind == 'preview' else None
         timeout_seconds = max(1, min(int(timeout_seconds), 180))
         item = {
             'interaction_id': uuid.uuid4().hex,
             'task_id': str(task_id), 'client_id': str(client_id),
             'tab_id': str(tab_id or '').strip(), 'kind': kind,
             'title': str(title or '')[:180], 'message': str(message or '')[:3000],
-            'placeholder': str(placeholder or '')[:200], 'options': options, 'timeout_seconds': timeout_seconds,
+            'placeholder': str(placeholder or '')[:200], 'options': options, 'preview': preview, 'timeout_seconds': timeout_seconds,
             'event': threading.Event(), 'status': 'pending', 'value': None,
             'deadline': time.monotonic() + timeout_seconds,
         }
@@ -101,6 +155,6 @@ class InteractionBroker:
                 item['status'] = 'answered'
             else:
                 item['status'] = 'rejected'
-                item['value'] = False if item['kind'] == 'confirm' else None
+                item['value'] = False if item['kind'] in ('confirm', 'preview') else None
             item['event'].set()
             return {'interaction_id': item['interaction_id'], 'status': item['status']}

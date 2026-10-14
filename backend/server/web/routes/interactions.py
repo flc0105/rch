@@ -50,6 +50,7 @@ def create_interaction_blueprint(server_instance):
                 task_id=task_id, client_id=client_id, tab_id=task.get('tab_id') or '',
                 kind=body.get('kind'), message=body.get('message'),
                 title=body.get('title'), placeholder=body.get('placeholder'), options=body.get('options'),
+                preview=body.get('preview'),
                 timeout_seconds=body.get('timeout_seconds', 90),
                 is_active=lambda: (conn.get_foreground_task() or {}).get('task_id') == task_id,
             )

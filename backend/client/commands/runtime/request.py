@@ -13,3 +13,4 @@ class CommandExecutionRequest:
 
     command_id: int
     timeout: float | None = None
+    interaction_grant: dict | None = None

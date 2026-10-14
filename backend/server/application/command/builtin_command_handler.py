@@ -28,10 +28,8 @@ class BuiltinCommandHandler:
          'help': 'disconnect | Confirm then close current client connection', 'source': 'server'},
         {'name': 'interaction_advanced_demo', 'template': 'interaction_advanced_demo',
          'help': 'interaction_advanced_demo | Test select and secret interactions', 'source': 'server'},
-        {'name': 'kill_process_preview', 'template': 'kill_process_preview --pid ',
-         'help': 'kill_process_preview --pid N [--name NAME] [--force] | Preview and approve Client process termination; keeps original kill_process unchanged', 'source': 'server'},
-        {'name': 'kill_by_port', 'template': 'kill_by_port --port ',
-         'help': 'kill_by_port --port N [--force] | Preview and approve Client port owner termination', 'source': 'server'},
+        {'name': 'interaction_preview_demo', 'template': 'interaction_preview_demo',
+         'help': 'interaction_preview_demo | Test structured preview and approval without side effects', 'source': 'server'},
         {
             'name': 'interaction_demo',
             'template': 'interaction_demo',
@@ -172,7 +170,7 @@ class BuiltinCommandHandler:
             conn=self.conn,
         )
         self.interactions = BuiltinInteractionSupport(server=self.server, conn=self.conn)
-        self.advanced_builtins = AdvancedBuiltinSupport(self.conn, self.interactions, self.remote_execution_service)
+        self.advanced_builtins = AdvancedBuiltinSupport(self.conn, self.interactions)
 
         self.external_tool_cli_support = ExternalToolCliBuiltinSupport(
             server=self.server,
@@ -285,8 +283,28 @@ class BuiltinCommandHandler:
     def interaction_advanced_demo(self, arg=''):
         yield from self.advanced_builtins.advanced_demo(arg)
 
-    def kill_process_preview(self, arg=''):
-        yield from self.advanced_builtins.kill(arg)
+    def interaction_preview_demo(self, arg=''):
+        if str(arg or '').strip():
+            yield 0, 'Usage: interaction_preview_demo'
+            return
+        preview = {
+            'summary': [
+                {'label': 'Items', 'value': '2'},
+                {'label': 'Total size', 'value': '12 MiB'},
+            ],
+            'columns': [{'key': 'item', 'label': 'Item'},
+                        {'key': 'files', 'label': 'Files'},
+                        {'key': 'size', 'label': 'Size'}],
+            'rows': [{'item': 'Documents', 'files': '5', 'size': '3 MiB'},
+                     {'item': 'Projects', 'files': '12', 'size': '9 MiB'}],
+            'details': [{'title': 'Example entries',
+                         'content': 'Documents: /example/Documents\nProjects: /example/Projects'}],
+            'notice': 'Demo only; no files, processes or connections will be modified.',
+        }
+        try:
+            accepted = self.interactions.approve_preview(
+                'This is a harmless plan preview.', preview, title='Preview demo')
+            yield 1, f'Preview demo result: {"approved" if accepted else "rejected"}; no action executed.'
+        except BuiltinInteractionError as exc:
+            yield 0, f'Preview demo cancelled: {exc}'
 
-    def kill_by_port(self, arg=''):
-        yield from self.advanced_builtins.kill(arg, by_port=True)

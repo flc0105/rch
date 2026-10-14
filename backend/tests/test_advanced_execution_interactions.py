@@ -11,6 +11,8 @@ import pytest
 from server.application.execution.interaction_broker import InteractionBroker
 from server.application.tasks.task_store import WebTaskStore
 from server.application.command.advanced_builtin_support import AdvancedBuiltinSupport
+from client.commands.common.mixins.process_ops import CommandProcessMixin
+from client.commands.common.services.process import approved_process_service as aps
 from server.application.command.builtin_command_handler import BuiltinCommandHandler
 from client.runtime.sdk import interactions
 
@@ -95,20 +97,20 @@ def test_client_sdk_select_roundtrip(monkeypatch):
 
 def test_existing_client_kill_process_not_shadowed():
     assert not hasattr(BuiltinCommandHandler, 'kill_process')
-    assert hasattr(BuiltinCommandHandler, 'kill_process_preview')
-    assert hasattr(BuiltinCommandHandler, 'kill_by_port')
+    assert not hasattr(BuiltinCommandHandler, 'kill_process_preview')
+    assert not hasattr(BuiltinCommandHandler, 'kill_by_port')
+    assert hasattr(CommandProcessMixin.kill_process, 'help')
+    assert hasattr(CommandProcessMixin.kill_process_preview, 'help')
+    assert hasattr(CommandProcessMixin.kill_by_port, 'help')
 
 
 def test_process_arguments_and_preview():
-    parse = AdvancedBuiltinSupport._parse_process_args
-    assert parse('--pid 234 --name test -9', by_port=False) == {'pid': 234, 'name': 'test', 'force': True}
-    assert parse('--port 8080 --force', by_port=True) == {'port': 8080, 'force': True}
-    with pytest.raises(ValueError):
-        parse('--port 0', by_port=True)
-    with pytest.raises(ValueError):
-        parse('--pid 1', by_port=False)
-    with pytest.raises(ValueError):
-        parse('--pid 22 --pid 23', by_port=False)
+    assert aps.parse_target('234 -9') == {'pid': 234, 'force': True}
+    assert aps.parse_target('test') == {'name': 'test', 'force': False}
+    assert aps.parse_target('8080 -9', by_port=True) == {'port': 8080, 'force': True}
+    for bad, port in [('0', True), ('--port 8080', True), ('--pid 22', False), ('1', False)]:
+        with pytest.raises(aps.ProcessApprovalError):
+            aps.parse_target(bad, by_port=port)
 
 
 def example_row():
@@ -119,45 +121,41 @@ def example_row():
             'listening': [{'port': 8080, 'address': '127.0.0.1', 'protocol': 'tcp'}]}
 
 
-def test_process_refusal_never_sends_signal():
-    calls = []
+def test_process_refusal_never_sends_signal(monkeypatch):
     class Interactions:
-        def confirm(self, message, **kwargs):
-            assert 'Executable: /usr/local/bin/python' in message
+        def __init__(self, owner): pass
+        def approve(self, message, preview):
+            assert preview['summary'][3]['value'] == '/usr/local/bin/python'
             return False
-    support = AdvancedBuiltinSupport(SimpleNamespace(), Interactions(), None)
-    def remote(args):
-        calls.append(args)
-        return {'processes': [example_row()]}
-    support._remote = remote
-    output = list(support.kill('--port 8080', by_port=True))
-    assert len(calls) == 1 and calls[0]['action'] == 'inspect'
-    assert output[-1][0] == 0
+    monkeypatch.setattr(aps, 'ClientCommandInteractions', Interactions)
+    monkeypatch.setattr(aps, 'find_targets', lambda *a: [example_row()])
+    monkeypatch.setattr(aps, 'terminate_verified', lambda *a, **k: pytest.fail('must not signal'))
+    owner = SimpleNamespace(_set_timeout=lambda t: None, _ensure_not_interrupted=lambda **k: None,
+                            _send_interim_result=lambda *a: None)
+    status, message = CommandProcessMixin._run_approved_process_command(owner, '8080', by_port=True)
+    assert status == 1 and 'rejected' in message
 
 
-def test_process_approval_executes_with_verified_snapshot():
-    calls = []
+def test_process_approval_executes_with_verified_snapshot(monkeypatch):
+    sent = []
     class Interactions:
-        def confirm(self, message, **kwargs):
-            return True
-    support = AdvancedBuiltinSupport(SimpleNamespace(), Interactions(), None)
-    def remote(args):
-        calls.append(args)
-        return {'processes': [example_row()]} if args['action'] == 'inspect' else {'pid': 2324, 'signal': 'SIGTERM'}
-    support._remote = remote
-    output = list(support.kill('--pid 2324'))
-    assert output[-1][0] == 1
-    assert calls[1]['action'] == 'terminate'
-    assert calls[1]['expected_name'] == 'app'
-    assert calls[1]['created_at'] == 2342.3
-    assert calls[1]['force'] is False
+        def __init__(self, owner): pass
+        def approve(self, message, preview): return True
+    monkeypatch.setattr(aps, 'ClientCommandInteractions', Interactions)
+    monkeypatch.setattr(aps, 'find_targets', lambda *a: [example_row()])
+    monkeypatch.setattr(aps, 'terminate_verified', lambda row, **kwargs: (sent.append((row, kwargs)), 'SIGTERM')[1])
+    owner = SimpleNamespace(_set_timeout=lambda t: None, _ensure_not_interrupted=lambda **k: None,
+                            _send_interim_result=lambda *a: None)
+    status, message = CommandProcessMixin._run_approved_process_command(owner, '2324')
+    assert status == 1 and 'SIGTERM' in message
+    assert sent[0][0]['created_at'] == 2342.3 and sent[0][1]['force'] is False
 
 
 def test_disconnection_refusal_preserves_connection():
     events = []
     conn = SimpleNamespace(session_info=SimpleNamespace(client_id='client-A', hostname='host'),
                            close=lambda: events.append('closed'))
-    support = AdvancedBuiltinSupport(conn, SimpleNamespace(confirm=lambda *a, **kw: False), None)
+    support = AdvancedBuiltinSupport(conn, SimpleNamespace(confirm=lambda *a, **kw: False))
     result = list(support.disconnect())
     assert result[-1][0] == 0 and not events
 
@@ -175,7 +173,7 @@ def test_plan_script_separate_and_metadata_declares_grants():
     assert meta['name'] == 'mac/recon/personal_mac_backup_preview'
     assert 'interactions:request' in meta['api_grants'] and 'scripts:read' in meta['api_grants']
     assert 'path_list' in [arg['type'] for arg in meta['params']]
-    assert source.index('scan_plan(selected, today)') < source.index('context.confirm(summary') < source.index('artifact.save(')
+    assert source.index('scan_plan(selected, today)') < source.index('context.approve_preview(') < source.index('artifact.save(')
 
 
 def test_backup_preview_reject_does_not_create_artifact(tmp_path, monkeypatch):
@@ -193,7 +191,7 @@ def test_backup_preview_reject_does_not_create_artifact(tmp_path, monkeypatch):
     params['projects'] = []
     messages = []
     monkeypatch.setattr(scope['context'], 'progress', lambda value, **kw: messages.append(value))
-    monkeypatch.setattr(scope['context'], 'confirm', lambda *a, **kw: False)
+    monkeypatch.setattr(scope['context'], 'approve_preview', lambda *a, **kw: False)
     monkeypatch.setattr(scope['artifact'], 'save', lambda *a, **kw: pytest.fail('Artifact must not upload after rejection'))
     result = scope['main'](params)
     assert result['uploaded'] is False
@@ -222,7 +220,7 @@ def test_backup_preview_approves_exact_filtered_plan(tmp_path, monkeypatch):
             seen['contents'] = [archive.read(x) for x in seen['entries']]
         return {'artifact_id': 'mock-artifact'}
     monkeypatch.setattr(scope['context'], 'progress', lambda *args, **kwargs: None)
-    monkeypatch.setattr(scope['context'], 'confirm', lambda *a, **kw: True)
+    monkeypatch.setattr(scope['context'], 'approve_preview', lambda *a, **kw: True)
     monkeypatch.setattr(scope['artifact'], 'save', save)
     result = scope['main'](params)
     assert result['uploaded'] is True
@@ -246,92 +244,69 @@ def test_backup_source_mutation_after_preview_skipped(tmp_path, monkeypatch):
         file.write_text('after')
         return True
     monkeypatch.setattr(scope['context'], 'progress', lambda *a, **kw: None)
-    monkeypatch.setattr(scope['context'], 'confirm', approve)
+    monkeypatch.setattr(scope['context'], 'approve_preview', approve)
     monkeypatch.setattr(scope['artifact'], 'save', lambda *a, **kw: pytest.fail('Do not upload empty verified snapshot'))
     result = scope['main'](params)
     assert result['uploaded'] is False
 
 
-def test_remote_process_rejects_pid_reuse_before_signal(monkeypatch, capsys):
-    import sys
-    from server.application.command.process_control_client_source import PROCESS_CONTROL_SOURCE
+def test_remote_process_rejects_pid_reuse_before_signal(monkeypatch):
+    import psutil
     signals = []
-    class FakeProc:
-        pid = 2324
+    class Proc:
         def create_time(self): return 200.0
         def name(self): return 'app'
         def exe(self): return '/usr/bin/app'
         def terminate(self): signals.append('SIGTERM')
         def kill(self): signals.append('SIGKILL')
-    class FakePsutil:
-        class Error(Exception): pass
-        class NoSuchProcess(Error): pass
-        class ZombieProcess(Error): pass
-        class AccessDenied(Error): pass
-        def Process(self, pid): return FakeProc()
-    monkeypatch.setitem(sys.modules, 'psutil', FakePsutil())
-    exec(PROCESS_CONTROL_SOURCE, {'kwargs': {
-        'action': 'terminate', 'pid': 2324, 'created_at': 100.0,
-        'expected_name': 'app', 'expected_exe': '/usr/bin/app', 'force': True,
-    }})
-    text = capsys.readouterr().out
-    response = json.loads(text.split('__RCH_PROCESS_CONTROL_RESULT__:')[1])
-    assert not response['ok'] and 'identity changed' in response['error']
+    monkeypatch.setattr(psutil, 'Process', lambda pid: Proc())
+    row = {'pid': 2324, 'created_at': 100.0, 'name': 'app', 'exec_path': '/usr/bin/app'}
+    with pytest.raises(aps.ProcessApprovalError, match='identity changed'):
+        aps.terminate_verified(row, force=True)
     assert not signals
 
 
-def test_remote_process_graceful_signal_only_after_identity_verified(monkeypatch, capsys):
-    import sys
-    from server.application.command.process_control_client_source import PROCESS_CONTROL_SOURCE
+def test_remote_process_graceful_signal_only_after_identity_verified(monkeypatch):
+    import psutil
     signals = []
-    class FakeProc:
-        pid = 2324
+    class Proc:
         def create_time(self): return 100.0
         def name(self): return 'app'
         def exe(self): return '/usr/bin/app'
         def terminate(self): signals.append('SIGTERM')
         def kill(self): signals.append('SIGKILL')
-    class FakePsutil:
-        class Error(Exception): pass
-        class NoSuchProcess(Error): pass
-        class ZombieProcess(Error): pass
-        class AccessDenied(Error): pass
-        def Process(self, pid): return FakeProc()
-    monkeypatch.setitem(sys.modules, 'psutil', FakePsutil())
-    exec(PROCESS_CONTROL_SOURCE, {'kwargs': {
-        'action': 'terminate', 'pid': 2324, 'created_at': 100.0,
-        'expected_name': 'app', 'expected_exe': '/usr/bin/app', 'force': False,
-    }})
-    response = json.loads(capsys.readouterr().out.split('__RCH_PROCESS_CONTROL_RESULT__:')[1])
-    assert response['ok'] and signals == ['SIGTERM']
+    monkeypatch.setattr(psutil, 'Process', lambda pid: Proc())
+    row = {'pid': 2324, 'created_at': 100.0, 'name': 'app', 'exec_path': '/usr/bin/app'}
+    assert aps.terminate_verified(row, force=False) == 'SIGTERM'
+    assert signals == ['SIGTERM']
 
 
-def test_process_interactive_pid_prompt_still_requires_approval():
-    calls = []
+def test_process_interactive_pid_prompt_still_requires_approval(monkeypatch):
     class Interactions:
-        def select(self, *args, **kwargs): return 'PID'
-        def ask(self, *args, **kwargs): return '2324'
-        def confirm(self, *args, **kwargs): return False
-    support = AdvancedBuiltinSupport(SimpleNamespace(), Interactions(), None)
-    def remote(args):
-        calls.append(args)
-        return {'processes': [example_row()]}
-    support._remote = remote
-    result = list(support.kill())
-    assert calls == [{'force': False, 'pid': 2324, 'action': 'inspect'}]
-    assert result[-1][0] == 0
+        def __init__(self, owner): pass
+        def select(self, *a, **k): return 'PID'
+        def ask(self, *a, **k): return '2324'
+        def approve(self, *a, **k): return False
+    monkeypatch.setattr(aps, 'ClientCommandInteractions', Interactions)
+    seen = []
+    monkeypatch.setattr(aps, 'find_targets', lambda criteria: (seen.append(criteria), [example_row()])[1])
+    monkeypatch.setattr(aps, 'terminate_verified', lambda *a, **k: pytest.fail('must not signal'))
+    owner = SimpleNamespace(_set_timeout=lambda t: None, _ensure_not_interrupted=lambda **k: None,
+                            _send_interim_result=lambda *a: None)
+    status, _ = CommandProcessMixin._run_approved_process_command(owner)
+    assert status == 1 and seen[0]['pid'] == 2324
 
 
-def test_process_interactive_port_prompt_still_requires_approval():
-    calls = []
+def test_process_interactive_port_prompt_still_requires_approval(monkeypatch):
     class Interactions:
-        def ask(self, *args, **kwargs): return '8080'
-        def confirm(self, *args, **kwargs): return False
-    support = AdvancedBuiltinSupport(SimpleNamespace(), Interactions(), None)
-    def remote(args):
-        calls.append(args)
-        return {'processes': [example_row()]}
-    support._remote = remote
-    result = list(support.kill(by_port=True))
-    assert calls == [{'force': False, 'port': 8080, 'action': 'inspect'}]
-    assert result[-1][0] == 0
+        def __init__(self, owner): pass
+        def ask(self, *a, **k): return '8080'
+        def approve(self, *a, **k): return False
+    monkeypatch.setattr(aps, 'ClientCommandInteractions', Interactions)
+    seen = []
+    monkeypatch.setattr(aps, 'find_targets', lambda criteria: (seen.append(criteria), [example_row()])[1])
+    monkeypatch.setattr(aps, 'terminate_verified', lambda *a, **k: pytest.fail('must not signal'))
+    owner = SimpleNamespace(_set_timeout=lambda t: None, _ensure_not_interrupted=lambda **k: None,
+                            _send_interim_result=lambda *a: None)
+    status, _ = CommandProcessMixin._run_approved_process_command(owner, by_port=True)
+    assert status == 1 and seen[0]['port'] == 8080

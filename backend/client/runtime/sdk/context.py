@@ -217,6 +217,12 @@ def ask(message: str, *, title='Input required', timeout=90, placeholder='', sec
     return request_input(message, title=title, timeout=timeout, placeholder=placeholder, secret=secret)
 
 
+def approve_preview(message: str, preview: dict, *, title='Review execution plan', timeout=90) -> bool:
+    """Show a structured preview and require explicit approval before continuing."""
+    from client.runtime.sdk.interactions import approve_preview as request_preview
+    return request_preview(message, preview, title=title, timeout=timeout)
+
+
 def get_script_grant() -> dict:
     value = get_current_context().get('script_grant', {})
     return dict(value) if isinstance(value, dict) else {}

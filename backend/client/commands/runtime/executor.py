@@ -56,7 +56,11 @@ class CommandExecutor:
         timeout = self._extract_timeout(payload_options)
         if timeout is None:
             timeout = self._extract_timeout(options)
-        return CommandExecutionRequest(command_id=command_id, timeout=timeout)
+        grant = None
+        if isinstance(options, dict) and isinstance(options.get('__script_grant__'), dict):
+            grant = options['__script_grant__']
+        return CommandExecutionRequest(command_id=command_id, timeout=timeout,
+                                       interaction_grant=grant)
 
     def _get_or_create_execution_context(self, command_id, timeout=None):
         return self.context_store.get_or_create(command_id, timeout=timeout)
@@ -82,6 +86,7 @@ class CommandExecutor:
             commands.bind_execution(request.command_id, execution_context)
         else:
             commands.command_id = request.command_id
+        commands._interaction_grant = request.interaction_grant
         return commands
 
     def _prepare_commands(self, request: CommandExecutionRequest):
@@ -100,7 +105,10 @@ class CommandExecutor:
     def execute_bound_request(self, request: CommandExecutionRequest, invoke: Callable[[Any], Any]):
         def _runner():
             commands = self._prepare_commands(request)
-            return invoke(commands)
+            try:
+                return invoke(commands)
+            finally:
+                commands._interaction_grant = None
 
         return self._execute_with_cleanup(request.command_id, _runner)
 
