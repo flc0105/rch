@@ -1,5 +1,5 @@
 SCRIPT_METADATA = {
-    "name": "macos/backup/personal_mac_backup",
+    "name": "mac/recon/personal_mac_backup",
     "display_name": "Personal Mac Backup to Artifact",
     "description": "Backup selected shell, browser, software inventory and Typora data into a dated ZIP artifact.",
     "platforms": ["macos"],
@@ -138,10 +138,10 @@ def main(params):
                             'common/browser/get_chromium_bookmarks', {'browser': 'chrome'},
                             f'browser/chrome_bookmarks_{today}.json'),
                         'include_homebrew': (
-                            'macos/recon/brew_packages', {},
+                            'mac/recon/backup_brew_packages', {},
                             f'software/homebrew_packages_{today}.json'),
                         'include_installed_apps': (
-                            'mac/gather/get_installed_apps', {},
+                            'mac/recon/backup_installed_apps', {},
                             f'software/installed_apps_{today}.json'),
                     }[flag]
                     try:
