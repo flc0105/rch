@@ -183,6 +183,9 @@ def resolve_param_values(
         name = spec.get('name') or ''
         has_value = name in raw
         raw_value = raw.get(name)
+        if has_value and raw_value == '' and spec.get('allow_empty') and not spec.get('required'):
+            resolved[name] = ''
+            continue
         if not has_value or is_missing_param_value(spec, raw_value):
             if 'default' in spec and spec.get('default') is not None:
                 raw_value = spec.get('default')
