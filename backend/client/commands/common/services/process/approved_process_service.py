@@ -58,30 +58,42 @@ class ClientCommandInteractions:
     def approve(self, message, preview):
         result = self.request('preview', message, preview=preview,
                               title='Approve process termination', timeout=120)
-        return result.get('status') == 'answered' and result.get('value') is True
+        if result.get('status') != 'answered':
+            return None
+        choice = result.get('value')
+        if not isinstance(choice, dict) or type(choice.get('force')) is not bool or set(choice) != {'force'}:
+            raise ProcessApprovalError('Invalid Force switch response from approval')
+        return choice
 
 
 def parse_target(text, *, by_port=False):
-    """RCH shell-like positional grammar: <port|pid|name> [-9]."""
+    """RCH shell-like grammar: <port|pid|name> [-9].
+
+    A trailing -9 sets only the initial Preview Force switch state. The
+    approved switch value, not the command text, decides the actual signal.
+    """
     parts = shlex.split(str(text or '').strip())
-    force = bool(parts and parts[-1] == '-9')
-    if force:
-        parts.pop()
-    if len(parts) != 1:
-        raise ProcessApprovalError('Usage: ' + ('kill_by_port <port> [-9]' if by_port
-                                               else 'kill_process_preview <pid|name> [-9]'))
+    usage = ('kill_by_port <port> [-9]' if by_port
+             else 'kill_process_preview <pid|name> [-9]')
+    if not (len(parts) == 1 or (len(parts) == 2 and parts[1] == '-9')):
+        raise ProcessApprovalError('Usage: ' + usage)
     target = parts[0]
+    force_default = len(parts) == 2
     if by_port:
         if not target.isdecimal() or not 1 <= int(target) <= 65535:
             raise ProcessApprovalError('Port must be an integer from 1 to 65535')
-        return {'port': int(target), 'force': force}
-    if target.isdecimal():
+        criteria = {'port': int(target)}
+    elif target.isdecimal():
         if int(target) <= 1:
             raise ProcessApprovalError('Protected PID')
-        return {'pid': int(target), 'force': force}
-    if target == '-9' or target.startswith('-'):
+        criteria = {'pid': int(target)}
+    elif target.startswith('-'):
         raise ProcessApprovalError('Expected a PID or process name')
-    return {'name': target, 'force': force}
+    else:
+        criteria = {'name': target}
+    if force_default:
+        criteria['force'] = True
+    return criteria
 
 
 def _port_owners_via_lsof(port):
@@ -175,12 +187,12 @@ def find_targets(criteria):
     return rows
 
 
-def build_preview(row, *, force, port=None):
+def build_preview(row, *, port=None, force_default=False):
     summary = [
         {'label': key, 'value': str(value)} for key, value in (
             ('PID', row['pid']), ('Name', row['name']), ('User', row['user']),
             ('Executable', row['exec_path']),
-            ('Signal', 'SIGKILL (-9)' if force else 'SIGTERM'),
+            ('Initial signal (editable below)', 'SIGKILL' if force_default else 'SIGTERM'),
         )
     ]
     detail_text = '\n'.join([
@@ -200,6 +212,11 @@ def build_preview(row, *, force, port=None):
         'details': [{'title': 'Process details', 'content': detail_text}],
         'notice': ('Listening port ownership will be rechecked before termination. '
                    if port else '') + 'Process identity will be rechecked before sending a signal.',
+        'switches': [{
+            'key': 'force', 'label': 'Force termination (SIGKILL / -9)',
+            'description': 'Disabled: SIGTERM. Enabled: immediate SIGKILL; no graceful shutdown.',
+            'default': bool(force_default),
+        }],
     }
 
 

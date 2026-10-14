@@ -23,7 +23,7 @@ class InteractionBroker:
         """Small, plain-text-only presentation schema; never accepts HTML/JS."""
         if not isinstance(value, dict):
             raise ValueError('Preview must be an object')
-        if set(value) - {'summary', 'columns', 'rows', 'details', 'notice'}:
+        if set(value) - {'summary', 'columns', 'rows', 'details', 'notice', 'switches'}:
             raise ValueError('Unsupported preview field')
         def short(value, limit=500):
             if not isinstance(value, str) or len(value) > limit:
@@ -69,6 +69,28 @@ class InteractionBroker:
             result['details'].append({'title': short(detail.get('title'), 120),
                                       'content': short(detail.get('content'), 4000)})
         result['notice'] = short(value.get('notice', ''), 1000)
+        if 'switches' in value:
+            switches = value['switches']
+            if not isinstance(switches, list) or len(switches) > 8:
+                raise ValueError('Preview switches must be a list (max 8)')
+            result['switches'] = []
+            for switch in switches:
+                if not isinstance(switch, dict) or set(switch) - {'key', 'label', 'description', 'default'}:
+                    raise ValueError('Invalid Preview switch')
+                key = short(switch.get('key'), 40)
+                if not key or not key.replace('_', '').isalnum():
+                    raise ValueError('Invalid Preview switch key')
+                default = switch.get('default', False)
+                if type(default) is not bool:
+                    raise ValueError('Preview switch default must be boolean')
+                result['switches'].append({
+                    'key': key, 'label': short(switch.get('label'), 160),
+                    'description': short(switch.get('description', ''), 500),
+                    'default': default,
+                })
+            ids = [s['key'] for s in result['switches']]
+            if len(set(ids)) != len(ids):
+                raise ValueError('Duplicate Preview switch keys')
         return result
 
     def pending(self, tab_id):
@@ -150,7 +172,17 @@ class InteractionBroker:
                     if item['kind'] == 'select' and value not in item['options']:
                         raise ValueError('Selected value is not among offered options')
                     item['value'] = value
+                elif item['kind'] == 'preview' and item['preview'] and item['preview'].get('switches'):
+                    switches = item['preview']['switches']
+                    expected = {switch['key'] for switch in switches}
+                    if not isinstance(value, dict) or set(value) != expected:
+                        raise ValueError('Preview switch reply must provide exactly the offered keys')
+                    if any(type(flag) is not bool for flag in value.values()):
+                        raise ValueError('Preview switch values must be boolean')
+                    item['value'] = dict(value)
                 else:
+                    if item['kind'] == 'preview' and value is not None:
+                        raise ValueError('Unexpected Preview response value')
                     item['value'] = True
                 item['status'] = 'answered'
             else:

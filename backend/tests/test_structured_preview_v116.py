@@ -27,8 +27,8 @@ def test_port_candidate_and_positional_grammar():
     assert not any(c['name'] == 'kill_by_port' for c in BuiltinCommandHandler.WEB_COMMAND_TEMPLATES)
     from core.utils.parsing import parse as split_command
     assert split_command('kill_by_port 9999') == ('kill_by_port', '9999')
-    assert aps.parse_target('9999', by_port=True) == {'force': False, 'port': 9999}
-    assert aps.parse_target('9999 -9', by_port=True) == {'force': True, 'port': 9999}
+    assert aps.parse_target('9999', by_port=True) == {'port': 9999}
+    assert aps.parse_target('9999 -9', by_port=True) == {'port': 9999, 'force': True}
     for bad in ('--port 9999', '9999 8888', '9999 foo', '0', '65536', ''):
         with pytest.raises(aps.ProcessApprovalError):
             aps.parse_target(bad, by_port=True)
@@ -40,7 +40,7 @@ def test_port_command_inspects_and_previews_before_signal(monkeypatch):
         def __init__(self, owner): pass
         def approve(self, message, preview):
             previews.append(preview)
-            return False
+            return None
     monkeypatch.setattr(aps, 'ClientCommandInteractions', Interactions)
     monkeypatch.setattr(aps, 'find_targets', lambda args: [{
         'pid': 421, 'name': 'server', 'user': 'owner', 'exec_path': '/bin/server',

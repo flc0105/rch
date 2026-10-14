@@ -126,11 +126,12 @@ class CommandProcessMixin:
             if row['pid'] <= 1 or row['pid'] == __import__('os').getpid():
                 raise ProcessApprovalError('Protected process')
             self._send_interim_result(1, f'[PROCESS] Preview ready: PID={row["pid"]} {row["name"]}')
-            if not ui.approve('Approve termination of this Client process?',
-                              build_preview(row, force=criteria['force'], port=criteria.get('port'))):
+            switches = ui.approve('Approve termination of this Client process?',
+                                  build_preview(row, port=criteria.get('port'), force_default=criteria.get('force', False)))
+            if switches is None:
                 return 1, 'Termination rejected; no signal sent.'
             self._ensure_not_interrupted(fallback_timeout=240)
-            signame = terminate_verified(row, force=criteria['force'], port=criteria.get('port'))
+            signame = terminate_verified(row, force=switches['force'], port=criteria.get('port'))
             return 1, f'{signame} sent to PID {row["pid"]} on the connected Client (exit not guaranteed).'
         except (ValueError, ProcessApprovalError, OSError) as exc:
             return 0, f'Process operation cancelled/failed: {exc}'

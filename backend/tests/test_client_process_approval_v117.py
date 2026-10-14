@@ -43,9 +43,9 @@ def test_shell_like_registry_and_positional_grammar():
     assert not hasattr(BuiltinCommandHandler, 'kill_process_preview')
     assert all(c['name'] not in ('kill_by_port', 'kill_process_preview')
                for c in BuiltinCommandHandler.WEB_COMMAND_TEMPLATES)
-    assert aps.parse_target('9999', by_port=True) == {'port': 9999, 'force': False}
+    assert aps.parse_target('9999', by_port=True) == {'port': 9999}
     assert aps.parse_target('9999 -9', by_port=True) == {'port': 9999, 'force': True}
-    assert aps.parse_target('30565') == {'pid': 30565, 'force': False}
+    assert aps.parse_target('30565') == {'pid': 30565}
     assert aps.parse_target('python3 -9') == {'name': 'python3', 'force': True}
     with pytest.raises(aps.ProcessApprovalError):
         aps.parse_target('--pid 30565')
@@ -96,7 +96,7 @@ def test_client_interaction_transport_uses_bound_grant(monkeypatch):
     monkeypatch.setattr('client.http.client_api.ClientApiClient', Api)
     ui = aps.ClientCommandInteractions(SimpleNamespace(
         _interaction_grant={'token': 'bound'}, _ensure_not_interrupted=lambda **k: None))
-    assert not ui.approve('Proceed?', aps.build_preview(row(), force=False, port=9999))
+    assert not ui.approve('Proceed?', aps.build_preview(row(), port=9999))
     assert calls[0][1]['headers']['X-Script-Grant-Token'] == 'bound'
     assert calls[0][1]['json']['kind'] == 'preview'
 
@@ -104,7 +104,7 @@ def test_client_interaction_transport_uses_bound_grant(monkeypatch):
 def test_port_rejection_does_not_send_signal(monkeypatch):
     host, messages = owner()
     monkeypatch.setattr(aps, 'find_targets', lambda args: [row()])
-    monkeypatch.setattr(aps.ClientCommandInteractions, 'approve', lambda *a, **k: False)
+    monkeypatch.setattr(aps.ClientCommandInteractions, 'approve', lambda *a, **k: None)
     monkeypatch.setattr(aps, 'terminate_verified', lambda *a, **k: pytest.fail('No signal before approval'))
     status, output = CommandProcessMixin._run_approved_process_command(host, '9999', by_port=True)
     assert status == 1 and 'rejected' in output
@@ -115,9 +115,9 @@ def test_port_approved_verifies_target_before_signal(monkeypatch):
     host, messages = owner()
     called = []
     monkeypatch.setattr(aps, 'find_targets', lambda args: [row()])
-    monkeypatch.setattr(aps.ClientCommandInteractions, 'approve', lambda *a, **k: True)
+    monkeypatch.setattr(aps.ClientCommandInteractions, 'approve', lambda *a, **k: {'force': True})
     monkeypatch.setattr(aps, 'terminate_verified', lambda r, **kw: (called.append((r, kw)), 'SIGKILL')[1])
-    status, output = CommandProcessMixin._run_approved_process_command(host, '9999 -9', by_port=True)
+    status, output = CommandProcessMixin._run_approved_process_command(host, '9999', by_port=True)
     assert status == 1 and 'SIGKILL' in output
     assert called[0][0]['pid'] == 4199 and called[0][1] == {'force': True, 'port': 9999}
 

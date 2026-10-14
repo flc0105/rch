@@ -41,6 +41,28 @@ assert.equal(calls[2].body.value,undefined,'preview approval must not send input
 assert.ok(sfc.includes('<el-table'), 'structured preview must render table')
 assert.ok(sfc.includes('<el-descriptions'), 'structured preview must render summary')
 assert.ok(sfc.includes('<el-collapse'), 'preview details must be expandable')
+state.enqueue({interaction_id:'force-plan',kind:'preview',message:'Stop process', preview:{
+    switches:[{key:'force',label:'Force termination',default:false}],summary:[],columns:[],rows:[],details:[]
+}})
+assert.equal(state.switchValues.force,false,'force defaults off')
+state.switchValues.force = true
+await state.submit(true)
+assert.equal(calls[3].body.approved,true)
+assert.equal(calls[3].body.value.force,true,'force switch is sent in approval value')
+state.enqueue({interaction_id:'force-rejected',kind:'preview',message:'Stop process', preview:{
+    switches:[{key:'force',label:'Force termination',default:false}],summary:[],columns:[],rows:[],details:[]
+}})
+state.switchValues.force = true
+await state.submit(false)
+assert.equal(calls[4].body.value,undefined,'rejection must not send switch values')
+state.enqueue({interaction_id:'force-default-on',kind:'preview',message:'Stop process', preview:{
+    switches:[{key:'force',label:'Force termination',default:true}],summary:[],columns:[],rows:[],details:[]
+}})
+assert.equal(state.switchValues.force,true,'-9 preview must initialize force ON')
+state.switchValues.force = false
+await state.submit(true)
+assert.equal(calls[5].body.value.force,false,'UI can override -9 default to ordinary SIGTERM')
+assert.ok(sfc.includes('<el-switch'), 'preview must render switch')
 await state.reloadPending('tab-A')
 assert.equal(state.current.interaction_id,'recovered')
 state.resolved({interaction_id:'recovered'})

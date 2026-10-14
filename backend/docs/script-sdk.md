@@ -479,10 +479,12 @@ Presentation constraints: `summary` up to 16 label/value entries; `columns` up t
 
 Client shell-like process commands are registered with `@desc` and use positional arguments:
 
-- `kill_by_port <port> [-9]` (e.g. `kill_by_port 9999`); an omitted port prompts for input.
-- `kill_process_preview <pid|name> [-9]` (e.g. `kill_process_preview 30565`); an omitted target prompts for PID/name input.
+- `kill_by_port <port> [-9]` (e.g. `kill_by_port 9999 -9`); an omitted port prompts for input.
+- `kill_process_preview <pid|name> [-9]` (e.g. `kill_process_preview 30565 -9`); an omitted target prompts for PID/name input.
 
-Both commands run **on the connected Client**, never on the Server host, and call the same structured Preview/Approval Broker using a short-lived grant bound to the active Client command. Command candidates insert only the command name. The legacy `kill_process` is unchanged. A `-9` suffix selects SIGKILL; default is SIGTERM. No signal is sent without approval and identity revalidation.
+Both commands run **on the connected Client**, never on the Server host, and use the shared Preview/Approval Broker with a short-lived grant bound to the current Client command. Command candidates insert only the command name. The original `kill_process` is unchanged. The Preview contains a **Force termination** switch: omitted `-9` initializes it OFF; a trailing `-9` initializes it ON. The user may change the switch either way before approval. The **final approved UI switch value** decides the signal: OFF uses SIGTERM, ON uses SIGKILL. An unapproved command never sends a signal. No signal is sent without approval and identity revalidation. The `disconnect` example remains a Server builtin.
+
+For previews requiring optional boolean choices, add `switches: [{"key": "force", "label": "Force termination", "description": "...", "default": false}]` to the Preview schema. When no switches are requested, existing `approve_preview()` behavior and its boolean return remain unchanged; with switches, the Broker validates the explicitly offered boolean keys before returning them to the requesting Client command.
 
 Mac backup scripts remain separately callable:
 `mac/recon/personal_mac_backup` (direct),

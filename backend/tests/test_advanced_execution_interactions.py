@@ -105,10 +105,11 @@ def test_existing_client_kill_process_not_shadowed():
 
 
 def test_process_arguments_and_preview():
-    assert aps.parse_target('234 -9') == {'pid': 234, 'force': True}
-    assert aps.parse_target('test') == {'name': 'test', 'force': False}
+    assert aps.parse_target('234') == {'pid': 234}
+    assert aps.parse_target('test') == {'name': 'test'}
+    assert aps.parse_target('8080', by_port=True) == {'port': 8080}
     assert aps.parse_target('8080 -9', by_port=True) == {'port': 8080, 'force': True}
-    for bad, port in [('0', True), ('--port 8080', True), ('--pid 22', False), ('1', False)]:
+    for bad, port in [('0', True), ('--port 8080', True), ('--pid 22', False), ('1', False), ('8080 -9 -9', True)]:
         with pytest.raises(aps.ProcessApprovalError):
             aps.parse_target(bad, by_port=port)
 
@@ -126,7 +127,7 @@ def test_process_refusal_never_sends_signal(monkeypatch):
         def __init__(self, owner): pass
         def approve(self, message, preview):
             assert preview['summary'][3]['value'] == '/usr/local/bin/python'
-            return False
+            return None
     monkeypatch.setattr(aps, 'ClientCommandInteractions', Interactions)
     monkeypatch.setattr(aps, 'find_targets', lambda *a: [example_row()])
     monkeypatch.setattr(aps, 'terminate_verified', lambda *a, **k: pytest.fail('must not signal'))
@@ -140,7 +141,7 @@ def test_process_approval_executes_with_verified_snapshot(monkeypatch):
     sent = []
     class Interactions:
         def __init__(self, owner): pass
-        def approve(self, message, preview): return True
+        def approve(self, message, preview): return {'force': False}
     monkeypatch.setattr(aps, 'ClientCommandInteractions', Interactions)
     monkeypatch.setattr(aps, 'find_targets', lambda *a: [example_row()])
     monkeypatch.setattr(aps, 'terminate_verified', lambda row, **kwargs: (sent.append((row, kwargs)), 'SIGTERM')[1])
@@ -286,7 +287,7 @@ def test_process_interactive_pid_prompt_still_requires_approval(monkeypatch):
         def __init__(self, owner): pass
         def select(self, *a, **k): return 'PID'
         def ask(self, *a, **k): return '2324'
-        def approve(self, *a, **k): return False
+        def approve(self, *a, **k): return None
     monkeypatch.setattr(aps, 'ClientCommandInteractions', Interactions)
     seen = []
     monkeypatch.setattr(aps, 'find_targets', lambda criteria: (seen.append(criteria), [example_row()])[1])
@@ -301,7 +302,7 @@ def test_process_interactive_port_prompt_still_requires_approval(monkeypatch):
     class Interactions:
         def __init__(self, owner): pass
         def ask(self, *a, **k): return '8080'
-        def approve(self, *a, **k): return False
+        def approve(self, *a, **k): return None
     monkeypatch.setattr(aps, 'ClientCommandInteractions', Interactions)
     seen = []
     monkeypatch.setattr(aps, 'find_targets', lambda criteria: (seen.append(criteria), [example_row()])[1])

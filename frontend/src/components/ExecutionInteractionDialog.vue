@@ -43,6 +43,16 @@
             min-width="100"
           />
         </el-table>
+        <div v-if="current.preview.switches?.length" class="plan-switches">
+          <div v-for="item in current.preview.switches" :key="item.key" class="plan-switch-row">
+            <div class="plan-switch-description">
+              <strong>{{ item.label }}</strong>
+              <div v-if="item.description" class="plan-switch-help">{{ item.description }}</div>
+            </div>
+            <el-switch v-model="switchValues[item.key]" active-text="On" inactive-text="Off" />
+          </div>
+          <el-alert v-if="switchValues.force === true" title="Force termination selected: process will receive SIGKILL without graceful shutdown." type="warning" :closable="false" show-icon />
+        </div>
         <el-collapse v-if="current.preview.details?.length" class="plan-details">
           <el-collapse-item
             v-for="(detail, index) in current.preview.details"
@@ -76,7 +86,7 @@
     <template #footer>
       <el-button :disabled="submitting" @click="submit(false)">Reject / Cancel</el-button>
       <el-button type="primary" :loading="submitting" @click="submit(true)">
-        {{ current?.kind === 'preview' ? 'Approve plan' : current?.kind === 'confirm' ? 'Approve' : 'Continue' }}
+        {{ current?.kind === 'preview' ? (switchValues.force === true ? 'Approve force kill' : 'Approve plan') : current?.kind === 'confirm' ? 'Approve' : 'Continue' }}
       </el-button>
     </template>
   </el-dialog>
@@ -88,16 +98,22 @@ import { answerInteraction, listPendingInteractions } from '../api/interactionAp
 export default {
   name: 'ExecutionInteractionDialog',
   data() {
-    return { queue: [], inputValue: '', selectedValue: '', errorText: '', submitting: false }
+    return { queue: [], inputValue: '', selectedValue: '', switchValues: {}, errorText: '', submitting: false }
   },
   computed: {
     current() { return this.queue[0] || null },
   },
   methods: {
+    initializeSwitches() {
+      this.switchValues = Object.fromEntries(
+        (this.current?.preview?.switches || []).map(item => [item.key, item.default === true])
+      )
+    },
     enqueue(request) {
       if (!request?.interaction_id) return
       if (this.queue.some(item => item.interaction_id === request.interaction_id)) return
       this.queue.push(request)
+      if (this.queue.length === 1) this.initializeSwitches()
     },
     resolved(payload) {
       if (!payload?.interaction_id) return
@@ -105,6 +121,7 @@ export default {
       this.inputValue = ''
       this.selectedValue = ''
       this.errorText = ''
+      this.initializeSwitches()
     },
     async reloadPending(tabId) {
       if (!tabId) return
@@ -127,6 +144,9 @@ export default {
       try {
         await answerInteraction(request.interaction_id, {
           approved,
+          ...(approved && request.kind === 'preview' && request.preview?.switches?.length
+            ? { value: Object.fromEntries(request.preview.switches.map(item => [item.key, this.switchValues[item.key] === true])) }
+            : {}),
           ...(approved && !['confirm', 'preview'].includes(request.kind) ? { value: request.kind === 'select' ? this.selectedValue : this.inputValue } : {}),
         })
         this.resolved(request)
@@ -146,6 +166,10 @@ export default {
 .plan-notice { margin-bottom: 14px; }
 .plan-summary { margin-bottom: 14px; }
 .plan-table { margin-bottom: 10px; width: 100%; }
+.plan-switches { padding: 12px; margin: 12px 0; border: 1px solid var(--el-border-color); border-radius: 6px; }
+.plan-switch-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.plan-switch-description { flex: 1; font-size: 13px; }
+.plan-switch-help { color: var(--el-text-color-secondary); font-size: 12px; margin-top: 4px; }
 .plan-details { margin-top: 8px; }
 .plan-detail-content { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; font-size: 12px; }
 .interaction-error { color: var(--el-color-danger); font-size: 12px; }
