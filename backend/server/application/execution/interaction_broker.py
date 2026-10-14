@@ -15,7 +15,7 @@ class InteractionBroker:
     def _public(item):
         return {key: item[key] for key in (
             'interaction_id', 'task_id', 'client_id', 'tab_id', 'kind', 'title', 'message',
-            'timeout_seconds', 'placeholder',
+            'timeout_seconds', 'placeholder', 'options',
         )}
 
     def pending(self, tab_id):
@@ -24,18 +24,28 @@ class InteractionBroker:
                     if item['tab_id'] == str(tab_id or '').strip() and not item['event'].is_set()]
 
     def request(self, *, task_id, client_id, tab_id, kind, message, title='',
-                timeout_seconds=90, placeholder='', is_active=None):
-        if kind not in ('confirm', 'input', 'secret'):
+                timeout_seconds=90, placeholder='', options=None, is_active=None):
+        if kind not in ('confirm', 'input', 'secret', 'select'):
             raise ValueError('Unsupported interaction kind')
         if not str(task_id or '').strip() or not str(client_id or '').strip():
             raise ValueError('An active task is required for interaction')
+        if kind == 'select':
+            if not isinstance(options, (list, tuple)) or not (1 <= len(options) <= 24):
+                raise ValueError('Select requires 1-24 options')
+            if any(not isinstance(option, str) or not option or len(option) > 160 for option in options):
+                raise ValueError('Each select option must be a nonempty string (<=160 chars)')
+            if len(set(options)) != len(options):
+                raise ValueError('Select options must be unique')
+            options = list(options)
+        else:
+            options = []
         timeout_seconds = max(1, min(int(timeout_seconds), 180))
         item = {
             'interaction_id': uuid.uuid4().hex,
             'task_id': str(task_id), 'client_id': str(client_id),
             'tab_id': str(tab_id or '').strip(), 'kind': kind,
             'title': str(title or '')[:180], 'message': str(message or '')[:3000],
-            'placeholder': str(placeholder or '')[:200], 'timeout_seconds': timeout_seconds,
+            'placeholder': str(placeholder or '')[:200], 'options': options, 'timeout_seconds': timeout_seconds,
             'event': threading.Event(), 'status': 'pending', 'value': None,
             'deadline': time.monotonic() + timeout_seconds,
         }
@@ -80,9 +90,11 @@ class InteractionBroker:
             if not task or task.get('status') != 'running':
                 raise ValueError('Interaction task is no longer running')
             if approved:
-                if item['kind'] in ('input', 'secret'):
+                if item['kind'] in ('input', 'secret', 'select'):
                     if not isinstance(value, str) or len(value) > 4096:
                         raise ValueError('Input must be a string of at most 4096 characters')
+                    if item['kind'] == 'select' and value not in item['options']:
+                        raise ValueError('Selected value is not among offered options')
                     item['value'] = value
                 else:
                     item['value'] = True

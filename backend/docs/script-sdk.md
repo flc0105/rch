@@ -430,3 +430,20 @@ print("Approved operation:", label)
 `context.confirm()` returns `False` on reject or timeout, and only returns `True` after explicit approval. `context.ask()` returns user text (including an empty string) or raises `ScriptSdkInteractionError` on reject/timeout. The input response travels over a separate authenticated control request and never becomes a new foreground Command. `context.ask(secret=True)` masks the browser input; do not print or persist secrets. Each request is limited to 180 seconds. The Server holds no durable paused-execution state; Server restarts invalidate pending interactions.
 
 RCH server builtin `interaction_demo` exercises confirmation followed by text input without deleting or modifying data.
+
+
+### Execution interactions: Select and Secret
+
+Scripts that opt into `"api_grants": ["interactions:request"]` may use:
+
+```python
+mode = context.select('Choose mode', ['Preview', 'Execute'])
+secret = context.ask('Enter secret', secret=True)
+if mode == 'Execute' and context.confirm('Continue?'):
+    # Use the secret in memory; do not print or store it.
+    print('Approved')
+```
+
+Selections are restricted to the offered strings. Secret values are returned only
+to the running Client script, never in a UI SSE event. Normal command/script
+execution remains unchanged unless the new APIs are explicitly called.

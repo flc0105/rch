@@ -10,7 +10,7 @@ class BuiltinInteractionSupport:
         self.server = server
         self.conn = conn
 
-    def _request(self, kind, message, *, title='', timeout=90, placeholder=''):
+    def _request(self, kind, message, *, title='', timeout=90, placeholder='', options=None):
         foreground = self.conn.get_foreground_task() or {}
         task_id = str(foreground.get('task_id') or '').strip()
         client_id = str(getattr(getattr(self.conn, 'session_info', None), 'client_id', '') or '')
@@ -21,7 +21,7 @@ class BuiltinInteractionSupport:
         return service.interaction_broker.request(
             task_id=task_id, client_id=client_id, tab_id=task['tab_id'],
             kind=kind, message=message, title=title,
-            timeout_seconds=timeout, placeholder=placeholder,
+            timeout_seconds=timeout, placeholder=placeholder, options=options,
             is_active=lambda: (self.conn.get_foreground_task() or {}).get('task_id') == task_id,
         )
 
@@ -34,4 +34,10 @@ class BuiltinInteractionSupport:
                                title=title, timeout=timeout, placeholder=placeholder)
         if result['status'] != 'answered':
             raise BuiltinInteractionError(f'Input not provided ({result["status"]})')
+        return result['value']
+
+    def select(self, message, options, *, title='Choose an option', timeout=90) -> str:
+        result = self._request('select', message, title=title, timeout=timeout, options=options)
+        if result['status'] != 'answered':
+            raise BuiltinInteractionError(f'Selection not provided ({result["status"]})')
         return result['value']

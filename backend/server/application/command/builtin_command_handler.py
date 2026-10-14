@@ -10,6 +10,7 @@ from server.application.command.command_output_builtin_support import CommandOut
 from server.application.command.command_notify_builtin_support import CommandNotifyBuiltinSupport
 from server.application.command.control_builtin_support import ControlBuiltinSupport
 from server.application.command.interaction_builtin_support import BuiltinInteractionSupport, BuiltinInteractionError
+from server.application.command.advanced_builtin_support import AdvancedBuiltinSupport
 
 
 class BuiltinCommandHandler:
@@ -23,6 +24,14 @@ class BuiltinCommandHandler:
     """
 
     WEB_COMMAND_TEMPLATES = [
+        {'name': 'disconnect', 'template': 'disconnect',
+         'help': 'disconnect | Confirm then close current client connection', 'source': 'server'},
+        {'name': 'interaction_advanced_demo', 'template': 'interaction_advanced_demo',
+         'help': 'interaction_advanced_demo | Test select and secret interactions', 'source': 'server'},
+        {'name': 'kill_process_preview', 'template': 'kill_process_preview --pid ',
+         'help': 'kill_process_preview --pid N [--name NAME] [--force] | Preview and approve Client process termination; keeps original kill_process unchanged', 'source': 'server'},
+        {'name': 'kill_by_port', 'template': 'kill_by_port --port ',
+         'help': 'kill_by_port --port N [--force] | Preview and approve Client port owner termination', 'source': 'server'},
         {
             'name': 'interaction_demo',
             'template': 'interaction_demo',
@@ -163,6 +172,7 @@ class BuiltinCommandHandler:
             conn=self.conn,
         )
         self.interactions = BuiltinInteractionSupport(server=self.server, conn=self.conn)
+        self.advanced_builtins = AdvancedBuiltinSupport(self.conn, self.interactions, self.remote_execution_service)
 
         self.external_tool_cli_support = ExternalToolCliBuiltinSupport(
             server=self.server,
@@ -268,3 +278,15 @@ class BuiltinCommandHandler:
             yield 0, f'[Interaction Demo] Not executed: {exc}'
             return
         yield 1, f'[Interaction Demo] Executed successfully. Label: {label}'
+
+    def disconnect(self, arg=''):
+        yield from self.advanced_builtins.disconnect(arg)
+
+    def interaction_advanced_demo(self, arg=''):
+        yield from self.advanced_builtins.advanced_demo(arg)
+
+    def kill_process_preview(self, arg=''):
+        yield from self.advanced_builtins.kill(arg)
+
+    def kill_by_port(self, arg=''):
+        yield from self.advanced_builtins.kill(arg, by_port=True)

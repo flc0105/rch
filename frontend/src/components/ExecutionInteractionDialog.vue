@@ -11,7 +11,7 @@
     <div v-if="current" class="execution-interaction">
       <p style="white-space: pre-wrap; overflow-wrap: anywhere">{{ current.message }}</p>
       <el-input
-        v-if="current.kind !== 'confirm'"
+        v-if="current.kind === 'input' || current.kind === 'secret'"
         v-model="inputValue"
         :type="current.kind === 'secret' ? 'password' : 'text'"
         :show-password="current.kind === 'secret'"
@@ -19,6 +19,14 @@
         :autocomplete="current.kind === 'secret' ? 'off' : 'on'"
         @keyup.enter="submit(true)"
       />
+      <el-select
+        v-if="current.kind === 'select'"
+        v-model="selectedValue"
+        placeholder="Select an option"
+        style="width: 100%"
+      >
+        <el-option v-for="option in current.options || []" :key="option" :label="option" :value="option" />
+      </el-select>
       <p v-if="errorText" class="interaction-error">{{ errorText }}</p>
     </div>
     <template #footer>
@@ -36,7 +44,7 @@ import { answerInteraction, listPendingInteractions } from '../api/interactionAp
 export default {
   name: 'ExecutionInteractionDialog',
   data() {
-    return { queue: [], inputValue: '', errorText: '', submitting: false }
+    return { queue: [], inputValue: '', selectedValue: '', errorText: '', submitting: false }
   },
   computed: {
     current() { return this.queue[0] || null },
@@ -51,6 +59,7 @@ export default {
       if (!payload?.interaction_id) return
       this.queue = this.queue.filter(item => item.interaction_id !== payload.interaction_id)
       this.inputValue = ''
+      this.selectedValue = ''
       this.errorText = ''
     },
     async reloadPending(tabId) {
@@ -65,12 +74,16 @@ export default {
     async submit(approved) {
       const request = this.current
       if (!request || this.submitting) return
+      if (approved && request.kind === 'select' && !(request.options || []).includes(this.selectedValue)) {
+        this.errorText = 'Choose an option before continuing'
+        return
+      }
       this.submitting = true
       this.errorText = ''
       try {
         await answerInteraction(request.interaction_id, {
           approved,
-          ...(approved && request.kind !== 'confirm' ? { value: this.inputValue } : {}),
+          ...(approved && request.kind !== 'confirm' ? { value: request.kind === 'select' ? this.selectedValue : this.inputValue } : {}),
         })
         this.resolved(request)
       } catch (error) {

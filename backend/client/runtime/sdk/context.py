@@ -205,6 +205,12 @@ def confirm(message: str, *, title='Confirmation', timeout=90) -> bool:
     return request_confirmation(message, title=title, timeout=timeout)
 
 
+def select(message: str, options, *, title='Choose an option', timeout=90) -> str:
+    """Choose an item from a fixed list via the shared Web execution interaction."""
+    from client.runtime.sdk.interactions import select as request_selection
+    return request_selection(message, options, title=title, timeout=timeout)
+
+
 def ask(message: str, *, title='Input required', timeout=90, placeholder='', secret=False) -> str:
     """Request Web text input for the active inproc script."""
     from client.runtime.sdk.interactions import ask as request_input
