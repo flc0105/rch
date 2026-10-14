@@ -199,6 +199,18 @@ def progress(message: str, status: int = 1) -> None:
         print(text, flush=True)
 
 
+def confirm(message: str, *, title='Confirmation', timeout=90) -> bool:
+    """Request opt-in Web approval; rejection or timeout returns False."""
+    from client.runtime.sdk.interactions import confirm as request_confirmation
+    return request_confirmation(message, title=title, timeout=timeout)
+
+
+def ask(message: str, *, title='Input required', timeout=90, placeholder='', secret=False) -> str:
+    """Request Web text input for the active inproc script."""
+    from client.runtime.sdk.interactions import ask as request_input
+    return request_input(message, title=title, timeout=timeout, placeholder=placeholder, secret=secret)
+
+
 def get_script_grant() -> dict:
     value = get_current_context().get('script_grant', {})
     return dict(value) if isinstance(value, dict) else {}

@@ -10,6 +10,7 @@ from server.config.config import (
 )
 from server.web.api_response import WebApiResponder
 from server.web.auth_guard import WebAuthGuard
+from server.web.routes.interactions import create_interaction_blueprint
 from server.web.routes.agent import create_agent_blueprint
 from server.web.routes.artifacts import create_artifacts_blueprint
 from server.web.routes.auth import create_auth_blueprint
@@ -72,6 +73,7 @@ def create_app(server_instance):
     app.register_blueprint(create_keychain_blueprint(server_instance))
     app.register_blueprint(create_agent_blueprint(server_instance))
     app.register_blueprint(create_script_blueprint(server_instance))
+    app.register_blueprint(create_interaction_blueprint(server_instance))
     app.register_blueprint(create_terminal_blueprint(server_instance))
     app.register_blueprint(create_screen_view_blueprint(server_instance))
     app.register_blueprint(create_clipboard_blueprint(server_instance))

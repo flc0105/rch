@@ -15,6 +15,7 @@ USER_FACING_SCRIPT_ERRORS = {
     'ScriptSdkExternalToolError',
     'ScriptSdkWorkspaceError',
     'ClientApiError',
+    'ScriptSdkInteractionError',
 }
 
 

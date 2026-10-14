@@ -16,6 +16,7 @@ class ScriptGrantPolicy:
 
     ROUTE_RULES = [
         {'scope': 'scripts:read', 'method': 'GET', 'path': '/api/scripts/download'},
+        {'scope': 'interactions:request', 'method': 'POST', 'path': '/api/interactions/client/request'},
         {'scope': 'artifacts:list', 'method': 'GET', 'path': '/api/artifacts'},
         {'scope': 'artifacts:download', 'method': 'GET', 'path': '/api/artifacts/<artifact_id>/download'},
         {'scope': 'artifacts:raw', 'method': 'GET', 'path': '/api/artifacts/<artifact_id>/raw'},

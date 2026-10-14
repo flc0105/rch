@@ -406,3 +406,27 @@ print("ffmpeg installed =", xt.ffmpeg.is_installed)
 secret = keychains.get_secret("test_secret")
 print("secret =", secret.getvalue())
 ```
+
+
+## Execution interaction (Web Script, inproc)
+
+A Script can opt in to browser-based confirmation and text input. Declare `api_grants: ["interactions:request"]` in `SCRIPT_METADATA` (alongside any other needed grants). This feature requires a Web-launched Client script with the `inproc` Python execution strategy; it is **not** shell stdin and does not intercept other commands.
+
+```python
+SCRIPT_METADATA = {
+    "name": "mac/recon/interaction_example",
+    "display_name": "Interaction Example",
+    "platforms": ["mac"],
+    "params": [],
+    "api_grants": ["interactions:request"],
+}
+
+if not context.confirm("Perform the example operation?", timeout=90):
+    raise SystemExit("Not approved")
+label = context.ask("Enter a label:", timeout=90)
+print("Approved operation:", label)
+```
+
+`context.confirm()` returns `False` on reject or timeout, and only returns `True` after explicit approval. `context.ask()` returns user text (including an empty string) or raises `ScriptSdkInteractionError` on reject/timeout. The input response travels over a separate authenticated control request and never becomes a new foreground Command. `context.ask(secret=True)` masks the browser input; do not print or persist secrets. Each request is limited to 180 seconds. The Server holds no durable paused-execution state; Server restarts invalidate pending interactions.
+
+RCH server builtin `interaction_demo` exercises confirmation followed by text input without deleting or modifying data.

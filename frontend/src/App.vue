@@ -240,6 +240,8 @@
     :machine-alias-map="machineAliasMap"
   />
 
+  <ExecutionInteractionDialog ref="executionInteractionDialogRef" />
+
   <ScriptLibraryDialog
     ref="scriptLibraryDialogRef"
     :selected-id="selectedId"
@@ -398,6 +400,7 @@
 <script>
 import AppUtilsModule from './composables/useAppUtils.js'
 import AppSseModule from './composables/useSseStream.js'
+import ExecutionInteractionDialog from './components/ExecutionInteractionDialog.vue'
 import AppConnectionModule from './composables/useConnections.js'
 import AppTaskModule from './composables/useTaskState.js'
 import AppTerminalModule from './composables/useTerminalOutput.js'
@@ -449,6 +452,7 @@ export default {
     TerminalJsonDialog,
     PreviewDialog,
     BackgroundJobsDialog,
+    ExecutionInteractionDialog,
     ScriptLibraryDialog,
     KeychainManagerDialog,
     ExternalToolManagerDialog,

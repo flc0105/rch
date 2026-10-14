@@ -211,6 +211,16 @@ export default {
 
             es.addEventListener('open', () => {
                 if (!this.sseReady) this.sseReady = true;
+                void this.$refs.executionInteractionDialogRef?.reloadPending(tabId);
+            });
+
+            es.addEventListener('interaction_requested', (event) => {
+                const payload = JSON.parse(event.data || '{}');
+                this.$refs.executionInteractionDialogRef?.enqueue(payload);
+            });
+            es.addEventListener('interaction_resolved', (event) => {
+                const payload = JSON.parse(event.data || '{}');
+                this.$refs.executionInteractionDialogRef?.resolved(payload);
             });
 
             es.addEventListener('notification_preferences_updated', (event) => {

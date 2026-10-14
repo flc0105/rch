@@ -9,6 +9,7 @@ from server.application.command.builtin_command_support import (
 from server.application.command.command_output_builtin_support import CommandOutputBuiltinSupport
 from server.application.command.command_notify_builtin_support import CommandNotifyBuiltinSupport
 from server.application.command.control_builtin_support import ControlBuiltinSupport
+from server.application.command.interaction_builtin_support import BuiltinInteractionSupport, BuiltinInteractionError
 
 
 class BuiltinCommandHandler:
@@ -22,6 +23,12 @@ class BuiltinCommandHandler:
     """
 
     WEB_COMMAND_TEMPLATES = [
+        {
+            'name': 'interaction_demo',
+            'template': 'interaction_demo',
+            'help': 'interaction_demo | Test confirmation and text input before executing a harmless action',
+            'source': 'server',
+        },
         {
             'name': 'upload',
             'template': 'upload ',
@@ -155,6 +162,7 @@ class BuiltinCommandHandler:
         self.control_support = ControlBuiltinSupport(
             conn=self.conn,
         )
+        self.interactions = BuiltinInteractionSupport(server=self.server, conn=self.conn)
 
         self.external_tool_cli_support = ExternalToolCliBuiltinSupport(
             server=self.server,
@@ -245,3 +253,18 @@ class BuiltinCommandHandler:
     def httpctl(self, arg=''):
         for item in self.control_support.httpctl(arg):
             yield item
+
+    def interaction_demo(self, arg=''):
+        """Safe RCH builtin demonstration of the shared confirmation/input API."""
+        yield 1, '[Interaction Demo] Preview: print a harmless result after approval and input.'
+        try:
+            if not self.interactions.confirm('Approve the harmless interaction demo?',
+                                              title='Execution approval'):
+                yield 0, '[Interaction Demo] Not executed (rejected or expired)'
+                return
+            label = self.interactions.ask('Enter a label to include in the result:',
+                                          title='Execution input', placeholder='e.g. test-approval')
+        except BuiltinInteractionError as exc:
+            yield 0, f'[Interaction Demo] Not executed: {exc}'
+            return
+        yield 1, f'[Interaction Demo] Executed successfully. Label: {label}'

@@ -27,6 +27,7 @@ from server.application.preferences.notification_history_store import Notificati
 from server.application.preferences.notification_event_projector import NotificationEventProjector
 from server.application.scripts.script_catalog_service import ScriptCatalogService
 from server.application.tasks.task_runner import WebTaskRunner
+from server.application.execution.interaction_broker import InteractionBroker
 from server.application.tasks.task_service import WebTaskService
 from server.application.tasks.task_store import WebTaskStore
 from server.application.terminal.pty_session_service import PtySessionService
@@ -95,6 +96,7 @@ class ServerApplicationAssembly:
             event_bus=self.event_bus,
         )
         self.task_store = WebTaskStore()
+        self.interaction_broker = InteractionBroker(self.event_bus, self.task_store)
         self.transfer_service = TransferService(self.event_bus)
 
         # ------------------ domain/application services ------------------ #

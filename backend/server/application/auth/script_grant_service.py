@@ -185,6 +185,13 @@ class ScriptGrantService:
             if stored is grant:
                 stored['used_count'] = int(stored.get('used_count') or 0) + 1
 
+    def get_interaction_identity(self, token: str) -> dict | None:
+        """Return only identity of a valid interaction grant; never expose token."""
+        grant = self._find_grant(token) if token else None
+        if not grant or not self._has_scope(grant, 'interactions:request'):
+            return None
+        return {'client_id': grant['client_id'], 'command_id': grant['command_id']}
+
     def authorize_request(self, *, method: str, path: str, headers=None) -> bool:
         scope = self.policy.match_request_scope(method, path)
         if not scope:

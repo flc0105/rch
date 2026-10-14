@@ -102,7 +102,8 @@ class WebEventBus:
         recorder = self._notification_recorder
         if recorder is None:
             return None
-        if event_type in {'notification_center_updated', 'notification_preferences_updated'}:
+        if event_type in {'notification_center_updated', 'notification_preferences_updated',
+                          'interaction_requested', 'interaction_resolved'}:
             return None
         try:
             return recorder(event_type, data, event_id, target_tab_id)
