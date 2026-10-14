@@ -1,7 +1,7 @@
 SCRIPT_METADATA = {
     "name": "mac/recon/personal_mac_backup",
     "display_name": "Personal Mac Backup to Artifact",
-    "description": "Backup selected shell, browser, software inventory and Typora data into a dated ZIP artifact.",
+    "description": "Backup selected Mac settings, Typora documents and project source trees into a dated ZIP artifact.",
     "platforms": ["macos"],
     "category": "Backup",
     "api_grants": ["scripts:read"],
@@ -15,6 +15,16 @@ SCRIPT_METADATA = {
         {"name": "typora_directory", "label": "Typora directory", "type": "string",
          "required": False, "default": "/Users/flc/Documents/Typora",
          "description": "Directory to archive recursively; missing/unmounted volumes are warnings."},
+        {"name": "include_project_photo_library", "label": "Photo Library project source", "type": "boolean", "default": True},
+        {"name": "photo_library_directory", "label": "Photo Library project directory", "type": "string",
+         "required": False, "default": "/Volumes/T7/Projects/photo_library"},
+        {"name": "include_project_rch", "label": "RCH project source", "type": "boolean", "default": True},
+        {"name": "rch_directory", "label": "RCH project directory", "type": "string",
+         "required": False, "default": "/Users/flc/PycharmProjects/rch"},
+        {"name": "include_project_oh_my_wechat_personal", "label": "Oh My WeChat Personal project source",
+         "type": "boolean", "default": True},
+        {"name": "oh_my_wechat_personal_directory", "label": "Oh My WeChat Personal project directory",
+         "type": "string", "required": False, "default": "/Users/flc/Projects/oh-my-wechat-personal"},
     ],
 }
 
@@ -37,7 +47,38 @@ SOURCES = (
     ("include_homebrew", "homebrew_packages"),
     ("include_installed_apps", "installed_apps"),
     ("include_typora", "typora_documents"),
+    ("include_project_photo_library", "project_photo_library"),
+    ("include_project_rch", "project_rch"),
+    ("include_project_oh_my_wechat_personal", "project_oh_my_wechat_personal"),
 )
+
+
+# Generic source-only exclusions, applied identically to every backed-up project.
+# Hidden names include .git, .idea, .venv, .env and macOS AppleDouble (._*) files.
+PROJECT_EXCLUDED_DIRS = frozenset({
+    '__pycache__', '__pypackages__', 'venv', 'virtualenv', 'node_modules',
+    'bower_components', 'site-packages', 'dist', 'build', 'target', 'coverage',
+    'htmlcov', 'cache', 'caches', 'tmp', 'temp', 'logs', 'artifacts',
+    'uploads', 'downloads',
+})
+PROJECT_EXCLUDED_FILE_SUFFIXES = frozenset({
+    '.pyc', '.pyo', '.class', '.log', '.tmp', '.swp', '.swo',
+})
+PROJECT_EXCLUDED_FILES = frozenset({'thumbs.db', 'desktop.ini'})
+
+
+def excluded_entry(name, *, directory, project):
+    # macOS resource forks are ._* sidecars; ZipFile does not save file xattrs.
+    if name.startswith('.') or name == '__MACOSX' or name == 'Icon\r':
+        return True
+    if not project:
+        return False
+    lower = name.casefold()
+    if directory:
+        return lower in PROJECT_EXCLUDED_DIRS
+    return (lower in PROJECT_EXCLUDED_FILES
+            or Path(lower).suffix in PROJECT_EXCLUDED_FILE_SUFFIXES)
+
 
 
 def emit(message, *, warning=False):
@@ -120,6 +161,39 @@ def main(params):
                 except (OSError, ValueError) as exc:
                     warn(label, f'file not backed up: {file_path}: {exc}')
 
+            def add_directory(label, folder, archive_prefix, *, project=False):
+                reason = missing_reason(folder)
+                if reason:
+                    warn(label, reason)
+                    return
+                if not folder.is_dir():
+                    warn(label, f'not a directory: {folder}')
+                    return
+                for root, dirnames, filenames in os.walk(
+                    folder, topdown=True, followlinks=False,
+                    onerror=lambda exc: warn(label, f'cannot scan directory: {exc}'),
+                ):
+                    # Prune early: never descend into hidden, dependency or build trees.
+                    kept = []
+                    for dirname in sorted(dirnames):
+                        if excluded_entry(dirname, directory=True, project=project):
+                            continue
+                        child = Path(root) / dirname
+                        if child.is_symlink():
+                            warn(label, f'symbolic link directory skipped: {child}')
+                        else:
+                            kept.append(dirname)
+                    dirnames[:] = kept
+                    for filename in sorted(filenames):
+                        if excluded_entry(filename, directory=False, project=project):
+                            continue
+                        filepath = Path(root) / filename
+                        relative = filepath.relative_to(folder).as_posix()
+                        if not filepath.is_file() and not filepath.is_symlink():
+                            warn(label, f'not a regular file: {filepath}')
+                            continue
+                        add_file(label, f'{archive_prefix}/{relative}', filepath)
+
             for index, (flag, label) in enumerate(selected, 1):
                 emit(f'[{index}/{source_count}] {label}')
                 if flag in ('include_zshrc', 'include_zsh_history'):
@@ -163,32 +237,21 @@ def main(params):
 
                 elif flag == 'include_typora':
                     requested = str(params.get('typora_directory') or '/Users/flc/Documents/Typora')
-                    folder = Path(requested).expanduser()
-                    reason = missing_reason(folder)
-                    if reason:
-                        warn(label, reason)
-                        continue
-                    if not folder.is_dir():
-                        warn(label, f'not a directory: {folder}')
-                        continue
-                    for root, dirnames, filenames in os.walk(
-                        folder, topdown=True, followlinks=False,
-                        onerror=lambda exc: warn(label, f'cannot scan directory: {exc}'),
-                    ):
-                        dirnames.sort()
-                        filenames.sort()
-                        kept = []
-                        for item in dirnames:
-                            child = Path(root) / item
-                            if child.is_symlink():
-                                warn(label, f'symbolic link directory skipped: {child}')
-                            else:
-                                kept.append(item)
-                        dirnames[:] = kept
-                        for filename in filenames:
-                            filepath = Path(root) / filename
-                            relative = filepath.relative_to(folder).as_posix()
-                            add_file(label, f'documents/typora_{today}/{relative}', filepath)
+                    add_directory(label, Path(requested).expanduser(), f'documents/typora_{today}')
+
+                elif flag.startswith('include_project_'):
+                    param_name, default_path, archive_name = {
+                        'include_project_photo_library': (
+                            'photo_library_directory', '/Volumes/T7/Projects/photo_library', 'photo_library'),
+                        'include_project_rch': (
+                            'rch_directory', '/Users/flc/PycharmProjects/rch', 'rch'),
+                        'include_project_oh_my_wechat_personal': (
+                            'oh_my_wechat_personal_directory', '/Users/flc/Projects/oh-my-wechat-personal',
+                            'oh-my-wechat-personal'),
+                    }[flag]
+                    requested = str(params.get(param_name) or default_path)
+                    add_directory(label, Path(requested).expanduser(),
+                                  f'projects/{archive_name}_{today}', project=True)
 
                 emit(f'[{index}/{source_count}] completed {label}: '
                      f'{counts[label]["files"]} files, {formatted_size(counts[label]["bytes"])}')
