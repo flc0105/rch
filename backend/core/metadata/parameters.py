@@ -127,6 +127,21 @@ def coerce_path_list(value, param_name: str) -> list[str]:
     return result
 
 
+def coerce_editable_path_list(value, param_name: str) -> list[dict]:
+    """Editable Script Run path rows: keep per-row enabled status, including disabled paths."""
+    if not isinstance(value, list):
+        raise ValueError(f'Invalid editable path list param: {param_name}')
+    result = []
+    for index, entry in enumerate(value):
+        if not isinstance(entry, dict) or not isinstance(entry.get('path'), str):
+            raise ValueError(f'Invalid path row {index + 1} for {param_name}')
+        enabled = entry.get('enabled', True)
+        if not isinstance(enabled, bool):
+            raise ValueError(f'Invalid enabled flag in path row {index + 1} for {param_name}')
+        result.append({'path': entry['path'].strip(), 'enabled': enabled})
+    return result
+
+
 def is_missing_param_value(spec: dict, value) -> bool:
     if value is None or value == '':
         return True
@@ -137,7 +152,7 @@ def is_missing_param_value(spec: dict, value) -> bool:
 
 
 def empty_param_value(spec: dict):
-    return [] if normalize_param_type(spec.get('type')) in REMOTE_PATH_MULTI_PARAM_TYPES else ''
+    return [] if normalize_param_type(spec.get('type')) in (*REMOTE_PATH_MULTI_PARAM_TYPES, 'path_list') else ''
 
 
 def coerce_param_value(spec: dict, value):
@@ -155,6 +170,8 @@ def coerce_param_value(spec: dict, value):
         if allowed and text_value not in [str(item) for item in allowed]:
             raise ValueError(f'Invalid option for {param_name}: {text_value}')
         return text_value
+    if param_type == 'path_list':
+        return coerce_editable_path_list(value, param_name)
     if param_type in REMOTE_PATH_MULTI_PARAM_TYPES:
         return coerce_path_list(value, param_name)
     if param_type in REMOTE_PATH_PARAM_TYPES:
@@ -183,9 +200,6 @@ def resolve_param_values(
         name = spec.get('name') or ''
         has_value = name in raw
         raw_value = raw.get(name)
-        if has_value and raw_value == '' and spec.get('allow_empty') and not spec.get('required'):
-            resolved[name] = ''
-            continue
         if not has_value or is_missing_param_value(spec, raw_value):
             if 'default' in spec and spec.get('default') is not None:
                 raw_value = spec.get('default')

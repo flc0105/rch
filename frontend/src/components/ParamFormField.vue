@@ -24,6 +24,37 @@
       />
     </el-select>
 
+    <div v-else-if="type === 'path_list'" class="path-list-editor">
+      <div
+        v-for="(entry, index) in pathEntries"
+        :key="index"
+        class="path-list-row"
+      >
+        <el-switch
+          :model-value="entry.enabled"
+          :aria-label="`Enable path ${index + 1}`"
+          @update:model-value="changePathEntry(index, 'enabled', $event)"
+        />
+        <el-input
+          :model-value="entry.path"
+          :disabled="!entry.enabled"
+          placeholder="/path/to/folder"
+          class="path-list-input"
+          @update:model-value="changePathEntry(index, 'path', $event)"
+        />
+        <el-button
+          :aria-label="`Remove path ${index + 1}`"
+          @click="removePathEntry(index)"
+        >
+          <el-icon><Delete /></el-icon>
+        </el-button>
+      </div>
+      <el-button plain class="path-list-add" @click="addPathEntry">
+        <el-icon><Plus /></el-icon>
+        Add path
+      </el-button>
+    </div>
+
     <el-input-number
       v-else-if="type === 'integer' || type === 'number'"
       :model-value="numericModelValue"
@@ -68,7 +99,11 @@
       @update:model-value="$emit('update:modelValue', $event)"
     />
 
-    <div class="hint-text param-form-hint">
+    <div v-if="type === 'path_list'" class="hint-text param-form-hint">
+      {{ param.description || 'No description' }}
+      <template v-if="param.required"> · required</template>
+    </div>
+    <div v-else class="hint-text param-form-hint">
       {{ param.description || 'No description' }}
       <template v-if="param.required"> · required</template>
       <template v-if="hasDefault"> · default: {{ defaultDisplayValue }}</template>
@@ -80,9 +115,11 @@
 
 <script>
 import { isRemoteMultiParam, isRemoteParam, normalizeParamType } from '../utils/parameterSchema.js'
+import { Delete, Plus } from '@element-plus/icons-vue'
 
 export default {
   name: 'ParamFormField',
+  components: { Delete, Plus },
 
   props: {
     param: {
@@ -99,6 +136,12 @@ export default {
   computed: {
     type() {
       return normalizeParamType(this.param?.type)
+    },
+
+    pathEntries() {
+      return Array.isArray(this.modelValue)
+        ? this.modelValue.map(entry => ({ path: String(entry?.path ?? ''), enabled: entry?.enabled !== false }))
+        : []
     },
 
     fieldLabel() {
@@ -158,6 +201,20 @@ export default {
       return String(value)
     },
   },
+
+  methods: {
+    changePathEntry(index, key, value) {
+      const entries = this.pathEntries
+      entries[index] = { ...entries[index], [key]: value }
+      this.$emit('update:modelValue', entries)
+    },
+    addPathEntry() {
+      this.$emit('update:modelValue', [...this.pathEntries, { path: '', enabled: true }])
+    },
+    removePathEntry(index) {
+      this.$emit('update:modelValue', this.pathEntries.filter((_, i) => i !== index))
+    },
+  },
 }
 </script>
 
@@ -170,4 +227,8 @@ export default {
   margin-top: 6px;
   line-height: 1.5;
 }
+.path-list-editor { width: 100%; display: flex; flex-direction: column; gap: 8px; }
+.path-list-row { display: flex; align-items: center; gap: 8px; width: 100%; }
+.path-list-input { flex: 1; min-width: 0; }
+.path-list-add { align-self: flex-start; }
 </style>

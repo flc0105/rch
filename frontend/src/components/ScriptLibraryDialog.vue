@@ -1070,14 +1070,14 @@ getPreferredScriptDirectoryForCurrentConnection() {
         const type = normalizeParamType(param.type)
         const hasDefault = Object.prototype.hasOwnProperty.call(param, 'default') && param.default !== null && param.default !== undefined
         if (hasDefault) {
-          if (['remote_files', 'remote_folders'].includes(type)) {
+          if (['remote_files', 'remote_folders', 'path_list'].includes(type)) {
             result[param.name] = Array.isArray(param.default) ? cloneParamValue(param.default) : []
           } else if (type === 'boolean') {
             result[param.name] = param.default === true || String(param.default).toLowerCase() === 'true'
           } else {
             result[param.name] = cloneParamValue(param.default)
           }
-        } else if (['remote_files', 'remote_folders'].includes(type)) {
+        } else if (['remote_files', 'remote_folders', 'path_list'].includes(type)) {
           result[param.name] = []
         } else if (type === 'boolean') {
           result[param.name] = false
@@ -1101,6 +1101,16 @@ getPreferredScriptDirectoryForCurrentConnection() {
     coerceScriptParamValue(param, rawValue) {
       const type = normalizeParamType(param?.type)
       if (type === 'boolean') return !!rawValue
+      if (type === 'path_list') {
+        if (!Array.isArray(rawValue)) throw new Error(`Param "${param.name}" must be a path list`)
+        return rawValue.map((entry, index) => {
+          if (!entry || typeof entry !== 'object' || Array.isArray(entry) || typeof entry.path !== 'string') {
+            throw new Error(`Invalid path at row ${index + 1} of "${param.name}"`)
+          }
+          return { path: entry.path.trim(), enabled: entry.enabled !== false }
+        })
+      }
+
 
       if (['remote_files', 'remote_folders'].includes(type)) {
         if (!Array.isArray(rawValue)) throw new Error(`Param "${param.name}" must be a path list`)
@@ -1151,6 +1161,11 @@ getPreferredScriptDirectoryForCurrentConnection() {
       for (const param of metadata.params || []) {
         const rawValue = this.scriptParamForm[param.name]
         const type = normalizeParamType(param.type)
+        // An empty editable list is intentional (all rows deleted), not a request for defaults.
+        if (type === 'path_list') {
+          params[param.name] = this.coerceScriptParamValue(param, rawValue)
+          continue
+        }
         const hasRemoteMultiValue = ['remote_files', 'remote_folders'].includes(type) && Array.isArray(rawValue) && rawValue.length > 0
         const textValue = type === 'boolean' ? rawValue : String(rawValue === null || rawValue === undefined ? '' : rawValue).trim()
 

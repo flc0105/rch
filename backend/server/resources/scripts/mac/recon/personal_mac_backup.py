@@ -1,7 +1,7 @@
 SCRIPT_METADATA = {
     "name": "mac/recon/personal_mac_backup",
     "display_name": "Personal Mac Backup to Artifact",
-    "description": "Backup selected Mac settings, Typora documents and project source trees into a dated ZIP artifact.",
+    "description": "Backup selected Mac settings, document folders and project folders into a dated ZIP artifact.",
     "platforms": ["macos"],
     "category": "Backup",
     "api_grants": ["scripts:read"],
@@ -11,22 +11,41 @@ SCRIPT_METADATA = {
         {"name": "include_chrome_bookmarks", "label": "Chrome bookmarks", "type": "boolean", "default": True},
         {"name": "include_homebrew", "label": "Homebrew packages", "type": "boolean", "default": True},
         {"name": "include_installed_apps", "label": "Installed app inventory", "type": "boolean", "default": True},
-        {"name": "include_typora", "label": "Typora documents", "type": "boolean", "default": True},
-        {"name": "typora_directory", "label": "Typora directory", "type": "string",
-         "required": False, "default": "/Users/flc/Documents/Typora",
-         "description": "Directory to archive recursively; missing/unmounted volumes are warnings."},
-        {"name": "include_project_photo_library", "label": "Photo Library project source", "type": "boolean", "default": True},
-        {"name": "photo_library_directory", "label": "Photo Library project directory", "type": "string",
-         "required": False, "default": "/Volumes/T7/Projects/photo_library"},
-        {"name": "include_project_rch", "label": "RCH project source", "type": "boolean", "default": True},
-        {"name": "rch_directory", "label": "RCH project directory", "type": "string",
-         "required": False, "default": "/Users/flc/PycharmProjects/rch"},
-        {"name": "include_project_oh_my_wechat_personal", "label": "Oh My WeChat Personal project source",
-         "type": "boolean", "default": True},
-        {"name": "oh_my_wechat_personal_directory", "label": "Oh My WeChat Personal project directory",
-         "type": "string", "required": False, "default": "/Users/flc/Projects/oh-my-wechat-personal"},
+        {"name": "documents", "label": "Documents", "type": "path_list", "required": False,
+         "description": "Document directories. Add, disable or remove each path; hidden and macOS metadata excluded.",
+         "default": [{"path": "/Users/flc/Documents/Typora", "enabled": True}]},
+        {"name": "projects", "label": "Projects", "type": "path_list", "required": False,
+         "description": "Source directories. Add, disable or remove each path; development dependencies excluded.",
+         "default": [
+             {"path": "/Users/flc/PycharmProjects/rch", "enabled": True},
+             {"path": "/Volumes/T7/Projects/photo_library", "enabled": True},
+             {"path": "/Users/flc/Projects/oh-my-wechat-personal", "enabled": True},
+         ]},
     ],
 }
+
+
+# Centralized backup inclusion/exclusion policy (edit these lists to change the rules).
+# Documents: only dot-prefixed files/directories and macOS resource-fork metadata.
+# Projects: the same restrictions, plus the specifically selected development junk.
+HIDDEN_PREFIXES = ('.',)  # Includes .git, .idea, .env, ._* AppleDouble files.
+MACOS_METADATA_NAMES = frozenset({'__MACOSX', 'Icon\r'})
+PROJECT_EXCLUDED_DIRS = frozenset({
+    'venv', 'virtualenv', '__pycache__', 'site-packages',
+    'node_modules', 'dist', 'tmp', 'temp', 'logs',
+})
+PROJECT_EXCLUDED_FILE_SUFFIXES = frozenset({
+    '.pyc', '.pyo', '.class', '.log', '.tmp', '.swp', '.swo', '.out',
+})
+PROJECT_EXCLUDED_FILES = frozenset({'thumbs.db', 'desktop.ini'})
+
+SOURCES = (
+    ('include_zshrc', 'zshrc'),
+    ('include_zsh_history', 'zsh_history'),
+    ('include_chrome_bookmarks', 'chrome_bookmarks'),
+    ('include_homebrew', 'homebrew_packages'),
+    ('include_installed_apps', 'installed_apps'),
+)
 
 import json
 import os
@@ -40,36 +59,11 @@ from pathlib import Path
 from client.runtime.sdk import artifact, context, scripts
 
 
-SOURCES = (
-    ("include_zshrc", "zshrc"),
-    ("include_zsh_history", "zsh_history"),
-    ("include_chrome_bookmarks", "chrome_bookmarks"),
-    ("include_homebrew", "homebrew_packages"),
-    ("include_installed_apps", "installed_apps"),
-    ("include_typora", "typora_documents"),
-    ("include_project_photo_library", "project_photo_library"),
-    ("include_project_rch", "project_rch"),
-    ("include_project_oh_my_wechat_personal", "project_oh_my_wechat_personal"),
-)
-
-
-# Generic source-only exclusions, applied identically to every backed-up project.
-# Hidden names include .git, .idea, .venv, .env and macOS AppleDouble (._*) files.
-PROJECT_EXCLUDED_DIRS = frozenset({
-    '__pycache__', '__pypackages__', 'venv', 'virtualenv', 'node_modules',
-    'bower_components', 'site-packages', 'dist', 'build', 'target', 'coverage',
-    'htmlcov', 'cache', 'caches', 'tmp', 'temp', 'logs', 'artifacts',
-    'uploads', 'downloads',
-})
-PROJECT_EXCLUDED_FILE_SUFFIXES = frozenset({
-    '.pyc', '.pyo', '.class', '.log', '.tmp', '.swp', '.swo',
-})
-PROJECT_EXCLUDED_FILES = frozenset({'thumbs.db', 'desktop.ini'})
 
 
 def excluded_entry(name, *, directory, project):
     # macOS resource forks are ._* sidecars; ZipFile does not save file xattrs.
-    if name.startswith('.') or name == '__MACOSX' or name == 'Icon\r':
+    if name.startswith(HIDDEN_PREFIXES) or name in MACOS_METADATA_NAMES:
         return True
     if not project:
         return False
@@ -108,18 +102,56 @@ def missing_reason(path):
     return ''
 
 
+def prepared_sources(params, today):
+    """Build enabled backup items; names derive from paths, never fixed project mappings."""
+    selected = [
+        {'kind': 'setting', 'flag': flag, 'label': label}
+        for flag, label in SOURCES if params.get(flag, True)
+    ]
+    for param_name, section, is_project in (
+        ('documents', 'documents', False), ('projects', 'projects', True),
+    ):
+        # Script SDK populates missing defaults from SCRIPT_METADATA. Respect [] (all removed).
+        spec = next(spec for spec in SCRIPT_METADATA['params'] if spec['name'] == param_name)
+        entries = params.get(param_name, spec['default'])
+        if not isinstance(entries, list):
+            raise ValueError(f'{param_name} must be a path list')
+        used_names = set()
+        for entry in entries:
+            if not isinstance(entry, dict) or not isinstance(entry.get('path'), str):
+                raise ValueError(f'{param_name} path entries must be objects with a string path')
+            if not isinstance(entry.get('enabled', True), bool):
+                raise ValueError(f'{param_name} entry enabled must be boolean')
+            if not entry.get('enabled', True) or not entry['path'].strip():
+                continue
+            folder = Path(entry['path'].strip()).expanduser()
+            stem = re.sub(r'[^a-zA-Z0-9_-]+', '_', folder.name).strip('_-').lower() or 'folder'
+            candidate = stem
+            counter = 2
+            while candidate in used_names:
+                candidate = f'{stem}_{counter}'
+                counter += 1
+            used_names.add(candidate)
+            selected.append({
+                'kind': 'directory', 'label': f'{section}_{candidate}',
+                'path': folder, 'prefix': f'{section}/{candidate}_{today}',
+                'project': is_project,
+            })
+    return selected
+
+
 def main(params):
     today = datetime.now().astimezone().strftime('%Y-%m-%d')
     timestamp = datetime.now(timezone.utc).isoformat()
     machine = re.sub(r'[^a-zA-Z0-9_-]', '-', platform.node())[:48].strip('-') or 'mac'
     backup_id = f'mac-personal-backup_{today}_{machine}'
-    selected = [(flag, label) for flag, label in SOURCES if params.get(flag, True)]
+    selected = prepared_sources(params, today)
     if not selected:
         raise ValueError('No backup items selected')
 
     records = []
     warnings = []
-    counts = {label: {'files': 0, 'bytes': 0} for _flag, label in selected}
+    counts = {item['label']: {'files': 0, 'bytes': 0} for item in selected}
     source_count = len(selected)
     emit(f'Start: {backup_id} | selected categories: {source_count}')
 
@@ -194,7 +226,9 @@ def main(params):
                             continue
                         add_file(label, f'{archive_prefix}/{relative}', filepath)
 
-            for index, (flag, label) in enumerate(selected, 1):
+            for index, item in enumerate(selected, 1):
+                label = item['label']
+                flag = item.get('flag', '')
                 emit(f'[{index}/{source_count}] {label}')
                 if flag in ('include_zshrc', 'include_zsh_history'):
                     source = Path.home() / ('.zshrc' if flag == 'include_zshrc' else '.zsh_history')
@@ -235,23 +269,8 @@ def main(params):
                     except Exception as exc:
                         warn(label, f'subscript unavailable: {script_name}: {exc}')
 
-                elif flag == 'include_typora':
-                    requested = str(params.get('typora_directory') or '/Users/flc/Documents/Typora')
-                    add_directory(label, Path(requested).expanduser(), f'documents/typora_{today}')
-
-                elif flag.startswith('include_project_'):
-                    param_name, default_path, archive_name = {
-                        'include_project_photo_library': (
-                            'photo_library_directory', '/Volumes/T7/Projects/photo_library', 'photo_library'),
-                        'include_project_rch': (
-                            'rch_directory', '/Users/flc/PycharmProjects/rch', 'rch'),
-                        'include_project_oh_my_wechat_personal': (
-                            'oh_my_wechat_personal_directory', '/Users/flc/Projects/oh-my-wechat-personal',
-                            'oh-my-wechat-personal'),
-                    }[flag]
-                    requested = str(params.get(param_name) or default_path)
-                    add_directory(label, Path(requested).expanduser(),
-                                  f'projects/{archive_name}_{today}', project=True)
+                elif item['kind'] == 'directory':
+                    add_directory(label, item['path'], item['prefix'], project=item['project'])
 
                 emit(f'[{index}/{source_count}] completed {label}: '
                      f'{counts[label]["files"]} files, {formatted_size(counts[label]["bytes"])}')
@@ -265,7 +284,7 @@ def main(params):
             manifest = {
                 'backup_name': backup_id,
                 'exported_at_utc': timestamp,
-                'selected': [label for _flag, label in selected],
+                'selected': [item['label'] for item in selected],
                 'counts': counts,
                 'files': records,
                 'warnings': warnings,
@@ -284,7 +303,8 @@ def main(params):
         })
         emit(f'Uploaded: artifact_id={saved.get("artifact_id", "")}')
         emit('Backup summary:')
-        for _flag, label in selected:
+        for item in selected:
+            label = item['label']
             emit(f'  {label}: {counts[label]["files"]} files, '
                  f'{formatted_size(counts[label]["bytes"])}')
         emit(f'  TOTAL: {len(records)} files, {formatted_size(total)}; ZIP: {formatted_size(zip_size)}')
