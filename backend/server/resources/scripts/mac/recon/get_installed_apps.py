@@ -1,5 +1,5 @@
 SCRIPT_METADATA = {
-    "name": "mac/gather/get_installed_apps",
+    "name": "mac/recon/get_installed_apps",
     "display_name": "List Installed Apps",
     "description": "Get installed applications on macOS",
     "platforms": ["darwin"],

@@ -5,7 +5,7 @@
 脚本中可以直接导入 SDK 模块：
 
 ```python
-from client.runtime.sdk import artifact, command, context, keychains, workspace, xt
+from client.runtime.sdk import artifact, command, context, keychains, scripts, workspace, xt
 ```
 
 如果脚本需要访问受保护的 Server API，需要在脚本顶部声明 `SCRIPT_METADATA["api_grants"]`：
@@ -36,6 +36,7 @@ SCRIPT_METADATA = {
 | `keychains:create` | `POST /api/keychains` | 创建 keychain |
 | `external_tools:catalog` | `GET /api/external-tools/catalog` | 查询 external tool catalog |
 | `workspace:read` | `GET /api/connections/<client_id>/pinned_paths` | 查询 pinned workspace paths |
+| `scripts:read` | `GET /api/scripts/download` | 读取 Script Library 的脚本用于当前 Client 中执行 |
 
 ## `context`
 
@@ -72,6 +73,7 @@ print("system_paths =", context.system_paths())
 | `context.os_alias()` | OS alias |
 | `context.os_ver()` | OS 版本 |
 | `context.system_paths()` | 当前 client 握手上报的系统路径 |
+| `context.progress(message, status=1)` | 将脚本进度实时发到当前执行输出流（无运行上下文时打印） |
 
 兼容 API：
 
@@ -181,6 +183,37 @@ print("downloaded_path =", path)
 "shared_files"
 "command_output"
 ```
+
+## `scripts` — 复用 Script Library 脚本
+
+需要在调用方的 `SCRIPT_METADATA["api_grants"]` 声明 `"scripts:read"`，Server 仅允许读取脚本源代码，**不授予创建或修改脚本权限**。在当前 Client 的同一次脚本执行中同步运行子脚本，不提交第二条远程命令。
+
+```python
+SCRIPT_METADATA = {
+    "name": "macos/backup/example",
+    "platforms": ["macos"],
+    "params": [],
+    "api_grants": ["scripts:read"],
+}
+from client.runtime.sdk import scripts, context
+
+context.progress("Preparing bookmarks...")
+result = scripts.run("common/browser/get_chromium_bookmarks", {"browser": "chrome"})
+if result.ok:
+    bookmarks = result.json()  # 解析子脚本 stdout 中的 JSON
+    print("bookmarks", len(bookmarks))
+else:
+    print("failed", result.stderr)
+```
+
+| API | 作用 |
+|---|---|
+| `scripts.run(name, params=None, timeout=30)` | 同步执行当前 Server Script Library 的脚本，返回 `ScriptResult` |
+| `ScriptResult.ok`, `.returncode` | 执行是否成功 / 退出状态 |
+| `ScriptResult.stdout`, `.stderr`, `.text` | 子脚本输出；可直接保存到文件 |
+| `ScriptResult.json()` | 解析 stdout 为 JSON，格式无效会抛异常 |
+
+注意：子脚本与调用方共享同一个 Client 执行上下文及临时 grant，不会按子脚本 metadata 重新签发权限。调用方需要显式声明所有期望使用的 grant。子脚本在当前进程执行，适用于可信的 Script Library 代码；不要调用不可信的脚本。该调用捕获子脚本的 stdout/stderr；父脚本可通过 `context.progress()` 输出实时进度。
 
 ## `keychains`
 

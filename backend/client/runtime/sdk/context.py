@@ -188,6 +188,17 @@ def system_paths() -> dict:
     return get_system_paths()
 
 
+def progress(message: str, status: int = 1) -> None:
+    """将当前脚本进度实时发到运行结果流；脱离 Client 上下文时退化为 print。"""
+    text = str(message)
+    owner = get_command_owner()
+    sender = getattr(owner, '_send_interim_result', None) if owner is not None else None
+    if callable(sender):
+        sender(1 if status else 0, text, 0)
+    else:
+        print(text, flush=True)
+
+
 def get_script_grant() -> dict:
     value = get_current_context().get('script_grant', {})
     return dict(value) if isinstance(value, dict) else {}
@@ -262,13 +273,14 @@ def build_script_sdk_globals(command_owner=None, kwargs=None) -> dict:
     """
     import sys
 
-    from client.runtime.sdk import artifact, command, events, keychains, workspace, xt
+    from client.runtime.sdk import artifact, command, events, keychains, scripts, workspace, xt
 
     sdk_globals = {
         'artifact': artifact,
         'command': command,
         'events': events,
         'keychains': keychains,
+        'scripts': scripts,
         'context': sys.modules[__name__],
         'workspace': workspace,
         'xt': xt,

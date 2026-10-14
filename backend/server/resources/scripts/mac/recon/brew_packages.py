@@ -1,5 +1,5 @@
 SCRIPT_METADATA = {
-    "name": "macos/recon/brew_packages",
+    "name": "mac/recon/brew_packages",
     "display_name": "Homebrew Package List",
     "description": "List all installed Homebrew formulae and casks",
     "platforms": ["macos"],

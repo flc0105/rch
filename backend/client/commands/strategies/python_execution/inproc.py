@@ -10,6 +10,7 @@ from client.commands.strategies.python_execution.base import PythonExecutionStra
 USER_FACING_SCRIPT_ERRORS = {
     'KeychainError',
     'ScriptSdkArtifactError',
+    'ScriptSdkScriptsError',
     'ScriptSdkCommandError',
     'ScriptSdkExternalToolError',
     'ScriptSdkWorkspaceError',
