@@ -1,0 +1,152 @@
+SCRIPT_METADATA = {
+    "name": "macos/recon/brew_packages",
+    "display_name": "Homebrew Package List",
+    "description": "List all installed Homebrew formulae and casks",
+    "platforms": ["macos"], "category": "Recon", "params": []
+}
+
+import datetime as dt
+import json
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+from client.runtime.sdk import context
+
+
+def format_time(value):
+    if value in (None, "", 0, "0"):
+        return ""
+    try:
+        return dt.datetime.fromtimestamp(int(value)).isoformat(timespec="seconds")
+    except Exception:
+        return ""
+
+
+def formula_version(item):
+    return ", ".join(str(v["version"]) for v in item.get("installed", []) if isinstance(v, dict) and v.get("version"))
+
+
+def formula_installed_time(item):
+    return ", ".join(t for t in (
+        format_time(x.get("installed_time") or x.get("time"))
+        for x in item.get("installed", []) if isinstance(x, dict)
+    ) if t)
+
+
+def formula_url(item):
+    urls = item.get("urls") or {}
+    for key in ("stable", "head"):
+        if isinstance(urls.get(key), dict) and urls[key].get("url"):
+            return urls[key]["url"]
+    return ""
+
+
+def normalize_formula(item):
+    return {
+        "type": "formula", "token": item.get("name") or "",
+        "name": item.get("full_name") or item.get("name") or "",
+        "tap": item.get("tap") or "", "installed_ver": formula_version(item),
+        "desc": item.get("desc") or "", "homepage": item.get("homepage") or "",
+        "url": formula_url(item), "depends_on": item.get("dependencies") or [],
+        "installed_time": formula_installed_time(item)
+    }
+
+
+def normalize_cask(item):
+    installed = item.get("installed")
+    version = ", ".join(str(x) for x in installed if x is not None) if isinstance(installed, list) else str(installed or item.get("version") or "")
+    name = item.get("name")
+    name = ", ".join(str(x) for x in name if x is not None) if isinstance(name, list) else str(name or "")
+    depends = []
+    for key, value in (item.get("depends_on") or {}).items():
+        if isinstance(value, dict):
+            for op, vals in value.items():
+                for v in vals if isinstance(vals, list) else [vals]:
+                    depends.append(f"{key} {op} {v}")
+        elif isinstance(value, list):
+            depends.extend(f"{key}: {v}" for v in value)
+        elif value:
+            depends.append(f"{key}: {value}")
+    return {
+        "type": "cask", "token": item.get("token") or "", "name": name,
+        "tap": item.get("tap") or "", "installed_ver": version,
+        "desc": item.get("desc") or "", "homepage": item.get("homepage") or "",
+        "url": item.get("url") or "", "depends_on": depends,
+        "installed_time": format_time(item.get("installed_time"))
+    }
+
+
+def _brew_executable():
+    resolved = shutil.which('brew')
+    if resolved:
+        return resolved
+    for path in ('/opt/homebrew/bin/brew', '/usr/local/bin/brew'):
+        if Path(path).is_file():
+            return path
+    raise FileNotFoundError('Homebrew executable not found')
+
+
+def _brew_command(executable, args, timeout):
+    env = os.environ.copy()
+    env['HOMEBREW_NO_AUTO_UPDATE'] = '1'
+    env['HOMEBREW_NO_ANALYTICS'] = '1'
+    result = subprocess.run([executable, *args], text=True, capture_output=True,
+                            timeout=timeout, env=env)
+    if result.returncode != 0:
+        raise RuntimeError((result.stderr or result.stdout).strip() or f'brew {args[0]} failed')
+    return result.stdout
+
+
+def _quick_list(executable):
+    # A bounded fallback: retain the original JSON field schema while omitting
+    # fields that `brew list --versions` does not supply.
+    output = []
+    for kind, args in (('formula', ('list', '--formula', '--versions')),
+                       ('cask', ('list', '--cask', '--versions'))):
+        context.progress(f'[BREW] Fallback listing {kind} packages (12 s limit)')
+        try:
+            listing = _brew_command(executable, args, timeout=12)
+        except (OSError, subprocess.TimeoutExpired, RuntimeError) as exc:
+            print(f'Homebrew {kind} list unavailable: {exc}', file=sys.stderr)
+            continue
+        for line in listing.splitlines():
+            token, _, versions = line.strip().partition(' ')
+            if not token:
+                continue
+            output.append({
+                'type': kind, 'token': token, 'name': token, 'tap': '',
+                'installed_ver': versions.strip(), 'desc': '', 'homepage': '',
+                'url': '', 'depends_on': [], 'installed_time': '',
+            })
+    return output
+
+
+def main():
+    try:
+        executable = _brew_executable()
+    except OSError as exc:
+        print(json.dumps({'error': str(exc)}, ensure_ascii=False))
+        raise SystemExit(1)
+
+    context.progress('[BREW] Reading installed package details (20 s limit)')
+    try:
+        payload = _brew_command(executable, ('info', '--json=v2', '--installed'), timeout=20)
+        data = json.loads(payload)
+        output = [normalize_formula(x) for x in data.get('formulae') or []]
+        output.extend(normalize_cask(x) for x in data.get('casks') or [])
+    except (OSError, subprocess.TimeoutExpired, RuntimeError, ValueError, TypeError) as exc:
+        print(f'Homebrew rich inventory unavailable; using package/version fallback: {exc}', file=sys.stderr)
+        context.progress('[BREW] Detailed inventory unavailable; switching to lightweight list')
+        output = _quick_list(executable)
+        if not output:
+            print(json.dumps({'error': 'Unable to collect Homebrew packages'}, ensure_ascii=False))
+            raise SystemExit(1)
+    output.sort(key=lambda x: (x['type'], x['token']))
+    print(json.dumps(output, ensure_ascii=False, indent=2))
+
+
+if __name__ == '__main__':
+    main()
