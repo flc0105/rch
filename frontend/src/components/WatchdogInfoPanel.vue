@@ -136,12 +136,7 @@
         <strong>HTTP control</strong>
         <span>{{ actionHint }}</span>
       </div>
-      <div v-if="actionsLoading" class="watchdog-actions-loading">Loading actions…</div>
-      <div v-else-if="actionsError" class="watchdog-actions-error">
-        {{ actionsError }}
-        <el-button link type="primary" size="small" @click="loadActions">Retry</el-button>
-      </div>
-      <div v-else-if="actions.length" class="watchdog-action-buttons">
+      <div v-if="actions.length" class="watchdog-action-buttons">
         <el-tooltip
           v-for="action in actions"
           :key="action.action"
@@ -162,6 +157,10 @@
         </el-tooltip>
       </div>
       <span v-else class="watchdog-actions-empty">No control actions available</span>
+      <div v-if="actionsError" class="watchdog-actions-error">
+        {{ actionsError }}
+        <el-button link type="primary" size="small" @click="loadActions">Retry</el-button>
+      </div>
     </footer>
   </section>
 </template>
@@ -175,6 +174,12 @@ import {
   updateRuntimeConfig,
 } from '../api/connectionsApi.js'
 
+const RECOVERY_ACTIONS = [
+  { action: 'kill', label: 'Kill', description: 'Terminate the current agent process via remote watchdog.' },
+  { action: 'relaunch', label: 'Relaunch', description: 'Launch a replacement agent, then terminate the current agent process.' },
+  { action: 'clone', label: 'Clone', description: 'Launch another agent instance without stopping the current one.' },
+]
+
 export default {
   name: 'WatchdogInfoPanel',
   props: {
@@ -186,7 +191,7 @@ export default {
       status: null,
       loading: false,
       error: '',
-      actions: [],
+      actions: RECOVERY_ACTIONS.map(action => ({ ...action })),
       actionsLoading: false,
       actionsError: '',
       pendingAction: '',
@@ -223,15 +228,15 @@ export default {
         Boolean(this.status) && !this.togglingMode && !this.pendingAction
     },
     canControl() {
-      return !this.connectionOffline && !this.loading && !this.error && !this.togglingMode &&
-        Boolean(this.status?.remote_enabled && this.status?.watchdog_alive)
+      // Recovery controls must not rely on the health/status request or the
+      // agent's online/busy state; the HTTP queue is independent.
+      return Boolean(this.clientId) && !this.pendingAction
     },
     actionHint() {
-      if (this.connectionOffline) return 'Agent is offline'
-      if (!this.status || this.error) return 'Status required before sending commands'
-      if (!this.status.remote_enabled) return 'Enable remote watchdog to use these actions'
-      if (!this.status.watchdog_alive) return 'Supervisor is not running'
-      return 'Commands are delivered through the remote watchdog'
+      if (this.connectionOffline) return 'Agent is offline; command can be queued for its next poll'
+      if (!this.status || this.error) return 'Status unavailable; recovery commands can still be queued'
+      if (!this.status.remote_enabled || !this.status.watchdog_alive) return 'Recovery commands can be queued; delivery requires an active remote watchdog'
+      return 'Commands are queued through the remote watchdog'
     },
   },
   mounted() {
@@ -295,9 +300,11 @@ export default {
       try {
         const data = await getHttpControlActions()
         if (!Array.isArray(data)) throw new Error('Invalid control action response')
-        this.actions = data.filter(item => item && typeof item.action === 'string' && item.action)
+        const available = data.filter(item => item && typeof item.action === 'string' && item.action)
+        this.actions = available.length ? available : RECOVERY_ACTIONS.map(action => ({ ...action }))
       } catch (error) {
-        this.actions = []
+        // Keep known recovery controls available if action discovery fails.
+        this.actions = RECOVERY_ACTIONS.map(action => ({ ...action }))
         this.actionsError = error.message || 'Could not load actions'
       } finally {
         this.actionsLoading = false

@@ -138,14 +138,17 @@ def main(params):
                             'common/browser/get_chromium_bookmarks', {'browser': 'chrome'},
                             f'browser/chrome_bookmarks_{today}.json'),
                         'include_homebrew': (
-                            'mac/recon/brew_packages', {},
+                            'macos/recon/brew_packages', {},
                             f'software/homebrew_packages_{today}.json'),
                         'include_installed_apps': (
-                            'mac/recon/get_installed_apps', {},
+                            'mac/gather/get_installed_apps', {},
                             f'software/installed_apps_{today}.json'),
                     }[flag]
                     try:
+                        emit(f'  Running collector: {script_name} (waiting for result)')
                         result = scripts.run(script_name, script_params)
+                        if result.ok and result.stderr.strip():
+                            warn(label, f'collector fallback notice: {result.stderr.strip()[:400]}')
                         if not result.ok:
                             warn(label, f'subscript failed: {script_name}: {(result.stderr or result.stdout).strip()[:400]}')
                             continue

@@ -48,7 +48,8 @@ def create_stream_control_blueprint(server_instance):
             if command not in HTTP_CONTROL_COMMANDS:
                 raise ValueError('Unsupported HTTP control action')
 
-            server_instance.get_target_connection_by_client_id(client_id)
+            # Recovery must also be queueable while the agent is offline or
+            # has an occupied command slot. The watchdog polls by client_id.
             return control_command_store.set_pending_command(client_id, command)
 
         return responder.json_endpoint(_execute, default_error_status=500)

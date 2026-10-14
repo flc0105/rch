@@ -1,6 +1,8 @@
 import threading
+import shlex
 
 from core.protocol.message_types import MSG_TYPE_TRANSFER_CANCEL
+from server.application.connection.control_command_store import HTTP_CONTROL_COMMANDS
 from dataclasses import dataclass, field
 
 from server.application.execution.execution_context import TaskExecutionContext
@@ -209,8 +211,20 @@ class WebTaskService:
                 tab_id=tab_id,
                 source=str(source or 'web').strip() or 'web',
                 metadata=dict(metadata or {}),
+                # HTTP recovery commands are server-side builtins delivered via a
+                # separate HTTP control queue; they never occupy the stuck agent's
+                # foreground execution slot.
+                use_foreground_guard=not self._is_http_control_command(command),
             )
         )
+
+    @staticmethod
+    def _is_http_control_command(command: str) -> bool:
+        try:
+            parts = shlex.split(str(command or '').strip())
+        except ValueError:
+            return False
+        return len(parts) == 2 and parts[0] == 'httpctl' and parts[1].lower() in HTTP_CONTROL_COMMANDS
 
     def cancel_web_task(self, task_id: str):
         try:
