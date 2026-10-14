@@ -85,10 +85,17 @@ class WebScriptApi:
         normalized.pop('script_grant_request', None)
         return normalized
 
-    def run_script(self, client_id: str, script_name: str, params=None, tab_id: str = ''):
+    def run_script(self, client_id: str, script_name: str, params=None, tab_id: str = '',
+                   presentation: str = '', run_id: str = ''):
         normalized_script_name = str(script_name or '').strip()
         if not normalized_script_name:
             raise ValueError('script_name is required')
+        normalized_presentation = str(presentation or '').strip().lower()
+        if normalized_presentation not in {'dialog', 'terminal'}:
+            raise ValueError('presentation must be dialog or terminal')
+        normalized_run_id = str(run_id or '').strip()
+        if normalized_presentation == 'dialog' and not normalized_run_id:
+            raise ValueError('run_id is required for dialog presentation')
         metadata = {}
         for item in self.script_catalog_service.list_scripts() or []:
             if str(item.get('script_name') or '').strip() == normalized_script_name:
@@ -107,4 +114,10 @@ class WebScriptApi:
             client_id,
             f'run_script {encode_structured_arg(payload)}',
             tab_id=tab_id,
+            metadata={
+                'script_run': True,
+                'script_run_id': normalized_run_id,
+                'script_run_name': normalized_script_name,
+                'script_run_presentation': normalized_presentation,
+            },
         )

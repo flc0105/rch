@@ -684,6 +684,14 @@ export default {
       return this.$refs.quickActionsDialogRef?.handleCommandComplete(payload) === true
     },
 
+    handleScriptCommandResult(payload = {}) {
+      return this.$refs.scriptLibraryDialogRef?.handleCommandResult(payload) === true
+    },
+
+    handleScriptCommandComplete(payload = {}) {
+      return this.$refs.scriptLibraryDialogRef?.handleCommandComplete(payload) === true
+    },
+
     openDeviceGroupManagerDialog() {
       return this.$refs.deviceGroupManagerDialogRef?.open()
     },

@@ -122,7 +122,14 @@ def create_script_blueprint(server_instance):
                 raise ValueError('script_name is required')
             if params is not None and not isinstance(params, dict):
                 raise ValueError('params must be an object')
-            return script_api.run_script(client_id, script_name, params=params, tab_id=get_optional_tab_id())
+            return script_api.run_script(
+                client_id,
+                script_name,
+                params=params,
+                tab_id=get_optional_tab_id(),
+                presentation=payload.get('presentation'),
+                run_id=payload.get('run_id'),
+            )
         return responder.json_endpoint(_execute, default_error_status=500)
 
     return blueprint

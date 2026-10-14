@@ -264,6 +264,25 @@
     @cancel="closeScriptRunDialog"
     @confirm="confirmRunScript"
   />
+
+  <el-dialog
+    v-model="resultVisible"
+    :title="activeRun.displayName || 'Script Result'"
+    width="760px"
+    append-to-body
+  >
+    <div class="script-result-meta">
+      <el-tag :type="resultStatusType" size="small">
+        {{ activeRun.status || 'Running' }}
+      </el-tag>
+      <code class="script-result-path" :title="activeRun.scriptPath">{{ activeRun.scriptPath }}</code>
+    </div>
+    <pre class="script-result-output">{{ activeRun.output || (activeRun.complete ? '(no output)' : 'Running…') }}</pre>
+    <template #footer>
+      <el-button :disabled="!activeRun.output" @click="copyResult">Copy</el-button>
+      <el-button @click="resultVisible = false">Close</el-button>
+    </template>
+  </el-dialog>
 </template>
 
 <script>
@@ -271,6 +290,19 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import ScriptRunDialog from './ScriptRunDialog.vue'
 import { TERMINAL_RUN_SCRIPT_PREFIX } from '../composables/terminalMarkers.js'
 import { cloneParamValue, normalizeParamSpecs, normalizeParamType } from '../utils/parameterSchema.js'
+
+function emptyScriptRun() {
+  return {
+    runId: '',
+    clientId: '',
+    displayName: '',
+    scriptPath: '',
+    output: '',
+    status: '',
+    complete: false,
+    success: false,
+  }
+}
 
 export default {
   name: 'ScriptLibraryDialog',
@@ -328,6 +360,8 @@ export default {
       scriptRunSubmitting: false,
       pendingRunScriptName: '',
       scriptParamForm: {},
+      resultVisible: false,
+      activeRun: emptyScriptRun(),
     }
   },
 
@@ -460,6 +494,11 @@ export default {
 
     pendingRunScriptParamSpecs() {
       return Array.isArray(this.pendingRunScriptMetadata.params) ? this.pendingRunScriptMetadata.params : []
+    },
+
+    resultStatusType() {
+      if (!this.activeRun.complete) return 'info'
+      return this.activeRun.success ? 'success' : 'danger'
     },
   },
 
@@ -1157,6 +1196,65 @@ getPreferredScriptDirectoryForCurrentConnection() {
       this.scriptParamForm = {}
     },
 
+    createRunId() {
+      if (globalThis.crypto && typeof globalThis.crypto.randomUUID === 'function') {
+        return globalThis.crypto.randomUUID()
+      }
+      return `script-run-${Date.now()}-${Math.random().toString(16).slice(2)}`
+    },
+
+    handleCommandResult(payload = {}) {
+      const metadata = payload.metadata && typeof payload.metadata === 'object' ? payload.metadata : {}
+      if (metadata.script_run !== true || metadata.script_run_presentation !== 'dialog') return false
+      if (String(metadata.script_run_id || '') !== this.activeRun.runId ||
+          String(payload.client_id || '') !== this.activeRun.clientId) return true
+
+      if (!this.resultVisible) this.resultVisible = true
+      const chunk = String(payload.text ?? '').replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+      if (chunk) {
+        const output = this.activeRun.output
+        const separator = output && !output.endsWith('\n') && !chunk.startsWith('\n') ? '\n' : ''
+        this.activeRun.output = `${output}${separator}${chunk}`
+      }
+      return true
+    },
+
+    handleCommandComplete(payload = {}) {
+      const metadata = payload.metadata && typeof payload.metadata === 'object' ? payload.metadata : {}
+      if (metadata.script_run !== true || metadata.script_run_presentation !== 'dialog') return false
+      if (String(metadata.script_run_id || '') !== this.activeRun.runId ||
+          String(payload.client_id || '') !== this.activeRun.clientId) return true
+
+      this.activeRun.complete = true
+      this.activeRun.success = payload.success === true
+      this.activeRun.status = payload.cancelled || payload.status === 'cancelled'
+        ? 'Cancelled'
+        : (payload.success ? 'Success' : 'Failed')
+      return true
+    },
+
+    async copyResult() {
+      const text = String(this.activeRun.output || '')
+      if (!text) return
+      try {
+        if (window.isSecureContext && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+          await navigator.clipboard.writeText(text)
+        } else {
+          const textarea = document.createElement('textarea')
+          textarea.value = text
+          textarea.style.position = 'fixed'
+          textarea.style.opacity = '0'
+          document.body.appendChild(textarea)
+          textarea.focus()
+          textarea.select()
+          document.execCommand('copy')
+          document.body.removeChild(textarea)
+        }
+        ElMessage.success('Result copied')
+      } catch (e) {
+        ElMessage.error(e.message || 'Copy failed')
+      }
+    },
 
     async runScriptFromTerminalBlock(payload = {}) {
   const scriptName = String(payload.script_name || '').trim()
@@ -1189,7 +1287,7 @@ getPreferredScriptDirectoryForCurrentConnection() {
     const res = await fetch(`/api/connections/${encodeURIComponent(this.selectedId)}/scripts/run`, {
       method: 'POST',
       headers: this.buildJsonHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ script_name: scriptName, params }),
+      body: JSON.stringify({ script_name: scriptName, params, presentation: 'terminal' }),
     })
     const json = await res.json()
     if (!res.ok || json.code !== 0) throw new Error(json.message || 'Failed to run script')
@@ -1205,7 +1303,7 @@ getPreferredScriptDirectoryForCurrentConnection() {
 
 
 
-    async confirmRunScript() {
+    async confirmRunScript(presentation = 'dialog') {
       const item = this.pendingRunScriptItem
       if (!item) {
         this.closeScriptRunDialog()
@@ -1216,33 +1314,56 @@ getPreferredScriptDirectoryForCurrentConnection() {
         ElMessage.warning('Please select a device')
         return
       }
+      if (this.scriptRunSubmitting) return
 
+      let runId = ''
       try {
-        this.scriptRunSubmitting = true
         const params = this.buildScriptRunParams(item)
+        this.scriptRunSubmitting = true
+        const displayName = item.display_name || item.script_name
 
-        const commandText = `> ${TERMINAL_RUN_SCRIPT_PREFIX} ${item.display_name || item.script_name}`
-        this.$emit('append-output', this.selectedId, commandText, 'command', {
-          terminal_block_type: 'script',
-          script_name: item.script_name || '',
-          script_path: item.path || `${item.script_name || ''}.py`,
-          script_display_name: item.display_name || item.script_name || '',
-          params: { ...params },
-        })
+        if (presentation === 'dialog') {
+          runId = this.createRunId()
+          this.activeRun = {
+            ...emptyScriptRun(),
+            runId,
+            clientId: String(this.selectedId),
+            displayName,
+            scriptPath: item.path || `${item.script_name}.py`,
+            status: 'Running',
+          }
+          this.resultVisible = true
+        } else {
+          // Terminal output keeps its original command block and re-run metadata.
+          const commandText = `> ${TERMINAL_RUN_SCRIPT_PREFIX} ${displayName}`
+          this.$emit('append-output', this.selectedId, commandText, 'command', {
+            terminal_block_type: 'script',
+            script_name: item.script_name || '',
+            script_path: item.path || `${item.script_name || ''}.py`,
+            script_display_name: displayName,
+            params: { ...params },
+          })
+        }
 
         const res = await fetch(`/api/connections/${encodeURIComponent(this.selectedId)}/scripts/run`, {
           method: 'POST',
           headers: this.buildJsonHeaders({ 'Content-Type': 'application/json' }),
-          body: JSON.stringify({ script_name: item.script_name, params }),
+          body: JSON.stringify({ script_name: item.script_name, params, presentation, run_id: runId }),
         })
         const json = await res.json()
         if (!res.ok || json.code !== 0) throw new Error(json.message || 'Failed to run script')
 
         const taskId = json.data && json.data.task_id
         this.$emit('set-active-task', this.selectedId, taskId || '')
-        ElMessage.success(`Run request submitted: ${item.display_name || item.script_name}`)
+        ElMessage.success(`Run request submitted: ${displayName}`)
         this.closeScriptRunDialog()
       } catch (e) {
+        if (presentation === 'dialog' && this.activeRun.runId === runId && runId) {
+          this.activeRun.complete = true
+          this.activeRun.success = false
+          this.activeRun.status = 'Failed'
+          this.activeRun.output += `${this.activeRun.output ? '\n' : ''}${e.message || 'Failed to run script'}`
+        }
         ElMessage.error(e.message || 'Failed to run script')
       } finally {
         this.scriptRunSubmitting = false
@@ -1760,6 +1881,37 @@ getPreferredScriptDirectoryForCurrentConnection() {
 
 .script-library-empty {
   min-height: 120px;
+}
+
+.script-result-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  margin-bottom: 12px;
+}
+
+.script-result-path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--el-text-color-regular);
+}
+
+.script-result-output {
+  min-height: 220px;
+  max-height: 52vh;
+  overflow: auto;
+  margin: 0;
+  padding: 14px;
+  border: 1px solid var(--el-border-color);
+  border-radius: 6px;
+  background: var(--el-fill-color-light);
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--el-font-family-monospace, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
 }
 
 @media (max-width: 1024px) {

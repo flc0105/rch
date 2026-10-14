@@ -46,7 +46,7 @@
   v-if="paramSpecs.length"
   label-position="top"
   class="script-run-form"
-  @submit.prevent="$emit('confirm')"
+  @submit.prevent="$emit('confirm', 'dialog')"
 >
         <ParamFormField
           v-for="param in paramSpecs"
@@ -72,13 +72,20 @@
           Cancel
         </el-button>
 
-        <el-button
+        <el-dropdown
+          split-button
           type="primary"
-          :loading="submitting"
-          @click="$emit('confirm')"
+          :disabled="submitting"
+          @click="$emit('confirm', 'dialog')"
+          @command="command => $emit('confirm', command)"
         >
-          Run
-        </el-button>
+          Run in Dialog
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="terminal">Run in Terminal</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
       </div>
     </template>
   </el-dialog>

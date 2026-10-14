@@ -638,7 +638,12 @@ export default {
                     ? this.handleQuickActionCommandResult?.({...payload, metadata}) === true
                     : false;
 
-                if (!handledByQuickActionDialog) {
+                const isScriptDialog = metadata.script_run === true && metadata.script_run_presentation === 'dialog';
+                const handledByScriptDialog = isScriptDialog
+                    ? this.handleScriptCommandResult?.({...payload, metadata}) === true
+                    : false;
+
+                if (!handledByQuickActionDialog && !handledByScriptDialog) {
                     this.appendOutput(payload.client_id, payload.text || '', '', {
                         task_id: payload.task_id || '',
                         command: payload.command || '',
@@ -669,7 +674,12 @@ export default {
                     ? this.handleQuickActionCommandComplete?.({...payload, metadata}) === true
                     : false;
 
-                if (!handledByQuickActionDialog) {
+                const isScriptDialog = metadata.script_run === true && metadata.script_run_presentation === 'dialog';
+                const handledByScriptDialog = isScriptDialog
+                    ? this.handleScriptCommandComplete?.({...payload, metadata}) === true
+                    : false;
+
+                if (!handledByQuickActionDialog && !handledByScriptDialog) {
                     const finishedCommand = metadata.quick_action === true
                         ? (metadata.quick_action_display_command || payload.command)
                         : payload.command;
