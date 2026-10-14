@@ -205,7 +205,7 @@ class ExternalToolClientPayloadBuilder(ExternalToolRuntimeComponent):
     def build_client_payload(self, meta: dict, params: dict | None = None) -> dict:
         return self.build_client_start_payload(meta, params=params)
 
-    def build_client_action_payload(self, meta: dict, action: str, instance_id: str = '', params: dict | None = None, max_bytes: int | None = None) -> dict:
+    def build_client_action_payload(self, meta: dict, action: str, instance_id: str = '', params: dict | None = None, max_bytes: int | None = None, cursor: str | None = None) -> dict:
         resolved_params = self.resolve_params(meta, params or {}, require_required=False) if params else {}
         # Action payloads only need deterministic runtime path from package/module/instance.
         package_id = meta.get('package_id') or ''
@@ -223,6 +223,7 @@ class ExternalToolClientPayloadBuilder(ExternalToolRuntimeComponent):
             params=resolved_params,
             runtime=runtime,
             max_bytes=int(max_bytes or self.DEFAULT_LOG_TAIL_BYTES),
+            cursor=cursor,
         )
 
     def build_client_install_status_payloads(self, packages: list[dict], platform_alias: str = '', arch: str = '') -> list[dict]:

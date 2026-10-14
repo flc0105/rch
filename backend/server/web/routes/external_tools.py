@@ -291,6 +291,7 @@ def create_external_tool_blueprint(server_instance):
                 tool_id,
                 instance_id=instance_id,
                 max_bytes=max_bytes,
+                cursor=payload.get('cursor'),
                 tab_id=get_optional_tab_id(),
             )
         return responder.json_endpoint(_execute, default_error_status=500)

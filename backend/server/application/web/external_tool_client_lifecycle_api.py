@@ -52,8 +52,8 @@ class WebExternalToolClientLifecycleApi:
         modules = [item for item in (self.catalog_service.get_catalog().get('modules') or []) if not item.get('error')]
         return self.runtime_service.client_lifecycle_runtime.list_all_client_instances(client_id, modules, tab_id=tab_id)
 
-    def read_client_logs(self, client_id: str, tool_id: str, instance_id: str, max_bytes=None, tab_id: str = ''):
-        return self.runtime_service.client_lifecycle_runtime.read_client_logs(client_id, tool_id, instance_id=instance_id, max_bytes=max_bytes, tab_id=tab_id)
+    def read_client_logs(self, client_id: str, tool_id: str, instance_id: str, max_bytes=None, tab_id: str = '', cursor=None):
+        return self.runtime_service.client_lifecycle_runtime.read_client_logs(client_id, tool_id, instance_id=instance_id, max_bytes=max_bytes, cursor=cursor, tab_id=tab_id)
 
     def remove_client_instance(self, client_id: str, tool_id: str, instance_id: str, tab_id: str = ''):
         return self.runtime_service.client_lifecycle_runtime.remove_client_instance(client_id, tool_id, instance_id=instance_id, tab_id=tab_id)

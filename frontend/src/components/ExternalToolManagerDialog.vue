@@ -680,6 +680,7 @@
 
   <el-dialog
     v-model="logDialogVisible"
+    @closed="stopLogStreaming"
     :title="logDialogTitle"
     width="940px"
     append-to-body
@@ -689,6 +690,8 @@
     </div>
     <pre ref="logContentRef" class="external-tool-log-content">{{ logContent || 'No log content.' }}</pre>
     <template #footer>
+      <el-switch v-model="logStreamingEnabled" size="small" active-text="Streaming" @change="onLogStreamingChange" />
+      <span v-if="logStreamError" class="muted small-text">{{ logStreamError }}</span>
       <el-button size="small" :loading="logLoading" @click="refreshCurrentLogs">Refresh Logs</el-button>
       <el-button size="small" @click="logDialogVisible = false">Close</el-button>
     </template>
@@ -870,6 +873,11 @@ export default {
       logDialogTitle: 'External Tool Logs',
       logFilePath: '',
       logContent: '',
+      logCursor: '',
+      logStreamingEnabled: false,
+      logStreamError: '',
+      logStreamTimer: null,
+      logStreamGeneration: 0,
       currentLogRow: null,
       detailDialogVisible: false,
       detailDialogTitle: '',
@@ -1066,12 +1074,19 @@ export default {
   },
 
   watch: {
+    logDialogVisible(visible) {
+      if (!visible) this.stopLogStreaming()
+    },
     async selectedId() {
       if (!this.visible) return
       this.deviceFilter = this.defaultTargetValue()
       await this.refreshInstallStatuses(false)
       await this.refreshInstances(false)
     },
+  },
+
+  beforeUnmount() {
+    this.stopLogStreaming()
   },
 
   methods: {
@@ -1161,6 +1176,7 @@ export default {
     },
 
     handleClosed() {
+      this.stopLogStreaming()
       this.resetStartDialog()
       this.currentLogRow = null
       this.logFilePath = ''
@@ -3009,13 +3025,21 @@ async uninstallClientTool(item, deviceId) {
     },
 
     async openInstanceLogs(row) {
+      this.stopLogStreaming()
       this.currentLogRow = row
+      this.logCursor = ''
       await this.readLogs(row, true)
     },
 
     async refreshCurrentLogs() {
       if (!this.currentLogRow) return
+      const streaming = this.logStreamingEnabled
+      if (streaming) this.stopLogStreaming()
       await this.readLogs(this.currentLogRow, true)
+      if (streaming && this.logDialogVisible) {
+        this.logStreamingEnabled = true
+        this.scheduleLogPoll()
+      }
     },
 
     async readLogs(row, openDialog = false) {
@@ -3025,6 +3049,7 @@ async uninstallClientTool(item, deviceId) {
         this.logDialogTitle = `${row.tool_id}/${row.instance_id} logs`
         this.logFilePath = data.log_file || row.stdout || ''
         this.logContent = data.content || ''
+        this.logCursor = data.cursor || ''
         if (openDialog) this.logDialogVisible = true
         this.scrollLogsToBottom()
       } catch (e) {
@@ -3035,10 +3060,58 @@ async uninstallClientTool(item, deviceId) {
     },
 
 
-    async readClientLogs(row) {
+    async readClientLogs(row, cursor = null) {
       const deviceId = this.normalizeDeviceId(row.device_id)
       if (!deviceId) throw new Error('Client instance row is missing device_id')
-      return externalToolsApi.readClientInstanceLogs(deviceId, row.tool_id, row.instance_id, { max_bytes: 65536 }, this.buildJsonHeaders())
+      const payload = { max_bytes: 65536 }
+      if (cursor !== null) payload.cursor = cursor
+      return externalToolsApi.readClientInstanceLogs(deviceId, row.tool_id, row.instance_id, payload, this.buildJsonHeaders())
+    },
+
+    onLogStreamingChange(enabled) {
+      if (enabled) this.scheduleLogPoll(0)
+      else this.stopLogStreaming()
+    },
+
+    stopLogStreaming() {
+      this.logStreamingEnabled = false
+      this.logStreamGeneration += 1
+      if (this.logStreamTimer !== null) clearTimeout(this.logStreamTimer)
+      this.logStreamTimer = null
+      this.logStreamError = ''
+    },
+
+    scheduleLogPoll(delay = 1200) {
+      if (!this.logStreamingEnabled || !this.logDialogVisible || !this.currentLogRow) return
+      if (this.logStreamTimer !== null) clearTimeout(this.logStreamTimer)
+      this.logStreamTimer = setTimeout(() => {
+        this.logStreamTimer = null
+        this.pollInstanceLog()
+      }, delay)
+    },
+
+    async pollInstanceLog() {
+      if (!this.logStreamingEnabled || !this.logDialogVisible || !this.currentLogRow) return
+      const generation = this.logStreamGeneration
+      try {
+        if (this.logLoading) return
+        // A cursor fetch returns only appended bytes; rotation/truncation resets the view.
+        const data = await this.readClientLogs(this.currentLogRow, this.logCursor || null)
+        if (generation !== this.logStreamGeneration || !this.logStreamingEnabled || !this.logDialogVisible) return
+        this.logStreamError = ''
+        this.logFilePath = data.log_file || this.logFilePath
+        this.logCursor = data.cursor || ''
+        if (data.reset || !this.logCursor) {
+          this.logContent = data.content || ''
+        } else if (data.content) {
+          this.logContent = (this.logContent + data.content).slice(-524288)
+        }
+        if (data.content) this.scrollLogsToBottom()
+      } catch (e) {
+        if (generation === this.logStreamGeneration) this.logStreamError = e.message || 'Log stream unavailable'
+      } finally {
+        if (generation === this.logStreamGeneration) this.scheduleLogPoll(this.logStreamError ? 2500 : 1200)
+      }
     },
 
     scrollLogsToBottom() {

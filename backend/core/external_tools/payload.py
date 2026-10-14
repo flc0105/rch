@@ -188,11 +188,12 @@ def client_action_payload(
     params: dict | None,
     runtime: dict,
     max_bytes: int,
+    cursor: str | None = None,
 ) -> dict:
     source_module = module if isinstance(module, dict) else {}
     package_id = str(source_module.get('package_id') or '').strip()
     module_id = str(source_module.get('id') or source_module.get('module_id') or '').strip()
-    return {
+    result = {
         'action': action,
         'tool_id': source_module.get('tool_id') or '',
         'package_id': package_id,
@@ -207,6 +208,9 @@ def client_action_payload(
         'lifecycle': dict(source_module.get('lifecycle') or {}),
         'max_bytes': int(max_bytes),
     }
+    if cursor is not None:
+        result['cursor'] = str(cursor)
+    return result
 
 
 def client_exec_payload(
