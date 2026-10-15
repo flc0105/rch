@@ -1,7 +1,7 @@
 SCRIPT_METADATA = {
-    "name": "macos/browser/get_chrome_tabs",
-    "display_name": "Get Chrome Tabs",
-    "description": "Get open tabs from Google Chrome on macOS",
+    "name": "mac/browser/get_chrome_tabs",
+    "display_name": "Chrome Tabs",
+    "description": "List open Chrome tabs.",
     "platforms": ["mac"],
     "category": "Browser",
     "params": []
@@ -27,7 +27,7 @@ def is_chrome_running():
 
 def get_chrome_tabs():
     if not is_chrome_running():
-        return [{"error": "Google Chrome is not running"}]
+        return {"error": "Chrome is not running."}
 
     script = r'''
     tell application "Google Chrome"
@@ -60,7 +60,7 @@ def get_chrome_tabs():
         )
 
         if result.returncode != 0:
-            return [{"error": (result.stderr or "Failed to get Chrome tabs").strip()}]
+            return {"error": (result.stderr or "Failed to retrieve Chrome tabs.").strip()}
 
         tabs = []
         for line in result.stdout.splitlines():
@@ -72,7 +72,7 @@ def get_chrome_tabs():
             if len(parts) != 3:
                 continue
 
-            title, url, window_id = [p.strip() for p in parts]
+            title, url, window_index = [p.strip() for p in parts]
 
             if not title:
                 continue
@@ -84,15 +84,18 @@ def get_chrome_tabs():
             tabs.append({
                 "title": title,
                 "url": url,
-                "window_id": int(window_id) if window_id.isdigit() else 0
+                "window": int(window_index) if window_index.isdigit() else 0
             })
 
         return tabs
 
     except subprocess.TimeoutExpired:
-        return [{"error": "Timeout while fetching Chrome tabs"}]
-    except Exception as e:
-        return [{"error": str(e)}]
+        return {"error": "Timed out while retrieving Chrome tabs."}
+    except Exception as exc:
+        return {"error": str(exc)}
 
 
-print(json.dumps(get_chrome_tabs(), indent=2, ensure_ascii=False))
+try:
+    print(json.dumps(get_chrome_tabs(), indent=2, ensure_ascii=False))
+except Exception as exc:
+    print(json.dumps({"error": str(exc)}, indent=2, ensure_ascii=False))

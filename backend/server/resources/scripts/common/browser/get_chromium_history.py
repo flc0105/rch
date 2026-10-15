@@ -4,9 +4,9 @@ Chrome/Edge 历史记录提取模块
 """
 
 SCRIPT_METADATA = {
-    "name": "common/browser/get_chromium_history",
-    "display_name": "Extract Chromium History",
-    "description": "Extract browsing history from Chromium-based browsers",
+    "name": "mac/browser/get_chromium_history",
+    "display_name": "Chromium History",
+    "description": "Retrieve browsing history from Chrome or Edge.",
     "platforms": ["common"],
     "category": "Browser",
     "params": [
@@ -16,7 +16,7 @@ SCRIPT_METADATA = {
             "required": False,
             "default": "chrome",
             "options": ["chrome", "edge"],
-            "description": "Browser type"
+            "description": "Browser (Chrome or Edge)"
         }
     ]
 }
@@ -31,7 +31,7 @@ from datetime import datetime
 from pathlib import Path
 
 
-def get_browser_paths(browser):
+def get_browser_data_dir(browser):
     """获取浏览器配置路径（跨平台）"""
     home = Path.home()
 
@@ -115,15 +115,15 @@ def get_chromium_history(db_path):
             history.append({
                 "title": truncate_string(title, 500),
                 "url": truncate_string(url, 500),
-                "date": visit_time.strftime("%Y-%m-%d %H:%M:%S") if visit_time else None,
-                "visit_count": visit_count
+                "time": visit_time.isoformat(timespec="seconds") if visit_time else None,
+                "visits": visit_count
             })
 
         cursor.close()
         return history
 
-    except Exception as e:
-        return {"error": f"Error reading history: {str(e)}"}
+    except Exception as exc:
+        return {"error": f"Failed to read browser history: {exc}"}
 
     finally:
         if conn:
@@ -149,7 +149,7 @@ def extract_history(browser="chrome"):
     if browser not in ("chrome", "edge"):
         return {"error": f"Unsupported browser: {browser}"}
 
-    profile_path = get_browser_paths(browser)
+    profile_path = get_browser_data_dir(browser)
     if not profile_path or not os.path.isdir(profile_path):
         return {"error": f"Browser not found: {browser}"}
 
@@ -161,6 +161,9 @@ def extract_history(browser="chrome"):
     return get_chromium_history(history_path)
 
 
-browser = kwargs.get("browser", "chrome")
-result = extract_history(browser)
-print(json.dumps(result, indent=2, ensure_ascii=False))
+try:
+    browser = kwargs.get("browser", "chrome")
+    result = extract_history(browser)
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+except Exception as exc:
+    print(json.dumps({"error": str(exc)}, indent=2, ensure_ascii=False))

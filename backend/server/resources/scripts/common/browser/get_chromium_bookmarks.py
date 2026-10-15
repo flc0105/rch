@@ -1,7 +1,7 @@
 SCRIPT_METADATA = {
-    "name": "common/browser/get_chromium_bookmarks",
-    "display_name": "Extract Chromium Bookmarks",
-    "description": "Extract bookmarks from Chromium-based browsers",
+    "name": "mac/browser/get_chromium_bookmarks",
+    "display_name": "Chromium Bookmarks",
+    "description": "Retrieve bookmarks from Chrome or Edge.",
     "platforms": ["common"],
     "category": "Browser",
     "params": [
@@ -11,7 +11,7 @@ SCRIPT_METADATA = {
             "required": False,
             "default": "chrome",
             "options": ["chrome", "edge"],
-            "description": "Chromium browser type"
+            "description": "Browser (Chrome or Edge)"
         }
     ]
 }
@@ -35,7 +35,7 @@ def chrome_time_to_datetime(chrome_time):
         return None
 
 
-def get_browser_paths(browser):
+def get_browser_data_dir(browser):
     home = Path.home()
 
     paths = {
@@ -80,13 +80,13 @@ def extract_bookmarks_recursive(node, path=""):
 
     elif node.get("type") == "url":
         dt = chrome_time_to_datetime(node.get("date_added"))
-        date_str = dt.strftime("%Y-%m-%d %H:%M:%S") if dt else None
+        added_time = dt.isoformat(timespec="seconds") if dt else None
 
         bookmarks.append({
-            "name": node.get("name", ""),
+            "title": node.get("name", ""),
             "url": node.get("url", ""),
             "path": path,
-            "date": date_str
+            "time": added_time
         })
 
     return bookmarks
@@ -113,8 +113,8 @@ def get_chromium_bookmarks(filename):
 
         return all_bookmarks
 
-    except Exception as e:
-        return {"error": f"Failed to read bookmarks: {str(e)}"}
+    except Exception as exc:
+        return {"error": f"Failed to read bookmarks: {exc}"}
 
 
 def extract_bookmarks(browser="chrome"):
@@ -122,7 +122,7 @@ def extract_bookmarks(browser="chrome"):
     if browser not in ("chrome", "edge"):
         return {"error": f"Unsupported browser: {browser}"}
 
-    profile_path = get_browser_paths(browser)
+    profile_path = get_browser_data_dir(browser)
     if not profile_path or not os.path.isdir(profile_path):
         return {"error": f"Browser not found: {browser}"}
 
@@ -133,5 +133,8 @@ def extract_bookmarks(browser="chrome"):
     return get_chromium_bookmarks(os.path.join(profile_dir, "Bookmarks"))
 
 
-browser = kwargs.get("browser", "chrome")
-print(json.dumps(extract_bookmarks(browser), indent=2, ensure_ascii=False))
+try:
+    browser = kwargs.get("browser", "chrome")
+    print(json.dumps(extract_bookmarks(browser), indent=2, ensure_ascii=False))
+except Exception as exc:
+    print(json.dumps({"error": str(exc)}, indent=2, ensure_ascii=False))

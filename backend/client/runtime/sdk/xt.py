@@ -97,7 +97,7 @@ def _missing_grant_message() -> str:
 
 
 def _target_platform() -> str:
-    value = normalize_platform(context.platform())
+    value = normalize_platform(context.os_alias())
     if not value:
         raise ScriptSdkExternalToolError('current platform is empty')
     return value

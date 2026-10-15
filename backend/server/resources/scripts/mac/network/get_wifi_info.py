@@ -1,8 +1,9 @@
+#!/usr/bin/env python3
 SCRIPT_METADATA = {
     "name": "mac/network/get_wifi_info",
-    "display_name": "Get Wi-Fi Info",
-    "description": "Get current and saved Wi-Fi networks on macOS",
-    "platforms": ["darwin"],
+    "display_name": "Wi-Fi Info",
+    "description": "Retrieve the current and saved Wi-Fi networks.",
+    "platforms": ["mac"],
     "category": "Network",
     "params": []
 }
@@ -11,10 +12,7 @@ import json
 import re
 import subprocess
 
-result = {
-    "current_network": None,
-    "known_networks": []
-}
+UNAVAILABLE = "未连接或无法获取"
 
 
 def get_wifi_interface():
@@ -23,71 +21,96 @@ def get_wifi_interface():
             ["networksetup", "-listallhardwareports"],
             text=True
         )
+    except (OSError, subprocess.CalledProcessError):
+        return None
 
-        lines = output.splitlines()
-        for i, line in enumerate(lines):
-            if "AirPort" in line or "Wi-Fi" in line:
-                if i + 1 < len(lines) and "Device:" in lines[i + 1]:
-                    return lines[i + 1].split(":", 1)[1].strip()
-    except Exception:
-        pass
+    lines = output.splitlines()
+
+    for index, line in enumerate(lines[:-1]):
+        if "AirPort" in line or "Wi-Fi" in line:
+            next_line = lines[index + 1]
+
+            if "Device:" in next_line:
+                return next_line.split(":", 1)[1].strip()
 
     return None
 
 
-def get_current_wifi():
-    wifi_interface = get_wifi_interface()
-    if not wifi_interface:
-        result["current_network"] = "未连接或无法获取"
-        return
+def get_current_wifi(interface):
+    if not interface:
+        return UNAVAILABLE
 
     try:
         output = subprocess.check_output(
-            ["networksetup", "-getairportnetwork", wifi_interface],
+            ["networksetup", "-getairportnetwork", interface],
             text=True
         )
 
         if "Current Wi-Fi Network:" in output:
-            result["current_network"] = output.split(":", 1)[1].strip()
-        else:
-            result["current_network"] = "未连接或无法获取"
-    except Exception:
-        result["current_network"] = "未连接或无法获取"
+            return output.split(":", 1)[1].strip()
+
+    except (OSError, subprocess.CalledProcessError):
+        pass
+
+    return UNAVAILABLE
 
 
-def get_wifi_history():
-    wifi_interface = get_wifi_interface()
+def get_known_wifi(interface):
+    networks = []
 
-    if wifi_interface:
+    if interface:
         try:
             output = subprocess.check_output(
-                ["networksetup", "-listpreferredwirelessnetworks", wifi_interface],
+                [
+                    "networksetup",
+                    "-listpreferredwirelessnetworks",
+                    interface
+                ],
                 text=True
             )
 
-            lines = output.splitlines()[1:]
-            for line in lines:
-                ssid = line.strip()
-                if ssid:
-                    result["known_networks"].append(ssid)
-        except Exception:
+            networks = [
+                line.strip()
+                for line in output.splitlines()[1:]
+                if line.strip()
+            ]
+
+        except (OSError, subprocess.CalledProcessError):
             pass
 
-    if not result["known_networks"]:
+    if not networks:
         try:
             output = subprocess.check_output(
-                ["defaults", "read", "/Library/Preferences/SystemConfiguration/com.apple.airport.preferences"],
+                [
+                    "defaults",
+                    "read",
+                    "/Library/Preferences/SystemConfiguration/com.apple.airport.preferences"
+                ],
                 text=True,
                 stderr=subprocess.DEVNULL
             )
-            ssids = re.findall(r'SSIDString = "([^"]+)"', output)
-            result["known_networks"] = ssids
-        except Exception:
+
+            networks = re.findall(
+                r'SSIDString = "([^"]+)"',
+                output
+            )
+
+        except (OSError, subprocess.CalledProcessError):
             pass
 
-    result["known_networks"] = sorted(set(result["known_networks"]), key=str.lower)
+    return sorted(set(networks), key=str.lower)
 
 
-get_current_wifi()
-get_wifi_history()
-print(json.dumps(result, indent=2, ensure_ascii=False))
+def main():
+    interface = get_wifi_interface()
+
+    output = {
+        "current_network": get_current_wifi(interface),
+        "known_networks": get_known_wifi(interface),
+    }
+
+    print(json.dumps(output, ensure_ascii=False, indent=2))
+
+
+if __name__ == "__main__":
+    main()

@@ -4,6 +4,7 @@ import { getConnectionRevisionStatus, listConnections, updateConnectionDeviceVie
 import { assignMachineDeviceGroup, listDeviceGroups } from '../api/deviceGroupsApi.js'
 
 const LAST_SELECTED_MACHINE_STORAGE_KEY = 'rch:last_selected_machine_id'
+const LAST_SELECTED_CLIENT_STORAGE_KEY = 'rch:last_selected_client_id'
 
 function emptyDeviceViewPrefs() {
     return {
@@ -65,13 +66,27 @@ export default {
             }
         },
 
-        rememberSelectedMachineId(machineId) {
-            const normalizedMachineId = this.normalizeMachineId(machineId)
+        getStoredSelectedClientId() {
             try {
-                if (normalizedMachineId) {
-                    window.sessionStorage.setItem(LAST_SELECTED_MACHINE_STORAGE_KEY, normalizedMachineId)
+                return this.normalizeClientId(window.sessionStorage.getItem(LAST_SELECTED_CLIENT_STORAGE_KEY))
+            } catch (e) {
+                return ''
+            }
+        },
+
+        rememberSelectedConnection(item) {
+            const machineId = this.getConnectionMachineId(item)
+            const clientId = this.getConnectionClientId(item)
+            try {
+                if (machineId) {
+                    window.sessionStorage.setItem(LAST_SELECTED_MACHINE_STORAGE_KEY, machineId)
                 } else {
                     window.sessionStorage.removeItem(LAST_SELECTED_MACHINE_STORAGE_KEY)
+                }
+                if (clientId) {
+                    window.sessionStorage.setItem(LAST_SELECTED_CLIENT_STORAGE_KEY, clientId)
+                } else {
+                    window.sessionStorage.removeItem(LAST_SELECTED_CLIENT_STORAGE_KEY)
                 }
             } catch (e) {
                 // sessionStorage 不可用时只影响刷新后的恢复，不影响当前连接选择。
@@ -572,17 +587,22 @@ const passwordInput = h({
             const selectedVisible = sidebarConnections.find(item => item.client_id === this.selectedId)
 
             if (selectedVisible) {
-                this.rememberSelectedMachineId(this.getConnectionMachineId(selectedVisible))
+                this.rememberSelectedConnection(selectedVisible)
                 return
             }
 
             const preferredMachineId = this.getConnectionMachineId(selected) || this.getStoredSelectedMachineId()
-            const next = this.findPreferredConnectionForMachine(preferredMachineId, sidebarConnections)
+            const storedClientId = this.getStoredSelectedClientId()
+            const exactMatch = storedClientId ? sidebarConnections.find(item => (
+                this.getConnectionClientId(item) === storedClientId
+                && (!preferredMachineId || this.getConnectionMachineId(item) === preferredMachineId)
+            )) : null
+            const next = exactMatch || this.findPreferredConnectionForMachine(preferredMachineId, sidebarConnections)
             const previousSelectedId = this.selectedId
             this.selectedId = next?.client_id || ''
 
             if (next && next.client_id !== previousSelectedId) {
-                this.rememberSelectedMachineId(this.getConnectionMachineId(next))
+                this.rememberSelectedConnection(next)
                 this.ensureOutputBucket?.(next.client_id)
                 this.refreshClientRevisionStatus(next)
             }
@@ -1163,7 +1183,7 @@ const passwordInput = h({
         selectConnection(clientId) {
             this.selectedId = clientId
             const selected = this.connections.find(item => item.client_id === clientId)
-            this.rememberSelectedMachineId(this.getConnectionMachineId(selected))
+            this.rememberSelectedConnection(selected)
             this.ensureOutputBucket(clientId)
             this.refreshClientRevisionStatus(selected)
             this.commandHistoryItems = []
