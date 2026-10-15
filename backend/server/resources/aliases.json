@@ -53,7 +53,6 @@
   "mac": {
     "ll": "ls -la",
     "sleep": "read ping -c <sec> 127.0.0.1",
-    "kill_port": "kill -9 $(lsof -t -i:<port>)",
     "public_ip": "curl -s ifconfig.me;echo",
     "clean_apple_junk": "find . -name \"._*\" -type f -delete && find . -name \".DS_Store\" -type f -delete",
     "local_ip": "ipconfig getifaddr en0",
@@ -80,7 +79,8 @@
     "wake_display": "caffeinate -u -t 1",
     "enter_password": "osascript -e 'tell application \"System Events\" to keystroke \"<password>\"' -e 'tell application \"System Events\" to key code 36'",
     "sleep_display": "pmset displaysleepnow",
-    "real_clear": "printf '\\033[2J\\033[3J\\033[H'"
+    "real_clear": "printf '\\033[2J\\033[3J\\033[H'",
+    "kill_port9": "kill -9 $(lsof -t -i:<port>)"
   },
   "linux": {},
   "ios": {}

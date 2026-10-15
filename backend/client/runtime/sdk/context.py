@@ -223,6 +223,12 @@ def approve_preview(message: str, preview: dict, *, title='Review execution plan
     return request_preview(message, preview, title=title, timeout=timeout)
 
 
+def select_preview_rows(message: str, preview: dict, *, title='Review execution plan', timeout=90) -> list[str]:
+    """Return selected row IDs after approval; cancellation raises."""
+    from client.runtime.sdk.interactions import select_preview_rows as request_rows
+    return request_rows(message, preview, title=title, timeout=timeout)
+
+
 def get_script_grant() -> dict:
     value = get_current_context().get('script_grant', {})
     return dict(value) if isinstance(value, dict) else {}
@@ -297,7 +303,7 @@ def build_script_sdk_globals(command_owner=None, kwargs=None) -> dict:
     """
     import sys
 
-    from client.runtime.sdk import artifact, command, events, keychains, scripts, variables, workspace, xt
+    from client.runtime.sdk import artifact, command, events, keychains, scripts, workspace, xt
 
     sdk_globals = {
         'artifact': artifact,
@@ -305,7 +311,6 @@ def build_script_sdk_globals(command_owner=None, kwargs=None) -> dict:
         'events': events,
         'keychains': keychains,
         'scripts': scripts,
-        'variables': variables,
         'context': sys.modules[__name__],
         'workspace': workspace,
         'xt': xt,

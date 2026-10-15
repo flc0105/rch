@@ -34,6 +34,21 @@
           size="small"
           class="plan-table"
         >
+          <el-table-column v-if="current.preview.row_ids?.length" width="48" align="center">
+            <template #header>
+              <el-checkbox
+                :model-value="selectedRowIds.length === current.preview.row_ids.length"
+                :indeterminate="selectedRowIds.length > 0 && selectedRowIds.length < current.preview.row_ids.length"
+                @change="toggleAllRows"
+              />
+            </template>
+            <template #default="{ $index }">
+              <el-checkbox
+                :model-value="selectedRowIds.includes(current.preview.row_ids[$index])"
+                @change="checked => toggleRow(current.preview.row_ids[$index], checked)"
+              />
+            </template>
+          </el-table-column>
           <el-table-column
             v-for="column in current.preview.columns"
             :key="column.key"
@@ -98,7 +113,7 @@ import { answerInteraction, listPendingInteractions } from '../api/interactionAp
 export default {
   name: 'ExecutionInteractionDialog',
   data() {
-    return { queue: [], inputValue: '', selectedValue: '', switchValues: {}, errorText: '', submitting: false }
+    return { queue: [], inputValue: '', selectedValue: '', switchValues: {}, selectedRowIds: [], errorText: '', submitting: false }
   },
   computed: {
     current() { return this.queue[0] || null },
@@ -109,11 +124,31 @@ export default {
         (this.current?.preview?.switches || []).map(item => [item.key, item.default === true])
       )
     },
+    initializeRows() {
+      this.selectedRowIds = [...(this.current?.preview?.row_ids || [])]
+    },
+    toggleRow(id, checked) {
+      this.selectedRowIds = checked
+        ? [...new Set([...this.selectedRowIds, id])]
+        : this.selectedRowIds.filter(value => value !== id)
+    },
+    toggleAllRows(checked) {
+      this.selectedRowIds = checked ? [...(this.current?.preview?.row_ids || [])] : []
+    },
+    previewValue(request) {
+      const switches = request.preview?.switches || []
+      const hasRows = Array.isArray(request.preview?.row_ids)
+      if (!switches.length && !hasRows) return undefined
+      return {
+        ...Object.fromEntries(switches.map(item => [item.key, this.switchValues[item.key] === true])),
+        ...(hasRows ? { selected_rows: [...this.selectedRowIds] } : {}),
+      }
+    },
     enqueue(request) {
       if (!request?.interaction_id) return
       if (this.queue.some(item => item.interaction_id === request.interaction_id)) return
       this.queue.push(request)
-      if (this.queue.length === 1) this.initializeSwitches()
+      if (this.queue.length === 1) { this.initializeSwitches(); this.initializeRows() }
     },
     resolved(payload) {
       if (!payload?.interaction_id) return
@@ -122,6 +157,7 @@ export default {
       this.selectedValue = ''
       this.errorText = ''
       this.initializeSwitches()
+      this.initializeRows()
     },
     async reloadPending(tabId) {
       if (!tabId) return
@@ -144,9 +180,8 @@ export default {
       try {
         await answerInteraction(request.interaction_id, {
           approved,
-          ...(approved && request.kind === 'preview' && request.preview?.switches?.length
-            ? { value: Object.fromEntries(request.preview.switches.map(item => [item.key, this.switchValues[item.key] === true])) }
-            : {}),
+          ...(approved && request.kind === 'preview' && this.previewValue(request) !== undefined
+            ? { value: this.previewValue(request) } : {}),
           ...(approved && !['confirm', 'preview'].includes(request.kind) ? { value: request.kind === 'select' ? this.selectedValue : this.inputValue } : {}),
         })
         this.resolved(request)

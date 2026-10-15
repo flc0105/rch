@@ -54,3 +54,20 @@ def approve_preview(message: str, preview: dict, *, title='Review execution plan
     """Approve a plain-data preview (summary, columns/rows, collapsible details)."""
     result = _request('preview', message, title=title, timeout=timeout, preview=preview)
     return result.get('status') == 'answered' and result.get('value') is True
+
+
+def select_preview_rows(message: str, preview: dict, *, title='Review execution plan', timeout=90) -> list[str]:
+    """Return approved row IDs; reject/timeout raises (distinct from selecting none)."""
+    if not isinstance(preview, dict) or not preview.get('row_ids'):
+        raise ValueError('Selectable preview requires nonempty row_ids')
+    result = _request('preview', message, title=title, timeout=timeout, preview=preview)
+    value = result.get('value')
+    if (result.get('status') != 'answered' or not isinstance(value, dict) or
+            not isinstance(value.get('selected_rows'), list)):
+        raise ScriptSdkInteractionError(f'Preview selection not approved ({result.get("status")})')
+    allowed = preview['row_ids']
+    selected = value['selected_rows']
+    if (any(not isinstance(row_id, str) or row_id not in allowed for row_id in selected) or
+            len(selected) != len(set(selected))):
+        raise ScriptSdkInteractionError('Invalid preview row selection response')
+    return selected

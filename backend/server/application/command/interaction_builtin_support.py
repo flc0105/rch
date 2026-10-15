@@ -46,3 +46,18 @@ class BuiltinInteractionSupport:
         """Display structured summary/table/details; approve only on explicit acceptance."""
         result = self._request('preview', message, title=title, timeout=timeout, preview=preview)
         return result['status'] == 'answered' and result['value'] is True
+
+
+    def select_preview_rows(self, message, preview, *, title='Review execution plan', timeout=90):
+        if not isinstance(preview, dict) or not preview.get('row_ids'):
+            raise ValueError('Selectable preview requires nonempty row_ids')
+        result = self._request('preview', message, title=title, timeout=timeout, preview=preview)
+        value = result.get('value')
+        if result.get('status') != 'answered' or not isinstance(value, dict):
+            raise BuiltinInteractionError('Preview selection rejected, expired, or cancelled')
+        selected = value.get('selected_rows')
+        if (not isinstance(selected, list) or
+                any(not isinstance(key, str) or key not in preview['row_ids'] for key in selected) or
+                len(selected) != len(set(selected))):
+            raise BuiltinInteractionError('Invalid preview row selection reply')
+        return selected

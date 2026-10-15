@@ -23,7 +23,7 @@ class InteractionBroker:
         """Small, plain-text-only presentation schema; never accepts HTML/JS."""
         if not isinstance(value, dict):
             raise ValueError('Preview must be an object')
-        if set(value) - {'summary', 'columns', 'rows', 'details', 'notice', 'switches'}:
+        if set(value) - {'summary', 'columns', 'rows', 'details', 'notice', 'switches', 'row_ids'}:
             raise ValueError('Unsupported preview field')
         def short(value, limit=500):
             if not isinstance(value, str) or len(value) > limit:
@@ -60,6 +60,18 @@ class InteractionBroker:
             if not isinstance(row, dict) or set(row) - set(keys):
                 raise ValueError('Preview row contains unknown fields')
             result['rows'].append({key: short(row.get(key, ''), 500) for key in keys})
+        if 'row_ids' in value:
+            row_ids = value['row_ids']
+            if (not isinstance(row_ids, list) or not row_ids or
+                    len(row_ids) != len(result['rows'])):
+                raise ValueError('Preview row_ids must match nonempty preview rows')
+            if any(not isinstance(row_id, str) or not 1 <= len(row_id) <= 80 or
+                   not row_id.replace('_', '').replace('-', '').isalnum() or
+                   not row_id[0].isalnum() for row_id in row_ids):
+                raise ValueError('Invalid Preview row ID')
+            if len(set(row_ids)) != len(row_ids):
+                raise ValueError('Duplicate Preview row IDs')
+            result['row_ids'] = list(row_ids)
         details = value.get('details', [])
         if not isinstance(details, list) or len(details) > 16:
             raise ValueError('Preview details must be a list of <=16 items')
@@ -91,6 +103,8 @@ class InteractionBroker:
             ids = [s['key'] for s in result['switches']]
             if len(set(ids)) != len(ids):
                 raise ValueError('Duplicate Preview switch keys')
+            if 'row_ids' in result and 'selected_rows' in ids:
+                raise ValueError('Preview switch key conflicts with row selection')
         return result
 
     def pending(self, tab_id):
@@ -172,13 +186,27 @@ class InteractionBroker:
                     if item['kind'] == 'select' and value not in item['options']:
                         raise ValueError('Selected value is not among offered options')
                     item['value'] = value
-                elif item['kind'] == 'preview' and item['preview'] and item['preview'].get('switches'):
-                    switches = item['preview']['switches']
+                elif item['kind'] == 'preview' and item['preview'] and (
+                        item['preview'].get('switches') or 'row_ids' in item['preview']):
+                    offered = item['preview']
+                    switches = offered.get('switches', [])
                     expected = {switch['key'] for switch in switches}
+                    if 'row_ids' in offered:
+                        if 'selected_rows' in expected:
+                            raise ValueError('Preview switch key conflicts with row selection')
+                        expected.add('selected_rows')
                     if not isinstance(value, dict) or set(value) != expected:
-                        raise ValueError('Preview switch reply must provide exactly the offered keys')
-                    if any(type(flag) is not bool for flag in value.values()):
+                        raise ValueError('Preview switch/row reply must provide exactly the offered keys')
+                    if any(type(value[switch['key']]) is not bool for switch in switches):
                         raise ValueError('Preview switch values must be boolean')
+                    if 'row_ids' in offered:
+                        selected = value['selected_rows']
+                        allowed = set(offered['row_ids'])
+                        if (not isinstance(selected, list) or
+                                any(not isinstance(row_id, str) or row_id not in allowed
+                                    for row_id in selected) or
+                                len(set(selected)) != len(selected)):
+                            raise ValueError('Preview selected rows must be unique offered IDs')
                     item['value'] = dict(value)
                 else:
                     if item['kind'] == 'preview' and value is not None:

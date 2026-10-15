@@ -477,6 +477,38 @@ Client command demos use `CommandInteractions(self).approve_preview(message, pla
 
 Presentation constraints: `summary` up to 16 label/value entries; `columns` up to 8 `{key,label}` pairs; `rows` up to 100 dictionaries keyed by declared column keys; `details` up to 16 `{title,content}` entries. All values are plain strings, not HTML. Only the preview UI changes: existing `confirm`, `ask`, `select`, and `secret` remain unchanged. Reject/timeout returns `False`. A preview approves a request, **not** a persistent server-side plan: the caller must verify its own actual targets before executing.
 
+### Selectable Preview rows (opt-in)
+
+Existing `context.approve_preview()` plans remain unchanged. Add `row_ids` only when
+users should check/uncheck table rows; IDs must be unique, stable strings matching
+the 1–100 visible rows. By default all rows are checked. The response contains only
+selected IDs; scripts must use them to filter their own plan.
+
+```python
+plan = {
+    'columns': [{'key': 'item', 'label': 'Item'}],
+    'rows': [{'item': 'A'}, {'item': 'B'}],
+    'row_ids': ['a', 'b'],
+}
+try:
+    selected_ids = context.select_preview_rows('Choose items:', plan)
+except ScriptSdkInteractionError:
+    return  # rejected, expired, or cancelled
+# [] means approved with no rows checked. This call changes no files.
+```
+
+Client Command Registry code can call
+`CommandInteractions(self).select_preview_rows(message, plan, title=...)`;
+Server Builtin commands can call `self.interactions.select_preview_rows(...)`.
+The normal boolean-only Preview and existing switches still work without changes.
+
+For read-only expansion of a **single intermediate directory-level `*`** (e.g.
+`~/Library/Containers/com.tencent.xinWeChat/Data/Documents/xwechat_files/*/msg/file`),
+use `from client.runtime.sdk.path_patterns import expand_directory_pattern`.
+This returns existing directories without following symlinks. It performs **no**
+deletions; a caller must separately scan, preview and validate targets before acting.
+The Cleanup and Backup scripts do not yet call this helper.
+
 Client shell-like process commands are registered with `@desc` and use positional arguments:
 
 - `kill_port <port> [-9]` (e.g. `kill_port 9999 -9`); an omitted port prompts for input.
