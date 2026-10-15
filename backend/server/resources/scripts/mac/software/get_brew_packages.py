@@ -10,34 +10,56 @@ SCRIPT_METADATA = {
 import json
 import subprocess
 import datetime as dt
+import os
+import shutil
+import sys
+from pathlib import Path
 
 BREW = "brew"
+COMMAND_TIMEOUT_SECONDS = 60
+
+
+def find_brew():
+    found = shutil.which(BREW)
+    if found:
+        return found
+    for candidate in ("/opt/homebrew/bin/brew", "/usr/local/bin/brew"):
+        if Path(candidate).is_file() and os.access(candidate, os.X_OK):
+            return candidate
+    return None
 
 
 def run_brew_info():
-    result = subprocess.run(
-        [BREW, "info", "--json=v2", "--installed"],
-        text=True,
-        capture_output=True,
-    )
+    brew = find_brew()
+    if not brew:
+        return None, ["Homebrew executable not found"]
+
+    try:
+        result = subprocess.run(
+            [brew, "info", "--json=v2", "--installed"],
+            text=True,
+            capture_output=True,
+            timeout=COMMAND_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired:
+        return None, [f"Homebrew inventory timed out after {COMMAND_TIMEOUT_SECONDS}s"]
+    except OSError as exc:
+        return None, [f"Cannot run Homebrew: {exc}"]
 
     if result.returncode != 0:
-        print(json.dumps([{
-            "type": "",
-            "token": "",
-            "name": "",
-            "tap": "",
-            "installed_ver": "",
-            "desc": "",
-            "homepage": "",
-            "url": "",
-            "depends_on": [],
-            "installed_time": "",
-            "error": result.stderr.strip() or result.stdout.strip()
-        }], ensure_ascii=False, indent=2))
-        raise SystemExit(1)
+        detail = (result.stderr or result.stdout).strip()
+        return None, [f"Homebrew inventory failed ({result.returncode}): {detail or 'no error details'}"]
 
-    return json.loads(result.stdout)
+    warnings = [line.strip() for line in result.stderr.splitlines() if line.strip()]
+    try:
+        data = json.loads(result.stdout)
+    except ValueError as exc:
+        return None, [f"Cannot parse Homebrew JSON: {exc}"]
+    if not isinstance(data, dict) or any(
+        not isinstance(data.get(key), list) for key in ("formulae", "casks")
+    ):
+        return None, ["Unexpected Homebrew JSON structure"]
+    return data, warnings
 
 
 def format_time(value):
@@ -170,20 +192,31 @@ def normalize_cask(cask):
     }
 
 
+def collect():
+    data, warnings = run_brew_info()
+    if data is None:
+        return None, warnings
+
+    try:
+        output = []
+        for formula in data["formulae"]:
+            output.append(normalize_formula(formula))
+        for cask in data["casks"]:
+            output.append(normalize_cask(cask))
+        output.sort(key=lambda x: (x["type"], x["token"]))
+    except (TypeError, AttributeError, KeyError, ValueError) as exc:
+        return None, [f"Cannot process Homebrew inventory: {exc}"]
+    return output, warnings
+
+
 def main():
-    data = run_brew_info()
-
-    output = []
-
-    for formula in data.get("formulae") or []:
-        output.append(normalize_formula(formula))
-
-    for cask in data.get("casks") or []:
-        output.append(normalize_cask(cask))
-
-    output.sort(key=lambda x: (x["type"], x["token"]))
-
-    print(json.dumps(output, ensure_ascii=False, indent=2))
+    rows, warnings = collect()
+    for warning in warnings:
+        level = "ERROR" if rows is None else "WARNING"
+        print(f"[BREW] {level}: {warning}", file=sys.stderr, flush=True)
+    if rows is None:
+        raise SystemExit(1)
+    print(json.dumps(rows, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

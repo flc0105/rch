@@ -28,6 +28,7 @@ def collect(roots=None):
     apps = []
     warnings = []
     seen = set()
+    scanned_roots = 0
     for root in app_roots() if roots is None else roots:
         root = Path(root)
         if not root.is_dir():
@@ -37,6 +38,7 @@ def collect(roots=None):
         except OSError as exc:
             warnings.append(f'cannot read {root}: {exc}')
             continue
+        scanned_roots += 1
         for app in entries:
             if app.suffix.lower() != '.app' or app.is_symlink() or not app.is_dir():
                 continue
@@ -63,13 +65,18 @@ def collect(roots=None):
                     warnings.append(f'cannot read {info_path}: {exc}')
             seen.add(dedup_key)
             apps.append(details)
+    if warnings and scanned_roots == 0:
+        return None, warnings
     return sorted(apps, key=lambda item: (item['name'].casefold(), item['path'])), warnings
 
 
 def main():
     apps, warnings = collect()
     for warning in warnings:
-        print(f'[BACKUP APPS] WARNING: {warning}', file=sys.stderr, flush=True)
+        level = 'ERROR' if apps is None else 'WARNING'
+        print(f'[APPS] {level}: {warning}', file=sys.stderr, flush=True)
+    if apps is None:
+        raise SystemExit(1)
     print(json.dumps(apps, indent=2, ensure_ascii=False))
 
 

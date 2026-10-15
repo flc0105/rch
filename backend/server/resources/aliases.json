@@ -79,7 +79,8 @@
     "elevate_self": "osascript -e 'do shell script \"${rch:launch_command} >/var/tmp/rchclient.log 2>&1 </dev/null &\" with administrator privileges'",
     "wake_display": "caffeinate -u -t 1",
     "enter_password": "osascript -e 'tell application \"System Events\" to keystroke \"<password>\"' -e 'tell application \"System Events\" to key code 36'",
-    "sleep_display": "pmset displaysleepnow"
+    "sleep_display": "pmset displaysleepnow",
+    "real_clear": "printf '\\033[2J\\033[3J\\033[H'"
   },
   "linux": {},
   "ios": {}
