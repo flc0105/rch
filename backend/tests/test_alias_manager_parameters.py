@@ -123,14 +123,37 @@ class AliasManagerParameterTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, r'^Cannot mix positional and named arguments$'):
             self.manager.resolve_alias('pair', '--src A B --dst C')
 
-    def test_named_invocation_requires_cli_safe_placeholder_names(self):
-        self.manager.aliases['common']['bad'] = 'shell echo <hello world>'
+    def test_only_cli_safe_names_are_placeholders(self):
+        command = 'shell echo <user_name> <client-id> <hello world> <2bad> <some/path>'
+        parameters = self.manager.extract_parameters(command)
 
-        with self.assertRaisesRegex(
-            ValueError,
-            r'Named invocation requires parameter names matching \[A-Za-z_\]\[A-Za-z0-9_-\]\*',
-        ):
-            self.manager.resolve_alias('bad', '--hello value')
+        self.assertEqual(['user_name', 'client-id'], [item['name'] for item in parameters])
+        self.manager.aliases['common']['safe'] = command
+        resolved = self.manager.resolve_alias('safe', '--client-id C1 --user_name Alice')
+        self.assertEqual(
+            'shell echo Alice C1 <hello world> <2bad> <some/path>',
+            resolved['command'],
+        )
+
+    def test_shell_redirections_are_not_placeholders(self):
+        command = (
+            "osascript -e 'do shell script \"nohup ${rch:launch_command} "
+            "</dev/null >/var/tmp/rchclient.log 2>&1 &\" with administrator privileges'"
+        )
+        self.manager.aliases['common']['sudo_client'] = command
+
+        self.assertEqual([], self.manager.extract_parameters(command))
+        self.assertEqual(command, self.manager.resolve_alias('sudo_client')['command'])
+
+    def test_valid_parameter_with_redirections(self):
+        command = 'shell cat <input_path> </dev/null >/tmp/out.log 2>&1'
+        self.manager.aliases['common']['catfile'] = command
+
+        self.assertEqual(['input_path'], self.manager._extract_required_args(command))
+        self.assertEqual(
+            'shell cat /tmp/in </dev/null >/tmp/out.log 2>&1',
+            self.manager.resolve_alias('catfile', '--input_path /tmp/in')['command'],
+        )
 
     def test_named_invocation_preserves_quoted_values_with_spaces(self):
         self.manager.aliases['common']['say'] = 'shell echo "<text>" <count>'
@@ -183,6 +206,12 @@ class QuickActionNameOrientedParameterTests(unittest.TestCase):
         )
 
         self.assertEqual(['path'], [parameter['name'] for parameter in item['parameters']])
+
+    def test_quick_action_ignores_shell_redirection(self):
+        command = 'shell cat <input_path> </dev/null >/tmp/out.log 2>&1'
+        item = self.api._build_item('common', 'catfile', command, 'common', {})
+
+        self.assertEqual(['input_path'], [p['name'] for p in item['parameters']])
 
     def test_quick_action_dialog_execution_reuses_one_value(self):
         result = self.api.execute_quick_action(

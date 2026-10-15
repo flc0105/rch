@@ -85,7 +85,8 @@
     "git_summary": "read sh -c 'cd \"<path>\" && echo \"=== <path> ===\" && git status --short --branch && echo \"--- latest commit ---\" && git log -1 --oneline'",
     "find_in": "read grep -RInHi -I \"<keyword>\" \"<path>\"",
     "sha256": "read shasum -a 256 \"<file>\"",
-    "disk_for": "read df -h \"<path>\""
+    "disk_for": "read df -h \"<path>\"",
+    "elevate_self": "osascript -e 'do shell script \"${rch:launch_command} >/var/tmp/rchclient.log 2>&1 </dev/null &\" with administrator privileges'"
   },
   "linux": {},
   "ios": {}

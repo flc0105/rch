@@ -7,7 +7,7 @@ from server.config.config import ALIAS_PATH
 
 
 class AliasManager:
-    PLACEHOLDER_PATTERN = r'<.*?>'
+    PLACEHOLDER_PATTERN = r'<[A-Za-z_][A-Za-z0-9_-]*>'
     NAMED_PARAMETER_PATTERN = re.compile(r'^[A-Za-z_][A-Za-z0-9_-]*$')
     SUPPORTED_PLATFORMS = ('common', 'win', 'mac', 'linux', 'ios')
     # QUERY_PLATFORMS = SUPPORTED_PLATFORMS + ('all',)
