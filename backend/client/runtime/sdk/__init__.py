@@ -12,9 +12,9 @@ Server Script SDK。
     paths = workspace.list()
 
 也可以显式导入：
-    from client.runtime.sdk import artifact, command, context, events, keychains, scripts, workspace, xt
+    from client.runtime.sdk import artifact, command, context, events, keychains, scripts, variables, workspace, xt
 """
 
 from client.runtime.sdk import artifact, command, context, events, keychains, workspace, xt
 
-__all__ = ['artifact', 'command', 'context', 'events', 'keychains', 'scripts', 'workspace', 'xt']
+__all__ = ['artifact', 'command', 'context', 'events', 'keychains', 'scripts', 'variables', 'workspace', 'xt']

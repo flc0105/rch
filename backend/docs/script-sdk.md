@@ -5,7 +5,7 @@
 脚本中可以直接导入 SDK 模块：
 
 ```python
-from client.runtime.sdk import artifact, command, context, keychains, scripts, workspace, xt
+from client.runtime.sdk import artifact, command, context, keychains, scripts, variables, workspace, xt
 ```
 
 如果脚本需要访问受保护的 Server API，需要在脚本顶部声明 `SCRIPT_METADATA["api_grants"]`：
@@ -92,6 +92,31 @@ context.get_script_context()
 context.get_script_grant()
 context.get_script_grant_token()
 ```
+
+## `variables`
+
+Script 可以读取普通 Client 命令中的动态变量，不需要额外的 API Grant。变量在当前 Client 上解析，支持 `rch`、`env` 和 `path` 三个命名空间。
+
+```python
+from client.runtime.sdk import variables
+
+print('launch_command =', variables.get('rch:launch_command'))
+print('runtime =', variables.get('rch:runtime'))
+print('exec_path =', variables.get('rch:exec_path'))
+print('home =', variables.get('path:home'))
+
+text = variables.expand('Client: ${rch:client_id}, runtime: ${rch:runtime}')
+print(text)
+```
+
+| API | 作用 |
+|---|---|
+| `variables.get('namespace:name')` | 返回一项变量的字符串值 |
+| `variables.expand(text)` | 将文本中的 `${namespace:name}` 展开成变量值 |
+
+`rch` 变量与终端命令使用同一组名称，包括 `launch_command`、`runtime`、`exec_path`、`pid`、`cwd`、`client_id` 等。`env` 读取当前 Client 的环境变量，`path` 提供常用系统路径。未知变量或未设置的环境变量会抛出 `CommandVariableResolutionError`。
+
+`launch_command` 是完整启动命令，`exec_path` 是 Python/Client 可执行文件路径，`runtime` 是 Client 运行根目录。`subprocess_pipe` 模式返回 Client 本体对应的这些值，而不是脚本子进程的启动信息。变量只做文本替换，不会自动进行 Shell 引号转义。
 
 ## `command`
 

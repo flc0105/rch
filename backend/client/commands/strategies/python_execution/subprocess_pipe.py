@@ -26,7 +26,19 @@ class SubprocessPipePythonExecutionStrategy(PythonExecutionStrategy):
         它只负责把用户代码和 kwargs 包成一段完整的 Python 文本，
         然后直接通过 stdin 管道喂给子进程。
         """
-        kwargs_payload = self._serialize_kwargs(kwargs)
+        from types import SimpleNamespace
+        from client.commands.runtime.command_variable_resolver import CommandVariableResolver
+
+        payload = dict(kwargs or {})
+        script_context = dict(payload.get('__context__') or {})
+        resolver = CommandVariableResolver(SimpleNamespace(client_id=script_context.get('client_id', '')))
+        # 子进程的 argv / PID 与 Client 不同，先保存 Client 本体的取值。
+        script_context['__rch_variables__'] = {
+            name: resolver.resolve('${rch:' + name + '}', command_id=script_context.get('command_id'))
+            for name in ('exec_path', 'launch_command', 'runtime', 'pid', 'client_id', 'command_id')
+        }
+        payload['__context__'] = script_context
+        kwargs_payload = self._serialize_kwargs(payload)
 
         return f"""import base64
 import pickle

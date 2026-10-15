@@ -297,7 +297,7 @@ def build_script_sdk_globals(command_owner=None, kwargs=None) -> dict:
     """
     import sys
 
-    from client.runtime.sdk import artifact, command, events, keychains, scripts, workspace, xt
+    from client.runtime.sdk import artifact, command, events, keychains, scripts, variables, workspace, xt
 
     sdk_globals = {
         'artifact': artifact,
@@ -305,6 +305,7 @@ def build_script_sdk_globals(command_owner=None, kwargs=None) -> dict:
         'events': events,
         'keychains': keychains,
         'scripts': scripts,
+        'variables': variables,
         'context': sys.modules[__name__],
         'workspace': workspace,
         'xt': xt,

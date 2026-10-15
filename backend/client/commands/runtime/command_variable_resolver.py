@@ -41,8 +41,9 @@ class CommandVariableResolver:
         re.IGNORECASE,
     )
 
-    def __init__(self, connection):
+    def __init__(self, connection, *, rch_overrides=None):
         self.connection = connection
+        self._rch_overrides = dict(rch_overrides or {})
         self._static_cache = {}
         self._rch_variables = {
             'exec_path': ('Current Client process executable path.', self._get_exec_path),
@@ -140,6 +141,9 @@ class CommandVariableResolver:
         item = self._rch_variables.get(key)
         if item is None:
             raise CommandVariableResolutionError(f'Unknown rch variable: {name}')
+
+        if key in self._rch_overrides:
+            return self._stringify_value(self._rch_overrides[key], f'rch:{key}')
 
         _description, provider = item
         value = provider(command_id)
