@@ -6,7 +6,7 @@ from core.utils.decorator import desc
 
 class CommandInteractionMixin:
 
-    @desc('Test confirmation and text input before executing a harmless action', group='interaction')
+    @desc('Test confirmation and text input before executing a harmless action', group='interaction', api_grants=('interactions:request',))
     def interaction_demo(self, arg=''):
         if str(arg or '').strip():
             return 0, 'Usage: interaction_demo'
@@ -21,7 +21,7 @@ class CommandInteractionMixin:
         except CommandInteractionError as exc:
             return 0, f'[Interaction Demo] Not executed: {exc}'
 
-    @desc('Test select and secret interactions', group='interaction')
+    @desc('Test select and secret interactions', group='interaction', api_grants=('interactions:request',))
     def interaction_advanced_demo(self, arg=''):
         if str(arg or '').strip():
             return 0, 'Usage: interaction_advanced_demo'
@@ -39,7 +39,7 @@ class CommandInteractionMixin:
         except CommandInteractionError as exc:
             return 0, f'Demo cancelled: {exc}'
 
-    @desc('Test structured preview and approval without side effects', group='interaction')
+    @desc('Test structured preview and approval without side effects', group='interaction', api_grants=('interactions:request',))
     def interaction_preview_demo(self, arg=''):
         if str(arg or '').strip():
             return 0, 'Usage: interaction_preview_demo'

@@ -139,6 +139,7 @@
                   @run-quick-action="runPinnedQuickAction"
                   @open-settings="openSettingsDialog"
                   @clear="clearOutput"
+                  @clear-selection="clearSelectedConnection"
                   @bottom="scrollToBottom"
                 />
 

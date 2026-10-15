@@ -16,7 +16,13 @@
 <!--/>-->
 
 
-      <span class="dot dot-red"></span>
+      <button
+        class="dot dot-red dot-action"
+        type="button"
+        title="Clear selected device"
+        aria-label="Clear selected device"
+        @click="$emit('clear-selection')"
+      />
 <span class="dot dot-yellow"></span>
 
 <el-dropdown
@@ -231,6 +237,7 @@ export default {
     'run-quick-action',
     'open-settings',
     'clear',
+    'clear-selection',
     'bottom',
   ],
 
@@ -614,6 +621,10 @@ export default {
 
 .dot-action:active {
   transform: scale(0.96);
+}
+
+.dot-red.dot-action:hover {
+  box-shadow: 0 0 0 3px rgba(251, 113, 133, 0.14);
 }
 
 

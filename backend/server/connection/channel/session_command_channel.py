@@ -1,4 +1,5 @@
 from core.protocol.message_types import MSG_TYPE_COMMAND, MSG_TYPE_CANCEL, MSG_TYPE_SCRIPT
+from client.commands.common.commands import CommonCommands
 from server.application.auth.script_grant_service import (
     SCRIPT_GRANT_REQUEST_KEY,
     SCRIPT_GRANT_TOKEN_KEY,
@@ -56,11 +57,15 @@ class ClientSessionCommandChannel:
                 parts = shlex.split(command or '')
             except ValueError:
                 parts = []
-            if parts and parts[0] in ('kill_proc', 'kill_port', 'interaction_demo', 'interaction_advanced_demo', 'interaction_preview_demo'):
+            # Resolve grants from the Server's trusted command definitions,
+            # never from a Client-supplied command manifest.
+            method = getattr(CommonCommands, parts[0], None) if parts else None
+            grants = getattr(method, 'api_grants', ()) if callable(method) and hasattr(method, 'help') else ()
+            if grants:
                 extra = self._build_script_grant_extra(data['id'], {
                     SCRIPT_GRANT_REQUEST_KEY: {
                         'script_name': f'client-command:{parts[0]}',
-                        'api_grants': ['interactions:request'],
+                        'api_grants': list(grants),
                         'ttl_seconds': 300,
                     },
                 })

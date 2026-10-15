@@ -1180,6 +1180,17 @@ const passwordInput = h({
     return this.getConnectionClientId(a).localeCompare(this.getConnectionClientId(b))
 },
 
+        clearSelectedConnection() {
+            this.selectedId = ''
+            this.rememberSelectedConnection(null)
+            this.commandHistoryItems = []
+            this.commandExecutionItems = []
+            this.reloadCommandCandidatesFromRuntime?.({
+                reset: true,
+                silent: true,
+            })
+        },
+
         selectConnection(clientId) {
             this.selectedId = clientId
             const selected = this.connections.find(item => item.client_id === clientId)
