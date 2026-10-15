@@ -48,15 +48,15 @@ class ClientSessionCommandChannel:
             'id': self.generate_message_id(),
             'text': command,
         }
-        # Only the explicitly interactive Client process commands get a task-bound grant.
-        # Ordinary shell commands and existing Client registry entries are untouched.
+        # Only explicitly interactive Client commands receive task-bound grants.
+        # Other Client and shell commands are untouched.
         if command_type == MSG_TYPE_COMMAND:
             import shlex
             try:
                 parts = shlex.split(command or '')
             except ValueError:
                 parts = []
-            if parts and parts[0] in ('kill_process_preview', 'kill_by_port'):
+            if parts and parts[0] in ('kill_proc', 'kill_port', 'interaction_demo', 'interaction_advanced_demo', 'interaction_preview_demo'):
                 extra = self._build_script_grant_extra(data['id'], {
                     SCRIPT_GRANT_REQUEST_KEY: {
                         'script_name': f'client-command:{parts[0]}',

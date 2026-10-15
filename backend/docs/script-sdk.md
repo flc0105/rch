@@ -5,7 +5,7 @@
 脚本中可以直接导入 SDK 模块：
 
 ```python
-from client.runtime.sdk import artifact, command, context, keychains, scripts, variables, workspace, xt
+from client.runtime.sdk import artifact, command, context, keychains, scripts, workspace, xt
 ```
 
 如果脚本需要访问受保护的 Server API，需要在脚本顶部声明 `SCRIPT_METADATA["api_grants"]`：
@@ -92,31 +92,6 @@ context.get_script_context()
 context.get_script_grant()
 context.get_script_grant_token()
 ```
-
-## `variables`
-
-Script 可以读取普通 Client 命令中的动态变量，不需要额外的 API Grant。变量在当前 Client 上解析，支持 `rch`、`env` 和 `path` 三个命名空间。
-
-```python
-from client.runtime.sdk import variables
-
-print('launch_command =', variables.get('rch:launch_command'))
-print('runtime =', variables.get('rch:runtime'))
-print('exec_path =', variables.get('rch:exec_path'))
-print('home =', variables.get('path:home'))
-
-text = variables.expand('Client: ${rch:client_id}, runtime: ${rch:runtime}')
-print(text)
-```
-
-| API | 作用 |
-|---|---|
-| `variables.get('namespace:name')` | 返回一项变量的字符串值 |
-| `variables.expand(text)` | 将文本中的 `${namespace:name}` 展开成变量值 |
-
-`rch` 变量与终端命令使用同一组名称，包括 `launch_command`、`runtime`、`exec_path`、`pid`、`cwd`、`client_id` 等。`env` 读取当前 Client 的环境变量，`path` 提供常用系统路径。未知变量或未设置的环境变量会抛出 `CommandVariableResolutionError`。
-
-`launch_command` 是完整启动命令，`exec_path` 是 Python/Client 可执行文件路径，`runtime` 是 Client 运行根目录。`subprocess_pipe` 模式返回 Client 本体对应的这些值，而不是脚本子进程的启动信息。变量只做文本替换，不会自动进行 Shell 引号转义。
 
 ## `command`
 
@@ -454,7 +429,7 @@ print("Approved operation:", label)
 
 `context.confirm()` returns `False` on reject or timeout, and only returns `True` after explicit approval. `context.ask()` returns user text (including an empty string) or raises `ScriptSdkInteractionError` on reject/timeout. The input response travels over a separate authenticated control request and never becomes a new foreground Command. `context.ask(secret=True)` masks the browser input; do not print or persist secrets. Each request is limited to 180 seconds. The Server holds no durable paused-execution state; Server restarts invalidate pending interactions.
 
-RCH server builtin `interaction_demo` exercises confirmation followed by text input without deleting or modifying data.
+RCH Client command `interaction_demo` exercises confirmation followed by text input without deleting or modifying data.
 
 
 ### Execution interactions: Select and Secret
@@ -498,14 +473,14 @@ if not context.approve_preview('Execute this plan?', plan, title='Backup preview
 # Execute only the validated plan; verify targets have not changed.
 ```
 
-RCH builtins use `self.interactions.approve_preview(message, plan, title=..., timeout=...)` with the same data format. Test via the harmless `interaction_preview_demo` builtin or Script `mac/recon/personal_mac_backup_preview`.
+Client command demos use `CommandInteractions(self).approve_preview(message, plan, title=...)` with the same data format. Test via the harmless `interaction_preview_demo` Client command or Script `mac/recon/personal_mac_backup_preview`.
 
 Presentation constraints: `summary` up to 16 label/value entries; `columns` up to 8 `{key,label}` pairs; `rows` up to 100 dictionaries keyed by declared column keys; `details` up to 16 `{title,content}` entries. All values are plain strings, not HTML. Only the preview UI changes: existing `confirm`, `ask`, `select`, and `secret` remain unchanged. Reject/timeout returns `False`. A preview approves a request, **not** a persistent server-side plan: the caller must verify its own actual targets before executing.
 
 Client shell-like process commands are registered with `@desc` and use positional arguments:
 
-- `kill_by_port <port> [-9]` (e.g. `kill_by_port 9999 -9`); an omitted port prompts for input.
-- `kill_process_preview <pid|name> [-9]` (e.g. `kill_process_preview 30565 -9`); an omitted target prompts for PID/name input.
+- `kill_port <port> [-9]` (e.g. `kill_port 9999 -9`); an omitted port prompts for input.
+- `kill_proc <pid|name> [-9]` (e.g. `kill_proc 30565 -9`); an omitted target prompts for PID/name input.
 
 Both commands run **on the connected Client**, never on the Server host, and use the shared Preview/Approval Broker with a short-lived grant bound to the current Client command. Command candidates insert only the command name. The original `kill_process` is unchanged. The Preview contains a **Force termination** switch: omitted `-9` initializes it OFF; a trailing `-9` initializes it ON. The user may change the switch either way before approval. The **final approved UI switch value** decides the signal: OFF uses SIGTERM, ON uses SIGKILL. An unapproved command never sends a signal. No signal is sent without approval and identity revalidation. The `disconnect` example remains a Server builtin.
 

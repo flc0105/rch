@@ -24,6 +24,9 @@ SCRIPT_METADATA = {
              {"path": "~/Library/Caches/Adobe/CCX Welcome", "enabled": True},
              {"path": "~/Library/Caches/Homebrew", "enabled": True},
              {"path": "~/Library/Caches/pip", "enabled": True},
+             {"path": "~/Library/Logs/JetBrains/", "enabled": True},
+             {"path": "~/Library/Containers/com.tencent.xinWeChat/Data/Documents/xwechat_files", "enabled": False},
+             
              {"path": "~/*.hprof", "enabled": True},
              {"path": "~/.Trash", "enabled": False},
          ]},

@@ -9,7 +9,7 @@ from server.application.command.builtin_command_support import (
 from server.application.command.command_output_builtin_support import CommandOutputBuiltinSupport
 from server.application.command.command_notify_builtin_support import CommandNotifyBuiltinSupport
 from server.application.command.control_builtin_support import ControlBuiltinSupport
-from server.application.command.interaction_builtin_support import BuiltinInteractionSupport, BuiltinInteractionError
+from server.application.command.interaction_builtin_support import BuiltinInteractionSupport
 from server.application.command.advanced_builtin_support import AdvancedBuiltinSupport
 
 
@@ -26,16 +26,6 @@ class BuiltinCommandHandler:
     WEB_COMMAND_TEMPLATES = [
         {'name': 'disconnect', 'template': 'disconnect',
          'help': 'disconnect | Confirm then close current client connection', 'source': 'server'},
-        {'name': 'interaction_advanced_demo', 'template': 'interaction_advanced_demo',
-         'help': 'interaction_advanced_demo | Test select and secret interactions', 'source': 'server'},
-        {'name': 'interaction_preview_demo', 'template': 'interaction_preview_demo',
-         'help': 'interaction_preview_demo | Test structured preview and approval without side effects', 'source': 'server'},
-        {
-            'name': 'interaction_demo',
-            'template': 'interaction_demo',
-            'help': 'interaction_demo | Test confirmation and text input before executing a harmless action',
-            'source': 'server',
-        },
         {
             'name': 'upload',
             'template': 'upload ',
@@ -262,49 +252,6 @@ class BuiltinCommandHandler:
         for item in self.control_support.httpctl(arg):
             yield item
 
-    def interaction_demo(self, arg=''):
-        """Safe RCH builtin demonstration of the shared confirmation/input API."""
-        yield 1, '[Interaction Demo] Preview: print a harmless result after approval and input.'
-        try:
-            if not self.interactions.confirm('Approve the harmless interaction demo?',
-                                              title='Execution approval'):
-                yield 0, '[Interaction Demo] Not executed (rejected or expired)'
-                return
-            label = self.interactions.ask('Enter a label to include in the result:',
-                                          title='Execution input', placeholder='e.g. test-approval')
-        except BuiltinInteractionError as exc:
-            yield 0, f'[Interaction Demo] Not executed: {exc}'
-            return
-        yield 1, f'[Interaction Demo] Executed successfully. Label: {label}'
-
     def disconnect(self, arg=''):
         yield from self.advanced_builtins.disconnect(arg)
-
-    def interaction_advanced_demo(self, arg=''):
-        yield from self.advanced_builtins.advanced_demo(arg)
-
-    def interaction_preview_demo(self, arg=''):
-        if str(arg or '').strip():
-            yield 0, 'Usage: interaction_preview_demo'
-            return
-        preview = {
-            'summary': [
-                {'label': 'Items', 'value': '2'},
-                {'label': 'Total size', 'value': '12 MiB'},
-            ],
-            'columns': [{'key': 'item', 'label': 'Item'},
-                        {'key': 'files', 'label': 'Files'},
-                        {'key': 'size', 'label': 'Size'}],
-            'rows': [{'item': 'Documents', 'files': '5', 'size': '3 MiB'},
-                     {'item': 'Projects', 'files': '12', 'size': '9 MiB'}],
-            'details': [{'title': 'Example entries',
-                         'content': 'Documents: /example/Documents\nProjects: /example/Projects'}],
-            'notice': 'Demo only; no files, processes or connections will be modified.',
-        }
-        try:
-            accepted = self.interactions.approve_preview(
-                'This is a harmless plan preview.', preview, title='Preview demo')
-            yield 1, f'Preview demo result: {"approved" if accepted else "rejected"}; no action executed.'
-        except BuiltinInteractionError as exc:
-            yield 0, f'Preview demo cancelled: {exc}'
 

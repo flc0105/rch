@@ -1,4 +1,4 @@
-"""Regression for kill_by_port's RCH positional grammar and reusable preview."""
+"""Regression for kill_port's RCH positional grammar and reusable preview."""
 import threading
 from types import SimpleNamespace
 
@@ -23,10 +23,10 @@ class Events:
 
 
 def test_port_candidate_and_positional_grammar():
-    assert hasattr(CommandProcessMixin.kill_by_port, 'help')
-    assert not any(c['name'] == 'kill_by_port' for c in BuiltinCommandHandler.WEB_COMMAND_TEMPLATES)
+    assert hasattr(CommandProcessMixin.kill_port, 'help')
+    assert not any(c['name'] == 'kill_port' for c in BuiltinCommandHandler.WEB_COMMAND_TEMPLATES)
     from core.utils.parsing import parse as split_command
-    assert split_command('kill_by_port 9999') == ('kill_by_port', '9999')
+    assert split_command('kill_port 9999') == ('kill_port', '9999')
     assert aps.parse_target('9999', by_port=True) == {'port': 9999}
     assert aps.parse_target('9999 -9', by_port=True) == {'port': 9999, 'force': True}
     for bad in ('--port 9999', '9999 8888', '9999 foo', '0', '65536', ''):
@@ -112,7 +112,16 @@ def test_sdk_preview_passes_structured_plan_and_protects_rejection(monkeypatch):
     assert payloads[0]['preview']['summary'] == []
 
 
-def test_harmless_preview_builtin_does_not_modify_files():
-    handler = object.__new__(BuiltinCommandHandler)
-    handler.interactions = SimpleNamespace(approve_preview=lambda *args, **kwargs: True)
-    assert list(handler.interaction_preview_demo()) == [(1, 'Preview demo result: approved; no action executed.')]
+def test_harmless_preview_client_command_does_not_modify_files(monkeypatch):
+    from client.commands.common.mixins.interaction_ops import CommandInteractionMixin
+    from client.commands.common.services.interaction_service import CommandInteractions
+    previews = []
+    def fake_request(self, kind, message, **kwargs):
+        assert kind == 'preview'
+        previews.append(kwargs['preview'])
+        return {'status': 'answered', 'value': True}
+    monkeypatch.setattr(CommandInteractions, 'request', fake_request)
+    owner = SimpleNamespace(_set_timeout=lambda _: None)
+    result = CommandInteractionMixin.interaction_preview_demo(owner)
+    assert result == (1, 'Preview demo result: approved; no action executed.')
+    assert len(previews[0]['rows']) == 2

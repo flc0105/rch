@@ -56,7 +56,7 @@ def test_preview_switch_schema_is_optional_and_strict():
 def test_broker_round_trip_validated_switches(approve, force):
     events = Events()
     store = WebTaskStore()
-    task = store.create_task('client-A', 'kill_by_port 8080', tab_id='tab-A')
+    task = store.create_task('client-A', 'kill_port 8080', tab_id='tab-A')
     broker = InteractionBroker(events, store)
     result = []
     worker = threading.Thread(target=lambda: result.append(broker.request(
@@ -112,6 +112,26 @@ def test_disconnect_stays_server_builtin_and_client_commands_do_not_shadow_it():
                            close=lambda: closed.append(True))
     result = list(AdvancedBuiltinSupport(conn, SimpleNamespace(confirm=lambda *a, **k: False)).disconnect())
     assert result[-1][0] == 0 and not closed
+
+
+def test_approved_server_disconnect_sends_client_kill_connection(monkeypatch):
+    from server.application.command.advanced_builtin_support import AdvancedBuiltinSupport
+    class Timer:
+        def __init__(self, delay, callback):
+            assert delay > 0
+            self.callback = callback
+            self.daemon = False
+        def start(self):
+            self.callback()
+    monkeypatch.setattr('server.application.command.advanced_builtin_support.threading.Timer', Timer)
+    sent = []
+    channel = SimpleNamespace(build_command_payload=lambda command: {'type': 'command', 'text': command})
+    conn = SimpleNamespace(session_info=SimpleNamespace(client_id='client-A', hostname='test'),
+                           command_channel=channel, send=sent.append,
+                           close=lambda: pytest.fail('Do not directly close Server transport'))
+    result = list(AdvancedBuiltinSupport(conn, SimpleNamespace(confirm=lambda *a, **kw: True)).disconnect())
+    assert result[-1][0] == 1
+    assert sent == [{'type': 'command', 'text': 'kill_connection'}]
 
 
 @pytest.mark.parametrize('by_port,arg,criteria', [

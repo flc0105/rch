@@ -36,12 +36,12 @@ def owner():
 
 
 def test_shell_like_registry_and_positional_grammar():
-    assert hasattr(CommandProcessMixin.kill_by_port, 'help')
-    assert hasattr(CommandProcessMixin.kill_process_preview, 'help')
+    assert hasattr(CommandProcessMixin.kill_port, 'help')
+    assert hasattr(CommandProcessMixin.kill_proc, 'help')
     assert hasattr(CommandProcessMixin.kill_process, 'help')
-    assert not hasattr(BuiltinCommandHandler, 'kill_by_port')
-    assert not hasattr(BuiltinCommandHandler, 'kill_process_preview')
-    assert all(c['name'] not in ('kill_by_port', 'kill_process_preview')
+    assert not hasattr(BuiltinCommandHandler, 'kill_port')
+    assert not hasattr(BuiltinCommandHandler, 'kill_proc')
+    assert all(c['name'] not in ('kill_port', 'kill_proc')
                for c in BuiltinCommandHandler.WEB_COMMAND_TEMPLATES)
     assert aps.parse_target('9999', by_port=True) == {'port': 9999}
     assert aps.parse_target('9999 -9', by_port=True) == {'port': 9999, 'force': True}
@@ -63,7 +63,7 @@ def test_only_explicit_client_commands_are_issued_interaction_grants():
     channel = ClientSessionCommandChannel(session)
     for command in ('pwd', 'kill_process 3', 'ls -la'):
         assert 'extra' not in channel.build_command_payload(command)
-    for command in ('kill_by_port 9999', 'kill_process_preview 30565'):
+    for command in ('kill_port 9999', 'kill_proc 30565'):
         payload = channel.build_command_payload(command)
         assert payload['extra']['__script_grant__']['token'] == 'bound-token'
         assert grants[-1]['command_id'] == payload['id']
@@ -182,7 +182,7 @@ def test_actual_client_manifest_yields_only_plain_command_name_candidates():
         pass
 
     manifest = Commands().get_command_manifest_payload()
-    entries = [item for item in manifest if item['name'] in ('kill_by_port', 'kill_process_preview')]
+    entries = [item for item in manifest if item['name'] in ('kill_port', 'kill_proc')]
     assert len(entries) == 2 and all('template' not in entry for entry in entries)
     client = SimpleNamespace(session_info=SimpleNamespace(command_manifest=manifest))
     server = SimpleNamespace(get_target_connection_by_client_id=lambda _: client)
@@ -190,6 +190,6 @@ def test_actual_client_manifest_yields_only_plain_command_name_candidates():
         server, SimpleNamespace(create=lambda _: SimpleNamespace(
             get_command_candidates=lambda: [dict(item) for item in BuiltinCommandHandler.WEB_COMMAND_TEMPLATES])))
     candidates = catalog.get_command_candidates('client-A')
-    for name in ('kill_by_port', 'kill_process_preview'):
+    for name in ('kill_port', 'kill_proc'):
         rows = [c for c in candidates if c['name'] == name]
         assert len(rows) == 1 and rows[0]['template'] == name and rows[0]['source'] == 'client'

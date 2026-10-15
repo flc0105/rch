@@ -11,49 +11,15 @@ import signal
 import socket
 import subprocess
 
+from client.commands.common.services.interaction_service import CommandInteractions
+
 
 class ProcessApprovalError(RuntimeError):
     pass
 
 
-class ClientCommandInteractions:
-    """Use the active, command-bound interaction grant; never submit a new Command."""
-
-    def __init__(self, owner):
-        self.owner = owner
-
-    def request(self, kind, message, *, title='', options=None, preview=None, timeout=60):
-        from client.http.client_api import ClientApiClient
-
-        grant = getattr(self.owner, '_interaction_grant', None) or {}
-        token = str(grant.get('token') or '').strip()
-        if not token:
-            raise ProcessApprovalError('This Client command has no active interaction grant')
-        timeout = max(1, min(int(timeout), 180))
-        self.owner._ensure_not_interrupted(fallback_timeout=240)
-        result = ClientApiClient().post_data(
-            '/api/interactions/client/request', timeout=timeout + 15,
-            headers={'X-Script-Grant-Token': token},
-            json={'kind': kind, 'title': title, 'message': message,
-                  'options': options if options is not None else [],
-                  'preview': preview, 'timeout_seconds': timeout},
-        )
-        self.owner._ensure_not_interrupted(fallback_timeout=240)
-        if not isinstance(result, dict):
-            raise ProcessApprovalError('Invalid interaction reply')
-        return result
-
-    def ask(self, message, *, title):
-        result = self.request('input', message, title=title)
-        if result.get('status') != 'answered' or not isinstance(result.get('value'), str):
-            raise ProcessApprovalError('Input rejected, expired, or cancelled')
-        return result['value']
-
-    def select(self, message, labels, *, title):
-        result = self.request('select', message, title=title, options=labels)
-        if result.get('status') != 'answered' or result.get('value') not in labels:
-            raise ProcessApprovalError('Selection rejected, expired, or cancelled')
-        return result['value']
+class ClientCommandInteractions(CommandInteractions):
+    """Process-specific Force switch validation after Broker approval."""
 
     def approve(self, message, preview):
         result = self.request('preview', message, preview=preview,
@@ -73,8 +39,8 @@ def parse_target(text, *, by_port=False):
     approved switch value, not the command text, decides the actual signal.
     """
     parts = shlex.split(str(text or '').strip())
-    usage = ('kill_by_port <port> [-9]' if by_port
-             else 'kill_process_preview <pid|name> [-9]')
+    usage = ('kill_port <port> [-9]' if by_port
+             else 'kill_proc <pid|name> [-9]')
     if not (len(parts) == 1 or (len(parts) == 2 and parts[1] == '-9')):
         raise ProcessApprovalError('Usage: ' + usage)
     target = parts[0]

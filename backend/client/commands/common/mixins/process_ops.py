@@ -80,12 +80,12 @@ class CommandProcessMixin:
 
 
     @desc('Inspect a listening port, preview and approve termination', group='process')
-    def kill_by_port(self, arg=''):
+    def kill_port(self, arg=''):
         """Client-native interactive operation. No Server builtin or nested pyexec."""
         return self._run_approved_process_command(arg, by_port=True)
 
     @desc('Preview and approve process termination', group='process')
-    def kill_process_preview(self, arg=''):
+    def kill_proc(self, arg=''):
         """Separate from the original kill_process; the latter remains unchanged."""
         return self._run_approved_process_command(arg, by_port=False)
 

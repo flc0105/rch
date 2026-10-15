@@ -153,56 +153,37 @@ def test_script_interaction_requires_explicit_grant(monkeypatch):
         interactions.confirm('ok?')
 
 
-def test_builtin_demo_approval_then_input(broker_case):
-    from server.application.command.builtin_command_handler import BuiltinCommandHandler
-    broker, bus, store, task = broker_case
-    foreground = {'task_id': task['task_id']}
-    conn = SimpleNamespace(get_foreground_task=lambda: foreground,
-                           session_info=SimpleNamespace(client_id='client-A'))
-    server = SimpleNamespace(web_service=SimpleNamespace(task_store=store, interaction_broker=broker))
-    handler = object.__new__(BuiltinCommandHandler)
-    handler.conn, handler.server = conn, server
-    from server.application.command.interaction_builtin_support import BuiltinInteractionSupport
-    handler.interactions = BuiltinInteractionSupport(server, conn)
+def test_client_demo_approval_then_input(monkeypatch):
+    from client.commands.common.mixins.interaction_ops import CommandInteractionMixin
+    from client.commands.common.services.interaction_service import CommandInteractions
+    outcomes = iter([{'status': 'answered', 'value': True},
+                     {'status': 'answered', 'value': 'demo-test'}])
+    calls = []
+    def fake_request(self, kind, message, **kwargs):
+        calls.append(kind)
+        return next(outcomes)
+    monkeypatch.setattr(CommandInteractions, 'request', fake_request)
     output = []
-
-    def run():
-        output.extend(handler.interaction_demo())
-
-    thread = threading.Thread(target=run, daemon=True)
-    thread.start()
-    request1 = wait_for_request(bus)
-    assert 'executed' not in '\n'.join(str(x) for x in output).lower()
-    broker.answer(request1['interaction_id'], approved=True)
-    until = time.monotonic() + 2
-    while len([x for x in bus.events if x[0] == 'interaction_requested']) < 2 and time.monotonic() < until:
-        time.sleep(.01)
-    request2 = [x[1] for x in bus.events if x[0] == 'interaction_requested'][1]
-    broker.answer(request2['interaction_id'], approved=True, value='demo-test')
-    thread.join(timeout=2)
-    assert output[-1] == (1, '[Interaction Demo] Executed successfully. Label: demo-test')
+    owner = SimpleNamespace(_set_timeout=lambda _: None,
+                            _send_interim_result=lambda *args: output.append(args))
+    result = CommandInteractionMixin.interaction_demo(owner)
+    assert result == (1, '[Interaction Demo] Executed successfully. Label: demo-test')
+    assert calls == ['confirm', 'input']
+    assert len(output) == 1
 
 
-def test_builtin_demo_rejected_never_requests_input(broker_case):
-    from server.application.command.builtin_command_handler import BuiltinCommandHandler
-    from server.application.command.interaction_builtin_support import BuiltinInteractionSupport
-    broker, bus, store, task = broker_case
-    conn = SimpleNamespace(get_foreground_task=lambda: {'task_id': task['task_id']},
-                           session_info=SimpleNamespace(client_id='client-A'))
-    server = SimpleNamespace(web_service=SimpleNamespace(task_store=store, interaction_broker=broker))
-    handler = object.__new__(BuiltinCommandHandler)
-    handler.conn, handler.server = conn, server
-    handler.interactions = BuiltinInteractionSupport(server, conn)
-    output = []
-    thread = threading.Thread(target=lambda: output.extend(handler.interaction_demo()), daemon=True)
-    thread.start()
-    first = wait_for_request(bus)
-    broker.answer(first['interaction_id'], approved=False)
-    thread.join(timeout=2)
-    assert not thread.is_alive()
-    assert len([e for e in bus.events if e[0] == 'interaction_requested']) == 1
-    assert output[-1][0] == 0
-    assert 'not executed' in output[-1][1].lower()
+def test_client_demo_rejected_never_requests_input(monkeypatch):
+    from client.commands.common.mixins.interaction_ops import CommandInteractionMixin
+    from client.commands.common.services.interaction_service import CommandInteractions
+    calls = []
+    def fake_request(self, kind, message, **kwargs):
+        calls.append(kind)
+        return {'status': 'rejected', 'value': False}
+    monkeypatch.setattr(CommandInteractions, 'request', fake_request)
+    owner = SimpleNamespace(_set_timeout=lambda _: None, _send_interim_result=lambda *args: None)
+    result = CommandInteractionMixin.interaction_demo(owner)
+    assert result[0] == 0 and 'not executed' in result[1].lower()
+    assert calls == ['confirm']
 
 
 def test_secret_answer_never_appears_in_sse_or_pending(broker_case):

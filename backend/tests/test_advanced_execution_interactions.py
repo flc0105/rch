@@ -97,11 +97,11 @@ def test_client_sdk_select_roundtrip(monkeypatch):
 
 def test_existing_client_kill_process_not_shadowed():
     assert not hasattr(BuiltinCommandHandler, 'kill_process')
-    assert not hasattr(BuiltinCommandHandler, 'kill_process_preview')
-    assert not hasattr(BuiltinCommandHandler, 'kill_by_port')
+    assert not hasattr(BuiltinCommandHandler, 'kill_proc')
+    assert not hasattr(BuiltinCommandHandler, 'kill_port')
     assert hasattr(CommandProcessMixin.kill_process, 'help')
-    assert hasattr(CommandProcessMixin.kill_process_preview, 'help')
-    assert hasattr(CommandProcessMixin.kill_by_port, 'help')
+    assert hasattr(CommandProcessMixin.kill_proc, 'help')
+    assert hasattr(CommandProcessMixin.kill_port, 'help')
 
 
 def test_process_arguments_and_preview():

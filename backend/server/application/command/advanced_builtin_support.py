@@ -1,4 +1,4 @@
-"""New opt-in, preview-gated builtins; ordinary Client process commands remain intact."""
+"""Server-side command interaction support."""
 import threading
 
 from server.application.command.interaction_builtin_support import BuiltinInteractionError
@@ -26,27 +26,9 @@ class AdvancedBuiltinSupport:
             yield 0, f'Disconnect cancelled: {exc}'
             return
         yield 1, 'Disconnect approved; closing this connection.'
-        # Let the output event flush before transport teardown.
-        worker = threading.Timer(0.35, self.conn.close)
+        # Flush the response before dispatching the Client lifecycle command.
+        worker = threading.Timer(0.35, lambda: self.conn.send(
+            self.conn.command_channel.build_command_payload('kill_connection')))
         worker.daemon = True
         worker.start()
-
-    def advanced_demo(self, arg=''):
-        if str(arg or '').strip():
-            yield 0, 'Usage: interaction_advanced_demo'
-            return
-        try:
-            choice = self.interactions.select('Choose a harmless demo action:',
-                                               ['Preview only', 'Execute demo'], title='Select demo mode')
-            if choice == 'Preview only':
-                yield 1, 'Demo preview only; no operation executed.'
-                return
-            secret = self.interactions.ask('Enter a secret sample (never printed):',
-                                           title='Secret input demo', secret=True)
-            if not self.interactions.confirm('Run harmless demo and discard secret?', title='Demo approval'):
-                yield 0, 'Demo rejected'
-                return
-            yield 1, 'Demo complete; secret received but not disclosed.'
-        except BuiltinInteractionError as exc:
-            yield 0, f'Demo cancelled: {exc}'
 
