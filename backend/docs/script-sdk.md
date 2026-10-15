@@ -502,6 +502,30 @@ Client Command Registry code can call
 Server Builtin commands can call `self.interactions.select_preview_rows(...)`.
 The normal boolean-only Preview and existing switches still work without changes.
 
+### Preview row details (opt-in)
+
+To show a text file list inside an expandable table row, supply `row_details` alongside
+`row_ids`. Each detail references an existing ID and contains plain text, not HTML:
+
+```python
+plan = {
+    'columns': [{'key': 'item', 'label': 'Item'}],
+    'rows': [{'item': 'Cache'}, {'item': 'Logs'}],
+    'row_ids': ['cache', 'logs'],
+    'row_details': [
+        {'row_id': 'cache', 'content': 'Cache/file1\nCache/file2'},
+        {'row_id': 'logs', 'content': 'Logs/service.log'},
+    ],
+}
+selected = context.select_preview_rows('Choose items:', plan)
+```
+
+`row_details` is optional and may contain a subset of the provided rows (up to
+100 entries, each with at most 4,000 characters). The existing top-level `details`
+section remains available for unrelated information and warnings. Without
+`row_details`, the table is rendered exactly as before. Expanding a row only
+shows information; it does not change the selected row IDs or approval result.
+
 For read-only expansion of a **single intermediate directory-level `*`** (e.g.
 `~/Library/Containers/com.tencent.xinWeChat/Data/Documents/xwechat_files/*/msg/file`),
 use `from client.runtime.sdk.path_patterns import expand_directory_pattern`.

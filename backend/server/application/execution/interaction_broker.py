@@ -23,7 +23,7 @@ class InteractionBroker:
         """Small, plain-text-only presentation schema; never accepts HTML/JS."""
         if not isinstance(value, dict):
             raise ValueError('Preview must be an object')
-        if set(value) - {'summary', 'columns', 'rows', 'details', 'notice', 'switches', 'row_ids'}:
+        if set(value) - {'summary', 'columns', 'rows', 'details', 'notice', 'switches', 'row_ids', 'row_details'}:
             raise ValueError('Unsupported preview field')
         def short(value, limit=500):
             if not isinstance(value, str) or len(value) > limit:
@@ -72,6 +72,23 @@ class InteractionBroker:
             if len(set(row_ids)) != len(row_ids):
                 raise ValueError('Duplicate Preview row IDs')
             result['row_ids'] = list(row_ids)
+        if 'row_details' in value:
+            row_details = value['row_details']
+            if ('row_ids' not in result or not isinstance(row_details, list) or
+                    len(row_details) > len(result['row_ids'])):
+                raise ValueError('Preview row_details require matching row_ids')
+            allowed_ids = set(result['row_ids'])
+            result['row_details'] = []
+            seen_ids = set()
+            for detail in row_details:
+                if not isinstance(detail, dict) or set(detail) != {'row_id', 'content'}:
+                    raise ValueError('Invalid Preview row detail')
+                row_id = detail['row_id']
+                if not isinstance(row_id, str) or row_id not in allowed_ids or row_id in seen_ids:
+                    raise ValueError('Preview row detail has unknown or repeated row ID')
+                seen_ids.add(row_id)
+                result['row_details'].append({'row_id': row_id,
+                                              'content': short(detail['content'], 4000)})
         details = value.get('details', [])
         if not isinstance(details, list) or len(details) > 16:
             raise ValueError('Preview details must be a list of <=16 items')

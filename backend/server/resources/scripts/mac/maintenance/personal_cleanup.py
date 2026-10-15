@@ -333,15 +333,16 @@ def make_preview(scanned, warnings):
              'folders': '—' if item.get('finder_trash') else str(len(item['directories'])),
              'size': 'Unknown' if item.get('finder_trash')
              else readable_size(item['bytes'])} for item in scanned]
-    details = []
-    for item in (item for item in scanned if not item.get('finder_trash')):
-        if len(details) >= 16:
-            break
+    row_details = []
+    for index, item in enumerate(scanned, 1):
+        if item.get('finder_trash'):
+            continue
         names = ['/'.join(row[0]) for row in item['files'][:30]]
         if len(item['files']) > 30:
             names.append(f'... and {len(item["files"])-30} additional files/links')
-        details.append({'title': f'Files: {item.get("display_path", item["path"]).name}',
-                        'content': '\n'.join(names)[:3900] or '(empty)'})
+        row_details.append({'row_id': str(index),
+                            'content': '\n'.join(names)[:3900] or '(empty)'})
+    details = []
     if warnings:
         details.append({'title': 'Scan warnings', 'content': '\n'.join(warnings[:20])[:3900]})
     return {'summary': [
@@ -357,7 +358,7 @@ def make_preview(scanned, warnings):
         {'key': 'label', 'label': 'Name'}, {'key': 'item', 'label': 'Target'}, {'key': 'files', 'label': 'Files'},
         {'key': 'folders', 'label': 'Folders'}, {'key': 'size', 'label': 'Size'},
     ], 'rows': rows[:100], 'row_ids': [str(i + 1) for i in range(len(scanned))],
-        'details': details[:16], 'notice': 'Deletion is permanent.'}
+        'row_details': row_details, 'details': details[:16], 'notice': 'Deletion is permanent.'}
 
 
 def _open_parent(fd, relative_parent, known_dirs):

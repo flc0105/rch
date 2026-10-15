@@ -34,6 +34,11 @@
           size="small"
           class="plan-table"
         >
+          <el-table-column v-if="current.preview.row_details?.length" type="expand" width="44">
+            <template #default="{ $index }">
+              <pre v-if="rowDetail($index)" class="plan-detail-content">{{ rowDetail($index) }}</pre>
+            </template>
+          </el-table-column>
           <el-table-column v-if="current.preview.row_ids?.length" width="48" align="center">
             <template #header>
               <el-checkbox
@@ -126,6 +131,10 @@ export default {
     },
     initializeRows() {
       this.selectedRowIds = [...(this.current?.preview?.row_ids || [])]
+    },
+    rowDetail(index) {
+      const id = this.current?.preview?.row_ids?.[index]
+      return (this.current?.preview?.row_details || []).find(item => item.row_id === id)?.content || ''
     },
     toggleRow(id, checked) {
       this.selectedRowIds = checked
