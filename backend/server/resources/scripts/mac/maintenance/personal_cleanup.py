@@ -25,7 +25,7 @@ SCRIPT_METADATA = {
              {"path": "~/Library/Caches/Homebrew", "enabled": True},
              {"path": "~/Library/Caches/pip", "enabled": True},
              {"path": "~/Library/Logs/JetBrains/", "enabled": True},
-             {"path": "~/Library/Containers/com.tencent.xinWeChat/Data/Documents/xwechat_files", "enabled": False},
+             {"path": "~/Library/Containers/com.tencent.xinWeChat/Data/Documents/xwechat_files/*/msg/file", "enabled": False},
              
              {"path": "~/*.hprof", "enabled": True},
              {"path": "~/.Trash", "enabled": False},
@@ -44,6 +44,8 @@ import subprocess
 from pathlib import Path
 
 from client.runtime.sdk import context
+from client.runtime.sdk.interactions import ScriptSdkInteractionError
+from client.runtime.sdk.path_patterns import expand_directory_pattern
 
 
 OPEN_DIRECTORY = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
@@ -77,7 +79,11 @@ def _safe_root(text):
         raise ValueError('Cleanup path must resolve to absolute')
     home = Path.home().absolute()
     if any('*' in part for part in candidate.parts) and candidate != home / '*.hprof':
-        raise ValueError('Only the home-level ~/*.hprof file pattern is supported')
+        # Only a complete, non-terminal * directory level is allowed.
+        if (candidate.parts.count('*') != 1 or candidate.parts[-1] == '*' or
+                home not in candidate.parents or '..' in Path(text.strip()).parts or
+                any('*' in part and part != '*' for part in candidate.parts)):
+            raise ValueError('Only one intermediate * directory or ~/*.hprof is supported')
     # Prevent deleting broad system/user roots, while permitting editable paths.
     in_home = candidate != home and home in candidate.parents
     parts = candidate.parts
@@ -119,10 +125,22 @@ def selected_directories(params):
         if not row.get('enabled', True):
             continue
         root = _safe_root(row['path'])
-        if any(root == previous or root in previous.parents or previous in root.parents
-               for previous in chosen):
-            raise ValueError(f'Duplicate/overlapping cleanup target: {root}')
-        chosen.append(root)
+        if '*' in root.parts:
+            try:
+                targets = expand_directory_pattern(str(root))
+            except OSError as exc:
+                emit(f'Skipping {root}: {exc}', warning=True)
+                continue
+        else:
+            targets = [root]
+        for target in targets:
+            target = _safe_root(str(target))
+            if any(target == previous or target in previous.parents or previous in target.parents
+                   for previous in chosen):
+                raise ValueError(f'Duplicate/overlapping cleanup target: {target}')
+            chosen.append(target)
+            if len(chosen) > 100:
+                raise ValueError('Too many cleanup targets for a single Preview (maximum 100)')
     return chosen
 
 
@@ -308,8 +326,8 @@ def make_preview(scanned, warnings):
     ], 'columns': [
         {'key': 'item', 'label': 'Target'}, {'key': 'files', 'label': 'Files'},
         {'key': 'folders', 'label': 'Folders'}, {'key': 'size', 'label': 'Size'},
-    ], 'rows': rows[:100], 'details': details[:16],
-        'notice': 'Deletion is permanent.'}
+    ], 'rows': rows[:100], 'row_ids': [str(i + 1) for i in range(len(scanned))],
+        'details': details[:16], 'notice': 'Deletion is permanent.'}
 
 
 def _open_parent(fd, relative_parent, known_dirs):
@@ -400,12 +418,19 @@ def main(params):
          f'{readable_size(sum(i["bytes"] for i in scanned))}; '
          f'warnings: {len(warnings)}')
     question = 'Permanently delete the selected items?'
-    if not context.approve_preview(question, preview,
-                                   title='Personal Disk Cleanup — Delete Plan', timeout=180):
+    try:
+        selected_ids = set(context.select_preview_rows(
+            question, preview, title='Personal Disk Cleanup — Delete Plan', timeout=180))
+    except ScriptSdkInteractionError:
         emit('Approval rejected/expired. Nothing deleted.')
         return {'approved': False, 'reason': 'rejected', 'warnings': warnings}
-    result = execute_plan(scanned)
-    for item in scanned:
+    selected_scanned = [item for index, item in enumerate(scanned, 1)
+                        if str(index) in selected_ids]
+    if not selected_scanned:
+        emit('No items selected. Nothing deleted.')
+        return {'approved': True, 'reason': 'no selected targets', 'warnings': warnings}
+    result = execute_plan(selected_scanned)
+    for item in selected_scanned:
         if item.get('finder_trash'):
             error = _empty_finder_trash(item['trash_count'])
             result['finder_trash_emptied'] = error is None

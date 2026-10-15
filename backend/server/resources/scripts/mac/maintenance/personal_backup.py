@@ -9,7 +9,7 @@ SCRIPT_METADATA = {
         {"name": "include_zshrc", "label": "Zsh configuration", "type": "boolean", "default": True},
         {"name": "include_zsh_history", "label": "Zsh history", "type": "boolean", "default": True},
         {"name": "include_chrome_bookmarks", "label": "Chrome bookmarks", "type": "boolean", "default": True},
-        {"name": "include_homebrew", "label": "Homebrew packages", "type": "boolean", "default": True},
+        {"name": "include_homebrew", "label": "Homebrew packages", "type": "boolean", "default": False},
         {"name": "include_installed_apps", "label": "Installed app inventory", "type": "boolean", "default": True},
         {"name": "documents", "label": "Documents", "type": "path_list", "required": False,
          "description": "Document directories. Add, disable or remove each path; hidden and macOS metadata excluded.",
