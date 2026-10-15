@@ -293,10 +293,40 @@ def scan_plan(paths):
     return scanned, warnings
 
 
+def _preview_label(item):
+    target = item.get('display_path', item['path'])
+    home = Path.home().absolute()
+    labels = {
+        home / 'Work/Home/seeyona9/ApacheJetspeed/logs_sy': 'Jetspeed Logs',
+        home / 'SeeyonLogs': 'Seeyon Logs',
+        home / 'NCCACHE': 'NC Cache',
+        home / 'upload/files': 'Uploaded Files',
+        home / 'Library/ScreenRecordings': 'Screen Recordings',
+        home / 'Library/Caches/Google/Chrome/Default': 'Chrome Cache',
+        home / 'Library/Application Support/Google/Chrome/Default/Service Worker/CacheStorage': 'Chrome Site Cache',
+        home / 'Library/Containers/com.apple.Safari/Data/Library/Caches/com.apple.Safari': 'Safari Cache',
+        home / 'Library/Developer/Xcode/DerivedData': 'Xcode DerivedData',
+        home / 'Library/Logs/Adobe': 'Adobe Logs',
+        home / 'Library/Caches/Adobe Camera Raw 2': 'Camera Raw Cache',
+        home / 'Library/Caches/Adobe/CCX Welcome': 'Creative Cloud Cache',
+        home / 'Library/Caches/Homebrew': 'Homebrew Cache',
+        home / 'Library/Caches/pip': 'pip Cache',
+        home / 'Library/Logs/JetBrains': 'JetBrains Logs',
+        home / '*.hprof': 'Java Heap Dumps',
+        home / '.Trash': 'Trash',
+    }
+    wechat_root = home / 'Library/Containers/com.tencent.xinWeChat/Data/Documents/xwechat_files'
+    if (target.name == 'file' and target.parent.name == 'msg' and
+            target.parent.parent.parent == wechat_root):
+        return 'WeChat Files'
+    return labels.get(target, target.name)
+
+
 def make_preview(scanned, warnings):
     count_files = sum(len(item['files']) for item in scanned)
     count_bytes = sum(item['bytes'] for item in scanned)
-    rows = [{'item': 'Trash (all disks)' if item.get('finder_trash')
+    rows = [{'label': _preview_label(item),
+             'item': 'Trash (all disks)' if item.get('finder_trash')
              else str(item.get('display_path', item['path'])),
              'files': str(item["trash_count"]) if item.get('finder_trash')
              else str(len(item['files'])),
@@ -324,7 +354,7 @@ def make_preview(scanned, warnings):
           if any(i.get('finder_trash') for i in scanned) else []),
         {'label': 'Warnings', 'value': str(len(warnings))},
     ], 'columns': [
-        {'key': 'item', 'label': 'Target'}, {'key': 'files', 'label': 'Files'},
+        {'key': 'label', 'label': 'Name'}, {'key': 'item', 'label': 'Target'}, {'key': 'files', 'label': 'Files'},
         {'key': 'folders', 'label': 'Folders'}, {'key': 'size', 'label': 'Size'},
     ], 'rows': rows[:100], 'row_ids': [str(i + 1) for i in range(len(scanned))],
         'details': details[:16], 'notice': 'Deletion is permanent.'}
