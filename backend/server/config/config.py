@@ -1,5 +1,7 @@
 import os
 
+from server.config.admin_auth import load_admin_auth
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SERVER_DIR = os.path.dirname(BASE_DIR)
 
@@ -14,10 +16,6 @@ WEB_WS_PORT = int(os.getenv('RCH_WEB_WS_PORT', str(WEB_PORT + 1)))
 WEB_FILE_TRANSFER_PORT = WEB_PORT + 2
 
 # ------------------ auth ------------------ #
-WEB_SESSION_SECRET = os.getenv('RCH_WEB_SESSION_SECRET', 'BE18F48E-F363-458A-8F29-5E6C791C8F03')
-ADMIN_USERNAME = os.getenv('RCH_ADMIN_USERNAME', 'admin')
-ADMIN_PASSWORD = os.getenv('RCH_ADMIN_PASSWORD', 'mutsumi123456')
-ADMIN_API_TOKEN = os.getenv('RCH_ADMIN_API_TOKEN', '627D3547-E8F4-4705-AABC-D42EB872F4D6')
 HIDDEN_DEVICES_REQUIRE_PASSWORD = os.getenv('RCH_HIDDEN_DEVICES_REQUIRE_PASSWORD', 'true').strip().lower() in {
     '1', 'true', 'yes', 'on',
 }
@@ -40,6 +38,17 @@ EXTERNAL_TOOL_PACKAGE_PATH = os.path.join(EXTERNAL_TOOLS_ROOT, 'packages')
 # session_messages.log 已移除，background message 不再单独落盘。
 # ------------------ runtime ------------------ #
 os.makedirs('runtime', exist_ok=True)
+# WEB_SESSION_SECRET = os.getenv('RCH_WEB_SESSION_SECRET', 'BE18F48E-F363-458A-8F29-5E6C791C8F03')
+# ADMIN_USERNAME = os.getenv('RCH_ADMIN_USERNAME', 'admin')
+# ADMIN_PASSWORD = os.getenv('RCH_ADMIN_PASSWORD', 'mutsumi123456')
+# ADMIN_API_TOKEN = os.getenv('RCH_ADMIN_API_TOKEN', '627D3547-E8F4-4705-AABC-D42EB872F4D6')
+
+
+_AUTH = load_admin_auth(os.path.join('runtime', 'auth.json'))
+ADMIN_USERNAME = _AUTH['username']
+ADMIN_PASSWORD_HASH = _AUTH['password']
+ADMIN_API_TOKEN = _AUTH['api_token']
+WEB_SESSION_SECRET = _AUTH['session_secret']
 
 # ------------------ cleanup ------------------ #
 SERVER_CLEANUP_START_DELAY_SECONDS = 20

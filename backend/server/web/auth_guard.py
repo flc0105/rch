@@ -5,7 +5,7 @@ from flask import current_app, request, session
 
 from server.config.config import (
     ADMIN_API_TOKEN,
-    ADMIN_PASSWORD,
+    ADMIN_PASSWORD_HASH,
     ADMIN_USERNAME,
     WEB_SESSION_SECRET,
 )
@@ -67,9 +67,9 @@ class WebAuthGuard:
         return hmac.compare_digest(provided, expected)
 
     def _current_session_credential_version(self) -> str:
-        # Session is bound to the current configured admin credentials.
+        # Session is bound to the current persisted admin credentials.
         secret = str(WEB_SESSION_SECRET or '').encode('utf-8')
-        payload = f'{ADMIN_USERNAME}\0{ADMIN_PASSWORD}'.encode('utf-8')
+        payload = f'{ADMIN_USERNAME}\0{ADMIN_PASSWORD_HASH}'.encode('utf-8')
         return hmac.new(secret, payload, 'sha256').hexdigest()
 
     def has_valid_session(self) -> bool:

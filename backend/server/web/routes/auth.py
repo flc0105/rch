@@ -1,9 +1,11 @@
 import hmac
 
+from werkzeug.security import check_password_hash
+
 from flask import Blueprint, current_app, redirect, request, send_from_directory
 
 from server.config.config import (
-    ADMIN_PASSWORD,
+    ADMIN_PASSWORD_HASH,
     ADMIN_USERNAME,
     WEB_AUTH_SESSION_DAYS,
 )
@@ -49,7 +51,7 @@ def create_auth_blueprint():
         if not password:
             return responder.fail('password is required', 400)
 
-        if not hmac.compare_digest(username, ADMIN_USERNAME) or not hmac.compare_digest(password, ADMIN_PASSWORD):
+        if not hmac.compare_digest(username, ADMIN_USERNAME) or not check_password_hash(ADMIN_PASSWORD_HASH, password):
             return responder.fail('Invalid username or password', 401)
 
         auth_guard.login_user(username)
