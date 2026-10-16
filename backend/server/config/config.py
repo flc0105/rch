@@ -23,27 +23,16 @@ HIDDEN_DEVICES_PASSWORD = os.getenv('RCH_HIDDEN_DEVICES_PASSWORD', '1')
 WEB_AUTH_SESSION_DAYS = int(os.getenv('RCH_WEB_AUTH_SESSION_DAYS', '7'))
 SESSION_COOKIE_NAME = os.getenv('RCH_WEB_SESSION_COOKIE_NAME', 'rch_admin_session')
 
-# ------------------ command / alias ------------------ #
+# ------------------resources ------------------ #
 ALIAS_PATH = os.path.join(SERVER_DIR, 'resources/aliases.json')
 SCRIPT_PATH = os.path.join(SERVER_DIR, 'resources/scripts')
-# 脚本目录
 SCRIPT_JOBS_PATH = os.path.join(SERVER_DIR, 'resources/jobs')
-
-# ------------------ external tools ------------------ #
 EXTERNAL_TOOLS_ROOT = os.path.join(SERVER_DIR, 'resources/external_tools')
 EXTERNAL_TOOL_META_PATH = os.path.join(EXTERNAL_TOOLS_ROOT, 'metas')
 EXTERNAL_TOOL_PACKAGE_PATH = os.path.join(EXTERNAL_TOOLS_ROOT, 'packages')
 
-# ------------------ logging ------------------ #
-# session_messages.log 已移除，background message 不再单独落盘。
 # ------------------ runtime ------------------ #
 os.makedirs('runtime', exist_ok=True)
-# WEB_SESSION_SECRET = os.getenv('RCH_WEB_SESSION_SECRET', 'BE18F48E-F363-458A-8F29-5E6C791C8F03')
-# ADMIN_USERNAME = os.getenv('RCH_ADMIN_USERNAME', 'admin')
-# ADMIN_PASSWORD = os.getenv('RCH_ADMIN_PASSWORD', 'mutsumi123456')
-# ADMIN_API_TOKEN = os.getenv('RCH_ADMIN_API_TOKEN', '627D3547-E8F4-4705-AABC-D42EB872F4D6')
-
-
 _AUTH = load_admin_auth(os.path.join('runtime', 'auth.json'))
 ADMIN_USERNAME = _AUTH['username']
 ADMIN_PASSWORD_HASH = _AUTH['password']
@@ -77,7 +66,6 @@ KEYCHAINS_ROOT_DIR = os.path.abspath(os.path.join('runtime', 'keychains'))
 
 # ------------------ web files ------------------ #
 WEB_FILES_ROOT_DIR = os.path.abspath(os.path.join('runtime', 'web_files'))
-# WEB_PREVIEW_TEXT_MAX_BYTES = 200 * 1024
 WEB_PREVIEW_TEXT_MAX_BYTES = 200 * 1024
 WEB_HTTP_UPLOAD_MAX_BYTES = 10 * 1024 * 1024 * 1024  # 10GB
 WEB_PUBLIC_BASE_URL = 'http://127.0.0.1:8085'
