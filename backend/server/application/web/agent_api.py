@@ -3,7 +3,7 @@ import platform
 import tempfile
 from datetime import datetime
 
-from server.config.config import WEB_FILE_TRANSFER_PORT, WEB_PORT
+from server.config.config import SOCKET_PORT, WEB_PORT
 from core.platform.normalization import normalize_arch
 
 
@@ -31,7 +31,6 @@ class WebAgentApi:
         server_host: str,
         server_port: int,
         web_port: int = None,
-        file_transfer_port: int = None,
         target_os: str = 'mac',
         builder: str = 'pyinstaller',
         target_arch: str = '',
@@ -39,7 +38,6 @@ class WebAgentApi:
         server_web_host: str = '',
         source: str = 'manual',
     ):
-        file_transfer_port = int(file_transfer_port or WEB_FILE_TRANSFER_PORT)
         lifecycle_context = {
             'builder': str(builder or '').strip(),
             'target_os': str(target_os or '').strip(),
@@ -51,7 +49,6 @@ class WebAgentApi:
                 server_host=server_host,
                 server_port=server_port,
                 web_port=web_port,
-                file_transfer_port=file_transfer_port,
                 target_os=target_os,
                 builder=builder,
                 target_arch=target_arch,
@@ -65,7 +62,6 @@ class WebAgentApi:
                     'server_host': server_host,
                     'server_port': server_port,
                     'web_port': web_port,
-                    'file_transfer_port': file_transfer_port,
                     'target_os': target_os,
                     'builder': builder,
                     'target_arch': target_arch,
@@ -127,8 +123,8 @@ class WebAgentApi:
             'system': system,
             'target_os': target_os,
             'target_arch': target_arch,
+            'socket_port': int(SOCKET_PORT),
             'web_port': int(WEB_PORT),
-            'file_transfer_port': int(WEB_FILE_TRANSFER_PORT),
         }
 
     def _get_loader_log_path(self) -> str:

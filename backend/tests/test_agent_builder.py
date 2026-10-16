@@ -68,7 +68,6 @@ class AgentBuilderTests(unittest.TestCase):
                     server_host='127.0.0.1',
                     server_port=9000,
                     web_port=8080,
-                    file_transfer_port=8081,
                     builder='bundle',
                 )
 
@@ -90,8 +89,7 @@ class AgentBuilderTests(unittest.TestCase):
                         server_host='127.0.0.1',
                         server_port=9000,
                         web_port=8080,
-                        file_transfer_port=8081,
-                        builder='bundle',
+                            builder='bundle',
                     )
 
             self.assertFalse(os.path.exists(work_dir))

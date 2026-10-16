@@ -2,6 +2,5 @@
   "server_host": "39.107.248.76",
   "server_port": 9999,
   "server_web_host": "39.107.248.76",
-  "server_web_port": 8085,
-  "server_file_transfer_port": 8087
+  "server_web_port": 8085
 }

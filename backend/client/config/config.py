@@ -13,7 +13,6 @@ DEFAULT_CONFIG = {
     'server_web_scheme': 'http',
     'server_web_host': '127.0.0.1',
     'server_web_port': 8085,
-    'server_file_transfer_port': 8087,
     'client_build_version': 'dev',
 }
 
@@ -59,7 +58,7 @@ SERVER_ADDR = (SERVER_HOST, SERVER_PORT)
 SERVER_WEB_SCHEME = RUNTIME_CONFIG['server_web_scheme']
 SERVER_WEB_HOST = RUNTIME_CONFIG['server_web_host']
 SERVER_WEB_PORT = RUNTIME_CONFIG['server_web_port']
-SERVER_FILE_TRANSFER_PORT = RUNTIME_CONFIG['server_file_transfer_port']
+SERVER_FILE_TRANSFER_PORT = int(SERVER_WEB_PORT) + 1
 UPLOAD_BASE_URL = f'{SERVER_WEB_SCHEME}://{SERVER_WEB_HOST}:{SERVER_WEB_PORT}'
 FILE_TRANSFER_BASE_URL = f'{SERVER_WEB_SCHEME}://{SERVER_WEB_HOST}:{SERVER_FILE_TRANSFER_PORT}'
 

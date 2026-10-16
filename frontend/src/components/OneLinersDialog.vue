@@ -42,15 +42,6 @@
             placeholder="8085"
           />
         </label>
-
-        <label class="one-liners-config-field">
-          <span>File transfer port</span>
-          <el-input
-            v-model="serverForm.fileTransferPort"
-            size="small"
-            placeholder="8087"
-          />
-        </label>
       </div>
 
       <div
@@ -150,7 +141,6 @@ export default {
         serverHost: location?.hostname || 'localhost',
         serverPort: '9999',
         webPort: '8085',
-        fileTransferPort: '8087',
       }
     },
 
@@ -164,13 +154,13 @@ export default {
         }
 
         const webPort = Number(json.data?.web_port || 0)
-        const fileTransferPort = Number(json.data?.file_transfer_port || 0)
+        const socketPort = Number(json.data?.socket_port || 0)
 
         if (webPort > 0) {
           this.serverForm.webPort = String(webPort)
         }
-        if (fileTransferPort > 0) {
-          this.serverForm.fileTransferPort = String(fileTransferPort)
+        if (socketPort > 0) {
+          this.serverForm.serverPort = String(socketPort)
         }
       } catch (_error) {
         // 保留本地默认值，避免平台信息读取失败时阻断 one-liner 使用。
@@ -182,14 +172,12 @@ export default {
         server_host: String(this.serverForm.serverHost || '').trim(),
         server_port: String(this.serverForm.serverPort || '').trim(),
         web_port: String(this.serverForm.webPort || '').trim(),
-        file_transfer_port: String(this.serverForm.fileTransferPort || '').trim(),
       }
 
       return String(code || '')
         .replace(/{{\s*server_host\s*}}/g, replacements.server_host)
         .replace(/{{\s*server_port\s*}}/g, replacements.server_port)
         .replace(/{{\s*web_port\s*}}/g, replacements.web_port)
-        .replace(/{{\s*file_transfer_port\s*}}/g, replacements.file_transfer_port)
         .trim()
     },
 
@@ -281,7 +269,7 @@ export default {
 .one-liners-config-row {
   flex: 0 0 auto;
   display: grid;
-  grid-template-columns: minmax(0, 1.25fr) repeat(3, minmax(100px, 0.75fr));
+  grid-template-columns: minmax(0, 1.25fr) repeat(2, minmax(100px, 0.75fr));
   gap: 10px;
   padding: 10px 12px;
   border: 1px solid rgba(148, 163, 184, 0.18);

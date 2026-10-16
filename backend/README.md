@@ -2636,10 +2636,14 @@ Templates can substitute:
 {{server_host}}
 {{server_port}}
 {{web_port}}
-{{file_transfer_port}}
 ```
 
 The displayed snippet can be edited/copied without changing the static catalog source.
+
+The server listens on the Socket port (`RCH_SOCKET_PORT`, default `9999`) and Web port (`RCH_WEB_PORT`, default `8085`). The separate file transfer HTTP service always listens on **Web port + 1** (default `8086`); the unused standalone PTY WebSocket listener has been removed. PTY/Screen WebSockets remain on the Web port.
+
+Agent Builder, Bootstrap, and One-liners accept only Socket and Web ports. `/api/agent/platform` supplies both configured server defaults. The derived file transfer port is not independently configurable. For external port mapping, forward the Web port and its following file-transfer port together.
+
 
 ---
 

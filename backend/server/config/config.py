@@ -7,13 +7,14 @@ SERVER_DIR = os.path.dirname(BASE_DIR)
 
 # ------------------ network ------------------ #
 SOCKET_HOST = ''
-SOCKET_PORT = 9999
+SOCKET_PORT = int(os.getenv('RCH_SOCKET_PORT', '9999'))
 SOCKET_ADDR = (SOCKET_HOST, SOCKET_PORT)
 
 WEB_HOST = '0.0.0.0'
-WEB_PORT = 8085
-WEB_WS_PORT = int(os.getenv('RCH_WEB_WS_PORT', str(WEB_PORT + 1)))
-WEB_FILE_TRANSFER_PORT = WEB_PORT + 2
+WEB_PORT = int(os.getenv('RCH_WEB_PORT', '8085'))
+WEB_FILE_TRANSFER_PORT = WEB_PORT + 1
+if not (1 <= SOCKET_PORT <= 65535 and 1 <= WEB_PORT <= 65534) or SOCKET_PORT in (WEB_PORT, WEB_FILE_TRANSFER_PORT):
+    raise ValueError('Invalid or overlapping RCH socket/web/file ports')
 
 # ------------------ auth ------------------ #
 HIDDEN_DEVICES_REQUIRE_PASSWORD = os.getenv('RCH_HIDDEN_DEVICES_REQUIRE_PASSWORD', 'true').strip().lower() in {
@@ -27,6 +28,7 @@ SESSION_COOKIE_NAME = os.getenv('RCH_WEB_SESSION_COOKIE_NAME', 'rch_admin_sessio
 ALIAS_PATH = os.path.join(SERVER_DIR, 'resources/aliases.json')
 SCRIPT_PATH = os.path.join(SERVER_DIR, 'resources/scripts')
 SCRIPT_JOBS_PATH = os.path.join(SERVER_DIR, 'resources/jobs')
+
 EXTERNAL_TOOLS_ROOT = os.path.join(SERVER_DIR, 'resources/external_tools')
 EXTERNAL_TOOL_META_PATH = os.path.join(EXTERNAL_TOOLS_ROOT, 'metas')
 EXTERNAL_TOOL_PACKAGE_PATH = os.path.join(EXTERNAL_TOOLS_ROOT, 'packages')
@@ -68,6 +70,6 @@ KEYCHAINS_ROOT_DIR = os.path.abspath(os.path.join('runtime', 'keychains'))
 WEB_FILES_ROOT_DIR = os.path.abspath(os.path.join('runtime', 'web_files'))
 WEB_PREVIEW_TEXT_MAX_BYTES = 200 * 1024
 WEB_HTTP_UPLOAD_MAX_BYTES = 10 * 1024 * 1024 * 1024  # 10GB
-WEB_PUBLIC_BASE_URL = 'http://127.0.0.1:8085'
+WEB_PUBLIC_BASE_URL = f'http://127.0.0.1:{WEB_PORT}'
 
 HEARTBEAT_INTERVAL_SECONDS = 30

@@ -30,7 +30,6 @@ def create_agent_blueprint(server_instance):
             server_host = (payload.get('server_host') or '').strip()
             server_port = payload.get('server_port')
             web_port = payload.get('web_port')
-            file_transfer_port = payload.get('file_transfer_port')
             target_os = (payload.get('target_os') or 'mac').strip()
             builder = (payload.get('builder') or 'pyinstaller').strip()
             target_arch = (payload.get('target_arch') or '').strip()
@@ -55,17 +54,10 @@ def create_agent_blueprint(server_instance):
             except ValueError:
                 raise ValueError('web_port must be integer')
 
-            if file_transfer_port:
-                try:
-                    file_transfer_port = int(file_transfer_port)
-                except ValueError:
-                    raise ValueError('file_transfer_port must be integer')
-
             result = agent_api.build_agent(
                 server_host,
                 server_port,
                 web_port,
-                file_transfer_port,
                 target_os,
                 builder,
                 target_arch,

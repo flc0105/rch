@@ -82,7 +82,7 @@ class AgentBuilder:
         return f'rchclient-source-bundle-{build_id}.zip'
 
     def build_agent(self, server_host: str, server_port: int,
-                    web_port: int, file_transfer_port: int, target_os: str = 'mac',
+                    web_port: int, target_os: str = 'mac',
                     builder: str = 'pyinstaller', target_arch: str = '',
                     server_web_scheme: str = 'http', server_web_host: str = '') -> dict:
         builder = (builder or 'pyinstaller').strip().lower()
@@ -97,6 +97,10 @@ class AgentBuilder:
             raise ValueError(f'Unsupported target arch: {target_arch or "empty"}')
         if builder != 'bundle' and target_os not in self.SUPPORTED_TARGETS:
             raise ValueError(f'Unsupported target OS: {target_os}')
+
+        if not 1 <= int(web_port) <= 65534:
+            raise ValueError('web_port must be between 1 and 65534')
+        file_transfer_port = int(web_port) + 1
 
         work_dir = tempfile.mkdtemp(prefix='agent_build_')
         build_id = self._build_id_text()
@@ -219,7 +223,7 @@ SERVER_ADDR = (SERVER_HOST, SERVER_PORT)
 SERVER_WEB_SCHEME = "{server_web_scheme}"
 SERVER_WEB_HOST = "{server_web_host}"
 SERVER_WEB_PORT = {web_port}
-SERVER_FILE_TRANSFER_PORT = {file_transfer_port}
+SERVER_FILE_TRANSFER_PORT = SERVER_WEB_PORT + 1
 UPLOAD_BASE_URL = f"{{SERVER_WEB_SCHEME}}://{{SERVER_WEB_HOST}}:{{SERVER_WEB_PORT}}"
 FILE_TRANSFER_BASE_URL = f"{{SERVER_WEB_SCHEME}}://{{SERVER_WEB_HOST}}:{{SERVER_FILE_TRANSFER_PORT}}"
 
@@ -230,7 +234,6 @@ RUNTIME_CONFIG = {{
     'server_web_scheme': SERVER_WEB_SCHEME,
     'server_web_host': SERVER_WEB_HOST,
     'server_web_port': SERVER_WEB_PORT,
-    'server_file_transfer_port': SERVER_FILE_TRANSFER_PORT,
     'client_build_version': CLIENT_BUILD_VERSION,
 }}
 CLIENT_SOURCE_REVISION = "{client_revision}"
@@ -247,13 +250,15 @@ CLIENT_SOURCE_REVISION_FILES = {client_revision_files}
         server_web_host = (server_web_host or server_host).strip() or server_host
         template = f'''package config
 
+import "strconv"
+
 var SERVER_ADDR = "{server_host}:{server_port}"
 var SERVER_WEB_SCHEME = "{server_web_scheme}"
 var SERVER_WEB_HOST = "{server_web_host}"
 var SERVER_WEB_PORT = {web_port}
-var SERVER_FILE_TRANSFER_PORT = {file_transfer_port}
+var SERVER_FILE_TRANSFER_PORT = SERVER_WEB_PORT + 1
 var UPLOAD_BASE_URL = SERVER_WEB_SCHEME + "://" + SERVER_WEB_HOST + ":" + "{web_port}"
-var FILE_TRANSFER_BASE_URL = SERVER_WEB_SCHEME + "://" + SERVER_WEB_HOST + ":" + "{file_transfer_port}"
+var FILE_TRANSFER_BASE_URL = SERVER_WEB_SCHEME + "://" + SERVER_WEB_HOST + ":" + strconv.Itoa(SERVER_FILE_TRANSFER_PORT)
 var CLIENT_BUILD_VERSION = "{build_version}"
 '''
         with open(config_path, 'w', encoding='utf-8') as f:
@@ -271,7 +276,7 @@ const ServerSocketPort = {server_port}
 const ServerWebScheme = "{server_web_scheme}"
 const ServerWebHost = "{server_web_host}"
 const ServerWebPort = {web_port}
-const ServerFileTransferPort = {file_transfer_port}
+const ServerFileTransferPort = ServerWebPort + 1
 const LoaderBuildVersion = "{build_version}"
 const BundleBaseDirName = "client_bundle"
 const BundleBuildAPIPath = "/api/agent/build"
