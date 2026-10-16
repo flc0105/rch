@@ -129,8 +129,11 @@ def log(message):
 def request_bytes(url, payload=None):
     body = json.dumps(payload).encode() if payload is not None else None
     request = urllib.request.Request(url, data=body, headers={'Content-Type': 'application/json'} if body else {})
+    log(f'HTTP request: {url}')
     with urllib.request.urlopen(request, timeout=300) as response:
-        return response.read()
+        data = response.read()
+    log(f'HTTP response received: {len(data)} bytes')
+    return data
 
 
 def runtime_version(python):
@@ -150,7 +153,10 @@ def find_embedded(root):
 def download(url, dest, sha256=None):
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_name(dest.name + '.part')
+    log(f'Downloading: {url}')
+    log(f'Saving to: {dest}')
     digest = hashlib.sha256()
+    total = 0
     try:
         with urllib.request.urlopen(url, timeout=300) as response, open(tmp, 'wb') as output:
             while True:
@@ -159,8 +165,12 @@ def download(url, dest, sha256=None):
                     break
                 output.write(chunk)
                 digest.update(chunk)
+                total += len(chunk)
+        log(f'Download complete: {total} bytes')
         if sha256 and digest.hexdigest().lower() != sha256.lower():
             raise ValueError('Downloaded file SHA-256 mismatch')
+        if sha256:
+            log('Download SHA-256 verified')
         os.replace(tmp, dest)
     finally:
         if tmp.exists():
@@ -169,6 +179,7 @@ def download(url, dest, sha256=None):
 
 def extract_zip(zip_path, destination):
     # Validate members before extraction and never extract symlinks.
+    log(f'Extracting {zip_path} to {destination}')
     destination.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(zip_path) as archive:
         if archive.testzip() is not None:
@@ -179,21 +190,38 @@ def extract_zip(zip_path, destination):
             if path.is_absolute() or '..' in path.parts or (member.external_attr >> 16) & 0o170000 == 0o120000:
                 raise ValueError(f'Unsafe ZIP member: {name}')
         archive.extractall(destination)
+    log(f'Extracted successfully: {destination}')
 
 
 def prepare_python():
+    log(f'Preparing Python runtime (minimum {MIN_PYTHON[0]}.{MIN_PYTHON[1]}) on {sys.platform}')
     if sys.platform != 'win32':
         for candidate in (sys.executable, shutil.which('python3'), shutil.which('python')):
-            if candidate and runtime_version(candidate) >= MIN_PYTHON:
-                return str(candidate)
+            if candidate:
+                version = runtime_version(candidate)
+                log(f'Checking local Python: {candidate} ({version[0]}.{version[1]})')
+                if version >= MIN_PYTHON:
+                    log(f'Using local Python: {candidate}')
+                    return str(candidate)
         raise RuntimeError('Python 3.10 or newer is required')
 
     embedded = find_embedded(RUNTIME_DIR)
-    if embedded and runtime_version(embedded) >= MIN_PYTHON:
-        return str(embedded)
+    if embedded:
+        version = runtime_version(embedded)
+        log(f'Checking cached Python Embed: {embedded} ({version[0]}.{version[1]})')
+        if version >= MIN_PYTHON:
+            log(f'Using cached Python Embed: {embedded}')
+            return str(embedded)
+        log('Cached Python Embed is not compatible; checking local Python')
+    else:
+        log(f'No cached Python Embed found in: {RUNTIME_DIR}')
     for candidate in (sys.executable, shutil.which('python'), shutil.which('python3')):
-        if candidate and runtime_version(candidate) >= MIN_PYTHON:
-            return str(candidate)
+        if candidate:
+            version = runtime_version(candidate)
+            log(f'Checking local Python: {candidate} ({version[0]}.{version[1]})')
+            if version >= MIN_PYTHON:
+                log(f'Using local Python: {candidate}')
+                return str(candidate)
 
     # Python 3.13 Embed is packaged only for supported Windows amd64.
     import platform
@@ -206,6 +234,7 @@ def prepare_python():
     if arch != 'amd64':
         raise RuntimeError(f'No embedded Python package available for Windows {arch}')
     url = f'{BASE_URL}/api/external-tools/python-embed/download?platform=win&arch={arch}'
+    log(f'No compatible local Python; downloading Python Embed for win/{arch}')
     zip_path = DOWNLOADS_DIR / 'python-embed.zip'
     download(url, zip_path)
     staging = RUNTIME_DIR.with_name('python-embed.part')
@@ -220,6 +249,7 @@ def prepare_python():
         if RUNTIME_DIR.exists():
             shutil.rmtree(RUNTIME_DIR)
         staging.rename(RUNTIME_DIR)
+        log(f'Python Embed ready: {RUNTIME_DIR / relative}')
         return str(RUNTIME_DIR / relative)
     finally:
         if staging.exists():
@@ -233,10 +263,13 @@ def build_bundle():
         'web_port': WEB_PORT, 'target_os': 'bundle', 'builder': 'bundle',
         'target_arch': '', 'source': 'bootstrap',
     }
+    log(f'Requesting Bundle build: {BASE_URL}/api/agent/build')
     result = json.loads(request_bytes(f'{BASE_URL}/api/agent/build', payload))
     if result.get('code') != 0:
         raise RuntimeError(result.get('message') or 'Bundle build failed')
-    return result['data']
+    data = result['data']
+    log(f'Bundle build ready: {data.get("build_version", "unknown")} / {data.get("file_name", "unknown")}')
+    return data
 
 
 def launch(python, directory):
@@ -249,6 +282,7 @@ def launch(python, directory):
     except ImportError:
         pythonista = sys.platform == 'ios'
     if pythonista:
+        log('iOS/Pythonista detected, using runpy mode')
         def run():
             os.chdir(directory)
             sys.path.insert(0, str(directory))
@@ -262,10 +296,14 @@ def launch(python, directory):
         kwargs['creationflags'] = 0x00000008 | 0x00000200
     else:
         kwargs['start_new_session'] = True
+    log(f'Launching detached Client: {python} {script} (cwd={directory})')
     subprocess.Popen([str(python), str(script)], **kwargs)
+    log('Client process launched (detached)')
 
 
 def main():
+    log(f'Server: {BASE_URL}; Socket: {SERVER_HOST}:{SERVER_PORT}')
+    log(f'Bundle root: {ROOT}')
     DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
     RELEASES_DIR.mkdir(parents=True, exist_ok=True)
     python = prepare_python()
@@ -279,8 +317,10 @@ def main():
     if not expected_sha:
         raise ValueError('Bundle build did not provide SHA-256')
     archive_path = DOWNLOADS_DIR / filename
+    log(f'Downloading Bundle: {filename}')
     download(urljoin(BASE_URL + '/', meta['download_url']), archive_path, expected_sha)
     release = RELEASES_DIR / version
+    log(f'Installing Bundle release: {release}')
     staging = RELEASES_DIR / (version + '.part')
     if staging.exists():
         shutil.rmtree(staging)
@@ -289,8 +329,10 @@ def main():
         if not (staging / 'rchclient.py').is_file():
             raise RuntimeError('Bundle missing rchclient.py')
         if release.exists():
+            log(f'Replacing existing Bundle release: {release}')
             shutil.rmtree(release)
         staging.rename(release)
+        log(f'Bundle installed successfully: {release}')
     finally:
         if staging.exists():
             shutil.rmtree(staging)
@@ -311,6 +353,9 @@ $runtimeDir = Join-Path $bundleDir 'runtimes\python-embed'
 $downloadsDir = Join-Path $bundleDir 'downloads'
 $releaseDir = Join-Path $bundleDir 'releases'
 New-Item -Type Directory -Force $downloadsDir,$releaseDir | Out-Null
+Write-Host "[bootstrap] Server: $ip`:$webPort; Socket: $ip`:$serverPort"
+Write-Host "[bootstrap] Bundle root: $bundleDir"
+Write-Host '[bootstrap] Preparing Python runtime (minimum 3.10)'
 
 function Test-Python($binary) {
     try {
@@ -352,10 +397,25 @@ function Expand-ValidatedZip($archivePath, $destination) {
 
 # Windows: embedded runtime first, then suitable local Python, then download Embed.
 $py = Find-Embed $runtimeDir
-if ($py -and -not (Test-Python $py)) { $py = $null }
+if ($py) {
+    Write-Host "[bootstrap] Checking cached Python Embed: $py"
+    if (Test-Python $py) {
+        Write-Host "[bootstrap] Using cached Python Embed: $py"
+    } else {
+        Write-Host '[bootstrap] Cached Python Embed is not compatible; checking local Python'
+        $py = $null
+    }
+} else {
+    Write-Host "[bootstrap] No cached Python Embed found in: $runtimeDir"
+}
 if (-not $py) {
     foreach ($candidate in @('python','python3')) {
-        if (Test-Python $candidate) { $py = $candidate; break }
+        Write-Host "[bootstrap] Checking local Python: $candidate"
+        if (Test-Python $candidate) {
+            $py = $candidate
+            Write-Host "[bootstrap] Using local Python: $candidate"
+            break
+        }
     }
 }
 if (-not $py) {
@@ -370,10 +430,14 @@ if (-not $py) {
     if (-not $arch) { $arch = $env:PROCESSOR_ARCHITECTURE }
     if ($arch -eq 'AMD64') { $arch = 'amd64' }
     if ($arch -ne 'amd64') { throw "No embedded Python package available for Windows $arch" }
+    Write-Host "[bootstrap] No compatible local Python; downloading Python Embed for win/$arch"
     $zipPath = Join-Path $downloadsDir 'python-embed.zip'
+    Write-Host "[bootstrap] Downloading: http://$ip`:$webPort/api/external-tools/python-embed/download?platform=win&arch=$arch"
     Invoke-WebRequest "http://$ip`:$webPort/api/external-tools/python-embed/download?platform=win&arch=$arch" -OutFile $zipPath -UseBasicParsing
     $staging = "$runtimeDir.part"
     if (Test-Path $staging) { Remove-Item $staging -Recurse -Force }
+    Write-Host "[bootstrap] Python Embed downloaded: $zipPath"
+    Write-Host "[bootstrap] Extracting Python Embed: $staging"
     Expand-ValidatedZip $zipPath $staging
     $candidate = Find-Embed $staging
     if (-not $candidate -or -not (Test-Python $candidate)) { throw 'Downloaded Embed is incompatible' }
@@ -381,6 +445,7 @@ if (-not $py) {
     if (Test-Path $runtimeDir) { Remove-Item $runtimeDir -Recurse -Force }
     Move-Item $staging $runtimeDir
     $py = Join-Path $runtimeDir $relative
+    Write-Host "[bootstrap] Python Embed ready: $py"
 }
 
 $body = @{
@@ -388,9 +453,11 @@ $body = @{
     target_os='bundle'; builder='bundle'; target_arch=''; source='bootstrap';
     server_web_scheme='http'; server_web_host=$ip
 } | ConvertTo-Json -Compress
+Write-Host "[bootstrap] Requesting Bundle build: http://$ip`:$webPort/api/agent/build"
 $response = Invoke-RestMethod "http://$ip`:$webPort/api/agent/build" -Method Post -ContentType 'application/json' -Body $body
 if ($response.code -ne 0) { throw "Build failed: $($response.message)" }
 $data = $response.data
+Write-Host "[bootstrap] Bundle build ready: $($data.build_version) / $($data.file_name)"
 if (-not $data.sha256) { throw 'Build response missing SHA-256' }
 if ($data.file_name -notmatch '^[A-Za-z0-9._-]+$' -or
     $data.build_version -notmatch '^[A-Za-z0-9._-]+$' -or
@@ -400,20 +467,32 @@ if ($data.file_name -notmatch '^[A-Za-z0-9._-]+$' -or
 $url = $data.download_url
 if (-not $url.StartsWith('http')) { $url = "http://$ip`:$webPort$url" }
 $zipPath = Join-Path $downloadsDir $data.file_name
+Write-Host "[bootstrap] Downloading Bundle: $url"
+Write-Host "[bootstrap] Saving to: $zipPath"
 Invoke-WebRequest $url -OutFile $zipPath -UseBasicParsing
+Write-Host "[bootstrap] Bundle downloaded: $zipPath"
 if ((Get-Hash256 $zipPath) -ne $data.sha256.ToLowerInvariant()) { throw 'Bundle SHA-256 mismatch' }
+Write-Host '[bootstrap] Bundle SHA-256 verified'
 $release = Join-Path $releaseDir $data.build_version
 $staging = "$release.part"
+Write-Host "[bootstrap] Installing Bundle release: $release"
 if (Test-Path $staging) { Remove-Item $staging -Recurse -Force }
 try {
+    Write-Host "[bootstrap] Extracting Bundle: $zipPath -> $staging"
     Expand-ValidatedZip $zipPath $staging
     if (-not (Test-Path (Join-Path $staging 'rchclient.py'))) { throw 'Bundle missing rchclient.py' }
-    if (Test-Path $release) { Remove-Item $release -Recurse -Force }
+    if (Test-Path $release) {
+        Write-Host "[bootstrap] Replacing existing Bundle release: $release"
+        Remove-Item $release -Recurse -Force
+    }
     Move-Item $staging $release
+    Write-Host "[bootstrap] Bundle installed successfully: $release"
 } finally {
     if (Test-Path $staging) { Remove-Item $staging -Recurse -Force }
 }
 $script = Join-Path $release 'rchclient.py'
+Write-Host "[bootstrap] Launching detached Client: $py $script"
 Start-Process -FilePath $py -ArgumentList ('"' + $script + '"') -WorkingDirectory $release -WindowStyle Hidden
+Write-Host '[bootstrap] Client process launched (detached)'
 Write-Host 'Bootstrap complete.'
 '''

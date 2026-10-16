@@ -2695,6 +2695,9 @@ Python Bootstrap, Windows PowerShell Bootstrap, and the standalone Go Loader req
 
 The Client source requires **Python 3.10 or newer**. On Windows the bootstrap prefers an existing suitable embedded runtime, then suitable local Python; if neither is available it requests the Windows Embed archive using the detected platform/architecture. The published `python-embed` package is currently **Windows amd64 / Python 3.13.13 only**; Windows 7 and unsupported architectures cannot use it. On macOS the bootstrap uses local Python only and never downloads Embed. Launching the Client is detached (Windows also hides its window). Bootstrap initialization still uses the Web port; Client file transfer is separate.
 
+Both generated Python and Windows PowerShell bootstraps print each stage to the console: runtime source (cached Embed, local Python, or Embed download), build request/version, Bundle download and checksum, extraction/replacement directory, and detached launch. An existing Python Client's `update` command keeps its original extraction and handoff behavior; only its ZIP archive location is `~/client_bundle/downloads/` (sibling of `releases/`). The Bundle ZIP residue cleanup also targets that downloads directory without touching cached Python Embed packages.
+
+
 
 ---
 

@@ -255,11 +255,15 @@ def ensure_directory(path: str) -> str:
 
 
 def get_client_bundle_release_dir() -> str:
-    # update 命令默认下载目录
+    # update 默认 bundle 版本目录
     if get_local_identity().os_alias != 'ios':
         return ensure_directory(os.path.join(str(Path.home()), 'client_bundle', 'releases'))
     else:
         return ensure_directory(os.path.join(str(Path.home()), 'Documents', 'client_bundle', 'releases'))
+
+
+def get_client_bundle_download_dir() -> str:
+    return ensure_directory(os.path.join(os.path.dirname(get_client_bundle_release_dir()), 'downloads'))
 
 
 def build_bundle_extract_dir(release_dir: str, file_name: str) -> str:

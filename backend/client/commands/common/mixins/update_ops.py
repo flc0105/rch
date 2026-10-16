@@ -23,6 +23,7 @@ from core.device.local_identity import get_local_identity
 from client.runtime.client_util import (
     build_bundle_extract_dir,
     get_client_bundle_release_dir,
+    get_client_bundle_download_dir,
     spawn_detached_python_script,
 )
 from core.utils.decorator import desc
@@ -142,12 +143,22 @@ class CommandUpdateMixin:
                     deleted_dirs.append(path)
                     continue
 
-                if os.path.isfile(path) and name.lower().endswith('.zip'):
-                    os.remove(path)
-                    deleted_zips.append(path)
-                    continue
             except Exception as e:
                 errors.append(f'{path}: {e}')
+
+        # Bundle archives now live alongside releases, under downloads/.
+        downloads_dir = get_client_bundle_download_dir()
+        for name in sorted(os.listdir(downloads_dir)):
+            self._ensure_not_interrupted()
+            if not (name.startswith('rchclient-source-bundle-') and name.lower().endswith('.zip')):
+                continue
+            archive_path = os.path.join(downloads_dir, name)
+            try:
+                if os.path.isfile(archive_path):
+                    os.remove(archive_path)
+                    deleted_zips.append(archive_path)
+            except Exception as e:
+                errors.append(f'{archive_path}: {e}')
 
         return {
             'release_dir': release_root,
@@ -386,7 +397,8 @@ class CommandUpdateMixin:
             self._send_success('Bundle building completed', 0)
 
             release_dir = get_client_bundle_release_dir()
-            archive_path = os.path.join(release_dir, bundle_meta['file_name'])
+            archive_dir = get_client_bundle_download_dir()
+            archive_path = os.path.join(archive_dir, bundle_meta['file_name'])
             extract_dir = build_bundle_extract_dir(release_dir, bundle_meta['file_name'])
 
             self._send_info(f'Bundle downloading: {bundle_meta["file_name"]}', 0)

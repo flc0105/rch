@@ -5,7 +5,7 @@ import tempfile
 
 from core.utils.filesystem import safe_file_size
 from client.config.runtime_config_store import get_runtime_config_path
-from client.runtime.client_util import get_client_bundle_release_dir
+from client.runtime.client_util import get_client_bundle_release_dir, get_client_bundle_download_dir
 from client.runtime.temp_workspace import (
     get_client_temp_root,
     get_temp_category_dir,
@@ -194,14 +194,15 @@ class ClientCleanupService:
 
     def _clean_bundle_archive_residue(self) -> dict:
         result = self._new_result('bundle_archive_residue')
-        release_dir = os.path.abspath(get_client_bundle_release_dir())
-        if not os.path.isdir(release_dir):
+        downloads_dir = os.path.abspath(get_client_bundle_download_dir())
+        if not os.path.isdir(downloads_dir):
             return result
 
-        for name in sorted(os.listdir(release_dir)):
+        for name in sorted(os.listdir(downloads_dir)):
             self._ensure_not_interrupted()
-            path = os.path.abspath(os.path.join(release_dir, name))
-            if os.path.isfile(path) and name.lower().endswith('.zip'):
+            path = os.path.abspath(os.path.join(downloads_dir, name))
+            if (os.path.isfile(path) and name.startswith('rchclient-source-bundle-')
+                    and name.lower().endswith('.zip')):
                 self._remove_path(path, result)
         return result
 
