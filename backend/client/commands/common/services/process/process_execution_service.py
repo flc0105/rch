@@ -74,9 +74,10 @@ class ProcessExecutionService:
 
         while True:
             try:
-                self.owner._ensure_not_interrupted(fallback_timeout=effective_timeout)
+                self.owner._checkpoint(fallback_timeout=effective_timeout)
                 return_code = process.poll()
                 if return_code is not None:
+                    self.owner._checkpoint(fallback_timeout=effective_timeout)
                     return return_code
                 time.sleep(getattr(self.owner, 'PROCESS_WAIT_POLL_INTERVAL', 0.2))
             except CommandCancelledError:
@@ -108,11 +109,14 @@ class ProcessExecutionService:
 
         try:
             while True:
-                self.owner._ensure_not_interrupted(fallback_timeout=effective_timeout)
+                self.owner._checkpoint(fallback_timeout=effective_timeout)
                 try:
                     stdout, stderr = process.communicate(
                         timeout=getattr(self.owner, 'PROCESS_WAIT_POLL_INTERVAL', 0.2)
                     )
+                    # A cancel handler can terminate the subprocess between our
+                    # polling checkpoint and communicate() returning.
+                    self.owner._checkpoint(fallback_timeout=effective_timeout)
                     return subprocess.CompletedProcess(
                         args=command,
                         returncode=process.returncode,
@@ -157,7 +161,7 @@ class ProcessExecutionService:
         encoding = self.get_default_encoding()
 
         while True:
-            self.owner._ensure_not_interrupted(fallback_timeout=timeout)
+            self.owner._checkpoint(fallback_timeout=timeout)
             line = stream.readline()
             if not line:
                 break

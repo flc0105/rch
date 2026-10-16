@@ -1,3 +1,4 @@
+from client.commands.runtime.interrupts import cancel_policy
 import json
 import os
 import shlex
@@ -10,7 +11,6 @@ from uuid import uuid4
 
 from client.commands.platform.utils.ios_util import spawn
 from client.commands.common.services.client_cleanup_service import ClientCleanupService
-from client.commands.runtime.interrupts import interruptible
 from client.config.config import (
     SERVER_HOST,
     SERVER_PORT,
@@ -67,7 +67,7 @@ class CommandUpdateMixin:
             archive_path,
             timeout=self.DOWNLOAD_TIMEOUT,
             chunk_size=self.DOWNLOAD_CHUNK_SIZE,
-            ensure_not_interrupted=self._ensure_not_interrupted,
+            checkpoint=self._checkpoint,
         )
 
     def _get_current_bundle_release_dir(self, release_dir: str) -> str:
@@ -131,7 +131,7 @@ class CommandUpdateMixin:
         errors = []
 
         for name in sorted(os.listdir(release_root)):
-            self._ensure_not_interrupted()
+            self._checkpoint()
 
             path = os.path.realpath(os.path.join(release_root, name))
 
@@ -150,7 +150,7 @@ class CommandUpdateMixin:
         # Bundle archives now live alongside releases, under downloads/.
         downloads_dir = get_client_bundle_download_dir()
         for name in sorted(os.listdir(downloads_dir)):
-            self._ensure_not_interrupted()
+            self._checkpoint()
             if not is_bundle_archive(name):
                 continue
             archive_path = os.path.join(downloads_dir, name)
@@ -314,7 +314,7 @@ class CommandUpdateMixin:
         deadline = time.time() + self.UPDATE_READY_TIMEOUT_SECONDS
 
         while time.time() < deadline:
-            self._ensure_not_interrupted()
+            self._checkpoint()
 
             if os.path.isfile(ready_path):
                 with open(ready_path, 'r', encoding='utf-8') as file_obj:
@@ -322,7 +322,7 @@ class CommandUpdateMixin:
                 if int(payload.get('pid') or 0) == int(process.pid):
                     stabilize_deadline = time.time() + self.UPDATE_READY_STABILIZE_SECONDS
                     while time.time() < stabilize_deadline:
-                        self._ensure_not_interrupted()
+                        self._checkpoint()
                         return_code = process.poll()
                         if return_code is not None:
                             detail = self._read_update_startup_error(error_path)
@@ -383,7 +383,7 @@ class CommandUpdateMixin:
         ).start()
 
     @desc('Build, download, extract and launch the latest client bundle; use --keep-old to retain current client', group='session')
-    @interruptible()
+    @cancel_policy('cooperative')
     def update(self, arg=''):
         ready_path = ''
         error_path = ''
@@ -458,7 +458,7 @@ class CommandUpdateMixin:
             self._cleanup_update_probe_files(ready_path, error_path)
 
     @desc('Clean outdated client bundle release directories and ZIP files', group='session')
-    @interruptible()
+    @cancel_policy('cooperative')
     def clean_releases(self, arg=''):
         """
         清理默认 releases 目录里的旧 update bundle。
@@ -508,7 +508,7 @@ class CommandUpdateMixin:
         return '\n'.join(lines)
 
     @desc('Clean all client-owned temporary residue and obsolete update bundle files', group='session')
-    @interruptible()
+    @cancel_policy('cooperative')
     def clean(self, arg=''):
         """Clean all supported client residue. Usage: clean"""
         if str(arg or '').strip():
@@ -516,7 +516,7 @@ class CommandUpdateMixin:
 
         try:
             service = ClientCleanupService(
-                ensure_not_interrupted=self._ensure_not_interrupted,
+                checkpoint=self._checkpoint,
                 current_bundle_resolver=self._get_current_bundle_release_dir,
             )
             result = service.clean()

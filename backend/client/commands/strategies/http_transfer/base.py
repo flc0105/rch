@@ -74,13 +74,13 @@ class HttpTransferStrategy:
 
     def configure_context_for_upload(self):
         self.owner._set_cancel_policy(
-            supported=self.is_cancel_supported(),
+            mode='cooperative' if self.is_cancel_supported() else 'none',
             message='Current HTTP transfer mode is legacy; upload cancellation is not supported',
         )
 
     def configure_context_for_download(self):
         self.owner._set_cancel_policy(
-            supported=self.is_cancel_supported(),
+            mode='cooperative' if self.is_cancel_supported() else 'none',
             message='Current HTTP transfer mode is legacy; download cancellation is not supported',
         )
 

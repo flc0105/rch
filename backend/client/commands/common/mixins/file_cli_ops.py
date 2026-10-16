@@ -1,6 +1,6 @@
+from client.commands.runtime.interrupts import cancel_policy
 import os
 
-from client.commands.runtime.interrupts import interruptible
 from client.config.runtime_config import HTTP_TRANSFER_MODE
 from core.utils.decorator import desc
 from core.utils.output_marker import error, success, info
@@ -8,7 +8,6 @@ from core.utils.output_marker import error, success, info
 
 class CommandFileCliMixin:
     @desc('Download a file from the client', group='file')
-    @interruptible()
     def download(self, filename):
         """
         旧版为 socket 发送文件。
@@ -17,7 +16,7 @@ class CommandFileCliMixin:
         try:
             if HTTP_TRANSFER_MODE == 'legacy':
                 self._set_cancel_policy(
-                    supported=False,
+                    mode='none',
                     message='Current HTTP transfer mode is legacy; download cancellation is not supported')
 
             file_path = self.path_resolver.require_existing_file_from_arg(filename)
@@ -30,7 +29,6 @@ class CommandFileCliMixin:
 
 
     @desc('Receive a file from server via HTTP', group='file', suggest=False)
-    @interruptible()
     def receive_http_upload(self, arg=''):
         """
         通过普通命令下发 HTTP 拉取任务，由 client 自己去 server 拉文件并保存到本地。
@@ -46,7 +44,7 @@ class CommandFileCliMixin:
             # 如果传输模式为legacy在正式上传之前设置不可取消
             if HTTP_TRANSFER_MODE == 'legacy':
                 self._set_cancel_policy(
-                    supported=False,
+                    mode='none',
                     message='Current HTTP transfer mode is legacy; upload cancellation is not supported')
 
             payload = self.structured_arg_codec.decode(arg)
@@ -95,6 +93,7 @@ class CommandFileCliMixin:
             return 0, error(f'Failed to receive file via HTTP: {e}')
 
     @desc('Create a ZIP archive', group='file')
+    @cancel_policy('cooperative')
     def zip_dir(self, dir_name):
         """
         按命令行参数压缩目录。
@@ -106,6 +105,7 @@ class CommandFileCliMixin:
             return 0, f'Failed to create archive: {e}'
 
     @desc('Extract a ZIP archive', group='file')
+    @cancel_policy('cooperative')
     def unzip(self, zip_name):
         """
         按命令行参数解压压缩包到当前工作目录。

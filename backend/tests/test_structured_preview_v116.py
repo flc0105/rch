@@ -49,7 +49,7 @@ def test_port_command_inspects_and_previews_before_signal(monkeypatch):
         'threads': 2, 'listening': [{'protocol': 'tcp', 'address': '127.0.0.1', 'port': 9999}],
     }])
     monkeypatch.setattr(aps, 'terminate_verified', lambda *a, **k: pytest.fail('must not signal'))
-    owner = SimpleNamespace(_set_timeout=lambda t: None, _ensure_not_interrupted=lambda **k: None,
+    owner = SimpleNamespace(_set_timeout=lambda t: None, _checkpoint=lambda **k: None,
                             _send_interim_result=lambda *a: None)
     status, msg = CommandProcessMixin._run_approved_process_command(owner, '9999', by_port=True)
     assert status == 1 and 'rejected' in msg

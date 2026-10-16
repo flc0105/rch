@@ -389,6 +389,16 @@ Examples:
 
 So the accurate mental model is **best-effort cancellation with explicit per-command/per-strategy policy**, not “everything is always interruptible”.
 
+**Ordinary shell-like command execution policy (Client):**
+
+- `@timeout(seconds)` records a command-local **default execution budget**. This is metadata only. A `timeout` or `_timeout` explicitly supplied in the Server's command-message `extra` is an execution limit, and the Client applies the **shorter** of the two limits. Neither limit forcibly interrupts arbitrary in-process Python code; execution must reach a checkpoint or managed I/O.
+- `@cancel_policy(mode)` is metadata with exactly three modes: `none` (not cancellable), `cooperative` (checks cancellation at checkpoints or interruptible I/O), and `process` (execution owns a managed subprocess and can terminate it). **`shell` and `read` use `process`**. The default for otherwise unannotated ordinary commands is `none`. Strategy-dependent HTTP transfer and Python execution policy is selected at runtime; `subprocess_pipe` uses `process`, `inproc` uses `none`.
+- `@confirm` continues to be independent of timeout/cancellation policy. Server `disconnect` and Client `kill_connection` each retain their own confirmation.
+- No `@interruptible()` decorator remains. The shared execution entry checks cancellation/timeouts before command invocation; long operations continue checking via `_checkpoint()` (and checked loop/I/O helpers). There is **no automatic forced termination of Python loops**.
+- Cancellation states are distinct: the Server records `requested` on sending a request; Client `cancel_ack` says `accepted` only when the operation allows cancellation; Client reports a terminal `stopped` only after actually observing cancellation **and returning**. A command that ignores cancellation but completes normally reports `completed`, not `stopped`. These states are not equivalent to a watchdog or forced kill.
+- Repeated cancellation cannot replace an already recorded `accepted` / `stopped` / `completed` acknowledgement with `requested`; an accepted Client cancellation registers its final completion notification before triggering cancellation handlers.
+
+
 ### Python execution strategy
 
 Python code execution supports two runtime strategies:
@@ -1378,7 +1388,7 @@ def sensitive_action(self, arg=''):
     return 1, 'Action completed'
 ```
 
-If the user rejects the prompt, it expires, or the Broker is unavailable, the method **does not execute** and the command returns a failed/cancelled result. Commands without `@confirm` behave as before. This first implementation uses the existing Client-originated Interaction Broker request, not Server-side pre-execution approval. The prompt requires an active Web task/interaction grant; direct calls without that context fail closed.
+If the user rejects the prompt, it expires, or the Broker is unavailable, the method **does not execute** and the command returns a failed/cancelled result. Commands without `@confirm` behave as before. This first implementation uses the existing Client-originated Interaction Broker request, not Server-side pre-execution approval. The prompt requires an active Web task/interaction grant; direct calls without that context fail closed. The annotation must exist in the **Server-deployed trusted command source** as well as the Client; restart Server and Client after adding it so Server can automatically attach the grant. `kill_connection` and `reset` now require Web confirmation. The Server builtin `disconnect` retains its existing Server-side approval; the annotated Client `kill_connection` performs its own confirmation as well. For this sequence, the Server keeps the original Web task active until the Client command finishes, so the second confirmation remains authorized and visible.
 
 ## User-facing Client command reference
 

@@ -1,7 +1,6 @@
 import os
 import subprocess
 
-from client.commands.runtime.interrupts import interruptible
 from client.commands.common.services.network.netstat_service import NetstatService
 from client.commands.common.services.network.network_interface_service import NetworkInterfaceService
 from core.utils.decorator import desc
@@ -14,20 +13,17 @@ class CommandSystemMixin:
 
 
     @desc('Get current user ID/name', group='system')
-    @interruptible()
     def getuid(self):
         """获取当前用户名"""
         import getpass
         return 1, getpass.getuser()
 
     @desc('Print working directory', group='system')
-    @interruptible()
     def pwd(self):
         """显示当前工作目录"""
         return 1, os.getcwd()
 
     @desc('Simulate keyboard input', group='system')
-    @interruptible()
     def keyboard_send(self, text):
         """模拟键盘输入文字"""
         try:
@@ -38,13 +34,11 @@ class CommandSystemMixin:
             return 0, 'pyautogui not installed'
 
     @desc('Get current process ID', group='system')
-    @interruptible()
     def getpid(self):
         """获取当前进程PID"""
         return 1, str(os.getpid())
 
     @desc('Find processes by name', group='system')
-    @interruptible()
     def pgrep(self, name):
         """按进程名查找PID"""
         import psutil
@@ -62,7 +56,6 @@ class CommandSystemMixin:
         return 1, 'No matching processes'
 
     @desc('Terminate processes by name', group='system')
-    @interruptible()
     def pkill(self, name):
         """按进程名终止进程"""
         import psutil
@@ -81,7 +74,6 @@ class CommandSystemMixin:
         return 1, 'No matching processes'
 
     @desc('Show network IP addresses', group='network')
-    @interruptible()
     def ip(self):
         """显示内网IP、外网IP和归属地"""
         import requests
@@ -122,7 +114,6 @@ class CommandSystemMixin:
         return 1, result
 
     @desc('List system user accounts', group='system')
-    @interruptible()
     def userenum(self):
         """列出系统用户账户"""
         try:
@@ -144,7 +135,6 @@ class CommandSystemMixin:
             return 1, result.stdout
 
     @desc('Check if current session is root', group='system')
-    @interruptible()
     def is_root(self):
         """检查当前是否为 root 权限"""
         if os.name == 'nt':
@@ -156,7 +146,6 @@ class CommandSystemMixin:
         return 1, f'Is root: {is_root}'
 
     @desc('Show system uptime', group='system')
-    @interruptible()
     def uptime(self):
         """显示系统运行时间"""
         import psutil
@@ -174,7 +163,6 @@ class CommandSystemMixin:
         return 1, f"Boot time: {boot_dt.strftime('%Y-%m-%d %H:%M:%S')}\nUptime: {days}d {hours}h {minutes}m"
 
     @desc('List installed third-party Python packages', group='system')
-    @interruptible()
     def piplist(self, arg=''):
         """列出当前 Python 环境已安装的第三方包和版本"""
         try:
@@ -226,7 +214,6 @@ class CommandSystemMixin:
         return service
 
     @desc('Show network interfaces', group='network')
-    @interruptible()
     def ifconfig(self, arg=''):
         """
         shell-like ifconfig.

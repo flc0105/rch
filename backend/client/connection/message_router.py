@@ -47,7 +47,22 @@ class ClientInboundMessageRouter(BaseMessageRouter):
 
     def handle_cancel_message(self, data: dict):
         target_command_id = data.get('target_id')
-        cancel_result = self.connection.runtime.command_executor.cancel_command(target_command_id)
+        def _report_terminal_state(state):
+            self.connection.send({
+                'type': MSG_TYPE_CANCEL_ACK,
+                'id': data.get('id'),
+                'target_id': target_command_id,
+                'accepted': True,
+                'state': state,
+                'cwd': os.getcwd(),
+                'client_ts': time.time(),
+            })
+
+        # Completion registration and cancellation must be one atomic operation:
+        # a fast exit must not clear the context between those two steps.
+        cancel_result = self.connection.runtime.command_executor.cancel_command(
+            target_command_id, on_completion=_report_terminal_state,
+        )
         accepted = bool(cancel_result.get('accepted'))
         message = str(cancel_result.get('message') or '').strip()
 
@@ -59,6 +74,7 @@ class ClientInboundMessageRouter(BaseMessageRouter):
             'id': data.get('id'),
             'target_id': target_command_id,
             'accepted': accepted,
+            'state': cancel_result.get('state', 'rejected'),
             'message': message,
             'cwd': os.getcwd(),
             'client_ts': time.time(),

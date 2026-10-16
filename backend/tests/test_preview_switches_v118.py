@@ -88,7 +88,7 @@ def test_client_process_signal_only_follows_approved_switch(monkeypatch):
     monkeypatch.setattr(aps, 'terminate_verified', lambda row, **kw: (calls.append(kw),
                            'SIGKILL' if kw['force'] else 'SIGTERM')[1])
     owner = SimpleNamespace(_set_timeout=lambda *a: None,
-                            _ensure_not_interrupted=lambda **kw: None,
+                            _checkpoint=lambda **kw: None,
                             _send_interim_result=lambda *a: None)
     for reply in (None, {'force': False}, {'force': True}):
         monkeypatch.setattr(aps.ClientCommandInteractions, 'approve', lambda *a, **kw: reply)
@@ -114,24 +114,20 @@ def test_disconnect_stays_server_builtin_and_client_commands_do_not_shadow_it():
     assert result[-1][0] == 0 and not closed
 
 
-def test_approved_server_disconnect_sends_client_kill_connection(monkeypatch):
+def test_approved_server_disconnect_sends_client_kill_connection():
     from server.application.command.advanced_builtin_support import AdvancedBuiltinSupport
-    class Timer:
-        def __init__(self, delay, callback):
-            assert delay > 0
-            self.callback = callback
-            self.daemon = False
-        def start(self):
-            self.callback()
-    monkeypatch.setattr('server.application.command.advanced_builtin_support.threading.Timer', Timer)
     sent = []
-    channel = SimpleNamespace(build_command_payload=lambda command: {'type': 'command', 'text': command})
+
+    def send_command(command):
+        sent.append(command)
+        yield 0, None
+
     conn = SimpleNamespace(session_info=SimpleNamespace(client_id='client-A', hostname='test'),
-                           command_channel=channel, send=sent.append,
+                           send_command=send_command,
                            close=lambda: pytest.fail('Do not directly close Server transport'))
     result = list(AdvancedBuiltinSupport(conn, SimpleNamespace(confirm=lambda *a, **kw: True)).disconnect())
-    assert result[-1][0] == 1
-    assert sent == [{'type': 'command', 'text': 'kill_connection'}]
+    assert result[-1] == (1, 'Client connection closed.')
+    assert sent == ['kill_connection']
 
 
 @pytest.mark.parametrize('by_port,arg,criteria', [
@@ -190,7 +186,7 @@ def test_approved_ui_switch_overrides_cli_default(monkeypatch, argument, force_i
         calls.append(kwargs), 'SIGKILL' if kwargs['force'] else 'SIGTERM')[1])
     host = SimpleNamespace(
         _set_timeout=lambda *a: None,
-        _ensure_not_interrupted=lambda **kw: None,
+        _checkpoint=lambda **kw: None,
         _send_interim_result=lambda *a: None,
     )
     result, text = CommandProcessMixin._run_approved_process_command(host, argument, by_port=True)
@@ -204,7 +200,7 @@ def test_trailing_force_never_bypasses_approval(monkeypatch):
     monkeypatch.setattr(aps.ClientCommandInteractions, 'approve', lambda *a, **k: None)
     monkeypatch.setattr(aps, 'terminate_verified', lambda *a, **k: pytest.fail('No approval, no signal'))
     host = SimpleNamespace(_set_timeout=lambda *a: None,
-                           _ensure_not_interrupted=lambda **kw: None,
+                           _checkpoint=lambda **kw: None,
                            _send_interim_result=lambda *a: None)
     result, message = CommandProcessMixin._run_approved_process_command(host, '9999 -9', by_port=True)
     assert result == 1 and 'rejected' in message

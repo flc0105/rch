@@ -11,20 +11,20 @@ class FileSystemService:
     文件系统操作服务。
     """
 
-    def __init__(self, path_resolver: PathResolver, run_interruptible=None, iter_interruptible=None):
+    def __init__(self, path_resolver: PathResolver, run_checked=None, iter_checked=None):
         self.path_resolver = path_resolver
-        self.run_interruptible = run_interruptible
-        self.iter_interruptible = iter_interruptible
+        self.run_checked = run_checked
+        self.iter_checked = iter_checked
 
     def _run(self, func, *args, **kwargs):
-        if self.run_interruptible is None:
+        if self.run_checked is None:
             return func(*args, **kwargs)
-        return self.run_interruptible(func, *args, **kwargs)
+        return self.run_checked(func, *args, **kwargs)
 
     def _iter(self, iterable, check_interval: int = 1):
-        if self.iter_interruptible is None:
+        if self.iter_checked is None:
             return iterable
-        return self.iter_interruptible(iterable, check_interval=check_interval)
+        return self.iter_checked(iterable, check_interval=check_interval)
 
     def build_directory_entry(self, entry):
         stat_result = self._run(entry.stat, follow_symlinks=False)

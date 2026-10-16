@@ -1,6 +1,7 @@
 from functools import wraps
 
 
+
 def desc(text, group='general', suggest=True, api_grants=()):
     """
     装饰器函数，用于为函数或方法添加命令元信息。

@@ -359,8 +359,8 @@ def run(exec_name: str, raw_args: Any = '', *, timeout=None, cwd: str = '') -> E
         raise ScriptSdkExternalToolError(f'external tool cwd does not exist: {run_cwd}')
 
     owner = get_command_owner()
-    if owner is not None and hasattr(owner, '_ensure_not_interrupted'):
-        owner._ensure_not_interrupted()
+    if owner is not None and hasattr(owner, '_checkpoint'):
+        owner._checkpoint()
 
     argv = [executable_path] + _argv_extra(raw_args)
     try:
@@ -379,8 +379,8 @@ def run(exec_name: str, raw_args: Any = '', *, timeout=None, cwd: str = '') -> E
     except Exception as exc:
         raise ScriptSdkExternalToolError(str(exc) or f'Failed to execute external tool: {normalized_exec_name}') from exc
 
-    if owner is not None and hasattr(owner, '_ensure_not_interrupted'):
-        owner._ensure_not_interrupted()
+    if owner is not None and hasattr(owner, '_checkpoint'):
+        owner._checkpoint()
 
     return ExternalToolExecResult(
         exec_name=normalized_exec_name,

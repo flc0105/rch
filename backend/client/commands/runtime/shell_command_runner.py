@@ -44,6 +44,21 @@ class ShellCommandRunner:
         """
         return lambda: commands.shell(raw_command)
 
+    def _apply_command_policy(self, commands, func):
+        context = getattr(commands, 'execution_context', None)
+        if context is None:
+            return
+        budget = getattr(func, 'command_timeout', None)
+        if budget is not None:
+            context.set_timeout(budget)
+        mode = getattr(func, 'command_cancel_mode', 'none')
+        context.set_cancel_policy(
+            mode=mode,
+            message=getattr(func, 'command_cancel_message', '') or
+                    'Command does not support cancellation',
+        )
+        commands._checkpoint()
+
     def _invoke_command_method(self, func, arg):
         """
         调用命令方法
@@ -66,12 +81,15 @@ class ShellCommandRunner:
 
             builtin_command = self._resolve_builtin_command(commands, name)
             if builtin_command:
+                self._apply_command_policy(commands, builtin_command)
                 result = self._invoke_command_method(builtin_command, arg)
                 return self._render_command_result(
                     result,
                     output_format=self._resolve_builtin_output_format(arg),
                 )
 
+            # Shell fallback uses the same managed subprocess as the registered shell command.
+            self._apply_command_policy(commands, getattr(commands, 'shell'))
             default_command = self._resolve_default_command(commands, resolved_command)
             return default_command()
 

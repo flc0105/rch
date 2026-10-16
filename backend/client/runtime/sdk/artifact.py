@@ -230,13 +230,13 @@ def download(ref: str, *, type: str = 'shared_files', target_path: str = '', tim
     local_path = _resolve_target_path(target_path, filename)
     download_url = item.get('download_url') or f'/api/artifacts/{item.get("artifact_id")}/download'
     owner = get_command_owner()
-    ensure_not_interrupted = getattr(owner, '_ensure_not_interrupted', None) if owner is not None else None
+    checkpoint = getattr(owner, '_checkpoint', None) if owner is not None else None
 
     ClientApiClient().download_file(
         download_url,
         local_path,
         timeout=timeout,
-        ensure_not_interrupted=ensure_not_interrupted if callable(ensure_not_interrupted) else None,
+        checkpoint=checkpoint if callable(checkpoint) else None,
     )
     return local_path
 

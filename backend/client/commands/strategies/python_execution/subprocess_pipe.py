@@ -94,6 +94,9 @@ except Exception:
                 input=bootstrap_code,
                 timeout=self.owner._resolve_timeout(timeout),
             )
+            # A process cancel handler may terminate the child while communicate()
+            # is blocked. Distinguish confirmed cancellation from an ordinary exit.
+            self.owner._checkpoint(fallback_timeout=timeout)
 
             if process.returncode == 0:
                 return 1, stdout or ''
@@ -130,7 +133,7 @@ except Exception:
 
             def read_stream(stream, is_stderr=False):
                 for line in iter(stream.readline, ''):
-                    self.owner._ensure_not_interrupted(fallback_timeout=timeout)
+                    self.owner._checkpoint(fallback_timeout=timeout)
                     if line:
                         status = 0 if is_stderr else 1
                         self.owner._send_interim_result(status, line.rstrip('\n'), 0)
@@ -144,7 +147,7 @@ except Exception:
             stderr_thread.start()
 
             while True:
-                self.owner._ensure_not_interrupted(fallback_timeout=timeout)
+                self.owner._checkpoint(fallback_timeout=timeout)
                 if process.poll() is not None:
                     break
                 time.sleep(0.1)

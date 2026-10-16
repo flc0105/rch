@@ -49,7 +49,7 @@ class MacSystemService:
 
     def collect_system_info(self, arg=''):
         try:
-            payload = self.owner._run_interruptible(self.build_process_info)
+            payload = self.owner._run_checked(self.build_process_info)
             return StructuredCommandResult(
                 status=1,
                 data=payload,
@@ -71,7 +71,7 @@ class MacSystemService:
                 kCGEventSourceStateHIDSystemState,
             )
 
-            idle_seconds = self.owner._run_interruptible(
+            idle_seconds = self.owner._run_checked(
                 CGEventSourceSecondsSinceLastEventType,
                 kCGEventSourceStateHIDSystemState,
                 kCGAnyInputEventType,

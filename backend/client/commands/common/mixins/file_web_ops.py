@@ -4,7 +4,6 @@ import os
 import requests
 
 from client.commands.runtime.context import CommandCancelledError, CommandTimeoutError
-from client.commands.runtime.interrupts import interruptible
 from client.commands.common.services.transfer.http_file_transfer_service import CommandHttpFileTransferService
 from client.commands.common.services.filesystem.preview_image_service import PreviewImageService
 from client.config.runtime_config import HTTP_TRANSFER_MODE
@@ -52,7 +51,6 @@ class CommandFileWebMixin:
         return service
 
     @desc('Download a file by path', group='file_path', suggest=False)
-    @interruptible()
     def download_path(self, path=''):
         """
         下载单个路径到 server artifact files 区
@@ -60,7 +58,7 @@ class CommandFileWebMixin:
         try:
             if HTTP_TRANSFER_MODE == 'legacy':
                 self._set_cancel_policy(
-                    supported=False,
+                    mode='none',
                     message='Current HTTP transfer mode is legacy; download cancellation is not supported')
 
             payload = self.structured_arg_codec.decode(path)
@@ -88,7 +86,6 @@ class CommandFileWebMixin:
             return 0, f'Failed to download file via HTTP: {e}'
 
     @desc('Download multiple paths as ZIP archive', group='file_path', suggest=False)
-    @interruptible()
     def download_paths(self, arg=''):
         """
         按路径列表打包上传到 server artifact files 区
@@ -125,7 +122,6 @@ class CommandFileWebMixin:
 
 
     @desc('Create a ZIP archive from remote paths', group='file_path', suggest=False)
-    @interruptible()
     def create_zip_paths(self, arg=''):
         try:
             payload = self.structured_arg_codec.decode(arg)
@@ -166,7 +162,6 @@ class CommandFileWebMixin:
             return 0, f'Failed to create ZIP archive: {e}'
 
     @desc('Inspect a ZIP archive without extracting it', group='file_path', suggest=False)
-    @interruptible()
     def peek_zip(self, arg=''):
         try:
             payload = self.structured_arg_codec.decode(arg)
@@ -184,7 +179,6 @@ class CommandFileWebMixin:
             return 0, f'Failed to inspect ZIP archive: {e}'
 
     @desc('Read a text entry from a ZIP archive without extracting it', group='file_path', suggest=False)
-    @interruptible()
     def read_zip_entry(self, arg=''):
         try:
             payload = self.structured_arg_codec.decode(arg)
@@ -206,7 +200,6 @@ class CommandFileWebMixin:
             return 0, f'Failed to read ZIP entry: {e}'
 
     @desc('Extract a ZIP archive into a remote directory', group='file_path', suggest=False)
-    @interruptible()
     def extract_zip_path(self, arg=''):
         try:
             payload = self.structured_arg_codec.decode(arg)
@@ -229,7 +222,6 @@ class CommandFileWebMixin:
             return 0, f'Failed to extract ZIP archive: {e}'
 
     @desc('Preview a file by path', group='file_path', suggest=False)
-    @interruptible()
     def preview_path(self, path=''):
         """
         拉取预览文件到 server artifact previews 区。
@@ -258,7 +250,6 @@ class CommandFileWebMixin:
                 self.preview_image_service.cleanup_upload_file(prepared_file)
 
     @desc('Browse directory as JSON payload', group='file_path', suggest=False)
-    @interruptible()
     def browse_dir(self, path=''):
         try:
             payload = self.structured_arg_codec.decode(path)
@@ -294,7 +285,6 @@ class CommandFileWebMixin:
             return 0, f'Failed to browse directory: {e}'
 
     @desc('Delete a file or directory', group='file_path', suggest=False)
-    @interruptible()
     def delete_path(self, path=''):
         try:
             target_path = self.path_resolver.require_existing_non_empty_path_from_arg(path)
@@ -307,7 +297,6 @@ class CommandFileWebMixin:
             return 0, f'Failed to delete path: {e}'
 
     @desc('Delete multiple files or directories', group='file_path', suggest=False)
-    @interruptible()
     def delete_paths(self, arg=''):
         """
         批量删除多个文件或目录
@@ -331,7 +320,6 @@ class CommandFileWebMixin:
             return 0, f'Failed to delete paths: {e}'
 
     @desc('Create a directory', group='file_path', suggest=False)
-    @interruptible()
     def mkdir_path(self, path=''):
         try:
             target_path = self.path_resolver.resolve_target_path(
@@ -350,7 +338,6 @@ class CommandFileWebMixin:
             return 0, f'Failed to create directory: {e}'
 
     @desc('Rename a file or directory', group='file_path', suggest=False)
-    @interruptible()
     def rename_path(self, arg=''):
         try:
             payload = self.structured_arg_codec.decode(arg)
@@ -375,7 +362,6 @@ class CommandFileWebMixin:
             return 0, f'Failed to rename path: {e}'
 
     @desc('Paste copied or moved files into a directory', group='file_path', suggest=False)
-    @interruptible()
     def paste_paths(self, arg=''):
         try:
             payload = self.structured_arg_codec.decode(arg)
@@ -406,7 +392,6 @@ class CommandFileWebMixin:
             return 0, f'Failed to paste paths: {e}'
 
     @desc('Save content to a file', group='file_path', suggest=False)
-    @interruptible()
     def save_file_content(self, arg=''):
         """
         保存内容到文件

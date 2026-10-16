@@ -1,6 +1,6 @@
 from client.commands.arguments.decorators import argument_command
 from client.commands.common.commands import CommonCommands
-from client.commands.runtime.interrupts import timeout, interruptible
+from client.commands.runtime.interrupts import timeout
 from client.commands.platform.services.ios.console_service import iOSConsoleService
 from client.commands.platform.services.ios.file_system_service import iOSFileSystemService
 from client.commands.platform.services.ios.network_service import iOSNetworkService
@@ -110,7 +110,6 @@ class iOSCommands(CommonCommands):
         return self.ios_system.list_contacts()
 
     @desc('Pick photo or file and upload', group='console')
-    @interruptible()
     def pickupload(self, kind='photo'):
         return self.ios_console.pick_upload(kind)
 
@@ -139,26 +138,21 @@ class iOSCommands(CommonCommands):
         return self.ios_file_system.acmd_tree(args_dict)
 
     @argument_command('head', spec=HEAD_ARGUMENT_SPEC)
-    @interruptible()
     def head(self, args_dict, payload=None):
         return self.ios_file_system.acmd_head(args_dict)
 
     @argument_command('tail', spec=TAIL_ARGUMENT_SPEC)
-    @interruptible()
     def tail(self, args_dict, payload=None):
         return self.ios_file_system.acmd_tail(args_dict)
 
     @argument_command('wget', spec=WGET_ARGUMENT_SPEC)
-    @interruptible()
     def wget(self, args_dict, payload=None):
         return self.ios_file_system.acmd_wget(args_dict)
 
     @argument_command('tcp_ping', spec=TCP_PING_ARGUMENT_SPEC)
-    @interruptible()
     def tcp_ping(self, args_dict, payload=None):
         return self.ios_network.acmd_tcp_ping(args_dict)
 
     @argument_command('ping', spec=PING_ARGUMENT_SPEC)
-    @interruptible()
     def ping(self, args_dict, payload=None):
         return self.ios_network.acmd_ping(args_dict)

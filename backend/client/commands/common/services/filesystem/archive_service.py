@@ -14,19 +14,19 @@ class ArchiveService:
     压缩包创建与解压服务。
     """
 
-    def __init__(self, path_resolver: PathResolver, ensure_not_interrupted=None, iter_interruptible=None):
+    def __init__(self, path_resolver: PathResolver, checkpoint=None, iter_checked=None):
         self.path_resolver = path_resolver
-        self.ensure_not_interrupted = ensure_not_interrupted
-        self.iter_interruptible = iter_interruptible
+        self.checkpoint = checkpoint
+        self.iter_checked = iter_checked
 
-    def _ensure_not_interrupted(self):
-        if self.ensure_not_interrupted is not None:
-            self.ensure_not_interrupted()
+    def _checkpoint(self):
+        if self.checkpoint is not None:
+            self.checkpoint()
 
     def _iter(self, iterable, check_interval: int = 1):
-        if self.iter_interruptible is None:
+        if self.iter_checked is None:
             return iterable
-        return self.iter_interruptible(iterable, check_interval=check_interval)
+        return self.iter_checked(iterable, check_interval=check_interval)
 
     def create_zip_archive(self, dir_name: str) -> str:
         import pathlib
@@ -69,7 +69,7 @@ class ArchiveService:
         suffix_index = 1
 
         while archive_root in used_names:
-            self._ensure_not_interrupted()
+            self._checkpoint()
             archive_root = f'{top_name}_{suffix_index}'
             suffix_index += 1
 
@@ -211,7 +211,7 @@ class ArchiveService:
             return parent
 
         for info in infos:
-            self._ensure_not_interrupted()
+            self._checkpoint()
             normalized = self._normalize_zip_member_name(info.filename)
             if not normalized:
                 continue
@@ -431,7 +431,7 @@ class ArchiveService:
         candidate = os.path.join(destination_dir, clean_name)
         index = 1
         while os.path.exists(candidate):
-            self._ensure_not_interrupted()
+            self._checkpoint()
             candidate = os.path.join(destination_dir, f'{clean_name}_{index}')
             index += 1
         return candidate
@@ -467,7 +467,7 @@ class ArchiveService:
             try:
                 base_real = os.path.realpath(extract_base)
                 for info, normalized in validated:
-                    self._ensure_not_interrupted()
+                    self._checkpoint()
                     target_path = os.path.realpath(os.path.join(extract_base, *normalized.split('/')))
                     if os.path.commonpath([base_real, target_path]) != base_real:
                         raise ValueError(f'Unsafe ZIP extraction path: {info.filename}')

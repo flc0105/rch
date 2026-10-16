@@ -29,7 +29,7 @@ def owner():
     host = SimpleNamespace(
         _interaction_grant={'token': 'grant'},
         _set_timeout=lambda *a, **k: None,
-        _ensure_not_interrupted=lambda *a, **k: None,
+        _checkpoint=lambda *a, **k: None,
         _send_interim_result=lambda *args: messages.append(args),
     )
     return host, messages
@@ -95,7 +95,7 @@ def test_client_interaction_transport_uses_bound_grant(monkeypatch):
             return {'status': 'rejected', 'value': False}
     monkeypatch.setattr('client.http.client_api.ClientApiClient', Api)
     ui = aps.ClientCommandInteractions(SimpleNamespace(
-        _interaction_grant={'token': 'bound'}, _ensure_not_interrupted=lambda **k: None))
+        _interaction_grant={'token': 'bound'}, _checkpoint=lambda **k: None))
     assert not ui.approve('Proceed?', aps.build_preview(row(), port=9999))
     assert calls[0][1]['headers']['X-Script-Grant-Token'] == 'bound'
     assert calls[0][1]['json']['kind'] == 'preview'

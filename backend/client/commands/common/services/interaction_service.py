@@ -19,7 +19,7 @@ class CommandInteractions:
         if not token:
             raise CommandInteractionError('This Client command has no active interaction grant')
         timeout = max(1, min(int(timeout), 180))
-        self.owner._ensure_not_interrupted(fallback_timeout=240)
+        self.owner._checkpoint(fallback_timeout=240)
         result = ClientApiClient().post_data(
             '/api/interactions/client/request', timeout=timeout + 15,
             headers={'X-Script-Grant-Token': token},
@@ -27,7 +27,7 @@ class CommandInteractions:
                   'options': options if options is not None else [],
                   'preview': preview, 'timeout_seconds': timeout},
         )
-        self.owner._ensure_not_interrupted(fallback_timeout=240)
+        self.owner._checkpoint(fallback_timeout=240)
         if not isinstance(result, dict):
             raise CommandInteractionError('Invalid interaction reply')
         return result

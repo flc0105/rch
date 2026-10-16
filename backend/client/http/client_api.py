@@ -244,7 +244,7 @@ class ClientApiClient:
         *,
         timeout=None,
         chunk_size: int = 64 * 1024,
-        ensure_not_interrupted=None,
+        checkpoint=None,
     ):
         url = self.normalize_server_url(path_or_url)
         temp_path = target_path + '.part'
@@ -263,8 +263,8 @@ class ClientApiClient:
                 response.raise_for_status()
                 with open(temp_path, 'wb') as file_obj:
                     for chunk in response.iter_content(chunk_size=chunk_size):
-                        if ensure_not_interrupted is not None:
-                            ensure_not_interrupted()
+                        if checkpoint is not None:
+                            checkpoint()
                         if not chunk:
                             continue
                         file_obj.write(chunk)

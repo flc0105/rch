@@ -75,7 +75,7 @@ class ExternalToolCache(ExternalToolCommon):
             archive_path,
             timeout=self.DOWNLOAD_TIMEOUT,
             chunk_size=self.DOWNLOAD_CHUNK_SIZE,
-            ensure_not_interrupted=self._ensure_not_interrupted,
+            checkpoint=self._checkpoint,
         )
 
         after = self.cache_info(payload)

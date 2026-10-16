@@ -88,7 +88,7 @@ class CommandResultMixin:
 class CommandRuntimeMixin:
     """
     命令运行时能力：
-    - 负责 cancel / timeout / cleanup / interruptible 相关基础设施
+    - 负责 cancel / timeout / cleanup / checkpoint 相关基础设施
     - 不负责协议层输出
     """
 
@@ -127,7 +127,7 @@ class CommandRuntimeMixin:
             fallback_timeout=self._resolve_command_fallback_timeout(fallback_timeout)
         )
 
-    def _ensure_not_interrupted(self, fallback_timeout=None):
+    def _checkpoint(self, fallback_timeout=None):
         context = self._get_execution_context()
         if context is None:
             return
@@ -135,11 +135,11 @@ class CommandRuntimeMixin:
             fallback_timeout=self._resolve_command_fallback_timeout(fallback_timeout)
         )
 
-    def _set_cancel_policy(self, supported: bool = True, message: str = ''):
+    def _set_cancel_policy(self, mode: str = 'none', message: str = ''):
         context = self._get_execution_context()
         if context is None:
             return
-        context.set_cancel_policy(supported=supported, message=message)
+        context.set_cancel_policy(mode=mode, message=message)
 
     def _set_timeout(self, timeout: float):
         """
@@ -168,24 +168,24 @@ class CommandRuntimeMixin:
             return
         context.run_cleanup()
 
-    def _run_interruptible(self, func, *args, fallback_timeout=None, **kwargs):
-        self._ensure_not_interrupted(fallback_timeout=fallback_timeout)
+    def _run_checked(self, func, *args, fallback_timeout=None, **kwargs):
+        self._checkpoint(fallback_timeout=fallback_timeout)
         return func(*args, **kwargs)
 
-    def _iter_interruptible(self, iterable, fallback_timeout=None, check_interval: int = 1):
+    def _iter_checked(self, iterable, fallback_timeout=None, check_interval: int = 1):
         interval = max(int(check_interval or 1), 1)
         for index, item in enumerate(iterable, start=1):
             if index == 1 or index % interval == 0:
-                self._ensure_not_interrupted(fallback_timeout=fallback_timeout)
+                self._checkpoint(fallback_timeout=fallback_timeout)
             yield item
-        self._ensure_not_interrupted(fallback_timeout=fallback_timeout)
+        self._checkpoint(fallback_timeout=fallback_timeout)
 
-    def _read_interruptible(self, file_obj, size=-1, fallback_timeout=None):
-        self._ensure_not_interrupted(fallback_timeout=fallback_timeout)
+    def _read_checked(self, file_obj, size=-1, fallback_timeout=None):
+        self._checkpoint(fallback_timeout=fallback_timeout)
         return file_obj.read(size)
 
-    def _write_interruptible(self, file_obj, data, fallback_timeout=None):
-        self._ensure_not_interrupted(fallback_timeout=fallback_timeout)
+    def _write_checked(self, file_obj, data, fallback_timeout=None):
+        self._checkpoint(fallback_timeout=fallback_timeout)
         return file_obj.write(data)
 
 
@@ -211,7 +211,7 @@ class CommandBase(
         if service is None:
             service = PathResolver(
                 codec=self.structured_arg_codec,
-                iter_interruptible=self._iter_interruptible,
+                iter_checked=self._iter_checked,
             )
             self._path_resolver = service
         return service
@@ -222,8 +222,8 @@ class CommandBase(
         if service is None:
             service = FileSystemService(
                 path_resolver=self.path_resolver,
-                run_interruptible=self._run_interruptible,
-                iter_interruptible=self._iter_interruptible,
+                run_checked=self._run_checked,
+                iter_checked=self._iter_checked,
             )
             self._file_system_service = service
         return service
@@ -234,8 +234,8 @@ class CommandBase(
         if service is None:
             service = ArchiveService(
                 path_resolver=self.path_resolver,
-                ensure_not_interrupted=self._ensure_not_interrupted,
-                iter_interruptible=self._iter_interruptible,
+                checkpoint=self._checkpoint,
+                iter_checked=self._iter_checked,
             )
             self._archive_service = service
         return service

@@ -131,7 +131,7 @@ def test_process_refusal_never_sends_signal(monkeypatch):
     monkeypatch.setattr(aps, 'ClientCommandInteractions', Interactions)
     monkeypatch.setattr(aps, 'find_targets', lambda *a: [example_row()])
     monkeypatch.setattr(aps, 'terminate_verified', lambda *a, **k: pytest.fail('must not signal'))
-    owner = SimpleNamespace(_set_timeout=lambda t: None, _ensure_not_interrupted=lambda **k: None,
+    owner = SimpleNamespace(_set_timeout=lambda t: None, _checkpoint=lambda **k: None,
                             _send_interim_result=lambda *a: None)
     status, message = CommandProcessMixin._run_approved_process_command(owner, '8080', by_port=True)
     assert status == 1 and 'rejected' in message
@@ -145,7 +145,7 @@ def test_process_approval_executes_with_verified_snapshot(monkeypatch):
     monkeypatch.setattr(aps, 'ClientCommandInteractions', Interactions)
     monkeypatch.setattr(aps, 'find_targets', lambda *a: [example_row()])
     monkeypatch.setattr(aps, 'terminate_verified', lambda row, **kwargs: (sent.append((row, kwargs)), 'SIGTERM')[1])
-    owner = SimpleNamespace(_set_timeout=lambda t: None, _ensure_not_interrupted=lambda **k: None,
+    owner = SimpleNamespace(_set_timeout=lambda t: None, _checkpoint=lambda **k: None,
                             _send_interim_result=lambda *a: None)
     status, message = CommandProcessMixin._run_approved_process_command(owner, '2324')
     assert status == 1 and 'SIGTERM' in message
@@ -292,7 +292,7 @@ def test_process_interactive_pid_prompt_still_requires_approval(monkeypatch):
     seen = []
     monkeypatch.setattr(aps, 'find_targets', lambda criteria: (seen.append(criteria), [example_row()])[1])
     monkeypatch.setattr(aps, 'terminate_verified', lambda *a, **k: pytest.fail('must not signal'))
-    owner = SimpleNamespace(_set_timeout=lambda t: None, _ensure_not_interrupted=lambda **k: None,
+    owner = SimpleNamespace(_set_timeout=lambda t: None, _checkpoint=lambda **k: None,
                             _send_interim_result=lambda *a: None)
     status, _ = CommandProcessMixin._run_approved_process_command(owner)
     assert status == 1 and seen[0]['pid'] == 2324
@@ -307,7 +307,7 @@ def test_process_interactive_port_prompt_still_requires_approval(monkeypatch):
     seen = []
     monkeypatch.setattr(aps, 'find_targets', lambda criteria: (seen.append(criteria), [example_row()])[1])
     monkeypatch.setattr(aps, 'terminate_verified', lambda *a, **k: pytest.fail('must not signal'))
-    owner = SimpleNamespace(_set_timeout=lambda t: None, _ensure_not_interrupted=lambda **k: None,
+    owner = SimpleNamespace(_set_timeout=lambda t: None, _checkpoint=lambda **k: None,
                             _send_interim_result=lambda *a: None)
     status, _ = CommandProcessMixin._run_approved_process_command(owner, by_port=True)
     assert status == 1 and seen[0]['port'] == 8080

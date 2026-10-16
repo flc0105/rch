@@ -41,14 +41,14 @@ class ClientCleanupService:
         'media_temp': (),
     }
 
-    def __init__(self, *, ensure_not_interrupted=None, current_bundle_resolver=None):
-        self.ensure_not_interrupted = ensure_not_interrupted
+    def __init__(self, *, checkpoint=None, current_bundle_resolver=None):
+        self.checkpoint = checkpoint
         self.current_bundle_resolver = current_bundle_resolver
 
     def clean(self) -> dict:
         item_results = []
         for name in self.ITEMS:
-            self._ensure_not_interrupted()
+            self._checkpoint()
             handler = getattr(self, f'_clean_{name}', None)
             if handler is None:
                 raise ValueError(f'Unknown cleanup item: {name}')
@@ -101,7 +101,7 @@ class ClientCleanupService:
         # Older builds stored categories under an extra session directory.
         # That layout no longer exists; any matching nested category is residue.
         for entry_name in sorted(os.listdir(root)):
-            self._ensure_not_interrupted()
+            self._checkpoint()
             entry_path = os.path.abspath(os.path.join(root, entry_name))
             if not os.path.isdir(entry_path) or entry_path == category_dir:
                 continue
@@ -118,7 +118,7 @@ class ClientCleanupService:
         if not os.path.isdir(directory):
             return
         for child_name in sorted(os.listdir(directory)):
-            self._ensure_not_interrupted()
+            self._checkpoint()
             child_path = os.path.abspath(os.path.join(directory, child_name))
             if path_contains_active_temp(child_path):
                 result['skipped_paths'].append(child_path)
@@ -138,7 +138,7 @@ class ClientCleanupService:
             return
 
         for entry_name in names:
-            self._ensure_not_interrupted()
+            self._checkpoint()
             if not any(fnmatch.fnmatch(entry_name, pattern) for pattern in patterns):
                 continue
             path = os.path.abspath(os.path.join(temp_root, entry_name))
@@ -161,7 +161,7 @@ class ClientCleanupService:
             '.rch_runtime_config_*.json.tmp',
         )
         for name in sorted(os.listdir(directory)):
-            self._ensure_not_interrupted()
+            self._checkpoint()
             if not any(fnmatch.fnmatch(name, pattern) for pattern in patterns):
                 continue
             path = os.path.abspath(os.path.join(directory, name))
@@ -179,7 +179,7 @@ class ClientCleanupService:
             return result
 
         for name in sorted(os.listdir(release_dir)):
-            self._ensure_not_interrupted()
+            self._checkpoint()
             path = os.path.realpath(os.path.join(release_dir, name))
             if not os.path.isdir(path):
                 continue
@@ -200,7 +200,7 @@ class ClientCleanupService:
             return result
 
         for name in sorted(os.listdir(downloads_dir)):
-            self._ensure_not_interrupted()
+            self._checkpoint()
             path = os.path.abspath(os.path.join(downloads_dir, name))
             if os.path.isfile(path) and is_bundle_archive(name):
                 self._remove_path(path, result)
@@ -213,7 +213,7 @@ class ClientCleanupService:
             return result
 
         for name in sorted(os.listdir(release_dir)):
-            self._ensure_not_interrupted()
+            self._checkpoint()
             if '.extracting.' not in name:
                 continue
             path = os.path.abspath(os.path.join(release_dir, name))
@@ -232,7 +232,7 @@ class ClientCleanupService:
             '.update_startup_*.log',
         )
         for name in sorted(os.listdir(release_dir)):
-            self._ensure_not_interrupted()
+            self._checkpoint()
             if not any(fnmatch.fnmatch(name, pattern) for pattern in patterns):
                 continue
             path = os.path.abspath(os.path.join(release_dir, name))
@@ -297,9 +297,9 @@ class ClientCleanupService:
         result['bytes_freed'] += total_size
         result['paths'].append(path)
 
-    def _ensure_not_interrupted(self):
-        if self.ensure_not_interrupted is not None:
-            self.ensure_not_interrupted()
+    def _checkpoint(self):
+        if self.checkpoint is not None:
+            self.checkpoint()
 
     @staticmethod
     def _prune_empty_directory(path: str):

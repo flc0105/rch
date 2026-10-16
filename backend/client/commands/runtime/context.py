@@ -39,28 +39,32 @@ class CommandExecutionContext:
         self._lock = threading.RLock()
         self._cancel_handlers: list[Callable[[], None]] = []
         self._cleanup_handlers: list[Callable[[], None]] = []
-        self._cancel_supported = True
+        self._cancel_mode = 'none'
+        self.cancel_state = 'running'
+        self._cancel_observed = False
+        self._completion_handlers = []
         self._cancel_unsupported_message = ''
 
     def set_timeout(self, timeout) -> None:
         with self._lock:
-            self.timeout = normalize_positive_timeout(timeout)
+            normalized = normalize_positive_timeout(timeout)
+            if normalized is not None:
+                self.timeout = min(self.timeout, normalized) if self.timeout is not None else normalized
 
-    def set_cancel_policy(self, supported: bool = True, message: str = '') -> None:
+    def set_cancel_policy(self, mode: str = 'none', message: str = '') -> None:
+        if mode not in ('none', 'cooperative', 'process'):
+            raise ValueError(f'Invalid cancel mode: {mode}')
         with self._lock:
-            self._cancel_supported = bool(supported)
+            self._cancel_mode = mode
             self._cancel_unsupported_message = str(message or '').strip()
 
     def get_cancel_policy(self) -> dict:
         with self._lock:
-            return {
-                'supported': self._cancel_supported,
-                'message': self._cancel_unsupported_message,
-            }
+            return {'mode': self._cancel_mode, 'message': self._cancel_unsupported_message}
 
     def is_cancel_supported(self) -> bool:
         with self._lock:
-            return self._cancel_supported
+            return self._cancel_mode != 'none'
 
     def get_cancel_unsupported_message(self) -> str:
         with self._lock:
@@ -121,36 +125,69 @@ class CommandExecutionContext:
         with self._lock:
             self._cleanup_handlers.append(handler)
 
-    def request_cancel(self) -> dict:
-        policy = self.get_cancel_policy()
-        if not policy.get('supported', True):
-            return {
-                'accepted': False,
-                'already_cancelled': self.cancel_event.is_set(),
-                'message': policy.get('message') or 'Command does not support cancellation',
-            }
-
-        handlers = []
-
+    def request_cancel(self, on_completion=None) -> dict:
         with self._lock:
-            already_cancelled = self.cancel_event.is_set()
+            if self.cancel_state in ('stopped', 'completed'):
+                return {
+                    'accepted': False, 'state': 'finished',
+                    'message': 'Command is not running',
+                }
+            if self._cancel_mode == 'none':
+                return {
+                    'accepted': False, 'state': 'rejected',
+                    'message': self._cancel_unsupported_message or 'Command does not support cancellation',
+                }
+            # Register before signalling cancellation: a handler may end the command
+            # and clear its context before the caller can register separately.
+            if on_completion is not None:
+                self._completion_handlers.append(on_completion)
+            already_requested = self.cancel_event.is_set()
             self.cancel_event.set()
-            handlers = list(self._cancel_handlers)
+            self.cancel_state = 'accepted'
+            handlers = list(self._cancel_handlers) if not already_requested else []
 
+        # A handler being invoked does not prove that the command stopped.
+        if handlers:
+            for handler in handlers:
+                try:
+                    handler()
+                except Exception:
+                    pass
+        return {
+            'accepted': True,
+            'state': 'accepted',
+            'already_cancelled': already_requested,
+            'message': 'Cancellation accepted; command is still running',
+        }
+
+    def on_completion(self, handler):
+        """Callback fires only when command invocation has returned, not on cancel ACK."""
+        with self._lock:
+            if self.cancel_state in ('stopped', 'completed'):
+                state = self.cancel_state
+            else:
+                self._completion_handlers.append(handler)
+                return
+        handler(state)
+
+    def finish(self, cancelled: bool = False):
+        """Only an observed cancellation followed by command exit counts as stopped."""
+        with self._lock:
+            was_requested = self.cancel_event.is_set()
+            self.cancel_state = 'stopped' if (was_requested and (cancelled or self._cancel_observed)) else 'completed'
+            handlers = list(self._completion_handlers)
+            self._completion_handlers.clear()
+            state = self.cancel_state
         for handler in handlers:
             try:
-                handler()
+                handler(state)
             except Exception:
                 pass
 
-        return {
-            'accepted': True,
-            'already_cancelled': already_cancelled,
-            'message': 'Cancel requested',
-        }
-
     def raise_if_cancelled(self):
         if self.is_cancel_requested():
+            with self._lock:
+                self._cancel_observed = True
             raise CommandCancelledError('Command cancelled')
 
     def raise_if_timed_out(self, fallback_timeout=None):

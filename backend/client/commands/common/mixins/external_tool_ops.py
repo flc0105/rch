@@ -1,9 +1,9 @@
+from client.commands.runtime.interrupts import cancel_policy
 import json
 
 from client.external_tools.launcher import resolve_external_tool_launcher
 from client.external_tools.service import ExternalToolClientService
 from core.utils.decorator import desc
-from client.commands.runtime.interrupts import interruptible
 
 
 class CommandExternalToolMixin:
@@ -35,7 +35,6 @@ class CommandExternalToolMixin:
         return 1, json.dumps(payload, ensure_ascii=False, indent=2)
 
     @desc('Uninstall an external tool package when no instances are running', group='runtime', suggest=False)
-    @interruptible()
     def external_tool_uninstall(self, arg=''):
         try:
             payload = self._decode_external_tool_payload(arg)
@@ -44,7 +43,6 @@ class CommandExternalToolMixin:
             return 0, f'Failed to uninstall external tool: {e}'
 
     @desc('Resolve the launcher executable for an external tool module', group='runtime', suggest=False)
-    @interruptible()
     def external_tool_resolve_launcher(self, arg=''):
         try:
             payload = self._decode_external_tool_payload(arg)
@@ -54,7 +52,6 @@ class CommandExternalToolMixin:
             return 0, f'Failed to resolve external tool launcher: {e}'
 
     @desc('Start an external tool instance', group='runtime', suggest=False)
-    @interruptible()
     def external_tool_start(self, arg=''):
         try:
             payload = self._decode_external_tool_payload(arg)
@@ -63,12 +60,10 @@ class CommandExternalToolMixin:
             return 0, f'Failed to start external tool: {e}'
 
     @desc('Install and run an external tool package', group='runtime', suggest=False)
-    @interruptible()
     def external_tool_run(self, arg=''):
         return self.external_tool_start(arg)
 
     @desc('Preview the final external tool shell command without starting it', group='runtime', suggest=False)
-    @interruptible()
     def external_tool_preview(self, arg=''):
         try:
             payload = self._decode_external_tool_payload(arg)
@@ -77,7 +72,6 @@ class CommandExternalToolMixin:
             return 0, f'Failed to preview external tool command: {e}'
 
     @desc('Run an external tool module once and return captured output', group='runtime', suggest=False)
-    @interruptible()
     def external_tool_oneshot(self, arg=''):
         try:
             payload = self._decode_external_tool_payload(arg)
@@ -86,7 +80,7 @@ class CommandExternalToolMixin:
             return 0, f'Failed to run external tool oneshot: {e}'
 
     @desc('Install an external tool package without starting it', group='runtime', suggest=False)
-    @interruptible()
+    @cancel_policy('cooperative')
     def external_tool_install(self, arg=''):
         try:
             payload = self._decode_external_tool_payload(arg)
@@ -95,7 +89,6 @@ class CommandExternalToolMixin:
             return 0, f'Failed to install external tool: {e}'
 
     @desc('Show external tool install status', group='runtime', suggest=False)
-    @interruptible()
     def external_tool_install_status(self, arg=''):
         try:
             payload = self._decode_external_tool_payload(arg)
@@ -104,7 +97,6 @@ class CommandExternalToolMixin:
             return 0, f'Failed to get external tool install status: {e}'
 
     @desc('Clear cached external tool package archive', group='runtime', suggest=False)
-    @interruptible()
     def external_tool_clear_cache(self, arg=''):
         try:
             payload = self._decode_external_tool_payload(arg)
@@ -113,7 +105,6 @@ class CommandExternalToolMixin:
             return 0, f'Failed to clear external tool cache: {e}'
 
     @desc('Show external tool install statuses in one client command', group='runtime', suggest=False)
-    @interruptible()
     def external_tool_install_statuses(self, arg=''):
         try:
             payload = self.structured_arg_codec.decode(arg)
@@ -122,7 +113,6 @@ class CommandExternalToolMixin:
             return 0, f'Failed to get external tool install statuses: {e}'
 
     @desc('Stop an external tool instance', group='runtime', suggest=False)
-    @interruptible()
     def external_tool_stop(self, arg=''):
         try:
             payload = self._decode_external_tool_payload(arg)
@@ -131,7 +121,6 @@ class CommandExternalToolMixin:
             return 0, f'Failed to stop external tool: {e}'
 
     @desc('Show external tool instance status', group='runtime', suggest=False)
-    @interruptible()
     def external_tool_status(self, arg=''):
         try:
             payload = self._decode_external_tool_payload(arg)
@@ -140,7 +129,6 @@ class CommandExternalToolMixin:
             return 0, f'Failed to get external tool status: {e}'
 
     @desc('List external tool instances', group='runtime', suggest=False)
-    @interruptible()
     def external_tool_list_instances(self, arg=''):
         try:
             payload = self._decode_external_tool_payload(arg)
@@ -149,7 +137,6 @@ class CommandExternalToolMixin:
             return 0, f'Failed to list external tool instances: {e}'
 
     @desc('List all external tool instances in one command', group='runtime', suggest=False)
-    @interruptible()
     def external_tool_list_instances_all(self, arg=''):
         try:
             payload = self._decode_external_tool_payload(arg)
@@ -158,7 +145,6 @@ class CommandExternalToolMixin:
             return 0, f'Failed to list all external tool instances: {e}'
 
     @desc('Read external tool instance logs', group='runtime', suggest=False)
-    @interruptible()
     def external_tool_logs(self, arg=''):
         try:
             payload = self._decode_external_tool_payload(arg)
@@ -167,7 +153,6 @@ class CommandExternalToolMixin:
             return 0, f'Failed to read external tool logs: {e}'
 
     @desc('Remove stopped external tool instance runtime files', group='runtime', suggest=False)
-    @interruptible()
     def external_tool_remove(self, arg=''):
         try:
             payload = self._decode_external_tool_payload(arg)
@@ -176,7 +161,6 @@ class CommandExternalToolMixin:
             return 0, f'Failed to remove external tool instance: {e}'
 
     @desc('Clear stopped external tool instance logs', group='runtime', suggest=False)
-    @interruptible()
     def external_tool_clear_logs(self, arg=''):
         try:
             payload = self._decode_external_tool_payload(arg)
@@ -185,7 +169,6 @@ class CommandExternalToolMixin:
             return 0, f'Failed to clear external tool logs: {e}'
 
     @desc('Show installed external tool executable path', group='runtime', suggest=False)
-    @interruptible()
     def external_tool_which(self, arg=''):
         try:
             payload = self._decode_external_tool_payload(arg)
@@ -194,7 +177,6 @@ class CommandExternalToolMixin:
             return 0, f'Failed to resolve external tool executable: {e}'
 
     @desc('Run an installed external tool executable with raw argv', group='runtime', suggest=False)
-    @interruptible()
     def external_tool_exec(self, arg=''):
         try:
             payload = self._decode_external_tool_payload(arg)

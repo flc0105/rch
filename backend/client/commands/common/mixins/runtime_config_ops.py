@@ -2,7 +2,6 @@ import json
 import shlex
 
 from client.commands.common.services.runtime.runtime_config_service import RuntimeConfigService
-from client.commands.runtime.interrupts import interruptible
 from core.utils.decorator import desc
 from core.utils.logger import logger
 from core.utils.output_marker import success, info, error, warning
@@ -30,7 +29,6 @@ class CommandRuntimeConfigMixin:
         return service
 
     @desc('Show or update client runtime config', group='runtime')
-    @interruptible()
     def set(self, arg=''):
         """
         set

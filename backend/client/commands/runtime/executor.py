@@ -68,11 +68,18 @@ class CommandExecutor:
     def _clear_execution_context(self, command_id):
         self.context_store.clear(command_id)
 
-    def cancel_command(self, command_id: int) -> dict:
+    def cancel_command(self, command_id: int, on_completion=None) -> dict:
         """
-        请求取消指定命令
+        请求取消指定命令；若被接受，原子注册最终完成回调。
         """
-        return self.context_store.cancel(command_id)
+        return self.context_store.cancel(command_id, on_completion=on_completion)
+
+    def on_command_completion(self, command_id: int, callback):
+        context = self.context_store.get_existing(command_id)
+        if context is None:
+            return False
+        context.on_completion(callback)
+        return True
 
     def _bind_execution(self, commands, request: CommandExecutionRequest):
         """
@@ -100,12 +107,20 @@ class CommandExecutor:
         try:
             return invoke()
         finally:
+            # A cancellation ACK is only a request; execution reaches a terminal
+            # state once the command has actually returned or raised.
+            context = self.context_store.get_existing(command_id)
+            if context is not None:
+                context.finish()
             self._clear_execution_context(command_id)
 
     def execute_bound_request(self, request: CommandExecutionRequest, invoke: Callable[[Any], Any]):
         def _runner():
             commands = self._prepare_commands(request)
             try:
+                # Common entry checkpoint for command / acmd / script, previously duplicated
+                # through the shared execution entry, never command-specific wrappers.
+                commands._checkpoint()
                 return invoke(commands)
             finally:
                 commands._interaction_grant = None

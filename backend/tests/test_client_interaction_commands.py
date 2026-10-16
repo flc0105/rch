@@ -14,7 +14,7 @@ from server.connection.channel.session_command_channel import ClientSessionComma
 
 def owner(token='active-grant'):
     return SimpleNamespace(_interaction_grant={'token': token} if token else None,
-                           _ensure_not_interrupted=lambda **kw: None,
+                           _checkpoint=lambda **kw: None,
                            _set_timeout=lambda _: None,
                            _send_interim_result=lambda *args: None)
 

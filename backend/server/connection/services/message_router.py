@@ -16,6 +16,11 @@ class ServerInboundMessageRouter(BaseMessageRouter):
             data.get('eof')
         )
 
+    def handle_cancel_ack_message(self, data: dict) -> None:
+        self.connection.runtime.record_cancel_ack(
+            data.get('target_id'), str(data.get('state') or ''),
+        )
+
     def handle_heartbeat_ack_message(self, data: dict) -> None:
         self.connection.update_current_workdir(data.get('cwd'))
         self.connection.services.heartbeat_service.handle_heartbeat_ack(data)

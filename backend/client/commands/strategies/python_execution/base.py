@@ -22,7 +22,7 @@ class PythonExecutionStrategy:
 
     def configure_context(self):
         self.owner._set_cancel_policy(
-            supported=self.is_cancel_supported(),
+            mode='process' if self.is_cancel_supported() else 'none',
             message='Current Python execution mode does not support cancellation',
         )
 

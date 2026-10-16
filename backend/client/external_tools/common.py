@@ -29,8 +29,8 @@ class ExternalToolCommon:
     def client_api(self):
         return self.command_host.client_api
 
-    def _ensure_not_interrupted(self):
-        return self.command_host._ensure_not_interrupted()
+    def _checkpoint(self):
+        return self.command_host._checkpoint()
 
     def normalize_platform(self, value) -> str:
         return normalize_platform(value)

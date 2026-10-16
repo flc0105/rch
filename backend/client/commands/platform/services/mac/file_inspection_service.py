@@ -32,19 +32,19 @@ class MacFileInspectionService:
             # 多次覆写
             with open(target, 'r+b') as f:
                 for _ in range(3):
-                    self.owner._ensure_not_interrupted()
+                    self.owner._checkpoint()
                     f.seek(0)
                     # 第一次: 0x00
                     f.write(b'\x00' * size)
                     f.flush()
 
-                    self.owner._ensure_not_interrupted()
+                    self.owner._checkpoint()
                     f.seek(0)
                     # 第二次: 0xFF
                     f.write(b'\xFF' * size)
                     f.flush()
 
-                    self.owner._ensure_not_interrupted()
+                    self.owner._checkpoint()
                     f.seek(0)
                     # 第三次: 随机数据
                     f.write(os.urandom(size))

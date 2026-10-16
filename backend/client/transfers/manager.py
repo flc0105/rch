@@ -26,11 +26,11 @@ class _TransferTaskOwner(CommandRuntimeMixin):
         self.execution_context = execution_context
         self.HTTP_TRANSFER_MODE = runtime_config.HTTP_TRANSFER_MODE
 
-        self._path_resolver = PathResolver(iter_interruptible=self._iter_interruptible)
+        self._path_resolver = PathResolver(iter_checked=self._iter_checked)
         self._archive_service = ArchiveService(
             path_resolver=self._path_resolver,
-            ensure_not_interrupted=self._ensure_not_interrupted,
-            iter_interruptible=self._iter_interruptible,
+            checkpoint=self._checkpoint,
+            iter_checked=self._iter_checked,
         )
         self._client_api = ClientApiClient()
         self._preview_image_service = PreviewImageService()

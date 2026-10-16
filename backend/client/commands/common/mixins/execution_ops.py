@@ -1,9 +1,9 @@
+from client.commands.runtime.interrupts import cancel_policy
 import os
 import subprocess
 import time
 
 from client.commands.runtime.context import CommandCancelledError, CommandTimeoutError
-from client.commands.runtime.interrupts import interruptible
 from client.commands.strategies.python_execution.factory import (
     build_python_execution_strategy,
     get_python_execution_mode
@@ -210,7 +210,6 @@ class CommandExecutionMixin:
 
     # ------------------ 基础执行命令 ------------------ #
     @desc('Change working directory', group='shell')
-    @interruptible()
     def cd(self, path):
         try:
             if not path.strip():
@@ -225,7 +224,7 @@ class CommandExecutionMixin:
             return 0, f'Failed to change directory: {e}'
 
     @desc('Run a shell command', group='shell')
-    @interruptible()
+    @cancel_policy('process')
     def shell(self, command):
         try:
             result = self._run_shell_command(command)
@@ -240,7 +239,6 @@ class CommandExecutionMixin:
             return 0, f'Failed to execute command: {e}'
 
     @desc('Run a program in background', group='shell')
-    @interruptible()
     def spawn(self, command):
         """
         后台启动指定程序/命令，不等待其执行结束。
@@ -264,7 +262,7 @@ class CommandExecutionMixin:
             return 0, f'Failed to start background process: {e}'
 
     @desc('Run a command with live output', group='shell')
-    @interruptible()
+    @cancel_policy('process')
     def read(self, command):
         try:
             process = self._start_stream_process(command)
@@ -284,7 +282,6 @@ class CommandExecutionMixin:
             self._send_final_result(0, f'Failed to execute command: {e}')
 
     @desc('Execute Python code and collect output', group='shell')
-    @interruptible()
     def pyexec_collect(self, code, kwargs=None):
         """
         一次性返回版本。
@@ -304,7 +301,6 @@ class CommandExecutionMixin:
             return 0, f'Failed to execute code: {e}'
 
     @desc('Execute Python code with streaming output', group='shell')
-    @interruptible()
     def pyexec_stream(self, code, kwargs=None):
         """
         流式返回版本。

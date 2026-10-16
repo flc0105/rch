@@ -39,6 +39,7 @@ class SessionExecutionRuntime:
             'history_entry_id': (history_entry_id or '').strip(),
             'command_id': None,
             'cancel_requested': False,
+            'cancel_state': 'running',
         }
 
         with self._lock:
@@ -70,8 +71,24 @@ class SessionExecutionRuntime:
             if task_id and self._task.get('task_id') and self._task.get('task_id') != task_id:
                 return None
 
+            # A repeated request must not erase a terminal Client acknowledgement.
+            if self._task.get('cancel_state') in ('accepted', 'stopped', 'completed'):
+                return dict(self._task)
+
             self._task['cancel_requested'] = True
+            self._task['cancel_state'] = 'requested'
             return dict(self._task)
+
+    def record_cancel_ack(self, command_id: int, state: str):
+        # Acknowledgement and actual termination are different states.
+        if state not in ('accepted', 'rejected', 'stopped', 'completed'):
+            return
+        with self._lock:
+            if self._task is None or self._task.get('command_id') != command_id:
+                return
+            # A delayed 'accepted' acknowledgement must not overwrite a terminal state.
+            if self._task.get('cancel_state') not in ('stopped', 'completed'):
+                self._task['cancel_state'] = state
 
     def release_foreground_task(self, task_id: str = '', command: str = '') -> None:
         task_id = (task_id or '').strip()

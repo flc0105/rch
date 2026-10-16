@@ -130,7 +130,7 @@ class CommandProcessMixin:
                                   build_preview(row, port=criteria.get('port'), force_default=criteria.get('force', False)))
             if switches is None:
                 return 1, 'Termination rejected; no signal sent.'
-            self._ensure_not_interrupted(fallback_timeout=240)
+            self._checkpoint(fallback_timeout=240)
             signame = terminate_verified(row, force=switches['force'], port=criteria.get('port'))
             return 1, f'{signame} sent to PID {row["pid"]} on the connected Client (exit not guaranteed).'
         except (ValueError, ProcessApprovalError, OSError) as exc:

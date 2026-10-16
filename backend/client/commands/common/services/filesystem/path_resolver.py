@@ -8,14 +8,14 @@ class PathResolver:
     路径解析与存在性校验服务。
     """
 
-    def __init__(self, codec: StructuredArgCodec | None = None, iter_interruptible=None):
+    def __init__(self, codec: StructuredArgCodec | None = None, iter_checked=None):
         self.codec = codec or StructuredArgCodec()
-        self.iter_interruptible = iter_interruptible
+        self.iter_checked = iter_checked
 
     def _iter(self, iterable, check_interval: int = 1):
-        if self.iter_interruptible is None:
+        if self.iter_checked is None:
             return iterable
-        return self.iter_interruptible(iterable, check_interval=check_interval)
+        return self.iter_checked(iterable, check_interval=check_interval)
 
     def validate_directory_exists(self, path):
         directory = os.path.abspath(os.path.expanduser(path))

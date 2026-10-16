@@ -1,5 +1,4 @@
 """Server-side command interaction support."""
-import threading
 
 from server.application.command.interaction_builtin_support import BuiltinInteractionError
 
@@ -26,9 +25,13 @@ class AdvancedBuiltinSupport:
             yield 0, f'Disconnect cancelled: {exc}'
             return
         yield 1, 'Disconnect approved; closing this connection.'
-        # Flush the response before dispatching the Client lifecycle command.
-        worker = threading.Timer(0.35, lambda: self.conn.send(
-            self.conn.command_channel.build_command_payload('kill_connection')))
-        worker.daemon = True
-        worker.start()
+        # Keep the Web task active while Client @confirm requests its own approval.
+        # The normal command channel binds command_id and interaction grant.
+        for status, result in self.conn.send_command('kill_connection'):
+            if result is None:
+                # The Client closes its socket after approving kill_connection;
+                # Server's connection listener wakes the waiting command with EOF.
+                yield 1, 'Client connection closed.'
+                return
+            yield status, result
 

@@ -78,6 +78,7 @@ class ClientSessionCommandChannel:
             grants = getattr(method, 'api_grants', ()) if callable(method) and hasattr(method, 'help') else ()
             if grants:
                 extra = self._build_script_grant_extra(data['id'], {
+                    **(extra if isinstance(extra, dict) else {}),
                     SCRIPT_GRANT_REQUEST_KEY: {
                         'script_name': f'client-command:{parts[0]}',
                         'api_grants': list(grants),

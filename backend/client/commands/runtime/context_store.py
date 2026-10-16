@@ -42,6 +42,10 @@ class CommandExecutionContextStore:
                 context.set_timeout(normalized_timeout)
             return context
 
+    def get_existing(self, command_id):
+        with self._context_lock:
+            return self._execution_contexts.get(command_id)
+
     def clear(self, command_id):
         with self._context_lock:
             context = self._execution_contexts.pop(command_id, None)
@@ -52,17 +56,18 @@ class CommandExecutionContextStore:
             except Exception:
                 pass
 
-    def cancel(self, command_id: int) -> dict:
+    def cancel(self, command_id: int, on_completion=None) -> dict:
         with self._context_lock:
             context = self._execution_contexts.get(command_id)
 
         if context is None:
             return {
                 'accepted': False,
+                'state': 'finished',
                 'message': 'Command is not running',
             }
 
-        return context.request_cancel()
+        return context.request_cancel(on_completion=on_completion)
 
 
 
