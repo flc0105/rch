@@ -31,7 +31,9 @@ def create_agent_blueprint(server_instance):
             server_port = payload.get('server_port')
             web_port = payload.get('web_port')
             target_os = (payload.get('target_os') or 'mac').strip()
-            builder = (payload.get('builder') or 'pyinstaller').strip()
+            builder = str(payload.get('builder') or '').strip()
+            if not builder:
+                raise ValueError('builder is required')
             target_arch = (payload.get('target_arch') or '').strip()
             server_web_scheme = (payload.get('server_web_scheme') or 'http').strip() or 'http'
             server_web_host = (payload.get('server_web_host') or server_host).strip() or server_host

@@ -4,6 +4,8 @@ import unittest
 from unittest.mock import patch
 
 from server.application.agent.agent_builder import AgentBuilder
+from server.application.agent.agent_build_bundle import BUNDLE_INCLUDE_PATHS
+from server.application.agent.agent_build_utils import copy_source_paths
 from server.application.maintenance.server_cleanup_service import ServerCleanupService
 
 
@@ -15,7 +17,7 @@ class AgentBuilderTests(unittest.TestCase):
         os.makedirs(output_dir, exist_ok=True)
         return builder
 
-    def test_pyinstaller_staging_uses_allowlist(self):
+    def test_bundle_staging_uses_allowlist(self):
         with tempfile.TemporaryDirectory() as source_dir, tempfile.TemporaryDirectory() as temp_dir:
             for relative_path in ('client', 'core', 'server', 'runtime'):
                 os.makedirs(os.path.join(source_dir, relative_path), exist_ok=True)
@@ -34,7 +36,7 @@ class AgentBuilderTests(unittest.TestCase):
 
             builder = self._builder_for(source_dir, os.path.join(temp_dir, 'output'))
             staging_dir = os.path.join(temp_dir, 'staging')
-            builder._copy_source_paths(builder.PYINSTALLER_INCLUDE_PATHS, staging_dir)
+            copy_source_paths(builder.source_dir, BUNDLE_INCLUDE_PATHS, staging_dir)
 
             self.assertTrue(os.path.isfile(os.path.join(staging_dir, 'client', 'client.py')))
             self.assertTrue(os.path.isfile(os.path.join(staging_dir, 'core', 'core.py')))
@@ -63,7 +65,7 @@ class AgentBuilderTests(unittest.TestCase):
                 }
 
             with patch('server.application.agent.agent_builder.tempfile.mkdtemp', return_value=work_dir), \
-                    patch.object(builder, '_build_with_bundle', side_effect=fake_bundle):
+                    patch('server.application.agent.agent_build_bundle.BundleBuilder.build', side_effect=fake_bundle):
                 result = builder.build_agent(
                     server_host='127.0.0.1',
                     server_port=9000,
@@ -83,7 +85,7 @@ class AgentBuilderTests(unittest.TestCase):
             builder = self._builder_for(source_dir, output_dir)
 
             with patch('server.application.agent.agent_builder.tempfile.mkdtemp', return_value=work_dir), \
-                    patch.object(builder, '_build_with_bundle', side_effect=RuntimeError('build failed')):
+                    patch('server.application.agent.agent_build_bundle.BundleBuilder.build', side_effect=RuntimeError('build failed')):
                 with self.assertRaisesRegex(RuntimeError, 'build failed'):
                     builder.build_agent(
                         server_host='127.0.0.1',

@@ -57,10 +57,11 @@
               v-model="agentForm.builder"
               class="agent-builder-radio-group"
           >
-            <el-radio label="bundle">Bundle</el-radio>
-            <el-radio label="pyinstaller">PyInstaller</el-radio>
-            <el-radio label="go">Go (Simple)</el-radio>
-            <el-radio label="go_loader">Go (Loader)</el-radio>
+            <el-radio
+                v-for="builder in availableBuilders"
+                :key="builder.value"
+                :label="builder.value"
+            >{{ builder.label }}</el-radio>
           </el-radio-group>
         </el-form-item>
 
@@ -76,6 +77,7 @@
         </el-form-item>
 
         <el-alert
+            v-if="agentForm.builder"
             type="info"
             :closable="false"
             show-icon
@@ -98,6 +100,7 @@
         <el-button
             type="primary"
             :loading="agentBuilding"
+            :disabled="!supportedBuilders.includes(agentForm.builder)"
             @click="buildAgent"
         >
           Build & Download
@@ -109,6 +112,13 @@
 
 <script>
 import {ElMessage} from 'element-plus'
+
+const BUILDER_LABELS = {
+  bundle: 'Bundle',
+  pyinstaller: 'PyInstaller',
+  go: 'Go (Simple)',
+  go_loader: 'Go (Loader)',
+}
 
 export default {
   name: 'AgentBuilderDialog',
@@ -123,19 +133,25 @@ export default {
       platformLoading: false,
       agentBuilding: false,
       agentServerTargetOs: 'mac',
+      supportedBuilders: [],
       agentForm: {
         server_host: window.location.hostname || '127.0.0.1',
         server_port: 9999,
         web_port: 8085,
         target_os: 'mac',
-        builder: 'bundle',
+        builder: '',
         target_arch: 'arm64',
       },
     }
   },
 
   computed: {
+    availableBuilders() {
+      return this.supportedBuilders.map(value => ({value, label: BUILDER_LABELS[value] || value}))
+    },
+
     agentBuilderAlertText() {
+      if (!this.agentForm.builder) return ''
       if (this.agentForm.builder === 'pyinstaller') {
         return `Standalone executable. Can only build for the same OS as the current server (${this.describeAgentTargetOs(this.agentServerTargetOs)}).`
       }
@@ -225,6 +241,15 @@ export default {
           throw new Error(json.message || 'Failed to load server platform')
         }
 
+        const builders = json.data?.builders
+        if (!Array.isArray(builders)) {
+          throw new Error('Failed to load server builders')
+        }
+        this.supportedBuilders = builders.filter(value => typeof value === 'string')
+        if (!this.supportedBuilders.includes(this.agentForm.builder)) {
+          this.agentForm.builder = this.supportedBuilders[0] || ''
+        }
+
         const targetOs = String(json.data?.target_os || 'mac').trim() || 'mac'
         this.agentServerTargetOs = targetOs
 
@@ -238,6 +263,8 @@ export default {
         }
       } catch (_error) {
         this.agentServerTargetOs = 'mac'
+        this.supportedBuilders = []
+        this.agentForm.builder = ''
       }
     },
 
@@ -278,6 +305,7 @@ export default {
 
     async buildAgent() {
       if (this.agentBuilding) return
+      if (!this.supportedBuilders.includes(this.agentForm.builder)) return
 
       if (!this.agentForm.server_host) {
         ElMessage.warning('Please enter server IP')

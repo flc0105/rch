@@ -775,7 +775,19 @@ Important nuance: alias placeholders stay intentionally simple. Parameters are b
 
 ## Agent Build Modes
 
-The project exposes agent-building features from the web UI.
+The Agent Builder coordinates dispatch and output management. **Bundle** is a Python source build mode, not an implicit default or mandatory registration, and requires Python on the target machine. Go Loader is independently registered and builds its own executable, but its runtime still requests a Python Bundle from the Server; unregistering Bundle prevents that runtime download.
+
+**Required builder module** (do not remove):
+
+- Bundle: `server/application/agent/agent_build_bundle.py`
+
+**Optional builder modules** (each can be removed independently):
+
+- PyInstaller: `server/application/agent/agent_build_pyinstaller.py`
+- Experimental Go (Simple) Client: `server/application/agent/agent_build_client_go.py`
+- Go Loader: `server/application/agent/agent_build_go_loader.py`
+
+All four build modes are peers in the single `AGENT_BUILDERS` registry in `server/application/agent/agent_builder.py`. Each builder is a standalone class with `build()`; shared source staging and Python config injection live in `agent_build_utils.py`, not in the dispatch layer. To disable any builder, including Bundle, remove its registry entry and restart the Server; its module file can remain installed. Missing modules are also excluded. An empty registry is valid and `/api/agent/platform` then returns `builders: []`. Every build request must explicitly specify a registered `builder`; there is no implicit Bundle fallback. The Agent Builder UI only shows available modes.
 
 ### PyInstaller
 

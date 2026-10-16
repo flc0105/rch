@@ -32,7 +32,7 @@ class WebAgentApi:
         server_port: int,
         web_port: int = None,
         target_os: str = 'mac',
-        builder: str = 'pyinstaller',
+        builder: str = '',
         target_arch: str = '',
         server_web_scheme: str = 'http',
         server_web_host: str = '',
@@ -116,7 +116,7 @@ class WebAgentApi:
 
     def get_server_platform(self):
         system = platform.system()
-        target_os = self.agent_builder.PYINSTALLER_PLATFORM_MAP.get(system, 'mac')
+        target_os = {'Windows': 'win', 'Darwin': 'mac', 'Linux': 'linux'}.get(system, 'mac')
         machine = normalize_arch(platform.machine())
         target_arch = machine if machine in {'arm64', 'amd64'} else 'amd64'
         return {
@@ -125,6 +125,7 @@ class WebAgentApi:
             'target_arch': target_arch,
             'socket_port': int(SOCKET_PORT),
             'web_port': int(WEB_PORT),
+            'builders': self.agent_builder.list_supported_builders(),
         }
 
     def _get_loader_log_path(self) -> str:
