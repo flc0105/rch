@@ -205,6 +205,7 @@
 <script>
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { formatBytes as formatBytesValue } from '../utils/formatters.js'
+import { uploadRemoteFileToClient } from '../api/transferApi.js'
 
 export default {
   name: 'RemoteFilePicker',
@@ -530,9 +531,6 @@ export default {
         return
       }
 
-      const formData = new FormData()
-      formData.append('file', file)
-      formData.append('target_path', this.remoteFilesCurrentPath)
       this.remoteUploadLoading = true
 
       this.$emit(
@@ -543,18 +541,11 @@ export default {
       )
 
       try {
-        const res = await fetch(`/api/connections/${encodeURIComponent(this.selectedId)}/upload`, {
-          method: 'POST',
+        const result = await uploadRemoteFileToClient({
+          file, clientId: this.selectedId, destinationPath: this.remoteFilesCurrentPath,
           headers: this.buildRequestHeaders(),
-          body: formData,
         })
-        const json = await res.json()
-
-        if (!res.ok || json.code !== 0) {
-          throw new Error(json.message || 'Upload failed')
-        }
-
-        const taskId = json.data && json.data.task_id
+        const taskId = result.task_id
         this.$emit('set-active-task', this.selectedId, taskId || '')
         this.$emit('upload-started', {
           source: 'remote_file_picker',

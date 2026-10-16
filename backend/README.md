@@ -616,6 +616,8 @@ Capabilities include:
 - preview/edit workflows for server-side stored artifacts
 - remote browser download/upload helpers that preserve command/job/history association metadata
 
+Both **RemoteFilesDialog** and **RemoteFilePicker** initiate remote uploads through `/api/transfers/browser-upload` on the Web port, then stream the file body to `/api/transfers/browser-upload/{id}/content` on the dedicated File port. Both operations are tracked in Transfer Center; the legacy Web multipart upload endpoint is no longer used.
+
 A useful way to think about the design is:
 
 - **command routing** happens over the socket protocol

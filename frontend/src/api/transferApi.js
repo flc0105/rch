@@ -47,6 +47,57 @@ export function buildBrowserUploadContentUrl(transfer = {}) {
   return url.toString()
 }
 
+// Shared browser -> Server -> Client upload path used by both remote file dialogs.
+export async function uploadRemoteFileToClient({file, clientId, destinationPath, headers = {}}) {
+  const transfer = await createBrowserUploadTransfer({
+    client_id: clientId,
+    filename: file.name,
+    total_bytes: file.size,
+    destination_path: destinationPath,
+  }, headers)
+  const transferId = String(transfer?.transfer_id || '').trim()
+
+  try {
+    if (!transferId) throw new Error('Failed to initialize upload transfer')
+    const token = String(transfer?.browser_upload_token || '').trim()
+    if (!token) throw new Error('Browser file transfer token is unavailable')
+
+    const url = buildBrowserUploadContentUrl(transfer)
+    const response = await new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      xhr.open('POST', url, true)
+      xhr.setRequestHeader('Content-Type', 'application/octet-stream')
+      xhr.setRequestHeader('X-RCH-Transfer-Token', token)
+      xhr.addEventListener('load', () => {
+        let json = {}
+        try {
+          json = JSON.parse(xhr.responseText || '{}')
+        } catch (error) {
+          reject(new Error('Upload returned an invalid response'))
+          return
+        }
+        if (xhr.status < 200 || xhr.status >= 300 || json.code !== 0) {
+          reject(new Error(json.message || `Upload failed (${xhr.status || 'network error'})`))
+          return
+        }
+        resolve(json)
+      })
+      xhr.addEventListener('error', () => reject(new Error('Browser upload connection failed')))
+      xhr.addEventListener('abort', () => reject(new Error('Browser upload was cancelled')))
+      xhr.send(file)
+    })
+    return response.data || {}
+  } catch (error) {
+    if (transferId) {
+      updateBrowserUploadTransfer(transferId, {
+        state: 'failed',
+        error: error.message || 'Browser upload failed',
+      }, headers).catch(() => {})
+    }
+    throw error
+  }
+}
+
 export async function updateBrowserUploadTransfer(transferId, payload = {}, headers = {}) {
   const normalizedTransferId = String(transferId || '').trim()
   if (!normalizedTransferId) return null

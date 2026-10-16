@@ -1,3 +1,3 @@
-module rat-go-loader
+module rch-go-loader
 
 go 1.20

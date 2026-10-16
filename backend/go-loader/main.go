@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"rat-go-loader/config"
+	"rch-go-loader/config"
 )
 
 type BundleBuildResponse struct {
