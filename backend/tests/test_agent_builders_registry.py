@@ -12,6 +12,7 @@ from unittest.mock import patch
 
 import pytest
 
+from core.client_revision import BUNDLE_ARTIFACT_STEM
 from server.application.agent.agent_builder import AgentBuilder, AGENT_BUILDERS
 from server.application.agent.agent_build_utils import copy_source_paths
 
@@ -59,7 +60,8 @@ def test_explicit_bundle_generates_valid_source_zip():
             result = agent.build_agent('host.example', 9999, 8085, builder='bundle')
         assert result['builder'] == 'bundle'
         assert result['target_os'] == 'bundle'
-        assert result['file_name'].startswith('rchclient-source-bundle-')
+        assert result['file_name'].startswith(BUNDLE_ARTIFACT_STEM + '-')
+        assert result['file_name'] == result['build_version'] + '.zip'
         with zipfile.ZipFile(result['file_path']) as z:
             assert 'client/config/config.py' in z.namelist()
             cfg = z.read('client/config/config.py').decode()

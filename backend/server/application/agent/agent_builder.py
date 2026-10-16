@@ -7,14 +7,15 @@ from datetime import datetime
 from uuid import uuid4
 
 from core.platform.normalization import normalize_arch
+from core.client_revision import BUNDLE_ARTIFACT_STEM
 
 
 # Single registration point. Remove an entry to disable a builder without deleting its file.
 # All builders are peers; even Bundle may be unregistered. Restart after editing this map.
 AGENT_BUILDERS = {
-    'bundle': ('server.application.agent.agent_build_bundle', 'BundleBuilder', 'source-bundle'),
-    # 'pyinstaller': ('server.application.agent.agent_build_pyinstaller', 'PyInstallerBuilder', 'pyinstaller'),
-    # 'go': ('server.application.agent.agent_build_client_go', 'ClientGoBuilder', 'go-client'),
+    'bundle': ('server.application.agent.agent_build_bundle', 'BundleBuilder', BUNDLE_ARTIFACT_STEM),
+    'pyinstaller': ('server.application.agent.agent_build_pyinstaller', 'PyInstallerBuilder', 'pyinstaller'),
+    'go': ('server.application.agent.agent_build_client_go', 'ClientGoBuilder', 'go-client'),
     'go_loader': ('server.application.agent.agent_build_go_loader', 'GoLoaderBuilder', 'go-loader'),
 }
 

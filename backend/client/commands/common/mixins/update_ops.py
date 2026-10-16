@@ -19,6 +19,7 @@ from client.config.config import (
     SERVER_WEB_SCHEME,
 )
 from core.external_tools.archive import safe_extract_zip_archive
+from core.client_revision import is_bundle_archive
 from core.device.local_identity import get_local_identity
 from client.runtime.client_util import (
     build_bundle_extract_dir,
@@ -150,7 +151,7 @@ class CommandUpdateMixin:
         downloads_dir = get_client_bundle_download_dir()
         for name in sorted(os.listdir(downloads_dir)):
             self._ensure_not_interrupted()
-            if not (name.startswith('rchclient-source-bundle-') and name.lower().endswith('.zip')):
+            if not is_bundle_archive(name):
                 continue
             archive_path = os.path.join(downloads_dir, name)
             try:

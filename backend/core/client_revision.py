@@ -30,6 +30,18 @@ CLIENT_REVISION_EXCLUDE_EXTENSIONS = {
 }
 REVISION_DIGEST_LENGTH = 16
 
+# One naming contract for Bundle build versions, release folders and ZIP archives.
+BUNDLE_ARTIFACT_STEM = 'rchclient-source-bundle'
+
+
+def bundle_archive_name(build_id: str) -> str:
+    return f'{BUNDLE_ARTIFACT_STEM}-{build_id}.zip'
+
+
+def is_bundle_archive(name: str) -> bool:
+    return (isinstance(name, str) and name.startswith(BUNDLE_ARTIFACT_STEM + '-')
+            and name.lower().endswith('.zip'))
+
 
 def _get_default_source_root() -> str:
     core_dir = os.path.dirname(os.path.abspath(__file__))

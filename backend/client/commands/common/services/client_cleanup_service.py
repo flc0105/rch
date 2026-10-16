@@ -4,6 +4,7 @@ import shutil
 import tempfile
 
 from core.utils.filesystem import safe_file_size
+from core.client_revision import is_bundle_archive
 from client.config.runtime_config_store import get_runtime_config_path
 from client.runtime.client_util import get_client_bundle_release_dir, get_client_bundle_download_dir
 from client.runtime.temp_workspace import (
@@ -201,8 +202,7 @@ class ClientCleanupService:
         for name in sorted(os.listdir(downloads_dir)):
             self._ensure_not_interrupted()
             path = os.path.abspath(os.path.join(downloads_dir, name))
-            if (os.path.isfile(path) and name.startswith('rchclient-source-bundle-')
-                    and name.lower().endswith('.zip')):
+            if os.path.isfile(path) and is_bundle_archive(name):
                 self._remove_path(path, result)
         return result
 

@@ -2,7 +2,7 @@
 import os
 import zipfile
 
-from core.client_revision import CLIENT_BUNDLE_SOURCE_PATHS
+from core.client_revision import CLIENT_BUNDLE_SOURCE_PATHS, bundle_archive_name
 from server.application.agent.agent_build_utils import copy_source_paths, inject_python_client_config
 
 
@@ -34,7 +34,7 @@ class BundleBuilder:
             server_web_scheme,
             server_web_host,
         )
-        bundle_name = f'rchclient-source-bundle-{build_id}.zip'
+        bundle_name = bundle_archive_name(build_id)
         bundle_path = os.path.join(work_dir, bundle_name)
 
         with zipfile.ZipFile(bundle_path, mode='w', compression=zipfile.ZIP_DEFLATED) as archive:
