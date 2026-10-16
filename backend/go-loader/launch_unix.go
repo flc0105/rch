@@ -19,3 +19,4 @@ func startDetached(cmd *exec.Cmd, cwd string) (*os.Process, error) {
 	}
 	return cmd.Process, nil
 }
+func windowsEmbedSupported() error { return nil }

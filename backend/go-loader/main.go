@@ -3,6 +3,8 @@ package main
 import (
 	"archive/zip"
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -25,6 +28,7 @@ type BundleBuildResponse struct {
 		FileName     string `json:"file_name"`
 		DownloadURL  string `json:"download_url"`
 		BuildVersion string `json:"build_version"`
+		SHA256       string `json:"sha256"`
 	} `json:"data"`
 }
 
@@ -82,27 +86,24 @@ func main() {
 	var pythonBinary string
 	var ok bool
 
-	// Windows 系统：使用嵌入版 Python，不进行本地勘测
+	// Windows: cached Embed -> local Python >= 3.10 -> Embed download.
+	// macOS/Unix: only local Python >= 3.10, no embedded runtime.
+	appendDebugLog("python check begin")
 	if runtime.GOOS == "windows" {
-		appendDebugLog("windows detected, using embedded python")
 		pythonBinary, ok = setupEmbeddedPython()
-		if !ok {
-			appendDebugLog("embedded python setup failed, exiting")
-			return
-		}
 	} else {
-		// Unix 系统：检测本地 Python
-		appendDebugLog("python check begin")
 		var pythonVersion string
 		pythonBinary, pythonVersion, ok = detectPython()
 		appendDebugLog(fmt.Sprintf("python check result: found=%v binary=%s version=%s", ok, pythonBinary, pythonVersion))
 		if ok {
 			_ = report("PYTHON_OK", fmt.Sprintf("found %s (%s)", pythonBinary, pythonVersion))
 		} else {
-			_ = report("PYTHON_ERR", "python not found")
-			appendDebugLog("python not found, exiting")
-			return
+			_ = report("PYTHON_ERR", "Python 3.10 or newer is required")
 		}
+	}
+	if !ok {
+		appendDebugLog("python runtime unavailable, exiting")
+		return
 	}
 
 	appendDebugLog("resolve workdir begin")
@@ -130,8 +131,12 @@ func main() {
 	))
 	_ = report("BUILD_OK", fmt.Sprintf("version=%s file=%s", buildMeta.Data.BuildVersion, buildMeta.Data.FileName))
 
-	archivePath := filepath.Join(workDir, buildMeta.Data.FileName)
-	extractPath := filepath.Join(workDir, buildMeta.Data.BuildVersion)
+	if !safeBuildName(buildMeta.Data.FileName) || !safeBuildName(buildMeta.Data.BuildVersion) {
+		_ = report("BUILD_ERR", "unsafe bundle filename or build version")
+		return
+	}
+	archivePath := filepath.Join(workDir, "downloads", buildMeta.Data.FileName)
+	extractPath := filepath.Join(workDir, "releases", buildMeta.Data.BuildVersion)
 
 	downloadURL := resolveURL(buildMeta.Data.DownloadURL)
 	appendDebugLog("download bundle begin: " + downloadURL)
@@ -140,20 +145,38 @@ func main() {
 		_ = report("DOWNLOAD_ERR", "download bundle failed: "+err.Error())
 		return
 	}
+	if err := verifySHA256(archivePath, buildMeta.Data.SHA256); err != nil {
+		_ = report("DOWNLOAD_ERR", "bundle verification failed: "+err.Error())
+		return
+	}
 	appendDebugLog("download bundle ok: " + archivePath)
 	_ = report("DOWNLOAD_OK", fmt.Sprintf("downloaded to %s", archivePath))
 
-	appendDebugLog("prepare extract dir: " + extractPath)
-	if err := os.RemoveAll(extractPath); err != nil && !os.IsNotExist(err) {
-		appendDebugLog("prepare extract dir error: " + err.Error())
-		_ = report("EXTRACT_ERR", "prepare extract dir failed: "+err.Error())
+	// Always extract into a new staging folder, then replace the old release.
+	stagePath := extractPath + ".part"
+	if err := os.RemoveAll(stagePath); err != nil {
+		_ = report("EXTRACT_ERR", err.Error())
 		return
 	}
-
 	appendDebugLog("extract bundle begin")
-	if err := unzipArchive(archivePath, extractPath); err != nil {
-		appendDebugLog("extract bundle error: " + err.Error())
+	if err := unzipArchive(archivePath, stagePath); err != nil {
+		_ = os.RemoveAll(stagePath)
 		_ = report("EXTRACT_ERR", "extract bundle failed: "+err.Error())
+		return
+	}
+	if _, err := os.Stat(filepath.Join(stagePath, "rchclient.py")); err != nil {
+		_ = os.RemoveAll(stagePath)
+		_ = report("EXTRACT_ERR", "bundle missing rchclient.py")
+		return
+	}
+	if err := os.RemoveAll(extractPath); err != nil {
+		_ = os.RemoveAll(stagePath)
+		_ = report("EXTRACT_ERR", "remove previous release failed: "+err.Error())
+		return
+	}
+	if err := os.Rename(stagePath, extractPath); err != nil {
+		_ = os.RemoveAll(stagePath)
+		_ = report("EXTRACT_ERR", "install release failed: "+err.Error())
 		return
 	}
 	appendDebugLog("extract bundle ok: " + extractPath)
@@ -195,74 +218,142 @@ func main() {
 	appendDebugLog("loader finished successfully and will exit")
 }
 
-// setupEmbeddedPython 为 Windows 系统设置嵌入版 Python
+// setupEmbeddedPython implements Windows runtime selection, not an unconditional download.
 func setupEmbeddedPython() (string, bool) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		appendDebugLog("get home dir error: " + err.Error())
 		_ = report("PYTHON_ERR", "get home dir failed: "+err.Error())
 		return "", false
 	}
-
-	pythonDir := filepath.Join(home, config.BundleBaseDirName, "python-embed")
-	pythonExe := filepath.Join(pythonDir, "python.exe")
-
-	// 检查缓存是否存在
-	if _, err := os.Stat(pythonExe); err == nil {
-		appendDebugLog("embedded python cache exists: " + pythonExe)
-		_ = report("PYTHON_OK", fmt.Sprintf("using cached embedded python: %s", pythonExe))
-		return pythonExe, true
+	root := filepath.Join(home, config.BundleBaseDirName)
+	runtimeDir := filepath.Join(root, "runtimes", "python-embed")
+	cached := findEmbeddedPython(runtimeDir)
+	if cached != "" && supportedPython(cached) {
+		_ = report("PYTHON_OK", "using cached embedded Python: "+cached)
+		return cached, true
 	}
-
-	appendDebugLog("embedded python cache not found, downloading...")
-
+	if python, version, ok := detectPython(); ok {
+		_ = report("PYTHON_OK", "using local Python: "+python+" ("+version+")")
+		return python, true
+	}
+	if err := windowsEmbedSupported(); err != nil {
+		_ = report("PYTHON_ERR", err.Error())
+		return "", false
+	}
+	// Only Windows amd64 is published in python-embed.json.
+	if runtime.GOARCH != "amd64" {
+		_ = report("PYTHON_ERR", "no embedded Python package for Windows "+runtime.GOARCH)
+		return "", false
+	}
 	downloadURL := fmt.Sprintf("%s://%s:%d/api/external-tools/python-embed/download?platform=win&arch=%s",
-		config.ServerWebScheme,
-		config.ServerWebHost,
-		config.ServerWebPort,
-		runtime.GOARCH,
-	)
-
-	zipPath := filepath.Join(pythonDir, "python-embed.zip")
-	if err := os.MkdirAll(pythonDir, 0o755); err != nil {
-		appendDebugLog("create python embed dir error: " + err.Error())
-		_ = report("PYTHON_ERR", "create python embed dir failed: "+err.Error())
+		config.ServerWebScheme, config.ServerWebHost, config.ServerWebPort, runtime.GOARCH)
+	archive := filepath.Join(root, "downloads", "python-embed.zip")
+	if err := downloadFile(downloadURL, archive); err != nil {
+		_ = report("PYTHON_ERR", "download embedded Python failed: "+err.Error())
 		return "", false
 	}
-
-	appendDebugLog("downloading embedded python from: " + downloadURL)
-	if err := downloadFile(downloadURL, zipPath); err != nil {
-		appendDebugLog("download embedded python error: " + err.Error())
-		_ = report("PYTHON_ERR", "download embedded python failed: "+err.Error())
+	staging := runtimeDir + ".part"
+	_ = os.RemoveAll(staging)
+	if err := unzipArchive(archive, staging); err != nil {
+		_ = os.RemoveAll(staging)
+		_ = report("PYTHON_ERR", "extract embedded Python failed: "+err.Error())
 		return "", false
 	}
-	appendDebugLog("embedded python downloaded: " + zipPath)
-
-	appendDebugLog("extracting embedded python to: " + pythonDir)
-	if err := unzipArchive(zipPath, pythonDir); err != nil {
-		appendDebugLog("extract embedded python error: " + err.Error())
-		_ = report("PYTHON_ERR", "extract embedded python failed: "+err.Error())
+	python := findEmbeddedPython(staging)
+	if python == "" || !supportedPython(python) {
+		_ = os.RemoveAll(staging)
+		_ = report("PYTHON_ERR", "downloaded Python Embed is missing or incompatible")
 		return "", false
 	}
-	appendDebugLog("embedded python extracted successfully")
-
-	if _, err := os.Stat(pythonExe); err != nil {
-		appendDebugLog("python.exe not found after extract: " + err.Error())
-		_ = report("PYTHON_ERR", "python.exe not found after extract: "+err.Error())
+	relative, err := filepath.Rel(staging, python)
+	if err != nil {
+		_ = report("PYTHON_ERR", err.Error())
 		return "", false
 	}
+	if err := os.RemoveAll(runtimeDir); err != nil {
+		_ = report("PYTHON_ERR", err.Error())
+		return "", false
+	}
+	if err := os.Rename(staging, runtimeDir); err != nil {
+		_ = report("PYTHON_ERR", err.Error())
+		return "", false
+	}
+	python = filepath.Join(runtimeDir, relative)
+	_ = report("PYTHON_OK", "embedded Python downloaded: "+python)
+	return python, true
+}
 
-	appendDebugLog("embedded python ready: " + pythonExe)
-	_ = report("PYTHON_OK", fmt.Sprintf("embedded python downloaded and cached: %s", pythonExe))
+func findEmbeddedPython(root string) string {
+	if _, err := os.Stat(root); err != nil {
+		return ""
+	}
+	found := ""
+	_ = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+		if info.Mode().IsRegular() && strings.EqualFold(info.Name(), "python.exe") {
+			found = path
+			return filepath.SkipAll
+		}
+		return nil
+	})
+	return found
+}
 
-	return pythonExe, true
+func supportedPython(name string) bool {
+	command := exec.Command(name, "-c", "import sys; print(sys.version_info.major,sys.version_info.minor)")
+	output, err := command.CombinedOutput()
+	if err != nil {
+		return false
+	}
+	fields := strings.Fields(string(output))
+	if len(fields) != 2 {
+		return false
+	}
+	major, err1 := strconv.Atoi(fields[0])
+	minor, err2 := strconv.Atoi(fields[1])
+	return err1 == nil && err2 == nil && (major > 3 || major == 3 && minor >= 10)
+}
+
+func safeBuildName(name string) bool {
+	if name == "" || name == "." || name == ".." {
+		return false
+	}
+	for _, c := range name {
+		if c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' ||
+			c >= '0' && c <= '9' || c == '_' || c == '-' || c == '.' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func verifySHA256(path string, expected string) error {
+	if len(expected) != 64 {
+		return fmt.Errorf("missing or invalid SHA-256")
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	hash := sha256.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		return err
+	}
+	if !strings.EqualFold(hex.EncodeToString(hash.Sum(nil)), expected) {
+		return fmt.Errorf("SHA-256 mismatch")
+	}
+	return nil
 }
 
 // report 发送纯文本日志行到服务端
 // 格式：时间 | 事件标签 | 消息
 // 服务端直接追加到日志文件
 func report(event string, message string) error {
-	now := time.Now().Format("2006-01-02 15:04:05")  // 改这一行
+	now := time.Now().Format("2006-01-02 15:04:05") // 改这一行
 	line := fmt.Sprintf("%s | %-12s | %s", now, event, message)
 
 	// 封装成 JSON 发给服务端，服务端取 line 字段写入
@@ -352,16 +443,15 @@ func getLocalIPs() []string {
 }
 
 func detectPython() (string, string, bool) {
-	candidates := []string{"python3", "python"}
-
-	for _, name := range candidates {
-		cmd := exec.Command(name, "--version")
-		output, err := cmd.CombinedOutput()
+	for _, name := range []string{"python3", "python"} {
+		if !supportedPython(name) {
+			continue
+		}
+		output, err := exec.Command(name, "--version").CombinedOutput()
 		if err == nil {
 			return name, strings.TrimSpace(string(output)), true
 		}
 	}
-
 	return "", "", false
 }
 
@@ -429,21 +519,22 @@ func requestBundleBuild() (*BundleBuildResponse, error) {
 	if parsed.Data.DownloadURL == "" {
 		parsed.Data.DownloadURL = "/api/agent/download/" + parsed.Data.FileName
 	}
-	if parsed.Data.BuildVersion == "" {
-		parsed.Data.BuildVersion = strings.TrimSuffix(strings.TrimPrefix(parsed.Data.FileName, "rchclient_bundle_"), ".zip")
+	if parsed.Data.BuildVersion == "" || parsed.Data.SHA256 == "" {
+		return nil, fmt.Errorf("bundle build response missing build_version or sha256")
 	}
 
 	return parsed, nil
 }
 
 func downloadFile(url string, dst string) error {
-	resp, err := http.Get(url)
+	client := &http.Client{Timeout: 10 * time.Minute}
+	resp, err := client.Get(url)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode >= 400 {
+	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("download failed: http %d", resp.StatusCode)
 	}
 
@@ -465,6 +556,9 @@ func downloadFile(url string, dst string) error {
 		return err
 	}
 
+	if err := os.Remove(dst); err != nil && !os.IsNotExist(err) {
+		return err
+	}
 	return os.Rename(tmp, dst)
 }
 
@@ -488,6 +582,9 @@ func unzipArchive(zipPath string, dest string) error {
 			return fmt.Errorf("unsafe zip entry: %s", f.Name)
 		}
 
+		if f.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("unsafe zip symlink: %s", f.Name)
+		}
 		if f.FileInfo().IsDir() {
 			if err := os.MkdirAll(cleanTarget, 0o755); err != nil {
 				return err
@@ -529,12 +626,6 @@ func buildPythonCommand(preferredPython string, scriptPath string, extractPath s
 	preferredPython = strings.TrimSpace(preferredPython)
 	if preferredPython != "" {
 		candidates = append(candidates, preferredPython)
-	}
-
-	for _, name := range []string{"python3", "python"} {
-		if name != preferredPython {
-			candidates = append(candidates, name)
-		}
 	}
 
 	var lastErr error

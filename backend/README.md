@@ -2682,6 +2682,20 @@ Current supporting features include:
 
 The Server does not need to continuously rebuild bundles just to detect Client source drift; revision checking is separate from artifact construction.
 
+### Bootstrap runtime and release layout
+
+Python Bootstrap, Windows PowerShell Bootstrap, and the standalone Go Loader request an explicit `bundle` build and consume its `sha256` value from `/api/agent/build`. The downloaded ZIP is checksum-checked, safely extracted to a staging directory, and installed afresh for each run. All use the following layout under the target user's home directory:
+
+```text
+~/client_bundle/
+├── runtimes/python-embed/
+├── downloads/
+└── releases/<build_version>/
+```
+
+The Client source requires **Python 3.10 or newer**. On Windows the bootstrap prefers an existing suitable embedded runtime, then suitable local Python; if neither is available it requests the Windows Embed archive using the detected platform/architecture. The published `python-embed` package is currently **Windows amd64 / Python 3.13.13 only**; Windows 7 and unsupported architectures cannot use it. On macOS the bootstrap uses local Python only and never downloads Embed. Launching the Client is detached (Windows also hides its window). Bootstrap initialization still uses the Web port; Client file transfer is separate.
+
+
 ---
 
 ## Runtime data and persistent stores

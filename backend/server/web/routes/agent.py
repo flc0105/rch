@@ -1,4 +1,5 @@
 import os
+import hashlib
 
 from flask import Blueprint, send_file
 
@@ -68,6 +69,12 @@ def create_agent_blueprint(server_instance):
                 source,
             )
             result['download_url'] = f'/api/agent/download/{result["file_name"]}'
+            if builder == 'bundle':
+                digest = hashlib.sha256()
+                with open(agent_api.get_built_agent_file_path(result['file_name']), 'rb') as artifact:
+                    for chunk in iter(lambda: artifact.read(1024 * 1024), b''):
+                        digest.update(chunk)
+                result['sha256'] = digest.hexdigest()
             return result
 
         return responder.json_endpoint(_execute, default_error_status=500)
