@@ -1365,6 +1365,21 @@ help
 
 ---
 
+## Client command confirmation decorator
+
+Commands exported with `@desc` may also use `@confirm` to request an Interaction Broker confirmation **before** the method body is called. The annotation works in either decorator order, does not require editing the method body, and automatically declares the command-bound `interactions:request` grant. For example:
+
+```python
+from core.utils.decorator import confirm, desc
+
+@desc('A sensitive action', group='system')
+@confirm  # or @confirm('Proceed with this action?')
+def sensitive_action(self, arg=''):
+    return 1, 'Action completed'
+```
+
+If the user rejects the prompt, it expires, or the Broker is unavailable, the method **does not execute** and the command returns a failed/cancelled result. Commands without `@confirm` behave as before. This first implementation uses the existing Client-originated Interaction Broker request, not Server-side pre-execution approval. The prompt requires an active Web task/interaction grant; direct calls without that context fail closed.
+
 ## User-facing Client command reference
 
 The following tables are generated from current `@desc(...)` declarations with `suggest=True`. Commands marked `suggest=False` are implementation-facing helpers and are intentionally not listed as user commands here. Availability still depends on platform.

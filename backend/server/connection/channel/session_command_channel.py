@@ -1,4 +1,6 @@
 from core.protocol.message_types import MSG_TYPE_COMMAND, MSG_TYPE_CANCEL, MSG_TYPE_SCRIPT
+from importlib import import_module
+from client.commands.runtime.catalog import CommandCatalog
 from client.commands.common.commands import CommonCommands
 from server.application.auth.script_grant_service import (
     SCRIPT_GRANT_REQUEST_KEY,
@@ -60,6 +62,19 @@ class ClientSessionCommandChannel:
             # Resolve grants from the Server's trusted command definitions,
             # never from a Client-supplied command manifest.
             method = getattr(CommonCommands, parts[0], None) if parts else None
+            if parts and (method is None or not hasattr(method, 'help')):
+                # Platform-only commands also carry trusted method annotations.
+                session_info = getattr(self.session, 'session_info', None)
+                os_alias = str(getattr(session_info, 'os_alias', '') or '').lower()
+                platform_info = CommandCatalog.PLATFORM_COMMAND_MODULES.get(os_alias)
+                if platform_info:
+                    module_name, class_name = platform_info
+                    try:
+                        command_class = getattr(import_module(module_name), class_name)
+                    except (ImportError, AttributeError):
+                        method = None  # Unavailable platform module: never issue an unverified grant.
+                    else:
+                        method = getattr(command_class, parts[0], None)
             grants = getattr(method, 'api_grants', ()) if callable(method) and hasattr(method, 'help') else ()
             if grants:
                 extra = self._build_script_grant_extra(data['id'], {
