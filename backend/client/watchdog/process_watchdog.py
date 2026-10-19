@@ -1,0 +1,305 @@
+"""Independent Client process-death supervisor (not a heartbeat watchdog)."""
+
+import json
+import logging
+from logging.handlers import RotatingFileHandler
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+from uuid import uuid4
+
+import psutil
+
+from client.config.runtime_config_store import get_runtime_config_dir
+
+
+_ENV_SESSION = 'RCH_PROCESS_WATCHDOG_SESSION'
+_ENV_PID = 'RCH_PROCESS_WATCHDOG_PID'
+_ENV_STARTED = 'RCH_PROCESS_WATCHDOG_STARTED'
+_ENV_KEYS = (_ENV_SESSION, _ENV_PID, _ENV_STARTED)
+_POLL_INTERVAL = 0.5
+_STOP_TIMEOUT = 3.0
+_RETRY_DELAYS = (3, 10, 30, 60, 120, 300)
+_STABLE_SECONDS = 300
+
+
+def without_process_watchdog_environment(source=None):
+    """A separately launched Client must receive a NEW supervisor chain."""
+    env = dict(os.environ if source is None else source)
+    for key in _ENV_KEYS:
+        env.pop(key, None)
+    return env
+
+
+def _process_identity(pid):
+    try:
+        process = psutil.Process(int(pid))
+        return process.create_time()
+    except (psutil.NoSuchProcess, psutil.AccessDenied, ValueError, OverflowError):
+        return None
+
+
+def _alive(pid, started):
+    try:
+        process = psutil.Process(int(pid))
+        return (abs(process.create_time() - float(started)) < 0.01
+                and process.is_running() and process.status() != psutil.STATUS_ZOMBIE)
+    except psutil.NoSuchProcess:
+        return False
+    except (psutil.AccessDenied, OSError):
+        # An inaccessible PID is not proof that the process died. Retry probing.
+        return True
+
+
+def _atomic_json(path, payload):
+    temp_path = f'{path}.{os.getpid()}.tmp'
+    with open(temp_path, 'w', encoding='utf-8') as file_obj:
+        json.dump(payload, file_obj)
+    os.replace(temp_path, path)
+
+
+def _logger():
+    path = os.path.join(get_runtime_config_dir(), 'process_watchdog.log')
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    logger = logging.getLogger('rch_process_watchdog')
+    if not logger.handlers:
+        logger.setLevel(logging.INFO)
+        logger.propagate = False
+        handler = RotatingFileHandler(path, maxBytes=2 * 1024 * 1024, backupCount=2, encoding='utf-8')
+        handler.setFormatter(logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s'))
+        logger.addHandler(handler)
+    return logger
+
+
+def _worker_command(session, parent_pid, parent_started, launch_argv, cwd):
+    executable = os.path.realpath(sys.executable)
+    prefix = [executable] if getattr(sys, 'frozen', False) else [executable, os.path.realpath(sys.argv[0])]
+    return [*prefix, '--process-watchdog-worker', '--process-watchdog-session', session,
+            '--process-watchdog-parent-pid', str(parent_pid),
+            '--process-watchdog-parent-started', repr(parent_started),
+            '--process-watchdog-launch-json', json.dumps(launch_argv),
+            '--process-watchdog-cwd', cwd]
+
+
+def _launch_argv():
+    executable = os.path.realpath(sys.executable)
+    if getattr(sys, 'frozen', False):
+        return [executable, *sys.argv[1:]]
+    return [executable, os.path.realpath(sys.argv[0]), *sys.argv[1:]]
+
+
+def _detached_kwargs(cwd, env):
+    kwargs = dict(cwd=cwd, env=env, shell=False, stdin=subprocess.DEVNULL,
+                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True)
+    if os.name == 'nt':
+        kwargs['creationflags'] = (getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0)
+                                   | getattr(subprocess, 'DETACHED_PROCESS', 0))
+    elif os.name == 'posix':
+        kwargs['start_new_session'] = True
+    else:
+        raise RuntimeError(f'Unsupported platform: {os.name}')
+    return kwargs
+
+
+def _session_from_environment():
+    session = os.environ.get(_ENV_SESSION, '')
+    pid_text = os.environ.get(_ENV_PID, '')
+    started_text = os.environ.get(_ENV_STARTED, '')
+    try:
+        pid = int(pid_text)
+        started = float(started_text)
+    except ValueError:
+        return ''
+    if session and os.path.isdir(session) and _alive(pid, started):
+        return session
+    return ''
+
+
+def stop_process_watchdog_from_environment():
+    """Used by the separate Remote/Local HTTP watchdog before deliberate kill/relaunch."""
+    session = _session_from_environment()
+    if not session:
+        return True
+    if _request_stop(session):
+        return True
+    try:
+        pid = int(os.environ[_ENV_PID])
+        started = float(os.environ[_ENV_STARTED])
+        if _alive(pid, started):
+            psutil.Process(pid).terminate()
+            psutil.Process(pid).wait(timeout=2)
+    except (ValueError, KeyError, psutil.Error, OSError):
+        return False
+    return True
+
+
+def _request_stop(session):
+    stop_path = os.path.join(session, 'stop')
+    ack_path = os.path.join(session, 'stopped')
+    try:
+        _atomic_json(stop_path, {'pid': os.getpid(), 'intent': 'stop'})
+    except OSError:
+        return False
+    deadline = time.monotonic() + _STOP_TIMEOUT
+    while time.monotonic() < deadline:
+        if os.path.isfile(ack_path) or not os.path.isdir(session):
+            return True
+        time.sleep(0.05)
+    return False
+
+
+class ProcessWatchdogManager:
+    """Client-side control endpoint; the monitor itself runs in a detached process."""
+
+    def __init__(self):
+        self.session = ''
+        self.supervisor_pid = None
+        self.supervisor_started = None
+
+    def start(self):
+        if self.session and self.supervisor_pid and _alive(self.supervisor_pid, self.supervisor_started):
+            return
+        inherited = _session_from_environment()
+        if inherited:
+            self.session = inherited
+            self.supervisor_pid = int(os.environ[_ENV_PID])
+            self.supervisor_started = float(os.environ[_ENV_STARTED])
+            return
+
+        # Stale inheritance must never be copied into a fresh supervisor.
+        for key in _ENV_KEYS:
+            os.environ.pop(key, None)
+        session = tempfile.mkdtemp(prefix='rch_process_watchdog_')
+        parent_started = _process_identity(os.getpid())
+        if parent_started is None:
+            shutil.rmtree(session, ignore_errors=True)
+            raise RuntimeError('Cannot identify Client PID for process supervision')
+        try:
+            process = subprocess.Popen(
+                _worker_command(session, os.getpid(), parent_started, _launch_argv(), os.getcwd()),
+                **_detached_kwargs(os.getcwd(), without_process_watchdog_environment()),
+            )
+            ready_path = os.path.join(session, 'ready.json')
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline:
+                if os.path.isfile(ready_path):
+                    with open(ready_path, 'r', encoding='utf-8') as file_obj:
+                        ready = json.load(file_obj)
+                    if int(ready['pid']) != process.pid:
+                        raise RuntimeError('Process watchdog identity mismatch')
+                    self.session = session
+                    self.supervisor_pid = process.pid
+                    self.supervisor_started = float(ready['started'])
+                    os.environ[_ENV_SESSION] = session
+                    os.environ[_ENV_PID] = str(self.supervisor_pid)
+                    os.environ[_ENV_STARTED] = repr(self.supervisor_started)
+                    return
+                if process.poll() is not None:
+                    raise RuntimeError(f'Process watchdog worker exited: {process.returncode}')
+                time.sleep(0.05)
+            raise RuntimeError('Process watchdog worker did not become ready')
+        except Exception:
+            # Never leave an untracked supervisor alive after a failed startup handshake.
+            if 'process' in locals() and process.poll() is None:
+                process.terminate()
+            shutil.rmtree(session, ignore_errors=True)
+            raise
+
+    def stop(self):
+        session = self.session or _session_from_environment()
+        ok = True
+        if session:
+            ok = _request_stop(session)
+            if not ok and self.supervisor_pid and _alive(self.supervisor_pid, self.supervisor_started):
+                # A deliberate shutdown must not be countermanded by a wedged supervisor.
+                try:
+                    psutil.Process(self.supervisor_pid).terminate()
+                    psutil.Process(self.supervisor_pid).wait(timeout=2)
+                    ok = True
+                except (psutil.Error, OSError):
+                    pass
+        self.session = ''
+        self.supervisor_pid = None
+        self.supervisor_started = None
+        for key in _ENV_KEYS:
+            os.environ.pop(key, None)
+        return ok
+
+
+def run_process_watchdog_worker_from_argv():
+    args = sys.argv
+
+    def value(flag):
+        index = args.index(flag)
+        return args[index + 1]
+
+    session = value('--process-watchdog-session')
+    parent_pid = int(value('--process-watchdog-parent-pid'))
+    parent_started = float(value('--process-watchdog-parent-started'))
+    launch_argv = json.loads(value('--process-watchdog-launch-json'))
+    cwd = value('--process-watchdog-cwd')
+    if not isinstance(launch_argv, list) or not launch_argv or not all(isinstance(x, str) for x in launch_argv):
+        raise ValueError('Invalid Client launch argv')
+    run_process_supervisor(session, parent_pid, parent_started, launch_argv, cwd)
+
+
+def run_process_supervisor(session, parent_pid, parent_started, launch_argv, cwd):
+    log = _logger()
+    supervisor_pid = os.getpid()
+    supervisor_started = _process_identity(supervisor_pid)
+    if supervisor_started is None:
+        raise RuntimeError('Cannot identify process supervisor')
+    _atomic_json(os.path.join(session, 'ready.json'),
+                 {'pid': supervisor_pid, 'started': supervisor_started})
+    log.info('watching Client pid=%s, supervisor pid=%s', parent_pid, supervisor_pid)
+
+    child = None
+    watched_pid, watched_started = parent_pid, parent_started
+    running_since = time.monotonic()
+    failures = 0
+    try:
+        while True:
+            if os.path.exists(os.path.join(session, 'stop')):
+                _atomic_json(os.path.join(session, 'stopped'), {'pid': supervisor_pid})
+                log.info('intentional stop, watched Client pid=%s', watched_pid)
+                return
+            if _alive(watched_pid, watched_started):
+                time.sleep(_POLL_INTERVAL)
+                continue
+            if child is not None:
+                child.poll()  # Reap the last subprocess; avoid accumulating zombies.
+            uptime = time.monotonic() - running_since
+            failures = 1 if uptime >= _STABLE_SECONDS else failures + 1
+            delay = _RETRY_DELAYS[min(failures - 1, len(_RETRY_DELAYS) - 1)]
+            log.warning('Client pid=%s disappeared after %.1fs; retry in %ss (failure %s)',
+                        watched_pid, uptime, delay, failures)
+            deadline = time.monotonic() + delay
+            while time.monotonic() < deadline:
+                if os.path.exists(os.path.join(session, 'stop')):
+                    _atomic_json(os.path.join(session, 'stopped'), {'pid': supervisor_pid})
+                    return
+                time.sleep(min(_POLL_INTERVAL, deadline - time.monotonic()))
+            if os.path.exists(os.path.join(session, 'stop')):
+                _atomic_json(os.path.join(session, 'stopped'), {'pid': supervisor_pid})
+                return
+            env = without_process_watchdog_environment()
+            env.update({_ENV_SESSION: session, _ENV_PID: str(supervisor_pid),
+                        _ENV_STARTED: repr(supervisor_started)})
+            try:
+                child = subprocess.Popen(launch_argv, **_detached_kwargs(cwd, env))
+                watched_pid = child.pid
+                watched_started = _process_identity(watched_pid)
+                if watched_started is None:
+                    # Still track the child by PID; a fast exit will be detected next iteration.
+                    watched_started = 0
+                running_since = time.monotonic()
+                log.info('restarted Client pid=%s', watched_pid)
+            except (OSError, ValueError) as exc:
+                log.error('failed to restart Client: %s', exc)
+                watched_pid, watched_started = 0, 0
+                running_since = time.monotonic()
+    finally:
+        shutil.rmtree(session, ignore_errors=True)
