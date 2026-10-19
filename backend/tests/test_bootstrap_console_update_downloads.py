@@ -124,6 +124,7 @@ class UpdateZipDirectoryTests(unittest.TestCase):
                 paths.append(('extract', zip_path, extract_dir, current)) or extract_dir)
             command._build_update_ready_paths = lambda release: (str(release_dir/'ready'), str(release_dir/'error'))
             command._wait_for_updated_client_ready = lambda *a: {'client_id': 'client-1'}
+            command._activate_updated_client_watchdog = lambda *a: None
             command._cleanup_update_probe_files = lambda *a: None
             class Process:
                 pid = 1234

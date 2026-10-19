@@ -9,6 +9,9 @@ import urllib.error
 import urllib.request
 
 from client.runtime.client_util import spawn_new_instance, is_process_alive
+from client.watchdog.process_watchdog import (
+    stop_process_watchdog_from_environment, without_process_watchdog_environment,
+)
 
 HTTP_CONTROL_COMMANDS = {'kill', 'relaunch', 'clone'}
 
@@ -62,7 +65,7 @@ class WatchdogActionExecutor:
 
         popen_kwargs = {
             'cwd': self.launch_cwd,
-            'env': dict(os.environ),
+            'env': without_process_watchdog_environment(),
             'stdin': subprocess.DEVNULL,
             'stdout': subprocess.DEVNULL,
             'stderr': subprocess.DEVNULL,
@@ -93,11 +96,13 @@ class WatchdogActionExecutor:
     def restart_parent_and_exit(self):
         self.spawn_restarted_parent()
         time.sleep(0.2)
+        stop_process_watchdog_from_environment()
         self.kill_parent_process()
         os._exit(0)
 
 
     def kill_parent_and_exit(self):
+        stop_process_watchdog_from_environment()
         self.kill_parent_process()
         os._exit(0)
 

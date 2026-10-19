@@ -13,11 +13,12 @@ from core.utils.logger import logger
 class Client:
     RECONNECT_INTERVAL = RECONNECT_INTERVAL_SECONDS
 
-    def __init__(self, address):
+    def __init__(self, address, process_watchdog_manager=None):
         self.address = address
         self.client_id = str(uuid.uuid4())
         self.server = None
         self.info = None
+        self.process_watchdog_manager = process_watchdog_manager
 
         self.receiver_worker = ClientReceiverWorker()
         self.guard_manager = ClientGuardManager(

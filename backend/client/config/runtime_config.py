@@ -56,6 +56,9 @@ LOCAL_WATCHDOG_ENABLED = False
 LOCAL_WATCHDOG_HEARTBEAT_INTERVAL_SECONDS = 5
 LOCAL_WATCHDOG_TIMEOUT_SECONDS = 15
 
+# Independent process-death recovery; unrelated to the local heartbeat watchdog.
+PROCESS_WATCHDOG_ENABLED = False
+
 
 # runtime_config 暴露元信息。
 # expose=True 的配置会出现在普通 set 输出和 set 自动补全中，也允许通过 set KEY value 修改。
@@ -162,6 +165,11 @@ _RUNTIME_CONFIG_META = {
         'group': 'watchdog',
         'expose': False,
         'desc': 'Local watchdog timeout in seconds.',
+    },
+    'PROCESS_WATCHDOG_ENABLED': {
+        'group': 'watchdog',
+        'expose': True,
+        'desc': 'Restart the Client if its operating-system process unexpectedly exits.',
     },
 }
 

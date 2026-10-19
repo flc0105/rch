@@ -1,5 +1,7 @@
 # Watchdog
 
+> 本文只描述既有 **Remote HTTP / Local Heartbeat Watchdog**。新增的独立进程死亡复活功能请参阅 [Process Watchdog](process_watchdog.md)。
+
 Watchdog Worker 是独立于 Client 主执行流程的进程控制组件。Remote HTTP 模式用于在主命令通道不可用时接受来自 Server 的进程控制请求；Local 模式依靠本机心跳判断 Client 是否失去响应，并按配置尝试恢复。两套控制条件可以单独启用，也可由同一个 Worker 共同承担。
 
 这一机制追踪的是 Client 主进程的可达性和活性，并不等价于业务任务是否健康。理解它需要区分心跳线程、独立 Worker、HTTP 命令队列、进程重新启动和 Server 管理界面各自负责的状态。

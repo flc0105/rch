@@ -169,6 +169,10 @@ def require_kwarg(kwargs, name, default='', allow_empty=False, error_prefix='[Âè
 def reset(socket):
     spawn_new_instance()
 
+    manager = getattr(socket, 'process_watchdog_manager', None)
+    if manager is not None:
+        manager.stop()
+
     try:
         socket.close()
     except Exception:
@@ -216,9 +220,11 @@ def spawn_new_instance():
     else:
         launch_cwd = os.path.dirname(os.path.realpath(sys.argv[0]))
 
+    from client.watchdog.process_watchdog import without_process_watchdog_environment
+
     popen_kwargs = {
         'cwd': launch_cwd,
-        'env': dict(os.environ),
+        'env': without_process_watchdog_environment(),
         'stdin': subprocess.DEVNULL,
         'stdout': subprocess.DEVNULL,
         'stderr': subprocess.DEVNULL,
@@ -312,9 +318,11 @@ def spawn_detached_python_script(script_path: str, cwd: str = '', args=None, std
     if stderr_path:
         stderr_file = open(os.path.abspath(stderr_path), 'ab')
 
+    from client.watchdog.process_watchdog import without_process_watchdog_environment
+
     popen_kwargs = {
         'cwd': launch_cwd,
-        'env': dict(os.environ),
+        'env': without_process_watchdog_environment(),
         'stdin': subprocess.DEVNULL,
         'stdout': subprocess.DEVNULL,
         'stderr': stderr_file or subprocess.DEVNULL,

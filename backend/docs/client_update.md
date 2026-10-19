@@ -166,3 +166,7 @@ update --keep-old
 若新进程没有按时提交就绪标记或在稳定性检查期间退出，旧进程会保留；这属于避免过早关闭旧连接的交接保护，不是原子级自动回滚已解压文件的事务。反之，成功交接后的新进程仍可能在稍后因运行环境或网络问题断开，不能将短暂存活检查解释为长期健康保证。
 
 `POST /api/agent/build` 与产物下载目前允许匿名请求，部署时需要把构建服务的网络暴露面作为独立运维边界考虑；它不等于通过了 Web 管理员登录。需要人工下载、安装或维护原始构建产物时，按 [Client Bootstrap and Deployment](one_liners_bootstrap.md) 的入口和安装方式处理；需要理解执行期间的任务取消与超时，则参阅 [Shell-like Commands](shell_like_commands.md)。
+
+## Process Watchdog 更新交接
+
+启用 [Process Watchdog](process_watchdog.md) 后，更新候选 Client 在 `--update-ready-file` 验证期间不创建进程复活监督链。旧 Client 确认新进程 PID、握手和稳定时间后，写入 `.accepted` 并等待新 Client 的 `.adopted` 确认，再决定是否关闭旧实例。失败候选不会由 Process Watchdog 自动复活。`--keep-old` 时旧实例保留独立监督链；普通更新在旧实例退出前停止其监督链。

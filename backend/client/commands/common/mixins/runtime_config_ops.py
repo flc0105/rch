@@ -201,6 +201,18 @@ class CommandRuntimeConfigMixin:
         if key == 'SCREEN_FRAME_STRATEGY':
             effects.append(warning('Applies to new Screen View sessions; restart the current Screen View to switch mode'))
 
+        if key == 'PROCESS_WATCHDOG_ENABLED':
+            manager = getattr(self.socket, 'process_watchdog_manager', None)
+            if manager is not None:
+                if value:
+                    manager.start()
+                else:
+                    manager.stop()
+                effects.append(success('Applied: process watchdog runtime updated'))
+                # Existing Remote/Local control Worker inherits the original environment.
+                # Refresh it once so intentional kill/relaunch can stop this new chain.
+                self._restart_guard_manager()
+
         if key in self.WATCHDOG_CONFIG_KEYS:
             if self._restart_guard_manager():
                 effects.append(success('Applied: watchdog runtime restarted'))

@@ -360,7 +360,31 @@ class CommandUpdateMixin:
             except Exception:
                 pass
 
+    def _activate_updated_client_watchdog(self, process, ready_path):
+        """Authorize the update candidate's supervisor only after PID verification."""
+        accepted_path = f'{ready_path}.accepted'
+        adopted_path = f'{ready_path}.adopted'
+        with open(accepted_path, 'w', encoding='utf-8') as marker:
+            marker.write('accepted\n')
+        deadline = time.monotonic() + 7
+        while time.monotonic() < deadline:
+            self._checkpoint()
+            if process.poll() is not None:
+                raise RuntimeError('Updated Client exited during watchdog activation')
+            if os.path.isfile(adopted_path):
+                with open(adopted_path, 'r', encoding='utf-8') as marker:
+                    result = json.load(marker)
+                if not result.get('ok'):
+                    raise RuntimeError(f'Updated Client watchdog activation failed: {result.get("error")}')
+                return
+            time.sleep(0.1)
+        raise RuntimeError('Updated Client did not acknowledge watchdog activation')
+
     def _schedule_exit_after_update(self):
+        process_watchdog_manager = getattr(self.socket, 'process_watchdog_manager', None)
+        if process_watchdog_manager is not None:
+            process_watchdog_manager.stop()
+
         guard_manager = getattr(self.socket, 'guard_manager', None)
         if guard_manager is not None:
             try:
@@ -434,6 +458,7 @@ class CommandUpdateMixin:
                 stderr_path=error_path,
             )
             ready_payload = self._wait_for_updated_client_ready(process, ready_path, error_path)
+            self._activate_updated_client_watchdog(process, ready_path)
             update_ready = True
 
             new_client_id = str(ready_payload.get('client_id') or '').strip()
@@ -456,6 +481,10 @@ class CommandUpdateMixin:
             self._send_error(f'Failed to update client bundle: {e}', eof=1)
         finally:
             self._cleanup_update_probe_files(ready_path, error_path)
+            self._cleanup_update_probe_files(
+                f'{ready_path}.accepted' if ready_path else '',
+                f'{ready_path}.adopted' if ready_path else '',
+            )
 
     @desc('Clean outdated client bundle release directories and ZIP files', group='session')
     @cancel_policy('cooperative')
