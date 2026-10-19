@@ -128,20 +128,28 @@ class ClientGuardManager:
             local_feeder_thread_name = self._local_watchdog_feeder.get_thread_name()
 
         return {
-            'client_id': self.client_id,
-            'main_pid': os.getpid(),
-            # Remote and local modes share one worker; report its state once.
-            'watchdog_pid': watchdog_worker_pid,
-            'watchdog_alive': watchdog_worker_alive,
-            'remote_enabled': REMOTE_HTTP_WATCHDOG_ENABLED,
-            'remote_control_url': self._build_remote_http_control_url(),
-            'remote_interval_s': REMOTE_HTTP_WATCHDOG_INTERVAL_SECONDS,
-            'remote_log': self._build_remote_watchdog_log_file_path(),
-            'local_enabled': LOCAL_WATCHDOG_ENABLED,
-            'local_heartbeat_interval_s': LOCAL_WATCHDOG_HEARTBEAT_INTERVAL_SECONDS,
-            'local_timeout_s': LOCAL_WATCHDOG_TIMEOUT_SECONDS,
-            'local_heartbeat_file': self._build_local_watchdog_heartbeat_file_path(),
-            'local_log': self._build_local_watchdog_log_file_path(),
-            'local_feeder_thread': local_feeder_thread_name,
-            'local_feeder_alive': local_feeder_thread_alive,
+            'client': {
+                'id': self.client_id,
+                'pid': os.getpid(),
+            },
+            # Remote and Local share the same worker; both sections expose its actual identity.
+            'remote_watchdog': {
+                'enabled': REMOTE_HTTP_WATCHDOG_ENABLED,
+                'worker_pid': watchdog_worker_pid,
+                'worker_alive': watchdog_worker_alive,
+                'control_url': self._build_remote_http_control_url(),
+                'interval_seconds': REMOTE_HTTP_WATCHDOG_INTERVAL_SECONDS,
+                'log_path': self._build_remote_watchdog_log_file_path(),
+            },
+            'local_watchdog': {
+                'enabled': LOCAL_WATCHDOG_ENABLED,
+                'worker_pid': watchdog_worker_pid,
+                'worker_alive': watchdog_worker_alive,
+                'heartbeat_interval_seconds': LOCAL_WATCHDOG_HEARTBEAT_INTERVAL_SECONDS,
+                'timeout_seconds': LOCAL_WATCHDOG_TIMEOUT_SECONDS,
+                'heartbeat_file_path': self._build_local_watchdog_heartbeat_file_path(),
+                'log_path': self._build_local_watchdog_log_file_path(),
+                'feeder_thread_name': local_feeder_thread_name,
+                'feeder_alive': local_feeder_thread_alive,
+            },
         }

@@ -35,6 +35,21 @@ def format_dict(data: Mapping[str, Any], width: int = 15, index: bool = False) -
     )
 
 
+def format_grouped_dict(data: Mapping[str, Mapping[str, Any]]) -> str:
+    """Render two-level command data as [group] followed by key = value lines."""
+    sections = []
+    for group, fields in data.items():
+        if not isinstance(fields, Mapping):
+            raise ValueError('grouped dict sections must be mappings')
+        lines = [f'[{group}]']
+        for key, value in fields.items():
+            if isinstance(value, Mapping):
+                raise ValueError('grouped dict fields cannot contain nested mappings')
+            lines.append(f'{key} = {value}')
+        sections.append('\n'.join(lines))
+    return '\n\n'.join(sections)
+
+
 def get_size(size_in_bytes: float, suffix: str = "B") -> str:
     factor = 1024
     for unit in ["", "K", "M", "G", "T", "P"]:

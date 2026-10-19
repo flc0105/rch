@@ -2,10 +2,10 @@ import json
 from dataclasses import dataclass
 from typing import Literal
 
-from core.utils.formatting import format_dict, format_table
+from core.utils.formatting import format_dict, format_grouped_dict, format_table
 
 
-OutputShape = Literal['dict', 'table']
+OutputShape = Literal['dict', 'grouped_dict', 'table']
 
 
 @dataclass
@@ -50,6 +50,9 @@ def render_structured_result(result, output_format: str = 'text'):
         return result.status, json.dumps(result.data, ensure_ascii=False, indent=2)
 
     data = result.data
+
+    if isinstance(data, dict) and result.shape == 'grouped_dict':
+        return result.status, format_grouped_dict(data)
 
     if isinstance(data, dict):
         if result.width is None:

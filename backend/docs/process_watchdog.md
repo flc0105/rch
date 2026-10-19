@@ -21,11 +21,50 @@
 
 注意：如果用户在系统层直接 `kill -9` 或强制结束 Client，Supervisor 无法辨别人工操作还是意外死亡，默认视为异常并复活。要永久停止 Client，请先禁用 Process Watchdog，或使用正式生命周期命令。
 
-## 状态查询与 Web 管理
+## 与另外两种 Watchdog 的设计差异
 
-`watchdog` 与 `watchdog --json` 在原有 Remote/Local 字段之外，还会返回 `process_enabled`、`process_pid`、`process_alive`、`process_log`。`process_pid` 是**独立的进程复活 Supervisor**，不要与原有 Remote/Local 共用 Worker 的 `watchdog_pid` 混淆；`process_alive` 仅表示进程仍在，不保证恢复动作已经成功。日志位置以 `process_log` 为准。
+| Watchdog | 判断依据与负责场景 | 运行组件 | 发现故障后的动作 |
+| --- | --- | --- | --- |
+| Remote HTTP | 周期向 Server Web 轮询待执行的 `kill`、`relaunch`、`clone` 指令；不是健康探测 | 与 Local 共用的 `ClientWatchdogProcess` Worker | 收到指令后按动作控制进程 |
+| Local Heartbeat | Client 内的 `LocalWatchdogHeartbeatFeeder` 线程写时间戳，Worker 检查文件是否超过超时阈值；目标是“进程尚在但心跳停了” | Client 心跳线程 + Remote/Local 共用 Worker | 心跳超时后尝试 `relaunch` |
+| Process | 操作系统进程是否还活着；目标是“Client 进程已经消失” | 独立的 `--process-watchdog-worker` Supervisor | 退避后重建 Client，并继续监控新 PID |
 
-Web 连接详情的 **info → Watchdog** 页面把 **Process recovery** 单独展示在 Remote control / Local recovery 之上，包含独立开关、Supervisor 运行状态和 PID；其日志路径保留在诊断折叠区。三个开关通过原有运行时配置命令分别设置，不共享监控逻辑。顶部状态会综合已启用的模式判断，底部 HTTP control 操作仍属于 Remote HTTP Watchdog，并非 Process Watchdog 的操作按钮。
+Remote/Local 由 `client/watchdog/client_guard_manager.py` 管理，实际共享 `client/watchdog/watchdog_process.py` 创建的 Worker；Process 由 `client/watchdog/process_watchdog.py` 中的 `ProcessWatchdogManager` 和独立 `run_process_supervisor()` 管理。三个功能的配置、故障依据和生命周期相互独立，状态查询才把它们组合展示。Remote/Local 的 Worker 遇到原 Client 消失会结束监控，**只有 Process Supervisor 会在 Client 消失后继续运行并尝试复活**。
+
+### Process 存活扫描的真实实现
+
+Process Supervisor **不遍历系统全部进程**，也不读取 Local 心跳文件。每次探测只针对当前受监控的单个 PID 调用 `psutil.Process(pid)`：
+
+1. 读取进程 `create_time()`，与保存的创建时间比较（误差小于 `0.01` 秒），防止 PID 被其他进程复用。
+2. 检查 `process.is_running()`，再检查 `process.status() != psutil.STATUS_ZOMBIE`，排除已经退出的僵尸进程。
+3. 找不到 PID（`psutil.NoSuchProcess`）视为死亡。权限不足（`AccessDenied`）或其他操作系统读取错误时保守地视为仍存活，不据此杀进程或立即复活，后续继续探测。
+4. 发现受监控 Client 已死亡后进入崩溃退避流程；每次成功启动新的 Client 会记录其新 PID 和创建时间，再继续监控该进程。
+
+`_alive()` 和 `run_process_supervisor()` 均位于 `backend/client/watchdog/process_watchdog.py`。这是一条**进程级**监督链：Socket 断开、Server 离线、主线程卡住但 PID 尚存，不会单凭这些现象触发复活。反过来，即使 `os.abort()`、`os._exit()` 等导致 Client 在没有 Python 清理回调的情况下死亡，也可以被独立 Supervisor 检测到（前提是 Supervisor 自身仍活着）。
+
+### 探测频率、崩溃退避与修改方式
+
+| 时间项 | 当前实现 | 含义与调整方式 |
+| --- | --- | --- |
+| `_POLL_INTERVAL` | **0.5 秒** | Client 正常存活时，Supervisor 两次 PID 探测之间的休眠时间；也用于退避等待期间检查停止标志。源码常量，不是 `set` 配置 |
+| `_RETRY_DELAYS` | **3、10、30、60、120、300 秒** | 第 1 至第 6 次及以后的连续失败，分别等待相应时长再尝试启动新 Client；不是 PID 探测间隔 |
+| `_STABLE_SECONDS` | **300 秒** | 上一代 Client 若连续存活至少 300 秒，下一次异常死亡重新按第 1 次失败计算退避 |
+| `_STOP_TIMEOUT` | **3 秒** | 主动停止时等待 Supervisor 停止确认的最长时间；不是扫描周期 |
+
+更改 PID 扫描周期的方式：编辑 `backend/client/watchdog/process_watchdog.py` 的 `_POLL_INTERVAL = 0.5`，例如更改为 `1.0` 表示约每 1 秒探测一次。然后重新部署修改后的 Client 源码（打包运行时需要重新构建程序），**重新启动 Client 及其独立 Supervisor** 才会载入新常量。这个设置目前没有独立的 runtime_config 配置项，不能通过 `set PROCESS_WATCHDOG_...` 在线修改扫描周期；`set PROCESS_WATCHDOG_ENABLED true/false` 只能启停功能，不能更改常量。
+
+改变 `_POLL_INTERVAL` 影响的是故障被发现的速度与轮询开销，而非重启退避时间。实际检测可能因操作系统调度等稍有延迟；探测到死亡后仍需经过 `_RETRY_DELAYS` 的等待。使用 `watchdog --json` 可以通过 `process_watchdog.poll_interval_seconds` 查看**运行中 Client 所加载代码里的配置值**，它不是某个 PID 的实时测量结果。若已部署不同代码版本，必须以实际运行实例与其日志为准。
+
+### 状态查询与 Web 管理
+
+`watchdog` 和 `watchdog --json` 使用统一的两层结构：`client` 保存主进程身份，三个模块分别位于 `remote_watchdog`、`local_watchdog`、`process_watchdog`。Process 状态字段包括：
+
+- `process_watchdog.enabled`：启用状态。
+- `process_watchdog.supervisor_pid`、`process_watchdog.supervisor_alive`：独立 Supervisor 的 PID 和存活状态；不是 Remote/Local 共用 Worker 的 PID。
+- `process_watchdog.poll_interval_seconds`：代码指定的进程探测间隔，单位秒。
+- `process_watchdog.log_path`：实际进程监督日志路径。
+
+完整字段和 JSON 实例参见 [Watchdog 状态说明](watchdog.md#状态字段的含义)。Web 连接详情的 **info → Watchdog** 仍将 **Process recovery** 独占一行，Remote control / Local recovery 在下方双列排列；独立开关、运行状态、PID、诊断路径及底部 HTTP Control 操作全部保留。三个开关通过既有运行时配置命令分别设置；HTTP Control 按钮仍只属于 Remote HTTP Watchdog。
 
 ## 功能边界
 

@@ -12,9 +12,9 @@ class CommandWatchdogMixin:
 
         try:
             payload = guard_manager.get_watchdog_status_payload()
-            payload.update(get_process_watchdog_status_payload(
+            payload['process_watchdog'] = get_process_watchdog_status_payload(
                 getattr(self.socket, 'process_watchdog_manager', None)
-            ))
-            return StructuredCommandResult(status=1, data=payload, shape='dict', width=30)
+            )
+            return StructuredCommandResult(status=1, data=payload, shape='grouped_dict')
         except Exception as e:
             return 0, f'Failed to get watchdog status: {e}'

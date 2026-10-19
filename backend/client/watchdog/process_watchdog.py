@@ -158,10 +158,11 @@ def get_process_watchdog_status_payload(manager=None):
     pid = getattr(manager, 'supervisor_pid', None)
     started = getattr(manager, 'supervisor_started', None)
     return {
-        'process_enabled': bool(runtime_config.PROCESS_WATCHDOG_ENABLED),
-        'process_pid': pid,
-        'process_alive': bool(pid is not None and started is not None and _alive(pid, started)),
-        'process_log': os.path.join(get_runtime_config_dir(), 'process_watchdog.log'),
+        'enabled': bool(runtime_config.PROCESS_WATCHDOG_ENABLED),
+        'supervisor_pid': pid,
+        'supervisor_alive': bool(pid is not None and started is not None and _alive(pid, started)),
+        'poll_interval_seconds': _POLL_INTERVAL,
+        'log_path': os.path.join(get_runtime_config_dir(), 'process_watchdog.log'),
     }
 
 
