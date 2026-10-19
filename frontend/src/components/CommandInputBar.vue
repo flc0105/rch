@@ -308,6 +308,34 @@ export default {
   return true
 },
 
+    async runResultActionCommand(command, expectedClientId) {
+      const text = String(command || '').trim()
+      const clientId = String(this.selectedId || '')
+      if (!text || !clientId || clientId !== String(expectedClientId || '')) {
+        ElMessage.warning('The target device has changed')
+        return false
+      }
+      if (this.sending || this.hasRunningWebTask) {
+        ElMessage.warning('A command is already running')
+        return false
+      }
+
+      // Result Actions 复用原命令通道，但不能覆盖用户正在输入的草稿。
+      this.sending = true
+      this.$emit('append-output', clientId, '> ' + text, 'command')
+      try {
+        const data = await sendCommandApi(clientId, text, this.getTabScopedHeaders())
+        this.$emit('set-active-task', clientId, data?.task_id || '')
+        return true
+      } catch (error) {
+        this.$emit('append-output', clientId, formatTerminalCommandFailedLine(error.message || 'unknown error'), 'error')
+        ElMessage.error(error.message || 'Command failed')
+        return false
+      } finally {
+        this.sending = false
+      }
+    },
+
     async runCommandText(command) {
   const normalizedCommand = String(command || '').trim()
   if (!normalizedCommand) {

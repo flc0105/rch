@@ -325,7 +325,9 @@
 
   <TerminalJsonDialog
   ref="terminalJsonDialogRef"
+  :selected-id="selectedId"
   @save-json-output="saveTerminalJsonOutputFromViewer"
+  @run-result-action="runTerminalJsonResultAction"
 />
 
   <AgentOutputsDialog
@@ -785,6 +787,10 @@ export default {
 
     openCommandHistoryDialog() {
       return this.$refs.commandHistoryDialogRef?.open()
+    },
+
+    runTerminalJsonResultAction(payload = {}) {
+      return this.$refs.commandInputBarRef?.runResultActionCommand(payload.command, payload.clientId)
     },
 
     rerunTerminalBlock(payload = {}) {

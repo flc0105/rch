@@ -22,7 +22,7 @@ JSON Viewer：Table / Grouped / Flat / Raw
 
 结构化结果解决的是**同一份数据如何输出为人类可读文本和可机器处理的 JSON**。例如进程信息可以默认显示为对齐的列，指定 JSON 输出时保留字段和数据类型，让调用方更方便地复制、保存或进一步处理。
 
-Terminal JSON Rendering 是独立的展示层：浏览器检测输出是否为有效 JSON，提供查看操作，打开后依据 JSON 顶层类型选择适合的展示方式。它不反向改变 Client 命令的执行结果，也不向 Server 请求另一份数据。
+Terminal JSON Rendering 是独立的展示层：浏览器检测输出是否为有效 JSON，提供查看操作，打开后依据 JSON 顶层类型选择适合的展示方式。它不反向改变 Client 命令的执行结果，也不为展示向 Server 请求另一份数据。仅当用户在 Table 中明确确认 Result Action 时，才通过原有命令接口提交该 Action 指定的命令。
 
 ## 结构化返回对象及形状
 
@@ -183,7 +183,7 @@ JSON Viewer 按 Table → Grouped → Flat → Raw 的顺序选择显示方式�
 
 | View | 触发条件 | 展示方式 |
 |---|---|---|
-| **Table** | 非空 JSON 数组，元素全部是对象，且每个对象有与首项**完全相同的键集合**，首项至少有一个键 | 一行一个对象、一列一个字段 |
+| **Table** | 非空 JSON 数组，元素全部是对象，且各行除可选 `_actions` 外的普通字段集合完全相同，至少存在一个普通字段 | 一行一个对象、一列一个普通字段；可选行级 Actions |
 | **Grouped** | 顶层是至少包含 **2 个分组键**的 JSON 对象；**每个**分组值都必须是非空 JSON 对象（不能是数组、`null` 或标量） | 按外层键分组；组名作为标题，每组内部一层 Key / Value 双列展示 |
 | **Flat** | JSON 顶层是对象（包括空对象），且未匹配 Grouped | 顶层 Key / Value 列表 |
 | **Raw** | 有效 JSON，但不适合 Table、Grouped 或 Flat | 格式化后的完整 JSON 文本 |
@@ -209,7 +209,31 @@ Viewer 将它显示为 Name、PID、Active 三列（实际表头使用原始字�
 - 点击列头可以排序。排序会优先识别数字和日期形式的字符串，其余按不区分大小写的文本比较；空值排在非空值后，同值保持原有相对顺序。
 - JSON 中的数字和布尔值在表格单元格内转换成展示用字符串；嵌套对象或数组会转换成 JSON 字符串，`null` 显示为空。
 
-如果数组为空、元素不是对象、字段集合不同，或首个对象没有字段，**不会勉强补列或自动合并不同 Schema**，而是进入 Raw View。即使后台文本表格可以按首项字段显示，前端 Table View 仍要求全部记录结构一致，两者规则不同。
+如果数组为空、元素不是对象、普通字段集合不同，或首个对象没有普通字段，**不会勉强补列或自动合并不同 Schema**，而是进入 Raw View。`_actions` 是唯一不参与普通字段一致性比较的可选元数据。即使后台文本表格可以按首项字段显示，前端 Table View 仍要求全部记录结构一致，两者规则不同。
+
+### 行级 Result Actions（仅 Table）
+
+Table 中每个对象**可以选择性**提供 `_actions` 数组；没有该字段的行完全不需要添加它，也不需要填 `[]`。这不会修改现有普通字段 Schema：除了 `_actions` 以外，各行普通字段集合仍必须一致。普通 Table 继续保持原样；只有至少一行包含有效 Action 时才显示右侧 `Actions` 列，没有 Action 的行不显示按钮。
+
+```json
+[
+  {"pid": 123, "name": "python3", "_actions": [{"label": "Inspect", "command": "echo inspecting-123"}]},
+  {"pid": 456, "name": "node"},
+  {"pid": 789, "name": "other", "_actions": [
+    {"label": "One", "command": "echo one"},
+    {"label": "Two", "command": "echo two"},
+    {"label": "Three", "command": "echo three"}
+  ]}
+]
+```
+
+- `_actions` 仅是可选的行级展示元数据，不是可见数据列、不参与搜索或排序；每条有效 Action 只有 `label`（按钮名）与 `command`（完整的待发送命令）两个必需的非空字符串字段。无效字段项不会变成可执行按钮。
+- 每行 **1–2 个**有效操作时直接显示小按钮，**超过 2 个**时收进 `More` 下拉菜单。搜索、排序后，操作始终绑定原始数据行，不依赖行序号。
+- 每次点击都**必须先确认**；确认框展示目标 Client 和即将执行的完整命令。只有用户选择 `Run` 才提交，取消不执行。没有可选 `confirm` 开关，也没有自动执行。
+- 确认后关闭 Viewer，经原有 Terminal 命令通道发送到对应 Client；命令及其后续结果出现在 Terminal，继续使用现有任务状态和输出链路；不会覆盖命令输入框中尚未提交的草稿。若用户已切换目标 Client 或当前任务繁忙，不发送到其他设备。
+- Viewer 只负责提交 Action 中的**原始命令**，不根据 PID/路径自行添加重新核验、重写命令或其他业务判断。具体命令本身的权限和行为仍由正常 Client 命令执行链负责。
+- `_actions` 不依赖内置命令名称、`--json` 标志或 Script 名称；普通 Shell `echo`、Script 输出的完整合法 JSON 数组均由同一 Table 识别逻辑处理。其前提仍是终端成功识别到完整 JSON（不要和非 JSON 的日志混输出）。
+- **Copy Raw、Raw View、Save to Artifact** 均保留原始 `_actions` 内容，不因界面隐藏操作列而删改 JSON。
 
 ### 多组键值展示（Grouped）
 
@@ -280,7 +304,7 @@ Viewer 的操作包括：
 | 输入 `--json` 仍显示普通文本 | 对应命令可能没有支持这个选项，或参数位置不符合其解析规则；先查看该命令的 Help |
 | Dict 的文本结果抛出 `width is required for dict output` | `StructuredCommandResult` 的字典文本渲染必须提供 `width` |
 | `shape='table'` 却没有得到表格 | 当前依据实际 `data` 类型选择渲染；检查是否传入了 `list[dict]` |
-| JSON 数组只能显示 Raw | 数组为空、元素不是对象、首项没有键，或各对象字段集合不完全一致 |
+| JSON 数组只能显示 Raw | 数组为空、元素不是对象、首项没有普通字段，或各对象的普通字段集合不一致（可选 `_actions` 不参与比较） |
 | Flat 中的子对象没有展开成多层字段 | Flat 仅展现顶层 Key / Value，嵌套值转成 JSON 字符串 |
 | Grouped 没有出现 | 必须至少两个外层键，且所有组值都是非空对象；任一组不符合即不选用 Grouped |
 | Grouped 组内的 JSON 对象没有展开 | 组内嵌套对象或数组只作为 JSON 字符串显示，不会递归渲染第三层 |

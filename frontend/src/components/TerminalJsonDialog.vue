@@ -75,6 +75,43 @@
               sortable="custom"
               :sort-orders="['descending', 'ascending', null]"
             />
+            <el-table-column
+              v-if="tableHasActions"
+              label="Actions"
+              min-width="180"
+            >
+              <template #default="{ row }">
+                <template v-if="getTerminalJsonRowActions(row).length <= 2">
+                  <el-button
+                    v-for="(action, index) in getTerminalJsonRowActions(row)"
+                    :key="index"
+                    size="small"
+                    @click.stop="confirmTableAction(action)"
+                  >
+                    {{ action.label }}
+                  </el-button>
+                </template>
+                <el-dropdown
+                  v-else
+                  trigger="click"
+                  placement="bottom-start"
+                  @command="index => confirmTableAction(getTerminalJsonRowActions(row)[index])"
+                >
+                  <el-button size="small" @click.stop>More</el-button>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item
+                        v-for="(action, index) in getTerminalJsonRowActions(row)"
+                        :key="index"
+                        :command="index"
+                      >
+                        {{ action.label }}
+                      </el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
+              </template>
+            </el-table-column>
           </el-table>
         </div>
       </template>
@@ -135,7 +172,10 @@
 </template>
 
 <script>
-import { ElMessage } from 'element-plus'
+import { h } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+
+const RESULT_ACTIONS = Symbol('terminalJsonRowActions')
 
 export default {
   name: 'TerminalJsonDialog',
@@ -152,7 +192,7 @@ export default {
     },
   },
 
-  emits: ['save-json-output'],
+  emits: ['save-json-output', 'run-result-action'],
 
   data() {
     return {
@@ -162,6 +202,8 @@ export default {
       displayMode: 'raw',
       tableColumns: [],
       tableRows: [],
+      actionConnectionId: '',
+      actionConfirming: false,
       flatRows: [],
       groupedSections: [],
       tableSearchText: '',
@@ -188,6 +230,10 @@ export default {
       return this.displayMode === 'raw' || this.isRawViewVisible
     },
 
+    tableHasActions() {
+      return this.tableRows.some(row => this.getTerminalJsonRowActions(row).length > 0)
+    },
+
     filteredTableRows() {
       const rows = Array.isArray(this.tableRows) ? this.tableRows : []
       const keyword = String(this.tableSearchText || '').trim().toLowerCase()
@@ -198,8 +244,8 @@ export default {
 
       // table 搜索只做前端行筛选，不改原始 JSON。
       return rows.filter((row) => {
-        return Object.values(row || {}).some((value) => {
-          return String(value ?? '').toLowerCase().includes(keyword)
+        return this.tableColumns.some((column) => {
+          return String(row[column.prop] ?? '').toLowerCase().includes(keyword)
         })
       })
     },
@@ -229,6 +275,8 @@ export default {
       this.title = 'JSON Viewer'
       this.text = jsonText
       this.commandInfo = this.normalizeTerminalJsonCommandInfo(line.jsonCommandInfo || line.commandInfo || {})
+      this.actionConnectionId = String(this.selectedId || '')
+      this.actionConfirming = false
       this.tableSearchText = ''
       this.isRawViewVisible = false
       this.savingJsonArtifact = false
@@ -278,6 +326,8 @@ export default {
       this.isRawViewVisible = false
       this.savingJsonArtifact = false
       this.commandInfo = {}
+      this.actionConnectionId = ''
+      this.actionConfirming = false
       this.tableSort = {
         prop: '',
         order: '',
@@ -307,7 +357,8 @@ export default {
         return null
       }
 
-      const firstKeys = Object.keys(parsed[0])
+      // _actions 是可选的每行元数据，不参与原表格字段一致性比较。
+      const firstKeys = Object.keys(parsed[0]).filter(key => key !== '_actions')
       if (!firstKeys.length) {
         return null
       }
@@ -315,7 +366,7 @@ export default {
       const sortedFirstKeys = [...firstKeys].sort()
 
       const hasSameStructure = parsed.every((item) => {
-        const keys = Object.keys(item)
+        const keys = Object.keys(item).filter(key => key !== '_actions')
         if (keys.length !== firstKeys.length) return false
 
         const sortedKeys = [...keys].sort()
@@ -351,9 +402,52 @@ export default {
             }
           })
 
+          Object.defineProperty(row, RESULT_ACTIONS, {
+            value: this.normalizeTerminalJsonRowActions(item._actions),
+            configurable: true,
+          })
           return row
         }),
       }
+    },
+
+    getTerminalJsonRowActions(row) {
+      return row?.[RESULT_ACTIONS] || []
+    },
+
+    normalizeTerminalJsonRowActions(actions) {
+      if (!Array.isArray(actions)) return []
+      return actions.flatMap((action) => {
+        if (!this.isTerminalJsonPlainObject(action)) return []
+        const label = typeof action.label === 'string' ? action.label.trim() : ''
+        const command = typeof action.command === 'string' ? action.command.trim() : ''
+        return label && command ? [{ label, command }] : []
+      })
+    },
+
+    async confirmTableAction(action) {
+      if (this.actionConfirming || !action?.command) return
+      this.actionConfirming = true
+      const clientId = this.actionConnectionId
+      try {
+        await ElMessageBox.confirm(
+          h('div', null, [
+            h('div', null, `Client: ${clientId || 'Not selected'}`),
+            h('pre', { style: {
+              whiteSpace: 'pre-wrap', overflowWrap: 'anywhere',
+              maxHeight: '45vh', overflowY: 'auto',
+            } }, action.command),
+          ]),
+          'Execute command?',
+          { type: 'warning', confirmButtonText: 'Run', cancelButtonText: 'Cancel' },
+        )
+      } catch (_error) {
+        return
+      } finally {
+        this.actionConfirming = false
+      }
+      this.$emit('run-result-action', { command: action.command, clientId })
+      this.visible = false
     },
 
     tryBuildTerminalJsonGroupedModel(jsonText) {

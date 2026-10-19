@@ -23,12 +23,12 @@ assert.ok(template.indexOf("displayMode === 'table'") < template.indexOf("displa
 assert.ok(template.indexOf("displayMode === 'grouped'") < template.indexOf("displayMode === 'flat'"))
 
 const messages = []
-const sandbox = { ElMessage: {
+const sandbox = { h: (tag, props, children) => ({tag, props, children}), ElMessageBox: {confirm: async () => {}}, ElMessage: {
   success: value => messages.push(['success', value]),
   error: value => messages.push(['error', value]),
   warning: value => messages.push(['warning', value]),
 } }
-vm.runInNewContext(script.replace(/^import \{ ElMessage \} from 'element-plus'\s*/m, '')
+vm.runInNewContext(script.replace(/^import\s+[^\n]*\n/gm, '')
   .replace('export default {', 'globalThis.component = {'), sandbox)
 const component = sandbox.component
 
