@@ -17,7 +17,7 @@ StructuredCommandResult → 文本格式化 / JSON 序列化
           ↓
 Web Terminal：显示输出、识别完整 JSON
           ↓
-JSON Viewer：Table / Flat / Raw
+JSON Viewer：Table / Grouped / Flat / Raw
 ```
 
 结构化结果解决的是**同一份数据如何输出为人类可读文本和可机器处理的 JSON**。例如进程信息可以默认显示为对齐的列，指定 JSON 输出时保留字段和数据类型，让调用方更方便地复制、保存或进一步处理。
@@ -179,15 +179,18 @@ return render_structured_result(
 
 Web Terminal 将命令输出当作文本接收，并尝试识别其中**完整、可以成功解析的 JSON**。当某组输出被识别为 JSON 时，终端会提供 `[JSON]` 或 `[View JSON]` 操作；点击后打开 JSON Viewer。
 
-JSON Viewer 会先尝试构建 Table，再尝试 Flat；两者都不适用时显示 Raw。
+JSON Viewer 按 Table → Grouped → Flat → Raw 的顺序选择显示方式。Grouped 仅用于外层多个对象分组均符合条件的 JSON，不递归展开第三层数据。
 
 | View | 触发条件 | 展示方式 |
 |---|---|---|
 | **Table** | 非空 JSON 数组，元素全部是对象，且每个对象有与首项**完全相同的键集合**，首项至少有一个键 | 一行一个对象、一列一个字段 |
-| **Flat** | JSON 顶层是对象（包括空对象） | 顶层 Key / Value 列表 |
-| **Raw** | 有效 JSON，但不适合 Table 或 Flat | 格式化后的完整 JSON 文本 |
+| **Grouped** | 顶层是至少包含 **2 个分组键**的 JSON 对象；**每个**分组值都必须是非空 JSON 对象（不能是数组、`null` 或标量） | 按外层键分组；组名作为标题，每组内部一层 Key / Value 双列展示 |
+| **Flat** | JSON 顶层是对象（包括空对象），且未匹配 Grouped | 顶层 Key / Value 列表 |
+| **Raw** | 有效 JSON，但不适合 Table、Grouped 或 Flat | 格式化后的完整 JSON 文本 |
 
-这里的 **Flat 是顶层键值视图，不是将整个嵌套 JSON 递归 flatten 成带点号的路径**。如果顶层对象的值还是对象或数组，该值会被 `JSON.stringify` 转成一段 JSON 文本显示在对应 Value 中。
+**Grouped 严格全量校验**：必须所有顶层成员都符合分组条件，任意一组结构不符就不能进入 Grouped，不会只渲染其中合格的几组。各组的字段集合无需相同。组内字段的值允许 `null`、标量、对象或数组；内部对象和数组只由现有 `JSON.stringify` 转为一段文本，不再展开成第三层组。Grouped 样式参照 Artifact Info / Preview Image Info 的分组标题、间距及双列字段布局。普通混合键值对象仍可由既有 Flat 规则显示，不能据此误认为 Grouped 已匹配。
+
+**Flat 是顶层键值视图，不是将整个嵌套 JSON 递归 flatten 成带点号的路径**。如果顶层对象的值还是对象或数组，该值会被 `JSON.stringify` 转成一段 JSON 文本显示在对应 Value 中。
 
 ### 对象集合展示
 
@@ -208,6 +211,23 @@ Viewer 将它显示为 Name、PID、Active 三列（实际表头使用原始字�
 
 如果数组为空、元素不是对象、字段集合不同，或首个对象没有字段，**不会勉强补列或自动合并不同 Schema**，而是进入 Raw View。即使后台文本表格可以按首项字段显示，前端 Table View 仍要求全部记录结构一致，两者规则不同。
 
+### 多组键值展示（Grouped）
+
+例如：
+
+```json
+{
+  "client": {"id": "abc123", "pid": 1201},
+  "remote_watchdog": {"enabled": true, "interval_seconds": 15},
+  "local_watchdog": {"enabled": false, "timeout_seconds": 15},
+  "process_watchdog": {"enabled": true, "supervisor_pid": 1202}
+}
+```
+
+Viewer 会依输入顺序展示四个标题 `client`、`remote_watchdog`、`local_watchdog`、`process_watchdog`，并在每个标题下直接排列当前组的字段名和值。只有外层存在至少两个键、并且每个键的值均为非空对象时才进入此模式。例如 `{"one": {"pid": 1}, "two": null}` 或 `{"one": {}, "two": {"pid": 2}}` 均不匹配 Grouped，不会对一部分字段单独渲染分组。
+
+如果组内出现 `"details": {"platform": "macOS"}`，它只会作为该组的一行文本值 `{"platform":"macOS"}` 显示；组内数组同理，不继续创建分组。Grouped 与其他可渲染模式一样可以切换 Raw View，并在复制或保存时保留原始 JSON。
+
 ### 键值字段展示
 
 例如：
@@ -224,12 +244,12 @@ Viewer 逐项显示 `client_id`、`watchdog_alive`、`detail`。其中 `detail` 
 
 ### 原始 JSON 和导出
 
-Raw View 将 JSON 解析后按两空格缩进显示，适合查看完整的嵌套数据。Table 和 Flat 模式中可以切换 **Raw View / Render View**，但不支持结构化渲染的 JSON 本来就直接显示 Raw。
+Raw View 将 JSON 解析后按两空格缩进显示，适合查看完整的嵌套数据。Table、Grouped 和 Flat 模式中可以切换 **Raw View / Render View**，但不支持结构化渲染的 JSON 本来就直接显示 Raw。
 
 Viewer 的操作包括：
 
 - **Copy Raw**：复制原始识别到的 JSON 文本，而不是搜索、排序后的表格内容；必要时使用浏览器的兼容复制方式。
-- **Save to Artifact**：将原始 JSON 内容保存为 Server Artifact，同时携带能够取得的来源命令上下文。保存的不是当前屏幕上的 Flat / Table 文本。
+- **Save to Artifact**：将原始 JSON 内容保存为 Server Artifact，同时携带能够取得的来源命令上下文。保存的不是当前屏幕上的 Flat / Grouped / Table 文本。
 
 因此，无论怎样搜索、排序或切换 View，都不会改变原始 JSON 字段和数据顺序；这些操作只是浏览器侧展示。
 
@@ -246,7 +266,7 @@ Viewer 的操作包括：
 
 其他应当区分的行为：
 
-- 后端的 `StructuredCommandResult.shape` 不直接控制前端使用 Table 还是 Flat；前端会重新解析收到的 JSON 文本。
+- 后端的 `StructuredCommandResult.shape` 不直接控制前端使用 Table、Grouped 还是 Flat；前端会重新解析收到的 JSON 文本。
 - 默认的对齐键值文本或文本表格**不是 JSON**，不会仅因来自结构化结果而触发 JSON Viewer。
 - `--json` 不是服务器自动为任何普通 Shell 输出附加的格式选项；由各命令自己决定是否支持。
 - 有效 JSON 标量（如单独的字符串或数字）不一定被终端自动识别为 JSON 操作，因为当前识别入口主要匹配对象和数组。
@@ -262,6 +282,8 @@ Viewer 的操作包括：
 | `shape='table'` 却没有得到表格 | 当前依据实际 `data` 类型选择渲染；检查是否传入了 `list[dict]` |
 | JSON 数组只能显示 Raw | 数组为空、元素不是对象、首项没有键，或各对象字段集合不完全一致 |
 | Flat 中的子对象没有展开成多层字段 | Flat 仅展现顶层 Key / Value，嵌套值转成 JSON 字符串 |
+| Grouped 没有出现 | 必须至少两个外层键，且所有组值都是非空对象；任一组不符合即不选用 Grouped |
+| Grouped 组内的 JSON 对象没有展开 | 组内嵌套对象或数组只作为 JSON 字符串显示，不会递归渲染第三层 |
 | 输出看起来像 JSON，却没有 View JSON | JSON 不完整、前后混入了其他文本，或未满足终端的分段识别条件 |
 | 搜索或排序后复制的内容没有变化 | Copy Raw 和 Save to Artifact 始终使用原始 JSON，而不是当前过滤/排序结果 |
 | JSON Viewer 里的字段与默认文本列不同 | 文本表格以首条记录的 Key 建列，JSON 输出保留原始对象，Viewer Table 又要求全部记录字段一致 |

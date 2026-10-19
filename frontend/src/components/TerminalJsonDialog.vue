@@ -79,6 +79,34 @@
         </div>
       </template>
 
+      <template v-else-if="displayMode === 'grouped' && !isTerminalJsonRawView">
+        <div class="terminal-json-scroll">
+          <div
+            v-for="group in groupedSections"
+            :key="group.key"
+            class="terminal-json-grouped-section"
+          >
+            <div class="terminal-json-grouped-title">
+              {{ group.key }}
+            </div>
+
+            <div
+              v-for="item in group.items"
+              :key="item.key"
+              class="terminal-json-grouped-row"
+            >
+              <div class="terminal-json-grouped-label">
+                {{ item.label }}
+              </div>
+
+              <div class="terminal-json-grouped-value">
+                {{ item.value }}
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
+
       <template v-else-if="displayMode === 'flat' && !isTerminalJsonRawView">
         <div class="terminal-json-scroll">
           <div
@@ -135,6 +163,7 @@ export default {
       tableColumns: [],
       tableRows: [],
       flatRows: [],
+      groupedSections: [],
       tableSearchText: '',
       isRawViewVisible: false,
       savingJsonArtifact: false,
@@ -152,7 +181,7 @@ export default {
     },
 
     hasTerminalJsonRenderView() {
-      return this.displayMode === 'table' || this.displayMode === 'flat'
+      return ['table', 'grouped', 'flat'].includes(this.displayMode)
     },
 
     isTerminalJsonRawView() {
@@ -194,7 +223,8 @@ export default {
 
       const jsonText = String(line.jsonText || '').trim()
       const tableModel = this.tryBuildTerminalJsonTableModel(jsonText)
-      const flatModel = tableModel ? null : this.tryBuildTerminalJsonFlatModel(jsonText)
+      const groupedModel = tableModel ? null : this.tryBuildTerminalJsonGroupedModel(jsonText)
+      const flatModel = tableModel || groupedModel ? null : this.tryBuildTerminalJsonFlatModel(jsonText)
 
       this.title = 'JSON Viewer'
       this.text = jsonText
@@ -212,16 +242,25 @@ export default {
         this.tableColumns = tableModel.columns
         this.tableRows = tableModel.rows
         this.flatRows = []
+        this.groupedSections = []
+      } else if (groupedModel) {
+        this.displayMode = 'grouped'
+        this.tableColumns = []
+        this.tableRows = []
+        this.flatRows = []
+        this.groupedSections = groupedModel
       } else if (flatModel) {
         this.displayMode = 'flat'
         this.tableColumns = []
         this.tableRows = []
         this.flatRows = flatModel
+        this.groupedSections = []
       } else {
         this.displayMode = 'raw'
         this.tableColumns = []
         this.tableRows = []
         this.flatRows = []
+        this.groupedSections = []
       }
 
       this.visible = true
@@ -234,6 +273,7 @@ export default {
       this.tableColumns = []
       this.tableRows = []
       this.flatRows = []
+      this.groupedSections = []
       this.tableSearchText = ''
       this.isRawViewVisible = false
       this.savingJsonArtifact = false
@@ -314,6 +354,36 @@ export default {
           return row
         }),
       }
+    },
+
+    tryBuildTerminalJsonGroupedModel(jsonText) {
+      const raw = String(jsonText || '').trim()
+      if (!raw) return null
+
+      let parsed
+      try {
+        parsed = JSON.parse(raw)
+      } catch (e) {
+        return null
+      }
+
+      if (!this.isTerminalJsonPlainObject(parsed)) return null
+
+      const keys = Object.keys(parsed)
+      // Grouped 只接受多个外层分组，且每个分组必须是非空对象。
+      if (keys.length < 2 || !keys.every(key => this.isTerminalJsonPlainObject(parsed[key]) && Object.keys(parsed[key]).length > 0)) {
+        return null
+      }
+
+      return keys.map(key => ({
+        key,
+        items: Object.keys(parsed[key]).map(itemKey => ({
+          key: itemKey,
+          label: itemKey,
+          // 内层值保持单行；对象和数组仅序列化，不继续展开。
+          value: this.formatTerminalJsonFlatValue(parsed[key][itemKey]),
+        })),
+      }))
     },
 
     tryBuildTerminalJsonFlatModel(jsonText) {
@@ -604,6 +674,40 @@ export default {
 .terminal-json-table-scroll :deep(.el-table__header-wrapper),
 .terminal-json-table-scroll :deep(.el-table__body-wrapper) {
   min-width: max-content;
+}
+
+/* 与 Artifact Info / Image Info 一致的 section + 双列键值布局。 */
+.terminal-json-grouped-section {
+  margin-bottom: 20px;
+}
+
+.terminal-json-grouped-title {
+  font-weight: 600;
+  font-size: 14px;
+  margin-bottom: 10px;
+}
+
+.terminal-json-grouped-row {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr);
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid #ebeef5;
+}
+
+.terminal-json-grouped-label {
+  color: #606266;
+  font-weight: 500;
+  word-break: break-word;
+}
+
+.terminal-json-grouped-value {
+  min-width: 0;
+  word-break: break-word;
+  white-space: pre-wrap;
+  font-family: Monaco, Menlo, "Ubuntu Mono", Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .terminal-json-flat-row {
