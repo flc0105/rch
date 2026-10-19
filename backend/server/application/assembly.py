@@ -20,6 +20,7 @@ from server.application.jobs.background_job_store import BackgroundJobStore
 from server.application.jobs.job_catalog_service import JobCatalogService
 from server.application.maintenance.server_cleanup_service import ServerCleanupService
 from server.application.keychains.keychain_store import KeychainStore
+from server.application.documents.document_library_service import DocumentLibraryService
 from server.application.pinned_paths.pinned_path_store import PinnedPathStore
 from server.application.preferences.toolbar_preference_store import ToolbarPreferenceStore
 from server.application.preferences.notification_preference_store import NotificationPreferenceStore
@@ -67,6 +68,8 @@ from server.config.config import (
     SERVER_CLEANUP_START_DELAY_SECONDS,
     SCRIPT_JOBS_PATH,
     SCRIPT_PATH,
+    DOCUMENT_ROOTS,
+    WEB_PREVIEW_TEXT_MAX_BYTES,
 )
 from server.web.event_bus import WebEventBus
 
@@ -176,6 +179,7 @@ class ServerApplicationAssembly:
 
         self.pinned_path_store = PinnedPathStore(self.server.database)
         self.keychain_store = KeychainStore()
+        self.document_library_service = DocumentLibraryService(DOCUMENT_ROOTS, WEB_PREVIEW_TEXT_MAX_BYTES)
         self.agent_builder = AgentBuilder()
         self.agent_output_registry = AgentOutputRegistry(self.agent_builder.output_dir)
         self.agent_bootstrap_script_service = AgentBootstrapScriptService()

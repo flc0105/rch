@@ -125,6 +125,7 @@
                   @open-artifacts="openArtifactDialog"
                   @open-external-tools="openExternalToolManagerDialog"
                   @open-keychains="openKeychainManagerDialog"
+                  @open-documents="openDocumentsDialog"
                   @open-info="openConnectionInfoDialog"
                   @open-jobs="openBackgroundJobsDialog"
                   @open-scripts="openScriptLibraryDialog"
@@ -234,6 +235,8 @@
     @upload-started="pendingRemoteUploadRefresh = $event"
     @open-tool-meta-editor="openExternalToolMetaEditor"
   />
+
+  <DocumentsDialog ref="documentsDialogRef" />
 
   <KeychainManagerDialog
     ref="keychainManagerDialogRef"
@@ -425,6 +428,7 @@ import RemoteFilesDialog from './components/RemoteFilesDialog.vue'
 import ArtifactDialog from './components/ArtifactDialog.vue'
 import ExternalToolManagerDialog from './components/ExternalToolManagerDialog.vue'
 import KeychainManagerDialog from './components/KeychainManagerDialog.vue'
+import DocumentsDialog from './components/DocumentsDialog.vue'
 import ScriptLibraryDialog from './components/ScriptLibraryDialog.vue'
 import BackgroundJobsDialog from './components/BackgroundJobsDialog.vue'
 import PreviewDialog from './components/PreviewDialog.vue'
@@ -462,6 +466,7 @@ export default {
     ExecutionInteractionDialog,
     ScriptLibraryDialog,
     KeychainManagerDialog,
+    DocumentsDialog,
     ExternalToolManagerDialog,
     ArtifactDialog,
     RemoteFilesDialog,
@@ -617,6 +622,10 @@ export default {
         payload?.action || {},
         payload?.notification?.context || {},
       )
+    },
+
+    openDocumentsDialog() {
+      return this.$refs.documentsDialogRef?.open()
     },
 
     openKeychainManagerDialog() {

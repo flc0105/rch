@@ -19,6 +19,7 @@ from server.web.routes.command_execution import create_command_execution_bluepri
 from server.web.routes.command_history import create_command_history_blueprint
 from server.web.routes.external_tools import create_external_tool_blueprint
 from server.web.routes.keychains import create_keychain_blueprint
+from server.web.routes.documents import create_documents_blueprint
 from server.web.routes.connections import create_connections_blueprint
 from server.web.routes.pinned_paths import create_pinned_path_blueprint
 from server.web.routes.quick_actions import create_quick_actions_blueprint
@@ -71,6 +72,7 @@ def create_app(server_instance):
     app.register_blueprint(create_external_tool_blueprint(server_instance))
     app.register_blueprint(create_artifacts_blueprint(server_instance))
     app.register_blueprint(create_keychain_blueprint(server_instance))
+    app.register_blueprint(create_documents_blueprint(server_instance))
     app.register_blueprint(create_agent_blueprint(server_instance))
     app.register_blueprint(create_script_blueprint(server_instance))
     app.register_blueprint(create_interaction_blueprint(server_instance))

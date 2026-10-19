@@ -44,6 +44,7 @@ class ServerWebService:
         self.remote_file_api = self.assembly.remote_file_api
         self.pinned_path_api = self.assembly.pinned_path_api
         self.keychain_api = self.assembly.keychain_api
+        self.document_library_api = self.assembly.document_library_service
         self.agent_api = self.assembly.agent_api
         self.process_control_api = self.assembly.process_control_api
         self.terminal_api = self.assembly.terminal_api

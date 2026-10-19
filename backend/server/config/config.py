@@ -1,4 +1,5 @@
 import os
+import json
 
 from server.config.admin_auth import load_admin_auth
 
@@ -76,6 +77,18 @@ KEYCHAINS_ROOT_DIR = os.path.join(SERVER_RUNTIME_DIR, 'keychains')
 # ------------------ web files ------------------ #
 WEB_FILES_ROOT_DIR = os.path.join(SERVER_RUNTIME_DIR, 'web_files')
 WEB_PREVIEW_TEXT_MAX_BYTES = 512 * 1024
+
+# Server-local Documents: JSON mapping of root IDs to absolute paths or {label, path}.
+# Defaults expose bundled RCH docs and a persistent Notes directory.
+_DEFAULT_DOCUMENT_ROOTS = {
+    'rch': {'label': 'RCH Docs', 'path': os.path.join(BACKEND_DIR, 'docs')},
+    'notes': {'label': 'Notes', 'path': os.path.join(SERVER_RUNTIME_DIR, 'documents', 'notes')},
+}
+if 'RCH_DOCUMENT_ROOTS' in os.environ:
+    DOCUMENT_ROOTS = json.loads(os.environ['RCH_DOCUMENT_ROOTS'])
+else:
+    os.makedirs(_DEFAULT_DOCUMENT_ROOTS['notes']['path'], exist_ok=True)
+    DOCUMENT_ROOTS = _DEFAULT_DOCUMENT_ROOTS
 WEB_HTTP_UPLOAD_MAX_BYTES = 10 * 1024 * 1024 * 1024  # 10GB
 WEB_PUBLIC_BASE_URL = f'http://127.0.0.1:{WEB_PORT}'
 

@@ -12,6 +12,7 @@
     "element-plus": "^2.13.7",
     "vue": "^3.5.32",
     "monaco-editor": "^0.45.0",
+    "markdown-it": "^14.1.0",
     "@element-plus/icons-vue": "^2.3.2",
     "xterm": "^5.3.0",
     "xterm-addon-fit": "^0.8.0"

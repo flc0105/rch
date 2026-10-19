@@ -2628,6 +2628,10 @@ Server notification events are persisted before SSE delivery; Frontend preferenc
 
 ---
 
+## Documents (Server-local Markdown)
+
+The `Documents` toolbar action opens a Server-only Markdown directory library. It reads configured local directories directly; no Client calls or database content storage are involved. The default roots are `backend/docs` and persistent runtime Notes. Map additional absolute Server paths through `RCH_DOCUMENT_ROOTS`, and use Monaco editing with live Markdown preview and revision checks. See [Documents](docs/documents.md) for configuration, API endpoints and safety limits.
+
 ## Toolbar Preferences and One-liners
 
 ### Toolbar Preferences
@@ -2648,6 +2652,7 @@ Jobs
 Agents
 Processes
 Keychains
+Documents
 One-liners
 ```
 

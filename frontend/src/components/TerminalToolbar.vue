@@ -223,6 +223,7 @@ export default {
     'open-artifacts',
     'open-external-tools',
     'open-keychains',
+    'open-documents',
     'open-info',
     'open-jobs',
     'open-scripts',
@@ -395,6 +396,7 @@ export default {
       const resourceActions = [
         'external-tools',
         'keychains',
+        'documents',
         'jobs',
         'agents',
         'processes',
@@ -442,6 +444,7 @@ export default {
       const eventMap = {
         'external-tools': 'open-external-tools',
         keychains: 'open-keychains',
+        documents: 'open-documents',
         jobs: 'open-jobs',
         agents: 'open-agents',
         processes: 'open-processes',
