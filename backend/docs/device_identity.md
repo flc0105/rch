@@ -132,7 +132,7 @@ Server 收到连接注册时，先记录最近设备并登记连接历史，然�
 - 多个活动 `client_id` 可以指向相同 `machine_id`，实时列表仍可显示多条连接；Recent Devices 本身则每台逻辑机器只保留一份最近快照。
 - 已离线的设备可能仍留在 Web 列表。这是 Server 持久化设备库存的行为，不表示仍存在 Socket；其 `connection_state` 是 `offline`。
 
-最近设备和历史记录都存储在 Server 的 SQLite 数据库中，默认数据库路径由 `RCH_DB_PATH` 指向启动工作目录下的 `runtime/rch.db`。Recent Devices 对应 `recent_devices` 表，连接历史对应 `connection_sessions` 表；Server 的用户自定义分组另存在 `device_groups` 与 `device_group_members` 表中。不要将数据库路径理解为 Client 机器上的 `runtime/`。
+最近设备和历史记录都存储在 Server 的 SQLite 数据库中，默认数据库路径由 `RCH_DB_PATH` 指向项目固定的 `backend/runtime/rch.db`（通过 `RCH_SERVER_RUNTIME_DIR` 可覆盖根目录）。Recent Devices 对应 `recent_devices` 表，连接历史对应 `connection_sessions` 表；Server 的用户自定义分组另存在 `device_groups` 与 `device_group_members` 表中。不要将数据库路径理解为 Client 机器上的 `runtime/`。
 
 连接历史按机器归集，再区分每个 Client ID。记录中的 `online`、`offline`、`interrupted` 描述历史会话结局；实时界面的 `stale` 则由当前连接的新鲜度判定，不是历史的第四种状态。查看一台机器的连接历史时，Server 还会将关联命令计数汇入各次会话。详见 `command_history.md` 和 [Connection Lifecycle](./connection_lifecycle.md)。
 
@@ -214,7 +214,7 @@ Content-Type: application/json
 1. 对照两次连接的 `machine_id`，判断它们究竟是否被认为是同一机器；不能只比较 `hostname`。
 2. 若 Machine ID 改变，比较 `machine_fingerprint_basis` 中的七项字段，重点检查主机名、OS 版本、架构、原生系统 ID 和空值 `na`。比较 Basis 时应避免将其泄露到公开渠道。
 3. 检查 Client 是否重新创建：如果只变了 `client_id`，属于新的运行实例，不意味着机器身份变化；如果两者都变，先排查 Fingerprint 输入变化。
-4. 确认 Server 当前使用的 SQLite 数据库和实际启动工作目录；设备偏好、分组和历史不是由新 Client 进程自动带回的。
+4. 确认 Server 当前使用的 `SERVER_RUNTIME_DIR` 和 SQLite 数据库的真实位置；设备偏好、分组和历史不是由新 Client 进程自动带回的。
 5. 若一台机器仍有活动连接，区分 Server 活动 Session、Recent Device 最近快照和浏览器的选中项；它们可指向不同 Client ID。
 
 当需要修改身份算法时，应同时评估本地 `LocalIdentity`、握手字段、Server 的 Machine 键、分组成员、最近设备和历史数据之间的关联后果。仅改变哈希输入或前缀会产生一批新的逻辑机器身份，并不会自动给历史记录换键。

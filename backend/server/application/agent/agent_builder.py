@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from core.platform.normalization import normalize_arch
 from core.client_revision import BUNDLE_ARTIFACT_STEM
+from server.config.config import SERVER_RUNTIME_DIR
 
 
 # Single registration point. Remove an entry to disable a builder without deleting its file.
@@ -24,7 +25,7 @@ class AgentBuilder:
 
     def __init__(self):
         self.source_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
-        self.output_dir = os.path.join(self.source_dir, 'runtime', 'agent_output')
+        self.output_dir = os.path.join(SERVER_RUNTIME_DIR, 'agent_output')
         self._ensure_dirs()
 
     @property

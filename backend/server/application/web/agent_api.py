@@ -3,7 +3,7 @@ import platform
 import tempfile
 from datetime import datetime
 
-from server.config.config import SOCKET_PORT, WEB_PORT
+from server.config.config import SOCKET_PORT, WEB_PORT, SERVER_RUNTIME_DIR
 from core.platform.normalization import normalize_arch
 
 
@@ -23,7 +23,7 @@ class WebAgentApi:
         self.agent_output_registry = agent_output_registry
         self.bootstrap_script_service = bootstrap_script_service
         self.event_bus = event_bus
-        self.logs_dir = os.path.abspath(os.path.join('runtime', 'logs'))
+        self.logs_dir = os.path.join(SERVER_RUNTIME_DIR, 'logs')
         os.makedirs(self.logs_dir, exist_ok=True)
 
     def build_agent(

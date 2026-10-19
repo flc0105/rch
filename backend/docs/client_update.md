@@ -53,7 +53,7 @@ Content-Type: application/json
 }
 ```
 
-Server 在临时工作目录复制 Bundle 所需源码，注入 Client 配置后打包，再把构建结果复制到 `backend/runtime/agent_output/`。同目录下的 `.metadata/<filename>.json` 保存构建时间、Build Version、构建方式、系统和架构、连接参数、请求来源等信息。构建成功会发布 `agent_build_lifecycle` 事件（`completed`），失败则发布 `error`；这些是**构建事件**，不是 Client 已经升级成功的确认。
+Server 在临时工作目录复制 Bundle 所需源码，注入 Client 配置后打包，再把构建结果复制到 `SERVER_RUNTIME_DIR/agent_output/`（默认 `backend/runtime/agent_output/`）。同目录下的 `.metadata/<filename>.json` 保存构建时间、Build Version、构建方式、系统和架构、连接参数、请求来源等信息。构建成功会发布 `agent_build_lifecycle` 事件（`completed`），失败则发布 `error`；这些是**构建事件**，不是 Client 已经升级成功的确认。
 
 `POST /api/agent/build` 的 Bundle 响应提供 `file_name`、`build_version`、`download_url` 以及服务端对实际 ZIP 计算的 `sha256`。产物下载通过 **Web/API 端口**上的 `GET /api/agent/download/{filename}` 完成，不经过文件传输专线的 8086。构建产物可以通过 `/api/agent/outputs` 查看，并通过相应删除接口移除；删除某个 Server 构建产物，不会卸载已安装在远程设备上的 Release。
 

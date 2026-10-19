@@ -37,7 +37,7 @@ Machine ID 来源于机器指纹；系统升级、改主机名等操作可能导
 
 ## 二、Server 存储：JSON 而非系统密码保险库
 
-存储根目录由 `KEYCHAINS_ROOT_DIR` 指定，当前配置为 Server 工作目录下的 **`runtime/keychains`**；每个机器范围对应一个经过安全文件名处理的 `<machine_id>.json`，Shared 对应 `__shared__.json`。这一目录由 Server 创建，**不是** Client 各自维护的密码文件，也不在普通 `rch.db` 数据表中。
+存储根目录由 `KEYCHAINS_ROOT_DIR` 指定，默认位于项目固定的 **`backend/runtime/keychains`**（Server 可通过 `RCH_SERVER_RUNTIME_DIR` 指定其他根目录）；每个机器范围对应一个经过安全文件名处理的 `<machine_id>.json`，Shared 对应 `__shared__.json`。这一目录由 Server 创建，**不是** Client 各自维护的密码文件，也不在普通 `rch.db` 数据表中。
 
 单个存储文件的概念结构如下（示例值均为虚构）：
 

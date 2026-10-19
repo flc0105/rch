@@ -2,7 +2,7 @@
 
 Server 对受保护 Web API 建立统一的管理员身份边界：浏览器依靠经签名的 Session Cookie，外部 HTTP 客户端使用管理员 API Token；由 Server 授权运行的 Script 和 Client 命令可以在限定范围内使用临时 Grant。三类凭据的来源、可达接口和失效条件不同，但最终由同一请求守卫判断是否放行。
 
-管理员凭据的持久根是 Server 工作目录中的 `runtime/auth.json`。启动过程决定它何时生成、何时装载；运行中的认证中间件依靠已加载的凭据判断请求，因此理解文件、进程和 Cookie 之间的关系比单独记住某个启动参数更重要。
+管理员凭据的持久根默认是项目固定的 `backend/runtime/auth.json`（通过 `SERVER_RUNTIME_DIR` 配置）。启动过程决定它何时生成、何时装载；运行中的认证中间件依靠已加载的凭据判断请求，因此理解文件、进程和 Cookie 之间的关系比单独记住某个启动参数更重要。
 
 ## 凭据根与服务初始化
 
@@ -32,7 +32,7 @@ Server 加载配置时会先读取 `runtime/auth.json`。文件不存在时，�
 
 ### 服务入口与运行参数
 
-Web 服务的入口是 `run_web.py`。从 `backend/` 作为当前工作目录启动，使 `runtime/auth.json` 和 `runtime/rch.db` 使用预期位置：
+Web 服务的入口是 `run_web.py`。默认的 `runtime/auth.json` 与 `runtime/rch.db` **固定相对于项目 `backend/`**，不受启动 CWD 影响；在项目目录下启动只是常见用法：
 
 ```bash
 cd backend
@@ -47,6 +47,7 @@ python run_web.py
 |---|---|---|
 | `RCH_WEB_PORT` | `8085` | Web/API 监听端口，同时决定文件传输端口 `+1` |
 | `RCH_SOCKET_PORT` | `9999` | Client Socket 监听端口 |
+| `RCH_SERVER_RUNTIME_DIR` | `backend/runtime`（项目固定路径） | Server 所有持久 runtime 数据的根目录；绝对路径或相对于 `backend/` 的路径 |
 | `RCH_WEB_AUTH_SESSION_DAYS` | `7` | 浏览器持久 Session 的有效天数 |
 | `RCH_WEB_SESSION_COOKIE_NAME` | `rch_admin_session` | Session Cookie 名称 |
 
@@ -66,7 +67,7 @@ RCH_WEB_SESSION_COOKIE_NAME=rch_admin_session python run_web.py
 
 #### 管理员密码的原子改写
 
-停止 Server 后，编辑当前工作目录下的 `runtime/auth.json`，**保留其他三个字段**，仅将 `password` 改为：
+停止 Server 后，编辑 `SERVER_RUNTIME_DIR/auth.json`（默认 `backend/runtime/auth.json`），**保留其他三个字段**，仅将 `password` 改为：
 
 ```text
 "password": "plain:your-new-password"
@@ -90,9 +91,9 @@ python -c 'import secrets; print(secrets.token_urlsafe(32))'
 
 #### 重新初始化凭据根
 
-停止 Server，安全备份或移走 `runtime/auth.json`，随后重启；Server 因找不到该文件而生成新的随机密码、API Token 和 Session Secret，并再次输出新的初始登录信息。此前的登录 Session 和所有使用旧 API Token 的外部客户端都需要更新。不要在 Server 运行时删除、修改凭据文件并期待内存中的认证配置立即刷新：认证值在配置导入时加载，必须重新启动才能应用。
+停止 Server，安全备份或移走 `SERVER_RUNTIME_DIR/auth.json`（默认 `backend/runtime/auth.json`），随后重启；Server 因找不到该文件而生成新的随机密码、API Token 和 Session Secret，并再次输出新的初始登录信息。此前的登录 Session 和所有使用旧 API Token 的外部客户端都需要更新。不要在 Server 运行时删除、修改凭据文件并期待内存中的认证配置立即刷新：认证值在配置导入时加载，必须重新启动才能应用。
 
-`auth.json` 的位置按启动时的**工作目录**解析，不是相对于脚本路径自动定位。若从不同目录启动，可能创建另一套 `runtime/auth.json`，看起来像密码被重置；遇到这种情况先检查工作目录，而不要随意删除现有凭据。
+`auth.json` 的位置由 `backend/server/config/config.py` 中的 `SERVER_RUNTIME_DIR` 统一计算，默认 `backend/runtime/`，**不会随着启动工作目录变化**。修改位置就在该文件 `# ------------------ runtime ------------------ #` 章节。启动前可用环境变量 `RCH_SERVER_RUNTIME_DIR` 设置新根目录；绝对路径原样使用，相对路径相对于 `backend/` 解析。该配置与 Client 侧的 `RUNTIME_CONFIG_PATH` 无关。更换根目录不会搬迁旧目录的数据：必须先停机，将原 `auth.json`、`rch.db`、`web_files/` 等所需内容一并搬迁或备份再启动，否则新位置会初始化另一套数据与凭据。
 
 ## Web 请求的认证决策
 
@@ -197,7 +198,7 @@ Grant 的默认生命周期如下：
 | 现象 | 检查方向 |
 |---|---|
 | 首次启动不知道密码 | 检查首次启动标准输出及受保护日志；之后不会再次打印旧密码 |
-| 重启后密码好像变了 | 确认启动工作目录以及使用的 `runtime/auth.json` 是否仍是同一个 |
+| 重启后密码好像变了 | 检查 `RCH_SERVER_RUNTIME_DIR` 是否变化，以及实际读取的 `SERVER_RUNTIME_DIR/auth.json` 是否与上次相同 |
 | 修改了 `plain:` 但仍无法登录 | 确认 JSON 完整有效、Server 已重启、登录名与新密码匹配 |
 | 修改环境变量后登录凭据未改变 | 管理员身份凭据由 `runtime/auth.json` 装载，运行时环境变量只负责受支持的服务配置 |
 | 修改密码后浏览器被退出 | 旧 Session 绑定的凭据标识已失效，属于预期行为 |

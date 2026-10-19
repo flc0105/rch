@@ -13,7 +13,7 @@ from uuid import uuid4
 
 import psutil
 
-from client.config.runtime_config_store import get_runtime_config_dir
+from client.watchdog.watchdog_paths import get_watchdog_log_path
 
 
 _ENV_SESSION = 'RCH_PROCESS_WATCHDOG_SESSION'
@@ -62,7 +62,7 @@ def _atomic_json(path, payload):
 
 
 def _logger():
-    path = os.path.join(get_runtime_config_dir(), 'process_watchdog.log')
+    path = get_watchdog_log_path('process_watchdog.log')
     os.makedirs(os.path.dirname(path), exist_ok=True)
     logger = logging.getLogger('rch_process_watchdog')
     if not logger.handlers:
@@ -162,7 +162,7 @@ def get_process_watchdog_status_payload(manager=None):
         'supervisor_pid': pid,
         'supervisor_alive': bool(pid is not None and started is not None and _alive(pid, started)),
         'poll_interval_seconds': _POLL_INTERVAL,
-        'log_path': os.path.join(get_runtime_config_dir(), 'process_watchdog.log'),
+        'log_path': get_watchdog_log_path('process_watchdog.log'),
     }
 
 

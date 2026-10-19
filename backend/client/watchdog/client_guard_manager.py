@@ -13,6 +13,7 @@ from client.config.runtime_config import (
 from client.config.config import UPLOAD_BASE_URL
 from client.watchdog.local_watchdog import LocalWatchdogHeartbeatFeeder
 from client.watchdog.watchdog_process import ClientWatchdogProcess
+from client.watchdog.watchdog_paths import get_watchdog_log_path
 from core.utils.logger import logger
 
 
@@ -29,11 +30,11 @@ class ClientGuardManager:
 
 
     def _build_local_watchdog_log_file_path(self):
-        return os.path.join(tempfile.gettempdir(), f'client_local_watchdog.log')
+        return get_watchdog_log_path('client_local_watchdog.log')
 
 
     def _build_remote_watchdog_log_file_path(self):
-        return os.path.join(tempfile.gettempdir(), f'client_remote_watchdog.log')
+        return get_watchdog_log_path('client_remote_watchdog.log')
 
 
     def _build_remote_http_control_url(self):

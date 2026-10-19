@@ -10,7 +10,7 @@
 
 复活后的 Client 继承内部监督会话标记并复用原 Worker，不再次创建 Worker。单独 `spawn_instance`、`clone` 或 `reset` 创建的新实例**不继承**原监督会话，会独立建立自己的监督链。`reexec` 仍在同一 PID 内执行，监督会话保留。
 
-单独的轮转日志存储于运行时配置目录下的 `process_watchdog.log`（包括 `.1`、`.2` 备份）。Worker 的临时控制目录只用于本次监督会话，不承载业务数据。
+单独的轮转日志存储于 Client 外部运行时配置目录下 `logs/process_watchdog.log`（包括 `.1`、`.2` 备份）。Remote HTTP 和 Local Heartbeat 的日志也统一使用同一 `logs/` 目录，各自保留独立日志文件。Worker 的临时控制目录只用于本次监督会话，不承载业务数据。
 
 ## 有意关闭、重启和更新
 

@@ -305,7 +305,7 @@ set --reset LOCAL_WATCHDOG_ENABLED
     "worker_alive": true,
     "control_url": "https://server.example/api/connections/example-client/control",
     "interval_seconds": 15,
-    "log_path": "/tmp/client_remote_watchdog.log"
+    "log_path": "/example/rchclient/logs/client_remote_watchdog.log"
   },
   "local_watchdog": {
     "enabled": true,
@@ -314,7 +314,7 @@ set --reset LOCAL_WATCHDOG_ENABLED
     "heartbeat_interval_seconds": 5,
     "timeout_seconds": 15,
     "heartbeat_file_path": "/tmp/client_local_watchdog_heartbeat_example-client.json",
-    "log_path": "/tmp/client_local_watchdog.log",
+    "log_path": "/example/rchclient/logs/client_local_watchdog.log",
     "feeder_thread_name": "LocalWatchdogHeartbeatFeeder",
     "feeder_alive": true
   },
@@ -323,7 +323,7 @@ set --reset LOCAL_WATCHDOG_ENABLED
     "supervisor_pid": 3456,
     "supervisor_alive": true,
     "poll_interval_seconds": 0.5,
-    "log_path": "/example/runtime_config/process_watchdog.log"
+    "log_path": "/example/rchclient/logs/process_watchdog.log"
   }
 }
 ```
@@ -348,6 +348,8 @@ set --reset LOCAL_WATCHDOG_ENABLED
 | `process_watchdog.supervisor_pid` / `supervisor_alive` | 独立进程复活 Supervisor 的 PID 和存活状态 |
 | `process_watchdog.poll_interval_seconds` | Supervisor 正常进程存活探测间隔（秒），当前由源码常量控制 |
 | `process_watchdog.log_path` | Process Supervisor 日志位置 |
+
+三种 Watchdog 的日志现在统一位于 **Client 的外部运行时配置根目录下 `logs/`**，分别为 `client_remote_watchdog.log`、`client_local_watchdog.log`、`process_watchdog.log`。路径由 `client/watchdog/watchdog_paths.py` 的 `get_watchdog_log_path()` 统一计算；不再将 Remote/Local 日志写入系统临时目录。macOS 默认是 `~/Library/Application Support/rchclient/logs/`，Windows 默认是 `%APPDATA%/rchclient/logs/`，Linux 默认是 `~/.config/rchclient/logs/`。`RUNTIME_CONFIG_PATH` 仅覆盖配置 JSON 文件本身，不改变日志根目录。**Local 心跳 JSON 文件仍放在系统临时目录**，它不是日志。更换代码后需重启 Client（及其 Worker/Supervisor）使用新路径；不会自动迁移或删除旧临时日志。
 
 `worker_alive` 或 `supervisor_alive` 为 `true` 只说明相应进程仍被检测为存活，不意味着网络命令已交付、心跳恢复已完成或新 Client 已连接 Server。状态查询不会将不再使用的扁平字段作为额外兼容输出。Process 扫描算法、修改检查间隔的方法及生命周期边界详见 [Process Watchdog](process_watchdog.md)。
 
@@ -376,16 +378,16 @@ Remote 日志用于查看 HTTP 请求失败、收到远程指令和控制动作�
 Linux/macOS 上可以使用 `tail -f` 持续观察日志，例如：
 
 ```bash
-tail -f /tmp/client_remote_watchdog.log
+tail -f "$HOME/Library/Application Support/rchclient/logs/client_remote_watchdog.log"
 ```
 
-这条命令持续打印 Remote 日志新增内容，适合核对 Server 是否已被轮询、动作是否被领取及 HTTP 是否报错。`/tmp` 只是常见示例，实际路径应使用 `watchdog --json` 返回的 `remote_watchdog.log_path`。
+这条 macOS 示例命令持续打印 Remote 日志新增内容，适合核对 Server 是否已被轮询、动作是否被领取及 HTTP 是否报错。其他系统使用 `watchdog --json` 返回的 `remote_watchdog.log_path`。
 
 ```bash
-tail -f /tmp/client_local_watchdog.log
+tail -f "$HOME/Library/Application Support/rchclient/logs/client_local_watchdog.log"
 ```
 
-这条命令用于观察心跳超时与重启请求。实际路径同样以 `local_watchdog.log_path` 为准；只看到超时请求并不意味着新 Client 一定启动成功，还应核实进程与 Server 连接列表。
+这条 macOS 示例命令用于观察心跳超时与重启请求。其他系统使用 `local_watchdog.log_path` 返回值；只看到超时请求并不意味着新 Client 一定启动成功，还应核实进程与 Server 连接列表。
 
 常见异常可以结合状态字段、日志与进程行为定位：
 

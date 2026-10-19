@@ -31,7 +31,7 @@ Server 还能创建临时文件供 Client 下载，例如浏览器向远端设�
 
 ## 文件身份、类型与存储组织
 
-Artifact 采用文件系统存储，默认根目录由 `WEB_FILES_ROOT_DIR` 决定，当前配置对应启动工作目录下的 `runtime/web_files/`。正式文件位于其中的 `artifacts/` 子目录，记录通过旁边的 `meta/*.meta.json` 文件保存，而不是写进 `runtime/rch.db` 的一张 Artifact 主表。
+Artifact 采用文件系统存储，默认根目录由 `WEB_FILES_ROOT_DIR` 决定，默认对应固定项目路径 `backend/runtime/web_files/`（可通过 `RCH_SERVER_RUNTIME_DIR` 修改 Server runtime 根目录）。正式文件位于其中的 `artifacts/` 子目录，记录通过旁边的 `meta/*.meta.json` 文件保存，而不是写进 `runtime/rch.db` 的一张 Artifact 主表。
 
 目前登记的正式 `artifact_type` 分为四类。这是 Registry 接受的类型约束，不是用户可以任意扩展的普通标签：
 
@@ -142,7 +142,7 @@ Rename 会更新 `original_name`，同时重命名磁盘文件和元数据文件
 
 预览文件虽然属于正式 `previews` 类型，但 Server 的启动清理配置同时包含 `preview_cache`：启动清理会清除该预览目录下的缓存文件，包括相关元数据。相较之下，`files`、`shared_files` 和 `command_output` 不是当前启动清理配置中的常规清理目标。`upload_tmp` 会单独清理，它不参与正式 Artifact 的列表与 Clear。
 
-Artifact 数据在 Server 本地文件系统中，备份时应考虑文件与元数据一起保存。只备份 SQLite 不能恢复 Artifact；只保留 `.meta.json` 而丢失实际文件，则只能得到不可用的记录。默认路径相对于 Server **启动工作目录**计算，因此从不同目录启动程序可能访问到不同的 `runtime/web_files` 数据根。对外部署时应保护这份目录和访问 API，尤其 8086 的专用上传入口并不等同于对所有 Web 会话做相同认证。
+Artifact 数据在 Server 本地文件系统中，备份时应考虑文件与元数据一起保存。只备份 SQLite 不能恢复 Artifact；只保留 `.meta.json` 而丢失实际文件，则只能得到不可用的记录。默认路径固定相对于项目 **`backend/`**，不会随启动 CWD 改变；自定义路径由 `RCH_SERVER_RUNTIME_DIR` 决定，变更后应停机并整体迁移对应数据。对外部署时应保护这份目录和访问 API，尤其 8086 的专用上传入口并不等同于对所有 Web 会话做相同认证。
 
 开发和运维时可以从现象定位到具体边界：找不到 Artifact 先确认上传是否真正注册并返回 `artifact_id`；列表可见却无法下载则检查 `saved_path` 的文件是否存在；按文件名查找有多条结果时应改用 ID；预览被截断不代表磁盘内容缺失；共享文件无法下发需要区分 Artifact 是否存在、目标 Client 是否在线、下发任务是否完成；历史还在而文件已失效则应检查 Artifact 的独立清理记录。
 
