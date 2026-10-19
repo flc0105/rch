@@ -697,7 +697,7 @@ export default {
 
 .terminal-json-grouped-label {
   color: #606266;
-  font-weight: 500;
+  font-weight: 400;
   word-break: break-word;
 }
 
