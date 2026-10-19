@@ -35,7 +35,7 @@ export RCH_DOCUMENT_ROOTS='{"api":{"label":"API Docs","path":"/srv/docs/api"},"n
 ## Markdown 与编辑安全
 
 - 前端用 `markdown-it` 渲染 CommonMark 和表格，关闭原始 HTML，默认链接协议校验；不解析 HTML，也不加载 Markdown 图片。外部 HTTP(S) 链接在新标签页打开，同一映射根内的相对 `.md` 链接可以在 Documents 中打开。
-- 使用现有 Monaco 编辑源码，编辑时并排实时展示 Markdown 结果；这是**源码编辑 + 实时预览**，不是 Typora 式行内富文本编辑。
+- 使用现有 Monaco 编辑源码，默认并排实时展示 Markdown 结果；编辑工具栏的 `Live Preview` 开关可临时关闭实时渲染，关闭后编辑器占满正文区且不更新 Markdown 预览，重新开启立即按最新源码渲染。回到只读阅读视图或重新打开文档时始终正常渲染，开关仅保存在当前页面组件实例中，不写入 Server 配置；这不是 Typora 式行内富文本编辑。
 - Monaco 实例使用非响应式存储，并在编辑、取消、关闭和重新打开后复用固定容器；初始化与布局延后至动画帧，关闭时取消待执行任务并使编辑器失焦，不主动调用可能导致界面卡死的 `dispose()`。此生命周期策略与现有 PreviewDialog 一致。
 - 文件大小上限共用 `WEB_PREVIEW_TEXT_MAX_BYTES`（默认 512 KiB），超过限额将拒绝在 Documents 内编辑。读取保留 UTF-8、UTF-8 BOM、UTF-16 LE/BE BOM；无法无损解码的文件允许只读显示，禁止编辑。
 - 保存必须携带打开文件时的 SHA-256 和真实编码；外部文件改变后拒绝覆盖，要求重新加载；输出在覆盖前完整编码，在同目录写入临时文件并以原子替换完成保存。新文件以排他模式创建，默认 UTF-8。

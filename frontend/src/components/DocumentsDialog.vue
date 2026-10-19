@@ -65,15 +65,19 @@
           <el-tag size="small" :type="currentEditable ? 'info' : 'warning'">{{ currentEncoding }}</el-tag>
           <el-button size="small" v-if="!editing && currentEditable" type="primary" @click="startEdit">Edit</el-button>
           <template v-else-if="editing">
+            <div class="documents-live-preview-control">
+              <span>Live Preview</span>
+              <el-switch v-model="livePreviewEnabled" aria-label="Live Preview" />
+            </div>
             <el-button size="small" type="primary" :loading="saving" @click="save">Save</el-button>
             <el-button size="small" :disabled="saving" @click="cancelEdit">Cancel</el-button>
           </template>
           <el-button size="small" :disabled="reading || saving" @click="reloadDocument">Reload</el-button>
         </div>
         <!-- Keep Monaco's host attached across Edit/Cancel and dialog reopen; disposal can freeze the page. -->
-        <div v-show="currentPath && editing" class="documents-split">
+        <div v-show="currentPath && editing" class="documents-split" :class="{ 'documents-split-source-only': !livePreviewEnabled }">
           <div ref="editorHost" class="documents-monaco"></div>
-          <article v-if="editing" class="documents-markdown" @click="followMarkdownLink" v-html="renderedMarkdown"></article>
+          <article v-if="editing && livePreviewEnabled" class="documents-markdown" @click="followMarkdownLink" v-html="renderedMarkdown"></article>
         </div>
         <article v-if="currentPath && !editing" class="documents-markdown documents-reader" @click="followMarkdownLink" v-html="renderedMarkdown"></article>
         <el-empty v-if="!currentPath" description="Select a Markdown document" />
@@ -143,6 +147,7 @@ export default {
       sourceText: '',
       previewText: '',
       previewTimer: null,
+      livePreviewEnabled: true,
       editing: false,
       editorInitSeq: 0,
       documentRequestId: 0,
@@ -150,7 +155,19 @@ export default {
   },
   computed: {
     dirty() { return this.editing && this.sourceText !== this.originalText },
-    renderedMarkdown() { return markdown.render(this.editing ? this.previewText : this.originalText) },
+    renderedMarkdown() {
+      // Even if evaluated outside the template, disabled live preview must never render.
+      if (this.editing && !this.livePreviewEnabled) return ''
+      return markdown.render(this.editing ? this.previewText : this.originalText)
+    },
+  },
+  watch: {
+    livePreviewEnabled(enabled) {
+      clearTimeout(this.previewTimer)
+      this.previewTimer = null
+      if (enabled && this.editing) this.previewText = this.sourceText
+      if (this.editing) this.scheduleEditorLayout()
+    },
   },
   methods: {
     async open() {
@@ -229,7 +246,7 @@ export default {
     },
     startEdit() {
       if (!this.visible || !this.currentPath || !this.currentEditable || this.editing) return
-      this.previewText = this.sourceText
+      if (this.livePreviewEnabled) this.previewText = this.sourceText
       this.editing = true
       this.initEditor(this.sourceText)
     },
@@ -269,7 +286,13 @@ export default {
               if (!this.visible || !this.editing || getDocumentEditor(this) !== nextEditor) return
               this.sourceText = nextEditor.getValue()
               clearTimeout(this.previewTimer)
-              this.previewTimer = setTimeout(() => { this.previewText = this.sourceText }, 150)
+              this.previewTimer = null
+              if (this.livePreviewEnabled) {
+                this.previewTimer = setTimeout(() => {
+                  this.previewTimer = null
+                  if (this.editing && this.livePreviewEnabled) this.previewText = this.sourceText
+                }, 150)
+              }
             })
           }
           this.scheduleEditorLayout()
@@ -426,8 +449,11 @@ export default {
 .documents-main { display: flex; flex-direction: column; min-width: 0; min-height: 0; border: 1px solid var(--el-border-color); border-radius: 5px; }
 .documents-editor-toolbar { padding: 10px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--el-border-color); }
 .documents-editor-toolbar .el-button { margin-left: 0; }
+.documents-live-preview-control { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; font-size: 12px; }
 .documents-location { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
 .documents-split { display: grid; grid-template-columns: 1fr 1fr; min-height: 0; flex: 1; }
+.documents-split.documents-split-source-only { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+.documents-split.documents-split-source-only .documents-monaco { border-right: 0; border-bottom: 0; }
 .documents-monaco { height: 100%; min-width: 0; min-height: 0; border-right: 1px solid var(--el-border-color); }
 .documents-markdown { padding: 20px 25px; overflow: auto; min-height: 0; overflow-wrap: anywhere; line-height: 1.65; font-size: 14px; }
 .documents-reader { flex: 1; }

@@ -20,7 +20,7 @@ test('Documents supports live Markdown preview and conflict revisions', () => {
   const api = read('../src/api/documentsApi.js')
   assert.match(dialog, /new MarkdownIt\(\{ html: false/)
   assert.match(dialog, /onDidChangeModelContent/)
-  assert.match(dialog, /setTimeout\(\(\) => \{ this\.previewText = this\.sourceText \}, 150\)/)
+  assert.match(dialog, /if \(this\.livePreviewEnabled\) \{[\s\S]*?setTimeout\(\(\) => \{[\s\S]*?\}, 150\)/)
   assert.match(dialog, /markdown\.render\(this\.editing \? this\.previewText/)
   assert.match(dialog, /:loading="saving" @click="save"/)
   assert.match(dialog, /sha256: this\.currentSha256/)
