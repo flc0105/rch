@@ -19,6 +19,15 @@
 
 
           <el-button
+            v-if="canRunAgain"
+            size="small"
+            :loading="refreshRunning"
+            @click="runAgain"
+          >
+            Run Again
+          </el-button>
+
+          <el-button
             v-if="hasTerminalJsonRenderView"
             size="small"
             @click="toggleTerminalJsonViewMode"
@@ -81,35 +90,35 @@
               min-width="180"
             >
               <template #default="{ row }">
-                <template v-if="getTerminalJsonRowActions(row).length <= 2">
+                <div class="terminal-json-row-actions">
                   <el-button
-                    v-for="(action, index) in getTerminalJsonRowActions(row)"
+                    v-for="(action, index) in getTerminalJsonRowActions(row).slice(0, 2)"
                     :key="index"
                     size="small"
                     @click.stop="confirmTableAction(action)"
                   >
                     {{ action.label }}
                   </el-button>
-                </template>
-                <el-dropdown
-                  v-else
-                  trigger="click"
-                  placement="bottom-start"
-                  @command="index => confirmTableAction(getTerminalJsonRowActions(row)[index])"
-                >
-                  <el-button size="small" @click.stop>More</el-button>
-                  <template #dropdown>
-                    <el-dropdown-menu>
-                      <el-dropdown-item
-                        v-for="(action, index) in getTerminalJsonRowActions(row)"
-                        :key="index"
-                        :command="index"
-                      >
-                        {{ action.label }}
-                      </el-dropdown-item>
-                    </el-dropdown-menu>
-                  </template>
-                </el-dropdown>
+                  <el-dropdown
+                    v-if="getTerminalJsonRowActions(row).length > 2"
+                    trigger="click"
+                    placement="bottom-start"
+                    @command="index => confirmTableAction(getTerminalJsonRowActions(row)[index])"
+                  >
+                    <el-button size="small" @click.stop>More</el-button>
+                    <template #dropdown>
+                      <el-dropdown-menu>
+                        <el-dropdown-item
+                          v-for="(action, index) in getTerminalJsonRowActions(row).slice(2)"
+                          :key="index + 2"
+                          :command="index + 2"
+                        >
+                          {{ action.label }}
+                        </el-dropdown-item>
+                      </el-dropdown-menu>
+                    </template>
+                  </el-dropdown>
+                </div>
               </template>
             </el-table-column>
           </el-table>
@@ -169,11 +178,28 @@
       </template>
     </div>
   </el-dialog>
+
+  <el-dialog
+    v-model="resultVisible"
+    title="Command Result"
+    width="760px"
+    append-to-body
+  >
+    <div class="terminal-json-action-result-meta">
+      <el-tag :type="resultStatusType" size="small">{{ activeResult.status }}</el-tag>
+      <code class="terminal-json-action-result-command">{{ activeResult.command }}</code>
+    </div>
+    <pre class="terminal-json-action-result-output">{{ activeResult.output || (activeResult.complete ? '(no output)' : 'Running…') }}</pre>
+    <template #footer>
+      <el-button :disabled="!activeResult.output" @click="copyResultActionOutput">Copy</el-button>
+      <el-button @click="resultVisible = false">Close</el-button>
+    </template>
+  </el-dialog>
 </template>
 
 <script>
-import { h } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { h, ref } from 'vue'
+import { ElMessage, ElMessageBox, ElRadioGroup, ElRadioButton } from 'element-plus'
 
 const RESULT_ACTIONS = Symbol('terminalJsonRowActions')
 
@@ -190,9 +216,14 @@ export default {
       type: Object,
       default: null,
     },
+
+    machineAliasMap: {
+      type: Object,
+      default: () => ({}),
+    },
   },
 
-  emits: ['save-json-output', 'run-result-action'],
+  emits: ['save-json-output', 'run-result-action', 'rerun-json'],
 
   data() {
     return {
@@ -203,13 +234,18 @@ export default {
       tableColumns: [],
       tableRows: [],
       actionConnectionId: '',
+      actionTargetName: '',
       actionConfirming: false,
+      resultVisible: false,
+      activeResult: { runId: '', clientId: '', command: '', output: '', status: 'Running', complete: false, success: false },
       flatRows: [],
       groupedSections: [],
       tableSearchText: '',
       isRawViewVisible: false,
       savingJsonArtifact: false,
       commandInfo: {},
+      refreshRunning: false,
+      refreshRun: null,
       tableSort: {
         prop: '',
         order: '',
@@ -222,12 +258,26 @@ export default {
       return this.formatTerminalJsonRawForDisplay(this.text)
     },
 
+    canRunAgain() {
+      const info = this.commandInfo || {}
+      if (info.blockType === 'remote_upload') return false
+      if (info.blockType === 'script' || info.is_script === true) {
+        return !!String(info.script_name || info.scriptMeta?.script_name || '').trim()
+      }
+      return !!String(info.commandText || '').trim()
+    },
+
     hasTerminalJsonRenderView() {
       return ['table', 'grouped', 'flat'].includes(this.displayMode)
     },
 
     isTerminalJsonRawView() {
       return this.displayMode === 'raw' || this.isRawViewVisible
+    },
+
+    resultStatusType() {
+      if (!this.activeResult.complete) return 'info'
+      return this.activeResult.success ? 'success' : 'danger'
     },
 
     tableHasActions() {
@@ -268,22 +318,25 @@ export default {
       if (!line || !line.isJsonMessage) return
 
       const jsonText = String(line.jsonText || '').trim()
+      this.title = 'JSON Viewer'
+      this.commandInfo = this.normalizeTerminalJsonCommandInfo(line.jsonCommandInfo || line.commandInfo || {})
+      this.actionConnectionId = String(this.selectedId || '')
+      this.actionTargetName = this.resolveResultActionTargetName(this.actionConnectionId)
+      this.actionConfirming = false
+      this.refreshRunning = false
+      this.refreshRun = null
+      this.setTerminalJsonContent(jsonText)
+      this.visible = true
+    },
+
+    setTerminalJsonContent(jsonText) {
       const tableModel = this.tryBuildTerminalJsonTableModel(jsonText)
       const groupedModel = tableModel ? null : this.tryBuildTerminalJsonGroupedModel(jsonText)
       const flatModel = tableModel || groupedModel ? null : this.tryBuildTerminalJsonFlatModel(jsonText)
-
-      this.title = 'JSON Viewer'
       this.text = jsonText
-      this.commandInfo = this.normalizeTerminalJsonCommandInfo(line.jsonCommandInfo || line.commandInfo || {})
-      this.actionConnectionId = String(this.selectedId || '')
-      this.actionConfirming = false
       this.tableSearchText = ''
       this.isRawViewVisible = false
-      this.savingJsonArtifact = false
-      this.tableSort = {
-        prop: '',
-        order: '',
-      }
+      this.tableSort = { prop: '', order: '' }
 
       if (tableModel) {
         this.displayMode = 'table'
@@ -311,7 +364,6 @@ export default {
         this.groupedSections = []
       }
 
-      this.visible = true
     },
 
     reset() {
@@ -327,11 +379,75 @@ export default {
       this.savingJsonArtifact = false
       this.commandInfo = {}
       this.actionConnectionId = ''
+      this.actionTargetName = ''
       this.actionConfirming = false
+      this.refreshRunning = false
+      this.refreshRun = null
       this.tableSort = {
         prop: '',
         order: '',
       }
+    },
+
+    async runAgain() {
+      if (!this.visible || this.refreshRunning || !this.canRunAgain) return
+      const clientId = this.actionConnectionId
+      if (!clientId || String(this.selectedId || '') !== clientId) {
+        ElMessage.warning('The target device has changed')
+        return
+      }
+
+      const info = this.commandInfo || {}
+      const isScript = info.blockType === 'script' || info.is_script === true
+      const script = info.scriptMeta || {}
+      const runId = this.createResultActionRunId()
+      this.refreshRun = { runId, clientId, chunks: [] }
+      this.refreshRunning = true
+      this.$emit('rerun-json', {
+        runId, clientId,
+        type: isScript ? 'script' : 'command',
+        command: String(info.commandText || '').trim(),
+        script_name: String(info.script_name || script.script_name || '').trim(),
+        script_path: String(info.script_path || script.script_path || '').trim(),
+        script_display_name: String(info.script_display_name || script.script_display_name || '').trim(),
+        params: { ...(info.params || script.params || {}) },
+        onDone: ok => {
+          if (!ok && this.refreshRun?.runId === runId) {
+            this.refreshRunning = false
+            this.refreshRun = null
+            ElMessage.error('Run Again failed to start')
+          }
+        },
+      })
+    },
+
+    handleJsonRefreshResult(payload = {}, runId = '') {
+      if (!this.refreshRun || !this.visible || this.refreshRun.runId !== runId
+          || String(payload.client_id || '') !== this.refreshRun.clientId) return
+      this.refreshRun.chunks.push(String(payload.text ?? ''))
+    },
+
+    handleJsonRefreshComplete(payload = {}, runId = '') {
+      if (!this.refreshRun || !this.visible || this.refreshRun.runId !== runId
+          || String(payload.client_id || '') !== this.refreshRun.clientId) return
+      const chunks = this.refreshRun.chunks
+      this.refreshRun = null
+      this.refreshRunning = false
+      // A rerun is a new Terminal event, not a mutation of the historical output.
+      const candidates = [chunks.join(''), chunks.join('\n')]
+      const validText = candidates.find(text => {
+        try {
+          JSON.parse(text.trim())
+          return true
+        } catch (_) {
+          return false
+        }
+      })
+      if (validText === undefined) {
+        ElMessage.error('Run Again did not return valid JSON; previous result kept')
+        return
+      }
+      this.setTerminalJsonContent(validText.trim())
     },
 
     isTerminalJsonPlainObject(value) {
@@ -425,20 +541,62 @@ export default {
       })
     },
 
+    createResultActionRunId() {
+      if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+        return crypto.randomUUID()
+      }
+      return `result-action-${Date.now()}-${Math.random().toString(16).slice(2)}`
+    },
+
+    resolveResultActionTargetName(clientId) {
+      const connection = this.currentConnection
+      if (!connection || String(connection.client_id || '') !== clientId) {
+        return clientId || 'Unknown Client'
+      }
+      const machineId = String(connection.machine_id || '').trim()
+      const alias = String(this.machineAliasMap?.[machineId] || '').trim()
+      const hostname = String(connection.hostname || '').trim()
+      return alias || hostname || clientId || 'Unknown Client'
+    },
+
     async confirmTableAction(action) {
       if (this.actionConfirming || !action?.command) return
+      if (this.activeResult.runId && !this.activeResult.complete) {
+        ElMessage.warning('A command is already running')
+        return
+      }
       this.actionConfirming = true
       const clientId = this.actionConnectionId
+      const presentation = ref('terminal')
       try {
         await ElMessageBox.confirm(
           h('div', null, [
-            h('div', null, `Client: ${clientId || 'Not selected'}`),
+            h('div', null, [
+              'Run the following command on ',
+              h('strong', null, this.actionTargetName),
+              '?',
+            ]),
             h('pre', { style: {
+              margin: '8px 0 0', padding: '6px 12px',
+              background: '#f5f7fa', border: '1px solid #dcdfe6',
+              borderRadius: '6px', color: '#303133',
+              fontFamily: 'Monaco, Menlo, Consolas, monospace',
+              fontSize: '13px', lineHeight: '1.35',
               whiteSpace: 'pre-wrap', overflowWrap: 'anywhere',
               maxHeight: '45vh', overflowY: 'auto',
-            } }, action.command),
+            } }, [h('code', null, action.command)]),
+            h('div', { style: { marginTop: '12px', marginBottom: '6px' } }, 'Output to'),
+            // Render inside a reactive component so the selection updates in the message box.
+            h(() => h(ElRadioGroup, {
+              modelValue: presentation.value,
+              'onUpdate:modelValue': value => { presentation.value = value },
+              size: 'small',
+            }, () => [
+              h(ElRadioButton, { value: 'terminal', label: 'terminal' }, () => 'Terminal'),
+              h(ElRadioButton, { value: 'dialog', label: 'dialog' }, () => 'New Dialog'),
+            ])),
           ]),
-          'Execute command?',
+          'Execute Command',
           { type: 'warning', confirmButtonText: 'Run', cancelButtonText: 'Cancel' },
         )
       } catch (_error) {
@@ -446,8 +604,68 @@ export default {
       } finally {
         this.actionConfirming = false
       }
-      this.$emit('run-result-action', { command: action.command, clientId })
-      this.visible = false
+
+      const outputMode = presentation.value
+      const runId = outputMode === 'dialog' ? this.createResultActionRunId() : ''
+      if (outputMode === 'dialog') {
+        this.activeResult = {
+          runId, clientId, command: action.command,
+          output: '', status: 'Running', complete: false, success: false,
+        }
+        this.resultVisible = true
+      } else {
+        this.visible = false
+      }
+      this.$emit('run-result-action', {
+        command: action.command, clientId, presentation: outputMode, runId,
+        onDone: (ok) => {
+          if (outputMode === 'dialog' && !ok && this.activeResult.runId === runId && !this.activeResult.complete) {
+            this.activeResult.complete = true
+            this.activeResult.status = 'Failed'
+            this.activeResult.output = 'Command submission failed'
+          }
+        },
+      })
+    },
+
+    handleResultActionCommandResult(payload = {}, runId = '') {
+      if (runId !== this.activeResult.runId
+          || String(payload.client_id || '') !== this.activeResult.clientId) return true
+
+      const chunk = String(payload.text ?? '').replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+      if (chunk) {
+        const current = this.activeResult.output
+        const separator = current && !current.endsWith('\n') && !chunk.startsWith('\n') ? '\n' : ''
+        this.activeResult.output = `${current}${separator}${chunk}`
+      }
+      return true
+    },
+
+    handleResultActionCommandComplete(payload = {}, runId = '') {
+      if (runId !== this.activeResult.runId
+          || String(payload.client_id || '') !== this.activeResult.clientId) return true
+
+      this.activeResult.complete = true
+      this.activeResult.success = payload.success === true
+      this.activeResult.status = payload.cancelled || payload.status === 'cancelled'
+        ? 'Cancelled'
+        : (payload.success ? 'Success' : 'Failed')
+      return true
+    },
+
+    async copyResultActionOutput() {
+      const output = this.activeResult.output
+      if (!output) return
+      try {
+        if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(output)
+        } else {
+          this.copyTextWithLegacyTextarea(output)
+        }
+        ElMessage.success('Result copied')
+      } catch (error) {
+        ElMessage.error(error.message || 'Copy failed')
+      }
     },
 
     tryBuildTerminalJsonGroupedModel(jsonText) {
@@ -752,6 +970,41 @@ export default {
 
 .terminal-json-search {
   width: 240px;
+}
+
+/* 行操作含普通按钮和 dropdown，使用统一间距而非 Element Plus 默认按钮 margin。 */
+.terminal-json-row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.terminal-json-row-actions :deep(.el-button) {
+  margin-left: 0;
+}
+
+.terminal-json-action-result-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.terminal-json-action-result-command {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.terminal-json-action-result-output {
+  max-height: 55vh;
+  min-height: 160px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: 12px;
+  border: 1px solid var(--line, #ebeef5);
+  border-radius: 4px;
 }
 
 .terminal-json-scroll {

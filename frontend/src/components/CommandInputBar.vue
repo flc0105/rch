@@ -308,32 +308,44 @@ export default {
   return true
 },
 
-    async runResultActionCommand(command, expectedClientId) {
+    // Viewer actions are ordinary terminal commands. Presentation stays in the UI:
+    // neither this submission nor the API receives UI-specific metadata.
+    async submitViewerCommand(command, expectedClientId, echoToTerminal) {
       const text = String(command || '').trim()
       const clientId = String(this.selectedId || '')
       if (!text || !clientId || clientId !== String(expectedClientId || '')) {
         ElMessage.warning('The target device has changed')
-        return false
+        return ''
       }
       if (this.sending || this.hasRunningWebTask) {
         ElMessage.warning('A command is already running')
-        return false
+        return ''
       }
 
-      // Result Actions 复用原命令通道，但不能覆盖用户正在输入的草稿。
       this.sending = true
-      this.$emit('append-output', clientId, '> ' + text, 'command')
+      if (echoToTerminal) this.$emit('append-output', clientId, '> ' + text, 'command')
       try {
         const data = await sendCommandApi(clientId, text, this.getTabScopedHeaders())
-        this.$emit('set-active-task', clientId, data?.task_id || '')
-        return true
+        const taskId = String(data?.task_id || '')
+        this.$emit('set-active-task', clientId, taskId)
+        return taskId
       } catch (error) {
-        this.$emit('append-output', clientId, formatTerminalCommandFailedLine(error.message || 'unknown error'), 'error')
+        if (echoToTerminal) {
+          this.$emit('append-output', clientId, formatTerminalCommandFailedLine(error.message || 'unknown error'), 'error')
+        }
         ElMessage.error(error.message || 'Command failed')
-        return false
+        return ''
       } finally {
         this.sending = false
       }
+    },
+
+    async runResultActionCommand(command, expectedClientId, presentation = 'terminal') {
+      return this.submitViewerCommand(command, expectedClientId, presentation !== 'dialog')
+    },
+
+    async runJsonViewerRefreshCommand(command, expectedClientId) {
+      return this.submitViewerCommand(command, expectedClientId, true)
     },
 
     async runCommandText(command) {

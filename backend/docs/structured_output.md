@@ -228,9 +228,10 @@ Table 中每个对象**可以选择性**提供 `_actions` 数组；没有该字�
 ```
 
 - `_actions` 仅是可选的行级展示元数据，不是可见数据列、不参与搜索或排序；每条有效 Action 只有 `label`（按钮名）与 `command`（完整的待发送命令）两个必需的非空字符串字段。无效字段项不会变成可执行按钮。
-- 每行 **1–2 个**有效操作时直接显示小按钮，**超过 2 个**时收进 `More` 下拉菜单。搜索、排序后，操作始终绑定原始数据行，不依赖行序号。
-- 每次点击都**必须先确认**；确认框展示目标 Client 和即将执行的完整命令。只有用户选择 `Run` 才提交，取消不执行。没有可选 `confirm` 开关，也没有自动执行。
-- 确认后关闭 Viewer，经原有 Terminal 命令通道发送到对应 Client；命令及其后续结果出现在 Terminal，继续使用现有任务状态和输出链路；不会覆盖命令输入框中尚未提交的草稿。若用户已切换目标 Client 或当前任务繁忙，不发送到其他设备。
+- 每行**前两个**有效操作始终直接显示为小按钮；只有第三个及其后的操作才进入 `More` 下拉菜单。只有 1–2 个操作时不显示 `More`。搜索、排序后，操作始终绑定原始数据行，不依赖行序号。
+- 每次点击都**必须先确认**；确认框展示目标 Client 和即将执行的完整命令，并让用户选择 **Terminal** 或 **New Dialog** 输出（默认 Terminal）。只有用户选择 `Run` 才提交，取消不执行。没有可选 `confirm` 开关，也没有自动执行。
+- **Terminal**：沿用现有行为，关闭 JSON Viewer，使用普通命令通道提交，命令及后续结果回到 Terminal。**New Dialog**：保持原 JSON Viewer 打开，另外弹出独立结果窗口，显示命令、运行状态、输出和复制操作；输出经同一命令通道执行，再由运行 ID 对应的 SSE 结果写入该窗口，不额外在 Terminal 输出同一条结果。关闭结果窗口不会关闭 JSON Viewer。
+- 两种模式都不会覆盖命令输入框中尚未提交的草稿，也继续更新原有任务状态。若用户已切换目标 Client 或当前任务繁忙，不发送到其他设备。
 - Viewer 只负责提交 Action 中的**原始命令**，不根据 PID/路径自行添加重新核验、重写命令或其他业务判断。具体命令本身的权限和行为仍由正常 Client 命令执行链负责。
 - `_actions` 不依赖内置命令名称、`--json` 标志或 Script 名称；普通 Shell `echo`、Script 输出的完整合法 JSON 数组均由同一 Table 识别逻辑处理。其前提仍是终端成功识别到完整 JSON（不要和非 JSON 的日志混输出）。
 - **Copy Raw、Raw View、Save to Artifact** 均保留原始 `_actions` 内容，不因界面隐藏操作列而删改 JSON。
@@ -313,3 +314,11 @@ Viewer 的操作包括：
 | JSON Viewer 里的字段与默认文本列不同 | 文本表格以首条记录的 Key 建列，JSON 输出保留原始对象，Viewer Table 又要求全部记录字段一致 |
 
 只需要面向终端显示简单结果时，直接返回 `(status, text)` 即可；需要同一组数据提供人类可读文本和 JSON 两种表示时，使用 `StructuredCommandResult` 更合适。Web Terminal 再根据收到的 JSON 形状决定展示方式，两层职责保持独立。
+
+## JSON Viewer 的 Run Again 与行级操作输出
+
+JSON Viewer 支持对有效来源的 Command 或 Script 使用 **Run Again**，发起一次新的执行并在 Terminal 中留下新执行记录。当前 Viewer 不关闭；新任务完成后仅在输出能解析为完整合法 JSON 时替换 Viewer 中展示的数据，否则提示错误并保留原数据显示。此前的 Terminal 历史内容始终不变。
+
+Table 的 `_actions` 继续是可选的行级元数据。用户确认执行命令后，可以选择 Terminal 或 New Dialog：前者使用原终端输出，后者仅在当前前端的结果弹窗显示执行输出，不关闭原 JSON Viewer。两种动作均复用既有 `/api/connections/{client_id}/command` 请求及任务结果 SSE，不在通用 Command API 中附加展示层标记。
+
+**关联方式：** Server 原样返回 `task_id`，并通过 `command_result` / `command_complete` SSE 发出任务结果。浏览器在提交前建立临时任务捕获器，缓冲 HTTP 返回之前可能先到达的 SSE 事件，取得 `task_id` 后只采纳该任务的输出。Script 的 Run Again 则复用现有 `/scripts/run` 和相同的 `task_id` 结果事件。只有当前前端使用这些暂存信息，它们不进入 Server/Client 命令协议或持久化数据。

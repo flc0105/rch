@@ -1279,16 +1279,14 @@ getPreferredScriptDirectoryForCurrentConnection() {
   const displayName = String(payload.script_display_name || scriptName).trim()
   const scriptPath = String(payload.script_path || `${scriptName}.py`).trim()
 
-  if (!this.selectedId) {
-    ElMessage.warning('Please select a device')
-    return
+  if (!this.selectedId || (payload.clientId && String(this.selectedId) !== String(payload.clientId))) {
+    ElMessage.warning('The target device has changed')
+    return ''
   }
-
   if (!scriptName) {
     ElMessage.warning('Missing script name')
-    return
+    return ''
   }
-
   try {
     const commandText = `> ${TERMINAL_RUN_SCRIPT_PREFIX} ${displayName || scriptName}`
     this.$emit('append-output', this.selectedId, commandText, 'command', {
@@ -1298,7 +1296,6 @@ getPreferredScriptDirectoryForCurrentConnection() {
       script_display_name: displayName || scriptName,
       params: { ...params },
     })
-
     const res = await fetch(`/api/connections/${encodeURIComponent(this.selectedId)}/scripts/run`, {
       method: 'POST',
       headers: this.buildJsonHeaders({ 'Content-Type': 'application/json' }),
@@ -1306,15 +1303,15 @@ getPreferredScriptDirectoryForCurrentConnection() {
     })
     const json = await res.json()
     if (!res.ok || json.code !== 0) throw new Error(json.message || 'Failed to run script')
-
-    const taskId = json.data && json.data.task_id
-    this.$emit('set-active-task', this.selectedId, taskId || '')
+    const taskId = String(json.data?.task_id || '')
+    this.$emit('set-active-task', this.selectedId, taskId)
     ElMessage.success(`Run request submitted: ${displayName || scriptName}`)
+    return taskId
   } catch (e) {
     ElMessage.error(e.message || 'Failed to run script')
+    return ''
   }
 },
-
 
 
 

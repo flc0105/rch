@@ -326,8 +326,11 @@
   <TerminalJsonDialog
   ref="terminalJsonDialogRef"
   :selected-id="selectedId"
+  :current-connection="currentConnection"
+  :machine-alias-map="machineAliasMap"
   @save-json-output="saveTerminalJsonOutputFromViewer"
   @run-result-action="runTerminalJsonResultAction"
+  @rerun-json="runTerminalJsonAgain"
 />
 
   <AgentOutputsDialog
@@ -426,6 +429,7 @@ import ScriptLibraryDialog from './components/ScriptLibraryDialog.vue'
 import BackgroundJobsDialog from './components/BackgroundJobsDialog.vue'
 import PreviewDialog from './components/PreviewDialog.vue'
 import TerminalJsonDialog from './components/TerminalJsonDialog.vue'
+import { createTerminalTaskCapture } from './composables/terminalTaskCapture.js'
 import PtyDialog from './components/PtyDialog.vue'
 import ScreenViewDialog from './components/ScreenViewDialog.vue'
 import ClipboardDialog from './components/ClipboardDialog.vue'
@@ -481,6 +485,7 @@ export default {
       ...AppTaskModule.data(),
       ...AppSseModule.data(),
 
+      terminalTaskCapture: createTerminalTaskCapture(),
       statusNowTick: Date.now(),
       statusTickTimer: null,
       remoteFilesDialogVisible: false,
@@ -683,6 +688,11 @@ export default {
       return this.$refs.quickActionsDialogRef?.runPinnedAction(item)
     },
 
+    // Both Run Again and Result Action dialogs subscribe to the existing task stream.
+    routeTerminalTaskCapture(kind, payload = {}) {
+      return this.terminalTaskCapture.route(kind, payload)
+    },
+
     handleQuickActionCommandResult(payload = {}) {
       return this.$refs.quickActionsDialogRef?.handleCommandResult(payload) === true
     },
@@ -789,8 +799,40 @@ export default {
       return this.$refs.commandHistoryDialogRef?.open()
     },
 
-    runTerminalJsonResultAction(payload = {}) {
-      return this.$refs.commandInputBarRef?.runResultActionCommand(payload.command, payload.clientId)
+    async runTerminalJsonResultAction(payload = {}) {
+      const inDialog = payload.presentation === 'dialog'
+      const viewer = this.$refs.terminalJsonDialogRef
+      const capture = inDialog ? this.terminalTaskCapture.begin({
+        clientId: payload.clientId,
+        command: payload.command,
+        suppress: true,
+        onResult: event => viewer?.handleResultActionCommandResult(event, payload.runId),
+        onComplete: event => viewer?.handleResultActionCommandComplete(event, payload.runId),
+      }) : null
+      const taskId = await this.$refs.commandInputBarRef?.runResultActionCommand(
+        payload.command, payload.clientId, payload.presentation,
+      ) || ''
+      if (!taskId) capture?.cancel()
+      else capture?.bind(taskId)
+      payload.onDone?.(!!taskId)
+      return !!taskId
+    },
+
+    async runTerminalJsonAgain(payload = {}) {
+      const viewer = this.$refs.terminalJsonDialogRef
+      const capture = this.terminalTaskCapture.begin({
+        clientId: payload.clientId,
+        command: payload.type === 'script' ? '' : payload.command,
+        onResult: event => viewer?.handleJsonRefreshResult(event, payload.runId),
+        onComplete: event => viewer?.handleJsonRefreshComplete(event, payload.runId),
+      })
+      const taskId = payload.type === 'script'
+        ? await this.$refs.scriptLibraryDialogRef?.runScriptFromTerminalBlock(payload)
+        : await this.$refs.commandInputBarRef?.runJsonViewerRefreshCommand(payload.command, payload.clientId)
+      if (!taskId) capture.cancel()
+      else capture.bind(taskId)
+      payload.onDone?.(!!taskId)
+      return !!taskId
     },
 
     rerunTerminalBlock(payload = {}) {

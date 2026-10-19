@@ -21,14 +21,14 @@ def create_command_execution_blueprint(server_instance):
 
     @blueprint.post('/api/connections/<client_id>/command')
     def send_command(client_id):
-        def _execute():
-            return command_execution_api.submit_web_command(
+        return responder.json_endpoint(
+            lambda: command_execution_api.submit_web_command(
                 client_id,
                 get_required_command(),
                 tab_id=get_optional_tab_id(),
-            )
-
-        return responder.json_endpoint(_execute, default_error_status=500)
+            ),
+            default_error_status=500,
+        )
 
     @blueprint.get('/api/connections/<client_id>/watchdog')
     def get_watchdog_status(client_id):
