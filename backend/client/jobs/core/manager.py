@@ -113,8 +113,10 @@ class JobManager:
                 execution_mode=execution_mode,
             )
             return job_instance
-        except Exception as e:
-            raise ImportError(f'Failed to load job module "{module_name}": {e}')
+        # Import, constructor and context hooks execute on the Client command thread.
+        except BaseException as e:
+            detail = f'{type(e).__name__}: {e}' if isinstance(e, (SystemExit, KeyboardInterrupt)) else str(e)
+            raise ImportError(f'Failed to load job module "{module_name}": {detail}') from e
 
     def _build_sdk_context(self, job_instance) -> dict:
         return {
@@ -225,6 +227,13 @@ class JobManager:
             try:
                 with use_script_sdk_context(None, {'__context__': self._build_sdk_context(job_instance)}):
                     job_instance.run()
+            except BaseException as exc:
+                # A failed inproc Job is an error state, not a Client shutdown.
+                job_instance.is_running = False
+                job_instance.stop_event.set()
+                message = f'Job failed: {type(exc).__name__}: {exc}'
+                job_instance._report_state('error', status=0, text=message)
+                job_instance.send_to_server(0, message, 0)
             finally:
                 if cleanup_path:
                     cleanup_temp_path(cleanup_path)

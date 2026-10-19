@@ -19,7 +19,7 @@ USER_FACING_SCRIPT_ERRORS = {
 }
 
 
-def _is_user_facing_script_error(exc: Exception) -> bool:
+def _is_user_facing_script_error(exc: BaseException) -> bool:
     module_name = str(exc.__class__.__module__ or '')
     if exc.__class__.__name__ not in USER_FACING_SCRIPT_ERRORS:
         return False
@@ -62,7 +62,8 @@ class InProcessPythonExecutionStrategy(PythonExecutionStrategy):
                 with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
                     exec(code, exec_globals)
             return 1, output.getvalue()
-        except Exception as exc:
+        # User scripts must not propagate interpreter-exit exceptions into Client.wait().
+        except BaseException as exc:
             if _is_user_facing_script_error(exc):
                 output.write(_format_user_facing_script_error(exc))
             else:
@@ -117,11 +118,14 @@ class InProcessPythonExecutionStrategy(PythonExecutionStrategy):
                 with use_script_sdk_context(self.owner, kwargs):
                     exec(code, exec_globals)
                 generator.flush()
-            except Exception as e:
+            except BaseException as e:
                 if _is_user_facing_script_error(e):
                     message = _format_user_facing_script_error(e).strip()
+                elif isinstance(e, (SystemExit, KeyboardInterrupt)):
+                    message = f'{type(e).__name__}: {e}'
                 else:
                     message = f'Error: {e}'
+                generator.flush()
                 self.owner._send_interim_result(0, message, 0)
                 return 0, f'Execution failed: {e}'
             finally:

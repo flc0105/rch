@@ -1,17 +1,12 @@
 # Watchdog
 
-Watchdog 为 Client 提供两种互补能力：**Remote HTTP Watchdog** 在主命令通道不可用时仍可从 Server 接收进程控制指令；**Local Watchdog** 通过本地心跳判断 Client 是否停止更新，并在超时后尝试重新启动 Client。
+Watchdog Worker 是独立于 Client 主执行流程的进程控制组件。Remote HTTP 模式用于在主命令通道不可用时接受来自 Server 的进程控制请求；Local 模式依靠本机心跳判断 Client 是否失去响应，并按配置尝试恢复。两套控制条件可以单独启用，也可由同一个 Worker 共同承担。
 
-两种模式可以单独开启，也可以同时开启。它们使用同一个独立的 Watchdog Worker 进程；Local 模式还会在 Client 主进程中启动心跳线程。两个开关默认均为关闭。
+这一机制追踪的是 Client 主进程的可达性和活性，并不等价于业务任务是否健康。理解它需要区分心跳线程、独立 Worker、HTTP 命令队列、进程重新启动和 Server 管理界面各自负责的状态。
 
-| 模式 | 监控或控制依据 | 可执行操作 | 适用场景 |
-| --- | --- | --- | --- |
-| Remote HTTP Watchdog | Worker 定期从 Server Web 接口获取待执行命令 | `kill`、`relaunch`、`clone` | Socket 断开、命令执行槽繁忙、主进程无法响应管理命令 |
-| Local Watchdog | Client 定期写入本地心跳文件，Worker 检测最后更新时间 | 心跳超时后尝试 `relaunch` | Client 进程还存在，但心跳线程已停止工作的场景 |
+## 守护进程与 Client 的运行关系
 
-## 工作机制
-
-### Worker 与 Client 的运行关系
+### Worker 的独立性与生命周期
 
 每次启动 Client 都会生成一个新的 `client_id`。开启任意 Watchdog 模式后，Client 另外启动一个操作系统进程作为 Watchdog Worker，并向它传入原 Client 的 PID、启动命令、工作目录、`client_id`、监控开关与参数。
 
@@ -44,7 +39,7 @@ HTTP Control 根据 `client_id` 而不是主机名、`machine_id` 或 PID 定位
 
 `relaunch` 和 `clone` 都会启动一个新的 Client 实例，新的实例会生成新的 `client_id`。如果原实例已被替换，应从 Server 的当前连接列表取得新 ID，不能继续使用旧 ID 下发后续指令。
 
-### Kill、Relaunch、Clone 的行为
+### 进程控制动作的差异
 
 Worker 可执行三种进程操作，作用如下：
 
@@ -64,9 +59,9 @@ Worker 按相同的启动命令创建额外的 Client 实例，保留原 Client 
 
 以上操作都在 **Client 所在设备**由 Worker 执行；Server 只负责保存待执行命令。
 
-## Remote HTTP 控制
+## 独立 HTTP 控制链
 
-### 命令提交、轮询与执行
+### 命令投递与结果回执
 
 Remote 开启后，Worker 周期性访问：
 
@@ -88,7 +83,7 @@ Authorization: Bearer <API_TOKEN>
 
 该 POST 负责**入队**，不是直接在 Server 上运行命令。Remote Worker 下一次 GET 时会取得当前动作，随后在 Client 设备上执行。
 
-### HTTP 接口、认证及队列机制
+### HTTP 接口和任务队列
 
 Server 为每个 `client_id` 维护一个内存中的待执行命令槽。入队记录的结构为：
 
@@ -123,7 +118,7 @@ POST 的请求体使用 `command` 字段，只接受 `kill`、`relaunch`、`clon
 
 **匿名 GET 是为了让独立 Worker 无需管理员登录即可轮询。** 但这也意味着能访问该地址并知道 `client_id` 的请求方可能提前消费控制命令。应通过网络访问控制限制 Server Web 接口的暴露范围，不能把匿名取命令接口视为安全的公开状态查询服务。
 
-### Server 控制台操作
+### Server 端管理入口
 
 也可以在 Server 控制台操作：先选中目标 Client 连接，再执行 `httpctl`。该命令会使用当前选中连接的 `client_id`，无需手动填写 ID。
 
@@ -147,9 +142,9 @@ httpctl kill
 
 Server 控制台命令需要有可选中的目标连接；如果目标已完全离线且无法选中，使用指定 `client_id` 的 HTTP POST 更直接。无论通过哪个入口提交，都适用“每客户端一个命令槽”和“入队不等于执行”的规则。
 
-## Local 心跳恢复
+## 本地心跳与进程恢复
 
-### 心跳与超时恢复
+### 心跳失活条件
 
 开启 `LOCAL_WATCHDOG_ENABLED` 后，Client 主进程会启动单独的心跳线程，定期更新系统临时目录中的 JSON 文件。心跳内容示例：
 
@@ -184,7 +179,7 @@ heartbeat_age_seconds = max(当前 Unix 时间 - ts, 0)
 | 心跳年龄小于或等于超时阈值 | 视为正常；解除之前的超时触发标记 |
 | 心跳年龄大于超时阈值 | 首次检测到持续超时时尝试恢复；不在同一次持续超时期间反复拉起进程 |
 
-### 检测边界与运行时序
+### 恢复动作的时间界限
 
 心跳来自 Client 的**独立线程**，并不直接代表业务线程、命令执行器或 Socket 通道工作正常。因此：
 
@@ -197,9 +192,9 @@ heartbeat_age_seconds = max(当前 Unix 时间 - ts, 0)
 
 Local 的心跳间隔下限为 0.5 秒，监控超时下限为 1 秒。实际生效值应通过 `watchdog --json` 查看。
 
-## 配置与日常操作
+## 运行配置与启停操作
 
-### 配置项及生效规则
+### 控制开关的生效时间
 
 | 配置项 | 默认值 | 含义 | 普通 `set` 修改 |
 | --- | --- | --- | --- |
@@ -220,7 +215,7 @@ Local 的心跳间隔下限为 0.5 秒，监控超时下限为 1 秒。实际生
 | Linux | `~/.config/rchclient/runtime_config.json` |
 | iOS | `~/Documents/.rchclient/runtime_config.json` |
 
-### 启停、状态查询与重置
+### 操作状态和重置
 
 要**启用 Watchdog**，按需要执行其中一行或两行：
 
@@ -263,9 +258,9 @@ set --reset LOCAL_WATCHDOG_ENABLED
 
 以上 `set` 和 `watchdog` 都是 **Client 命令通道内置命令**，不能直接作为普通操作系统 Shell 命令执行。
 
-## 状态与 Web 管理
+## 守护状态与控制台观测
 
-### 状态字段
+### 状态字段的含义
 
 `watchdog --json` 返回的字段用于识别 Client 主进程、独立 Worker 和两个模式是否运行。
 
@@ -289,7 +284,7 @@ set --reset LOCAL_WATCHDOG_ENABLED
 
 `watchdog_alive=true` 仅说明操作系统进程还在，不包含“Worker 已成功从 Server 取命令”或“本地重启已经成功”的判断。排障时应结合日志、心跳更新情况和实际进程变化一起判断。
 
-### Web 管理与控制
+### 浏览器中的控制与显示
 
 在 Web 管理页面的连接详情中打开 **Watchdog** 选项卡，可以查看 Remote / Local 的启用状态、相关时间参数、Supervisor PID、日志路径及控制按钮。
 
@@ -299,7 +294,7 @@ set --reset LOCAL_WATCHDOG_ENABLED
 
 Web 页面提示动作已发送或已入队，只能视为 Server 接受了指令。应通过 Client 进程变化、重新连接情况和 Watchdog 日志确认最终效果。
 
-## 日志与故障排查
+## 失效模式及恢复路径
 
 Watchdog 使用 Client 设备上的系统临时目录，默认名称如下：
 
@@ -341,9 +336,9 @@ tail -f /tmp/client_local_watchdog.log
 
 若 Worker 使用的启动命令、工作目录或环境依赖已经变化，`relaunch` / `clone` 新建的进程也可能启动失败。恢复机制本身不负责自动补齐依赖或修复配置错误。
 
-## 操作验证
+## 验证守护链路的方法
 
-### HTTP Control 与 curl
+### 控制请求的验证
 
 以下命令适用于具备操作权限、允许中断的 **Linux/macOS Client**。`curl` 在能访问 Server Web 的终端运行，`kill -STOP` 和 `kill -CONT` 必须在 **Client 所在设备**的 Shell 中运行。Windows 不使用这里的 POSIX 信号命令。
 
@@ -399,7 +394,7 @@ curl -sS -i -X POST \
 
 三种动作使用同一个 POST 地址，不需要更换 API 路由。发送下一条动作前，应确认上一条已经被 Worker 取走或已完成，避免在单命令槽中覆盖尚未领取的动作。
 
-### Remote：模拟挂起与远程恢复
+### 挂起时的恢复条件
 
 暂停 Client，再从 HTTP 远程恢复。这可以验证主进程已经停止执行普通命令时，独立 Worker 仍能从 Server 接收 `relaunch`。
 
@@ -444,7 +439,7 @@ kill -CONT "$CLIENT_PID"
 
 `SIGCONT` 会使原先被 STOP 的进程恢复运行；如果旧 PID 已因 Relaunch 消失，可能出现 `No such process`，此时应核查新实例，而不是对猜测的 PID 重复操作。注意 `kill -STOP "$CLIENT_PID"` 使用正 PID，不要写成负 PID 以免误作用于进程组。
 
-### Local：心跳超时与自动恢复
+### 心跳停止的恢复行为
 
 暂停心跳，等待超时后自动替换 Client。这可以验证心跳线程停摆时，Worker 是否会根据超时阈值尝试重新启动 Client，整个过程不需要 HTTP Control。
 
@@ -476,7 +471,7 @@ kill -CONT "$CLIENT_PID"
 
 这一步只能说明“进程还存在、但心跳停止”的场景可以被检测；它**不能**证明 `kill -9` 把 Client 完全终止之后仍可自动恢复。
 
-### 验证结束与清理
+### 测试后的现场清理
 
 实验结束后，如不再需要 Watchdog，在**当前仍在运行的 Client 实例**的命令通道执行：
 

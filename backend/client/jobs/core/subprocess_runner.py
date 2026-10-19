@@ -185,10 +185,13 @@ def main() -> int:
         with use_script_sdk_context(None, {'__context__': _build_sdk_context(job_instance)}):
             try:
                 job_instance.run()
-            except Exception as exc:
+            except BaseException as exc:
+                job_instance.is_running = False
+                job_instance.stop_event.set()
+                detail = f'{type(exc).__name__}: {exc}' if not isinstance(exc, Exception) else str(exc)
                 try:
-                    job_instance._report_state('error', status=0, text=f'Job failed: {exc}')
-                    job_instance.send_to_server(0, f'Job failed: {exc}', 0)
+                    job_instance._report_state('error', status=0, text=f'Job failed: {detail}')
+                    job_instance.send_to_server(0, f'Job failed: {detail}', 0)
                 except Exception:
                     pass
                 return 1
@@ -199,13 +202,14 @@ def main() -> int:
                     except Exception:
                         pass
         return 0
-    except Exception as exc:
+    except BaseException as exc:
         if context:
+            detail = f'{type(exc).__name__}: {exc}' if not isinstance(exc, Exception) else str(exc)
             _post_fallback_report(
                 context,
                 state='error',
                 status=0,
-                text=f'Failed to start background job subprocess: {exc}',
+                text=f'Failed to start background job subprocess: {detail}',
             )
         return 2
 

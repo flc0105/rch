@@ -62,8 +62,10 @@ exec_globals['kwargs'] = kwargs
 try:
     with use_script_sdk_context(None, kwargs):
         exec(compile(USER_CODE, '<remote_pyexec>', 'exec'), exec_globals)
-except SystemExit:
-    raise
+except (SystemExit, KeyboardInterrupt):
+    # Even sys.exit(0) from user code is a script failure, not a successful run.
+    traceback.print_exc()
+    raise SystemExit(1)
 except Exception:
     traceback.print_exc()
     raise
