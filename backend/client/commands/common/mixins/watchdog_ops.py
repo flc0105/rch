@@ -1,5 +1,6 @@
 from core.utils.command_output import StructuredCommandResult
 from core.utils.decorator import desc
+from client.watchdog.process_watchdog import get_process_watchdog_status_payload
 
 
 class CommandWatchdogMixin:
@@ -11,6 +12,9 @@ class CommandWatchdogMixin:
 
         try:
             payload = guard_manager.get_watchdog_status_payload()
+            payload.update(get_process_watchdog_status_payload(
+                getattr(self.socket, 'process_watchdog_manager', None)
+            ))
             return StructuredCommandResult(status=1, data=payload, shape='dict', width=30)
         except Exception as e:
             return 0, f'Failed to get watchdog status: {e}'

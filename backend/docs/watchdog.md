@@ -1,6 +1,6 @@
 # Watchdog
 
-> 本文只描述既有 **Remote HTTP / Local Heartbeat Watchdog**。新增的独立进程死亡复活功能请参阅 [Process Watchdog](process_watchdog.md)。
+> 本文主要描述既有 **Remote HTTP / Local Heartbeat Watchdog**；`watchdog` 状态查询和 Web 面板也展示独立的 Process Watchdog，详情请参阅 [Process Watchdog](process_watchdog.md)。
 
 Watchdog Worker 是独立于 Client 主执行流程的进程控制组件。Remote HTTP 模式用于在主命令通道不可用时接受来自 Server 的进程控制请求；Local 模式依靠本机心跳判断 Client 是否失去响应，并按配置尝试恢复。两套控制条件可以单独启用，也可由同一个 Worker 共同承担。
 
@@ -245,7 +245,7 @@ watchdog --json
 set --all
 ```
 
-`watchdog` 返回便于直接阅读的当前状态，包括启用开关、进程 PID、心跳和日志信息；`watchdog --json` 提供相同状态的结构化字段，例如 `main_pid`、`watchdog_pid`、`client_id`、`remote_control_url`、`local_feeder_alive`，便于获取准确参数和自动化处理。`set --all` 列出运行时配置，包括三个不能用普通 `set` 修改的时间参数。这些查询都不修改配置。
+`watchdog` 返回便于直接阅读的当前状态，包括启用开关、进程 PID、心跳和日志信息；`watchdog --json` 提供相同状态的结构化字段，例如 `main_pid`、`watchdog_pid`、`client_id`、`remote_control_url`、`local_feeder_alive`，以及独立进程监督的 `process_enabled`、`process_pid`、`process_alive`、`process_log`（具体参阅 [Process Watchdog](process_watchdog.md)），便于获取准确参数和自动化处理。`set --all` 列出运行时配置，包括三个不能用普通 `set` 修改的时间参数。这些查询都不修改配置。
 
 排查启用是否成功，不能只看 `remote_enabled=true` 或 `local_enabled=true`：远程模式还应确认 `watchdog_alive`、`watchdog_pid`、`remote_control_url` 和日志中的轮询情况；本地模式还要确认 `local_feeder_alive` 与心跳文件持续更新。上述查询依赖 Client 正常命令通道，命令通道卡住时查询失败，并不直接证明独立 Worker 已经退出。
 
@@ -288,7 +288,7 @@ set --reset LOCAL_WATCHDOG_ENABLED
 
 ### 浏览器中的控制与显示
 
-在 Web 管理页面的连接详情中打开 **Watchdog** 选项卡，可以查看 Remote / Local 的启用状态、相关时间参数、Supervisor PID、日志路径及控制按钮。
+在 Web 管理页面的连接详情中打开 **Watchdog** 选项卡，可以分别查看 Process recovery、Remote / Local 的启用状态和监督进程：Process 独占一行，Remote / Local 保持双列（窄屏单列），日志路径在诊断区域。原有底部 HTTP 控制按钮仍专门对应 Remote Worker。
 
 **切换 Remote / Local** 时，Web 服务会经正常 Client 命令通道修改相应配置，并重新初始化 Watchdog。目标 Client 已离线或命令通道不可用时，这类开关操作可能失败。
 

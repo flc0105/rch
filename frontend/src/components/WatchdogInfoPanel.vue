@@ -27,12 +27,43 @@
             <span>{{ healthSubtitle }}</span>
           </div>
           <div class="watchdog-worker-meta">
-            <span>Supervisor process</span>
-            <strong>{{ status.watchdog_pid ?? '—' }}</strong>
+            <span>{{ status.process_enabled && !legacyEnabled ? 'Process supervisor' : 'Supervisor process' }}</span>
+            <strong>{{ (status.process_enabled && !legacyEnabled ? status.process_pid : status.watchdog_pid) ?? '—' }}</strong>
           </div>
         </div>
 
         <div class="watchdog-modes">
+          <article class="watchdog-mode-card watchdog-process-card">
+            <div class="watchdog-card-head">
+              <div>
+                <h4>Process recovery</h4>
+                <p>Restarts the agent after an unexpected process exit</p>
+              </div>
+              <div class="watchdog-card-controls">
+                <span class="watchdog-state-tag" :class="{ 'is-on': status.process_enabled }">
+                  {{ status.process_enabled ? 'Enabled' : 'Disabled' }}
+                </span>
+                <el-switch
+                  :model-value="Boolean(status.process_enabled)"
+                  :loading="togglingMode === 'process'"
+                  :disabled="!canToggleMode"
+                  aria-label="Toggle process recovery watchdog"
+                  @change="value => toggleMode('process', value)"
+                />
+              </div>
+            </div>
+            <div class="watchdog-card-stats">
+              <div>
+                <span>Supervisor</span>
+                <strong>{{ status.process_alive ? 'Running' : 'Stopped' }}</strong>
+              </div>
+              <div>
+                <span>Process PID</span>
+                <strong>{{ status.process_pid ?? '—' }}</strong>
+              </div>
+            </div>
+          </article>
+
           <article class="watchdog-mode-card">
             <div class="watchdog-card-head">
               <div>
@@ -108,6 +139,10 @@
           <el-collapse v-model="expandedSections" class="watchdog-diagnostics">
             <el-collapse-item title="Connection & diagnostic paths" name="paths">
               <div class="watchdog-path-list">
+                <div v-if="status.process_log">
+                  <span>Process recovery log</span>
+                  <code>{{ status.process_log }}</code>
+                </div>
                 <div v-if="status.remote_control_url">
                   <span>Control endpoint (agent-side)</span>
                   <code>{{ status.remote_control_url }}</code>
@@ -200,23 +235,34 @@ export default {
     }
   },
   computed: {
-    enabled() {
+    legacyEnabled() {
       return Boolean(this.status?.remote_enabled || this.status?.local_enabled)
+    },
+    enabled() {
+      return Boolean(this.legacyEnabled || this.status?.process_enabled)
     },
     workerStatus() {
       return this.status?.watchdog_alive ? 'Running' : 'Stopped'
     },
     healthTone() {
       if (!this.enabled) return 'off'
-      return this.status?.watchdog_alive ? 'healthy' : 'warning'
+      if ((this.legacyEnabled && !this.status?.watchdog_alive) ||
+          (this.status?.process_enabled && !this.status?.process_alive)) return 'warning'
+      return 'healthy'
     },
     healthTitle() {
       if (!this.enabled) return 'Watchdog is disabled'
-      return this.status?.watchdog_alive ? 'Supervisor is running' : 'Supervisor is not running'
+      return this.healthTone === 'healthy' ? 'Supervisor is running' : 'Supervisor is not running'
     },
     healthSubtitle() {
-      if (!this.enabled) return 'Both remote control and local recovery are turned off.'
-      if (!this.status?.watchdog_alive) return 'A watchdog mode is enabled, but its supervisor process is unavailable.'
+      if (!this.enabled) return 'All watchdog modes are turned off.'
+      if (this.healthTone === 'warning') return 'A watchdog mode is enabled, but its supervisor process is unavailable.'
+      if (this.status.process_enabled) {
+        const modes = ['Process recovery']
+        if (this.status.remote_enabled) modes.push('remote control')
+        if (this.status.local_enabled) modes.push('local recovery')
+        return `${modes.join(', ')} ${modes.length === 1 ? 'is' : 'are'} enabled.`
+      }
       if (this.status.remote_enabled && this.status.local_enabled) return 'Remote control and local recovery are enabled.'
       return this.status.remote_enabled ? 'Remote control is enabled.' : 'Local recovery is enabled.'
     },
@@ -248,10 +294,16 @@ export default {
       return value == null || !Number.isFinite(Number(value)) ? '—' : `${value} s`
     },
     async toggleMode(mode, enabled) {
-      if (!this.canToggleMode || !['remote', 'local'].includes(mode) || typeof enabled !== 'boolean') return
+      if (!this.canToggleMode || !['remote', 'local', 'process'].includes(mode) || typeof enabled !== 'boolean') return
       const clientId = this.clientId
-      const key = mode === 'remote' ? 'REMOTE_HTTP_WATCHDOG_ENABLED' : 'LOCAL_WATCHDOG_ENABLED'
-      const label = mode === 'remote' ? 'Remote control' : 'Local recovery'
+      const keys = {
+        remote: 'REMOTE_HTTP_WATCHDOG_ENABLED',
+        local: 'LOCAL_WATCHDOG_ENABLED',
+        process: 'PROCESS_WATCHDOG_ENABLED',
+      }
+      const labels = { remote: 'Remote control', local: 'Local recovery', process: 'Process recovery' }
+      const key = keys[mode]
+      const label = labels[mode]
       if (this.status[`${mode}_enabled`] === enabled) return
 
       this.togglingMode = mode
@@ -284,7 +336,8 @@ export default {
       try {
         const data = await getWatchdogStatus(requestedId)
         if (requestedId !== this.clientId) return
-        if (!data || typeof data !== 'object' || Array.isArray(data) || !('watchdog_alive' in data)) {
+        if (!data || typeof data !== 'object' || Array.isArray(data) ||
+            !('watchdog_alive' in data) || !('process_alive' in data)) {
           throw new Error('Invalid watchdog status response')
         }
         this.status = data
@@ -364,6 +417,7 @@ export default {
 .watchdog-worker-meta span { font-size: 11px; color: #64748b; }
 .watchdog-worker-meta strong { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 14px; }
 .watchdog-modes { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 14px; }
+.watchdog-process-card { grid-column: 1 / -1; }
 .watchdog-mode-card { border: 1px solid rgba(15,23,42,.08); border-radius: 14px; padding: 18px; background: #fff; min-width: 0; }
 .watchdog-card-head { display: flex; justify-content: space-between; gap: 10px; min-height: 52px; }
 .watchdog-card-head h4 { font-size: 14px; margin: 0 0 6px; }

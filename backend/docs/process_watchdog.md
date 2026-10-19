@@ -21,6 +21,12 @@
 
 注意：如果用户在系统层直接 `kill -9` 或强制结束 Client，Supervisor 无法辨别人工操作还是意外死亡，默认视为异常并复活。要永久停止 Client，请先禁用 Process Watchdog，或使用正式生命周期命令。
 
+## 状态查询与 Web 管理
+
+`watchdog` 与 `watchdog --json` 在原有 Remote/Local 字段之外，还会返回 `process_enabled`、`process_pid`、`process_alive`、`process_log`。`process_pid` 是**独立的进程复活 Supervisor**，不要与原有 Remote/Local 共用 Worker 的 `watchdog_pid` 混淆；`process_alive` 仅表示进程仍在，不保证恢复动作已经成功。日志位置以 `process_log` 为准。
+
+Web 连接详情的 **info → Watchdog** 页面把 **Process recovery** 单独展示在 Remote control / Local recovery 之上，包含独立开关、Supervisor 运行状态和 PID；其日志路径保留在诊断折叠区。三个开关通过原有运行时配置命令分别设置，不共享监控逻辑。顶部状态会综合已启用的模式判断，底部 HTTP control 操作仍属于 Remote HTTP Watchdog，并非 Process Watchdog 的操作按钮。
+
 ## 功能边界
 
 - 只覆盖 **Worker 已成功启动之后** 的 Client 死亡；不承诺 Supervisor 自身死亡、系统重启、系统级清理或注销后的自动恢复。更高级持久化应使用系统服务管理器（launchd/systemd/Windows Service），不在此模块中实现。

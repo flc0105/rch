@@ -151,6 +151,20 @@ def _request_stop(session):
     return False
 
 
+def get_process_watchdog_status_payload(manager=None):
+    """Report process-death supervision separately from Remote/Local heartbeat workers."""
+    from client.config import runtime_config
+
+    pid = getattr(manager, 'supervisor_pid', None)
+    started = getattr(manager, 'supervisor_started', None)
+    return {
+        'process_enabled': bool(runtime_config.PROCESS_WATCHDOG_ENABLED),
+        'process_pid': pid,
+        'process_alive': bool(pid is not None and started is not None and _alive(pid, started)),
+        'process_log': os.path.join(get_runtime_config_dir(), 'process_watchdog.log'),
+    }
+
+
 class ProcessWatchdogManager:
     """Client-side control endpoint; the monitor itself runs in a detached process."""
 
