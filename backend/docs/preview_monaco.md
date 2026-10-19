@@ -8,8 +8,8 @@ RCH 将多处文件预览和文本编辑集中到同一个 Web 组件。它既�
 
 | 功能入口 | 打开时的数据来源 | 文本编辑模式 | Save 实际写入目标 |
 | --- | --- | --- | --- |
-| **Remote Files** 文件 Preview | `POST /api/connections/{client_id}/remote-files/preview`；先从指定 Client 传至 Server 预览 Artifact | 先只读；内容完整时可 Edit | `POST /api/connections/{client_id}/remote-files/save`；**原 Client 上原路径** |
-| **Artifacts**（含 `files`、`shared_files`、`previews`、`command_output` 等适用文件） | `GET /api/artifacts/{artifact_id}/preview` | 文本、未截断时可 Edit | `PUT /api/artifacts/{artifact_id}/content`；**Server Artifact 文件** |
+| **Remote Files** 文件 Preview | `POST /api/connections/{client_id}/remote-files/preview`；先从指定 Client 传至 Server 预览 Artifact | 先只读；内容完整且编码可无损识别时可 Edit | `POST /api/connections/{client_id}/remote-files/save`；**原 Client 上原路径** |
+| **Artifacts**（含 `files`、`shared_files`、`previews`、`command_output` 等适用文件） | `GET /api/artifacts/{artifact_id}/preview` | 文本、未截断且编码可无损识别时可 Edit | `PUT /api/artifacts/{artifact_id}/content`；**Server Artifact 文件** |
 | **Shared Files → 新建文件** | 在 Web 创建空 Monaco 模型 | 直接可编辑 | `POST /api/files/upload`；创建 `shared_files` Artifact，之后切换为 Artifact 编辑来源 |
 | **Script Library → 新建 / 编辑 Python Script** | 默认脚本模板，或 `GET /api/scripts/download?name=...` | 直接可编辑 | `POST /api/scripts/save`；**Server 脚本资源** |
 | **Background Jobs → 新建 / 编辑 Job 模块** | 默认 Job 模板，或 `GET /api/jobs/download?name=...` | 直接可编辑 | `POST /api/jobs/save`；**Server Job 脚本资源** |
@@ -29,6 +29,8 @@ Artifact 对象可能从普通文件列表、终端运行结果、通知动作�
   "type": "text",
   "name": "example.py",
   "content": "print('hello')\n",
+  "encoding": "utf-8",
+  "editable": true,
   "truncated": false,
   "artifact_id": "an-artifact-id"
 }
@@ -36,12 +38,12 @@ Artifact 对象可能从普通文件列表、终端运行结果、通知动作�
 
 - `type` 决定显示文本、图片或不支持格式的占位信息。只有 `text` 才创建 Monaco 实例。
 - `name` 用作标题和语言识别依据；`content` 是编辑器的初始文本。
-- `truncated` 不只是一个标签，还是 **Edit 按钮的启用条件**。
+- `truncated` 和 `editable` 共同决定 Edit 是否可用：内容必须完整且能严格无损解码。`encoding` 由 Server 对原始字节判断，并用于原编码写回。
 - `image` 类型改为读取 `url`，如果附带 `image_info` 则允许打开图片信息弹窗；`unsupported` 不会偷偷尝试用 Monaco 打开二进制内容。
 
 对普通 Artifact 文本，`ArtifactPreviewService.build_preview_payload()` 根据文件扩展名和 MIME 推断预览类型；它只从磁盘读取前 **200 KiB（204,800 字节）**。超过后设置 `truncated=true`，并在可见文本后补上截断提示，避免超大文本直接进入浏览器。
 
-读取采用 `raw.decode('utf-8', errors='replace')`：遇到无效 UTF-8 字节会以替换字符展示，而不会因此保证原始字节被保留。即使文件未超过 200 KiB，仍可能因为编码不匹配产生不可逆的显示差异。这也是不能把“能预览”直接等同于“可以无损编辑”的原因。
+读取先尝试严格识别 UTF-8、UTF-8 BOM 和带 BOM 的 UTF-16 LE/BE，只有解码成功且不含明显二进制控制字符、内容未截断时才允许编辑。未知编码文件仍可用替换字符进行**只读**预览；替换后的文本绝不能保存。200 KiB 的预览截断发生于字节层，因此即使编码可识别，截断内容也不可编辑。
 
 ### Remote Files 有额外的传输阶段
 
@@ -67,12 +69,12 @@ Web 使用 `monaco-editor` 的 ESM 编辑器 API，在组件内部建立/复用 
 
 ### 只读 Preview、Edit 与 Save
 
-普通文本的工具栏显示 **Copy、Edit、Fullscreen**。选择 Edit 后切换为 **Save、Paste、Clear、Reload、Cancel、Fullscreen**。这些按钮的含义如下：
+普通文本的工具栏显示 **Copy、Edit、Fullscreen**（Edit 仅在可无损编辑时出现）；未知编码或截断内容只有 Copy、Fullscreen。选择 Edit 后切换为 **Save、Paste、Clear、Reload、Cancel、Fullscreen**。这些按钮的含义如下：
 
 | 操作 | 实际行为或限制 |
 | --- | --- |
 | **Copy** | 读取当前 Monaco 内容并复制，优先 Clipboard API，必要时使用兼容回退。 |
-| **Edit** | 非截断文本才显示；记录编辑前文本，切换 Monaco `readOnly=false`。 |
+| **Edit** | 仅完整且经过严格解码的文本才显示；记录编辑前文本，切换 Monaco `readOnly=false`。 |
 | **Save** | 读取 Monaco 的 `getValue()`，根据来源调用不同的保存 API；服务器成功返回后退出编辑模式。**没有统一的跨来源保存端点**。 |
 | **Paste** | 仅编辑模式；先尝试现代 Clipboard 读取，并为特定浏览器/系统环境提供回退路径。 |
 | **Clear** | 仅编辑模式；把当前编辑器内容清空，此时尚未写入磁盘。 |
@@ -80,7 +82,7 @@ Web 使用 `monaco-editor` 的 ESM 编辑器 API，在组件内部建立/复用 
 | **Cancel** | 将编辑器恢复到上一次装载/保存时的 `previewOriginalContent`，结束本轮编辑，不向后台写入。 |
 | **Fullscreen / Exit Fullscreen** | 调整 Dialog 为 `100vw`、`top=0` 的全屏样式并重新布局 Monaco；**不是浏览器原生 Fullscreen API**。 |
 
-文本右侧同时显示：来源、文件大小、编码标签、语言、`Full content` 或 `Truncated - Edit disabled`。普通对话框宽度为 `1080px`，顶部间距为 `5vh`。关闭后会重置对话框状态与异步加载序号，以减少旧请求/旧渲染帧对新界面的干扰。
+文本右侧同时显示：来源、文件大小、编码标签、语言、`Full content`、`Truncated - Edit disabled` 或 `Unknown encoding - Edit disabled`。普通对话框宽度为 `1080px`，顶部间距为 `5vh`。关闭后会重置对话框状态与异步加载序号，以减少旧请求/旧渲染帧对新界面的干扰。
 
 这套 UI 没有实现文件编辑的多用户协同、服务器冲突合并、自动保存、版本树或差异比较；保存是**覆盖当前目标内容**的请求。因此当外部程序也在写同一文件时，应在保存前重新核对其状态。Reload 是主动获取最新内容，但不是自动冲突检测或安全的三方合并。
 
@@ -98,7 +100,7 @@ Web 使用 `monaco-editor` 的 ESM 编辑器 API，在组件内部建立/复用 
 
 ### 远程文件与 Artifact 的保存语义不同
 
-**Remote Files** 预览经 Server 缓存，保存却走远端命令链：`remote-files/save` → `save_file_content` → Client FileSystemService 以指定编码打开**已经存在的原路径**并写入完整内容；目标为目录会拒绝。该路径没有与预览时文件内容绑定的 ETag、修改时间校验或自动冲突保护。保存也不自动为原文件建立备份。
+**Remote Files** 预览经 Server 缓存，保存却走远端命令链：`remote-files/save` → `save_file_content` → Client FileSystemService 根据文件真实编码验证后，将完整编码好的字节写入**已经存在的原路径**；目标为目录会拒绝。该路径没有与预览时文件内容绑定的 ETag、修改时间校验或自动冲突保护。保存也不自动为原文件建立备份。
 
 **Artifact** 则把内容写进 `artifact_id` 对应的 Server 文件，并尝试更新 Artifact 元数据的大小和更新时间；它不会同步最初的 Client 文件，也不意味着创建新的 Artifact ID。对于不属于文本的 Artifact，服务端会拒绝内容编辑。`previews` 分类的临时内容即使被改动，也可能在后续缓存清理中消失。
 
@@ -114,15 +116,25 @@ Background Job 生成的文件附件可能也提供 Preview，但它的 `preview
 
 External Tools 的 Metadata 编辑直接以 JSON 文本打开共用 Monaco，保存时调用专门的 Metadata 内容 API，并在成功后通知 External Tools 列表更新。它不同于 External Tools 的 **Preview Command**：后者只是展示即将启动的命令参数，不是文件内容编辑器。更完整的 Metadata 结构及启动规则见 [External Tools](external_tools.md)。
 
-## 五、编码：当前是 UTF-8 工作流，不是编码选择器
+## 五、编码：确定性识别、未知只读、按原编码写回
 
-目前前端工具栏的编码标签来自 `detectEncoding(text)`，它是对 **已解码 JavaScript 字符串**做非常有限的判断：空值、含中文字、普通内容都返回 `UTF-8`；遇到开头的 Unicode BOM 字符才显示 `UTF-8 with BOM`。它**并没有检测原始文件中的 GBK、GB18030、Shift-JIS 或其他编码，也没有让用户切换编码的控件**。
+无需第三方编码检测库，也没有自动猜测编码或编码选择器。普通 Remote Files 和 Artifact 文本预览由 Server 基于**文件原始字节**识别，采用 Python 标准库严格解码：
 
-读取一般先经过 Server 的 UTF-8 解码，遇到不合法字节使用 `errors='replace'`。这意味着一个非 UTF-8 文件可能被显示为乱码或替换字符，而不是可靠识别出正确编码。因此，“UI 标签写 UTF-8”不能证明源文件最初就是 UTF-8。
+| 字节格式 | 预览响应 `encoding` | 编辑与保存 |
+| --- | --- | --- |
+| 严格合法 UTF-8（包括 ASCII） | `utf-8` | 可编辑；以 UTF-8 写回 |
+| UTF-8 BOM (`EF BB BF`) | `utf-8-sig` | 可编辑；写回保留 BOM |
+| UTF-16 LE BOM (`FF FE`) | `utf-16-le` | 可编辑；写回保留原字节序与 BOM |
+| UTF-16 BE BOM (`FE FF`) | `utf-16-be` | 可编辑；写回保留原字节序与 BOM |
+| 无法严格解码、无 BOM 的其他编码、明显二进制内容 | `unknown` | 仅供只读预览，不显示 Edit |
 
-当前前端远程保存请求显式发送 `encoding: 'utf-8'`；新建 Shared File 的 Blob 也是 `text/plain;charset=utf-8`；Script 和 Job 的下载/保存走文本接口。Artifact 保存请求带 `encoding` 参数，Server 层也可接收编码，但**用户界面并没有可操作的编码选择流程**，不能把后端参数等同于完整的多编码编辑功能。
+无 BOM 的 UTF-16 不进行猜测；GBK、Shift-JIS 等编码不进行自动转换。仅包含 ASCII 字节的文件天然也满足 UTF-8 严格解码，无法从原始字节唯一证明它采用哪种单字节编码。截断预览即使编码确定，`editable` 也必定是 `false`。
 
-如果以后支持“按文件编码选择”，合理的扩展位置是：读取阶段保留原始字节或可靠编码元数据 → 可见编码选择与重解码 → 根据实际编码写回 → 保存前警告无效字符和可能的有损转换。**这是未来扩展方向，不是当前已经实现的功能**。特别是预览先以替换字符解码的文件，不能只改保存参数就认为可以恢复原始字节。
+Server 在预览响应中返回 `content`、`encoding` 和 `editable`；Web 的 Monaco 只消费 Unicode 字符串，编码标签取自服务端 codec，而不再根据字符串内容猜测。未知编码预览可能含 `�`，但其 `editable=false`，用户不能从 UI 启动 Edit。
+
+**保存仍使用既有两个 API，不新增转换端点。** Web 把确定的 codec 传给 Artifact 或 Remote Files 保存；真正写文件的 Server/Client 端重新检查**当前目标文件**是否仍可严格解码且 codec 一致，再将全部内容编码为字节，成功后才打开目标进行覆盖。编码不匹配、编码失败、未知编码和无法表示的字符均直接报错，文件不会因编码错误被截断，也不会隐式回退为 UTF-8。普通的磁盘写入中断和两个编辑者间的内容冲突，仍不属于这次编码安全保护所能解决的范围。
+
+新建 Shared Files、Script Library、Background Jobs 模块源码和 External Tools Metadata 继续沿用各自明确的 UTF-8 文本协议，不增加编码选择。
 
 ## 六、图片预览：和文本共用窗口，但不是 Monaco
 
@@ -138,8 +150,8 @@ External Tools 的 Metadata 编辑直接以 JSON 文本打开共用 Monaco，保
 ## 七、错误处理和维护者检查点
 
 - **预览不是原始文件锁定**：Client 文件在 Preview 与 Save 之间可能被修改或删除；远程保存必须由目标 Client 当前权限和路径状态决定。预览缓存不自动证明文件仍同一版本。
-- **只对完整文本开放编辑是必要条件，但非充分条件**：`truncated=false` 不代表内容一定是无损解码、保存目标一定存在，或该来源具有可用写入权限。
-- **截断发生在字节层**：200 KiB 限额可能切在 UTF-8 多字节序列中。显示的后缀不是原文件内容，不能拿它与编辑器文本一起覆盖原文件。
+- **只对完整且可无损解码的文本开放编辑**：`truncated=false` 不代表 `editable=true`；保存端仍必须校验原文件 codec、存在性和权限。
+- **截断发生在字节层**：200 KiB 限额可能切在 UTF-8 或 UTF-16 多字节序列中。显示的后缀不是原文件内容，不能拿它与编辑器文本一起覆盖原文件。
 - **Source 决定业务语义**：新接入 Preview 的功能应显式选择数据来源和保存策略；如果只是只读附件，不应假设通用的 Edit 按钮自然提供回写能力。
 - **下载与预览不同**：Download 返回原文件或打包数据，Preview 尽量生成可展示的结构化数据与缓存，两者有不同的大小和生命周期边界。
 - **功能名 Preview 有多个含义**：命令执行前的审批 Preview、压缩包 Peek、Daemon Preview Command、图像预览和 Monaco 文件预览不能混为一条接口链路。

@@ -2,6 +2,8 @@ import mimetypes
 import os
 from fractions import Fraction
 
+from core.utils.text_encoding import preview_text_bytes
+
 
 class ArtifactPreviewService:
     """
@@ -152,7 +154,8 @@ class ArtifactPreviewService:
                 raw = raw[:self.artifact_service.MAX_PREVIEW_TEXT_BYTES]
                 truncated = True
 
-            text = raw.decode('utf-8', errors='replace')
+            decoded = preview_text_bytes(raw)
+            text = decoded['content']
             if truncated:
                 text += '\n\n...(已截断)'
 
@@ -160,6 +163,8 @@ class ArtifactPreviewService:
                 'type': 'text',
                 'name': os.path.basename(display_name),
                 'content': text,
+                'encoding': decoded['encoding'],
+                'editable': decoded['editable'] and not truncated,
                 'truncated': truncated,
                 'artifact_id': artifact.get('artifact_id', ''),
             }

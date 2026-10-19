@@ -33,7 +33,7 @@
 
 
             <el-button
-                v-if="!previewEditMode && !previewTruncated"
+                v-if="!previewEditMode && !previewTruncated && previewEditable"
                 size="small"
                 type="primary"
                 @click="enterEditMode"
@@ -151,6 +151,14 @@
                   type="danger"
               >
                 Truncated - Edit disabled
+              </el-tag>
+
+              <el-tag
+                  v-else-if="!previewEditable"
+                  size="small"
+                  type="warning"
+              >
+                Unknown encoding - Edit disabled
               </el-tag>
 
               <el-tag
@@ -338,6 +346,8 @@ export default {
       previewRemoteClientId: '',  // Remote Files 预览固定使用打开时的目标设备
       previewOriginalContent: '',  // 原始内容副本（用于取消编辑时恢复）
       previewTruncated: false,     // 是否被截断
+      previewEditable: true,       // 文件解码是否无损可编辑
+      previewFileCodec: 'utf-8',   // 服务端确认的写回编码（与显示标签分离）
       previewFileSize: '',         // 文件大小显示
       previewFileEncoding: 'UTF-8', // 文件编码
       previewSource: '',  // 'remote_file' 或 'artifact'
@@ -666,6 +676,7 @@ export default {
     },
 
     enterEditMode() {
+      if (this.previewTruncated || !this.previewEditable) return
       this.previewOriginalContent = this.previewText
       this.previewEditMode = true
       // 切换编辑器为可编辑模式
@@ -731,6 +742,7 @@ export default {
             body: JSON.stringify({path: row.path}),
           }),
           row.name || 'File Preview',
+          clientId,
       )
 
       // 重置编辑模式
@@ -781,6 +793,11 @@ export default {
     },
 
     async saveEditedContent() {
+      if ((this.previewSource === 'remote_file' || this.previewSource === 'artifact') &&
+          (this.previewTruncated || !this.previewEditable)) {
+        ElMessage.warning('Editing is disabled for this file')
+        return
+      }
       const currentContent = this.getMonacoEditorContent()
 
       // 根据来源选择不同的保存方式
@@ -924,7 +941,7 @@ export default {
           body: JSON.stringify({
             path: this.previewFilePath,
             content,
-            encoding: 'utf-8',
+            encoding: this.previewFileCodec,
           }),
         })
 
@@ -1026,7 +1043,7 @@ export default {
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({
             content,
-            encoding: this.previewFileEncoding || 'utf-8',
+            encoding: this.previewFileCodec,
           }),
         })
 
@@ -1063,10 +1080,11 @@ export default {
       }
     },
 
-    async loadPreviewPayload(fetcher, fallbackTitle = 'File Preview') {
+    async loadPreviewPayload(fetcher, fallbackTitle = 'File Preview', remoteClientId = '') {
       this.previewDialogVisible = true
       this.previewLoading = true
       this.resetPreviewState()
+      this.previewRemoteClientId = remoteClientId
       this.previewEditMode = false
       this.previewSaving = false
       this.previewOriginalContent = ''
@@ -1091,9 +1109,11 @@ export default {
         } else if (this.previewType === 'text') {
           this.previewText = data.content || ''
           this.previewTruncated = data.truncated || false
+          this.previewEditable = data.editable === true && !this.previewTruncated
+          this.previewFileCodec = data.encoding || 'unknown'
           this.previewOriginalContent = this.previewText
           this.previewFileSize = formatBytes(data.size || this.previewText.length)
-          this.previewFileEncoding = this.detectEncoding(this.previewText)
+          this.previewFileEncoding = this.getEncodingDisplayName(this.previewFileCodec)
           this.previewDetectedLanguage = this.getLanguageDisplayName(this.getLanguageFromFilename(this.previewTitle))
 
           // 等待 DOM 渲染完成后初始化编辑器
@@ -1109,22 +1129,15 @@ export default {
       }
     },
 
-    detectEncoding(text) {
-      // 简单的编码检测
-      if (!text) return 'UTF-8'
-
-      // 检测是否包含常见的中文字符
-      if (/[\u4e00-\u9fa5]/.test(text)) {
-        // 简单判断：如果内容看起来正常，就是 UTF-8
-        return 'UTF-8'
+    getEncodingDisplayName(codec) {
+      const names = {
+        'utf-8': 'UTF-8',
+        'utf-8-sig': 'UTF-8 with BOM',
+        'utf-16-le': 'UTF-16 LE with BOM',
+        'utf-16-be': 'UTF-16 BE with BOM',
+        'unknown': 'Unknown encoding',
       }
-
-      // 检测是否包含 BOM
-      if (text.charCodeAt(0) === 0xFEFF) {
-        return 'UTF-8 with BOM'
-      }
-
-      return 'UTF-8'
+      return names[codec] || 'Unknown encoding'
     },
 
 
@@ -1279,6 +1292,8 @@ print(value)
       this.previewTruncated = false
       this.previewFileSize = formatBytes(content.length)
       this.previewFileEncoding = 'UTF-8'
+      this.previewFileCodec = 'utf-8'
+      this.previewEditable = true
       this.previewDetectedLanguage = this.getLanguageDisplayName(this.getLanguageFromFilename(this.previewTitle))
 
       this.previewEditMode = true
@@ -1334,6 +1349,8 @@ print(value)
         this.previewTruncated = false
         this.previewFileSize = formatBytes(data.size || content.length)
         this.previewFileEncoding = 'UTF-8'
+        this.previewFileCodec = 'utf-8'
+        this.previewEditable = true
         this.previewDetectedLanguage = 'JSON'
 
         this.previewEditMode = true
@@ -1372,6 +1389,8 @@ print(value)
       this.previewTruncated = false
       this.previewFileSize = formatBytes(content.length)
       this.previewFileEncoding = 'UTF-8'
+      this.previewFileCodec = 'utf-8'
+      this.previewEditable = true
       this.previewEditMode = true
       this.previewDialogVisible = true
 
@@ -1398,6 +1417,8 @@ print(value)
       this.previewTruncated = false
       this.previewFileSize = formatBytes(content.length)
       this.previewFileEncoding = 'UTF-8'
+      this.previewFileCodec = 'utf-8'
+      this.previewEditable = true
       this.previewDetectedLanguage = this.getLanguageDisplayName(this.getLanguageFromFilename(this.previewTitle))
 
       this.previewEditMode = true
@@ -1439,6 +1460,8 @@ print(value)
         this.previewTruncated = false
         this.previewFileSize = formatBytes(content.length)
         this.previewFileEncoding = 'UTF-8'
+        this.previewFileCodec = 'utf-8'
+        this.previewEditable = true
         this.previewDetectedLanguage = this.getLanguageDisplayName(this.getLanguageFromFilename(this.previewTitle))
 
         this.previewEditMode = true
@@ -1480,6 +1503,8 @@ print(value)
         this.previewTruncated = false
         this.previewFileSize = formatBytes(content.length)
         this.previewFileEncoding = 'UTF-8'
+        this.previewFileCodec = 'utf-8'
+        this.previewEditable = true
         this.previewDetectedLanguage = this.getLanguageDisplayName(this.getLanguageFromFilename(this.previewTitle))
 
         this.previewEditMode = true
@@ -1707,6 +1732,7 @@ print(value)
           size: data.size,
           truncated: data.truncated,
           encoding: data.encoding,
+          editable: data.editable,
         })
 
         ElMessage.success('File reloaded')
@@ -1761,7 +1787,8 @@ print(value)
           name: this.previewTitle || this.previewFilePath,
           size: content.length,
           truncated: false,
-          encoding: 'UTF-8',
+          encoding: 'utf-8',
+          editable: true,
         }
       }
 
@@ -1783,7 +1810,8 @@ print(value)
           name: this.previewTitle || this.previewFilePath,
           size: content.length,
           truncated: false,
-          encoding: 'UTF-8',
+          encoding: 'utf-8',
+          editable: true,
         }
       }
 
@@ -1800,7 +1828,8 @@ print(value)
           name: data.name || this.previewTitle || `${this.previewFilePath}.json`,
           size: data.size || content.length,
           truncated: false,
-          encoding: 'UTF-8',
+          encoding: 'utf-8',
+          editable: true,
         }
       }
 
@@ -1829,7 +1858,8 @@ print(value)
         name: data.name || this.previewTitle,
         size: data.size,
         truncated: data.truncated || false,
-        encoding: data.encoding || '',
+        encoding: data.encoding || 'unknown',
+        editable: data.editable === true,
       }
     },
 
@@ -1839,13 +1869,15 @@ print(value)
       this.previewText = content
       this.previewOriginalContent = content
       this.previewTruncated = payload.truncated || false
+      this.previewEditable = payload.editable === true && !this.previewTruncated
+      this.previewFileCodec = payload.encoding || 'unknown'
 
       if (payload.name) {
         this.previewTitle = payload.name
       }
 
       this.previewFileSize = formatBytes(payload.size || content.length)
-      this.previewFileEncoding = payload.encoding || this.detectEncoding(content)
+      this.previewFileEncoding = this.getEncodingDisplayName(this.previewFileCodec)
       this.previewDetectedLanguage = this.getLanguageDisplayName(this.getLanguageFromFilename(this.previewTitle))
 
       const editor = getPreviewMonacoEditor(this)
@@ -1861,7 +1893,7 @@ print(value)
           editor.setValue(content)
         }
 
-        editor.updateOptions({readOnly: false})
+        editor.updateOptions({readOnly: !this.previewEditable})
 
         if (typeof editor.setPosition === 'function') {
           editor.setPosition({lineNumber: 1, column: 1})
@@ -1869,10 +1901,10 @@ print(value)
 
         editor.focus()
       } else {
-        this.initMonacoEditor(content, false)
+        this.initMonacoEditor(content, !this.previewEditable)
       }
 
-      this.previewEditMode = true
+      this.previewEditMode = this.previewEditable
     },
 
 
@@ -1883,6 +1915,10 @@ print(value)
       this.previewUrl = ''
       this.previewText = ''
       this.previewOriginalContent = ''
+      this.previewTruncated = false
+      this.previewEditable = true
+      this.previewFileCodec = 'utf-8'
+      this.previewFileEncoding = 'UTF-8'
       this.previewRemoteClientId = ''
       this.previewEditMode = false
       this.previewSaving = false

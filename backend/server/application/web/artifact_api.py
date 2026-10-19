@@ -2,6 +2,8 @@ import json
 import os
 from datetime import datetime
 
+from core.utils.text_encoding import encode_for_existing_file
+
 
 class WebArtifactApi:
     def __init__(self, server, event_bus, artifact_service, command_execution_api=None):
@@ -223,13 +225,11 @@ class WebArtifactApi:
         preview_type = self.artifact_service.guess_preview_type(artifact.get('original_name', ''))
         if preview_type != 'text':
             raise ValueError('Only text files can be edited')
-        try:
-            with open(file_path, 'w', encoding=encoding) as f:
-                f.write(content)
-        except UnicodeEncodeError:
-            with open(file_path, 'w', encoding='utf-8') as f:
-                f.write(content)
-            encoding = 'utf-8'
+        with open(file_path, 'rb') as f:
+            original_bytes = f.read()
+        encoded_bytes = encode_for_existing_file(content, encoding, original_bytes)
+        with open(file_path, 'wb') as f:
+            f.write(encoded_bytes)
         file_size = os.path.getsize(file_path)
         meta_path = artifact.get('_meta_path', '')
         if meta_path and os.path.isfile(meta_path):

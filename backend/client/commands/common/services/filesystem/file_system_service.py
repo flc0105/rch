@@ -4,6 +4,7 @@ import stat as stat_module
 import time
 
 from client.commands.common.services.filesystem.path_resolver import PathResolver
+from core.utils.text_encoding import encode_for_existing_file
 
 
 class FileSystemService:
@@ -344,14 +345,11 @@ class FileSystemService:
         if os.path.isdir(target_path):
             raise IsADirectoryError(f'Cannot write to directory: {target_path}')
 
-        try:
-            with open(target_path, 'w', encoding=encoding) as f:
-                f.write(content)
-        except UnicodeEncodeError:
-            # 如果指定编码失败，尝试 utf-8
-            with open(target_path, 'w', encoding='utf-8') as f:
-                f.write(content)
-            encoding = 'utf-8'
+        with open(target_path, 'rb') as f:
+            original_bytes = f.read()
+        encoded_bytes = encode_for_existing_file(content, encoding, original_bytes)
+        with open(target_path, 'wb') as f:
+            f.write(encoded_bytes)
 
         file_size = os.path.getsize(target_path)
         return target_path, file_size, encoding
