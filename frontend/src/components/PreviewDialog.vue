@@ -5,8 +5,39 @@
       :width="previewDialogWidth"
       :top="previewDialogTop"
       :class="previewDialogClass"
+      :show-close="false"
       @close="handlePreviewDialogClose"
   >
+    <template #header>
+      <div class="preview-dialog-header">
+        <span class="preview-dialog-title">{{ previewTitle || 'File Preview' }}</span>
+        <div class="preview-header-actions">
+          <el-tooltip
+              v-if="previewType === 'text'"
+              :content="previewFullscreen ? 'Exit Fullscreen' : 'Fullscreen'"
+              placement="bottom"
+          >
+            <button
+                type="button"
+                class="preview-header-action"
+                :aria-label="previewFullscreen ? 'Exit Fullscreen' : 'Fullscreen'"
+                @click="togglePreviewFullscreen"
+            >
+              <el-icon><FullScreen /></el-icon>
+            </button>
+          </el-tooltip>
+          <button
+              type="button"
+              class="preview-header-action"
+              aria-label="Close"
+              title="Close"
+              @click="previewDialogVisible = false"
+          >
+            <el-icon><Close /></el-icon>
+          </button>
+        </div>
+      </div>
+    </template>
     <div
         v-loading="previewLoading"
         class="preview-wrap"
@@ -52,30 +83,21 @@
                 Save
               </el-button>
 
-              <el-button
-                  size="small"
-                  @click="pastePreviewText"
-              >
-                Paste
-              </el-button>
-
-              <el-button
-                  size="small"
-                  type="danger"
-                  plain
-                  @click="clearPreviewContent"
-              >
-                Clear
-              </el-button>
-
-              <el-button
-                  size="small"
-                  :loading="previewReloading"
-                  :disabled="previewSaving"
-                  @click="reloadPreviewContent"
-              >
-                Reload
-              </el-button>
+              <el-dropdown trigger="click" @command="handlePreviewMoreCommand">
+                <el-button size="small">More</el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item command="paste">Paste</el-dropdown-item>
+                    <el-dropdown-item command="clear">Clear</el-dropdown-item>
+                    <el-dropdown-item
+                        command="reload"
+                        :disabled="previewSaving || previewReloading"
+                    >
+                      Reload
+                    </el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
 
 
               <el-button
@@ -87,13 +109,6 @@
 
 
             </template>
-            <el-button
-                size="small"
-                class="preview-fullscreen-toggle"
-                @click="togglePreviewFullscreen"
-            >
-              {{ previewFullscreen ? 'Exit Fullscreen' : 'Fullscreen' }}
-            </el-button>
           </template>
 
           <template v-if="previewType === 'image' && previewUrl">
@@ -133,7 +148,7 @@
 
               <el-tag
                   size="small"
-                  type="info"
+                  :type="previewFileCodec === 'unknown' ? 'warning' : 'info'"
               >
                 {{ previewFileEncoding }}
               </el-tag>
@@ -150,23 +165,7 @@
                   size="small"
                   type="danger"
               >
-                Truncated - Edit disabled
-              </el-tag>
-
-              <el-tag
-                  v-else-if="!previewEditable"
-                  size="small"
-                  type="warning"
-              >
-                Unknown encoding - Edit disabled
-              </el-tag>
-
-              <el-tag
-                  v-else
-                  size="small"
-                  type="success"
-              >
-                Full content
+                Truncated
               </el-tag>
             </div>
           </template>
@@ -214,6 +213,7 @@
 
 <script>
 import {ElMessage} from 'element-plus'
+import {Close, FullScreen} from '@element-plus/icons-vue'
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api'
 import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker'
 import JsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker'
@@ -308,6 +308,8 @@ export default {
 
   components: {
     PreviewImageInfoDialog,
+    Close,
+    FullScreen,
   },
 
   props: {
@@ -418,6 +420,12 @@ export default {
   },
 
   methods: {
+    handlePreviewMoreCommand(command) {
+      if (command === 'paste') this.pastePreviewText()
+      else if (command === 'clear') this.clearPreviewContent()
+      else if (command === 'reload') this.reloadPreviewContent()
+    },
+
     handlePreviewDialogClose() {
       this.previewLoadSeq += 1
       this.monacoInitSeq += 1
@@ -1934,6 +1942,56 @@ print(value)
 
 <style scoped>
 /* ========== 文件预览 ========== */
+.preview-dialog-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.preview-dialog-title {
+  color: var(--el-text-color-primary);
+  font-size: var(--el-dialog-title-font-size);
+  line-height: var(--el-dialog-font-line-height);
+}
+
+.preview-header-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.preview-header-action {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--el-color-info);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.preview-header-action:hover,
+.preview-header-action:focus-visible {
+  color: var(--el-color-primary);
+  background: var(--el-fill-color-light);
+  outline: none;
+}
+
+.preview-header-action .el-icon {
+  width: 18px;
+  height: 18px;
+}
+
 .preview-wrap {
   min-height: 280px;
   height: 100%;
@@ -1971,7 +2029,7 @@ print(value)
 
 .preview-toolbar-left {
   display: flex;
-  /*gap: 4px;*/
+  gap: 8px;
   align-items: center;
   flex-wrap: wrap;
 }
@@ -2003,7 +2061,9 @@ print(value)
   font-size: 14px;
 }
 
+/* Element Plus only spaces adjacent buttons; flex gap also covers dropdowns. */
 .preview-toolbar-left :deep(.el-button) {
+  margin-left: 0;
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -2036,10 +2096,6 @@ print(value)
   border-radius: 12px;
 }
 
-.preview-fullscreen-toggle {
-  display: inline-flex;
-}
-
 @media (max-width: 768px), (max-height: 720px) {
   .preview-toolbar {
     flex-direction: column;
@@ -2052,10 +2108,6 @@ print(value)
   .preview-toolbar-left,
   .preview-toolbar-right {
     width: 100%;
-  }
-
-  .preview-fullscreen-toggle {
-    display: none !important;
   }
 
   .preview-info-tags {

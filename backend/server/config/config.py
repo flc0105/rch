@@ -75,7 +75,7 @@ KEYCHAINS_ROOT_DIR = os.path.join(SERVER_RUNTIME_DIR, 'keychains')
 
 # ------------------ web files ------------------ #
 WEB_FILES_ROOT_DIR = os.path.join(SERVER_RUNTIME_DIR, 'web_files')
-WEB_PREVIEW_TEXT_MAX_BYTES = 200 * 1024
+WEB_PREVIEW_TEXT_MAX_BYTES = 512 * 1024
 WEB_HTTP_UPLOAD_MAX_BYTES = 10 * 1024 * 1024 * 1024  # 10GB
 WEB_PUBLIC_BASE_URL = f'http://127.0.0.1:{WEB_PORT}'
 

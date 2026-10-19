@@ -41,7 +41,7 @@ Artifact 对象可能从普通文件列表、终端运行结果、通知动作�
 - `truncated` 和 `editable` 共同决定 Edit 是否可用：内容必须完整且能严格无损解码。`encoding` 由 Server 对原始字节判断，并用于原编码写回。
 - `image` 类型改为读取 `url`，如果附带 `image_info` 则允许打开图片信息弹窗；`unsupported` 不会偷偷尝试用 Monaco 打开二进制内容。
 
-对普通 Artifact 文本，`ArtifactPreviewService.build_preview_payload()` 根据文件扩展名和 MIME 推断预览类型；它只从磁盘读取前 **200 KiB（204,800 字节）**。超过后设置 `truncated=true`，并在可见文本后补上截断提示，避免超大文本直接进入浏览器。
+对普通 Artifact 文本，`ArtifactPreviewService.build_preview_payload()` 根据文件扩展名和 MIME 推断预览类型；它最多向浏览器发送前 **200 KiB（204,800 字节）**的完整字符文本；编码校验使用增量解码器流式检查**整份文件**，所以即使截断边界落在 UTF-8 多字节序列或 UTF-16 字符中间，也不会错误地显示 `unknown`。超过预览限额设置 `truncated=true`，并在可见文本后补上截断提示，避免超大文本直接进入浏览器。
 
 读取先尝试严格识别 UTF-8、UTF-8 BOM 和带 BOM 的 UTF-16 LE/BE，只有解码成功且不含明显二进制控制字符、内容未截断时才允许编辑。未知编码文件仍可用替换字符进行**只读**预览；替换后的文本绝不能保存。200 KiB 的预览截断发生于字节层，因此即使编码可识别，截断内容也不可编辑。
 
@@ -69,7 +69,7 @@ Web 使用 `monaco-editor` 的 ESM 编辑器 API，在组件内部建立/复用 
 
 ### 只读 Preview、Edit 与 Save
 
-普通文本的工具栏显示 **Copy、Edit、Fullscreen**（Edit 仅在可无损编辑时出现）；未知编码或截断内容只有 Copy、Fullscreen。选择 Edit 后切换为 **Save、Paste、Clear、Reload、Cancel、Fullscreen**。这些按钮的含义如下：
+普通文本的工具栏显示 **Copy、Edit**（Edit 仅在可无损编辑时出现），未知编码或截断内容只有 Copy。全屏图标在右上角标题栏关闭按钮旁边，与 Screen View 一致。选择 Edit 后切换为 **Save、More、Cancel**；Paste、Clear、Reload 在 More 下拉菜单里。它们的含义如下：
 
 | 操作 | 实际行为或限制 |
 | --- | --- |
@@ -80,9 +80,9 @@ Web 使用 `monaco-editor` 的 ESM 编辑器 API，在组件内部建立/复用 
 | **Clear** | 仅编辑模式；把当前编辑器内容清空，此时尚未写入磁盘。 |
 | **Reload** | 仅编辑模式、未正在保存时重新请求当前来源，更新 Monaco 模型和原始内容快照；**尚未保存的修改会被替换**。新建而未保存的 Shared File 不支持 Reload。 |
 | **Cancel** | 将编辑器恢复到上一次装载/保存时的 `previewOriginalContent`，结束本轮编辑，不向后台写入。 |
-| **Fullscreen / Exit Fullscreen** | 调整 Dialog 为 `100vw`、`top=0` 的全屏样式并重新布局 Monaco；**不是浏览器原生 Fullscreen API**。 |
+| **Fullscreen / Exit Fullscreen** | 标题栏图标（紧邻 Close）；调整 Dialog 为 `100vw`、`top=0` 的全屏样式并重新布局 Monaco；**不是浏览器原生 Fullscreen API**。 |
 
-文本右侧同时显示：来源、文件大小、编码标签、语言、`Full content`、`Truncated - Edit disabled` 或 `Unknown encoding - Edit disabled`。普通对话框宽度为 `1080px`，顶部间距为 `5vh`。关闭后会重置对话框状态与异步加载序号，以减少旧请求/旧渲染帧对新界面的干扰。
+文本右侧显示来源、文件大小、编码标签、语言；仅在截断时额外显示 `Truncated`，未截断不额外显示 `Full content`。无法识别编码只通过原编码标签 `Unknown encoding` 的警告色表示，不另加禁用编辑提示。普通对话框宽度为 `1080px`，顶部间距为 `5vh`。关闭后会重置对话框状态与异步加载序号，以减少旧请求/旧渲染帧对新界面的干扰。
 
 这套 UI 没有实现文件编辑的多用户协同、服务器冲突合并、自动保存、版本树或差异比较；保存是**覆盖当前目标内容**的请求。因此当外部程序也在写同一文件时，应在保存前重新核对其状态。Reload 是主动获取最新内容，但不是自动冲突检测或安全的三方合并。
 
@@ -151,7 +151,7 @@ Server 在预览响应中返回 `content`、`encoding` 和 `editable`；Web 的 
 
 - **预览不是原始文件锁定**：Client 文件在 Preview 与 Save 之间可能被修改或删除；远程保存必须由目标 Client 当前权限和路径状态决定。预览缓存不自动证明文件仍同一版本。
 - **只对完整且可无损解码的文本开放编辑**：`truncated=false` 不代表 `editable=true`；保存端仍必须校验原文件 codec、存在性和权限。
-- **截断发生在字节层**：200 KiB 限额可能切在 UTF-8 或 UTF-16 多字节序列中。显示的后缀不是原文件内容，不能拿它与编辑器文本一起覆盖原文件。
+- **截断发生在字节层**：200 KiB 限额可能切在 UTF-8 或 UTF-16 多字节序列中；增量解码会丢弃显示边界尚未完成的字符，完整文件独立流式验证以确定真实编码。显示的后缀不是原文件内容，不能拿它与编辑器文本一起覆盖原文件。
 - **Source 决定业务语义**：新接入 Preview 的功能应显式选择数据来源和保存策略；如果只是只读附件，不应假设通用的 Edit 按钮自然提供回写能力。
 - **下载与预览不同**：Download 返回原文件或打包数据，Preview 尽量生成可展示的结构化数据与缓存，两者有不同的大小和生命周期边界。
 - **功能名 Preview 有多个含义**：命令执行前的审批 Preview、压缩包 Peek、Daemon Preview Command、图像预览和 Monaco 文件预览不能混为一条接口链路。

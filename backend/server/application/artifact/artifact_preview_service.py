@@ -2,7 +2,7 @@ import mimetypes
 import os
 from fractions import Fraction
 
-from core.utils.text_encoding import preview_text_bytes
+from core.utils.text_encoding import preview_text_file
 
 
 class ArtifactPreviewService:
@@ -145,18 +145,10 @@ class ArtifactPreviewService:
             }
 
         if preview_type == 'text':
-            truncated = False
-
             with open(file_path, 'rb') as file_obj:
-                raw = file_obj.read(self.artifact_service.MAX_PREVIEW_TEXT_BYTES + 1)
-
-            if len(raw) > self.artifact_service.MAX_PREVIEW_TEXT_BYTES:
-                raw = raw[:self.artifact_service.MAX_PREVIEW_TEXT_BYTES]
-                truncated = True
-
-            decoded = preview_text_bytes(raw)
+                decoded = preview_text_file(file_obj, self.artifact_service.MAX_PREVIEW_TEXT_BYTES)
             text = decoded['content']
-            if truncated:
+            if decoded['truncated']:
                 text += '\n\n...(已截断)'
 
             return {
@@ -164,8 +156,8 @@ class ArtifactPreviewService:
                 'name': os.path.basename(display_name),
                 'content': text,
                 'encoding': decoded['encoding'],
-                'editable': decoded['editable'] and not truncated,
-                'truncated': truncated,
+                'editable': decoded['editable'],
+                'truncated': decoded['truncated'],
                 'artifact_id': artifact.get('artifact_id', ''),
             }
 
