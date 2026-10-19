@@ -67,9 +67,13 @@ class ClientConnectionLifecycle:
             client_id=self.client.client_id,
             command_executor=self.client.server.runtime.command_executor,
         ).build()
+        if self.client.recovery_source:
+            info['recovery_source'] = self.client.recovery_source
         self.client.info = info
         self.client.server.send(info)
         self.client.server.mark_connected()
+        # The source describes only the first successful startup handshake.
+        self.client.recovery_source = ''
         logger.info('Connected')
 
     def handle_connection_lost(self):

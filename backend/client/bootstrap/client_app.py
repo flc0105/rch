@@ -7,6 +7,7 @@ from client.bootstrap.receiver_worker import ClientReceiverWorker
 from client.config.runtime_config import RECONNECT_INTERVAL_SECONDS
 from client.config.runtime_config_reporter import log_runtime_config_overrides_if_any
 from client.watchdog.client_guard_manager import ClientGuardManager
+from client.watchdog.recovery_source import consume_recovery_source
 from core.utils.logger import logger
 
 
@@ -19,6 +20,7 @@ class Client:
         self.server = None
         self.info = None
         self.process_watchdog_manager = process_watchdog_manager
+        self.recovery_source = consume_recovery_source()
 
         self.receiver_worker = ClientReceiverWorker()
         self.guard_manager = ClientGuardManager(

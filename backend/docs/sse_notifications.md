@@ -66,6 +66,24 @@ WebEventBus 发布时生成一份临时事件对象：
 
 事件总线的订阅队列存储于 Server 进程内存，不是持久化消息队列。断线后的通用 SSE 不会自动重放整个 WebEventBus 历史；需要可靠恢复时，必须依赖专门持久化的数据模型。
 
+## Watchdog 恢复后的上线通知
+
+仍然使用原有的 `connection_online` 事件和 `connection_online` 通知偏好，不新增事件类型或独立订阅入口。Local Heartbeat Watchdog 检测到心跳过期并拉起新的 Client 时，首次上线事件附带 `recovery_source: "local_watchdog"`；Process Supervisor 检测到 Client PID 消失并拉起新 Client 时，附带 `recovery_source: "process_watchdog"`。Server 只允许这两个已知值进入上线事件；正常启动、Remote HTTP Relaunch 和普通断线重连都不标注恢复来源。
+
+```json
+{
+  "connection": {"client_id": "client-example", "hostname": "workstation"},
+  "recovery_source": "process_watchdog",
+  "time": "<online-event-time>"
+}
+```
+
+前端即时 Toast 与 `NotificationEventProjector` 历史记录均使用原有 **Device Online** 标题。普通上线显示 `workstation is now available`，恢复上线分别追加 ` (recovered by Local Watchdog)` 或 ` (recovered by Process Watchdog)`；通知历史 `context.recovery_source` 仅在已知来源时存在。恢复来源描述实际拉起 Client 的监督者，**不声称确认了崩溃根因**。
+
+该标记随新 Client 的启动环境传递、在 Client 初始化时移出环境，并只用于第一次成功发送的 `info` 握手；以后同进程网络重连不再携带。Server 真正注册连接后才发布上线事件，因此恢复失败、没有上线时不会产生恢复成功通知。Socket 握手没有单独的 Server ACK，若握手已发送却未被 Server 注册，Client 不能获知这一情况；当前实现只保证标记在本地首次成功发送后消费，而非跨网络故障的恰好一次投递。
+
+**本版不支持** Watchdog 在检测到 stale 或进程死亡的当下主动发送故障 SSE，也不增加 Preferences 开关；那是另一个后续功能。
+
 ## 持久化通知的形成
 
 `NotificationEventProjector` 从 WebEventBus 的事件类型中选择符合条件的项目，构造通知记录并写入 SQLite。它处理 Device Event、设备上下线、Artifact、文件传输、Background Job、PTY、ScreenView、External Tool、构建和清理等生命周期事件。

@@ -14,6 +14,7 @@ from uuid import uuid4
 import psutil
 
 from client.watchdog.watchdog_paths import get_watchdog_log_path
+from client.watchdog.recovery_source import RECOVERY_SOURCE_ENV, PROCESS_WATCHDOG
 
 
 _ENV_SESSION = 'RCH_PROCESS_WATCHDOG_SESSION'
@@ -29,7 +30,7 @@ _STABLE_SECONDS = 300
 def without_process_watchdog_environment(source=None):
     """A separately launched Client must receive a NEW supervisor chain."""
     env = dict(os.environ if source is None else source)
-    for key in _ENV_KEYS:
+    for key in (*_ENV_KEYS, RECOVERY_SOURCE_ENV):
         env.pop(key, None)
     return env
 
@@ -302,7 +303,8 @@ def run_process_supervisor(session, parent_pid, parent_started, launch_argv, cwd
                 return
             env = without_process_watchdog_environment()
             env.update({_ENV_SESSION: session, _ENV_PID: str(supervisor_pid),
-                        _ENV_STARTED: repr(supervisor_started)})
+                        _ENV_STARTED: repr(supervisor_started),
+                        RECOVERY_SOURCE_ENV: PROCESS_WATCHDOG})
             try:
                 child = subprocess.Popen(launch_argv, **_detached_kwargs(cwd, env))
                 watched_pid = child.pid

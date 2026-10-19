@@ -12,6 +12,7 @@ from client.watchdog.local_watchdog import (
     LocalWatchdogActionExecutor,
     LocalWatchdogMonitor,
 )
+from client.watchdog.recovery_source import LOCAL_WATCHDOG
 
 
 class ClientWatchdogWorker:
@@ -56,7 +57,9 @@ class ClientWatchdogWorker:
                 heartbeat_file_path=local_watchdog_heartbeat_file_path,
                 timeout_seconds=local_watchdog_timeout_seconds,
                 local_watchdog_log_file_path=local_watchdog_log_file_path,
-                action_executor=LocalWatchdogActionExecutor(self._action_executor.restart_parent_and_exit),
+                action_executor=LocalWatchdogActionExecutor(
+                    lambda: self._action_executor.restart_parent_and_exit(recovery_source=LOCAL_WATCHDOG)
+                ),
             )
 
 

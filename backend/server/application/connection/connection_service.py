@@ -570,13 +570,17 @@ class WebConnectionService:
     # ------------------ event publish ------------------ #
     def publish_connection_online(self, session: ClientSession):
         server_manifest = build_client_revision_manifest(include_parts=False, include_files=False)
-        self.event_bus.publish('connection_online', {
+        payload = {
             'connection': self._decorate_connection_with_device_view_prefs(
                 self.serialize_connection(session),
                 server_manifest=server_manifest,
             ),
             'time': datetime.now().isoformat()
-        })
+        }
+        source = session.get_info_extra('recovery_source', '')
+        if source in ('local_watchdog', 'process_watchdog'):
+            payload['recovery_source'] = source
+        self.event_bus.publish('connection_online', payload)
 
     def publish_connection_offline(self, session: ClientSession):
         self.event_bus.publish('connection_offline', {

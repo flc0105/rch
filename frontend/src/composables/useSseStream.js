@@ -590,15 +590,21 @@ export default {
                 const conn = payload.connection;
                 this.upsertConnection(conn);
 
+                const recoverySource = payload.recovery_source;
+                const recoveryLabel = {
+                    local_watchdog: 'Local Watchdog',
+                    process_watchdog: 'Process Watchdog',
+                }[recoverySource] || '';
                 this.showSseNotification('connection_online', {
                     title: 'Device Online',
-                    message: `${conn.hostname || conn.client_id} is now available`,
+                    message: `${conn.hostname || conn.client_id} is now available${recoveryLabel ? ` (recovered by ${recoveryLabel})` : ''}`,
                     type: 'success'
                 }, {
                     eventId: event.lastEventId,
                     context: {
                         client_id: conn.client_id || '',
                         hostname: conn.hostname || '',
+                        ...(recoveryLabel ? { recovery_source: recoverySource } : {}),
                     },
                 });
             });

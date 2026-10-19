@@ -12,6 +12,7 @@ from client.runtime.client_util import spawn_new_instance, is_process_alive
 from client.watchdog.process_watchdog import (
     stop_process_watchdog_from_environment, without_process_watchdog_environment,
 )
+from client.watchdog.recovery_source import RECOVERY_SOURCE_ENV
 
 HTTP_CONTROL_COMMANDS = {'kill', 'relaunch', 'clone'}
 
@@ -59,13 +60,16 @@ class WatchdogActionExecutor:
             os.kill(self.parent_pid, signal.SIGKILL)
 
 
-    def spawn_restarted_parent(self):
+    def spawn_restarted_parent(self, *, recovery_source=''):
         if not self.parent_launch_argv:
             raise RuntimeError('Missing parent launch argv')
 
+        env = without_process_watchdog_environment()
+        if recovery_source:
+            env[RECOVERY_SOURCE_ENV] = recovery_source
         popen_kwargs = {
             'cwd': self.launch_cwd,
-            'env': without_process_watchdog_environment(),
+            'env': env,
             'stdin': subprocess.DEVNULL,
             'stdout': subprocess.DEVNULL,
             'stderr': subprocess.DEVNULL,
@@ -93,8 +97,11 @@ class WatchdogActionExecutor:
             raise RuntimeError(f'Unsupported os.name: {os.name}')
 
 
-    def restart_parent_and_exit(self):
-        self.spawn_restarted_parent()
+    def restart_parent_and_exit(self, *, recovery_source=''):
+        if recovery_source:
+            self.spawn_restarted_parent(recovery_source=recovery_source)
+        else:
+            self.spawn_restarted_parent()
         time.sleep(0.2)
         stop_process_watchdog_from_environment()
         self.kill_parent_process()

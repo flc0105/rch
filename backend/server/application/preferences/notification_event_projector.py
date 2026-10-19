@@ -124,12 +124,22 @@ class NotificationEventProjector:
         conn = payload.get('connection') if isinstance(payload.get('connection'), dict) else {}
         client_id = str(conn.get('client_id') or '').strip()
         hostname = str(conn.get('hostname') or '').strip()
+        source = payload.get('recovery_source')
+        source_label = {
+            'local_watchdog': 'Local Watchdog',
+            'process_watchdog': 'Process Watchdog',
+        }.get(source, '')
+        message = f'{hostname or client_id or "Unknown device"} is now available'
+        context = {'client_id': client_id, 'hostname': hostname}
+        if source_label:
+            message += f' (recovered by {source_label})'
+            context['recovery_source'] = source
         return self._notification(
             key='connection_online',
             title='Device Online',
-            message=f'{hostname or client_id or "Unknown device"} is now available',
+            message=message,
             type_='success',
-            context={'client_id': client_id, 'hostname': hostname},
+            context=context,
         )
 
     def _build_connection_offline(self, payload):

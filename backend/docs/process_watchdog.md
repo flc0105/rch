@@ -73,3 +73,7 @@ Process Supervisor **不遍历系统全部进程**，也不读取 Local 心跳�
 - 强制进程退出可能导致运行中的 Script/Job 中断；新 Client 是新的进程、`client_id` 与连接会话，不恢复原任务内存状态。
 - 仅在支持独立后台进程和 `psutil` 的桌面平台使用（macOS、Linux、Windows）。iOS/Pythonista 不保证支持。
 - Supervisor 是可靠性手段而不是防篡改沙箱：具有同等本机权限的代码仍可以终止它、修改配置或关闭监督。
+
+## 恢复后上线通知
+
+Supervisor 检测到 Client 进程死亡，按原有退避策略启动下一代 Client 时，仅向子进程传递一次性 `RCH_CLIENT_RECOVERY_SOURCE=process_watchdog`。Client 首次成功握手后，Server 继续发布原有 `connection_online`，对应即时提示与历史记录显示 `recovered by Process Watchdog`。它不负责故障发生时另发 SSE；没有恢复成功上线时也没有新的上线通知。独立启动、普通网络重连、主动退出、更新与 Remote Relaunch 不应被误标为 Process 恢复。

@@ -66,6 +66,12 @@ Python Client 的握手不只是操作系统名称。`ClientInfoBuilder.build()`
 
 真实 Python Client 还会附带其他上述字段。不要将这里的省略值或示例名字视为协议标准值。完整载荷应以当前 Client `ClientInfoBuilder` 组装结果为准。
 
+### Watchdog 复活来源（仅首次握手）
+
+若新 Client 是由 Local Heartbeat Watchdog 或 Process Supervisor 自动拉起，其首次成功发送的 `info` 额外包含 `recovery_source: "local_watchdog"` 或 `"process_watchdog"`。这个值来自创建新进程时携带的一次性环境标记，Client 初始化后即将标记移出环境；首次握手发送成功后，后续同进程连接恢复不会再次携带。Server 只在此次 `connection_online` 事件中显示来源，**不会把它写进持久设备属性或后续 Heartbeat**。普通上线和 Remote HTTP 控制的 Relaunch 不添加该字段。
+
+这份消息仍然不带 Server ACK，因此“首次发送成功”与“Server 完成注册”之间可能存在网络失败窗口；不能把来源标记理解为端到端恰好一次确认。
+
 ## 3. 能力如何被发现和声明
 
 RCH 的能力发现并非 Server 在每次 Web 打开下拉框时扫描 Client 对象。Python Client 在构建握手时，通过其执行器与命令注册体系组装两份独立的 Manifest，并另行采集系统路径。这些信息最终挂在**这一条 ClientSession** 上；不同平台、不同 Client 构建可以提交不同结果。
