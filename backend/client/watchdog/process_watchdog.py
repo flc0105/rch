@@ -38,22 +38,41 @@ def without_process_watchdog_environment(source=None):
 def _process_identity(pid):
     try:
         process = psutil.Process(int(pid))
-        return process.create_time()
-    except (psutil.NoSuchProcess, psutil.AccessDenied, ValueError, OverflowError):
+        # psutil 7.2.2 uses monotonic process start time in _ident on macOS/Linux.
+        # Unlike create_time(), it cannot shift when NTP adjusts the system clock.
+        identity = process._ident[1]
+        return identity if identity else None
+    except (psutil.NoSuchProcess, psutil.AccessDenied, ValueError, OverflowError, OSError):
         return None
 
 
-def _alive(pid, started):
+def _probe_process(pid, started):
+    """Return (alive, reason); uncertain reads never prove a Client is dead."""
     try:
-        process = psutil.Process(int(pid))
-        return (abs(process.create_time() - float(started)) < 0.01
-                and process.is_running() and process.status() != psutil.STATUS_ZOMBIE)
+        pid = int(pid)
+        if pid <= 0:
+            return False, 'invalid watched PID'
+        process = psutil.Process(pid)
+        identity = process._ident[1]
+        if started and identity and identity != float(started):
+            return False, f'PID identity changed: expected={started!r}, actual={identity!r}'
+        if not process.is_running():
+            return False, 'PID not running or reused'
+        if process.status() == psutil.STATUS_ZOMBIE:
+            return False, 'PID is zombie'
+        if not started or not identity:
+            return True, 'PID alive; identity temporarily unavailable'
+        return True, 'PID alive with matching identity'
     except psutil.NoSuchProcess:
-        return False
-    except (psutil.AccessDenied, OSError):
-        # An inaccessible PID is not proof that the process died. Retry probing.
-        return True
+        return False, 'PID no longer exists'
+    except (ValueError, OverflowError):
+        return False, 'invalid watched PID'
+    except (psutil.AccessDenied, OSError) as exc:
+        return True, f'PID probe uncertain ({type(exc).__name__})'
 
+
+def _alive(pid, started):
+    return _probe_process(pid, started)[0]
 
 def _atomic_json(path, payload):
     temp_path = f'{path}.{os.getpid()}.tmp'
@@ -282,16 +301,24 @@ def run_process_supervisor(session, parent_pid, parent_started, launch_argv, cwd
                 _atomic_json(os.path.join(session, 'stopped'), {'pid': supervisor_pid})
                 log.info('intentional stop, watched Client pid=%s', watched_pid)
                 return
+            if watched_started is None and child is not None and child.pid == watched_pid:
+                # A just-spawned child can be briefly unqueryable. Only adopt its
+                # identity while the Popen handle still identifies a live child.
+                if child.poll() is None:
+                    watched_started = _process_identity(watched_pid)
             if _alive(watched_pid, watched_started):
                 time.sleep(_POLL_INTERVAL)
                 continue
-            if child is not None:
-                child.poll()  # Reap the last subprocess; avoid accumulating zombies.
+            alive, reason = _probe_process(watched_pid, watched_started)
+            if alive:
+                # A failed probe must be reproducible before beginning recovery.
+                time.sleep(_POLL_INTERVAL)
+                continue
             uptime = time.monotonic() - running_since
-            failures = 1 if uptime >= _STABLE_SECONDS else failures + 1
-            delay = _RETRY_DELAYS[min(failures - 1, len(_RETRY_DELAYS) - 1)]
-            log.warning('Client pid=%s disappeared after %.1fs; retry in %ss (failure %s)',
-                        watched_pid, uptime, delay, failures)
+            next_failures = 1 if uptime >= _STABLE_SECONDS else failures + 1
+            delay = _RETRY_DELAYS[min(next_failures - 1, len(_RETRY_DELAYS) - 1)]
+            log.warning('Client pid=%s appears gone (%s) after %.1fs; verify again in %ss (failure %s)',
+                        watched_pid, reason, uptime, delay, next_failures)
             deadline = time.monotonic() + delay
             while time.monotonic() < deadline:
                 if os.path.exists(os.path.join(session, 'stop')):
@@ -301,6 +328,12 @@ def run_process_supervisor(session, parent_pid, parent_started, launch_argv, cwd
             if os.path.exists(os.path.join(session, 'stop')):
                 _atomic_json(os.path.join(session, 'stopped'), {'pid': supervisor_pid})
                 return
+            if _alive(watched_pid, watched_started):
+                log.info('Client pid=%s still alive on final check; restart cancelled', watched_pid)
+                continue
+            if child is not None:
+                child.poll()  # Reap the last subprocess; avoid accumulating zombies.
+            failures = next_failures
             env = without_process_watchdog_environment()
             env.update({_ENV_SESSION: session, _ENV_PID: str(supervisor_pid),
                         _ENV_STARTED: repr(supervisor_started),
@@ -310,8 +343,9 @@ def run_process_supervisor(session, parent_pid, parent_started, launch_argv, cwd
                 watched_pid = child.pid
                 watched_started = _process_identity(watched_pid)
                 if watched_started is None:
-                    # Still track the child by PID; a fast exit will be detected next iteration.
-                    watched_started = 0
+                    # An uncertain identity is not proof of death; retry capturing it
+                    # while the child is live rather than spawning duplicate Clients.
+                    log.warning('started Client pid=%s but its identity is not yet readable', watched_pid)
                 running_since = time.monotonic()
                 log.info('restarted Client pid=%s', watched_pid)
             except (OSError, ValueError) as exc:

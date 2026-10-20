@@ -33,9 +33,63 @@ class ProcessWatchdogLogicTests(unittest.TestCase):
 
     def test_identity_and_wrong_start_time(self):
         pid = os.getpid()
-        self.assertTrue(guard._alive(pid, psutil.Process(pid).create_time()))
-        self.assertFalse(guard._alive(pid, psutil.Process(pid).create_time() - 1000))
+        started = guard._process_identity(pid)
+        self.assertIsNotNone(started)
+        self.assertTrue(guard._alive(pid, started))
+        self.assertFalse(guard._alive(pid, started - 1000))
         self.assertFalse(guard._alive(99999999, 0))
+        self.assertFalse(guard._alive(0, 0))
+
+    def test_ntp_clock_change_does_not_change_process_identity(self):
+        pid = os.getpid()
+        process = Mock()
+        process._ident = (pid, 100.5)
+        process.is_running.return_value = True
+        process.status.return_value = psutil.STATUS_RUNNING
+        with patch.object(guard.psutil, 'Process', return_value=process):
+            self.assertEqual(guard._process_identity(pid), 100.5)
+            for wall_clock_started in (1000.0, 1000.131711, 999.90324, 1000.088489):
+                process.create_time.return_value = wall_clock_started
+                self.assertTrue(guard._alive(pid, 100.5))
+            self.assertFalse(guard._alive(pid, 100.4))  # genuine PID reuse
+        process.create_time.assert_not_called()
+
+    def test_unknown_identity_is_not_treated_as_death(self):
+        process = Mock()
+        process._ident = (123, None)
+        process.is_running.return_value = True
+        process.status.return_value = psutil.STATUS_RUNNING
+        with patch.object(guard.psutil, 'Process', return_value=process):
+            self.assertTrue(guard._alive(123, 12.0))
+            self.assertTrue(guard._alive(123, None))
+            process._ident = (123, 0)
+            self.assertIsNone(guard._process_identity(123))
+            self.assertTrue(guard._alive(123, 12.0))
+            process.status.return_value = psutil.STATUS_ZOMBIE
+            self.assertFalse(guard._alive(123, None))
+
+    def test_probe_denied_is_not_proof_of_process_death(self):
+        with patch.object(guard.psutil, 'Process', side_effect=psutil.AccessDenied(pid=123)):
+            self.assertTrue(guard._alive(123, 10.0))
+        with patch.object(guard.psutil, 'Process', side_effect=psutil.NoSuchProcess(pid=123)):
+            self.assertFalse(guard._alive(123, 10.0))
+
+    def test_recheck_after_retry_cancels_spurious_restart(self):
+        logger = Mock()
+        with tempfile.TemporaryDirectory() as directory:
+            session = str(Path(directory) / 'session')
+            Path(session).mkdir()
+            # First scan fails, second confirms, final scan sees original alive.
+            with patch.object(guard, '_logger', return_value=logger), \
+                 patch.object(guard, '_process_identity', return_value=1.0), \
+                 patch.object(guard, '_alive', side_effect=[False, True]), \
+                 patch.object(guard, '_probe_process', return_value=(False, 'identity changed')), \
+                 patch.object(guard, '_RETRY_DELAYS', (0,)), \
+                 patch.object(guard.subprocess, 'Popen') as spawn, \
+                 patch.object(guard.os.path, 'exists', side_effect=[False, False, True]):
+                guard.run_process_supervisor(session, 123, 1.0, ['python', 'client.py'], directory)
+            spawn.assert_not_called()
+            logger.info.assert_any_call('Client pid=%s still alive on final check; restart cancelled', 123)
 
     def test_clone_and_update_launches_scrub_supervisor_inheritance(self):
         env = {'RCH_PROCESS_WATCHDOG_SESSION': 'old-session',
