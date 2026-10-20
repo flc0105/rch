@@ -45,6 +45,36 @@ Server 会生成类似如下的负载：
 
 `acmd` 走独立的 `acmd` 协议消息类型，不使用普通 `command` 的字符串分派，也不会在找不到处理器时交给系统 Shell。命令是否可执行，取决于目标 Client 的操作系统平台和当前注册内容。
 
+## Process ACMD：Kill 与 Find
+
+普通 Process Manager UI 仍通过 `kill_process <pid>` 处理按钮操作。
+Terminal / Server CLI 提供统一的 ACMD 命令：
+
+```text
+acmd kill
+acmd kill --pid 1234
+acmd kill --name python --force
+acmd kill --port 8080 -9
+acmd kill --pid 1234 --no-confirm
+acmd find_proc
+acmd find_proc --pid 1234 --json
+acmd find_proc --name python --json
+acmd find_proc --port 8080 --json
+```
+
+- `acmd kill` 无目标时先通过 Interaction Broker 询问 `pid/name/port`
+  和目标值，再 Preview。指定目标时直接 Preview 所有匹配 PID，
+  可取消单条勾选；Force 初始状态由 `-9/-f/--force` 决定。
+- `--no-confirm` 必须指定目标，不发起任何交互。`--force` 仅决定使用
+  `SIGKILL`，未指定时使用 `SIGTERM`。不从未确认的自由文本猜目标。
+- `find_proc --json` 每条记录有 `_actions`，例如
+  `[{"label":"Kill","command":"acmd kill --pid 1234"}]`；终端 JSON 表格
+  可复用现有 Result Action 功能。文本输出仍使用结构化表格。
+- `kill_proc / kill_port / pkill / pgrep` 不再是注册的 Client 命令。
+- 进程选择和发信号都在 Client 执行。对 PID 创建时间、名称、可执行
+  文件和端口归属进行重检，拒绝已替换的进程。服务器下发的 Interaction
+  Grant 仅授予显式注册需要交互的 ACMD；无确认模式不请求 Grant。
+
 ## 从输入文本构造参数对象
 
 基本形式：

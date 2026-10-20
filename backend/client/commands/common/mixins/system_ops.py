@@ -38,41 +38,6 @@ class CommandSystemMixin:
         """获取当前进程PID"""
         return 1, str(os.getpid())
 
-    @desc('Find processes by name', group='system')
-    def pgrep(self, name):
-        """按进程名查找PID"""
-        import psutil
-
-        pids = []
-        for proc in psutil.process_iter(['pid', 'name']):
-            try:
-                if name.lower() in proc.info['name'].lower():
-                    pids.append(str(proc.info['pid']))
-            except Exception:
-                continue
-
-        if pids:
-            return 1, '\n'.join(pids)
-        return 1, 'No matching processes'
-
-    @desc('Terminate processes by name', group='system')
-    def pkill(self, name):
-        """按进程名终止进程"""
-        import psutil
-
-        killed = []
-        for proc in psutil.process_iter(['pid', 'name']):
-            try:
-                if name.lower() in proc.info['name'].lower():
-                    proc.terminate()
-                    killed.append(str(proc.info['pid']))
-            except Exception:
-                continue
-
-        if killed:
-            return 1, f'Killed processes: {", ".join(killed)}'
-        return 1, 'No matching processes'
-
     @desc('Show network IP addresses', group='network')
     def ip(self):
         """显示内网IP、外网IP和归属地"""

@@ -3,6 +3,8 @@
 import json
 
 from client.commands.common.services.process.process_service import ProcessService
+from client.commands.arguments.decorators import argument_command
+from client.commands.platform.specs.common import KILL_ARGUMENT_SPEC, FIND_PROC_ARGUMENT_SPEC
 from core.device.local_identity import get_local_identity
 from core.utils.command_output import StructuredCommandResult, render_structured_result
 from core.utils.decorator import desc
@@ -79,64 +81,111 @@ class CommandProcessMixin:
             return 0, str(e)
 
 
-    @desc('Inspect a listening port, preview and approve termination', group='process', api_grants=('interactions:request',))
-    def kill_port(self, arg=''):
-        """Client-native interactive operation. No Server builtin or nested pyexec."""
-        return self._run_approved_process_command(arg, by_port=True)
-
-    @desc('Preview and approve process termination', group='process', api_grants=('interactions:request',))
-    def kill_proc(self, arg=''):
-        """Separate from the original kill_process; the latter remains unchanged."""
-        return self._run_approved_process_command(arg, by_port=False)
-
-    def _run_approved_process_command(self, arg='', *, by_port=False):
+    @argument_command('kill', spec=KILL_ARGUMENT_SPEC, api_grants=('interactions:request',))
+    def _acmd_kill(self, args_dict, payload=None):
         from client.commands.common.services.process.approved_process_service import (
-            ClientCommandInteractions, ProcessApprovalError, parse_target,
-            find_targets, build_preview, terminate_verified,
+            ClientCommandInteractions, ProcessApprovalError, find_targets,
+            build_multi_preview, terminate_verified,
         )
-        import shlex
+        import os
 
-        ui = ClientCommandInteractions(self)
+        self._set_timeout(240)
         try:
-            self._set_timeout(240)
-            text = str(arg or '').strip()
-            if not text:
-                if by_port:
-                    self._send_interim_result(1, '[PROCESS] Waiting for port input...')
-                    text = ui.ask('Enter a listening port:', title='Port to inspect')
-                else:
-                    choice = ui.select('Find a process using:', ['PID', 'Name'], title='Process lookup')
-                    text = ui.ask(f'Enter {choice}:', title='Process to inspect')
-                    # PID and name are distinguished automatically, except a numeric name;
-                    # numeric names require specifying an actual PID instead.
-                    text = shlex.quote(text) if choice == 'Name' else text
-            criteria = parse_target(text, by_port=by_port)
-            target = (f'port {criteria["port"]}' if by_port else
-                      f'PID {criteria["pid"]}' if 'pid' in criteria else criteria['name'])
-            self._send_interim_result(1, f'[PROCESS] Inspecting {target} on the connected Client...')
-            rows = find_targets(criteria)
+            extra = args_dict.get('_args') or []
+            if extra and any(token != '-9' for token in extra):
+                raise ValueError('Unknown kill argument; use --pid, --name, --port, -9, --force or --no-confirm')
+            force = bool(args_dict.get('force') or '-9' in extra)
+            no_confirm = bool(args_dict.get('no-confirm'))
+            criteria = {key: args_dict[key] for key in ('pid', 'name', 'port')
+                        if args_dict.get(key) not in (None, '')}
+            if len(criteria) > 1:
+                raise ValueError('Specify exactly one of --pid, --name or --port')
+            if not criteria and no_confirm:
+                raise ValueError('--no-confirm requires --pid, --name or --port')
+            if not criteria:
+                ui = ClientCommandInteractions(self)
+                choice = ui.select('Find a process by:', ['pid', 'name', 'port'],
+                                   title='Process lookup')
+                target = ui.ask(f'Enter {choice}:', title='Process lookup')
+                criteria[choice] = target
+            if 'pid' in criteria:
+                criteria['pid'] = int(criteria['pid'])
+                if criteria['pid'] <= 1:
+                    raise ProcessApprovalError('Protected PID')
+            if 'port' in criteria:
+                criteria['port'] = int(criteria['port'])
+                if not 1 <= criteria['port'] <= 65535:
+                    raise ProcessApprovalError('Port must be 1..65535')
+            if 'name' in criteria:
+                criteria['name'] = str(criteria['name']).strip()
+                if not criteria['name']:
+                    raise ValueError('Name must not be empty')
+            rows = (find_targets(criteria) if no_confirm
+                    else find_targets(criteria, preview_limit=100))
             if not rows:
-                return 0, f'No matching process found for {target} on the connected Client (or insufficient permissions).'
-            if len(rows) > 1:
-                labels = [f'{row["pid"]}: {row["name"]} ({row["user"]})' for row in rows]
-                selected = ui.select('Choose exactly one process:', labels, title='Process selection')
-                row = rows[labels.index(selected)]
-            else:
-                row = rows[0]
-            if row['pid'] <= 1 or row['pid'] == __import__('os').getpid():
-                raise ProcessApprovalError('Protected process')
-            self._send_interim_result(1, f'[PROCESS] Preview ready: PID={row["pid"]} {row["name"]}')
-            switches = ui.approve('Approve termination of this Client process?',
-                                  build_preview(row, port=criteria.get('port'), force_default=criteria.get('force', False)))
-            if switches is None:
-                return 1, 'Termination rejected; no signal sent.'
+                return 0, 'No matching Client processes'
+            own_pid = os.getpid()
+            if any(int(row['pid']) <= 1 or int(row['pid']) == own_pid for row in rows):
+                raise ProcessApprovalError('Protected process in matching results; narrow the selection')
+            if not no_confirm:
+                selected_ids, force = ClientCommandInteractions(self).approve_processes(
+                    'Approve termination of selected Client processes?',
+                    build_multi_preview(rows, criteria=criteria, force_default=force))
+                rows = [row for row in rows if str(row['pid']) in selected_ids]
+                if not rows:
+                    return 1, 'No processes selected; no signal sent.'
             self._checkpoint(fallback_timeout=240)
-            signame = terminate_verified(row, force=switches['force'], port=criteria.get('port'))
-            return 1, f'{signame} sent to PID {row["pid"]} on the connected Client (exit not guaranteed).'
+            outcomes = []
+            for row in rows:
+                self._checkpoint(fallback_timeout=240)
+                try:
+                    signal_name = terminate_verified(row, force=force, port=criteria.get('port'))
+                    outcomes.append(f'{signal_name} sent to PID {row["pid"]} ({row["name"]})')
+                except (OSError, ProcessApprovalError) as exc:
+                    outcomes.append(f'PID {row["pid"]} failed: {exc}')
+            failures = [line for line in outcomes if ' failed:' in line]
+            return (0 if failures else 1), '\n'.join(outcomes)
         except (ValueError, ProcessApprovalError, OSError) as exc:
-            return 0, f'Process operation cancelled/failed: {exc}'
+            return 0, f'Process termination failed: {exc}'
         except Exception as exc:
-            return 0, f'Process operation failed: {exc}'
+            return 0, f'Process termination unavailable: {exc}'
+
+    @argument_command('find_proc', spec=FIND_PROC_ARGUMENT_SPEC)
+    def _acmd_find_proc(self, args_dict, payload=None):
+        from client.commands.common.services.process.approved_process_service import (
+            find_targets, ProcessApprovalError,
+        )
+        criteria = {key: args_dict[key] for key in ('pid', 'name', 'port')
+                    if args_dict.get(key) not in (None, '')}
+        if len(criteria) > 1:
+            return 0, 'Specify one of --pid, --name or --port'
+        try:
+            if 'pid' in criteria and int(criteria['pid']) <= 1:
+                raise ValueError('PID must be greater than 1')
+            if 'port' in criteria and not 1 <= int(criteria['port']) <= 65535:
+                raise ValueError('Port must be 1..65535')
+            rows = find_targets(criteria) if criteria else self._get_process_service().list_processes()
+            output = []
+            for row in rows:
+                pid = int(row.get('pid') or 0)
+                item = {key: row.get(key, '') for key in ('pid', 'name', 'status')}
+                item['user'] = row.get('user') or row.get('username') or ''
+                item['_actions'] = ([{'label': 'Kill', 'command': f'acmd kill --pid {pid}'}]
+                                    if pid > 1 and pid != __import__('os').getpid() else [])
+                output.append(item)
+            if not output:
+                return (1, '[]' if args_dict.get('json') else 'No matching processes')
+            if args_dict.get('json'):
+                return render_structured_result(
+                    StructuredCommandResult(status=1, data=output, shape='table'),
+                    output_format='json')
+            # Row actions are presentation metadata for the JSON viewer only.
+            return render_structured_result(
+                StructuredCommandResult(status=1,
+                    data=[{k:v for k,v in row.items() if k != '_actions'} for row in output],
+                    shape='table'), output_format='text')
+        except (ValueError, ProcessApprovalError, OSError) as exc:
+            return 0, f'Process lookup failed: {exc}'
 
     def _acmd_ps_common(self, args_dict, payload=None):
         """

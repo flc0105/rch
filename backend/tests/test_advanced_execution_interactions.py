@@ -96,22 +96,20 @@ def test_client_sdk_select_roundtrip(monkeypatch):
 
 def test_existing_client_kill_process_not_shadowed():
     assert not hasattr(BuiltinCommandHandler, 'kill_process')
-    assert not hasattr(BuiltinCommandHandler, 'kill_proc')
-    assert not hasattr(BuiltinCommandHandler, 'kill_port')
     assert hasattr(CommandProcessMixin.kill_process, 'help')
-    assert hasattr(CommandProcessMixin.kill_proc, 'help')
-    assert hasattr(CommandProcessMixin.kill_port, 'help')
-
+    assert not hasattr(CommandProcessMixin, 'kill_proc')
+    assert not hasattr(CommandProcessMixin, 'kill_port')
+    assert CommandProcessMixin._acmd_kill.argument_command_name == 'kill'
+    assert CommandProcessMixin._acmd_find_proc.argument_command_name == 'find_proc'
 
 def test_process_arguments_and_preview():
-    assert aps.parse_target('234') == {'pid': 234}
-    assert aps.parse_target('test') == {'name': 'test'}
-    assert aps.parse_target('8080', by_port=True) == {'port': 8080}
-    assert aps.parse_target('8080 -9', by_port=True) == {'port': 8080, 'force': True}
-    for bad, port in [('0', True), ('--port 8080', True), ('--pid 22', False), ('1', False), ('8080 -9 -9', True)]:
-        with pytest.raises(aps.ProcessApprovalError):
-            aps.parse_target(bad, by_port=port)
-
+    from client.commands.platform.specs.common import KILL_ARGUMENT_SPEC
+    from client.commands.arguments.validator import ArgumentCommandValidator
+    opts = ArgumentCommandValidator().normalize(KILL_ARGUMENT_SPEC, {'pid':'234','_args':['-9']})
+    assert opts['pid'] == 234 and opts['_args'] == ['-9']
+    offered = aps.build_multi_preview([example_row()], criteria={'pid':234}, force_default=True)
+    assert offered['switches'][0]['default'] is True
+    assert offered['row_ids'] == ['2324']
 
 def example_row():
     return {'pid': 2324, 'ppid': 12, 'name': 'app', 'user': 'alice',
@@ -122,34 +120,21 @@ def example_row():
 
 
 def test_process_refusal_never_sends_signal(monkeypatch):
-    class Interactions:
-        def __init__(self, owner): pass
-        def approve(self, message, preview):
-            assert preview['summary'][3]['value'] == '/usr/local/bin/python'
-            return None
-    monkeypatch.setattr(aps, 'ClientCommandInteractions', Interactions)
-    monkeypatch.setattr(aps, 'find_targets', lambda *a: [example_row()])
+    monkeypatch.setattr(aps.ClientCommandInteractions, 'approve_processes', lambda *a: (_ for _ in ()).throw(aps.ProcessApprovalError('rejected')))
+    monkeypatch.setattr(aps, 'find_targets', lambda *_: [example_row()])
     monkeypatch.setattr(aps, 'terminate_verified', lambda *a, **k: pytest.fail('must not signal'))
-    owner = SimpleNamespace(_set_timeout=lambda t: None, _checkpoint=lambda **k: None,
-                            _send_interim_result=lambda *a: None)
-    status, message = CommandProcessMixin._run_approved_process_command(owner, '8080', by_port=True)
-    assert status == 1 and 'rejected' in message
-
+    owner = SimpleNamespace(_set_timeout=lambda t: None, _checkpoint=lambda **k: None)
+    status, message = CommandProcessMixin._acmd_kill(owner, {'pid':2324,'name':'','port':None})
+    assert status == 0 and 'rejected' in message
 
 def test_process_approval_executes_with_verified_snapshot(monkeypatch):
-    sent = []
-    class Interactions:
-        def __init__(self, owner): pass
-        def approve(self, message, preview): return {'force': False}
-    monkeypatch.setattr(aps, 'ClientCommandInteractions', Interactions)
-    monkeypatch.setattr(aps, 'find_targets', lambda *a: [example_row()])
-    monkeypatch.setattr(aps, 'terminate_verified', lambda row, **kwargs: (sent.append((row, kwargs)), 'SIGTERM')[1])
-    owner = SimpleNamespace(_set_timeout=lambda t: None, _checkpoint=lambda **k: None,
-                            _send_interim_result=lambda *a: None)
-    status, message = CommandProcessMixin._run_approved_process_command(owner, '2324')
-    assert status == 1 and 'SIGTERM' in message
-    assert sent[0][0]['created_at'] == 2342.3 and sent[0][1]['force'] is False
-
+    sent=[]
+    monkeypatch.setattr(aps.ClientCommandInteractions, 'approve_processes', lambda *a: ({'2324'}, False))
+    monkeypatch.setattr(aps, 'find_targets', lambda *_: [example_row()])
+    monkeypatch.setattr(aps, 'terminate_verified', lambda row, **kwargs: (sent.append((row,kwargs)),'SIGTERM')[1])
+    owner = SimpleNamespace(_set_timeout=lambda t: None, _checkpoint=lambda **k: None)
+    status, message=CommandProcessMixin._acmd_kill(owner, {'pid':2324,'name':'','port':None})
+    assert status==1 and 'SIGTERM' in message and sent[0][1]['force'] is False
 
 def test_plan_script_separate_and_metadata_declares_grants():
     root = Path(__file__).resolve().parents[1] / 'server/resources/scripts/mac/recon'
@@ -273,31 +258,23 @@ def test_remote_process_graceful_signal_only_after_identity_verified(monkeypatch
 
 
 def test_process_interactive_pid_prompt_still_requires_approval(monkeypatch):
-    class Interactions:
-        def __init__(self, owner): pass
-        def select(self, *a, **k): return 'PID'
-        def ask(self, *a, **k): return '2324'
-        def approve(self, *a, **k): return None
-    monkeypatch.setattr(aps, 'ClientCommandInteractions', Interactions)
-    seen = []
+    monkeypatch.setattr(aps.ClientCommandInteractions, 'select', lambda *a,**k: 'pid')
+    monkeypatch.setattr(aps.ClientCommandInteractions, 'ask', lambda *a,**k: '2324')
+    monkeypatch.setattr(aps.ClientCommandInteractions, 'approve_processes', lambda *a: (_ for _ in ()).throw(aps.ProcessApprovalError('rejected')))
+    seen=[]
     monkeypatch.setattr(aps, 'find_targets', lambda criteria: (seen.append(criteria), [example_row()])[1])
-    monkeypatch.setattr(aps, 'terminate_verified', lambda *a, **k: pytest.fail('must not signal'))
-    owner = SimpleNamespace(_set_timeout=lambda t: None, _checkpoint=lambda **k: None,
-                            _send_interim_result=lambda *a: None)
-    status, _ = CommandProcessMixin._run_approved_process_command(owner)
-    assert status == 1 and seen[0]['pid'] == 2324
-
+    monkeypatch.setattr(aps, 'terminate_verified', lambda *a,**k: pytest.fail('No signal'))
+    owner=SimpleNamespace(_set_timeout=lambda t: None, _checkpoint=lambda **k: None)
+    status, _=CommandProcessMixin._acmd_kill(owner, {'pid':None,'name':'','port':None})
+    assert status==0 and seen[0]['pid']==2324
 
 def test_process_interactive_port_prompt_still_requires_approval(monkeypatch):
-    class Interactions:
-        def __init__(self, owner): pass
-        def ask(self, *a, **k): return '8080'
-        def approve(self, *a, **k): return None
-    monkeypatch.setattr(aps, 'ClientCommandInteractions', Interactions)
-    seen = []
+    monkeypatch.setattr(aps.ClientCommandInteractions, 'select', lambda *a,**k: 'port')
+    monkeypatch.setattr(aps.ClientCommandInteractions, 'ask', lambda *a,**k: '8080')
+    monkeypatch.setattr(aps.ClientCommandInteractions, 'approve_processes', lambda *a: (_ for _ in ()).throw(aps.ProcessApprovalError('rejected')))
+    seen=[]
     monkeypatch.setattr(aps, 'find_targets', lambda criteria: (seen.append(criteria), [example_row()])[1])
-    monkeypatch.setattr(aps, 'terminate_verified', lambda *a, **k: pytest.fail('must not signal'))
-    owner = SimpleNamespace(_set_timeout=lambda t: None, _checkpoint=lambda **k: None,
-                            _send_interim_result=lambda *a: None)
-    status, _ = CommandProcessMixin._run_approved_process_command(owner, by_port=True)
-    assert status == 1 and seen[0]['port'] == 8080
+    owner=SimpleNamespace(_set_timeout=lambda t: None, _checkpoint=lambda **k: None)
+    status, _=CommandProcessMixin._acmd_kill(owner, {'pid':None,'name':'','port':None})
+    assert status==0 and seen[0]['port']==8080
+

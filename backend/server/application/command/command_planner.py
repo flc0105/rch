@@ -90,6 +90,13 @@ class CommandPlanner:
                 if not key:
                     raise ValueError('Empty option name is not allowed')
 
+                # Kill's explicit boolean switches must not consume a following
+                # short flag (-f/-9) as their option value.
+                if command_name == 'kill' and key in ('force', 'no-confirm'):
+                    args_dict[key] = True
+                    index += 1
+                    continue
+
                 if index + 1 < len(parts) and not parts[index + 1].startswith('--'):
                     args_dict[key] = parts[index + 1]
                     index += 2

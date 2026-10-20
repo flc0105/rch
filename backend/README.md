@@ -1361,7 +1361,7 @@ This is important because multiple Client instances on one `machine_id` are a va
 ```text
 watchdog
 update
-clean_releases
+clean
 set
 help
 ```
@@ -1369,7 +1369,7 @@ help
 - `watchdog` displays the flat guard/watchdog runtime status; use `watchdog --json` for flat JSON.
 - `update` builds/downloads/extracts/starts the newest bundle.
 - `update --keep-old` leaves the current Client alive after the new Client successfully starts.
-- `clean_releases` removes obsolete local bundle releases and ZIPs.
+- `clean` previews selectable Client residue and obsolete Release cleanup; `clean --no-confirm` runs without Interaction Broker.
 - `set` reads/writes Client runtime configuration overrides.
 - `help` is generated from the actual exported command manifest.
 
@@ -1410,7 +1410,7 @@ The following tables are generated from current `@desc(...)` declarations with `
 | `ifconfig` | `network` | Show network interfaces |
 | `ip` | `network` | Show network IP addresses |
 | `set` | `runtime` | Show or update client runtime config |
-| `clean_releases` | `session` | Clean outdated client bundle release directories and ZIP files |
+| `clean` | `session` | Clean Client residue and obsolete bundle releases |
 | `help` | `session` | Show available commands |
 | `kill_connection` | `session` | Terminate current session |
 | `reexec` | `session` | Restart current process by exec replacement |
@@ -1428,9 +1428,7 @@ The following tables are generated from current `@desc(...)` declarations with `
 | `getuid` | `system` | Get current user ID/name |
 | `is_root` | `system` | Check if current session is root |
 | `keyboard_send` | `system` | Simulate keyboard input |
-| `pgrep` | `system` | Find processes by name |
 | `piplist` | `system` | List installed third-party Python packages |
-| `pkill` | `system` | Terminate processes by name |
 | `pwd` | `system` | Print working directory |
 | `uptime` | `system` | Show system uptime |
 | `userenum` | `system` | List system user accounts |

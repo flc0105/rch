@@ -1,4 +1,4 @@
-from core.protocol.message_types import MSG_TYPE_COMMAND, MSG_TYPE_CANCEL, MSG_TYPE_SCRIPT
+from core.protocol.message_types import MSG_TYPE_COMMAND, MSG_TYPE_CANCEL, MSG_TYPE_SCRIPT, MSG_TYPE_ACMD
 from importlib import import_module
 from client.commands.runtime.catalog import CommandCatalog
 from client.commands.common.commands import CommonCommands
@@ -82,6 +82,23 @@ class ClientSessionCommandChannel:
                     SCRIPT_GRANT_REQUEST_KEY: {
                         'script_name': f'client-command:{parts[0]}',
                         'api_grants': list(grants),
+                        'ttl_seconds': 300,
+                    },
+                })
+        if command_type == MSG_TYPE_ACMD and isinstance(extra, dict):
+            # ACMD grants come only from trusted registered CommonCommands methods,
+            # never from an incoming Client manifest or a user-supplied grant request.
+            name = str(extra.get('name') or '').strip()
+            method = getattr(CommonCommands, f'_acmd_{name}', None)
+            scopes = (getattr(method, 'argument_command_grants', ())
+                      if getattr(method, 'argument_command_name', None) == name else ())
+            args = extra.get('args') if isinstance(extra.get('args'), dict) else {}
+            skip_confirmation = args.get('no-confirm') in (True, 'true', '1', 'yes', 'on')
+            if scopes and not skip_confirmation:
+                extra = self._build_script_grant_extra(data['id'], {
+                    **extra, SCRIPT_GRANT_REQUEST_KEY: {
+                        'script_name': f'client-acmd:{name}',
+                        'api_grants': list(scopes),
                         'ttl_seconds': 300,
                     },
                 })

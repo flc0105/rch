@@ -535,12 +535,26 @@ This returns existing directories without following symlinks. It performs **no**
 deletions; a caller must separately scan, preview and validate targets before acting.
 The Cleanup and Backup scripts do not yet call this helper.
 
-Client shell-like process commands are registered with `@desc` and use positional arguments:
+Client process termination is now a single registered **ACMD** `acmd kill` (the
+Process Manager UI keeps its internal `kill_process <pid>` path):
 
-- `kill_port <port> [-9]` (e.g. `kill_port 9999 -9`); an omitted port prompts for input.
-- `kill_proc <pid|name> [-9]` (e.g. `kill_proc 30565 -9`); an omitted target prompts for PID/name input.
+- `acmd kill` asks for `pid` / `name` / `port`, then the matching value, then shows
+  one selectable Preview with all matched processes checked initially.
+- `acmd kill --pid 1234` / `--name python` / `--port 8080` skip target entry and
+  show that same Preview. Matching names and ports select **all** corresponding PIDs.
+- `-9`, `-f`, `--force` initialize the Preview Force switch to ON, but the user's
+  final selection determines `SIGTERM` vs `SIGKILL`.
+- `--no-confirm` requires an explicit target, never opens Interaction Broker
+  controls, and sends the chosen signal without preview. It also works from
+  Server CLI without a Web interaction task.
+- `acmd find_proc` lists all visible Client processes; `--pid`, `--name`, `--port`
+  filter it. `--json` returns structured rows with `_actions` entries for `acmd kill`.
 
-Both commands run **on the connected Client**, never on the Server host, and use the shared Preview/Approval Broker with a short-lived grant bound to the current Client command. Command candidates insert only the command name. The original `kill_process` is unchanged. The Preview contains a **Force termination** switch: omitted `-9` initializes it OFF; a trailing `-9` initializes it ON. The user may change the switch either way before approval. The **final approved UI switch value** decides the signal: OFF uses SIGTERM, ON uses SIGKILL. An unapproved command never sends a signal. No signal is sent without approval and identity revalidation. There is no Server `disconnect` builtin; session termination remains available through the existing Client/session control paths.
+The Server issues task-bound `interactions:request` grants only for trusted ACMD
+handlers declaring them, and only for interactive calls. Process identity and
+port ownership are verified again before signalling, including in `--no-confirm`.
+The public `kill_proc`, `kill_port`, `pkill` and `pgrep` commands are removed.
+The Web UI's `kill_process` handler remains unchanged.
 
 For previews requiring optional boolean choices, add `switches: [{"key": "force", "label": "Force termination", "description": "...", "default": false}]` to the Preview schema. When no switches are requested, existing `approve_preview()` behavior and its boolean return remain unchanged; with switches, the Broker validates the explicitly offered boolean keys before returning them to the requesting Client command.
 

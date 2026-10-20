@@ -1,6 +1,8 @@
 import fnmatch
+import hashlib
 import os
 import shutil
+import sys
 import tempfile
 
 from core.utils.filesystem import safe_file_size
@@ -44,6 +46,105 @@ class ClientCleanupService:
     def __init__(self, *, checkpoint=None, current_bundle_resolver=None):
         self.checkpoint = checkpoint
         self.current_bundle_resolver = current_bundle_resolver
+        self._planning = False
+        self._planned_paths = []
+
+    def plan(self) -> dict:
+        """Read-only snapshot of cleanup candidates, grouped by the existing categories."""
+        self._planning = True
+        self._planned_paths = []
+        try:
+            preview_result = self.clean()
+            groups = []
+            for item in preview_result['items']:
+                paths = [entry for entry in self._planned_paths if entry['category'] == item['name']]
+                groups.append({**item, 'paths': paths})
+            return {'items': groups}
+        finally:
+            self._planning = False
+            self._planned_paths = []
+
+    def execute_plan(self, plan: dict, selected: set[str]) -> dict:
+        """Execute only approved, snapshotted paths, refusing changed identities."""
+        if not isinstance(plan, dict) or not isinstance(selected, set):
+            raise ValueError('Invalid cleanup plan')
+        categories = {item['name'] for item in plan.get('items', [])}
+        if not selected.issubset(categories):
+            raise ValueError('Unrecognized cleanup selection')
+        items, seen = [], set()
+        for item in plan.get('items', []):
+            if item['name'] not in selected:
+                continue
+            result = self._new_result(item['name'])
+            result['skipped_paths'].extend(item.get('skipped_paths') or [])
+            result['errors'].extend(item.get('errors') or [])
+            for entry in item['paths']:
+                self._checkpoint()
+                path = entry['path']
+                if path in seen:
+                    continue
+                seen.add(path)
+                try:
+                    info = os.lstat(path)
+                    if (info.st_dev, info.st_ino, info.st_mode, info.st_mtime_ns) != tuple(entry['identity']) \
+                            or self._tree_signature(path) != entry['tree_signature']:
+                        result['skipped_paths'].append(path + ' (changed after preview)')
+                        continue
+                except OSError:
+                    result['skipped_paths'].append(path + ' (missing after preview)')
+                    continue
+                self._remove_path(path, result)
+            items.append(result)
+        return {
+            'items': items,
+            'removed_files': sum(i['removed_files'] for i in items),
+            'removed_dirs': sum(i['removed_dirs'] for i in items),
+            'bytes_freed': sum(i['bytes_freed'] for i in items),
+            'error_count': sum(len(i['errors']) for i in items),
+            'skipped_count': sum(bool(i['skipped'] or i['skipped_paths']) for i in items),
+        }
+
+    def _candidate_identity(self, path):
+        info = os.lstat(path)
+        return [info.st_dev, info.st_ino, info.st_mode, info.st_mtime_ns]
+
+    @staticmethod
+    def _tree_signature(path):
+        """Freeze directory contents for Preview; never follow symlinked directories."""
+        digest = hashlib.sha256()
+        def record(absolute, relative):
+            info = os.lstat(absolute)
+            digest.update(repr((relative, info.st_dev, info.st_ino, info.st_mode,
+                                info.st_size, info.st_mtime_ns, info.st_ctime_ns)).encode())
+        record(path, '.')
+        if os.path.isdir(path) and not os.path.islink(path):
+            for parent, dirs, files in os.walk(path, followlinks=False):
+                for name in sorted(dirs + files):
+                    full = os.path.join(parent, name)
+                    record(full, os.path.relpath(full, path))
+        return digest.hexdigest()
+
+    def _preview_path(self, path, result):
+        try:
+            identity = self._candidate_identity(path)
+        except OSError as exc:
+            result['errors'].append(f'{path}: {exc}')
+            return
+        if os.path.isfile(path) or os.path.islink(path):
+            result['removed_files'] += 1
+            result['bytes_freed'] += safe_file_size(path) if not os.path.islink(path) else 0
+        elif os.path.isdir(path):
+            result['removed_dirs'] += 1
+            for current, dirs, files in os.walk(path, followlinks=False):
+                result['removed_dirs'] += len(dirs)
+                result['removed_files'] += len(files)
+                for filename in files:
+                    result['bytes_freed'] += safe_file_size(os.path.join(current, filename))
+        result['paths'].append(path)
+        self._planned_paths.append({
+            'category': result['name'], 'path': path, 'identity': identity,
+            'tree_signature': self._tree_signature(path),
+        })
 
     def clean(self) -> dict:
         item_results = []
@@ -180,15 +281,14 @@ class ClientCleanupService:
 
         for name in sorted(os.listdir(release_dir)):
             self._checkpoint()
-            path = os.path.realpath(os.path.join(release_dir, name))
-            if not os.path.isdir(path):
+            entry = os.path.join(release_dir, name)
+            if os.path.islink(entry) or not os.path.isdir(entry):
                 continue
-            if '.extracting.' in name:
+            path = os.path.realpath(entry)
+            if os.path.commonpath([release_dir, path]) != release_dir:
                 continue
             if path == current_bundle_dir:
                 result['skipped_paths'].append(path)
-                continue
-            if not os.path.isfile(os.path.join(path, 'rchclient.py')):
                 continue
             self._remove_path(path, result)
         return result
@@ -208,17 +308,23 @@ class ClientCleanupService:
 
     def _clean_bundle_extracting_residue(self) -> dict:
         result = self._new_result('bundle_extracting_residue')
-        release_dir = os.path.abspath(get_client_bundle_release_dir())
+        release_dir, running_dir = self._bundle_context(result)
         if not os.path.isdir(release_dir):
             return result
-
         for name in sorted(os.listdir(release_dir)):
             self._checkpoint()
             if '.extracting.' not in name:
                 continue
-            path = os.path.abspath(os.path.join(release_dir, name))
-            if os.path.isdir(path):
-                self._remove_path(path, result)
+            entry = os.path.join(release_dir, name)
+            if os.path.islink(entry) or not os.path.isdir(entry):
+                continue
+            path = os.path.realpath(entry)
+            if os.path.commonpath([release_dir, path]) != release_dir:
+                continue
+            if path == running_dir:
+                result['skipped_paths'].append(path)
+                continue
+            self._remove_path(path, result)
         return result
 
     def _clean_bundle_probe_files(self) -> dict:
@@ -248,14 +354,26 @@ class ClientCleanupService:
         current_bundle_dir = os.path.realpath(os.path.abspath(current_bundle_dir)) if current_bundle_dir else ''
 
         if not current_bundle_dir:
-            result['skipped'] = True
-            result['skip_reason'] = 'Current client is not running from the default bundle releases directory'
+            # Protect the running release even if its bundle manifest is absent.
+            for path in (os.path.abspath(sys.argv[0] or ''), os.getcwd()):
+                candidate = os.path.realpath(path)
+                if os.path.isfile(candidate):
+                    candidate = os.path.dirname(candidate)
+                if os.path.commonpath([release_dir, candidate]) != release_dir:
+                    continue
+                relative = os.path.relpath(candidate, release_dir)
+                if relative != '.' and not relative.startswith('..'):
+                    current_bundle_dir = os.path.join(release_dir, relative.split(os.sep, 1)[0])
+                    break
         return release_dir, current_bundle_dir
 
     def _remove_path(self, path: str, result: dict):
         path = os.path.abspath(path)
         if path_contains_active_temp(path):
             result['skipped_paths'].append(path)
+            return
+        if self._planning:
+            self._preview_path(path, result)
             return
 
         if os.path.isfile(path) or os.path.islink(path):
@@ -301,8 +419,9 @@ class ClientCleanupService:
         if self.checkpoint is not None:
             self.checkpoint()
 
-    @staticmethod
-    def _prune_empty_directory(path: str):
+    def _prune_empty_directory(self, path: str):
+        if self._planning:
+            return
         try:
             if os.path.isdir(path) and not os.listdir(path):
                 os.rmdir(path)

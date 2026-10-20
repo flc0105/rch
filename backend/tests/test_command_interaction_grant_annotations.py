@@ -8,7 +8,7 @@ from server.application.auth.script_grant_service import SCRIPT_GRANT_REQUEST_KE
 from server.connection.channel.session_command_channel import ClientSessionCommandChannel
 
 
-INTERACTIVE_NAMES = ('kill_proc', 'kill_port')
+INTERACTIVE_NAMES = ('clean',)
 
 
 def channel_and_requests():

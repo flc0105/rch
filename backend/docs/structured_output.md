@@ -322,3 +322,11 @@ JSON Viewer 支持对有效来源的 Command 或 Script 使用 **Run Again**，�
 Table 的 `_actions` 继续是可选的行级元数据。用户确认执行命令后，可以选择 Terminal 或 New Dialog：前者使用原终端输出，后者仅在当前前端的结果弹窗显示执行输出，不关闭原 JSON Viewer。两种动作均复用既有 `/api/connections/{client_id}/command` 请求及任务结果 SSE。
 
 Run Again 与行级操作均执行新的任务；仅当前任务的结果用于刷新对应窗口，其他任务的输出不会混入。
+
+## Process Result Actions
+
+`acmd find_proc --json` 使用 `StructuredCommandResult(status=1, shape='table')`
+生成 JSON 数组。每行包含 `pid/name/status/user` 及可选的 `_actions`。
+`_actions` 格式为 `[{"label":"Kill","command":"acmd kill --pid 1234"}]`，
+由现有 Terminal JSON 表格识别并在执行前提供结果操作确认。文本模式
+只渲染进程字段，不输出 `_actions` 元数据。无匹配行时 JSON 返回空数组。

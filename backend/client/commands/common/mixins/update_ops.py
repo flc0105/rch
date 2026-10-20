@@ -121,83 +121,6 @@ class CommandUpdateMixin:
         except Exception:
             return ''
 
-    def _clean_outdated_bundle_releases(self, release_dir: str, current_bundle_dir: str) -> dict:
-        release_root = os.path.realpath(os.path.abspath(release_dir))
-        current_root = os.path.realpath(os.path.abspath(current_bundle_dir))
-
-        deleted_dirs = []
-        deleted_zips = []
-        skipped = []
-        errors = []
-
-        for name in sorted(os.listdir(release_root)):
-            self._checkpoint()
-
-            path = os.path.realpath(os.path.join(release_root, name))
-
-            try:
-                if os.path.isdir(path):
-                    if path == current_root:
-                        skipped.append(path)
-                        continue
-                    shutil.rmtree(path)
-                    deleted_dirs.append(path)
-                    continue
-
-            except Exception as e:
-                errors.append(f'{path}: {e}')
-
-        # Bundle archives now live alongside releases, under downloads/.
-        downloads_dir = get_client_bundle_download_dir()
-        for name in sorted(os.listdir(downloads_dir)):
-            self._checkpoint()
-            if not is_bundle_archive(name):
-                continue
-            archive_path = os.path.join(downloads_dir, name)
-            try:
-                if os.path.isfile(archive_path):
-                    os.remove(archive_path)
-                    deleted_zips.append(archive_path)
-            except Exception as e:
-                errors.append(f'{archive_path}: {e}')
-
-        return {
-            'release_dir': release_root,
-            'current_bundle_dir': current_root,
-            'deleted_dirs': deleted_dirs,
-            'deleted_zips': deleted_zips,
-            'skipped': skipped,
-            'errors': errors,
-        }
-
-    def _format_clean_outdated_releases_result(self, result: dict) -> str:
-        lines = [
-            success('Outdated bundle releases cleaned'),
-            info(f'Release Dir: {result.get("release_dir", "")}'),
-            info(f'Current Bundle Dir: {result.get("current_bundle_dir", "")}'),
-            success(f'Deleted Version Dirs: {len(result.get("deleted_dirs") or [])}'),
-            success(f'Deleted ZIP Files: {len(result.get("deleted_zips") or [])}'),
-        ]
-
-        deleted_dirs = result.get('deleted_dirs') or []
-        deleted_zips = result.get('deleted_zips') or []
-        errors = result.get('errors') or []
-
-        if deleted_dirs:
-            lines.append(warning('Deleted dirs:'))
-            lines.extend(f'  {item}' for item in deleted_dirs)
-
-        if deleted_zips:
-            lines.append(warning('Deleted zips:'))
-            lines.extend(f'  {item}' for item in deleted_zips)
-
-        if errors:
-            lines.append(error('Errors:'))
-            lines.extend(f'  {item}' for item in errors)
-
-        return '\n'.join(lines)
-
-
     def _same_real_path(self, left: str, right: str) -> bool:
         if not left or not right:
             return False
@@ -486,26 +409,6 @@ class CommandUpdateMixin:
                 f'{ready_path}.adopted' if ready_path else '',
             )
 
-    @desc('Clean outdated client bundle release directories and ZIP files', group='session')
-    @cancel_policy('cooperative')
-    def clean_releases(self, arg=''):
-        """
-        清理默认 releases 目录里的旧 update bundle。
-        当前只在自身运行于 update bundle 目录时执行。
-        """
-        try:
-            release_dir = get_client_bundle_release_dir()
-            current_bundle_dir = self._get_current_bundle_release_dir(release_dir)
-            if not current_bundle_dir:
-                self._send_warning(f'Skipped: current client is not running from default bundle releases directory', 0)
-                self._send_warning(f'Default Release Dir: {release_dir}', 1)
-                return
-
-            result = self._clean_outdated_bundle_releases(release_dir, current_bundle_dir)
-            return 1, self._format_clean_outdated_releases_result(result)
-        except Exception as e:
-            return self._send_error(f'Failed to clean outdated releases: {e}', 1)
-
     def _format_client_cleanup_result(self, result: dict) -> str:
         lines = [
             success('Client residue cleanup completed'),
@@ -536,20 +439,58 @@ class CommandUpdateMixin:
 
         return '\n'.join(lines)
 
-    @desc('Clean all client-owned temporary residue and obsolete update bundle files', group='session')
+    @desc('Clean Client residue and obsolete bundle releases', group='session',
+          api_grants=('interactions:request',))
     @cancel_policy('cooperative')
     def clean(self, arg=''):
-        """Clean all supported client residue. Usage: clean"""
-        if str(arg or '').strip():
-            return 0, error('Usage: clean')
-
+        """Preview selectable cleanup categories; --no-confirm executes without Broker."""
+        options = str(arg or '').strip()
+        if options not in ('', '--no-confirm'):
+            return 0, error('Usage: clean [--no-confirm]')
         try:
             service = ClientCleanupService(
                 checkpoint=self._checkpoint,
                 current_bundle_resolver=self._get_current_bundle_release_dir,
             )
-            result = service.clean()
+            self._set_timeout(240)
+            plan = service.plan()
+            candidates = [entry for entry in plan['items'] if entry['paths']]
+            if not candidates:
+                return 1, info('Nothing to clean')
+            chosen = {entry['name'] for entry in candidates}
+            if options != '--no-confirm':
+                from client.commands.common.services.interaction_service import CommandInteractions
+                rows = []
+                for entry in candidates:
+                    paths = [item['path'] for item in entry['paths']]
+                    rows.append({
+                        'category': entry['name'], 'targets': str(len(paths)),
+                        'size': get_size(float(entry.get('bytes_freed') or 0)),
+                    })
+                preview = {
+                    'summary': [
+                        {'label': 'Categories', 'value': str(len(rows))},
+                        {'label': 'Files', 'value': str(sum(i['removed_files'] for i in candidates))},
+                        {'label': 'Directories', 'value': str(sum(i['removed_dirs'] for i in candidates))},
+                    ],
+                    'columns': [{'key':'category','label':'Category'},
+                                {'key':'targets','label':'Targets'},
+                                {'key':'size','label':'Size'}],
+                    'rows': rows,
+                    'row_ids': [entry['name'] for entry in candidates],
+                    'row_details': [
+                        {'row_id': entry['name'],
+                         'content': '\n'.join(item['path'] for item in entry['paths'])[:3900]}
+                        for entry in candidates],
+                    'notice': 'Selected paths will be permanently deleted. Current running release is protected.',
+                }
+                chosen = set(CommandInteractions(self).select_preview_rows(
+                    'Delete selected Client residue?', preview,
+                    title='Client Cleanup — Delete Plan'))
+                if not chosen:
+                    return 1, info('No cleanup categories selected; nothing deleted')
+            result = service.execute_plan(plan, chosen)
             status = 0 if int(result.get('error_count') or 0) else 1
             return status, self._format_client_cleanup_result(result)
-        except Exception as e:
-            return 0, error(f'Failed to clean client residue: {e}')
+        except Exception as exc:
+            return 0, error(f'Failed to clean Client residue: {exc}')

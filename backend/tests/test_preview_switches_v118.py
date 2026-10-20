@@ -24,12 +24,12 @@ class Events:
 
 
 def preview():
-    return aps.build_preview({
+    return aps.build_multi_preview([{
         'pid': 2233, 'name': 'example', 'user': 'user', 'exec_path': '/usr/bin/example',
         'created_at': 1.0, 'cmdline': ['/usr/bin/example'], 'cwd': '/tmp',
         'ppid': 1, 'status': 'running', 'memory_rss': 100, 'threads': 1,
         'listening': [{'protocol': 'tcp', 'address': '127.0.0.1', 'port': 8080}],
-    }, port=8080)
+    }], criteria={'port':8080})
 
 
 def test_preview_switch_schema_is_optional_and_strict():
@@ -38,7 +38,7 @@ def test_preview_switch_schema_is_optional_and_strict():
     enriched = InteractionBroker._normalize_preview(preview())
     assert enriched['switches'] == [{
         'key': 'force', 'label': 'Force termination (SIGKILL / -9)',
-        'description': 'Disabled: SIGTERM. Enabled: immediate SIGKILL; no graceful shutdown.',
+        'description': 'OFF: SIGTERM. ON: immediate SIGKILL.',
         'default': False,
     }]
     for switches in (
@@ -72,106 +72,31 @@ def test_broker_round_trip_validated_switches(approve, force):
             with pytest.raises(ValueError, match='switch'):
                 broker.answer(offered['interaction_id'], approved=True, value=forged)
         assert worker.is_alive(), 'invalid input must not release waiting task'
-    broker.answer(offered['interaction_id'], approved=approve, value={'force': force} if approve else None)
+    broker.answer(offered['interaction_id'], approved=approve, value={'force': force, 'selected_rows': ['2233']} if approve else None)
     worker.join(2)
     assert not worker.is_alive()
     assert result[0]['status'] == ('answered' if approve else 'rejected')
-    assert result[0]['value'] == ({'force': force} if approve else False)
+    assert result[0]['value'] == ({'force': force, 'selected_rows':['2233']} if approve else False)
 
 
 def test_client_process_signal_only_follows_approved_switch(monkeypatch):
-    rows = [{'pid': 2233, 'name': 'example', 'user': 'user', 'exec_path': '/usr/bin/example',
-             'created_at': 1.0, 'cmdline': [], 'cwd': '/tmp', 'ppid': 1, 'status': 'running',
-             'memory_rss': 0, 'threads': 1, 'listening': []}]
-    monkeypatch.setattr(aps, 'find_targets', lambda criteria: rows)
-    calls = []
-    monkeypatch.setattr(aps, 'terminate_verified', lambda row, **kw: (calls.append(kw),
+    rows=[{'pid':2233,'name':'example','user':'user','exec_path':'/usr/bin/example',
+           'created_at':1.0,'cmdline':[],'cwd':'/tmp','ppid':1,'status':'running',
+           'memory_rss':0,'threads':1,'listening':[]}]
+    monkeypatch.setattr(aps,'find_targets',lambda *a,**kw:rows)
+    calls=[]
+    monkeypatch.setattr(aps,'terminate_verified',lambda row,**kw:(calls.append(kw),
                            'SIGKILL' if kw['force'] else 'SIGTERM')[1])
-    owner = SimpleNamespace(_set_timeout=lambda *a: None,
-                            _checkpoint=lambda **kw: None,
-                            _send_interim_result=lambda *a: None)
-    for reply in (None, {'force': False}, {'force': True}):
-        monkeypatch.setattr(aps.ClientCommandInteractions, 'approve', lambda *a, **kw: reply)
-        status, text = CommandProcessMixin._run_approved_process_command(owner, '8080', by_port=True)
-        assert status == 1
-        if reply is None:
-            assert 'rejected' in text
-        else:
-            assert ('SIGKILL' if reply['force'] else 'SIGTERM') in text
-    assert calls == [{'force': False, 'port': 8080}, {'force': True, 'port': 8080}]
+    owner=SimpleNamespace(_set_timeout=lambda *a:None,_checkpoint=lambda **k:None)
+    for force in (False,True):
+        monkeypatch.setattr(aps.ClientCommandInteractions,'approve_processes',lambda *a:({'2233'},force))
+        status,msg=CommandProcessMixin._acmd_kill(owner,{'port':8080,'force':False})
+        assert status==1 and ('SIGKILL' if force else 'SIGTERM') in msg
+    assert calls==[{'force':False,'port':8080},{'force':True,'port':8080}]
 
 
-@pytest.mark.parametrize('by_port,arg,criteria', [
-    (True, '9999', {'port': 9999}),
-    (True, '9999 -9', {'port': 9999, 'force': True}),
-    (False, '30565', {'pid': 30565}),
-    (False, '30565 -9', {'pid': 30565, 'force': True}),
-    (False, 'python3', {'name': 'python3'}),
-    (False, 'python3 -9', {'name': 'python3', 'force': True}),
-    (False, "'a name' -9", {'name': 'a name', 'force': True}),
-])
-def test_command_line_force_is_only_preview_default(by_port, arg, criteria):
-    assert aps.parse_target(arg, by_port=by_port) == criteria
-    offered = aps.build_preview(preview_process_row(), force_default=criteria.get('force', False))
-    assert offered['switches'][0]['default'] == criteria.get('force', False)
-    expected_initial = 'SIGKILL' if criteria.get('force') else 'SIGTERM'
-    assert any(entry['value'] == expected_initial for entry in offered['summary'])
-
-
-def preview_process_row():
-    return {
-        'pid': 2233, 'name': 'example', 'user': 'user', 'exec_path': '/usr/bin/example',
-        'created_at': 1.0, 'cmdline': [], 'cwd': '/tmp', 'ppid': 1, 'status': 'running',
-        'memory_rss': 100, 'threads': 1, 'listening': [],
-    }
-
-
-@pytest.mark.parametrize('bad,by_port', [
-    ('9999 -9 -9', True), ('-9', True), ('9999 --force', True),
-    ('9999 -9 other', True), ('--port 9999 -9', True),
-    ('python3 --force', False), ('-9', False), ('30565 -9 -9', False),
-    ('--pid 30565 -9', False),
-])
-def test_force_syntax_rejects_unexpected_arguments(bad, by_port):
-    with pytest.raises(aps.ProcessApprovalError):
-        aps.parse_target(bad, by_port=by_port)
-
-
-@pytest.mark.parametrize('argument,force_initial,user_force,signal', [
-    ('9999', False, False, 'SIGTERM'),
-    ('9999', False, True, 'SIGKILL'),
-    ('9999 -9', True, True, 'SIGKILL'),
-    ('9999 -9', True, False, 'SIGTERM'),
-])
-def test_approved_ui_switch_overrides_cli_default(monkeypatch, argument, force_initial, user_force, signal):
-    offered = []
-    calls = []
-    monkeypatch.setattr(aps, 'find_targets', lambda criteria: [preview_process_row()])
-
-    def approve(ui, message, preview):
-        offered.append(preview)
-        return {'force': user_force}
-
-    monkeypatch.setattr(aps.ClientCommandInteractions, 'approve', approve)
-    monkeypatch.setattr(aps, 'terminate_verified', lambda row, **kwargs: (
-        calls.append(kwargs), 'SIGKILL' if kwargs['force'] else 'SIGTERM')[1])
-    host = SimpleNamespace(
-        _set_timeout=lambda *a: None,
-        _checkpoint=lambda **kw: None,
-        _send_interim_result=lambda *a: None,
-    )
-    result, text = CommandProcessMixin._run_approved_process_command(host, argument, by_port=True)
-    assert result == 1 and signal in text
-    assert offered[0]['switches'][0]['default'] is force_initial
-    assert calls == [{'force': user_force, 'port': 9999}]
-
-
-def test_trailing_force_never_bypasses_approval(monkeypatch):
-    monkeypatch.setattr(aps, 'find_targets', lambda criteria: [preview_process_row()])
-    monkeypatch.setattr(aps.ClientCommandInteractions, 'approve', lambda *a, **k: None)
-    monkeypatch.setattr(aps, 'terminate_verified', lambda *a, **k: pytest.fail('No approval, no signal'))
-    host = SimpleNamespace(_set_timeout=lambda *a: None,
-                           _checkpoint=lambda **kw: None,
-                           _send_interim_result=lambda *a: None)
-    result, message = CommandProcessMixin._run_approved_process_command(host, '9999 -9', by_port=True)
-    assert result == 1 and 'rejected' in message
+def test_broker_rows_and_switches_validate_exact_selection():
+    offered=InteractionBroker._normalize_preview(preview())
+    assert offered['row_ids']==['2233']
+    assert offered['switches'][0]['key']=='force'
+    assert offered['row_details'][0]['row_id']=='2233'

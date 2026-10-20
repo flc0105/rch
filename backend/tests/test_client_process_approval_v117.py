@@ -36,39 +36,28 @@ def owner():
 
 
 def test_shell_like_registry_and_positional_grammar():
-    assert hasattr(CommandProcessMixin.kill_port, 'help')
-    assert hasattr(CommandProcessMixin.kill_proc, 'help')
     assert hasattr(CommandProcessMixin.kill_process, 'help')
-    assert not hasattr(BuiltinCommandHandler, 'kill_port')
-    assert not hasattr(BuiltinCommandHandler, 'kill_proc')
-    assert all(c['name'] not in ('kill_port', 'kill_proc')
-               for c in BuiltinCommandHandler.REGISTRY.candidates())
-    assert aps.parse_target('9999', by_port=True) == {'port': 9999}
-    assert aps.parse_target('9999 -9', by_port=True) == {'port': 9999, 'force': True}
-    assert aps.parse_target('30565') == {'pid': 30565}
-    assert aps.parse_target('python3 -9') == {'name': 'python3', 'force': True}
-    with pytest.raises(aps.ProcessApprovalError):
-        aps.parse_target('--pid 30565')
-    with pytest.raises(aps.ProcessApprovalError):
-        aps.parse_target('--port 9999', by_port=True)
-
+    assert not hasattr(CommandProcessMixin, 'kill_port')
+    assert not hasattr(CommandProcessMixin, 'kill_proc')
+    assert CommandProcessMixin._acmd_kill.argument_command_name == 'kill'
+    assert CommandProcessMixin._acmd_find_proc.argument_command_name == 'find_proc'
 
 def test_only_explicit_client_commands_are_issued_interaction_grants():
-    grants = []
+    from core.protocol.message_types import MSG_TYPE_ACMD
+    grants=[]
     class Grants:
         def issue_script_grant(self, **params):
             grants.append(params)
             return {'token': 'bound-token'}
-    session = SimpleNamespace(context=SimpleNamespace(script_grant_service=Grants()))
-    channel = ClientSessionCommandChannel(session)
-    for command in ('pwd', 'kill_process 3', 'ls -la'):
+    channel=ClientSessionCommandChannel(SimpleNamespace(context=SimpleNamespace(script_grant_service=Grants())))
+    for command in ('pwd','kill_process 3','ls -la'):
         assert 'extra' not in channel.build_command_payload(command)
-    for command in ('kill_port 9999', 'kill_proc 30565'):
-        payload = channel.build_command_payload(command)
-        assert payload['extra']['__script_grant__']['token'] == 'bound-token'
-        assert grants[-1]['command_id'] == payload['id']
-        assert grants[-1]['grant_request']['api_grants'] == ['interactions:request']
-
+    for command in ('kill_port 9999','kill_proc 30565'):
+        assert 'extra' not in channel.build_command_payload(command)
+    response=channel.build_command_payload('acmd kill --pid 9999',MSG_TYPE_ACMD,
+                      {'name':'kill','args':{'pid':'9999'}})
+    assert response['extra']['__script_grant__']['token']=='bound-token'
+    assert len(grants)==1
 
 def test_active_client_command_grant_is_forwarded_and_not_reused(monkeypatch):
     runtime = object.__new__(CommandExecutor)
@@ -88,48 +77,41 @@ def test_active_client_command_grant_is_forwarded_and_not_reused(monkeypatch):
 
 
 def test_client_interaction_transport_uses_bound_grant(monkeypatch):
-    calls = []
+    calls=[]
     class Api:
-        def post_data(self, path, **opts):
-            calls.append((path, opts))
-            return {'status': 'rejected', 'value': False}
+        def post_data(self,path,**opts):
+            calls.append((path,opts))
+            return {'status':'rejected','value':False}
     monkeypatch.setattr('client.http.client_api.ClientApiClient', Api)
-    ui = aps.ClientCommandInteractions(SimpleNamespace(
-        _interaction_grant={'token': 'bound'}, _checkpoint=lambda **k: None))
-    assert not ui.approve('Proceed?', aps.build_preview(row(), port=9999))
-    assert calls[0][1]['headers']['X-Script-Grant-Token'] == 'bound'
-    assert calls[0][1]['json']['kind'] == 'preview'
-
+    ui=aps.ClientCommandInteractions(SimpleNamespace(_interaction_grant={'token':'bound'}, _checkpoint=lambda **k:None))
+    with pytest.raises(aps.ProcessApprovalError):
+        ui.approve_processes('Proceed?',aps.build_multi_preview([row()],criteria={'pid':4199}))
+    assert calls[0][1]['headers']['X-Script-Grant-Token']=='bound'
 
 def test_port_rejection_does_not_send_signal(monkeypatch):
-    host, messages = owner()
-    monkeypatch.setattr(aps, 'find_targets', lambda args: [row()])
-    monkeypatch.setattr(aps.ClientCommandInteractions, 'approve', lambda *a, **k: None)
-    monkeypatch.setattr(aps, 'terminate_verified', lambda *a, **k: pytest.fail('No signal before approval'))
-    status, output = CommandProcessMixin._run_approved_process_command(host, '9999', by_port=True)
-    assert status == 1 and 'rejected' in output
-    assert any('Inspecting port 9999' in x[1] for x in messages)
-
+    host,_=owner()
+    monkeypatch.setattr(aps,'find_targets',lambda args:[row()])
+    monkeypatch.setattr(aps.ClientCommandInteractions,'approve_processes',lambda *a: (_ for _ in ()).throw(aps.ProcessApprovalError('rejected')))
+    monkeypatch.setattr(aps,'terminate_verified',lambda *a,**k:pytest.fail('No signal before approval'))
+    status,output=CommandProcessMixin._acmd_kill(host,{'pid':None,'name':'','port':9999})
+    assert status==0 and 'rejected' in output
 
 def test_port_approved_verifies_target_before_signal(monkeypatch):
-    host, messages = owner()
-    called = []
-    monkeypatch.setattr(aps, 'find_targets', lambda args: [row()])
-    monkeypatch.setattr(aps.ClientCommandInteractions, 'approve', lambda *a, **k: {'force': True})
-    monkeypatch.setattr(aps, 'terminate_verified', lambda r, **kw: (called.append((r, kw)), 'SIGKILL')[1])
-    status, output = CommandProcessMixin._run_approved_process_command(host, '9999', by_port=True)
-    assert status == 1 and 'SIGKILL' in output
-    assert called[0][0]['pid'] == 4199 and called[0][1] == {'force': True, 'port': 9999}
-
+    host,_=owner();called=[]
+    monkeypatch.setattr(aps,'find_targets',lambda args:[row()])
+    monkeypatch.setattr(aps.ClientCommandInteractions,'approve_processes',lambda *a:({'4199'},True))
+    monkeypatch.setattr(aps,'terminate_verified',lambda r,**kw: (called.append((r,kw)),'SIGKILL')[1])
+    status,output=CommandProcessMixin._acmd_kill(host,{'pid':None,'name':'','port':9999})
+    assert status==1 and 'SIGKILL' in output
+    assert called[0][1]=={'force':True,'port':9999}
 
 def test_no_argument_requests_input_and_gives_error_not_silence(monkeypatch):
-    host, messages = owner()
-    monkeypatch.setattr(aps.ClientCommandInteractions, 'ask', lambda *a, **k: '9999')
-    monkeypatch.setattr(aps, 'find_targets', lambda *a: [])
-    status, output = CommandProcessMixin._run_approved_process_command(host, '', by_port=True)
-    assert status == 0 and 'No matching process' in output
-    assert any('9999' in text for _, text in messages)
-
+    host,_=owner()
+    monkeypatch.setattr(aps.ClientCommandInteractions,'select',lambda *a,**k:'port')
+    monkeypatch.setattr(aps.ClientCommandInteractions,'ask',lambda *a,**k:'9999')
+    monkeypatch.setattr(aps,'find_targets',lambda *a:[])
+    status,output=CommandProcessMixin._acmd_kill(host,{'pid':None,'name':'','port':None})
+    assert status==0 and 'No matching' in output
 
 def test_port_identity_cannot_change_after_approval(monkeypatch):
     class Proc:
@@ -176,20 +158,13 @@ def test_local_listener_can_be_identified_without_stale_server_pyexec():
 
 def test_actual_client_manifest_yields_only_plain_command_name_candidates():
     from client.commands.common.mixins.introspection_ops import CommandIntrospectionMixin
-    from server.application.web.command_catalog_api import WebCommandCatalogApi
-
-    class Commands(CommandProcessMixin, CommandIntrospectionMixin):
+    from client.commands.arguments.registry import ArgumentCommandRegistry
+    class Commands(CommandProcessMixin,CommandIntrospectionMixin):
         pass
+    instance=Commands()
+    manifest=instance.get_command_manifest_payload()
+    assert all(row['name'] not in ('kill_port','kill_proc') for row in manifest)
+    acmd=ArgumentCommandRegistry(instance).get_manifest_payload()
+    assert any(row['name']=='acmd kill' for row in acmd)
+    assert any(row['name']=='acmd find_proc' for row in acmd)
 
-    manifest = Commands().get_command_manifest_payload()
-    entries = [item for item in manifest if item['name'] in ('kill_port', 'kill_proc')]
-    assert len(entries) == 2 and all('template' not in entry for entry in entries)
-    client = SimpleNamespace(session_info=SimpleNamespace(command_manifest=manifest))
-    server = SimpleNamespace(get_target_connection_by_client_id=lambda _: client)
-    catalog = WebCommandCatalogApi(
-        server, SimpleNamespace(create=lambda _: SimpleNamespace(
-            get_command_candidates=lambda: [dict(item) for item in BuiltinCommandHandler.REGISTRY.candidates()])))
-    candidates = catalog.get_command_candidates('client-A')
-    for name in ('kill_port', 'kill_proc'):
-        rows = [c for c in candidates if c['name'] == name]
-        assert len(rows) == 1 and rows[0]['template'] == name and rows[0]['source'] == 'client'

@@ -151,9 +151,21 @@ update --keep-old
 
 这里的 `<build_id>` 由实际构建结果提供，而不是手动填写的固定 Release 版本。iOS 的对应根目录在 `~/Documents/client_bundle/`。首次部署的 Bootstrap / Go Loader 还可能管理 `runtimes/python-embed/`，但 Client 自更新只处理新的 Source Bundle 和运行进程，不会借此重装整个 Python 环境。
 
-更新不会因为新版本启动成功就自动清空所有先前 Release。`clean_releases` 可以在当前 Client **确实运行于默认 `releases/` 下的某个有效 Bundle 目录时**执行清理；它保护当前运行目录，删除该目录之外的其他 Release 子目录，并清除 `downloads/` 中匹配 Source Bundle 命名的 ZIP。这个操作会删除其他已安装 Release，因此在并行保留旧 Client、准备回退或管理多个 Release 时，应先确认不再需要那些目录。未从默认 Release 目录运行的 Client 会跳过这项清理。
+更新不会因为新版本启动成功就自动清空先前 Release。现在由统一的 `clean`
+处理 Client 临时残留、过期 Release 子目录、Bundle ZIP 和更新探测文件。
+普通 `clean` 先扫描候选路径，再用一个可多选的 Preview 展示类别、目标数量及大小，
+**默认全选**；用户可以取消任意类别。`clean --no-confirm` 不使用 Interaction
+Broker，直接执行同一套清理扫描计划，供纯 CLI 调用。
 
-普通 `clean` 还有其他 Client 临时残留清理职责，不等同于只清除旧 Bundle；不应把 Server 端删除 Agent Output、目标设备清理 Release，以及终止某个仍运行的 Client 当成同一操作。构建产物本身位于 Server 文件系统，Release 位于目标设备用户目录，两边的生命周期独立。
+Release 清理不再要求 Client 从默认 Bundle 路径启动：如果当前不在
+`releases/` 目录下，清理其中全部非保护子目录；如果正从某个 Release
+运行，必须保留该 Release，删除其他子目录。不会根据目录是否含有
+`rchclient.py` 放宽或缩小本次 Release 删除范围。所有已扫描路径在
+执行前还会进行文件身份检查；扫描后已变化的目标不会删除。
+
+清理仅针对 **目标 Client** 的残留与 Release，不包含 Server 端
+Agent Output 或其他构建产物。删除不可恢复，应在批准 Preview 前
+检查每个类别的目标列表。
 
 ## 运行和排查中的关键判断
 

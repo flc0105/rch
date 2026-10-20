@@ -5,7 +5,6 @@ Server-to-Client script command. Terminal output is plain text; approval payload
 are data rendered by the shared Interaction Broker.
 """
 import os
-import shlex
 import shutil
 import signal
 import socket
@@ -21,45 +20,21 @@ class ProcessApprovalError(RuntimeError):
 class ClientCommandInteractions(CommandInteractions):
     """Process-specific Force switch validation after Broker approval."""
 
-    def approve(self, message, preview):
+    def approve_processes(self, message, preview):
         result = self.request('preview', message, preview=preview,
                               title='Approve process termination', timeout=120)
         if result.get('status') != 'answered':
-            return None
+            raise ProcessApprovalError('Approval rejected, expired, or cancelled')
         choice = result.get('value')
-        if not isinstance(choice, dict) or type(choice.get('force')) is not bool or set(choice) != {'force'}:
-            raise ProcessApprovalError('Invalid Force switch response from approval')
-        return choice
-
-
-def parse_target(text, *, by_port=False):
-    """RCH shell-like grammar: <port|pid|name> [-9].
-
-    A trailing -9 sets only the initial Preview Force switch state. The
-    approved switch value, not the command text, decides the actual signal.
-    """
-    parts = shlex.split(str(text or '').strip())
-    usage = ('kill_port <port> [-9]' if by_port
-             else 'kill_proc <pid|name> [-9]')
-    if not (len(parts) == 1 or (len(parts) == 2 and parts[1] == '-9')):
-        raise ProcessApprovalError('Usage: ' + usage)
-    target = parts[0]
-    force_default = len(parts) == 2
-    if by_port:
-        if not target.isdecimal() or not 1 <= int(target) <= 65535:
-            raise ProcessApprovalError('Port must be an integer from 1 to 65535')
-        criteria = {'port': int(target)}
-    elif target.isdecimal():
-        if int(target) <= 1:
-            raise ProcessApprovalError('Protected PID')
-        criteria = {'pid': int(target)}
-    elif target.startswith('-'):
-        raise ProcessApprovalError('Expected a PID or process name')
-    else:
-        criteria = {'name': target}
-    if force_default:
-        criteria['force'] = True
-    return criteria
+        if (not isinstance(choice, dict) or set(choice) != {'force', 'selected_rows'}
+                or type(choice['force']) is not bool
+                or not isinstance(choice['selected_rows'], list)):
+            raise ProcessApprovalError('Invalid process Preview reply')
+        ids = choice['selected_rows']
+        if (any(not isinstance(item, str) or item not in preview['row_ids'] for item in ids)
+                or len(ids) != len(set(ids))):
+            raise ProcessApprovalError('Invalid selected process IDs')
+        return set(ids), choice['force']
 
 
 def _port_owners_via_lsof(port):
@@ -131,7 +106,7 @@ def inspect_process(pid, *, known_port=None):
     return row
 
 
-def find_targets(criteria):
+def find_targets(criteria, *, preview_limit=None):
     import psutil
     if 'port' in criteria:
         ids = sorted(_port_owners(criteria['port']))
@@ -140,8 +115,8 @@ def find_targets(criteria):
     else:
         ids = [proc.pid for proc in psutil.process_iter(['name'])
                if (proc.info.get('name') or '').casefold() == criteria['name'].casefold()]
-    if len(ids) > 24:
-        raise ProcessApprovalError('More than 24 processes matched; specify a PID')
+    if preview_limit is not None and len(ids) > preview_limit:
+        raise ProcessApprovalError(f'More than {preview_limit} processes matched; narrow the selection')
     rows = []
     for pid in ids:
         try:
@@ -153,36 +128,24 @@ def find_targets(criteria):
     return rows
 
 
-def build_preview(row, *, port=None, force_default=False):
-    summary = [
-        {'label': key, 'value': str(value)} for key, value in (
-            ('PID', row['pid']), ('Name', row['name']), ('User', row['user']),
-            ('Executable', row['exec_path']),
-            ('Initial signal (editable below)', 'SIGKILL' if force_default else 'SIGTERM'),
-        )
-    ]
-    detail_text = '\n'.join([
-        f"PID: {row['pid']}", f"Name: {row['name']}", f"User: {row['user']}",
-        f"Executable: {row['exec_path']}", f"Command: {row['cmdline']}",
-        f"CWD: {row['cwd']}", f"Parent: {row['ppid']}", f"Status: {row['status']}",
-        f"Started: {row['created_at']}", f"RSS: {row['memory_rss']}",
-        f"Threads: {row['threads']}",
-    ])
+def build_multi_preview(rows, *, criteria, force_default=False):
+    """One selectable preview for all matched processes (all checked by default)."""
     return {
-        'summary': summary,
-        'columns': [{'key': 'protocol', 'label': 'Protocol'},
-                    {'key': 'address', 'label': 'Address'},
-                    {'key': 'port', 'label': 'Port'}],
-        'rows': [{key: str(row_item[key]) for key in ('protocol', 'address', 'port')}
-                 for row_item in row['listening'][:100]],
-        'details': [{'title': 'Process details', 'content': detail_text}],
-        'notice': ('Listening port ownership will be rechecked before termination. '
-                   if port else '') + 'Process identity will be rechecked before sending a signal.',
-        'switches': [{
-            'key': 'force', 'label': 'Force termination (SIGKILL / -9)',
-            'description': 'Disabled: SIGTERM. Enabled: immediate SIGKILL; no graceful shutdown.',
-            'default': bool(force_default),
-        }],
+        'summary': [{'label': 'Matching processes', 'value': str(len(rows))},
+                    {'label': 'Lookup', 'value': str(criteria)},
+                    {'label': 'Signal', 'value': 'SIGKILL' if force_default else 'SIGTERM'}],
+        'columns': [{'key': 'pid', 'label': 'PID'}, {'key': 'name', 'label': 'Name'},
+                    {'key': 'user', 'label': 'User'}, {'key': 'exec_path', 'label': 'Executable'}],
+        'rows': [{key: str(row.get(key, '')) for key in ('pid','name','user','exec_path')}
+                 for row in rows],
+        'row_ids': [str(row['pid']) for row in rows],
+        'row_details': [{'row_id': str(row['pid']),
+                         'content': f"PID: {row['pid']}\nCommand: {row['cmdline']}\nStarted: {row['created_at']}"}
+                        for row in rows],
+        'switches': [{'key': 'force', 'label': 'Force termination (SIGKILL / -9)',
+                      'description': 'OFF: SIGTERM. ON: immediate SIGKILL.',
+                      'default': bool(force_default)}],
+        'notice': 'All matching processes are selected. Identities are rechecked before termination.',
     }
 
 

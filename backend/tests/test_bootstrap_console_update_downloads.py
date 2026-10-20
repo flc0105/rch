@@ -160,22 +160,26 @@ class UpdateZipDirectoryTests(unittest.TestCase):
             self.assertEqual(result['removed_files'], 1)
 
     def test_clean_releases_keeps_running_dir_and_removes_bundle_zip_only(self):
+        from client.commands.common.services import client_cleanup_service as cleanup_module
         with tempfile.TemporaryDirectory() as tmp:
-            releases = Path(tmp) / 'releases';releases.mkdir()
-            current = releases / 'running';current.mkdir();(current/'rchclient.py').write_text('pass')
-            stale = releases / 'old';stale.mkdir();(stale/'rchclient.py').write_text('pass')
-            downloads = Path(tmp) / 'downloads';downloads.mkdir()
-            archive = downloads/bundle_archive_name('old');archive.write_bytes(b'x')
-            embed = downloads/'python-embed.zip';embed.write_bytes(b'y')
-            command = CommandUpdateMixin();command._checkpoint = lambda: None
-            with patch('client.commands.common.mixins.update_ops.get_client_bundle_download_dir',
-                       return_value=str(downloads)):
-                result = command._clean_outdated_bundle_releases(str(releases), str(current))
+            releases=Path(tmp)/'releases';releases.mkdir()
+            current=releases/'running';current.mkdir();(current/'rchclient.py').write_text('pass')
+            stale=releases/'old';stale.mkdir();(stale/'notes.txt').write_text('old')
+            downloads=Path(tmp)/'downloads';downloads.mkdir()
+            archive=downloads/bundle_archive_name('old');archive.write_bytes(b'x')
+            embed=downloads/'python-embed.zip';embed.write_bytes(b'y')
+            service=ClientCleanupService(current_bundle_resolver=lambda root:str(current))
+            service.ITEMS=('bundle_old_releases','bundle_archive_residue')
+            with patch.object(cleanup_module,'get_client_bundle_release_dir',return_value=str(releases)), \
+                 patch.object(cleanup_module,'get_client_bundle_download_dir',return_value=str(downloads)):
+                plan=service.plan()
+                self.assertTrue(stale.exists() and archive.exists())
+                result=service.execute_plan(plan,{'bundle_old_releases','bundle_archive_residue'})
             self.assertTrue(current.exists())
             self.assertFalse(stale.exists())
             self.assertFalse(archive.exists())
             self.assertTrue(embed.exists())
-            self.assertEqual(result['deleted_zips'], [str(archive)])
+            self.assertEqual(result['error_count'],0)
 
 if __name__ == '__main__':
     unittest.main()

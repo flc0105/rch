@@ -23,39 +23,19 @@ class Events:
 
 
 def test_port_candidate_and_positional_grammar():
-    assert hasattr(CommandProcessMixin.kill_port, 'help')
-    assert not any(c['name'] == 'kill_port' for c in BuiltinCommandHandler.REGISTRY.candidates())
-    from core.utils.parsing import parse as split_command
-    assert split_command('kill_port 9999') == ('kill_port', '9999')
-    assert aps.parse_target('9999', by_port=True) == {'port': 9999}
-    assert aps.parse_target('9999 -9', by_port=True) == {'port': 9999, 'force': True}
-    for bad in ('--port 9999', '9999 8888', '9999 foo', '0', '65536', ''):
-        with pytest.raises(aps.ProcessApprovalError):
-            aps.parse_target(bad, by_port=True)
-
+    from client.commands.platform.specs.common import KILL_ARGUMENT_SPEC
+    from client.commands.arguments.validator import ArgumentCommandValidator
+    args=ArgumentCommandValidator().normalize(KILL_ARGUMENT_SPEC,{'port':'9999','_args':['-9']})
+    assert args['port']==9999 and args['_args']==['-9']
+    assert not hasattr(CommandProcessMixin,'kill_port')
 
 def test_port_command_inspects_and_previews_before_signal(monkeypatch):
-    previews = []
-    class Interactions:
-        def __init__(self, owner): pass
-        def approve(self, message, preview):
-            previews.append(preview)
-            return None
-    monkeypatch.setattr(aps, 'ClientCommandInteractions', Interactions)
-    monkeypatch.setattr(aps, 'find_targets', lambda args: [{
-        'pid': 421, 'name': 'server', 'user': 'owner', 'exec_path': '/bin/server',
-        'cmdline': ['/bin/server', '9999'], 'cwd': '/tmp', 'ppid': 1,
-        'status': 'running', 'created_at': 12.0, 'memory_rss': 128,
-        'threads': 2, 'listening': [{'protocol': 'tcp', 'address': '127.0.0.1', 'port': 9999}],
-    }])
-    monkeypatch.setattr(aps, 'terminate_verified', lambda *a, **k: pytest.fail('must not signal'))
-    owner = SimpleNamespace(_set_timeout=lambda t: None, _checkpoint=lambda **k: None,
-                            _send_interim_result=lambda *a: None)
-    status, msg = CommandProcessMixin._run_approved_process_command(owner, '9999', by_port=True)
-    assert status == 1 and 'rejected' in msg
-    assert previews[0]['summary'][0] == {'label': 'PID', 'value': '421'}
-    assert previews[0]['rows'][0]['port'] == '9999'
-
+    monkeypatch.setattr(aps,'find_targets',lambda args,**kw:[{'pid':421,'name':'server','user':'owner','exec_path':'/bin/server','cmdline':['/bin/server'],'cwd':'/tmp','ppid':1,'status':'running','created_at':12.0,'memory_rss':128,'threads':2,'listening':[]}])
+    monkeypatch.setattr(aps.ClientCommandInteractions,'approve_processes',lambda *a: (_ for _ in ()).throw(aps.ProcessApprovalError('rejected')))
+    monkeypatch.setattr(aps,'terminate_verified',lambda *a,**k:pytest.fail('Must not signal'))
+    owner=SimpleNamespace(_set_timeout=lambda t:None,_checkpoint=lambda **k:None)
+    status,msg=CommandProcessMixin._acmd_kill(owner,{'pid':None,'name':'','port':9999})
+    assert status==0 and 'rejected' in msg
 
 def test_structured_preview_roundtrip_approve_and_reject():
     events = Events()
