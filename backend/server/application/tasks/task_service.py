@@ -59,6 +59,7 @@ class WebTaskService:
             source=request.source,
             should_record=None,
             task_type=request.task_type,
+            metadata=request.metadata,
         )
 
         try:
@@ -261,6 +262,9 @@ class WebTaskService:
 
         client_id = task.get('client_id') or ''
         cancel_info = self._request_task_cancel(conn, task_id)
+        self.history_orchestrator.update_execution_status(
+            conn, cancel_info.get('history_entry_id') or '', 'cancelling'
+        )
         command_id = cancel_info.get('command_id')
 
         return {

@@ -85,7 +85,7 @@ class ExternalToolClientLifecycleRuntime(ExternalToolRuntimeComponent):
 
     def _run_client_lifecycle_command(self, client_id: str, command: str, tab_id: str = '') -> dict:
         if self.remote_execution_service is None:
-            return self.command_execution_api.submit_web_command(client_id, command, tab_id=tab_id)
+            return self.command_execution_api.submit_web_command(client_id, command, tab_id=tab_id, source="web_external_tool")
         del tab_id
         return self.remote_execution_service.run_foreground_json_command(client_id, command, task_type='external_tool', source='web_external_tool')
 

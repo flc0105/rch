@@ -177,7 +177,8 @@ class CommandOutputBuiltinSupport:
         )
 
         size = int(artifact.get('size') or 0)
-        yield 1, '\n'.join([
+        # File registration is not proof that the inner Client command succeeded.
+        yield (1 if final_status == 'success' else 0), '\n'.join([
             f'saved to command_output: {artifact.get("original_name") or allocation.get("original_name") or "command_output.txt"}',
             f'artifact_id: {artifact.get("artifact_id", "")}',
             f'size: {size} bytes',

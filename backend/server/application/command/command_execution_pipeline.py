@@ -119,7 +119,9 @@ class CommandExecutionPipeline:
                 context.history_entry_id,
             )
             if swallow_exception:
-                yield CommandExecutionEvent.error(str(exc))
+                reason = ('timed_out' if isinstance(exc, TimeoutError) else
+                          'interrupted' if isinstance(exc, (ConnectionError, EOFError)) else '')
+                yield CommandExecutionEvent.error(str(exc), payload={'failure_reason': reason})
             else:
                 raise
 

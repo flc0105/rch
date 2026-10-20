@@ -1,171 +1,162 @@
+"""Activity record intent follows a command to the *actual* Client dispatch."""
+import shlex
+import threading
+import uuid
+
 from server.application.history.history_record_policy import CommandHistoryRecordPolicy
 
 
 class CommandHistoryOrchestrator:
-    """
-    命令历史编排器。
-
-    职责：
-    - 统一决定一条命令是否应该进入历史
-    - 统一创建 history entry
-    - 统一追加输出
-    - 统一结束/收尾执行状态
-    - 统一管理 command_id <-> history_entry_id 绑定
-    - 统一处理 artifact 回挂到 history entry
-
-    当前目标：
-    - CLI / WebTask / RemoteExecution 的 history 写入走单入口
-    - session runtime 只保留绑定存储，不再承担编排职责
-    - web/app.py 不再自己拼 artifact 反向绑定逻辑
-    """
-
     def __init__(self, history_store):
         self.history_store = history_store
+        self._pending = {}
+        self._lock = threading.RLock()
 
-    # ------------------ record policy ------------------ #
-    def should_record_command(self, command: str, *, source: str = '', task_type: str = '') -> bool:
-        """
-        判断命令是否应该进入历史。
-        统一委托给集中策略，避免规则散落在 CLI / Web / job / file / process 各入口。
-        """
-        return CommandHistoryRecordPolicy.should_record_command(
-            command,
-            source=source,
-            task_type=task_type,
-        )
+    def should_record_command(self, command, *, source='', task_type=''):
+        return CommandHistoryRecordPolicy.should_record_command(command, source=source, task_type=task_type)
 
-    # ------------------ history entry lifecycle ------------------ #
-    def begin_execution(self, conn, command: str, source: str = 'cli', should_record=None, task_type: str = '') -> str:
-        """
-        为一次执行创建 history entry。
-        """
-        if conn is None:
+    def begin_execution(self, conn, command, source='cli', should_record=None, task_type='', metadata=None):
+        if conn is None or not str(command or '').strip():
             return ''
-
-        command_text = (command or '').strip()
-        if not command_text:
+        # Caller may suppress internal tasks; text is never an authoritative
+        # decision about whether any work will reach Client.
+        if (should_record is False or str(task_type or '').strip().lower() in CommandHistoryRecordPolicy.NON_RECORD_TASK_TYPES
+                or source not in CommandHistoryRecordPolicy.RECORD_SOURCES):
             return ''
+        metadata = dict(metadata or {})
+        origin = {'web': 'web_terminal', 'quick_action': 'web_ui', 'cli': 'cli',
+                  'web_api': 'web_api'}.get(source, source or 'cli')
+        presentation = 'terminal' if origin in {'web_terminal', 'cli'} else 'none'
+        kind, action, target, arguments = 'command', 'invoke', None, {}
+        text = str(command).strip()
+        if metadata.get('quick_action'):
+            kind = 'alias'
+            origin = 'web_ui'
+            target = str(metadata.get('quick_action_alias') or '').strip() or None
+            text = str(metadata.get('quick_action_display_command') or text)
+            presentation = str(metadata.get('quick_action_presentation') or 'dialog')
+            arguments = {'values': metadata.get('quick_action_arguments') or []}
+        elif metadata.get('script_run'):
+            kind, action, origin = 'script', 'run', 'web_ui'
+            target = metadata.get('script_run_name') or None
+            text = str(target or text)
+            arguments = dict(metadata.get('script_run_arguments') or {})
+            presentation = str(metadata.get('script_run_presentation') or 'dialog')
+        else:
+            # Raw exec / run_script is identified by its *real dispatch type*,
+            # not by guessing whether its text looks like a shell command.
+            if source == 'web':
+                presentation = 'terminal'
+            elif source == 'cli':
+                presentation = 'terminal'
+        invocation = {'input': text, 'arguments': arguments}
+        if target:
+            invocation['target'] = target
+        activity_id = uuid.uuid4().hex
+        with self._lock:
+            self._pending[activity_id] = {
+                'conn': conn, 'kind': kind, 'action': action, 'origin': origin,
+                'presentation': presentation, 'invocation': invocation,
+                'resolved': {}, 'created_at': self.history_store._now_iso(),
+            }
+        return activity_id
 
-        if should_record is None:
-            should_record = self.should_record_command(
-                command_text,
-                source=source,
-                task_type=task_type,
-            )
-
-        if not should_record:
-            return ''
-
-        return self.history_store.create_entry_for_connection(
-            conn,
-            command_text,
-            source=source
-        )
-
-    def append_output(self, conn, entry_id: str, status: int, text: str, eof: int = 0):
-        """
-        为指定 history entry 追加输出。
-        """
-        if conn is None or not entry_id:
+    def describe_plan(self, activity_id, plan):
+        if not activity_id or not isinstance(plan, dict):
             return
+        with self._lock:
+            pending = self._pending.get(activity_id)
+            if not pending:
+                return
+            kind = pending['kind']
+            command_type = str(plan.get('command_type') or 'command')
+            alias_name = str(plan.get('alias_name') or '').strip()
+            if command_type == 'script' and kind != 'alias':
+                kind = 'script'
+                pending['action'] = 'run'
+                if not pending['invocation'].get('target'):
+                    # Terminal `exec <path> <args>` / `run_script <encoded>`.
+                    original = str(pending['invocation']['input']).strip()
+                    if original.startswith('exec '):
+                        try:
+                            parts = shlex.split(original)
+                            pending['invocation']['target'] = parts[1]
+                            pending['invocation']['arguments'] = {'argv': parts[2:]}
+                        except (ValueError, IndexError):
+                            pass
+                    elif original.startswith('run_script '):
+                        pending['invocation']['target'] = str((plan.get('extra') or {}).get('__script_name__') or '')
+            elif alias_name:
+                kind = 'alias'
+                pending['invocation'].setdefault('target', alias_name)
+            pending['kind'] = kind
+            # Script content is never copied into Activity; the real transport
+            # type and script identity describe the execution without leaking source.
+            pending['resolved'] = {'command_type': command_type}
+            if command_type != 'script':
+                pending['resolved']['command'] = str(plan.get('command') or '')
 
-        self.history_store.append_output_for_connection(
-            conn,
-            entry_id,
-            status,
-            text,
-            eof
-        )
-
-    def discard_execution(self, conn, entry_id: str) -> bool:
-        """
-        丢弃尚未真正进入执行阶段的 history entry。
-        """
-        if conn is None or not entry_id:
-            return False
-        return self.history_store.write_service.delete_execution_entry_for_connection(conn, entry_id)
-
-    def finalize_execution(self, conn, entry_id: str, ok: bool, cwd_end: str = ''):
-        """
-        统一结束一次执行历史。
-        """
-        if conn is None or not entry_id:
+    def confirm_dispatch(self, conn, activity_id, command, command_type='command'):
+        if not activity_id:
             return
+        with self._lock:
+            pending = self._pending.pop(activity_id, None)
+        if not pending:
+            return
+        if pending['conn'] is not conn:
+            return
+        if not pending['resolved']:
+            pending['resolved'] = {'command_type': command_type}
+            if command_type != 'script':
+                pending['resolved']['command'] = command
+        if command_type == 'script':
+            pending['resolved'].pop('command', None)
+        self.history_store.write_service.create_activity_for_dispatch(conn, activity_id, pending)
 
-        final_cwd = cwd_end or getattr(getattr(conn, 'session_info', None), 'cwd', '')
-        self.history_store.update_entry_status_for_connection(
-            conn,
-            entry_id,
-            'success' if ok else 'error',
-            cwd_end=final_cwd
-        )
+    def discard_execution(self, conn, entry_id):
+        with self._lock:
+            return self._pending.pop(entry_id, None) is not None
 
-    # ------------------ binding orchestration ------------------ #
-    def bind_command_entry(self, conn, command_id: int, entry_id: str):
-        """
-        绑定 command_id -> history_entry_id。
-        """
+    def append_output(self, conn, entry_id, status, text, eof=0):
+        self.history_store.append_output_for_connection(conn, entry_id, status, text, eof)
+
+    def update_execution_status(self, conn, entry_id, status):
+        if entry_id:
+            self.history_store.update_entry_status_for_connection(conn, entry_id, status)
+
+    def finalize_execution(self, conn, entry_id, ok, cwd_end='', status=''):
+        with self._lock:
+            self._pending.pop(entry_id, None)
+        if not entry_id:
+            return
+        final_status = status or ('success' if ok else 'error')
+        self.history_store.update_entry_status_for_connection(conn, entry_id, final_status, cwd_end=cwd_end)
+
+    def bind_command_entry(self, conn, command_id, entry_id):
         if conn is None or not command_id or not entry_id:
             return
-
         try:
             conn.bind_history_entry(command_id, entry_id)
         except Exception:
             pass
 
-    def get_bound_entry_id(self, conn, command_id: int) -> str:
-        """
-        获取 command_id 当前绑定的 history_entry_id。
-        """
-        if conn is None or not command_id:
-            return ''
-
+    def get_bound_entry_id(self, conn, command_id):
         try:
             return conn.get_history_entry_id(command_id)
         except Exception:
             return ''
 
-    def clear_command_entry(self, conn, command_id: int):
-        """
-        清理 command_id -> history_entry_id 绑定。
-        """
-        if conn is None or not command_id:
-            return
-
+    def clear_command_entry(self, conn, command_id):
         try:
             conn.clear_history_entry(command_id)
         except Exception:
             pass
 
-    # ------------------ artifact binding ------------------ #
-    def bind_uploaded_artifact(self, conn, source_command_id, artifact: dict) -> bool:
-        """
-        将 HTTP 上传产生的 artifact 挂回到对应的 history entry。
-        """
-        if conn is None:
+    def bind_uploaded_artifact(self, conn, source_command_id, artifact):
+        if conn is None or source_command_id is None or not isinstance(artifact, dict) or not artifact:
             return False
-
-        if source_command_id is None:
-            return False
-
-        if not isinstance(artifact, dict) or not artifact:
-            return False
-
         entry_id = self.get_bound_entry_id(conn, source_command_id)
         if not entry_id:
             return False
-
-        self.history_store.append_file_for_connection(
-            conn,
-            entry_id,
-            artifact
-        )
+        self.history_store.append_file_for_connection(conn, entry_id, artifact)
         return True
-
-
-
-
-
-
-
-

@@ -69,6 +69,9 @@ class CommandExecutor:
         return processor
 
     def _execute_remote_plan(self, plan: dict):
+        history = getattr(self.server, 'command_history_orchestrator', None)
+        if history is not None:
+            history.describe_plan(self.current_history_entry_id, plan)
         if self.use_foreground_guard:
             return partial(
                 self.remote_execution_service.stream_foreground_command,

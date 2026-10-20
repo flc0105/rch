@@ -7,6 +7,7 @@ from server.application.command.command_execution_event import CommandExecutionE
 from server.application.command.command_execution_pipeline import CommandExecutionPipeline
 from server.application.execution.execution_context import ExecutionContext
 from server.application.history.history_store import CommandHistoryStore
+from server.application.history.history_orchestrator import CommandHistoryOrchestrator
 from server.application.jobs.background_job_store import BackgroundJobStore
 from server.application.tasks.task_runner import WebTaskRunner
 from server.application.tasks.task_status import WebTaskStatus
@@ -62,49 +63,56 @@ class RecordBaseRefactorTests(unittest.TestCase):
         self.assertEqual('', task['finished_at'])
         self.assertNotIn('chunks', task)
 
+    def _dispatch_activity(self, store, conn, command):
+        orchestrator = CommandHistoryOrchestrator(store)
+        activity_id = orchestrator.begin_execution(conn, command, source='web')
+        orchestrator.describe_plan(activity_id, {'command_type': 'command', 'command': command})
+        orchestrator.confirm_dispatch(conn, activity_id, command)
+        return activity_id
+
     def test_history_does_not_persist_empty_eof_only_chunk_and_derives_summary(self):
         store = CommandHistoryStore(self.database)
         conn = SimpleNamespace(session_info=SimpleNamespace(
             machine_id='m1', client_id='c1', hostname='host', addr='127.0.0.1', cwd='/start',
         ))
-        entry_id = store.create_entry_for_connection(conn, 'echo hello', source='web')
-        store.append_output_for_connection(conn, entry_id, 1, 'hello', eof=0)
-        store.append_output_for_connection(conn, entry_id, 1, '', eof=1)
-        store.update_entry_status_for_connection(conn, entry_id, 'success', cwd_end='/end')
+        activity_id = self._dispatch_activity(store, conn, 'echo hello')
+        store.append_output_for_connection(conn, activity_id, 1, 'hello', eof=0)
+        store.append_output_for_connection(conn, activity_id, 1, '', eof=1)
+        store.update_entry_status_for_connection(conn, activity_id, 'success', cwd_end='/end')
 
-        entry = store._get_entry('m1', entry_id)
-        self.assertEqual(2, entry['output_chunk_count'])
-        self.assertEqual(1, len(entry['output_records']))
-        self.assertEqual(0, entry['output_records'][-1]['eof'])
-        self.assertEqual('hello', entry['output_records'][-1]['text'])
+        entry = store._get_entry('m1', activity_id)
+        records = entry['result']['output_records']
+        self.assertEqual(1, len(records))
+        self.assertEqual(0, records[-1]['eof'])
+        self.assertEqual('hello', records[-1]['text'])
         self.assertEqual('success', entry['status'])
-        self.assertEqual('/start', entry['cwd_start'])
-        self.assertEqual('/end', entry['cwd_end'])
-        for removed in (
-            'duration_ms', 'final_status', 'has_output', 'output_summary',
-            'output_stored_char_count', 'output_record_seq', 'has_files', 'file_count',
-        ):
+        self.assertEqual('echo hello', entry['invocation']['input'])
+        self.assertEqual('echo hello', entry['resolved']['command'])
+        self.assertTrue(entry['finished_at'])
+        for removed in ('output_summary', 'output_chunk_count', 'cwd_start', 'cwd_end', 'duration_ms'):
             self.assertNotIn(removed, entry)
 
         view = store.view_service.get_execution_history_page('m1', limit=10)['items'][0]
-        self.assertEqual('hello', view['output_summary'])
+        self.assertNotIn('output_summary', view)
+        self.assertEqual('hello', view['result']['output_records'][0]['text'])
 
         quick = store.view_service.get_history_by_machine_id('m1')[0]
         self.assertTrue(quick['last_used_at'])
-        self.assertEqual('hello', quick['output_summary'])
+        self.assertEqual('success', quick['status'])
 
     def test_history_keeps_eof_on_nonempty_output_record(self):
         store = CommandHistoryStore(self.database)
         conn = SimpleNamespace(session_info=SimpleNamespace(
             machine_id='m1', client_id='c1', hostname='host', addr='127.0.0.1', cwd='/start',
         ))
-        entry_id = store.create_entry_for_connection(conn, 'printf done', source='web')
-        store.append_output_for_connection(conn, entry_id, 1, 'done', eof=1)
+        activity_id = self._dispatch_activity(store, conn, 'printf done')
+        store.append_output_for_connection(conn, activity_id, 1, 'done', eof=1)
 
-        entry = store._get_entry('m1', entry_id)
-        self.assertEqual(1, len(entry['output_records']))
-        self.assertEqual('done', entry['output_records'][0]['text'])
-        self.assertEqual(1, entry['output_records'][0]['eof'])
+        entry = store._get_entry('m1', activity_id)
+        records = entry['result']['output_records']
+        self.assertEqual(1, len(records))
+        self.assertEqual('done', records[0]['text'])
+        self.assertEqual(1, records[0]['eof'])
 
     def test_raw_session_result_stream_uses_eof_only_to_end_stream(self):
         runtime = ClientSessionRuntime()
@@ -250,23 +258,22 @@ class RecordBaseRefactorTests(unittest.TestCase):
         self.assertEqual('Artifact removed', file_item['status_text'])
 
     def test_current_schema_contains_only_canonical_record_fields(self):
+        # v34 uses its own canonical Activity store; old Execution entries are
+        # intentionally not imported or exposed by the new Activity API.
+        CommandHistoryStore(self.database)
         conn = self.database.connection()
         history_columns = {
-            row['name']
-            for row in conn.execute('PRAGMA table_info(command_executions)').fetchall()
+            row['name'] for row in conn.execute('PRAGMA table_info(activity_records)').fetchall()
         }
-        self.assertTrue({
-            'machine_id', 'client_id', 'hostname', 'addr',
-            'created_at', 'started_at', 'updated_at', 'finished_at',
-            'output_line_count', 'output_chunk_count', 'output_char_count',
-            'output_truncated', 'output_records_json', 'files_json',
-        }.issubset(history_columns))
-        for removed in (
-            'time_text', 'duration_ms', 'final_status', 'has_output', 'output_summary',
-            'output_stored_char_count', 'output_record_seq', 'has_files', 'file_count',
-            'finished_at_ms',
-        ):
-            self.assertNotIn(removed, history_columns)
+        self.assertEqual({
+            'activity_id', 'machine_id', 'client_id', 'kind', 'action', 'origin',
+            'presentation', 'status', 'invocation_json', 'resolved_json',
+            'result_json', 'created_at', 'started_at', 'started_at_ms',
+            'finished_at', 'files_json',
+        }, history_columns)
+        self.assertEqual(0, conn.execute('SELECT COUNT(*) FROM activity_records').fetchone()[0])
+        for old in ('entry_id', 'raw_command', 'output_summary', 'task_id', 'schema_version'):
+            self.assertNotIn(old, history_columns)
 
         message_columns = {
             row['name']

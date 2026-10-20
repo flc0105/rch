@@ -105,6 +105,12 @@ Server 另有 `exec` 入口，它按文件名称读取 Library 脚本，并将�
 
 执行记录属于命令任务生命周期，可与 Command History 的来源、状态、输出限制和 Artifact 关联协作，但 Script Library 本身不自动在数据库中保存每次运行的全部独立 Script Session 对象。
 
+### Script Activity 记录
+
+首批 Activity Center 将 Script Library 的 Run/Run in Terminal 及 Terminal 中的 `exec <script>` 都归为 `kind=script/action=run`。`invocation.input` 保留真实入口，`invocation.target` 保存 Script 名称或路径，`invocation.arguments` 保存 Script Library 的实际参数对象（Terminal `exec` 用 `argv` 表示原始命令行参数）。`resolved.command_type=script` 反映真实 Client Script 协议；不把 Server 侧读取的脚本源码或内部 `run_script __json__:` Base64 传输参数复制进公共 Activity，也不伪造一条 Shell 命令。
+
+Activity 只在 Script 真的被提交给 Client 时创建；单纯列出脚本、查看/编辑元数据或打开目录不会产生记录。Script Cancel 只更新当前 Run Activity 的状态（`cancelling`、`cancelled` 等），不额外制造 `stop` Activity。Details 沿用实际任务结果的输出记录和 Artifact；Quick History 不接收 Script Library 的内部可执行 Payload。
+
 ## 4. Python 执行环境与运行上下文
 
 ### In-process 与独立子进程

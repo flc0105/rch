@@ -195,6 +195,7 @@ class WebQuickActionApi:
             'quick_action_presentation': normalized_presentation,
             'quick_action_display_command': display_command,
             'quick_action_resolved_command': resolved['command'],
+            'quick_action_arguments': list(resolved.get('arguments') or []),
             'quick_action_effective_definition': selected_definition_is_effective,
         }
         submitted = self.command_execution_api.submit_web_command(

@@ -565,26 +565,10 @@ class HistoryBuiltinSupport:
 
         raise ValueError(f'History index not found: {history_index}')
 
-    def _rewrite_current_history_entry(self, resolved_command: str):
-        """
-        当前这次交互在 ratserver 中已经预先创建了 history entry。
-        当用户执行 history run / !index 时，这里把当前 entry 改写成真实命令，
-        避免历史最终保留元命令文本。
-        """
-        entry_id = (self.history_entry_id_provider() or '').strip()
-        if not entry_id:
-            return
-
-        self.command_history.update_entry_command_for_connection(
-            self.conn,
-            entry_id,
-            resolved_command,
-        )
-
     def _run_history_item(self, history_index: int):
         resolved_command = self._resolve_history_command_by_index(history_index)
-        self._rewrite_current_history_entry(resolved_command)
-
+        # Keep the outer invocation (`history run N` or `!N`); the nested
+        # execution plan supplies the actual resolved Client command.
         yield 1, f'sending command: {resolved_command}'
 
         command_processor = self.command_processor_factory()

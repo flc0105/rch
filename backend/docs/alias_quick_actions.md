@@ -156,6 +156,12 @@ Web 向任务附带 `quick_action`、`quick_action_run_id`、`quick_action_alias
 
 **一个已知的参数边界**：在“生效 Alias + Run in Terminal”路径中，Server 用 `shlex.join()` 生成调用文本，但不会自动给第一个以 `--` 开头的位置值补 Alias 所需的单独 `--`。因此这种值可能被 Alias 误解释为命名参数；对于此类参数，优先使用结果弹窗，或者在手动终端调用中显式写 `--`。复杂跨 Shell 的转义同样需核对最终展开文本，不能只看表单里的原始值。
 
+### Activity 与 Quick History 的区别
+
+Alias 通过 Terminal 输入时，Server 的 AliasManager 展开参数并创建 Client 执行计划；只有实际发送到 Client，才生成一条 `kind=alias/action=invoke` 的 Activity。`invocation.input` 保留输入文本（例如 `now`），`invocation.target` 为 Alias 名称，`resolved.command_type=command`，`resolved.command` 是真正展开并派发的命令。
+
+Quick Actions 的 Dialog / Terminal 两种呈现方式都通过 Metadata 保留选中 Alias 的身份、平台和参数，不能仅根据已展开文本推断是否为 Alias，尤其要正确处理选择被当前平台同名定义覆盖的共享 Alias。两者成功时可形成 Activity，但 **Quick Actions UI 不会额外写入 Quick Recent**；手动 Terminal/CLI 可复现的 Alias 成功执行才进入 Recent。失败、取消、超时不会更新 Recent 或覆盖已有成功快照。Alias 定义管理、列表查询属于 Server 操作，不产生 Activity。
+
 ### 工具栏及同步机制
 
 在 Quick Actions 编辑弹窗打开 **Pin to Quick Actions dropdown**，会将该定义的 `{platform, alias}` 引用存入全局 Toolbar Preferences（SQLite）。Pin 不是复制模板，也不是 History 的收藏。Toolbar Layout 的位置/顺序与 Pin 的条目列表是两种配置；工具栏可以在自身的 Toolbar 或 More 位置展示 Quick Actions 入口。

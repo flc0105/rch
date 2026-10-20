@@ -118,6 +118,7 @@ class WebScriptApi:
                 'script_run': True,
                 'script_run_id': normalized_run_id,
                 'script_run_name': normalized_script_name,
+                'script_run_arguments': normalized_params,
                 'script_run_presentation': normalized_presentation,
             },
         )

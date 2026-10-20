@@ -110,6 +110,13 @@ class ClientSessionCommandChannel:
             history_orchestrator=history_orchestrator,
         )
         self.session.send(data)
+        # Persist only after the transport has accepted an actual Client command.
+        # This is deliberately restricted to explicitly prepared Activity intents:
+        # internal requests and pure Server builtins never create Activity.
+        if history_orchestrator is not None:
+            history_orchestrator.confirm_dispatch(
+                self.session, history_entry_id, command, command_type=type,
+            )
 
         if bound_task and bound_task.get('cancel_requested'):
             self.send_cancel(data.get('id'))

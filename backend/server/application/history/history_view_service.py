@@ -1,257 +1,125 @@
+"""Read models for Activity Center and the independent Quick History."""
 import base64
 import json
+
 from server.application.artifact.artifact_reference_view_projector import ArtifactReferenceViewProjector
-from server.config.config import (
-    COMMAND_HISTORY_MAX_OUTPUT_SUMMARY_CHARS,
-    COMMAND_HISTORY_MAX_PAGE_SIZE,
-    COMMAND_HISTORY_PAGE_SIZE,
-)
+from server.config.config import COMMAND_HISTORY_PAGE_SIZE, COMMAND_HISTORY_MAX_PAGE_SIZE
 
 
 class HistoryViewService:
-    """Command history read models: Quick History and paged permanent executions."""
-
     def __init__(self, store):
         self.store = store
         self.artifact_view_projector = ArtifactReferenceViewProjector()
 
-    def _resolve_artifact_file_view(self, file_item: dict) -> dict:
+    def _resolve_artifact(self, file_item):
         return self.artifact_view_projector.project(
-            file_item,
-            self.store.artifact_service,
-            path_key='saved_path',
-            allow_local_path_fallback=True,
-            include_created_at=True,
+            file_item, self.store.artifact_service,
+            path_key='saved_path', allow_local_path_fallback=True, include_created_at=True,
         )
 
-    def _refresh_file_status_for_view(self, item: dict) -> dict:
-        copied = dict(item)
-        copied.pop('_started_at_ms', None)
-        files = [self._resolve_artifact_file_view(file_item) for file_item in item.get('files') or []]
-        copied['files'] = files
-        return copied
-
     @staticmethod
-    def _build_output_summary(item: dict) -> str:
-        files = list(item.get('files') or [])
-        if files:
-            return f'Produced {len(files)} file(s)'
-
-        for record in reversed(item.get('output_records') or []):
-            text = str(record.get('text') or '').strip()
-            if not text:
-                continue
-            if '\n' not in text and '\r' not in text:
-                return text[:COMMAND_HISTORY_MAX_OUTPUT_SUMMARY_CHARS]
-            break
-
-        status = str(item.get('status') or '').strip().lower()
-        if status == 'success':
-            return 'Command completed'
-        if status == 'error':
-            return 'Command failed'
-        return 'No output'
-
-    @staticmethod
-    def _apply_quick_history_move_flags(pinned_items: list, normal_items: list):
-        for index, item in enumerate(pinned_items):
+    def _apply_quick_history_move_flags(pinned, normal):
+        for index, item in enumerate(pinned):
             item['can_move_up'] = index > 0
-            item['can_move_down'] = index < len(pinned_items) - 1
-        for item in normal_items:
+            item['can_move_down'] = index < len(pinned) - 1
+        for item in normal:
             item['can_move_up'] = False
             item['can_move_down'] = False
 
-    def _build_pinned_quick_item(self, pinned_item: dict, latest_entry: dict | None) -> dict:
-        command_text = str(pinned_item.get('command') or '').strip()
-        snapshot = pinned_item.get('snapshot') if isinstance(pinned_item.get('snapshot'), dict) else {}
-        source_item = latest_entry if isinstance(latest_entry, dict) else snapshot
-        copied = dict(source_item or {})
-        output_summary = self._build_output_summary(copied)
-        copied.pop('output_records', None)
-        copied['command'] = command_text
-        copied['raw_command'] = str(copied.get('raw_command') or command_text).strip()
-        copied['is_pinned'] = True
-        copied['pinned_at'] = str(pinned_item.get('pinned_at') or '').strip()
-        copied['pin_order'] = int(pinned_item.get('pin_order', 0) or 0)
-        copied = self._refresh_file_status_for_view(copied)
-        copied['output_summary'] = output_summary
-        return copied
-
-    def _build_normal_quick_item(self, item: dict, latest_entry: dict | None = None) -> dict:
-        copied = dict(item or {})
-        if isinstance(latest_entry, dict):
-            copied.update(latest_entry)
-        output_summary = self._build_output_summary(copied)
-        copied.pop('output_records', None)
-        copied['is_pinned'] = False
-        copied['pinned_at'] = ''
-        copied['pin_order'] = 0
-        copied = self._refresh_file_status_for_view(copied)
-        copied['output_summary'] = output_summary
-        return copied
-
-    def _build_quick_history(self, machine_id: str) -> list:
-        pinned_source_items = self.store.pinned_store.get_items(machine_id)
-        pinned_commands = {item['command'] for item in pinned_source_items}
-        pinned_items = []
-        for pinned_item in pinned_source_items:
-            command = pinned_item['command']
-            pinned_items.append(
-                self._build_pinned_quick_item(
-                    pinned_item,
-                    self.store._get_latest_entry_for_command(machine_id, command),
-                )
-            )
-
-        normal_items = []
-        for item in self.store._list_recents(machine_id):
-            command = str(item.get('command') or '').strip()
-            if command in pinned_commands:
-                continue
-            latest_entry = self.store._get_entry(machine_id, str(item.get('last_entry_id') or '').strip())
-            normal_items.append(self._build_normal_quick_item(item, latest_entry))
-        self._apply_quick_history_move_flags(pinned_items, normal_items)
-        result = pinned_items + normal_items
-        for index, item in enumerate(result, start=1):
-            item['index'] = index
-        return result
-
-    def _build_execution_entry_view(self, entry: dict, index: int = 0) -> dict:
-        copied = self._refresh_file_status_for_view(entry)
-        copied['output_records'] = list(entry.get('output_records') or [])
-        copied['output_summary'] = self._build_output_summary(copied)
-        if index > 0:
-            copied['index'] = index
-        return copied
+    def _build_quick_history(self, machine_id):
+        pinned_source = self.store.pinned_store.get_items(machine_id)
+        pinned = []
+        for item in pinned_source:
+            command = item['command']
+            row = self.store.database.connection().execute(
+                'SELECT snapshot_json, last_used_at, use_count FROM command_recents WHERE machine_id = ? AND command = ?',
+                (machine_id, command),
+            ).fetchone()
+            from core.utils.json_utils import json_loads_typed
+            snapshot = json_loads_typed(row['snapshot_json'], {}) if row else item.get('snapshot') or {}
+            pinned.append({**snapshot, 'command': command, 'is_pinned': True,
+                           'pinned_at': item.get('pinned_at') or '', 'pin_order': item.get('pin_order') or 0,
+                           'last_used_at': row['last_used_at'] if row else '',
+                           'use_count': int(row['use_count']) if row else 0, 'files': []})
+        pinned_commands = {row['command'] for row in pinned}
+        normal = [{**row, 'files': [], 'is_pinned': False, 'pin_order': 0, 'pinned_at': ''}
+                  for row in self.store._list_recents(machine_id) if row['command'] not in pinned_commands]
+        self._apply_quick_history_move_flags(pinned, normal)
+        results = pinned + normal
+        for index, row in enumerate(results, start=1):
+            row['index'] = index
+        return results
 
     @staticmethod
-    def _encode_cursor(started_at_ms: int, entry_id: str) -> str:
-        payload = json.dumps({'t': int(started_at_ms), 'id': str(entry_id)}, separators=(',', ':')).encode('utf-8')
-        return base64.urlsafe_b64encode(payload).decode('ascii').rstrip('=')
+    def _encode_cursor(started_at_ms, activity_id):
+        raw = json.dumps({'t': int(started_at_ms), 'id': str(activity_id)}, separators=(',', ':')).encode()
+        return base64.urlsafe_b64encode(raw).decode().rstrip('=')
 
     @staticmethod
-    def _decode_cursor(cursor: str):
-        text = str(cursor or '').strip()
-        if not text:
+    def _decode_cursor(cursor):
+        if not str(cursor or '').strip():
             return None
         try:
-            padding = '=' * ((4 - len(text) % 4) % 4)
-            payload = json.loads(base64.urlsafe_b64decode((text + padding).encode('ascii')).decode('utf-8'))
+            text = str(cursor).strip()
+            payload = json.loads(base64.urlsafe_b64decode(text + '=' * (-len(text) % 4)))
             return int(payload['t']), str(payload['id'])
         except Exception as exc:
-            raise ValueError('Invalid history cursor') from exc
+            raise ValueError('Invalid activity cursor') from exc
 
     @staticmethod
-    def _normalize_page_limit(limit) -> int:
+    def _limit(value):
         try:
-            value = int(limit)
-        except Exception:
-            value = COMMAND_HISTORY_PAGE_SIZE
-        return min(max(value, 1), COMMAND_HISTORY_MAX_PAGE_SIZE)
+            result = int(value)
+        except (TypeError, ValueError):
+            result = COMMAND_HISTORY_PAGE_SIZE
+        return min(max(result, 1), COMMAND_HISTORY_MAX_PAGE_SIZE)
 
-    def get_history_for_connection(self, conn) -> list:
-        if conn is None:
-            return []
-        return self.get_history_by_machine_id(self.store._get_machine_id_from_conn(conn))
+    def get_history_for_connection(self, conn):
+        return self.get_history_by_machine_id(self.store._get_machine_id_from_conn(conn)) if conn else []
 
-    def get_history_by_machine_id(self, machine_id: str) -> list:
-        machine_id_text = str(machine_id or '').strip() or 'unknown_machine'
+    def get_history_by_machine_id(self, machine_id):
         with self.store._lock:
-            return self._build_quick_history(machine_id_text)
+            return self._build_quick_history(str(machine_id or '').strip() or 'unknown_machine')
 
-    def get_connection_command_counts_by_machine_id(self, machine_id: str) -> dict[str, int]:
-        machine_id_text = str(machine_id or '').strip() or 'unknown_machine'
-        rows = self.store.database.connection().execute(
-            """
-            SELECT client_id, COUNT(*) AS command_count
-            FROM command_executions
-            WHERE machine_id = ?
-            GROUP BY client_id
-            """,
-            (machine_id_text,),
-        ).fetchall()
-        return {str(row['client_id'] or ''): int(row['command_count'] or 0) for row in rows}
+    def _activity_page(self, machine_id, *, client_id='', limit=None, cursor='', query='', kind='', errors=False):
+        size = self._limit(limit)
+        filters = {'client_id': client_id, 'query': query, 'kind': kind, 'errors': errors}
+        rows = self.store._list_execution_rows(machine_id, limit=size + 1,
+                                               cursor=self._decode_cursor(cursor), **filters)
+        has_more = len(rows) > size
+        page_rows = rows[:size]
+        items = []
+        for row in page_rows:
+            entry = self.store._row_to_entry(row)
+            entry['files'] = [self._resolve_artifact(item) for item in entry['files']]
+            items.append(entry)
+        next_cursor = self._encode_cursor(page_rows[-1]['started_at_ms'], page_rows[-1]['activity_id']) if has_more and page_rows else ''
+        # Count uses exactly the same filters as data, excluding page cursor.
+        count = self.store.count_activities(machine_id, **filters)
+        return {'items': items, 'next_cursor': next_cursor, 'has_more': has_more, 'total_count': count}
 
-    def get_connection_command_page(
-        self,
-        machine_id: str,
-        client_id: str,
-        *,
-        limit=None,
-        cursor: str = '',
-    ) -> dict:
-        machine_id_text = str(machine_id or '').strip() or 'unknown_machine'
-        client_id_text = str(client_id or '').strip()
-        if not client_id_text:
+    def get_execution_history_page(self, machine_id, *, limit=None, cursor='', query='', kind='', errors=False):
+        if kind and kind not in {'command', 'alias', 'script'}:
+            raise ValueError('Invalid activity kind')
+        with self.store._lock:
+            return self._activity_page(str(machine_id or '').strip() or 'unknown_machine',
+                                       limit=limit, cursor=cursor, query=query, kind=kind, errors=errors)
+
+    def get_connection_command_counts_by_machine_id(self, machine_id):
+        rows = self.store.database.connection().execute('''
+            SELECT client_id, COUNT(*) AS command_count FROM activity_records
+            WHERE machine_id = ? GROUP BY client_id
+        ''', (machine_id,)).fetchall()
+        return {row['client_id']: int(row['command_count']) for row in rows}
+
+    def get_connection_command_page(self, machine_id, client_id, *, limit=None, cursor=''):
+        if not str(client_id or '').strip():
             raise ValueError('Invalid client id')
-
-        page_limit = self._normalize_page_limit(limit)
-        decoded_cursor = self._decode_cursor(cursor)
-        rows = self.store._list_execution_rows(
-            machine_id_text,
-            limit=page_limit + 1,
-            cursor=decoded_cursor,
-            client_id=client_id_text,
-        )
-        has_more = len(rows) > page_limit
-        page_rows = rows[:page_limit]
-        items = [
-            {
-                'created_at': row['created_at'] or '',
-                'started_at': row['started_at'] or '',
-                'finished_at': row['finished_at'] or '',
-                'status': row['status'] or '',
-                'command': row['command'] or '',
-            }
-            for row in page_rows
-        ]
-        next_cursor = ''
-        if has_more and page_rows:
-            last = page_rows[-1]
-            next_cursor = self._encode_cursor(int(last['started_at_ms'] or 0), last['entry_id'])
-
-        total_row = self.store.database.connection().execute(
-            'SELECT COUNT(*) FROM command_executions WHERE machine_id = ? AND client_id = ?',
-            (machine_id_text, client_id_text),
-        ).fetchone()
-        return {
-            'items': items,
-            'next_cursor': next_cursor,
-            'has_more': has_more,
-            'total_count': int(total_row[0] if total_row else 0),
-        }
-
-    def get_execution_history_page(self, machine_id: str, *, limit=None, cursor: str = '', query: str = '') -> dict:
-        machine_id_text = str(machine_id or '').strip() or 'unknown_machine'
-        query_text = str(query or '').strip()
-        page_limit = self._normalize_page_limit(limit)
-        decoded_cursor = self._decode_cursor(cursor)
-        rows = self.store._list_execution_rows(
-            machine_id_text,
-            limit=page_limit + 1,
-            cursor=decoded_cursor,
-            query=query_text,
-        )
-        has_more = len(rows) > page_limit
-        page_rows = rows[:page_limit]
-        items = [
-            self._build_execution_entry_view(self.store._row_to_entry(row), index=index)
-            for index, row in enumerate(page_rows, start=1)
-        ]
-        next_cursor = ''
-        if has_more and page_rows:
-            last = page_rows[-1]
-            next_cursor = self._encode_cursor(int(last['started_at_ms'] or 0), last['entry_id'])
-
-        count_sql = 'SELECT COUNT(*) FROM command_executions WHERE machine_id = ?'
-        count_params = [machine_id_text]
-        if query_text:
-            count_sql += ' AND instr(LOWER(command), LOWER(?)) > 0'
-            count_params.append(query_text)
-        total_row = self.store.database.connection().execute(count_sql, tuple(count_params)).fetchone()
-        return {
-            'items': items,
-            'next_cursor': next_cursor,
-            'has_more': has_more,
-            'total_count': int(total_row[0] if total_row else 0),
-        }
+        with self.store._lock:
+            page = self._activity_page(str(machine_id or '').strip() or 'unknown_machine',
+                                       client_id=client_id, limit=limit, cursor=cursor)
+            # The machine connection timeline remains a read-only command projection.
+            # It is not the Activity Center public record contract.
+            page['items'] = [{**activity, 'command': activity['invocation'].get('input') or ''}
+                             for activity in page['items']]
+            return page

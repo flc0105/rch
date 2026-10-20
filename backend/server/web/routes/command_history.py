@@ -21,6 +21,8 @@ def create_command_history_blueprint(server_instance):
                 limit=request.args.get('limit'),
                 cursor=request.args.get('cursor', ''),
                 query=request.args.get('query', ''),
+                kind=request.args.get('kind', ''),
+                errors=str(request.args.get('errors', '')).strip().lower() in ('1', 'true'),
             ),
             default_error_status=500,
         )

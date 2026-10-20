@@ -7,6 +7,8 @@ class WebTaskStatus:
     SUCCESS = 'success'
     ERROR = 'error'
     CANCELLED = 'cancelled'
+    TIMED_OUT = 'timed_out'
+    INTERRUPTED = 'interrupted'
 
     ACTIVE_STATUSES = {
         RUNNING,
@@ -17,6 +19,8 @@ class WebTaskStatus:
         SUCCESS,
         ERROR,
         CANCELLED,
+        TIMED_OUT,
+        INTERRUPTED,
     }
 
 
@@ -34,6 +38,8 @@ class TaskStreamSummary:
     has_failure: bool = False
     has_cancelled_output: bool = False
     has_timeout_output: bool = False
+    has_explicit_timeout: bool = False
+    has_connection_interruption: bool = False
 
     NON_FATAL_ERROR_TEXTS = {
         'command does not support cancellation',
@@ -57,14 +63,31 @@ class TaskStreamSummary:
             ):
                 self.has_failure = True
 
-    def mark_exception(self):
+    def mark_exception(self, exc=None):
         self.has_failure = True
+        if isinstance(exc, TimeoutError):
+            self.has_explicit_timeout = True
+        elif isinstance(exc, (ConnectionError, EOFError)):
+            self.has_connection_interruption = True
+
+    def mark_dispatch_failure(self, reason: str):
+        self.has_failure = True
+        if reason == 'timed_out':
+            self.has_explicit_timeout = True
+        elif reason == 'interrupted':
+            self.has_connection_interruption = True
 
     def is_success(self) -> bool:
         return not self.has_failure
 
     def resolve_final_status(self, cancel_requested: bool = False) -> str:
-        if cancel_requested and (self.has_cancelled_output or self.has_timeout_output):
+        if cancel_requested and self.has_cancelled_output:
+            return WebTaskStatus.CANCELLED
+        if self.has_explicit_timeout:
+            return WebTaskStatus.TIMED_OUT
+        if self.has_connection_interruption:
+            return WebTaskStatus.INTERRUPTED
+        if cancel_requested and self.has_timeout_output:
             return WebTaskStatus.CANCELLED
         return WebTaskStatus.SUCCESS if self.is_success() else WebTaskStatus.ERROR
 

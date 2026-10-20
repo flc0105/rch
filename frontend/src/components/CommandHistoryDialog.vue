@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     :model-value="visible"
-    title="Command History"
+    title="Activity Center"
     width="1120px"
     top="5vh"
     class="fixed-dialog recent-files-dialog command-history-dialog"
@@ -35,7 +35,7 @@
               </span>
 
               <span>
-                Execution {{ commandHistorySearchSummary.fullVisible }} / {{ commandHistorySearchSummary.fullTotal }}
+                Activity {{ commandHistorySearchSummary.fullVisible }} / {{ commandHistorySearchSummary.fullTotal }}
               </span>
             </div>
 
@@ -90,35 +90,6 @@
                   <div class="ellipsis mono">
                     {{ row.command || '-' }}
                   </div>
-                </template>
-              </el-table-column>
-
-              <el-table-column
-                prop="last_used_at"
-                label="Last Used"
-                width="240"
-                show-overflow-tooltip
-              >
-                <template #default="{ row }">
-                  <div class="ellipsis">
-                    {{ formatDateTimeStandard(row.last_used_at || row.created_at || row.started_at) || '-' }}
-                  </div>
-                </template>
-              </el-table-column>
-
-              <el-table-column
-                prop="status"
-                label="Status"
-                width="120"
-                align="center"
-              >
-                <template #default="{ row }">
-                  <el-tag
-                    :type="buildCommandExecutionStatusTagType(row.status)"
-                    size="small"
-                  >
-                    {{ row.status || '-' }}
-                  </el-tag>
                 </template>
               </el-table-column>
 
@@ -265,21 +236,6 @@
                           #{{ row.index || '-' }}
                         </el-tag>
 
-                        <el-tag
-                          size="small"
-                          :type="buildCommandExecutionStatusTagType(row.status)"
-                        >
-                          {{ row.status || '-' }}
-                        </el-tag>
-                      </div>
-
-                      <div class="mobile-file-meta">
-                        <div class="mobile-file-meta-item">
-                          <div class="mobile-file-meta-label">Last Used</div>
-                          <div class="mobile-file-meta-value">
-                            {{ formatDateTimeStandard(row.last_used_at || row.created_at || row.started_at) || '-' }}
-                          </div>
-                        </div>
                       </div>
 
                       <div class="mobile-file-actions mobile-history-actions-row">
@@ -336,11 +292,20 @@
           </div>
         </el-tab-pane>
 
-        <el-tab-pane label="Execution History" name="full">
+        <el-tab-pane label="Activity Center" name="full">
           <div
             class="command-execution-list-shell"
             v-loading="commandExecutionHistoryLoading"
           >
+            <div class="activity-filters">
+              <el-select v-model="activityKindFilter" size="small" class="activity-kind-filter" aria-label="Activity kind">
+                <el-option label="All types" value="" />
+                <el-option label="Command" value="command" />
+                <el-option label="Alias" value="alias" />
+                <el-option label="Script" value="script" />
+              </el-select>
+              <el-checkbox v-model="activityErrorsOnly">Errors</el-checkbox>
+            </div>
             <div
               v-if="!filteredCommandExecutionItems.length && !commandExecutionHistoryLoading"
               class="empty-state"
@@ -354,87 +319,33 @@
             >
               <div
                 v-for="item in filteredCommandExecutionItems"
-                :key="item.entry_id"
+                :key="item.activity_id"
                 class="execution-history-item"
                 role="button"
                 tabindex="0"
-                :aria-label="`View details: ${item.command || '-'}`"
+                :aria-label="`View details: ${buildActivityLabel(item)}`"
                 @click="openCommandExecutionDetail(item)"
                 @keydown.enter.self.prevent="openCommandExecutionDetail(item)"
                 @keydown.space.self.prevent="openCommandExecutionDetail(item)"
               >
-                <div class="execution-history-row">
-                  <div class="execution-history-meta">
-                    <el-tag
-                      :type="buildCommandExecutionStatusTagType(item.status)"
-                      size="small"
-                    >
-                      {{ item.status || '-' }}
-                    </el-tag>
-
-                    <span class="execution-history-time">
-                      {{ formatDateTimeStandard(item.started_at) || '-' }}
-                    </span>
-
-                    <el-tag
-                      v-if="Array.isArray(item.files) && item.files.length"
-                      type="primary"
-                      size="small"
-                    >
-                      📎 {{ item.files.length }}
-                    </el-tag>
-
-                    <el-tag
-                      v-if="item.output_truncated"
-                      type="warning"
-                      size="small"
-                    >
-                      ✂️ truncated
-                    </el-tag>
+                <div class="activity-entry-main">
+                  <component :is="getActivityKindIcon(item.kind)" class="activity-kind-icon" :size="19" />
+                  <div class="activity-entry-content">
+                    <div class="activity-entry-title" :title="buildActivityLabel(item)">
+                      <span class="activity-kind-name">{{ buildActivityKindLabel(item.kind) }}</span>
+                      <span class="activity-title-separator">·</span>
+                      <span class="activity-operation">{{ buildActivityLabel(item) }}</span>
+                      <component :is="getActivityStatusIcon(item.status)" class="activity-status-icon"
+                                 :class="`activity-status-${item.status}`" :size="16" :title="item.status" />
+                    </div>
+                    <div class="activity-entry-subtitle">
+                      <span>{{ formatDateTimeStandard(item.started_at || item.created_at) || '-' }}</span>
+                      <span v-if="isActivityProblem(item.status)" class="activity-error-preview">{{ buildCommandExecutionSingleLineSummary(item) }}</span>
+                      <span v-if="item.files?.length">{{ item.files.length }} file(s)</span>
+                      <span v-if="item.result?.truncated">Truncated</span>
+                    </div>
                   </div>
-
-                  <div class="execution-history-actions">
-                    <el-button
-                      plain
-                      size="small"
-                      @click.stop="applyHistoryCommand(item)"
-                    >
-                      Use
-                    </el-button>
-
-                    <el-button
-                      plain
-                      size="small"
-                      @click.stop="openCommandExecutionDetail(item)"
-                    >
-                      Details
-                    </el-button>
-
-                    <el-button
-                      type="danger"
-                      plain
-                      size="small"
-                      :loading="commandExecutionDeletingEntryId === item.entry_id"
-                      @click.stop="deleteCommandExecutionItem(item)"
-                    >
-                      Delete
-                    </el-button>
-                  </div>
-                </div>
-
-                <div
-                  class="execution-history-command mono"
-                  :title="item.command || '-'"
-                >
-                  {{ item.command || '-' }}
-                </div>
-
-                <div
-                  v-if="String(item.status || '').toLowerCase() === 'error'"
-                  class="execution-history-error"
-                  :title="buildCommandExecutionSingleLineSummary(item)"
-                >
-                  {{ buildCommandExecutionSingleLineSummary(item) }}
+                  <ChevronRight class="activity-detail-chevron" :size="18" aria-label="Open details" />
                 </div>
               </div>
               <div
@@ -470,6 +381,7 @@
     :format-bytes="formatBytes"
     @toggle-output-sort="toggleCommandExecutionOutputSort"
     @preview-file="$emit('preview-file', $event)"
+    @delete-activity="deleteCommandExecutionItem"
   />
 </template>
 
@@ -479,6 +391,7 @@ import CommandExecutionDetailDialog from './CommandExecutionDetailDialog.vue'
 import {EditPen} from "@element-plus/icons-vue";
 import { Star, StarFilled, ArrowUp, ArrowDown, Select } from '@element-plus/icons-vue'
 import { diffDateTimeMs } from '../utils/formatters.js'
+import { Terminal, Zap, FileCode2, CheckCircle2, XCircle, CircleDashed, Ban, Clock3, ChevronRight, AlertTriangle } from '@lucide/vue'
 
 export default {
   name: 'CommandHistoryDialog',
@@ -489,7 +402,8 @@ export default {
 Star,
     StarFilled,
     CommandExecutionDetailDialog,
-    ArrowUp, ArrowDown
+    ArrowUp, ArrowDown,
+    Terminal, Zap, FileCode2, CheckCircle2, XCircle, CircleDashed, Ban, Clock3, ChevronRight, AlertTriangle,
   },
 
   props: {
@@ -538,6 +452,8 @@ Star,
       commandExecutionTotalCount: 0,
       commandExecutionDeletingEntryId: '',
       commandHistoryActiveTab: 'quick',
+      activityKindFilter: '',
+      activityErrorsOnly: false,
       commandHistorySearchText: '',
       commandExecutionDetailDialogVisible: false,
       selectedCommandExecutionEntryId: '',
@@ -580,12 +496,12 @@ Star,
     },
 
     selectedCommandExecutionEntry() {
-      return this.commandExecutionItems.find(item => item.entry_id === this.selectedCommandExecutionEntryId) || null
+      return this.commandExecutionItems.find(item => item.activity_id === this.selectedCommandExecutionEntryId) || null
     },
 
     selectedCommandExecutionOutputRecordsDesc() {
-      const records = this.selectedCommandExecutionEntry && Array.isArray(this.selectedCommandExecutionEntry.output_records)
-        ? this.selectedCommandExecutionEntry.output_records
+      const records = this.selectedCommandExecutionEntry && Array.isArray(this.selectedCommandExecutionEntry.result?.output_records)
+        ? this.selectedCommandExecutionEntry.result?.output_records
         : []
 
       const sorted = [...records].sort((a, b) => Number(b.seq || 0) - Number(a.seq || 0))
@@ -605,6 +521,14 @@ Star,
       }
     },
 
+    activityKindFilter() {
+      if (this.visible) this.reloadCommandExecutionHistory({ silent: true })
+    },
+
+    activityErrorsOnly() {
+      if (this.visible) this.reloadCommandExecutionHistory({ silent: true })
+    },
+
     commandHistorySearchText() {
       if (this.commandHistorySearchTimer) {
         window.clearTimeout(this.commandHistorySearchTimer)
@@ -620,6 +544,29 @@ Star,
   },
 
   methods: {
+    getActivityKindIcon(kind) {
+      return ({ command: Terminal, alias: Zap, script: FileCode2 })[kind] || Terminal
+    },
+    getActivityStatusIcon(status) {
+      if (status === 'success') return CheckCircle2
+      if (['error', 'timed_out'].includes(status)) return XCircle
+      if (['cancelled', 'interrupted'].includes(status)) return Ban
+      if (status === 'running' || status === 'cancelling') return CircleDashed
+      return Clock3
+    },
+    buildActivityKindLabel(kind) {
+      return ({ command: 'Command', alias: 'Alias', script: 'Script' })[kind] || 'Activity'
+    },
+    buildActivityLabel(item) {
+      const invocation = item?.invocation || {}
+      const fallback = item?.resolved?.command || invocation.input || '-'
+      if (item?.kind === 'script') return String(invocation.target || invocation.input || 'Script')
+      if (item?.kind === 'alias') return String(invocation.target || invocation.input || 'Alias')
+      return String(fallback).replace(/\s+/g, ' ').slice(0, 160)
+    },
+    isActivityProblem(status) {
+      return ['error', 'cancelled', 'interrupted', 'timed_out'].includes(String(status || ''))
+    },
     getSelectedHistoryMachineId() {
       return String(this.currentConnection?.machine_id || '').trim()
     },
@@ -689,6 +636,8 @@ Star,
       try {
         const params = new URLSearchParams({ limit: '50' })
         if (query) params.set('query', query)
+        if (this.activityKindFilter) params.set('kind', this.activityKindFilter)
+        if (this.activityErrorsOnly) params.set('errors', 'true')
 
         const res = await fetch(
           `/api/machines/${encodeURIComponent(machineId)}/command-history/full?${params.toString()}`,
@@ -715,7 +664,7 @@ Star,
 
         if (
           this.selectedCommandExecutionEntryId
-          && !this.commandExecutionItems.some(item => item.entry_id === this.selectedCommandExecutionEntryId)
+          && !this.commandExecutionItems.some(item => item.activity_id === this.selectedCommandExecutionEntryId)
         ) {
           this.commandExecutionDetailDialogVisible = false
           this.selectedCommandExecutionEntryId = ''
@@ -805,6 +754,8 @@ Star,
         if (query) {
           params.set('query', query)
         }
+        if (this.activityKindFilter) params.set('kind', this.activityKindFilter)
+        if (this.activityErrorsOnly) params.set('errors', 'true')
         const res = await fetch(
           `/api/machines/${encodeURIComponent(machineId)}/command-history/full?${params.toString()}`,
         )
@@ -824,11 +775,11 @@ Star,
 
         const data = json.data && typeof json.data === 'object' ? json.data : {}
         const items = Array.isArray(data.items) ? data.items : []
-        const existingIds = new Set(this.commandExecutionItems.map(item => item?.entry_id).filter(Boolean))
+        const existingIds = new Set(this.commandExecutionItems.map(item => item?.activity_id).filter(Boolean))
         for (const item of items) {
-          if (item?.entry_id && existingIds.has(item.entry_id)) continue
+          if (item?.activity_id && existingIds.has(item.activity_id)) continue
           this.commandExecutionItems.push(item)
-          if (item?.entry_id) existingIds.add(item.entry_id)
+          if (item?.activity_id) existingIds.add(item.activity_id)
         }
         this.commandExecutionNextCursor = String(data.next_cursor || '')
         this.commandExecutionHasMore = data.has_more === true
@@ -848,9 +799,9 @@ Star,
     },
 
     openCommandExecutionDetail(row) {
-      if (!row || !row.entry_id) return
+      if (!row || !row.activity_id) return
 
-      this.selectedCommandExecutionEntryId = row.entry_id
+      this.selectedCommandExecutionEntryId = row.activity_id
       this.commandExecutionDetailDialogVisible = true
     },
 
@@ -970,7 +921,7 @@ Star,
         return
       }
 
-      if (!row || !row.entry_id) return
+      if (!row || !row.activity_id) return
 
       try {
         await ElMessageBox.confirm(
@@ -983,9 +934,9 @@ Star,
           }
         )
 
-        this.commandExecutionDeletingEntryId = row.entry_id
+        this.commandExecutionDeletingEntryId = row.activity_id
 
-        const res = await fetch(`/api/machines/${encodeURIComponent(machineId)}/command-history/full/${encodeURIComponent(row.entry_id)}`, {
+        const res = await fetch(`/api/machines/${encodeURIComponent(machineId)}/command-history/full/${encodeURIComponent(row.activity_id)}`, {
           method: 'DELETE',
         })
 
@@ -1105,7 +1056,8 @@ Star,
       const value = String(status || '').toLowerCase()
 
       if (value === 'success') return 'success'
-      if (value === 'error') return 'danger'
+      if (['error', 'timed_out', 'interrupted'].includes(value)) return 'danger'
+      if (value === 'cancelled') return 'warning'
       if (value === 'running') return 'warning'
 
       return 'info'
@@ -1137,13 +1089,11 @@ Star,
     },
 
     buildCommandExecutionSummary(item) {
-      const calculatedSummary = String(item?.output_summary || '').trim()
-      if (calculatedSummary) return calculatedSummary
 
       const files = Array.isArray(item?.files) ? item.files : []
       if (files.length) return `Produced ${files.length} file(s)`
 
-      const records = Array.isArray(item?.output_records) ? item.output_records : []
+      const records = Array.isArray(item?.result?.output_records) ? item.result.output_records : []
       for (let index = records.length - 1; index >= 0; index -= 1) {
         const text = String(records[index]?.text || '').trim()
         if (!text) continue
@@ -1151,8 +1101,8 @@ Star,
         break
       }
 
-      if (String(item?.status || '').toLowerCase() === 'success') return 'Command completed'
-      if (String(item?.status || '').toLowerCase() === 'error') return 'Command failed'
+      if (String(item?.status || '').toLowerCase() === 'success') return 'Completed'
+      if (this.isActivityProblem(item?.status)) return `Activity ${item.status}`
       return 'No output'
     },
 
@@ -1557,6 +1507,24 @@ Star,
   flex-direction: column;
   padding: 0 4px 4px 0;
 }
+
+ .activity-filters { display: flex; align-items: center; gap: 12px; padding: 8px 12px; }
+.activity-kind-filter { width: 150px; }
+.activity-entry-main { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.activity-kind-icon { flex: 0 0 auto; color: #64748b; }
+.activity-entry-content { flex: 1; min-width: 0; }
+.activity-entry-title { display: flex; align-items: center; gap: 6px; font-size: 13px; white-space: nowrap; overflow: hidden; }
+.activity-kind-name { font-weight: 600; flex: 0 0 auto; }
+.activity-title-separator { color: #9ca3af; }
+.activity-operation { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.activity-status-icon { flex: 0 0 auto; }
+.activity-status-success { color: #16a34a; }
+.activity-status-error,.activity-status-timed_out,.activity-status-interrupted { color: #dc2626; }
+.activity-status-cancelled { color: #d97706; }
+.activity-status-running,.activity-status-cancelling { color: #64748b; }
+.activity-entry-subtitle { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 5px; font-size: 12px; color: #64748b; min-width: 0; }
+.activity-error-preview { color: #dc2626; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.activity-detail-chevron { flex: 0 0 auto; color: #94a3b8; }
 
 .execution-history-item {
   flex: 0 0 auto;

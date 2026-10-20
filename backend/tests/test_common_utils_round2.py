@@ -39,7 +39,10 @@ class CommonUtilityRound2Tests(unittest.TestCase):
         self.assertTrue(encoded.startswith(JSON_PREFIX))
         self.assertEqual(payload, decode_structured_arg(encoded, require_prefix=True))
         self.assertEqual(payload, StructuredArgCodec().decode(f'"{encoded}"'))
-        self.assertEqual(JSON_PREFIX, CommandHistoryRecordPolicy.JSON_PAYLOAD_PREFIX)
+        # Activity eligibility follows a known execution source and Client dispatch,
+        # not whether a command contains a structured JSON transport payload.
+        self.assertTrue(CommandHistoryRecordPolicy.should_record_command(encoded, source='web'))
+        self.assertFalse(CommandHistoryRecordPolicy.should_record_command(encoded, source='web_remote_file'))
 
     def test_structured_arg_codec_can_leave_plain_text_untouched(self):
         self.assertEqual('plain text', decode_structured_arg('plain text'))

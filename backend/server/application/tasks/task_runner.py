@@ -93,6 +93,7 @@ class WebTaskRunner:
             history_entry_id,
             final_status == WebTaskStatus.SUCCESS,
             cwd_end=context.session.session_info.cwd,
+            status=final_status,
         )
 
     def _publish_task_result(self, context: TaskExecutionContext, status: int, text: str):
@@ -158,6 +159,9 @@ class WebTaskRunner:
             return
 
         if event.event_type == CommandExecutionEvent.ERROR:
+            reason = str(event.payload.get('failure_reason') or '')
+            if reason:
+                summary.mark_dispatch_failure(reason)
             self._record_stream_chunk(context, 0, event.text, summary)
             return
 
@@ -183,7 +187,7 @@ class WebTaskRunner:
     def _finalize_stream(self, context: TaskExecutionContext, final_status: str, summary: TaskStreamSummary):
         self.task_store.finish_task(
             context.task_id,
-            ok=summary.is_success(),
+            ok=final_status == WebTaskStatus.SUCCESS,
             final_status=final_status,
         )
 
@@ -206,7 +210,7 @@ class WebTaskRunner:
                 context.command,
                 context.task_type,
             )
-            summary.mark_exception()
+            summary.mark_exception(exc)
             self._record_stream_chunk(context, 0, str(exc), summary)
         finally:
             final_status = self._resolve_final_status(context, summary)

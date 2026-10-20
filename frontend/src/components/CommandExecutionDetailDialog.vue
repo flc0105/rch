@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     :model-value="visible"
-    :title="entry ? (entry.command || 'Execution Detail') : 'Execution Detail'"
+    :title="entry ? ('Activity · ' + (entry.invocation?.target || entry.invocation?.input || 'Details')) : 'Activity Detail'"
     width="1000px"
     top="5vh"
     class="fixed-dialog command-execution-detail-dialog"
@@ -27,10 +27,22 @@
         <div class="background-job-stat">
           <div class="background-job-stat-label">Source</div>
           <div class="background-job-stat-value">
-            {{ entry.source || '-' }}
+            {{ entry.origin || '-' }}
           </div>
         </div>
 
+        <div class="background-job-stat">
+          <div class="background-job-stat-label">Kind / Action</div>
+          <div class="background-job-stat-value">{{ entry.kind }} · {{ entry.action }}</div>
+        </div>
+        <div class="background-job-stat">
+          <div class="background-job-stat-label">Invocation</div>
+          <div class="background-job-stat-value">{{ entry.invocation?.input || '-' }}</div>
+        </div>
+        <div class="background-job-stat">
+          <div class="background-job-stat-label">Resolved</div>
+          <div class="background-job-stat-value">{{ entry.resolved?.command || entry.resolved?.command_type || '-' }}</div>
+        </div>
         <div class="background-job-stat">
           <div class="background-job-stat-label">Duration</div>
           <div class="background-job-stat-value">
@@ -84,7 +96,7 @@
           <div class="background-job-message-list">
             <div
               v-for="(record, index) in outputRecords"
-              :key="`${entry.entry_id}-output-${index}`"
+              :key="`${entry.activity_id}-output-${index}`"
               class="background-job-message-item"
             >
               <div class="background-job-message-time">
@@ -103,14 +115,14 @@
             </div>
 
             <div
-              v-if="entry.output_truncated"
+              v-if="entry.result?.truncated"
               class="empty-state compact"
             >
               Output was truncated for storage safety
             </div>
 
             <div
-              v-if="!entry.output_records || !entry.output_records.length"
+              v-if="!entry.result?.output_records || !entry.result?.output_records.length"
               class="empty-state compact"
             >
               No output records
@@ -124,7 +136,7 @@
           <div class="background-job-file-list">
             <div
               v-for="(file, index) in entry.files"
-              :key="`${entry.entry_id}-file-${index}`"
+              :key="`${entry.activity_id}-file-${index}`"
               class="background-job-file-item"
             >
               <div class="background-job-file-main">
@@ -170,6 +182,9 @@
             </div>
           </div>
         </div>
+      </div>
+      <div class="activity-detail-footer">
+        <el-button type="danger" plain size="small" @click="$emit('delete-activity', entry)">Delete</el-button>
       </div>
     </div>
   </el-dialog>
@@ -240,11 +255,13 @@ export default {
     'update:visible',
     'toggle-output-sort',
     'preview-file',
+    'delete-activity',
   ],
 }
 </script>
 
 <style scoped>
+.activity-detail-footer { display: flex; justify-content: flex-end; padding-top: 14px; }
 .background-job-stats {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
