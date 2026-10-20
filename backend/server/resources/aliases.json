@@ -10,8 +10,8 @@
     "rch_paste": "pyexec_collect import pyperclip; print(pyperclip.paste())",
     "rch_copy": "pyexec_collect import pyperclip;pyperclip.copy(\"<text>\")",
     "git_log": "git log --date=format:'%Y-%m-%d %H:%M:%S' --pretty=format:\"%h %cd %s\"",
-    "git_zip": "git archive --format=zip -o source.zip <commit>",
-    "pyver": "pyexec_collect import sys;print(sys.version)"
+    "pyver": "pyexec_collect import sys;print(sys.version)",
+    "git_export": "git archive --format=zip -o source.zip <commit>"
   },
   "win": {
     "list_av": "powershell Get-CimInstance -Namespace root/SecurityCenter2 -ClassName AntivirusProduct ^| Select-Object displayName",
@@ -53,19 +53,15 @@
   "mac": {
     "ll": "ls -la",
     "public_ip": "curl -s ifconfig.me;echo",
-    "clean_apple_junk": "find . -name \"._*\" -type f -delete && find . -name \".DS_Store\" -type f -delete",
     "local_ip": "ipconfig getifaddr en0",
     "wifi_password": "security find-generic-password -wa <ssid>",
     "list_xattrs": "xattr -l <path>",
     "port_info": "lsof -nP -iTCP:\"<port>\" -sTCP:LISTEN",
     "remove_quarantine": "xattr -d com.apple.quarantine <path>",
-    "pause_pid": "kill -STOP <pid>",
-    "resume_pid": "kill -CONT <pid>",
     "list_path": "echo $PATH | tr ':' '\\n'",
     "notifier": "nohup /Library/Frameworks/Python.framework/Versions/3.10/bin/python3 /Users/flc/PycharmProjects/rch/desktop_notifier/run.py --tray --config /Users/flc/PycharmProjects/rch/desktop_notifier/config.json &",
     "http_probe": "curl -L -sS -o /dev/null -w 'remote_ip: %{remote_ip}\\nstatus: %{http_code}\\ntime: %{time_total}s\\nserver: %header{server}\\n' '<url>'",
     "find_in": "read grep -RInHi -I \"<keyword>\" \"<path>\"",
-    "sha256": "read shasum -a 256 \"<file>\"",
     "wake_display": "caffeinate -u -t 1",
     "sleep_display": "pmset displaysleepnow",
     "kill_port9": "kill -9 $(lsof -t -i:<port>)",
@@ -75,7 +71,10 @@
     "stay_awake": "nohup caffeinate -i -w ${rch:pid} >/dev/null 2>&1 &",
     "check_awake": "pgrep -af caffeinate",
     "type_password": "sleep 3 && osascript -e 'tell application \"System Events\" to keystroke \"<password>\"' -e 'tell application \"System Events\" to key code 36'",
-    "power_assertions": "pmset -g assertions"
+    "power_assertions": "pmset -g assertions",
+    "resume_process": "kill -CONT <pid>",
+    "pause_process": "kill -STOP <pid>",
+    "clean_mac_junk": "find . -name \"._*\" -type f -delete && find . -name \".DS_Store\" -type f -delete"
   },
   "linux": {},
   "ios": {}

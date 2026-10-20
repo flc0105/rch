@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     :model-value="visible"
-    :title="entry ? ('Activity · ' + (entry.invocation?.target || entry.invocation?.input || 'Details')) : 'Activity Detail'"
+    :title="detailTitle"
     width="1000px"
     top="5vh"
     class="fixed-dialog command-execution-detail-dialog"
@@ -32,16 +32,28 @@
         </div>
 
         <div class="background-job-stat">
-          <div class="background-job-stat-label">Kind / Action</div>
-          <div class="background-job-stat-value">{{ entry.kind }} · {{ entry.action }}</div>
+          <div class="background-job-stat-label">Kind</div>
+          <div class="background-job-stat-value">{{ entry.kind || '-' }}</div>
         </div>
         <div class="background-job-stat">
+          <div class="background-job-stat-label">Action</div>
+          <div class="background-job-stat-value">{{ entry.action || '-' }}</div>
+        </div>
+        <div class="background-job-stat activity-value-card"
+             role="button" tabindex="0" title="View full invocation"
+             @click="openFullValue('Invocation', entry.invocation?.input)"
+             @keydown.enter.prevent="openFullValue('Invocation', entry.invocation?.input)"
+             @keydown.space.prevent="openFullValue('Invocation', entry.invocation?.input)">
           <div class="background-job-stat-label">Invocation</div>
-          <div class="background-job-stat-value">{{ entry.invocation?.input || '-' }}</div>
+          <div class="background-job-stat-value activity-single-line-value">{{ entry.invocation?.input || '-' }}</div>
         </div>
-        <div class="background-job-stat">
+        <div class="background-job-stat activity-value-card"
+             role="button" tabindex="0" title="View full resolved command"
+             @click="openFullValue('Resolved', entry.resolved?.command || entry.resolved?.command_type)"
+             @keydown.enter.prevent="openFullValue('Resolved', entry.resolved?.command || entry.resolved?.command_type)"
+             @keydown.space.prevent="openFullValue('Resolved', entry.resolved?.command || entry.resolved?.command_type)">
           <div class="background-job-stat-label">Resolved</div>
-          <div class="background-job-stat-value">{{ entry.resolved?.command || entry.resolved?.command_type || '-' }}</div>
+          <div class="background-job-stat-value activity-single-line-value">{{ entry.resolved?.command || entry.resolved?.command_type || '-' }}</div>
         </div>
         <div class="background-job-stat">
           <div class="background-job-stat-label">Duration</div>
@@ -188,6 +200,12 @@
       </div>
     </div>
   </el-dialog>
+  <el-dialog v-model="fullValueVisible" :title="fullValueTitle" width="760px" top="12vh"
+             append-to-body class="fixed-dialog activity-full-value-dialog">
+    <div class="activity-full-value-body">
+      <pre class="activity-full-value-text">{{ fullValueText }}</pre>
+    </div>
+  </el-dialog>
 </template>
 
 <script>
@@ -257,6 +275,32 @@ export default {
     'preview-file',
     'delete-activity',
   ],
+
+  data() {
+    return { fullValueVisible: false, fullValueTitle: '', fullValueText: '' }
+  },
+
+  computed: {
+    detailTitle() {
+      if (!this.entry) return 'Activity Detail'
+      const label = String(this.entry.invocation?.target || this.entry.invocation?.input || 'Details')
+      return `Activity · ${label.length > 64 ? `${label.slice(0, 64)}…` : label}`
+    },
+  },
+
+  watch: {
+    visible(nextVisible) {
+      if (!nextVisible) this.fullValueVisible = false
+    },
+  },
+
+  methods: {
+    openFullValue(title, value) {
+      this.fullValueTitle = title
+      this.fullValueText = String(value ?? '-') || '-'
+      this.fullValueVisible = true
+    },
+  },
 }
 </script>
 
@@ -288,6 +332,33 @@ export default {
   font-size: 13px;
   color: var(--text);
   word-break: break-word;
+}
+
+.activity-value-card { cursor: pointer; min-width: 0; }
+.activity-value-card:hover { border-color: var(--el-color-primary-light-5); }
+.activity-value-card:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: -2px; }
+.background-job-stat-value.activity-single-line-value {
+  display: block;
+  min-width: 0;
+  width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  word-break: normal;
+}
+.activity-full-value-text {
+  margin: 0;
+  padding: 14px;
+  max-height: 62vh;
+  min-height: 180px;
+  overflow: auto;
+  border-radius: 14px;
+  background: #f8fafc;
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.65;
 }
 
 .command-execution-detail-section {

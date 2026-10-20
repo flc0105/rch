@@ -1206,8 +1206,9 @@ Star,
 }
 
 .command-history-tabs {
+  flex: 1 1 auto;
   min-height: 0;
-  height: 100%;
+  height: auto;
   display: flex;
   flex-direction: column;
 }
@@ -1495,28 +1496,31 @@ Star,
 /* Execution History：紧凑的执行事件列表，命令不作为标题。 */
 .command-execution-list-shell {
   height: 100%;
-  min-height: 320px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
 }
 
 .command-execution-list {
-  height: 100%;
+  flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   display: flex;
   flex-direction: column;
   padding: 0 4px 4px 0;
 }
 
- .activity-filters { display: flex; align-items: center; gap: 12px; padding: 8px 12px; }
+ .activity-filters { display: flex; flex: 0 0 auto; align-items: center; gap: 12px; padding: 8px 12px; }
 .activity-kind-filter { width: 150px; }
 .activity-entry-main { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .activity-kind-icon { flex: 0 0 auto; color: #64748b; }
 .activity-entry-content { flex: 1; min-width: 0; }
-.activity-entry-title { display: flex; align-items: center; gap: 6px; font-size: 13px; white-space: nowrap; overflow: hidden; }
+.activity-entry-title { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 13px; white-space: nowrap; overflow: hidden; }
 .activity-kind-name { font-weight: 600; flex: 0 0 auto; }
 .activity-title-separator { color: #9ca3af; }
-.activity-operation { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.activity-operation { flex: 0 1 auto; min-width: 0; max-width: min(38ch, 42vw); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .activity-status-icon { flex: 0 0 auto; }
 .activity-status-success { color: #16a34a; }
 .activity-status-error,.activity-status-timed_out,.activity-status-interrupted { color: #dc2626; }

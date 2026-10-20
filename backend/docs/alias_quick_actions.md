@@ -87,7 +87,7 @@ alias reload
 
 参数位置存在实际限制：`--platform` / `-p` 只在子命令后、被解析文本的开头识别；`list` 的格式后缀应放在末尾，例如 `alias list --platform mac --json`，不能假定所有选项任意换序都等价。`resolve` 不接受额外筛选参数，`reload` 也不接受参数。删除定义使用 `alias unset`。
 
-Server 内建命令会先于 Alias 名称进行识别；顶层 `acmd` 也优先于 Alias 名称。因此应避免使用和已有 Server Built-in 或保留入口冲突的 Alias 名称，否则可能无法从普通终端按 Alias 调用。通过 CLI 设置 Alias 时主要检查名称、模板非空；Web 编辑器还禁止名称含空白字符，建议始终使用无空格名称。
+Server 内建命令会先于 Alias 名称进行识别；顶层 `acmd` 也优先于 Alias 名称。因此应避免使用和已有 Server Built-in 或保留入口冲突的 Alias 名称，否则可能无法从普通终端按 Alias 调用。Alias 新建与改名都经 `AliasManager.MAX_ALIAS_NAME_LENGTH = 32` 统一校验名称长度，超过 32 个字符会拒绝保存，已存在的定义不因校验失败而被覆写；通过 CLI 设置 Alias 时检查名称、模板非空及长度；Web 编辑器还禁止名称含空白字符，建议始终使用无空格名称。
 
 ## 模板展开及实参绑定
 

@@ -7,6 +7,7 @@ from server.config.config import ALIAS_PATH
 
 
 class AliasManager:
+    MAX_ALIAS_NAME_LENGTH = 32
     PLACEHOLDER_PATTERN = r'<[A-Za-z_][A-Za-z0-9_-]*>'
     NAMED_PARAMETER_PATTERN = re.compile(r'^[A-Za-z_][A-Za-z0-9_-]*$')
     SUPPORTED_PLATFORMS = ('common', 'win', 'mac', 'linux', 'ios')
@@ -127,6 +128,10 @@ class AliasManager:
         return result
 
     # ------------------ 基础操作 ------------------ #
+    def _validate_alias_name(self, alias_name: str):
+        if len(alias_name) > self.MAX_ALIAS_NAME_LENGTH:
+            raise ValueError(f'Alias name cannot exceed {self.MAX_ALIAS_NAME_LENGTH} characters')
+
     def add_alias(self, alias, command, platform: str = 'common'):
         """添加别名"""
         alias_name = str(alias or '').strip()
@@ -135,6 +140,7 @@ class AliasManager:
 
         if not alias_name or not command_text:
             raise ValueError("Alias and command cannot be empty")
+        self._validate_alias_name(alias_name)
 
         self.aliases.setdefault(platform_name, {})
         self.aliases[platform_name][alias_name] = command_text
@@ -159,6 +165,7 @@ class AliasManager:
             raise ValueError('original alias is required')
         if not alias_name or not command_text:
             raise ValueError('Alias and command cannot be empty')
+        self._validate_alias_name(alias_name)
 
         original_map = self.aliases.get(original_platform_name) or {}
         if original_name not in original_map:
