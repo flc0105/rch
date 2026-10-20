@@ -6,6 +6,7 @@ from client.commands.platform.services.ios.file_system_service import iOSFileSys
 from client.commands.platform.services.ios.network_service import iOSNetworkService
 from client.commands.platform.services.ios.system_service import iOSSystemService
 from client.commands.platform.specs.ios import *
+from client.commands.platform.specs.common import PS_ARGUMENT_SPEC
 from core.utils.decorator import desc
 
 
@@ -156,3 +157,7 @@ class iOSCommands(CommonCommands):
     @argument_command('ping', spec=PING_ARGUMENT_SPEC)
     def ping(self, args_dict, payload=None):
         return self.ios_network.acmd_ping(args_dict)
+
+    @argument_command('ps', spec=PS_ARGUMENT_SPEC)
+    def _acmd_ps(self, args_dict, payload=None):
+        return self._acmd_ps_common(args_dict, payload)

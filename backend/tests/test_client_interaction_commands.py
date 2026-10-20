@@ -23,7 +23,7 @@ def test_client_commands_are_registered_without_old_aliases():
     for old in ('kill_proc','kill_port','kill_by_port','kill_process_preview'):
         assert not hasattr(CommonRuntimeCommands, old)
     assert CommonRuntimeCommands._acmd_kill.argument_command_name == 'kill'
-    assert CommonRuntimeCommands._acmd_find_proc.argument_command_name == 'find_proc'
+    assert not hasattr(CommonRuntimeCommands, '_acmd_find_proc')
     assert BuiltinCommandHandler.REGISTRY.get('disconnect') is None
 
 def test_plain_command_resolution_uses_normal_client_registry():

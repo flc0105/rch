@@ -64,6 +64,14 @@ PS_ARGUMENT_SPEC = ArgumentCommandSpec(
             help_text='Filter by process name or executable path',
         ),
         ArgumentOptionSpec(
+            name='port', option_type='int', required=False, default=None,
+            help_text='Filter by listening port',
+        ),
+        ArgumentOptionSpec(
+            name='with-actions', option_type='flag', required=False, default=False,
+            help_text='Include available row actions in JSON output',
+        ),
+        ArgumentOptionSpec(
             name='json',
             option_type='flag',
             required=False,
@@ -85,6 +93,7 @@ PS_ARGUMENT_SPEC = ArgumentCommandSpec(
         'acmd ps --pid 1234',
         'acmd ps --name python',
         'acmd ps --name python --json',
+        'acmd ps --port 8080 --json --with-actions',
     ],
 )
 
@@ -102,15 +111,3 @@ KILL_ARGUMENT_SPEC = ArgumentCommandSpec(
               'acmd kill --port 8080 --force', 'acmd kill --pid 1234 --no-confirm'],
 )
 
-FIND_PROC_ARGUMENT_SPEC = ArgumentCommandSpec(
-    name='find_proc', description='Find Client processes and offer termination actions',
-    options=[
-        ArgumentOptionSpec(name='pid', option_type='int', default=None, help_text='Process ID'),
-        ArgumentOptionSpec(name='name', option_type='str', default='', help_text='Exact process name'),
-        ArgumentOptionSpec(name='port', option_type='int', default=None, help_text='Listening port'),
-        ArgumentOptionSpec(name='json', option_type='flag', default=False, help_text='Output as JSON with actions'),
-        ArgumentOptionSpec(name='help', option_type='flag', default=False, alias='h', help_text='Show help'),
-    ],
-    examples=['acmd find_proc', 'acmd find_proc --name python --json',
-              'acmd find_proc --pid 1234', 'acmd find_proc --port 8080 --json'],
-)

@@ -155,7 +155,9 @@ update --keep-old
 处理 Client 临时残留、过期 Release 子目录、Bundle ZIP 和更新探测文件。
 普通 `clean` 先扫描候选路径，再用一个可多选的 Preview 展示类别、目标数量及大小，
 **默认全选**；用户可以取消任意类别。`clean --no-confirm` 不使用 Interaction
-Broker，直接执行同一套清理扫描计划，供纯 CLI 调用。
+Broker，直接执行同一套清理扫描计划，供纯 CLI 调用。原有十个清理类别继续完整扫描，
+命令输出逐项列出每个类别、检查过的目录、候选路径及跳过项；空类别也会输出
+`(empty)`，而不是只显示 `Nothing to clean`。旧版清理后移除空临时目录的行为保留。
 
 Release 清理不再要求 Client 从默认 Bundle 路径启动：如果当前不在
 `releases/` 目录下，清理其中全部非保护子目录；如果正从某个 Release

@@ -547,8 +547,9 @@ Process Manager UI keeps its internal `kill_process <pid>` path):
 - `--no-confirm` requires an explicit target, never opens Interaction Broker
   controls, and sends the chosen signal without preview. It also works from
   Server CLI without a Web interaction task.
-- `acmd find_proc` lists all visible Client processes; `--pid`, `--name`, `--port`
-  filter it. `--json` returns structured rows with `_actions` entries for `acmd kill`.
+- `acmd ps` lists Client processes; `--pid`, `--name`, `--port` filter it.
+  `--json` returns structured rows without actions. Add `--with-actions`
+  to include optional `_actions` entries for `acmd kill` in JSON output.
 
 The Server issues task-bound `interactions:request` grants only for trusted ACMD
 handlers declaring them, and only for interactive calls. Process identity and

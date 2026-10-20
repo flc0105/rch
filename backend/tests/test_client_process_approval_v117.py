@@ -40,7 +40,7 @@ def test_shell_like_registry_and_positional_grammar():
     assert not hasattr(CommandProcessMixin, 'kill_port')
     assert not hasattr(CommandProcessMixin, 'kill_proc')
     assert CommandProcessMixin._acmd_kill.argument_command_name == 'kill'
-    assert CommandProcessMixin._acmd_find_proc.argument_command_name == 'find_proc'
+    assert not hasattr(CommandProcessMixin, '_acmd_find_proc')
 
 def test_only_explicit_client_commands_are_issued_interaction_grants():
     from core.protocol.message_types import MSG_TYPE_ACMD
@@ -90,7 +90,7 @@ def test_client_interaction_transport_uses_bound_grant(monkeypatch):
 
 def test_port_rejection_does_not_send_signal(monkeypatch):
     host,_=owner()
-    monkeypatch.setattr(aps,'find_targets',lambda args:[row()])
+    monkeypatch.setattr(aps,'find_targets',lambda args, **kw:[row()])
     monkeypatch.setattr(aps.ClientCommandInteractions,'approve_processes',lambda *a: (_ for _ in ()).throw(aps.ProcessApprovalError('rejected')))
     monkeypatch.setattr(aps,'terminate_verified',lambda *a,**k:pytest.fail('No signal before approval'))
     status,output=CommandProcessMixin._acmd_kill(host,{'pid':None,'name':'','port':9999})
@@ -98,7 +98,7 @@ def test_port_rejection_does_not_send_signal(monkeypatch):
 
 def test_port_approved_verifies_target_before_signal(monkeypatch):
     host,_=owner();called=[]
-    monkeypatch.setattr(aps,'find_targets',lambda args:[row()])
+    monkeypatch.setattr(aps,'find_targets',lambda args, **kw:[row()])
     monkeypatch.setattr(aps.ClientCommandInteractions,'approve_processes',lambda *a:({'4199'},True))
     monkeypatch.setattr(aps,'terminate_verified',lambda r,**kw: (called.append((r,kw)),'SIGKILL')[1])
     status,output=CommandProcessMixin._acmd_kill(host,{'pid':None,'name':'','port':9999})
@@ -109,7 +109,7 @@ def test_no_argument_requests_input_and_gives_error_not_silence(monkeypatch):
     host,_=owner()
     monkeypatch.setattr(aps.ClientCommandInteractions,'select',lambda *a,**k:'port')
     monkeypatch.setattr(aps.ClientCommandInteractions,'ask',lambda *a,**k:'9999')
-    monkeypatch.setattr(aps,'find_targets',lambda *a:[])
+    monkeypatch.setattr(aps,'find_targets',lambda *a, **kw:[])
     status,output=CommandProcessMixin._acmd_kill(host,{'pid':None,'name':'','port':None})
     assert status==0 and 'No matching' in output
 
@@ -166,5 +166,5 @@ def test_actual_client_manifest_yields_only_plain_command_name_candidates():
     assert all(row['name'] not in ('kill_port','kill_proc') for row in manifest)
     acmd=ArgumentCommandRegistry(instance).get_manifest_payload()
     assert any(row['name']=='acmd kill' for row in acmd)
-    assert any(row['name']=='acmd find_proc' for row in acmd)
+    assert not any(row['name']=='acmd find_proc' for row in acmd)
 

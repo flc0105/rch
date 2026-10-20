@@ -152,8 +152,6 @@ def build_multi_preview(rows, *, criteria, force_default=False):
 def terminate_verified(row, *, force, port=None):
     import psutil
     pid = int(row['pid'])
-    if pid <= 1 or pid == os.getpid():
-        raise ProcessApprovalError('Protected PID')
     # PID reuse, binary/name changes and port reassignment all fail closed.
     try:
         proc = psutil.Process(pid)

@@ -439,6 +439,25 @@ class CommandUpdateMixin:
 
         return '\n'.join(lines)
 
+    @staticmethod
+    def _format_client_cleanup_scan(plan: dict) -> str:
+        """Retain scan visibility across all cleanup categories, including empty ones."""
+        lines = []
+        for item in plan.get('items') or []:
+            name = str(item.get('name') or '')
+            paths = item.get('paths') or []
+            lines.append(info(f'[{name}] targets={len(paths)}'
+                              + (' (empty)' if not paths else '')))
+            for directory in item.get('scanned_paths') or []:
+                lines.append(f'  scanned: {directory}')
+            for entry in paths:
+                lines.append(f'  candidate: {entry["path"]}')
+            for path in item.get('skipped_paths') or []:
+                lines.append(f'  kept: {path}')
+            for message in item.get('errors') or []:
+                lines.append(error(f'  {message}'))
+        return '\n'.join(lines)
+
     @desc('Clean Client residue and obsolete bundle releases', group='session',
           api_grants=('interactions:request',))
     @cancel_policy('cooperative')
@@ -454,17 +473,26 @@ class CommandUpdateMixin:
             )
             self._set_timeout(240)
             plan = service.plan()
-            candidates = [entry for entry in plan['items'] if entry['paths']]
+            scan_text = CommandUpdateMixin._format_client_cleanup_scan(plan)
+            candidates = [
+                entry for entry in plan['items']
+                if entry['paths'] or any(
+                    os.path.isdir(path) and not os.listdir(path)
+                    for path in entry.get('prune_dirs') or []
+                )
+            ]
             if not candidates:
-                return 1, info('Nothing to clean')
+                return 1, scan_text + '\n' + info('Nothing to clean')
             chosen = {entry['name'] for entry in candidates}
             if options != '--no-confirm':
                 from client.commands.common.services.interaction_service import CommandInteractions
                 rows = []
                 for entry in candidates:
                     paths = [item['path'] for item in entry['paths']]
+                    empty_dirs = [path for path in entry.get('prune_dirs') or []
+                                  if os.path.isdir(path) and not os.listdir(path)]
                     rows.append({
-                        'category': entry['name'], 'targets': str(len(paths)),
+                        'category': entry['name'], 'targets': str(len(paths) + len(empty_dirs)),
                         'size': get_size(float(entry.get('bytes_freed') or 0)),
                     })
                 preview = {
@@ -480,7 +508,10 @@ class CommandUpdateMixin:
                     'row_ids': [entry['name'] for entry in candidates],
                     'row_details': [
                         {'row_id': entry['name'],
-                         'content': '\n'.join(item['path'] for item in entry['paths'])[:3900]}
+                         'content': '\n'.join([item['path'] for item in entry['paths']]
+                                              + [path + ' (empty directory)'
+                                                 for path in entry.get('prune_dirs') or []
+                                                 if os.path.isdir(path) and not os.listdir(path)])[:3900]}
                         for entry in candidates],
                     'notice': 'Selected paths will be permanently deleted. Current running release is protected.',
                 }
@@ -488,9 +519,9 @@ class CommandUpdateMixin:
                     'Delete selected Client residue?', preview,
                     title='Client Cleanup — Delete Plan'))
                 if not chosen:
-                    return 1, info('No cleanup categories selected; nothing deleted')
+                    return 1, scan_text + '\n' + info('No cleanup categories selected; nothing deleted')
             result = service.execute_plan(plan, chosen)
             status = 0 if int(result.get('error_count') or 0) else 1
-            return status, self._format_client_cleanup_result(result)
+            return status, scan_text + '\n' + self._format_client_cleanup_result(result)
         except Exception as exc:
             return 0, error(f'Failed to clean Client residue: {exc}')

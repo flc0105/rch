@@ -4,7 +4,7 @@ import json
 
 from client.commands.common.services.process.process_service import ProcessService
 from client.commands.arguments.decorators import argument_command
-from client.commands.platform.specs.common import KILL_ARGUMENT_SPEC, FIND_PROC_ARGUMENT_SPEC
+from client.commands.platform.specs.common import KILL_ARGUMENT_SPEC
 from core.device.local_identity import get_local_identity
 from core.utils.command_output import StructuredCommandResult, render_structured_result
 from core.utils.decorator import desc
@@ -87,7 +87,6 @@ class CommandProcessMixin:
             ClientCommandInteractions, ProcessApprovalError, find_targets,
             build_multi_preview, terminate_verified,
         )
-        import os
 
         self._set_timeout(240)
         try:
@@ -110,8 +109,6 @@ class CommandProcessMixin:
                 criteria[choice] = target
             if 'pid' in criteria:
                 criteria['pid'] = int(criteria['pid'])
-                if criteria['pid'] <= 1:
-                    raise ProcessApprovalError('Protected PID')
             if 'port' in criteria:
                 criteria['port'] = int(criteria['port'])
                 if not 1 <= criteria['port'] <= 65535:
@@ -124,9 +121,6 @@ class CommandProcessMixin:
                     else find_targets(criteria, preview_limit=100))
             if not rows:
                 return 0, 'No matching Client processes'
-            own_pid = os.getpid()
-            if any(int(row['pid']) <= 1 or int(row['pid']) == own_pid for row in rows):
-                raise ProcessApprovalError('Protected process in matching results; narrow the selection')
             if not no_confirm:
                 selected_ids, force = ClientCommandInteractions(self).approve_processes(
                     'Approve termination of selected Client processes?',
@@ -150,50 +144,13 @@ class CommandProcessMixin:
         except Exception as exc:
             return 0, f'Process termination unavailable: {exc}'
 
-    @argument_command('find_proc', spec=FIND_PROC_ARGUMENT_SPEC)
-    def _acmd_find_proc(self, args_dict, payload=None):
-        from client.commands.common.services.process.approved_process_service import (
-            find_targets, ProcessApprovalError,
-        )
-        criteria = {key: args_dict[key] for key in ('pid', 'name', 'port')
-                    if args_dict.get(key) not in (None, '')}
-        if len(criteria) > 1:
-            return 0, 'Specify one of --pid, --name or --port'
-        try:
-            if 'pid' in criteria and int(criteria['pid']) <= 1:
-                raise ValueError('PID must be greater than 1')
-            if 'port' in criteria and not 1 <= int(criteria['port']) <= 65535:
-                raise ValueError('Port must be 1..65535')
-            rows = find_targets(criteria) if criteria else self._get_process_service().list_processes()
-            output = []
-            for row in rows:
-                pid = int(row.get('pid') or 0)
-                item = {key: row.get(key, '') for key in ('pid', 'name', 'status')}
-                item['user'] = row.get('user') or row.get('username') or ''
-                item['_actions'] = ([{'label': 'Kill', 'command': f'acmd kill --pid {pid}'}]
-                                    if pid > 1 and pid != __import__('os').getpid() else [])
-                output.append(item)
-            if not output:
-                return (1, '[]' if args_dict.get('json') else 'No matching processes')
-            if args_dict.get('json'):
-                return render_structured_result(
-                    StructuredCommandResult(status=1, data=output, shape='table'),
-                    output_format='json')
-            # Row actions are presentation metadata for the JSON viewer only.
-            return render_structured_result(
-                StructuredCommandResult(status=1,
-                    data=[{k:v for k,v in row.items() if k != '_actions'} for row in output],
-                    shape='table'), output_format='text')
-        except (ValueError, ProcessApprovalError, OSError) as exc:
-            return 0, f'Process lookup failed: {exc}'
-
     def _acmd_ps_common(self, args_dict, payload=None):
         """
         acmd ps 公共实现。
 
         只做：
         - 调用 ProcessService.list_processes()
-        - 根据 pid / name 筛选
+        - 根据 pid / name / port 筛选
         - 返回 StructuredCommandResult 渲染结果
 
         不在这里写任何 psutil 枚举逻辑。
@@ -201,6 +158,12 @@ class CommandProcessMixin:
         pid = args_dict.get('pid')
         name = str(args_dict.get('name') or '').strip()
         output_json = bool(args_dict.get('json', False))
+        include_actions = bool(args_dict.get('with-actions', False))
+        port = args_dict.get('port')
+        if port is not None:
+            port = int(port)
+            if not 1 <= port <= 65535:
+                raise ValueError('Port must be 1..65535')
 
         if pid is not None:
             pid = int(pid)
@@ -209,6 +172,14 @@ class CommandProcessMixin:
 
         rows = self._get_process_service().list_processes()
         rows = self._filter_acmd_ps_rows(rows, pid=pid, name=name)
+        if port is not None:
+            from client.commands.common.services.process.approved_process_service import _port_owners
+            owners = _port_owners(port)
+            rows = [row for row in rows if row['pid'] in owners]
+        if include_actions and output_json:
+            for row in rows:
+                row['_actions'] = [{'label': 'Kill',
+                                    'command': f'acmd kill --pid {row["pid"]}'}]
 
         if not rows:
             if pid is not None and name:
@@ -225,6 +196,8 @@ class CommandProcessMixin:
                 raise RuntimeError(
                     'No process found for name {}'.format(name)
                 )
+            if port is not None:
+                raise RuntimeError('No process found for port {}'.format(port))
 
             raise RuntimeError('No processes found')
 

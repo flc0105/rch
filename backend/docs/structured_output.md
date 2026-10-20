@@ -325,8 +325,10 @@ Run Again 与行级操作均执行新的任务；仅当前任务的结果用于�
 
 ## Process Result Actions
 
-`acmd find_proc --json` 使用 `StructuredCommandResult(status=1, shape='table')`
-生成 JSON 数组。每行包含 `pid/name/status/user` 及可选的 `_actions`。
-`_actions` 格式为 `[{"label":"Kill","command":"acmd kill --pid 1234"}]`，
-由现有 Terminal JSON 表格识别并在执行前提供结果操作确认。文本模式
-只渲染进程字段，不输出 `_actions` 元数据。无匹配行时 JSON 返回空数组。
+`acmd ps --json` 使用 `StructuredCommandResult(status=1, shape='table')`
+生成 JSON 进程数组；默认不含 `_actions`。只有显式添加 `--with-actions`
+（例如 `acmd ps --port 8080 --json --with-actions`）才为每行生成
+`[{"label":"Kill","command":"acmd kill --pid 1234"}]`，交由现有
+Terminal JSON Table 操作列显示。文本模式不输出 `_actions` 元数据。
+`acmd ps` 的 `--port` 过滤当前监听/占用该端口的进程。无匹配进程沿用
+`ps` 原有查询失败结果。

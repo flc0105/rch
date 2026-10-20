@@ -48,21 +48,28 @@ class ClientCleanupService:
         self.current_bundle_resolver = current_bundle_resolver
         self._planning = False
         self._planned_paths = []
+        self._planned_prune_dirs = []
+        self._active_category = ''
 
     def plan(self) -> dict:
         """Read-only snapshot of cleanup candidates, grouped by the existing categories."""
         self._planning = True
         self._planned_paths = []
+        self._planned_prune_dirs = []
         try:
             preview_result = self.clean()
             groups = []
             for item in preview_result['items']:
                 paths = [entry for entry in self._planned_paths if entry['category'] == item['name']]
-                groups.append({**item, 'paths': paths})
+                prunes = [entry['path'] for entry in self._planned_prune_dirs
+                          if entry['category'] == item['name']]
+                groups.append({**item, 'paths': paths, 'prune_dirs': prunes})
             return {'items': groups}
         finally:
             self._planning = False
             self._planned_paths = []
+            self._planned_prune_dirs = []
+            self._active_category = ''
 
     def execute_plan(self, plan: dict, selected: set[str]) -> dict:
         """Execute only approved, snapshotted paths, refusing changed identities."""
@@ -78,6 +85,7 @@ class ClientCleanupService:
             result = self._new_result(item['name'])
             result['skipped_paths'].extend(item.get('skipped_paths') or [])
             result['errors'].extend(item.get('errors') or [])
+            result['scanned_paths'].extend(item.get('scanned_paths') or [])
             for entry in item['paths']:
                 self._checkpoint()
                 path = entry['path']
@@ -94,6 +102,10 @@ class ClientCleanupService:
                     result['skipped_paths'].append(path + ' (missing after preview)')
                     continue
                 self._remove_path(path, result)
+            for directory in item.get('prune_dirs') or []:
+                # The original clean removed now-empty managed temp directories.
+                # rmdir never deletes a directory that gained contents after scanning.
+                self._prune_empty_directory(directory)
             items.append(result)
         return {
             'items': items,
@@ -150,6 +162,7 @@ class ClientCleanupService:
         item_results = []
         for name in self.ITEMS:
             self._checkpoint()
+            self._active_category = name
             handler = getattr(self, f'_clean_{name}', None)
             if handler is None:
                 raise ValueError(f'Unknown cleanup item: {name}')
@@ -159,6 +172,7 @@ class ClientCleanupService:
                 result = self._new_result(name)
                 result['errors'].append(str(exc))
             item_results.append(result)
+        self._active_category = ''
 
         return {
             'items': item_results,
@@ -192,10 +206,11 @@ class ClientCleanupService:
 
     def _clean_managed_temp_category(self, category: str, result: dict):
         root = get_client_temp_root(create=False)
+        category_dir = os.path.abspath(get_temp_category_dir(category, create=False))
+        self._note_scan(result, category_dir)
         if not os.path.isdir(root):
             return
 
-        category_dir = os.path.abspath(get_temp_category_dir(category, create=False))
         self._clean_directory_children(category_dir, result)
         self._prune_empty_directory(category_dir)
 
@@ -207,6 +222,7 @@ class ClientCleanupService:
             if not os.path.isdir(entry_path) or entry_path == category_dir:
                 continue
             nested_category = os.path.abspath(os.path.join(entry_path, category))
+            self._note_scan(result, nested_category)
             if not os.path.isdir(nested_category):
                 continue
             self._clean_directory_children(nested_category, result)
@@ -233,6 +249,8 @@ class ClientCleanupService:
 
         temp_root = os.path.abspath(tempfile.gettempdir())
         managed_root = os.path.abspath(get_client_temp_root(create=False))
+        for pattern in patterns:
+            self._note_scan(result, os.path.join(temp_root, pattern))
         try:
             names = sorted(os.listdir(temp_root))
         except Exception:
@@ -254,6 +272,7 @@ class ClientCleanupService:
         result = self._new_result('runtime_config_temp')
         config_path = os.path.abspath(get_runtime_config_path())
         directory = os.path.dirname(config_path) or '.'
+        self._note_scan(result, directory)
         if not os.path.isdir(directory):
             return result
 
@@ -276,6 +295,7 @@ class ClientCleanupService:
     def _clean_bundle_old_releases(self) -> dict:
         result = self._new_result('bundle_old_releases')
         release_dir, current_bundle_dir = self._bundle_context(result)
+        self._note_scan(result, release_dir)
         if result['skipped']:
             return result
 
@@ -296,6 +316,7 @@ class ClientCleanupService:
     def _clean_bundle_archive_residue(self) -> dict:
         result = self._new_result('bundle_archive_residue')
         downloads_dir = os.path.abspath(get_client_bundle_download_dir())
+        self._note_scan(result, downloads_dir)
         if not os.path.isdir(downloads_dir):
             return result
 
@@ -309,6 +330,7 @@ class ClientCleanupService:
     def _clean_bundle_extracting_residue(self) -> dict:
         result = self._new_result('bundle_extracting_residue')
         release_dir, running_dir = self._bundle_context(result)
+        self._note_scan(result, release_dir)
         if not os.path.isdir(release_dir):
             return result
         for name in sorted(os.listdir(release_dir)):
@@ -330,6 +352,7 @@ class ClientCleanupService:
     def _clean_bundle_probe_files(self) -> dict:
         result = self._new_result('bundle_probe_files')
         release_dir = os.path.abspath(get_client_bundle_release_dir())
+        self._note_scan(result, release_dir)
         if not os.path.isdir(release_dir):
             return result
 
@@ -421,12 +444,21 @@ class ClientCleanupService:
 
     def _prune_empty_directory(self, path: str):
         if self._planning:
+            entry = {'category': self._active_category, 'path': os.path.abspath(path)}
+            if entry not in self._planned_prune_dirs:
+                self._planned_prune_dirs.append(entry)
             return
         try:
             if os.path.isdir(path) and not os.listdir(path):
                 os.rmdir(path)
         except Exception:
             pass
+
+    @staticmethod
+    def _note_scan(result: dict, path: str):
+        normalized = os.path.abspath(path)
+        if normalized not in result['scanned_paths']:
+            result['scanned_paths'].append(normalized)
 
     @staticmethod
     def _new_result(name: str) -> dict:
@@ -436,6 +468,7 @@ class ClientCleanupService:
             'removed_dirs': 0,
             'bytes_freed': 0,
             'paths': [],
+            'scanned_paths': [],
             'skipped_paths': [],
             'errors': [],
             'skipped': False,
