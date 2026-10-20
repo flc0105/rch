@@ -10,6 +10,7 @@ from server.application.command.command_output_builtin_support import CommandOut
 from server.application.command.command_notify_builtin_support import CommandNotifyBuiltinSupport
 from server.application.command.control_builtin_support import ControlBuiltinSupport
 from server.application.command.interaction_builtin_support import BuiltinInteractionSupport
+from server.application.command.job_builtin_support import JobBuiltinSupport
 from server.application.command.advanced_builtin_support import AdvancedBuiltinSupport
 
 
@@ -48,6 +49,12 @@ class BuiltinCommandHandler:
             'name': 'alias',
             'template': 'alias ',
             'help': 'alias set|unset|list|resolve|reload [--platform supported-platform]',
+            'source': 'server'
+        },
+        {
+            'name': 'job',
+            'template': 'job ',
+            'help': JobBuiltinSupport.HELP,
             'source': 'server'
         },
         {
@@ -117,6 +124,10 @@ class BuiltinCommandHandler:
             conn=self.conn,
             remote_execution_service=self.remote_execution_service,
             history_entry_id_provider=self.history_entry_id_provider,
+        )
+        self.job_support = JobBuiltinSupport(
+            server=self.server, conn=self.conn,
+            remote_execution_service=self.remote_execution_service,
         )
         self.script_support = ScriptBuiltinSupport(
             plan_builder=self.plan_builder,
@@ -235,6 +246,9 @@ class BuiltinCommandHandler:
         for item in self.alias_support.alias(arg):
             yield item
 
+
+    def job(self, arg=''):
+        yield from self.job_support.job(arg)
 
     def history(self, arg):
         for item in self.history_support.history(arg):

@@ -6,6 +6,7 @@ from client.commands.runtime.command_variable_resolver import CommandVariableRes
 from client.commands.runtime.context_store import CommandExecutionContextStore
 from client.commands.runtime.request import CommandExecutionRequest
 from client.commands.runtime.script_runner import ScriptCommandRunner
+from client.jobs.command_control import ClientJobControl
 from client.commands.runtime.shell_command_runner import ShellCommandRunner
 
 
@@ -148,6 +149,13 @@ class CommandExecutor:
         """
         request = self._build_request(command_id, options=options, payload_options=payload)
         return self.argument_command_runner.execute(request, payload)
+
+    def execute_job_control_command(self, command_id, payload_text: str, options=None):
+        """Handle internal Server-owned Job RPC; never expose a Client CLI job command."""
+        request = self._build_request(command_id, options=options)
+        return self.execute_bound_request(
+            request, lambda commands: ClientJobControl.execute(commands, payload_text),
+        )
 
     def execute_script_command(self, command_id, script_text: str, kwargs=None, options=None):
         """

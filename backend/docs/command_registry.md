@@ -36,6 +36,10 @@ Web Terminal / Server CLI
 
 这描述的是普通命令入口；PTY、Monitor、Clipboard 等独立消息与会话服务不应为了“在终端里有个命令名”被塞进同一注册表。
 
+### Server `job` 命令和专用 Client Job Control
+
+Job Catalog、终端命令解析和参数模式验证由 Server 管理；新增 Server Builtin `job` 支持 `list/start/stop/ps/status/stop-all`。纯 `job list` 直接查 Server Catalog；其他子命令通过 `job_control` 独立协议类型交给 Client `JobManager` 执行。旧 Client 公开 `start_job`、`stop_job`、`jobs`、`jobs_ps`、`job_status`、`stop_all_jobs` 方法已移除，Client Command Manifest 与 Help 不再列出它们。客户端 Runtime、Web Job API、任务上报及原有 Shell fallback 保持。详见 [Background Jobs](background_jobs.md)。
+
 ## 二、普通 Client 命令怎样被导出
 
 ### 平台对象和继承链

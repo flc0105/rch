@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     :model-value="visible"
-    title="Activity Center"
+    title="History"
     width="1120px"
     top="5vh"
     class="fixed-dialog recent-files-dialog command-history-dialog"
@@ -1089,16 +1089,16 @@ Star,
     },
 
     buildCommandExecutionSummary(item) {
-
       const files = Array.isArray(item?.files) ? item.files : []
       if (files.length) return `Produced ${files.length} file(s)`
 
       const records = Array.isArray(item?.result?.output_records) ? item.result.output_records : []
-      for (let index = records.length - 1; index >= 0; index -= 1) {
-        const text = String(records[index]?.text || '').trim()
-        if (!text) continue
-        if (!text.includes('\n') && !text.includes('\r')) return text
-        break
+      const parts = records.map(record => String(record?.text || '').trim()).filter(Boolean)
+      if (parts.length) {
+        // Summaries never display multiline or lengthy output, regardless of
+        // how the transport split it into output records.
+        if (parts.length !== 1 || /[\r\n]/.test(parts[0]) || parts[0].length > 128) return 'Completed'
+        return parts[0]
       }
 
       if (String(item?.status || '').toLowerCase() === 'success') return 'Completed'

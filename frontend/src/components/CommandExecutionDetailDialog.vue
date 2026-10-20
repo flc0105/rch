@@ -32,12 +32,8 @@
         </div>
 
         <div class="background-job-stat">
-          <div class="background-job-stat-label">Kind</div>
-          <div class="background-job-stat-value">{{ entry.kind || '-' }}</div>
-        </div>
-        <div class="background-job-stat">
           <div class="background-job-stat-label">Action</div>
-          <div class="background-job-stat-value">{{ entry.action || '-' }}</div>
+          <div class="background-job-stat-value">{{ entry.kind || '-' }} · {{ entry.action || '-' }}</div>
         </div>
         <div class="background-job-stat activity-value-card"
              role="button" tabindex="0" title="View full invocation"
@@ -282,9 +278,7 @@ export default {
 
   computed: {
     detailTitle() {
-      if (!this.entry) return 'Activity Detail'
-      const label = String(this.entry.invocation?.target || this.entry.invocation?.input || 'Details')
-      return `Activity · ${label.length > 64 ? `${label.slice(0, 64)}…` : label}`
+      return 'Activity Detail'
     },
   },
 

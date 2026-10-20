@@ -13,7 +13,7 @@ Web Background Jobs / Server 命令
     │ 选择 Module、参数、execution_mode
     ▼
 Server · Job Catalog / Background Job Service
-    │ 通过前台 job_control 命令提交 start_job
+    │ 发送专用 job_control 协议消息（不是 Client 命令文本）
     ▼
 Client · 下载 Job Python 内容、写入临时目录
     │ 静态解析 Metadata、规范化参数、检查执行模式
@@ -30,7 +30,7 @@ Server · SQLite Job History + WebEventBus
 Web Jobs / Job Detail · 状态、消息、文件
 ```
 
-启动或停止控制经由 Client 的前台命令执行路径，但 **Job 开始运行后不持续占用前台命令槽**。长时间运行的任务自行上报消息和状态；Server 通过 SQLite 保存执行记录，再发布 SSE 事件供浏览器刷新。
+启动或停止控制经由独立的 `job_control` 消息类型进入 Client 的受管理执行路径，但 **Job 开始运行后不持续占用前台命令槽**。长时间运行的任务自行上报消息和状态；Server 通过 SQLite 保存执行记录，再发布 SSE 事件供浏览器刷新。
 
 模块存放在 Server 的 Job 资源目录中。Web 可以创建、编辑、上传或删除 Python 模块；Client 启动时按需从 Server 取得该模块内容，而不是要求用户事先把所有 Job 安装到目标设备上。不过，**Python 第三方依赖仍必须在目标运行环境中可用**，下载模块并不等于自动安装其依赖。
 
@@ -137,7 +137,18 @@ Job 的模块管理、执行查询和运行控制分属不同操作。模块目�
 
 启动请求的核心字段是 `job_name`、`params` 和 `execution_mode`，停止操作则根据模块运行标识请求目标 Client 停止。在 Web Start API 中，未传 `execution_mode` 时当前路由使用 `inproc`；如果模块只允许 `subprocess`，API 调用方应明确传入该模式。终端启动路径会依据 Job Metadata 解析默认执行模式，因此两种入口的默认行为不可简单视为相同。
 
-终端还提供 Job 发现、启动、状态查询与停止的内置入口；这些操作最终仍通过 Client 的 JobManager 实现。文档不维护固定的终端命令清单，具体输入格式以当前命令帮助与自动补全为准。需要区分 HTTP 请求已接受、前台控制命令已完成和后台 Job 最终状态三个时点。
+终端的 Job 用户入口统一由 **Server Builtin `job`** 提供，不再通过 Client 公开的 `start_job`、`stop_job`、`jobs`、`jobs_ps`、`job_status`、`stop_all_jobs` 命令方法执行。这些旧方法已经移除，Client Manifest/Help 不再列出它们；Client 仍使用 `JobManager` 来执行、停止和上报运行状态。Server Web Job API 使用同一个内部 `job_control` 消息类型，而非旧 Client 命令文本。
+
+| 命令 | 执行位置与语义 |
+|---|---|
+| `job` / `job list` | Server 查询 Job Catalog，不联系 Client |
+| `job start <name> [--mode inproc\|subprocess] [--params '{"key":"value"}']` | Server 验证名称、Metadata 模式限制；Client 下载 Job 并启动运行 |
+| `job ps` | Server 向 Client 询问当前运行实例 |
+| `job status <name>` | Client 查询 `JobManager` 当前状态 |
+| `job stop <name>` | Client 发送停止请求，最终状态仍依赖 Job 本身上报 |
+| `job stop-all` | Client 向当前所有运行 Job 发停止请求 |
+
+Server Builtin `job` 的命令候选来自 `BuiltinCommandHandler.WEB_COMMAND_TEMPLATES`，不纳入 Client 命令 Manifest。Job 的执行/控制属于内部请求，不在首批 Command/Alias/Script Activity Center 记录范围内。需要区分 HTTP 请求已接受、前台控制命令已完成和后台 Job 最终状态三个时点。
 
 ### 停止请求与异常清理
 
@@ -145,7 +156,7 @@ Job 的模块管理、执行查询和运行控制分属不同操作。模块目�
 |---|---|
 | Web 显示 Job 不支持当前设备 | Metadata `platforms` 与当前 Client 平台是否匹配 |
 | 启动返回不支持执行模式 | `execution.allowed` 是否包含实际提交的模式，特别是 API 默认 `inproc` |
-| `start_job` 找不到模块 | Server Catalog 中是否存在该 Job，模块名与请求是否一致 |
+| `job start` 找不到模块 | Server Catalog 中是否存在该 Job，模块名与请求是否一致 |
 | Job 启动后没有消息 | Job 是否调用上报方法、Client 身份是否有效、HTTP 报告是否成功 |
 | Job 使用 Subprocess 时访问 Runtime 失败 | 子进程只有有限的 `server` 代理，不能直接访问完整 Client Runtime |
 | In-process 的 Stop 很慢 | Job 是否使用长时间阻塞或 `time.sleep()`，有没有及时检查 `stop_event` |

@@ -176,6 +176,13 @@ class CommandOutputBuiltinSupport:
             extra=extra,
         )
 
+        # saveout already creates a registered command_output artifact. Attach its
+        # existing reference to the dispatched Activity without copying content.
+        activity_id = self.history_entry_id_provider() or ''
+        history = getattr(self.server, 'command_history_orchestrator', None)
+        if activity_id and history is not None and artifact:
+            history.history_store.append_file_for_connection(self.conn, activity_id, artifact)
+
         size = int(artifact.get('size') or 0)
         # File registration is not proof that the inner Client command succeeded.
         yield (1 if final_status == 'success' else 0), '\n'.join([

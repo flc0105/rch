@@ -97,7 +97,7 @@ class WebJobApi:
                 return metadata if isinstance(metadata, dict) else {}
         return {}
 
-    def start_background_job(self, client_id: str, job_name: str, params=None, execution_mode: str = 'inproc'):
+    def prepare_background_job_start(self, client_id: str, job_name: str, execution_mode: str | None = None):
         normalized_job_name = (job_name or '').strip()
         if not normalized_job_name:
             raise ValueError('job_name is required')
@@ -116,6 +116,11 @@ class WebJobApi:
                 f'"{normalized_job_name}"; allowed: {allowed_modes}'
             )
 
+        return normalized_mode
+
+    def start_background_job(self, client_id: str, job_name: str, params=None, execution_mode: str = 'inproc'):
+        normalized_job_name = (job_name or '').strip()
+        normalized_mode = self.prepare_background_job_start(client_id, normalized_job_name, execution_mode)
         result = self.background_job_service.start_job(
             client_id,
             normalized_job_name,

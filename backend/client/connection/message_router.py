@@ -45,6 +45,16 @@ class ClientInboundMessageRouter(BaseMessageRouter):
             return command_id, *result
         return None
 
+    def handle_job_control_message(self, data: dict):
+        command_id = data.get('id')
+        result = self.connection.runtime.command_executor.execute_job_control_command(
+            command_id, data.get('text') or '',
+            options=data.get('extra') if isinstance(data.get('extra'), dict) else None,
+        )
+        if result:
+            return command_id, *result
+        return None
+
     def handle_cancel_message(self, data: dict):
         target_command_id = data.get('target_id')
         def _report_terminal_state(state):

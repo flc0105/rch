@@ -2,7 +2,7 @@ import json
 import threading
 from datetime import datetime
 
-from core.protocol.structured_arg_codec import encode_structured_arg
+from server.application.command.command_types import COMMAND_TYPE_JOB_CONTROL
 from core.utils.job_metadata import normalize_job_key, normalize_job_execution_mode
 
 
@@ -31,20 +31,15 @@ class BackgroundJobService:
         self._lifecycle_event_keys = set()
         self._lifecycle_lock = threading.RLock()
 
+    @staticmethod
+    def _build_job_control_command(action: str, **payload) -> str:
+        return json.dumps({'action': action, **payload}, ensure_ascii=False, separators=(',', ':'))
+
     def _build_start_job_command(self, job_name: str, params=None, execution_mode: str = 'inproc') -> str:
-        normalized_job_name = str(job_name or '').strip()
-        normalized_params = dict(params or {}) if isinstance(params, dict) else {}
-        normalized_mode = normalize_job_execution_mode(execution_mode, default='inproc')
-
-        if not normalized_params and normalized_mode == 'inproc':
-            return f'start_job {normalized_job_name}'
-
-        payload = {
-            'job_name': normalized_job_name,
-            'params': normalized_params,
-            'execution_mode': normalized_mode,
-        }
-        return f'start_job {encode_structured_arg(payload)}'
+        return self._build_job_control_command(
+            'start', job_name=str(job_name or '').strip(), params=dict(params or {}),
+            execution_mode=normalize_job_execution_mode(execution_mode, default='inproc'),
+        )
 
     def _serialize_available_job(self, job_item: dict) -> dict:
         job_name = str(job_item.get('job_name') or job_item.get('name') or job_item.get('job_key') or '').strip()
@@ -81,6 +76,7 @@ class BackgroundJobService:
         text = self.remote_execution_service.run_foreground_text_command(
             client_id,
             self._build_start_job_command(job_name, normalized_params, normalized_mode),
+            command_type=COMMAND_TYPE_JOB_CONTROL,
             task_type='job_control',
             source='web_background_job',
         )
@@ -99,7 +95,8 @@ class BackgroundJobService:
 
         text = self.remote_execution_service.run_foreground_text_command(
             client_id,
-            f'stop_job {job_key}',
+            self._build_job_control_command('stop', job_key=job_key),
+            command_type=COMMAND_TYPE_JOB_CONTROL,
             task_type='job_control',
             source='web_background_job',
         )

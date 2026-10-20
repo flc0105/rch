@@ -3,6 +3,7 @@ MSG_TYPE_RESULT = 'result'
 MSG_TYPE_COMMAND = 'command'
 MSG_TYPE_SCRIPT = 'script'
 MSG_TYPE_ACMD = 'acmd'
+MSG_TYPE_JOB_CONTROL = 'job_control'
 
 MSG_TYPE_CANCEL = 'cancel'
 MSG_TYPE_CANCEL_ACK = 'cancel_ack'

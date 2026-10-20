@@ -7,6 +7,7 @@ from core.protocol.message_types import (
     MSG_TYPE_HEARTBEAT_ACK,
     MSG_TYPE_RESULT,
     MSG_TYPE_SCRIPT,
+    MSG_TYPE_JOB_CONTROL,
     MSG_TYPE_PTY_OPEN,
     MSG_TYPE_PTY_INPUT,
     MSG_TYPE_PTY_RESIZE,
@@ -62,6 +63,9 @@ class BaseMessageRouter:
 
         if message_type == MSG_TYPE_ACMD:
             return self.handle_acmd_message(data)
+
+        if message_type == MSG_TYPE_JOB_CONTROL:
+            return self.handle_job_control_message(data)
 
         if message_type == MSG_TYPE_CANCEL:
             return self.handle_cancel_message(data)
@@ -177,6 +181,9 @@ class BaseMessageRouter:
         return None
 
     def handle_acmd_message(self, data: dict):
+        return None
+
+    def handle_job_control_message(self, data: dict):
         return None
 
     def handle_cancel_message(self, data: dict):
