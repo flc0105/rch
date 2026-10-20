@@ -256,23 +256,16 @@
           class="connection-info-tab-pane connection-info-command-tab"
         >
           <div class="connection-command-panel">
-            <div class="connection-command-panel-title">
-              Command List
+            <div class="connection-command-panel-title connection-command-panel-heading">
+              <span>Command List</span>
+              <el-select v-model="connectionCommandSource" size="small" class="connection-command-source-select" aria-label="Command source">
+                <el-option label="Client" value="client" />
+                <el-option label="Server" value="server" />
+              </el-select>
             </div>
-
-            <div v-if="connectionInfoServerCommands.length" class="connection-command-panel-title">Server Commands</div>
-            <div v-if="connectionInfoServerCommands.length" class="connection-command-list">
-              <div v-for="item in connectionInfoServerCommands" :key="`server-${item.name}`" class="connection-command-item">
-                <div class="connection-command-group"><span>{{ item.group || 'server' }}</span></div>
-                <div class="connection-command-text">
-                  <span class="mono">{{ item.name }}</span><span v-if="item.help"> — {{ item.help }}</span>
-                </div>
-              </div>
-            </div>
-            <div class="connection-command-panel-title">Client Commands</div>
             <div class="connection-command-list">
               <div
-                v-for="(item, index) in connectionInfoClientCommands"
+                v-for="(item, index) in (connectionCommandSource === 'server' ? connectionInfoServerCommands : connectionInfoClientCommands)"
                 :key="`${item.template}-${index}`"
                 class="connection-command-item"
               >
@@ -287,7 +280,7 @@
               </div>
 
               <div
-                v-if="!connectionInfoClientCommands.length"
+                v-if="!(connectionCommandSource === 'server' ? connectionInfoServerCommands : connectionInfoClientCommands).length"
                 class="empty-state compact"
               >
                 No commands available
@@ -562,6 +555,7 @@ export default {
       valueValue: '',
       connectionInfoClientCommands: [],
       connectionInfoServerCommands: [],
+      connectionCommandSource: 'client',
       activeTab: 'basic',
       runtimeConfigItems: [],
       runtimeConfigStorePath: '',
@@ -1442,6 +1436,15 @@ export default {
   border-bottom: 1px solid rgba(15, 23, 42, 0.06);
   background: #f8fafc;
 }
+
+.connection-command-panel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.connection-command-source-select { width: 104px; font-weight: 400; }
 
 .connection-command-list {
   flex: 1 1 auto;

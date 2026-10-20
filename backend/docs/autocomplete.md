@@ -48,7 +48,7 @@ Server/Client 的 Provider 负责候选生成，浏览器负责缓存、过滤�
 
 部分补全读取的并不是目标设备的文件系统，而是 Server 当前管理的数据。例如，保存过的远程路径 Quick Jump 名称由当前机器的 Pinned Paths 提供；Alias 管理入口会补全管理动作，但具体 Alias **名称**作为顶层候选由 AliasManager 的有效定义提供，管理动作 Provider 本身不会逐个读取 `aliases.json` 生成名称候选。
 
-Script 的执行候选来自 Server 的脚本目录；当前设备平台对应的目录与共享目录可见，不会把其他平台的脚本直接当作本机通用候选。External Tool 的候选由 Server 的 Exec Catalog 按目标平台和架构筛选，除入口操作外，也可以补充符合目标设备条件的 Exec 名称。运行时配置 `set` 的参数候选则必须询问目标 Client，展示真实配置键、当前值、默认值和是否覆盖的信息。
+Script 的执行候选来自 Server 的脚本目录；以 Script Metadata `platforms` 为主筛选当前设备；没有该字段时按原平台/共享目录归属识别。只影响列表与候选，不限制显式执行。External Tool 的候选由 Server 的 Exec Catalog 按目标平台和架构筛选，除入口操作外，也可以补充符合目标设备条件的 Exec 名称。运行时配置 `set` 的参数候选则必须询问目标 Client，展示真实配置键、当前值、默认值和是否覆盖的信息。
 
 这些动态候选的数量与内容取决于当前设备、Server 配置及 Catalog，而不是一套固定的命令总表。详见 [Aliases and Quick Actions](alias_quick_actions.md)、[Remote Files](remote_files.md) 和 [External Tools](external_tools.md)。
 
@@ -143,3 +143,7 @@ Provider 内部按 `priority` 与标题排序、按插入文本去重；某个 P
 ## Server Registry 静态子命令补全
 
 Server 注册表 `server_builtin_registry.py` 是一级 Builtin 与 `alias/job/script/xt/history/httpctl` 子命令唯一的静态定义来源。`RegisteredServerSubcommandCompletionProvider` 从该表生成 `script list/view/exec/run`、`job list/start/ps/status/stop/stop-all` 等结构；动态 `script exec <path>`、`job start <name>` 仍由专门 Provider 查询当前 Server Catalog。前端 `CommandInputBar` 对 `script`、`job` 进入既有按上下文缓存的 Server 补全流程，不再识别旧 `exec`。
+
+### v34.6 顶层命令与平台筛选边界
+
+Server Registry 的 `script` 是一级命令，来源为 `server`；它不应被当作 `script exec <path>` 的特定平台脚本进行目录筛选。输入 `sc` 应能找到 `script`，选中后再通过上下文 Provider 获取 `list/view/exec/run` 子命令。只有真实 Script 路径候选才进行平台筛选。Job Catalog 的 `job start` 动态候选采用与 CLI `job list` 一致的 Metadata 平台条件。

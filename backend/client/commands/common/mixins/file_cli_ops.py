@@ -8,12 +8,14 @@ from core.utils.output_marker import error, success, info
 
 class CommandFileCliMixin:
     @desc('Download a file from the client', group='file')
-    def download(self, filename):
+    def download(self, filename=''):
         """
         旧版为 socket 发送文件。
         现改为 client 直接通过 HTTP 上传到 server artifact 区。
         """
         try:
+            if not str(filename or '').strip():
+                return 0, 'Usage: download <file>'
             if HTTP_TRANSFER_MODE == 'legacy':
                 self._set_cancel_policy(
                     mode='none',

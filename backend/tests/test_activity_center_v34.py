@@ -162,16 +162,14 @@ def test_real_session_send_boundary_writes_once_and_not_on_send_failure(setup):
     store, orch, client = setup
     sent = []
 
-    class Runtime:
-        def bind_command_execution(self, *args, **kwargs):
-            return None
-
-        def wait_for_result(self, *args, **kwargs):
-            return iter([(1, 'ok')])
-
+    from server.connection.runtime.session_runtime import ClientSessionRuntime
+    from server.connection.services.result_dispatcher import ServerResultDispatcher
     client.context = SimpleNamespace(command_history_orchestrator=orch, script_grant_service=None)
-    client.runtime = Runtime()
-    client.send = lambda packet: sent.append(packet)
+    client.runtime = ClientSessionRuntime()
+    client.send = lambda packet: (
+        sent.append(packet),
+        ServerResultDispatcher(client).dispatch_result(packet['id'], 1, 'ok', 1),
+    )
     channel = ClientSessionCommandChannel(client)
     aid = orch.begin_execution(client, 'shell pwd', source='web')
     orch.describe_plan(aid, {'command_type': 'command', 'command': 'shell pwd'})

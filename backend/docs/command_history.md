@@ -56,6 +56,8 @@ Pin 顺序由独立的 `pinned_commands` 表持久管理：Pinned 项优先显�
 
 `history` 和 `history clear` 是只读/清理 Quick 的纯 Server 命令，不记 Activity 或 Quick；`history` 的可回放索引使用 Quick History 快照并跳过 `history run N` / `!N` 元命令，重新从 1 编号；`history run <index>` / `!<index>` 会根据当前机器 Quick History 的动态索引查找真实可执行文本，再按照正常命令解析和 Client 派发链执行。索引随 Pin 排序、Recent 变化而变动，不是稳定 ID，重放前应核对列表。Replay 不产生 Quick，但实际派发 Client 后会产生 Activity，并记录外层回放 Invocation 与实际 Resolved；所以回放自身不改变 Quick 索引。未派发或纯 Server 回放不生成 Activity。
 
+`xt info <name> --json` 在 Server 的 `ExternalToolCliBuiltinSupport._load_cli_install_status_map()` 中会构造真实的内部 Client 查询 `external_tool_install_statuses __json__:...`，由 `_collect_nested_command_text()` 向 Client 派发；因此 Activity 的 `resolved.command` 可能包含该真实但很长的 Base64 传输文本，`invocation.input` 仍是用户输入的 `xt info ...`。本轮不伪造一条不存在的 Client `xt info` 命令，Details 中长命令依旧可以点开完整查看。
+
 `notify`、`saveout` 等 Server 包装命令如果执行了 Client 子命令，只产生一条 Activity，外层包装文本留在 `invocation.input`，实际命令留在 `resolved.command`。`saveout` 在内层命令完成并成功注册 `command_output` Artifact 后，会沿用原有 History Store 文件关联方法，把 Artifact 引用加到该 Activity 的 `files`；不复制文件内容，也不凭文件存在推断执行成功。`script exec <name>` 由 Server 读取 Script 文件并向 Client 下发 Script 类型，不是普通 `command`。`rtt`、Alias 定义列表、脚本目录浏览等未下发 Client 的 Server 操作不记录。
 
 ## 查询、删除和界面

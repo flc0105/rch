@@ -57,6 +57,7 @@ class BuiltinCommandHandler:
         self.script_support = ScriptBuiltinSupport(
             plan_builder=self.plan_builder,
             plan_executor_factory=self.plan_executor_factory,
+            conn=self.conn,
         )
         self.command_output_support = CommandOutputBuiltinSupport(
             server=self.server,

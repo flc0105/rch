@@ -208,3 +208,7 @@ Web 入口需要提供明确的 `client_id`、命令、`tab_id` 和必要的呈�
 ## Server Builtin 统一路由
 
 Server 只将 `SERVER_COMMAND_REGISTRY` 显式注册的一级名称作为 Builtin，先用公用子命令解析器识别 `script/job/alias/xt/history` 等命令，再交给原业务 Support。未命中注册表的普通命令继续走 ACMD → Alias → Client 普通执行；Client 未注册的普通命令保留 Shell 后备执行。`script exec` / `script run` 两种 Server 输入共用原 `COMMAND_TYPE_SCRIPT` 执行协议，不把结构化 Payload 交给 Client 再做 Builtin 解析。
+
+### Client 返回结果的派发次序（v34.6）
+
+`ClientSessionCommandChannel.send_command()` 必须在 `session.send()` 前向 `pending_command_ids` 注册新消息 ID。此前极快完成的 Client 结果可能早于 `wait_for_result()` 注册而到达，误入 `background_message`，并导致前台永远等待以及取消时返回 `Command is not running`。现在先注册、后发送，在 EOF 或迭代器结束时统一清理；发送失败时回滚排队 ID。Client 的未知命令 Shell fallback 仍是原有能力，不因 Server Registry 扩展而改变。

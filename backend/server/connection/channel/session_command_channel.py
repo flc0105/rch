@@ -109,7 +109,15 @@ class ClientSessionCommandChannel:
             history_entry_id=history_entry_id,
             history_orchestrator=history_orchestrator,
         )
-        self.session.send(data)
+        # Register before sending: a very fast Client (e.g. invalid download)
+        # can reply before the caller starts iterating wait_for_result().
+        self.session.runtime.pending_command_ids.put(data['id'])
+        try:
+            self.session.send(data)
+        except Exception:
+            if self.session.runtime.pending_command_ids.peek_first() == data['id']:
+                self.session.runtime.pending_command_ids.get()
+            raise
         # Persist only after the transport has accepted an actual Client command.
         # This is deliberately restricted to explicitly prepared Activity intents:
         # internal requests and pure Server builtins never create Activity.
@@ -121,15 +129,18 @@ class ClientSessionCommandChannel:
         if bound_task and bound_task.get('cancel_requested'):
             self.send_cancel(data.get('id'))
 
-        return self.wait_for_result(data.get('id'), command if type == MSG_TYPE_COMMAND else None)
+        return self.wait_for_result(data.get('id'), command if type == MSG_TYPE_COMMAND else None,
+                                    already_registered=True)
 
     def send_cancel(self, target_command_id: int):
         data = self.build_cancel_payload(target_command_id)
         self.session.send(data)
         return data
 
-    def wait_for_result(self, command_id: int, command: str = ''):
-        yield from self.session.runtime.wait_for_result(self.session, command_id, command)
+    def wait_for_result(self, command_id: int, command: str = '', already_registered=False):
+        yield from self.session.runtime.wait_for_result(
+            self.session, command_id, command, already_registered=already_registered,
+        )
 
 
 

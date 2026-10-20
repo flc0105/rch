@@ -3,6 +3,7 @@ import json
 import shlex
 
 from server.application.command.command_types import COMMAND_TYPE_JOB_CONTROL
+from core.platform.catalog_visibility import visible_on_platform
 
 
 class JobBuiltinSupport:
@@ -49,7 +50,9 @@ class JobBuiltinSupport:
             if args not in ([], ['--json']):
                 yield 0, self.HELP
                 return
-            jobs = job_api.list_background_job_catalog(self.client_id)
+            platform = str(getattr(getattr(self.conn, 'session_info', None), 'os_alias', '') or '')
+            jobs = [item for item in job_api.list_background_job_catalog(self.client_id)
+                    if visible_on_platform(item, platform)]
             if args == ['--json']:
                 yield 1, json.dumps([{'name': str(item.get('job_name') or ''),
                                       'display_name': str(item.get('display_name') or ''),

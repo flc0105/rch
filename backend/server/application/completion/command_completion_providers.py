@@ -5,6 +5,8 @@ import re
 from core.protocol.structured_arg_codec import encode_structured_arg
 from core.command_completion.models import CompletionCandidate, CompletionContext
 from core.platform.normalization import normalize_platform_alias
+from core.platform.catalog_visibility import visible_on_platform
+from core.utils.script_metadata import read_script_metadata_from_file
 from core.command_completion.provider import CommandCompletionProvider
 from server.application.history.quick_history import QuickHistoryRecordPolicy
 from server.config.config import SCRIPT_PATH
@@ -279,7 +281,9 @@ class ScriptCommandCompletionProvider(ServerCompletionSessionMixin, CommandCompl
             if not os.path.isfile(file_path):
                 continue
             script = os.path.relpath(file_path, self.script_root).replace('\\', '/')
-            if self._should_show_script(script, current_os_alias):
+            script_name = script[:-3] if script.endswith('.py') else script
+            metadata = read_script_metadata_from_file(file_path, fallback_name=script_name)
+            if visible_on_platform({'path': script, 'metadata': metadata}, current_os_alias):
                 result.append(script)
         return sorted(result, key=str.lower)
 
@@ -459,9 +463,11 @@ class JobCommandCompletionProvider(ServerCompletionSessionMixin, CommandCompleti
             items = self.server.web_service.job_api.list_background_job_catalog(client_id)
         except (AttributeError, ValueError, LookupError):
             return []
+        platform = self.get_client_platform(context)
         return [CompletionCandidate(
             title=f'job start {name}', insert_text=f'job start {name}',
             description='Start a Server-managed job on this Client', source=self.source,
             group=self.group, kind='job', name=name, priority=31 + i,
         ) for i, item in enumerate(items or [])
-            if (name := str(item.get('job_name') or '').strip())]
+            if (name := str(item.get('job_name') or '').strip())
+            and visible_on_platform(item, platform)]

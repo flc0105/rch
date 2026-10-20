@@ -108,20 +108,22 @@ class ClientSessionRuntime:
         return self._execution_runtime.get_foreground_task()
 
     # ------------------ result wait ------------------ #
-    def wait_for_result(self, connection, command_id: int, command: Optional[str]):
+    def wait_for_result(self, connection, command_id: int, command: Optional[str], *, already_registered=False):
         """
         主线程等待接收结果，并保存执行记录
         """
-        self.pending_command_ids.put(command_id)
+        if not already_registered:
+            self.pending_command_ids.put(command_id)
 
         try:
             while 1:
                 status, result, eof = self.message_queue.get()
                 yield status, result
                 if eof:
-                    self.pending_command_ids.get()
                     break
         finally:
+            if self.pending_command_ids.peek_first() == command_id:
+                self.pending_command_ids.get()
             try:
                 history_orchestrator = getattr(connection.context, 'command_history_orchestrator', None)
                 if history_orchestrator is not None:

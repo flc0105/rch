@@ -170,3 +170,7 @@ Server Builtin `job` 的命令候选来自 `SERVER_COMMAND_REGISTRY`，不纳入
 Subprocess 只能隔离 Python 任务进程，不能替代操作系统访问控制或自动安装缺失依赖。Job 的动态 Python 模块来自 Server，能在 Client 上执行实际代码，因此编辑、上传和运行权限应与项目的 Web 管理和部署信任边界一起考虑。当前 `/api/background-jobs/report` 允许匿名访问，Server 会据报告内容建立或更新 Job 记录；该路由没有强制把上报方的 `client_id` 与独立身份凭据绑定，部署时应限制不可信网络访问，不宜把请求自带的身份字段当成已完成的强身份认证。
 
 如需细化参数校验、事件通知或 Artifact/JSON 展示，分别参考 [Parameter Schema](parameter_schema.md)、[Device Event Emit](event_emit.md)、[SSE Notifications](sse_notifications.md) 与 [Structured Command Output](structured_output.md)。
+
+### 终端 Job 列表范围
+
+`job`、`job list` 和 `job list --json` 只展示 Metadata `platforms` 对当前设备适用的资源；没写 `platforms` 时才根据 common / 平台目录判断。`job start` 的名称补全复用相同的过滤。它只控制 Server 终端命令目录，不收窄 Background Jobs Web 管理 UI Catalog，也不修改 Client 的 JobManager 执行协议。

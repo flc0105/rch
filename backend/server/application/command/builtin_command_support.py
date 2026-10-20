@@ -14,6 +14,7 @@ from core.utils.command_output import (
 from core.utils.formatting import format_dict
 from core.utils.parsing import scan_args
 from core.utils.script_metadata import read_script_metadata_from_file
+from core.platform.catalog_visibility import visible_on_platform
 from server.application.auth.script_grant_service import SCRIPT_GRANT_REQUEST_KEY
 from server.application.command.command_execution_event import CommandExecutionEvent
 from server.application.history.quick_history import QuickHistoryRecordPolicy
@@ -77,9 +78,14 @@ class ScriptBuiltinSupport:
     script builtin: list / view / exec / run.
     """
 
-    def __init__(self, plan_builder, plan_executor_factory):
+    def __init__(self, plan_builder, plan_executor_factory, conn=None):
         self.plan_builder = plan_builder
         self.plan_executor_factory = plan_executor_factory
+        self.conn = conn
+
+    def _platform(self):
+        info = getattr(self.conn, 'session_info', None)
+        return str(getattr(info, 'os_alias', '') or '')
 
     def script(self, subcommand, tail=''):
         """Execute a validated registry subcommand without leaking transport detail."""
@@ -136,10 +142,7 @@ class ScriptBuiltinSupport:
         return glob.iglob(os.path.join(SCRIPT_PATH, '**/*.py'), recursive=True)
 
     def list_scripts(self):
-        return [
-            os.path.relpath(file_path, SCRIPT_PATH).replace('\\', '/')
-            for file_path in self._iter_script_files()
-        ]
+        return [item['path'] for item in self.list_script_catalog()]
 
     def list_script_catalog(self):
         items = []
@@ -154,7 +157,10 @@ class ScriptBuiltinSupport:
                 'description': str(metadata.get('description') or '').strip(),
                 'metadata': metadata,
             })
-        return sorted(items, key=lambda item: item.get('path', '').lower())
+        return sorted(
+            (item for item in items if visible_on_platform(item, self._platform())),
+            key=lambda item: item.get('path', '').lower(),
+        )
 
     def _resolve_script_path(self, script_name: str) -> str:
         script_path = os.path.realpath(os.path.join(SCRIPT_PATH, script_name))

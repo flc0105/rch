@@ -1462,9 +1462,7 @@ const pinnedHistoryItems = historyItems.filter(item => item && item.is_pinned)
 
       return (
         source === 'script' ||
-        group === 'script' ||
-        groupLabel === 'script' ||
-        /^script\s+exec\s+/i.test(commandText)
+        /^script\s+exec\s+[^\s]/i.test(commandText)
       )
     },
 

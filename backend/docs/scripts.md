@@ -306,3 +306,7 @@ Script 的边界不是“只要是 Python 就能无条件使用全部 Client 能
 `script` / `script list` 默认沿用原 `exec` 无参数时的 Server Script 相对路径列表。`script list --json` 输出简化的 `name`（相对路径）、`display_name`、`description` 与 `params`（仅参数名数组）；`script view <path>` 返回 Server 上的脚本源码，严格限制在 Script 根目录。
 
 `script exec <path> [options]` 继承原 Terminal `exec` 的 `shlex`、`scan_args` 参数语义；`script run <__json__:payload>` 继承原 `run_script` 的结构化 Metadata 参数、授权信息与 Script Library UI 流程。两者解析后都构造 Script Plan，向 Client 派发 `COMMAND_TYPE_SCRIPT`，不在 Client 新增 `script`/`run_script` 文本命令。旧 `exec`、`run_script` 不作为独立的 Server Builtin 注册。UI 内部 `script run` 保留原有 Base64 JSON 传输，用户手动输入可使用 `script exec`。
+
+### 终端列表的平台筛选
+
+`script list` 与 `script list --json` 使用同一份扫描与 Metadata，按连接设备的 `os_alias` 和脚本 `SCRIPT_METADATA.platforms` 过滤（声明优先于路径；没有声明则按平台目录 / common 识别）。补全 `script exec <path>` 复用这份判断。`script exec` / `script run` 显式指定脚本时依旧能解析完整 Library 路径，不按列表结果限制；Script Library UI 的 Catalog/展示完全不参与这一过滤。
