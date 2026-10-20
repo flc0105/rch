@@ -352,87 +352,52 @@
               v-else
               class="command-execution-list"
             >
-              <el-card
+              <div
                 v-for="item in filteredCommandExecutionItems"
                 :key="item.entry_id"
-                class="execution-history-card"
-                shadow="hover"
+                class="execution-history-item"
+                role="button"
+                tabindex="0"
+                :aria-label="`View details: ${item.command || '-'}`"
+                @click="openCommandExecutionDetail(item)"
+                @keydown.enter.self.prevent="openCommandExecutionDetail(item)"
+                @keydown.space.self.prevent="openCommandExecutionDetail(item)"
               >
-                <div class="execution-history-card-inner">
-                  <div class="execution-history-card-header">
-                    <div class="execution-history-command mono">
-                      {{ item.command || '-' }}
-                    </div>
-
-                    <div class="execution-history-badges">
-                      <el-tag
-                        :type="buildCommandExecutionStatusTagType(item.status)"
-                        size="small"
-                      >
-                        {{ item.status || '-' }}
-                      </el-tag>
-
-                      <el-tag
-                        v-if="Array.isArray(item.files) && item.files.length"
-                        type="primary"
-                        size="small"
-                      >
-                        📎 {{ (item.files || []).length }}
-                      </el-tag>
-
-                      <el-tag
-                        v-if="item.output_truncated"
-                        type="warning"
-                        size="small"
-                      >
-                        ✂️ truncated
-                      </el-tag>
-                    </div>
-                  </div>
-
+                <div class="execution-history-row">
                   <div class="execution-history-meta">
-                    <span class="execution-history-source mono">{{ item.source || '-' }}</span>
-                    <span class="execution-history-separator">•</span>
+                    <el-tag
+                      :type="buildCommandExecutionStatusTagType(item.status)"
+                      size="small"
+                    >
+                      {{ item.status || '-' }}
+                    </el-tag>
+
                     <span class="execution-history-time">
                       {{ formatDateTimeStandard(item.started_at) || '-' }}
                     </span>
-                  </div>
 
-<!--                  <div class="execution-history-stats">-->
-<!--                    <div class="execution-history-stat-item">-->
-<!--                      <span class="execution-history-stat-label">Duration</span>-->
-<!--                      <span class="execution-history-stat-value">-->
-<!--                        {{ formatCommandExecutionDuration(item) }}-->
-<!--                      </span>-->
-<!--                    </div>-->
+                    <el-tag
+                      v-if="Array.isArray(item.files) && item.files.length"
+                      type="primary"
+                      size="small"
+                    >
+                      📎 {{ item.files.length }}
+                    </el-tag>
 
-<!--                    <div class="execution-history-stat-item">-->
-<!--                      <span class="execution-history-stat-label">Chunks</span>-->
-<!--                      <span class="execution-history-stat-value">-->
-<!--                        {{ item.output_chunk_count || 0 }}-->
-<!--                      </span>-->
-<!--                    </div>-->
-
-<!--                    <div class="execution-history-stat-item">-->
-<!--                      <span class="execution-history-stat-label">Lines</span>-->
-<!--                      <span class="execution-history-stat-value">-->
-<!--                        {{ item.output_line_count || 0 }}-->
-<!--                      </span>-->
-<!--                    </div>-->
-<!--                  </div>-->
-
-                  <div
-                    class="execution-history-summary"
-                    :title="buildCommandExecutionSingleLineSummary(item)"
-                  >
-                    {{ buildCommandExecutionSingleLineSummary(item) }}
+                    <el-tag
+                      v-if="item.output_truncated"
+                      type="warning"
+                      size="small"
+                    >
+                      ✂️ truncated
+                    </el-tag>
                   </div>
 
                   <div class="execution-history-actions">
                     <el-button
                       plain
                       size="small"
-                      @click="applyHistoryCommand(item)"
+                      @click.stop="applyHistoryCommand(item)"
                     >
                       Use
                     </el-button>
@@ -440,7 +405,7 @@
                     <el-button
                       plain
                       size="small"
-                      @click="openCommandExecutionDetail(item)"
+                      @click.stop="openCommandExecutionDetail(item)"
                     >
                       Details
                     </el-button>
@@ -450,14 +415,28 @@
                       plain
                       size="small"
                       :loading="commandExecutionDeletingEntryId === item.entry_id"
-                      @click="deleteCommandExecutionItem(item)"
+                      @click.stop="deleteCommandExecutionItem(item)"
                     >
                       Delete
                     </el-button>
                   </div>
                 </div>
-              </el-card>
 
+                <div
+                  class="execution-history-command mono"
+                  :title="item.command || '-'"
+                >
+                  {{ item.command || '-' }}
+                </div>
+
+                <div
+                  v-if="String(item.status || '').toLowerCase() === 'error'"
+                  class="execution-history-error"
+                  :title="buildCommandExecutionSingleLineSummary(item)"
+                >
+                  {{ buildCommandExecutionSingleLineSummary(item) }}
+                </div>
+              </div>
               <div
                 v-if="commandExecutionHasMore"
                 class="execution-history-load-more"
@@ -1199,7 +1178,7 @@ Star,
 </script>
 
 <style scoped>
-/* History dialog：Execution History 使用 el-card 外壳，内部保留原来的卡片信息结构。 */
+/* History dialog */
 .fixed-dialog-body {
   height: 100%;
   min-height: 0;
@@ -1563,7 +1542,7 @@ Star,
   cursor: not-allowed;
 }
 
-/* Execution History 卡片 */
+/* Execution History：紧凑的执行事件列表，命令不作为标题。 */
 .command-execution-list-shell {
   height: 100%;
   min-height: 320px;
@@ -1572,127 +1551,83 @@ Star,
 
 .command-execution-list {
   height: 100%;
+  min-height: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding: 4px 2px 4px 0;
+  padding: 0 4px 4px 0;
 }
 
-.execution-history-card.el-card {
+.execution-history-item {
   flex: 0 0 auto;
-  border: 1px solid #eef2f6;
-  border-radius: 16px;
+  min-width: 0;
+  padding: 12px 14px;
+  border-bottom: 1px solid #e8edf3;
   background: #fff;
-  overflow: hidden;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
-  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
 }
 
-.execution-history-card.el-card:hover {
-  border-color: #e2e8f0;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
-  transform: translateY(-1px);
+.execution-history-item:first-child {
+  border-top: 1px solid #e8edf3;
 }
 
-.execution-history-card :deep(.el-card__body) {
-  padding: 0 !important;
+.execution-history-item:hover {
+  background: #f8fafc;
 }
 
-.execution-history-card-inner {
-  padding: 16px 20px;
+.execution-history-item:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: -2px;
 }
 
-.execution-history-card-header {
+.execution-history-row {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 8px;
-}
-
-.execution-history-command {
-  display: block;
-  font-size: 14px;
-  font-weight: 600;
-  color: #1e293b;
-  line-height: 1.4;
-  flex: 0 1 560px;
-  max-width: min(560px, 100%);
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  word-break: normal;
-}
-
-.execution-history-badges {
-  display: flex;
-  gap: 8px;
-  flex-shrink: 0;
-  flex-wrap: wrap;
-  justify-content: flex-end;
 }
 
 .execution-history-meta {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 12px;
+  flex-wrap: wrap;
+  min-width: 0;
   font-size: 12px;
-  color: #6b7280;
+  color: #64748b;
 }
 
-.execution-history-source {
-  color: #475569;
+.execution-history-time {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
-.execution-history-separator {
-  color: #d1d5db;
-}
-
-/*
-//
-//.execution-history-stats {
-//  display: flex;
-//  flex-wrap: wrap;
-//  gap: 16px;
-//  margin-bottom: 12px;
-//  padding: 10px 0;
-//  border-top: 1px solid #f0f2f5;
-//  border-bottom: 1px solid #f0f2f5;
-//}
-//
-//.execution-history-stat-item {
-//  display: flex;
-//  align-items: baseline;
-//  gap: 6px;
-//  min-width: 0;
-//}
-//
-//.execution-history-stat-label {
-//  font-size: 11px;
-//  font-weight: 500;
-//  color: #9ca3af;
-//  text-transform: uppercase;
-//  letter-spacing: 0.3px;
-//}
-//
-//.execution-history-stat-value {
-//  font-size: 13px;
-//  font-weight: 500;
-//  color: #1e293b;
-//}
- */
-
-.execution-history-summary {
-  font-size: 12px;
-  color: #4b5563;
-  line-height: 1.5;
-  margin-bottom: 14px;
+.execution-history-command {
+  display: block;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  margin-top: 6px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: #f4f6f9;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+}
+
+.execution-history-error {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 6px;
+  color: var(--el-color-danger);
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .execution-history-load-more {
@@ -1703,11 +1638,14 @@ Star,
 
 .execution-history-actions {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
+  flex-shrink: 0;
+  gap: 8px;
 }
 
-.execution-history-actions :deep(.el-button + .el-button) {
-  margin-left: 12px;
+.execution-history-actions :deep(.el-button) {
+  margin: 0;
 }
 
 .empty-state {
@@ -1778,43 +1716,20 @@ Star,
     justify-content: space-between;
   }
 
-  .execution-history-card-inner {
-    padding: 14px 16px;
+  .execution-history-item {
+    padding: 12px;
   }
 
-  .execution-history-card-header {
-    flex-direction: column;
+  .execution-history-row {
     align-items: flex-start;
-    width: 100%;
-    min-width: 0;
-  }
-
-  .execution-history-command {
-    width: 100%;
-    max-width: 100%;
-    flex: 0 1 auto;
-  }
-
-  .execution-history-badges {
-    justify-content: flex-start;
-  }
-
-
-
-  .execution-history-summary {
-    white-space: normal;
-    word-break: break-word;
-  }
-
-  .execution-history-actions {
-    justify-content: flex-start;
     flex-wrap: wrap;
     gap: 8px;
   }
 
-  .execution-history-actions :deep(.el-button + .el-button) {
-    margin-left: 0;
+  .execution-history-actions {
+    margin-left: auto;
   }
+
 }
 
 @media (max-width: 640px) {
@@ -1853,23 +1768,18 @@ Star,
   }
 
   .execution-history-actions {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    display: flex;
+    justify-content: flex-end;
+    flex-wrap: wrap;
     gap: 6px;
     width: 100%;
   }
 
   .execution-history-actions :deep(.el-button) {
-    width: 100%;
+    margin: 0;
     min-height: 32px;
-    margin: 0 !important;
-    border-radius: 10px;
-    justify-content: center;
   }
 
-  .execution-history-actions :deep(.el-button:last-child) {
-    grid-column: 1 / -1;
-  }
 }
 </style>
 

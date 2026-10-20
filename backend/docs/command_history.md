@@ -168,6 +168,8 @@ History Replay 本身属于允许记录的操作，但新建执行条目中的 `
 
 Command History 对话框有 **Quick History** 和 **Execution History** 两个页签。Quick 适合搜索、固定和回填；Execution 适合查看每一次执行、打开输出详情及删除指定记录。
 
+Execution History 按时间排列每次执行，以状态、时间和单行命令展示记录；长命令可悬浮查看完整内容。正常成功的输出不在列表中重复展示，失败记录可显示一行错误摘要；点击记录或 Details 查看详细输出、附件与来源。
+
 | 操作 | Quick History | Execution History |
 |---|---|---|
 | 按命令文本搜索 | 浏览器对已加载条目进行匹配 | Server 对历史记录查询 |
