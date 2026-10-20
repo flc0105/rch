@@ -105,6 +105,28 @@
           </template>
         </el-dropdown>
 
+        <el-dropdown
+          v-else-if="action.id === 'clipboard'"
+          trigger="hover"
+          placement="bottom-start"
+          @command="handleClipboardDropdownCommand"
+        >
+          <el-button
+            size="small"
+            :class="['tool-btn', 'ml-0', { 'tool-btn-accent': action.accent }]"
+            :disabled="isActionDisabled(action.id)"
+            @click="runAction(action.id)"
+          >
+            {{ action.label }}
+          </el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="get" :disabled="isActionDisabled(action.id)">Get</el-dropdown-item>
+              <el-dropdown-item command="send" :disabled="isActionDisabled(action.id)">Send</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+
         <el-button
           v-else
           size="small"
@@ -460,6 +482,11 @@ export default {
       } else {
         this.runAction(actionId)
       }
+    },
+    handleClipboardDropdownCommand(command) {
+      if (this.isActionDisabled('clipboard')) return
+      if (command !== 'get' && command !== 'send') return
+      this.$emit('open-clipboard', command)
     },
     handleMoreCommand(command) {
       const normalizedCommand = String(command || '').trim().toLowerCase()

@@ -562,4 +562,4 @@ unset ADMIN_API_TOKEN
 
 ## Local Heartbeat 恢复后上线通知
 
-仅当 Local Heartbeat Monitor 判断心跳过期并通过专用重启回调拉起替代 Client 时，替代进程携带一次性 `RCH_CLIENT_RECOVERY_SOURCE=local_watchdog`。该 Client 首次成功握手产生的原有 `connection_online` 通知将显示 `recovered by Local Watchdog`；Remote HTTP 手动 `relaunch` 使用同一底层重启器但不附带此标记。普通网络重连不重复展示恢复来源。本版未增加故障检测即时 SSE 或新的通知偏好。
+仅当 Local Heartbeat Monitor 判断心跳过期并通过专用重启回调拉起替代 Client 时，替代进程携带一次性 `RCH_CLIENT_RECOVERY_SOURCE=local_watchdog`。该 Client 首次成功握手产生的原有 `connection_online` 通知将显示 `recovered by Local Watchdog`；Remote HTTP 手动 `relaunch` 使用同一底层重启器但不附带此标记。普通网络重连不重复展示恢复来源。

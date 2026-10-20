@@ -250,15 +250,15 @@ export default {
     },
   },
   methods: {
-    async open() {
-      this.mode = 'get'
+    async open(tab = 'get') {
+      this.mode = tab === 'send' ? 'send' : 'get'
       this.visible = true
       this.resetRemotePayload()
       this.remoteDownloadingPaths = {}
       this.remoteDownloadAllLoading = false
       this.clearComposer()
       await this.loadCapabilities()
-      await this.loadRemoteClipboard()
+      if (this.mode === 'get') await this.loadRemoteClipboard()
     },
     async handleModeChange(tabName) {
       if (String(tabName || '') !== 'get') return

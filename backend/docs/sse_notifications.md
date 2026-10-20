@@ -82,8 +82,6 @@ WebEventBus 发布时生成一份临时事件对象：
 
 该标记随新 Client 的启动环境传递、在 Client 初始化时移出环境，并只用于第一次成功发送的 `info` 握手；以后同进程网络重连不再携带。Server 真正注册连接后才发布上线事件，因此恢复失败、没有上线时不会产生恢复成功通知。Socket 握手没有单独的 Server ACK，若握手已发送却未被 Server 注册，Client 不能获知这一情况；当前实现只保证标记在本地首次成功发送后消费，而非跨网络故障的恰好一次投递。
 
-**本版不支持** Watchdog 在检测到 stale 或进程死亡的当下主动发送故障 SSE，也不增加 Preferences 开关；那是另一个后续功能。
-
 ## 持久化通知的形成
 
 `NotificationEventProjector` 从 WebEventBus 的事件类型中选择符合条件的项目，构造通知记录并写入 SQLite。它处理 Device Event、设备上下线、Artifact、文件传输、Background Job、PTY、ScreenView、External Tool、构建和清理等生命周期事件。

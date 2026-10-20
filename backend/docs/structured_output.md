@@ -319,6 +319,6 @@ Viewer 的操作包括：
 
 JSON Viewer 支持对有效来源的 Command 或 Script 使用 **Run Again**，发起一次新的执行并在 Terminal 中留下新执行记录。当前 Viewer 不关闭；新任务完成后仅在输出能解析为完整合法 JSON 时替换 Viewer 中展示的数据，否则提示错误并保留原数据显示。此前的 Terminal 历史内容始终不变。
 
-Table 的 `_actions` 继续是可选的行级元数据。用户确认执行命令后，可以选择 Terminal 或 New Dialog：前者使用原终端输出，后者仅在当前前端的结果弹窗显示执行输出，不关闭原 JSON Viewer。两种动作均复用既有 `/api/connections/{client_id}/command` 请求及任务结果 SSE，不在通用 Command API 中附加展示层标记。
+Table 的 `_actions` 继续是可选的行级元数据。用户确认执行命令后，可以选择 Terminal 或 New Dialog：前者使用原终端输出，后者仅在当前前端的结果弹窗显示执行输出，不关闭原 JSON Viewer。两种动作均复用既有 `/api/connections/{client_id}/command` 请求及任务结果 SSE。
 
-**关联方式：** Server 原样返回 `task_id`，并通过 `command_result` / `command_complete` SSE 发出任务结果。浏览器在提交前建立临时任务捕获器，缓冲 HTTP 返回之前可能先到达的 SSE 事件，取得 `task_id` 后只采纳该任务的输出。Script 的 Run Again 则复用现有 `/scripts/run` 和相同的 `task_id` 结果事件。只有当前前端使用这些暂存信息，它们不进入 Server/Client 命令协议或持久化数据。
+Run Again 与行级操作均执行新的任务；仅当前任务的结果用于刷新对应窗口，其他任务的输出不会混入。

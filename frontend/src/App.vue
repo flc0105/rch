@@ -541,8 +541,8 @@ export default {
       return this.$refs.screenViewDialogRef?.open()
     },
 
-    openClipboardDialog() {
-      return this.$refs.clipboardDialogRef?.open()
+    openClipboardDialog(tab = 'get') {
+      return this.$refs.clipboardDialogRef?.open(tab)
     },
 
     toggleConnectionInfo() {

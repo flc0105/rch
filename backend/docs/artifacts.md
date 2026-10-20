@@ -91,7 +91,7 @@ Artifact 的三个 URL 含义不同：
 | `/api/artifacts/{artifact_id}/raw` | 直接以文件响应返回内容，适合浏览器显示图片等 |
 | `/api/artifacts/{artifact_id}/preview` | 返回用于预览界面的结构化描述，而非直接返回整个原始文件 |
 
-预览根据扩展名和 MIME 类型区分图片、文本和不支持的格式。图片预览返回 Raw URL；如果运行环境安装 Pillow，还可能附加尺寸、格式和部分 EXIF 信息。文本预览只读取文件前 **200 KiB**，使用 UTF-8 和替换错误字符解码，超过限额会标记 `truncated`，不会把大文本全部载入预览响应。无法识别为图片或文本时仍可下载，但 Preview 会返回 `unsupported`。
+预览根据扩展名和 MIME 类型区分图片、文本和不支持的格式。图片预览返回 Raw URL；如果运行环境安装 Pillow，还可能附加尺寸、格式和部分 EXIF 信息。文本预览默认最多显示文件前 **512 KiB**，同时校验完整文件的编码；支持严格 UTF-8、UTF-8 BOM 与带 BOM 的 UTF-16。无法无损识别编码时只读显示；超过限额会标记 `truncated`，不允许将截断内容直接保存覆盖原文件。无法识别为图片或文本时仍可下载，但 Preview 会返回 `unsupported`。
 
 Preview Dialog 对可编辑文本提供编辑入口；保存实际修改的是 **Server 上的 Artifact 文件**，并同步更新其元数据大小和更新时间。它不会自动将编辑内容同步回最初的 Client 文件。如果是 Remote Files 中的远程文件编辑，则要使用那条独立的远端保存链路。被截断的预览不应作为完整内容直接覆盖保存。
 
