@@ -160,7 +160,7 @@ Web 向任务附带 `quick_action`、`quick_action_run_id`、`quick_action_alias
 
 Alias 通过 Terminal 输入时，Server 的 AliasManager 展开参数并创建 Client 执行计划；只有实际发送到 Client，才生成一条 `kind=alias/action=invoke` 的 Activity。`invocation.input` 保留输入文本（例如 `now`），`invocation.target` 为 Alias 名称，`resolved.command_type=command`，`resolved.command` 是真正展开并派发的命令。
 
-Quick Actions 的 Dialog / Terminal 两种呈现方式都通过 Metadata 保留选中 Alias 的身份、平台和参数，不能仅根据已展开文本推断是否为 Alias，尤其要正确处理选择被当前平台同名定义覆盖的共享 Alias。两者成功时可形成 Activity，但 **Quick Actions UI 不会额外写入 Quick Recent**；手动 Terminal/CLI 可复现的 Alias 成功执行才进入 Recent。失败、取消、超时不会更新 Recent 或覆盖已有成功快照。Alias 定义管理、列表查询属于 Server 操作，不产生 Activity。
+Quick Actions 的 Dialog / Terminal 两种呈现方式都通过 Metadata 保留选中 Alias 的身份、平台和参数，不能仅根据已展开文本推断是否为 Alias，尤其要正确处理选择被当前平台同名定义覆盖的共享 Alias。两者成功时可形成 Activity，但 **Quick Actions UI 不会额外写入 Quick Recent**；手动 Terminal/CLI 调用 Alias 不论成功、失败、取消或超时都可进入 Quick Recent，保存最近一次状态与尝试次数；Quick Actions UI 调用不写 Quick。Alias 定义管理、列表查询属于 Server 操作，不产生 Activity。
 
 ### 工具栏及同步机制
 

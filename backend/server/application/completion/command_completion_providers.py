@@ -6,7 +6,7 @@ from core.protocol.structured_arg_codec import encode_structured_arg
 from core.command_completion.models import CompletionCandidate, CompletionContext
 from core.platform.normalization import normalize_platform_alias
 from core.command_completion.provider import CommandCompletionProvider
-from server.application.history.history_record_policy import CommandHistoryRecordPolicy
+from server.application.history.quick_history import QuickHistoryRecordPolicy
 from server.config.config import SCRIPT_PATH
 
 
@@ -153,7 +153,7 @@ class HistoryCommandCompletionProvider(ServerCompletionSessionMixin, CommandComp
             command_text = str(item.get('command') or '').strip()
             if not command_text:
                 continue
-            if CommandHistoryRecordPolicy.is_history_replay_command(command_text):
+            if QuickHistoryRecordPolicy.is_history_replay_command(command_text):
                 continue
 
             cloned = dict(item)

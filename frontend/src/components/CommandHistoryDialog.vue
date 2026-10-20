@@ -87,8 +87,11 @@
                 show-overflow-tooltip
               >
                 <template #default="{ row }">
-                  <div class="ellipsis mono">
-                    {{ row.command || '-' }}
+                  <div class="quick-command-label mono">
+                    <component v-if="row.status" :is="getActivityStatusIcon(row.status)"
+                               class="activity-status-icon" :class="`activity-status-${row.status}`"
+                               :size="16" :title="row.status" />
+                    <span class="ellipsis">{{ row.command || '-' }}</span>
                   </div>
                 </template>
               </el-table-column>
@@ -227,8 +230,11 @@
                     <div class="mobile-file-icon">⌘</div>
 
                     <div class="mobile-file-main">
-                      <div class="mobile-file-name mono">
-                        {{ row.is_pinned ? '⭐ ' : '' }}{{ row.command || '-' }}
+                      <div class="mobile-file-name mono quick-command-label">
+                        <component v-if="row.status" :is="getActivityStatusIcon(row.status)"
+                                   class="activity-status-icon" :class="`activity-status-${row.status}`"
+                                   :size="16" :title="row.status" />
+                        <span class="ellipsis">{{ row.is_pinned ? '⭐ ' : '' }}{{ row.command || '-' }}</span>
                       </div>
 
                       <div class="mobile-file-tags">
@@ -1359,6 +1365,19 @@ Star,
   cursor: not-allowed !important;
   pointer-events: none !important;
   text-decoration: none !important;
+}
+
+.quick-command-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.quick-command-label .ellipsis {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .quick-history-mobile-shell,

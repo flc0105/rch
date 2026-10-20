@@ -16,7 +16,7 @@ from core.utils.parsing import scan_args
 from core.utils.script_metadata import read_script_metadata_from_file
 from server.application.auth.script_grant_service import SCRIPT_GRANT_REQUEST_KEY
 from server.application.command.command_execution_event import CommandExecutionEvent
-from server.application.history.history_record_policy import CommandHistoryRecordPolicy
+from server.application.history.quick_history import QuickHistoryRecordPolicy
 from server.config.config import SCRIPT_PATH
 
 
@@ -526,7 +526,7 @@ class HistoryBuiltinSupport:
         text = str(command_text or '').strip()
         if not text:
             return False
-        return CommandHistoryRecordPolicy.is_history_replay_command(text)
+        return QuickHistoryRecordPolicy.is_history_replay_command(text)
 
     def _get_resolvable_quick_history(self) -> list:
         """

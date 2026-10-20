@@ -1,4 +1,4 @@
-"""Activity mutations and success-only Quick Recent mutations."""
+"""Activity mutations; Quick History has an independent lifecycle and store."""
 from server.models.artifact import ArtifactReference
 from server.models.records import OutputRecordBase
 
@@ -78,16 +78,6 @@ class HistoryWriteService:
             entry['status'] = status
             if status in {'success', 'error', 'cancelled', 'interrupted', 'timed_out', 'stopped'}:
                 entry['finished_at'] = self.store._now_iso()
-                # The replayed command, not 'history run N', becomes Quick Recent.
-                if status == 'success' and entry['origin'] in {'web_terminal', 'cli'} and entry['kind'] in {'command', 'alias'}:
-                    raw = str(entry['invocation'].get('input') or '').strip()
-                    command = str(entry['resolved'].get('command') or '').strip()
-                    if raw.startswith('history run ') or raw.startswith('!'):
-                        key = str(entry['invocation'].get('target') or command).strip()
-                    else:
-                        key = raw
-                    if key and command and not key.startswith(('run_script ', 'exec ')):
-                        self.store._upsert_recent(entry['machine_id'], key, entry_id, entry['finished_at'])
             self.store._update_entry(entry)
 
     def clear_history_for_connection(self, conn):
@@ -96,9 +86,7 @@ class HistoryWriteService:
 
     def clear_history_by_machine_id(self, machine_id):
         machine_id = self._machine_id(machine_id)
-        with self.store._lock, self.store.database.transaction():
-            self.store.database.connection().execute('DELETE FROM activity_records WHERE machine_id = ?', (machine_id,))
-            self.store.database.connection().execute('DELETE FROM command_recents WHERE machine_id = ?', (machine_id,))
+        self.store.quick_store.clear(machine_id)
 
     def set_command_pinned_for_connection(self, conn, command, is_pinned):
         if conn is None:

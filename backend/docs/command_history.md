@@ -1,6 +1,6 @@
 # Activity Center / Quick History
 
-Activity Center 与 Quick History 服务不同目的：前者保留**实际向 Client 提交的操作事实及结果**，后者仅用于成功执行过的、可复现的用户命令；Pinned Commands 是独立的用户收藏。它们共享 `machine_id` 设备作用域，但 Activity 的删除不重建或覆盖 Quick Recent。现有旧 Execution History 不导入新的 Activity 存储，正式记录从空表开始；不保留双份运行时读写路径。
+Activity Center 与 Quick History 服务不同目的：前者保留**实际向 Client 提交的操作事实及结果**，后者保存手动终端命令的最近一次执行状态，失败命令也可以重试；Pinned Commands 是独立的用户收藏。它们共享 `machine_id` 设备作用域，但 Activity 的删除不重建或覆盖 Quick Recent。现有旧 Execution History 不导入新的 Activity 存储，正式记录从空表开始；不保留双份运行时读写路径。
 
 ## 一次操作如何进入 Activity
 
@@ -8,7 +8,7 @@ Server 接收请求时保留原始调用身份，解析 Server Builtin、Alias�
 
 首批范围是 `command`、`alias`、`script`。Remote Files、Job、Process、External Tool、监控采样、上传、目录浏览及内部 RPC 暂不写 Activity。以后 Job 若接入，正常执行动作使用 `invoke`，停止沿用取消原活动的流程，不额外创建 `stop` Activity。未知普通 Client 命令落到 Shell 是 RCH 原有的**设计特性**，本轮不更改命令分发、解析或 Shell fallback。
 
-同一用户操作只记一条 Activity：`history run 3`、`!3`、`notify shell pwd`、`saveout shell pwd` 以 `invocation.input` 保留外部调用文本，`resolved.command` 保留真正下发的 Client 命令。Alias 保留 Alias 名称/参数，而非把展开文本冒充用户输入。Script Library、`exec <file>` 都是 `kind=script`，实际下发的是脚本协议 `command_type=script`；Activity 不复制整段脚本源码或 Base64 载荷，也不伪造 Shell 命令。
+同一用户操作至多记一条 Activity：`notify shell pwd`、`saveout shell pwd` 以 `invocation.input` 保留外部调用文本，`resolved.command` 保留真正下发的 Client 命令。`history run N` 和 `!N` 不写入 Quick，但只要回放实际向 Client 派发了命令，就创建一条 Activity：`invocation.input` 保留外层回放写法，`resolved` 保留实际派发的命令类型和内容。未成功派发则不落 Activity。Alias 保留 Alias 名称/参数，而非把展开文本冒充用户输入。Script Library、`exec <file>` 都是 `kind=script`，实际下发的是脚本协议 `command_type=script`；Activity 不复制整段脚本源码或 Base64 载荷，也不伪造 Shell 命令。
 
 ### Activity Record 公共结构
 
@@ -44,15 +44,17 @@ Server 接收请求时保留原始调用身份，解析 Server Builtin、Alias�
 
 ## Quick History 与 Pin
 
-Quick Recent 只记录**成功完成且适合重放**的手动 Web Terminal / CLI 命令。失败、取消、中断、超时，以及 Quick Action / Script Library UI 自动提交的结构化调用都不更新 Recent。相同 `machine_id + command` 去重，最多保留最近 100 条不同命令；重复成功增加 `use_count`，所以该计数表示成功重放/执行的次数，而不是所有尝试数。`history run N` 成功后更新被重放的真实命令（而不是文字 `history run N`）；`!N` 同理。用户手动 Pin 的命令不因之后一次失败而删除，也不依赖 Activity 是否存在。
+Quick Recent 保存手动 **Web Terminal / CLI** 提交的命令，无论最终为 `success`、`error`、`cancelled`、`interrupted` 或 `timed_out`；失败的命令也可以重试。以 `machine_id + command` 去重，保留最近 100 条不同命令。最近一次完成结果的 `status` 与时间独立保存在 `command_recents`，每次完成增加 `use_count`（执行尝试数），**不依赖 Activity 存在，也不持有 Activity ID**。UI 的 Command 列显示最近一次状态图标，Last Used 仍隐藏。用户手动 Pin 的命令不因后续失败而删除。
 
-Quick History 页面继续支持 Use、双击回填、Pin / Unpin、Pin Up / Down 和动态数字索引。**仅隐藏** Status 和 Last Used 的 UI，底层必要字段不删除。Use 将命令填入 Terminal 输入框，不会直接执行。
+不记录的操作在 `server/application/history/quick_history.py` 文件顶部统一声明：`history`/`history clear`/`history run N`/`!N`；Quick Action UI、Script Library UI、Web API、上传、Remote Files、Job、Process、External Tool 及其他内部任务；UI 专用 `run_script __json__:` 载荷。Replay 只从 Quick 解析命令，不更新 Quick；其真实 Client 派发则按正常执行规则生成 Activity。
 
-Pin 顺序由独立的 `pinned_commands` 表持久管理：Pinned 项优先显示，然后是排除重复项的 Recent；整体结果重排从 1 开始的索引。最新一次 Pin 不受 Recent 的 100 条容量限制。Quick History 的 Clear 同时清空 Activity 和 Recent，保留手动 Pin；删除单条 Activity 不修改 Quick / Pin。
+Quick History 页面继续支持 Use、双击回填、Pin / Unpin、Pin Up / Down 和动态数字索引。**仅隐藏** Last Used 的 UI；Command 前显示状态图标，底层必要字段不删除。Use 将命令填入 Terminal 输入框，不会直接执行。
+
+Pin 顺序由独立的 `pinned_commands` 表持久管理：Pinned 项优先显示，然后是排除重复项的 Recent；整体结果重排从 1 开始的索引。最新一次 Pin 不受 Recent 的 100 条容量限制。Quick History 的 Clear 只清空 Recent，不影响 Activity 或手动 Pin；删除单条 Activity 不修改 Quick / Pin。
 
 ## 回放与 Server 命令边界
 
-`history` 和 `history clear` 是纯 Server 命令，不记 Activity；`history` 的可回放索引使用 Quick History 快照并跳过 `history run N` / `!N` 元命令，重新从 1 编号；`history run <index>` / `!<index>` 会根据当前机器 Quick History 的动态索引查找真实可执行文本，再按照正常命令解析和 Client 派发链执行。索引随 Pin 排序、Recent 变化而变动，不是稳定 ID，重放前应核对列表。重放的外层 `invocation.input` 保留原文，`resolved.command` 保留实际发出的命令，类型由实际计划决定。
+`history` 和 `history clear` 是只读/清理 Quick 的纯 Server 命令，不记 Activity 或 Quick；`history` 的可回放索引使用 Quick History 快照并跳过 `history run N` / `!N` 元命令，重新从 1 编号；`history run <index>` / `!<index>` 会根据当前机器 Quick History 的动态索引查找真实可执行文本，再按照正常命令解析和 Client 派发链执行。索引随 Pin 排序、Recent 变化而变动，不是稳定 ID，重放前应核对列表。Replay 不产生 Quick，但实际派发 Client 后会产生 Activity，并记录外层回放 Invocation 与实际 Resolved；所以回放自身不改变 Quick 索引。未派发或纯 Server 回放不生成 Activity。
 
 `notify`、`saveout` 等 Server 包装命令如果执行了 Client 子命令，只产生一条 Activity，外层包装文本留在 `invocation.input`，实际命令留在 `resolved.command`。`saveout` 在内层命令完成并成功注册 `command_output` Artifact 后，会沿用原有 History Store 文件关联方法，把 Artifact 引用加到该 Activity 的 `files`；不复制文件内容，也不凭文件存在推断执行成功。`exec <name>` 由 Server 读取 Script 文件并向 Client 下发 Script 类型，不是普通 `command`。`rtt`、Alias 定义列表、脚本目录浏览等未下发 Client 的 Server 操作不记录。
 
@@ -100,7 +102,7 @@ Activity Center / Quick History 的 Web API 以机器 ID 为范围，并使用 W
 | POST | `/api/machines/{machine_id}/command-history/pin` | Pin / Unpin 命令 |
 | POST | `/api/machines/{machine_id}/command-history/pin/move` | 按 `up` / `down` 调整 Pin 顺序 |
 | DELETE | `/api/machines/{machine_id}/command-history/full/{activity_id}` | 删除指定 Activity |
-| DELETE | `/api/machines/{machine_id}/command-history` | 清空该机器的 Activity 和 Recent，保留 Pin |
+| DELETE | `/api/machines/{machine_id}/command-history` | 仅清空该机器的 Quick Recent，保留 Activity 与 Pin |
 
 例如，读取 Activity Center 时，可以使用：
 
@@ -131,7 +133,7 @@ Content-Type: application/json
 | 现象 | 原因或处理方式 |
 |---|---|
 | 执行过命令，却没有 Activity | 先确认是否实际派发 Client，且属于首批三类可记录操作 |
-| Quick 里没有旧命令 | 失败执行不写入 Recent，或已超过最近 100 条不同命令上限 |
+| Quick 里没有旧命令 | 非终端或明确排除的操作不写 Recent，或已超过最近 100 条不同命令上限 |
 | Quick 出现 Pin 但看不到之前输出 | Pin 只保存轻量快照，不复制完整 `output_records` |
 | Clear 后仍看到部分命令 | Pinned Commands 独立保留 |
 | `!2` 执行了意料之外的命令 | 动态索引因新执行或 Pin 排序发生变化 |

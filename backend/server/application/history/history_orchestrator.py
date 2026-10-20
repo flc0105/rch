@@ -4,11 +4,13 @@ import threading
 import uuid
 
 from server.application.history.history_record_policy import CommandHistoryRecordPolicy
+from server.application.history.quick_history import QuickHistoryRecordPolicy
 
 
 class CommandHistoryOrchestrator:
     def __init__(self, history_store):
         self.history_store = history_store
+        self.quick_store = history_store.quick_store
         self._pending = {}
         self._lock = threading.RLock()
 
@@ -18,12 +20,23 @@ class CommandHistoryOrchestrator:
     def begin_execution(self, conn, command, source='cli', should_record=None, task_type='', metadata=None):
         if conn is None or not str(command or '').strip():
             return ''
-        # Caller may suppress internal tasks; text is never an authoritative
-        # decision about whether any work will reach Client.
-        if (should_record is False or str(task_type or '').strip().lower() in CommandHistoryRecordPolicy.NON_RECORD_TASK_TYPES
-                or source not in CommandHistoryRecordPolicy.RECORD_SOURCES):
-            return ''
         metadata = dict(metadata or {})
+        # Quick management is Server-only. Replay is different: it is never
+        # stored in Quick, but its dispatched Client work belongs in Activity.
+        if (QuickHistoryRecordPolicy.is_history_management_command(command)
+                and not QuickHistoryRecordPolicy.is_history_replay_command(command)):
+            return ''
+        allowed = should_record is not False
+        record_activity = allowed and self.should_record_command(command, source=source, task_type=task_type)
+        record_quick = allowed and QuickHistoryRecordPolicy.should_record(
+            command, source=source, task_type=task_type, metadata=metadata)
+        if not record_activity and not record_quick:
+            return ''
+        activity_id = uuid.uuid4().hex
+        if record_quick:
+            self.quick_store.begin(activity_id, conn, command)
+        if not record_activity:
+            return activity_id
         origin = {'web': 'web_terminal', 'quick_action': 'web_ui', 'cli': 'cli',
                   'web_api': 'web_api'}.get(source, source or 'cli')
         presentation = 'terminal' if origin in {'web_terminal', 'cli'} else 'none'
@@ -52,7 +65,6 @@ class CommandHistoryOrchestrator:
         invocation = {'input': text, 'arguments': arguments}
         if target:
             invocation['target'] = target
-        activity_id = uuid.uuid4().hex
         with self._lock:
             self._pending[activity_id] = {
                 'conn': conn, 'kind': kind, 'action': action, 'origin': origin,
@@ -114,6 +126,7 @@ class CommandHistoryOrchestrator:
         self.history_store.write_service.create_activity_for_dispatch(conn, activity_id, pending)
 
     def discard_execution(self, conn, entry_id):
+        self.quick_store.discard(entry_id)
         with self._lock:
             return self._pending.pop(entry_id, None) is not None
 
@@ -130,6 +143,8 @@ class CommandHistoryOrchestrator:
         if not entry_id:
             return
         final_status = status or ('success' if ok else 'error')
+        # Quick status is saved regardless of whether an Activity was dispatched.
+        self.quick_store.finish(entry_id, final_status)
         self.history_store.update_entry_status_for_connection(conn, entry_id, final_status, cwd_end=cwd_end)
 
     def bind_command_entry(self, conn, command_id, entry_id):

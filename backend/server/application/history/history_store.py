@@ -1,4 +1,4 @@
-"""Activity Center storage and successful-command Quick History.
+"""Activity Center storage; Quick History uses its own writer and lifecycle.
 
 Activity records start empty. The retired command_executions rows are not read or
 migrated; existing pinned Quick commands remain independent.
@@ -11,23 +11,23 @@ from core.utils.json_utils import compact_json_dumps, json_loads_typed
 from server.application.history.history_view_service import HistoryViewService
 from server.application.history.history_write_service import HistoryWriteService
 from server.application.history.pinned_command_store import PinnedCommandStore
+from server.application.history.quick_history import QuickHistoryStore
 from server.config.config import (
     COMMAND_HISTORY_MAX_OUTPUT_RECORD_CHARS,
     COMMAND_HISTORY_MAX_OUTPUT_RECORDS,
-    COMMAND_HISTORY_RECENT_LIMIT,
 )
 
 
 class CommandHistoryStore:
     MAX_OUTPUT_RECORD_CHARS = COMMAND_HISTORY_MAX_OUTPUT_RECORD_CHARS
     MAX_OUTPUT_RECORDS = COMMAND_HISTORY_MAX_OUTPUT_RECORDS
-    RECENT_LIMIT = COMMAND_HISTORY_RECENT_LIMIT
 
     def __init__(self, database):
         self.database = database
         self._lock = threading.RLock()
         self.artifact_service = None
         self.pinned_store = PinnedCommandStore(database, self._now_iso)
+        self.quick_store = QuickHistoryStore(self)
         self.write_service = HistoryWriteService(self)
         self.view_service = HistoryViewService(self)
         # A new, empty Activity dataset. No old execution import, compatibility
@@ -126,48 +126,6 @@ class CommandHistoryStore:
             entry['status'], compact_json_dumps(entry['result']), compact_json_dumps(entry['files']),
             entry['finished_at'], entry['machine_id'], entry['activity_id'],
         ))
-
-    def _upsert_recent(self, machine_id, command, activity_id, finished_at):
-        # Success is the only route that writes a Quick Recent snapshot.
-        timestamp_ms = self._now_ms()
-        snapshot = {'command': command, 'raw_command': command, 'status': 'success',
-                    'created_at': finished_at, 'finished_at': finished_at, 'files': []}
-        self.database.connection().execute('''
-            INSERT INTO command_recents (
-                machine_id, command, last_entry_id, last_used_at, last_used_at_ms,
-                use_count, snapshot_json
-            ) VALUES (?, ?, ?, ?, ?, 1, ?)
-            ON CONFLICT(machine_id, command) DO UPDATE SET
-                last_entry_id = excluded.last_entry_id,
-                last_used_at = excluded.last_used_at,
-                last_used_at_ms = excluded.last_used_at_ms,
-                use_count = command_recents.use_count + 1,
-                snapshot_json = excluded.snapshot_json
-        ''', (machine_id, command, activity_id, finished_at, timestamp_ms, compact_json_dumps(snapshot)))
-        self._trim_recents(machine_id)
-
-    def _trim_recents(self, machine_id):
-        self.database.connection().execute('''
-            DELETE FROM command_recents WHERE rowid IN (
-                SELECT rowid FROM command_recents WHERE machine_id = ?
-                ORDER BY last_used_at_ms DESC, command DESC LIMIT -1 OFFSET ?
-            )
-        ''', (machine_id, self.RECENT_LIMIT))
-
-    def _list_recents(self, machine_id):
-        rows = self.database.connection().execute('''
-            SELECT command, last_used_at, use_count, snapshot_json FROM command_recents
-            WHERE machine_id = ? ORDER BY last_used_at_ms DESC, command DESC LIMIT ?
-        ''', (machine_id, self.RECENT_LIMIT)).fetchall()
-        result = []
-        for row in rows:
-            snapshot = json_loads_typed(row['snapshot_json'], {})
-            if snapshot.get('status') != 'success':
-                continue
-            snapshot.update({'command': row['command'], 'last_used_at': row['last_used_at'],
-                             'use_count': int(row['use_count'] or 0)})
-            result.append(snapshot)
-        return result
 
     def _list_execution_rows(self, machine_id, *, limit=None, cursor=None, query='', client_id='', kind='', errors=False):
         clauses, params = self._activity_filters(machine_id, query=query, client_id=client_id, kind=kind, errors=errors)

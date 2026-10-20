@@ -168,7 +168,6 @@ class RchDatabase:
             CREATE TABLE command_recents (
                 machine_id TEXT NOT NULL,
                 command TEXT NOT NULL,
-                last_entry_id TEXT NOT NULL DEFAULT '',
                 last_used_at TEXT NOT NULL DEFAULT '',
                 last_used_at_ms INTEGER NOT NULL DEFAULT 0,
                 use_count INTEGER NOT NULL DEFAULT 1,

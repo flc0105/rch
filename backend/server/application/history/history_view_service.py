@@ -43,7 +43,7 @@ class HistoryViewService:
                            'use_count': int(row['use_count']) if row else 0, 'files': []})
         pinned_commands = {row['command'] for row in pinned}
         normal = [{**row, 'files': [], 'is_pinned': False, 'pin_order': 0, 'pinned_at': ''}
-                  for row in self.store._list_recents(machine_id) if row['command'] not in pinned_commands]
+                  for row in self.store.quick_store.list_recents(machine_id) if row['command'] not in pinned_commands]
         self._apply_quick_history_move_flags(pinned, normal)
         results = pinned + normal
         for index, row in enumerate(results, start=1):
