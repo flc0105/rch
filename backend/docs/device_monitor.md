@@ -98,7 +98,7 @@ Dashboard 将变化速度不同的数据拆到不同 Channel，使用的配置�
 
 ## 4. Process Manager：进程、图形应用与详情
 
-Process Manager 是一个独立窗口，进入时创建**自己的** Monitor Session，默认以 1 秒为周期订阅 `processes`。切换到 Apps 标签时，向原 Session 发送 `monitor_config`，把采集 Channel 改成 `apps`；切回时再改回 `processes`。窗口里的 Refresh 会重启这条监控 Session，搜索框则过滤前端已经收到的列表，而不是为每次输入发起新的远程查询。
+Process Manager 是一个独立窗口，进入时创建**自己的** Monitor Session，默认以 1 秒为周期订阅 `processes`。切换到 Apps 标签时，向原 Session 发送 `monitor_config`，把采集 Channel 改成 `apps`；切回时再改回 `processes`。窗口里的 Refresh 会重启这条监控 Session，搜索框则过滤前端已经收到的列表，而不是为每次输入发起新的远程查询。窗口关闭时释放当前监控 Session；再次打开会创建新的 Session。旧关闭动画的迟到回调不得关闭已重新打开的监控。
 
 ### Processes 与 Apps 的数据语义不同
 
@@ -161,3 +161,6 @@ Server 状态通常经历 `opening → open → closing → closed`，但异常�
 **当前没有通用的 Monitor Session 租约超时或定时清理机制。** 正常页面关闭依靠显式 Close，异常中断的浏览器不保证立即撤销采样；若客户端仍连接、Close 又没有成功送达，资源可能继续占用，直到后续关闭、Client 断线或进程结束。因此不应将 Monitor Session 当成长期无需维护的后台 Job，也不应为暂时不用的界面持续保留高速采样。
 
 采样负载和平台能力同样限制实际表现：高频 CPU/网络采集与低频磁盘、电池采集应分开调度；应用枚举可能涉及系统权限或慢速平台接口；进程可能在两个 Snapshot 之间退出；细节列表也可能因权限不足缺少文件或连接信息。Dashboard 的图表和 Process Manager 的列表仅表示最近一次成功接收到的采样结果，不是某个固定时点的全系统原子快照。
+### Process Manager usage columns and navigation
+
+`processes` and `apps` monitor snapshots include `cpu_percent` and `memory_percent` where psutil can read them. CPU uses nonblocking per-process samples; the first sample has no baseline and is shown as `-`, then updates on the existing 1-second cycle. Memory is the process share of physical RAM (percent). These numbers are per process, not the overall Dashboard CPU/Memory figures; CPU per-process may exceed 100% on multicore systems. PID, Name, CPU and Memory columns are sortable in both tabs; chosen sort order persists across live snapshots. Clicking the Dashboard CPU or Memory overview card closes Connection Info first, then opens the existing Process Manager on All Processes (after the closing transition), sorted descending by that metric; this prevents overlapping modal layers from hiding the target dialog. No extra monitor channel or endpoint is required.

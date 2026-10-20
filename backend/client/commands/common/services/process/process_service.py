@@ -9,22 +9,32 @@ class ProcessService:
     def __init__(self, owner):
         self.owner = owner
         self._last_macos_apps = []
+        self._cpu_sampled_processes = set()
 
     def list_processes(self):
         import psutil
         processes = []
+        previously_sampled = self._cpu_sampled_processes
+        sampled = set()
         for proc in psutil.process_iter(['pid', 'ppid', 'username', 'name', 'status']):
             try:
                 pinfo = proc.info
+                was_sampled = proc in previously_sampled
+                cpu = self._safe_proc_value(lambda: proc.cpu_percent(interval=None))
+                memory = self._safe_proc_value(proc.memory_percent)
+                sampled.add(proc)
                 processes.append({
                     'pid': pinfo['pid'],
                     'ppid': pinfo['ppid'],
                     'name': pinfo['name'] or '',
                     'username': pinfo['username'] or '',
                     'status': pinfo['status'] or '',
+                    'cpu_percent': round(float(cpu), 1) if was_sampled and cpu is not None else None,
+                    'memory_percent': round(float(memory), 1) if memory is not None else None,
                 })
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
                 continue
+        self._cpu_sampled_processes = sampled
         return processes
 
     def _safe_proc_value(self, getter, default=None):
@@ -157,6 +167,26 @@ class ProcessService:
         except Exception as e:
             raise Exception(f'Failed to get process detail: {e}')
 
+    def _app_usage(self, pids):
+        """Nonblocking CPU / memory snapshot using psutil's cached process_iter objects."""
+        import psutil
+        targets = set(pids)
+        usage = {}
+        previously_sampled = self._cpu_sampled_processes
+        sampled = set()
+        for proc in psutil.process_iter():
+            if proc.pid not in targets:
+                continue
+            cpu = self._safe_proc_value(lambda: proc.cpu_percent(interval=None))
+            memory = self._safe_proc_value(proc.memory_percent)
+            usage[proc.pid] = {
+                'cpu_percent': round(float(cpu), 1) if proc in previously_sampled and cpu is not None else None,
+                'memory_percent': round(float(memory), 1) if memory is not None else None,
+            }
+            sampled.add(proc)
+        self._cpu_sampled_processes = sampled
+        return usage
+
     def list_windows_apps(self):
         import psutil
         import win32gui
@@ -173,6 +203,7 @@ class ProcessService:
         windows = []
         win32gui.EnumWindows(enum_window_callback, windows)
 
+        usage_by_pid = self._app_usage(windows)
         for pid in windows:
             try:
                 proc = psutil.Process(pid)
@@ -180,6 +211,7 @@ class ProcessService:
                     'pid': pid,
                     'name': self._safe_proc_value(proc.name, '') or '',
                     'status': self._safe_proc_value(proc.status, '') or '',
+                    **usage_by_pid.get(pid, {'cpu_percent': None, 'memory_percent': None}),
                 })
             except Exception:
                 continue
@@ -257,6 +289,10 @@ class ProcessService:
                         'name': proc_name,
                         'status': self._safe_proc_value(proc.status, '') or '',
                     })
+
+            usage_by_pid = self._app_usage(item['pid'] for item in parsed_apps)
+            for item in parsed_apps:
+                item.update(usage_by_pid.get(item['pid'], {'cpu_percent': None, 'memory_percent': None}))
 
             parsed_apps.sort(
                 key=lambda item: (

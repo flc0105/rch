@@ -259,7 +259,7 @@ test('Live Preview switch is available only in edit mode and hides the Markdown 
   assert.match(source, /<article v-if="editing && livePreviewEnabled" class="documents-markdown"/)
   assert.match(source, /:class="\{ 'documents-split-source-only': !livePreviewEnabled \}"/)
   assert.match(source, /\.documents-split\.documents-split-source-only \{ grid-template-columns: minmax\(0, 1fr\)/)
-  assert.match(source, /<article v-if="currentPath && !editing" class="documents-markdown documents-reader"/)
+  assert.match(source, /<article v-if="currentPath && !editing" ref="readerView" class="documents-markdown documents-reader"/)
 })
 
 test('Save while live preview is off returns to the up-to-date read-only Markdown rendering', async () => {
@@ -283,4 +283,49 @@ test('Save while live preview is off returns to the up-to-date read-only Markdow
   assert.equal(component.computed.renderedMarkdown.call(instance), '## Saved without live preview')
   assert.equal(app.renderCount, 1)
   assert.equal(app.disposeCount, 0)
+})
+
+
+test('opening a different document resets reader scroll and selects lazily expanded Markdown path', async () => {
+  const app = mountDocuments()
+  const { instance } = app
+  instance.$refs.readerView = { scrollTop: 900 }
+  const nodes = new Map()
+  const tree = {
+    selected: '',
+    getNode(key) { return nodes.get(key) || null },
+    setCurrentKey(key) { this.selected = key },
+  }
+  function makeNode(key, nextKey) {
+    return {
+      loaded: false, expanded: false,
+      expand(done) {
+        this.loaded = true
+        this.expanded = true
+        if (nextKey) nodes.set(nextKey, makeNode(nextKey, nextKey === 'notes:guide' ? 'notes:guide/intro.md' : null))
+        done()
+      },
+    }
+  }
+  nodes.set('notes:', makeNode('notes:', 'notes:guide'))
+  nodes.set('notes:overview.md', makeNode('notes:overview.md', null))
+  instance.$refs.treeRef = tree
+  app.documentsApi.readDocument = async () => ({
+    content: '# New', encoding: 'utf-8', editable: true, sha256: 'new',
+  })
+  await instance.openDocument('notes', 'guide/intro.md')
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(instance.$refs.readerView.scrollTop, 0)
+  assert.equal(tree.selected, 'notes:guide/intro.md')
+  instance.$refs.readerView.scrollTop = 555
+  const e = {
+    preventDefault() { this.prevented = true },
+    target: { closest: () => ({ getAttribute: () => '../overview.md' }) },
+  }
+  // Link from guide/intro.md to overview.md in the root.
+  await instance.followMarkdownLink(e)
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(e.prevented, true)
+  assert.equal(instance.currentPath, 'overview.md')
+  assert.equal(instance.$refs.readerView.scrollTop, 0)
 })

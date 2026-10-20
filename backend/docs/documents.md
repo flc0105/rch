@@ -42,3 +42,5 @@ export RCH_DOCUMENT_ROOTS='{"api":{"label":"API Docs","path":"/srv/docs/api"},"n
 - 页面关闭、换文件及重新加载前会提示未保存更改。没有数据库、文件监控、实时同步、自动搜索、附件或上传逻辑；目录和正文均直接从磁盘读取。
 
 `markdown-it` 是本功能唯一新增的前端直接依赖。部署环境执行 `cd frontend && npm ci` 安装依赖。
+
+Document navigation: opening a different Markdown file returns the read-only pane to the first line. Following an internal relative `.md` link also expands lazily loaded parent directories and selects the destination in the left tree; direct tree navigation uses the same selection synchronization.

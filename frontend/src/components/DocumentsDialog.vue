@@ -79,7 +79,7 @@
           <div ref="editorHost" class="documents-monaco"></div>
           <article v-if="editing && livePreviewEnabled" class="documents-markdown" @click="followMarkdownLink" v-html="renderedMarkdown"></article>
         </div>
-        <article v-if="currentPath && !editing" class="documents-markdown documents-reader" @click="followMarkdownLink" v-html="renderedMarkdown"></article>
+        <article v-if="currentPath && !editing" ref="readerView" class="documents-markdown documents-reader" @click="followMarkdownLink" v-html="renderedMarkdown"></article>
         <el-empty v-if="!currentPath" description="Select a Markdown document" />
       </section>
     </div>
@@ -234,11 +234,35 @@ export default {
         this.sourceText = item.content
         this.previewText = item.content
         this.editing = false
+        await this.$nextTick()
+        if (requestId !== this.documentRequestId || !this.visible) return
+        // Never reuse the previous document's reading position.
+        if (this.$refs.readerView) this.$refs.readerView.scrollTop = 0
+        // Sidebar selection is best-effort: never block the document reader on lazy folders.
+        void this.selectDocumentInTree(rootId, path, requestId).catch(() => {})
       } catch (error) {
         if (requestId === this.documentRequestId) ElMessage.error(error.message || 'Cannot open document')
       } finally {
         if (requestId === this.documentRequestId) this.reading = false
       }
+    },
+    async selectDocumentInTree(rootId, path, requestId) {
+      // Element Plus Tree is lazy: an internal Markdown link can target a node
+      // whose parents have not been expanded in the sidebar yet.
+      const tree = this.$refs.treeRef
+      if (!tree) return
+      let currentPath = ''
+      let node = tree.getNode(`${rootId}:`)
+      const parts = path.split('/').filter(Boolean)
+      for (const part of parts) {
+        if (requestId !== this.documentRequestId || !this.visible || !node) return
+        if (!node.loaded || !node.expanded) {
+          await new Promise(resolve => node.expand(resolve))
+        }
+        currentPath = currentPath ? `${currentPath}/${part}` : part
+        node = tree.getNode(`${rootId}:${currentPath}`)
+      }
+      if (requestId === this.documentRequestId && node) tree.setCurrentKey(`${rootId}:${path}`)
     },
     async reloadDocument() {
       if (!this.currentPath || this.saving || this.reading || !(await this.askDiscard())) return
@@ -373,11 +397,13 @@ export default {
       try {
         if (isFile) {
           await documentsApi.createDocument({ root_id: this.selectedRoot, path })
+          this.treeVersion++
+          await this.$nextTick()
           await this.openDocument(this.selectedRoot, path)
         } else {
           await documentsApi.createDocumentDirectory({ root_id: this.selectedRoot, path })
+          this.treeVersion++
         }
-        this.treeVersion++
       } catch (error) { ElMessage.error(error.message || 'Cannot create item') }
     },
     async followMarkdownLink(event) {

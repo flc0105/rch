@@ -6,6 +6,7 @@
     top="6vh"
     class="fixed-dialog connection-info-dialog"
     modal-class="connection-info-overlay"
+    @closed="handleInfoDialogClosed"
   >
     <div
       class="fixed-dialog-body connection-info-body"
@@ -79,7 +80,7 @@
             </div>
 
             <div class="monitor-overview-grid">
-              <div class="monitor-overview-card">
+              <div class="monitor-overview-card" @click="openProcessesFromDashboard('cpu_percent')">
                 <div class="monitor-card-label">CPU</div>
                 <div class="monitor-card-value">{{ formatPercent(monitorSystem.cpu_percent) }}</div>
                 <el-progress
@@ -93,7 +94,7 @@
                 </div>
               </div>
 
-              <div class="monitor-overview-card">
+              <div class="monitor-overview-card" @click="openProcessesFromDashboard('memory_percent')">
                 <div class="monitor-card-label">Memory</div>
                 <div class="monitor-card-value">{{ formatPercent(monitorSystem.memory?.percent) }}</div>
                 <el-progress
@@ -515,6 +516,7 @@ import WatchdogInfoPanel from './WatchdogInfoPanel.vue'
 
 export default {
   name: 'ConnectionInfoDialogs',
+  emits: ['open-processes'],
   components: { WatchdogInfoPanel },
 
   props: {
@@ -542,6 +544,7 @@ export default {
   data() {
     return {
       infoVisible: false,
+      pendingProcessSort: '',
       valueVisible: false,
       loading: false,
       jobCount: 0,
@@ -746,12 +749,28 @@ export default {
   },
 
   methods: {
+    // Close the Dashboard overlay before opening Process Manager: the two modal
+    // layers must never compete for focus or cover the target dialog.
+    openProcessesFromDashboard(sortBy) {
+      if (!this.infoVisible) return
+      if (sortBy !== 'cpu_percent' && sortBy !== 'memory_percent') return
+      this.pendingProcessSort = sortBy
+      this.infoVisible = false
+    },
+
+    handleInfoDialogClosed() {
+      const sortBy = this.pendingProcessSort
+      this.pendingProcessSort = ''
+      if (sortBy) this.$emit('open-processes', sortBy)
+    },
+
     async open() {
       if (!this.selectedId) {
         ElMessage.warning('Please select a device')
         return
       }
 
+      this.pendingProcessSort = ''
       this.infoVisible = true
       this.loading = true
       this.jobCount = 0

@@ -44,7 +44,10 @@
         >
           <div class="process-table-shell">
             <el-table
+              ref="processTable"
               :data="filteredProcesses"
+              :default-sort="processSort"
+              @sort-change="onProcessSortChange"
               v-loading="processesLoading"
               stripe
               height="100%"
@@ -55,6 +58,7 @@
                 label="PID"
                 width="90"
                 align="center"
+                sortable="custom"
               />
 
               <el-table-column
@@ -68,13 +72,22 @@
                 prop="name"
                 label="Name"
                 min-width="220"
+                sortable="custom"
                 show-overflow-tooltip
               />
+
+              <el-table-column prop="cpu_percent" label="CPU %" width="100" align="center" sortable="custom">
+                <template #default="{ row }">{{ formatUsagePercent(row.cpu_percent) }}</template>
+              </el-table-column>
+
+              <el-table-column prop="memory_percent" label="Memory %" width="135" align="center" sortable="custom">
+                <template #default="{ row }">{{ formatUsagePercent(row.memory_percent) }}</template>
+              </el-table-column>
 
               <el-table-column
                 prop="username"
                 label="Username"
-                min-width="180"
+                min-width="145"
                 show-overflow-tooltip
               />
 
@@ -124,6 +137,8 @@
           <div class="process-table-shell">
             <el-table
               :data="filteredApps"
+              :default-sort="appSort"
+              @sort-change="onAppSortChange"
               v-loading="appsLoading"
               stripe
               height="100%"
@@ -134,14 +149,24 @@
                 label="PID"
                 width="100"
                 align="center"
+                sortable="custom"
               />
 
               <el-table-column
                 prop="name"
                 label="Name"
                 min-width="240"
+                sortable="custom"
                 show-overflow-tooltip
               />
+
+              <el-table-column prop="cpu_percent" label="CPU %" width="100" align="center" sortable="custom">
+                <template #default="{ row }">{{ formatUsagePercent(row.cpu_percent) }}</template>
+              </el-table-column>
+
+              <el-table-column prop="memory_percent" label="Memory %" width="135" align="center" sortable="custom">
+                <template #default="{ row }">{{ formatUsagePercent(row.memory_percent) }}</template>
+              </el-table-column>
 
               <el-table-column
                 prop="status"
@@ -321,6 +346,7 @@
 <script>
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Document } from '@element-plus/icons-vue'
+import { sortProcessRows } from '../utils/processSorting.js'
 
 export default {
   name: 'ProcessDialogs',
@@ -352,6 +378,8 @@ export default {
       appsSnapshotReceived: false,
       // 过滤
       processFilterText: '',
+      processSort: { prop: 'pid', order: 'ascending' },
+      appSort: { prop: 'name', order: 'ascending' },
       processMonitorSessionId: '',
       processMonitorStarting: false,
       processMonitorError: '',
@@ -412,27 +440,27 @@ export default {
 
     filteredProcesses() {
       if (!this.processes.length) return []
-      if (!this.processFilterText) return this.processes
+      if (!this.processFilterText) return sortProcessRows(this.processes, this.processSort)
 
       const kw = this.processFilterText.toLowerCase()
-      return this.processes.filter(p =>
+      return sortProcessRows(this.processes.filter(p =>
         String(p.pid).includes(kw) ||
         String(p.ppid ?? '').includes(kw) ||
         (p.name || '').toLowerCase().includes(kw) ||
         (p.username || '').toLowerCase().includes(kw)
-      )
+      ), this.processSort)
     },
 
     filteredApps() {
       if (!this.apps.length) return []
-      if (!this.processFilterText) return this.apps
+      if (!this.processFilterText) return sortProcessRows(this.apps, this.appSort)
 
       const kw = this.processFilterText.toLowerCase()
-      return this.apps.filter(a =>
+      return sortProcessRows(this.apps.filter(a =>
         String(a.pid).includes(kw) ||
         (a.name || '').toLowerCase().includes(kw) ||
         (a.username || '').toLowerCase().includes(kw)
-      )
+      ), this.appSort)
     },
 
     processDetailBasicRows() {
@@ -488,13 +516,34 @@ export default {
   },
 
   methods: {
-    open() {
+    formatUsagePercent(value) {
+      return value === null || value === undefined || !Number.isFinite(Number(value))
+        ? '-'
+        : `${Number(value).toFixed(1)}%`
+    },
+
+    onProcessSortChange({ prop, order }) {
+      this.processSort = { prop: prop || 'pid', order: order || 'ascending' }
+    },
+
+    onAppSortChange({ prop, order }) {
+      this.appSort = { prop: prop || 'name', order: order || 'ascending' }
+    },
+
+    open(sortBy = '') {
       if (!this.selectedId) {
         ElMessage.warning('Please select a device first')
         return
       }
 
+      if (sortBy === 'cpu_percent' || sortBy === 'memory_percent') {
+        this.processActiveTab = 'processes'
+        this.processSort = { prop: sortBy, order: 'descending' }
+      }
       this.processDialogVisible = true
+      if (sortBy === 'cpu_percent' || sortBy === 'memory_percent') {
+        this.$nextTick(() => this.$refs.processTable?.sort(sortBy, 'descending'))
+      }
       this.processes = []
       this.apps = []
       this.processesSnapshotReceived = false
@@ -505,7 +554,9 @@ export default {
     },
 
     handleProcessDialogClosed() {
-      this.closeProcessDialog()
+      // A previous close transition must not stop a newly reopened dialog.
+      if (this.processDialogVisible) return
+      void this.stopProcessMonitor()
     },
 
     handleProcessMonitorPageHide() {

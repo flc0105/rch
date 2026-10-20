@@ -306,6 +306,7 @@
     :current-connection="currentConnection"
     :status-now-tick="statusNowTick"
     :tab-id="tabId"
+    @open-processes="openProcessDialog"
   />
 
   <ProcessDialogs
@@ -740,8 +741,8 @@ export default {
       return this.$refs.terminalToolbarRef?.loadManagedToolbar()
     },
 
-    openProcessDialog() {
-      return this.$refs.processDialogRef?.open()
+    openProcessDialog(sortBy = '') {
+      return this.$refs.processDialogRef?.open(typeof sortBy === 'string' ? sortBy : '')
     },
 
     openAgentBuilderDialog() {
