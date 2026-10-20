@@ -6,17 +6,17 @@
 
 默认 `PROCESS_WATCHDOG_ENABLED = False`，在 `client/config/runtime_config.py` 声明。运行中的 Client 可通过 `set PROCESS_WATCHDOG_ENABLED true` 启用、`set PROCESS_WATCHDOG_ENABLED false` 关闭；设置按项目现有 runtime_config 覆盖文件持久化。建议先在非关键设备验证，再远程开启。运行时切换本开关会刷新现有 Remote/Local 控制 Worker 的启动环境，以便它正确区分主动退出；监控逻辑和检测依据仍然完全独立。
 
-开启后，Client 在建立连接之前启动单独的 `--process-watchdog-worker` 进程。Worker 使用 `psutil` 的进程身份标识（PID 加内部启动标识）区分 PID 复用及僵尸进程；在 macOS/Linux 上使用不受 NTP 校时影响的单调启动时间。正常情况下只保留一条监督链：Client 死亡后，原 Worker 按 3、10、30、60、120、最高 300 秒的退避间隔重启 Client；运行至少 300 秒视为恢复稳定，重置连续失败计数。Worker 持续重试，不因达到失败次数而永久放弃。
+开启后，Client 在建立连接之前启动单独的 `--process-watchdog-worker` 进程。Worker 使用 `psutil` 对 PID 和创建时间进行联合检查，区分 PID 复用及僵尸进程。正常情况下只保留一条监督链：Client 死亡后，原 Worker 按 3、10、30、60、120、最高 300 秒的退避间隔重启 Client；运行至少 300 秒视为恢复稳定，重置连续失败计数。Worker 持续重试，不因达到失败次数而永久放弃。
 
-复活后的 Client 继承内部监督会话标记并复用原 Worker，不再次创建 Worker。单独 `spawn_instance`、`clone` 或 `reset` 创建的新实例**不继承**原监督会话，会独立建立自己的监督链。`reexec` 仍在同一 PID 内执行，监督会话保留。
+复活后的 Client 继承内部监督会话标记并复用原 Worker，不再次创建 Worker。单独 `spawn_instance`、`clone` 或 `relaunch_instance` 创建的新实例**不继承**原监督会话，会独立建立自己的监督链。`reexec_instance` 仍在同一 PID 内执行，监督会话保留。
 
 单独的轮转日志存储于 Client 外部运行时配置目录下 `logs/process_watchdog.log`（包括 `.1`、`.2` 备份）。Remote HTTP 和 Local Heartbeat 的日志也统一使用同一 `logs/` 目录，各自保留独立日志文件。Worker 的临时控制目录只用于本次监督会话，不承载业务数据。
 
 ## 有意关闭、重启和更新
 
-- `kill_connection`、本机 `KeyboardInterrupt` 以及 Remote HTTP `kill` 在退出前明确停止 Process Watchdog，不会因为主动关闭而自动复活。
-- `reset` 与 Remote HTTP `relaunch` 先建立独立新 Client，再停止旧实例的监督链；新实例自己负责保护。
-- `reexec` 沿用原 PID 与监督关系；意外失败则由 Supervisor 尝试恢复。
+- `kill_instance`、本机 `KeyboardInterrupt` 以及 Remote HTTP `kill` 在退出前明确停止 Process Watchdog，不会因为主动关闭而自动复活。
+- `relaunch_instance` 与 Remote HTTP `relaunch` 先建立独立新 Client，再停止旧实例的监督链；新实例自己负责保护。
+- `reexec_instance` 沿用原 PID 与监督关系；意外失败则由 Supervisor 尝试恢复。
 - `update` 下载并启动的新 Client 在 **PID/握手就绪验证完成前不启用** Process Watchdog。旧 Client 确认验收后通过临时 `.accepted` 标记激活新 Client，再等待 `.adopted` 确认。只有验收通过才能交接。`--keep-old` 保留旧监督链；普通更新退出旧 Client 前停止旧监督链。
 
 注意：如果用户在系统层直接 `kill -9` 或强制结束 Client，Supervisor 无法辨别人工操作还是意外死亡，默认视为异常并复活。要永久停止 Client，请先禁用 Process Watchdog，或使用正式生命周期命令。
@@ -35,11 +35,10 @@ Remote/Local 由 `client/watchdog/client_guard_manager.py` 管理，实际共享
 
 Process Supervisor **不遍历系统全部进程**，也不读取 Local 心跳文件。每次探测只针对当前受监控的单个 PID 调用 `psutil.Process(pid)`：
 
-1. 读取 `psutil.Process(pid)._ident[1]` 并与 Supervisor 保存的启动标识比较，防止 PID 复用。psutil 7.2.2 在 macOS/Linux 使用单调启动时间；这里不再使用会被系统时钟/NTP 校正影响的 `create_time()` 墙上时钟时间戳，也不通过扩大时间容差规避问题。
+1. 读取进程 `create_time()`，与保存的创建时间比较（误差小于 `0.01` 秒），防止 PID 被其他进程复用。
 2. 检查 `process.is_running()`，再检查 `process.status() != psutil.STATUS_ZOMBIE`，排除已经退出的僵尸进程。
-3. 找不到 PID（`psutil.NoSuchProcess`）视为死亡；权限不足、OS 读取错误、暂时无法取得身份标识时保守地按存活处理。进程身份确实不同才认作 PID 被复用。
-4. 首次死亡判定先复查一次，经过原有崩溃退避后、真正启动替代 Client **之前再核查一次**；如果旧 PID 仍然正常，取消此次恢复，不生成重复 Client，也不累计失败次数。异常日志记录检测原因与取消恢复的情况。
-5. 每次成功启动新的 Client 都记录其新 PID 和稳定启动标识，继续监控；若新生进程标识暂时不可读，则在子进程确认仍存活时重试读取，不把未知标识当作死亡。
+3. 找不到 PID（`psutil.NoSuchProcess`）视为死亡。权限不足（`AccessDenied`）或其他操作系统读取错误时保守地视为仍存活，不据此杀进程或立即复活，后续继续探测。
+4. 发现受监控 Client 已死亡后进入崩溃退避流程；每次成功启动新的 Client 会记录其新 PID 和创建时间，再继续监控该进程。
 
 `_alive()` 和 `run_process_supervisor()` 均位于 `backend/client/watchdog/process_watchdog.py`。这是一条**进程级**监督链：Socket 断开、Server 离线、主线程卡住但 PID 尚存，不会单凭这些现象触发复活。反过来，即使 `os.abort()`、`os._exit()` 等导致 Client 在没有 Python 清理回调的情况下死亡，也可以被独立 Supervisor 检测到（前提是 Supervisor 自身仍活着）。
 

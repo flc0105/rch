@@ -12,7 +12,7 @@ class UploadExecutionService:
 
     职责：
     - 负责 server -> client 上传链路的 staging / cleanup
-    - 负责构建 receive_http_upload 命令负载
+    - 负责构建 receive_file 命令负载
     - 负责把上传执行转换成结构化事件流
     - 浏览器 -> Server 与 Server -> Client 复用同一个 Transfer 生命周期
     """

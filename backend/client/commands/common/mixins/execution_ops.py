@@ -22,9 +22,9 @@ class CommandExecutionMixin:
 
     这里只保留执行相关逻辑：
     - shell
-    - spawn
-    - read
-    - pyexec_collect
+    - bgrun
+    - shell_stream
+    - pyexec
     - pyexec_stream
     - execute_script_stream
 
@@ -223,7 +223,7 @@ class CommandExecutionMixin:
         except Exception as e:
             return 0, f'Failed to change directory: {e}'
 
-    @desc('Run a shell command', group='shell')
+    @desc('Run a shell command', group='execution')
     @cancel_policy('process')
     def shell(self, command):
         try:
@@ -238,14 +238,14 @@ class CommandExecutionMixin:
         except Exception as e:
             return 0, f'Failed to execute command: {e}'
 
-    @desc('Run a program in background', group='shell')
-    def spawn(self, command):
+    @desc('Run a program in background', group='execution')
+    def bgrun(self, command):
         """
         后台启动指定程序/命令，不等待其执行结束。
         """
         command_text = (command or '').strip()
         if not command_text:
-            return 0, 'Usage: spawn <program ...>'
+            return 0, 'Usage: bgrun <program ...>'
 
         try:
             process = self._spawn_background_process(command_text)
@@ -261,9 +261,9 @@ class CommandExecutionMixin:
         except Exception as e:
             return 0, f'Failed to start background process: {e}'
 
-    @desc('Run a command with live output', group='shell')
+    @desc('Run a command with live output', group='execution')
     @cancel_policy('process')
-    def read(self, command):
+    def shell_stream(self, command):
         try:
             process = self._start_stream_process(command)
             self._start_output_threads(process)
@@ -281,8 +281,8 @@ class CommandExecutionMixin:
         except Exception as e:
             self._send_final_result(0, f'Failed to execute command: {e}')
 
-    @desc('Execute Python code and collect output', group='shell')
-    def pyexec_collect(self, code, kwargs=None):
+    @desc('Execute Python code and collect output', group='execution')
+    def pyexec(self, code, kwargs=None):
         """
         一次性返回版本。
         """
@@ -300,7 +300,7 @@ class CommandExecutionMixin:
         except Exception as e:
             return 0, f'Failed to execute code: {e}'
 
-    @desc('Execute Python code with streaming output', group='shell')
+    @desc('Execute Python code with streaming output', group='execution')
     def pyexec_stream(self, code, kwargs=None):
         """
         流式返回版本。

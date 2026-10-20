@@ -11,7 +11,7 @@ class CommandSessionMixin:
 
     @desc('Terminate current session', group='session')
     # @confirm('Terminate this Client session and close its connection?')
-    def kill_connection(self):
+    def kill_instance(self):
         manager = getattr(self.socket, 'process_watchdog_manager', None)
         if manager is not None:
             manager.stop()
@@ -20,11 +20,11 @@ class CommandSessionMixin:
 
     @desc('Restart client process and reconnect', group='session')
     @confirm('Restart this Client process and reconnect to the Server?')
-    def reset(self):
+    def relaunch_instance(self):
         reset(self.socket)
 
     @desc('Restart current process by exec replacement', group='session')
-    def reexec(self):
+    def reexec_instance(self):
         reexec_restart(self.socket)
 
     @desc('Start a new client instance without exiting current process', group='session')

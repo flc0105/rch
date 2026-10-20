@@ -7,7 +7,7 @@ from core.utils.output_marker import error, success, info
 
 
 class CommandFileCliMixin:
-    @desc('Download a file from the client', group='file')
+    @desc('Download a file from the client', group='transfer')
     def download(self, filename=''):
         """
         旧版为 socket 发送文件。
@@ -31,7 +31,7 @@ class CommandFileCliMixin:
 
 
     @desc('Receive a file from server via HTTP', group='file', suggest=False)
-    def receive_http_upload(self, arg=''):
+    def receive_file(self, arg=''):
         """
         通过普通命令下发 HTTP 拉取任务，由 client 自己去 server 拉文件并保存到本地。
 

@@ -23,7 +23,7 @@ Server 接收请求时保留原始调用身份，解析 Server Builtin、Alias�
   "presentation": "dialog",
   "status": "success",
   "invocation": {"input": "now", "target": "now", "arguments": {}},
-  "resolved": {"command_type": "command", "command": "pyexec_collect import datetime;..."},
+  "resolved": {"command_type": "command", "command": "pyexec import datetime;..."},
   "result": {"truncated": false, "output_records": []},
   "created_at": "2026-10-20T10:10:09+08:00",
   "started_at": "2026-10-20T10:10:09+08:00",

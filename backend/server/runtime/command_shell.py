@@ -377,7 +377,7 @@ class ServerCommandShell:
                             return
                         continue
 
-                    if cmd in ['kill_connection', 'reset']:
+                    if cmd in ['kill_instance', 'relaunch_instance']:
                         session.send_command(cmd)
                         return
 
@@ -433,7 +433,7 @@ class ServerCommandShell:
             if not target:
                 raise Exception('Usage: kill <index|client_id>')
             session = self.get_target_connection(target)
-            self._execute_session_command(session, 'kill_connection')
+            self._execute_session_command(session, 'kill_instance')
             return
 
         if cmd in ['quit', 'exit']:

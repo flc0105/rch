@@ -19,7 +19,7 @@ class WindowsCommands(CommonCommands):
         self.win_media = WinMediaService(self)
         self.win_privilege = WinPrivilegeService(self)
 
-    @desc('Run a program without waiting (detached)', group='shell')
+    @desc('Run a program without waiting (detached)', group='execution')
     def run(self, command):
         """
         启动程序但不等待返回（独立运行）
@@ -27,7 +27,7 @@ class WindowsCommands(CommonCommands):
         return self.win_process.run(command)
 
     # ------------------ 截图 ------------------ #
-    @desc('Capture screenshot', group='platform')
+    @desc('Capture screenshot', group='media')
 
     @timeout(30)
     def screenshot(self):
@@ -37,7 +37,7 @@ class WindowsCommands(CommonCommands):
         return self.win_media.capture_screenshot()
 
     # ------------------ 系统信息 ------------------ #
-    @desc('Get system information', group='platform')
+    @desc('Get system information', group='system')
 
     @timeout(30)
     def getinfo(self):
@@ -47,7 +47,7 @@ class WindowsCommands(CommonCommands):
         return self.win_system.collect_system_info()
 
     # ------------------ 用户空闲时间 ------------------ #
-    @desc('Get user idle time', group='platform')
+    @desc('Get user idle time', group='system')
 
     @timeout(10)
     def idletime(self):
@@ -56,8 +56,8 @@ class WindowsCommands(CommonCommands):
         """
         return self.win_system.get_user_idletime()
 
-    @desc('Run command as admin', group='system')
-    def runasadmin(self, command):
+    @desc('Run command as admin', group='privilege')
+    def run_elevated(self, command):
         """
         以管理员权限执行命令
         """

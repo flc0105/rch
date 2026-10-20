@@ -23,7 +23,7 @@ class RemoteExecutionService:
       统一走事件流接口 iter_upload_events，不再保留旧 tuple 流兼容层
     """
 
-    HTTP_RECEIVE_COMMAND_NAME = 'receive_http_upload'
+    HTTP_RECEIVE_COMMAND_NAME = 'receive_file'
 
     def __init__(self, server, artifact_service=None, transfer_service=None):
         self.server = server

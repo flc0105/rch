@@ -329,7 +329,7 @@ class CommandUpdateMixin:
             daemon=True,
         ).start()
 
-    @desc('Build, download, extract and launch the latest client bundle; use --keep-old to retain current client', group='session')
+    @desc('Build, download, extract and launch the latest client bundle; use --keep-old to retain current client', group='maintenance')
     @cancel_policy('cooperative')
     def update(self, arg=''):
         ready_path = ''
@@ -458,7 +458,7 @@ class CommandUpdateMixin:
                 lines.append(error(f'  {message}'))
         return '\n'.join(lines)
 
-    @desc('Clean Client residue and obsolete bundle releases', group='session',
+    @desc('Clean Client residue and obsolete bundle releases', group='maintenance',
           api_grants=('interactions:request',))
     @cancel_policy('cooperative')
     def clean(self, arg=''):

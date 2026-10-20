@@ -4,7 +4,7 @@ from client.watchdog.process_watchdog import get_process_watchdog_status_payload
 
 
 class CommandWatchdogMixin:
-    @desc('Show watchdog runtime status', group='session')
+    @desc('Show watchdog runtime status', group='runtime')
     def watchdog(self, arg=''):
         guard_manager = getattr(self.socket, 'guard_manager', None)
         if guard_manager is None:

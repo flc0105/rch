@@ -78,7 +78,7 @@ Alias 本体由 Server 全局管理，持久化在 `backend/server/resources/ali
 alias set --platform common sample = shell echo "<message>"
 alias list --json
 alias
-alias set now = pyexec_collect print(1)
+alias set now = pyexec print(1)
 alias unset now
 ```
 

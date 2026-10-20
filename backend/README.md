@@ -324,9 +324,9 @@ Shell-like commands are lightweight and intentionally simple:
 This is the familiar path for commands such as:
 
 - `cd ...`
-- `spawn ...`
-- `read ...`
-- `pyexec_collect ...`
+- `bgrun ...`
+- `shell_stream ...`
+- `pyexec ...`
 - `pyexec_stream ...`
 - many file/process/platform helpers
 
@@ -392,8 +392,8 @@ So the accurate mental model is **best-effort cancellation with explicit per-com
 **Ordinary shell-like command execution policy (Client):**
 
 - `@timeout(seconds)` records a command-local **default execution budget**. This is metadata only. A `timeout` or `_timeout` explicitly supplied in the Server's command-message `extra` is an execution limit, and the Client applies the **shorter** of the two limits. Neither limit forcibly interrupts arbitrary in-process Python code; execution must reach a checkpoint or managed I/O.
-- `@cancel_policy(mode)` is metadata with exactly three modes: `none` (not cancellable), `cooperative` (checks cancellation at checkpoints or interruptible I/O), and `process` (execution owns a managed subprocess and can terminate it). **`shell` and `read` use `process`**. The default for otherwise unannotated ordinary commands is `none`. Strategy-dependent HTTP transfer and Python execution policy is selected at runtime; `subprocess_pipe` uses `process`, `inproc` uses `none`.
-- `@confirm` continues to be independent of timeout/cancellation policy. Server `disconnect` and Client `kill_connection` each retain their own confirmation.
+- `@cancel_policy(mode)` is metadata with exactly three modes: `none` (not cancellable), `cooperative` (checks cancellation at checkpoints or interruptible I/O), and `process` (execution owns a managed subprocess and can terminate it). **`shell` and `shell_stream` use `process`**. The default for otherwise unannotated ordinary commands is `none`. Strategy-dependent HTTP transfer and Python execution policy is selected at runtime; `subprocess_pipe` uses `process`, `inproc` uses `none`.
+- `@confirm` continues to be independent of timeout/cancellation policy. Client `relaunch_instance` retains its confirmation; `kill_instance` currently has no active `@confirm` decorator.
 - No `@interruptible()` decorator remains. The shared execution entry checks cancellation/timeouts before command invocation; long operations continue checking via `_checkpoint()` (and checked loop/I/O helpers). There is **no automatic forced termination of Python loops**.
 - Cancellation states are distinct: the Server records `requested` on sending a request; Client `cancel_ack` says `accepted` only when the operation allows cancellation; Client reports a terminal `stopped` only after actually observing cancellation **and returning**. A command that ignores cancellation but completes normally reports `completed`, not `stopped`. These states are not equivalent to a watchdog or forced kill.
 - Repeated cancellation cannot replace an already recorded `accepted` / `stopped` / `completed` acknowledgement with `requested`; an accepted Client cancellation registers its final completion notification before triggering cancellation handlers.
@@ -419,7 +419,7 @@ The project distinguishes **one-shot collected Python execution** from **streami
 
 Current command-level behavior:
 
-- `pyexec_collect` = execute Python code and return collected output
+- `pyexec` = execute Python code and return collected output
 - `pyexec_stream` = execute Python code with true streaming output
 - `script` / `exec <script>` / `run_script` currently execute through the script path and **do not provide true streaming output**
 
@@ -1008,13 +1008,13 @@ Below is a reorganized roadmap based on current priorities and project direction
 ### Shell, execution, and terminal improvements
 
 - [x] Add **xterm.js + PTY** support
-- [ ] Support client-side variables in commands, for example `spawn ${exec_path}`
+- [ ] Support client-side variables in commands, for example `bgrun ${exec_path}`
 - [ ] Support inline helper expressions such as `kill ${getpid}`
 - [ ] Add reverse shell support
 - [ ] Add multi-device batch execution
 - [ ] Support writing command output to files, similar to shell-style redirection
 - [ ] Add a normal JSON / UI toggle inside the terminal JSON dialog
-- [ ] Make `read` support built-in commands
+- [ ] Make `shell_stream` support built-in commands
 
 ### Jobs and background execution
 
@@ -1294,9 +1294,9 @@ The Client command manifest contains the common execution primitives that are ea
 ```text
 cd
 shell
-spawn
-read
-pyexec_collect
+bgrun
+shell_stream
+pyexec
 pyexec_stream
 ```
 
@@ -1306,9 +1306,9 @@ Their roles are intentionally different:
 | --- | --- |
 | `cd <path>` | Changes the Client process working directory; without an argument, reports current CWD |
 | `shell <command>` | Runs a shell command and waits for the final result |
-| `spawn <command>` | Starts a background process and returns immediately with the PID |
-| `read <command>` | Runs a subprocess while streaming output live to the terminal |
-| `pyexec_collect <code>` | Executes Python and returns collected output |
+| `bgrun <command>` | Starts a background process and returns immediately with the PID |
+| `shell_stream <command>` | Runs a subprocess while streaming output live to the terminal |
+| `pyexec <code>` | Executes Python and returns collected output |
 | `pyexec_stream <code>` | Executes Python with streaming output |
 
 Windows additionally exposes:
@@ -1343,15 +1343,15 @@ and is exposed through Client Runtime Configuration.
 ### Session lifecycle commands
 
 ```text
-kill_connection
-reset
-reexec
+kill_instance
+relaunch_instance
+reexec_instance
 spawn_instance
 ```
 
-- `kill_connection` terminates the current Client session/process.
-- `reset` starts a fresh Client process and reconnects.
-- `reexec` replaces the current process image.
+- `kill_instance` terminates the current Client session/process.
+- `relaunch_instance` starts a fresh Client process and reconnects.
+- `reexec_instance` replaces the current process image.
 - `spawn_instance` launches an additional Client instance without terminating the current one.
 
 This is important because multiple Client instances on one `machine_id` are a valid operating model, for example user/admin/system sessions.
@@ -1388,7 +1388,7 @@ def sensitive_action(self, arg=''):
     return 1, 'Action completed'
 ```
 
-If the user rejects the prompt, it expires, or the Broker is unavailable, the method **does not execute** and the command returns a failed/cancelled result. Commands without `@confirm` behave as before. This first implementation uses the existing Client-originated Interaction Broker request, not Server-side pre-execution approval. The prompt requires an active Web task/interaction grant; direct calls without that context fail closed. The annotation must exist in the **Server-deployed trusted command source** as well as the Client; restart Server and Client after adding it so Server can automatically attach the grant. `kill_connection` and `reset` now require Web confirmation. The Server builtin `disconnect` retains its existing Server-side approval; the annotated Client `kill_connection` performs its own confirmation as well. For this sequence, the Server keeps the original Web task active until the Client command finishes, so the second confirmation remains authorized and visible.
+If the user rejects the prompt, it expires, or the Broker is unavailable, the method **does not execute** and the command returns a failed/cancelled result. Commands without `@confirm` behave as before. This first implementation uses the existing Client-originated Interaction Broker request, not Server-side pre-execution approval. The prompt requires an active Web task/interaction grant; direct calls without that context fail closed. The annotation must exist in the **Server-deployed trusted command source** as well as the Client; restart Server and Client after adding it so Server can automatically attach the grant. `relaunch_instance` requires Client Interaction Broker confirmation; `kill_instance` currently has no active `@confirm` decorator and does not show that confirmation.
 
 ## User-facing Client command reference
 
@@ -1398,7 +1398,7 @@ The following tables are generated from current `@desc(...)` declarations with `
 
 | Command | Group | What it does |
 | --- | --- | --- |
-| `download` | `file` | Download a file from the client |
+| `download` | `transfer` | Download a file from the client |
 | `unzip` | `file` | Extract a ZIP archive |
 | `zip_dir` | `file` | Create a ZIP archive |
 | `job_status` | `job` | Show background job status |
@@ -1408,28 +1408,27 @@ The following tables are generated from current `@desc(...)` declarations with `
 | `stop_all_jobs` | `job` | Stop all background jobs |
 | `stop_job` | `job` | Stop a background job |
 | `ifconfig` | `network` | Show network interfaces |
-| `ip` | `network` | Show network IP addresses |
 | `set` | `runtime` | Show or update client runtime config |
-| `clean` | `session` | Clean Client residue and obsolete bundle releases |
+| `clean` | `maintenance` | Clean Client residue and obsolete bundle releases |
 | `help` | `session` | Show available commands |
-| `kill_connection` | `session` | Terminate current session |
-| `reexec` | `session` | Restart current process by exec replacement |
-| `reset` | `session` | Restart client process and reconnect |
+| `kill_instance` | `session` | Terminate current session |
+| `reexec_instance` | `session` | Restart current process by exec replacement |
+| `relaunch_instance` | `session` | Restart client process and reconnect |
 | `spawn_instance` | `session` | Start a new client instance without exiting current process |
-| `update` | `session` | Build, download, extract and launch the latest client bundle; use --keep-old to retain current client |
-| `watchdog` | `session` | Show flat watchdog runtime status (`--json` supported) |
+| `update` | `maintenance` | Build, download, extract and launch the latest client bundle; use --keep-old to retain current client |
+| `watchdog` | `runtime` | Show flat watchdog runtime status (`--json` supported) |
 | `cd` | `shell` | Change working directory |
-| `pyexec_collect` | `shell` | Execute Python code and collect output |
-| `pyexec_stream` | `shell` | Execute Python code with streaming output |
-| `read` | `shell` | Run a command with live output |
-| `shell` | `shell` | Run a shell command |
-| `spawn` | `shell` | Run a program in background |
+| `pyexec` | `execution` | Execute Python code and collect output |
+| `pyexec_stream` | `execution` | Execute Python code with streaming output |
+| `shell_stream` | `execution` | Run a command with live output |
+| `shell` | `execution` | Run a shell command |
+| `bgrun` | `execution` | Run a program in background |
 | `getpid` | `system` | Get current process ID |
 | `getuid` | `system` | Get current user ID/name |
-| `is_root` | `system` | Check if current session is root |
-| `keyboard_send` | `system` | Simulate keyboard input |
-| `piplist` | `system` | List installed third-party Python packages |
-| `pwd` | `system` | Print working directory |
+| `is_elevated` | `privilege` | Check if the current Client is elevated |
+| `keyboard_send` | `automation` | Simulate keyboard input |
+| `piplist` | `python` | List installed third-party Python packages |
+| `pwd` | `shell` | Print working directory |
 | `uptime` | `system` | Show system uptime |
 | `userenum` | `system` | List system user accounts |
 
@@ -1437,23 +1436,23 @@ The following tables are generated from current `@desc(...)` declarations with `
 
 | Command | Group | What it does |
 | --- | --- | --- |
-| `getinfo` | `platform` | Get system information |
-| `idletime` | `platform` | Get user idle time |
-| `screenshot` | `platform` | Capture screenshot |
-| `run` | `shell` | Run a program without waiting (detached) |
-| `runasadmin` | `system` | Run command as admin |
+| `getinfo` | `system` | Get system information |
+| `idletime` | `system` | Get user idle time |
+| `screenshot` | `media` | Capture screenshot |
+| `run` | `execution` | Run a program without waiting (detached) |
+| `run_elevated` | `privilege` | Run command as admin |
 
 ### macOS commands
 
 | Command | Group | What it does |
 | --- | --- | --- |
 | `file_shred` | `file` | Securely delete file (overwrite) |
-| `getinfo` | `platform` | Show system information |
-| `idletime` | `platform` | Show user idle time |
-| `screenshot` | `platform` | Capture a screenshot |
-| `sudo_run` | `platform` | Run command with sudo |
-| `sudo_self` | `platform` | Launch new instance with sudo |
-| `webcam_snap` | `platform` | Capture webcam photo |
+| `getinfo` | `system` | Show system information |
+| `idletime` | `system` | Show user idle time |
+| `screenshot` | `media` | Capture a screenshot |
+| `run_elevated` | `privilege` | Run command with sudo |
+| `spawn_elevated_instance` | `privilege` | Launch new instance with sudo |
+| `webcam_snap` | `media` | Capture webcam photo |
 
 ### iOS commands
 
@@ -1468,9 +1467,9 @@ The following tables are generated from current `@desc(...)` declarations with `
 | `quicklook` | `console` | QuickLook preview file |
 | `getlocation` | `mobile` | Get current location |
 | `listcontacts` | `mobile` | List contacts via CNContactStore |
-| `readclip` | `mobile` | Read clipboard text |
+| `clipboard_read` | `mobile` | Read clipboard text |
 | `speak` | `mobile` | Speak text |
-| `writeclip` | `mobile` | Write clipboard text |
+| `clipboard_write` | `mobile` | Write clipboard text |
 | `getinfo` | `platform` | Get system information |
 | `cat` | `shell` | Read text file |
 | `echo` | `shell` | Echo text or expand environment variables |
@@ -1573,7 +1572,7 @@ ${rch:datetime}
 Examples:
 
 ```text
-spawn ${rch:exec_path}
+bgrun ${rch:exec_path}
 shell echo ${rch:uid}@${rch:hostname}
 shell mkdir ${rch:timestamp}
 kill ${rch:pid}
@@ -2524,7 +2523,7 @@ PTY is also a dedicated session feature rather than a normal one-shot shell comm
 - Client disconnect cleanup
 - Server-side session release after close/error
 
-This is separate from `shell` / `read`, which still use subprocess-style execution.
+This is separate from `shell` / `shell_stream`, which still use subprocess-style execution.
 
 ---
 
@@ -2962,7 +2961,7 @@ For future README updates, distinguish four layers:
    - Remote Files, Artifact, Monitor, Clipboard, External Tools, etc.
 
 2. **Actual command entrypoints**
-   - `shell`, `read`, `spawn`, `httpctl`, `gopin`, `saveout`, `xt`, etc.
+   - `shell`, `shell_stream`, `bgrun`, `httpctl`, `gopin`, `saveout`, `xt`, etc.
 
 3. **Reusable Script SDK**
    - `context`, `command`, `artifact`, `keychains`, `workspace`, `xt`.

@@ -186,3 +186,26 @@ Web 通过 `GET /api/connections/{client_id}/command-candidates` 获取候选，
 `script list`（含 `--json`）和 `job list`（含 `--json`）只列出适合当前连接 Client 平台的条目。只读取 Script/Job Metadata 中显式声明的 `platforms`（可使用 `common` / `all` 等通配声明）；**没有声明或声明为空时不进入终端列表与补全**，不再根据 `mac/win/linux/ios/common` 目录名兜底。`script exec` 与 `script run` 并不被该**列表筛选**拦截，显式指定其他平台文件依旧可以执行。
 
 Terminal 的 `script exec` 路径候选和 `job start` Job 名称候选复用相同的可见性判断；Script Library 和 Background Jobs Web Catalog 不使用该 CLI 筛选，原有 UI 数据范围不改变。
+
+
+## 当前 Client 可见命令命名与分组
+
+普通 Client 命令的可见名称直接来自 `@desc` 修饰的方法名，`group`
+决定 Manifest、Client Help 和 Info → Commands 的分类。重命名后不保留旧名称兼容入口。
+本次分组使用 `shell`（`cd`、`pwd`）、`execution`（`shell`、`shell_stream`、
+`bgrun`、`pyexec`、`pyexec_stream`）、`file`（`file_shred`、`zip_dir`、`unzip`）、
+`session`（`kill_instance`、`reexec_instance`、`relaunch_instance`、`spawn_instance`）、
+`runtime`（`watchdog`、`set`）、`maintenance`（`clean`、`update`）、
+`transfer`（`download`）、`automation`（`keyboard_send`）、
+`media`（`screenshot`、`webcam_snap`）、`privilege`（`run_elevated`、
+`spawn_elevated_instance`、`is_elevated`）、`network`（`ifconfig`）、
+`system`（`getinfo`、`idletime`、`getuid`、`getpid`、`uptime`、`userenum`）、
+`python`（`piplist`）。`ip` 已不再注册为 Client 命令。
+
+结构化传输入口现在名为 `receive_file`，其原有参数及 HTTP 流程不变。
+iOS 专属 `clipboard_read` / `clipboard_write` 仅调整命令名称，
+其他 iOS 分组与内部 `acmd`/Structured Payload 命令保持不变。
+
+Client 生命周期的 `relaunch_instance` 仍调用原有新建进程再退出逻辑；
+`reexec_instance` 仍走 `os.execv()`，两者不可混淆。macOS 和 Windows 的
+`run_elevated` 保留各自平台原有执行策略，统一的是命令名称。

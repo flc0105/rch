@@ -18,12 +18,12 @@ class CommandSystemMixin:
         import getpass
         return 1, getpass.getuser()
 
-    @desc('Print working directory', group='system')
+    @desc('Print working directory', group='shell')
     def pwd(self):
         """显示当前工作目录"""
         return 1, os.getcwd()
 
-    @desc('Simulate keyboard input', group='system')
+    @desc('Simulate keyboard input', group='automation')
     def keyboard_send(self, text):
         """模拟键盘输入文字"""
         try:
@@ -37,46 +37,6 @@ class CommandSystemMixin:
     def getpid(self):
         """获取当前进程PID"""
         return 1, str(os.getpid())
-
-    @desc('Show network IP addresses', group='network')
-    def ip(self):
-        """显示内网IP、外网IP和归属地"""
-        import requests
-
-        local_ips = []
-
-        try:
-            rows = self._get_network_interface_service().collect_ifconfig_rows()
-
-            for row in rows:
-                ip_text = str(row.get('ip') or '').strip()
-                if not ip_text:
-                    continue
-
-                for ip in ip_text.split(','):
-                    ip = ip.strip()
-                    if ip and ip not in local_ips:
-                        local_ips.append(ip)
-        except Exception:
-            local_ips = []
-
-        try:
-            resp = requests.get('http://ip-api.com/json/', timeout=5)
-            data = resp.json()
-            public_ip = data.get('query', 'Unknown')
-            city = data.get('city', 'Unknown')
-            region = data.get('regionName', 'Unknown')
-            country = data.get('country', 'Unknown')
-            isp = data.get('isp', 'Unknown')
-            location = f"{city}, {region}, {country} ({isp})"
-        except Exception:
-            public_ip = 'Unable to determine'
-            location = 'Unknown'
-
-        local_ip_text = chr(10).join(local_ips) if local_ips else 'Unable to determine'
-
-        result = f"Local IPs:\n  {local_ip_text}\n\nPublic IP: {public_ip}\nLocation: {location}"
-        return 1, result
 
     @desc('List system user accounts', group='system')
     def userenum(self):
@@ -99,8 +59,8 @@ class CommandSystemMixin:
             result = subprocess.run('net user', shell=True, capture_output=True, text=True)
             return 1, result.stdout
 
-    @desc('Check if current session is root', group='system')
-    def is_root(self):
+    @desc('Check if current session is root', group='privilege')
+    def is_elevated(self):
         """检查当前是否为 root 权限"""
         if os.name == 'nt':
             import ctypes
@@ -127,7 +87,7 @@ class CommandSystemMixin:
 
         return 1, f"Boot time: {boot_dt.strftime('%Y-%m-%d %H:%M:%S')}\nUptime: {days}d {hours}h {minutes}m"
 
-    @desc('List installed third-party Python packages', group='system')
+    @desc('List installed third-party Python packages', group='python')
     def piplist(self, arg=''):
         """列出当前 Python 环境已安装的第三方包和版本"""
         try:

@@ -72,11 +72,11 @@ class iOSCommands(CommonCommands):
     # ------------------ 剪贴板 ------------------ #
 
     @desc('Read clipboard text', group='mobile')
-    def readclip(self):
+    def clipboard_read(self):
         return self.ios_console.read_clipboard()
 
     @desc('Write clipboard text', group='mobile')
-    def writeclip(self, text=''):
+    def clipboard_write(self, text=''):
         return self.ios_console.write_clipboard(text)
 
     # ------------------ 手机常用 ------------------ #

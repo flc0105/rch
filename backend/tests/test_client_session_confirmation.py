@@ -28,7 +28,7 @@ def make_channel():
     return ClientSessionCommandChannel(session), service
 
 
-@pytest.mark.parametrize('name', ('kill_connection', 'reset'))
+@pytest.mark.parametrize('name', ('kill_instance', 'relaunch_instance'))
 def test_decorated_commands_auto_receive_interaction_grant(name):
     method = getattr(CommonCommands, name)
     assert method.requires_confirmation is True
@@ -45,7 +45,7 @@ def test_decorated_commands_auto_receive_interaction_grant(name):
 def test_grant_is_bound_by_client_executor_and_used_by_confirmation(monkeypatch):
     from client.http import client_api
     channel, _ = make_channel()
-    payload = channel.build_command_payload('reset')
+    payload = channel.build_command_payload('relaunch_instance')
     executor = CommandExecutor.__new__(CommandExecutor)
     calls = []
     executor.context_store = SimpleNamespace(extract_timeout=lambda *_: None)
@@ -66,14 +66,14 @@ def test_grant_is_bound_by_client_executor_and_used_by_confirmation(monkeypatch)
 
     monkeypatch.setattr(client_api, 'ClientApiClient', FakeApi)
     monkeypatch.setattr(session_ops, 'reset', lambda socket: calls.append(('reset', socket)))
-    CommonCommands.reset(owner)
+    CommonCommands.relaunch_instance(owner)
     assert calls[0][0] == '/api/interactions/client/request'
     assert calls[0][1]['headers']['X-Script-Grant-Token'] == 'issued-token'
     assert calls[0][1]['json']['message'] == 'Restart this Client process and reconnect to the Server?'
     assert calls[1] == ('reset', owner.socket)
 
 
-@pytest.mark.parametrize('name', ('kill_connection', 'reset'))
+@pytest.mark.parametrize('name', ('kill_instance', 'relaunch_instance'))
 def test_refusal_does_not_enter_session_command_body(monkeypatch, name):
     executed = []
     monkeypatch.setattr(CommandInteractions, 'confirm', lambda *a, **kw: False)
@@ -92,8 +92,8 @@ def test_plain_command_does_not_receive_grant():
 
 
 @pytest.mark.parametrize('name,expected', [
-    ('kill_connection', 'Terminate this Client session and close its connection?'),
-    ('reset', 'Restart this Client process and reconnect to the Server?'),
+    ('kill_instance', 'Terminate this Client session and close its connection?'),
+    ('relaunch_instance', 'Restart this Client process and reconnect to the Server?'),
 ])
 def test_session_prompts_are_specific_and_execute_only_on_approval(monkeypatch, name, expected):
     prompted = []
@@ -105,4 +105,4 @@ def test_session_prompts_are_specific_and_execute_only_on_approval(monkeypatch, 
     owner = SimpleNamespace(socket=SimpleNamespace(close=lambda: executed.append('close')))
     getattr(CommonCommands, name)(owner)
     assert prompted == [expected]
-    assert executed == (['close', 'exit'] if name == 'kill_connection' else ['restart'])
+    assert executed == (['close', 'exit'] if name == 'kill_instance' else ['restart'])

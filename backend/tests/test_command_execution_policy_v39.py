@@ -106,9 +106,9 @@ def test_existing_builtin_method_bodies_have_no_interruptible_wrapper():
     from client.commands.common.commands import CommonCommands
     assert not hasattr(CommonCommands.shell, '__wrapped__')
     assert CommonCommands.shell.command_cancel_mode == 'process'
-    assert CommonCommands.read.command_cancel_mode == 'process'
-    assert getattr(CommonCommands.kill_connection, 'requires_confirmation', False)
-    assert getattr(CommonCommands.reset, 'requires_confirmation', False)
+    assert CommonCommands.shell_stream.command_cancel_mode == 'process'
+    assert getattr(CommonCommands.kill_instance, 'requires_confirmation', False)
+    assert getattr(CommonCommands.relaunch_instance, 'requires_confirmation', False)
 
 
 def test_real_shell_process_cancel_distinguishes_ack_from_stop():
@@ -180,11 +180,11 @@ def test_invalid_cancel_mode_rejected():
 def test_shell_and_stream_declare_process_cancellation():
     from client.commands.common.commands import CommonCommands
     assert CommonCommands.shell.command_cancel_mode == 'process'
-    assert CommonCommands.read.command_cancel_mode == 'process'
+    assert CommonCommands.shell_stream.command_cancel_mode == 'process'
     # A file operation with checkpoints is cooperative, not a managed subprocess.
     assert CommonCommands.zip_dir.command_cancel_mode == 'cooperative'
     # Detached spawn cannot be cancelled after the command returns.
-    assert getattr(CommonCommands.spawn, 'command_cancel_mode', 'none') == 'none'
+    assert getattr(CommonCommands.bgrun, 'command_cancel_mode', 'none') == 'none'
 
 
 def test_runtime_execution_strategies_select_actual_cancel_mode():
@@ -213,7 +213,7 @@ def test_read_uses_managed_subprocess_cancel_not_only_checkpoints():
     socket = SimpleNamespace(send_result=lambda *args: None)
     executor = CommandExecutor(socket)
     result = {}
-    command = 'read ' + shlex.quote(sys.executable) + " -c 'import time; time.sleep(9)'"
+    command = 'shell_stream ' + shlex.quote(sys.executable) + " -c 'import time; time.sleep(9)'"
     worker = threading.Thread(target=lambda: result.setdefault('return', executor.execute_command(204, command)))
     worker.start()
     ctx = None

