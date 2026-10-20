@@ -1,6 +1,5 @@
 {
   "common": {
-    "pysleep": "pyexec_stream import time; time.sleep(<sec>)",
     "open_url": "pyexec_collect import webbrowser;webbrowser.open('<url>')",
     "now": "pyexec_collect import datetime;print(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))",
     "rch_whoami": "pyexec_collect import getpass;print(getpass.getuser())",
@@ -9,9 +8,10 @@
     "cwd": "pyexec_collect import os;print(os.getcwd())",
     "rch_paste": "pyexec_collect import pyperclip; print(pyperclip.paste())",
     "rch_copy": "pyexec_collect import pyperclip;pyperclip.copy(\"<text>\")",
-    "git_log": "git log --date=format:'%Y-%m-%d %H:%M:%S' --pretty=format:\"%h %cd %s\"",
     "pyver": "pyexec_collect import sys;print(sys.version)",
-    "git_export": "git archive --format=zip -o source.zip <commit>"
+    "git_export": "git archive --format=zip -o source.zip <commit>",
+    "git_history": "git log --date=format:'%Y-%m-%d %H:%M:%S' --pretty=format:\"%h %cd %s\"",
+    "sleep_py": "pyexec_stream import time; time.sleep(<sec>)"
   },
   "win": {
     "list_av": "powershell Get-CimInstance -Namespace root/SecurityCenter2 -ClassName AntivirusProduct ^| Select-Object displayName",
@@ -64,9 +64,6 @@
     "find_in": "read grep -RInHi -I \"<keyword>\" \"<path>\"",
     "wake_display": "caffeinate -u -t 1",
     "sleep_display": "pmset displaysleepnow",
-    "kill_port9": "kill -9 $(lsof -t -i:<port>)",
-    "rch_sleep": "read ping -c <sec> 127.0.0.1",
-    "rch_clear": "printf '\\033[2J\\033[3J\\033[H'",
     "elevate": "osascript -e 'do shell script \"${rch:launch_command} >/var/tmp/rchclient.log 2>&1 </dev/null &\" with administrator privileges'",
     "stay_awake": "nohup caffeinate -i -w ${rch:pid} >/dev/null 2>&1 &",
     "check_awake": "pgrep -af caffeinate",
@@ -74,7 +71,10 @@
     "power_assertions": "pmset -g assertions",
     "resume_process": "kill -CONT <pid>",
     "pause_process": "kill -STOP <pid>",
-    "clean_mac_junk": "find . -name \"._*\" -type f -delete && find . -name \".DS_Store\" -type f -delete"
+    "sleep_ping": "read ping -c <sec> 127.0.0.1",
+    "kill_port": "kill -9 $(lsof -t -i:<port>)",
+    "clear_terminal": "printf '\\033[2J\\033[3J\\033[H'",
+    "clean_sidecars": "find . -name \"._*\" -type f -delete && find . -name \".DS_Store\" -type f -delete"
   },
   "linux": {},
   "ios": {}
