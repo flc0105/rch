@@ -122,7 +122,7 @@
                       aria-label="Use"
 @click.prevent="applyHistoryCommand(row)"
                   >
-             <el-icon><Select /></el-icon>
+             <TextCursorInput :size="16" />
                        </el-button>
 
 
@@ -395,16 +395,16 @@
 import { ElMessage, ElMessageBox } from 'element-plus'
 import CommandExecutionDetailDialog from './CommandExecutionDetailDialog.vue'
 import {EditPen} from "@element-plus/icons-vue";
-import { Star, StarFilled, ArrowUp, ArrowDown, Select } from '@element-plus/icons-vue'
+import { Star, StarFilled, ArrowUp, ArrowDown } from '@element-plus/icons-vue'
 import { diffDateTimeMs } from '../utils/formatters.js'
-import { Terminal, Zap, FileCode2, CheckCircle2, XCircle, CircleDashed, Ban, Clock3, ChevronRight, AlertTriangle } from '@lucide/vue'
+import { Terminal, Zap, FileCode2, CheckCircle2, XCircle, CircleDashed, Ban, Clock3, ChevronRight, AlertTriangle, TextCursorInput } from '@lucide/vue'
 
 export default {
   name: 'CommandHistoryDialog',
 
   components: {
     EditPen,
-    Select,
+    TextCursorInput,
 Star,
     StarFilled,
     CommandExecutionDetailDialog,
@@ -1095,20 +1095,26 @@ Star,
     },
 
     buildCommandExecutionSummary(item) {
-      const files = Array.isArray(item?.files) ? item.files : []
-      if (files.length) return `Produced ${files.length} file(s)`
-
+      const status = String(item?.status || '').toLowerCase()
+      const isLong = text => /[\r\n]/.test(text) || text.length > 128
       const records = Array.isArray(item?.result?.output_records) ? item.result.output_records : []
       const parts = records.map(record => String(record?.text || '').trim()).filter(Boolean)
-      if (parts.length) {
-        // Summaries never display multiline or lengthy output, regardless of
-        // how the transport split it into output records.
-        if (parts.length !== 1 || /[\r\n]/.test(parts[0]) || parts[0].length > 128) return 'Completed'
-        return parts[0]
+      const truncated = Boolean(item?.result?.truncated)
+      // A large failure must never be presented as a successful "Completed" event.
+      if (truncated || parts.length > 1 || (parts.length === 1 && isLong(parts[0]))) {
+        if (status === 'success') return 'Completed'
+        if (status === 'error') return 'Failed'
+        if (status === 'timed_out') return 'Timed out'
+        if (status === 'cancelled') return 'Cancelled'
+        if (status === 'interrupted') return 'Interrupted'
+        return status === 'running' ? 'Running' : 'No output'
       }
-
-      if (String(item?.status || '').toLowerCase() === 'success') return 'Completed'
-      if (this.isActivityProblem(item?.status)) return `Activity ${item.status}`
+      if (status === 'error' && !parts.length) return 'Failed'
+      if (this.isActivityProblem(status) && !parts.length) return `Activity ${status}`
+      const files = Array.isArray(item?.files) ? item.files : []
+      if (files.length && status === 'success') return `Produced ${files.length} file(s)`
+      if (parts.length) return parts[0]
+      if (status === 'success') return 'Completed'
       return 'No output'
     },
 

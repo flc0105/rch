@@ -45,6 +45,12 @@ class WebCommandCatalogApi:
         session = self.server.get_target_connection_by_client_id(client_id)
         client_candidates = self._get_client_command_candidates(session)
         server_candidates = self.command_executor_factory.create(session).get_command_candidates()
+        # Top-level Server Builtins own these names; do not present shadowed
+        # Client manifest entries as independently reachable terminal commands.
+        registered_server_names = {str(item.get('name') or '').lower() for item in server_candidates
+                                   if item.get('source') == 'server'}
+        client_candidates = [item for item in client_candidates
+                             if str(item.get('name') or '').lower() not in registered_server_names]
 
         merged = []
         seen = set()

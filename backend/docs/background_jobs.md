@@ -148,7 +148,7 @@ Job 的模块管理、执行查询和运行控制分属不同操作。模块目�
 | `job stop <name>` | Client 发送停止请求，最终状态仍依赖 Job 本身上报 |
 | `job stop-all` | Client 向当前所有运行 Job 发停止请求 |
 
-Server Builtin `job` 的命令候选来自 `BuiltinCommandHandler.WEB_COMMAND_TEMPLATES`，不纳入 Client 命令 Manifest。Job 的执行/控制属于内部请求，不在首批 Command/Alias/Script Activity Center 记录范围内。需要区分 HTTP 请求已接受、前台控制命令已完成和后台 Job 最终状态三个时点。
+Server Builtin `job` 的命令候选来自 `SERVER_COMMAND_REGISTRY`，不纳入 Client 命令 Manifest。Job 的执行/控制属于内部请求，不在首批 Command/Alias/Script Activity Center 记录范围内。需要区分 HTTP 请求已接受、前台控制命令已完成和后台 Job 最终状态三个时点。
 
 ### 停止请求与异常清理
 

@@ -91,7 +91,7 @@ shell echo ${path:do
 
 ## 输入框选择、过滤与缓存
 
-Terminal 的下拉候选按标题文字筛选：优先精确匹配，其次前缀匹配、包含匹配；对于 `exec` 脚本路径还允许较保守的多词包含匹配。匹配依据是候选插入的命令文本，而不是对描述文本做全文搜索。通过统一结构显示 `help`、来源分组，并在各类候选中保留必要的附加元数据。
+Terminal 的下拉候选按标题文字筛选：优先精确匹配，其次前缀匹配、包含匹配；对于 `script exec` 脚本路径还允许较保守的多词包含匹配。匹配依据是候选插入的命令文本，而不是对描述文本做全文搜索。通过统一结构显示 `help`、来源分组，并在各类候选中保留必要的附加元数据。
 
 交互上，**上下方向键**可以轮流预览候选内容，预览阶段保留原始输入供继续筛选；按**右方向键**提交当前预览文本而不执行，按 **Escape** 恢复进入预览前的输入。点击下拉候选或使用组件选择交互会将文本回填输入框；通过 Run 或 Enter 提交命令才真正发起执行。选择变量命名空间之后，可以继续刷新候选列表以补全下一段。
 
@@ -138,3 +138,8 @@ Terminal 的下拉候选按标题文字筛选：优先精确匹配，其次前�
 Provider 内部按 `priority` 与标题排序、按插入文本去重；某个 Provider 出错时，注册表会跳过它的异常而不让整个候选链崩溃。这保证自动补全保持辅助性：没有候选、远程目录不可访问或完成查询失败，都不应被解释为业务命令一定不可执行。
 
 目前解析器只支持根据输入位置之前的字符串提取首个命令词和最后一个参数片段；前端主要按光标末尾输入组织远程请求。它没有操作系统 Shell 那种全语法树级的参数识别、任意位置补全、通用参数 Schema 推导，也不会自动提供所有 `acmd` 选项或全部 Shell 命令的文件名补全。真正执行命令时的权限、类型与路径解析规则仍由其各自的执行模块决定。
+
+
+## Server Registry 静态子命令补全
+
+Server 注册表 `server_builtin_registry.py` 是一级 Builtin 与 `alias/job/script/xt/history/httpctl` 子命令唯一的静态定义来源。`RegisteredServerSubcommandCompletionProvider` 从该表生成 `script list/view/exec/run`、`job list/start/ps/status/stop/stop-all` 等结构；动态 `script exec <path>`、`job start <name>` 仍由专门 Provider 查询当前 Server Catalog。前端 `CommandInputBar` 对 `script`、`job` 进入既有按上下文缓存的 Server 补全流程，不再识别旧 `exec`。

@@ -24,7 +24,7 @@ class Events:
 
 def test_port_candidate_and_positional_grammar():
     assert hasattr(CommandProcessMixin.kill_port, 'help')
-    assert not any(c['name'] == 'kill_port' for c in BuiltinCommandHandler.WEB_COMMAND_TEMPLATES)
+    assert not any(c['name'] == 'kill_port' for c in BuiltinCommandHandler.REGISTRY.candidates())
     from core.utils.parsing import parse as split_command
     assert split_command('kill_port 9999') == ('kill_port', '9999')
     assert aps.parse_target('9999', by_port=True) == {'port': 9999}

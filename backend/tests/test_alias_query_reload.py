@@ -77,6 +77,20 @@ class AliasQueryReloadTests(unittest.TestCase):
 
         self.assertEqual({'common_after', 'effective_after'}, names)
 
+    def test_alias_execution_auto_refreshes_external_file_changes(self):
+        self._write_aliases({
+            'common': {'updated': 'shell echo refreshed'},
+            'mac': {'current': 'pwd'},
+            'linux': {'other_platform': 'pwd'},
+        })
+        aliases = self.manager.get_effective_aliases(self.conn)
+        self.assertEqual('shell echo refreshed', aliases['updated'])
+        self.assertEqual('pwd', aliases['current'])
+        self.assertNotIn('other_platform', aliases)
+        self.assertEqual('shell echo refreshed', self.manager.resolve_alias('updated', '', conn=self.conn)['command'])
+        payload = json.loads(list(self.support.alias('list --json'))[0][1])
+        self.assertEqual({'updated', 'current'}, {row['alias'] for row in payload})
+
     def test_quick_actions_list_already_reloads_direct_json_edits(self):
         api = WebQuickActionApi(
             server=_Server(self.conn),

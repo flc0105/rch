@@ -4,11 +4,11 @@ Activity Center 与 Quick History 服务不同目的：前者保留**实际向 C
 
 ## 一次操作如何进入 Activity
 
-Server 接收请求时保留原始调用身份，解析 Server Builtin、Alias、History Replay 或 Script Library，得到真实远程执行计划。纯 Server 查询如 `rtt`、`history` 列表、`alias list`、无参数 `exec`、参数校验失败，都**不会**生成 Activity。只有显式可记录的操作已实际交给 Client 命令通道，发送成功后才创建持久记录；发送前允许分配内部关联 ID，以便结果输出、取消和 Artifact 归属，不代表已经执行或持久化。
+Server 接收请求时保留原始调用身份，解析 Server Builtin、Alias、History Replay 或 Script Library，得到真实远程执行计划。纯 Server 查询如 `rtt`、`history` 列表、`alias list`、无参数 `script`（等同 `script list`）、参数校验失败，都**不会**生成 Activity。只有显式可记录的操作已实际交给 Client 命令通道，发送成功后才创建持久记录；发送前允许分配内部关联 ID，以便结果输出、取消和 Artifact 归属，不代表已经执行或持久化。
 
 首批范围是 `command`、`alias`、`script`。Remote Files、Job、Process、External Tool、监控采样、上传、目录浏览及内部 RPC 暂不写 Activity。以后 Job 若接入，正常执行动作使用 `invoke`，停止沿用取消原活动的流程，不额外创建 `stop` Activity。未知普通 Client 命令落到 Shell 是 RCH 原有的**设计特性**，本轮不更改命令分发、解析或 Shell fallback。
 
-同一用户操作至多记一条 Activity：`notify shell pwd`、`saveout shell pwd` 以 `invocation.input` 保留外部调用文本，`resolved.command` 保留真正下发的 Client 命令。`history run N` 和 `!N` 不写入 Quick，但只要回放实际向 Client 派发了命令，就创建一条 Activity：`invocation.input` 保留外层回放写法，`resolved` 保留实际派发的命令类型和内容。未成功派发则不落 Activity。Alias 保留 Alias 名称/参数，而非把展开文本冒充用户输入。Script Library、`exec <file>` 都是 `kind=script`，实际下发的是脚本协议 `command_type=script`；Activity 不复制整段脚本源码或 Base64 载荷，也不伪造 Shell 命令。
+同一用户操作至多记一条 Activity：`notify shell pwd`、`saveout shell pwd` 以 `invocation.input` 保留外部调用文本，`resolved.command` 保留真正下发的 Client 命令。`history run N` 和 `!N` 不写入 Quick，但只要回放实际向 Client 派发了命令，就创建一条 Activity：`invocation.input` 保留外层回放写法，`resolved` 保留实际派发的命令类型和内容。未成功派发则不落 Activity。Alias 保留 Alias 名称/参数，而非把展开文本冒充用户输入。Script Library、`script exec <file>` 都是 `kind=script`，实际下发的是脚本协议 `command_type=script`；Activity 不复制整段脚本源码或 Base64 载荷，也不伪造 Shell 命令。
 
 ### Activity Record 公共结构
 
@@ -46,7 +46,7 @@ Server 接收请求时保留原始调用身份，解析 Server Builtin、Alias�
 
 Quick Recent 保存手动 **Web Terminal / CLI** 提交的命令，无论最终为 `success`、`error`、`cancelled`、`interrupted` 或 `timed_out`；失败的命令也可以重试。以 `machine_id + command` 去重，保留最近 100 条不同命令。最近一次完成结果的 `status` 与时间独立保存在 `command_recents`，每次完成增加 `use_count`（执行尝试数），**不依赖 Activity 存在，也不持有 Activity ID**。UI 的 Command 列显示最近一次状态图标，Last Used 仍隐藏。用户手动 Pin 的命令不因后续失败而删除。
 
-不记录的操作在 `server/application/history/quick_history.py` 文件顶部统一声明：`history`/`history clear`/`history run N`/`!N`；Quick Action UI、Script Library UI、Web API、上传、Remote Files、Job、Process、External Tool 及其他内部任务；UI 专用 `run_script __json__:` 载荷。Replay 只从 Quick 解析命令，不更新 Quick；其真实 Client 派发则按正常执行规则生成 Activity。
+不记录的操作在 `server/application/history/quick_history.py` 文件顶部统一声明：`history`/`history clear`/`history run N`/`!N`；Quick Action UI、Script Library UI、Web API、上传、Remote Files、Job、Process、External Tool 及其他内部任务；由 Script Library Metadata 标记的 `script run __json__:` UI 调用（手动终端输入的 `script run` 属于 Quick）。Replay 只从 Quick 解析命令，不更新 Quick；其真实 Client 派发则按正常执行规则生成 Activity。
 
 Quick History 页面继续支持 Use、双击回填、Pin / Unpin、Pin Up / Down 和动态数字索引。**仅隐藏** Last Used 的 UI；Command 前显示状态图标，底层必要字段不删除。Use 将命令填入 Terminal 输入框，不会直接执行。
 
@@ -56,11 +56,11 @@ Pin 顺序由独立的 `pinned_commands` 表持久管理：Pinned 项优先显�
 
 `history` 和 `history clear` 是只读/清理 Quick 的纯 Server 命令，不记 Activity 或 Quick；`history` 的可回放索引使用 Quick History 快照并跳过 `history run N` / `!N` 元命令，重新从 1 编号；`history run <index>` / `!<index>` 会根据当前机器 Quick History 的动态索引查找真实可执行文本，再按照正常命令解析和 Client 派发链执行。索引随 Pin 排序、Recent 变化而变动，不是稳定 ID，重放前应核对列表。Replay 不产生 Quick，但实际派发 Client 后会产生 Activity，并记录外层回放 Invocation 与实际 Resolved；所以回放自身不改变 Quick 索引。未派发或纯 Server 回放不生成 Activity。
 
-`notify`、`saveout` 等 Server 包装命令如果执行了 Client 子命令，只产生一条 Activity，外层包装文本留在 `invocation.input`，实际命令留在 `resolved.command`。`saveout` 在内层命令完成并成功注册 `command_output` Artifact 后，会沿用原有 History Store 文件关联方法，把 Artifact 引用加到该 Activity 的 `files`；不复制文件内容，也不凭文件存在推断执行成功。`exec <name>` 由 Server 读取 Script 文件并向 Client 下发 Script 类型，不是普通 `command`。`rtt`、Alias 定义列表、脚本目录浏览等未下发 Client 的 Server 操作不记录。
+`notify`、`saveout` 等 Server 包装命令如果执行了 Client 子命令，只产生一条 Activity，外层包装文本留在 `invocation.input`，实际命令留在 `resolved.command`。`saveout` 在内层命令完成并成功注册 `command_output` Artifact 后，会沿用原有 History Store 文件关联方法，把 Artifact 引用加到该 Activity 的 `files`；不复制文件内容，也不凭文件存在推断执行成功。`script exec <name>` 由 Server 读取 Script 文件并向 Client 下发 Script 类型，不是普通 `command`。`rtt`、Alias 定义列表、脚本目录浏览等未下发 Client 的 Server 操作不记录。
 
 ## 查询、删除和界面
 
-Activity Center 保留原有两行式列表，第一行 Lucide 类型图标、`Kind · 实际操作摘要`、状态图标（长命令单行省略），第二行日期时间与必要的计算摘要（只对非空、单行且长度不超过 128 字符的输出展示原文；多行或更长输出统一显示 `Completed`，完整内容仍在 Output Records）；右侧箭头或整行打开原 Details。列表不提供 Use 或 Delete；Delete 按钮在 Details 中。History 对话框标题仍为 `History`，第二个页签命名 `Activity Center`。Details 标题固定为 `Activity Detail`，不在标题右侧附加命令名字。Details 将 Kind 与 Action 合为单张 `Action` 卡片，内容为 `kind · action`；Invocation、Resolved 卡片单行省略，点击后弹窗查看完整值，原始命令文本不截断；Activity 过滤栏固定、列表独立滚动。原有输出记录排序、文件预览/下载和删除确认保留。类型筛选为 All / Command / Alias / Script；Errors 筛选使用 Server 端过滤，并和 `limit/cursor/query` 一起作用于分页与 `total_count`。默认 50 条，最大 200 条；同一时间按 `activity_id` 继续稳定排序。
+Activity Center 保留原有两行式列表，第一行 Lucide 类型图标、`Kind · 实际操作摘要`、状态图标（长命令单行省略），第二行日期时间与必要的计算摘要（只对非空、单行且长度不超过 128 字符的输出展示原文；多行、截断或超过 128 字符时根据状态显示 `Completed`（成功）、`Failed`（失败）或对应的取消/超时/中断文案，完整内容仍在 Output Records）；右侧箭头或整行打开原 Details。列表不提供 Use 或 Delete；Delete 按钮在 Details 中。History 对话框标题仍为 `History`，第二个页签命名 `Activity Center`。Details 标题固定为 `Activity Detail`，不在标题右侧附加命令名字。Details 将 Kind 与 Action 合为单张 `Action` 卡片，内容为 `kind · action`；Invocation、Resolved 卡片单行省略，点击后弹窗查看完整值，原始命令文本不截断；Activity 过滤栏固定、列表独立滚动。原有输出记录排序、文件预览/下载和删除确认保留。类型筛选为 All / Command / Alias / Script；Errors 筛选使用 Server 端过滤，并和 `limit/cursor/query` 一起作用于分页与 `total_count`。默认 50 条，最大 200 条；同一时间按 `activity_id` 继续稳定排序。
 
 查询 API 沿用现有机器作用域路径，Activity 项目通过新 Schema 返回，不再返回旧 `entry_id`、`source`、`raw_command`、顶层 `output_records/output_summary/output_truncated`。客户端关联执行所需的临时 ID 不属于公开记录。
 

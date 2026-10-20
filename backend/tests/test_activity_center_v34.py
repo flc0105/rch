@@ -29,7 +29,7 @@ def test_pure_server_command_and_setup_failure_do_not_persist(setup):
     pending = orch.begin_execution(client, 'rtt')
     orch.finalize_execution(client, pending, True)
     assert store.view_service.get_execution_history_page('m1')['total_count'] == 0
-    pending = orch.begin_execution(client, 'exec missing.py')
+    pending = orch.begin_execution(client, 'script exec missing.py')
     orch.discard_execution(client, pending)
     assert store.view_service.get_execution_history_page('m1')['items'] == []
 
@@ -78,7 +78,7 @@ def test_alias_quick_action_keeps_ui_identity_and_skips_quick(setup):
 
 def test_script_does_not_copy_source_and_cancelled_terminal_is_retryable(setup):
     store, orch, client = setup
-    aid = dispatch(store, orch, client, 'exec demos/foo.py 123', source='cli',
+    aid = dispatch(store, orch, client, 'script exec demos/foo.py 123', source='cli',
                    plan={'command_type': 'script', 'command': 'SENSITIVE PYTHON SCRIPT'})
     orch.update_execution_status(client, aid, 'cancelling')
     orch.finalize_execution(client, aid, False, status='cancelled')
@@ -88,7 +88,7 @@ def test_script_does_not_copy_source_and_cancelled_terminal_is_retryable(setup):
     assert item['resolved'] == {'command_type': 'script'}
     assert item['status'] == 'cancelled'
     assert store.view_service.get_history_by_machine_id('m1')[0]['status'] == 'cancelled'
-    assert store.view_service.get_history_by_machine_id('m1')[0]['command'] == 'exec demos/foo.py 123'
+    assert store.view_service.get_history_by_machine_id('m1')[0]['command'] == 'script exec demos/foo.py 123'
 
 
 def test_history_replay_retains_outer_invocation_and_uses_actual_command(setup):

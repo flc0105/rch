@@ -125,7 +125,7 @@ def test_non_terminal_sources_and_payloads_skip_quick(ctx):
     ):
         submit(ctx, 'shell echo internal', 'error', source=source, metadata=metadata, task_type=task_type)
     assert quick(ctx) == []
-    assert not QuickHistoryRecordPolicy.should_record('run_script __json__:abc', source='web')
+    assert QuickHistoryRecordPolicy.should_record('script run __json__:abc', source='web')
     assert QuickHistoryRecordPolicy.should_record('exec demo.py', source='web')
     assert QuickHistoryRecordPolicy.should_record('shell echo history run 3', source='web')
 

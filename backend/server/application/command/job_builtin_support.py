@@ -29,52 +29,59 @@ class JobBuiltinSupport:
         )
 
     def job(self, arg=''):
+        from server.application.command.server_builtin_registry import SERVER_COMMAND_REGISTRY
         try:
-            parts = shlex.split(str(arg or ''))
+            _, subcommand, remaining = SERVER_COMMAND_REGISTRY.parse('job', arg)
+        except ValueError as exc:
+            yield 0, str(exc)
+            return
+        yield from self.execute_subcommand(subcommand, remaining)
+
+    def execute_subcommand(self, subcommand, remaining=''):
+        try:
+            args = shlex.split(str(remaining or ''))
         except ValueError as exc:
             yield 0, f'Invalid job arguments: {exc}'
             return
-        subcommand = parts[0].lower() if parts else 'list'
-        args = parts[1:]
         job_api = self.server.web_service.job_api
 
-        if subcommand in ('list', 'ls'):
-            if args:
+        if subcommand == 'list':
+            if args not in ([], ['--json']):
                 yield 0, self.HELP
                 return
             jobs = job_api.list_background_job_catalog(self.client_id)
+            if args == ['--json']:
+                yield 1, json.dumps([{'name': str(item.get('job_name') or ''),
+                                      'display_name': str(item.get('display_name') or ''),
+                                      'description': str(item.get('description') or '')}
+                                     for item in jobs if item.get('job_name')], ensure_ascii=False, indent=2)
+                return
             names = [str(item.get('job_name') or '') for item in jobs if item.get('job_name')]
             yield 1, '\n'.join(names) if names else 'No background jobs available'
             return
 
         if subcommand == 'start':
-            if not args:
+            from server.application.command.server_builtin_registry import SERVER_COMMAND_REGISTRY
+            try:
+                positional, flags = SERVER_COMMAND_REGISTRY.parse_arguments('job', 'start', remaining)
+            except ValueError as exc:
+                yield 0, str(exc)
+                return
+            if len(positional) != 1:
                 yield 0, self.HELP
                 return
-            name = args[0]
-            mode = None
+            name = positional[0]
+            mode = flags.get('mode')
             params = {}
-            remaining = args[1:]
-            while remaining:
-                flag = remaining.pop(0)
-                if flag not in ('--mode', '--params') or not remaining:
-                    yield 0, self.HELP
+            if 'params' in flags:
+                try:
+                    params = json.loads(flags['params'])
+                except ValueError as exc:
+                    yield 0, f'Invalid --params JSON: {exc}'
                     return
-                value = remaining.pop(0)
-                if flag == '--mode':
-                    if mode is not None:
-                        yield 0, 'Duplicate --mode'
-                        return
-                    mode = value
-                else:
-                    try:
-                        params = json.loads(value)
-                    except ValueError as exc:
-                        yield 0, f'Invalid --params JSON: {exc}'
-                        return
-                    if not isinstance(params, dict):
-                        yield 0, '--params must contain a JSON object'
-                        return
+                if not isinstance(params, dict):
+                    yield 0, '--params must contain a JSON object'
+                    return
             try:
                 mode = job_api.prepare_background_job_start(self.client_id, name, mode)
             except (ValueError, FileNotFoundError) as exc:

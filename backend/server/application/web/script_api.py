@@ -112,7 +112,7 @@ class WebScriptApi:
             payload['script_grant_request'] = grant_request
         return self.command_execution_api.submit_web_command(
             client_id,
-            f'run_script {encode_structured_arg(payload)}',
+            f'script run {encode_structured_arg(payload)}',
             tab_id=tab_id,
             metadata={
                 'script_run': True,

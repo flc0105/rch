@@ -56,7 +56,7 @@ class CommandHistoryOrchestrator:
             arguments = dict(metadata.get('script_run_arguments') or {})
             presentation = str(metadata.get('script_run_presentation') or 'dialog')
         else:
-            # Raw exec / run_script is identified by its *real dispatch type*,
+            # Raw script exec / script run is identified by its *real dispatch type*,
             # not by guessing whether its text looks like a shell command.
             if source == 'web':
                 presentation = 'terminal'
@@ -87,16 +87,16 @@ class CommandHistoryOrchestrator:
                 kind = 'script'
                 pending['action'] = 'run'
                 if not pending['invocation'].get('target'):
-                    # Terminal `exec <path> <args>` / `run_script <encoded>`.
+                    # Terminal `script exec <path> <args>` / `script run <encoded>`.
                     original = str(pending['invocation']['input']).strip()
-                    if original.startswith('exec '):
+                    if original.startswith('script exec '):
                         try:
                             parts = shlex.split(original)
-                            pending['invocation']['target'] = parts[1]
-                            pending['invocation']['arguments'] = {'argv': parts[2:]}
+                            pending['invocation']['target'] = parts[2]
+                            pending['invocation']['arguments'] = {'argv': parts[3:]}
                         except (ValueError, IndexError):
                             pass
-                    elif original.startswith('run_script '):
+                    elif original.startswith('script run '):
                         pending['invocation']['target'] = str((plan.get('extra') or {}).get('__script_name__') or '')
             elif alias_name:
                 kind = 'alias'

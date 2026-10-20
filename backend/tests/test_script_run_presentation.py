@@ -32,12 +32,13 @@ class ScriptPresentationTests(unittest.TestCase):
         self.assertEqual('task-123', result['task_id'])
         client, command, kwargs = self.commands.calls[0]
         self.assertEqual('device-1', client)
-        self.assertTrue(command.startswith('run_script '))
+        self.assertTrue(command.startswith('script run '))
         self.assertEqual('tab-3', kwargs['tab_id'])
         self.assertEqual({
             'script_run': True,
             'script_run_id': 'dialog-456',
             'script_run_name': 'tools/hello',
+            'script_run_arguments': {'message': 'Hello World'},
             'script_run_presentation': 'dialog',
         }, kwargs['metadata'])
         self.assertNotIn('dialog-456', command)
@@ -49,7 +50,7 @@ class ScriptPresentationTests(unittest.TestCase):
         )
         client, command, kwargs = self.commands.calls[0]
         self.assertEqual('device-1', client)
-        self.assertTrue(command.startswith('run_script '))
+        self.assertTrue(command.startswith('script run '))
         self.assertEqual('terminal', kwargs['metadata']['script_run_presentation'])
         self.assertEqual('', kwargs['metadata']['script_run_id'])
 

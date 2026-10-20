@@ -80,7 +80,7 @@ Script Run 表单可以选择 **Dialog** 或 **Terminal**：
 - Dialog 先生成 `run_id`，把运行结果显示在独立弹窗，连续追加收到的文本，结束后根据任务完成消息显示成功、失败或取消；支持复制结果。
 - Terminal 在终端插入带 Script 信息的命令块，把普通命令结果、完成状态呈现在终端；该命令块保留 Script Name、路径和提交参数，以便界面后续再次运行。
 
-它们最终都调用 `POST /api/connections/{client_id}/scripts/run`，Server 都会构造同一种 `run_script` 结构化内部调用，最后下发 `type=script`。`presentation` 仅改变前端消费本次输出的方式，不会把脚本切换到另一种 Python 执行策略。
+它们最终都调用 `POST /api/connections/{client_id}/scripts/run`，Server 都会构造同一种 `script run` 结构化 Server Builtin 调用，最后下发 `type=script`。`presentation` 仅改变前端消费本次输出的方式，不会把脚本切换到另一种 Python 执行策略。
 
 请求体形状如下；其中 `run_id` 是 Dialog 必需、Terminal 可不提供的关联标识：
 
@@ -97,9 +97,9 @@ Server 会给命令任务附加 `script_run`、`script_run_name`、`script_run_i
 
 ### 终端轻量入口和结构化入口
 
-Server 另有 `exec` 入口，它按文件名称读取 Library 脚本，并将随后按命令行扫描解析的参数交给 Script 执行计划。它适合快速发起一次性脚本执行，但不是 Web 的 Metadata 参数表单：不要假设 `exec` 一定会应用同一套必填表单逻辑、自动构造 Metadata API Grant 或弹出 Script Run Dialog。
+Server 另有 `script exec` 入口，它按文件名称读取 Library 脚本，并将随后按命令行扫描解析的参数交给 Script 执行计划。它适合快速发起一次性脚本执行，但不是 Web 的 Metadata 参数表单：不要假设 `script exec` 一定会应用同一套必填表单逻辑、自动构造 Metadata API Grant 或弹出 Script Run Dialog。
 
-`run_script` 则是内部结构化参数入口，Web 正常通过专用 HTTP API 产生对应 Payload；它可以携带用户参数、Script Name 和由受信任 Metadata 得来的 Grant Request。手动构造 Payload 与直接传原始 Python 文本不是一回事，正式界面操作建议使用 Script Library。
+`script run` 则是内部结构化参数入口，Web 正常通过专用 HTTP API 产生对应 Payload；它可以携带用户参数、Script Name 和由受信任 Metadata 得来的 Grant Request。手动构造 Payload 与直接传原始 Python 文本不是一回事，正式界面操作建议使用 Script Library。
 
 普通 Script 运行的输出经过 Python 执行策略收集后回到既有命令结果链。`print()` 可作为标准结果输出；`context.progress()` 在 In-process 且有命令所有者时可显式推送进度文本。当前 Script 默认采用 **collect** 执行调用，不应把 Script 简单等同为逐行 stdout 的真正 Shell Stream。对于输出较大、持续很久的任务，结果何时送达以及能否及时取消，还与执行策略相关。
 
@@ -107,7 +107,7 @@ Server 另有 `exec` 入口，它按文件名称读取 Library 脚本，并将�
 
 ### Script Activity 记录
 
-首批 Activity Center 将 Script Library 的 Run/Run in Terminal 及 Terminal 中的 `exec <script>` 都归为 `kind=script/action=run`。`invocation.input` 保留真实入口，`invocation.target` 保存 Script 名称或路径，`invocation.arguments` 保存 Script Library 的实际参数对象（Terminal `exec` 用 `argv` 表示原始命令行参数）。`resolved.command_type=script` 反映真实 Client Script 协议；不把 Server 侧读取的脚本源码或内部 `run_script __json__:` Base64 传输参数复制进公共 Activity，也不伪造一条 Shell 命令。
+首批 Activity Center 将 Script Library 的 Run/Run in Terminal 及 Terminal 中的 `script exec <script>` 都归为 `kind=script/action=run`。`invocation.input` 保留真实入口，`invocation.target` 保存 Script 名称或路径，`invocation.arguments` 保存 Script Library 的实际参数对象（Terminal `script exec` 用 `argv` 表示原始命令行参数）。`resolved.command_type=script` 反映真实 Client Script 协议；不把 Server 侧读取的脚本源码或内部 `script run __json__:` Base64 传输参数复制进公共 Activity，也不伪造一条 Shell 命令。
 
 Activity 只在 Script 真的被提交给 Client 时创建；单纯列出脚本、查看/编辑元数据或打开目录不会产生记录。Script Cancel 只更新当前 Run Activity 的状态（`cancelling`、`cancelled` 等），不额外制造 `stop` Activity。Details 沿用实际任务结果的输出记录和 Artifact；Quick History 不接收 Script Library 的内部可执行 Payload。
 
@@ -201,7 +201,7 @@ if not result.ok:
 print(result.stdout)
 ```
 
-子脚本会再次按照自己的 Metadata 解析收到的参数，但**不会按子脚本的 Metadata 重新签发 Script Grant**。它沿用调用者的临时上下文和授权，因此父脚本必须主动声明整个执行链所需的权限。当前实现还检测自调用、嵌套重复调用，并限制嵌套深度（最多 8 层活跃子脚本）。子脚本的标准输出与标准错误被捕获后作为结果返回，通常由父脚本决定打印哪些内容。它不会触发新的 Server `run_script` 任务，也不会形成独立的 Web Script Run Dialog。
+子脚本会再次按照自己的 Metadata 解析收到的参数，但**不会按子脚本的 Metadata 重新签发 Script Grant**。它沿用调用者的临时上下文和授权，因此父脚本必须主动声明整个执行链所需的权限。当前实现还检测自调用、嵌套重复调用，并限制嵌套深度（最多 8 层活跃子脚本）。子脚本的标准输出与标准错误被捕获后作为结果返回，通常由父脚本决定打印哪些内容。它不会触发新的 Server `script run` 任务，也不会形成独立的 Web Script Run Dialog。
 
 子脚本通过 `exec()` 执行的是 Server Library 提供的 Python 源码；这不是隔离沙箱。只有可信脚本适合被这样复用。父脚本同步调用期间同样会受到顶层命令任务的寿命和占用约束。
 
@@ -223,7 +223,7 @@ Web 读取实际 Script Metadata，Server 在构造结构化运行任务时将�
 
 默认 Grant 有效期为 300 秒，最多使用 100 次；请求中的 TTL/次数不能突破这两个服务端上限。签发时只接受策略允许的 Scope，服务端按 HTTP 方法与路径校验。完成、断开或 Grant 到期、次数耗尽后无法继续使用。它是一种**按 URL/方法授权**的临时能力，不等于针对 Artifact ID、Keychain 名称、远程设备目录的细粒度资源权限，也不限制脚本在本机自行执行 Python/OS 操作。
 
-特别注意：Web 结构化运行会基于 Metadata 创建 Grant Request；终端 `exec` 的轻量执行方式不会自动采取相同的授权请求构造流程。直接在另一个环境启动 Python 文件也不会自动获得 Server Script Grant。如果缺少权限，SDK 应明确报错，而不是建议把管理员 API Token 硬编码进脚本。详细的认证体系与 Script Grant 机制见 [Administrator Authentication](admin-auth.md)。
+特别注意：Web 结构化运行会基于 Metadata 创建 Grant Request；终端 `script exec` 的轻量执行方式不会自动采取相同的授权请求构造流程。直接在另一个环境启动 Python 文件也不会自动获得 Server Script Grant。如果缺少权限，SDK 应明确报错，而不是建议把管理员 API Token 硬编码进脚本。详细的认证体系与 Script Grant 机制见 [Administrator Authentication](admin-auth.md)。
 
 ### 执行中请求浏览器决策
 
@@ -299,3 +299,10 @@ Run API 要求 `script_name` 非空、`params` 为对象，并明确提供 `pres
 | 上传文件后找不到 | Artifact 类型、返回的 `artifact_id`、Client/Command 关联及 Artifact 当前可用性 |
 
 Script 的边界不是“只要是 Python 就能无条件使用全部 Client 能力”。当需要增加功能，应先判断它属于 Library 管理、Metadata 表单、任务执行、SDK、授权，还是特定的文件/监控/Job 生命周期，再接入已有对应服务。这样能保持 Script 的一次性任务语义清晰，也便于沿着真实错误来源排查。
+
+
+## Server `script` 一级命令（统一入口）
+
+`script` / `script list` 默认沿用原 `exec` 无参数时的 Server Script 相对路径列表。`script list --json` 输出简化的 `name`（相对路径）、`display_name`、`description` 与 `params`（仅参数名数组）；`script view <path>` 返回 Server 上的脚本源码，严格限制在 Script 根目录。
+
+`script exec <path> [options]` 继承原 Terminal `exec` 的 `shlex`、`scan_args` 参数语义；`script run <__json__:payload>` 继承原 `run_script` 的结构化 Metadata 参数、授权信息与 Script Library UI 流程。两者解析后都构造 Script Plan，向 Client 派发 `COMMAND_TYPE_SCRIPT`，不在 Client 新增 `script`/`run_script` 文本命令。旧 `exec`、`run_script` 不作为独立的 Server Builtin 注册。UI 内部 `script run` 保留原有 Base64 JSON 传输，用户手动输入可使用 `script exec`。

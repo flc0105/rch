@@ -577,7 +577,7 @@ export default {
 
       const commandName = String(commandMatch[1] || '').trim().toLowerCase()
       const argumentText = String(commandMatch[2] || '')
-      const dynamicCommands = ['gopin', 'set', 'history', 'alias', 'httpctl', 'exec', 'xt']
+      const dynamicCommands = ['gopin', 'set', 'history', 'alias', 'httpctl', 'script', 'job', 'xt']
 
       if (!dynamicCommands.includes(commandName)) {
         return null
@@ -1161,7 +1161,7 @@ export default {
           return
         }
 
-        // 仍然只基于标题筛选；exec 仅按脚本路径/文件名做保守模糊匹配。
+        // 仍然只基于标题筛选；script exec 仅按脚本路径/文件名做保守模糊匹配。
         if (this.isExecScriptPathCandidateMatch(item, normalizedKeyword)) {
           fuzzyMatches.push(item)
         }
@@ -1179,7 +1179,7 @@ export default {
       if (!this.isExecScriptCandidate(item)) return false
 
       const scriptPath = this.getExecScriptPathSearchText(item)
-      const queryText = String(keyword || '').trim().toLowerCase().replace(/^exec\s+/, '')
+      const queryText = String(keyword || '').trim().toLowerCase().replace(/^script\s+exec\s+/, '')
       const tokens = queryText.split(/\s+/).filter(Boolean)
 
       if (!scriptPath || !tokens.length) return false
@@ -1193,7 +1193,7 @@ export default {
       if (metadataScript) return metadataScript.toLowerCase()
 
       return this.getCandidateTitleText(item)
-        .replace(/^exec\s+/i, '')
+        .replace(/^script\s+exec\s+/i, '')
         .trim()
         .toLowerCase()
     },
@@ -1464,7 +1464,7 @@ const pinnedHistoryItems = historyItems.filter(item => item && item.is_pinned)
         source === 'script' ||
         group === 'script' ||
         groupLabel === 'script' ||
-        /^exec\s+/i.test(commandText)
+        /^script\s+exec\s+/i.test(commandText)
       )
     },
 
@@ -1474,7 +1474,7 @@ const pinnedHistoryItems = historyItems.filter(item => item && item.is_pinned)
 
     getExecScriptRoot(item) {
       const commandText = this.getCandidateCommandText(item)
-      const match = commandText.match(/^exec\s+(.+)$/i)
+      const match = commandText.match(/^script\s+exec\s+(.+)$/i)
 
       if (!match) return ''
 

@@ -7,7 +7,6 @@ Recording rules live here (not scattered through execution, Activity, or UI):
   these are Quick management/replay operations, not new submitted commands.
 * Never record Web API, Quick Action UI, Script Library UI or internal tasks
   (uploads, remote files, process, jobs, external tools).
-* Never record the UI-only encoded `run_script __json__:` transport.
 * A user's command is stored as typed, not as Alias expansion or replay target.
   Pins remain independent even after Recent is cleared or an Activity deleted.
 """
@@ -22,7 +21,6 @@ QUICK_EXCLUDED_TASK_TYPES = frozenset({'upload', 'remote_file', 'process', 'job_
 QUICK_EXCLUDED_META_FLAGS = frozenset({'quick_action', 'script_run'})
 QUICK_MANAGEMENT_PATTERN = re.compile(r'^history(?:\s|$)', re.IGNORECASE)
 QUICK_REPLAY_PATTERN = re.compile(r'^(?:history\s+run\s+\d+|!\d+)$', re.IGNORECASE)
-QUICK_TRANSPORT_PATTERN = re.compile(r'^run_script\s+__json__:', re.IGNORECASE)
 QUICK_FINAL_STATUSES = frozenset({'success', 'error', 'cancelled', 'interrupted', 'timed_out', 'stopped'})
 
 
@@ -46,7 +44,7 @@ class QuickHistoryRecordPolicy:
             return False
         return not (cls.is_history_management_command(command)
                     or cls.is_history_replay_command(command)
-                    or QUICK_TRANSPORT_PATTERN.match(command))
+                    )
 
 
 class QuickHistoryStore:

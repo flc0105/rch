@@ -1,4 +1,5 @@
 import json
+import os
 import re
 import shlex
 
@@ -17,6 +18,7 @@ class AliasManager:
     def __init__(self):
         self.alias_path = ALIAS_PATH
         self.aliases = self._create_empty_aliases()
+        self._file_signature = None
         self.load_aliases()
 
     # ------------------ 持久化 ------------------ #
@@ -95,17 +97,35 @@ class AliasManager:
         }
         return normalized
 
+    def _file_state(self):
+        try:
+            stat = os.stat(self.alias_path)
+            return (stat.st_mtime_ns, stat.st_size)
+        except FileNotFoundError:
+            return None
+
     def load_aliases(self):
-        """从文件中加载命令别名"""
+        """Load current alias definitions and remember the on-disk fingerprint."""
         try:
             payload = self._read_alias_file()
             self.aliases = self._normalize_alias_payload(payload)
-        except (FileNotFoundError, json.JSONDecodeError):
+        except FileNotFoundError:
             self.aliases = self._create_empty_aliases()
+        except json.JSONDecodeError as exc:
+            raise ValueError(f'Invalid aliases.json: {exc}') from exc
+        self._file_signature = self._file_state()
+
+    def _ensure_fresh(self):
+        """File-based live reload; no user-facing reload subcommand necessary."""
+        if not hasattr(self, 'alias_path'):
+            return
+        if self._file_state() != getattr(self, '_file_signature', None):
+            self.load_aliases()
 
     def save_aliases(self):
         """保存命令别名到文件"""
         self._write_alias_file(self.aliases)
+        self._file_signature = self._file_state()
 
     # ------------------ 平台解析 ------------------ #
     def get_platform_for_connection(self, conn=None) -> str:
@@ -119,6 +139,7 @@ class AliasManager:
         )
 
     def get_effective_aliases(self, conn=None) -> dict:
+        self._ensure_fresh()
         platform_name = self.get_platform_for_connection(conn)
         result = dict(self.aliases.get('common') or {})
 
@@ -134,6 +155,7 @@ class AliasManager:
 
     def add_alias(self, alias, command, platform: str = 'common'):
         """添加别名"""
+        self._ensure_fresh()
         alias_name = str(alias or '').strip()
         command_text = str(command or '').strip()
         platform_name = self.normalize_platform(platform)
@@ -155,6 +177,7 @@ class AliasManager:
             platform: str = 'common',
     ):
         """更新 alias；跨名称/平台移动时只进行一次持久化。"""
+        self._ensure_fresh()
         original_name = str(original_alias or '').strip()
         alias_name = str(alias or '').strip()
         command_text = str(command or '').strip()
@@ -182,6 +205,7 @@ class AliasManager:
         self.save_aliases()
 
     def remove_alias(self, alias, platform: str = ''):
+        self._ensure_fresh()
         """移除别名"""
         alias_name = str(alias or '').strip()
         if not alias_name:
@@ -208,6 +232,7 @@ class AliasManager:
         return self.get_effective_aliases(conn)
 
     def list_aliases_for_platform(self, platform: str, conn=None) -> dict:
+        self._ensure_fresh()
         platform_name = self.normalize_platform(platform, allow_empty=True, allow_all=True)
         if platform_name == 'all':
             return self.list_aliases_grouped()
@@ -216,12 +241,14 @@ class AliasManager:
         return dict(self.aliases.get(platform_name) or {})
 
     def list_aliases_grouped(self):
+        self._ensure_fresh()
         return {
             platform_name: dict(self.aliases.get(platform_name) or {})
             for platform_name in self.SUPPORTED_PLATFORMS
         }
 
     def get_alias_definition(self, alias: str, platform: str) -> str:
+        self._ensure_fresh()
         alias_name = str(alias or '').strip()
         platform_name = self.normalize_platform(platform)
         command = (self.aliases.get(platform_name) or {}).get(alias_name)

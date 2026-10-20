@@ -8,6 +8,7 @@ from core.platform.normalization import normalize_platform_alias
 from core.command_completion.provider import CommandCompletionProvider
 from server.application.history.quick_history import QuickHistoryRecordPolicy
 from server.config.config import SCRIPT_PATH
+from server.application.command.server_builtin_registry import SERVER_COMMAND_REGISTRY
 
 
 class ServerCompletionSessionMixin:
@@ -212,81 +213,33 @@ class HistoryCommandCompletionProvider(ServerCompletionSessionMixin, CommandComp
         return result
 
 
-class AliasCommandCompletionProvider(CommandCompletionProvider):
-    """
-    server alias 菜单子命令补全；不读取 alias.json，不补具体别名。
-    """
-
-    command_names = ('alias',)
-    source = 'server_alias'
-    group = 'alias'
-
-    def __init__(self, alias_manager):
-        self.alias_manager = alias_manager
+class RegisteredServerSubcommandCompletionProvider(CommandCompletionProvider):
+    """Static subcommand autocomplete comes directly from executable registry."""
+    command_names = tuple(spec.name for spec in SERVER_COMMAND_REGISTRY._commands.values()
+                          if spec.subcommands)
+    source = 'server'
+    group = 'server'
 
     def complete(self, context: CompletionContext) -> list[CompletionCandidate]:
-        return self._build_candidates()
+        spec = SERVER_COMMAND_REGISTRY.get(context.command_name)
+        if not spec or not spec.subcommands:
+            return []
+        return [CompletionCandidate(
+            title=f'{spec.name} {sub.name}',
+            insert_text=f'{spec.name} {sub.name}' + (' ' if sub.name in
+                {'exec', 'run', 'view', 'start', 'status', 'stop', 'set', 'unset', 'info', 'which'} else ''),
+            description=sub.description,
+            source=self.source, group=spec.group, kind='server_subcommand',
+            name=sub.name, priority=18 + i,
+        ) for i, sub in enumerate(spec.subcommands) if sub.visibility == 'public']
 
-    def _build_candidates(self) -> list[CompletionCandidate]:
-        platforms = '|'.join(self.alias_manager.get_supported_platforms())
-        menu_items = (
-            ('alias resolve', 'Show resolved aliases for current client platform'),
-            ('alias set ', f'Create or update an alias: alias set [--platform {platforms}] name = command'),
-            ('alias unset ', f'Remove an alias: alias unset [--platform {platforms}] name'),
-            ('alias list', 'List all platform aliases'),
-            ('alias reload', 'Reload alias definitions'),
-        )
-        result = []
-        for index, (insert_text, description) in enumerate(menu_items):
-            result.append(CompletionCandidate(
-                title=insert_text,
-                insert_text=insert_text,
-                description=description,
-                source=self.source,
-                group=self.group,
-                kind='alias_menu',
-                name=insert_text.replace('alias ', '').strip() or 'alias',
-                priority=20 + index,
-            ))
-        return result
 
-class HttpctlCommandCompletionProvider(CommandCompletionProvider):
+class ScriptCommandCompletionProvider(ServerCompletionSessionMixin, CommandCompletionProvider):
     """
-    server httpctl 子命令补全。
+    server script exec 脚本补全。
     """
 
-    command_names = ('httpctl',)
-    source = 'server_httpctl'
-    group = 'control'
-
-    ACTIONS = (
-        ('kill', 'Terminate the current agent process via remote watchdog.'),
-        ('relaunch', 'Launch a replacement agent, then terminate the current agent process.'),
-        ('clone', 'Launch another agent instance without stopping the current one.'),
-    )
-
-    def complete(self, context: CompletionContext) -> list[CompletionCandidate]:
-        return [
-            CompletionCandidate(
-                title=f'httpctl {name}',
-                insert_text=f'httpctl {name}',
-                description=description,
-                source=self.source,
-                group=self.group,
-                kind='control',
-                name=name,
-                priority=20,
-            )
-            for name, description in self.ACTIONS
-        ]
-
-
-class ExecScriptCommandCompletionProvider(ServerCompletionSessionMixin, CommandCompletionProvider):
-    """
-    server exec 脚本补全。
-    """
-
-    command_names = ('exec',)
+    command_names = ('script',)
     source = 'script'
     group = 'script'
 
@@ -295,11 +248,14 @@ class ExecScriptCommandCompletionProvider(ServerCompletionSessionMixin, CommandC
         self.script_root = script_root
 
     def complete(self, context: CompletionContext) -> list[CompletionCandidate]:
+        tail = str(context.argument_text or '').strip().lower()
+        if tail and tail != 'exec' and not tail.startswith('exec '):
+            return []
         current_os_alias = self.get_client_platform(context)
         result = []
 
         for script in self._list_scripts(current_os_alias):
-            insert_text = f'exec {script}'
+            insert_text = f'script exec {script}'
             result.append(CompletionCandidate(
                 title=insert_text,
                 insert_text=insert_text,
@@ -360,9 +316,7 @@ class ExternalToolCommandCompletionProvider(ServerCompletionSessionMixin, Comman
         self.external_tool_catalog_service = external_tool_catalog_service
 
     def complete(self, context: CompletionContext) -> list[CompletionCandidate]:
-        items = self._build_subcommand_candidates()
-        items.extend(self._build_exec_candidates(context))
-        return items
+        return self._build_exec_candidates(context)
 
     def _build_subcommand_candidates(self) -> list[CompletionCandidate]:
         return [
@@ -483,3 +437,31 @@ class RemoteClientCommandCompletionProvider(CommandCompletionProvider):
             priority=int(item.get('priority') or 100),
             metadata=metadata,
         )
+
+
+class JobCommandCompletionProvider(ServerCompletionSessionMixin, CommandCompletionProvider):
+    """Dynamic job start candidates; static subcommands come from the registry."""
+    command_names = ('job',)
+    source = 'server_job'
+    group = 'job'
+
+    def __init__(self, server):
+        ServerCompletionSessionMixin.__init__(self, server)
+
+    def complete(self, context: CompletionContext) -> list[CompletionCandidate]:
+        tail = str(context.argument_text or '').strip().lower()
+        if tail and tail != 'start' and not tail.startswith('start '):
+            return []
+        client_id = self.get_client_id(context)
+        if not client_id:
+            return []
+        try:
+            items = self.server.web_service.job_api.list_background_job_catalog(client_id)
+        except (AttributeError, ValueError, LookupError):
+            return []
+        return [CompletionCandidate(
+            title=f'job start {name}', insert_text=f'job start {name}',
+            description='Start a Server-managed job on this Client', source=self.source,
+            group=self.group, kind='job', name=name, priority=31 + i,
+        ) for i, item in enumerate(items or [])
+            if (name := str(item.get('job_name') or '').strip())]

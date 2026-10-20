@@ -25,7 +25,7 @@ def test_client_commands_are_registered_without_old_aliases():
     for name in names:
         assert hasattr(CommonRuntimeCommands, name)
         assert hasattr(getattr(CommonRuntimeCommands, name), 'help')
-        assert name not in [x['name'] for x in BuiltinCommandHandler.WEB_COMMAND_TEMPLATES]
+        assert name not in [x['name'] for x in BuiltinCommandHandler.REGISTRY.candidates()]
     for old in ('kill_by_port', 'kill_process_preview'):
         assert not hasattr(CommandProcessMixin, old)
     for name in ('kill_process', 'kill_connection', 'disconnect'):

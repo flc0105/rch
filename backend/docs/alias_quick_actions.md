@@ -43,7 +43,7 @@ Alias 本体由 Server 全局管理，持久化在 `backend/server/resources/ali
 }
 ```
 
-同一组内，一个名称只对应一条模板；不同平台组可以出现同名定义。文件不是按机器或连接分别存放的，而是当前 Server 实例共享的配置。管理接口统一以分平台结构写入。读取时过滤空名称和空模板；文件不存在或 JSON 无法解析时，内存别名表会退回空配置。修改配置前应避免让损坏的文件被误当成有效的空配置覆盖。
+同一组内，一个名称只对应一条模板；不同平台组可以出现同名定义。文件不是按机器或连接分别存放的，而是当前 Server 实例共享的配置。管理接口统一以分平台结构写入。读取时过滤空名称和空模板；文件不存在则使用空配置，JSON 无法解析时拒绝该次刷新，不覆盖当前有效内存定义。修改配置前应避免让损坏的文件被误当成有效的空配置覆盖。
 
 这里必须区分**磁盘文件与 AliasManager 的内存快照**：
 
@@ -52,40 +52,39 @@ Alias 本体由 Server 全局管理，持久化在 `backend/server/resources/ali
 | Server 初始化 | 读取一次 `aliases.json` |
 | `alias set`、`alias unset` | 改写当前内存定义，并保存完整 JSON |
 | Quick Actions 新增、编辑、删除 | 使用同一个内存定义管理器，并保存 JSON；编辑移动作用域时一次写入 |
-| `alias` / `alias resolve`、`alias list` | 查询前主动从磁盘重载，再生成视图 |
-| `alias reload` | 显式丢弃当前内存快照，重新从磁盘加载 |
+| `alias` / `alias list` | 显示 common 与目标 Client 平台合并后的生效定义，支持 `--json` |
+| 普通 Alias 展开 / Web 管理修改 | 检测文件 mtime_ns 与大小变化，有变化则在下一次 Alias 访问时自动重新读取 |
 | 打开或刷新 Web Quick Actions 列表 | GET 时主动从磁盘重载，再返回所有平台定义 |
-| 普通 Alias 调用 | 使用当前内存定义，**不会每次调用自动读盘** |
-| Terminal 普通命令候选查询 | 从当前内存定义生成候选，**不额外自动读盘** |
+| 普通 Alias 调用 | 检查磁盘文件指纹；未改变则直接复用内存定义，有变化则重新加载 |
+| Terminal 普通命令候选查询 | 通过 AliasManager 检测配置变化，再生成当前连接有效候选 |
 
-因此，通过文件编辑器直接修改 JSON 后，推荐先执行 `alias reload` 或进行会触发加载的查询，再运行 Alias。某次 `alias list` 或 Quick Actions GET 本身会刷新同一个 Server 管理器，后续普通调用可能已经看到新值；但**已经在浏览器缓存的补全候选或先前打开的列表不会因此自动重新渲染**，需重新加载对应界面或候选数据。
+因此，通过文件编辑器直接修改 JSON 后，下次 AliasManager 查询或执行时检测文件变化并自动重载，无需再调用 `reload`。某次 `alias list` 或 Quick Actions GET 本身会刷新同一个 Server 管理器，后续普通调用可能已经看到新值；但**已经在浏览器缓存的补全候选或先前打开的列表不会因此自动重新渲染**，需重新加载对应界面或候选数据。
 
-尤其不要在直接编辑 JSON 后，未经重载就从另一个入口修改 Alias：写入操作按**当前内存快照**保存整份文件，可能把刚才手动编辑、但尚未加载的内容覆盖掉。此处也没有文件系统热监听、按机器分别同步配置，或分布式多 Server 的冲突合并机制。
+通过外部编辑器修改 JSON 后，下一次使用 AliasManager 修改配置前也会读取最新文件，防止继续用旧内存快照覆盖外部编辑；独立 Server 实例之间仍没有分布式写入协调。此处也没有文件系统热监听、按机器分别同步配置，或分布式多 Server 的冲突合并机制。
 
 工具栏 Pin 是另一份数据：记录在 `runtime/rch.db` 的 `settings` 表、`toolbar_preferences` 命名空间下，不写进 `aliases.json`。它保存的只是平台和名称引用，不复制命令模板。两份数据的写入及失败处理也不具备统一事务。
 
 ### 写入、删除和查询定义
 
-终端中的 `alias` 是 **Server Built-in**，负责查询及维护 Server 的 JSON 定义，不是远程操作系统的 Shell 内建命令。当前支持 `resolve`、`list`、`set`、`unset` 和 `reload` 五种管理动作；不必先进入客户端 Shell。
+终端中的 `alias` 是 **Server Built-in**，负责查询及维护 Server 的 JSON 定义，不是远程操作系统的 Shell 内建命令。当前仅支持 `list`、`set`、`unset` 三种管理动作；不必先进入客户端 Shell。
 
-直接输入 `alias` 与 `alias resolve` 等效，展示目标连接的 **生效合并视图**；可在末尾加 `--json`（或 `json`）取得同一组结构化数据。`alias list` 则查看**所有平台的原始定义**，可以在命令开头加 `--platform`（简写 `-p`）缩小到一组，末尾加 `--json` 导出 JSON。这里的“所有”是 `alias list` 的默认含义，**当前 CLI 并不接受 `--platform all`**。
+直接输入 `alias` 等价于 `alias list`，只显示 common 与目标 Client 平台覆盖后的**生效** Alias 列表；`alias list --json`、`alias --json` 输出相同结果的结构化数组。已删除公开 `resolve`、`reload` 和原 `alias list --platform` 跨平台清单入口；平台原始定义仍在 JSON 与 Web Quick Actions 管理接口中保存、编辑，绝不删除其他平台配置。
 
-创建或覆盖某个平台上的定义，使用 `alias set [--platform 平台] 名称 = 模板文本`；删除用 `alias unset [--platform 平台] 名称`。未写 `--platform` 时，这两个操作都只作用于 `common`，**不会自动删除/修改同名的平台专用定义**。`set` 在所选作用域内同名时是替换；终端写法按第一个 `=` 分隔名称与模板，其后作为模板正文保存，不需要把命令整段重新按 Shell 参数解析。`alias reload` 用于丢弃内存快照并从 JSON 读回。
+创建或覆盖某个平台上的定义，使用 `alias set [--platform 平台] 名称 = 模板文本`；删除用 `alias unset [--platform 平台] 名称`。未写 `--platform` 时，这两个操作都只作用于 `common`，**不会自动删除/修改同名的平台专用定义**。`set` 在所选作用域内同名时是替换；终端写法按第一个 `=` 分隔名称与模板，其后作为模板正文保存，不需要把命令整段重新按 Shell 参数解析。AliasManager 在读取与修改时自动检查磁盘文件是否变化；无需手动 Reload。
 
 下面用一个临时自定义名称说明完整管理操作，而不是列举项目现有 Alias：
 
 ```text
 alias set --platform common sample = shell echo "<message>"
-alias resolve --json
-alias list --platform common --json
-sample "hello world"
-alias unset --platform common sample
-alias reload
+alias list --json
+alias
+alias set now = pyexec_collect print(1)
+alias unset now
 ```
 
-其中保存后的 `sample` 调用按模板绑定 `message`，在 Client 侧运行展开的普通命令；`resolve` 与 `list` 的 JSON 都是**查询结果**，不是用 `--json` 改变被保存的模板。管理命令的输出使用 Structured Command Output 的文本表格或 JSON 渲染。
+其中保存后的 `sample` 调用按模板绑定 `message`，在 Client 侧运行展开的普通命令；`alias list --json` 是**查询结果**，不是用 `--json` 改变被保存的模板。管理命令的输出使用 Structured Command Output 的文本表格或 JSON 渲染。
 
-参数位置存在实际限制：`--platform` / `-p` 只在子命令后、被解析文本的开头识别；`list` 的格式后缀应放在末尾，例如 `alias list --platform mac --json`，不能假定所有选项任意换序都等价。`resolve` 不接受额外筛选参数，`reload` 也不接受参数。删除定义使用 `alias unset`。
+参数位置存在实际限制：`--platform` / `-p` 只在子命令后、被解析文本的开头识别；`list` 只接受可选的 `--json` 输出标志，不能假定所有选项任意换序都等价。原 `resolve/reload` 已移除。删除定义使用 `alias unset`。
 
 Server 内建命令会先于 Alias 名称进行识别；顶层 `acmd` 也优先于 Alias 名称。因此应避免使用和已有 Server Built-in 或保留入口冲突的 Alias 名称，否则可能无法从普通终端按 Alias 调用。Alias 新建与改名都经 `AliasManager.MAX_ALIAS_NAME_LENGTH = 32` 统一校验名称长度，超过 32 个字符会拒绝保存，已存在的定义不因校验失败而被覆写；通过 CLI 设置 Alias 时检查名称、模板非空及长度；Web 编辑器还禁止名称含空白字符，建议始终使用无空格名称。
 
@@ -170,7 +169,7 @@ Quick Actions 的 Dialog / Terminal 两种呈现方式都通过 Metadata 保留�
 
 通过编辑器改名、跨平台移动或删除时，前端会尝试同步迁移/移除旧 Pin，但 Alias JSON 与 SQLite 偏好是两次独立保存：Alias 操作成功而 Pin 更新失败时，界面提示部分成功，不保证自动回滚。普通 Toolbar Settings 保存布局时会尽量保留现有 Pin 列表，避免一次布局修改清空固定命令。
 
-Terminal 的命令候选包含当前有效 Alias 名称，帮助信息标示它来自哪个平台及其模板；`alias` 管理子命令也有专门的自动补全提示。候选生成依赖 Server 当前内存 Alias 表以及浏览器的候选缓存，**不能把补全结果当成磁盘配置实时刷新机制**。定义更新后如候选仍旧，应刷新候选或重新进入相应界面；Quick Actions 列表 GET 才保证在该请求时从 JSON 重新加载。
+Terminal 的命令候选包含当前有效 Alias 名称，帮助信息标示它来自哪个平台及其模板；`alias` 管理子命令由统一 Server Registry 自动产生静态补全提示。候选生成依赖 Server 当前内存 Alias 表以及浏览器的候选缓存，**不能把补全结果当成磁盘配置实时刷新机制**。定义更新后如候选仍旧，应刷新候选或重新进入相应界面；通过 AliasManager 的查询或执行入口会自动检查并载入磁盘变化。
 
 Web 接口以目标 Client 为上下文，基础路径为 `/api/connections/{client_id}/quick-actions`。GET 读取平台和定义列表；POST 新增；PUT 更新（需要原 `original_platform` 和 `original_alias`）；DELETE 删除。执行为 `POST /api/connections/{client_id}/quick-actions/execute`，请求以 `platform`、`alias` 定位原始定义，`arguments` 是**按占位符首次出现顺序排列的数组**，`presentation` 为 `dialog` 或 `terminal`，还可携带 `run_id`。服务端重新验证目标连接、平台、定义、参数数量及展示方式，并返回 `task_id`、运行 ID、显示命令、展开命令与提交命令等信息。终端 Alias 的命名参数文本格式**不适用于这里的 `arguments` 字段**。
 

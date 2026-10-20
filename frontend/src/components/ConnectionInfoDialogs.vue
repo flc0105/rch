@@ -260,6 +260,16 @@
               Command List
             </div>
 
+            <div v-if="connectionInfoServerCommands.length" class="connection-command-panel-title">Server Commands</div>
+            <div v-if="connectionInfoServerCommands.length" class="connection-command-list">
+              <div v-for="item in connectionInfoServerCommands" :key="`server-${item.name}`" class="connection-command-item">
+                <div class="connection-command-group"><span>{{ item.group || 'server' }}</span></div>
+                <div class="connection-command-text">
+                  <span class="mono">{{ item.name }}</span><span v-if="item.help"> — {{ item.help }}</span>
+                </div>
+              </div>
+            </div>
+            <div class="connection-command-panel-title">Client Commands</div>
             <div class="connection-command-list">
               <div
                 v-for="(item, index) in connectionInfoClientCommands"
@@ -551,6 +561,7 @@ export default {
       valueTitle: '',
       valueValue: '',
       connectionInfoClientCommands: [],
+      connectionInfoServerCommands: [],
       activeTab: 'basic',
       runtimeConfigItems: [],
       runtimeConfigStorePath: '',
@@ -778,6 +789,7 @@ export default {
       this.valueTitle = ''
       this.valueValue = ''
       this.connectionInfoClientCommands = []
+      this.connectionInfoServerCommands = []
       this.activeTab = 'basic'
       this.runtimeConfigItems = []
       this.runtimeConfigStorePath = ''
@@ -1002,6 +1014,9 @@ export default {
         throw new Error(json.message || 'Failed to load command candidates')
       }
 
+      this.connectionInfoServerCommands = (Array.isArray(json.data) ? json.data : [])
+        .filter(item => item && item.source === 'server')
+        .map(item => this.normalizeConnectionInfoCommand(item))
       this.connectionInfoClientCommands = (Array.isArray(json.data) ? json.data : [])
         .filter(item => item && item.source === 'client' && item.suggest !== false)
         .map(item => this.normalizeConnectionInfoCommand(item))

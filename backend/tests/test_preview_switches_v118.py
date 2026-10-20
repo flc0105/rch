@@ -103,7 +103,7 @@ def test_client_process_signal_only_follows_approved_switch(monkeypatch):
 
 def test_disconnect_stays_server_builtin_and_client_commands_do_not_shadow_it():
     assert any(x['name'] == 'disconnect' and x['source'] == 'server'
-               for x in BuiltinCommandHandler.WEB_COMMAND_TEMPLATES)
+               for x in BuiltinCommandHandler.REGISTRY.candidates())
     assert hasattr(BuiltinCommandHandler, 'disconnect')
     assert not hasattr(CommandProcessMixin, 'disconnect')
     from server.application.command.advanced_builtin_support import AdvancedBuiltinSupport

@@ -1,3 +1,4 @@
+from server.application.command.server_builtin_registry import SERVER_COMMAND_REGISTRY
 from server.application.command.builtin_command_support import (
     AliasBuiltinSupport,
     HistoryBuiltinSupport,
@@ -24,83 +25,7 @@ class BuiltinCommandHandler:
     - 不负责命令总路由，也不直接决定 alias / default / acmd 的分流
     """
 
-    WEB_COMMAND_TEMPLATES = [
-        {'name': 'disconnect', 'template': 'disconnect',
-         'help': 'disconnect | Confirm then close current client connection', 'source': 'server'},
-        {
-            'name': 'upload',
-            'template': 'upload ',
-            'help': 'upload <local_file> | Upload a local file to the client',
-            'source': 'server'
-        },
-        {
-            'name': 'exec',
-            'template': 'exec ',
-            'help': 'exec <script.py> | Execute a server-side Python script on the client',
-            'source': 'server'
-        },
-        {
-            'name': 'run_script',
-            'template': 'run_script ',
-            'help': 'run_script <payload> | Execute a structured server-side script on the client',
-            'source': 'server'
-        },
-        {
-            'name': 'alias',
-            'template': 'alias ',
-            'help': 'alias set|unset|list|resolve|reload [--platform supported-platform]',
-            'source': 'server'
-        },
-        {
-            'name': 'job',
-            'template': 'job ',
-            'help': JobBuiltinSupport.HELP,
-            'source': 'server'
-        },
-        {
-            'name': 'history',
-            'template': 'history',
-            'help': 'Show de-duplicated command history for the current host. Use history run <index> or !<index> to run an item quickly',
-            'source': 'server'
-        },
-        {
-            'name': 'gopin',
-            'template': 'gopin ',
-            'help': 'gopin <display_name> | Jump to a saved quick jump path for the current host',
-            'source': 'server'
-        },
-        {
-            'name': 'rtt',
-            'template': 'rtt',
-            'help': 'Show current heartbeat RTT / last seen state',
-            'source': 'server'
-        },
-        {
-            'name': 'httpctl',
-            'template': 'httpctl ',
-            'help': 'httpctl kill|relaunch|clone | Client HTTP control channel',
-            'source': 'server'
-        },
-
-        {
-            'name': 'saveout',
-            'template': 'saveout ',
-            'help': 'saveout <client-command> | Save full client command output as artifact',
-            'source': 'server'
-        },
-        {
-            'name': 'notify',
-            'template': 'notify ',
-            'help': 'notify <client-command> | Run a client command and notify when it finishes',
-            'source': 'server'
-        },
-        {
-            'name': 'xt',
-            'template': 'xt ',
-            'help': 'xt list|info|which|<alias> [--] <raw args> | External tool CLI facade',
-            'source': 'server'
-        },
-    ]
+    REGISTRY = SERVER_COMMAND_REGISTRY
 
     def __init__(
         self,
@@ -180,7 +105,7 @@ class BuiltinCommandHandler:
         )
 
     def get_command_candidates(self):
-        candidates = [dict(item) for item in self.WEB_COMMAND_TEMPLATES]
+        candidates = self.REGISTRY.candidates()
 
         for item in self.alias_support.list_resolved_aliases():
             alias_name = item.get('alias') or ''
@@ -200,14 +125,61 @@ class BuiltinCommandHandler:
         return candidates
 
     def resolve_builtin_command(self, name, arg):
-        if not hasattr(self, name):
+        if self.REGISTRY.get(name) is None:
             return None
+        try:
+            spec, subcommand, remaining = self.REGISTRY.parse(name, arg)
+        except ValueError as exc:
+            return iter(((0, str(exc)),))
+        handler = getattr(self, spec.handler)
+        if subcommand is None:
+            return handler(remaining)
+        if name == 'script':
+            return self.script_support.script(subcommand, remaining)
+        if name == 'alias':
+            return self.alias_support.execute_subcommand(subcommand, remaining)
+        if name == 'job':
+            return self.job_support.execute_subcommand(subcommand, remaining)
+        # XT, History and HTTP control keep their existing business-specific
+        # argument semantics; only command/subcommand recognition is centralized.
+        if name == 'history' and subcommand == 'list':
+            return handler('')
+        if name == 'xt' and subcommand == '__direct__':
+            return handler(remaining)
+        if name == 'httpctl' and subcommand == 'help':
+            return handler('help')
+        return handler(subcommand + ((' ' + remaining) if remaining else ''))
 
-        handler = getattr(self, name)
-        if not callable(handler):
-            return None
+    def server_help(self, target=''):
+        target = str(target or '').strip()
+        if target in ('', 'server'):
+            lines = ['Server Commands:', self.REGISTRY.help()]
+            if target == '':
+                lines.extend(['', 'Client Commands:', self._client_help(),
+                              '', 'Aliases:', self._alias_help()])
+            yield 1, '\n'.join(lines)
+            return
+        if target == 'client':
+            yield 1, self._client_help()
+            return
+        if target == 'alias':
+            yield 1, self._alias_help()
+            return
+        try:
+            yield 1, self.REGISTRY.help(target)
+        except ValueError as exc:
+            yield 0, str(exc)
 
-        return handler(arg)
+    def _client_help(self):
+        manifest = getattr(getattr(self.conn, 'session_info', None), 'command_manifest', None) or []
+        lines = [f"{str(item.get('name') or ''):<22} {str(item.get('help') or '')}"
+                 for item in manifest if isinstance(item, dict)
+                 and item.get('name') and item.get('suggest', True) is not False]
+        return '\n'.join(sorted(lines, key=str.lower)) or 'No Client commands available'
+
+    def _alias_help(self):
+        rows = self.alias_support.list_resolved_aliases()
+        return '\n'.join(f"{row['alias']} -> {row['command']}" for row in rows) or 'No aliases available'
 
     def upload(self, filename):
         for item in self.upload_support.upload(filename):
@@ -226,21 +198,9 @@ class BuiltinCommandHandler:
             yield item
 
 
-    def exec(self, filename):
-        if not filename:
-            yield 1, '\n'.join(self.script_support.list_scripts())
-            return
-
-        for item in self.script_support.execute_script_file(filename):
-            yield item
-
-    def run_script(self, payload_text):
-        if not payload_text:
-            yield 0, 'Usage: run_script <payload>'
-            return
-
-        for item in self.script_support.execute_script_payload(payload_text):
-            yield item
+    def script(self, arg=''):
+        # Subcommand resolution is managed by the shared registry.
+        yield from self.script_support.script(*self.REGISTRY.parse('script', arg)[1:])
 
     def alias(self, arg=''):
         for item in self.alias_support.alias(arg):

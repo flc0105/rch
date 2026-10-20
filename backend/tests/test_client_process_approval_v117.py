@@ -42,7 +42,7 @@ def test_shell_like_registry_and_positional_grammar():
     assert not hasattr(BuiltinCommandHandler, 'kill_port')
     assert not hasattr(BuiltinCommandHandler, 'kill_proc')
     assert all(c['name'] not in ('kill_port', 'kill_proc')
-               for c in BuiltinCommandHandler.WEB_COMMAND_TEMPLATES)
+               for c in BuiltinCommandHandler.REGISTRY.candidates())
     assert aps.parse_target('9999', by_port=True) == {'port': 9999}
     assert aps.parse_target('9999 -9', by_port=True) == {'port': 9999, 'force': True}
     assert aps.parse_target('30565') == {'pid': 30565}
@@ -188,7 +188,7 @@ def test_actual_client_manifest_yields_only_plain_command_name_candidates():
     server = SimpleNamespace(get_target_connection_by_client_id=lambda _: client)
     catalog = WebCommandCatalogApi(
         server, SimpleNamespace(create=lambda _: SimpleNamespace(
-            get_command_candidates=lambda: [dict(item) for item in BuiltinCommandHandler.WEB_COMMAND_TEMPLATES])))
+            get_command_candidates=lambda: [dict(item) for item in BuiltinCommandHandler.REGISTRY.candidates()])))
     candidates = catalog.get_command_candidates('client-A')
     for name in ('kill_port', 'kill_proc'):
         rows = [c for c in candidates if c['name'] == name]

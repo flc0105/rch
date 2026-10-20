@@ -1,13 +1,15 @@
 from core.command_completion.parser import CommandCompletionParser
 from core.command_completion.registry import CommandCompletionRegistry
 from server.application.completion.command_completion_providers import (
-    ExecScriptCommandCompletionProvider,
+    ScriptCommandCompletionProvider,
+    JobCommandCompletionProvider,
+    RegisteredServerSubcommandCompletionProvider,
     ExternalToolCommandCompletionProvider,
     GopinCommandCompletionProvider,
     HistoryCommandCompletionProvider,
-    HttpctlCommandCompletionProvider,
+
     RemoteClientCommandCompletionProvider,
-    AliasCommandCompletionProvider,
+
 )
 
 
@@ -28,9 +30,9 @@ class ServerCommandCompletionService:
                 server=server,
                 command_history=server.command_history,
             ),
-            AliasCommandCompletionProvider(server.alias_manager),
-            HttpctlCommandCompletionProvider(),
-            ExecScriptCommandCompletionProvider(
+            RegisteredServerSubcommandCompletionProvider(),
+            JobCommandCompletionProvider(server=server),
+            ScriptCommandCompletionProvider(
                 server=server,
             ),
             ExternalToolCommandCompletionProvider(

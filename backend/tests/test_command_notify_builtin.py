@@ -83,7 +83,7 @@ class CommandNotifyBuiltinSupportTests(unittest.TestCase):
 
     def test_notify_is_exposed_as_server_builtin_candidate(self):
         candidate = next(
-            item for item in BuiltinCommandHandler.WEB_COMMAND_TEMPLATES
+            item for item in BuiltinCommandHandler.REGISTRY.candidates()
             if item.get('name') == 'notify'
         )
         self.assertEqual('notify ', candidate['template'])

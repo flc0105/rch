@@ -74,12 +74,63 @@ class UploadBuiltinSupport:
 
 class ScriptBuiltinSupport:
     """
-    script/exec 相关内建命令支持。
+    script builtin: list / view / exec / run.
     """
 
     def __init__(self, plan_builder, plan_executor_factory):
         self.plan_builder = plan_builder
         self.plan_executor_factory = plan_executor_factory
+
+    def script(self, subcommand, tail=''):
+        """Execute a validated registry subcommand without leaking transport detail."""
+        if subcommand == 'list':
+            from core.utils.command_output import parse_output_format, render_structured_result, StructuredCommandResult
+            text = str(tail or '').strip()
+            if text not in ('', '--json'):
+                yield 0, 'Usage: script list [--json]'
+                return
+            if text == '--json':
+                rows = []
+                for item in self.list_script_catalog():
+                    parameters = (item['metadata'] or {}).get('params') or []
+                    if isinstance(parameters, dict):
+                        param_names = list(parameters.keys())
+                    elif isinstance(parameters, list):
+                        param_names = [p.get('name', '') for p in parameters if isinstance(p, dict)]
+                    else:
+                        param_names = []
+                    rows.append({'name': item['path'], 'display_name': item['display_name'],
+                                 'description': item['description'], 'params': param_names})
+                yield render_structured_result(
+                    StructuredCommandResult(status=1, data=rows, shape='table'), output_format='json')
+                return
+            yield 1, '\n'.join(self.list_scripts())
+            return
+        if subcommand == 'view':
+            try:
+                args = shlex.split(tail)
+            except ValueError as exc:
+                yield 0, str(exc)
+                return
+            if len(args) != 1:
+                yield 0, 'Usage: script view <path>'
+                return
+            with open(self._resolve_script_path(args[0]), 'rt', encoding='utf-8') as source:
+                yield 1, source.read()
+            return
+        if subcommand == 'exec':
+            if not str(tail or '').strip():
+                yield 0, 'Usage: script exec <path> [options]'
+                return
+            yield from self.execute_script_file(tail)
+            return
+        if subcommand == 'run':
+            if not str(tail or '').strip():
+                yield 0, 'Usage: script run <__json__:payload>'
+                return
+            yield from self.execute_script_payload(tail)
+            return
+        raise ValueError(f'Unsupported script subcommand: {subcommand}')
 
     def _iter_script_files(self):
         return glob.iglob(os.path.join(SCRIPT_PATH, '**/*.py'), recursive=True)
@@ -106,12 +157,16 @@ class ScriptBuiltinSupport:
         return sorted(items, key=lambda item: item.get('path', '').lower())
 
     def _resolve_script_path(self, script_name: str) -> str:
-        script_path = os.path.abspath(os.path.join(SCRIPT_PATH, script_name))
+        script_path = os.path.realpath(os.path.join(SCRIPT_PATH, script_name))
+        script_root = os.path.realpath(SCRIPT_PATH)
+        if os.path.commonpath((script_root, script_path)) != script_root:
+            raise ValueError('Script path is outside the Server Script directory')
         if os.path.isfile(script_path):
             return script_path
 
-        if os.path.isfile(script_path + '.py'):
-            return script_path + '.py'
+        candidate = os.path.realpath(script_path + '.py')
+        if os.path.commonpath((script_root, candidate)) == script_root and os.path.isfile(candidate):
+            return candidate
 
         raise FileNotFoundError(f"Script not found: {script_path}")
 
@@ -122,7 +177,7 @@ class ScriptBuiltinSupport:
         try:
             return decode_structured_arg(raw, require_prefix=True)
         except Exception as e:
-            raise ValueError(f'Invalid run_script payload: {e}') from e
+            raise ValueError(f'Invalid script run payload: {e}') from e
 
     def execute_script_file(self, filename: str):
         parts = shlex.split(filename)
@@ -140,7 +195,7 @@ class ScriptBuiltinSupport:
     def execute_script_payload(self, payload_text: str):
         payload = self._decode_script_payload_arg(payload_text)
         if not isinstance(payload, dict):
-            raise ValueError('Invalid run_script payload')
+            raise ValueError('Invalid script run payload')
 
         script_name = str(payload.get('script_name') or payload.get('name') or '').strip()
         if not script_name:
@@ -193,20 +248,13 @@ class AliasBuiltinSupport:
     """
     alias 子命令支持：
 
-    - alias / alias resolve
+    - alias / alias list [--json]
     - alias set [--platform <supported>] name = command
     - alias unset [--platform <supported>] name
-    - alias list [--platform <supported>] [--json]
-    - alias reload
     """
 
     ANY_PLATFORM_OPTION_PATTERN = re.compile(
         r'^(?:--platform|-p)\s+(\S+)\b',
-        re.IGNORECASE,
-    )
-
-    SUBCOMMAND_PATTERN = re.compile(
-        r'^(resolve|set|unset|list|reload)\b',
         re.IGNORECASE,
     )
 
@@ -234,19 +282,6 @@ class AliasBuiltinSupport:
 
     def _resolve_target_platform(self, platform_name: str) -> str:
         return platform_name or 'common'
-
-    def _parse_subcommand(self, arg_text: str) -> tuple[str, str]:
-        text = str(arg_text or '').strip()
-        if not text:
-            return 'resolve', ''
-
-        matched = self.SUBCOMMAND_PATTERN.match(text)
-        if matched is None:
-            return 'resolve', text
-
-        subcommand = matched.group(1).lower()
-        remaining = text[matched.end():].strip()
-        return subcommand, remaining
 
     def _get_runtime_platform(self) -> str:
         """
@@ -301,26 +336,6 @@ class AliasBuiltinSupport:
         ))
         return rows
 
-    def _build_list_alias_payload(self, platform_name: str = '') -> list[dict]:
-        """
-        alias list:
-        - 默认显示所有平台原始配置
-        - 支持 AliasManager 定义的全部平台
-        - 不支持 --platform all
-        """
-        if platform_name:
-            alias_map = self.alias_manager.list_aliases_for_platform(platform_name, conn=self.conn) or {}
-            return self._normalize_alias_rows(alias_map, platform_name)
-
-        grouped = self.alias_manager.list_aliases_grouped() or {}
-        rows = []
-
-        for current_platform in self.alias_manager.get_supported_platforms():
-            alias_map = grouped.get(current_platform) or {}
-            rows.extend(self._normalize_alias_rows(alias_map, current_platform))
-
-        return rows
-
     def list_aliases(self):
         """
         给自动补全/旧逻辑使用：返回当前连接可用 alias（dict）
@@ -342,19 +357,6 @@ class AliasBuiltinSupport:
             ),
             output_format=output_format,
         )
-
-    def _alias_resolve(self, arg=''):
-        output_format = parse_output_format(arg)
-        arg = strip_output_format_arg(arg)
-
-        if str(arg or '').strip():
-            raise ValueError("alias resolve does not accept any arguments")
-
-        # aliases.json may be edited directly outside the CLI/Web API.
-        # Query commands should always reflect the latest persisted definitions.
-        self.alias_manager.load_aliases()
-        payload = self._build_resolved_alias_payload()
-        yield self._render_table_result(payload, output_format)
 
     def _alias_set(self, arg=''):
         text = str(arg or '').strip()
@@ -396,59 +398,25 @@ class AliasBuiltinSupport:
 
     def _alias_list(self, arg=''):
         output_format = parse_output_format(arg)
-        arg = strip_output_format_arg(arg)
+        remaining = strip_output_format_arg(arg)
+        if str(remaining or '').strip():
+            raise ValueError('Usage: alias [list] [--json]')
+        yield self._render_table_result(self._build_resolved_alias_payload(), output_format)
 
-        platform_name, remaining_text = self._parse_platform_option(arg)
-        if remaining_text:
-            raise ValueError(
-                f"Expected format: alias list [--platform {'|'.join(self.alias_manager.get_supported_platforms())}] [--json]"
-            )
-
-        # Keep explicit list queries in sync with direct aliases.json edits.
-        self.alias_manager.load_aliases()
-        payload = self._build_list_alias_payload(platform_name=platform_name)
-        yield self._render_table_result(payload, output_format)
-
-    def _alias_reload(self, arg=''):
-        text = str(arg or '').strip()
-        if text:
-            raise ValueError("alias reload does not accept any arguments")
-
-        self.alias_manager.load_aliases()
-        yield 1, 'Aliases reloaded'
+    def execute_subcommand(self, subcommand, remaining=''):
+        if subcommand == 'list':
+            yield from self._alias_list(remaining)
+        elif subcommand == 'set':
+            yield from self._alias_set(remaining)
+        elif subcommand == 'unset':
+            yield from self._alias_unset(remaining)
+        else:
+            raise ValueError(f'Unsupported alias subcommand: {subcommand}')
 
     def alias(self, arg=''):
-        subcommand, remaining = self._parse_subcommand(arg)
-
-        if subcommand == 'resolve':
-            for item in self._alias_resolve(remaining):
-                yield item
-            return
-
-        if subcommand == 'set':
-            for item in self._alias_set(remaining):
-                yield item
-            return
-
-        if subcommand == 'unset':
-            for item in self._alias_unset(remaining):
-                yield item
-            return
-
-        if subcommand == 'list':
-            for item in self._alias_list(remaining):
-                yield item
-            return
-
-        if subcommand == 'reload':
-            for item in self._alias_reload(remaining):
-                yield item
-            return
-
-        raise ValueError(
-            "Unsupported alias subcommand. "
-            "Use: alias [resolve] | alias set | alias unset | alias list | alias reload"
-        )
+        from server.application.command.server_builtin_registry import SERVER_COMMAND_REGISTRY
+        _, subcommand, remaining = SERVER_COMMAND_REGISTRY.parse('alias', arg)
+        yield from self.execute_subcommand(subcommand, remaining)
 
 
 class PinnedPathBuiltinSupport:

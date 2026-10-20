@@ -110,7 +110,7 @@ class JobCommandMigrationTests(unittest.TestCase):
         self.assertEqual('stop', json.loads(called.args[1])['action'])
 
     def test_builtin_registration_and_dispatch(self):
-        names = {item['name'] for item in BuiltinCommandHandler.WEB_COMMAND_TEMPLATES}
+        names = {item['name'] for item in BuiltinCommandHandler.REGISTRY.candidates()}
         self.assertIn('job', names)
         self.assertNotIn('start_job', names)
         self.assertNotIn('stop_job', names)

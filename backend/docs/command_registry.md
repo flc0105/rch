@@ -12,7 +12,7 @@ RCH 的命令扩展并不是“在某个表里添加名字”就完成。一个�
 |---|---|---|---|
 | 对所选 Client 执行一个通常接受文本参数的操作 | Client 普通命令 | 导出方法、`@desc`、平台命令对象的继承链 | `command` → Client `ShellCommandRunner` |
 | 对输入参数做声明式校验与类型转换 | Client 结构化命令 | `@argument_command` + `ArgumentCommandSpec`，`ArgumentCommandRegistry` 收集 | `acmd` → `ArgumentCommandRunner` |
-| 在 Server 上处理别名、历史、流程编排或 Web 控制 | Server Builtin | `BuiltinCommandHandler` 中的可调用方法；候选模板另行维护 | Server `CommandExecutor` 优先处理 Builtin |
+| 在 Server 上处理别名、历史、流程编排或 Web 控制 | Server Builtin | `ServerCommandRegistry` 显式声明主命令/子命令/Handler，运行时只允许注册名称 | Server `CommandExecutor` 优先处理 Builtin |
 | 将现有操作配置成一个快捷别名 | Alias | Server 的别名存储与解析器 | 解析别名后转成远程计划 |
 | 运行存放在 Server Script Library 的 Python Script | Script | Script Library / Metadata | Script 请求与 Python 执行策略 |
 
@@ -23,7 +23,7 @@ RCH 的命令扩展并不是“在某个表里添加名字”就完成。一个�
 ```text
 Web Terminal / Server CLI
   └─ Server CommandExecutor.process_command()
-       ├─ 命中 BuiltinCommandHandler 的方法 → Server Builtin
+       ├─ 命中显式 Server Command Registry → Server Builtin
        └─ CommandPlanner
             ├─ acmd 前缀 → 结构化负载，Socket type=acmd
             ├─ 已配置 Alias → 展开到远程命令计划
@@ -124,38 +124,24 @@ Schema 可声明 `str`、`int`、`float`、`bool`、`flag`，以及默认值、�
 
 ## 四、Server Builtin 不是 Client Registry 的一部分
 
-Server 命令入口由 `BuiltinCommandHandler` 提供。`server.application.command.executor.CommandExecutor` 首先检查 `BuiltinCommandHandler.resolve_builtin_command(name, arg)`：如果处理器对象上存在同名可调用方法，就把它当作 Builtin；否则再进入 Planner 的 ACMD、Alias 或默认远程命令路径。因此添加 Server Builtin 时应核对命名冲突，避免无意截获原本要发给 Client 的名字。
+Server 命令入口由 `server.application.command.server_builtin_registry.SERVER_COMMAND_REGISTRY` 显式注册；`BuiltinCommandHandler.resolve_builtin_command()` 只接受注册名称，未命中则交由 Planner 保持 ACMD、Alias、Client 普通命令和 **未知命令 Shell 回退**的原有机制。不能靠 `hasattr()` 将辅助方法误当用户 Builtin。
 
-Builtin 由具体 Support Service 承担业务，Handler 提供调用入口。新增时通常分成两处：
+新增主命令只需在同一 Registry 声明 `name/description/handler`；有子命令时声明 `SubcommandSpec` 的 `name/usage/description`、默认子命令及直接快捷模式。公用解析器区分子命令并保留参数尾部原文（如 Alias 右侧 Shell 模板、XT 参数、结构化 `__json__:`），具体参数校验和真实业务执行仍由原 Support / Service 负责。执行方法继续 `yield status, message`。
 
-1. 在 `BuiltinCommandHandler` 增加实际可调用方法，按 Server 命令执行器所消费的结果迭代器约定返回状态和消息；需要分多段输出时逐段 `yield status, message`。
-2. 需要出现在 Web 顶层命令候选时，在 `BuiltinCommandHandler.WEB_COMMAND_TEMPLATES` 增加 `name`、`template`、`help`、`source='server'`。**模板只负责展示；单独添加候选不会创建可执行的 Builtin。**
+Registry 同时产生 Server Manifest、`help` 和静态子命令补全候选，Info → Commands 中 Server 列表只显示一级命令；子命令不伪装成独立顶层命令。Server `help` 聚合注册的 Server 主命令、当前 Client Manifest 与当前可用 Alias；`help server/client/alias/script/script run` 可以分别查询。需要动态内容时使用既有补全 Provider，例如 `script exec <path>` 与 `job start <name>`；不重复手写另一份静态菜单。普通 Client 命令 Manifest 的 `@desc` 与 `suggest` 行为保持原样。
 
-例如一个不产生外部副作用的示意方法：
-
-```python
-def server_note(self, arg=''):
-    message = str(arg or '').strip()
-    if not message:
-        yield 0, 'Usage: server_note <text>'
-        return
-    yield 1, f'Server note: {message}'
-```
-
-同名处理方法需要定义在 `BuiltinCommandHandler` 上；这里不展示已有 Builtin 清单。涉及远程操作时，还要调用已经封装好的 Remote Execution Service，不应绕开 Task 生命周期自己直接给 Socket 写命令。Server Builtin 需要用户确认时，可复用 [Interaction Broker](interaction_broker.md) 的 Server 调用方式，而不是把 Client 侧 Grant 套用到 Server Builtin。
-
-## 五、注册与发现为什么分开
+当前聚合的一级命令包括 `alias`（默认生效列表、`list/set/unset`）、`job`（`list/start/ps/status/stop/stop-all`）、`script`（`list/view/exec/run`）、`xt`（`list/info/which/run`，保留 `xt <exec>` 直接执行）、`history`（默认 Quick 列表、`clear/run`）及原有 `notify/saveout/gopin/rtt/httpctl/upload/disconnect`。`exec` 和 `run_script` **不再作为独立 Server 顶级命令**：Terminal 改为 `script exec <path> [options]`，Script Library UI 使用 `script run __json__:...`，Server 最终都沿用原 `COMMAND_TYPE_SCRIPT` Client 协议，绝不把 Base64 当成 Client 命令解析。
 
 Client 的 `CommandIntrospectionMixin` 通过 `inspect.getmembers()` 收集当前平台命令对象中带 `help` 属性的方法，生成 `command_manifest`（含 `name/help/group/suggest`），并附加 `ArgumentCommandRegistry.get_manifest_payload()` 的 ACMD 条目。Manifest 在 Client 构造 `info` 握手时提交，Server 的 `SessionInfo` 保存该连接的快照；**不是 Web 打开命令面板时实时从 Client 重新扫描 Python 方法**。
 
 Web 通过 `GET /api/connections/{client_id}/command-candidates` 获取候选，`WebCommandCatalogApi` 汇合当前 Client 的 Manifest 与 Server Builtin/Alias 模板，按 `template` 去重，再进行排序。用户能在候选列表里看见一个名称，只能说明它出现在此清单，不能替代执行权限、平台可用性或参数合法性的验证；反过来，`suggest=False` 的命令可以执行但不作为普通提示展示。
 
-上下文自动补全又是独立机制：`POST /api/connections/{client_id}/command-completions` 由 Server `ServerCommandCompletionService` 的 Provider Registry 响应；需要远程文件等数据时，再通过 Client 的 `command_completions` 入口，由 `ClientCommandCompletionService` 注册的相应 Provider 收集候选。**新增普通命令不等于自动获得参数补全**：需分别考虑 Server Provider、Client Provider 与前端解析上下文。输入框选中候选后只是填充命令，不代表执行。详细规则请参阅 [Autocomplete](autocomplete.md)。
+上下文自动补全又是独立机制：`POST /api/connections/{client_id}/command-completions` 由 Server `ServerCommandCompletionService` 的 Provider Registry 响应；需要远程文件等数据时，再通过 Client 的 `command_completions` 入口，由 `ClientCommandCompletionService` 注册的相应 Provider 收集候选。**新增普通命令不等于自动获得参数补全**：静态 Server 子命令直接来自 Registry，动态参数仍需分别考虑 Server Provider、Client Provider 与前端解析上下文。输入框选中候选后只是填充命令，不代表执行。详细规则请参阅 [Autocomplete](autocomplete.md)。
 
 开发者可依次检查三个现象：
 
 - `help` 是否显示：取决于平台方法是否存在、`@desc` 是否导出，以及 `suggest`。
-- 命令候选 API 是否返回：取决于连接握手里的 Manifest 是否更新，以及 Server Builtin 模板是否声明。
+- 命令候选 API 是否返回：取决于连接握手里的 Client Manifest 是否更新，以及 Server Registry 是否声明。
 - 输入参数时是否继续提示：取决于独立的 Completion Provider 和前端路由，而不是 `help` 描述本身。
 
 ## 六、受保护能力与执行策略如何接入

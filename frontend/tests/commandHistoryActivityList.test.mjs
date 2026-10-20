@@ -14,7 +14,7 @@ assert.ok(quick && activity, 'Quick History and Activity Center must remain')
 
 const script = source.match(/<script>([\s\S]*?)<\/script>/)?.[1]
 assert.ok(script)
-const context = {console, EditPen:{}, CommandExecutionDetailDialog:{}, Select:{}, Star:{}, StarFilled:{},
+const context = {console, EditPen:{}, CommandExecutionDetailDialog:{}, TextCursorInput:{}, Star:{}, StarFilled:{},
   ArrowUp:{}, ArrowDown:{}, Terminal:{}, Zap:{}, FileCode2:{}, CheckCircle2:{}, XCircle:{},
   CircleDashed:{}, Ban:{}, Clock3:{}, ChevronRight:{}, AlertTriangle:{}, diffDateTimeMs: () => 0}
 vm.runInNewContext(
@@ -91,7 +91,7 @@ test('Long Activity titles and detail values truncate, full text opens on click'
 
 })
 
-test('Summary is Completed for multiline and over-128 single-line output', () => {
+test('Summary distinguishes success and failure for long output', () => {
   const build = text => component.methods.buildCommandExecutionSummary.call({
     isActivityProblem: () => false,
   }, {status:'success', files:[], result:{output_records:[{text}]}})
@@ -99,6 +99,9 @@ test('Summary is Completed for multiline and over-128 single-line output', () =>
   assert.equal(build('a'.repeat(128)), 'a'.repeat(128))
   assert.equal(build('a'.repeat(129)), 'Completed')
   assert.equal(build('line1\nline2'), 'Completed')
+  const failed = text => component.methods.buildCommandExecutionSummary.call({isActivityProblem: () => true}, {status:'error', files:[], result:{output_records:[{text}]}})
+  assert.equal(failed('Traceback\nNameError'), 'Failed')
+  assert.equal(failed('a'.repeat(129)), 'Failed')
   assert.equal(component.methods.buildCommandExecutionSummary.call({isActivityProblem: () => false}, {
     status:'success', result:{output_records:[{text:'first'}, {text:'second'}]}, files:[],
   }), 'Completed')

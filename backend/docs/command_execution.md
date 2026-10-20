@@ -203,3 +203,8 @@ Web 入口需要提供明确的 `client_id`、命令、`tab_id` 和必要的呈�
 - [Scripts](scripts.md)、[Background Jobs](background_jobs.md)：前台脚本任务与长期后台执行的区别。
 - [SSE Notifications](sse_notifications.md)：事件总线、定向事件及通知分发。
 - [Connection Lifecycle](connection_lifecycle.md)：Socket 连接和离线状态对任务执行的影响。
+
+
+## Server Builtin 统一路由
+
+Server 只将 `SERVER_COMMAND_REGISTRY` 显式注册的一级名称作为 Builtin，先用公用子命令解析器识别 `script/job/alias/xt/history` 等命令，再交给原业务 Support。未命中注册表的普通命令继续走 ACMD → Alias → Client 普通执行；Client 未注册的普通命令保留 Shell 后备执行。`script exec` / `script run` 两种 Server 输入共用原 `COMMAND_TYPE_SCRIPT` 执行协议，不把结构化 Payload 交给 Client 再做 Builtin 解析。
