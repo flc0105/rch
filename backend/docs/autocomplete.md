@@ -48,7 +48,7 @@ Server/Client 的 Provider 负责候选生成，浏览器负责缓存、过滤�
 
 部分补全读取的并不是目标设备的文件系统，而是 Server 当前管理的数据。例如，保存过的远程路径 Quick Jump 名称由当前机器的 Pinned Paths 提供；Alias 管理入口会补全管理动作，但具体 Alias **名称**作为顶层候选由 AliasManager 的有效定义提供，管理动作 Provider 本身不会逐个读取 `aliases.json` 生成名称候选。
 
-Script 的执行候选来自 Server 的脚本目录；以 Script Metadata `platforms` 为主筛选当前设备；没有该字段时按原平台/共享目录归属识别。只影响列表与候选，不限制显式执行。External Tool 的候选由 Server 的 Exec Catalog 按目标平台和架构筛选，除入口操作外，也可以补充符合目标设备条件的 Exec 名称。运行时配置 `set` 的参数候选则必须询问目标 Client，展示真实配置键、当前值、默认值和是否覆盖的信息。
+Script 的执行候选来自 Server 脚本目录，**只根据 Script Metadata `platforms` 声明**筛选当前设备；没有该声明的脚本不参与 CLI 列表与补全，路径名不作为平台依据。候选在 Server 过滤后直接提供给 Terminal，前端不再根据目录名过滤。此规则不限制显式执行。External Tool 的候选由 Server 的 Exec Catalog 按目标平台和架构筛选，除入口操作外，也可以补充符合目标设备条件的 Exec 名称。运行时配置 `set` 的参数候选则必须询问目标 Client，展示真实配置键、当前值、默认值和是否覆盖的信息。
 
 这些动态候选的数量与内容取决于当前设备、Server 配置及 Catalog，而不是一套固定的命令总表。详见 [Aliases and Quick Actions](alias_quick_actions.md)、[Remote Files](remote_files.md) 和 [External Tools](external_tools.md)。
 

@@ -258,20 +258,28 @@
           <div class="connection-command-panel">
             <div class="connection-command-panel-title connection-command-panel-heading">
               <span>Command List</span>
-              <el-select v-model="connectionCommandSource" size="small" class="connection-command-source-select" aria-label="Command source">
-                <el-option label="Client" value="client" />
-                <el-option label="Server" value="server" />
-              </el-select>
+              <div class="connection-command-heading-controls">
+                <el-input
+                  v-model="connectionCommandSearch"
+                  size="small"
+                  clearable
+                  placeholder="Search commands"
+                  aria-label="Search commands"
+                  class="connection-command-search"
+                />
+                <el-select v-model="connectionCommandSource" size="small" class="connection-command-source-select" aria-label="Command source">
+                  <el-option label="Client" value="client" />
+                  <el-option label="Server" value="server" />
+                </el-select>
+              </div>
             </div>
             <div class="connection-command-list">
               <div
-                v-for="(item, index) in (connectionCommandSource === 'server' ? connectionInfoServerCommands : connectionInfoClientCommands)"
+                v-for="(item, index) in visibleConnectionCommands"
                 :key="`${item.template}-${index}`"
                 class="connection-command-item"
               >
-                <div class="connection-command-group">
-                  <span v-if="item.group">{{ item.group }}</span>
-                </div>
+                <div v-if="connectionCommandSource === 'client' && item.group" class="connection-command-group">{{ item.group }}</div>
 
                 <div class="connection-command-text">
                   <span class="mono">{{ item.name || item.template }}</span>
@@ -280,7 +288,7 @@
               </div>
 
               <div
-                v-if="!(connectionCommandSource === 'server' ? connectionInfoServerCommands : connectionInfoClientCommands).length"
+                v-if="!visibleConnectionCommands.length"
                 class="empty-state compact"
               >
                 No commands available
@@ -556,6 +564,7 @@ export default {
       connectionInfoClientCommands: [],
       connectionInfoServerCommands: [],
       connectionCommandSource: 'client',
+      connectionCommandSearch: '',
       activeTab: 'basic',
       runtimeConfigItems: [],
       runtimeConfigStorePath: '',
@@ -581,6 +590,25 @@ export default {
   },
 
   computed: {
+    visibleConnectionCommands() {
+      const source = this.connectionCommandSource === 'server'
+        ? this.connectionInfoServerCommands
+        : this.connectionInfoClientCommands
+      const term = String(this.connectionCommandSearch || '').trim().toLocaleLowerCase()
+      const filtered = source.filter(item => {
+        if (!term) return true
+        return [item.name, item.template, item.help].some(value =>
+          String(value || '').toLocaleLowerCase().includes(term))
+      })
+      return [...filtered].sort((a, b) => {
+        if (this.connectionCommandSource === 'client') {
+          const groupOrder = String(a.group || '').localeCompare(String(b.group || ''), undefined, { sensitivity: 'base' })
+          if (groupOrder) return groupOrder
+        }
+        return String(a.name || a.template || '').localeCompare(String(b.name || b.template || ''), undefined, { sensitivity: 'base' })
+      })
+    },
+
     connectionInfoCards() {
       const conn = this.currentConnection || {}
       const items = [
@@ -1441,10 +1469,21 @@ export default {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 12px;
 }
 
-.connection-command-source-select { width: 104px; font-weight: 400; }
+.connection-command-heading-controls {
+  display: flex;
+  flex: 1 1 260px;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.connection-command-search { flex: 1 1 150px; max-width: 220px; min-width: 0; font-weight: 400; }
+.connection-command-source-select { width: 104px; flex: 0 0 104px; font-weight: 400; }
 
 .connection-command-list {
   flex: 1 1 auto;

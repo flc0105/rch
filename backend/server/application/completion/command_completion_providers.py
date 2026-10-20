@@ -287,16 +287,6 @@ class ScriptCommandCompletionProvider(ServerCompletionSessionMixin, CommandCompl
                 result.append(script)
         return sorted(result, key=str.lower)
 
-    def _should_show_script(self, script: str, current_os_alias: str) -> bool:
-        root = script.replace('\\', '/').split('/')[0].strip().lower()
-        normalized_root = self._normalize_platform_alias(root)
-        if not normalized_root:
-            return False
-        if normalized_root in {'common', 'shared'}:
-            return True
-        if not current_os_alias:
-            return True
-        return normalized_root == current_os_alias
 
 
 class ExternalToolCommandCompletionProvider(ServerCompletionSessionMixin, CommandCompletionProvider):

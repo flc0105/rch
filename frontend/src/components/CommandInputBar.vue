@@ -409,14 +409,14 @@ export default {
 
       const keyword = String(effectiveQueryString || '').trim().toLowerCase()
       const sourceList = Array.isArray(this.commandCandidates) ? this.commandCandidates : []
-      const visibleCandidates = this.filterExecScriptCandidatesByCurrentOs(sourceList)
-
+      // Script path candidates are already filtered against metadata.platforms on the Server.
+      // Do not reinterpret their folder names as platform restrictions here.
       if (!keyword) {
-        emitCandidates(visibleCandidates)
+        emitCandidates(sourceList)
         return
       }
 
-      emitCandidates(this.filterCandidatesByTitle(visibleCandidates, keyword))
+      emitCandidates(this.filterCandidatesByTitle(sourceList, keyword))
     },
 
     parseVariableCompletionQuery(queryString) {
@@ -1425,33 +1425,6 @@ const pinnedHistoryItems = historyItems.filter(item => item && item.is_pinned)
         .filter(Boolean)
     },
 
-    filterExecScriptCandidatesByCurrentOs(candidates) {
-      const currentOsAlias = this.normalizeCurrentOsAlias(this.currentConnection?.os_alias)
-
-      if (!currentOsAlias) {
-        return Array.isArray(candidates) ? candidates : []
-      }
-
-      return (Array.isArray(candidates) ? candidates : []).filter(item => {
-        return this.shouldShowCandidateForCurrentOs(item, currentOsAlias)
-      })
-    },
-
-    shouldShowCandidateForCurrentOs(item, currentOsAlias) {
-      if (!this.isExecScriptCandidate(item)) {
-        return true
-      }
-
-      const scriptRoot = this.getExecScriptRoot(item)
-      if (!scriptRoot) {
-        return false
-      }
-
-      const normalizedRoot = this.normalizeExecScriptRoot(scriptRoot)
-
-      return normalizedRoot === 'common' || normalizedRoot === currentOsAlias
-    },
-
     isExecScriptCandidate(item) {
       if (!item) return false
 
@@ -1468,69 +1441,6 @@ const pinnedHistoryItems = historyItems.filter(item => item && item.is_pinned)
 
     getCandidateCommandText(item) {
       return String(item?.template || item?.value || item?.name || '').trim()
-    },
-
-    getExecScriptRoot(item) {
-      const commandText = this.getCandidateCommandText(item)
-      const match = commandText.match(/^script\s+exec\s+(.+)$/i)
-
-      if (!match) return ''
-
-      const scriptPath = this.stripCommandArgumentQuotes(match[1])
-        .replace(/\\/g, '/')
-        .trim()
-
-      return scriptPath.split('/').filter(Boolean)[0] || ''
-    },
-
-    stripCommandArgumentQuotes(value) {
-      const text = String(value || '').trim()
-      if (!text) return ''
-
-      const firstChar = text[0]
-      const quoteChars = ['"', "'"]
-
-      if (!quoteChars.includes(firstChar)) {
-        return text.split(/\s+/)[0] || ''
-      }
-
-      const endIndex = text.indexOf(firstChar, 1)
-      if (endIndex === -1) {
-        return text.slice(1)
-      }
-
-      return text.slice(1, endIndex)
-    },
-
-    normalizeCurrentOsAlias(value) {
-      const text = String(value || '').trim().toLowerCase()
-
-      if (!text) return ''
-      if (['windows', 'win', 'win32', 'nt'].includes(text)) return 'win'
-      if (['darwin', 'mac', 'macos', 'osx'].includes(text)) return 'mac'
-      if (['linux', 'ubuntu', 'debian', 'centos', 'fedora', 'redhat', 'rhel', 'alpine', 'arch'].includes(text)) return 'linux'
-      if (['ios', 'iphone', 'ipad', 'iphoneos', 'ipados'].includes(text)) return 'ios'
-
-      if (text.includes('win')) return 'win'
-      if (text.includes('darwin') || text.includes('mac')) return 'mac'
-      if (text.includes('linux')) return 'linux'
-      if (/(ubuntu|debian|centos|fedora|redhat|rhel|alpine|arch)/.test(text)) return 'linux'
-      if (text.includes('ios') || text.includes('iphone') || text.includes('ipad')) return 'ios'
-
-      return text
-    },
-
-    normalizeExecScriptRoot(value) {
-      const text = String(value || '').trim().toLowerCase()
-
-      if (!text) return ''
-      if (['common', 'shared'].includes(text)) return 'common'
-      if (['windows', 'win', 'win32', 'nt'].includes(text)) return 'win'
-      if (['darwin', 'mac', 'macos', 'osx'].includes(text)) return 'mac'
-      if (['linux', 'ubuntu', 'debian', 'centos', 'fedora', 'redhat', 'rhel', 'alpine', 'arch'].includes(text)) return 'linux'
-      if (['ios', 'iphone', 'ipad', 'iphoneos', 'ipados'].includes(text)) return 'ios'
-
-      return text
     },
 
     sortQuickHistoryShortcutCandidates(items) {

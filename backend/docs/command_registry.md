@@ -128,7 +128,7 @@ Server 命令入口由 `server.application.command.server_builtin_registry.SERVE
 
 新增主命令只需在同一 Registry 声明 `name/description/handler`；有子命令时声明 `SubcommandSpec` 的 `name/usage/description`、默认子命令及直接快捷模式。公用解析器区分子命令并保留参数尾部原文（如 Alias 右侧 Shell 模板、XT 参数、结构化 `__json__:`），具体参数校验和真实业务执行仍由原 Support / Service 负责。执行方法继续 `yield status, message`。
 
-Registry 同时产生 Server Manifest、`help` 和静态子命令补全候选，Info → Commands 保留原有的单列命令卡片；在 Command List 标题右侧切换 Client / Server。Server 模式只显示一级 Builtin，子命令不伪装成独立顶层命令。Server `help` 聚合已注册的 Server 主命令与当前 Client Manifest，并保留 Client 原有的 `[Shell / Execution]`、`[File]`、`[Session]`、`[Acmd]` 等分组及说明。它**不会展开动态 Alias 名称和命令内容**；`help alias` 只解释 `alias` 管理命令的用法。`help server/client/alias/script/script run` 可查询对应命令帮助。需要动态内容时使用既有补全 Provider，例如 `script exec <path>` 与 `job start <name>`；不重复手写另一份静态菜单。普通 Client 命令 Manifest 的 `@desc` 与 `suggest` 行为保持原样。
+Registry 同时产生 Server Manifest、`help` 和静态子命令补全候选，Info → Commands 保留原有的单列命令卡片；在 Command List 标题处切换 Client / Server，并可在当前来源内按命令名称或描述搜索。Client 模式先按 Group 名称（不区分大小写），同组再按命令名称排序；Server 模式只显示一级 Builtin，不展示冗余的 Group 行，子命令不伪装成独立顶层命令。Server `help` 聚合已注册的 Server 主命令与当前 Client Manifest，并保留 Client 原有的 `[Shell / Execution]`、`[File]`、`[Session]`、`[Acmd]` 等分组及说明。它**不会展开动态 Alias 名称和命令内容**；`help alias` 只解释 `alias` 管理命令的用法。`help server/client/alias/script/script run` 可查询对应命令帮助。需要动态内容时使用既有补全 Provider，例如 `script exec <path>` 与 `job start <name>`；不重复手写另一份静态菜单。普通 Client 命令 Manifest 的 `@desc` 与 `suggest` 行为保持原样。
 
 当前聚合的一级命令包括 `alias`（默认生效列表、`list/set/unset`）、`job`（`list/start/ps/status/stop/stop-all`）、`script`（`list/view/exec/run`）、`xt`（`list/info/which/run`，保留 `xt <exec>` 直接执行）、`history`（默认 Quick 列表、`clear/run`）及原有 `notify/saveout/gopin/rtt/httpctl/upload`。`exec` 和 `run_script` **不再作为独立 Server 顶级命令**：Terminal 改为 `script exec <path> [options]`，Script Library UI 使用 `script run __json__:...`，Server 最终都沿用原 `COMMAND_TYPE_SCRIPT` Client 协议，绝不把 Base64 当成 Client 命令解析。
 
@@ -181,6 +181,6 @@ Web 通过 `GET /api/connections/{client_id}/command-candidates` 获取候选，
 
 ### 终端命令目录的平台可见性
 
-`script list`（含 `--json`）和 `job list`（含 `--json`）只列出适合当前连接 Client 平台的条目。优先读取 Script/Job Metadata 的 `platforms` 列表（接受 `common` / `all` 等通配声明）；未声明平台时，按根目录的 `mac/win/linux/ios/common` 归属识别，未分平台的通用资源仍可列出。`script exec` 与 `script run` 并不被该**列表筛选**拦截，显式指定其他平台文件依旧可以执行。
+`script list`（含 `--json`）和 `job list`（含 `--json`）只列出适合当前连接 Client 平台的条目。只读取 Script/Job Metadata 中显式声明的 `platforms`（可使用 `common` / `all` 等通配声明）；**没有声明或声明为空时不进入终端列表与补全**，不再根据 `mac/win/linux/ios/common` 目录名兜底。`script exec` 与 `script run` 并不被该**列表筛选**拦截，显式指定其他平台文件依旧可以执行。
 
 Terminal 的 `script exec` 路径候选和 `job start` Job 名称候选复用相同的可见性判断；Script Library 和 Background Jobs Web Catalog 不使用该 CLI 筛选，原有 UI 数据范围不改变。

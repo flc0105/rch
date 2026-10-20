@@ -20,7 +20,7 @@ class JobCommandMigrationTests(unittest.TestCase):
         self.sent = []
         self.remote = SimpleNamespace(stream_command=self.stream_command)
         self.jobs = SimpleNamespace(
-            list_background_job_catalog=lambda _cid: [{'job_name': 'tools/a'}],
+            list_background_job_catalog=lambda _cid: [{'job_name': 'tools/a', 'metadata': {'platforms': ['common']}}],
             prepare_background_job_start=lambda _cid, _name, _mode: 'inproc',
         )
         self.jobs.background_job_service = SimpleNamespace(

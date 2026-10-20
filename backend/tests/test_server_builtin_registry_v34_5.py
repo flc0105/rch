@@ -44,7 +44,7 @@ def test_script_end_to_end_server_plan_and_safe_view(tmp_path, monkeypatch):
     monkeypatch.setattr(module, 'SCRIPT_PATH', str(tmp_path))
     file = tmp_path / 'common' / 'demo.py'
     file.parent.mkdir()
-    file.write_text('# test script\nprint(123)\n', encoding='utf-8')
+    file.write_text("SCRIPT_METADATA = {'platforms': ['common']}\n# test script\nprint(123)\n", encoding='utf-8')
     plans = []
     planner = SimpleNamespace(build_script_plan=lambda text, extra: plans.append((text,extra)) or
                               {'command': text, 'command_type':'script', 'extra': extra})
@@ -78,7 +78,7 @@ def test_completions_share_registry_and_job_catalog():
     context = CompletionContext(raw_input='job ', command_name='job', argument_text='')
     assert {c.title for c in p.complete(context)} == {'job list','job start','job ps','job status','job stop','job stop-all'}
     server = SimpleNamespace(web_service=SimpleNamespace(job_api=SimpleNamespace(
-        list_background_job_catalog=lambda client: [{'job_name':'common/hello'}]
+        list_background_job_catalog=lambda client: [{'job_name':'common/hello', 'metadata': {'platforms': ['common']}}]
     )))
     dynamic = JobCommandCompletionProvider(server)
     context = CompletionContext(raw_input='job start ', command_name='job',argument_text='start ',

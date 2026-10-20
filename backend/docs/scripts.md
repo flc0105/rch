@@ -59,7 +59,7 @@ context.progress(f"Checking {folder} (limit={limit}, verbose={verbose})")
 print("Finished")
 ```
 
-`name` 是可选的元数据标识；实际从 Catalog 调用时仍使用脚本文件的相对路径。`display_name`、`description`、`category`、`tags` 主要用于展示。`platforms` 经过通用平台别名规范化，未声明或使用 `*` 表示无平台限定；Web 会根据选中的 Client 平台控制运行按钮、展示兼容平台。不过这属于 Web 侧的支持性筛选，不能被当作脚本代码的跨平台运行保证，轻量终端执行入口也不应假定同样进行了完整的 UI 限制检查。
+`name` 是可选的元数据标识；实际从 Catalog 调用时仍使用脚本文件的相对路径。`display_name`、`description`、`category`、`tags` 主要用于展示。`platforms` 经过通用平台别名规范化；对 **Web Script Library**，未声明或使用 `*` 表示无平台限定，Web 会根据选中的 Client 平台控制运行按钮与兼容平台展示。**Terminal `script list` / 补全与 Web 不同：未声明平台的脚本不会显示，但显式执行仍不被此筛选阻止。** 这两种列表判断都不能保证脚本在目标系统有完整的运行库或权限。
 
 `api_grants` 也是 Script Metadata 的顶层字段，但它不属于普通业务参数。它声明脚本执行期间希望调用的受保护 Server API，具体签发与边界见后文。
 
@@ -309,4 +309,4 @@ Script 的边界不是“只要是 Python 就能无条件使用全部 Client 能
 
 ### 终端列表的平台筛选
 
-`script list` 与 `script list --json` 使用同一份扫描与 Metadata，按连接设备的 `os_alias` 和脚本 `SCRIPT_METADATA.platforms` 过滤（声明优先于路径；没有声明则按平台目录 / common 识别）。补全 `script exec <path>` 复用这份判断。`script exec` / `script run` 显式指定脚本时依旧能解析完整 Library 路径，不按列表结果限制；Script Library UI 的 Catalog/展示完全不参与这一过滤。
+`script list` 与 `script list --json` 使用同一份扫描与 Metadata，按连接设备的 `os_alias` 和脚本 `SCRIPT_METADATA.platforms` 过滤；未声明或声明为空时不显示，**不再根据目录名推断平台**。补全 `script exec <path>` 复用这份判断。`script exec` / `script run` 显式指定脚本时依旧能解析完整 Library 路径，不按列表结果限制；Script Library UI 的 Catalog/展示完全不参与这一过滤。

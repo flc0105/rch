@@ -173,4 +173,4 @@ Subprocess 只能隔离 Python 任务进程，不能替代操作系统访问控�
 
 ### 终端 Job 列表范围
 
-`job`、`job list` 和 `job list --json` 只展示 Metadata `platforms` 对当前设备适用的资源；没写 `platforms` 时才根据 common / 平台目录判断。`job start` 的名称补全复用相同的过滤。它只控制 Server 终端命令目录，不收窄 Background Jobs Web 管理 UI Catalog，也不修改 Client 的 JobManager 执行协议。
+`job`、`job list` 和 `job list --json` 只展示 Metadata `platforms` 对当前设备适用的资源；没写 `platforms` 或声明为空时不显示在终端 Job 列表及补全中，不再读取目录名推断平台。`job start` 的名称补全复用相同的过滤。它只控制 Server 终端命令目录，不收窄 Background Jobs Web 管理 UI Catalog，也不修改 Client 的 JobManager 执行协议。

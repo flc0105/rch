@@ -22,6 +22,6 @@ test('Info Commands reuses old card list with a single title-level source select
   assert.match(info,/v-model="connectionCommandSource"/)
   assert.match(info,/<el-option label="Client" value="client"/)
   assert.match(info,/<el-option label="Server" value="server"/)
-  assert.match(info,/connectionCommandSource === 'server' \? connectionInfoServerCommands : connectionInfoClientCommands/)
+  assert.match(info,/visibleConnectionCommands/)
   assert.doesNotMatch(info,/class="connection-command-panel-title">Server Commands/)
 })
