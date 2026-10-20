@@ -47,12 +47,12 @@ SERVER_COMMAND_SPECS = (
         ('view', 'Read script source on the Server', 'script view <path>'),
         ('exec', 'Execute a script with CLI arguments', 'script exec <path> [options]'),
         ('run', 'Execute a script with structured JSON payload', 'script run <__json__:payload>'),
-    ), default='list', group='script'),
+    ), default='list'),
     command('alias', 'List or manage aliases for this Client platform', children=(
         ('list', 'List current effective aliases (optionally --json)', 'alias list [--json]'),
         ('set', 'Save an alias', 'alias set [--platform PLATFORM] name = command'),
         ('unset', 'Remove an alias', 'alias unset [--platform PLATFORM] name'),
-    ), default='list', group='alias'),
+    ), default='list'),
     command('job', 'Manage Client jobs from the Server', children=(
         ('list', 'List available Server jobs (optionally --json)', 'job list [--json]'),
         ('start', 'Start a Client job', 'job start <name> [--mode MODE] [--params JSON]', 'public', ('mode','params')),
@@ -60,12 +60,12 @@ SERVER_COMMAND_SPECS = (
         ('status', 'Query job state', 'job status <name>'),
         ('stop', 'Stop a running job', 'job stop <name>'),
         ('stop-all', 'Stop all running jobs', 'job stop-all'),
-    ), default='list', group='job'),
+    ), default='list'),
     command('history', 'Show Quick History or replay by index', children=(
         ('list', 'Display Quick History', 'history'),
         ('clear', 'Clear Quick Recent', 'history clear'),
         ('run', 'Replay a Quick command by index', 'history run <index>'),
-    ), default='list', group='history'),
+    ), default='list'),
     command('gopin', 'Jump to saved path', expects_arguments=True),
     command('rtt', 'Show current heartbeat RTT'),
     command('httpctl', 'Client HTTP control channel', children=(
@@ -73,7 +73,7 @@ SERVER_COMMAND_SPECS = (
         ('relaunch', 'Relaunch Agent', 'httpctl relaunch'),
         ('clone', 'Clone Agent', 'httpctl clone'),
         ('help', 'Show HTTP control usage', 'httpctl help'),
-    ), default='help', group='control'),
+    ), default='help'),
     command('saveout', 'Save Client command output as Artifact', expects_arguments=True),
     command('notify', 'Run a Client command and notify when finished', expects_arguments=True),
     command('xt', 'External tool catalog and execution', children=(
@@ -81,7 +81,7 @@ SERVER_COMMAND_SPECS = (
         ('info', 'Show external tool details', 'xt info <name>'),
         ('which', 'Locate external executable', 'xt which <name>'),
         ('run', 'Execute external tool', 'xt run <name> [--] [args]'),
-    ), default='list', allow_direct=True, group='external_tool'),
+    ), default='list', allow_direct=True),
     command('help', 'Show Server builtin commands and subcommands', handler='server_help'),
 )
 

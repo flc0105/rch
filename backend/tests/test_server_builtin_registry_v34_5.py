@@ -23,6 +23,11 @@ def test_registry_is_only_builtin_allowlist_and_manifest_source():
     assert {'alias', 'job', 'script', 'xt', 'history', 'notify', 'saveout', 'help'} <= names
     assert {'exec', 'run_script', 'resolve', 'reload', 'get_command_candidates'} & names == set()
     assert registry.parse('not_a_builtin', 'anything') is None
+    assert all(spec.group == 'server' for spec in registry._commands.values())
+    assert all(item['group'] == 'server' for item in registry.candidates())
+    from server.application.command.server_builtin_registry import command
+    assert command('example', 'Example').group == 'server'
+    assert command('example', 'Example', group='custom').group == 'custom'
     assert BuiltinCommandHandler.__dict__.get('WEB_COMMAND_TEMPLATES') is None
     assert registry.parse('script', '')[1:] == ('list', '')
     assert registry.parse('script', 'exec mac/a.py --name "hello world"')[1:] == (
