@@ -429,7 +429,7 @@ print("Approved operation:", label)
 
 `context.confirm()` returns `False` on reject or timeout, and only returns `True` after explicit approval. `context.ask()` returns user text (including an empty string) or raises `ScriptSdkInteractionError` on reject/timeout. The input response travels over a separate authenticated control request and never becomes a new foreground Command. `context.ask(secret=True)` masks the browser input; do not print or persist secrets. Each request is limited to 180 seconds. The Server holds no durable paused-execution state; Server restarts invalidate pending interactions.
 
-RCH Client command `interaction_demo` exercises confirmation followed by text input without deleting or modifying data.
+Ordinary Client commands can invoke the same Interaction Broker through `CommandInteractions(self)` when authorized; no demo commands are registered.
 
 
 ### Execution interactions: Select and Secret
@@ -473,7 +473,7 @@ if not context.approve_preview('Execute this plan?', plan, title='Backup preview
 # Execute only the validated plan; verify targets have not changed.
 ```
 
-Client command demos use `CommandInteractions(self).approve_preview(message, plan, title=...)` with the same data format. Test via the harmless `interaction_preview_demo` Client command or Script `mac/recon/personal_mac_backup_preview`.
+Authorized Client commands use `CommandInteractions(self).approve_preview(message, plan, title=...)` with the same data format. The Script `mac/recon/personal_mac_backup_preview` provides a real preview use case.
 
 Ordinary Client commands declare the interaction permission on the registered method using `@desc(..., api_grants=('interactions:request',))`. The Server reads these grants from its trusted `CommonCommands` definitions; no separate command-name grant list is needed.
 
@@ -540,7 +540,7 @@ Client shell-like process commands are registered with `@desc` and use positiona
 - `kill_port <port> [-9]` (e.g. `kill_port 9999 -9`); an omitted port prompts for input.
 - `kill_proc <pid|name> [-9]` (e.g. `kill_proc 30565 -9`); an omitted target prompts for PID/name input.
 
-Both commands run **on the connected Client**, never on the Server host, and use the shared Preview/Approval Broker with a short-lived grant bound to the current Client command. Command candidates insert only the command name. The original `kill_process` is unchanged. The Preview contains a **Force termination** switch: omitted `-9` initializes it OFF; a trailing `-9` initializes it ON. The user may change the switch either way before approval. The **final approved UI switch value** decides the signal: OFF uses SIGTERM, ON uses SIGKILL. An unapproved command never sends a signal. No signal is sent without approval and identity revalidation. The `disconnect` example remains a Server builtin.
+Both commands run **on the connected Client**, never on the Server host, and use the shared Preview/Approval Broker with a short-lived grant bound to the current Client command. Command candidates insert only the command name. The original `kill_process` is unchanged. The Preview contains a **Force termination** switch: omitted `-9` initializes it OFF; a trailing `-9` initializes it ON. The user may change the switch either way before approval. The **final approved UI switch value** decides the signal: OFF uses SIGTERM, ON uses SIGKILL. An unapproved command never sends a signal. No signal is sent without approval and identity revalidation. There is no Server `disconnect` builtin; session termination remains available through the existing Client/session control paths.
 
 For previews requiring optional boolean choices, add `switches: [{"key": "force", "label": "Force termination", "description": "...", "default": false}]` to the Preview schema. When no switches are requested, existing `approve_preview()` behavior and its boolean return remain unchanged; with switches, the Broker validates the explicitly offered boolean keys before returning them to the requesting Client command.
 

@@ -3,6 +3,7 @@ import json
 
 from client.commands.common.services.completion.command_completion_service import ClientCommandCompletionService
 from core.utils.decorator import desc
+from core.utils.command_help import render_grouped_client_help
 
 
 class CommandIntrospectionMixin:
@@ -129,42 +130,7 @@ class CommandIntrospectionMixin:
         if not grouped:
             return 1, ''
 
-        title_map = {
-            'shell': 'Shell / Execution',
-            'file': 'File',
-            'file_path': 'File Path / Web',
-            'job': 'Job',
-            'session': 'Session',
-            'platform': 'Platform',
-            'acmd': 'Acmd',
-            'general': 'General',
-        }
-
-        lines = []
-        ordered_groups = ['shell', 'file', 'file_path', 'job', 'session', 'platform', 'acmd', 'general']
-        seen = set()
-
-        for group_name in ordered_groups:
-            items = grouped.get(group_name)
-            if not items:
-                continue
-
-            seen.add(group_name)
-            lines.append(f'[{title_map.get(group_name, group_name)}]')
-            for name, help_text in items:
-                lines.append(f'{name:<24}{help_text}')
-            lines.append('')
-
-        for group_name, items in grouped.items():
-            if group_name in seen:
-                continue
-
-            lines.append(f'[{title_map.get(group_name, group_name)}]')
-            for name, help_text in items:
-                lines.append(f'{name:<24}{help_text}')
-            lines.append('')
-
-        return 1, '\n'.join(lines).rstrip()
+        return 1, render_grouped_client_help(grouped)
 
 
 

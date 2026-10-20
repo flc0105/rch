@@ -41,7 +41,6 @@ def command(name, description, handler=None, children=(), default='', allow_dire
 
 
 SERVER_COMMAND_SPECS = (
-    command('disconnect', 'Confirm and close the current Client connection'),
     command('upload', 'Upload a local file to the Client', expects_arguments=True),
     command('script', 'List, inspect and run Server scripts', children=(
         ('list', 'List available scripts (optionally --json)', 'script list [--json]'),
@@ -76,7 +75,7 @@ SERVER_COMMAND_SPECS = (
         ('help', 'Show HTTP control usage', 'httpctl help'),
     ), default='help', group='control'),
     command('saveout', 'Save Client command output as Artifact', expects_arguments=True),
-    command('notify', 'notify <client-command> | Run a Client command and notify when finished', expects_arguments=True),
+    command('notify', 'Run a Client command and notify when finished', expects_arguments=True),
     command('xt', 'External tool catalog and execution', children=(
         ('list', 'List external tools', 'xt list'),
         ('info', 'Show external tool details', 'xt info <name>'),

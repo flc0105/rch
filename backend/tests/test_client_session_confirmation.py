@@ -8,7 +8,6 @@ from client.commands.common.mixins import session_ops
 from client.commands.common.services.interaction_service import CommandInteractions
 from client.commands.runtime.executor import CommandExecutor
 from server.connection.channel.session_command_channel import ClientSessionCommandChannel
-from server.application.command.advanced_builtin_support import AdvancedBuiltinSupport
 
 
 class GrantService:
@@ -83,70 +82,6 @@ def test_refusal_does_not_enter_session_command_body(monkeypatch, name):
     sock = SimpleNamespace(close=lambda: executed.append('close'))
     owner = SimpleNamespace(socket=sock, _interaction_grant={'token': 'token'})
     result = getattr(CommonCommands, name)(owner)
-    assert result[0] == 0
-    assert executed == []
-
-
-def test_server_disconnect_then_client_kill_connection_confirms_twice(monkeypatch):
-    prompts = []
-    sent = []
-    executed = []
-    channel, _ = make_channel()
-
-    def send_command(command):
-        sent.append(channel.build_command_payload(command))
-        yield 0, None  # Expected EOF when the Client closes its socket.
-
-    connection = SimpleNamespace(
-        session_info=SimpleNamespace(client_id='client-A', hostname='test'),
-        send_command=send_command,
-    )
-    support = AdvancedBuiltinSupport(connection, SimpleNamespace(
-        confirm=lambda *a, **kw: (prompts.append('server'), True)[1],
-    ))
-    assert list(support.disconnect())[-1] == (1, 'Client connection closed.')
-    assert sent[0]['text'] == 'kill_connection'
-    assert sent[0]['extra']['__script_grant__']['token'] == 'issued-token'
-    assert set(sent[0]['extra']) == {'__script_grant__'}
-
-    executor = CommandExecutor.__new__(CommandExecutor)
-    executor.context_store = SimpleNamespace(extract_timeout=lambda *_: None)
-    request = executor._build_request(sent[0]['id'], options=sent[0]['extra'])
-    owner = SimpleNamespace(
-        bind_execution=lambda *args: None,
-        socket=SimpleNamespace(close=lambda: executed.append('close')),
-        _checkpoint=lambda **kwargs: None,
-    )
-    executor._get_or_create_execution_context = lambda command_id, timeout=None: object()
-    executor._bind_execution(owner, request)
-    monkeypatch.setattr(CommandInteractions, 'confirm',
-                        lambda *a, **kw: (prompts.append('client'), True)[1])
-    monkeypatch.setattr(session_ops.sys, 'exit', lambda *_: executed.append('exit'))
-    CommonCommands.kill_connection(owner)
-    assert prompts == ['server', 'client']
-    assert executed == ['close', 'exit']
-
-
-def test_server_disconnect_client_refusal_does_not_close_socket(monkeypatch):
-    sent = []
-    channel, _ = make_channel()
-
-    def send_command(command):
-        sent.append(channel.build_command_payload(command))
-        yield 0, 'Command cancelled: confirmation rejected or expired'
-
-    support = AdvancedBuiltinSupport(
-        SimpleNamespace(session_info=SimpleNamespace(client_id='client-A', hostname='test'),
-                        send_command=send_command),
-        SimpleNamespace(confirm=lambda *a, **kw: True),
-    )
-    assert list(support.disconnect())[-1][0] == 0
-    assert sent[0]['text'] == 'kill_connection'
-    executed = []
-    monkeypatch.setattr(CommandInteractions, 'confirm', lambda *a, **kw: False)
-    owner = SimpleNamespace(socket=SimpleNamespace(close=lambda: executed.append('close')),
-                            _interaction_grant=sent[0]['extra']['__script_grant__'])
-    result = CommonCommands.kill_connection(owner)
     assert result[0] == 0
     assert executed == []
 

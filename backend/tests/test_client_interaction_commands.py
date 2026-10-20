@@ -3,7 +3,6 @@ from types import SimpleNamespace
 
 import pytest
 
-from client.commands.common.mixins.interaction_ops import CommandInteractionMixin
 from client.commands.common.services.interaction_service import CommandInteractions, CommandInteractionError
 from client.commands.common.mixins.process_ops import CommandProcessMixin
 from client.commands.common.groups import CommonRuntimeCommands
@@ -20,8 +19,7 @@ def owner(token='active-grant'):
 
 
 def test_client_commands_are_registered_without_old_aliases():
-    names = ('interaction_demo', 'interaction_advanced_demo', 'interaction_preview_demo',
-             'kill_port', 'kill_proc')
+    names = ('kill_port', 'kill_proc')
     for name in names:
         assert hasattr(CommonRuntimeCommands, name)
         assert hasattr(getattr(CommonRuntimeCommands, name), 'help')
@@ -29,15 +27,16 @@ def test_client_commands_are_registered_without_old_aliases():
     for old in ('kill_by_port', 'kill_process_preview'):
         assert not hasattr(CommandProcessMixin, old)
     for name in ('kill_process', 'kill_connection', 'disconnect'):
-        assert not hasattr(BuiltinCommandHandler, name) or name == 'disconnect'
-    assert hasattr(BuiltinCommandHandler, 'disconnect')
+        assert not hasattr(BuiltinCommandHandler, name)
+    assert BuiltinCommandHandler.REGISTRY.get('disconnect') is None
+    for name in ('interaction_demo', 'interaction_advanced_demo', 'interaction_preview_demo'):
+        assert not hasattr(CommonRuntimeCommands, name)
     assert not hasattr(CommonRuntimeCommands, 'disconnect')
 
 
 def test_plain_command_resolution_uses_normal_client_registry():
     runner = ShellCommandRunner(SimpleNamespace())
-    for name in ('interaction_demo', 'interaction_advanced_demo', 'interaction_preview_demo',
-                 'kill_port', 'kill_proc'):
+    for name in ('kill_port', 'kill_proc'):
         cmd = runner._resolve_builtin_command(CommonRuntimeCommands, name)
         assert cmd is not None and hasattr(cmd, 'help')
     assert runner._resolve_builtin_command(CommonRuntimeCommands, 'kill_by_port') is None
@@ -76,20 +75,6 @@ def test_secret_input_and_preview_rejection(monkeypatch):
     assert requests[0]['message'] == 'Secret?'
 
 
-def test_advanced_demo_does_not_disclose_secret(monkeypatch):
-    result = iter([{'status': 'answered', 'value': 'Execute demo'},
-                   {'status': 'answered', 'value': 'sample-secret'},
-                   {'status': 'answered', 'value': True}])
-    calls = []
-    def responder(self, kind, message, **kw):
-        calls.append(kind)
-        return next(result)
-    monkeypatch.setattr(CommandInteractions, 'request', responder)
-    assert CommandInteractionMixin.interaction_advanced_demo(owner()) == (
-        1, 'Demo complete; secret received but not disclosed.')
-    assert calls == ['select', 'secret', 'confirm']
-
-
 def test_each_interactive_command_receives_scoped_grant():
     issued = []
     class GrantService:
@@ -98,10 +83,9 @@ def test_each_interactive_command_receives_scoped_grant():
             return {'token': 't'}
     session = SimpleNamespace(context=SimpleNamespace(script_grant_service=GrantService()))
     channel = ClientSessionCommandChannel(session)
-    for name in ('interaction_demo', 'interaction_advanced_demo', 'interaction_preview_demo',
-                 'kill_port', 'kill_proc'):
+    for name in ('kill_port', 'kill_proc'):
         result = channel.build_command_payload(name)
         assert result['extra']['__script_grant__']['token'] == 't'
     for old in ('kill_by_port', 'kill_process_preview'):
         assert 'extra' not in channel.build_command_payload(old)
-    assert len(issued) == 5
+    assert len(issued) == 2

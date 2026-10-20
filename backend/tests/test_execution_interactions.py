@@ -26,7 +26,7 @@ class Events:
 def broker_case():
     bus = Events()
     store = WebTaskStore()
-    task = store.create_task('client-A', 'interaction_demo', tab_id='tab-A')
+    task = store.create_task('client-A', 'test-interaction', tab_id='tab-A')
     return InteractionBroker(bus, store), bus, store, task
 
 
@@ -151,39 +151,6 @@ def test_script_interaction_requires_explicit_grant(monkeypatch):
     monkeypatch.setattr(interactions.context, 'get_script_grant_token', lambda: '')
     with pytest.raises(interactions.ScriptSdkInteractionError, match='api_grants'):
         interactions.confirm('ok?')
-
-
-def test_client_demo_approval_then_input(monkeypatch):
-    from client.commands.common.mixins.interaction_ops import CommandInteractionMixin
-    from client.commands.common.services.interaction_service import CommandInteractions
-    outcomes = iter([{'status': 'answered', 'value': True},
-                     {'status': 'answered', 'value': 'demo-test'}])
-    calls = []
-    def fake_request(self, kind, message, **kwargs):
-        calls.append(kind)
-        return next(outcomes)
-    monkeypatch.setattr(CommandInteractions, 'request', fake_request)
-    output = []
-    owner = SimpleNamespace(_set_timeout=lambda _: None,
-                            _send_interim_result=lambda *args: output.append(args))
-    result = CommandInteractionMixin.interaction_demo(owner)
-    assert result == (1, '[Interaction Demo] Executed successfully. Label: demo-test')
-    assert calls == ['confirm', 'input']
-    assert len(output) == 1
-
-
-def test_client_demo_rejected_never_requests_input(monkeypatch):
-    from client.commands.common.mixins.interaction_ops import CommandInteractionMixin
-    from client.commands.common.services.interaction_service import CommandInteractions
-    calls = []
-    def fake_request(self, kind, message, **kwargs):
-        calls.append(kind)
-        return {'status': 'rejected', 'value': False}
-    monkeypatch.setattr(CommandInteractions, 'request', fake_request)
-    owner = SimpleNamespace(_set_timeout=lambda _: None, _send_interim_result=lambda *args: None)
-    result = CommandInteractionMixin.interaction_demo(owner)
-    assert result[0] == 0 and 'not executed' in result[1].lower()
-    assert calls == ['confirm']
 
 
 def test_secret_answer_never_appears_in_sse_or_pending(broker_case):

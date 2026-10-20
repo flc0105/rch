@@ -8,10 +8,7 @@ from server.application.auth.script_grant_service import SCRIPT_GRANT_REQUEST_KE
 from server.connection.channel.session_command_channel import ClientSessionCommandChannel
 
 
-INTERACTIVE_NAMES = (
-    'kill_proc', 'kill_port', 'interaction_demo',
-    'interaction_advanced_demo', 'interaction_preview_demo',
-)
+INTERACTIVE_NAMES = ('kill_proc', 'kill_port')
 
 
 def channel_and_requests():
@@ -28,7 +25,7 @@ def channel_and_requests():
     return ClientSessionCommandChannel(session), requests
 
 
-def test_five_commands_declare_scopes_at_method():
+def test_interactive_process_commands_declare_scopes_at_method():
     for name in INTERACTIVE_NAMES:
         command = getattr(CommonCommands, name)
         assert command.api_grants == ('interactions:request',)

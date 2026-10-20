@@ -3,7 +3,6 @@ from client.commands.common.mixins.external_tool_ops import CommandExternalToolM
 from client.commands.common.mixins.file_cli_ops import CommandFileCliMixin
 from client.commands.common.mixins.file_web_ops import CommandFileWebMixin
 from client.commands.common.mixins.introspection_ops import CommandIntrospectionMixin
-from client.commands.common.mixins.interaction_ops import CommandInteractionMixin
 from client.commands.common.mixins.process_ops import CommandProcessMixin
 from client.commands.common.mixins.runtime_config_ops import CommandRuntimeConfigMixin
 from client.commands.common.mixins.session_ops import CommandSessionMixin
@@ -37,7 +36,6 @@ class CommonRuntimeCommands(
     CommandExternalToolMixin,
     CommandIntrospectionMixin,
     CommandProcessMixin,
-    CommandInteractionMixin,
     CommandRuntimeConfigMixin,
     CommandWatchdogMixin,
     CommandUpdateMixin,

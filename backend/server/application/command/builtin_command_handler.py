@@ -1,4 +1,5 @@
 from server.application.command.server_builtin_registry import SERVER_COMMAND_REGISTRY
+from core.utils.command_help import render_grouped_client_help
 from server.application.command.builtin_command_support import (
     AliasBuiltinSupport,
     HistoryBuiltinSupport,
@@ -10,9 +11,7 @@ from server.application.command.builtin_command_support import (
 from server.application.command.command_output_builtin_support import CommandOutputBuiltinSupport
 from server.application.command.command_notify_builtin_support import CommandNotifyBuiltinSupport
 from server.application.command.control_builtin_support import ControlBuiltinSupport
-from server.application.command.interaction_builtin_support import BuiltinInteractionSupport
 from server.application.command.job_builtin_support import JobBuiltinSupport
-from server.application.command.advanced_builtin_support import AdvancedBuiltinSupport
 
 
 class BuiltinCommandHandler:
@@ -21,7 +20,7 @@ class BuiltinCommandHandler:
 
     职责：
     - 提供内建命令候选项
-    - 分发 upload / exec / alias / unalias / history / rtt 等内建命令
+    - 仅分发显式注册的 upload / script / alias / history / job 等内建命令
     - 不负责命令总路由，也不直接决定 alias / default / acmd 的分流
     """
 
@@ -96,8 +95,6 @@ class BuiltinCommandHandler:
         self.control_support = ControlBuiltinSupport(
             conn=self.conn,
         )
-        self.interactions = BuiltinInteractionSupport(server=self.server, conn=self.conn)
-        self.advanced_builtins = AdvancedBuiltinSupport(self.conn, self.interactions)
 
         self.external_tool_cli_support = ExternalToolCliBuiltinSupport(
             server=self.server,
@@ -156,15 +153,11 @@ class BuiltinCommandHandler:
         if target in ('', 'server'):
             lines = ['Server Commands:', self.REGISTRY.help()]
             if target == '':
-                lines.extend(['', 'Client Commands:', self._client_help(),
-                              '', 'Aliases:', self._alias_help()])
+                lines.extend(['', 'Client Commands:', self._client_help()])
             yield 1, '\n'.join(lines)
             return
         if target == 'client':
             yield 1, self._client_help()
-            return
-        if target == 'alias':
-            yield 1, self._alias_help()
             return
         try:
             yield 1, self.REGISTRY.help(target)
@@ -172,15 +165,21 @@ class BuiltinCommandHandler:
             yield 0, str(exc)
 
     def _client_help(self):
+        """Recreate the Client's native help groups from the handshake manifest."""
         manifest = getattr(getattr(self.conn, 'session_info', None), 'command_manifest', None) or []
-        lines = [f"{str(item.get('name') or ''):<22} {str(item.get('help') or '')}"
-                 for item in manifest if isinstance(item, dict)
-                 and item.get('name') and item.get('suggest', True) is not False]
-        return '\n'.join(sorted(lines, key=str.lower)) or 'No Client commands available'
-
-    def _alias_help(self):
-        rows = self.alias_support.list_resolved_aliases()
-        return '\n'.join(f"{row['alias']} -> {row['command']}" for row in rows) or 'No aliases available'
+        grouped = {}
+        for item in manifest:
+            if not isinstance(item, dict) or item.get('suggest', True) is False:
+                continue
+            name = str(item.get('name') or '').strip()
+            if not name:
+                continue
+            group = str(item.get('group') or 'general')
+            # Client help shows actual ACMD names, not autocomplete-only help templates.
+            if group == 'acmd' and (name == 'acmd' or name.startswith('acmd help ')):
+                continue
+            grouped.setdefault(group, []).append((name, str(item.get('help') or '')))
+        return render_grouped_client_help(grouped) or 'No Client commands available'
 
     def upload(self, filename):
         for item in self.upload_support.upload(filename):
@@ -226,7 +225,4 @@ class BuiltinCommandHandler:
     def httpctl(self, arg=''):
         for item in self.control_support.httpctl(arg):
             yield item
-
-    def disconnect(self, arg=''):
-        yield from self.advanced_builtins.disconnect(arg)
 

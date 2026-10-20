@@ -10,7 +10,6 @@ import pytest
 
 from server.application.execution.interaction_broker import InteractionBroker
 from server.application.tasks.task_store import WebTaskStore
-from server.application.command.advanced_builtin_support import AdvancedBuiltinSupport
 from client.commands.common.mixins.process_ops import CommandProcessMixin
 from client.commands.common.services.process import approved_process_service as aps
 from server.application.command.builtin_command_handler import BuiltinCommandHandler
@@ -150,15 +149,6 @@ def test_process_approval_executes_with_verified_snapshot(monkeypatch):
     status, message = CommandProcessMixin._run_approved_process_command(owner, '2324')
     assert status == 1 and 'SIGTERM' in message
     assert sent[0][0]['created_at'] == 2342.3 and sent[0][1]['force'] is False
-
-
-def test_disconnection_refusal_preserves_connection():
-    events = []
-    conn = SimpleNamespace(session_info=SimpleNamespace(client_id='client-A', hostname='host'),
-                           close=lambda: events.append('closed'))
-    support = AdvancedBuiltinSupport(conn, SimpleNamespace(confirm=lambda *a, **kw: False))
-    result = list(support.disconnect())
-    assert result[-1][0] == 0 and not events
 
 
 def test_plan_script_separate_and_metadata_declares_grants():

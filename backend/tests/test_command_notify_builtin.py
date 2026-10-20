@@ -87,7 +87,8 @@ class CommandNotifyBuiltinSupportTests(unittest.TestCase):
             if item.get('name') == 'notify'
         )
         self.assertEqual('notify ', candidate['template'])
-        self.assertIn('notify <client-command>', candidate['help'])
+        self.assertEqual('Run a Client command and notify when finished', candidate['help'])
+        self.assertNotIn('|', candidate['help'])
 
     def test_notify_preserves_default_client_commands(self):
         for command in ('shell echo hello', 'read python -V', 'getinfo'):

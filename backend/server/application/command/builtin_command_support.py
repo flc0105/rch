@@ -460,7 +460,7 @@ class PinnedPathBuiltinSupport:
                 yield 1, 'No saved pinned paths for current host'
                 return
 
-            lines = [f'[{self._get_machine_id()}]']
+            lines = []
             for item in items:
                 lines.append(f'{item.get("display_name", "")} -> {item.get("path", "")}')
             yield 1, '\n'.join(lines)

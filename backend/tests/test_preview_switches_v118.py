@@ -101,35 +101,6 @@ def test_client_process_signal_only_follows_approved_switch(monkeypatch):
     assert calls == [{'force': False, 'port': 8080}, {'force': True, 'port': 8080}]
 
 
-def test_disconnect_stays_server_builtin_and_client_commands_do_not_shadow_it():
-    assert any(x['name'] == 'disconnect' and x['source'] == 'server'
-               for x in BuiltinCommandHandler.REGISTRY.candidates())
-    assert hasattr(BuiltinCommandHandler, 'disconnect')
-    assert not hasattr(CommandProcessMixin, 'disconnect')
-    from server.application.command.advanced_builtin_support import AdvancedBuiltinSupport
-    closed = []
-    conn = SimpleNamespace(session_info=SimpleNamespace(client_id='client-A', hostname='test'),
-                           close=lambda: closed.append(True))
-    result = list(AdvancedBuiltinSupport(conn, SimpleNamespace(confirm=lambda *a, **k: False)).disconnect())
-    assert result[-1][0] == 0 and not closed
-
-
-def test_approved_server_disconnect_sends_client_kill_connection():
-    from server.application.command.advanced_builtin_support import AdvancedBuiltinSupport
-    sent = []
-
-    def send_command(command):
-        sent.append(command)
-        yield 0, None
-
-    conn = SimpleNamespace(session_info=SimpleNamespace(client_id='client-A', hostname='test'),
-                           send_command=send_command,
-                           close=lambda: pytest.fail('Do not directly close Server transport'))
-    result = list(AdvancedBuiltinSupport(conn, SimpleNamespace(confirm=lambda *a, **kw: True)).disconnect())
-    assert result[-1] == (1, 'Client connection closed.')
-    assert sent == ['kill_connection']
-
-
 @pytest.mark.parametrize('by_port,arg,criteria', [
     (True, '9999', {'port': 9999}),
     (True, '9999 -9', {'port': 9999, 'force': True}),
