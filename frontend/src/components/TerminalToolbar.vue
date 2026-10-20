@@ -117,12 +117,14 @@
       </template>
 
       <el-dropdown
-        trigger="click"
+        ref="moreDropdown"
+        trigger="hover"
         @command="handleMoreCommand"
       >
         <el-button
           size="small"
           class="tool-btn tool-btn-accent"
+          @click.stop="openToolbox"
         >
           More
         </el-button>
@@ -172,12 +174,19 @@
         Bottom
       </el-button>
     </div>
+    <ToolboxDialog
+      v-model:visible="toolboxVisible"
+      :actions="toolboxActions"
+      @launch="queueToolboxLaunch"
+      @closed="handleToolboxClosed"
+    />
   </div>
 
 </template>
 
 <script>
 import { ElMessage, ElMessageBox } from 'element-plus'
+import ToolboxDialog from './ToolboxDialog.vue'
 import { killConnection as killConnectionApi } from '../api/connectionsApi.js'
 import { loadToolbarPreferences } from '../api/toolbarPreferencesApi.js'
 import { listQuickActions } from '../api/quickActionsApi.js'
@@ -190,6 +199,7 @@ import {
 
 export default {
   name: 'TerminalToolbar',
+  components: { ToolboxDialog },
 
   props: {
     selectedId: {
@@ -247,6 +257,8 @@ export default {
       toolbarPreferences: cloneToolbarPreferences(DEFAULT_TOOLBAR_PREFERENCES),
       quickActionsLoading: false,
       pinnedQuickActions: [],
+      toolboxVisible: false,
+      pendingToolboxActionId: null,
     }
   },
 
@@ -270,6 +282,14 @@ export default {
     },
     moreActions() {
       return this.actionsForIds(this.toolbarPreferences.more)
+    },
+    toolboxActions() {
+      // One catalog and the current Toolbar + More order, without a separate Toolbox layout.
+      const ids = [...this.toolbarPreferences.toolbar, ...this.toolbarPreferences.more]
+      return this.actionsForIds(ids).map((action) => ({
+        ...action,
+        disabled: this.isActionDisabled(action.id),
+      }))
     },
   },
 
@@ -424,6 +444,30 @@ export default {
         return
       }
       this.$emit(eventName)
+    },
+    openToolbox() {
+      this.$refs.moreDropdown?.handleClose?.()
+      this.pendingToolboxActionId = null
+      this.toolboxVisible = true
+    },
+    queueToolboxLaunch(actionId) {
+      if (actionId !== 'settings' && (
+        !TOOLBAR_ACTION_CATALOG.some((action) => action.id === actionId)
+        || this.isActionDisabled(actionId)
+      )) return
+      this.pendingToolboxActionId = actionId
+      this.toolboxVisible = false
+    },
+    handleToolboxClosed() {
+      const actionId = this.pendingToolboxActionId
+      this.pendingToolboxActionId = null
+      if (!actionId) return
+      if (actionId === 'settings') {
+        this.$emit('open-settings')
+      } else if (!this.isActionDisabled(actionId)) {
+        // Use the exact same route as the existing Toolbar and More entries.
+        this.runAction(actionId)
+      }
     },
     handleMoreCommand(command) {
       const normalizedCommand = String(command || '').trim().toLowerCase()
