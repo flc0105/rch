@@ -63,7 +63,7 @@ test('Toolbox uses exactly 16 shared actions and original Lucide icon choices', 
   ])
   const { vue } = readOptions('../src/components/ToolboxDialog.vue', { Search: {}, Settings2: {}, Close: {}, FolderOpen: {}, Archive: {}, Monitor: {}, FileCode: {}, History: {}, Terminal: {}, MonitorPlay: {}, Clipboard: {}, Wrench: {}, CalendarClock: {}, Bot: {}, Activity: {}, KeyRound: {}, BookOpen: {}, Code2: {}, Zap: {} })
   assert.match(vue, /grid-template-columns: repeat\(6, minmax\(0, 1fr\)\)/)
-  assert.match(vue, /@closed="\$emit\('closed'\)"/)
+  assert.doesNotMatch(vue, /@closed="\$emit\('closed'\)"/, 'launch should not wait for closing animation')
   assert.doesNotMatch(vue, /draggable|@dragstart|@drop=/, 'drag-to-sort is next version only')
   assert.match(vue, /@click="\$emit\('launch', action.id\)"/)
 })
@@ -81,28 +81,44 @@ test('More hover preserves the original menu while click opens Toolbox', () => {
   assert.deepEqual(app.events, ['open-documents', 'open-settings'])
 })
 
-test('Tools launch only after Toolbox has finished closing and reuse normal dispatch', () => {
+test('Toolbox launches tools immediately without waiting for the close animation', () => {
   const app = mountToolbar()
   const ids = Array.from(app.options.computed.toolboxActions.call(app.instance), item => item.id)
   assert.equal(ids.length, 16)
   assert.equal(ids[0], 'remote-files')
   assert.equal(ids.at(-1), 'quick-actions')
+
   app.instance.openToolbox()
-  app.instance.queueToolboxLaunch('documents')
+  app.instance.launchToolboxAction('documents')
   assert.equal(app.instance.toolboxVisible, false)
-  assert.deepEqual(app.events, [], 'must not open another Dialog before closed event')
-  app.instance.handleToolboxClosed()
+  assert.deepEqual(app.events, ['open-documents'], 'tool launches synchronously without a closed event')
+
+  // A rapid second click during closing must not open a second dialog.
+  app.instance.launchToolboxAction('processes')
   assert.deepEqual(app.events, ['open-documents'])
-  app.instance.handleToolboxClosed()
-  assert.equal(app.events.length, 1, 'no duplicate launch on stale closed events')
+
   app.instance.openToolbox()
-  app.instance.queueToolboxLaunch('processes')
-  app.instance.handleToolboxClosed()
+  app.instance.launchToolboxAction('processes')
   assert.deepEqual(app.events, ['open-documents', 'open-processes'])
   app.instance.openToolbox()
-  app.instance.queueToolboxLaunch('settings')
-  app.instance.handleToolboxClosed()
+  app.instance.launchToolboxAction('settings')
   assert.equal(app.events.at(-1), 'open-settings')
+  assert.equal(app.instance.toolboxVisible, false)
+})
+
+test('Toolbox closes its own window before synchronously dispatching the target tool', () => {
+  const app = mountToolbar()
+  let closedAtDispatch = false
+  app.instance.$emit = event => {
+    if (event === 'open-screen-view') {
+      closedAtDispatch = !app.instance.toolboxVisible
+    }
+    app.events.push(event)
+  }
+  app.instance.openToolbox()
+  app.instance.launchToolboxAction('screen-view')
+  assert.equal(closedAtDispatch, true)
+  assert.deepEqual(app.events, ['open-screen-view'])
 })
 
 test('Device tools remain disabled and cannot launch from Toolbox', () => {
@@ -113,10 +129,9 @@ test('Device tools remain disabled and cannot launch from Toolbox', () => {
   assert.equal(entries.find(item => item.id === 'remote-files').disabled, true)
   assert.equal(entries.find(item => item.id === 'documents').disabled, false)
   app.instance.openToolbox()
-  app.instance.queueToolboxLaunch('pty')
+  app.instance.launchToolboxAction('pty')
   assert.equal(app.instance.toolboxVisible, true, 'disabled entry must not close Toolbox')
-  app.instance.queueToolboxLaunch('documents')
-  app.instance.handleToolboxClosed()
+  app.instance.launchToolboxAction('documents')
   assert.deepEqual(app.events, ['open-documents'])
 })
 
@@ -149,7 +164,7 @@ test('Toolbox header aligns Settings and Close using the Screen View header layo
   assert.match(toolbox, /class="toolbox-header-action"[^>]*aria-label="Settings"[^>]*@click="\$emit\('launch', 'settings'\)"/)
   assert.match(toolbox, /class="toolbox-header-action"\s+aria-label="Close"[\s\S]*?@click="\$emit\('update:visible', false\)"/)
   assert.match(toolbox, /<el-icon><Close \/><\/el-icon>/)
-  assert.match(toolbox, /@closed="\$emit\('closed'\)"/, 'preserve Toolbox launch-after-close event')
+  assert.doesNotMatch(toolbox, /@closed="\$emit\('closed'\)"/, 'do not delay launch until close transition ends')
   assert.match(toolbox, /\.toolbox-header-actions \{[^}]*display: flex;[^}]*align-items: center;[^}]*gap: 10px;/)
   assert.match(toolbox, /\.toolbox-header-action \{[^}]*width: 32px;[^}]*height: 32px;/)
   assert.match(screen, /\.screen-view-header-actions \{[^}]*gap: 10px;/)

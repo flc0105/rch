@@ -177,8 +177,7 @@
     <ToolboxDialog
       v-model:visible="toolboxVisible"
       :actions="toolboxActions"
-      @launch="queueToolboxLaunch"
-      @closed="handleToolboxClosed"
+      @launch="launchToolboxAction"
     />
   </div>
 
@@ -258,7 +257,6 @@ export default {
       quickActionsLoading: false,
       pinnedQuickActions: [],
       toolboxVisible: false,
-      pendingToolboxActionId: null,
     }
   },
 
@@ -447,25 +445,19 @@ export default {
     },
     openToolbox() {
       this.$refs.moreDropdown?.handleClose?.()
-      this.pendingToolboxActionId = null
       this.toolboxVisible = true
     },
-    queueToolboxLaunch(actionId) {
+    launchToolboxAction(actionId) {
+      if (!this.toolboxVisible) return
       if (actionId !== 'settings' && (
         !TOOLBAR_ACTION_CATALOG.some((action) => action.id === actionId)
         || this.isActionDisabled(actionId)
       )) return
-      this.pendingToolboxActionId = actionId
+      // Open the target immediately; Toolbox may finish its exit animation underneath it.
       this.toolboxVisible = false
-    },
-    handleToolboxClosed() {
-      const actionId = this.pendingToolboxActionId
-      this.pendingToolboxActionId = null
-      if (!actionId) return
       if (actionId === 'settings') {
         this.$emit('open-settings')
-      } else if (!this.isActionDisabled(actionId)) {
-        // Use the exact same route as the existing Toolbar and More entries.
+      } else {
         this.runAction(actionId)
       }
     },

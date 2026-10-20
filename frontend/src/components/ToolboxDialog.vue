@@ -9,7 +9,6 @@
     append-to-body
     :destroy-on-close="false"
     @update:model-value="$emit('update:visible', $event)"
-    @closed="$emit('closed')"
   >
     <template #header>
       <div class="toolbox-header">
@@ -102,7 +101,7 @@ export default {
     visible: { type: Boolean, default: false },
     actions: { type: Array, default: () => [] },
   },
-  emits: ['update:visible', 'launch', 'closed'],
+  emits: ['update:visible', 'launch'],
   data() {
     return { query: '' }
   },
