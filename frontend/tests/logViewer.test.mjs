@@ -115,14 +115,17 @@ test('paused viewer uses one-shot remote monitor on Refresh', async () => {
   assert.ok(calls.filter(row => row.url.endsWith('/close')).length >= 2)
 })
 
-test('viewer is remote-only, toolbar is compact, Wrap defaults on', () => {
+test('viewer keeps Browse and full-width path above the other controls, Wrap defaults on', () => {
   const { instance } = makeViewer()
   instance.open()
   assert.equal(instance.wrap, true)
   assert.doesNotMatch(component, /log-viewer-side|sourceSide|Server files are not available/)
-  assert.match(component, /class="log-viewer-toolbar"/)
-  assert.match(component, /flex-wrap: nowrap/)
-  assert.match(component, /Browse[\s\S]*Choose a remote log file[\s\S]*Streaming[\s\S]*Refresh/)
+  const toolbar = component.match(/<div class="log-viewer-toolbar">([\s\S]*?)<\/div>\s*<div v-if="error"/)?.[1]
+  assert.ok(toolbar)
+  assert.match(toolbar, /<div class="log-viewer-file-row">[\s\S]*?>Browse<\/el-button>[\s\S]*class="log-viewer-path"[\s\S]*<\/div>/)
+  assert.match(toolbar, /<div class="log-viewer-actions-row">[\s\S]*Streaming[\s\S]*Refresh[\s\S]*Clear View[\s\S]*Copy[\s\S]*Follow[\s\S]*Wrap[\s\S]*Find in loaded log[\s\S]*<\/div>/)
+  assert.match(component, /\.log-viewer-toolbar \{[^}]*flex-direction: column/)
+  assert.match(component, /\.log-viewer-path \{[^}]*flex: 1 1 auto/)
 })
 
 test('line numbers stay attached to original loaded lines during search', () => {

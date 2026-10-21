@@ -10,15 +10,19 @@
   >
     <div class="log-viewer-body">
       <div class="log-viewer-toolbar">
-        <el-button size="small" plain :disabled="!activeClientId" @click="pickerVisible = true">Browse</el-button>
-        <code class="log-viewer-path" :title="path">{{ path || 'Choose a remote log file' }}</code>
-        <el-switch v-model="streaming" size="small" active-text="Streaming" @change="onStreamingChange" />
-        <el-button size="small" :disabled="!path || loading" :loading="loading" @click="refresh">Refresh</el-button>
-        <el-button size="small" @click="clearView">Clear View</el-button>
-        <el-button size="small" @click="copyLogs">Copy</el-button>
-        <el-checkbox v-model="follow">Follow</el-checkbox>
-        <el-checkbox v-model="wrap">Wrap</el-checkbox>
-        <el-input v-model="search" size="small" clearable class="log-viewer-search" placeholder="Find in loaded log..." />
+        <div class="log-viewer-file-row">
+          <el-button size="small" plain :disabled="!activeClientId" @click="pickerVisible = true">Browse</el-button>
+          <code class="log-viewer-path" :title="path">{{ path || 'Choose a remote log file' }}</code>
+        </div>
+        <div class="log-viewer-actions-row">
+          <el-switch v-model="streaming" size="small" active-text="Streaming" @change="onStreamingChange" />
+          <el-button size="small" :disabled="!path || loading" :loading="loading" @click="refresh">Refresh</el-button>
+          <el-button size="small" @click="clearView">Clear View</el-button>
+          <el-button size="small" @click="copyLogs">Copy</el-button>
+          <el-checkbox v-model="follow">Follow</el-checkbox>
+          <el-checkbox v-model="wrap">Wrap</el-checkbox>
+          <el-input v-model="search" size="small" clearable class="log-viewer-search" placeholder="Find in loaded log..." />
+        </div>
       </div>
       <div v-if="error" class="log-viewer-error">{{ error }}</div>
       <div ref="output" class="log-viewer-output" :class="{ 'log-viewer-wrap': wrap }" @scroll="onScroll">
@@ -290,11 +294,13 @@ export default {
 
 <style scoped>
 .log-viewer-body { display: flex; flex-direction: column; gap: 8px; min-height: 0; height: min(70vh, 700px); }
-.log-viewer-toolbar { display: flex; align-items: center; flex-wrap: nowrap; gap: 9px; min-width: 0; overflow-x: auto; padding: 2px 0 6px; }
+.log-viewer-toolbar { display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 2px 0 6px; }
+.log-viewer-file-row, .log-viewer-actions-row { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.log-viewer-actions-row { overflow-x: auto; }
 .log-viewer-toolbar :deep(.el-button + .el-button) { margin-left: 0; }
 .log-viewer-toolbar :deep(.el-checkbox) { margin-right: 0; flex: 0 0 auto; }
 .log-viewer-toolbar :deep(.el-switch), .log-viewer-toolbar :deep(.el-button) { flex-shrink: 0; }
-.log-viewer-path { min-width: 110px; max-width: 190px; flex: 1 1 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.log-viewer-path { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
 .log-viewer-search { flex: 0 0 160px; width: 160px; margin-left: auto; }
 .log-viewer-error { font-size: 12px; color: var(--el-color-danger); }
 .log-viewer-output { flex: 1; min-height: 130px; overflow: auto; border: 1px solid var(--el-border-color); border-radius: 7px; background: var(--el-fill-color-light); color: var(--el-text-color-primary); font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
