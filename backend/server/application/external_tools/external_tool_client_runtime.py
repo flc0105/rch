@@ -339,12 +339,6 @@ class ExternalToolClientLifecycleRuntime(ExternalToolRuntimeComponent):
         command = f'external_tool_list_instances {self.payload_builder.encode_payload_arg(payload)}'
         return self._run_client_lifecycle_command(client_id, command, tab_id=tab_id)
 
-    def read_client_logs(self, client_id: str, tool_id: str, instance_id: str, max_bytes: int | None = None, tab_id: str = '', cursor: str | None = None) -> dict:
-        meta = self.catalog_service.get_tool(tool_id)
-        payload = self.payload_builder.build_client_action_payload(meta, 'logs', instance_id=instance_id, max_bytes=max_bytes, cursor=cursor)
-        command = f'external_tool_logs {self.payload_builder.encode_payload_arg(payload)}'
-        return self._run_client_lifecycle_command(client_id, command, tab_id=tab_id)
-
     def remove_client_instance(self, client_id: str, tool_id: str, instance_id: str, tab_id: str = '') -> dict:
         meta = self.catalog_service.get_tool(tool_id)
         payload = self.payload_builder.build_client_action_payload(meta, 'remove', instance_id=instance_id)

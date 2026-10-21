@@ -175,15 +175,6 @@ export function stopClientInstance(clientId, toolId, instanceId, payload = {}, h
   )
 }
 
-export function readClientInstanceLogs(clientId, toolId, instanceId, payload = {}, headers = {}) {
-  return postJson(
-    `/api/connections/${encodeURIComponent(clientId)}/external-tools/${encodeURIComponent(toolId)}/instances/${encodeURIComponent(instanceId)}/logs`,
-    payload,
-    headers,
-    'Failed to read client logs',
-  )
-}
-
 export function removeClientInstance(clientId, toolId, instanceId, payload = {}, headers = {}) {
   return postJson(
     `/api/connections/${encodeURIComponent(clientId)}/external-tools/${encodeURIComponent(toolId)}/instances/${encodeURIComponent(instanceId)}/remove`,

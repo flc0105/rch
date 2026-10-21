@@ -453,12 +453,14 @@ export default {
                 const payload = JSON.parse(event.data || '{}');
                 this.$refs.connectionInfoDialogRef?.handleDeviceMonitorSnapshot?.(payload);
                 this.$refs.processDialogRef?.handleDeviceMonitorSnapshot?.(payload);
+                this.$refs.logViewerDialogRef?.handleDeviceMonitorSnapshot?.(payload);
             });
 
             es.addEventListener('device_monitor_status', (event) => {
                 const payload = JSON.parse(event.data || '{}');
                 this.$refs.connectionInfoDialogRef?.handleDeviceMonitorStatus?.(payload);
                 this.$refs.processDialogRef?.handleDeviceMonitorStatus?.(payload);
+                this.$refs.logViewerDialogRef?.handleDeviceMonitorStatus?.(payload);
             });
 
             es.addEventListener('transfer_updated', (event) => {

@@ -8,6 +8,7 @@ MONITOR_SUPPORTED_CHANNELS = frozenset({
     'process_detail',
     'process_connections',
     'process_open_files',
+    'log_file',
 })
 MONITOR_DEFAULT_CHANNELS = ('system', 'storage', 'network', 'battery')
 MONITOR_DEFAULT_INTERVALS = {
@@ -20,6 +21,7 @@ MONITOR_DEFAULT_INTERVALS = {
     'process_detail': 1.0,
     'process_connections': 2.0,
     'process_open_files': 3.0,
+    'log_file': 0.25,
 }
 MONITOR_MIN_INTERVAL_SECONDS = 0.25
 MONITOR_MAX_INTERVAL_SECONDS = 60.0

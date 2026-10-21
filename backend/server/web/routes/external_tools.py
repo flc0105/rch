@@ -281,21 +281,6 @@ def create_external_tool_blueprint(server_instance):
             default_error_status=500,
         )
 
-    @blueprint.post('/api/connections/<client_id>/external-tools/<tool_id>/instances/<instance_id>/logs')
-    def read_client_instance_logs(client_id, tool_id, instance_id):
-        def _execute():
-            payload = get_json_payload()
-            max_bytes = request_context.max_bytes_from_payload(payload)
-            return client_lifecycle_api.read_client_logs(
-                client_id,
-                tool_id,
-                instance_id=instance_id,
-                max_bytes=max_bytes,
-                cursor=payload.get('cursor'),
-                tab_id=get_optional_tab_id(),
-            )
-        return responder.json_endpoint(_execute, default_error_status=500)
-
     @blueprint.post('/api/connections/<client_id>/external-tools/<tool_id>/instances/<instance_id>/remove')
     def remove_client_instance(client_id, tool_id, instance_id):
         return responder.json_endpoint(

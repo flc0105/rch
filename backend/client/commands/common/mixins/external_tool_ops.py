@@ -14,7 +14,7 @@ class CommandExternalToolMixin:
     - check/install package
     - write config
     - start detached process
-    - stop/status/list/logs/remove/clear logs
+    - stop/status/list/remove/clear logs
     """
 
     @property
@@ -143,14 +143,6 @@ class CommandExternalToolMixin:
             return self._json_result(self.external_tool_service.list_instances_all_payload(payload))
         except Exception as e:
             return 0, f'Failed to list all external tool instances: {e}'
-
-    @desc('Read external tool instance logs', group='runtime', suggest=False)
-    def external_tool_logs(self, arg=''):
-        try:
-            payload = self._decode_external_tool_payload(arg)
-            return self._json_result(self.external_tool_service.read_logs_payload(payload))
-        except Exception as e:
-            return 0, f'Failed to read external tool logs: {e}'
 
     @desc('Remove stopped external tool instance runtime files', group='runtime', suggest=False)
     def external_tool_remove(self, arg=''):

@@ -51,17 +51,17 @@ function mountToolbar() {
   return { instance, options, events, get dropdownCloses() { return dropdownCloses }, vue }
 }
 
-test('Toolbox uses exactly 16 shared actions and original Lucide icon choices', () => {
+test('Toolbox includes the shared Log Viewer action and original Lucide icon choices', () => {
   const { actions, defaults } = getCatalog()
-  assert.equal(actions.length, 16)
+  assert.equal(actions.length, 17)
   const ids = [...defaults.toolbar, ...defaults.more]
-  assert.equal(new Set(ids).size, 16)
+  assert.equal(new Set(ids).size, 17)
   assert.deepEqual(Array.from(actions, item => item.icon), [
     'folder-open', 'archive', 'monitor', 'file-code', 'history', 'terminal',
-    'monitor-play', 'clipboard', 'wrench', 'calendar-clock', 'bot', 'activity',
+    'monitor-play', 'clipboard', 'wrench', 'scroll-text', 'calendar-clock', 'bot', 'activity',
     'key-round', 'book-open', 'code-2', 'zap',
   ])
-  const { vue } = readOptions('../src/components/ToolboxDialog.vue', { Search: {}, Settings2: {}, Close: {}, FolderOpen: {}, Archive: {}, Monitor: {}, FileCode: {}, History: {}, Terminal: {}, MonitorPlay: {}, Clipboard: {}, Wrench: {}, CalendarClock: {}, Bot: {}, Activity: {}, KeyRound: {}, BookOpen: {}, Code2: {}, Zap: {} })
+  const { vue } = readOptions('../src/components/ToolboxDialog.vue', { Search: {}, Settings2: {}, Close: {}, FolderOpen: {}, Archive: {}, Monitor: {}, FileCode: {}, History: {}, Terminal: {}, MonitorPlay: {}, Clipboard: {}, Wrench: {}, ScrollText: {}, CalendarClock: {}, Bot: {}, Activity: {}, KeyRound: {}, BookOpen: {}, Code2: {}, Zap: {} })
   assert.match(vue, /grid-template-columns: repeat\(6, minmax\(0, 1fr\)\)/)
   assert.doesNotMatch(vue, /@closed="\$emit\('closed'\)"/, 'launch should not wait for closing animation')
   assert.doesNotMatch(vue, /draggable|@dragstart|@drop=/, 'drag-to-sort is next version only')
@@ -84,7 +84,7 @@ test('More hover preserves the original menu while click opens Toolbox', () => {
 test('Toolbox launches tools immediately without waiting for the close animation', () => {
   const app = mountToolbar()
   const ids = Array.from(app.options.computed.toolboxActions.call(app.instance), item => item.id)
-  assert.equal(ids.length, 16)
+  assert.equal(ids.length, 17)
   assert.equal(ids[0], 'remote-files')
   assert.equal(ids.at(-1), 'quick-actions')
 
@@ -136,13 +136,13 @@ test('Device tools remain disabled and cannot launch from Toolbox', () => {
 })
 
 test('Toolbox search is case-insensitive and does not mutate order or preferences', () => {
-  const { options } = readOptions('../src/components/ToolboxDialog.vue', { Search: {}, Settings2: {}, Close: {}, FolderOpen: {}, Archive: {}, Monitor: {}, FileCode: {}, History: {}, Terminal: {}, MonitorPlay: {}, Clipboard: {}, Wrench: {}, CalendarClock: {}, Bot: {}, Activity: {}, KeyRound: {}, BookOpen: {}, Code2: {}, Zap: {} })
+  const { options } = readOptions('../src/components/ToolboxDialog.vue', { Search: {}, Settings2: {}, Close: {}, FolderOpen: {}, Archive: {}, Monitor: {}, FileCode: {}, History: {}, Terminal: {}, MonitorPlay: {}, Clipboard: {}, Wrench: {}, ScrollText: {}, CalendarClock: {}, Bot: {}, Activity: {}, KeyRound: {}, BookOpen: {}, Code2: {}, Zap: {} })
   const actions = getCatalog().actions
   const instance = { ...options.data(), query: '  KEY  ', actions }
   const matched = options.computed.filteredActions.call(instance)
   assert.deepEqual(Array.from(matched, item => item.id), ['keychains'])
-  assert.equal(options.computed.filteredActions.call({ ...instance, query: '' }).length, 16)
-  assert.equal(actions.length, 16)
+  assert.equal(options.computed.filteredActions.call({ ...instance, query: '' }).length, 17)
+  assert.equal(actions.length, 17)
 })
 
 test('npm ci lock root matches lucide dependency (no hand-written integrity)', () => {

@@ -209,3 +209,21 @@ iOS 专属 `clipboard_read` / `clipboard_write` 仅调整命令名称，
 Client 生命周期的 `relaunch_instance` 仍调用原有新建进程再退出逻辑；
 `reexec_instance` 仍走 `os.execv()`，两者不可混淆。macOS 和 Windows 的
 `run_elevated` 保留各自平台原有执行策略，统一的是命令名称。
+
+
+## Log Viewer (Client file tail)
+
+Toolbox → Log Viewer opens without selecting a path. The user selects a remote Client
+text file through the existing RemoteFilePicker. External Tools instance stdout
+paths and Info → Watchdog log paths open the same viewer directly.
+
+The Client Device Monitor `log_file` channel uses `options.path` and a 250 ms
+sampling interval. It reads bounded incremental UTF-8 chunks through the shared
+`core.utils.log_reader.read_text_log_chunk` cursor reader, handles rotation/truncation, and transmits
+updates through the existing `monitor_snapshot` → Server EventBus → SSE path.
+No foreground RCH command or External Tools log polling endpoint is used.
+A Server-side file source can be added later; v1 has no Server file picker or
+System Events implementation.
+
+The viewer's Clear View clears browser display only. External Tools' existing
+**Clear Logs** operation still explicitly clears stopped instance log files.

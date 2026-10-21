@@ -7,10 +7,10 @@ import tempfile
 import unittest
 import zipfile
 
-from core.external_tools.files import read_text_log_chunk
+from core.utils.log_reader import read_text_log_chunk
 from core.external_tools.meta import normalize_meta
-from core.external_tools.payload import client_action_payload
-from client.external_tools.daemon_instance import ExternalToolDaemonInstance
+from client.monitor.manager import DeviceMonitorManager
+from core.protocol.monitor import normalize_monitor_channels, normalize_monitor_intervals
 
 ROOT = pathlib.Path(__file__).resolve().parents[1] / 'server' / 'resources' / 'external_tools'
 
@@ -63,25 +63,43 @@ class LogStreamTests(unittest.TestCase):
                 if not chunk['content']: break
             self.assertEqual(acc, '中日文\n')
 
-    def test_payload_keeps_original_action_shape(self):
-        opts = {'action': 'logs', 'instance_id': 'i', 'params': {}, 'runtime': {}, 'max_bytes': 100}
-        module = {'id': 'mod', 'package_id': 'pkg'}
-        original = client_action_payload(module, **opts)
-        self.assertNotIn('cursor', original)
-        next_one = client_action_payload(module, cursor='1:2:3', **opts)
-        self.assertEqual(next_one['cursor'], '1:2:3')
-
-    def test_client_log_response(self):
+    def test_log_file_channel_reads_tail_and_deltas(self):
+        self.assertEqual(normalize_monitor_channels(['log_file']), ['log_file'])
+        self.assertEqual(normalize_monitor_intervals({}, ['log_file'])['log_file'], 0.25)
         with tempfile.TemporaryDirectory() as tmp:
             path = pathlib.Path(tmp) / 'stdout.log'
-            path.write_text('line 1\n')
-            instance = ExternalToolDaemonInstance.__new__(ExternalToolDaemonInstance)
-            runtime = {'stdout': str(path)}
-            first = instance.read_logs_payload({'tool_id':'h','runtime':runtime, 'max_bytes': 128})
-            self.assertEqual(first['content'], 'line 1\n')
-            with path.open('a') as file: file.write('line 2\n')
-            second = instance.read_logs_payload({'tool_id':'h','runtime':runtime, 'cursor':first['cursor'], 'max_bytes':128})
-            self.assertEqual(second['content'], 'line 2\n')
+            path.write_text('first\n')
+            manager = DeviceMonitorManager.__new__(DeviceMonitorManager)
+            item = {
+                'options': {'path': str(path)},
+                'log_cursor': '', 'log_path': '', 'log_seen': False,
+            }
+            first = manager._collect_log_file(item)
+            self.assertEqual(first['content'], 'first\n')
+            self.assertTrue(first['exists'])
+            self.assertIsNone(manager._collect_log_file(item))
+            with path.open('a') as handle:
+                handle.write('second\n')
+            added = manager._collect_log_file(item)
+            self.assertEqual(added['content'], 'second\n')
+            self.assertFalse(added['reset'])
+            path.rename(path.with_suffix('.old'))
+            path.write_text('replacement\n')
+            replaced = manager._collect_log_file(item)
+            self.assertTrue(replaced['reset'])
+            self.assertEqual(replaced['content'], 'replacement\n')
+            path.unlink()
+            missing = manager._collect_log_file(item)
+            self.assertFalse(missing['exists'])
+            self.assertTrue(missing['reset'])
+
+    def test_log_file_requires_absolute_remote_path(self):
+        manager = DeviceMonitorManager.__new__(DeviceMonitorManager)
+        with self.assertRaises(ValueError):
+            manager._collect_log_file({
+                'options': {'path': 'relative.log'},
+                'log_cursor': '', 'log_path': '', 'log_seen': False,
+            })
 
     def test_bundle_meta_and_process(self):
         meta = json.loads((ROOT / 'metas' / 'python-heartbeat-log.json').read_text())

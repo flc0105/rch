@@ -247,6 +247,7 @@
             v-if="infoVisible && activeTab === 'watchdog'"
             :client-id="selectedId"
             :current-connection="currentConnection"
+            @open-log-viewer="$emit('open-log-viewer', $event)"
           />
         </el-tab-pane>
 
@@ -527,7 +528,7 @@ import WatchdogInfoPanel from './WatchdogInfoPanel.vue'
 
 export default {
   name: 'ConnectionInfoDialogs',
-  emits: ['open-processes'],
+  emits: ['open-processes', 'open-log-viewer'],
   components: { WatchdogInfoPanel },
 
   props: {

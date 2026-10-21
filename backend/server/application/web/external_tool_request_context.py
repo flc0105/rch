@@ -55,11 +55,6 @@ class ExternalToolRequestContextApi:
     def max_bytes_from_query(self, query: Mapping[str, Any]):
         return query.get('bytes') or query.get('max_bytes') or None
 
-    def max_bytes_from_payload(self, payload: Any):
-        if not isinstance(payload, dict):
-            return None
-        return payload.get('bytes') or payload.get('max_bytes') or None
-
     def resolve_client_target(self, client_id: str, payload: Any):
         requested_platform, requested_arch = self._target_from_payload(payload or {})
         session_platform, session_arch, session_info = self._client_session_target(client_id)

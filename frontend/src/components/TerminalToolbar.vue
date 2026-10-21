@@ -253,6 +253,7 @@ export default {
     'open-remote-files',
     'open-artifacts',
     'open-external-tools',
+    'open-log-viewer',
     'open-keychains',
     'open-documents',
     'open-info',
@@ -435,6 +436,7 @@ export default {
       const normalizedAction = String(actionId || '').trim().toLowerCase()
       const resourceActions = [
         'external-tools',
+        'log-viewer',
         'keychains',
         'documents',
         'jobs',
@@ -506,6 +508,7 @@ export default {
       const normalizedCommand = String(command || '').trim().toLowerCase()
       const eventMap = {
         'external-tools': 'open-external-tools',
+        'log-viewer': 'open-log-viewer',
         keychains: 'open-keychains',
         documents: 'open-documents',
         jobs: 'open-jobs',

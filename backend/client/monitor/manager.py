@@ -54,6 +54,9 @@ class DeviceMonitorManager:
         self.close_session(monitor_session_id, notify=False)
 
         item = {
+            'log_cursor': '',
+            'log_path': '',
+            'log_seen': False,
             'monitor_session_id': monitor_session_id,
             'channels': normalized_channels,
             'intervals': normalized_intervals,
@@ -96,10 +99,15 @@ class DeviceMonitorManager:
             item['intervals'] = next_intervals
             if options is not None:
                 previous_pid = self._read_process_pid_option(item)
+                previous_path = str((item.get('options') or {}).get('path') or '')
                 item['options'] = normalize_monitor_options(options)
                 if self._read_process_pid_option(item) != previous_pid:
                     item['process_cache'] = {}
                     item['process_cpu_primed'] = set()
+                if str(item['options'].get('path') or '') != previous_path:
+                    item['log_cursor'] = ''
+                    item['log_path'] = ''
+                    item['log_seen'] = False
 
     def close_session(self, monitor_session_id: str, notify: bool = True):
         monitor_session_id = str(monitor_session_id or '').strip()
@@ -164,6 +172,11 @@ class DeviceMonitorManager:
                         continue
 
                     data = self._collect_channel(channel, psutil, item)
+
+                    # File logs are deltas, not snapshots: do not flood SSE while idle.
+                    if channel == 'log_file' and data is None:
+                        next_due[channel] = time.monotonic() + float(intervals.get(channel, 0.25))
+                        continue
 
                     # 某些 collector（例如 macOS Apps 的 System Events）可能阻塞数秒。
                     # 采集期间如果前端已经切换 channel，就丢弃这条晚到 snapshot，
@@ -233,7 +246,36 @@ class DeviceMonitorManager:
             return self._collect_process_connections(psutil, item)
         if channel == 'process_open_files':
             return self._collect_process_open_files(psutil, item)
+        if channel == 'log_file':
+            return self._collect_log_file(item)
         return {}
+
+    def _collect_log_file(self, item: dict):
+        """Tail a Client file with the shared UTF-8/rotation-aware cursor reader."""
+        from core.utils.log_reader import read_text_log_chunk
+
+        path = str((item.get('options') or {}).get('path') or '').strip()
+        if not path or not os.path.isabs(path):
+            raise ValueError('Log file requires an absolute Client path')
+        if path != item.get('log_path'):
+            item['log_cursor'] = ''
+            item['log_path'] = path
+            item['log_seen'] = False
+
+        cursor = item['log_cursor']
+        # Bound each frame; large writers are caught up across successive frames.
+        data = read_text_log_chunk(path, 32768, cursor=cursor or None)
+        exists = os.path.isfile(path)
+        item['log_cursor'] = data['cursor']
+        first = not item['log_seen']
+        item['log_seen'] = True
+        if not first and not data['content'] and not data['reset']:
+            return None
+        return {
+            **data,
+            'path': path,
+            'exists': exists,
+        }
 
     def _get_process_service(self):
         if self._process_service is None:

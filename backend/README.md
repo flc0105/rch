@@ -2205,7 +2205,6 @@ external_tool_stop
 external_tool_status
 external_tool_list_instances
 external_tool_list_instances_all
-external_tool_logs
 external_tool_remove
 external_tool_clear_logs
 external_tool_which
@@ -2970,3 +2969,11 @@ For future README updates, distinguish four layers:
    - machine-scoped pins/history/groups/keychains, notification/toolbar preferences, Client runtime config.
 
 A feature should not be considered documented just because a nearby subsystem name appears once in the architecture section.
+
+
+### Log Viewer
+
+Toolbox → Log Viewer follows a selected Client log file using RemoteFilePicker.
+External Tools instance logs and Watchdog file paths open the shared viewer.
+Streaming uses Device Monitor snapshots forwarded over the existing SSE stream;
+there is no Server-local file selection or System Events feed in the first version.

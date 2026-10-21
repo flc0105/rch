@@ -124,6 +124,7 @@
                   @open-remote-files="openRemoteFilesDialog"
                   @open-artifacts="openArtifactDialog"
                   @open-external-tools="openExternalToolManagerDialog"
+                  @open-log-viewer="openLogViewerDialog"
                   @open-keychains="openKeychainManagerDialog"
                   @open-documents="openDocumentsDialog"
                   @open-info="openConnectionInfoDialog"
@@ -234,6 +235,14 @@
     @set-active-task="setActiveTask"
     @upload-started="pendingRemoteUploadRefresh = $event"
     @open-tool-meta-editor="openExternalToolMetaEditor"
+    @open-log-viewer="openLogViewerDialog"
+  />
+
+  <LogViewerDialog
+    ref="logViewerDialogRef"
+    :selected-id="selectedId"
+    :tab-id="tabId"
+    :get-tab-scoped-headers="getTabScopedHeaders"
   />
 
   <DocumentsDialog ref="documentsDialogRef" />
@@ -307,6 +316,7 @@
     :status-now-tick="statusNowTick"
     :tab-id="tabId"
     @open-processes="openProcessDialog"
+    @open-log-viewer="openLogViewerDialog"
   />
 
   <ProcessDialogs
@@ -428,6 +438,7 @@ import MachineConnectionHistoryDialog from './components/MachineConnectionHistor
 import RemoteFilesDialog from './components/RemoteFilesDialog.vue'
 import ArtifactDialog from './components/ArtifactDialog.vue'
 import ExternalToolManagerDialog from './components/ExternalToolManagerDialog.vue'
+import LogViewerDialog from './components/LogViewerDialog.vue'
 import KeychainManagerDialog from './components/KeychainManagerDialog.vue'
 import DocumentsDialog from './components/DocumentsDialog.vue'
 import ScriptLibraryDialog from './components/ScriptLibraryDialog.vue'
@@ -469,6 +480,7 @@ export default {
     KeychainManagerDialog,
     DocumentsDialog,
     ExternalToolManagerDialog,
+    LogViewerDialog,
     ArtifactDialog,
     RemoteFilesDialog,
     CommandHistoryDialog,
@@ -578,6 +590,10 @@ export default {
 
     openRemoteFilesDialog() {
       this.$refs.remoteFilesDialogRef?.open()
+    },
+
+    openLogViewerDialog(source = {}) {
+      this.$refs.logViewerDialogRef?.open(source)
     },
 
     openExternalToolManagerDialog() {

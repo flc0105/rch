@@ -70,7 +70,7 @@
 import {
   Activity, Archive, BookOpen, Bot, CalendarClock, Clipboard, Code2,
   FileCode, FolderOpen, History, KeyRound, Monitor, MonitorPlay,
-  Search, Settings2, Terminal, Wrench, Zap,
+  Search, Settings2, Terminal, Wrench, Zap, ScrollText,
 } from '@lucide/vue'
 import { Close } from '@element-plus/icons-vue'
 
@@ -85,6 +85,7 @@ const icons = Object.freeze({
   'monitor-play': MonitorPlay,
   clipboard: Clipboard,
   wrench: Wrench,
+  'scroll-text': ScrollText,
   'calendar-clock': CalendarClock,
   bot: Bot,
   activity: Activity,

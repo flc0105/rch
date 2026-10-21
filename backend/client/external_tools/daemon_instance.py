@@ -7,7 +7,6 @@ from types import SimpleNamespace
 
 from client.external_tools.common import ExternalToolCommon
 from client.external_tools.launcher import apply_external_tool_launcher
-from core.external_tools.files import read_text_log_chunk
 from core.external_tools.paths import EXTERNAL_TOOLS_RUNTIME_ROOT, external_tool_instances_runtime_parts
 from core.external_tools.processes import (
     is_pid_alive,
@@ -398,22 +397,6 @@ class ExternalToolDaemonInstance(ExternalToolCommon):
                 items.append(self.status_from_payload(instance_payload))
 
         return {'tool_id': tool_id, 'package_id': package_id, 'module_id': module_id, 'side': 'client', 'items': items}
-
-    def read_logs_payload(self, payload: dict) -> dict:
-        stdout = self.stdout_from_payload(payload)
-        max_bytes = int(payload.get('max_bytes') or self.DEFAULT_LOG_TAIL_BYTES)
-
-        chunk = read_text_log_chunk(stdout, max_bytes, cursor=payload.get('cursor'))
-
-        return {
-            'tool_id': payload.get('tool_id') or '',
-            'instance_id': payload.get('instance_id') or 'default',
-            'log_file': stdout,
-            'content': chunk['content'],
-            'cursor': chunk['cursor'],
-            'reset': chunk['reset'],
-            'max_bytes': max_bytes,
-        }
 
     def ensure_instance_stopped(self, payload: dict) -> dict:
         status = self.status_from_payload(payload)
