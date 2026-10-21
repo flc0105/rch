@@ -302,18 +302,43 @@
         }
     }
 
+    function bytesToBase64(bytes) {
+        let text = '';
+        for (const byte of bytes) text += String.fromCharCode(byte);
+        return btoa(text);
+    }
+
+    async function fetchLogin(url, options) {
+        try {
+            return await fetch(url, options);
+        } catch (_) {
+            throw new Error('LOGIN_NETWORK_ERROR');
+        }
+    }
+
+    function maskedLoginPayload(username, password) {
+        // Lightweight reversible masking only: hides raw text in the request body.
+        // It does not secure credentials against interception on plain HTTP.
+        const nonce = new Uint8Array(16);
+        crypto.getRandomValues(nonce); // available on ordinary HTTP origins
+        const bytes = new TextEncoder().encode(password);
+        const key = new TextEncoder().encode('RCH-login-transport-mask');
+        const masked = bytes.map((value, index) =>
+            value ^ key[index % key.length] ^ nonce[index % nonce.length]
+        );
+        return { username, masked_password: bytesToBase64(masked), mask_nonce: bytesToBase64(nonce) };
+    }
+
     async function handleLogin(event) {
         event.preventDefault();
 
         const username = usernameInput.value.trim();
         const password = passwordInput.value;
-
         if (!username) {
             showError('Please enter your username');
             usernameInput.focus();
             return;
         }
-
         if (!password) {
             showError('Please enter your password');
             passwordInput.focus();
@@ -322,37 +347,43 @@
 
         setSubmitting(true);
         openLoading('Signing In...');
-
         try {
-            const response = await fetch(LOGIN_URL, {
+            const maskedPayload = maskedLoginPayload(username, password);
+            passwordInput.value = '';
+            const response = await fetchLogin(LOGIN_URL, {
                 method: 'POST',
                 credentials: 'same-origin',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({username, password})
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(maskedPayload)
             });
-
-            const payload = await response.json().catch(() => ({}));
-
-            if (!response.ok || payload?.code !== 0) {
-                closeLoading();
-                setSubmitting(false);
-                passwordInput.value = '';
-                showError(payload?.message || 'Invalid username or password');
+            if (response.status === 401) {
+                showError('Invalid username or password');
                 passwordInput.focus();
+                return;
+            }
+            if (!response.ok) {
+                showError(response.status >= 500 ? 'Server error. Please try again.' : 'Sign in failed. Please retry.');
+                return;
+            }
+            const result = await response.json();
+            if (result?.code !== 0 || !result?.data?.authenticated) {
+                showError('Sign in failed. Please retry.');
                 return;
             }
 
             showSuccess('Signed in');
             submitButton.textContent = 'Loading...';
             openLoading('Loading workspace...');
-
-            window.setTimeout(() => {
-                window.location.replace(redirectTarget);
-            }, 650);
-        } catch (_error) {
+            window.setTimeout(() => window.location.replace(redirectTarget), 650);
+        } catch (error) {
+            if (error?.message === 'LOGIN_NETWORK_ERROR') {
+                showError('Network error. Check your connection and retry.');
+            } else {
+                showError('Unable to prepare login request. Please retry.');
+            }
+        } finally {
             closeLoading();
-            setSubmitting(false);
-            showError('Network error, please try again');
+            if (submitButton.textContent !== 'Loading...') setSubmitting(false);
         }
     }
 

@@ -871,6 +871,7 @@ The web app includes a lightweight auth layer designed for simple public deploym
 - no registration flow
 - no database dependency
 - session cookie based login for the web app
+- browser login submits a simply masked password field instead of plaintext JSON; HTTP remains supported (masking is not network confidentiality)
 - API token accepted via auth guard
 
 ### Relevant config entries

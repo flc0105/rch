@@ -140,33 +140,33 @@
             <el-collapse-item title="Connection & diagnostic paths" name="paths">
               <div class="watchdog-path-list">
                 <div v-if="status.process_watchdog.log_path">
-                  <div class="watchdog-log-heading">
-                    <span>Process recovery log</span>
+                  <span>Process recovery log</span>
+                  <div class="watchdog-log-location">
+                    <code>{{ status.process_watchdog.log_path }}</code>
                     <button class="watchdog-log-link" type="button" @click="openLog(status.process_watchdog.log_path, 'Process Watchdog')">View log</button>
                   </div>
-                  <code>{{ status.process_watchdog.log_path }}</code>
                 </div>
                 <div v-if="status.remote_watchdog.control_url">
                   <span>Control endpoint (agent-side)</span>
                   <code>{{ status.remote_watchdog.control_url }}</code>
                 </div>
                 <div v-if="status.remote_watchdog.log_path">
-                  <div class="watchdog-log-heading">
-                    <span>Remote activity log</span>
+                  <span>Remote activity log</span>
+                  <div class="watchdog-log-location">
+                    <code>{{ status.remote_watchdog.log_path }}</code>
                     <button class="watchdog-log-link" type="button" @click="openLog(status.remote_watchdog.log_path, 'Remote Watchdog')">View log</button>
                   </div>
-                  <code>{{ status.remote_watchdog.log_path }}</code>
                 </div>
                 <div v-if="status.local_watchdog.heartbeat_file_path">
                   <span>Local heartbeat file</span>
                   <code>{{ status.local_watchdog.heartbeat_file_path }}</code>
                 </div>
                 <div v-if="status.local_watchdog.log_path">
-                  <div class="watchdog-log-heading">
-                    <span>Local activity log</span>
+                  <span>Local activity log</span>
+                  <div class="watchdog-log-location">
+                    <code>{{ status.local_watchdog.log_path }}</code>
                     <button class="watchdog-log-link" type="button" @click="openLog(status.local_watchdog.log_path, 'Local Watchdog')">View log</button>
                   </div>
-                  <code>{{ status.local_watchdog.log_path }}</code>
                 </div>
               </div>
             </el-collapse-item>
@@ -457,10 +457,11 @@ export default {
 .watchdog-path-list { display: flex; flex-direction: column; gap: 12px; padding: 2px 0 12px; }
 .watchdog-path-list > div { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .watchdog-path-list span { color: #64748b; font-size: 11px; }
-.watchdog-log-heading { display: flex; flex-direction: row; justify-content: space-between; align-items: center; gap: 8px; }
-.watchdog-log-link { align-self: flex-start; border: none; background: none; padding: 0; font-size: 11px; color: var(--el-color-primary); cursor: pointer; }
+.watchdog-log-location { display: block; min-width: 0; }
+.watchdog-log-link { display: inline; margin-left: 6px; border: none; background: none; padding: 0; font-size: 11px; color: var(--el-color-primary); cursor: pointer; white-space: nowrap; }
 .watchdog-log-link:hover { text-decoration: underline; }
 .watchdog-path-list code { display: block; color: var(--text); font-size: 11px; line-height: 1.5; white-space: normal; overflow-wrap: anywhere; user-select: text; }
+.watchdog-log-location code { display: inline; }
 .watchdog-toolbar { border-top: 1px solid rgba(15,23,42,.1); padding: 13px 0 2px; flex: 0 0 auto; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .watchdog-toolbar-title { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .watchdog-toolbar-title strong { font-size: 13px; }

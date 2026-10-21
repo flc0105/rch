@@ -99,7 +99,7 @@ python -c 'import secrets; print(secrets.token_urlsafe(32))'
 
 ### 浏览器会话与 Cookie
 
-用户通过 `/login.html` 输入管理员用户名和明文密码。浏览器将 JSON 发送给匿名开放的登录端点：
+用户通过 `/login.html` 输入管理员用户名和密码。登录页对密码做简单的可逆 XOR 掩码后提交到原有登录接口；不发送明文 `password` 字段，也不需要额外的 challenge 请求：
 
 ```http
 POST /api/auth/login
@@ -109,11 +109,14 @@ Content-Type: application/json
 ```json
 {
   "username": "admin",
-  "password": "your-admin-password"
+  "masked_password": "<base64-masked-utf8-password>",
+  "mask_nonce": "<base64-random-16-bytes>"
 }
 ```
 
-Server 比较用户名并使用 scrypt 校验密码哈希。登录成功后，通过 Flask Session 在浏览器设置 Cookie；后续同源 Web API 请求会携带它，**不需要在浏览器前端保存或使用管理员 API Token**。登录失败返回 HTTP `401`；用户名或密码缺失返回 `400`。
+Server 还原密码并继续使用原有的 scrypt 哈希校验，`auth.json` 不变。凭据错误返回 `401`，数据无效返回 `400`，前端单独提示网络异常与服务错误。旧的复杂 challenge/RSA/AES 流程已移除。
+
+**安全边界：**这种轻量掩码只避免 Network 请求体直接出现可读密码。其算法和固定掩码材料都能从网页源码取得，因此 **不具有抵御抓包或中间人攻击的保密性**。项目不因此强制 HTTPS，也不改变 HTTP 的可用性。
 
 Session 主要由以下两个接口管理：`GET /api/auth/session` 可检测当前是否已认证；`POST /api/auth/logout` 清除当前会话。`/api/auth/session` 本身允许匿名请求，未认证时返回 `authenticated: false`，而不是把它视为一个必须登录才能访问的页面。Web 首页在未认证时跳转登录页，受保护的 `/api/` 请求失败则返回 `401`；前端收到该状态会引导用户重新登录。
 

@@ -9,14 +9,9 @@
     @closed="stopSession"
   >
     <div class="log-viewer-body">
-      <div class="log-viewer-source">
-        <span class="log-viewer-side">{{ sourceSide === 'client' ? 'Client' : 'Server' }}</span>
-        <code class="log-viewer-path" :title="path">{{ path || 'Choose a remote log file' }}</code>
-        <el-button size="small" plain :disabled="sourceSide !== 'client' || !activeClientId" @click="pickerVisible = true">
-          Browse
-        </el-button>
-      </div>
       <div class="log-viewer-toolbar">
+        <el-button size="small" plain :disabled="!activeClientId" @click="pickerVisible = true">Browse</el-button>
+        <code class="log-viewer-path" :title="path">{{ path || 'Choose a remote log file' }}</code>
         <el-switch v-model="streaming" size="small" active-text="Streaming" @change="onStreamingChange" />
         <el-button size="small" :disabled="!path || loading" :loading="loading" @click="refresh">Refresh</el-button>
         <el-button size="small" @click="clearView">Clear View</el-button>
@@ -26,12 +21,15 @@
         <el-input v-model="search" size="small" clearable class="log-viewer-search" placeholder="Find in loaded log..." />
       </div>
       <div v-if="error" class="log-viewer-error">{{ error }}</div>
-      <pre
-        ref="output"
-        class="log-viewer-output"
-        :class="{ 'log-viewer-wrap': wrap }"
-        @scroll="onScroll"
-      >{{ filteredContent || (path ? 'No log content.' : 'Choose a remote log file to begin.') }}</pre>
+      <div ref="output" class="log-viewer-output" :class="{ 'log-viewer-wrap': wrap }" @scroll="onScroll">
+        <template v-if="displayLines.length">
+          <div v-for="line in displayLines" :key="line.number" class="log-viewer-line">
+            <span class="log-viewer-line-number" aria-hidden="true">{{ line.number }}</span>
+            <span class="log-viewer-line-text">{{ line.text || ' ' }}</span>
+          </div>
+        </template>
+        <div v-else class="log-viewer-placeholder">{{ search.trim() && content ? 'No matching lines.' : (path ? 'No log content.' : 'Choose a remote log file to begin.') }}</div>
+      </div>
       <div class="log-viewer-status">
         <span>{{ statusLabel }}</span>
         <span>UTF-8 · Up to 512 KiB displayed</span>
@@ -66,13 +64,12 @@ export default {
     return {
       visible: false,
       activeClientId: '',
-      sourceSide: 'client',
       path: '',
       title: '',
       pickerVisible: false,
       streaming: true,
       follow: true,
-      wrap: false,
+      wrap: true,
       search: '',
       content: '',
       status: 'idle',
@@ -95,10 +92,12 @@ export default {
       if (index === 2 && /^[a-z]:\//i.test(normalized)) return this.path.slice(0, 3)
       return this.path.slice(0, index)
     },
-    filteredContent() {
+    displayLines() {
+      if (!this.content) return []
       const term = this.search.trim().toLocaleLowerCase()
-      if (!term) return this.content
-      return this.content.split('\n').filter(line => line.toLocaleLowerCase().includes(term)).join('\n')
+      return this.content.split('\n')
+        .map((text, index) => ({ number: index + 1, text }))
+        .filter(line => !term || line.text.toLocaleLowerCase().includes(term))
     },
     statusLabel() {
       if (!this.path) return 'No file selected'
@@ -117,18 +116,18 @@ export default {
     open(source = {}) {
       this.stopSession()
       this.activeClientId = String(source.clientId || this.selectedId || '').trim()
-      this.sourceSide = source.side === 'server' ? 'server' : 'client'
       this.path = String(source.path || '').trim()
       this.title = String(source.title || '').trim()
       this.streaming = true
       this.follow = true
+      this.wrap = true
       this.search = ''
       this.content = ''
-      this.error = this.sourceSide === 'server' ? 'Server files are not available in this version' : ''
+      this.error = ''
       this.fileExists = null
       this.status = 'idle'
       this.visible = true
-      if (this.sourceSide === 'client' && this.path) this.$nextTick(() => this.startSession())
+      if (this.path) this.$nextTick(() => this.startSession())
     },
     onFileSelected(selected) {
       const chosen = Array.isArray(selected) ? selected[0] : selected
@@ -150,7 +149,7 @@ export default {
       return json.data || {}
     },
     async startSession(oneShot = false) {
-      if (!this.visible || !this.path || !this.activeClientId || this.sourceSide !== 'client') return
+      if (!this.visible || !this.path || !this.activeClientId) return
       const generation = ++this.requestGeneration
       this.loading = true
       this.error = ''
@@ -290,14 +289,20 @@ export default {
 </script>
 
 <style scoped>
-.log-viewer-body { display: flex; flex-direction: column; gap: 12px; min-height: 0; height: min(70vh, 700px); }
-.log-viewer-source { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.log-viewer-side { font-size: 12px; color: var(--el-text-color-secondary); }
-.log-viewer-path { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
-.log-viewer-toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.log-viewer-search { width: min(220px, 100%); margin-left: auto; }
+.log-viewer-body { display: flex; flex-direction: column; gap: 8px; min-height: 0; height: min(70vh, 700px); }
+.log-viewer-toolbar { display: flex; align-items: center; flex-wrap: nowrap; gap: 9px; min-width: 0; overflow-x: auto; padding: 2px 0 6px; }
+.log-viewer-toolbar :deep(.el-button + .el-button) { margin-left: 0; }
+.log-viewer-toolbar :deep(.el-checkbox) { margin-right: 0; flex: 0 0 auto; }
+.log-viewer-toolbar :deep(.el-switch), .log-viewer-toolbar :deep(.el-button) { flex-shrink: 0; }
+.log-viewer-path { min-width: 110px; max-width: 190px; flex: 1 1 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.log-viewer-search { flex: 0 0 160px; width: 160px; margin-left: auto; }
 .log-viewer-error { font-size: 12px; color: var(--el-color-danger); }
-.log-viewer-output { flex: 1; min-height: 130px; margin: 0; overflow: auto; border: 1px solid var(--el-border-color); border-radius: 7px; padding: 12px; background: var(--el-fill-color-light); color: var(--el-text-color-primary); font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre; }
-.log-viewer-wrap { white-space: pre-wrap; overflow-wrap: anywhere; }
+.log-viewer-output { flex: 1; min-height: 130px; overflow: auto; border: 1px solid var(--el-border-color); border-radius: 7px; background: var(--el-fill-color-light); color: var(--el-text-color-primary); font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.log-viewer-line { display: flex; width: max-content; min-width: 100%; }
+.log-viewer-line-number { position: sticky; left: 0; z-index: 1; flex: 0 0 58px; box-sizing: border-box; text-align: right; padding: 0 10px 0 4px; color: var(--el-text-color-placeholder); background: var(--el-fill-color); border-right: 1px solid var(--el-border-color-lighter); user-select: none; }
+.log-viewer-line-text { white-space: pre; padding-left: 10px; padding-right: 12px; }
+.log-viewer-wrap .log-viewer-line { width: 100%; min-width: 0; }
+.log-viewer-wrap .log-viewer-line-text { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.log-viewer-placeholder { padding: 12px; color: var(--el-text-color-secondary); }
 .log-viewer-status { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; color: var(--el-text-color-secondary); font-size: 11px; }
 </style>

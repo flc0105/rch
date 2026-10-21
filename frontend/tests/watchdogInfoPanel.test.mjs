@@ -14,6 +14,10 @@ assert.ok(template.indexOf('<h4>Remote control</h4>') < template.indexOf('<h4>Lo
 assert.match(source, /watchdog-process-card\s*\{\s*grid-column:\s*1\s*\/\s*-1/)
 assert.match(template, /status\.process_watchdog\.supervisor_pid/)
 assert.match(template, /status\.process_watchdog\.log_path/)
+for (const kind of ['process_watchdog', 'remote_watchdog', 'local_watchdog']) {
+  assert.match(template, new RegExp(`<code>\\{\\{ status\\.${kind}\\.log_path \\}\\}</code>\\s*<button class="watchdog-log-link"`))
+}
+assert.match(source, /\.watchdog-log-location code \{ display: inline; \}/)
 assert.match(template, /status\.client\.pid/)
 assert.match(template, /status\.remote_watchdog\.interval_seconds/)
 assert.match(template, /status\.local_watchdog\.timeout_seconds/)

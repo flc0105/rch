@@ -115,13 +115,27 @@ test('paused viewer uses one-shot remote monitor on Refresh', async () => {
   assert.ok(calls.filter(row => row.url.endsWith('/close')).length >= 2)
 })
 
-test('Server source boundary is reserved without local file browsing', () => {
+test('viewer is remote-only, toolbar is compact, Wrap defaults on', () => {
   const { instance } = makeViewer()
-  instance.open({ side: 'server', path: '/var/log/server.log' })
-  assert.equal(instance.sourceSide, 'server')
-  assert.match(instance.error, /not available/)
-  assert.equal(instance.sessionId, '')
-  assert.match(component, /sourceSide !== 'client'/)
+  instance.open()
+  assert.equal(instance.wrap, true)
+  assert.doesNotMatch(component, /log-viewer-side|sourceSide|Server files are not available/)
+  assert.match(component, /class="log-viewer-toolbar"/)
+  assert.match(component, /flex-wrap: nowrap/)
+  assert.match(component, /Browse[\s\S]*Choose a remote log file[\s\S]*Streaming[\s\S]*Refresh/)
+})
+
+test('line numbers stay attached to original loaded lines during search', () => {
+  const { instance } = makeViewer()
+  instance.content = 'alpha\nbeta\nalpha again\nlast'
+  instance.search = 'alpha'
+  assert.deepEqual(Array.from(options.computed.displayLines.call(instance), line => [line.number, line.text]), [
+    [1, 'alpha'], [3, 'alpha again'],
+  ])
+  assert.match(component, /log-viewer-line-number/)
+  assert.match(component, /line\.number/)
+  instance.search = ''
+  assert.equal(options.computed.displayLines.call(instance).length, 4)
 })
 
 test('External Tools / Watchdog forward log source to single App viewer', () => {

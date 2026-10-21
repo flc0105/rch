@@ -11,6 +11,7 @@ from server.config.config import (
 )
 from server.web.api_response import WebApiResponder
 from server.web.auth_guard import WebAuthGuard, allow_anonymous
+from server.web.password_mask import decode_masked_password
 
 
 def create_auth_blueprint():
@@ -42,14 +43,14 @@ def create_auth_blueprint():
     @blueprint.post('/api/auth/login')
     @allow_anonymous
     def auth_login():
-        payload = request.get_json(silent=True) or {}
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return responder.fail('Invalid login request', 400)
         username = str(payload.get('username') or '').strip()
-        password = str(payload.get('password') or '')
-
-        if not username:
-            return responder.fail('username is required', 400)
-        if not password:
-            return responder.fail('password is required', 400)
+        try:
+            password = decode_masked_password(payload)
+        except ValueError:
+            return responder.fail('Invalid login request', 400)
 
         if not hmac.compare_digest(username, ADMIN_USERNAME) or not check_password_hash(ADMIN_PASSWORD_HASH, password):
             return responder.fail('Invalid username or password', 401)

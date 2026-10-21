@@ -4,6 +4,8 @@ from unittest.mock import patch
 from flask import Flask
 from werkzeug.security import generate_password_hash
 
+from test_password_mask import masked_payload
+
 from server.web import auth_guard
 from server.web.routes import auth as auth_routes
 
@@ -28,22 +30,22 @@ class AdminAuthWebTests(unittest.TestCase):
             self.addCleanup(override.stop)
 
     def test_password_verification_and_session(self):
-        invalid = self.client.post('/api/auth/login', json={
-            'username': 'admin', 'password': 'wrong',
-        })
+        invalid = self.client.post('/api/auth/login', json=masked_payload('wrong'))
         self.assertEqual(invalid.status_code, 401)
-        valid = self.client.post('/api/auth/login', json={
-            'username': 'admin', 'password': 'initial-secret',
-        })
+        valid = self.client.post('/api/auth/login', json=masked_payload('initial-secret'))
         self.assertEqual(valid.status_code, 200)
         self.assertTrue(valid.json['data']['authenticated'])
         session = self.client.get('/api/auth/session')
         self.assertTrue(session.json['data']['authenticated'])
 
-    def test_password_change_invalidates_existing_sessions_not_static_token(self):
-        self.client.post('/api/auth/login', json={
+    def test_plaintext_login_is_rejected(self):
+        result = self.client.post('/api/auth/login', json={
             'username': 'admin', 'password': 'initial-secret',
         })
+        self.assertEqual(result.status_code, 400)
+
+    def test_password_change_invalidates_existing_sessions_not_static_token(self):
+        self.client.post('/api/auth/login', json=masked_payload('initial-secret'))
         new_hash = generate_password_hash('changed-secret', method='scrypt:32768:8:1')
         with patch.object(auth_guard, 'ADMIN_PASSWORD_HASH', new_hash):
             session = self.client.get('/api/auth/session')
