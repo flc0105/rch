@@ -1360,7 +1360,7 @@ export default {
       try {
         const res = await fetch(`/api/connections/${encodeURIComponent(clientId)}/remote-files/paste`, {
           method: 'POST',
-          headers: {'Content-Type': 'application/json'},
+          headers: {'Content-Type': 'application/json', 'X-RCH-Origin': 'web_ui'},
           body: JSON.stringify({
             paths,
             destination_dir: this.remoteFilesCurrentPath,
@@ -1543,7 +1543,7 @@ export default {
         this.remoteZipCreating = true
         const res = await fetch(`/api/connections/${encodeURIComponent(clientId)}/remote-files/create-zip`, {
           method: 'POST',
-          headers: {'Content-Type': 'application/json'},
+          headers: {'Content-Type': 'application/json', 'X-RCH-Origin': 'web_ui'},
           body: JSON.stringify({
             paths,
             destination_dir: this.remoteFilesCurrentPath,
@@ -1600,7 +1600,7 @@ export default {
         this.remoteZipExtracting = true
         const res = await fetch(`/api/connections/${encodeURIComponent(clientId)}/remote-files/extract-zip`, {
           method: 'POST',
-          headers: {'Content-Type': 'application/json'},
+          headers: {'Content-Type': 'application/json', 'X-RCH-Origin': 'web_ui'},
           body: JSON.stringify({
             path: row.path,
             destination_dir: this.remoteFilesCurrentPath,
@@ -1659,7 +1659,7 @@ export default {
 
         const res = await fetch(`/api/connections/${encodeURIComponent(clientId)}/remote-files/mkdir`, {
           method: 'POST',
-          headers: {'Content-Type': 'application/json'},
+          headers: {'Content-Type': 'application/json', 'X-RCH-Origin': 'web_ui'},
           body: JSON.stringify({path: fullPath}),
         })
 
@@ -1709,7 +1709,7 @@ export default {
 
         const res = await fetch(`/api/connections/${encodeURIComponent(clientId)}/remote-files/rename`, {
           method: 'POST',
-          headers: {'Content-Type': 'application/json'},
+          headers: {'Content-Type': 'application/json', 'X-RCH-Origin': 'web_ui'},
           body: JSON.stringify({
             old_path: row.path,
             new_name: newName,
@@ -1877,7 +1877,7 @@ export default {
 
         url.searchParams.set('path', row.path)
 
-        const res = await fetch(url.pathname + url.search, {method: 'DELETE'})
+        const res = await fetch(url.pathname + url.search, {method: 'DELETE', headers: {'X-RCH-Origin': 'web_ui'}})
         const json = await res.json()
 
         if (!this.isRemoteFilesContextActive(context)) return
@@ -1925,7 +1925,7 @@ export default {
         if (!this.isRemoteFilesContextActive(context)) return
         const res = await fetch(`/api/connections/${encodeURIComponent(clientId)}/remote-files/batch`, {
           method: 'DELETE',
-          headers: {'Content-Type': 'application/json'},
+          headers: {'Content-Type': 'application/json', 'X-RCH-Origin': 'web_ui'},
           body: JSON.stringify({paths}),
         })
 

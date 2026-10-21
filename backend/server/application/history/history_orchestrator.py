@@ -73,6 +73,30 @@ class CommandHistoryOrchestrator:
             }
         return activity_id
 
+    def begin_remote_files_execution(self, conn, action, arguments, command_name, command=None, *, origin='web_ui'):
+        """Prepare one semantic UI file action, without touching Quick History.
+
+        The Client channel confirms dispatch before it is written. A save command
+        intentionally omits its encoded content from the durable resolved data.
+        """
+        if conn is None:
+            return ''
+        activity_id = uuid.uuid4().hex
+        args = dict(arguments)
+        invocation = {'arguments': args}
+        # Only actual UI action names belong in the user-facing invocation.
+        resolved = {'command_type': 'command', 'command_name': command_name}
+        if command is not None:
+            resolved['command'] = command
+        with self._lock:
+            self._pending[activity_id] = {
+                'conn': conn, 'kind': 'remote_files', 'action': action,
+                'origin': origin, 'presentation': 'none',
+                'invocation': invocation, 'resolved': resolved,
+                'created_at': self.history_store._now_iso(),
+            }
+        return activity_id
+
     def describe_plan(self, activity_id, plan):
         if not activity_id or not isinstance(plan, dict):
             return

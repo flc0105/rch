@@ -112,6 +112,10 @@ Browser 的 Copy、Cut 和 Paste 使用的是**界面内部的远程路径列表
 
 多项复制或移动同样是逐项执行，允许部分成功，不提供整个批次的事务性回滚。Cut 操作成功提交后，界面清空待移动路径；Copy 列表可保留，便于重复粘贴。目标操作完成后应刷新目录，检查成功数量与失败记录。
 
+## Activity Center 操作记录
+
+Web Remote Files 的真正远程文件修改动作会在 Client 命令成功派发后写入一条 Activity：`delete_files`、`rename_files`、`create_directory`、`copy_files`、`move_files`、`create_archive`、`extract_archive`、`save_file`。批量操作统一为一条记录；部分成功按 `error` 显示数量和失败明细。保存文本仅记录路径和编码，不保存正文或编码载荷。Browse/Preview/读取/下载/上传不属于这些 Activity，下载上传继续由 Transfer Center 管理，Quick History 不受影响。详情中的 `files` 指生成的 Artifact，不指被修改的远端路径。
+
 ## 文件内容和打包传输
 
 ### 远端到 Server 的文件搬运

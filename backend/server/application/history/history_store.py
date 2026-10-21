@@ -151,9 +151,10 @@ class CommandHistoryStore:
         if errors:
             clauses.append("status IN ('error','cancelled','interrupted','timed_out')")
         if query:
-            clauses.append('''(instr(LOWER(invocation_json), LOWER(?)) > 0
+            clauses.append('''(instr(LOWER(action), LOWER(?)) > 0
+                              OR instr(LOWER(invocation_json), LOWER(?)) > 0
                               OR instr(LOWER(resolved_json), LOWER(?)) > 0)''')
-            params.extend([query, query])
+            params.extend([query, query, query])
         return clauses, params
 
     def count_activities(self, machine_id, *, query='', client_id='', kind='', errors=False):

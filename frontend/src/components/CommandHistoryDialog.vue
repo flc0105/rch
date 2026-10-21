@@ -309,6 +309,7 @@
                 <el-option label="Command" value="command" />
                 <el-option label="Alias" value="alias" />
                 <el-option label="Script" value="script" />
+                <el-option label="Remote Files" value="remote_files" />
               </el-select>
               <el-checkbox v-model="activityErrorsOnly">Errors</el-checkbox>
             </div>
@@ -346,7 +347,7 @@
                     </div>
                     <div class="activity-entry-subtitle">
                       <span>{{ formatDateTimeStandard(item.started_at || item.created_at) || '-' }}</span>
-                      <span v-if="isActivityProblem(item.status)" class="activity-error-preview">{{ buildCommandExecutionSingleLineSummary(item) }}</span>
+                      <span v-if="item.kind === 'remote_files' || isActivityProblem(item.status)" class="activity-summary-preview" :class="{ 'activity-error-preview': isActivityProblem(item.status) }">{{ buildCommandExecutionSingleLineSummary(item) }}</span>
                       <span v-if="item.files?.length">{{ item.files.length }} file(s)</span>
                       <span v-if="item.result?.truncated">Truncated</span>
                     </div>
@@ -397,7 +398,7 @@ import CommandExecutionDetailDialog from './CommandExecutionDetailDialog.vue'
 import {EditPen} from "@element-plus/icons-vue";
 import { Star, StarFilled, ArrowUp, ArrowDown } from '@element-plus/icons-vue'
 import { diffDateTimeMs } from '../utils/formatters.js'
-import { Terminal, Zap, FileCode2, CheckCircle2, XCircle, CircleDashed, Ban, Clock3, ChevronRight, AlertTriangle, TextCursorInput } from '@lucide/vue'
+import { Terminal, Zap, FileCode2, CheckCircle2, XCircle, CircleDashed, Ban, Clock3, ChevronRight, AlertTriangle, TextCursorInput, FolderOpen } from '@lucide/vue'
 
 export default {
   name: 'CommandHistoryDialog',
@@ -409,7 +410,7 @@ Star,
     StarFilled,
     CommandExecutionDetailDialog,
     ArrowUp, ArrowDown,
-    Terminal, Zap, FileCode2, CheckCircle2, XCircle, CircleDashed, Ban, Clock3, ChevronRight, AlertTriangle,
+    Terminal, Zap, FileCode2, CheckCircle2, XCircle, CircleDashed, Ban, Clock3, ChevronRight, AlertTriangle, FolderOpen,
   },
 
   props: {
@@ -551,7 +552,7 @@ Star,
 
   methods: {
     getActivityKindIcon(kind) {
-      return ({ command: Terminal, alias: Zap, script: FileCode2 })[kind] || Terminal
+      return ({ command: Terminal, alias: Zap, script: FileCode2, remote_files: FolderOpen })[kind] || Terminal
     },
     getActivityStatusIcon(status) {
       if (status === 'success') return CheckCircle2
@@ -561,10 +562,26 @@ Star,
       return Clock3
     },
     buildActivityKindLabel(kind) {
-      return ({ command: 'Command', alias: 'Alias', script: 'Script' })[kind] || 'Activity'
+      return ({ command: 'Command', alias: 'Alias', script: 'Script', remote_files: 'Remote Files' })[kind] || 'Activity'
     },
     buildActivityLabel(item) {
       const invocation = item?.invocation || {}
+      if (item?.kind === 'remote_files') {
+        const args = invocation.arguments || {}
+        const count = Number(args.count || (Array.isArray(args.paths) ? args.paths.length : 1))
+        const noun = count === 1 ? 'item' : 'items'
+        const actions = {
+          delete_files: `Delete ${count} ${noun}`,
+          rename_files: 'Rename',
+          copy_files: `Copy ${count} ${noun}`,
+          move_files: `Move ${count} ${noun}`,
+          create_directory: 'Create directory',
+          create_archive: `Create archive from ${count} ${noun}`,
+          extract_archive: `Extract archive ${args.path || ''}`,
+          save_file: `Save file ${args.path || ''}`,
+        }
+        return actions[item.action] || item.action || 'Remote Files'
+      }
       const fallback = item?.resolved?.command || invocation.input || '-'
       if (item?.kind === 'script') return String(invocation.target || invocation.input || 'Script')
       if (item?.kind === 'alias') return String(invocation.target || invocation.input || 'Alias')
@@ -1096,6 +1113,10 @@ Star,
 
     buildCommandExecutionSummary(item) {
       const status = String(item?.status || '').toLowerCase()
+      if (item?.kind === 'remote_files') {
+        const firstLine = String(item?.result?.output_records?.[0]?.text || '').split(/\r?\n/)[0].trim()
+        if (firstLine && firstLine.length <= 128) return firstLine
+      }
       const isLong = text => /[\r\n]/.test(text) || text.length > 128
       const records = Array.isArray(item?.result?.output_records) ? item.result.output_records : []
       const parts = records.map(record => String(record?.text || '').trim()).filter(Boolean)
@@ -1552,7 +1573,8 @@ Star,
 .activity-status-cancelled { color: #d97706; }
 .activity-status-running,.activity-status-cancelling { color: #64748b; }
 .activity-entry-subtitle { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 5px; font-size: 12px; color: #64748b; min-width: 0; }
-.activity-error-preview { color: #dc2626; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.activity-summary-preview { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.activity-error-preview { color: #dc2626; }
 .activity-detail-chevron { flex: 0 0 auto; color: #94a3b8; }
 
 .execution-history-item {

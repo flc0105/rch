@@ -1,3 +1,5 @@
+import json
+
 from core.protocol.structured_arg_codec import encode_structured_arg
 from core.protocol.message_types import MSG_TYPE_TRANSFER_START
 
@@ -28,6 +30,66 @@ class WebRemoteFileService:
         if not payload:
             return name
         return f'{name} {encode_structured_arg(payload)}'
+
+    def _run_mutation(self, client_id, action, arguments, command_name, payload, *, json_result=False, batch=False, origin='web_ui'):
+        """One dispatched file operation -> one semantic Activity, never Quick.
+
+        The command channel itself confirms transport dispatch. Pre-send errors
+        discard an intent without creating a persistent Activity.
+        """
+        runner = self.remote_execution_service
+        orchestrator = getattr(runner, 'history_orchestrator', None)
+        command = self._build_command(command_name, payload)
+        session = runner.get_connection(client_id) if orchestrator else None
+        activity_id = (orchestrator.begin_remote_files_execution(session, action, arguments, command_name,
+                                                                 command if action != 'save_file' else None, origin=origin)
+                       if orchestrator else '')
+        recorded = False
+        try:
+            kwargs = {'task_type': 'remote_file', 'source': 'web_remote_file',
+                      'history_entry_id': activity_id}
+            if json_result:
+                result = runner.run_foreground_json_command(client_id, command, **kwargs)
+                if batch:
+                    # Client reports counts explicitly: the transport success code
+                    # alone cannot distinguish all-success from partial-success.
+                    if not isinstance(result, dict) or not all(k in result for k in ('status', 'total', 'succeeded', 'failed', 'message')):
+                        raise RuntimeError('Invalid remote batch result')
+                    if (not all(isinstance(result[k], int) and not isinstance(result[k], bool)
+                                for k in ('status', 'total', 'succeeded', 'failed'))
+                            or result['status'] not in (0, 1)
+                            or result['total'] != result['succeeded'] + result['failed']
+                            or result['total'] != len(arguments['paths'])
+                            or result['succeeded'] < 0 or result['failed'] < 0):
+                        raise RuntimeError('Invalid remote batch counts')
+                    output = str(result['message'])
+                    ok = result['status'] == 1 and result['failed'] == 0
+                    original_success = result['status'] == 1
+                else:
+                    output = json.dumps(result, ensure_ascii=False)
+                    ok = original_success = True
+            else:
+                result = runner.run_foreground_text_command(client_id, command, **kwargs)
+                output = str(result)
+                ok = original_success = True
+            if activity_id:
+                orchestrator.append_output(session, activity_id, int(ok), output)
+                orchestrator.finalize_execution(session, activity_id, ok)
+            recorded = True
+            if not original_success:
+                raise RuntimeError(output or 'Remote file operation failed')
+            return result
+        except Exception as exc:
+            if activity_id and not recorded:
+                # Never echo the encoded content of save_file_content into History.
+                safe_error = ('Remote file save failed' if action == 'save_file' else str(exc))
+                orchestrator.append_output(session, activity_id, 0, safe_error)
+                status = 'timed_out' if isinstance(exc, TimeoutError) else ('interrupted' if isinstance(exc, ConnectionError) else 'error')
+                orchestrator.finalize_execution(session, activity_id, False, status=status)
+            raise
+        finally:
+            if activity_id:
+                orchestrator.discard_execution(session, activity_id)
 
     def browse_directory(
             self,
@@ -77,56 +139,35 @@ class WebRemoteFileService:
             }
         }
 
-    def delete_path(self, client_id: str, path: str) -> dict:
+    def delete_path(self, client_id: str, path: str, *, origin: str = 'web_ui') -> dict:
         if not (path or '').strip():
             raise ValueError('path is required')
 
-        command = self._build_command('delete_path', {'path': path})
-        result_text = self.remote_execution_service.run_foreground_text_command(
-            client_id,
-            command,
-            task_type='remote_file',
-            source='web_remote_file',
-        )
+        result_text = self._run_mutation(client_id, 'delete_files', {'paths': [path], 'count': 1}, 'delete_path', {'path': path}, origin=origin)
 
         return {
             'path': path,
             'message': result_text
         }
 
-    def create_directory(self, client_id: str, path: str) -> dict:
+    def create_directory(self, client_id: str, path: str, *, origin: str = 'web_ui') -> dict:
         if not (path or '').strip():
             raise ValueError('path is required')
 
-        command = self._build_command('mkdir_path', {'path': path})
-        result_text = self.remote_execution_service.run_foreground_text_command(
-            client_id,
-            command,
-            task_type='remote_file',
-            source='web_remote_file',
-        )
+        result_text = self._run_mutation(client_id, 'create_directory', {'path': path}, 'mkdir_path', {'path': path}, origin=origin)
 
         return {
             'path': path,
             'message': result_text
         }
 
-    def rename_path(self, client_id: str, old_path: str, new_name: str) -> dict:
+    def rename_path(self, client_id: str, old_path: str, new_name: str, *, origin: str = 'web_ui') -> dict:
         if not (old_path or '').strip():
             raise ValueError('old_path is required')
         if not (new_name or '').strip():
             raise ValueError('new_name is required')
 
-        command = self._build_command('rename_path', {
-            'old_path': old_path,
-            'new_name': new_name
-        })
-        result_text = self.remote_execution_service.run_foreground_text_command(
-            client_id,
-            command,
-            task_type='remote_file',
-            source='web_remote_file',
-        )
+        result_text = self._run_mutation(client_id, 'rename_files', {'old_path': old_path, 'new_name': new_name, 'count': 1}, 'rename_path', {'old_path': old_path, 'new_name': new_name}, origin=origin)
 
         return {
             'old_path': old_path,
@@ -285,6 +326,7 @@ class WebRemoteFileService:
             paths: list[str],
             destination_dir: str,
             archive_name: str = '',
+            *, origin: str = 'web_ui',
     ) -> dict:
         if not isinstance(paths, list) or not paths:
             raise ValueError('paths is required')
@@ -299,16 +341,7 @@ class WebRemoteFileService:
         if not normalized_paths:
             raise ValueError('paths is required')
 
-        return self.remote_execution_service.run_foreground_json_command(
-            client_id,
-            self._build_command('create_zip_paths', {
-                'paths': normalized_paths,
-                'destination_dir': destination_dir.strip(),
-                'archive_name': str(archive_name or '').strip(),
-            }),
-            task_type='remote_file',
-            source='web_remote_file',
-        )
+        return self._run_mutation(client_id, 'create_archive', {'paths': normalized_paths, 'count': len(normalized_paths), 'destination_dir': destination_dir.strip(), 'archive_name': archive_name}, 'create_zip_paths', {'paths': normalized_paths, 'destination_dir': destination_dir.strip(), 'archive_name': str(archive_name or '').strip()}, json_result=True, origin=origin)
 
     def peek_zip(self, client_id: str, path: str) -> dict:
         if not (path or '').strip():
@@ -337,23 +370,15 @@ class WebRemoteFileService:
             source='web_remote_file',
         )
 
-    def extract_zip(self, client_id: str, path: str, destination_dir: str) -> dict:
+    def extract_zip(self, client_id: str, path: str, destination_dir: str, *, origin: str = 'web_ui') -> dict:
         if not (path or '').strip():
             raise ValueError('path is required')
         if not (destination_dir or '').strip():
             raise ValueError('destination_dir is required')
 
-        return self.remote_execution_service.run_foreground_json_command(
-            client_id,
-            self._build_command('extract_zip_path', {
-                'path': path.strip(),
-                'destination_dir': destination_dir.strip(),
-            }),
-            task_type='remote_file',
-            source='web_remote_file',
-        )
+        return self._run_mutation(client_id, 'extract_archive', {'path': path.strip(), 'destination_dir': destination_dir.strip()}, 'extract_zip_path', {'path': path.strip(), 'destination_dir': destination_dir.strip()}, json_result=True, origin=origin)
 
-    def delete_paths(self, client_id: str, paths: list[str]) -> dict:
+    def delete_paths(self, client_id: str, paths: list[str], *, origin: str = 'web_ui') -> dict:
         """
         批量删除远程文件或目录
         """
@@ -368,20 +393,15 @@ class WebRemoteFileService:
         if not normalized_paths:
             raise ValueError('paths is required and must contain valid paths')
 
-        command = self._build_command('delete_paths', {'paths': normalized_paths})
-        result_text = self.remote_execution_service.run_foreground_text_command(
-            client_id,
-            command,
-            task_type='remote_file',
-            source='web_remote_file',
-        )
+        result_text = self._run_mutation(client_id, 'delete_files', {'paths': normalized_paths, 'count': len(normalized_paths)}, 'delete_paths', {'paths': normalized_paths, 'activity_report': True}, json_result=True, batch=True, origin=origin)
+        result_text = result_text['message']
 
         return {
             'paths': normalized_paths,
             'message': result_text
         }
 
-    def paste_paths(self, client_id: str, paths: list[str], destination_dir: str, operation: str = 'copy') -> dict:
+    def paste_paths(self, client_id: str, paths: list[str], destination_dir: str, operation: str = 'copy', *, origin: str = 'web_ui') -> dict:
         if not isinstance(paths, list) or not paths:
             raise ValueError('paths is required and must be a non-empty list')
         if not (destination_dir or '').strip():
@@ -400,17 +420,8 @@ class WebRemoteFileService:
         if normalized_operation not in ('copy', 'move'):
             raise ValueError('operation must be copy or move')
 
-        command = self._build_command('paste_paths', {
-            'paths': normalized_paths,
-            'destination_dir': normalized_destination_dir,
-            'operation': normalized_operation,
-        })
-        result_text = self.remote_execution_service.run_foreground_text_command(
-            client_id,
-            command,
-            task_type='remote_file',
-            source='web_remote_file',
-        )
+        result_text = self._run_mutation(client_id, 'copy_files' if normalized_operation == 'copy' else 'move_files', {'paths': normalized_paths, 'count': len(normalized_paths), 'destination_dir': normalized_destination_dir}, 'paste_paths', {'paths': normalized_paths, 'destination_dir': normalized_destination_dir, 'operation': normalized_operation, 'activity_report': True}, json_result=True, batch=True, origin=origin)
+        result_text = result_text['message']
 
         return {
             'paths': normalized_paths,
@@ -466,7 +477,7 @@ class WebRemoteFileService:
                 self.transfer_service.fail_transfer(transfer_id, str(exc), client_id=client_id)
             raise
 
-    def save_file_content(self, client_id: str, path: str, content: str, encoding: str = 'utf-8') -> dict:
+    def save_file_content(self, client_id: str, path: str, content: str, encoding: str = 'utf-8', *, origin: str = 'web_ui') -> dict:
         """
         保存内容到远程文件
         """
@@ -475,19 +486,7 @@ class WebRemoteFileService:
 
         normalized_path = path.strip()
 
-        # 构建保存命令
-        command = self._build_command('save_file_content', {
-            'path': normalized_path,
-            'content': content,
-            'encoding': encoding
-        })
-
-        result_text = self.remote_execution_service.run_foreground_text_command(
-            client_id,
-            command,
-            task_type='remote_file',
-            source='web_remote_file',
-        )
+        result_text = self._run_mutation(client_id, 'save_file', {'path': normalized_path, 'encoding': encoding}, 'save_file_content', {'path': normalized_path, 'content': content, 'encoding': encoding}, origin=origin)
 
         return {
             'path': normalized_path,

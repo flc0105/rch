@@ -99,7 +99,7 @@ class HistoryViewService:
         return {'items': items, 'next_cursor': next_cursor, 'has_more': has_more, 'total_count': count}
 
     def get_execution_history_page(self, machine_id, *, limit=None, cursor='', query='', kind='', errors=False):
-        if kind and kind not in {'command', 'alias', 'script'}:
+        if kind and kind not in {'command', 'alias', 'script', 'remote_files'}:
             raise ValueError('Invalid activity kind')
         with self.store._lock:
             return self._activity_page(str(machine_id or '').strip() or 'unknown_machine',

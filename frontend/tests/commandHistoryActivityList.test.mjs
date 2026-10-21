@@ -16,7 +16,7 @@ const script = source.match(/<script>([\s\S]*?)<\/script>/)?.[1]
 assert.ok(script)
 const context = {console, EditPen:{}, CommandExecutionDetailDialog:{}, TextCursorInput:{}, Star:{}, StarFilled:{},
   ArrowUp:{}, ArrowDown:{}, Terminal:{}, Zap:{}, FileCode2:{}, CheckCircle2:{}, XCircle:{},
-  CircleDashed:{}, Ban:{}, Clock3:{}, ChevronRight:{}, AlertTriangle:{}, diffDateTimeMs: () => 0}
+  CircleDashed:{}, Ban:{}, Clock3:{}, ChevronRight:{}, AlertTriangle:{}, FolderOpen:{}, diffDateTimeMs: () => 0}
 vm.runInNewContext(
   script.replace(/^import\s+.*?\s+from\s+.*?\n/gm,'').replace('export default {','globalThis.component = {'),
   context,
@@ -115,4 +115,34 @@ test('Quick command cells show latest status via Lucide icon on desktop and mobi
   assert.match(quick, /class="quick-command-label mono"/)
   assert.match(source, /\.quick-command-label\s*\{[^}]*display:\s*flex;/s)
   assert.doesNotMatch(quick, /<el-table-column[^>]+prop="status"/)
+})
+
+test('Remote Files list uses semantic actions and includes the new filter', () => {
+  assert.match(activity, /label="Remote Files" value="remote_files"/)
+  const entry = {kind:'remote_files', action:'rename_files', status:'success',
+    invocation:{arguments:{old_path:'/tmp/a.txt',new_name:'b.txt',count:1}},
+    result:{output_records:[{text:'Renamed to: /tmp/b.txt'}]}}
+  assert.equal(component.methods.getActivityKindIcon('remote_files'), context.FolderOpen)
+  assert.equal(component.methods.buildActivityKindLabel('remote_files'), 'Remote Files')
+  assert.equal(component.methods.buildActivityLabel(entry), 'Rename')
+  assert.equal(component.methods.buildCommandExecutionSummary.call({},entry), 'Renamed to: /tmp/b.txt')
+  assert.equal(component.methods.buildActivityLabel({kind:'remote_files',action:'delete_files',invocation:{arguments:{paths:['a','b'],count:2}}}), 'Delete 2 items')
+  assert.equal(component.methods.buildActivityLabel({kind:'remote_files',action:'create_directory',invocation:{arguments:{path:'/tmp/chat_exports'}}}), 'Create directory')
+  const detailScript = detail.match(/<script>([\s\S]*?)<\/script>/)?.[1]
+  const detailContext = {}
+  vm.runInNewContext(detailScript.replace('export default {', 'globalThis.component = {'), detailContext)
+  const contents = detailContext.component.methods.getActivityInvocation(entry)
+  assert.match(contents, /"old_path": "\/tmp\/a\.txt"/)
+  assert.doesNotMatch(contents, /__json__:/)
+})
+
+
+test('Activity summary color reflects operation status, without changing list layout', () => {
+  assert.match(activity, /class="activity-summary-preview" :class="\{ 'activity-error-preview': isActivityProblem\(item.status\) \}"/)
+  assert.match(source, /\.activity-summary-preview\s*\{[^}]*overflow:\s*hidden;[^}]*text-overflow:\s*ellipsis;/s)
+  assert.match(source, /\.activity-error-preview\s*\{\s*color:\s*#dc2626;/s)
+  assert.doesNotMatch(source, /\.activity-summary-preview\s*\{[^}]*color:/s)
+  assert.equal(component.methods.isActivityProblem('success'), false)
+  assert.equal(component.methods.isActivityProblem('error'), true)
+  assert.equal(component.methods.isActivityProblem('timed_out'), true)
 })

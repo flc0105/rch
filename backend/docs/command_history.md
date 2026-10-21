@@ -6,9 +6,11 @@ Activity Center 与 Quick History 服务不同目的：前者保留**实际向 C
 
 Server 接收请求时保留原始调用身份，解析 Server Builtin、Alias、History Replay 或 Script Library，得到真实远程执行计划。纯 Server 查询如 `rtt`、`history` 列表、`alias list`、无参数 `script`（等同 `script list`）、参数校验失败，都**不会**生成 Activity。只有显式可记录的操作已实际交给 Client 命令通道，发送成功后才创建持久记录；发送前允许分配内部关联 ID，以便结果输出、取消和 Artifact 归属，不代表已经执行或持久化。
 
-首批范围是 `command`、`alias`、`script`。Remote Files、Job、Process、External Tool、监控采样、上传、目录浏览及内部 RPC 暂不写 Activity。以后 Job 若接入，正常执行动作使用 `invoke`，停止沿用取消原活动的流程，不额外创建 `stop` Activity。未知普通 Client 命令落到 Shell 是 RCH 原有的**设计特性**，本轮不更改命令分发、解析或 Shell fallback。
+记录类型包括 `command`、`alias`、`script` 及 `remote_files`（语义化文件修改动作）。Remote Files 的 Browse、Search、预览、读取、ZIP Peek/Entry 等查询不记录；Download / Upload 仍由 Transfer Center 负责，不写入 `remote_files` Activity。Job、Process、External Tool、监控采样及其他内部 RPC 不在本次范围。以后 Job 若接入，正常执行动作使用 `invoke`，停止沿用取消原活动的流程，不额外创建 `stop` Activity。未知普通 Client 命令落到 Shell 是 RCH 原有的**设计特性**，本轮不更改命令分发、解析或 Shell fallback。
 
 同一用户操作至多记一条 Activity：`notify shell pwd`、`saveout shell pwd` 以 `invocation.input` 保留外部调用文本，`resolved.command` 保留真正下发的 Client 命令。`history run N` 和 `!N` 不写入 Quick，但只要回放实际向 Client 派发了命令，就创建一条 Activity：`invocation.input` 保留外层回放写法，`resolved` 保留实际派发的命令类型和内容。未成功派发则不落 Activity。Alias 保留 Alias 名称/参数，而非把展开文本冒充用户输入。Script Library、`script exec <file>` 都是 `kind=script`，实际下发的是脚本协议 `command_type=script`；Activity 不复制整段脚本源码或 Base64 载荷，也不伪造 Shell 命令。
+
+Remote Files 的修改操作使用 `kind=remote_files`，统一记录为 `create_directory`、`delete_files`、`rename_files`、`copy_files`、`move_files`、`create_archive`、`extract_archive`、`save_file`。每次用户操作（包括批量处理）只创建一条 Activity。`invocation.arguments` 保存路径等结构化参数，`resolved` 保存可记录的实际派发信息；保存文本的正文及编码载荷不持久化。批量任务使用 Client 的结构化报告核对成功数和失败项；部分成功或全部失败为 `error`，并在输出中保留数量和失败原因。
 
 ### Activity Record 公共结构
 
@@ -32,7 +34,7 @@ Server 接收请求时保留原始调用身份，解析 Server Builtin、Alias�
 }
 ```
 
-字段与含义：`activity_id` 为对外唯一身份；`machine_id` 按设备聚合，`client_id` 区分连接实例；`kind` 为 `command|alias|script`；`action` 为 `command/alias:invoke`、`script:run`；`origin` 为 `web_terminal|web_ui|web_api|cli`；`presentation` 为 `dialog|terminal|inline|none`。实际 Web Terminal HTTP 请求按 `web_terminal` 标记，Web API 只有明确提供程序调用身份时才能标为 `web_api`，不能单凭 HTTP 传输认定。
+字段与含义：`activity_id` 为对外唯一身份；`machine_id` 按设备聚合，`client_id` 区分连接实例；`kind` 为 `command|alias|script|remote_files`；`action` 为 `command/alias:invoke`、`script:run`；`origin` 为 `web_terminal|web_ui|web_api|cli`；`presentation` 为 `dialog|terminal|inline|none`。实际 Web Terminal HTTP 请求按 `web_terminal` 标记，Web API 只有明确提供程序调用身份时才能标为 `web_api`，不能单凭 HTTP 传输认定。
 
 `invocation.input` 是用户真实调用形式，`target` 是可选的 Alias 或 Script 业务身份，`arguments` 是结构化参数（普通 Shell 命令不做强行解析）；`resolved.command_type` 是实际派发类型；只在适合保存真实命令文本时提供 `resolved.command`。Script 实际源码属于执行传输，不复制到持久 Activity。`result` 只存 `truncated` 和原有 `output_records`，输出摘要从记录即时计算而非新增持久字段。`files` 仍是独立的 Artifact 引用数组。`task_id` 只用于内部运行时，不是 Activity 公共字段。
 
@@ -62,7 +64,7 @@ Pin 顺序由独立的 `pinned_commands` 表持久管理：Pinned 项优先显�
 
 ## 查询、删除和界面
 
-Activity Center 保留原有两行式列表，第一行 Lucide 类型图标、`Kind · 实际操作摘要`、状态图标（长命令单行省略），第二行日期时间与必要的计算摘要（只对非空、单行且长度不超过 128 字符的输出展示原文；多行、截断或超过 128 字符时根据状态显示 `Completed`（成功）、`Failed`（失败）或对应的取消/超时/中断文案，完整内容仍在 Output Records）；右侧箭头或整行打开原 Details。列表不提供 Use 或 Delete；Delete 按钮在 Details 中。History 对话框标题仍为 `History`，第二个页签命名 `Activity Center`。Details 标题固定为 `Activity Detail`，不在标题右侧附加命令名字。Details 将 Kind 与 Action 合为单张 `Action` 卡片，内容为 `kind · action`；Invocation、Resolved 卡片单行省略，点击后弹窗查看完整值，原始命令文本不截断；Activity 过滤栏固定、列表独立滚动。原有输出记录排序、文件预览/下载和删除确认保留。类型筛选为 All / Command / Alias / Script；Errors 筛选使用 Server 端过滤，并和 `limit/cursor/query` 一起作用于分页与 `total_count`。默认 50 条，最大 200 条；同一时间按 `activity_id` 继续稳定排序。
+Activity Center 保留原有两行式列表，第一行 Lucide 类型图标、`Kind · 实际操作摘要`、状态图标（长命令单行省略），第二行日期时间与必要的计算摘要（只对非空、单行且长度不超过 128 字符的输出展示原文；多行、截断或超过 128 字符时根据状态显示 `Completed`（成功）、`Failed`（失败）或对应的取消/超时/中断文案，完整内容仍在 Output Records）；右侧箭头或整行打开原 Details。列表不提供 Use 或 Delete；Delete 按钮在 Details 中。History 对话框标题仍为 `History`，第二个页签命名 `Activity Center`。Details 标题固定为 `Activity Detail`，不在标题右侧附加命令名字。Details 将 Kind 与 Action 合为单张 `Action` 卡片，内容为 `kind · action`；Invocation、Resolved 卡片单行省略，点击后弹窗查看完整值，原始命令文本不截断；Activity 过滤栏固定、列表独立滚动。原有输出记录排序、文件预览/下载和删除确认保留。类型筛选为 All / Command / Alias / Script / Remote Files；Errors 筛选使用 Server 端过滤，并和 `limit/cursor/query` 一起作用于分页与 `total_count`。默认 50 条，最大 200 条；同一时间按 `activity_id` 继续稳定排序。
 
 查询 API 沿用现有机器作用域路径，Activity 项目通过新 Schema 返回，不再返回旧 `entry_id`、`source`、`raw_command`、顶层 `output_records/output_summary/output_truncated`。客户端关联执行所需的临时 ID 不属于公开记录。
 
@@ -70,7 +72,7 @@ Activity Center 保留原有两行式列表，第一行 Lucide 类型图标、`K
 
 ### 记录策略所覆盖的执行
 
-统一 Activity 写入依据是显式受支持的用户操作上下文 + 真实向 Client 派发，而不是字符串黑名单。纯 Server 管理、目录浏览、Remote Files、Job/Process Control 及内部监控均不在第一版。不是所有业务请求都会有 Activity，因此缺少 Activity 不代表客户端从未接受某次内部请求。
+统一 Activity 写入依据是显式受支持的用户操作上下文 + 真实向 Client 派发，而不是字符串黑名单。纯 Server 管理、目录浏览、Remote Files 的查询/传输操作、Job/Process Control 及内部监控不进入 Activity；只有明确列出的 Remote Files 文件修改操作记录为语义 Activity。不是所有业务请求都会有 Activity，因此缺少 Activity 不代表客户端从未接受某次内部请求。
 
 ### 命令收藏与路径收藏
 

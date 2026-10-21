@@ -311,7 +311,7 @@ class CommandFileWebMixin:
             if not isinstance(paths, list) or not paths:
                 return 0, 'paths is required and must be a non-empty list'
 
-            return self.file_system_service.delete_paths(paths)
+            return self.file_system_service.delete_paths(paths, activity_report=payload.get('activity_report') is True)
         except CommandCancelledError:
             return 0, 'Command cancelled'
         except CommandTimeoutError:
@@ -383,6 +383,7 @@ class CommandFileWebMixin:
                 resolved_paths,
                 destination_dir,
                 operation,
+                activity_report=payload.get('activity_report') is True,
             )
         except CommandCancelledError:
             return 0, 'Command cancelled'

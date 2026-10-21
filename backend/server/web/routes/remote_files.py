@@ -10,6 +10,9 @@ def create_remote_files_blueprint(server_instance):
     remote_file_api = web_service.remote_file_api
     responder = WebApiResponder()
 
+    def activity_origin():
+        return 'web_ui' if request.headers.get('X-RCH-Origin') == 'web_ui' else 'web_api'
+
     @blueprint.get('/api/connections/<client_id>/remote-files')
     def browse_remote_files(client_id):
         def _execute():
@@ -35,7 +38,7 @@ def create_remote_files_blueprint(server_instance):
             path = (payload.get('path') or '').strip()
             if not path:
                 raise ValueError('path is required')
-            return remote_file_api.create_remote_directory(client_id, path)
+            return remote_file_api.create_remote_directory(client_id, path, origin=activity_origin())
 
         return responder.json_endpoint(_execute, default_error_status=500)
 
@@ -51,7 +54,7 @@ def create_remote_files_blueprint(server_instance):
             if not new_name:
                 raise ValueError('new_name is required')
 
-            return remote_file_api.rename_remote_path(client_id, old_path, new_name)
+            return remote_file_api.rename_remote_path(client_id, old_path, new_name, origin=activity_origin())
 
         return responder.json_endpoint(_execute, default_error_status=500)
 
@@ -61,7 +64,7 @@ def create_remote_files_blueprint(server_instance):
             path = get_optional_remote_path()
             if not path:
                 raise ValueError('path is required')
-            return remote_file_api.delete_remote_path(client_id, path)
+            return remote_file_api.delete_remote_path(client_id, path, origin=activity_origin())
 
         return responder.json_endpoint(_execute, default_error_status=500)
 
@@ -112,6 +115,7 @@ def create_remote_files_blueprint(server_instance):
                 paths,
                 destination_dir,
                 archive_name,
+                origin=activity_origin(),
             )
 
         return responder.json_endpoint(_execute, default_error_status=500)
@@ -151,7 +155,7 @@ def create_remote_files_blueprint(server_instance):
                 raise ValueError('path is required')
             if not destination_dir:
                 raise ValueError('destination_dir is required')
-            return remote_file_api.extract_remote_zip(client_id, path, destination_dir)
+            return remote_file_api.extract_remote_zip(client_id, path, destination_dir, origin=activity_origin())
 
         return responder.json_endpoint(_execute, default_error_status=500)
 
@@ -162,7 +166,7 @@ def create_remote_files_blueprint(server_instance):
             paths = payload.get('paths') or []
             if not isinstance(paths, list) or not paths:
                 raise ValueError('paths is required and must be a non-empty list')
-            return remote_file_api.delete_remote_paths(client_id, paths)
+            return remote_file_api.delete_remote_paths(client_id, paths, origin=activity_origin())
 
         return responder.json_endpoint(_execute, default_error_status=500)
 
@@ -181,7 +185,7 @@ def create_remote_files_blueprint(server_instance):
             if operation not in ('copy', 'move'):
                 raise ValueError('operation must be copy or move')
 
-            return remote_file_api.paste_remote_paths(client_id, paths, destination_dir, operation)
+            return remote_file_api.paste_remote_paths(client_id, paths, destination_dir, operation, origin=activity_origin())
 
         return responder.json_endpoint(_execute, default_error_status=500)
 
@@ -212,6 +216,7 @@ def create_remote_files_blueprint(server_instance):
                 path,
                 content,
                 encoding,
+                origin=activity_origin(),
             )
 
         return responder.json_endpoint(_execute, default_error_status=500)

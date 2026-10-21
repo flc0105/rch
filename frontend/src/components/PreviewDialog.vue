@@ -945,7 +945,7 @@ export default {
       try {
         const res = await fetch(`/api/connections/${encodeURIComponent(clientId)}/remote-files/save`, {
           method: 'POST',
-          headers: {'Content-Type': 'application/json'},
+          headers: {'Content-Type': 'application/json', 'X-RCH-Origin': 'web_ui'},
           body: JSON.stringify({
             path: this.previewFilePath,
             content,

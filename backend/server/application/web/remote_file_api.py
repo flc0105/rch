@@ -36,21 +36,21 @@ class WebRemoteFileApi:
             recursive_search=recursive_search,
         )
 
-    def create_remote_directory(self, client_id: str, path: str):
-        return self.remote_file_service.create_directory(client_id, path)
+    def create_remote_directory(self, client_id: str, path: str, *, origin: str = 'web_ui'):
+        return self.remote_file_service.create_directory(client_id, path, origin=origin)
 
-    def rename_remote_path(self, client_id: str, old_path: str, new_name: str):
-        return self.remote_file_service.rename_path(client_id, old_path, new_name)
+    def rename_remote_path(self, client_id: str, old_path: str, new_name: str, *, origin: str = 'web_ui'):
+        return self.remote_file_service.rename_path(client_id, old_path, new_name, origin=origin)
 
-    def delete_remote_path(self, client_id: str, path: str):
-        return self.remote_file_service.delete_path(client_id, path)
+    def delete_remote_path(self, client_id: str, path: str, *, origin: str = 'web_ui'):
+        return self.remote_file_service.delete_path(client_id, path, origin=origin)
 
-    def delete_remote_paths(self, client_id: str, paths: list[str]):
-        return self.remote_file_service.delete_paths(client_id, paths)
+    def delete_remote_paths(self, client_id: str, paths: list[str], *, origin: str = 'web_ui'):
+        return self.remote_file_service.delete_paths(client_id, paths, origin=origin)
 
 
-    def paste_remote_paths(self, client_id: str, paths: list[str], destination_dir: str, operation: str = 'copy'):
-        return self.remote_file_service.paste_paths(client_id, paths, destination_dir, operation)
+    def paste_remote_paths(self, client_id: str, paths: list[str], destination_dir: str, operation: str = 'copy', *, origin: str = 'web_ui'):
+        return self.remote_file_service.paste_paths(client_id, paths, destination_dir, operation, origin=origin)
 
     def preview_remote_file(
         self,
@@ -102,12 +102,14 @@ class WebRemoteFileApi:
         paths: list[str],
         destination_dir: str,
         archive_name: str = '',
+        *, origin: str = 'web_ui',
     ):
         return self.remote_file_service.create_zip_from_paths(
             client_id,
             paths,
             destination_dir,
             archive_name=archive_name,
+            origin=origin,
         )
 
     def peek_remote_zip(self, client_id: str, path: str):
@@ -116,8 +118,8 @@ class WebRemoteFileApi:
     def read_remote_zip_entry(self, client_id: str, path: str, entry_name: str):
         return self.remote_file_service.read_zip_entry(client_id, path, entry_name)
 
-    def extract_remote_zip(self, client_id: str, path: str, destination_dir: str):
-        return self.remote_file_service.extract_zip(client_id, path, destination_dir)
+    def extract_remote_zip(self, client_id: str, path: str, destination_dir: str, *, origin: str = 'web_ui'):
+        return self.remote_file_service.extract_zip(client_id, path, destination_dir, origin=origin)
 
     def read_remote_file(
         self,
@@ -134,10 +136,12 @@ class WebRemoteFileApi:
         path: str,
         content: str,
         encoding: str = 'utf-8',
+        *, origin: str = 'web_ui',
     ):
         return self.remote_file_service.save_file_content(
             client_id,
             path,
             content,
             encoding=encoding,
+            origin=origin,
         )

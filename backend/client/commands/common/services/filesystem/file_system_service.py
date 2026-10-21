@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 import stat as stat_module
@@ -221,7 +222,7 @@ class FileSystemService:
         os.remove(target_path)
         return 1, f'File deleted: {target_path}'
 
-    def delete_paths(self, paths: list) -> tuple[int, str]:
+    def delete_paths(self, paths: list, *, activity_report: bool = False) -> tuple[int, str]:
         resolved_paths = []
         errors = []
         success_count = 0
@@ -238,7 +239,15 @@ class FileSystemService:
                 errors.append(f'{raw_path}: {e}')
 
         if not resolved_paths:
-            return 0, 'No valid paths to delete'
+            message = 'No valid paths to delete'
+            if activity_report:
+                message = f'Deleted 0 of {len(paths)} items'
+                if errors:
+                    message += '\nErrors:\n  ' + '\n  '.join(errors)
+                return 1, json.dumps({'status': 0, 'total': len(paths), 'succeeded': 0,
+                                      'failed': len(paths), 'message': message,
+                                      'errors': errors}, ensure_ascii=False)
+            return 0, message
 
         for target_path in resolved_paths:
             try:
@@ -251,10 +260,14 @@ class FileSystemService:
             except Exception as e:
                 errors.append(f'{target_path}: {e}')
 
-        result_msg = f'Deleted {success_count} of {len(resolved_paths)} items'
+        result_msg = f'Deleted {success_count} of {len(paths) if activity_report else len(resolved_paths)} items'
         if errors:
             result_msg += f'\nErrors:\n  ' + '\n  '.join(errors)
 
+        if activity_report:
+            return 1, json.dumps({'status': int(success_count > 0), 'total': len(paths),
+                                  'succeeded': success_count, 'failed': len(paths) - success_count,
+                                  'message': result_msg, 'errors': errors}, ensure_ascii=False)
         if success_count > 0:
             return 1, result_msg
         return 0, result_msg
@@ -315,7 +328,7 @@ class FileSystemService:
 
         return target_path
 
-    def paste_paths(self, source_paths: list[str], destination_dir: str, operation: str) -> tuple[int, str]:
+    def paste_paths(self, source_paths: list[str], destination_dir: str, operation: str, *, activity_report: bool = False) -> tuple[int, str]:
         success_count = 0
         errors = []
 
@@ -336,6 +349,10 @@ class FileSystemService:
         if errors:
             result_msg += '\nErrors:\n  ' + '\n  '.join(errors)
 
+        if activity_report:
+            return 1, json.dumps({'status': int(success_count > 0), 'total': len(source_paths),
+                                  'succeeded': success_count, 'failed': len(source_paths) - success_count,
+                                  'message': result_msg, 'errors': errors}, ensure_ascii=False)
         if success_count > 0:
             return 1, result_msg
         return 0, result_msg
