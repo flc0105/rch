@@ -172,3 +172,17 @@ test('External Tool Manager Activity is semantic, searchable and uses a distinct
   assert.match(detail, /\['remote_files', 'external_tool'\]\.includes\(entry\?\.kind\)/)
   assert.match(source, /\['remote_files', 'transfer', 'external_tool'\]\.includes\(item\.kind\)/)
 })
+
+
+test('xt Exec uses semantic External Tool label and human invocation', () => {
+  const entry = {kind:'external_tool', action:'run_exec',
+    invocation:{input:'xt run ffmpeg -- -version', arguments:{exec_name:'ffmpeg', package_id:'ffmpeg'}},
+    resolved:{command_type:'command'}}
+  assert.equal(component.methods.buildActivityLabel(entry), 'Run ffmpeg')
+  assert.equal(component.methods.getActivityKindIcon('external_tool'), context.Wrench)
+  const detailContext = {}
+  const detailScript = detail.match(/<script>([\s\S]*?)<\/script>/)?.[1]
+  vm.runInNewContext(detailScript.replace('export default {', 'globalThis.component = {'), detailContext)
+  assert.equal(detailContext.component.methods.getActivityInvocation(entry), 'xt run ffmpeg -- -version')
+  assert.doesNotMatch(JSON.stringify(entry), /external_tool_exec|__json__:/)
+})

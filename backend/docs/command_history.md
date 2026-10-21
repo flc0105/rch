@@ -56,7 +56,7 @@ Transfer Activity 的 `resolved` 只记录已存在的 `transfer_id`（如有）
 
 Quick Recent 保存手动 **Web Terminal / CLI** 提交的命令，无论最终为 `success`、`error`、`cancelled`、`interrupted` 或 `timed_out`；失败的命令也可以重试。以 `machine_id + command` 去重，保留最近 100 条不同命令。最近一次完成结果的 `status` 与时间独立保存在 `command_recents`，每次完成增加 `use_count`（执行尝试数），**不依赖 Activity 存在，也不持有 Activity ID**。UI 的 Command 列显示最近一次状态图标，Last Used 仍隐藏。用户手动 Pin 的命令不因后续失败而删除。
 
-不记录的操作在 `server/application/history/quick_history.py` 文件顶部统一声明：`history`/`history clear`/`history run N`/`!N`；Quick Action UI、Script Library UI、Web API、上传、Remote Files、Job、Process、External Tool 及其他内部任务；由 Script Library Metadata 标记的 `script run __json__:` UI 调用（手动终端输入的 `script run` 属于 Quick）。Replay 只从 Quick 解析命令，不更新 Quick；其真实 Client 派发则按正常执行规则生成 Activity。
+不记录的操作在 `server/application/history/quick_history.py` 文件顶部统一声明：`history`/`history clear`/`history run N`/`!N`；Quick Action UI、Script Library UI、Web API、上传、Remote Files、Job、Process、External Tool 内部任务及其他内部任务；由 Script Library Metadata 标记的 `script run __json__:` UI 调用（手动终端输入的 `script run` 属于 Quick）。Replay 只从 Quick 解析命令，不更新 Quick；其真实 Client 派发则按正常执行规则生成 Activity。
 
 Quick History 页面继续支持 Use、双击回填、Pin / Unpin、Pin Up / Down 和动态数字索引。**仅隐藏** Last Used 的 UI；Command 前显示状态图标，底层必要字段不删除。Use 将命令填入 Terminal 输入框，不会直接执行。
 
@@ -64,9 +64,9 @@ Pin 顺序由独立的 `pinned_commands` 表持久管理：Pinned 项优先显�
 
 ## 回放与 Server 命令边界
 
-`history` 和 `history clear` 是只读/清理 Quick 的纯 Server 命令，不记 Activity 或 Quick；`history` 的可回放索引使用 Quick History 快照并跳过 `history run N` / `!N` 元命令，重新从 1 编号；`history run <index>` / `!<index>` 会根据当前机器 Quick History 的动态索引查找真实可执行文本，再按照正常命令解析和 Client 派发链执行。索引随 Pin 排序、Recent 变化而变动，不是稳定 ID，重放前应核对列表。Replay 不产生 Quick，但实际派发 Client 后会产生 Activity，并记录外层回放 Invocation 与实际 Resolved；所以回放自身不改变 Quick 索引。未派发或纯 Server 回放不生成 Activity。
+`history` 和 `history clear` 是只读/清理 Quick 的纯 Server 命令，不记 Activity 或 Quick；`history` 的可回放索引使用 Quick History 快照并跳过 `history run N` / `!N` 元命令，重新从 1 编号；`history run <index>` / `!<index>` 会根据当前机器 Quick History 的动态索引查找真实可执行文本，再按照正常命令解析和 Client 派发链执行。索引随 Pin 排序、Recent 变化而变动，不是稳定 ID，重放前应核对列表。Replay 不产生 Quick；真实派发且符合记录策略的 Client 执行才产生 Activity，所以回放自身不改变 Quick 索引。未派发或纯 Server 回放不生成 Activity。
 
-`xt info <name> --json` 在 Server 的 `ExternalToolCliBuiltinSupport._load_cli_install_status_map()` 中会构造真实的内部 Client 查询 `external_tool_install_statuses __json__:...`，由 `_collect_nested_command_text()` 向 Client 派发；因此 Activity 的 `resolved.command` 可能包含该真实但很长的 Base64 传输文本，`invocation.input` 仍是用户输入的 `xt info ...`。本轮不伪造一条不存在的 Client `xt info` 命令，Details 中长命令依旧可以点开完整查看。
+`xt` 仍由 Server Builtin 解析、Client 负责本地运行 Exec。`xt`、`xt list`、`xt info`、`xt which`、`xt help`（包括 JSON 查询）属于查询，不写 Activity；手动终端输入正常进入 Quick，即使 Server 内部向 Client 查询安装状态或可执行文件路径也不会产生 Activity。`xt run <exec>` 与 `xt <exec>` 真正派发执行后生成一条 `external_tool · run_exec` Activity；保留终端原始输入、Exec/Package 身份和实际结果，Quick 按普通终端执行规则记录。嵌套的 `external_tool_*` Client RPC 不会独立建 Activity，也不能覆盖外层的语义记录，编码参数不持久化。History 回放查询同样不记录 Activity、且不会重复写 Quick；回放执行仍记一条 `run_exec` Activity 而不重复写 Quick。
 
 `notify`、`saveout` 等 Server 包装命令如果执行了 Client 子命令，只产生一条 Activity，外层包装文本留在 `invocation.input`，实际命令留在 `resolved.command`。`saveout` 在内层命令完成并成功注册 `command_output` Artifact 后，会沿用原有 History Store 文件关联方法，把 Artifact 引用加到该 Activity 的 `files`；不复制文件内容，也不凭文件存在推断执行成功。`script exec <name>` 由 Server 读取 Script 文件并向 Client 下发 Script 类型，不是普通 `command`。`rtt`、Alias 定义列表、脚本目录浏览等未下发 Client 的 Server 操作不记录。
 
@@ -80,7 +80,7 @@ Activity Center 保留原有两行式列表，第一行 Lucide 类型图标、`K
 
 ### 记录策略所覆盖的执行
 
-统一 Activity 写入依据是显式受支持的用户操作上下文 + 真实向 Client 派发，而不是字符串黑名单。纯 Server 管理、远程文件浏览、Remote Files 的查询操作、Job/Process Control 及内部监控不进入 Activity；只有明确列出的 Remote Files 文件修改、用户传输和 External Tool Manager 生命周期操作记录为语义 Activity。External Tool Manager 的 Package 安装、卸载、清缓存和 Module/Instance 的启动、Oneshot、停止、移除、清日志使用 `kind=external_tool`，分别记录 `install_package`、`uninstall_package`、`clear_package_cache`、`start_instance`、`run_oneshot`、`stop_instance`、`remove_instance`、`clear_instance_logs`。一次用户操作只记一条，发送前失败不落库，Oneshot 非零退出或超时按实际结果终结。记录只存 Package/Tool/Instance 身份和安全摘要，不持久化参数、原始运行配置、编码命令或 stdout/stderr 原文；查询、状态刷新、命令预览、Preset/Metadata 编辑均不记此类 Activity。终端 `xt` 仍按原有终端历史规则，Script SDK 的内部调用归属于 Script，不另记 External Tool Activity。不是所有业务请求都会有 Activity，因此缺少 Activity 不代表客户端从未接受某次内部请求。
+统一 Activity 写入依据是显式受支持的用户操作上下文 + 真实向 Client 派发；内部 `external_tool_*` 属于专用传输协议而非用户命令，不得产生普通 Command Activity。纯 Server 管理、远程文件浏览、Remote Files 的查询操作、Job/Process Control 及内部监控不进入 Activity；只有明确列出的 Remote Files 文件修改、用户传输和 External Tool Manager 生命周期操作记录为语义 Activity。External Tool Manager 的 Package 安装、卸载、清缓存和 Module/Instance 的启动、Oneshot、停止、移除、清日志使用 `kind=external_tool`，分别记录 `install_package`、`uninstall_package`、`clear_package_cache`、`start_instance`、`run_oneshot`、`stop_instance`、`remove_instance`、`clear_instance_logs`。一次用户操作只记一条，发送前失败不落库，Oneshot 非零退出或超时按实际结果终结。记录只存 Package/Tool/Instance 身份和安全摘要，不持久化参数、原始运行配置、编码命令或 stdout/stderr 原文；查询、状态刷新、命令预览、Preset/Metadata 编辑均不记此类 Activity。终端 `xt` 的只读查询仅写 Quick、不写 Activity；实际 `xt run` / `xt <exec>` 则记一条 `external_tool · run_exec`，不写内部 RPC 文本。Script SDK 的内部调用归属于 Script，不另记 External Tool Activity。不是所有业务请求都会有 Activity，因此缺少 Activity 不代表客户端从未接受某次内部请求。
 
 ### 命令收藏与路径收藏
 

@@ -100,6 +100,7 @@ class BuiltinCommandHandler:
             server=self.server,
             conn=self.conn,
             command_processor_factory=self.command_processor_factory,
+            history_entry_id_provider=self.history_entry_id_provider,
         )
 
     def get_command_candidates(self):

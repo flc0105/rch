@@ -110,10 +110,34 @@ class CommandHistoryOrchestrator:
                 'conn': conn, 'kind': 'external_tool', 'action': action,
                 'origin': origin, 'presentation': 'none',
                 'invocation': {'arguments': dict(arguments)},
-                'resolved': {'command_type': 'command', 'command_name': command_name},
+                'resolved': {'command_type': 'command'},
                 'created_at': self.history_store._now_iso(),
             }
         return activity_id
+
+    def prepare_xt_run(self, conn, entry_id, target):
+        """Promote the terminal invocation to one semantic Exec Activity.
+
+        The nested Client RPC never replaces this intent or exposes its payload.
+        """
+        with self._lock:
+            pending = self._pending.get(entry_id)
+            if not pending or pending['conn'] is not conn:
+                return
+            pending['kind'] = 'external_tool'
+            pending['action'] = 'run_exec'
+            pending['invocation']['arguments'] = {
+                'exec_name': str(target.get('exec_name') or ''),
+                'package_id': str(target.get('package_id') or ''),
+            }
+            pending['resolved'] = {'command_type': 'command'}
+
+    def suppress_xt_query(self, conn, entry_id):
+        """Suppress xt query Activity without discarding the original Quick entry."""
+        with self._lock:
+            pending = self._pending.get(entry_id)
+            if pending and pending['conn'] is conn:
+                self._pending.pop(entry_id, None)
 
     def describe_plan(self, activity_id, plan):
         if not activity_id or not isinstance(plan, dict):
@@ -121,6 +145,14 @@ class CommandHistoryOrchestrator:
         with self._lock:
             pending = self._pending.get(activity_id)
             if not pending:
+                return
+            # Never persist an internal Client RPC, including nested builtin
+            # calls; a prepared External Tool Activity already has safe fields.
+            if CommandHistoryRecordPolicy.is_internal_external_tool_command(plan.get('command')):
+                if pending['kind'] != 'external_tool':
+                    self._pending.pop(activity_id, None)
+                return
+            if pending['kind'] == 'external_tool':
                 return
             kind = pending['kind']
             command_type = str(plan.get('command_type') or 'command')
@@ -159,6 +191,10 @@ class CommandHistoryOrchestrator:
             return
         if pending['conn'] is not conn:
             return
+        if CommandHistoryRecordPolicy.is_internal_external_tool_command(command):
+            if pending['kind'] != 'external_tool':
+                return
+            # Semantic Activity already has its safe resolved fields.
         if not pending['resolved']:
             pending['resolved'] = {'command_type': command_type}
             if command_type != 'script':

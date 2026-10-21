@@ -172,7 +172,8 @@ def test_cli_upload_claims_pending_without_discarding_quick():
     source = (Path(__file__).parents[1] / 'server/application/history/history_orchestrator.py').read_text()
     tree = ast.parse(source)
     cls = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == 'CommandHistoryOrchestrator')
-    fake_policy = SimpleNamespace(should_record_command=lambda *a, **k: True,
+    fake_policy = SimpleNamespace(is_internal_external_tool_command=lambda c: str(c).strip().startswith("external_tool_"),
+                                      should_record_command=lambda *a, **k: True,
                                   should_record=lambda *a, **k: True,
                                   is_history_management_command=lambda c: False,
                                   is_history_replay_command=lambda c: False)
@@ -259,7 +260,8 @@ def test_client_download_and_screenshot_remain_normal_command_activities():
     tree = ast.parse(source)
     entrypoints = [node for node in tree.body if isinstance(node, ast.ClassDef)
                    and node.name == 'CommandHistoryOrchestrator']
-    fake_policy = SimpleNamespace(should_record_command=lambda *a, **k: True,
+    fake_policy = SimpleNamespace(is_internal_external_tool_command=lambda c: str(c).strip().startswith("external_tool_"),
+                                      should_record_command=lambda *a, **k: True,
                                   should_record=lambda *a, **k: True,
                                   is_history_management_command=lambda c: False,
                                   is_history_replay_command=lambda c: False)

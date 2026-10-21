@@ -577,12 +577,12 @@ Star,
       }
       if (item?.kind === 'external_tool') {
         const args = invocation.arguments || {}
-        const target = args.package_id || args.tool_id || 'tool'
+        const target = args.exec_name || args.package_id || args.tool_id || 'tool'
         const instance = args.instance_id ? ` (${args.instance_id})` : ''
         const actions = {
           install_package: 'Install', uninstall_package: 'Uninstall',
           clear_package_cache: 'Clear cache', start_instance: 'Start',
-          run_oneshot: 'Run', stop_instance: 'Stop',
+          run_oneshot: 'Run', run_exec: 'Run', stop_instance: 'Stop',
           remove_instance: 'Remove', clear_instance_logs: 'Clear logs',
         }
         return `${actions[item.action] || 'External Tool'} ${target}${instance}`

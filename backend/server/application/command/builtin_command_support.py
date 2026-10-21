@@ -632,10 +632,19 @@ class ExternalToolCliBuiltinSupport:
 
     RESERVED_SUBCOMMANDS = {'list', 'info', 'which', 'run', 'help'}
 
-    def __init__(self, server, conn, command_processor_factory):
+    def __init__(self, server, conn, command_processor_factory, history_entry_id_provider):
         self.server = server
         self.conn = conn
         self.command_processor_factory = command_processor_factory
+        self.history_entry_id_provider = history_entry_id_provider
+
+    def _history(self):
+        return getattr(self.server, 'command_history_orchestrator', None)
+
+    def _suppress_query_history(self):
+        history = self._history()
+        if history is not None:
+            history.suppress_xt_query(self.conn, self.history_entry_id_provider())
 
     def _catalog_service(self):
         web_service = getattr(self.server, 'web_service', None)
@@ -844,6 +853,9 @@ class ExternalToolCliBuiltinSupport:
     def _run_exec(self, exec_name: str, raw_args: str):
         target = self._resolve_exec_target(exec_name)
         payload = self._build_client_payload(target, raw_args=raw_args)
+        history = self._history()
+        if history is not None:
+            history.prepare_xt_run(self.conn, self.history_entry_id_provider(), target)
         command = f'external_tool_exec {encode_structured_arg(payload)}'
         for item in self._iter_nested_command(command):
             yield item
@@ -853,16 +865,19 @@ class ExternalToolCliBuiltinSupport:
         arg_text = strip_output_format_arg(arg)
 
         if not arg_text or arg_text == 'list':
+            self._suppress_query_history()
             yield self._render_cli_list(output_format)
             return
 
         if arg_text in ('help', '-h', '--help'):
+            self._suppress_query_history()
             yield 1, 'Usage: xt [list] [--json] | xt info <exec> [--json] | xt which <exec> | xt <exec> [--] <raw args>'
             return
 
         subcommand, rest = self._split_first_token(arg_text)
 
         if subcommand == 'info':
+            self._suppress_query_history()
             output_format = parse_output_format(rest, default=output_format)
             rest = strip_output_format_arg(rest)
             exec_name, _ = self._split_first_token(rest)
@@ -872,11 +887,17 @@ class ExternalToolCliBuiltinSupport:
             return
 
         if subcommand == 'which':
+            self._suppress_query_history()
             exec_name, _ = self._split_first_token(rest)
             if not exec_name:
                 raise ValueError('Usage: xt which <exec>')
             for item in self._which(exec_name):
                 yield item
+            return
+
+        if subcommand == 'list':
+            self._suppress_query_history()
+            yield self._render_cli_list(output_format)
             return
 
         if subcommand == 'install':

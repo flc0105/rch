@@ -13,6 +13,7 @@ Recording rules live here (not scattered through execution, Activity, or UI):
 import re
 
 from core.utils.json_utils import compact_json_dumps, json_loads_typed
+from server.application.history.history_record_policy import CommandHistoryRecordPolicy
 from server.config.config import COMMAND_HISTORY_RECENT_LIMIT
 
 
@@ -39,6 +40,8 @@ class QuickHistoryRecordPolicy:
         if not command or source not in QUICK_TERMINAL_SOURCES:
             return False
         if str(task_type or '').strip().lower() in QUICK_EXCLUDED_TASK_TYPES:
+            return False
+        if CommandHistoryRecordPolicy.is_internal_external_tool_command(command):
             return False
         if any((metadata or {}).get(flag) for flag in QUICK_EXCLUDED_META_FLAGS):
             return False
