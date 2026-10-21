@@ -153,7 +153,7 @@ Client → Server 的路径也有 `preparing`、`staging`（上送文件字节�
 
 Transfer Center 管理内存中的实时速度、进度、取消和最近任务；Activity Center 只为用户明确发起的上传/下载维护一条持久执行事实。Remote Browser / Remote File Picker 上传和 Remote Browser / Clipboard 下载均以真实 `transfer_id` 关联 Activity。Browser→Server 上传完成只是中间阶段；只有 Server→Client 写盘完成才将 Activity 标记成功。进度变化不重复写 Activity；失败、取消和重启后中断分别使用现有 `error`、`cancelled` 和 `interrupted` 状态。
 
-终端 Server Builtin `upload` 在受管理 Transfer 创建时认领其原始历史 ID，不把内部 `receive_file` 或临时 URL 当作用户命令；终端 Client `download` 的真实命令 Activity 改归类为 Transfer，它的 Artifact 关联沿用既有命令通道，不会额外伪造 `transfer_id`。预览、后台 Job/Script 中转和已生成 Artifact 的本地浏览器下载不自动进入 Transfer Activity。
+终端 Server Builtin `upload` 在受管理 Transfer 创建时认领其原始历史 ID，不把内部 `receive_file` 或临时 URL 当作用户命令；终端 Client `download` 与 `screenshot` 一样保留普通 Command Activity，Artifact 继续沿用既有命令通道关联；不会额外创建 Transfer Activity 或虚构 `transfer_id`。预览、后台 Job/Script 中转和已生成 Artifact 的本地浏览器下载不自动进入 Transfer Activity。
 
 ## 传输状态与实时进度的建模
 

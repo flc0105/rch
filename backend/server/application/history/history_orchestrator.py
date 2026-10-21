@@ -7,13 +7,6 @@ from server.application.history.history_record_policy import CommandHistoryRecor
 from server.application.history.quick_history import QuickHistoryRecordPolicy
 
 
-def original_download_command(original, resolved):
-    original = str(original or '').strip()
-    resolved = str(resolved or '').strip()
-    return (original.startswith('download ') and resolved.startswith('download ')
-            and bool(original.split(None, 1)[1].strip()))
-
-
 class CommandHistoryOrchestrator:
     def __init__(self, history_store):
         self.history_store = history_store
@@ -133,17 +126,11 @@ class CommandHistoryOrchestrator:
                 kind = 'alias'
                 pending['invocation'].setdefault('target', alias_name)
             pending['kind'] = kind
-            if (kind == 'command' and command_type == 'command'
-                    and original_download_command(pending['invocation'].get('input'), plan.get('command'))):
-                pending['kind'], pending['action'] = 'transfer', 'download_files'
-                pending['invocation']['arguments'] = {'path': str(pending['invocation']['input']).split(None, 1)[1]}
             # Script content is never copied into Activity; the real transport
             # type and script identity describe the execution without leaking source.
             pending['resolved'] = {'command_type': command_type}
             if command_type != 'script':
                 pending['resolved']['command'] = str(plan.get('command') or '')
-            if pending['kind'] == 'transfer':
-                pending['resolved']['direction'] = 'client_to_server'
 
     def confirm_dispatch(self, conn, activity_id, command, command_type='command'):
         if not activity_id:

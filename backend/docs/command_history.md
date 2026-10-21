@@ -14,9 +14,9 @@ Remote Files 的修改操作使用 `kind=remote_files`，统一记录为 `create
 
 ### Transfer 操作记录
 
-用户主动发起的 Remote Files Upload、Remote File Picker Upload、Remote Files 文件/ZIP Download、Clipboard 远程文件/目录 Download 及终端 `upload`、`download`，使用 `kind=transfer`、`action=upload_files|download_files`；入口身份保存在 `origin`，具体界面来源保存在 `invocation.arguments.source`。单个受管理 `transfer_id` 只创建一条 Activity，进度事件不持久写入 Activity；终态 `completed/failed/cancelled` 对应 `success/error/cancelled`。Browser 上传有 Browser→Server 和 Server→Client 两阶段，必须在 Client 完成写盘后才是 `success`。Server 重新启动时，旧的未完成 Transfer Activity 变为 `interrupted`，不假定传输成功。
+用户主动发起的 Remote Files Upload、Remote File Picker Upload、Remote Files 文件/ZIP Download、Clipboard 远程文件/目录 Download 及终端 Server Builtin `upload`，使用 `kind=transfer`、`action=upload_files|download_files`；入口身份保存在 `origin`，具体界面来源保存在 `invocation.arguments.source`。单个受管理 `transfer_id` 只创建一条 Activity，进度事件不持久写入 Activity；终态 `completed/failed/cancelled` 对应 `success/error/cancelled`。Browser 上传有 Browser→Server 和 Server→Client 两阶段，必须在 Client 完成写盘后才是 `success`。Server 重新启动时，旧的未完成 Transfer Activity 变为 `interrupted`，不假定传输成功。
 
-终端 `upload` 是 Server Builtin；当真实 Transfer 建立时认领原终端提交的 Activity ID，不额外生成 Command Activity，并保留 Quick 最近命令。终端 `download` 为真实 Client 命令；保留原来的派发确认、结果与 Artifact 关联，直接归类为 Transfer；这一路没有额外创建 Transfer Center `transfer_id`，不得伪造它。纯文件预览、内部 Job/Script 上传和浏览器下载已生成 Artifact 的 HTTP 请求不自动产生 Transfer Activity。
+终端 `upload` 是 Server Builtin；当真实 Transfer 建立时认领原终端提交的 Activity ID，不额外生成 Command Activity，并保留 Quick 最近命令。终端 `download` 是与 `screenshot` 相同的普通 Client 命令，按 `kind=command`、`action=invoke` 正常记录，保留实际派发、输出及 Artifact 关联；不会为了文件内容经 HTTP 上传而改变 Activity 类型或虚构 Transfer Center `transfer_id`。纯文件预览、内部 Job/Script 上传和浏览器下载已生成 Artifact 的 HTTP 请求不自动产生 Transfer Activity。
 
 Transfer Activity 的 `resolved` 只记录已存在的 `transfer_id`（如有）和真实方向，`invocation` 记录文件名、远程路径等业务字段；不保存浏览器上传令牌、暂存 URL、HTTP Body、内部 `receive_file` 的编码载荷或进度明细。Transfer 的 `files` 只关联真正生成的 Server Artifact。清空 Transfer Center 的 Recent 与删除 Activity 相互独立。
 

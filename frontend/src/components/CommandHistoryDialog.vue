@@ -337,7 +337,7 @@
                 @keydown.space.self.prevent="openCommandExecutionDetail(item)"
               >
                 <div class="activity-entry-main">
-                  <component :is="getActivityKindIcon(item.kind)" class="activity-kind-icon" :size="19" />
+                  <component :is="getActivityKindIcon(item.kind, item.action)" class="activity-kind-icon" :size="19" />
                   <div class="activity-entry-content">
                     <div class="activity-entry-title" :title="buildActivityLabel(item)">
                       <span class="activity-kind-name">{{ buildActivityKindLabel(item.kind) }}</span>
@@ -399,7 +399,7 @@ import CommandExecutionDetailDialog from './CommandExecutionDetailDialog.vue'
 import {EditPen} from "@element-plus/icons-vue";
 import { Star, StarFilled, ArrowUp, ArrowDown } from '@element-plus/icons-vue'
 import { diffDateTimeMs } from '../utils/formatters.js'
-import { Terminal, Zap, FileCode2, CheckCircle2, XCircle, CircleDashed, Ban, Clock3, ChevronRight, AlertTriangle, TextCursorInput, FolderOpen, ArrowDownToLine } from '@lucide/vue'
+import { Terminal, Zap, FileCode2, CheckCircle2, XCircle, CircleDashed, Ban, Clock3, ChevronRight, AlertTriangle, TextCursorInput, FolderOpen, ArrowDownToLine, ArrowUpToLine } from '@lucide/vue'
 
 export default {
   name: 'CommandHistoryDialog',
@@ -411,7 +411,7 @@ Star,
     StarFilled,
     CommandExecutionDetailDialog,
     ArrowUp, ArrowDown,
-    Terminal, Zap, FileCode2, CheckCircle2, XCircle, CircleDashed, Ban, Clock3, ChevronRight, AlertTriangle, FolderOpen, ArrowDownToLine,
+    Terminal, Zap, FileCode2, CheckCircle2, XCircle, CircleDashed, Ban, Clock3, ChevronRight, AlertTriangle, FolderOpen, ArrowDownToLine, ArrowUpToLine,
   },
 
   props: {
@@ -552,8 +552,9 @@ Star,
   },
 
   methods: {
-    getActivityKindIcon(kind) {
-      return ({ command: Terminal, alias: Zap, script: FileCode2, remote_files: FolderOpen, transfer: ArrowDownToLine })[kind] || Terminal
+    getActivityKindIcon(kind, action) {
+      if (kind === 'transfer') return action === 'upload_files' ? ArrowUpToLine : ArrowDownToLine
+      return ({ command: Terminal, alias: Zap, script: FileCode2, remote_files: FolderOpen })[kind] || Terminal
     },
     getActivityStatusIcon(status) {
       if (status === 'success') return CheckCircle2

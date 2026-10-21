@@ -245,7 +245,7 @@ def test_cli_legacy_upload_without_tab_creates_managed_transfer(tmp_path):
     assert any(e.event_type == 'completed' and e.ok for e in events)
 
 
-def test_cli_download_converts_existing_command_activity_to_transfer():
+def test_client_download_and_screenshot_remain_normal_command_activities():
     store, transfers, recorder, conn = setup()
 
     class FakeQuick:
@@ -257,10 +257,8 @@ def test_cli_download_converts_existing_command_activity_to_transfer():
     store.quick_store = FakeQuick()
     source = (Path(__file__).parents[1] / 'server/application/history/history_orchestrator.py').read_text()
     tree = ast.parse(source)
-    entrypoints = [node for node in tree.body if isinstance(node, ast.FunctionDef)
-                   and node.name == 'original_download_command']
-    entrypoints += [node for node in tree.body if isinstance(node, ast.ClassDef)
-                    and node.name == 'CommandHistoryOrchestrator']
+    entrypoints = [node for node in tree.body if isinstance(node, ast.ClassDef)
+                   and node.name == 'CommandHistoryOrchestrator']
     fake_policy = SimpleNamespace(should_record_command=lambda *a, **k: True,
                                   should_record=lambda *a, **k: True,
                                   is_history_management_command=lambda c: False,
@@ -273,12 +271,18 @@ def test_cli_download_converts_existing_command_activity_to_transfer():
     orch.describe_plan(aid, {'command_type': 'command', 'command': 'download /home/user/report.csv'})
     orch.confirm_dispatch(conn, aid, 'download /home/user/report.csv')
     entry = store.entries[aid]
-    assert (entry['kind'], entry['action']) == ('transfer', 'download_files')
+    assert (entry['kind'], entry['action']) == ('command', 'invoke')
     assert entry['invocation']['input'] == 'download /home/user/report.csv'
-    assert entry['resolved']['direction'] == 'client_to_server'
+    assert entry['resolved'] == {'command_type': 'command', 'command': 'download /home/user/report.csv'}
     assert store.quick_store.pending[aid] == 'download /home/user/report.csv'
 
     unrelated = orch.begin_execution(conn, 'echo download /home/user/report.csv', source='cli', task_type='command')
     orch.describe_plan(unrelated, {'command_type': 'command', 'command': 'echo download /home/user/report.csv'})
     orch.confirm_dispatch(conn, unrelated, 'echo download /home/user/report.csv')
     assert store.entries[unrelated]['kind'] == 'command'
+
+    screenshot = orch.begin_execution(conn, 'screenshot', source='cli', task_type='command')
+    orch.describe_plan(screenshot, {'command_type': 'command', 'command': 'screenshot'})
+    orch.confirm_dispatch(conn, screenshot, 'screenshot')
+    assert (store.entries[screenshot]['kind'], store.entries[screenshot]['action']) == ('command', 'invoke')
+    assert len(store.entries) == 3
