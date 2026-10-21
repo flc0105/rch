@@ -13,6 +13,9 @@ def create_remote_files_blueprint(server_instance):
     def activity_origin():
         return 'web_ui' if request.headers.get('X-RCH-Origin') == 'web_ui' else 'web_api'
 
+    def transfer_feature():
+        return 'clipboard' if request.headers.get('X-RCH-Feature') == 'clipboard' else 'remote_files'
+
     @blueprint.get('/api/connections/<client_id>/remote-files')
     def browse_remote_files(client_id):
         def _execute():
@@ -74,7 +77,8 @@ def create_remote_files_blueprint(server_instance):
             path = get_optional_remote_path()
             if not path:
                 raise ValueError('path is required')
-            return remote_file_api.download_remote_file(client_id, path, tab_id=get_optional_tab_id())
+            return remote_file_api.download_remote_file(client_id, path, tab_id=get_optional_tab_id(),
+                                                        origin=activity_origin(), feature=transfer_feature())
 
         return responder.json_endpoint(_execute, default_error_status=500)
 
@@ -92,7 +96,7 @@ def create_remote_files_blueprint(server_instance):
                 client_id,
                 paths,
                 archive_name,
-                tab_id=get_optional_tab_id(),
+                tab_id=get_optional_tab_id(), origin=activity_origin(), feature=transfer_feature(),
             )
 
         return responder.json_endpoint(_execute, default_error_status=500)

@@ -114,7 +114,7 @@ Browser 的 Copy、Cut 和 Paste 使用的是**界面内部的远程路径列表
 
 ## Activity Center 操作记录
 
-Web Remote Files 的真正远程文件修改动作会在 Client 命令成功派发后写入一条 Activity：`delete_files`、`rename_files`、`create_directory`、`copy_files`、`move_files`、`create_archive`、`extract_archive`、`save_file`。批量操作统一为一条记录；部分成功按 `error` 显示数量和失败明细。保存文本仅记录路径和编码，不保存正文或编码载荷。Browse/Preview/读取/下载/上传不属于这些 Activity，下载上传继续由 Transfer Center 管理，Quick History 不受影响。详情中的 `files` 指生成的 Artifact，不指被修改的远端路径。
+Web Remote Files 的真正远程文件修改动作会在 Client 命令成功派发后写入一条 Activity：`delete_files`、`rename_files`、`create_directory`、`copy_files`、`move_files`、`create_archive`、`extract_archive`、`save_file`。批量操作统一为一条记录；部分成功按 `error` 显示数量和失败明细。保存文本仅记录路径和编码，不保存正文或编码载荷。Browse/Preview/读取不属于这些 Activity。用户主动上传/下载作为独立的 `transfer` Activity 记录一次，Transfer Center 继续管理进度与取消；Quick History 不受影响。详情中的 `files` 指生成的 Artifact，不指被修改的远端路径。
 
 ## 文件内容和打包传输
 
@@ -206,16 +206,7 @@ File 模式允许进入目录浏览，但只有文件可以被选中；Folder �
 
 Picker 保留面包屑、上级目录、Quick Jump、Go to Folder 和分页，默认每页 **50 项**，但不提供 Browser 的搜索、Recursive、显示隐藏项开关、Pins 管理、复制删除和 Preview 编辑。它固定请求 `show_hidden=false`，所以隐藏文件或隐藏目录不会出现在普通可选列表中。
 
-Picker 提供一个简单的 Upload 按钮，可选择**单个本地文件**，以 multipart 表单提交到当前远程目录：
-
-```text
-POST /api/connections/{client_id}/upload
-Form fields:
-  file         本地上传文件
-  target_path  当前远程目录
-```
-
-服务端接受后返回上传任务 ID，Picker 通知调用它的表单并可以在任务完成时重新刷新目录。**Upload started 表示任务启动，不能据此推断文件已经可选或已经写入。** Picker 不是 Browser 的全部批量上传功能入口，也不具备文件夹上传选择器。
+Picker 提供一个简单的 Upload 按钮，可选择**单个本地文件**，与 Browser 共用 `POST /api/transfers/browser-upload` 建立受管理任务，再通过 8086 的 `browser-upload/{transfer_id}/content` 上传文件字节并由 Client 写入当前远程目录。Picker 和 Browser 是相同的 Transfer 生命周期，来源分别标记为 `remote_file_picker` 与 `remote_files`。**Upload started 表示任务启动，不能据此推断文件已经可选或已经写入。** Picker 不是 Browser 的全部批量上传功能入口，也不具备文件夹上传选择器。
 
 例如 Script 或 Job 声明一个远程多文件参数：
 

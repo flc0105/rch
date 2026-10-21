@@ -22,6 +22,7 @@ class TransferService:
         self._changed = threading.Condition(self._lock)
         self._items = {}
         self._recent_ids = []
+        self.activity_recorder = None
 
     def create_transfer(
         self,
@@ -126,6 +127,8 @@ class TransferService:
         self._publish(item)
         if lifecycle:
             self._publish_lifecycle(item, lifecycle)
+            if self.activity_recorder is not None:
+                self.activity_recorder.on_update(snapshot)
         return snapshot
 
     def update_progress(

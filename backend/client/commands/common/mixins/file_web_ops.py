@@ -311,7 +311,7 @@ class CommandFileWebMixin:
             if not isinstance(paths, list) or not paths:
                 return 0, 'paths is required and must be a non-empty list'
 
-            return self.file_system_service.delete_paths(paths, activity_report=payload.get('activity_report') is True)
+            return 1, json.dumps(self.file_system_service.delete_paths(paths).to_dict(), ensure_ascii=False)
         except CommandCancelledError:
             return 0, 'Command cancelled'
         except CommandTimeoutError:
@@ -378,13 +378,8 @@ class CommandFileWebMixin:
             if not isinstance(raw_paths, list) or not raw_paths:
                 return 0, 'paths is required and must be a non-empty list'
 
-            resolved_paths = self.path_resolver.require_existing_paths_from_list(raw_paths)
-            return self.file_system_service.paste_paths(
-                resolved_paths,
-                destination_dir,
-                operation,
-                activity_report=payload.get('activity_report') is True,
-            )
+            return 1, json.dumps(self.file_system_service.paste_paths(
+                raw_paths, destination_dir, operation).to_dict(), ensure_ascii=False)
         except CommandCancelledError:
             return 0, 'Command cancelled'
         except CommandTimeoutError:

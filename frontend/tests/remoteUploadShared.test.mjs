@@ -130,7 +130,8 @@ const event = {target: {files: [file], value: 'report.txt'}}
 await picker.state.handleRemoteUploadChange(event)
 assert.equal(picker.called.length, 1)
 assert.deepEqual(JSON.parse(JSON.stringify(picker.called[0])), {
-  file, clientId: 'client-A', destinationPath: '/home/test', headers,
+  file, clientId: 'client-A', destinationPath: '/home/test',
+  headers: {...headers, 'X-RCH-Origin': 'web_ui', 'X-RCH-Feature': 'remote_file_picker'},
 })
 assert.equal(event.target.value, '')
 assert.equal(picker.state.remoteUploadLoading, false)
@@ -138,7 +139,10 @@ assert.ok(picker.events.some(([name, info]) => name === 'upload-started' && info
 const event2 = {target: {files: [file], value: 'report.txt'}}
 await dialog.state.handleUploadChange(event2)
 assert.equal(dialog.called.length, 1)
-assert.deepEqual(JSON.parse(JSON.stringify(dialog.called[0])), JSON.parse(JSON.stringify(picker.called[0])))
+assert.deepEqual(JSON.parse(JSON.stringify(dialog.called[0])), {
+  file, clientId: 'client-A', destinationPath: '/home/test',
+  headers: {...headers, 'X-RCH-Origin': 'web_ui', 'X-RCH-Feature': 'remote_files'},
+})
 assert.equal(event2.target.value, '')
 assert.equal(dialog.state.remoteUploadLoading, false)
 assert.ok(dialog.events.some(([name, info]) => name === 'upload-started' && info.taskId === 'task-shared'))

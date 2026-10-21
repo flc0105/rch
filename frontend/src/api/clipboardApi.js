@@ -78,14 +78,14 @@ export function setRemoteClipboardFiles(clientId, items = []) {
 
 export function downloadRemoteClipboardFile(clientId, path, headers = {}) {
   const url = `/api/connections/${encodeURIComponent(clientId)}/remote-files/download?path=${encodeURIComponent(path)}`
-  return apiData(url, { method: 'POST', headers: { ...(headers || {}) } }, {})
+  return apiData(url, { method: 'POST', headers: { ...(headers || {}), 'X-RCH-Origin': 'web_ui', 'X-RCH-Feature': 'clipboard' } }, {})
 }
 
 export function downloadRemoteClipboardDirectory(clientId, path, headers = {}) {
   const url = `/api/connections/${encodeURIComponent(clientId)}/remote-files/download-zip`
   return apiData(
     url,
-    jsonRequestOptions('POST', { paths: [path], archive_name: '' }, headers),
+    jsonRequestOptions('POST', { paths: [path], archive_name: '' }, {...headers, 'X-RCH-Origin': 'web_ui', 'X-RCH-Feature': 'clipboard'}),
     {},
   )
 }
@@ -94,7 +94,7 @@ export function downloadRemoteClipboardFiles(clientId, paths = [], headers = {})
   const url = `/api/connections/${encodeURIComponent(clientId)}/remote-files/download-zip`
   return apiData(
     url,
-    jsonRequestOptions('POST', { paths, archive_name: '' }, headers),
+    jsonRequestOptions('POST', { paths, archive_name: '' }, {...headers, 'X-RCH-Origin': 'web_ui', 'X-RCH-Feature': 'clipboard'}),
     {},
   )
 }

@@ -4,6 +4,7 @@ from server.application.agent.agent_output_registry import AgentOutputRegistry
 from server.application.auth.script_grant_service import ScriptGrantService
 from server.application.artifact.artifact_service import WebArtifactService
 from server.application.artifact.remote_file_service import WebRemoteFileService
+from server.application.history.transfer_activity_recorder import TransferActivityRecorder
 from server.application.command.command_executor_factory import CommandExecutorFactory
 from server.application.completion.command_completion_service import ServerCommandCompletionService
 from server.application.connection.connection_history_store import ConnectionHistoryStore
@@ -101,6 +102,8 @@ class ServerApplicationAssembly:
         self.task_store = WebTaskStore()
         self.interaction_broker = InteractionBroker(self.event_bus, self.task_store)
         self.transfer_service = TransferService(self.event_bus)
+        self.transfer_service.activity_recorder = TransferActivityRecorder(
+            self.server.command_history, self.transfer_service)
 
         # ------------------ domain/application services ------------------ #
         self.artifact_service = WebArtifactService()

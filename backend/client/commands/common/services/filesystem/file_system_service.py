@@ -1,10 +1,10 @@
-import json
 import os
 import shutil
 import stat as stat_module
 import time
 
 from client.commands.common.services.filesystem.path_resolver import PathResolver
+from client.commands.common.services.filesystem.batch_file_result import BatchFileResult
 from core.utils.text_encoding import encode_for_existing_file
 
 
@@ -222,55 +222,22 @@ class FileSystemService:
         os.remove(target_path)
         return 1, f'File deleted: {target_path}'
 
-    def delete_paths(self, paths: list, *, activity_report: bool = False) -> tuple[int, str]:
-        resolved_paths = []
-        errors = []
-        success_count = 0
-
+    def delete_paths(self, paths: list) -> BatchFileResult:
+        succeeded, errors = 0, []
         for raw_path in paths:
             try:
-                path_str = str(raw_path or '').strip()
-                if not path_str:
-                    continue
-
-                target_path = self.path_resolver.require_existing_path_from_arg(path_str)
-                resolved_paths.append(target_path)
-            except Exception as e:
-                errors.append(f'{raw_path}: {e}')
-
-        if not resolved_paths:
-            message = 'No valid paths to delete'
-            if activity_report:
-                message = f'Deleted 0 of {len(paths)} items'
-                if errors:
-                    message += '\nErrors:\n  ' + '\n  '.join(errors)
-                return 1, json.dumps({'status': 0, 'total': len(paths), 'succeeded': 0,
-                                      'failed': len(paths), 'message': message,
-                                      'errors': errors}, ensure_ascii=False)
-            return 0, message
-
-        for target_path in resolved_paths:
-            try:
-                if os.path.isdir(target_path):
-                    shutil.rmtree(target_path)
-                    success_count += 1
+                path = str(raw_path or '').strip()
+                if not path:
+                    raise ValueError('Path is required')
+                target = self.path_resolver.require_existing_path_from_arg(path)
+                if os.path.isdir(target):
+                    shutil.rmtree(target)
                 else:
-                    os.remove(target_path)
-                    success_count += 1
-            except Exception as e:
-                errors.append(f'{target_path}: {e}')
-
-        result_msg = f'Deleted {success_count} of {len(paths) if activity_report else len(resolved_paths)} items'
-        if errors:
-            result_msg += f'\nErrors:\n  ' + '\n  '.join(errors)
-
-        if activity_report:
-            return 1, json.dumps({'status': int(success_count > 0), 'total': len(paths),
-                                  'succeeded': success_count, 'failed': len(paths) - success_count,
-                                  'message': result_msg, 'errors': errors}, ensure_ascii=False)
-        if success_count > 0:
-            return 1, result_msg
-        return 0, result_msg
+                    os.remove(target)
+                succeeded += 1
+            except Exception as exc:
+                errors.append(f'{raw_path}: {exc}')
+        return BatchFileResult('delete', len(paths), succeeded, tuple(errors))
 
     def create_directory(self, target_path: str):
         if os.path.exists(target_path):
@@ -328,34 +295,19 @@ class FileSystemService:
 
         return target_path
 
-    def paste_paths(self, source_paths: list[str], destination_dir: str, operation: str, *, activity_report: bool = False) -> tuple[int, str]:
-        success_count = 0
-        errors = []
-
+    def paste_paths(self, source_paths: list[str], destination_dir: str, operation: str) -> BatchFileResult:
+        succeeded, errors = 0, []
         for source_path in source_paths:
             try:
-                self.copy_or_move_single_path(source_path, destination_dir, operation)
-                success_count += 1
-            except Exception as e:
-                errors.append(f'{source_path}: {e}')
-
-        action_text = 'Pasted'
-        if operation == 'move':
-            action_text = 'Moved'
-        elif operation == 'copy':
-            action_text = 'Copied'
-
-        result_msg = f'{action_text} {success_count} of {len(source_paths)} items to: {destination_dir}'
-        if errors:
-            result_msg += '\nErrors:\n  ' + '\n  '.join(errors)
-
-        if activity_report:
-            return 1, json.dumps({'status': int(success_count > 0), 'total': len(source_paths),
-                                  'succeeded': success_count, 'failed': len(source_paths) - success_count,
-                                  'message': result_msg, 'errors': errors}, ensure_ascii=False)
-        if success_count > 0:
-            return 1, result_msg
-        return 0, result_msg
+                path = str(source_path or '').strip()
+                if not path:
+                    raise ValueError('Path is required')
+                resolved = self.path_resolver.require_existing_path_from_arg(path)
+                self.copy_or_move_single_path(resolved, destination_dir, operation)
+                succeeded += 1
+            except Exception as exc:
+                errors.append(f'{source_path}: {exc}')
+        return BatchFileResult(operation, len(source_paths), succeeded, tuple(errors), destination_dir)
 
     def save_file_content(self, file_path: str, content: str, encoding: str = 'utf-8') -> tuple[str, int, str]:
         target_path = self.path_resolver.require_existing_path_from_arg(file_path)

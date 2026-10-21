@@ -23,6 +23,21 @@ class UploadExecutionService:
         self.artifact_service = artifact_service
         self.transfer_service = transfer_service
 
+    def _record_cli_upload(self, session, transfer_id, history_entry_id, source, filename, local_path):
+        if source != 'cli' or not history_entry_id or not transfer_id or self.transfer_service is None:
+            return
+        recorder = getattr(self.transfer_service, 'activity_recorder', None)
+        orchestrator = getattr(self.server, 'command_history_orchestrator', None)
+        if recorder is None or orchestrator is None:
+            return
+        claimed = orchestrator.claim_upload_intent(session, history_entry_id)
+        if claimed:
+            origin, original_input = claimed
+            recorder.track(transfer_id, session, activity_id=history_entry_id,
+                           action='upload_files', origin=origin,
+                           arguments={'input': original_input,
+                                      'filename': filename, 'count': 1, 'source': 'cli'})
+
     def get_connection(self, target):
         return self.command_stream_service.get_connection(target)
 
@@ -127,6 +142,8 @@ class UploadExecutionService:
                     metadata=transfer_metadata,
                 )
                 active_transfer_id = transfer.get('transfer_id') or ''
+
+            self._record_cli_upload(session, active_transfer_id, history_entry_id, source, safe_name, local_path)
 
             payload = {
                 'source': source,
@@ -264,7 +281,7 @@ class UploadExecutionService:
                 'browser_stage': False,
             }
 
-            if self.transfer_service is not None and tab_id:
+            if self.transfer_service is not None:
                 if active_transfer_id:
                     updated = self.transfer_service.reset_progress(
                         active_transfer_id,
@@ -295,6 +312,8 @@ class UploadExecutionService:
                         metadata=transfer_metadata,
                     )
                     active_transfer_id = transfer.get('transfer_id') or ''
+
+                self._record_cli_upload(session, active_transfer_id, history_entry_id, source, safe_name, local_path)
 
             yield CommandExecutionEvent.started(
                 effective_command,

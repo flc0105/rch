@@ -16,7 +16,7 @@ const script = source.match(/<script>([\s\S]*?)<\/script>/)?.[1]
 assert.ok(script)
 const context = {console, EditPen:{}, CommandExecutionDetailDialog:{}, TextCursorInput:{}, Star:{}, StarFilled:{},
   ArrowUp:{}, ArrowDown:{}, Terminal:{}, Zap:{}, FileCode2:{}, CheckCircle2:{}, XCircle:{},
-  CircleDashed:{}, Ban:{}, Clock3:{}, ChevronRight:{}, AlertTriangle:{}, FolderOpen:{}, diffDateTimeMs: () => 0}
+  CircleDashed:{}, Ban:{}, Clock3:{}, ChevronRight:{}, AlertTriangle:{}, FolderOpen:{}, ArrowDownToLine:{}, diffDateTimeMs: () => 0}
 vm.runInNewContext(
   script.replace(/^import\s+.*?\s+from\s+.*?\n/gm,'').replace('export default {','globalThis.component = {'),
   context,
@@ -145,4 +145,14 @@ test('Activity summary color reflects operation status, without changing list la
   assert.equal(component.methods.isActivityProblem('success'), false)
   assert.equal(component.methods.isActivityProblem('error'), true)
   assert.equal(component.methods.isActivityProblem('timed_out'), true)
+})
+
+
+test('Transfer kind preserves filtering and uses compact semantic names', () => {
+  assert.match(activity, /label="Transfer" value="transfer"/)
+  const transfer = {kind:'transfer', action:'download_files', status:'success', invocation:{arguments:{filename:'archive.zip', count:3}}}
+  assert.equal(component.methods.buildActivityLabel(transfer), 'Download 3 items')
+  assert.equal(component.methods.buildActivityKindLabel('transfer'), 'Transfer')
+  assert.equal(component.methods.getActivityKindIcon('transfer'), context.ArrowDownToLine)
+  assert.match(activity, /\['remote_files', 'transfer'\]/)
 })

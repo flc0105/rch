@@ -543,7 +543,7 @@ export default {
       try {
         const result = await uploadRemoteFileToClient({
           file, clientId: this.selectedId, destinationPath: this.remoteFilesCurrentPath,
-          headers: this.buildRequestHeaders(),
+          headers: {...this.buildRequestHeaders(), 'X-RCH-Origin': 'web_ui', 'X-RCH-Feature': 'remote_file_picker'},
         })
         const taskId = result.task_id
         this.$emit('set-active-task', this.selectedId, taskId || '')

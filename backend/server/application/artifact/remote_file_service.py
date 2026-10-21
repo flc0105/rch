@@ -206,7 +206,7 @@ class WebRemoteFileService:
             raise RuntimeError('Artifact was not found after HTTP upload completed')
         return terminal, artifact
 
-    def download_file(self, client_id: str, path: str, history_entry_id: str = '', tab_id: str = '') -> dict:
+    def download_file(self, client_id: str, path: str, history_entry_id: str = '', tab_id: str = '', *, origin: str = 'web_api', feature: str = 'remote_files') -> dict:
         if not (path or '').strip():
             raise ValueError('path is required')
         if self.transfer_service is None:
@@ -230,6 +230,11 @@ class WebRemoteFileService:
             },
         )
         transfer_id = transfer.get('transfer_id') or ''
+        recorder = getattr(self.transfer_service, 'activity_recorder', None)
+        if recorder is not None:
+            recorder.track(transfer_id, session, action='download_files', origin=origin,
+                           arguments={'path': normalized_path, 'filename': transfer['filename'],
+                                      'count': 1, 'source': feature})
 
         try:
             self._start_client_transfer(
@@ -262,6 +267,7 @@ class WebRemoteFileService:
             archive_name: str = '',
             history_entry_id: str = '',
             tab_id: str = '',
+            *, origin: str = 'web_api', feature: str = 'remote_files',
     ) -> dict:
         if not isinstance(paths, list) or not paths:
             raise ValueError('paths is required')
@@ -294,6 +300,11 @@ class WebRemoteFileService:
             },
         )
         transfer_id = transfer.get('transfer_id') or ''
+        recorder = getattr(self.transfer_service, 'activity_recorder', None)
+        if recorder is not None:
+            recorder.track(transfer_id, session, action='download_files', origin=origin,
+                           arguments={'paths': normalized_paths, 'filename': transfer['filename'],
+                                      'count': len(normalized_paths), 'source': feature})
 
         try:
             self._start_client_transfer(
@@ -393,7 +404,7 @@ class WebRemoteFileService:
         if not normalized_paths:
             raise ValueError('paths is required and must contain valid paths')
 
-        result_text = self._run_mutation(client_id, 'delete_files', {'paths': normalized_paths, 'count': len(normalized_paths)}, 'delete_paths', {'paths': normalized_paths, 'activity_report': True}, json_result=True, batch=True, origin=origin)
+        result_text = self._run_mutation(client_id, 'delete_files', {'paths': normalized_paths, 'count': len(normalized_paths)}, 'delete_paths', {'paths': normalized_paths}, json_result=True, batch=True, origin=origin)
         result_text = result_text['message']
 
         return {
@@ -420,7 +431,7 @@ class WebRemoteFileService:
         if normalized_operation not in ('copy', 'move'):
             raise ValueError('operation must be copy or move')
 
-        result_text = self._run_mutation(client_id, 'copy_files' if normalized_operation == 'copy' else 'move_files', {'paths': normalized_paths, 'count': len(normalized_paths), 'destination_dir': normalized_destination_dir}, 'paste_paths', {'paths': normalized_paths, 'destination_dir': normalized_destination_dir, 'operation': normalized_operation, 'activity_report': True}, json_result=True, batch=True, origin=origin)
+        result_text = self._run_mutation(client_id, 'copy_files' if normalized_operation == 'copy' else 'move_files', {'paths': normalized_paths, 'count': len(normalized_paths), 'destination_dir': normalized_destination_dir}, 'paste_paths', {'paths': normalized_paths, 'destination_dir': normalized_destination_dir, 'operation': normalized_operation}, json_result=True, batch=True, origin=origin)
         result_text = result_text['message']
 
         return {

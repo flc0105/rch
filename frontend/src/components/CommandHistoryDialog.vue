@@ -310,6 +310,7 @@
                 <el-option label="Alias" value="alias" />
                 <el-option label="Script" value="script" />
                 <el-option label="Remote Files" value="remote_files" />
+                <el-option label="Transfer" value="transfer" />
               </el-select>
               <el-checkbox v-model="activityErrorsOnly">Errors</el-checkbox>
             </div>
@@ -347,7 +348,7 @@
                     </div>
                     <div class="activity-entry-subtitle">
                       <span>{{ formatDateTimeStandard(item.started_at || item.created_at) || '-' }}</span>
-                      <span v-if="item.kind === 'remote_files' || isActivityProblem(item.status)" class="activity-summary-preview" :class="{ 'activity-error-preview': isActivityProblem(item.status) }">{{ buildCommandExecutionSingleLineSummary(item) }}</span>
+                      <span v-if="['remote_files', 'transfer'].includes(item.kind) || isActivityProblem(item.status)" class="activity-summary-preview" :class="{ 'activity-error-preview': isActivityProblem(item.status) }">{{ buildCommandExecutionSingleLineSummary(item) }}</span>
                       <span v-if="item.files?.length">{{ item.files.length }} file(s)</span>
                       <span v-if="item.result?.truncated">Truncated</span>
                     </div>
@@ -398,7 +399,7 @@ import CommandExecutionDetailDialog from './CommandExecutionDetailDialog.vue'
 import {EditPen} from "@element-plus/icons-vue";
 import { Star, StarFilled, ArrowUp, ArrowDown } from '@element-plus/icons-vue'
 import { diffDateTimeMs } from '../utils/formatters.js'
-import { Terminal, Zap, FileCode2, CheckCircle2, XCircle, CircleDashed, Ban, Clock3, ChevronRight, AlertTriangle, TextCursorInput, FolderOpen } from '@lucide/vue'
+import { Terminal, Zap, FileCode2, CheckCircle2, XCircle, CircleDashed, Ban, Clock3, ChevronRight, AlertTriangle, TextCursorInput, FolderOpen, ArrowDownToLine } from '@lucide/vue'
 
 export default {
   name: 'CommandHistoryDialog',
@@ -410,7 +411,7 @@ Star,
     StarFilled,
     CommandExecutionDetailDialog,
     ArrowUp, ArrowDown,
-    Terminal, Zap, FileCode2, CheckCircle2, XCircle, CircleDashed, Ban, Clock3, ChevronRight, AlertTriangle, FolderOpen,
+    Terminal, Zap, FileCode2, CheckCircle2, XCircle, CircleDashed, Ban, Clock3, ChevronRight, AlertTriangle, FolderOpen, ArrowDownToLine,
   },
 
   props: {
@@ -552,7 +553,7 @@ Star,
 
   methods: {
     getActivityKindIcon(kind) {
-      return ({ command: Terminal, alias: Zap, script: FileCode2, remote_files: FolderOpen })[kind] || Terminal
+      return ({ command: Terminal, alias: Zap, script: FileCode2, remote_files: FolderOpen, transfer: ArrowDownToLine })[kind] || Terminal
     },
     getActivityStatusIcon(status) {
       if (status === 'success') return CheckCircle2
@@ -562,10 +563,16 @@ Star,
       return Clock3
     },
     buildActivityKindLabel(kind) {
-      return ({ command: 'Command', alias: 'Alias', script: 'Script', remote_files: 'Remote Files' })[kind] || 'Activity'
+      return ({ command: 'Command', alias: 'Alias', script: 'Script', remote_files: 'Remote Files', transfer: 'Transfer' })[kind] || 'Activity'
     },
     buildActivityLabel(item) {
       const invocation = item?.invocation || {}
+      if (item?.kind === 'transfer') {
+        const args = invocation.arguments || {}
+        const name = String(args.filename || args.path || '').split(/[\\/]/).pop()
+        const count = Number(args.count || 1)
+        return `${item.action === 'upload_files' ? 'Upload' : 'Download'} ${count > 1 ? `${count} items` : (name || 'file')}`
+      }
       if (item?.kind === 'remote_files') {
         const args = invocation.arguments || {}
         const count = Number(args.count || (Array.isArray(args.paths) ? args.paths.length : 1))
@@ -1113,7 +1120,7 @@ Star,
 
     buildCommandExecutionSummary(item) {
       const status = String(item?.status || '').toLowerCase()
-      if (item?.kind === 'remote_files') {
+      if (['remote_files', 'transfer'].includes(item?.kind)) {
         const firstLine = String(item?.result?.output_records?.[0]?.text || '').split(/\r?\n/)[0].trim()
         if (firstLine && firstLine.length <= 128) return firstLine
       }

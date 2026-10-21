@@ -149,6 +149,12 @@ completed             客户端完成下载并报告结果
 
 Client → Server 的路径也有 `preparing`、`staging`（上送文件字节）与 `finalizing`（确认 HTTP/Artifact 结果）等阶段。目录打包在准备阶段可能暂时没有确定的总字节数；上传完成后，Server 注册 Artifact，返回与该 Transfer 对应的 `artifact_id`。上传成功只代表文件已到达 Server；浏览器随后下载 Artifact 是另一次独立 HTTP 响应。
 
+## Transfer Activity 与进度职责
+
+Transfer Center 管理内存中的实时速度、进度、取消和最近任务；Activity Center 只为用户明确发起的上传/下载维护一条持久执行事实。Remote Browser / Remote File Picker 上传和 Remote Browser / Clipboard 下载均以真实 `transfer_id` 关联 Activity。Browser→Server 上传完成只是中间阶段；只有 Server→Client 写盘完成才将 Activity 标记成功。进度变化不重复写 Activity；失败、取消和重启后中断分别使用现有 `error`、`cancelled` 和 `interrupted` 状态。
+
+终端 Server Builtin `upload` 在受管理 Transfer 创建时认领其原始历史 ID，不把内部 `receive_file` 或临时 URL 当作用户命令；终端 Client `download` 的真实命令 Activity 改归类为 Transfer，它的 Artifact 关联沿用既有命令通道，不会额外伪造 `transfer_id`。预览、后台 Job/Script 中转和已生成 Artifact 的本地浏览器下载不自动进入 Transfer Activity。
+
 ## 传输状态与实时进度的建模
 
 ### 传输记录的字段和阶段

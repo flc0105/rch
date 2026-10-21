@@ -72,12 +72,13 @@ class WebRemoteFileApi:
         path: str,
         history_entry_id: str = '',
         tab_id: str = '',
+        *, origin: str = 'web_api', feature: str = 'remote_files',
     ):
         return self.remote_file_service.download_file(
             client_id,
             path,
             history_entry_id=history_entry_id,
-            tab_id=tab_id,
+            tab_id=tab_id, origin=origin, feature=feature,
         )
 
     def download_remote_paths_as_zip(
@@ -87,13 +88,14 @@ class WebRemoteFileApi:
         archive_name: str = '',
         history_entry_id: str = '',
         tab_id: str = '',
+        *, origin: str = 'web_api', feature: str = 'remote_files',
     ):
         return self.remote_file_service.download_paths_as_zip(
             client_id,
             paths,
             archive_name=archive_name,
             history_entry_id=history_entry_id,
-            tab_id=tab_id,
+            tab_id=tab_id, origin=origin, feature=feature,
         )
 
     def create_remote_zip(

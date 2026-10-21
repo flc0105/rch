@@ -25,6 +25,8 @@ class WebTransferApi:
         total_bytes,
         destination_path: str = '',
         tab_id: str = '',
+        origin: str = 'web_api',
+        feature: str = 'remote_files',
     ):
         normalized_client_id = str(client_id or '').strip()
         normalized_filename = str(filename or '').strip()
@@ -61,6 +63,18 @@ class WebTransferApi:
                 'destination_path': str(destination_path or '').strip(),
                 'tab_id': normalized_tab_id,
             }
+
+        recorder = getattr(self.transfer_service, 'activity_recorder', None)
+        if recorder is not None and self.server is not None:
+            try:
+                conn = self.server.get_target_connection_by_client_id(normalized_client_id)
+            except Exception:
+                conn = None
+            if conn is not None:
+                recorder.track(transfer_id, conn, action='upload_files', origin=origin, arguments={
+                    'filename': normalized_filename, 'destination_path': destination_path,
+                    'size': total_bytes, 'count': 1, 'source': feature,
+                })
 
         return {
             **transfer,

@@ -1,4 +1,4 @@
-from flask import Blueprint
+from flask import Blueprint, request
 
 from server.web.api_response import WebApiResponder
 from server.web.request_parsers import get_json_payload, get_optional_tab_id
@@ -26,6 +26,8 @@ def create_transfers_blueprint(server_instance):
                 total_bytes=payload.get('total_bytes'),
                 destination_path=payload.get('destination_path') or '',
                 tab_id=get_optional_tab_id(),
+                origin='web_ui' if request.headers.get('X-RCH-Origin') == 'web_ui' else 'web_api',
+                feature=request.headers.get('X-RCH-Feature') if request.headers.get('X-RCH-Feature') in ('remote_files', 'remote_file_picker') else 'remote_files',
             )
 
         return responder.json_endpoint(_execute, default_error_status=500)

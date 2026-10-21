@@ -45,11 +45,11 @@
         </div>
         <div class="background-job-stat activity-value-card"
              role="button" tabindex="0" title="View full resolved command"
-             @click="openFullValue('Resolved', entry.resolved?.command || entry.resolved?.command_name || entry.resolved?.command_type)"
-             @keydown.enter.prevent="openFullValue('Resolved', entry.resolved?.command || entry.resolved?.command_name || entry.resolved?.command_type)"
-             @keydown.space.prevent="openFullValue('Resolved', entry.resolved?.command || entry.resolved?.command_name || entry.resolved?.command_type)">
+             @click="openFullValue('Resolved', entry.resolved?.command || entry.resolved?.command_name || entry.resolved?.transfer_id || entry.resolved?.command_type)"
+             @keydown.enter.prevent="openFullValue('Resolved', entry.resolved?.command || entry.resolved?.command_name || entry.resolved?.transfer_id || entry.resolved?.command_type)"
+             @keydown.space.prevent="openFullValue('Resolved', entry.resolved?.command || entry.resolved?.command_name || entry.resolved?.transfer_id || entry.resolved?.command_type)">
           <div class="background-job-stat-label">Resolved</div>
-          <div class="background-job-stat-value activity-single-line-value">{{ entry.resolved?.command || entry.resolved?.command_name || entry.resolved?.command_type || '-' }}</div>
+          <div class="background-job-stat-value activity-single-line-value">{{ entry.resolved?.command || entry.resolved?.command_name || entry.resolved?.transfer_id || entry.resolved?.command_type || '-' }}</div>
         </div>
         <div class="background-job-stat">
           <div class="background-job-stat-label">Duration</div>
@@ -290,7 +290,7 @@ export default {
 
   methods: {
     getActivityInvocation(entry) {
-      if (entry?.kind === 'remote_files') {
+      if (entry?.kind === 'remote_files' || (entry?.kind === 'transfer' && !entry?.invocation?.input)) {
         return JSON.stringify(entry.invocation?.arguments || {}, null, 2)
       }
       return entry?.invocation?.input || '-'

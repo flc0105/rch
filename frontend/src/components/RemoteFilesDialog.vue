@@ -1010,7 +1010,7 @@ export default {
       try {
         const result = await uploadRemoteFileToClient({
           file, clientId, destinationPath: targetPath,
-          headers: this.getTabScopedHeaders(),
+          headers: {...this.getTabScopedHeaders(), 'X-RCH-Origin': 'web_ui', 'X-RCH-Feature': 'remote_files'},
         })
         const taskId = result.task_id
 
@@ -1759,7 +1759,7 @@ export default {
 
         const res = await fetch(url.pathname + url.search, {
           method: 'POST',
-          headers: this.getTabScopedHeaders(),
+          headers: {...this.getTabScopedHeaders(), 'X-RCH-Origin': 'web_ui'},
         })
         const json = await res.json()
 
@@ -1813,6 +1813,7 @@ export default {
           headers: {
             ...this.getTabScopedHeaders(),
             'Content-Type': 'application/json',
+            'X-RCH-Origin': 'web_ui',
           },
           body: JSON.stringify({
             paths,
