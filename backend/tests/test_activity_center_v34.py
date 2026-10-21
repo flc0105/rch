@@ -139,7 +139,8 @@ def test_connection_timeline_still_exposes_command_projection(setup):
     aid = dispatch(store, orch, client, 'echo value')
     orch.finalize_execution(client, aid, True)
     row = store.view_service.get_connection_command_page('m1', 'c1')['items'][0]
-    assert row['command'] == 'echo value'
+    assert row['summary'] == 'echo value'
+    assert row['kind'] == 'command'
     assert row['activity_id'] == aid
 
 

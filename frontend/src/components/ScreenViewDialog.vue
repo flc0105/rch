@@ -90,7 +90,15 @@
             @change="handleControlToggle"
           />
 
-          <el-button size="small" @click="$emit('open-clipboard')">Clipboard</el-button>
+          <el-dropdown trigger="hover" placement="bottom-start" @command="handleClipboardCommand">
+            <el-button size="small" @click="$emit('open-clipboard', 'get')">Clipboard</el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="get">Get</el-dropdown-item>
+                <el-dropdown-item command="send">Send</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
 
           <el-dropdown trigger="click" @command="handleMoreCommand">
             <el-button size="small">More</el-button>
@@ -370,6 +378,11 @@ export default {
 
     toggleFullscreen() {
       this.fullscreen = !this.fullscreen
+    },
+
+    handleClipboardCommand(command) {
+      if (command !== 'get' && command !== 'send') return
+      this.$emit('open-clipboard', command)
     },
 
 

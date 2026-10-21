@@ -3,8 +3,9 @@
     v-model="visible"
     :title="dialogTitle"
     width="1180px"
-    top="4vh"
+    top="5vh"
     class="machine-connection-history-dialog"
+    modal-class="machine-connection-history-overlay"
     destroy-on-close
   >
     <div class="machine-history-body" v-loading="loading">
@@ -29,7 +30,7 @@
           <div class="machine-history-stat-value">{{ history.online_connection_count || 0 }}</div>
         </div>
         <div class="machine-history-stat">
-          <div class="machine-history-stat-label">Total Commands</div>
+          <div class="machine-history-stat-label">Total Activities</div>
           <div class="machine-history-stat-value">{{ history.command_count || 0 }}</div>
         </div>
         <div class="machine-history-stat">
@@ -44,7 +45,7 @@
         type="warning"
         :closable="false"
         show-icon
-        :title="`${history.unassigned_command_count} command record(s) have no client_id and cannot be assigned to a session.`"
+        :title="`${history.unassigned_command_count} activity record(s) have no client_id and cannot be assigned to a session.`"
       />
 
       <el-table
@@ -99,7 +100,7 @@
               </div>
 
               <div class="machine-session-command-header">
-                <span>Commands ({{ scope.row.command_count || 0 }})</span>
+                <span>Activities ({{ scope.row.command_count || 0 }})</span>
               </div>
 
               <div
@@ -130,9 +131,13 @@
                       </el-tag>
                     </template>
                   </el-table-column>
-                  <el-table-column label="Command" min-width="480" show-overflow-tooltip>
+                  <el-table-column label="Activity" min-width="360" show-overflow-tooltip>
                     <template #default="commandScope">
-                      <code class="machine-session-command-text">{{ commandScope.row.command || '-' }}</code>
+                      <div class="machine-session-activity-text">
+                        <span class="machine-session-activity-kind">{{ activityKindLabel(commandScope.row.kind) }}</span>
+                        <span class="machine-session-activity-separator">·</span>
+                        <span class="machine-session-command-text">{{ commandScope.row.summary || '-' }}</span>
+                      </div>
                     </template>
                   </el-table-column>
                   <el-table-column label="Duration" width="105">
@@ -146,7 +151,7 @@
                   v-else-if="scope.row.command_loaded && !scope.row.command_loading"
                   class="empty-state compact"
                 >
-                  No command records for this connection
+                  No activity records for this connection
                 </div>
 
                 <div
@@ -208,7 +213,7 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="Commands" width="118" align="right">
+        <el-table-column label="Activities" width="118" align="right">
           <template #default="scope">
             {{ scope.row.command_count || 0 }}
           </template>
@@ -220,7 +225,7 @@
       </div>
 
       <div v-if="history.tracking_started_at" class="machine-history-footer-note">
-        Connection lifecycle and command executions are stored in rch.db. Command details are loaded from the permanent execution history for each client session.
+        Connection lifecycle and activity records are stored in rch.db. Activity summaries are loaded for each client session.
       </div>
     </div>
   </el-dialog>
@@ -318,12 +323,19 @@ export default {
         row.command_has_more = data?.has_more === true
         row.command_loaded = true
       } catch (e) {
-        ElMessage.error(e.message || 'Failed to load connection commands')
+        ElMessage.error(e.message || 'Failed to load connection activities')
       } finally {
         if (this.sessions.includes(row)) {
           row.command_loading = false
         }
       }
+    },
+
+    activityKindLabel(kind) {
+      return ({
+        command: 'Command', alias: 'Alias', script: 'Script',
+        remote_files: 'Remote Files', transfer: 'Transfer', external_tool: 'External Tool',
+      })[kind] || 'Activity'
     },
 
     shortenMachineId(machineId) {
@@ -395,7 +407,9 @@ export default {
 
 <style scoped>
 .machine-history-body {
-  min-height: 260px;
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
 }
 
 .machine-history-toolbar {
@@ -518,6 +532,23 @@ export default {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
+.machine-session-activity-text {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 5px;
+}
+
+.machine-session-activity-kind {
+  color: var(--el-text-color-secondary);
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.machine-session-activity-separator {
+  color: var(--el-text-color-placeholder);
+}
+
 .machine-session-command-text {
   display: block;
   min-width: 0;
@@ -557,6 +588,44 @@ export default {
 
   .machine-session-detail {
     padding-left: 12px;
+  }
+}
+</style>
+
+<style>
+.machine-connection-history-overlay .el-overlay-dialog {
+  overflow: hidden;
+}
+
+.machine-connection-history-overlay .el-dialog {
+  height: 78vh;
+  max-height: 78vh;
+  margin-top: 5vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.machine-connection-history-overlay .el-dialog__header {
+  flex: 0 0 auto;
+}
+
+.machine-connection-history-overlay .el-dialog__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+
+@media (max-width: 768px), (max-height: 720px) {
+  .machine-connection-history-overlay .el-dialog {
+    width: 100vw !important;
+    max-width: 100vw !important;
+    height: 100dvh;
+    max-height: 100dvh;
+    margin: 0;
+    border-radius: 0;
   }
 }
 </style>

@@ -158,7 +158,7 @@ FPS 是目标采集上限，而不是保证的实际显示帧率。如果截图�
 |---|---|
 | FPS / Quality | 在会话运行时修改采集帧率及 JPEG 压缩质量 |
 | Control | 启用或关闭远程鼠标、键盘输入；需活动 WebSocket 和可用画面 |
-| Clipboard | 打开独立的剪贴板交互窗口，进行显式的内容交换 |
+| Clipboard | 点击直接进入 Get 标签；悬停菜单可选择 Get 或 Send，直接进入相应的 Clipboard 标签 |
 | More → Screenshot | 将当前已经显示的画面保存为 Server Artifact |
 | More → Restart | 关闭当前会话，再创建新会话；可使新编码策略生效 |
 | Fullscreen | 将 Screen View 预览窗口展开为全屏布局 |

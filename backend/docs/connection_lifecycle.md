@@ -1,6 +1,6 @@
 # Connection Lifecycle
 
-RCH 使用持续存在的 TCP Client Session 承载命令与运行时消息，并通过周期性 Heartbeat 观察会话是否仍能正常响应。设备列表中的 `online`、`stale`、`offline` 既反映 Socket 会话是否被关闭，也反映最近一次心跳回复的新鲜度；连接历史则独立记录每一段会话的起止时间。它们相关，但不是一份状态数据的不同名称。
+RCH 使用持续存在的 TCP Client Session 承载命令与运行时消息，并通过周期性 Heartbeat 观察会话是否仍能正常响应。设备列表中的 `online`、`stale`、`offline` 既反映 Socket 会话是否被关闭，也反映最近一次心跳回复的新鲜度；连接历史则独立记录每一段会话的起止时间，并按会话显示 Activity 执行摘要。它们相关，但不是一份状态数据的不同名称。
 
 Server 负责建立和移除会话、发送心跳、计算 RTT、维护设备快照与连接历史；Python / Go Client 负责连接、回复和重新拨号；Web 通过 API 与 SSE 接收会话信息，再根据当前时间更新设备展示状态。下面按照这一条链路说明各部分怎样协作，以及需要调整时应修改什么。
 
@@ -131,7 +131,7 @@ RCH 将当前 Session、最近设备和历史会话分别管理：
 
 - **当前 Session** 是 Server 进程内存中的活动 Socket，按 `client_id` 识别。
 - **最近设备** 保留 `machine_id` 关联的机器快照、别名等信息。没有活动 Session 的设备仍可以作为 Offline 条目出现在设备列表；有当前会话的机器不会再额外叠加同一机器的离线快照。
-- **连接历史** 持久化在 `runtime/rch.db` 的 `connection_sessions` 中，记录各 `machine_id` / `client_id` 会话的连接、断开、最后响应时间和持续时间，并可关联对应的命令数量与执行记录。
+- **连接历史** 持久化在 `runtime/rch.db` 的 `connection_sessions` 中，记录各 `machine_id` / `client_id` 会话的连接、断开、最后响应时间和持续时间，并可关联对应的 Activity 数量与执行摘要。
 
 例如，`GET /api/machines/{machine_id}/connection-history` 查询的是某台机器历次连接会话，并不是一次实时的 Heartbeat 探测。历史中可能出现 `interrupted`，表示记录中的会话不再属于当前活动集合而未得到正常断开结局；**它是历史状态，不属于设备实时的 Online / Stale / Offline 三态**。历史在线时长按会话起止计算，并不表示期间的每一秒心跳都健康。
 

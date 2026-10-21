@@ -81,7 +81,39 @@ class HistoryViewService:
         with self.store._lock:
             return self._build_quick_history(str(machine_id or '').strip() or 'unknown_machine')
 
-    def _activity_page(self, machine_id, *, client_id='', limit=None, cursor='', query='', kind='', errors=False):
+    @staticmethod
+    def _connection_activity_summary(entry):
+        kind = entry['kind']
+        action = entry['action']
+        invocation = entry['invocation']
+        if kind == 'script':
+            return str(invocation.get('target') or 'Script')
+        if kind in {'command', 'alias'}:
+            # Show the user invocation, not an internal resolved command or encoded payload.
+            return str(invocation.get('input') or invocation.get('target') or kind)
+        args = invocation.get('arguments') or {}
+        if kind == 'remote_files':
+            actions = {
+                'create_directory': 'Create directory', 'delete_files': 'Delete files',
+                'rename_files': 'Rename', 'copy_files': 'Copy files',
+                'move_files': 'Move files', 'create_archive': 'Create archive',
+                'extract_archive': 'Extract archive', 'save_file': 'Save file',
+            }
+            return actions.get(action, action or 'Remote Files')
+        if kind == 'transfer':
+            return 'Upload files' if action == 'upload_files' else 'Download files' if action == 'download_files' else (action or 'Transfer')
+        if kind == 'external_tool':
+            actions = {
+                'install_package': 'Install', 'uninstall_package': 'Uninstall',
+                'clear_package_cache': 'Clear cache', 'start_instance': 'Start',
+                'run_oneshot': 'Run', 'run_exec': 'Run', 'stop_instance': 'Stop',
+                'remove_instance': 'Remove', 'clear_instance_logs': 'Clear logs',
+            }
+            target = args.get('exec_name') or args.get('tool_id') or args.get('package_id') or ''
+            return f"{actions.get(action, action or 'External Tool')} {target}".strip()
+        return action or kind or 'Activity'
+
+    def _activity_page(self, machine_id, *, client_id='', limit=None, cursor='', query='', kind='', errors=False, connection_summary=False):
         size = self._limit(limit)
         filters = {'client_id': client_id, 'query': query, 'kind': kind, 'errors': errors}
         rows = self.store._list_execution_rows(machine_id, limit=size + 1,
@@ -91,8 +123,18 @@ class HistoryViewService:
         items = []
         for row in page_rows:
             entry = self.store._row_to_entry(row)
-            entry['files'] = [self._resolve_artifact(item) for item in entry['files']]
-            items.append(entry)
+            if connection_summary:
+                # Session timeline needs identity, status and a readable label only.
+                # Avoid resolving artifacts or sending full command output to this list.
+                items.append({
+                    'activity_id': entry['activity_id'], 'kind': entry['kind'],
+                    'action': entry['action'], 'summary': self._connection_activity_summary(entry),
+                    'status': entry['status'], 'created_at': entry['created_at'],
+                    'started_at': entry['started_at'], 'finished_at': entry['finished_at'],
+                })
+            else:
+                entry['files'] = [self._resolve_artifact(item) for item in entry['files']]
+                items.append(entry)
         next_cursor = self._encode_cursor(page_rows[-1]['started_at_ms'], page_rows[-1]['activity_id']) if has_more and page_rows else ''
         # Count uses exactly the same filters as data, excluding page cursor.
         count = self.store.count_activities(machine_id, **filters)
@@ -116,10 +158,6 @@ class HistoryViewService:
         if not str(client_id or '').strip():
             raise ValueError('Invalid client id')
         with self.store._lock:
-            page = self._activity_page(str(machine_id or '').strip() or 'unknown_machine',
-                                       client_id=client_id, limit=limit, cursor=cursor)
-            # The machine connection timeline remains a read-only command projection.
-            # It is not the Activity Center public record contract.
-            page['items'] = [{**activity, 'command': activity['invocation'].get('input') or ''}
-                             for activity in page['items']]
-            return page
+            return self._activity_page(str(machine_id or '').strip() or 'unknown_machine',
+                                       client_id=client_id, limit=limit, cursor=cursor,
+                                       connection_summary=True)
