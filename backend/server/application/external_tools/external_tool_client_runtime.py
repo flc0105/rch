@@ -83,11 +83,11 @@ class ExternalToolClientLifecycleRuntime(ExternalToolRuntimeComponent):
             return result
         return result
 
-    def _run_client_lifecycle_command(self, client_id: str, command: str, tab_id: str = '') -> dict:
+    def _run_client_lifecycle_command(self, client_id: str, command: str, tab_id: str = '', history_entry_id: str = '') -> dict:
         if self.remote_execution_service is None:
             return self.command_execution_api.submit_web_command(client_id, command, tab_id=tab_id, source="web_external_tool")
         del tab_id
-        return self.remote_execution_service.run_foreground_json_command(client_id, command, task_type='external_tool', source='web_external_tool')
+        return self.remote_execution_service.run_foreground_json_command(client_id, command, task_type='external_tool', source='web_external_tool', history_entry_id=history_entry_id)
 
     def resolve_client_launcher(self, client_id: str, tool_id: str, tab_id: str = '', platform_alias: str = '', arch: str = '') -> dict:
         meta = self.catalog_service.get_tool(tool_id)
@@ -99,7 +99,7 @@ class ExternalToolClientLifecycleRuntime(ExternalToolRuntimeComponent):
         command = f'external_tool_resolve_launcher {self.payload_builder.encode_payload_arg(payload)}'
         return self._run_client_lifecycle_command(client_id, command, tab_id=tab_id)
 
-    def start_client_instance(self, client_id: str, tool_id: str, params: dict | None = None, tab_id: str = '', instance_id: str = '', install_if_needed: bool = False, platform_alias: str = '', arch: str = '', launcher_override: dict | None = None) -> dict:
+    def start_client_instance(self, client_id: str, tool_id: str, params: dict | None = None, tab_id: str = '', instance_id: str = '', install_if_needed: bool = False, platform_alias: str = '', arch: str = '', launcher_override: dict | None = None, history_entry_id: str = '') -> dict:
         del install_if_needed
         meta = self.catalog_service.get_tool(tool_id)
         payload = self.payload_builder.build_client_start_payload(
@@ -114,7 +114,7 @@ class ExternalToolClientLifecycleRuntime(ExternalToolRuntimeComponent):
         command = f'external_tool_start {self.payload_builder.encode_payload_arg(payload)}'
 
         try:
-            result = self._run_client_lifecycle_command(client_id, command, tab_id=tab_id)
+            result = self._run_client_lifecycle_command(client_id, command, tab_id=tab_id, history_entry_id=history_entry_id)
         except Exception as exc:
             self._publish_lifecycle(
                 client_id=client_id,
@@ -167,7 +167,7 @@ class ExternalToolClientLifecycleRuntime(ExternalToolRuntimeComponent):
         command = f'external_tool_preview {self.payload_builder.encode_payload_arg(payload)}'
         return self._run_client_lifecycle_command(client_id, command, tab_id=tab_id)
 
-    def run_client_oneshot(self, client_id: str, tool_id: str, params: dict | None = None, tab_id: str = '', platform_alias: str = '', arch: str = '', launcher_override: dict | None = None) -> dict:
+    def run_client_oneshot(self, client_id: str, tool_id: str, params: dict | None = None, tab_id: str = '', platform_alias: str = '', arch: str = '', launcher_override: dict | None = None, history_entry_id: str = '') -> dict:
         meta = self.catalog_service.get_tool(tool_id)
         payload = self.payload_builder.build_client_oneshot_payload(
             meta,
@@ -177,9 +177,9 @@ class ExternalToolClientLifecycleRuntime(ExternalToolRuntimeComponent):
             launcher_override=launcher_override,
         )
         command = f'external_tool_oneshot {self.payload_builder.encode_payload_arg(payload)}'
-        return self._run_client_lifecycle_command(client_id, command, tab_id=tab_id)
+        return self._run_client_lifecycle_command(client_id, command, tab_id=tab_id, history_entry_id=history_entry_id)
 
-    def install_client_tool(self, client_id: str, package_id: str, params: dict | None = None, tab_id: str = '', instance_id: str = '', platform_alias: str = '', arch: str = '') -> dict:
+    def install_client_tool(self, client_id: str, package_id: str, params: dict | None = None, tab_id: str = '', instance_id: str = '', platform_alias: str = '', arch: str = '', history_entry_id: str = '') -> dict:
         del params, instance_id
         package = self.catalog_service.get_package(package_id)
         payload = self.payload_builder.build_client_install_payload(package, platform_alias=platform_alias, arch=arch)
@@ -187,7 +187,7 @@ class ExternalToolClientLifecycleRuntime(ExternalToolRuntimeComponent):
         command = f'external_tool_install {self.payload_builder.encode_payload_arg(payload)}'
 
         try:
-            result = self._run_client_lifecycle_command(client_id, command, tab_id=tab_id)
+            result = self._run_client_lifecycle_command(client_id, command, tab_id=tab_id, history_entry_id=history_entry_id)
         except Exception as exc:
             self._publish_lifecycle(
                 client_id=client_id,
@@ -228,7 +228,7 @@ class ExternalToolClientLifecycleRuntime(ExternalToolRuntimeComponent):
         command = f'external_tool_install_status {self.payload_builder.encode_payload_arg(payload)}'
         return self._run_client_lifecycle_command(client_id, command, tab_id=tab_id)
 
-    def uninstall_client_tool(self, client_id: str, package_id: str, params: dict | None = None, tab_id: str = '', instance_id: str = '', platform_alias: str = '', arch: str = '') -> dict:
+    def uninstall_client_tool(self, client_id: str, package_id: str, params: dict | None = None, tab_id: str = '', instance_id: str = '', platform_alias: str = '', arch: str = '', history_entry_id: str = '') -> dict:
         del params, instance_id
         package = self.catalog_service.get_package(package_id)
         payload = self.payload_builder.build_client_install_payload(package, platform_alias=platform_alias, arch=arch)
@@ -236,7 +236,7 @@ class ExternalToolClientLifecycleRuntime(ExternalToolRuntimeComponent):
         command = f'external_tool_uninstall {self.payload_builder.encode_payload_arg(payload)}'
 
         try:
-            result = self._run_client_lifecycle_command(client_id, command, tab_id=tab_id)
+            result = self._run_client_lifecycle_command(client_id, command, tab_id=tab_id, history_entry_id=history_entry_id)
         except Exception as exc:
             self._publish_lifecycle(
                 client_id=client_id,
@@ -274,22 +274,22 @@ class ExternalToolClientLifecycleRuntime(ExternalToolRuntimeComponent):
         command = f'external_tool_install_statuses {self.payload_builder.encode_payload_arg(payload)}'
         return self._run_client_lifecycle_command(client_id, command, tab_id=tab_id)
 
-    def clear_client_package_cache(self, client_id: str, package_id: str, params: dict | None = None, tab_id: str = '', instance_id: str = '', platform_alias: str = '', arch: str = '') -> dict:
+    def clear_client_package_cache(self, client_id: str, package_id: str, params: dict | None = None, tab_id: str = '', instance_id: str = '', platform_alias: str = '', arch: str = '', history_entry_id: str = '') -> dict:
         del params, instance_id
         package = self.catalog_service.get_package(package_id)
         payload = self.payload_builder.build_client_install_payload(package, platform_alias=platform_alias, arch=arch)
         payload['action'] = 'clear_cache'
         command = f'external_tool_clear_cache {self.payload_builder.encode_payload_arg(payload)}'
-        return self._run_client_lifecycle_command(client_id, command, tab_id=tab_id)
+        return self._run_client_lifecycle_command(client_id, command, tab_id=tab_id, history_entry_id=history_entry_id)
 
-    def stop_client_instance(self, client_id: str, tool_id: str, instance_id: str, params: dict | None = None, tab_id: str = '') -> dict:
+    def stop_client_instance(self, client_id: str, tool_id: str, instance_id: str, params: dict | None = None, tab_id: str = '', history_entry_id: str = '') -> dict:
         meta = self.catalog_service.get_tool(tool_id)
         payload = self.payload_builder.build_client_action_payload(meta, 'stop', instance_id=instance_id, params=params)
         resolved_instance_id = str(payload.get('instance_id') or instance_id or 'default').strip()
         command = f'external_tool_stop {self.payload_builder.encode_payload_arg(payload)}'
 
         try:
-            result = self._run_client_lifecycle_command(client_id, command, tab_id=tab_id)
+            result = self._run_client_lifecycle_command(client_id, command, tab_id=tab_id, history_entry_id=history_entry_id)
         except Exception as exc:
             self._publish_lifecycle(
                 client_id=client_id,
@@ -339,14 +339,14 @@ class ExternalToolClientLifecycleRuntime(ExternalToolRuntimeComponent):
         command = f'external_tool_list_instances {self.payload_builder.encode_payload_arg(payload)}'
         return self._run_client_lifecycle_command(client_id, command, tab_id=tab_id)
 
-    def remove_client_instance(self, client_id: str, tool_id: str, instance_id: str, tab_id: str = '') -> dict:
+    def remove_client_instance(self, client_id: str, tool_id: str, instance_id: str, tab_id: str = '', history_entry_id: str = '') -> dict:
         meta = self.catalog_service.get_tool(tool_id)
         payload = self.payload_builder.build_client_action_payload(meta, 'remove', instance_id=instance_id)
         command = f'external_tool_remove {self.payload_builder.encode_payload_arg(payload)}'
-        return self._run_client_lifecycle_command(client_id, command, tab_id=tab_id)
+        return self._run_client_lifecycle_command(client_id, command, tab_id=tab_id, history_entry_id=history_entry_id)
 
-    def clear_client_logs(self, client_id: str, tool_id: str, instance_id: str, tab_id: str = '') -> dict:
+    def clear_client_logs(self, client_id: str, tool_id: str, instance_id: str, tab_id: str = '', history_entry_id: str = '') -> dict:
         meta = self.catalog_service.get_tool(tool_id)
         payload = self.payload_builder.build_client_action_payload(meta, 'clear_logs', instance_id=instance_id)
         command = f'external_tool_clear_logs {self.payload_builder.encode_payload_arg(payload)}'
-        return self._run_client_lifecycle_command(client_id, command, tab_id=tab_id)
+        return self._run_client_lifecycle_command(client_id, command, tab_id=tab_id, history_entry_id=history_entry_id)

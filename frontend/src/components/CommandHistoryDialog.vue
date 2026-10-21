@@ -311,6 +311,7 @@
                 <el-option label="Script" value="script" />
                 <el-option label="Remote Files" value="remote_files" />
                 <el-option label="Transfer" value="transfer" />
+                <el-option label="External Tool" value="external_tool" />
               </el-select>
               <el-checkbox v-model="activityErrorsOnly">Errors</el-checkbox>
             </div>
@@ -348,7 +349,7 @@
                     </div>
                     <div class="activity-entry-subtitle">
                       <span>{{ formatDateTimeStandard(item.started_at || item.created_at) || '-' }}</span>
-                      <span v-if="['remote_files', 'transfer'].includes(item.kind) || isActivityProblem(item.status)" class="activity-summary-preview" :class="{ 'activity-error-preview': isActivityProblem(item.status) }">{{ buildCommandExecutionSingleLineSummary(item) }}</span>
+                      <span v-if="['remote_files', 'transfer', 'external_tool'].includes(item.kind) || isActivityProblem(item.status)" class="activity-summary-preview" :class="{ 'activity-error-preview': isActivityProblem(item.status) }">{{ buildCommandExecutionSingleLineSummary(item) }}</span>
                       <span v-if="item.files?.length">{{ item.files.length }} file(s)</span>
                       <span v-if="item.result?.truncated">Truncated</span>
                     </div>
@@ -399,7 +400,7 @@ import CommandExecutionDetailDialog from './CommandExecutionDetailDialog.vue'
 import {EditPen} from "@element-plus/icons-vue";
 import { Star, StarFilled, ArrowUp, ArrowDown } from '@element-plus/icons-vue'
 import { diffDateTimeMs } from '../utils/formatters.js'
-import { Terminal, Zap, FileCode2, CheckCircle2, XCircle, CircleDashed, Ban, Clock3, ChevronRight, AlertTriangle, TextCursorInput, FolderOpen, ArrowDownToLine, ArrowUpToLine } from '@lucide/vue'
+import { Terminal, Zap, FileCode2, CheckCircle2, XCircle, CircleDashed, Ban, Clock3, ChevronRight, AlertTriangle, TextCursorInput, FolderOpen, ArrowDownToLine, ArrowUpToLine, Wrench } from '@lucide/vue'
 
 export default {
   name: 'CommandHistoryDialog',
@@ -411,7 +412,7 @@ Star,
     StarFilled,
     CommandExecutionDetailDialog,
     ArrowUp, ArrowDown,
-    Terminal, Zap, FileCode2, CheckCircle2, XCircle, CircleDashed, Ban, Clock3, ChevronRight, AlertTriangle, FolderOpen, ArrowDownToLine, ArrowUpToLine,
+    Terminal, Zap, FileCode2, CheckCircle2, XCircle, CircleDashed, Ban, Clock3, ChevronRight, AlertTriangle, FolderOpen, ArrowDownToLine, ArrowUpToLine, Wrench,
   },
 
   props: {
@@ -554,7 +555,7 @@ Star,
   methods: {
     getActivityKindIcon(kind, action) {
       if (kind === 'transfer') return action === 'upload_files' ? ArrowUpToLine : ArrowDownToLine
-      return ({ command: Terminal, alias: Zap, script: FileCode2, remote_files: FolderOpen })[kind] || Terminal
+      return ({ command: Terminal, alias: Zap, script: FileCode2, remote_files: FolderOpen, external_tool: Wrench })[kind] || Terminal
     },
     getActivityStatusIcon(status) {
       if (status === 'success') return CheckCircle2
@@ -564,7 +565,7 @@ Star,
       return Clock3
     },
     buildActivityKindLabel(kind) {
-      return ({ command: 'Command', alias: 'Alias', script: 'Script', remote_files: 'Remote Files', transfer: 'Transfer' })[kind] || 'Activity'
+      return ({ command: 'Command', alias: 'Alias', script: 'Script', remote_files: 'Remote Files', transfer: 'Transfer', external_tool: 'External Tool' })[kind] || 'Activity'
     },
     buildActivityLabel(item) {
       const invocation = item?.invocation || {}
@@ -573,6 +574,18 @@ Star,
         const name = String(args.filename || args.path || '').split(/[\\/]/).pop()
         const count = Number(args.count || 1)
         return `${item.action === 'upload_files' ? 'Upload' : 'Download'} ${count > 1 ? `${count} items` : (name || 'file')}`
+      }
+      if (item?.kind === 'external_tool') {
+        const args = invocation.arguments || {}
+        const target = args.package_id || args.tool_id || 'tool'
+        const instance = args.instance_id ? ` (${args.instance_id})` : ''
+        const actions = {
+          install_package: 'Install', uninstall_package: 'Uninstall',
+          clear_package_cache: 'Clear cache', start_instance: 'Start',
+          run_oneshot: 'Run', stop_instance: 'Stop',
+          remove_instance: 'Remove', clear_instance_logs: 'Clear logs',
+        }
+        return `${actions[item.action] || 'External Tool'} ${target}${instance}`
       }
       if (item?.kind === 'remote_files') {
         const args = invocation.arguments || {}
@@ -1121,7 +1134,7 @@ Star,
 
     buildCommandExecutionSummary(item) {
       const status = String(item?.status || '').toLowerCase()
-      if (['remote_files', 'transfer'].includes(item?.kind)) {
+      if (['remote_files', 'transfer', 'external_tool'].includes(item?.kind)) {
         const firstLine = String(item?.result?.output_records?.[0]?.text || '').split(/\r?\n/)[0].trim()
         if (firstLine && firstLine.length <= 128) return firstLine
       }

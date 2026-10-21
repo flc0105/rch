@@ -308,6 +308,8 @@ External Tool Manager 的主要视图是 **Packages** 和 **Instances**。
 
 **Packages** 展示 Server Catalog，并按当前目标 Client 过滤适用 Package。用户可以选择设备，查看 Package 安装状态、下载 Package、Install、Uninstall、Clear Package Cache、查看状态及编辑 Metadata。Package 下再展开可执行的 Module，按 Daemon/Oneshot 显示对应 Run 操作。
 
+External Tool Manager 中实际派发到 Client 的 Install、Uninstall、Clear Package Cache、Start、Oneshot Run、Stop、Remove Instance、Clear Logs 会在 Activity Center 留下各自的一条 `External Tool` 语义记录。记录按所选机器归属，执行成功、失败和超时由真实结果确定，不复制运行配置、敏感参数或程序输出；安装状态、日志查看、Launcher 预览等只读操作不记 Activity。终端 `xt` 与 Script SDK 的历史规则不变。
+
 **Instances** 展示当前设备已有 Daemon 实例，包含实例标识、状态、PID、端口/参数相关信息和开始时间等。对于具体实例，可查看日志、请求停止、查看详细信息、重启、清理日志或移除实例；运行中的实例不可直接执行清理文件的操作。
 
 ### Preset 与运行请求

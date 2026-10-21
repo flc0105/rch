@@ -16,7 +16,7 @@ const script = source.match(/<script>([\s\S]*?)<\/script>/)?.[1]
 assert.ok(script)
 const context = {console, EditPen:{}, CommandExecutionDetailDialog:{}, TextCursorInput:{}, Star:{}, StarFilled:{},
   ArrowUp:{}, ArrowDown:{}, Terminal:{}, Zap:{}, FileCode2:{}, CheckCircle2:{}, XCircle:{},
-  CircleDashed:{}, Ban:{}, Clock3:{}, ChevronRight:{}, AlertTriangle:{}, FolderOpen:{}, ArrowDownToLine:{}, ArrowUpToLine:{}, diffDateTimeMs: () => 0}
+  CircleDashed:{}, Ban:{}, Clock3:{}, ChevronRight:{}, AlertTriangle:{}, FolderOpen:{}, ArrowDownToLine:{}, ArrowUpToLine:{}, Wrench:{}, diffDateTimeMs: () => 0}
 vm.runInNewContext(
   script.replace(/^import\s+.*?\s+from\s+.*?\n/gm,'').replace('export default {','globalThis.component = {'),
   context,
@@ -156,5 +156,19 @@ test('Transfer kind preserves filtering and uses compact semantic names', () => 
   assert.equal(component.methods.getActivityKindIcon('transfer', 'download_files'), context.ArrowDownToLine)
   assert.equal(component.methods.getActivityKindIcon('transfer', 'upload_files'), context.ArrowUpToLine)
   assert.match(activity, /getActivityKindIcon\(item\.kind, item\.action\)/)
-  assert.match(activity, /\['remote_files', 'transfer'\]/)
+  assert.match(activity, /\['remote_files', 'transfer', 'external_tool'\]/)
+})
+
+test('External Tool Manager Activity is semantic, searchable and uses a distinct icon', () => {
+  assert.match(activity, /label="External Tool" value="external_tool"/)
+  assert.match(source, /external_tool: Wrench/)
+  assert.equal(component.methods.getActivityKindIcon('external_tool'), context.Wrench)
+  assert.equal(component.methods.buildActivityKindLabel('external_tool'), 'External Tool')
+  const example = {kind: 'external_tool', action: 'start_instance',
+    invocation: {arguments: {tool_id: 'heartbeat.worker', instance_id: 'alpha'}}}
+  assert.equal(component.methods.buildActivityLabel(example), 'Start heartbeat.worker (alpha)')
+  assert.equal(component.methods.buildActivityLabel({kind:'external_tool', action:'install_package',
+    invocation:{arguments:{package_id:'heartbeat'}}}), 'Install heartbeat')
+  assert.match(detail, /\['remote_files', 'external_tool'\]\.includes\(entry\?\.kind\)/)
+  assert.match(source, /\['remote_files', 'transfer', 'external_tool'\]\.includes\(item\.kind\)/)
 })

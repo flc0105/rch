@@ -16,6 +16,9 @@ def create_external_tool_blueprint(server_instance):
     param_preset_api = external_tool_api.param_presets
     responder = WebApiResponder()
 
+    def activity_origin():
+        return 'web_ui' if request.headers.get('X-RCH-Origin') == 'web_ui' else 'web_api'
+
     @blueprint.get('/api/external-tools/catalog')
     def list_external_tools():
         return responder.json_endpoint(
@@ -162,6 +165,7 @@ def create_external_tool_blueprint(server_instance):
                 platform_alias=ctx.platform_alias,
                 arch=ctx.arch,
                 launcher_override=ctx.payload.get('launcher_override'),
+                origin=activity_origin(),
             )
         return responder.json_endpoint(_execute, default_error_status=500)
 
@@ -193,6 +197,7 @@ def create_external_tool_blueprint(server_instance):
                 platform_alias=ctx.platform_alias,
                 arch=ctx.arch,
                 launcher_override=ctx.payload.get('launcher_override'),
+                origin=activity_origin(),
             )
         return responder.json_endpoint(_execute, default_error_status=500)
 
@@ -208,6 +213,7 @@ def create_external_tool_blueprint(server_instance):
                 tab_id=ctx.tab_id,
                 platform_alias=ctx.platform_alias,
                 arch=ctx.arch,
+                origin=activity_origin(),
             )
         return responder.json_endpoint(_execute, default_error_status=500)
 
@@ -238,6 +244,7 @@ def create_external_tool_blueprint(server_instance):
                 tab_id=ctx.tab_id,
                 platform_alias=ctx.platform_alias,
                 arch=ctx.arch,
+                origin=activity_origin(),
             )
         return responder.json_endpoint(_execute, default_error_status=500)
 
@@ -253,6 +260,7 @@ def create_external_tool_blueprint(server_instance):
                 tab_id=ctx.tab_id,
                 platform_alias=ctx.platform_alias,
                 arch=ctx.arch,
+                origin=activity_origin(),
             )
         return responder.json_endpoint(_execute, default_error_status=500)
 
@@ -266,6 +274,7 @@ def create_external_tool_blueprint(server_instance):
                 instance_id=instance_id,
                 params=ctx.params,
                 tab_id=get_optional_tab_id(),
+                origin=activity_origin(),
             )
         return responder.json_endpoint(_execute, default_error_status=500)
 
@@ -289,6 +298,7 @@ def create_external_tool_blueprint(server_instance):
                 tool_id,
                 instance_id=instance_id,
                 tab_id=get_optional_tab_id(),
+                origin=activity_origin(),
             ),
             default_error_status=500,
         )
@@ -301,6 +311,7 @@ def create_external_tool_blueprint(server_instance):
                 tool_id,
                 instance_id=instance_id,
                 tab_id=get_optional_tab_id(),
+                origin=activity_origin(),
             ),
             default_error_status=500,
         )

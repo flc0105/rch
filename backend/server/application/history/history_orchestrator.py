@@ -97,6 +97,24 @@ class CommandHistoryOrchestrator:
             }
         return activity_id
 
+    def begin_external_tool_execution(self, conn, action, arguments, command_name, *, origin='web_api'):
+        """Web Manager intent only; the Client command channel confirms dispatch.
+
+        Never store the encoded lifecycle payload, runtime configuration or parameters.
+        """
+        if conn is None:
+            return ''
+        activity_id = uuid.uuid4().hex
+        with self._lock:
+            self._pending[activity_id] = {
+                'conn': conn, 'kind': 'external_tool', 'action': action,
+                'origin': origin, 'presentation': 'none',
+                'invocation': {'arguments': dict(arguments)},
+                'resolved': {'command_type': 'command', 'command_name': command_name},
+                'created_at': self.history_store._now_iso(),
+            }
+        return activity_id
+
     def describe_plan(self, activity_id, plan):
         if not activity_id or not isinstance(plan, dict):
             return

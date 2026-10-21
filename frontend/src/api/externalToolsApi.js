@@ -107,7 +107,7 @@ export function uninstallClientTool(clientId, toolId, payload = {}, headers = {}
   return postJson(
     `/api/connections/${encodeURIComponent(clientId)}/external-tools/${encodeURIComponent(toolId)}/uninstall`,
     payload,
-    headers,
+    { ...headers, 'X-RCH-Origin': 'web_ui' },
     'Failed to uninstall client package',
   )
 }
@@ -116,7 +116,7 @@ export function clearClientPackageCache(clientId, toolId, payload = {}, headers 
   return postJson(
     `/api/connections/${encodeURIComponent(clientId)}/external-tools/${encodeURIComponent(toolId)}/clear-cache`,
     payload,
-    headers,
+    { ...headers, 'X-RCH-Origin': 'web_ui' },
     'Failed to clear client package cache',
   )
 }
@@ -125,7 +125,7 @@ export function installClientTool(clientId, toolId, payload = {}, headers = {}) 
   return postJson(
     `/api/connections/${encodeURIComponent(clientId)}/external-tools/${encodeURIComponent(toolId)}/install`,
     payload,
-    headers,
+    { ...headers, 'X-RCH-Origin': 'web_ui' },
     'Failed to install package',
   )
 }
@@ -143,7 +143,7 @@ export function startClientInstance(clientId, toolId, payload = {}, headers = {}
   return postJson(
     `/api/connections/${encodeURIComponent(clientId)}/external-tools/${encodeURIComponent(toolId)}/instances/start`,
     payload,
-    headers,
+    { ...headers, 'X-RCH-Origin': 'web_ui' },
     'Failed to start client tool',
   )
 }
@@ -161,7 +161,7 @@ export function runClientOneshot(clientId, toolId, payload = {}, headers = {}) {
   return postJson(
     `/api/connections/${encodeURIComponent(clientId)}/external-tools/${encodeURIComponent(toolId)}/oneshot`,
     payload,
-    headers,
+    { ...headers, 'X-RCH-Origin': 'web_ui' },
     'Failed to run client oneshot',
   )
 }
@@ -170,7 +170,7 @@ export function stopClientInstance(clientId, toolId, instanceId, payload = {}, h
   return postJson(
     `/api/connections/${encodeURIComponent(clientId)}/external-tools/${encodeURIComponent(toolId)}/instances/${encodeURIComponent(instanceId)}/stop`,
     payload,
-    headers,
+    { ...headers, 'X-RCH-Origin': 'web_ui' },
     'Failed to stop client instance',
   )
 }
@@ -179,7 +179,7 @@ export function removeClientInstance(clientId, toolId, instanceId, payload = {},
   return postJson(
     `/api/connections/${encodeURIComponent(clientId)}/external-tools/${encodeURIComponent(toolId)}/instances/${encodeURIComponent(instanceId)}/remove`,
     payload,
-    headers,
+    { ...headers, 'X-RCH-Origin': 'web_ui' },
     'Failed to remove client instance',
   )
 }
@@ -188,7 +188,7 @@ export function clearClientInstanceLogs(clientId, toolId, instanceId, payload = 
   return postJson(
     `/api/connections/${encodeURIComponent(clientId)}/external-tools/${encodeURIComponent(toolId)}/instances/${encodeURIComponent(instanceId)}/clear-logs`,
     payload,
-    headers,
+    { ...headers, 'X-RCH-Origin': 'web_ui' },
     'Failed to clear client logs',
   )
 }

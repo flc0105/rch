@@ -72,7 +72,7 @@ Pin 顺序由独立的 `pinned_commands` 表持久管理：Pinned 项优先显�
 
 ## 查询、删除和界面
 
-Activity Center 保留原有两行式列表，第一行 Lucide 类型图标、`Kind · 实际操作摘要`、状态图标（长命令单行省略），第二行日期时间与必要的计算摘要（只对非空、单行且长度不超过 128 字符的输出展示原文；多行、截断或超过 128 字符时根据状态显示 `Completed`（成功）、`Failed`（失败）或对应的取消/超时/中断文案，完整内容仍在 Output Records）；右侧箭头或整行打开原 Details。列表不提供 Use 或 Delete；Delete 按钮在 Details 中。History 对话框标题仍为 `History`，第二个页签命名 `Activity Center`。Details 标题固定为 `Activity Detail`，不在标题右侧附加命令名字。Details 将 Kind 与 Action 合为单张 `Action` 卡片，内容为 `kind · action`；Invocation、Resolved 卡片单行省略，点击后弹窗查看完整值，原始命令文本不截断；Activity 过滤栏固定、列表独立滚动。原有输出记录排序、文件预览/下载和删除确认保留。类型筛选为 All / Command / Alias / Script / Remote Files / Transfer；Errors 筛选使用 Server 端过滤，并和 `limit/cursor/query` 一起作用于分页与 `total_count`。默认 50 条，最大 200 条；同一时间按 `activity_id` 继续稳定排序。
+Activity Center 保留原有两行式列表，第一行 Lucide 类型图标、`Kind · 实际操作摘要`、状态图标（长命令单行省略），第二行日期时间与必要的计算摘要（只对非空、单行且长度不超过 128 字符的输出展示原文；多行、截断或超过 128 字符时根据状态显示 `Completed`（成功）、`Failed`（失败）或对应的取消/超时/中断文案，完整内容仍在 Output Records）；右侧箭头或整行打开原 Details。列表不提供 Use 或 Delete；Delete 按钮在 Details 中。History 对话框标题仍为 `History`，第二个页签命名 `Activity Center`。Details 标题固定为 `Activity Detail`，不在标题右侧附加命令名字。Details 将 Kind 与 Action 合为单张 `Action` 卡片，内容为 `kind · action`；Invocation、Resolved 卡片单行省略，点击后弹窗查看完整值，原始命令文本不截断；Activity 过滤栏固定、列表独立滚动。原有输出记录排序、文件预览/下载和删除确认保留。类型筛选为 All / Command / Alias / Script / Remote Files / Transfer / External Tool；Errors 筛选使用 Server 端过滤，并和 `limit/cursor/query` 一起作用于分页与 `total_count`。默认 50 条，最大 200 条；同一时间按 `activity_id` 继续稳定排序。
 
 查询 API 沿用现有机器作用域路径，Activity 项目通过新 Schema 返回，不再返回旧 `entry_id`、`source`、`raw_command`、顶层 `output_records/output_summary/output_truncated`。客户端关联执行所需的临时 ID 不属于公开记录。
 
@@ -80,7 +80,7 @@ Activity Center 保留原有两行式列表，第一行 Lucide 类型图标、`K
 
 ### 记录策略所覆盖的执行
 
-统一 Activity 写入依据是显式受支持的用户操作上下文 + 真实向 Client 派发，而不是字符串黑名单。纯 Server 管理、远程文件浏览、Remote Files 的查询操作、Job/Process Control 及内部监控不进入 Activity；只有明确列出的 Remote Files 文件修改及用户传输操作记录为语义 Activity。不是所有业务请求都会有 Activity，因此缺少 Activity 不代表客户端从未接受某次内部请求。
+统一 Activity 写入依据是显式受支持的用户操作上下文 + 真实向 Client 派发，而不是字符串黑名单。纯 Server 管理、远程文件浏览、Remote Files 的查询操作、Job/Process Control 及内部监控不进入 Activity；只有明确列出的 Remote Files 文件修改、用户传输和 External Tool Manager 生命周期操作记录为语义 Activity。External Tool Manager 的 Package 安装、卸载、清缓存和 Module/Instance 的启动、Oneshot、停止、移除、清日志使用 `kind=external_tool`，分别记录 `install_package`、`uninstall_package`、`clear_package_cache`、`start_instance`、`run_oneshot`、`stop_instance`、`remove_instance`、`clear_instance_logs`。一次用户操作只记一条，发送前失败不落库，Oneshot 非零退出或超时按实际结果终结。记录只存 Package/Tool/Instance 身份和安全摘要，不持久化参数、原始运行配置、编码命令或 stdout/stderr 原文；查询、状态刷新、命令预览、Preset/Metadata 编辑均不记此类 Activity。终端 `xt` 仍按原有终端历史规则，Script SDK 的内部调用归属于 Script，不另记 External Tool Activity。不是所有业务请求都会有 Activity，因此缺少 Activity 不代表客户端从未接受某次内部请求。
 
 ### 命令收藏与路径收藏
 

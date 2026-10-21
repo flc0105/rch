@@ -290,7 +290,7 @@ export default {
 
   methods: {
     getActivityInvocation(entry) {
-      if (entry?.kind === 'remote_files' || (entry?.kind === 'transfer' && !entry?.invocation?.input)) {
+      if (['remote_files', 'external_tool'].includes(entry?.kind) || (entry?.kind === 'transfer' && !entry?.invocation?.input)) {
         return JSON.stringify(entry.invocation?.arguments || {}, null, 2)
       }
       return entry?.invocation?.input || '-'
