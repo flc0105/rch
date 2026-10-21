@@ -104,7 +104,7 @@
       <p v-if="errorText" class="interaction-error">{{ errorText }}</p>
     </div>
     <template #footer>
-      <el-button :disabled="submitting" @click="submit(false)">Reject / Cancel</el-button>
+      <el-button :disabled="submitting" @click="submit(false)">Reject</el-button>
       <el-button type="primary" :loading="submitting" @click="submit(true)">
         {{ current?.kind === 'preview' ? (switchValues.force === true ? 'Approve force kill' : 'Approve plan') : current?.kind === 'confirm' ? 'Approve' : 'Continue' }}
       </el-button>

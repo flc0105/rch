@@ -38,6 +38,8 @@ state.enqueue({interaction_id:'plan',kind:'preview',message:'Review',preview:{su
 await state.submit(true)
 assert.equal(calls[2].body.approved,true)
 assert.equal(calls[2].body.value,undefined,'preview approval must not send input value')
+assert.match(sfc, /@click="submit\(false\)">Reject<\/el-button>/, 'rejection button label only')
+assert.doesNotMatch(sfc, /Reject \/ Cancel/)
 assert.ok(sfc.includes('<el-table'), 'structured preview must render table')
 assert.ok(sfc.includes('<el-descriptions'), 'structured preview must render summary')
 assert.ok(sfc.includes('<el-collapse'), 'preview details must be expandable')

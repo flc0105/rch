@@ -161,8 +161,11 @@ FPS 是目标采集上限，而不是保证的实际显示帧率。如果截图�
 | Clipboard | 点击直接进入 Get 标签；悬停菜单可选择 Get 或 Send，直接进入相应的 Clipboard 标签 |
 | More → Screenshot | 将当前已经显示的画面保存为 Server Artifact |
 | More → Restart | 关闭当前会话，再创建新会话；可使新编码策略生效 |
+| More → Open in New Tab | 在独立浏览器标签页使用同一个 Screen View 控件全屏显示与控制；工具栏悬浮于画面上方，支持 Control、Clipboard Get/Send、FPS/Quality、Screenshot、Restart |
 | Fullscreen | 将 Screen View 预览窗口展开为全屏布局 |
 | 状态信息 | 显示会话打开、关闭、错误状态及画面参数 |
+
+Open in New Tab 使用现有 Screen View 和 Clipboard 控件，并通过同一个 Server 创建会话。新标签页打开时原 Screen View 弹窗关闭；同一 Client 不会同时保留两条活跃预览会话。新标签页的控制工具栏不占用画面布局高度，默认隐藏；将鼠标移到画面顶部时浮现，离开后收起，打开下拉菜单期间保持可操作。
 
 **Screenshot** 不会在点击时额外发送一次远程截图命令。浏览器直接读取已经渲染的完整图像或 Delta Canvas，按当前 Quality 重新编码为 JPEG，再上传到 `/api/files/upload`，保存为 `category=screenshot` 的 Artifact。这样保存的是当时页面已经看到的画面，而不是之后重新采集的另一帧。上传的附加信息包含 Client、会话、编码策略、尺寸和采集记录相关元数据。
 

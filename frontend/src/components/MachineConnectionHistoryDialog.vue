@@ -57,7 +57,7 @@
         class="machine-history-table"
         @expand-change="handleSessionExpand"
       >
-        <el-table-column type="expand" width="44">
+        <el-table-column type="expand" width="40">
           <template #default="scope">
             <div class="machine-session-detail">
               <div class="machine-session-meta-grid">
@@ -94,7 +94,7 @@
                   <span class="value">{{ scope.row.disconnect_reason || '-' }}</span>
                 </div>
                 <div class="machine-session-meta-item machine-session-meta-wide">
-                  <span class="label">Current / last cwd</span>
+                  <span class="label">cwd</span>
                   <span class="value">{{ scope.row.cwd || '-' }}</span>
                 </div>
               </div>
@@ -148,10 +148,10 @@
                 </el-table>
 
                 <div
-                  v-else-if="scope.row.command_loaded && !scope.row.command_loading"
+                  v-else-if="!scope.row.command_loading && (scope.row.command_loaded || !Number(scope.row.command_count || 0))"
                   class="empty-state compact"
                 >
-                  No activity records for this connection
+                  No activities
                 </div>
 
                 <div
@@ -172,13 +172,13 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="#" width="52">
+        <el-table-column label="#" width="64" class-name="machine-history-index-column">
           <template #default="scope">
             {{ scope.$index + 1 }}
           </template>
         </el-table-column>
 
-        <el-table-column label="State" width="96">
+        <el-table-column label="State" width="100">
           <template #default="scope">
             <el-tag
               size="small"
@@ -189,31 +189,31 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="client_id" min-width="240">
+        <el-table-column label="client_id" min-width="136" show-overflow-tooltip>
           <template #default="scope">
             <code class="machine-session-client-id">{{ scope.row.client_id || '-' }}</code>
           </template>
         </el-table-column>
 
-        <el-table-column label="Online" width="160">
+        <el-table-column label="Online" min-width="96" class-name="machine-history-time-column" show-overflow-tooltip>
           <template #default="scope">
             {{ formatDateTime(scope.row.connected_at) }}
           </template>
         </el-table-column>
 
-        <el-table-column label="Offline" width="160">
+        <el-table-column label="Offline" min-width="96" class-name="machine-history-time-column" show-overflow-tooltip>
           <template #default="scope">
             {{ scope.row.connection_state === 'online' ? 'online' : formatDateTime(scope.row.disconnected_at) }}
           </template>
         </el-table-column>
 
-        <el-table-column label="Duration" width="108">
+        <el-table-column label="Duration" width="96" show-overflow-tooltip>
           <template #default="scope">
             {{ formatDuration(scope.row.duration_ms) }}
           </template>
         </el-table-column>
 
-        <el-table-column label="Activities" width="118" align="right">
+        <el-table-column label="Activities" width="110" align="right">
           <template #default="scope">
             {{ scope.row.command_count || 0 }}
           </template>
@@ -552,6 +552,13 @@ export default {
 .machine-session-command-text {
   display: block;
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Keep every session column visible; long values truncate instead of widening the table. */
+:deep(.machine-history-table .cell) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

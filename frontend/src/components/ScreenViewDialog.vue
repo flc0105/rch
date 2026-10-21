@@ -8,11 +8,14 @@
     :class="screenDialogClass"
     modal-class="screen-view-overlay"
     :show-close="false"
+    :modal="!standalone"
+    :lock-scroll="!standalone"
+    :close-on-press-escape="!standalone"
     @close="handleDialogClose"
     @closed="handleDialogClosed"
   >
     <template #header>
-      <div class="screen-view-dialog-header">
+      <div v-if="!standalone" class="screen-view-dialog-header">
         <span class="screen-view-dialog-title">Screen View</span>
         <div class="screen-view-header-actions">
           <el-tooltip :content="fullscreen ? 'Exit Fullscreen' : 'Fullscreen'" placement="bottom">
@@ -39,6 +42,13 @@
     </template>
 
     <div class="screen-view-body">
+      <div
+        class="screen-view-toolbar-host"
+        :class="{
+          'screen-view-toolbar-host-standalone': standalone,
+          'screen-view-toolbar-popup-active': standalone && standaloneToolbarPopupOpen,
+        }"
+      >
       <div class="screen-view-toolbar">
         <div class="screen-view-toolbar-left">
           <span class="screen-view-target" :title="targetTitle">{{ targetLabel }}</span>
@@ -58,6 +68,7 @@
             v-model="fps"
             size="small"
             class="screen-view-fps-select"
+            @visible-change="onToolbarPopupVisible('fps', $event)"
             :disabled="!screenSessionId || settingsSaving"
             @change="applySettings"
           >
@@ -69,6 +80,7 @@
             v-model="quality"
             size="small"
             class="screen-view-quality-select"
+            @visible-change="onToolbarPopupVisible('quality', $event)"
             :disabled="!screenSessionId || settingsSaving"
             @change="applySettings"
           >
@@ -90,7 +102,7 @@
             @change="handleControlToggle"
           />
 
-          <el-dropdown trigger="hover" placement="bottom-start" @command="handleClipboardCommand">
+          <el-dropdown trigger="hover" placement="bottom-start" @command="handleClipboardCommand" @visible-change="onToolbarPopupVisible('clipboard', $event)">
             <el-button size="small" @click="$emit('open-clipboard', 'get')">Clipboard</el-button>
             <template #dropdown>
               <el-dropdown-menu>
@@ -100,16 +112,19 @@
             </template>
           </el-dropdown>
 
-          <el-dropdown trigger="click" @command="handleMoreCommand">
+          <el-dropdown trigger="click" @command="handleMoreCommand" @visible-change="onToolbarPopupVisible('more', $event)">
             <el-button size="small">More</el-button>
             <template #dropdown>
               <el-dropdown-menu>
                 <el-dropdown-item command="screenshot" :disabled="!frameReady">Screenshot</el-dropdown-item>
                 <el-dropdown-item command="restart" :disabled="loading">Restart</el-dropdown-item>
+                <el-dropdown-item v-if="!standalone" command="open-new-tab">Open in New Tab</el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
+          <el-button v-if="standalone" size="small" @click="closeStandaloneTab">Close</el-button>
         </div>
+      </div>
       </div>
 
       <el-alert
@@ -191,6 +206,10 @@ export default {
       type: Object,
       default: null,
     },
+    standalone: {
+      type: Boolean,
+      default: false,
+    },
   },
 
   data() {
@@ -223,6 +242,7 @@ export default {
       targetLabel: '-',
       userClosing: false,
       fallbackPollTimer: null,
+      toolbarPopoverStates: { fps: false, quality: false, clipboard: false, more: false },
       fpsOptions: [1, 2, 4, 6, 10, 15, 20, 24, 30],
       qualityOptions: [
         { value: 30, label: 'Low · 30' },
@@ -235,20 +255,25 @@ export default {
   },
 
   computed: {
+    standaloneToolbarPopupOpen() {
+      return Object.values(this.toolbarPopoverStates).some(Boolean)
+    },
+
     screenDialogClass() {
       return [
         'fixed-dialog',
         'screen-view-dialog',
-        { 'screen-view-dialog-fullscreen': this.fullscreen },
+        { 'screen-view-dialog-fullscreen': this.fullscreen || this.standalone },
+        { 'screen-view-dialog-standalone': this.standalone },
       ]
     },
 
     screenDialogWidth() {
-      return this.fullscreen ? '100vw' : '1120px'
+      return (this.fullscreen || this.standalone) ? '100vw' : '1120px'
     },
 
     screenDialogTop() {
-      return this.fullscreen ? '0' : '4vh'
+      return (this.fullscreen || this.standalone) ? '0' : '4vh'
     },
 
     controlAvailable() {
@@ -304,6 +329,12 @@ export default {
   },
 
   methods: {
+    onToolbarPopupVisible(name, visible) {
+      if (this.standalone && Object.prototype.hasOwnProperty.call(this.toolbarPopoverStates, name)) {
+        this.toolbarPopoverStates[name] = !!visible
+      }
+    },
+
     async open() {
       const clientId = String(this.selectedId || '').trim()
       if (!clientId) {
@@ -380,6 +411,26 @@ export default {
       this.fullscreen = !this.fullscreen
     },
 
+    openInNewTab() {
+      if (!this.targetClientId) return
+      const url = new URL('/', window.location.origin)
+      url.searchParams.set('screen_view_client', this.targetClientId)
+      // The same Client has one active Screen View session; the new tab takes ownership.
+      const tab = window.open(url.toString(), '_blank')
+      if (!tab) {
+        ElMessage.warning('Please allow pop-ups to open Screen View in a new tab')
+        return
+      }
+      tab.opener = null
+      this.visible = false
+    },
+
+    closeStandaloneTab() {
+      this.visible = false
+      window.close()
+      if (!window.closed) window.location.assign('/')
+    },
+
     handleClipboardCommand(command) {
       if (command !== 'get' && command !== 'send') return
       this.$emit('open-clipboard', command)
@@ -387,6 +438,10 @@ export default {
 
 
     async handleMoreCommand(command) {
+  if (command === 'open-new-tab') {
+    this.openInNewTab()
+    return
+  }
   if (command === 'screenshot') {
     if (!this.frameReady) {
       ElMessage.warning('No screen frame is available yet')
@@ -1118,6 +1173,10 @@ export default {
   min-height: 620px;
 }
 
+.screen-view-toolbar-host {
+  display: contents;
+}
+
 .screen-view-toolbar {
   display: flex;
   align-items: center;
@@ -1280,5 +1339,78 @@ export default {
 
 .screen-view-dialog.screen-view-dialog-fullscreen .screen-view-image {
   max-height: none !important;
+}
+/* Standalone uses the existing toolbar as a top-edge, hover-revealed overlay. */
+.screen-view-dialog.screen-view-dialog-standalone.el-dialog {
+  background: #020617 !important;
+  box-shadow: none !important;
+}
+.screen-view-dialog.screen-view-dialog-standalone .el-dialog__header {
+  display: none !important;
+}
+.screen-view-dialog.screen-view-dialog-standalone .el-dialog__body {
+  padding: 0 !important;
+}
+.screen-view-dialog.screen-view-dialog-standalone .screen-view-body {
+  position: relative;
+  gap: 0;
+}
+.screen-view-dialog.screen-view-dialog-standalone .screen-view-toolbar-host {
+  position: absolute;
+  z-index: 5;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 12px;
+  display: block;
+}
+.screen-view-dialog.screen-view-dialog-standalone .screen-view-toolbar-host::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 50%;
+  width: 60px;
+  height: 4px;
+  transform: translateX(-50%);
+  border-radius: 4px;
+  background: rgba(226, 232, 240, 0.6);
+  pointer-events: none;
+}
+.screen-view-dialog.screen-view-dialog-standalone .screen-view-toolbar {
+  position: absolute;
+  top: 8px;
+  left: 12px;
+  right: 12px;
+  padding: 8px 12px;
+  border-radius: 9px;
+  background: rgba(248, 250, 252, 0.93);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.24);
+  backdrop-filter: blur(8px);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(calc(-100% - 8px));
+  transition: opacity 0.15s ease, transform 0.15s ease, visibility 0.15s;
+}
+.screen-view-dialog.screen-view-dialog-standalone .screen-view-toolbar-host:hover .screen-view-toolbar,
+.screen-view-dialog.screen-view-dialog-standalone .screen-view-toolbar-host:has(:focus-visible) .screen-view-toolbar,
+.screen-view-dialog.screen-view-dialog-standalone .screen-view-toolbar-popup-active .screen-view-toolbar {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+.screen-view-dialog.screen-view-dialog-standalone .screen-view-canvas {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+}
+.screen-view-dialog.screen-view-dialog-standalone .el-alert {
+  position: absolute;
+  top: 80px;
+  left: 12px;
+  right: 12px;
+  z-index: 3;
 }
 </style>

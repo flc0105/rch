@@ -17,7 +17,7 @@ Server 验证执行身份与授权 → Interaction Broker 创建待回复请求
           ↓
 SSE interaction_requested → 对应 Web 标签页的统一交互窗口
           ↓
-用户 Approve / Continue、Reject / Cancel，或输入选择值
+用户 Approve / Continue、Reject，或输入选择值
           ↓
 POST 交互回答 → Broker 验证 → 唤醒原执行流程
           ↓
