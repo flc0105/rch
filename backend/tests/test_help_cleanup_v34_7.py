@@ -9,7 +9,7 @@ from server.application.command.builtin_command_support import PinnedPathBuiltin
 from server.application.command.server_builtin_registry import SERVER_COMMAND_REGISTRY
 
 
-def test_original_client_help_group_order_is_restored():
+def test_client_help_groups_and_commands_are_sorted_by_display_title():
     grouped = {
         'system': [('pwd', 'Print working directory')],
         'session': [('help', 'Show available commands')],
@@ -18,9 +18,9 @@ def test_original_client_help_group_order_is_restored():
     }
     text = render_grouped_client_help(grouped)
     assert text.splitlines() == [
-        '[Shell / Execution]', 'shell                   Run shell command', '',
         '[File]', 'download                Download a file', '',
         '[Session]', 'help                    Show available commands', '',
+        '[Shell]', 'shell                   Run shell command', '',
         '[system]', 'pwd                     Print working directory',
     ]
 
@@ -79,4 +79,23 @@ def test_client_native_help_uses_original_group_headers():
     code, text = CommandIntrospectionMixin.help.__wrapped__(owner) if hasattr(
         CommandIntrospectionMixin.help, '__wrapped__') else CommandIntrospectionMixin.help(owner)
     assert code == 1
-    assert '[Shell / Execution]' in text and '[File]' in text
+    assert '[Shell]' in text and '[File]' in text
+
+
+def test_client_help_sorts_by_visible_title_then_command_name():
+    grouped = {
+        'shell': [('zsh', 'Z shell'), ('bash', 'Bourne shell')],
+        'execution': [('shell_stream', 'Stream command'), ('bgrun', 'Start program')],
+        'acmd': [('acmd ps', 'List processes')],
+        'general': [('ping', 'Ping')],
+        'file_path': [('rename', 'Rename file')],
+        'file': [('zip_dir', 'ZIP directory')],
+    }
+    lines = render_grouped_client_help(grouped).splitlines()
+    assert [line for line in lines if line.startswith('[')] == [
+        '[Acmd]', '[execution]', '[File]', '[File Path / Web]', '[General]', '[Shell]',
+    ]
+    assert next(i for i, line in enumerate(lines) if line.startswith('bgrun ')) < next(
+        i for i, line in enumerate(lines) if line.startswith('shell_stream '))
+    assert next(i for i, line in enumerate(lines) if line.startswith('bash ')) < next(
+        i for i, line in enumerate(lines) if line.startswith('zsh '))

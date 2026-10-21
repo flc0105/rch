@@ -1,7 +1,7 @@
-"""Render the original grouped Client command help from trusted command metadata."""
+"""Render Client help grouped and sorted by its displayed group titles."""
 
 HELP_GROUP_TITLES = {
-    'shell': 'Shell / Execution',
+    'shell': 'Shell',
     'file': 'File',
     'file_path': 'File Path / Web',
     'job': 'Job',
@@ -10,13 +10,11 @@ HELP_GROUP_TITLES = {
     'acmd': 'Acmd',
     'general': 'General',
 }
-HELP_GROUP_ORDER = ('shell', 'file', 'file_path', 'job', 'session',
-                    'platform', 'acmd', 'general')
 
 
 def render_grouped_client_help(grouped):
     lines = []
-    names = [*HELP_GROUP_ORDER, *(name for name in grouped if name not in HELP_GROUP_ORDER)]
+    names = sorted(grouped, key=lambda name: (HELP_GROUP_TITLES.get(name, name).casefold(), name.casefold()))
     for group_name in names:
         items = grouped.get(group_name) or []
         if not items:

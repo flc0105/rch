@@ -41,12 +41,12 @@ class MacCommands(CommonCommands):
         """拍照并上传到服务器"""
         return self.mac_media.capture_webcam_photo()
 
-    @desc('Launch new instance with sudo', group='privilege')
+    @desc('Launch a new instance with elevated privileges', group='privilege')
     def spawn_elevated_instance(self):
         """以 root 权限启动新实例，返回 PID"""
         return self.mac_automation.sudo_self()
 
-    @desc('Run command with sudo', group='privilege')
+    @desc('Run a command with elevated privileges', group='privilege')
     def run_elevated(self, command):
         """以 root 权限执行命令 (macOS)"""
         return self.mac_automation.sudo_run(command)

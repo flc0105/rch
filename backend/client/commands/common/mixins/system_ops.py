@@ -59,7 +59,7 @@ class CommandSystemMixin:
             result = subprocess.run('net user', shell=True, capture_output=True, text=True)
             return 1, result.stdout
 
-    @desc('Check if current session is root', group='privilege')
+    @desc('Check whether the current process has elevated privileges', group='privilege')
     def is_elevated(self):
         """检查当前是否为 root 权限"""
         if os.name == 'nt':

@@ -1415,7 +1415,7 @@ The following tables are generated from current `@desc(...)` declarations with `
 | `reexec_instance` | `session` | Restart current process by exec replacement |
 | `relaunch_instance` | `session` | Restart client process and reconnect |
 | `spawn_instance` | `session` | Start a new client instance without exiting current process |
-| `update` | `maintenance` | Build, download, extract and launch the latest client bundle; use --keep-old to retain current client |
+| `update` | `maintenance` | Build, download, extract and launch the latest client bundle |
 | `watchdog` | `runtime` | Show flat watchdog runtime status (`--json` supported) |
 | `cd` | `shell` | Change working directory |
 | `pyexec` | `execution` | Execute Python code and collect output |
@@ -1425,7 +1425,7 @@ The following tables are generated from current `@desc(...)` declarations with `
 | `bgrun` | `execution` | Run a program in background |
 | `getpid` | `system` | Get current process ID |
 | `getuid` | `system` | Get current user ID/name |
-| `is_elevated` | `privilege` | Check if the current Client is elevated |
+| `is_elevated` | `privilege` | Check whether the current process has elevated privileges |
 | `keyboard_send` | `automation` | Simulate keyboard input |
 | `piplist` | `python` | List installed third-party Python packages |
 | `pwd` | `shell` | Print working directory |
@@ -1440,7 +1440,7 @@ The following tables are generated from current `@desc(...)` declarations with `
 | `idletime` | `system` | Get user idle time |
 | `screenshot` | `media` | Capture screenshot |
 | `run` | `execution` | Run a program without waiting (detached) |
-| `run_elevated` | `privilege` | Run command as admin |
+| `run_elevated` | `privilege` | Run a command with elevated privileges |
 
 ### macOS commands
 
@@ -1450,8 +1450,8 @@ The following tables are generated from current `@desc(...)` declarations with `
 | `getinfo` | `system` | Show system information |
 | `idletime` | `system` | Show user idle time |
 | `screenshot` | `media` | Capture a screenshot |
-| `run_elevated` | `privilege` | Run command with sudo |
-| `spawn_elevated_instance` | `privilege` | Launch new instance with sudo |
+| `run_elevated` | `privilege` | Run a command with elevated privileges |
+| `spawn_elevated_instance` | `privilege` | Launch a new instance with elevated privileges |
 | `webcam_snap` | `media` | Capture webcam photo |
 
 ### iOS commands
@@ -1508,7 +1508,7 @@ Current specs:
 | macOS | `msgbox` | Show a native macOS dialog |
 | macOS | `notify` | Show a native macOS notification |
 | macOS | `sqlite_query` | Read-only SQLite query |
-| macOS | `image_info` | Show image metadata (size, resolution, color mode, EXIF) |
+| macOS | `image_info` | Show image metadata |
 | macOS | `import_check` | Check Python package/module status |
 | macOS | `archive_peek` | List archive contents without extracting |
 

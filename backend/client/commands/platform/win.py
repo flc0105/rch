@@ -56,7 +56,7 @@ class WindowsCommands(CommonCommands):
         """
         return self.win_system.get_user_idletime()
 
-    @desc('Run command as admin', group='privilege')
+    @desc('Run a command with elevated privileges', group='privilege')
     def run_elevated(self, command):
         """
         以管理员权限执行命令

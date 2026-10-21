@@ -98,7 +98,7 @@ PS_ARGUMENT_SPEC = ArgumentCommandSpec(
 )
 
 KILL_ARGUMENT_SPEC = ArgumentCommandSpec(
-    name='kill', description='Find, review and terminate Client processes',
+    name='kill', description='Kill processes',
     options=[
         ArgumentOptionSpec(name='pid', option_type='int', default=None, help_text='Process ID'),
         ArgumentOptionSpec(name='name', option_type='str', default='', help_text='Exact process name'),

@@ -50,7 +50,7 @@ SQLITE_QUERY_SPEC = ArgumentCommandSpec(
 
 IMAGE_INFO_SPEC = ArgumentCommandSpec(
     name='image_info',
-    description='Show image metadata (size, resolution, color mode, EXIF)',
+    description='Show image metadata',
     options=[
         ArgumentOptionSpec(name='path', option_type='str', required=True, help_text='Image file path',
                            positional_index=0),
