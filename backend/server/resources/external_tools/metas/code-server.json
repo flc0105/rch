@@ -1,0 +1,150 @@
+{
+  "id": "code-server",
+  "name": "code-server",
+  "display_name": "code-server Web IDE",
+  "description": "Self-hosted browser IDE with file tree, editor and integrated terminal.",
+  "version": "4.141.0",
+  "category": "development",
+  "tags": [
+    "ide",
+    "editor",
+    "web",
+    "vscode",
+    "terminal",
+    "development"
+  ],
+  "source": "https://github.com/coder/code-server",
+  "platform_packages": {
+    "darwin-arm64": {
+      "platform": "mac",
+      "arch": "arm64",
+      "filename": "code-server-v4.141.0-darwin-arm64.zip",
+      "download_url": "/api/external-tools/packages/code-server-v4.141.0-darwin-arm64.zip",
+      "root": "",
+      "repacked": true,
+      "source": "https://github.com/coder/code-server/releases/download/v4.141.0/code-server-4.141.0-macos-arm64.tar.gz",
+      "source_filename": "code-server-4.141.0-macos-arm64.tar.gz",
+      "notes": "RCH ZIP contains verified upstream tar.gz plus launch.sh. First start extracts upstream with native tar to preserve symlinks and executable permissions."
+    },
+    "darwin-amd64": {
+      "platform": "mac",
+      "arch": "amd64",
+      "filename": "code-server-v4.141.0-darwin-amd64.zip",
+      "download_url": "/api/external-tools/packages/code-server-v4.141.0-darwin-amd64.zip",
+      "root": "",
+      "repacked": true,
+      "source": "https://github.com/coder/code-server/releases/download/v4.141.0/code-server-4.141.0-macos-amd64.tar.gz",
+      "source_filename": "code-server-4.141.0-macos-amd64.tar.gz",
+      "notes": "RCH ZIP contains verified upstream tar.gz plus launch.sh. First start extracts upstream with native tar to preserve symlinks and executable permissions."
+    },
+    "linux-amd64": {
+      "platform": "linux",
+      "arch": "amd64",
+      "filename": "code-server-v4.141.0-linux-amd64.zip",
+      "download_url": "/api/external-tools/packages/code-server-v4.141.0-linux-amd64.zip",
+      "root": "",
+      "repacked": true,
+      "source": "https://github.com/coder/code-server/releases/download/v4.141.0/code-server-4.141.0-linux-amd64.tar.gz",
+      "source_filename": "code-server-4.141.0-linux-amd64.tar.gz",
+      "notes": "RCH ZIP contains verified upstream tar.gz plus launch.sh. First start extracts upstream with native tar to preserve symlinks and executable permissions."
+    },
+    "linux-arm64": {
+      "platform": "linux",
+      "arch": "arm64",
+      "filename": "code-server-v4.141.0-linux-arm64.zip",
+      "download_url": "/api/external-tools/packages/code-server-v4.141.0-linux-arm64.zip",
+      "root": "",
+      "repacked": true,
+      "source": "https://github.com/coder/code-server/releases/download/v4.141.0/code-server-4.141.0-linux-arm64.tar.gz",
+      "source_filename": "code-server-4.141.0-linux-arm64.tar.gz",
+      "notes": "RCH ZIP contains verified upstream tar.gz plus launch.sh. First start extracts upstream with native tar to preserve symlinks and executable permissions."
+    }
+  },
+  "execs": {
+    "code-server": {
+      "paths": {
+        "darwin-arm64": "launch.sh",
+        "darwin-amd64": "launch.sh",
+        "linux-amd64": "launch.sh",
+        "linux-arm64": "launch.sh"
+      }
+    }
+  },
+  "install": {
+    "install_dir": "{{external_tools_root}}/{{package_id}}/{{version}}/{{package_key}}"
+  },
+  "modules": [
+    {
+      "id": "main",
+      "name": "code-server",
+      "display_name": "code-server Web IDE",
+      "description": "Serve a selected project directory in a browser. The login password is generated in the client user config on first run.",
+      "execution": "daemon",
+      "exec": "code-server",
+      "params": [
+        {
+          "name": "instance_name",
+          "label": "Instance Name",
+          "type": "string",
+          "required": true,
+          "default": "code-server-8080",
+          "description": "Unique instance name for runtime status and logs."
+        },
+        {
+          "name": "address",
+          "label": "Listen Address",
+          "type": "string",
+          "required": true,
+          "default": "127.0.0.1",
+          "description": "Bind to localhost. Use a protected HTTPS reverse proxy to access remotely."
+        },
+        {
+          "name": "port",
+          "label": "Listen Port",
+          "type": "integer",
+          "required": true,
+          "default": 8080,
+          "min": 1,
+          "max": 65535,
+          "description": "Local HTTP listening port."
+        },
+        {
+          "name": "project_dir",
+          "label": "Project Directory",
+          "type": "remote_folder",
+          "required": true,
+          "default": "~",
+          "initial_path": "~",
+          "description": "Project directory on the target Client. Browse to select an existing folder."
+        }
+      ],
+      "runtime": {
+        "cwd": "{{install_dir}}",
+        "argv": [
+          "{{bin_code_server}}",
+          "--bind-addr",
+          "{{address}}:{{port}}",
+          "--auth",
+          "password",
+          "--disable-telemetry",
+          "{{project_dir}}"
+        ],
+        "stdout": "{{instance_runtime_dir}}/stdout.log",
+        "stderr": "stdout",
+        "pid_file": "{{instance_runtime_dir}}/tool.pid",
+        "state_file": "{{instance_runtime_dir}}/state.json"
+      },
+      "lifecycle": {
+        "stop": {
+          "type": "signal",
+          "signal": "TERM",
+          "timeout_sec": 10,
+          "kill_after_timeout": true
+        },
+        "status": {
+          "type": "pid_file"
+        }
+      }
+    }
+  ]
+}
