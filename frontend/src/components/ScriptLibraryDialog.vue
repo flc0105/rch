@@ -276,6 +276,7 @@
         {{ activeRun.status || 'Running' }}
       </el-tag>
       <code class="script-result-path" :title="activeRun.scriptPath">{{ activeRun.scriptPath }}</code>
+      <el-button v-if="resultJsonText" size="small" class="script-result-json-button" @click="viewResultJson">View JSON</el-button>
     </div>
     <pre class="script-result-output">{{ activeRun.output || (activeRun.complete ? '(no output)' : 'Running…') }}</pre>
     <template #footer>
@@ -288,6 +289,7 @@
 <script>
 import { ElMessage, ElMessageBox } from 'element-plus'
 import ScriptRunDialog from './ScriptRunDialog.vue'
+import { findJsonOutput } from '../utils/terminalJson.js'
 import { TERMINAL_RUN_SCRIPT_PREFIX } from '../composables/terminalMarkers.js'
 import { cloneParamValue, normalizeParamSpecs, normalizeParamType } from '../utils/parameterSchema.js'
 
@@ -342,6 +344,7 @@ export default {
     'append-output',
     'set-active-task',
     'upload-started',
+    'open-json',
   ],
 
   data() {
@@ -496,6 +499,7 @@ export default {
       return Array.isArray(this.pendingRunScriptMetadata.params) ? this.pendingRunScriptMetadata.params : []
     },
 
+    resultJsonText() { return findJsonOutput(this.activeRun.output) },
     resultStatusType() {
       if (!this.activeRun.complete) return 'info'
       return this.activeRun.success ? 'success' : 'danger'
@@ -509,6 +513,10 @@ export default {
   },
 
   methods: {
+    viewResultJson() {
+      if (!this.resultJsonText) return
+      this.$emit('open-json', { jsonText: this.resultJsonText, clientId: this.activeRun.clientId })
+    },
     forwardAppendOutput(clientId, line, kind) {
       this.$emit('append-output', clientId, line, kind)
     },
@@ -1917,6 +1925,11 @@ getPreferredScriptDirectoryForCurrentConnection() {
   gap: 10px;
   min-width: 0;
   margin-bottom: 12px;
+}
+
+.script-result-json-button {
+  margin-left: auto;
+  flex: 0 0 auto;
 }
 
 .script-result-path {

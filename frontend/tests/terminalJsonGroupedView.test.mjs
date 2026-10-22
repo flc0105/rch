@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 import vm from 'node:vm'
+import { JSON_ROW_ACTIONS, getJsonRenderModel, buildJsonTableModel, buildJsonGroupedModel, buildJsonFlatModel, normalizeJsonRowActions, formatJsonFlatValue } from '../src/utils/terminalJson.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const source = readFileSync(resolve(here, '../src/components/TerminalJsonDialog.vue'), 'utf8')
@@ -23,7 +24,7 @@ assert.ok(template.indexOf("displayMode === 'table'") < template.indexOf("displa
 assert.ok(template.indexOf("displayMode === 'grouped'") < template.indexOf("displayMode === 'flat'"))
 
 const messages = []
-const sandbox = { h: (tag, props, children) => ({tag, props, children}), ElMessageBox: {confirm: async () => {}}, ElMessage: {
+const sandbox = { JSON_ROW_ACTIONS, getJsonRenderModel, buildJsonTableModel, buildJsonGroupedModel, buildJsonFlatModel, normalizeJsonRowActions, formatJsonFlatValue, h: (tag, props, children) => ({tag, props, children}), ElMessageBox: {confirm: async () => {}}, ElMessage: {
   success: value => messages.push(['success', value]),
   error: value => messages.push(['error', value]),
   warning: value => messages.push(['warning', value]),

@@ -268,6 +268,7 @@
     @append-output="appendOutput"
     @set-active-task="setActiveTask"
     @upload-started="pendingRemoteUploadRefresh = $event"
+    @open-json="openResultJson"
   />
 
   <BackgroundJobsDialog
@@ -389,6 +390,7 @@
     @append-output="appendOutput"
     @set-active-task="setActiveTask"
     @toolbar-pins-updated="refreshToolbarPreferences"
+    @open-json="openResultJson"
   />
 
   <DeviceGroupManagerDialog
@@ -700,6 +702,14 @@ export default {
 
     refreshBackgroundJobModulesIfOpen() {
       return this.$refs.backgroundJobsDialogRef?.refreshModulesIfOpen()
+    },
+
+    openResultJson(payload = {}) {
+      if (!payload.jsonText || String(payload.clientId || '') !== String(this.selectedId || '')) return
+      this.$refs.terminalJsonDialogRef?.open({
+        isJsonMessage: true,
+        jsonText: payload.jsonText,
+      })
     },
 
     openScriptLibraryDialog() {

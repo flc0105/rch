@@ -241,6 +241,7 @@
           </code>
         </el-tooltip>
       </div>
+      <el-button v-if="resultJsonText" size="small" class="quick-action-result-json-button" @click="viewResultJson">View JSON</el-button>
     </div>
 
     <pre class="quick-action-result-output">{{ activeRun.output || (activeRun.complete ? '(no output)' : 'Running…') }}</pre>
@@ -254,6 +255,7 @@
 
 <script>
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { findJsonOutput } from '../utils/terminalJson.js'
 import {
   loadToolbarPreferences,
   saveToolbarPreferences,
@@ -322,6 +324,7 @@ function emptyRun() {
     taskId: '',
     alias: '',
     platform: '',
+    clientId: '',
     displayCommand: '',
     resolvedCommand: '',
     output: '',
@@ -353,7 +356,7 @@ export default {
     },
   },
 
-  emits: ['append-output', 'set-active-task', 'toolbar-pins-updated'],
+  emits: ['append-output', 'set-active-task', 'toolbar-pins-updated', 'open-json'],
 
   data() {
     return {
@@ -412,6 +415,7 @@ export default {
     pendingRunParameters() {
       return Array.isArray(this.pendingRunItem?.parameters) ? this.pendingRunItem.parameters : []
     },
+    resultJsonText() { return findJsonOutput(this.activeRun.output) },
     resultTitle() {
       const alias = this.activeRun.alias || 'Quick Action'
       const platform = this.activeRun.platform ? ` · ${this.platformLabel(this.activeRun.platform)}` : ''
@@ -424,6 +428,10 @@ export default {
   },
 
   methods: {
+    viewResultJson() {
+      if (!this.resultJsonText) return
+      this.$emit('open-json', { jsonText: this.resultJsonText, clientId: this.activeRun.clientId })
+    },
     platformLabel(platform) {
       return PLATFORM_LABELS[String(platform || '').trim().toLowerCase()] || String(platform || 'Unknown')
     },
@@ -710,6 +718,7 @@ export default {
         this.activeRun = {
           ...emptyRun(),
           runId,
+          clientId: String(this.selectedId),
           alias: row.alias,
           platform: row.platform,
           displayCommand,
@@ -918,6 +927,11 @@ export default {
 }
 
 .quick-action-result-status {
+  flex: 0 0 auto;
+}
+
+.quick-action-result-json-button {
+  margin-left: auto;
   flex: 0 0 auto;
 }
 

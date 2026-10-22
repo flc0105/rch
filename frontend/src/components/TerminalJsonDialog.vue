@@ -200,8 +200,8 @@
 <script>
 import { h, ref } from 'vue'
 import { ElMessage, ElMessageBox, ElRadioGroup, ElRadioButton } from 'element-plus'
+import { JSON_ROW_ACTIONS, getJsonRenderModel } from '../utils/terminalJson.js'
 
-const RESULT_ACTIONS = Symbol('terminalJsonRowActions')
 
 export default {
   name: 'TerminalJsonDialog',
@@ -330,39 +330,17 @@ export default {
     },
 
     setTerminalJsonContent(jsonText) {
-      const tableModel = this.tryBuildTerminalJsonTableModel(jsonText)
-      const groupedModel = tableModel ? null : this.tryBuildTerminalJsonGroupedModel(jsonText)
-      const flatModel = tableModel || groupedModel ? null : this.tryBuildTerminalJsonFlatModel(jsonText)
+      const model = getJsonRenderModel(jsonText)
       this.text = jsonText
       this.tableSearchText = ''
       this.isRawViewVisible = false
       this.tableSort = { prop: '', order: '' }
 
-      if (tableModel) {
-        this.displayMode = 'table'
-        this.tableColumns = tableModel.columns
-        this.tableRows = tableModel.rows
-        this.flatRows = []
-        this.groupedSections = []
-      } else if (groupedModel) {
-        this.displayMode = 'grouped'
-        this.tableColumns = []
-        this.tableRows = []
-        this.flatRows = []
-        this.groupedSections = groupedModel
-      } else if (flatModel) {
-        this.displayMode = 'flat'
-        this.tableColumns = []
-        this.tableRows = []
-        this.flatRows = flatModel
-        this.groupedSections = []
-      } else {
-        this.displayMode = 'raw'
-        this.tableColumns = []
-        this.tableRows = []
-        this.flatRows = []
-        this.groupedSections = []
-      }
+      this.displayMode = model.mode
+      this.tableColumns = model.columns
+      this.tableRows = model.rows
+      this.flatRows = model.flatRows
+      this.groupedSections = model.groups
 
     },
 
@@ -450,96 +428,7 @@ export default {
       this.setTerminalJsonContent(validText.trim())
     },
 
-    isTerminalJsonPlainObject(value) {
-      return !!value && typeof value === 'object' && !Array.isArray(value)
-    },
-
-    tryBuildTerminalJsonTableModel(jsonText) {
-      const raw = String(jsonText || '').trim()
-      if (!raw) return null
-
-      let parsed
-      try {
-        parsed = JSON.parse(raw)
-      } catch (e) {
-        return null
-      }
-
-      if (!Array.isArray(parsed) || !parsed.length) {
-        return null
-      }
-
-      if (!parsed.every(item => this.isTerminalJsonPlainObject(item))) {
-        return null
-      }
-
-      // _actions 是可选的每行元数据，不参与原表格字段一致性比较。
-      const firstKeys = Object.keys(parsed[0]).filter(key => key !== '_actions')
-      if (!firstKeys.length) {
-        return null
-      }
-
-      const sortedFirstKeys = [...firstKeys].sort()
-
-      const hasSameStructure = parsed.every((item) => {
-        const keys = Object.keys(item).filter(key => key !== '_actions')
-        if (keys.length !== firstKeys.length) return false
-
-        const sortedKeys = [...keys].sort()
-        for (let i = 0; i < sortedFirstKeys.length; i += 1) {
-          if (sortedKeys[i] !== sortedFirstKeys[i]) return false
-        }
-
-        return true
-      })
-
-      if (!hasSameStructure) {
-        return null
-      }
-
-      return {
-        columns: firstKeys.map((key) => ({
-          prop: key,
-          label: key,
-        })),
-
-        rows: parsed.map((item) => {
-          const row = {}
-
-          firstKeys.forEach((key) => {
-            const value = item[key]
-
-            if (value === null || value === undefined) {
-              row[key] = ''
-            } else if (typeof value === 'object') {
-              row[key] = JSON.stringify(value)
-            } else {
-              row[key] = String(value)
-            }
-          })
-
-          Object.defineProperty(row, RESULT_ACTIONS, {
-            value: this.normalizeTerminalJsonRowActions(item._actions),
-            configurable: true,
-          })
-          return row
-        }),
-      }
-    },
-
-    getTerminalJsonRowActions(row) {
-      return row?.[RESULT_ACTIONS] || []
-    },
-
-    normalizeTerminalJsonRowActions(actions) {
-      if (!Array.isArray(actions)) return []
-      return actions.flatMap((action) => {
-        if (!this.isTerminalJsonPlainObject(action)) return []
-        const label = typeof action.label === 'string' ? action.label.trim() : ''
-        const command = typeof action.command === 'string' ? action.command.trim() : ''
-        return label && command ? [{ label, command }] : []
-      })
-    },
+    getTerminalJsonRowActions(row) { return row?.[JSON_ROW_ACTIONS] || [] },
 
     createResultActionRunId() {
       if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -666,74 +555,6 @@ export default {
       } catch (error) {
         ElMessage.error(error.message || 'Copy failed')
       }
-    },
-
-    tryBuildTerminalJsonGroupedModel(jsonText) {
-      const raw = String(jsonText || '').trim()
-      if (!raw) return null
-
-      let parsed
-      try {
-        parsed = JSON.parse(raw)
-      } catch (e) {
-        return null
-      }
-
-      if (!this.isTerminalJsonPlainObject(parsed)) return null
-
-      const keys = Object.keys(parsed)
-      // Grouped 只接受多个外层分组，且每个分组必须是非空对象。
-      if (keys.length < 2 || !keys.every(key => this.isTerminalJsonPlainObject(parsed[key]) && Object.keys(parsed[key]).length > 0)) {
-        return null
-      }
-
-      return keys.map(key => ({
-        key,
-        items: Object.keys(parsed[key]).map(itemKey => ({
-          key: itemKey,
-          label: itemKey,
-          // 内层值保持单行；对象和数组仅序列化，不继续展开。
-          value: this.formatTerminalJsonFlatValue(parsed[key][itemKey]),
-        })),
-      }))
-    },
-
-    tryBuildTerminalJsonFlatModel(jsonText) {
-      const raw = String(jsonText || '').trim()
-      if (!raw) return null
-
-      let parsed
-      try {
-        parsed = JSON.parse(raw)
-      } catch (e) {
-        return null
-      }
-
-      if (!this.isTerminalJsonPlainObject(parsed)) {
-        return null
-      }
-
-      return Object.keys(parsed).map((key) => ({
-        key,
-        label: key,
-        value: this.formatTerminalJsonFlatValue(parsed[key]),
-      }))
-    },
-
-    formatTerminalJsonFlatValue(value) {
-      if (value === null || value === undefined) {
-        return ''
-      }
-
-      if (typeof value === 'object') {
-        try {
-          return JSON.stringify(value)
-        } catch (e) {
-          return String(value)
-        }
-      }
-
-      return String(value)
     },
 
     formatTerminalJsonRawForDisplay(jsonText) {

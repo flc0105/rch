@@ -1,3 +1,4 @@
+import { isJsonContainerText, isJsonStartLine, parseJsonLines, jsonBracketDelta } from '../utils/terminalJson.js'
 import {
     TERMINAL_BACKGROUND_PREFIX,
     isTerminalCancelRequestedText,
@@ -15,43 +16,9 @@ export default {
     methods: {
 
 
-        isTerminalJsonText(text) {
-            const raw = String(text ?? '').trim();
-            if (!raw) return false;
-
-            if (
-                (raw.startsWith('{') && raw.endsWith('}')) ||
-                (raw.startsWith('[') && raw.endsWith(']'))
-            ) {
-                try {
-                    JSON.parse(raw);
-                    return true;
-                } catch (e) {
-                    return false;
-                }
-            }
-
-            return false;
-        },
-
-        isTerminalJsonStartLine(text) {
-            const raw = String(text ?? '').trim();
-            return raw === '{' || raw === '[';
-        },
-
-        tryParseTerminalJsonBuffer(lines) {
-            if (!Array.isArray(lines) || !lines.length) return null;
-
-            const jsonText = lines.join('\n').trim();
-            if (!jsonText) return null;
-
-            try {
-                JSON.parse(jsonText);
-                return jsonText;
-            } catch (e) {
-                return null;
-            }
-        },
+        isTerminalJsonText(text) { return isJsonContainerText(text) },
+        isTerminalJsonStartLine(text) { return isJsonStartLine(text) },
+        tryParseTerminalJsonBuffer(lines) { return parseJsonLines(lines) },
 
 //    inferLineKind(text) {
 //     const value = String(text ?? '');
@@ -117,45 +84,7 @@ export default {
     return 'default';
 },
 
-        calculateTerminalJsonDelta(text) {
-            const raw = String(text ?? '');
-            let delta = 0;
-            let inString = false;
-            let escaped = false;
-
-            for (let i = 0; i < raw.length; i++) {
-                const ch = raw[i];
-
-                if (escaped) {
-                    escaped = false;
-                    continue;
-                }
-
-                if (ch === '\\') {
-                    if (inString) {
-                        escaped = true;
-                    }
-                    continue;
-                }
-
-                if (ch === '"') {
-                    inString = !inString;
-                    continue;
-                }
-
-                if (inString) {
-                    continue;
-                }
-
-                if (ch === '{' || ch === '[') {
-                    delta += 1;
-                } else if (ch === '}' || ch === ']') {
-                    delta -= 1;
-                }
-            }
-
-            return delta;
-        },
+        calculateTerminalJsonDelta(text) { return jsonBracketDelta(text) },
 
   isTerminalCommandBoundaryLine(text) {
     const raw = String(text ?? '');

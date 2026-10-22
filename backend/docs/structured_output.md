@@ -181,6 +181,8 @@ Web Terminal 将命令输出当作文本接收，并尝试识别其中**完整�
 
 JSON Viewer 按 Table → Grouped → Flat → Raw 的顺序选择显示方式。Grouped 仅用于外层多个对象分组均符合条件的 JSON，不递归展开第三层数据。
 
+Script 和 Quick Action 的 **Result Dialog** 与 Terminal 使用相同的 JSON 识别与渲染模型。当输出包含一份完整、合法的 JSON 对象或数组（包括独立的多行 JSON 块）时，Result Dialog 状态与命令行的右侧才显示 **View JSON** 按钮，点击使用同一个 JSON Viewer；普通文本或不完整 JSON 不显示入口。原 Result Dialog 的输出、复制和关闭操作不变。
+
 | View | 触发条件 | 展示方式 |
 |---|---|---|
 | **Table** | 非空 JSON 数组，元素全部是对象，且各行除可选 `_actions` 外的普通字段集合完全相同，至少存在一个普通字段 | 一行一个对象、一列一个普通字段；可选行级 Actions |

@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import vm from 'node:vm'
+import { JSON_ROW_ACTIONS, getJsonRenderModel, buildJsonTableModel, buildJsonGroupedModel, buildJsonFlatModel, normalizeJsonRowActions, formatJsonFlatValue } from '../src/utils/terminalJson.js'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const source = readFileSync(resolve(root, 'src/components/TerminalJsonDialog.vue'), 'utf8')
@@ -13,7 +14,7 @@ assert.match(template, /@click="runAgain"/)
 const script = source.match(/<script>([\s\S]*?)<\/script>/)?.[1] || ''
 const errors = []
 const warnings = []
-const sandbox = {
+const sandbox = { JSON_ROW_ACTIONS, getJsonRenderModel, buildJsonTableModel, buildJsonGroupedModel, buildJsonFlatModel, normalizeJsonRowActions, formatJsonFlatValue,
   h: (tag, props, children) => ({ tag, props, children }), ref: value => ({value}),
   ElRadioGroup: '', ElRadioButton: '', ElMessageBox: { confirm: async () => {} },
   ElMessage: { error: message => errors.push(message), warning: message => warnings.push(message), success: () => {} },

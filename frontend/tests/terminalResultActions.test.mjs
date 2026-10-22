@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import vm from 'node:vm'
+import { JSON_ROW_ACTIONS, getJsonRenderModel, buildJsonTableModel, buildJsonGroupedModel, buildJsonFlatModel, normalizeJsonRowActions, formatJsonFlatValue, isJsonContainerText, isJsonStartLine, parseJsonLines, jsonBracketDelta } from '../src/utils/terminalJson.js'
 
 const base = resolve(dirname(fileURLToPath(import.meta.url)), '../src')
 const viewerSource = readFileSync(resolve(base, 'components/TerminalJsonDialog.vue'), 'utf8')
@@ -28,7 +29,7 @@ const viewerScript = viewerSource.match(/<script>([\s\S]*?)<\/script>/)?.[1] || 
 const previewCalls = []
 let shouldConfirm = true
 const emitted = []
-const sandbox = {
+const sandbox = { JSON_ROW_ACTIONS, getJsonRenderModel, buildJsonTableModel, buildJsonGroupedModel, buildJsonFlatModel, normalizeJsonRowActions, formatJsonFlatValue,
   ref: value => ({value}),
   ElRadioGroup: 'radio-group', ElRadioButton:'radio-button',
   h: (tag, props, children) => ({ tag, props, children }),
@@ -173,7 +174,7 @@ assert.match(viewer.formattedRawText, /"_actions"/)
 
 // Echo and Script output feed the same JSON recognizer, without relying on command names.
 const terminalOutputSource = readFileSync(resolve(base, 'composables/useTerminalOutput.js'), 'utf8')
-const outputSandbox = {isTerminalCommandFinishedText:()=>false, isTerminalCommandFailedText:()=>false}
+const outputSandbox = {isJsonContainerText, isJsonStartLine, parseJsonLines, jsonBracketDelta, isTerminalCommandFinishedText:()=>false, isTerminalCommandFailedText:()=>false}
 vm.runInNewContext(terminalOutputSource.replace(/^import\s*\{[\s\S]*?\}\s*from\s*[^;]+;/m, '').replace('export default {', 'globalThis.mixin = {'), outputSandbox)
 const output = {...outputSandbox.mixin.data(), outputs:{}, scrollToBottom() {}}
 for (const [key, fn] of Object.entries(outputSandbox.mixin.methods)) output[key] = fn.bind(output)

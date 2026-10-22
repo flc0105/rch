@@ -68,7 +68,7 @@
         </div>
         <div v-if="!query.trim()" class="toolbox-grid-entry">
           <button class="toolbox-item" type="button" title="Add shortcut" aria-label="Add shortcut" @click="openShortcutPicker">
-            <span class="toolbox-icon"><Plus :size="27" :stroke-width="1.75" /></span>
+            <span class="toolbox-icon toolbox-icon-add"><Plus :size="27" :stroke-width="1.75" /></span>
             <span class="toolbox-label">Add</span>
           </button>
         </div>
@@ -401,6 +401,7 @@ export default {
 .toolbox-item:not(:disabled):hover { background: var(--el-fill-color-light); border-color: var(--el-border-color-lighter); }
 .toolbox-item:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: -2px; }
 .toolbox-icon { display: inline-flex; align-items: center; justify-content: center; width: 60px; height: 60px; max-width: 100%; border: 1px solid var(--el-border-color); border-radius: 18px; color: var(--el-text-color-primary); background: var(--el-fill-color-light); }
+.toolbox-icon-add { border-style: dashed; }
 .toolbox-icon-accent { color: var(--el-color-primary); background: var(--el-color-primary-light-9); border-color: var(--el-color-primary-light-7); }
 .toolbox-label { max-width: 100%; overflow-wrap: anywhere; font-size: 12px; font-weight: 500; line-height: 1.25; text-align: center; }
 .toolbox-icon-select { display: flex; align-items: center; gap: 12px; width: 100%; min-width: 0; padding: 10px 12px; border: 1px solid var(--el-border-color); border-radius: 8px; background: var(--el-fill-color-light); color: var(--el-text-color-primary); font: inherit; cursor: pointer; }

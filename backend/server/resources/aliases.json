@@ -69,7 +69,8 @@
     "sleep_ping": "shell_stream ping -c <sec> 127.0.0.1",
     "kill_port": "kill -9 $(lsof -t -i:<port>)",
     "clear_terminal": "printf '\\033[2J\\033[3J\\033[H'",
-    "clean_sidecars": "find . -name \"._*\" -type f -delete && find . -name \".DS_Store\" -type f -delete"
+    "clean_sidecars": "find . -name \"._*\" -type f -delete && find . -name \".DS_Store\" -type f -delete",
+    "info": "getinfo --json"
   },
   "linux": {},
   "ios": {}
