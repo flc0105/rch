@@ -1,5 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+
+SCRIPT_METADATA = {
+    "name": "windows/system/recycle_bin",
+    "display_name": "Recycle Bin Contents",
+    "description": "List all items in Recycle Bin",
+    "platforms": ["windows"],
+    "category": "System",
+    "params": []
+}
+
 """将 Windows 回收站条目输出为 JSON 数组；仅使用 Python 标准库。
 
 字段与 macOS 版本保持一致：name、type、original_path、trash_path、deleted_at、size。

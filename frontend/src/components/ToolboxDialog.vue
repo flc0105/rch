@@ -405,9 +405,8 @@ export default {
 .toolbox-label { max-width: 100%; overflow-wrap: anywhere; font-size: 12px; font-weight: 500; line-height: 1.25; text-align: center; }
 .toolbox-icon-select { display: flex; align-items: center; gap: 12px; width: 100%; min-width: 0; padding: 10px 12px; border: 1px solid var(--el-border-color); border-radius: 8px; background: var(--el-fill-color-light); color: var(--el-text-color-primary); font: inherit; cursor: pointer; }
 .toolbox-icon-select-change { margin-left: auto; color: var(--el-color-primary); font-size: 13px; }
-.toolbox-shortcut-type { padding: 2px; }
-.toolbox-shortcut-type :deep(.el-radio-button:first-child .el-radio-button__inner) { border-left: 1px solid var(--el-border-color); }
-.toolbox-shortcut-type :deep(.el-radio-button:first-child.is-active .el-radio-button__inner) { border-left-color: var(--el-color-primary); }
+/* Element Plus draws the radio buttons' outlines; leave room for the first outline near a scroll container edge. */
+.toolbox-shortcut-type { margin-inline-start: 1px; }
 .toolbox-item-disabled { opacity: 0.38; cursor: not-allowed; }
 .toolbox-shortcut-unavailable { font-size: 11px; color: var(--el-color-danger); }
 @media (max-width: 780px) { .toolbox-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }

@@ -284,7 +284,10 @@ test('reusable IconPickerDialog supports fuzzy name search and selecting an icon
   const toolbox = file('../src/components/ToolboxDialog.vue')
   assert.match(toolbox, /<IconPickerDialog/)
   assert.doesNotMatch(toolbox, /class="toolbox-icon-picker"/)
-  assert.match(toolbox, /toolbox-shortcut-type :deep\(\.el-radio-button:first-child/)
+  assert.match(toolbox, /class="toolbox-shortcut-type"/)
+  assert.match(toolbox, /\.toolbox-shortcut-type \{ margin-inline-start: 1px; \}/)
+  assert.doesNotMatch(toolbox, /\.toolbox-shortcut-type[^\n]*border-left/)
+  assert.doesNotMatch(toolbox, /\.toolbox-shortcut-type[^\n]*padding:/)
 })
 
 test('Add picker orders Script and Quick Action resources by visible name A-Z', () => {
