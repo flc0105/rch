@@ -91,7 +91,41 @@ export const TOOLBOX_SHORTCUT_ICONS = Object.freeze([
   'file-code', 'terminal', 'zap', 'rocket', 'play', 'activity', 'shield-check',
   'folder-open', 'monitor', 'wrench', 'calendar-clock', 'book-open', 'code-2',
   'archive', 'clipboard', 'scroll-text',
+  'star', 'heart', 'check-circle', 'circle-alert', 'bell', 'bookmark', 'flag',
+  'folder', 'folder-code', 'file-text', 'file-json', 'files', 'braces', 'bug',
+  'git-branch', 'git-merge', 'git-pull-request', 'git-commit', 'box', 'boxes',
+  'cpu', 'hard-drive', 'cloud', 'cloud-upload', 'cloud-download', 'download', 'upload',
+  'settings', 'sliders-horizontal', 'database-backup', 'shield', 'lock', 'key-round',
+  'refresh-ccw', 'repeat', 'timer', 'clock', 'calendar', 'list-checks', 'list-todo',
+  'chart-no-axes-column', 'chart-line', 'eye', 'search', 'filter', 'link', 'globe-2',
+  'network', 'wifi', 'send', 'mail', 'message-square', 'image', 'camera',
+  'video', 'music', 'headphones', 'pencil', 'pen-line', 'trash-2', 'copy',
+  'scissors', 'save', 'printer', 'power', 'plug', 'lightbulb', 'sun', 'moon',
 ])
+
+// Match the platform names used by Script metadata and Quick Action scope.
+export function normalizeToolboxPlatform(value) {
+  const text = String(value || '').trim().toLowerCase()
+  if (!text) return ''
+  if (['*', 'all', 'any', 'common'].includes(text)) return '*'
+  if (text.includes('ios') || text.includes('iphone') || text.includes('ipad')) return 'ios'
+  if (text.includes('darwin') || text.includes('mac') || text.includes('osx')) return 'mac'
+  if (text.includes('windows') || text.startsWith('win') || text === 'nt') return 'win'
+  if (text.includes('linux') || /(ubuntu|debian|centos|fedora|redhat|rhel|alpine|arch)/.test(text)) return 'linux'
+  return text
+}
+
+export function isScriptSupportedOnPlatform(item, platform) {
+  const raw = item?.metadata?.platforms
+  const platforms = (Array.isArray(raw) ? raw : (typeof raw === 'string' && raw.trim() ? [raw] : []))
+    .map(normalizeToolboxPlatform).filter(Boolean)
+  return !platforms.length || platforms.includes('*') || (!!platform && platforms.includes(platform))
+}
+
+export function isQuickActionSupportedOnPlatform(platformKey, platform) {
+  const normalized = normalizeToolboxPlatform(platformKey)
+  return normalized === '*' || (!!platform && normalized === platform)
+}
 
 export function toolboxShortcutKey(item) {
   return item?.kind === 'script'
@@ -107,6 +141,7 @@ export function normalizeToolboxShortcuts(value) {
     if (!raw || typeof raw !== 'object') continue
     const kind = String(raw.kind || '').trim()
     const icon = String(raw.icon || '').trim()
+    const label = String(raw.label || '').trim().slice(0, 64)
     if (!TOOLBOX_SHORTCUT_ICONS.includes(icon)) continue
     let item
     if (kind === 'script') {
@@ -119,6 +154,7 @@ export function normalizeToolboxShortcuts(value) {
       if (!platform || !alias) continue
       item = { kind, platform, alias, icon }
     } else continue
+    if (label) item.label = label
     const key = toolboxShortcutKey(item)
     if (seen.has(key)) continue
     seen.add(key)

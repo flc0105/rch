@@ -23,6 +23,17 @@ class ToolboxShortcutPreferencesTests(unittest.TestCase):
         ])
         self.assertEqual(payload['quick_actions_pinned'], [{'platform': 'common', 'alias': 'ping'}])
 
+    def test_label_and_expanded_icons_are_validated(self):
+        store = object.__new__(ToolbarPreferenceStore)
+        payload = store._normalize({'toolbox_shortcuts': [
+            {'kind': 'script', 'script_name': 'ops/a', 'icon': 'heart', 'label': ' My Favorite '},
+            {'kind': 'quick_action', 'platform': 'WIN', 'alias': 'alias_long', 'icon': 'git-branch', 'label': 'Run Task'},
+        ]})
+        self.assertEqual(payload['toolbox_shortcuts'], [
+            {'kind': 'script', 'script_name': 'ops/a', 'icon': 'heart', 'label': 'My Favorite'},
+            {'kind': 'quick_action', 'platform': 'win', 'alias': 'alias_long', 'icon': 'git-branch', 'label': 'Run Task'},
+        ])
+
     def test_save_and_reload(self):
         class MemorySettings:
             def __init__(self):

@@ -11,7 +11,11 @@ function readOptions(path, globals = {}) {
   assert.ok(script, 'Vue SFC must include an ordinary script')
   const js = script.replace(/^import\s+[\s\S]*?\s+from\s+['"][^'"]+['"]\s*$/gm, '')
     .replace('export default {', 'const options = {') + '\nglobalThis.options = options'
-  const context = { ...globals }
+  const iconImports = path.includes('ToolboxDialog.vue')
+    ? (script.match(/import \{([\s\S]*?)\} from ['"]@lucide\/vue['"]/)?.[1] || '').split(',').map(name => name.trim()).filter(Boolean)
+    : []
+  const context = { ...Object.fromEntries(iconImports.map(name => [name, {}])), ...globals,
+    TOOLBOX_SHORTCUT_ICONS: [], isScriptSupportedOnPlatform: () => true, isQuickActionSupportedOnPlatform: () => true }
   vm.runInNewContext(js, context, { timeout: 1000 })
   return { options: context.options, vue }
 }
@@ -39,6 +43,7 @@ function mountToolbar() {
     TOOLBAR_ACTION_OPTIONS: actionOptions,
     cloneToolbarPreferences: p => ({ toolbar: [...p.toolbar], more: [...p.more], quick_actions_pinned: [] }),
     normalizeToolbarPreferences: p => p,
+    normalizeToolboxPlatform: value => value, isScriptSupportedOnPlatform: () => true, isQuickActionSupportedOnPlatform: () => true,
   })
   const instance = Object.assign({}, options.data(), options.methods, {
     currentConnectionOffline: false, selectedId: 'client-1',

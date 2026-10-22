@@ -19,6 +19,16 @@ _TOOLBOX_ICONS = frozenset({
     'file-code', 'terminal', 'zap', 'rocket', 'play', 'activity', 'shield-check',
     'folder-open', 'monitor', 'wrench', 'calendar-clock', 'book-open', 'code-2',
     'archive', 'clipboard', 'scroll-text',
+    'star', 'heart', 'check-circle', 'circle-alert', 'bell', 'bookmark', 'flag',
+    'folder', 'folder-code', 'file-text', 'file-json', 'files', 'braces', 'bug',
+    'git-branch', 'git-merge', 'git-pull-request', 'git-commit', 'box', 'boxes',
+    'cpu', 'hard-drive', 'cloud', 'cloud-upload', 'cloud-download', 'download', 'upload',
+    'settings', 'sliders-horizontal', 'database-backup', 'shield', 'lock', 'key-round',
+    'refresh-ccw', 'repeat', 'timer', 'clock', 'calendar', 'list-checks', 'list-todo',
+    'chart-no-axes-column', 'chart-line', 'eye', 'search', 'filter', 'link', 'globe-2',
+    'network', 'wifi', 'send', 'mail', 'message-square', 'image', 'camera',
+    'video', 'music', 'headphones', 'pencil', 'pen-line', 'trash-2', 'copy',
+    'scissors', 'save', 'printer', 'power', 'plug', 'lightbulb', 'sun', 'moon',
 })
 
 
@@ -81,6 +91,7 @@ class ToolbarPreferenceStore:
                 continue
             kind = str(raw.get('kind') or '').strip()
             icon = str(raw.get('icon') or '').strip()
+            label = str(raw.get('label') or '').strip()[:64]
             if icon not in _TOOLBOX_ICONS:
                 continue
             if kind == 'script':
@@ -100,6 +111,8 @@ class ToolbarPreferenceStore:
                 continue
             if key in seen:
                 continue
+            if label:
+                item['label'] = label
             seen.add(key)
             result.append(item)
         return result

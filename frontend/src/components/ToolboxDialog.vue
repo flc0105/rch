@@ -56,13 +56,14 @@
             :class="{ 'toolbox-item-disabled': action.disabled }"
             type="button"
             :disabled="action.disabled && !action.shortcut"
-            :title="action.label"
+            :title="action.disabled && action.shortcut ? `Unavailable: ${action.label}` : action.label"
             @click="action.disabled ? null : (action.shortcut ? $emit('launch-pin', action.shortcut) : $emit('launch', action.id))"
           >
             <span class="toolbox-icon" :class="{ 'toolbox-icon-accent': action.accent }">
               <component :is="iconComponents[action.icon]" :size="27" :stroke-width="1.75" aria-hidden="true" />
             </span>
             <span class="toolbox-label">{{ action.label }}</span>
+            <span v-if="action.shortcut && action.unavailable" class="toolbox-shortcut-unavailable">Unavailable</span>
           </button>
         </div>
         <div v-if="!query.trim()" class="toolbox-grid-entry">
@@ -105,7 +106,7 @@
     </div>
   </teleport>
 
-  <el-dialog v-model="shortcutPickerVisible" title="Add to Toolbox" width="520px" append-to-body>
+  <el-dialog v-model="shortcutPickerVisible" title="Add to Toolbox" width="520px" class="toolbox-add-dialog" append-to-body>
     <el-form label-position="top">
       <el-form-item label="Type">
         <el-radio-group v-model="shortcutKind"><el-radio-button value="script">Script</el-radio-button><el-radio-button value="quick_action">Quick Action</el-radio-button></el-radio-group>
@@ -114,6 +115,9 @@
         <el-select v-model="shortcutResource" filterable placeholder="Select a resource" style="width: 100%" :loading="pinLoading">
           <el-option v-for="item in pickerResources" :key="item.key" :label="item.label" :value="item.key" :disabled="item.pinned" />
         </el-select>
+      </el-form-item>
+      <el-form-item label="Display Name">
+        <el-input v-model="shortcutLabel" maxlength="64" show-word-limit placeholder="Optional custom name" />
       </el-form-item>
       <el-form-item label="Icon">
         <div class="toolbox-icon-picker">
@@ -138,8 +142,17 @@ import {
   FileCode, FolderOpen, History, KeyRound, Monitor, MonitorPlay,
   Search, Settings2, Terminal, Wrench, Zap, ScrollText,
   Plus, Rocket, Play, ShieldCheck,
+  Star, Heart, CheckCircle, CircleAlert, Bell, Bookmark, Flag, Folder, FolderCode,
+  FileText, FileJson, Files, Braces, Bug, GitBranch, GitMerge, GitPullRequest, GitCommit,
+  Box, Boxes, Cpu, HardDrive, Cloud, CloudUpload, CloudDownload, Download, Upload,
+  Settings, SlidersHorizontal, DatabaseBackup, Shield, Lock, RefreshCcw, Repeat,
+  Timer, Clock, Calendar, ListChecks, ListTodo, ChartNoAxesColumn, ChartLine, Eye,
+  Filter, Link, Globe2, Network, Wifi, Send, Mail, MessageSquare, Image, Camera,
+  Video, Music, Headphones, Pencil, PenLine, Trash2, Copy, Scissors, Save, Printer,
+  Power, Plug, Lightbulb, Sun, Moon,
 } from '@lucide/vue'
 import { Close } from '@element-plus/icons-vue'
+import { TOOLBOX_SHORTCUT_ICONS, isScriptSupportedOnPlatform, isQuickActionSupportedOnPlatform } from '../data/toolbarPreferences.js'
 
 // Icons are presentation only; tool identity and launch behavior come from the shared catalog.
 const icons = Object.freeze({
@@ -159,8 +172,25 @@ const icons = Object.freeze({
   'key-round': KeyRound,
   'book-open': BookOpen,
   'code-2': Code2,
-  zap: Zap,
+  zap: Zap, search: Search,
   rocket: Rocket, play: Play, 'shield-check': ShieldCheck,
+  star: Star, heart: Heart, 'check-circle': CheckCircle, 'circle-alert': CircleAlert,
+  bell: Bell, bookmark: Bookmark, flag: Flag, folder: Folder, 'folder-code': FolderCode,
+  'file-text': FileText, 'file-json': FileJson, files: Files, braces: Braces, bug: Bug,
+  'git-branch': GitBranch, 'git-merge': GitMerge, 'git-pull-request': GitPullRequest,
+  'git-commit': GitCommit, box: Box, boxes: Boxes, cpu: Cpu, 'hard-drive': HardDrive,
+  cloud: Cloud, 'cloud-upload': CloudUpload, 'cloud-download': CloudDownload,
+  download: Download, upload: Upload, settings: Settings, 'sliders-horizontal': SlidersHorizontal,
+  'database-backup': DatabaseBackup, shield: Shield, lock: Lock,
+  'refresh-ccw': RefreshCcw, repeat: Repeat, timer: Timer, clock: Clock,
+  calendar: Calendar, 'list-checks': ListChecks, 'list-todo': ListTodo,
+  'chart-no-axes-column': ChartNoAxesColumn, 'chart-line': ChartLine, eye: Eye,
+  filter: Filter, link: Link, 'globe-2': Globe2, network: Network, wifi: Wifi,
+  send: Send, mail: Mail, 'message-square': MessageSquare, image: Image,
+  camera: Camera, video: Video, music: Music, headphones: Headphones,
+  pencil: Pencil, 'pen-line': PenLine, 'trash-2': Trash2, copy: Copy,
+  scissors: Scissors, save: Save, printer: Printer, power: Power, plug: Plug,
+  lightbulb: Lightbulb, sun: Sun, moon: Moon,
 })
 
 export default {
@@ -173,23 +203,21 @@ export default {
     scripts: { type: Array, default: () => [] },
     quickActions: { type: Array, default: () => [] },
     pinLoading: { type: Boolean, default: false },
+    currentPlatform: { type: String, default: '' },
   },
   emits: ['update:visible', 'launch', 'load-pin-options', 'add-pin', 'remove-pin', 'launch-pin'],
   data() {
     return { query: '', contextMenuAction: null, contextMenuX: 0, contextMenuY: 0, contextMenuSerial: 0,
-      shortcutPickerVisible: false, shortcutKind: 'script', shortcutResource: '', shortcutIcon: 'file-code' }
+      shortcutPickerVisible: false, shortcutKind: 'script', shortcutResource: '', shortcutIcon: 'file-code', shortcutLabel: '' }
   },
   computed: {
     iconComponents() { return icons },
-    shortcutIconChoices() {
-      return ['file-code', 'terminal', 'zap', 'rocket', 'play', 'activity', 'shield-check', 'folder-open',
-        'monitor', 'wrench', 'calendar-clock', 'book-open', 'code-2', 'archive', 'clipboard', 'scroll-text']
-    },
+    shortcutIconChoices() { return TOOLBOX_SHORTCUT_ICONS },
     pickerResources() {
       const isScript = this.shortcutKind === 'script'
       const items = isScript
-        ? this.scripts.filter(item => item.script_name).map(item => ({ key: item.script_name, label: item.display_name || item.script_name, pin: { kind: 'script', script_name: item.script_name } }))
-        : this.quickActions.filter(item => item.in_current_scope === true && item.platform && item.alias).map(item => ({
+        ? this.scripts.filter(item => item.script_name && isScriptSupportedOnPlatform(item, this.currentPlatform)).map(item => ({ key: item.script_name, label: item.display_name || item.script_name, pin: { kind: 'script', script_name: item.script_name } }))
+        : this.quickActions.filter(item => item.in_current_scope === true && item.platform && item.alias && isQuickActionSupportedOnPlatform(item.platform, this.currentPlatform)).map(item => ({
           key: JSON.stringify([item.platform, item.alias]), label: `${item.alias} · ${item.platform}`,
           pin: { kind: 'quick_action', platform: item.platform, alias: item.alias },
         }))
@@ -221,13 +249,14 @@ export default {
       this.shortcutKind = 'script'
       this.shortcutResource = ''
       this.shortcutIcon = 'file-code'
+      this.shortcutLabel = ''
       this.shortcutPickerVisible = true
       this.$emit('load-pin-options')
     },
     addShortcut() {
       const choice = this.pickerResources.find(item => item.key === this.shortcutResource && !item.pinned)
       if (!choice) return
-      this.$emit('add-pin', { ...choice.pin, icon: this.shortcutIcon })
+      this.$emit('add-pin', { ...choice.pin, icon: this.shortcutIcon, ...(this.shortcutLabel.trim() ? { label: this.shortcutLabel.trim().slice(0, 64) } : {}) })
       this.shortcutPickerVisible = false
     },
     openContextMenu(event, action) {
@@ -312,7 +341,7 @@ export default {
 }
 .toolbox-header-action .el-icon { width: 18px; height: 18px; }
 .toolbox-search { margin-bottom: 18px; }
-.toolbox-list { overflow-y: auto; max-height: min(62vh, 610px); min-height: 165px; padding: 2px 4px 8px; }
+.toolbox-list { overflow-y: auto; min-height: 0; padding: 2px 4px 8px; }
 .toolbox-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px 8px; }
 .toolbox-grid-entry { display: block; min-width: 0; }
 .toolbox-context-menu {
@@ -361,14 +390,21 @@ export default {
 .toolbox-icon-choice { display: grid; place-items: center; min-width: 0; height: 40px; border: 1px solid var(--el-border-color); border-radius: 8px; background: var(--el-fill-color-light); color: var(--el-text-color-primary); cursor: pointer; }
 .toolbox-icon-choice.is-selected { border-color: var(--el-color-primary); color: var(--el-color-primary); background: var(--el-color-primary-light-9); }
 .toolbox-item-disabled { opacity: 0.38; cursor: not-allowed; }
+.toolbox-shortcut-unavailable { font-size: 11px; color: var(--el-color-danger); }
 @media (max-width: 780px) { .toolbox-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 @media (max-width: 550px) { .toolbox-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } .toolbox-icon { width: 52px; height: 52px; border-radius: 15px; } }
 @media (max-width: 390px) { .toolbox-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 </style>
 
 <style>
-.toolbox-dialog.el-dialog { max-width: calc(100vw - 24px); max-height: calc(100dvh - 20px); display: flex; flex-direction: column; }
+.toolbox-dialog.el-dialog { max-width: calc(100vw - 24px); height: min(78vh, calc(100dvh - 24px)); display: flex; flex-direction: column; }
 .toolbox-dialog .el-dialog__header { flex: 0 0 auto; }
 .toolbox-dialog .el-dialog__body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 .toolbox-dialog .toolbox-list { flex: 1 1 auto; }
+</style>
+
+<style>
+.toolbox-add-dialog.el-dialog { max-width: calc(100vw - 24px); height: min(72vh, calc(100dvh - 24px)); display: flex; flex-direction: column; }
+.toolbox-add-dialog .el-dialog__header, .toolbox-add-dialog .el-dialog__footer { flex: 0 0 auto; }
+.toolbox-add-dialog .el-dialog__body { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
 </style>

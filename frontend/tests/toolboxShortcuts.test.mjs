@@ -7,8 +7,8 @@ const file = path => readFileSync(new URL(path, import.meta.url), 'utf8')
 const prefs = {}
 vm.runInNewContext(file('../src/data/toolbarPreferences.js')
   .replaceAll('export const ', 'const ').replaceAll('export function ', 'function ')
-  + '\nglobalThis.fns = {normalizeToolbarPreferences,cloneToolbarPreferences,normalizeToolboxShortcuts,toolboxShortcutKey};', prefs)
-const { normalizeToolbarPreferences, cloneToolbarPreferences } = prefs.fns
+  + '\nglobalThis.fns = {normalizeToolbarPreferences,cloneToolbarPreferences,normalizeToolboxShortcuts,toolboxShortcutKey,TOOLBOX_SHORTCUT_ICONS,normalizeToolboxPlatform,isScriptSupportedOnPlatform,isQuickActionSupportedOnPlatform};', prefs)
+const { normalizeToolbarPreferences, cloneToolbarPreferences, TOOLBOX_SHORTCUT_ICONS, normalizeToolboxPlatform, isScriptSupportedOnPlatform, isQuickActionSupportedOnPlatform } = prefs.fns
 const plain = value => JSON.parse(JSON.stringify(value))
 function vueOptions(path, mocks = {}) {
   const code = file(path).match(/<script>([\s\S]+?)<\/script>/)[1]
@@ -19,11 +19,13 @@ function vueOptions(path, mocks = {}) {
   return context.options
 }
 function mountPicker(props = {}) {
-  const icons = Object.fromEntries('Activity Archive BookOpen Bot CalendarClock Clipboard Code2 FileCode FolderOpen History KeyRound Monitor MonitorPlay Search Settings2 Terminal Wrench Zap ScrollText Plus Rocket Play ShieldCheck Close'.split(' ').map(k => [k, {}]))
+  const source = file('../src/components/ToolboxDialog.vue').match(/import \{([\s\S]*?)\} from '@lucide\/vue'/)[1]
+  const icons = Object.fromEntries(source.split(',').map(k => [k.trim(), {}]))
+  Object.assign(icons, { Close: {}, TOOLBOX_SHORTCUT_ICONS, isScriptSupportedOnPlatform, isQuickActionSupportedOnPlatform })
   const options = vueOptions('../src/components/ToolboxDialog.vue', icons)
   const events = []
   const instance = Object.assign({}, options.data(), options.methods, {
-    actions: [], shortcuts: [], scripts: [], quickActions: [], pinLoading: false,
+    actions: [], shortcuts: [], scripts: [], quickActions: [], currentPlatform: 'linux', pinLoading: false,
     $emit(...args) { events.push(args) }, $nextTick(fn) { fn() }, $refs: {}, ...props,
   })
   Object.defineProperty(instance, 'pickerResources', { get() { return options.computed.pickerResources.call(instance) } })
@@ -115,11 +117,12 @@ test('Toolbar launch for pinned Script or Quick Action invokes the existing App 
     TOOLBAR_ACTION_CATALOG: [], TOOLBAR_ACTION_OPTIONS: {},
     cloneToolbarPreferences: x => x,
     normalizeToolbarPreferences: x => x,
+    normalizeToolboxPlatform, isScriptSupportedOnPlatform, isQuickActionSupportedOnPlatform,
     listQuickActions: async () => ({ items: [{ platform: 'common', alias: 'start', in_current_scope: true, parameters: [{ name: 'host' }] }] }),
   })
   const events = []
   const item = Object.assign({}, options.data(), options.methods, {
-    selectedId: 'client-1', currentConnectionOffline: false, toolboxVisible: true,
+    selectedId: 'client-1', currentConnectionOffline: false, toolboxVisible: true, toolboxCurrentPlatform: 'linux', toolboxScripts: [{script_name: 'ops/deploy'}],
     $emit(...args) { events.push(args) },
   })
   Object.defineProperty(item, 'deviceActionDisabled', { get() { return options.computed.deviceActionDisabled.call(item) } })
@@ -153,11 +156,12 @@ test('switching devices while a Quick Action lookup is pending does not dispatch
     DEFAULT_TOOLBAR_PREFERENCES: plain(normalizeToolbarPreferences({})),
     TOOLBAR_ACTION_CATALOG: [], TOOLBAR_ACTION_OPTIONS: {},
     cloneToolbarPreferences: x => x, normalizeToolbarPreferences: x => x,
+    normalizeToolboxPlatform, isScriptSupportedOnPlatform, isQuickActionSupportedOnPlatform,
     listQuickActions: () => new Promise(resolve => { resolveList = resolve }),
   })
   const events = []
   const item = Object.assign({}, options.data(), options.methods, {
-    selectedId: 'first-client', currentConnectionOffline: false, toolboxVisible: true,
+    selectedId: 'first-client', currentConnectionOffline: false, toolboxVisible: true, toolboxCurrentPlatform: 'linux',
     $emit(...args) { events.push(args) },
   })
   Object.defineProperty(item, 'deviceActionDisabled', { get() { return options.computed.deviceActionDisabled.call(item) } })
@@ -167,4 +171,88 @@ test('switching devices while a Quick Action lookup is pending does not dispatch
   await pending
   assert.deepEqual(events, [])
   assert.equal(item.toolboxVisible, true)
+})
+
+
+test('new labels survive normalization, remain separate from script identity, and expanded icon set is shared', () => {
+  const result = normalizeToolbarPreferences({ toolbox_shortcuts: [
+    { kind: 'quick_action', platform: 'mac', alias: 'long_alias_name', icon: 'heart', label: '  My Deploy  ' },
+    { kind: 'script', script_name: 'ops/cleanup', icon: 'git-branch', label: ' Cleanup ' },
+  ] })
+  assert.deepEqual(plain(result.toolbox_shortcuts), [
+    { kind: 'quick_action', platform: 'mac', alias: 'long_alias_name', icon: 'heart', label: 'My Deploy' },
+    { kind: 'script', script_name: 'ops/cleanup', icon: 'git-branch', label: 'Cleanup' },
+  ])
+  assert.ok(TOOLBOX_SHORTCUT_ICONS.length >= 65)
+  assert.equal(new Set(TOOLBOX_SHORTCUT_ICONS).size, TOOLBOX_SHORTCUT_ICONS.length)
+})
+
+test('Script compatibility uses metadata platforms; Quick Actions honor their platform identity', () => {
+  assert.equal(normalizeToolboxPlatform('Darwin'), 'mac')
+  assert.equal(normalizeToolboxPlatform('Windows'), 'win')
+  assert.equal(isScriptSupportedOnPlatform({ metadata: { platforms: ['linux'] } }, 'win'), false)
+  assert.equal(isScriptSupportedOnPlatform({ metadata: { platforms: ['mac'] } }, 'mac'), true)
+  assert.equal(isScriptSupportedOnPlatform({ metadata: {} }, 'mac'), true)
+  assert.equal(isScriptSupportedOnPlatform({ metadata: { platforms: ['win'] } }, ''), false)
+  assert.equal(isQuickActionSupportedOnPlatform('common', 'mac'), true)
+  assert.equal(isQuickActionSupportedOnPlatform('linux', 'mac'), false)
+})
+
+test('Add picker shows only compatible resources and custom label is emitted', () => {
+  const app = mountPicker({
+    scripts: [
+      {script_name: 'mac/test', metadata: {platforms: ['mac']}},
+      {script_name: 'linux/test', metadata: {platforms: ['linux']}},
+      {script_name: 'all/test', metadata: {platforms: []}},
+    ],
+    quickActions: [
+      {platform:'mac', alias:'mac-only', in_current_scope:false},
+      {platform:'linux', alias:'linux-only', in_current_scope:true},
+      {platform:'common', alias:'all', in_current_scope:true},
+    ],
+  })
+  app.instance.currentPlatform = 'mac'
+  assert.deepEqual(plain(app.instance.pickerResources.map(it => it.key)), ['mac/test', 'all/test'])
+  app.instance.shortcutKind = 'quick_action'
+  assert.deepEqual(plain(app.instance.pickerResources.map(it => it.key)), [JSON.stringify(['common','all'])])
+  app.instance.shortcutKind = 'script'
+  app.instance.shortcutResource = 'mac/test'
+  app.instance.shortcutLabel = ' My Check '
+  app.instance.shortcutIcon = 'heart'
+  app.instance.addShortcut()
+  assert.deepEqual(plain(app.events[0]), ['add-pin', {kind:'script', script_name:'mac/test', icon:'heart', label:'My Check'}])
+})
+
+test('Toolbar excludes platform-mismatched pins but preserves missing same-platform pins for Unpin', () => {
+  const options = vueOptions('../src/components/TerminalToolbar.vue', {
+    ElMessage: {warning(){},error(){}}, ElMessageBox:{}, ToolboxDialog:{},
+    DEFAULT_TOOLBAR_PREFERENCES: plain(normalizeToolbarPreferences({})),
+    TOOLBAR_ACTION_CATALOG:[], TOOLBAR_ACTION_OPTIONS:{},
+    cloneToolbarPreferences: x => x, normalizeToolbarPreferences: x => x,
+    normalizeToolboxPlatform, isScriptSupportedOnPlatform, isQuickActionSupportedOnPlatform,
+  })
+  const inst = Object.assign({}, options.data(), options.methods, {
+    currentConnectionOffline: false, selectedId:'c1', toolboxCurrentPlatform:'mac', toolboxPinsLoaded:true,
+    toolbarPreferences: { toolbar:[], more:[], toolbox_shortcuts:[
+      {kind:'script',script_name:'win/tool',icon:'rocket'},
+      {kind:'script',script_name:'deleted',icon:'heart',label:'Missing Tool'},
+      {kind:'quick_action',platform:'win',alias:'no',icon:'rocket'},
+      {kind:'quick_action',platform:'common',alias:'gone',icon:'star',label:'Deleted Alias'},
+    ]},
+    toolboxScripts:[{script_name:'win/tool',metadata:{platforms:['win']}}],
+    toolboxQuickActions:[],
+  })
+  Object.defineProperty(inst, 'deviceActionDisabled', { get() { return options.computed.deviceActionDisabled.call(inst) } })
+  assert.deepEqual(plain(options.computed.toolboxActions.call(inst).map(x=>x.label)), ['Missing Tool','Deleted Alias'])
+  assert.ok(options.computed.toolboxActions.call(inst).every(x=>x.disabled && x.unavailable && x.shortcut))
+  inst.toolboxPinsLoaded = false
+  assert.ok(options.computed.toolboxActions.call(inst).every(x=>x.disabled && !x.unavailable), 'loading or offline must not be mislabeled as a deleted resource')
+})
+
+test('both Toolbox dialogs use fixed height with internal scroll', () => {
+  const vue = file('../src/components/ToolboxDialog.vue')
+  assert.match(vue,/\.toolbox-dialog\.el-dialog \{[^}]*height: min\(78vh/)
+  assert.match(vue,/\.toolbox-list \{[^}]*overflow-y: auto/)
+  assert.match(vue,/\.toolbox-add-dialog\.el-dialog \{[^}]*height: min\(72vh/)
+  assert.match(vue,/\.toolbox-add-dialog \.el-dialog__body \{[^}]*overflow-y: auto/)
 })

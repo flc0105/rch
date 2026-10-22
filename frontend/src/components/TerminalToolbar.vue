@@ -227,6 +227,7 @@
       :scripts="toolboxScripts"
       :quick-actions="toolboxQuickActions"
       :pin-loading="toolboxPinsLoading || toolboxPinsSaving"
+      :current-platform="toolboxCurrentPlatform"
       @launch="launchToolboxAction"
       @load-pin-options="loadToolboxPinOptions"
       @add-pin="addToolboxPin"
@@ -249,6 +250,7 @@ import {
   TOOLBAR_ACTION_OPTIONS,
   cloneToolbarPreferences,
   normalizeToolbarPreferences,
+  normalizeToolboxPlatform, isScriptSupportedOnPlatform, isQuickActionSupportedOnPlatform,
 } from '../data/toolbarPreferences.js'
 
 export default {
@@ -315,7 +317,7 @@ export default {
       quickActionsLoading: false,
       pinnedQuickActions: [],
       toolboxVisible: false,
-      toolboxScripts: [], toolboxQuickActions: [], toolboxPinsLoading: false, toolboxPinLoadSerial: 0, toolboxPinsSaving: false,
+      toolboxScripts: [], toolboxQuickActions: [], toolboxPinsLoading: false, toolboxPinsLoaded: false, toolboxPinLoadSerial: 0, toolboxPinsSaving: false,
     }
   },
 
@@ -330,6 +332,15 @@ export default {
 
       if (username && hostname) return `${username}@${hostname}`
       return username || hostname || 'Interactive Shell'
+    },
+    toolboxCurrentPlatform() {
+      const conn = this.currentConnection || {}
+      const candidates = [conn.os_alias, conn.os_type, conn.platform, conn.system, conn.os, conn.os_name]
+      for (const candidate of candidates) {
+        const platform = normalizeToolboxPlatform(candidate)
+        if (['mac', 'win', 'linux', 'ios'].includes(platform)) return platform
+      }
+      return ''
     },
     deviceActionDisabled() {
       return !this.selectedId || this.currentConnectionOffline
@@ -348,16 +359,21 @@ export default {
         disabled: this.isActionDisabled(action.id),
         menuOptions: this.actionOptions(action.id),
       }))
-      const shortcuts = (this.toolbarPreferences.toolbox_shortcuts || []).map((pin, index) => {
+      const shortcuts = (this.toolbarPreferences.toolbox_shortcuts || []).flatMap((pin, index) => {
+        if (pin.kind === 'quick_action' && !isQuickActionSupportedOnPlatform(pin.platform, this.toolboxCurrentPlatform)) return []
         const resource = pin.kind === 'script'
           ? this.toolboxScripts.find(item => item.script_name === pin.script_name)
           : this.toolboxQuickActions.find(item => item.platform === pin.platform && item.alias === pin.alias && item.in_current_scope === true)
-        return {
-          id: `shortcut:${index}`, label: resource?.display_name || resource?.alias || pin.script_name || pin.alias,
-          icon: pin.icon, shortcut: pin, disabled: this.deviceActionDisabled ||
-            ((this.toolboxScripts.length || this.toolboxQuickActions.length) && !resource),
+        // Missing resources remain visible (unavailable) so users can Unpin them.
+        if (pin.kind === 'script' && resource && !isScriptSupportedOnPlatform(resource, this.toolboxCurrentPlatform)) return []
+        return [{
+          id: `shortcut:${index}`,
+          label: pin.label || resource?.display_name || resource?.alias || pin.script_name || pin.alias,
+          icon: pin.icon, shortcut: pin,
+          disabled: this.deviceActionDisabled || !this.toolboxPinsLoaded || !resource,
+          unavailable: this.toolboxPinsLoaded && !resource,
           menuOptions: [],
-        }
+        }]
       })
       return [...base, ...shortcuts]
     },
@@ -370,6 +386,7 @@ export default {
       this.toolboxQuickActions = []
       this.toolboxPinLoadSerial++
       this.toolboxPinsLoading = false
+      this.toolboxPinsLoaded = false
     },
   },
 
@@ -540,11 +557,15 @@ export default {
       if (!this.selectedId || this.currentConnectionOffline) {
         this.toolboxScripts = []
         this.toolboxQuickActions = []
+        this.toolboxPinsLoaded = false
         return
       }
       const clientId = this.selectedId
       const serial = ++this.toolboxPinLoadSerial
       this.toolboxPinsLoading = true
+      this.toolboxPinsLoaded = false
+      this.toolboxScripts = []
+      this.toolboxQuickActions = []
       try {
         const [scripts, actions] = await Promise.all([
           fetch('/api/scripts/catalog').then(async res => {
@@ -557,6 +578,7 @@ export default {
         if (clientId !== this.selectedId || serial !== this.toolboxPinLoadSerial) return
         this.toolboxScripts = Array.isArray(scripts) ? scripts : []
         this.toolboxQuickActions = Array.isArray(actions) ? actions : []
+        this.toolboxPinsLoaded = true
       } catch (e) {
         if (clientId === this.selectedId && serial === this.toolboxPinLoadSerial) ElMessage.warning(e.message || 'Failed to load Toolbox shortcuts')
       } finally {
@@ -587,16 +609,17 @@ export default {
     async launchToolboxPin(pin) {
       if (!this.toolboxVisible || this.deviceActionDisabled) return
       if (pin.kind === 'script') {
+        if (!this.toolboxScripts.some(item => item.script_name === pin.script_name && isScriptSupportedOnPlatform(item, this.toolboxCurrentPlatform))) return
         this.toolboxVisible = false
         this.$emit('run-toolbox-script', pin.script_name)
         return
       }
-      if (pin.kind !== 'quick_action') return
+      if (pin.kind !== 'quick_action' || !isQuickActionSupportedOnPlatform(pin.platform, this.toolboxCurrentPlatform)) return
       const clientId = this.selectedId
       try {
         const data = await listQuickActions(clientId)
         if (clientId !== this.selectedId || !this.toolboxVisible) return
-        const item = (data.items || []).find(row => row.platform === pin.platform && row.alias === pin.alias && row.in_current_scope === true)
+        const item = (data.items || []).find(row => row.platform === pin.platform && row.alias === pin.alias && row.in_current_scope === true && isQuickActionSupportedOnPlatform(row.platform, this.toolboxCurrentPlatform))
         if (!item) { ElMessage.warning('Quick Action is unavailable'); return }
         this.toolboxVisible = false
         this.$emit('run-quick-action', item)
