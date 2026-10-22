@@ -14,7 +14,7 @@ function readOptions(path, globals = {}) {
   const iconImports = path.includes('ToolboxDialog.vue')
     ? (script.match(/import \{([\s\S]*?)\} from ['"]@lucide\/vue['"]/)?.[1] || '').split(',').map(name => name.trim()).filter(Boolean)
     : []
-  const context = { ...Object.fromEntries(iconImports.map(name => [name, {}])), ...globals,
+  const context = { ...Object.fromEntries(iconImports.map(name => [name, {}])), IconPickerDialog: {}, ...globals,
     TOOLBOX_SHORTCUT_ICONS: [], isScriptSupportedOnPlatform: () => true, isQuickActionSupportedOnPlatform: () => true }
   vm.runInNewContext(js, context, { timeout: 1000 })
   return { options: context.options, vue }
@@ -97,34 +97,30 @@ test('Toolbox launches tools immediately without waiting for the close animation
 
   app.instance.openToolbox()
   app.instance.launchToolboxAction('documents')
-  assert.equal(app.instance.toolboxVisible, false)
-  assert.deepEqual(app.events, ['open-documents'], 'tool launches synchronously without a closed event')
+  assert.equal(app.instance.toolboxVisible, true)
+  assert.deepEqual(app.events, ['open-documents'], 'tool launches immediately while Toolbox remains open')
 
-  // A rapid second click during closing must not open a second dialog.
-  app.instance.launchToolboxAction('processes')
-  assert.deepEqual(app.events, ['open-documents'])
-
-  app.instance.openToolbox()
+  // The Toolbox remains visible and can launch another tool after the target dialog closes.
   app.instance.launchToolboxAction('processes')
   assert.deepEqual(app.events, ['open-documents', 'open-processes'])
   app.instance.openToolbox()
   app.instance.launchToolboxAction('settings')
   assert.equal(app.events.at(-1), 'open-settings')
-  assert.equal(app.instance.toolboxVisible, false)
+  assert.equal(app.instance.toolboxVisible, true)
 })
 
-test('Toolbox closes its own window before synchronously dispatching the target tool', () => {
+test('Toolbox remains mounted underneath the launched tool', () => {
   const app = mountToolbar()
-  let closedAtDispatch = false
+  let openAtDispatch = false
   app.instance.$emit = event => {
     if (event === 'open-screen-view') {
-      closedAtDispatch = !app.instance.toolboxVisible
+      openAtDispatch = app.instance.toolboxVisible
     }
     app.events.push(event)
   }
   app.instance.openToolbox()
   app.instance.launchToolboxAction('screen-view')
-  assert.equal(closedAtDispatch, true)
+  assert.equal(openAtDispatch, true)
   assert.deepEqual(app.events, ['open-screen-view'])
 })
 
@@ -190,7 +186,7 @@ test('Toolbar and Toolbox share Screen View and Clipboard options without openin
   assert.deepEqual(app.events, ['open-screen-view-tab'])
   app.instance.openToolbox()
   app.instance.launchToolboxAction('screen-view', 'new-tab')
-  assert.equal(app.instance.toolboxVisible, false)
+  assert.equal(app.instance.toolboxVisible, true)
   assert.deepEqual(app.events, ['open-screen-view-tab', 'open-screen-view-tab'])
   app.instance.openToolbox()
   app.instance.launchToolboxAction('clipboard', 'send')

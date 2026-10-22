@@ -21,7 +21,7 @@ function vueOptions(path, mocks = {}) {
 function mountPicker(props = {}) {
   const source = file('../src/components/ToolboxDialog.vue').match(/import \{([\s\S]*?)\} from '@lucide\/vue'/)[1]
   const icons = Object.fromEntries(source.split(',').map(k => [k.trim(), {}]))
-  Object.assign(icons, { Close: {}, TOOLBOX_SHORTCUT_ICONS, isScriptSupportedOnPlatform, isQuickActionSupportedOnPlatform })
+  Object.assign(icons, { Close: {}, IconPickerDialog: {}, TOOLBOX_SHORTCUT_ICONS, isScriptSupportedOnPlatform, isQuickActionSupportedOnPlatform })
   const options = vueOptions('../src/components/ToolboxDialog.vue', icons)
   const events = []
   const instance = Object.assign({}, options.data(), options.methods, {
@@ -96,7 +96,7 @@ test('Script and Quick Action invoke original Run interfaces with no direct comm
   assert.match(app, /openRunForScript\(scriptName\)/)
   assert.match(library, /async openRunForScript\(scriptName\)/)
   assert.match(library, /this\.openScriptRunDialog\(item\)/)
-  assert.match(quick, /runPinnedAction\(row\)[\s\S]*?this\.requestRun\(row, 'dialog', \{ allowTerminal: false \}\)/)
+  assert.match(quick, /runPinnedAction\(row, presentation = 'dialog'\)/)
   assert.match(toolbar, /this\.\$emit\('run-quick-action', item\)/)
   assert.match(toolbar, /this\.\$emit\('run-toolbox-script', pin\.script_name\)/)
   assert.match(file('../src/components/ToolboxDialog.vue'), /aria-label="Add shortcut"/)
@@ -128,10 +128,9 @@ test('Toolbar launch for pinned Script or Quick Action invokes the existing App 
   Object.defineProperty(item, 'deviceActionDisabled', { get() { return options.computed.deviceActionDisabled.call(item) } })
   await item.launchToolboxPin({ kind: 'script', script_name: 'ops/deploy', icon: 'rocket' })
   assert.deepEqual(plain(events), [['run-toolbox-script', 'ops/deploy']])
-  assert.equal(item.toolboxVisible, false)
-  item.toolboxVisible = true
+  assert.equal(item.toolboxVisible, true)
   await item.launchToolboxPin({ kind: 'quick_action', platform: 'common', alias: 'start', icon: 'zap' })
-  assert.equal(item.toolboxVisible, false)
+  assert.equal(item.toolboxVisible, true)
   assert.equal(events.length, 2)
   assert.equal(events[1][0], 'run-quick-action')
   assert.deepEqual(plain(events[1][1].parameters), [{ name: 'host' }])
@@ -212,7 +211,7 @@ test('Add picker shows only compatible resources and custom label is emitted', (
     ],
   })
   app.instance.currentPlatform = 'mac'
-  assert.deepEqual(plain(app.instance.pickerResources.map(it => it.key)), ['mac/test', 'all/test'])
+  assert.deepEqual(plain(app.instance.pickerResources.map(it => it.key)), ['all/test', 'mac/test'])
   app.instance.shortcutKind = 'quick_action'
   assert.deepEqual(plain(app.instance.pickerResources.map(it => it.key)), [JSON.stringify(['common','all'])])
   app.instance.shortcutKind = 'script'
@@ -251,8 +250,67 @@ test('Toolbar excludes platform-mismatched pins but preserves missing same-platf
 
 test('both Toolbox dialogs use fixed height with internal scroll', () => {
   const vue = file('../src/components/ToolboxDialog.vue')
-  assert.match(vue,/\.toolbox-dialog\.el-dialog \{[^}]*height: min\(78vh/)
+  assert.match(vue,/\.toolbox-dialog\.el-dialog \{[^}]*height: min\(70vh/)
   assert.match(vue,/\.toolbox-list \{[^}]*overflow-y: auto/)
-  assert.match(vue,/\.toolbox-add-dialog\.el-dialog \{[^}]*height: min\(72vh/)
+  assert.match(vue,/\.toolbox-add-dialog\.el-dialog \{[^}]*height: min\(58vh/)
   assert.match(vue,/\.toolbox-add-dialog \.el-dialog__body \{[^}]*overflow-y: auto/)
+})
+
+
+test('reusable IconPickerDialog supports fuzzy name search and selecting an icon', () => {
+  const picker = file('../src/components/IconPickerDialog.vue')
+  assert.match(picker, /name: 'IconPickerDialog'/)
+  assert.match(picker, /aria-label="Search icon names"/)
+  assert.match(picker, /overflow-y: auto/)
+  const options = vueOptions('../src/components/IconPickerDialog.vue')
+  const events = []
+  const inst = Object.assign({}, options.data(), options.methods, {
+    icons: ['file-code', 'git-branch', 'cloud-upload', 'cloud-download'],
+    iconComponents: { 'file-code': {}, 'git-branch': {}, 'cloud-upload': {}, 'cloud-download': {} },
+    modelValue: 'file-code',
+    $emit(...args) { events.push(args) },
+  })
+  inst.search = 'CLOUD uP'
+  assert.deepEqual(plain(options.computed.filteredIcons.call(inst)), ['cloud-upload'])
+  inst.search = 'git_br'
+  assert.deepEqual(plain(options.computed.filteredIcons.call(inst)), ['git-branch'])
+  inst.choose('cloud-upload')
+  assert.deepEqual(plain(events), [['select', 'cloud-upload'], ['update:visible', false]])
+  inst.choose('invalid')
+  assert.equal(events.length, 2)
+  inst.search = 'stale'
+  options.watch.visible.call(inst, true)
+  assert.equal(inst.search, '')
+  const toolbox = file('../src/components/ToolboxDialog.vue')
+  assert.match(toolbox, /<IconPickerDialog/)
+  assert.doesNotMatch(toolbox, /class="toolbox-icon-picker"/)
+  assert.match(toolbox, /toolbox-shortcut-type :deep\(\.el-radio-button:first-child/)
+})
+
+test('Add picker orders Script and Quick Action resources by visible name A-Z', () => {
+  const app = mountPicker({
+    scripts: [{ script_name: 'z', display_name: 'Zulu' }, { script_name: 'b', display_name: 'alpha' }, { script_name: 'c', display_name: 'Beta' }],
+    quickActions: [
+      { platform: 'common', alias: 'zoo', in_current_scope: true },
+      { platform: 'common', alias: 'Alpha', in_current_scope: true },
+      { platform: 'common', alias: 'beta', in_current_scope: true },
+    ],
+  })
+  assert.deepEqual(plain(app.instance.pickerResources.map(x => x.label)), ['alpha', 'Beta', 'Zulu'])
+  app.instance.shortcutKind = 'quick_action'
+  assert.deepEqual(plain(app.instance.pickerResources.map(x => x.label)), ['Alpha · common', 'beta · common', 'zoo · common'])
+})
+
+test('right-click Quick Action can execute in Terminal using original Quick Action runner', async () => {
+  const app = mountPicker()
+  app.instance.handleContextCommand({ shortcut: { kind: 'quick_action', platform: 'common', alias: 'build' }, disabled: false }, 'terminal')
+  assert.deepEqual(plain(app.events), [['launch-pin', { kind: 'quick_action', platform: 'common', alias: 'build' }, 'terminal']])
+  const toolbar = file('../src/components/TerminalToolbar.vue')
+  const quick = file('../src/components/QuickActionsDialog.vue')
+  const root = file('../src/App.vue')
+  assert.match(toolbar, /run-quick-action-terminal/)
+  assert.match(root, /@run-quick-action-terminal="runPinnedQuickActionInTerminal"/)
+  assert.match(root, /runPinnedAction\(item, 'terminal'\)/)
+  assert.match(quick, /runPinnedAction\(row, presentation = 'dialog'\)/)
+  assert.match(quick, /this\.requestRun\(row, presentation/)
 })

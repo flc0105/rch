@@ -304,6 +304,7 @@ export default {
     'open-one-liners',
     'open-quick-actions',
     'run-quick-action',
+    'run-quick-action-terminal',
     'run-toolbox-script',
     'open-settings',
     'clear',
@@ -606,11 +607,10 @@ export default {
           : item.platform === pin.platform && item.alias === pin.alias)))
       void this.saveToolboxPins(pins)
     },
-    async launchToolboxPin(pin) {
+    async launchToolboxPin(pin, presentation = 'dialog') {
       if (!this.toolboxVisible || this.deviceActionDisabled) return
       if (pin.kind === 'script') {
         if (!this.toolboxScripts.some(item => item.script_name === pin.script_name && isScriptSupportedOnPlatform(item, this.toolboxCurrentPlatform))) return
-        this.toolboxVisible = false
         this.$emit('run-toolbox-script', pin.script_name)
         return
       }
@@ -621,8 +621,7 @@ export default {
         if (clientId !== this.selectedId || !this.toolboxVisible) return
         const item = (data.items || []).find(row => row.platform === pin.platform && row.alias === pin.alias && row.in_current_scope === true && isQuickActionSupportedOnPlatform(row.platform, this.toolboxCurrentPlatform))
         if (!item) { ElMessage.warning('Quick Action is unavailable'); return }
-        this.toolboxVisible = false
-        this.$emit('run-quick-action', item)
+        this.$emit(presentation === 'terminal' ? 'run-quick-action-terminal' : 'run-quick-action', item)
       } catch (e) { ElMessage.warning(e.message || 'Failed to load Quick Action') }
     },
     launchToolboxAction(actionId, option = 'open') {
@@ -631,8 +630,7 @@ export default {
         !TOOLBAR_ACTION_CATALOG.some((action) => action.id === actionId)
         || this.isActionDisabled(actionId)
       )) return
-      // Open the target immediately; Toolbox may finish its exit animation underneath it.
-      this.toolboxVisible = false
+      // Keep the Toolbox open beneath the launched dialog.
       if (actionId === 'settings') {
         this.$emit('open-settings')
       } else if (option === 'open') {

@@ -647,12 +647,12 @@ export default {
     handleRunCommand(row, command) {
       if (command === 'terminal') this.requestRun(row, 'terminal')
     },
-    runPinnedAction(row) {
+    runPinnedAction(row, presentation = 'dialog') {
       if (!row?.platform || !row?.alias) {
         ElMessage.warning('Quick Action is unavailable')
         return
       }
-      this.requestRun(row, 'dialog', { allowTerminal: false })
+      this.requestRun(row, presentation, { allowTerminal: presentation === 'terminal' })
     },
     requestRun(row, presentation = 'dialog', options = {}) {
       const allowTerminal = options.allowTerminal !== false

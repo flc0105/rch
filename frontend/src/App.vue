@@ -140,6 +140,7 @@
                   @open-one-liners="openOneLinersDialog"
                   @open-quick-actions="openQuickActionsDialog"
                   @run-quick-action="runPinnedQuickAction"
+                  @run-quick-action-terminal="runPinnedQuickActionInTerminal"
                   @run-toolbox-script="runToolboxScript"
                   @open-settings="openSettingsDialog"
                   @clear="clearOutput"
@@ -727,6 +728,10 @@ export default {
 
     runPinnedQuickAction(item) {
       return this.$refs.quickActionsDialogRef?.runPinnedAction(item)
+    },
+
+    runPinnedQuickActionInTerminal(item) {
+      return this.$refs.quickActionsDialogRef?.runPinnedAction(item, 'terminal')
     },
 
     // Both Run Again and Result Action dialogs subscribe to the existing task stream.

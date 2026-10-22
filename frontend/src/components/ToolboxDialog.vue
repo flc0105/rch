@@ -92,6 +92,10 @@
     >
       <button type="button" role="menuitem" class="toolbox-context-menu-item" :disabled="contextMenuAction.disabled" @click="handleContextCommand(contextMenuAction, 'open')">Open</button>
       <button
+        v-if="contextMenuAction.shortcut?.kind === 'quick_action' && !contextMenuAction.disabled"
+        type="button" role="menuitem" class="toolbox-context-menu-item"
+        @click="handleContextCommand(contextMenuAction, 'terminal')">Run in Terminal</button>
+      <button
         v-if="contextMenuAction.shortcut"
         type="button" role="menuitem" class="toolbox-context-menu-item"
         @click="handleContextCommand(contextMenuAction, 'unpin')">Unpin</button>
@@ -109,7 +113,7 @@
   <el-dialog v-model="shortcutPickerVisible" title="Add to Toolbox" width="520px" class="toolbox-add-dialog" append-to-body>
     <el-form label-position="top">
       <el-form-item label="Type">
-        <el-radio-group v-model="shortcutKind"><el-radio-button value="script">Script</el-radio-button><el-radio-button value="quick_action">Quick Action</el-radio-button></el-radio-group>
+        <el-radio-group v-model="shortcutKind" class="toolbox-shortcut-type"><el-radio-button value="script">Script</el-radio-button><el-radio-button value="quick_action">Quick Action</el-radio-button></el-radio-group>
       </el-form-item>
       <el-form-item label="Resource">
         <el-select v-model="shortcutResource" filterable placeholder="Select a resource" style="width: 100%" :loading="pinLoading">
@@ -120,13 +124,11 @@
         <el-input v-model="shortcutLabel" maxlength="64" show-word-limit placeholder="Optional custom name" />
       </el-form-item>
       <el-form-item label="Icon">
-        <div class="toolbox-icon-picker">
-          <button v-for="name in shortcutIconChoices" :key="name" type="button"
-            class="toolbox-icon-choice" :class="{ 'is-selected': shortcutIcon === name }"
-            :title="name" :aria-label="name" @click="shortcutIcon = name">
-            <component :is="iconComponents[name]" :size="21" />
-          </button>
-        </div>
+        <button type="button" class="toolbox-icon-select" @click="iconPickerVisible = true">
+          <component :is="iconComponents[shortcutIcon]" :size="21" aria-hidden="true" />
+          <span>{{ shortcutIcon }}</span>
+          <span class="toolbox-icon-select-change">Choose icon</span>
+        </button>
       </el-form-item>
     </el-form>
     <template #footer>
@@ -134,6 +136,13 @@
       <el-button type="primary" :disabled="!shortcutResource || pinLoading" @click="addShortcut">Add</el-button>
     </template>
   </el-dialog>
+  <IconPickerDialog
+    v-model:visible="iconPickerVisible"
+    :model-value="shortcutIcon"
+    :icons="shortcutIconChoices"
+    :icon-components="iconComponents"
+    @select="selectShortcutIcon"
+  />
 </template>
 
 <script>
@@ -152,6 +161,7 @@ import {
   Power, Plug, Lightbulb, Sun, Moon,
 } from '@lucide/vue'
 import { Close } from '@element-plus/icons-vue'
+import IconPickerDialog from './IconPickerDialog.vue'
 import { TOOLBOX_SHORTCUT_ICONS, isScriptSupportedOnPlatform, isQuickActionSupportedOnPlatform } from '../data/toolbarPreferences.js'
 
 // Icons are presentation only; tool identity and launch behavior come from the shared catalog.
@@ -195,7 +205,7 @@ const icons = Object.freeze({
 
 export default {
   name: 'ToolboxDialog',
-  components: { Search, Settings2, Close, Plus },
+  components: { Search, Settings2, Close, Plus, IconPickerDialog },
   props: {
     visible: { type: Boolean, default: false },
     actions: { type: Array, default: () => [] },
@@ -208,7 +218,7 @@ export default {
   emits: ['update:visible', 'launch', 'load-pin-options', 'add-pin', 'remove-pin', 'launch-pin'],
   data() {
     return { query: '', contextMenuAction: null, contextMenuX: 0, contextMenuY: 0, contextMenuSerial: 0,
-      shortcutPickerVisible: false, shortcutKind: 'script', shortcutResource: '', shortcutIcon: 'file-code', shortcutLabel: '' }
+      shortcutPickerVisible: false, iconPickerVisible: false, shortcutKind: 'script', shortcutResource: '', shortcutIcon: 'file-code', shortcutLabel: '' }
   },
   computed: {
     iconComponents() { return icons },
@@ -224,6 +234,7 @@ export default {
       return items.map(item => ({ ...item, pinned: this.shortcuts.some(pin =>
         pin.kind === item.pin.kind && (isScript ? pin.script_name === item.pin.script_name
           : pin.platform === item.pin.platform && pin.alias === item.pin.alias)) }))
+        .sort((a, b) => a.label.localeCompare(b.label, 'en', { sensitivity: 'base' }) || a.key.localeCompare(b.key))
     },
     filteredActions() {
       const term = this.query.trim().toLocaleLowerCase()
@@ -250,8 +261,12 @@ export default {
       this.shortcutResource = ''
       this.shortcutIcon = 'file-code'
       this.shortcutLabel = ''
+      this.iconPickerVisible = false
       this.shortcutPickerVisible = true
       this.$emit('load-pin-options')
+    },
+    selectShortcutIcon(name) {
+      if (this.shortcutIconChoices.includes(name)) this.shortcutIcon = name
     },
     addShortcut() {
       const choice = this.pickerResources.find(item => item.key === this.shortcutResource && !item.pinned)
@@ -295,7 +310,8 @@ export default {
       if (action.disabled && option !== 'unpin') return
       this.closeContextMenu()
       if (action.shortcut) {
-        this.$emit(option === 'unpin' ? 'remove-pin' : 'launch-pin', action.shortcut)
+        if (option === 'unpin') this.$emit('remove-pin', action.shortcut)
+        else this.$emit('launch-pin', action.shortcut, option === 'terminal' ? 'terminal' : 'dialog')
       } else this.$emit('launch', action.id, option)
     },
   },
@@ -307,6 +323,7 @@ export default {
       if (!isVisible) return
       this.query = ''
       this.shortcutPickerVisible = false
+      this.iconPickerVisible = false
       this.$nextTick(() => this.$refs.searchInput?.focus?.())
     },
   },
@@ -386,9 +403,11 @@ export default {
 .toolbox-icon { display: inline-flex; align-items: center; justify-content: center; width: 60px; height: 60px; max-width: 100%; border: 1px solid var(--el-border-color); border-radius: 18px; color: var(--el-text-color-primary); background: var(--el-fill-color-light); }
 .toolbox-icon-accent { color: var(--el-color-primary); background: var(--el-color-primary-light-9); border-color: var(--el-color-primary-light-7); }
 .toolbox-label { max-width: 100%; overflow-wrap: anywhere; font-size: 12px; font-weight: 500; line-height: 1.25; text-align: center; }
-.toolbox-icon-picker { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 8px; width: 100%; }
-.toolbox-icon-choice { display: grid; place-items: center; min-width: 0; height: 40px; border: 1px solid var(--el-border-color); border-radius: 8px; background: var(--el-fill-color-light); color: var(--el-text-color-primary); cursor: pointer; }
-.toolbox-icon-choice.is-selected { border-color: var(--el-color-primary); color: var(--el-color-primary); background: var(--el-color-primary-light-9); }
+.toolbox-icon-select { display: flex; align-items: center; gap: 12px; width: 100%; min-width: 0; padding: 10px 12px; border: 1px solid var(--el-border-color); border-radius: 8px; background: var(--el-fill-color-light); color: var(--el-text-color-primary); font: inherit; cursor: pointer; }
+.toolbox-icon-select-change { margin-left: auto; color: var(--el-color-primary); font-size: 13px; }
+.toolbox-shortcut-type { padding: 2px; }
+.toolbox-shortcut-type :deep(.el-radio-button:first-child .el-radio-button__inner) { border-left: 1px solid var(--el-border-color); }
+.toolbox-shortcut-type :deep(.el-radio-button:first-child.is-active .el-radio-button__inner) { border-left-color: var(--el-color-primary); }
 .toolbox-item-disabled { opacity: 0.38; cursor: not-allowed; }
 .toolbox-shortcut-unavailable { font-size: 11px; color: var(--el-color-danger); }
 @media (max-width: 780px) { .toolbox-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
@@ -397,14 +416,14 @@ export default {
 </style>
 
 <style>
-.toolbox-dialog.el-dialog { max-width: calc(100vw - 24px); height: min(78vh, calc(100dvh - 24px)); display: flex; flex-direction: column; }
+.toolbox-dialog.el-dialog { max-width: calc(100vw - 24px); height: min(70vh, calc(100dvh - 24px)); display: flex; flex-direction: column; }
 .toolbox-dialog .el-dialog__header { flex: 0 0 auto; }
 .toolbox-dialog .el-dialog__body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 .toolbox-dialog .toolbox-list { flex: 1 1 auto; }
 </style>
 
 <style>
-.toolbox-add-dialog.el-dialog { max-width: calc(100vw - 24px); height: min(72vh, calc(100dvh - 24px)); display: flex; flex-direction: column; }
+.toolbox-add-dialog.el-dialog { max-width: calc(100vw - 24px); height: min(58vh, calc(100dvh - 24px)); display: flex; flex-direction: column; }
 .toolbox-add-dialog .el-dialog__header, .toolbox-add-dialog .el-dialog__footer { flex: 0 0 auto; }
 .toolbox-add-dialog .el-dialog__body { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
 </style>
