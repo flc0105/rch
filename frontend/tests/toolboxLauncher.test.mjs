@@ -191,15 +191,81 @@ test('Toolbar and Toolbox share Screen View and Clipboard options without openin
   assert.deepEqual(app.events.at(-1), 'open-clipboard')
 })
 
-test('Toolbox context menu exposes Open and the identical toolbar options', () => {
-  const { vue, options } = readOptions('../src/components/ToolboxDialog.vue', { Search: {}, Settings2: {}, Close: {}, FolderOpen: {}, Archive: {}, Monitor: {}, FileCode: {}, History: {}, Terminal: {}, MonitorPlay: {}, Clipboard: {}, Wrench: {}, ScrollText: {}, CalendarClock: {}, Bot: {}, Activity: {}, KeyRound: {}, BookOpen: {}, Code2: {}, Zap: {} })
-  assert.match(vue, /trigger="contextmenu"/)
-  assert.match(vue, /<el-dropdown-item command="open">Open<\/el-dropdown-item>/)
+test('Toolbox uses one pointer-anchored context menu and preserves shared toolbar actions', () => {
+  const icons = { Search: {}, Settings2: {}, Close: {}, FolderOpen: {}, Archive: {}, Monitor: {}, FileCode: {}, History: {}, Terminal: {}, MonitorPlay: {}, Clipboard: {}, Wrench: {}, ScrollText: {}, CalendarClock: {}, Bot: {}, Activity: {}, KeyRound: {}, BookOpen: {}, Code2: {}, Zap: {} }
+  const listeners = []
+  const fakeWindow = {
+    innerWidth: 500, innerHeight: 300,
+    addEventListener: (...args) => listeners.push(['add', ...args]),
+    removeEventListener: (...args) => listeners.push(['remove', ...args]),
+  }
+  const fakeDocument = {
+    addEventListener: (...args) => listeners.push(['add', ...args]),
+    removeEventListener: (...args) => listeners.push(['remove', ...args]),
+  }
+  const { vue, options } = readOptions('../src/components/ToolboxDialog.vue', { ...icons, window: fakeWindow, document: fakeDocument })
+  assert.match(vue, /@contextmenu\.prevent\.stop="openContextMenu\(\$event, action\)"/)
+  assert.match(vue, /<teleport to="body">/)
+  assert.match(vue, /class="toolbox-context-menu"/)
+  assert.match(vue, /role="menu"/)
+  assert.match(vue, /handleContextCommand\(contextMenuAction, 'open'\)/)
+  assert.match(vue, /v-for="option in contextMenuAction\.menuOptions \|\| \[\]"/)
+  assert.doesNotMatch(vue, /trigger="contextmenu"|<el-dropdown-item command="open">/, 'no independently-open Element Plus dropdowns')
+  assert.match(vue, /\.toolbox-context-menu \{[\s\S]*?position: fixed;/)
+
   const events = []
-  const handler = options.methods.handleContextCommand
-  handler.call({ $emit: (...args) => events.push(args) }, { id: 'screen-view', disabled: false }, 'new-tab')
-  handler.call({ $emit: (...args) => events.push(args) }, { id: 'clipboard', disabled: true }, 'get')
-  assert.deepEqual(events, [['launch', 'screen-view', 'new-tab']])
+  const inside = {}
+  const instance = Object.assign({}, options.data(), options.methods, {
+    $emit: (...args) => events.push(args),
+    $nextTick: callback => callback(),
+    $refs: { contextMenu: {
+      getBoundingClientRect: () => ({ width: 180, height: 115 }),
+      contains: target => target === inside,
+    } },
+  })
+  const screen = { id: 'screen-view', disabled: false, menuOptions: [{ id: 'new-tab', label: 'Open in New Tab' }] }
+  const clipboard = { id: 'clipboard', disabled: false, menuOptions: [{ id: 'get', label: 'Get' }, { id: 'send', label: 'Send' }] }
+
+  // The menu follows the click, not the icon's bounding rectangle.
+  instance.openContextMenu({ clientX: 99, clientY: 71 }, screen)
+  assert.equal(instance.contextMenuAction.id, 'screen-view')
+  assert.deepEqual([instance.contextMenuX, instance.contextMenuY], [99, 71])
+  // Right-clicking another icon replaces the existing menu. Clamp near viewport edges.
+  instance.openContextMenu({ clientX: 491, clientY: 298 }, clipboard)
+  assert.equal(instance.contextMenuAction.id, 'clipboard')
+  assert.deepEqual([instance.contextMenuX, instance.contextMenuY], [312, 177])
+  instance.onOutsidePointerDown({ target: inside })
+  assert.equal(instance.contextMenuAction.id, 'clipboard', 'clicks inside the menu must not dismiss it')
+  instance.handleContextCommand(clipboard, 'send')
+  assert.equal(instance.contextMenuAction, null)
+  assert.deepEqual(events, [['launch', 'clipboard', 'send']])
+
+  instance.openContextMenu({ clientX: 33, clientY: 44 }, screen)
+  const escape = { key: 'Escape', prevented: false, stopped: false,
+    preventDefault() { this.prevented = true }, stopPropagation() { this.stopped = true } }
+  instance.onGlobalKeydown(escape)
+  assert.equal(instance.contextMenuAction, null)
+  assert.equal(escape.prevented && escape.stopped, true)
+  instance.openContextMenu({ clientX: 55, clientY: 66 }, screen)
+  instance.onOutsidePointerDown({ target: {} })
+  assert.equal(instance.contextMenuAction, null)
+  instance.openContextMenu({ clientX: 55, clientY: 66 }, screen)
+  instance.onViewportScroll({ target: {} })
+  assert.equal(instance.contextMenuAction, null)
+  instance.openContextMenu({ clientX: 55, clientY: 66 }, screen)
+  options.watch.visible.call(instance, false)
+  assert.equal(instance.contextMenuAction, null)
+  const disabled = { id: 'screen-view', disabled: true }
+  instance.openContextMenu({ clientX: 9, clientY: 9 }, disabled)
+  assert.equal(instance.contextMenuAction, null)
+  instance.handleContextCommand(disabled, 'open')
+  assert.equal(events.length, 1, 'disabled entries cannot launch')
+
+  // Only one document-level listener set is installed, and it is cleaned up.
+  options.mounted.call(instance)
+  options.beforeUnmount.call(instance)
+  assert.equal(listeners.filter(entry => entry[0] === 'add').length, 4)
+  assert.equal(listeners.filter(entry => entry[0] === 'remove').length, 4)
   assert.match(source('../src/App.vue'), /@open-screen-view-tab="openScreenViewInNewTab"/)
   assert.match(source('../src/App.vue'), /viewer\.openInNewTab\(\)/)
 })

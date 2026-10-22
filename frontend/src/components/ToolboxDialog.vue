@@ -45,42 +45,55 @@
 
     <div class="toolbox-list">
       <div v-if="filteredActions.length" class="toolbox-grid">
-        <el-dropdown
+        <div
           v-for="action in filteredActions"
           :key="action.id"
-          trigger="contextmenu"
           class="toolbox-grid-entry"
-          :disabled="action.disabled"
-          @command="handleContextCommand(action, $event)"
+          @contextmenu.prevent.stop="openContextMenu($event, action)"
         >
-        <button
-          class="toolbox-item"
-          :class="{ 'toolbox-item-disabled': action.disabled }"
-          type="button"
-          :disabled="action.disabled"
-          :title="action.label"
-          @click="$emit('launch', action.id)"
-        >
-          <span class="toolbox-icon" :class="{ 'toolbox-icon-accent': action.accent }">
-            <component :is="iconComponents[action.icon]" :size="27" :stroke-width="1.75" aria-hidden="true" />
-          </span>
-          <span class="toolbox-label">{{ action.label }}</span>
-        </button>
-        <template #dropdown>
-          <el-dropdown-menu>
-            <el-dropdown-item command="open">Open</el-dropdown-item>
-            <el-dropdown-item
-              v-for="option in action.menuOptions || []"
-              :key="option.id"
-              :command="option.id"
-            >{{ option.label }}</el-dropdown-item>
-          </el-dropdown-menu>
-        </template>
-        </el-dropdown>
+          <button
+            class="toolbox-item"
+            :class="{ 'toolbox-item-disabled': action.disabled }"
+            type="button"
+            :disabled="action.disabled"
+            :title="action.label"
+            @click="$emit('launch', action.id)"
+          >
+            <span class="toolbox-icon" :class="{ 'toolbox-icon-accent': action.accent }">
+              <component :is="iconComponents[action.icon]" :size="27" :stroke-width="1.75" aria-hidden="true" />
+            </span>
+            <span class="toolbox-label">{{ action.label }}</span>
+          </button>
+        </div>
       </div>
       <el-empty v-else description="No tools found" :image-size="72" />
     </div>
   </el-dialog>
+
+  <!-- One context menu for the entire Toolbox: anchor it to the pointer, not the icon. -->
+  <teleport to="body">
+    <div
+      v-if="contextMenuAction"
+      ref="contextMenu"
+      class="toolbox-context-menu"
+      role="menu"
+      :style="{ left: `${contextMenuX}px`, top: `${contextMenuY}px` }"
+      @pointerdown.stop
+      @click.stop
+      @contextmenu.prevent.stop
+      @keydown.esc.stop.prevent="closeContextMenu"
+    >
+      <button type="button" role="menuitem" class="toolbox-context-menu-item" @click="handleContextCommand(contextMenuAction, 'open')">Open</button>
+      <button
+        v-for="option in contextMenuAction.menuOptions || []"
+        :key="option.id"
+        type="button"
+        role="menuitem"
+        class="toolbox-context-menu-item"
+        @click="handleContextCommand(contextMenuAction, option.id)"
+      >{{ option.label }}</button>
+    </div>
+  </teleport>
 </template>
 
 <script>
@@ -121,7 +134,7 @@ export default {
   },
   emits: ['update:visible', 'launch'],
   data() {
-    return { query: '' }
+    return { query: '', contextMenuAction: null, contextMenuX: 0, contextMenuY: 0, contextMenuSerial: 0 }
   },
   computed: {
     iconComponents() { return icons },
@@ -131,14 +144,61 @@ export default {
       return this.actions.filter((action) => action.label.toLocaleLowerCase().includes(term))
     },
   },
+  mounted() {
+    document.addEventListener('pointerdown', this.onOutsidePointerDown, true)
+    document.addEventListener('scroll', this.onViewportScroll, true)
+    window.addEventListener('keydown', this.onGlobalKeydown, true)
+    window.addEventListener('resize', this.closeContextMenu)
+  },
+  beforeUnmount() {
+    document.removeEventListener('pointerdown', this.onOutsidePointerDown, true)
+    document.removeEventListener('scroll', this.onViewportScroll, true)
+    window.removeEventListener('keydown', this.onGlobalKeydown, true)
+    window.removeEventListener('resize', this.closeContextMenu)
+  },
   methods: {
+    openContextMenu(event, action) {
+      if (action.disabled) { this.closeContextMenu(); return }
+      const serial = ++this.contextMenuSerial
+      this.contextMenuAction = action
+      this.contextMenuX = event.clientX
+      this.contextMenuY = event.clientY
+      // Read the actual menu size so the menu stays inside the viewport.
+      this.$nextTick(() => {
+        if (serial !== this.contextMenuSerial) return
+        const rect = this.$refs.contextMenu?.getBoundingClientRect?.()
+        if (!rect) return
+        const margin = 8
+        this.contextMenuX = Math.max(margin, Math.min(event.clientX, window.innerWidth - rect.width - margin))
+        this.contextMenuY = Math.max(margin, Math.min(event.clientY, window.innerHeight - rect.height - margin))
+      })
+    },
+    closeContextMenu() {
+      this.contextMenuSerial++
+      this.contextMenuAction = null
+    },
+    onOutsidePointerDown(event) {
+      if (this.contextMenuAction && !this.$refs.contextMenu?.contains(event.target)) this.closeContextMenu()
+    },
+    onGlobalKeydown(event) {
+      if (!this.contextMenuAction || event.key !== 'Escape') return
+      event.preventDefault()
+      event.stopPropagation()
+      this.closeContextMenu()
+    },
+    onViewportScroll(event) {
+      if (this.contextMenuAction && !this.$refs.contextMenu?.contains(event.target)) this.closeContextMenu()
+    },
     handleContextCommand(action, option) {
       if (action.disabled) return
+      this.closeContextMenu()
       this.$emit('launch', action.id, option)
     },
   },
   watch: {
+    query() { this.closeContextMenu() },
     visible(isVisible) {
+      this.closeContextMenu()
       if (!isVisible) return
       this.query = ''
       this.$nextTick(() => this.$refs.searchInput?.focus?.())
@@ -178,6 +238,42 @@ export default {
 .toolbox-list { overflow-y: auto; max-height: min(62vh, 610px); min-height: 165px; padding: 2px 4px 8px; }
 .toolbox-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px 8px; }
 .toolbox-grid-entry { display: block; min-width: 0; }
+.toolbox-context-menu {
+  position: fixed;
+  z-index: 4000;
+  min-width: 150px;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100dvh - 16px);
+  overflow-y: auto;
+  padding: 5px;
+  border: 1px solid var(--el-border-color-light);
+  border-radius: var(--el-border-radius-base);
+  background: var(--el-bg-color-overlay);
+  box-shadow: var(--el-box-shadow-light);
+}
+.toolbox-context-menu-item {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--el-text-color-regular);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.toolbox-context-menu-item:hover,
+.toolbox-context-menu-item:focus-visible {
+  color: var(--el-color-primary);
+  background: var(--el-fill-color-light);
+  outline: none;
+}
 .toolbox-item { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 9px; min-width: 0; padding: 10px 4px; border: 1px solid transparent; border-radius: 15px; background: transparent; color: var(--el-text-color-primary); font: inherit; cursor: pointer; }
 .toolbox-item:not(:disabled):hover { background: var(--el-fill-color-light); border-color: var(--el-border-color-lighter); }
 .toolbox-item:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: -2px; }

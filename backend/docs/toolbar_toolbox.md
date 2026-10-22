@@ -5,7 +5,7 @@
 - **悬浮 More**：显示原有的工具下拉菜单和 Settings 入口。
 - **点击 More**：打开 Toolbox，按图标查看全部工具。
 
-Toolbox 显示 Toolbar 和 More 中的全部工具，顺序与当前工具栏设置一致。顶部搜索框支持按工具名称筛选；清空搜索后恢复全部工具。点击工具图标会关闭 Toolbox 并打开对应功能；右键图标可选择 Open，带 Toolbar 下拉动作的工具还会显示相同子选项（Clipboard Get/Send、Screen View Open in New Tab，以及已 Pin 的 Quick Actions）。顶部 Settings 按钮打开工具栏设置，Close / ESC 仅关闭 Toolbox。
+Toolbox 显示 Toolbar 和 More 中的全部工具，顺序与当前工具栏设置一致。顶部搜索框支持按工具名称筛选；清空搜索后恢复全部工具。点击工具图标会关闭 Toolbox 并打开对应功能；在图标上右键会在鼠标位置打开唯一的操作菜单（右键其他图标时自动切换；点击菜单外、按 ESC 或滚动会关闭）。菜单提供 Open，带 Toolbar 下拉动作的工具还会显示相同子选项（Clipboard Get/Send、Screen View Open in New Tab，以及已 Pin 的 Quick Actions）。顶部 Settings 按钮打开工具栏设置，Close / ESC 仅关闭 Toolbox。
 
 需要在线设备的工具（Remote Files、PTY、Screen View、Clipboard、Processes、Quick Actions）在未选择可用 Client 时不可操作；Documents、Keychains 等 Server 功能保持各自的可用条件。
 
