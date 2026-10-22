@@ -412,7 +412,7 @@ export default {
       // Script path candidates are already filtered against metadata.platforms on the Server.
       // Do not reinterpret their folder names as platform restrictions here.
       if (!keyword) {
-        emitCandidates(sourceList)
+        emitCandidates(this.sortDefaultCommandCandidates(sourceList))
         return
       }
 
@@ -1365,6 +1365,33 @@ const pinnedHistoryItems = historyItems.filter(item => item && item.is_pinned)
           group: 'common_ops',
         },
       ]
+    },
+
+    sortDefaultCommandCandidates(candidates) {
+      // Sort only the blank-input command list; contextual completion keeps its own ranking.
+      const groupOrder = [
+        'shell', 'execution', 'session', 'system', 'network', 'privilege',
+        'media', 'file', 'automation', 'transfer', 'runtime', 'maintenance',
+        'python', 'acmd', 'common_ops', 'server', 'alias',
+      ]
+      const rank = new Map(groupOrder.map((name, index) => [name, index]))
+      const groupOf = (item) => {
+        const group = String(item?.group || item?.source || '').trim().toLowerCase().replace(/[\s-]+/g, '_')
+        if (group === 'history' || group === 'quick_history' || group === 'pin_command') return 'pin_command'
+        return group
+      }
+      const rankOf = (group) => group === 'pin_command'
+        ? groupOrder.length + 1
+        : (rank.get(group) ?? groupOrder.length)
+      const compare = (a, b) => String(a).localeCompare(String(b), undefined, { sensitivity: 'base' })
+      return [...(Array.isArray(candidates) ? candidates : [])].sort((a, b) => {
+        const leftGroup = groupOf(a)
+        const rightGroup = groupOf(b)
+        return rankOf(leftGroup) - rankOf(rightGroup)
+          || compare(leftGroup, rightGroup)
+          || compare(a?.name || a?.template || a?.value || '', b?.name || b?.template || b?.value || '')
+          || compare(a?.template || a?.value || '', b?.template || b?.value || '')
+      })
     },
 
     buildCandidateGroupLabel(item) {

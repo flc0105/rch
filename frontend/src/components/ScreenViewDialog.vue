@@ -49,6 +49,7 @@
           'screen-view-toolbar-popup-active': standalone && standaloneToolbarPopupOpen,
         }"
       >
+      <div v-if="standalone" class="screen-view-toolbar-trigger" aria-hidden="true"></div>
       <div class="screen-view-toolbar">
         <div class="screen-view-toolbar-left">
           <span class="screen-view-target" :title="targetTitle">{{ targetLabel }}</span>
@@ -290,7 +291,7 @@ export default {
       const hostname = String(connection.hostname || '').trim()
       const machineId = String(connection.machine_id || '').trim()
       if (hostname && machineId) return `${hostname} · ${machineId}`
-      return hostname || machineId || String(this.selectedId || '').trim() || '-'
+      return hostname || machineId || (this.standalone ? 'Screen View' : String(this.selectedId || '').trim() || '-')
     },
 
     frameMetaTitle() {
@@ -359,7 +360,7 @@ export default {
       const hostname = String(connection.hostname || '').trim()
       const machineId = this.shortenMachineId(connection.machine_id)
       if (hostname && machineId) return `${hostname} · ${machineId}`
-      return hostname || machineId || String(this.selectedId || '').trim() || '-'
+      return hostname || machineId || (this.standalone ? 'Screen View' : String(this.selectedId || '').trim() || '-')
     },
 
     async startView() {
@@ -425,6 +426,13 @@ export default {
         ElMessage.warning('Please allow pop-ups to open Screen View in a new tab')
         return
       }
+      // Pass the existing device label to the same-origin new tab without adding it to the URL.
+      const connection = this.currentConnection || {}
+      tab.name = JSON.stringify({
+        screen_view_client: this.targetClientId,
+        hostname: String(connection.hostname || '').trim(),
+        machine_id: String(connection.machine_id || '').trim(),
+      })
       tab.opener = null
       await this.closeRemoteSession(false)
       this.visible = false
@@ -1362,31 +1370,29 @@ export default {
   gap: 0;
 }
 .screen-view-dialog.screen-view-dialog-standalone .screen-view-toolbar-host {
+  display: block;
   position: absolute;
   z-index: 5;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 12px;
-  display: block;
-}
-.screen-view-dialog.screen-view-dialog-standalone .screen-view-toolbar-host::before {
-  content: '';
-  position: absolute;
   top: 2px;
   left: 50%;
-  width: 60px;
-  height: 4px;
+  width: 168px;
+  height: 6px;
   transform: translateX(-50%);
+  pointer-events: none;
+}
+/* Only the visible handle reveals the toolbar, not the full top edge. */
+.screen-view-dialog.screen-view-dialog-standalone .screen-view-toolbar-trigger {
+  width: 100%;
+  height: 100%;
   border-radius: 4px;
   background: rgba(226, 232, 240, 0.6);
-  pointer-events: none;
+  pointer-events: auto;
 }
 .screen-view-dialog.screen-view-dialog-standalone .screen-view-toolbar {
   position: absolute;
-  top: 8px;
-  left: 12px;
-  right: 12px;
+  top: 6px;
+  left: 50%;
+  width: calc(100vw - 24px);
   padding: 8px 12px;
   border-radius: 9px;
   background: rgba(248, 250, 252, 0.93);
@@ -1395,7 +1401,7 @@ export default {
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
-  transform: translateY(calc(-100% - 8px));
+  transform: translate(-50%, calc(-100% - 8px));
   transition: opacity 0.15s ease, transform 0.15s ease, visibility 0.15s;
 }
 .screen-view-dialog.screen-view-dialog-standalone .screen-view-toolbar-host:hover .screen-view-toolbar,
@@ -1404,7 +1410,7 @@ export default {
   opacity: 1;
   visibility: visible;
   pointer-events: auto;
-  transform: translateY(0);
+  transform: translate(-50%, 0);
 }
 .screen-view-dialog.screen-view-dialog-standalone .screen-view-canvas {
   width: 100%;

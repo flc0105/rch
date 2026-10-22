@@ -30,14 +30,30 @@ export default {
   async mounted() {
     window.addEventListener('pagehide', this.releaseScreenViewOnUnload)
     if (!this.clientId) return
+    // Consume the device identity passed by the opener before querying the connection list.
+    // This is display-only data; the Screen View request still uses the selected client ID.
+    const tabName = window.name
+    window.name = ''
+    try {
+      const snapshot = JSON.parse(tabName || 'null')
+      if (snapshot?.screen_view_client === this.clientId) {
+        this.connection = {
+          client_id: this.clientId,
+          hostname: String(snapshot.hostname || '').trim(),
+          machine_id: String(snapshot.machine_id || '').trim(),
+        }
+      }
+    } catch (_error) {
+      // Directly opened tabs can still resolve identity from the Server.
+    }
     // Each tab establishes its own authenticated session with the same Screen View component.
     try {
       const connections = await listConnections()
-      this.connection = connections.find(item => String(item.client_id) === this.clientId) || null
+      this.connection = connections.find(item => String(item.client_id) === this.clientId) || this.connection
     } catch (_error) {
       // The Screen View API still reports connection/auth errors to the user.
     }
-    document.title = `Screen View · ${this.connection?.hostname || this.clientId}`
+    document.title = `Screen View · ${this.connection?.hostname || String(this.connection?.machine_id || '').slice(0, 12) || 'Device'}`
     await this.$refs.screenViewDialogRef?.open()
   },
   beforeUnmount() {

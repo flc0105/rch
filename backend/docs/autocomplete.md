@@ -22,7 +22,7 @@ Web Terminal 输入内容
                                        + 前端常用操作候选 + 已固定的命令历史
 ```
 
-**基础命令候选**来自 `GET /api/connections/{client_id}/command-candidates`。Client 在建立连接时通过 `command_manifest` 上报导出的 Shell-like 命令和结构化 `acmd` 命令；Server 再合并 Built-in 和当前生效的 Alias。前端只显示允许建议的条目（`suggest !== false`），另外加入少量常用操作和当前设备已经 Pin 的命令历史。按候选模板文本去重后，按照来源与命令分组展示。
+**基础命令候选**来自 `GET /api/connections/{client_id}/command-candidates`。Client 在建立连接时通过 `command_manifest` 上报导出的 Shell-like 命令和结构化 `acmd` 命令；Server 再合并 Built-in 和当前生效的 Alias。前端只显示允许建议的条目（`suggest !== false`），另外加入少量常用操作和当前设备已经 Pin 的命令历史。按候选模板文本去重后，**空输入**时按固定分组顺序、组内按命令名称字母顺序展示：`shell → execution → session → system → network → privilege → media → file → automation → transfer → runtime → maintenance → python → acmd → common_ops → server → alias → Pin Command`。`common_ops` 使用现有命令分组名称，已 Pin 的 History 位于末尾。已输入文字后的匹配及上下文补全仍沿用各自的排序逻辑。
 
 命令 Manifest 由 Client 当前平台支持的命令注册信息生成。`@desc(..., suggest=False)` 可以让内部命令保持可执行、却不进入普通命令发现列表；`acmd` 项来自结构化命令注册表。Manifest 属于**握手快照**：Client 本地命令注册内容变化后，不能假定已连接浏览器会自动看到更新的 Manifest。顶层列表的别名则来源于 Server 内存中的当前生效定义，而不是一个永久写死在前端的名称列表。
 

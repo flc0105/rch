@@ -40,10 +40,10 @@ test('new tab waits for the original session to close before navigating', async 
   const navigations = []
   let releaseSession
   const released = new Promise(resolve => { releaseSession = resolve })
-  const tab = { opener: 'original', location: { replace(url) { navigations.push(url) } } }
+  const tab = { opener: 'original', name: '', location: { replace(url) { navigations.push(url) } } }
   const window = { location: { origin: 'https://example.test' }, open(...args) { opened.push(args); return tab } }
   const { options } = component('../src/components/ScreenViewDialog.vue', { ...screenGlobals, window, URL })
-  const dialog = { targetClientId: 'device/1', visible: true, closeRemoteSession() { return released } }
+  const dialog = { targetClientId: 'device/1', visible: true, currentConnection: { hostname: 'Office PC', machine_id: 'abc1234567894567' }, closeRemoteSession() { return released } }
   const pending = options.methods.openInNewTab.call(dialog)
   assert.equal(opened.length, 1)
   assert.equal(opened[0][0], 'about:blank')
@@ -51,6 +51,7 @@ test('new tab waits for the original session to close before navigating', async 
   assert.deepEqual(navigations, [])
   assert.equal(dialog.visible, true)
   assert.equal(tab.opener, null)
+  assert.deepEqual(JSON.parse(tab.name), { screen_view_client: 'device/1', hostname: 'Office PC', machine_id: 'abc1234567894567' })
   releaseSession()
   await pending
   assert.equal(dialog.visible, false)
@@ -97,7 +98,11 @@ test('standalone overlay stays hidden until top-edge hover and remains available
   const { source, options } = component('../src/components/ScreenViewDialog.vue', screenGlobals)
   assert.match(source, /class="screen-view-toolbar-host"/)
   assert.match(source, /screen-view-toolbar-host-standalone/)
-  assert.match(source, /\.screen-view-dialog\.screen-view-dialog-standalone \.screen-view-toolbar-host\s*\{[\s\S]*?height: 12px;/)
+  assert.match(source, /\.screen-view-dialog\.screen-view-dialog-standalone \.screen-view-toolbar-host\s*\{[\s\S]*?width: 168px;[\s\S]*?pointer-events: none;/)
+  assert.match(source, /v-if="standalone" class="screen-view-toolbar-trigger"/)
+  assert.match(source, /\.screen-view-dialog\.screen-view-dialog-standalone \.screen-view-toolbar-trigger\s*\{[\s\S]*?pointer-events: auto;/)
+  assert.doesNotMatch(source, /\.screen-view-toolbar-host::before/)
+  assert.match(source, /width: calc\(100vw - 24px\)/)
   assert.match(source, /\.screen-view-dialog\.screen-view-dialog-standalone \.screen-view-toolbar\s*\{[\s\S]*?opacity: 0;[\s\S]*?pointer-events: none;/)
   assert.match(source, /\.screen-view-toolbar-host:hover \.screen-view-toolbar/)
   assert.match(source, /\.screen-view-toolbar-popup-active \.screen-view-toolbar/)
@@ -128,7 +133,7 @@ test('standalone entry loads the same Screen View and Clipboard dialogs, with no
   const { source, options } = component('../src/ScreenViewTab.vue', {
     ScreenViewDialog: {}, ClipboardDialog: {},
     URLSearchParams, window: {
-      location: { search: '?screen_view_client=client-7' },
+      location: { search: '?screen_view_client=client-7' }, name: '',
       addEventListener(event, listener) { eventsRegistered.push([event, listener]) },
       removeEventListener(event, listener) { eventsRemoved.push([event, listener]) },
     },
@@ -191,4 +196,44 @@ test('main viewer surfaces an already-open error without displaying an empty dia
   assert.equal(ctx.visible, false)
   assert.equal(ctx.screenSessionId, undefined)
   assert.equal(errors[0], 'Screen View is already open for this device')
+})
+
+test('standalone tab prefers opener identity when connection lookup fails and shows short machine ID', async () => {
+  const doc = { title: '' }
+  const openerName = JSON.stringify({ screen_view_client: 'client-7', hostname: 'Windows Laptop', machine_id: 'a123456789012345' })
+  const window = { name: openerName, location: { search: '?screen_view_client=client-7' },
+    addEventListener() {}, removeEventListener() {} }
+  const { options } = component('../src/ScreenViewTab.vue', {
+    ScreenViewDialog: {}, ClipboardDialog: {}, URLSearchParams, window,
+    listConnections: async () => { throw new Error('offline list unavailable') }, document: doc,
+  })
+  const target = { clientId: 'client-7', connection: null, $refs: { screenViewDialogRef: { open() {} } } }
+  await options.mounted.call(target)
+  assert.equal(target.connection.hostname, 'Windows Laptop')
+  assert.equal(target.connection.machine_id, 'a123456789012345')
+  assert.equal(window.name, '', 'clear identity from window.name once consumed')
+  assert.equal(doc.title, 'Screen View · Windows Laptop')
+  const label = component('../src/components/ScreenViewDialog.vue', screenGlobals).options.methods.buildTargetLabel.call({
+    currentConnection: target.connection, selectedId: 'client-7', shortenMachineId: value => value.slice(0, 12), standalone: true,
+  })
+  assert.equal(label, 'Windows Laptop · a12345678901')
+})
+
+test('standalone viewer never falls back to displaying the full client ID', () => {
+  const { options } = component('../src/components/ScreenViewDialog.vue', screenGlobals)
+  const context = { currentConnection: null, selectedId: '12345678-1234-1234-1234-123456789abc', standalone: true,
+    shortenMachineId: options.methods.shortenMachineId }
+  assert.equal(options.methods.buildTargetLabel.call(context), 'Screen View')
+  assert.equal(options.computed.targetTitle.call(context), 'Screen View')
+  context.standalone = false
+  assert.equal(options.methods.buildTargetLabel.call(context), context.selectedId)
+})
+
+
+test('standalone toolbar host creates a positioned box; ordinary dialog keeps original contents layout', () => {
+  const source = read('../src/components/ScreenViewDialog.vue')
+  assert.match(source, /\.screen-view-toolbar-host\s*\{\s*display: contents;\s*\}/)
+  assert.match(source, /\.screen-view-dialog\.screen-view-dialog-standalone \.screen-view-toolbar-host\s*\{\s*display: block;\s*position: absolute;/)
+  assert.match(source, /\.screen-view-dialog\.screen-view-dialog-standalone \.screen-view-toolbar-host\s*\{[\s\S]*?width: 168px;[\s\S]*?height: 6px;/)
+  assert.match(source, /\.screen-view-dialog\.screen-view-dialog-standalone \.screen-view-canvas\s*\{[\s\S]*?height: 100%/)
 })
