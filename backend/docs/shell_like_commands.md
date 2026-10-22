@@ -140,7 +140,7 @@ Client 将剩余的 `Alice` 作为完整字符串 `arg` 传入方法，方法返
 | 注解 | 用途 | 关键参数与行为 |
 |---|---|---|
 | `@desc(text, group='general', suggest=True, api_grants=())` | **导出命令**，描述帮助文本和补全分类 | `text` 是帮助说明；`group` 用于 Help 分组；`suggest=False` 不进入推荐列表但仍可以执行；`api_grants` 为该命令申请受限 Web API 授权范围 |
-| `@confirm(message=None)` | 执行方法体**之前**请求 Web 确认 | 不传参数时生成默认提示；同意才进入原函数，拒绝、超时或没有可用交互时返回失败；自动附加 `interactions:request` Grant 声明 |
+| `@confirm(message=None, allow_no_confirm=False)` | 执行方法体**之前**请求 Web 确认 | 不传参数时生成默认提示；同意才进入原函数，拒绝、超时或没有可用交互时返回失败；自动附加 `interactions:request` Grant 声明；显式设置 `allow_no_confirm=True` 时可用命令参数 `--no-confirm` 跳过 Broker |
 | `@timeout(seconds)` | 声明命令默认的正数超时预算 | 请求方指定的有效超时只可缩短预算；这是执行上下文的期限，不保证强制终止任意 Python 代码 |
 | `@cancel_policy(mode='none', message='')` | 声明命令可以采用的取消机制 | `none` 不接受取消；`cooperative` 在检查点响应；`process` 用于实际由命令管理的子进程；`message` 是取消不可用等情况的解释文本 |
 
@@ -181,6 +181,8 @@ class CommandExampleMixin:
 ```
 
 运行 `approved_demo` 时，系统先通过当前 Web Task 发出确认，只有用户明确批准才调用方法。`@confirm` 自动申请命令交互所需的 `interactions:request` 范围；单独写一个没有 `@desc` 的私有方法不会变成可远程执行的命令。
+
+仅对明确允许无交互执行的命令，使用 `@confirm(..., allow_no_confirm=True)`。其 `--no-confirm` 可放在命令参数开头或末尾；装饰器移除此开关后调用原函数，且不导入或请求 Interaction Broker。Server 只对可信注解识别该开关，不签发不必要的 `interactions:request` Grant。普通 `@confirm` 不接受绕过；无 Web Task 的纯 Server CLI 只有显式使用允许的 `--no-confirm` 才会直接执行，操作系统自身的 UAC / sudo 授权仍可能弹窗。
 
 如果需要自定义文本输入、选择或先展示计划再批准，则在命令内部显式使用 `CommandInteractions`，并在 `@desc` 中声明交互 Grant：
 

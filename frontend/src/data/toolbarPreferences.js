@@ -18,6 +18,17 @@ export const TOOLBAR_ACTION_CATALOG = [
   { id: 'quick-actions', label: 'Quick Actions', icon: 'zap' },
 ]
 
+// Shared sub-actions used by the Toolbar hover menus and Toolbox right-click menu.
+export const TOOLBAR_ACTION_OPTIONS = Object.freeze({
+  clipboard: Object.freeze([
+    { id: 'get', label: 'Get' },
+    { id: 'send', label: 'Send' },
+  ]),
+  'screen-view': Object.freeze([
+    { id: 'new-tab', label: 'Open in New Tab' },
+  ]),
+})
+
 export const DEFAULT_TOOLBAR_PREFERENCES = {
   toolbar: [
     'remote-files',

@@ -2,6 +2,7 @@ from core.protocol.message_types import MSG_TYPE_COMMAND, MSG_TYPE_CANCEL, MSG_T
 from importlib import import_module
 from client.commands.runtime.catalog import CommandCatalog
 from client.commands.common.commands import CommonCommands
+from core.utils.decorator import _strip_confirm_bypass
 from server.application.auth.script_grant_service import (
     SCRIPT_GRANT_REQUEST_KEY,
     SCRIPT_GRANT_TOKEN_KEY,
@@ -76,6 +77,9 @@ class ClientSessionCommandChannel:
                     else:
                         method = getattr(command_class, parts[0], None)
             grants = getattr(method, 'api_grants', ()) if callable(method) and hasattr(method, 'help') else ()
+            if (grants and parts and getattr(method, 'allow_no_confirm', False)
+                    and len(parts) > 1 and _strip_confirm_bypass(command[len(parts[0]):].strip())[0]):
+                grants = tuple(scope for scope in grants if scope != 'interactions:request')
             if grants:
                 extra = self._build_script_grant_extra(data['id'], {
                     **(extra if isinstance(extra, dict) else {}),

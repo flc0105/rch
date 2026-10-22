@@ -45,9 +45,15 @@
 
     <div class="toolbox-list">
       <div v-if="filteredActions.length" class="toolbox-grid">
-        <button
+        <el-dropdown
           v-for="action in filteredActions"
           :key="action.id"
+          trigger="contextmenu"
+          class="toolbox-grid-entry"
+          :disabled="action.disabled"
+          @command="handleContextCommand(action, $event)"
+        >
+        <button
           class="toolbox-item"
           :class="{ 'toolbox-item-disabled': action.disabled }"
           type="button"
@@ -60,6 +66,17 @@
           </span>
           <span class="toolbox-label">{{ action.label }}</span>
         </button>
+        <template #dropdown>
+          <el-dropdown-menu>
+            <el-dropdown-item command="open">Open</el-dropdown-item>
+            <el-dropdown-item
+              v-for="option in action.menuOptions || []"
+              :key="option.id"
+              :command="option.id"
+            >{{ option.label }}</el-dropdown-item>
+          </el-dropdown-menu>
+        </template>
+        </el-dropdown>
       </div>
       <el-empty v-else description="No tools found" :image-size="72" />
     </div>
@@ -114,6 +131,12 @@ export default {
       return this.actions.filter((action) => action.label.toLocaleLowerCase().includes(term))
     },
   },
+  methods: {
+    handleContextCommand(action, option) {
+      if (action.disabled) return
+      this.$emit('launch', action.id, option)
+    },
+  },
   watch: {
     visible(isVisible) {
       if (!isVisible) return
@@ -154,7 +177,8 @@ export default {
 .toolbox-search { margin-bottom: 18px; }
 .toolbox-list { overflow-y: auto; max-height: min(62vh, 610px); min-height: 165px; padding: 2px 4px 8px; }
 .toolbox-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px 8px; }
-.toolbox-item { display: flex; flex-direction: column; align-items: center; gap: 9px; min-width: 0; padding: 10px 4px; border: 1px solid transparent; border-radius: 15px; background: transparent; color: var(--el-text-color-primary); font: inherit; cursor: pointer; }
+.toolbox-grid-entry { display: block; min-width: 0; }
+.toolbox-item { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 9px; min-width: 0; padding: 10px 4px; border: 1px solid transparent; border-radius: 15px; background: transparent; color: var(--el-text-color-primary); font: inherit; cursor: pointer; }
 .toolbox-item:not(:disabled):hover { background: var(--el-fill-color-light); border-color: var(--el-border-color-lighter); }
 .toolbox-item:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: -2px; }
 .toolbox-icon { display: inline-flex; align-items: center; justify-content: center; width: 60px; height: 60px; max-width: 100%; border: 1px solid var(--el-border-color); border-radius: 18px; color: var(--el-text-color-primary); background: var(--el-fill-color-light); }

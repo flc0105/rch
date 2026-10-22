@@ -22,13 +22,13 @@ function getCatalog() {
   vm.runInNewContext(catalogSource
     .replaceAll('export const ', 'const ')
     .replaceAll('export function ', 'function ')
-    + '\nglobalThis.catalog = TOOLBAR_ACTION_CATALOG; globalThis.defaults = DEFAULT_TOOLBAR_PREFERENCES;',
+    + '\nglobalThis.catalog = TOOLBAR_ACTION_CATALOG; globalThis.defaults = DEFAULT_TOOLBAR_PREFERENCES; globalThis.options = TOOLBAR_ACTION_OPTIONS;',
     ctx, { timeout: 1000 })
-  return { actions: ctx.catalog, defaults: ctx.defaults }
+  return { actions: ctx.catalog, defaults: ctx.defaults, actionOptions: ctx.options }
 }
 
 function mountToolbar() {
-  const { actions, defaults } = getCatalog()
+  const { actions, defaults, actionOptions } = getCatalog()
   const events = []
   let dropdownCloses = 0
   const { options, vue } = readOptions('../src/components/TerminalToolbar.vue', {
@@ -36,6 +36,7 @@ function mountToolbar() {
     ElMessageBox: {}, ToolboxDialog: {},
     DEFAULT_TOOLBAR_PREFERENCES: defaults,
     TOOLBAR_ACTION_CATALOG: actions,
+    TOOLBAR_ACTION_OPTIONS: actionOptions,
     cloneToolbarPreferences: p => ({ toolbar: [...p.toolbar], more: [...p.more], quick_actions_pinned: [] }),
     normalizeToolbarPreferences: p => p,
   })
@@ -170,4 +171,35 @@ test('Toolbox header aligns Settings and Close using the Screen View header layo
   assert.match(screen, /\.screen-view-header-actions \{[^}]*gap: 10px;/)
   assert.match(screen, /\.screen-view-header-action \{[^}]*width: 32px;[^}]*height: 32px;/)
   assert.doesNotMatch(toolbox, /toolbox-settings|padding-right: 25px;/)
+})
+
+
+test('Toolbar and Toolbox share Screen View and Clipboard options without opening a dialog', () => {
+  const app = mountToolbar()
+  const entries = app.options.computed.toolboxActions.call(app.instance)
+  assert.deepEqual(Array.from(entries.find(item => item.id === 'screen-view').menuOptions, option => option.id), ['new-tab'])
+  assert.deepEqual(Array.from(entries.find(item => item.id === 'clipboard').menuOptions, option => option.id), ['get', 'send'])
+  assert.match(app.vue, /@command="handleScreenViewDropdownCommand"/)
+  app.instance.handleScreenViewDropdownCommand('new-tab')
+  assert.deepEqual(app.events, ['open-screen-view-tab'])
+  app.instance.openToolbox()
+  app.instance.launchToolboxAction('screen-view', 'new-tab')
+  assert.equal(app.instance.toolboxVisible, false)
+  assert.deepEqual(app.events, ['open-screen-view-tab', 'open-screen-view-tab'])
+  app.instance.openToolbox()
+  app.instance.launchToolboxAction('clipboard', 'send')
+  assert.deepEqual(app.events.at(-1), 'open-clipboard')
+})
+
+test('Toolbox context menu exposes Open and the identical toolbar options', () => {
+  const { vue, options } = readOptions('../src/components/ToolboxDialog.vue', { Search: {}, Settings2: {}, Close: {}, FolderOpen: {}, Archive: {}, Monitor: {}, FileCode: {}, History: {}, Terminal: {}, MonitorPlay: {}, Clipboard: {}, Wrench: {}, ScrollText: {}, CalendarClock: {}, Bot: {}, Activity: {}, KeyRound: {}, BookOpen: {}, Code2: {}, Zap: {} })
+  assert.match(vue, /trigger="contextmenu"/)
+  assert.match(vue, /<el-dropdown-item command="open">Open<\/el-dropdown-item>/)
+  const events = []
+  const handler = options.methods.handleContextCommand
+  handler.call({ $emit: (...args) => events.push(args) }, { id: 'screen-view', disabled: false }, 'new-tab')
+  handler.call({ $emit: (...args) => events.push(args) }, { id: 'clipboard', disabled: true }, 'get')
+  assert.deepEqual(events, [['launch', 'screen-view', 'new-tab']])
+  assert.match(source('../src/App.vue'), /@open-screen-view-tab="openScreenViewInNewTab"/)
+  assert.match(source('../src/App.vue'), /viewer\.openInNewTab\(\)/)
 })

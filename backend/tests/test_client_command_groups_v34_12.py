@@ -38,7 +38,7 @@ PLATFORM_GROUPS = {
     WindowsCommands: {
         'system': ('getinfo', 'idletime'),
         'media': ('screenshot',),
-        'privilege': ('run_elevated',),
+        'privilege': ('run_elevated', 'spawn_elevated_instance'),
         'execution': ('run',),
     },
 }
@@ -103,7 +103,7 @@ def test_client_public_descriptions_are_concise_and_platform_consistent():
     assert mac['run_elevated']['help'] == win['run_elevated']['help'] == (
         'Run a command with elevated privileges'
     )
-    assert mac['spawn_elevated_instance']['help'] == 'Launch a new instance with elevated privileges'
+    assert mac['spawn_elevated_instance']['help'] == win['spawn_elevated_instance']['help'] == 'Launch a new instance with elevated privileges'
     assert KILL_ARGUMENT_SPEC.description == 'Kill processes'
     assert IMAGE_INFO_SPEC.description == 'Show image metadata'
     # Only the description changes; the option parser and --keep-old behavior remain.

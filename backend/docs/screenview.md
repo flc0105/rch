@@ -19,7 +19,7 @@ Client（远程设备）
   截取屏幕、编码 JPEG、发送画面、执行系统输入
 ```
 
-用户在设备工具栏打开 **Screen View** 后，会经过以下过程：
+用户点击设备工具栏的 **Screen View** 主按钮可打开原 Dialog；悬停下拉选择 **Open in New Tab** 可直接打开独立标签页，无须先建立 Dialog 会话。Toolbox 图标右键也提供同一入口。建立会话后经过以下过程：
 
 1. 浏览器选择目标在线 Client，向 Server 请求创建屏幕会话。
 2. Server 分配独立的 `screen_session_id`，生成 WebSocket 访问令牌，将状态设为 `opening`，并向目标 Client 发送 `screen_open`。

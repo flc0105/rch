@@ -1389,7 +1389,7 @@ def sensitive_action(self, arg=''):
     return 1, 'Action completed'
 ```
 
-If the user rejects the prompt, it expires, or the Broker is unavailable, the method **does not execute** and the command returns a failed/cancelled result. Commands without `@confirm` behave as before. This first implementation uses the existing Client-originated Interaction Broker request, not Server-side pre-execution approval. The prompt requires an active Web task/interaction grant; direct calls without that context fail closed. The annotation must exist in the **Server-deployed trusted command source** as well as the Client; restart Server and Client after adding it so Server can automatically attach the grant. `relaunch_instance` requires Client Interaction Broker confirmation; `kill_instance` currently has no active `@confirm` decorator and does not show that confirmation.
+If the user rejects the prompt, it expires, or the Broker is unavailable, the method **does not execute** and the command returns a failed/cancelled result. Commands without `@confirm` behave as before. This first implementation uses the existing Client-originated Interaction Broker request, not Server-side pre-execution approval. The prompt requires an active Web task/interaction grant; direct calls without that context fail closed. The annotation must exist in the **Server-deployed trusted command source** as well as the Client; restart Server and Client after adding it so Server can automatically attach the grant. Elevated `run_elevated` and `spawn_elevated_instance` on macOS/Windows require Broker confirmation by default; `--no-confirm` on these methods bypasses only Broker (including for headless Server CLI) and does not suppress the operating system privilege prompt. `relaunch_instance` requires Client Interaction Broker confirmation; `kill_instance` currently has no active `@confirm` decorator and does not show that confirmation.
 
 ## User-facing Client command reference
 
@@ -1442,6 +1442,7 @@ The following tables are generated from current `@desc(...)` declarations with `
 | `screenshot` | `media` | Capture screenshot |
 | `run` | `execution` | Run a program without waiting (detached) |
 | `run_elevated` | `privilege` | Run a command with elevated privileges |
+| `spawn_elevated_instance` | `privilege` | Launch a new instance with elevated privileges |
 
 ### macOS commands
 

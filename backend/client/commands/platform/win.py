@@ -6,7 +6,7 @@ from client.commands.platform.services.win.privilege_service import WinPrivilege
 from client.commands.platform.services.win.process_service import WinProcessService
 from client.commands.platform.services.win.system_service import WinSystemService
 from client.commands.platform.specs.common import NETSTAT_ARGUMENT_SPEC, PS_ARGUMENT_SPEC
-from core.utils.decorator import desc
+from core.utils.decorator import desc, confirm
 
 
 class WindowsCommands(CommonCommands):
@@ -57,11 +57,19 @@ class WindowsCommands(CommonCommands):
         return self.win_system.get_user_idletime()
 
     @desc('Run a command with elevated privileges', group='privilege')
+    @confirm('This may show a Windows UAC permission prompt and wait for authorization. Continue?', allow_no_confirm=True)
     def run_elevated(self, command):
         """
         以管理员权限执行命令
         """
         return self.win_privilege.run_as_admin(command)
+
+    @desc('Launch a new instance with elevated privileges', group='privilege')
+    @confirm('This may show a Windows UAC permission prompt and wait for authorization. Continue?', allow_no_confirm=True)
+    def spawn_elevated_instance(self, options=''):
+        if options.strip():
+            return 0, 'Usage: spawn_elevated_instance [--no-confirm]'
+        return self.win_privilege.spawn_elevated_instance()
 
     @argument_command('netstat', spec=NETSTAT_ARGUMENT_SPEC)
     def _acmd_netstat(self, args_dict, payload=None):

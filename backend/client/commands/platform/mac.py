@@ -6,7 +6,7 @@ from client.commands.platform.services.mac.media_service import MacMediaService
 from client.commands.platform.services.mac.system_service import MacSystemService
 from client.commands.platform.specs.mac import *
 from client.commands.platform.specs.common import NETSTAT_ARGUMENT_SPEC, PS_ARGUMENT_SPEC
-from core.utils.decorator import desc
+from core.utils.decorator import desc, confirm
 from core.utils.logger import logger
 
 
@@ -42,11 +42,15 @@ class MacCommands(CommonCommands):
         return self.mac_media.capture_webcam_photo()
 
     @desc('Launch a new instance with elevated privileges', group='privilege')
-    def spawn_elevated_instance(self):
+    @confirm('This may show an operating system permission prompt and wait for authorization. Continue?', allow_no_confirm=True)
+    def spawn_elevated_instance(self, options=''):
         """以 root 权限启动新实例，返回 PID"""
+        if options.strip():
+            return 0, 'Usage: spawn_elevated_instance [--no-confirm]'
         return self.mac_automation.sudo_self()
 
     @desc('Run a command with elevated privileges', group='privilege')
+    @confirm('This may show an operating system permission prompt and wait for authorization. Continue?', allow_no_confirm=True)
     def run_elevated(self, command):
         """以 root 权限执行命令 (macOS)"""
         return self.mac_automation.sudo_run(command)

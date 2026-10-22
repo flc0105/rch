@@ -127,6 +127,30 @@
           </template>
         </el-dropdown>
 
+        <el-dropdown
+          v-else-if="action.id === 'screen-view'"
+          trigger="hover"
+          placement="bottom-start"
+          @command="handleScreenViewDropdownCommand"
+        >
+          <el-button
+            size="small"
+            :class="['tool-btn', 'ml-0', { 'tool-btn-accent': action.accent }]"
+            :disabled="isActionDisabled(action.id)"
+            @click="runAction(action.id)"
+          >{{ action.label }}</el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item
+                v-for="option in actionOptions('screen-view')"
+                :key="option.id"
+                :command="option.id"
+                :disabled="isActionDisabled('screen-view')"
+              >{{ option.label }}</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+
         <el-button
           v-else
           size="small"
@@ -214,6 +238,7 @@ import { listQuickActions } from '../api/quickActionsApi.js'
 import {
   DEFAULT_TOOLBAR_PREFERENCES,
   TOOLBAR_ACTION_CATALOG,
+  TOOLBAR_ACTION_OPTIONS,
   cloneToolbarPreferences,
   normalizeToolbarPreferences,
 } from '../data/toolbarPreferences.js'
@@ -263,6 +288,7 @@ export default {
     'open-history',
     'open-pty',
     'open-screen-view',
+    'open-screen-view-tab',
     'open-clipboard',
     'open-processes',
     'open-one-liners',
@@ -310,6 +336,7 @@ export default {
       return this.actionsForIds(ids).map((action) => ({
         ...action,
         disabled: this.isActionDisabled(action.id),
+        menuOptions: this.actionOptions(action.id),
       }))
     },
   },
@@ -325,6 +352,14 @@ export default {
   },
 
   methods: {
+    actionOptions(id) {
+      if (id === 'quick-actions') {
+        return this.pinnedQuickActions.map((item, index) => ({
+          id: `pin:${index}`, label: this.pinnedQuickActionLabel(item),
+        }))
+      }
+      return TOOLBAR_ACTION_OPTIONS[id] || []
+    },
     clonePreferences(preferences) {
       return cloneToolbarPreferences(preferences)
     },
@@ -470,8 +505,11 @@ export default {
     openToolbox() {
       this.$refs.moreDropdown?.handleClose?.()
       this.toolboxVisible = true
+      if ((this.toolbarPreferences.quick_actions_pinned || []).length) {
+        void this.loadPinnedQuickActions()
+      }
     },
-    launchToolboxAction(actionId) {
+    launchToolboxAction(actionId, option = 'open') {
       if (!this.toolboxVisible) return
       if (actionId !== 'settings' && (
         !TOOLBAR_ACTION_CATALOG.some((action) => action.id === actionId)
@@ -481,8 +519,23 @@ export default {
       this.toolboxVisible = false
       if (actionId === 'settings') {
         this.$emit('open-settings')
-      } else {
+      } else if (option === 'open') {
         this.runAction(actionId)
+      } else {
+        this.runActionOption(actionId, option)
+      }
+    },
+    runActionOption(actionId, option) {
+      if (this.isActionDisabled(actionId)) return
+      if (actionId === 'clipboard') this.handleClipboardDropdownCommand(option)
+      else if (actionId === 'screen-view') this.handleScreenViewDropdownCommand(option)
+      else if (actionId === 'quick-actions' && option.startsWith('pin:')) {
+        this.handleQuickActionsDropdownCommand(option.slice(4))
+      }
+    },
+    handleScreenViewDropdownCommand(command) {
+      if (command === 'new-tab' && !this.isActionDisabled('screen-view')) {
+        this.$emit('open-screen-view-tab')
       }
     },
     handleClipboardDropdownCommand(command) {

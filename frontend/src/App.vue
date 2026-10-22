@@ -134,6 +134,7 @@
                   @open-history="openCommandHistoryDialog"
                   @open-pty="openPtyDialog"
                   @open-screen-view="openScreenViewDialog"
+                  @open-screen-view-tab="openScreenViewInNewTab"
                   @open-clipboard="openClipboardDialog"
                   @open-processes="openProcessDialog"
                   @open-one-liners="openOneLinersDialog"
@@ -551,6 +552,15 @@ export default {
 
     openScreenViewDialog() {
       return this.$refs.screenViewDialogRef?.open()
+    },
+
+    openScreenViewInNewTab() {
+      const viewer = this.$refs.screenViewDialogRef
+      if (!viewer || !this.selectedId || this.isCurrentConnectionOffline) return
+      // Use the original viewer's tab launcher; no duplicate session/rendering logic.
+      viewer.targetClientId = String(this.selectedId)
+      viewer.targetLabel = viewer.buildTargetLabel()
+      return viewer.openInNewTab()
     },
 
     openClipboardDialog(tab = 'get') {
