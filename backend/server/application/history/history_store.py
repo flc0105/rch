@@ -120,11 +120,11 @@ class CommandHistoryStore:
 
     def _update_entry(self, entry):
         self.database.connection().execute('''
-            UPDATE activity_records SET status = ?, result_json = ?, files_json = ?,
+            UPDATE activity_records SET status = ?, resolved_json = ?, result_json = ?, files_json = ?,
             finished_at = ? WHERE machine_id = ? AND activity_id = ?
         ''', (
-            entry['status'], compact_json_dumps(entry['result']), compact_json_dumps(entry['files']),
-            entry['finished_at'], entry['machine_id'], entry['activity_id'],
+            entry['status'], compact_json_dumps(entry['resolved']), compact_json_dumps(entry['result']),
+            compact_json_dumps(entry['files']), entry['finished_at'], entry['machine_id'], entry['activity_id'],
         ))
 
     def _list_execution_rows(self, machine_id, *, limit=None, cursor=None, query='', client_id='', kind='', errors=False):

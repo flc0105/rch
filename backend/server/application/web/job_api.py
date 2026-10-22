@@ -49,8 +49,8 @@ class WebJobApi:
     def list_available_background_jobs(self, client_id: str):
         return self.background_job_service.list_available_jobs(client_id)
 
-    def stop_background_job(self, client_id: str, job_key: str):
-        return self.background_job_service.stop_job(client_id, job_key)
+    def stop_background_job(self, client_id: str, job_key: str, *, origin='web_api'):
+        return self.background_job_service.stop_job(client_id, job_key, origin=origin)
 
     def ingest_background_job_report(self, payload: dict):
         return self.background_job_service.ingest_report(payload)
@@ -118,7 +118,7 @@ class WebJobApi:
 
         return normalized_mode
 
-    def start_background_job(self, client_id: str, job_name: str, params=None, execution_mode: str = 'inproc'):
+    def start_background_job(self, client_id: str, job_name: str, params=None, execution_mode: str = 'inproc', *, origin='web_api'):
         normalized_job_name = (job_name or '').strip()
         normalized_mode = self.prepare_background_job_start(client_id, normalized_job_name, execution_mode)
         result = self.background_job_service.start_job(
@@ -126,6 +126,7 @@ class WebJobApi:
             normalized_job_name,
             params=params,
             execution_mode=normalized_mode,
+            origin=origin,
         )
         if isinstance(result, dict):
             result['job_name'] = normalized_job_name

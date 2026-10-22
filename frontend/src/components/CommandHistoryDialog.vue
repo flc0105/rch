@@ -312,6 +312,7 @@
                 <el-option label="Remote Files" value="remote_files" />
                 <el-option label="Transfer" value="transfer" />
                 <el-option label="External Tool" value="external_tool" />
+                <el-option label="Background Job" value="background_job" />
               </el-select>
               <el-checkbox v-model="activityErrorsOnly">Errors</el-checkbox>
             </div>
@@ -349,7 +350,7 @@
                     </div>
                     <div class="activity-entry-subtitle">
                       <span>{{ formatDateTimeStandard(item.started_at || item.created_at) || '-' }}</span>
-                      <span v-if="['remote_files', 'transfer', 'external_tool'].includes(item.kind) || isActivityProblem(item.status)" class="activity-summary-preview" :class="{ 'activity-error-preview': isActivityProblem(item.status) }">{{ buildCommandExecutionSingleLineSummary(item) }}</span>
+                      <span v-if="['remote_files', 'transfer', 'external_tool', 'background_job'].includes(item.kind) || isActivityProblem(item.status)" class="activity-summary-preview" :class="{ 'activity-error-preview': isActivityProblem(item.status) }">{{ buildCommandExecutionSingleLineSummary(item) }}</span>
                       <span v-if="item.files?.length">{{ item.files.length }} file(s)</span>
                       <span v-if="item.result?.truncated">Truncated</span>
                     </div>
@@ -400,7 +401,7 @@ import CommandExecutionDetailDialog from './CommandExecutionDetailDialog.vue'
 import {EditPen} from "@element-plus/icons-vue";
 import { Star, StarFilled, ArrowUp, ArrowDown } from '@element-plus/icons-vue'
 import { diffDateTimeMs } from '../utils/formatters.js'
-import { Terminal, Zap, FileCode2, CheckCircle2, XCircle, CircleDashed, Ban, Clock3, ChevronRight, AlertTriangle, TextCursorInput, FolderOpen, ArrowDownToLine, ArrowUpToLine, Wrench } from '@lucide/vue'
+import { Terminal, Zap, FileCode2, CheckCircle2, XCircle, CircleDashed, Ban, Clock3, ChevronRight, AlertTriangle, TextCursorInput, FolderOpen, ArrowDownToLine, ArrowUpToLine, Wrench, BriefcaseBusiness } from '@lucide/vue'
 
 export default {
   name: 'CommandHistoryDialog',
@@ -555,7 +556,7 @@ Star,
   methods: {
     getActivityKindIcon(kind, action) {
       if (kind === 'transfer') return action === 'upload_files' ? ArrowUpToLine : ArrowDownToLine
-      return ({ command: Terminal, alias: Zap, script: FileCode2, remote_files: FolderOpen, external_tool: Wrench })[kind] || Terminal
+      return ({ command: Terminal, alias: Zap, script: FileCode2, remote_files: FolderOpen, external_tool: Wrench, background_job: BriefcaseBusiness })[kind] || Terminal
     },
     getActivityStatusIcon(status) {
       if (status === 'success') return CheckCircle2
@@ -565,7 +566,7 @@ Star,
       return Clock3
     },
     buildActivityKindLabel(kind) {
-      return ({ command: 'Command', alias: 'Alias', script: 'Script', remote_files: 'Remote Files', transfer: 'Transfer', external_tool: 'External Tool' })[kind] || 'Activity'
+      return ({ command: 'Command', alias: 'Alias', script: 'Script', remote_files: 'Remote Files', transfer: 'Transfer', external_tool: 'External Tool', background_job: 'Background Job' })[kind] || 'Activity'
     },
     buildActivityLabel(item) {
       const invocation = item?.invocation || {}
@@ -574,6 +575,12 @@ Star,
         const name = String(args.filename || args.path || '').split(/[\\/]/).pop()
         const count = Number(args.count || 1)
         return `${item.action === 'upload_files' ? 'Upload' : 'Download'} ${count > 1 ? `${count} items` : (name || 'file')}`
+      }
+      if (item?.kind === 'background_job') {
+        const args = invocation.arguments || {}
+        if (item.action === 'stop_all_jobs') return 'Stop all jobs'
+        const name = args.job_name || args.job_key || 'job'
+        return `${item.action === 'start_job' ? 'Start' : 'Stop'} ${name}`
       }
       if (item?.kind === 'external_tool') {
         const args = invocation.arguments || {}
@@ -1134,7 +1141,7 @@ Star,
 
     buildCommandExecutionSummary(item) {
       const status = String(item?.status || '').toLowerCase()
-      if (['remote_files', 'transfer', 'external_tool'].includes(item?.kind)) {
+      if (['remote_files', 'transfer', 'external_tool', 'background_job'].includes(item?.kind)) {
         const firstLine = String(item?.result?.output_records?.[0]?.text || '').split(/\r?\n/)[0].trim()
         if (firstLine && firstLine.length <= 128) return firstLine
       }

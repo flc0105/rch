@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from client.jobs.command_control import ClientJobControl
+from core.utils.job_control_result import decode_job_control_result, encode_job_control_result
 from core.protocol.message_router_base import BaseMessageRouter
 from core.protocol.message_types import MSG_TYPE_JOB_CONTROL
 from server.application.command.builtin_command_handler import BuiltinCommandHandler
@@ -30,10 +31,16 @@ class JobCommandMigrationTests(unittest.TestCase):
         self.conn = SimpleNamespace(session_info=SimpleNamespace(client_id='c1'))
         self.svc = JobBuiltinSupport(self.server, self.conn, self.remote)
 
-    def stream_command(self, target, text, *, command_type):
+    def stream_command(self, target, text, *, command_type, history_entry_id=''):
         self.assertIs(target, self.conn)
-        self.sent.append((json.loads(text), command_type))
-        yield (1, 'accepted')
+        payload = json.loads(text)
+        self.sent.append((payload, command_type))
+        if payload['action'] in {'start','stop','stop_all'}:
+            yield (1, encode_job_control_result(payload['action'], 'accepted',
+                                                total=0 if payload['action'] == 'stop_all' else 1,
+                                                succeeded=0 if payload['action'] == 'stop_all' else 1))
+        else:
+            yield (1, 'accepted')
 
     def test_server_list_never_contacts_client(self):
         self.assertEqual([(1, 'tools/a')], list(self.svc.job('list')))
@@ -66,20 +73,22 @@ class JobCommandMigrationTests(unittest.TestCase):
             job_manager=SimpleNamespace(
                 list_running_jobs=lambda: ['tools/a'],
                 get_job_status=lambda key: {'job_key': key, 'state': 'running'},
-                stop_job=lambda key: SimpleNamespace(display_name=key),
-                stop_all_jobs=lambda: ['tools/a'],
+                stop_job=lambda key: SimpleNamespace(display_name=key, job_id='job-1'),
+                stop_all_jobs=lambda: {'total':1, 'stopped':[{'display_name':'tools/a','job_id':'job-1'}], 'errors':[]},
             ),
         )
         commands = SimpleNamespace(socket=SimpleNamespace(runtime=runtime))
         self.assertEqual((1, 'tools/a'), ClientJobControl.execute(commands, '{"action":"ps"}'))
         self.assertIn('running', ClientJobControl.execute(commands, '{"action":"status","job_key":"tools/a"}')[1])
-        self.assertEqual((1, 'Stop request sent: tools/a'), ClientJobControl.execute(commands, '{"action":"stop","job_key":"tools/a"}'))
+        status, wire = ClientJobControl.execute(commands, '{"action":"stop","job_key":"tools/a"}')
+        self.assertEqual(1, status)
+        self.assertEqual('job-1', decode_job_control_result(wire, 'stop')['job_id'])
         self.assertEqual(1, ClientJobControl.execute(commands, '{"action":"stop_all"}')[0])
         self.assertEqual(0, ClientJobControl.execute(commands, '{"action":"bogus"}')[0])
 
     def test_client_job_start_keeps_jobmanager_and_download(self):
         with TemporaryDirectory() as folder:
-            runtime = SimpleNamespace(display_name='tools/a', job_key='tools/a', execution_mode='inproc', worker_name='worker')
+            runtime = SimpleNamespace(display_name='tools/a', job_key='tools/a', job_id='uuid-1', execution_mode='inproc', worker_name='worker')
             manager = SimpleNamespace(start_job=Mock(return_value=runtime))
             context = SimpleNamespace(runtime=SimpleNamespace(job_manager=manager))
             commands = SimpleNamespace(
@@ -93,21 +102,29 @@ class JobCommandMigrationTests(unittest.TestCase):
                     'action':'start', 'job_name':'tools/a', 'params':{}, 'execution_mode':'inproc',
                 }))
             self.assertEqual(1, status)
-            self.assertIn('job stop tools/a', text)
+            self.assertIn('job stop tools/a', decode_job_control_result(text, 'start')['message'])
             self.assertEqual('tools/a', manager.start_job.call_args.args[1])
             self.assertEqual(7, manager.start_job.call_args.args[2])
             self.assertTrue(Path(folder, 'remote_job.py').is_file())
 
     def test_web_job_service_uses_internal_message_type(self):
-        remote = SimpleNamespace(run_foreground_text_command=Mock(return_value='OK'))
+        class FakeRemote:
+            def __init__(self):
+                self.kwargs = None
+            def get_connection(self, cid):
+                return SimpleNamespace(session_info=SimpleNamespace(machine_id='m1', client_id=cid))
+            def stream_foreground_command(self, target, command, **kwargs):
+                self.kwargs = kwargs
+                action = json.loads(command)['action']
+                yield 1, encode_job_control_result(action, 'OK', job_id='j1')
+            def collect_result(self, it):
+                return list(it)[-1]
+        remote = FakeRemote()
         service = BackgroundJobService(None, None, remote, None)
         service.start_job('client', 'example')
-        called = remote.run_foreground_text_command.call_args
-        self.assertEqual('job_control', called.kwargs['command_type'])
-        self.assertEqual('start', json.loads(called.args[1])['action'])
+        self.assertEqual('job_control', remote.kwargs['command_type'])
         service.stop_job('client', 'example')
-        called = remote.run_foreground_text_command.call_args
-        self.assertEqual('stop', json.loads(called.args[1])['action'])
+        self.assertEqual('job_control', remote.kwargs['command_type'])
 
     def test_builtin_registration_and_dispatch(self):
         names = {item['name'] for item in BuiltinCommandHandler.REGISTRY.candidates()}

@@ -102,6 +102,9 @@ class HistoryViewService:
             return actions.get(action, action or 'Remote Files')
         if kind == 'transfer':
             return 'Upload files' if action == 'upload_files' else 'Download files' if action == 'download_files' else (action or 'Transfer')
+        if kind == 'background_job':
+            labels = {'start_job': 'Start', 'stop_job': 'Stop', 'stop_all_jobs': 'Stop all jobs'}
+            return f"{labels.get(action, action or 'Background Job')} {args.get('job_name') or args.get('job_key') or ''}".strip()
         if kind == 'external_tool':
             actions = {
                 'install_package': 'Install', 'uninstall_package': 'Uninstall',
@@ -141,7 +144,7 @@ class HistoryViewService:
         return {'items': items, 'next_cursor': next_cursor, 'has_more': has_more, 'total_count': count}
 
     def get_execution_history_page(self, machine_id, *, limit=None, cursor='', query='', kind='', errors=False):
-        if kind and kind not in {'command', 'alias', 'script', 'remote_files', 'transfer', 'external_tool'}:
+        if kind and kind not in {'command', 'alias', 'script', 'remote_files', 'transfer', 'external_tool', 'background_job'}:
             raise ValueError('Invalid activity kind')
         with self.store._lock:
             return self._activity_page(str(machine_id or '').strip() or 'unknown_machine',

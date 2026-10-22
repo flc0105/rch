@@ -190,10 +190,12 @@ class CommandJobMixin:
         """
         try:
             job_manager = self.socket.runtime.job_manager
-            stopped_jobs = job_manager.stop_all_jobs()
-            if not stopped_jobs:
-                return 1, 'No background jobs are currently running'
-            return 1, 'Stop request sent for:\n' + '\n'.join(stopped_jobs)
+            report = job_manager.stop_all_jobs()
+            names = [item['display_name'] for item in report['stopped']]
+            text = ('Stop request sent for:\n' + '\n'.join(names)) if names else 'No background jobs are currently running'
+            if report['errors']:
+                return 0, text + '\nErrors:\n' + '\n'.join(report['errors'])
+            return 1, text
         except Exception as e:
             return 0, f'Failed to stop background jobs: {e}'
 

@@ -30,7 +30,9 @@ Server · SQLite Job History + WebEventBus
 Web Jobs / Job Detail · 状态、消息、文件
 ```
 
-启动或停止控制经由独立的 `job_control` 消息类型进入 Client 的受管理执行路径，但 **Job 开始运行后不持续占用前台命令槽**。长时间运行的任务自行上报消息和状态；Server 通过 SQLite 保存执行记录，再发布 SSE 事件供浏览器刷新。
+启动或停止控制经由独立的 `job_control` 消息类型进入 Client 的受管理执行路径，但 **Job 开始运行后不持续占用前台命令槽**。
+
+用户主动发起的 Job 管理操作另记录到 Activity Center：`kind=background_job`；`job start` / Web Start 为 `start_job`，`job stop` / Web Stop 为 `stop_job`，`job stop-all` 为一条 `stop_all_jobs`。Activity 在真实派发 Client 后创建，Client 反馈已建立 Job Runtime / 已接受 Stop 请求后终结；不等待 Job 长期运行结束。Stop 不会修改先前成功的 Start Activity。原有 Job History 继续存储运行生命周期、消息和文件，不与 Activity 互相删除。纯查询 `job list/ps/status` 仅按普通终端输入规则保留 Quick，不建立 Activity；来自 Web 的操作不写 Quick。内部 `job_control` 消息不记录成 Command，也不持久化 Job 参数正文、Python 模块源码或内部结构化 Payload。Start / Stop 的真实 `job_id` 可以在 Activity Details 关联，批量 Stop All 返回成功与失败数量；部分失败沿用 `error`，不新增状态。长时间运行的任务自行上报消息和状态；Server 通过 SQLite 保存执行记录，再发布 SSE 事件供浏览器刷新。
 
 模块存放在 Server 的 Job 资源目录中。Web 可以创建、编辑、上传或删除 Python 模块；Client 启动时按需从 Server 取得该模块内容，而不是要求用户事先把所有 Job 安装到目标设备上。不过，**Python 第三方依赖仍必须在目标运行环境中可用**，下载模块并不等于自动安装其依赖。
 

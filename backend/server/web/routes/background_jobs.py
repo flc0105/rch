@@ -126,6 +126,7 @@ def create_background_job_blueprint(server_instance):
                 job_name,
                 params=params,
                 execution_mode=execution_mode,
+                origin='web_ui' if request.headers.get('X-RCH-Origin') == 'web_ui' else 'web_api',
             )
 
         return responder.json_endpoint(_execute, default_error_status=500)
@@ -137,7 +138,10 @@ def create_background_job_blueprint(server_instance):
             job_key = (payload.get('job_key') or '').strip()
             if not job_key:
                 raise ValueError('job_key is required')
-            return job_api.stop_background_job(client_id, job_key)
+            return job_api.stop_background_job(
+                client_id, job_key,
+                origin='web_ui' if request.headers.get('X-RCH-Origin') == 'web_ui' else 'web_api',
+            )
 
         return responder.json_endpoint(_execute, default_error_status=500)
 

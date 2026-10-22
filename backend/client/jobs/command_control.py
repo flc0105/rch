@@ -7,6 +7,7 @@ import json
 import os
 
 from core.utils.formatting import format_dict
+from core.utils.job_control_result import encode_job_control_result
 from client.runtime.temp_workspace import make_client_temp_dir, cleanup_temp_path
 
 
@@ -51,18 +52,19 @@ class ClientJobControl:
                 except Exception:
                     cleanup_temp_path(temp_dir)
                     raise
-                return 1, (
+                message = (
                     f'Background job started: {getattr(runtime, "display_name", name)}\n'
                     f'Mode: {getattr(runtime, "execution_mode", mode)}\n'
                     f'Worker: {getattr(runtime, "worker_name", "unknown")}\n'
                     f'Use "job stop {getattr(runtime, "job_key", name)}" to request stop'
                 )
+                return 1, encode_job_control_result('start', message, job_id=runtime.job_id)
             if action == 'stop':
                 key = cls._name(payload.get('job_key'))
                 if not key:
                     raise ValueError('Job key is required')
                 runtime = manager.stop_job(key)
-                return 1, f'Stop request sent: {runtime.display_name}'
+                return 1, encode_job_control_result('stop', f'Stop request sent: {runtime.display_name}', job_id=runtime.job_id)
             if action == 'ps':
                 jobs = manager.list_running_jobs()
                 return 1, '\n'.join(jobs) if jobs else 'No background jobs are currently running'
@@ -72,8 +74,16 @@ class ClientJobControl:
                     raise ValueError('Job key is required')
                 return 1, format_dict(manager.get_job_status(key))
             if action == 'stop_all':
-                stopped = manager.stop_all_jobs()
-                return 1, ('Stop request sent for:\n' + '\n'.join(stopped)) if stopped else 'No background jobs are currently running'
+                report = manager.stop_all_jobs()
+                names = [item['display_name'] for item in report['stopped']]
+                errors = report['errors']
+                message = ('Stop request sent for:\n' + '\n'.join(names)) if names else 'No background jobs are currently running'
+                if errors:
+                    message += '\nErrors:\n' + '\n'.join(errors)
+                return (1 if not errors else 0), encode_job_control_result(
+                    'stop_all', message, job_ids=[item['job_id'] for item in report['stopped']],
+                    total=report['total'], succeeded=len(names), errors=errors,
+                )
             raise ValueError(f'Unsupported job control action: {action}')
         except Exception as exc:
             return 0, f'Job control failed: {exc}'

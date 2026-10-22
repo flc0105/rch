@@ -1115,7 +1115,7 @@ export default {
 
       const res = await fetch(`/api/connections/${encodeURIComponent(this.selectedId)}/background-jobs/start`, {
         method: 'POST',
-        headers: this.buildJsonHeaders(),
+        headers: { ...this.buildJsonHeaders(), 'X-RCH-Origin': 'web_ui' },
         body: JSON.stringify({
           job_name: normalized,
           params,
@@ -1301,7 +1301,7 @@ export default {
 
         const res = await fetch(`/api/connections/${encodeURIComponent(this.selectedId)}/background-jobs/stop`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'X-RCH-Origin': 'web_ui' },
           body: JSON.stringify({ job_key: jobKey }),
         })
 

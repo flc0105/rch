@@ -34,6 +34,25 @@ class HistoryWriteService:
             self.store._insert_entry(entry)
         return activity_id
 
+    def set_background_job_result(self, conn, entry_id, result):
+        """Attach bounded, non-sensitive Job identity and batch counts only."""
+        if conn is None or not entry_id:
+            return
+        with self.store._lock, self.store.database.transaction():
+            entry = self.store._get_entry(self.store._get_machine_id_from_conn(conn), entry_id)
+            if not entry or entry['kind'] != 'background_job':
+                return
+            resolved = entry['resolved']
+            if result.get('job_id'):
+                resolved['job_id'] = str(result['job_id'])
+            if entry['action'] == 'stop_all_jobs':
+                resolved['job_ids'] = [str(item) for item in result.get('job_ids', [])]
+                for key in ('total', 'succeeded', 'failed'):
+                    resolved[key] = int(result.get(key, 0))
+                # Avoid full parameters and unbounded error output in Activity.
+                resolved['errors'] = [str(error)[:250] for error in result.get('errors', [])[:20]]
+            self.store._update_entry(entry)
+
     def append_output_for_connection(self, conn, entry_id, status, text, eof=0):
         if conn is None or not entry_id:
             return

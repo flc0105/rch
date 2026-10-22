@@ -52,6 +52,7 @@ class BuiltinCommandHandler:
         self.job_support = JobBuiltinSupport(
             server=self.server, conn=self.conn,
             remote_execution_service=self.remote_execution_service,
+            history_entry_id_provider=self.history_entry_id_provider,
         )
         self.script_support = ScriptBuiltinSupport(
             plan_builder=self.plan_builder,

@@ -479,18 +479,19 @@ class JobManager:
         self._request_runtime_stop(runtime, notify=True)
         return runtime
 
-    def stop_all_jobs(self) -> List[str]:
+    def stop_all_jobs(self) -> dict:
         self.cleanup_finished_jobs()
-        stopped = []
-
         with self._lock:
             runtimes = list(self._runtimes.values())
 
+        stopped, errors = [], []
         for runtime in runtimes:
-            self._request_runtime_stop(runtime, notify=True)
-            stopped.append(runtime.display_name)
-
-        return stopped
+            try:
+                self._request_runtime_stop(runtime, notify=True)
+                stopped.append({'job_id': runtime.job_id, 'display_name': runtime.display_name})
+            except Exception as exc:
+                errors.append(f'{runtime.display_name}: {exc}')
+        return {'total': len(runtimes), 'stopped': stopped, 'errors': errors}
 
     def handle_connection_lost(self) -> list[str]:
         """

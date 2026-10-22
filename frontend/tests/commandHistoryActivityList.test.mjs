@@ -16,7 +16,7 @@ const script = source.match(/<script>([\s\S]*?)<\/script>/)?.[1]
 assert.ok(script)
 const context = {console, EditPen:{}, CommandExecutionDetailDialog:{}, TextCursorInput:{}, Star:{}, StarFilled:{},
   ArrowUp:{}, ArrowDown:{}, Terminal:{}, Zap:{}, FileCode2:{}, CheckCircle2:{}, XCircle:{},
-  CircleDashed:{}, Ban:{}, Clock3:{}, ChevronRight:{}, AlertTriangle:{}, FolderOpen:{}, ArrowDownToLine:{}, ArrowUpToLine:{}, Wrench:{}, diffDateTimeMs: () => 0}
+  CircleDashed:{}, Ban:{}, Clock3:{}, ChevronRight:{}, AlertTriangle:{}, FolderOpen:{}, ArrowDownToLine:{}, ArrowUpToLine:{}, Wrench:{}, BriefcaseBusiness:{}, diffDateTimeMs: () => 0}
 vm.runInNewContext(
   script.replace(/^import\s+.*?\s+from\s+.*?\n/gm,'').replace('export default {','globalThis.component = {'),
   context,
@@ -60,7 +60,7 @@ test('Activity labels use semantic invocation, Details use new Activity ID', () 
   assert.equal(state.selectedCommandExecutionEntryId,'a1')
   assert.equal(state.commandExecutionDetailDialogVisible,true)
   assert.match(detail,/entry\.result\?\.output_records/)
-  assert.match(detail,/entry\.resolved\?\.command/)
+  assert.match(detail,/getActivityResolved\(entry\)/)
 })
 
 
@@ -156,7 +156,7 @@ test('Transfer kind preserves filtering and uses compact semantic names', () => 
   assert.equal(component.methods.getActivityKindIcon('transfer', 'download_files'), context.ArrowDownToLine)
   assert.equal(component.methods.getActivityKindIcon('transfer', 'upload_files'), context.ArrowUpToLine)
   assert.match(activity, /getActivityKindIcon\(item\.kind, item\.action\)/)
-  assert.match(activity, /\['remote_files', 'transfer', 'external_tool'\]/)
+  assert.match(activity, /\['remote_files', 'transfer', 'external_tool', 'background_job'\]/)
 })
 
 test('External Tool Manager Activity is semantic, searchable and uses a distinct icon', () => {
@@ -169,8 +169,8 @@ test('External Tool Manager Activity is semantic, searchable and uses a distinct
   assert.equal(component.methods.buildActivityLabel(example), 'Start heartbeat.worker (alpha)')
   assert.equal(component.methods.buildActivityLabel({kind:'external_tool', action:'install_package',
     invocation:{arguments:{package_id:'heartbeat'}}}), 'Install heartbeat')
-  assert.match(detail, /\['remote_files', 'external_tool'\]\.includes\(entry\?\.kind\)/)
-  assert.match(source, /\['remote_files', 'transfer', 'external_tool'\]\.includes\(item\.kind\)/)
+  assert.match(detail, /\['remote_files', 'external_tool', 'background_job'\]\.includes\(entry\?\.kind\)/)
+  assert.match(source, /\['remote_files', 'transfer', 'external_tool', 'background_job'\]\.includes\(item\.kind\)/)
 })
 
 
@@ -185,4 +185,33 @@ test('xt Exec uses semantic External Tool label and human invocation', () => {
   vm.runInNewContext(detailScript.replace('export default {', 'globalThis.component = {'), detailContext)
   assert.equal(detailContext.component.methods.getActivityInvocation(entry), 'xt run ffmpeg -- -version')
   assert.doesNotMatch(JSON.stringify(entry), /external_tool_exec|__json__:/)
+})
+
+test('Background Job actions use one semantic Activity and a distinct icon', () => {
+  assert.match(activity, /label="Background Job" value="background_job"/)
+  assert.equal(component.methods.getActivityKindIcon('background_job'), context.BriefcaseBusiness)
+  assert.equal(component.methods.buildActivityKindLabel('background_job'), 'Background Job')
+  assert.equal(component.methods.buildActivityLabel({kind:'background_job', action:'start_job',
+    invocation:{arguments:{job_name:'cleanup'}}}), 'Start cleanup')
+  assert.equal(component.methods.buildActivityLabel({kind:'background_job', action:'stop_job',
+    invocation:{arguments:{job_key:'cleanup'}}}), 'Stop cleanup')
+  assert.equal(component.methods.buildActivityLabel({kind:'background_job', action:'stop_all_jobs',
+    invocation:{arguments:{}}}), 'Stop all jobs')
+  assert.match(detail, /'background_job'/)
+})
+
+
+test('Background Job detail shows persisted counts without invented zeros or trailing separators', () => {
+  const detailContext = {}
+  const detailScript = detail.match(/<script>([\s\S]*?)<\/script>/)?.[1]
+  vm.runInNewContext(detailScript.replace('export default {', 'globalThis.component = {'), detailContext)
+  const resolved = detailContext.component.methods.getActivityResolved
+  const entry = counts => ({kind:'background_job', action:'stop_all_jobs', resolved:counts})
+  assert.equal(resolved(entry({total:2, succeeded:2, failed:0, job_ids:['a','b']})),
+    '2 of 2 stop requested · 0 failed · a, b')
+  assert.equal(resolved(entry({total:0, succeeded:0, failed:0, job_ids:[]})),
+    '0 of 0 stop requested · 0 failed')
+  assert.equal(resolved(entry({total:2, succeeded:1, failed:1, job_ids:[]})),
+    '1 of 2 stop requested · 1 failed')
+  assert.equal(resolved(entry({command_type:'job_control'})), 'Stop all jobs')
 })

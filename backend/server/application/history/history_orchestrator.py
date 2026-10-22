@@ -115,6 +115,42 @@ class CommandHistoryOrchestrator:
             }
         return activity_id
 
+    def begin_background_job_execution(self, conn, action, arguments, *, origin='web_api', entry_id=''):
+        """One user action, confirmed only on the actual job_control dispatch.
+
+        CLI reuses the original terminal submission ID so Quick keeps its
+        original command while the Activity becomes semantic.
+        """
+        if conn is None:
+            return ''
+        activity_id = entry_id or uuid.uuid4().hex
+        safe_args = {key: str(value) for key, value in dict(arguments).items()
+                     if key in {'job_name', 'job_key', 'execution_mode'}}
+        with self._lock:
+            previous = self._pending.get(activity_id)
+            if entry_id and (not previous or previous['conn'] is not conn):
+                return ''
+            # Quick owns the raw CLI submission. Job --params may contain
+            # secrets, so the Activity stores only whitelisted identities.
+            invocation = {'arguments': safe_args}
+            self._pending[activity_id] = {
+                'conn': conn, 'kind': 'background_job', 'action': action,
+                'origin': previous['origin'] if previous else origin,
+                'presentation': previous['presentation'] if previous else 'none',
+                'invocation': invocation, 'resolved': {'command_type': 'job_control'},
+                'created_at': previous['created_at'] if previous else self.history_store._now_iso(),
+            }
+        return activity_id
+
+    def discard_activity_intent(self, entry_id):
+        with self._lock:
+            self._pending.pop(entry_id, None)
+
+    def record_background_job_result(self, conn, entry_id, result):
+        if not entry_id or not isinstance(result, dict):
+            return
+        self.history_store.write_service.set_background_job_result(conn, entry_id, result)
+
     def prepare_xt_run(self, conn, entry_id, target):
         """Promote the terminal invocation to one semantic Exec Activity.
 
@@ -190,6 +226,8 @@ class CommandHistoryOrchestrator:
         if not pending:
             return
         if pending['conn'] is not conn:
+            return
+        if command_type == 'job_control' and pending['kind'] != 'background_job':
             return
         if CommandHistoryRecordPolicy.is_internal_external_tool_command(command):
             if pending['kind'] != 'external_tool':
