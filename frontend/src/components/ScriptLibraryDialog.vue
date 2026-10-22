@@ -532,6 +532,22 @@ export default {
       await this.loadScriptCatalog({ selectForConnection: true })
     },
 
+    async openRunForScript(scriptName) {
+      if (!this.selectedId) {
+        ElMessage.warning('Please select a device')
+        return
+      }
+      this.scriptCatalogItems = []
+      await this.loadScriptCatalog()
+      const target = String(scriptName || '').trim()
+      const item = this.scriptCatalogItems.find(row => row.script_name === target)
+      if (!item) {
+        ElMessage.warning('Script is unavailable')
+        return
+      }
+      this.openScriptRunDialog(item)
+    },
+
     isOpen() {
       return this.visible
     },

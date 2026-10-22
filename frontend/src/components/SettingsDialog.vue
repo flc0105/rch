@@ -223,12 +223,12 @@ export default {
       if (this.toolbarSaving) return
       this.toolbarSaving = true
       try {
-        // Toolbar Settings only owns placement/order. Preserve Quick Actions pins,
-        // which are managed from the Quick Action editor.
+        // Toolbar Settings only owns placement/order. Preserve pins managed elsewhere.
         const latest = normalizeToolbarPreferences(await loadToolbarPreferences())
         const payload = {
           ...this.toolbarDraft,
           quick_actions_pinned: latest.quick_actions_pinned,
+          toolbox_shortcuts: latest.toolbox_shortcuts,
         }
         const saved = normalizeToolbarPreferences(
           await saveToolbarPreferences(payload),

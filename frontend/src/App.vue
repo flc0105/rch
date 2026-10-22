@@ -140,6 +140,7 @@
                   @open-one-liners="openOneLinersDialog"
                   @open-quick-actions="openQuickActionsDialog"
                   @run-quick-action="runPinnedQuickAction"
+                  @run-toolbox-script="runToolboxScript"
                   @open-settings="openSettingsDialog"
                   @clear="clearOutput"
                   @clear-selection="clearSelectedConnection"
@@ -718,6 +719,10 @@ export default {
 
     openQuickActionsDialog() {
       return this.$refs.quickActionsDialogRef?.open()
+    },
+
+    runToolboxScript(scriptName) {
+      return this.$refs.scriptLibraryDialogRef?.openRunForScript(scriptName)
     },
 
     runPinnedQuickAction(item) {

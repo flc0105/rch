@@ -44,6 +44,7 @@ function mountToolbar() {
     currentConnectionOffline: false, selectedId: 'client-1',
     $emit(event) { events.push(event) },
     $refs: { moreDropdown: { handleClose() { dropdownCloses++ } } },
+    loadToolboxPinOptions() {},
   })
   // Vue normally provides computed getters; mount their dependencies in this method-level harness.
   Object.defineProperty(instance, 'deviceActionDisabled', {
@@ -62,11 +63,11 @@ test('Toolbox includes the shared Log Viewer action and original Lucide icon cho
     'monitor-play', 'clipboard', 'wrench', 'scroll-text', 'calendar-clock', 'bot', 'activity',
     'key-round', 'book-open', 'code-2', 'zap',
   ])
-  const { vue } = readOptions('../src/components/ToolboxDialog.vue', { Search: {}, Settings2: {}, Close: {}, FolderOpen: {}, Archive: {}, Monitor: {}, FileCode: {}, History: {}, Terminal: {}, MonitorPlay: {}, Clipboard: {}, Wrench: {}, ScrollText: {}, CalendarClock: {}, Bot: {}, Activity: {}, KeyRound: {}, BookOpen: {}, Code2: {}, Zap: {} })
+  const { vue } = readOptions('../src/components/ToolboxDialog.vue', { Search: {}, Settings2: {}, Close: {}, FolderOpen: {}, Archive: {}, Monitor: {}, FileCode: {}, History: {}, Terminal: {}, MonitorPlay: {}, Clipboard: {}, Wrench: {}, ScrollText: {}, CalendarClock: {}, Bot: {}, Activity: {}, KeyRound: {}, BookOpen: {}, Code2: {}, Zap: {}, Rocket: {}, Play: {}, ShieldCheck: {}, Plus: {} })
   assert.match(vue, /grid-template-columns: repeat\(6, minmax\(0, 1fr\)\)/)
   assert.doesNotMatch(vue, /@closed="\$emit\('closed'\)"/, 'launch should not wait for closing animation')
   assert.doesNotMatch(vue, /draggable|@dragstart|@drop=/, 'drag-to-sort is next version only')
-  assert.match(vue, /@click="\$emit\('launch', action.id\)"/)
+  assert.match(vue, /@click="action.disabled \? null : \(action.shortcut \? \$emit\('launch-pin', action.shortcut\)/)
 })
 
 test('More hover preserves the original menu while click opens Toolbox', () => {
@@ -137,7 +138,7 @@ test('Device tools remain disabled and cannot launch from Toolbox', () => {
 })
 
 test('Toolbox search is case-insensitive and does not mutate order or preferences', () => {
-  const { options } = readOptions('../src/components/ToolboxDialog.vue', { Search: {}, Settings2: {}, Close: {}, FolderOpen: {}, Archive: {}, Monitor: {}, FileCode: {}, History: {}, Terminal: {}, MonitorPlay: {}, Clipboard: {}, Wrench: {}, ScrollText: {}, CalendarClock: {}, Bot: {}, Activity: {}, KeyRound: {}, BookOpen: {}, Code2: {}, Zap: {} })
+  const { options } = readOptions('../src/components/ToolboxDialog.vue', { Search: {}, Settings2: {}, Close: {}, FolderOpen: {}, Archive: {}, Monitor: {}, FileCode: {}, History: {}, Terminal: {}, MonitorPlay: {}, Clipboard: {}, Wrench: {}, ScrollText: {}, CalendarClock: {}, Bot: {}, Activity: {}, KeyRound: {}, BookOpen: {}, Code2: {}, Zap: {}, Rocket: {}, Play: {}, ShieldCheck: {}, Plus: {} })
   const actions = getCatalog().actions
   const instance = { ...options.data(), query: '  KEY  ', actions }
   const matched = options.computed.filteredActions.call(instance)
@@ -192,7 +193,7 @@ test('Toolbar and Toolbox share Screen View and Clipboard options without openin
 })
 
 test('Toolbox uses one pointer-anchored context menu and preserves shared toolbar actions', () => {
-  const icons = { Search: {}, Settings2: {}, Close: {}, FolderOpen: {}, Archive: {}, Monitor: {}, FileCode: {}, History: {}, Terminal: {}, MonitorPlay: {}, Clipboard: {}, Wrench: {}, ScrollText: {}, CalendarClock: {}, Bot: {}, Activity: {}, KeyRound: {}, BookOpen: {}, Code2: {}, Zap: {} }
+  const icons = { Search: {}, Settings2: {}, Close: {}, FolderOpen: {}, Archive: {}, Monitor: {}, FileCode: {}, History: {}, Terminal: {}, MonitorPlay: {}, Clipboard: {}, Wrench: {}, ScrollText: {}, CalendarClock: {}, Bot: {}, Activity: {}, KeyRound: {}, BookOpen: {}, Code2: {}, Zap: {}, Rocket: {}, Play: {}, ShieldCheck: {}, Plus: {} }
   const listeners = []
   const fakeWindow = {
     innerWidth: 500, innerHeight: 300,

@@ -52,12 +52,14 @@ export const DEFAULT_TOOLBAR_PREFERENCES = {
     'quick-actions',
   ],
   quick_actions_pinned: [],
+  toolbox_shortcuts: [],
 }
 
 export function cloneToolbarPreferences(preferences = DEFAULT_TOOLBAR_PREFERENCES) {
   return {
     toolbar: [...(preferences?.toolbar || [])],
     more: [...(preferences?.more || [])],
+    toolbox_shortcuts: normalizeToolboxShortcuts(preferences?.toolbox_shortcuts),
     quick_actions_pinned: (preferences?.quick_actions_pinned || []).map((item) => ({
       platform: String(item?.platform || '').trim(),
       alias: String(item?.alias || '').trim(),
@@ -85,6 +87,46 @@ export function normalizeQuickActionPins(value) {
   return result
 }
 
+export const TOOLBOX_SHORTCUT_ICONS = Object.freeze([
+  'file-code', 'terminal', 'zap', 'rocket', 'play', 'activity', 'shield-check',
+  'folder-open', 'monitor', 'wrench', 'calendar-clock', 'book-open', 'code-2',
+  'archive', 'clipboard', 'scroll-text',
+])
+
+export function toolboxShortcutKey(item) {
+  return item?.kind === 'script'
+    ? `script\u0000${item.script_name}`
+    : `quick_action\u0000${item?.platform}\u0000${item?.alias}`
+}
+
+export function normalizeToolboxShortcuts(value) {
+  if (!Array.isArray(value)) return []
+  const seen = new Set()
+  const result = []
+  for (const raw of value) {
+    if (!raw || typeof raw !== 'object') continue
+    const kind = String(raw.kind || '').trim()
+    const icon = String(raw.icon || '').trim()
+    if (!TOOLBOX_SHORTCUT_ICONS.includes(icon)) continue
+    let item
+    if (kind === 'script') {
+      const script_name = String(raw.script_name || '').trim()
+      if (!script_name) continue
+      item = { kind, script_name, icon }
+    } else if (kind === 'quick_action') {
+      const platform = String(raw.platform || '').trim().toLowerCase()
+      const alias = String(raw.alias || '').trim()
+      if (!platform || !alias) continue
+      item = { kind, platform, alias, icon }
+    } else continue
+    const key = toolboxShortcutKey(item)
+    if (seen.has(key)) continue
+    seen.add(key)
+    result.push(item)
+  }
+  return result
+}
+
 export function normalizeToolbarPreferences(preferences = {}) {
   const allowed = new Set(TOOLBAR_ACTION_CATALOG.map((item) => item.id))
   const used = new Set()
@@ -104,6 +146,7 @@ export function normalizeToolbarPreferences(preferences = {}) {
     toolbar: normalizeList(preferences?.toolbar),
     more: normalizeList(preferences?.more),
     quick_actions_pinned: normalizeQuickActionPins(preferences?.quick_actions_pinned),
+    toolbox_shortcuts: normalizeToolboxShortcuts(preferences?.toolbox_shortcuts),
   }
 
   TOOLBAR_ACTION_CATALOG.forEach((action) => {

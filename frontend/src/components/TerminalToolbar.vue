@@ -223,7 +223,15 @@
     <ToolboxDialog
       v-model:visible="toolboxVisible"
       :actions="toolboxActions"
+      :shortcuts="toolbarPreferences.toolbox_shortcuts"
+      :scripts="toolboxScripts"
+      :quick-actions="toolboxQuickActions"
+      :pin-loading="toolboxPinsLoading || toolboxPinsSaving"
       @launch="launchToolboxAction"
+      @load-pin-options="loadToolboxPinOptions"
+      @add-pin="addToolboxPin"
+      @remove-pin="removeToolboxPin"
+      @launch-pin="launchToolboxPin"
     />
   </div>
 
@@ -233,7 +241,7 @@
 import { ElMessage, ElMessageBox } from 'element-plus'
 import ToolboxDialog from './ToolboxDialog.vue'
 import { killConnection as killConnectionApi } from '../api/connectionsApi.js'
-import { loadToolbarPreferences } from '../api/toolbarPreferencesApi.js'
+import { loadToolbarPreferences, saveToolbarPreferences } from '../api/toolbarPreferencesApi.js'
 import { listQuickActions } from '../api/quickActionsApi.js'
 import {
   DEFAULT_TOOLBAR_PREFERENCES,
@@ -294,6 +302,7 @@ export default {
     'open-one-liners',
     'open-quick-actions',
     'run-quick-action',
+    'run-toolbox-script',
     'open-settings',
     'clear',
     'clear-selection',
@@ -306,6 +315,7 @@ export default {
       quickActionsLoading: false,
       pinnedQuickActions: [],
       toolboxVisible: false,
+      toolboxScripts: [], toolboxQuickActions: [], toolboxPinsLoading: false, toolboxPinLoadSerial: 0, toolboxPinsSaving: false,
     }
   },
 
@@ -333,17 +343,33 @@ export default {
     toolboxActions() {
       // One catalog and the current Toolbar + More order, without a separate Toolbox layout.
       const ids = [...this.toolbarPreferences.toolbar, ...this.toolbarPreferences.more]
-      return this.actionsForIds(ids).map((action) => ({
+      const base = this.actionsForIds(ids).map((action) => ({
         ...action,
         disabled: this.isActionDisabled(action.id),
         menuOptions: this.actionOptions(action.id),
       }))
+      const shortcuts = (this.toolbarPreferences.toolbox_shortcuts || []).map((pin, index) => {
+        const resource = pin.kind === 'script'
+          ? this.toolboxScripts.find(item => item.script_name === pin.script_name)
+          : this.toolboxQuickActions.find(item => item.platform === pin.platform && item.alias === pin.alias && item.in_current_scope === true)
+        return {
+          id: `shortcut:${index}`, label: resource?.display_name || resource?.alias || pin.script_name || pin.alias,
+          icon: pin.icon, shortcut: pin, disabled: this.deviceActionDisabled ||
+            ((this.toolboxScripts.length || this.toolboxQuickActions.length) && !resource),
+          menuOptions: [],
+        }
+      })
+      return [...base, ...shortcuts]
     },
   },
 
   watch: {
     selectedId() {
       this.pinnedQuickActions = []
+      this.toolboxScripts = []
+      this.toolboxQuickActions = []
+      this.toolboxPinLoadSerial++
+      this.toolboxPinsLoading = false
     },
   },
 
@@ -505,9 +531,76 @@ export default {
     openToolbox() {
       this.$refs.moreDropdown?.handleClose?.()
       this.toolboxVisible = true
+      void this.loadToolboxPinOptions()
       if ((this.toolbarPreferences.quick_actions_pinned || []).length) {
         void this.loadPinnedQuickActions()
       }
+    },
+    async loadToolboxPinOptions() {
+      if (!this.selectedId || this.currentConnectionOffline) {
+        this.toolboxScripts = []
+        this.toolboxQuickActions = []
+        return
+      }
+      const clientId = this.selectedId
+      const serial = ++this.toolboxPinLoadSerial
+      this.toolboxPinsLoading = true
+      try {
+        const [scripts, actions] = await Promise.all([
+          fetch('/api/scripts/catalog').then(async res => {
+            const json = await res.json()
+            if (!res.ok || json.code !== 0) throw Error(json.message || 'Failed to load scripts')
+            return json.data?.items || []
+          }),
+          listQuickActions(clientId).then(data => data.items || []),
+        ])
+        if (clientId !== this.selectedId || serial !== this.toolboxPinLoadSerial) return
+        this.toolboxScripts = Array.isArray(scripts) ? scripts : []
+        this.toolboxQuickActions = Array.isArray(actions) ? actions : []
+      } catch (e) {
+        if (clientId === this.selectedId && serial === this.toolboxPinLoadSerial) ElMessage.warning(e.message || 'Failed to load Toolbox shortcuts')
+      } finally {
+        if (clientId === this.selectedId && serial === this.toolboxPinLoadSerial) this.toolboxPinsLoading = false
+      }
+    },
+    async saveToolboxPins(pins) {
+      if (this.toolboxPinsSaving) return
+      this.toolboxPinsSaving = true
+      try {
+        const latest = this.normalizePreferences(await loadToolbarPreferences())
+        const saved = this.normalizePreferences(await saveToolbarPreferences({ ...latest, toolbox_shortcuts: pins }))
+        this.toolbarPreferences = this.clonePreferences(saved)
+      } catch (e) { ElMessage.error(e.message || 'Failed to save Toolbox shortcuts') }
+      finally { this.toolboxPinsSaving = false }
+    },
+    addToolboxPin(pin) {
+      const pins = [...(this.toolbarPreferences.toolbox_shortcuts || []), pin]
+      void this.saveToolboxPins(pins)
+    },
+    removeToolboxPin(pin) {
+      const pins = (this.toolbarPreferences.toolbox_shortcuts || []).filter(item =>
+        !(item.kind === pin.kind && (item.kind === 'script'
+          ? item.script_name === pin.script_name
+          : item.platform === pin.platform && item.alias === pin.alias)))
+      void this.saveToolboxPins(pins)
+    },
+    async launchToolboxPin(pin) {
+      if (!this.toolboxVisible || this.deviceActionDisabled) return
+      if (pin.kind === 'script') {
+        this.toolboxVisible = false
+        this.$emit('run-toolbox-script', pin.script_name)
+        return
+      }
+      if (pin.kind !== 'quick_action') return
+      const clientId = this.selectedId
+      try {
+        const data = await listQuickActions(clientId)
+        if (clientId !== this.selectedId || !this.toolboxVisible) return
+        const item = (data.items || []).find(row => row.platform === pin.platform && row.alias === pin.alias && row.in_current_scope === true)
+        if (!item) { ElMessage.warning('Quick Action is unavailable'); return }
+        this.toolboxVisible = false
+        this.$emit('run-quick-action', item)
+      } catch (e) { ElMessage.warning(e.message || 'Failed to load Quick Action') }
     },
     launchToolboxAction(actionId, option = 'open') {
       if (!this.toolboxVisible) return

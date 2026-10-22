@@ -13,3 +13,7 @@ Toolbox 显示 Toolbar 和 More 中的全部工具，顺序与当前工具栏设
 
 
 终端 Toolbar 的 Screen View 主按钮打开原 Dialog，悬停下拉 **Open in New Tab** 可以直接打开独立标签页，不必先打开 Dialog。
+
+Toolbox 工具网格末尾提供 **Add** 快捷入口。可以选择 Server Script 或当前 Client 可用的 Quick Action，并选择一个预设 Lucide 图标固定到 Toolbox；不涉及 Background Job 或分组配置。固定项只保留资源身份与图标，不复制脚本、Alias 模板或参数。固定的 Script 点击后直接使用原 Script Run Dialog；固定的 Quick Action 仍遵循原有执行方式（有参数打开参数框，无参数直接运行）。右键固定项可选择 Unpin，仍使用 Toolbox 的单实例右键菜单。
+
+固定项通过 Toolbar Preferences 中的 `toolbox_shortcuts` 持久化，独立于 Toolbar 的 `quick_actions_pinned`。Toolbar Settings 修改布局时保留这一字段；切换 Client 时重新检查资源及其平台可用性，失效引用不会执行其他同名资源。

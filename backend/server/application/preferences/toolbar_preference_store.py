@@ -9,9 +9,17 @@ DEFAULT_TOOLBAR_PREFERENCES = {
         'external-tools', 'jobs', 'agents', 'processes', 'keychains', 'one-liners', 'quick-actions',
     ],
     'quick_actions_pinned': [],
+    'toolbox_shortcuts': [],
 }
 
 _ALLOWED_ACTION_IDS = tuple(DEFAULT_TOOLBAR_PREFERENCES['toolbar'] + DEFAULT_TOOLBAR_PREFERENCES['more'])
+
+
+_TOOLBOX_ICONS = frozenset({
+    'file-code', 'terminal', 'zap', 'rocket', 'play', 'activity', 'shield-check',
+    'folder-open', 'monitor', 'wrench', 'calendar-clock', 'book-open', 'code-2',
+    'archive', 'clipboard', 'scroll-text',
+})
 
 
 class ToolbarPreferenceStore:
@@ -63,6 +71,39 @@ class ToolbarPreferenceStore:
             result.append({'platform': platform, 'alias': alias})
         return result
 
+    @staticmethod
+    def _normalize_toolbox_shortcuts(value) -> list[dict]:
+        if not isinstance(value, list):
+            return []
+        result, seen = [], set()
+        for raw in value:
+            if not isinstance(raw, dict):
+                continue
+            kind = str(raw.get('kind') or '').strip()
+            icon = str(raw.get('icon') or '').strip()
+            if icon not in _TOOLBOX_ICONS:
+                continue
+            if kind == 'script':
+                name = str(raw.get('script_name') or '').strip()
+                if not name:
+                    continue
+                key = ('script', name)
+                item = {'kind': kind, 'script_name': name, 'icon': icon}
+            elif kind == 'quick_action':
+                platform = str(raw.get('platform') or '').strip().lower()
+                alias = str(raw.get('alias') or '').strip()
+                if not platform or not alias:
+                    continue
+                key = ('quick_action', platform, alias)
+                item = {'kind': kind, 'platform': platform, 'alias': alias, 'icon': icon}
+            else:
+                continue
+            if key in seen:
+                continue
+            seen.add(key)
+            result.append(item)
+        return result
+
     def _normalize(self, payload: dict) -> dict:
         source = payload if isinstance(payload, dict) else {}
         toolbar = self._normalize_list(source.get('toolbar'))
@@ -80,4 +121,5 @@ class ToolbarPreferenceStore:
             'toolbar': toolbar,
             'more': more,
             'quick_actions_pinned': self._normalize_quick_action_pins(source.get('quick_actions_pinned')),
+            'toolbox_shortcuts': self._normalize_toolbox_shortcuts(source.get('toolbox_shortcuts')),
         }
