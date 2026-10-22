@@ -397,6 +397,9 @@ export default {
         this.screenStatus = 'error'
         this.screenError = e?.message || 'Failed to open screen view'
         ElMessage.error(this.screenError)
+        if (!this.standalone && this.screenError === 'Screen View is already open for this device') {
+          this.visible = false
+        }
       } finally {
         this.loading = false
       }
@@ -411,18 +414,21 @@ export default {
       this.fullscreen = !this.fullscreen
     },
 
-    openInNewTab() {
+    async openInNewTab() {
       if (!this.targetClientId) return
       const url = new URL('/', window.location.origin)
       url.searchParams.set('screen_view_client', this.targetClientId)
-      // The same Client has one active Screen View session; the new tab takes ownership.
-      const tab = window.open(url.toString(), '_blank')
+      // Reserve the tab during the user gesture, then release the old session
+      // before the standalone viewer starts its own session.
+      const tab = window.open('about:blank', '_blank')
       if (!tab) {
         ElMessage.warning('Please allow pop-ups to open Screen View in a new tab')
         return
       }
       tab.opener = null
+      await this.closeRemoteSession(false)
       this.visible = false
+      tab.location.replace(url.toString())
     },
 
     closeStandaloneTab() {
@@ -1405,6 +1411,10 @@ export default {
   height: 100%;
   border: 0;
   border-radius: 0;
+}
+/* The standalone viewport has no control-focus frame; dialog styling stays unchanged. */
+.screen-view-dialog.screen-view-dialog-standalone .screen-view-canvas-control {
+  outline: none;
 }
 .screen-view-dialog.screen-view-dialog-standalone .el-alert {
   position: absolute;

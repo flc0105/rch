@@ -45,7 +45,6 @@ class ScreenViewSessionService:
         client_id = str(client_id or '').strip()
         session = self.server.get_target_connection_by_client_id(client_id)
         self._cleanup_expired_sessions()
-        self._close_existing_client_sessions(client_id)
 
         screen_session_id = str(uuid.uuid4())
         item = {
@@ -73,6 +72,13 @@ class ScreenViewSessionService:
             'ws_token': secrets.token_urlsafe(24),
         }
         with self._lock:
+            # Do not displace a viewer in another browser tab or window.
+            if any(
+                existing['client_id'] == client_id
+                and existing['status'] not in ('closing', 'closed', 'error')
+                for existing in self._sessions.values()
+            ):
+                raise ValueError('Screen View is already open for this device')
             self._sessions[screen_session_id] = item
 
         try:
@@ -188,7 +194,7 @@ class ScreenViewSessionService:
         control_item = None
         with self._lock:
             item = self._sessions.get(str(screen_session_id or ''))
-            if not item:
+            if not item or item['status'] in ('closing', 'closed', 'error'):
                 return
             item['status'] = 'open'
             item['opened_at'] = time.time()
@@ -251,7 +257,7 @@ class ScreenViewSessionService:
 
         with self._lock:
             item = self._sessions.get(str(screen_session_id or ''))
-            if not item:
+            if not item or item['status'] in ('closing', 'closed', 'error'):
                 return
             if packet['seq'] <= int(item.get('seq') or 0):
                 return
@@ -346,19 +352,6 @@ class ScreenViewSessionService:
                 return False
             expected = str(item.get('ws_token') or '')
         return bool(expected) and bool(token) and secrets.compare_digest(expected, str(token))
-
-    def _close_existing_client_sessions(self, client_id: str):
-        with self._lock:
-            session_ids = [
-                item['screen_session_id']
-                for item in self._sessions.values()
-                if item.get('client_id') == client_id and item.get('status') not in ('closed', 'error')
-            ]
-        for screen_session_id in session_ids:
-            try:
-                self.close_session(screen_session_id)
-            except Exception:
-                pass
 
     def _send_input_event(self, item: dict, event: dict):
         session = self.server.get_target_connection_by_client_id(item['client_id'])

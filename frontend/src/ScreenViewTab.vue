@@ -28,6 +28,7 @@ export default {
     }
   },
   async mounted() {
+    window.addEventListener('pagehide', this.releaseScreenViewOnUnload)
     if (!this.clientId) return
     // Each tab establishes its own authenticated session with the same Screen View component.
     try {
@@ -39,7 +40,16 @@ export default {
     document.title = `Screen View · ${this.connection?.hostname || this.clientId}`
     await this.$refs.screenViewDialogRef?.open()
   },
+  beforeUnmount() {
+    window.removeEventListener('pagehide', this.releaseScreenViewOnUnload)
+  },
   methods: {
+    releaseScreenViewOnUnload() {
+      const sessionId = this.$refs.screenViewDialogRef?.screenSessionId
+      if (!sessionId) return
+      // Closing a browser tab does not reliably run Vue unmount hooks.
+      navigator.sendBeacon(`/api/screen-view/${encodeURIComponent(sessionId)}/close`)
+    },
     openClipboardDialog(tab = 'get') {
       return this.$refs.clipboardDialogRef?.open(tab)
     },

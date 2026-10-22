@@ -35,19 +35,27 @@ test('More offers Open in New Tab while existing screenshot/restart remain', asy
   assert.equal(restarted, 1)
 })
 
-test('new tab uses same-origin client-only URL; successful popup releases original session', () => {
+test('new tab waits for the original session to close before navigating', async () => {
   const opened = []
-  const tab = { opener: 'original' }
+  const navigations = []
+  let releaseSession
+  const released = new Promise(resolve => { releaseSession = resolve })
+  const tab = { opener: 'original', location: { replace(url) { navigations.push(url) } } }
   const window = { location: { origin: 'https://example.test' }, open(...args) { opened.push(args); return tab } }
   const { options } = component('../src/components/ScreenViewDialog.vue', { ...screenGlobals, window, URL })
-  const dialog = { targetClientId: 'device/1', visible: true }
-  options.methods.openInNewTab.call(dialog)
+  const dialog = { targetClientId: 'device/1', visible: true, closeRemoteSession() { return released } }
+  const pending = options.methods.openInNewTab.call(dialog)
   assert.equal(opened.length, 1)
+  assert.equal(opened[0][0], 'about:blank')
   assert.equal(opened[0][1], '_blank')
-  assert.equal(new URL(opened[0][0]).searchParams.get('screen_view_client'), 'device/1')
-  assert.deepEqual(Array.from(new URL(opened[0][0]).searchParams.keys()), ['screen_view_client'])
+  assert.deepEqual(navigations, [])
+  assert.equal(dialog.visible, true)
   assert.equal(tab.opener, null)
+  releaseSession()
+  await pending
   assert.equal(dialog.visible, false)
+  assert.equal(new URL(navigations[0]).searchParams.get('screen_view_client'), 'device/1')
+  assert.deepEqual(Array.from(new URL(navigations[0]).searchParams.keys()), ['screen_view_client'])
 })
 
 test('popup blocker preserves original Screen View', () => {
@@ -73,6 +81,8 @@ test('standalone mode retains original renderer/input/controls and adds floating
   assert.match(source, /<KeyframeDeltaScreenRenderer/)
   assert.match(source, /@pointerdown="handlePointerDown"/)
   assert.match(source, /@keydown="handleKeyDown"/)
+  assert.match(source, /\.screen-view-dialog\.screen-view-dialog-standalone \.screen-view-canvas-control\s*\{\s*outline: none;/)
+  assert.match(source, /\.screen-view-canvas-control\s*\{\s*outline: 2px solid #409eff;/)
   assert.match(source, /@click="\$emit\('open-clipboard', 'get'\)"/)
   assert.match(source, /<el-dropdown-item command="send">Send<\/el-dropdown-item>/)
   assert.match(source, /<el-switch[\s\S]*?v-model="controlEnabled"/)
@@ -113,9 +123,15 @@ test('standalone overlay stays hidden until top-edge hover and remains available
 
 test('standalone entry loads the same Screen View and Clipboard dialogs, with no second implementation', async () => {
   const title = { title: '' }
+  const eventsRegistered = []
+  const eventsRemoved = []
   const { source, options } = component('../src/ScreenViewTab.vue', {
     ScreenViewDialog: {}, ClipboardDialog: {},
-    URLSearchParams, window: { location: { search: '?screen_view_client=client-7' } },
+    URLSearchParams, window: {
+      location: { search: '?screen_view_client=client-7' },
+      addEventListener(event, listener) { eventsRegistered.push([event, listener]) },
+      removeEventListener(event, listener) { eventsRemoved.push([event, listener]) },
+    },
     listConnections: async () => [{ client_id: 'client-7', hostname: 'test-Mac' }],
     document: title,
   })
@@ -134,9 +150,45 @@ test('standalone entry loads the same Screen View and Clipboard dialogs, with no
   assert.equal(title.title, 'Screen View · test-Mac')
   options.methods.openClipboardDialog.call(dialog, 'send')
   assert.deepEqual(events, ['open-screen', 'clipboard:send'])
+  assert.equal(eventsRegistered[0][0], 'pagehide')
+  options.beforeUnmount.call(dialog)
+  assert.deepEqual(eventsRemoved, eventsRegistered)
   const main = read('../src/main.js')
   assert.match(main, /screen_view_client/)
   assert.match(main, /import\('\.\/ScreenViewTab\.vue'\)/)
   assert.match(main, /import\('\.\/App\.vue'\)/)
   assert.match(read('../src/../index.html'), /src="\/auth\.js"/)
+})
+
+test('standalone tab releases its screen session on pagehide using existing close endpoint', () => {
+  const sent = []
+  const { options } = component('../src/ScreenViewTab.vue', {
+    ScreenViewDialog: {}, ClipboardDialog: {},
+    URLSearchParams,
+    window: { location: { search: '?screen_view_client=client-7' } },
+    navigator: { sendBeacon(url) { sent.push(url); return true } },
+  })
+  const dialog = { $refs: { screenViewDialogRef: { screenSessionId: 'session/7' } } }
+  options.methods.releaseScreenViewOnUnload.call(dialog)
+  assert.deepEqual(sent, ['/api/screen-view/session%2F7/close'])
+  dialog.$refs.screenViewDialogRef.screenSessionId = ''
+  options.methods.releaseScreenViewOnUnload.call(dialog)
+  assert.equal(sent.length, 1)
+})
+
+test('main viewer surfaces an already-open error without displaying an empty dialog', async () => {
+  const errors = []
+  const { options } = component('../src/components/ScreenViewDialog.vue', {
+    ...screenGlobals, ElMessage: { error(message) { errors.push(message) } },
+    screenViewApi: { openScreenView: async () => { throw new Error('Screen View is already open for this device') } },
+  })
+  const ctx = {
+    targetClientId: 'client-a', loading: false, standalone: false, visible: true,
+    fps: 15, quality: 60, removeControlSafetyListeners() {}, clearPointerMoveTimer() {},
+    stopFallbackPolling() {}, closeScreenSocket() {}, $refs: { deltaRenderer: { reset() {} } },
+  }
+  await options.methods.startView.call(ctx)
+  assert.equal(ctx.visible, false)
+  assert.equal(ctx.screenSessionId, undefined)
+  assert.equal(errors[0], 'Screen View is already open for this device')
 })
