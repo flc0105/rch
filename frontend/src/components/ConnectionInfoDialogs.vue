@@ -638,6 +638,7 @@ export default {
         { label: 'PID', value: conn.process_id || '-' },
         { label: 'Process Name', value: conn.process_name || '-' },
         { label: 'Launch Command', value: conn.launch_command || '-' },
+        { label: 'Client Log', value: conn.client_log_path || '-', mono: true },
         { label: 'Username', value: conn.username || '-' },
         { label: 'Python Version', value: conn.python_ver || '-' },
         { label: 'Reported Jobs', value: this.jobCount },

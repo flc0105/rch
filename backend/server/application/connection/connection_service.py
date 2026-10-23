@@ -164,6 +164,7 @@ class WebConnectionService:
             'python_ver': info.get_extra('python_ver'),
             'process_id': info.get_extra('process_id'),
             'launch_command': info.get_extra('launch_command'),
+            'client_log_path': info.get_extra('client_log_path') or '',
             'username': info.get_extra('username'),
             'process_name': info.get_extra('process_name'),
             'http_transfer_mode': info.get_extra('http_transfer_mode'),

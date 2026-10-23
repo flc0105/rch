@@ -607,7 +607,14 @@ export default {
     },
 
     openLogViewerDialog(source = {}) {
-      this.$refs.logViewerDialogRef?.open(source)
+      const requested = source && typeof source === 'object' ? source : {}
+      const selectedClientId = String(this.currentConnection?.client_id || '').trim()
+      const targetClientId = String(requested.clientId || this.selectedId || '').trim()
+      const useDefaultLog = !String(requested.path || '').trim()
+        && !!selectedClientId && targetClientId === selectedClientId
+        && !this.isCurrentConnectionOffline
+      const logPath = useDefaultLog ? String(this.currentConnection?.client_log_path || '').trim() : ''
+      this.$refs.logViewerDialogRef?.open(logPath ? { ...requested, path: logPath } : requested)
     },
 
     openExternalToolManagerDialog() {

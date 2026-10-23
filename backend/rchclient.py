@@ -11,6 +11,7 @@ from client.watchdog.process_watchdog import (
     ProcessWatchdogManager, run_process_watchdog_worker_from_argv,
 )
 from client.config import runtime_config
+from client.runtime.client_logging import install_client_file_logging
 from core.utils.logger import logger
 
 
@@ -78,6 +79,7 @@ def main():
         sys.exit(0)
 
     update_ready_file = _pop_argv_value('--update-ready-file')
+    install_client_file_logging()
     process_watchdog = ProcessWatchdogManager()
     if not update_ready_file and runtime_config.PROCESS_WATCHDOG_ENABLED:
         try:

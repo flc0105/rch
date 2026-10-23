@@ -14,6 +14,7 @@ from client.config.runtime_config import (
     REMOTE_HTTP_WATCHDOG_ENABLED,
 )
 from core.client_revision import build_client_revision_manifest
+from client.runtime.client_logging import get_client_log_path
 from core.device.local_identity import get_local_identity
 from client.runtime.client_util import check_privilege, get_executable_path, get_system_paths
 
@@ -78,6 +79,7 @@ class ClientInfoBuilder:
 
             'process_id': os.getpid(),
             'launch_command': get_executable_path(),
+            'client_log_path': get_client_log_path(),
             'username': process_info['username'],
             'process_name': process_info['process_name'],
             'integrity': check_privilege(),

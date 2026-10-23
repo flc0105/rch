@@ -2975,7 +2975,7 @@ A feature should not be considered documented just because a nearby subsystem na
 
 ### Log Viewer
 
-Toolbox → Log Viewer follows a selected Client log file using RemoteFilePicker.
+Toolbox → Log Viewer defaults to the current online Client main log path (reported at handshake) when no file is provided; Browse can switch to another remote log using RemoteFilePicker.
 External Tools instance logs and Watchdog file paths open the shared viewer.
 Streaming uses Device Monitor snapshots forwarded over the existing SSE stream;
 there is no Server-local file selection or System Events feed in the first version.
