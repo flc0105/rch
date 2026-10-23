@@ -172,13 +172,13 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="#" width="64" class-name="machine-history-index-column">
+        <el-table-column label="#" width="60" class-name="machine-history-index-column">
           <template #default="scope">
             {{ scope.$index + 1 }}
           </template>
         </el-table-column>
 
-        <el-table-column label="State" width="100">
+        <el-table-column label="State" width="110">
           <template #default="scope">
             <el-tag
               size="small"
@@ -189,31 +189,31 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="client_id" min-width="136" show-overflow-tooltip>
+        <el-table-column label="Client" min-width="136" show-overflow-tooltip>
           <template #default="scope">
             <code class="machine-session-client-id">{{ scope.row.client_id || '-' }}</code>
           </template>
         </el-table-column>
 
-        <el-table-column label="Online" min-width="96" class-name="machine-history-time-column" show-overflow-tooltip>
+        <el-table-column label="Online" min-width="80" class-name="machine-history-time-column" show-overflow-tooltip>
           <template #default="scope">
             {{ formatDateTime(scope.row.connected_at) }}
           </template>
         </el-table-column>
 
-        <el-table-column label="Offline" min-width="96" class-name="machine-history-time-column" show-overflow-tooltip>
+        <el-table-column label="Offline" min-width="80" class-name="machine-history-time-column" show-overflow-tooltip>
           <template #default="scope">
             {{ scope.row.connection_state === 'online' ? 'online' : formatDateTime(scope.row.disconnected_at) }}
           </template>
         </el-table-column>
 
-        <el-table-column label="Duration" width="96" show-overflow-tooltip>
+        <el-table-column label="Duration" width="100" show-overflow-tooltip>
           <template #default="scope">
             {{ formatDuration(scope.row.duration_ms) }}
           </template>
         </el-table-column>
 
-        <el-table-column label="Activities" width="110" align="right">
+        <el-table-column label="Activities" width="90" align="right">
           <template #default="scope">
             {{ scope.row.command_count || 0 }}
           </template>
