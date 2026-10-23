@@ -1119,15 +1119,22 @@ export default {
   width: 100% !important;
 }
 
+/* File entries are visually grouped without affecting the shared section heading. */
 .process-open-files-list {
-  border: 1px solid #e4e7ed;
-  border-radius: 10px;
-  background: #fff;
-  overflow: hidden;
+  --process-open-file-icon-size: clamp(22px, 2.4vw, 24px);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 7px;
+  border: 1px solid #e6ebf3;
+  border-radius: 12px;
+  background: #f6f8fc;
 }
 
 .process-open-files-empty {
-  padding: 18px 16px;
+  padding: 16px 14px;
+  border-radius: 9px;
+  background: #fff;
   color: #909399;
   text-align: center;
   font-size: 13px;
@@ -1135,45 +1142,51 @@ export default {
 
 .process-open-file-row {
   display: grid;
-  grid-template-columns: 24px minmax(0, 1fr);
+  grid-template-columns: var(--process-open-file-icon-size) minmax(0, 1fr);
   align-items: center;
   gap: 8px;
   min-width: 0;
-  padding: 8px 12px;
-  border-bottom: 1px solid #f0f2f5;
-  transition: background-color 0.16s ease, color 0.16s ease;
+  padding: 6px 9px;
+  border: 1px solid #e8edf5;
+  border-radius: 9px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(27, 43, 68, 0.04);
+  transition: border-color 0.16s ease, background-color 0.16s ease, box-shadow 0.16s ease;
 }
 
 .process-open-file-row:hover {
-  background: #f7f9fc;
-}
-
-.process-open-file-row:last-of-type {
-  border-bottom: 0;
+  border-color: #cbdcf5;
+  background: #fcfdff;
+  box-shadow: 0 2px 7px rgba(42, 78, 129, 0.08);
 }
 
 .process-open-file-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
-  color: #a3adbd;
-  font-size: 14px;
+  width: var(--process-open-file-icon-size);
+  height: var(--process-open-file-icon-size);
+  border-radius: 8px;
+  background: #edf3fc;
+  color: #6489be;
+  font-size: clamp(13px, 1.3vw, 14px);
 }
 
 .process-open-file-path {
   min-width: 0;
   overflow: hidden;
-  color: #4b5565;
-  font-size: 12px;
-  line-height: 1.45;
+  padding-right: 12px;
+  box-sizing: border-box;
+  color: #3b4a60;
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.5;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .process-open-file-row:hover .process-open-file-path {
-  color: #303846;
+  color: #263b59;
 }
 
 .process-open-files-toggle {
@@ -1181,26 +1194,27 @@ export default {
   align-items: center;
   justify-content: center;
   width: 100%;
-  min-height: 34px;
-  padding: 7px 12px;
-  border: 0;
-  border-top: 1px solid #f0f2f5;
-  background: #fff;
+  min-height: 32px;
+  padding: 5px 10px;
+  border: 1px solid #dce7f7;
+  border-radius: 8px;
+  background: #edf4ff;
   color: var(--el-color-primary);
   font: inherit;
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
-  transition: background-color 0.16s ease;
+  transition: border-color 0.16s ease, background-color 0.16s ease;
 }
 
 .process-open-files-toggle:hover {
-  background: #f7f9fc;
+  border-color: #c6d9f5;
+  background: #e5efff;
 }
 
 .process-open-files-toggle:focus-visible {
   outline: 2px solid var(--el-color-primary-light-5);
-  outline-offset: -2px;
+  outline-offset: 2px;
 }
 
 @media (max-width: 768px) {
