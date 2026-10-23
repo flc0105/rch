@@ -102,7 +102,7 @@ test('standalone overlay stays hidden until top-edge hover and remains available
   assert.match(source, /v-if="standalone" class="screen-view-toolbar-trigger"/)
   assert.match(source, /\.screen-view-dialog\.screen-view-dialog-standalone \.screen-view-toolbar-trigger\s*\{[\s\S]*?pointer-events: auto;/)
   assert.doesNotMatch(source, /\.screen-view-toolbar-host::before/)
-  assert.match(source, /width: calc\(100vw - 24px\)/)
+  assert.match(source, /width: calc\(90vw - 24px\)/)
   assert.match(source, /\.screen-view-dialog\.screen-view-dialog-standalone \.screen-view-toolbar\s*\{[\s\S]*?opacity: 0;[\s\S]*?pointer-events: none;/)
   assert.match(source, /\.screen-view-toolbar-host:hover \.screen-view-toolbar/)
   assert.match(source, /\.screen-view-toolbar-popup-active \.screen-view-toolbar/)

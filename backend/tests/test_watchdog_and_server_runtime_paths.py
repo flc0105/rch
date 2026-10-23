@@ -3,6 +3,7 @@
 import os
 from pathlib import Path
 import runpy
+import subprocess
 import sys
 import tempfile
 import types
@@ -15,6 +16,24 @@ from client.watchdog.process_watchdog import get_process_watchdog_status_payload
 
 BACKEND = Path(__file__).resolve().parents[1]
 CONFIG_FILE = BACKEND / 'server' / 'config' / 'config.py'
+
+
+class ProcessWatchdogOptionalDependencyTest(unittest.TestCase):
+    def test_import_does_not_require_psutil_when_disabled(self):
+        script = (
+            'import builtins; original = builtins.__import__; '
+            'def_no_psutil = lambda name, *args, **kwargs: '
+            '(_ for _ in ()).throw(ModuleNotFoundError("psutil unavailable")) '
+            'if name.split(".")[0] == "psutil" else original(name, *args, **kwargs); '
+            'builtins.__import__ = def_no_psutil; '
+            'from client.watchdog.process_watchdog import ProcessWatchdogManager; '
+            'assert ProcessWatchdogManager().supervisor_pid is None'
+        )
+        result = subprocess.run(
+            [sys.executable, '-c', script],
+            cwd=str(BACKEND), capture_output=True, text=True, timeout=15,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
 
 
 class WatchdogLogPathsTest(unittest.TestCase):

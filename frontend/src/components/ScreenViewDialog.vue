@@ -1392,7 +1392,7 @@ export default {
   position: absolute;
   top: 6px;
   left: 50%;
-  width: calc(100vw - 24px);
+  width: calc(90vw - 24px);
   padding: 8px 12px;
   border-radius: 9px;
   background: rgba(248, 250, 252, 0.93);

@@ -11,8 +11,6 @@ import tempfile
 import time
 from uuid import uuid4
 
-import psutil
-
 from client.watchdog.watchdog_paths import get_watchdog_log_path
 from client.watchdog.recovery_source import RECOVERY_SOURCE_ENV, PROCESS_WATCHDOG
 
@@ -36,6 +34,8 @@ def without_process_watchdog_environment(source=None):
 
 
 def _process_identity(pid):
+    import psutil
+
     try:
         process = psutil.Process(int(pid))
         # psutil 7.2.2 uses monotonic process start time in _ident on macOS/Linux.
@@ -48,6 +48,8 @@ def _process_identity(pid):
 
 def _probe_process(pid, started):
     """Return (alive, reason); uncertain reads never prove a Client is dead."""
+    import psutil
+
     try:
         pid = int(pid)
         if pid <= 0:
@@ -145,6 +147,8 @@ def stop_process_watchdog_from_environment():
         return True
     if _request_stop(session):
         return True
+    import psutil
+
     try:
         pid = int(os.environ[_ENV_PID])
         started = float(os.environ[_ENV_STARTED])
@@ -251,6 +255,8 @@ class ProcessWatchdogManager:
             if not ok and self.supervisor_pid and _alive(self.supervisor_pid, self.supervisor_started):
                 # A deliberate shutdown must not be countermanded by a wedged supervisor.
                 try:
+                    import psutil
+
                     psutil.Process(self.supervisor_pid).terminate()
                     psutil.Process(self.supervisor_pid).wait(timeout=2)
                     ok = True
