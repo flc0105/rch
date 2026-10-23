@@ -3,11 +3,12 @@ import threading
 import uvicorn
 from werkzeug.serving import make_server
 
-from server.config.config import SOCKET_ADDR, WEB_FILE_TRANSFER_PORT, WEB_HOST, WEB_PORT
+from server.config.config import SERVER_RUNTIME_DIR, SOCKET_ADDR, WEB_FILE_TRANSFER_PORT, WEB_HOST, WEB_PORT
 from rchserver import Server
 from core.utils.logger import logger
 from server.web.asgi import create_asgi_app
 from server.web.file_transfer_app import create_file_transfer_app
+from server.runtime.server_logging import install_server_file_logging, attach_uvicorn_file_logging
 
 
 def start_file_transfer_server(server):
@@ -23,6 +24,7 @@ def start_file_transfer_server(server):
 
 
 def main():
+    file_handler = install_server_file_logging(SERVER_RUNTIME_DIR)
     server = Server(SOCKET_ADDR)
 
     threading.Thread(target=server.serve, daemon=True).start()
@@ -32,7 +34,9 @@ def main():
     app = create_asgi_app(server)
     server.schedule_startup_cleanup()
     try:
-        uvicorn.run(app, host=WEB_HOST, port=WEB_PORT, log_level='info')
+        config = uvicorn.Config(app, host=WEB_HOST, port=WEB_PORT, log_level='info')
+        attach_uvicorn_file_logging(file_handler)
+        uvicorn.Server(config).run()
     finally:
         transfer_server.shutdown()
 
