@@ -204,7 +204,7 @@ data: {"reason":"cursor_not_found","last_event_id":"missing-id"}
 Web UI 主要订阅通用 `/api/stream`。它在连接打开后监听不同事件名称，并按业务类型生成 Element Plus Toast；另外在加载时调用历史接口，在收到 `notification_center_updated` 时更新 Notification Center 状态。
 
 - **Toast** 是短暂提示，是否弹出由浏览器当前通知偏好决定。
-- **Notification Center** 是独立的持久历史视图，支持按 `success` / `info` / `warning` / `error` 查看、删除单条和清空全部。
+- **Notification Center** 是独立的持久历史视图，支持按 `success` / `info` / `warning` / `error` 查看、删除单条，以及清空全部或仅清空当前筛选类型。
 - **通知 Actions** 允许部分记录提供下载、预览、查看日志或打开相关管理器等操作。只有投影确实生成了 Actions，页面才有相应入口。
 
 当前 Web UI 并不是主要通过专用 Notification Stream 来消费通知；专用接口面向像 RCH Desktop Notifier 这样只关心持久通知的独立消费者。Desktop Notifier 使用 Bearer Token 连接该接口，把 `notification` 投射为操作系统桌面通知，并将最近成功投递的通知 ID 存入本地状态文件以便重连。
@@ -244,7 +244,7 @@ Notification Preferences 存在 Server 的 `runtime/rch.db` 中，通过 `settin
 | `PUT` | `/api/notifications/preferences` | 保存全局开关与分类偏好 |
 | `GET` | `/api/notifications/history` | 取得完整 Notification Center 历史 |
 | `DELETE` | `/api/notifications/history/{notification_id}` | 删除指定通知 |
-| `DELETE` | `/api/notifications/history` | 清空通知历史 |
+| `DELETE` | `/api/notifications/history` | 清空通知历史；传入 `?type=success`（也支持 `info`、`warning`、`error`） 时只清理对应类型 |
 | `GET` | `/api/notifications/stream` | 订阅持久通知的 SSE 流 |
 
 在已有 Web 登录会话或有效 API Token 的情况下，可按以下方式读取历史：

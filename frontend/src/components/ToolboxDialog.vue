@@ -43,10 +43,10 @@
       <template #prefix><Search :size="17" :stroke-width="1.8" /></template>
     </el-input>
 
-    <div class="toolbox-list">
+    <div class="toolbox-list" ref="toolboxList" @touchstart.passive="onPageTouchStart" @touchend.passive="onPageTouchEnd" @wheel.passive="onPageWheel">
       <div v-if="filteredActions.length" class="toolbox-grid">
         <div
-          v-for="action in filteredActions"
+          v-for="action in pageActions"
           :key="action.id"
           class="toolbox-grid-entry"
           @contextmenu.prevent.stop="openContextMenu($event, action)"
@@ -66,7 +66,7 @@
             <span v-if="action.shortcut && action.unavailable" class="toolbox-shortcut-unavailable">Unavailable</span>
           </button>
         </div>
-        <div v-if="!query.trim()" class="toolbox-grid-entry">
+        <div v-if="showAddOnPage" class="toolbox-grid-entry">
           <button class="toolbox-item" type="button" title="Add shortcut" aria-label="Add shortcut" @click="openShortcutPicker">
             <span class="toolbox-icon toolbox-icon-add"><Plus :size="27" :stroke-width="1.75" /></span>
             <span class="toolbox-label">Add</span>
@@ -74,6 +74,18 @@
         </div>
       </div>
       <el-empty v-else description="No tools found" :image-size="72" />
+    </div>
+    <div v-if="pageCount > 1" class="toolbox-page-dots" aria-label="Toolbox pages">
+      <button
+        v-for="page in pageCount"
+        :key="page"
+        class="toolbox-page-dot"
+        :class="{ 'toolbox-page-dot-active': currentPage === page - 1 }"
+        type="button"
+        :aria-label="`Page ${page}`"
+        :aria-current="currentPage === page - 1 ? 'page' : undefined"
+        @click="setPage(page - 1)"
+      />
     </div>
   </el-dialog>
 
@@ -218,7 +230,8 @@ export default {
   emits: ['update:visible', 'launch', 'load-pin-options', 'add-pin', 'remove-pin', 'launch-pin'],
   data() {
     return { query: '', contextMenuAction: null, contextMenuX: 0, contextMenuY: 0, contextMenuSerial: 0,
-      shortcutPickerVisible: false, iconPickerVisible: false, shortcutKind: 'script', shortcutResource: '', shortcutIcon: 'file-code', shortcutLabel: '' }
+      shortcutPickerVisible: false, iconPickerVisible: false, shortcutKind: 'script', shortcutResource: '', shortcutIcon: 'file-code', shortcutLabel: '',
+      pageIndex: 0, pageTouchStartX: null, pageTouchStartY: null, lastPageWheelAt: 0 }
   },
   computed: {
     iconComponents() { return icons },
@@ -241,6 +254,17 @@ export default {
       if (!term) return this.actions
       return this.actions.filter((action) => action.label.toLocaleLowerCase().includes(term))
     },
+    pageCount() {
+      return Math.max(1, Math.ceil((this.filteredActions.length + (this.query.trim() ? 0 : 1)) / 24))
+    },
+    currentPage() { return Math.min(this.pageIndex, this.pageCount - 1) },
+    pageActions() {
+      const start = this.currentPage * 24
+      return this.filteredActions.slice(start, start + 24)
+    },
+    showAddOnPage() {
+      return !this.query.trim() && this.currentPage === Math.floor(this.filteredActions.length / 24)
+    },
   },
   mounted() {
     document.addEventListener('pointerdown', this.onOutsidePointerDown, true)
@@ -255,6 +279,33 @@ export default {
     window.removeEventListener('resize', this.closeContextMenu)
   },
   methods: {
+    setPage(index) {
+      const next = Math.max(0, Math.min(index, this.pageCount - 1))
+      if (next === this.currentPage) return
+      this.pageIndex = next
+      this.closeContextMenu()
+      if (this.$refs.toolboxList) this.$refs.toolboxList.scrollTop = 0
+    },
+    onPageTouchStart(event) {
+      this.pageTouchStartX = event.touches?.[0]?.clientX ?? null
+      this.pageTouchStartY = event.touches?.[0]?.clientY ?? null
+    },
+    onPageTouchEnd(event) {
+      const end = event.changedTouches?.[0]
+      const deltaX = end && this.pageTouchStartX !== null ? end.clientX - this.pageTouchStartX : 0
+      const deltaY = end && this.pageTouchStartY !== null ? end.clientY - this.pageTouchStartY : 0
+      this.pageTouchStartX = null
+      this.pageTouchStartY = null
+      if (Math.abs(deltaX) < 60 || Math.abs(deltaX) <= Math.abs(deltaY) || this.pageCount <= 1) return
+      this.setPage(this.currentPage + (deltaX < 0 ? 1 : -1))
+    },
+    onPageWheel(event) {
+      if (this.pageCount <= 1 || Math.abs(event.deltaX) < 24 || Math.abs(event.deltaX) <= Math.abs(event.deltaY)) return
+      const now = Date.now()
+      if (now - this.lastPageWheelAt < 450) return
+      this.lastPageWheelAt = now
+      this.setPage(this.currentPage + (event.deltaX > 0 ? 1 : -1))
+    },
     openShortcutPicker() {
       this.closeContextMenu()
       this.shortcutKind = 'script'
@@ -316,12 +367,21 @@ export default {
     },
   },
   watch: {
-    query() { this.closeContextMenu() },
+    query() {
+      this.pageIndex = 0
+      this.closeContextMenu()
+      if (this.$refs.toolboxList) this.$refs.toolboxList.scrollTop = 0
+    },
+    actions() {
+      this.pageIndex = 0
+      if (this.$refs.toolboxList) this.$refs.toolboxList.scrollTop = 0
+    },
     shortcutKind() { this.shortcutResource = '' },
     visible(isVisible) {
       this.closeContextMenu()
       if (!isVisible) return
       this.query = ''
+      this.pageIndex = 0
       this.shortcutPickerVisible = false
       this.iconPickerVisible = false
       this.$nextTick(() => this.$refs.searchInput?.focus?.())
@@ -361,6 +421,10 @@ export default {
 .toolbox-list { overflow-y: auto; min-height: 0; padding: 2px 4px 8px; }
 .toolbox-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px 8px; }
 .toolbox-grid-entry { display: block; min-width: 0; }
+.toolbox-page-dots { flex: 0 0 auto; display: flex; justify-content: center; align-items: center; gap: 9px; padding: 5px 0 2px; }
+.toolbox-page-dot { width: 8px; height: 8px; padding: 0; border: 0; border-radius: 50%; background: var(--el-border-color-darker); opacity: 0.55; cursor: pointer; }
+.toolbox-page-dot-active { background: var(--el-text-color-primary); opacity: 0.9; }
+.toolbox-page-dot:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: 3px; }
 .toolbox-context-menu {
   position: fixed;
   z-index: 4000;

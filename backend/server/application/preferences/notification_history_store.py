@@ -186,6 +186,16 @@ class NotificationHistoryStore:
             conn.execute('DELETE FROM notifications')
             return removed_count
 
+    def clear_type(self, notification_type: str) -> list[str]:
+        with self._lock, self.database.transaction() as conn:
+            rows = conn.execute(
+                'SELECT id FROM notifications WHERE type = ?', (notification_type,)
+            ).fetchall()
+            removed_ids = [row['id'] for row in rows]
+            if removed_ids:
+                conn.execute('DELETE FROM notifications WHERE type = ?', (notification_type,))
+            return removed_ids
+
     def delete_notifications(self, notification_ids) -> dict:
         normalized_ids = {
             str(value or '').strip()

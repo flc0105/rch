@@ -1,7 +1,7 @@
 {
   "id": "python-heartbeat-log",
   "name": "python-heartbeat-log",
-  "display_name": "Python Heartbeat Log (Streaming Test)",
+  "display_name": "Python Heartbeat Log",
   "description": "Daemon that emits timestamped heartbeat lines to stdout for testing streaming instance logs.",
   "version": "1.0.0",
   "category": "demo",

@@ -15,9 +15,12 @@ export function deleteNotificationHistory(notificationId) {
   )
 }
 
-export function clearNotificationHistory() {
+export function clearNotificationHistory(type = 'all') {
+  const url = type === 'all'
+    ? '/api/notifications/history'
+    : `/api/notifications/history?type=${encodeURIComponent(type)}`
   return apiData(
-    '/api/notifications/history',
+    url,
     { method: 'DELETE' },
     { removed_count: 0 },
   )

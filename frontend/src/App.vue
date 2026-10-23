@@ -410,7 +410,7 @@
     ref="notificationCenterDrawerRef"
     :notifications="sseNotificationHistory"
     @notification-deleted="removeSseNotificationHistory"
-    @notifications-cleared="clearSseNotificationHistory"
+    @notifications-cleared="loadSseNotificationHistory"
     @notification-action="handleNotificationCenterAction"
   />
 

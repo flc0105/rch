@@ -29,25 +29,26 @@
         </span>
 
         <div class="notification-center-toolbar-actions">
-          <select
+          <el-select
             v-model="typeFilter"
             class="notification-center-filter"
+            size="small"
             aria-label="Filter notifications by type"
           >
-            <option value="all">All</option>
-            <option value="success">Success</option>
-            <option value="info">Info</option>
-            <option value="warning">Warning</option>
-            <option value="error">Error</option>
-          </select>
+            <el-option label="All" value="all" />
+            <el-option label="Success" value="success" />
+            <el-option label="Info" value="info" />
+            <el-option label="Warning" value="warning" />
+            <el-option label="Error" value="error" />
+          </el-select>
 
           <button
             class="notification-center-clear"
             type="button"
-            :disabled="notifications.length === 0 || clearing"
+            :disabled="filteredNotifications.length === 0 || clearing"
             @click="clearAll"
           >
-            Clear All
+            {{ clearLabel }}
           </button>
         </div>
       </div>
@@ -195,6 +196,12 @@ export default {
       if (this.typeFilter === 'all') return notifications
       return notifications.filter(notification => this.normalizeType(notification?.type) === this.typeFilter)
     },
+
+    clearLabel() {
+      return this.typeFilter === 'all'
+        ? 'Clear All'
+        : `Clear ${this.typeFilter.charAt(0).toUpperCase()}${this.typeFilter.slice(1)}`
+    },
   },
 
   watch: {
@@ -261,14 +268,18 @@ export default {
     },
 
     async clearAll() {
-      if (!this.notifications.length || this.clearing) return
+      if (!this.filteredNotifications.length || this.clearing) return
 
+      const selectedType = this.typeFilter
+      const label = this.clearLabel
       try {
         await ElMessageBox.confirm(
-          'Clear all notifications? This cannot be undone.',
+          selectedType === 'all'
+            ? 'Clear all notifications? This cannot be undone.'
+            : `Clear ${selectedType} notifications? This cannot be undone.`,
           'Clear Notifications',
           {
-            confirmButtonText: 'Clear All',
+            confirmButtonText: label,
             cancelButtonText: 'Cancel',
             type: 'warning',
           },
@@ -279,7 +290,7 @@ export default {
 
       this.clearing = true
       try {
-        await clearNotificationHistory()
+        await clearNotificationHistory(selectedType)
         this.$emit('notifications-cleared')
       } catch (e) {
         ElMessage.error(e?.message || 'Failed to clear notifications')
@@ -369,19 +380,15 @@ export default {
 .notification-center-filter {
   width: 82px;
   height: 24px;
-  padding: 0 6px;
-  border: 1px solid rgba(148, 163, 184, 0.28);
-  border-radius: 6px;
-  outline: none;
-  background: rgba(255, 255, 255, 0.7);
-  color: #64748b;
-  font: inherit;
   font-size: 11px;
-  cursor: pointer;
 }
 
-.notification-center-filter:focus {
-  border-color: rgba(100, 116, 139, 0.45);
+.notification-center-filter :deep(.el-select__wrapper) {
+  min-height: 24px;
+  height: 24px;
+  padding: 0 6px;
+  border-radius: 6px;
+  font-size: 11px;
 }
 
 .notification-center-clear {

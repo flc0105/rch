@@ -1,4 +1,4 @@
-from flask import Blueprint
+from flask import Blueprint, request
 
 from server.web.api_response import WebApiResponder
 
@@ -25,7 +25,7 @@ def create_notification_history_blueprint(server_instance):
     @blueprint.delete('/api/notifications/history')
     def clear_notification_history():
         return responder.json_endpoint(
-            notification_api.clear_history,
+            lambda: notification_api.clear_history(request.args.get('type', '')),
             default_error_status=500,
         )
 

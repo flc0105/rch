@@ -20,7 +20,18 @@ class WebNotificationHistoryApi:
             })
         return {'deleted': deleted}
 
-    def clear_history(self):
+    def clear_history(self, notification_type: str = ''):
+        if notification_type:
+            if notification_type not in {'success', 'info', 'warning', 'error'}:
+                raise ValueError('Invalid notification type')
+            removed_ids = self.history_store.clear_type(notification_type)
+            if removed_ids and self.event_bus is not None:
+                self.event_bus.publish('notification_center_updated', {
+                    'action': 'pruned',
+                    'ids': removed_ids,
+                })
+            return {'removed_count': len(removed_ids)}
+
         removed_count = self.history_store.clear_history()
         if self.event_bus is not None:
             self.event_bus.publish('notification_center_updated', {

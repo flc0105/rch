@@ -140,7 +140,7 @@ test('Toolbar launch for pinned Script or Quick Action invokes the existing App 
 test('Toolbox shortcuts are a flat tail, with a single add icon and no Job type', () => {
   const vue = file('../src/components/ToolboxDialog.vue')
   const grid = vue.slice(vue.indexOf('class="toolbox-grid"'), vue.indexOf('<el-empty'))
-  assert.ok(grid.indexOf('v-for="action in filteredActions"') < grid.indexOf('aria-label="Add shortcut"'))
+  assert.ok(grid.indexOf('v-for="action in pageActions"') < grid.indexOf('aria-label="Add shortcut"'))
   assert.match(vue, /shortcutKind = 'script'/)
   assert.match(vue, /value="quick_action"/)
   assert.doesNotMatch(vue, /value="background_job"/)
