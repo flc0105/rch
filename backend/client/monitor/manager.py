@@ -157,7 +157,7 @@ class DeviceMonitorManager:
                 ):
                     next_due[channel] = now
                 else:
-                    next_due[channel] = now + float(item['intervals'].get(channel, 0.5))
+                    next_due[channel] = now + float(item['intervals'].get(channel, MONITOR_DEFAULT_INTERVALS[channel]))
 
             while not item['stop_event'].is_set():
                 with self._lock:
@@ -175,7 +175,7 @@ class DeviceMonitorManager:
 
                     # File logs are deltas, not snapshots: do not flood SSE while idle.
                     if channel == 'log_file' and data is None:
-                        next_due[channel] = time.monotonic() + float(intervals.get(channel, 0.25))
+                        next_due[channel] = time.monotonic() + float(intervals.get(channel, MONITOR_DEFAULT_INTERVALS[channel]))
                         continue
 
                     # 某些 collector（例如 macOS Apps 的 System Events）可能阻塞数秒。
@@ -200,7 +200,7 @@ class DeviceMonitorManager:
                     # 从本次采集完成后重新计算周期。耗时 collector 超时/变慢后
                     # 不应因为旧 due time 已经过期而立即连续重试。
                     next_due[channel] = time.monotonic() + float(
-                        current_intervals.get(channel, intervals.get(channel, 1.0))
+                        current_intervals.get(channel, intervals.get(channel, MONITOR_DEFAULT_INTERVALS[channel]))
                     )
 
                 for channel in list(next_due.keys()):

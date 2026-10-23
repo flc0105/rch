@@ -21,7 +21,7 @@ class WatchdogStatusIntegrationTests(unittest.TestCase):
         self.assertFalse(status['supervisor_alive'])
         self.assertIsNone(status['supervisor_pid'])
         self.assertEqual(status['poll_interval_seconds'], _POLL_INTERVAL)
-        self.assertTrue(status['log_path'].endswith(os.path.join('rchclient', 'logs', 'process_watchdog.log')))
+        self.assertTrue(status['log_path'].endswith(os.path.join('rch_client_temp', 'watchdog_logs', 'process_watchdog.log')))
         is_alive.assert_not_called()
 
     def test_supervisor_identity_probed_independently(self):

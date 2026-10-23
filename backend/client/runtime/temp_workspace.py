@@ -16,11 +16,14 @@ def get_client_temp_root(create: bool = True) -> str:
     return root
 
 
-def get_temp_category_dir(category: str, create: bool = True) -> str:
+def get_temp_category_dir(category: str, create: bool = True, *, private: bool = False) -> str:
     normalized = _normalize_category(category)
     path = os.path.join(get_client_temp_root(create=create), normalized)
     if create:
-        os.makedirs(path, exist_ok=True)
+        os.makedirs(path, mode=0o700 if private else 0o777, exist_ok=True)
+        if private and os.name != 'nt':
+            # Staged clipboard contents and watchdog diagnostics may be sensitive.
+            os.chmod(path, 0o700)
     return os.path.abspath(path)
 
 

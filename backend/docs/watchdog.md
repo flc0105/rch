@@ -148,7 +148,7 @@ Server 控制台命令需要有可选中的目标连接；如果目标已完全�
 
 ### 心跳失活条件
 
-开启 `LOCAL_WATCHDOG_ENABLED` 后，Client 主进程会启动单独的心跳线程，定期更新系统临时目录中的 JSON 文件。心跳内容示例：
+开启 `LOCAL_WATCHDOG_ENABLED` 后，Client 主进程会启动单独的心跳线程，定期更新 Client 统一临时目录下 `watchdog_heartbeats/` 中的 JSON 文件。心跳内容示例：
 
 ```json
 {
@@ -161,7 +161,7 @@ Server 控制台命令需要有可选中的目标连接；如果目标已完全�
 这里 `ts` 是 Unix 秒级时间戳，`pid` 是 Client 主进程 PID，`client_id` 是当前实例标识。每个实例使用不同的心跳文件名：
 
 ```text
-<系统临时目录>/client_local_watchdog_heartbeat_<client_id>.json
+<系统临时目录>/rch_client_temp/watchdog_heartbeats/client_local_watchdog_heartbeat_<client_id>.json
 ```
 
 每次写入先生成临时文件，再原子替换正式文件，尽量避免 Worker 在文件写入到一半时读到不完整 JSON。写入失败会记录在 Local 日志中；心跳线程仍会在下一个周期继续尝试写入。
@@ -323,7 +323,7 @@ set --reset LOCAL_WATCHDOG_ENABLED
     "supervisor_pid": 3456,
     "supervisor_alive": true,
     "poll_interval_seconds": 0.5,
-    "log_path": "/example/rchclient/logs/process_watchdog.log"
+    "log_path": "/example/tmp/rch_client_temp/watchdog_logs/process_watchdog.log"
   }
 }
 ```
@@ -349,7 +349,7 @@ set --reset LOCAL_WATCHDOG_ENABLED
 | `process_watchdog.poll_interval_seconds` | Supervisor 正常进程存活探测间隔（秒），当前由源码常量控制 |
 | `process_watchdog.log_path` | Process Supervisor 日志位置 |
 
-三种 Watchdog 的日志现在统一位于 **Client 的外部运行时配置根目录下 `logs/`**，分别为 `client_remote_watchdog.log`、`client_local_watchdog.log`、`process_watchdog.log`。路径由 `client/watchdog/watchdog_paths.py` 的 `get_watchdog_log_path()` 统一计算；不再将 Remote/Local 日志写入系统临时目录。macOS 默认是 `~/Library/Application Support/rchclient/logs/`，Windows 默认是 `%APPDATA%/rchclient/logs/`，Linux 默认是 `~/.config/rchclient/logs/`。`RUNTIME_CONFIG_PATH` 仅覆盖配置 JSON 文件本身，不改变日志根目录。**Local 心跳 JSON 文件仍放在系统临时目录**，它不是日志。更换代码后需重启 Client（及其 Worker/Supervisor）使用新路径；不会自动迁移或删除旧临时日志。
+三种 Watchdog 日志分别位于 **`<系统临时目录>/rch_client_temp/watchdog_logs/`** 下的 `client_remote_watchdog.log`、`client_local_watchdog.log`、`process_watchdog.log`。路径由 `client/watchdog/watchdog_paths.py` 统一计算；Process 日志保留轮转。Local 心跳保存在并列的 `watchdog_heartbeats/`，Process 监督会话的 `ready.json`、`stop`、`stopped`（含原子 `.tmp`）保存在 `watchdog_sessions/rch_process_watchdog_*/`。日志属于系统临时空间，**不会像外部运行时配置目录中的文件那样保证持久保留**；系统清理临时目录可能使历史诊断日志消失。切换代码后需重启 Client（及其 Worker/Supervisor）使用新路径；旧配置目录里的日志不会被自动迁移或删除。
 
 `worker_alive` 或 `supervisor_alive` 为 `true` 只说明相应进程仍被检测为存活，不意味着网络命令已交付、心跳恢复已完成或新 Client 已连接 Server。状态查询不会将不再使用的扁平字段作为额外兼容输出。Process 扫描算法、修改检查间隔的方法及生命周期边界详见 [Process Watchdog](process_watchdog.md)。
 
@@ -370,7 +370,7 @@ Watchdog 使用 Client 设备上的系统临时目录，默认名称如下：
 ```text
 <系统临时目录>/client_remote_watchdog.log
 <系统临时目录>/client_local_watchdog.log
-<系统临时目录>/client_local_watchdog_heartbeat_<client_id>.json
+<系统临时目录>/rch_client_temp/watchdog_heartbeats/client_local_watchdog_heartbeat_<client_id>.json
 ```
 
 Remote 日志用于查看 HTTP 请求失败、收到远程指令和控制动作；Local 日志用于查看心跳写入失败、超时检测和恢复请求。前两个日志名称不含 `client_id`，同一机器多个实例可能写入同一文件；心跳文件则按 `client_id` 区分。查看多实例日志时，结合记录中的 Client ID 定位目标。

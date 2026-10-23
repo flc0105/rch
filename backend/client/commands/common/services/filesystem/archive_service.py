@@ -7,6 +7,7 @@ import time
 import zipfile
 
 from client.commands.common.services.filesystem.path_resolver import PathResolver
+from client.runtime.temp_workspace import get_temp_category_dir
 
 
 class ArchiveService:
@@ -31,7 +32,7 @@ class ArchiveService:
     def create_zip_archive(self, dir_name: str) -> str:
         import pathlib
 
-        temp_dir = tempfile.mkdtemp()
+        temp_dir = tempfile.mkdtemp(dir=get_temp_category_dir('archive_temp', private=True))
         directory = self.path_resolver.validate_directory_exists(dir_name)
         archive_name = os.path.basename(directory)
         parent_dir = pathlib.Path(directory).resolve().parent
@@ -96,7 +97,7 @@ class ArchiveService:
 
     def create_zip_from_paths(self, paths: list[str], archive_name: str = '') -> str:
         final_name = self.build_download_archive_name(paths, archive_name=archive_name)
-        temp_dir = tempfile.mkdtemp()
+        temp_dir = tempfile.mkdtemp(dir=get_temp_category_dir('archive_temp', private=True))
         archive_path = os.path.join(temp_dir, final_name)
 
         try:

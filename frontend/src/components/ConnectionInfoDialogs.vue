@@ -873,12 +873,6 @@ export default {
             headers,
             body: JSON.stringify({
               channels: ['system', 'storage', 'network', 'battery'],
-              intervals: {
-                system: 0.5,
-                network: 0.5,
-                storage: 5,
-                battery: 5,
-              },
             }),
           },
         )

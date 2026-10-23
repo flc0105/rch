@@ -12,6 +12,7 @@ import time
 from uuid import uuid4
 
 from client.watchdog.watchdog_paths import get_watchdog_log_path
+from client.runtime.temp_workspace import get_temp_category_dir
 from client.watchdog.recovery_source import RECOVERY_SOURCE_ENV, PROCESS_WATCHDOG
 
 
@@ -211,7 +212,7 @@ class ProcessWatchdogManager:
         # Stale inheritance must never be copied into a fresh supervisor.
         for key in _ENV_KEYS:
             os.environ.pop(key, None)
-        session = tempfile.mkdtemp(prefix='rch_process_watchdog_')
+        session = tempfile.mkdtemp(prefix='rch_process_watchdog_', dir=get_temp_category_dir('watchdog_sessions', private=True))
         parent_started = _process_identity(os.getpid())
         if parent_started is None:
             shutil.rmtree(session, ignore_errors=True)

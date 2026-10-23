@@ -167,10 +167,10 @@ Client 剪贴板路径元数据 → 用户点击 Download → 远程文件传输
 
 **Server 上传临时文件**仅用于 Send 阶段的中转，接口在请求结束时尝试删除这些文件。Get 图片和下载文件创建的是 Artifact，属于另一类存储，不随 Clipboard 对话框关闭而自动清理。
 
-**Client 文件暂存目录**默认为：
+**Client 文件暂存目录**：除 macOS 外，默认位于系统临时目录下 `rch_client_temp/clipboard_staging/`。macOS 仍使用桌面用户可访问的路径，避免后台 Client（例如 root 进程）所用系统 temp 目录阻止 Finder 读取：
 
 ```text
-~/.rch/clipboard_staging/
+~/.rch/clipboard_staging/  # 仅 macOS（按桌面用户解析 ~）
 ```
 
 每次接收文件使用独立的请求 ID 作为子目录名。Client 将上传文件下载到对应位置、恢复目录层级，再将实际存在的根路径交给原生剪贴板。目录和路径分量会进行安全规范化处理，避免直接把浏览器提交的任意相对路径拼接为落地位置。

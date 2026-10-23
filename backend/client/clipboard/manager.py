@@ -2,7 +2,7 @@ import json
 import os
 import shutil
 import uuid
-from client.runtime.temp_workspace import make_client_temp_dir, cleanup_temp_path
+from client.runtime.temp_workspace import make_client_temp_dir, cleanup_temp_path, get_temp_category_dir
 from pathlib import Path
 
 import requests
@@ -26,7 +26,13 @@ class ClipboardManager:
         self.client_api = ClientApiClient()
         self._os_alias = get_local_identity().os_alias
         self._macos_console_identity = self._get_macos_console_identity()
-        self.staging_dir = self._resolve_staging_dir(self.DEFAULT_STAGING_DIR)
+        # macOS may run as root while its clipboard consumes paths as the GUI user.
+        # Keep that user-owned staging root; all other platforms use Client temp.
+        self.staging_dir = (
+            self._resolve_staging_dir(self.DEFAULT_STAGING_DIR)
+            if self._os_alias == 'mac'
+            else get_temp_category_dir('clipboard_staging', private=True)
+        )
         self.adapter = self._build_adapter()
         self._clear_staging_on_startup()
 

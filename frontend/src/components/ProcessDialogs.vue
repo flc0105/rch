@@ -609,7 +609,6 @@ export default {
             headers: this.getMonitorHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({
               channels: [channel],
-              intervals: { [channel]: 1 },
             }),
           },
         )
@@ -654,7 +653,6 @@ export default {
           headers: this.getMonitorHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({
             channels: [channel],
-            intervals: { [channel]: 1 },
           }),
         })
         const json = await res.json()
@@ -726,11 +724,6 @@ export default {
             headers: this.getMonitorHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({
               channels: ['process_detail', 'process_connections', 'process_open_files'],
-              intervals: {
-                process_detail: 1,
-                process_connections: 2,
-                process_open_files: 3,
-              },
               options: { pid: Number(pid) },
             }),
           },

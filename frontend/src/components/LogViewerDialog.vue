@@ -164,7 +164,6 @@ export default {
           `/api/connections/${encodeURIComponent(this.activeClientId)}/device-monitor/open`,
           {
             channels: ['log_file'],
-            intervals: { log_file: 0.25 },
             options: { path: this.path },
           },
         )

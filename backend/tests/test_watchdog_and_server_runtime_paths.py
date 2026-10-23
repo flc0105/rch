@@ -37,9 +37,20 @@ class ProcessWatchdogOptionalDependencyTest(unittest.TestCase):
 
 
 class WatchdogLogPathsTest(unittest.TestCase):
-    def test_three_log_files_share_persistent_directory(self):
+    def test_private_temp_directories_are_owner_only(self):
+        from client.runtime.temp_workspace import get_temp_category_dir
         with tempfile.TemporaryDirectory() as tmp, \
-                patch('client.watchdog.watchdog_paths.get_runtime_config_dir', return_value=tmp):
+                patch('client.runtime.temp_workspace.get_client_temp_root',
+                      return_value=os.path.join(tmp, 'rch_client_temp')):
+            path = get_temp_category_dir('watchdog_logs', private=True)
+            self.assertTrue(os.path.isdir(path))
+            if os.name != 'nt':
+                self.assertEqual(os.stat(path).st_mode & 0o777, 0o700)
+
+    def test_three_log_files_and_heartbeat_use_separate_temp_categories(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+                patch('client.runtime.temp_workspace.get_client_temp_root',
+                      return_value=os.path.join(tmp, 'rch_client_temp')):
             manager = ClientGuardManager('device-id')
             payload = manager.get_watchdog_status_payload()
             process = get_process_watchdog_status_payload()
@@ -47,9 +58,24 @@ class WatchdogLogPathsTest(unittest.TestCase):
                      payload['local_watchdog']['log_path'], process['log_path']]
             self.assertEqual([os.path.basename(path) for path in paths], [
                 'client_remote_watchdog.log', 'client_local_watchdog.log', 'process_watchdog.log'])
-            self.assertEqual({os.path.dirname(path) for path in paths}, {os.path.join(tmp, 'logs')})
-            self.assertNotEqual(os.path.dirname(payload['local_watchdog']['heartbeat_file_path']),
-                                os.path.join(tmp, 'logs'))
+            temp_root = os.path.join(tmp, 'rch_client_temp')
+            self.assertEqual({os.path.dirname(path) for path in paths},
+                             {os.path.join(temp_root, 'watchdog_logs')})
+            self.assertEqual(os.path.dirname(payload['local_watchdog']['heartbeat_file_path']),
+                             os.path.join(temp_root, 'watchdog_heartbeats'))
+
+    def test_process_supervisor_session_is_under_temp_root_and_cleaned_on_failure(self):
+        from client.watchdog.process_watchdog import ProcessWatchdogManager
+        with tempfile.TemporaryDirectory() as tmp, \
+                patch('client.runtime.temp_workspace.get_client_temp_root',
+                      return_value=os.path.join(tmp, 'rch_client_temp')), \
+                patch('client.watchdog.process_watchdog._session_from_environment', return_value=''), \
+                patch('client.watchdog.process_watchdog._process_identity', return_value=None):
+            with self.assertRaisesRegex(RuntimeError, 'Cannot identify Client PID'):
+                ProcessWatchdogManager().start()
+            sessions = os.path.join(tmp, 'rch_client_temp', 'watchdog_sessions')
+            self.assertTrue(os.path.isdir(sessions))
+            self.assertEqual(os.listdir(sessions), [])
 
 
 class ServerRuntimePathsTest(unittest.TestCase):

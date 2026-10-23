@@ -32,7 +32,7 @@ Session 信息由 Server 和 Client 分别保存在内存中。它不是 Job、P
 
 ### 创建、配置与关闭
 
-会话创建时可以传入 `channels`、`intervals`、`options`。`channels` 决定本次采集哪些数据；`intervals` 是每个 Channel 的目标采样间隔，单位秒；`options` 保留目标资源等上下文信息，例如单进程监控使用的 `pid`。Server 和 Client 都使用相同的规范化逻辑：去除重复或不支持的 Channel；没有有效 Channel 时采用系统监控的默认组合；间隔限制在 **0.25–60 秒**，缺失或无效值使用该 Channel 的默认周期。
+会话创建时可以传入 `channels`、`intervals`、`options`。`channels` 决定本次采集哪些数据；`intervals` 是每个 Channel 的目标采样间隔，单位秒；`options` 保留目标资源等上下文信息，例如单进程监控使用的 `pid`。Server 和 Client 都使用相同的规范化逻辑：去除重复或不支持的 Channel；没有有效 Channel 时采用系统监控的默认组合；间隔限制在 **0.25–60 秒**，缺失或无效值使用该 Channel 的默认周期。各 Channel 的**唯一默认采样间隔**集中定义在 `core/protocol/monitor.py` 文件顶部的 `MONITOR_DEFAULT_INTERVALS`，由 Server 与 Client 共用；Dashboard、Processes/Apps、进程详情及日志视图的前端请求不传默认 `intervals`，需要调整默认速度时直接修改该 Python 字典，不写入 Runtime Config。协议仍允许明确传入覆盖值。
 
 会话创建时处于 `opening`，收到 Client 的 `monitor_opened` 后成为 `open`。浏览器变更订阅使用 `monitor_config`，在现有 Session 内更新 Channel、周期和选项，不需要每次都重建会话。配置时只传入部分字段，Server 会保留未替换的对应会话设置；改变进程目标 PID 时，Client 还会清除旧的进程对象及 CPU 采样基线。
 

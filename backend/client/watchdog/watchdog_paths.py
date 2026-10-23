@@ -1,9 +1,9 @@
-"""Shared persistent log locations for the three independent Client watchdogs."""
+"""Shared Client temp log locations for the three independent watchdogs."""
 
 import os
 
-from client.config.runtime_config_store import get_runtime_config_dir
+from client.runtime.temp_workspace import get_temp_category_dir
 
 
 def get_watchdog_log_path(filename: str) -> str:
-    return os.path.join(get_runtime_config_dir(), 'logs', filename)
+    return os.path.join(get_temp_category_dir('watchdog_logs', private=True), filename)

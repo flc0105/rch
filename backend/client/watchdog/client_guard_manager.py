@@ -1,5 +1,4 @@
 import os
-import tempfile
 
 from client.config.runtime_config import (
     LOCAL_WATCHDOG_ENABLED,
@@ -14,6 +13,7 @@ from client.config.config import UPLOAD_BASE_URL
 from client.watchdog.local_watchdog import LocalWatchdogHeartbeatFeeder
 from client.watchdog.watchdog_process import ClientWatchdogProcess
 from client.watchdog.watchdog_paths import get_watchdog_log_path
+from client.runtime.temp_workspace import get_temp_category_dir
 from core.utils.logger import logger
 
 
@@ -26,7 +26,7 @@ class ClientGuardManager:
 
 
     def _build_local_watchdog_heartbeat_file_path(self):
-        return os.path.join(tempfile.gettempdir(), f'client_local_watchdog_heartbeat_{self.client_id}.json')
+        return os.path.join(get_temp_category_dir('watchdog_heartbeats', private=True), f'client_local_watchdog_heartbeat_{self.client_id}.json')
 
 
     def _build_local_watchdog_log_file_path(self):
