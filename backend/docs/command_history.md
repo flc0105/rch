@@ -60,7 +60,7 @@ Quick Recent 保存手动 **Web Terminal / CLI** 提交的命令，无论最终�
 
 Quick History 页面继续支持 Use、双击回填、Pin / Unpin、Pin Up / Down 和动态数字索引。**仅隐藏** Last Used 的 UI；Command 前显示状态图标，底层必要字段不删除。Use 将命令填入 Terminal 输入框，不会直接执行。
 
-Pin 顺序由独立的 `pinned_commands` 表持久管理：Pinned 项优先显示，然后是排除重复项的 Recent；整体结果重排从 1 开始的索引。最新一次 Pin 不受 Recent 的 100 条容量限制。Quick History 的 Clear 只清空 Recent，不影响 Activity 或手动 Pin；删除单条 Activity 不修改 Quick / Pin。
+Pin 顺序由独立的 `pinned_commands` 表持久管理：Pinned 项优先显示，然后是排除重复项的 Recent；整体结果重排从 1 开始的索引。最新一次 Pin 不受 Recent 的 100 条容量限制。Quick History 的 Clear 只清空 Recent，不影响 Activity 或手动 Pin；删除单条 Activity 不修改 Quick / Pin。History 顶部 Refresh 和 Clear 按当前页签作用：Quick 仅刷新/清理 Quick Recent，搜索时只清理命令文本匹配搜索词的 Recent，Pinned Commands 始终保留；Activity Center 仅刷新/清理 Activity，并使用页面的类型、Errors、搜索词筛选条件确定批量清理范围。确认时须明确显示本次删除范围。
 
 ## 回放与 Server 命令边界
 
@@ -114,7 +114,8 @@ Activity Center / Quick History 的 Web API 以机器 ID 为范围，并使用 W
 | POST | `/api/machines/{machine_id}/command-history/pin` | Pin / Unpin 命令 |
 | POST | `/api/machines/{machine_id}/command-history/pin/move` | 按 `up` / `down` 调整 Pin 顺序 |
 | DELETE | `/api/machines/{machine_id}/command-history/full/{activity_id}` | 删除指定 Activity |
-| DELETE | `/api/machines/{machine_id}/command-history` | 仅清空该机器的 Quick Recent，保留 Activity 与 Pin |
+| DELETE | `/api/machines/{machine_id}/command-history/full` | 按 `kind`、`errors`、`query` 清理符合条件的 Activity；无筛选时清空该机器全部 Activity，不改变 Quick 和 Pin |
+| DELETE | `/api/machines/{machine_id}/command-history` | 仅清理该机器的 Quick Recent，可选 `query` 只清理命令包含搜索词的 Recent；不影响 Activity 与 Pin |
 
 例如，读取 Activity Center 时，可以使用：
 

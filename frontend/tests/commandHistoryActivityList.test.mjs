@@ -45,11 +45,11 @@ test('Only necessary Quick columns are hidden, Use/Pin/ordering remain', () => {
   assert.match(quick, /Use/)
 })
 
-test('Kind and Errors filters are sent to server for both first and next pages', () => {
+test('Kind and Errors filters are sent for both pages and scoped bulk clear', () => {
   assert.match(activity, /v-model="activityKindFilter"/)
   assert.match(activity, /v-model="activityErrorsOnly"/)
   assert.equal((source.match(/params\.set\('kind', this\.activityKindFilter\)/g) || []).length,2)
-  assert.equal((source.match(/params\.set\('errors', 'true'\)/g) || []).length,2)
+  assert.equal((source.match(/params\.set\('errors', 'true'\)/g) || []).length,3)
 })
 
 test('Activity labels use semantic invocation, Details use new Activity ID', () => {

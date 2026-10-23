@@ -43,7 +43,7 @@
       <template #prefix><Search :size="17" :stroke-width="1.8" /></template>
     </el-input>
 
-    <div class="toolbox-list" ref="toolboxList" @touchstart.passive="onPageTouchStart" @touchend.passive="onPageTouchEnd" @wheel.passive="onPageWheel">
+    <div class="toolbox-list" ref="toolboxList" @touchstart.passive="onPageTouchStart" @touchend.passive="onPageTouchEnd" @wheel.prevent="onPageWheel">
       <div v-if="filteredActions.length" class="toolbox-grid">
         <div
           v-for="action in pageActions"
@@ -231,7 +231,7 @@ export default {
   data() {
     return { query: '', contextMenuAction: null, contextMenuX: 0, contextMenuY: 0, contextMenuSerial: 0,
       shortcutPickerVisible: false, iconPickerVisible: false, shortcutKind: 'script', shortcutResource: '', shortcutIcon: 'file-code', shortcutLabel: '',
-      pageIndex: 0, pageTouchStartX: null, pageTouchStartY: null, lastPageWheelAt: 0 }
+      pageIndex: 0, pageTouchStartX: null, pageTouchStartY: null, lastPageWheelAt: 0, pageWheelAmount: 0, pageWheelDirection: 0, pageWheelLocked: false }
   },
   computed: {
     iconComponents() { return icons },
@@ -296,15 +296,32 @@ export default {
       const deltaY = end && this.pageTouchStartY !== null ? end.clientY - this.pageTouchStartY : 0
       this.pageTouchStartX = null
       this.pageTouchStartY = null
-      if (Math.abs(deltaX) < 60 || Math.abs(deltaX) <= Math.abs(deltaY) || this.pageCount <= 1) return
-      this.setPage(this.currentPage + (deltaX < 0 ? 1 : -1))
+      if (this.pageCount <= 1) return
+      const isHorizontal = Math.abs(deltaX) > Math.abs(deltaY)
+      const delta = isHorizontal ? deltaX : deltaY
+      if (Math.abs(delta) < 60) return
+      this.setPage(this.currentPage + (delta < 0 ? 1 : -1))
     },
     onPageWheel(event) {
-      if (this.pageCount <= 1 || Math.abs(event.deltaX) < 24 || Math.abs(event.deltaX) <= Math.abs(event.deltaY)) return
+      if (this.pageCount <= 1) return
+      const raw = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY
+      if (!raw) return
+      // Mouse wheels send large steps; trackpads send small events in one gesture.
+      const delta = raw * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 480 : 1)
+      const direction = Math.sign(delta)
       const now = Date.now()
-      if (now - this.lastPageWheelAt < 450) return
+      if (now - this.lastPageWheelAt > 160 || direction !== this.pageWheelDirection) {
+        this.pageWheelAmount = 0
+        this.pageWheelLocked = false
+      }
       this.lastPageWheelAt = now
-      this.setPage(this.currentPage + (event.deltaX > 0 ? 1 : -1))
+      this.pageWheelDirection = direction
+      if (this.pageWheelLocked) return
+      this.pageWheelAmount += Math.abs(delta)
+      if (this.pageWheelAmount < 14) return
+      this.pageWheelAmount = 0
+      this.pageWheelLocked = true
+      this.setPage(this.currentPage + direction)
     },
     openShortcutPicker() {
       this.closeContextMenu()
@@ -373,8 +390,8 @@ export default {
       if (this.$refs.toolboxList) this.$refs.toolboxList.scrollTop = 0
     },
     actions() {
-      this.pageIndex = 0
-      if (this.$refs.toolboxList) this.$refs.toolboxList.scrollTop = 0
+      // A newly added shortcut updates the grid; keep the page where Add was used.
+      this.pageIndex = Math.min(this.pageIndex, this.pageCount - 1)
     },
     shortcutKind() { this.shortcutResource = '' },
     visible(isVisible) {
@@ -418,10 +435,10 @@ export default {
 }
 .toolbox-header-action .el-icon { width: 18px; height: 18px; }
 .toolbox-search { margin-bottom: 18px; }
-.toolbox-list { overflow-y: auto; min-height: 0; padding: 2px 4px 8px; }
+.toolbox-list { overflow: hidden; min-height: 0; padding: 2px 4px 8px; }
 .toolbox-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px 8px; }
 .toolbox-grid-entry { display: block; min-width: 0; }
-.toolbox-page-dots { flex: 0 0 auto; display: flex; justify-content: center; align-items: center; gap: 9px; padding: 5px 0 2px; }
+.toolbox-page-dots { flex: 0 0 auto; display: flex; justify-content: center; align-items: center; gap: 9px; padding: 8px 0 5px; }
 .toolbox-page-dot { width: 8px; height: 8px; padding: 0; border: 0; border-radius: 50%; background: var(--el-border-color-darker); opacity: 0.55; cursor: pointer; }
 .toolbox-page-dot-active { background: var(--el-text-color-primary); opacity: 0.9; }
 .toolbox-page-dot:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: 3px; }
@@ -480,7 +497,7 @@ export default {
 </style>
 
 <style>
-.toolbox-dialog.el-dialog { max-width: calc(100vw - 24px); height: min(70vh, calc(100dvh - 24px)); display: flex; flex-direction: column; }
+.toolbox-dialog.el-dialog { max-width: calc(100vw - 24px); height: min(calc(70vh + 5px), calc(100dvh - 24px)); display: flex; flex-direction: column; }
 .toolbox-dialog .el-dialog__header { flex: 0 0 auto; }
 .toolbox-dialog .el-dialog__body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 .toolbox-dialog .toolbox-list { flex: 1 1 auto; }

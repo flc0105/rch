@@ -103,9 +103,12 @@ class HistoryWriteService:
         if conn is not None:
             self.clear_history_by_machine_id(self.store._get_machine_id_from_conn(conn))
 
-    def clear_history_by_machine_id(self, machine_id):
+    def clear_history_by_machine_id(self, machine_id, *, query=''):
         machine_id = self._machine_id(machine_id)
-        self.store.quick_store.clear(machine_id)
+        if str(query or '').strip():
+            self.store.quick_store.clear(machine_id, query=query)
+        else:
+            self.store.quick_store.clear(machine_id)
 
     def set_command_pinned_for_connection(self, conn, command, is_pinned):
         if conn is None:
@@ -122,6 +125,15 @@ class HistoryWriteService:
 
     def move_pinned_command_by_machine_id(self, machine_id, command, direction):
         return self.store.pinned_store.move_pinned_command(self._machine_id(machine_id), command, direction)
+
+    def clear_execution_history_by_machine_id(self, machine_id, *, query='', kind='', errors=False):
+        machine_id = self._machine_id(machine_id)
+        # Reuse the same filters as Activity Center's list/count queries.
+        clauses, params = self.store._activity_filters(machine_id, query=query, kind=kind, errors=errors)
+        with self.store._lock, self.store.database.transaction():
+            cursor = self.store.database.connection().execute(
+                f"DELETE FROM activity_records WHERE {' AND '.join(clauses)}", tuple(params))
+            return cursor.rowcount
 
     def delete_execution_entry_for_connection(self, conn, entry_id):
         if conn is None:

@@ -13,7 +13,7 @@
         <div class="dialog-head-left">
           <el-button
             size="small"
-            @click="reloadCommandHistoryDialogData"
+            @click="refreshActiveHistory"
           >
             Refresh
           </el-button>
@@ -23,7 +23,7 @@
             type="danger"
             @click="clearCommandHistory"
           >
-            Clear History
+            {{ commandHistoryActiveTab === 'quick' ? 'Clear Quick History' : 'Clear Activities' }}
           </el-button>
         </div>
 
@@ -488,12 +488,8 @@ Star,
     },
 
     filteredCommandExecutionItems() {
-      const keyword = this.normalizedCommandHistorySearchText
-      const items = Array.isArray(this.commandExecutionItems) ? this.commandExecutionItems : []
-
-      if (!keyword) return items
-
-      return items.filter(item => String(item?.command || '').toLowerCase().includes(keyword))
+      // Activity search/filtering is performed by the Server and applies to every page.
+      return Array.isArray(this.commandExecutionItems) ? this.commandExecutionItems : []
     },
 
     commandHistorySearchSummary() {
@@ -738,6 +734,14 @@ Star,
       }
     },
 
+    async refreshActiveHistory() {
+      if (this.commandHistoryActiveTab === 'full') {
+        await this.reloadCommandExecutionHistory()
+        return
+      }
+      await this.reloadCommandHistoryDialogData({ tab: 'quick' })
+    },
+
     async reloadCommandHistoryDialogData(options = {}) {
       const silent = !!options.silent
 
@@ -774,7 +778,7 @@ Star,
         }
 
         this.commandHistoryItems = Array.isArray(quickJson.data) ? quickJson.data : []
-        await this.reloadCommandExecutionHistory({ silent })
+        if (options.tab !== 'quick') await this.reloadCommandExecutionHistory({ silent })
         await this.reloadCandidates()
       } catch (e) {
         this.commandHistoryItems = []
@@ -1008,53 +1012,96 @@ Star,
     },
 
     async clearCommandHistory() {
-  if (!this.selectedId) {
-    ElMessage.warning('Please select a device')
-    return
-  }
-
-  const machineId = this.getSelectedHistoryMachineId()
-
-  if (!machineId) {
-    ElMessage.warning('Current device identity is unavailable')
-    return
-  }
-
-  try {
-    await ElMessageBox.confirm(
-      'Clear command history for the current device? Pinned commands will be kept.',
-      'Clear History',
-      {
-        type: 'warning',
-        confirmButtonText: 'Clear',
-        cancelButtonText: 'Cancel',
+      if (this.commandHistoryActiveTab === 'full') {
+        await this.clearCommandExecutionHistory()
+        return
       }
-    )
+      if (!this.selectedId) {
+        ElMessage.warning('Please select a device')
+        return
+      }
+      const machineId = this.getSelectedHistoryMachineId()
+      if (!machineId) {
+        ElMessage.warning('Current device identity is unavailable')
+        return
+      }
 
-    const res = await fetch(`/api/machines/${encodeURIComponent(machineId)}/command-history`, {
-      method: 'DELETE',
-    })
+      const query = this.getCommandExecutionSearchQuery()
+      const scope = query
+        ? `Clear Quick History matching “${query}” for the current device? Pinned commands will be kept.`
+        : 'Clear all Quick History for the current device? Pinned commands will be kept.'
+      try {
+        await ElMessageBox.confirm(scope, 'Clear Quick History', {
+          type: 'warning',
+          confirmButtonText: 'Clear',
+          cancelButtonText: 'Cancel',
+        })
+        const params = new URLSearchParams()
+        if (query) params.set('query', query)
+        const suffix = params.toString() ? `?${params.toString()}` : ''
+        const res = await fetch(`/api/machines/${encodeURIComponent(machineId)}/command-history${suffix}`, {
+          method: 'DELETE',
+        })
+        const json = await res.json()
+        if (!res.ok || json.code !== 0) throw new Error(json.message || 'Failed to clear command history')
 
-    const json = await res.json()
+        this.commandExecutionDetailDialogVisible = false
+        this.selectedCommandExecutionEntryId = ''
+        // Pinned commands are stored separately and must remain visible after clearing recents.
+        await this.reloadCommandHistoryDialogData({ silent: true, tab: 'quick' })
+        await this.reloadCandidates({ reset: true })
+        ElMessage.success('Quick History cleared')
+      } catch (e) {
+        if (e === 'cancel' || e === 'close' || e?.toString?.().includes('cancel')) return
+        ElMessage.error(e.message || 'Failed to clear command history')
+      }
+    },
 
-    if (!res.ok || json.code !== 0) {
-      throw new Error(json.message || 'Failed to clear command history')
-    }
+    async clearCommandExecutionHistory() {
+      if (!this.selectedId) {
+        ElMessage.warning('Please select a device')
+        return
+      }
+      const machineId = this.getSelectedHistoryMachineId()
+      if (!machineId) {
+        ElMessage.warning('Current device identity is unavailable')
+        return
+      }
 
-    this.commandHistorySearchText = ''
-    this.commandExecutionDetailDialogVisible = false
-    this.selectedCommandExecutionEntryId = ''
-
-    // pinned history 单独存储，clear 后重新拉取 quick history，避免 pinned 临时消失后刷新又冒出来。
-    await this.reloadCommandHistoryDialogData({ silent: true })
-    await this.reloadCandidates({ reset: true })
-
-    ElMessage.success('Command history cleared')
-  } catch (e) {
-    if (e === 'cancel' || e === 'close' || e?.toString?.().includes('cancel')) return
-    ElMessage.error(e.message || 'Failed to clear command history')
-  }
-},
+      const kind = this.activityKindFilter
+      const errors = this.activityErrorsOnly
+      const query = this.getCommandExecutionSearchQuery()
+      const category = kind ? `${this.buildActivityKindLabel(kind).toLowerCase()} activities` : 'activities'
+      const scope = `${category}${errors ? ' with errors' : ''}${query ? ` matching “${query}”` : ''}`
+      try {
+        // Search is debounced for listing; show the current filtered results before confirming deletion.
+        if (this.commandHistorySearchTimer) {
+          window.clearTimeout(this.commandHistorySearchTimer)
+          this.commandHistorySearchTimer = null
+          await this.reloadCommandExecutionHistory({ silent: true })
+        }
+        await ElMessageBox.confirm(
+          `Clear ${kind || errors || query ? scope : 'all activities'} for the current device? This cannot be undone.`,
+          'Clear Activities',
+          { type: 'warning', confirmButtonText: 'Clear', cancelButtonText: 'Cancel' },
+        )
+        const params = new URLSearchParams()
+        if (kind) params.set('kind', kind)
+        if (errors) params.set('errors', 'true')
+        if (query) params.set('query', query)
+        const suffix = params.toString() ? `?${params.toString()}` : ''
+        const res = await fetch(`/api/machines/${encodeURIComponent(machineId)}/command-history/full${suffix}`, { method: 'DELETE' })
+        const json = await res.json()
+        if (!res.ok || json.code !== 0) throw new Error(json.message || 'Failed to clear activities')
+        this.commandExecutionDetailDialogVisible = false
+        this.selectedCommandExecutionEntryId = ''
+        await this.reloadCommandExecutionHistory({ silent: true })
+        ElMessage.success('Activities cleared')
+      } catch (e) {
+        if (e === 'cancel' || e === 'close' || e?.toString?.().includes('cancel')) return
+        ElMessage.error(e.message || 'Failed to clear activities')
+      }
+    },
 
     // async clearCommandHistory() {
     //   if (!this.selectedId) {

@@ -248,10 +248,10 @@ test('Toolbar excludes platform-mismatched pins but preserves missing same-platf
   assert.ok(options.computed.toolboxActions.call(inst).every(x=>x.disabled && !x.unavailable), 'loading or offline must not be mislabeled as a deleted resource')
 })
 
-test('both Toolbox dialogs use fixed height with internal scroll', () => {
+test('Toolbox uses fixed height without an icon-grid scrollbar; picker still scrolls', () => {
   const vue = file('../src/components/ToolboxDialog.vue')
-  assert.match(vue,/\.toolbox-dialog\.el-dialog \{[^}]*height: min\(70vh/)
-  assert.match(vue,/\.toolbox-list \{[^}]*overflow-y: auto/)
+  assert.match(vue,/\.toolbox-dialog\.el-dialog \{[^}]*height: min\(calc\(70vh \+ 5px\)/)
+  assert.match(vue,/\.toolbox-list \{[^}]*overflow: hidden/)
   assert.match(vue,/\.toolbox-add-dialog\.el-dialog \{[^}]*height: min\(58vh/)
   assert.match(vue,/\.toolbox-add-dialog \.el-dialog__body \{[^}]*overflow-y: auto/)
 })

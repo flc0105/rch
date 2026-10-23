@@ -23,9 +23,16 @@ class WebCommandHistoryApi:
             errors=errors,
         )
 
-    def clear_command_history(self, machine_id: str):
-        self.server.command_history.write_service.clear_history_by_machine_id(machine_id)
+    def clear_command_history(self, machine_id: str, *, query: str = ''):
+        self.server.command_history.write_service.clear_history_by_machine_id(machine_id, query=query)
         return None
+
+    def clear_command_execution_history(self, machine_id: str, *, query: str = '', kind: str = '', errors: bool = False):
+        if kind and kind not in {'command', 'alias', 'script', 'remote_files', 'transfer', 'external_tool', 'background_job'}:
+            raise ValueError('Invalid activity kind')
+        removed_count = self.server.command_history.write_service.clear_execution_history_by_machine_id(
+            machine_id, query=query, kind=kind, errors=errors)
+        return {'removed_count': removed_count}
 
     def set_command_history_pinned(self, machine_id: str, command: str, is_pinned: bool):
         changed = self.server.command_history.write_service.set_command_pinned_by_machine_id(

@@ -96,10 +96,21 @@ class QuickHistoryStore:
                     )
                 ''', (machine_id, COMMAND_HISTORY_RECENT_LIMIT))
 
-    def clear(self, machine_id):
+    def clear(self, machine_id, *, query=''):
+        query = str(query or '').strip()
         with self.store._lock, self.store.database.transaction():
-            self.store.database.connection().execute(
-                'DELETE FROM command_recents WHERE machine_id = ?', (machine_id,))
+            if query:
+                # Match the UI's case-insensitive substring search, including Unicode text.
+                conn = self.store.database.connection()
+                commands = [row[0] for row in conn.execute(
+                    'SELECT command FROM command_recents WHERE machine_id = ?', (machine_id,))
+                    if query.lower() in row[0].lower()]
+                conn.executemany(
+                    'DELETE FROM command_recents WHERE machine_id = ? AND command = ?',
+                    ((machine_id, command) for command in commands))
+            else:
+                self.store.database.connection().execute(
+                    'DELETE FROM command_recents WHERE machine_id = ?', (machine_id,))
             # Do not clear the user's independent pinned_commands collection.
 
     def list_recents(self, machine_id):

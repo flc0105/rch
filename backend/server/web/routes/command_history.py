@@ -29,7 +29,21 @@ def create_command_history_blueprint(server_instance):
 
     @blueprint.delete('/api/machines/<machine_id>/command-history')
     def clear_command_history(machine_id):
-        return responder.json_endpoint(lambda: command_history_api.clear_command_history(machine_id), default_error_status=500)
+        return responder.json_endpoint(
+            lambda: command_history_api.clear_command_history(machine_id, query=request.args.get('query', '')),
+            default_error_status=500)
+
+    @blueprint.delete('/api/machines/<machine_id>/command-history/full')
+    def clear_full_command_history(machine_id):
+        return responder.json_endpoint(
+            lambda: command_history_api.clear_command_execution_history(
+                machine_id,
+                query=request.args.get('query', ''),
+                kind=request.args.get('kind', ''),
+                errors=str(request.args.get('errors', '')).strip().lower() in ('1', 'true'),
+            ),
+            default_error_status=500,
+        )
 
     @blueprint.post('/api/machines/<machine_id>/command-history/pin')
     def set_command_history_pinned(machine_id):
