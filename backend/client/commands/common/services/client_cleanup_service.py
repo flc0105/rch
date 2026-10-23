@@ -1,14 +1,17 @@
 import fnmatch
+import json
 import hashlib
 import os
 import shutil
 import sys
 import tempfile
+import time
 
 from core.utils.filesystem import safe_file_size
 from core.client_revision import is_bundle_archive
 from client.config.runtime_config_store import get_runtime_config_path
 from client.runtime.client_util import get_client_bundle_release_dir, get_client_bundle_download_dir
+from client.runtime.client_logging import get_client_log_path
 from client.runtime.temp_workspace import (
     get_client_temp_root,
     get_temp_category_dir,
@@ -26,11 +29,22 @@ class ClientCleanupService:
         'clipboard_helper_temp',
         'runtime_config_temp',
         'media_temp',
+        'archive_temp',
+        'client_logs',
+        'clipboard_staging',
+        'watchdog_heartbeats',
+        'watchdog_sessions',
         'bundle_old_releases',
         'bundle_archive_residue',
         'bundle_extracting_residue',
         'bundle_probe_files',
     )
+
+    # Current Client paths are flat categories directly below rch_client_temp.
+    # Expiration margins prevent `clean --no-confirm` from removing in-flight files.
+    ACTIVE_GRACE_SECONDS = 60
+    ARCHIVE_GRACE_SECONDS = 300
+    CLIPBOARD_STAGING_GRACE_SECONDS = 3600
 
     LEGACY_TEMP_PATTERNS = {
         'remote_job_temp': ('rat_remote_*.py',),
@@ -92,6 +106,11 @@ class ClientCleanupService:
                 if path in seen:
                     continue
                 seen.add(path)
+                # A preview is a snapshot, not permission to remove files that
+                # became active after it was produced. Re-evaluate live guards.
+                if not self._eligible_runtime_path(item['name'], path):
+                    result['skipped_paths'].append(path + ' (active or not yet stale)')
+                    continue
                 try:
                     info = os.lstat(path)
                     if (info.st_dev, info.st_ino, info.st_mode, info.st_mtime_ns) != tuple(entry['identity']) \
@@ -198,6 +217,28 @@ class ClientCleanupService:
     def _clean_media_temp(self):
         return self._clean_temp_item('media_temp')
 
+    def _clean_archive_temp(self):
+        return self._clean_managed_children('archive_temp')
+
+    def _clean_client_logs(self):
+        return self._clean_managed_children('client_logs')
+
+    def _clean_clipboard_staging(self):
+        # macOS hands these files to Finder under the console user's home;
+        # they are intentionally outside the shared temp root.
+        return self._clean_managed_children('clipboard_staging')
+
+    def _clean_watchdog_heartbeats(self):
+        return self._clean_managed_children('watchdog_heartbeats')
+
+    def _clean_watchdog_sessions(self):
+        return self._clean_managed_children('watchdog_sessions')
+
+    def _clean_managed_children(self, name: str) -> dict:
+        result = self._new_result(name)
+        self._clean_managed_temp_category(name, result)
+        return result
+
     def _clean_temp_item(self, name: str) -> dict:
         result = self._new_result(name)
         self._clean_managed_temp_category(name, result)
@@ -205,42 +246,135 @@ class ClientCleanupService:
         return result
 
     def _clean_managed_temp_category(self, category: str, result: dict):
-        root = get_client_temp_root(create=False)
+        root = os.path.abspath(get_client_temp_root(create=False))
         category_dir = os.path.abspath(get_temp_category_dir(category, create=False))
         self._note_scan(result, category_dir)
-        if not os.path.isdir(root):
+        if not os.path.isdir(root) or os.path.islink(root) or os.path.islink(category_dir):
             return
 
+        # Flat layout: rch_client_temp/<category>/<item>. Do not invent
+        # rch_client_temp/<unrelated-category>/<category> paths.
         self._clean_directory_children(category_dir, result)
         self._prune_empty_directory(category_dir)
-
-        # Older builds stored categories under an extra session directory.
-        # That layout no longer exists; any matching nested category is residue.
-        for entry_name in sorted(os.listdir(root)):
-            self._checkpoint()
-            entry_path = os.path.abspath(os.path.join(root, entry_name))
-            if not os.path.isdir(entry_path) or entry_path == category_dir:
-                continue
-            nested_category = os.path.abspath(os.path.join(entry_path, category))
-            self._note_scan(result, nested_category)
-            if not os.path.isdir(nested_category):
-                continue
-            self._clean_directory_children(nested_category, result)
-            self._prune_empty_directory(nested_category)
-            self._prune_empty_directory(entry_path)
-
         self._prune_empty_directory(root)
 
     def _clean_directory_children(self, directory: str, result: dict):
-        if not os.path.isdir(directory):
+        if not os.path.isdir(directory) or os.path.islink(directory):
             return
         for child_name in sorted(os.listdir(directory)):
             self._checkpoint()
             child_path = os.path.abspath(os.path.join(directory, child_name))
-            if path_contains_active_temp(child_path):
+            if path_contains_active_temp(child_path) or not self._eligible_runtime_path(result['name'], child_path):
                 result['skipped_paths'].append(child_path)
                 continue
             self._remove_path(child_path, result)
+
+    @staticmethod
+    def _old_enough(path: str, seconds: float) -> bool:
+        """Do not delete actively written content just because its directory is old."""
+        try:
+            newest = os.lstat(path).st_mtime
+            if os.path.isdir(path) and not os.path.islink(path):
+                for parent, dirs, files in os.walk(path, followlinks=False):
+                    for name in dirs + files:
+                        newest = max(newest, os.lstat(os.path.join(parent, name)).st_mtime)
+            return time.time() - newest >= seconds
+        except OSError:
+            return False
+
+    @staticmethod
+    def _pid_active(pid: object) -> bool:
+        """Conservative POSIX existence check; never send signals on Windows."""
+        try:
+            value = int(pid)
+            if value <= 0:
+                return True
+            if os.name == 'nt':
+                # Never use os.kill(pid, 0) on Windows: it can terminate processes.
+                import ctypes
+                kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+                open_process = kernel.OpenProcess
+                open_process.argtypes = (ctypes.c_uint, ctypes.c_int, ctypes.c_uint)
+                open_process.restype = ctypes.c_void_p
+                handle = open_process(0x1000, False, value)  # QUERY_LIMITED_INFORMATION
+                if not handle:
+                    return ctypes.get_last_error() != 87  # INVALID_PARAMETER: PID absent
+                kernel.GetExitCodeProcess.argtypes = (ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint))
+                kernel.GetExitCodeProcess.restype = ctypes.c_int
+                kernel.CloseHandle.argtypes = (ctypes.c_void_p,)
+                kernel.CloseHandle.restype = ctypes.c_int
+                try:
+                    exit_code = ctypes.c_uint()
+                    if not kernel.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+                        return True
+                    return exit_code.value == 259  # STILL_ACTIVE
+                finally:
+                    kernel.CloseHandle(ctypes.c_void_p(handle))
+            os.kill(value, 0)
+            return True
+        except ProcessLookupError:
+            return False
+        except (PermissionError, ValueError, TypeError, OverflowError, OSError):
+            return True
+
+    def _stale_heartbeat(self, path: str) -> bool:
+        name = os.path.basename(path)
+        base = name.removesuffix('.tmp')
+        if not (base.startswith('client_local_watchdog_heartbeat_') and base.endswith('.json')):
+            return False
+        if not self._old_enough(path, self.ACTIVE_GRACE_SECONDS):
+            return False
+        heartbeat = path[:-4] if name.endswith('.tmp') else path
+        if not os.path.isfile(heartbeat) or os.path.islink(heartbeat):
+            return True  # orphaned old .tmp
+        try:
+            with open(heartbeat, encoding='utf-8') as stream:
+                payload = json.load(stream)
+            if isinstance(payload, dict) and payload.get('pid'):
+                return not self._pid_active(payload['pid'])
+        except (OSError, ValueError, TypeError):
+            pass  # stale, malformed orphan
+        return True
+
+    def _stale_watchdog_session(self, path: str) -> bool:
+        if not os.path.isdir(path) or os.path.islink(path):
+            return False
+        if not os.path.basename(path).startswith('rch_process_watchdog_'):
+            return False
+        if not self._old_enough(path, self.ACTIVE_GRACE_SECONDS):
+            return False
+        ready = os.path.join(path, 'ready.json')
+        if not os.path.isfile(ready):
+            return True  # abandoned startup directory
+        try:
+            with open(ready, encoding='utf-8') as stream:
+                payload = json.load(stream)
+            if not isinstance(payload, dict) or not payload.get('pid'):
+                return True
+            return not self._pid_active(payload['pid'])
+        except (OSError, ValueError, TypeError):
+            return False  # uncertain; keep supervisor state
+
+    def _eligible_runtime_path(self, category: str, path: str) -> bool:
+        if category == 'client_logs':
+            if not os.path.isdir(path) or os.path.islink(path) or not os.path.basename(path).startswith('client_'):
+                return False
+            current_log = get_client_log_path()
+            if current_log and path == os.path.dirname(os.path.abspath(current_log)):
+                return False
+            # No per-process metadata file: keep the current instance and
+            # recently updated logs; older instances are preview candidates.
+            return self._old_enough(path, self.ACTIVE_GRACE_SECONDS)
+        if category == 'archive_temp':
+            return os.path.isdir(path) and not os.path.islink(path) and self._old_enough(path, self.ARCHIVE_GRACE_SECONDS)
+        if category == 'clipboard_staging':
+            return (sys.platform != 'darwin' and os.path.isdir(path)
+                    and not os.path.islink(path) and self._old_enough(path, self.CLIPBOARD_STAGING_GRACE_SECONDS))
+        if category == 'watchdog_heartbeats':
+            return not os.path.islink(path) and self._stale_heartbeat(path)
+        if category == 'watchdog_sessions':
+            return self._stale_watchdog_session(path)
+        return True
 
     def _clean_legacy_temp_patterns(self, name: str, result: dict):
         patterns = self.LEGACY_TEMP_PATTERNS.get(name) or ()

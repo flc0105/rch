@@ -329,6 +329,176 @@
           "type": "pid_file"
         }
       }
+    },
+    {
+      "id": "screen-record",
+      "name": "ffmpeg-screen-record",
+      "display_name": "FFmpeg Screen Recording",
+      "description": "Records the client desktop to a local fragmented MP4. Start and stop manually in Instances; Windows stop may not finalize the last fragment.",
+      "execution": "daemon",
+      "exec": "ffmpeg",
+      "params": [
+        {
+          "name": "instance_name",
+          "label": "Recording Instance",
+          "type": "string",
+          "required": true,
+          "default": "screen-record-1",
+          "description": "Daemon instance identifier. Reuse an existing stopped instance with a new Output Filename to keep earlier recordings."
+        },
+        {
+          "name": "output_filename",
+          "label": "Output Filename",
+          "type": "string",
+          "required": true,
+          "default": "recording.mp4",
+          "description": "Filename within this instance (e.g. recording-02.mp4). Enter a new name on each Start; existing recordings are not overwritten. No directory separators."
+        },
+        {
+          "name": "framerate",
+          "label": "Capture Frame Rate",
+          "type": "integer",
+          "required": true,
+          "default": 12,
+          "min": 1,
+          "max": 60,
+          "description": "Screen frames per second."
+        },
+        {
+          "name": "scale_width",
+          "label": "Video Width",
+          "type": "integer",
+          "required": true,
+          "default": 1280,
+          "min": 320,
+          "max": 7680,
+          "description": "Output width; proportional height is rounded to an even number."
+        },
+        {
+          "name": "crf",
+          "label": "Video Quality (CRF)",
+          "type": "integer",
+          "required": true,
+          "default": 26,
+          "min": 0,
+          "max": 51,
+          "description": "Lower value improves quality and increases file size."
+        },
+        {
+          "name": "video_device_index",
+          "label": "macOS Screen Device",
+          "type": "string",
+          "required": false,
+          "default": "2",
+          "description": "Screen capture device index from ffmpeg -f avfoundation -list_devices true -i \"\" (depends on the Mac)."
+        },
+        {
+          "name": "desktop_source",
+          "label": "Windows Capture Source",
+          "type": "string",
+          "required": false,
+          "default": "desktop",
+          "description": "gdigrab source; default records the desktop."
+        }
+      ],
+      "runtime": {
+        "cwd": "{{install_dir}}/{{package_root}}",
+        "stdout": "{{instance_runtime_dir}}/stdout.log",
+        "stderr": "stdout",
+        "pid_file": "{{instance_runtime_dir}}/tool.pid",
+        "state_file": "{{instance_runtime_dir}}/state.json"
+      },
+      "runtimes": [
+        {
+          "platform": "mac",
+          "argv": [
+            "{{bin_ffmpeg}}",
+            "-hide_banner",
+            "-nostdin",
+            "-n",
+            "-f",
+            "avfoundation",
+            "-pixel_format",
+            "nv12",
+            "-capture_cursor",
+            "1",
+            "-framerate",
+            "{{framerate}}",
+            "-i",
+            "{{video_device_index}}:none",
+            "-vf",
+            "fps={{framerate}},scale={{scale_width}}:-2,format=yuv420p",
+            "-r",
+            "{{framerate}}",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "veryfast",
+            "-crf",
+            "{{crf}}",
+            "-g",
+            "{{framerate}}",
+            "-an",
+            "-movflags",
+            "+frag_keyframe+empty_moov+default_base_moof",
+            "-frag_duration",
+            "1000000",
+            "-flush_packets",
+            "1",
+            "-f",
+            "mp4",
+            "{{instance_runtime_dir}}/{{output_filename}}"
+          ]
+        },
+        {
+          "platform": "win",
+          "argv": [
+            "{{bin_ffmpeg}}",
+            "-hide_banner",
+            "-nostdin",
+            "-n",
+            "-f",
+            "gdigrab",
+            "-framerate",
+            "{{framerate}}",
+            "-draw_mouse",
+            "1",
+            "-i",
+            "{{desktop_source}}",
+            "-vf",
+            "scale={{scale_width}}:-2,format=yuv420p",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "veryfast",
+            "-crf",
+            "{{crf}}",
+            "-g",
+            "{{framerate}}",
+            "-an",
+            "-movflags",
+            "+frag_keyframe+empty_moov+default_base_moof",
+            "-frag_duration",
+            "1000000",
+            "-flush_packets",
+            "1",
+            "-f",
+            "mp4",
+            "{{instance_runtime_dir}}/{{output_filename}}"
+          ]
+        }
+      ],
+      "lifecycle": {
+        "stop": {
+          "type": "signal",
+          "signal": "INT",
+          "timeout_sec": 15,
+          "kill_after_timeout": true
+        },
+        "status": {
+          "type": "pid_file"
+        }
+      }
     }
   ]
 }

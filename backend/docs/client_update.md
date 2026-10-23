@@ -155,7 +155,7 @@ update --keep-old
 处理 Client 临时残留、过期 Release 子目录、Bundle ZIP 和更新探测文件。
 普通 `clean` 先扫描候选路径，再用一个可多选的 Preview 展示类别、目标数量及大小，
 **默认全选**；用户可以取消任意类别。`clean --no-confirm` 不使用 Interaction
-Broker，直接执行同一套清理扫描计划，供纯 CLI 调用。原有十个清理类别继续完整扫描，
+Broker，直接执行同一套清理扫描计划，供纯 CLI 调用。现有清理类别及新增的临时残留类别继续完整扫描，
 命令输出逐项列出每个类别、检查过的目录、候选路径及跳过项；空类别也会输出
 `(empty)`，而不是只显示 `Nothing to clean`。旧版清理后移除空临时目录的行为保留。
 
@@ -164,6 +164,24 @@ Release 清理不再要求 Client 从默认 Bundle 路径启动：如果当前�
 运行，必须保留该 Release，删除其他子目录。不会根据目录是否含有
 `rchclient.py` 放宽或缩小本次 Release 删除范围。所有已扫描路径在
 执行前还会进行文件身份检查；扫描后已变化的目标不会删除。
+
+当前 `rch_client_temp` 的分类目录是扁平结构：`rch_client_temp/<category>/`。
+`clean` 只扫描具体类别，不会将 `client_logs`、`watchdog_logs`、
+`watchdog_heartbeats` 等目录误认为旧的嵌套会话目录。除原有临时目录外，
+可选清理类别还包括：
+
+- `archive_temp`：列出至少 5 分钟没有写入的归档中转目录；这里可能保存仍需下载的 ZIP，人工预览时应检查。
+- `client_logs`：列出超过 1 分钟没有写入的其他 Client 日志实例目录；不产生额外 PID/owner 文件，始终保留当前进程的日志目录。仅凭文件未更新不能确认其他 Client 已退出，因此 `clean --no-confirm` 不会删除此类日志；手动 `clean` 可在 Preview 中决定是否清理。
+- `clipboard_staging`：非 macOS 平台超过 1 小时未写入的接收暂存目录；macOS 的 GUI 用户剪贴板目录仍然不参与清理。
+- `watchdog_heartbeats`：超过 1 分钟未更新且归属 PID 已退出的 Local 心跳及遗留中转文件。
+- `watchdog_sessions`：超过 1 分钟未更新、且独立监督进程确认已退出的 Process Watchdog 控制会话目录。
+
+上述新类别均适用 Preview 身份签名检查；执行前还会重新判断活动保护条件。
+`client_logs` 仅能确认当前进程的日志路径，不能保证其他 Client 没有在空闲运行；
+因此 `clean --no-confirm` 不自动删除 `client_logs`，此类日志需要手动预览确认。
+Watchdog 的**正在使用的固定日志**不纳入整目录清理，避免中断诊断写入。
+Runtime Config 的原子中转仍在配置同目录，Bundle 更新目录遵守原保护规则，
+External Tools 的安装、日志及实例目录不属于此命令的清理范围。
 
 清理仅针对 **目标 Client** 的残留与 Release，不包含 Server 端
 Agent Output 或其他构建产物。删除不可恢复，应在批准 Preview 前

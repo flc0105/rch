@@ -280,6 +280,16 @@ Stop 默认向目标 PID/进程组发送 `TERM`，按配置等待一段时间，
 
 Remove Instance 会删除整个实例运行目录（含日志、PID、状态文件）；Clear Logs 只清空当前实例的 stdout 日志。两者都要求实例先处于非运行状态。重启通常是先 Stop 再重新使用参数启动，而不是在原进程内热更新配置。
 
+### FFmpeg Client 本地录屏
+
+FFmpeg Package 的 `ffmpeg.screen-record` 是 Daemon Module，用现有 Start / Status / Stop 手动控制本地桌面录像，不设置默认录制结束时间；不依赖 Screen View 或前端实时帧流。macOS 使用 `avfoundation`（请求 `nv12` 输入像素格式，并将输出约束为配置的帧率），Windows 使用 `gdigrab`，默认静音，12 FPS、1280 宽度、H.264 编码。macOS 要求登录图形会话且具备屏幕录制权限，设备索引应先用 FFmpeg `-list_devices` 查询；Windows 需要可捕获的交互式桌面会话。
+
+录像默认保存为该 Daemon 实例运行目录中的 `recording.mp4`；可通过 Module 的 **Output Filename** 参数指定文件名（例如 `recording-02.mp4`）。同一实例重复录制时应先填写一个未使用过的文件名，不必重建实例；使用普通文件名，不填写路径分隔符。`${rch:timestamp}` 属于 Shell Command 变量，不会在 External Tools 的 Meta 参数中自动展开。`stdout.log` 记录 FFmpeg 日志。命令使用 `-n`，已有录像时不会静默覆盖；Stop 后**不**自动上传录像，实例文件也不会自动删除。Remove Instance 会删除实例目录，**因此包含其中的录像**，应在删除前自行转存或上传。
+
+停止通过现有 Daemon `lifecycle.stop` 发出 `INT`，等待最多 15 秒后可能强制终止。在 macOS/POSIX 上 FFmpeg 可以处理 SIGINT 并结束封装；Windows 当前的分离进程实现尚不支持可靠的 FFmpeg graceful stop，Stop 可能直接结束进程。录像采用 fragmented MP4（`frag_keyframe+empty_moov+default_base_moof`），提高意外中断后的解码机会，但不保证完整尾帧，也可能与部分播放器不兼容。这**不是**已完成的 Windows 优雅停止方案，录制结束后应核实实际文件可播放。
+
+长时间录制会持续占用磁盘；远程断线不会自动停止已启动的 Daemon。需要稳定的 Windows 优雅停止与自动上传时，应扩展 External Tools 的受控停止、完成状态/文件交付契约，不宜通过 Oneshot 超时或不受控的强制结束伪装实现。
+
 ### 一次性命令的完成语义
 
 `execution: "oneshot"` 的 Module 使用同步子进程执行，捕获 stdout、stderr、退出码和时间信息，结束后返回结果。运行结果常见字段：

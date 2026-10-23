@@ -484,7 +484,11 @@ class CommandUpdateMixin:
             if not candidates:
                 return 1, scan_text + '\n' + info('Nothing to clean')
             chosen = {entry['name'] for entry in candidates}
-            if options != '--no-confirm':
+            if options == '--no-confirm':
+                # An idle but live *other* Client cannot be proven inactive
+                # without additional metadata; require manual Preview for logs.
+                chosen.discard('client_logs')
+            else:
                 from client.commands.common.services.interaction_service import CommandInteractions
                 rows = []
                 for entry in candidates:
