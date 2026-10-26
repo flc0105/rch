@@ -45,9 +45,10 @@ class MacCommands(CommonCommands):
     @confirm('This may show an operating system permission prompt and wait for authorization. Continue?', allow_no_confirm=True)
     def spawn_elevated_instance(self, options=''):
         """以 root 权限启动新实例，返回 PID"""
-        if options.strip():
-            return 0, 'Usage: spawn_elevated_instance [--no-confirm]'
-        return self.mac_automation.sudo_self()
+        option = options.strip()
+        if option not in ('', '--detached'):
+            return 0, 'Usage: spawn_elevated_instance [--detached] [--no-confirm]'
+        return self.mac_automation.sudo_self(detached=(option == '--detached'))
 
     @desc('Run a command with elevated privileges', group='privilege')
     @confirm('This may show an operating system permission prompt and wait for authorization. Continue?', allow_no_confirm=True)

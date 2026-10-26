@@ -331,3 +331,74 @@ def test_recent_device_uses_latest_launch_snapshot_without_old_source_leak(tmp_p
     assert item['launch_source'] == ''
     db.close_thread_connection()
 
+
+
+def test_macos_elevated_command_keeps_default_and_adds_detached_option():
+    from client.commands.platform.mac import MacCommands
+
+    calls = []
+    command = SimpleNamespace(
+        mac_automation=SimpleNamespace(
+            sudo_self=lambda *, detached=False: calls.append(detached) or (1, 'ok')
+        )
+    )
+
+    assert MacCommands.spawn_elevated_instance(command, '--no-confirm') == (1, 'ok')
+    assert calls.pop() is False
+    assert MacCommands.spawn_elevated_instance(command, '--detached --no-confirm') == (1, 'ok')
+    assert calls.pop() is True
+    assert MacCommands.spawn_elevated_instance(command, '--bad --no-confirm') == (
+        0,
+        'Usage: spawn_elevated_instance [--detached] [--no-confirm]',
+    )
+
+
+def test_macos_elevated_detached_uses_short_lived_bootstrap(monkeypatch):
+    import client.commands.platform.services.mac.automation_service as automation_service
+
+    captured = []
+    monkeypatch.setattr(
+        automation_service,
+        'get_executable_path',
+        lambda: '/usr/bin/python3 /tmp/rchclient.py',
+    )
+    monkeypatch.setattr(
+        automation_service.subprocess,
+        'Popen',
+        lambda *args, **kwargs: captured.append((args, kwargs)) or SimpleNamespace(pid=4321),
+    )
+
+    service = automation_service.MacAutomationService(SimpleNamespace())
+    status, text = service.sudo_self(detached=False)
+    assert status == 1
+    assert 'parent PID: 4321' in text
+    legacy_args, legacy_kwargs = captured.pop()
+    assert '--elevated-detached-bootstrap' not in legacy_args[0][-1]
+    assert 'start_new_session' not in legacy_kwargs
+
+    status, text = service.sudo_self(detached=True)
+    assert status == 1
+    assert 'bootstrap PID: 4321' in text
+    detached_args, detached_kwargs = captured.pop()
+    assert '--elevated-detached-bootstrap' in detached_args[0][-1]
+    assert detached_kwargs['start_new_session'] is True
+    assert detached_kwargs['stdin'] is automation_service.subprocess.DEVNULL
+
+
+def test_elevated_detached_bootstrap_removes_internal_flag_before_spawn(monkeypatch):
+    import rchclient
+    import client.runtime.client_util as runtime_client_util
+
+    calls = []
+    monkeypatch.setattr(rchclient.sys, 'argv', [
+        '/tmp/rchclient.py', '--elevated-detached-bootstrap',
+    ])
+    monkeypatch.setattr(
+        runtime_client_util,
+        'spawn_new_instance',
+        lambda: calls.append(tuple(rchclient.sys.argv)) or SimpleNamespace(pid=9876),
+    )
+
+    rchclient._run_elevated_detached_bootstrap()
+
+    assert calls == [('/tmp/rchclient.py',)]

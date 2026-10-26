@@ -9,7 +9,7 @@ SCRIPT_METADATA = {
             "name": "label",
             "type": "string",
             "required": False,
-            "default": "com.rat.helper",
+            "default": "com.rch.client",
             "description": "Unique identifier for the LaunchDaemon"
         },
         {

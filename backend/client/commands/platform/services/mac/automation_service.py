@@ -28,17 +28,30 @@ class MacAutomationService:
         self.owner._register_cancel_handler(lambda: self.owner._terminate_process(process))
         return process
 
-    def sudo_self(self):
-        """以 root 权限启动新实例，返回 PID"""
+    def sudo_self(self, *, detached=False):
+        """以 root 权限启动新实例，返回 PID。"""
         cmd = get_executable_path()
+        if detached:
+            cmd = f'{cmd} --elevated-detached-bootstrap'
 
-        # 使用 osascript 启动，不等待
+        popen_kwargs = {
+            'stdout': subprocess.DEVNULL,
+            'stderr': subprocess.DEVNULL,
+        }
+        if detached:
+            popen_kwargs.update({
+                'stdin': subprocess.DEVNULL,
+                'start_new_session': True,
+            })
+
+        # 默认模式保持原有生命周期；--detached 只让提权进程充当短生命周期 bootstrap。
         proc = subprocess.Popen(
             ['osascript', '-e', f'do shell script "{cmd}" with administrator privileges'],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
+            **popen_kwargs,
         )
 
+        if detached:
+            return 1, f'New detached instance launch requested with sudo (bootstrap PID: {proc.pid})'
         return 1, f'New instance launched with sudo (parent PID: {proc.pid})'
 
     def sudo_run(self, command):

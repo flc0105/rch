@@ -204,7 +204,7 @@ iOS 专属 `clipboard_read` / `clipboard_write` 仅调整命令名称，
 
 Client 生命周期的 `relaunch_instance` 仍调用原有新建进程再退出逻辑；
 `reexec_instance` 仍走 `os.execv()`，两者不可混淆。macOS 和 Windows 的
-`run_elevated` 保留各自平台原有执行策略；macOS 与 Windows 均提供 `spawn_elevated_instance`，由系统权限确认后启动一个额外的高权限 Client 实例。这两个平台的提权命令默认通过 `@confirm` 请求交互；显式 `--no-confirm` 仅跳过 RCH Interaction Broker，不会绕过操作系统授权弹窗。
+`run_elevated` 保留各自平台原有执行策略；macOS 与 Windows 均提供 `spawn_elevated_instance`，由系统权限确认后启动一个额外的高权限 Client 实例。macOS 可使用 `spawn_elevated_instance --detached`，由提权 bootstrap 创建独立 session 的后台 root Client 后退出；不带该参数时保留原有启动生命周期。这两个平台的提权命令默认通过 `@confirm` 请求交互；显式 `--no-confirm` 仅跳过 RCH Interaction Broker，不会绕过操作系统授权弹窗。
 
 
 ## Log Viewer (Client file tail)

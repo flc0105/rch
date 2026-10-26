@@ -162,7 +162,7 @@ Server 的 `xt ...` 是面向用户的统一目录与运行入口；Client 另�
 | `webcam_snap` | 使用摄像头拍照并上传结果，受摄像头权限限制 |
 | `idletime` | 查看用户空闲时间 |
 | `run_elevated <command>` | 请求以提升权限执行命令，可能弹出系统授权 |
-| `spawn_elevated_instance` | 请求启动提升权限的 Client 实例 |
+| `spawn_elevated_instance [--detached]` | 请求启动提升权限的 Client 实例；macOS 使用 `--detached` 时新实例以独立后台 session 运行 |
 | `file_shred <path>` | 对文件执行覆盖式删除，属于不可逆高风险操作；闪存等设备不保证物理不可恢复 |
 
 ### Linux

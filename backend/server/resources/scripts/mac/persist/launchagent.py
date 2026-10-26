@@ -9,7 +9,7 @@ SCRIPT_METADATA = {
             "name": "label",
             "type": "string",
             "required": False,
-            "default": "com.apple.softwareupdate",
+            "default": "com.rch.client",
             "description": "Unique identifier for the LaunchAgent"
         },
         {
