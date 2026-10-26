@@ -1,0 +1,47 @@
+/* Main toolbar workspaces are full-screen on phones; confirmation/approval dialogs stay compact. */
+@media (max-width: 768px) {
+  :is(.agent-builder-dialog, .agent-outputs-dialog, .artifact-dialog,
+      .background-jobs-dialog, .background-job-detail-dialog, .clipboard-dialog, .connection-info-dialog, .command-history-dialog,
+      .command-execution-detail-dialog, .device-group-manager-dialog,
+      .documents-dialog, .external-tool-dialog, .keychain-dialog,
+      .log-viewer-dialog, .machine-connection-history-dialog, .preview-dialog,
+      .one-liners-dialog, .process-dialog, .process-detail-dialog,
+      .pty-dialog, .quick-actions-dialog, .quick-actions-editor-dialog, .quick-actions-parameters-dialog, .quick-actions-result-dialog, .remote-files-dialog,
+      .remote-pins-dialog, .remote-file-picker-dialog, .remote-zip-peek-dialog, .screen-view-dialog, .script-library-dialog, .script-run-dialog,
+      .settings-dialog, .toolbox-dialog).el-dialog {
+    width: 100vw !important; max-width: 100vw !important;
+    height: 100dvh !important; max-height: 100dvh !important;
+    margin: 0 !important; border-radius: 0 !important;
+    display: flex !important; flex-direction: column !important;
+    overflow: hidden !important;
+  }
+  :is(.agent-builder-dialog, .agent-outputs-dialog, .artifact-dialog,
+      .background-jobs-dialog, .background-job-detail-dialog, .clipboard-dialog, .connection-info-dialog, .command-history-dialog,
+      .command-execution-detail-dialog, .device-group-manager-dialog,
+      .documents-dialog, .external-tool-dialog, .keychain-dialog,
+      .log-viewer-dialog, .machine-connection-history-dialog, .preview-dialog,
+      .one-liners-dialog, .process-dialog, .process-detail-dialog,
+      .pty-dialog, .quick-actions-dialog, .quick-actions-editor-dialog, .quick-actions-parameters-dialog, .quick-actions-result-dialog, .remote-files-dialog,
+      .remote-pins-dialog, .remote-file-picker-dialog, .remote-zip-peek-dialog, .screen-view-dialog, .script-library-dialog, .script-run-dialog,
+      .settings-dialog, .toolbox-dialog).el-dialog > .el-dialog__header { flex: 0 0 auto; }
+  :is(.agent-builder-dialog, .agent-outputs-dialog, .artifact-dialog,
+      .background-jobs-dialog, .background-job-detail-dialog, .clipboard-dialog, .connection-info-dialog, .command-history-dialog,
+      .command-execution-detail-dialog, .device-group-manager-dialog,
+      .documents-dialog, .external-tool-dialog, .keychain-dialog,
+      .log-viewer-dialog, .machine-connection-history-dialog, .preview-dialog,
+      .one-liners-dialog, .process-dialog, .process-detail-dialog,
+      .pty-dialog, .quick-actions-dialog, .quick-actions-editor-dialog, .quick-actions-parameters-dialog, .quick-actions-result-dialog, .remote-files-dialog,
+      .remote-pins-dialog, .remote-file-picker-dialog, .remote-zip-peek-dialog, .screen-view-dialog, .script-library-dialog, .script-run-dialog,
+      .settings-dialog, .toolbox-dialog).el-dialog > .el-dialog__body {
+    flex: 1 1 auto !important; min-height: 0 !important;
+    overflow: auto;
+  }
+  .command-execution-detail-dialog.el-dialog > .el-dialog__body { overflow-y: auto !important; }
+}
+
+@media (max-width: 768px) {
+  .quick-actions-editor-dialog .el-dialog__body,
+  .quick-actions-parameters-dialog .el-dialog__body { overflow-y: auto !important; }
+  .quick-actions-result-dialog .el-dialog__body { overflow-y: auto !important; }
+  .quick-actions-result-dialog .quick-action-result-output { max-height: none; min-height: 0; overflow-wrap: anywhere; }
+}
