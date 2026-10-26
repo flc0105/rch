@@ -168,6 +168,7 @@ def require_kwarg(kwargs, name, default='', allow_empty=False, error_prefix='[Âè
 
 def reset(socket):
     spawn_new_instance()
+    socket.report_session_end('client_restart')
 
     manager = getattr(socket, 'process_watchdog_manager', None)
     if manager is not None:
@@ -183,6 +184,7 @@ def reset(socket):
 
 def reexec_restart(socket):
     restart_command = get_executable_path()
+    socket.report_session_end('client_restart')
 
     try:
         socket.close()

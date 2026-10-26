@@ -1,4 +1,5 @@
 import threading
+import time
 from datetime import datetime
 
 
@@ -8,6 +9,7 @@ HTTP_CONTROL_COMMANDS = {'kill', 'relaunch', 'clone'}
 class ControlCommandStore:
     def __init__(self):
         self._commands_by_client = {}
+        self._delivered_shutdown_by_client = {}
         self._lock = threading.RLock()
 
 
@@ -44,11 +46,19 @@ class ControlCommandStore:
 
         with self._lock:
             payload = self._commands_by_client.pop(client_id_text, None)
+            if payload and payload['command'] in ('kill', 'relaunch'):
+                self._delivered_shutdown_by_client[client_id_text] = (
+                    payload['command'], time.monotonic()
+                )
 
-        if payload is None:
-            return None
+        return dict(payload) if payload else None
 
-        return dict(payload)
+    def take_delivered_shutdown(self, client_id: str, *, max_age: float = 120.0) -> str:
+        with self._lock:
+            delivered = self._delivered_shutdown_by_client.pop(str(client_id or '').strip(), None)
+        if delivered and time.monotonic() - delivered[1] < max_age:
+            return delivered[0]
+        return ''
 
 
 _CONTROL_COMMAND_STORE = ControlCommandStore()

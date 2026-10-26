@@ -69,7 +69,9 @@
 | `last_seen_at` | 该连接最近一次心跳/被看见的时间。 |
 | `duration_ms` | 连接持续时长；在线显示时可以根据当前时间动态计算。 |
 | `connection_state` | 保存的连接状态，如在线/离线。 |
-| `disconnect_reason` | 已记录的断开原因。 |
+| `disconnect_reason` | 原有连接结束标记，继续对应 Connection History 中的 Disconnect / Interrupted 状态展示。 |
+| `termination_reason` | 会话终止类别，在 Connection History 中以 **Termination cause** 呈现；Server requested disconnect、Client exit / restart / update、Connection lost、Transport error、Timeout、Unexpected disconnect 和 Client error 各有对应采集路径。 |
+| `error_diagnostics_json` | 异常诊断 JSON；出现 Client error、Transport error、Timeout 或协议帧中断时，保存实际错误 `summary` 与可取得的 `traceback`，在 **Error diagnostics** 中展示；正常结束保存空对象。 |
 | `tracking_source` | 连接状态记录的来源标记。 |
 | `snapshot_json` | 连接阶段的主机、系统、进程、运行方式、Watchdog 配置等快照，支持历史详情展示。 |
 
@@ -187,7 +189,7 @@
 | `context_json` | 通知关联的业务上下文。 |
 | `actions_json` | 通知可呈现的操作项描述及目标信息。 |
 
-此表保存 **Server 级**通知历史，通知上下文可以在 `context_json` 携带设备信息；表中没有 `machine_id` 列。通知偏好和通知历史互不等同：关闭弹出提醒不意味着本表不再保存通知。Server 启动清理可能清理启动前已有通知，见 [Cleanup](cleanup.md)。
+此表保存 **Server 级**通知历史，通知上下文可以在 `context_json` 携带设备信息；表中没有 `machine_id` 列。通知历史由 Server 持久保存，关闭弹出提醒只调整通知呈现偏好。Server 启动清理可能清理启动前已有通知，见 [Cleanup](cleanup.md)。
 
 ### `settings` — 多种全局偏好共用的 JSON 容器
 
@@ -255,9 +257,9 @@
 | `execution_mode` | 执行方式（例如进程内或子进程）。 |
 | `state` | Job 当前/最终状态，驱动列表状态显示。 |
 | `created_at`、`started_at`、`updated_at`、`finished_at` | 记录创建、开始、更新和结束时间；未开始或未结束时可能为空。 |
-| `params_json` | 创建 Job 时的参数对象；不等于完整的 Python 模块源码。 |
+| `params_json` | 创建 Job 时的参数对象；源码由独立的 Job 模块文件管理。 |
 
-消息数、文件数和显示摘要可以通过关联记录或投影产生，并不需要在本表中各自保存一列。Job 运行状态也不等于当前进程一定仍在执行：例如 Server 重启后，之前标记为运行中的任务会按恢复规则处理。
+消息数、文件数和显示摘要从关联记录产生。Job 的历史状态由持久化记录提供，Server 重启后会按恢复规则处理尚处于运行状态的任务。
 
 ### `background_job_messages` — Job 消息/输出
 
@@ -284,7 +286,7 @@
 | `created_at` | 文件关联记录时间。 |
 | `snapshot_json` | 文件描述快照，例如原始名称、相对路径、大小及展示链接等；即使 Artifact 注册信息被清理，仍可保留部分历史显示信息。 |
 
-两张子表对 `background_jobs` 都有真正的外键并设置 **`ON DELETE CASCADE`**；删除 Job 主记录会删除关联的消息和文件引用。`artifact_id` 本身没有指向 `rch.db` 中 Artifact 主表的外键，因为文件与注册元数据位于独立存储；删除文件引用不等于删除真实 Artifact。详见 [Background Jobs](background_jobs.md) 和 [Artifacts](artifacts.md)。
+两张子表对 `background_jobs` 都有外键并设置 **`ON DELETE CASCADE`**；删除 Job 主记录会删除关联的消息和文件引用。Artifact 文件与注册元数据位于独立存储，删除本表的文件引用仍会保留 Artifact 实体。详见 [Background Jobs](background_jobs.md) 和 [Artifacts](artifacts.md)。
 
 ## 数据库管理表
 
@@ -297,7 +299,7 @@
 | `version`（PK） | 已应用的数据库结构编号。 |
 | `applied_at` | 该结构记录的应用时间。 |
 
-不要修改此表以尝试“解锁”业务数据：结构标识不等于实际表结构。部分业务表还会在自己的模块初始化阶段创建，因此只看 `schema_migrations` 不能判断全部应用表是否存在。
+`schema_migrations` 记录基础结构的初始化进度。部分业务表由各自模块初始化，因此检查完整表结构可使用 `sqlite_master` 或 `PRAGMA table_info`。
 
 ## 表之间如何关联
 

@@ -4,7 +4,7 @@ import queue
 from client.connection.message_dispatcher import ClientInboundMessageDispatcher
 from client.connection.message_router import ClientInboundMessageRouter
 from client.runtime.client_runtime import ClientRuntime
-from core.protocol.message_types import MSG_TYPE_RESULT
+from core.protocol.message_types import MSG_TYPE_RESULT, MSG_TYPE_SESSION_END
 from core.protocol.rchsocket import RCHSocket
 from core.utils.logger import logger
 
@@ -45,6 +45,18 @@ class ServerConnection(RCHSocket):
         except queue.Empty:
             pass
         except Exception:
+            pass
+
+    def report_session_end(self, reason: str, *, summary: str = '', traceback_text: str = ''):
+        try:
+            message = {'type': MSG_TYPE_SESSION_END, 'reason': reason}
+            if summary or traceback_text:
+                message['detail'] = {
+                    'summary': str(summary or '')[:500],
+                    'traceback': str(traceback_text or '')[:12000],
+                }
+            self.send(message)
+        except OSError:
             pass
 
     def send_result(self, id: int, status: int, result: str, eof: int = 1):

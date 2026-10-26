@@ -1,7 +1,9 @@
 from datetime import datetime
+import time
 
 from core.utils.datetime_utils import parse_iso_datetime
 from core.client_revision import build_client_revision_manifest
+from server.application.connection.control_command_store import get_control_command_store
 from server.connection.client_session import ClientSession
 from server.connection.transport.client_transport import ClientTransport
 
@@ -413,6 +415,7 @@ class WebConnectionService:
 
         if session is not None:
             try:
+                session.note_server_disconnect()
                 session.send_command('kill_instance')
             except Exception:
                 pass
@@ -530,7 +533,25 @@ class WebConnectionService:
                 disconnected_at=payload.get('disconnected_at') or '',
             )
         if self.connection_history_store:
-            self.connection_history_store.record_disconnected(payload)
+            request = getattr(session.context, 'server_disconnect_request', None)
+            client_end = getattr(session.context, 'client_session_end', None)
+            failure = getattr(session.context, 'transport_failure', None)
+            http_action = get_control_command_store().take_delivered_shutdown(payload.get('client_id'))
+            if request and time.monotonic() - request.get('at', 0) < 120:
+                reason, detail = 'server_requested_disconnect', {}
+            elif http_action == 'kill':
+                reason, detail = 'server_requested_disconnect', {}
+            elif http_action == 'relaunch':
+                reason, detail = 'client_restart', {}
+            elif client_end and time.monotonic() - client_end.get('at', time.monotonic()) < 120:
+                reason, detail = client_end['reason'], client_end.get('detail', {})
+            elif failure:
+                reason, detail = failure['reason'], failure.get('detail', {})
+            else:
+                reason, detail = 'unexpected_disconnect', {}
+            self.connection_history_store.record_disconnected(
+                payload, termination_reason=reason, diagnostics=detail
+            )
         try:
             if self.script_grant_service is not None:
                 self.script_grant_service.revoke_by_client(session.session_info.client_id)

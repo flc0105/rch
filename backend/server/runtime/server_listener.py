@@ -3,6 +3,7 @@ import json
 import socket
 import threading
 import time
+import traceback
 
 from core.utils.logger import logger
 from server.connection.transport.client_transport import ClientTransport
@@ -111,7 +112,7 @@ class ServerListener:
         """
         self.server.connections.remove(session)
 
-    def _handle_connection_closed(self, session):
+    def _handle_connection_closed(self, session, error=None):
         """
         处理连接关闭后的清理逻辑
 
@@ -120,6 +121,24 @@ class ServerListener:
         - 都必须保证连接最终从 ConnectionManager 中移除
         """
         client_id = getattr(getattr(session, 'session_info', None), 'client_id', '')
+        if error is not None:
+            if isinstance(error, (socket.timeout, TimeoutError)) or getattr(error, 'errno', None) == errno.ETIMEDOUT:
+                reason = 'timeout'
+            elif str(error) == 'Connection closed':
+                reason = 'connection_lost'
+            elif str(error) == 'Connection aborted':
+                reason = 'unexpected_disconnect'
+            else:
+                reason = 'transport_error'
+            diagnostics = {}
+            if reason == 'unexpected_disconnect':
+                diagnostics['summary'] = 'Protocol frame was interrupted'
+            elif reason in ('transport_error', 'timeout'):
+                diagnostics = {
+                    'summary': f'{type(error).__name__}: {error}'[:500],
+                    'traceback': traceback.format_exc()[-12000:],
+                }
+            session.context.transport_failure = {'reason': reason, 'detail': diagnostics}
         logger.error(f'Connection closed: {session.address} client_id={client_id}')
 
         try:
@@ -181,8 +200,8 @@ class ServerListener:
         while 1:
             try:
                 session.recv_message()
-            except socket.error:
-                self._handle_connection_closed(session)
+            except socket.error as exc:
+                self._handle_connection_closed(session, exc)
                 break
             except Exception:
                 self._handle_connection_receive_error(session)

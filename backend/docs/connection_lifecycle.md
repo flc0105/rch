@@ -19,7 +19,7 @@ Client ── TCP connect / handshake ──→ Server Socket
                                         └─ connection_online ──→ Web SSE
 ```
 
-活动会话和持久化设备资料是两个层次。连接管理器保存当前 Server 进程中的 Session；最近设备存储则保存设备的历史身份和快照。这使一台断线设备仍可显示在最近设备列表中，而不意味着其 Socket 仍然在线。
+活动会话和持久化设备资料是两个层次。连接管理器保存当前 Server 进程中的 Session；最近设备存储则保存设备的历史身份和快照。断线设备可以继续显示在最近设备列表中，其 Socket 已从活动会话中移除。
 
 ## 心跳驱动的活跃度判断
 
@@ -57,7 +57,7 @@ Python Client 在消息路由中立即回复 `heartbeat_ack`，携带相同的 I
 | `stale` | 会话尚未标记断开，但距离 `last_seen_at` 已超过 **45 秒** | Server 尚未确认 Socket 关闭，心跳回复已不新鲜 |
 | `offline` | Session 已记录断开，或展示的是无活动会话的最近设备快照 | 当前没有可用的对应活动会话 |
 
-关键在于：**Stale 不等于 TCP 断开。** 心跳线程会周期发送消息，却没有仅因为超过 45 秒就强制关闭 Socket、或者连续若干次丢失 ACK 后自动转 Offline 的逻辑。真正进入 Offline 主要来自 Socket 接收异常、会话关闭或移除等生命周期操作。因此半开连接可能持续处于 Stale，直到传输层报告错误或其他操作关闭它。
+**Stale** 表示最近 ACK 超过 45 秒未更新，Server 继续保持原有 TCP Socket；接收层发现连接关闭或应用显式移除会话时，才进入 Offline 清理流程。对于半开连接，列表会持续显示 Stale，直至传输层发现错误或执行关闭操作。
 
 45 秒衡量的是**距上一次有效 ACK 的时间**，不是距上一次发送 Heartbeat 的时间。假设第 0 秒收到 ACK，第 30 秒发送新 Heartbeat 却没有回复，那么在第 45 秒之后可能判为 Stale；如果随后收到 ACK 且会话没有断开，会恢复 Online。状态恰好跨越阈值时，前端的计时刷新还可能产生额外的显示延迟。
 
@@ -115,7 +115,7 @@ Web 不是单纯显示最后收到的一份 `connection_state`。它在本地以
 
 界面还有一项优先条件：对于**没有被明确标记为 Offline**、且携带 `is_transfer_active` 标记的连接，当前前端状态计算会优先展示 Online。因此判断异常时，应区分 Server 返回的 `connection_state` 和浏览器最终计算出的显示状态，不要只依据颜色认定 Socket 是否健康。
 
-上线与离线会产生 `connection_online` / `connection_offline` 事件，并可进入通知系统。Stale 是最近心跳时间派生出的展示状态，不自动意味着发布 Offline 生命周期事件或通知。浏览器 SSE 是否畅通也不等于 Client Socket 是否健康；浏览器连接的保活与设备 Heartbeat 使用不同的链路。
+上线与离线会产生 `connection_online` / `connection_offline` 事件，并可进入通知系统。Stale 由最近心跳时间计算，在确认 Socket 关闭时才发布 Offline 生命周期事件。浏览器 SSE 流使用独立的保活链路，Client Socket 的心跳与状态由 Server 单独管理。
 
 ## 连接丢失后的清理、重连和历史留存
 
@@ -132,6 +132,22 @@ RCH 将当前 Session、最近设备和历史会话分别管理：
 - **当前 Session** 是 Server 进程内存中的活动 Socket，按 `client_id` 识别。
 - **最近设备** 保留 `machine_id` 关联的机器快照、别名等信息。没有活动 Session 的设备仍可以作为 Offline 条目出现在设备列表；有当前会话的机器不会再额外叠加同一机器的离线快照。
 - **连接历史** 持久化在 `runtime/rch.db` 的 `connection_sessions` 中，记录各 `machine_id` / `client_id` 会话的连接、断开、最后响应时间和持续时间，并可关联对应的 Activity 数量与执行摘要。
+
+### Connection History 的结束原因
+
+Connection History 的列表显示原有 **Disconnect / Interrupted** 状态标签。展开记录时，**Termination cause** 显示结束类别；捕获到 Client 异常、传输故障、超时或协议帧中断时，**Error diagnostics** 显示具体错误及可取得的 traceback。正常结束只显示结束类别。`connection_sessions.termination_reason` 与 `error_diagnostics_json` 分别保存结束类别和实际错误诊断。
+
+| Termination cause | 采集条件 |
+| --- | --- |
+| Server requested disconnect | Web Disconnect、Server 端 `disconnect` / `kill`、`httpctl kill` 发起关闭后，该连接结束 |
+| Client exit / Client restart / Client update | Python Client 主动退出、重启或完成更新替换旧实例时发送的结束通知 |
+| Connection lost | Socket 在报文边界处收到连接关闭信号 |
+| Transport error / Timeout | Server 捕获传输异常或超时，Error diagnostics 包含错误摘要和可取得的堆栈 |
+| Unexpected disconnect | 连接在消息传输途中中止，或关闭时缺少明确报告 |
+| Client error | Client 遇到终止性异常时发送错误摘要与堆栈 |
+
+设备断电、系统强制终止和网络中断由 Server 捕获的 Socket 现象归类。详情显示该连接实际收到的诊断信息。
+
 
 例如，`GET /api/machines/{machine_id}/connection-history` 查询的是某台机器历次连接会话，并不是一次实时的 Heartbeat 探测。历史中可能出现 `interrupted`，表示记录中的会话不再属于当前活动集合而未得到正常断开结局；**它是历史状态，不属于设备实时的 Online / Stale / Offline 三态**。历史在线时长按会话起止计算，并不表示期间的每一秒心跳都健康。
 

@@ -3,6 +3,7 @@ import os
 import sys
 import threading
 import time
+import traceback
 
 from client.bootstrap.client_app import Client
 from client.config.config import SERVER_ADDR
@@ -100,12 +101,18 @@ def main():
             ).start()
         client.wait()
     except KeyboardInterrupt:
+        if client is not None:
+            client.server.report_session_end('client_exit')
         process_watchdog.stop()
         if client is not None:
             client.guard_manager.stop()
         sys.exit(0)
     except Exception as e:
         if client is not None:
+            client.server.report_session_end(
+                'client_error', summary=f'{type(e).__name__}: {e}',
+                traceback_text=traceback.format_exc(),
+            )
             client.guard_manager.stop()
         logger.error(e, exc_info=True)
 

@@ -93,6 +93,17 @@
                   <span class="label">Disconnect</span>
                   <span class="value">{{ scope.row.disconnect_reason || '-' }}</span>
                 </div>
+                <div v-if="scope.row.termination_reason" class="machine-session-meta-item">
+                  <span class="label">Termination cause</span>
+                  <span class="value">{{ formatEndReason(scope.row.termination_reason) }}</span>
+                </div>
+                <div v-if="hasErrorDiagnostics(scope.row)" class="machine-session-meta-item machine-session-meta-wide">
+                  <span class="label">Error diagnostics</span>
+                  <div class="machine-session-end-details">
+                    <div v-if="scope.row.error_diagnostics.summary">{{ scope.row.error_diagnostics.summary }}</div>
+                    <pre v-if="scope.row.error_diagnostics.traceback">{{ scope.row.error_diagnostics.traceback }}</pre>
+                  </div>
+                </div>
                 <div class="machine-session-meta-item machine-session-meta-wide">
                   <span class="label">cwd</span>
                   <span class="value">{{ scope.row.cwd || '-' }}</span>
@@ -383,6 +394,26 @@ export default {
       return processName || processId || '-'
     },
 
+    hasErrorDiagnostics(row) {
+      return ['client_error', 'transport_error', 'timeout', 'unexpected_disconnect'].includes(row?.termination_reason)
+        && Boolean(row?.error_diagnostics?.summary || row?.error_diagnostics?.traceback)
+    },
+
+    formatEndReason(value) {
+      const names = {
+        server_requested_disconnect: 'Server requested disconnect',
+        client_exit: 'Client exit',
+        client_restart: 'Client restart',
+        client_update: 'Client update',
+        connection_lost: 'Connection lost',
+        transport_error: 'Transport error',
+        timeout: 'Timeout',
+        unexpected_disconnect: 'Unexpected disconnect',
+        client_error: 'Client error',
+      }
+      return names[value] || value
+    },
+
     sessionStatusText(row) {
       if (row?.connection_state === 'online') return 'online'
       if (row?.connection_state === 'interrupted') return 'interrupted'
@@ -597,6 +628,8 @@ export default {
     padding-left: 12px;
   }
 }
+.machine-session-end-details { min-width: 0; overflow-wrap: anywhere; white-space: pre-wrap; font-size: 12px; }
+.machine-session-end-details pre { margin: 6px 0 0; max-height: 240px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: inherit; }
 </style>
 
 <style>

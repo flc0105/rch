@@ -317,6 +317,7 @@ class CommandUpdateMixin:
 
         def _exit_current_client():
             time.sleep(self.UPDATE_EXIT_DELAY_SECONDS)
+            self.socket.report_session_end('client_update')
             try:
                 self.socket.close()
             except Exception:

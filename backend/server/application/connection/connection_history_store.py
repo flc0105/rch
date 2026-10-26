@@ -56,6 +56,8 @@ class ConnectionHistoryStore:
             'duration_ms': int(row['duration_ms'] or 0),
             'connection_state': row['connection_state'],
             'disconnect_reason': row['disconnect_reason'],
+            'termination_reason': row['termination_reason'],
+            'error_diagnostics': json_loads_dict(row['error_diagnostics_json']),
             'tracking_source': row['tracking_source'] or 'connection_lifecycle',
             'commands': [],
         })
@@ -88,8 +90,8 @@ class ConnectionHistoryStore:
                 INSERT INTO connection_sessions(
                     machine_id, client_id, connected_at, connected_at_ms, disconnected_at,
                     disconnected_at_ms, last_seen_at, duration_ms, connection_state,
-                    disconnect_reason, tracking_source, snapshot_json
-                ) VALUES (?, ?, ?, ?, '', 0, ?, 0, 'online', '', 'connection_lifecycle', ?)
+                    disconnect_reason, termination_reason, error_diagnostics_json, tracking_source, snapshot_json
+                ) VALUES (?, ?, ?, ?, '', 0, ?, 0, 'online', '', '', '{}', 'connection_lifecycle', ?)
                 ''',
                 (machine_id, client_id, connected_at, self._to_ms(connected_at), last_seen_at, compact_json_dumps(snapshot or {})),
             )
@@ -101,7 +103,7 @@ class ConnectionHistoryStore:
             UPDATE connection_sessions SET
                 connected_at = ?, connected_at_ms = ?, disconnected_at = '', disconnected_at_ms = 0,
                 last_seen_at = ?, duration_ms = 0, connection_state = 'online', disconnect_reason = '',
-                snapshot_json = ?
+                termination_reason = '', error_diagnostics_json = '{}', snapshot_json = ?
             WHERE machine_id = ? AND client_id = ?
             ''',
             (
@@ -172,7 +174,7 @@ class ConnectionHistoryStore:
                     (disconnected_at, self._to_ms(disconnected_at), duration_ms, machine_id_text, row['client_id']),
                 )
 
-    def record_disconnected(self, connection: dict):
+    def record_disconnected(self, connection: dict, *, termination_reason: str = '', diagnostics: dict = None):
         machine_id = str((connection or {}).get('machine_id') or '').strip()
         client_id = str((connection or {}).get('client_id') or '').strip()
         if not machine_id or not client_id:
@@ -191,20 +193,33 @@ class ConnectionHistoryStore:
                     (machine_id, client_id),
                 ).fetchone()
 
+            # The first completed close event owns the end state and diagnosis.
+            if str(row['disconnected_at'] or '').strip():
+                return
+
             snapshot = self._build_snapshot(connection, json_loads_dict(row['snapshot_json']))
             start = parse_iso_datetime(row['connected_at'])
             end = parse_iso_datetime(disconnected_at)
             duration_ms = max(int((end - start).total_seconds() * 1000), 0) if start and end else 0
             last_seen_at = str(connection.get('last_seen_at') or row['last_seen_at'] or '').strip()
+            error_diagnostics = {}
+            if termination_reason in ('client_error', 'transport_error', 'timeout', 'unexpected_disconnect') and isinstance(diagnostics, dict):
+                error_diagnostics = {
+                    key: str(diagnostics.get(key) or '')[:limit]
+                    for key, limit in (('summary', 500), ('traceback', 12000))
+                    if diagnostics.get(key)
+                }
             conn.execute(
                 '''
                 UPDATE connection_sessions SET
                     disconnected_at = ?, disconnected_at_ms = ?, last_seen_at = ?, duration_ms = ?,
-                    connection_state = 'offline', disconnect_reason = 'disconnected', snapshot_json = ?
+                    connection_state = 'offline', disconnect_reason = 'disconnected',
+                    termination_reason = ?, error_diagnostics_json = ?, snapshot_json = ?
                 WHERE machine_id = ? AND client_id = ?
                 ''',
                 (
                     disconnected_at, self._to_ms(disconnected_at), last_seen_at, duration_ms,
+                    str(termination_reason or ''), compact_json_dumps(error_diagnostics),
                     compact_json_dumps(snapshot or {}), machine_id, client_id,
                 ),
             )

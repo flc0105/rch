@@ -1,3 +1,5 @@
+import time
+
 from server.connection.channel.session_command_channel import ClientSessionCommandChannel
 from server.connection.context.session_context import ClientSessionContext
 from server.connection.runtime.session_runtime import ClientSessionRuntime
@@ -48,6 +50,9 @@ class ClientSession:
 
     def close(self):
         self.transport.close()
+
+    def note_server_disconnect(self):
+        self.context.server_disconnect_request = {'at': time.monotonic()}
 
     def bind_history_entry(self, command_id: int, entry_id: str):
         self.runtime.bind_history_entry(command_id, entry_id)

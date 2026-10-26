@@ -1,5 +1,8 @@
+import time
+
 from core.protocol.message_types import (
     MSG_TYPE_HEARTBEAT_ACK,
+    MSG_TYPE_SESSION_END,
     MSG_TYPE_RESULT,
     MSG_TYPE_PTY_OPENED,
     MSG_TYPE_PTY_OUTPUT,
@@ -23,9 +26,7 @@ class ServerInboundMessageDispatcher:
     """
     Server 侧入站消息调度器。
 
-    当前仅对需要立即消费的消息做分发：
-    - result
-    - heartbeat_ack
+    分发执行结果、心跳应答与 Client 主动结束通知。
     """
 
     IMMEDIATE_MESSAGE_TYPES = {
@@ -53,6 +54,20 @@ class ServerInboundMessageDispatcher:
 
     def dispatch(self, data: dict):
         message_type = data.get('type')
+
+        if message_type == MSG_TYPE_SESSION_END:
+            reason = str(data.get('reason') or '')
+            if reason in ('client_exit', 'client_restart', 'client_update', 'client_error'):
+                detail = data.get('detail') if isinstance(data.get('detail'), dict) else {}
+                self.session.context.client_session_end = {
+                    'at': time.monotonic(),
+                    'reason': reason,
+                    'detail': {
+                        'summary': str(detail.get('summary') or '')[:500],
+                        'traceback': str(detail.get('traceback') or '')[:12000],
+                    },
+                }
+            return None
 
         if message_type in self.IMMEDIATE_MESSAGE_TYPES:
             return self._dispatch_immediate_message(data)

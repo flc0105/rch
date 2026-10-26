@@ -49,6 +49,8 @@ class ClientSessionContext:
 
         self.connected_at = ''
         self.disconnected_at = ''
+        self.server_disconnect_request = None
+        self.client_session_end = None
         self.last_seen_at = ''
         self.last_heartbeat_sent_at = ''
         self.last_heartbeat_ack_at = ''
