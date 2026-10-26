@@ -260,6 +260,10 @@ export default {
 </script>
 
 <style scoped>
+.param-form-field :deep(.el-form-item__content) {
+  display: block;
+}
+
 .param-form-control {
   width: 100%;
 }
@@ -271,8 +275,20 @@ export default {
   max-width: 100%;
 }
 
+.param-form-button-group :deep(.el-radio-button:first-child .el-radio-button__inner) {
+  border-left: 1px solid var(--el-border-color);
+}
+
+.param-form-button-group :deep(.el-radio-button:first-child.is-active .el-radio-button__inner) {
+  border-left-color: var(--el-color-primary);
+}
+
 .param-form-hint {
+  display: block;
+  width: 100%;
   margin-top: 6px;
+  color: var(--el-text-color-secondary);
+  font-size: 0.9em;
   line-height: 1.5;
 }
 .path-list-editor { width: 100%; display: flex; flex-direction: column; gap: 8px; }
