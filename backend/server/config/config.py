@@ -43,11 +43,23 @@ SERVER_RUNTIME_DIR = os.path.abspath(os.path.join(
     os.path.expanduser(os.environ.get('RCH_SERVER_RUNTIME_DIR', '').strip() or 'runtime'),
 ))
 os.makedirs(SERVER_RUNTIME_DIR, exist_ok=True)
-_AUTH = load_admin_auth(os.path.join(SERVER_RUNTIME_DIR, 'auth.json'))
+AUTH_PATH = os.path.join(SERVER_RUNTIME_DIR, 'auth.json')
+_AUTH = load_admin_auth(AUTH_PATH)
 ADMIN_USERNAME = _AUTH['username']
 ADMIN_PASSWORD_HASH = _AUTH['password']
 ADMIN_API_TOKEN = _AUTH['api_token']
 WEB_SESSION_SECRET = _AUTH['session_secret']
+
+
+def reload_admin_auth():
+    global _AUTH, ADMIN_USERNAME, ADMIN_PASSWORD_HASH, ADMIN_API_TOKEN, WEB_SESSION_SECRET
+
+    _AUTH = load_admin_auth(AUTH_PATH)
+    ADMIN_USERNAME = _AUTH['username']
+    ADMIN_PASSWORD_HASH = _AUTH['password']
+    ADMIN_API_TOKEN = _AUTH['api_token']
+    WEB_SESSION_SECRET = _AUTH['session_secret']
+    return dict(_AUTH)
 
 # ------------------ cleanup ------------------ #
 SERVER_CLEANUP_START_DELAY_SECONDS = 20

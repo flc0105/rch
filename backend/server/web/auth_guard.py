@@ -3,12 +3,7 @@ from functools import wraps
 
 from flask import current_app, request, session
 
-from server.config.config import (
-    ADMIN_API_TOKEN,
-    ADMIN_PASSWORD_HASH,
-    ADMIN_USERNAME,
-    WEB_SESSION_SECRET,
-)
+from server.config import config as server_config
 
 
 PUBLIC_ENDPOINT_ATTR = '__rat_allow_anonymous__'
@@ -60,7 +55,7 @@ class WebAuthGuard:
         return ''
 
     def has_valid_static_token(self) -> bool:
-        expected = str(ADMIN_API_TOKEN or '').strip()
+        expected = str(server_config.ADMIN_API_TOKEN or '').strip()
         provided = self._get_authorization_token()
         if not expected or not provided:
             return False
@@ -68,8 +63,8 @@ class WebAuthGuard:
 
     def _current_session_credential_version(self) -> str:
         # Session is bound to the current persisted admin credentials.
-        secret = str(WEB_SESSION_SECRET or '').encode('utf-8')
-        payload = f'{ADMIN_USERNAME}\0{ADMIN_PASSWORD_HASH}'.encode('utf-8')
+        secret = str(server_config.WEB_SESSION_SECRET or '').encode('utf-8')
+        payload = f'{server_config.ADMIN_USERNAME}\0{server_config.ADMIN_PASSWORD_HASH}'.encode('utf-8')
         return hmac.new(secret, payload, 'sha256').hexdigest()
 
     def has_valid_session(self) -> bool:

@@ -235,23 +235,41 @@
 
         <div class="device-context-menu-separator"></div>
 
-<button
-  type="button"
-  class="device-context-menu-item is-danger"
-  :disabled="!canDisconnectContextConnection"
-  @click="triggerDeviceContextCommand('disconnect')"
->
-  Disconnect
-</button>
+        <button
+          type="button"
+          class="device-context-menu-item"
+          :disabled="!canRunContextConnectionCommand"
+          @click="triggerDeviceContextCommand('duplicate-connection')"
+        >
+          Duplicate connection
+        </button>
 
-<button
-  type="button"
-  class="device-context-menu-item is-danger"
-  :disabled="!canRemoveContextConnection"
-  @click="triggerDeviceContextCommand('remove-connection')"
->
-  Remove connection
-</button>
+        <button
+          type="button"
+          class="device-context-menu-item is-danger"
+          :disabled="!canRunContextConnectionCommand"
+          @click="triggerDeviceContextCommand('restart-connection')"
+        >
+          Restart connection
+        </button>
+
+        <button
+          type="button"
+          class="device-context-menu-item is-danger"
+          :disabled="!canDisconnectContextConnection"
+          @click="triggerDeviceContextCommand('disconnect')"
+        >
+          Disconnect
+        </button>
+
+        <button
+          type="button"
+          class="device-context-menu-item is-danger"
+          :disabled="!canRemoveContextConnection"
+          @click="triggerDeviceContextCommand('remove-connection')"
+        >
+          Remove connection
+        </button>
 
       </div>
     </Teleport>
@@ -265,6 +283,7 @@ import {CaretTop} from '@element-plus/icons-vue'
 import {
   killConnection as killConnectionApi,
   removeConnection as removeConnectionApi,
+  sendCommand as sendCommandApi,
 } from '../api/connectionsApi.js'
 
 export default {
@@ -314,6 +333,11 @@ export default {
       type: Boolean,
       default: false,
     },
+
+    getTabScopedHeaders: {
+      type: Function,
+      default: null,
+    },
   },
 
   emits: [
@@ -361,12 +385,16 @@ computed: {
     }
   },
 
-  canDisconnectContextConnection() {
+  canRunContextConnectionCommand() {
     if (!this.contextMenuItem || !this.contextMenuItem.client_id) {
       return false
     }
 
     return this.getConnectionDisplayState(this.contextMenuItem) !== 'offline'
+  },
+
+  canDisconnectContextConnection() {
+    return this.canRunContextConnectionCommand
   },
 
   canRemoveContextConnection() {
@@ -643,6 +671,16 @@ async triggerDeviceContextCommand(command) {
     return
   }
 
+  if (command === 'duplicate-connection') {
+    await this.runConnectionSessionCommand(item, 'spawn_instance', 'Duplicate connection command submitted')
+    return
+  }
+
+  if (command === 'restart-connection') {
+    await this.runConnectionSessionCommand(item, 'relaunch_instance', 'Restart command submitted')
+    return
+  }
+
   if (command === 'disconnect') {
     await this.disconnectConnection(item)
     return
@@ -650,6 +688,30 @@ async triggerDeviceContextCommand(command) {
 
   if (command === 'remove-connection') {
     await this.removeConnectionPermanently(item)
+  }
+},
+
+async runConnectionSessionCommand(item, command, successMessage) {
+  const clientId = String(item?.client_id || '').trim()
+
+  if (!clientId) {
+    ElMessage.warning('Invalid connection')
+    return
+  }
+
+  if (this.getConnectionDisplayState(item) === 'offline') {
+    ElMessage.warning('This connection is already offline')
+    return
+  }
+
+  try {
+    const headers = typeof this.getTabScopedHeaders === 'function'
+      ? this.getTabScopedHeaders()
+      : {}
+    await sendCommandApi(clientId, command, headers)
+    ElMessage.success(successMessage)
+  } catch (e) {
+    ElMessage.error(e.message || 'Failed to submit connection command')
   }
 },
 

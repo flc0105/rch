@@ -53,13 +53,25 @@
           </div>
 
           <span class="tool-separator banner-major-separator" aria-hidden="true"></span>
-          <button
-            class="banner-inline-action"
-            type="button"
-            onclick="window.RatAuth && window.RatAuth.logout()"
-          >
-            Sign out
-          </button>
+          <el-dropdown trigger="click" @command="handleAccountCommand">
+            <button
+              class="banner-inline-action banner-account-action"
+              type="button"
+              aria-haspopup="menu"
+              :title="authUsernameLabel"
+            >
+              <el-icon><User /></el-icon>
+              <span>{{ authUsernameLabel }}</span>
+              <el-icon class="banner-account-chevron"><ArrowDown /></el-icon>
+            </button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="change-password">Change Password</el-dropdown-item>
+                <el-dropdown-item command="authorization-info">Authorization Info</el-dropdown-item>
+                <el-dropdown-item command="sign-out" divided>Sign out</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
         </div>
       </div>
     </header>
@@ -78,6 +90,7 @@
         :machine-group-assignments="machineGroupAssignments"
         :selected-group-id="selectedDeviceGroupId"
         :device-group-counts="deviceGroupMachineCounts"
+        :get-tab-scoped-headers="getTabScopedHeaders"
         @refresh="loadConnections"
         @select="selectConnection"
         @toggle-hidden-devices="toggleShowHiddenDevices"
@@ -434,6 +447,76 @@
     :tab-id="tabId"
     @transfers-changed="loadTransferItems"
   />
+
+  <el-dialog
+    v-model="changePasswordDialogVisible"
+    title="Change Password"
+    width="min(92vw, 440px)"
+    append-to-body
+    @closed="resetChangePasswordForm"
+  >
+    <el-form label-position="top" @submit.prevent="submitPasswordChange">
+      <el-form-item label="Current password">
+        <el-input
+          v-model="changePasswordForm.currentPassword"
+          type="password"
+          show-password
+          autocomplete="current-password"
+        />
+      </el-form-item>
+      <el-form-item label="New password">
+        <el-input
+          v-model="changePasswordForm.newPassword"
+          type="password"
+          show-password
+          autocomplete="new-password"
+        />
+      </el-form-item>
+      <el-form-item label="Confirm new password">
+        <el-input
+          v-model="changePasswordForm.confirmPassword"
+          type="password"
+          show-password
+          autocomplete="new-password"
+          @keyup.enter="submitPasswordChange"
+        />
+      </el-form-item>
+      <div class="account-dialog-hint">
+        Use at least 8 characters with at least one English letter and one number.
+      </div>
+    </el-form>
+    <template #footer>
+      <el-button :disabled="changePasswordSubmitting" @click="changePasswordDialogVisible = false">Cancel</el-button>
+      <el-button type="primary" :loading="changePasswordSubmitting" @click="submitPasswordChange">Change Password</el-button>
+    </template>
+  </el-dialog>
+
+  <el-dialog
+    v-model="authorizationInfoDialogVisible"
+    title="Authorization Info"
+    width="min(92vw, 520px)"
+    append-to-body
+  >
+    <div v-loading="authorizationInfoLoading" class="authorization-info">
+      <div class="authorization-info-row">
+        <span class="authorization-info-label">Username</span>
+        <span class="authorization-info-value">{{ authorizationInfo.username || '-' }}</span>
+      </div>
+      <div class="authorization-info-row authorization-token-row">
+        <span class="authorization-info-label">API Token</span>
+        <el-input
+          :model-value="authorizationInfo.api_token"
+          readonly
+          class="authorization-token-input"
+        >
+          <template #append>
+            <el-button :disabled="!authorizationInfo.api_token" @click="copyAuthorizationToken">Copy</el-button>
+          </template>
+        </el-input>
+      </div>
+      <div class="account-dialog-hint">Use the API Token as a Bearer token for authenticated external API requests.</div>
+    </div>
+  </el-dialog>
 </template>
 
 <script>
@@ -475,8 +558,10 @@ import DeviceGroupManagerDialog from './components/DeviceGroupManagerDialog.vue'
 import SettingsDialog from './components/SettingsDialog.vue'
 import NotificationCenterDrawer from './components/NotificationCenterDrawer.vue'
 import TransferCenterDrawer from './components/TransferCenterDrawer.vue'
+import { changeAdminPassword, getAuthorizationInfo, getAuthSession } from './api/authApi.js'
+import { ElMessage } from 'element-plus'
 
-import { ArrowDown, ArrowUp, Bell, Grid, Sort } from '@element-plus/icons-vue'
+import { ArrowDown, ArrowUp, Bell, Grid, Sort, User } from '@element-plus/icons-vue'
 
 export default {
   components: {
@@ -493,6 +578,7 @@ export default {
     Bell,
     Grid,
     Sort,
+    User,
     PtyDialog,
     TerminalJsonDialog,
     PreviewDialog,
@@ -533,6 +619,21 @@ export default {
 
       connectionInfoCollapsed: false,
       deviceSidebarCollapsed: false,
+
+      currentAuthUsername: '',
+      changePasswordDialogVisible: false,
+      changePasswordSubmitting: false,
+      changePasswordForm: {
+        currentPassword: '',
+        newPassword: '',
+        confirmPassword: '',
+      },
+      authorizationInfoDialogVisible: false,
+      authorizationInfoLoading: false,
+      authorizationInfo: {
+        username: '',
+        api_token: '',
+      },
     }
   },
 
@@ -548,6 +649,10 @@ export default {
 
     activeTransferCount() {
       return (this.transferItems || []).filter(item => item?.state === 'running').length
+    },
+
+    authUsernameLabel() {
+      return String(this.currentAuthUsername || '').trim() || 'Account'
     },
   },
 
@@ -824,6 +929,124 @@ export default {
       return this.$refs.processDialogRef?.open(typeof sortBy === 'string' ? sortBy : '')
     },
 
+    async loadAuthSession() {
+      try {
+        const sessionInfo = await getAuthSession()
+        this.currentAuthUsername = String(sessionInfo?.username || '').trim()
+      } catch (_error) {
+        this.currentAuthUsername = ''
+      }
+    },
+
+    handleAccountCommand(command) {
+      if (command === 'change-password') {
+        this.resetChangePasswordForm()
+        this.changePasswordDialogVisible = true
+        return
+      }
+
+      if (command === 'authorization-info') {
+        this.openAuthorizationInfoDialog()
+        return
+      }
+
+      if (command === 'sign-out') {
+        window.RatAuth?.logout?.()
+      }
+    },
+
+    resetChangePasswordForm() {
+      this.changePasswordForm.currentPassword = ''
+      this.changePasswordForm.newPassword = ''
+      this.changePasswordForm.confirmPassword = ''
+      this.changePasswordSubmitting = false
+    },
+
+    validateNewAdminPassword(password) {
+      const value = String(password || '')
+      if ([...value].length < 8) return 'Password must be at least 8 characters'
+      if (!/[A-Za-z]/.test(value)) return 'Password must include at least one English letter'
+      if (!/[0-9]/.test(value)) return 'Password must include at least one number'
+      return ''
+    },
+
+    async submitPasswordChange() {
+      if (this.changePasswordSubmitting) return
+
+      const currentPassword = this.changePasswordForm.currentPassword
+      const newPassword = this.changePasswordForm.newPassword
+      const confirmPassword = this.changePasswordForm.confirmPassword
+
+      if (!currentPassword) {
+        ElMessage.warning('Enter your current password')
+        return
+      }
+
+      const passwordError = this.validateNewAdminPassword(newPassword)
+      if (passwordError) {
+        ElMessage.warning(passwordError)
+        return
+      }
+
+      if (newPassword !== confirmPassword) {
+        ElMessage.warning('New passwords do not match')
+        return
+      }
+
+      this.changePasswordSubmitting = true
+      try {
+        await changeAdminPassword(currentPassword, newPassword)
+        this.changePasswordDialogVisible = false
+        ElMessage.success('Password changed. Signing out...')
+        window.setTimeout(() => window.location.replace('/login.html'), 450)
+      } catch (error) {
+        ElMessage.error(error?.message || 'Failed to change password')
+      } finally {
+        this.changePasswordSubmitting = false
+      }
+    },
+
+    async openAuthorizationInfoDialog() {
+      this.authorizationInfoDialogVisible = true
+      this.authorizationInfoLoading = true
+      try {
+        const info = await getAuthorizationInfo()
+        this.authorizationInfo = {
+          username: String(info?.username || ''),
+          api_token: String(info?.api_token || ''),
+        }
+      } catch (error) {
+        this.authorizationInfoDialogVisible = false
+        ElMessage.error(error?.message || 'Failed to load authorization info')
+      } finally {
+        this.authorizationInfoLoading = false
+      }
+    },
+
+    async copyAuthorizationToken() {
+      const token = String(this.authorizationInfo?.api_token || '')
+      if (!token) return
+
+      try {
+        if (window.isSecureContext && navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(token)
+        } else {
+          const textarea = document.createElement('textarea')
+          textarea.value = token
+          textarea.style.position = 'fixed'
+          textarea.style.opacity = '0'
+          document.body.appendChild(textarea)
+          textarea.select()
+          const copied = document.execCommand('copy')
+          document.body.removeChild(textarea)
+          if (!copied) throw new Error('Copy failed')
+        }
+        ElMessage.success('API Token copied')
+      } catch (error) {
+        ElMessage.error(error?.message || 'Failed to copy API Token')
+      }
+    },
+
     handleBannerUtilityCommand(command) {
       if (command === 'one-liners') return this.openOneLinersDialog()
       if (command === 'build-agent') return this.openAgentBuilderDialog()
@@ -963,6 +1186,7 @@ export default {
     await Promise.all([
       this.loadConnections(),
       this.loadDeviceGroups(),
+      this.loadAuthSession(),
       this.loadSseNotificationPreferences(),
       this.loadSseNotificationHistory(),
       this.loadTransferItems(),
@@ -1025,6 +1249,57 @@ export default {
 
 .banner-icon-action:active {
   opacity: 0.72;
+}
+
+.banner-account-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.banner-account-action > span {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.banner-account-chevron {
+  font-size: 11px;
+  opacity: 0.72;
+}
+
+.account-dialog-hint {
+  margin-top: 4px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.authorization-info {
+  min-height: 88px;
+}
+
+.authorization-info-row {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.authorization-info-label {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.authorization-info-value {
+  color: var(--el-text-color-primary);
+  font-size: 14px;
+}
+
+.authorization-token-input :deep(.el-input__inner) {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
 .banner-transfer-count {

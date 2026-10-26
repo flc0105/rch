@@ -7,11 +7,13 @@ import secrets
 import stat
 import tempfile
 
-from werkzeug.security import generate_password_hash
+from werkzeug.security import check_password_hash, generate_password_hash
 
 
 _PASSWORD_METHOD = 'scrypt:32768:8:1'
 _PASSWORD_HASH_RE = re.compile(r'scrypt:32768:8:1\$[A-Za-z0-9_-]+\$[0-9a-f]{128}\Z')
+_ENGLISH_LETTER_RE = re.compile(r'[A-Za-z]')
+_DIGIT_RE = re.compile(r'[0-9]')
 
 
 def _write_auth_file(path, credentials, *, create_only=False):
@@ -61,6 +63,31 @@ def _read_auth_file(path):
     elif not _PASSWORD_HASH_RE.fullmatch(password):
         raise ValueError(f'Invalid administrator password hash in {path}; use plain:<password> to reset')
     return credentials
+
+
+def validate_admin_password(password):
+    value = str(password or '')
+    if len(value) < 8:
+        raise ValueError('Password must be at least 8 characters')
+    if not _ENGLISH_LETTER_RE.search(value):
+        raise ValueError('Password must include at least one English letter')
+    if not _DIGIT_RE.search(value):
+        raise ValueError('Password must include at least one digit')
+    return value
+
+
+def change_admin_password(path, current_password, new_password):
+    credentials = _read_auth_file(path)
+    if not check_password_hash(credentials['password'], str(current_password or '')):
+        raise PermissionError('Current password is incorrect')
+
+    updated = dict(credentials)
+    updated['password'] = generate_password_hash(
+        validate_admin_password(new_password),
+        method=_PASSWORD_METHOD,
+    )
+    _write_auth_file(path, updated)
+    return updated
 
 
 def load_admin_auth(path):

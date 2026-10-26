@@ -159,7 +159,9 @@ Server 收到连接注册时，先记录最近设备并登记连接历史，然�
 | 用户操作 | 实现边界 |
 | --- | --- |
 | 隐藏连接或机器 | 修改设备视图偏好；不主动关闭 Socket |
-| Kill Connection | 向指定 `client_id` 的在线会话发起关闭控制；不是删除设备历史 |
+| Duplicate Connection | 向选中的在线 `client_id` 执行 `spawn_instance`，保留当前 Client，同时启动同一机器上的新 Client 实例 |
+| Restart Connection | 向选中的在线 `client_id` 执行 `relaunch_instance`；确认后启动替代 Client，并结束当前 Client |
+| Kill Connection / Disconnect | 向指定 `client_id` 的在线会话发起关闭控制；不是删除设备历史 |
 | Remove Connection / Forget | 按指定 Client/Machine 身份移除 Recent Devices 记录；如果目标仍在线，还会尝试结束会话并发布移除事件 |
 
 “忘记”不是全库级级联删除。当前 `remove_connection()` 删除的是匹配的最近设备缓存，**没有在同一操作中删除 `device_group_members`、`connection_sessions` 或执行历史**。为了避免已经发出的离线更新立刻重新插回刚删除的缓存，Recent Device Store 还维护进程内的 `_forgotten_machine_keys` 集合；同一机器之后再次出现非离线连接更新时，会解除该临时屏蔽并重新记录。

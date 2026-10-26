@@ -39,7 +39,11 @@ handler.call(ctx, 'build-agent')
 handler.call(ctx, 'unrecognized')
 assert.deepEqual(opened, ['one-liners', 'build-agent'])
 
-// Sign out remains the exact existing button (not a dropdown item).
-assert.match(banner, /<button\s+class="banner-inline-action"\s+type="button"\s+onclick="window\.RatAuth && window\.RatAuth\.logout\(\)"\s*>\s*Sign out\s*<\/button>/)
-assert.equal((banner.match(/>\s*Sign out\s*</g) || []).length, 1)
+// Account control shows the authenticated username and keeps Sign out in its dropdown.
+assert.match(banner, /class="banner-inline-action banner-account-action"/)
+assert.match(banner, /<el-icon><User \/><\/el-icon>/)
+assert.match(banner, /\{\{ authUsernameLabel \}\}/)
+assert.match(banner, /<el-dropdown-item command="change-password">Change Password<\/el-dropdown-item>/)
+assert.match(banner, /<el-dropdown-item command="authorization-info">Authorization Info<\/el-dropdown-item>/)
+assert.match(banner, /<el-dropdown-item command="sign-out" divided>Sign out<\/el-dropdown-item>/)
 console.log('Banner utilities and icon grouping tests passed')

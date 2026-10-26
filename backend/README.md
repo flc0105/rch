@@ -867,19 +867,17 @@ The web app includes a lightweight auth layer designed for simple public deploym
 
 ### Current characteristics
 
-- fixed admin username/password stored in server config / environment variables
-- no registration flow
-- no database dependency
+- administrator username, password hash, API Token, and Session Secret are stored in `SERVER_RUNTIME_DIR/auth.json`
+- no registration flow and no database dependency
 - session cookie based login for the web app
-- browser login submits a simply masked password field instead of plaintext JSON; HTTP remains supported (masking is not network confidentiality)
+- the account menu shows the current administrator username, supports password changes, and exposes the administrator API Token in Authorization Info for copying
+- password changes atomically update `auth.json`, reload the active password credential, and sign out the current browser session
+- browser password submissions use the existing lightweight masked payload format instead of a plaintext JSON password field
 - API token accepted via auth guard
 
 ### Relevant config entries
 
-- `RCH_WEB_SESSION_SECRET`
-- `RCH_ADMIN_USERNAME`
-- `RCH_ADMIN_PASSWORD`
-- `RCH_ADMIN_API_TOKEN`
+- `RCH_SERVER_RUNTIME_DIR`
 - `RCH_WEB_AUTH_SESSION_DAYS`
 - `RCH_WEB_SESSION_COOKIE_NAME`
 

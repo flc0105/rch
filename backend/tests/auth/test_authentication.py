@@ -10,10 +10,11 @@ import os
 import tempfile
 from pathlib import Path
 from werkzeug.security import check_password_hash
-from server.config.admin_auth import load_admin_auth
+from server.config.admin_auth import change_admin_password, load_admin_auth, validate_admin_password
 from unittest.mock import patch
 from flask import Flask
 from werkzeug.security import generate_password_hash
+from server.config import config as server_config
 from server.web import auth_guard
 from server.web.routes import auth as auth_routes
 
@@ -127,33 +128,81 @@ class AdminAuthConfigTests(unittest.TestCase):
                     self.initialize()
 
 
+    def test_password_change_policy_and_atomic_update_preserve_other_credentials(self):
+        initial, _ = self.initialize()
+        current_password = 'current12'
+        initial['password'] = generate_password_hash(current_password, method='scrypt:32768:8:1')
+        self.path.write_text(json.dumps(initial), encoding='utf-8')
+
+        for invalid in ('abc1234', 'abcdefgh', '12345678'):
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(ValueError):
+                    validate_admin_password(invalid)
+
+        with self.assertRaises(PermissionError):
+            change_admin_password(str(self.path), 'wrong-password', 'newpass1')
+
+        updated = change_admin_password(str(self.path), current_password, 'newpass1')
+        self.assertTrue(check_password_hash(updated['password'], 'newpass1'))
+        self.assertEqual(validate_admin_password('中文ab12cd'), '中文ab12cd')
+        for key in ('username', 'api_token', 'session_secret'):
+            self.assertEqual(initial[key], updated[key])
+        self.assertEqual(json.loads(self.path.read_text()), updated)
+
+
+
+
+def _masked_password(password):
+    payload = masked_payload(password, username='')
+    return {
+        'masked_password': payload['masked_password'],
+        'mask_nonce': payload['mask_nonce'],
+    }
+
+
 class AdminAuthWebTests(unittest.TestCase):
     def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.auth_path = Path(self.temp.name) / 'auth.json'
         self.password_hash = generate_password_hash('initial-secret', method='scrypt:32768:8:1')
-        self.app = Flask(__name__)
-        self.app.secret_key = 'test-only-session-signing-secret'
-        self.app.register_blueprint(auth_routes.create_auth_blueprint())
-        self.client = self.app.test_client()
+        self.credentials = {
+            'username': 'admin',
+            'password': self.password_hash,
+            'api_token': 'unit-test-api-token-value-long-enough',
+            'session_secret': 'unit-test-session-version-secret-long-enough',
+        }
+        self.auth_path.write_text(json.dumps(self.credentials), encoding='utf-8')
+
         self.overrides = [
-            patch.object(auth_routes, 'ADMIN_USERNAME', 'admin'),
-            patch.object(auth_routes, 'ADMIN_PASSWORD_HASH', self.password_hash),
-            patch.object(auth_guard, 'ADMIN_USERNAME', 'admin'),
-            patch.object(auth_guard, 'ADMIN_PASSWORD_HASH', self.password_hash),
-            patch.object(auth_guard, 'ADMIN_API_TOKEN', 'unit-test-api-token-value-long-enough'),
-            patch.object(auth_guard, 'WEB_SESSION_SECRET', 'unit-test-session-version-secret'),
+            patch.object(server_config, 'AUTH_PATH', str(self.auth_path)),
+            patch.object(server_config, '_AUTH', dict(self.credentials)),
+            patch.object(server_config, 'ADMIN_USERNAME', self.credentials['username']),
+            patch.object(server_config, 'ADMIN_PASSWORD_HASH', self.credentials['password']),
+            patch.object(server_config, 'ADMIN_API_TOKEN', self.credentials['api_token']),
+            patch.object(server_config, 'WEB_SESSION_SECRET', self.credentials['session_secret']),
         ]
         for override in self.overrides:
             override.start()
             self.addCleanup(override.stop)
 
+        self.app = Flask(__name__)
+        self.app.secret_key = 'test-only-session-signing-secret'
+        self.app.register_blueprint(auth_routes.create_auth_blueprint())
+        self.client = self.app.test_client()
+
+    def login(self, password='initial-secret'):
+        return self.client.post('/api/auth/login', json=masked_payload(password))
+
     def test_password_verification_and_session(self):
         invalid = self.client.post('/api/auth/login', json=masked_payload('wrong'))
         self.assertEqual(invalid.status_code, 401)
-        valid = self.client.post('/api/auth/login', json=masked_payload('initial-secret'))
+        valid = self.login()
         self.assertEqual(valid.status_code, 200)
         self.assertTrue(valid.json['data']['authenticated'])
         session = self.client.get('/api/auth/session')
         self.assertTrue(session.json['data']['authenticated'])
+        self.assertEqual(session.json['data']['username'], 'admin')
 
     def test_plaintext_login_is_rejected(self):
         result = self.client.post('/api/auth/login', json={
@@ -161,13 +210,63 @@ class AdminAuthWebTests(unittest.TestCase):
         })
         self.assertEqual(result.status_code, 400)
 
-    def test_password_change_invalidates_existing_sessions_not_static_token(self):
-        self.client.post('/api/auth/login', json=masked_payload('initial-secret'))
-        new_hash = generate_password_hash('changed-secret', method='scrypt:32768:8:1')
-        with patch.object(auth_guard, 'ADMIN_PASSWORD_HASH', new_hash):
-            session = self.client.get('/api/auth/session')
-            self.assertFalse(session.json['data']['authenticated'])
+    def test_authorization_info_requires_admin_auth_and_returns_only_useful_credentials(self):
+        denied = self.client.get('/api/auth/info')
+        self.assertEqual(denied.status_code, 401)
+
+        self.login()
+        result = self.client.get('/api/auth/info')
+        self.assertEqual(result.status_code, 200)
+        self.assertEqual(result.json['data'], {
+            'username': 'admin',
+            'api_token': 'unit-test-api-token-value-long-enough',
+        })
+        self.assertEqual(result.headers.get('Cache-Control'), 'no-store')
+
+    def test_password_change_reloads_hash_preserves_token_and_signs_out(self):
+        self.login()
+        original_token = server_config.ADMIN_API_TOKEN
+        original_secret = server_config.WEB_SESSION_SECRET
+
+        result = self.client.post('/api/auth/password', json={
+            'current_password': _masked_password('initial-secret'),
+            'new_password': _masked_password('newpass1'),
+        })
+        self.assertEqual(result.status_code, 200)
+        self.assertTrue(result.json['data']['changed'])
+        self.assertFalse(result.json['data']['authenticated'])
+
+        stored = json.loads(self.auth_path.read_text())
+        self.assertTrue(check_password_hash(stored['password'], 'newpass1'))
+        self.assertEqual(stored['api_token'], original_token)
+        self.assertEqual(stored['session_secret'], original_secret)
+        self.assertEqual(server_config.ADMIN_PASSWORD_HASH, stored['password'])
+
+        session = self.client.get('/api/auth/session')
+        self.assertFalse(session.json['data']['authenticated'])
+        self.assertEqual(self.login().status_code, 401)
+        self.assertEqual(self.login('newpass1').status_code, 200)
+
         with self.app.test_request_context(
-            '/api/private', headers={'Authorization': 'Bearer unit-test-api-token-value-long-enough'},
+            '/api/private', headers={'Authorization': f'Bearer {original_token}'},
         ):
             self.assertTrue(auth_guard.WebAuthGuard().has_valid_static_token())
+
+    def test_password_change_rejects_wrong_current_and_policy_failures_without_logging_out(self):
+        self.login()
+        wrong = self.client.post('/api/auth/password', json={
+            'current_password': _masked_password('wrong-current'),
+            'new_password': _masked_password('newpass1'),
+        })
+        self.assertEqual(wrong.status_code, 403)
+        self.assertTrue(self.client.get('/api/auth/session').json['data']['authenticated'])
+
+        for invalid in ('abc1234', 'abcdefgh', '12345678'):
+            with self.subTest(invalid=invalid):
+                rejected = self.client.post('/api/auth/password', json={
+                    'current_password': _masked_password('initial-secret'),
+                    'new_password': _masked_password(invalid),
+                })
+                self.assertEqual(rejected.status_code, 400)
+                self.assertTrue(self.client.get('/api/auth/session').json['data']['authenticated'])
+

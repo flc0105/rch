@@ -2,7 +2,7 @@
 
 Server 对受保护 Web API 建立统一的管理员身份边界：浏览器依靠经签名的 Session Cookie，外部 HTTP 客户端使用管理员 API Token；由 Server 授权运行的 Script 和 Client 命令可以在限定范围内使用临时 Grant。三类凭据的来源、可达接口和失效条件不同，但最终由同一请求守卫判断是否放行。
 
-管理员凭据的持久根默认是项目固定的 `backend/runtime/auth.json`（通过 `SERVER_RUNTIME_DIR` 配置）。启动过程决定它何时生成、何时装载；运行中的认证中间件依靠已加载的凭据判断请求，因此理解文件、进程和 Cookie 之间的关系比单独记住某个启动参数更重要。
+管理员凭据的持久根默认是项目固定的 `backend/runtime/auth.json`（通过 `SERVER_RUNTIME_DIR` 配置）。Server 启动时装载完整凭据；Web 账户菜单修改管理员密码时会原子更新同一文件并立即重新加载密码凭据，因此该操作不需要重启 Server。
 
 ## 凭据根与服务初始化
 
@@ -61,13 +61,15 @@ RCH_WEB_SESSION_COOKIE_NAME=rch_admin_session python run_web.py
 
 上面是 POSIX Shell 的设置方式；Windows PowerShell 可先设置 `$env:RCH_WEB_PORT = '9000'` 等变量，再运行 `python run_web.py`。由于环境变量是在模块导入时读取的，改变它们需要重启 Server。Web Host 当前固定为 `0.0.0.0`，不能通过上述变量改为仅本地监听。
 
-**管理员身份凭据从 `auth.json` 加载，不从启动环境读取或覆盖。** 启动环境仅配置上表列出的监听与 Web Session 运行选项。需要修改管理员密码或轮换 API Token 时，应编辑受保护的凭据文件并重启 Server；Desktop Notifier 通过自己的 `RCH_NOTIFIER_TOKEN` 读取连接 Token，不会改变 Server 的认证配置。
+**管理员身份凭据从 `auth.json` 加载，不从启动环境读取或覆盖。** 启动环境仅配置上表列出的监听与 Web Session 运行选项。管理员密码可以在已登录 Web 界面的账户菜单中直接修改；API Token、Session Secret 或用户名的手工维护仍通过受保护的 `auth.json` 完成，并在重启 Server 后装载。Desktop Notifier 通过自己的 `RCH_NOTIFIER_TOKEN` 读取连接 Token，不会改变 Server 的认证配置。
 
 ### 密码与密钥的维护
 
 #### 管理员密码的原子改写
 
-停止 Server 后，编辑 `SERVER_RUNTIME_DIR/auth.json`（默认 `backend/runtime/auth.json`），**保留其他三个字段**，仅将 `password` 改为：
+已登录 Web 界面的右上角账户菜单提供 **Change Password**。修改时需要输入当前密码、新密码和确认密码；新密码必须至少包含 8 个字符，并同时包含至少一个英文字母和一个数字。成功后 Server 只替换 `auth.json` 中的密码哈希，保留 `username`、`api_token` 和 `session_secret`，立即重新加载认证配置，并退出当前登录。其他浏览器 Session 会在下一次请求时因凭据版本变化而失效。
+
+停机维护时仍可直接编辑 `SERVER_RUNTIME_DIR/auth.json`（默认 `backend/runtime/auth.json`），**保留其他三个字段**，仅将 `password` 改为：
 
 ```text
 "password": "plain:your-new-password"
@@ -75,7 +77,7 @@ RCH_WEB_SESSION_COOKIE_NAME=rch_admin_session python run_web.py
 
 这只是 JSON 对象内一个字段的写法，不是要把整个文件替换成上述一行。保存并重新启动后，Server 会将 `plain:` 后的明文转为新的加盐 scrypt 哈希，原子写回同一文件，并清除明文形式。`plain:` 后必须有非空密码；不允许直接填写不带 `plain:` 的明文。
 
-修改密码并重启后，以前的管理员登录 Session 会因为凭据版本不同而失效，需要重新登录。**API Token 与 Session Secret 保持不变**，使用旧 Token 的脚本、curl 或 Desktop Notifier 不受这次密码改写影响。两类凭据分别轮换，不需要一起重置。
+通过 Web 修改密码时会立即重新加载密码哈希并结束当前 Session；停机手工改写则在下一次启动时生效。两种方式都会使旧的浏览器登录凭据失效。**API Token 与 Session Secret 保持不变**，使用旧 Token 的脚本、curl 或 Desktop Notifier 不受密码改写影响。
 
 #### 长期凭据与签名密钥的轮换
 
@@ -91,7 +93,7 @@ python -c 'import secrets; print(secrets.token_urlsafe(32))'
 
 #### 重新初始化凭据根
 
-停止 Server，安全备份或移走 `SERVER_RUNTIME_DIR/auth.json`（默认 `backend/runtime/auth.json`），随后重启；Server 因找不到该文件而生成新的随机密码、API Token 和 Session Secret，并再次输出新的初始登录信息。此前的登录 Session 和所有使用旧 API Token 的外部客户端都需要更新。不要在 Server 运行时删除、修改凭据文件并期待内存中的认证配置立即刷新：认证值在配置导入时加载，必须重新启动才能应用。
+停止 Server，安全备份或移走 `SERVER_RUNTIME_DIR/auth.json`（默认 `backend/runtime/auth.json`），随后重启；Server 因找不到该文件而生成新的随机密码、API Token 和 Session Secret，并再次输出新的初始登录信息。此前的登录 Session 和所有使用旧 API Token 的外部客户端都需要更新。运行中只有 Web 的 Change Password 流程会执行受控的原子改写与认证重载；直接手工修改 `auth.json` 的其他字段仍应通过重启 Server 应用。
 
 `auth.json` 的位置由 `backend/server/config/config.py` 中的 `SERVER_RUNTIME_DIR` 统一计算，默认 `backend/runtime/`，**不会随着启动工作目录变化**。修改位置就在该文件 `# ------------------ runtime ------------------ #` 章节。启动前可用环境变量 `RCH_SERVER_RUNTIME_DIR` 设置新根目录；绝对路径原样使用，相对路径相对于 `backend/` 解析。该配置与 Client 侧的 `RUNTIME_CONFIG_PATH` 无关。更换根目录不会搬迁旧目录的数据：必须先停机，将原 `auth.json`、`rch.db`、`web_files/` 等所需内容一并搬迁或备份再启动，否则新位置会初始化另一套数据与凭据。
 
@@ -119,6 +121,8 @@ Server 还原密码并继续使用原有的 scrypt 哈希校验，`auth.json` �
 **安全边界：**这种轻量掩码只避免 Network 请求体直接出现可读密码。其算法和固定掩码材料都能从网页源码取得，因此 **不具有抵御抓包或中间人攻击的保密性**。项目不因此强制 HTTPS，也不改变 HTTP 的可用性。
 
 Session 主要由以下两个接口管理：`GET /api/auth/session` 可检测当前是否已认证；`POST /api/auth/logout` 清除当前会话。`/api/auth/session` 本身允许匿名请求，未认证时返回 `authenticated: false`，而不是把它视为一个必须登录才能访问的页面。Web 首页在未认证时跳转登录页，受保护的 `/api/` 请求失败则返回 `401`；前端收到该状态会引导用户重新登录。
+
+登录后的右上角账户入口显示 `auth.json` 当前用户名。菜单中的 **Authorization Info** 通过 `GET /api/auth/info` 读取用户名和管理员 API Token，并提供复制操作；Password Hash 与 Session Secret 不返回前端。**Change Password** 使用 `POST /api/auth/password`，当前密码和新密码沿用登录页相同的轻量掩码字段传输。上述两个接口只接受管理员 Session 或管理员静态 Token，不接受 Script Grant 作为账户管理权限。
 
 当前 Session 是 Flask Cookie Session：Cookie 默认名为 `rch_admin_session`，默认有效期七天，设置了 `HttpOnly` 和 `SameSite=Lax`，并用 `session_secret` 签名。会话状态由签名 Cookie 维护；Logout 清除当前浏览器的认证会话。每个 Session 还绑定基于当前用户名、密码哈希和 Session Secret 计算的凭据标识，因此修改密码并重启后，旧 Cookie 即使仍在有效期内也会被拒绝。
 
