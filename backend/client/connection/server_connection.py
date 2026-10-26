@@ -47,13 +47,16 @@ class ServerConnection(RCHSocket):
         except Exception:
             pass
 
-    def report_session_end(self, reason: str, *, summary: str = '', traceback_text: str = ''):
+    def report_session_end(self, reason: str, *, command: str = '', summary: str = '', traceback_text: str = ''):
         try:
             message = {'type': MSG_TYPE_SESSION_END, 'reason': reason}
-            if summary or traceback_text:
+            if command or summary or traceback_text:
                 message['detail'] = {
-                    'summary': str(summary or '')[:500],
-                    'traceback': str(traceback_text or '')[:12000],
+                    key: value for key, value in (
+                        ('command', str(command or '')[:200]),
+                        ('summary', str(summary or '')[:500]),
+                        ('traceback', str(traceback_text or '')[:12000]),
+                    ) if value
                 }
             self.send(message)
         except OSError:

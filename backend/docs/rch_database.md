@@ -69,9 +69,9 @@
 | `last_seen_at` | 该连接最近一次心跳/被看见的时间。 |
 | `duration_ms` | 连接持续时长；在线显示时可以根据当前时间动态计算。 |
 | `connection_state` | 保存的连接状态，如在线/离线。 |
-| `disconnect_reason` | 原有连接结束标记，继续对应 Connection History 中的 Disconnect / Interrupted 状态展示。 |
+| `disconnect_reason` | 正常主动结束写入 `disconnected`；连接丢失、超时、异常关闭写入 `interrupted`；Server 恢复核对时使用 `server_interrupted`。列表分别显示 Offline / Interrupted。 |
 | `termination_reason` | 会话终止类别，在 Connection History 中以 **Termination cause** 呈现；Server requested disconnect、Client exit / restart / update、Connection lost、Transport error、Timeout、Unexpected disconnect 和 Client error 各有对应采集路径。 |
-| `error_diagnostics_json` | 异常诊断 JSON；出现 Client error、Transport error、Timeout 或协议帧中断时，保存实际错误 `summary` 与可取得的 `traceback`，在 **Error diagnostics** 中展示；正常结束保存空对象。 |
+| `termination_detail_json` | 会话结束详情 JSON；主动结束时记录操作命令 `command`（如 `kill_instance`、`disconnect`、`httpctl kill`），捕获异常时记录 `summary`、`traceback`，在 **Termination details** 中展示。无额外详情时为空对象。 |
 | `tracking_source` | 连接状态记录的来源标记。 |
 | `snapshot_json` | 连接阶段的主机、系统、进程、运行方式、Watchdog 配置等快照，支持历史详情展示。 |
 

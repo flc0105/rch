@@ -415,7 +415,7 @@ class WebConnectionService:
 
         if session is not None:
             try:
-                session.note_server_disconnect()
+                session.note_server_disconnect('disconnect')
                 session.send_command('kill_instance')
             except Exception:
                 pass
@@ -538,11 +538,12 @@ class WebConnectionService:
             failure = getattr(session.context, 'transport_failure', None)
             http_action = get_control_command_store().take_delivered_shutdown(payload.get('client_id'))
             if request and time.monotonic() - request.get('at', 0) < 120:
-                reason, detail = 'server_requested_disconnect', {}
+                reason = 'server_requested_disconnect'
+                detail = {'command': request.get('command') or ''}
             elif http_action == 'kill':
-                reason, detail = 'server_requested_disconnect', {}
+                reason, detail = 'server_requested_disconnect', {'command': 'httpctl kill'}
             elif http_action == 'relaunch':
-                reason, detail = 'client_restart', {}
+                reason, detail = 'client_restart', {'command': 'httpctl relaunch'}
             elif client_end and time.monotonic() - client_end.get('at', time.monotonic()) < 120:
                 reason, detail = client_end['reason'], client_end.get('detail', {})
             elif failure:
@@ -550,7 +551,7 @@ class WebConnectionService:
             else:
                 reason, detail = 'unexpected_disconnect', {}
             self.connection_history_store.record_disconnected(
-                payload, termination_reason=reason, diagnostics=detail
+                payload, termination_reason=reason, details=detail
             )
         try:
             if self.script_grant_service is not None:

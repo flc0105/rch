@@ -27,6 +27,7 @@ class AdvancedBuiltinSupport:
         yield 1, 'Disconnect approved; closing this connection.'
         # Keep the Web task active while Client @confirm requests its own approval.
         # The normal command channel binds command_id and interaction grant.
+        self.conn.note_server_disconnect('disconnect')
         for status, result in self.conn.send_command('kill_connection'):
             if result is None:
                 # The Client closes its socket after approving kill_connection;

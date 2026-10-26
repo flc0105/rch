@@ -97,11 +97,12 @@
                   <span class="label">Termination cause</span>
                   <span class="value">{{ formatEndReason(scope.row.termination_reason) }}</span>
                 </div>
-                <div v-if="hasErrorDiagnostics(scope.row)" class="machine-session-meta-item machine-session-meta-wide">
-                  <span class="label">Error diagnostics</span>
+                <div v-if="hasTerminationDetail(scope.row)" class="machine-session-meta-item machine-session-meta-wide">
+                  <span class="label">Termination details</span>
                   <div class="machine-session-end-details">
-                    <div v-if="scope.row.error_diagnostics.summary">{{ scope.row.error_diagnostics.summary }}</div>
-                    <pre v-if="scope.row.error_diagnostics.traceback">{{ scope.row.error_diagnostics.traceback }}</pre>
+                    <div v-if="scope.row.termination_detail.command">Command: {{ scope.row.termination_detail.command }}</div>
+                    <div v-if="scope.row.termination_detail.summary">{{ scope.row.termination_detail.summary }}</div>
+                    <pre v-if="scope.row.termination_detail.traceback">{{ scope.row.termination_detail.traceback }}</pre>
                   </div>
                 </div>
                 <div class="machine-session-meta-item machine-session-meta-wide">
@@ -394,9 +395,9 @@ export default {
       return processName || processId || '-'
     },
 
-    hasErrorDiagnostics(row) {
-      return ['client_error', 'transport_error', 'timeout', 'unexpected_disconnect'].includes(row?.termination_reason)
-        && Boolean(row?.error_diagnostics?.summary || row?.error_diagnostics?.traceback)
+    hasTerminationDetail(row) {
+      const details = row?.termination_detail
+      return Boolean(details?.command || details?.summary || details?.traceback)
     },
 
     formatEndReason(value) {

@@ -135,18 +135,103 @@ RCH 将当前 Session、最近设备和历史会话分别管理：
 
 ### Connection History 的结束原因
 
-Connection History 的列表显示原有 **Disconnect / Interrupted** 状态标签。展开记录时，**Termination cause** 显示结束类别；捕获到 Client 异常、传输故障、超时或协议帧中断时，**Error diagnostics** 显示具体错误及可取得的 traceback。正常结束只显示结束类别。`connection_sessions.termination_reason` 与 `error_diagnostics_json` 分别保存结束类别和实际错误诊断。
+Connection History 的列表在主动结束时显示 **Offline**，在连接丢失、传输错误、超时、协议截断或 Client 异常时显示 **Interrupted**。Server 启动后核对出的旧会话仍使用 Interrupted。展开记录后，**Termination cause** 显示分类；**Termination details** 显示实际关闭命令或错误摘要与 traceback。`connection_sessions.termination_reason` 和 `termination_detail_json` 分别保存分类和详情。
 
-| Termination cause | 采集条件 |
-| --- | --- |
-| Server requested disconnect | Web Disconnect、Server 端 `disconnect` / `kill`、`httpctl kill` 发起关闭后，该连接结束 |
-| Client exit / Client restart / Client update | Python Client 主动退出、重启或完成更新替换旧实例时发送的结束通知 |
-| Connection lost | Socket 在报文边界处收到连接关闭信号 |
-| Transport error / Timeout | Server 捕获传输异常或超时，Error diagnostics 包含错误摘要和可取得的堆栈 |
-| Unexpected disconnect | 连接在消息传输途中中止，或关闭时缺少明确报告 |
-| Client error | Client 遇到终止性异常时发送错误摘要与堆栈 |
+| Termination cause | Connection History 状态 | 采集条件 |
+| --- | --- | --- |
+| Server requested disconnect | Offline | Web Disconnect、Server 端 `disconnect` / `kill`、`httpctl kill`，详情保存实际执行入口或命令 |
+| Client exit / Client restart / Client update | Offline | Python Client 退出、重启或完成更新时上报结束；有操作命令时写入详情 |
+| Connection lost | Interrupted | Socket 在报文边界处收到 TCP EOF |
+| Transport error / Timeout | Interrupted | Server 捕获 Socket 传输异常或超时，详情包含错误摘要及可取得的堆栈 |
+| Unexpected disconnect | Interrupted | 连接在协议帧传输途中中止，或关闭时缺少明确结束报告 |
+| Client error | Interrupted | Client 终止性异常上报错误摘要与堆栈 |
 
 设备断电、系统强制终止和网络中断由 Server 捕获的 Socket 现象归类。详情显示该连接实际收到的诊断信息。
+
+
+
+### 连接结束原因测试验证
+
+以下操作使用**隔离的桌面测试 Server 和 Python Client**；在 Web 的 RCH Terminal 中执行 `pyexec` 时，先设置：
+
+```text
+set PYTHON_EXECUTION_MODE inproc
+```
+
+执行 `os.abort()`、`os._exit()` 会直接结束目标 Client 进程。每组测试后重启 Client，打开 **Toolbox → Connection History**，查找刚退出实例对应的 `client_id`。测试环境关闭会自动重新启动 Client 的 Watchdog，避免新的会话刷新历史记录。
+
+| 场景 | 在 RCH Terminal 执行的命令 | 预期状态 / 原因 |
+| --- | --- | --- |
+| 强制崩溃 | `pyexec import os; os.abort()` | Interrupted；通常为 Connection lost，具体按 Server 收到的 FIN/RST 确定 |
+| 连接正常半关闭（EOF） | 见下方命令 | Interrupted / Connection lost |
+| TCP RST | 见下方命令 | Interrupted / Transport error |
+| 截断协议帧 | 见下方命令 | Interrupted / Unexpected disconnect |
+| Client 主循环异常 | 见下方命令 | Interrupted / Client error，详情中有 RuntimeError 和 traceback |
+| Socket 超时 | 在隔离测试 Server 中注入读取超时 | Interrupted / Timeout，详情包含 TimeoutError |
+
+**Connection lost — FIN / EOF**：
+
+```text
+pyexec import gc,socket,os; from client.connection.server_connection import ServerConnection; c=next(x for x in gc.get_objects() if isinstance(x,ServerConnection) and x.is_connected); c.socket.shutdown(socket.SHUT_WR); os._exit(1)
+```
+
+**Transport error — TCP RST**（macOS / Linux）：
+
+```text
+pyexec import gc,socket,struct,os; from client.connection.server_connection import ServerConnection; c=next(x for x in gc.get_objects() if isinstance(x,ServerConnection) and x.is_connected); c.socket.setsockopt(socket.SOL_SOCKET,socket.SO_LINGER,struct.pack('ii',1,0)); c.socket.close(); os._exit(2)
+```
+
+**Unexpected disconnect — 协议帧截断**：
+
+```text
+pyexec import gc,socket,struct,os; from client.connection.server_connection import ServerConnection; c=next(x for x in gc.get_objects() if isinstance(x,ServerConnection) and x.is_connected); c._send_lock.acquire(); c.socket.sendall(struct.pack('i',1024)+b'partial'); c.socket.shutdown(socket.SHUT_WR); os._exit(3)
+```
+
+**Client error — 模拟主循环异常**：
+
+```text
+pyexec import gc; from client.bootstrap.client_app import Client; c=next(x for x in gc.get_objects() if isinstance(x,Client) and x.client_id==__context__['client_id']); c._recover_from_connection_error=lambda e: (_ for _ in ()).throw(RuntimeError('RCH_TEST_CLIENT_ERROR')); c.receiver_worker.pop_error=lambda: (_ for _ in ()).throw(RuntimeError('RCH_TEST_TRIGGER'))
+```
+
+**Timeout — 隔离 Server 启动方式**：停止测试 Server，在 `backend` 目录运行以下命令，然后启动一个新的测试 Client：
+
+```bash
+RCH_SERVER_RUNTIME_DIR=runtime_reason_lab python3 - <<'PY'
+import socket
+from server.runtime.server_listener import ServerListener
+from run_web import main
+
+original_handshake = ServerListener._receive_client_info
+original_close = ServerListener._handle_connection_closed
+
+def short_timeout(self, raw_sock, addr):
+    info, transport = original_handshake(self, raw_sock, addr)
+    transport.socket.settimeout(0.1)
+    return info, transport
+
+def close_and_stop(self, session, error=None):
+    original_close(self, session, error)
+    if isinstance(error, socket.timeout):
+        self.stop()
+
+ServerListener._receive_client_info = short_timeout
+ServerListener._handle_connection_closed = close_and_stop
+main()
+PY
+```
+
+该测试 Server 在记录首次读取超时后停止监听，以便保留目标记录。测试完成后结束 Client 重连进程，停止测试 Server，并按常规方式启动 Server。
+
+主动结束也可直接验证：Web Disconnect、Server `disconnect`、Client `kill_instance`、`relaunch_instance` 及 Server `httpctl kill`。这些记录显示 **Offline**；详情中有实际命令时显示 `Command`。按 **Client exit / restart / update** 的各自执行路径上报。
+
+数据库核对使用当前的 `termination_reason` 与 `termination_detail_json` 字段。测试环境在 Server 停止写库后，可以用 `sqlite3` 查看最近会话：
+
+```sql
+SELECT client_id, connection_state, disconnect_reason,
+       termination_reason, termination_detail_json
+FROM connection_sessions
+ORDER BY connected_at_ms DESC LIMIT 12;
+```
 
 
 例如，`GET /api/machines/{machine_id}/connection-history` 查询的是某台机器历次连接会话，并不是一次实时的 Heartbeat 探测。历史中可能出现 `interrupted`，表示记录中的会话不再属于当前活动集合而未得到正常断开结局；**它是历史状态，不属于设备实时的 Online / Stale / Offline 三态**。历史在线时长按会话起止计算，并不表示期间的每一秒心跳都健康。

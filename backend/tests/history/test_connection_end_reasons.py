@@ -1,4 +1,4 @@
-"""Connection end diagnosis stays independent of the original session state label."""
+"""Connection end state, cause and details follow the observed close event."""
 import errno
 import os
 import sqlite3
@@ -36,17 +36,17 @@ def _new_store(tmp_path):
 
 def test_connection_history_new_fields_preserve_existing_state_and_detail(tmp_path):
     db, store = _new_store(tmp_path)
-    store.record_disconnected(_connection(), termination_reason='client_error', diagnostics={
+    store.record_disconnected(_connection(), termination_reason='client_error', details={
         'summary': 'RuntimeError: crash', 'traceback': 'Traceback (most recent call last): ...',
     })
     item = store.get_history('machine-A')['sessions'][0]
     assert item['termination_reason'] == 'client_error'
-    assert item['error_diagnostics']['summary'] == 'RuntimeError: crash'
-    assert 'Traceback' in item['error_diagnostics']['traceback']
-    assert item['connection_state'] == 'offline'
-    assert item['disconnect_reason'] == 'disconnected'
+    assert item['termination_detail']['summary'] == 'RuntimeError: crash'
+    assert 'Traceback' in item['termination_detail']['traceback']
+    assert item['connection_state'] == 'interrupted'
+    assert item['disconnect_reason'] == 'interrupted'
     # Later close callbacks must not replace the first conclusive diagnosis.
-    store.record_disconnected(_connection(), termination_reason='transport_error', diagnostics={'summary': 'later'})
+    store.record_disconnected(_connection(), termination_reason='transport_error', details={'summary': 'later'})
     assert store.get_history('machine-A')['sessions'][0]['termination_reason'] == 'client_error'
     db.close_thread_connection()
 
@@ -54,17 +54,18 @@ def test_connection_history_new_fields_preserve_existing_state_and_detail(tmp_pa
 def test_connection_history_schema_uses_explicit_termination_columns(tmp_path):
     db, store = _new_store(tmp_path)
     columns = {entry['name'] for entry in db.connection().execute('PRAGMA table_info(connection_sessions)')}
-    assert {'termination_reason', 'error_diagnostics_json', 'disconnect_reason'} <= columns
+    assert {'termination_reason', 'termination_detail_json', 'disconnect_reason'} <= columns
     assert 'reason' not in columns
     assert 'detail_json' not in columns
-    store.record_disconnected(_connection(), termination_reason='transport_error', diagnostics={
+    assert 'error_diagnostics_json' not in columns
+    store.record_disconnected(_connection(), termination_reason='transport_error', details={
         'summary': 'Connection reset', 'traceback': 'Traceback (most recent call last): ...',
     })
-    row = db.connection().execute("SELECT termination_reason, error_diagnostics_json, disconnect_reason FROM connection_sessions").fetchone()
+    row = db.connection().execute("SELECT termination_reason, termination_detail_json, disconnect_reason FROM connection_sessions").fetchone()
     assert row['termination_reason'] == 'transport_error'
-    assert row['disconnect_reason'] == 'disconnected'
-    assert 'Connection reset' in row['error_diagnostics_json']
-    assert store.get_history('machine-A')['sessions'][0]['error_diagnostics']['summary'] == 'Connection reset'
+    assert row['disconnect_reason'] == 'interrupted'
+    assert 'Connection reset' in row['termination_detail_json']
+    assert store.get_history('machine-A')['sessions'][0]['termination_detail']['summary'] == 'Connection reset'
     db.close_thread_connection()
 
 
@@ -80,7 +81,7 @@ def test_unrecognized_connection_history_columns_stop_without_rewriting(tmp_path
         columns = {row[1] for row in connection.execute('PRAGMA table_info(connection_sessions)')}
     assert 'reason' in columns
     assert 'termination_reason' not in columns
-    assert 'error_diagnostics_json' in columns
+    assert 'termination_detail_json' in columns
 
 def test_interrupted_tag_stays_unchanged_when_server_recovers(tmp_path):
     db, store = _new_store(tmp_path)
@@ -89,7 +90,7 @@ def test_interrupted_tag_stays_unchanged_when_server_recovers(tmp_path):
     assert item['connection_state'] == 'interrupted'
     assert item['disconnect_reason'] == 'server_interrupted'
     assert item['termination_reason'] == ''
-    assert item['error_diagnostics'] == {}
+    assert item['termination_detail'] == {}
     db.close_thread_connection()
 
 
@@ -148,7 +149,7 @@ def test_server_requested_reason_groups_server_and_client_reports(tmp_path):
         failure={'reason': 'connection_lost', 'detail': {'summary': 'EOF'}},
     )
     assert item['termination_reason'] == 'server_requested_disconnect'
-    assert item['error_diagnostics'] == {}
+    assert item['termination_detail'] == {}
     assert item['disconnect_reason'] == 'disconnected'
 
 
@@ -213,13 +214,13 @@ def test_server_command_marks_disconnect_only_after_dispatch_succeeds():
         runtime=SimpleNamespace(bind_command_execution=lambda *a, **k: None,
                                 pending_command_ids=Queue(),
                                 wait_for_result=lambda *a, **k: iter(())),
-        send=sent.append, note_server_disconnect=lambda: noted.append(None),
+        send=sent.append, note_server_disconnect=noted.append,
     )
     channel = ClientSessionCommandChannel(session)
     channel.send_command('kill_instance')
     channel.send_command('kill_connection')
     channel.send_command('help')
-    assert noted == [None, None]
+    assert noted == ['kill_instance', 'kill_connection']
     assert [row['text'] for row in sent] == ['kill_instance', 'kill_connection', 'help']
 
 
@@ -232,30 +233,48 @@ def test_expired_server_intent_uses_actual_client_report(tmp_path):
                     'detail': {'summary': 'Client restarted'}},
     )
     assert item['termination_reason'] == 'client_restart'
-    assert item['error_diagnostics'] == {}
+    assert item['termination_detail'] == {}
 
 
 def test_new_session_reuses_client_identity_and_resets_diagnosis(tmp_path):
     _, store = _new_store(tmp_path)
-    store.record_disconnected(_connection(), termination_reason='timeout', diagnostics={'summary': 'timeout'})
+    store.record_disconnected(_connection(), termination_reason='timeout', details={'summary': 'timeout'})
     store.record_connected(_connection())
     item = store.get_history('machine-A')['sessions'][0]
     assert item['termination_reason'] == ''
-    assert item['error_diagnostics'] == {}
+    assert item['termination_detail'] == {}
     assert item['connection_state'] == 'online'
 
 
-def test_normal_termination_displays_only_cause(tmp_path):
-    for cause in ('server_requested_disconnect', 'client_exit', 'client_restart', 'client_update', 'connection_lost'):
+def test_voluntary_shutdown_has_offline_tag_and_optional_command(tmp_path):
+    for cause in ('server_requested_disconnect', 'client_exit', 'client_restart', 'client_update'):
         with tempfile.TemporaryDirectory() as directory:
             db = RchDatabase(os.path.join(directory, 'rch.db'))
             store = ConnectionHistoryStore(db)
             store.record_connected(_connection())
             store.record_disconnected(_connection(), termination_reason=cause,
-                                      diagnostics={'summary': 'A generic repeated message'})
+                                      details={'command': 'kill_instance'})
             item = store.get_history('machine-A')['sessions'][0]
             assert item['termination_reason'] == cause
-            assert item['error_diagnostics'] == {}
+            assert item['connection_state'] == 'offline'
+            assert item['disconnect_reason'] == 'disconnected'
+            assert item['termination_detail'] == {'command': 'kill_instance'}
+            db.close_thread_connection()
+
+
+def test_abnormal_shutdown_has_interrupted_tag_and_actual_diagnostics(tmp_path):
+    for cause in ('connection_lost', 'transport_error', 'timeout', 'unexpected_disconnect', 'client_error'):
+        with tempfile.TemporaryDirectory() as directory:
+            db = RchDatabase(os.path.join(directory, 'rch.db'))
+            store = ConnectionHistoryStore(db)
+            store.record_connected(_connection())
+            details = {'summary': 'Connection reset', 'traceback': 'actual stack'} if cause != 'connection_lost' else {}
+            store.record_disconnected(_connection(), termination_reason=cause, details=details)
+            item = store.get_history('machine-A')['sessions'][0]
+            assert item['termination_reason'] == cause
+            assert item['connection_state'] == 'interrupted'
+            assert item['disconnect_reason'] == 'interrupted'
+            assert item['termination_detail'] == details
             db.close_thread_connection()
 
 
@@ -278,7 +297,7 @@ def test_http_control_tracks_only_actions_delivered_to_watchdog(monkeypatch, tmp
     control.pop_pending_command('client-X')
     item = _complete_session(store, failure={'reason': 'connection_lost', 'detail': {}})
     assert item['termination_reason'] == 'server_requested_disconnect'
-    assert item['error_diagnostics'] == {}
+    assert item['termination_detail'] == {'command': 'httpctl kill'}
     assert control.take_delivered_shutdown('client-X') == ''
 
 
@@ -293,7 +312,7 @@ def test_http_control_relaunch_and_clone_are_distinct(monkeypatch, tmp_path):
     _, store = _new_store(tmp_path)
     item = _complete_session(store, failure={'reason': 'connection_lost', 'detail': {}})
     assert item['termination_reason'] == 'client_restart'
-    assert item['error_diagnostics'] == {}
+    assert item['termination_detail'] == {'command': 'httpctl relaunch'}
 
     control.set_pending_command('client-Y', 'clone')
     control.pop_pending_command('client-Y')
@@ -307,3 +326,48 @@ def test_http_control_expired_delivery_is_ignored(monkeypatch):
     control.pop_pending_command('client-X')
     assert control.take_delivered_shutdown('client-X', max_age=-1) == ''
     assert control.take_delivered_shutdown('client-X') == ''
+
+
+def test_protocol_and_storage_preserve_command_metadata(tmp_path):
+    ctx = ClientSessionContext()
+    session = SimpleNamespace(context=ctx)
+    dispatcher = ServerInboundMessageDispatcher(session)
+    dispatcher.dispatch({'type': MSG_TYPE_SESSION_END, 'reason': 'client_restart',
+                         'detail': {'command': 'relaunch_instance'}})
+    assert ctx.client_session_end['detail']['command'] == 'relaunch_instance'
+    db, store = _new_store(tmp_path)
+    item = _complete_session(store, client_end=ctx.client_session_end)
+    assert item['termination_reason'] == 'client_restart'
+    assert item['connection_state'] == 'offline'
+    assert item['termination_detail'] == {'command': 'relaunch_instance'}
+    db.close_thread_connection()
+
+
+def test_server_disconnect_keeps_original_operator_command():
+    from server.connection.client_session import ClientSession
+    ctx = ClientSessionContext()
+    session = SimpleNamespace(context=ctx)
+    ClientSession.note_server_disconnect(session, 'disconnect')
+    ClientSession.note_server_disconnect(session, 'kill_connection')
+    assert ctx.server_disconnect_request['command'] == 'disconnect'
+
+
+def test_server_requested_detail_uses_original_intent(tmp_path):
+    _, store = _new_store(tmp_path)
+    item = _complete_session(store, request={'at': time.monotonic(), 'command': 'disconnect'},
+                             failure={'reason': 'connection_lost', 'detail': {}})
+    assert item['termination_reason'] == 'server_requested_disconnect'
+    assert item['connection_state'] == 'offline'
+    assert item['termination_detail'] == {'command': 'disconnect'}
+
+
+def test_client_report_can_include_command():
+    client = ServerConnection()
+    try:
+        captured = []
+        client.send = captured.append
+        client.report_session_end('client_exit', command='kill_instance')
+        assert captured == [{'type': MSG_TYPE_SESSION_END, 'reason': 'client_exit',
+                             'detail': {'command': 'kill_instance'}}]
+    finally:
+        client.close()

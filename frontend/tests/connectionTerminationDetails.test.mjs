@@ -14,9 +14,10 @@ test('Connection History keeps original state tags and Disconnect detail', () =>
 test('Connection History renders reason summary and traceback inside expanded details', () => {
   assert.match(dialog, /v-if="scope\.row\.termination_reason"/)
   assert.match(dialog, /formatEndReason\(scope\.row\.termination_reason\)/)
-  assert.match(dialog, /scope\.row\.error_diagnostics\.summary/)
-  assert.match(dialog, /scope\.row\.error_diagnostics\.traceback/)
-  assert.match(dialog, /hasErrorDiagnostics\(scope\.row\)/)
+  assert.match(dialog, /scope\.row\.termination_detail\.summary/)
+  assert.match(dialog, /scope\.row\.termination_detail\.traceback/)
+  assert.match(dialog, /scope\.row\.termination_detail\.command/)
+  assert.match(dialog, /hasTerminationDetail\(scope\.row\)/)
   for (const label of [
     'Server requested disconnect', 'Client exit', 'Client restart', 'Client update',
     'Connection lost', 'Transport error', 'Timeout', 'Unexpected disconnect', 'Client error',
@@ -25,9 +26,9 @@ test('Connection History renders reason summary and traceback inside expanded de
   }
 })
 
-test('normal shutdown has a single cause and no repeated diagnostics', () => {
+test('normal shutdown renders cause and optional command without repeated summary', () => {
   assert.match(dialog, /Termination cause/)
-  assert.match(dialog, /Error diagnostics/)
+  assert.match(dialog, /Termination details/)
   assert.doesNotMatch(dialog, /<span class="label">Details<\/span>/)
   assert.doesNotMatch(dialog, /<span class="label">Reason<\/span>/)
 })

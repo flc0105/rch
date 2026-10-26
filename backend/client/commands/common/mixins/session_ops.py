@@ -12,7 +12,7 @@ class CommandSessionMixin:
     @desc('Terminate current session', group='session')
     # @confirm('Terminate this Client session and close its connection?')
     def kill_instance(self):
-        self.socket.report_session_end('client_exit')
+        self.socket.report_session_end('client_exit', command='kill_instance')
         manager = getattr(self.socket, 'process_watchdog_manager', None)
         if manager is not None:
             manager.stop()

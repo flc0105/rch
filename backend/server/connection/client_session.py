@@ -51,8 +51,12 @@ class ClientSession:
     def close(self):
         self.transport.close()
 
-    def note_server_disconnect(self):
-        self.context.server_disconnect_request = {'at': time.monotonic()}
+    def note_server_disconnect(self, command: str = ''):
+        previous = self.context.server_disconnect_request or {}
+        self.context.server_disconnect_request = {
+            'at': time.monotonic(),
+            'command': previous.get('command') or str(command or '').strip(),
+        }
 
     def bind_history_entry(self, command_id: int, entry_id: str):
         self.runtime.bind_history_entry(command_id, entry_id)

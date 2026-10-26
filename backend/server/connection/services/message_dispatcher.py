@@ -63,6 +63,7 @@ class ServerInboundMessageDispatcher:
                     'at': time.monotonic(),
                     'reason': reason,
                     'detail': {
+                        'command': str(detail.get('command') or '')[:200],
                         'summary': str(detail.get('summary') or '')[:500],
                         'traceback': str(detail.get('traceback') or '')[:12000],
                     },
