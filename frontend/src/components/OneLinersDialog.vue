@@ -367,3 +367,18 @@ export default {
   }
 }
 </style>
+
+<style>
+@media (max-width: 768px) {
+  .one-liners-overlay .el-dialog {
+    width: 100vw !important; max-width: 100vw !important;
+    height: 100dvh !important; max-height: 100dvh !important;
+    margin: 0 !important; border-radius: 0 !important;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .one-liners-overlay .el-dialog__header { flex: 0 0 auto; }
+  .one-liners-overlay .el-dialog__body { flex: 1 1 auto; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
+  .one-liners-overlay .one-liners-body { flex: 1 1 auto; min-height: 0; height: auto; display: flex; flex-direction: column; }
+  .one-liners-overlay .one-liners-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+}
+</style>

@@ -498,3 +498,31 @@ export default {
 .documents-dialog.documents-dialog-fullscreen .documents-layout { flex: 1; min-height: 0; height: 100%; }
 @media(max-width: 740px) { .documents-layout { grid-template-columns: 185px minmax(0, 1fr); } .documents-split { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; } .documents-monaco { border-right: 0; border-bottom: 1px solid var(--el-border-color); } }
 </style>
+
+<style>
+@media (max-width: 768px) {
+  .documents-dialog.el-dialog {
+    width: 100vw !important; max-width: 100vw !important;
+    height: 100dvh !important; max-height: 100dvh !important;
+    margin: 0 !important; border-radius: 0 !important;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .documents-dialog .el-dialog__header { flex: 0 0 auto; }
+  .documents-dialog .el-dialog__body { flex: 1 1 auto; min-height: 0; padding: 8px !important; display: flex; flex-direction: column; overflow: hidden; }
+  .documents-dialog .documents-layout,
+  .documents-dialog.documents-dialog-fullscreen .documents-layout {
+    display: flex; flex: 1 1 auto; flex-direction: column;
+    min-height: 0; height: 100%; gap: 8px;
+  }
+  .documents-dialog .documents-sidebar { flex: 0 0 min(28dvh, 210px); min-height: 110px; width: 100%; max-width: 100%; }
+  .documents-dialog .documents-side-actions { padding: 6px; gap: 4px; }
+  .documents-dialog .documents-tree { padding: 5px; }
+  .documents-dialog .documents-main { flex: 1 1 auto; min-height: 0; width: 100%; max-width: 100%; }
+  .documents-dialog .documents-editor-toolbar { flex-wrap: wrap; gap: 6px; padding: 7px; }
+  .documents-dialog .documents-location { flex-basis: 100%; }
+  .documents-dialog .documents-split { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
+  .documents-dialog .documents-split.documents-split-source-only { grid-template-rows: minmax(0, 1fr); }
+  .documents-dialog .documents-monaco, .documents-dialog .documents-markdown { min-width: 0; min-height: 0; }
+  .documents-dialog .documents-markdown { padding: 10px 12px; overflow: auto; }
+}
+</style>

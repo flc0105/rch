@@ -231,7 +231,7 @@ export default {
   data() {
     return { query: '', contextMenuAction: null, contextMenuX: 0, contextMenuY: 0, contextMenuSerial: 0,
       shortcutPickerVisible: false, iconPickerVisible: false, shortcutKind: 'script', shortcutResource: '', shortcutIcon: 'file-code', shortcutLabel: '',
-      pageIndex: 0, pageTouchStartX: null, pageTouchStartY: null, lastPageWheelAt: 0, pageWheelAmount: 0, pageWheelDirection: 0, pageWheelLocked: false }
+      mobilePage: false, pageIndex: 0, pageTouchStartX: null, pageTouchStartY: null, lastPageWheelAt: 0, pageWheelAmount: 0, pageWheelDirection: 0, pageWheelLocked: false }
   },
   computed: {
     iconComponents() { return icons },
@@ -254,31 +254,44 @@ export default {
       if (!term) return this.actions
       return this.actions.filter((action) => action.label.toLocaleLowerCase().includes(term))
     },
+    pageSize() { return this.mobilePage ? 12 : 24 },
     pageCount() {
-      return Math.max(1, Math.ceil((this.filteredActions.length + (this.query.trim() ? 0 : 1)) / 24))
+      return Math.max(1, Math.ceil((this.filteredActions.length + (this.query.trim() ? 0 : 1)) / this.pageSize))
     },
     currentPage() { return Math.min(this.pageIndex, this.pageCount - 1) },
     pageActions() {
-      const start = this.currentPage * 24
-      return this.filteredActions.slice(start, start + 24)
+      const start = this.currentPage * this.pageSize
+      return this.filteredActions.slice(start, start + this.pageSize)
     },
     showAddOnPage() {
-      return !this.query.trim() && this.currentPage === Math.floor(this.filteredActions.length / 24)
+      return !this.query.trim() && this.currentPage === Math.floor(this.filteredActions.length / this.pageSize)
     },
   },
   mounted() {
+    this.syncMobilePage()
     document.addEventListener('pointerdown', this.onOutsidePointerDown, true)
     document.addEventListener('scroll', this.onViewportScroll, true)
     window.addEventListener('keydown', this.onGlobalKeydown, true)
     window.addEventListener('resize', this.closeContextMenu)
+    window.addEventListener('resize', this.syncMobilePage)
   },
   beforeUnmount() {
     document.removeEventListener('pointerdown', this.onOutsidePointerDown, true)
     document.removeEventListener('scroll', this.onViewportScroll, true)
     window.removeEventListener('keydown', this.onGlobalKeydown, true)
     window.removeEventListener('resize', this.closeContextMenu)
+    window.removeEventListener('resize', this.syncMobilePage)
   },
   methods: {
+    syncMobilePage() {
+      const mobile = typeof window.matchMedia === 'function'
+        ? window.matchMedia('(max-width: 768px)').matches
+        : window.innerWidth <= 768
+      if (this.mobilePage !== mobile) {
+        this.mobilePage = mobile
+        this.pageIndex = 0
+      }
+    },
     setPage(index) {
       const next = Math.max(0, Math.min(index, this.pageCount - 1))
       if (next === this.currentPage) return
@@ -507,4 +520,31 @@ export default {
 .toolbox-add-dialog.el-dialog { max-width: calc(100vw - 24px); height: min(58vh, calc(100dvh - 24px)); display: flex; flex-direction: column; }
 .toolbox-add-dialog .el-dialog__header, .toolbox-add-dialog .el-dialog__footer { flex: 0 0 auto; }
 .toolbox-add-dialog .el-dialog__body { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+</style>
+
+<style>
+@media (max-width: 768px) {
+  .toolbox-dialog.el-dialog {
+    width: 100vw !important;
+    max-width: 100vw !important;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+    overflow: hidden;
+  }
+  .toolbox-dialog .el-dialog__body { padding: 10px 12px max(12px, env(safe-area-inset-bottom)) !important; }
+  .toolbox-dialog .toolbox-search { margin-bottom: 10px; flex: 0 0 auto; }
+  .toolbox-dialog .toolbox-list { padding: 4px 3px; }
+  .toolbox-dialog .toolbox-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-rows: repeat(4, minmax(0, 1fr));
+    height: 100%;
+    gap: 4px;
+  }
+  .toolbox-dialog .toolbox-item { height: 100%; min-height: 0; gap: 5px; padding: 4px 2px; justify-content: center; }
+  .toolbox-dialog .toolbox-icon { width: clamp(34px, 11vw, 50px); height: clamp(34px, 11vw, 50px); border-radius: 13px; }
+  .toolbox-dialog .toolbox-page-dots { padding: 8px 0 8px; }
+  .toolbox-add-dialog.el-dialog { width: 100vw !important; max-width: 100vw !important; height: 100dvh !important; max-height: 100dvh !important; margin: 0 !important; border-radius: 0 !important; }
+}
 </style>

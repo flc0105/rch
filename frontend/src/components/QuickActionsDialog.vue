@@ -109,6 +109,29 @@
           </el-table-column>
         </el-table>
       </div>
+      <div class="quick-actions-mobile-list" v-loading="loading">
+        <div v-if="!filteredItems.length && !loading" class="empty-state">No Quick Actions</div>
+        <article v-for="row in filteredItems" :key="`${row.platform}-${row.alias}`" class="quick-actions-mobile-card">
+          <div class="quick-actions-mobile-title">
+            <strong>{{ row.alias }}</strong>
+            <el-tag v-if="showCommonTag(row)" size="small" type="info" effect="plain" :title="commonTagTitle(row)">Common</el-tag>
+          </div>
+          <code class="quick-actions-mobile-command">{{ row.command }}</code>
+          <div class="quick-actions-mobile-actions">
+            <el-dropdown split-button size="small" type="primary" :disabled="runSubmitting"
+              @click="requestRun(row, 'dialog')" @command="command => handleRunCommand(row, command)">
+              Run
+              <template #dropdown>
+                <el-dropdown-menu><el-dropdown-item command="terminal">Run in Terminal</el-dropdown-item></el-dropdown-menu>
+              </template>
+            </el-dropdown>
+            <div class="quick-actions-mobile-manage">
+              <el-button size="small" @click="openEditDialog(row)">Edit</el-button>
+              <el-button size="small" type="danger" plain @click="deleteItem(row)">Delete</el-button>
+            </div>
+          </div>
+        </article>
+      </div>
     </div>
 
     <template #footer>
@@ -120,6 +143,7 @@
     v-model="editorVisible"
     :title="editorMode === 'create' ? 'New Quick Action' : 'Edit Quick Action'"
     width="620px"
+    class="quick-actions-editor-dialog"
     append-to-body
   >
     <el-form label-position="top">
@@ -170,6 +194,7 @@
     v-model="parameterVisible"
     :title="`Run ${pendingRunItem?.alias || 'Quick Action'}`"
     width="560px"
+    class="quick-actions-parameters-dialog"
     append-to-body
   >
     <el-form label-position="top" @submit.prevent>
@@ -222,6 +247,7 @@
     v-model="resultVisible"
     :title="resultTitle"
     width="760px"
+    class="quick-actions-result-dialog"
     append-to-body
   >
     <div class="quick-action-result-meta">
@@ -1034,5 +1060,24 @@ export default {
     margin: 0 !important;
     border-radius: 0 !important;
   }
+}
+</style>
+
+<style scoped>
+.quick-actions-mobile-list { display: none; }
+@media (max-width: 768px) {
+  .quick-actions-toolbar { align-items: stretch; flex-wrap: wrap; gap: 8px; }
+  .quick-actions-toolbar-left { width: 100%; flex: 1 1 100%; min-width: 0; }
+  .platform-filter { flex: 0 0 min(35%, 135px); width: min(35%, 135px); }
+  .quick-actions-search { flex: 1 1 0; min-width: 0; }
+  .quick-actions-toolbar > .el-button { margin-left: auto; }
+  .quick-actions-table-shell { display: none; }
+  .quick-actions-mobile-list { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; padding: 2px 3px 12px; }
+  .quick-actions-mobile-card { width: 100%; min-width: 0; box-sizing: border-box; padding: 12px; border: 1px solid var(--el-border-color-light); border-radius: 12px; background: var(--el-bg-color); }
+  .quick-actions-mobile-title { display: flex; align-items: center; gap: 8px; min-width: 0; overflow-wrap: anywhere; }
+  .quick-actions-mobile-command { display: block; margin: 10px 0; padding: 9px; border-radius: 7px; background: var(--el-fill-color-light); white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+  .quick-actions-mobile-actions { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+  .quick-actions-mobile-manage { display: flex; gap: 6px; }
+  .quick-actions-mobile-manage .el-button { margin: 0; }
 }
 </style>

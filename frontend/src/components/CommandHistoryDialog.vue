@@ -1785,12 +1785,42 @@ Star,
   }
 
 .quick-history-mobile-shell .mobile-file-grid {
-  height: 100%;
-  min-height: 0;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  align-content: start;
-}
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Each history card keeps its natural height while the list scrolls. */
+  .quick-history-mobile-shell .quick-history-card {
+    flex: 0 0 auto;
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    height: auto;
+    overflow: visible;
+  }
+
+  .quick-history-mobile-shell .mobile-file-main,
+  .quick-history-mobile-shell .mobile-file-name,
+  .quick-history-mobile-shell .mobile-file-actions {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .quick-history-mobile-shell .quick-command-label .ellipsis {
+    flex: 1 1 auto;
+    min-width: 0;
+    white-space: pre-wrap;
+    overflow: visible;
+    overflow-wrap: anywhere;
+    text-overflow: clip;
+  }
 
   .dialog-head-left {
     flex-wrap: wrap;

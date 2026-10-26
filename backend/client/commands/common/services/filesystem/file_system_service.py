@@ -214,9 +214,23 @@ class FileSystemService:
             }
         }
 
+    @staticmethod
+    def _delete_directory_tree(target_path: str):
+        # Removable drives can drop AppleDouble children (e.g. ._.DS_Store)
+        # between scandir and unlink; a missing *child* is already deleted.
+        root = os.path.normcase(os.path.abspath(target_path))
+
+        def on_error(_operation, path, exception):
+            error = exception[1]
+            if isinstance(error, FileNotFoundError) and os.path.normcase(os.path.abspath(path)) != root:
+                return
+            raise error
+
+        shutil.rmtree(target_path, onerror=on_error)
+
     def delete_target_path(self, target_path: str):
         if os.path.isdir(target_path):
-            shutil.rmtree(target_path)
+            self._delete_directory_tree(target_path)
             return 1, f'Directory deleted: {target_path}'
 
         os.remove(target_path)
@@ -231,7 +245,7 @@ class FileSystemService:
                     raise ValueError('Path is required')
                 target = self.path_resolver.require_existing_path_from_arg(path)
                 if os.path.isdir(target):
-                    shutil.rmtree(target)
+                    self._delete_directory_tree(target)
                 else:
                     os.remove(target)
                 succeeded += 1

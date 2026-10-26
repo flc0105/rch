@@ -100,7 +100,6 @@ import os
 import runpy
 import re
 import shutil
-import subprocess
 import sys
 import threading
 import time
@@ -115,11 +114,25 @@ WEB_HOST = @WEB_HOST@
 WEB_PORT = @WEB_PORT@
 WEB_SCHEME = @WEB_SCHEME@
 BASE_URL = f"{WEB_SCHEME}://{WEB_HOST}:{WEB_PORT}"
-ROOT = Path.home() / 'client_bundle'
+MIN_PYTHON = (3, 10)
+
+
+def is_ios_pythonista():
+    if sys.platform == 'ios':
+        return True
+    try:
+        import appex
+        return True
+    except ImportError:
+        return False
+
+
+# Pythonista cannot spawn child interpreters; keep its bundles in Documents.
+IOS_PYTHONISTA = is_ios_pythonista()
+ROOT = Path.home() / 'Documents' / 'client_bundle' if IOS_PYTHONISTA else Path.home() / 'client_bundle'
 RUNTIME_DIR = ROOT / 'runtimes' / 'python-embed'
 DOWNLOADS_DIR = ROOT / 'downloads'
 RELEASES_DIR = ROOT / 'releases'
-MIN_PYTHON = (3, 10)
 
 
 def log(message):
@@ -137,6 +150,7 @@ def request_bytes(url, payload=None):
 
 
 def runtime_version(python):
+    import subprocess
     try:
         result = subprocess.run([str(python), '-c', 'import sys; print(sys.version_info.major,sys.version_info.minor)'],
                                 capture_output=True, text=True, timeout=12, check=True)
@@ -195,6 +209,11 @@ def extract_zip(zip_path, destination):
 
 def prepare_python():
     log(f'Preparing Python runtime (minimum {MIN_PYTHON[0]}.{MIN_PYTHON[1]}) on {sys.platform}')
+    if IOS_PYTHONISTA:
+        if sys.version_info[:2] < MIN_PYTHON:
+            raise RuntimeError('Python 3.10 or newer is required')
+        log(f'Using current iOS Python interpreter: {sys.executable}')
+        return sys.executable
     if sys.platform != 'win32':
         for candidate in (sys.executable, shutil.which('python3'), shutil.which('python')):
             if candidate:
@@ -276,12 +295,7 @@ def launch(python, directory):
     script = directory / 'rchclient.py'
     if not script.is_file():
         raise FileNotFoundError(script)
-    try:
-        import appex
-        pythonista = True
-    except ImportError:
-        pythonista = sys.platform == 'ios'
-    if pythonista:
+    if IOS_PYTHONISTA:
         log('iOS/Pythonista detected, using runpy mode')
         def run():
             os.chdir(directory)
@@ -290,6 +304,7 @@ def launch(python, directory):
             runpy.run_path(str(script), run_name='__main__')
         threading.Thread(target=run, name='rchclient-main', daemon=False).start()
         return
+    import subprocess
     kwargs = {'cwd': str(directory), 'stdin': subprocess.DEVNULL,
               'stdout': subprocess.DEVNULL, 'stderr': subprocess.DEVNULL, 'close_fds': True}
     if sys.platform == 'win32':

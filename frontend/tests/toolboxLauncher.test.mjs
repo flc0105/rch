@@ -263,11 +263,12 @@ test('Toolbox uses one pointer-anchored context menu and preserves shared toolba
   instance.handleContextCommand(disabled, 'open')
   assert.equal(events.length, 1, 'disabled entries cannot launch')
 
-  // Only one document-level listener set is installed, and it is cleaned up.
+  // Four existing handlers plus one resize handler for responsive pagination.
   options.mounted.call(instance)
   options.beforeUnmount.call(instance)
-  assert.equal(listeners.filter(entry => entry[0] === 'add').length, 4)
-  assert.equal(listeners.filter(entry => entry[0] === 'remove').length, 4)
+  assert.equal(listeners.filter(entry => entry[0] === 'add').length, 5)
+  assert.equal(listeners.filter(entry => entry[0] === 'remove').length, 5)
+  assert.equal(listeners.filter(entry => entry[0] === 'add' && entry[1] === 'resize').length, 2)
   assert.match(source('../src/App.vue'), /@open-screen-view-tab="openScreenViewInNewTab"/)
   assert.match(source('../src/App.vue'), /viewer\.openInNewTab\(\)/)
 })
