@@ -1,13 +1,24 @@
-# One-liners / Bootstrap / Go Loader
+# Client Bootstrap 与首次部署
 
-One-liners 提供可复制的 Client 启动命令，用于在目标设备上快速获取并执行由 RCH Server 生成的 Bootstrap；Go Loader 则通过预先构建的独立可执行文件完成同类部署工作。二者的入口不同，但最终都会获取 Python Bundle、校验并安装 Release，启动 Python Client。
+本篇统一介绍 One-liners、Python / PowerShell Bootstrap、Go Loader 和 iOS 上的首次部署。它们使用不同的引导入口，但目标都是从 Server 获取 Python Source Bundle，校验、安装 Release，再启动 RCH Client。**首次部署不同于 Client 在线后的自更新**；后续更新和版本交接参见 [Client Update](client_update.md)。
+
+## 选择合适的启动方式
+
+| 目标环境 | 推荐入口 | 运行特点 |
+|---|---|---|
+| macOS / Linux，已有 Python 3.10+ | One-liners → Python | 请求生成通用 Python Bootstrap，安装 Bundle，独立启动 Client |
+| Windows | One-liners → PowerShell / Python | 可以按环境使用本地 Python 或支持的 Windows Embed 运行时 |
+| Windows / macOS / Linux，需要预先分发一个执行文件 | Agent Builder → Go (Loader) | 先构建平台对应的 Loader，目标端再取得 Python Bundle |
+| **iOS / Pythonista** | **[iOS 专用 Bootstrap 示例](examples/ios_bootstrap.py)** | 不启动子进程，使用当前解释器运行 Bundle 中的 Client |
+
+这些入口并不要求目标设备先在线，也不等价于在 RCH Web Terminal 中执行普通命令。目标设备仍需要能访问 Server 的 Web 构建/下载端口与 Socket 连接端口。
 
 ## 一、整体工作机制
 
 整体分为准备部署入口和目标设备运行两个阶段：One-liners 准备脚本调用命令，Go Loader 由 Agent Builder 准备编译好的可执行文件；目标设备执行对应入口，再完成 Python Bundle 的安装启动。
 
 ```text
-Web Toolbar → One-liners
+Banner → Utilities → One-liners
   └─ 填写 Server IP / Socket port / Web port
        └─ 替换模板变量、编辑或复制命令
             ↓ 在需要部署 Client 的设备上运行
@@ -27,7 +38,7 @@ Bootstrap 成功启动新进程，不代表新 Client 一定已经与 Server 建
 
 ## 二、One-liners 工具栏与命令模板
 
-在工具栏打开 **One-liners** 对话框，可以选择 Python 或 Windows PowerShell 启动命令。工具栏布局允许将 One-liners 放在主工具栏或 More 菜单中。
+从 Banner 右侧 **Utilities → One-liners** 打开对话框，可以选择 Python 或 Windows PowerShell 启动命令。
 
 对话框上方提供以下设置：
 
@@ -78,7 +89,7 @@ iwr "http://$($ip):$p/api/agent/bootstrap/ps1" -Method Post -ContentType "applic
 
 ### Go Loader：独立可执行程序启动
 
-Go Loader 与 Python / PowerShell One-liner 的**部署目的相同，但交付入口不同**：前两者在目标设备运行一段从 Server 动态取得的 Bootstrap 脚本；Go Loader 则先由 Server 编译一个注入连接配置的 Go 可执行程序，再将这个可执行文件放到目标设备运行。**当前 One-liners 工具栏只提供 Python 和 PowerShell 模板**；Go Loader 通过 Agent Builder 的 **Go (Loader)** 模式构建和下载，而不是假装工具栏还有一个现成的 Go 命令。
+Go Loader 与 Python / PowerShell One-liner 的**部署目的相同，但交付入口不同**：前两者在目标设备运行一段从 Server 动态取得的 Bootstrap 脚本；Go Loader 则先由 Server 编译一个注入连接配置的 Go 可执行程序，再将这个可执行文件放到目标设备运行。**当前 One-liners 菜单只提供 Python 和 PowerShell 模板**；Go Loader 通过 Agent Builder 的 **Go (Loader)** 模式构建和下载，而不是假装工具栏还有一个现成的 Go 命令。
 
 在 Agent Builder 选择 Go (Loader)，指定目标操作系统、架构、Server Socket 地址与端口、Web 地址与端口后发起构建。Server 使用 Go 工具链交叉编译目标程序（`CGO_ENABLED=0`），将这些连接参数编入 Loader；Go Loader 支持的构建系统为 `win`、`mac`、`linux`，架构为 `amd64`、`arm64`。目标设备无需安装 Go 编译器，但**最终启动的仍是 Python Client，因此需要可用的 Python 3.10+ 运行环境**。
 
@@ -149,11 +160,11 @@ Client 需要 **Python 3.10 或更新版本**。Bootstrap 和 Go Loader 都会�
 
 **Go Loader 的 Python 选择：** Windows 优先尝试已缓存的 Embed，再寻找本机 Python；没有合适解释器时才尝试下载 Windows amd64 Embed。非 Windows 的 Go Loader 仅查找本地 `python3` / `python`，缺失则报告错误并结束，不自动获取其他系统的 Python 运行时。
 
-当前提供的 Python Embed 包面向 Windows amd64（Python 3.13.13）；回退下载要求 Windows 8.1 或更新版本，其他 Windows 架构或过旧系统在缺少可用 Python 时不能依靠这条路径自动安装。Python Bootstrap 还包含在 iOS / Pythonista 环境内运行的特殊启动分支，不应将它视为 Windows PowerShell 方案。
+当前提供的 Python Embed 包面向 Windows amd64（Python 3.13.13）；回退下载要求 Windows 8.1 或更新版本，其他 Windows 架构或过旧系统在缺少可用 Python 时不能依靠这条路径自动安装。**iOS / Pythonista 不应直接使用通用 Python One-liner。**当前通用 Bootstrap 在选择解释器的阶段需要启动子进程，即使它最后的 Client 启动阶段提供了 `runpy` 分支，也可能在 iOS 的子进程限制下提前失败。iOS 应使用下文的专用脚本，它直接使用当前 Python 解释器。
 
 ### Bundle 下载与目录组织
 
-Bootstrap 和 Go Loader 都在当前目标用户的 Home 下组织运行时、下载文件和版本目录：
+桌面版 Bootstrap 和 Go Loader 通常在当前目标用户 Home 下组织运行时、下载文件和版本目录；iOS 专用目录在下文单独说明：
 
 ```text
 ~/client_bundle/
@@ -178,13 +189,51 @@ Bootstrap 下载 Bundle 时按块计算 SHA-256，并与**本次构建响应中�
 
 ### Client 启动与 Bootstrap 退出
 
-安装完成后，Bootstrap 使用选定 Python 运行 `rchclient.py`，并将工作目录设为安装好的 Release。Windows 通过隐藏窗口的独立进程启动，Unix 类系统使用新的进程会话；脚本的标准输入输出通常不再与新进程保持连接。Pythonista 则采用适用于当前解释器环境的线程运行方式。
+安装完成后，Bootstrap 使用选定 Python 运行 `rchclient.py`，并将工作目录设为安装好的 Release。Windows 通过隐藏窗口的独立进程启动，Unix 类系统使用新的进程会话；脚本的标准输入输出通常不再与新进程保持连接。iOS 的专用脚本则使用当前解释器的非 daemon 线程调用 `runpy`；它不会创建独立的系统进程，也不保证 iOS 应用切到后台后可持续运行。
 
 Go Loader 同样使用后台分离进程启动 Python Client：Unix 创建独立 Session，Windows 使用隐藏窗口及分离进程标志，输出分别追加在 Release 目录的 `loader_python_stdout.log` 和 `loader_python_stderr.log`。Loader 成功报告 `LAUNCH_OK` 后退出；这不等于等待 Client 握手完成。
 
 Bootstrap 最终打印各阶段日志并结束自己的启动流程。它报告的“Client process launched”表示已经发起并成功创建启动过程，并没有等待新 Client 完成与 Server 的 Socket 握手。是否上线需要到 Server 连接列表再确认。
 
-## 六、网络、日志与日常诊断
+## 六、iOS / Pythonista Bootstrap
+
+**iOS 有两项和桌面系统不同的边界：**Pythonista 等 iOS Python 运行环境通常不支持创建系统子进程；Client 必须运行在已有 Python 解释器内。此外，Bundle 在 iOS 上的标准目录是 `~/Documents/client_bundle/`，而不是桌面系统的 `~/client_bundle/`。这也是为什么不能把桌面 One-liner 当成所有 iOS 环境的通用方案。
+
+本仓库提供一个可以直接复制到 iOS Python 环境执行的示例：**[`examples/ios_bootstrap.py`](examples/ios_bootstrap.py)**。此脚本仅使用 Python 3.10+ 标准库，不依赖 `requests`，也不调用 `subprocess`。它不是新的 Server API，也不替代已连接 Client 的在线更新机制。
+
+### 运行步骤
+
+1. 确认 iOS 上的 Pythonista 或其他 Python 环境支持 Python **3.10+**，可访问目标 Server 的 Web 端口、Socket 端口，并且允许在 `Documents` 下写入文件。还需要有运行 Client 所需的第三方依赖；Bootstrap 本身不负责为 Client 安装依赖。
+2. 将 [`ios_bootstrap.py`](examples/ios_bootstrap.py) 保存到设备的 Python 脚本目录。在文件开头设置 `WEB_HOST`、`WEB_PORT`、`WEB_SCHEME`、`SERVER_HOST`、`SERVER_PORT`。当 Web 与 Socket 使用不同域名或 IP 时，分别填写；不要直接照用示例局域网地址。
+3. 在该设备的 Python 环境中**作为脚本运行** `ios_bootstrap.py`。它请求 Server 构建 Bundle、检查返回数据与 SHA-256、下载 ZIP、检查归档路径，然后解压到独立的暂存目录，安装完成后才启动 Client。
+4. 查看控制台的 `[bootstrap]` 输出。脚本显示启动线程成功后，再在 Server 的 Connections 页面确认 Client 是否真正上线。只看到“handoff complete”并不代表 Socket 已握手成功。
+
+安装路径：
+
+```text
+~/Documents/client_bundle/
+├── downloads/
+│   └── <bundle-file>.zip
+└── releases/
+    └── <build_version>/
+        └── rchclient.py
+```
+
+示例保留历史已安装的其他 Release，**不会先删除同名 Release**；遇到同名目录会报错停止，防止覆盖正在运行的 Client 文件。它会在目标版本不存在的前提下，将检查合格的完整 Bundle 从暂存位置移动到正式目录。下载、安装或启动失败时，应该根据最后一条错误信息修复原因，不要手动删除仍在使用的 Release。
+
+### 为什么不继续使用通用一行命令？
+
+例如桌面 Python One-liner 会先从 `POST /api/agent/bootstrap` 获取通用脚本，再直接 `exec`。但该通用脚本在挑选 Python 运行时的过程中使用 `subprocess`，所以 **iOS 即使能成功取回脚本，也可能在安装前失败**。专用脚本直接调用 `POST /api/agent/build`，跳过子进程式运行时探测，仍沿用 Server 的 Bundle 构建、下载与哈希校验接口。
+
+专用脚本直接构建 Bundle，并检查**构建响应、下载哈希、ZIP 成员、暂存安装和同名 Release**。网络请求只使用标准库，避免首次部署阶段再依赖 `requests`。
+
+### iOS 上的启动与退出边界
+
+安装成功后，脚本使用一个**非 daemon 线程**在当前解释器内运行 `rchclient.py`。Bootstrap 的主线程会返回，但 Client 线程仍然运行；这**不是**通过 `Popen` 创建的独立后台进程。Pythonista 或 iOS 可以在应用退到后台、被挂起或关闭时中止运行，不能承诺其能像桌面 daemon 一样长期驻留。重复运行 Bootstrap 也不会自动接管或停止旧的 Client 线程。
+
+**排障重点：**`subprocess` 不支持时确认执行的是 iOS 专用脚本；`build` 请求失败时查 Web API 和 Builder；SHA-256 不匹配时停止安装；`rchclient.py` 不存在时检查生成的 Bundle；线程启动后仍不在线时查 Socket 地址、端口及 Client 的 Python 依赖。HTTP 示例仅适合可信网络；需要跨公网部署时，应使用可信的加密传输和访问控制，不能把哈希校验等同于服务端身份认证。
+
+## 七、网络、日志与日常诊断
 
 默认监听端口为 Socket `9999`、Web `8085`，独立文件传输端口固定为 **Web port + 1**（默认 `8086`）。One-liners 只需要填写前两个对应的服务端口，即 Socket 和 Web；文件传输端口不能在该表单中单独设置。跨网络做端口映射时，除确保 Socket 与 Web 可达外，还应按 Client 文件传输功能要求转发紧邻 Web 的文件端口。
 
@@ -196,7 +245,8 @@ Bootstrap 输出以 `[bootstrap]` 为阶段前缀，通常会显示：运行时�
 |---|---|
 | One-liners 地址与实际可达地址不同 | 修改 Server IP；浏览器访问地址不一定是目标设备可访问地址 |
 | 无法读取 Server 默认端口 | 检查当前 Web 登录状态及 `/api/agent/platform`；对话框仍可能保留默认端口 |
-| Python One-liner 报 `No module named requests` | 运行启动命令的 Python 未安装 `requests`；Bootstrap 本身仍使用标准库 |
+| Python One-liner 报 `No module named requests` | 桌面启动命令中的 `requests` 未安装；iOS 专用脚本完全使用标准库 |
+| iOS 运行通用 Bootstrap 报 `subprocess` 不支持 | 改用本篇的 iOS 专用 Bootstrap；当前通用脚本在解释器检测阶段仍会调用 `subprocess` |
 | 请求 Bootstrap 失败 | 目标到 Web 端口的网络、地址、防火墙与 HTTP 服务 |
 | Bundle 构建失败 | Server 是否注册 Bundle Builder、构建依赖、输出目录写入权限 |
 | 找不到可用 Python | 检查 Python 3.10+；Windows 检查 Embed 支持的系统与架构 |
@@ -209,7 +259,7 @@ Bootstrap 输出以 `[bootstrap]` 为阶段前缀，通常会显示：运行时�
 | Go Loader 提示 `BUILD_ERR` / `DOWNLOAD_ERR` | 检查 Bundle Builder、构建响应、下载可达性和 SHA-256 校验 |
 | Loader 报告 `LAUNCH_OK` 但 Client 离线 | 继续检查 Socket 连通性和新 Python 进程的 stdout/stderr 日志 |
 
-## 七、使用边界
+## 八、使用边界
 
 One-liners 是方便复制的脚本部署入口，Go Loader 是可独立分发的二进制部署入口；二者共享的是最后启动 Python Bundle 的目标，不是同一份脚本、同一种构建产物。
 

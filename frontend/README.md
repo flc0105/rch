@@ -9,3 +9,7 @@ Learn more about IDE Support for Vue in the [Vue Docs Scaling up Guide](https://
 Log Viewer reads remote Client files. Its Browse button and remote path occupy the first toolbar row, with the remaining controls on the second row. Wrap is enabled by default, and the gutter displays line numbers relative to the currently loaded log buffer (search results retain those numbers). Watchdog log links appear immediately after each file path.
 
 Administrator sign-in sends only a lightweight reversible masked password field, not a plaintext password field. It works with existing HTTP deployments and does not require a secure browser context. This is payload obfuscation only, **not** protection against interception on HTTP. The login page distinguishes credential errors, network errors, and server errors.
+
+## Banner utilities
+
+The right side of the banner shows Online Nodes, followed by Transfers, Notifications, and a Utilities dropdown. The Utilities menu opens One-liners or Build Agent without requiring a selected online Client. Sign out stays separate from the icon group.

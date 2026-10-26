@@ -2,7 +2,7 @@
 
 RCH 使用两种不同的身份描述 Client：`build_version` 标识一次可分发的构建产物，`client_revision` 标识参与 Client 运行的源码内容。Server 可以直接比较在线 Client 与当前源码的 Revision，决定是否提示更新；真正执行更新时，才构建并分发新的 Python Source Bundle。**发现源码差异、生成安装包和替换运行中的 Client，是三个独立阶段。**
 
-这条工作流涉及 Server Agent Builder、Client 握手、连接状态服务、Web Terminal 和 Client 自更新命令。下面按源码从构建到运行、再到新旧 Client 交接的顺序说明。首次部署所用的 One-liners、Python / PowerShell Bootstrap 和 Go Loader 另见 [Client Bootstrap and Deployment](one_liners_bootstrap.md)。
+这条工作流涉及 Server Agent Builder、Client 握手、连接状态服务、Web Terminal 和 Client 自更新命令。下面按源码从构建到运行、再到新旧 Client 交接的顺序说明。首次部署所用的 One-liners、Python / PowerShell Bootstrap 和 Go Loader 另见 [Client Bootstrap 与首次部署](bootstrap.md)。
 
 ## 构建产物与源码身份
 
@@ -197,7 +197,7 @@ Agent Output 或其他构建产物。删除不可恢复，应在批准 Preview �
 
 若新进程没有按时提交就绪标记或在稳定性检查期间退出，旧进程会保留；这属于避免过早关闭旧连接的交接保护，不是原子级自动回滚已解压文件的事务。反之，成功交接后的新进程仍可能在稍后因运行环境或网络问题断开，不能将短暂存活检查解释为长期健康保证。
 
-`POST /api/agent/build` 与产物下载目前允许匿名请求，部署时需要把构建服务的网络暴露面作为独立运维边界考虑；它不等于通过了 Web 管理员登录。需要人工下载、安装或维护原始构建产物时，按 [Client Bootstrap and Deployment](one_liners_bootstrap.md) 的入口和安装方式处理；需要理解执行期间的任务取消与超时，则参阅 [Shell-like Commands](shell_like_commands.md)。
+`POST /api/agent/build` 与产物下载目前允许匿名请求，部署时需要把构建服务的网络暴露面作为独立运维边界考虑；它不等于通过了 Web 管理员登录。需要人工下载、安装或维护原始构建产物时，按 [Client Bootstrap 与首次部署](bootstrap.md) 的入口和安装方式处理；需要理解执行期间的任务取消与超时，则参阅 [Shell-like Commands](shell_like_commands.md)。
 
 ## Process Watchdog 更新交接
 

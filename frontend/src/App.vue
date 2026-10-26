@@ -11,43 +11,55 @@
         <span class="banner-meta-value">{{ onlineConnectionsCount }}</span>
 
         <div class="banner-actions">
-          <div class="banner-action-links">
-            <span class="tool-separator" style="margin-right: 12px; margin-left: 6px"></span>
+          <span class="tool-separator banner-major-separator" aria-hidden="true"></span>
 
-            <div class="banner-action-links">
+          <div class="banner-action-links">
+            <button
+              class="banner-icon-action banner-transfer-action"
+              type="button"
+              title="Transfers"
+              aria-label="Transfers"
+              @click="openTransferCenter"
+            >
+              <el-icon><Sort /></el-icon>
+              <span v-if="activeTransferCount" class="banner-transfer-count">{{ activeTransferCount }}</span>
+            </button>
+            <button
+              class="banner-icon-action banner-notification-action"
+              type="button"
+              title="Notifications"
+              aria-label="Notifications"
+              @click="openNotificationCenter"
+            >
+              <el-icon><Bell /></el-icon>
+            </button>
+            <el-dropdown trigger="click" @command="handleBannerUtilityCommand">
               <button
-                class="banner-transfer-action"
+                class="banner-icon-action banner-utility-action"
                 type="button"
-                title="Transfers"
-                @click="openTransferCenter"
+                title="Utilities"
+                aria-label="Utilities"
+                aria-haspopup="menu"
               >
-                <span class="banner-transfer-symbol">⇅</span>
-                <span v-if="activeTransferCount" class="banner-transfer-count">{{ activeTransferCount }}</span>
+                <el-icon><Grid /></el-icon>
               </button>
-              <button
-                class="banner-notification-action"
-                type="button"
-                title="Notifications"
-                @click="openNotificationCenter"
-              >
-                <el-icon><Bell /></el-icon>
-              </button>
-              <button
-                class="banner-inline-action"
-                type="button"
-                @click="openAgentBuilderDialog"
-              >
-                Build Agent
-              </button>
-              <button
-                class="banner-inline-action"
-                type="button"
-                onclick="window.RatAuth && window.RatAuth.logout()"
-              >
-                Sign out
-              </button>
-            </div>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="one-liners">One-liners</el-dropdown-item>
+                  <el-dropdown-item command="build-agent">Build Agent</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </div>
+
+          <span class="tool-separator banner-major-separator" aria-hidden="true"></span>
+          <button
+            class="banner-inline-action"
+            type="button"
+            onclick="window.RatAuth && window.RatAuth.logout()"
+          >
+            Sign out
+          </button>
         </div>
       </div>
     </header>
@@ -461,7 +473,7 @@ import SettingsDialog from './components/SettingsDialog.vue'
 import NotificationCenterDrawer from './components/NotificationCenterDrawer.vue'
 import TransferCenterDrawer from './components/TransferCenterDrawer.vue'
 
-import { ArrowDown, ArrowUp, Bell } from '@element-plus/icons-vue'
+import { ArrowDown, ArrowUp, Bell, Grid, Sort } from '@element-plus/icons-vue'
 
 export default {
   components: {
@@ -476,6 +488,8 @@ export default {
     ArrowDown,
     ArrowUp,
     Bell,
+    Grid,
+    Sort,
     PtyDialog,
     TerminalJsonDialog,
     PreviewDialog,
@@ -798,6 +812,11 @@ export default {
       return this.$refs.processDialogRef?.open(typeof sortBy === 'string' ? sortBy : '')
     },
 
+    handleBannerUtilityCommand(command) {
+      if (command === 'one-liners') return this.openOneLinersDialog()
+      if (command === 'build-agent') return this.openAgentBuilderDialog()
+    },
+
     openAgentBuilderDialog() {
       return this.$refs.agentBuilderDialogRef?.open()
     },
@@ -956,62 +975,54 @@ export default {
 
 <style scoped>
 
-.banner-transfer-action {
-  margin-right: 10px;
-  padding: 4px 2px;
+/* Banner actions share Element Plus icon sizing without affecting other toolbars. */
+.banner-right .banner-actions {
+  gap: 14px;
+}
+
+.banner-right .banner-action-links {
+  gap: 8px;
+}
+
+.banner-major-separator {
+  height: 24px;
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.banner-icon-action {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 32px;
+  padding: 0;
+  margin: 0;
   border: 0;
   background: transparent;
   color: rgba(238, 244, 255, 0.82);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  font-size: 15px;
+  font-size: 16px;
   line-height: 1;
+  cursor: pointer;
   transition: color 0.18s ease, opacity 0.18s ease;
 }
 
-.banner-transfer-action:hover {
+.banner-icon-action:hover {
   color: #ffffff;
 }
 
-.banner-transfer-action:active {
+.banner-icon-action:active {
   opacity: 0.72;
 }
 
-.banner-transfer-symbol {
-  font-size: 16px;
-  line-height: 1;
-}
-
 .banner-transfer-count {
+  position: absolute;
+  top: 0;
+  right: -6px;
   min-width: 12px;
   font-size: 10px;
   font-weight: 700;
   line-height: 1;
-}
-
-.banner-notification-action {
-  margin-right: 12px;
-  padding: 4px 2px;
-  border: 0;
-  background: transparent;
-  color: rgba(238, 244, 255, 0.82);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 16px;
-  line-height: 1;
-  transition: color 0.18s ease, opacity 0.18s ease;
-}
-
-.banner-notification-action:hover {
-  color: #ffffff;
-}
-
-.banner-notification-action:active {
-  opacity: 0.72;
 }
 
 /*connection info card*/
