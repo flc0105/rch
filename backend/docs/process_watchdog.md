@@ -72,7 +72,7 @@ Process Supervisor **不遍历系统全部进程**，也不读取 Local 心跳�
 - 不判断 Client 主线程或 Socket 接收线程是否卡死；这属于连接恢复或 Local Heartbeat Watchdog 的范围。
 - 强制进程退出可能导致运行中的 Script/Job 中断；新 Client 是新的进程、`client_id` 与连接会话，不恢复原任务内存状态。
 - 仅在支持独立后台进程和 `psutil` 的桌面平台使用（macOS、Linux、Windows）。iOS/Pythonista 不保证支持。
-- Supervisor 是可靠性手段而不是防篡改沙箱：具有同等本机权限的代码仍可以终止它、修改配置或关闭监督。
+- Supervisor 提供本机进程故障恢复；拥有同等系统权限的程序可以关闭监督、修改配置或终止该进程。
 
 ## 恢复后上线通知
 

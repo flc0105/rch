@@ -2,7 +2,7 @@
 
 RCH 的 Client 与 Server 建立 TCP 连接后，需要完成一件比“上线通知”更基础的工作：让 Server 知道**当前这条连接是谁、运行在哪个环境、带有哪些命令和变量提示信息、能够在哪里操作文件，以及它对应哪份 Client 构建源码**。Python Client 把这组资料放进首次发送的 `info` 消息；Server 将其保存为当前 `ClientSession` 的会话信息，再分别提供给设备列表、命令输入栏、Connection Info、版本检查等功能。
 
-握手是**连接开始时的一次性状态快照和能力声明**，不是周期性系统监控，也不是单独的设备认证协议。后续心跳只更新最近响应和部分运行状态；动态命令补全、运行配置查询、远程文件操作依然有各自独立的请求链路。理解这个边界，才能准确判断新命令为什么未出现在候选列表、设备详情为什么保留旧路径，以及重连之后哪些信息会刷新。
+握手在**连接开始时上报状态快照和能力声明**。后续心跳更新最近响应及部分运行状态；动态命令补全、配置查询和远程文件操作使用各自的请求链路。理解这个边界，才能准确判断新命令为什么未出现在候选列表、设备详情为什么保留旧路径，以及重连之后哪些信息会刷新。
 
 ## 1. 连接建立时的消息交接
 
@@ -107,13 +107,13 @@ Client 先取得当前平台的命令对象，然后检查拥有 `help` 装饰�
 
 由于变量名是在握手时采集的，如果进程环境在同一条连接中改变，Web 可能暂时保留旧候选；但执行时的 `${env:...}` 会依据 Client 当下读取的环境求值。这种“输入时名称快照”和“执行时数值解析”是两种不同的时间语义。参见 [Variables](./variables.md)。
 
-### System Paths 是路径快照，不是远程目录扫描器
+### System Paths 路径快照
 
 `system_paths` 在握手时调用 Client 的 `get_system_paths()` 生成，结果为路径名到该 Client 本地路径的字典。它包含操作系统根目录、用户目录、桌面/文档/下载、临时目录、执行文件目录等逻辑位置，并可能包含平台特有路径。
 
 Server 保存的是这一刻的**路径字典**。它既不代表相应目录此刻一定存在，也不会替代 Remote Files 的文件列表与权限检查。远程浏览目录、判断文件类型、路径补全等依赖专门的 Client 操作；在更换用户环境或工作目录后，也不能仅靠此缓存推导真实可访问路径。`GET /api/connections/{client_id}/system-paths` 从当前 ClientSession 的已保存字段返回该字典，本身不是向 Client 重新发送一次系统路径采集请求。
 
-Manifest 构建采用局部容错：如果读取命令列表或变量清单的过程抛出异常，`ClientInfoBuilder` 会将相应字段设为空列表，仍然构造其他握手信息。因此**设备在线不等于它一定上报了全部命令/变量提示**；需要区分“能力声明为空”与“TCP 未连接”。
+Manifest 构建采用局部容错：如果读取命令列表或变量清单的过程抛出异常，`ClientInfoBuilder` 会将相应字段设为空列表，仍然构造其他握手信息。因此在线状态由 TCP 会话确认；命令或变量清单为空时，应检查握手期间相应 Manifest 的生成结果。
 
 ## 4. Server 如何把握手变成可用的连接
 
@@ -179,9 +179,9 @@ Heartbeat 更新连接的最近活跃信息、RTT 和可能的当前工作目录
 | 系统路径看起来不符当前运行环境 | `system_paths` 是握手缓存；确认当前 Client 进程的用户/环境和最近一次连接时间 |
 | Client 在线但更新状态 Unknown | 是否实际提交了 `client_revision`，以及 Server 是否能计算对应 Revision |
 | 同机重启后设备归属改变 | 核对 `machine_id` 的指纹输入是否变化；设备归并不是仅按主机名进行 |
-| 刷新浏览器后部分能力仍不出现 | 浏览器刷新不等于重新握手；区分 Server Session 中的旧快照与新 Client 注册 |
+| 刷新浏览器后部分能力仍不出现 | 浏览器刷新会读取已有 Session 快照；需 Client 重新连接才能上报新的握手信息 |
 
-相关详细参考：[Device Identity & Inventory](./device_identity.md)、[Terminal Autocomplete](./autocomplete.md)、[Variables](./variables.md)、[Client Builds and Updates](./client_update.md)、[Connection Lifecycle](./connection_lifecycle.md) 与 [Administrator Authentication](./admin-auth.md)。
+相关详细参考：[Device Identity & Inventory](./device_identity.md)、[Terminal Autocomplete](./autocomplete.md)、[Variables](./variables.md)、[Client Builds and Updates](./client_update.md)、[Connection Lifecycle](./connection_lifecycle.md) 与 [Administrator Authentication](./admin_auth.md)。
 
 ## 附录：Go Client（非主要维护路径）
 

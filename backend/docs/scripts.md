@@ -1,6 +1,6 @@
 # Scripts — Script Library 与 Client 执行工作流
 
-Script 是由 Server 管理源码、在指定 Client 上执行的 Python 自动化能力。Script Library 提供目录、元数据、编辑与运行入口；命令执行链负责把源码和已解析的参数交给目标设备；Script SDK 使脚本在当前任务上下文中访问本地命令、Server 资源和浏览器交互。它不是在 Server Web 进程里执行 Python，也不是 Background Job 的另一种管理方式。
+Script 是由 Server 管理源码、在指定 Client 上执行的 Python 自动化能力。Script Library 提供目录、元数据、编辑与运行入口；命令执行链负责把源码和已解析的参数交给目标设备；Script SDK 使脚本在当前任务上下文中访问本地命令、Server 资源和浏览器交互。脚本源码由 Server 保存，运行任务由目标 Client 执行；长期后台任务另由 [Background Jobs](background_jobs.md) 管理。
 
 一个 Script 可以是一次性检查、需要参数的维护流程或包含用户确认的多步操作。执行结束即形成一次命令任务的最终结果；不会像 Background Job 那样注册一个长期存在、可按 Job Key 管理的后台实例。真正需要持续采集、独立停止及 Job 消息历史的任务应使用 [Background Jobs](background_jobs.md)。
 
@@ -24,9 +24,9 @@ Script 与 Shell-like、ACMD 都可以进入 Client 的命令执行设施，但 
 
 ### 源码文件与 Catalog
 
-Server 递归搜索 Script 根目录中的 `.py` 文件，并根据文件本身和源码里的 `SCRIPT_METADATA` 构造 Catalog；目录列表另外由文件系统遍历得到。读取元数据使用 Python AST 的静态字面量提取，而不是为显示列表执行脚本代码。因此 Metadata 应当写成能在源码里直接解析的字典；由运行时函数动态生成的字典不应作为 UI 配置依据。
+Server 递归搜索 Script 根目录中的 `.py` 文件，并根据文件本身和源码里的 `SCRIPT_METADATA` 构造 Catalog；目录列表另外由文件系统遍历得到。读取元数据使用 Python AST 的静态字面量提取，而不是为显示列表执行脚本代码。Metadata 应写成源码里可静态解析的字典，供 UI 构建参数表单。
 
-Web Script Library 提供文件夹树、脚本搜索与选择、源码编辑入口，以及创建、上传、重命名、删除 Script 和目录。上传接口只接受 `.py`；重命名和删除会实际修改 Server 文件系统，删除整个文件夹时也会递归删除内容。Catalog 来自磁盘扫描，不是另存一份可独立编辑的数据库脚本清单。修改文件内容后重新请求 Catalog，即按磁盘中当前源码重新读入元数据；已经提交的执行任务不会因后续编辑而中途替换运行代码。
+Web Script Library 提供文件夹树、脚本搜索与选择、源码编辑入口，以及创建、上传、重命名、删除 Script 和目录。上传接口只接受 `.py`；重命名和删除会实际修改 Server 文件系统，删除整个文件夹时也会递归删除内容。Catalog 根据磁盘中的 Script 源文件实时扫描生成。修改文件内容后重新请求 Catalog，即按磁盘中当前源码重新读入元数据；已经提交的执行任务不会因后续编辑而中途替换运行代码。
 
 目录路径会规范化为相对于 Script 根目录的路径；文件的识别名称以该相对路径为准。目录、脚本重命名会影响此后通过原名称查找或 `scripts.run()` 引用的调用方，应同步修改引用关系。
 
@@ -93,7 +93,7 @@ Script Run 表单可以选择 **Dialog** 或 **Terminal**：
 }
 ```
 
-Server 会给命令任务附加 `script_run`、`script_run_name`、`script_run_id`、`script_run_presentation` 等元数据。Dialog 只消费相同 Client 和 `run_id` 的对应结果；这是**结果路由标识**，不是 Script 的文件身份，也不是权限 Token。提交接口返回任务已创建不等于脚本运行成功，应以后续执行结果及终态为准。
+Server 会给命令任务附加 `script_run`、`script_run_name`、`script_run_id`、`script_run_presentation` 等元数据。Dialog 只消费相同 Client 和 `run_id` 的对应结果；这是**结果路由标识**，不是 Script 的文件身份，也不是权限 Token。提交 API 返回任务创建状态；脚本完成情况由执行结果事件及终态反馈。
 
 ### 终端轻量入口和结构化入口
 
@@ -223,7 +223,7 @@ Web 读取实际 Script Metadata，Server 在构造结构化运行任务时将�
 
 默认 Grant 有效期为 300 秒，最多使用 100 次；请求中的 TTL/次数不能突破这两个服务端上限。签发时只接受策略允许的 Scope，服务端按 HTTP 方法与路径校验。完成、断开或 Grant 到期、次数耗尽后无法继续使用。它是一种**按 URL/方法授权**的临时能力，不等于针对 Artifact ID、Keychain 名称、远程设备目录的细粒度资源权限，也不限制脚本在本机自行执行 Python/OS 操作。
 
-特别注意：Web 结构化运行会基于 Metadata 创建 Grant Request；终端 `script exec` 的轻量执行方式不会自动采取相同的授权请求构造流程。直接在另一个环境启动 Python 文件也不会自动获得 Server Script Grant。如果缺少权限，SDK 应明确报错，而不是建议把管理员 API Token 硬编码进脚本。详细的认证体系与 Script Grant 机制见 [Administrator Authentication](admin-auth.md)。
+特别注意：Web 结构化运行会基于 Metadata 创建 Grant Request；终端 `script exec` 的轻量执行方式不会自动采取相同的授权请求构造流程。直接在另一个环境启动 Python 文件也不会自动获得 Server Script Grant。如果缺少权限，SDK 应明确报错，而不是建议把管理员 API Token 硬编码进脚本。详细的认证体系与 Script Grant 机制见 [Administrator Authentication](admin_auth.md)。
 
 ### 执行中请求浏览器决策
 
@@ -298,7 +298,7 @@ Run API 要求 `script_name` 非空、`params` 为对象，并明确提供 `pres
 | 输出不是 JSON 表格 | stdout 是否是单一合法 JSON，是否混入进度文本、日志或非 JSON 的 Python 表示 |
 | 上传文件后找不到 | Artifact 类型、返回的 `artifact_id`、Client/Command 关联及 Artifact 当前可用性 |
 
-Script 的边界不是“只要是 Python 就能无条件使用全部 Client 能力”。当需要增加功能，应先判断它属于 Library 管理、Metadata 表单、任务执行、SDK、授权，还是特定的文件/监控/Job 生命周期，再接入已有对应服务。这样能保持 Script 的一次性任务语义清晰，也便于沿着真实错误来源排查。
+扩展 Script 能力时，按职责接入 Library 管理、Metadata 表单、执行任务、SDK、授权或专门的文件、监控、Job 服务。这样能保持 Script 的一次性任务语义清晰，也便于沿着真实错误来源排查。
 
 
 ## Server `script` 一级命令（统一入口）

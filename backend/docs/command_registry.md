@@ -36,10 +36,6 @@ Web Terminal / Server CLI
 
 这描述的是普通命令入口；PTY、Monitor、Clipboard 等独立消息与会话服务不应为了“在终端里有个命令名”被塞进同一注册表。
 
-### Server `job` 命令和专用 Client Job Control
-
-Job Catalog、终端命令解析和参数模式验证由 Server 管理；新增 Server Builtin `job` 支持 `list/start/stop/ps/status/stop-all`。纯 `job list` 直接查 Server Catalog；其他子命令通过 `job_control` 独立协议类型交给 Client `JobManager` 执行。旧 Client 公开 `start_job`、`stop_job`、`jobs`、`jobs_ps`、`job_status`、`stop_all_jobs` 方法已移除，Client Command Manifest 与 Help 不再列出它们。客户端 Runtime、Web Job API、任务上报及原有 Shell fallback 保持。详见 [Background Jobs](background_jobs.md)。
-
 ## 二、普通 Client 命令怎样被导出
 
 ### 平台对象和继承链
@@ -152,7 +148,7 @@ Web 通过 `GET /api/connections/{client_id}/command-candidates` 获取候选，
 
 普通 Client 命令通过 `@desc(..., api_grants=('interactions:request',))` 声明所需受保护范围；若只需执行前确认，也可使用 `@confirm`。`@confirm` 和 `@desc` 两种装饰器顺序在当前实现中都能够保留帮助元数据及交互授权要求。实际 Grant 由 Server `ClientSessionCommandChannel.build_command_payload()` 对**可信的本地 `CommonCommands` 或对应平台类的方法注解**进行查找后签发，且仅在命令调用需要该范围时提供。Client 自报的 Manifest 不能凭空增加 Grant。
 
-涉及 `CommandInteractions`、预览、Secret 输入、批准/拒绝时，详细使用和应答边界参阅 [Interaction Broker](interaction_broker.md)；Script 的 Metadata 和 Script SDK 授权则由 [Scripts](scripts.md) 与 [Admin Auth](admin-auth.md) 解释。**普通命令的 `api_grants` 声明并不等于任意 ACMD 或 Shell 文本都会获得同样的授权。**
+涉及 `CommandInteractions`、预览、Secret 输入、批准/拒绝时，详细使用和应答边界参阅 [Interaction Broker](interaction_broker.md)；Script 的 Metadata 和 Script SDK 授权则由 [Scripts](scripts.md) 与 [Admin Auth](admin_auth.md) 解释。**普通命令的 `api_grants` 声明并不等于任意 ACMD 或 Shell 文本都会获得同样的授权。**
 
 取消与超时同样需要对应执行逻辑真正支持。`ShellCommandRunner` 会先应用方法上 `command_timeout` / `command_cancel_mode` 等策略元数据，再调用该方法或 Shell；中断检查点与注册的取消处理器需要由实现自身正确执行。对会读写外部文件、启动子进程或调用 HTTP 的新功能，必须验证取消发生在执行前、执行中以及失败清理阶段时的实际效果。安全敏感操作的鉴权与确认不能仅依赖命令是否出现在补全列表。
 

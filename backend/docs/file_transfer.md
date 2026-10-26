@@ -39,7 +39,7 @@ Remote Files 上传到设备
 
 `8085` 由 Uvicorn 提供 ASGI 服务，内部挂载 FastAPI 和 Flask 业务接口（通过 `WSGIMiddleware`）；它处理日常 UI、认证会话、命令调度、目录操作、任务查询以及浏览器对 Artifact 的访问。
 
-`8086` 是由 Werkzeug 直接启动、线程化运行的独立 Flask 文件服务，不经过 `8085` 的 ASGI/WSGI 桥接。将大文件请求体从基础 Web 链路中分离，可以避免该包装层对大文件数据的额外处理；独立服务也针对浏览器分段上传采用流式读取与落盘。**这是实现上的隔离与优化目标，不是对吞吐速度或内存占用的无条件保证。**
+`8086` 是由 Werkzeug 直接启动、线程化运行的独立 Flask 文件服务，不经过 `8085` 的 ASGI/WSGI 桥接。将大文件请求体从基础 Web 链路中分离，可以避免该包装层对大文件数据的额外处理；独立服务也针对浏览器分段上传采用流式读取与落盘。吞吐速度及内存占用还受网络、读写策略与文件大小影响。
 
 8086 当前对外暴露三类文件入口：普通 Artifact multipart 上传、暂存文件下载，以及使用一次性 Token 的浏览器传输内容上传。8085 仍保留同名的普通上传与暂存下载兼容入口，不能认为所有文件路由已从 8085 删除。
 
@@ -78,7 +78,7 @@ Remote Files 上传到设备
 
 8085 还保留 `/api/files/upload`、`/api/upload-tmp/...` 兼容路由，不能仅凭 URL 路径判断请求实际到达哪个端口；必须结合发起请求时构造的 Base URL。Python Client 的普通 API Base URL 与 `FILE_TRANSFER_BASE_URL` 分开配置。对相对文件传输路径，后者指向 Web 端口加一；若调用方传入的是完整 HTTP URL，则按该 URL 使用，不强制改写端口。
 
-部署时仅允许访问 8085 并不等于文件操作可用：使用 8086 的 Browser 和 Client 都需要能连接这一额外端口。浏览器上传通过当前页面 URL 替换端口构造 8086 地址，因此反向代理、TLS、跨域及防火墙配置也必须覆盖这条路径。
+部署文件传输时，浏览器和 Client 都需要能访问独立的 **8086** 文件服务端口。浏览器上传通过当前页面 URL 替换端口构造 8086 地址，因此反向代理、TLS、跨域及防火墙配置也必须覆盖这条路径。
 
 ## 客户端的字节处理机制
 
@@ -117,7 +117,7 @@ Cancelable 上传构造 multipart 的头部、文件内容及尾部，在 `read(
 | `HTTP_TRANSFER_IDLE_TIMEOUT_ENABLED` | `True` |
 | `HTTP_TRANSFER_IDLE_TIMEOUT_SECONDS` | 21,600 秒，即 6 小时 |
 
-Idle Timeout 用于网络读写长时间不推进的情况，**不是整个文件传输从开始到结束的总时长上限**。设置成更大的值并不解决无法访问 8086、权限不足或目标磁盘空间不足等问题。Server 的通用 HTTP 上传请求体上限为 10 GiB；这个服务端上限与 Legacy 的 1 GiB 客户端保护相互独立。
+Idle Timeout 统计网络读写**持续没有进展**的时间；文件传输总时长可以超过这个值。设置成更大的值并不解决无法访问 8086、权限不足或目标磁盘空间不足等问题。Server 的通用 HTTP 上传请求体上限为 10 GiB；这个服务端上限与 Legacy 的 1 GiB 客户端保护相互独立。
 
 ## 上传、下发及中转阶段
 
@@ -145,7 +145,7 @@ transferring          Client 从 Server 拉取并写入本地
 completed             客户端完成下载并报告结果
 ```
 
-开始第二段时，Server 会 `reset_progress()`：清零传输字节、速率和 ETA，重新设置阶段的总大小。**Transfer Center 的百分比是当前阶段的进度，不是浏览器上传与设备下载两段工作量的累计百分比。** 因此切换到下一阶段时进度条可以重新从零开始。
+开始第二段时，Server 会 `reset_progress()`：清零传输字节、速率和 ETA，重新设置阶段的总大小。**Transfer Center 的百分比显示当前阶段的进度**；多阶段传输在切换阶段后重新从零计算。 因此切换到下一阶段时进度条可以重新从零开始。
 
 Client → Server 的路径也有 `preparing`、`staging`（上送文件字节）与 `finalizing`（确认 HTTP/Artifact 结果）等阶段。目录打包在准备阶段可能暂时没有确定的总字节数；上传完成后，Server 注册 Artifact，返回与该 Transfer 对应的 `artifact_id`。上传成功只代表文件已到达 Server；浏览器随后下载 Artifact 是另一次独立 HTTP 响应。
 
@@ -193,7 +193,7 @@ Server 根据收到的进度字节数计算完成比例，对速率采用平滑�
 
 `GET /api/transfers` 提供初始状态，之后由 SSE 维持实时更新。Web 的 Transfer Center 分为 **Active** 和 **Recent**：Active 显示文件、方向、当前阶段、进度条、已完成字节、速度、ETA 和 Cancel；Recent 显示已完成、失败或取消的任务，并允许删除记录或清空最近记录。
 
-当 `progress_supported=false`，或者缺少有效 `total_bytes` 时，界面显示不确定进度而不是假造一个百分比。例如 Legacy 上传可能正在正常运行但无法报告逐块上传字节；目录打包也可能尚未知道最终 ZIP 大小。**没有百分比不等于任务没有执行。**
+当 `progress_supported=false`，或者缺少有效 `total_bytes` 时，界面显示不确定进度而不是假造一个百分比。例如 Legacy 上传可能正在正常运行但无法报告逐块上传字节；目录打包也可能尚未知道最终 ZIP 大小。此时应查看任务状态与已传输字节，而非依靠百分比判断。
 
 ### 任务记录与 Artifact 的不同生命周期
 

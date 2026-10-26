@@ -2,7 +2,7 @@
 
 Artifact 是 RCH 在 Server 端保存、管理和复用文件的统一对象。一次远程下载、Script 上传、Job 输出或终端内容保存，最终都可以形成一个具有稳定 `artifact_id` 的文件记录。浏览器和脚本通过 Artifact API 查找、预览或下载这些文件；Command History、Background Job 等功能则保留 Artifact 引用，以便在执行结束后仍能找到相关结果。
 
-Artifact 并非传输协议，也不是远程设备文件系统的镜像。它描述的是**已经落到 Server 文件系统并完成登记的文件**。实际数据传输可能经过 8085 或 8086，也可能由 Server 直接生成文本；任务进度与取消由 File Transfer 及相应的执行管理机制负责。需要理解大文件的上传通道和 Transfer Center 时，参见 [File Transfer](file_transfer.md)。
+Artifact 是**保存在 Server 文件系统中、且已经完成登记的文件资源**。实际数据传输可能经过 8085 或 8086，也可能由 Server 直接生成文本；任务进度与取消由 File Transfer 及相应的执行管理机制负责。需要理解大文件的上传通道和 Transfer Center 时，参见 [File Transfer](file_transfer.md)。
 
 ## 文件如何成为 Artifact
 
@@ -27,7 +27,7 @@ Client / Browser / Server 内部任务
 
 文件的来源不限定为某一种命令或任务。使用通用 HTTP 上传的调用方、在 Server 直接保存命令输出的调用方，以及负责远程文件预览的 Client，最终共享同一套 Artifact 查询与访问机制。但**并不是所有创建路径都会自动发布相同的 SSE 事件**：通用 Web 上传、特定命令输出注册路径显式发布 `artifact_created`；直接调用更底层的保存服务时，仍需由上层调用方决定是否发布事件。
 
-Server 还能创建临时文件供 Client 下载，例如浏览器向远端设备上传时先暂存的文件。它们位于 `upload_tmp`，**不是已经注册的正式 Artifact**：没有可供 Artifact Manager 管理的 `artifact_id`，应按传输任务的生命周期清理，而不是当作共享文件长期保存。
+Server 还能创建临时文件供 Client 下载，例如浏览器向远端设备上传时先暂存的文件。这些文件放在 `upload_tmp`，由传输任务按其生命周期清理；正式 Artifact 经登记后才获得 `artifact_id` 并可由 Artifact Manager 管理。
 
 ## 文件身份、类型与存储组织
 
@@ -75,7 +75,7 @@ Registry 会清理文件名中的不安全字符，为实际存储名添加随�
 
 其中 `machine_id` 表示可跨连接保留的设备身份；`client_id` 对应产生文件时的具体连接。来源字段可以包含命令、Job 等关联信息，`extra` 则保存调用方附加的 JSON 元信息。共享文件在登记时会清空机器、连接、命令和 Job 来源身份，因此不能依靠它们筛选某一台设备的共享文件。
 
-Artifact 列表不是单独维护的数据库索引。Server 遍历正式 Artifact 根目录下的 `.meta.json` 文件，解析后按创建时间逆序排列，并在读取时检查 `saved_path` 是否仍存在；缺失时返回 `is_available=false` 和状态文本。直接从磁盘移走文件但保留元数据，会使它继续出现在列表中却无法下载。对于大量 Artifact，枚举元数据文件也会形成实际的目录扫描开销。
+Artifact 列表由 Server 遍历正式 Artifact 根目录中的 `.meta.json` 文件，解析后按创建时间逆序排列，并在读取时检查 `saved_path` 是否仍存在；缺失时返回 `is_available=false` 和状态文本。直接从磁盘移走文件但保留元数据，会使它继续出现在列表中却无法下载。对于大量 Artifact，枚举元数据文件也会形成实际的目录扫描开销。
 
 ## 访问、查找与内容呈现
 
@@ -128,7 +128,7 @@ Shared Files 适合保存希望从 Server 重复分发、由脚本引用或在�
 
 Artifact 的一个重要用途是让**运行结束后的文件仍可从执行记录追溯**。上传时携带 `source_command_id`，Server 在对应连接中定位绑定的历史执行条目，尝试将 Artifact 信息关联到 Command History；Job 则通过独立的文件上报将 Artifact ID 和快照存入 Job 关联记录。两者都是关联关系，而非在历史数据库中重新保存文件字节。
 
-读取历史和 Job 详情时，Server 会使用关联的 `artifact_id` 重新查询当前 Artifact。如果文件已被删除或元数据不再存在，历史项仍可保留，但会显示 `Artifact removed` 或文件不可用。这意味着删除 Artifact **不等于**删除某次 Command History、Job 执行或它们的日志。
+读取历史和 Job 详情时，Server 会使用关联的 `artifact_id` 重新查询当前 Artifact。如果文件已被删除或元数据不再存在，历史项仍可保留，但会显示 `Artifact removed` 或文件不可用。Command History、Job 运行记录和日志按各自的保留规则管理。
 
 终端还支持将完整 Client 命令输出保存为 `command_output` Artifact。对应执行器将返回的输出分块写入 Server 文件、结束后注册元数据，再返回保存位置和 `artifact_id`，而不是把完整文本重新塞回终端。浏览器也可以将终端已有的输出内容保存为命令输出 Artifact；这条路径直接调用保存文本 API，因此其事件发布行为与上传文件的标准路径不必完全相同。输出的文件名会依据分类、时间和命令显示名称生成，并由 Registry 继续加入防重名后缀。
 
@@ -165,4 +165,4 @@ Web API 以 `/api/artifacts` 为主入口。以下是接口协议的边界，用
 
 上传文件的兼容入口 `POST /api/files/upload` 同时存在于基础 Web 服务（默认 8085）和专用传输服务（默认 8086）。其 multipart 表单包含 `file`，可携带 `artifact_type`、`category`、`client_id`、`source_command_id`、Job 来源信息及 JSON `extra`。接口完成后返回注册的 Artifact 描述，浏览器再通过正式 Artifact URL 访问它。**选择 8086 并不自动意味着 Client 使用可取消传输策略，也不保证 Transfer Center 会创建进度记录。**
 
-Artifact 管理路由通常由 Web Session 或管理员 API Token 保护；Script Grant 对列表、下载、Raw 和 Preview 等读取请求有单独的 Scope 授权规则。`/api/files/upload` 是专门标记的匿名入口，8086 文件上传服务也不是完整复用基础 Web 的会话认证中间件；因此不要将 `artifact_id`、上传路径或可下载 URL 理解为已包含完整身份校验的能力。对外暴露这些接口时，应同时考虑网络入口、管理员凭据和实际调用方权限。认证方式详见 [Administrator Authentication](admin-auth.md)。
+Artifact 管理路由通常由 Web Session 或管理员 API Token 保护；Script Grant 对列表、下载、Raw 和 Preview 等读取请求有单独的 Scope 授权规则。`/api/files/upload` 是专门标记的匿名入口，8086 文件上传服务也不是完整复用基础 Web 的会话认证中间件；因此不要将 `artifact_id`、上传路径或可下载 URL 理解为已包含完整身份校验的能力。对外暴露这些接口时，应同时考虑网络入口、管理员凭据和实际调用方权限。认证方式详见 [Administrator Authentication](admin_auth.md)。

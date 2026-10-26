@@ -139,7 +139,7 @@ set SCREEN_FRAME_STRATEGY keyframe_delta
 - `LOCAL_WATCHDOG_HEARTBEAT_INTERVAL_SECONDS`：默认 **5 秒**。
 - `LOCAL_WATCHDOG_TIMEOUT_SECONDS`：默认 **15 秒**。
 
-**能查到某项配置，不等于它一定可编辑。** 运行中 Watchdog 的真实状态可另外使用 `watchdog` 或 `watchdog --json` 查看；配置开关显示为 `true`，不保证监控组件一定已经健康运行。
+配置列表同时展示只读和可修改字段； 运行中 Watchdog 的真实状态可另外使用 `watchdog` 或 `watchdog --json` 查看；配置开关显示为 `true`，不保证监控组件一定已经健康运行。
 
 ## 4. 三个常见调整示例
 
@@ -173,7 +173,7 @@ set --reset SCREEN_FRAME_STRATEGY
 
 ## 5. 保存、恢复与注意事项
 
-`set` 和 Configuration 的修改会应用到当前 Client 的运行配置；与默认值不同的设置保存在 Client 本机的外部 `runtime_config.json` 中，通常在 Client 重启后仍保留。**这不是 Server 的全局配置，也不会自动批量修改其他设备。**
+`set` 和 Configuration 修改**当前选中 Client** 的运行配置；与默认值不同的设置保存在该设备的 `runtime_config.json`，重启后继续生效。其他 Client 的配置独立管理。
 
 配置文件默认随 Client 运行用户和操作系统而定，例如 macOS 位于该运行用户的 `~/Library/Application Support/rchclient/runtime_config.json`。如果 Client 以不同系统用户身份启动，所用配置文件也可能不同；实际路径可在 `set` 输出或配置数据中查看。需要自行指定路径时，可使用启动环境变量 `RUNTIME_CONFIG_PATH`。
 

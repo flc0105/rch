@@ -13,7 +13,7 @@ RCH 同时需要识别**一台设备**和**设备上运行的一条 Client 连�
 
 一台机器运行两个 Python Client 进程时，只要它们探测到的机器特征相同，两个进程就具有同一个 `machine_id`，但有不同 `client_id`。Server 因此可以同时保留两条可独立操作的在线连接，并在设备库存中以同一个机器键记录最近设备信息。
 
-`client_id` 不是 TCP 四元组、进程 PID 或主机名；`machine_id` 也不是 Session ID。即使同一 Client 因网络中断重新建立 Socket，它仍可能使用原 `client_id`，但 Socket 本身和连接时间已经更新。详细的心跳与在线状态流转见 [Connection Lifecycle](./connection_lifecycle.md)。
+`client_id` 标识 Client 实例，`machine_id` 标识逻辑设备；Socket 会话、进程 PID 与主机名分别由其他字段表示。即使同一 Client 因网络中断重新建立 Socket，它仍可能使用原 `client_id`，但 Socket 本身和连接时间已经更新。详细的心跳与在线状态流转见 [Connection Lifecycle](./connection_lifecycle.md)。
 
 ## 2. 机器指纹的完整构造过程
 
@@ -203,11 +203,11 @@ Content-Type: application/json
 
 ## 7. 身份稳定性、安全性与排查
 
-**确定性不等于永久不变。** 七个规范化字段任意一个发生有效变化，都可能导致不同 SHA-256；即使原生 `native_id` 不变，修改主机名或升级系统版本也可能得到新 `machine_id`。相反，克隆系统镜像如果保留相同系统 ID、主机名和其余特征，也可能计算出同一机器身份。重新构建 Client Bundle 本身不参与 Fingerprint，但更换运行系统环境可能影响其结果。
+**机器指纹由七个规范化字段共同决定。** 任意字段发生有效变化，都可能得到不同 SHA-256；即使原生 `native_id` 不变，修改主机名或升级系统版本也可能得到新 `machine_id`。相反，克隆系统镜像如果保留相同系统 ID、主机名和其余特征，也可能计算出同一机器身份。重新构建 Client Bundle 本身不参与 Fingerprint，但更换运行系统环境可能影响其结果。
 
 这直接影响 Server 设备库存：新 `machine_id` 会作为新的机器键写入最近设备；原别名、隐藏、排序、分组和历史引用仍绑定旧 Machine ID。当前代码没有靠主机名或相似硬件信息自动把两个不同哈希合并的迁移逻辑；即使它们确实来自同一物理设备，也不能假定用户偏好会自动转移。
 
-**指纹不是认证。** SHA-256 在这里用于确定性标识，不是签名、私钥或者硬件可信证明。握手中的 `machine_id` 与 `machine_fingerprint_basis` 是 Client 自报字段，不能证明其未被伪造；更不能据此绕开 Session / Bearer / Script Grant 等认证体系。原始 `native_id` 虽未单独出现在正常 Web 连接载荷，但 `machine_fingerprint_basis` 可能包含它；Server 序列化该字段并将其保存到最近设备快照，因此日志、诊断导出与 API 数据应控制访问范围。不要随意公开完整 Basis。
+**机器指纹用于身份归集。** 认证仍由 Session、Bearer Token 和 Script Grant 等机制处理；SHA-256 在这里用于确定性标识，没有签名或硬件可信证明功能。握手中的 `machine_id` 与 `machine_fingerprint_basis` 是 Client 自报字段，不能证明其未被伪造；更不能据此绕开 Session / Bearer / Script Grant 等认证体系。原始 `native_id` 虽未单独出现在正常 Web 连接载荷，但 `machine_fingerprint_basis` 可能包含它；Server 序列化该字段并将其保存到最近设备快照，因此日志、诊断导出与 API 数据应控制访问范围。不要随意公开完整 Basis。
 
 遇到设备重复、丢失分组或历史不连续，应依次确认：
 

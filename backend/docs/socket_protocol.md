@@ -66,7 +66,7 @@ Python Client 的 `ClientReceiverWorker` 在后台线程持续调用 `ServerConn
 
 Deferred 消息使用 `queue.Queue`。`Client.wait()` 通过 `recv_command(timeout=0.5)` 取出一条，调用命令执行器处理，再以 `send_result()` 回传（或由命令执行中的输出方法陆续回传）。这一路径使常规前台命令按 Client 执行循环串行处理，并与 Server 对同一连接的前台任务占槽机制配合；它**不意味着** PTY、监控和屏幕采集会占用同一个待执行队列。
 
-Immediate 指的是**不排入普通命令队列**，不是“保证不阻塞接收线程”。如果某个立即处理的 Handler 自己执行耗时同步操作，依然可能拖慢下一帧的读取。扩展消息时应把真正耗时的工作交给管理器或合适的执行线程。
+Immediate 消息**直接由接收路径处理，不进入普通命令队列**。如果某个立即处理的 Handler 自己执行耗时同步操作，依然可能拖慢下一帧的读取。扩展消息时应把真正耗时的工作交给管理器或合适的执行线程。
 
 ### Server：每个连接一条接收处理路径
 
@@ -118,7 +118,7 @@ Server 的结果分配并不是“把任何相同类型的消息广播给所有�
 
 这意味着当前 Server 的命令结果等待机制按**单个会话的当前等待命令**设计，并非支持多个命令在同一个结果队列里同时无序交错回包的通用多路复用 RPC。扩展前台命令并发时，必须同步设计更严格的结果归属，而不能只依靠消息 `id` 的存在。
 
-### 取消不是结果的替代品
+### 取消确认与最终执行结果
 
 取消控制本身使用一条独立消息：
 
@@ -128,7 +128,7 @@ Server 的结果分配并不是“把任何相同类型的消息广播给所有�
 
 其中 `id=19` 是取消请求的消息 ID，`target_id=18` 才是被取消的命令。Python Client 立即进入 `cancel_command()`，回应 `cancel_ack`，携带 `target_id`、`accepted`、`state`、`message`、`cwd`、`client_ts` 等字段。根据执行器回调，还可能后续再报告 `stopped` 或 `completed` 终态。
 
-**`accepted` 不等于命令已经终止。** Server 收到 `cancel_ack` 时，会依据 `target_id` 更新当前前台任务的取消状态；实际输出、收尾及前台槽释放依然要走命令生命周期。`cancel_ack.id` 不用于普通结果队首匹配。详见 [Command Execution Pipeline](command_execution.md)。
+**`accepted` 表示 Client 已接收取消请求。** Server 收到 `cancel_ack` 时，会依据 `target_id` 更新当前前台任务的取消状态；实际输出、收尾及前台槽释放依然要走命令生命周期。`cancel_ack.id` 不用于普通结果队首匹配。详见 [Command Execution Pipeline](command_execution.md)。
 
 ## 4. 不同用途的长会话消息
 

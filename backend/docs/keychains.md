@@ -2,7 +2,7 @@
 
 RCH 的 Keychains 是一个**由 Server 管理、按机器身份分组的凭据存储与调用功能**。它解决两个相连但不同的问题：管理员在 Web 中维护登录凭据与通用 Secret；经过授权的 Client Script 在运行时从 Server 获取所需值，而不是将密码硬编码在脚本库中。Keychains 不使用 Client 操作系统的密码钥匙串，也不是与 Server Admin 登录共用的账号数据库。
 
-本文集中解释数据模型、机器范围、管理页面、明文读写路径、Script SDK 与权限、安全边界。完整的临时 Grant 签发生命周期见 [Administrator Authentication](admin-auth.md) 与 [Scripts](scripts.md)；一般 SDK 约定见 [Script SDK API](script-sdk.md)；机器指纹如何变化见 [Device Identity](device_identity.md)。这些独立主题不在此重复展开。
+本文集中解释数据模型、机器范围、管理页面、明文读写路径、Script SDK 与权限、安全边界。完整的临时 Grant 签发生命周期见 [Administrator Authentication](admin_auth.md) 与 [Scripts](scripts.md)；一般 SDK 约定见 [Script SDK API](script-sdk.md)；机器指纹如何变化见 [Device Identity](device_identity.md)。这些独立主题不在此重复展开。
 
 ## 一、数据模型与存放范围
 
@@ -67,7 +67,7 @@ Machine ID 来源于机器指纹；系统升级、改主机名等操作可能导
 有几个值得开发维护时注意的限制：
 
 - 无法读取或解析的 JSON 在 `_read_payload()` 中返回空列表；不是一个向用户显式暴露的“凭据损坏”状态。不要在文件损坏后未经备份直接通过界面重建并覆盖。
-- 删除条目是重写该机器的 JSON 列表，不是安全擦除存储介质，也不会自动清除外部备份。
+- 删除条目会重写该机器的 JSON 列表；若需要安全擦除和备份清理，应按存储介质及备份策略单独处理。
 - 同机器范围编辑可原子替换单个文件；把条目移动到**另一台机器**时，会先写旧范围、再写新范围，**两文件之间没有数据库事务保证**。跨范围移动中断时需要检查双方是否一致。
 - 值归一化会去除前后空格；即使从 HTTP 传入字符串，不能保证保留所有原始文本字节。
 
@@ -134,7 +134,7 @@ Keychains 在 Web 的 `KeychainManagerDialog` 中管理；其 API 由 Server 本
 
 返回业务数据在统一响应对象的 `data.item` 中，`item.secret_value` 是真正明文；`GET /api/keychains` 的 `data.items` 则移除了这一字段。创建、编辑与删除的返回 `item` 同样使用公开形式，不附带明文；**只有详情及 Resolve 是明文读取路径**。`WebKeychainApi` 会根据当前/已存机器列表补全展示 `hostname`，但是 `hostname` 不用于鉴别授权。
 
-当前 HTTP 层并没有针对不同 Machine ID 的额外每设备 ACL，Script Grant 策略也不根据请求体的 `machine_id` 或 `name` 执行细粒度判断。**这是 API 路由访问授权，不是“只能读取当前这台机器某条凭据”的强制权限隔离。**
+当前 HTTP 层并没有针对不同 Machine ID 的额外每设备 ACL，Script Grant 策略也不根据请求体的 `machine_id` 或 `name` 执行细粒度判断。**该权限模型按 API 路由授权**；访问路径后续能操作的机器与条目范围取决于路由本身的校验。
 
 ## 六、Script SDK 如何读取与创建 Keychains
 
@@ -179,7 +179,7 @@ shared_token = keychains.get_secret("shared-api-token", scope="shared")
 
 ### Script Grant 的实际边界
 
-Scripts 在可信 Metadata 中声明 `keychains:list`、`keychains:resolve` 或 `keychains:create`；正常 Web 结构化运行时 Server 签发与命令相关、有效期和次数受限的临时 Grant。`ClientApiClient` 仅在请求指向配置的 Server API Base URL 时自动附加 `X-Script-Grant-Token`。授权码和客户端身份校验的完整机制见 [Scripts](scripts.md) 与 [Administrator Authentication](admin-auth.md)。
+Scripts 在可信 Metadata 中声明 `keychains:list`、`keychains:resolve` 或 `keychains:create`；正常 Web 结构化运行时 Server 签发与命令相关、有效期和次数受限的临时 Grant。`ClientApiClient` 仅在请求指向配置的 Server API Base URL 时自动附加 `X-Script-Grant-Token`。授权码和客户端身份校验的完整机制见 [Scripts](scripts.md) 与 [Administrator Authentication](admin_auth.md)。
 
 **不要混淆三件事：**
 

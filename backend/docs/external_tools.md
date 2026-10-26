@@ -2,7 +2,7 @@
 
 External Tools 把可分发的外部程序与运行时进程解耦。Package 描述可安装的程序资源，Exec 描述可调用入口，Module 描述一次具体用途及运行方式；目标平台选择、安装缓存、命令模板和执行结果都由这些元数据共同驱动。
 
-程序被安装并不代表某个 Module 已经运行，结束运行也不代表 Package 被卸载。Web Manager、终端控制与 Script SDK 使用同一组运行对象，但 Daemon 与 Oneshot 的生命周期、日志和状态维护差异明显，应沿着分发、安装、启动、观察和回收的完整路径理解。
+Package 安装、Module 运行和 Package 卸载分别管理，各有独立状态。Web Manager、终端控制与 Script SDK 使用同一组运行对象，但 Daemon 与 Oneshot 的生命周期、日志和状态维护差异明显，应沿着分发、安装、启动、观察和回收的完整路径理解。
 
 ## 分发单元与运行单元如何协作
 
@@ -116,7 +116,7 @@ External Tool 以 JSON Metadata 描述一个可安装的 Package。Server 读取
 | Module | `config` | 可选的运行前配置文件生成规则 |
 | Module | `lifecycle` | Daemon 的停止和状态相关声明 |
 
-规范化时，Package 的 `params` 会和 Module 的 `params` **依次拼接**，形成 Module 的运行参数 Schema。它不是同名字段的覆盖合并，因此公共参数与 Module 私有参数应避免重名。`execution` 缺失或不是规定的两个值、Module 引用了不存在的 Exec，都会导致该 Package 的 Metadata 无效。
+规范化时，Package 的 `params` 会和 Module 的 `params` **依次拼接**，形成 Module 的运行参数 Schema。公共参数与 Module 私有参数会顺序拼接，应避免同名参数。`execution` 缺失或不是规定的两个值、Module 引用了不存在的 Exec，都会导致该 Package 的 Metadata 无效。
 
 `tool_id` 是 `package_id.module_id`，而 `exec_name` 是 `execs` 中的名称：调用运行 API 要提供 Module 的 `tool_id`，调用 `xt` 或 SDK 的执行入口则通常提供 `exec_name`，不能混为一谈。
 
@@ -151,7 +151,7 @@ External Tool 的共享参数解析对缺失的可选值采用适合命令模板
 
 选择时优先寻找目标平台与架构完全匹配的 Package Key。如果没有完全匹配，会检查通配平台/架构或 `compatible_targets` 明确声明的兼容目标。只有一个匹配项时才选择；如果出现多个候选，直接报歧义错误，而不是随意取第一个。
 
-`common-all` 可声明 `platform: "*"` 与 `arch: "all"`，适合真正不依赖单一 OS/CPU 的内容包；但是**通用打包不意味着其中的运行程序可以在所有平台执行**。例如脚本包仍可能依赖目标 Client 的 Python 或 Java 环境。
+`common-all` 可声明 `platform: "*"` 与 `arch: "all"`，适合跨 OS/CPU 分发的内容包；实际运行仍要求目标设备具有对应的解释器、可执行格式和系统能力。例如脚本包仍可能依赖目标 Client 的 Python 或 Java 环境。
 
 `compatible_targets` 可标记特定兼容条件，例如 macOS Intel 构建在 Apple Silicon 上通过 Rosetta 运行。这是明确允许选择该包的声明；**选择逻辑本身不负责自动安装或检测 Rosetta 等兼容依赖**，运行环境仍须满足对应要求。
 

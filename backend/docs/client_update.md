@@ -6,7 +6,7 @@ RCH 使用两种不同的身份描述 Client：`build_version` 标识一次可�
 
 ## 构建产物与源码身份
 
-Server 的 Agent Builder 为每次构建生成独立的 `build_id`，形式为本地时间戳加一段随机 UUID。它再结合构建类型产生 `build_version`，并记录在产物元数据中。**重复构建完全相同的源码，仍会得到不同的 Build Version。** Build Version 不是语义化版本号，也不用于判断某台设备的源码是否过期。
+Server 的 Agent Builder 为每次构建生成独立的 `build_id`，形式为本地时间戳加一段随机 UUID。它再结合构建类型产生 `build_version`，并记录在产物元数据中。**即使源码相同，每次构建也产生独立的 Build Version。** Client 是否需要更新由源码 Revision 判断。
 
 Python Source Bundle 使用统一的命名契约：`rchclient-source-bundle-<build_id>.zip`；对应 `build_version` 是去掉 `.zip` 后的名称。该名称同时用作更新后的 Release 目录名，因而下载文件、解压目录和运行实例所报告的 Build Version 可以互相定位。
 
@@ -19,15 +19,13 @@ Python Source Bundle 使用统一的命名契约：`rchclient-source-bundle-<bui
 | `client_revision_files` | 相对文件路径对应的文件内容指纹 | 精确展示新增、删除和修改的源码文件 |
 | `build_version` | 某次构建产物身份，源码开发运行时通常为 `dev` | 定位构建、Release 和客户端的交付来源 |
 
-Revision 只覆盖上面规定的源码范围，不等于整个仓库、Web 前端或 Server 的 Git 版本。计算时排除 `client/config`、`__pycache__`、虚拟环境、构建缓存，以及 `.pyc` 等非源码内容。因此，仅修改 Client 的 Server 地址、Profile 或其配置模块，不一定改变 Revision；反过来，增加、删除或修改被纳入范围的运行代码文件会改变指纹。文件差异比较使用路径和文件内容的实际指纹，并不依赖 Git 工作区或提交记录。
+Revision 对指定的 Client 源码文件计算指纹，覆盖范围见上文；计算时排除 `client/config`、`__pycache__`、虚拟环境、构建缓存，以及 `.pyc` 等非源码内容。因此，仅修改 Client 的 Server 地址、Profile 或其配置模块，不一定改变 Revision；反过来，增加、删除或修改被纳入范围的运行代码文件会改变指纹。文件差异比较使用路径和文件内容的实际指纹，并不依赖 Git 工作区或提交记录。
 
 ### 构建时注入与源码启动
 
 生成 Python Bundle 时，Server 将目标 Socket 地址、Web 地址及端口、`build_version`、Revision 和分组/文件指纹写入 Bundle 内的 Client 配置。计算 Revision 的依据是 **Server 原始 Client 源码**，不是把构建后注入的不同连接参数再重新算作代码变化。Bundle 随后压缩并交付，Client 在握手时读取这些值。
 
 在源码/IDE 环境中直接运行 Client，配置 Profile 通常给出 `build_version=dev`，没有预先注入的 `CLIENT_SOURCE_REVISION`。这种情况下 Client 首次构造握手信息时在本地计算源码指纹，并在当前进程内缓存。**编辑本地源码后，已经运行的进程不会自动重新计算指纹或热加载代码**；应重新启动对应源码进程以重新生成握手信息。
-
-Go Client 也会在握手时报告自身的 Build Version，但当前 Go 握手不提供上述 Python 源码 Revision Manifest。因此不能将 Python Source Bundle 的 Revision 检测结果直接解释为 Go 可执行程序的版本判定。
 
 ## Server 如何生成和保存可部署 Client
 
@@ -53,7 +51,7 @@ Content-Type: application/json
 }
 ```
 
-Server 在临时工作目录复制 Bundle 所需源码，注入 Client 配置后打包，再把构建结果复制到 `SERVER_RUNTIME_DIR/agent_output/`（默认 `backend/runtime/agent_output/`）。同目录下的 `.metadata/<filename>.json` 保存构建时间、Build Version、构建方式、系统和架构、连接参数、请求来源等信息。构建成功会发布 `agent_build_lifecycle` 事件（`completed`），失败则发布 `error`；这些是**构建事件**，不是 Client 已经升级成功的确认。
+Server 在临时工作目录复制 Bundle 所需源码，注入 Client 配置后打包，再把构建结果复制到 `SERVER_RUNTIME_DIR/agent_output/`（默认 `backend/runtime/agent_output/`）。同目录下的 `.metadata/<filename>.json` 保存构建时间、Build Version、构建方式、系统和架构、连接参数、请求来源等信息。构建成功会发布 `agent_build_lifecycle` 事件（`completed`），失败则发布 `error`。
 
 `POST /api/agent/build` 的 Bundle 响应提供 `file_name`、`build_version`、`download_url` 以及服务端对实际 ZIP 计算的 `sha256`。产物下载通过 **Web/API 端口**上的 `GET /api/agent/download/{filename}` 完成，不经过文件传输专线的 8086。构建产物可以通过 `/api/agent/outputs` 查看，并通过相应删除接口移除；删除某个 Server 构建产物，不会卸载已安装在远程设备上的 Release。
 
@@ -63,7 +61,7 @@ Server 在临时工作目录复制 Bundle 所需源码，注入 Client 配置后
 
 Python Client 建立 TCP 连接后，在 `info` 握手中发送 `build_version`、`client_revision`、`client_revision_parts` 和 `client_revision_files`。Server 将这些字段保存在对应 `ClientSession`，同时用于设备信息展示与按需版本检查。
 
-Server 对**在线连接**把握手 Revision 与本机当前源码 Revision 比较：两者都存在且一致时为 `current`，两者都存在但不同为 `outdated`，任何一方缺失时为 `unknown`。这不是比较 Build Version 的字符串大小。即使新的构建产物名称不同，只要源码指纹相同，仍可以是 `current`。
+Server 对**在线连接**把握手 Revision 与本机当前源码 Revision 比较：两者都存在且一致时为 `current`，两者都存在但不同为 `outdated`，任何一方缺失时为 `unknown`。状态由源码指纹比较确定。即使新的构建产物名称不同，只要源码指纹相同，仍可以是 `current`。
 
 设备列表请求会为当前在线会话附带 `client_revision_state`。连接详情需要精确差异时，可以查询：
 
@@ -118,13 +116,13 @@ Web Terminal 提交 update
 update --keep-old
 ```
 
-整个下载使用 HTTP 流式读取，先落到 `downloads/<bundle-name>.zip.part`，成功后再替换成 ZIP。下载异常时会移除 `.part`。归档解压会检查路径安全，并先解到独立临时目录；确认其中有 `rchclient.py` 后才发布为最终 Release。对于已经存在且具有入口脚本的同名目录，当前逻辑会直接复用，不会删除可能正在运行的目录。**这里的入口文件检查不等于对安装环境、所有依赖或完整源码做端到端自检。**
+整个下载使用 HTTP 流式读取，先落到 `downloads/<bundle-name>.zip.part`，成功后再替换成 ZIP。下载异常时会移除 `.part`。归档解压会检查路径安全，并先解到独立临时目录；确认其中有 `rchclient.py` 后才发布为最终 Release。对于已经存在且具有入口脚本的同名目录，当前逻辑会直接复用，不会删除可能正在运行的目录。
 
 ### 新旧进程的切换条件
 
 非 iOS 平台启动新的 Python 进程时，将 `--update-ready-file` 交给新进程。新进程完成本地 Socket 连接、发送 `info` 握手后，写入包含 `pid`、`client_id` 和 `client_revision` 的就绪文件。旧 Client 最多等待 **10 秒**，要求标记中的 PID 与自己创建的新进程一致，并继续观察新进程约 **2 秒**，确认它没有立即退出。
 
-就绪文件意味着新进程已经执行到**本地连接与握手发送阶段**；它不是 Server 返回的一份独立“上线审核成功”确认，也不保证之后一直在线。若新进程提前退出或就绪等待超时，原 Client 会报告失败，尝试终止未通过交接的新进程，**不会主动退出旧 Client**。启动异常日志可附在错误信息中，探针文件最后会清理。
+就绪文件意味着新进程已经执行到**本地连接与握手发送阶段**；若新进程提前退出或就绪等待超时，原 Client 会报告失败，尝试终止未通过交接的新进程，**不会主动退出旧 Client**。启动异常日志可附在错误信息中，探针文件最后会清理。
 
 就绪确认后，默认先报告执行结果，再短暂延迟、停止当前 Guard Manager、关闭 Socket 并退出原进程；`--keep-old` 跳过这个旧进程退出步骤。因此保留旧实例时，在设备上可能同时看到多个具有不同 `client_id` 的活动连接。与设备身份、连接历史的区别，详见 [Connection Lifecycle](connection_lifecycle.md)。
 
@@ -193,11 +191,11 @@ Agent Output 或其他构建产物。删除不可恢复，应在批准 Preview �
 
 遇到更新提示没有出现时，先确认目标设备当前是否真正 Online、Client 是否提交了 `client_revision`、是否在源码模式下尚未重启，以及 Server 当前是否运行在预期的源码目录。若整体 Revision 不同却没有逐文件差异，检查握手中是否提供了 `client_revision_files`。这些诊断信息都依赖当前连接快照，而不是历史设备缓存。
 
-更新失败可按请求构建、下载、解压、启动与交接的实际阶段定位：构建依赖 Server 的构建能力与源码文件；下载依赖目标 Client 对 8085 Web 端口的访问；新 Release 启动还依赖目标系统的 Python 解释器、所需第三方依赖及 Socket 9999 可达。只有 HTTP Web 服务可达，并不能保证新 Client 可以建立 TCP 连接。连接地址在构建时已注入 Bundle，因此 Server 上生成构建的地址参数必须对目标设备可用。
+更新失败可按请求构建、下载、解压、启动与交接的实际阶段定位：构建依赖 Server 的构建能力与源码文件；下载依赖目标 Client 对 8085 Web 端口的访问；新 Release 启动还依赖目标系统的 Python 解释器、所需第三方依赖及 Socket 9999 可达。安装验证需要同时检查 HTTP 下载端口与 Client 的 TCP Socket 连接端口。连接地址在构建时已注入 Bundle，因此 Server 上生成构建的地址参数必须对目标设备可用。
 
 若新进程没有按时提交就绪标记或在稳定性检查期间退出，旧进程会保留；这属于避免过早关闭旧连接的交接保护，不是原子级自动回滚已解压文件的事务。反之，成功交接后的新进程仍可能在稍后因运行环境或网络问题断开，不能将短暂存活检查解释为长期健康保证。
 
-`POST /api/agent/build` 与产物下载目前允许匿名请求，部署时需要把构建服务的网络暴露面作为独立运维边界考虑；它不等于通过了 Web 管理员登录。需要人工下载、安装或维护原始构建产物时，按 [Client Bootstrap 与首次部署](bootstrap.md) 的入口和安装方式处理；需要理解执行期间的任务取消与超时，则参阅 [Shell-like Commands](shell_like_commands.md)。
+`POST /api/agent/build` 与产物下载目前允许匿名请求，部署时需要把构建服务的网络暴露面作为独立运维边界考虑；构建和下载接口需要单独纳入部署网络访问控制。需要人工下载、安装或维护原始构建产物时，按 [Client Bootstrap 与首次部署](bootstrap.md) 的入口和安装方式处理；需要理解执行期间的任务取消与超时，则参阅 [Shell-like Commands](shell_like_commands.md)。
 
 ## Process Watchdog 更新交接
 

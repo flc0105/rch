@@ -1,6 +1,6 @@
 # Desktop Notifier：独立桌面通知消费者
 
-RCH Desktop Notifier 是独立于 Server、浏览器和远程 Python Client 的**本机通知进程**。它以 Bearer Token 连接 Server 的持久通知 SSE 流，按照用户的投递偏好接收通知，把标题和正文交给操作系统的通知接口，并将处理进度保存在本地游标文件中。它既不是远程 Client 的一个命令，也不是浏览器 Notification Center 的替代品。
+RCH Desktop Notifier 是独立于 Server、浏览器和远程 Python Client 的**本机通知进程**。它以 Bearer Token 连接 Server 的持久通知 SSE 流，按照用户的投递偏好接收通知，把标题和正文交给操作系统的通知接口，并将处理进度保存在本地游标文件中。它由本地通知进程负责投递，与浏览器 Notification Center 和远程 Client 各自独立运行。
 
 这篇文档说明独立消费者的部署、运行、交付和故障边界。**哪些业务事件会产生通知、Server 如何投影通知历史、Web Notification Center 如何管理记录**，统一见 [SSE Notifications](sse_notifications.md)；这里不重复列举业务事件类型或历史表结构。
 
@@ -128,7 +128,7 @@ Last-Event-ID: <optional-last-notification-id>
 
 Server 收到有效的 `Last-Event-ID` 时，会从 SQLite 返回游标**之后**的通知记录，然后接续实时队列。订阅早于回放查询注册，因此 Server 用 `replayed_ids` 去除回放与实时窗口的重复 ID。无效游标则发出 `reset`；客户端清理游标，继续等待后续通知，**不会凭空恢复已经被清理的旧记录**。
 
-这是一套“处理后记录进度”的尽力交付模型，**不是端到端严格恰好一次通知**：
+通知在处理后记录游标，以尽力交付方式处理重连与重复消息：
 
 - `notify()` 正常返回但状态文件尚未写好就退出，重连可能再次显示同一通知。
 - 桌面后端正常返回仅表示系统通知请求被接受/提交；用户是否实际看到不在此协议确认范围内。
@@ -166,7 +166,7 @@ Server 收到有效的 `Last-Event-ID` 时，会从 SQLite 返回游标**之后*
 - 通知标题和消息可能包含敏感操作信息；桌面系统的通知预览/锁屏策略需要单独配置。
 - `Last-Event-ID` 仅用于重放定位，不能作为身份认证或访问授权凭据。
 
-相关 Web 身份认证与 Token 来源见 [Admin Auth](admin-auth.md)；业务通知的生成、用户投递偏好与删除见 [SSE Notifications](sse_notifications.md)。
+相关 Web 身份认证与 Token 来源见 [Admin Auth](admin_auth.md)；业务通知的生成、用户投递偏好与删除见 [SSE Notifications](sse_notifications.md)。
 
 ## 7. 常见问题与调试路径
 

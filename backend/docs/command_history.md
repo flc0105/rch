@@ -46,7 +46,7 @@ Transfer Activity 的 `resolved` 只记录已存在的 `transfer_id`（如有）
 
 `invocation.input` 是用户真实调用形式，`target` 是可选的 Alias 或 Script 业务身份，`arguments` 是结构化参数（普通 Shell 命令不做强行解析）；`resolved.command_type` 是实际派发类型；只在适合保存真实命令文本时提供 `resolved.command`。Script 实际源码属于执行传输，不复制到持久 Activity。`result` 只存 `truncated` 和原有 `output_records`，输出摘要从记录即时计算而非新增持久字段。`files` 仍是独立的 Artifact 引用数组。`task_id` 只用于内部运行时，不是 Activity 公共字段。
 
-状态：`running`、`cancelling`、`success`、`error`、`cancelled`、`interrupted`、`timed_out`。运行中可通过既有任务 Cancel 请求进入 `cancelling`，但并不自动成为最终 `cancelled`；明确超时或连接中断可单独归类，不能把所有无法证明成功的情况都写成成功。将来 Job 可能使用 `stopping/stopped`，本版不接入。Script Cancel 只更新原 `run` Activity，不单独新增 Stop 记录。Errors 筛选匹配 `error/cancelled/interrupted/timed_out`。没有明确执行证据的 `pending` 只表示内部提交准备，不在“已派发后才持久化”的第一版中制造额外记录。
+状态：`running`、`cancelling`、`success`、`error`、`cancelled`、`interrupted`、`timed_out`。运行中的任务收到 Cancel 请求后进入 `cancelling`，最终状态由执行结果决定；明确超时或连接中断可单独归类，不能把所有无法证明成功的情况都写成成功。将来 Job 可能使用 `stopping/stopped`，本版不接入。Script Cancel 只更新原 `run` Activity，不单独新增 Stop 记录。Errors 筛选匹配 `error/cancelled/interrupted/timed_out`。没有明确执行证据的 `pending` 只表示内部提交准备，不在“已派发后才持久化”的第一版中制造额外记录。
 
 ### 输出与 Artifact
 
@@ -157,4 +157,4 @@ Content-Type: application/json
 
 Activity Center 会保存调用文本、可记录的实际命令及部分执行输出，当前没有针对密码、Token 或其他敏感字符串的通用自动脱敏功能。避免直接把凭据拼进命令行；否则它们可能出现在历史、执行详情和其他可访问的命令记录中。
 
-历史记录的持久化不等于命令输出和关联文件会永久完整可用。Recent 有数量上限，Activity 的输出明细有大小上限，Artifact 另有自己的生命周期；排查问题时应分别核对这三者。
+历史保留策略分别作用于 Quick Recent、Activity 输出和 Artifact：Recent 有数量上限，Activity 输出有大小限制，Artifact 文件按独立的文件生命周期管理。排障时分别检查相应记录与文件。

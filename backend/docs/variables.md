@@ -180,7 +180,7 @@ shell echo ${rch:hostname} ${rch:pid} ${rch:hostname}
 
 解析器在一轮替换中处理匹配的占位符。`rch` 和 `path` 变量名不区分大小写，命名空间也不区分大小写，因此 `${RCH:PID}` 与 `${rch:pid}` 能解析为同一项。`env` 的名称部分则按输入名称读取系统环境变量。
 
-RCH Variables **不是表达式语言**：不支持计算、条件、函数调用，也没有通过它创建自定义持久化变量的操作。正确写法需要带有受支持的命名空间，如 `${rch:pid}`。不符合 RCH 变量格式的其他字符串（例如 `${pid}`）不会被这套解析器当作 RCH 变量替换；如果随后进入系统 Shell，则由 Shell 自己决定是否处理。
+RCH Variables 用于解析**预定义的运行时、路径和环境变量**；计算、条件、函数调用及持久化自定义变量不在当前语法范围内。正确写法需要带有受支持的命名空间，如 `${rch:pid}`。不符合 RCH 变量格式的其他字符串（例如 `${pid}`）不会被这套解析器当作 RCH 变量替换；如果随后进入系统 Shell，则由 Shell 自己决定是否处理。
 
 主要异常行为如下：
 
@@ -327,6 +327,6 @@ Script 可使用进程内或 `subprocess_pipe` Python 执行方式。两者都�
 | Script 中使用 `variables` 提示 `NameError` | 添加 `from client.runtime.sdk import variables` 显式导入 |
 | Subprocess Script 的 `rch:pid` 不等于 `os.getpid()` | 前者表示主 Client，后者是当前 Python 子进程 |
 
-RCH Variables 不是可持久化管理的自定义变量库。它目前提供 23 个 RCH 运行时变量、4 个 Path 快捷变量和动态读取的 Environment 命名空间；Web 端负责展示与补全，不提供变量编辑功能。
+RCH Variables 提供 23 个运行时变量、4 个 Path 快捷变量和动态读取的 Environment 命名空间；Web 端负责展示与补全，不提供变量编辑功能。
 
 使用环境变量时尤其应注意敏感信息和命令构造：读取 `${env:NAME}` 不等于安全输出，变量值中的空格、引号、换行或 Shell 特殊字符都可能改变命令行为。对于需要精确控制参数边界的脚本，优先使用 Python 的结构化参数和 SDK 返回值处理，而不是把未知内容直接拼接进 Shell 命令。

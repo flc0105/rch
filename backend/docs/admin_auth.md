@@ -120,7 +120,7 @@ Server 还原密码并继续使用原有的 scrypt 哈希校验，`auth.json` �
 
 Session 主要由以下两个接口管理：`GET /api/auth/session` 可检测当前是否已认证；`POST /api/auth/logout` 清除当前会话。`/api/auth/session` 本身允许匿名请求，未认证时返回 `authenticated: false`，而不是把它视为一个必须登录才能访问的页面。Web 首页在未认证时跳转登录页，受保护的 `/api/` 请求失败则返回 `401`；前端收到该状态会引导用户重新登录。
 
-当前 Session 是 Flask Cookie Session：Cookie 默认名为 `rch_admin_session`，默认有效期七天，设置了 `HttpOnly` 和 `SameSite=Lax`，并用 `session_secret` 签名。它不是数据库中可逐条管理的 Session 记录，Logout 清除的是当前浏览器会话。每个 Session 还绑定基于当前用户名、密码哈希和 Session Secret 计算的凭据标识，因此修改密码并重启后，旧 Cookie 即使仍在有效期内也会被拒绝。
+当前 Session 是 Flask Cookie Session：Cookie 默认名为 `rch_admin_session`，默认有效期七天，设置了 `HttpOnly` 和 `SameSite=Lax`，并用 `session_secret` 签名。会话状态由签名 Cookie 维护；Logout 清除当前浏览器的认证会话。每个 Session 还绑定基于当前用户名、密码哈希和 Session Secret 计算的凭据标识，因此修改密码并重启后，旧 Cookie 即使仍在有效期内也会被拒绝。
 
 当前配置没有显式设置 `SESSION_COOKIE_SECURE=True`；如果管理界面暴露到网络，应在可信的 HTTPS 反向代理和 Cookie/会话安全策略下部署。`SameSite=Lax` 不应被解释为所有修改类请求都具备独立的 CSRF 防护。
 
@@ -150,7 +150,7 @@ unset RCH_API_TOKEN
 
 Desktop Notifier 是这个 Token 的实际使用场景。Notifier 会携带相同的 `Authorization: Bearer ...` 访问 `/api/notifications/stream`，并支持在其独立的 `config.json` 配置 `token`，或通过 **Notifier 进程自己的** `RCH_NOTIFIER_TOKEN` 环境变量注入。该环境变量不会生成或修改 RCH Server 的 `auth.json`。Notifier 虽然只读取通知流，但使用的仍是管理员 Token，配置文件的保存权限应按管理员凭据处理。
 
-需要注意普通 API 认证与文件传输、PTY/Screen WebSocket 的专用访问 Token 是不同机制。当前部分路由明确用 `@allow_anonymous` 跳过通用认证守卫，8086 专用文件传输服务也不是这个 Flask WebAuthGuard 的完整镜像；因此不能据此声称 **所有** HTTP、Socket 或 WebSocket 通道都由管理员 API Token 统一保护。
+Web API、文件传输服务与 PTY/Screen WebSocket 分别有对应的认证或访问令牌机制。当前部分路由明确用 `@allow_anonymous` 跳过通用认证守卫，8086 专用文件传输服务也不是这个 Flask WebAuthGuard 的完整镜像；因此不能据此声称 **所有** HTTP、Socket 或 WebSocket 通道都由管理员 API Token 统一保护。
 
 ## 委托给执行任务的临时权限
 

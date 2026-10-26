@@ -10,7 +10,7 @@ Server 启动时建立 AliasManager，读取持久化的 Alias 定义。正常�
 
 Alias 解析只执行一轮：选择当前连接生效的模板，按参数名替换 `<name>`，生成一条 `COMMAND_TYPE_COMMAND` 类型的普通远程命令。Server 在此不会重新识别展开结果是不是另一个 Alias、Server Built-in 或顶层 `acmd`。Client 收到普通命令后才应用 Client 变量展开，并按 **Shell-like Commands** 的规则尝试导出的内置命令；未命中才通过系统 Shell 回退执行。
 
-所以，**Alias 可以定义为普通 Shell-like 命令，包括 Client 导出的命令入口以及普通 Shell 文本；并不限定只能写 `shell ...`。** 但模板内使用的具体 Client 命令仍需在目标平台实际可用。它不是能够重走所有 Server 命令入口的通用宏系统。
+所以，**Alias 可以定义为普通 Shell-like 命令，包括 Client 导出的命令入口以及普通 Shell 文本；并不限定只能写 `shell ...`。** 但模板内使用的具体 Client 命令仍需在目标平台实际可用。终端调用 Alias 时，展开结果以普通 Client 命令执行；各 Server Built-in 和顶层 `acmd` 的解析顺序参见下文。
 
 Quick Actions 则先以“平台 + 名称”定位**指定的原始定义**，绑定表单参数，再把适当的文本提交给正常 Web Command Task。具体何时保留 Alias 调用、何时提交已展开命令，以及为何可能重走 Server 命令解析，见第七节。
 
@@ -66,7 +66,7 @@ Alias 本体由 Server 全局管理，持久化在 `backend/server/resources/ali
 
 ### 写入、删除和查询定义
 
-终端中的 `alias` 是 **Server Built-in**，负责查询及维护 Server 的 JSON 定义，不是远程操作系统的 Shell 内建命令。当前仅支持 `list`、`set`、`unset` 三种管理动作；不必先进入客户端 Shell。
+终端中的 `alias` 由 **Server Built-in** 处理，用于查询和维护 Server 上保存的 JSON 定义。当前仅支持 `list`、`set`、`unset` 三种管理动作；不必先进入客户端 Shell。
 
 直接输入 `alias` 等价于 `alias list`，只显示 common 与目标 Client 平台覆盖后的**生效** Alias 列表；`alias list --json`、`alias --json` 输出相同结果的结构化数组。已删除公开 `resolve`、`reload` 和原 `alias list --platform` 跨平台清单入口；平台原始定义仍在 JSON 与 Web Quick Actions 管理接口中保存、编辑，绝不删除其他平台配置。
 
@@ -113,7 +113,7 @@ sample --path="/tmp/a file" --label "Report A"
 
 **Web Quick Actions 的参数表单**根据模板提取同一套唯一参数，每个参数只出现一个文本输入框；按首次出现顺序将字符串数组传给 Server，再由 `resolve_alias_definition()` 替换。Web 调用不使用终端的 `--name` 文本解析；它按所选定义和数组位置绑定。占位符不等于 Parameter Schema：这里没有自动的整数/布尔类型转换、Select、文件选择器、动态默认值或复杂业务校验。Web 表单目前允许输入空字符串，最终目标命令能否接受由实际命令决定。
 
-**安全边界：这是未经上下文转义的文本替换**。系统不自动给文件路径加引号、不转义 Shell 特殊字符，也不知道占位符是在 PowerShell、Shell、Python 字符串还是命令选项中。上面把值放进引号只用于解释绑定规则，并不保证恶意引号或特殊字符安全。对敏感和破坏性操作，应在目标执行层使用适当的参数化或验证机制；不要把 Alias 当成输入净化器。
+**安全边界：Alias 采用原样字符串替换，没有上下文转义**。系统不自动给文件路径加引号、不转义 Shell 特殊字符，也不知道占位符是在 PowerShell、Shell、Python 字符串还是命令选项中。上面把值放进引号只用于解释绑定规则，并不保证恶意引号或特殊字符安全。对敏感和破坏性操作，应在目标执行层使用适当的参数化或验证机制；不要把 Alias 当成输入净化器。
 
 ### 命令入口的第二次解析
 
@@ -139,6 +139,8 @@ Client 变量 `${rch:*}`、`${env:*}`、`${path:*}` 与 Alias 的 `<name>` 是�
 
 Web Quick Actions 的定义列表基于 Alias JSON，并非单独的 Quick Action 表。选中一个在线 Client 后打开管理弹窗，Server 在列表请求中重新加载 JSON，返回所有平台的原始定义和当前目标的作用域信息。界面默认显示 Current（`common` 加当前平台），也支持手动选择特定平台并按名称或模板文本搜索。New、Edit、Delete 对应 Alias 的新增、更新和删除，跨平台改名/移动时会检查目标作用域同名冲突；删除需要确认，只删除**选中的平台 + 名称**定义。
 
+在手机浏览器中，Quick Actions 使用卡片展示每条定义，仍提供 Run、Run in Terminal、Edit、Delete；Platform 选择、搜索和 New Action 保留在顶部，编辑及运行输入可在全屏工作区完成。
+
 编辑时填写 Platform、Action name、Command，可顺便启用工具栏 Pin。执行时，如果模板带占位符，先打开按唯一参数生成的文本表单；没有占位符就直接提交。**Run** 会打开独立结果弹窗，**Run in Terminal** 把输入和后续结果放到正常终端显示链。二者都通过常规 Web Command Task 提交，仍受目标连接、前台任务占用、权限与取消约束。
 
 真正需要注意的是这三种**命令提交模式**：
@@ -163,7 +165,7 @@ Quick Actions 的 Dialog / Terminal 两种呈现方式都通过 Metadata 保留�
 
 ### 工具栏及同步机制
 
-在 Quick Actions 编辑弹窗打开 **Pin to Quick Actions dropdown**，会将该定义的 `{platform, alias}` 引用存入全局 Toolbar Preferences（SQLite）。Pin 不是复制模板，也不是 History 的收藏。Toolbar Layout 的位置/顺序与 Pin 的条目列表是两种配置；工具栏可以在自身的 Toolbar 或 More 位置展示 Quick Actions 入口。
+在 Quick Actions 编辑弹窗打开 **Pin to Quick Actions dropdown**，会将该定义的 `{platform, alias}` 引用存入全局 Toolbar Preferences（SQLite）。Pin 保存对现有 Alias 定义的引用，模板仍由 Alias 管理器维护；History 收藏独立保存。Toolbar Layout 的位置/顺序与 Pin 的条目列表是两种配置；工具栏可以在自身的 Toolbar 或 More 位置展示 Quick Actions 入口。
 
 工具栏下拉打开时，会读取保存的 Pin，并重新请求 Quick Actions 定义列表，按平台与名称精确匹配，只呈现 `in_current_scope` 的条目。**被目标平台覆盖的 `common` 定义仍可能出现在工具栏下拉**，因为它依然属于当前作用域；同名项并列时界面加平台标签。不存在、改名或移到其他平台的引用会因无法匹配或当前作用域不符而不显示。点击固定项用结果弹窗方式运行，有参数先填表单。
 

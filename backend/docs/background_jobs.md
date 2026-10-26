@@ -2,7 +2,7 @@
 
 Background Job 的主要对象是一次可追踪的后台运行实例，而不只是保存于 Server 的 Python 模块。模块 Metadata 决定能在哪个平台、以何种模式、使用什么参数启动；Client 创建独立的 Job Runtime；Server 持久化运行状态、消息及文件关联，使 Web 能够在任务结束后继续查看执行过程。
 
-运行实例可能驻留在 Client 进程的线程中，也可能运行于独立 Python 子进程。两条路径具有不同的上下文可用性、停止能力和异常边界。编写 Job 时，应首先把状态报告、资源释放与取消检查作为执行契约的一部分，而不是从某个现有任务照搬循环代码。
+运行实例可能驻留在 Client 进程的线程中，也可能运行于独立 Python 子进程。两条路径分别提供不同的运行上下文与取消能力。编写 Job 时，应明确状态上报、资源释放和取消检查的处理方式。
 
 ## 后台运行的控制平面
 
@@ -34,7 +34,7 @@ Web Jobs / Job Detail · 状态、消息、文件
 
 用户主动发起的 Job 管理操作另记录到 Activity Center：`kind=background_job`；`job start` / Web Start 为 `start_job`，`job stop` / Web Stop 为 `stop_job`，`job stop-all` 为一条 `stop_all_jobs`。Activity 在真实派发 Client 后创建，Client 反馈已建立 Job Runtime / 已接受 Stop 请求后终结；不等待 Job 长期运行结束。Stop 不会修改先前成功的 Start Activity。原有 Job History 继续存储运行生命周期、消息和文件，不与 Activity 互相删除。纯查询 `job list/ps/status` 仅按普通终端输入规则保留 Quick，不建立 Activity；来自 Web 的操作不写 Quick。内部 `job_control` 消息不记录成 Command，也不持久化 Job 参数正文、Python 模块源码或内部结构化 Payload。Start / Stop 的真实 `job_id` 可以在 Activity Details 关联，批量 Stop All 返回成功与失败数量；部分失败沿用 `error`，不新增状态。长时间运行的任务自行上报消息和状态；Server 通过 SQLite 保存执行记录，再发布 SSE 事件供浏览器刷新。
 
-模块存放在 Server 的 Job 资源目录中。Web 可以创建、编辑、上传或删除 Python 模块；Client 启动时按需从 Server 取得该模块内容，而不是要求用户事先把所有 Job 安装到目标设备上。不过，**Python 第三方依赖仍必须在目标运行环境中可用**，下载模块并不等于自动安装其依赖。
+模块存放在 Server 的 Job 资源目录中。Web 可以创建、编辑、上传或删除 Python 模块；Client 启动任务时从 Server 取得 Job 模块；**目标环境需预先安装该 Job 使用的第三方依赖**。
 
 这里涉及三个不同身份：`job_key` 表示具体的 Job 模块名；`job_id` 是每次启动生成的独立 UUID；`client_id` 表示运行这次 Job 的 Client 连接。Server 历史还记录 `machine_id`，因此同一设备重新连接后可以继续查询已保存的 Job 记录。
 
@@ -129,9 +129,9 @@ Server 接收报告后，依据 `job_id` 保存 Job 实例、消息及文件关�
 
 每次新启动都会创建新的 `job_id`，而同一 Client 的活跃运行实例按 `job_key` 管理。当前代码会阻止同一个 Client 同时再启动相同 Job Key 的另一个活跃实例；已结束的历史记录则可以多次保留。Job 的查询依托 `machine_id` 识别持久设备，并记录每次对应的 `client_id`，所以设备重新连接后历史仍可查询。
 
-**持久化的是 Job 历史，不是运行中的 Python 线程或进程。** Server 启动存储层时会把数据库里仍处于 `running` 或 `stopping` 的记录标记为 `interrupted`；它不会重建中断的运行环境。Client 断线时会静默请求停止本地 Job，因此也不应期待断线后无限期保留原任务运行。
+**Server 持久保存 Job 状态与消息。** 重启存储服务时，仍标记为 `running` 或 `stopping` 的任务会改为 `interrupted`；任务需要重新启动才能继续执行。Client 断线时会静默请求停止本地 Job，因此也不应期待断线后无限期保留原任务运行。
 
-删除一条已结束的 Job 记录主要影响该 Job 的数据库记录、消息及关联关系，不等于自动删除 Server 上的 Artifact 原始文件。Artifact 是否能预览或下载，还取决于它当前是否存在且可访问。
+删除已结束的 Job 会清理数据库记录、消息及关联关系；Server 上的 Artifact 原始文件按 Artifact 自身的保留与删除操作管理。Artifact 是否能预览或下载，还取决于它当前是否存在且可访问。
 
 ## 运行控制接口与清理
 

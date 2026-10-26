@@ -35,7 +35,7 @@ Server 命令 ─┘              │                 │
 
 Remote 和 Local 的检查由同一个 Worker 循环依次执行：先确认原 Client PID 仍然存在，再检查 Remote，随后检查 Local，最后短暂休眠。循环的基础休眠时间为约 0.5 秒，但 Remote HTTP 请求本身可能等待最多 5 秒，所以 Local 检查不是严格固定间隔的实时调度。
 
-**Worker 不是独立于 Client 生命周期的系统服务。** 它持续监控启动时记录的原 Client PID；当该 PID 已经不存在时，Worker 会退出。这意味着它并不能保证在 Client 完全崩溃或被强制杀死后自动将其拉起。Local 模式针对的主要是进程仍存在、但心跳已停止的情况。
+**Worker 绑定原 Client PID 的生命周期。** Worker 持续监控启动时记录的 PID，原进程结束后 Worker 随之退出。完全退出后的独立进程恢复由 Process Watchdog 等其他机制负责。Local 模式针对的主要是进程仍存在、但心跳已停止的情况。
 
 HTTP Control 根据 `client_id` 而不是主机名、`machine_id` 或 PID 定位目标。同一台机器运行多个 Client 时，它们有不同的 `client_id` 和心跳文件。
 
@@ -53,7 +53,7 @@ Worker 强制终止它所监控的原 Client，并在操作后退出。Linux/mac
 
 Worker 使用 Client 启动时保存的启动参数和工作目录，先创建一个新实例，短暂等待约 0.2 秒，然后强制终止旧实例并退出。其目的是替换原 Client，而不是同时长期保留两个实例。
 
-这里的“启动新实例”不等于“新实例已成功连上 Server”。现有操作不会等待 Socket 握手完成，也不提供新 Client 健康确认；若新实例启动后立即失败，原 Client 仍可能已经被终止。
+Worker 启动新实例后直接进入旧进程结束流程；Server Socket 握手与后续健康状态需单独确认；若新实例启动后立即失败，原 Client 仍可能已经被终止。
 
 **Clone (`clone`)**
 
@@ -387,7 +387,7 @@ tail -f "$HOME/Library/Application Support/rchclient/logs/client_remote_watchdog
 tail -f "$HOME/Library/Application Support/rchclient/logs/client_local_watchdog.log"
 ```
 
-这条 macOS 示例命令用于观察心跳超时与重启请求。其他系统使用 `local_watchdog.log_path` 返回值；只看到超时请求并不意味着新 Client 一定启动成功，还应核实进程与 Server 连接列表。
+这条 macOS 示例命令用于观察心跳超时与重启请求。其他系统使用 `local_watchdog.log_path` 返回值；观察到超时请求后，再核对新进程和 Server 连接列表。
 
 常见异常可以结合状态字段、日志与进程行为定位：
 

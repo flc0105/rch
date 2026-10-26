@@ -26,7 +26,7 @@ Server WebEventBus
 
 `client_id` 指定被监控的 Client 连接；`tab_id` 指定接收事件的浏览器标签页；`monitor_session_id` 标识具体监控任务。即使是同一台设备、同一个 Tab，也可以同时存在不同 Session。前端按 **Session ID + Client ID + Channel** 筛选消息，防止 Dashboard 的数据混入进程详情，或已关闭视图的迟到消息更新另一处界面。
 
-Session 信息由 Server 和 Client 分别保存在内存中。它不是 Job、PTY 或 Screen View Session，也不写入命令历史；采集结果没有单独的 SQLite Snapshot 历史。它与 [Connection Lifecycle](connection_lifecycle.md) 中的 TCP 在线状态不同：设备 Online 表示连接可用，不等于目前已经打开了 Monitor Session。
+Session 信息由 Server 和 Client 分别保存在内存中。Monitor Session 独立管理采集线程与订阅 Channel，采样结果通过事件流下发，当前不保存独立的 SQLite Snapshot 历史。设备 Online 表示 TCP 连接可用；打开 Monitor Session 后才开始相应采集，连接状态参见 [Connection Lifecycle](connection_lifecycle.md)。
 
 ## 2. 会话协议和采样调度
 
@@ -36,7 +36,7 @@ Session 信息由 Server 和 Client 分别保存在内存中。它不是 Job、P
 
 会话创建时处于 `opening`，收到 Client 的 `monitor_opened` 后成为 `open`。浏览器变更订阅使用 `monitor_config`，在现有 Session 内更新 Channel、周期和选项，不需要每次都重建会话。配置时只传入部分字段，Server 会保留未替换的对应会话设置；改变进程目标 PID 时，Client 还会清除旧的进程对象及 CPU 采样基线。
 
-关闭请求会向 Client 发送 `monitor_close` 并把 Server 会话标记为 `closing`。真正收到 `monitor_closed` 后，Server 才从活动会话表移除该项并发布关闭状态。因而 **Close API 返回成功表示关闭请求已被处理，不是工作线程必定已经退出**。Client 发生采样异常会报告 `monitor_error`；正常清理完成后还可能发送 `monitor_closed`。
+关闭请求会向 Client 发送 `monitor_close` 并把 Server 会话标记为 `closing`。真正收到 `monitor_closed` 后，Server 才从活动会话表移除该项并发布关闭状态。**Close API 成功表示关闭请求已受理**；收到 `monitor_closed` 才确认工作线程已完成清理。Client 发生采样异常会报告 `monitor_error`；正常清理完成后还可能发送 `monitor_closed`。
 
 ### Snapshot、状态和定向投递
 
@@ -62,9 +62,9 @@ Session 信息由 Server 和 Client 分别保存在内存中。它不是 Job、P
 
 `seq` 在 **单个 Session** 内递增，不是全项目的全局序号。`collected_at` 记录 Client 采样时间，不代表浏览器收到数据的时间。Server 仅在会话存在且 Channel 合法时转发，并通过 `target_tab_id` 指定 SSE 接收方。打开、关闭和失败则产生 `device_monitor_status`，带有 `state` 与会话基本信息；页面不能把 Snapshot 流和状态流当作同一种数据。
 
-### 周期是采样计划，不是硬实时承诺
+### 采样周期与实际到达时间
 
-Client 为**每个 Session 创建一个工作线程**，在该线程中按 Channel 各自的到期时间顺序采集，而不是为每个 Channel 单独创建线程。完成一次采集后，才从当前时间安排该 Channel 的下一次采样；工作循环以较短等待响应 Stop。某个 Collector 耗时较长，会推迟同一 Session 内其他 Channel 的采集，所以配置 `0.5` 秒不代表每秒必然送达两帧。
+Client 为**每个 Session 创建一个工作线程**，在该线程中按 Channel 各自的到期时间顺序采集，而不是为每个 Channel 单独创建线程。完成一次采集后，才从当前时间安排该 Channel 的下一次采样；工作循环以较短等待响应 Stop。耗时较长的 Collector 会推迟同一 Session 内其他 Channel 的采集；`0.5` 秒表示计划采样间隔，实际到达时间受执行与网络开销影响。
 
 Client 打开 Session 时会预热 `psutil` 的 CPU 与网络计数器。`system`、`network` 的首次正式采集需要等待一个周期；存储、电池和进程类 Channel 可较快提交第一份 Snapshot。列表采集等局部错误可以写进对应 Channel 的 `data.error`，而严重异常（如无效进程 PID 或详情采集失败）可能结束整个 Session。切换 Channel 时，采样线程会在发送结果前再次检查当前订阅，丢弃已不需要的迟到结果。
 
@@ -88,7 +88,7 @@ Dashboard 将变化速度不同的数据拆到不同 Channel，使用的配置�
 
 `system` 提供 CPU 百分比和逻辑核数、内存与 Swap 的用量、设备启动后的运行时长以及进程数量。CPU 使用 `psutil.cpu_percent(interval=None)` 非阻塞采样，需要有前一帧作为测量基线；macOS 下还会处理偶发的单帧 0% 毛刺，避免图表因孤立采样值明显跳动。
 
-`network` 使用设备累计接收/发送字节计数，以两次采样的时间差计算 **bytes/s** 速率，同时选取处于活动状态的网络接口及 IPv4。它反映设备全部网络活动，**不是** Remote Files、Transfer Center 或 RCH Socket 自身的传输速率。第一次采样未建立有效计数器差值时，速率可能显示零值。
+`network` 使用设备累计接收/发送字节计数，以两次采样的时间差计算 **bytes/s** 速率，同时选取处于活动状态的网络接口及 IPv4。该速率统计设备全部网络活动；Remote Files、Transfer Center 和 RCH Socket 的独立传输进度需在各自界面查看。第一次采样未建立有效计数器差值时，速率可能显示零值。
 
 `storage` 对实际磁盘分区采集容量、已用、剩余及挂载信息，并按平台过滤虚拟/不适合展示的卷。macOS 重点展示系统根卷与 `/Volumes` 下的卷；Windows 结合驱动器类型和卷标；其他平台过滤 proc、sysfs 等伪文件系统。对 macOS APFS 根卷，Collector 按共享 Container 的容量语义规范化 used/free/total，使数字可以相互对应。
 
