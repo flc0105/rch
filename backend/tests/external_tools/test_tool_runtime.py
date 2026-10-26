@@ -15,6 +15,7 @@ from core.protocol.monitor import normalize_monitor_channels, normalize_monitor_
 import signal
 from pathlib import Path
 from core.external_tools.processes import signal_name_to_value
+from client.external_tools.daemon_instance import ExternalToolDaemonInstance
 from server.application.external_tools.external_tool_catalog_service import ExternalToolCatalogService
 from server.application.external_tools.external_tool_runtime_service import ExternalToolRuntimeService
 
@@ -195,3 +196,62 @@ class FFmpegScreenRecordMetaTests(unittest.TestCase):
         self.assertEqual(signal_name_to_value('INT'), signal.SIGINT)
         self.assertTrue(self.module['lifecycle']['stop']['kill_after_timeout'])
         self.assertEqual(self.module['lifecycle']['stop']['timeout_sec'], 15)
+
+class ExternalToolDaemonStatusTests(unittest.TestCase):
+    def _payload(self, root):
+        return {
+            'tool_id': 'test-daemon',
+            'instance_id': 'default',
+            'runtime': {
+                'pid_file': str(root / 'tool.pid'),
+                'state_file': str(root / 'state.json'),
+                'stdout': str(root / 'stdout.log'),
+            },
+        }
+
+    def test_dead_valid_pid_is_reclaimed_as_stopped(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            payload = self._payload(root)
+            (root / 'tool.pid').write_text('43210', encoding='utf-8')
+            (root / 'state.json').write_text(json.dumps({
+                'tool_id': 'test-daemon',
+                'instance_id': 'default',
+                'last_status': 'running',
+            }), encoding='utf-8')
+
+            daemon = ExternalToolDaemonInstance()
+            daemon.is_pid_alive = lambda pid: False
+
+            status = daemon.status_from_payload(payload)
+
+            self.assertEqual(status['status'], 'stopped')
+            self.assertFalse(status['running'])
+            self.assertIsNone(status['pid'])
+            self.assertFalse((root / 'tool.pid').exists())
+            state = json.loads((root / 'state.json').read_text(encoding='utf-8'))
+            self.assertEqual(state['last_status'], 'stopped')
+            self.assertTrue(state['stopped_at'])
+            self.assertNotIn('stop_result', state)
+
+    def test_malformed_pid_file_remains_stale(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            payload = self._payload(root)
+            (root / 'tool.pid').write_text('not-a-pid', encoding='utf-8')
+            (root / 'state.json').write_text(json.dumps({
+                'tool_id': 'test-daemon',
+                'instance_id': 'default',
+                'last_status': 'running',
+            }), encoding='utf-8')
+
+            daemon = ExternalToolDaemonInstance()
+            status = daemon.status_from_payload(payload)
+
+            self.assertEqual(status['status'], 'stale')
+            self.assertFalse(status['running'])
+            self.assertIsNone(status['pid'])
+            self.assertTrue((root / 'tool.pid').exists())
+            state = json.loads((root / 'state.json').read_text(encoding='utf-8'))
+            self.assertEqual(state['last_status'], 'running')
+

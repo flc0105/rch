@@ -181,6 +181,18 @@ class ExternalToolDaemonInstance(ExternalToolCommon):
 
         if alive:
             status = 'running'
+        elif pid is not None:
+            try:
+                if os.path.exists(pid_file):
+                    os.unlink(pid_file)
+            except OSError:
+                pass
+
+            state['last_status'] = 'stopped'
+            state['stopped_at'] = state.get('stopped_at') or time.strftime('%Y-%m-%dT%H:%M:%S')
+            self.write_json(state_file, state)
+            pid = None
+            status = 'stopped'
         elif os.path.exists(pid_file):
             status = 'stale'
         elif state:

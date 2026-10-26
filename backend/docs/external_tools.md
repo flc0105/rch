@@ -263,15 +263,15 @@ Daemon 按 `package_id/module_id/instance_id` 隔离状态。启动请求包含�
 
 启动前会检查实例 PID 是否仍然存活：已存活时返回 Already Running 状态，不创建第二个同名实例；否则检查 Package 是否已安装、写入配置、构建最终命令并分离启动。POSIX 下使用独立 Session，Windows 下使用分离进程和新的进程组；底层启动均不使用 `shell=True`。启动结果记录 PID、命令、参数、路径和开始时间。
 
-**`running: true` 表示系统检查到该 PID 存活，不是应用已通过端口监听、HTTP 健康检查或业务可用性验证。** 分离启动后的程序如果立即退出，稍后的 Status 可能显示 `stale`。
+**`running: true` 表示系统检查到该 PID 存活。** 应用级就绪状态由工具自身的端口、HTTP 健康检查或其他业务信号另行判断。分离启动后的程序退出后，下一次 Status 会清理仍指向该已退出进程的有效 PID 文件，并将实例状态记录为 `stopped`。
 
 ### 常驻实例的管理与回收
 
 状态读取 PID 文件和 `state.json`，结合操作系统 PID 存活检查得到 `running`、`stale`、`stopped`、`not_started` 等状态：
 
 - `running`：PID 被判断为存活；
-- `stale`：PID 文件存在，但该 PID 已不存活；
-- `stopped`：记录了已停止状态，且当前无活跃进程；
+- `stale`：PID 文件存在，但无法读取出有效 PID；
+- `stopped`：当前无活跃进程；如果 PID 文件记录的是已退出进程，状态查询会自动清理该文件并写入停止状态；
 - `not_started`：没有有效运行记录。
 
 Stop 默认向目标 PID/进程组发送 `TERM`，按配置等待一段时间，必要时强制发送 `KILL`。Module 的 `lifecycle.stop` 也可以指定通过外部命令停止，并在需要时配置信号 fallback；不同停止方式的执行细节由对应规则决定。
@@ -449,7 +449,7 @@ Server 会在安装成功/失败、卸载成功/失败，以及 Daemon 启动、
 | Install 成功但 Run 失败 | 所选 Module 对应 Exec、Launcher、目标 `cwd`、参数模板与依赖是否正确 |
 | Preview 的命令看起来正确，但不能启动 | Preview 不运行程序、不检查运行后的依赖和端口可用性 |
 | 报找不到 Python 或外部 Launcher | `client_python` / `system` 所需启动器在目标 Client 中不可用 |
-| Instance 显示 `stale` | PID 文件仍在，但进程不再存活；检查 stdout 和启动参数 |
+| Instance 显示 `stale` | PID 文件仍在，但内容无效或无法读取；检查实例目录中的 `tool.pid` 和 `state.json` |
 | Stop 返回后仍显示 Running | 进程未真正退出或自定义 stop command 未停止目标；重新查询 PID 状态 |
 | Clear Logs / Remove 不允许操作 | 必须先停止目标实例；二者也不是卸载 Package |
 | Oneshot 返回 Failed | 查看 `returncode`、`timed_out`、`stdout`、`stderr` 和超时设置 |
