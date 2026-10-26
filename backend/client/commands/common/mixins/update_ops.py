@@ -3,6 +3,7 @@ import json
 import os
 import shlex
 import shutil
+import socket
 import sys
 import tempfile
 import threading
@@ -40,6 +41,7 @@ class CommandUpdateMixin:
     UPDATE_READY_STABILIZE_SECONDS = 2
     UPDATE_READY_POLL_INTERVAL_SECONDS = 0.25
     UPDATE_EXIT_DELAY_SECONDS = 0.5
+    WINDOWS_UPDATE_SOCKET_DRAIN_SECONDS = 0.5
 
     def _build_update_request_payload(self) -> dict:
         # update 固定走 bundle 构建，不再依赖前台选择
@@ -303,6 +305,25 @@ class CommandUpdateMixin:
             time.sleep(0.1)
         raise RuntimeError('Updated Client did not acknowledge watchdog activation')
 
+    def _close_update_connection(self):
+        self.socket.report_session_end('client_update', command='update')
+
+        if os.name == 'nt':
+            raw_socket = getattr(self.socket, 'socket', None)
+            if raw_socket is not None:
+                try:
+                    # On Windows, send a FIN only after session_end is queued so the
+                    # Server reads the lifecycle message before the connection closes.
+                    raw_socket.shutdown(socket.SHUT_WR)
+                    time.sleep(self.WINDOWS_UPDATE_SOCKET_DRAIN_SECONDS)
+                except OSError:
+                    pass
+
+        try:
+            self.socket.close()
+        except Exception:
+            pass
+
     def _schedule_exit_after_update(self):
         process_watchdog_manager = getattr(self.socket, 'process_watchdog_manager', None)
         if process_watchdog_manager is not None:
@@ -317,11 +338,7 @@ class CommandUpdateMixin:
 
         def _exit_current_client():
             time.sleep(self.UPDATE_EXIT_DELAY_SECONDS)
-            self.socket.report_session_end('client_update', command='update')
-            try:
-                self.socket.close()
-            except Exception:
-                pass
+            self._close_update_connection()
             os._exit(0)
 
         threading.Thread(

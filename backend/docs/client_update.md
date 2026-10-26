@@ -124,7 +124,7 @@ update --keep-old
 
 就绪文件意味着新进程已经执行到**本地连接与握手发送阶段**；若新进程提前退出或就绪等待超时，原 Client 会报告失败，尝试终止未通过交接的新进程，**不会主动退出旧 Client**。启动异常日志可附在错误信息中，探针文件最后会清理。
 
-就绪确认后，默认先报告执行结果，再短暂延迟、停止当前 Guard Manager、关闭 Socket 并退出原进程；`--keep-old` 跳过这个旧进程退出步骤。因此保留旧实例时，在设备上可能同时看到多个具有不同 `client_id` 的活动连接。与设备身份、连接历史的区别，详见 [Connection Lifecycle](connection_lifecycle.md)。
+就绪确认后，默认先报告执行结果，再短暂延迟、停止当前 Guard Manager、关闭 Socket 并退出原进程。Windows 在关闭旧连接前会先完成 TCP 发送方向的有序关闭，让已经发送的 `client_update` 会话结束通知先到达 Server；其他桌面平台继续直接关闭旧连接。`--keep-old` 跳过这个旧进程退出步骤。因此保留旧实例时，在设备上可能同时看到多个具有不同 `client_id` 的活动连接。与设备身份、连接历史的区别，详见 [Connection Lifecycle](connection_lifecycle.md)。
 
 在 iOS / Pythonista 环境，`update` 完成 Bundle 下载与解压后，只返回新入口脚本的位置，提示重启 Pythonista 并手动运行；它不尝试执行桌面平台的自动新旧进程交接。
 
