@@ -115,7 +115,7 @@ Web 不是单纯显示最后收到的一份 `connection_state`。它在本地以
 
 界面还有一项优先条件：对于**没有被明确标记为 Offline**、且携带 `is_transfer_active` 标记的连接，当前前端状态计算会优先展示 Online。因此判断异常时，应区分 Server 返回的 `connection_state` 和浏览器最终计算出的显示状态，不要只依据颜色认定 Socket 是否健康。
 
-上线与离线会产生 `connection_online` / `connection_offline` 事件，并可进入通知系统。Stale 由最近心跳时间计算，在确认 Socket 关闭时才发布 Offline 生命周期事件。浏览器 SSE 流使用独立的保活链路，Client Socket 的心跳与状态由 Server 单独管理。
+上线与离线会产生 `connection_online` / `connection_offline` 事件，并可进入通知系统。`connection_offline` payload 同时携带本次连接的 `termination_reason`，前端离线通知直接显示该原因。Stale 由最近心跳时间计算，在确认 Socket 关闭时才发布 Offline 生命周期事件。浏览器 SSE 流使用独立的保活链路，Client Socket 的心跳与状态由 Server 单独管理。
 
 ## 连接丢失后的清理、重连和历史留存
 
@@ -139,7 +139,7 @@ Connection History 的列表在主动结束时显示 **Offline**，在连接丢�
 
 | Termination cause | Connection History 状态 | 采集条件 |
 | --- | --- | --- |
-| Server requested disconnect | Offline | Web Disconnect、Server 端 `disconnect` / `kill`、`httpctl kill`，详情保存实际执行入口或命令 |
+| Server requested disconnect | Offline | Web Disconnect、Server 控制台 `kill`、远程 `kill_instance`、`httpctl kill`，详情保存实际执行入口或命令 |
 | Client exit / Client restart / Client update | Offline | Python Client 退出、重启或完成更新时上报结束；有操作命令时写入详情 |
 | Connection lost | Interrupted | Socket 在报文边界处收到 TCP EOF |
 | Transport error / Timeout | Interrupted | Server 捕获 Socket 传输异常或超时，详情包含错误摘要及可取得的堆栈 |
@@ -222,7 +222,7 @@ PY
 
 该测试 Server 在记录首次读取超时后停止监听，以便保留目标记录。测试完成后结束 Client 重连进程，停止测试 Server，并按常规方式启动 Server。
 
-主动结束也可直接验证：Web Disconnect、Server `disconnect`、Client `kill_instance`、`relaunch_instance` 及 Server `httpctl kill`。这些记录显示 **Offline**；详情中有实际命令时显示 `Command`。按 **Client exit / restart / update** 的各自执行路径上报。
+主动结束也可直接验证：Web Disconnect、Server 控制台 `kill`、远程 `kill_instance`、`relaunch_instance` 及 Server `httpctl kill`。这些记录显示 **Offline**；详情中有实际命令时显示 `Command`。按 **Client exit / restart / update** 的各自执行路径上报。
 
 数据库核对使用当前的 `termination_reason` 与 `termination_detail_json` 字段。测试环境在 Server 停止写库后，可以用 `sqlite3` 查看最近会话：
 

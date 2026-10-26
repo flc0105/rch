@@ -136,7 +136,7 @@ def _complete_session(store, *, request=None, client_end=None, failure=None):
         connection_history_store=store,
     )
     service.serialize_connection = lambda _: _connection()
-    service.publish_connection_offline = lambda _: None
+    service.publish_connection_offline = lambda *args, **kwargs: None
     service.handle_connection_closed(session)
     return store.get_history('machine-A')['sessions'][0]
 
@@ -165,6 +165,47 @@ def test_client_restart_and_update_take_precedence_over_socket_eof(tmp_path):
             )
             assert item['termination_reason'] == reason
             db.close_thread_connection()
+
+
+def test_kill_instance_client_report_is_server_requested_disconnect(tmp_path):
+    db, store = _new_store(tmp_path)
+    item = _complete_session(
+        store,
+        client_end={
+            'at': time.monotonic(),
+            'reason': 'client_exit',
+            'detail': {'command': 'kill_instance'},
+        },
+        failure={'reason': 'connection_lost', 'detail': {}},
+    )
+    assert item['termination_reason'] == 'server_requested_disconnect'
+    assert item['termination_detail'] == {'command': 'kill_instance'}
+    assert item['connection_state'] == 'offline'
+    db.close_thread_connection()
+
+
+def test_connection_offline_event_contains_termination_reason(tmp_path):
+    db, store = _new_store(tmp_path)
+    published = []
+    ctx = ClientSessionContext()
+    ctx.transport_failure = {'reason': 'connection_lost', 'detail': {}}
+    session = SimpleNamespace(
+        context=ctx,
+        session_info=SimpleNamespace(client_id='client-X'),
+        services=SimpleNamespace(heartbeat_service=SimpleNamespace(mark_disconnected=lambda: None)),
+    )
+    service = WebConnectionService(
+        server=SimpleNamespace(),
+        event_bus=SimpleNamespace(publish=lambda event, payload: published.append((event, payload))),
+        artifact_service=None,
+        connection_history_store=store,
+    )
+    service.serialize_connection = lambda _: _connection()
+    service.handle_connection_closed(session)
+    offline_events = [payload for event, payload in published if event == 'connection_offline']
+    assert len(offline_events) == 1
+    assert offline_events[0]['termination_reason'] == 'connection_lost'
+    db.close_thread_connection()
 
 
 def test_receive_error_classification(tmp_path):
@@ -196,7 +237,7 @@ def test_receive_error_classification(tmp_path):
             assert context.transport_failure['detail']['summary']
 
 
-def test_server_command_marks_disconnect_only_after_dispatch_succeeds():
+def test_generic_command_channel_does_not_infer_disconnect_intent():
     from server.connection.channel.session_command_channel import ClientSessionCommandChannel
 
     sent = []
@@ -218,10 +259,9 @@ def test_server_command_marks_disconnect_only_after_dispatch_succeeds():
     )
     channel = ClientSessionCommandChannel(session)
     channel.send_command('kill_instance')
-    channel.send_command('kill_connection')
     channel.send_command('help')
-    assert noted == ['kill_instance', 'kill_connection']
-    assert [row['text'] for row in sent] == ['kill_instance', 'kill_connection', 'help']
+    assert noted == []
+    assert [row['text'] for row in sent] == ['kill_instance', 'help']
 
 
 def test_expired_server_intent_uses_actual_client_report(tmp_path):
@@ -348,7 +388,7 @@ def test_server_disconnect_keeps_original_operator_command():
     ctx = ClientSessionContext()
     session = SimpleNamespace(context=ctx)
     ClientSession.note_server_disconnect(session, 'disconnect')
-    ClientSession.note_server_disconnect(session, 'kill_connection')
+    ClientSession.note_server_disconnect(session, 'kill_instance')
     assert ctx.server_disconnect_request['command'] == 'disconnect'
 
 

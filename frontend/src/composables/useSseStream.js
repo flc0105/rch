@@ -615,6 +615,10 @@ export default {
                 const payload = JSON.parse(event.data);
                 const clientId = payload.client_id;
                 const conn = payload.connection || this.connections.find(item => item.client_id === clientId) || {client_id: clientId};
+                const terminationReason = String(payload.termination_reason || '').trim();
+                const reasonLabel = terminationReason
+                    ? terminationReason.replace(/_/g, ' ').replace(/^./, value => value.toUpperCase())
+                    : '';
 
                 this.upsertConnection({
                     ...conn,
@@ -627,13 +631,14 @@ export default {
 
                 this.showSseNotification('connection_offline', {
                     title: 'Device Offline',
-                    message: `${(conn && conn.hostname) || clientId} went offline`,
+                    message: `${(conn && conn.hostname) || clientId} went offline${reasonLabel ? ` · Reason: ${reasonLabel}` : ''}`,
                     type: 'warning'
                 }, {
                     eventId: event.lastEventId,
                     context: {
                         client_id: clientId || '',
                         hostname: conn?.hostname || '',
+                        ...(terminationReason ? {termination_reason: terminationReason} : {}),
                     },
                 });
             });

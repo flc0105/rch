@@ -146,12 +146,20 @@ class NotificationEventProjector:
         conn = payload.get('connection') if isinstance(payload.get('connection'), dict) else {}
         client_id = str(payload.get('client_id') or conn.get('client_id') or '').strip()
         hostname = str(conn.get('hostname') or '').strip()
+        termination_reason = str(payload.get('termination_reason') or '').strip()
+        reason_label = termination_reason.replace('_', ' ').capitalize()
+        message = f'{hostname or client_id or "Unknown device"} went offline'
+        if reason_label:
+            message += f' · Reason: {reason_label}'
+        context = {'client_id': client_id, 'hostname': hostname}
+        if termination_reason:
+            context['termination_reason'] = termination_reason
         return self._notification(
             key='connection_offline',
             title='Device Offline',
-            message=f'{hostname or client_id or "Unknown device"} went offline',
+            message=message,
             type_='warning',
-            context={'client_id': client_id, 'hostname': hostname},
+            context=context,
         )
 
     def _build_file_transfer_lifecycle(self, payload):

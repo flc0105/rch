@@ -9,6 +9,7 @@ from server.application.web.notification_history_api import WebNotificationHisto
 from server.persistence.rch_database import RchDatabase
 from server.web.event_bus import WebEventBus
 from server.application.preferences.notification_preference_store import NotificationPreferenceStore
+from server.application.preferences.notification_event_projector import NotificationEventProjector
 
 
 class NotificationClearTypeTests(unittest.TestCase):
@@ -134,3 +135,16 @@ class NotificationPreferenceDeliveryTests(unittest.TestCase):
 
         self.assertFalse(self.store.is_delivery_enabled('device_event'))
         self.assertTrue(self.store.is_delivery_enabled('connection_online'))
+
+
+class NotificationConnectionOfflineTests(unittest.TestCase):
+    def test_offline_notification_includes_human_readable_termination_reason(self):
+        projector = NotificationEventProjector(history_store=None, server=None)
+        notification = projector._build_connection_offline({
+            'client_id': 'client-X',
+            'connection': {'client_id': 'client-X', 'hostname': 'Mac'},
+            'termination_reason': 'connection_lost',
+        })
+
+        self.assertEqual(notification['message'], 'Mac went offline · Reason: Connection lost')
+        self.assertEqual(notification['context']['termination_reason'], 'connection_lost')

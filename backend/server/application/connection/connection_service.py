@@ -532,24 +532,27 @@ class WebConnectionService:
                 machine_id=payload.get('machine_id') or '',
                 disconnected_at=payload.get('disconnected_at') or '',
             )
-        if self.connection_history_store:
-            request = getattr(session.context, 'server_disconnect_request', None)
-            client_end = getattr(session.context, 'client_session_end', None)
-            failure = getattr(session.context, 'transport_failure', None)
-            http_action = get_control_command_store().take_delivered_shutdown(payload.get('client_id'))
-            if request and time.monotonic() - request.get('at', 0) < 120:
+        request = getattr(session.context, 'server_disconnect_request', None)
+        client_end = getattr(session.context, 'client_session_end', None)
+        failure = getattr(session.context, 'transport_failure', None)
+        http_action = get_control_command_store().take_delivered_shutdown(payload.get('client_id'))
+        if request and time.monotonic() - request.get('at', 0) < 120:
+            reason = 'server_requested_disconnect'
+            detail = {'command': request.get('command') or ''}
+        elif http_action == 'kill':
+            reason, detail = 'server_requested_disconnect', {'command': 'httpctl kill'}
+        elif http_action == 'relaunch':
+            reason, detail = 'client_restart', {'command': 'httpctl relaunch'}
+        elif client_end and time.monotonic() - client_end.get('at', time.monotonic()) < 120:
+            reason, detail = client_end['reason'], client_end.get('detail', {})
+            if reason == 'client_exit' and str(detail.get('command') or '').strip() == 'kill_instance':
                 reason = 'server_requested_disconnect'
-                detail = {'command': request.get('command') or ''}
-            elif http_action == 'kill':
-                reason, detail = 'server_requested_disconnect', {'command': 'httpctl kill'}
-            elif http_action == 'relaunch':
-                reason, detail = 'client_restart', {'command': 'httpctl relaunch'}
-            elif client_end and time.monotonic() - client_end.get('at', time.monotonic()) < 120:
-                reason, detail = client_end['reason'], client_end.get('detail', {})
-            elif failure:
-                reason, detail = failure['reason'], failure.get('detail', {})
-            else:
-                reason, detail = 'unexpected_disconnect', {}
+        elif failure:
+            reason, detail = failure['reason'], failure.get('detail', {})
+        else:
+            reason, detail = 'unexpected_disconnect', {}
+
+        if self.connection_history_store:
             self.connection_history_store.record_disconnected(
                 payload, termination_reason=reason, details=detail
             )
@@ -588,7 +591,7 @@ class WebConnectionService:
             )
         except Exception:
             pass
-        self.publish_connection_offline(session)
+        self.publish_connection_offline(session, termination_reason=reason)
 
     # ------------------ event publish ------------------ #
     def publish_connection_online(self, session: ClientSession):
@@ -605,10 +608,11 @@ class WebConnectionService:
             payload['recovery_source'] = source
         self.event_bus.publish('connection_online', payload)
 
-    def publish_connection_offline(self, session: ClientSession):
+    def publish_connection_offline(self, session: ClientSession, termination_reason: str = ''):
         self.event_bus.publish('connection_offline', {
             'client_id': session.session_info.client_id,
             'connection': self._decorate_connection_with_device_view_prefs(self.serialize_connection(session)),
+            'termination_reason': str(termination_reason or '').strip(),
             'time': datetime.now().isoformat()
         })
 

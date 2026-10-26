@@ -135,8 +135,6 @@ class ClientSessionCommandChannel:
         self.session.runtime.pending_command_ids.put(data['id'])
         try:
             self.session.send(data)
-            if type == MSG_TYPE_COMMAND and str(command or '').strip() in ('kill_instance', 'kill_connection'):
-                self.session.note_server_disconnect(str(command).strip())
         except Exception:
             if self.session.runtime.pending_command_ids.peek_first() == data['id']:
                 self.session.runtime.pending_command_ids.get()
