@@ -101,6 +101,16 @@ def test_explicit_detached_shape_outranks_inherited_pycharm_context(monkeypatch)
     }
 
 
+
+def test_launchd_watchdog_policy_uses_explicit_launch_shape(monkeypatch):
+    _prepare(monkeypatch, [], is_tty=False, platform='linux')
+    monkeypatch.setenv(launch_context.LAUNCH_MODE_ENV, 'user_service')
+    monkeypatch.setenv(launch_context.LAUNCH_SOURCE_ENV, 'launchagent')
+    assert launch_context.is_launchd_managed_client() is True
+
+    monkeypatch.setenv(launch_context.LAUNCH_SOURCE_ENV, 'systemd_user')
+    assert launch_context.is_launchd_managed_client() is False
+
 def test_detached_launch_environment_records_shape_not_internal_action(monkeypatch):
     monkeypatch.setattr(launch_context.os, 'name', 'posix')
     env = launch_context.detached_launch_environment({'PYCHARM_HOSTED': '1'})
@@ -702,3 +712,32 @@ def test_launchd_script_sdk_exposes_canonical_actions():
     assert launchd.VALID_LAUNCHD_ACTIONS == {
         'install', 'start', 'stop', 'restart', 'uninstall', 'status',
     }
+
+
+def test_client_info_reports_watchdog_effective_state_for_launchd(monkeypatch):
+    identity = SimpleNamespace(
+        os_alias='mac', os_type='macOS', os_full='macOS test', os_name='macOS',
+        os_version='15.0', arch='arm64', manufacturer='Apple', model='Mac',
+        hostname='host', machine_id='machine', fingerprint_basis='basis',
+    )
+    monkeypatch.setattr(client_info_builder, 'get_local_identity', lambda: identity)
+    monkeypatch.setattr(client_info_builder, '_get_client_revision_manifest', lambda: {
+        'revision': 'rev', 'parts': {}, 'files': {},
+    })
+    monkeypatch.setattr(client_info_builder, 'get_executable_path', lambda: 'python3 rchclient.py')
+    monkeypatch.setattr(client_info_builder, 'get_client_log_path', lambda: '/tmp/client.log')
+    monkeypatch.setattr(client_info_builder, 'check_privilege', lambda: 'user')
+    monkeypatch.setattr(client_info_builder, 'get_system_paths', lambda: {})
+    monkeypatch.setattr(ClientInfoBuilder, '_get_launch_context', classmethod(
+        lambda cls, _os_alias: {'mode': 'user_service', 'source': 'launchagent'}
+    ))
+    monkeypatch.setattr(ClientInfoBuilder, '_build_process_info', lambda self, _os_alias: {
+        'username': 'alice', 'process_name': 'python3',
+    })
+    monkeypatch.setattr(client_info_builder, 'REMOTE_HTTP_WATCHDOG_ENABLED', True)
+    monkeypatch.setattr(client_info_builder, 'LOCAL_WATCHDOG_ENABLED', True)
+    monkeypatch.setattr(client_info_builder, 'is_launchd_managed_client', lambda: True)
+
+    info = ClientInfoBuilder('client-launchd').build()
+    assert info['remote_watchdog_enabled'] is False
+    assert info['local_watchdog_enabled'] is False

@@ -13,6 +13,7 @@ from client.watchdog.process_watchdog import (
 )
 from client.config import runtime_config
 from client.runtime.client_logging import install_client_file_logging
+from client.runtime.launch_context import is_launchd_managed_client
 from core.utils.logger import logger
 
 
@@ -68,7 +69,7 @@ def _activate_watchdog_after_update_acceptance(ready_file, manager):
         if os.path.isfile(accepted):
             result = {'ok': True}
             try:
-                if runtime_config.PROCESS_WATCHDOG_ENABLED:
+                if runtime_config.PROCESS_WATCHDOG_ENABLED and not is_launchd_managed_client():
                     manager.start()
             except Exception as exc:
                 result = {'ok': False, 'error': str(exc)}
@@ -96,7 +97,11 @@ def main():
     update_ready_file = _pop_argv_value('--update-ready-file')
     install_client_file_logging()
     process_watchdog = ProcessWatchdogManager()
-    if not update_ready_file and runtime_config.PROCESS_WATCHDOG_ENABLED:
+    if (
+        not update_ready_file
+        and runtime_config.PROCESS_WATCHDOG_ENABLED
+        and not is_launchd_managed_client()
+    ):
         try:
             process_watchdog.start()
         except Exception:

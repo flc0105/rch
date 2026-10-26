@@ -115,37 +115,7 @@ Activity 只在 Script 真的被提交给 Client 时创建；单纯列出脚本�
 
 ### macOS LaunchAgent / LaunchDaemon 管理
 
-macOS Script 可以通过 `client.runtime.sdk.launchd` 使用统一的 launchd 生命周期管理，而不需要各自拼接 `launchctl` 命令或用 `expanduser('~')` 推断目标账户。默认 label 为 `com.rch.client`，支持 `agent` 与 `daemon` 两种 kind。对 Agent，`scope=user` 使用目标用户的 `~/Library/LaunchAgents`，`scope=global` 使用 `/Library/LaunchAgents`；运行 domain 始终明确为目标用户的 `gui/<uid>`。Daemon 使用 `/Library/LaunchDaemons` 和 `system` domain。
-
-对外动作固定为：
-
-| Action | 行为 |
-| --- | --- |
-| `install` | 写入或替换 plist；若旧定义仍 loaded，先停止旧定义；安装后保持 stopped |
-| `start` | 必要时 `bootstrap` 已安装 plist，再 `kickstart` 启动 |
-| `stop` | 从当前 domain `bootout`，保留 plist；`KeepAlive` 不会立即把进程重新拉起 |
-| `restart` | 已 loaded 时 `kickstart -k`；未 loaded 时按 `start` 恢复 |
-| `uninstall` | 停止当前 service 后删除 plist |
-| `status` | 报告 plist、domain、installed、loaded、running 和 PID |
-
-示例：
-
-```python
-from client.runtime.sdk import launchd
-
-result = launchd.manage(
-    kind=kwargs.get('kind', 'agent'),
-    action=kwargs.get('action', 'status'),
-    label=kwargs.get('label', launchd.DEFAULT_LAUNCHD_LABEL),
-    scope=kwargs.get('scope', 'user'),
-    target_user=kwargs.get('target_user') or None,
-    keep_alive=kwargs.get('keep_alive', True),
-    run_at_load=kwargs.get('run_at_load', True),
-)
-print(launchd.format_result(result))
-```
-
-`keep_alive` 与 `run_at_load` 分别写入 plist 的 `KeepAlive` 与 `RunAtLoad`，可以独立控制。Agent 的目标账户按“显式 `target_user` → 非 root 当前 effective user → sudo 来源用户 → 当前 macOS console user”解析，Home 来自 POSIX account database，而不是把 root 的 `/var/root` 改写成某个桌面用户目录。需要写 `/Library/LaunchAgents`、管理 LaunchDaemon，或跨用户安装时，应在具有相应权限的 Client 中执行。生成的 launchd plist 直接保存 Python/Client 的 `ProgramArguments`，不经过 `/bin/sh -c`，并显式标记 `launch_mode/launch_source` 为 LaunchAgent 或 LaunchDaemon。
+macOS Script 可以通过 `client.runtime.sdk.launchd` 统一管理 LaunchAgent / LaunchDaemon。公开生命周期动作固定为 `install / start / stop / restart / uninstall / status`，支持统一 label、目标 GUI 用户、`KeepAlive`、`RunAtLoad`、明确的 launchd domain，并与 Client 的 Launch Mode、Watchdog suppression 和 UID 隔离临时目录协作。完整的安装位置、权限、状态语义、SDK 示例、排障与实机验收见 [macOS launchd Service Management](launchd.md)。
 
 ### In-process 与独立子进程
 

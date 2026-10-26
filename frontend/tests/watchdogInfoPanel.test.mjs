@@ -21,6 +21,8 @@ assert.match(source, /\.watchdog-log-location code \{ display: inline; \}/)
 assert.match(template, /status\.client\.pid/)
 assert.match(template, /status\.remote_watchdog\.interval_seconds/)
 assert.match(template, /status\.local_watchdog\.timeout_seconds/)
+assert.match(source, /Lifecycle managed by/)
+assert.match(template, /Managed by \${launchdManagerLabel}/)
 assert.match(template, /toggleMode\('process', value\)/)
 for (const value of ['remote', 'local', 'process']) {
   assert.match(template, new RegExp(`toggleMode\\('${value}', value\\)`))
@@ -62,7 +64,7 @@ function makeState(status) {
   return instance
 }
 const baseline = {
-  client: { id: 'client-123', pid: 123 },
+  client: { id: 'client-123', pid: 123, lifecycle_manager: '', watchdogs_suppressed: false },
   remote_watchdog: { enabled: false, worker_pid: null, worker_alive: false, interval_seconds: 5, control_url: '', log_path: '' },
   local_watchdog: { enabled: false, worker_pid: null, worker_alive: false, heartbeat_interval_seconds: 5, timeout_seconds: 15, feeder_alive: false, feeder_thread_name: null, heartbeat_file_path: '', log_path: '' },
   process_watchdog: { enabled: false, supervisor_pid: null, supervisor_alive: false, poll_interval_seconds: 0.5, log_path: '' },
@@ -82,6 +84,21 @@ assert.equal(page.healthSubtitle, 'Remote control is enabled.')
 page = makeState({ ...baseline, remote_watchdog: { ...baseline.remote_watchdog, enabled: true, worker_alive: true },
   process_watchdog: { ...baseline.process_watchdog, enabled: true } })
 assert.equal(page.healthTone, 'warning')
+page = makeState({
+  ...baseline,
+  client: { ...baseline.client, lifecycle_manager: 'launchd', watchdogs_suppressed: true },
+  remote_watchdog: { ...baseline.remote_watchdog, configured_enabled: true, suppressed: true },
+  local_watchdog: { ...baseline.local_watchdog, configured_enabled: true, suppressed: true },
+  process_watchdog: { ...baseline.process_watchdog, configured_enabled: true, suppressed: true },
+})
+assert.equal(page.launchdManaged, true)
+page.currentConnection = { launch_source: 'launchagent' }
+assert.equal(page.launchdManagerLabel, 'LaunchAgent')
+assert.equal(page.healthTitle, 'Lifecycle managed by LaunchAgent')
+assert.match(page.healthSubtitle, /LaunchAgent remains the single lifecycle supervisor/)
+assert.equal(page.canToggleMode, false)
+assert.equal(page.canControl, false)
+assert.match(page.actionHint, /disabled while LaunchAgent manages this Client/)
 serverStatus = copy(baseline)
 page = makeState(serverStatus)
 await page.toggleMode('process', true)

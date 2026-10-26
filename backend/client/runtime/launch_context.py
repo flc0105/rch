@@ -16,6 +16,23 @@ VALID_LAUNCH_MODES = {
 }
 
 
+LAUNCHD_SOURCES = {'launchagent', 'launchdaemon'}
+
+
+def is_launchd_managed_client() -> bool:
+    """Return whether launchd owns this Client's process lifecycle."""
+    explicit_mode = str(os.environ.get(LAUNCH_MODE_ENV) or '').strip().lower()
+    explicit_source = str(os.environ.get(LAUNCH_SOURCE_ENV) or '').strip().lower()
+    if explicit_source in LAUNCHD_SOURCES and explicit_mode in {'user_service', 'system_service'}:
+        return True
+
+    if sys.platform != 'darwin':
+        return False
+
+    context = detect_launch_context('macos')
+    return str(context.get('source') or '').strip().lower() in LAUNCHD_SOURCES
+
+
 def with_launch_context_environment(source=None, *, mode: str, launch_source: str = '') -> dict:
     """Return an environment carrying only the normalized launch shape of a new Client."""
     env = dict(os.environ if source is None else source)

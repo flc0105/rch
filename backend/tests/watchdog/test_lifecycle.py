@@ -16,9 +16,12 @@ from server.application.preferences.notification_event_projector import Notifica
 import json
 from client.commands.common.mixins.watchdog_ops import CommandWatchdogMixin
 from client.watchdog.client_guard_manager import ClientGuardManager
-from client.watchdog.process_watchdog import _POLL_INTERVAL, get_process_watchdog_status_payload
+from client.watchdog.process_watchdog import (
+    _POLL_INTERVAL, ProcessWatchdogManager, get_process_watchdog_status_payload,
+)
 from core.utils.command_output import StructuredCommandResult, render_structured_result
 from client.commands.runtime.shell_command_runner import ShellCommandRunner
+from client.runtime.launch_context import LAUNCH_MODE_ENV, LAUNCH_SOURCE_ENV, is_launchd_managed_client
 
 
 class RecoverySourceTests(unittest.TestCase):
@@ -128,6 +131,67 @@ class RecoverySourceTests(unittest.TestCase):
                 self.assertEqual(notification['title'], 'Device Online')
                 self.assertEqual(notification['message'], 'Mac is now available' + suffix)
                 self.assertEqual(notification['context'].get('recovery_source', ''), source if suffix else '')
+
+
+class LaunchdWatchdogPolicyTests(unittest.TestCase):
+    def test_explicit_launchagent_and_launchdaemon_are_launchd_managed(self):
+        for mode, source in (('user_service', 'launchagent'), ('system_service', 'launchdaemon')):
+            with self.subTest(source=source), patch.dict(
+                os.environ,
+                {LAUNCH_MODE_ENV: mode, LAUNCH_SOURCE_ENV: source},
+                clear=False,
+            ):
+                self.assertTrue(is_launchd_managed_client())
+
+        with patch.dict(
+            os.environ,
+            {LAUNCH_MODE_ENV: 'user_service', LAUNCH_SOURCE_ENV: 'systemd_user'},
+            clear=False,
+        ):
+            self.assertFalse(is_launchd_managed_client())
+
+    def test_guard_manager_suppresses_remote_and_local_even_when_configured(self):
+        guard = ClientGuardManager('launchd-client')
+        with patch('client.watchdog.client_guard_manager.is_launchd_managed_client', return_value=True), \
+             patch('client.watchdog.client_guard_manager.REMOTE_HTTP_WATCHDOG_ENABLED', True), \
+             patch('client.watchdog.client_guard_manager.LOCAL_WATCHDOG_ENABLED', True):
+            guard.start()
+            self.assertIsNone(guard._watchdog_process)
+            self.assertIsNone(guard._local_watchdog_feeder)
+            status = guard.get_watchdog_status_payload()
+
+        self.assertTrue(status['client']['watchdogs_suppressed'])
+        self.assertEqual(status['client']['lifecycle_manager'], 'launchd')
+        for key in ('remote_watchdog', 'local_watchdog'):
+            self.assertTrue(status[key]['configured_enabled'])
+            self.assertFalse(status[key]['enabled'])
+            self.assertTrue(status[key]['suppressed'])
+            self.assertEqual(status[key]['suppression_reason'], 'launchd')
+        self.assertFalse(status['remote_watchdog']['worker_alive'])
+        self.assertFalse(status['local_watchdog']['feeder_alive'])
+
+    def test_process_manager_cannot_start_under_launchd(self):
+        manager = ProcessWatchdogManager()
+        with patch('client.watchdog.process_watchdog.is_launchd_managed_client', return_value=True), \
+             patch('client.watchdog.process_watchdog.subprocess.Popen') as popen:
+            manager.start()
+        popen.assert_not_called()
+        self.assertEqual(manager.session, '')
+        self.assertIsNone(manager.supervisor_pid)
+
+    def test_process_status_reports_configured_but_effectively_suppressed(self):
+        manager = SimpleNamespace(supervisor_pid=4512, supervisor_started=123.5)
+        with patch('client.config.runtime_config.PROCESS_WATCHDOG_ENABLED', True), \
+             patch('client.watchdog.process_watchdog.is_launchd_managed_client', return_value=True), \
+             patch('client.watchdog.process_watchdog._alive') as is_alive:
+            status = get_process_watchdog_status_payload(manager)
+        self.assertTrue(status['configured_enabled'])
+        self.assertFalse(status['enabled'])
+        self.assertTrue(status['suppressed'])
+        self.assertEqual(status['suppression_reason'], 'launchd')
+        self.assertIsNone(status['supervisor_pid'])
+        self.assertFalse(status['supervisor_alive'])
+        is_alive.assert_not_called()
 
 
 class WatchdogStatusIntegrationTests(unittest.TestCase):

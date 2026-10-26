@@ -73,7 +73,7 @@
 | `termination_reason` | 会话终止类别，在 Connection History 中以 **Termination cause** 呈现；Server requested disconnect、Client exit / restart / update、Connection lost、Transport error、Timeout、Unexpected disconnect 和 Client error 各有对应采集路径。 |
 | `termination_detail_json` | 会话结束详情 JSON；主动结束时记录操作命令 `command`（如 `kill_instance`、`disconnect`、`httpctl kill`），捕获异常时记录 `summary`、`traceback`，在 **Termination details** 中展示。无额外详情时为空对象。 |
 | `tracking_source` | 连接状态记录的来源标记。 |
-| `snapshot_json` | 连接阶段的主机、系统、进程、运行方式、Watchdog 配置等快照，支持历史详情展示；其中 `launch_mode` 保存标准化运行形态，`launch_source` 保存可识别的具体启动环境。 |
+| `snapshot_json` | 连接阶段的主机、系统、进程、运行方式、Watchdog 配置等快照，支持历史详情展示；其中 `launch_mode` 保存标准化运行形态，`launch_source` 保存可识别的具体启动环境，定义见 [Client Launch Mode](launch_mode.md)。 |
 
 **在线连接**由运行中的 Server 管理；数据库表保存历史与快照。管理当前 Socket 应使用 Connections 的对应操作。连接时间线内的操作记录来自 `activity_records`，不是 `connection_sessions` 自己的子列。
 

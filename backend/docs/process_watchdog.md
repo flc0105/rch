@@ -21,6 +21,10 @@
 
 注意：如果用户在系统层直接 `kill -9` 或强制结束 Client，Supervisor 无法辨别人工操作还是意外死亡，默认视为异常并复活。要永久停止 Client，请先禁用 Process Watchdog，或使用正式生命周期命令。
 
+## launchd 托管时的进程监督
+
+LaunchAgent / LaunchDaemon 的 Client 由 launchd 作为唯一进程生命周期监督者。此类 Client 不创建 Process Watchdog Supervisor；即使 `PROCESS_WATCHDOG_ENABLED=true` 已保存在 runtime config 中，运行状态仍为 suppressed。停止 launchd job 后不会再由独立 Process Supervisor 创建 Detached Client。Local Heartbeat 与 Remote HTTP Watchdog 同样在 launchd Client 中关闭。launchd 的生命周期操作与验收方式见 [macOS launchd Service Management](launchd.md)。
+
 ## 与另外两种 Watchdog 的设计差异
 
 | Watchdog | 判断依据与负责场景 | 运行组件 | 发现故障后的动作 |

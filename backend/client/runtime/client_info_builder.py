@@ -16,7 +16,7 @@ from core.client_revision import build_client_revision_manifest
 from client.runtime.client_logging import get_client_log_path
 from core.device.local_identity import get_local_identity
 from client.runtime.client_util import check_privilege, get_executable_path, get_system_paths
-from client.runtime.launch_context import detect_launch_context
+from client.runtime.launch_context import detect_launch_context, is_launchd_managed_client
 
 
 _CLIENT_REVISION_MANIFEST = None
@@ -92,8 +92,8 @@ class ClientInfoBuilder:
 
             'http_transfer_mode': HTTP_TRANSFER_MODE,
             'python_execution_mode': PYTHON_EXECUTION_MODE,
-            'remote_watchdog_enabled': REMOTE_HTTP_WATCHDOG_ENABLED,
-            'local_watchdog_enabled': LOCAL_WATCHDOG_ENABLED,
+            'remote_watchdog_enabled': bool(REMOTE_HTTP_WATCHDOG_ENABLED and not is_launchd_managed_client()),
+            'local_watchdog_enabled': bool(LOCAL_WATCHDOG_ENABLED and not is_launchd_managed_client()),
 
             'command_manifest': self._build_command_manifest(),
             'variable_manifest': self._build_variable_manifest(),

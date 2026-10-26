@@ -14,7 +14,7 @@ from uuid import uuid4
 from client.watchdog.watchdog_paths import get_watchdog_log_path
 from client.runtime.temp_workspace import get_temp_category_dir
 from client.watchdog.recovery_source import RECOVERY_SOURCE_ENV, PROCESS_WATCHDOG
-from client.runtime.launch_context import detached_launch_environment
+from client.runtime.launch_context import detached_launch_environment, is_launchd_managed_client
 
 
 _ENV_SESSION = 'RCH_PROCESS_WATCHDOG_SESSION'
@@ -181,12 +181,18 @@ def get_process_watchdog_status_payload(manager=None):
     """Report process-death supervision separately from Remote/Local heartbeat workers."""
     from client.config import runtime_config
 
-    pid = getattr(manager, 'supervisor_pid', None)
-    started = getattr(manager, 'supervisor_started', None)
+    configured_enabled = bool(runtime_config.PROCESS_WATCHDOG_ENABLED)
+    suppressed = is_launchd_managed_client()
+    enabled = configured_enabled and not suppressed
+    pid = getattr(manager, 'supervisor_pid', None) if enabled else None
+    started = getattr(manager, 'supervisor_started', None) if enabled else None
     return {
-        'enabled': bool(runtime_config.PROCESS_WATCHDOG_ENABLED),
+        'enabled': enabled,
+        'configured_enabled': configured_enabled,
+        'suppressed': suppressed,
+        'suppression_reason': 'launchd' if suppressed else '',
         'supervisor_pid': pid,
-        'supervisor_alive': bool(pid is not None and started is not None and _alive(pid, started)),
+        'supervisor_alive': bool(enabled and pid is not None and started is not None and _alive(pid, started)),
         'poll_interval_seconds': _POLL_INTERVAL,
         'log_path': get_watchdog_log_path('process_watchdog.log'),
     }
@@ -201,6 +207,9 @@ class ProcessWatchdogManager:
         self.supervisor_started = None
 
     def start(self):
+        if is_launchd_managed_client():
+            self.stop()
+            return
         if self.session and self.supervisor_pid and _alive(self.supervisor_pid, self.supervisor_started):
             return
         inherited = _session_from_environment()

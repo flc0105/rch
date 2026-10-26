@@ -27,9 +27,13 @@
             <span>{{ healthSubtitle }}</span>
           </div>
           <div class="watchdog-worker-meta">
-            <span>{{ status.process_watchdog.enabled && !legacyEnabled ? 'Process supervisor' : 'Supervisor process' }}</span>
-            <strong>{{ (status.process_watchdog.enabled && !legacyEnabled ? status.process_watchdog.supervisor_pid : status.remote_watchdog.worker_pid) ?? '—' }}</strong>
+            <span>{{ launchdManaged ? 'Lifecycle manager' : (status.process_watchdog.enabled && !legacyEnabled ? 'Process supervisor' : 'Supervisor process') }}</span>
+            <strong>{{ launchdManaged ? 'launchd' : ((status.process_watchdog.enabled && !legacyEnabled ? status.process_watchdog.supervisor_pid : status.remote_watchdog.worker_pid) ?? '—') }}</strong>
           </div>
+        </div>
+
+        <div v-if="launchdManaged" class="watchdog-policy-note">
+          {{ launchdManagerLabel }} owns this Client's lifecycle. Process recovery, local heartbeat recovery, and remote watchdog control are disabled to avoid competing supervisors.
         </div>
 
         <div class="watchdog-modes">
@@ -41,7 +45,7 @@
               </div>
               <div class="watchdog-card-controls">
                 <span class="watchdog-state-tag" :class="{ 'is-on': status.process_watchdog.enabled }">
-                  {{ status.process_watchdog.enabled ? 'Enabled' : 'Disabled' }}
+                  {{ launchdManaged ? `Managed by ${launchdManagerLabel}` : (status.process_watchdog.enabled ? 'Enabled' : 'Disabled') }}
                 </span>
                 <el-switch
                   :model-value="Boolean(status.process_watchdog.enabled)"
@@ -72,7 +76,7 @@
               </div>
               <div class="watchdog-card-controls">
                 <span class="watchdog-state-tag" :class="{ 'is-on': status.remote_watchdog.enabled }">
-                  {{ status.remote_watchdog.enabled ? 'Enabled' : 'Disabled' }}
+                  {{ launchdManaged ? `Managed by ${launchdManagerLabel}` : (status.remote_watchdog.enabled ? 'Enabled' : 'Disabled') }}
                 </span>
                 <el-switch
                   :model-value="Boolean(status.remote_watchdog.enabled)"
@@ -103,7 +107,7 @@
               </div>
               <div class="watchdog-card-controls">
                 <span class="watchdog-state-tag" :class="{ 'is-on': status.local_watchdog.enabled }">
-                  {{ status.local_watchdog.enabled ? 'Enabled' : 'Disabled' }}
+                  {{ launchdManaged ? `Managed by ${launchdManagerLabel}` : (status.local_watchdog.enabled ? 'Enabled' : 'Disabled') }}
                 </span>
                 <el-switch
                   :model-value="Boolean(status.local_watchdog.enabled)"
@@ -245,6 +249,15 @@ export default {
     }
   },
   computed: {
+    launchdManaged() {
+      return Boolean(this.status?.client?.watchdogs_suppressed && this.status?.client?.lifecycle_manager === 'launchd')
+    },
+    launchdManagerLabel() {
+      const source = String(this.currentConnection?.launch_source || '').toLowerCase()
+      if (source === 'launchagent') return 'LaunchAgent'
+      if (source === 'launchdaemon') return 'LaunchDaemon'
+      return 'launchd'
+    },
     legacyEnabled() {
       return Boolean(this.status?.remote_watchdog?.enabled || this.status?.local_watchdog?.enabled)
     },
@@ -255,16 +268,19 @@ export default {
       return this.status?.remote_watchdog?.worker_alive ? 'Running' : 'Stopped'
     },
     healthTone() {
+      if (this.launchdManaged) return 'off'
       if (!this.enabled) return 'off'
       if ((this.legacyEnabled && !this.status?.remote_watchdog?.worker_alive) ||
           (this.status?.process_watchdog?.enabled && !this.status?.process_watchdog?.supervisor_alive)) return 'warning'
       return 'healthy'
     },
     healthTitle() {
+      if (this.launchdManaged) return `Lifecycle managed by ${this.launchdManagerLabel}`
       if (!this.enabled) return 'Watchdog is disabled'
       return this.healthTone === 'healthy' ? 'Supervisor is running' : 'Supervisor is not running'
     },
     healthSubtitle() {
+      if (this.launchdManaged) return `Client-side watchdogs stay off so ${this.launchdManagerLabel} remains the single lifecycle supervisor.`
       if (!this.enabled) return 'All watchdog modes are turned off.'
       if (this.healthTone === 'warning') return 'A watchdog mode is enabled, but its supervisor process is unavailable.'
       if (this.status.process_watchdog.enabled) {
@@ -280,15 +296,16 @@ export default {
       return this.currentConnection?.connection_state === 'offline' || Boolean(this.currentConnection?.disconnected_at)
     },
     canToggleMode() {
-      return !this.connectionOffline && !this.loading && !this.error &&
+      return !this.launchdManaged && !this.connectionOffline && !this.loading && !this.error &&
         Boolean(this.status) && !this.togglingMode && !this.pendingAction
     },
     canControl() {
       // Recovery controls must not rely on the health/status request or the
-      // agent's online/busy state; the HTTP queue is independent.
-      return Boolean(this.clientId) && !this.pendingAction
+      // agent's online/busy state; launchd-managed Clients intentionally disable Remote Watchdog.
+      return Boolean(this.clientId) && !this.launchdManaged && !this.pendingAction
     },
     actionHint() {
+      if (this.launchdManaged) return `Remote watchdog control is disabled while ${this.launchdManagerLabel} manages this Client`
       if (this.connectionOffline) return 'Agent is offline; command can be queued for its next poll'
       if (!this.status || this.error) return 'Status unavailable; recovery commands can still be queued'
       if (!this.status.remote_watchdog.enabled || !this.status.remote_watchdog.worker_alive) return 'Recovery commands can be queued; delivery requires an active remote watchdog'
@@ -424,6 +441,7 @@ export default {
 .watchdog-hero { display: flex; align-items: center; gap: 14px; padding: 18px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 14px; margin-bottom: 14px; }
 .watchdog-hero-off { background: #f8fafc; border-color: #e2e8f0; }
 .watchdog-hero-warning { background: #fffbeb; border-color: #fde68a; }
+.watchdog-policy-note { margin: -2px 0 14px; padding: 11px 13px; border-radius: 10px; background: #f8fafc; border: 1px solid #e2e8f0; color: #475569; font-size: 12px; line-height: 1.5; }
 .watchdog-state-dot { width: 11px; height: 11px; border-radius: 50%; flex: 0 0 auto; background: #16a34a; box-shadow: 0 0 0 4px rgba(22,163,74,.12); }
 .watchdog-hero-off .watchdog-state-dot { background: #94a3b8; box-shadow: 0 0 0 4px rgba(148,163,184,.12); }
 .watchdog-hero-warning .watchdog-state-dot { background: #d97706; box-shadow: 0 0 0 4px rgba(217,119,6,.12); }

@@ -14,6 +14,7 @@ from client.watchdog.local_watchdog import LocalWatchdogHeartbeatFeeder
 from client.watchdog.watchdog_process import ClientWatchdogProcess
 from client.watchdog.watchdog_paths import get_watchdog_log_path
 from client.runtime.temp_workspace import get_temp_category_dir
+from client.runtime.launch_context import is_launchd_managed_client
 from core.utils.logger import logger
 
 
@@ -89,6 +90,13 @@ class ClientGuardManager:
         if self._started:
             return
 
+        # launchd owns restart/stop semantics for LaunchAgent and LaunchDaemon Clients.
+        # Running another recovery layer here can revive a deliberately stopped job.
+        if is_launchd_managed_client():
+            self.stop()
+            self._started = True
+            return
+
         # self._log_startup_once()
 
         if LOCAL_WATCHDOG_ENABLED:
@@ -116,15 +124,21 @@ class ClientGuardManager:
 
 
     def get_watchdog_status_payload(self):
+        suppressed = is_launchd_managed_client()
+        remote_configured = bool(REMOTE_HTTP_WATCHDOG_ENABLED)
+        local_configured = bool(LOCAL_WATCHDOG_ENABLED)
+        remote_enabled = remote_configured and not suppressed
+        local_enabled = local_configured and not suppressed
+
         watchdog_worker_pid = None
         watchdog_worker_alive = False
-        if self._watchdog_process is not None:
+        if not suppressed and self._watchdog_process is not None:
             watchdog_worker_pid = self._watchdog_process.get_pid()
             watchdog_worker_alive = self._watchdog_process.is_alive()
 
         local_feeder_thread_alive = False
         local_feeder_thread_name = None
-        if self._local_watchdog_feeder is not None:
+        if not suppressed and self._local_watchdog_feeder is not None:
             local_feeder_thread_alive = self._local_watchdog_feeder.is_alive()
             local_feeder_thread_name = self._local_watchdog_feeder.get_thread_name()
 
@@ -132,10 +146,15 @@ class ClientGuardManager:
             'client': {
                 'id': self.client_id,
                 'pid': os.getpid(),
+                'lifecycle_manager': 'launchd' if suppressed else '',
+                'watchdogs_suppressed': suppressed,
             },
             # Remote and Local share the same worker; both sections expose its actual identity.
             'remote_watchdog': {
-                'enabled': REMOTE_HTTP_WATCHDOG_ENABLED,
+                'enabled': remote_enabled,
+                'configured_enabled': remote_configured,
+                'suppressed': suppressed,
+                'suppression_reason': 'launchd' if suppressed else '',
                 'worker_pid': watchdog_worker_pid,
                 'worker_alive': watchdog_worker_alive,
                 'control_url': self._build_remote_http_control_url(),
@@ -143,7 +162,10 @@ class ClientGuardManager:
                 'log_path': self._build_remote_watchdog_log_file_path(),
             },
             'local_watchdog': {
-                'enabled': LOCAL_WATCHDOG_ENABLED,
+                'enabled': local_enabled,
+                'configured_enabled': local_configured,
+                'suppressed': suppressed,
+                'suppression_reason': 'launchd' if suppressed else '',
                 'worker_pid': watchdog_worker_pid,
                 'worker_alive': watchdog_worker_alive,
                 'heartbeat_interval_seconds': LOCAL_WATCHDOG_HEARTBEAT_INTERVAL_SECONDS,

@@ -194,6 +194,14 @@ heartbeat_age_seconds = max(当前 Unix 时间 - ts, 0)
 
 Local 的心跳间隔下限为 0.5 秒，监控超时下限为 1 秒。实际生效值应通过 `watchdog --json` 查看。
 
+## launchd 托管 Client 的 Watchdog 策略
+
+macOS LaunchAgent 与 LaunchDaemon 已由 launchd 负责进程启动、停止和按 plist 策略恢复。Client 判定自己运行在 LaunchAgent / LaunchDaemon 下时，Process Watchdog、Local Heartbeat Watchdog 和 Remote HTTP Watchdog 都保持关闭，避免第二套监督进程把明确停止的 launchd job 再次拉起，或与 `KeepAlive` 同时恢复出多个 Client。
+
+该规则优先于 `runtime_config.json` 中的三个 Watchdog 开关。配置值本身仍保留；`watchdog --json` 会通过 `configured_enabled` 显示保存的配置，同时 `enabled=false`、`suppressed=true`、`suppression_reason=launchd` 表示当前 launchd Client 的实际运行状态。离开 launchd 以 Terminal、IDE 或 Detached 等方式启动新的 Client 时，原有配置再次按正常规则生效。
+
+Web 的 **info → Watchdog** 在这种情况下显示 **Lifecycle managed by launchd**，三个 Watchdog 开关与 Remote HTTP control 操作不可用。LaunchAgent / LaunchDaemon 的启动、停止和重启应通过对应的 launchd service 管理动作完成。统一动作、domain、权限与状态语义见 [macOS launchd Service Management](launchd.md)。
+
 ## 运行配置与启停操作
 
 ### 控制开关的生效时间

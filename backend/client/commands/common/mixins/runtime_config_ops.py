@@ -5,6 +5,7 @@ from client.commands.common.services.runtime.runtime_config_service import Runti
 from core.utils.decorator import desc
 from core.utils.logger import logger
 from core.utils.output_marker import success, info, error, warning
+from client.runtime.launch_context import is_launchd_managed_client
 
 
 class CommandRuntimeConfigMixin:
@@ -201,21 +202,29 @@ class CommandRuntimeConfigMixin:
         if key == 'SCREEN_FRAME_STRATEGY':
             effects.append(warning('Applies to new Screen View sessions; restart the current Screen View to switch mode'))
 
+        launchd_managed = is_launchd_managed_client()
+
         if key == 'PROCESS_WATCHDOG_ENABLED':
             manager = getattr(self.socket, 'process_watchdog_manager', None)
             if manager is not None:
-                if value:
+                if value and not launchd_managed:
                     manager.start()
                 else:
                     manager.stop()
-                effects.append(success('Applied: process watchdog runtime updated'))
+                if launchd_managed:
+                    effects.append(warning('Saved: launchd manages this Client; process watchdog remains disabled'))
+                else:
+                    effects.append(success('Applied: process watchdog runtime updated'))
                 # Existing Remote/Local control Worker inherits the original environment.
                 # Refresh it once so intentional kill/relaunch can stop this new chain.
                 self._restart_guard_manager()
 
         if key in self.WATCHDOG_CONFIG_KEYS:
             if self._restart_guard_manager():
-                effects.append(success('Applied: watchdog runtime restarted'))
+                if launchd_managed:
+                    effects.append(warning('Saved: launchd manages this Client; Client watchdogs remain disabled'))
+                else:
+                    effects.append(success('Applied: watchdog runtime restarted'))
 
         return effects
 
