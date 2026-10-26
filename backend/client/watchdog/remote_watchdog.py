@@ -13,6 +13,7 @@ from client.watchdog.process_watchdog import (
     stop_process_watchdog_from_environment, without_process_watchdog_environment,
 )
 from client.watchdog.recovery_source import RECOVERY_SOURCE_ENV
+from client.runtime.launch_context import detached_launch_environment
 
 HTTP_CONTROL_COMMANDS = {'kill', 'relaunch', 'clone'}
 
@@ -64,7 +65,7 @@ class WatchdogActionExecutor:
         if not self.parent_launch_argv:
             raise RuntimeError('Missing parent launch argv')
 
-        env = without_process_watchdog_environment()
+        env = detached_launch_environment(without_process_watchdog_environment())
         if recovery_source:
             env[RECOVERY_SOURCE_ENV] = recovery_source
         popen_kwargs = {

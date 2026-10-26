@@ -1,6 +1,5 @@
 import os
 import platform
-
 from client.config.config import (
     CLIENT_BUILD_VERSION,
     CLIENT_SOURCE_REVISION,
@@ -17,9 +16,11 @@ from core.client_revision import build_client_revision_manifest
 from client.runtime.client_logging import get_client_log_path
 from core.device.local_identity import get_local_identity
 from client.runtime.client_util import check_privilege, get_executable_path, get_system_paths
+from client.runtime.launch_context import detect_launch_context
 
 
 _CLIENT_REVISION_MANIFEST = None
+_LAUNCH_CONTEXT = None
 
 
 def _get_client_revision_manifest() -> dict:
@@ -53,6 +54,7 @@ class ClientInfoBuilder:
         """
         identity = get_local_identity()
         process_info = self._build_process_info(identity.os_alias)
+        launch_context = self._get_launch_context(identity.os_alias)
         revision_manifest = _get_client_revision_manifest()
 
         info = {
@@ -79,6 +81,8 @@ class ClientInfoBuilder:
 
             'process_id': os.getpid(),
             'launch_command': get_executable_path(),
+            'launch_mode': launch_context['mode'],
+            'launch_source': launch_context['source'],
             'client_log_path': get_client_log_path(),
             'username': process_info['username'],
             'process_name': process_info['process_name'],
@@ -96,6 +100,18 @@ class ClientInfoBuilder:
             'system_paths': get_system_paths(),
         }
         return info
+
+
+    @classmethod
+    def _get_launch_context(cls, os_alias: str) -> dict:
+        global _LAUNCH_CONTEXT
+        if _LAUNCH_CONTEXT is None:
+            _LAUNCH_CONTEXT = cls._detect_launch_context(os_alias)
+        return dict(_LAUNCH_CONTEXT)
+
+    @staticmethod
+    def _detect_launch_context(os_alias: str) -> dict:
+        return detect_launch_context(os_alias)
 
     def _build_command_manifest(self):
         command_manifest = []

@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from core.device.local_identity import get_local_identity
+from client.runtime.launch_context import detached_launch_environment
 
 
 def check_privilege():
@@ -226,7 +227,7 @@ def spawn_new_instance():
 
     popen_kwargs = {
         'cwd': launch_cwd,
-        'env': without_process_watchdog_environment(),
+        'env': detached_launch_environment(without_process_watchdog_environment()),
         'stdin': subprocess.DEVNULL,
         'stdout': subprocess.DEVNULL,
         'stderr': subprocess.DEVNULL,
@@ -324,7 +325,7 @@ def spawn_detached_python_script(script_path: str, cwd: str = '', args=None, std
 
     popen_kwargs = {
         'cwd': launch_cwd,
-        'env': without_process_watchdog_environment(),
+        'env': detached_launch_environment(without_process_watchdog_environment()),
         'stdin': subprocess.DEVNULL,
         'stdout': subprocess.DEVNULL,
         'stderr': stderr_file or subprocess.DEVNULL,

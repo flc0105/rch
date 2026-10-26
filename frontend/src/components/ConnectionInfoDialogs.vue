@@ -522,7 +522,7 @@
 </template>
 
 <script>
-import { formatBytesHuman, formatDateTimeStandard as formatDateTimeStandardValue } from '../utils/formatters.js'
+import { formatBytesHuman, formatDateTimeStandard as formatDateTimeStandardValue, formatLaunchMode } from '../utils/formatters.js'
 import { ElMessage } from 'element-plus'
 import WatchdogInfoPanel from './WatchdogInfoPanel.vue'
 
@@ -638,6 +638,7 @@ export default {
         { label: 'PID', value: conn.process_id || '-' },
         { label: 'Process Name', value: conn.process_name || '-' },
         { label: 'Launch Command', value: conn.launch_command || '-' },
+        { label: 'Launch Mode', value: formatLaunchMode(conn.launch_mode, conn.launch_source) },
         { label: 'Client Log', value: conn.client_log_path || '-', mono: true },
         { label: 'Username', value: conn.username || '-' },
         { label: 'Python Version', value: conn.python_ver || '-' },

@@ -82,6 +82,10 @@
                   <span class="value">{{ formatProcess(scope.row) }}</span>
                 </div>
                 <div class="machine-session-meta-item">
+                  <span class="label">Launch mode</span>
+                  <span class="value">{{ formatLaunchModeValue(scope.row) }}</span>
+                </div>
+                <div class="machine-session-meta-item">
                   <span class="label">Build</span>
                   <span class="value">{{ scope.row.build_version || '-' }}</span>
                 </div>
@@ -244,7 +248,7 @@
 </template>
 
 <script>
-import { diffDateTimeMs, formatDateTimeStandard } from '../utils/formatters.js'
+import { diffDateTimeMs, formatDateTimeStandard, formatLaunchMode } from '../utils/formatters.js'
 import { ElMessage } from 'element-plus'
 import { getMachineConnectionCommands, getMachineConnectionHistory } from '../api/connectionsApi.js'
 
@@ -393,6 +397,11 @@ export default {
       const processId = String(row?.process_id || '').trim()
       if (processName && processId) return `${processName} (${processId})`
       return processName || processId || '-'
+    },
+
+
+    formatLaunchModeValue(row) {
+      return formatLaunchMode(row?.launch_mode, row?.launch_source)
     },
 
     hasTerminationDetail(row) {

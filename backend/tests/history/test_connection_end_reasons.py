@@ -34,6 +34,30 @@ def _new_store(tmp_path):
     return db, store
 
 
+
+
+def test_connection_history_persists_launch_mode_snapshot(tmp_path):
+    db = RchDatabase(str(tmp_path / 'rch.db'))
+    store = ConnectionHistoryStore(db)
+    connection = {
+        **_connection(),
+        'launch_mode': 'ide',
+        'launch_source': 'pycharm',
+    }
+    store.record_connected(connection)
+
+    session = store.get_history('machine-A')['sessions'][0]
+    assert session['launch_mode'] == 'ide'
+    assert session['launch_source'] == 'pycharm'
+
+    row = db.connection().execute(
+        'SELECT snapshot_json FROM connection_sessions WHERE machine_id = ? AND client_id = ?',
+        ('machine-A', 'client-X'),
+    ).fetchone()
+    assert '"launch_mode":"ide"' in row['snapshot_json']
+    assert '"launch_source":"pycharm"' in row['snapshot_json']
+
+
 def test_connection_history_new_fields_preserve_existing_state_and_detail(tmp_path):
     db, store = _new_store(tmp_path)
     store.record_disconnected(_connection(), termination_reason='client_error', details={

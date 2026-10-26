@@ -93,3 +93,45 @@ export function diffDateTimeMs(startValue, endValue = '') {
 
   return Math.max(endMs - startMs, 0)
 }
+
+export function formatLaunchMode(modeValue, sourceValue = '') {
+  const mode = String(modeValue || '').trim().toLowerCase()
+  const source = String(sourceValue || '').trim().toLowerCase()
+  const modeLabels = {
+    terminal: 'Terminal',
+    terminal_background: 'Terminal background',
+    ide: 'IDE',
+    detached: 'Detached',
+    user_service: 'User service',
+    system_service: 'System service',
+    scheduled: 'Scheduled',
+    unknown: 'Unknown',
+  }
+  const sourceLabels = {
+    zsh: 'zsh',
+    bash: 'bash',
+    sh: 'sh',
+    dash: 'dash',
+    fish: 'fish',
+    ksh: 'ksh',
+    tcsh: 'tcsh',
+    cmd: 'CMD',
+    powershell: 'PowerShell',
+    pwsh: 'PowerShell',
+    pycharm: 'PyCharm',
+    pythonista: 'Pythonista',
+    launchagent: 'LaunchAgent',
+    launchdaemon: 'LaunchDaemon',
+    systemd_user: 'systemd --user',
+    systemd: 'systemd',
+    windows_service: 'Windows Service',
+    cron: 'cron',
+    schtasks: 'Task Scheduler',
+    new_session: 'new session',
+    detached_process: 'detached process',
+  }
+
+  const modeLabel = modeLabels[mode] || mode || 'Unknown'
+  const sourceLabel = sourceLabels[source] || source
+  return sourceLabel ? `${modeLabel} (${sourceLabel})` : modeLabel
+}

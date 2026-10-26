@@ -12,7 +12,8 @@ class ConnectionHistoryStore:
     SNAPSHOT_FIELDS = (
         'machine_id', 'client_id', 'hostname', 'addr', 'os_type', 'os_alias', 'os_ver',
         'os_name', 'os_full', 'arch', 'manufacturer', 'model', 'integrity', 'cwd',
-        'build_version', 'python_ver', 'process_id', 'launch_command', 'username',
+        'build_version', 'python_ver', 'process_id', 'launch_command', 'launch_mode',
+        'launch_source', 'username',
         'process_name', 'http_transfer_mode', 'python_execution_mode',
         'remote_watchdog_enabled', 'local_watchdog_enabled',
     )

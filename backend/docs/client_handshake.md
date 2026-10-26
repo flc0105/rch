@@ -28,7 +28,7 @@ Python Client 的握手不只是操作系统名称。`ClientInfoBuilder.build()`
 | --- | --- | --- |
 | 当前连接身份 | `id`、`hostname`、`machine_id`、`machine_fingerprint_basis` | 区分活动 Client 实例与机器身份；来自当前进程的本地身份快照 |
 | 系统和硬件 | `os_type`、`os_alias`、`os_full`、`os_name`、`os_ver`、`arch`、`manufacturer`、`model` | 展示平台、架构和设备资料，供 UI 判断或呈现 |
-| 进程与权限 | `process_id`、`launch_command`、`username`、`process_name`、`integrity`、`cwd`、`python_ver` | 说明 Client 进程当时如何运行、具有何种权限及初始工作目录 |
+| 进程与权限 | `process_id`、`launch_command`、`launch_mode`、`launch_source`、`username`、`process_name`、`integrity`、`cwd`、`python_ver` | 说明 Client 进程当时如何运行、具有何种权限及初始工作目录 |
 | 构建与源码身份 | `build_version`、`client_revision`、`client_revision_parts`、`client_revision_files` | 标记构建产物，比较 Client 与 Server 的源码内容 |
 | 运行能力与配置快照 | `http_transfer_mode`、`python_execution_mode`、`remote_watchdog_enabled`、`local_watchdog_enabled` | 表示 Client 启动时采用的相关运行配置值 |
 | 提示与路径 | `command_manifest`、`variable_manifest`、`system_paths` | 提供命令候选、变量提示和 Client 端已知路径 |
@@ -38,6 +38,8 @@ Python Client 的握手不只是操作系统名称。`ClientInfoBuilder.build()`
 Client 主进程尝试将 Python Logging 同步镜像到 `tempfile.gettempdir()/rch_client_temp/client_logs/<实例目录>/client.log`，使用每文件 10 MiB、5 个备份的轮转。日志仍保留现有 stdout/stderr 处理方式；初始化失败只向 stdout 简短提示、不会阻断 Client 启动。握手中的 `client_log_path` 只报告成功打开的主日志文件绝对路径，失败时为空。该路径由 Server 透传到在线连接摘要及 Connection Info → Basic Info，Toolbox 打开未指定文件的 Log Viewer 时优先打开当前在线 Client 的该日志。Watchdog 的独立日志不并入主日志，且不会自动清理可能仍在使用的旧实例目录。
 
 `process_id`、`username`、`process_name`、`launch_command`、`cwd` 等描述的是**创建这份握手信息那一刻**。普通平台的用户和进程名由 `psutil` 查询；iOS 使用平台专用的进程信息方法；查询失败时可能返回空字符串。客户端不会因为进程经过几小时后 CPU、运行时长或环境信息改变，就不断发送新的 `info` 消息。
+
+`launch_mode` 描述 Client 的外部运行形态，取值为 `terminal`、`terminal_background`、`ide`、`detached`、`user_service`、`system_service`、`scheduled` 或 `unknown`。`launch_source` 保存该形态下可识别的具体环境，例如 `zsh`、`powershell`、`pycharm`、`launchagent`、`launchdaemon`、`cron` 或 `schtasks`。判定在 Client 进程生命周期内只采集一次，网络重连继续沿用同一结果；由 Client 自身重新创建出的独立后台进程按其实际进程形态记录为 `detached`。无法可靠识别的环境使用 `unknown`。
 
 `integrity` 由 Client 权限探测逻辑计算，不是对 Server 授予的权限。`python_execution_mode` 和传输模式表示 Client 当前配置，不构成“此 Client 支持所有 Web 功能”的通用能力证明。界面如需展示某个实时可执行状态，应调用相应的运行时 API，而不是反复读取握手快照。
 
@@ -54,6 +56,8 @@ Client 主进程尝试将 Python Logging 同步镜像到 `tempfile.gettempdir()/
   "os_alias": "linux",
   "cwd": "/home/demo",
   "integrity": "user",
+  "launch_mode": "system_service",
+  "launch_source": "systemd",
   "build_version": "dev",
   "client_revision": "<source-revision>",
   "command_manifest": [
