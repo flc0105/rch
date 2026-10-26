@@ -134,6 +134,8 @@
                   :connection-info-collapsed="connectionInfoCollapsed"
                   @layout-command="handleToolbarLayoutCommand"
                   @open-remote-files="openRemoteFilesDialog"
+                  @open-manage-pins="openManagePinnedPathsDialog"
+                  @open-connection-history="openSelectedMachineConnectionHistory"
                   @open-artifacts="openArtifactDialog"
                   @open-external-tools="openExternalToolManagerDialog"
                   @open-log-viewer="openLogViewerDialog"
@@ -619,6 +621,15 @@ export default {
 
     openRemoteFilesDialog() {
       this.$refs.remoteFilesDialogRef?.open()
+    },
+
+    openManagePinnedPathsDialog() {
+      this.$refs.remoteFilesDialogRef?.openPinnedQuickJumpManager()
+    },
+
+    openSelectedMachineConnectionHistory() {
+      if (!this.currentConnection?.machine_id) return
+      return this.openMachineConnectionHistory(this.decorateConnectionForDeviceView(this.currentConnection))
     },
 
     openLogViewerDialog(source = {}) {

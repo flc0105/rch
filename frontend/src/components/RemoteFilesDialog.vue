@@ -735,6 +735,19 @@ export default {
     }
   },
 
+  watch: {
+    pinManagerVisible(value) {
+      if (!value && !this.visible) {
+        this.remoteFilesContextSeq += 1
+        this.remoteFilesClientId = ''
+        this.remotePinnedJumpItems = []
+      }
+    },
+    selectedId() {
+      if (this.pinManagerVisible) this.pinManagerVisible = false
+    },
+  },
+
   computed: {
     displayRemoteFilesEntries() {
       const entries = Array.isArray(this.remoteFilesEntries)
@@ -921,7 +934,7 @@ export default {
     isRemoteFilesContextActive(context) {
       return !!(
         context?.clientId &&
-        this.visible &&
+        (this.visible || this.pinManagerVisible) &&
         context.contextSeq === this.remoteFilesContextSeq &&
         context.clientId === this.remoteFilesClientId
       )
@@ -2146,7 +2159,19 @@ export default {
     },
 
     openPinnedQuickJumpManager() {
+      const clientId = String(this.selectedId || '').trim()
+      if (!clientId) {
+        ElMessage.warning('Please select a device')
+        return
+      }
+      // The manager can open directly from Toolbox while Remote Files stays closed.
+      if (!this.visible || this.remoteFilesClientId !== clientId) {
+        this.remoteFilesContextSeq += 1
+        this.remoteFilesClientId = clientId
+        this.remotePinnedJumpItems = []
+      }
       this.pinManagerVisible = true
+      void this.loadPinnedQuickJumps()
     },
 
     handlePinnedQuickJumpsUpdated(items) {

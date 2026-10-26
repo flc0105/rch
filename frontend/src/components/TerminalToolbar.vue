@@ -286,6 +286,8 @@ export default {
   emits: [
     'layout-command',
     'open-remote-files',
+    'open-manage-pins',
+    'open-connection-history',
     'open-artifacts',
     'open-external-tools',
     'open-log-viewer',
@@ -376,7 +378,11 @@ export default {
           menuOptions: [],
         }]
       })
-      return [...base, ...shortcuts]
+      const toolboxOnly = [
+        { id: 'manage-pins', label: 'Pinned Paths', icon: 'bookmark', disabled: this.isActionDisabled('manage-pins') },
+        { id: 'connection-history', label: 'Connection History', icon: 'clock', disabled: this.isActionDisabled('connection-history') },
+      ]
+      return [...base, ...toolboxOnly, ...shortcuts]
     },
   },
 
@@ -415,6 +421,8 @@ export default {
       return (ids || []).map((id) => byId.get(id)).filter(Boolean)
     },
     isActionDisabled(actionId) {
+      if (actionId === 'connection-history') return !String(this.currentConnection?.machine_id || '').trim()
+      if (actionId === 'manage-pins') return this.deviceActionDisabled
       return [
         'remote-files',
         'pty',
@@ -531,6 +539,8 @@ export default {
 
       const eventMap = {
         'remote-files': 'open-remote-files',
+        'manage-pins': 'open-manage-pins',
+        'connection-history': 'open-connection-history',
         artifacts: 'open-artifacts',
         info: 'open-info',
         scripts: 'open-scripts',
@@ -628,6 +638,7 @@ export default {
       if (!this.toolboxVisible) return
       if (actionId !== 'settings' && (
         !TOOLBAR_ACTION_CATALOG.some((action) => action.id === actionId)
+        && !['manage-pins', 'connection-history'].includes(actionId)
         || this.isActionDisabled(actionId)
       )) return
       // Keep the Toolbox open beneath the launched dialog.

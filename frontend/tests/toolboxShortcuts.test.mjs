@@ -242,10 +242,11 @@ test('Toolbar excludes platform-mismatched pins but preserves missing same-platf
     toolboxQuickActions:[],
   })
   Object.defineProperty(inst, 'deviceActionDisabled', { get() { return options.computed.deviceActionDisabled.call(inst) } })
-  assert.deepEqual(plain(options.computed.toolboxActions.call(inst).map(x=>x.label)), ['Missing Tool','Deleted Alias'])
-  assert.ok(options.computed.toolboxActions.call(inst).every(x=>x.disabled && x.unavailable && x.shortcut))
+  const shortcuts = () => options.computed.toolboxActions.call(inst).filter(x => x.shortcut)
+  assert.deepEqual(plain(shortcuts().map(x=>x.label)), ['Missing Tool','Deleted Alias'])
+  assert.ok(shortcuts().every(x=>x.disabled && x.unavailable))
   inst.toolboxPinsLoaded = false
-  assert.ok(options.computed.toolboxActions.call(inst).every(x=>x.disabled && !x.unavailable), 'loading or offline must not be mislabeled as a deleted resource')
+  assert.ok(shortcuts().every(x=>x.disabled && !x.unavailable), 'loading or offline must not be mislabeled as a deleted resource')
 })
 
 test('Toolbox uses fixed height without an icon-grid scrollbar; picker still scrolls', () => {

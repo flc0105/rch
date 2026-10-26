@@ -9,6 +9,9 @@
     @update:model-value="emitVisibleChange"
   >
     <div class="fixed-dialog-body remote-pins-body">
+      <div class="remote-pins-toolbar">
+        <el-button size="small" type="primary" :disabled="!selectedId || createSaving" @click="openCreatePicker">Create</el-button>
+      </div>
       <div class="dialog-table-shell remote-pins-table-shell">
         <el-table
           :data="items"
@@ -64,13 +67,23 @@
       </div>
     </div>
   </el-dialog>
+
+  <RemoteFilePicker
+    v-model:visible="createPickerVisible"
+    :selected-id="selectedId"
+    selection-mode="folder"
+    :multiple="false"
+    @select="createPinnedPathFromSelection"
+  />
 </template>
 
 <script>
 import { ElMessage, ElMessageBox } from 'element-plus'
+import RemoteFilePicker from './RemoteFilePicker.vue'
 
 export default {
   name: 'RemotePinsDialog',
+  components: { RemoteFilePicker },
 
   props: {
     modelValue: {
@@ -94,7 +107,76 @@ export default {
     'updated',
   ],
 
+  data() {
+    return { createPickerVisible: false, createSaving: false }
+  },
+
+  watch: {
+    modelValue(value) {
+      if (!value) this.createPickerVisible = false
+    },
+  },
+
   methods: {
+    openCreatePicker() {
+      if (!this.selectedId || this.createSaving) return
+      this.createPickerVisible = true
+    },
+
+    async createPinnedPathFromSelection(selectedPath) {
+      const clientId = String(this.selectedId || '').trim()
+      const path = String(selectedPath || '').trim()
+      if (!clientId || !path || !this.modelValue || this.createSaving) return
+      const defaultName = path.replace(/[\\/]+$/, '').split(/[\\/]/).filter(Boolean).pop() || 'Pinned Path'
+
+      try {
+        const { value } = await ElMessageBox.prompt(
+          `Selected folder:<br><span style="word-break: break-all; color: var(--muted);">${this.escapeRemoteHtml(path)}</span>`,
+          'Pin Path',
+          {
+            confirmButtonText: 'Create',
+            cancelButtonText: 'Cancel',
+            dangerouslyUseHTMLString: true,
+            inputValue: defaultName,
+            inputPattern: /\S/,
+            inputErrorMessage: 'Display name is required',
+          },
+        )
+        if (clientId !== String(this.selectedId || '').trim() || !this.modelValue) return
+        const displayName = String(value || '').trim()
+        if (!displayName) return
+
+        // POST updates existing names; creating from the manager must not silently replace a Pin.
+        const latestRes = await fetch(`/api/connections/${encodeURIComponent(clientId)}/pinned_paths`)
+        const latestJson = await latestRes.json()
+        if (!latestRes.ok || latestJson.code !== 0) {
+          throw new Error(latestJson.message || 'Failed to check pinned paths')
+        }
+        if (clientId !== String(this.selectedId || '').trim() || !this.modelValue) return
+        const existing = Array.isArray(latestJson.data?.items) ? latestJson.data.items : []
+        if (existing.some(item => String(item?.display_name || '').toLowerCase() === displayName.toLowerCase())) {
+          ElMessage.warning('A pinned path with this name already exists')
+          return
+        }
+
+        const res = await fetch(`/api/connections/${encodeURIComponent(clientId)}/pinned_paths`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ display_name: displayName, path }),
+        })
+        const json = await res.json()
+        if (clientId !== String(this.selectedId || '').trim() || !this.modelValue) return
+        if (!res.ok || json.code !== 0) throw new Error(json.message || 'Failed to save pinned path')
+        this.$emit('updated', Array.isArray(json.data?.items) ? json.data.items : [])
+        ElMessage.success(json.data?.message || 'Pinned path saved')
+      } catch (e) {
+        if (this.isDialogCancel(e)) return
+        ElMessage.error(e.message || 'Failed to save pinned path')
+      } finally {
+        this.createSaving = false
+      }
+    },
+
     emitVisibleChange(value) {
       this.$emit('update:modelValue', value)
     },
@@ -218,6 +300,14 @@ export default {
 </script>
 
 <style scoped>
+.remote-pins-toolbar {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-start;
+  padding-bottom: 12px;
+}
+
 .remote-pins-body {
   height: 100%;
   min-height: 0;

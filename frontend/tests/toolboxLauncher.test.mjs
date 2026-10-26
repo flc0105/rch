@@ -91,9 +91,9 @@ test('More hover preserves the original menu while click opens Toolbox', () => {
 test('Toolbox launches tools immediately without waiting for the close animation', () => {
   const app = mountToolbar()
   const ids = Array.from(app.options.computed.toolboxActions.call(app.instance), item => item.id)
-  assert.equal(ids.length, 17)
+  assert.equal(ids.length, 19)
   assert.equal(ids[0], 'remote-files')
-  assert.equal(ids.at(-1), 'quick-actions')
+  assert.deepEqual(ids.slice(-3), ['quick-actions', 'manage-pins', 'connection-history'])
 
   app.instance.openToolbox()
   app.instance.launchToolboxAction('documents')
