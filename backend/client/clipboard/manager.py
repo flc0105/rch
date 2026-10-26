@@ -3,6 +3,7 @@ import os
 import shutil
 import uuid
 from client.runtime.temp_workspace import make_client_temp_dir, cleanup_temp_path, get_temp_category_dir
+from client.runtime.user_identity import get_macos_console_user_identity
 from pathlib import Path
 
 import requests
@@ -484,44 +485,10 @@ class ClipboardManager:
         if self._os_alias != 'mac':
             return None
 
-        try:
-            import pwd
-
-            console_stat = os.stat(
-                '/dev/console'
-            )
-
-            uid = int(console_stat.st_uid)
-
-            if uid <= 0:
-                return None
-
-            user = pwd.getpwuid(uid)
-
-            username = str(
-                user.pw_name or ''
-            ).strip()
-
-            if (
-                not username
-                or username in {
-                    'root',
-                    'loginwindow',
-                    '_mbsetupuser',
-                }
-            ):
-                return None
-
-            return {
-                'uid': uid,
-                'gid': int(user.pw_gid),
-                'home': str(
-                    user.pw_dir or ''
-                ).strip(),
-            }
-
-        except Exception:
+        identity = get_macos_console_user_identity()
+        if identity is None:
             return None
+        return identity.as_dict()
 
     def _resolve_staging_dir(
         self,

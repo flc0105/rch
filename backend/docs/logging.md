@@ -50,14 +50,16 @@ tail -n 100 -F runtime/server.log
 
 Client 正常启动时，会为**每个进程实例**建立一份可轮转的主日志；断线重连不会另外创建一份，同一设备上启动另一个 Client 进程则使用独立目录。文件位于**运行 Client 的那台设备**，不是 Server 的 `runtime/`。
 
-以 `T` 表示 Client 设备上的系统临时目录（由操作系统和运行环境决定）：
+以 `T` 表示 Client 设备上的系统临时目录（由操作系统和运行环境决定），`R` 表示 Client temp root。Windows 的 `R` 为 `T/rch_client_temp`；POSIX 的 `R` 为 `T/rch_client_temp_u<effective_uid>`：
 
 ```text
-T/rch_client_temp/client_logs/client_<实例目录>/client.log
-T/rch_client_temp/client_logs/client_<实例目录>/client.log.1
+R/client_logs/client_<实例目录>/client.log
+R/client_logs/client_<实例目录>/client.log.1
 ...
-T/rch_client_temp/client_logs/client_<实例目录>/client.log.5
+R/client_logs/client_<实例目录>/client.log.5
 ```
+
+POSIX 的 UID 后缀和 `0700` 根目录用于隔离 root/elevated 与普通用户实例，避免一个账户创建的私有目录阻止另一个账户启动 Client。
 
 | 项目 | 行为 |
 | --- | --- |
@@ -83,9 +85,9 @@ Client 不承诺自动捕获所有 `print()`、独立子进程 stdout/stderr，�
 三个 Watchdog 的诊断日志统一位于目标 Client 的：
 
 ```text
-T/rch_client_temp/watchdog_logs/client_remote_watchdog.log
-T/rch_client_temp/watchdog_logs/client_local_watchdog.log
-T/rch_client_temp/watchdog_logs/process_watchdog.log
+R/watchdog_logs/client_remote_watchdog.log
+R/watchdog_logs/client_local_watchdog.log
+R/watchdog_logs/process_watchdog.log
 ```
 
 Remote / Local Watchdog 使用独立文件日志；Process Watchdog 的日志按约 **2 MiB** 轮转并保留 **2 个备份**。这些日志不因主日志轮转而被合并或覆盖。Web 连接详情中的 **Watchdog** 区域提供各自路径及相应的查看入口。

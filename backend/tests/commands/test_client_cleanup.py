@@ -203,3 +203,34 @@ def test_no_confirm_skips_unverifiable_other_client_logs(monkeypatch):
                            _format_client_cleanup_result=lambda result: 'ok')
     code, output = CommandUpdateMixin.clean(host, '--no-confirm')
     assert code == 1 and chosen == [{'preview_temp'}]
+
+
+def test_posix_client_temp_root_is_namespaced_by_effective_uid(monkeypatch, tmp_path):
+    from client.runtime import temp_workspace
+
+    monkeypatch.setattr(temp_workspace.tempfile, 'gettempdir', lambda: str(tmp_path))
+    monkeypatch.setattr(temp_workspace.os, 'name', 'posix')
+    monkeypatch.setattr(temp_workspace.os, 'geteuid', lambda: 501)
+
+    path = temp_workspace.get_client_temp_root(create=False)
+    assert path == str(tmp_path / 'rch_client_temp_u501')
+
+
+def test_windows_client_temp_root_keeps_shared_name(monkeypatch, tmp_path):
+    from client.runtime import temp_workspace
+
+    monkeypatch.setattr(temp_workspace.tempfile, 'gettempdir', lambda: str(tmp_path))
+    monkeypatch.setattr(temp_workspace.os, 'name', 'nt')
+
+    path = temp_workspace.get_client_temp_root(create=False)
+    assert path == str(tmp_path / 'rch_client_temp')
+
+
+
+def test_posix_client_temp_root_is_private(monkeypatch, tmp_path):
+    import stat
+    from client.runtime import temp_workspace
+
+    monkeypatch.setattr(temp_workspace.tempfile, 'gettempdir', lambda: str(tmp_path))
+    root = temp_workspace.get_client_temp_root(create=True)
+    assert stat.S_IMODE(os.stat(root).st_mode) == 0o700

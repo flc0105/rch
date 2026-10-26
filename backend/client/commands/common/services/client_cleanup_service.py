@@ -40,7 +40,7 @@ class ClientCleanupService:
         'bundle_probe_files',
     )
 
-    # Current Client paths are flat categories directly below rch_client_temp.
+    # Current Client paths are flat categories directly below the current Client temp root.
     # Expiration margins prevent `clean --no-confirm` from removing in-flight files.
     ACTIVE_GRACE_SECONDS = 60
     ARCHIVE_GRACE_SECONDS = 300
@@ -252,8 +252,8 @@ class ClientCleanupService:
         if not os.path.isdir(root) or os.path.islink(root) or os.path.islink(category_dir):
             return
 
-        # Flat layout: rch_client_temp/<category>/<item>. Do not invent
-        # rch_client_temp/<unrelated-category>/<category> paths.
+        # Flat layout: <Client temp root>/<category>/<item>. Do not invent
+        # <Client temp root>/<unrelated-category>/<category> paths.
         self._clean_directory_children(category_dir, result)
         self._prune_empty_directory(category_dir)
         self._prune_empty_directory(root)

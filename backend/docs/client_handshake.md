@@ -35,11 +35,11 @@ Python Client 的握手不只是操作系统名称。`ClientInfoBuilder.build()`
 
 `id` 是每个 Python `Client` 对象初始化时创建的 UUID v4；它代表 Client 进程实例，不是主机名或 `machine_id`。同一个对象因网络异常重连会继续使用原 `client_id`，进程重新启动则通常产生新值。`machine_id` 来自规范化机器特征的 SHA-256 指纹，特征不变时可以跨进程重启复现；它不会随着 `client_id` 每次重建而重新随机分配。完整的字段采集、指纹算法与设备库存归属见 [Device Identity & Inventory](./device_identity.md)。
 
-Client 主进程尝试将 Python Logging 同步镜像到 `tempfile.gettempdir()/rch_client_temp/client_logs/<实例目录>/client.log`，使用每文件 10 MiB、5 个备份的轮转。日志仍保留现有 stdout/stderr 处理方式；初始化失败只向 stdout 简短提示、不会阻断 Client 启动。握手中的 `client_log_path` 只报告成功打开的主日志文件绝对路径，失败时为空。该路径由 Server 透传到在线连接摘要及 Connection Info → Basic Info，Toolbox 打开未指定文件的 Log Viewer 时优先打开当前在线 Client 的该日志。Watchdog 的独立日志不并入主日志，且不会自动清理可能仍在使用的旧实例目录。
+Client 主进程尝试将 Python Logging 同步镜像到 Client temp root 的 `client_logs/<实例目录>/client.log`，使用每文件 10 MiB、5 个备份的轮转。Windows temp root 使用 `rch_client_temp`；POSIX 使用 `rch_client_temp_u<effective_uid>`。日志仍保留现有 stdout/stderr 处理方式；初始化失败只向 stdout 简短提示、不会阻断 Client 启动。握手中的 `client_log_path` 只报告成功打开的主日志文件绝对路径，失败时为空。该路径由 Server 透传到在线连接摘要及 Connection Info → Basic Info，Toolbox 打开未指定文件的 Log Viewer 时优先打开当前在线 Client 的该日志。Watchdog 的独立日志不并入主日志，且不会自动清理可能仍在使用的旧实例目录。
 
 `process_id`、`username`、`process_name`、`launch_command`、`cwd` 等描述的是**创建这份握手信息那一刻**。普通平台的用户和进程名由 `psutil` 查询；iOS 使用平台专用的进程信息方法；查询失败时可能返回空字符串。客户端不会因为进程经过几小时后 CPU、运行时长或环境信息改变，就不断发送新的 `info` 消息。
 
-`launch_mode` 描述 Client 的外部运行形态，取值为 `terminal`、`terminal_background`、`ide`、`detached`、`user_service`、`system_service`、`scheduled` 或 `unknown`。`launch_source` 保存该形态下可识别的具体环境，例如 `zsh`、`powershell`、`pycharm`、`launchagent`、`launchdaemon`、`cron` 或 `schtasks`。判定在 Client 进程生命周期内只采集一次，网络重连继续沿用同一结果；由 Client 自身重新创建出的独立后台进程按其实际进程形态记录为 `detached`。无法可靠识别的环境使用 `unknown`。
+`launch_mode` 描述 Client 的外部运行形态，取值为 `terminal`、`terminal_background`、`ide`、`detached`、`user_service`、`system_service`、`scheduled` 或 `unknown`。`launch_source` 保存该形态下可识别的具体环境，例如 `zsh`、`powershell`、`pycharm`、`launchagent`、`launchdaemon`、`cron` 或 `schtasks`。判定在 Client 进程生命周期内只采集一次，网络重连继续沿用同一结果；由 Client 自身重新创建出的独立后台进程按其实际进程形态记录为 `detached`。macOS launchd manager 写入明确的 `user_service/launchagent` 或 `system_service/launchdaemon` 运行环境，使 LaunchAgent/LaunchDaemon 不依赖父进程启发式识别。无法可靠识别的环境使用 `unknown`。
 
 `integrity` 由 Client 权限探测逻辑计算，不是对 Server 授予的权限。`python_execution_mode` 和传输模式表示 Client 当前配置，不构成“此 Client 支持所有 Web 功能”的通用能力证明。界面如需展示某个实时可执行状态，应调用相应的运行时 API，而不是反复读取握手快照。
 

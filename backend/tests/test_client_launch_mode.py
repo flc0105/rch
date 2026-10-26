@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from types import SimpleNamespace
 
 import psutil
+import pytest
 
 import client.runtime.client_info_builder as client_info_builder
 import client.runtime.client_util as client_util
@@ -402,3 +403,302 @@ def test_elevated_detached_bootstrap_removes_internal_flag_before_spawn(monkeypa
     rchclient._run_elevated_detached_bootstrap()
 
     assert calls == [('/tmp/rchclient.py',)]
+
+
+
+def _make_launchd_manager(monkeypatch, tmp_path, *, kind='agent', scope='user'):
+    import client.runtime.launchd_service_manager as launchd_manager
+
+    plist_dir = tmp_path / ('LaunchAgents' if kind == 'agent' else 'LaunchDaemons')
+    log_dir = tmp_path / 'Logs'
+    target = launchd_manager.LaunchdTarget(
+        kind=kind,
+        scope=scope if kind == 'agent' else 'system',
+        label=launchd_manager.DEFAULT_LAUNCHD_LABEL,
+        plist_path=str(plist_dir / f'{launchd_manager.DEFAULT_LAUNCHD_LABEL}.plist'),
+        domain='gui/501' if kind == 'agent' else 'system',
+        service_target=(
+            f'gui/501/{launchd_manager.DEFAULT_LAUNCHD_LABEL}'
+            if kind == 'agent'
+            else f'system/{launchd_manager.DEFAULT_LAUNCHD_LABEL}'
+        ),
+        uid=501 if kind == 'agent' else 0,
+        gid=20 if kind == 'agent' else 0,
+        username='alice' if kind == 'agent' else 'root',
+        home='/Users/alice' if kind == 'agent' else '/var/root',
+        log_dir=str(log_dir),
+    )
+    monkeypatch.setattr(launchd_manager.sys, 'platform', 'darwin')
+    monkeypatch.setattr(launchd_manager, 'resolve_launchd_target', lambda **_kwargs: target)
+    monkeypatch.setattr(
+        launchd_manager,
+        'get_executable_path',
+        lambda: '/usr/bin/python3 /tmp/rchclient.py',
+    )
+    monkeypatch.setattr(launchd_manager, 'get_runtime_root', lambda: '/tmp')
+    manager = launchd_manager.LaunchdServiceManager(
+        kind=kind,
+        scope=scope,
+        keep_alive=True,
+    )
+    return launchd_manager, manager, target
+
+
+def test_launchd_targets_use_canonical_label_and_explicit_domains(monkeypatch):
+    import client.runtime.launchd_service_manager as launchd_manager
+    from client.runtime.user_identity import PosixUserIdentity
+
+    alice = PosixUserIdentity(uid=501, gid=20, username='alice', home='/Users/alice')
+    root = PosixUserIdentity(uid=0, gid=0, username='root', home='/var/root')
+    monkeypatch.setattr(
+        launchd_manager,
+        'resolve_macos_target_user_identity',
+        lambda _target=None: alice,
+    )
+    monkeypatch.setattr(
+        launchd_manager,
+        'get_posix_user_identity',
+        lambda value=None: root if str(value) == '0' else alice,
+    )
+
+    agent = launchd_manager.resolve_launchd_target(kind='agent')
+    assert agent.label == 'com.rch.client'
+    assert agent.plist_path == '/Users/alice/Library/LaunchAgents/com.rch.client.plist'
+    assert agent.domain == 'gui/501'
+    assert agent.service_target == 'gui/501/com.rch.client'
+
+    global_agent = launchd_manager.resolve_launchd_target(kind='agent', scope='global')
+    assert global_agent.plist_path == '/Library/LaunchAgents/com.rch.client.plist'
+    assert global_agent.domain == 'gui/501'
+
+    daemon = launchd_manager.resolve_launchd_target(kind='daemon')
+    assert daemon.plist_path == '/Library/LaunchDaemons/com.rch.client.plist'
+    assert daemon.domain == 'system'
+    assert daemon.service_target == 'system/com.rch.client'
+
+
+def test_launchd_install_only_installs_definition_and_sets_launch_shape(monkeypatch, tmp_path):
+    import plistlib
+
+    launchd_manager, manager, target = _make_launchd_manager(monkeypatch, tmp_path)
+    calls = []
+    monkeypatch.setattr(launchd_manager.os, 'geteuid', lambda: 0)
+    monkeypatch.setattr(launchd_manager.os, 'chown', lambda *_args: None)
+
+    def fake_launchctl(*args, check):
+        calls.append(args)
+        if args[0] == 'print':
+            return SimpleNamespace(returncode=1, stdout='', stderr='not found')
+        raise AssertionError(f'unexpected launchctl call during install: {args}')
+
+    monkeypatch.setattr(manager, '_run_launchctl', fake_launchctl)
+    result = manager.install()
+
+    assert result['installed'] is True
+    assert result['loaded'] is False
+    assert calls == [('print', target.service_target), ('print', target.service_target)]
+
+    with open(target.plist_path, 'rb') as file_obj:
+        payload = plistlib.load(file_obj)
+    assert payload['Label'] == 'com.rch.client'
+    assert payload['ProgramArguments'] == ['/usr/bin/python3', '/tmp/rchclient.py']
+    assert payload['RunAtLoad'] is True
+    assert payload['KeepAlive'] is True
+    assert payload['EnvironmentVariables'][launch_context.LAUNCH_MODE_ENV] == 'user_service'
+    assert payload['EnvironmentVariables'][launch_context.LAUNCH_SOURCE_ENV] == 'launchagent'
+    assert '/bin/sh' not in payload['ProgramArguments']
+
+
+def test_launchd_plist_exposes_run_at_load_independently_from_keep_alive(monkeypatch, tmp_path):
+    import plistlib
+
+    launchd_manager, _manager, target = _make_launchd_manager(monkeypatch, tmp_path)
+    manager = launchd_manager.LaunchdServiceManager(
+        kind='agent',
+        keep_alive=False,
+        run_at_load=False,
+    )
+    monkeypatch.setattr(launchd_manager.os, 'geteuid', lambda: 0)
+    monkeypatch.setattr(launchd_manager.os, 'chown', lambda *_args: None)
+    monkeypatch.setattr(
+        manager,
+        '_run_launchctl',
+        lambda *args, check: SimpleNamespace(returncode=1, stdout='', stderr='not found'),
+    )
+
+    manager.install()
+
+    with open(target.plist_path, 'rb') as file_obj:
+        payload = plistlib.load(file_obj)
+    assert payload['RunAtLoad'] is False
+    assert payload['KeepAlive'] is False
+
+
+def test_launchd_start_stop_restart_use_bootstrap_bootout_and_kickstart(monkeypatch, tmp_path):
+    launchd_manager, manager, target = _make_launchd_manager(monkeypatch, tmp_path)
+    monkeypatch.setattr(launchd_manager.os, 'geteuid', lambda: 0)
+    monkeypatch.setattr(launchd_manager.os, 'chown', lambda *_args: None)
+    target_path = tmp_path / 'LaunchAgents' / 'com.rch.client.plist'
+    target_path.parent.mkdir(parents=True)
+    target_path.write_bytes(b'plist')
+
+    state = {'loaded': False, 'pid': None}
+    calls = []
+
+    def fake_launchctl(*args, check):
+        calls.append(args)
+        command = args[0]
+        if command == 'print':
+            if state['loaded']:
+                return SimpleNamespace(
+                    returncode=0,
+                    stdout=f'state = running\npid = {state["pid"]}\n',
+                    stderr='',
+                )
+            return SimpleNamespace(returncode=1, stdout='', stderr='not found')
+        if command == 'bootstrap':
+            assert args == ('bootstrap', target.domain, target.plist_path)
+            state.update(loaded=True, pid=101)
+            return SimpleNamespace(returncode=0, stdout='', stderr='')
+        if command == 'kickstart':
+            state.update(loaded=True, pid=(state['pid'] or 100) + 1)
+            return SimpleNamespace(returncode=0, stdout=str(state['pid']), stderr='')
+        if command == 'bootout':
+            assert args == ('bootout', target.service_target)
+            state.update(loaded=False, pid=None)
+            return SimpleNamespace(returncode=0, stdout='', stderr='')
+        raise AssertionError(args)
+
+    monkeypatch.setattr(manager, '_run_launchctl', fake_launchctl)
+
+    started = manager.start()
+    assert started['loaded'] is True and started['running'] is True
+    assert ('bootstrap', target.domain, target.plist_path) in calls
+    assert ('kickstart', '-p', target.service_target) in calls
+
+    stopped = manager.stop()
+    assert stopped['installed'] is True
+    assert stopped['loaded'] is False and stopped['running'] is False
+    assert ('bootout', target.service_target) in calls
+
+    calls.clear()
+    restarted = manager.restart()
+    assert restarted['loaded'] is True and restarted['running'] is True
+    assert ('bootstrap', target.domain, target.plist_path) in calls
+    assert ('kickstart', '-p', target.service_target) in calls
+
+    calls.clear()
+    restarted = manager.restart()
+    assert restarted['loaded'] is True
+    assert ('kickstart', '-kp', target.service_target) in calls
+    assert not any(call[0] in {'load', 'unload'} for call in calls)
+
+
+def test_launchd_install_replaces_loaded_definition_but_does_not_restart(monkeypatch, tmp_path):
+    launchd_manager, manager, target = _make_launchd_manager(monkeypatch, tmp_path)
+    monkeypatch.setattr(launchd_manager.os, 'geteuid', lambda: 0)
+    monkeypatch.setattr(launchd_manager.os, 'chown', lambda *_args: None)
+    state = {'loaded': True}
+    calls = []
+
+    def fake_launchctl(*args, check):
+        calls.append(args)
+        if args[0] == 'print':
+            if state['loaded']:
+                return SimpleNamespace(returncode=0, stdout='state = running\npid = 77\n', stderr='')
+            return SimpleNamespace(returncode=1, stdout='', stderr='not found')
+        if args[0] == 'bootout':
+            state['loaded'] = False
+            return SimpleNamespace(returncode=0, stdout='', stderr='')
+        raise AssertionError(args)
+
+    monkeypatch.setattr(manager, '_run_launchctl', fake_launchctl)
+    result = manager.install()
+    assert result['installed'] is True and result['loaded'] is False
+    assert ('bootout', target.service_target) in calls
+    assert not any(call[0] in {'bootstrap', 'kickstart'} for call in calls)
+
+
+def test_launchd_uninstall_stops_loaded_service_and_removes_plist(monkeypatch, tmp_path):
+    launchd_manager, manager, target = _make_launchd_manager(monkeypatch, tmp_path)
+    monkeypatch.setattr(launchd_manager.os, 'geteuid', lambda: 0)
+    target_path = tmp_path / 'LaunchAgents' / 'com.rch.client.plist'
+    target_path.parent.mkdir(parents=True)
+    target_path.write_bytes(b'plist')
+    state = {'loaded': True}
+    calls = []
+
+    def fake_launchctl(*args, check):
+        calls.append(args)
+        if args[0] == 'print':
+            if state['loaded']:
+                return SimpleNamespace(returncode=0, stdout='state = running\npid = 88\n', stderr='')
+            return SimpleNamespace(returncode=1, stdout='', stderr='not found')
+        if args[0] == 'bootout':
+            state['loaded'] = False
+            return SimpleNamespace(returncode=0, stdout='', stderr='')
+        raise AssertionError(args)
+
+    monkeypatch.setattr(manager, '_run_launchctl', fake_launchctl)
+    result = manager.uninstall()
+    assert result['installed'] is False and result['loaded'] is False
+    assert not target_path.exists()
+    assert ('bootout', target.service_target) in calls
+
+
+def test_launchd_public_actions_include_start_and_stop_without_load_unload():
+    import client.runtime.launchd_service_manager as launchd_manager
+    assert launchd_manager.VALID_LAUNCHD_ACTIONS == {
+        'install', 'start', 'stop', 'restart', 'uninstall', 'status',
+    }
+
+
+
+def test_macos_target_user_resolution_uses_effective_or_sudo_user(monkeypatch):
+    import client.runtime.user_identity as user_identity
+
+    records = {
+        0: SimpleNamespace(pw_uid=0, pw_gid=0, pw_name='root', pw_dir='/var/root'),
+        501: SimpleNamespace(pw_uid=501, pw_gid=20, pw_name='flc', pw_dir='/Users/flc'),
+    }
+    names = {'root': records[0], 'flc': records[501]}
+    fake_pwd = SimpleNamespace(
+        getpwuid=lambda uid: records[int(uid)],
+        getpwnam=lambda name: names[str(name)],
+    )
+    monkeypatch.setattr(user_identity, '_pwd_module', lambda: fake_pwd)
+
+    monkeypatch.setattr(user_identity.os, 'geteuid', lambda: 501)
+    monkeypatch.delenv('SUDO_UID', raising=False)
+    monkeypatch.delenv('SUDO_USER', raising=False)
+    identity = user_identity.resolve_macos_target_user_identity()
+    assert (identity.uid, identity.home) == (501, '/Users/flc')
+
+    monkeypatch.setattr(user_identity.os, 'geteuid', lambda: 0)
+    monkeypatch.setenv('SUDO_UID', '501')
+    monkeypatch.setenv('SUDO_USER', 'flc')
+    identity = user_identity.resolve_macos_target_user_identity()
+    assert (identity.username, identity.home) == ('flc', '/Users/flc')
+
+
+def test_macos_target_user_resolution_falls_back_to_console_user(monkeypatch):
+    import client.runtime.user_identity as user_identity
+
+    console = user_identity.PosixUserIdentity(
+        uid=502, gid=20, username='desktop', home='/Users/desktop',
+    )
+    monkeypatch.setattr(user_identity.os, 'geteuid', lambda: 0)
+    monkeypatch.delenv('SUDO_UID', raising=False)
+    monkeypatch.delenv('SUDO_USER', raising=False)
+    monkeypatch.setattr(user_identity, 'get_macos_console_user_identity', lambda: console)
+    identity = user_identity.resolve_macos_target_user_identity()
+    assert identity == console
+
+
+def test_launchd_script_sdk_exposes_canonical_actions():
+    from client.runtime.sdk import launchd
+
+    assert launchd.DEFAULT_LAUNCHD_LABEL == 'com.rch.client'
+    assert launchd.VALID_LAUNCHD_ACTIONS == {
+        'install', 'start', 'stop', 'restart', 'uninstall', 'status',
+    }

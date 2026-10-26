@@ -163,8 +163,11 @@ Release 清理不再要求 Client 从默认 Bundle 路径启动：如果当前�
 `rchclient.py` 放宽或缩小本次 Release 删除范围。所有已扫描路径在
 执行前还会进行文件身份检查；扫描后已变化的目标不会删除。
 
-当前 `rch_client_temp` 的分类目录是扁平结构：`rch_client_temp/<category>/`。
-`clean` 只扫描具体类别，不会将 `client_logs`、`watchdog_logs`、
+Client 临时目录保持扁平分类：Windows 使用 `<系统临时目录>/rch_client_temp/<category>/`；
+POSIX 使用 `<系统临时目录>/rch_client_temp_u<effective_uid>/<category>/`。POSIX 根目录按
+effective UID 隔离并保持 `0700`，因此普通用户 Client 与 root/elevated Client 不再争用同一组
+私有日志、Watchdog 和中转目录。`clean` 只扫描当前 Client 所属 UID 的具体类别，不会将
+`client_logs`、`watchdog_logs`、
 `watchdog_heartbeats` 等目录误认为旧的嵌套会话目录。除原有临时目录外，
 可选清理类别还包括：
 

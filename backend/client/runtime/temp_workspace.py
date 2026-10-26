@@ -1,5 +1,6 @@
 import os
 import shutil
+import stat
 import tempfile
 import threading
 
@@ -9,10 +10,26 @@ _LOCK = threading.RLock()
 _ACTIVE_PATHS = set()
 
 
+def _client_temp_root_name() -> str:
+    if os.name == 'posix' and hasattr(os, 'geteuid'):
+        return f'{CLIENT_TEMP_ROOT_NAME}_u{int(os.geteuid())}'
+    return CLIENT_TEMP_ROOT_NAME
+
+
 def get_client_temp_root(create: bool = True) -> str:
-    root = os.path.abspath(os.path.join(tempfile.gettempdir(), CLIENT_TEMP_ROOT_NAME))
+    root = os.path.abspath(os.path.join(tempfile.gettempdir(), _client_temp_root_name()))
     if create:
-        os.makedirs(root, exist_ok=True)
+        os.makedirs(root, mode=0o700 if os.name == 'posix' else 0o777, exist_ok=True)
+        if os.name == 'posix' and hasattr(os, 'geteuid'):
+            stat_result = os.stat(root, follow_symlinks=False)
+            effective_uid = int(os.geteuid())
+            if not stat.S_ISDIR(stat_result.st_mode):
+                raise PermissionError(f'Client temp root is not a real directory: {root}')
+            if int(stat_result.st_uid) != effective_uid:
+                raise PermissionError(
+                    f'Client temp root is owned by uid {stat_result.st_uid}, expected {effective_uid}: {root}'
+                )
+            os.chmod(root, 0o700)
     return root
 
 
