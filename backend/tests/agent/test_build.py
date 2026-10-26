@@ -1,0 +1,167 @@
+"""Focused behavior tests for project module: agent."""
+
+import os
+import tempfile
+import unittest
+from unittest.mock import patch
+from server.application.agent.agent_builder import AgentBuilder
+from server.application.agent.agent_build_bundle import BUNDLE_INCLUDE_PATHS
+from server.application.agent.agent_build_utils import copy_source_paths
+from server.application.maintenance.server_cleanup_service import ServerCleanupService
+import ast
+import importlib
+import importlib.util
+import subprocess
+import sys
+import zipfile
+from pathlib import Path
+import pytest
+from core.client_revision import BUNDLE_ARTIFACT_STEM
+from server.application.agent.agent_builder import AgentBuilder, AGENT_BUILDERS
+
+
+class AgentBuilderTests(unittest.TestCase):
+    def _builder_for(self, source_dir: str, output_dir: str) -> AgentBuilder:
+        builder = AgentBuilder.__new__(AgentBuilder)
+        builder.source_dir = source_dir
+        builder.output_dir = output_dir
+        os.makedirs(output_dir, exist_ok=True)
+        return builder
+
+    def test_bundle_staging_uses_allowlist(self):
+        with tempfile.TemporaryDirectory() as source_dir, tempfile.TemporaryDirectory() as temp_dir:
+            for relative_path in ('client', 'core', 'server', 'runtime'):
+                os.makedirs(os.path.join(source_dir, relative_path), exist_ok=True)
+            with open(os.path.join(source_dir, 'client', 'client.py'), 'w', encoding='utf-8') as fp:
+                fp.write('client')
+            with open(os.path.join(source_dir, 'core', 'core.py'), 'w', encoding='utf-8') as fp:
+                fp.write('core')
+            with open(os.path.join(source_dir, 'rchclient.py'), 'w', encoding='utf-8') as fp:
+                fp.write('entry')
+            with open(os.path.join(source_dir, 'server', 'secret.py'), 'w', encoding='utf-8') as fp:
+                fp.write('server')
+            with open(os.path.join(source_dir, 'runtime', 'state.bin'), 'w', encoding='utf-8') as fp:
+                fp.write('runtime')
+            with open(os.path.join(source_dir, 'nohup.out'), 'w', encoding='utf-8') as fp:
+                fp.write('log')
+
+            builder = self._builder_for(source_dir, os.path.join(temp_dir, 'output'))
+            staging_dir = os.path.join(temp_dir, 'staging')
+            copy_source_paths(builder.source_dir, BUNDLE_INCLUDE_PATHS, staging_dir)
+
+            self.assertTrue(os.path.isfile(os.path.join(staging_dir, 'client', 'client.py')))
+            self.assertTrue(os.path.isfile(os.path.join(staging_dir, 'core', 'core.py')))
+            self.assertTrue(os.path.isfile(os.path.join(staging_dir, 'rchclient.py')))
+            self.assertFalse(os.path.exists(os.path.join(staging_dir, 'server')))
+            self.assertFalse(os.path.exists(os.path.join(staging_dir, 'runtime')))
+            self.assertFalse(os.path.exists(os.path.join(staging_dir, 'nohup.out')))
+
+    def test_build_workspace_is_removed_after_success(self):
+        with tempfile.TemporaryDirectory() as source_dir, tempfile.TemporaryDirectory() as temp_dir:
+            output_dir = os.path.join(temp_dir, 'output')
+            work_dir = os.path.join(temp_dir, 'agent_build_success')
+            os.makedirs(work_dir)
+            builder = self._builder_for(source_dir, output_dir)
+
+            def fake_bundle(**kwargs):
+                artifact = os.path.join(kwargs['work_dir'], 'agent.zip')
+                with open(artifact, 'wb') as fp:
+                    fp.write(b'agent')
+                return {
+                    'file_path': artifact,
+                    'file_name': 'agent.zip',
+                    'warnings': [],
+                    'target_arch': 'n/a',
+                    'target_os': 'bundle',
+                }
+
+            with patch('server.application.agent.agent_builder.tempfile.mkdtemp', return_value=work_dir), \
+                    patch('server.application.agent.agent_build_bundle.BundleBuilder.build', side_effect=fake_bundle):
+                result = builder.build_agent(
+                    server_host='127.0.0.1',
+                    server_port=9000,
+                    web_port=8080,
+                    builder='bundle',
+                )
+
+            self.assertFalse(os.path.exists(work_dir))
+            self.assertTrue(os.path.isfile(result['file_path']))
+            self.assertNotIn('work_dir', result)
+
+    def test_build_workspace_is_removed_after_failure(self):
+        with tempfile.TemporaryDirectory() as source_dir, tempfile.TemporaryDirectory() as temp_dir:
+            output_dir = os.path.join(temp_dir, 'output')
+            work_dir = os.path.join(temp_dir, 'agent_build_failure')
+            os.makedirs(work_dir)
+            builder = self._builder_for(source_dir, output_dir)
+
+            with patch('server.application.agent.agent_builder.tempfile.mkdtemp', return_value=work_dir), \
+                    patch('server.application.agent.agent_build_bundle.BundleBuilder.build', side_effect=RuntimeError('build failed')):
+                with self.assertRaisesRegex(RuntimeError, 'build failed'):
+                    builder.build_agent(
+                        server_host='127.0.0.1',
+                        server_port=9000,
+                        web_port=8080,
+                            builder='bundle',
+                    )
+
+            self.assertFalse(os.path.exists(work_dir))
+
+    def test_startup_cleanup_finds_abandoned_agent_workspaces(self):
+        service = ServerCleanupService.__new__(ServerCleanupService)
+        with tempfile.TemporaryDirectory() as temp_root:
+            owned = os.path.join(temp_root, 'agent_build_abandoned')
+            unrelated = os.path.join(temp_root, 'other_temp')
+            os.makedirs(owned)
+            os.makedirs(unrelated)
+
+            with patch('server.application.maintenance.server_cleanup_service.tempfile.gettempdir', return_value=temp_root):
+                work_dirs = service._snapshot_agent_build_temp()
+
+            self.assertEqual(work_dirs, [owned])
+
+
+def _agent(root: Path) -> AgentBuilder:
+    agent = AgentBuilder.__new__(AgentBuilder)
+    agent.source_dir = str(root)
+    agent.output_dir = str(root / 'output')
+    agent._ensure_dirs()
+    return agent
+
+
+def _stub_bundle_root(root: Path):
+    (root / 'client/config').mkdir(parents=True)
+    (root / 'core').mkdir()
+    (root / 'rchclient.py').write_text('print("hello")')
+    (root / 'client/config/config.py').write_text('original')
+    (root / 'core/core.py').write_text('x=1')
+
+
+def test_builder_is_required_at_service_layer():
+    with tempfile.TemporaryDirectory() as tmp:
+        agent = _agent(Path(tmp))
+        for kwargs in ({}, {'builder': None}, {'builder': ''}, {'builder': '   '}):
+            with pytest.raises(ValueError, match='builder is required'):
+                agent.build_agent('host.example', 9999, 8085, **kwargs)
+
+
+def test_explicit_bundle_generates_valid_source_zip():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        _stub_bundle_root(root)
+        agent = _agent(root)
+        with patch('server.application.agent.agent_build_utils.build_client_revision_manifest',
+                   return_value={'revision': 'abc', 'parts': {}, 'files': {}}):
+            result = agent.build_agent('host.example', 9999, 8085, builder='bundle')
+        assert result['builder'] == 'bundle'
+        assert result['target_os'] == 'bundle'
+        assert result['file_name'].startswith(BUNDLE_ARTIFACT_STEM + '-')
+        assert result['file_name'] == result['build_version'] + '.zip'
+        with zipfile.ZipFile(result['file_path']) as z:
+            assert 'client/config/config.py' in z.namelist()
+            cfg = z.read('client/config/config.py').decode()
+            ast.parse(cfg)
+            assert 'SERVER_FILE_TRANSFER_PORT = SERVER_WEB_PORT + 1' in cfg
+            assert 'SERVER_WEB_PORT = 8085' in cfg
+            assert 'rchclient.py' in z.namelist()
+            assert all(not n.startswith('server/') for n in z.namelist())
