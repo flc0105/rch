@@ -34,6 +34,42 @@ export function normalizeParamType(value) {
   return PARAM_TYPE_ALIASES[text] || text || 'string'
 }
 
+export function normalizeParamControl(value) {
+  return String(value || '').trim().toLowerCase()
+}
+
+function isParamConditionObject(condition) {
+  return !!condition && typeof condition === 'object' && !Array.isArray(condition)
+}
+
+export function matchesParamCondition(condition, values = {}) {
+  if (!isParamConditionObject(condition)) return false
+  const entries = Object.entries(condition)
+  if (!entries.length) return false
+  const source = values && typeof values === 'object' && !Array.isArray(values) ? values : {}
+
+  return entries.every(([name, expected]) => {
+    const actual = source[name]
+    return Array.isArray(expected)
+      ? expected.some(value => Object.is(actual, value))
+      : Object.is(actual, expected)
+  })
+}
+
+export function isParamVisible(param, values = {}) {
+  const condition = param?.visible_when
+  return !isParamConditionObject(condition) || !Object.keys(condition).length
+    ? true
+    : matchesParamCondition(condition, values)
+}
+
+export function isParamDisabled(param, values = {}) {
+  const condition = param?.disabled_when
+  return isParamConditionObject(condition) && Object.keys(condition).length
+    ? matchesParamCondition(condition, values)
+    : false
+}
+
 export function normalizeParamSpec(item = {}) {
   if (!item || typeof item !== 'object' || Array.isArray(item)) return null
   const name = String(item.name || '').trim()

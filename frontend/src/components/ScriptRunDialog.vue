@@ -53,6 +53,7 @@
           :key="`script-param-${param.name}`"
           :param="param"
           :model-value="paramForm[param.name]"
+          :form-values="paramForm"
           @update:model-value="$emit('update-param', param.name, $event)"
           @browse="openRemoteFilePicker"
         />

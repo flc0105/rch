@@ -631,6 +631,7 @@
           :key="param.name"
           :param="param"
           :model-value="paramForm[param.name]"
+          :form-values="paramForm"
           @update:model-value="paramForm[param.name] = $event"
           @browse="openRemoteFilePicker"
         />

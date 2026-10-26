@@ -1,17 +1,36 @@
 <template>
   <el-form-item
+    v-if="isVisible"
     :label="fieldLabel"
     class="param-form-field"
   >
     <el-switch
       v-if="type === 'boolean'"
       :model-value="!!modelValue"
+      :disabled="isDisabled"
       @update:model-value="$emit('update:modelValue', $event)"
     />
+
+    <el-radio-group
+      v-else-if="type === 'select' && control === 'button_group'"
+      :model-value="modelValue"
+      :disabled="isDisabled"
+      class="param-form-button-group"
+      @update:model-value="$emit('update:modelValue', $event)"
+    >
+      <el-radio-button
+        v-for="option in options"
+        :key="`${param.name}-${String(option)}`"
+        :value="option"
+      >
+        {{ String(option) }}
+      </el-radio-button>
+    </el-radio-group>
 
     <el-select
       v-else-if="type === 'select'"
       :model-value="modelValue"
+      :disabled="isDisabled"
       class="param-form-control"
       clearable
       @update:model-value="$emit('update:modelValue', $event)"
@@ -32,24 +51,26 @@
       >
         <el-switch
           :model-value="entry.enabled"
+          :disabled="isDisabled"
           :aria-label="`Enable path ${index + 1}`"
           @update:model-value="changePathEntry(index, 'enabled', $event)"
         />
         <el-input
           :model-value="entry.path"
-          :disabled="!entry.enabled"
+          :disabled="isDisabled || !entry.enabled"
           placeholder="/path/to/folder"
           class="path-list-input"
           @update:model-value="changePathEntry(index, 'path', $event)"
         />
         <el-button
           :aria-label="`Remove path ${index + 1}`"
+          :disabled="isDisabled"
           @click="removePathEntry(index)"
         >
           <el-icon><Delete /></el-icon>
         </el-button>
       </div>
-      <el-button plain class="path-list-add" @click="addPathEntry">
+      <el-button plain class="path-list-add" :disabled="isDisabled" @click="addPathEntry">
         <el-icon><Plus /></el-icon>
         Add path
       </el-button>
@@ -61,6 +82,7 @@
       :min="numericMin"
       :max="numericMax"
       :placeholder="placeholder"
+      :disabled="isDisabled"
       controls-position="right"
       class="param-form-control"
       @update:model-value="$emit('update:modelValue', $event)"
@@ -72,6 +94,7 @@
       type="textarea"
       :rows="textareaRows"
       :placeholder="placeholder"
+      :disabled="isDisabled"
       class="param-form-control"
       @update:model-value="$emit('update:modelValue', $event)"
     />
@@ -80,11 +103,12 @@
       v-else-if="isRemote"
       :model-value="remoteDisplayValue"
       :placeholder="placeholder"
+      :disabled="isDisabled"
       class="param-form-control"
       readonly
     >
       <template #append>
-        <el-button @click="$emit('browse', param)">
+        <el-button :disabled="isDisabled" @click="$emit('browse', param)">
           Browse
         </el-button>
       </template>
@@ -94,6 +118,7 @@
       v-else
       :model-value="textModelValue"
       :placeholder="placeholder"
+      :disabled="isDisabled"
       class="param-form-control"
       clearable
       @update:model-value="$emit('update:modelValue', $event)"
@@ -114,7 +139,7 @@
 </template>
 
 <script>
-import { isRemoteMultiParam, isRemoteParam, normalizeParamType } from '../utils/parameterSchema.js'
+import { isParamDisabled, isParamVisible, isRemoteMultiParam, isRemoteParam, normalizeParamControl, normalizeParamType } from '../utils/parameterSchema.js'
 import { Delete, Plus } from '@element-plus/icons-vue'
 
 export default {
@@ -129,6 +154,10 @@ export default {
     modelValue: {
       default: '',
     },
+    formValues: {
+      type: Object,
+      default: () => ({}),
+    },
   },
 
   emits: ['update:modelValue', 'browse'],
@@ -136,6 +165,18 @@ export default {
   computed: {
     type() {
       return normalizeParamType(this.param?.type)
+    },
+
+    control() {
+      return normalizeParamControl(this.param?.control)
+    },
+
+    isVisible() {
+      return isParamVisible(this.param, this.formValues)
+    },
+
+    isDisabled() {
+      return isParamDisabled(this.param, this.formValues)
     },
 
     pathEntries() {
@@ -221,6 +262,13 @@ export default {
 <style scoped>
 .param-form-control {
   width: 100%;
+}
+
+.param-form-button-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 0;
+  max-width: 100%;
 }
 
 .param-form-hint {

@@ -132,6 +132,9 @@ Script / Job / External Tool Metadata
 | `description` | 输入框说明文字，默认为空 |
 | `min` / `max` | 数值上下限，对 `integer`、`number` 的转换结果进行检查 |
 | `options` | `select` 允许值列表，非列表/元组输入规范化为空列表 |
+| `control` | Web 展示方式；`select` 可用 `button_group` 将选项显示成按钮组，省略时保持下拉框 |
+| `visible_when` | Web 条件显示规则；对象内多个条件按 AND 匹配，标量表示相等、数组表示包含任一允许值 |
+| `disabled_when` | Web 条件禁用规则；条件语义与 `visible_when` 相同 |
 | `multiple` | Remote Picker 是否采用多选；远程多路径类型默认启用 |
 | `selection_mode` | Remote Picker 的 `file` / `folder` 选择模式 |
 | `initial_path` | Remote Picker 初次打开时参考的目录 |
@@ -156,7 +159,7 @@ Web 端使用同一个参数字段组件，根据 `type` 选择 Element Plus 控
 字段行为包括：
 
 - `boolean` 显示 Switch，更新布尔值。
-- `select` 显示带 `options` 的单选下拉框；界面可清空选择。
+- `select` 默认显示带 `options` 的单选下拉框；`control: "button_group"` 时使用同一组值渲染按钮组，提交值和后端 `options` 校验保持不变。
 - `integer` / `number` 使用数字输入控件，读取 `min` / `max`。
 - `textarea` 使用多行输入框；普通类型使用单行文本框。
 - `remote_*` 显示只读路径和 Browse，路径由 Remote File Picker 返回。
@@ -171,6 +174,52 @@ Web 端使用同一个参数字段组件，根据 `type` 选择 Element Plus 控
   "output_dir": "/tmp/output"
 }
 ```
+
+### Select 的展示方式
+
+`select` 的运行时语义始终是单选枚举。默认控件仍是下拉框；少量固定选项需要直接并排展示时，可以声明 `control: "button_group"`：
+
+```json
+{
+  "name": "kind",
+  "label": "Service Type",
+  "type": "select",
+  "control": "button_group",
+  "options": ["agent", "daemon"],
+  "default": "agent"
+}
+```
+
+按钮组只改变 Web 表单展示，不增加新的参数类型。最终值仍是 `select` 的单个选项值，并继续使用同一套后端 `options` 校验。未声明 `control` 的现有 Metadata 保持下拉框。
+
+### 条件显示与条件禁用
+
+字段可以根据当前表单中其他参数的值控制显示或禁用：
+
+```json
+{
+  "name": "target_user",
+  "type": "string",
+  "visible_when": {"kind": "agent"}
+}
+```
+
+```json
+{
+  "name": "run_at_load",
+  "type": "boolean",
+  "disabled_when": {"action": ["status", "uninstall"]}
+}
+```
+
+条件规则使用受限的声明式对象，不解析字符串表达式：
+
+- 标量条件表示相等，例如 `{"kind": "agent"}`。
+- 数组条件表示当前值属于数组中的任意一项，例如 `{"action": ["install", "restart"]}`。
+- 同一对象包含多个字段时使用 AND，例如 `{"kind": "agent", "action": ["install", "status"]}`。
+- 省略条件、空对象或无效条件对象时，不改变默认显示/启用状态。
+
+`visible_when` 和 `disabled_when` 只控制 Web 编辑体验。字段被隐藏或禁用时，当前 `paramForm` 值不会被自动清空，后端 `required`、`default`、类型转换和提交规则也不会因此改变。用户切换条件后再切回来时，之前输入的值仍可继续编辑。
 
 用户修改控件后，字段组件把新值发回父表单。父表单决定何时验证、怎样构建最终 `params`，以及提交到哪个运行接口。
 
@@ -385,7 +434,7 @@ External Tool 同样使用共享后端解析器，但会对缺失的非必填参
 
 ### 扩展约束的应用范围
 
-当前方案是项目自己的运行参数规范，**不是完整的标准 JSON Schema 实现**。未提供通用的字段联动、嵌套对象编辑、动态选项来源、通用多选下拉或任意新类型自动注册能力。
+当前方案是项目自己的运行参数规范，**不是完整的标准 JSON Schema 实现**。字段联动仅支持 `visible_when` / `disabled_when` 的简单相等、数组包含和多字段 AND；未提供任意表达式、嵌套对象编辑、动态选项来源、通用多选下拉或任意新类型自动注册能力。
 
 未知类型在规范化阶段一般会保留名称，前端可能回退为普通文本框，后端也可能按字符串处理。这种回退行为不能视作该类型已被正式支持。扩展参数能力时，需要同步考虑 Metadata 规则、前端控件、默认值、转换规则和相关执行入口，不能只新增 `type` 字符串。
 

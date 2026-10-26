@@ -1,13 +1,14 @@
 SCRIPT_METADATA = {
-    "name": "mac/persistence/launchd_service",
+    "name": "macos/persistence/launchd_service",
     "display_name": "Manage Launchd Service",
     "description": "Install, start, stop, restart, uninstall, or inspect an RCH LaunchAgent or LaunchDaemon",
-    "platforms": ["mac"],
+    "platforms": ["macos"],
     "category": "Persistence",
     "params": [
         {
             "name": "kind",
             "type": "select",
+            "control": "button_group",
             "required": False,
             "default": "agent",
             "options": ["agent", "daemon"],
@@ -23,6 +24,7 @@ SCRIPT_METADATA = {
         {
             "name": "action",
             "type": "select",
+            "control": "button_group",
             "required": False,
             "default": "status",
             "options": ["install", "start", "stop", "restart", "uninstall", "status"],
@@ -33,6 +35,7 @@ SCRIPT_METADATA = {
             "type": "boolean",
             "required": False,
             "default": True,
+            "visible_when": {"action": "install"},
             "description": "Set the launchd KeepAlive property"
         },
         {
@@ -40,14 +43,17 @@ SCRIPT_METADATA = {
             "type": "boolean",
             "required": False,
             "default": True,
+            "visible_when": {"action": "install"},
             "description": "Set RunAtLoad; for LaunchAgents this normally means starting when the user login domain loads the service"
         },
         {
             "name": "scope",
             "type": "select",
+            "control": "button_group",
             "required": False,
             "default": "user",
             "options": ["user", "global"],
+            "visible_when": {"kind": "agent"},
             "description": "LaunchAgent only: install in the target user's Library or /Library/LaunchAgents"
         },
         {
@@ -55,6 +61,7 @@ SCRIPT_METADATA = {
             "type": "string",
             "required": False,
             "default": "",
+            "visible_when": {"kind": "agent"},
             "description": "LaunchAgent only: target macOS user name or UID; leave empty to resolve the current GUI user"
         }
     ]
