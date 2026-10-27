@@ -5,11 +5,15 @@
 - **悬浮 More**：显示原有的工具下拉菜单和 Settings 入口。
 - **点击 More**：打开 Toolbox，按图标查看全部工具。
 
-Toolbox 显示 Toolbar 和 More 中的全部工具，顺序与当前工具栏设置一致。顶部搜索框支持按工具名称筛选；清空搜索后恢复全部工具。网格每页最多 24 个位置（包括 Add），超过一页时底部显示页码圆点，选择圆点、滚轮上下滚动或触控滑动切换整页；工具网格不显示滚动条，添加快捷项后保持原页。点击工具图标会打开对应功能，Toolbox 保持打开并处于新弹窗下层；在图标上右键会在鼠标位置打开唯一的操作菜单（右键其他图标时自动切换；点击菜单外、按 ESC 或滚动会关闭）。菜单提供 Open，带 Toolbar 下拉动作的工具还会显示相同子选项（Clipboard Get/Send、Screen View Open in New Tab，以及已 Pin 的 Quick Actions）。顶部 Settings 按钮打开工具栏设置，Close / ESC 仅关闭 Toolbox。
+Toolbox 显示 Toolbar 和 More 中的全部工具，顺序与当前工具栏设置一致。顶部搜索框支持按工具名称筛选；清空搜索后恢复全部工具。网格每页最多 24 个位置（包括 Add），超过一页时底部显示页码圆点，选择圆点、滚轮上下滚动或触控滑动切换整页；工具网格不显示滚动条，添加快捷项后保持原页。点击工具图标会打开对应功能，Toolbox 保持打开并处于新弹窗下层；桌面端右键图标、触屏端长按图标都会在指针或触点位置打开同一个操作菜单。触屏端长按图标会在触点位置打开同一菜单；手指滑动会取消长按并保留网格翻页操作。点击菜单外、按 ESC 或滚动会关闭菜单。菜单提供 Open，带 Toolbar 下拉动作的工具还会显示相同子选项（Clipboard Get/Send、Screen View Open in New Tab，以及已 Pin 的 Quick Actions）。顶部 Settings 按钮打开工具栏设置，Close / ESC 仅关闭 Toolbox。
 
 需要在线设备的工具（Remote Files、PTY、Screen View、Clipboard、Processes、Quick Actions）在未选择可用 Client 时不可操作；Documents、Keychains 等 Server 功能保持各自的可用条件。
 
-工具栏上的 **Disconnect、Clear、Bottom** 属于终端操作按钮，不在 Toolbox 工具网格中。工具是否放在 Toolbar 或 More，可在工具栏设置中调整；Toolbox 会按当前设置显示工具列表。
+工具栏上的 **Disconnect** 保持为常驻操作；**Actions** 下拉菜单收纳终端清理、复制和保存操作：Clear、Bottom、Copy output、Copy as JSON、Save as Text Artifact、Save as JSON Artifact。Copy output 复制当前终端的完整文本行；Copy as JSON 导出命令结果数组，每项包含 `command` 和 `result`，现有终端元数据中存在开始时间或执行时长时还会附带 `time` 或 `duration_ms`。保存操作把当前终端内容写入 Command Output Artifacts，文本文件使用 `.txt`，JSON 数组使用 `.json`。
+
+macOS 样式的绿点菜单还包含 **Remember layout**。开启时，浏览器会记住 Device Sidebar 和 Connection Info Card 的收起状态；关闭后当前页面布局保持不变，后续重新载入时两者恢复展开。
+
+工具是否放在 Toolbar 或 More，可在工具栏设置中调整；Toolbox 会按当前设置显示工具列表。
 
 
 终端 Toolbar 的 Screen View 主按钮打开原 Dialog，悬停下拉 **Open in New Tab** 可以直接打开独立标签页，不必先打开 Dialog。

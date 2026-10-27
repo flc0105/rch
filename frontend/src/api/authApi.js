@@ -29,6 +29,10 @@ export function getAuthorizationInfo() {
   return apiData('/api/auth/info', { cache: 'no-store' }, { username: '', api_token: '' })
 }
 
+export function resetAdminApiToken() {
+  return apiData('/api/auth/token/reset', jsonRequestOptions('POST', {}), {})
+}
+
 export function changeAdminPassword(currentPassword, newPassword) {
   return apiData(
     '/api/auth/password',

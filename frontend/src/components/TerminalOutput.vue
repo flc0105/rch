@@ -267,6 +267,7 @@ import {
   TERMINAL_FILE_READY_PREFIX,
   TERMINAL_RUN_SCRIPT_PREFIX,
 } from '../composables/terminalMarkers.js'
+import { buildTerminalOutputJson, buildTerminalOutputText } from '../utils/terminalOutputExport.js'
 
 export default {
   name: 'TerminalOutput',
@@ -974,6 +975,76 @@ export default {
 
       if (!ok) {
         throw new Error('Copy failed')
+      }
+    },
+
+    buildTerminalToolbarJsonEntries() {
+      return buildTerminalOutputJson(this.terminalBlocks.map(block => ({
+        hasCommand: Boolean(block.commandLine),
+        command: this.getTerminalBlockCommandText(block),
+        result: this.getTerminalBlockOutputText(block),
+        time: this.findTerminalBlockMetaValue(block, ['started_at', 'created_at', 'timestamp', 'finished_at']),
+        duration_ms: this.normalizeNullableInt(
+          this.findTerminalBlockMetaValue(block, ['duration_ms', 'elapsed_ms', 'execution_duration_ms']),
+        ),
+      })))
+    },
+
+    getTerminalToolbarOutput(format = 'text') {
+      if (String(format || '').trim().toLowerCase() === 'json') {
+        const entries = this.buildTerminalToolbarJsonEntries()
+        return { content: JSON.stringify(entries, null, 2), format: 'json', commandCount: entries.length }
+      }
+      return {
+        content: buildTerminalOutputText(this.lines.map(line => ({
+          text: this.normalizeTerminalOutputLineText(line?.text),
+        }))),
+        format: 'text',
+        commandCount: this.terminalBlocks.filter(block => block.commandLine).length,
+      }
+    },
+
+    async copyAllTerminalOutput(format = 'text') {
+      const output = this.getTerminalToolbarOutput(format)
+      if (!output.content.trim() || (output.format === 'json' && output.commandCount === 0)) {
+        ElMessage.warning(output.format === 'json' ? 'No command output to copy' : 'No terminal output to copy')
+        return
+      }
+
+      try {
+        await this.copyTextToClipboard(output.content)
+        ElMessage.success(output.format === 'json' ? 'Terminal JSON copied' : 'Terminal output copied')
+      } catch (error) {
+        ElMessage.error(error.message || 'Copy failed')
+      }
+    },
+
+    async saveAllTerminalOutputArtifact(format = 'text') {
+      const output = this.getTerminalToolbarOutput(format)
+      if (!output.content.trim() || (output.format === 'json' && output.commandCount === 0)) {
+        ElMessage.warning(output.format === 'json' ? 'No command output to save' : 'No terminal output to save')
+        return
+      }
+
+      try {
+        await this.saveTerminalOutputArtifactBody({
+          content: output.content,
+          artifact_type: 'command_output',
+          category: 'command_output',
+          client_id: String(this.selectedId || ''),
+          hostname: String(this.currentConnection?.hostname || ''),
+          machine_id: String(this.currentConnection?.machine_id || ''),
+          source: 'terminal_toolbar_action',
+          source_command: '',
+          source_command_id: null,
+          output_format: output.format,
+          extra: {
+            saved_from: 'terminal_toolbar',
+            output_format: output.format,
+          },
+        })
+      } catch (error) {
+        ElMessage.error(error.message || 'Save failed')
       }
     },
 

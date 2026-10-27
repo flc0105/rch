@@ -10,7 +10,12 @@ import os
 import tempfile
 from pathlib import Path
 from werkzeug.security import check_password_hash
-from server.config.admin_auth import change_admin_password, load_admin_auth, validate_admin_password
+from server.config.admin_auth import (
+    change_admin_password,
+    load_admin_auth,
+    reset_admin_api_token,
+    validate_admin_password,
+)
 from unittest.mock import patch
 from flask import Flask
 from werkzeug.security import generate_password_hash
@@ -149,6 +154,18 @@ class AdminAuthConfigTests(unittest.TestCase):
             self.assertEqual(initial[key], updated[key])
         self.assertEqual(json.loads(self.path.read_text()), updated)
 
+    def test_api_token_reset_rotates_only_the_token_and_uses_secure_atomic_file(self):
+        initial, _ = self.initialize()
+        updated = reset_admin_api_token(str(self.path))
+
+        self.assertNotEqual(updated['api_token'], initial['api_token'])
+        self.assertGreaterEqual(len(updated['api_token']), 32)
+        for key in ('username', 'password', 'session_secret'):
+            self.assertEqual(updated[key], initial[key])
+        self.assertEqual(json.loads(self.path.read_text(encoding='utf-8')), updated)
+        if os.name == 'posix':
+            self.assertEqual(self.path.stat().st_mode & 0o777, 0o600)
+
 
 
 
@@ -222,6 +239,33 @@ class AdminAuthWebTests(unittest.TestCase):
             'api_token': 'unit-test-api-token-value-long-enough',
         })
         self.assertEqual(result.headers.get('Cache-Control'), 'no-store')
+
+    def test_api_token_reset_requires_admin_auth_and_invalidates_old_token_immediately(self):
+        denied = self.client.post('/api/auth/token/reset')
+        self.assertEqual(denied.status_code, 401)
+
+        self.login()
+        old_token = server_config.ADMIN_API_TOKEN
+        original_credentials = json.loads(self.auth_path.read_text(encoding='utf-8'))
+        result = self.client.post('/api/auth/token/reset')
+
+        self.assertEqual(result.status_code, 200)
+        self.assertEqual(result.headers.get('Cache-Control'), 'no-store')
+        new_token = result.json['data']['api_token']
+        self.assertTrue(new_token)
+        self.assertNotEqual(new_token, old_token)
+        self.assertEqual(server_config.ADMIN_API_TOKEN, new_token)
+        self.assertTrue(self.client.get('/api/auth/session').json['data']['authenticated'])
+
+        stored = json.loads(self.auth_path.read_text(encoding='utf-8'))
+        for key in ('username', 'password', 'session_secret'):
+            self.assertEqual(stored[key], original_credentials[key])
+        self.assertEqual(stored['api_token'], new_token)
+
+        with self.app.test_request_context('/api/private', headers={'Authorization': f'Bearer {old_token}'}):
+            self.assertFalse(auth_guard.WebAuthGuard().has_valid_static_token())
+        with self.app.test_request_context('/api/private', headers={'Authorization': f'Bearer {new_token}'}):
+            self.assertTrue(auth_guard.WebAuthGuard().has_valid_static_token())
 
     def test_password_change_reloads_hash_preserves_token_and_signs_out(self):
         self.login()

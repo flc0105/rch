@@ -131,7 +131,7 @@ class WebArtifactService:
                                      client_id: str = '', addr: str = '', source: str = '',
                                      source_command: str = '', source_command_id=None,
                                      job_id: str = '', job_name: str = '', job_key: str = '',
-                                     extra: dict | None = None) -> dict:
+                                     extra: dict | None = None, output_format: str = 'text') -> dict:
         return self.command_output_service.save_text_output(
             content=content,
             category=category,
@@ -146,6 +146,7 @@ class WebArtifactService:
             job_name=job_name,
             job_key=job_key,
             extra=extra,
+            output_format=output_format,
         )
 
 

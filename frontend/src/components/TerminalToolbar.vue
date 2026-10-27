@@ -48,6 +48,11 @@
         {{ connectionInfoCollapsed ? 'Show connection info card' : 'Hide connection info card' }}
       </el-dropdown-item>
 
+      <el-dropdown-item command="toggle-layout-persistence" divided>
+        <span class="layout-remember-indicator" aria-hidden="true">{{ rememberLayoutState ? '✓' : '' }}</span>
+        Remember layout
+      </el-dropdown-item>
+
       <el-dropdown-item
         command="hide-both"
         divided
@@ -204,21 +209,23 @@
 
       <span class="terminal-tool-separator"></span>
 
-      <el-button
-        size="small"
-        class="tool-btn"
-        @click="$emit('clear')"
+      <el-dropdown
+        trigger="click"
+        placement="bottom-end"
+        @command="handleTerminalActionsCommand"
       >
-        Clear
-      </el-button>
-
-      <el-button
-        size="small"
-        class="tool-btn ml-0"
-        @click="$emit('bottom')"
-      >
-        Bottom
-      </el-button>
+        <el-button size="small" class="tool-btn ml-0">Actions</el-button>
+        <template #dropdown>
+          <el-dropdown-menu>
+            <el-dropdown-item command="clear">Clear</el-dropdown-item>
+            <el-dropdown-item command="bottom">Bottom</el-dropdown-item>
+            <el-dropdown-item command="copy-output" divided :disabled="!hasTerminalOutput">Copy output</el-dropdown-item>
+            <el-dropdown-item command="copy-json" :disabled="!hasTerminalOutput">Copy as JSON</el-dropdown-item>
+            <el-dropdown-item command="save-output-text" divided :disabled="!hasTerminalOutput">Save as Text Artifact</el-dropdown-item>
+            <el-dropdown-item command="save-output-json" :disabled="!hasTerminalOutput">Save as JSON Artifact</el-dropdown-item>
+          </el-dropdown-menu>
+        </template>
+      </el-dropdown>
     </div>
     <ToolboxDialog
       v-model:visible="toolboxVisible"
@@ -281,6 +288,16 @@ export default {
       type: Boolean,
       default: false,
     },
+
+    rememberLayoutState: {
+      type: Boolean,
+      default: true,
+    },
+
+    hasTerminalOutput: {
+      type: Boolean,
+      default: false,
+    },
   },
 
   emits: [
@@ -312,6 +329,10 @@ export default {
     'clear',
     'clear-selection',
     'bottom',
+    'copy-terminal-output',
+    'copy-terminal-json',
+    'save-terminal-output',
+    'save-terminal-json',
   ],
 
   data() {
@@ -517,6 +538,19 @@ export default {
 
     handleLayoutCommand(command) {
       this.$emit('layout-command', command)
+    },
+
+    handleTerminalActionsCommand(command) {
+      const eventByCommand = {
+        clear: 'clear',
+        bottom: 'bottom',
+        'copy-output': 'copy-terminal-output',
+        'copy-json': 'copy-terminal-json',
+        'save-output-text': 'save-terminal-output',
+        'save-output-json': 'save-terminal-json',
+      }
+      const eventName = eventByCommand[String(command || '').trim()]
+      if (eventName) this.$emit(eventName)
     },
 
     runAction(actionId) {
@@ -763,6 +797,13 @@ export default {
 
 .dot-green {
   background: #34d399;
+}
+
+.layout-remember-indicator {
+  display: inline-block;
+  width: 16px;
+  font-weight: 700;
+  text-align: center;
 }
 
 .terminal-title {

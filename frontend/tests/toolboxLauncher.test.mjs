@@ -72,7 +72,7 @@ test('Toolbox includes the shared Log Viewer action and original Lucide icon cho
   assert.match(vue, /grid-template-columns: repeat\(6, minmax\(0, 1fr\)\)/)
   assert.doesNotMatch(vue, /@closed="\$emit\('closed'\)"/, 'launch should not wait for closing animation')
   assert.doesNotMatch(vue, /draggable|@dragstart|@drop=/, 'drag-to-sort is next version only')
-  assert.match(vue, /@click="action.disabled \? null : \(action.shortcut \? \$emit\('launch-pin', action.shortcut\)/)
+  assert.match(vue, /@click="handleActionClick\(action, \$event\)"/)
 })
 
 test('More hover preserves the original menu while click opens Toolbox', () => {
@@ -202,6 +202,7 @@ test('Toolbox uses one pointer-anchored context menu and preserves shared toolba
     removeEventListener: (...args) => listeners.push(['remove', ...args]),
   }
   const fakeDocument = {
+    body: { classList: { add() {}, remove() {} } },
     addEventListener: (...args) => listeners.push(['add', ...args]),
     removeEventListener: (...args) => listeners.push(['remove', ...args]),
   }
@@ -271,4 +272,57 @@ test('Toolbox uses one pointer-anchored context menu and preserves shared toolba
   assert.equal(listeners.filter(entry => entry[0] === 'add' && entry[1] === 'resize').length, 2)
   assert.match(source('../src/App.vue'), /@open-screen-view-tab="openScreenViewInNewTab"/)
   assert.match(source('../src/App.vue'), /viewer\.openInNewTab\(\)/)
+})
+
+test('Toolbox icons open the shared context menu on mobile long press and cancel when moved', () => {
+  const icons = { Search: {}, Settings2: {}, Close: {}, FolderOpen: {}, Archive: {}, Monitor: {}, FileCode: {}, History: {}, Terminal: {}, MonitorPlay: {}, Clipboard: {}, Wrench: {}, ScrollText: {}, CalendarClock: {}, Bot: {}, Activity: {}, KeyRound: {}, BookOpen: {}, Code2: {}, Zap: {}, Rocket: {}, Play: {}, ShieldCheck: {}, Plus: {} }
+  const timers = new Map()
+  let timerId = 0
+  const bodyClasses = new Set()
+  const fakeWindow = {
+    innerWidth: 500, innerHeight: 300,
+    setTimeout(callback, delay) { const id = ++timerId; timers.set(id, { callback, delay }); return id },
+    clearTimeout(id) { timers.delete(id) },
+    addEventListener() {}, removeEventListener() {},
+  }
+  const fakeDocument = {
+    body: { classList: { add(name) { bodyClasses.add(name) }, remove(name) { bodyClasses.delete(name) } } },
+    addEventListener() {}, removeEventListener() {},
+  }
+  const { vue, options } = readOptions('../src/components/ToolboxDialog.vue', { ...icons, window: fakeWindow, document: fakeDocument })
+  assert.match(vue, /@touchstart="handleActionTouchStart\(\$event, action\)"/)
+  assert.match(vue, /@touchmove="handleActionTouchMove"/)
+
+  const events = []
+  const instance = Object.assign({}, options.data(), options.methods, {
+    $emit: (...args) => events.push(args),
+    $nextTick: callback => callback(),
+    $refs: { contextMenu: { getBoundingClientRect: () => ({ width: 180, height: 115 }) } },
+  })
+  const action = { id: 'clipboard', disabled: false, menuOptions: [{ id: 'get', label: 'Get' }] }
+  let prevented = false
+  instance.handleActionTouchStart({
+    touches: [{ clientX: 80, clientY: 90 }], cancelable: true,
+    preventDefault() { prevented = true },
+  }, action)
+  const longPress = [...timers.entries()].find(([, timer]) => timer.delay === 520)
+  assert.ok(longPress)
+  timers.delete(longPress[0])
+  longPress[1].callback()
+  assert.equal(prevented, true)
+  assert.equal(instance.contextMenuAction, action)
+  assert.deepEqual([instance.contextMenuX, instance.contextMenuY], [80, 90])
+  assert.equal(bodyClasses.has('device-touch-callout-guard'), true)
+
+  const clickEvent = { prevented: false, stopped: false, preventDefault() { this.prevented = true }, stopPropagation() { this.stopped = true } }
+  instance.handleActionClick(action, clickEvent)
+  assert.equal(events.length, 0, 'long-press must not also launch the tool')
+  assert.equal(clickEvent.prevented && clickEvent.stopped, true)
+  instance.closeContextMenu()
+  assert.equal(bodyClasses.has('device-touch-callout-guard'), false)
+
+  instance.handleActionTouchStart({ touches: [{ clientX: 20, clientY: 30 }], cancelable: true, preventDefault() {} }, action)
+  instance.handleActionTouchMove({ touches: [{ clientX: 31, clientY: 30 }] })
+  assert.equal([...timers.values()].some(timer => timer.delay === 520), false, 'movement must cancel the long-press timer')
+  assert.equal(bodyClasses.has('device-touch-callout-guard'), false)
 })

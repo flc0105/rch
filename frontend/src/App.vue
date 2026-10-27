@@ -145,6 +145,8 @@
                   :current-connection-offline="isCurrentConnectionOffline"
                   :device-sidebar-collapsed="deviceSidebarCollapsed"
                   :connection-info-collapsed="connectionInfoCollapsed"
+                  :remember-layout-state="rememberLayoutState"
+                  :has-terminal-output="currentOutputLines.length > 0"
                   @layout-command="handleToolbarLayoutCommand"
                   @open-remote-files="openRemoteFilesDialog"
                   @open-manage-pins="openManagePinnedPathsDialog"
@@ -173,6 +175,10 @@
                   @clear="clearOutput"
                   @clear-selection="clearSelectedConnection"
                   @bottom="scrollToBottom"
+                  @copy-terminal-output="copyTerminalOutput('text')"
+                  @copy-terminal-json="copyTerminalOutput('json')"
+                  @save-terminal-output="saveTerminalOutputArtifact('text')"
+                  @save-terminal-json="saveTerminalOutputArtifact('json')"
                 />
 
 <CommandInputBar
@@ -504,15 +510,22 @@
       </div>
       <div class="authorization-info-row authorization-token-row">
         <span class="authorization-info-label">API Token</span>
-        <el-input
-          :model-value="authorizationInfo.api_token"
-          readonly
-          class="authorization-token-input"
-        >
-          <template #append>
-            <el-button :disabled="!authorizationInfo.api_token" @click="copyAuthorizationToken">Copy</el-button>
-          </template>
-        </el-input>
+        <div class="authorization-token-control">
+          <el-input
+            :model-value="authorizationInfo.api_token"
+            readonly
+            class="authorization-token-input"
+          >
+            <template #append>
+              <el-button :disabled="!authorizationInfo.api_token" @click="copyAuthorizationToken">Copy</el-button>
+            </template>
+          </el-input>
+          <el-button
+            :loading="authorizationTokenResetting"
+            :disabled="authorizationInfoLoading || authorizationTokenResetting"
+            @click="resetAuthorizationToken"
+          >Reset</el-button>
+        </div>
       </div>
       <div class="account-dialog-hint">Use the API Token as a Bearer token for authenticated external API requests.</div>
     </div>
@@ -558,8 +571,9 @@ import DeviceGroupManagerDialog from './components/DeviceGroupManagerDialog.vue'
 import SettingsDialog from './components/SettingsDialog.vue'
 import NotificationCenterDrawer from './components/NotificationCenterDrawer.vue'
 import TransferCenterDrawer from './components/TransferCenterDrawer.vue'
-import { changeAdminPassword, getAuthorizationInfo, getAuthSession } from './api/authApi.js'
-import { ElMessage } from 'element-plus'
+import { changeAdminPassword, getAuthorizationInfo, getAuthSession, resetAdminApiToken } from './api/authApi.js'
+import { loadLayoutPreferences, saveLayoutPreferences } from './utils/layoutPreferences.js'
+import { ElMessage, ElMessageBox } from 'element-plus'
 
 import { ArrowDown, ArrowUp, Bell, Grid, Sort, User } from '@element-plus/icons-vue'
 
@@ -605,6 +619,7 @@ export default {
   },
 
   data() {
+    const layoutPreferences = loadLayoutPreferences()
     return {
       ...AppTerminalModule.data(),
       ...AppConnectionModule.data(),
@@ -617,8 +632,9 @@ export default {
       remoteFilesDialogVisible: false,
       pendingRemoteUploadRefresh: null,
 
-      connectionInfoCollapsed: false,
-      deviceSidebarCollapsed: false,
+      connectionInfoCollapsed: layoutPreferences.connectionInfoCollapsed,
+      deviceSidebarCollapsed: layoutPreferences.deviceSidebarCollapsed,
+      rememberLayoutState: layoutPreferences.rememberLayoutState,
 
       currentAuthUsername: '',
       changePasswordDialogVisible: false,
@@ -630,6 +646,7 @@ export default {
       },
       authorizationInfoDialogVisible: false,
       authorizationInfoLoading: false,
+      authorizationTokenResetting: false,
       authorizationInfo: {
         username: '',
         api_token: '',
@@ -672,6 +689,14 @@ export default {
   return this.$refs.terminalOutputRef?.saveTerminalJsonOutputFromViewer(payload)
 },
 
+    copyTerminalOutput(format = 'text') {
+      return this.$refs.terminalOutputRef?.copyAllTerminalOutput(format)
+    },
+
+    saveTerminalOutputArtifact(format = 'text') {
+      return this.$refs.terminalOutputRef?.saveAllTerminalOutputArtifact(format)
+    },
+
     openArtifactDialog() {
       return this.$refs.artifactDialogRef?.open()
     },
@@ -695,10 +720,20 @@ export default {
 
     toggleConnectionInfo() {
       this.connectionInfoCollapsed = !this.connectionInfoCollapsed
+      this.persistLayoutPreferences()
     },
 
     toggleDeviceSidebar() {
       this.deviceSidebarCollapsed = !this.deviceSidebarCollapsed
+      this.persistLayoutPreferences()
+    },
+
+    persistLayoutPreferences() {
+      saveLayoutPreferences({
+        rememberLayoutState: this.rememberLayoutState,
+        deviceSidebarCollapsed: this.deviceSidebarCollapsed,
+        connectionInfoCollapsed: this.connectionInfoCollapsed,
+      })
     },
 
     handleToolbarLayoutCommand(command) {
@@ -714,9 +749,16 @@ export default {
         return
       }
 
+      if (normalizedCommand === 'toggle-layout-persistence') {
+        this.rememberLayoutState = !this.rememberLayoutState
+        this.persistLayoutPreferences()
+        return
+      }
+
       if (normalizedCommand === 'hide-both') {
         this.deviceSidebarCollapsed = true
         this.connectionInfoCollapsed = true
+        this.persistLayoutPreferences()
       }
     },
 
@@ -1047,6 +1089,38 @@ export default {
       }
     },
 
+    async resetAuthorizationToken() {
+      try {
+        await ElMessageBox.confirm(
+          'A new API Token will take effect immediately. Update any external clients that use the current token.',
+          'Reset API Token',
+          {
+            type: 'warning',
+            confirmButtonText: 'Reset Token',
+            cancelButtonText: 'Cancel',
+            confirmButtonClass: 'el-button--danger',
+          },
+        )
+      } catch (error) {
+        if (error === 'cancel' || error === 'close' || error?.message === 'cancel') return
+        ElMessage.error(error?.message || 'Failed to reset API Token')
+        return
+      }
+
+      this.authorizationTokenResetting = true
+      try {
+        const result = await resetAdminApiToken()
+        const token = String(result?.api_token || '')
+        if (!token) throw new Error('Server did not return the new API Token')
+        this.authorizationInfo = { ...this.authorizationInfo, api_token: token }
+        ElMessage.success('API Token reset')
+      } catch (error) {
+        ElMessage.error(error?.message || 'Failed to reset API Token')
+      } finally {
+        this.authorizationTokenResetting = false
+      }
+    },
+
     handleBannerUtilityCommand(command) {
       if (command === 'one-liners') return this.openOneLinersDialog()
       if (command === 'build-agent') return this.openAgentBuilderDialog()
@@ -1300,6 +1374,18 @@ export default {
 
 .authorization-token-input :deep(.el-input__inner) {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.authorization-token-control {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  min-width: 0;
+}
+
+.authorization-token-control .authorization-token-input {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .banner-transfer-count {

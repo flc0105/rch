@@ -90,6 +90,15 @@ def change_admin_password(path, current_password, new_password):
     return updated
 
 
+def reset_admin_api_token(path):
+    """Rotate the administrator API token while preserving other credentials."""
+    credentials = _read_auth_file(path)
+    updated = dict(credentials)
+    updated['api_token'] = secrets.token_urlsafe(32)
+    _write_auth_file(path, updated)
+    return updated
+
+
 def load_admin_auth(path):
     """Create once if absent; on later starts accept only valid persisted credentials."""
     try:

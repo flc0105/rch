@@ -160,8 +160,10 @@ Web API 以 `/api/artifacts` 为主入口。以下是接口协议的边界，用
 | `POST` | `/api/artifacts/{id}/rename` | 修改显示名和实际文件名 |
 | `DELETE` | `/api/artifacts/{id}` | 删除文件和元数据 |
 | `POST` | `/api/artifacts/clear` | 按类型、可选机器范围清理 |
-| `POST` | `/api/artifacts/command-output/save` | 以文本内容创建命令输出 Artifact |
+| `POST` | `/api/artifacts/command-output/save` | 以文本或 JSON 内容创建命令输出 Artifact |
 | `POST` | `/api/artifacts/{id}/send-to-client` | 提交共享文件下发任务 |
+
+`POST /api/artifacts/command-output/save` 接受可选的 `output_format`：`text`（默认）生成 `.txt` 文件，`json` 要求 `content` 是有效 JSON，并生成 `.json` 文件。现有 `job_output` 类别继续使用 `.json` 文件名规则。Terminal Actions 使用该接口保存当前终端文本或 `command` / `result` JSON 数组，仍归入 `command_output` 类别并沿用现有 Artifact 列表、预览和下载流程。
 
 上传文件的兼容入口 `POST /api/files/upload` 同时存在于基础 Web 服务（默认 8085）和专用传输服务（默认 8086）。其 multipart 表单包含 `file`，可携带 `artifact_type`、`category`、`client_id`、`source_command_id`、Job 来源信息及 JSON `extra`。接口完成后返回注册的 Artifact 描述，浏览器再通过正式 Artifact URL 访问它。**选择 8086 并不自动意味着 Client 使用可取消传输策略，也不保证 Transfer Center 会创建进度记录。**
 

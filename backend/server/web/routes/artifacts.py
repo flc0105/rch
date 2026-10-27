@@ -86,6 +86,7 @@ def create_artifacts_blueprint(server_instance):
             source = (payload.get('source') or '').strip()
             source_command = (payload.get('source_command') or '').strip()
             source_command_id = payload.get('source_command_id')
+            output_format = str(payload.get('output_format') or 'text').strip().lower()
             job_id = (payload.get('job_id') or '').strip()
             job_name = (payload.get('job_name') or '').strip()
             job_key = (payload.get('job_key') or '').strip()
@@ -100,6 +101,7 @@ def create_artifacts_blueprint(server_instance):
                 source=source,
                 source_command=source_command,
                 source_command_id=source_command_id,
+                output_format=output_format,
                 job_id=job_id,
                 job_name=job_name,
                 job_key=job_key,

@@ -1,3 +1,4 @@
+import json
 import os
 import re
 from datetime import datetime
@@ -29,6 +30,12 @@ class CommandOutputArtifactService:
     def _normalize_category(self, category: str) -> str:
         normalized = str(category or '').strip()
         return normalized or self.DEFAULT_CATEGORY
+
+    def _normalize_output_format(self, output_format: str) -> str:
+        normalized = str(output_format or 'text').strip().lower() or 'text'
+        if normalized not in {'text', 'json'}:
+            raise ValueError('output_format must be text or json')
+        return normalized
 
     def _get_prefix(self, category: str) -> str:
         normalized_category = self._normalize_category(category)
@@ -83,9 +90,10 @@ class CommandOutputArtifactService:
 
         return first
 
-    def build_output_name(self, *, category: str, source_command: str, now=None) -> str:
+    def build_output_name(self, *, category: str, source_command: str, now=None, output_format: str = 'text') -> str:
         current_time = now or self._now()
         normalized_category = self._normalize_category(category)
+        normalized_format = self._normalize_output_format(output_format)
         prefix = self._get_prefix(normalized_category)
         timestamp = current_time.strftime(self.OUTPUT_TIME_FORMAT)
 
@@ -98,7 +106,8 @@ class CommandOutputArtifactService:
         else:
             label = self._build_command_label(source_command)
 
-        return f'{prefix}_{timestamp}_{label}.txt'
+        extension = '.json' if normalized_format == 'json' else '.txt'
+        return f'{prefix}_{timestamp}_{label}{extension}'
 
     def _resolve_script_output_name_source(self, *, source_command: str, extra: dict | None = None) -> str:
         resolved_source_command = str(source_command or '').strip()
@@ -135,12 +144,14 @@ class CommandOutputArtifactService:
 
         return payload
 
-    def allocate_output_path(self, *, category: str, machine_id: str, source_command: str, now=None) -> dict:
+    def allocate_output_path(self, *, category: str, machine_id: str, source_command: str, now=None,
+                             output_format: str = 'text') -> dict:
         normalized_category = self._normalize_category(category)
         output_name = self.build_output_name(
             category=normalized_category,
             source_command=source_command,
             now=now,
+            output_format=output_format,
         )
 
         allocation = self.artifact_service.allocate_artifact_path(
@@ -189,9 +200,16 @@ class CommandOutputArtifactService:
                          client_id: str = '', addr: str = '', source: str = '',
                          source_command: str = '', source_command_id=None,
                          job_id: str = '', job_name: str = '', job_key: str = '',
-                         extra: dict | None = None) -> dict:
+                         extra: dict | None = None, output_format: str = 'text') -> dict:
         now = self._now()
         normalized_category = self._normalize_category(category)
+        normalized_format = self._normalize_output_format(output_format)
+        content_text = '' if content is None else str(content)
+        if normalized_format == 'json':
+            try:
+                json.loads(content_text)
+            except (TypeError, ValueError) as error:
+                raise ValueError('JSON output must contain valid JSON') from error
 
         allocation_name_source = source_command
         if normalized_category == self.SCRIPT_CATEGORY:
@@ -206,10 +224,11 @@ class CommandOutputArtifactService:
             machine_id=machine_id,
             source_command=allocation_name_source,
             now=now,
+            output_format=normalized_format,
         )
 
         with open(allocation['file_path'], 'w', encoding='utf-8', errors='replace') as file_obj:
-            file_obj.write('' if content is None else str(content))
+            file_obj.write(content_text)
 
         return self.register_output_artifact(
             allocation=allocation,

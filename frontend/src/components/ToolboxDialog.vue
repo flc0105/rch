@@ -50,6 +50,10 @@
           :key="action.id"
           class="toolbox-grid-entry"
           @contextmenu.prevent.stop="openContextMenu($event, action)"
+          @touchstart="handleActionTouchStart($event, action)"
+          @touchmove="handleActionTouchMove"
+          @touchend="handleActionTouchEnd"
+          @touchcancel="handleActionTouchEnd"
         >
           <button
             class="toolbox-item"
@@ -57,7 +61,7 @@
             type="button"
             :disabled="action.disabled && !action.shortcut"
             :title="action.disabled && action.shortcut ? `Unavailable: ${action.label}` : action.label"
-            @click="action.disabled ? null : (action.shortcut ? $emit('launch-pin', action.shortcut) : $emit('launch', action.id))"
+            @click="handleActionClick(action, $event)"
           >
             <span class="toolbox-icon" :class="{ 'toolbox-icon-accent': action.accent }">
               <component :is="iconComponents[action.icon]" :size="27" :stroke-width="1.75" aria-hidden="true" />
@@ -231,7 +235,9 @@ export default {
   data() {
     return { query: '', contextMenuAction: null, contextMenuX: 0, contextMenuY: 0, contextMenuSerial: 0,
       shortcutPickerVisible: false, iconPickerVisible: false, shortcutKind: 'script', shortcutResource: '', shortcutIcon: 'file-code', shortcutLabel: '',
-      mobilePage: false, pageIndex: 0, pageTouchStartX: null, pageTouchStartY: null, lastPageWheelAt: 0, pageWheelAmount: 0, pageWheelDirection: 0, pageWheelLocked: false }
+      mobilePage: false, pageIndex: 0, pageTouchStartX: null, pageTouchStartY: null, lastPageWheelAt: 0, pageWheelAmount: 0, pageWheelDirection: 0, pageWheelLocked: false,
+      actionTouchTimer: null, actionTouchStartX: 0, actionTouchStartY: 0, actionTouchMoved: false,
+      suppressNextActionClick: false, actionClickSuppressionTimer: null }
   },
   computed: {
     iconComponents() { return icons },
@@ -276,6 +282,9 @@ export default {
     window.addEventListener('resize', this.syncMobilePage)
   },
   beforeUnmount() {
+    this.clearActionTouchTimer()
+    if (this.actionClickSuppressionTimer) window.clearTimeout(this.actionClickSuppressionTimer)
+    this.setTouchCalloutGuard(false)
     document.removeEventListener('pointerdown', this.onOutsidePointerDown, true)
     document.removeEventListener('scroll', this.onViewportScroll, true)
     window.removeEventListener('keydown', this.onGlobalKeydown, true)
@@ -336,6 +345,67 @@ export default {
       this.pageWheelLocked = true
       this.setPage(this.currentPage + direction)
     },
+    clearActionTouchTimer() {
+      if (this.actionTouchTimer) {
+        window.clearTimeout(this.actionTouchTimer)
+        this.actionTouchTimer = null
+      }
+    },
+    setTouchCalloutGuard(enabled) {
+      if (typeof document === 'undefined' || !document.body?.classList) return
+      if (enabled) document.body.classList.add('device-touch-callout-guard')
+      else document.body.classList.remove('device-touch-callout-guard')
+    },
+    handleActionTouchStart(event, action) {
+      if (!event.touches || event.touches.length !== 1 || (action.disabled && !action.shortcut)) return
+      const touch = event.touches[0]
+      this.clearActionTouchTimer()
+      if (this.actionClickSuppressionTimer) window.clearTimeout(this.actionClickSuppressionTimer)
+      this.actionClickSuppressionTimer = null
+      this.actionTouchStartX = touch.clientX
+      this.actionTouchStartY = touch.clientY
+      this.actionTouchMoved = false
+      this.suppressNextActionClick = false
+      this.setTouchCalloutGuard(true)
+      this.actionTouchTimer = window.setTimeout(() => {
+        this.actionTouchTimer = null
+        if (this.actionTouchMoved) return
+        if (event.cancelable && typeof event.preventDefault === 'function') event.preventDefault()
+        this.suppressNextActionClick = true
+        if (this.actionClickSuppressionTimer) window.clearTimeout(this.actionClickSuppressionTimer)
+        this.actionClickSuppressionTimer = window.setTimeout(() => {
+          this.suppressNextActionClick = false
+          this.actionClickSuppressionTimer = null
+        }, 1000)
+        this.openContextMenu({ clientX: this.actionTouchStartX, clientY: this.actionTouchStartY }, action)
+      }, 520)
+    },
+    handleActionTouchMove(event) {
+      if (!this.actionTouchTimer || !event.touches || event.touches.length !== 1) return
+      const touch = event.touches[0]
+      if (Math.abs(touch.clientX - this.actionTouchStartX) > 8 || Math.abs(touch.clientY - this.actionTouchStartY) > 8) {
+        this.actionTouchMoved = true
+        this.clearActionTouchTimer()
+        this.setTouchCalloutGuard(false)
+      }
+    },
+    handleActionTouchEnd() {
+      this.clearActionTouchTimer()
+      if (!this.contextMenuAction) this.setTouchCalloutGuard(false)
+    },
+    handleActionClick(action, event) {
+      if (this.suppressNextActionClick) {
+        this.suppressNextActionClick = false
+        if (this.actionClickSuppressionTimer) window.clearTimeout(this.actionClickSuppressionTimer)
+        this.actionClickSuppressionTimer = null
+        event?.preventDefault?.()
+        event?.stopPropagation?.()
+        return
+      }
+      if (action.disabled) return
+      if (action.shortcut) this.$emit('launch-pin', action.shortcut)
+      else this.$emit('launch', action.id)
+    },
     openShortcutPicker() {
       this.closeContextMenu()
       this.shortcutKind = 'script'
@@ -374,6 +444,7 @@ export default {
     closeContextMenu() {
       this.contextMenuSerial++
       this.contextMenuAction = null
+      this.setTouchCalloutGuard(false)
     },
     onOutsidePointerDown(event) {
       if (this.contextMenuAction && !this.$refs.contextMenu?.contains(event.target)) this.closeContextMenu()

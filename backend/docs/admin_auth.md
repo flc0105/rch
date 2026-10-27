@@ -2,7 +2,7 @@
 
 Server 对受保护 Web API 建立统一的管理员身份边界：浏览器依靠经签名的 Session Cookie，外部 HTTP 客户端使用管理员 API Token；由 Server 授权运行的 Script 和 Client 命令可以在限定范围内使用临时 Grant。三类凭据的来源、可达接口和失效条件不同，但最终由同一请求守卫判断是否放行。
 
-管理员凭据的持久根默认是项目固定的 `backend/runtime/auth.json`（通过 `SERVER_RUNTIME_DIR` 配置）。Server 启动时装载完整凭据；Web 账户菜单修改管理员密码时会原子更新同一文件并立即重新加载密码凭据，因此该操作不需要重启 Server。
+管理员凭据的持久根默认是项目固定的 `backend/runtime/auth.json`（通过 `SERVER_RUNTIME_DIR` 配置）。Server 启动时装载完整凭据；Web 账户菜单修改管理员密码或重置 API Token 时，会原子更新同一文件并立即重新加载认证配置，因此这些操作不需要重启 Server。
 
 ## 凭据根与服务初始化
 
@@ -122,7 +122,7 @@ Server 还原密码并继续使用原有的 scrypt 哈希校验，`auth.json` �
 
 Session 主要由以下两个接口管理：`GET /api/auth/session` 可检测当前是否已认证；`POST /api/auth/logout` 清除当前会话。`/api/auth/session` 本身允许匿名请求，未认证时返回 `authenticated: false`，而不是把它视为一个必须登录才能访问的页面。Web 首页在未认证时跳转登录页，受保护的 `/api/` 请求失败则返回 `401`；前端收到该状态会引导用户重新登录。
 
-登录后的右上角账户入口显示 `auth.json` 当前用户名。菜单中的 **Authorization Info** 通过 `GET /api/auth/info` 读取用户名和管理员 API Token，并提供复制操作；Password Hash 与 Session Secret 不返回前端。**Change Password** 使用 `POST /api/auth/password`，当前密码和新密码沿用登录页相同的轻量掩码字段传输。上述两个接口只接受管理员 Session 或管理员静态 Token，不接受 Script Grant 作为账户管理权限。
+登录后的右上角账户入口显示 `auth.json` 当前用户名。菜单中的 **Authorization Info** 通过 `GET /api/auth/info` 读取用户名和管理员 API Token，并提供复制操作。**Reset** 调用 `POST /api/auth/token/reset` 生成新的随机 Token、原子保存 `auth.json` 并立即刷新 Server 内存中的 Token；响应通过 `Cache-Control: no-store` 返回新 Token，当前浏览器 Session 保持有效，旧 Token 从下一次请求起失效。重置后应更新使用旧 Token 的外部 HTTP 客户端。此操作只更换 `api_token`；用户名、密码哈希和 Session Secret 保持不变，后两项不返回前端。**Change Password** 使用 `POST /api/auth/password`，当前密码和新密码沿用登录页相同的轻量掩码字段传输。上述账户管理接口只接受管理员 Session 或管理员静态 Token，不接受 Script Grant 作为账户管理权限。
 
 当前 Session 是 Flask Cookie Session：Cookie 默认名为 `rch_admin_session`，默认有效期七天，设置了 `HttpOnly` 和 `SameSite=Lax`，并用 `session_secret` 签名。会话状态由签名 Cookie 维护；Logout 清除当前浏览器的认证会话。每个 Session 还绑定基于当前用户名、密码哈希和 Session Secret 计算的凭据标识，因此修改密码并重启后，旧 Cookie 即使仍在有效期内也会被拒绝。
 

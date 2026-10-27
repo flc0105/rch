@@ -165,7 +165,7 @@ class WebArtifactApi:
                                      client_id: str = '', hostname: str = '', machine_id: str = '',
                                      source: str = '', source_command: str = '', source_command_id=None,
                                      job_id: str = '', job_name: str = '', job_key: str = '',
-                                     extra=None):
+                                     extra=None, output_format: str = 'text'):
         resolved_hostname, resolved_machine_id, addr = self.resolve_client_context(client_id)
         hostname = hostname or resolved_hostname
         machine_id = machine_id or resolved_machine_id
@@ -184,6 +184,7 @@ class WebArtifactApi:
             job_name=job_name,
             job_key=job_key,
             extra=extra if isinstance(extra, dict) else {},
+            output_format=output_format,
         )
 
 
