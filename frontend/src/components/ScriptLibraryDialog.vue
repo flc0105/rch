@@ -252,12 +252,14 @@
     :item="pendingRunScriptItem"
     :param-specs="pendingRunScriptParamSpecs"
     :param-form="scriptParamForm"
+    :machine-id="currentConnection?.machine_id || ''"
     :submitting="scriptRunSubmitting"
     :selected-id="selectedId"
     :get-tab-scoped-headers="getTabScopedHeaders"
     :is-script-supported-for-current-connection="isScriptSupportedForCurrentConnection"
     :format-script-platform-label="formatScriptPlatformLabel"
     @update-param="updateScriptParam"
+    @apply-param-values="applyScriptParamValues"
     @append-output="forwardAppendOutput"
     @set-active-task="forwardSetActiveTask"
     @upload-started="$emit('upload-started', $event)"
@@ -1119,6 +1121,14 @@ getPreferredScriptDirectoryForCurrentConnection() {
       this.scriptParamForm = {
         ...this.scriptParamForm,
         [name]: value,
+      }
+    },
+
+    applyScriptParamValues(values) {
+      if (!values || typeof values !== 'object' || Array.isArray(values)) return
+      this.scriptParamForm = {
+        ...this.scriptParamForm,
+        ...values,
       }
     },
 

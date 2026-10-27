@@ -100,6 +100,30 @@
     />
 
     <el-input
+      v-else-if="type === 'password'"
+      :model-value="textModelValue"
+      type="password"
+      show-password
+      :placeholder="placeholder"
+      :disabled="isDisabled"
+      class="param-form-control"
+      clearable
+      @update:model-value="$emit('update:modelValue', $event)"
+    >
+      <template v-if="hasKeychainPicker" #append>
+        <el-tooltip content="Choose from Keychains" placement="top">
+          <el-button
+            :aria-label="`Choose ${fieldLabel} from Keychains`"
+            :disabled="isDisabled"
+            @click="$emit('pick-keychain', param)"
+          >
+            <el-icon><Key /></el-icon>
+          </el-button>
+        </el-tooltip>
+      </template>
+    </el-input>
+
+    <el-input
       v-else-if="isRemote"
       :model-value="remoteDisplayValue"
       :placeholder="placeholder"
@@ -139,12 +163,12 @@
 </template>
 
 <script>
-import { isParamDisabled, isParamVisible, isRemoteMultiParam, isRemoteParam, normalizeParamControl, normalizeParamType } from '../utils/parameterSchema.js'
-import { Delete, Plus } from '@element-plus/icons-vue'
+import { isParamDisabled, isParamVisible, isRemoteMultiParam, isRemoteParam, normalizeKeychainPicker, normalizeParamControl, normalizeParamType } from '../utils/parameterSchema.js'
+import { Delete, Key, Plus } from '@element-plus/icons-vue'
 
 export default {
   name: 'ParamFormField',
-  components: { Delete, Plus },
+  components: { Delete, Key, Plus },
 
   props: {
     param: {
@@ -160,7 +184,7 @@ export default {
     },
   },
 
-  emits: ['update:modelValue', 'browse'],
+  emits: ['update:modelValue', 'browse', 'pick-keychain'],
 
   computed: {
     type() {
@@ -200,6 +224,10 @@ export default {
 
     isRemote() {
       return isRemoteParam(this.param)
+    },
+
+    hasKeychainPicker() {
+      return !!normalizeKeychainPicker(this.param)
     },
 
     numericModelValue() {

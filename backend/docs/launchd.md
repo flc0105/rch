@@ -80,6 +80,7 @@ acmd launchd status agent
 acmd launchd
 acmd launchd restart daemon
 acmd launchd uninstall agent --label com.rch.client
+acmd launchd status agent --json
 acmd launchd status agent --no-confirm
 acmd help launchd
 ```
@@ -91,12 +92,13 @@ acmd help launchd
 | 参数 | 默认值 | 适用范围 |
 | --- | --- | --- |
 | `--label` | `com.rch.client` | Agent / Daemon |
+| `--json` | `false` | 输出 SDK 原始结果的 JSON 表示，不改变交互审批 |
 | `--keep_alive` / `--keep-alive` | `true` | 安装时写入 KeepAlive |
 | `--run_at_load` / `--run-at-load` | `true` | 安装时写入 RunAtLoad |
 | `--scope` | `user` | Agent；可选 `user`、`global` |
 | `--target_user` / `--target-user` | 空（自动解析 GUI 用户） | Agent |
 
-布尔参数需要明确值，如 `--keep-alive false`。Daemon 使用 system domain 与 root 身份，不使用 Agent 的 `scope`、`target_user`。管理系统级 Daemon / global Agent 需要相应 macOS 权限。`install` 只写入服务定义，启动需要单独执行 `start`。命令输出沿用 SDK 格式，包含操作、目标、Installed、Loaded、Running、PID 和 plist 路径。
+布尔参数需要明确值，如 `--keep-alive false`。Daemon 使用 system domain 与 root 身份，不使用 Agent 的 `scope`、`target_user`。管理系统级 Daemon / global Agent 需要相应 macOS 权限。`install` 只写入服务定义，启动需要单独执行 `start`。默认输出沿用 SDK 的 Terminal 文本格式，包含操作、目标、Installed、Loaded、Running、PID 和 plist 路径。添加 `--json` 时，命令通过 `StructuredCommandResult` 输出 launchd SDK 的结果对象，并保留布尔值、数字和空值等 JSON 类型；该选项不改变 Preview / Approve 流程。`--json --no-confirm` 同样直接执行并输出 JSON。
 
 ## 4. KeepAlive 与 RunAtLoad
 

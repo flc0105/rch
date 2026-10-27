@@ -95,6 +95,12 @@ Keychains 在 Web 的 `KeychainManagerDialog` 中管理；其 API 由 Server 本
 
 如果编辑时改变 Host Scope，`cred_id` 保持相同，但是实际所在 JSON 文件会迁移；因此其他脚本必须使用新的 `scope` 或 `machine_id` 才能继续按名称找到它。
 
+### 运行参数中的 Keychain Picker
+
+Script、Background Job 和 External Tool 的共享参数表单支持在 `password` 字段上声明 `keychain_picker`。Login 记录可一次填入用户名与密码；Secret 记录可填入密码或 API Token。选择范围是本次运行目标的 `machine_id` 与 Server Shared，凭证列表只显示元数据，用户选择后才读取完整值。
+
+字段绑定写在密码参数的 Metadata 中，详细格式与校验规则见 [Parameter Schema](parameter_schema.md)。项目内有三个可直接运行的示例：`server/resources/scripts/examples/keychain_login_picker.py`、`server/resources/jobs/examples/keychain_secret_picker.py` 和 External Tool `keychain-picker-demo`。它们只输出参数接收状态与长度，不输出凭证明文。
+
 ## 四、Password Generator 与 Keychains 的关系
 
 密码生成器从 Keychains 弹出，但属于**纯前端辅助工具**。生成后只在弹窗里展示，提供复制和重新生成，**不会自动保存为 Credential，更不会自动填入正在编辑的条目**。

@@ -297,6 +297,7 @@
     :item="pendingStartJobModule"
     :params="pendingStartJobModule?.metadata?.params || []"
     :param-form="backgroundJobParamForm || {}"
+    :machine-id="currentConnection?.machine_id || ''"
     :submitting="backgroundJobStartSubmitting"
     :execution-mode="backgroundJobExecutionMode"
     :selected-id="selectedId"
@@ -304,6 +305,7 @@
     :is-job-supported-for-current-connection="isJobSupportedForCurrentConnection"
     :format-job-platform-label="formatJobPlatformLabel"
     @update-param="updateBackgroundJobParam"
+    @apply-param-values="applyBackgroundJobParamValues"
     @update-execution-mode="updateBackgroundJobExecutionMode"
     @append-output="forwardAppendOutput"
     @set-active-task="forwardSetActiveTask"
@@ -999,6 +1001,14 @@ export default {
       this.backgroundJobParamForm = {
         ...this.backgroundJobParamForm,
         [name]: value,
+      }
+    },
+
+    applyBackgroundJobParamValues(values) {
+      if (!values || typeof values !== 'object' || Array.isArray(values)) return
+      this.backgroundJobParamForm = {
+        ...this.backgroundJobParamForm,
+        ...values,
       }
     },
 

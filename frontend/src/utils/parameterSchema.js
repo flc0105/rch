@@ -11,6 +11,7 @@ const PARAM_TYPE_ALIASES = {
   text: 'textarea',
   multiline: 'textarea',
   textarea: 'textarea',
+  password: 'password',
   remote_file: 'remote_file',
   remote_files: 'remote_files',
   remote_folder: 'remote_folder',
@@ -28,6 +29,49 @@ const REMOTE_MULTI_PARAM_TYPES = new Set([
   'remote_files',
   'remote_folders',
 ])
+
+const KEYCHAIN_SOURCE_FIELDS = new Set(['username', 'secret_value'])
+
+export function normalizeKeychainPicker(param) {
+  const source = param?.keychain_picker
+  if (!source || typeof source !== 'object' || Array.isArray(source)) return null
+  if (normalizeParamType(param?.type) !== 'password') return null
+
+  const kind = String(source.kind || '').trim().toLowerCase()
+  if (!['login', 'secret'].includes(kind)) return null
+  if (!source.bindings || typeof source.bindings !== 'object' || Array.isArray(source.bindings)) return null
+
+  const bindings = {}
+  const destinations = new Set()
+  for (const [field, rawName] of Object.entries(source.bindings)) {
+    const name = String(rawName || '').trim()
+    if (!KEYCHAIN_SOURCE_FIELDS.has(field) || !name || destinations.has(name)) return null
+    if (field === 'username' && kind !== 'login') return null
+    bindings[field] = name
+    destinations.add(name)
+  }
+  if (!Object.prototype.hasOwnProperty.call(bindings, 'secret_value')) return null
+
+  return { kind, bindings }
+}
+
+export function mapKeychainPickerValues(param, item, paramSpecs = []) {
+  const picker = normalizeKeychainPicker(param)
+  if (!picker || !item || typeof item !== 'object' || Array.isArray(item)) return null
+  if (String(item.kind || '').trim().toLowerCase() !== picker.kind) return null
+
+  const availableNames = new Set((Array.isArray(paramSpecs) ? paramSpecs : [])
+    .map(spec => String(spec?.name || '').trim()).filter(Boolean))
+  const values = {}
+  for (const [source, target] of Object.entries(picker.bindings)) {
+    if (availableNames.size && !availableNames.has(target)) return null
+    if (!Object.prototype.hasOwnProperty.call(item, source) || item[source] === null || item[source] === undefined) {
+      return null
+    }
+    values[target] = String(item[source])
+  }
+  return values
+}
 
 export function normalizeParamType(value) {
   const text = String(value || 'string').trim().toLowerCase()
@@ -83,6 +127,10 @@ export function normalizeParamSpec(item = {}) {
     type,
     required: !!item.required,
     description: String(item.description || '').trim(),
+  }
+
+  if (Object.prototype.hasOwnProperty.call(item, 'keychain_picker')) {
+    normalized.keychain_picker = normalizeKeychainPicker(normalized)
   }
 
   if (Object.prototype.hasOwnProperty.call(item, 'options')) {

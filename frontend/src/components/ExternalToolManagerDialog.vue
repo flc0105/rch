@@ -634,6 +634,7 @@
           :form-values="paramForm"
           @update:model-value="paramForm[param.name] = $event"
           @browse="openRemoteFilePicker"
+          @pick-keychain="openKeychainPicker"
         />
 
         <div v-if="!pendingParams.length" class="external-tool-empty small">
@@ -677,6 +678,13 @@
     @append-output="forwardAppendOutput"
     @set-active-task="forwardSetActiveTask"
     @upload-started="forwardRemoteUploadStarted"
+  />
+
+  <KeychainPicker
+    v-model:visible="keychainPickerVisible"
+    :machine-id="selectedTargetMachineId"
+    :kind="pendingKeychainParam?.keychain_picker?.kind || 'secret'"
+    @select="handleKeychainSelected"
   />
 
   <el-dialog
@@ -779,13 +787,15 @@ import { formatBytesHuman, formatDateTimeShort } from '../utils/formatters.js'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import * as externalToolsApi from '../api/externalToolsApi.js'
 import RemoteFilePicker from './RemoteFilePicker.vue'
+import KeychainPicker from './KeychainPicker.vue'
 import ParamFormField from './ParamFormField.vue'
-import { cloneParamValue, isRemoteMultiParam, normalizeParamSpecs, normalizeParamType, remoteParamInitialPath, remoteParamSelectionMode } from '../utils/parameterSchema.js'
+import { cloneParamValue, isRemoteMultiParam, mapKeychainPickerValues, normalizeParamSpecs, normalizeParamType, remoteParamInitialPath, remoteParamSelectionMode } from '../utils/parameterSchema.js'
 
 export default {
   name: 'ExternalToolManagerDialog',
 
   components: {
+    KeychainPicker,
     ParamFormField,
     RemoteFilePicker,
   },
@@ -850,6 +860,8 @@ export default {
       selectedParamPresetId: '__module_defaults__',
       remoteFilePickerVisible: false,
       pendingRemoteFileParam: null,
+      keychainPickerVisible: false,
+      pendingKeychainParam: null,
       detailDialogVisible: false,
       detailDialogTitle: '',
       detailSubtitle: '',
@@ -1892,6 +1904,28 @@ async loadAllClientInstances(deviceId = '', showToast = true) {
       }
       this.remoteFilePickerVisible = false
       this.pendingRemoteFileParam = null
+    },
+
+    openKeychainPicker(param) {
+      if (!param?.name || !param?.keychain_picker) return
+      this.pendingKeychainParam = param
+      this.keychainPickerVisible = true
+    },
+
+    handleKeychainSelected(item) {
+      const param = this.pendingKeychainParam
+      if (!param) return
+      const values = mapKeychainPickerValues(param, item, this.pendingParams)
+      if (!values) {
+        ElMessage.error('The selected credential does not match this parameter')
+        return
+      }
+      this.paramForm = {
+        ...this.paramForm,
+        ...values,
+      }
+      this.pendingKeychainParam = null
+      this.keychainPickerVisible = false
     },
 
     loadRemoteFilePickerDirectory(path = '') {

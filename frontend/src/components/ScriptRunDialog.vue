@@ -56,6 +56,7 @@
           :form-values="paramForm"
           @update:model-value="$emit('update-param', param.name, $event)"
           @browse="openRemoteFilePicker"
+          @pick-keychain="openKeychainPicker"
         />
       </el-form>
 
@@ -104,17 +105,26 @@
     @set-active-task="forwardSetActiveTask"
     @upload-started="forwardRemoteUploadStarted"
   />
+
+  <KeychainPicker
+    v-model:visible="keychainPickerVisible"
+    :machine-id="machineId"
+    :kind="pendingKeychainParam?.keychain_picker?.kind || 'secret'"
+    @select="handleKeychainSelected"
+  />
 </template>
 
 <script>
 import RemoteFilePicker from './RemoteFilePicker.vue'
+import KeychainPicker from './KeychainPicker.vue'
 import ParamFormField from './ParamFormField.vue'
-import { isRemoteMultiParam, remoteParamInitialPath, remoteParamSelectionMode } from '../utils/parameterSchema.js'
+import { isRemoteMultiParam, mapKeychainPickerValues, remoteParamInitialPath, remoteParamSelectionMode } from '../utils/parameterSchema.js'
 
 export default {
   name: 'ScriptRunDialog',
 
   components: {
+    KeychainPicker,
     ParamFormField,
     RemoteFilePicker,
   },
@@ -149,6 +159,10 @@ export default {
       type: [String, Number],
       default: '',
     },
+    machineId: {
+      type: [String, Number],
+      default: '',
+    },
 
     getTabScopedHeaders: {
       type: Function,
@@ -169,6 +183,7 @@ export default {
   emits: [
     'update:visible',
     'update-param',
+    'apply-param-values',
     'append-output',
     'set-active-task',
     'upload-started',
@@ -180,6 +195,8 @@ export default {
     return {
       remoteFilePickerVisible: false,
       pendingRemoteFileParam: null,
+      keychainPickerVisible: false,
+      pendingKeychainParam: null,
     }
   },
 
@@ -233,6 +250,22 @@ export default {
       this.$emit('update-param', param.name, this.pendingRemoteFileParamMultiple ? value : String(value || ''))
       this.remoteFilePickerVisible = false
       this.pendingRemoteFileParam = null
+    },
+
+    openKeychainPicker(param) {
+      if (!param?.name) return
+      this.pendingKeychainParam = param
+      this.keychainPickerVisible = true
+    },
+
+    handleKeychainSelected(item) {
+      const param = this.pendingKeychainParam
+      if (!param) return
+      const values = mapKeychainPickerValues(param, item, this.paramSpecs)
+      if (!values) return
+      this.$emit('apply-param-values', values)
+      this.pendingKeychainParam = null
+      this.keychainPickerVisible = false
     },
   },
 }

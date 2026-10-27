@@ -48,9 +48,11 @@ Metadata 为静态声明；模块的业务名称、展示名称、适用平台�
 
 ### 字段声明与类型边界
 
-`params` 使用与 Script、External Tool 共享的 Parameter Schema。常见字段包括 `name`、`type`、`label`、`description`、`required`、`default`、`min`、`max` 和下拉选项 `options`。参数类型覆盖 `string`、`textarea`、`integer`、`number`、`boolean`、`select`，也包括 `remote_file`、`remote_files`、`remote_folder`、`remote_folders`。
+`params` 使用与 Script、External Tool 共享的 Parameter Schema。常见字段包括 `name`、`type`、`label`、`description`、`required`、`default`、`min`、`max` 和下拉选项 `options`。参数类型覆盖 `string`、`password`、`textarea`、`integer`、`number`、`boolean`、`select`，也包括 `remote_file`、`remote_files`、`remote_folder`、`remote_folders`。
 
 Web 的 Start 弹窗按 Metadata 生成表单。对于 Remote File / Folder 类型，界面可以调用远程文件选择器；多路径参数最终必须使用 JSON 数组表示，例如 `['/a.txt', '/b.txt']` 对应的实际 JSON 数组，而不是逗号分隔字符串。Client 在运行前再次按 Schema 规范化和校验参数，包括必填项、数字类型、取值范围、Select 选项等。额外提供的参数键也会被保留，因此新 Job 不应假定只有 Schema 声明过的键才可能传入。
+
+`password` 参数可使用共享的 Keychain Picker，从运行目标机器或 Server Shared 选择 Secret。示例模块 `examples/keychain_secret_picker.py` 展示了如何读取该参数，并通过 Job 消息输出是否收到值及其长度。
 
 运行参数在绑定上下文后由 `get_job_param(name, default)` 读取。
 

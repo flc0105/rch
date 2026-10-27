@@ -93,11 +93,12 @@ Script / Job / External Tool Metadata
 
 ### 字段类型及规范化
 
-当前共有十种常规参数类型：
+当前共有十一种常规参数类型：
 
 | `type` | Web 输入方式 | 运行时数据 |
 |---|---|---|
 | `string` | 单行文本框 | 字符串 |
+| `password` | 密码输入框，可选显示/隐藏与 Keychain Picker | 字符串 |
 | `textarea` | 多行文本框 | 字符串 |
 | `integer` | 数字输入框 | 整数 |
 | `number` | 数字输入框 | 浮点数 |
@@ -138,6 +139,7 @@ Script / Job / External Tool Metadata
 | `multiple` | Remote Picker 是否采用多选；远程多路径类型默认启用 |
 | `selection_mode` | Remote Picker 的 `file` / `folder` 选择模式 |
 | `initial_path` | Remote Picker 初次打开时参考的目录 |
+| `keychain_picker` | 为 `password` 字段配置凭证选择器，并声明凭证类型与字段映射 |
 | `rows` | `textarea` 的显示行数，未设置或无效时显示 6 行 |
 
 规范化过程中会修剪 `name`、`label`、`description`，补充通用默认属性，将 `select.options` 规范为列表，并保留原定义中的其他扩展字段。扩展字段被保留**不代表**共用渲染或校验机制一定认识它。
@@ -240,9 +242,36 @@ Web 端使用同一个参数字段组件，根据 `type` 选择 Element Plus 控
 
 `multiple` 控制的是 Picker 的选择行为，不负责改变后端参数类型。例如，给 `remote_file` 写入 `multiple: true`，界面可以尝试多选，但后端仍按**单个路径**进行校验；因此应直接使用 `remote_files`，而不是靠 `multiple` 将单路径类型改造成数组类型。
 
+### Keychain 凭证选择
+
+`password` 字段默认使用密码输入控件。若声明 `keychain_picker`，控件右侧会增加 Keychains 入口；用户仍可以手动输入，也可以从当前运行目标机器或 Server Shared 选择凭证。选择器只在列表中显示凭证元数据，确认选择后才读取对应条目的完整值。
+
+`keychain_picker.kind` 支持 `login` 与 `secret`。`bindings` 的键是凭证详情字段，值是本次参数表单里的参数名；一次选择会将所有映射值作为一个更新对象写回父表单。例如 Login 可以同时填充用户名与密码：
+
+```json
+{
+  "params": [
+    {"name": "username", "type": "string", "required": true},
+    {
+      "name": "password",
+      "type": "password",
+      "required": true,
+      "keychain_picker": {
+        "kind": "login",
+        "bindings": {"username": "username", "secret_value": "password"}
+      }
+    }
+  ]
+}
+```
+
+只需要密码或 API Token 时，使用 `kind: "secret"`，并把 `secret_value` 映射到相应参数，例如 `{"secret_value": "api_token"}`。`username` 只能映射自 Login；每个来源字段只能映射到一个目标参数，且必须包含 `secret_value`。不同密码字段可以分别声明不同的映射，不共享选择状态。
+
+Picker 读取的明文成为普通表单字符串，后续仍由原来的 Script、Job 或 External Tool 参数提交流程处理。External Tool 的命令预览与参数 Preset 会使用当前实际参数值；如选择凭证，预览、复制命令或保存 Preset 可能包含密码或 Token。
+
 ### 可编辑路径集合
 
-`path_list` 主要面向 Script Run 中需要逐行启停的路径集合，不属于上表十种常规远程路径类型。它支持增加、删除路径行，以及为每一行切换 `enabled`：
+`path_list` 主要面向 Script Run 中需要逐行启停的路径集合，不属于上表十一种常规参数类型。它支持增加、删除路径行，以及为每一行切换 `enabled`：
 
 ```json
 [
@@ -444,7 +473,7 @@ External Tool 同样使用共享后端解析器，但会对缺失的非必填参
 
 ### 声明稳定的运行参数
 
-新参数优先使用十种通用类型，并遵循以下实践：
+新参数优先使用十一种通用类型，并遵循以下实践：
 
 1. 使用稳定且不重复的 `name`，将它作为脚本、Job 或命令模板读取参数的唯一标识。
 2. 提供人类可读的 `label`、明确的 `description`；必填项写明 `required`，有合理默认值时写明 `default`。

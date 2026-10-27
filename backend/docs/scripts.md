@@ -65,9 +65,11 @@ print("Finished")
 
 ### 参数如何形成并绑定
 
-Script 使用共享 [Parameter Schema](parameter_schema.md)，而不是 ACMD 的命名选项 Schema。当前 Metadata 可声明 `string`、`textarea`、`integer`、`number`、`boolean`、`select` 及远程路径选择类型；`path_list` 还支持保留每一行的 `path` 与 `enabled` 状态，适合让用户在执行前逐项启用/停用路径。`remote_file`、`remote_folder` 返回单个路径字符串；`remote_files`、`remote_folders` 返回路径字符串数组，不会自动变为本地上传文件。Web 的远程路径字段可打开目标设备的 Remote File Picker；在选择器里触发上传时，上传本身还会经过文件传输工作流，不能因为表单里出现了路径就认定文件已经送达。
+Script 使用共享 [Parameter Schema](parameter_schema.md)，而不是 ACMD 的命名选项 Schema。当前 Metadata 可声明 `string`、`password`、`textarea`、`integer`、`number`、`boolean`、`select` 及远程路径选择类型；`path_list` 还支持保留每一行的 `path` 与 `enabled` 状态，适合让用户在执行前逐项启用/停用路径。`remote_file`、`remote_folder` 返回单个路径字符串；`remote_files`、`remote_folders` 返回路径字符串数组，不会自动变为本地上传文件。Web 的远程路径字段可打开目标设备的 Remote File Picker；在选择器里触发上传时，上传本身还会经过文件传输工作流，不能因为表单里出现了路径就认定文件已经送达。
 
 表单可根据 `required`、`default`、`min`、`max`、`options`、`label` 等配置展示和校验。Server 再通过共享参数解析器做类型转换和必填、范围、下拉枚举检查；不要只依赖浏览器验证。缺失参数可采用 Metadata 默认值，`path_list` 的空数组则是允许的明确选择，不应误当作必须恢复默认列表。
+
+密码参数可以声明 `keychain_picker`，让共享字段控件从当前机器或 Server Shared 的 Keychains 选择凭证；Login 可一次绑定 `username` 与 `password`。示例 `examples/keychain_login_picker.py` 展示了这套映射，并输出参数是否收到及密码长度。
 
 结构化执行把业务参数作为键值对象传递给 Python。脚本既可使用 `kwargs["target"]`，也可以直接使用执行环境注入的 `target` 变量；为避免参数与 SDK、Python 内建名称冲突，建议优先使用 `kwargs`。必要时自行对路径存在性、操作范围和当前文件状态做运行时验证：文件选择器完成的是选值，不替代业务安全检查。
 

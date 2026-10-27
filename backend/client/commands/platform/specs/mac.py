@@ -106,6 +106,8 @@ LAUNCHD_ARGUMENT_SPEC = ArgumentCommandSpec(
                            help_text='LaunchAgent target username or UID; blank selects current GUI user'),
         ArgumentOptionSpec(name='no-confirm', option_type='flag', default=False,
                            help_text='Execute directly; requires action and kind'),
+        ArgumentOptionSpec(name='json', option_type='flag', default=False,
+                           help_text='Output the launchd service result as JSON'),
         ArgumentOptionSpec(name='help', option_type='flag', default=False,
                            help_text='Show this help message'),
     ],
@@ -114,5 +116,6 @@ LAUNCHD_ARGUMENT_SPEC = ArgumentCommandSpec(
         'acmd launchd --action start --kind agent',
         'acmd launchd status daemon',
         'acmd launchd uninstall agent --label com.rch.client',
+        'acmd launchd status agent --json',
     ],
 )

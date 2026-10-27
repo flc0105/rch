@@ -14,11 +14,46 @@ _PARAM_TYPE_ALIASES = {
     'text': 'textarea',
     'multiline': 'textarea',
     'textarea': 'textarea',
+    'password': 'password',
     'remote_file': 'remote_file',
     'remote_files': 'remote_files',
     'remote_folder': 'remote_folder',
     'remote_folders': 'remote_folders',
 }
+
+
+def _normalize_keychain_picker(value, param_type: str) -> dict:
+    if not isinstance(value, dict):
+        raise ValueError('keychain_picker must be an object')
+    if param_type != 'password':
+        raise ValueError('keychain_picker is only supported for password params')
+
+    kind = str(value.get('kind') or '').strip().lower()
+    if kind not in {'login', 'secret'}:
+        raise ValueError('keychain_picker.kind must be login or secret')
+
+    raw_bindings = value.get('bindings')
+    if not isinstance(raw_bindings, dict) or not raw_bindings:
+        raise ValueError('keychain_picker.bindings must be a non-empty object')
+
+    bindings = {}
+    destinations = set()
+    for source, raw_target in raw_bindings.items():
+        target = str(raw_target or '').strip()
+        if source not in {'username', 'secret_value'}:
+            raise ValueError(f'Unsupported keychain binding source: {source}')
+        if source == 'username' and kind != 'login':
+            raise ValueError('username can only be bound from a login credential')
+        if not target:
+            raise ValueError(f'keychain binding target is required for {source}')
+        if target in destinations:
+            raise ValueError(f'Duplicate keychain binding target: {target}')
+        bindings[source] = target
+        destinations.add(target)
+
+    if 'secret_value' not in bindings:
+        raise ValueError('keychain_picker.bindings must include secret_value')
+    return {'kind': kind, 'bindings': bindings}
 
 REMOTE_PATH_PARAM_TYPES = {
     'remote_file',
@@ -50,6 +85,9 @@ def normalize_param_spec(item: dict) -> dict | None:
     normalized['required'] = bool(item.get('required', False))
     normalized['description'] = str(item.get('description') or '').strip()
     normalized['default'] = item.get('default') if 'default' in item else None
+
+    if 'keychain_picker' in item:
+        normalized['keychain_picker'] = _normalize_keychain_picker(item.get('keychain_picker'), param_type)
 
     if 'min' in item:
         normalized['min'] = item.get('min')

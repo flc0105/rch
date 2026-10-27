@@ -4,7 +4,7 @@ import sys
 import time
 
 from client.commands.runtime.context import CommandCancelledError, CommandTimeoutError
-from core.utils.command_output import StructuredCommandResult
+from core.utils.command_output import StructuredCommandResult, render_structured_result
 
 
 class MacSystemService:
@@ -21,6 +21,7 @@ class MacSystemService:
         action = str(args_dict.get('action') or '').strip().lower()
         kind = str(args_dict.get('kind') or '').strip().lower()
         no_confirm = bool(args_dict.get('no-confirm'))
+        output_json = bool(args_dict.get('json', False))
         if action and action not in launchd.VALID_LAUNCHD_ACTIONS:
             return 0, f'Invalid launchd action: {action} (install, start, stop, restart, uninstall, status)'
         if kind and kind not in ('agent', 'daemon'):
@@ -77,7 +78,16 @@ class MacSystemService:
                 keep_alive=args_dict['keep_alive'],
                 run_at_load=args_dict['run_at_load'],
             )
-            return (1 if result.get('ok') else 0), launchd.format_result(result)
+            status = 1 if result.get('ok') else 0
+            structured = StructuredCommandResult(
+                status=status,
+                data=result,
+                shape='dict',
+                width=20,
+            )
+            if output_json:
+                return render_structured_result(structured, output_format='json')
+            return status, launchd.format_result(result)
         except (ValueError, OSError, RuntimeError) as exc:
             return 0, f'launchd {action or "operation"} failed: {exc}'
 

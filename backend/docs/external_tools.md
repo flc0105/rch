@@ -122,7 +122,9 @@ External Tool 以 JSON Metadata 描述一个可安装的 Package。Server 读取
 
 ### 运行参数由 Metadata 驱动
 
-External Tool 与 Script、Job 复用同一套运行参数 Schema 和单字段表单渲染机制。常规类型包括 `string`、`textarea`、`integer`、`number`、`boolean`、`select`、`remote_file`、`remote_files`、`remote_folder`、`remote_folders`。
+External Tool 与 Script、Job 复用同一套运行参数 Schema 和单字段表单渲染机制。常规类型包括 `string`、`password`、`textarea`、`integer`、`number`、`boolean`、`select`、`remote_file`、`remote_files`、`remote_folder`、`remote_folders`。
+
+`password` 字段也使用同一套渲染组件；声明 `keychain_picker` 后可从实际运行目标机器或 Server Shared 选择 Login / Secret。选择出的值继续作为普通参数进入启动与命令预览流程。Preset 保存的是当前参数快照，因此可能包含选中的密码或 Token。内置 `keychain-picker-demo` Python Bundle 是一个 oneshot 示例，用于验证 Secret 到 `api_token` 的映射和参数传递。
 
 例如：
 

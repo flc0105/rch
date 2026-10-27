@@ -2448,6 +2448,7 @@ List APIs hide the secret value by default and return a placeholder until the sp
 The Frontend includes:
 
 - Keychain Manager
+- shared Keychain Picker for Script, Background Job, and External Tool password parameters
 - machine/shared filtering
 - create/edit/delete
 - secret reveal workflow
