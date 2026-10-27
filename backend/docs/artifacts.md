@@ -130,7 +130,7 @@ Artifact 的一个重要用途是让**运行结束后的文件仍可从执行记
 
 读取历史和 Job 详情时，Server 会使用关联的 `artifact_id` 重新查询当前 Artifact。如果文件已被删除或元数据不再存在，历史项仍可保留，但会显示 `Artifact removed` 或文件不可用。Command History、Job 运行记录和日志按各自的保留规则管理。
 
-终端还支持将完整 Client 命令输出保存为 `command_output` Artifact。对应执行器将返回的输出分块写入 Server 文件、结束后注册元数据，再返回保存位置和 `artifact_id`，而不是把完整文本重新塞回终端。浏览器也可以将终端已有的输出内容保存为命令输出 Artifact；这条路径直接调用保存文本 API，因此其事件发布行为与上传文件的标准路径不必完全相同。输出的文件名会依据分类、时间和命令显示名称生成，并由 Registry 继续加入防重名后缀。
+终端还支持将完整 Client 命令输出保存为 `command_output` Artifact。对应执行器将返回的输出分块写入 Server 文件、结束后注册元数据，再返回保存位置和 `artifact_id`。浏览器也可以将终端已有的输出内容保存为命令输出 Artifact；这条路径直接调用保存文本 API，因此其事件发布行为与上传文件的标准路径不必完全相同。Terminal Actions 保存当前终端全文时，文件名固定为 `terminal_output_yyyyMMdd_HHmmss.txt` 或 `terminal_output_yyyyMMdd_HHmmss.json`，时间取 Server 保存时刻；其他命令、Script 和 Job 输出继续按各自分类规则生成名称。Registry 会为实际存储名处理重名，Artifact 的 `original_name` 保留供用户查看的名称。
 
 Artifact 创建通知与 Transfer 完成事件也是两个不同层面：`artifact_created` 表示一份正式文件已经登记；`transfer_updated` 表示传输进度正在变化；`file_transfer_lifecycle` 代表受管理传输的状态变化。一个普通 Script SDK 上传可以产生 Artifact，却未必在 Transfer Center 拥有独立追踪任务。
 

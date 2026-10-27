@@ -90,12 +90,19 @@ class CommandOutputArtifactService:
 
         return first
 
-    def build_output_name(self, *, category: str, source_command: str, now=None, output_format: str = 'text') -> str:
+    def build_output_name(self, *, category: str, source_command: str, now=None, output_format: str = 'text',
+                         output_name_prefix: str = '') -> str:
         current_time = now or self._now()
         normalized_category = self._normalize_category(category)
         normalized_format = self._normalize_output_format(output_format)
         prefix = self._get_prefix(normalized_category)
         timestamp = current_time.strftime(self.OUTPUT_TIME_FORMAT)
+        if output_name_prefix:
+            clean_prefix = self._clean_label_part(output_name_prefix)
+            if not clean_prefix:
+                raise ValueError('output_name_prefix must contain a valid filename prefix')
+            extension = '.json' if normalized_format == 'json' else '.txt'
+            return f'{clean_prefix}_{timestamp}{extension}'
 
         if normalized_category == self.JOB_CATEGORY:
             label = self._clean_label_part(source_command)[:64].strip('_') or 'output'
@@ -145,13 +152,14 @@ class CommandOutputArtifactService:
         return payload
 
     def allocate_output_path(self, *, category: str, machine_id: str, source_command: str, now=None,
-                             output_format: str = 'text') -> dict:
+                             output_format: str = 'text', output_name_prefix: str = '') -> dict:
         normalized_category = self._normalize_category(category)
         output_name = self.build_output_name(
             category=normalized_category,
             source_command=source_command,
             now=now,
             output_format=output_format,
+            output_name_prefix=output_name_prefix,
         )
 
         allocation = self.artifact_service.allocate_artifact_path(
@@ -219,12 +227,21 @@ class CommandOutputArtifactService:
                 extra=extra,
             )
 
+        extra_payload = extra if isinstance(extra, dict) else {}
+        is_terminal_toolbar_export = (
+            normalized_category == self.DEFAULT_CATEGORY
+            and (
+                str(source or '').strip() == 'terminal_toolbar_action'
+                or str(extra_payload.get('saved_from') or '').strip() == 'terminal_toolbar'
+            )
+        )
         allocation = self.allocate_output_path(
             category=normalized_category,
             machine_id=machine_id,
             source_command=allocation_name_source,
             now=now,
             output_format=normalized_format,
+            output_name_prefix='terminal_output' if is_terminal_toolbar_export else '',
         )
 
         with open(allocation['file_path'], 'w', encoding='utf-8', errors='replace') as file_obj:

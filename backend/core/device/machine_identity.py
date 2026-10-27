@@ -4,6 +4,7 @@ import json
 import os
 import platform
 import re
+import shutil
 import subprocess
 
 from core.platform.platform_identity import PlatformAlias, detect_platform_info
@@ -138,24 +139,121 @@ def _detect_linux_distribution_name_and_version() -> tuple[str, str]:
     return os_name, os_version
 
 
-def _detect_windows_manufacturer_and_model() -> tuple[str, str]:
+def _clean_hardware_identity_value(value) -> str:
+    text = _safe_text(value).strip()
+    if text.casefold() in {
+        'to be filled by o.e.m.',
+        'to be filled by oem',
+        'default string',
+        'system manufacturer',
+        'system product name',
+        'unknown',
+        'n/a',
+        'na',
+        'none',
+    }:
+        return ''
+    return text
+
+
+def _read_windows_bios_registry_value(value_name: str) -> str:
     try:
-        output = _run_command_output(['wmic', 'computersystem', 'get', 'manufacturer,model', '/value'])
-        manufacturer = ''
-        model = ''
-        for line in output.splitlines():
-            if '=' not in line:
-                continue
-            key, value = line.split('=', 1)
-            key = key.strip().lower()
-            value = value.strip()
-            if key == 'manufacturer' and value:
-                manufacturer = value
-            elif key == 'model' and value:
-                model = value
-        return manufacturer, model
+        import winreg
+
+        key = winreg.OpenKey(
+            winreg.HKEY_LOCAL_MACHINE,
+            r'HARDWARE\DESCRIPTION\System\BIOS',
+        )
+        try:
+            value, _value_type = winreg.QueryValueEx(key, value_name)
+        finally:
+            winreg.CloseKey(key)
+        return _clean_hardware_identity_value(value)
     except Exception:
+        return ''
+
+
+def _query_windows_computer_system() -> tuple[str, str]:
+    executables = []
+    for candidate in (shutil.which('powershell.exe'), shutil.which('pwsh.exe')):
+        if candidate and candidate not in executables:
+            executables.append(candidate)
+
+    system_root = str(os.environ.get('SystemRoot') or os.environ.get('WINDIR') or '').strip()
+    if system_root:
+        standard_powershell = os.path.join(
+            system_root,
+            'System32',
+            'WindowsPowerShell',
+            'v1.0',
+            'powershell.exe',
+        )
+        if os.path.isfile(standard_powershell) and standard_powershell not in executables:
+            executables.append(standard_powershell)
+
+    if not executables:
         return '', ''
+
+    script = (
+        "$ErrorActionPreference = 'Stop'; "
+        "[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding; "
+        "$OutputEncoding = [Console]::OutputEncoding; "
+        "try { $computer = Get-CimInstance -ClassName Win32_ComputerSystem } "
+        "catch { $computer = Get-WmiObject -Class Win32_ComputerSystem }; "
+        "[PSCustomObject]@{ Manufacturer = $computer.Manufacturer; Model = $computer.Model } "
+        "| ConvertTo-Json -Compress"
+    )
+    for executable in executables:
+        try:
+            result = subprocess.run(
+                [
+                    executable,
+                    '-NoLogo',
+                    '-NoProfile',
+                    '-NonInteractive',
+                    '-ExecutionPolicy',
+                    'Bypass',
+                    '-Command',
+                    script,
+                ],
+                capture_output=True,
+                text=True,
+                encoding='utf-8',
+                errors='replace',
+                timeout=8,
+                check=False,
+                creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+            )
+        except Exception:
+            continue
+
+        if result.returncode != 0 or not result.stdout.strip():
+            continue
+        try:
+            payload = json.loads(result.stdout.lstrip('\ufeff'))
+        except (TypeError, ValueError):
+            continue
+        if isinstance(payload, list):
+            payload = payload[0] if payload else {}
+        if not isinstance(payload, dict):
+            continue
+        return (
+            _clean_hardware_identity_value(payload.get('Manufacturer')),
+            _clean_hardware_identity_value(payload.get('Model')),
+        )
+
+    return '', ''
+
+
+def _detect_windows_manufacturer_and_model() -> tuple[str, str]:
+    # SMBIOS values are available through the registry without relying on WMIC.
+    manufacturer = _read_windows_bios_registry_value('SystemManufacturer')
+    model = _read_windows_bios_registry_value('SystemProductName')
+    if not manufacturer or not model:
+        queried_manufacturer, queried_model = _query_windows_computer_system()
+        manufacturer = manufacturer or queried_manufacturer
+        model = model or queried_model
+    return manufacturer, model
 
 
 def _detect_windows_native_id() -> str:
@@ -169,9 +267,37 @@ def _detect_windows_native_id() -> str:
         return ''
 
 
+def _read_macos_sysctl_value(name: str) -> str:
+    try:
+        libc = ctypes.CDLL(None)
+        sysctlbyname = libc.sysctlbyname
+        sysctlbyname.argtypes = [
+            ctypes.c_char_p,
+            ctypes.c_void_p,
+            ctypes.POINTER(ctypes.c_size_t),
+            ctypes.c_void_p,
+            ctypes.c_size_t,
+        ]
+        sysctlbyname.restype = ctypes.c_int
+        buffer = ctypes.create_string_buffer(256)
+        size = ctypes.c_size_t(len(buffer))
+        result = sysctlbyname(name.encode('ascii'), buffer, ctypes.byref(size), None, 0)
+        if result == 0:
+            value = buffer.value.decode('utf-8', errors='replace').strip()
+            if value:
+                return value
+    except Exception:
+        pass
+
+    if name == 'hw.model':
+        # launchd/root processes may have a minimal PATH, so use the system path explicitly.
+        return _run_command_output(['/usr/sbin/sysctl', '-n', 'hw.model'])
+    return ''
+
+
 def _detect_macos_manufacturer_and_model() -> tuple[str, str]:
     manufacturer = 'Apple'
-    model = _run_command_output(['sysctl', '-n', 'hw.model'])
+    model = _read_macos_sysctl_value('hw.model')
     return manufacturer, model
 
 

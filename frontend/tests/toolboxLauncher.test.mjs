@@ -31,13 +31,14 @@ function getCatalog() {
   return { actions: ctx.catalog, defaults: ctx.defaults, actionOptions: ctx.options }
 }
 
-function mountToolbar() {
+function mountToolbar(globals = {}) {
   const { actions, defaults, actionOptions } = getCatalog()
   const events = []
   let dropdownCloses = 0
   const { options, vue } = readOptions('../src/components/TerminalToolbar.vue', {
     ElMessage: { warning() { throw Error('Unexpected warning') } },
     ElMessageBox: {}, ToolboxDialog: {},
+    ...globals,
     DEFAULT_TOOLBAR_PREFERENCES: defaults,
     TOOLBAR_ACTION_CATALOG: actions,
     TOOLBAR_ACTION_OPTIONS: actionOptions,
@@ -122,6 +123,31 @@ test('Toolbox remains mounted underneath the launched tool', () => {
   app.instance.launchToolboxAction('screen-view')
   assert.equal(openAtDispatch, true)
   assert.deepEqual(app.events, ['open-screen-view'])
+})
+
+test('mobile Toolbox closes before dispatching a full-screen workspace', () => {
+  const fakeWindow = { innerWidth: 390, matchMedia: () => ({ matches: true }) }
+  const app = mountToolbar({ window: fakeWindow })
+  let openAtDispatch = true
+  app.instance.$emit = event => {
+    if (event === 'open-documents') openAtDispatch = app.instance.toolboxVisible
+    app.events.push(event)
+  }
+  app.instance.openToolbox()
+  app.instance.launchToolboxAction('documents')
+  assert.equal(openAtDispatch, false)
+  assert.equal(app.instance.toolboxVisible, false)
+  assert.deepEqual(app.events, ['open-documents'])
+})
+
+test('mobile Toolbox closes before launching a pinned Script dialog', async () => {
+  const fakeWindow = { innerWidth: 390, matchMedia: () => ({ matches: true }) }
+  const app = mountToolbar({ window: fakeWindow })
+  app.instance.toolboxVisible = true
+  app.instance.toolboxScripts = [{ script_name: 'sample.py' }]
+  await app.instance.launchToolboxPin({ kind: 'script', script_name: 'sample.py' })
+  assert.equal(app.instance.toolboxVisible, false)
+  assert.deepEqual(app.events, ['run-toolbox-script'])
 })
 
 test('Device tools remain disabled and cannot launch from Toolbox', () => {

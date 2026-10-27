@@ -145,7 +145,6 @@
                   :current-connection-offline="isCurrentConnectionOffline"
                   :device-sidebar-collapsed="deviceSidebarCollapsed"
                   :connection-info-collapsed="connectionInfoCollapsed"
-                  :remember-layout-state="rememberLayoutState"
                   :has-terminal-output="currentOutputLines.length > 0"
                   @layout-command="handleToolbarLayoutCommand"
                   @open-remote-files="openRemoteFilesDialog"
@@ -634,7 +633,6 @@ export default {
 
       connectionInfoCollapsed: layoutPreferences.connectionInfoCollapsed,
       deviceSidebarCollapsed: layoutPreferences.deviceSidebarCollapsed,
-      rememberLayoutState: layoutPreferences.rememberLayoutState,
 
       currentAuthUsername: '',
       changePasswordDialogVisible: false,
@@ -730,7 +728,6 @@ export default {
 
     persistLayoutPreferences() {
       saveLayoutPreferences({
-        rememberLayoutState: this.rememberLayoutState,
         deviceSidebarCollapsed: this.deviceSidebarCollapsed,
         connectionInfoCollapsed: this.connectionInfoCollapsed,
       })
@@ -746,12 +743,6 @@ export default {
 
       if (normalizedCommand === 'toggle-connection-info') {
         this.toggleConnectionInfo()
-        return
-      }
-
-      if (normalizedCommand === 'toggle-layout-persistence') {
-        this.rememberLayoutState = !this.rememberLayoutState
-        this.persistLayoutPreferences()
         return
       }
 

@@ -39,7 +39,7 @@ shell echo alice@macbook-pro
 
 ## Client 运行时信息的引用
 
-`rch` 命名空间当前包含 **23 个内置变量**。它们统一使用 `${rch:name}` 语法，但各自返回的含义不同。
+`rch` 命名空间当前包含 **25 个内置变量**。它们统一使用 `${rch:name}` 语法，但各自返回的含义不同。
 
 ### 主进程与工作目录字段
 
@@ -47,6 +47,8 @@ shell echo alice@macbook-pro
 |---|---|
 | `${rch:exec_path}` | 当前 Client 使用的 Python 解释器或打包程序的可执行路径 |
 | `${rch:launch_command}` | 启动当前 Client 的完整命令，包含必要的启动参数 |
+| `${rch:launch_mode}` | 当前 Client 的运行形态，如 `terminal`、`ide`、`detached`、`user_service`、`system_service`、`scheduled`、`unknown` |
+| `${rch:launch_detail}` | 运行形态的具体来源，如 `zsh`、`pycharm`、`launchagent`、`cron`、`new_session`；没有可用细节时为空字符串 |
 | `${rch:runtime}` | Client 的运行根目录 |
 | `${rch:pid}` | 当前 Client 进程的 PID |
 | `${rch:uid}` | 当前 Client 进程的运行用户名 |
@@ -57,6 +59,7 @@ shell echo alice@macbook-pro
 
 - `exec_path` 表示**可执行程序本身**。在 Python 脚本运行方式下通常是 Python 解释器路径；打包后通常是 Client 程序路径。路径包含空格时，这个变量返回的值会用双引号包裹。
 - `launch_command` 表示**启动命令**。通过 Python 脚本启动时包含解释器、启动脚本及原始参数；打包方式下通常是程序的启动路径。它不是单纯的目录，也不一定只有一个可执行文件名。
+- `launch_mode` 表示 Client 当前的运行形态，`launch_detail` 提供更具体的宿主或管理器信息。两者使用与连接启动快照相同的检测结果，例如 `ide` + `pycharm`、`user_service` + `launchagent` 或 `detached` + `new_session`。RCH Variables 使用 `launch_detail` 作为变量名；当前握手和连接快照中的细节字段仍名为 `launch_source`。
 - `runtime` 表示**运行根目录**：Python 脚本运行方式为 Client 启动脚本所在目录，打包模式为客户端可执行文件所在目录。
 - `cwd` 是当前工作目录，可能随着运行中的目录切换而改变，不能当成 `runtime` 的同义词。
 - `uid` 返回运行用户名，而非数字形式的 Unix UID；`shell` 会根据系统及可用的 Shell 选择对应路径。
@@ -327,6 +330,6 @@ Script 可使用进程内或 `subprocess_pipe` Python 执行方式。两者都�
 | Script 中使用 `variables` 提示 `NameError` | 添加 `from client.runtime.sdk import variables` 显式导入 |
 | Subprocess Script 的 `rch:pid` 不等于 `os.getpid()` | 前者表示主 Client，后者是当前 Python 子进程 |
 
-RCH Variables 提供 23 个运行时变量、4 个 Path 快捷变量和动态读取的 Environment 命名空间；Web 端负责展示与补全，不提供变量编辑功能。
+RCH Variables 提供 25 个运行时变量、4 个 Path 快捷变量和动态读取的 Environment 命名空间；Web 端负责展示与补全，不提供变量编辑功能。
 
 使用环境变量时尤其应注意敏感信息和命令构造：读取 `${env:NAME}` 不等于安全输出，变量值中的空格、引号、换行或 Shell 特殊字符都可能改变命令行为。对于需要精确控制参数边界的脚本，优先使用 Python 的结构化参数和 SDK 返回值处理，而不是把未知内容直接拼接进 Shell 命令。

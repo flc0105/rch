@@ -6,6 +6,7 @@ import shutil
 import sys
 
 from client.config.config import CLIENT_BUILD_VERSION
+from client.runtime.client_info_builder import ClientInfoBuilder
 from client.runtime.client_util import (
     get_executable_path,
     get_runtime_root,
@@ -48,6 +49,8 @@ class CommandVariableResolver:
         self._rch_variables = {
             'exec_path': ('Current Client process executable path.', self._get_exec_path),
             'launch_command': ('Current Client launch command.', self._get_launch_command),
+            'launch_mode': ('Current Client launch mode.', self._get_launch_mode),
+            'launch_detail': ('Current Client launch detail, such as zsh, pycharm, or launchagent.', self._get_launch_detail),
             'runtime': ('RCH Client runtime root directory.', self._get_runtime),
             'pid': ('Current Client process ID.', self._get_pid),
             'uid': ('Current Client user name, equivalent to getuid.', self._get_uid),
@@ -185,6 +188,16 @@ class CommandVariableResolver:
 
     def _get_launch_command(self, _command_id=None):
         return get_executable_path()
+
+    def _get_launch_context(self):
+        identity = self._get_local_identity()
+        return ClientInfoBuilder._get_launch_context(identity.os_alias)
+
+    def _get_launch_mode(self, _command_id=None):
+        return self._get_launch_context()['mode']
+
+    def _get_launch_detail(self, _command_id=None):
+        return self._get_launch_context()['source']
 
     def _get_runtime(self, _command_id=None):
         return get_runtime_root()

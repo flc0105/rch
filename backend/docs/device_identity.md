@@ -33,12 +33,12 @@ Python 侧的权威计算入口是 `core.device.machine_identity.build_machine_i
 
 | 系统 | 制造商 / 型号 | `native_id` 来源 |
 | --- | --- | --- |
-| Windows | `wmic computersystem get manufacturer,model /value` | 注册表 `HKLM\SOFTWARE\Microsoft\Cryptography` 中的 `MachineGuid` |
-| macOS | 制造商为 `Apple`，型号来自 `sysctl -n hw.model` | `ioreg` 查询 `IOPlatformExpertDevice` 的 `IOPlatformUUID` |
+| Windows | 注册表 `HKLM\HARDWARE\DESCRIPTION\System\BIOS` 的 `SystemManufacturer` / `SystemProductName`；缺项时查询 PowerShell CIM `Win32_ComputerSystem` | 注册表 `HKLM\SOFTWARE\Microsoft\Cryptography` 中的 `MachineGuid` |
+| macOS | 制造商为 `Apple`，型号优先通过系统 `sysctlbyname("hw.model")` 接口读取，失败时调用绝对路径 `/usr/sbin/sysctl` | `ioreg` 查询 `IOPlatformExpertDevice` 的 `IOPlatformUUID` |
 | Linux | DMI 的 `sys_vendor` 与 `product_name` | `/etc/machine-id`，不存在时读取 `/var/lib/dbus/machine-id` |
 | iOS | `Apple` 与设备 API / `platform.machine()` | `UIDevice.identifierForVendor().UUIDString()` |
 
-Linux 发行版名称/版本取自 `/etc/os-release`，其次尝试 `/usr/lib/os-release`；macOS 版本取自 `platform.mac_ver()`；Windows 版本使用 Python 平台信息的版本字段；iOS 版本由 `UIDevice.systemVersion()` 提供。查询失败时不会抛出必须停止启动的指纹异常：采集函数通常返回空字符串，规范化阶段用 `na` 表示缺失值。这里的 iOS `identifierForVendor` 具有厂商作用域，不能当作永久且不变的硬件序列号。
+Linux 发行版名称/版本取自 `/etc/os-release`，其次尝试 `/usr/lib/os-release`；macOS 版本取自 `platform.mac_ver()`；Windows 版本使用 Python 平台信息的版本字段；iOS 版本由 `UIDevice.systemVersion()` 提供。查询失败时不会抛出必须停止启动的指纹异常：采集函数返回空字符串，规范化阶段用 `na` 表示缺失值。Windows 硬件字段先读取 SMBIOS 注册表值，缺失或属于固件占位文本时再查询 CIM；macOS 型号直接调用系统 API，不依赖进程的 `PATH`，绝对路径命令作为后备。这里的 iOS `identifierForVendor` 具有厂商作用域，不能当作永久且不变的硬件序列号。
 
 ### 规范化、拼接与散列
 
@@ -91,7 +91,7 @@ ce728284ec284dcab7704f5ba3d44c83ceab1606e7f2c2d531d52583cf5f6aee
 
 ### 一次探测、一份进程内身份
 
-`get_local_identity()` 使用进程级缓存和锁保存不可变的 `LocalIdentity` 对象。第一次需要身份时会执行平台探测，包括可能调用注册表、`wmic`、`sysctl`、`ioreg`、DMI 或读取系统文件；同一进程后续读取默认重用同一份结果。`get_local_identity(refresh=True)` 会强制重新采集，`clear_local_identity_cache()` 可清空缓存。
+`get_local_identity()` 使用进程级缓存和锁保存不可变的 `LocalIdentity` 对象。第一次需要身份时会执行平台探测，包括读取 Windows 注册表、必要时调用 PowerShell CIM、调用 macOS `sysctlbyname` / `sysctl`、读取 `ioreg`、DMI 或系统文件；同一进程后续读取默认重用同一份结果。`get_local_identity(refresh=True)` 会强制重新采集，`clear_local_identity_cache()` 可清空缓存。
 
 因此，运行期间修改主机名或系统环境，并不保证已运行的 Client 立刻改变其握手身份。重新创建进程或显式刷新身份后，才会基于新特征生成不同结果。运行时的 `LocalIdentity.arch` 会经平台架构别名归一化；**指纹本身仍使用探测到的原始 `arch` 值进行指纹规范化**，不能拿展示用架构名重新计算散列。
 

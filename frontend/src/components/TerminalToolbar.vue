@@ -48,11 +48,6 @@
         {{ connectionInfoCollapsed ? 'Show connection info card' : 'Hide connection info card' }}
       </el-dropdown-item>
 
-      <el-dropdown-item command="toggle-layout-persistence" divided>
-        <span class="layout-remember-indicator" aria-hidden="true">{{ rememberLayoutState ? '✓' : '' }}</span>
-        Remember layout
-      </el-dropdown-item>
-
       <el-dropdown-item
         command="hide-both"
         divided
@@ -287,11 +282,6 @@ export default {
     connectionInfoCollapsed: {
       type: Boolean,
       default: false,
-    },
-
-    rememberLayoutState: {
-      type: Boolean,
-      default: true,
     },
 
     hasTerminalOutput: {
@@ -651,10 +641,22 @@ export default {
           : item.platform === pin.platform && item.alias === pin.alias)))
       void this.saveToolboxPins(pins)
     },
+    isMobileToolboxViewport() {
+      if (typeof window === 'undefined') return false
+      return typeof window.matchMedia === 'function'
+        ? window.matchMedia('(max-width: 768px)').matches
+        : window.innerWidth <= 768
+    },
+    closeToolboxForMobileLaunch() {
+      if (!this.isMobileToolboxViewport()) return false
+      this.toolboxVisible = false
+      return true
+    },
     async launchToolboxPin(pin, presentation = 'dialog') {
       if (!this.toolboxVisible || this.deviceActionDisabled) return
       if (pin.kind === 'script') {
         if (!this.toolboxScripts.some(item => item.script_name === pin.script_name && isScriptSupportedOnPlatform(item, this.toolboxCurrentPlatform))) return
+        if (presentation !== 'terminal') this.closeToolboxForMobileLaunch()
         this.$emit('run-toolbox-script', pin.script_name)
         return
       }
@@ -665,6 +667,7 @@ export default {
         if (clientId !== this.selectedId || !this.toolboxVisible) return
         const item = (data.items || []).find(row => row.platform === pin.platform && row.alias === pin.alias && row.in_current_scope === true && isQuickActionSupportedOnPlatform(row.platform, this.toolboxCurrentPlatform))
         if (!item) { ElMessage.warning('Quick Action is unavailable'); return }
+        if (presentation !== 'terminal') this.closeToolboxForMobileLaunch()
         this.$emit(presentation === 'terminal' ? 'run-quick-action-terminal' : 'run-quick-action', item)
       } catch (e) { ElMessage.warning(e.message || 'Failed to load Quick Action') }
     },
@@ -675,10 +678,12 @@ export default {
         && !['manage-pins', 'connection-history'].includes(actionId)
         || this.isActionDisabled(actionId)
       )) return
-      // Keep the Toolbox open beneath the launched dialog.
+      // On phones the Toolbox fills the viewport, so dismiss it before opening another workspace.
       if (actionId === 'settings') {
+        this.closeToolboxForMobileLaunch()
         this.$emit('open-settings')
       } else if (option === 'open') {
+        this.closeToolboxForMobileLaunch()
         this.runAction(actionId)
       } else {
         this.runActionOption(actionId, option)
@@ -797,13 +802,6 @@ export default {
 
 .dot-green {
   background: #34d399;
-}
-
-.layout-remember-indicator {
-  display: inline-block;
-  width: 16px;
-  font-weight: 700;
-  text-align: center;
 }
 
 .terminal-title {

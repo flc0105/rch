@@ -23,6 +23,8 @@ IDE (PyCharm)
 
 RCH 的 `spawn_instance`、`relaunch_instance`、update、Watchdog recovery 等属于“为什么创建了新进程”的内部动作，不进入 `launch_mode`。如果这些动作最终创建的是独立后台进程，新 Client 统一记录为 `detached`。
 
+普通 Client 命令可通过 `${rch:launch_mode}` 读取标准运行形态，通过 `${rch:launch_detail}` 读取具体宿主信息。变量名使用 `launch_detail`；当前握手和会话快照继续使用 `launch_source` 字段保存同一份细节。完整变量清单见 [RCH Variables](variables.md)。
+
 ## 2. 标准 Launch Mode
 
 当前标准 mode 固定为八类：
