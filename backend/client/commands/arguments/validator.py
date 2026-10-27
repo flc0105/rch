@@ -166,6 +166,10 @@ class ArgumentCommandValidator:
         option_key = self._strip_option_prefix(key_text)
         if option_key in option_map:
             return option_key
+        # CLI spelling may use --keep-alive for the canonical keep_alive field.
+        underscore_key = option_key.replace('-', '_')
+        if underscore_key in option_map:
+            return underscore_key
         if option_key in alias_map:
             return alias_map[option_key].name
         return key
@@ -188,6 +192,9 @@ class ArgumentCommandValidator:
 
         if option_key in option_map:
             return option_key, inline_value, has_inline_value
+        underscore_key = option_key.replace('-', '_')
+        if underscore_key in option_map:
+            return underscore_key, inline_value, has_inline_value
         if option_key in alias_map:
             return alias_map[option_key].name, inline_value, has_inline_value
 

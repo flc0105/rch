@@ -90,12 +90,26 @@ class ClientSessionCommandChannel:
                     },
                 })
         if command_type == MSG_TYPE_ACMD and isinstance(extra, dict):
-            # ACMD grants come only from trusted registered CommonCommands methods,
-            # never from an incoming Client manifest or a user-supplied grant request.
+            # ACMD grants use trusted Server-side command classes, never a Client
+            # manifest or caller-supplied requested scopes. Platform-only ACMDs
+            # (such as macOS launchd) need the same task-bound Broker grant.
             name = str(extra.get('name') or '').strip()
             method = getattr(CommonCommands, f'_acmd_{name}', None)
-            scopes = (getattr(method, 'argument_command_grants', ())
-                      if getattr(method, 'argument_command_name', None) == name else ())
+            if getattr(method, 'argument_command_name', None) != name:
+                method = None
+                os_alias = str(getattr(getattr(self.session, 'session_info', None), 'os_alias', '') or '').lower()
+                platform_info = CommandCatalog.PLATFORM_COMMAND_MODULES.get(os_alias)
+                if platform_info:
+                    module_name, class_name = platform_info
+                    try:
+                        command_class = getattr(import_module(module_name), class_name)
+                    except (ImportError, AttributeError):
+                        pass
+                    else:
+                        candidate = getattr(command_class, f'_acmd_{name}', None)
+                        if getattr(candidate, 'argument_command_name', None) == name:
+                            method = candidate
+            scopes = getattr(method, 'argument_command_grants', ()) if method else ()
             args = extra.get('args') if isinstance(extra.get('args'), dict) else {}
             skip_confirmation = args.get('no-confirm') in (True, 'true', '1', 'yes', 'on')
             if scopes and not skip_confirmation:

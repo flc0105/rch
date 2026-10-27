@@ -15,6 +15,72 @@ class MacSystemService:
     def __init__(self, owner):
         self.owner = owner
 
+    def acmd_launchd(self, args_dict, payload=None):
+        from client.runtime.sdk import launchd
+
+        action = str(args_dict.get('action') or '').strip().lower()
+        kind = str(args_dict.get('kind') or '').strip().lower()
+        no_confirm = bool(args_dict.get('no-confirm'))
+        if action and action not in launchd.VALID_LAUNCHD_ACTIONS:
+            return 0, f'Invalid launchd action: {action} (install, start, stop, restart, uninstall, status)'
+        if kind and kind not in ('agent', 'daemon'):
+            return 0, f'Invalid launchd kind: {kind} (agent, daemon)'
+        if no_confirm and (not action or not kind):
+            return 0, '--no-confirm requires both action and kind'
+
+        if not no_confirm:
+            # This import and every Broker request are bypassed for --no-confirm.
+            from client.commands.common.services.interaction_service import (
+                CommandInteractions, CommandInteractionError,
+            )
+            self.owner._set_timeout(300)
+            ui = CommandInteractions(self.owner)
+            try:
+                if not action:
+                    action = ui.select('Choose the launchd action:',
+                                       ['install', 'start', 'stop', 'restart', 'uninstall', 'status'],
+                                       title='Launchd action')
+                if not kind:
+                    kind = ui.select('Choose the launchd service type:',
+                                     ['agent', 'daemon'], title='Launchd type')
+
+                preview = {
+                    'summary': [
+                        {'label': 'Action', 'value': action},
+                        {'label': 'Type', 'value': 'LaunchAgent' if kind == 'agent' else 'LaunchDaemon'},
+                        {'label': 'Label', 'value': args_dict['label']},
+                        {'label': 'KeepAlive', 'value': str(args_dict['keep_alive']).lower()},
+                        {'label': 'RunAtLoad', 'value': str(args_dict['run_at_load']).lower()},
+                    ],
+                    'notice': ('KeepAlive and RunAtLoad apply when installing. '
+                               'Stopping or uninstalling the running Client may disconnect this session.'),
+                }
+                if kind == 'agent':
+                    preview['summary'].extend([
+                        {'label': 'Scope', 'value': args_dict['scope']},
+                        {'label': 'Target user', 'value': args_dict['target_user'] or 'Current GUI user (automatic)'},
+                    ])
+                if not ui.approve_preview('Approve this launchd operation?', preview,
+                                          title='Review launchd operation'):
+                    return 0, 'launchd action not approved; no changes made'
+            except CommandInteractionError as exc:
+                return 0, f'launchd interaction cancelled or unavailable: {exc}'
+
+        try:
+            self.owner._checkpoint(fallback_timeout=300)
+            result = launchd.manage(
+                kind=kind,
+                action=action,
+                label=args_dict['label'],
+                scope=args_dict['scope'] if kind == 'agent' else 'user',
+                target_user=(args_dict['target_user'] or None) if kind == 'agent' else None,
+                keep_alive=args_dict['keep_alive'],
+                run_at_load=args_dict['run_at_load'],
+            )
+            return (1 if result.get('ok') else 0), launchd.format_result(result)
+        except (ValueError, OSError, RuntimeError) as exc:
+            return 0, f'launchd {action or "operation"} failed: {exc}'
+
     def run_command_text(self, command: str, timeout: int = 15) -> str:
         try:
             result = self.owner._run_shell_command(command, timeout=timeout)

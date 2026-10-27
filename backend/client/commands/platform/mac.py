@@ -89,6 +89,10 @@ class MacCommands(CommonCommands):
         """查看压缩包内容"""
         return self.mac_file_inspection.acmd_archive_peek(args_dict, payload)
 
+    @argument_command('launchd', spec=LAUNCHD_ARGUMENT_SPEC, api_grants=('interactions:request',))
+    def _acmd_launchd(self, args_dict, payload=None):
+        return self.mac_system.acmd_launchd(args_dict, payload)
+
     @argument_command('netstat', spec=NETSTAT_ARGUMENT_SPEC)
     def _acmd_netstat(self, args_dict, payload=None):
         return self._acmd_netstat_common(args_dict, payload)

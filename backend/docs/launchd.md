@@ -69,6 +69,35 @@ status
 
 如果 Script Metadata 需要一个统一管理表单，建议把 `kind` 暴露为 select，同时保留 `label`、`action`、`keep_alive`、`run_at_load`。`scope` 与 `target_user` 只对 Agent 有意义；Daemon 固定使用 system scope 和 root 身份。
 
+### macOS ACMD 命令
+
+macOS Client 在终端中提供 `acmd launchd`，调用与 Script 相同的 `client.runtime.sdk.launchd`。`action` 和 `kind` 是执行时必须确定的参数：可用前两个位置参数或 `--action`、`--kind` 指定；未填写时由 Interaction Broker 的选择框依次收集。确定后会显示操作预览并要求批准，预览包括服务标签及 `KeepAlive`、`RunAtLoad` 的默认或自定义值，Agent 还会展示 `scope` 与目标用户。可选参数保持脚本相同的默认值，不额外弹出选项表单：
+
+```text
+acmd launchd install agent --scope user --keep-alive true
+acmd launchd --action start --kind agent
+acmd launchd status agent
+acmd launchd
+acmd launchd restart daemon
+acmd launchd uninstall agent --label com.rch.client
+acmd launchd status agent --no-confirm
+acmd help launchd
+```
+
+`--no-confirm` 在 `action` 和 `kind` 都已明确提供时直接执行，跳过全部 Interaction Broker 请求；缺少其中任一项则返回参数错误，避免在无人确认的情况下替用户选择服务操作。取消或拒绝预览时，不调用 launchd SDK。
+
+`action` 可选 `install`、`start`、`stop`、`restart`、`uninstall`、`status`；`kind` 可选 `agent`、`daemon`。其他选项与 Script Schema 的默认值一致：
+
+| 参数 | 默认值 | 适用范围 |
+| --- | --- | --- |
+| `--label` | `com.rch.client` | Agent / Daemon |
+| `--keep_alive` / `--keep-alive` | `true` | 安装时写入 KeepAlive |
+| `--run_at_load` / `--run-at-load` | `true` | 安装时写入 RunAtLoad |
+| `--scope` | `user` | Agent；可选 `user`、`global` |
+| `--target_user` / `--target-user` | 空（自动解析 GUI 用户） | Agent |
+
+布尔参数需要明确值，如 `--keep-alive false`。Daemon 使用 system domain 与 root 身份，不使用 Agent 的 `scope`、`target_user`。管理系统级 Daemon / global Agent 需要相应 macOS 权限。`install` 只写入服务定义，启动需要单独执行 `start`。命令输出沿用 SDK 格式，包含操作、目标、Installed、Loaded、Running、PID 和 plist 路径。
+
 ## 4. KeepAlive 与 RunAtLoad
 
 `keep_alive` 与 `run_at_load` 分别写入 plist：

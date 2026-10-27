@@ -205,6 +205,7 @@ ACMD 统一使用 `acmd <name> ...` 前缀，使用独立的命令注册表、�
 | **iOS** | `acmd ps` | 使用当前平台允许的进程信息能力查询 |
 | **通用（四个平台）** | `acmd kill` | 按 PID、名称或端口选择并终止进程；可先显示预览和确认，具体能力受权限限制 |
 | **macOS** | `acmd msgbox` / `acmd notify` | 显示本机提示框 / 发送本地通知 |
+| **macOS** | `acmd launchd` | 管理 LaunchAgent / LaunchDaemon；未填 action/kind 时交互选择，执行前预览审批，`--no-confirm` 可在参数齐全时直接执行；详见 [launchd](launchd.md) |
 | **macOS** | `acmd sqlite_query` | 对指定 SQLite 数据库做只读查询 |
 | **macOS** | `acmd image_info` | 查询图片文件信息 |
 | **macOS** | `acmd import_check` | 检查当前 Python 解释器是否能导入指定模块 |

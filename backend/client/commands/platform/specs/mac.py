@@ -83,3 +83,36 @@ ARCHIVE_PEEK_SPEC = ArgumentCommandSpec(
                            help_text='Show this help message'),
     ]
 )
+
+
+LAUNCHD_ARGUMENT_SPEC = ArgumentCommandSpec(
+    name='launchd',
+    description='Manage a macOS LaunchAgent or LaunchDaemon',
+    options=[
+        # Required execution choices are collected through Interaction Broker if omitted.
+        ArgumentOptionSpec(name='action', option_type='str', required=True, default='', allow_empty=False,
+                           positional_index=0, help_text='install, start, stop, restart, uninstall, status'),
+        ArgumentOptionSpec(name='kind', option_type='str', required=True, default='', allow_empty=False,
+                           positional_index=1, help_text='agent or daemon'),
+        ArgumentOptionSpec(name='label', option_type='str', default='com.rch.client', allow_empty=False,
+                           help_text='launchd service label'),
+        ArgumentOptionSpec(name='keep_alive', option_type='bool', default=True,
+                           help_text='Set KeepAlive when installing'),
+        ArgumentOptionSpec(name='run_at_load', option_type='bool', default=True,
+                           help_text='Set RunAtLoad when installing'),
+        ArgumentOptionSpec(name='scope', option_type='str', default='user', allow_empty=False,
+                           help_text='LaunchAgent scope: user or global'),
+        ArgumentOptionSpec(name='target_user', option_type='str', default='', allow_empty=True,
+                           help_text='LaunchAgent target username or UID; blank selects current GUI user'),
+        ArgumentOptionSpec(name='no-confirm', option_type='flag', default=False,
+                           help_text='Execute directly; requires action and kind'),
+        ArgumentOptionSpec(name='help', option_type='flag', default=False,
+                           help_text='Show this help message'),
+    ],
+    examples=[
+        'acmd launchd install agent --scope user --keep-alive true',
+        'acmd launchd --action start --kind agent',
+        'acmd launchd status daemon',
+        'acmd launchd uninstall agent --label com.rch.client',
+    ],
+)
