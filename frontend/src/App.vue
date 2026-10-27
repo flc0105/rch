@@ -532,7 +532,6 @@
 </template>
 
 <script>
-import './styles/mobileDialogs.css'
 import AppUtilsModule from './composables/useAppUtils.js'
 import AppSseModule from './composables/useSseStream.js'
 import ExecutionInteractionDialog from './components/ExecutionInteractionDialog.vue'

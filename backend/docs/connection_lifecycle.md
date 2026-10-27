@@ -133,6 +133,8 @@ RCH 将当前 Session、最近设备和历史会话分别管理：
 - **最近设备** 保留 `machine_id` 关联的机器快照、别名等信息。没有活动 Session 的设备仍可以作为 Offline 条目出现在设备列表；有当前会话的机器不会再额外叠加同一机器的离线快照。
 - **连接历史** 持久化在 `runtime/rch.db` 的 `connection_sessions` 中，记录各 `machine_id` / `client_id` 会话的连接、断开、最后响应时间和持续时间，并可关联对应的 Activity 数量与执行摘要。
 
+Connection History 在桌面端以表格展示会话，手机端改为卡片。卡片保留连接状态、Client ID、上线/离线时间、持续时间和 Activity 数量；展开 Details 可查看主机、系统、启动模式、结束原因及 Activity 记录，并可继续加载后续 Activity。两种布局使用同一会话数据和活动查询。
+
 ### Connection History 的结束原因
 
 Connection History 的列表在主动结束时显示 **Offline**，在连接丢失、传输错误、超时、协议截断或 Client 异常时显示 **Interrupted**。Server 启动后核对出的旧会话仍使用 Interrupted。展开记录后，**Termination cause** 显示分类；**Termination details** 显示实际关闭命令或错误摘要与 traceback。`connection_sessions.termination_reason` 和 `termination_detail_json` 分别保存分类和详情。

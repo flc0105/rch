@@ -48,6 +48,153 @@
         :title="`${history.unassigned_command_count} activity record(s) have no client_id and cannot be assigned to a session.`"
       />
 
+      <div v-if="sessions.length" class="machine-history-mobile-list">
+        <article
+          v-for="(row, index) in sessions"
+          :key="`mobile-${row.client_id}`"
+          class="machine-history-mobile-card"
+        >
+          <div class="machine-history-mobile-card-head">
+            <div class="machine-history-mobile-card-state">
+              <span class="machine-history-mobile-index">#{{ index + 1 }}</span>
+              <el-tag size="small" :type="sessionStatusTagType(row)">
+                {{ sessionStatusText(row) }}
+              </el-tag>
+            </div>
+            <code class="machine-session-client-id machine-history-mobile-client-id">{{ row.client_id || '-' }}</code>
+          </div>
+
+          <div class="machine-history-mobile-summary">
+            <div class="machine-history-mobile-field">
+              <span>Online</span>
+              <strong>{{ formatDateTime(row.connected_at) }}</strong>
+            </div>
+            <div class="machine-history-mobile-field">
+              <span>Offline</span>
+              <strong>{{ row.connection_state === 'online' ? 'online' : formatDateTime(row.disconnected_at) }}</strong>
+            </div>
+            <div class="machine-history-mobile-field">
+              <span>Duration</span>
+              <strong>{{ formatDuration(row.duration_ms) }}</strong>
+            </div>
+            <div class="machine-history-mobile-field">
+              <span>Activities</span>
+              <strong>{{ row.command_count || 0 }}</strong>
+            </div>
+          </div>
+
+          <el-button
+            class="machine-history-mobile-details-toggle"
+            size="small"
+            text
+            @click="toggleMobileSessionDetails(row)"
+          >
+            {{ isMobileSessionExpanded(row) ? 'Hide details' : 'Details' }}
+          </el-button>
+
+          <div v-if="isMobileSessionExpanded(row)" class="machine-history-mobile-details">
+            <div class="machine-session-meta-grid">
+              <div class="machine-session-meta-item">
+                <span class="label">Hostname</span>
+                <span class="value">{{ row.hostname || '-' }}</span>
+              </div>
+              <div class="machine-session-meta-item">
+                <span class="label">Address</span>
+                <span class="value">{{ row.addr || '-' }}</span>
+              </div>
+              <div class="machine-session-meta-item">
+                <span class="label">OS</span>
+                <span class="value">{{ formatOs(row) }}</span>
+              </div>
+              <div class="machine-session-meta-item">
+                <span class="label">User</span>
+                <span class="value">{{ row.username || '-' }}</span>
+              </div>
+              <div class="machine-session-meta-item">
+                <span class="label">Process</span>
+                <span class="value">{{ formatProcess(row) }}</span>
+              </div>
+              <div class="machine-session-meta-item">
+                <span class="label">Launch mode</span>
+                <span class="value">{{ formatLaunchModeValue(row) }}</span>
+              </div>
+              <div class="machine-session-meta-item">
+                <span class="label">Build</span>
+                <span class="value">{{ row.build_version || '-' }}</span>
+              </div>
+              <div class="machine-session-meta-item">
+                <span class="label">Last seen</span>
+                <span class="value">{{ formatDateTime(row.last_seen_at) }}</span>
+              </div>
+              <div class="machine-session-meta-item">
+                <span class="label">Disconnect</span>
+                <span class="value">{{ row.disconnect_reason || '-' }}</span>
+              </div>
+              <div v-if="row.termination_reason" class="machine-session-meta-item">
+                <span class="label">Termination cause</span>
+                <span class="value">{{ formatEndReason(row.termination_reason) }}</span>
+              </div>
+              <div v-if="hasTerminationDetail(row)" class="machine-session-meta-item machine-session-meta-wide">
+                <span class="label">Termination details</span>
+                <div class="machine-session-end-details">
+                  <div v-if="row.termination_detail.command">Command: {{ row.termination_detail.command }}</div>
+                  <div v-if="row.termination_detail.summary">{{ row.termination_detail.summary }}</div>
+                  <pre v-if="row.termination_detail.traceback">{{ row.termination_detail.traceback }}</pre>
+                </div>
+              </div>
+              <div class="machine-session-meta-item machine-session-meta-wide">
+                <span class="label">cwd</span>
+                <span class="value">{{ row.cwd || '-' }}</span>
+              </div>
+            </div>
+
+            <div class="machine-session-command-header">
+              <span>Activities ({{ row.command_count || 0 }})</span>
+            </div>
+            <div class="machine-session-command-section" v-loading="row.command_loading">
+              <div
+                v-for="(activity, activityIndex) in (row.commands || [])"
+                :key="activity.activity_id || `${row.client_id}-${activity.started_at || activity.created_at || activityIndex}-${activityIndex}`"
+                class="machine-history-mobile-activity"
+              >
+                <div class="machine-history-mobile-activity-head">
+                  <span>{{ formatDateTime(activity.started_at || activity.created_at) }}</span>
+                  <el-tag size="small" :type="commandStatusTagType(activity.status)">
+                    {{ activity.status || 'unknown' }}
+                  </el-tag>
+                </div>
+                <div class="machine-history-mobile-activity-summary">
+                  <span class="machine-session-activity-kind">{{ activityKindLabel(activity.kind) }}</span>
+                  <span class="machine-session-activity-separator">·</span>
+                  <span>{{ activity.summary || '-' }}</span>
+                </div>
+                <div class="machine-history-mobile-activity-duration">
+                  Duration · {{ formatDuration(commandDurationMs(activity)) }}
+                </div>
+              </div>
+
+              <div
+                v-if="!row.commands?.length && !row.command_loading && (row.command_loaded || !Number(row.command_count || 0))"
+                class="empty-state compact"
+              >
+                No activities
+              </div>
+
+              <div v-if="row.command_has_more" class="machine-session-command-load-more">
+                <el-button
+                  size="small"
+                  plain
+                  :loading="row.command_loading"
+                  @click="loadSessionCommands(row, true)"
+                >
+                  Load More
+                </el-button>
+              </div>
+            </div>
+          </div>
+        </article>
+      </div>
+
       <el-table
         v-if="sessions.length"
         :data="sessions"
@@ -264,6 +411,7 @@ export default {
       history: {
         sessions: [],
       },
+      mobileExpandedSessionIds: [],
     }
   },
 
@@ -288,6 +436,7 @@ export default {
     },
 
     async loadHistory() {
+      this.mobileExpandedSessionIds = []
       if (!this.machineId) {
         this.history = { sessions: [] }
         return
@@ -319,6 +468,26 @@ export default {
         && expandedRows.some(item => item?.client_id === row?.client_id)
       if (!expanded || row?.command_loaded || row?.command_loading || !Number(row?.command_count || 0)) return
       this.loadSessionCommands(row)
+    },
+
+    isMobileSessionExpanded(row) {
+      const clientId = String(row?.client_id || '')
+      return !!clientId && this.mobileExpandedSessionIds.includes(clientId)
+    },
+
+    toggleMobileSessionDetails(row) {
+      const clientId = String(row?.client_id || '')
+      if (!clientId) return
+
+      if (this.mobileExpandedSessionIds.includes(clientId)) {
+        this.mobileExpandedSessionIds = this.mobileExpandedSessionIds.filter(id => id !== clientId)
+        return
+      }
+
+      this.mobileExpandedSessionIds = [...this.mobileExpandedSessionIds, clientId]
+      if (!row.command_loaded && !row.command_loading && Number(row.command_count || 0)) {
+        return this.loadSessionCommands(row)
+      }
     },
 
     async loadSessionCommands(row, append = false) {
@@ -513,6 +682,131 @@ export default {
   width: 100%;
 }
 
+.machine-history-mobile-list {
+  display: none;
+}
+
+.machine-history-mobile-card {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 12px;
+  background: var(--el-bg-color);
+  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.04);
+}
+
+.machine-history-mobile-card-head {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.machine-history-mobile-card-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.machine-history-mobile-index {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.machine-history-mobile-client-id {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+
+.machine-history-mobile-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 10px;
+  margin-top: 14px;
+}
+
+.machine-history-mobile-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.machine-history-mobile-field > span {
+  color: var(--el-text-color-secondary);
+  font-size: 11px;
+}
+
+.machine-history-mobile-field > strong {
+  min-width: 0;
+  color: var(--el-text-color-primary);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.machine-history-mobile-details-toggle {
+  margin-top: 10px;
+}
+
+.machine-history-mobile-details {
+  margin-top: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--el-border-color-lighter);
+}
+
+.machine-history-mobile-details .machine-session-meta-grid {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+}
+
+.machine-history-mobile-details .machine-session-meta-item {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+}
+
+.machine-history-mobile-details .machine-session-meta-wide {
+  grid-column: span 1;
+}
+
+.machine-history-mobile-activity {
+  min-width: 0;
+  padding: 10px 0;
+  border-top: 1px solid var(--el-border-color-lighter);
+}
+
+.machine-history-mobile-activity-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--el-text-color-secondary);
+  font-size: 11px;
+}
+
+.machine-history-mobile-activity-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 0;
+  margin-top: 7px;
+  color: var(--el-text-color-primary);
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.machine-history-mobile-activity-duration {
+  margin-top: 6px;
+  color: var(--el-text-color-secondary);
+  font-size: 11px;
+}
+
 .machine-session-detail {
   padding: 12px 18px 18px 62px;
   background: var(--el-fill-color-extra-light);
@@ -621,6 +915,13 @@ export default {
   line-height: 1.6;
 }
 
+@media (max-width: 768px) {
+  .machine-history-body {
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
 @media (max-width: 900px) {
   .machine-history-stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -666,6 +967,28 @@ export default {
   overflow: hidden;
   padding-top: 12px;
   padding-bottom: 12px;
+}
+
+@media (max-width: 768px) {
+  .machine-history-table {
+    display: none !important;
+  }
+
+  .machine-history-mobile-list {
+    display: flex !important;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .machine-connection-history-overlay .el-dialog__body {
+    overflow: hidden;
+  }
+
+  .machine-history-body {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
 }
 
 @media (max-width: 768px), (max-height: 720px) {

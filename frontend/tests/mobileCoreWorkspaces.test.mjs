@@ -53,5 +53,5 @@ test('Quick History mobile cards retain full height and actions without horizont
   assert.doesNotMatch(css, /\.execution-interaction/)
   assert.doesNotMatch(css, /\.el-message-box/)
   assert.doesNotMatch(css, /\.drag-upload-dialog/)
-  assert.match(read('../src/App.vue'), /import '\.\/styles\/mobileDialogs\.css'/)
+  assert.match(read('../src/main.js'), /import '\.\/styles\/mobileDialogs\.css'/)
 })

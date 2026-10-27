@@ -33,13 +33,24 @@
             <span v-else class="remote-breadcrumb-empty">No path</span>
           </div>
 
-          <el-button size="small"
-
-                     class="remote-mobile-panel-toggle"
-                     @click="toggleRemoteMobilePanel"
-          >
-            {{ remoteMobilePanelCollapsed ? 'Show tools' : 'Hide tools' }}
-          </el-button>
+          <div class="remote-mobile-header-controls">
+            <el-button
+                size="small"
+                class="remote-mobile-panel-toggle"
+                @click="toggleRemoteMobilePanel"
+            >
+              {{ remoteMobilePanelCollapsed ? 'Show tools' : 'Hide tools' }}
+            </el-button>
+            <el-radio-group
+                v-model="remoteMobileViewMode"
+                size="small"
+                class="remote-mobile-view-switch"
+                aria-label="Remote files view"
+            >
+              <el-radio-button value="card">Card</el-radio-button>
+              <el-radio-button value="list">List</el-radio-button>
+            </el-radio-group>
+          </div>
 
           <div class="remote-files-toolbar">
             <div class="remote-toolbar-group">
@@ -484,7 +495,13 @@
             This folder is empty
           </div>
 
-          <div v-else class="mobile-file-grid" ref="remoteMobileFileGridRef">
+          <div
+              v-else
+              class="mobile-file-grid"
+              :class="{ 'mobile-file-grid-list': remoteMobileViewMode === 'list' }"
+              ref="remoteMobileFileGridRef"
+          >
+            <template v-if="remoteMobileViewMode === 'card'">
             <div
                 v-for="row in displayRemoteFilesEntries"
                 :key="`${row.is_parent_entry ? 'parent-' : ''}${row.path}`"
@@ -638,6 +655,67 @@
                 </div>
               </div>
             </div>
+            </template>
+            <template v-else>
+              <div
+                  v-for="row in displayRemoteFilesEntries"
+                  :key="`list-${row.is_parent_entry ? 'parent-' : ''}${row.path}`"
+                  class="remote-mobile-file-row"
+                  role="button"
+                  tabindex="0"
+                  @click="handleRemoteMobileListRowClick(row)"
+                  @keydown.enter.prevent="handleRemoteMobileListRowClick(row)"
+              >
+                <div v-if="!row.is_parent_entry" class="remote-mobile-file-checkbox" @click.stop>
+                  <el-checkbox
+                      :model-value="isRemoteEntrySelected(row)"
+                      :aria-label="`Select ${row.name}`"
+                      @change="toggleRemoteSelection(row)"
+                  />
+                </div>
+                <span class="remote-mobile-file-icon" aria-hidden="true">
+                  {{ row.is_parent_entry ? '↰' : (row.is_dir ? '📁' : '📄') }}
+                </span>
+                <div class="remote-mobile-file-row-main">
+                  <div class="remote-mobile-file-row-name">
+                    {{ row.is_parent_entry ? '..' : row.name }}
+                  </div>
+                  <div class="remote-mobile-file-row-meta">
+                    {{ row.is_dir ? '—' : formatBytes(row.size) }} · {{ row.is_parent_entry ? 'Parent directory' : (row.modified_at || '-') }}
+                  </div>
+                </div>
+                <div class="remote-mobile-file-row-actions" @click.stop>
+                  <el-dropdown
+                      trigger="click"
+                      @command="command => handleRemoteMobileListAction(command, row)"
+                  >
+                    <button
+                        type="button"
+                        class="remote-mobile-file-more-button"
+                        :aria-label="`Actions for ${row.name || 'parent directory'}`"
+                        aria-haspopup="menu"
+                    >
+                      ⋮
+                    </button>
+                    <template #dropdown>
+                      <el-dropdown-menu>
+                        <el-dropdown-item v-if="row.is_parent_entry || row.is_dir" command="open">Open</el-dropdown-item>
+                        <template v-if="!row.is_parent_entry && !row.is_dir">
+                          <el-dropdown-item command="preview">Preview</el-dropdown-item>
+                          <el-dropdown-item command="download">Download</el-dropdown-item>
+                        </template>
+                        <el-dropdown-item v-if="!row.is_parent_entry" command="rename" divided>Rename</el-dropdown-item>
+                        <el-dropdown-item v-if="!row.is_parent_entry" command="copy">Copy</el-dropdown-item>
+                        <el-dropdown-item v-if="!row.is_parent_entry" command="cut">Cut</el-dropdown-item>
+                        <el-dropdown-item v-if="!row.is_parent_entry" command="copy_path">Copy Path</el-dropdown-item>
+                        <el-dropdown-item v-if="isZipEntry(row)" command="extract" :disabled="remoteZipExtracting">Extract Here</el-dropdown-item>
+                        <el-dropdown-item v-if="!row.is_parent_entry" command="delete">Delete</el-dropdown-item>
+                      </el-dropdown-menu>
+                    </template>
+                  </el-dropdown>
+                </div>
+              </div>
+            </template>
           </div>
         </div>
       </div>
@@ -732,6 +810,7 @@ export default {
       remoteClipboardSourcePath: '',
 
       remoteMobilePanelCollapsed: true,
+      remoteMobileViewMode: 'card',
     }
   },
 
@@ -1136,6 +1215,20 @@ export default {
       }
 
       await this.navigateRemoteDirectory(row.path)
+    },
+
+    handleRemoteMobileListRowClick(row) {
+      if (!row?.is_dir) return
+      return row.is_parent_entry ? this.goToRemoteParent() : this.enterRemoteDirectory(row)
+    },
+
+    handleRemoteMobileListAction(command, row) {
+      if (command === 'open') {
+        return this.handleRemoteMobileListRowClick(row)
+      }
+      if (command === 'preview') return this.previewRow(row)
+      if (command === 'download') return this.downloadRemoteEntry(row)
+      return this.handleRemoteMoreAction(command, row)
     },
 
     async handleRemotePageChange(page) {
@@ -2437,6 +2530,10 @@ export default {
   display: none;
 }
 
+.remote-mobile-header-controls {
+  display: none;
+}
+
 .remote-files-toolbar {
   display: flex;
   align-items: center;
@@ -2577,6 +2674,92 @@ export default {
   min-height: 0;
   overflow-y: auto;
   padding-right: 2px;
+}
+
+.mobile-file-grid-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0 2px 0 0;
+}
+
+.remote-mobile-file-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  min-height: 58px;
+  padding: 8px 2px;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.remote-mobile-file-row:active {
+  background: rgba(148, 163, 184, 0.12);
+}
+
+.remote-mobile-file-checkbox {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 22px;
+}
+
+.remote-mobile-file-icon {
+  flex: 0 0 24px;
+  font-size: 20px;
+  line-height: 1;
+  text-align: center;
+}
+
+.remote-mobile-file-row-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.remote-mobile-file-row-name {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.remote-mobile-file-row-meta {
+  margin-top: 3px;
+  overflow: hidden;
+  color: var(--muted-2);
+  font-size: 11px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.remote-mobile-file-row-actions {
+  flex: 0 0 auto;
+}
+
+.remote-mobile-file-more-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 38px;
+  padding: 0;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.remote-mobile-file-more-button:active {
+  background: rgba(148, 163, 184, 0.18);
 }
 
 .mobile-file-card {
@@ -2772,6 +2955,23 @@ export default {
     align-self: flex-start;
     width: auto;
     margin: 0;
+  }
+
+  .remote-mobile-header-controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .remote-mobile-view-switch {
+    flex: 0 0 auto;
+  }
+
+  .remote-mobile-view-switch :deep(.el-radio-button__inner) {
+    padding: 7px 10px;
   }
 
   .remote-mobile-panel-collapsed .remote-files-toolbar {

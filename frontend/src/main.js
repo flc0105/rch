@@ -2,6 +2,8 @@ import {createApp} from 'vue'
 import ElementPlus, {ElLoading, ElMessage, ElMessageBox, ElNotification,} from 'element-plus'
 
 import 'element-plus/dist/index.css'
+import './styles/mobileDialogs.css'
+import { installMobileDialogScrollLock } from './utils/mobileDialogScrollLock.js'
 // The standalone Screen View tab shares this authenticated entry without mounting the main dashboard.
 
 // 兼容旧代码里的 ElementPlus.ElMessage / ElementPlus.ElMessageBox
@@ -17,9 +19,10 @@ async function mountApp() {
         ? await import('./ScreenViewTab.vue')
         : await import('./App.vue')
 
-    createApp(Root)
-        .use(ElementPlus)
-        .mount('#app')
+    const app = createApp(Root).use(ElementPlus)
+    const stopMobileDialogScrollLock = installMobileDialogScrollLock()
+    app.mount('#app')
+    app.onUnmount(stopMobileDialogScrollLock)
 }
 
 mountApp()

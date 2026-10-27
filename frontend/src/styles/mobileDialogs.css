@@ -45,3 +45,26 @@
   .quick-actions-result-dialog .el-dialog__body { overflow-y: auto !important; }
   .quick-actions-result-dialog .quick-action-result-output { max-height: none; min-height: 0; overflow-wrap: anywhere; }
 }
+
+/* A visible mobile dialog owns the scroll gesture until it closes. */
+@media (max-width: 768px) {
+  body.rch-mobile-dialog-open {
+    overscroll-behavior: none;
+  }
+
+  body.rch-mobile-dialog-open #app {
+    overflow-y: hidden !important;
+    overscroll-behavior: none;
+  }
+
+  body.rch-mobile-dialog-open .el-dialog,
+  body.rch-mobile-dialog-open .el-dialog__body,
+  body.rch-mobile-dialog-open .fixed-dialog-body,
+  body.rch-mobile-dialog-open .machine-history-body,
+  body.rch-mobile-dialog-open .mobile-file-grid,
+  body.rch-mobile-dialog-open .el-scrollbar__wrap,
+  body.rch-mobile-dialog-open .el-table__body-wrapper {
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+}

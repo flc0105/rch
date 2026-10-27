@@ -23,3 +23,5 @@ Toolbox 工具网格末尾提供 **Add** 快捷入口。可以选择 Server Scri
 固定项通过 Toolbar Preferences 中的 `toolbox_shortcuts` 持久化，独立于 Toolbar 的 `quick_actions_pinned`。Toolbar Settings 修改布局时保留这一字段。添加时可设置独立的显示名称（不修改 Script 或 Alias 原名称），并通过独立、可复用的 Icon Picker 弹窗按名称模糊搜索并选择 Lucide 图标。Script 与 Quick Action 的资源选项分别按显示名称 A-Z 排序。
 
 添加列表仅包含选中 Client 平台兼容的 Script（以 `metadata.platforms` 为准）及 `in_current_scope` 的 Quick Action。切换 Client 后，不兼容平台的快捷项自动隐藏；同平台但原资源被删除的快捷项保留并标记 Unavailable，可从右键菜单 Unpin，不能误执行其他同名资源。Toolbox 高度以约 70vh 为基准；添加弹窗与 Icon Picker 仍采用固定高度，内容超出时在各自弹窗内部滚动。
+
+手机端打开 Dialog 时，页面根滚动区域会锁定，滚动手势由 Dialog 内部可滚动内容接管；关闭最后一个 Dialog 后恢复之前的页面滚动位置。嵌套 Dialog 保持页面锁定，直到全部关闭。
