@@ -1178,17 +1178,26 @@ export default {
       this.selectedPackageId = item.id
     },
 
-    async refreshAll() {
+    refreshAll() {
+      // Lifecycle SSE and the Refresh button may arrive during the same fetch.
+      if (this._refreshAllPromise) return this._refreshAllPromise
       this.loading = true
-      try {
-        await this.loadCatalog(false)
-        await this.refreshInstallStatuses(false)
-        await this.refreshInstances(false)
-      } catch (e) {
-        ElMessage.error(e.message || 'Failed to refresh external tools')
-      } finally {
-        this.loading = false
-      }
+      const pending = (async () => {
+        try {
+          await this.loadCatalog(false)
+          await this.refreshInstallStatuses(false)
+          await this.refreshInstances(false)
+        } catch (e) {
+          ElMessage.error(e.message || 'Failed to refresh external tools')
+        } finally {
+          this.loading = false
+        }
+      })()
+      this._refreshAllPromise = pending
+      pending.then(() => {
+        if (this._refreshAllPromise === pending) this._refreshAllPromise = null
+      })
+      return pending
     },
 
     async loadCatalog(showError = true) {

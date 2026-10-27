@@ -35,6 +35,35 @@ function postJson(url, body = {}, headers = {}, defaultMessage = 'External tool 
   )
 }
 
+// External Tool catalog/instance reads share a single foreground slot per Client.
+// Serialize this tab's reads and tolerate a short busy window caused by SSE
+// refreshes from other tabs or by an in-flight lifecycle command. Writes are
+// intentionally excluded: starting/stopping a process must never be retried.
+const clientReadTails = new Map()
+const CLIENT_BUSY_RETRY_DELAYS_MS = [150, 300, 600, 900, 1250, 1750]
+
+function queueClientRead(clientId, request) {
+  const key = String(clientId || '').trim()
+  const previous = clientReadTails.get(key) || Promise.resolve()
+  const current = previous.catch(() => {}).then(async () => {
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        return await request()
+      } catch (error) {
+        const busy = /^Client is busy(?::|$)/i.test(String(error?.message || ''))
+        if (!busy || attempt >= CLIENT_BUSY_RETRY_DELAYS_MS.length) throw error
+        await new Promise(resolve => setTimeout(resolve, CLIENT_BUSY_RETRY_DELAYS_MS[attempt]))
+      }
+    }
+  })
+  clientReadTails.set(key, current)
+  current.then(
+    () => { if (clientReadTails.get(key) === current) clientReadTails.delete(key) },
+    () => { if (clientReadTails.get(key) === current) clientReadTails.delete(key) },
+  )
+  return current
+}
+
 export function loadExternalToolCatalog() {
   return externalToolRequest('/api/external-tools/catalog', {}, 'Failed to load external tools')
 }
@@ -77,30 +106,30 @@ export function deleteExternalToolParamPreset(toolId, presetId) {
 }
 
 export function loadClientExternalToolCatalog(clientId, payload = {}, headers = {}) {
-  return postJson(
+  return queueClientRead(clientId, () => postJson(
     `/api/connections/${encodeURIComponent(clientId)}/external-tools/catalog`,
     payload,
     headers,
     'Failed to load client install statuses',
-  )
+  ))
 }
 
 export function loadAllClientInstances(clientId, headers = {}) {
-  return postJson(
+  return queueClientRead(clientId, () => postJson(
     `/api/connections/${encodeURIComponent(clientId)}/external-tools/instances`,
     {},
     headers,
     'Failed to load client instances',
-  )
+  ))
 }
 
 export function loadClientInstances(clientId, toolId, headers = {}) {
-  return postJson(
+  return queueClientRead(clientId, () => postJson(
     `/api/connections/${encodeURIComponent(clientId)}/external-tools/${encodeURIComponent(toolId)}/instances`,
     {},
     headers,
     'Failed to load client instances',
-  )
+  ))
 }
 
 export function uninstallClientTool(clientId, toolId, payload = {}, headers = {}) {
