@@ -8,7 +8,7 @@ const script = source.match(/<script>([\s\S]*?)<\/script>/)?.[1]
 assert.ok(script)
 const javascript = script.replace(/^import\s+[\s\S]*?\s+from\s+['"][^'"]+['"]\s*$/gm, '')
   .replace('export default {', 'const options = {') + '\nglobalThis.options = options'
-const globals = { ElMessage: {}, formatTerminalCancelRequestedLine() {}, formatTerminalCommandFailedLine() {} }
+const globals = { ElMessage: {}, TerminalConnectionContext: {}, formatTerminalCancelRequestedLine() {}, formatTerminalCommandFailedLine() {} }
 vm.runInNewContext(javascript, globals, { timeout: 1000 })
 const methods = globals.options.methods
 

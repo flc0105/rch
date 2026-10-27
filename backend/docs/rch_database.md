@@ -193,7 +193,7 @@
 
 ### `settings` — 多种全局偏好共用的 JSON 容器
 
-**前台对应：** Terminal Toolbar 的 Toolbar / More 排列、Toolbox 自定义快捷项、Quick Actions 工具栏固定项，以及 Notification Settings 中的通知开关。
+**前台对应：** Terminal Toolbar 的 Toolbar / More 排列、Toolbox 自定义快捷项、Quick Actions 工具栏固定项、Notification Settings 的通知开关，以及 Terminal Connection Context 的字段选择。
 
 | 字段 | 含义、前台作用 |
 | --- | --- |
@@ -205,6 +205,7 @@
 | --- | --- | --- |
 | `toolbar_preferences` | `toolbar`、`more`（工具排序与归属）；`quick_actions_pinned`（按平台及 Alias 固定的 Quick Action）；`toolbox_shortcuts`（Script / Quick Action 资源身份、图标及可选显示名称） | Terminal Toolbar Settings、Toolbox 的 Add / Unpin、Quick Actions 固定项 |
 | `notification_preferences` | `enabled`（全局通知投递开关）、`events`（各事件投递开关）及偏好对象中的结构标识 | Notification Settings、桌面通知投递控制 |
+| `terminal_context_preferences` | `field_ids`（Terminal 下方显示的同步 Basic Info 字段，按用户选择顺序排列） | Settings → Connection Context、Terminal 输入栏下方的连接标签 |
 
 这里的设置由 Server 共享，不按 `machine_id` 建独立行。`toolbox_shortcuts` 是快捷入口引用，并不保存 Script 正文或 Alias 定义。`notifications` 保存的是**实际通知历史**，`notification_preferences` 仅决定通知投递偏好；详见 [Toolbox](toolbar_toolbox.md) 和 [SSE Notifications](sse_notifications.md)。浏览器自己的临时选中状态或交互状态，不一定存入 `rch.db`。
 

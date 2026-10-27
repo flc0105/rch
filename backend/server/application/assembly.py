@@ -25,6 +25,7 @@ from server.application.documents.document_library_service import DocumentLibrar
 from server.application.pinned_paths.pinned_path_store import PinnedPathStore
 from server.application.preferences.toolbar_preference_store import ToolbarPreferenceStore
 from server.application.preferences.notification_preference_store import NotificationPreferenceStore
+from server.application.preferences.terminal_context_preference_store import TerminalContextPreferenceStore
 from server.application.preferences.notification_history_store import NotificationHistoryStore
 from server.application.preferences.notification_event_projector import NotificationEventProjector
 from server.application.scripts.script_catalog_service import ScriptCatalogService
@@ -55,6 +56,7 @@ from server.application.web.process_control_api import WebProcessControlApi
 from server.application.web.terminal_api import WebTerminalApi
 from server.application.web.toolbar_preferences_api import WebToolbarPreferencesApi
 from server.application.web.notification_preferences_api import WebNotificationPreferencesApi
+from server.application.web.terminal_context_preferences_api import WebTerminalContextPreferencesApi
 from server.application.web.notification_history_api import WebNotificationHistoryApi
 from server.application.web.screen_view_api import WebScreenViewApi
 from server.application.web.server_cleanup_api import WebServerCleanupApi
@@ -130,6 +132,7 @@ class ServerApplicationAssembly:
         self.device_group_store = DeviceGroupStore(self.server.database)
         self.toolbar_preference_store = ToolbarPreferenceStore(self.server.database)
         self.notification_preference_store = NotificationPreferenceStore(self.server.database)
+        self.terminal_context_preference_store = TerminalContextPreferenceStore(self.server.database)
         self.notification_history_store = NotificationHistoryStore(self.server.database)
         self.notification_event_projector = NotificationEventProjector(
             history_store=self.notification_history_store,
@@ -211,6 +214,10 @@ class ServerApplicationAssembly:
         self.notification_preferences_api = WebNotificationPreferencesApi(
             preference_store=self.notification_preference_store,
             event_bus=self.event_bus,
+        )
+
+        self.terminal_context_preferences_api = WebTerminalContextPreferencesApi(
+            preference_store=self.terminal_context_preference_store,
         )
 
         self.notification_history_api = WebNotificationHistoryApi(

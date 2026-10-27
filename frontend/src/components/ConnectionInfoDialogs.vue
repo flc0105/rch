@@ -523,6 +523,7 @@
 
 <script>
 import { formatBytesHuman, formatDateTimeStandard as formatDateTimeStandardValue, formatLaunchMode } from '../utils/formatters.js'
+import { formatConnectionLastSeen as formatConnectionLastSeenValue, formatConnectionRtt as formatConnectionRttValue, formatConnectionStatus as formatConnectionStatusValue, getConnectionDisplayState as getConnectionDisplayStateValue } from '../utils/connectionInfoFormatting.js'
 import { ElMessage } from 'element-plus'
 import WatchdogInfoPanel from './WatchdogInfoPanel.vue'
 
@@ -1101,47 +1102,17 @@ export default {
       }
     },
 
-    // 连接状态展示逻辑放在组件内，避免继续依赖 legacy connection formatter。
+    // Basic Info and Terminal Context share connection-state formatting.
     getConnectionDisplayState(conn) {
-      const state = String((conn && conn.connection_state) || '').trim()
-      if (state === 'offline') return 'offline'
-
-      if (conn && conn.is_transfer_active) {
-        return 'online'
-      }
-
-      const disconnectedAt = String((conn && conn.disconnected_at) || '').trim()
-      if (disconnectedAt) return 'offline'
-
-      const lastSeenAt = String((conn && conn.last_seen_at) || '').trim()
-      if (!lastSeenAt) return state || 'online'
-
-      const staleAfterSeconds = Number((conn && conn.stale_after_seconds) || 45)
-      const seenMs = Date.parse(lastSeenAt)
-      if (!Number.isFinite(seenMs)) return state || 'online'
-
-      const ageMs = Math.max(this.statusNowTick - seenMs, 0)
-      if (ageMs > staleAfterSeconds * 1000) return 'stale'
-
-      return 'online'
+      return getConnectionDisplayStateValue(conn, this.statusNowTick)
     },
 
     formatStatusText(conn) {
-      const state = this.getConnectionDisplayState(conn)
-      if (state === 'online') return 'online'
-      if (state === 'stale') return 'stale'
-      return 'offline'
+      return formatConnectionStatusValue(conn, this.statusNowTick)
     },
 
     formatLastSeenText(conn) {
-      if (!conn) return '-'
-
-      const state = this.getConnectionDisplayState(conn)
-      if (state === 'offline') {
-        return this.formatDateTimeStandard(conn.disconnected_at) || '-'
-      }
-
-      return this.formatDateTimeStandard(conn.last_seen_at) || '-'
+      return formatConnectionLastSeenValue(conn, this.statusNowTick)
     },
 
     formatDateTimeStandard(value) {
@@ -1149,9 +1120,7 @@ export default {
     },
 
     formatRttText(conn) {
-      const value = conn && conn.last_rtt_ms
-      if (value === null || value === undefined || value === '') return '-'
-      return `${value} ms`
+      return formatConnectionRttValue(conn)
     },
 
     normalizeConnectionInfoValue(value) {

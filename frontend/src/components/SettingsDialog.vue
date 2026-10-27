@@ -54,6 +54,89 @@
         </div>
       </el-tab-pane>
 
+      <el-tab-pane label="Connection Context" name="connection-context">
+        <div v-loading="connectionContextLoading" class="settings-tab-scroll">
+          <div class="settings-note">
+            Choose which connection details appear below the terminal command input. The selection applies to every device.
+          </div>
+
+          <div class="connection-context-settings-grid">
+            <section class="settings-section">
+              <div class="settings-section-title">Available fields</div>
+              <div class="connection-context-search">
+                <el-input
+                  v-model="connectionContextSearch"
+                  size="small"
+                  clearable
+                  placeholder="Search fields..."
+                  aria-label="Search connection context fields"
+                />
+              </div>
+              <div class="connection-context-available-list">
+                <div
+                  v-for="field in filteredConnectionContextFields"
+                  :key="field.id"
+                  class="connection-context-available-row"
+                >
+                  <el-checkbox
+                    :model-value="connectionContextDraft.field_ids.includes(field.id)"
+                    @change="toggleConnectionContextField(field.id, $event)"
+                  >
+                    <component :is="connectionContextIcons[field.icon]" :size="15" aria-hidden="true" />
+                    <span>{{ field.label }}</span>
+                  </el-checkbox>
+                </div>
+                <div v-if="filteredConnectionContextFields.length === 0" class="connection-context-empty">
+                  No matching fields
+                </div>
+              </div>
+            </section>
+
+            <section class="settings-section">
+              <div class="settings-section-title connection-context-selected-title">
+                <span>Displayed tags</span>
+                <span class="connection-context-count">{{ selectedConnectionContextFields.length }}</span>
+              </div>
+              <div v-if="selectedConnectionContextFields.length" class="connection-context-selected-list">
+                <div
+                  v-for="(field, index) in selectedConnectionContextFields"
+                  :key="field.id"
+                  class="connection-context-selected-row"
+                >
+                  <component :is="connectionContextIcons[field.icon]" :size="15" aria-hidden="true" />
+                  <span class="connection-context-selected-label">{{ field.label }}</span>
+                  <div class="connection-context-selected-actions">
+                    <el-button
+                      size="small"
+                      text
+                      :disabled="index === 0"
+                      :aria-label="`Move ${field.label} up`"
+                      @click="moveConnectionContextField(index, -1)"
+                    >↑</el-button>
+                    <el-button
+                      size="small"
+                      text
+                      :disabled="index === selectedConnectionContextFields.length - 1"
+                      :aria-label="`Move ${field.label} down`"
+                      @click="moveConnectionContextField(index, 1)"
+                    >↓</el-button>
+                    <el-button
+                      size="small"
+                      text
+                      :aria-label="`Remove ${field.label}`"
+                      @click="toggleConnectionContextField(field.id, false)"
+                    >×</el-button>
+                  </div>
+                </div>
+              </div>
+              <div v-else class="connection-context-empty connection-context-selected-empty">
+                No fields selected. Choose fields to show them below the terminal input.
+              </div>
+            </section>
+          </div>
+        </div>
+      </el-tab-pane>
+
       <el-tab-pane label="Notifications" name="notifications">
         <div v-loading="notificationLoading" class="settings-tab-scroll">
           <div class="notification-master-row">
@@ -123,6 +206,10 @@ import {
   saveNotificationPreferences,
 } from '../api/notificationPreferencesApi.js'
 import {
+  loadTerminalContextPreferences,
+  saveTerminalContextPreferences,
+} from '../api/terminalContextPreferencesApi.js'
+import {
   DEFAULT_TOOLBAR_PREFERENCES,
   TOOLBAR_ACTION_CATALOG,
   cloneToolbarPreferences,
@@ -134,11 +221,18 @@ import {
   cloneSseNotificationPreferences,
   normalizeSseNotificationPreferences,
 } from '../data/sseNotificationPreferences.js'
+import {
+  CONNECTION_CONTEXT_FIELD_CATALOG,
+  DEFAULT_CONNECTION_CONTEXT_PREFERENCES,
+  cloneConnectionContextPreferences,
+  normalizeConnectionContextPreferences,
+} from '../data/connectionContextFields.js'
+import { CONNECTION_CONTEXT_ICONS } from '../data/connectionContextIcons.js'
 
 export default {
   name: 'SettingsDialog',
 
-  emits: ['toolbar-saved', 'notification-saved'],
+  emits: ['toolbar-saved', 'notification-saved', 'connection-context-saved'],
 
   data() {
     return {
@@ -153,26 +247,50 @@ export default {
       notificationSaving: false,
       notificationGroups: SSE_NOTIFICATION_GROUPS,
       notificationDraft: cloneSseNotificationPreferences(DEFAULT_SSE_NOTIFICATION_PREFERENCES),
+
+      connectionContextLoading: false,
+      connectionContextSaving: false,
+      connectionContextSearch: '',
+      connectionContextFields: CONNECTION_CONTEXT_FIELD_CATALOG,
+      connectionContextDraft: cloneConnectionContextPreferences(DEFAULT_CONNECTION_CONTEXT_PREFERENCES),
     }
   },
 
   computed: {
     activeLoading() {
-      return this.activeTab === 'notifications' ? this.notificationLoading : this.toolbarLoading
+      if (this.activeTab === 'notifications') return this.notificationLoading
+      if (this.activeTab === 'connection-context') return this.connectionContextLoading
+      return this.toolbarLoading
     },
     activeSaving() {
-      return this.activeTab === 'notifications' ? this.notificationSaving : this.toolbarSaving
+      if (this.activeTab === 'notifications') return this.notificationSaving
+      if (this.activeTab === 'connection-context') return this.connectionContextSaving
+      return this.toolbarSaving
+    },
+    connectionContextIcons() {
+      return CONNECTION_CONTEXT_ICONS
+    },
+    filteredConnectionContextFields() {
+      const query = String(this.connectionContextSearch || '').trim().toLocaleLowerCase()
+      if (!query) return this.connectionContextFields
+      return this.connectionContextFields.filter(field =>
+        `${field.label} ${field.id} ${field.description}`.toLocaleLowerCase().includes(query))
+    },
+    selectedConnectionContextFields() {
+      const byId = new Map(this.connectionContextFields.map(field => [field.id, field]))
+      return this.connectionContextDraft.field_ids.map(id => byId.get(id)).filter(Boolean)
     },
   },
 
   methods: {
     async open(tab = 'toolbar') {
       this.visible = true
-      this.activeTab = tab === 'notifications' ? 'notifications' : 'toolbar'
+      this.activeTab = ['notifications', 'connection-context'].includes(tab) ? tab : 'toolbar'
 
       await Promise.all([
         this.loadToolbarSettings(),
         this.loadNotificationSettings(),
+        this.loadConnectionContextSettings(),
       ])
     },
 
@@ -275,9 +393,60 @@ export default {
       }
     },
 
+    async loadConnectionContextSettings() {
+      this.connectionContextLoading = true
+      try {
+        this.connectionContextDraft = cloneConnectionContextPreferences(
+          normalizeConnectionContextPreferences(await loadTerminalContextPreferences()),
+        )
+      } catch (e) {
+        ElMessage.error(e.message || 'Failed to load connection context settings')
+      } finally {
+        this.connectionContextLoading = false
+      }
+    },
+    toggleConnectionContextField(fieldId, checked) {
+      const fieldIds = [...this.connectionContextDraft.field_ids]
+      const existingIndex = fieldIds.indexOf(fieldId)
+      if (checked && existingIndex < 0) fieldIds.push(fieldId)
+      if (!checked && existingIndex >= 0) fieldIds.splice(existingIndex, 1)
+      this.connectionContextDraft = { field_ids: fieldIds }
+    },
+    moveConnectionContextField(index, direction) {
+      const fieldIds = [...this.connectionContextDraft.field_ids]
+      const targetIndex = index + direction
+      if (targetIndex < 0 || targetIndex >= fieldIds.length) return
+      const [fieldId] = fieldIds.splice(index, 1)
+      fieldIds.splice(targetIndex, 0, fieldId)
+      this.connectionContextDraft = { field_ids: fieldIds }
+    },
+    resetConnectionContextDefaults() {
+      this.connectionContextDraft = cloneConnectionContextPreferences(DEFAULT_CONNECTION_CONTEXT_PREFERENCES)
+    },
+    async saveConnectionContextSettings() {
+      if (this.connectionContextSaving) return
+      this.connectionContextSaving = true
+      try {
+        const saved = cloneConnectionContextPreferences(
+          normalizeConnectionContextPreferences(await saveTerminalContextPreferences(this.connectionContextDraft)),
+        )
+        this.connectionContextDraft = saved
+        this.$emit('connection-context-saved', saved)
+        ElMessage.success('Connection context settings updated')
+      } catch (e) {
+        ElMessage.error(e.message || 'Failed to save connection context settings')
+      } finally {
+        this.connectionContextSaving = false
+      }
+    },
+
     resetActiveDefaults() {
       if (this.activeTab === 'notifications') {
         this.resetNotificationDefaults()
+        return
+      }
+      if (this.activeTab === 'connection-context') {
+        this.resetConnectionContextDefaults()
         return
       }
       this.resetToolbarDefaults()
@@ -285,6 +454,9 @@ export default {
     saveActiveSettings() {
       if (this.activeTab === 'notifications') {
         return this.saveNotificationSettings()
+      }
+      if (this.activeTab === 'connection-context') {
+        return this.saveConnectionContextSettings()
       }
       return this.saveToolbarSettings()
     },
@@ -392,9 +564,106 @@ export default {
   flex: 1;
 }
 
+.connection-context-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  min-height: 0;
+}
+
+.connection-context-search {
+  padding: 10px 10px 2px;
+}
+
+.connection-context-available-list,
+.connection-context-selected-list {
+  max-height: 360px;
+  overflow-y: auto;
+  padding: 2px 10px 8px;
+}
+
+.connection-context-available-row,
+.connection-context-selected-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 38px;
+  border-bottom: 1px solid var(--el-border-color-extra-light);
+  font-size: 12px;
+}
+
+.connection-context-available-row:last-child,
+.connection-context-selected-row:last-child {
+  border-bottom: none;
+}
+
+.connection-context-available-row :deep(.el-checkbox) {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  margin-right: 0;
+}
+
+.connection-context-available-row :deep(.el-checkbox__label) {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  flex: 1;
+}
+
+.connection-context-selected-label {
+  min-width: 0;
+  flex: 1;
+}
+
+.connection-context-selected-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.connection-context-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 21px;
+  height: 21px;
+  padding: 0 5px;
+  border-radius: 11px;
+  background: var(--el-fill-color);
+  color: var(--el-text-color-secondary);
+}
+
+.connection-context-selected-actions {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+.connection-context-selected-actions .el-button {
+  min-width: 24px;
+  padding: 4px;
+  margin-left: 0;
+}
+
+.connection-context-empty {
+  padding: 18px 12px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.connection-context-selected-empty {
+  min-height: 90px;
+  display: flex;
+  align-items: center;
+}
+
 @media (max-width: 760px) {
   .toolbar-manager-grid,
-  .notification-groups {
+  .notification-groups,
+  .connection-context-settings-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 }

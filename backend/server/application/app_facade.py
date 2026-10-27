@@ -30,6 +30,7 @@ class ServerWebService:
         self.connection_api = self.assembly.connection_api
         self.toolbar_preferences_api = self.assembly.toolbar_preferences_api
         self.notification_preferences_api = self.assembly.notification_preferences_api
+        self.terminal_context_preferences_api = self.assembly.terminal_context_preferences_api
         self.notification_history_api = self.assembly.notification_history_api
         self.server_cleanup_api = self.assembly.server_cleanup_api
         self.command_catalog_api = self.assembly.command_catalog_api

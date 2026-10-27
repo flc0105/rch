@@ -69,11 +69,18 @@
         Cancel
       </el-button>
     </div>
+
+    <TerminalConnectionContext
+      ref="terminalConnectionContextRef"
+      :current-connection="currentConnection"
+      :status-now-tick="statusNowTick"
+    />
   </div>
 </template>
 
 <script>
 import { ElMessage } from 'element-plus'
+import TerminalConnectionContext from './TerminalConnectionContext.vue'
 import {
   sendCommand as sendCommandApi,
   getCommandCandidates,
@@ -103,6 +110,7 @@ const PATH_COMPLETION_COMMANDS = [
 
 export default {
   name: 'CommandInputBar',
+  components: { TerminalConnectionContext },
 
 
   props: {
@@ -114,6 +122,11 @@ export default {
     currentConnection: {
       type: Object,
       default: null,
+    },
+
+    statusNowTick: {
+      type: Number,
+      default: () => Date.now(),
     },
 
     currentActiveTaskId: {
@@ -201,6 +214,10 @@ export default {
   },
 
   methods: {
+
+    setConnectionContextPreferences(preferences) {
+      this.$refs.terminalConnectionContextRef?.setPreferences(preferences)
+    },
 
     async sendCommand() {
   const command = String(this.commandText || '').trim()

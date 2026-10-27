@@ -117,6 +117,14 @@ Web 不是单纯显示最后收到的一份 `connection_state`。它在本地以
 
 上线与离线会产生 `connection_online` / `connection_offline` 事件，并可进入通知系统。`connection_offline` payload 同时携带本次连接的 `termination_reason`，前端离线通知直接显示该原因。Stale 由最近心跳时间计算，在确认 Socket 关闭时才发布 Offline 生命周期事件。浏览器 SSE 流使用独立的保活链路，Client Socket 的心跳与状态由 Server 单独管理。
 
+## Terminal Connection Context
+
+Terminal 输入栏下方可以显示一行连接上下文标签，用于快速查看当前设备的状态与基础信息。通过 **Settings → Connection Context** 搜索并选择 Basic Info 字段，调整展示顺序后保存；字段选择是 Server 全局偏好，对当前实例管理的所有设备生效。未选择字段时不显示标签行。
+
+标签值从当前连接快照读取，并复用 Connection Info 的状态、最近响应时间、RTT、时间和启动模式格式化规则。可选字段包括 Status、Hostname、Address、Client ID、OS 信息、Manufacturer、Model、Integrity、Build Version、Client Revision、Machine ID、Fingerprint Basis、Last Seen、Connected At、Disconnected At、RTT、Working Directory、PID、Process Name、Launch Command、Launch Mode、Client Log、Username 和 Python Version。连接切换后，标签内容随当前连接更新。
+
+字段选择保存在 `settings` 表的 `terminal_context_preferences` 命名空间中，字段 ID 按用户选择顺序保存。`GET /api/terminal/context-preferences` 读取当前选择，`PUT /api/terminal/context-preferences` 保存选择，数据结构为 `{"field_ids": ["integrity", "pid"]}`。该偏好只决定显示哪些信息，不改变 Client 上报的数据或连接生命周期状态。
+
 ## 连接丢失后的清理、重连和历史留存
 
 Server 的 Session 收包循环在捕获 Socket 错误时进入会话关闭处理：标记 `disconnected_at`，将最近设备标为离线，结束持久会话历史，撤销相应的临时授权，并通知 PTY、ScreenView、Clipboard、Monitor、Transfer 等子系统清理与该 Client 关联的运行态。随后发布 `connection_offline`，唤醒等待中的命令处理，最终从 `ConnectionManager` 移除 Session。

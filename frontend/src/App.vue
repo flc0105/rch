@@ -184,6 +184,7 @@
   ref="commandInputBarRef"
   :selected-id="selectedId"
   :current-connection="currentConnection"
+  :status-now-tick="statusNowTick"
   :current-active-task-id="currentActiveTaskId"
   :tab-id="tabId"
   @append-output="appendOutput"
@@ -436,6 +437,7 @@
     ref="settingsDialogRef"
     @toolbar-saved="refreshToolbarPreferences"
     @notification-saved="applySseNotificationPreferences"
+    @connection-context-saved="applyTerminalContextPreferences"
   />
 
   <NotificationCenterDrawer
@@ -941,6 +943,10 @@ export default {
 
     openSettingsDialog() {
       return this.$refs.settingsDialogRef?.open()
+    },
+
+    applyTerminalContextPreferences(preferences) {
+      this.$refs.commandInputBarRef?.setConnectionContextPreferences(preferences)
     },
 
     async openTransferCenter() {

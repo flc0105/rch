@@ -45,6 +45,8 @@
 </template>
 
 <script>
+import { formatConnectionRtt as formatConnectionRttValue, formatConnectionStatus as formatConnectionStatusValue, getConnectionDisplayState as getConnectionDisplayStateValue } from '../utils/connectionInfoFormatting.js'
+
 export default {
   name: 'ConnectionInfoCards',
 
@@ -61,42 +63,17 @@ export default {
   },
 
   methods: {
-    // 信息卡片内部只保留展示格式化逻辑
+    // Keep the connection card and Terminal Context on the same status rules.
     getConnectionDisplayState(conn) {
-      const state = String((conn && conn.connection_state) || '').trim()
-      if (state === 'offline') return 'offline'
-
-      if (conn && conn.is_transfer_active) {
-        return 'online'
-      }
-
-      const disconnectedAt = String((conn && conn.disconnected_at) || '').trim()
-      if (disconnectedAt) return 'offline'
-
-      const lastSeenAt = String((conn && conn.last_seen_at) || '').trim()
-      if (!lastSeenAt) return state || 'online'
-
-      const staleAfterSeconds = Number((conn && conn.stale_after_seconds) || 45)
-      const seenMs = Date.parse(lastSeenAt)
-      if (!Number.isFinite(seenMs)) return state || 'online'
-
-      const ageMs = Math.max(this.statusNowTick - seenMs, 0)
-      if (ageMs > staleAfterSeconds * 1000) return 'stale'
-
-      return 'online'
+      return getConnectionDisplayStateValue(conn, this.statusNowTick)
     },
 
     getConnectionStatusText(conn) {
-      const state = this.getConnectionDisplayState(conn)
-      if (state === 'online') return 'online'
-      if (state === 'stale') return 'stale'
-      return 'offline'
+      return formatConnectionStatusValue(conn, this.statusNowTick)
     },
 
     formatConnectionRtt(conn) {
-      const value = conn && conn.last_rtt_ms
-      if (value === null || value === undefined || value === '') return '-'
-      return `${value} ms`
+      return formatConnectionRttValue(conn)
     },
 
     formatOsLabel(osType, osVer) {

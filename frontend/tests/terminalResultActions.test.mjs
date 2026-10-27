@@ -197,6 +197,7 @@ const barScript = barSource.match(/<script>([\s\S]*?)<\/script>/)?.[1] || ''
 const apiCalls = [], terminalEvents = [], feedback = []
 const barSandbox = {
   ElMessage:{warning: msg => feedback.push(msg), error: msg => feedback.push(msg)},
+  TerminalConnectionContext: {},
   sendCommandApi: async (...args) => {apiCalls.push(args); return {task_id:'task-33'}},
   formatTerminalCommandFailedLine: x => `FAILED:${x}`,
 }
