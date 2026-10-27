@@ -8,48 +8,111 @@
       modal-class="remote-files-overlay"
       @update:model-value="handleVisibleChange"
   >
-    <div
-        class="fixed-dialog-body"
-        :class="{ 'remote-mobile-panel-collapsed': remoteMobilePanelCollapsed }"
-    >
+    <div class="fixed-dialog-body">
       <div class="dialog-head remote-files-head">
         <div class="dialog-head-left remote-files-head-main">
-          <div class="remote-breadcrumb-bar">
-            <template v-if="remoteBreadcrumbItems.length">
-              <button
-                  v-for="(item, index) in remoteBreadcrumbItems"
-                  :key="`breadcrumb-${index}-${item.path}`"
-                  type="button"
-                  class="remote-breadcrumb-item"
-                  :class="{ active: item.isCurrent }"
-                  :disabled="item.isCurrent"
-                  @click="goToRemoteBreadcrumb(item)"
-              >
-                <span v-if="index > 0" class="remote-breadcrumb-sep">/</span>
-                <span>{{ item.label }}</span>
-              </button>
-            </template>
+          <div class="remote-mobile-breadcrumb-row">
+            <div class="remote-breadcrumb-bar">
+              <template v-if="remoteBreadcrumbItems.length">
+                <button
+                    v-for="(item, index) in remoteBreadcrumbItems"
+                    :key="`breadcrumb-${index}-${item.path}`"
+                    type="button"
+                    class="remote-breadcrumb-item"
+                    :class="{ active: item.isCurrent }"
+                    :disabled="item.isCurrent"
+                    @click="goToRemoteBreadcrumb(item)"
+                >
+                  <span v-if="index > 0" class="remote-breadcrumb-sep">/</span>
+                  <span>{{ item.label }}</span>
+                </button>
+              </template>
 
-            <span v-else class="remote-breadcrumb-empty">No path</span>
+              <span v-else class="remote-breadcrumb-empty">No path</span>
+            </div>
+
+            <el-dropdown
+                trigger="click"
+                class="remote-mobile-tools-dropdown"
+                popper-class="remote-mobile-tools-popper"
+                @command="handleRemoteMobileToolsCommand"
+            >
+              <button type="button" class="remote-mobile-tools-button" aria-label="Remote file actions" aria-haspopup="menu">
+                <el-icon><MoreFilled /></el-icon>
+              </button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="refresh">Refresh</el-dropdown-item>
+                  <el-dropdown-item command="up" :disabled="!remoteFilesParentPath">Parent Directory</el-dropdown-item>
+
+                  <el-dropdown-item divided disabled>Quick Jump</el-dropdown-item>
+                  <el-dropdown-item command="root" :disabled="quickJumpLoading">Root</el-dropdown-item>
+                  <el-dropdown-item command="home" :disabled="quickJumpLoading">Home</el-dropdown-item>
+                  <el-dropdown-item command="desktop" :disabled="quickJumpLoading">Desktop</el-dropdown-item>
+                  <el-dropdown-item command="documents" :disabled="quickJumpLoading">Documents</el-dropdown-item>
+                  <el-dropdown-item command="downloads" :disabled="quickJumpLoading">Downloads</el-dropdown-item>
+                  <el-dropdown-item command="temp" :disabled="quickJumpLoading">Temp</el-dropdown-item>
+                  <el-dropdown-item command="executable" :disabled="quickJumpLoading">Program Directory</el-dropdown-item>
+                  <el-dropdown-item
+                      v-for="(item, index) in remotePinnedJumpItems"
+                      :key="`mobile-pinned-jump-${item.display_name}-${item.path}`"
+                      :divided="index === 0"
+                      :command="{ type: 'pinned_jump', display_name: item.display_name, path: item.path }"
+                      :disabled="remotePinnedJumpLoading"
+                  >
+                    {{ item.display_name }}
+                  </el-dropdown-item>
+                  <el-dropdown-item divided command="input_navigate">Go to Folder</el-dropdown-item>
+
+                  <el-dropdown-item divided command="new_folder">New Folder</el-dropdown-item>
+                  <el-dropdown-item command="upload" :disabled="remoteUploadLoading">Upload</el-dropdown-item>
+                  <el-dropdown-item command="download_selected" :disabled="!hasRemoteSelection || remoteZipDownloading">
+                    Download{{ remoteSelectedPaths.length ? ' (' + remoteSelectedPaths.length + ')' : '' }}
+                  </el-dropdown-item>
+                  <el-dropdown-item command="delete_selected" :disabled="!hasRemoteSelection">
+                    Delete{{ remoteSelectedPaths.length ? ' (' + remoteSelectedPaths.length + ')' : '' }}
+                  </el-dropdown-item>
+
+                  <el-dropdown-item divided disabled>View</el-dropdown-item>
+                  <el-dropdown-item command="view_card">{{ remoteMobileViewMode === 'card' ? '✓ Card' : 'Card' }}</el-dropdown-item>
+                  <el-dropdown-item command="view_list">{{ remoteMobileViewMode === 'list' ? '✓ List' : 'List' }}</el-dropdown-item>
+
+                  <el-dropdown-item divided command="toggle_recursive">
+                    {{ remoteSearchRecursive ? '✓ Recursive Search' : 'Recursive Search' }}
+                  </el-dropdown-item>
+                  <el-dropdown-item command="toggle_pin">{{ remotePinButtonText }} Current Path</el-dropdown-item>
+                  <el-dropdown-item v-if="hasPinnedQuickJumps" command="manage_pins">Manage Pins</el-dropdown-item>
+                  <el-dropdown-item command="copy" :disabled="!hasRemoteSelection">Copy Selected</el-dropdown-item>
+                  <el-dropdown-item command="cut" :disabled="!hasRemoteSelection">Cut Selected</el-dropdown-item>
+                  <el-dropdown-item command="create_zip" :disabled="!hasRemoteSelection || remoteZipCreating">Create ZIP</el-dropdown-item>
+                  <el-dropdown-item command="paste" :disabled="!hasRemoteClipboard">Paste</el-dropdown-item>
+                  <el-dropdown-item command="clear_clipboard" :disabled="!hasRemoteClipboard">Clear Clipboard</el-dropdown-item>
+                  <el-dropdown-item
+                      v-if="!isRemoteCurrentPageAllSelected"
+                      command="toggle_select_all"
+                      :disabled="!visibleRemoteSelectablePaths.length"
+                  >
+                    Select All
+                  </el-dropdown-item>
+                  <el-dropdown-item command="clear_selection" :disabled="!hasRemoteSelection">Clear Selection</el-dropdown-item>
+                  <el-dropdown-item command="toggle_hidden">{{ showHiddenFiles ? 'Hide Hidden' : 'Show Hidden' }}</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </div>
 
-          <div class="remote-mobile-header-controls">
-            <el-button
+          <div class="remote-mobile-search-row">
+            <el-input
+                v-model="remoteSearchKeyword"
+                clearable
                 size="small"
-                class="remote-mobile-panel-toggle"
-                @click="toggleRemoteMobilePanel"
-            >
-              {{ remoteMobilePanelCollapsed ? 'Show tools' : 'Hide tools' }}
-            </el-button>
-            <el-radio-group
-                v-model="remoteMobileViewMode"
-                size="small"
-                class="remote-mobile-view-switch"
-                aria-label="Remote files view"
-            >
-              <el-radio-button value="card">Card</el-radio-button>
-              <el-radio-button value="list">List</el-radio-button>
-            </el-radio-group>
+                class="remote-mobile-search-input"
+                placeholder="Search files and folders"
+                aria-label="Search remote files"
+                @input="scheduleRemoteSearch"
+                @clear="applyRemoteSearch"
+                @keyup.enter="applyRemoteSearch"
+            />
           </div>
 
           <div class="remote-files-toolbar">
@@ -508,12 +571,11 @@
                 class="mobile-file-card"
                 style="position: relative;"
             >
-              <div
-                  v-if="!row.is_parent_entry"
-                  style="position:absolute; top:6px; right:12px; z-index:1;"
-              >
+              <div style="position:absolute; top:6px; right:12px; z-index:1;">
                 <el-checkbox
                     :model-value="isRemoteEntrySelected(row)"
+                    :disabled="row.is_parent_entry"
+                    :aria-label="row.is_parent_entry ? 'Parent directory cannot be selected' : 'Select ' + row.name"
                     @change="toggleRemoteSelection(row)"
                 />
               </div>
@@ -524,10 +586,7 @@
                 </div>
 
                 <div class="mobile-file-main">
-                  <div
-                      class="mobile-file-name"
-                      :style="row.is_parent_entry ? '' : 'padding-right: 42px;'"
-                  >
+                  <div class="mobile-file-name" style="padding-right: 42px;">
                     {{ row.is_parent_entry ? '..' : row.name }}
                   </div>
 
@@ -666,22 +725,23 @@
                   @click="handleRemoteMobileListRowClick(row)"
                   @keydown.enter.prevent="handleRemoteMobileListRowClick(row)"
               >
-                <div v-if="!row.is_parent_entry" class="remote-mobile-file-checkbox" @click.stop>
+                <div class="remote-mobile-file-checkbox" @click.stop>
                   <el-checkbox
                       :model-value="isRemoteEntrySelected(row)"
-                      :aria-label="`Select ${row.name}`"
+                      :disabled="row.is_parent_entry"
+                      :aria-label="row.is_parent_entry ? 'Parent directory cannot be selected' : 'Select ' + row.name"
                       @change="toggleRemoteSelection(row)"
                   />
                 </div>
                 <span class="remote-mobile-file-icon" aria-hidden="true">
-                  {{ row.is_parent_entry ? '↰' : (row.is_dir ? '📁' : '📄') }}
+                  {{ row.is_dir ? '📁' : '📄' }}
                 </span>
                 <div class="remote-mobile-file-row-main">
                   <div class="remote-mobile-file-row-name">
                     {{ row.is_parent_entry ? '..' : row.name }}
                   </div>
                   <div class="remote-mobile-file-row-meta">
-                    {{ row.is_dir ? '—' : formatBytes(row.size) }} · {{ row.is_parent_entry ? 'Parent directory' : (row.modified_at || '-') }}
+                    {{ row.is_dir ? '-' : formatBytes(row.size) }} · {{ row.is_parent_entry ? 'Parent directory' : (row.modified_at || '-') }}
                   </div>
                 </div>
                 <div class="remote-mobile-file-row-actions" @click.stop>
@@ -719,6 +779,57 @@
           </div>
         </div>
       </div>
+
+      <div class="remote-mobile-pagination" aria-label="Remote file pagination">
+        <div class="remote-mobile-pagination-meta">
+          <span class="remote-mobile-total-count">{{ remoteFilesTotal }} items</span>
+          <el-dropdown trigger="click" popper-class="remote-mobile-page-size-popper" @command="handleRemotePageSizeChange">
+            <button type="button" class="remote-mobile-page-size-button" aria-label="Items per page">
+              {{ remoteFilesPageSize }}/page
+            </button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item
+                    v-for="size in remoteFilesPageSizeOptions"
+                    :key="`mobile-page-size-${size}`"
+                    :command="size"
+                >
+                  {{ size }} per page
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+        </div>
+
+        <nav class="remote-mobile-page-controls" aria-label="Pages">
+          <button
+              type="button"
+              class="remote-mobile-page-button remote-mobile-page-arrow"
+              aria-label="Previous page"
+              :disabled="remoteFilesPage <= 1"
+              @click="handleRemotePageChange(remoteFilesPage - 1)"
+          >‹</button>
+          <template v-for="item in remoteMobilePageItems" :key="item.key">
+            <span v-if="item.type === 'ellipsis'" class="remote-mobile-page-ellipsis" aria-hidden="true">…</span>
+            <button
+                v-else
+                type="button"
+                class="remote-mobile-page-button"
+                :class="{ active: item.page === remoteFilesPage }"
+                :aria-current="item.page === remoteFilesPage ? 'page' : undefined"
+                :aria-label="`Page ${item.page}`"
+                @click="handleRemotePageChange(item.page)"
+            >{{ item.page }}</button>
+          </template>
+          <button
+              type="button"
+              class="remote-mobile-page-button remote-mobile-page-arrow"
+              aria-label="Next page"
+              :disabled="remoteFilesPage >= remoteFilesTotalPages"
+              @click="handleRemotePageChange(remoteFilesPage + 1)"
+          >›</button>
+        </nav>
+      </div>
     </div>
   </el-dialog>
 
@@ -738,6 +849,7 @@
 
 <script>
 import {ElMessage, ElMessageBox} from 'element-plus'
+import { MoreFilled } from '@element-plus/icons-vue'
 import RemotePinsDialog from './RemotePinsDialog.vue'
 import RemoteZipPeekDialog from './RemoteZipPeekDialog.vue'
 import { formatBytes as formatBytesValue } from '../utils/formatters.js'
@@ -750,6 +862,7 @@ export default {
   components: {
     RemotePinsDialog,
     RemoteZipPeekDialog,
+    MoreFilled,
   },
 
   props: {
@@ -809,7 +922,6 @@ export default {
       remoteClipboardMode: '',
       remoteClipboardSourcePath: '',
 
-      remoteMobilePanelCollapsed: true,
       remoteMobileViewMode: 'card',
     }
   },
@@ -898,6 +1010,26 @@ export default {
 
     hasPinnedQuickJumps() {
       return Array.isArray(this.remotePinnedJumpItems) && this.remotePinnedJumpItems.length > 0
+    },
+
+    remoteMobilePageItems() {
+      const total = Math.max(1, Number(this.remoteFilesTotalPages) || 1)
+      const current = Math.min(total, Math.max(1, Number(this.remoteFilesPage) || 1))
+      let pages
+
+      if (total <= 5) {
+        pages = Array.from({ length: total }, (_, index) => index + 1)
+      } else if (current <= 4) {
+        pages = [1, 2, 3, 4, 'ellipsis', total]
+      } else if (current >= total - 3) {
+        pages = [1, 'ellipsis', total - 3, total - 2, total - 1, total]
+      } else {
+        pages = [1, 'ellipsis', current - 1, current, current + 1, 'ellipsis', total]
+      }
+
+      return pages.map((page, index) => page === 'ellipsis'
+        ? { type: 'ellipsis', key: `ellipsis-${index}` }
+        : { type: 'page', page, key: `page-${page}` })
     },
 
     currentPinnedQuickJumpItem() {
@@ -1054,10 +1186,6 @@ export default {
       if (table && typeof table.clearSelection === 'function') {
         table.clearSelection()
       }
-    },
-
-    toggleRemoteMobilePanel() {
-      this.remoteMobilePanelCollapsed = !this.remoteMobilePanelCollapsed
     },
 
     triggerRemoteUpload() {
@@ -1498,6 +1626,37 @@ export default {
         if (!this.isRemoteFilesContextActive(context)) return
         ElMessage.error(e.message || 'Paste failed')
       }
+    },
+
+    handleRemoteMobileToolsCommand(command) {
+      if (command && typeof command === 'object') {
+        return this.jumpToPath(command)
+      }
+
+      if (['root', 'home', 'desktop', 'documents', 'downloads', 'temp', 'executable', 'input_navigate'].includes(command)) {
+        return this.jumpToPath(command)
+      }
+
+      if (command === 'refresh') return this.refreshRemoteDirectory()
+      if (command === 'up') return this.goToRemoteParent()
+      if (command === 'new_folder') return this.createRemoteDirectory()
+      if (command === 'upload') return this.triggerRemoteUpload()
+      if (command === 'download_selected') return this.downloadSelectedRemoteEntries()
+      if (command === 'delete_selected') return this.deleteSelectedRemoteEntries()
+      if (command === 'view_card') {
+        this.remoteMobileViewMode = 'card'
+        return
+      }
+      if (command === 'view_list') {
+        this.remoteMobileViewMode = 'list'
+        return
+      }
+      if (command === 'toggle_recursive') {
+        this.remoteSearchRecursive = !this.remoteSearchRecursive
+        return this.handleRemoteSearchRecursiveChange()
+      }
+
+      return this.handleRemoteToolbarMoreCommand(command)
     },
 
     handleRemoteToolbarMoreCommand(command) {
@@ -2450,7 +2609,6 @@ export default {
       this.remotePinnedJumpItems = []
       this.remotePinnedJumpLoading = false
       this.pinManagerVisible = false
-      this.remoteMobilePanelCollapsed = false
       this.clearRemoteClipboard()
       this.clearTableSelection()
     },
@@ -2526,12 +2684,15 @@ export default {
   font-size: 13px;
 }
 
-.remote-mobile-panel-toggle {
+.remote-mobile-tools-dropdown,
+.remote-mobile-search-row,
+.remote-mobile-pagination {
   display: none;
 }
 
-.remote-mobile-header-controls {
-  display: none;
+.remote-mobile-breadcrumb-row {
+  width: 100%;
+  min-width: 0;
 }
 
 .remote-files-toolbar {
@@ -2950,36 +3111,177 @@ export default {
     text-align: left;
   }
 
-  .remote-mobile-panel-toggle {
-    display: inline-flex;
-    align-self: flex-start;
-    width: auto;
-    margin: 0;
-  }
-
-  .remote-mobile-header-controls {
+  .remote-mobile-breadcrumb-row {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 8px;
+    gap: 6px;
     width: 100%;
     min-width: 0;
   }
 
-  .remote-mobile-view-switch {
+  .remote-mobile-breadcrumb-row .remote-breadcrumb-bar {
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 0;
+  }
+
+  .remote-mobile-tools-dropdown {
+    display: inline-flex;
     flex: 0 0 auto;
+    align-items: center;
   }
 
-  .remote-mobile-view-switch :deep(.el-radio-button__inner) {
-    padding: 7px 10px;
+  .remote-mobile-tools-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--surface, #fff);
+    color: var(--text);
+    font-size: 19px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
   }
 
-  .remote-mobile-panel-collapsed .remote-files-toolbar {
+  .remote-mobile-tools-button:active {
+    background: rgba(148, 163, 184, 0.14);
+  }
+
+  .remote-mobile-search-row {
+    display: flex;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .remote-mobile-search-input {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .remote-mobile-search-input :deep(.el-input__wrapper) {
+    min-height: 36px;
+    border-radius: 11px;
+  }
+
+  .remote-files-toolbar {
+    display: none !important;
+  }
+
+  :deep(.dialog-pagination-wrap) {
+    display: none !important;
+  }
+
+  .remote-mobile-pagination {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: space-between;
+    gap: 5px;
+    width: 100%;
+    min-width: 0;
+    padding: 7px 0 max(6px, env(safe-area-inset-bottom));
+    border-top: 1px solid var(--line);
+    background: var(--surface, #fff);
+  }
+
+  .remote-mobile-pagination-meta {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex: 0 1 auto;
+    min-width: 0;
+    color: var(--muted-2);
+    font-size: 10px;
+    white-space: nowrap;
+  }
+
+  .remote-mobile-total-count {
+    overflow: hidden;
+    max-width: 68px;
+    text-overflow: ellipsis;
+  }
+
+  .remote-mobile-page-size-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 27px;
+    padding: 0 3px;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--muted);
+    font: inherit;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .remote-mobile-page-controls {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 1px;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .remote-mobile-page-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 25px;
+    width: 25px;
+    height: 28px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--text);
+    font-size: 11px;
+    line-height: 1;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .remote-mobile-page-button.active {
+    border-color: var(--line);
+    background: var(--surface-elevated, rgba(148, 163, 184, 0.14));
+    color: var(--text);
+    font-weight: 700;
+  }
+
+  .remote-mobile-page-button:disabled {
+    opacity: 0.32;
+    cursor: default;
+  }
+
+  .remote-mobile-page-ellipsis {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 12px;
+    width: 12px;
+    color: var(--muted-2);
+    font-size: 10px;
+  }
+}
+
+@media (max-width: 380px) {
+  .remote-mobile-total-count {
     display: none;
   }
 
-  .remote-mobile-panel-collapsed :deep(.dialog-pagination-wrap) {
-    display: none !important;
+  .remote-mobile-pagination {
+    gap: 3px;
+  }
+
+  .remote-mobile-page-button {
+    flex-basis: 23px;
+    width: 23px;
   }
 }
 
@@ -3035,6 +3337,19 @@ export default {
 
 
 <style>
+.remote-mobile-tools-popper .el-dropdown-menu {
+  max-height: 72vh;
+  max-height: min(72dvh, 620px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.remote-mobile-page-size-popper .el-dropdown-menu {
+  max-height: 40vh;
+  max-height: 40dvh;
+  overflow-y: auto;
+}
+
 /* RemoteFilesDialog: 强制固定弹窗高度，禁止被内容撑开 */
 .remote-files-overlay .el-overlay-dialog {
   overflow: hidden !important;

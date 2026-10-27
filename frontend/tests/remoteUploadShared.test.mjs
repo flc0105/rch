@@ -103,7 +103,7 @@ function component(fileName) {
   let events = []
   const sandbox = {
     ElMessage: {warning() {}, error(e) {throw Error(e)}, success() {}},
-    ElMessageBox: {}, RemotePinsDialog: {}, RemoteZipPeekDialog: {},
+    ElMessageBox: {}, RemotePinsDialog: {}, RemoteZipPeekDialog: {}, MoreFilled: {},
     formatBytesValue: (x) => x,
     uploadRemoteFileToClient: async (args) => {
       called.push(args)

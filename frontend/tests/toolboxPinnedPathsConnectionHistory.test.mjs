@@ -89,7 +89,7 @@ test('existing Remote Files pins manager can open directly from Toolbox, includi
   const ready = deferred()
   const requests = []
   const p = options('../src/components/RemoteFilesDialog.vue', {
-    RemotePinsDialog: {}, RemoteZipPeekDialog: {}, formatBytesValue() {},
+    RemotePinsDialog: {}, RemoteZipPeekDialog: {}, MoreFilled: {}, formatBytesValue() {},
     ElMessage: { warning: value => { throw Error(value) } }, ElMessageBox: {},
     fetch: async url => { requests.push(url); await ready.promise; return ok({ items: [{ display_name: 'Documents', path: '/Documents' }] }) },
   })
