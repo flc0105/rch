@@ -156,8 +156,13 @@ export default {
 
 @media (max-width: 960px) {
   .terminal-connection-context {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
     gap: 5px;
     padding: 7px 0 0;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
   }
 
   .terminal-connection-context-tag {

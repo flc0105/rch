@@ -144,3 +144,18 @@ test('Terminal Connection Context hides itself when no fields are selected and p
     ['pid', '9'], ['status', 'online'],
   ])
 })
+
+test('mobile layout keeps the dashboard within the viewport and confines context overflow to its tag row', () => {
+  const appCss = read('../public/app.css')
+  const contextVue = read('../src/components/TerminalConnectionContext.vue')
+  const infoCardsVue = read('../src/components/ConnectionInfoCards.vue')
+
+  assert.match(appCss, /@media \(max-width: 960px\) \{[\s\S]*?\.content\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/)
+  assert.match(appCss, /\.main\.panel,[\s\S]*?\.command-row\s*\{[^}]*width:\s*100%;[^}]*max-width:\s*100%;[^}]*min-width:\s*0;/)
+  assert.match(infoCardsVue, /@media \(max-width: 960px\) \{\s*\.info-grid\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/)
+
+  const mobileContextStyles = contextVue.match(/@media \(max-width: 960px\) \{([\s\S]*?)\n\}/)?.[1] || ''
+  assert.match(mobileContextStyles, /\.terminal-connection-context\s*\{[^}]*width:\s*100%;[^}]*max-width:\s*100%;[^}]*min-width:\s*0;[^}]*overflow-x:\s*auto;/)
+  assert.match(mobileContextStyles, /overscroll-behavior-x:\s*contain;/)
+})
+

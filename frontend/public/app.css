@@ -1054,6 +1054,8 @@ body {
   }
 
   #app {
+    width: 100%;
+    max-width: 100vw;
     height: 100vh;
     height: 100dvh;
     overflow-x: hidden;
@@ -1062,6 +1064,9 @@ body {
   }
 
   .app {
+    width: 100%;
+    max-width: 100vw;
+    min-width: 0;
     height: auto;
     min-height: 100%;
     overflow: visible;
@@ -1069,9 +1074,25 @@ body {
   }
 
   .content {
-    grid-template-columns: 1fr;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr);
     min-height: auto;
     overflow: visible;
+  }
+
+  .main.panel,
+  .main,
+  .main-body,
+  .connection-info-shell,
+  .terminal-panel,
+  .terminal-frame,
+  .terminal-topbar,
+  .command-row {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
   }
 
   .main.panel,
