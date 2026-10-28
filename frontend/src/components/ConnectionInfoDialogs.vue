@@ -50,6 +50,16 @@
           class="connection-info-tab-pane"
         >
           <div class="connection-info-tab-scroll monitor-dashboard-scroll">
+            <IosDashboardPanel
+              v-if="currentConnection?.os_alias === 'ios'"
+              :data="monitorChannels.ios_dashboard || {}"
+              :hostname="currentConnection?.hostname || ''"
+              :status="monitorStatus"
+              :error="monitorError"
+              :updated-text="monitorUpdatedText"
+              :interval-ms="monitorIntervalMs"
+            />
+            <template v-else>
             <div class="monitor-dashboard-head">
               <div>
                 <div class="monitor-dashboard-title">Device Dashboard</div>
@@ -235,6 +245,7 @@
                 {{ monitorStatus === 'opening' ? 'Waiting for storage data…' : 'No volumes available' }}
               </div>
             </div>
+            </template>
           </div>
         </el-tab-pane>
 
@@ -527,11 +538,12 @@ import { formatBytesHuman, formatDateTimeStandard as formatDateTimeStandardValue
 import { formatConnectionLastSeen as formatConnectionLastSeenValue, formatConnectionRtt as formatConnectionRttValue, formatConnectionStatus as formatConnectionStatusValue, getConnectionDisplayState as getConnectionDisplayStateValue } from '../utils/connectionInfoFormatting.js'
 import { ElMessage } from 'element-plus'
 import WatchdogInfoPanel from './WatchdogInfoPanel.vue'
+import IosDashboardPanel from './IosDashboardPanel.vue'
 
 export default {
   name: 'ConnectionInfoDialogs',
   emits: ['open-processes', 'open-log-viewer'],
-  components: { WatchdogInfoPanel },
+  components: { WatchdogInfoPanel, IosDashboardPanel },
 
   props: {
     selectedId: {
@@ -580,6 +592,7 @@ export default {
       runtimeConfigSaving: false,
       monitorSessionId: '',
       monitorStatus: 'idle',
+      monitorIntervalMs: 5000,
       monitorError: '',
       monitorLastUpdatedAt: 0,
       monitorStarting: false,
@@ -588,6 +601,7 @@ export default {
         storage: { volumes: [] },
         network: {},
         battery: { available: false },
+        ios_dashboard: {},
       },
     }
   },
@@ -849,6 +863,7 @@ export default {
         storage: { volumes: [] },
         network: {},
         battery: { available: false },
+        ios_dashboard: {},
       }
     },
 
@@ -865,6 +880,7 @@ export default {
         storage: { volumes: [] },
         network: {},
         battery: { available: false },
+        ios_dashboard: {},
       }
 
       try {
@@ -877,7 +893,8 @@ export default {
             method: 'POST',
             headers,
             body: JSON.stringify({
-              channels: ['system', 'storage', 'network', 'battery'],
+              channels: this.currentConnection?.os_alias === 'ios'
+                ? ['ios_dashboard'] : ['system', 'storage', 'network', 'battery'],
             }),
           },
         )
@@ -892,6 +909,9 @@ export default {
         }
 
         this.monitorSessionId = sessionId
+        const intervalSeconds = Number(json.data?.intervals?.ios_dashboard)
+        this.monitorIntervalMs = Number.isFinite(intervalSeconds) && intervalSeconds > 0
+          ? intervalSeconds * 1000 : 5000
         this.monitorStatus = String(json.data?.status || 'opening')
 
         if (!this.infoVisible || this.activeTab !== 'dashboard') {
@@ -934,7 +954,9 @@ export default {
       if (String(payload.client_id || '') !== String(this.selectedId || '')) return
 
       const channel = String(payload.channel || '').trim().toLowerCase()
-      if (!['system', 'storage', 'network', 'battery'].includes(channel)) return
+      const allowedChannels = this.currentConnection?.os_alias === 'ios'
+        ? ['ios_dashboard'] : ['system', 'storage', 'network', 'battery']
+      if (!allowedChannels.includes(channel)) return
 
       this.monitorChannels = {
         ...this.monitorChannels,

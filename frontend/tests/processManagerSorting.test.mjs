@@ -54,7 +54,7 @@ test('Dashboard waits for Info dialog to close before emitting Process Manager n
   assert.ok(script)
   const code = script.split('\n').filter(line => !/^import /.test(line)).join('\n')
     .replace('export default {', 'const component = {') + '\nglobalThis.component = component'
-  const context = { WatchdogInfoPanel: {}, ElMessage: {}, formatBytesHuman() {}, formatDateTimeStandardValue() {} }
+  const context = { WatchdogInfoPanel: {}, IosDashboardPanel: {}, ElMessage: {}, formatBytesHuman() {}, formatDateTimeStandardValue() {} }
   vm.runInNewContext(code, context, { timeout: 1000 })
   const events = []
   const dialog = {

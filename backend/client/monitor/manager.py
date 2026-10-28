@@ -143,7 +143,7 @@ class DeviceMonitorManager:
                 return psutil
 
             # A log-only session works without psutil (including Pythonista).
-            if any(channel != 'log_file' for channel in item.get('channels') or ()):
+            if any(channel not in ('log_file', 'ios_dashboard') for channel in item.get('channels') or ()):
                 ensure_psutil()
 
             self._send({
@@ -159,6 +159,7 @@ class DeviceMonitorManager:
                 if channel in (
                     'storage',
                     'battery',
+                    'ios_dashboard',
                     'processes',
                     'apps',
                     'process_detail',
@@ -183,7 +184,7 @@ class DeviceMonitorManager:
 
                     # A live channel switch may enable system metrics after log-only start.
                     data = self._collect_channel(
-                        channel, None if channel == 'log_file' else ensure_psutil(), item
+                        channel, None if channel in ('log_file', 'ios_dashboard') else ensure_psutil(), item
                     )
 
                     # File logs are deltas, not snapshots: do not flood SSE while idle.
@@ -261,6 +262,11 @@ class DeviceMonitorManager:
             return self._collect_process_open_files(psutil, item)
         if channel == 'log_file':
             return self._collect_log_file(item)
+        if channel == 'ios_dashboard':
+            if self._os_alias != 'ios':
+                raise ValueError('iOS dashboard is only available on iOS clients')
+            from client.monitor.ios_dashboard import collect_ios_dashboard
+            return collect_ios_dashboard()
         return {}
 
     def _collect_log_file(self, item: dict):

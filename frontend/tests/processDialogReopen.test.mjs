@@ -65,7 +65,7 @@ test('Process Manager: close releases current monitor, direct reopen and Dashboa
 
   // The Dashboard sends navigation only after its own dialog has closed.
   const infoComponent = loadVueOptions('../src/components/ConnectionInfoDialogs.vue', {
-    ElMessage: {}, WatchdogInfoPanel: {}, formatBytesHuman() {}, formatDateTimeStandardValue() {},
+    ElMessage: {}, WatchdogInfoPanel: {}, IosDashboardPanel: {}, formatBytesHuman() {}, formatDateTimeStandardValue() {},
   })
   assert.match(infoComponent.source, /@closed="handleInfoDialogClosed"/)
   const info = {

@@ -43,7 +43,7 @@ RCH 为 iOS 选择独立的平台能力实现，但保留 Server / Client 的统
 
 在 iOS 实机使用反馈中，RCH 的 **Command、Job、Script 已有大量可正常运行的场景**。这些能力分别沿着以下执行路径工作：
 
-- **Command** 可以分派到 RCH 内置的跨平台或 iOS 专用操作，它们可以直接调用 Python 库、Socket 或 iOS API；但未匹配到内置操作后若转成系统 Shell 执行，就会碰到 iOS 的进程限制。Web Terminal 会按命令路由选择实际执行路径。
+- **Command** 可以分派到 RCH 内置的跨平台或 iOS 专用操作，它们可以直接调用 Python 库、Socket 或 iOS API；未匹配的系统 Shell 回退会明确返回不支持，Web Terminal 继续执行已注册的 iOS 命令和脚本。
 - **Python Script** 可以在当前解释器内运行，使用标准库和已有第三方包处理数据、文件及网络。若脚本自身再要求运行系统可执行文件，仍会受 iOS 限制；执行模式切换到“子进程”不会解除该限制。
 - **Background Job** 有基于线程的进程内运行路径，能够执行不依赖新进程的任务，并上报状态和输出。另一类需要独立子进程的运行方式不适用于普通 Pythonista。进程内任务的停止通常要依靠协作机制，不能指望像桌面子进程一样强制终止，同时其生命周期仍受宿主 App 控制。
 
@@ -53,11 +53,19 @@ RCH 为 iOS 选择独立的平台能力实现，但保留 Server / Client 的统
 
 RCH 的浏览器终端按 Client 平台分派命令。iOS Client **不支持交互式 PTY 会话**；普通 RCH Command 和进程内 Python Script 沿各自的 Python 执行路径运行。
 
+`getinfo`、`uptime` 属于 `system` 命令分组；`uptime` 读取 iOS 的系统启动时间和运行时长。iOS 平台命令使用下划线命名：`clear_console`、`keep_awake`、`kill_app`、`open_in`、`quick_look`、`pick_upload`、`get_location`、`list_contacts`。`getinfo` 等其他命令沿用既有名称。iOS 不注册 `mkdir`、`rm`、`rmdir`、`acmd ps` 或 `acmd kill`，也不展示系统 Shell/子进程、`bgrun`、`is_elevated`、`piplist`、`keyboard_send`、`userenum`、`spawn_instance`、`relaunch_instance`、`reexec_instance` 等桌面专用入口；远程文件操作、脚本和 Job 继续走各自通道。
+
 Pythonista 提供文本、图片剪贴板接口，实际能力由模块和系统授权决定；RCH 的 **iOS 文件剪贴板暂不支持**。文件读写可使用沙盒路径，文件传输使用 RCH 通道，系统文件选择器负责获得其他授权位置的文件，参见 [Clipboard](clipboard.md) 与 [File Transfer](file_transfer.md)。
 
 屏幕、进程监测、系统级自恢复和外部程序运行等功能具有更强的平台依赖。它们可能要求 iOS 不提供的系统 API、进程权限、持久后台执行或原生可执行文件；应按当前设备实际返回的能力和错误判断，不宜照搬桌面端的功能预期。参见 [Device Monitor](device_monitor.md)、[Process Watchdog](process_watchdog.md)。
 
 在 iOS / Pythonista 上，`external_tool` 和 `process_monitor` 默认关闭，Web 不显示相应工具入口；Log Viewer 的日志读取无需 `psutil`。有效 `feature_manifest.watchdog=false`；Client 不加载 Watchdog 实现。`set` 中三个 Watchdog 开关的值可以保留，运行时不会启用相应监督进程。Web Watchdog 面板保留 HTTP Control 三个操作入口并显示功能不可用的原因。
+
+## iOS Dashboard
+
+Connection Info → Dashboard 在 iOS 上使用独立的 Pythonista 采样视图。打开页面后每 5 秒读取电池、低电量模式、温控状态、屏幕亮度、iOS Data Volume 的重要用途可用容量与总容量、设备运行时长、网络接口、音频输出及当前音量，并显示 CPU 核心数。系统内存使用率来自 Mach VM 计数器：占用量为 `total - (free + inactive)`，支持与桌面 Dashboard 相似的使用率进度条，同时显示 Pythonista 进程驻留内存。照片、歌曲、联系人分别仅统计授权可访问的数量，并每 120 秒刷新缓存；无权限或采集失败显示 `—`，不影响其他指标。采样通过 `objc_util` 和标准库完成，不需要 `psutil`。采集失败或权限不可用的单项信息显示为空值。
+
+Dashboard 使用现有 Monitor Session 协议；其他平台继续显示原来的桌面 Dashboard。iOS 的 Log Viewer 仍然使用独立的 `log_file` Channel 读取客户端可访问的日志文件。
 
 ## 沙盒存储、网络与系统权限
 

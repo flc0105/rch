@@ -2,6 +2,8 @@ import json
 import os
 import platform
 import sys
+import time
+from datetime import datetime
 
 from client.commands.platform.utils.ios_util import (
     _safe_call,
@@ -87,6 +89,19 @@ class iOSSystemService:
         except Exception as e:
             logger.error(e, exc_info=True)
             return 0, f'Failed to get system info: {e}'
+
+    def get_uptime(self):
+        try:
+            from objc_util import ObjCClass
+
+            seconds = max(0, float(ObjCClass('NSProcessInfo').processInfo().systemUptime()))
+            boot_time = datetime.fromtimestamp(time.time() - seconds)
+            days = int(seconds // 86400)
+            hours = int((seconds % 86400) // 3600)
+            minutes = int((seconds % 3600) // 60)
+            return 1, f"Boot time: {boot_time:%Y-%m-%d %H:%M:%S}\nUptime: {days}d {hours}h {minutes}m"
+        except Exception as e:
+            return 0, f'Failed to get system uptime: {e}'
 
     def list_contacts(self):
         try:

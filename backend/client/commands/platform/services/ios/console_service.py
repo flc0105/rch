@@ -54,7 +54,7 @@ class iOSConsoleService:
 
             target = os.path.expanduser((path or '').strip())
             if not target:
-                return 0, 'Usage: quicklook <path>'
+                return 0, 'Usage: quick_look <path>'
             if not os.path.exists(target):
                 return 0, f'Path not found: {target}'
 
@@ -69,7 +69,7 @@ class iOSConsoleService:
 
             target = os.path.expanduser((path or '').strip())
             if not target:
-                return 0, 'Usage: openin <path>'
+                return 0, 'Usage: open_in <path>'
             if not os.path.exists(target):
                 return 0, f'Path not found: {target}'
 
@@ -175,7 +175,7 @@ class iOSConsoleService:
         except Exception as e:
             return 0, f'Failed to pick/upload: {e}'
 
-    def keepawake(self, arg):
+    def keep_awake(self, arg):
         import console
         if arg == 'on':
             console.set_idle_timer_disabled(True)
@@ -183,9 +183,9 @@ class iOSConsoleService:
         if arg == 'off':
             console.set_idle_timer_disabled(False)
             return 1, 'Screen sleep restored'
-        return 0, 'keepawake [on/off]'
+        return 0, 'keep_awake [on/off]'
 
-    def killapp(self):
+    def kill_app(self):
         import os
         import time
         time.sleep(0.2)

@@ -11,17 +11,28 @@
     <div class="log-viewer-body">
       <div class="log-viewer-toolbar">
         <div class="log-viewer-file-row">
-          <el-button size="small" plain :disabled="!activeClientId" @click="pickerVisible = true">Browse</el-button>
           <code class="log-viewer-path" :title="path">{{ path || 'Choose a remote log file' }}</code>
         </div>
         <div class="log-viewer-actions-row">
-          <el-switch v-model="streaming" size="small" active-text="Streaming" @change="onStreamingChange" />
-          <el-button size="small" :disabled="!path || loading" :loading="loading" @click="refresh">Refresh</el-button>
-          <el-button size="small" @click="clearView">Clear View</el-button>
-          <el-button size="small" @click="copyLogs">Copy</el-button>
-          <el-checkbox v-model="follow">Follow</el-checkbox>
-          <el-checkbox v-model="wrap">Wrap</el-checkbox>
-          <el-input v-model="search" size="small" clearable class="log-viewer-search" placeholder="Find in loaded log..." />
+          <div class="log-viewer-toggles">
+            <el-switch v-model="streaming" size="small" active-text="Streaming" @change="onStreamingChange" />
+            <el-switch v-model="follow" size="small" active-text="Follow" />
+            <el-switch v-model="wrap" size="small" active-text="Wrap" />
+          </div>
+          <div class="log-viewer-tools">
+            <el-button size="small" plain :disabled="!activeClientId" @click="pickerVisible = true">Browse</el-button>
+            <el-input v-model="search" size="small" clearable class="log-viewer-search" placeholder="Find in loaded log..." />
+            <el-dropdown trigger="click" @command="onMoreCommand">
+              <el-button size="small" plain aria-label="Log actions">More</el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="refresh" :disabled="!path || loading">Refresh</el-dropdown-item>
+                  <el-dropdown-item command="clear">Clear View</el-dropdown-item>
+                  <el-dropdown-item command="copy">Copy</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+          </div>
         </div>
       </div>
       <div v-if="error" class="log-viewer-error">{{ error }}</div>
@@ -222,6 +233,11 @@ export default {
       }
       this.refresh()
     },
+    onMoreCommand(command) {
+      if (command === 'refresh') return this.refresh()
+      if (command === 'clear') return this.clearView()
+      if (command === 'copy') return this.copyLogs()
+    },
     clearView() {
       this.content = ''
     },
@@ -293,14 +309,16 @@ export default {
 
 <style scoped>
 .log-viewer-body { display: flex; flex-direction: column; gap: 8px; min-height: 0; height: min(70vh, 700px); }
-.log-viewer-toolbar { display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 2px 0 6px; }
-.log-viewer-file-row, .log-viewer-actions-row { display: flex; align-items: center; gap: 9px; min-width: 0; }
-.log-viewer-actions-row { overflow-x: auto; }
+.log-viewer-toolbar { display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 2px 0 6px; }
+.log-viewer-file-row { display: flex; align-items: center; min-width: 0; }
+.log-viewer-actions-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; }
+.log-viewer-toggles, .log-viewer-tools { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.log-viewer-toggles { flex: 0 0 auto; }
+.log-viewer-tools { flex: 1 1 auto; justify-content: flex-end; gap: 9px; }
 .log-viewer-toolbar :deep(.el-button + .el-button) { margin-left: 0; }
-.log-viewer-toolbar :deep(.el-checkbox) { margin-right: 0; flex: 0 0 auto; }
 .log-viewer-toolbar :deep(.el-switch), .log-viewer-toolbar :deep(.el-button) { flex-shrink: 0; }
-.log-viewer-path { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
-.log-viewer-search { flex: 0 0 160px; width: 160px; margin-left: auto; }
+.log-viewer-path { display: block; max-width: 92%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.log-viewer-search { flex: 0 1 210px; width: 210px; min-width: 100px; }
 .log-viewer-error { font-size: 12px; color: var(--el-color-danger); }
 .log-viewer-output { flex: 1; min-height: 130px; overflow: auto; border: 1px solid var(--el-border-color); border-radius: 7px; background: var(--el-fill-color-light); color: var(--el-text-color-primary); font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 .log-viewer-line { display: flex; width: max-content; min-width: 100%; }
@@ -310,4 +328,27 @@ export default {
 .log-viewer-wrap .log-viewer-line-text { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .log-viewer-placeholder { padding: 12px; color: var(--el-text-color-secondary); }
 .log-viewer-status { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; color: var(--el-text-color-secondary); font-size: 11px; }
+@media (max-width: 780px) {
+  .log-viewer-actions-row { flex-direction: column; align-items: stretch; gap: 10px; }
+  .log-viewer-toggles { flex-wrap: wrap; gap: 8px 16px; }
+  .log-viewer-tools { width: 100%; justify-content: flex-start; }
+  .log-viewer-search { flex: 1 1 auto; width: auto; }
+}
+@media (max-width: 460px) {
+  .log-viewer-body { height: min(72dvh, 700px); }
+  .log-viewer-toggles { justify-content: space-between; }
+  .log-viewer-tools { flex-wrap: wrap; }
+  .log-viewer-tools .log-viewer-search { order: 3; flex: 1 0 100%; }
+  .log-viewer-line-number { flex-basis: 42px; padding-right: 6px; }
+  .log-viewer-line-text { padding-left: 7px; }
+}
+</style>
+
+<style>
+.log-viewer-dialog.el-dialog { width: min(960px, calc(100vw - 24px)) !important; }
+@media (max-width: 460px) {
+  .log-viewer-dialog.el-dialog { margin-top: 2vh !important; }
+  .log-viewer-dialog .el-dialog__body { padding: 12px !important; }
+  .log-viewer-dialog .el-dialog__header { margin-right: 0; padding: 14px 16px 6px; }
+}
 </style>

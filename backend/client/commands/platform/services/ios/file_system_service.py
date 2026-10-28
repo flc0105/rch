@@ -1,7 +1,6 @@
 import hashlib
 import os
 import re
-import shutil
 import urllib.request
 
 
@@ -53,49 +52,6 @@ class iOSFileSystemService:
             return 1, f'File touched: {target}'
         except Exception as e:
             return 0, f'touch failed: {e}'
-
-    def mkdir(self, path):
-        try:
-            target = self.expand_path(path, default='')
-            if not target:
-                return 0, 'Usage: mkdir <path>'
-
-            os.makedirs(target, exist_ok=True)
-            return 1, f'Directory created: {target}'
-        except Exception as e:
-            return 0, f'mkdir failed: {e}'
-
-    def rm(self, path):
-        try:
-            target = self.expand_path(path, default='')
-            if not target:
-                return 0, 'Usage: rm <file>'
-
-            if not os.path.exists(target):
-                return 0, f'Path not found: {target}'
-            if os.path.isdir(target):
-                return 0, f'Is a directory: {target}'
-
-            os.remove(target)
-            return 1, f'File removed: {target}'
-        except Exception as e:
-            return 0, f'rm failed: {e}'
-
-    def rmdir(self, path):
-        try:
-            target = self.expand_path(path, default='')
-            if not target:
-                return 0, 'Usage: rmdir <dir>'
-
-            if not os.path.exists(target):
-                return 0, f'Path not found: {target}'
-            if not os.path.isdir(target):
-                return 0, f'Not a directory: {target}'
-
-            shutil.rmtree(target)
-            return 1, f'Directory removed: {target}'
-        except Exception as e:
-            return 0, f'rmdir failed: {e}'
 
     def cat(self, path):
         try:

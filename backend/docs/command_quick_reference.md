@@ -176,21 +176,20 @@ iOS 的 RCH Client 专门实现了一组可在 Pythonista 中通过 Python / iOS
 | 命令 | 作用 |
 |---|---|
 | `ls` / `cat` | 列出目录 / 读取文本文件 |
-| `touch` / `mkdir` | 创建文件 / 目录 |
-| `rm` / `rmdir` | 删除文件 / 递归删除目录；操作范围受 Pythonista 沙盒和文件权限约束 |
+| `touch` | 创建空文件 |
 | `echo` / `printenv` | 输出文本或环境变量 / 查看环境变量 |
-| `whoami` / `getinfo` | 查看当前身份 / iOS 设备信息 |
+| `whoami` / `getinfo` / `uptime` | 查看当前身份 / iOS 设备信息 / 系统运行时间 |
 | `md5sum` | 计算文件 MD5（用于文件比对，不适合作为安全校验） |
 | `clipboard_read` / `clipboard_write` | 读取 / 写入文本剪贴板 |
-| `openurl` / `openin` | 打开 URL / 将文件交给其他 App |
-| `quicklook` / `pickupload` | 预览文件 / 选取照片或文件并上传 |
-| `getlocation` / `listcontacts` | 读取获授权的定位 / 联系人信息 |
+| `openurl` / `open_in` | 打开 URL / 将文件交给其他 App |
+| `quick_look` / `pick_upload` | 预览文件 / 选取照片或文件并上传 |
+| `get_location` / `list_contacts` | 读取获授权的定位 / 联系人信息 |
 | `speak` | 使用设备语音合成朗读文本 |
-| `keepawake` | 请求保持屏幕唤醒；不保证 App 长期后台运行 |
-| `clearconsole` | 清理 Pythonista 控制台输出 |
-| `killapp` | 请求结束当前 App / Client；会中断连接 |
+| `keep_awake` | 请求保持屏幕唤醒；不保证 App 长期后台运行 |
+| `clear_console` | 清理 Pythonista 控制台输出 |
+| `kill_app` | 请求结束当前 App / Client；会中断连接 |
 
-这些是 **RCH 在 iOS 上的内置命令**，通过 Python 与受授权的平台接口执行。部分操作需要设备端用户授权或在前台使用。详情见 [iOS / Pythonista](ios_pythonista.md)。
+这些是 **RCH 在 iOS 上的内置命令**，通过 Python 与受授权的平台接口执行。iOS 不注册 `acmd ps` / `acmd kill`，也不提供系统 Shell、后台子进程、用户枚举、提权检查和软件包枚举命令。部分操作需要设备端用户授权或在前台使用。详情见 [iOS / Pythonista](ios_pythonista.md)。
 
 ## 5. ACMD：有参数定义的 Client 命令
 
@@ -202,8 +201,7 @@ ACMD 统一使用 `acmd <name> ...` 前缀，使用独立的命令注册表、�
 |---|---|---|
 | **Windows / macOS / Linux** | `acmd ps` | 按 PID、名称、端口查看进程，部分形式支持 JSON 结果 |
 | **Windows / macOS / Linux** | `acmd netstat` | 查看 TCP / UDP 连接，可按端口筛选 |
-| **iOS** | `acmd ps` | 使用当前平台允许的进程信息能力查询 |
-| **通用（四个平台）** | `acmd kill` | 按 PID、名称或端口选择并终止进程；可先显示预览和确认，具体能力受权限限制 |
+| **Windows / macOS / Linux** | `acmd kill` | 按 PID、名称或端口选择并终止进程；可先显示预览和确认，具体能力受权限限制 |
 | **macOS** | `acmd msgbox` / `acmd notify` | 显示本机提示框 / 发送本地通知 |
 | **macOS** | `acmd launchd` | 管理 LaunchAgent / LaunchDaemon；未填 action/kind 时交互选择，执行前预览审批；支持 `--json` 结构化结果与 `--no-confirm` 直接执行；详见 [launchd](launchd.md) |
 | **macOS** | `acmd sqlite_query` | 对指定 SQLite 数据库做只读查询 |

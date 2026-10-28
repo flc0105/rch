@@ -40,6 +40,9 @@ Session 信息由 Server 和 Client 分别保存在内存中。Monitor Session �
 
 ### Snapshot、状态和定向投递
 
+iOS Dashboard 的状态徽标使用 Monitor Open 返回的 `intervals.ios_dashboard` 展示实际采样周期，刷新时间由最近一次 Snapshot 的 `collected_at` 计算；默认采样间隔为 5 秒。
+
+
 一次 Snapshot 的主要字段包括会话 ID、采集 Channel、递增的 `seq`、结构化的 `data` 和 `collected_at`（Unix 秒级时间戳）。Server 在转发时补充 `client_id` 和事件时间，将其包装成 `device_monitor_snapshot` SSE：
 
 ```json
@@ -66,7 +69,7 @@ Session 信息由 Server 和 Client 分别保存在内存中。Monitor Session �
 
 Client 为**每个 Session 创建一个工作线程**，在该线程中按 Channel 各自的到期时间顺序采集，而不是为每个 Channel 单独创建线程。完成一次采集后，才从当前时间安排该 Channel 的下一次采样；工作循环以较短等待响应 Stop。耗时较长的 Collector 会推迟同一 Session 内其他 Channel 的采集；`0.5` 秒表示计划采样间隔，实际到达时间受执行与网络开销影响。
 
-Client 打开含有系统／进程指标的 Session 时会按需导入 `psutil` 并预热 CPU 与网络计数器；仅订阅 `log_file` 的 Session 直接使用标准库读取日志，无须导入 `psutil`。后续切换到其他 Channel 时才加载采样依赖。`system`、`network` 的首次正式采集需要等待一个周期；存储、电池和进程类 Channel 可较快提交第一份 Snapshot。列表采集等局部错误可以写进对应 Channel 的 `data.error`，而严重异常（如无效进程 PID 或详情采集失败）可能结束整个 Session。切换 Channel 时，采样线程会在发送结果前再次检查当前订阅，丢弃已不需要的迟到结果。
+Client 打开含有桌面系统／进程指标的 Session 时会按需导入 `psutil` 并预热 CPU 与网络计数器；仅订阅 `log_file` 或 `ios_dashboard` 的 Session 无须导入 `psutil`。后续切换到其他 Channel 时才加载采样依赖。`system`、`network` 的首次正式采集需要等待一个周期；存储、电池和进程类 Channel 可较快提交第一份 Snapshot。列表采集等局部错误可以写进对应 Channel 的 `data.error`，而严重异常（如无效进程 PID 或详情采集失败）可能结束整个 Session。切换 Channel 时，采样线程会在发送结果前再次检查当前订阅，丢弃已不需要的迟到结果。
 
 ## 3. Info Dashboard：设备资源的持续采集
 
@@ -96,9 +99,17 @@ Dashboard 将变化速度不同的数据拆到不同 Channel，使用的配置�
 
 前端只接受与当前 Dashboard Session 匹配的 `system`、`network`、`storage`、`battery` 快照，分别更新对应资源卡片和最后更新时间。Dashboard 的 Live 标识表示近期收到监控数据，不应被理解为 TCP 连接的 `online/stale/offline` 判定结果；连接健康度另由连接生命周期机制维护。
 
+### iOS Dashboard：Pythonista 专用采样与界面
+
+当 Client 的 `os_alias` 为 `ios` 时，Connection Info 的 Dashboard 直接使用独立的 iOS 视图，并通过同一套 Monitor Session 请求单个 `ios_dashboard` Channel。其他平台继续订阅 `system`、`storage`、`network`、`battery` 四个现有 Channel。iOS 的默认采样周期是 **5 秒**，定义于 `core/protocol/monitor.py`，打开 Dashboard 才开始采集，关闭面板即停止。
+
+iOS Collector 只在采样时导入 Pythonista 的 `objc_util`，从 `NSProcessInfo`、`UIDevice`、`UIScreen` 和 `AVAudioSession` 读取 CPU 核心数、总内存、运行时长、电池、低电量模式、温控状态、屏幕和音频输出／音量。通过 Darwin Mach `host_statistics(HOST_VM_INFO)` 取得系统内存页面计数，以 `total - (free + inactive)` 计算占用量和百分比，并读取 Pythonista 进程的驻留内存。存储容量使用 Pythonista Documents 所在 iOS Data Volume 的 Important Usage 可用容量及总容量，路由 IP 与部分 IPv4 接口来自 socket / Darwin `getifaddrs`。该 Channel 不导入 `psutil`；采集时不可读取的值会以空值呈现。
+
+iOS 存储卡片使用十进制 GB，与 iOS 设置中的容量单位相同。iOS 视图采用独立卡片布局，展示电池、系统内存进度、剩余存储、运行时长、硬件（含温控）、单独的显示信息、网络、音频及媒体库数量。照片、歌曲与联系人的计数只读取当前授权范围，不返回具体清单；单项失败时显示空值。计数每 120 秒更新一次，其余设备指标保持每 5 秒采样。设备名称、型号和 OS 版本等已经存在于 Basic Info 的静态字段不再重复显示为 Dashboard 指标。该视图复用 Monitor 的生命周期与 SSE 协议，不引入独立的 HTTP 路由。
+
 ## 4. Process Manager：进程、图形应用与详情
 
-Web Process Manager 入口受 Client `feature_manifest.process_monitor` 控制，macOS、Windows、Linux 默认开启，iOS 默认关闭。此开关只控制工具界面，`acmd ps/kill` 等进程命令保持原有行为；共享 Monitor Manager、Dashboard 和 Log Viewer 继续使用相同协议。
+Web Process Manager 入口受 Client `feature_manifest.process_monitor` 控制，macOS、Windows、Linux 默认开启，iOS 默认关闭。此开关只控制工具界面，桌面端 `acmd ps/kill` 等进程命令保持原有行为；iOS 不注册这些系统进程命令；共享 Monitor Manager、Dashboard 和 Log Viewer 继续使用相同协议。
 
 Process Manager 是一个独立窗口，进入时创建**自己的** Monitor Session，默认以 1 秒为周期订阅 `processes`。切换到 Apps 标签时，向原 Session 发送 `monitor_config`，把采集 Channel 改成 `apps`；切回时再改回 `processes`。窗口里的 Refresh 会重启这条监控 Session，搜索框则过滤前端已经收到的列表，而不是为每次输入发起新的远程查询。窗口关闭时释放当前监控 Session；再次打开会创建新的 Session。旧关闭动画的迟到回调不得关闭已重新打开的监控。
 

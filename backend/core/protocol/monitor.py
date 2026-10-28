@@ -9,6 +9,7 @@ MONITOR_SUPPORTED_CHANNELS = frozenset({
     'process_connections',
     'process_open_files',
     'log_file',
+    'ios_dashboard',
 })
 MONITOR_DEFAULT_CHANNELS = ('system', 'storage', 'network', 'battery')
 MONITOR_DEFAULT_INTERVALS = {
@@ -22,6 +23,7 @@ MONITOR_DEFAULT_INTERVALS = {
     'process_connections': 2.0,
     'process_open_files': 3.0,
     'log_file': 0.25,
+    'ios_dashboard': 5.0,
 }
 MONITOR_MIN_INTERVAL_SECONDS = 0.25
 MONITOR_MAX_INTERVAL_SECONDS = 60.0

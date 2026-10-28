@@ -6,7 +6,6 @@ from client.commands.platform.services.ios.file_system_service import iOSFileSys
 from client.commands.platform.services.ios.network_service import iOSNetworkService
 from client.commands.platform.services.ios.system_service import iOSSystemService
 from client.commands.platform.specs.ios import *
-from client.commands.platform.specs.common import PS_ARGUMENT_SPEC
 from core.utils.decorator import desc
 
 
@@ -19,6 +18,43 @@ class iOSCommands(CommonCommands):
         self.ios_system = iOSSystemService(self)
         self.ios_console = iOSConsoleService(self)
         self.ios_network = iOSNetworkService(self)
+
+    # iOS has no OS shell/subprocess or system process-inspection privileges.
+    # These overrides deliberately have no @desc metadata: they are not exported
+    # as commands. Unknown shell fallbacks also return a clear error.
+    def shell(self, command=''):
+        return 0, 'OS shell execution is unavailable on iOS'
+
+    def shell_stream(self, command=''):
+        return self.shell(command)
+
+    def bgrun(self, command=''):
+        return self.shell(command)
+
+    def is_elevated(self):
+        return 0, 'Privilege elevation is unavailable on iOS'
+
+    def piplist(self, arg=''):
+        return 0, 'Package enumeration is unavailable on iOS'
+
+    def keyboard_send(self, text=''):
+        return 0, 'System keyboard injection is unavailable on iOS'
+
+    def userenum(self):
+        return 0, 'System user enumeration is unavailable on iOS'
+
+
+    def spawn_instance(self):
+        return 0, 'Starting another Client process is unavailable on iOS'
+
+    def relaunch_instance(self, options=''):
+        return 0, 'Process relaunch is unavailable on iOS'
+
+    def reexec_instance(self):
+        return 0, 'Process replacement is unavailable on iOS'
+
+    # Prevent inherited ACMD kill from being registered on iOS.
+    _acmd_kill = None
 
     # ------------------ 基础 shell ------------------ #
 
@@ -33,18 +69,6 @@ class iOSCommands(CommonCommands):
     @desc('Create empty file', group='shell')
     def touch(self, path):
         return self.ios_file_system.touch(path)
-
-    @desc('Create directory', group='shell')
-    def mkdir(self, path):
-        return self.ios_file_system.mkdir(path)
-
-    @desc('Remove file', group='shell')
-    def rm(self, path):
-        return self.ios_file_system.rm(path)
-
-    @desc('Remove directory recursively', group='shell')
-    def rmdir(self, path):
-        return self.ios_file_system.rmdir(path)
 
     @desc('Read text file', group='shell')
     def cat(self, path):
@@ -64,10 +88,14 @@ class iOSCommands(CommonCommands):
 
     # ------------------ 系统信息 ------------------ #
 
-    @desc('Get system information', group='platform')
+    @desc('Get system information', group='system')
     @timeout(20)
     def getinfo(self):
         return self.ios_system.collect_info()
+
+    @desc('Show system uptime', group='system')
+    def uptime(self):
+        return self.ios_system.get_uptime()
 
     # ------------------ 剪贴板 ------------------ #
 
@@ -86,20 +114,20 @@ class iOSCommands(CommonCommands):
         return self.ios_console.open_url(url)
 
     @desc('Clear console output', group='console')
-    def clearconsole(self):
+    def clear_console(self):
         return self.ios_console.clear_console()
 
     @desc('QuickLook preview file', group='console')
-    def quicklook(self, path):
+    def quick_look(self, path):
         return self.ios_console.quick_look(path)
 
     @desc('Open file in other app', group='console')
-    def openin(self, path):
+    def open_in(self, path):
         return self.ios_console.open_in(path)
 
     @desc('Get current location', group='mobile')
     @timeout(15)
-    def getlocation(self):
+    def get_location(self):
         return self.ios_console.get_location()
 
     @desc('Speak text', group='mobile')
@@ -107,20 +135,20 @@ class iOSCommands(CommonCommands):
         return self.ios_console.speak(text)
 
     @desc('List contacts via CNContactStore', group='mobile')
-    def listcontacts(self):
+    def list_contacts(self):
         return self.ios_system.list_contacts()
 
     @desc('Pick photo or file and upload', group='console')
-    def pickupload(self, kind='photo'):
+    def pick_upload(self, kind='photo'):
         return self.ios_console.pick_upload(kind)
 
     @desc('Keep screen awake', group='console')
-    def keepawake(self, arg):
-        return self.ios_console.keepawake(arg)
+    def keep_awake(self, arg):
+        return self.ios_console.keep_awake(arg)
 
     @desc('Force quit app', group='console')
-    def killapp(self):
-        return self.ios_console.killapp()
+    def kill_app(self):
+        return self.ios_console.kill_app()
 
     @argument_command('alert', spec=ALERT_ARGUMENT_SPEC)
     def alert(self, args_dict, payload=None):
@@ -158,6 +186,3 @@ class iOSCommands(CommonCommands):
     def ping(self, args_dict, payload=None):
         return self.ios_network.acmd_ping(args_dict)
 
-    @argument_command('ps', spec=PS_ARGUMENT_SPEC)
-    def _acmd_ps(self, args_dict, payload=None):
-        return self._acmd_ps_common(args_dict, payload)
