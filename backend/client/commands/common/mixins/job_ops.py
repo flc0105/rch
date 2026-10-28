@@ -85,7 +85,7 @@ class CommandJobMixin:
             except Exception:
                 pass
 
-    @desc('Start a background job', group='job')
+    @desc('Start a background job', group='job', output='stream')
     def start_job(self, job_name: str):
         """
         启动后台任务。

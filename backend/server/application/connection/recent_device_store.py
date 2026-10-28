@@ -246,13 +246,6 @@ class RecentDeviceStore:
                 'cwd': str(connection_payload.get('cwd') or previous.get('cwd') or ''),
                 'build_version': str(connection_payload.get('build_version') or previous.get('build_version') or ''),
                 'client_revision': str(connection_payload.get('client_revision') or previous.get('client_revision') or ''),
-                'client_revision_parts': dict(
-                    connection_payload.get('client_revision_parts')
-                    if isinstance(connection_payload.get('client_revision_parts'), dict)
-                    else previous.get('client_revision_parts')
-                    if isinstance(previous.get('client_revision_parts'), dict)
-                    else {}
-                ),
                 'python_ver': connection_payload.get('python_ver') or previous.get('python_ver') or '',
                 'process_id': connection_payload.get('process_id') or previous.get('process_id') or '',
                 'launch_command': connection_payload.get('launch_command') or previous.get('launch_command') or '',
@@ -262,8 +255,6 @@ class RecentDeviceStore:
                 'process_name': connection_payload.get('process_name') or previous.get('process_name') or '',
                 'http_transfer_mode': connection_payload.get('http_transfer_mode') or previous.get('http_transfer_mode') or '',
                 'python_execution_mode': connection_payload.get('python_execution_mode') or previous.get('python_execution_mode') or '',
-                'remote_watchdog_enabled': connection_payload.get('remote_watchdog_enabled'),
-                'local_watchdog_enabled': connection_payload.get('local_watchdog_enabled'),
                 'connected_at': str(connection_payload.get('connected_at') or previous.get('connected_at') or ''),
                 'disconnected_at': str(connection_payload.get('disconnected_at') or ''),
                 'last_seen_at': str(connection_payload.get('last_seen_at') or previous.get('last_seen_at') or ''),

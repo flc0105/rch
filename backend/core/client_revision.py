@@ -139,30 +139,9 @@ def _hash_files(source_root: str, relative_paths) -> str:
     return digest.hexdigest()[:REVISION_DIGEST_LENGTH]
 
 
-def _iter_revision_part_paths(source_root: str):
-    for relative_root in CLIENT_BUNDLE_SOURCE_PATHS:
-        normalized_root = _normalize_relative_path(relative_root)
-        target_path = os.path.join(source_root, *normalized_root.split('/'))
-
-        if os.path.isfile(target_path):
-            if not _is_excluded_path(normalized_root):
-                yield normalized_root
-            continue
-
-        if not os.path.isdir(target_path):
-            continue
-
-        for name in sorted(os.listdir(target_path)):
-            relative_path = _normalize_relative_path(f'{normalized_root}/{name}')
-            if _is_excluded_path(relative_path):
-                continue
-            if any(_iter_revision_files(source_root, relative_path)):
-                yield relative_path
-
 
 def build_client_revision_manifest(
     source_root: str = '',
-    include_parts: bool = True,
     include_files: bool = True,
 ) -> dict:
     """
@@ -172,13 +151,6 @@ def build_client_revision_manifest(
     client/config 单独排除，避免仅修改连接地址、profile 或运行配置时误判为源码更新。
     """
     root = os.path.abspath(source_root or _get_default_source_root())
-    parts = {}
-    if include_parts:
-        parts = {
-            relative_path: _hash_files(root, (relative_path,))
-            for relative_path in _iter_revision_part_paths(root)
-        }
-
     files = {}
     if include_files:
         for relative_root in CLIENT_BUNDLE_SOURCE_PATHS:
@@ -188,6 +160,5 @@ def build_client_revision_manifest(
 
     return {
         'revision': _hash_files(root, CLIENT_BUNDLE_SOURCE_PATHS),
-        'parts': parts,
         'files': files,
     }

@@ -48,7 +48,7 @@ def _strip_confirm_bypass(arg):
     return False, arg
 
 
-def confirm(message=None, *, allow_no_confirm=False):
+def confirm(message=None):
     """Require a Client Interaction Broker confirmation before calling a command.
 
     Works with @desc in either order; no changes to the command body are needed.
@@ -61,16 +61,14 @@ def confirm(message=None, *, allow_no_confirm=False):
 
         @wraps(func)
         def wrapper(self, *args, **kwargs):
-            # Explicit opt-in: plain @confirm commands cannot bypass approval.
-            if allow_no_confirm:
-                raw_arg = args[0] if args else kwargs.get('options', '')
-                bypass, cleaned = _strip_confirm_bypass(raw_arg)
-                if bypass:
-                    if args:
-                        args = (cleaned, *args[1:])
-                    elif 'options' in kwargs:
-                        kwargs['options'] = cleaned
-                    return func(self, *args, **kwargs)
+            raw_arg = args[0] if args else kwargs.get('options', '')
+            bypass, cleaned = _strip_confirm_bypass(raw_arg)
+            if bypass:
+                if args:
+                    args = (cleaned, *args[1:])
+                elif 'options' in kwargs:
+                    kwargs['options'] = cleaned
+                return func(self, *args, **kwargs)
             from client.commands.common.services.interaction_service import CommandInteractions
 
             try:
@@ -84,7 +82,6 @@ def confirm(message=None, *, allow_no_confirm=False):
             return func(self, *args, **kwargs)
 
         wrapper.requires_confirmation = True
-        wrapper.allow_no_confirm = bool(allow_no_confirm)
         wrapper.api_grants = tuple(dict.fromkeys(
             (*getattr(func, 'api_grants', ()), 'interactions:request')
         ))

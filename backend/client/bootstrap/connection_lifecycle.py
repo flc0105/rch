@@ -73,7 +73,6 @@ class ClientConnectionLifecycle:
             info['recovery_source'] = self.client.recovery_source
         self.client.info = info
         handshake_json = json.dumps(info, ensure_ascii=False, indent=2)
-        print(f'Client handshake info:\n{handshake_json}', flush=True)
         logger.info('Client handshake info:\n%s', handshake_json)
         self.client.server.send(info)
         self.client.server.mark_connected()

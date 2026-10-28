@@ -21,7 +21,6 @@ class SessionInfo:
     cwd: str = ''
     build_version: str = ''
     client_revision: str = ''
-    client_revision_parts: dict = field(default_factory=dict)
     client_revision_files: dict = field(default_factory=dict)
     command_manifest: list[dict] = field(default_factory=list)
     system_paths: dict = field(default_factory=dict)
@@ -51,7 +50,6 @@ class SessionInfo:
             'cwd',
             'build_version',
             'client_revision',
-            'client_revision_parts',
             'client_revision_files',
             'command_manifest',
             'system_paths',
@@ -62,10 +60,6 @@ class SessionInfo:
             for key, value in payload.items()
             if key not in known_keys
         }
-
-        client_revision_parts = payload.get('client_revision_parts')
-        if not isinstance(client_revision_parts, dict):
-            client_revision_parts = {}
 
         client_revision_files = payload.get('client_revision_files')
         if not isinstance(client_revision_files, dict):
@@ -90,7 +84,6 @@ class SessionInfo:
             cwd=str(payload.get('cwd') or ''),
             build_version=(payload.get('build_version') or 'Unknown'),
             client_revision=str(payload.get('client_revision') or ''),
-            client_revision_parts=dict(client_revision_parts),
             client_revision_files=dict(client_revision_files),
             command_manifest=list(payload.get('command_manifest') or []),
             system_paths=dict(payload.get('system_paths') or {}),
@@ -117,7 +110,6 @@ class SessionInfo:
             'cwd': self.cwd,
             'build_version': self.build_version,
             'client_revision': self.client_revision,
-            'client_revision_parts': dict(self.client_revision_parts),
             'client_revision_files': dict(self.client_revision_files),
             'command_manifest': list(self.command_manifest),
             'system_paths': dict(self.system_paths),

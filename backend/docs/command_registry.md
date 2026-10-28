@@ -134,7 +134,7 @@ Registry 同时产生 Server Manifest、`help` 和静态子命令补全候选，
 
 Client 的 `CommandIntrospectionMixin` 通过 `inspect.getmembers()` 收集当前平台命令对象中带 `help` 属性的方法，生成 `command_manifest`（含 `name/help/group/suggest`），并附加 `ArgumentCommandRegistry.get_manifest_payload()` 的 ACMD 条目。Manifest 在 Client 构造 `info` 握手时提交，Server 的 `SessionInfo` 保存该连接的快照；**不是 Web 打开命令面板时实时从 Client 重新扫描 Python 方法**。
 
-Web 通过 `GET /api/connections/{client_id}/command-candidates` 获取候选，`WebCommandCatalogApi` 汇合当前 Client 的 Manifest 与 Server Builtin/Alias 模板，按 `template` 去重，再进行排序。用户能在候选列表里看见一个名称，只能说明它出现在此清单，不能替代执行权限、平台可用性或参数合法性的验证；反过来，`suggest=False` 的命令可以执行但不作为普通提示展示。
+Web 通过 `GET /api/connections/{client_id}/command-candidates` 获取候选，`WebCommandCatalogApi` 汇合当前 Client 的 Manifest 与 Server Builtin/Alias 模板，按候选插入文本 `template` 去重，再进行排序。用户能在候选列表里看见一个名称，只能说明它出现在此清单，不能替代执行权限、平台可用性或参数合法性的验证；反过来，`suggest=False` 的命令可以执行但不作为普通提示展示。
 
 上下文自动补全又是独立机制：`POST /api/connections/{client_id}/command-completions` 由 Server `ServerCommandCompletionService` 的 Provider Registry 响应；需要远程文件等数据时，再通过 Client 的 `command_completions` 入口，由 `ClientCommandCompletionService` 注册的相应 Provider 收集候选。**新增普通命令不等于自动获得参数补全**：静态 Server 子命令直接来自 Registry，动态参数仍需分别考虑 Server Provider、Client Provider 与前端解析上下文。输入框选中候选后只是填充命令，不代表执行。详细规则请参阅 [Autocomplete](autocomplete.md)。
 
@@ -226,6 +226,6 @@ The viewer's Clear View clears browser display only. External Tools' existing
 
 ## 命令 Manifest 元数据
 
-Client 普通命令的 `@desc` 可以声明 `output='collect'|'stream'`、`interaction=True|False`，并保留 `help/group/suggest/api_grants`。取消能力由现有 `@cancel_policy('none'|'cooperative'|'process')` 声明，命令执行时仍可根据具体执行模式更新当前取消策略。`@cancel_policy`、`@timeout`、`@confirm` 仍各自定义实际执行行为。命令扫描器统一提取 `name/kind/source/help/group/suggest/template/cancel_policy/timeout/confirmation/interaction/output/streaming`；ACMD 注册表也生成相同字段。每一个 ACMD 帮助候选使用自己的唯一 `name`，执行和自动补全仍以 `template` 为准。
+Client 普通命令的 `@desc` 可以声明 `output='collect'|'stream'`、`interaction=True|False`，并保留 `help/group/suggest/api_grants`。取消能力由现有 `@cancel_policy('none'|'cooperative'|'process')` 声明，命令执行时仍可根据具体执行模式更新当前取消策略。`@cancel_policy`、`@timeout`、`@confirm` 仍各自定义实际执行行为。命令扫描器统一提取 `name/kind/source/help/group/suggest/cancel_policy/timeout/confirmation/interaction/output`；ACMD 注册表也生成相同字段。每个可补全的 ACMD 条目使用真实插入文本作为 `name`，隐藏命令不加入握手清单。
 
-Manifest 的取消与 Timeout 信息反映命令默认声明；实际执行中的取消策略以运行态为准。`confirmation.required` 表示被 `@confirm` 包装的命令需要 Interaction Broker 确认，`allow_no_confirm` 表示该命令明确允许跳过确认。`interaction.may_request` 是声明或授权范围提供的“可能请求交互”提示，不表示每次执行都会产生弹窗。
+Manifest 的取消与 Timeout 信息反映命令默认声明；实际执行中的取消策略以运行态为准。带有 `confirmation: true` 的命令由 `@confirm` 请求 Interaction Broker 确认；所有这类命令均接受 `--no-confirm`。`interaction.may_request` 是声明或授权范围提供的“可能请求交互”提示，不表示每次执行都会产生弹窗。

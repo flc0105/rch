@@ -3,6 +3,7 @@ import shlex
 
 from client.commands.common.services.runtime.runtime_config_service import RuntimeConfigService
 from core.utils.decorator import desc
+from client.commands.runtime.interrupts import timeout
 from core.utils.logger import logger
 from core.utils.output_marker import success, info, error, warning
 from client.runtime.launch_context import is_launchd_managed_client
@@ -30,6 +31,7 @@ class CommandRuntimeConfigMixin:
         return service
 
     @desc('Show or update client runtime config', group='runtime')
+    @timeout(30)
     def set(self, arg=''):
         """
         set
@@ -89,7 +91,9 @@ class CommandRuntimeConfigMixin:
 
         try:
             result = self.runtime_config_service.set_config_value(key, value)
+            self._checkpoint()
             side_effects = self._apply_runtime_config_side_effects(result.key, result.new_value)
+            self._checkpoint()
 
             lines = [
                 success(f'{result.key} updated'),
@@ -210,17 +214,27 @@ class CommandRuntimeConfigMixin:
                 effects.append(warning('Saved: watchdog is unavailable on this Client; restart with watchdog support to apply'))
             manager = getattr(self.socket, 'process_watchdog_manager', None) if watchdog_supported else None
             if manager is not None:
-                if value and not launchd_managed:
-                    manager.start()
+                self._checkpoint()
+                try:
+                    if value and not launchd_managed:
+                        manager.start()
+                    else:
+                        manager.stop()
+                except Exception as exc:
+                    logger.warning('Process watchdog runtime update failed: %s', exc)
+                    effects.append(warning(f'Saved: process watchdog could not start/stop: {exc}'))
                 else:
-                    manager.stop()
-                if launchd_managed:
-                    effects.append(warning('Saved: launchd manages this Client; process watchdog remains disabled'))
-                else:
-                    effects.append(success('Applied: process watchdog runtime updated'))
-                # Existing Remote/Local control Worker inherits the original environment.
-                # Refresh it once so intentional kill/relaunch can stop this new chain.
-                self._restart_guard_manager()
+                    if launchd_managed:
+                        effects.append(warning('Saved: launchd manages this Client; process watchdog remains disabled'))
+                    else:
+                        effects.append(success('Applied: process watchdog runtime updated'))
+                    # Remote/Local workers inherit the supervisor environment at launch.
+                    from client.config import runtime_config
+                    if (runtime_config.REMOTE_HTTP_WATCHDOG_ENABLED
+                            or runtime_config.LOCAL_WATCHDOG_ENABLED):
+                        if not self._restart_guard_manager():
+                            effects.append(warning('Saved: Remote/Local watchdog worker could not restart'))
+                self._checkpoint()
 
         if key in self.WATCHDOG_CONFIG_KEYS:
             if not watchdog_supported:
@@ -230,6 +244,8 @@ class CommandRuntimeConfigMixin:
                     effects.append(warning('Saved: launchd manages this Client; Client watchdogs remain disabled'))
                 else:
                     effects.append(success('Applied: watchdog runtime restarted'))
+            else:
+                effects.append(warning('Saved: watchdog worker did not restart; check Client logs'))
 
         return effects
 
@@ -239,8 +255,11 @@ class CommandRuntimeConfigMixin:
             return False
 
         try:
+            self._checkpoint()
             guard_manager.stop()
+            self._checkpoint()
             guard_manager.start()
+            self._checkpoint()
             return True
         except Exception as e:
             logger.warning(f'Failed to restart watchdog runtime after config update: {e}')

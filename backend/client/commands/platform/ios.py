@@ -150,11 +150,11 @@ class iOSCommands(CommonCommands):
     def wget(self, args_dict, payload=None):
         return self.ios_file_system.acmd_wget(args_dict)
 
-    @argument_command('tcp_ping', spec=TCP_PING_ARGUMENT_SPEC)
+    @argument_command('tcp_ping', spec=TCP_PING_ARGUMENT_SPEC, output='stream')
     def tcp_ping(self, args_dict, payload=None):
         return self.ios_network.acmd_tcp_ping(args_dict)
 
-    @argument_command('ping', spec=PING_ARGUMENT_SPEC)
+    @argument_command('ping', spec=PING_ARGUMENT_SPEC, output='stream')
     def ping(self, args_dict, payload=None):
         return self.ios_network.acmd_ping(args_dict)
 

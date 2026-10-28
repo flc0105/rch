@@ -80,8 +80,7 @@ class ArgumentCommandRegistry:
         from client.commands.runtime.manifest_metadata import command_metadata
 
         payload = [{
-            'name': 'acmd',
-            'template': 'acmd help',
+            'name': 'acmd help',
             'help': 'List all registered structured commands',
             'group': 'acmd',
             'suggest': True,
@@ -95,19 +94,10 @@ class ArgumentCommandRegistry:
             metadata = command_metadata(handler, kind='acmd')
             payload.append({
                 'name': f'acmd {command_name}',
-                'template': f'acmd {command_name}',
                 'help': item['description'],
                 'group': 'acmd',
                 'suggest': True,
                 **metadata,
-            })
-            payload.append({
-                'name': f'acmd help {command_name}',
-                'template': f'acmd help {command_name}',
-                'help': f'Show help for acmd command: {command_name}',
-                'group': 'acmd',
-                'suggest': False,
-                **command_metadata(None, kind='acmd'),
             })
         return payload
 

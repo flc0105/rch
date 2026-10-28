@@ -76,13 +76,13 @@ class CommandIntrospectionMixin:
         payload = [
             {
                 'name': name,
-                'template': name,
                 'help': method.help,
                 'group': getattr(method, 'group', 'general'),
                 'suggest': getattr(method, 'suggest', True),
                 **command_metadata(method),
             }
             for name, method in methods.items()
+            if getattr(method, 'suggest', True)
         ]
 
         payload.extend(self._get_argument_command_manifest_payload())

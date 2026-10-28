@@ -42,7 +42,6 @@ def inject_python_client_config(source_dir: str, client_dir: str, server_host: s
     server_web_host = (server_web_host or server_host).strip() or server_host
     revision_manifest = build_client_revision_manifest(source_dir)
     client_revision = str(revision_manifest.get('revision') or '')
-    client_revision_parts = json.dumps(revision_manifest.get('parts') or {}, ensure_ascii=False, sort_keys=True)
     client_revision_files = json.dumps(revision_manifest.get('files') or {}, ensure_ascii=False, sort_keys=True)
     template = f'''import os
 
@@ -67,7 +66,6 @@ RUNTIME_CONFIG = {{
     'client_build_version': CLIENT_BUILD_VERSION,
 }}
 CLIENT_SOURCE_REVISION = "{client_revision}"
-CLIENT_SOURCE_REVISION_PARTS = {client_revision_parts}
 CLIENT_SOURCE_REVISION_FILES = {client_revision_files}
 '''
     with open(config_path, 'w', encoding='utf-8') as f:

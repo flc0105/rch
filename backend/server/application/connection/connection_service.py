@@ -162,7 +162,6 @@ class WebConnectionService:
             'connection_state': self._build_connection_state(session),
             'build_version': info.build_version,
             'client_revision': info.client_revision,
-            'client_revision_parts': dict(info.client_revision_parts),
             'python_ver': info.get_extra('python_ver'),
             'process_id': info.get_extra('process_id'),
             'launch_command': info.get_extra('launch_command'),
@@ -173,8 +172,6 @@ class WebConnectionService:
             'process_name': info.get_extra('process_name'),
             'http_transfer_mode': info.get_extra('http_transfer_mode'),
             'python_execution_mode': info.get_extra('python_execution_mode'),
-            'remote_watchdog_enabled': info.get_extra('remote_watchdog_enabled'),
-            'local_watchdog_enabled': info.get_extra('local_watchdog_enabled'),
             'variable_manifest': list(info.get_extra('variable_manifest') or []),
             'feature_manifest': dict(info.get_extra('feature_manifest') or {}),
         }
@@ -236,7 +233,6 @@ class WebConnectionService:
                 'connection_state': 'offline',
                 'build_version': item.get('build_version') or '',
                 'client_revision': item.get('client_revision') or '',
-                'client_revision_parts': dict(item.get('client_revision_parts')) if isinstance(item.get('client_revision_parts'), dict) else {},
                 'python_ver': item.get('python_ver') or '',
                 'process_id': item.get('process_id') or '',
                 'launch_command': item.get('launch_command') or '',
@@ -246,8 +242,6 @@ class WebConnectionService:
                 'process_name': item.get('process_name') or '',
                 'http_transfer_mode': item.get('http_transfer_mode') or '',
                 'python_execution_mode': item.get('python_execution_mode') or '',
-                'remote_watchdog_enabled': item.get('remote_watchdog_enabled'),
-                'local_watchdog_enabled': item.get('local_watchdog_enabled'),
                 'recent_cached': True,
             }
             results.append(self._decorate_connection_with_device_view_prefs(offline_item))
@@ -274,7 +268,7 @@ class WebConnectionService:
             }
 
         # 每次查询都基于当前磁盘源码重新计算，Server 无需重启即可反映最新 revision。
-        server_manifest = build_client_revision_manifest(include_parts=False, include_files=True)
+        server_manifest = build_client_revision_manifest(include_files=True)
         info = session.session_info
         client_revision = str(info.client_revision or '').strip()
         server_revision = str(server_manifest.get('revision') or '').strip()
@@ -298,7 +292,7 @@ class WebConnectionService:
     def get_connections_payload(self):
         active_connections = [self.serialize_connection(session) for session in self.server.connections.all()]
         self._sync_recent_online_connections(active_connections)
-        server_manifest = build_client_revision_manifest(include_parts=False, include_files=False) if active_connections else {}
+        server_manifest = build_client_revision_manifest(include_files=False) if active_connections else {}
         active_connections = [
             self._decorate_connection_with_device_view_prefs(item, server_manifest=server_manifest)
             for item in active_connections
@@ -600,7 +594,7 @@ class WebConnectionService:
 
     # ------------------ event publish ------------------ #
     def publish_connection_online(self, session: ClientSession):
-        server_manifest = build_client_revision_manifest(include_parts=False, include_files=False)
+        server_manifest = build_client_revision_manifest(include_files=False)
         payload = {
             'connection': self._decorate_connection_with_device_view_prefs(
                 self.serialize_connection(session),

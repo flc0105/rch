@@ -67,7 +67,7 @@ def test_command_declared_metadata_and_confirm_semantics():
     @desc('A command', group='example', output='stream')
     @timeout(11)
     @cancel_policy('cooperative')
-    @confirm('Approve?', allow_no_confirm=True)
+    @confirm('Approve?')
     def sample(_owner):
         return 1, 'ok'
 
@@ -75,9 +75,9 @@ def test_command_declared_metadata_and_confirm_semantics():
     assert metadata == {
         'kind': 'command', 'source': 'client',
         'cancel_policy': 'cooperative', 'timeout': 11,
-        'confirmation': {'required': True, 'allow_no_confirm': True},
+        'confirmation': True,
         'interaction': {'may_request': True},
-        'output': 'stream', 'streaming': True,
+        'output': 'stream',
     }
 
 
@@ -88,9 +88,8 @@ def test_linux_command_manifest_is_unique_and_complete():
     names = [item['name'] for item in entries]
     assert len(names) == len(set(names))
     required = {
-        'name', 'kind', 'source', 'help', 'group', 'suggest', 'template',
-        'cancel_policy', 'timeout', 'confirmation', 'interaction',
-        'output', 'streaming',
+        'name', 'kind', 'source', 'help', 'group', 'suggest',
+        'cancel_policy', 'timeout', 'interaction', 'output',
     }
     assert all(required <= set(item) for item in entries)
     assert all(item['source'] == 'client' for item in entries)
@@ -101,9 +100,12 @@ def test_linux_command_manifest_is_unique_and_complete():
     assert modes['pyexec'] == 'collect'
     policies = {item['name']: item['cancel_policy'] for item in entries}
     assert set(policies.values()) <= {'none', 'cooperative', 'process'}
-    for name in ('pyexec', 'pyexec_stream', 'download', 'receive_file', 'download_path', 'download_paths'):
+    for name in ('pyexec', 'pyexec_stream', 'download'):
         assert policies[name] == 'cooperative'
-    assert any(item['confirmation']['required'] for item in entries)
+    assert all(item['suggest'] is True for item in entries)
+    assert not any('template' in item or 'streaming' in item for item in entries)
+    assert any(item.get('confirmation') is True for item in entries)
+    assert not any(item.get('confirmation') is False for item in entries)
 
 
 def test_no_disabled_manager_imports_in_fresh_client():
@@ -198,6 +200,7 @@ def test_set_watchdog_modes_hot_start_and_stop_without_changing_capability(monke
 
     guard, process = Guard(), Process()
     owner = CommandRuntimeConfigMixin()
+    owner._checkpoint = lambda: None
     owner.socket = SimpleNamespace(
         runtime=SimpleNamespace(features={'watchdog': True}),
         guard_manager=guard, process_watchdog_manager=process,

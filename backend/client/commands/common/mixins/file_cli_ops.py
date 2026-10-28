@@ -7,7 +7,7 @@ from core.utils.output_marker import error, success, info
 
 
 class CommandFileCliMixin:
-    @desc('Download a file from the client', group='transfer')
+    @desc('Download a file from the client', group='transfer', output='stream')
     @cancel_policy('cooperative')
     def download(self, filename=''):
         """
@@ -31,7 +31,7 @@ class CommandFileCliMixin:
             return 0, f'Failed to download file: {e}'
 
 
-    @desc('Receive a file from server via HTTP', group='file', suggest=False)
+    @desc('Receive a file from server via HTTP', group='file', suggest=False, output='stream')
     @cancel_policy('cooperative')
     def receive_file(self, arg=''):
         """

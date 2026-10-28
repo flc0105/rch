@@ -10,12 +10,11 @@ Server 的 Agent Builder 为每次构建生成独立的 `build_id`，形式为�
 
 Python Source Bundle 使用统一的命名契约：`rchclient-source-bundle-<build_id>.zip`；对应 `build_version` 是去掉 `.zip` 后的名称。该名称同时用作更新后的 Release 目录名，因而下载文件、解压目录和运行实例所报告的 Build Version 可以互相定位。
 
-`client_revision` 则由 `build_client_revision_manifest()` 计算。它遍历构成 Python Client Bundle 的三个根：`client/`、`core/` 和 `rchclient.py`，按确定顺序把相对路径、分隔符与文件内容纳入 SHA-256，取前 **16 个十六进制字符**作为整体 Revision。实现还可生成两层诊断数据：
+`client_revision` 则由 `build_client_revision_manifest()` 计算。它遍历构成 Python Client Bundle 的三个根：`client/`、`core/` 和 `rchclient.py`，按确定顺序把相对路径、分隔符与文件内容纳入 SHA-256，取前 **16 个十六进制字符**作为整体 Revision。同时生成文件级差异数据：
 
 | 字段 | 表示内容 | 用途 |
 | --- | --- | --- |
 | `client_revision` | 整个 Client 源码集合的内容指纹 | 判断当前 Client 与 Server 源码是否一致 |
-| `client_revision_parts` | 源码根目录及其直接子项的分组指纹 | 保留较粗粒度的差异定位能力 |
 | `client_revision_files` | 相对文件路径对应的文件内容指纹 | 精确展示新增、删除和修改的源码文件 |
 | `build_version` | 某次构建产物身份，源码开发运行时通常为 `dev` | 定位构建、Release 和客户端的交付来源 |
 
@@ -23,7 +22,7 @@ Revision 对指定的 Client 源码文件计算指纹，覆盖范围见上文；
 
 ### 构建时注入与源码启动
 
-生成 Python Bundle 时，Server 将目标 Socket 地址、Web 地址及端口、`build_version`、Revision 和分组/文件指纹写入 Bundle 内的 Client 配置。计算 Revision 的依据是 **Server 原始 Client 源码**，不是把构建后注入的不同连接参数再重新算作代码变化。Bundle 随后压缩并交付，Client 在握手时读取这些值。
+生成 Python Bundle 时，Server 将目标 Socket 地址、Web 地址及端口、`build_version`、Revision 和文件指纹写入 Bundle 内的 Client 配置。计算 Revision 的依据是 **Server 原始 Client 源码**，不是把构建后注入的不同连接参数再重新算作代码变化。Bundle 随后压缩并交付，Client 在握手时读取这些值。
 
 在源码/IDE 环境中直接运行 Client，配置 Profile 通常给出 `build_version=dev`，没有预先注入的 `CLIENT_SOURCE_REVISION`。这种情况下 Client 首次构造握手信息时在本地计算源码指纹，并在当前进程内缓存。**编辑本地源码后，已经运行的进程不会自动重新计算指纹或热加载代码**；应重新启动对应源码进程以重新生成握手信息。
 
@@ -59,7 +58,7 @@ Server 在临时工作目录复制 Bundle 所需源码，注入 Client 配置后
 
 ## 在线连接怎样判断是否需要更新
 
-Python Client 建立 TCP 连接后，在 `info` 握手中发送 `build_version`、`client_revision`、`client_revision_parts` 和 `client_revision_files`。Server 将这些字段保存在对应 `ClientSession`，同时用于设备信息展示与按需版本检查。
+Python Client 建立 TCP 连接后，在 `info` 握手中发送 `build_version`、`client_revision`、`client_revision_files`。Server 将这些字段保存在对应 `ClientSession`，同时用于设备信息展示与按需版本检查。
 
 Server 对**在线连接**把握手 Revision 与本机当前源码 Revision 比较：两者都存在且一致时为 `current`，两者都存在但不同为 `outdated`，任何一方缺失时为 `unknown`。状态由源码指纹比较确定。即使新的构建产物名称不同，只要源码指纹相同，仍可以是 `current`。
 

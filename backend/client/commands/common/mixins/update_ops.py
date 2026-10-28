@@ -347,7 +347,7 @@ class CommandUpdateMixin:
             daemon=True,
         ).start()
 
-    @desc('Build, download, extract and launch the latest client bundle', group='maintenance')
+    @desc('Build, download, extract and launch the latest client bundle', group='maintenance', output='stream')
     @cancel_policy('cooperative')
     def update(self, arg=''):
         ready_path = ''

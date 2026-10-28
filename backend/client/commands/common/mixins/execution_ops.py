@@ -230,7 +230,9 @@ class CommandExecutionMixin:
             result = self._run_shell_command(command)
             if result.returncode == 0:
                 return 1, result.stdout
-            return 0, result.stderr or f'Command exited with code {result.returncode}'
+            details = [part.strip() for part in (result.stdout, result.stderr) if part and part.strip()]
+            details.append(f'Command exited with code {result.returncode}')
+            return 0, '\n'.join(details)
         except CommandCancelledError:
             return 0, 'Command cancelled'
         except (CommandTimeoutError, subprocess.TimeoutExpired):

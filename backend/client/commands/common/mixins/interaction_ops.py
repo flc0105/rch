@@ -6,7 +6,7 @@ from core.utils.decorator import desc
 
 class CommandInteractionMixin:
 
-    @desc('Test confirmation and text input before executing a harmless action', group='interaction', api_grants=('interactions:request',), interaction=True)
+    @desc('Test confirmation and text input before executing a harmless action', group='interaction', api_grants=('interactions:request',), interaction=True, output='stream')
     def interaction_demo(self, arg=''):
         if str(arg or '').strip():
             return 0, 'Usage: interaction_demo'

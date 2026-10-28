@@ -10,7 +10,7 @@ Python Client 初始化时先创建 `Client` 对象，为这个进程实例生�
 
 1. 根据 Client Profile 中的 `server_host`、`server_port` 连接 Server Socket；连接失败则按重连间隔重试，并重建连接对象。
 2. TCP 建立后，由 `ClientInfoBuilder` 收集本地身份、当前平台的命令清单、变量提示、系统路径、构建信息与运行配置。
-3. 将完整 `info` 握手 JSON 输出到 Client 的 stdout 与 `console_logger`（同时写入已启用的主日志文件），再通过 Socket 协议发送；消息的 `id` 为当前 Client 实例的 `client_id`。每次建立新连接并发送握手时都会输出。
+3. 通过 Client 的 `console_logger` 记录完整 `info` 握手 JSON（同时输出到控制台和已启用的主日志文件），再通过 Socket 协议发送；消息的 `id` 为当前 Client 实例的 `client_id`。每次建立新连接并发送握手时都会输出。
 4. Client 本地将连接标记为已连接，再启动接收工作线程。这里的 `mark_connected()` 是本地状态更新，**不是收到 Server 的独立握手确认帧**。
 5. Server 的监听线程读取新 Socket 的第一条消息，建立 `ClientSession` 并放入活动连接管理器，记录设备/连接历史，发布 `connection_online`；随后另启线程持续接收该连接的消息。
 
@@ -29,8 +29,8 @@ Python Client 的握手不只是操作系统名称。`ClientInfoBuilder.build()`
 | 当前连接身份 | `id`、`hostname`、`machine_id`、`machine_fingerprint_basis` | 区分活动 Client 实例与机器身份；来自当前进程的本地身份快照 |
 | 系统和硬件 | `os_type`、`os_alias`、`os_full`、`os_name`、`os_ver`、`arch`、`manufacturer`、`model` | 展示平台、架构和设备资料，供 UI 判断或呈现 |
 | 进程与权限 | `process_id`、`launch_command`、`launch_mode`、`launch_source`、`username`、`process_name`、`integrity`、`cwd`、`python_ver` | 说明 Client 进程当时如何运行、具有何种权限及初始工作目录 |
-| 构建与源码身份 | `build_version`、`client_revision`、`client_revision_parts`、`client_revision_files` | 标记构建产物，比较 Client 与 Server 的源码内容 |
-| 运行能力与配置快照 | `http_transfer_mode`、`python_execution_mode`、`remote_watchdog_enabled`、`local_watchdog_enabled` | 表示 Client 启动时实际生效的相关运行能力；LaunchAgent / LaunchDaemon 下两个 Watchdog 字段固定为 `false` |
+| 构建与源码身份 | `build_version`、`client_revision`、`client_revision_files` | 标记构建产物，比较 Client 与 Server 的源码内容 |
+| 运行能力与配置快照 | `http_transfer_mode`、`python_execution_mode` | 表示 Client 握手时采用的传输与执行模式；Watchdog 运行状态通过 `watchdog --json` 实时读取 |
 | 提示与路径 | `command_manifest`、`variable_manifest`、`system_paths` | 提供命令候选、变量提示和 Client 端已知路径 |
 
 `id` 是每个 Python `Client` 对象初始化时创建的 UUID v4；它代表 Client 进程实例，不是主机名或 `machine_id`。同一个对象因网络异常重连会继续使用原 `client_id`，进程重新启动则通常产生新值。`machine_id` 来自规范化机器特征的 SHA-256 指纹，特征不变时可以跨进程重启复现；它不会随着 `client_id` 每次重建而重新随机分配。完整的字段采集、指纹算法与设备库存归属见 [Device Identity & Inventory](./device_identity.md)。
@@ -88,14 +88,13 @@ Client 先取得当前平台的命令对象，然后检查拥有 `help` 装饰�
 
 | 字段 | 含义 |
 | --- | --- |
-| `name` | 命令名称或入口名称 |
+| `name` | 可补全的命令文本，包括 `acmd` 前缀；Server 候选 API 将其映射为插入模板 |
 | `help` | 简短帮助文本 |
 | `group` | 用于命令候选的展示分组，缺省为 `general` |
 | `suggest` | 是否建议在通常的帮助/提示 UI 中显示 |
-| `template` | 可选的输入模板；未提供时 Server 使用 `name` |
 | `source` | 可选的候选来源；Server 在缺省时按 Client 来源处理 |
 
-结构化参数命令通过其注册表添加额外的 Manifest 条目，通常带有完整输入模板。最终命令 Manifest 会按 `group`、`name` 排序。普通命令中设置 `suggest=False` 的条目**不会因此失去执行能力**；它是提示/展示属性，而不是 Server 对该命令作出的权限授权决定。
+结构化参数命令通过注册表添加可补全的 `acmd` 命令名称。最终命令 Manifest 会按 `group`、`name` 排序。普通命令中设置 `suggest=False` 的条目**不会因此失去执行能力**；它是提示/展示属性，而不是 Server 对该命令作出的权限授权决定。
 
 `command_manifest` 是当前 Client 声明出来的**候选描述数据**。它不包含执行命令所需的一切状态，也不保证所有后续调用都会成功：执行器仍须完成真正的命令解析、参数验证、平台判断和权限/交互流程。完整的命令候选合并、参数级补全和前端接收行为见 [Terminal Autocomplete](./autocomplete.md)；命令执行方式见 [Shell-like Commands](./shell_like_commands.md) 与 [ACMD](./acmd.md)。
 
@@ -121,7 +120,7 @@ Manifest 构建采用局部容错：如果读取命令列表或变量清单的�
 
 ## 4. Server 如何把握手变成可用的连接
 
-Server 监听线程把初始 JSON 与接受连接时得到的来源地址结合，交由 Web Connection Service 构造 `ClientSession`。`SessionInfo.from_dict()` 将标准字段转为会话属性，对 `client_revision_parts` 和 `client_revision_files` 等对象字段做基本的类型归一化；其余未在标准字段集合中的键放进 `extras`。例如 Python 的 `process_id`、`variable_manifest` 和传输模式，以及 Go 的 `go_version`，会沿这个扩展字段通道保存。
+Server 监听线程把初始 JSON 与接受连接时得到的来源地址结合，交由 Web Connection Service 构造 `ClientSession`。`SessionInfo.from_dict()` 将标准字段转为会话属性，对 `client_revision_files` 等对象字段做基本的类型归一化；其余未在标准字段集合中的键放进 `extras`。例如 Python 的 `process_id`、`variable_manifest` 和传输模式，以及 Go 的 `go_version`，会沿这个扩展字段通道保存。
 
 标准字段与扩展字段的区别会影响后续读取方式，但它们均属于当前会话的握手资料。Server 并不依靠 `SessionInfo` 自动探测远端能力：未上报的字段会使用默认值或空集合，不能由此推断远端实际运行了哪些功能。
 
@@ -145,7 +144,7 @@ Server 监听线程把初始 JSON 与接受连接时得到的来源地址结合�
 Python Client 握手同时传递 `build_version` 和 `client_revision`，但两者回答不同问题：
 
 - `build_version`：这次 Client 构建产物的标识，源码模式通常为 `dev`；它不用于推断代码内容的新旧大小顺序。
-- `client_revision`：纳入 Revision 计算范围的 Client 源码内容指纹；`client_revision_parts` 是分段指纹，`client_revision_files` 是文件级摘要，用于细化差异展示。
+- `client_revision`：纳入 Revision 计算范围的 Client 源码内容指纹；`client_revision_files` 是文件级摘要，用于细化差异展示。
 
 预构建 Bundle 可以把源码指纹及明细注入 Client 配置；源码模式在本地构建 Revision Manifest 并缓存。Server 查询时计算自己的当前源码指纹，比较相等时标记 `current`，不等时标记 `outdated`，缺乏可比 Revision 时为 `unknown`。这不是依赖某个自增版本号，也不是 Client 与 Server 建立连接前协商的协议版本。
 
@@ -200,9 +199,9 @@ Heartbeat 更新连接的最近活跃信息、RTT 和可能的当前工作目录
 
 ## Capability Metadata 与启动 Feature
 
-Client 在原有 `info.command_manifest` 每个条目中上报完整的命令描述：`name`（命令/候选唯一名）、`kind`（`command` / `acmd`）、`source`、`help`、`group`、`suggest`、`template`、`cancel_policy`、`timeout`（秒或 `null`）、`confirmation`（`required`、`allow_no_confirm`）、`interaction`（`may_request`）、`output`（`collect` / `stream`）和 `streaming`（布尔值）。普通命令的声明来自 Python 装饰器；ACMD 的声明来自注册 Handler。`confirmation.required=true` 对应已有 `@confirm` 的执行前确认；`allow_no_confirm` 对应允许使用 `--no-confirm` 跳过该确认。`interaction.may_request=true` 表示命令可能调用 Interaction Broker。
+Client 在原有 `info.command_manifest` 每个条目中上报完整的命令描述：`name`（命令/候选唯一名）、`kind`（`command` / `acmd`）、`source`、`help`、`group`、`suggest`、`cancel_policy`、`timeout`（秒或 `null`）、`confirmation`（仅 `@confirm` 命令出现，值为 `true`）、`interaction`（`may_request`）、`output`（`collect` / `stream`）。普通命令的声明来自 Python 装饰器；ACMD 的声明来自注册 Handler。带 `@confirm` 的命令默认请求执行确认，显式 `--no-confirm` 跳过确认。`interaction.may_request=true` 表示命令可能调用 Interaction Broker。
 
-这些描述属于**静态声明**；取消策略、执行超时及交互状态在运行过程中仍由执行器/任务上下文决定。`output=stream` 表示命令有流式输出入口；`collect` 表示通常在命令完成时收集输出。命令执行产生的进度或中间消息仍可能独立于该默认模式。
+这些描述属于**静态声明**；取消策略、执行超时及交互状态在运行过程中仍由执行器/任务上下文决定。`output=stream` 表示命令可能在最终结果前发送中间命令结果；`collect` 表示该命令只返回最终命令结果。
 
 `info.feature_manifest` 是 Client 启动时解析并实际装载的 Feature 布尔快照。第一版支持 `pty`、`screen_view`、`screen_input`、`clipboard`、`watchdog`。File Transfer 和 Device Monitor 仍沿用现有路径；Process Inspection/Control 暂未纳入 Feature 开关。Server 的连接列表序列化会透传 `feature_manifest`，供 Web 界面读取；本阶段没有新增服务端 Feature 权限校验。
 

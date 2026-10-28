@@ -51,7 +51,7 @@ class CommandFileWebMixin:
             self._preview_image_service = service
         return service
 
-    @desc('Download a file by path', group='file_path', suggest=False)
+    @desc('Download a file by path', group='file_path', suggest=False, output='stream')
     @cancel_policy('cooperative')
     def download_path(self, path=''):
         """
@@ -87,7 +87,7 @@ class CommandFileWebMixin:
         except Exception as e:
             return 0, f'Failed to download file via HTTP: {e}'
 
-    @desc('Download multiple paths as ZIP archive', group='file_path', suggest=False)
+    @desc('Download multiple paths as ZIP archive', group='file_path', suggest=False, output='stream')
     @cancel_policy('cooperative')
     def download_paths(self, arg=''):
         """
@@ -224,7 +224,7 @@ class CommandFileWebMixin:
         except Exception as e:
             return 0, f'Failed to extract ZIP archive: {e}'
 
-    @desc('Preview a file by path', group='file_path', suggest=False)
+    @desc('Preview a file by path', group='file_path', suggest=False, output='stream')
     def preview_path(self, path=''):
         """
         拉取预览文件到 server artifact previews 区。

@@ -91,7 +91,8 @@ def inspect_process(pid, *, known_port=None):
             'status': safe(proc.status, ''), 'memory_rss': safe(lambda: proc.memory_info().rss, 0),
             'threads': safe(proc.num_threads, 0),
         }
-    conns = safe(lambda: proc.net_connections(kind='inet'), []) or []
+    connections_method = getattr(proc, 'net_connections', None) or getattr(proc, 'connections', None)
+    conns = safe(lambda: connections_method(kind='inet'), []) if connections_method else []
     row['listening'] = [
         {'port': int(c.laddr.port), 'address': str(c.laddr.ip),
          'protocol': 'udp' if c.type == socket.SOCK_DGRAM else 'tcp'}

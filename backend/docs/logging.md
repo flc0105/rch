@@ -69,7 +69,7 @@ POSIX 的 UID 后缀和 `0700` 根目录用于隔离 root/elevated 与普通用�
 | 文件日志不可用 | Client **继续启动与连接**，只向 stdout 简短报告；路径不会作为有效日志位置上报 |
 | 保存期限 | 系统临时目录可能被操作系统清理；不应当作永久审计记录 |
 
-Client 在发送 `info` 握手时将完整 JSON 同时输出到 stdout 和现有 `console_logger`；后者也会写入正常安装的主日志文件。断线重连后重新握手时会再次记录，内容包括 Client 身份、系统信息、Command / Feature / Variable Manifest 和路径快照。
+Client 在发送 `info` 握手时通过现有 `console_logger` 记录完整 JSON；该记录在控制台出现一次，并写入正常安装的主日志文件。断线重连后重新握手时会再次记录，内容包括 Client 身份、系统信息、Command / Feature / Variable Manifest 和路径快照。
 
 Client 不承诺自动捕获所有 `print()`、独立子进程 stdout/stderr，或日志初始化前的异常。普通 Client 主日志也**不包括三个 Watchdog 的专用日志**，这些监督模块有独立的输出文件。
 

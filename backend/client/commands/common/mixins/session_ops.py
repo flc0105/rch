@@ -21,7 +21,9 @@ class CommandSessionMixin:
 
     @desc('Restart client process and reconnect', group='session')
     @confirm('Restart this Client process and reconnect to the Server?')
-    def relaunch_instance(self):
+    def relaunch_instance(self, options=''):
+        if str(options or '').strip():
+            return 0, 'Usage: relaunch_instance [--no-confirm]'
         reset(self.socket)
 
     @desc('Restart current process by exec replacement', group='session')

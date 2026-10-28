@@ -27,7 +27,7 @@ class WindowsCommands(CommonCommands):
         return self.win_process.run(command)
 
     # ------------------ 截图 ------------------ #
-    @desc('Capture screenshot', group='media')
+    @desc('Capture screenshot', group='media', output='stream')
 
     @timeout(30)
     def screenshot(self):
@@ -57,7 +57,7 @@ class WindowsCommands(CommonCommands):
         return self.win_system.get_user_idletime()
 
     @desc('Run a command with elevated privileges', group='privilege')
-    @confirm('This may show a Windows UAC permission prompt and wait for authorization. Continue?', allow_no_confirm=True)
+    @confirm('This may show a Windows UAC permission prompt and wait for authorization. Continue?')
     def run_elevated(self, command):
         """
         以管理员权限执行命令
@@ -65,7 +65,7 @@ class WindowsCommands(CommonCommands):
         return self.win_privilege.run_as_admin(command)
 
     @desc('Launch a new instance with elevated privileges', group='privilege')
-    @confirm('This may show a Windows UAC permission prompt and wait for authorization. Continue?', allow_no_confirm=True)
+    @confirm('This may show a Windows UAC permission prompt and wait for authorization. Continue?')
     def spawn_elevated_instance(self, options=''):
         if options.strip():
             return 0, 'Usage: spawn_elevated_instance [--no-confirm]'

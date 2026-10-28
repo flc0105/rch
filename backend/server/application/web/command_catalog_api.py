@@ -25,7 +25,7 @@ class WebCommandCatalogApi:
                 continue
 
             name = (item.get('name') or '').strip()
-            template = (item.get('template') or name).strip()
+            template = name
 
             if not name or not template:
                 continue
@@ -40,10 +40,9 @@ class WebCommandCatalogApi:
                 'kind': item.get('kind', 'command'),
                 'cancel_policy': item.get('cancel_policy', 'none'),
                 'timeout': item.get('timeout'),
-                'confirmation': item.get('confirmation') or {'required': False, 'allow_no_confirm': False},
+                **({'confirmation': True} if item.get('confirmation') else {}),
                 'interaction': item.get('interaction') or {'may_request': False},
                 'output': item.get('output', 'collect'),
-                'streaming': bool(item.get('streaming', False)),
             })
 
         return result

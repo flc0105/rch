@@ -3,16 +3,14 @@ import platform
 from client.config.config import (
     CLIENT_BUILD_VERSION,
     CLIENT_SOURCE_REVISION,
-    CLIENT_SOURCE_REVISION_PARTS,
     CLIENT_SOURCE_REVISION_FILES,
 )
 from client.config.runtime_config import HTTP_TRANSFER_MODE, PYTHON_EXECUTION_MODE
-from client.config import runtime_config
 from core.client_revision import build_client_revision_manifest
 from client.runtime.client_logging import get_client_log_path
 from core.device.local_identity import get_local_identity
 from client.runtime.client_util import check_privilege, get_executable_path, get_system_paths
-from client.runtime.launch_context import detect_launch_context, is_launchd_managed_client
+from client.runtime.launch_context import detect_launch_context
 
 
 _CLIENT_REVISION_MANIFEST = None
@@ -25,7 +23,6 @@ def _get_client_revision_manifest() -> dict:
     if CLIENT_SOURCE_REVISION:
         return {
             'revision': str(CLIENT_SOURCE_REVISION),
-            'parts': dict(CLIENT_SOURCE_REVISION_PARTS or {}),
             'files': dict(CLIENT_SOURCE_REVISION_FILES or {}),
         }
 
@@ -75,7 +72,6 @@ class ClientInfoBuilder:
             'machine_fingerprint_basis': identity.fingerprint_basis,
             'build_version': CLIENT_BUILD_VERSION,
             'client_revision': revision_manifest.get('revision') or '',
-            'client_revision_parts': dict(revision_manifest.get('parts') or {}),
             'client_revision_files': dict(revision_manifest.get('files') or {}),
 
             'process_id': os.getpid(),
@@ -91,8 +87,6 @@ class ClientInfoBuilder:
 
             'http_transfer_mode': HTTP_TRANSFER_MODE,
             'python_execution_mode': PYTHON_EXECUTION_MODE,
-            'remote_watchdog_enabled': bool(features['watchdog'] and runtime_config.REMOTE_HTTP_WATCHDOG_ENABLED and not is_launchd_managed_client()),
-            'local_watchdog_enabled': bool(features['watchdog'] and runtime_config.LOCAL_WATCHDOG_ENABLED and not is_launchd_managed_client()),
 
             'command_manifest': self._build_command_manifest(),
             'feature_manifest': dict(features),

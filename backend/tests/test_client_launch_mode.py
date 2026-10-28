@@ -308,7 +308,6 @@ def test_server_connection_payload_exposes_launch_snapshot():
         machine_fingerprint_basis='basis', os_type='macOS', os_alias='mac', os_ver='15.0',
         os_name='macOS', os_full='macOS test', arch='arm64', manufacturer='Apple', model='Mac',
         integrity='user', cwd='/tmp', build_version='dev', client_revision='',
-        client_revision_parts={},
         get_extra=lambda key, default=None: extras.get(key, default),
     )
     context = SimpleNamespace(
@@ -734,11 +733,8 @@ def test_client_info_reports_watchdog_effective_state_for_launchd(monkeypatch):
     monkeypatch.setattr(ClientInfoBuilder, '_build_process_info', lambda self, _os_alias: {
         'username': 'alice', 'process_name': 'python3',
     })
-    monkeypatch.setattr(client_info_builder.runtime_config, 'REMOTE_HTTP_WATCHDOG_ENABLED', True)
-    monkeypatch.setattr(client_info_builder.runtime_config, 'LOCAL_WATCHDOG_ENABLED', True)
-    monkeypatch.setattr(client_info_builder, 'is_launchd_managed_client', lambda: True)
 
     info = ClientInfoBuilder('client-launchd').build()
-    assert info['remote_watchdog_enabled'] is False
-    assert info['local_watchdog_enabled'] is False
+    assert 'remote_watchdog_enabled' not in info
+    assert 'local_watchdog_enabled' not in info
     assert info['feature_manifest']['watchdog'] is True

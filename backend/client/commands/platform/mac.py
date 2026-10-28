@@ -20,7 +20,7 @@ class MacCommands(CommonCommands):
         self.mac_automation = MacAutomationService(self)
         self.mac_file_inspection = MacFileInspectionService(self)
 
-    @desc("Capture a screenshot", group='media')
+    @desc("Capture a screenshot", group='media', output='stream')
     def screenshot(self):
         return self.mac_media.capture_screenshot()
 
@@ -36,13 +36,13 @@ class MacCommands(CommonCommands):
     def idletime(self):
         return self.mac_system.get_idle_time()
 
-    @desc('Capture webcam photo', group='media')
+    @desc('Capture webcam photo', group='media', output='stream')
     def webcam_snap(self):
         """拍照并上传到服务器"""
         return self.mac_media.capture_webcam_photo()
 
     @desc('Launch a new instance with elevated privileges', group='privilege')
-    @confirm('This may show an operating system permission prompt and wait for authorization. Continue?', allow_no_confirm=True)
+    @confirm('This may show an operating system permission prompt and wait for authorization. Continue?')
     def spawn_elevated_instance(self, options=''):
         """以 root 权限启动新实例，返回 PID"""
         option = options.strip()
@@ -51,12 +51,12 @@ class MacCommands(CommonCommands):
         return self.mac_automation.sudo_self(detached=(option == '--detached'))
 
     @desc('Run a command with elevated privileges', group='privilege')
-    @confirm('This may show an operating system permission prompt and wait for authorization. Continue?', allow_no_confirm=True)
+    @confirm('This may show an operating system permission prompt and wait for authorization. Continue?')
     def run_elevated(self, command):
         """以 root 权限执行命令 (macOS)"""
         return self.mac_automation.sudo_run(command)
 
-    @desc('Securely delete file (overwrite)', group='file')
+    @desc('Securely delete file (overwrite)', group='file', output='stream')
     def file_shred(self, path):
         """安全删除文件（覆写后删除）"""
         return self.mac_file_inspection.secure_delete_file(path)

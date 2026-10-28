@@ -12,6 +12,8 @@ Watchdog Worker 是独立于 Client 主执行流程的进程控制组件。Remot
 
 当 `watchdog=true` 时，Watchdog 实现会在 Client 启动时加载，即使三个运行模式全部关闭。运行中通过 `set REMOTE_HTTP_WATCHDOG_ENABLED`、`set LOCAL_WATCHDOG_ENABLED` 和 `set PROCESS_WATCHDOG_ENABLED` 独立启停对应功能，不需重启 Client。Web 的 Watchdog 详情在 Feature 支持时显示三个开关；不支持时显示能力提示。底部 HTTP Control 的 Kill、Relaunch、Clone 按钮始终显示，操作能否执行由运行状态决定。
 
+热切换失败时，`set` 会提示配置已保存但实际进程未能启动或停止；运行状态以 `watchdog --json` 返回的 Worker、Supervisor 存活信息为准。Windows 的 Worker 停止操作最多等待系统 `taskkill` 5 秒，超时后尝试直接结束对应进程。
+
 ## 守护进程与 Client 的运行关系
 
 ### Worker 的独立性与生命周期

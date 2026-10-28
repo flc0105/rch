@@ -77,7 +77,7 @@ class ClientSessionCommandChannel:
                     else:
                         method = getattr(command_class, parts[0], None)
             grants = getattr(method, 'api_grants', ()) if callable(method) and hasattr(method, 'help') else ()
-            if (grants and parts and getattr(method, 'allow_no_confirm', False)
+            if (grants and parts and getattr(method, 'requires_confirmation', False)
                     and len(parts) > 1 and _strip_confirm_bypass(command[len(parts[0]):].strip())[0]):
                 grants = tuple(scope for scope in grants if scope != 'interactions:request')
             if grants:

@@ -190,12 +190,16 @@ class ClientWatchdogProcess:
 
         try:
             if os.name == 'nt':
-                subprocess.run(
-                    ['taskkill', '/PID', str(process.pid), '/F', '/T'],
-                    check=False,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
+                try:
+                    subprocess.run(
+                        ['taskkill', '/PID', str(process.pid), '/F', '/T'],
+                        timeout=5, check=False,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                except subprocess.TimeoutExpired:
+                    # A blocked taskkill must not hold the Client command indefinitely.
+                    process.kill()
             else:
                 os.kill(process.pid, 9)
         except Exception:
