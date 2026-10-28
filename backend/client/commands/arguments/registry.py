@@ -76,43 +76,39 @@ class ArgumentCommandRegistry:
         return result
 
     def get_manifest_payload(self) -> list[dict]:
-        """
-        生成 acmd 自动补全清单，供 client command_manifest 上报给 server/web。
-        """
-        payload = [
-            {
-                'name': 'acmd',
-                'template': 'acmd help',
-                'help': 'List all registered structured commands',
-                'group': 'acmd',
-                'suggest': True,
-                'source': 'client',
-            }
-        ]
+        """Describe registered ACMD handlers and their completion templates."""
+        from client.commands.runtime.manifest_metadata import command_metadata
 
+        payload = [{
+            'name': 'acmd',
+            'template': 'acmd help',
+            'help': 'List all registered structured commands',
+            'group': 'acmd',
+            'suggest': True,
+            **command_metadata(None, kind='acmd'),
+        }]
         for item in self.list_command_entries():
-            command_name = item.get('name', '').strip()
-            description = item.get('description') or 'No description'
+            command_name = item['name'].strip()
             if not command_name:
                 continue
-
+            handler = self._entries[command_name]['handler']
+            metadata = command_metadata(handler, kind='acmd')
             payload.append({
                 'name': f'acmd {command_name}',
                 'template': f'acmd {command_name}',
-                'help': description,
+                'help': item['description'],
                 'group': 'acmd',
                 'suggest': True,
-                'source': 'client',
+                **metadata,
             })
             payload.append({
-                'name': 'acmd',
+                'name': f'acmd help {command_name}',
                 'template': f'acmd help {command_name}',
                 'help': f'Show help for acmd command: {command_name}',
                 'group': 'acmd',
                 'suggest': False,
-                'source': 'client',
+                **command_metadata(None, kind='acmd'),
             })
-
         return payload
 
     def execute(self, payload: dict):

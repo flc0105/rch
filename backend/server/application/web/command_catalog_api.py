@@ -37,6 +37,13 @@ class WebCommandCatalogApi:
                 'group': item.get('group', 'general'),
                 'suggest': item.get('suggest', True),
                 'source': item.get('source', 'client'),
+                'kind': item.get('kind', 'command'),
+                'cancel_policy': item.get('cancel_policy', 'none'),
+                'timeout': item.get('timeout'),
+                'confirmation': item.get('confirmation') or {'required': False, 'allow_no_confirm': False},
+                'interaction': item.get('interaction') or {'may_request': False},
+                'output': item.get('output', 'collect'),
+                'streaming': bool(item.get('streaming', False)),
             })
 
         return result

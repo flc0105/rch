@@ -3,7 +3,11 @@ import time
 
 from core.protocol.message_router_base import BaseMessageRouter
 from core.protocol.screen import SCREEN_DEFAULT_FPS
-from core.protocol.message_types import MSG_TYPE_CANCEL_ACK, MSG_TYPE_HEARTBEAT_ACK
+from core.protocol.message_types import (
+    MSG_TYPE_CANCEL_ACK, MSG_TYPE_HEARTBEAT_ACK,
+    MSG_TYPE_SCREEN_ERROR, MSG_TYPE_SCREEN_INPUT_ERROR,
+    MSG_TYPE_PTY_ERROR, MSG_TYPE_CLIPBOARD_RESULT,
+)
 
 
 class ClientInboundMessageRouter(BaseMessageRouter):
@@ -103,6 +107,13 @@ class ClientInboundMessageRouter(BaseMessageRouter):
 
 
     def handle_screen_open_message(self, data: dict):
+        if self.connection.runtime.screen_view_manager is None:
+            self.connection.send({
+                'type': MSG_TYPE_SCREEN_ERROR,
+                'screen_session_id': data.get('screen_session_id') or '',
+                'message': 'Screen View disabled on Client',
+            })
+            return None
         self.connection.runtime.screen_view_manager.open_session(
             data.get('screen_session_id') or '',
             fps=data.get('fps') or SCREEN_DEFAULT_FPS,
@@ -111,6 +122,8 @@ class ClientInboundMessageRouter(BaseMessageRouter):
         return None
 
     def handle_screen_config_message(self, data: dict):
+        if self.connection.runtime.screen_view_manager is None:
+            return None
         self.connection.runtime.screen_view_manager.update_session(
             data.get('screen_session_id') or '',
             fps=data.get('fps'),
@@ -119,12 +132,21 @@ class ClientInboundMessageRouter(BaseMessageRouter):
         return None
 
     def handle_screen_close_message(self, data: dict):
+        if self.connection.runtime.screen_view_manager is None:
+            return None
         self.connection.runtime.screen_view_manager.close_session(
             data.get('screen_session_id') or '',
         )
         return None
 
     def handle_screen_input_message(self, data: dict):
+        if not self.connection.runtime.features['screen_input']:
+            self.connection.send({
+                'type': MSG_TYPE_SCREEN_INPUT_ERROR,
+                'screen_session_id': data.get('screen_session_id') or '',
+                'message': 'Screen Input disabled on Client',
+            })
+            return None
         self.connection.runtime.screen_view_manager.handle_input(
             data.get('screen_session_id') or '',
             data.get('event') if isinstance(data.get('event'), dict) else {},
@@ -132,6 +154,14 @@ class ClientInboundMessageRouter(BaseMessageRouter):
         return None
 
     def handle_clipboard_get_message(self, data: dict):
+        if self.connection.runtime.clipboard_manager is None:
+            self.connection.send({
+                'type': MSG_TYPE_CLIPBOARD_RESULT,
+                'clipboard_request_id': data.get('clipboard_request_id') or '',
+                'operation': 'get', 'ok': False,
+                'payload': {}, 'error': 'Clipboard disabled on Client',
+            })
+            return None
         # 显式读取目标机器当前剪贴板，不做自动同步。
         self.connection.runtime.clipboard_manager.handle_get(
             data.get('clipboard_request_id') or '',
@@ -140,6 +170,14 @@ class ClientInboundMessageRouter(BaseMessageRouter):
         return None
 
     def handle_clipboard_set_message(self, data: dict):
+        if self.connection.runtime.clipboard_manager is None:
+            self.connection.send({
+                'type': MSG_TYPE_CLIPBOARD_RESULT,
+                'clipboard_request_id': data.get('clipboard_request_id') or '',
+                'operation': 'set', 'ok': False,
+                'payload': {}, 'error': 'Clipboard disabled on Client',
+            })
+            return None
         # 文本、图片、文件统一交给 ClipboardManager 落到原生剪贴板。
         self.connection.runtime.clipboard_manager.handle_set(
             data.get('clipboard_request_id') or '',
@@ -148,6 +186,13 @@ class ClientInboundMessageRouter(BaseMessageRouter):
         return None
 
     def handle_pty_open_message(self, data: dict):
+        if self.connection.runtime.pty_manager is None:
+            self.connection.send({
+                'type': MSG_TYPE_PTY_ERROR,
+                'pty_session_id': data.get('pty_session_id') or '',
+                'message': 'PTY disabled on Client',
+            })
+            return None
         self.connection.runtime.pty_manager.open_session(
             data.get('pty_session_id') or '',
             shell=data.get('shell') or '',
@@ -158,6 +203,8 @@ class ClientInboundMessageRouter(BaseMessageRouter):
         return None
 
     def handle_pty_input_message(self, data: dict):
+        if self.connection.runtime.pty_manager is None:
+            return None
         self.connection.runtime.pty_manager.write_input(
             data.get('pty_session_id') or '',
             data.get('data') or '',
@@ -165,6 +212,8 @@ class ClientInboundMessageRouter(BaseMessageRouter):
         return None
 
     def handle_pty_resize_message(self, data: dict):
+        if self.connection.runtime.pty_manager is None:
+            return None
         self.connection.runtime.pty_manager.resize_session(
             data.get('pty_session_id') or '',
             data.get('cols') or 120,
@@ -173,6 +222,8 @@ class ClientInboundMessageRouter(BaseMessageRouter):
         return None
 
     def handle_pty_close_message(self, data: dict):
+        if self.connection.runtime.pty_manager is None:
+            return None
         self.connection.runtime.pty_manager.close_session(data.get('pty_session_id') or '')
         return None
 

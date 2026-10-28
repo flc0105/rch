@@ -95,8 +95,9 @@
             </el-option>
           </el-select>
 
-          <span class="screen-view-control-label">Control</span>
+          <span v-if="screenInputSupported" class="screen-view-control-label">Control</span>
           <el-switch
+            v-if="screenInputSupported"
             v-model="controlEnabled"
             size="small"
             :disabled="!controlAvailable"
@@ -232,7 +233,7 @@ export default {
       frameWidth: 0,
       frameHeight: 0,
       frameBytes: 0,
-      controlEnabled: true,
+      controlEnabled: false,
       controlError: '',
       pendingPointerMove: null,
       pointerMoveTimer: null,
@@ -277,8 +278,14 @@ export default {
       return (this.fullscreen || this.standalone) ? '0' : '4vh'
     },
 
+    screenInputSupported() {
+      // Existing connections without a feature manifest retain their prior behavior.
+      const flags = this.currentConnection?.feature_manifest
+      return !flags || flags.screen_input !== false
+    },
+
     controlAvailable() {
-      return !!(
+      return this.screenInputSupported && !!(
         this.screenSessionId &&
         this.screenWsReady &&
         this.screenStatus === 'open' &&
@@ -318,6 +325,12 @@ export default {
       if (this.screenStatus === 'error') return 'danger'
       if (this.screenStatus === 'opening' || this.screenStatus === 'closing') return 'warning'
       return 'info'
+    },
+  },
+
+  watch: {
+    screenInputSupported(enabled) {
+      if (!enabled) this.disableControl(false)
     },
   },
 
@@ -376,7 +389,7 @@ export default {
       this.frameWidth = 0
       this.frameHeight = 0
       this.frameBytes = 0
-      this.controlEnabled = true
+      this.controlEnabled = this.screenInputSupported
       this.controlError = ''
       this.screenWsReady = false
       this.removeControlSafetyListeners()
@@ -432,6 +445,7 @@ export default {
         screen_view_client: this.targetClientId,
         hostname: String(connection.hostname || '').trim(),
         machine_id: String(connection.machine_id || '').trim(),
+        feature_manifest: connection.feature_manifest || null,
       })
       tab.opener = null
       await this.closeRemoteSession(false)
@@ -530,6 +544,10 @@ export default {
 },
 
     async handleControlToggle(enabled) {
+      if (enabled && !this.screenInputSupported) {
+        this.disableControl(false)
+        return
+      }
       if (!enabled) {
         this.sendScreenWsMessage({ type: 'control', enabled: false })
         this.disableControl(false)
@@ -570,7 +588,7 @@ export default {
     applyControlPayload(payload = {}) {
       if (Object.prototype.hasOwnProperty.call(payload, 'control_enabled')) {
         const nextEnabled = !!payload.control_enabled
-        if (nextEnabled) {
+        if (nextEnabled && this.screenInputSupported) {
           this.controlEnabled = true
           this.installControlSafetyListeners()
         } else if (this.controlEnabled) {
@@ -597,7 +615,7 @@ export default {
     },
 
     sendScreenInput(event) {
-      if (!this.controlEnabled || !event) return false
+      if (!this.screenInputSupported || !this.controlEnabled || !event) return false
       return this.sendScreenWsMessage({ type: 'input', event })
     },
 

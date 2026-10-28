@@ -329,6 +329,7 @@
                 <div class="connection-config-stat-head">
                   <div class="connection-info-stat-label">
                     {{ item.key }}
+                    <span v-if="item.editable === false && currentConnection?.feature_manifest?.watchdog === false && ['REMOTE_HTTP_WATCHDOG_ENABLED', 'LOCAL_WATCHDOG_ENABLED', 'PROCESS_WATCHDOG_ENABLED'].includes(item.key)" class="connection-config-override-badge">Unavailable on this Client</span>
                   </div>
                   <span
                     v-if="item.source === 'override'"
@@ -1080,7 +1081,11 @@ export default {
       const data = payload && typeof payload === 'object' ? payload : {}
       this.runtimeConfigStorePath = String(data.store_path || '')
       this.runtimeConfigItems = Array.isArray(data.items)
-        ? data.items.filter(item => item && item.key)
+        ? data.items.filter(item => item && item.key).map(item => (
+            this.currentConnection?.feature_manifest?.watchdog === false &&
+            ['REMOTE_HTTP_WATCHDOG_ENABLED', 'LOCAL_WATCHDOG_ENABLED', 'PROCESS_WATCHDOG_ENABLED'].includes(item.key)
+              ? { ...item, editable: false } : item
+          ))
         : []
     },
 

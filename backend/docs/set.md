@@ -141,6 +141,8 @@ set SCREEN_FRAME_STRATEGY keyframe_delta
 
 配置列表同时展示只读和可修改字段； 运行中 Watchdog 的真实状态可另外使用 `watchdog` 或 `watchdog --json` 查看；配置开关显示为 `true`，不保证监控组件一定已经健康运行。
 
+Watchdog 的三个 `*_WATCHDOG_ENABLED` 配置仍可通过 `set` 热切换；加载能力由 Client 启动 Feature `watchdog` 决定。Feature 关闭时配置可保存但当前 Client 不执行 Watchdog，Web Configuration 显示只读状态。launchd 下设置也可以保存，实际运行受 launchd 生命周期管理约束。
+
 ## 4. 三个常见调整示例
 
 ### 大文件传输：减少内存压力并允许取消

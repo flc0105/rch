@@ -50,7 +50,7 @@ class CommandFileWebMixin:
             self._preview_image_service = service
         return service
 
-    @desc('Download a file by path', group='file_path', suggest=False)
+    @desc('Download a file by path', group='file_path', suggest=False, manifest_cancel='dynamic')
     def download_path(self, path=''):
         """
         下载单个路径到 server artifact files 区
@@ -85,7 +85,7 @@ class CommandFileWebMixin:
         except Exception as e:
             return 0, f'Failed to download file via HTTP: {e}'
 
-    @desc('Download multiple paths as ZIP archive', group='file_path', suggest=False)
+    @desc('Download multiple paths as ZIP archive', group='file_path', suggest=False, manifest_cancel='dynamic')
     def download_paths(self, arg=''):
         """
         按路径列表打包上传到 server artifact files 区

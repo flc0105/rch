@@ -6,12 +6,8 @@ from client.config.config import (
     CLIENT_SOURCE_REVISION_PARTS,
     CLIENT_SOURCE_REVISION_FILES,
 )
-from client.config.runtime_config import (
-    HTTP_TRANSFER_MODE,
-    LOCAL_WATCHDOG_ENABLED,
-    PYTHON_EXECUTION_MODE,
-    REMOTE_HTTP_WATCHDOG_ENABLED,
-)
+from client.config.runtime_config import HTTP_TRANSFER_MODE, PYTHON_EXECUTION_MODE
+from client.config import runtime_config
 from core.client_revision import build_client_revision_manifest
 from client.runtime.client_logging import get_client_log_path
 from core.device.local_identity import get_local_identity
@@ -44,9 +40,10 @@ class ClientInfoBuilder:
     构造客户端握手信息。
     """
 
-    def __init__(self, client_id, command_executor=None):
+    def __init__(self, client_id, command_executor=None, features=None):
         self.client_id = client_id
         self.command_executor = command_executor
+        self.features = features
 
     def build(self):
         """
@@ -57,6 +54,8 @@ class ClientInfoBuilder:
         launch_context = self._get_launch_context(identity.os_alias)
         revision_manifest = _get_client_revision_manifest()
 
+        from client.config.feature_config import resolve_features
+        features = dict(self.features if self.features is not None else resolve_features(identity.os_alias))
         info = {
             'id': self.client_id,
             'type': 'info',
@@ -92,10 +91,11 @@ class ClientInfoBuilder:
 
             'http_transfer_mode': HTTP_TRANSFER_MODE,
             'python_execution_mode': PYTHON_EXECUTION_MODE,
-            'remote_watchdog_enabled': bool(REMOTE_HTTP_WATCHDOG_ENABLED and not is_launchd_managed_client()),
-            'local_watchdog_enabled': bool(LOCAL_WATCHDOG_ENABLED and not is_launchd_managed_client()),
+            'remote_watchdog_enabled': bool(features['watchdog'] and runtime_config.REMOTE_HTTP_WATCHDOG_ENABLED and not is_launchd_managed_client()),
+            'local_watchdog_enabled': bool(features['watchdog'] and runtime_config.LOCAL_WATCHDOG_ENABLED and not is_launchd_managed_client()),
 
             'command_manifest': self._build_command_manifest(),
+            'feature_manifest': dict(features),
             'variable_manifest': self._build_variable_manifest(),
             'system_paths': get_system_paths(),
         }

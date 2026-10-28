@@ -203,9 +203,12 @@ class CommandRuntimeConfigMixin:
             effects.append(warning('Applies to new Screen View sessions; restart the current Screen View to switch mode'))
 
         launchd_managed = is_launchd_managed_client()
+        watchdog_supported = bool(getattr(getattr(self.socket, 'runtime', None), 'features', {}).get('watchdog', True))
 
         if key == 'PROCESS_WATCHDOG_ENABLED':
-            manager = getattr(self.socket, 'process_watchdog_manager', None)
+            if not watchdog_supported:
+                effects.append(warning('Saved: watchdog is unavailable on this Client; restart with watchdog support to apply'))
+            manager = getattr(self.socket, 'process_watchdog_manager', None) if watchdog_supported else None
             if manager is not None:
                 if value and not launchd_managed:
                     manager.start()
@@ -220,7 +223,9 @@ class CommandRuntimeConfigMixin:
                 self._restart_guard_manager()
 
         if key in self.WATCHDOG_CONFIG_KEYS:
-            if self._restart_guard_manager():
+            if not watchdog_supported:
+                effects.append(warning('Saved: watchdog is unavailable on this Client; restart with watchdog support to apply'))
+            elif self._restart_guard_manager():
                 if launchd_managed:
                     effects.append(warning('Saved: launchd manages this Client; Client watchdogs remain disabled'))
                 else:

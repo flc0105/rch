@@ -14,6 +14,7 @@ from uuid import uuid4
 from client.watchdog.watchdog_paths import get_watchdog_log_path
 from client.runtime.temp_workspace import get_temp_category_dir
 from client.watchdog.recovery_source import RECOVERY_SOURCE_ENV, PROCESS_WATCHDOG
+from client.watchdog.watchdog_environment import without_process_watchdog_environment
 from client.runtime.launch_context import detached_launch_environment, is_launchd_managed_client
 
 
@@ -25,14 +26,6 @@ _POLL_INTERVAL = 0.5
 _STOP_TIMEOUT = 3.0
 _RETRY_DELAYS = (3, 10, 30, 60, 120, 300)
 _STABLE_SECONDS = 300
-
-
-def without_process_watchdog_environment(source=None):
-    """A separately launched Client must receive a NEW supervisor chain."""
-    env = dict(os.environ if source is None else source)
-    for key in (*_ENV_KEYS, RECOVERY_SOURCE_ENV):
-        env.pop(key, None)
-    return env
 
 
 def _process_identity(pid):

@@ -11,6 +11,10 @@
         </el-button>
       </header>
 
+      <div v-if="!watchdogSupported" class="watchdog-policy-note">
+        Watchdog is unavailable on this Client. The Client can be restarted with the watchdog capability enabled on supported platforms.
+      </div>
+
       <div v-if="loading && !status" class="watchdog-loading">
         <el-skeleton :rows="5" animated />
       </div>
@@ -45,10 +49,11 @@
               </div>
               <div class="watchdog-card-controls">
                 <span class="watchdog-state-tag" :class="{ 'is-on': status.process_watchdog.enabled }">
-                  {{ launchdManaged ? `Managed by ${launchdManagerLabel}` : (status.process_watchdog.enabled ? 'Enabled' : 'Disabled') }}
+                  {{ !watchdogSupported ? 'Unavailable' : launchdManaged ? `Managed by ${launchdManagerLabel}` : (status.process_watchdog.enabled ? 'Enabled' : 'Disabled') }}
                 </span>
                 <el-switch
-                  :model-value="Boolean(status.process_watchdog.enabled)"
+                  v-if="watchdogSupported"
+                  :model-value="Boolean(launchdManaged ? status.process_watchdog.configured_enabled : status.process_watchdog.enabled)"
                   :loading="togglingMode === 'process'"
                   :disabled="!canToggleMode"
                   aria-label="Toggle process recovery watchdog"
@@ -76,10 +81,11 @@
               </div>
               <div class="watchdog-card-controls">
                 <span class="watchdog-state-tag" :class="{ 'is-on': status.remote_watchdog.enabled }">
-                  {{ launchdManaged ? `Managed by ${launchdManagerLabel}` : (status.remote_watchdog.enabled ? 'Enabled' : 'Disabled') }}
+                  {{ !watchdogSupported ? 'Unavailable' : launchdManaged ? `Managed by ${launchdManagerLabel}` : (status.remote_watchdog.enabled ? 'Enabled' : 'Disabled') }}
                 </span>
                 <el-switch
-                  :model-value="Boolean(status.remote_watchdog.enabled)"
+                  v-if="watchdogSupported"
+                  :model-value="Boolean(launchdManaged ? status.remote_watchdog.configured_enabled : status.remote_watchdog.enabled)"
                   :loading="togglingMode === 'remote'"
                   :disabled="!canToggleMode"
                   aria-label="Toggle remote control watchdog"
@@ -107,10 +113,11 @@
               </div>
               <div class="watchdog-card-controls">
                 <span class="watchdog-state-tag" :class="{ 'is-on': status.local_watchdog.enabled }">
-                  {{ launchdManaged ? `Managed by ${launchdManagerLabel}` : (status.local_watchdog.enabled ? 'Enabled' : 'Disabled') }}
+                  {{ !watchdogSupported ? 'Unavailable' : launchdManaged ? `Managed by ${launchdManagerLabel}` : (status.local_watchdog.enabled ? 'Enabled' : 'Disabled') }}
                 </span>
                 <el-switch
-                  :model-value="Boolean(status.local_watchdog.enabled)"
+                  v-if="watchdogSupported"
+                  :model-value="Boolean(launchdManaged ? status.local_watchdog.configured_enabled : status.local_watchdog.enabled)"
                   :loading="togglingMode === 'local'"
                   :disabled="!canToggleMode"
                   aria-label="Toggle local recovery watchdog"
@@ -249,6 +256,11 @@ export default {
     }
   },
   computed: {
+    watchdogSupported() {
+      const reported = this.currentConnection?.feature_manifest?.watchdog
+      if (typeof reported === 'boolean') return reported
+      return this.status?.client?.watchdog_supported !== false
+    },
     launchdManaged() {
       return Boolean(this.status?.client?.watchdogs_suppressed && this.status?.client?.lifecycle_manager === 'launchd')
     },
@@ -268,13 +280,14 @@ export default {
       return this.status?.remote_watchdog?.worker_alive ? 'Running' : 'Stopped'
     },
     healthTone() {
-      if (this.launchdManaged) return 'off'
+      if (!this.watchdogSupported || this.launchdManaged) return 'off'
       if (!this.enabled) return 'off'
       if ((this.legacyEnabled && !this.status?.remote_watchdog?.worker_alive) ||
           (this.status?.process_watchdog?.enabled && !this.status?.process_watchdog?.supervisor_alive)) return 'warning'
       return 'healthy'
     },
     healthTitle() {
+      if (!this.watchdogSupported) return 'Watchdog is unavailable'
       if (this.launchdManaged) return `Lifecycle managed by ${this.launchdManagerLabel}`
       if (!this.enabled) return 'Watchdog is disabled'
       return this.healthTone === 'healthy' ? 'Supervisor is running' : 'Supervisor is not running'
@@ -296,15 +309,16 @@ export default {
       return this.currentConnection?.connection_state === 'offline' || Boolean(this.currentConnection?.disconnected_at)
     },
     canToggleMode() {
-      return !this.launchdManaged && !this.connectionOffline && !this.loading && !this.error &&
+      return this.watchdogSupported && !this.connectionOffline && !this.loading && !this.error &&
         Boolean(this.status) && !this.togglingMode && !this.pendingAction
     },
     canControl() {
       // Recovery controls must not rely on the health/status request or the
       // agent's online/busy state; launchd-managed Clients intentionally disable Remote Watchdog.
-      return Boolean(this.clientId) && !this.launchdManaged && !this.pendingAction
+      return Boolean(this.clientId) && this.watchdogSupported && !this.launchdManaged && !this.pendingAction
     },
     actionHint() {
+      if (!this.watchdogSupported) return 'This Client does not support remote watchdog control'
       if (this.launchdManaged) return `Remote watchdog control is disabled while ${this.launchdManagerLabel} manages this Client`
       if (this.connectionOffline) return 'Agent is offline; command can be queued for its next poll'
       if (!this.status || this.error) return 'Status unavailable; recovery commands can still be queued'
@@ -335,7 +349,7 @@ export default {
       const labels = { remote: 'Remote control', local: 'Local recovery', process: 'Process recovery' }
       const key = keys[mode]
       const label = labels[mode]
-      if (this.status[`${mode}_watchdog`].enabled === enabled) return
+      if (Boolean(this.launchdManaged ? this.status[`${mode}_watchdog`].configured_enabled : this.status[`${mode}_watchdog`].enabled) === enabled) return
 
       this.togglingMode = mode
       try {
@@ -345,6 +359,8 @@ export default {
         await this.loadStatus()
         if (this.error || !this.status) {
           ElMessage.warning(`${label} updated, but status could not be refreshed`)
+        } else if (this.launchdManaged) {
+          ElMessage.warning(`${label} setting saved; ${this.launchdManagerLabel} manages the Client lifecycle`)
         } else if (this.status[`${mode}_watchdog`].enabled !== enabled) {
           ElMessage.warning(`${label} setting saved; refresh to verify its runtime state`)
         } else {
@@ -387,8 +403,8 @@ export default {
       try {
         const data = await getHttpControlActions()
         if (!Array.isArray(data)) throw new Error('Invalid control action response')
-        const available = data.filter(item => item && typeof item.action === 'string' && item.action)
-        this.actions = available.length ? available : RECOVERY_ACTIONS.map(action => ({ ...action }))
+        const available = new Map(data.filter(item => item && typeof item.action === 'string').map(item => [item.action, item]))
+        this.actions = RECOVERY_ACTIONS.map(action => ({ ...action, ...(available.get(action.action) || {}), action: action.action }))
       } catch (error) {
         // Keep known recovery controls available if action discovery fails.
         this.actions = RECOVERY_ACTIONS.map(action => ({ ...action }))

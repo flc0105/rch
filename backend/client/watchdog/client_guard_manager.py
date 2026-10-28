@@ -1,18 +1,19 @@
 import os
 
+from client.config import runtime_config
+
 from client.config.runtime_config import (
-    LOCAL_WATCHDOG_ENABLED,
     LOCAL_WATCHDOG_HEARTBEAT_INTERVAL_SECONDS,
     LOCAL_WATCHDOG_TIMEOUT_SECONDS,
-    REMOTE_HTTP_WATCHDOG_ENABLED,
     REMOTE_HTTP_WATCHDOG_INTERVAL_SECONDS,
 
 )
 
 from client.config.config import UPLOAD_BASE_URL
-from client.watchdog.local_watchdog import LocalWatchdogHeartbeatFeeder
-from client.watchdog.watchdog_process import ClientWatchdogProcess
 from client.watchdog.watchdog_paths import get_watchdog_log_path
+from client.watchdog.local_watchdog import LocalWatchdogHeartbeatFeeder
+from client.watchdog.remote_watchdog import RemoteHttpWatchdogMonitor
+from client.watchdog.watchdog_process import ClientWatchdogProcess
 from client.runtime.temp_workspace import get_temp_category_dir
 from client.runtime.launch_context import is_launchd_managed_client
 from core.utils.logger import logger
@@ -25,6 +26,12 @@ class ClientGuardManager:
         self._local_watchdog_feeder = None
         self._started = False
 
+
+    def _current_enabled_modes(self):
+        return {
+            'remote_watchdog': bool(runtime_config.REMOTE_HTTP_WATCHDOG_ENABLED),
+            'local_watchdog': bool(runtime_config.LOCAL_WATCHDOG_ENABLED),
+        }
 
     def _build_local_watchdog_heartbeat_file_path(self):
         return os.path.join(get_temp_category_dir('watchdog_heartbeats', private=True), f'client_local_watchdog_heartbeat_{self.client_id}.json')
@@ -56,11 +63,11 @@ class ClientGuardManager:
         if self._watchdog_process is None:
             self._watchdog_process = ClientWatchdogProcess(
                 client_id=self.client_id,
-                remote_http_watchdog_enabled=REMOTE_HTTP_WATCHDOG_ENABLED,
+                remote_http_watchdog_enabled=self._current_enabled_modes()['remote_watchdog'],
                 remote_http_watchdog_base_url=UPLOAD_BASE_URL,
                 remote_http_watchdog_interval_seconds=REMOTE_HTTP_WATCHDOG_INTERVAL_SECONDS,
                 remote_watchdog_log_file_path=self._build_remote_watchdog_log_file_path(),
-                local_watchdog_enabled=LOCAL_WATCHDOG_ENABLED,
+                local_watchdog_enabled=self._current_enabled_modes()['local_watchdog'],
                 local_watchdog_timeout_seconds=LOCAL_WATCHDOG_TIMEOUT_SECONDS,
                 local_watchdog_heartbeat_file_path=self._build_local_watchdog_heartbeat_file_path(),
                 local_watchdog_log_file_path=self._build_local_watchdog_log_file_path(),
@@ -70,11 +77,11 @@ class ClientGuardManager:
         items = [
             ('client_id', self.client_id),
             ('main_process_pid', os.getpid()),
-            ('remote_http_watchdog_enabled', REMOTE_HTTP_WATCHDOG_ENABLED),
+            ('remote_http_watchdog_enabled', runtime_config.REMOTE_HTTP_WATCHDOG_ENABLED),
             ('remote_http_watchdog_interval_seconds', REMOTE_HTTP_WATCHDOG_INTERVAL_SECONDS),
             ('remote_http_control_url', self._build_remote_http_control_url()),
             ('remote_watchdog_log_file_path', self._build_remote_watchdog_log_file_path()),
-            ('local_watchdog_enabled', LOCAL_WATCHDOG_ENABLED),
+            ('local_watchdog_enabled', runtime_config.LOCAL_WATCHDOG_ENABLED),
             ('local_watchdog_heartbeat_interval_seconds', LOCAL_WATCHDOG_HEARTBEAT_INTERVAL_SECONDS),
             ('local_watchdog_timeout_seconds', LOCAL_WATCHDOG_TIMEOUT_SECONDS),
             ('local_watchdog_heartbeat_file_path', self._build_local_watchdog_heartbeat_file_path()),
@@ -99,11 +106,11 @@ class ClientGuardManager:
 
         # self._log_startup_once()
 
-        if LOCAL_WATCHDOG_ENABLED:
+        if self._current_enabled_modes()['local_watchdog']:
             self._ensure_local_watchdog_feeder()
             self._local_watchdog_feeder.start()
 
-        if REMOTE_HTTP_WATCHDOG_ENABLED or LOCAL_WATCHDOG_ENABLED:
+        if self._current_enabled_modes()['remote_watchdog'] or self._current_enabled_modes()['local_watchdog']:
             self._ensure_watchdog_process()
             self._watchdog_process.start()
 
@@ -125,8 +132,8 @@ class ClientGuardManager:
 
     def get_watchdog_status_payload(self):
         suppressed = is_launchd_managed_client()
-        remote_configured = bool(REMOTE_HTTP_WATCHDOG_ENABLED)
-        local_configured = bool(LOCAL_WATCHDOG_ENABLED)
+        remote_configured = bool(self._current_enabled_modes()['remote_watchdog'])
+        local_configured = bool(self._current_enabled_modes()['local_watchdog'])
         remote_enabled = remote_configured and not suppressed
         local_enabled = local_configured and not suppressed
 
@@ -146,6 +153,7 @@ class ClientGuardManager:
             'client': {
                 'id': self.client_id,
                 'pid': os.getpid(),
+                'watchdog_supported': True,
                 'lifecycle_manager': 'launchd' if suppressed else '',
                 'watchdogs_suppressed': suppressed,
             },

@@ -153,8 +153,8 @@ class LaunchdWatchdogPolicyTests(unittest.TestCase):
     def test_guard_manager_suppresses_remote_and_local_even_when_configured(self):
         guard = ClientGuardManager('launchd-client')
         with patch('client.watchdog.client_guard_manager.is_launchd_managed_client', return_value=True), \
-             patch('client.watchdog.client_guard_manager.REMOTE_HTTP_WATCHDOG_ENABLED', True), \
-             patch('client.watchdog.client_guard_manager.LOCAL_WATCHDOG_ENABLED', True):
+             patch('client.config.runtime_config.REMOTE_HTTP_WATCHDOG_ENABLED', True), \
+             patch('client.config.runtime_config.LOCAL_WATCHDOG_ENABLED', True):
             guard.start()
             self.assertIsNone(guard._watchdog_process)
             self.assertIsNone(guard._local_watchdog_feeder)
@@ -293,7 +293,7 @@ class WatchdogStatusIntegrationTests(unittest.TestCase):
         for remote_enabled in (False, True):
             with self.subTest(remote_enabled=remote_enabled), \
                  patch('client.config.runtime_config.PROCESS_WATCHDOG_ENABLED', False), \
-                 patch('client.watchdog.client_guard_manager.REMOTE_HTTP_WATCHDOG_ENABLED', remote_enabled):
+                 patch('client.config.runtime_config.REMOTE_HTTP_WATCHDOG_ENABLED', remote_enabled):
                 status, text_output = runner.execute(request, 'watchdog')
                 json_status, json_output = runner.execute(request, 'watchdog --json')
 

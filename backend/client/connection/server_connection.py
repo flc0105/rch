@@ -21,11 +21,11 @@ class ServerConnection(RCHSocket):
     本地运行能力统一放在 ClientRuntime 中，避免连接层继续膨胀。
     """
 
-    def __init__(self):
+    def __init__(self, *, features=None):
         super().__init__()
         self.client_id = None
 
-        self.runtime = ClientRuntime(self)
+        self.runtime = ClientRuntime(self, features=features)
         self.pending_message_queue = queue.Queue()
         self.is_connected = False
 

@@ -23,7 +23,7 @@ class ClientConnectionLifecycle:
         """
         创建一个新的服务端连接对象
         """
-        server = ServerConnection()
+        server = ServerConnection(features=getattr(self.client, 'features', None))
         server.client_id = self.client.client_id
         server.guard_manager = self.client.guard_manager
         server.process_watchdog_manager = self.client.process_watchdog_manager
@@ -66,6 +66,7 @@ class ClientConnectionLifecycle:
         info = ClientInfoBuilder(
             client_id=self.client.client_id,
             command_executor=self.client.server.runtime.command_executor,
+            features=self.client.server.runtime.features,
         ).build()
         if self.client.recovery_source:
             info['recovery_source'] = self.client.recovery_source

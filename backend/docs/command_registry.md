@@ -223,3 +223,9 @@ System Events implementation.
 
 The viewer's Clear View clears browser display only. External Tools' existing
 **Clear Logs** operation still explicitly clears stopped instance log files.
+
+## 命令 Manifest 元数据
+
+Client 普通命令的 `@desc` 可以声明 `output='collect'|'stream'`、`interaction=True|False` 与 `manifest_cancel='dynamic'`（动态取消能力提示），并保留 `help/group/suggest/api_grants`。`@cancel_policy`、`@timeout`、`@confirm` 仍各自定义实际执行行为。命令扫描器统一提取 `name/kind/source/help/group/suggest/template/cancel_policy/timeout/confirmation/interaction/output/streaming`；ACMD 注册表也生成相同字段。每一个 ACMD 帮助候选使用自己的唯一 `name`，执行和自动补全仍以 `template` 为准。
+
+Manifest 的取消与 Timeout 信息反映默认声明；执行过程中的动态取消模式由运行态覆盖。`confirmation.required` 表示被 `@confirm` 包装的命令需要 Interaction Broker 确认，`allow_no_confirm` 表示该命令明确允许跳过确认。`interaction.may_request` 是声明或授权范围提供的“可能请求交互”提示，不表示每次执行都会产生弹窗。

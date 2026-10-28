@@ -4,7 +4,7 @@
 
 ## 启用与控制
 
-默认 `PROCESS_WATCHDOG_ENABLED = False`，在 `client/config/runtime_config.py` 声明。运行中的 Client 可通过 `set PROCESS_WATCHDOG_ENABLED true` 启用、`set PROCESS_WATCHDOG_ENABLED false` 关闭；设置按项目现有 runtime_config 覆盖文件持久化。建议先在非关键设备验证，再远程开启。运行时切换本开关会刷新现有 Remote/Local 控制 Worker 的启动环境，以便它正确区分主动退出；监控逻辑和检测依据仍然完全独立。
+Client 启动时由单一 `watchdog` Feature 决定是否导入监督实现（macOS、Windows、Linux 默认支持，iOS 不支持）。默认 `PROCESS_WATCHDOG_ENABLED = False`，在 `client/config/runtime_config.py` 声明。运行中的 Client 可通过 `set PROCESS_WATCHDOG_ENABLED true` 启用、`set PROCESS_WATCHDOG_ENABLED false` 关闭；设置按项目现有 runtime_config 覆盖文件持久化。建议先在非关键设备验证，再远程开启。运行时切换本开关会刷新现有 Remote/Local 控制 Worker 的启动环境，以便它正确区分主动退出；监控逻辑和检测依据仍然完全独立。
 
 开启后，Client 在建立连接之前启动单独的 `--process-watchdog-worker` 进程。Worker 使用 `psutil` 对 PID 和创建时间进行联合检查，区分 PID 复用及僵尸进程。正常情况下只保留一条监督链：Client 死亡后，原 Worker 按 3、10、30、60、120、最高 300 秒的退避间隔重启 Client；运行至少 300 秒视为恢复稳定，重置连续失败计数。Worker 持续重试，不因达到失败次数而永久放弃。
 

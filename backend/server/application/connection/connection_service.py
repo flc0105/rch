@@ -176,6 +176,7 @@ class WebConnectionService:
             'remote_watchdog_enabled': info.get_extra('remote_watchdog_enabled'),
             'local_watchdog_enabled': info.get_extra('local_watchdog_enabled'),
             'variable_manifest': list(info.get_extra('variable_manifest') or []),
+            'feature_manifest': dict(info.get_extra('feature_manifest') or {}),
         }
 
     def _sync_recent_online_connections(self, active_connections: list[dict]):

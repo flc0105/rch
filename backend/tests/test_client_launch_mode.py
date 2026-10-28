@@ -734,10 +734,11 @@ def test_client_info_reports_watchdog_effective_state_for_launchd(monkeypatch):
     monkeypatch.setattr(ClientInfoBuilder, '_build_process_info', lambda self, _os_alias: {
         'username': 'alice', 'process_name': 'python3',
     })
-    monkeypatch.setattr(client_info_builder, 'REMOTE_HTTP_WATCHDOG_ENABLED', True)
-    monkeypatch.setattr(client_info_builder, 'LOCAL_WATCHDOG_ENABLED', True)
+    monkeypatch.setattr(client_info_builder.runtime_config, 'REMOTE_HTTP_WATCHDOG_ENABLED', True)
+    monkeypatch.setattr(client_info_builder.runtime_config, 'LOCAL_WATCHDOG_ENABLED', True)
     monkeypatch.setattr(client_info_builder, 'is_launchd_managed_client', lambda: True)
 
     info = ClientInfoBuilder('client-launchd').build()
     assert info['remote_watchdog_enabled'] is False
     assert info['local_watchdog_enabled'] is False
+    assert info['feature_manifest']['watchdog'] is True

@@ -6,7 +6,7 @@ from client.bootstrap.connection_lifecycle import ClientConnectionLifecycle
 from client.bootstrap.receiver_worker import ClientReceiverWorker
 from client.config.runtime_config import RECONNECT_INTERVAL_SECONDS
 from client.config.runtime_config_reporter import log_runtime_config_overrides_if_any
-from client.watchdog.client_guard_manager import ClientGuardManager
+from client.config.feature_config import resolve_features
 from client.watchdog.recovery_source import consume_recovery_source
 from core.utils.logger import logger
 
@@ -23,21 +23,25 @@ class Client:
         self.recovery_source = consume_recovery_source()
 
         self.receiver_worker = ClientReceiverWorker()
-        self.guard_manager = ClientGuardManager(
-            client_id=self.client_id,
-        )
+        self.features = resolve_features()
+        self.guard_manager = None
+        if self.features['watchdog']:
+            from client.watchdog.client_guard_manager import ClientGuardManager
+            self.guard_manager = ClientGuardManager(client_id=self.client_id)
         self.connection_lifecycle = ClientConnectionLifecycle(self)
 
         log_runtime_config_overrides_if_any()
 
         self.server = self.connection_lifecycle.create_connection()
-        self.guard_manager.start()
+        if self.guard_manager is not None:
+            self.guard_manager.start()
 
     def connect(self):
         """
         建立连接并完成握手
         """
-        self.guard_manager.start()
+        if self.guard_manager is not None:
+            self.guard_manager.start()
         self.connection_lifecycle.connect_socket()
         self.connection_lifecycle.handshake()
         self.receiver_worker.start(self.server)

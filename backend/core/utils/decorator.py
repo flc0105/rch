@@ -3,7 +3,7 @@ import re
 
 
 
-def desc(text, group='general', suggest=True, api_grants=()):
+def desc(text, group='general', suggest=True, api_grants=(), *, output='collect', interaction=False, manifest_cancel=None):
     """
     装饰器函数，用于为函数或方法添加命令元信息。
 
@@ -12,12 +12,23 @@ def desc(text, group='general', suggest=True, api_grants=()):
         group (str): 命令分组
         suggest (bool): 是否默认出现在自动补全候选中
         api_grants (tuple): 命令请求的 API 授权范围
+        output (str): collect (final result) or stream (progressive output)
+        interaction (bool): 命令可能在执行中请求 Interaction Broker
+        manifest_cancel: 对动态执行策略的取消能力使用 'dynamic'
 
     Returns:
         function: 装饰后的函数或方法对象
     """
 
+    if output not in ('collect', 'stream'):
+        raise ValueError('Command output must be collect or stream')
+    if manifest_cancel not in (None, 'dynamic'):
+        raise ValueError('Command manifest cancel must be dynamic or None')
+
     def attr_decorator(func):
+        setattr(func, 'manifest_cancel_policy', manifest_cancel)
+        setattr(func, 'command_output', output)
+        setattr(func, 'command_interaction', bool(interaction))
         setattr(func, 'help', text)
         setattr(func, 'group', group)
         setattr(func, 'suggest', suggest)

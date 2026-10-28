@@ -247,3 +247,7 @@ Screen View 提供实时预览；Server 只保存最新画面以及 Delta 所需
 - HTTP 轮询仅是画面与状态的回退，不提供现有 WebSocket 输入控制能力。
 - Screen View 的输入动作包含按键事件和鼠标事件，并非针对任意文本内容的独立输入法同步；复制内容应使用 Clipboard。
 - 同一 Client 同时只允许一个活动 Screen View 会话；重复打开会被拒绝，不支持同一设备的并发预览。
+
+## Client Feature 开关
+
+`client/config/feature_config.py` 的 `FEATURE_OVERRIDES` 可独立控制 `screen_view` 与 `screen_input`。`screen_view=false` 时启动过程跳过 `ScreenViewManager` 导入和创建，输入也自动关闭。`screen_view=true, screen_input=false` 则支持只读预览；Client 拒绝远程输入消息，Web 不展示 Control Switch（包括独立 Screen View 标签页）。这一阶段 Server 尚不使用 Manifest 拒绝新建 Screen View Session；Client 会通过现有错误消息反馈禁用状态。需要重启 Client 以应用开关。

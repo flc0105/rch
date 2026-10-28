@@ -6,6 +6,12 @@ Watchdog Worker 是独立于 Client 主执行流程的进程控制组件。Remot
 
 这一机制追踪的是 Client 主进程的可达性和活性，并不等价于业务任务是否健康。理解它需要区分心跳线程、独立 Worker、HTTP 命令队列、进程重新启动和 Server 管理界面各自负责的状态。
 
+## Capability 与运行配置
+
+`client/config/feature_config.py` 的 `watchdog` 是启动能力总开关，默认在 macOS、Windows、Linux 为 `true`，iOS 固定为 `false`。LaunchAgent / LaunchDaemon 也会加载 Watchdog 子系统，仍由 launchd 负责实际进程生命周期管理。配置 `watchdog=false` 后重启 Client，Watchdog Manager、Monitor 和 Supervisor 实现不再导入；命令 `watchdog --json` 可查看未启用状态。
+
+当 `watchdog=true` 时，Watchdog 实现会在 Client 启动时加载，即使三个运行模式全部关闭。运行中通过 `set REMOTE_HTTP_WATCHDOG_ENABLED`、`set LOCAL_WATCHDOG_ENABLED` 和 `set PROCESS_WATCHDOG_ENABLED` 独立启停对应功能，不需重启 Client。Web 的 Watchdog 详情在 Feature 支持时显示三个开关；不支持时显示能力提示。底部 HTTP Control 的 Kill、Relaunch、Clone 按钮始终显示，操作能否执行由运行状态决定。
+
 ## 守护进程与 Client 的运行关系
 
 ### Worker 的独立性与生命周期
@@ -200,7 +206,7 @@ macOS LaunchAgent 与 LaunchDaemon 已由 launchd 负责进程启动、停止和
 
 该规则优先于 `runtime_config.json` 中的三个 Watchdog 开关。配置值本身仍保留；`watchdog --json` 会通过 `configured_enabled` 显示保存的配置，同时 `enabled=false`、`suppressed=true`、`suppression_reason=launchd` 表示当前 launchd Client 的实际运行状态。离开 launchd 以 Terminal、IDE 或 Detached 等方式启动新的 Client 时，原有配置再次按正常规则生效。
 
-Web 的 **info → Watchdog** 在这种情况下显示 **Lifecycle managed by launchd**，三个 Watchdog 开关与 Remote HTTP control 操作不可用。LaunchAgent / LaunchDaemon 的启动、停止和重启应通过对应的 launchd service 管理动作完成。统一动作、domain、权限与状态语义见 [macOS launchd Service Management](launchd.md)。
+Web 的 **info → Watchdog** 在这种情况下显示 **Lifecycle managed by launchd**。三个 Watchdog 开关可修改保存的配置，Watchdog Supervisor 保持停止；HTTP Control 操作仍显示，但由于 Remote Worker 不运行而不可执行。LaunchAgent / LaunchDaemon 的启动、停止和重启应通过对应的 launchd service 管理动作完成。统一动作、domain、权限与状态语义见 [macOS launchd Service Management](launchd.md)。
 
 ## 运行配置与启停操作
 
@@ -571,3 +577,7 @@ unset ADMIN_API_TOKEN
 ## Local Heartbeat 恢复后上线通知
 
 仅当 Local Heartbeat Monitor 判断心跳过期并通过专用重启回调拉起替代 Client 时，替代进程携带一次性 `RCH_CLIENT_RECOVERY_SOURCE=local_watchdog`。该 Client 首次成功握手产生的原有 `connection_online` 通知将显示 `recovered by Local Watchdog`；Remote HTTP 手动 `relaunch` 使用同一底层重启器但不附带此标记。普通网络重连不重复展示恢复来源。
+
+## 启动时按需加载
+
+`client/config/feature_config.py` 解析唯一的 `watchdog` 启动能力。`true` 时导入 Watchdog Manager、Monitor 和 Supervisor 的实现，三个运行模式分别通过 `set` 热启停；`false` 时完全跳过这些实现的导入。iOS 的有效能力固定为 `false`，launchd Client 的能力为 `true`，实际监督仍由 launchd 管理。修改 Feature 配置需要重启 Client。

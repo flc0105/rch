@@ -41,6 +41,7 @@ export default {
           client_id: this.clientId,
           hostname: String(snapshot.hostname || '').trim(),
           machine_id: String(snapshot.machine_id || '').trim(),
+          feature_manifest: snapshot.feature_manifest || null,
         }
       }
     } catch (_error) {

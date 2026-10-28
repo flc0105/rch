@@ -7,13 +7,9 @@ import traceback
 
 from client.bootstrap.client_app import Client
 from client.config.config import SERVER_ADDR
-from client.watchdog.watchdog_process import run_watchdog_worker_from_argv
-from client.watchdog.process_watchdog import (
-    ProcessWatchdogManager, run_process_watchdog_worker_from_argv,
-)
+from client.config.feature_config import resolve_features
 from client.config import runtime_config
 from client.runtime.client_logging import install_client_file_logging
-from client.runtime.launch_context import is_launchd_managed_client
 from core.utils.logger import logger
 
 
@@ -69,7 +65,7 @@ def _activate_watchdog_after_update_acceptance(ready_file, manager):
         if os.path.isfile(accepted):
             result = {'ok': True}
             try:
-                if runtime_config.PROCESS_WATCHDOG_ENABLED and not is_launchd_managed_client():
+                if manager is not None and runtime_config.PROCESS_WATCHDOG_ENABLED:
                     manager.start()
             except Exception as exc:
                 result = {'ok': False, 'error': str(exc)}
@@ -88,20 +84,22 @@ def main():
         _run_elevated_detached_bootstrap()
         return
     if '--watchdog-worker' in sys.argv[1:]:
+        from client.watchdog.watchdog_process import run_watchdog_worker_from_argv
         run_watchdog_worker_from_argv()
         sys.exit(0)
     if '--process-watchdog-worker' in sys.argv[1:]:
+        from client.watchdog.process_watchdog import run_process_watchdog_worker_from_argv
         run_process_watchdog_worker_from_argv()
         sys.exit(0)
 
     update_ready_file = _pop_argv_value('--update-ready-file')
     install_client_file_logging()
-    process_watchdog = ProcessWatchdogManager()
-    if (
-        not update_ready_file
-        and runtime_config.PROCESS_WATCHDOG_ENABLED
-        and not is_launchd_managed_client()
-    ):
+    features = resolve_features()
+    process_watchdog = None
+    if features['watchdog']:
+        from client.watchdog.process_watchdog import ProcessWatchdogManager
+        process_watchdog = ProcessWatchdogManager()
+    if process_watchdog is not None and runtime_config.PROCESS_WATCHDOG_ENABLED and not update_ready_file:
         try:
             process_watchdog.start()
         except Exception:
@@ -122,9 +120,11 @@ def main():
     except KeyboardInterrupt:
         if client is not None:
             client.server.report_session_end('client_exit')
-        process_watchdog.stop()
+        if process_watchdog is not None:
+            process_watchdog.stop()
         if client is not None:
-            client.guard_manager.stop()
+            if client.guard_manager is not None:
+                client.guard_manager.stop()
         sys.exit(0)
     except Exception as e:
         if client is not None:
@@ -132,7 +132,8 @@ def main():
                 'client_error', summary=f'{type(e).__name__}: {e}',
                 traceback_text=traceback.format_exc(),
             )
-            client.guard_manager.stop()
+            if client.guard_manager is not None:
+                client.guard_manager.stop()
         logger.error(e, exc_info=True)
 
 

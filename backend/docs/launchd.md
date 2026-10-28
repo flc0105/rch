@@ -193,7 +193,7 @@ LaunchAgent / LaunchDaemon 下，launchd 是 Client 唯一的自动生命周期 
 - Remote HTTP relaunch/clone 不会形成第二套独立生命周期链；
 - `KeepAlive` 的恢复策略只由 launchd 执行。
 
-Web 的 **info → Watchdog** 会显示当前生命周期由 LaunchAgent 或 LaunchDaemon 管理，并禁用三个 Client Watchdog 的控制入口。详细状态字段见 [Watchdog](watchdog.md)。
+Web 的 **info → Watchdog** 会显示当前生命周期由 LaunchAgent 或 LaunchDaemon 管理。`watchdog` Feature 为 `true`，相关实现已加载；三个模式的 `set` 开关可以保存配置，当前进程的实际运行状态仍是 suppressed。HTTP Control 的三个按钮保持显示，托管期间不可执行。详细状态字段见 [Watchdog](watchdog.md)。
 
 ## 9. 状态检查
 

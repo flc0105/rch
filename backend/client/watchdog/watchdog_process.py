@@ -4,14 +4,7 @@ import subprocess
 import sys
 import time
 
-from client.watchdog.remote_watchdog import (
-    RemoteHttpWatchdogMonitor,
-    WatchdogActionExecutor,
-)
-from client.watchdog.local_watchdog import (
-    LocalWatchdogActionExecutor,
-    LocalWatchdogMonitor,
-)
+from client.watchdog.watchdog_action import WatchdogActionExecutor
 from client.watchdog.recovery_source import LOCAL_WATCHDOG
 
 
@@ -42,6 +35,7 @@ class ClientWatchdogWorker:
 
         self._remote_monitor = None
         if remote_http_watchdog_enabled:
+            from client.watchdog.remote_watchdog import RemoteHttpWatchdogMonitor
             self._remote_monitor = RemoteHttpWatchdogMonitor(
                 client_id=client_id,
                 base_url=remote_http_watchdog_base_url,
@@ -52,6 +46,7 @@ class ClientWatchdogWorker:
 
         self._local_monitor = None
         if local_watchdog_enabled:
+            from client.watchdog.local_watchdog import LocalWatchdogActionExecutor, LocalWatchdogMonitor
             self._local_monitor = LocalWatchdogMonitor(
                 client_id=client_id,
                 heartbeat_file_path=local_watchdog_heartbeat_file_path,

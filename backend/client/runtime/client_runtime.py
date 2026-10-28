@@ -1,8 +1,6 @@
 from client.commands.runtime.executor import CommandExecutor
 from client.jobs.core.manager import JobManager
-from client.pty.manager import PtyManager
-from client.screen.manager import ScreenViewManager
-from client.clipboard.manager import ClipboardManager
+from client.config.feature_config import resolve_features
 from client.monitor.manager import DeviceMonitorManager
 from client.transfers.manager import ClientTransferManager
 
@@ -21,13 +19,23 @@ class ClientRuntime:
     - transfer_manager：独立文件传输任务，不占 command foreground slot
     """
 
-    def __init__(self, connection):
+    def __init__(self, connection, features=None):
         self.connection = connection
         self.command_executor = CommandExecutor(connection)
         self.job_manager = JobManager(connection)
-        self.pty_manager = PtyManager(connection)
-        self.screen_view_manager = ScreenViewManager(connection)
-        self.clipboard_manager = ClipboardManager(connection)
+        self.features = dict(features if features is not None else resolve_features())
+        self.pty_manager = None
+        self.screen_view_manager = None
+        self.clipboard_manager = None
+        if self.features['pty']:
+            from client.pty.manager import PtyManager
+            self.pty_manager = PtyManager(connection)
+        if self.features['screen_view']:
+            from client.screen.manager import ScreenViewManager
+            self.screen_view_manager = ScreenViewManager(connection)
+        if self.features['clipboard']:
+            from client.clipboard.manager import ClipboardManager
+            self.clipboard_manager = ClipboardManager(connection)
         self.device_monitor_manager = DeviceMonitorManager(connection)
         self.transfer_manager = ClientTransferManager(connection)
 
@@ -36,8 +44,10 @@ class ClientRuntime:
         连接断开时清理依赖服务端连接的运行态。
         """
         stopped_jobs = self.job_manager.handle_connection_lost()
-        self.pty_manager.close_all_sessions(notify=False)
-        self.screen_view_manager.close_all_sessions(notify=False)
+        if self.pty_manager is not None:
+            self.pty_manager.close_all_sessions(notify=False)
+        if self.screen_view_manager is not None:
+            self.screen_view_manager.close_all_sessions(notify=False)
         self.device_monitor_manager.close_all_sessions(notify=False)
         self.transfer_manager.cancel_all(notify=False)
         return stopped_jobs

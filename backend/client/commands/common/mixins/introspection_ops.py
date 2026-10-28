@@ -3,6 +3,7 @@ import json
 
 from client.commands.common.services.completion.command_completion_service import ClientCommandCompletionService
 from core.utils.decorator import desc
+from client.commands.runtime.manifest_metadata import command_metadata
 from core.utils.command_help import render_grouped_client_help
 
 
@@ -75,9 +76,11 @@ class CommandIntrospectionMixin:
         payload = [
             {
                 'name': name,
+                'template': name,
                 'help': method.help,
                 'group': getattr(method, 'group', 'general'),
                 'suggest': getattr(method, 'suggest', True),
+                **command_metadata(method),
             }
             for name, method in methods.items()
         ]

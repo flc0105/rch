@@ -223,7 +223,7 @@ def spawn_new_instance():
     else:
         launch_cwd = os.path.dirname(os.path.realpath(sys.argv[0]))
 
-    from client.watchdog.process_watchdog import without_process_watchdog_environment
+    from client.watchdog.watchdog_environment import without_process_watchdog_environment
 
     popen_kwargs = {
         'cwd': launch_cwd,
@@ -321,7 +321,7 @@ def spawn_detached_python_script(script_path: str, cwd: str = '', args=None, std
     if stderr_path:
         stderr_file = open(os.path.abspath(stderr_path), 'ab')
 
-    from client.watchdog.process_watchdog import without_process_watchdog_environment
+    from client.watchdog.watchdog_environment import without_process_watchdog_environment
 
     popen_kwargs = {
         'cwd': launch_cwd,

@@ -57,6 +57,8 @@ Pythonista 提供文本、图片剪贴板接口，实际能力由模块和系统
 
 屏幕、进程监测、系统级自恢复和外部程序运行等功能具有更强的平台依赖。它们可能要求 iOS 不提供的系统 API、进程权限、持久后台执行或原生可执行文件；应按当前设备实际返回的能力和错误判断，不宜照搬桌面端的功能预期。参见 [Device Monitor](device_monitor.md)、[Process Watchdog](process_watchdog.md)。
 
+在 iOS / Pythonista 上，有效 `feature_manifest.watchdog=false`；Client 不加载 Watchdog 实现。`set` 中三个 Watchdog 开关的值可以保留，运行时不会启用相应监督进程。Web Watchdog 面板保留 HTTP Control 三个操作入口并显示功能不可用的原因。
+
 ## 沙盒存储、网络与系统权限
 
 **Client 的本地目录属于运行它的 Pythonista App 沙盒。**iOS 首次安装的 Source Bundle 按项目布局存放在 Pythonista 可写的 `~/Documents/client_bundle/` 下，下载缓存与已解压的 Release 分开组织。运行时配置、日志和临时文件分别按其保留规则管理。详细路径及更新交接见 [Client Update](client_update.md)，日志见 [Logging](logging.md)。
@@ -91,3 +93,4 @@ Pythonista 与 Shortcuts、分享扩展的集成适合触发**有限时长、有
 - [Pythonista 官方文档：内置模块与使用环境](https://www.omz-software.com/pythonista/docs-3.4/py3/contents.html)
 - [Pythonista 3 — App Store 官方介绍](https://apps.apple.com/us/app/pythonista-3/id1085978097)
 - [Apple：App 进入后台时的运行与挂起机制](https://developer.apple.com/documentation/uikit/preparing-your-ui-to-run-in-the-background)
+

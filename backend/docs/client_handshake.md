@@ -197,3 +197,13 @@ Heartbeat 更新连接的最近活跃信息、RTT 和可能的当前工作目录
 - 没有上报 Python Client 使用的 `machine_id`、`machine_fingerprint_basis`、`client_revision` 及其源码指纹明细。
 
 因此，该实现即使在线，也不能直接视为具备本篇介绍的完整机器归并、变量提示和源码 Revision 检测能力。相关代码位于 `backend/client-go/`；上文的功能开发与故障判断默认针对 Python Client。
+
+## Capability Metadata 与启动 Feature
+
+Client 在原有 `info.command_manifest` 每个条目中上报完整的命令描述：`name`（命令/候选唯一名）、`kind`（`command` / `acmd`）、`source`、`help`、`group`、`suggest`、`template`、`cancel_policy`、`timeout`（秒或 `null`）、`confirmation`（`required`、`allow_no_confirm`）、`interaction`（`may_request`）、`output`（`collect` / `stream`）和 `streaming`（布尔值）。普通命令的声明来自 Python 装饰器；ACMD 的声明来自注册 Handler。`confirmation.required=true` 对应已有 `@confirm` 的执行前确认；`allow_no_confirm` 对应允许使用 `--no-confirm` 跳过该确认。`interaction.may_request=true` 表示命令可能调用 Interaction Broker。
+
+这些描述属于**静态声明**；取消策略、执行超时及交互状态在运行过程中仍由执行器/任务上下文决定。`output=stream` 表示命令有流式输出入口；`collect` 表示通常在命令完成时收集输出。命令执行产生的进度或中间消息仍可能独立于该默认模式。
+
+`info.feature_manifest` 是 Client 启动时解析并实际装载的 Feature 布尔快照。第一版支持 `pty`、`screen_view`、`screen_input`、`clipboard`、`watchdog`。File Transfer 和 Device Monitor 仍沿用现有路径；Process Inspection/Control 暂未纳入 Feature 开关。Server 的连接列表序列化会透传 `feature_manifest`，供 Web 界面读取；本阶段没有新增服务端 Feature 权限校验。
+
+配置入口为 `client/config/feature_config.py` 内的 `FEATURE_OVERRIDES`，在 Client 启动时与平台默认值合并。关闭的 PTY、Screen View、Clipboard Manager 不会导入或实例化；`watchdog=false` 时不导入 Watchdog Manager、Monitor 或 Supervisor；`watchdog=true` 时加载模块，由原有三个 `set` 开关分别热启停 Remote、Local 与 Process。macOS（含 launchd 托管场景）、Windows、Linux的能力默认启用；iOS 固定不支持。launchd 托管下，已加载的 Watchdog 仍执行现有的生命周期运行抑制，`set` 配置可保存但不启动监督进程。Screen Input 关闭时保留只读 Screen View，Client 忽略输入并返回错误；前端隐藏 Control 开关。修改启动 Feature 配置后需重启 Client，当前 Socket 重连会沿用同一进程的配置快照。
