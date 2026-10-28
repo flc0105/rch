@@ -52,7 +52,7 @@
 
       <button
         class="run-button"
-        :disabled="sending || hasRunningWebTask"
+        :disabled="sending || hasRunningWebTask || hasRemoteTask"
         @click="sendCommand"
       >
         <span v-if="!sending && !hasRunningWebTask">Run</span>
@@ -73,6 +73,7 @@
     <TerminalConnectionContext
       ref="terminalConnectionContextRef"
       :current-connection="currentConnection"
+      :foreground-task="foregroundTask"
       :status-now-tick="statusNowTick"
     />
   </div>
@@ -114,6 +115,7 @@ export default {
 
 
   props: {
+    foregroundTask: { type: Object, default: () => ({ state: 'Idle' }) },
     selectedId: {
       type: [String, Number],
       default: '',
@@ -175,6 +177,9 @@ export default {
   computed: {
     hasRunningWebTask() {
       return !!String(this.currentActiveTaskId || '').trim()
+    },
+    hasRemoteTask() {
+      return ['Running', 'Cancelling'].includes(this.foregroundTask?.state)
     },
   },
 

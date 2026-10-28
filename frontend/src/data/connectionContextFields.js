@@ -3,6 +3,7 @@ import { formatLaunchMode } from '../utils/formatters.js'
 
 export const CONNECTION_CONTEXT_FIELD_CATALOG = Object.freeze([
   { id: 'status', label: 'Status', icon: 'Activity', description: 'Current connection state' },
+  { id: 'task', label: 'Task', icon: 'Activity', description: 'Current foreground task state' },
   { id: 'hostname', label: 'Hostname', icon: 'Monitor', description: 'Device hostname' },
   { id: 'address', label: 'Address', icon: 'Network', description: 'Client network address' },
   { id: 'client_id', label: 'Client ID', icon: 'Fingerprint', description: 'Current client instance' },
@@ -101,6 +102,7 @@ export function resolveConnectionContextValue(fieldId, connection, nowTick = Dat
   }
 
   if (fieldId === 'status') return formatConnectionStatus(conn, nowTick)
+  if (fieldId === 'task') return conn.foreground_task?.state || 'Idle'
   if (fieldId === 'last_seen') return formatConnectionLastSeen(conn, nowTick)
   if (fieldId === 'rtt') return formatConnectionRtt(conn)
   return normalizeDisplayValue(rawValues[fieldId])

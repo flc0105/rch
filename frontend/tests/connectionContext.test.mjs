@@ -25,10 +25,11 @@ function optionsFrom(path, globals = {}) {
 
 const FIELD_IDS = CONNECTION_CONTEXT_FIELD_CATALOG.map(field => field.id)
 
-test('Connection Context catalog includes only synchronous Basic Info fields', () => {
-  assert.equal(FIELD_IDS.length, 29)
+test('Connection Context catalog includes Basic Info fields and live Task state', () => {
+  assert.equal(FIELD_IDS.length, 30)
   assert.equal(new Set(FIELD_IDS).size, FIELD_IDS.length)
   assert.ok(FIELD_IDS.includes('status'))
+  assert.ok(FIELD_IDS.includes('task'))
   assert.ok(FIELD_IDS.includes('pid'))
   assert.ok(FIELD_IDS.includes('launch_mode'))
   assert.ok(!FIELD_IDS.includes('reported_jobs'))

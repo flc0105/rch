@@ -37,6 +37,42 @@ class ProcessService:
         self._cpu_sampled_processes = sampled
         return processes
 
+    def get_acmd_process_details(self, pid):
+        """Optional ACMD detail fields; inaccessible process metadata stays blank."""
+        import psutil
+        import time
+
+        result = {'running_time': '', 'command': '', 'listening_ports': ''}
+        try:
+            proc = psutil.Process(pid)
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            return result
+        started = self._safe_proc_value(proc.create_time)
+        if started is not None:
+            elapsed = max(0, int(time.time() - float(started)))
+            days, remainder = divmod(elapsed, 86400)
+            hours, remainder = divmod(remainder, 3600)
+            minutes, seconds = divmod(remainder, 60)
+            result['running_time'] = (f'{days}d ' if days else '') + f'{hours}h {minutes}m {seconds}s'
+        argv = self._safe_proc_value(proc.cmdline, []) or []
+        result['command'] = ' '.join(str(part) for part in argv)
+
+        connections = self._safe_proc_value(lambda: proc.net_connections(kind='inet'))
+        if connections is None:
+            connections = self._safe_proc_value(lambda: proc.connections(kind='inet'), []) or []
+        ports = set()
+        for conn in connections:
+            if str(getattr(conn, 'status', '')).upper() not in ('LISTEN', 'LISTENING'):
+                continue
+            address = getattr(conn, 'laddr', None)
+            port = getattr(address, 'port', None)
+            if port is None and isinstance(address, tuple) and len(address) >= 2:
+                port = address[1]
+            if isinstance(port, int) and 0 < port <= 65535:
+                ports.add(port)
+        result['listening_ports'] = ', '.join(str(port) for port in sorted(ports))
+        return result
+
     def _safe_proc_value(self, getter, default=None):
         import psutil
         try:

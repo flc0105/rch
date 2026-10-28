@@ -212,6 +212,14 @@ export default {
             es.addEventListener('open', () => {
                 if (!this.sseReady) this.sseReady = true;
                 void this.$refs.executionInteractionDialogRef?.reloadPending(tabId);
+                void this.refreshForegroundTask?.();
+            });
+
+            es.addEventListener('foreground_task_changed', (event) => {
+                const payload = JSON.parse(event.data || '{}');
+                if (String(payload.client_id || '') === String(this.selectedId || '')) {
+                    void this.refreshForegroundTask?.();
+                }
             });
 
             es.addEventListener('interaction_requested', (event) => {

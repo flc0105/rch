@@ -35,6 +35,7 @@ export default {
   name: 'TerminalConnectionContext',
 
   props: {
+    foregroundTask: { type: Object, default: () => ({ state: 'Idle' }) },
     currentConnection: {
       type: Object,
       default: null,
@@ -63,7 +64,7 @@ export default {
         .filter(Boolean)
         .map(field => ({
           ...field,
-          value: resolveConnectionContextValue(field.id, this.currentConnection, this.statusNowTick),
+          value: resolveConnectionContextValue(field.id, { ...this.currentConnection, foreground_task: this.foregroundTask }, this.statusNowTick),
         }))
     },
   },

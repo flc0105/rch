@@ -171,6 +171,15 @@
             </a>
 
             <a
+                v-if="entry.line?.meta?.foregroundTaskNotice"
+                href="#"
+                class="table-action-link-aux terminal-text terminal-action-link-spaced"
+                @click.prevent.stop="$emit('open-task-details')"
+            >
+              [ Details ]
+            </a>
+
+            <a
                 v-for="(actionItem, actionIndex) in getTerminalInlineActionItems(lines, entry.index)"
                 :key="actionItem.key"
                 href="#"
@@ -293,7 +302,7 @@ export default {
     },
   },
 
-  emits: ['preview-artifact', 'open-json', 'artifact-saved', 'rerun-terminal-block', 'suggest-command'],
+  emits: ['preview-artifact', 'open-json', 'artifact-saved', 'rerun-terminal-block', 'suggest-command', 'open-task-details'],
 
   data() {
     return {

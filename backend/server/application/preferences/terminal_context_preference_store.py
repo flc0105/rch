@@ -3,6 +3,7 @@ from server.application.preferences.settings_store import SettingsStore
 
 ALLOWED_TERMINAL_CONTEXT_FIELD_IDS = frozenset({
     'status',
+    'task',
     'hostname',
     'address',
     'client_id',

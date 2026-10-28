@@ -125,6 +125,8 @@ Terminal 输入栏下方可以显示一行连接上下文标签，用于快速�
 
 标签值从当前连接快照读取，并复用 Connection Info 的状态、最近响应时间、RTT、时间和启动模式格式化规则。可选字段包括 Status、Hostname、Address、Client ID、OS 信息、Manufacturer、Model、Integrity、Build Version、Client Revision、Machine ID、Fingerprint Basis、Last Seen、Connected At、Disconnected At、RTT、Working Directory、PID、Process Name、Launch Command、Launch Mode、Client Log、Username 和 Python Version。连接切换后，标签内容随当前连接更新。
 
+可选 **Task** 显示当前 Client 前台执行状态：`Idle`、`Running`、`Cancelling`。该状态来自 Server 的执行槽，浏览器通过 SSE 状态通知和每 2 秒一次的快照同步更新，因此重开标签页或刷新后仍可恢复；Basic Info 的 Task 字段采用相同状态。Terminal 在已有前台任务占用时以输出警告行显示 `[ Details ]` 链接，展示执行信息和适用的取消操作。
+
 字段选择保存在 `settings` 表的 `terminal_context_preferences` 命名空间中，字段 ID 按用户选择顺序保存。`GET /api/terminal/context-preferences` 读取当前选择，`PUT /api/terminal/context-preferences` 保存选择，数据结构为 `{"field_ids": ["integrity", "pid"]}`。该偏好只决定显示哪些信息，不改变 Client 上报的数据或连接生命周期状态。
 
 ## 连接丢失后的清理、重连和历史留存

@@ -555,6 +555,10 @@ export default {
       type: Object,
       default: null,
     },
+    foregroundTask: {
+      type: Object,
+      default: () => ({ state: 'Idle' }),
+    },
 
     statusNowTick: {
       type: Number,
@@ -630,6 +634,7 @@ export default {
       const conn = this.currentConnection || {}
       const items = [
         { label: 'Status', value: this.formatStatusText(conn) },
+        { label: 'Task', value: this.foregroundTask?.state || 'Idle' },
         { label: 'Hostname', value: conn.hostname || '-' },
         { label: 'Address', value: conn.addr || '-', mono: true },
         { label: 'Client ID', value: conn.client_id || '-', mono: true },

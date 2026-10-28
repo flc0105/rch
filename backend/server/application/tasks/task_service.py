@@ -1,3 +1,4 @@
+import logging
 import threading
 import shlex
 
@@ -128,6 +129,14 @@ class WebTaskService:
             raise ValueError('task is no longer the active foreground task')
         return foreground_task
 
+    def _notify_foreground_task_changed(self, client_id: str):
+        try:
+            bus = getattr(self.task_runner, 'event_bus', None)
+            if bus:
+                bus.publish('foreground_task_changed', {'client_id': client_id})
+        except Exception:
+            logging.getLogger(__name__).warning('Unable to publish task state', exc_info=True)
+
     def _request_task_cancel(self, conn, task_id: str):
         self.task_store.request_cancel(task_id)
         foreground_task = self._ensure_active_task(conn, task_id)
@@ -139,6 +148,10 @@ class WebTaskService:
         command_id = cancel_info.get('command_id')
         if command_id:
             conn.send_cancel(command_id)
+
+        self._notify_foreground_task_changed(
+            (self.task_store.get_task(task_id) or {}).get('client_id', '')
+        )
 
         result = dict(cancel_info)
         if not result.get('history_entry_id'):
@@ -180,6 +193,8 @@ class WebTaskService:
                 self._acquire_task(context)
                 acquired = True
             self._start_task_thread(runner, context)
+            if acquired:
+                self._notify_foreground_task_changed(request.client_id)
         except Exception:
             if acquired:
                 context.session.release_foreground_task(

@@ -1,4 +1,5 @@
 import threading
+from datetime import datetime, timezone
 
 
 class SessionExecutionRuntime:
@@ -32,6 +33,7 @@ class SessionExecutionRuntime:
         history_entry_id: str = '',
     ) -> dict:
         task_info = {
+            'started_at': datetime.now(timezone.utc).isoformat(),
             'task_type': task_type,
             'command': (command or '').strip(),
             'source': (source or '').strip(),

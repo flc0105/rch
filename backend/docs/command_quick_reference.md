@@ -221,6 +221,7 @@ ACMD 统一使用 `acmd <name> ...` 前缀，使用独立的命令注册表、�
 acmd help
 acmd help ps
 acmd ps --name python --json
+acmd ps --pid 1234 --details --json
 acmd netstat --port 443
 acmd netstat --status LISTENING
 acmd netstat -l -t --port 443 --json

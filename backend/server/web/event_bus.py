@@ -103,7 +103,8 @@ class WebEventBus:
         if recorder is None:
             return None
         if event_type in {'notification_center_updated', 'notification_preferences_updated',
-                          'interaction_requested', 'interaction_resolved'}:
+                          'interaction_requested', 'interaction_resolved',
+                          'foreground_task_changed'}:
             return None
         try:
             return recorder(event_type, data, event_id, target_tab_id)

@@ -45,6 +45,13 @@ class TerminalContextPreferenceStoreTests(unittest.TestCase):
         ).fetchone()
         self.assertIsNotNone(row)
 
+    def test_task_selection_survives_save_and_reload(self):
+        saved = self.store.save_preferences({'field_ids': ['status', 'task', 'pid']})
+        self.assertEqual(saved, {'field_ids': ['status', 'task', 'pid']})
+        self.database.close_thread_connection()
+        reloaded = TerminalContextPreferenceStore(self.database)
+        self.assertEqual(reloaded.get_preferences(), saved)
+
     def test_malformed_payload_resets_to_empty_selection(self):
         self.assertEqual(self.store.save_preferences({'field_ids': 'pid'}), {'field_ids': []})
         self.assertEqual(self.store.save_preferences(None), {'field_ids': []})

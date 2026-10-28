@@ -110,6 +110,12 @@ WebTaskRunner 消费执行事件
 
 这意味着**一条 Web 命令可能对应多个输出分片、一条完成事件，也可能在完全没有 Client `command_id` 的情况下完成**。不要用“HTTP 请求次数”推断“Socket 命令数”。更详细的命令语义分别参见 [Shell-like Commands](shell_like_commands.md)、[ACMD](acmd.md)、[Scripts](scripts.md) 和 [Aliases / Quick Actions](alias_quick_actions.md)。
 
+## 前台任务状态与跨标签页恢复
+
+Connection Info 的 **Task** 字段显示 `Idle`、`Running` 或 `Cancelling`；Terminal Connection Context 也可以选择 **Task** 标签。Server 从当前 ClientSession 的前台任务槽返回状态，不依赖浏览器中保留的 Web Task ID。页面启动或切换 Client 时读取快照，并订阅前台任务状态变更事件；每 2 秒同步一次状态作为重连兜底。任务结束后状态回到 `Idle`。
+
+当所选 Client 被其他标签页或前一次页面会话的任务占用，Terminal 在输出区显示警告行及 **[ Details ]** 链接，沿用终端其他状态提示的交互样式。详情包含执行命令、来源、任务类型、开始时间、持续时间、任务／命令 ID 与取消状态。可以取消的 Web 命令通过已有 Task Cancel API 请求取消；`cancel_policy=none`、尚未绑定 Client 命令 ID、已经请求取消或非 Web 来源的任务不开放此按钮。状态查询不占用前台槽，也不产生远程命令。
+
 ## 4. 前台串行约束与执行并发
 
 RCH 在单个 `ClientSession` 上保留一份当前前台 Task 运行态，不是所有浏览器标签页各自拥有一个互不影响的前台槽。普通 Web 命令提交时，在启动 Runner 之前调用 `acquire_foreground_task()`；如果该会话已经被另一前台任务占用，就抛出 `Client is busy: ...`，而不是把新命令悄悄排入一个没有界面的队列。

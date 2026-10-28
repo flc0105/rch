@@ -26,6 +26,8 @@ Client：按当前平台查 Command Registry
 
 ```text
 acmd ps --name python --json
+acmd ps --details
+acmd ps --pid 1234 --details --json
 ```
 
 Server 会生成类似如下的负载：
@@ -72,6 +74,9 @@ acmd ps --port 8080 --json --with-actions
   可取消单条勾选；Force 初始状态由 `-9/-f/--force` 决定。
 - `--no-confirm` 必须指定目标，不发起任何交互。`--force` 仅决定使用
   `SIGKILL`，未指定时使用 `SIGTERM`。不从未确认的自由文本猜目标。
+- `acmd ps` 的 `--details` 可按需添加 `running_time`、`command` 和 `listening_ports`。
+  运行时长以时分秒表示；命令行和监听端口可能因系统权限或进程退出而为空。
+  `listening_ports` 支持多个端口，以逗号分隔。
 - `acmd ps` 支持 `--pid/--name/--port`；普通输出及 `--json` 默认只含
   进程信息。仅指定 `--json --with-actions` 才在每行添加 `_actions`，例如
   `[{"label":"Kill","command":"acmd kill --pid 1234"}]`。

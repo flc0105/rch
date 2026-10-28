@@ -187,6 +187,7 @@
   :status-now-tick="statusNowTick"
   :current-active-task-id="currentActiveTaskId"
   :current-active-task-cancel-policy="currentActiveTaskCancelPolicy"
+  :foreground-task="currentForegroundTask"
   :tab-id="tabId"
   @append-output="appendOutput"
   @set-active-task="setActiveTask"
@@ -210,6 +211,7 @@
                   @artifact-saved="refreshArtifactsIfOpen"
                   @rerun-terminal-block="rerunTerminalBlock"
                   @suggest-command="applyTerminalSuggestedCommand"
+                  @open-task-details="openForegroundTaskDetails"
                 />
               </div>
             </section>
@@ -351,6 +353,7 @@
     ref="connectionInfoDialogRef"
     :selected-id="selectedId"
     :current-connection="currentConnection"
+    :foreground-task="currentForegroundTask"
     :status-now-tick="statusNowTick"
     :tab-id="tabId"
     @open-processes="openProcessDialog"
@@ -499,6 +502,19 @@
     </template>
   </el-dialog>
 
+  <el-dialog v-model="taskDialogVisible" title="Task Details" width="min(92vw, 520px)" append-to-body>
+    <div class="task-detail-grid">
+      <template v-for="(value, label) in currentTaskDetails" :key="label">
+        <span class="task-detail-label">{{ label }}</span>
+        <span class="task-detail-value">{{ value }}</span>
+      </template>
+    </div>
+    <template #footer>
+      <el-button @click="taskDialogVisible = false">Close</el-button>
+      <el-button type="danger" :disabled="!currentForegroundTask.can_cancel || taskCancelSending" :loading="taskCancelSending" @click="cancelForegroundTask">Cancel</el-button>
+    </template>
+  </el-dialog>
+
   <el-dialog
     v-model="authorizationInfoDialogVisible"
     title="Authorization Info"
@@ -575,6 +591,9 @@ import TransferCenterDrawer from './components/TransferCenterDrawer.vue'
 import { changeAdminPassword, getAuthorizationInfo, getAuthSession, resetAdminApiToken } from './api/authApi.js'
 import { loadLayoutPreferences, saveLayoutPreferences } from './utils/layoutPreferences.js'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { getConnectionTask } from './api/connectionsApi.js'
+import { cancelTask } from './api/tasksApi.js'
+import { normalizeForegroundTask, shouldShowTaskNotice, formatTaskTime } from './utils/foregroundTask.js'
 
 import { ArrowDown, ArrowUp, Bell, Grid, Sort, User } from '@element-plus/icons-vue'
 
@@ -630,6 +649,11 @@ export default {
       terminalTaskCapture: createTerminalTaskCapture(),
       statusNowTick: Date.now(),
       statusTickTimer: null,
+      foregroundTaskTimer: null,
+      foregroundTasks: {},
+      foregroundQuerySequence: 0,
+      taskDialogVisible: false,
+      taskCancelSending: false,
       remoteFilesDialogVisible: false,
       pendingRemoteUploadRefresh: null,
 
@@ -659,6 +683,28 @@ export default {
     ...AppTerminalModule.computed,
     ...AppTaskModule.computed,
 
+    currentForegroundTask() {
+      if (this.isCurrentConnectionOffline) return { state: 'Idle' }
+      return this.foregroundTasks[this.selectedId] || { state: 'Idle' }
+    },
+    showCurrentTaskNotice() {
+      return shouldShowTaskNotice(this.currentForegroundTask, this.currentActiveTaskId)
+    },
+    currentTaskDetails() {
+      const task = this.currentForegroundTask
+      return {
+        Status: task.state || 'Idle',
+        Command: task.command || '-',
+        Started: task.started_at ? new Date(task.started_at).toLocaleString() : '-',
+        Duration: formatTaskTime(task.started_at, this.statusNowTick),
+        Source: task.source || '-',
+        Type: task.task_type || '-',
+        'Task ID': task.task_id || '-',
+        'Command ID': task.command_id ?? '-',
+        Cancellation: task.can_cancel ? 'Available' : (task.cancel_policy === 'none' ? 'Not supported' : task.cancel_state || 'Unavailable'),
+      }
+    },
+
     isCurrentConnectionOffline() {
       if (!this.currentConnection) return false
       return this.getConnectionDisplayState(this.currentConnection) === 'offline'
@@ -675,9 +721,69 @@ export default {
 
   watch: {
     ...AppTerminalModule.watch,
+    selectedId() {
+      this.taskDialogVisible = false
+      void this.refreshForegroundTask()
+    },
   },
 
   methods: {
+    openForegroundTaskDetails() {
+      if (this.showCurrentTaskNotice) this.taskDialogVisible = true
+    },
+
+    syncForegroundTaskNotice(clientId, task) {
+      this.ensureOutputBucket(clientId)
+      const lines = this.outputs[clientId] || []
+      const existing = lines.find(line => line?.meta?.foregroundTaskNotice === true)
+      const visible = shouldShowTaskNotice(task, this.currentActiveTaskId)
+      const noticeKey = `${task?.task_id || ''}:${task?.command_id || ''}:${task?.started_at || ''}`
+      if (visible && existing?.meta?.foregroundTaskKey === noticeKey && existing?.meta?.foregroundTaskState === task.state) return
+      if (existing) {
+        this.outputs[clientId] = lines.filter(line => line?.meta?.foregroundTaskNotice !== true)
+      }
+      if (visible) {
+        this.appendOutput(clientId,
+          task.state === 'Cancelling' ? '[!] Task cancellation requested.' : '[!] Client is running a task.',
+          'warning', { foregroundTaskNotice: true, foregroundTaskKey: noticeKey, foregroundTaskState: task.state })
+      }
+    },
+
+    async refreshForegroundTask() {
+      const clientId = String(this.selectedId || '').trim()
+      if (!clientId) return
+      if (this.isCurrentConnectionOffline) {
+        this.syncForegroundTaskNotice(clientId, { state: 'Idle' })
+        return
+      }
+      const sequence = ++this.foregroundQuerySequence
+      try {
+        const nextTask = normalizeForegroundTask(await getConnectionTask(clientId))
+        if (this.selectedId !== clientId || sequence !== this.foregroundQuerySequence) return
+        this.foregroundTasks = { ...this.foregroundTasks, [clientId]: nextTask }
+        this.syncForegroundTaskNotice(clientId, nextTask)
+      } catch (_error) {
+        // A temporary status request failure must not invent an Idle transition.
+      }
+    },
+
+    async cancelForegroundTask() {
+      const task = this.currentForegroundTask
+      const clientId = String(this.selectedId || '')
+      if (!task.can_cancel || !task.task_id || this.taskCancelSending) return
+      this.taskCancelSending = true
+      try {
+        await cancelTask(task.task_id)
+        ElMessage.success('Cancellation requested')
+        if (clientId === this.selectedId) await this.refreshForegroundTask()
+      } catch (error) {
+        ElMessage.error(error?.message || 'Unable to cancel task')
+        await this.refreshForegroundTask()
+      } finally {
+        this.taskCancelSending = false
+      }
+    },
+
     ...AppUtilsModule.methods,
     ...AppSseModule.methods,
     ...AppConnectionModule.methods,
@@ -1264,6 +1370,11 @@ export default {
       this.loadTransferItems(),
     ])
     this.initSSE()
+    void this.refreshForegroundTask()
+    this.foregroundTaskTimer = setInterval(() => {
+      void this.refreshForegroundTask()
+      this.statusNowTick = Date.now()
+    }, 2000)
 
     this.statusTickTimer = setInterval(() => {
       this.statusNowTick = Date.now()
@@ -1271,6 +1382,8 @@ export default {
   },
 
   beforeUnmount() {
+    if (this.foregroundTaskTimer) clearInterval(this.foregroundTaskTimer)
+    this.foregroundQuerySequence += 1
     if (this.eventSource) this.eventSource.close()
 
     if (this.statusTickTimer) {
@@ -1461,4 +1574,10 @@ export default {
     padding-right: 8px;
   }
 }
+</style>
+<style scoped>
+.task-detail-grid { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 10px 12px; font-size: 13px; }
+.task-detail-label { color: var(--muted); }
+.task-detail-value { overflow-wrap: anywhere; }
+@media (max-width: 520px) { .task-detail-grid { grid-template-columns: 1fr; gap: 4px; } }
 </style>

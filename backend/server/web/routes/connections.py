@@ -4,6 +4,7 @@ from flask import Blueprint, request
 
 from server.config.config import HIDDEN_DEVICES_PASSWORD, HIDDEN_DEVICES_REQUIRE_PASSWORD
 from server.web.api_response import WebApiResponder
+from server.connection.runtime.foreground_task_snapshot import build_foreground_task_snapshot
 
 
 def create_connections_blueprint(server_instance):
@@ -14,6 +15,15 @@ def create_connections_blueprint(server_instance):
     @blueprint.get('/api/connections')
     def get_connections():
         return responder.ok(connection_api.get_connections_payload())
+
+    @blueprint.get('/api/connections/<client_id>/task')
+    def get_connection_task(client_id):
+        return responder.json_endpoint(
+            lambda: build_foreground_task_snapshot(
+                server_instance.get_target_connection_by_client_id(client_id)
+            ),
+            default_error_status=404,
+        )
 
     @blueprint.post('/api/connections/hidden-devices/verify')
     def verify_hidden_devices_password():

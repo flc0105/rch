@@ -106,3 +106,7 @@ export function getMachineConnectionCommands(machineId, clientId, params = {}) {
     { items: [], next_cursor: '', has_more: false, total_count: 0 },
   )
 }
+
+export function getConnectionTask(clientId) {
+  return apiData(`/api/connections/${encodeURIComponent(clientId)}/task`, {}, { state: 'Idle' })
+}
