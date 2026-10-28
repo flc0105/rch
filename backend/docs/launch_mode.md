@@ -96,12 +96,12 @@ Service/Scheduler 检测会查看进程祖先链，因此 `cron → sh -c → py
 
 ## 5. RCH 自己创建的新 Client
 
-普通 Duplicate/Restart 等路径使用标准 detached helper 创建新进程：
+普通 Duplicate/Restart 与 SSH Bootstrap 等路径创建独立 Client，并显式传递 detached 形态：
 
 - POSIX：`start_new_session=True`，记录 `detached / new_session`；
 - Windows：独立后台进程，记录 `detached / detached_process`。
 
-环境里只传递标准化形态，不传 `spawn_instance`、`relaunch_instance` 等内部动作名。因此即使原 Client 来自 `IDE (PyCharm)`，新建的独立 Client 仍显示 `Detached (...)`。
+启动环境中显式传递标准化形态；短生命周期 Bootstrap 退出后，即使 Client 被 PID 1 收养，仍保留 `detached / new_session`。环境里不传 `spawn_instance`、`relaunch_instance` 等内部动作名。因此即使原 Client 来自 `IDE (PyCharm)`，新建的独立 Client 仍显示 `Detached (...)`。
 
 macOS `spawn_elevated_instance --detached` 也通过短生命周期提权 bootstrap 创建真正的 new-session root Client，最终显示 `Detached (new session)`。默认不带 `--detached` 的 elevated 启动保留原调用链，Launch Mode 按其真实宿主环境判定。
 

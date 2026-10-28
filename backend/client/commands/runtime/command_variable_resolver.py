@@ -4,6 +4,7 @@ import platform
 import re
 import shutil
 import sys
+import threading
 
 from client.config.config import CLIENT_BUILD_VERSION
 from client.runtime.client_info_builder import ClientInfoBuilder
@@ -25,16 +26,17 @@ class CommandVariableResolver:
     """
     普通 command 的 Client 侧动态变量解析器。
 
-    当前只支持三类命名空间：
+    支持运行时信息、进程环境、常用路径及连接级自定义变量：
     - ${rch:*}：RCH Client 运行时信息
     - ${env:*}：目标 Client 当前进程环境变量
     - ${path:*}：目标 Client 常用系统路径
+    - ${var:*}：当前 Client 连接内设置的用户变量
 
     script / acmd 不经过本解析器。
     """
 
     VARIABLE_PATTERN = re.compile(
-        r'\$\{(?P<namespace>rch|env|path)\\?:(?P<name>[^{}]+)\}',
+        r'\$\{(?P<namespace>rch|env|path|var)\\?:(?P<name>[^{}]+)\}',
         re.IGNORECASE,
     )
     NAMESPACED_VARIABLE_PATTERN = re.compile(
@@ -46,6 +48,8 @@ class CommandVariableResolver:
         self.connection = connection
         self._rch_overrides = dict(rch_overrides or {})
         self._static_cache = {}
+        self._user_variables = {}
+        self._user_lock = threading.RLock()
         self._rch_variables = {
             'exec_path': ('Current Client process executable path.', self._get_exec_path),
             'launch_command': ('Current Client launch command.', self._get_launch_command),
@@ -87,7 +91,7 @@ class CommandVariableResolver:
 
         for match in self.NAMESPACED_VARIABLE_PATTERN.finditer(text):
             namespace = str(match.group('namespace') or '').strip().lower()
-            if namespace not in {'rch', 'env', 'path'}:
+            if namespace not in {'rch', 'env', 'path', 'var'}:
                 raise CommandVariableResolutionError(f'Unsupported variable namespace: {namespace}')
 
         def _replace(match):
@@ -102,6 +106,8 @@ class CommandVariableResolver:
                 return self._resolve_env(name)
             if namespace == 'path':
                 return self._resolve_path(name)
+            if namespace == 'var':
+                return self._resolve_var(name)
 
             raise CommandVariableResolutionError(f'Unsupported variable namespace: {namespace}')
 
@@ -115,6 +121,14 @@ class CommandVariableResolver:
 
         for name, description in self._path_variables.items():
             payload.append(self._build_manifest_item('path', name, description))
+
+        payload.append({
+            'namespace': 'var',
+            'name': 'NAME',
+            'template': '${var:NAME}',
+            'description': 'User variable for the current Client connection; set with var NAME=value.',
+            'dynamic': True,
+        })
 
         payload.append({
             'namespace': 'env',
@@ -138,6 +152,28 @@ class CommandVariableResolver:
             'description': description,
             'dynamic': True,
         }
+
+    USER_NAME_PATTERN = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
+
+    def set_var(self, name: str, value: str) -> None:
+        if not self.USER_NAME_PATTERN.fullmatch(name):
+            raise CommandVariableResolutionError('Invalid variable name (use letters, digits, underscores; start with letter or underscore)')
+        with self._user_lock:
+            self._user_variables[name] = str(value)
+
+    def unset_var(self, name: str) -> bool:
+        with self._user_lock:
+            return self._user_variables.pop(name, None) is not None
+
+    def list_vars(self) -> dict:
+        with self._user_lock:
+            return dict(sorted(self._user_variables.items()))
+
+    def _resolve_var(self, name: str) -> str:
+        with self._user_lock:
+            if name not in self._user_variables:
+                raise CommandVariableResolutionError(f'User variable is not set: {name}')
+            return self._user_variables[name]
 
     def _resolve_rch(self, name: str, command_id=None) -> str:
         key = str(name or '').strip().lower()

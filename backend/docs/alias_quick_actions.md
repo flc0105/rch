@@ -133,7 +133,7 @@ sample --path="/tmp/a file" --label "Report A"
 
 但 **Quick Actions 的提交路径不同**：它会把某个定义展开后的文本交给 Web 任务系统，Web 任务可能从头经过 Server 的命令解析（详见下节）。所以一个以 `acmd` 或 Server Built-in 开头的**展开文本**，在 Quick Actions 的弹窗执行下可能走到该特殊入口，而从终端直接调用 Alias 时却不是这样。这属于当前实现必须了解的行为差异，不是可以依赖的跨入口等价保证。编写 Alias 时，优先采用目标 Client 上明确可执行的 Shell-like / Shell 命令模板。
 
-Client 变量 `${rch:*}`、`${env:*}`、`${path:*}` 与 Alias 的 `<name>` 是两套不同替换语法，且发生在不同层次：Alias 的尖括号替换在 Server 进行；普通 `command` 的变量展开由 Client 执行。Alias 保存阶段不解析这些 Client 变量；最终能否展开，取决于该次实际提交的执行类型和目标 Client 支持情况。不要把这与 ACMD 的参数 Schema 混淆。
+Client 变量 `${rch:*}`、`${env:*}`、`${path:*}`、`${var:*}` 与 Alias 的 `<name>` 是两套不同替换语法，且发生在不同层次：Alias 的尖括号替换在 Server 进行；普通 `command` 的变量展开由 Client 执行。Alias 保存阶段不解析这些 Client 变量；最终能否展开，取决于该次实际提交的执行类型和目标 Client 支持情况。不要把这与 ACMD 的参数 Schema 混淆。
 
 ## Web 动作的编辑与任务派发
 

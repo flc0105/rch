@@ -25,10 +25,10 @@ def get(name: str) -> str:
     key = str(name or '').strip()
     template = '${' + key + '}'
     if not CommandVariableResolver.VARIABLE_PATTERN.fullmatch(template):
-        raise ValueError('Variable name must be namespace:name (rch, env, or path)')
+        raise ValueError('Variable name must be namespace:name (rch, env, path, or var)')
     return _resolver().resolve(template, command_id=context.command_id())
 
 
 def expand(text: str) -> str:
-    """在字符串中展开 ${rch:*}、${env:*}、${path:*}。"""
+    """在字符串中展开 ${rch:*}、${env:*}、${path:*}、${var:*}。"""
     return _resolver().resolve(text, command_id=context.command_id())

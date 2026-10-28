@@ -73,6 +73,7 @@ Alias 的模板参数、平台覆盖与安全边界见 [Aliases / Quick Actions]
 | `help` | 显示 Client 支持的命令 | 从 Server Terminal 查阅时优先使用 `help client`，以免与 Server Builtin `help` 混淆 |
 | `pwd` | 显示 Client 当前工作目录 | 返回目标 Client 的工作目录 |
 | `cd <path>` | 修改 Client **进程本身**的工作目录 | 会影响后续相对路径命令；不同于临时 Shell 内的 `cd` |
+| `var NAME=VALUE` | 设置当前 Client 连接的变量，可由 `${var:NAME}` 引用 | `var` 列出变量；`var --unset NAME` 删除；与进程环境 `${env:*}` 分开 |
 | `shell <command>` | 启动系统 Shell 子进程，等待完成后收集输出 | 适合短任务；非零退出码通常返回失败 |
 | `shell_stream <command>` | 启动 Shell 子进程，边运行边发送标准输出/错误 | 适合观察日志或持续输出；交互式终端使用 PTY |
 | `bgrun <command>` | 在后台启动程序并尽快返回 PID | 不等待最终结果，也不持续收集输出 |
@@ -167,7 +168,7 @@ Server 的 `xt ...` 是面向用户的统一目录与运行入口；Client 另�
 
 ### Linux
 
-当前 Linux 平台类没有单独导出额外的普通命令名称；它继承上文的**公共 Client 命令**。因此 `pwd`、`shell`、`set`、`clean` 等仍按公共规则可用，实际系统工具通过目标 Linux Shell 调用。Linux 不自动继承 Windows/macOS 的 `getinfo`、`screenshot`、`run_elevated` 等平台方法。
+Linux 平台额外提供 `getinfo [--json]`，采集发行版、内核、主机、CPU、内存、GPU、网络、Python、Shell、桌面、用户及当前 Client 进程信息。输出为平铺字段，使用 `distro`、`pid`、`ppid`、`has_desktop`、`resolution` 等简明字段名；需要区分含义时使用 `cpu_model`、`memory_total_gb`、`python_version` 等限定名称。默认文本列表，`--json` 输出扁平 JSON。其余如 `pwd`、`shell`、`set`、`clean` 仍按公共 Client 命令执行。
 
 ### iOS / Pythonista
 

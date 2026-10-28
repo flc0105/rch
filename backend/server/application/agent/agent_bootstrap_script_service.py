@@ -311,6 +311,10 @@ def launch(python, directory):
         kwargs['creationflags'] = 0x00000008 | 0x00000200
     else:
         kwargs['start_new_session'] = True
+    # The bootstrap exits after launching; parent PID 1 does not mean systemd owns the Client.
+    kwargs['env'] = dict(os.environ,
+                         RCH_CLIENT_LAUNCH_MODE='detached',
+                         RCH_CLIENT_LAUNCH_SOURCE=('detached_process' if sys.platform == 'win32' else 'new_session'))
     log(f'Launching detached Client: {python} {script} (cwd={directory})')
     subprocess.Popen([str(python), str(script)], **kwargs)
     log('Client process launched (detached)')

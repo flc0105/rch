@@ -186,6 +186,8 @@ Terminal 的 `script exec` 路径候选和 `job start` Job 名称候选复用相
 
 ## 当前 Client 可见命令命名与分组
 
+Linux 通过平台类导出 `getinfo [--json]`，返回平铺的 `StructuredCommandResult` 系统信息。
+
 iOS 的命令可见性由 `iOSCommands` 的实际导出方法和 ACMD Registry 决定。平台类会屏蔽不适用于 Pythonista 的继承命令，并将移动端命令统一为 `clear_console`、`keep_awake`、`kill_app`、`open_in`、`quick_look`、`pick_upload`、`get_location`、`list_contacts`；`acmd ps/kill` 不在 iOS 注册。iOS 的 `getinfo` 和基于 Pythonista 系统接口的 `uptime` 均归入 `system` 命令组。
 
 
@@ -193,7 +195,7 @@ iOS 的命令可见性由 `iOSCommands` 的实际导出方法和 ACMD Registry �
 决定 Manifest、Client Help 和 Info → Commands 的分类。重命名后不保留旧名称兼容入口。
 本次分组使用 `shell`（`cd`、`pwd`）、`execution`（`shell`、`shell_stream`、
 `bgrun`、`pyexec`、`pyexec_stream`）、`file`（`file_shred`、`zip_dir`、`unzip`）、
-`session`（`kill_instance`、`reexec_instance`、`relaunch_instance`、`spawn_instance`）、
+`session`（`var`、`kill_instance`、`reexec_instance`、`relaunch_instance`、`spawn_instance`）、
 `runtime`（`watchdog`、`set`）、`maintenance`（`clean`、`update`）、
 `transfer`（`download`）、`automation`（`keyboard_send`）、
 `media`（`screenshot`、`webcam_snap`）、`privilege`（`run_elevated`、

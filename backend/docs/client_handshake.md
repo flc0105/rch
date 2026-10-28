@@ -100,11 +100,12 @@ Client 先取得当前平台的命令对象，然后检查拥有 `help` 装饰�
 
 ### 变量清单描述“可以怎样写”，不预先替换数值
 
-`variable_manifest` 由 Command 执行器的 Variable Resolver 生成。当前机制为命令输入支持三个命名空间：
+`variable_manifest` 由 Command 执行器的 Variable Resolver 生成。当前机制为普通命令输入支持四个命名空间：
 
 - `rch`：Client 运行态、身份或命令上下文等内置变量；每项附带模板及简短描述。
 - `path`：Client 常用系统目录的命名变量；候选名称来自变量注册配置。
 - `env`：提供 `${env:NAME}` 模板，并在构建 Manifest 时列出 Client **当前进程环境变量的名称**作为候选。
+- `var`：提供 `${var:NAME}` 模板；当前连接的变量通过 `var NAME=VALUE` 命令设置，值在命令执行时读取。
 
 这里的关键区别是：Manifest **不携带环境变量的值**。`${env:...}` 在实际执行命令时由 Client 读取进程环境；`rch` 和 `path` 变量也由执行时的 Provider 求值。握手时提供 `env` 候选键，只为了让浏览器在输入阶段能够提示可能的名称，并不代表这些值会被传送给 Server。
 

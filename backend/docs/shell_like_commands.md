@@ -222,7 +222,7 @@ watchdog --json
 
 ### 变量替换的发生位置
 
-普通 `command` 消息会在 Client 端进行一次变量展开，支持 `${rch:*}`、`${env:*}`、`${path:*}` 三种命名空间。Server 不负责替换成自己的值。
+普通 `command` 消息会在 Client 端进行一次变量展开，支持 `${rch:*}`、`${env:*}`、`${path:*}`、`${var:*}` 四种命名空间。Server 不负责替换成自己的值。
 
 ```text
 shell echo ${rch:hostname} ${rch:pid}

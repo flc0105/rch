@@ -25,17 +25,35 @@ shell echo alice@macbook-pro
 3. Client 解析**替换后的完整命令**，优先匹配内置命令；没有匹配时回退到 Shell 执行。
 4. 执行结果通过现有连接返回 Server 和 Web Terminal。变量解析出错时，命令会在派发前停止，不会执行尚未解析完成的命令。
 
-当前提供三个命名空间：
+当前提供四个命名空间：
 
 | 命名空间 | 用法 | 取值来源 |
 |---|---|---|
 | `rch` | `${rch:pid}` | Client 的运行时、设备身份、系统和时间信息 |
 | `env` | `${env:HOME}` | 目标 Client **进程**的环境变量 |
 | `path` | `${path:downloads}` | 目标 Client 上常见系统目录的路径 |
+| `var` | `${var:NAME}` | 当前 Client 连接的自定义变量，通过 `var NAME=VALUE` 设置 |
 
-这里的关键在于**取值发生在目标 Client**。当 Server 与 Client 运行在不同操作系统时，`${rch:pid}`、`${env:PATH}` 和 `${path:home}` 都表示目标 Client 的值，不是 Server 或浏览器的值。变量也不是服务端保存的一套用户自定义键值对，而是根据当前执行上下文求得。
+这里的关键在于**取值发生在目标 Client**。当 Server 与 Client 运行在不同操作系统时，`${rch:pid}`、`${env:PATH}` 和 `${path:home}` 都表示目标 Client 的值，不是 Server 或浏览器的值。自定义 `var` 值保存在 Client 当前连接的命令执行器内；切换目标 Client 时各自独立，重新创建 Client 执行器后清空。
 
 普通命令采用自动插值；Python Script 与结构化 `acmd` 使用不同执行链，**不自动对其代码或参数执行同样的字符串替换**。Script 可以通过 SDK 主动读取和展开变量，详见第六节。
+
+## 当前 Client 连接的自定义变量
+
+使用 `var NAME=VALUE` 保存字符串，随后在普通命令中使用 `${var:NAME}` 引用：
+
+```text
+var pid=11122
+shell echo ${var:pid}
+var JAVA_HOME=/opt/java
+shell echo ${var:JAVA_HOME}
+var
+var --unset pid
+```
+
+`var` 列出当前变量，`var --unset NAME` 删除指定变量。名称区分大小写，必须以字母或下划线开头，其余字符为字母、数字或下划线。赋值语法是 `var NAME=VALUE`，等号两侧不能有空格；值可为空，也可以包含内部空格或等号。展开时使用保存后的字符串。`var` 值只参与 RCH 的 `${var:*}` 文本插值，不修改 `os.environ`，不会自动变成子进程的 Shell 环境变量。要在 Shell 中用作环境变量，可在单条 Shell 命令中显式赋值。未设置的变量会在执行前报告错误。
+
+作用域是当前目标 Client 的命令执行器，适用于共享该连接的普通命令；重启 Client 或重建命令执行器后重新设置。`rch`、`env`、`path` 和 `var` 四种命名空间互不覆盖。
 
 ## Client 运行时信息的引用
 
@@ -183,7 +201,7 @@ shell echo ${rch:hostname} ${rch:pid} ${rch:hostname}
 
 解析器在一轮替换中处理匹配的占位符。`rch` 和 `path` 变量名不区分大小写，命名空间也不区分大小写，因此 `${RCH:PID}` 与 `${rch:pid}` 能解析为同一项。`env` 的名称部分则按输入名称读取系统环境变量。
 
-RCH Variables 用于解析**预定义的运行时、路径和环境变量**；计算、条件、函数调用及持久化自定义变量不在当前语法范围内。正确写法需要带有受支持的命名空间，如 `${rch:pid}`。不符合 RCH 变量格式的其他字符串（例如 `${pid}`）不会被这套解析器当作 RCH 变量替换；如果随后进入系统 Shell，则由 Shell 自己决定是否处理。
+RCH Variables 解析运行时、路径、进程环境和连接级自定义变量；表达式计算、条件和函数调用不在当前语法范围内。正确写法需要带有受支持的命名空间，如 `${rch:pid}`。不符合 RCH 变量格式的其他字符串（例如 `${pid}`）不会被这套解析器当作 RCH 变量替换；如果随后进入系统 Shell，则由 Shell 自己决定是否处理。
 
 主要异常行为如下：
 
@@ -252,7 +270,7 @@ Client 在连接握手时上报 `variable_manifest`，Server 随连接信息保�
 
 上面的 `candidates` 仅示意数据结构；实际名称来自目标 Client 的环境变量，不保证与示例相同。
 
-连接信息窗口的 **Variables** 标签直接展示这些模板及说明，便于查询可用名称。它不是变量编辑器，不提供创建、修改或删除变量值的操作，也不会因为打开标签页就向 Client 重新请求所有变量当前值。
+连接信息窗口的 **Variables** 标签展示变量模板及说明；设置与删除连接级自定义变量使用 `var` 命令。打开标签页不会重新查询 Client 上各变量的当前值。
 
 ### 补全提示和候选内容
 
@@ -262,7 +280,7 @@ Web Terminal 输入框使用同一份 Manifest 提供补全，而不是独立硬
 shell echo ${
 ```
 
-可以从命名空间候选继续输入 `${rch:`、`${env:` 或 `${path:`；继续输入 `${rch:p`，可匹配 `pid`、`platform` 等名称。环境变量补全会从 `env` 项目的 `candidates` 中寻找名称。
+可以从命名空间候选继续输入 `${rch:`、`${env:`、`${path:` 或 `${var:`；继续输入 `${rch:p`，可匹配 `pid`、`platform` 等名称。环境变量补全会从 `env` 项目的 `candidates` 中寻找名称。
 
 补全基于**握手时上报的名称快照**，实际变量则在**命令执行时**解析。因此如果 Client 的环境变量在连接建立后改变，候选列表与当前实际可解析的值可能不同。变量补全仅帮助输入，不保证命令执行时路径存在、环境变量仍被设置，或目标权限足够。
 
@@ -322,7 +340,7 @@ Script 可使用进程内或 `subprocess_pipe` Python 执行方式。两者都�
 | `${pid}` 没有展开 | 缺少命名空间，改用 `${rch:pid}` |
 | 提示 `Unknown rch variable` | 变量名不在当前 RCH 内置清单中；检查拼写 |
 | 提示环境变量未设置 | 目标 Client 进程中不存在该环境变量；不能用 Server 环境代替 |
-| 提示 `Unsupported variable namespace` | 占位符用了 `rch`、`env`、`path` 之外的命名空间 |
+| 提示 `Unsupported variable namespace` | 占位符用了 `rch`、`env`、`path`、`var` 之外的命名空间 |
 | 路径存在空格，命令却报参数错误 | 展开不等于 Shell 安全转义；按目标 Shell 的语法正确引用 |
 | 变量值与 Server 的 PID、用户或目录不同 | 变量在目标 Client 上解析，属于不同进程和机器 |
 | Variables 标签看不到实时值 | 该页面展示的是连接握手上传的变量定义，并非实时变量查询 |
@@ -330,6 +348,6 @@ Script 可使用进程内或 `subprocess_pipe` Python 执行方式。两者都�
 | Script 中使用 `variables` 提示 `NameError` | 添加 `from client.runtime.sdk import variables` 显式导入 |
 | Subprocess Script 的 `rch:pid` 不等于 `os.getpid()` | 前者表示主 Client，后者是当前 Python 子进程 |
 
-RCH Variables 提供 25 个运行时变量、4 个 Path 快捷变量和动态读取的 Environment 命名空间；Web 端负责展示与补全，不提供变量编辑功能。
+RCH Variables 提供 25 个运行时变量、4 个 Path 快捷变量、进程 Environment 与连接级自定义 `var` 命名空间。Web 端展示变量模板和补全；`var` 命令负责自定义变量的设置和查询。
 
 使用环境变量时尤其应注意敏感信息和命令构造：读取 `${env:NAME}` 不等于安全输出，变量值中的空格、引号、换行或 Shell 特殊字符都可能改变命令行为。对于需要精确控制参数边界的脚本，优先使用 Python 的结构化参数和 SDK 返回值处理，而不是把未知内容直接拼接进 Shell 命令。
