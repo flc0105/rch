@@ -96,6 +96,8 @@ rtt --json
 
 Python Client 会回传 `server_ts`。当前 Go Client 的 Heartbeat ACK 则返回 ID、Client 时间及工作目录，但**不回传 `server_ts`**，Server 仍可更新该会话的最近 ACK 时间，不过不会凭这条 ACK 计算新的 RTT。当前 RTT 处理也没有对 ACK ID 与在途 Heartbeat ID 建立严格的一一对应检查，不适合作为精密性能测量基准。
 
+设备列表使用连接的 `client_revision_state` 在过期时显示小型 `clock-alert` 图标；`integrity` 为 High、System、Protected 或 Root 时显示 `shield-plus` 图标。两者仅在线时显示，且保留原有设备名称和状态布局。
+
 ## Web 如何持续更新连接状态
 
 浏览器首先通过 `GET /api/connections` 取得当前活动会话和最近设备快照。之后使用通用 SSE `/api/stream` 接收 Server 推送的状态变化：

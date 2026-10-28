@@ -119,13 +119,20 @@
               <div class="device-name">
                 {{ formatDeviceName(item) }}
               </div>
-              <el-icon
+              <ClockAlert
                 v-if="getConnectionDisplayState(item) === 'online' && item.client_revision_state === 'outdated'"
                 class="device-update-indicator"
+                :size="13"
+                aria-label="Client update available"
                 title="Client update available"
-              >
-                <CaretTop />
-              </el-icon>
+              />
+              <ShieldPlus
+                v-if="getConnectionDisplayState(item) === 'online' && isElevated(item)"
+                class="device-elevated-indicator"
+                :size="13"
+                aria-label="Elevated client"
+                title="Elevated client"
+              />
             </div>
             <div class="device-os">
               {{ formatOsLabel(item.os_type, item.os_ver) }}
@@ -279,7 +286,7 @@
 <script>
 
 import { ElMessage, ElMessageBox } from 'element-plus'
-import {CaretTop} from '@element-plus/icons-vue'
+import { ClockAlert, ShieldPlus } from '@lucide/vue'
 import {
   killConnection as killConnectionApi,
   removeConnection as removeConnectionApi,
@@ -290,7 +297,8 @@ export default {
   name: 'DeviceSidebar',
 
   components: {
-    CaretTop,
+    ClockAlert,
+    ShieldPlus,
   },
 
   props: {
@@ -805,6 +813,12 @@ async removeConnectionPermanently(item) {
   }
 },
 
+    isElevated(item) {
+      // Use the privilege already reported in the connection handshake.
+      const integrity = String(item?.integrity || '').trim().toLowerCase()
+      return ['high', 'system', 'protected', 'root', 'root (via sudo)'].includes(integrity)
+    },
+
     formatDeviceName(item) {
       return item?.device_display_name || item?.display_hostname || item?.device_alias || item?.hostname || 'Unknown Host'
     },
@@ -1106,11 +1120,11 @@ async removeConnectionPermanently(item) {
   white-space: nowrap;
 }
 
-.device-update-indicator {
+.device-update-indicator,
+.device-elevated-indicator {
   flex: 0 0 auto;
-  font-size: 12px;
   color: var(--muted-2);
-  opacity: 0.58;
+  opacity: 0.65;
 }
 
 .device-os {
