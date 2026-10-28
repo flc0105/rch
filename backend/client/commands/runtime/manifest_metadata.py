@@ -10,8 +10,7 @@ def command_metadata(handler, *, kind='command'):
     return {
         'kind': kind,
         'source': 'client',
-        'cancel_policy': (getattr(handler, 'manifest_cancel_policy', None)
-                          or getattr(handler, 'command_cancel_mode', 'none')),
+        'cancel_policy': getattr(handler, 'command_cancel_mode', 'none'),
         'timeout': getattr(handler, 'command_timeout', None),
         'confirmation': {
             'required': bool(getattr(handler, 'requires_confirmation', False)),

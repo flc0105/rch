@@ -281,7 +281,8 @@ class CommandExecutionMixin:
         except Exception as e:
             self._send_final_result(0, f'Failed to execute command: {e}')
 
-    @desc('Execute Python code and collect output', group='execution', manifest_cancel='dynamic')
+    @desc('Execute Python code and collect output', group='execution')
+    @cancel_policy('cooperative')
     def pyexec(self, code, kwargs=None):
         """
         一次性返回版本。
@@ -300,7 +301,8 @@ class CommandExecutionMixin:
         except Exception as e:
             return 0, f'Failed to execute code: {e}'
 
-    @desc('Execute Python code with streaming output', group='execution', output='stream', manifest_cancel='dynamic')
+    @desc('Execute Python code with streaming output', group='execution', output='stream')
+    @cancel_policy('cooperative')
     def pyexec_stream(self, code, kwargs=None):
         """
         流式返回版本。

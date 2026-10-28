@@ -10,7 +10,7 @@ Python Client 初始化时先创建 `Client` 对象，为这个进程实例生�
 
 1. 根据 Client Profile 中的 `server_host`、`server_port` 连接 Server Socket；连接失败则按重连间隔重试，并重建连接对象。
 2. TCP 建立后，由 `ClientInfoBuilder` 收集本地身份、当前平台的命令清单、变量提示、系统路径、构建信息与运行配置。
-3. 使用 Socket 协议发送一条 `type: "info"` 的 JSON 消息，消息的 `id` 为当前 Client 实例的 `client_id`。
+3. 将完整 `info` 握手 JSON 输出到 Client 的 stdout 与 `console_logger`（同时写入已启用的主日志文件），再通过 Socket 协议发送；消息的 `id` 为当前 Client 实例的 `client_id`。每次建立新连接并发送握手时都会输出。
 4. Client 本地将连接标记为已连接，再启动接收工作线程。这里的 `mark_connected()` 是本地状态更新，**不是收到 Server 的独立握手确认帧**。
 5. Server 的监听线程读取新 Socket 的第一条消息，建立 `ClientSession` 并放入活动连接管理器，记录设备/连接历史，发布 `connection_online`；随后另启线程持续接收该连接的消息。
 

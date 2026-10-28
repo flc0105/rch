@@ -99,8 +99,10 @@ def test_linux_command_manifest_is_unique_and_complete():
     assert modes['shell_stream'] == 'stream'
     assert modes['pyexec_stream'] == 'stream'
     assert modes['pyexec'] == 'collect'
-    dynamic = {item['name'] for item in entries if item['cancel_policy'] == 'dynamic'}
-    assert {'pyexec', 'pyexec_stream', 'download_path', 'receive_file'} <= dynamic
+    policies = {item['name']: item['cancel_policy'] for item in entries}
+    assert set(policies.values()) <= {'none', 'cooperative', 'process'}
+    for name in ('pyexec', 'pyexec_stream', 'download', 'receive_file', 'download_path', 'download_paths'):
+        assert policies[name] == 'cooperative'
     assert any(item['confirmation']['required'] for item in entries)
 
 

@@ -4,6 +4,7 @@ import os
 import requests
 
 from client.commands.runtime.context import CommandCancelledError, CommandTimeoutError
+from client.commands.runtime.interrupts import cancel_policy
 from client.commands.common.services.transfer.http_file_transfer_service import CommandHttpFileTransferService
 from client.commands.common.services.filesystem.preview_image_service import PreviewImageService
 from client.config.runtime_config import HTTP_TRANSFER_MODE
@@ -50,7 +51,8 @@ class CommandFileWebMixin:
             self._preview_image_service = service
         return service
 
-    @desc('Download a file by path', group='file_path', suggest=False, manifest_cancel='dynamic')
+    @desc('Download a file by path', group='file_path', suggest=False)
+    @cancel_policy('cooperative')
     def download_path(self, path=''):
         """
         下载单个路径到 server artifact files 区
@@ -85,7 +87,8 @@ class CommandFileWebMixin:
         except Exception as e:
             return 0, f'Failed to download file via HTTP: {e}'
 
-    @desc('Download multiple paths as ZIP archive', group='file_path', suggest=False, manifest_cancel='dynamic')
+    @desc('Download multiple paths as ZIP archive', group='file_path', suggest=False)
+    @cancel_policy('cooperative')
     def download_paths(self, arg=''):
         """
         按路径列表打包上传到 server artifact files 区
