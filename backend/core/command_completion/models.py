@@ -70,11 +70,10 @@ class CompletionCandidate:
     def to_dict(self) -> dict:
         title = str(self.title or self.insert_text or self.name or '').strip()
         insert_text = str(self.insert_text or title).strip()
-        name = str(self.name or title).strip()
+        name = insert_text
         payload = {
             'name': name,
             'title': title,
-            'template': insert_text,
             'value': insert_text,
             'insert_text': insert_text,
             'help': str(self.description or '').strip(),

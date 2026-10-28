@@ -277,13 +277,13 @@
             <div class="connection-command-list">
               <div
                 v-for="(item, index) in visibleConnectionCommands"
-                :key="`${item.template}-${index}`"
+                :key="`${item.name}-${index}`"
                 class="connection-command-item"
               >
                 <div v-if="connectionCommandSource === 'client' && item.group" class="connection-command-group">{{ item.group }}</div>
 
                 <div class="connection-command-text">
-                  <span class="mono">{{ item.name || item.template }}</span>
+                  <span class="mono">{{ item.name }}</span>
                   <span v-if="item.help"> — {{ item.help }}</span>
                 </div>
               </div>
@@ -600,7 +600,7 @@ export default {
       const term = String(this.connectionCommandSearch || '').trim().toLocaleLowerCase()
       const filtered = source.filter(item => {
         if (!term) return true
-        return [item.name, item.template, item.help].some(value =>
+        return [item.name, item.help].some(value =>
           String(value || '').toLocaleLowerCase().includes(term))
       })
       return [...filtered].sort((a, b) => {
@@ -608,7 +608,7 @@ export default {
           const groupOrder = String(a.group || '').localeCompare(String(b.group || ''), undefined, { sensitivity: 'base' })
           if (groupOrder) return groupOrder
         }
-        return String(a.name || a.template || '').localeCompare(String(b.name || b.template || ''), undefined, { sensitivity: 'base' })
+        return String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' })
       })
     },
 
@@ -1090,17 +1090,15 @@ export default {
     },
 
     normalizeConnectionInfoCommand(item) {
-      const template = String(item.template || '').trim()
-      const name = String(item.name || template || '').trim()
+      const name = String(item.name || '').trim()
       const help = String(item.help || '').trim()
       const group = String(item.group || '').trim()
       const source = String(item.source || '').trim()
 
       return {
         ...item,
-        value: template,
+        value: name,
         name,
-        template,
         help,
         group,
         source,

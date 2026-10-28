@@ -39,6 +39,7 @@ def inactive_guard_status(client_id):
 
 
 def inactive_process_status():
+
     return {
         'enabled': False, 'configured_enabled': bool(runtime_config.PROCESS_WATCHDOG_ENABLED),
         'suppressed': True, 'suppression_reason': 'feature_disabled',

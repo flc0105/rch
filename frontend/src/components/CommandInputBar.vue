@@ -25,9 +25,9 @@
               <div class="command-autocomplete-item-main">
                 <div
                   class="command-autocomplete-item-name"
-                  :title="item.displayText || item.template || item.value || '-'"
+                  :title="item.displayText || item.name || item.value || '-'"
                 >
-                  {{ item.displayText || item.template || item.value || '-' }}
+                  {{ item.displayText || item.name || item.value || '-' }}
                 </div>
 
                 <div
@@ -508,9 +508,8 @@ export default {
             if (!variableTemplate) return null
 
             return {
-              name: variableTemplate,
+              name: `${variableQuery.commandPrefix}${variableTemplate}`,
               value: `${variableQuery.commandPrefix}${variableTemplate}`,
-              template: `${variableQuery.commandPrefix}${variableTemplate}`,
               displayText: variableTemplate,
               help: String(item?.description || '').trim(),
               source: 'variable',
@@ -548,9 +547,8 @@ export default {
         .map(namespace => {
           const namespaceTemplate = '${' + namespace + ':'
           return {
-            name: namespaceTemplate,
+            name: `${variableQuery.commandPrefix}${namespaceTemplate}`,
             value: `${variableQuery.commandPrefix}${namespaceTemplate}`,
-            template: `${variableQuery.commandPrefix}${namespaceTemplate}`,
             displayText: namespaceTemplate,
             help: `Complete ${namespace} variables`,
             source: 'variable_namespace',
@@ -830,7 +828,7 @@ export default {
           const items = Array.isArray(payload?.items) ? payload.items : []
           const normalizedItems = items
             .map(item => this.normalizeCommandCompletionCandidate(item, completionQuery))
-            .filter(item => item.template)
+            .filter(item => item.name)
 
           this.commandCompletionCandidatesByContext = {
             ...this.commandCompletionCandidatesByContext,
@@ -862,23 +860,17 @@ export default {
       const sourcePrefix = `${completionQuery.fileSystemProxyCommand} `
       const targetPrefix = `${completionQuery.fileSystemTargetCommand} `
       const candidatePath = String(item?.candidatePath || '').trim()
-      const template = candidatePath
-        ? `${targetPrefix}${candidatePath}`.trim()
-        : this.replaceCompletionCommandPrefix(item.template, sourcePrefix, targetPrefix)
-      const value = candidatePath
-        ? template
-        : this.replaceCompletionCommandPrefix(item.value, sourcePrefix, targetPrefix)
       const name = candidatePath
-        ? template
+        ? `${targetPrefix}${candidatePath}`.trim()
         : this.replaceCompletionCommandPrefix(item.name, sourcePrefix, targetPrefix)
+      const value = name
 
       return {
         ...item,
         value,
         name,
-        template,
         groupLabel: this.buildCandidateGroupLabel({ ...item, group: item.group, source: item.source }),
-        searchText: this.getCandidateTitleText({ template, value, name }).toLowerCase(),
+        searchText: this.getCandidateTitleText({ value, name }).toLowerCase(),
       }
     },
 
@@ -1148,7 +1140,7 @@ export default {
     },
 
     getCandidateInsertText(item) {
-      return String(item?.template || item?.value || item?.name || '').trim()
+      return String(item?.name || item?.value || '').trim()
     },
 
     filterCandidatesByTitle(candidates, keyword) {
@@ -1216,7 +1208,7 @@ export default {
     },
 
     getCandidateTitleText(item) {
-      return String(item?.template || item?.value || item?.name || '').trim()
+      return String(item?.name || item?.value || '').trim()
     },
 
     getCandidateTitleSearchText(item) {
@@ -1279,10 +1271,10 @@ const pinnedHistoryItems = historyItems.filter(item => item && item.is_pinned)
 
         const pushUniqueCandidate = (item) => {
           const normalized = this.normalizeCandidateItem(item)
-          const template = normalized.template
+          const name = normalized.name
 
-          if (!template || seen.has(template)) return
-          seen.add(template)
+          if (!name || seen.has(name)) return
+          seen.add(name)
           merged.push(normalized)
         }
 
@@ -1313,8 +1305,7 @@ const pinnedHistoryItems = historyItems.filter(item => item && item.is_pinned)
         //   seen.add(command)
         //   merged.push(this.normalizeCandidateItem({
         //     name: command,
-        //     template: command,
-        //     help: 'Recent command',
+        //         //     help: 'Recent command',
         //     source: 'history',
         //     group: 'history',
         //   }))
@@ -1327,7 +1318,6 @@ const pinnedHistoryItems = historyItems.filter(item => item && item.is_pinned)
   seen.add(command)
   merged.push(this.normalizeCandidateItem({
     name: command,
-    template: command,
     help: 'Pinned recent command',
     source: 'history',
     group: 'history',
@@ -1355,28 +1345,24 @@ const pinnedHistoryItems = historyItems.filter(item => item && item.is_pinned)
       return [
         {
           name: 'whoami',
-          template: 'whoami',
           help: 'Show current user',
           source: 'common_ops',
           group: 'common_ops',
         },
         {
           name: 'hostname',
-          template: 'hostname',
           help: 'Show host name',
           source: 'common_ops',
           group: 'common_ops',
         },
         {
-          name: 'mkdir',
-          template: 'mkdir ',
+          name: 'mkdir ',
           help: 'Create a directory',
           source: 'common_ops',
           group: 'common_ops',
         },
         {
-          name: 'rmdir',
-          template: 'rmdir ',
+          name: 'rmdir ',
           help: 'Remove an empty directory',
           source: 'common_ops',
           group: 'common_ops',
@@ -1406,8 +1392,7 @@ const pinnedHistoryItems = historyItems.filter(item => item && item.is_pinned)
         const rightGroup = groupOf(b)
         return rankOf(leftGroup) - rankOf(rightGroup)
           || compare(leftGroup, rightGroup)
-          || compare(a?.name || a?.template || a?.value || '', b?.name || b?.template || b?.value || '')
-          || compare(a?.template || a?.value || '', b?.template || b?.value || '')
+          || compare(a?.name || a?.value || '', b?.name || b?.value || '')
       })
     },
 
@@ -1419,19 +1404,17 @@ const pinnedHistoryItems = historyItems.filter(item => item && item.is_pinned)
 
     normalizeCandidateItem(item) {
       const rawValue = String(item.value || '').trim()
-      const template = String(item.template || rawValue || '').trim()
-      const name = String(item.name || template || rawValue || '').trim()
+      const name = String(item.name || rawValue || '').trim()
       const help = String(item.help || '').trim()
       const group = String(item.group || '').trim()
       const source = String(item.source || '').trim()
       const groupLabel = this.buildCandidateGroupLabel(item)
-      const titleText = this.getCandidateTitleText({ template, value: rawValue, name })
+      const titleText = this.getCandidateTitleText({ value: rawValue, name })
 
       return {
         ...item,
-        value: template,
+        value: name,
         name,
-        template,
         help,
         group,
         source,
@@ -1456,7 +1439,6 @@ const pinnedHistoryItems = historyItems.filter(item => item && item.is_pinned)
           return {
             name: shortcutText,
             value: shortcutText,
-            template: shortcutText,
             help: commandText,
             source: 'quick_history_shortcut',
             group: 'quick_history',
@@ -1484,7 +1466,7 @@ const pinnedHistoryItems = historyItems.filter(item => item && item.is_pinned)
     },
 
     getCandidateCommandText(item) {
-      return String(item?.template || item?.value || item?.name || '').trim()
+      return String(item?.name || item?.value || '').trim()
     },
 
     sortQuickHistoryShortcutCandidates(items) {

@@ -410,13 +410,13 @@ class RemoteClientCommandCompletionProvider(CommandCompletionProvider):
         return f'command_completions {encode_structured_arg(payload)}'
 
     def _candidate_from_payload(self, item: dict) -> CompletionCandidate:
-        title = str(item.get('title') or item.get('template') or item.get('value') or item.get('name') or '').strip()
-        insert_text = str(item.get('insert_text') or item.get('template') or item.get('value') or title).strip()
+        title = str(item.get('title') or item.get('name') or item.get('value') or '').strip()
+        insert_text = str(item.get('insert_text') or item.get('name') or item.get('value') or title).strip()
         metadata = {
             key: value
             for key, value in item.items()
             if key not in {
-                'name', 'title', 'template', 'value', 'insert_text', 'help',
+                'name', 'title', 'value', 'insert_text', 'help',
                 'group', 'source', 'kind', 'priority'
             }
         }
@@ -427,7 +427,7 @@ class RemoteClientCommandCompletionProvider(CommandCompletionProvider):
             source=str(item.get('source') or self.source).strip(),
             group=str(item.get('group') or self.group).strip(),
             kind=str(item.get('kind') or 'command').strip(),
-            name=str(item.get('name') or title).strip(),
+            name=insert_text,
             priority=int(item.get('priority') or 100),
             metadata=metadata,
         )

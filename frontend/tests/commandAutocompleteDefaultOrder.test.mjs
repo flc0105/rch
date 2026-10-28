@@ -12,7 +12,7 @@ const globals = { ElMessage: {}, TerminalConnectionContext: {}, formatTerminalCa
 vm.runInNewContext(javascript, globals, { timeout: 1000 })
 const methods = globals.options.methods
 
-const candidate = (group, name, source = 'client') => ({ group, name, template: name, source })
+const candidate = (group, name, source = 'client') => ({ group, name, source })
 
 test('blank input sorts by actual common_ops group after acmd, and alphabetically within groups', () => {
   const items = [

@@ -134,7 +134,7 @@ Registry 同时产生 Server Manifest、`help` 和静态子命令补全候选，
 
 Client 的 `CommandIntrospectionMixin` 通过 `inspect.getmembers()` 收集当前平台命令对象中带 `help` 属性的方法，生成 `command_manifest`（含 `name/help/group/suggest`），并附加 `ArgumentCommandRegistry.get_manifest_payload()` 的 ACMD 条目。Manifest 在 Client 构造 `info` 握手时提交，Server 的 `SessionInfo` 保存该连接的快照；**不是 Web 打开命令面板时实时从 Client 重新扫描 Python 方法**。
 
-Web 通过 `GET /api/connections/{client_id}/command-candidates` 获取候选，`WebCommandCatalogApi` 汇合当前 Client 的 Manifest 与 Server Builtin/Alias 模板，按候选插入文本 `template` 去重，再进行排序。用户能在候选列表里看见一个名称，只能说明它出现在此清单，不能替代执行权限、平台可用性或参数合法性的验证；反过来，`suggest=False` 的命令可以执行但不作为普通提示展示。
+Web 通过 `GET /api/connections/{client_id}/command-candidates` 获取候选，`WebCommandCatalogApi` 汇合当前 Client 的 Manifest 与 Server Builtin/Alias 命令，按候选插入文本 `name` 去重，再进行排序。用户能在候选列表里看见一个名称，只能说明它出现在此清单，不能替代执行权限、平台可用性或参数合法性的验证；反过来，`suggest=False` 的命令可以执行但不作为普通提示展示。
 
 上下文自动补全又是独立机制：`POST /api/connections/{client_id}/command-completions` 由 Server `ServerCommandCompletionService` 的 Provider Registry 响应；需要远程文件等数据时，再通过 Client 的 `command_completions` 入口，由 `ClientCommandCompletionService` 注册的相应 Provider 收集候选。**新增普通命令不等于自动获得参数补全**：静态 Server 子命令直接来自 Registry，动态参数仍需分别考虑 Server Provider、Client Provider 与前端解析上下文。输入框选中候选后只是填充命令，不代表执行。详细规则请参阅 [Autocomplete](autocomplete.md)。
 

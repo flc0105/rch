@@ -187,7 +187,7 @@ class ServerCommandRegistry:
         return f'{sub.usage} — {sub.description}'
 
     def candidates(self):
-        return [dict(name=spec.name, template=spec.name + (' ' if spec.subcommands or spec.expects_arguments else ''),
+        return [dict(name=spec.name + (' ' if spec.subcommands or spec.expects_arguments else ''),
                      help=spec.description, source='server', group=spec.group,
                      suggest=spec.suggest,
                      subcommands=[dict(name=child.name, usage=child.usage,

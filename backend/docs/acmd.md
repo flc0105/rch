@@ -242,7 +242,6 @@ Client 在连接握手时生成 `command_manifest`，其中加入 `acmd` 注册�
 ```json
 {
   "name": "acmd ps",
-  "template": "acmd ps",
   "help": "Show running processes",
   "group": "acmd",
   "suggest": true,

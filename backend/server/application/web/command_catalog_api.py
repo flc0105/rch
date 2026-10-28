@@ -25,14 +25,11 @@ class WebCommandCatalogApi:
                 continue
 
             name = (item.get('name') or '').strip()
-            template = name
-
-            if not name or not template:
+            if not name:
                 continue
 
             result.append({
                 'name': name,
-                'template': template,
                 'help': item.get('help', ''),
                 'group': item.get('group', 'general'),
                 'suggest': item.get('suggest', True),
@@ -53,7 +50,7 @@ class WebCommandCatalogApi:
         server_candidates = self.command_executor_factory.create(session).get_command_candidates()
         # Top-level Server Builtins own these names; do not present shadowed
         # Client manifest entries as independently reachable terminal commands.
-        registered_server_names = {str(item.get('name') or '').lower() for item in server_candidates
+        registered_server_names = {str(item.get('name') or '').strip().split(' ', 1)[0].lower() for item in server_candidates
                                    if item.get('source') == 'server'}
         client_candidates = [item for item in client_candidates
                              if str(item.get('name') or '').lower() not in registered_server_names]
@@ -61,13 +58,13 @@ class WebCommandCatalogApi:
         merged = []
         seen = set()
         for item in client_candidates + server_candidates:
-            template = (item.get('template') or '').strip()
-            if not template or template in seen:
+            name = (item.get('name') or '').strip()
+            if not name or name in seen:
                 continue
-            seen.add(template)
+            seen.add(name)
             merged.append(item)
 
-        merged.sort(key=lambda item: (item.get('source', ''), item.get('template', '').lower()))
+        merged.sort(key=lambda item: (item.get('source', ''), item.get('name', '').lower()))
         return merged
 
     def get_command_completions(self, client_id: str, raw_input: str = '', cursor_position=None, max_results: int = 50):

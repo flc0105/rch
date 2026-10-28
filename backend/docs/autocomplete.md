@@ -101,7 +101,7 @@ Terminal 的下拉候选按标题文字筛选：优先精确匹配，其次前�
 
 ## 扩展补全能力的接入边界
 
-自动补全使用 `CommandCompletionParser`、`CompletionContext` 和统一的 `CompletionCandidate`：候选包括标题 `title`、真正写入输入框的 `insert_text`、说明 `description`、`source`、`group`、`kind`、`priority` 和可选的 `metadata`。序列化后前端使用 `template` / `value` 作为插入文本，使用 `help` 作为说明。一个 Provider 只需声明支持哪些命令上下文，并返回候选，不应在查询过程中修改文件、启动任务或执行候选命令。
+自动补全使用 `CommandCompletionParser`、`CompletionContext` 和统一的 `CompletionCandidate`：候选包括标题 `title`、真正写入输入框的 `insert_text`、说明 `description`、`source`、`group`、`kind`、`priority` 和可选的 `metadata`。序列化后的命令候选统一以 `name` 表示插入文本，以 `title` 表示需要单独展示的标题，以 `help` 表示说明。一个 Provider 只需声明支持哪些命令上下文，并返回候选，不应在查询过程中修改文件、启动任务或执行候选命令。
 
 新增 Server 侧补全时，在 Server 的 Completion Service 中注册 Provider；需要目标设备文件系统或 Runtime Config 时，在 Client 的 Completion Service 中注册，并通过 Server 的远程代理读取。**只注册一个 Provider 还不够**：Web 输入框的上下文分流目前是显式规则，新的命令参数入口还需要在前端识别逻辑中接入，否则输入框仍会走基础命令筛选，而不会调用新增 Provider。
 
@@ -120,9 +120,8 @@ Terminal 的下拉候选按标题文字筛选：优先精确匹配，其次前�
   },
   "items": [
     {
-      "name": "logs",
+      "name": "cd /tmp/logs",
       "title": "cd /tmp/logs",
-      "template": "cd /tmp/logs",
       "value": "cd /tmp/logs",
       "insert_text": "cd /tmp/logs",
       "help": "Change directory -> /tmp/logs",

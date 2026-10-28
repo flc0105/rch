@@ -117,7 +117,6 @@ class BuiltinCommandHandler:
 
             candidates.append({
                 'name': alias_name,
-                'template': alias_name,
                 'help': f'Alias [{alias_platform}] -> {alias_command}',
                 'source': 'alias'
             })
