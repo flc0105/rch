@@ -33,8 +33,28 @@ class NetstatService:
     def build_acmd_netstat_result(self, args_dict):
         port = args_dict.get('port')
         output_json = bool(args_dict.get('json', False))
+        status = str(args_dict.get('status') or '').strip().upper()
+        protocol = str(args_dict.get('protocol') or '').strip().lower()
+        listening = bool(args_dict.get('listening'))
+        tcp = bool(args_dict.get('tcp'))
+        udp = bool(args_dict.get('udp'))
 
-        rows = self.collect_netstat_rows(port=port)
+        if listening:
+            if status and status not in ('LISTEN', 'LISTENING'):
+                raise ValueError('-l conflicts with --status {}'.format(status))
+            status = 'LISTENING'
+
+        if protocol and protocol not in ('tcp', 'udp'):
+            raise ValueError('Invalid protocol: {} (expected tcp or udp)'.format(protocol))
+        if tcp and udp:
+            raise ValueError('Choose either -t or -u')
+        if tcp or udp:
+            selected_protocol = 'tcp' if tcp else 'udp'
+            if protocol and protocol != selected_protocol:
+                raise ValueError('Conflicting protocol filters')
+            protocol = selected_protocol
+
+        rows = self.collect_netstat_rows(port=port, status=status, protocol=protocol)
 
         result = StructuredCommandResult(
             status=1,
@@ -47,7 +67,7 @@ class NetstatService:
             output_format='json' if output_json else 'text',
         )
 
-    def collect_netstat_rows(self, port=None):
+    def collect_netstat_rows(self, port=None, status='', protocol=''):
         platform_alias = get_local_identity().os_alias
 
         if platform_alias == 'ios':
@@ -73,20 +93,21 @@ class NetstatService:
                 row for row in rows
                 if self._row_matches_port(row, port)
             ]
+        if status:
+            # psutil commonly reports LISTEN; accept LISTENING as the CLI spelling.
+            statuses = ('LISTEN', 'LISTENING') if status in ('LISTEN', 'LISTENING') else (status,)
+            rows = [row for row in rows if (row.get('status') or '').upper() in statuses]
+        if protocol:
+            rows = [row for row in rows if (row.get('protocol') or '').lower() == protocol]
 
         rows = self._clean_and_sort_rows(rows)
 
         if not rows:
-            if port is None:
-                raise RuntimeError(
-                    'No TCP/UDP network connections found'
-                )
-
-            raise RuntimeError(
-                'No TCP/UDP network connections found for port {}'.format(
-                    port
-                )
-            )
+            if not status and not protocol:
+                if port is None:
+                    raise RuntimeError('No TCP/UDP network connections found')
+                raise RuntimeError('No TCP/UDP network connections found for port {}'.format(port))
+            raise RuntimeError('No network connections match the requested filters')
 
         return rows
 

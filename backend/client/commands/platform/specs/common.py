@@ -18,6 +18,26 @@ NETSTAT_ARGUMENT_SPEC = ArgumentCommandSpec(
             help_text='Filter by local or remote port',
         ),
         ArgumentOptionSpec(
+            name='status', option_type='str', default='',
+            help_text='Filter by status, e.g. LISTENING',
+        ),
+        ArgumentOptionSpec(
+            name='listening', option_type='flag', default=False, alias='l',
+            help_text='Show listening connections (-l = --status LISTENING)',
+        ),
+        ArgumentOptionSpec(
+            name='protocol', option_type='str', default='',
+            help_text='Filter by protocol: tcp or udp',
+        ),
+        ArgumentOptionSpec(
+            name='tcp', option_type='flag', default=False, alias='t',
+            help_text='Show TCP connections (-t = --protocol tcp)',
+        ),
+        ArgumentOptionSpec(
+            name='udp', option_type='flag', default=False, alias='u',
+            help_text='Show UDP connections (-u = --protocol udp)',
+        ),
+        ArgumentOptionSpec(
             name='json',
             option_type='flag',
             required=False,
@@ -38,6 +58,9 @@ NETSTAT_ARGUMENT_SPEC = ArgumentCommandSpec(
         'acmd netstat 443',
         'acmd netstat --port 443',
         'acmd netstat --port 443 --json',
+        'acmd netstat --status LISTENING',
+        'acmd netstat -l -t',
+        'acmd netstat --protocol udp',
     ],
 )
 

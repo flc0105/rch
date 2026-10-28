@@ -65,6 +65,8 @@ acmd ps --port 8080 --json
 acmd ps --port 8080 --json --with-actions
 ```
 
+`acmd netstat` 在 Windows、macOS、Linux 上查看 TCP/UDP 连接，默认显示全部可读取的连接。可用 `--port 443`（或位置参数 `443`）按本地／远端端口过滤，`--status LISTENING`（或 `-l`）仅看监听状态，`--protocol tcp`（或 `-t`）、`--protocol udp`（或 `-u`）按协议过滤。支持组合条件，如 `acmd netstat -l -t --port 443 --json`；监听状态同时识别系统返回的 `LISTEN` 与 `LISTENING`。`-t` 和 `-u` 不能同时指定，`--json` 保持原有结构化表格输出。
+
 - `acmd kill` 无目标时先通过 Interaction Broker 询问 `pid/name/port`
   和目标值，再 Preview。指定目标时直接 Preview 所有匹配 PID，
   可取消单条勾选；Force 初始状态由 `-9/-f/--force` 决定。

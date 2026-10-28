@@ -201,7 +201,7 @@ ACMD 统一使用 `acmd <name> ...` 前缀，使用独立的命令注册表、�
 | 平台 | 当前已注册的 ACMD | 作用概述 |
 |---|---|---|
 | **Windows / macOS / Linux** | `acmd ps` | 按 PID、名称、端口查看进程，部分形式支持 JSON 结果 |
-| **Windows / macOS / Linux** | `acmd netstat` | 查看 TCP / UDP 连接，可按端口筛选 |
+| **Windows / macOS / Linux** | `acmd netstat` | 查看 TCP / UDP 连接，可按端口、监听状态和协议筛选 |
 | **Windows / macOS / Linux** | `acmd kill` | 按 PID、名称或端口选择并终止进程；可先显示预览和确认，具体能力受权限限制 |
 | **macOS** | `acmd msgbox` / `acmd notify` | 显示本机提示框 / 发送本地通知 |
 | **macOS** | `acmd launchd` | 管理 LaunchAgent / LaunchDaemon；未填 action/kind 时交互选择，执行前预览审批；支持 `--json` 结构化结果与 `--no-confirm` 直接执行；详见 [launchd](launchd.md) |
@@ -222,6 +222,9 @@ acmd help
 acmd help ps
 acmd ps --name python --json
 acmd netstat --port 443
+acmd netstat --status LISTENING
+acmd netstat -l -t --port 443 --json
+acmd netstat -u
 acmd kill --pid 1234
 acmd tree . --max_depth 2
 ```
