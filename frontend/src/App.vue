@@ -186,6 +186,7 @@
   :current-connection="currentConnection"
   :status-now-tick="statusNowTick"
   :current-active-task-id="currentActiveTaskId"
+  :current-active-task-cancel-policy="currentActiveTaskCancelPolicy"
   :tab-id="tabId"
   @append-output="appendOutput"
   @set-active-task="setActiveTask"
@@ -964,6 +965,7 @@ export default {
     },
 
     openProcessDialog(sortBy = '') {
+      if (this.currentConnection?.feature_manifest?.process_monitor === false) return
       return this.$refs.processDialogRef?.open(typeof sortBy === 'string' ? sortBy : '')
     },
 

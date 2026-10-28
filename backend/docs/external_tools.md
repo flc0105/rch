@@ -4,6 +4,8 @@ External Tools 把可分发的外部程序与运行时进程解耦。Package 描
 
 Package 安装、Module 运行和 Package 卸载分别管理，各有独立状态。Web Manager、终端控制与 Script SDK 使用同一组运行对象，但 Daemon 与 Oneshot 的生命周期、日志和状态维护差异明显，应沿着分发、安装、启动、观察和回收的完整路径理解。
 
+Web 中 External Tools 入口由 Client 握手的 `feature_manifest.external_tool` 控制：macOS、Windows、Linux 默认显示，iOS 默认隐藏。该开关仅控制 Web 入口；Script SDK 与现有运行时的工具实现仍保持原有导入及调用方式。
+
 ## 分发单元与运行单元如何协作
 
 一次典型操作经过以下链路：

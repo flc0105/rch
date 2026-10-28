@@ -104,7 +104,7 @@
             @change="handleControlToggle"
           />
 
-          <el-dropdown trigger="hover" placement="bottom-start" @command="handleClipboardCommand" @visible-change="onToolbarPopupVisible('clipboard', $event)">
+          <el-dropdown trigger="hover" placement="bottom-start" @command="handleClipboardCommand" @visible-change="onToolbarPopupVisible('clipboard', $event)" v-if="clipboardSupported">
             <el-button size="small" @click="$emit('open-clipboard', 'get')">Clipboard</el-button>
             <template #dropdown>
               <el-dropdown-menu>
@@ -282,6 +282,10 @@ export default {
       // Existing connections without a feature manifest retain their prior behavior.
       const flags = this.currentConnection?.feature_manifest
       return !flags || flags.screen_input !== false
+    },
+
+    clipboardSupported() {
+      return this.currentConnection?.feature_manifest?.clipboard !== false
     },
 
     controlAvailable() {

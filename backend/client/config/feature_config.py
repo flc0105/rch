@@ -1,20 +1,21 @@
 """Client launch-time feature choices. Restart the Client after changing overrides.
 
 Only explicitly configurable features appear in FEATURE_OVERRIDES. Missing keys
-use platform defaults. Features marked off are never imported by their owners.
+use platform defaults. PTY/Screen/Clipboard/Watchdog disable imports;
+external_tool and process_monitor only control Web entry availability.
 """
 
 # Edit these values locally. Accepted keys are listed in _DEFAULTS below.
 # Example: {'screen_view': False, 'screen_input': False, 'pty': False}
+# external_tool and process_monitor control Web entry availability; their shared
+# runtime code may still be imported by Script / commands / Device Monitor.
 FEATURE_OVERRIDES = {}
 
-
-
 _DEFAULTS = {
-    'mac': {'pty': True, 'screen_view': True, 'screen_input': True, 'clipboard': True, 'watchdog': True},
-    'win': {'pty': True, 'screen_view': True, 'screen_input': True, 'clipboard': True, 'watchdog': True},
-    'linux': {'pty': True, 'screen_view': False, 'screen_input': False, 'clipboard': False, 'watchdog': True},
-    'ios': {'pty': False, 'screen_view': False, 'screen_input': False, 'clipboard': True, 'watchdog': False},
+    'mac': {'external_tool': True, 'process_monitor': True, 'pty': True, 'screen_view': True, 'screen_input': True, 'clipboard': True, 'watchdog': True},
+    'win': {'external_tool': True, 'process_monitor': True, 'pty': True, 'screen_view': True, 'screen_input': True, 'clipboard': True, 'watchdog': True},
+    'linux': {'external_tool': True, 'process_monitor': True, 'pty': True, 'screen_view': False, 'screen_input': False, 'clipboard': False, 'watchdog': True},
+    'ios': {'external_tool': False, 'process_monitor': False, 'pty': False, 'screen_view': False, 'screen_input': False, 'clipboard': True, 'watchdog': False},
 }
 
 def resolve_features(os_alias=None, overrides=None):
@@ -37,9 +38,13 @@ def resolve_features(os_alias=None, overrides=None):
         defaults['screen_input'] = False
     if os_alias not in _DEFAULTS:
         defaults['watchdog'] = False
+        defaults['external_tool'] = False
+        defaults['process_monitor'] = False
     if os_alias == 'ios':
         defaults['pty'] = False
         defaults['screen_view'] = False
         defaults['screen_input'] = False
         defaults['watchdog'] = False
+        defaults['external_tool'] = False
+        defaults['process_monitor'] = False
     return defaults

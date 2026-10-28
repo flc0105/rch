@@ -29,6 +29,19 @@ def test_platform_defaults(monkeypatch, os_alias, screen_view, pty, clipboard):
     assert result['screen_input'] is screen_view
 
 
+
+def test_external_tool_and_process_monitor_platform_features():
+    for platform in ('mac', 'win', 'linux'):
+        assert feature_config.resolve_features(platform, {})['external_tool'] is True
+        assert feature_config.resolve_features(platform, {})['process_monitor'] is True
+    assert feature_config.resolve_features('ios', {'external_tool': True, 'process_monitor': True})['external_tool'] is False
+    assert feature_config.resolve_features('ios', {'external_tool': True, 'process_monitor': True})['process_monitor'] is False
+    disabled = feature_config.resolve_features('mac', {'external_tool': False, 'process_monitor': False})
+    assert disabled['external_tool'] is False
+    assert disabled['process_monitor'] is False
+    assert disabled['pty'] is True  # Independent core capability
+
+
 def test_features_validate_user_overrides(monkeypatch):
     selected = feature_config.resolve_features('mac', {
         'screen_view': False, 'screen_input': True, 'pty': False,

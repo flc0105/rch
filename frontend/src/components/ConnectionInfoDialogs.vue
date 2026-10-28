@@ -790,6 +790,7 @@ export default {
     // Close the Dashboard overlay before opening Process Manager: the two modal
     // layers must never compete for focus or cover the target dialog.
     openProcessesFromDashboard(sortBy) {
+      if (this.currentConnection?.feature_manifest?.process_monitor === false) return
       if (!this.infoVisible) return
       if (sortBy !== 'cpu_percent' && sortBy !== 'memory_percent') return
       this.pendingProcessSort = sortBy

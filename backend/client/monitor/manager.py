@@ -130,11 +130,21 @@ class DeviceMonitorManager:
     def _run_session(self, item: dict):
         monitor_session_id = item['monitor_session_id']
         try:
-            import psutil
+            psutil = None
 
-            # cpu_percent / network rate 都需要前一帧基线，启动时先预热一次。
-            psutil.cpu_percent(interval=None)
-            item['network_baseline'] = self._read_network_baseline(psutil)
+            def ensure_psutil():
+                nonlocal psutil
+                if psutil is None:
+                    import psutil as loaded_psutil
+                    psutil = loaded_psutil
+                    # CPU / network collectors need an initial baseline.
+                    psutil.cpu_percent(interval=None)
+                    item['network_baseline'] = self._read_network_baseline(psutil)
+                return psutil
+
+            # A log-only session works without psutil (including Pythonista).
+            if any(channel != 'log_file' for channel in item.get('channels') or ()):
+                ensure_psutil()
 
             self._send({
                 'type': MSG_TYPE_MONITOR_OPENED,
@@ -171,7 +181,10 @@ class DeviceMonitorManager:
                     if now < next_due[channel]:
                         continue
 
-                    data = self._collect_channel(channel, psutil, item)
+                    # A live channel switch may enable system metrics after log-only start.
+                    data = self._collect_channel(
+                        channel, None if channel == 'log_file' else ensure_psutil(), item
+                    )
 
                     # File logs are deltas, not snapshots: do not flood SSE while idle.
                     if channel == 'log_file' and data is None:

@@ -66,7 +66,7 @@ Session 信息由 Server 和 Client 分别保存在内存中。Monitor Session �
 
 Client 为**每个 Session 创建一个工作线程**，在该线程中按 Channel 各自的到期时间顺序采集，而不是为每个 Channel 单独创建线程。完成一次采集后，才从当前时间安排该 Channel 的下一次采样；工作循环以较短等待响应 Stop。耗时较长的 Collector 会推迟同一 Session 内其他 Channel 的采集；`0.5` 秒表示计划采样间隔，实际到达时间受执行与网络开销影响。
 
-Client 打开 Session 时会预热 `psutil` 的 CPU 与网络计数器。`system`、`network` 的首次正式采集需要等待一个周期；存储、电池和进程类 Channel 可较快提交第一份 Snapshot。列表采集等局部错误可以写进对应 Channel 的 `data.error`，而严重异常（如无效进程 PID 或详情采集失败）可能结束整个 Session。切换 Channel 时，采样线程会在发送结果前再次检查当前订阅，丢弃已不需要的迟到结果。
+Client 打开含有系统／进程指标的 Session 时会按需导入 `psutil` 并预热 CPU 与网络计数器；仅订阅 `log_file` 的 Session 直接使用标准库读取日志，无须导入 `psutil`。后续切换到其他 Channel 时才加载采样依赖。`system`、`network` 的首次正式采集需要等待一个周期；存储、电池和进程类 Channel 可较快提交第一份 Snapshot。列表采集等局部错误可以写进对应 Channel 的 `data.error`，而严重异常（如无效进程 PID 或详情采集失败）可能结束整个 Session。切换 Channel 时，采样线程会在发送结果前再次检查当前订阅，丢弃已不需要的迟到结果。
 
 ## 3. Info Dashboard：设备资源的持续采集
 
@@ -97,6 +97,8 @@ Dashboard 将变化速度不同的数据拆到不同 Channel，使用的配置�
 前端只接受与当前 Dashboard Session 匹配的 `system`、`network`、`storage`、`battery` 快照，分别更新对应资源卡片和最后更新时间。Dashboard 的 Live 标识表示近期收到监控数据，不应被理解为 TCP 连接的 `online/stale/offline` 判定结果；连接健康度另由连接生命周期机制维护。
 
 ## 4. Process Manager：进程、图形应用与详情
+
+Web Process Manager 入口受 Client `feature_manifest.process_monitor` 控制，macOS、Windows、Linux 默认开启，iOS 默认关闭。此开关只控制工具界面，`acmd ps/kill` 等进程命令保持原有行为；共享 Monitor Manager、Dashboard 和 Log Viewer 继续使用相同协议。
 
 Process Manager 是一个独立窗口，进入时创建**自己的** Monitor Session，默认以 1 秒为周期订阅 `processes`。切换到 Apps 标签时，向原 Session 发送 `monitor_config`，把采集 Channel 改成 `apps`；切回时再改回 `processes`。窗口里的 Refresh 会重启这条监控 Session，搜索框则过滤前端已经收到的列表，而不是为每次输入发起新的远程查询。窗口关闭时释放当前监控 Session；再次打开会创建新的 Session。旧关闭动画的迟到回调不得关闭已重新打开的监控。
 

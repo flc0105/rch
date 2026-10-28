@@ -62,7 +62,7 @@
 
       <el-button
         class="run-button cancel-button"
-        :disabled="!hasRunningWebTask"
+        :disabled="!hasRunningWebTask || currentActiveTaskCancelPolicy === 'none'"
         :loading="cancelSending"
         @click="cancelCurrentTask"
       >
@@ -131,6 +131,11 @@ export default {
 
     currentActiveTaskId: {
       type: [String, Number],
+      default: '',
+    },
+
+    currentActiveTaskCancelPolicy: {
+      type: String,
       default: '',
     },
 
@@ -240,13 +245,14 @@ export default {
     return
   }
 
+  const cancelPolicy = this.getSubmittedCommandCancelPolicy(command)
   this.sending = true
   this.$emit('append-output', this.selectedId, '> ' + command, 'command')
 
   try {
     const data = await sendCommandApi(this.selectedId, command, this.getTabScopedHeaders())
     const taskId = data && data.task_id
-    this.$emit('set-active-task', this.selectedId, taskId || '')
+    this.$emit('set-active-task', this.selectedId, taskId || '', cancelPolicy)
 
     this.commandText = ''
     this.commandCandidatesLoadedFor = ''
@@ -339,12 +345,13 @@ export default {
         return ''
       }
 
+      const cancelPolicy = this.getSubmittedCommandCancelPolicy(text)
       this.sending = true
       if (echoToTerminal) this.$emit('append-output', clientId, '> ' + text, 'command')
       try {
         const data = await sendCommandApi(clientId, text, this.getTabScopedHeaders())
         const taskId = String(data?.task_id || '')
-        this.$emit('set-active-task', clientId, taskId)
+        this.$emit('set-active-task', clientId, taskId, cancelPolicy)
         return taskId
       } catch (error) {
         if (echoToTerminal) {
@@ -376,7 +383,28 @@ export default {
   await this.sendCommand()
 },
 
+    getSubmittedCommandCancelPolicy(command) {
+      const text = String(command || '').trim().toLowerCase().replace(/\s+/g, ' ')
+      if (!text || /^(?:pyexec|pyexec_stream|script|http)(?:\s|$)/.test(text)) return ''
+
+      // Only an explicit `none` from the current command catalog disables Cancel.
+      // Match complete command tokens, including ACMD subcommands, longest first.
+      const manifest = Array.isArray(this.currentConnection?.command_manifest)
+        ? this.currentConnection.command_manifest : []
+      const candidates = this.commandCandidatesLoadedFor === this.selectedId
+        ? this.commandCandidates : []
+      const commands = [...candidates, ...manifest]
+        .filter(item => item && typeof item.cancel_policy === 'string')
+        .sort((a, b) => String(b.name || '').length - String(a.name || '').length)
+      const matched = commands.find(item => {
+        const name = String(item.name || '').trim().toLowerCase().replace(/\s+/g, ' ')
+        return name && (text === name || text.startsWith(name + ' '))
+      })
+      return matched?.cancel_policy === 'none' ? 'none' : ''
+    },
+
     async cancelCurrentTask() {
+      if (this.currentActiveTaskCancelPolicy === 'none') return
       if (!this.selectedId) {
         ElMessage.warning('Please select a device')
         return

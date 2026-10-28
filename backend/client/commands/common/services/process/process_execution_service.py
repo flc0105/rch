@@ -167,9 +167,9 @@ class ProcessExecutionService:
                 break
 
             if isinstance(line, bytes):
-                text = line.decode(encoding, errors='replace').rstrip('\n')
+                text = line.decode(encoding, errors='replace').rstrip('\r\n')
             else:
-                text = str(line).rstrip('\n')
+                text = str(line).rstrip('\r\n')
 
             self.owner._send_interim_result(status, text)
 

@@ -32,6 +32,8 @@ X-Tab-Id: <browser-tab-id>
 
 **HTTP 成功表示任务已创建并启动执行线程**；最终结果由后续命令输出与完成事件报告。 Terminal 在提交之前会先显示输入命令行；随后收到的异步结果和完成状态才决定这条执行的最终呈现。
 
+终端 Cancel 按钮依据当前运行 Task 的命令声明更新：当已匹配到的命令 `cancel_policy` 明确为 `none` 时，执行期间禁用 Cancel；`cooperative`、`process`、未声明策略和其他入口创建的 Task 仍可发出取消请求。提交时将策略绑定 `task_id`，切换设备、任务完成或输入框内容变化不改变原 Task 的按钮状态。该按钮状态仅影响 Web Terminal 操作，实际取消仍由执行链处理。
+
 完整顺序如下：
 
 ```text

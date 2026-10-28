@@ -288,3 +288,20 @@ def test_cancel_after_context_finished_rejected_without_callback():
     router.handle_cancel_message({'id': 10, 'target_id': 31})
     assert [entry['state'] for entry in sent] == ['finished']
     assert len(results) == 1
+
+
+@pytest.mark.parametrize('binary', [True, False])
+def test_stream_process_output_normalizes_windows_crlf_without_removing_blank_lines(binary):
+    import io
+    from client.commands.common.services.process.process_execution_service import ProcessExecutionService
+
+    chunks = []
+    owner = SimpleNamespace(
+        _checkpoint=lambda **kwargs: None,
+        _send_interim_result=lambda status, text: chunks.append((status, text)),
+    )
+    raw = 'first\r\n\r\nsecond\nthird\r\n'
+    source = io.BytesIO(raw.encode('utf-8')) if binary else io.StringIO(raw)
+    ProcessExecutionService(owner).stream_process_output(source, status=1)
+
+    assert chunks == [(1, 'first'), (1, ''), (1, 'second'), (1, 'third')]

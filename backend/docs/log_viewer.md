@@ -4,6 +4,8 @@
 
 主日志的产生、路径和保留策略见 [Server / Client Logging](logging.md)。
 
+Log Viewer 的 `log_file` Monitor Session 使用标准库读取客户端日志；在 iOS / Pythonista 中无需安装 `psutil`。文件必须位于该 Client 可读取的路径下。
+
 ## 打开日志与选择来源
 
 **常用入口：**

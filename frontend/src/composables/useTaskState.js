@@ -2,12 +2,13 @@ export default {
     data() {
         return {
             activeTaskIds: {},
+            activeTaskCancelPolicies: {},
             completedTaskIds: {},
         }
     },
 
     methods: {
-        setActiveTask(clientId, taskId) {
+        setActiveTask(clientId, taskId, cancelPolicy = '') {
             if (!clientId) return;
 
             const normalizedTaskId = String(taskId || '').trim();
@@ -27,6 +28,10 @@ export default {
             this.activeTaskIds = {
                 ...this.activeTaskIds,
                 [clientId]: normalizedTaskId
+            };
+            this.activeTaskCancelPolicies = {
+                ...this.activeTaskCancelPolicies,
+                [clientId]: cancelPolicy === 'none' ? 'none' : '',
             };
         },
 
@@ -65,12 +70,18 @@ export default {
             const nextActive = {...this.activeTaskIds};
             delete nextActive[clientId];
             this.activeTaskIds = nextActive;
+            const nextPolicies = { ...this.activeTaskCancelPolicies };
+            delete nextPolicies[clientId];
+            this.activeTaskCancelPolicies = nextPolicies;
         },
     },
 
     computed: {
         currentActiveTaskId() {
             return this.activeTaskIds[this.selectedId] || '';
+        },
+        currentActiveTaskCancelPolicy() {
+            return this.activeTaskCancelPolicies[this.selectedId] || '';
         },
     },
 }

@@ -427,11 +427,24 @@ export default {
     normalizePreferences(preferences) {
       return normalizeToolbarPreferences(preferences)
     },
+    isActionAvailable(actionId) {
+      const featureByAction = {
+        pty: 'pty',
+        'screen-view': 'screen_view',
+        clipboard: 'clipboard',
+        'external-tools': 'external_tool',
+        processes: 'process_monitor',
+      }
+      const feature = featureByAction[actionId]
+      // Older connections without a manifest retain their existing actions.
+      return !feature || this.currentConnection?.feature_manifest?.[feature] !== false
+    },
     actionsForIds(ids) {
       const byId = new Map(TOOLBAR_ACTION_CATALOG.map((item) => [item.id, item]))
-      return (ids || []).map((id) => byId.get(id)).filter(Boolean)
+      return (ids || []).map((id) => byId.get(id)).filter((item) => item && this.isActionAvailable(item.id))
     },
     isActionDisabled(actionId) {
+      if (!this.isActionAvailable(actionId)) return true
       if (actionId === 'connection-history') return !String(this.currentConnection?.machine_id || '').trim()
       if (actionId === 'manage-pins') return this.deviceActionDisabled
       return [
@@ -545,6 +558,7 @@ export default {
 
     runAction(actionId) {
       const normalizedAction = String(actionId || '').trim().toLowerCase()
+      if (!this.isActionAvailable(normalizedAction)) return
       const resourceActions = [
         'external-tools',
         'log-viewer',

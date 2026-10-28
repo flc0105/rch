@@ -9,6 +9,8 @@ Toolbox 显示 Toolbar 和 More 中的全部工具，顺序与当前工具栏设
 
 需要在线设备的工具（Remote Files、PTY、Screen View、Clipboard、Processes、Quick Actions）在未选择可用 Client 时不可操作；Documents、Keychains 等 Server 功能保持各自的可用条件。
 
+当前 Client 的 `feature_manifest` 明确将 `pty`、`screen_view`、`clipboard`、`external_tool` 或 `process_monitor` 标为 `false` 时，Toolbar、More、Toolbox 均隐藏对应入口（包括下拉子操作）。Screen View 内的 Clipboard 菜单遵循同一能力状态。`external_tool` 对应 External Tools 入口，`process_monitor` 对应 Processes 窗口；Process Monitor 关闭时 Dashboard 的 CPU/Memory 卡片仍显示指标，但不会打开 Processes 窗口。切换 Client 后入口按新连接能力自动更新；未上报对应 Feature 的旧 Client 延续原有显示方式。工具栏布局设置照常保存用户的入口顺序。
+
 工具栏上的 **Disconnect** 保持为常驻操作；**Actions** 下拉菜单收纳终端清理、复制和保存操作：Clear、Bottom、Copy output、Copy as JSON、Save as Text Artifact、Save as JSON Artifact。Copy output 复制当前终端的完整文本行；Copy as JSON 导出命令结果数组，每项包含 `command` 和 `result`，现有终端元数据中存在开始时间或执行时长时还会附带 `time` 或 `duration_ms`。保存操作把当前终端内容写入 Command Output Artifacts，文本文件使用 `.txt`，JSON 数组使用 `.json`。
 
 macOS 样式的绿点菜单可切换 Device Sidebar 和 Connection Info Card 的显示状态。浏览器会自动保存两者的收起状态，并在重新载入页面后恢复。

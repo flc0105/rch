@@ -57,7 +57,7 @@ Pythonista 提供文本、图片剪贴板接口，实际能力由模块和系统
 
 屏幕、进程监测、系统级自恢复和外部程序运行等功能具有更强的平台依赖。它们可能要求 iOS 不提供的系统 API、进程权限、持久后台执行或原生可执行文件；应按当前设备实际返回的能力和错误判断，不宜照搬桌面端的功能预期。参见 [Device Monitor](device_monitor.md)、[Process Watchdog](process_watchdog.md)。
 
-在 iOS / Pythonista 上，有效 `feature_manifest.watchdog=false`；Client 不加载 Watchdog 实现。`set` 中三个 Watchdog 开关的值可以保留，运行时不会启用相应监督进程。Web Watchdog 面板保留 HTTP Control 三个操作入口并显示功能不可用的原因。
+在 iOS / Pythonista 上，`external_tool` 和 `process_monitor` 默认关闭，Web 不显示相应工具入口；Log Viewer 的日志读取无需 `psutil`。有效 `feature_manifest.watchdog=false`；Client 不加载 Watchdog 实现。`set` 中三个 Watchdog 开关的值可以保留，运行时不会启用相应监督进程。Web Watchdog 面板保留 HTTP Control 三个操作入口并显示功能不可用的原因。
 
 ## 沙盒存储、网络与系统权限
 
