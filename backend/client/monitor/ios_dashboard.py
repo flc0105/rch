@@ -40,6 +40,28 @@ def _ios_volume_capacity():
     }
 
 
+def _audio_volume_percent(audio):
+    """Read system volume on the UIKit thread; keep a session fallback."""
+    def percent(value):
+        fraction = float(value)
+        if not 0.0 <= fraction <= 1.0:
+            raise ValueError('Output volume outside 0..1')
+        return round(fraction * 100)
+
+    try:
+        from objc_util import ObjCClass, load_framework, on_main_thread
+        load_framework('MediaPlayer')
+
+        @on_main_thread
+        def read_system_volume():
+            return ObjCClass('MPMusicPlayerController').systemMusicPlayer().volume()
+
+        # AVAudioSession may retain an old value on iOS 18; a valid 0% is not a failure.
+        return percent(read_system_volume())
+    except Exception:
+        return _safe(lambda: percent(audio.outputVolume())) if audio else None
+
+
 def _system_memory():
     """Return whole-device VM counters via Mach, using the same available-memory
     convention as macOS psutil (free + inactive). No external modules required.
@@ -272,7 +294,7 @@ def collect_ios_dashboard():
             'sample_rate': _safe(lambda: float(audio.sampleRate())) if audio else None,
             'output_latency_ms': _safe(lambda: round(float(audio.outputLatency()) * 1000, 1)) if audio else None,
             'output': _safe(audio_route) if audio else None,
-            'volume_percent': _safe(lambda: round(float(audio.outputVolume()) * 100)) if audio else None,
+            'volume_percent': _audio_volume_percent(audio),
         },
         'network': {
             'route_ip': _safe(_route_ip),

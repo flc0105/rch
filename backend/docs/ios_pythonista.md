@@ -63,7 +63,7 @@ Pythonista 提供文本、图片剪贴板接口，实际能力由模块和系统
 
 ## iOS Dashboard
 
-Connection Info → Dashboard 在 iOS 上使用独立的 Pythonista 采样视图。打开页面后每 5 秒读取电池、低电量模式、温控状态、屏幕亮度、iOS Data Volume 的重要用途可用容量与总容量、设备运行时长、网络接口、音频输出及当前音量，并显示 CPU 核心数。系统内存使用率来自 Mach VM 计数器：占用量为 `total - (free + inactive)`，支持与桌面 Dashboard 相似的使用率进度条，同时显示 Pythonista 进程驻留内存。照片、歌曲、联系人分别仅统计授权可访问的数量，并每 120 秒刷新缓存；无权限或采集失败显示 `—`，不影响其他指标。采样通过 `objc_util` 和标准库完成，不需要 `psutil`。采集失败或权限不可用的单项信息显示为空值。
+Connection Info → Dashboard 在 iOS 上使用独立的 Pythonista 采样视图。打开页面后每 5 秒读取电池、低电量模式、温控状态、屏幕亮度、iOS Data Volume 的重要用途可用容量与总容量、设备运行时长、网络接口、音频输出及当前音量，并显示 CPU 核心数。音量优先读取系统音乐播放器的音量值，并在接口不可用时通过音频会话读取。系统内存使用率来自 Mach VM 计数器：占用量为 `total - (free + inactive)`，支持与桌面 Dashboard 相似的使用率进度条，同时显示 Pythonista 进程驻留内存。照片、歌曲、联系人分别仅统计授权可访问的数量，并每 120 秒刷新缓存；无权限或采集失败显示 `—`，不影响其他指标。采样通过 `objc_util` 和标准库完成，不需要 `psutil`。采集失败或权限不可用的单项信息显示为空值。
 
 Dashboard 使用现有 Monitor Session 协议；其他平台继续显示原来的桌面 Dashboard。iOS 的 Log Viewer 仍然使用独立的 `log_file` Channel 读取客户端可访问的日志文件。
 

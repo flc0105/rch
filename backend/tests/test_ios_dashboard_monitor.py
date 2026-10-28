@@ -293,3 +293,63 @@ def test_ios_volume_unavailable_and_invalid_values_are_isolated(monkeypatch):
     monkeypatch.setitem(sys.modules, 'objc_util', types.SimpleNamespace(
         ns=lambda value: value, nsurl=lambda path: types.SimpleNamespace(resourceValuesForKeys_error_=lambda *args: None)))
     assert collector._ios_volume_capacity() == {'free': None, 'total': None}
+
+
+def test_ios_audio_volume_reads_music_player_on_main_thread(monkeypatch):
+    from client.monitor import ios_dashboard
+    calls = []
+    current_volume = [0.0]
+
+    def on_main_thread(func):
+        def invoke():
+            calls.append('main_thread')
+            return func()
+        return invoke
+
+    class MusicPlayer:
+        def volume(self):
+            return current_volume[0]
+
+    music_class = types.SimpleNamespace(systemMusicPlayer=lambda: MusicPlayer())
+    monkeypatch.setitem(sys.modules, 'objc_util', types.SimpleNamespace(
+        ObjCClass=lambda name: music_class if name == 'MPMusicPlayerController' else None,
+        load_framework=lambda name: calls.append(('load', name)),
+        on_main_thread=on_main_thread,
+    ))
+    class StaleAudioSession:
+        def outputVolume(self): return 0.4
+
+    assert ios_dashboard._audio_volume_percent(StaleAudioSession()) == 0
+    current_volume[0] = 1.0
+    assert ios_dashboard._audio_volume_percent(StaleAudioSession()) == 100
+    current_volume[0] = 0.65
+    assert ios_dashboard._audio_volume_percent(StaleAudioSession()) == 65
+    assert calls.count('main_thread') == 3
+    assert ('load', 'MediaPlayer') in calls
+
+
+def test_ios_audio_volume_fallback_is_isolated(monkeypatch):
+    from client.monitor import ios_dashboard
+    monkeypatch.setitem(sys.modules, 'objc_util', types.SimpleNamespace(
+        ObjCClass=lambda name: (_ for _ in ()).throw(RuntimeError('MediaPlayer unavailable')),
+        load_framework=lambda name: None,
+        on_main_thread=lambda func: func,
+    ))
+    class Audio:
+        def outputVolume(self): return 0.25
+    assert ios_dashboard._audio_volume_percent(Audio()) == 25
+    assert ios_dashboard._audio_volume_percent(None) is None
+    class BadAudio:
+        def outputVolume(self): raise RuntimeError('unavailable')
+    assert ios_dashboard._audio_volume_percent(BadAudio()) is None
+
+
+def test_ios_audio_volume_rejects_invalid_music_readings(monkeypatch):
+    from client.monitor import ios_dashboard
+    fake_class = types.SimpleNamespace(systemMusicPlayer=lambda: types.SimpleNamespace(volume=lambda: float('nan')))
+    monkeypatch.setitem(sys.modules, 'objc_util', types.SimpleNamespace(
+        ObjCClass=lambda name: fake_class,
+        load_framework=lambda name: None,
+        on_main_thread=lambda func: func,
+    ))
+    assert ios_dashboard._audio_volume_percent(types.SimpleNamespace(outputVolume=lambda: .36)) == 36
