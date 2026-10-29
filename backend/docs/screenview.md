@@ -142,7 +142,7 @@ set SCREEN_FRAME_STRATEGY keyframe_delta
 set SCREEN_FRAME_STRATEGY full_jpeg
 ```
 
-可以在 Client 命令通道执行 `set` 查看配置列表，或使用 `set --json` 查看完整 JSON 配置数据，并在结果中找到 `SCREEN_FRAME_STRATEGY`。该值反映的是新会话将采用的策略，不能替代正在运行的会话实际策略，后者以 Screen View 窗口的策略标签和状态数据为准。
+Client 的有效 `screen_view` Feature 启用时，`set` 和 `set --json` 会提供 `SCREEN_FRAME_STRATEGY`；关闭该 Feature 后配置入口隐藏，已保存的策略值不丢失，重新启用后恢复显示。该值反映的是新会话将采用的策略，不能替代正在运行的会话实际策略，后者以 Screen View 窗口的策略标签和状态数据为准。
 
 **调整帧率和质量**不需要重建会话。在窗口工具栏的 FPS 和 Quality 下拉菜单选择新值后，Server 更新会话参数并把新配置通知 Client，采集线程随后使用新的 FPS 和 JPEG 质量。
 

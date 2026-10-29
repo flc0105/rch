@@ -73,10 +73,8 @@ set HTTP_TRANSFER_MODE cancelable
 相关设置：
 
 - `HTTP_TRANSFER_BUFFER_SIZE`：默认 **1 MiB**（`1048576` 字节），允许 **64 KiB～16 MiB**。
-- `HTTP_TRANSFER_IDLE_TIMEOUT_ENABLED`：默认 **`true`**。
-- `HTTP_TRANSFER_IDLE_TIMEOUT_SECONDS`：默认 **21600 秒（6 小时）**。
 
-Idle Timeout 关注的是**网络 I/O 长时间没有进展**，不是限制整个大文件传输最多运行多久。通常保持默认缓冲区和空闲超时即可；切换传输策略不需要顺便调大它们。
+通常保持默认缓冲区即可。传输是否可取消取决于所选 HTTP Transfer 模式。
 
 ### 2.2 Python 执行 — `PYTHON_EXECUTION_MODE`
 

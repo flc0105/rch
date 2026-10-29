@@ -53,7 +53,7 @@
                 </span>
                 <el-switch
                   v-if="watchdogSupported"
-                  :model-value="Boolean(launchdManaged ? status.process_recovery_watchdog.configured_enabled : status.process_recovery_watchdog.enabled)"
+                  :model-value="Boolean(status.process_recovery_watchdog.enabled)"
                   :loading="togglingMode === 'process_recovery'"
                   :disabled="!canToggleMode"
                   aria-label="Toggle Process Recovery Watchdog"
@@ -85,7 +85,7 @@
                 </span>
                 <el-switch
                   v-if="watchdogSupported"
-                  :model-value="Boolean(launchdManaged ? status.remote_control_watchdog.configured_enabled : status.remote_control_watchdog.enabled)"
+                  :model-value="Boolean(status.remote_control_watchdog.enabled)"
                   :loading="togglingMode === 'remote_control'"
                   :disabled="!canToggleMode"
                   aria-label="Toggle Remote Control Watchdog"
@@ -117,7 +117,7 @@
                 </span>
                 <el-switch
                   v-if="watchdogSupported"
-                  :model-value="Boolean(launchdManaged ? status.local_heartbeat_watchdog.configured_enabled : status.local_heartbeat_watchdog.enabled)"
+                  :model-value="Boolean(status.local_heartbeat_watchdog.enabled)"
                   :loading="togglingMode === 'local_heartbeat'"
                   :disabled="!canToggleMode"
                   aria-label="Toggle Local Heartbeat Watchdog"
@@ -259,10 +259,10 @@ export default {
     watchdogSupported() {
       const reported = this.currentConnection?.feature_manifest?.watchdog
       if (typeof reported === 'boolean') return reported
-      return this.status?.client?.watchdog_supported !== false
+      return true
     },
     launchdManaged() {
-      return Boolean(this.status?.client?.watchdogs_suppressed && this.status?.client?.lifecycle_manager === 'launchd')
+      return Boolean(this.status?.client?.suppressed)
     },
     launchdManagerLabel() {
       const source = String(this.currentConnection?.launch_source || '').toLowerCase()
@@ -348,7 +348,7 @@ export default {
       if (!this.canToggleMode || !selected || typeof enabled !== 'boolean') return
       const clientId = this.clientId
       const { key, statusKey, label } = selected
-      if (Boolean(this.launchdManaged ? this.status[statusKey].configured_enabled : this.status[statusKey].enabled) === enabled) return
+      if (Boolean(this.status[statusKey].enabled) === enabled) return
 
       this.togglingMode = mode
       try {

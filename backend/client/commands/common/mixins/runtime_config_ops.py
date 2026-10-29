@@ -28,7 +28,9 @@ class CommandRuntimeConfigMixin:
     def runtime_config_service(self):
         service = getattr(self, '_runtime_config_service', None)
         if service is None:
-            service = RuntimeConfigService()
+            runtime = getattr(self.socket, 'runtime', None)
+            features = getattr(runtime, 'features', None)
+            service = RuntimeConfigService(features=features)
             self._runtime_config_service = service
         return service
 

@@ -134,8 +134,6 @@ class ClientWatchdogManager:
         suppressed = is_launchd_managed_client()
         remote_configured = bool(self._current_enabled_modes()['remote_control_watchdog'])
         local_configured = bool(self._current_enabled_modes()['local_heartbeat_watchdog'])
-        remote_enabled = remote_configured and not suppressed
-        local_enabled = local_configured and not suppressed
 
         watchdog_worker_pid = None
         watchdog_worker_alive = False
@@ -143,6 +141,7 @@ class ClientWatchdogManager:
             watchdog_worker_pid = self._watchdog_process.get_pid()
             watchdog_worker_alive = self._watchdog_process.is_alive()
 
+        heartbeat_file_path = self._build_local_heartbeat_watchdog_heartbeat_file_path()
         local_feeder_thread_alive = False
         local_feeder_thread_name = None
         if not suppressed and self._local_heartbeat_watchdog_feeder is not None:
@@ -153,16 +152,11 @@ class ClientWatchdogManager:
             'client': {
                 'id': self.client_id,
                 'pid': os.getpid(),
-                'watchdog_supported': True,
-                'lifecycle_manager': 'launchd' if suppressed else '',
-                'watchdogs_suppressed': suppressed,
+                'suppressed': suppressed,
             },
             # Remote and Local share the same worker; both sections expose its actual identity.
             'remote_control_watchdog': {
-                'enabled': remote_enabled,
-                'configured_enabled': remote_configured,
-                'suppressed': suppressed,
-                'suppression_reason': 'launchd' if suppressed else '',
+                'enabled': remote_configured,
                 'worker_pid': watchdog_worker_pid,
                 'worker_alive': watchdog_worker_alive,
                 'control_url': self._build_remote_http_control_url(),
@@ -170,15 +164,12 @@ class ClientWatchdogManager:
                 'log_path': get_existing_watchdog_log_path('client_remote_control_watchdog.log'),
             },
             'local_heartbeat_watchdog': {
-                'enabled': local_enabled,
-                'configured_enabled': local_configured,
-                'suppressed': suppressed,
-                'suppression_reason': 'launchd' if suppressed else '',
+                'enabled': local_configured,
                 'worker_pid': watchdog_worker_pid,
                 'worker_alive': watchdog_worker_alive,
                 'heartbeat_interval_seconds': LOCAL_HEARTBEAT_WATCHDOG_INTERVAL_SECONDS,
                 'timeout_seconds': LOCAL_HEARTBEAT_WATCHDOG_TIMEOUT_SECONDS,
-                'heartbeat_file_path': self._build_local_heartbeat_watchdog_heartbeat_file_path(),
+                'heartbeat_file_path': heartbeat_file_path if os.path.isfile(heartbeat_file_path) else '',
                 'log_path': get_existing_watchdog_log_path('client_local_heartbeat_watchdog.log'),
                 'feeder_thread_name': local_feeder_thread_name,
                 'feeder_alive': local_feeder_thread_alive,

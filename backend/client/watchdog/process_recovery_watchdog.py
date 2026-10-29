@@ -174,18 +174,14 @@ def get_process_recovery_watchdog_status_payload(manager=None):
     """Report process-death supervision separately from Remote Control Watchdog / Local Heartbeat Watchdog workers."""
     from client.config import runtime_config
 
-    configured_enabled = bool(runtime_config.PROCESS_RECOVERY_WATCHDOG_ENABLED)
+    enabled = bool(runtime_config.PROCESS_RECOVERY_WATCHDOG_ENABLED)
     suppressed = is_launchd_managed_client()
-    enabled = configured_enabled and not suppressed
-    pid = getattr(manager, 'supervisor_pid', None) if enabled else None
-    started = getattr(manager, 'supervisor_started', None) if enabled else None
+    pid = getattr(manager, 'supervisor_pid', None) if enabled and not suppressed else None
+    started = getattr(manager, 'supervisor_started', None) if enabled and not suppressed else None
     return {
         'enabled': enabled,
-        'configured_enabled': configured_enabled,
-        'suppressed': suppressed,
-        'suppression_reason': 'launchd' if suppressed else '',
         'supervisor_pid': pid,
-        'supervisor_alive': bool(enabled and pid is not None and started is not None and _alive(pid, started)),
+        'supervisor_alive': bool(enabled and not suppressed and pid is not None and started is not None and _alive(pid, started)),
         'poll_interval_seconds': _POLL_INTERVAL,
         'log_path': get_existing_watchdog_log_path('process_recovery_watchdog.log'),
     }

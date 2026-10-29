@@ -56,7 +56,7 @@ class _TransferTaskOwner(CommandRuntimeMixin):
         return None
 
     def _resolve_command_fallback_timeout(self, fallback_timeout=None):
-        # Transfer 不继承 COMMAND_DEFAULT_TIMEOUT；文件传输只使用自己的 idle timeout。
+        # Transfer 不继承 COMMAND_DEFAULT_TIMEOUT；传输由自身取消与底层 HTTP 行为控制。
         return fallback_timeout
 
 

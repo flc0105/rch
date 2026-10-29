@@ -29,6 +29,23 @@ class CommandExternalToolMixin:
         payload = self.structured_arg_codec.decode(arg)
         if not isinstance(payload, dict):
             raise ValueError('Invalid external tool payload')
+        # The Server has already rendered tool templates. Resolve remaining Client
+        # variables only in user-derived execution data, keeping all value types.
+        runtime = getattr(self, '_command_runtime', None)
+        resolver = getattr(runtime, 'command_variable_resolver', None)
+        if resolver is not None:
+            def expand(value):
+                if isinstance(value, str):
+                    return resolver.resolve(value) if '${' in value else value
+                if isinstance(value, list):
+                    return [expand(item) for item in value]
+                if isinstance(value, dict):
+                    return {key: expand(item) for key, item in value.items()}
+                return value
+
+            for key in ('params', 'runtime', 'config'):
+                if key in payload:
+                    payload[key] = expand(payload[key])
         return payload
 
     def _json_result(self, payload: dict):

@@ -331,8 +331,11 @@ class DeviceMonitorManager:
 
     def _resolve_process_pid(self, item: dict) -> int:
         pid = self._read_process_pid_option(item)
-        if pid <= 0:
-            raise ValueError('Process monitor requires a valid pid')
+        options = item.get('options') if isinstance(item.get('options'), dict) else {}
+        raw_pid = options.get('pid')
+        if (raw_pid is None or isinstance(raw_pid, bool)
+                or not str(raw_pid).strip().lstrip('+').isdigit() or pid < 0):
+            raise ValueError('Process monitor requires a non-negative pid')
         return pid
 
     def _get_monitored_process(self, psutil, item: dict):

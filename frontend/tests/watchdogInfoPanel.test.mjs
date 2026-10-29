@@ -69,7 +69,7 @@ function makeState(status) {
   return instance
 }
 const baseline = {
-  client: { id: 'client-123', pid: 123, lifecycle_manager: '', watchdogs_suppressed: false },
+  client: { id: 'client-123', pid: 123, suppressed: false },
   remote_control_watchdog: { enabled: false, worker_pid: null, worker_alive: false, interval_seconds: 5, control_url: '', log_path: '' },
   local_heartbeat_watchdog: { enabled: false, worker_pid: null, worker_alive: false, heartbeat_interval_seconds: 5, timeout_seconds: 15, feeder_alive: false, feeder_thread_name: null, heartbeat_file_path: '', log_path: '' },
   process_recovery_watchdog: { enabled: false, supervisor_pid: null, supervisor_alive: false, poll_interval_seconds: 0.5, log_path: '' },
@@ -91,10 +91,10 @@ page = makeState({ ...baseline, remote_control_watchdog: { ...baseline.remote_co
 assert.equal(page.healthTone, 'warning')
 page = makeState({
   ...baseline,
-  client: { ...baseline.client, lifecycle_manager: 'launchd', watchdogs_suppressed: true },
-  remote_control_watchdog: { ...baseline.remote_control_watchdog, configured_enabled: true, suppressed: true },
-  local_heartbeat_watchdog: { ...baseline.local_heartbeat_watchdog, configured_enabled: true, suppressed: true },
-  process_recovery_watchdog: { ...baseline.process_recovery_watchdog, configured_enabled: true, suppressed: true },
+  client: { ...baseline.client, suppressed: true },
+  remote_control_watchdog: { ...baseline.remote_control_watchdog, enabled: true },
+  local_heartbeat_watchdog: { ...baseline.local_heartbeat_watchdog, enabled: true },
+  process_recovery_watchdog: { ...baseline.process_recovery_watchdog, enabled: true },
 })
 assert.equal(page.launchdManaged, true)
 page.currentConnection = { launch_source: 'launchagent' }

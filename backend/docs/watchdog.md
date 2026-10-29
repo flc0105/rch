@@ -207,7 +207,7 @@ Local 的心跳间隔下限为 0.5 秒，监控超时下限为 1 秒。实际生
 
 macOS LaunchAgent 与 LaunchDaemon 已由 launchd 负责进程启动、停止和按 plist 策略恢复。Client 判定自己运行在 LaunchAgent / LaunchDaemon 下时，Process Recovery Watchdog、Local Heartbeat Watchdog 和 Remote Control Watchdog 都保持关闭，避免第二套监督进程把明确停止的 launchd job 再次拉起，或与 `KeepAlive` 同时恢复出多个 Client。
 
-该规则优先于 `runtime_config.json` 中的三个 Watchdog 开关。配置值本身仍保留；`watchdog --json` 会通过 `configured_enabled` 显示保存的配置，同时 `enabled=false`、`suppressed=true`、`suppression_reason=launchd` 表示当前 launchd Client 的实际运行状态。离开 launchd 以 Terminal、IDE 或 Detached 等方式启动新的 Client 时，原有配置再次按正常规则生效。
+launchd 托管时，三个模式的 `enabled` 仍表示保存的开关值；实际 Worker/Supervisor 不启动，`client.suppressed=true`。离开 launchd 以 Terminal、IDE 或 Detached 等方式启动新的 Client 时，原有配置按正常规则生效。
 
 Web 的 **info → Watchdog** 在这种情况下显示 **Lifecycle managed by launchd**。三个 Watchdog 开关可修改保存的配置，Watchdog Supervisor 保持停止；HTTP Control 操作仍显示，但由于 Remote Worker 不运行而不可执行。LaunchAgent / LaunchDaemon 的启动、停止和重启应通过对应的 launchd service 管理动作完成。统一动作、domain、权限与状态语义见 [macOS launchd Service Management](launchd.md)。
 
@@ -316,7 +316,8 @@ set --reset LOCAL_HEARTBEAT_WATCHDOG_ENABLED
 {
   "client": {
     "id": "example-client",
-    "pid": 1234
+    "pid": 1234,
+    "suppressed": false
   },
   "remote_control_watchdog": {
     "enabled": true,
@@ -351,6 +352,7 @@ set --reset LOCAL_HEARTBEAT_WATCHDOG_ENABLED
 | --- | --- |
 | `client.id` | 当前 Client 标识，用于 HTTP Control 路由 |
 | `client.pid` | Client 主进程 PID |
+| `client.suppressed` | 由 launchd 托管时为 true；模式开关值保持原样，实际监控进程停用 |
 | `remote_control_watchdog.enabled` | Remote 开关 |
 | `remote_control_watchdog.worker_pid` / `worker_alive` | Remote Control Watchdog / Local Heartbeat Watchdog 共用 Worker 的 PID 和存活状态 |
 | `remote_control_watchdog.control_url` | Remote HTTP GET 轮询地址 |
@@ -360,7 +362,7 @@ set --reset LOCAL_HEARTBEAT_WATCHDOG_ENABLED
 | `local_heartbeat_watchdog.worker_pid` / `worker_alive` | 与 Remote 相同的共用 Worker；不是另一个进程 |
 | `local_heartbeat_watchdog.heartbeat_interval_seconds` | Client 心跳写入间隔（秒） |
 | `local_heartbeat_watchdog.timeout_seconds` | 心跳超时阈值（秒） |
-| `local_heartbeat_watchdog.heartbeat_file_path` | 当前 Client 的心跳文件 |
+| `local_heartbeat_watchdog.heartbeat_file_path` | 已创建的本地心跳文件；文件不存在时返回空路径 |
 | `local_heartbeat_watchdog.log_path` | Local 日志位置 |
 | `local_heartbeat_watchdog.feeder_thread_name` / `feeder_alive` | 本机心跳线程名称和存活状态 |
 | `process_recovery_watchdog.enabled` | Process Recovery Watchdog 开关 |

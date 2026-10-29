@@ -305,37 +305,55 @@
             Open Files ({{ (processDetail.open_files || []).length }})
           </div>
 
-          <div class="process-open-files-list">
-            <div
-              v-if="!(processDetail.open_files || []).length"
-              class="process-open-files-empty"
+          <div class="process-detail-table-shell">
+            <el-table
+              :data="visibleOpenFiles"
+              stripe
+              border
+              empty-text="No open files"
+              table-layout="fixed"
             >
-              No open files
+              <el-table-column
+                prop="path"
+                label="Path"
+                min-width="420"
+                show-overflow-tooltip
+              >
+                <template #default="{ row }">
+                  <span class="mono">{{ row.path || '-' }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column
+                prop="fd"
+                label="FD"
+                width="90"
+                align="center"
+              >
+                <template #default="{ row }">{{ row.fd == null || row.fd < 0 ? '-' : row.fd }}</template>
+              </el-table-column>
+              <el-table-column
+                label="Actions"
+                width="180"
+                align="center"
+                fixed="right"
+              >
+                <template #default="{ row }">
+                  <div class="process-action-buttons">
+                    <el-button size="small" link type="primary" :disabled="!row.path" @click="copyOpenFilePath(row.path)">
+                      Copy Path
+                    </el-button>
+                    <el-button v-if="isLogFilePath(row.path)" size="small" link type="primary" @click="viewOpenFileLog(row.path)">
+                      View Log
+                    </el-button>
+                  </div>
+                </template>
+              </el-table-column>
+            </el-table>
+            <div v-if="openFilesHiddenCount > 0 || openFilesExpanded" class="process-open-files-footer">
+              <el-button link type="primary" size="small" @click="openFilesExpanded = !openFilesExpanded">
+                {{ openFilesExpanded ? 'Show less' : `Show ${openFilesHiddenCount} more` }}
+              </el-button>
             </div>
-
-            <div
-              v-for="(item, index) in visibleOpenFiles"
-              :key="`${item.path || 'file'}-${index}`"
-              class="process-open-file-row"
-              :title="item.path || ''"
-            >
-              <div class="process-open-file-icon" aria-hidden="true">
-                <el-icon><Document /></el-icon>
-              </div>
-
-              <div class="process-open-file-path mono">
-                {{ item.path || '-' }}
-              </div>
-            </div>
-
-            <button
-              v-if="openFilesHiddenCount > 0 || openFilesExpanded"
-              type="button"
-              class="process-open-files-toggle"
-              @click="openFilesExpanded = !openFilesExpanded"
-            >
-              {{ openFilesExpanded ? 'Show less' : `Show ${openFilesHiddenCount} more` }}
-            </button>
           </div>
         </section>
       </template>
@@ -345,13 +363,12 @@
 
 <script>
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Document } from '@element-plus/icons-vue'
 import { sortProcessRows } from '../utils/processSorting.js'
 
 export default {
   name: 'ProcessDialogs',
+  emits: ['open-log-viewer'],
 
-  components: { Document },
 
   props: {
     selectedId: {
@@ -516,6 +533,51 @@ export default {
   },
 
   methods: {
+    isLogFilePath(path) {
+      return /\.log$/i.test(String(path || ''))
+    },
+
+    viewOpenFileLog(path) {
+      if (!this.isLogFilePath(path)) return
+      this.$emit('open-log-viewer', { clientId: this.selectedId, path })
+    },
+
+    async copyOpenFilePath(path) {
+      const text = String(path || '')
+      if (!text) return
+      try {
+        if (window.isSecureContext && navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(text)
+        } else {
+          this.copyOpenFilePathFallback(text)
+        }
+        ElMessage.success('Path copied')
+      } catch (_error) {
+        try {
+          this.copyOpenFilePathFallback(text)
+          ElMessage.success('Path copied')
+        } catch (_fallbackError) {
+          ElMessage.error('Failed to copy path')
+        }
+      }
+    },
+
+    copyOpenFilePathFallback(text) {
+      const textarea = document.createElement('textarea')
+      textarea.value = text
+      textarea.setAttribute('readonly', '')
+      textarea.style.position = 'fixed'
+      textarea.style.left = '-9999px'
+      document.body.appendChild(textarea)
+      try {
+        textarea.focus()
+        textarea.select()
+        if (!document.execCommand('copy')) throw new Error('Copy failed')
+      } finally {
+        textarea.remove()
+      }
+    },
+
     formatUsagePercent(value) {
       return value === null || value === undefined || !Number.isFinite(Number(value))
         ? '-'
@@ -689,8 +751,7 @@ export default {
     },
 
     async openProcessDetail(pid) {
-      // if (!this.selectedId || !pid) return;
-      if (!this.selectedId || !pid) return
+      if (!this.selectedId || pid === null || pid === undefined || String(pid).trim() === '' || !Number.isInteger(Number(pid)) || Number(pid) < 0) return
       await this.stopProcessDetailMonitor()
       this.processDetailDialogVisible = true
       this.processDetailLoading = true
@@ -713,7 +774,7 @@ export default {
     },
 
     async startProcessDetailMonitor(pid) {
-      if (!this.selectedId || !pid || this.processDetailMonitorStarting) return
+      if (!this.selectedId || pid === null || pid === undefined || String(pid).trim() === '' || !Number.isInteger(Number(pid)) || Number(pid) < 0 || this.processDetailMonitorStarting) return
       this.processDetailMonitorStarting = true
 
       try {
@@ -1119,102 +1180,11 @@ export default {
   width: 100% !important;
 }
 
-/* File entries are visually grouped without affecting the shared section heading. */
-.process-open-files-list {
-  --process-open-file-icon-size: clamp(22px, 2.4vw, 24px);
+/* Keep Open Files consistent with the Network Connections table above. */
+.process-open-files-footer {
   display: flex;
-  flex-direction: column;
-  gap: 5px;
-  padding: 7px;
-  border: 1px solid #e6ebf3;
-  border-radius: 12px;
-  background: #f6f8fc;
-}
-
-.process-open-files-empty {
-  padding: 16px 14px;
-  border-radius: 9px;
-  background: #fff;
-  color: #909399;
-  text-align: center;
-  font-size: 13px;
-}
-
-.process-open-file-row {
-  display: grid;
-  grid-template-columns: var(--process-open-file-icon-size) minmax(0, 1fr);
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  padding: 6px 9px;
-  border: 1px solid #e8edf5;
-  border-radius: 9px;
-  background: #fff;
-  box-shadow: 0 1px 2px rgba(27, 43, 68, 0.04);
-  transition: border-color 0.16s ease, background-color 0.16s ease, box-shadow 0.16s ease;
-}
-
-.process-open-file-row:hover {
-  border-color: #cbdcf5;
-  background: #fcfdff;
-  box-shadow: 0 2px 7px rgba(42, 78, 129, 0.08);
-}
-
-.process-open-file-icon {
-  display: inline-flex;
-  align-items: center;
   justify-content: center;
-  width: var(--process-open-file-icon-size);
-  height: var(--process-open-file-icon-size);
-  border-radius: 8px;
-  background: #edf3fc;
-  color: #6489be;
-  font-size: clamp(13px, 1.3vw, 14px);
-}
-
-.process-open-file-path {
-  min-width: 0;
-  overflow: hidden;
-  padding-right: 12px;
-  box-sizing: border-box;
-  color: #3b4a60;
-  font-size: 12.5px;
-  font-weight: 500;
-  line-height: 1.5;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.process-open-file-row:hover .process-open-file-path {
-  color: #263b59;
-}
-
-.process-open-files-toggle {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  min-height: 32px;
-  padding: 5px 10px;
-  border: 1px solid #dce7f7;
-  border-radius: 8px;
-  background: #edf4ff;
-  color: var(--el-color-primary);
-  font: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: border-color 0.16s ease, background-color 0.16s ease;
-}
-
-.process-open-files-toggle:hover {
-  border-color: #c6d9f5;
-  background: #e5efff;
-}
-
-.process-open-files-toggle:focus-visible {
-  outline: 2px solid var(--el-color-primary-light-5);
-  outline-offset: 2px;
+  padding: 7px 0 2px;
 }
 
 @media (max-width: 768px) {

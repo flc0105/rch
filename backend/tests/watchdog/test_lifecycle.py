@@ -160,13 +160,11 @@ class LaunchdWatchdogPolicyTests(unittest.TestCase):
             self.assertIsNone(guard._local_heartbeat_watchdog_feeder)
             status = guard.get_watchdog_status_payload()
 
-        self.assertTrue(status['client']['watchdogs_suppressed'])
-        self.assertEqual(status['client']['lifecycle_manager'], 'launchd')
+        self.assertTrue(status['client']['suppressed'])
         for key in ('remote_control_watchdog', 'local_heartbeat_watchdog'):
-            self.assertTrue(status[key]['configured_enabled'])
-            self.assertFalse(status[key]['enabled'])
-            self.assertTrue(status[key]['suppressed'])
-            self.assertEqual(status[key]['suppression_reason'], 'launchd')
+            self.assertTrue(status[key]['enabled'])
+            self.assertNotIn('configured_enabled', status[key])
+            self.assertNotIn('suppressed', status[key])
         self.assertFalse(status['remote_control_watchdog']['worker_alive'])
         self.assertFalse(status['local_heartbeat_watchdog']['feeder_alive'])
 
@@ -185,10 +183,9 @@ class LaunchdWatchdogPolicyTests(unittest.TestCase):
              patch('client.watchdog.process_recovery_watchdog.is_launchd_managed_client', return_value=True), \
              patch('client.watchdog.process_recovery_watchdog._alive') as is_alive:
             status = get_process_recovery_watchdog_status_payload(manager)
-        self.assertTrue(status['configured_enabled'])
-        self.assertFalse(status['enabled'])
-        self.assertTrue(status['suppressed'])
-        self.assertEqual(status['suppression_reason'], 'launchd')
+        self.assertTrue(status['enabled'])
+        self.assertNotIn('configured_enabled', status)
+        self.assertNotIn('suppressed', status)
         self.assertIsNone(status['supervisor_pid'])
         self.assertFalse(status['supervisor_alive'])
         is_alive.assert_not_called()

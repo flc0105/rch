@@ -351,7 +351,7 @@
           "label": "Output Filename",
           "type": "string",
           "required": true,
-          "default": "recording.mp4",
+          "default": "capture-${rch:timestamp}.mp4",
           "description": "Filename within this instance (e.g. recording-02.mp4). Enter a new name on each Start; existing recordings are not overwritten. No directory separators."
         },
         {

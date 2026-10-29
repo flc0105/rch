@@ -26,7 +26,7 @@ class CommandFileWebMixin:
       以便服务端正确分类并挂回 execution history
     - HTTP 传输支持两种模式：
       - legacy：保留原版 requests files=/iter_content 行为，不支持取消
-      - cancelable：支持取消 / 实时进度 / idle timeout
+      - cancelable：支持取消和实时进度
     """
 
     HTTP_TRANSFER_MODE = HTTP_TRANSFER_MODE
@@ -81,7 +81,7 @@ class CommandFileWebMixin:
         except CommandCancelledError:
             return 0, 'Command cancelled'
         except requests.Timeout:
-            return 0, 'HTTP transfer stopped after reaching the idle timeout'
+            return 0, 'HTTP request timed out'
         except CommandTimeoutError:
             return 0, 'Command timed out and was terminated'
         except Exception as e:
@@ -117,7 +117,7 @@ class CommandFileWebMixin:
         except CommandCancelledError:
             return 0, 'Command cancelled'
         except requests.Timeout:
-            return 0, 'HTTP transfer stopped after reaching the idle timeout'
+            return 0, 'HTTP request timed out'
         except CommandTimeoutError:
             return 0, 'Command timed out and was terminated'
         except Exception as e:
@@ -243,7 +243,7 @@ class CommandFileWebMixin:
         except CommandCancelledError:
             return 0, 'Command cancelled'
         except requests.Timeout:
-            return 0, 'HTTP transfer stopped after reaching the idle timeout'
+            return 0, 'HTTP request timed out'
         except CommandTimeoutError:
             return 0, 'Command timed out and was terminated'
         except Exception as e:

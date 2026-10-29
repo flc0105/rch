@@ -43,13 +43,20 @@ class RuntimeConfigService:
     BOOL_TRUE_VALUES = {'true', '1', 'yes', 'y', 'on'}
     BOOL_FALSE_VALUES = {'false', '0', 'no', 'n', 'off'}
 
+    def __init__(self, features=None):
+        self.features = dict(features) if features is not None else None
+
+    def _feature_available(self, key):
+        required = self.get_config_meta(key).get('required_feature')
+        return not required or self.features is None or self.features.get(required, False)
+
     def list_config_items(self, include_hidden: bool = False) -> list[tuple[str, object, object, str]]:
         overrides = load_runtime_overrides()
         defaults = self.get_default_values()
 
         items = []
         for key in sorted(self._iter_runtime_config_keys()):
-            if not include_hidden and not self.is_exposed_key(key):
+            if not self._feature_available(key) or (not include_hidden and not self.is_exposed_key(key)):
                 continue
 
             value = getattr(runtime_config, key)
@@ -138,7 +145,7 @@ class RuntimeConfigService:
             overrides = {
                 key: value
                 for key, value in overrides.items()
-                if self.is_exposed_key(key)
+                if self.is_exposed_key(key) and self._feature_available(key)
             }
 
         if not overrides:
@@ -147,6 +154,8 @@ class RuntimeConfigService:
         defaults = self.get_default_values()
         lines = [warning('Active overrides:')]
         for key in sorted(overrides.keys()):
+            if not self._feature_available(key):
+                continue
             value = overrides[key]
             default_value = defaults.get(key)
             if key in defaults:
@@ -320,7 +329,7 @@ class RuntimeConfigService:
         # 默认只允许修改 expose=True 的配置，避免内部常量/低频参数被误改。
         # 如果以后要允许所有 runtime_config 基础类型被 set 修改，把这里改成：
         # return self.is_known_config_key(key)
-        return self.is_known_config_key(key) and self.is_exposed_key(key)
+        return self.is_known_config_key(key) and self.is_exposed_key(key) and self._feature_available(key)
 
     def format_value(self, value) -> str:
         return format_runtime_config_value(value)

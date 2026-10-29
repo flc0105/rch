@@ -184,7 +184,7 @@ LaunchAgent / LaunchDaemon 下，launchd 是 Client 唯一的自动生命周期 
 - Local Heartbeat Watchdog；
 - Remote Control Watchdog。
 
-即使 runtime config 中保存的对应开关为 `true`，当前 launchd Client 的 effective 状态仍为 disabled/suppressed；保存的配置值不会被改写。离开 launchd 后，以 Terminal、IDE 或 Detached 等方式启动的新 Client 会重新按原 runtime config 生效。
+launchd Client 的 Watchdog Worker 保持停止，`client.suppressed=true`；模式 `enabled` 仍表示保存的配置值。离开 launchd 后，以 Terminal、IDE 或 Detached 等方式启动的新 Client 会重新按原 runtime config 生效。
 
 这样可以保证：
 
@@ -193,7 +193,7 @@ LaunchAgent / LaunchDaemon 下，launchd 是 Client 唯一的自动生命周期 
 - Remote HTTP relaunch/clone 不会形成第二套独立生命周期链；
 - `KeepAlive` 的恢复策略只由 launchd 执行。
 
-Web 的 **info → Watchdog** 会显示当前生命周期由 LaunchAgent 或 LaunchDaemon 管理。`watchdog` Feature 为 `true`，相关实现已加载；三个模式的 `set` 开关可以保存配置，当前进程的实际运行状态仍是 suppressed。HTTP Control 的三个按钮保持显示，托管期间不可执行。详细状态字段见 [Watchdog](watchdog.md)。
+Web 的 **info → Watchdog** 会显示当前生命周期由 LaunchAgent 或 LaunchDaemon 管理。`watchdog` Feature 为 `true`，相关实现已加载；三个模式的 `set` 开关可以保存配置，Worker/Supervisor 当前不会启动。HTTP Control 的三个按钮保持显示，托管期间不可执行。详细状态字段见 [Watchdog](watchdog.md)。
 
 ## 9. 状态检查
 
@@ -261,7 +261,7 @@ Daemon plist 应位于：
 先在 runtime config 中把 Process、Local、Remote 三个 Watchdog 都设为 enabled，再通过 LaunchAgent 或 LaunchDaemon 启动 Client。预期：
 
 - Watchdog 页面显示 lifecycle managed by LaunchAgent/LaunchDaemon；
-- 三个 effective enabled 都为 false/suppressed；
+- `client.suppressed=true`，三个 Worker/Supervisor 都不运行；
 - 系统进程列表中没有该 Client 对应的 `--process-recovery-watchdog-worker` 或 `--watchdog-worker`；
 - `stop` 后 Client 保持停止，直到再次执行 launchd `start`。
 

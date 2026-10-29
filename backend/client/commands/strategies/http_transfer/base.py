@@ -99,35 +99,6 @@ class HttpTransferStrategy:
 
         return max(value, 1)
 
-    def get_idle_timeout(self):
-        enabled = bool(
-            getattr(
-                runtime_config,
-                'HTTP_TRANSFER_IDLE_TIMEOUT_ENABLED',
-                True,
-            )
-        )
-
-        if not enabled:
-            return None
-
-        try:
-            seconds = float(
-                getattr(
-                    runtime_config,
-                    'HTTP_TRANSFER_IDLE_TIMEOUT_SECONDS',
-                    6 * 60 * 60,
-                )
-                or 0
-            )
-        except Exception:
-            seconds = float(6 * 60 * 60)
-
-        if seconds <= 0:
-            return None
-
-        return seconds
-
     def create_http_session(self):
         session = requests.Session()
 
@@ -139,29 +110,6 @@ class HttpTransferStrategy:
         session.mount('https://', adapter)
 
         return session
-
-    def normalize_request_exception(
-        self,
-        exc: requests.RequestException,
-    ):
-        idle_timeout = self.get_idle_timeout()
-
-        if idle_timeout is None:
-            return exc
-
-        text = str(exc or '').lower()
-
-        if (
-            isinstance(exc, requests.Timeout)
-            or 'timed out' in text
-            or 'timeout' in text
-        ):
-            return requests.Timeout(
-                'HTTP file transfer made no network I/O progress '
-                f'for {idle_timeout:g}s'
-            )
-
-        return exc
 
     def upload_file(
         self,

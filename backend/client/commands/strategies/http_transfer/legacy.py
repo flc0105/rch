@@ -25,10 +25,9 @@ class LegacyHttpTransferStrategy(HttpTransferStrategy):
                     upload_url,
                     files={'file': (os.path.basename(file_path), file_obj)},
                     data=form_data,
-                    timeout=self.get_idle_timeout(),
                 )
         except requests.RequestException as e:
-            raise self.normalize_request_exception(e) from e
+            raise
         finally:
             session.close()
 
@@ -39,7 +38,6 @@ class LegacyHttpTransferStrategy(HttpTransferStrategy):
             with session.get(
                     url,
                     stream=True,
-                    timeout=self.get_idle_timeout(),
             ) as response:
                 response.raise_for_status()
                 try:
@@ -57,6 +55,6 @@ class LegacyHttpTransferStrategy(HttpTransferStrategy):
                         if callable(progress_callback):
                             progress_callback(transferred_bytes, total_bytes)
         except requests.RequestException as e:
-            raise self.normalize_request_exception(e) from e
+            raise
         finally:
             session.close()

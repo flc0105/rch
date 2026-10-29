@@ -114,10 +114,8 @@ Cancelable 上传构造 multipart 的头部、文件内容及尾部，在 `read(
 | --- | --- |
 | `HTTP_TRANSFER_MODE` | `legacy`；可选 `legacy` / `cancelable` |
 | `HTTP_TRANSFER_BUFFER_SIZE` | 1 MiB，允许 64 KiB 至 16 MiB |
-| `HTTP_TRANSFER_IDLE_TIMEOUT_ENABLED` | `True` |
-| `HTTP_TRANSFER_IDLE_TIMEOUT_SECONDS` | 21,600 秒，即 6 小时 |
 
-Idle Timeout 统计网络读写**持续没有进展**的时间；文件传输总时长可以超过这个值。设置成更大的值并不解决无法访问 8086、权限不足或目标磁盘空间不足等问题。Server 的通用 HTTP 上传请求体上限为 10 GiB；这个服务端上限与 Legacy 的 1 GiB 客户端保护相互独立。
+HTTP 传输不设置额外的 I/O 闲置时限；取消能力由所选传输模式决定。Server 的通用 HTTP 上传请求体上限为 10 GiB；这个服务端上限与 Legacy 的 1 GiB 客户端保护相互独立。
 
 ## 上传、下发及中转阶段
 

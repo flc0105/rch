@@ -1739,7 +1739,6 @@ Current exposed configuration areas include:
 - command shell/stream timeout
 - HTTP transfer mode
 - transfer buffer size
-- transfer idle timeout enable/seconds
 - preview image compression enable/quality
 - Python execution mode
 - reconnect interval
@@ -2078,11 +2077,8 @@ so it does not use the same 1 GB upload restriction.
 ```text
 HTTP_TRANSFER_MODE
 HTTP_TRANSFER_BUFFER_SIZE
-HTTP_TRANSFER_IDLE_TIMEOUT_ENABLED
-HTTP_TRANSFER_IDLE_TIMEOUT_SECONDS
 ```
 
-The default idle timeout is a no-progress timeout, not a total transfer-duration limit.
 
 ---
 

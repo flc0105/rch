@@ -3,7 +3,7 @@
 
 说明：
 - 不改动原有 client.config.config
-- 将 HTTP 传输模式、buffer 与 idle timeout 等新能力集中到这里
+- 将 HTTP 传输模式与 buffer 配置集中到这里
 - HTTP_TRANSFER_MODE:
   - legacy: 保留原版 requests files=... / iter_content() 行为，不支持取消
   - cancelable: 使用可取消并支持实时进度的流式实现
@@ -30,11 +30,6 @@ HTTP_TRANSFER_MODE = 'legacy'
 # ------------------ http file transfer ------------------ #
 # 所有 HTTP 文件传输统一使用同一个 buffer。
 HTTP_TRANSFER_BUFFER_SIZE = transfer_settings.DEFAULT_HTTP_TRANSFER_BUFFER_SIZE
-
-# 不限制文件传输总时长；仅在启用后，对单次网络 I/O 长时间无推进进行停止。
-# 默认 6 小时，适合超大文件/弱网环境，仍可在 Configuration 中调整或关闭。
-HTTP_TRANSFER_IDLE_TIMEOUT_ENABLED = True
-HTTP_TRANSFER_IDLE_TIMEOUT_SECONDS = 6 * 60 * 60
 
 # ------------------ preview image compression ------------------ #
 # 只影响 preview_path 的 web 预览上传，不影响 download_path / 平台命令 / script 上传。
@@ -101,19 +96,6 @@ _RUNTIME_CONFIG_META = {
         'max': transfer_settings.MAX_HTTP_TRANSFER_BUFFER_SIZE,
         'step': transfer_settings.MIN_HTTP_TRANSFER_BUFFER_SIZE,
     },
-    'HTTP_TRANSFER_IDLE_TIMEOUT_ENABLED': {
-        'group': 'transfer',
-        'expose': True,
-        'desc': 'Stop an HTTP file transfer when network I/O makes no progress for the configured idle timeout.',
-    },
-    'HTTP_TRANSFER_IDLE_TIMEOUT_SECONDS': {
-        'group': 'transfer',
-        'expose': True,
-        'desc': 'Maximum seconds without HTTP file transfer I/O progress. Default: 21600 seconds (6 hours).',
-        'min': 1,
-        'max': 604800,
-        'step': 60,
-    },
     'PREVIEW_IMAGE_COMPRESS_ENABLED': {
         'group': 'preview',
         'expose': True,
@@ -133,6 +115,7 @@ _RUNTIME_CONFIG_META = {
     'SCREEN_FRAME_STRATEGY': {
         'group': 'strategy',
         'expose': True,
+        'required_feature': 'screen_view',
         'desc': 'Screen View frame strategy: full_jpeg or keyframe_delta. Applies to new screen sessions.',
         'choices': ['full_jpeg', 'keyframe_delta'],
     },

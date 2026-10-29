@@ -179,7 +179,6 @@ class CancelableHttpTransferStrategy(HttpTransferStrategy):
                     'Content-Type': stream.content_type,
                     'Content-Length': str(stream.content_length),
                 },
-                timeout=self.get_idle_timeout(),
             )
             self.owner._ensure_not_cancelled()
             return response
@@ -187,7 +186,7 @@ class CancelableHttpTransferStrategy(HttpTransferStrategy):
             raise
         except requests.RequestException as e:
             self.owner._ensure_not_cancelled()
-            raise self.normalize_request_exception(e) from e
+            raise
         finally:
             try:
                 stream.close()
@@ -211,7 +210,6 @@ class CancelableHttpTransferStrategy(HttpTransferStrategy):
             response = session.get(
                 url,
                 stream=True,
-                timeout=self.get_idle_timeout(),
             )
             response.raise_for_status()
 
@@ -242,7 +240,7 @@ class CancelableHttpTransferStrategy(HttpTransferStrategy):
             raise
         except requests.RequestException as e:
             self.owner._ensure_not_cancelled()
-            raise self.normalize_request_exception(e) from e
+            raise
         finally:
             if file_obj is not None:
                 try:
