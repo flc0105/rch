@@ -5,7 +5,7 @@ import signal
 import subprocess
 import time
 from client.runtime.client_util import is_process_alive
-from client.watchdog.watchdog_environment import without_process_watchdog_environment
+from client.watchdog.watchdog_environment import without_process_recovery_watchdog_environment
 from client.watchdog.recovery_source import RECOVERY_SOURCE_ENV
 from client.runtime.launch_context import detached_launch_environment
 
@@ -38,7 +38,7 @@ class WatchdogActionExecutor:
         if not self.parent_launch_argv:
             raise RuntimeError('Missing parent launch argv')
 
-        env = detached_launch_environment(without_process_watchdog_environment())
+        env = detached_launch_environment(without_process_recovery_watchdog_environment())
         if recovery_source:
             env[RECOVERY_SOURCE_ENV] = recovery_source
         popen_kwargs = {
@@ -77,19 +77,19 @@ class WatchdogActionExecutor:
         else:
             self.spawn_restarted_parent()
         time.sleep(0.2)
-        from client.watchdog.watchdog_environment import PROCESS_WATCHDOG_SESSION_ENV
-        if os.environ.get(PROCESS_WATCHDOG_SESSION_ENV):
-            from client.watchdog.process_watchdog import stop_process_watchdog_from_environment
-            stop_process_watchdog_from_environment()
+        from client.watchdog.watchdog_environment import PROCESS_RECOVERY_WATCHDOG_SESSION_ENV
+        if os.environ.get(PROCESS_RECOVERY_WATCHDOG_SESSION_ENV):
+            from client.watchdog.process_recovery_watchdog import stop_process_recovery_watchdog_from_environment
+            stop_process_recovery_watchdog_from_environment()
         self.kill_parent_process()
         os._exit(0)
 
 
     def kill_parent_and_exit(self):
-        from client.watchdog.watchdog_environment import PROCESS_WATCHDOG_SESSION_ENV
-        if os.environ.get(PROCESS_WATCHDOG_SESSION_ENV):
-            from client.watchdog.process_watchdog import stop_process_watchdog_from_environment
-            stop_process_watchdog_from_environment()
+        from client.watchdog.watchdog_environment import PROCESS_RECOVERY_WATCHDOG_SESSION_ENV
+        if os.environ.get(PROCESS_RECOVERY_WATCHDOG_SESSION_ENV):
+            from client.watchdog.process_recovery_watchdog import stop_process_recovery_watchdog_from_environment
+            stop_process_recovery_watchdog_from_environment()
         self.kill_parent_process()
         os._exit(0)
 

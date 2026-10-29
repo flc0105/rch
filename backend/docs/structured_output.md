@@ -245,13 +245,13 @@ Table 中每个对象**可以选择性**提供 `_actions` 数组；没有该字�
 ```json
 {
   "client": {"id": "abc123", "pid": 1201},
-  "remote_watchdog": {"enabled": true, "interval_seconds": 15},
-  "local_watchdog": {"enabled": false, "timeout_seconds": 15},
-  "process_watchdog": {"enabled": true, "supervisor_pid": 1202}
+  "remote_control_watchdog": {"enabled": true, "interval_seconds": 15},
+  "local_heartbeat_watchdog": {"enabled": false, "timeout_seconds": 15},
+  "process_recovery_watchdog": {"enabled": true, "supervisor_pid": 1202}
 }
 ```
 
-Viewer 会依输入顺序展示四个标题 `client`、`remote_watchdog`、`local_watchdog`、`process_watchdog`，并在每个标题下直接排列当前组的字段名和值。只有外层存在至少两个键、并且每个键的值均为非空对象时才进入此模式。例如 `{"one": {"pid": 1}, "two": null}` 或 `{"one": {}, "two": {"pid": 2}}` 均不匹配 Grouped，不会对一部分字段单独渲染分组。
+Viewer 会依输入顺序展示四个标题 `client`、`remote_control_watchdog`、`local_heartbeat_watchdog`、`process_recovery_watchdog`，并在每个标题下直接排列当前组的字段名和值。只有外层存在至少两个键、并且每个键的值均为非空对象时才进入此模式。例如 `{"one": {"pid": 1}, "two": null}` 或 `{"one": {}, "two": {"pid": 2}}` 均不匹配 Grouped，不会对一部分字段单独渲染分组。
 
 如果组内出现 `"details": {"platform": "macOS"}`，它只会作为该组的一行文本值 `{"platform":"macOS"}` 显示；组内数组同理，不继续创建分组。Grouped 与其他可渲染模式一样可以切换 Raw View，并在复制或保存时保留原始 JSON。
 

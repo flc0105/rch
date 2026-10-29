@@ -26,8 +26,8 @@ class ClientConnectionLifecycle:
         """
         server = ServerConnection(features=getattr(self.client, 'features', None))
         server.client_id = self.client.client_id
-        server.guard_manager = self.client.guard_manager
-        server.process_watchdog_manager = self.client.process_watchdog_manager
+        server.watchdog_manager = self.client.watchdog_manager
+        server.process_recovery_watchdog_manager = self.client.process_recovery_watchdog_manager
         return server
 
     def close_current_connection(self):

@@ -134,7 +134,7 @@ test('only explicitly none commands disable Cancel; ACMD subcommands are token-m
     { name: 'pyexec', cancel_policy: 'none' },
     { name: 'script exec', cancel_policy: 'none' },
   ]
-  assert.equal(getPolicy('set PROCESS_WATCHDOG_ENABLED true', manifest), 'none')
+  assert.equal(getPolicy('set PROCESS_RECOVERY_WATCHDOG_ENABLED true', manifest), 'none')
   assert.equal(getPolicy('acmd help --verbose', manifest), 'none')
   assert.equal(getPolicy('ACMD   ping --host example.com', manifest), '')
   assert.equal(getPolicy('acmd helper', manifest), '')
@@ -184,7 +184,7 @@ test('terminal submission attaches the matched policy to task ID and blocks canc
   const { options } = vueOptions('../src/components/CommandInputBar.vue', globals)
   const events = []
   const state = Object.assign({}, options.data(), options.methods, {
-    commandText: 'set PROCESS_WATCHDOG_ENABLED true',
+    commandText: 'set PROCESS_RECOVERY_WATCHDOG_ENABLED true',
     selectedId: 'abc',
     currentConnection: { command_manifest: [{ name: 'set', cancel_policy: 'none' }] },
     currentActiveTaskId: '', currentActiveTaskCancelPolicy: '',

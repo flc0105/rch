@@ -610,7 +610,7 @@ class WebConnectionService:
             'time': datetime.now().isoformat()
         }
         source = session.get_info_extra('recovery_source', '')
-        if source in ('local_watchdog', 'process_watchdog'):
+        if source in ('local_heartbeat_watchdog', 'process_recovery_watchdog'):
             payload['recovery_source'] = source
         self.event_bus.publish('connection_online', payload)
 

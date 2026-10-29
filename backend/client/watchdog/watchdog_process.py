@@ -5,7 +5,7 @@ import sys
 import time
 
 from client.watchdog.watchdog_action import WatchdogActionExecutor
-from client.watchdog.recovery_source import LOCAL_WATCHDOG
+from client.watchdog.recovery_source import LOCAL_HEARTBEAT_WATCHDOG
 
 
 class ClientWatchdogWorker:
@@ -15,14 +15,14 @@ class ClientWatchdogWorker:
         client_id: str,
         launch_cwd: str,
         parent_launch_argv: list[str],
-        remote_http_watchdog_enabled: bool,
-        remote_http_watchdog_base_url: str,
-        remote_http_watchdog_interval_seconds: float,
-        remote_watchdog_log_file_path: str,
-        local_watchdog_enabled: bool,
-        local_watchdog_timeout_seconds: float,
-        local_watchdog_heartbeat_file_path: str,
-        local_watchdog_log_file_path: str,
+        remote_control_watchdog_enabled: bool,
+        remote_control_watchdog_base_url: str,
+        remote_control_watchdog_interval_seconds: float,
+        remote_control_watchdog_log_file_path: str,
+        local_heartbeat_watchdog_enabled: bool,
+        local_heartbeat_watchdog_timeout_seconds: float,
+        local_heartbeat_watchdog_heartbeat_file_path: str,
+        local_heartbeat_watchdog_log_file_path: str,
     ):
         self.parent_pid = int(parent_pid)
         self.client_id = str(client_id or '').strip()
@@ -34,26 +34,26 @@ class ClientWatchdogWorker:
         )
 
         self._remote_monitor = None
-        if remote_http_watchdog_enabled:
-            from client.watchdog.remote_watchdog import RemoteHttpWatchdogMonitor
-            self._remote_monitor = RemoteHttpWatchdogMonitor(
+        if remote_control_watchdog_enabled:
+            from client.watchdog.remote_control_watchdog import RemoteControlWatchdogMonitor
+            self._remote_monitor = RemoteControlWatchdogMonitor(
                 client_id=client_id,
-                base_url=remote_http_watchdog_base_url,
-                poll_interval=remote_http_watchdog_interval_seconds,
-                remote_watchdog_log_file_path=remote_watchdog_log_file_path,
+                base_url=remote_control_watchdog_base_url,
+                poll_interval=remote_control_watchdog_interval_seconds,
+                remote_control_watchdog_log_file_path=remote_control_watchdog_log_file_path,
                 action_executor=self._action_executor,
             )
 
         self._local_monitor = None
-        if local_watchdog_enabled:
-            from client.watchdog.local_watchdog import LocalWatchdogActionExecutor, LocalWatchdogMonitor
-            self._local_monitor = LocalWatchdogMonitor(
+        if local_heartbeat_watchdog_enabled:
+            from client.watchdog.local_heartbeat_watchdog import LocalHeartbeatWatchdogActionExecutor, LocalHeartbeatWatchdogMonitor
+            self._local_monitor = LocalHeartbeatWatchdogMonitor(
                 client_id=client_id,
-                heartbeat_file_path=local_watchdog_heartbeat_file_path,
-                timeout_seconds=local_watchdog_timeout_seconds,
-                local_watchdog_log_file_path=local_watchdog_log_file_path,
-                action_executor=LocalWatchdogActionExecutor(
-                    lambda: self._action_executor.restart_parent_and_exit(recovery_source=LOCAL_WATCHDOG)
+                heartbeat_file_path=local_heartbeat_watchdog_heartbeat_file_path,
+                timeout_seconds=local_heartbeat_watchdog_timeout_seconds,
+                local_heartbeat_watchdog_log_file_path=local_heartbeat_watchdog_log_file_path,
+                action_executor=LocalHeartbeatWatchdogActionExecutor(
+                    lambda: self._action_executor.restart_parent_and_exit(recovery_source=LOCAL_HEARTBEAT_WATCHDOG)
                 ),
             )
 
@@ -78,24 +78,24 @@ class ClientWatchdogProcess:
     def __init__(
         self,
         client_id: str,
-        remote_http_watchdog_enabled: bool,
-        remote_http_watchdog_base_url: str,
-        remote_http_watchdog_interval_seconds: float,
-        remote_watchdog_log_file_path: str,
-        local_watchdog_enabled: bool,
-        local_watchdog_timeout_seconds: float,
-        local_watchdog_heartbeat_file_path: str,
-        local_watchdog_log_file_path: str,
+        remote_control_watchdog_enabled: bool,
+        remote_control_watchdog_base_url: str,
+        remote_control_watchdog_interval_seconds: float,
+        remote_control_watchdog_log_file_path: str,
+        local_heartbeat_watchdog_enabled: bool,
+        local_heartbeat_watchdog_timeout_seconds: float,
+        local_heartbeat_watchdog_heartbeat_file_path: str,
+        local_heartbeat_watchdog_log_file_path: str,
     ):
         self.client_id = str(client_id or '').strip()
-        self.remote_http_watchdog_enabled = bool(remote_http_watchdog_enabled)
-        self.remote_http_watchdog_base_url = str(remote_http_watchdog_base_url or '').rstrip('/')
-        self.remote_http_watchdog_interval_seconds = max(float(remote_http_watchdog_interval_seconds or 0), 1.0)
-        self.remote_watchdog_log_file_path = str(remote_watchdog_log_file_path or '').strip()
-        self.local_watchdog_enabled = bool(local_watchdog_enabled)
-        self.local_watchdog_timeout_seconds = max(float(local_watchdog_timeout_seconds or 0), 1.0)
-        self.local_watchdog_heartbeat_file_path = str(local_watchdog_heartbeat_file_path or '').strip()
-        self.local_watchdog_log_file_path = str(local_watchdog_log_file_path or '').strip()
+        self.remote_control_watchdog_enabled = bool(remote_control_watchdog_enabled)
+        self.remote_control_watchdog_base_url = str(remote_control_watchdog_base_url or '').rstrip('/')
+        self.remote_control_watchdog_interval_seconds = max(float(remote_control_watchdog_interval_seconds or 0), 1.0)
+        self.remote_control_watchdog_log_file_path = str(remote_control_watchdog_log_file_path or '').strip()
+        self.local_heartbeat_watchdog_enabled = bool(local_heartbeat_watchdog_enabled)
+        self.local_heartbeat_watchdog_timeout_seconds = max(float(local_heartbeat_watchdog_timeout_seconds or 0), 1.0)
+        self.local_heartbeat_watchdog_heartbeat_file_path = str(local_heartbeat_watchdog_heartbeat_file_path or '').strip()
+        self.local_heartbeat_watchdog_log_file_path = str(local_heartbeat_watchdog_log_file_path or '').strip()
         self._process = None
 
 
@@ -117,14 +117,14 @@ class ClientWatchdogProcess:
                 '--watch-client-id', self.client_id,
                 '--watch-launch-cwd', os.getcwd(),
                 '--watch-parent-launch-argv-json', parent_launch_argv_json,
-                '--watch-remote-http-watchdog-enabled', '1' if self.remote_http_watchdog_enabled else '0',
-                '--watch-remote-http-watchdog-base-url', self.remote_http_watchdog_base_url,
-                '--watch-remote-http-watchdog-interval-seconds', str(self.remote_http_watchdog_interval_seconds),
-                '--watch-remote-watchdog-log-file-path', self.remote_watchdog_log_file_path,
-                '--watch-local-watchdog-enabled', '1' if self.local_watchdog_enabled else '0',
-                '--watch-local-watchdog-timeout-seconds', str(self.local_watchdog_timeout_seconds),
-                '--watch-local-watchdog-heartbeat-file-path', self.local_watchdog_heartbeat_file_path,
-                '--watch-local-watchdog-log-file-path', self.local_watchdog_log_file_path,
+                '--watch-remote-control-watchdog-enabled', '1' if self.remote_control_watchdog_enabled else '0',
+                '--watch-remote-control-watchdog-base-url', self.remote_control_watchdog_base_url,
+                '--watch-remote-control-watchdog-interval-seconds', str(self.remote_control_watchdog_interval_seconds),
+                '--watch-remote-control-watchdog-log-file-path', self.remote_control_watchdog_log_file_path,
+                '--watch-local-heartbeat-watchdog-enabled', '1' if self.local_heartbeat_watchdog_enabled else '0',
+                '--watch-local-heartbeat-watchdog-timeout-seconds', str(self.local_heartbeat_watchdog_timeout_seconds),
+                '--watch-local-heartbeat-watchdog-heartbeat-file-path', self.local_heartbeat_watchdog_heartbeat_file_path,
+                '--watch-local-heartbeat-watchdog-log-file-path', self.local_heartbeat_watchdog_log_file_path,
             ]
 
         return [
@@ -135,14 +135,14 @@ class ClientWatchdogProcess:
             '--watch-client-id', self.client_id,
             '--watch-launch-cwd', os.getcwd(),
             '--watch-parent-launch-argv-json', parent_launch_argv_json,
-            '--watch-remote-http-watchdog-enabled', '1' if self.remote_http_watchdog_enabled else '0',
-            '--watch-remote-http-watchdog-base-url', self.remote_http_watchdog_base_url,
-            '--watch-remote-http-watchdog-interval-seconds', str(self.remote_http_watchdog_interval_seconds),
-            '--watch-remote-watchdog-log-file-path', self.remote_watchdog_log_file_path,
-            '--watch-local-watchdog-enabled', '1' if self.local_watchdog_enabled else '0',
-            '--watch-local-watchdog-timeout-seconds', str(self.local_watchdog_timeout_seconds),
-            '--watch-local-watchdog-heartbeat-file-path', self.local_watchdog_heartbeat_file_path,
-            '--watch-local-watchdog-log-file-path', self.local_watchdog_log_file_path,
+            '--watch-remote-control-watchdog-enabled', '1' if self.remote_control_watchdog_enabled else '0',
+            '--watch-remote-control-watchdog-base-url', self.remote_control_watchdog_base_url,
+            '--watch-remote-control-watchdog-interval-seconds', str(self.remote_control_watchdog_interval_seconds),
+            '--watch-remote-control-watchdog-log-file-path', self.remote_control_watchdog_log_file_path,
+            '--watch-local-heartbeat-watchdog-enabled', '1' if self.local_heartbeat_watchdog_enabled else '0',
+            '--watch-local-heartbeat-watchdog-timeout-seconds', str(self.local_heartbeat_watchdog_timeout_seconds),
+            '--watch-local-heartbeat-watchdog-heartbeat-file-path', self.local_heartbeat_watchdog_heartbeat_file_path,
+            '--watch-local-heartbeat-watchdog-log-file-path', self.local_heartbeat_watchdog_log_file_path,
         ]
 
 
@@ -234,19 +234,19 @@ def run_watchdog_worker_from_argv():
     launch_cwd = _read_flag_value('--watch-launch-cwd', os.getcwd()) or os.getcwd()
     parent_launch_argv_json = _read_flag_value('--watch-parent-launch-argv-json', '[]') or '[]'
 
-    remote_http_watchdog_enabled = (_read_flag_value('--watch-remote-http-watchdog-enabled', '1') or '1') == '1'
-    remote_http_watchdog_base_url = _read_flag_value('--watch-remote-http-watchdog-base-url', '') or ''
-    remote_http_watchdog_interval_seconds = float(
-        _read_flag_value('--watch-remote-http-watchdog-interval-seconds', '30') or '30'
+    remote_control_watchdog_enabled = (_read_flag_value('--watch-remote-control-watchdog-enabled', '1') or '1') == '1'
+    remote_control_watchdog_base_url = _read_flag_value('--watch-remote-control-watchdog-base-url', '') or ''
+    remote_control_watchdog_interval_seconds = float(
+        _read_flag_value('--watch-remote-control-watchdog-interval-seconds', '30') or '30'
     )
-    remote_watchdog_log_file_path = _read_flag_value('--watch-remote-watchdog-log-file-path', '') or ''
+    remote_control_watchdog_log_file_path = _read_flag_value('--watch-remote-control-watchdog-log-file-path', '') or ''
 
-    local_watchdog_enabled = (_read_flag_value('--watch-local-watchdog-enabled', '1') or '1') == '1'
-    local_watchdog_timeout_seconds = float(
-        _read_flag_value('--watch-local-watchdog-timeout-seconds', '15') or '15'
+    local_heartbeat_watchdog_enabled = (_read_flag_value('--watch-local-heartbeat-watchdog-enabled', '1') or '1') == '1'
+    local_heartbeat_watchdog_timeout_seconds = float(
+        _read_flag_value('--watch-local-heartbeat-watchdog-timeout-seconds', '15') or '15'
     )
-    local_watchdog_heartbeat_file_path = _read_flag_value('--watch-local-watchdog-heartbeat-file-path', '') or ''
-    local_watchdog_log_file_path = _read_flag_value('--watch-local-watchdog-log-file-path', '') or ''
+    local_heartbeat_watchdog_heartbeat_file_path = _read_flag_value('--watch-local-heartbeat-watchdog-heartbeat-file-path', '') or ''
+    local_heartbeat_watchdog_log_file_path = _read_flag_value('--watch-local-heartbeat-watchdog-log-file-path', '') or ''
 
     parent_launch_argv = json.loads(parent_launch_argv_json)
     if not isinstance(parent_launch_argv, list):
@@ -257,13 +257,13 @@ def run_watchdog_worker_from_argv():
         client_id=client_id,
         launch_cwd=launch_cwd,
         parent_launch_argv=parent_launch_argv,
-        remote_http_watchdog_enabled=remote_http_watchdog_enabled,
-        remote_http_watchdog_base_url=remote_http_watchdog_base_url,
-        remote_http_watchdog_interval_seconds=remote_http_watchdog_interval_seconds,
-        remote_watchdog_log_file_path=remote_watchdog_log_file_path,
-        local_watchdog_enabled=local_watchdog_enabled,
-        local_watchdog_timeout_seconds=local_watchdog_timeout_seconds,
-        local_watchdog_heartbeat_file_path=local_watchdog_heartbeat_file_path,
-        local_watchdog_log_file_path=local_watchdog_log_file_path,
+        remote_control_watchdog_enabled=remote_control_watchdog_enabled,
+        remote_control_watchdog_base_url=remote_control_watchdog_base_url,
+        remote_control_watchdog_interval_seconds=remote_control_watchdog_interval_seconds,
+        remote_control_watchdog_log_file_path=remote_control_watchdog_log_file_path,
+        local_heartbeat_watchdog_enabled=local_heartbeat_watchdog_enabled,
+        local_heartbeat_watchdog_timeout_seconds=local_heartbeat_watchdog_timeout_seconds,
+        local_heartbeat_watchdog_heartbeat_file_path=local_heartbeat_watchdog_heartbeat_file_path,
+        local_heartbeat_watchdog_log_file_path=local_heartbeat_watchdog_log_file_path,
     )
     worker.run()

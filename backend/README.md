@@ -255,7 +255,7 @@ That handshake currently reports runtime details such as:
 - launch command
 - current HTTP transfer mode
 - current Python execution mode
-- remote/local watchdog enabled flags
+- Remote Control Watchdog / Local Heartbeat Watchdog enabled flags
 - client build version
 
 This allows the server UI/CLI to immediately display execution characteristics instead of treating every client as a generic endpoint.
@@ -277,9 +277,9 @@ RTT is therefore not a guessed UI field; it is computed from the heartbeat excha
 
 Watchdog behavior is split into two different responsibilities.
 
-#### Remote HTTP watchdog
+#### Remote Control Watchdog
 
-The **remote watchdog** is for **out-of-band remote control**.
+The **Remote Control Watchdog** is for **out-of-band remote control**.
 
 It runs in the shared watchdog worker and polls a dedicated HTTP endpoint:
 
@@ -295,16 +295,16 @@ The web UI exposes these actions, and the server also provides built-ins such as
 - `force_reset`
 - `force_spawn`
 
-#### Local watchdog
+#### Local Heartbeat Watchdog
 
-The **local watchdog** is for **local self-healing / parent liveness monitoring**.
+The **Local Heartbeat Watchdog** is for **local self-healing / parent liveness monitoring**.
 
 The main client process periodically feeds heartbeat state to a local heartbeat file, and the watchdog worker monitors that file. If the local heartbeat is stale beyond the configured timeout, the watchdog can restart the parent client process.
 
 In short:
 
-- **remote watchdog** = independent remote control channel (`kill` / `relaunch` / `clone`)
-- **local watchdog** = local crash/hang recovery for the client process itself
+- **Remote Control Watchdog** = independent remote control channel (`kill` / `relaunch` / `clone`)
+- **Local Heartbeat Watchdog** = local crash/hang recovery for the client process itself
 
 The `watchdog` client command shows a flat key/value runtime status by default; `watchdog --json` returns the same flat dictionary as JSON.
 
@@ -665,7 +665,7 @@ The UI includes high-level control actions such as:
 - force spawn
 - disconnect
 
-The `force_*` controls are forwarded through the remote watchdog HTTP control path rather than being simple shell aliases.
+The `force_*` controls are forwarded through the Remote Control Watchdog HTTP control path rather than being simple shell aliases.
 
 ---
 
@@ -1638,7 +1638,7 @@ The command input closes/reloads completion state after execution so stale candi
 
 The watchdog implementation has two independent responsibilities.
 
-### Remote HTTP watchdog
+### Remote Control Watchdog
 
 When enabled, a separate watchdog worker polls:
 
@@ -1666,7 +1666,7 @@ or the corresponding control API.
 
 This path exists specifically so the Server can still request kill/relaunch/clone when the main command socket is blocked, broken, or unusable.
 
-The remote watchdog:
+The Remote Control Watchdog:
 
 - runs outside the Client foreground command slot
 - has its own polling interval
@@ -1675,9 +1675,9 @@ The remote watchdog:
 - can restart the parent Client
 - can start an additional Client instance
 
-### Local watchdog
+### Local Heartbeat Watchdog
 
-The local watchdog uses a heartbeat file written by the running Client.
+The Local Heartbeat Watchdog uses a heartbeat file written by the running Client.
 
 If the watchdog worker sees the heartbeat go stale past the configured timeout, it can restart the parent Client process.
 
@@ -1686,11 +1686,11 @@ If the watchdog worker sees the heartbeat go stale past the configured timeout, 
 Relevant keys include:
 
 ```text
-REMOTE_HTTP_WATCHDOG_ENABLED
-REMOTE_HTTP_WATCHDOG_INTERVAL_SECONDS
-LOCAL_WATCHDOG_ENABLED
-LOCAL_WATCHDOG_HEARTBEAT_INTERVAL_SECONDS
-LOCAL_WATCHDOG_TIMEOUT_SECONDS
+REMOTE_CONTROL_WATCHDOG_ENABLED
+REMOTE_CONTROL_WATCHDOG_INTERVAL_SECONDS
+LOCAL_HEARTBEAT_WATCHDOG_ENABLED
+LOCAL_HEARTBEAT_WATCHDOG_INTERVAL_SECONDS
+LOCAL_HEARTBEAT_WATCHDOG_TIMEOUT_SECONDS
 ```
 
 The main Client command:
@@ -1743,8 +1743,8 @@ Current exposed configuration areas include:
 - preview image compression enable/quality
 - Python execution mode
 - reconnect interval
-- remote HTTP watchdog enable
-- local watchdog enable
+- Remote Control Watchdog enable
+- Local Heartbeat Watchdog enable
 
 The terminal supports:
 

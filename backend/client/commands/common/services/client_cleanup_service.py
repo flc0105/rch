@@ -320,7 +320,7 @@ class ClientCleanupService:
     def _stale_heartbeat(self, path: str) -> bool:
         name = os.path.basename(path)
         base = name.removesuffix('.tmp')
-        if not (base.startswith('client_local_watchdog_heartbeat_') and base.endswith('.json')):
+        if not (base.startswith('client_local_heartbeat_watchdog_heartbeat_') and base.endswith('.json')):
             return False
         if not self._old_enough(path, self.ACTIVE_GRACE_SECONDS):
             return False
@@ -339,7 +339,7 @@ class ClientCleanupService:
     def _stale_watchdog_session(self, path: str) -> bool:
         if not os.path.isdir(path) or os.path.islink(path):
             return False
-        if not os.path.basename(path).startswith('rch_process_watchdog_'):
+        if not os.path.basename(path).startswith('rch_process_recovery_watchdog_'):
             return False
         if not self._old_enough(path, self.ACTIVE_GRACE_SECONDS):
             return False

@@ -44,7 +44,7 @@ class ControlCommandStore:
                 return
             outcome['status'] = 'timeout'
             seconds = self.CONTROL_TIMEOUT_SECONDS[outcome['command']]
-            outcome['detail'] = f'Remote Watchdog did not respond within {seconds:g} seconds'
+            outcome['detail'] = f'Remote Control Watchdog did not respond within {seconds:g} seconds'
             cid = outcome['client_id']
             pending = self._commands_by_client.get(cid)
             if pending is not None:

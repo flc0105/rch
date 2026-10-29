@@ -9,7 +9,7 @@ from server.application.connection.control_command_store import (
 HTTP_CONTROL_ACTIONS = {
     'kill': {
         'label': 'Kill',
-        'description': 'Terminate the current agent process via remote watchdog.',
+        'description': 'Terminate the current agent process via Remote Control Watchdog.',
     },
     'relaunch': {
         'label': 'Relaunch',

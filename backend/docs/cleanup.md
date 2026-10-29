@@ -89,13 +89,13 @@ Client 的常见临时数据位于目标设备系统临时目录中的 Client te
 | `archive_temp` | 已闲置一段时间的压缩包临时工作目录 | 生成的 ZIP 可能仍有使用价值，预览时须核对 |
 | `client_logs` | 非当前 Client 实例、满足候选条件的日志目录 | **仅交互式预览中可选择**；其他空闲实例不一定已退出 |
 | `clipboard_staging` | 非 macOS 系统上满足保留时间条件的剪贴板接收暂存 | 仍可能被粘贴或其他流程引用；macOS GUI 用户的暂存位置不在此范围 |
-| `watchdog_heartbeats` | 已失效的 Local Watchdog 心跳及相关残留 | 正在使用的心跳不应被清理 |
-| `watchdog_sessions` | 已结束的 Process Watchdog 会话控制目录 | 不能清理仍在运行的监督会话 |
+| `watchdog_heartbeats` | 已失效的 Local Heartbeat Watchdog 心跳及相关残留 | 正在使用的心跳不应被清理 |
+| `watchdog_sessions` | 已结束的 Process Recovery Watchdog 会话控制目录 | 不能清理仍在运行的监督会话 |
 | `bundle_old_releases` | Bundle Releases 中除已识别为当前运行版本以外的目录 | 其他目录即使仍有回退用途，也可能被删除 |
 | `bundle_archive_residue` | 下载目录中的 Bundle 压缩包残留 | 不应在更新/下载进行时执行清理 |
 | `bundle_extracting_residue`、`bundle_probe_files` | 更新解压中转、就绪探测及启动日志等残留 | 更新尚未完成时应避免清理 |
 
-运行中的 Client 主日志目录不会作为 `client_logs` 候选；**Remote、Local、Process Watchdog 正在使用的固定日志也不属于可整目录删除的清理类别**。当前 Bundle Release 受保护，但其他 Release 目录可能全部进入候选，不能把“旧 Release”简单理解成“按时间过期的版本”。External Tools 的安装包、实例日志和运行数据不属于本命令清理范围。
+运行中的 Client 主日志目录不会作为 `client_logs` 候选；**Remote、Local、Process Recovery Watchdog 正在使用的固定日志也不属于可整目录删除的清理类别**。当前 Bundle Release 受保护，但其他 Release 目录可能全部进入候选，不能把“旧 Release”简单理解成“按时间过期的版本”。External Tools 的安装包、实例日志和运行数据不属于本命令清理范围。
 
 ### 预览、跳过和执行安全
 
@@ -111,7 +111,7 @@ Client 的常见临时数据位于目标设备系统临时目录中的 Client te
 
 不过，**被清理的旧 Bundle Release、临时 ZIP、旧日志或暂存文件可能无法恢复**。需要用于回滚、下载、粘贴或故障追踪的文件，应在确认前排除相应类别或先做好备份。正在执行 Bundle 更新、远程 Job、文件传输或其他依赖临时文件的任务时，建议暂不运行清理。
 
-Client 文件日志的保存位置见 [Server / Client Logging](logging.md)；Bundle 更新与 Release 管理见 [Client Update](client_update.md)；Watchdog 的运行边界见 [Watchdog](watchdog.md) 与 [Process Watchdog](process_watchdog.md)。
+Client 文件日志的保存位置见 [Server / Client Logging](logging.md)；Bundle 更新与 Release 管理见 [Client Update](client_update.md)；Watchdog 的运行边界见 [Watchdog](watchdog.md) 与 [Process Recovery Watchdog](process_recovery_watchdog.md)。
 
 ## 两种清理如何选择？
 

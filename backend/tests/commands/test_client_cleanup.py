@@ -110,14 +110,14 @@ def test_macos_clipboard_staging_not_considered_for_delete(managed, monkeypatch)
 
 def test_heartbeat_and_watchdog_session_skip_active_processes(managed, monkeypatch):
     hb = managed / 'watchdog_heartbeats'; hb.mkdir()
-    active_hb = hb / 'client_local_watchdog_heartbeat_live.json'
-    stale_hb = hb / 'client_local_watchdog_heartbeat_dead.json'
+    active_hb = hb / 'client_local_heartbeat_watchdog_heartbeat_live.json'
+    stale_hb = hb / 'client_local_heartbeat_watchdog_heartbeat_dead.json'
     active_hb.write_text(json.dumps({'pid': 801, 'ts': time.time()-7200}))
     stale_hb.write_text(json.dumps({'pid': 802, 'ts': time.time()-7200}))
     old(active_hb); old(stale_hb)
     sess = managed / 'watchdog_sessions'; sess.mkdir()
-    active = sess / 'rch_process_watchdog_alive'; active.mkdir()
-    dead = sess / 'rch_process_watchdog_dead'; dead.mkdir()
+    active = sess / 'rch_process_recovery_watchdog_alive'; active.mkdir()
+    dead = sess / 'rch_process_recovery_watchdog_dead'; dead.mkdir()
     for folder, pid in ((active, 801), (dead, 802)):
         marker = folder / 'ready.json'; marker.write_text(json.dumps({'pid': pid}))
         old(marker); old(folder)
@@ -144,13 +144,13 @@ def test_new_categories_do_not_scan_legacy_cross_roots(managed):
 
 def test_stale_watchdog_artifacts_removed_when_owner_exited(managed, monkeypatch):
     hb_dir = managed / 'watchdog_heartbeats'; hb_dir.mkdir()
-    hb = hb_dir / 'client_local_watchdog_heartbeat_previous.json'
+    hb = hb_dir / 'client_local_heartbeat_watchdog_heartbeat_previous.json'
     hb.write_text(json.dumps({'pid': 123456, 'ts': time.time() - 1000}))
     old(hb)
-    orphan_tmp = hb_dir / 'client_local_watchdog_heartbeat_lost.json.tmp'
+    orphan_tmp = hb_dir / 'client_local_heartbeat_watchdog_heartbeat_lost.json.tmp'
     orphan_tmp.write_text('old'); old(orphan_tmp)
     sess_root = managed / 'watchdog_sessions'; sess_root.mkdir()
-    sess = sess_root / 'rch_process_watchdog_old'; sess.mkdir()
+    sess = sess_root / 'rch_process_recovery_watchdog_old'; sess.mkdir()
     ready = sess / 'ready.json'; ready.write_text(json.dumps({'pid': 123456}))
     old(ready); old(sess)
     monkeypatch.setattr(cleanup.ClientCleanupService, '_pid_active', staticmethod(lambda pid: False))

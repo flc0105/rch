@@ -125,13 +125,13 @@ def test_watchdog_start_failure_reports_saved_but_not_running(monkeypatch):
     supervisor = Mock()
     supervisor.start.side_effect = RuntimeError('access denied')
     owner.socket = SimpleNamespace(runtime=SimpleNamespace(features={'watchdog': True}),
-                                   process_watchdog_manager=supervisor, guard_manager=Mock())
-    monkeypatch.setattr(runtime_config, 'REMOTE_HTTP_WATCHDOG_ENABLED', False)
-    monkeypatch.setattr(runtime_config, 'LOCAL_WATCHDOG_ENABLED', False)
+                                   process_recovery_watchdog_manager=supervisor, watchdog_manager=Mock())
+    monkeypatch.setattr(runtime_config, 'REMOTE_CONTROL_WATCHDOG_ENABLED', False)
+    monkeypatch.setattr(runtime_config, 'LOCAL_HEARTBEAT_WATCHDOG_ENABLED', False)
     monkeypatch.setattr('client.commands.common.mixins.runtime_config_ops.is_launchd_managed_client', lambda: False)
-    messages = owner._apply_runtime_config_side_effects('PROCESS_WATCHDOG_ENABLED', True)
+    messages = owner._apply_runtime_config_side_effects('PROCESS_RECOVERY_WATCHDOG_ENABLED', True)
     assert any('Saved' in message and 'access denied' in message for message in messages)
-    owner.socket.guard_manager.stop.assert_not_called()
+    owner.socket.watchdog_manager.stop.assert_not_called()
 
 
 def test_agent_bundle_injection_without_revision_parts(tmp_path):

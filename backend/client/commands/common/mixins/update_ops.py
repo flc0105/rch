@@ -325,14 +325,14 @@ class CommandUpdateMixin:
             pass
 
     def _schedule_exit_after_update(self):
-        process_watchdog_manager = getattr(self.socket, 'process_watchdog_manager', None)
-        if process_watchdog_manager is not None:
-            process_watchdog_manager.stop()
+        process_recovery_watchdog_manager = getattr(self.socket, 'process_recovery_watchdog_manager', None)
+        if process_recovery_watchdog_manager is not None:
+            process_recovery_watchdog_manager.stop()
 
-        guard_manager = getattr(self.socket, 'guard_manager', None)
-        if guard_manager is not None:
+        watchdog_manager = getattr(self.socket, 'watchdog_manager', None)
+        if watchdog_manager is not None:
             try:
-                guard_manager.stop()
+                watchdog_manager.stop()
             except Exception:
                 pass
 

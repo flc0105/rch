@@ -621,8 +621,8 @@ export default {
 
                 const recoverySource = payload.recovery_source;
                 const recoveryLabel = {
-                    local_watchdog: 'Local Watchdog',
-                    process_watchdog: 'Process Watchdog',
+                    local_heartbeat_watchdog: 'Local Heartbeat Watchdog',
+                    process_recovery_watchdog: 'Process Recovery Watchdog',
                 }[recoverySource] || '';
                 this.showSseNotification('connection_online', {
                     title: 'Device Online',

@@ -123,23 +123,23 @@ set SCREEN_FRAME_STRATEGY keyframe_delta
 | Preview | `PREVIEW_IMAGE_COMPRESS_ENABLED` | `false` | 在图片预览上传前尝试压缩，仅影响相应预览流程 |
 | Preview | `PREVIEW_IMAGE_COMPRESS_QUALITY` | `75` | 预览压缩的图片质量参数 |
 | Connection | `RECONNECT_INTERVAL_SECONDS` | `5` 秒 | Client 断线后再次尝试连接的间隔 |
-| Watchdog | `REMOTE_HTTP_WATCHDOG_ENABLED` | `false` | 启用独立 HTTP 远程进程控制 |
-| Watchdog | `LOCAL_WATCHDOG_ENABLED` | `false` | 启用本地心跳超时恢复 |
-| Watchdog | `PROCESS_WATCHDOG_ENABLED` | `false` | Client 进程异常消失时，由独立监督进程尝试复活 |
+| Watchdog | `REMOTE_CONTROL_WATCHDOG_ENABLED` | `false` | 启用独立 HTTP 远程进程控制 |
+| Watchdog | `LOCAL_HEARTBEAT_WATCHDOG_ENABLED` | `false` | 启用本地心跳超时恢复 |
+| Watchdog | `PROCESS_RECOVERY_WATCHDOG_ENABLED` | `false` | Client 进程异常消失时，由独立监督进程尝试复活 |
 
 关于 Watchdog，容易混淆的是以下三种行为：
 
-- **Remote HTTP Watchdog**：从 Server 取得待执行的远程进程控制操作，不等于自动检测 Client 故障。
+- **Remote Control Watchdog**：从 Server 取得待执行的远程进程控制操作，不等于自动检测 Client 故障。
 - **Local Heartbeat Watchdog**：关注心跳长时间停止，处理“进程还在，但心跳不再更新”的情况。
-- **Process Watchdog**：关注 Client 进程是否已经死亡，并在非预期退出后尝试恢复；不会因为网络断开、进程仍存活就触发复活。
+- **Process Recovery Watchdog**：关注 Client 进程是否已经死亡，并在非预期退出后尝试恢复；不会因为网络断开、进程仍存活就触发复活。
 
 它们可以分别启停，不属于同一个三选一的 Strategy。启停开关可在线调整；涉及 Watchdog 组件的配置变更可能重建相应监控进程，因此建议逐项修改、逐项检查。
 
 下列时间参数可通过 `set --all` 查看，但**目前不能**使用普通 `set KEY value` 或前台 Configuration 在线修改：
 
-- `REMOTE_HTTP_WATCHDOG_INTERVAL_SECONDS`：默认 **15 秒**。
-- `LOCAL_WATCHDOG_HEARTBEAT_INTERVAL_SECONDS`：默认 **5 秒**。
-- `LOCAL_WATCHDOG_TIMEOUT_SECONDS`：默认 **15 秒**。
+- `REMOTE_CONTROL_WATCHDOG_INTERVAL_SECONDS`：默认 **15 秒**。
+- `LOCAL_HEARTBEAT_WATCHDOG_INTERVAL_SECONDS`：默认 **5 秒**。
+- `LOCAL_HEARTBEAT_WATCHDOG_TIMEOUT_SECONDS`：默认 **15 秒**。
 
 配置列表同时展示只读和可修改字段； 运行中 Watchdog 的真实状态可另外使用 `watchdog` 或 `watchdog --json` 查看；配置开关显示为 `true`，不保证监控组件一定已经健康运行。
 

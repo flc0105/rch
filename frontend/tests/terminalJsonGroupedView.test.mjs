@@ -50,9 +50,9 @@ function openViewer(value) {
 
 const watchdog = {
   client: { id: 'abc', pid: 123 },
-  remote_watchdog: { enabled: true, interval_seconds: 5, worker_pid: 2345 },
-  local_watchdog: { enabled: false, timeout_seconds: 10 },
-  process_watchdog: { supervisor_pid: 3456, supervisor_alive: true },
+  remote_control_watchdog: { enabled: true, interval_seconds: 5, worker_pid: 2345 },
+  local_heartbeat_watchdog: { enabled: false, timeout_seconds: 10 },
+  process_recovery_watchdog: { supervisor_pid: 3456, supervisor_alive: true },
 }
 let { viewer, emitted } = openViewer(watchdog)
 assert.equal(viewer.displayMode, 'grouped')
@@ -67,7 +67,7 @@ assert.equal(viewer.flatRows.length, 0)
 assert.equal(viewer.tableRows.length, 0)
 viewer.toggleTerminalJsonViewMode()
 assert.equal(viewer.isTerminalJsonRawView, true)
-assert.match(viewer.formattedRawText, /"remote_watchdog": \{/)
+assert.match(viewer.formattedRawText, /"remote_control_watchdog": \{/)
 viewer.toggleTerminalJsonViewMode()
 assert.equal(viewer.isTerminalJsonRawView, false)
 viewer.saveTerminalJsonToArtifact()

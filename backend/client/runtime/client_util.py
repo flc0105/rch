@@ -171,7 +171,7 @@ def reset(socket):
     spawn_new_instance()
     socket.report_session_end('client_restart', command='relaunch_instance')
 
-    manager = getattr(socket, 'process_watchdog_manager', None)
+    manager = getattr(socket, 'process_recovery_watchdog_manager', None)
     if manager is not None:
         manager.stop()
 
@@ -223,11 +223,11 @@ def spawn_new_instance():
     else:
         launch_cwd = os.path.dirname(os.path.realpath(sys.argv[0]))
 
-    from client.watchdog.watchdog_environment import without_process_watchdog_environment
+    from client.watchdog.watchdog_environment import without_process_recovery_watchdog_environment
 
     popen_kwargs = {
         'cwd': launch_cwd,
-        'env': detached_launch_environment(without_process_watchdog_environment()),
+        'env': detached_launch_environment(without_process_recovery_watchdog_environment()),
         'stdin': subprocess.DEVNULL,
         'stdout': subprocess.DEVNULL,
         'stderr': subprocess.DEVNULL,
@@ -321,11 +321,11 @@ def spawn_detached_python_script(script_path: str, cwd: str = '', args=None, std
     if stderr_path:
         stderr_file = open(os.path.abspath(stderr_path), 'ab')
 
-    from client.watchdog.watchdog_environment import without_process_watchdog_environment
+    from client.watchdog.watchdog_environment import without_process_recovery_watchdog_environment
 
     popen_kwargs = {
         'cwd': launch_cwd,
-        'env': detached_launch_environment(without_process_watchdog_environment()),
+        'env': detached_launch_environment(without_process_recovery_watchdog_environment()),
         'stdin': subprocess.DEVNULL,
         'stdout': subprocess.DEVNULL,
         'stderr': stderr_file or subprocess.DEVNULL,

@@ -31,44 +31,44 @@
             <span>{{ healthSubtitle }}</span>
           </div>
           <div class="watchdog-worker-meta">
-            <span>{{ launchdManaged ? 'Lifecycle manager' : (status.process_watchdog.enabled && !legacyEnabled ? 'Process supervisor' : 'Supervisor process') }}</span>
-            <strong>{{ launchdManaged ? 'launchd' : ((status.process_watchdog.enabled && !legacyEnabled ? status.process_watchdog.supervisor_pid : status.remote_watchdog.worker_pid) ?? '—') }}</strong>
+            <span>{{ launchdManaged ? 'Lifecycle manager' : (status.process_recovery_watchdog.enabled && !sharedWorkerEnabled ? 'Process Recovery Watchdog supervisor' : 'Supervisor process') }}</span>
+            <strong>{{ launchdManaged ? 'launchd' : ((status.process_recovery_watchdog.enabled && !sharedWorkerEnabled ? status.process_recovery_watchdog.supervisor_pid : status.remote_control_watchdog.worker_pid) ?? '—') }}</strong>
           </div>
         </div>
 
         <div v-if="launchdManaged" class="watchdog-policy-note">
-          {{ launchdManagerLabel }} owns this Client's lifecycle. Process recovery, local heartbeat recovery, and remote watchdog control are disabled to avoid competing supervisors.
+          {{ launchdManagerLabel }} owns this Client's lifecycle. Process Recovery Watchdog, Local Heartbeat Watchdog, and Remote Control Watchdog are disabled to avoid competing supervisors.
         </div>
 
         <div class="watchdog-modes">
           <article class="watchdog-mode-card watchdog-process-card">
             <div class="watchdog-card-head">
               <div>
-                <h4>Process recovery</h4>
+                <h4>Process Recovery Watchdog</h4>
                 <p>Restarts the agent after an unexpected process exit</p>
               </div>
               <div class="watchdog-card-controls">
-                <span class="watchdog-state-tag" :class="{ 'is-on': status.process_watchdog.enabled }">
-                  {{ !watchdogSupported ? 'Unavailable' : launchdManaged ? `Managed by ${launchdManagerLabel}` : (status.process_watchdog.enabled ? 'Enabled' : 'Disabled') }}
+                <span class="watchdog-state-tag" :class="{ 'is-on': status.process_recovery_watchdog.enabled }">
+                  {{ !watchdogSupported ? 'Unavailable' : launchdManaged ? `Managed by ${launchdManagerLabel}` : (status.process_recovery_watchdog.enabled ? 'Enabled' : 'Disabled') }}
                 </span>
                 <el-switch
                   v-if="watchdogSupported"
-                  :model-value="Boolean(launchdManaged ? status.process_watchdog.configured_enabled : status.process_watchdog.enabled)"
-                  :loading="togglingMode === 'process'"
+                  :model-value="Boolean(launchdManaged ? status.process_recovery_watchdog.configured_enabled : status.process_recovery_watchdog.enabled)"
+                  :loading="togglingMode === 'process_recovery'"
                   :disabled="!canToggleMode"
-                  aria-label="Toggle process recovery watchdog"
-                  @change="value => toggleMode('process', value)"
+                  aria-label="Toggle Process Recovery Watchdog"
+                  @change="value => toggleMode('process_recovery', value)"
                 />
               </div>
             </div>
             <div class="watchdog-card-stats">
               <div>
                 <span>Supervisor</span>
-                <strong>{{ status.process_watchdog.supervisor_alive ? 'Running' : 'Stopped' }}</strong>
+                <strong>{{ status.process_recovery_watchdog.supervisor_alive ? 'Running' : 'Stopped' }}</strong>
               </div>
               <div>
                 <span>Process PID</span>
-                <strong>{{ status.process_watchdog.supervisor_pid ?? '—' }}</strong>
+                <strong>{{ status.process_recovery_watchdog.supervisor_pid ?? '—' }}</strong>
               </div>
             </div>
           </article>
@@ -76,27 +76,27 @@
           <article class="watchdog-mode-card">
             <div class="watchdog-card-head">
               <div>
-                <h4>Remote control</h4>
+                <h4>Remote Control Watchdog</h4>
                 <p>Responds to HTTP management commands</p>
               </div>
               <div class="watchdog-card-controls">
-                <span class="watchdog-state-tag" :class="{ 'is-on': status.remote_watchdog.enabled }">
-                  {{ !watchdogSupported ? 'Unavailable' : launchdManaged ? `Managed by ${launchdManagerLabel}` : (status.remote_watchdog.enabled ? 'Enabled' : 'Disabled') }}
+                <span class="watchdog-state-tag" :class="{ 'is-on': status.remote_control_watchdog.enabled }">
+                  {{ !watchdogSupported ? 'Unavailable' : launchdManaged ? `Managed by ${launchdManagerLabel}` : (status.remote_control_watchdog.enabled ? 'Enabled' : 'Disabled') }}
                 </span>
                 <el-switch
                   v-if="watchdogSupported"
-                  :model-value="Boolean(launchdManaged ? status.remote_watchdog.configured_enabled : status.remote_watchdog.enabled)"
-                  :loading="togglingMode === 'remote'"
+                  :model-value="Boolean(launchdManaged ? status.remote_control_watchdog.configured_enabled : status.remote_control_watchdog.enabled)"
+                  :loading="togglingMode === 'remote_control'"
                   :disabled="!canToggleMode"
-                  aria-label="Toggle remote control watchdog"
-                  @change="value => toggleMode('remote', value)"
+                  aria-label="Toggle Remote Control Watchdog"
+                  @change="value => toggleMode('remote_control', value)"
                 />
               </div>
             </div>
             <div class="watchdog-card-stats">
               <div>
                 <span>Check interval</span>
-                <strong>{{ duration(status.remote_watchdog.interval_seconds) }}</strong>
+                <strong>{{ duration(status.remote_control_watchdog.interval_seconds) }}</strong>
               </div>
               <div>
                 <span>Supervisor</span>
@@ -108,36 +108,36 @@
           <article class="watchdog-mode-card">
             <div class="watchdog-card-head">
               <div>
-                <h4>Local recovery</h4>
+                <h4>Local Heartbeat Watchdog</h4>
                 <p>Monitors agent heartbeats on this device</p>
               </div>
               <div class="watchdog-card-controls">
-                <span class="watchdog-state-tag" :class="{ 'is-on': status.local_watchdog.enabled }">
-                  {{ !watchdogSupported ? 'Unavailable' : launchdManaged ? `Managed by ${launchdManagerLabel}` : (status.local_watchdog.enabled ? 'Enabled' : 'Disabled') }}
+                <span class="watchdog-state-tag" :class="{ 'is-on': status.local_heartbeat_watchdog.enabled }">
+                  {{ !watchdogSupported ? 'Unavailable' : launchdManaged ? `Managed by ${launchdManagerLabel}` : (status.local_heartbeat_watchdog.enabled ? 'Enabled' : 'Disabled') }}
                 </span>
                 <el-switch
                   v-if="watchdogSupported"
-                  :model-value="Boolean(launchdManaged ? status.local_watchdog.configured_enabled : status.local_watchdog.enabled)"
-                  :loading="togglingMode === 'local'"
+                  :model-value="Boolean(launchdManaged ? status.local_heartbeat_watchdog.configured_enabled : status.local_heartbeat_watchdog.enabled)"
+                  :loading="togglingMode === 'local_heartbeat'"
                   :disabled="!canToggleMode"
-                  aria-label="Toggle local recovery watchdog"
-                  @change="value => toggleMode('local', value)"
+                  aria-label="Toggle Local Heartbeat Watchdog"
+                  @change="value => toggleMode('local_heartbeat', value)"
                 />
               </div>
             </div>
             <div class="watchdog-card-stats">
               <div>
                 <span>Heartbeat</span>
-                <strong>{{ duration(status.local_watchdog.heartbeat_interval_seconds) }}</strong>
+                <strong>{{ duration(status.local_heartbeat_watchdog.heartbeat_interval_seconds) }}</strong>
               </div>
               <div>
                 <span>Timeout</span>
-                <strong>{{ duration(status.local_watchdog.timeout_seconds) }}</strong>
+                <strong>{{ duration(status.local_heartbeat_watchdog.timeout_seconds) }}</strong>
               </div>
             </div>
-            <p v-if="status.local_watchdog.enabled" class="watchdog-feeder">
-              Heartbeat sender: {{ status.local_watchdog.feeder_alive ? 'Active' : 'Not running' }}
-              <span v-if="status.local_watchdog.feeder_thread_name">· {{ status.local_watchdog.feeder_thread_name }}</span>
+            <p v-if="status.local_heartbeat_watchdog.enabled" class="watchdog-feeder">
+              Heartbeat sender: {{ status.local_heartbeat_watchdog.feeder_alive ? 'Active' : 'Not running' }}
+              <span v-if="status.local_heartbeat_watchdog.feeder_thread_name">· {{ status.local_heartbeat_watchdog.feeder_thread_name }}</span>
             </p>
           </article>
         </div>
@@ -150,33 +150,33 @@
           <el-collapse v-model="expandedSections" class="watchdog-diagnostics">
             <el-collapse-item title="Connection & diagnostic paths" name="paths">
               <div class="watchdog-path-list">
-                <div v-if="status.process_watchdog.log_path">
-                  <span>Process recovery log</span>
+                <div v-if="status.process_recovery_watchdog.log_path">
+                  <span>Process Recovery Watchdog log</span>
                   <div class="watchdog-log-location">
-                    <code>{{ status.process_watchdog.log_path }}</code>
-                    <button class="watchdog-log-link" type="button" @click="openLog(status.process_watchdog.log_path, 'Process Watchdog')">View log</button>
+                    <code>{{ status.process_recovery_watchdog.log_path }}</code>
+                    <button class="watchdog-log-link" type="button" @click="openLog(status.process_recovery_watchdog.log_path, 'Process Recovery Watchdog')">View log</button>
                   </div>
                 </div>
-                <div v-if="status.remote_watchdog.control_url">
+                <div v-if="status.remote_control_watchdog.control_url">
                   <span>Control endpoint (agent-side)</span>
-                  <code>{{ status.remote_watchdog.control_url }}</code>
+                  <code>{{ status.remote_control_watchdog.control_url }}</code>
                 </div>
-                <div v-if="status.remote_watchdog.log_path">
-                  <span>Remote activity log</span>
+                <div v-if="status.remote_control_watchdog.log_path">
+                  <span>Remote Control Watchdog log</span>
                   <div class="watchdog-log-location">
-                    <code>{{ status.remote_watchdog.log_path }}</code>
-                    <button class="watchdog-log-link" type="button" @click="openLog(status.remote_watchdog.log_path, 'Remote Watchdog')">View log</button>
+                    <code>{{ status.remote_control_watchdog.log_path }}</code>
+                    <button class="watchdog-log-link" type="button" @click="openLog(status.remote_control_watchdog.log_path, 'Remote Control Watchdog')">View log</button>
                   </div>
                 </div>
-                <div v-if="status.local_watchdog.heartbeat_file_path">
+                <div v-if="status.local_heartbeat_watchdog.heartbeat_file_path">
                   <span>Local heartbeat file</span>
-                  <code>{{ status.local_watchdog.heartbeat_file_path }}</code>
+                  <code>{{ status.local_heartbeat_watchdog.heartbeat_file_path }}</code>
                 </div>
-                <div v-if="status.local_watchdog.log_path">
-                  <span>Local activity log</span>
+                <div v-if="status.local_heartbeat_watchdog.log_path">
+                  <span>Local Heartbeat Watchdog log</span>
                   <div class="watchdog-log-location">
-                    <code>{{ status.local_watchdog.log_path }}</code>
-                    <button class="watchdog-log-link" type="button" @click="openLog(status.local_watchdog.log_path, 'Local Watchdog')">View log</button>
+                    <code>{{ status.local_heartbeat_watchdog.log_path }}</code>
+                    <button class="watchdog-log-link" type="button" @click="openLog(status.local_heartbeat_watchdog.log_path, 'Local Heartbeat Watchdog')">View log</button>
                   </div>
                 </div>
               </div>
@@ -230,7 +230,7 @@ import {
 } from '../api/connectionsApi.js'
 
 const RECOVERY_ACTIONS = [
-  { action: 'kill', label: 'Kill', description: 'Terminate the current agent process via remote watchdog.' },
+  { action: 'kill', label: 'Kill', description: 'Terminate the current agent process via Remote Control Watchdog.' },
   { action: 'relaunch', label: 'Relaunch', description: 'Launch a replacement agent, then terminate the current agent process.' },
   { action: 'clone', label: 'Clone', description: 'Launch another agent instance without stopping the current one.' },
 ]
@@ -270,20 +270,20 @@ export default {
       if (source === 'launchdaemon') return 'LaunchDaemon'
       return 'launchd'
     },
-    legacyEnabled() {
-      return Boolean(this.status?.remote_watchdog?.enabled || this.status?.local_watchdog?.enabled)
+    sharedWorkerEnabled() {
+      return Boolean(this.status?.remote_control_watchdog?.enabled || this.status?.local_heartbeat_watchdog?.enabled)
     },
     enabled() {
-      return Boolean(this.legacyEnabled || this.status?.process_watchdog?.enabled)
+      return Boolean(this.sharedWorkerEnabled || this.status?.process_recovery_watchdog?.enabled)
     },
     workerStatus() {
-      return this.status?.remote_watchdog?.worker_alive ? 'Running' : 'Stopped'
+      return this.status?.remote_control_watchdog?.worker_alive ? 'Running' : 'Stopped'
     },
     healthTone() {
       if (!this.watchdogSupported || this.launchdManaged) return 'off'
       if (!this.enabled) return 'off'
-      if ((this.legacyEnabled && !this.status?.remote_watchdog?.worker_alive) ||
-          (this.status?.process_watchdog?.enabled && !this.status?.process_watchdog?.supervisor_alive)) return 'warning'
+      if ((this.sharedWorkerEnabled && !this.status?.remote_control_watchdog?.worker_alive) ||
+          (this.status?.process_recovery_watchdog?.enabled && !this.status?.process_recovery_watchdog?.supervisor_alive)) return 'warning'
       return 'healthy'
     },
     healthTitle() {
@@ -296,14 +296,14 @@ export default {
       if (this.launchdManaged) return `Client-side watchdogs stay off so ${this.launchdManagerLabel} remains the single lifecycle supervisor.`
       if (!this.enabled) return 'All watchdog modes are turned off.'
       if (this.healthTone === 'warning') return 'A watchdog mode is enabled, but its supervisor process is unavailable.'
-      if (this.status.process_watchdog.enabled) {
-        const modes = ['Process recovery']
-        if (this.status.remote_watchdog.enabled) modes.push('remote control')
-        if (this.status.local_watchdog.enabled) modes.push('local recovery')
+      if (this.status.process_recovery_watchdog.enabled) {
+        const modes = ['Process Recovery Watchdog']
+        if (this.status.remote_control_watchdog.enabled) modes.push('Remote Control Watchdog')
+        if (this.status.local_heartbeat_watchdog.enabled) modes.push('Local Heartbeat Watchdog')
         return `${modes.join(', ')} ${modes.length === 1 ? 'is' : 'are'} enabled.`
       }
-      if (this.status.remote_watchdog.enabled && this.status.local_watchdog.enabled) return 'Remote control and local recovery are enabled.'
-      return this.status.remote_watchdog.enabled ? 'Remote control is enabled.' : 'Local recovery is enabled.'
+      if (this.status.remote_control_watchdog.enabled && this.status.local_heartbeat_watchdog.enabled) return 'Remote Control Watchdog and Local Heartbeat Watchdog are enabled.'
+      return this.status.remote_control_watchdog.enabled ? 'Remote Control Watchdog is enabled.' : 'Local Heartbeat Watchdog is enabled.'
     },
     connectionOffline() {
       return this.currentConnection?.connection_state === 'offline' || Boolean(this.currentConnection?.disconnected_at)
@@ -314,16 +314,16 @@ export default {
     },
     canControl() {
       // Recovery controls must not rely on the health/status request or the
-      // agent's online/busy state; launchd-managed Clients intentionally disable Remote Watchdog.
+      // agent's online/busy state; launchd-managed Clients intentionally disable Remote Control Watchdog.
       return Boolean(this.clientId) && this.watchdogSupported && !this.launchdManaged && !this.pendingAction
     },
     actionHint() {
-      if (!this.watchdogSupported) return 'This Client does not support remote watchdog control'
-      if (this.launchdManaged) return `Remote watchdog control is disabled while ${this.launchdManagerLabel} manages this Client`
+      if (!this.watchdogSupported) return 'This Client does not support Remote Control Watchdog control'
+      if (this.launchdManaged) return `Remote Control Watchdog control is disabled while ${this.launchdManagerLabel} manages this Client`
       if (this.connectionOffline) return 'Agent is offline; command can be queued for its next poll'
       if (!this.status || this.error) return 'Status unavailable; recovery commands can still be queued'
-      if (!this.status.remote_watchdog.enabled || !this.status.remote_watchdog.worker_alive) return 'Recovery commands can be queued; delivery requires an active remote watchdog'
-      return 'Commands are queued through the remote watchdog'
+      if (!this.status.remote_control_watchdog.enabled || !this.status.remote_control_watchdog.worker_alive) return 'Recovery commands can be queued; delivery requires an active Remote Control Watchdog'
+      return 'Commands are queued through the Remote Control Watchdog'
     },
   },
   mounted() {
@@ -339,17 +339,16 @@ export default {
       return value == null || !Number.isFinite(Number(value)) ? '—' : `${value} s`
     },
     async toggleMode(mode, enabled) {
-      if (!this.canToggleMode || !['remote', 'local', 'process'].includes(mode) || typeof enabled !== 'boolean') return
-      const clientId = this.clientId
-      const keys = {
-        remote: 'REMOTE_HTTP_WATCHDOG_ENABLED',
-        local: 'LOCAL_WATCHDOG_ENABLED',
-        process: 'PROCESS_WATCHDOG_ENABLED',
+      const modes = {
+        remote_control: { key: 'REMOTE_CONTROL_WATCHDOG_ENABLED', statusKey: 'remote_control_watchdog', label: 'Remote Control Watchdog' },
+        local_heartbeat: { key: 'LOCAL_HEARTBEAT_WATCHDOG_ENABLED', statusKey: 'local_heartbeat_watchdog', label: 'Local Heartbeat Watchdog' },
+        process_recovery: { key: 'PROCESS_RECOVERY_WATCHDOG_ENABLED', statusKey: 'process_recovery_watchdog', label: 'Process Recovery Watchdog' },
       }
-      const labels = { remote: 'Remote control', local: 'Local recovery', process: 'Process recovery' }
-      const key = keys[mode]
-      const label = labels[mode]
-      if (Boolean(this.launchdManaged ? this.status[`${mode}_watchdog`].configured_enabled : this.status[`${mode}_watchdog`].enabled) === enabled) return
+      const selected = modes[mode]
+      if (!this.canToggleMode || !selected || typeof enabled !== 'boolean') return
+      const clientId = this.clientId
+      const { key, statusKey, label } = selected
+      if (Boolean(this.launchdManaged ? this.status[statusKey].configured_enabled : this.status[statusKey].enabled) === enabled) return
 
       this.togglingMode = mode
       try {
@@ -361,7 +360,7 @@ export default {
           ElMessage.warning(`${label} updated, but status could not be refreshed`)
         } else if (this.launchdManaged) {
           ElMessage.warning(`${label} setting saved; ${this.launchdManagerLabel} manages the Client lifecycle`)
-        } else if (this.status[`${mode}_watchdog`].enabled !== enabled) {
+        } else if (this.status[statusKey].enabled !== enabled) {
           ElMessage.warning(`${label} setting saved; refresh to verify its runtime state`)
         } else {
           ElMessage.success(`${label} ${enabled ? 'enabled' : 'disabled'}`)
@@ -384,10 +383,10 @@ export default {
         const data = await getWatchdogStatus(requestedId)
         if (requestedId !== this.clientId) return
         if (!data || typeof data !== 'object' || Array.isArray(data) ||
-            !data.client || !data.remote_watchdog || !data.local_watchdog || !data.process_watchdog ||
-            typeof data.client !== 'object' || typeof data.remote_watchdog !== 'object' ||
-            typeof data.local_watchdog !== 'object' || typeof data.process_watchdog !== 'object' ||
-            !('worker_alive' in data.remote_watchdog) || !('supervisor_alive' in data.process_watchdog)) {
+            !data.client || !data.remote_control_watchdog || !data.local_heartbeat_watchdog || !data.process_recovery_watchdog ||
+            typeof data.client !== 'object' || typeof data.remote_control_watchdog !== 'object' ||
+            typeof data.local_heartbeat_watchdog !== 'object' || typeof data.process_recovery_watchdog !== 'object' ||
+            !('worker_alive' in data.remote_control_watchdog) || !('supervisor_alive' in data.process_recovery_watchdog)) {
           throw new Error('Invalid watchdog status response')
         }
         this.status = data
@@ -434,7 +433,7 @@ export default {
       this.pendingAction = action.action
       try {
         await queueHttpControlAction(clientId, action.action)
-        ElMessage.success(`${action.label || action.action} queued for remote watchdog`)
+        ElMessage.success(`${action.label || action.action} queued for Remote Control Watchdog`)
       } catch (error) {
         ElMessage.error(error.message || 'Could not queue control action')
       } finally {

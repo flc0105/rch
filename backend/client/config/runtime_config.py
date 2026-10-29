@@ -50,14 +50,14 @@ SCREEN_FRAME_STRATEGY = 'full_jpeg'
 
 
 RECONNECT_INTERVAL_SECONDS = 5
-REMOTE_HTTP_WATCHDOG_ENABLED = False
-REMOTE_HTTP_WATCHDOG_INTERVAL_SECONDS = 15
-LOCAL_WATCHDOG_ENABLED = False
-LOCAL_WATCHDOG_HEARTBEAT_INTERVAL_SECONDS = 5
-LOCAL_WATCHDOG_TIMEOUT_SECONDS = 15
+REMOTE_CONTROL_WATCHDOG_ENABLED = False
+REMOTE_CONTROL_WATCHDOG_INTERVAL_SECONDS = 15
+LOCAL_HEARTBEAT_WATCHDOG_ENABLED = False
+LOCAL_HEARTBEAT_WATCHDOG_INTERVAL_SECONDS = 5
+LOCAL_HEARTBEAT_WATCHDOG_TIMEOUT_SECONDS = 15
 
 # Independent process-death recovery; unrelated to the local heartbeat watchdog.
-PROCESS_WATCHDOG_ENABLED = False
+PROCESS_RECOVERY_WATCHDOG_ENABLED = False
 
 
 # runtime_config 暴露元信息。
@@ -141,32 +141,32 @@ _RUNTIME_CONFIG_META = {
         'expose': True,
         'desc': 'Reconnect interval after client connection loss.',
     },
-    'REMOTE_HTTP_WATCHDOG_ENABLED': {
+    'REMOTE_CONTROL_WATCHDOG_ENABLED': {
         'group': 'watchdog',
         'expose': True,
-        'desc': 'Enable remote HTTP watchdog.',
+        'desc': 'Enable Remote Control Watchdog.',
     },
-    'REMOTE_HTTP_WATCHDOG_INTERVAL_SECONDS': {
+    'REMOTE_CONTROL_WATCHDOG_INTERVAL_SECONDS': {
         'group': 'watchdog',
         'expose': False,
-        'desc': 'Remote HTTP watchdog check interval in seconds.',
+        'desc': 'Remote Control Watchdog check interval in seconds.',
     },
-    'LOCAL_WATCHDOG_ENABLED': {
+    'LOCAL_HEARTBEAT_WATCHDOG_ENABLED': {
         'group': 'watchdog',
         'expose': True,
-        'desc': 'Enable local watchdog heartbeat.',
+        'desc': 'Enable Local Heartbeat Watchdog heartbeat.',
     },
-    'LOCAL_WATCHDOG_HEARTBEAT_INTERVAL_SECONDS': {
+    'LOCAL_HEARTBEAT_WATCHDOG_INTERVAL_SECONDS': {
         'group': 'watchdog',
         'expose': False,
-        'desc': 'Local watchdog heartbeat interval in seconds.',
+        'desc': 'Local Heartbeat Watchdog heartbeat interval in seconds.',
     },
-    'LOCAL_WATCHDOG_TIMEOUT_SECONDS': {
+    'LOCAL_HEARTBEAT_WATCHDOG_TIMEOUT_SECONDS': {
         'group': 'watchdog',
         'expose': False,
-        'desc': 'Local watchdog timeout in seconds.',
+        'desc': 'Local Heartbeat Watchdog timeout in seconds.',
     },
-    'PROCESS_WATCHDOG_ENABLED': {
+    'PROCESS_RECOVERY_WATCHDOG_ENABLED': {
         'group': 'watchdog',
         'expose': True,
         'desc': 'Restart the Client if its operating-system process unexpectedly exits.',

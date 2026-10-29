@@ -74,7 +74,7 @@ Client 主进程尝试将 Python Logging 同步镜像到 Client temp root 的 `c
 
 ### Watchdog 复活来源（仅首次握手）
 
-若新 Client 是由 Local Heartbeat Watchdog 或 Process Supervisor 自动拉起，其首次成功发送的 `info` 额外包含 `recovery_source: "local_watchdog"` 或 `"process_watchdog"`。这个值来自创建新进程时携带的一次性环境标记，Client 初始化后即将标记移出环境；首次握手发送成功后，后续同进程连接恢复不会再次携带。Server 只在此次 `connection_online` 事件中显示来源，**不会把它写进持久设备属性或后续 Heartbeat**。普通上线和 Remote HTTP 控制的 Relaunch 不添加该字段。
+若新 Client 是由 Local Heartbeat Watchdog 或 Process Recovery Watchdog 自动拉起，其首次成功发送的 `info` 额外包含 `recovery_source: "local_heartbeat_watchdog"` 或 `"process_recovery_watchdog"`。这个值来自创建新进程时携带的一次性环境标记，Client 初始化后即将标记移出环境；首次握手发送成功后，后续同进程连接恢复不会再次携带。Server 只在此次 `connection_online` 事件中显示来源，**不会把它写进持久设备属性或后续 Heartbeat**。普通上线和 Remote HTTP 控制的 Relaunch 不添加该字段。
 
 这份消息仍然不带 Server ACK，因此“首次发送成功”与“Server 完成注册”之间可能存在网络失败窗口；不能把来源标记理解为端到端恰好一次确认。
 

@@ -15,11 +15,11 @@ class CommandRuntimeConfigMixin:
     """
 
     WATCHDOG_CONFIG_KEYS = {
-        'REMOTE_HTTP_WATCHDOG_ENABLED',
-        'REMOTE_HTTP_WATCHDOG_INTERVAL_SECONDS',
-        'LOCAL_WATCHDOG_ENABLED',
-        'LOCAL_WATCHDOG_HEARTBEAT_INTERVAL_SECONDS',
-        'LOCAL_WATCHDOG_TIMEOUT_SECONDS',
+        'REMOTE_CONTROL_WATCHDOG_ENABLED',
+        'REMOTE_CONTROL_WATCHDOG_INTERVAL_SECONDS',
+        'LOCAL_HEARTBEAT_WATCHDOG_ENABLED',
+        'LOCAL_HEARTBEAT_WATCHDOG_INTERVAL_SECONDS',
+        'LOCAL_HEARTBEAT_WATCHDOG_TIMEOUT_SECONDS',
     }
 
     @property
@@ -209,10 +209,10 @@ class CommandRuntimeConfigMixin:
         launchd_managed = is_launchd_managed_client()
         watchdog_supported = bool(getattr(getattr(self.socket, 'runtime', None), 'features', {}).get('watchdog', True))
 
-        if key == 'PROCESS_WATCHDOG_ENABLED':
+        if key == 'PROCESS_RECOVERY_WATCHDOG_ENABLED':
             if not watchdog_supported:
                 effects.append(warning('Saved: watchdog is unavailable on this Client; restart with watchdog support to apply'))
-            manager = getattr(self.socket, 'process_watchdog_manager', None) if watchdog_supported else None
+            manager = getattr(self.socket, 'process_recovery_watchdog_manager', None) if watchdog_supported else None
             if manager is not None:
                 self._checkpoint()
                 try:
@@ -221,25 +221,25 @@ class CommandRuntimeConfigMixin:
                     else:
                         manager.stop()
                 except Exception as exc:
-                    logger.warning('Process watchdog runtime update failed: %s', exc)
-                    effects.append(warning(f'Saved: process watchdog could not start/stop: {exc}'))
+                    logger.warning('Process Recovery Watchdog runtime update failed: %s', exc)
+                    effects.append(warning(f'Saved: Process Recovery Watchdog could not start/stop: {exc}'))
                 else:
                     if launchd_managed:
-                        effects.append(warning('Saved: launchd manages this Client; process watchdog remains disabled'))
+                        effects.append(warning('Saved: launchd manages this Client; Process Recovery Watchdog remains disabled'))
                     else:
-                        effects.append(success('Applied: process watchdog runtime updated'))
-                    # Remote/Local workers inherit the supervisor environment at launch.
+                        effects.append(success('Applied: Process Recovery Watchdog runtime updated'))
+                    # Remote Control Watchdog / Local Heartbeat Watchdog workers inherit the supervisor environment at launch.
                     from client.config import runtime_config
-                    if (runtime_config.REMOTE_HTTP_WATCHDOG_ENABLED
-                            or runtime_config.LOCAL_WATCHDOG_ENABLED):
-                        if not self._restart_guard_manager():
-                            effects.append(warning('Saved: Remote/Local watchdog worker could not restart'))
+                    if (runtime_config.REMOTE_CONTROL_WATCHDOG_ENABLED
+                            or runtime_config.LOCAL_HEARTBEAT_WATCHDOG_ENABLED):
+                        if not self._restart_watchdog_manager():
+                            effects.append(warning('Saved: Remote Control Watchdog / Local Heartbeat Watchdog worker could not restart'))
                 self._checkpoint()
 
         if key in self.WATCHDOG_CONFIG_KEYS:
             if not watchdog_supported:
                 effects.append(warning('Saved: watchdog is unavailable on this Client; restart with watchdog support to apply'))
-            elif self._restart_guard_manager():
+            elif self._restart_watchdog_manager():
                 if launchd_managed:
                     effects.append(warning('Saved: launchd manages this Client; Client watchdogs remain disabled'))
                 else:
@@ -249,16 +249,16 @@ class CommandRuntimeConfigMixin:
 
         return effects
 
-    def _restart_guard_manager(self) -> bool:
-        guard_manager = getattr(self.socket, 'guard_manager', None)
-        if guard_manager is None:
+    def _restart_watchdog_manager(self) -> bool:
+        watchdog_manager = getattr(self.socket, 'watchdog_manager', None)
+        if watchdog_manager is None:
             return False
 
         try:
             self._checkpoint()
-            guard_manager.stop()
+            watchdog_manager.stop()
             self._checkpoint()
-            guard_manager.start()
+            watchdog_manager.start()
             self._checkpoint()
             return True
         except Exception as e:

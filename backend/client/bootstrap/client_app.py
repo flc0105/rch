@@ -14,34 +14,34 @@ from core.utils.logger import logger
 class Client:
     RECONNECT_INTERVAL = RECONNECT_INTERVAL_SECONDS
 
-    def __init__(self, address, process_watchdog_manager=None):
+    def __init__(self, address, process_recovery_watchdog_manager=None):
         self.address = address
         self.client_id = str(uuid.uuid4())
         self.server = None
         self.info = None
-        self.process_watchdog_manager = process_watchdog_manager
+        self.process_recovery_watchdog_manager = process_recovery_watchdog_manager
         self.recovery_source = consume_recovery_source()
 
         self.receiver_worker = ClientReceiverWorker()
         self.features = resolve_features()
-        self.guard_manager = None
+        self.watchdog_manager = None
         if self.features['watchdog']:
-            from client.watchdog.client_guard_manager import ClientGuardManager
-            self.guard_manager = ClientGuardManager(client_id=self.client_id)
+            from client.watchdog.client_watchdog_manager import ClientWatchdogManager
+            self.watchdog_manager = ClientWatchdogManager(client_id=self.client_id)
         self.connection_lifecycle = ClientConnectionLifecycle(self)
 
         log_runtime_config_overrides_if_any()
 
         self.server = self.connection_lifecycle.create_connection()
-        if self.guard_manager is not None:
-            self.guard_manager.start()
+        if self.watchdog_manager is not None:
+            self.watchdog_manager.start()
 
     def connect(self):
         """
         建立连接并完成握手
         """
-        if self.guard_manager is not None:
-            self.guard_manager.start()
+        if self.watchdog_manager is not None:
+            self.watchdog_manager.start()
         self.connection_lifecycle.connect_socket()
         self.connection_lifecycle.handshake()
         self.receiver_worker.start(self.server)

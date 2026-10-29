@@ -180,16 +180,16 @@ Client 自己的临时工作区与 launchd 日志目录是两套路径。POSIX C
 
 LaunchAgent / LaunchDaemon 下，launchd 是 Client 唯一的自动生命周期 owner。Client 会抑制以下三类 Watchdog：
 
-- Process Watchdog；
+- Process Recovery Watchdog；
 - Local Heartbeat Watchdog；
-- Remote HTTP Watchdog。
+- Remote Control Watchdog。
 
 即使 runtime config 中保存的对应开关为 `true`，当前 launchd Client 的 effective 状态仍为 disabled/suppressed；保存的配置值不会被改写。离开 launchd 后，以 Terminal、IDE 或 Detached 等方式启动的新 Client 会重新按原 runtime config 生效。
 
 这样可以保证：
 
-- `stop` 后不会被 Process Watchdog 重新拉出一个 Detached Client；
-- Local Heartbeat 不会在 launchd 之外创建 replacement Client；
+- `stop` 后不会被 Process Recovery Watchdog 重新拉出一个 Detached Client；
+- Local Heartbeat Watchdog 不会在 launchd 之外创建 replacement Client；
 - Remote HTTP relaunch/clone 不会形成第二套独立生命周期链；
 - `KeepAlive` 的恢复策略只由 launchd 执行。
 
@@ -236,7 +236,7 @@ sudo launchctl print system/com.rch.client
 3. `start`：预期 `Loaded=yes, Running=yes`，并获得 PID。
 4. Server Basic Info：预期 `Launch Mode = User service (LaunchAgent)`。
 5. `stop`：预期 `Installed=yes, Loaded=no, Running=no`，plist 仍存在。
-6. 等待超过 Process Watchdog 的首个恢复退避时间，确认没有 Detached Client 被重新创建。
+6. 等待超过 Process Recovery Watchdog 的首个恢复退避时间，确认没有 Detached Client 被重新创建。
 7. `start` 后再执行 `restart`，预期继续以 LaunchAgent 身份上线。
 8. `uninstall`：预期 plist 消失，`Installed=no`。
 
@@ -262,7 +262,7 @@ Daemon plist 应位于：
 
 - Watchdog 页面显示 lifecycle managed by LaunchAgent/LaunchDaemon；
 - 三个 effective enabled 都为 false/suppressed；
-- 系统进程列表中没有该 Client 对应的 `--process-watchdog-worker` 或 `--watchdog-worker`；
+- 系统进程列表中没有该 Client 对应的 `--process-recovery-watchdog-worker` 或 `--watchdog-worker`；
 - `stop` 后 Client 保持停止，直到再次执行 launchd `start`。
 
 ## 11. 常见问题
@@ -273,6 +273,6 @@ Daemon plist 应位于：
 | Agent 写到了 `/var/root/Library/LaunchAgents` | 不要用 root 的 `expanduser('~')` 作为目标用户 Home；使用 manager 的 `target_user` 解析。 |
 | global Agent 已安装但指定用户没运行 | 确认当前操作针对正确的 `gui/<uid>` domain，并检查该用户是否有可用 GUI session。 |
 | Daemon 操作权限失败 | `/Library/LaunchDaemons` 和 system domain 管理要求 root。 |
-| `stop` 后又出现 Detached Client | 检查运行中的 Client 是否已经包含 launchd Watchdog suppression；launchd Client 不应启动 Process/Local/Remote Watchdog。 |
+| `stop` 后又出现 Detached Client | 检查运行中的 Client 是否已经包含 launchd Watchdog suppression；launchd Client 不应启动 Process/Local/Remote Control Watchdog。 |
 | cron/普通用户 Client 报 `/tmp/rch_client_temp` 权限错误 | 新版本使用按 effective UID 隔离的 Client temp root；确认实际运行 Client 已加载该实现，并清理不再使用的旧共享 temp root。 |
 | Basic Info 显示 IDE/Detached 而不是 LaunchAgent/Daemon | 检查 plist 是否由当前 manager 生成并带有标准 Launch Mode 环境；也可用 `launchctl print` 确认实际 service target。 |

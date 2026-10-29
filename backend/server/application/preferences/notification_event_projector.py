@@ -47,7 +47,7 @@ class NotificationEventProjector:
     def _build_httpctl_timeout(self, payload):
         action = str(payload.get('command') or 'control').strip()
         client_id = str(payload.get('client_id') or '').strip()
-        detail = str(payload.get('detail') or 'Timed out waiting for Remote Watchdog').strip()
+        detail = str(payload.get('detail') or 'Timed out waiting for Remote Control Watchdog').strip()
         return self._notification(
             'watchdog_control_timeout', 'Watchdog Control Timeout',
             f'{self._device_name(client_id)} · {action}: {detail}',
@@ -59,7 +59,7 @@ class NotificationEventProjector:
         action = str(payload.get('command') or 'control').strip()
         return self._notification(
             'watchdog_control_received', 'Watchdog Control Received',
-            f'{self._device_name(client_id)} · {action} received by Remote Watchdog',
+            f'{self._device_name(client_id)} · {action} received by Remote Control Watchdog',
             'info', {'client_id': client_id, 'command': action, 'command_id': payload.get('command_id') or ''},
         )
 
@@ -160,8 +160,8 @@ class NotificationEventProjector:
         hostname = str(conn.get('hostname') or '').strip()
         source = payload.get('recovery_source')
         source_label = {
-            'local_watchdog': 'Local Watchdog',
-            'process_watchdog': 'Process Watchdog',
+            'local_heartbeat_watchdog': 'Local Heartbeat Watchdog',
+            'process_recovery_watchdog': 'Process Recovery Watchdog',
         }.get(source, '')
         message = f'{hostname or client_id or "Unknown device"} is now available'
         context = {'client_id': client_id, 'hostname': hostname}

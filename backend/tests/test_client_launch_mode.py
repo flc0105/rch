@@ -735,8 +735,8 @@ def test_client_info_reports_watchdog_effective_state_for_launchd(monkeypatch):
     })
 
     info = ClientInfoBuilder('client-launchd').build()
-    assert 'remote_watchdog_enabled' not in info
-    assert 'local_watchdog_enabled' not in info
+    assert 'remote_control_watchdog_enabled' not in info
+    assert 'local_heartbeat_watchdog_enabled' not in info
     assert info['feature_manifest']['watchdog'] is True
 
 

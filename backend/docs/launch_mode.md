@@ -248,7 +248,7 @@ System service (LaunchDaemon)
 sudo launchctl print system/com.rch.client
 ```
 
-LaunchAgent / LaunchDaemon 下 Client 的 Process、Local Heartbeat 与 Remote HTTP Watchdog 都被抑制，生命周期只由 launchd 管理。
+LaunchAgent / LaunchDaemon 下 Client 的 Process Recovery Watchdog、Local Heartbeat Watchdog 与 Remote Control Watchdog 都被抑制，生命周期只由 launchd 管理。
 
 ### 7.7 cron / Scheduled
 

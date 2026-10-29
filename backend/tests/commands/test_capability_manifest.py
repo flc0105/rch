@@ -59,14 +59,14 @@ def test_watchdog_single_capability_independent_of_set(monkeypatch):
     from client.config import runtime_config
     for alias in ('mac', 'win', 'linux'):
         for is_enabled in (False, True):
-            monkeypatch.setattr(runtime_config, 'PROCESS_WATCHDOG_ENABLED', is_enabled)
-            monkeypatch.setattr(runtime_config, 'LOCAL_WATCHDOG_ENABLED', is_enabled)
-            monkeypatch.setattr(runtime_config, 'REMOTE_HTTP_WATCHDOG_ENABLED', is_enabled)
+            monkeypatch.setattr(runtime_config, 'PROCESS_RECOVERY_WATCHDOG_ENABLED', is_enabled)
+            monkeypatch.setattr(runtime_config, 'LOCAL_HEARTBEAT_WATCHDOG_ENABLED', is_enabled)
+            monkeypatch.setattr(runtime_config, 'REMOTE_CONTROL_WATCHDOG_ENABLED', is_enabled)
             assert feature_config.resolve_features(alias, {})['watchdog'] is True
     assert feature_config.resolve_features('ios', {'watchdog': True})['watchdog'] is False
     assert feature_config.resolve_features('mac', {'watchdog': False})['watchdog'] is False
     with pytest.raises(ValueError, match='Unknown Client feature'):
-        feature_config.resolve_features('mac', {'remote_watchdog': False})
+        feature_config.resolve_features('mac', {'remote_control_watchdog': False})
 
 
 def test_launchd_capability_is_loaded(monkeypatch):
@@ -135,13 +135,13 @@ def test_no_disabled_manager_imports_in_fresh_client():
         assert runtime.pty_manager is None
         assert runtime.screen_view_manager is None
         assert runtime.clipboard_manager is None
-        assert client.guard_manager is None
-        assert client.process_watchdog_manager is None
+        assert client.watchdog_manager is None
+        assert client.process_recovery_watchdog_manager is None
         optional = [
             'client.pty.manager', 'client.screen.manager',
-            'client.clipboard.manager', 'client.watchdog.client_guard_manager',
-            'client.watchdog.watchdog_process', 'client.watchdog.process_watchdog',
-            'client.watchdog.local_watchdog', 'client.watchdog.remote_watchdog',
+            'client.clipboard.manager', 'client.watchdog.client_watchdog_manager',
+            'client.watchdog.watchdog_process', 'client.watchdog.process_recovery_watchdog',
+            'client.watchdog.local_heartbeat_watchdog', 'client.watchdog.remote_control_watchdog',
         ]
         assert not [name for name in optional if name in sys.modules]
         manifest = runtime.command_executor.get_commands().get_command_manifest_payload()
@@ -179,17 +179,17 @@ def test_supported_watchdog_imports_implementation_with_all_modes_off():
         import sys
         from client.config import feature_config, runtime_config
         from client.watchdog import watchdog_status
-        runtime_config.REMOTE_HTTP_WATCHDOG_ENABLED = False
-        runtime_config.LOCAL_WATCHDOG_ENABLED = False
-        runtime_config.PROCESS_WATCHDOG_ENABLED = False
+        runtime_config.REMOTE_CONTROL_WATCHDOG_ENABLED = False
+        runtime_config.LOCAL_HEARTBEAT_WATCHDOG_ENABLED = False
+        runtime_config.PROCESS_RECOVERY_WATCHDOG_ENABLED = False
         feature_config.FEATURE_OVERRIDES.update({'watchdog': True, 'pty': False, 'screen_view': False, 'clipboard': False})
         from client.bootstrap.client_app import Client
         client = Client(('127.0.0.1', 1))
-        assert client.guard_manager is not None
-        assert client.guard_manager._watchdog_process is None
-        assert client.process_watchdog_manager is None  # Process manager lives in rchclient.main
-        assert {'client.watchdog.watchdog_process', 'client.watchdog.remote_watchdog',
-                'client.watchdog.local_watchdog'} <= set(sys.modules)
+        assert client.watchdog_manager is not None
+        assert client.watchdog_manager._watchdog_process is None
+        assert client.process_recovery_watchdog_manager is None  # Process manager lives in rchclient.main
+        assert {'client.watchdog.watchdog_process', 'client.watchdog.remote_control_watchdog',
+                'client.watchdog.local_heartbeat_watchdog'} <= set(sys.modules)
         assert client.features['watchdog'] is True
     """)
     result = subprocess.run([sys.executable, '-c', script], cwd=os.path.dirname(os.path.dirname(os.path.dirname(__file__))), capture_output=True, text=True)
@@ -216,24 +216,24 @@ def test_set_watchdog_modes_hot_start_and_stop_without_changing_capability(monke
     owner._checkpoint = lambda: None
     owner.socket = SimpleNamespace(
         runtime=SimpleNamespace(features={'watchdog': True}),
-        guard_manager=guard, process_watchdog_manager=process,
+        watchdog_manager=guard, process_recovery_watchdog_manager=process,
     )
     monkeypatch.setattr('client.commands.common.mixins.runtime_config_ops.is_launchd_managed_client', lambda: False)
-    monkeypatch.setattr(runtime_config, 'REMOTE_HTTP_WATCHDOG_ENABLED', True)
-    result = owner._apply_runtime_config_side_effects('REMOTE_HTTP_WATCHDOG_ENABLED', True)
+    monkeypatch.setattr(runtime_config, 'REMOTE_CONTROL_WATCHDOG_ENABLED', True)
+    result = owner._apply_runtime_config_side_effects('REMOTE_CONTROL_WATCHDOG_ENABLED', True)
     assert guard.calls == ['stop', 'start']
     assert result and 'Applied' in ''.join(result)
-    monkeypatch.setattr(runtime_config, 'PROCESS_WATCHDOG_ENABLED', True)
-    owner._apply_runtime_config_side_effects('PROCESS_WATCHDOG_ENABLED', True)
+    monkeypatch.setattr(runtime_config, 'PROCESS_RECOVERY_WATCHDOG_ENABLED', True)
+    owner._apply_runtime_config_side_effects('PROCESS_RECOVERY_WATCHDOG_ENABLED', True)
     assert process.calls == ['start']
-    owner._apply_runtime_config_side_effects('PROCESS_WATCHDOG_ENABLED', False)
+    owner._apply_runtime_config_side_effects('PROCESS_RECOVERY_WATCHDOG_ENABLED', False)
     assert process.calls[-1] == 'stop'
     assert owner.socket.runtime.features['watchdog'] is True
 
     # A disabled capability can retain user preferences without creating managers.
     owner.socket = SimpleNamespace(runtime=SimpleNamespace(features={'watchdog': False}),
-                                   guard_manager=None, process_watchdog_manager=None)
-    result = owner._apply_runtime_config_side_effects('PROCESS_WATCHDOG_ENABLED', True)
+                                   watchdog_manager=None, process_recovery_watchdog_manager=None)
+    result = owner._apply_runtime_config_side_effects('PROCESS_RECOVERY_WATCHDOG_ENABLED', True)
     assert 'unavailable' in ''.join(result)
-    result = owner._apply_runtime_config_side_effects('LOCAL_WATCHDOG_ENABLED', True)
+    result = owner._apply_runtime_config_side_effects('LOCAL_HEARTBEAT_WATCHDOG_ENABLED', True)
     assert 'unavailable' in ''.join(result)

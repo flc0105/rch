@@ -2,7 +2,7 @@
 
 RCH 的 Server 与 Client 都保留原有的控制台日志输出，同时尝试保存便于诊断的本地日志文件。两端的日志**写在各自运行的设备上**，保存位置、失败处理和生命周期不同；Server 的 Runtime 日志不等于 Client 的远程日志，也不等于浏览器中的命令历史。
 
-本文说明主进程日志的用途、实际保存位置、轮转及日常查看方式。远程文件查看操作见 [Log Viewer](log_viewer.md)；独立监督进程的行为见 [Watchdog](watchdog.md) 与 [Process Watchdog](process_watchdog.md)。
+本文说明主进程日志的用途、实际保存位置、轮转及日常查看方式。远程文件查看操作见 [Log Viewer](log_viewer.md)；独立监督进程的行为见 [Watchdog](watchdog.md) 与 [Process Recovery Watchdog](process_recovery_watchdog.md)。
 
 ## Server 主日志
 
@@ -87,12 +87,12 @@ Client 不承诺自动捕获所有 `print()`、独立子进程 stdout/stderr，�
 三个 Watchdog 的诊断日志统一位于目标 Client 的：
 
 ```text
-R/watchdog_logs/client_remote_watchdog.log
-R/watchdog_logs/client_local_watchdog.log
-R/watchdog_logs/process_watchdog.log
+R/watchdog_logs/client_remote_control_watchdog.log
+R/watchdog_logs/client_local_heartbeat_watchdog.log
+R/watchdog_logs/process_recovery_watchdog.log
 ```
 
-Remote / Local Watchdog 使用独立文件日志；Process Watchdog 的日志按约 **2 MiB** 轮转并保留 **2 个备份**。这些日志不因主日志轮转而被合并或覆盖。Web 连接详情中的 **Watchdog** 区域提供各自路径及相应的查看入口。
+Remote Control Watchdog / Local Heartbeat Watchdog 使用独立文件日志；Process Recovery Watchdog 的日志按约 **2 MiB** 轮转并保留 **2 个备份**。这些日志不因主日志轮转而被合并或覆盖。Web 连接详情中的 **Watchdog** 区域提供各自路径及相应的查看入口。
 
 External Tools 的安装及运行日志也独立保存在目标 Client 的工具数据目录；具体位置可受安装和运行配置影响，参见 [External Tools](external_tools.md)。
 

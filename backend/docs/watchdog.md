@@ -1,8 +1,8 @@
 # Watchdog
 
-> 本文主要描述既有 **Remote HTTP / Local Heartbeat Watchdog**；`watchdog` 状态查询和 Web 面板也展示独立的 Process Watchdog，详情请参阅 [Process Watchdog](process_watchdog.md)。
+> 本文主要描述既有 **Remote Control Watchdog / Local Heartbeat Watchdog**；`watchdog` 状态查询和 Web 面板也展示独立的 Process Recovery Watchdog，详情请参阅 [Process Recovery Watchdog](process_recovery_watchdog.md)。
 
-Watchdog Worker 是独立于 Client 主执行流程的进程控制组件。Remote HTTP 模式用于在主命令通道不可用时接受来自 Server 的进程控制请求；Local 模式依靠本机心跳判断 Client 是否失去响应，并按配置尝试恢复。两套控制条件可以单独启用，也可由同一个 Worker 共同承担。
+Watchdog Worker 是独立于 Client 主执行流程的进程控制组件。Remote Control Watchdog 模式用于在主命令通道不可用时接受来自 Server 的进程控制请求；Local 模式依靠本机心跳判断 Client 是否失去响应，并按配置尝试恢复。两套控制条件可以单独启用，也可由同一个 Worker 共同承担。
 
 这一机制追踪的是 Client 主进程的可达性和活性，并不等价于业务任务是否健康。理解它需要区分心跳线程、独立 Worker、HTTP 命令队列、进程重新启动和 Server 管理界面各自负责的状态。
 
@@ -10,7 +10,7 @@ Watchdog Worker 是独立于 Client 主执行流程的进程控制组件。Remot
 
 `client/config/feature_config.py` 的 `watchdog` 是启动能力总开关，默认在 macOS、Windows、Linux 为 `true`，iOS 固定为 `false`。LaunchAgent / LaunchDaemon 也会加载 Watchdog 子系统，仍由 launchd 负责实际进程生命周期管理。配置 `watchdog=false` 后重启 Client，Watchdog Manager、Monitor 和 Supervisor 实现不再导入；命令 `watchdog --json` 可查看未启用状态。
 
-当 `watchdog=true` 时，Watchdog 实现会在 Client 启动时加载，即使三个运行模式全部关闭。运行中通过 `set REMOTE_HTTP_WATCHDOG_ENABLED`、`set LOCAL_WATCHDOG_ENABLED` 和 `set PROCESS_WATCHDOG_ENABLED` 独立启停对应功能，不需重启 Client。Web 的 Watchdog 详情在 Feature 支持时显示三个开关；不支持时显示能力提示。底部 HTTP Control 的 Kill、Relaunch、Clone 按钮始终显示，操作能否执行由运行状态决定。
+当 `watchdog=true` 时，Watchdog 实现会在 Client 启动时加载，即使三个运行模式全部关闭。运行中通过 `set REMOTE_CONTROL_WATCHDOG_ENABLED`、`set LOCAL_HEARTBEAT_WATCHDOG_ENABLED` 和 `set PROCESS_RECOVERY_WATCHDOG_ENABLED` 独立启停对应功能，不需重启 Client。Web 的 Watchdog 详情在 Feature 支持时显示三个开关；不支持时显示能力提示。底部 HTTP Control 的 Kill、Relaunch、Clone 按钮始终显示，操作能否执行由运行状态决定。
 
 热切换失败时，`set` 会提示配置已保存但实际进程未能启动或停止；运行状态以 `watchdog --json` 返回的 Worker、Supervisor 存活信息为准。Windows 的 Worker 停止操作最多等待系统 `taskkill` 5 秒，超时后尝试直接结束对应进程。
 
@@ -41,9 +41,9 @@ Server 命令 ─┘              │                 │
 └───────────────────────────────────────────────────────┘
 ```
 
-Remote 和 Local 的检查由同一个 Worker 循环依次执行：先确认原 Client PID 仍然存在，再检查 Remote，随后检查 Local，最后短暂休眠。循环的基础休眠时间为约 0.5 秒，但 Remote HTTP 请求本身可能等待最多 5 秒，所以 Local 检查不是严格固定间隔的实时调度。
+Remote Control Watchdog 和 Local Heartbeat Watchdog 的检查由同一个 Worker 循环依次执行：先确认原 Client PID 仍然存在，再检查 Remote Control Watchdog，随后检查 Local Heartbeat Watchdog，最后短暂休眠。循环的基础休眠时间为约 0.5 秒，但 Remote HTTP 请求本身可能等待最多 5 秒，所以 Local Heartbeat Watchdog 检查不是严格固定间隔的实时调度。
 
-**Worker 绑定原 Client PID 的生命周期。** Worker 持续监控启动时记录的 PID，原进程结束后 Worker 随之退出。完全退出后的独立进程恢复由 Process Watchdog 等其他机制负责。Local 模式针对的主要是进程仍存在、但心跳已停止的情况。
+**Worker 绑定原 Client PID 的生命周期。** Worker 持续监控启动时记录的 PID，原进程结束后 Worker 随之退出。完全退出后的独立进程恢复由 Process Recovery Watchdog 等其他机制负责。Local Heartbeat Watchdog 针对的主要是进程仍存在、但心跳已停止的情况。
 
 HTTP Control 根据 `client_id` 而不是主机名、`machine_id` 或 PID 定位目标。同一台机器运行多个 Client 时，它们有不同的 `client_id` 和心跳文件。
 
@@ -79,7 +79,7 @@ Remote 开启后，Worker 周期性访问：
 GET /api/connections/<client_id>/control
 ```
 
-访问地址由 Client 的 Server Web 连接配置决定，包括 `server_web_scheme`、`server_web_host` 和 `server_web_port`。它访问的是 **Web HTTP 服务**，而不是主 Socket 端口。Worker 使用 HTTP GET，单次请求超时为 5 秒，轮询周期由 `REMOTE_HTTP_WATCHDOG_INTERVAL_SECONDS` 决定。
+访问地址由 Client 的 Server Web 连接配置决定，包括 `server_web_scheme`、`server_web_host` 和 `server_web_port`。它访问的是 **Web HTTP 服务**，而不是主 Socket 端口。Worker 使用 HTTP GET，单次请求超时为 5 秒，轮询周期由 `REMOTE_CONTROL_WATCHDOG_INTERVAL_SECONDS` 决定。
 
 Server 允许通过 Web UI、Server 内置命令或 HTTP POST 提交控制动作：
 
@@ -157,7 +157,7 @@ Server 控制台命令需要有可选中的目标连接；如果目标已完全�
 
 ### 心跳失活条件
 
-开启 `LOCAL_WATCHDOG_ENABLED` 后，Client 主进程会启动单独的心跳线程，定期更新 Client 统一临时目录下 `watchdog_heartbeats/` 中的 JSON 文件。心跳内容示例：
+开启 `LOCAL_HEARTBEAT_WATCHDOG_ENABLED` 后，Client 主进程会启动单独的心跳线程，定期更新 Client 统一临时目录下 `watchdog_heartbeats/` 中的 JSON 文件。心跳内容示例：
 
 ```json
 {
@@ -170,7 +170,7 @@ Server 控制台命令需要有可选中的目标连接；如果目标已完全�
 这里 `ts` 是 Unix 秒级时间戳，`pid` 是 Client 主进程 PID，`client_id` 是当前实例标识。每个实例使用不同的心跳文件名：
 
 ```text
-<Client temp root>/watchdog_heartbeats/client_local_watchdog_heartbeat_<client_id>.json
+<Client temp root>/watchdog_heartbeats/client_local_heartbeat_watchdog_heartbeat_<client_id>.json
 ```
 
 每次写入先生成临时文件，再原子替换正式文件，尽量避免 Worker 在文件写入到一半时读到不完整 JSON。写入失败会记录在 Local 日志中；心跳线程仍会在下一个周期继续尝试写入。
@@ -181,7 +181,7 @@ Worker 读取心跳文件中的 `ts`，用当前时间与最后一次心跳时�
 heartbeat_age_seconds = max(当前 Unix 时间 - ts, 0)
 ```
 
-当心跳年龄**严格大于** `LOCAL_WATCHDOG_TIMEOUT_SECONDS`，Worker 会记录超时并尝试执行 `relaunch`：先启动新 Client，再终止旧 Client。
+当心跳年龄**严格大于** `LOCAL_HEARTBEAT_WATCHDOG_TIMEOUT_SECONDS`，Worker 会记录超时并尝试执行 `relaunch`：先启动新 Client，再终止旧 Client。
 
 | 心跳状态 | 处理结果 |
 | --- | --- |
@@ -194,7 +194,7 @@ heartbeat_age_seconds = max(当前 Unix 时间 - ts, 0)
 
 心跳来自 Client 的**独立线程**，并不直接代表业务线程、命令执行器或 Socket 通道工作正常。因此：
 
-- 主命令执行卡住、但心跳线程仍可正常写入时，Local 不会重启；这种情况可以使用 Remote HTTP 控制。
+- 主命令执行卡住、但心跳线程仍可正常写入时，Local Heartbeat Watchdog 不会重启；这种情况可以使用 Remote HTTP 控制。
 - 整个 Client 被 `SIGSTOP` 暂停时，心跳线程也会停止；只要 Worker 仍在运行，就可能在超时后执行替换。
 - Client 被 `SIGKILL` 直接终止时，Worker 先发现原 PID 不存在并退出，不能据此期待 Local 自动复活 Client。
 - 若 Remote 与 Local 同时开启，Local 有可能先于人工提交的 HTTP 控制触发替换；进行单一模式的故障演练时应关闭另一模式。
@@ -205,7 +205,7 @@ Local 的心跳间隔下限为 0.5 秒，监控超时下限为 1 秒。实际生
 
 ## launchd 托管 Client 的 Watchdog 策略
 
-macOS LaunchAgent 与 LaunchDaemon 已由 launchd 负责进程启动、停止和按 plist 策略恢复。Client 判定自己运行在 LaunchAgent / LaunchDaemon 下时，Process Watchdog、Local Heartbeat Watchdog 和 Remote HTTP Watchdog 都保持关闭，避免第二套监督进程把明确停止的 launchd job 再次拉起，或与 `KeepAlive` 同时恢复出多个 Client。
+macOS LaunchAgent 与 LaunchDaemon 已由 launchd 负责进程启动、停止和按 plist 策略恢复。Client 判定自己运行在 LaunchAgent / LaunchDaemon 下时，Process Recovery Watchdog、Local Heartbeat Watchdog 和 Remote Control Watchdog 都保持关闭，避免第二套监督进程把明确停止的 launchd job 再次拉起，或与 `KeepAlive` 同时恢复出多个 Client。
 
 该规则优先于 `runtime_config.json` 中的三个 Watchdog 开关。配置值本身仍保留；`watchdog --json` 会通过 `configured_enabled` 显示保存的配置，同时 `enabled=false`、`suppressed=true`、`suppression_reason=launchd` 表示当前 launchd Client 的实际运行状态。离开 launchd 以 Terminal、IDE 或 Detached 等方式启动新的 Client 时，原有配置再次按正常规则生效。
 
@@ -217,11 +217,11 @@ Web 的 **info → Watchdog** 在这种情况下显示 **Lifecycle managed by la
 
 | 配置项 | 默认值 | 含义 | 普通 `set` 修改 |
 | --- | --- | --- | --- |
-| `REMOTE_HTTP_WATCHDOG_ENABLED` | `false` | 是否启用独立 HTTP 远程控制 | 支持 |
-| `REMOTE_HTTP_WATCHDOG_INTERVAL_SECONDS` | `15` | Remote HTTP 轮询间隔，单位秒 | 不支持 |
-| `LOCAL_WATCHDOG_ENABLED` | `false` | 是否启用本地心跳及超时恢复 | 支持 |
-| `LOCAL_WATCHDOG_HEARTBEAT_INTERVAL_SECONDS` | `5` | Client 写入心跳文件的周期，单位秒 | 不支持 |
-| `LOCAL_WATCHDOG_TIMEOUT_SECONDS` | `15` | 心跳超过多少秒未更新时触发恢复 | 不支持 |
+| `REMOTE_CONTROL_WATCHDOG_ENABLED` | `false` | 是否启用独立 HTTP 远程控制 | 支持 |
+| `REMOTE_CONTROL_WATCHDOG_INTERVAL_SECONDS` | `15` | Remote Control Watchdog HTTP 轮询间隔，单位秒 | 不支持 |
+| `LOCAL_HEARTBEAT_WATCHDOG_ENABLED` | `false` | 是否启用本地心跳及超时恢复 | 支持 |
+| `LOCAL_HEARTBEAT_WATCHDOG_INTERVAL_SECONDS` | `5` | Client 写入心跳文件的周期，单位秒 | 不支持 |
+| `LOCAL_HEARTBEAT_WATCHDOG_TIMEOUT_SECONDS` | `15` | 心跳超过多少秒未更新时触发恢复 | 不支持 |
 
 两个模式的开关可以从 Client 命令通道用 `set` 在线修改。三个时间参数能够在配置查询中查看，但不对普通的 `set KEY value` 开放；**能被 `set --all` 列出，并不意味着能够直接在线修改**。
 
@@ -241,17 +241,17 @@ Remote HTTP Control 通过原 Client 的 `client_id` 投递 `kill`、`relaunch`�
 要**启用 Watchdog**，按需要执行其中一行或两行：
 
 ```text
-set REMOTE_HTTP_WATCHDOG_ENABLED true
-set LOCAL_WATCHDOG_ENABLED true
+set REMOTE_CONTROL_WATCHDOG_ENABLED true
+set LOCAL_HEARTBEAT_WATCHDOG_ENABLED true
 ```
 
-第一行开启独立 Worker 的 Remote HTTP 轮询；第二行开启 Client 心跳线程和 Worker 的 Local 超时检查。只需远程控制时执行第一行，只需本地恢复时执行第二行。更改开关后，Client 会停止原来的 Watchdog 组件，并按新配置重新启动，无需重启整个 Client。Remote 和 Local 同时启用时也只需要一个 Worker。
+第一行开启独立 Worker 的 Remote Control Watchdog HTTP 轮询；第二行开启 Client 心跳线程和 Worker 的 Local 超时检查。只需远程控制时执行第一行，只需本地恢复时执行第二行。更改开关后，Client 会停止原来的 Watchdog 组件，并按新配置重新启动，无需重启整个 Client。Remote 和 Local 同时启用时也只需要一个 Worker。
 
 关闭 Watchdog 时使用相同的配置项，将值设为 `false`：
 
 ```text
-set REMOTE_HTTP_WATCHDOG_ENABLED false
-set LOCAL_WATCHDOG_ENABLED false
+set REMOTE_CONTROL_WATCHDOG_ENABLED false
+set LOCAL_HEARTBEAT_WATCHDOG_ENABLED false
 ```
 
 仅关闭一个模式时，另一个模式仍继续运行；两个模式都关闭后则不再需要独立 Worker。关闭 Local 会停止心跳线程，但已经生成的心跳文件和日志不会自动删除。
@@ -264,26 +264,26 @@ watchdog --json
 set --all
 ```
 
-`watchdog` 返回便于阅读的当前状态；`watchdog --json` 返回同样的结构化状态。顶层按 `client`、`remote_watchdog`、`local_watchdog`、`process_watchdog` 分组，第二层才是各项具体信息，字段不再重复所属 Watchdog 前缀；秒数统一使用 `_seconds`。`set --all` 仍可查看运行时配置，包括不支持普通 `set` 修改的三个 Remote/Local 时间参数；这些查询都不改变配置。
+`watchdog` 返回便于阅读的当前状态；`watchdog --json` 返回同样的结构化状态。顶层按 `client`、`remote_control_watchdog`、`local_heartbeat_watchdog`、`process_recovery_watchdog` 分组，第二层才是各项具体信息，字段不再重复所属 Watchdog 前缀；秒数统一使用 `_seconds`。`set --all` 仍可查看运行时配置，包括不支持普通 `set` 修改的三个 Remote Control Watchdog / Local Heartbeat Watchdog 时间参数；这些查询都不改变配置。
 
-`watchdog` 的**普通文本输出**与 `set` 分组列表一致：每个对象显示为 `[client]`、`[remote_watchdog]`、`[local_watchdog]`、`[process_watchdog]` 标题，下面逐行输出 `字段 = 值`，组之间留空行；不会把第二层对象直接打印成 Python 字典。比如：
+`watchdog` 的**普通文本输出**与 `set` 分组列表一致：每个对象显示为 `[client]`、`[remote_control_watchdog]`、`[local_heartbeat_watchdog]`、`[process_recovery_watchdog]` 标题，下面逐行输出 `字段 = 值`，组之间留空行；不会把第二层对象直接打印成 Python 字典。比如：
 
 ```text
 [client]
 id = example-client
 pid = 1234
 
-[remote_watchdog]
+[remote_control_watchdog]
 enabled = True
 worker_pid = 2345
 worker_alive = True
 ...
 
-[local_watchdog]
+[local_heartbeat_watchdog]
 enabled = True
 ...
 
-[process_watchdog]
+[process_recovery_watchdog]
 enabled = True
 supervisor_pid = 3456
 supervisor_alive = True
@@ -293,13 +293,13 @@ poll_interval_seconds = 0.5
 
 以上为显示格式示意，省略号表示未展示的其他字段，实际命令会输出每个分组的全部字段。`watchdog --json` 仍输出下文所示的两层 JSON 对象；文本展示改变不影响字段名称、JSON 结构或 `info → Watchdog` 界面。
 
-Remote 启用后应检查 `remote_watchdog.worker_alive`、`remote_watchdog.worker_pid`、`remote_watchdog.control_url` 和轮询日志；Local 启用后应检查 `local_watchdog.feeder_alive`、心跳文件更新及共用 Worker 状态；Process 启用后应检查 `process_watchdog.supervisor_alive` 和独立 PID。仅有 `enabled=true` 不保证恢复链路已经健康。命令查询仍依赖 Client 主命令通道，命令通道卡住不等于各独立进程必然退出。
+Remote 启用后应检查 `remote_control_watchdog.worker_alive`、`remote_control_watchdog.worker_pid`、`remote_control_watchdog.control_url` 和轮询日志；Local 启用后应检查 `local_heartbeat_watchdog.feeder_alive`、心跳文件更新及共用 Worker 状态；Process 启用后应检查 `process_recovery_watchdog.supervisor_alive` 和独立 PID。仅有 `enabled=true` 不保证恢复链路已经健康。命令查询仍依赖 Client 主命令通道，命令通道卡住不等于各独立进程必然退出。
 
 需要恢复两个开关的默认值时使用：
 
 ```text
-set --reset REMOTE_HTTP_WATCHDOG_ENABLED
-set --reset LOCAL_WATCHDOG_ENABLED
+set --reset REMOTE_CONTROL_WATCHDOG_ENABLED
+set --reset LOCAL_HEARTBEAT_WATCHDOG_ENABLED
 ```
 
 每一行只清除对应开关的运行时覆盖值；当前默认值均为关闭。只需重置一个模式时执行对应一行即可，新的值会立即应用到 Watchdog 组件。
@@ -318,31 +318,31 @@ set --reset LOCAL_WATCHDOG_ENABLED
     "id": "example-client",
     "pid": 1234
   },
-  "remote_watchdog": {
+  "remote_control_watchdog": {
     "enabled": true,
     "worker_pid": 2345,
     "worker_alive": true,
     "control_url": "https://server.example/api/connections/example-client/control",
     "interval_seconds": 15,
-    "log_path": "/example/rchclient/logs/client_remote_watchdog.log"
+    "log_path": "/example/rchclient/logs/client_remote_control_watchdog.log"
   },
-  "local_watchdog": {
+  "local_heartbeat_watchdog": {
     "enabled": true,
     "worker_pid": 2345,
     "worker_alive": true,
     "heartbeat_interval_seconds": 5,
     "timeout_seconds": 15,
-    "heartbeat_file_path": "/tmp/client_local_watchdog_heartbeat_example-client.json",
-    "log_path": "/example/rchclient/logs/client_local_watchdog.log",
-    "feeder_thread_name": "LocalWatchdogHeartbeatFeeder",
+    "heartbeat_file_path": "/tmp/client_local_heartbeat_watchdog_heartbeat_example-client.json",
+    "log_path": "/example/rchclient/logs/client_local_heartbeat_watchdog.log",
+    "feeder_thread_name": "LocalHeartbeatWatchdogFeeder",
     "feeder_alive": true
   },
-  "process_watchdog": {
+  "process_recovery_watchdog": {
     "enabled": true,
     "supervisor_pid": 3456,
     "supervisor_alive": true,
     "poll_interval_seconds": 0.5,
-    "log_path": "/example/tmp/rch_client_temp_u501/watchdog_logs/process_watchdog.log"
+    "log_path": "/example/tmp/rch_client_temp_u501/watchdog_logs/process_recovery_watchdog.log"
   }
 }
 ```
@@ -351,32 +351,32 @@ set --reset LOCAL_WATCHDOG_ENABLED
 | --- | --- |
 | `client.id` | 当前 Client 标识，用于 HTTP Control 路由 |
 | `client.pid` | Client 主进程 PID |
-| `remote_watchdog.enabled` | Remote 开关 |
-| `remote_watchdog.worker_pid` / `worker_alive` | Remote/Local 共用 Worker 的 PID 和存活状态 |
-| `remote_watchdog.control_url` | Remote HTTP GET 轮询地址 |
-| `remote_watchdog.interval_seconds` | Remote HTTP 轮询配置间隔（秒） |
-| `remote_watchdog.log_path` | Remote 日志位置 |
-| `local_watchdog.enabled` | Local 开关 |
-| `local_watchdog.worker_pid` / `worker_alive` | 与 Remote 相同的共用 Worker；不是另一个进程 |
-| `local_watchdog.heartbeat_interval_seconds` | Client 心跳写入间隔（秒） |
-| `local_watchdog.timeout_seconds` | 心跳超时阈值（秒） |
-| `local_watchdog.heartbeat_file_path` | 当前 Client 的心跳文件 |
-| `local_watchdog.log_path` | Local 日志位置 |
-| `local_watchdog.feeder_thread_name` / `feeder_alive` | 本机心跳线程名称和存活状态 |
-| `process_watchdog.enabled` | Process Watchdog 开关 |
-| `process_watchdog.supervisor_pid` / `supervisor_alive` | 独立进程复活 Supervisor 的 PID 和存活状态 |
-| `process_watchdog.poll_interval_seconds` | Supervisor 正常进程存活探测间隔（秒），当前由源码常量控制 |
-| `process_watchdog.log_path` | Process Supervisor 日志位置 |
+| `remote_control_watchdog.enabled` | Remote 开关 |
+| `remote_control_watchdog.worker_pid` / `worker_alive` | Remote Control Watchdog / Local Heartbeat Watchdog 共用 Worker 的 PID 和存活状态 |
+| `remote_control_watchdog.control_url` | Remote HTTP GET 轮询地址 |
+| `remote_control_watchdog.interval_seconds` | Remote Control Watchdog HTTP 轮询配置间隔（秒） |
+| `remote_control_watchdog.log_path` | Remote 日志位置 |
+| `local_heartbeat_watchdog.enabled` | Local 开关 |
+| `local_heartbeat_watchdog.worker_pid` / `worker_alive` | 与 Remote 相同的共用 Worker；不是另一个进程 |
+| `local_heartbeat_watchdog.heartbeat_interval_seconds` | Client 心跳写入间隔（秒） |
+| `local_heartbeat_watchdog.timeout_seconds` | 心跳超时阈值（秒） |
+| `local_heartbeat_watchdog.heartbeat_file_path` | 当前 Client 的心跳文件 |
+| `local_heartbeat_watchdog.log_path` | Local 日志位置 |
+| `local_heartbeat_watchdog.feeder_thread_name` / `feeder_alive` | 本机心跳线程名称和存活状态 |
+| `process_recovery_watchdog.enabled` | Process Recovery Watchdog 开关 |
+| `process_recovery_watchdog.supervisor_pid` / `supervisor_alive` | 独立进程复活 Supervisor 的 PID 和存活状态 |
+| `process_recovery_watchdog.poll_interval_seconds` | Supervisor 正常进程存活探测间隔（秒），当前由源码常量控制 |
+| `process_recovery_watchdog.log_path` | Process Supervisor 日志位置 |
 
-三种 Watchdog 日志分别位于 **`<Client temp root>/watchdog_logs/`** 下的 `client_remote_watchdog.log`、`client_local_watchdog.log`、`process_watchdog.log`。路径由 `client/watchdog/watchdog_paths.py` 统一计算；Windows 的 Client temp root 使用 `rch_client_temp`，POSIX 使用 `rch_client_temp_u<effective_uid>` 并按 UID 隔离。Process 日志保留轮转。Local 心跳保存在并列的 `watchdog_heartbeats/`，Process 监督会话的 `ready.json`、`stop`、`stopped`（含原子 `.tmp`）保存在 `watchdog_sessions/rch_process_watchdog_*/`。日志属于系统临时空间，**不会像外部运行时配置目录中的文件那样保证持久保留**；系统清理临时目录可能使历史诊断日志消失。切换代码后需重启 Client（及其 Worker/Supervisor）使用新路径；旧配置目录里的日志不会被自动迁移或删除。
+三种 Watchdog 日志分别位于 **`<Client temp root>/watchdog_logs/`** 下的 `client_remote_control_watchdog.log`、`client_local_heartbeat_watchdog.log`、`process_recovery_watchdog.log`。路径由 `client/watchdog/watchdog_paths.py` 统一计算；Windows 的 Client temp root 使用 `rch_client_temp`，POSIX 使用 `rch_client_temp_u<effective_uid>` 并按 UID 隔离。Process 日志保留轮转。Local 心跳保存在并列的 `watchdog_heartbeats/`，Process 监督会话的 `ready.json`、`stop`、`stopped`（含原子 `.tmp`）保存在 `watchdog_sessions/rch_process_recovery_watchdog_*/`。日志属于系统临时空间，**不会像外部运行时配置目录中的文件那样保证持久保留**；系统清理临时目录可能使历史诊断日志消失。切换代码后需重启 Client（及其 Worker/Supervisor）使用新路径；旧配置目录里的日志不会被自动迁移或删除。
 
-`worker_alive` 或 `supervisor_alive` 为 `true` 只说明相应进程仍被检测为存活，不意味着网络命令已交付、心跳恢复已完成或新 Client 已连接 Server。状态查询不会将不再使用的扁平字段作为额外兼容输出。Process 扫描算法、修改检查间隔的方法及生命周期边界详见 [Process Watchdog](process_watchdog.md)。
+`worker_alive` 或 `supervisor_alive` 为 `true` 只说明相应进程仍被检测为存活，不意味着网络命令已交付、心跳恢复已完成或新 Client 已连接 Server。状态查询不会将不再使用的扁平字段作为额外兼容输出。Process 扫描算法、修改检查间隔的方法及生命周期边界详见 [Process Recovery Watchdog](process_recovery_watchdog.md)。
 
 ### 浏览器中的控制与显示
 
-在 Web 管理页面的连接详情中打开 **Watchdog** 选项卡，可以分别查看 Process recovery、Remote / Local 的启用状态和监督进程：Process 独占一行，Remote / Local 保持双列（窄屏单列），日志路径在诊断区域。原有底部 HTTP 控制按钮仍专门对应 Remote Worker。
+在 Web 管理页面的连接详情中打开 **Watchdog** 选项卡，可以分别查看 Process Recovery Watchdog、Remote Control Watchdog / Local Heartbeat Watchdog 的启用状态和监督进程：Process Recovery Watchdog 独占一行，Remote Control Watchdog / Local Heartbeat Watchdog 保持双列（窄屏单列），日志路径在诊断区域。原有底部 HTTP 控制按钮仍专门对应 Remote Control Watchdog Worker。
 
-**切换 Remote / Local** 时，Web 服务会经正常 Client 命令通道修改相应配置，并重新初始化 Watchdog。目标 Client 已离线或命令通道不可用时，这类开关操作可能失败。
+**切换 Remote Control Watchdog / Local Heartbeat Watchdog** 时，Web 服务会经正常 Client 命令通道修改相应配置，并重新初始化 Watchdog。目标 Client 已离线或命令通道不可用时，这类开关操作可能失败。
 
 **点击 Kill / Relaunch / Clone** 时，界面先要求确认，再通过 HTTP Control 将动作加入 Server 的待执行队列。它不直接依赖 Client 当前能否处理普通命令，因此即便状态查询失败，仍可能成功入队；但实际执行必须依靠原有 Remote Worker 持续运行并可访问 Server。
 
@@ -387,9 +387,9 @@ Web 页面提示动作已发送或已入队，只能视为 Server 接受了指�
 Watchdog 使用 Client 设备上的系统临时目录，默认名称如下：
 
 ```text
-<系统临时目录>/client_remote_watchdog.log
-<系统临时目录>/client_local_watchdog.log
-<Client temp root>/watchdog_heartbeats/client_local_watchdog_heartbeat_<client_id>.json
+<系统临时目录>/client_remote_control_watchdog.log
+<系统临时目录>/client_local_heartbeat_watchdog.log
+<Client temp root>/watchdog_heartbeats/client_local_heartbeat_watchdog_heartbeat_<client_id>.json
 ```
 
 Remote 日志用于查看 HTTP 请求失败、收到远程指令和控制动作；Local 日志用于查看心跳写入失败、超时检测和恢复请求。前两个日志名称不含 `client_id`，同一机器多个实例可能写入同一文件；心跳文件则按 `client_id` 区分。查看多实例日志时，结合记录中的 Client ID 定位目标。
@@ -397,26 +397,26 @@ Remote 日志用于查看 HTTP 请求失败、收到远程指令和控制动作�
 Linux/macOS 上可以使用 `tail -f` 持续观察日志，例如：
 
 ```bash
-tail -f "$HOME/Library/Application Support/rchclient/logs/client_remote_watchdog.log"
+tail -f "$HOME/Library/Application Support/rchclient/logs/client_remote_control_watchdog.log"
 ```
 
-这条 macOS 示例命令持续打印 Remote 日志新增内容，适合核对 Server 是否已被轮询、动作是否被领取及 HTTP 是否报错。其他系统使用 `watchdog --json` 返回的 `remote_watchdog.log_path`。
+这条 macOS 示例命令持续打印 Remote 日志新增内容，适合核对 Server 是否已被轮询、动作是否被领取及 HTTP 是否报错。其他系统使用 `watchdog --json` 返回的 `remote_control_watchdog.log_path`。
 
 ```bash
-tail -f "$HOME/Library/Application Support/rchclient/logs/client_local_watchdog.log"
+tail -f "$HOME/Library/Application Support/rchclient/logs/client_local_heartbeat_watchdog.log"
 ```
 
-这条 macOS 示例命令用于观察心跳超时与重启请求。其他系统使用 `local_watchdog.log_path` 返回值；观察到超时请求后，再核对新进程和 Server 连接列表。
+这条 macOS 示例命令用于观察心跳超时与重启请求。其他系统使用 `local_heartbeat_watchdog.log_path` 返回值；观察到超时请求后，再核对新进程和 Server 连接列表。
 
 常见异常可以结合状态字段、日志与进程行为定位：
 
 | 现象 | 先看什么 | 处理方向 |
 | --- | --- | --- |
-| 已开启 Remote，但没有 Worker PID | `remote_watchdog.worker_pid`、`remote_watchdog.worker_alive`、启动错误 | 确认 Worker 是否成功创建，或配置切换后是否成功重建 |
-| HTTP Control 入队成功却没有任何操作 | `remote_watchdog.control_url`、Remote 日志、旧 PID | 检查 Worker 存活、Server Web 可达性，以及命令是否被其他 GET 提前消费 |
+| 已开启 Remote，但没有 Worker PID | `remote_control_watchdog.worker_pid`、`remote_control_watchdog.worker_alive`、启动错误 | 确认 Worker 是否成功创建，或配置切换后是否成功重建 |
+| HTTP Control 入队成功却没有任何操作 | `remote_control_watchdog.control_url`、Remote 日志、旧 PID | 检查 Worker 存活、Server Web 可达性，以及命令是否被其他 GET 提前消费 |
 | HTTP POST 返回 401 | 请求认证头和 Token | POST 需要管理员权限，不能套用 Worker 匿名 GET 的规则 |
 | `watchdog` 查询失败，控制按钮仍能入队 | Client Socket 与 Remote Worker | 查询和控制使用两条通道，分别排查 |
-| Local 已开启但没有正常心跳 | `local_watchdog.feeder_alive`、心跳文件时间戳、Local 日志 | 检查心跳线程和文件写入是否正常；缺文件本身不会触发重启 |
+| Local 已开启但没有正常心跳 | `local_heartbeat_watchdog.feeder_alive`、心跳文件时间戳、Local 日志 | 检查心跳线程和文件写入是否正常；缺文件本身不会触发重启 |
 | 业务无响应但 Local 不触发 | 心跳 JSON 中的 `ts` 是否继续更新 | 业务线程阻塞时心跳线程可能仍活跃，可使用 Remote 控制 |
 | Client 完全退出后没有自动拉起 | 原 PID 和 Worker PID | 原 Client 消失时 Worker 也会退出，Local 不承担进程死亡后的持续守护 |
 | Relaunch 后旧 ID 无法再操作 | Server 的当前连接列表 | 新实例具有新的 `client_id`，应重新选择或取得新 ID |
@@ -430,7 +430,7 @@ tail -f "$HOME/Library/Application Support/rchclient/logs/client_local_watchdog.
 
 以下命令适用于具备操作权限、允许中断的 **Linux/macOS Client**。`curl` 在能访问 Server Web 的终端运行，`kill -STOP` 和 `kill -CONT` 必须在 **Client 所在设备**的 Shell 中运行。Windows 不使用这里的 POSIX 信号命令。
 
-**开始前先在 Client 命令通道执行 `watchdog --json`，记录真实的 `client.id`、`client.pid`、`remote_watchdog.worker_pid`、`remote_watchdog.control_url` 和 `local_watchdog.timeout_seconds`。** 一定要区分 Client 主进程与 Worker PID，暂停主进程时不要误操作 Worker。
+**开始前先在 Client 命令通道执行 `watchdog --json`，记录真实的 `client.id`、`client.pid`、`remote_control_watchdog.worker_pid`、`remote_control_watchdog.control_url` 和 `local_heartbeat_watchdog.timeout_seconds`。** 一定要区分 Client 主进程与 Worker PID，暂停主进程时不要误操作 Worker。
 
 使用 `curl` 前，先在能够访问 Server Web 的终端设置地址与目标 Client ID，再交互输入管理员 API Token：
 
@@ -489,12 +489,12 @@ curl -sS -i -X POST \
 先在 **Client 命令通道**执行：
 
 ```text
-set LOCAL_WATCHDOG_ENABLED false
-set REMOTE_HTTP_WATCHDOG_ENABLED true
+set LOCAL_HEARTBEAT_WATCHDOG_ENABLED false
+set REMOTE_CONTROL_WATCHDOG_ENABLED true
 watchdog --json
 ```
 
-第一行关闭 Local，避免本地心跳超时抢先执行重启。第二行启用 Remote。第三行重新查询并确认 `remote_watchdog.enabled=true`、`remote_watchdog.worker_alive=true`，记下**最新**的 `client.pid` 和 `client.id`。不要沿用已经经历过 Relaunch 的旧实例信息。
+第一行关闭 Local，避免本地心跳超时抢先执行重启。第二行启用 Remote。第三行重新查询并确认 `remote_control_watchdog.enabled=true`、`remote_control_watchdog.worker_alive=true`，记下**最新**的 `client.pid` 和 `client.id`。不要沿用已经经历过 Relaunch 的旧实例信息。
 
 随后在 **Client 设备的 Shell** 中执行：
 
@@ -534,12 +534,12 @@ kill -CONT "$CLIENT_PID"
 先在 **Client 命令通道**执行：
 
 ```text
-set REMOTE_HTTP_WATCHDOG_ENABLED false
-set LOCAL_WATCHDOG_ENABLED true
+set REMOTE_CONTROL_WATCHDOG_ENABLED false
+set LOCAL_HEARTBEAT_WATCHDOG_ENABLED true
 watchdog --json
 ```
 
-关闭 Remote 用来排除远程控制动作的干扰；启用 Local 会启动心跳线程和 Worker。确认 `local_watchdog.feeder_alive=true`、`local_watchdog.worker_alive=true`，记下 `client.pid`、`local_watchdog.timeout_seconds`、`local_watchdog.heartbeat_file_path` 和 `local_watchdog.log_path`。
+关闭 Remote 用来排除远程控制动作的干扰；启用 Local 会启动心跳线程和 Worker。确认 `local_heartbeat_watchdog.feeder_alive=true`、`local_heartbeat_watchdog.worker_alive=true`，记下 `client.pid`、`local_heartbeat_watchdog.timeout_seconds`、`local_heartbeat_watchdog.heartbeat_file_path` 和 `local_heartbeat_watchdog.log_path`。
 
 在 **Client 设备 Shell** 中执行：
 
@@ -551,7 +551,7 @@ kill -STOP "$CLIENT_PID"
 
 这里同样要使用**本次**查询得到的 `client.pid`。暂停后，Client 的心跳线程也停止更新 JSON，但 Worker 仍继续运行。超过心跳超时阈值，并经过 Worker 的下一次检查后，Local 应记录超时并尝试 Relaunch。
 
-观察 `local_watchdog.log_path` 里的超时与恢复记录，同时确认旧 PID 是否终止、新 Client 是否出现。若测试中止或恢复未发生且旧 PID 仍存在，及时执行：
+观察 `local_heartbeat_watchdog.log_path` 里的超时与恢复记录，同时确认旧 PID 是否终止、新 Client 是否出现。若测试中止或恢复未发生且旧 PID 仍存在，及时执行：
 
 ```bash
 kill -CONT "$CLIENT_PID"
@@ -564,8 +564,8 @@ kill -CONT "$CLIENT_PID"
 实验结束后，如不再需要 Watchdog，在**当前仍在运行的 Client 实例**的命令通道执行：
 
 ```text
-set REMOTE_HTTP_WATCHDOG_ENABLED false
-set LOCAL_WATCHDOG_ENABLED false
+set REMOTE_CONTROL_WATCHDOG_ENABLED false
+set LOCAL_HEARTBEAT_WATCHDOG_ENABLED false
 watchdog
 ```
 
@@ -579,9 +579,9 @@ unset ADMIN_API_TOKEN
 
 这会从当前 Shell 环境删除该变量；不会撤销 Server 端 Token，也不能清除之前已经记录在外部日志中的凭据。
 
-## Local Heartbeat 恢复后上线通知
+## Local Heartbeat Watchdog 恢复后上线通知
 
-仅当 Local Heartbeat Monitor 判断心跳过期并通过专用重启回调拉起替代 Client 时，替代进程携带一次性 `RCH_CLIENT_RECOVERY_SOURCE=local_watchdog`。该 Client 首次成功握手产生的原有 `connection_online` 通知将显示 `recovered by Local Watchdog`；Remote HTTP 手动 `relaunch` 使用同一底层重启器但不附带此标记。普通网络重连不重复展示恢复来源。
+仅当 Local Heartbeat Watchdog 监测器判断心跳过期并通过专用重启回调拉起替代 Client 时，替代进程携带一次性 `RCH_CLIENT_RECOVERY_SOURCE=local_heartbeat_watchdog`。该 Client 首次成功握手产生的原有 `connection_online` 通知将显示 `recovered by Local Heartbeat Watchdog`；Remote Control Watchdog 手动 `relaunch` 使用同一底层重启器但不附带此标记。普通网络重连不重复展示恢复来源。
 
 ## 启动时按需加载
 

@@ -11,8 +11,8 @@ const end = source.indexOf("es.addEventListener('connection_offline'", start)
 assert.ok(start >= 0 && end > start)
 const fragment = source.slice(start, end)
 for (const [value, suffix] of [
-  ['', ''], ['local_watchdog', ' (recovered by Local Watchdog)'],
-  ['process_watchdog', ' (recovered by Process Watchdog)'], ['unknown', ''],
+  ['', ''], ['local_heartbeat_watchdog', ' (recovered by Local Heartbeat Watchdog)'],
+  ['process_recovery_watchdog', ' (recovered by Process Recovery Watchdog)'], ['unknown', ''],
 ]) {
   let handler
   const ctx = { notifications: [], connections: [],

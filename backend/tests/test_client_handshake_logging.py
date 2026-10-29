@@ -15,7 +15,7 @@ def test_handshake_logs_full_payload_via_existing_logger_once(capsys):
         'variable_manifest': [{'name': 'HOME'}],
     }
     client = SimpleNamespace(
-        client_id='client-123', recovery_source='process_watchdog',
+        client_id='client-123', recovery_source='process_recovery_watchdog',
         server=Mock(), info=None,
     )
     lifecycle = ClientConnectionLifecycle(client)
@@ -24,7 +24,7 @@ def test_handshake_logs_full_payload_via_existing_logger_once(capsys):
         builder.return_value.build.return_value = dict(info)
         lifecycle.handshake()
 
-    expected = dict(info, recovery_source='process_watchdog')
+    expected = dict(info, recovery_source='process_recovery_watchdog')
     assert client.server.send.call_args.args[0] == expected
     assert client.info == expected
     assert capsys.readouterr().out == ''

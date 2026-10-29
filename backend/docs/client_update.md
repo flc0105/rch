@@ -123,7 +123,7 @@ update --keep-old
 
 就绪文件意味着新进程已经执行到**本地连接与握手发送阶段**；若新进程提前退出或就绪等待超时，原 Client 会报告失败，尝试终止未通过交接的新进程，**不会主动退出旧 Client**。启动异常日志可附在错误信息中，探针文件最后会清理。
 
-就绪确认后，默认先报告执行结果，再短暂延迟、停止当前 Guard Manager、关闭 Socket 并退出原进程。Windows 在关闭旧连接前会先完成 TCP 发送方向的有序关闭，让已经发送的 `client_update` 会话结束通知先到达 Server；其他桌面平台继续直接关闭旧连接。`--keep-old` 跳过这个旧进程退出步骤。因此保留旧实例时，在设备上可能同时看到多个具有不同 `client_id` 的活动连接。与设备身份、连接历史的区别，详见 [Connection Lifecycle](connection_lifecycle.md)。
+就绪确认后，默认先报告执行结果，再短暂延迟、停止当前 Watchdog Manager、关闭 Socket 并退出原进程。Windows 在关闭旧连接前会先完成 TCP 发送方向的有序关闭，让已经发送的 `client_update` 会话结束通知先到达 Server；其他桌面平台继续直接关闭旧连接。`--keep-old` 跳过这个旧进程退出步骤。因此保留旧实例时，在设备上可能同时看到多个具有不同 `client_id` 的活动连接。与设备身份、连接历史的区别，详见 [Connection Lifecycle](connection_lifecycle.md)。
 
 在 iOS / Pythonista 环境，`update` 完成 Bundle 下载与解压后，只返回新入口脚本的位置，提示重启 Pythonista 并手动运行；它不尝试执行桌面平台的自动新旧进程交接。
 
@@ -174,7 +174,7 @@ effective UID 隔离并保持 `0700`，因此普通用户 Client 与 root/elevat
 - `client_logs`：列出超过 1 分钟没有写入的其他 Client 日志实例目录；不产生额外 PID/owner 文件，始终保留当前进程的日志目录。仅凭文件未更新不能确认其他 Client 已退出，因此 `clean --no-confirm` 不会删除此类日志；手动 `clean` 可在 Preview 中决定是否清理。
 - `clipboard_staging`：非 macOS 平台超过 1 小时未写入的接收暂存目录；macOS 的 GUI 用户剪贴板目录仍然不参与清理。
 - `watchdog_heartbeats`：超过 1 分钟未更新且归属 PID 已退出的 Local 心跳及遗留中转文件。
-- `watchdog_sessions`：超过 1 分钟未更新、且独立监督进程确认已退出的 Process Watchdog 控制会话目录。
+- `watchdog_sessions`：超过 1 分钟未更新、且独立监督进程确认已退出的 Process Recovery Watchdog 控制会话目录。
 
 上述新类别均适用 Preview 身份签名检查；执行前还会重新判断活动保护条件。
 `client_logs` 仅能确认当前进程的日志路径，不能保证其他 Client 没有在空闲运行；
@@ -199,6 +199,6 @@ Agent Output 或其他构建产物。删除不可恢复，应在批准 Preview �
 
 `POST /api/agent/build` 与产物下载目前允许匿名请求，部署时需要把构建服务的网络暴露面作为独立运维边界考虑；构建和下载接口需要单独纳入部署网络访问控制。需要人工下载、安装或维护原始构建产物时，按 [Client Bootstrap 与首次部署](bootstrap.md) 的入口和安装方式处理；需要理解执行期间的任务取消与超时，则参阅 [Shell-like Commands](shell_like_commands.md)。
 
-## Process Watchdog 更新交接
+## Process Recovery Watchdog 更新交接
 
-启用 [Process Watchdog](process_watchdog.md) 后，更新候选 Client 在 `--update-ready-file` 验证期间不创建进程复活监督链。旧 Client 确认新进程 PID、握手和稳定时间后，写入 `.accepted` 并等待新 Client 的 `.adopted` 确认，再决定是否关闭旧实例。失败候选不会由 Process Watchdog 自动复活。`--keep-old` 时旧实例保留独立监督链；普通更新在旧实例退出前停止其监督链。
+启用 [Process Recovery Watchdog](process_recovery_watchdog.md) 后，更新候选 Client 在 `--update-ready-file` 验证期间不创建进程复活监督链。旧 Client 确认新进程 PID、握手和稳定时间后，写入 `.accepted` 并等待新 Client 的 `.adopted` 确认，再决定是否关闭旧实例。失败候选不会由 Process Recovery Watchdog 自动复活。`--keep-old` 时旧实例保留独立监督链；普通更新在旧实例退出前停止其监督链。

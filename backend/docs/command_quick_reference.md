@@ -96,7 +96,7 @@ Alias 的模板参数、平台覆盖与安全边界见 [Aliases / Quick Actions]
 | `set` | 查看及修改 Client Runtime Config | 无参查看可暴露设置；`set --all` 查看更完整列表 |
 | `set KEY value` | 设置允许覆盖的 Runtime Config 项 | 可能影响客户端运行行为，修改前确认范围 |
 | `set --reset KEY` / `set --reset-all` | 还原一项 / 全部运行时覆盖值 | `--reset-all` 影响所有已保存的覆盖设置 |
-| `watchdog` | 查看 Client Watchdog 的当前状态 | 用于判断 Local / Remote / Process Watchdog 配置与运行状态 |
+| `watchdog` | 查看 Client Watchdog 的当前状态 | 用于判断 Local Heartbeat Watchdog / Remote Control Watchdog / Process Recovery Watchdog 配置与运行状态 |
 
 ### 文件、传输、清理和更新
 

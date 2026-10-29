@@ -65,11 +65,11 @@ def _activate_watchdog_after_update_acceptance(ready_file, manager):
         if os.path.isfile(accepted):
             result = {'ok': True}
             try:
-                if manager is not None and runtime_config.PROCESS_WATCHDOG_ENABLED:
+                if manager is not None and runtime_config.PROCESS_RECOVERY_WATCHDOG_ENABLED:
                     manager.start()
             except Exception as exc:
                 result = {'ok': False, 'error': str(exc)}
-                logger.error('Failed to activate updated Client process watchdog', exc_info=True)
+                logger.error('Failed to activate updated Client Process Recovery Watchdog', exc_info=True)
             try:
                 with open(acknowledged, 'w', encoding='utf-8') as file_obj:
                     json.dump(result, file_obj)
@@ -87,44 +87,44 @@ def main():
         from client.watchdog.watchdog_process import run_watchdog_worker_from_argv
         run_watchdog_worker_from_argv()
         sys.exit(0)
-    if '--process-watchdog-worker' in sys.argv[1:]:
-        from client.watchdog.process_watchdog import run_process_watchdog_worker_from_argv
-        run_process_watchdog_worker_from_argv()
+    if '--process-recovery-watchdog-worker' in sys.argv[1:]:
+        from client.watchdog.process_recovery_watchdog import run_process_recovery_watchdog_worker_from_argv
+        run_process_recovery_watchdog_worker_from_argv()
         sys.exit(0)
 
     update_ready_file = _pop_argv_value('--update-ready-file')
     install_client_file_logging()
     features = resolve_features()
-    process_watchdog = None
+    process_recovery_watchdog = None
     if features['watchdog']:
-        from client.watchdog.process_watchdog import ProcessWatchdogManager
-        process_watchdog = ProcessWatchdogManager()
-    if process_watchdog is not None and runtime_config.PROCESS_WATCHDOG_ENABLED and not update_ready_file:
+        from client.watchdog.process_recovery_watchdog import ProcessRecoveryWatchdogManager
+        process_recovery_watchdog = ProcessRecoveryWatchdogManager()
+    if process_recovery_watchdog is not None and runtime_config.PROCESS_RECOVERY_WATCHDOG_ENABLED and not update_ready_file:
         try:
-            process_watchdog.start()
+            process_recovery_watchdog.start()
         except Exception:
-            logger.error('Failed to start Client process watchdog', exc_info=True)
+            logger.error('Failed to start Client Process Recovery Watchdog', exc_info=True)
 
     client = None
     try:
-        client = Client(SERVER_ADDR, process_watchdog_manager=process_watchdog)
+        client = Client(SERVER_ADDR, process_recovery_watchdog_manager=process_recovery_watchdog)
         client.connect()
         _write_update_ready_marker(update_ready_file, client)
         if update_ready_file:
             threading.Thread(
                 target=_activate_watchdog_after_update_acceptance,
-                args=(update_ready_file, process_watchdog),
-                name='ProcessWatchdogUpdateActivation', daemon=True,
+                args=(update_ready_file, process_recovery_watchdog),
+                name='ProcessRecoveryWatchdogUpdateActivation', daemon=True,
             ).start()
         client.wait()
     except KeyboardInterrupt:
         if client is not None:
             client.server.report_session_end('client_exit')
-        if process_watchdog is not None:
-            process_watchdog.stop()
+        if process_recovery_watchdog is not None:
+            process_recovery_watchdog.stop()
         if client is not None:
-            if client.guard_manager is not None:
-                client.guard_manager.stop()
+            if client.watchdog_manager is not None:
+                client.watchdog_manager.stop()
         sys.exit(0)
     except Exception as e:
         if client is not None:
@@ -132,8 +132,8 @@ def main():
                 'client_error', summary=f'{type(e).__name__}: {e}',
                 traceback_text=traceback.format_exc(),
             )
-            if client.guard_manager is not None:
-                client.guard_manager.stop()
+            if client.watchdog_manager is not None:
+                client.watchdog_manager.stop()
         logger.error(e, exc_info=True)
 
 
