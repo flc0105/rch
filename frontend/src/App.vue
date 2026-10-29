@@ -549,11 +549,8 @@
             :model-value="authorizationInfo.api_token"
             readonly
             class="authorization-token-input"
-          >
-            <template #append>
-              <el-button :disabled="!authorizationInfo.api_token" @click="copyAuthorizationToken">Copy</el-button>
-            </template>
-          </el-input>
+          />
+          <el-button :disabled="!authorizationInfo.api_token" @click="copyAuthorizationToken">Copy</el-button>
           <el-button
             :loading="authorizationTokenResetting"
             :disabled="authorizationInfoLoading || authorizationTokenResetting"
@@ -1593,6 +1590,10 @@ export default {
 .authorization-token-control .authorization-token-input {
   flex: 1 1 auto;
   min-width: 0;
+}
+
+.authorization-token-control > .el-button + .el-button {
+  margin-left: 0;
 }
 
 .banner-transfer-count {

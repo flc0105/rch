@@ -115,7 +115,7 @@ Cancelable 上传构造 multipart 的头部、文件内容及尾部，在 `read(
 | `HTTP_TRANSFER_MODE` | `legacy`；可选 `legacy` / `cancelable` |
 | `HTTP_TRANSFER_BUFFER_SIZE` | 1 MiB，允许 64 KiB 至 16 MiB |
 
-HTTP 传输不设置额外的 I/O 闲置时限；取消能力由所选传输模式决定。Server 的通用 HTTP 上传请求体上限为 10 GiB；这个服务端上限与 Legacy 的 1 GiB 客户端保护相互独立。
+Legacy HTTP 上传与下载使用内部固定的 Requests 网络超时：连接等待 15 秒、单次网络读取等待 120 秒（接收到数据后重新计时），不暴露运行时配置。Cancelable 保持原有请求行为，通过执行上下文协作取消。Server 的通用 HTTP 上传请求体上限为 10 GiB；这个服务端上限与 Legacy 的 1 GiB 客户端保护相互独立。
 
 ## 上传、下发及中转阶段
 

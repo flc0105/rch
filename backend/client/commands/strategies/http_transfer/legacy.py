@@ -7,6 +7,8 @@ from client.commands.strategies.http_transfer.base import HttpTransferStrategy
 
 class LegacyHttpTransferStrategy(HttpTransferStrategy):
     MODE_NAME = 'legacy'
+    # Requests connect/read I/O timeouts; the read timeout resets as data arrives.
+    _NETWORK_TIMEOUT = (15, 120)
 
     def upload_file(self, file_path: str, upload_url: str, form_data: dict, progress_callback=None):
         file_size = os.path.getsize(file_path)
@@ -25,6 +27,7 @@ class LegacyHttpTransferStrategy(HttpTransferStrategy):
                     upload_url,
                     files={'file': (os.path.basename(file_path), file_obj)},
                     data=form_data,
+                    timeout=self._NETWORK_TIMEOUT,
                 )
         except requests.RequestException as e:
             raise
@@ -38,6 +41,7 @@ class LegacyHttpTransferStrategy(HttpTransferStrategy):
             with session.get(
                     url,
                     stream=True,
+                    timeout=self._NETWORK_TIMEOUT,
             ) as response:
                 response.raise_for_status()
                 try:
