@@ -14,6 +14,11 @@ assert.ok(template.indexOf('<h4>Remote Control Watchdog</h4>') < template.indexO
 assert.match(source, /watchdog-process-card\s*\{\s*grid-column:\s*1\s*\/\s*-1/)
 assert.match(template, /status\.process_recovery_watchdog\.supervisor_pid/)
 assert.match(template, /status\.process_recovery_watchdog\.log_path/)
+// Only already-created Watchdog log files are advertised by the Client status.
+for (const kind of ['process_recovery_watchdog', 'remote_control_watchdog', 'local_heartbeat_watchdog']) {
+  assert.match(template, new RegExp(`v-if="status\\.${kind}\\.log_path"`))
+}
+
 for (const kind of ['process_recovery_watchdog', 'remote_control_watchdog', 'local_heartbeat_watchdog']) {
   assert.match(template, new RegExp(`<code>\\{\\{ status\\.${kind}\\.log_path \\}\\}</code>\\s*<button class="watchdog-log-link"`))
 }

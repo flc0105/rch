@@ -49,6 +49,20 @@ class CommandParser:
         command_arg = raw_command[len(command_name):].strip()
         return command_name, command_arg
 
+def split_shell_arguments(text: str, *, literal_backslashes: bool = False) -> list[str]:
+    """Split user arguments; Windows paths use literal backslashes, not POSIX escapes.
+
+    Quoting and whitespace grouping stay available in both modes.
+    """
+    if not literal_backslashes:
+        return shlex.split(text)
+    lexer = shlex.shlex(text, posix=True)
+    lexer.whitespace_split = True
+    lexer.commenters = ''
+    lexer.escape = ''
+    return list(lexer)
+
+
 def parse(cmd: str) -> Tuple[str, str]:
     return CommandParser.parse_command(cmd)
 

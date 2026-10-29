@@ -4,7 +4,7 @@ import os
 from client.config import runtime_config
 from client.config.config import UPLOAD_BASE_URL
 from client.runtime.temp_workspace import get_temp_category_dir
-from client.watchdog.watchdog_paths import get_watchdog_log_path
+from client.watchdog.watchdog_paths import get_existing_watchdog_log_path
 
 
 def inactive_watchdog_worker_status(client_id):
@@ -20,7 +20,7 @@ def inactive_watchdog_worker_status(client_id):
             'worker_pid': None, 'worker_alive': False,
             'control_url': f'{UPLOAD_BASE_URL}/api/connections/{client_id}/control',
             'interval_seconds': runtime_config.REMOTE_CONTROL_WATCHDOG_INTERVAL_SECONDS,
-            'log_path': get_watchdog_log_path('client_remote_control_watchdog.log'),
+            'log_path': get_existing_watchdog_log_path('client_remote_control_watchdog.log'),
         },
         'local_heartbeat_watchdog': {
             'enabled': False, 'configured_enabled': bool(runtime_config.LOCAL_HEARTBEAT_WATCHDOG_ENABLED),
@@ -32,7 +32,7 @@ def inactive_watchdog_worker_status(client_id):
                 get_temp_category_dir('watchdog_heartbeats', private=True),
                 f'client_local_heartbeat_watchdog_heartbeat_{client_id}.json',
             ),
-            'log_path': get_watchdog_log_path('client_local_heartbeat_watchdog.log'),
+            'log_path': get_existing_watchdog_log_path('client_local_heartbeat_watchdog.log'),
             'feeder_thread_name': None, 'feeder_alive': False,
         },
     }
@@ -45,5 +45,5 @@ def inactive_process_recovery_watchdog_status():
         'suppressed': True, 'suppression_reason': 'feature_disabled',
         'supervisor_pid': None, 'supervisor_alive': False,
         'poll_interval_seconds': 0.5,
-        'log_path': get_watchdog_log_path('process_recovery_watchdog.log'),
+        'log_path': get_existing_watchdog_log_path('process_recovery_watchdog.log'),
     }

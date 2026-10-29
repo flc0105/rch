@@ -368,6 +368,8 @@ set --reset LOCAL_HEARTBEAT_WATCHDOG_ENABLED
 | `process_recovery_watchdog.poll_interval_seconds` | Supervisor 正常进程存活探测间隔（秒），当前由源码常量控制 |
 | `process_recovery_watchdog.log_path` | Process Supervisor 日志位置 |
 
+诊断状态中的 `log_path` 只有对应日志文件确实存在时才返回路径；尚未创建时为空，Web 不显示该日志或 `View log`。
+
 三种 Watchdog 日志分别位于 **`<Client temp root>/watchdog_logs/`** 下的 `client_remote_control_watchdog.log`、`client_local_heartbeat_watchdog.log`、`process_recovery_watchdog.log`。路径由 `client/watchdog/watchdog_paths.py` 统一计算；Windows 的 Client temp root 使用 `rch_client_temp`，POSIX 使用 `rch_client_temp_u<effective_uid>` 并按 UID 隔离。Process 日志保留轮转。Local 心跳保存在并列的 `watchdog_heartbeats/`，Process 监督会话的 `ready.json`、`stop`、`stopped`（含原子 `.tmp`）保存在 `watchdog_sessions/rch_process_recovery_watchdog_*/`。日志属于系统临时空间，**不会像外部运行时配置目录中的文件那样保证持久保留**；系统清理临时目录可能使历史诊断日志消失。切换代码后需重启 Client（及其 Worker/Supervisor）使用新路径；旧配置目录里的日志不会被自动迁移或删除。
 
 `worker_alive` 或 `supervisor_alive` 为 `true` 只说明相应进程仍被检测为存活，不意味着网络命令已交付、心跳恢复已完成或新 Client 已连接 Server。状态查询不会将不再使用的扁平字段作为额外兼容输出。Process 扫描算法、修改检查间隔的方法及生命周期边界详见 [Process Recovery Watchdog](process_recovery_watchdog.md)。

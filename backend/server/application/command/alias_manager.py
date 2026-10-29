@@ -1,9 +1,9 @@
 import json
 import os
 import re
-import shlex
 
 from core.platform.normalization import normalize_platform_alias
+from core.utils.parsing import split_shell_arguments
 from server.config.config import ALIAS_PATH
 
 
@@ -294,14 +294,14 @@ class AliasManager:
             parameters.append(occurrence)
         return parameters
 
-    def _parse_provided_args(self, args="", required_args: list | None = None):
+    def _parse_provided_args(self, args="", required_args: list | None = None, *, platform: str = ""):
         """解析 alias 调用参数。
 
         默认保留原有 positional 调用；当首个 token 以 ``--`` 开头时进入 named
         模式，支持 ``--name value`` 与 ``--name=value``。named 模式最终仍按模板
         参数首次出现顺序归一化为 list，后续复用同一套 resolver。
         """
-        tokens = shlex.split(args) if args else []
+        tokens = split_shell_arguments(args, literal_backslashes=(platform == "win")) if args else []
         if not tokens:
             return []
 
@@ -410,7 +410,10 @@ class AliasManager:
         alias_name = str(alias or '').strip()
         command = self._get_alias_template(alias_name, conn=conn)
         required_args = self._extract_required_args(command)
-        provided_args = self._parse_provided_args(args, required_args=required_args)
+        provided_args = self._parse_provided_args(
+            args, required_args=required_args,
+            platform=self.get_platform_for_connection(conn),
+        )
 
         self._validate_alias_args(required_args, provided_args)
         expanded_command = self._replace_placeholders(command, required_args, provided_args)

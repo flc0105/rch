@@ -1,8 +1,8 @@
 import os
-import shlex
 import subprocess
 import time
 
+from core.utils.parsing import split_shell_arguments
 from client.commands.runtime.context import CommandCancelledError, CommandTimeoutError
 from client.external_tools.common import ExternalToolCommon
 from client.external_tools.launcher import apply_external_tool_launcher
@@ -41,7 +41,7 @@ class ExternalToolCliExec(ExternalToolCommon):
             raw_args = str(payload.get('raw_args') or '').strip()
             argv_extra = payload.get('argv_extra')
             if not isinstance(argv_extra, list):
-                argv_extra = shlex.split(raw_args) if raw_args else []
+                argv_extra = split_shell_arguments(raw_args, literal_backslashes=(os.name == "nt")) if raw_args else []
 
             argv = [executable_path] + [str(item) for item in argv_extra]
 

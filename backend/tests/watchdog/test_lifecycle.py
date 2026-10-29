@@ -203,7 +203,11 @@ class WatchdogStatusIntegrationTests(unittest.TestCase):
         self.assertFalse(status['supervisor_alive'])
         self.assertIsNone(status['supervisor_pid'])
         self.assertEqual(status['poll_interval_seconds'], _POLL_INTERVAL)
-        self.assertRegex(status['log_path'], r'rch_client_temp(?:_u\d+)?[/\\]watchdog_logs[/\\]process_recovery_watchdog\.log$')
+        # An uncreated diagnostic log must not appear as a real View log target.
+        if status['log_path']:
+            self.assertTrue(os.path.isfile(status['log_path']))
+        else:
+            self.assertEqual(status['log_path'], '')
         is_alive.assert_not_called()
 
     def test_supervisor_identity_probed_independently(self):

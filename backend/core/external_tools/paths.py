@@ -3,6 +3,8 @@ import re
 import shlex
 from typing import Any, Callable
 
+from core.utils.parsing import split_shell_arguments
+
 
 _INSTANCE_PATTERN = re.compile(r'[^A-Za-z0-9_.-]+')
 
@@ -42,7 +44,7 @@ def external_tool_oneshot_runtime_parts(package_id: Any, module_id: Any, run_id:
 
 def render_path_list(values: Any) -> list[str]:
     if isinstance(values, str):
-        return shlex.split(values)
+        return split_shell_arguments(values, literal_backslashes=(os.name == "nt"))
     if isinstance(values, list):
         return [str(item) for item in values]
     return []

@@ -3,8 +3,8 @@ from core.protocol.structured_arg_codec import encode_structured_arg
 import json
 import logging
 import os
-import shlex
 
+from core.utils.parsing import split_shell_arguments
 from core.external_tools.paths import EXTERNAL_TOOLS_RUNTIME_ROOT, external_tool_instance_runtime_parts
 from core.external_tools.payload import (
     client_action_payload,
@@ -118,7 +118,7 @@ class ExternalToolClientPayloadBuilder(ExternalToolRuntimeComponent):
         runtime.setdefault('state_file', context.get('state_file') or '')
         runtime_argv = runtime.get('argv') or []
         if isinstance(runtime_argv, str):
-            runtime_argv = shlex.split(runtime_argv)
+            runtime_argv = split_shell_arguments(runtime_argv, literal_backslashes=(platform_value in ('win', 'windows')))
         if isinstance(runtime_argv, list):
             runtime['argv'] = self._append_runtime_extra_args(runtime_argv, runtime, context)
         config_payload = config_payload_from_rendered(rendered_meta, lambda value: self._render_value(value, context))
@@ -171,7 +171,7 @@ class ExternalToolClientPayloadBuilder(ExternalToolRuntimeComponent):
         runtime.setdefault('state_file', context.get('state_file') or '')
         runtime_argv = runtime.get('argv') or []
         if isinstance(runtime_argv, str):
-            runtime_argv = shlex.split(runtime_argv)
+            runtime_argv = split_shell_arguments(runtime_argv, literal_backslashes=(platform_value in ('win', 'windows')))
         if isinstance(runtime_argv, list):
             runtime['argv'] = self._append_runtime_extra_args(runtime_argv, runtime, context)
         config_payload = config_payload_from_rendered(rendered_meta, lambda value: self._render_value(value, context))

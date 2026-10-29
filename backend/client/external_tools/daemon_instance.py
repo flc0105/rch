@@ -5,6 +5,7 @@ import subprocess
 import time
 from types import SimpleNamespace
 
+from core.utils.parsing import split_shell_arguments
 from client.external_tools.common import ExternalToolCommon
 from client.external_tools.launcher import apply_external_tool_launcher
 from core.external_tools.paths import EXTERNAL_TOOLS_RUNTIME_ROOT, external_tool_instances_runtime_parts
@@ -276,7 +277,7 @@ class ExternalToolDaemonInstance(ExternalToolCommon):
         argv = stop_spec.get('argv') or stop_spec.get('command') or []
 
         if isinstance(argv, str):
-            argv = shlex.split(argv)
+            argv = split_shell_arguments(argv, literal_backslashes=(os.name == "nt"))
 
         if not isinstance(argv, list) or not argv:
             raise ValueError('lifecycle.stop.argv is required for command stop')

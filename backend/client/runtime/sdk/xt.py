@@ -3,6 +3,7 @@ import shlex
 import subprocess
 from dataclasses import dataclass
 from typing import Any
+from core.utils.parsing import split_shell_arguments
 from client.runtime.sdk import context
 from client.runtime.sdk.context import get_command_owner
 from core.external_tools.paths import EXTERNAL_TOOLS_INSTALL_ROOT, EXTERNAL_TOOLS_RUNTIME_ROOT
@@ -308,7 +309,7 @@ def _argv_extra(raw_args: Any) -> list[str]:
         return []
     if isinstance(raw_args, (list, tuple)):
         return [str(item) for item in raw_args]
-    return shlex.split(str(raw_args or '').strip())
+    return split_shell_arguments(str(raw_args or '').strip(), literal_backslashes=(os.name == 'nt'))
 
 
 def _install_status(exec_name: str) -> dict:

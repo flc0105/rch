@@ -10,7 +10,7 @@ from client.config.runtime_config import (
 )
 
 from client.config.config import UPLOAD_BASE_URL
-from client.watchdog.watchdog_paths import get_watchdog_log_path
+from client.watchdog.watchdog_paths import get_watchdog_log_path, get_existing_watchdog_log_path
 from client.watchdog.local_heartbeat_watchdog import LocalHeartbeatWatchdogFeeder
 from client.watchdog.remote_control_watchdog import RemoteControlWatchdogMonitor
 from client.watchdog.watchdog_process import ClientWatchdogProcess
@@ -167,7 +167,7 @@ class ClientWatchdogManager:
                 'worker_alive': watchdog_worker_alive,
                 'control_url': self._build_remote_http_control_url(),
                 'interval_seconds': REMOTE_CONTROL_WATCHDOG_INTERVAL_SECONDS,
-                'log_path': self._build_remote_control_watchdog_log_file_path(),
+                'log_path': get_existing_watchdog_log_path('client_remote_control_watchdog.log'),
             },
             'local_heartbeat_watchdog': {
                 'enabled': local_enabled,
@@ -179,7 +179,7 @@ class ClientWatchdogManager:
                 'heartbeat_interval_seconds': LOCAL_HEARTBEAT_WATCHDOG_INTERVAL_SECONDS,
                 'timeout_seconds': LOCAL_HEARTBEAT_WATCHDOG_TIMEOUT_SECONDS,
                 'heartbeat_file_path': self._build_local_heartbeat_watchdog_heartbeat_file_path(),
-                'log_path': self._build_local_heartbeat_watchdog_log_file_path(),
+                'log_path': get_existing_watchdog_log_path('client_local_heartbeat_watchdog.log'),
                 'feeder_thread_name': local_feeder_thread_name,
                 'feeder_alive': local_feeder_thread_alive,
             },

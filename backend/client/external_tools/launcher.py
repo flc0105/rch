@@ -1,5 +1,5 @@
 import os
-import shlex
+from core.utils.parsing import split_shell_arguments
 import shutil
 import subprocess
 import sys
@@ -9,7 +9,7 @@ def _normalize_prefix_args(value) -> list[str]:
     if isinstance(value, list):
         return [str(item) for item in value]
     if isinstance(value, str):
-        return shlex.split(value)
+        return split_shell_arguments(value, literal_backslashes=(os.name == "nt"))
     return []
 
 

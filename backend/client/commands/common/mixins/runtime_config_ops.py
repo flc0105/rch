@@ -1,5 +1,7 @@
 import json
-import shlex
+import os
+
+from core.utils.parsing import split_shell_arguments
 
 from client.commands.common.services.runtime.runtime_config_service import RuntimeConfigService
 from core.utils.decorator import desc
@@ -59,7 +61,7 @@ class CommandRuntimeConfigMixin:
             return 1, self._format_runtime_config_listing()
 
         try:
-            parts = shlex.split(text)
+            parts = split_shell_arguments(text, literal_backslashes=(os.name == "nt"))
         except Exception as e:
             return 0, error(f'Invalid set arguments: {e}')
 

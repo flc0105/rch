@@ -11,7 +11,7 @@ import tempfile
 import time
 from uuid import uuid4
 
-from client.watchdog.watchdog_paths import get_watchdog_log_path
+from client.watchdog.watchdog_paths import get_watchdog_log_path, get_existing_watchdog_log_path
 from client.runtime.temp_workspace import get_temp_category_dir
 from client.watchdog.recovery_source import RECOVERY_SOURCE_ENV, PROCESS_RECOVERY_WATCHDOG
 from client.watchdog.watchdog_environment import without_process_recovery_watchdog_environment
@@ -187,7 +187,7 @@ def get_process_recovery_watchdog_status_payload(manager=None):
         'supervisor_pid': pid,
         'supervisor_alive': bool(enabled and pid is not None and started is not None and _alive(pid, started)),
         'poll_interval_seconds': _POLL_INTERVAL,
-        'log_path': get_watchdog_log_path('process_recovery_watchdog.log'),
+        'log_path': get_existing_watchdog_log_path('process_recovery_watchdog.log'),
     }
 
 
