@@ -695,7 +695,6 @@ export default {
       terminalTaskCapture: createTerminalTaskCapture(),
       statusNowTick: Date.now(),
       statusTickTimer: null,
-      foregroundTaskTimer: null,
       foregroundTasks: {},
       foregroundQuerySequence: 0,
       taskDialogVisible: false,
@@ -773,8 +772,13 @@ export default {
   watch: {
     ...AppTerminalModule.watch,
     selectedId() {
+      this.foregroundQuerySequence += 1
       this.taskDialogVisible = false
       void this.refreshForegroundTask()
+    },
+    currentActiveTaskId() {
+      const clientId = String(this.selectedId || '').trim()
+      if (clientId) this.syncForegroundTaskNotice(clientId, this.currentForegroundTask)
     },
   },
 
@@ -824,19 +828,28 @@ export default {
       }
     },
 
+    applyForegroundTaskUpdate(clientId, payload) {
+      const id = String(clientId || '').trim()
+      if (!id) return
+      // Only this client's SSE can supersede its in-flight snapshot request.
+      if (id === this.selectedId) this.foregroundQuerySequence += 1
+      const task = normalizeForegroundTask(payload)
+      this.foregroundTasks = { ...this.foregroundTasks, [id]: task }
+      this.syncForegroundTaskNotice(id, task)
+    },
+
     async refreshForegroundTask() {
       const clientId = String(this.selectedId || '').trim()
       if (!clientId) return
       if (this.isCurrentConnectionOffline) {
-        this.syncForegroundTaskNotice(clientId, { state: 'Idle' })
+        this.applyForegroundTaskUpdate(clientId, { state: 'Idle' })
         return
       }
       const sequence = ++this.foregroundQuerySequence
       try {
         const nextTask = normalizeForegroundTask(await getConnectionTask(clientId))
         if (this.selectedId !== clientId || sequence !== this.foregroundQuerySequence) return
-        this.foregroundTasks = { ...this.foregroundTasks, [clientId]: nextTask }
-        this.syncForegroundTaskNotice(clientId, nextTask)
+        this.applyForegroundTaskUpdate(clientId, nextTask)
       } catch (_error) {
         // A temporary status request failure must not invent an Idle transition.
       }
@@ -844,13 +857,11 @@ export default {
 
     async cancelForegroundTask() {
       const task = this.currentForegroundTask
-      const clientId = String(this.selectedId || '')
       if (!task.can_cancel || !task.task_id || this.taskCancelSending) return
       this.taskCancelSending = true
       try {
         await cancelTask(task.task_id)
         ElMessage.success('Cancellation requested')
-        if (clientId === this.selectedId) await this.refreshForegroundTask()
       } catch (error) {
         ElMessage.error(error?.message || 'Unable to cancel task')
         await this.refreshForegroundTask()
@@ -1455,20 +1466,18 @@ export default {
       () => loadOptionalDialog('preview'),
       () => loadOptionalDialog('documents'),
     ])
-    void this.refreshForegroundTask()
-    this.foregroundTaskTimer = setInterval(() => {
-      void this.refreshForegroundTask()
-      this.statusNowTick = Date.now()
-    }, 2000)
-
     this.statusTickTimer = setInterval(() => {
-      this.statusNowTick = Date.now()
-    }, 30 * 1000)
+      const now = Date.now()
+      // Keep task duration responsive without any network polling. Other
+      // connection ages only need their previous 30-second refresh cadence.
+      if (this.currentForegroundTask.state !== 'Idle' || now - this.statusNowTick >= 30 * 1000) {
+        this.statusNowTick = now
+      }
+    }, 2000)
   },
 
   beforeUnmount() {
     this.cancelIdleWarmup?.()
-    if (this.foregroundTaskTimer) clearInterval(this.foregroundTaskTimer)
     this.foregroundQuerySequence += 1
     if (this.eventSource) this.eventSource.close()
 

@@ -66,6 +66,8 @@ WebEventBus 发布时生成一份临时事件对象：
 
 事件总线的订阅队列存储于 Server 进程内存，不是持久化消息队列。断线后的通用 SSE 不会自动重放整个 WebEventBus 历史；需要可靠恢复时，必须依赖专门持久化的数据模型。
 
+前台 Task 是实时运行态，不进行通知持久化。`foreground_task_changed` 广播中的 `task` 是当前会话状态快照，所有标签页均可直接使用；事件丢失后由浏览器在 SSE 重连时调用已有的连接 Task 查询接口重新同步。其他同步命令来源也在共用执行槽上发出相同事件，避免用周期性 HTTP 轮询补漏。
+
 ## Watchdog 恢复后的上线通知
 
 仍然使用原有的 `connection_online` 事件和 `connection_online` 通知偏好，不新增事件类型或独立订阅入口。Local Heartbeat Watchdog 检测到心跳过期并拉起新的 Client 时，首次上线事件附带 `recovery_source: "local_watchdog"`；Process Supervisor 检测到 Client PID 消失并拉起新 Client 时，附带 `recovery_source: "process_watchdog"`。Server 只允许这两个已知值进入上线事件；正常启动、Remote HTTP Relaunch 和普通断线重连都不标注恢复来源。

@@ -243,10 +243,6 @@ class WebTaskRunner:
 
     def _release_task(self, context: TaskExecutionContext) -> None:
         context.session.release_foreground_task(task_id=context.task_id, command=context.command)
-        try:
-            self.event_bus.publish('foreground_task_changed', {'client_id': context.client_id})
-        except Exception:
-            self.logger.warning('Unable to publish task release', exc_info=True)
 
     # def _cleanup_upload_local_temp(self, context: TaskExecutionContext):
     #     local_path = context.metadata.get('local_path') or ''

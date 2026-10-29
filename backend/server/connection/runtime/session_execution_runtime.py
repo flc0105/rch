@@ -1,3 +1,4 @@
+import logging
 import threading
 from datetime import datetime, timezone
 
@@ -20,8 +21,22 @@ class SessionExecutionRuntime:
 
     def __init__(self):
         self._lock = threading.RLock()
+        self._task_changed_listener = None
         self._task = None
         self._entry_ids_by_command_id = {}
+
+    def set_foreground_task_listener(self, listener):
+        with self._lock:
+            self._task_changed_listener = listener
+
+    def _notify_task_changed(self):
+        # Emit while holding the task lock, so a fast task cannot publish
+        # Running after a later Idle transition.
+        if self._task_changed_listener is not None:
+            try:
+                self._task_changed_listener()
+            except Exception:
+                logging.getLogger(__name__).warning('Unable to publish foreground task', exc_info=True)
 
     # ------------------ foreground task ------------------ #
     def acquire_foreground_task(
@@ -31,6 +46,7 @@ class SessionExecutionRuntime:
         source: str = '',
         task_id: str = '',
         history_entry_id: str = '',
+        web_task: bool = False,
     ) -> dict:
         task_info = {
             'started_at': datetime.now(timezone.utc).isoformat(),
@@ -39,6 +55,7 @@ class SessionExecutionRuntime:
             'source': (source or '').strip(),
             'task_id': (task_id or '').strip(),
             'history_entry_id': (history_entry_id or '').strip(),
+            'web_task': bool(web_task),
             'command_id': None,
             'cancel_requested': False,
             'cancel_state': 'running',
@@ -53,6 +70,7 @@ class SessionExecutionRuntime:
                 )
 
             self._task = task_info
+            self._notify_task_changed()
             return dict(task_info)
 
     def bind_foreground_command_id(self, command_id: int):
@@ -60,7 +78,9 @@ class SessionExecutionRuntime:
             if self._task is None:
                 return None
 
-            self._task['command_id'] = command_id
+            if self._task['command_id'] != command_id:
+                self._task['command_id'] = command_id
+                self._notify_task_changed()
             return dict(self._task)
 
     def request_foreground_task_cancel(self, task_id: str = ''):
@@ -74,11 +94,12 @@ class SessionExecutionRuntime:
                 return None
 
             # A repeated request must not erase a terminal Client acknowledgement.
-            if self._task.get('cancel_state') in ('accepted', 'stopped', 'completed'):
+            if self._task.get('cancel_state') in ('requested', 'accepted', 'stopped', 'completed'):
                 return dict(self._task)
 
             self._task['cancel_requested'] = True
             self._task['cancel_state'] = 'requested'
+            self._notify_task_changed()
             return dict(self._task)
 
     def record_cancel_ack(self, command_id: int, state: str):
@@ -90,7 +111,11 @@ class SessionExecutionRuntime:
                 return
             # A delayed 'accepted' acknowledgement must not overwrite a terminal state.
             if self._task.get('cancel_state') not in ('stopped', 'completed'):
-                self._task['cancel_state'] = state
+                if self._task['cancel_state'] != state or (state == 'rejected' and self._task['cancel_requested']):
+                    self._task['cancel_state'] = state
+                    if state == 'rejected':
+                        self._task['cancel_requested'] = False
+                    self._notify_task_changed()
 
     def release_foreground_task(self, task_id: str = '', command: str = '') -> None:
         task_id = (task_id or '').strip()
@@ -109,6 +134,7 @@ class SessionExecutionRuntime:
                 return
 
             self._task = None
+            self._notify_task_changed()
 
     def get_foreground_task(self):
         with self._lock:
@@ -155,7 +181,9 @@ class SessionExecutionRuntime:
             bound_task = None
 
             if self._task is not None:
-                self._task['command_id'] = command_id
+                if self._task['command_id'] != command_id:
+                    self._task['command_id'] = command_id
+                    self._notify_task_changed()
                 bound_task = dict(self._task)
 
                 if not resolved_history_entry_id:

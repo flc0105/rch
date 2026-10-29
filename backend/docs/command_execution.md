@@ -124,6 +124,10 @@ RCH 在单个 `ClientSession` 上保留一份当前前台 Task 运行态，不�
 
 后台执行线程结束时会在 `finally` 中释放当前会话的前台槽。仅使用 `task_id` 和命令文本匹配当前占槽对象，避免迟到的清理动作把下一条任务的槽释放掉。
 
+前台 Task 状态由会话的统一执行运行态发布 `foreground_task_changed` SSE：成功占槽、绑定远程 `command_id`、请求取消、收到 Client 的 `cancel_ack` 和释放占槽时，都会广播 `{client_id, task}`。`task` 使用与 `/api/connections/<client_id>/task` 相同的 `Running`／`Cancelling`／`Idle` 快照，支持 Web Terminal、Server CLI、同步 External Tool 等共用前台槽的入口；与之独立的 PTY 和 TransferManager 会话不纳入此状态。通知由运行态在锁内按变更顺序发布，避免极短任务的 Idle 先于 Running 到达。
+
+Web 首次选中设备、切换设备、SSE 重连和设备重新上线时查询一次当前快照，持续运行期间直接消费 SSE，不定时查询 `/task`。通用 SSE 不提供事件重放，因此重连快照负责补齐断线期间漏掉的状态；如果快照请求未返回就收到了较新的 SSE，浏览器会忽略旧快照。Task 时长由本地时间刷新，不产生额外请求。取消按钮的可用性来自实际 Web Task 归属、绑定的远程 Command ID 和命令策略，不能仅根据 `source` 文本判断；CLI 等任务可查看详情但不提供 Web Task 取消。Client 明确拒绝取消后，展示状态恢复 Running，直到任务结束或再次发起请求。
+
 **前台槽是执行策略，不是“Client 一次只能做一件事情”的全局锁。** 心跳、监控会话、通知、PTY、某些文件传输与后台 Job 有各自的控制或数据通道；它们不等于再创建一个普通 Web Command Task。但通过同步远程命令访问 Client 的其他 API，如运行时配置查询或进程控制，仍可能遵守统一前台占槽要求。
 
 目前两类 Web 请求有明确例外：

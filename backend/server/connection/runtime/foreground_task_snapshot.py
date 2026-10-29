@@ -15,7 +15,7 @@ def build_foreground_task_snapshot(session):
                    and (command == item['name'] or command.startswith(item['name'] + ' '))]
         if matches:
             policy = max(matches, key=lambda item: len(item['name'])).get('cancel_policy', '')
-    cancellable = bool(task.get('task_id') and task.get('source') == 'web'
+    cancellable = bool(task.get('task_id') and task.get('web_task')
                        and task.get('command_id') and policy != 'none')
     return {
         'state': 'Cancelling' if task.get('cancel_requested') else 'Running',

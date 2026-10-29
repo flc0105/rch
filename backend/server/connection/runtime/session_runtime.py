@@ -24,6 +24,9 @@ class ClientSessionRuntime:
         self.message_queue = MessageQueue()
         self._execution_runtime = SessionExecutionRuntime()
 
+    def set_foreground_task_listener(self, listener):
+        self._execution_runtime.set_foreground_task_listener(listener)
+
     # ------------------ unified execution binding ------------------ #
     def bind_command_execution(
         self,
@@ -71,6 +74,7 @@ class ClientSessionRuntime:
         source: str = '',
         task_id: str = '',
         history_entry_id: str = '',
+        web_task: bool = False,
     ) -> dict:
         """
         尝试占用当前连接的前台执行槽。
@@ -81,6 +85,7 @@ class ClientSessionRuntime:
             source=source,
             task_id=task_id,
             history_entry_id=history_entry_id,
+            web_task=web_task,
         )
 
     def bind_foreground_command_id(self, command_id: int):
@@ -94,6 +99,9 @@ class ClientSessionRuntime:
         请求取消当前前台任务
         """
         return self._execution_runtime.request_foreground_task_cancel(task_id=task_id)
+
+    def record_cancel_ack(self, command_id: int, state: str):
+        self._execution_runtime.record_cancel_ack(command_id, state)
 
     def release_foreground_task(self, task_id: str = '', command: str = '') -> None:
         """

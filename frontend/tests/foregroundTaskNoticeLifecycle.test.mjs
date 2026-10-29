@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 import { shouldShowTaskNotice } from '../src/utils/foregroundTask.js'
 
 const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
-const match = app.match(/    syncForegroundTaskNotice\(clientId, task\) \{([\s\S]*?)\n    \},\n\n    async refreshForegroundTask\(/)
+const match = app.match(/    syncForegroundTaskNotice\(clientId, task\) \{([\s\S]*?)\n    \},\n\n    applyForegroundTaskUpdate\(/)
 assert.ok(match, 'App must provide task notice synchronization')
 const syncNotice = new Function('shouldShowTaskNotice', `return function syncForegroundTaskNotice(clientId, task) {${match[1]}\n}`)(shouldShowTaskNotice)
 
@@ -22,7 +22,7 @@ const running = { state: 'Running', task_id: 'task-1', command_id: '123', starte
 const cancelling = { ...running, state: 'Cancelling' }
 const notices = app => app.outputs.clientA.filter(line => line.meta?.foregroundTaskNotice)
 
-test('new tab receives one inline warning and repeat polls do not duplicate or reorder it', () => {
+test('new tab receives one inline warning and repeat SSE updates do not duplicate or reorder it', () => {
   const state = makeApp()
   state.outputs.clientA = [{ text: 'revision notice', kind: 'warning', meta: { clientRevisionNotice: true } }]
   state.syncForegroundTaskNotice('clientA', running)

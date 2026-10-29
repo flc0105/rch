@@ -211,16 +211,18 @@ export default {
             };
 
             es.addEventListener('open', () => {
-                if (!this.sseReady) this.sseReady = true;
+                const reconnecting = this.sseReady;
+                this.sseReady = true;
                 void this.$refs.executionInteractionDialogRef?.reloadPending(tabId);
-                void this.refreshForegroundTask?.();
+                // The initial selection already fetches a snapshot. Reconnects
+                // must resync because the transient SSE bus has no replay.
+                if (reconnecting) void this.refreshForegroundTask?.();
             });
 
             es.addEventListener('foreground_task_changed', (event) => {
                 const payload = JSON.parse(event.data || '{}');
-                if (String(payload.client_id || '') === String(this.selectedId || '')) {
-                    void this.refreshForegroundTask?.();
-                }
+                if (!payload.client_id || !payload.task) return;
+                this.applyForegroundTaskUpdate?.(payload.client_id, payload.task);
             });
 
             es.addEventListener('interaction_requested', (event) => {
@@ -600,6 +602,7 @@ export default {
                 const payload = JSON.parse(event.data);
                 const conn = payload.connection;
                 this.upsertConnection(conn);
+                if (conn.client_id === this.selectedId) void this.refreshForegroundTask?.();
 
                 const recoverySource = payload.recovery_source;
                 const recoveryLabel = {
@@ -637,6 +640,7 @@ export default {
                 });
 
                 this.clearActiveTask(clientId);
+                this.applyForegroundTaskUpdate?.(clientId, { state: 'Idle' });
 
                 this.showSseNotification('connection_offline', {
                     title: 'Device Offline',

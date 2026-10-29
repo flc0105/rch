@@ -5,6 +5,7 @@ from core.utils.datetime_utils import parse_iso_datetime
 from core.client_revision import build_client_revision_manifest
 from server.application.connection.control_command_store import get_control_command_store
 from server.connection.client_session import ClientSession
+from server.connection.runtime.foreground_task_snapshot import build_foreground_task_snapshot
 from server.connection.transport.client_transport import ClientTransport
 
 
@@ -472,6 +473,12 @@ class WebConnectionService:
     # ------------------ connection lifecycle ------------------ #
     def create_web_connection(self, transport: ClientTransport, addr, info: dict) -> ClientSession:
         session = ClientSession(transport, info)
+        session.runtime.set_foreground_task_listener(
+            lambda: self.event_bus.publish('foreground_task_changed', {
+                'client_id': session.session_info.client_id,
+                'task': build_foreground_task_snapshot(session),
+            })
+        )
         session.context.command_history = self.server.command_history
         session.context.command_history_orchestrator = self.server.command_history_orchestrator
         session.context.artifact_service = self.artifact_service

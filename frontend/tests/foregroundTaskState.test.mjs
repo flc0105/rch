@@ -30,15 +30,19 @@ test('elapsed time uses UTC timestamp and is refreshable', () => {
   assert.equal(formatTaskTime('invalid'), '-')
 })
 
-test('App includes task details, cancel entry and dynamic polling', () => {
+test('App retains task details and uses SSE rather than task polling', () => {
   const source = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
   const basicInfo = readFileSync(new URL('../src/components/ConnectionInfoDialogs.vue', import.meta.url), 'utf8')
   assert.ok(basicInfo.includes("label: 'Task'"))
   const sse = readFileSync(new URL('../src/composables/useSseStream.js', import.meta.url), 'utf8')
   assert.ok(sse.includes("es.addEventListener('foreground_task_changed'"))
+  assert.ok(sse.includes('this.applyForegroundTaskUpdate?.(payload.client_id, payload.task)'))
   assert.ok(sse.includes('this.refreshForegroundTask?.()'))
+  assert.ok(!source.includes('foregroundTaskTimer'))
+  assert.match(source, /this\.statusTickTimer = setInterval\(\(\) => \{[\s\S]*?this\.statusNowTick = now[\s\S]*?\}, 2000\)/)
+  assert.doesNotMatch(source, /setInterval\(\(\) => \{\s*void this\.refreshForegroundTask\(\)/)
   for (const token of ['Client is running a task' , 'Task Details', 'cancelForegroundTask',
-                       'this.refreshForegroundTask()', 'this.foregroundTaskTimer', 'currentForegroundTask']) {
+                       'this.refreshForegroundTask()', 'applyForegroundTaskUpdate', 'currentForegroundTask']) {
     assert.ok(source.includes(token), token)
   }
 })

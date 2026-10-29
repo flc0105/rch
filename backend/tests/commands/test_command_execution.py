@@ -92,6 +92,28 @@ def test_server_records_requested_accepted_stopped_without_downgrades():
     assert state.get_foreground_task()['cancel_state'] == 'stopped'
 
 
+def test_foreground_listener_emits_only_actual_transitions_in_order():
+    state = SessionExecutionRuntime()
+    observed = []
+    state.set_foreground_task_listener(lambda: observed.append(state.get_foreground_task()))
+    state.acquire_foreground_task('command', 'shell sleep 10', task_id='t', web_task=True)
+    state.bind_foreground_command_id(8)
+    state.bind_foreground_command_id(8)  # unchanged: no new event
+    state.request_foreground_task_cancel('t')
+    state.request_foreground_task_cancel('t')
+    state.record_cancel_ack(8, 'accepted')
+    state.record_cancel_ack(999, 'completed')
+    state.record_cancel_ack(8, 'stopped')
+    state.record_cancel_ack(8, 'accepted')
+    state.release_foreground_task('t')
+    state.release_foreground_task('t')
+    assert [item['cancel_state'] if item else 'Idle' for item in observed] == [
+        'running', 'running', 'requested', 'accepted', 'stopped', 'Idle'
+    ]
+    assert observed[0]['command_id'] is None
+    assert observed[1]['command_id'] == 8
+
+
 def test_cancel_declaration_is_not_a_forceful_thread_abort():
     @desc('Read only')
     def ordinary(self):

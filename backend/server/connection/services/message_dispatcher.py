@@ -2,6 +2,7 @@ import time
 
 from core.protocol.message_types import (
     MSG_TYPE_HEARTBEAT_ACK,
+    MSG_TYPE_CANCEL_ACK,
     MSG_TYPE_SESSION_END,
     MSG_TYPE_RESULT,
     MSG_TYPE_PTY_OPENED,
@@ -32,6 +33,7 @@ class ServerInboundMessageDispatcher:
     IMMEDIATE_MESSAGE_TYPES = {
         MSG_TYPE_RESULT,
         MSG_TYPE_HEARTBEAT_ACK,
+        MSG_TYPE_CANCEL_ACK,
         MSG_TYPE_PTY_OPENED,
         MSG_TYPE_PTY_OUTPUT,
         MSG_TYPE_PTY_CLOSED,
