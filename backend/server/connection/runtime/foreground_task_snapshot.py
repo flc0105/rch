@@ -22,6 +22,7 @@ def build_foreground_task_snapshot(session):
         'command': task.get('command', ''),
         'task_type': task.get('task_type', ''),
         'source': task.get('source', ''),
+        'tab_id': task.get('tab_id', ''),
         'task_id': task.get('task_id', ''),
         'command_id': task.get('command_id'),
         'started_at': task.get('started_at', ''),

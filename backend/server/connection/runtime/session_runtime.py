@@ -75,6 +75,7 @@ class ClientSessionRuntime:
         task_id: str = '',
         history_entry_id: str = '',
         web_task: bool = False,
+        tab_id: str = '',
     ) -> dict:
         """
         尝试占用当前连接的前台执行槽。
@@ -86,6 +87,7 @@ class ClientSessionRuntime:
             task_id=task_id,
             history_entry_id=history_entry_id,
             web_task=web_task,
+            tab_id=tab_id,
         )
 
     def bind_foreground_command_id(self, command_id: int):

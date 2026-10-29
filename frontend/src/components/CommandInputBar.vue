@@ -150,6 +150,8 @@ export default {
   emits: [
     'append-output',
     'set-active-task',
+    'terminal-submission-start',
+    'terminal-submission-finish',
     'clear-output',
   ],
 
@@ -251,13 +253,15 @@ export default {
   }
 
   const cancelPolicy = this.getSubmittedCommandCancelPolicy(command)
+  const clientId = this.selectedId
   this.sending = true
-  this.$emit('append-output', this.selectedId, '> ' + command, 'command')
+  this.$emit('terminal-submission-start', clientId, command)
+  this.$emit('append-output', clientId, '> ' + command, 'command')
 
   try {
-    const data = await sendCommandApi(this.selectedId, command, this.getTabScopedHeaders())
+    const data = await sendCommandApi(clientId, command, this.getTabScopedHeaders())
     const taskId = data && data.task_id
-    this.$emit('set-active-task', this.selectedId, taskId || '', cancelPolicy)
+    this.$emit('set-active-task', clientId, taskId || '', cancelPolicy)
 
     this.commandText = ''
     this.commandCandidatesLoadedFor = ''
@@ -268,6 +272,7 @@ export default {
     ElMessage.error(e.message || 'Command failed')
     this.commandText = ''
   } finally {
+    this.$emit('terminal-submission-finish', clientId)
     this.sending = false
   }
 },
@@ -352,6 +357,7 @@ export default {
 
       const cancelPolicy = this.getSubmittedCommandCancelPolicy(text)
       this.sending = true
+      this.$emit('terminal-submission-start', clientId, text)
       if (echoToTerminal) this.$emit('append-output', clientId, '> ' + text, 'command')
       try {
         const data = await sendCommandApi(clientId, text, this.getTabScopedHeaders())
@@ -365,6 +371,7 @@ export default {
         ElMessage.error(error.message || 'Command failed')
         return ''
       } finally {
+        this.$emit('terminal-submission-finish', clientId)
         this.sending = false
       }
     },

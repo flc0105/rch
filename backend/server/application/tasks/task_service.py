@@ -120,6 +120,7 @@ class WebTaskService:
             task_id=context.task_id,
             history_entry_id=context.history_entry_id,
             web_task=True,
+            tab_id=context.tab_id,
         )
 
     def _ensure_active_task(self, conn, task_id: str):

@@ -12,7 +12,7 @@ const syncNotice = new Function('shouldShowTaskNotice',
 
 function makeApp() {
   return {
-    selectedId: 'clientA',
+    selectedId: 'clientA', tabId: 'tabA', pendingTerminalSubmissions: {},
     activeTaskIds: {},
     outputs: {},
     get currentActiveTaskId() { return this.activeTaskIds[this.selectedId] || '' },

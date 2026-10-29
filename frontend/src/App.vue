@@ -192,6 +192,8 @@
   :tab-id="tabId"
   @append-output="appendOutput"
   @set-active-task="setActiveTask"
+  @terminal-submission-start="startTerminalSubmission"
+  @terminal-submission-finish="finishTerminalSubmission"
   @clear-output="clearOutput"
 />
 
@@ -694,6 +696,7 @@ export default {
       statusNowTick: Date.now(),
       statusTickTimer: null,
       foregroundTasks: {},
+      pendingTerminalSubmissions: {},
       foregroundQuerySequence: 0,
       taskDialogVisible: false,
       taskCancelSending: false,
@@ -736,7 +739,8 @@ export default {
       return this.foregroundTasks[this.selectedId] || { state: 'Idle' }
     },
     showCurrentTaskNotice() {
-      return shouldShowTaskNotice(this.currentForegroundTask, this.currentActiveTaskId)
+      return shouldShowTaskNotice(this.currentForegroundTask, this.currentActiveTaskId,
+        this.pendingTerminalSubmissions[this.selectedId], this.tabId)
     },
     currentTaskDetails() {
       const task = this.currentForegroundTask
@@ -809,11 +813,27 @@ export default {
       if (this.showCurrentTaskNotice) this.taskDialogVisible = true
     },
 
+    startTerminalSubmission(clientId, command) {
+      const id = String(clientId || '').trim()
+      if (!id) return
+      this.pendingTerminalSubmissions = { ...this.pendingTerminalSubmissions, [id]: { command } }
+    },
+
+    finishTerminalSubmission(clientId) {
+      const id = String(clientId || '').trim()
+      if (!this.pendingTerminalSubmissions[id]) return
+      const next = { ...this.pendingTerminalSubmissions }
+      delete next[id]
+      this.pendingTerminalSubmissions = next
+      this.syncForegroundTaskNotice(id, this.foregroundTasks[id] || { state: 'Idle' })
+    },
+
     syncForegroundTaskNotice(clientId, task) {
       this.ensureOutputBucket(clientId)
       const lines = this.outputs[clientId] || []
       const existing = lines.find(line => line?.meta?.foregroundTaskNotice === true)
-      const visible = shouldShowTaskNotice(task, this.currentActiveTaskId)
+      const visible = shouldShowTaskNotice(task, this.activeTaskIds[clientId] || '',
+        this.pendingTerminalSubmissions[clientId], this.tabId)
       const noticeKey = `${task?.task_id || ''}:${task?.command_id || ''}:${task?.started_at || ''}`
       if (visible && existing?.meta?.foregroundTaskKey === noticeKey && existing?.meta?.foregroundTaskState === task.state) return
       if (existing) {

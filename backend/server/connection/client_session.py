@@ -95,6 +95,7 @@ class ClientSession:
         task_id: str = '',
         history_entry_id: str = '',
         web_task: bool = False,
+        tab_id: str = '',
     ) -> dict:
         return self.runtime.acquire_foreground_task(
             task_type=task_type,
@@ -103,6 +104,7 @@ class ClientSession:
             task_id=task_id,
             history_entry_id=history_entry_id,
             web_task=web_task,
+            tab_id=tab_id,
         )
 
     def request_foreground_task_cancel(self, task_id: str = ''):

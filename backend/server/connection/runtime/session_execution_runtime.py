@@ -47,6 +47,7 @@ class SessionExecutionRuntime:
         task_id: str = '',
         history_entry_id: str = '',
         web_task: bool = False,
+        tab_id: str = '',
     ) -> dict:
         task_info = {
             'started_at': datetime.now(timezone.utc).isoformat(),
@@ -56,6 +57,7 @@ class SessionExecutionRuntime:
             'task_id': (task_id or '').strip(),
             'history_entry_id': (history_entry_id or '').strip(),
             'web_task': bool(web_task),
+            'tab_id': (tab_id or '').strip(),
             'command_id': None,
             'cancel_requested': False,
             'cancel_state': 'running',

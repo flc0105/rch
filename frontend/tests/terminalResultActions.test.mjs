@@ -216,8 +216,9 @@ assert.equal(apiCalls.length, 2)
 assert.deepEqual(Array.from(apiCalls[0]).slice(0,2), ['client-A','echo hello'])
 assert.equal(apiCalls[0][2]['X-Tab-Id'], 'tab-A')
 assert.equal(bar.commandText, 'my unfinished draft')
-assert.equal(terminalEvents[0][0], 'append-output')
-assert.equal(terminalEvents[1][0], 'set-active-task')
+assert.deepEqual(terminalEvents.slice(0, 4).map(event => event[0]), [
+  'terminal-submission-start', 'append-output', 'set-active-task', 'terminal-submission-finish',
+])
 bar.selectedId = 'client-B'
 assert.equal(await bar.runResultActionCommand('echo wrong', 'client-A'), '')
 assert.equal(apiCalls.length, 2, 'changed target device must not receive the command')

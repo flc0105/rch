@@ -114,13 +114,13 @@ WebTaskRunner 消费执行事件
 
 Connection Info 的 **Task** 字段显示 `Idle`、`Running` 或 `Cancelling`；Terminal Connection Context 也可以选择 **Task** 标签。Server 从当前 ClientSession 的前台任务槽返回状态，不依赖浏览器中保留的 Web Task ID。页面启动或切换 Client 时读取快照，并订阅前台任务状态变更事件；每 2 秒同步一次状态作为重连兜底。任务结束后状态回到 `Idle`。
 
-当所选 Client 被其他标签页或前一次页面会话的任务占用，Terminal 在输出区显示警告行及 **[ Details ]** 链接，沿用终端其他状态提示的交互样式。详情包含执行命令、来源、任务类型、开始时间、持续时间、任务／命令 ID 与取消状态。可以取消的 Web 命令通过已有 Task Cancel API 请求取消；`cancel_policy=none`、尚未绑定 Client 命令 ID、已经请求取消或非 Web 来源的任务不开放此按钮。状态查询不占用前台槽，也不产生远程命令。
+当所选 Client 被其他标签页或前一次页面会话的任务占用，Terminal 在输出区显示警告行及 **[ Details ]** 链接，沿用终端其他状态提示的交互样式。当前页面提交 Terminal 命令时，通过前台任务中的 `tab_id` 与命令文本识别提交中的任务，避免状态 SSE 先于 HTTP 响应时短暂显示自身任务警告；页面刷新后不存在提交中记录，仍立即显示已有运行任务。详情包含执行命令、来源、任务类型、开始时间、持续时间、任务／命令 ID 与取消状态。可以取消的 Web 命令通过已有 Task Cancel API 请求取消；`cancel_policy=none`、尚未绑定 Client 命令 ID、已经请求取消或非 Web 来源的任务不开放此按钮。状态查询不占用前台槽，也不产生远程命令。
 
 ## 4. 前台串行约束与执行并发
 
 RCH 在单个 `ClientSession` 上保留一份当前前台 Task 运行态，不是所有浏览器标签页各自拥有一个互不影响的前台槽。普通 Web 命令提交时，在启动 Runner 之前调用 `acquire_foreground_task()`；如果该会话已经被另一前台任务占用，就抛出 `Client is busy: ...`，而不是把新命令悄悄排入一个没有界面的队列。
 
-占槽记录包括 `task_type`、`command`、`source`、`task_id`、可选 `history_entry_id`、稍后绑定的 `command_id`、`cancel_requested` 和 `cancel_state`。失败的提交会释放可能占到的槽、撤销本次创建的 Task，并清理尚未真正执行的历史条目；不会将这些失败准备步骤当作一次成功执行。
+占槽记录包括 `task_type`、`command`、`source`、`task_id`、`tab_id`（Web 来源）、可选 `history_entry_id`、稍后绑定的 `command_id`、`cancel_requested` 和 `cancel_state`。失败的提交会释放可能占到的槽、撤销本次创建的 Task，并清理尚未真正执行的历史条目；不会将这些失败准备步骤当作一次成功执行。
 
 后台执行线程结束时会在 `finally` 中释放当前会话的前台槽。仅使用 `task_id` 和命令文本匹配当前占槽对象，避免迟到的清理动作把下一条任务的槽释放掉。
 
