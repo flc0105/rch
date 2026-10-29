@@ -264,7 +264,9 @@
     @open-new-shared-file-editor="openNewSharedFileEditor"
   />
 
-  <ExternalToolManagerDialog
+  <component
+    :is="dialogComponents.externalTools"
+    v-if="dialogComponents.externalTools"
     ref="externalToolManagerDialogRef"
     :selected-id="selectedId"
     :current-connection="currentConnection"
@@ -310,7 +312,9 @@
     @open-json="openResultJson"
   />
 
-  <BackgroundJobsDialog
+  <component
+    :is="dialogComponents.backgroundJobs"
+    v-if="dialogComponents.backgroundJobs"
     ref="backgroundJobsDialogRef"
     :selected-id="selectedId"
     :current-connection="currentConnection"
@@ -343,7 +347,9 @@
     ref="machineConnectionHistoryDialogRef"
   />
 
-  <CommandHistoryDialog
+  <component
+    :is="dialogComponents.commandHistory"
+    v-if="dialogComponents.commandHistory"
     ref="commandHistoryDialogRef"
     :selected-id="selectedId"
     :current-connection="currentConnection"
@@ -574,14 +580,11 @@ import TerminalOutput from './components/TerminalOutput.vue'
 import ConnectionInfoDialogs from './components/ConnectionInfoDialogs.vue'
 import AgentBuilderDialog from './components/AgentBuilderDialog.vue'
 import AgentOutputsDialog from './components/AgentOutputsDialog.vue'
-import CommandHistoryDialog from './components/CommandHistoryDialog.vue'
 import MachineConnectionHistoryDialog from './components/MachineConnectionHistoryDialog.vue'
 import RemoteFilesDialog from './components/RemoteFilesDialog.vue'
 import ArtifactDialog from './components/ArtifactDialog.vue'
-import ExternalToolManagerDialog from './components/ExternalToolManagerDialog.vue'
 import LogViewerDialog from './components/LogViewerDialog.vue'
 import ScriptLibraryDialog from './components/ScriptLibraryDialog.vue'
-import BackgroundJobsDialog from './components/BackgroundJobsDialog.vue'
 import TerminalJsonDialog from './components/TerminalJsonDialog.vue'
 import { createTerminalTaskCapture } from './composables/terminalTaskCapture.js'
 import ScreenViewDialog from './components/ScreenViewDialog.vue'
@@ -605,6 +608,9 @@ import { ArrowDown, ArrowUp, Bell, Grid, Sort, User } from '@element-plus/icons-
 
 // Keep a single in-flight module per dialog, shared by idle warmup, hover and click.
 const optionalDialogLoaders = {
+  externalTools: () => import('./components/ExternalToolManagerDialog.vue'),
+  commandHistory: () => import('./components/CommandHistoryDialog.vue'),
+  backgroundJobs: () => import('./components/BackgroundJobsDialog.vue'),
   preview: () => import('./components/PreviewDialog.vue'),
   documents: () => import('./components/DocumentsDialog.vue'),
   pty: () => import('./components/PtyDialog.vue'),
@@ -625,6 +631,9 @@ function loadOptionalDialog(name) {
   return optionalDialogRequests.get(name)
 }
 const optionalDialogRefs = {
+  externalTools: 'externalToolManagerDialogRef',
+  commandHistory: 'commandHistoryDialogRef',
+  backgroundJobs: 'backgroundJobsDialogRef',
   preview: 'previewDialogRef',
   documents: 'documentsDialogRef',
   pty: 'ptyDialogRef',
@@ -632,6 +641,9 @@ const optionalDialogRefs = {
   keychains: 'keychainManagerDialogRef',
 }
 const hoverWarmupTargets = {
+  'external-tools': 'externalTools',
+  history: 'commandHistory',
+  jobs: 'backgroundJobs',
   documents: 'documents',
   keychains: 'keychains',
   pty: 'pty',
@@ -656,14 +668,11 @@ export default {
     Sort,
     User,
     TerminalJsonDialog,
-    BackgroundJobsDialog,
     ExecutionInteractionDialog,
     ScriptLibraryDialog,
-    ExternalToolManagerDialog,
     LogViewerDialog,
     ArtifactDialog,
     RemoteFilesDialog,
-    CommandHistoryDialog,
     MachineConnectionHistoryDialog,
     AgentOutputsDialog,
     AgentBuilderDialog,
@@ -693,7 +702,10 @@ export default {
       taskCancelSending: false,
       remoteFilesDialogVisible: false,
       pendingRemoteUploadRefresh: null,
-      dialogComponents: { preview: null, documents: null, pty: null, processes: null, keychains: null },
+      dialogComponents: {
+        externalTools: null, commandHistory: null, pty: null, backgroundJobs: null,
+        processes: null, keychains: null, preview: null, documents: null,
+      },
       cancelIdleWarmup: null,
 
       connectionInfoCollapsed: layoutPreferences.connectionInfoCollapsed,
@@ -774,16 +786,16 @@ export default {
 
     async ensureOptionalDialog(name) {
       const component = await loadOptionalDialog(name)
-      if (!this.dialogComponents[name]) {
-        this.dialogComponents[name] = component
-        await this.$nextTick()
-      }
+      if (!this.dialogComponents[name]) this.dialogComponents[name] = component
+      // Concurrent hover/click callers must both wait for the component to mount.
+      await this.$nextTick()
       return this.$refs[optionalDialogRefs[name]]
     },
 
     async callOptionalDialog(name, method, ...args) {
       try {
         const dialog = await this.ensureOptionalDialog(name)
+        if (name === 'externalTools' && method === 'open' && dialog?.isOpen?.()) return
         return dialog?.[method]?.(...args)
       } catch (error) {
         console.error(`Failed to load ${name} dialog`, error)
@@ -953,20 +965,19 @@ export default {
     },
 
     openExternalToolManagerDialog() {
-      const dialog = this.$refs.externalToolManagerDialogRef
-      if (dialog?.isOpen?.()) return
-      return dialog?.open()
+      if (this.$refs.externalToolManagerDialogRef?.isOpen?.()) return
+      return this.callOptionalDialog('externalTools', 'open')
     },
 
     async handleSseNotificationAction(action = {}, context = {}) {
       const actionType = String(action?.type || '').trim().toLowerCase()
 
       if (actionType === 'open_external_tools') {
-        return this.$refs.externalToolManagerDialogRef?.openFromNotification?.(context)
+        return this.callOptionalDialog('externalTools', 'openFromNotification', context)
       }
 
       if (actionType === 'view_external_tool_log') {
-        return this.$refs.externalToolManagerDialogRef?.openFromNotification?.(context, { viewLog: true })
+        return this.callOptionalDialog('externalTools', 'openFromNotification', context, { viewLog: true })
       }
 
       if (actionType === 'artifact_preview') {
@@ -1035,7 +1046,7 @@ export default {
     },
 
     openBackgroundJobsDialog() {
-      return this.$refs.backgroundJobsDialogRef?.open()
+      return this.callOptionalDialog('backgroundJobs', 'open')
     },
 
     refreshBackgroundJobsIfOpen() {
@@ -1354,7 +1365,7 @@ export default {
     },
 
     openCommandHistoryDialog() {
-      return this.$refs.commandHistoryDialogRef?.open()
+      return this.callOptionalDialog('commandHistory', 'open')
     },
 
     async runTerminalJsonResultAction(payload = {}) {
@@ -1435,11 +1446,14 @@ export default {
     this.initSSE()
     // Start code-only warmup after first paint; dialogs/PTY sockets are not mounted.
     this.cancelIdleWarmup = scheduleIdleWarmup([
-      () => loadOptionalDialog('preview'),
-      () => loadOptionalDialog('documents'),
+      () => loadOptionalDialog('externalTools'),
+      () => loadOptionalDialog('commandHistory'),
       () => loadOptionalDialog('pty'),
+      () => loadOptionalDialog('backgroundJobs'),
       () => loadOptionalDialog('processes'),
       () => loadOptionalDialog('keychains'),
+      () => loadOptionalDialog('preview'),
+      () => loadOptionalDialog('documents'),
     ])
     void this.refreshForegroundTask()
     this.foregroundTaskTimer = setInterval(() => {

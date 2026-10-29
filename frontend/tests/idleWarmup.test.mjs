@@ -126,3 +126,41 @@ test('all referenced Element Plus tags and v-loading are explicitly registered',
   }
   assert.doesNotMatch(main, /import ElementPlus from ['"]element-plus['"]|app\.use\(ElementPlus\)/)
 })
+
+test('optional dialog idle queue follows user priority and keeps hover/click/notification routes', async () => {
+  const { readFileSync } = await import('node:fs')
+  const { fileURLToPath } = await import('node:url')
+  const { dirname, resolve } = await import('node:path')
+  const src = resolve(dirname(fileURLToPath(import.meta.url)), '../src')
+  const app = readFileSync(resolve(src, 'App.vue'), 'utf8')
+  const priorities = ['externalTools', 'commandHistory', 'pty', 'backgroundJobs', 'processes', 'keychains', 'preview', 'documents']
+  const mounted = app.slice(app.indexOf('  async mounted() {'), app.indexOf('  beforeUnmount() {'))
+  const tasks = [...mounted.matchAll(/\(\) => loadOptionalDialog\('([^']+)'\)/g)].map(match => match[1])
+  assert.deepEqual(tasks, priorities)
+  for (const [name, file] of [
+    ['externalTools', 'ExternalToolManagerDialog'],
+    ['commandHistory', 'CommandHistoryDialog'],
+    ['backgroundJobs', 'BackgroundJobsDialog'],
+  ]) {
+    assert.ok(app.includes(`${name}: () => import('./components/${file}.vue')`))
+    assert.match(app, new RegExp(`:is="dialogComponents\\.${name}"`))
+    assert.match(app, new RegExp(`v-if="dialogComponents\\.${name}"`))
+    assert.doesNotMatch(app, new RegExp(`import ${file} from`))
+  }
+  for (const [action, name] of [
+    ['external-tools', 'externalTools'], ['history', 'commandHistory'], ['jobs', 'backgroundJobs'],
+  ]) assert.ok(app.includes(`'${action}': '${name}'`) || app.includes(`${action}: '${name}'`))
+  assert.match(app, /this\.callOptionalDialog\('externalTools', 'openFromNotification', context, \{ viewLog: true \}\)/)
+  assert.match(app, /this\.callOptionalDialog\('externalTools', 'openFromNotification', context\)/)
+  for (const [method, name] of [
+    ['openExternalToolManagerDialog', 'externalTools'],
+    ['openBackgroundJobsDialog', 'backgroundJobs'],
+    ['openCommandHistoryDialog', 'commandHistory'],
+  ]) {
+    const body = app.slice(app.indexOf(`    ${method}()`), app.indexOf('\n    },', app.indexOf(`    ${method}()`)))
+    assert.ok(body.includes(`this.callOptionalDialog('${name}', 'open')`))
+  }
+  assert.match(app, /await this\.\$nextTick\(\)\n      return this\.\$refs\[optionalDialogRefs\[name\]\]/)
+  assert.match(app, /name === 'externalTools' && method === 'open' && dialog\?\.isOpen\?\.\(\)/)
+  assert.match(app, /refreshBackgroundJobsIfOpen\(\)\s*\{\s*return this\.\$refs\.backgroundJobsDialogRef\?\.refreshIfOpen\(\)/)
+})

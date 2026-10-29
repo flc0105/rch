@@ -23,9 +23,11 @@ hashed assets use a long-lived browser cache; deploy all new assets before
 updating `index.html` and retain old hashed assets while older tabs may still be
 open.
 
-Optional editors and dialogs download after the page's first paint during
-browser idle time. Moving the pointer over a supported toolbar, More-menu, or
-Toolbox action can preload its dialog earlier.
+Optional dialogs download in priority order after the page's first paint during
+browser idle time: External Tools, Command History, PTY, Background Jobs,
+Processes, Keychains, then Preview and Documents (including Monaco). Moving the
+pointer over a supported toolbar, More-menu, or Toolbox action can preload its
+dialog earlier.
 
 Element Plus registers the UI components used by the application through explicit
 named imports, with individual component styles. Its loading directive and
