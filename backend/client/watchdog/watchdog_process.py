@@ -23,6 +23,8 @@ class ClientWatchdogWorker:
         local_watchdog_timeout_seconds: float,
         local_watchdog_heartbeat_file_path: str,
         local_watchdog_log_file_path: str,
+        resume_address: str = '',
+        resume_authkey: str = '',
     ):
         self.parent_pid = int(parent_pid)
         self.client_id = str(client_id or '').strip()
@@ -42,6 +44,8 @@ class ClientWatchdogWorker:
                 poll_interval=remote_http_watchdog_interval_seconds,
                 remote_watchdog_log_file_path=remote_watchdog_log_file_path,
                 action_executor=self._action_executor,
+                resume_address=resume_address,
+                resume_authkey=resume_authkey,
             )
 
         self._local_monitor = None
@@ -86,12 +90,16 @@ class ClientWatchdogProcess:
         local_watchdog_timeout_seconds: float,
         local_watchdog_heartbeat_file_path: str,
         local_watchdog_log_file_path: str,
+        resume_address: str = '',
+        resume_authkey: str = '',
     ):
         self.client_id = str(client_id or '').strip()
         self.remote_http_watchdog_enabled = bool(remote_http_watchdog_enabled)
         self.remote_http_watchdog_base_url = str(remote_http_watchdog_base_url or '').rstrip('/')
         self.remote_http_watchdog_interval_seconds = max(float(remote_http_watchdog_interval_seconds or 0), 1.0)
         self.remote_watchdog_log_file_path = str(remote_watchdog_log_file_path or '').strip()
+        self.resume_address = str(resume_address or '')
+        self.resume_authkey = str(resume_authkey or '')
         self.local_watchdog_enabled = bool(local_watchdog_enabled)
         self.local_watchdog_timeout_seconds = max(float(local_watchdog_timeout_seconds or 0), 1.0)
         self.local_watchdog_heartbeat_file_path = str(local_watchdog_heartbeat_file_path or '').strip()
@@ -121,6 +129,8 @@ class ClientWatchdogProcess:
                 '--watch-remote-http-watchdog-base-url', self.remote_http_watchdog_base_url,
                 '--watch-remote-http-watchdog-interval-seconds', str(self.remote_http_watchdog_interval_seconds),
                 '--watch-remote-watchdog-log-file-path', self.remote_watchdog_log_file_path,
+                '--watch-resume-address', self.resume_address,
+                '--watch-resume-authkey', self.resume_authkey,
                 '--watch-local-watchdog-enabled', '1' if self.local_watchdog_enabled else '0',
                 '--watch-local-watchdog-timeout-seconds', str(self.local_watchdog_timeout_seconds),
                 '--watch-local-watchdog-heartbeat-file-path', self.local_watchdog_heartbeat_file_path,
@@ -139,6 +149,8 @@ class ClientWatchdogProcess:
             '--watch-remote-http-watchdog-base-url', self.remote_http_watchdog_base_url,
             '--watch-remote-http-watchdog-interval-seconds', str(self.remote_http_watchdog_interval_seconds),
             '--watch-remote-watchdog-log-file-path', self.remote_watchdog_log_file_path,
+            '--watch-resume-address', self.resume_address,
+            '--watch-resume-authkey', self.resume_authkey,
             '--watch-local-watchdog-enabled', '1' if self.local_watchdog_enabled else '0',
             '--watch-local-watchdog-timeout-seconds', str(self.local_watchdog_timeout_seconds),
             '--watch-local-watchdog-heartbeat-file-path', self.local_watchdog_heartbeat_file_path,
@@ -240,6 +252,8 @@ def run_watchdog_worker_from_argv():
         _read_flag_value('--watch-remote-http-watchdog-interval-seconds', '30') or '30'
     )
     remote_watchdog_log_file_path = _read_flag_value('--watch-remote-watchdog-log-file-path', '') or ''
+    resume_address = _read_flag_value('--watch-resume-address', '') or ''
+    resume_authkey = _read_flag_value('--watch-resume-authkey', '') or ''
 
     local_watchdog_enabled = (_read_flag_value('--watch-local-watchdog-enabled', '1') or '1') == '1'
     local_watchdog_timeout_seconds = float(
@@ -261,6 +275,8 @@ def run_watchdog_worker_from_argv():
         remote_http_watchdog_base_url=remote_http_watchdog_base_url,
         remote_http_watchdog_interval_seconds=remote_http_watchdog_interval_seconds,
         remote_watchdog_log_file_path=remote_watchdog_log_file_path,
+        resume_address=resume_address,
+        resume_authkey=resume_authkey,
         local_watchdog_enabled=local_watchdog_enabled,
         local_watchdog_timeout_seconds=local_watchdog_timeout_seconds,
         local_watchdog_heartbeat_file_path=local_watchdog_heartbeat_file_path,

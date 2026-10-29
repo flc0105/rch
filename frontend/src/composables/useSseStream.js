@@ -219,6 +219,11 @@ export default {
                 if (reconnecting) void this.refreshForegroundTask?.();
             });
 
+            es.addEventListener('httpctl_result', (event) => {
+                const payload = JSON.parse(event.data || '{}');
+                this.$refs?.machineConnectionHistoryDialogRef?.applyResumeResult(payload);
+            });
+
             es.addEventListener('foreground_task_changed', (event) => {
                 const payload = JSON.parse(event.data || '{}');
                 if (!payload.client_id || !payload.task) return;
@@ -602,6 +607,7 @@ export default {
                 const payload = JSON.parse(event.data);
                 const conn = payload.connection;
                 this.upsertConnection(conn);
+                this.$refs?.machineConnectionHistoryDialogRef?.markClientOnline(conn.client_id);
                 if (conn.client_id === this.selectedId) void this.refreshForegroundTask?.();
 
                 const recoverySource = payload.recovery_source;

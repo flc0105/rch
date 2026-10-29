@@ -59,7 +59,7 @@ class ServerInboundMessageDispatcher:
 
         if message_type == MSG_TYPE_SESSION_END:
             reason = str(data.get('reason') or '')
-            if reason in ('client_exit', 'client_restart', 'client_update', 'client_error'):
+            if reason in ('client_exit', 'client_restart', 'client_update', 'client_error', 'client_paused'):
                 detail = data.get('detail') if isinstance(data.get('detail'), dict) else {}
                 self.session.context.client_session_end = {
                     'at': time.monotonic(),

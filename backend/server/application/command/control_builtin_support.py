@@ -19,6 +19,10 @@ HTTP_CONTROL_ACTIONS = {
         'label': 'Clone',
         'description': 'Launch another agent instance without stopping the current one.',
     },
+    'resume': {
+        'label': 'Resume',
+        'description': 'Wake a Client instance through its Remote Watchdog.',
+    },
 }
 
 

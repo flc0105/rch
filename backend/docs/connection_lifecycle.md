@@ -137,6 +137,10 @@ Server 的 Session 收包循环在捕获 Socket 错误时进入会话关闭处�
 
 Python Client 在连接丢失时会停止接收 Worker、关闭旧连接、处理相关后台任务并重建连接运行态，然后重新拨号、握手、启动接收 Worker。默认失败重试间隔为 **5 秒**。同一个 Python Client 进程使用自己的 `client_id` 重新连接；重启或另开 Client 进程则有新的实例身份。Go Client 也会在 TCP 拨号失败后等待约 5 秒再次尝试，并在接收连接发生错误后重建 Session。
 
+### 主动暂停 Client 连接
+
+Python Client 可通过 `pause_instance` 暂停自身到 Server 的主连接。命令先返回结果，再关闭主 Socket 并停止自动重连；进程继续运行，Remote HTTP Watchdog 使用原 `client_id` 保持 HTTP Control 轮询。收到针对该实例的 `httpctl resume` 后，Watchdog 通过本机 IPC 通知 Client，Client 恢复正常拨号与重连。Client 的独立暂停控制组件在本机 IPC 上提供 `paused` 查询及 `resume` 唤醒；Remote Watchdog 在已有的 HTTP 领取请求中附带有效暂停状态。Local Watchdog 继续使用原有独立心跳线程及心跳超时恢复机制，暂停连接期间主进程仍持续提供本地心跳。需要先开启 Remote HTTP Watchdog 并确认其 Worker 仍在运行；否则命令返回失败，不会断开连接。暂停前先报告 `client_paused` 会话结束原因，连接历史将其归类为正常离线。暂停时连接运行态按普通断线清理，包括停止当前 Background Jobs。该命令仅属于 Python Client，Go Client 不提供此命令。
+
 ### 最近设备与连接历史
 
 RCH 将当前 Session、最近设备和历史会话分别管理：
@@ -145,7 +149,7 @@ RCH 将当前 Session、最近设备和历史会话分别管理：
 - **最近设备** 保留 `machine_id` 关联的机器快照、别名等信息。没有活动 Session 的设备仍可以作为 Offline 条目出现在设备列表；有当前会话的机器不会再额外叠加同一机器的离线快照。
 - **连接历史** 持久化在 `runtime/rch.db` 的 `connection_sessions` 中，记录各 `machine_id` / `client_id` 会话的连接、断开、最后响应时间和持续时间，并可关联对应的 Activity 数量与执行摘要。
 
-Connection History 在桌面端以表格展示会话，手机端改为卡片。卡片保留连接状态、Client ID、上线/离线时间、持续时间和 Activity 数量；展开 Details 可查看主机、系统、启动模式、结束原因及 Activity 记录，并可继续加载后续 Activity。两种布局使用同一会话数据和活动查询。
+Connection History 在桌面端以表格展示会话，手机端改为卡片。卡片保留连接状态、Client ID、上线/离线时间、持续时间和 Activity 数量；展开 Details 可查看主机、系统、用户、Integrity、启动模式、结束原因及 Activity 记录，并可继续加载后续 Activity。两种布局使用同一会话数据和活动查询。展开的 Details 使用 Resume 字段显示 `Ready`、`Not paused` 或 `Unavailable`，分别对应可达且已暂停、可达但未暂停、不可达。只有近期可达且已暂停的实例显示 **Resume**；点击后精确向该实例的 `client_id` 投递 HTTP Control 恢复请求。结果会显示入队、领取、唤醒交付、失败或重新上线状态，打开详情和刷新历史时也可查询最新结果。可达状态在 Watchdog 通过本机 IPC 确认 Client 进程响应后，随原有 HTTP 领取请求更新；失去报告后约 35 秒过期。
 
 ### Connection History 的结束原因
 

@@ -95,5 +95,3 @@ class WatchdogActionExecutor:
 
     def spawn_new_instance(self):
         self.spawn_restarted_parent()
-
-

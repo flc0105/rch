@@ -34,10 +34,13 @@ def create_stream_control_blueprint(server_instance):
     @blueprint.get('/api/connections/<client_id>/control')
     @allow_anonymous
     def get_connection_control(client_id):
-        return responder.json_endpoint(
-            lambda: control_command_store.pop_pending_command(client_id) or {'command': ''},
-            default_error_status=500,
-        )
+        def _execute():
+            paused = request.headers.get('X-RCH-Client-Paused')
+            if paused in ('0', '1'):
+                control_command_store.note_watchdog_poll(client_id, paused == '1')
+            return control_command_store.pop_pending_command(client_id) or {'command': ''}
+
+        return responder.json_endpoint(_execute, default_error_status=500)
 
     @blueprint.post('/api/connections/<client_id>/control')
     def set_connection_control(client_id):
@@ -53,6 +56,19 @@ def create_stream_control_blueprint(server_instance):
             return control_command_store.set_pending_command(client_id, command)
 
         return responder.json_endpoint(_execute, default_error_status=500)
+
+    @blueprint.post('/api/connections/<client_id>/control/ack')
+    @allow_anonymous
+    def acknowledge_connection_control(client_id):
+        def _execute():
+            payload = request.get_json(silent=True) or {}
+            outcome = control_command_store.acknowledge_resume(
+                client_id, str(payload.get('command_id') or ''),
+                str(payload.get('status') or ''), str(payload.get('detail') or ''),
+            )
+            web_service.event_bus.publish('httpctl_result', {'client_id': client_id, **outcome})
+            return outcome
+        return responder.json_endpoint(_execute)
 
     @blueprint.get('/api/stream')
     def stream():

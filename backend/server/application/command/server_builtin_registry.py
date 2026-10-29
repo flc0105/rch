@@ -72,6 +72,7 @@ SERVER_COMMAND_SPECS = (
         ('kill', 'Terminate current Agent', 'httpctl kill'),
         ('relaunch', 'Relaunch Agent', 'httpctl relaunch'),
         ('clone', 'Clone Agent', 'httpctl clone'),
+        ('resume', 'Resume Client connection', 'httpctl resume'),
         ('help', 'Show HTTP control usage', 'httpctl help'),
     ), default='help'),
     command('saveout', 'Save Client command output as Artifact', expects_arguments=True),

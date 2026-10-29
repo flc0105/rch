@@ -339,6 +339,10 @@ class WebConnectionService:
             copied = dict(session)
             client_id = str(copied.get('client_id') or '').strip()
             copied['command_count'] = int(command_counts.get(client_id, 0) or 0)
+            watchdog = get_control_command_store().watchdog_status(client_id)
+            copied['remote_watchdog_reachable'] = watchdog['reachable']
+            copied['remote_watchdog_paused'] = watchdog['paused']
+            copied['remote_resume'] = watchdog['resume']
 
             duration_ms = int(copied.get('duration_ms', 0) or 0)
             total_online_duration_ms += duration_ms
@@ -522,6 +526,7 @@ class WebConnectionService:
 
     def handle_connection_registered(self, session: ClientSession):
         session.services.heartbeat_service.mark_connected()
+        get_control_command_store().mark_connected(session.session_info.client_id)
         payload = self.serialize_connection(session)
         if self.recent_device_store:
             self.recent_device_store.upsert_from_connection(payload)
@@ -558,6 +563,10 @@ class WebConnectionService:
         else:
             reason, detail = 'unexpected_disconnect', {}
 
+        if reason in ('server_requested_disconnect', 'client_restart', 'client_exit'):
+            # This instance is known to be terminating; do not retain an old
+            # Remote Watchdog reachability signal after its main process exits.
+            get_control_command_store().clear_watchdog_reachability(payload.get('client_id'))
         if self.connection_history_store:
             self.connection_history_store.record_disconnected(
                 payload, termination_reason=reason, details=detail

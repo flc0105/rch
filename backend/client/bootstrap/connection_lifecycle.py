@@ -1,6 +1,7 @@
 import json
 import time
 
+from client.watchdog.instance_pause import InstancePauseControl
 from client.connection.server_connection import ServerConnection
 from client.runtime.client_info_builder import ClientInfoBuilder
 from core.utils.logger import logger
@@ -19,6 +20,7 @@ class ClientConnectionLifecycle:
 
     def __init__(self, client):
         self.client = client
+        self._instance_pause = InstancePauseControl()
 
     def create_connection(self):
         """
@@ -28,6 +30,7 @@ class ClientConnectionLifecycle:
         server.client_id = self.client.client_id
         server.guard_manager = self.client.guard_manager
         server.process_watchdog_manager = self.client.process_watchdog_manager
+        server.connection_lifecycle = self
         return server
 
     def close_current_connection(self):
@@ -48,6 +51,21 @@ class ClientConnectionLifecycle:
         self.handle_connection_lost()
         self.client.receiver_worker.reset_runtime()
         self.client.server = self.create_connection()
+
+    def start_resume_listener(self):
+        return self._instance_pause.listen()
+
+    def request_pause_after_result(self):
+        return self._instance_pause.request(self.client.guard_manager)
+
+    def cancel_pending_pause(self):
+        self._instance_pause.requested = False
+
+    def consume_pause_request(self):
+        return self._instance_pause.consume()
+
+    def pause_until_resumed(self):
+        self._instance_pause.disconnect_and_wait(self.client.server, self.reset_connection)
 
     def connect_socket(self):
         """

@@ -216,7 +216,7 @@ Web 的 **info → Watchdog** 在这种情况下显示 **Lifecycle managed by la
 
 | 配置项 | 默认值 | 含义 | 普通 `set` 修改 |
 | --- | --- | --- | --- |
-| `REMOTE_HTTP_WATCHDOG_ENABLED` | `false` | 是否启用独立 HTTP 远程控制 | 支持 |
+| `REMOTE_HTTP_WATCHDOG_ENABLED` | `false` | 是否启用独立 HTTP 远程控制及 `pause_instance` 后的恢复入口 | 支持 |
 | `REMOTE_HTTP_WATCHDOG_INTERVAL_SECONDS` | `15` | Remote HTTP 轮询间隔，单位秒 | 不支持 |
 | `LOCAL_WATCHDOG_ENABLED` | `false` | 是否启用本地心跳及超时恢复 | 支持 |
 | `LOCAL_WATCHDOG_HEARTBEAT_INTERVAL_SECONDS` | `5` | Client 写入心跳文件的周期，单位秒 | 不支持 |
@@ -232,6 +232,8 @@ Web 的 **info → Watchdog** 在这种情况下显示 **Lifecycle managed by la
 | macOS | `~/Library/Application Support/rchclient/runtime_config.json` |
 | Linux | `~/.config/rchclient/runtime_config.json` |
 | iOS | `~/Documents/.rchclient/runtime_config.json` |
+
+Remote HTTP Control 的 `resume` 将唤醒原 Client 进程中的重连等待，不会启动新进程。Connection History 展开实例 Details 后，Resume 字段显示 `Ready`（可达且已暂停）、`Not paused`（可达且未暂停）或 `Unavailable`（当前无法确认可恢复）；只有可达且暂停的实例允许按原 `client_id` 精确发送 Resume。Watchdog 每次 HTTP 领取前查询本机主进程的暂停状态，确认主进程响应后将状态随本次请求传给 Server。Local Watchdog 始终沿用独立心跳线程和原有超时恢复条件；暂停连接不会停止该心跳。暂停 IPC 不可达时，原有 `kill/relaunch/clone` HTTP Control 领取仍可继续。Server 采用逐实例 FIFO 待处理队列，单实例最多积压 32 条指令，超出时拒绝新指令。HTTP Control 仍沿用现有匿名领取方式。Resume 使用每次投递的随机命令 ID 记录入队、领取和 Watchdog 执行结果；在 60 秒内未取得交付结果时，按需将请求标记超时并清理未领取的命令，允许重试；History Detail 展开或点击小型 Refresh 时发起一次非缓存查询，按实例 ID 更新当前 Detail；即使期间重载历史列表，Resume 的 60 秒等待和前台结果通知仍持续有效，不增加轮询；Watchdog 通过现有 HTTP 控制通道反馈唤醒成功或本机 IPC 错误，Server 将最终重连确认为 Online，并通过 SSE 通知已打开的 Connection History，前台通过提示消息报告交付结果或超时，而 Detail 只展示简洁可达性及 Resume 入口。该状态只在 Server 内存保留，重启 Server 后会清空。被结束的进程不再通过 IPC 回答状态探测，其最后一次可达记录会在超时后过期。
 
 ### 操作状态和重置
 
