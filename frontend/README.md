@@ -29,7 +29,7 @@ Processes, Keychains, then Preview and Documents (including Monaco). Moving the
 pointer over a supported toolbar, More-menu, or Toolbox action can preload its
 dialog earlier.
 
-Element Plus registers the UI components used by the application through explicit
-named imports, with individual component styles. Its loading directive and
-programmatic message/confirmation/notification APIs are imported explicitly.
-No Vite auto-registration plugin or full Element Plus installation is required.
+Element Plus is installed globally with its complete stylesheet so all component
+styles, child-component styles, directives, and layout rules match the original UI.
+Programmatic message/confirmation/notification APIs remain imported directly where
+used. The Vite auto-registration plugin is not required.

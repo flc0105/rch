@@ -52,7 +52,7 @@ test('idle warmup can cancel pending tasks', () => {
   } finally { globalThis.window = oldWindow; globalThis.document = oldDocument }
 })
 
-test('lazy dialog wiring preserves optional dialogs after Element Plus on-demand registration', async () => {
+test('lazy dialog wiring is preserved with complete Element Plus UI styles', async () => {
   const { readFileSync } = await import('node:fs')
   const { fileURLToPath } = await import('node:url')
   const { dirname, resolve } = await import('node:path')
@@ -68,63 +68,28 @@ test('lazy dialog wiring preserves optional dialogs after Element Plus on-demand
     'openRemoteScriptEditorInternal', 'openNewRemoteJobEditor',
     'openNewSharedFileEditor', 'openRemoteJobEditor',
   ]) assert.match(app, new RegExp(`this\\.callOptionalDialog\\('preview', '${name}'`))
-  assert.doesNotMatch(main, /\.use\(ElementPlus\)/)
-  assert.doesNotMatch(main, /element-plus\/dist\/index\.css/)
+  assert.match(main, /\.use\(ElementPlus\)/)
+  assert.match(main, /element-plus\/dist\/index\.css/)
   assert.doesNotMatch(main, /window\.ElementPlus/)
 })
 
-test('all referenced Element Plus tags and v-loading are explicitly registered', async () => {
-  const { readFileSync, readdirSync } = await import('node:fs')
+test('full Element Plus CSS and plugin restore the original UI styling', async () => {
+  const { readFileSync } = await import('node:fs')
   const { fileURLToPath } = await import('node:url')
-  const { dirname, resolve, join } = await import('node:path')
+  const { dirname, resolve } = await import('node:path')
   const frontend = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-  const src = resolve(frontend, 'src')
-  const registry = readFileSync(resolve(src, 'utils/elementPlusRegistry.js'), 'utf8')
-  const main = readFileSync(resolve(src, 'main.js'), 'utf8')
+  const main = readFileSync(resolve(frontend, 'src/main.js'), 'utf8')
   const vite = readFileSync(resolve(frontend, 'vite.config.js'), 'utf8')
   const pkg = JSON.parse(readFileSync(resolve(frontend, 'package.json'), 'utf8'))
   const lock = JSON.parse(readFileSync(resolve(frontend, 'package-lock.json'), 'utf8'))
-  const files = []
-  function walk(dir) {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      const path = join(dir, entry.name)
-      if (entry.isDirectory()) walk(path)
-      else if (entry.name.endsWith('.vue')) files.push(path)
-    }
-  }
-  walk(src)
-  const referenced = new Set()
-  let hasLoading = false
-  for (const file of files) {
-    const sfc = readFileSync(file, 'utf8').replace(/<!--[^]*?-->/g, '')
-    for (const [, tag] of sfc.matchAll(/<(el-[a-z][\w-]*)\b/g)) referenced.add(tag)
-    if (/v-loading\b/.test(sfc)) hasLoading = true
-  }
-  const registered = new Set([...registry.matchAll(/app\.component\('(el-[a-z][\w-]*)', (El\w+)\)/g)].map(m => m[1]))
-  assert.deepEqual([...registered].sort(), [...referenced].sort())
-  const parentStyle = {
-    'collapse-item': 'collapse', 'descriptions-item': 'descriptions',
-    'dropdown-item': 'dropdown', 'dropdown-menu': 'dropdown',
-    'form-item': 'form', option: 'select', 'radio-button': 'radio',
-    'radio-group': 'radio', 'tab-pane': 'tabs', 'table-column': 'table',
-  }
-  for (const tag of registered) {
-    const suffix = tag.slice(3)
-    const name = 'El' + suffix.split('-').map(part => part[0].toUpperCase() + part.slice(1)).join('')
-    assert.match(registry, new RegExp(`\\b${name}\\b`))
-    const style = parentStyle[suffix] || suffix
-    assert.ok(registry.includes(`element-plus/es/components/${style}/style/css`))
-  }
-  assert.ok(hasLoading)
-  assert.match(registry, /app\.directive\('loading', ElLoadingDirective\)/)
-  assert.match(main, /registerElementPlusComponents\(app\)/)
+  assert.match(main, /import ElementPlus from ['"]element-plus['"]/) 
+  assert.match(main, /import ['"]element-plus\/dist\/index\.css['"]/) 
+  assert.match(main, /createApp\(Root\)\.use\(ElementPlus\)/)
+  assert.doesNotMatch(main, /registerElementPlusComponents|elementPlusRegistry/)
+  assert.doesNotMatch(main, /element-plus\/es\/components\/.*\/style\/css/)
   assert.doesNotMatch(vite, /unplugin-vue-components|ElementPlusResolver/)
   assert.equal(pkg.devDependencies['unplugin-vue-components'], undefined)
   assert.deepEqual(pkg.devDependencies, lock.packages[''].devDependencies)
-  for (const style of ['message', 'message-box', 'notification', 'loading']) {
-    assert.ok(main.includes(`element-plus/es/components/${style}/style/css`))
-  }
-  assert.doesNotMatch(main, /import ElementPlus from ['"]element-plus['"]|app\.use\(ElementPlus\)/)
 })
 
 test('optional dialog idle queue follows user priority and keeps hover/click/notification routes', async () => {
