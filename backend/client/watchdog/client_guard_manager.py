@@ -33,16 +33,6 @@ class ClientGuardManager:
             'local_watchdog': bool(runtime_config.LOCAL_WATCHDOG_ENABLED),
         }
 
-    def remote_watchdog_configured(self):
-        return self._current_enabled_modes()['remote_watchdog'] and not is_launchd_managed_client()
-
-    def is_remote_watchdog_available(self):
-        return (
-            self.remote_watchdog_configured()
-            and self._watchdog_process is not None
-            and self._watchdog_process.is_alive()
-        )
-
     def _build_local_watchdog_heartbeat_file_path(self):
         return os.path.join(get_temp_category_dir('watchdog_heartbeats', private=True), f'client_local_watchdog_heartbeat_{self.client_id}.json')
 
@@ -69,7 +59,7 @@ class ClientGuardManager:
             )
 
 
-    def _ensure_watchdog_process(self, resume_endpoint=('', '')):
+    def _ensure_watchdog_process(self):
         if self._watchdog_process is None:
             self._watchdog_process = ClientWatchdogProcess(
                 client_id=self.client_id,
@@ -77,8 +67,6 @@ class ClientGuardManager:
                 remote_http_watchdog_base_url=UPLOAD_BASE_URL,
                 remote_http_watchdog_interval_seconds=REMOTE_HTTP_WATCHDOG_INTERVAL_SECONDS,
                 remote_watchdog_log_file_path=self._build_remote_watchdog_log_file_path(),
-                resume_address=resume_endpoint[0],
-                resume_authkey=resume_endpoint[1],
                 local_watchdog_enabled=self._current_enabled_modes()['local_watchdog'],
                 local_watchdog_timeout_seconds=LOCAL_WATCHDOG_TIMEOUT_SECONDS,
                 local_watchdog_heartbeat_file_path=self._build_local_watchdog_heartbeat_file_path(),
@@ -118,19 +106,12 @@ class ClientGuardManager:
 
         # self._log_startup_once()
 
-        # The optional IPC endpoint belongs to InstancePauseControl, not this manager.
-        resume_endpoint = ('', '')
-        if self.remote_watchdog_configured():
-            ensure_listener = getattr(self, 'ensure_resume_listener', None)
-            if callable(ensure_listener):
-                resume_endpoint = ensure_listener()
-
         if self._current_enabled_modes()['local_watchdog']:
             self._ensure_local_watchdog_feeder()
             self._local_watchdog_feeder.start()
 
         if self._current_enabled_modes()['remote_watchdog'] or self._current_enabled_modes()['local_watchdog']:
-            self._ensure_watchdog_process(resume_endpoint)
+            self._ensure_watchdog_process()
             self._watchdog_process.start()
 
         self._started = True

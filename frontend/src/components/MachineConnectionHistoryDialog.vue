@@ -114,12 +114,6 @@
                 <span class="label">Integrity</span>
                 <span class="value">{{ row.integrity || '-' }}</span>
               </div>
-              <div v-if="row.remote_watchdog_reachable && row.remote_watchdog_paused" class="machine-session-meta-item machine-session-resume">
-                  <span class="label">Resume</span>
-                  <span class="value machine-session-remote-control">
-                    <el-button link type="primary" size="small" :loading="row.resume_loading" @click="resumeSession(row)">Resume</el-button>
-                  </span>
-                </div>
               <div class="machine-session-meta-item">
                 <span class="label">Process</span>
                 <span class="value">{{ formatProcess(row) }}</span>
@@ -229,12 +223,6 @@
                 <div class="machine-session-meta-item">
                   <span class="label">Integrity</span>
                   <span class="value">{{ scope.row.integrity || '-' }}</span>
-                </div>
-                <div v-if="scope.row.remote_watchdog_reachable && scope.row.remote_watchdog_paused" class="machine-session-meta-item machine-session-resume">
-                  <span class="label">Resume</span>
-                  <span class="value machine-session-remote-control">
-                    <el-button link type="primary" size="small" :loading="scope.row.resume_loading" @click="resumeSession(scope.row)">Resume</el-button>
-                  </span>
                 </div>
                 <div class="machine-session-meta-item">
                   <span class="label">Process</span>
@@ -400,7 +388,7 @@
 <script>
 import { diffDateTimeMs, formatDateTimeStandard, formatLaunchMode } from '../utils/formatters.js'
 import { ElMessage } from 'element-plus'
-import { getMachineConnectionCommands, getMachineConnectionHistory, queueHttpControlAction } from '../api/connectionsApi.js'
+import { getMachineConnectionCommands, getMachineConnectionHistory } from '../api/connectionsApi.js'
 
 export default {
   name: 'MachineConnectionHistoryDialog',
@@ -463,7 +451,6 @@ export default {
               command_loading: old?.command_loading || false,
               command_has_more: old?.command_has_more || false,
               command_next_cursor: old?.command_next_cursor || '',
-              resume_loading: old?.resume_loading || false,
             }
           }),
         }
@@ -539,21 +526,6 @@ export default {
       }
     },
 
-    async resumeSession(row) {
-      if (!row?.client_id || !row.remote_watchdog_reachable || !row.remote_watchdog_paused || row.resume_loading) return
-      row.resume_loading = true
-      try {
-        await queueHttpControlAction(row.client_id, 'resume')
-        ElMessage.success('Resume queued for Remote Watchdog')
-      } catch (e) {
-        // Immediate HTTP validation failures have no queued command to notify about.
-        ElMessage.error(e.message || 'Failed to queue resume')
-      } finally {
-        row.resume_loading = false
-        const current = this.sessions.find(item => item.client_id === row.client_id)
-        if (current) current.resume_loading = false
-      }
-    },
 
     activityKindLabel(kind) {
       return ({
@@ -626,7 +598,6 @@ export default {
       const names = {
         server_requested_disconnect: 'Server requested disconnect',
         client_exit: 'Client exit',
-        client_paused: 'Client paused',
         client_restart: 'Client restart',
         client_update: 'Client update',
         connection_lost: 'Connection lost',
@@ -886,16 +857,7 @@ export default {
   grid-column: span 2;
 }
 
-.machine-session-resume {
-  align-items: center;
-}
 
-.machine-session-remote-control {
-  display: inline-flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-}
 
 .machine-session-command-header {
   display: flex;

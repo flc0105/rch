@@ -43,13 +43,6 @@ class CommandSessionMixin:
         self.socket.close()
         sys.exit(0)
 
-    @desc('Pause this Client instance connection until Remote Watchdog resume', group='session')
-    def pause_instance(self):
-        lifecycle = getattr(self.socket, 'connection_lifecycle', None)
-        if lifecycle is None or not lifecycle.request_pause_after_result():
-            return 0, 'Remote Watchdog is not available for this Client instance'
-        return 1, 'Pause requested. The Client will disconnect after this command completes; its process and Remote Watchdog will remain running.'
-
     @desc('Restart client process and reconnect', group='session')
     @confirm('Restart this Client process and reconnect to the Server?')
     def relaunch_instance(self, options=''):

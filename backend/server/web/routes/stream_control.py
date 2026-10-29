@@ -38,9 +38,6 @@ def create_stream_control_blueprint(server_instance):
     @allow_anonymous
     def get_connection_control(client_id):
         def _execute():
-            paused = request.headers.get('X-RCH-Client-Paused')
-            if paused in ('0', '1'):
-                control_command_store.note_watchdog_poll(client_id, paused == '1')
             command = control_command_store.pop_pending_command(client_id)
             if command:
                 web_service.event_bus.publish('httpctl_consumed', command)
@@ -57,8 +54,7 @@ def create_stream_control_blueprint(server_instance):
             if command not in HTTP_CONTROL_COMMANDS:
                 raise ValueError('Unsupported HTTP control action')
 
-            # Recovery must also be queueable while the agent is offline or
-            # has an occupied command slot. The watchdog polls by client_id.
+            # HTTP control queues commands independently of the active command slot.
             return control_command_store.set_pending_command(client_id, command)
 
         return responder.json_endpoint(_execute, default_error_status=500)

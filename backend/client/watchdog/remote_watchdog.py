@@ -13,9 +13,8 @@ from client.watchdog.watchdog_environment import without_process_watchdog_enviro
 from client.watchdog.recovery_source import RECOVERY_SOURCE_ENV
 from client.runtime.launch_context import detached_launch_environment
 from client.watchdog.watchdog_action import WatchdogActionExecutor
-from client.watchdog.instance_pause import query_client_pause_state, wake_client
 
-HTTP_CONTROL_COMMANDS = {'kill', 'relaunch', 'clone', 'resume'}
+HTTP_CONTROL_COMMANDS = {'kill', 'relaunch', 'clone'}
 
 def _build_remote_watchdog_file_logger(log_file_path: str):
     logger_name = f'remote_watchdog_file_logger::{os.path.abspath(log_file_path)}'
@@ -44,16 +43,12 @@ class RemoteHttpWatchdogMonitor:
         poll_interval: float,
         remote_watchdog_log_file_path: str,
         action_executor: WatchdogActionExecutor,
-        resume_address: str = '',
-        resume_authkey: str = '',
     ):
         self.client_id = str(client_id or '').strip()
         self.base_url = str(base_url or '').rstrip('/')
         self.poll_interval = max(float(poll_interval or 0), 1.0)
         self.remote_watchdog_log_file_path = str(remote_watchdog_log_file_path or '').strip()
         self.action_executor = action_executor
-        self.resume_address = str(resume_address or '')
-        self.resume_authkey = str(resume_authkey or '')
 
         self._logger = _build_remote_watchdog_file_logger(self.remote_watchdog_log_file_path)
         self._next_poll_at = 0.0
@@ -75,11 +70,8 @@ class RemoteHttpWatchdogMonitor:
         self._logger.error(message)
 
 
-    def _fetch_command(self, paused: bool | None) -> dict:
-        headers = {'Accept': 'application/json'}
-        if paused is not None:
-            headers['X-RCH-Client-Paused'] = '1' if paused else '0'
-        request = urllib.request.Request(self._build_poll_url(), method='GET', headers=headers)
+    def _fetch_command(self) -> dict:
+        request = urllib.request.Request(self._build_poll_url(), method='GET', headers={'Accept': 'application/json'})
 
         with urllib.request.urlopen(request, timeout=5) as response:
             payload = json.loads(response.read().decode('utf-8', errors='replace'))
@@ -112,11 +104,6 @@ class RemoteHttpWatchdogMonitor:
             self.action_executor.spawn_new_instance()
             return
 
-        if command_text == 'resume':
-            if not wake_client(self.resume_address, self.resume_authkey):
-                raise RuntimeError('Client is not paused or did not accept wake')
-            return
-
         raise ValueError(f'Unsupported remote HTTP control action: {command_text}')
    
     def _report_control_result(self, command_id: str, status: str, detail: str = ''):
@@ -134,13 +121,11 @@ class RemoteHttpWatchdogMonitor:
         if now < self._next_poll_at:
             return
         self._next_poll_at = now + self.poll_interval
-        # Optional pause-status probing must never block ordinary HTTP controls.
-        paused = query_client_pause_state(self.resume_address, self.resume_authkey)
 
         poll_url = self._build_poll_url()
         self._log_http_debug(f'http control poll request: client_id={self.client_id}, url={poll_url}')
         try:
-            payload = self._fetch_command(paused)
+            payload = self._fetch_command()
             command = str(payload.get('command') or '').lower()
             if command:
                 self._log_http_warning(f'http control command received: client_id={self.client_id}, command={command}')
@@ -148,11 +133,11 @@ class RemoteHttpWatchdogMonitor:
                 try:
                     self._execute_command(command)
                 except Exception as exc:
-                    if command in ('resume', 'clone'):
+                    if command == 'clone':
                         self._report_control_result(command_id, 'failed', str(exc))
                     raise
                 else:
-                    if command in ('resume', 'clone'):
+                    if command == 'clone':
                         self._report_control_result(command_id, 'delivered')
         except urllib.error.HTTPError as e:
             self._log_http_error(f'http control poll failed: client_id={self.client_id}, http_status={e.code}, url={poll_url}')

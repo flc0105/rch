@@ -34,7 +34,6 @@ class Client:
 
         self.server = self.connection_lifecycle.create_connection()
         if self.guard_manager is not None:
-            self.guard_manager.ensure_resume_listener = self.connection_lifecycle.start_resume_listener
             self.guard_manager.start()
 
     def connect(self):
@@ -52,7 +51,6 @@ class Client:
         连接异常后的恢复逻辑
         """
         logger.error(error, exc_info=True)
-        self.connection_lifecycle.cancel_pending_pause()
         self.connection_lifecycle.reset_connection()
         self.connect()
 
@@ -66,9 +64,6 @@ class Client:
                 result = self.server.recv_command(timeout=0.5)
                 if result:
                     self.server.send_result(*result)
-                    if self.connection_lifecycle.consume_pause_request():
-                        self.connection_lifecycle.pause_until_resumed()
-                        self.connect()
             except queue.Empty:
                 continue
             except SystemExit:

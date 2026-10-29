@@ -26,7 +26,7 @@ Worker 不需要通过 Client 的 Socket 命令执行器获取控制命令，因
                          Server Web
             ┌────────────────────────────────┐
 Web 按钮 ────┤  HTTP Control：按实例 FIFO 保存待执行操作   │
-HTTP POST ───┤  每个 client_id 一个待取命令槽   │
+HTTP POST ───┤  每个 client_id 的 FIFO 待取队列 │
 Server 命令 ─┘              │                 │
             └───────────────┼─────────────────┘
                             │ HTTP GET（取出即删除）
@@ -95,22 +95,23 @@ Authorization: Bearer <API_TOKEN>
 
 ### HTTP 接口和任务队列
 
-Server 为每个 `client_id` 维护一个内存中的待执行命令槽。入队记录的结构为：
+Server 为每个 `client_id` 维护一个内存中的 FIFO 待执行队列（最多 32 条）。入队记录包含：
 
 ```json
 {
   "client_id": "<CLIENT_ID>",
   "command": "relaunch",
+  "command_id": "<Server 生成的指令 ID>",
   "created_at": "<Server 生成的时间字符串>"
 }
 ```
 
 这套机制有以下行为：
 
-- **同一个客户端最多保留一条未取走的指令。** 如果连续提交 `kill` 和 `clone`，Worker 取走之前后一次提交会覆盖前一次，不是 FIFO 队列。
+- **每个客户端最多积压 32 条指令。** 依照 FIFO 顺序交付；达到队列上限后明确拒绝新指令，不会覆盖已经入队的指令。
 - **GET 会取走并删除指令。** 不应手工调用上述 GET 来“查看队列”，否则会把指令提前消费，真正的 Worker 可能收不到。
-- **POST 返回成功表示已经入队。** 它不能证明 Worker 已收到，更不能证明进程操作成功；当前没有执行回执或 ACK。
-- **队列不持久化。** Server 进程重启可能丢失尚未取走的命令；Worker 取走后执行失败也不会自动重新入队。多进程部署之间的内存槽位不共享。
+- **POST 返回成功只表示已经入队。** 领取后会发布 SSE 事件；`clone` 由 Worker 回传执行 ACK，`kill/relaunch` 领取后即视为交付；以上不等于新进程已经上线。超时和失败会进入 Notification Center。
+- **队列不持久化。** Server 进程重启可能丢失待处理命令；Worker 执行失败也不会自动重新入队。多进程部署之间的内存队列不共享。
 
 例如，对一个无法响应 Socket 命令的 Client 提交 `relaunch`，HTTP POST 可能立即返回成功，但必须继续观察 Worker 日志以及新旧进程和连接状态，才能知道是否完成替换。
 
@@ -216,7 +217,7 @@ Web 的 **info → Watchdog** 在这种情况下显示 **Lifecycle managed by la
 
 | 配置项 | 默认值 | 含义 | 普通 `set` 修改 |
 | --- | --- | --- | --- |
-| `REMOTE_HTTP_WATCHDOG_ENABLED` | `false` | 是否启用独立 HTTP 远程控制及 `pause_instance` 后的恢复入口 | 支持 |
+| `REMOTE_HTTP_WATCHDOG_ENABLED` | `false` | 是否启用独立 HTTP 远程控制 | 支持 |
 | `REMOTE_HTTP_WATCHDOG_INTERVAL_SECONDS` | `15` | Remote HTTP 轮询间隔，单位秒 | 不支持 |
 | `LOCAL_WATCHDOG_ENABLED` | `false` | 是否启用本地心跳及超时恢复 | 支持 |
 | `LOCAL_WATCHDOG_HEARTBEAT_INTERVAL_SECONDS` | `5` | Client 写入心跳文件的周期，单位秒 | 不支持 |
@@ -233,9 +234,7 @@ Web 的 **info → Watchdog** 在这种情况下显示 **Lifecycle managed by la
 | Linux | `~/.config/rchclient/runtime_config.json` |
 | iOS | `~/Documents/.rchclient/runtime_config.json` |
 
-Remote HTTP Control 通过原 Client 的 `client_id` 投递 `kill`、`relaunch`、`clone`、`resume`；待处理指令按实例 FIFO 排队（最多 32 条），新指令不会覆盖之前的指令。指令超时时间及队列上限统一定义在 `ControlCommandStore` 类顶部。Server 在指令领取时发布 `httpctl_consumed` SSE 事件；当未领取或领取后未收到确认且超过超时预算时，会主动发布 `httpctl_timeout`。`clone` 和 `resume` 成功执行后由 Worker 回传 ACK；`kill`、`relaunch` 执行时 Worker 即将退出，领取即视为交付。超时和执行失败会写入 Notification Center，并通过 `notification_center_updated` SSE 触发前端通知弹窗；Watchdog 偏好中控制超时、控制失败默认开启，指令领取调试通知默认关闭。Web 控制操作入队成功后立即显示一次 Toast，该反馈仅表示请求已入队。HTTP Control 继续使用原有匿名领取接口，指令状态仍保存在 Server 进程内存，Server 重启会丢失待处理队列。
-
-`resume` 唤醒原 Client 进程中的重连等待，不会创建新进程。Connection History 的展开 Details 只在该实例通过 Remote Watchdog IPC 报告**可达且暂停**时展示 Resume 小入口；其他实例不展示 Resume 字段，也不因展开 Details 产生额外状态刷新。可达快照由现有 HTTP 领取请求更新，最后一次有效上报在约 35 秒后失效。Local Watchdog 沿用独立心跳线程与原有超时恢复判定；暂停期间该线程继续更新心跳。
+Remote HTTP Control 通过原 Client 的 `client_id` 投递 `kill`、`relaunch`、`clone`；待处理指令按实例 FIFO 排队（最多 32 条），新指令不会覆盖之前的指令。指令超时时间及队列上限统一定义在 `ControlCommandStore` 类顶部。Server 在指令领取时发布 `httpctl_consumed` SSE 事件；当未领取或领取后未收到确认且超过超时预算时，会主动发布 `httpctl_timeout`。`clone` 成功执行后由 Worker 回传 ACK；`kill`、`relaunch` 执行时 Worker 即将退出，领取即视为交付。超时和执行失败会写入 Notification Center，并通过 `notification_center_updated` SSE 触发前端通知弹窗；Watchdog 偏好中控制超时、控制失败默认开启，指令领取调试通知默认关闭。Web 控制操作入队成功后立即显示一次 Toast，该反馈仅表示请求已入队。HTTP Control 继续使用原有匿名领取接口，指令状态仍保存在 Server 进程内存，Server 重启会丢失待处理队列。
 
 ### 操作状态和重置
 
@@ -481,7 +480,7 @@ curl -sS -i -X POST \
 {"command":"kill"}
 ```
 
-三种动作使用同一个 POST 地址，不需要更换 API 路由。发送下一条动作前，应确认上一条已经被 Worker 取走或已完成，避免在单命令槽中覆盖尚未领取的动作。
+三种动作使用同一个 POST 地址，不需要更换 API 路由。新指令入队不会覆盖尚未领取的动作；需注意队列上限及后续命令的顺序与副作用。
 
 ### 挂起时的恢复条件
 

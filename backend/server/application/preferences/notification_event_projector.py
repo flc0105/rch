@@ -67,7 +67,7 @@ class NotificationEventProjector:
         if str(payload.get('status') or '') != 'failed':
             return None
         client_id = str(payload.get('client_id') or '').strip()
-        action = str(payload.get('command') or 'resume').strip()
+        action = str(payload.get('command') or 'control').strip()
         detail = str(payload.get('detail') or '').strip()
         return self._notification(
             'watchdog_control_failed', 'Watchdog Control Failed',

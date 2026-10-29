@@ -87,9 +87,9 @@ export function getCommandHistory(machineId) {
   return apiData(`/api/machines/${encodeURIComponent(machineId)}/command-history`, {}, [])
 }
 
-export function getMachineConnectionHistory(machineId, options = {}) {
+export function getMachineConnectionHistory(machineId) {
   if (!machineId) return Promise.resolve({ sessions: [] })
-  return apiData(`/api/machines/${encodeURIComponent(machineId)}/connection-history`, options, { sessions: [] })
+  return apiData(`/api/machines/${encodeURIComponent(machineId)}/connection-history`, {}, { sessions: [] })
 }
 
 export function getMachineConnectionCommands(machineId, clientId, params = {}) {
