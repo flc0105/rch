@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     :model-value="modelValue"
-    title="Manage Pinned Paths"
+    title="Pinned Paths"
     width="760px"
     top="6vh"
     class="fixed-dialog remote-pins-dialog"
@@ -11,6 +11,7 @@
     <div class="fixed-dialog-body remote-pins-body">
       <div class="remote-pins-toolbar">
         <el-button size="small" type="primary" :disabled="!selectedId || createSaving" @click="openCreatePicker">Create</el-button>
+        <el-button size="small" :disabled="!selectedId || refreshing" :loading="refreshing" @click="refreshPinnedPaths">Refresh</el-button>
       </div>
       <div class="dialog-table-shell remote-pins-table-shell">
         <el-table
@@ -108,7 +109,7 @@ export default {
   ],
 
   data() {
-    return { createPickerVisible: false, createSaving: false }
+    return { createPickerVisible: false, createSaving: false, refreshing: false }
   },
 
   watch: {
@@ -118,6 +119,29 @@ export default {
   },
 
   methods: {
+    async refreshPinnedPaths() {
+      const clientId = String(this.selectedId || '').trim()
+      if (!clientId || this.refreshing || !this.modelValue) return
+      this.refreshing = true
+      try {
+        const response = await fetch(`/api/connections/${encodeURIComponent(clientId)}/pinned_paths`, {
+          cache: 'no-store',
+        })
+        const json = await response.json()
+        if (clientId !== String(this.selectedId || '').trim() || !this.modelValue) return
+        if (!response.ok || json.code !== 0) {
+          throw new Error(json.message || 'Failed to refresh pinned paths')
+        }
+        this.$emit('updated', Array.isArray(json.data?.items) ? json.data.items : [])
+      } catch (e) {
+        if (clientId === String(this.selectedId || '').trim() && this.modelValue) {
+          ElMessage.error(e.message || 'Failed to refresh pinned paths')
+        }
+      } finally {
+        this.refreshing = false
+      }
+    },
+
     openCreatePicker() {
       if (!this.selectedId || this.createSaving) return
       this.createPickerVisible = true

@@ -82,7 +82,7 @@ Search 按文件或目录名称进行**不区分大小写的子字符串匹配**
 
 Quick Jump 提供 Root、Home、Desktop、Documents、Downloads、Temp 和 Program Directory 等系统位置，以及手动输入路径的 Go to Folder。这些位置由**目标 Client 的系统环境**解析；具体路径随平台和运行身份不同。
 
-Browser 还提供 Pinned Paths 管理：可以保存常用远程目录、指定显示名称、编辑、删除或直接跳转。Pins 按**机器身份 `machine_id`** 保存于 Server 的 SQLite 数据库 `runtime/rch.db`，不是按单次连接的 `client_id` 暂存，所以同一机器重新连接后仍可复用。固定路径也供终端 `gopin` 和 Script SDK 的 Workspace 能力使用。
+Browser 还提供 Pinned Paths 管理：可以保存常用远程目录、指定显示名称、编辑、删除或直接跳转。Pinned Paths 对话框支持手动 Refresh，以单次请求更新当前设备的固定路径列表。Pins 按**机器身份 `machine_id`** 保存于 Server 的 SQLite 数据库 `runtime/rch.db`，不是按单次连接的 `client_id` 暂存，所以同一机器重新连接后仍可复用。固定路径也供终端 `gopin` 和 Script SDK 的 Workspace 能力使用。
 
 例如已经保存显示名称为 `logs` 的 Pin，可以在相应 Client 的终端命令通道执行：
 

@@ -91,10 +91,6 @@ PS_ARGUMENT_SPEC = ArgumentCommandSpec(
             help_text='Filter by listening port',
         ),
         ArgumentOptionSpec(
-            name='details', option_type='flag', required=False, default=False,
-            help_text='Include elapsed running time, command line and listening ports',
-        ),
-        ArgumentOptionSpec(
             name='with-actions', option_type='flag', required=False, default=False,
             help_text='Include available row actions in JSON output',
         ),
@@ -120,7 +116,6 @@ PS_ARGUMENT_SPEC = ArgumentCommandSpec(
         'acmd ps --pid 1234',
         'acmd ps --name python',
         'acmd ps --name python --json',
-        'acmd ps --details --json',
         'acmd ps --port 8080 --json --with-actions',
     ],
 )

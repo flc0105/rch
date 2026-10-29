@@ -159,7 +159,6 @@ class CommandProcessMixin:
         name = str(args_dict.get('name') or '').strip()
         output_json = bool(args_dict.get('json', False))
         include_actions = bool(args_dict.get('with-actions', False))
-        include_details = bool(args_dict.get('details', False))
         port = args_dict.get('port')
         if port is not None:
             port = int(port)
@@ -177,10 +176,6 @@ class CommandProcessMixin:
             from client.commands.common.services.process.approved_process_service import _port_owners
             owners = _port_owners(port)
             rows = [row for row in rows if row['pid'] in owners]
-        if include_details:
-            service = self._get_process_service()
-            for row in rows:
-                row.update(service.get_acmd_process_details(row['pid']))
         if include_actions and output_json:
             for row in rows:
                 row['_actions'] = [{'label': 'Kill',

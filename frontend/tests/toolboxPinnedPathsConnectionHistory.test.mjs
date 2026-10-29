@@ -157,3 +157,32 @@ test('changing the selected client during the folder/name flow does not save to 
   app.opts.watch.modelValue.call(app.instance, false)
   assert.equal(app.instance.createPickerVisible, false)
 })
+
+test('Pinned Paths title and one-shot Refresh update only the active device', async () => {
+  const template = source('../src/components/RemotePinsDialog.vue')
+  assert.match(template, /title="Pinned Paths"/)
+  assert.match(template, /@click="refreshPinnedPaths">Refresh<\/el-button>/)
+  const app = pinsDialog({ items: [{ display_name: 'New', path: '/new' }] })
+  await app.instance.refreshPinnedPaths()
+  assert.equal(app.requests.length, 1)
+  assert.equal(app.requests[0].url, '/api/connections/client-1/pinned_paths')
+  assert.equal(app.requests[0].init.cache, 'no-store')
+  assert.deepEqual(plain(app.emitted[0]), ['updated', [{ display_name: 'New', path: '/new' }]])
+
+  const pending = deferred()
+  // Simulate switching devices while the refresh response is pending.
+  const calls = []
+  const delayedOptions = options('../src/components/RemotePinsDialog.vue', {
+    RemoteFilePicker: {},
+    ElMessage: { error: value => calls.push(value) },
+    ElMessageBox: {},
+    fetch: async () => { await pending.promise; return ok({ items: [{ display_name: 'Old', path: '/old' }] }) },
+  })
+  const instance = { ...delayedOptions.data(), ...delayedOptions.methods, selectedId: 'client-1', modelValue: true, $emit: (...event) => calls.push(event) }
+  const task = instance.refreshPinnedPaths()
+  instance.selectedId = 'client-2'
+  pending.resolve()
+  await task
+  assert.deepEqual(calls, [], 'stale Client response must not replace current pins')
+  assert.equal(instance.refreshing, false)
+})

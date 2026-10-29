@@ -1,6 +1,6 @@
 # RCH Variables
 
-运行时变量的取值发生在目标 Client 上，而非浏览器或 Server 预先替换。普通命令在进入 Client 方法查找及 Shell 执行之前解析 `${namespace:name}`，使相同命令能引用当前设备的进程、环境与路径。Script SDK 另提供以执行上下文为基础的读取接口。
+运行时变量的取值发生在目标 Client 上，而非浏览器或 Server 预先替换。普通命令在派发前展开 `${namespace:name}`，结构化 ACMD 在参数类型校验前展开同样的变量，使两类命令都能引用当前设备的进程、环境与路径。Script SDK 另提供以执行上下文为基础的读取接口。
 
 变量值会受进程身份、工作目录、操作系统和所用执行模式影响。其机制是文本展开，不会自动理解 Shell 引号、参数分隔和业务类型，所以需要区分变量解析成功与最终命令安全可执行。
 
@@ -36,7 +36,7 @@ shell echo alice@macbook-pro
 
 这里的关键在于**取值发生在目标 Client**。当 Server 与 Client 运行在不同操作系统时，`${rch:pid}`、`${env:PATH}` 和 `${path:home}` 都表示目标 Client 的值，不是 Server 或浏览器的值。自定义 `var` 值保存在 Client 当前连接的命令执行器内；切换目标 Client 时各自独立，重新创建 Client 执行器后清空。
 
-普通命令采用自动插值；Python Script 与结构化 `acmd` 使用不同执行链，**不自动对其代码或参数执行同样的字符串替换**。Script 可以通过 SDK 主动读取和展开变量，详见第六节。
+普通命令在派发前展开变量；结构化 `acmd` 在 Client 参数类型校验前展开字符串选项和位置参数。Python Script 代码不会自动插值，可通过 SDK 主动读取和展开变量，详见第六节。
 
 ## 当前 Client 连接的自定义变量
 
@@ -286,7 +286,7 @@ shell echo ${
 
 ## Script 运行上下文中的变量
 
-普通命令会自动插值，但 Python Script 代码文本及结构化 `acmd` 参数不走普通命令的自动变量展开链。需要在 Script 中读取变量时，应显式使用 `variables` SDK。
+普通命令和 ACMD 参数自动插值。Python Script 代码文本不自动插值，需要在 Script 中读取变量时显式使用 `variables` SDK。
 
 ### SDK 读取及字符串展开
 

@@ -17,6 +17,8 @@ Client 连接：acmd 消息 + 结构化 Payload
                  ↓
 Client：按当前平台查 Command Registry
                  ↓
+Client：对参数中的 RCH Variables 展开（目标 Client 的当前值）
+                 ↓
 有注册及参数定义 → 别名/位置参数处理 → 校验与类型转换
                  ↓
 调用命令 Handler → 返回状态与结果
@@ -26,8 +28,7 @@ Client：按当前平台查 Command Registry
 
 ```text
 acmd ps --name python --json
-acmd ps --details
-acmd ps --pid 1234 --details --json
+acmd ps --pid ${rch:pid} --json
 ```
 
 Server 会生成类似如下的负载：
@@ -74,9 +75,6 @@ acmd ps --port 8080 --json --with-actions
   可取消单条勾选；Force 初始状态由 `-9/-f/--force` 决定。
 - `--no-confirm` 必须指定目标，不发起任何交互。`--force` 仅决定使用
   `SIGKILL`，未指定时使用 `SIGTERM`。不从未确认的自由文本猜目标。
-- `acmd ps` 的 `--details` 可按需添加 `running_time`、`command` 和 `listening_ports`。
-  运行时长以时分秒表示；命令行和监听端口可能因系统权限或进程退出而为空。
-  `listening_ports` 支持多个端口，以逗号分隔。
 - `acmd ps` 支持 `--pid/--name/--port`；普通输出及 `--json` 默认只含
   进程信息。仅指定 `--json --with-actions` 才在每行添加 `_actions`，例如
   `[{"label":"Kill","command":"acmd kill --pid 1234"}]`。
@@ -268,13 +266,14 @@ Server 在收到 `acmd` 前缀后先生成结构化 Payload，再通过现有 Cl
 
 取消与超时属于**协作式执行控制**：上下文可以记录取消请求并调用已注册的清理处理器，但 Registry 不会对任意 Handler 自动实现持续中断。如果 Handler 进入长时间阻塞调用而没有检查取消状态，不能保证发出取消后立即停止。ACMD 本身也不默认启动外部 Shell；命令 Handler 如何访问系统资源取决于它的实现及 Client 权限。
 
-与普通 Shell-like 命令还有一个关键区别：**ACMD 参数不经过 Client 普通命令的 `${rch:*}`、`${env:*}`、`${path:*}` 自动插值链**。例如：
+ACMD 的参数在 Client 侧完成 RCH Variables 展开，随后才按参数 Schema 做类型转换。例如：
 
 ```text
 acmd ps --pid ${rch:pid}
+acmd kill --pid ${rch:pid}
 ```
 
-不能期待 `pid` 自动替换成 Client PID。Server 先把文本保留为字符串参数，Client 的整数校验会因无法转换而失败。需要变量支持时，不应直接套用 Shell-like 的插值规则；相关机制见 [RCH Variables](variables.md)。
+这两条命令的 `pid` 都在目标 Client 上解析为当前主进程 PID，再进行整数校验。所有字符串选项和位置参数都支持 `${rch:*}`、`${env:*}`、`${path:*}`、`${var:*}`；解析失败时命令停止执行。命令名称与参数名称不会被插值，Script 代码仍需使用 Variables SDK。详见 [RCH Variables](variables.md)。
 
 ## 调用失败时如何定位问题
 

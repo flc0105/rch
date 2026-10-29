@@ -24,7 +24,7 @@ class CommandVariableResolutionError(ValueError):
 
 class CommandVariableResolver:
     """
-    普通 command 的 Client 侧动态变量解析器。
+    Client 侧动态变量解析器，供普通命令、ACMD 参数及 Script SDK 复用。
 
     支持运行时信息、进程环境、常用路径及连接级自定义变量：
     - ${rch:*}：RCH Client 运行时信息
@@ -32,7 +32,7 @@ class CommandVariableResolver:
     - ${path:*}：目标 Client 常用系统路径
     - ${var:*}：当前 Client 连接内设置的用户变量
 
-    script / acmd 不经过本解析器。
+    Script 可通过 SDK 显式调用；ACMD 在参数类型校验前展开字符串参数。
     """
 
     VARIABLE_PATTERN = re.compile(
