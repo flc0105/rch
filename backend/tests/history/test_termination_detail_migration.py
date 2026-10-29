@@ -23,10 +23,10 @@ def _seed_db(path):
         conn.execute("INSERT INTO unrelated_data VALUES ('keep me')")
         conn.executemany('''INSERT INTO connection_sessions(
             machine_id, client_id, connected_at, disconnected_at,
-            connection_state, disconnect_reason, termination_reason, termination_detail_json
-        ) VALUES (?, ?, '2026-10-26T10:00:00', '2026-10-26T10:00:01', ?, ?, ?, ?)''', [
-            ('m', 'aborted', 'offline', 'disconnected', 'connection_lost', json.dumps({'summary': 'EOF'})),
-            ('m', 'manual', 'offline', 'disconnected', 'server_requested_disconnect', json.dumps({'command': 'httpctl kill'})),
+            connection_state, termination_reason, termination_detail_json
+        ) VALUES (?, ?, '2026-10-26T10:00:00', '2026-10-26T10:00:01', ?, ?, ?)''', [
+            ('m', 'aborted', 'offline', 'connection_lost', json.dumps({'summary': 'EOF'})),
+            ('m', 'manual', 'offline', 'server_requested_disconnect', json.dumps({'command': 'httpctl kill'})),
         ])
 
 
@@ -41,9 +41,9 @@ def test_migration_from_prior_detail_columns_preserves_json_and_normalizes_statu
     with sqlite3.connect(db_path) as conn:
         columns = migration.table_columns(conn)
         assert 'termination_detail_json' in columns and old_column not in columns
-        rows = list(conn.execute('SELECT client_id, connection_state, disconnect_reason, termination_detail_json FROM connection_sessions ORDER BY client_id'))
-        assert rows[0] == ('aborted', 'interrupted', 'interrupted', '{"summary": "EOF"}')
-        assert rows[1] == ('manual', 'offline', 'disconnected', '{"command": "httpctl kill"}')
+        rows = list(conn.execute('SELECT client_id, connection_state, termination_detail_json FROM connection_sessions ORDER BY client_id'))
+        assert rows[0] == ('aborted', 'interrupted', '{"summary": "EOF"}')
+        assert rows[1] == ('manual', 'offline', '{"command": "httpctl kill"}')
         assert conn.execute('SELECT value FROM unrelated_data').fetchone()[0] == 'keep me'
     with sqlite3.connect(backup) as conn:
         assert 'termination_detail_json' not in migration.table_columns(conn)

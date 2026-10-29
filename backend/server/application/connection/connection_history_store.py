@@ -55,7 +55,6 @@ class ConnectionHistoryStore:
             'last_seen_at': row['last_seen_at'],
             'duration_ms': int(row['duration_ms'] or 0),
             'connection_state': row['connection_state'],
-            'disconnect_reason': row['disconnect_reason'],
             'termination_reason': row['termination_reason'],
             'termination_detail': json_loads_dict(row['termination_detail_json']),
             'tracking_source': row['tracking_source'] or 'connection_lifecycle',
@@ -90,8 +89,8 @@ class ConnectionHistoryStore:
                 INSERT INTO connection_sessions(
                     machine_id, client_id, connected_at, connected_at_ms, disconnected_at,
                     disconnected_at_ms, last_seen_at, duration_ms, connection_state,
-                    disconnect_reason, termination_reason, termination_detail_json, tracking_source, snapshot_json
-                ) VALUES (?, ?, ?, ?, '', 0, ?, 0, 'online', '', '', '{}', 'connection_lifecycle', ?)
+                    termination_reason, termination_detail_json, tracking_source, snapshot_json
+                ) VALUES (?, ?, ?, ?, '', 0, ?, 0, 'online', '', '{}', 'connection_lifecycle', ?)
                 ''',
                 (machine_id, client_id, connected_at, self._to_ms(connected_at), last_seen_at, compact_json_dumps(snapshot or {})),
             )
@@ -102,7 +101,7 @@ class ConnectionHistoryStore:
             '''
             UPDATE connection_sessions SET
                 connected_at = ?, connected_at_ms = ?, disconnected_at = '', disconnected_at_ms = 0,
-                last_seen_at = ?, duration_ms = 0, connection_state = 'online', disconnect_reason = '',
+                last_seen_at = ?, duration_ms = 0, connection_state = 'online',
                 termination_reason = '', termination_detail_json = '{}', snapshot_json = ?
             WHERE machine_id = ? AND client_id = ?
             ''',
@@ -169,7 +168,7 @@ class ConnectionHistoryStore:
                 duration_ms = max(int((end - start).total_seconds() * 1000), 0) if start and end else 0
                 conn.execute(
                     '''UPDATE connection_sessions SET disconnected_at = ?, disconnected_at_ms = ?, duration_ms = ?,
-                       connection_state = 'interrupted', disconnect_reason = 'server_interrupted'
+                       connection_state = 'interrupted'
                        WHERE machine_id = ? AND client_id = ?''',
                     (disconnected_at, self._to_ms(disconnected_at), duration_ms, machine_id_text, row['client_id']),
                 )
@@ -213,18 +212,17 @@ class ConnectionHistoryStore:
                     if value:
                         termination_detail[key] = value[:limit]
             end_state = 'offline' if normal_end else 'interrupted'
-            end_marker = 'disconnected' if normal_end else 'interrupted'
             conn.execute(
                 '''
                 UPDATE connection_sessions SET
                     disconnected_at = ?, disconnected_at_ms = ?, last_seen_at = ?, duration_ms = ?,
-                    connection_state = ?, disconnect_reason = ?,
-                    termination_reason = ?, termination_detail_json = ?, snapshot_json = ?
+                    connection_state = ?, termination_reason = ?,
+                    termination_detail_json = ?, snapshot_json = ?
                 WHERE machine_id = ? AND client_id = ?
                 ''',
                 (
                     disconnected_at, self._to_ms(disconnected_at), last_seen_at, duration_ms,
-                    end_state, end_marker, str(termination_reason or ''), compact_json_dumps(termination_detail),
+                    end_state, str(termination_reason or ''), compact_json_dumps(termination_detail),
                     compact_json_dumps(snapshot or {}), machine_id, client_id,
                 ),
             )

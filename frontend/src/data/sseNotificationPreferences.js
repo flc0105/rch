@@ -5,6 +5,9 @@ export const DEFAULT_SSE_NOTIFICATION_PREFERENCES = {
     connection_online: true,
     connection_offline: true,
     device_event: true,
+    watchdog_control_timeout: true,
+    watchdog_control_failed: true,
+    watchdog_control_received: false,
     artifact_created: true,
     file_transfer_started: false,
     file_transfer_stopped: false,
@@ -38,6 +41,14 @@ export const SSE_NOTIFICATION_GROUPS = [
       { key: 'connection_online', label: 'Device online' },
       { key: 'connection_offline', label: 'Device offline' },
       { key: 'device_event', label: 'Device events' },
+    ],
+  },
+  {
+    title: 'Watchdog',
+    items: [
+      { key: 'watchdog_control_timeout', label: 'Control timeout' },
+      { key: 'watchdog_control_failed', label: 'Control failed' },
+      { key: 'watchdog_control_received', label: 'Control received' },
     ],
   },
   {

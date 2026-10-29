@@ -136,7 +136,7 @@ test('Connection History mobile cards preserve session detail and activity contr
   })
   assert.match(vue, /class="machine-history-mobile-list"/)
   assert.match(vue, /class="machine-history-table"/)
-  for (const field of ['Hostname', 'Address', 'OS', 'User', 'Process', 'Launch mode', 'Build', 'Last seen', 'Disconnect', 'Termination cause', 'Termination details', 'cwd']) {
+  for (const field of ['Hostname', 'Address', 'OS', 'User', 'Process', 'Launch mode', 'Build', 'Last seen', 'Termination', 'cwd']) {
     assert.match(vue, new RegExp(`>${field}<`), `${field} should remain in mobile details`)
   }
   assert.match(vue, /@click="toggleMobileSessionDetails\(row\)"/)

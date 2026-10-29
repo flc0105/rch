@@ -20,6 +20,9 @@ def create_stream_control_blueprint(server_instance):
     web_service = server_instance.web_service
     responder = WebApiResponder()
     control_command_store = get_control_command_store()
+    control_command_store.set_timeout_callback(
+        lambda payload: web_service.event_bus.publish('httpctl_timeout', payload)
+    )
 
     @blueprint.get('/api/httpctl/actions')
     def list_http_control_actions():
@@ -38,7 +41,10 @@ def create_stream_control_blueprint(server_instance):
             paused = request.headers.get('X-RCH-Client-Paused')
             if paused in ('0', '1'):
                 control_command_store.note_watchdog_poll(client_id, paused == '1')
-            return control_command_store.pop_pending_command(client_id) or {'command': ''}
+            command = control_command_store.pop_pending_command(client_id)
+            if command:
+                web_service.event_bus.publish('httpctl_consumed', command)
+            return command or {'command': ''}
 
         return responder.json_endpoint(_execute, default_error_status=500)
 
@@ -62,7 +68,7 @@ def create_stream_control_blueprint(server_instance):
     def acknowledge_connection_control(client_id):
         def _execute():
             payload = request.get_json(silent=True) or {}
-            outcome = control_command_store.acknowledge_resume(
+            outcome = control_command_store.acknowledge_control(
                 client_id, str(payload.get('command_id') or ''),
                 str(payload.get('status') or ''), str(payload.get('detail') or ''),
             )

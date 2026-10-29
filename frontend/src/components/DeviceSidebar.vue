@@ -253,6 +253,15 @@
 
         <button
           type="button"
+          class="device-context-menu-item"
+          :disabled="!canRunContextConnectionCommand"
+          @click="triggerDeviceContextCommand('pause-connection')"
+        >
+          Pause connection
+        </button>
+
+        <button
+          type="button"
           class="device-context-menu-item is-danger"
           :disabled="!canRunContextConnectionCommand"
           @click="triggerDeviceContextCommand('restart-connection')"
@@ -681,6 +690,11 @@ async triggerDeviceContextCommand(command) {
 
   if (command === 'duplicate-connection') {
     await this.runConnectionSessionCommand(item, 'spawn_instance', 'Duplicate connection command submitted')
+    return
+  }
+
+  if (command === 'pause-connection') {
+    await this.runConnectionSessionCommand(item, 'pause_instance', 'Pause command submitted')
     return
   }
 

@@ -114,15 +114,12 @@
                 <span class="label">Integrity</span>
                 <span class="value">{{ row.integrity || '-' }}</span>
               </div>
-              <div class="machine-session-meta-item machine-session-resume">
-                <span class="label">Resume</span>
-                <span class="value machine-session-remote-control">
-                  {{ row.remote_watchdog_reachable ? (row.remote_watchdog_paused ? 'Ready' : 'Not paused') : 'Unavailable' }}
-                  <el-button v-if="row.remote_watchdog_reachable && row.remote_watchdog_paused" link type="primary" size="small"
-                    :loading="row.resume_loading" @click="resumeSession(row)">Resume</el-button>
-                  <el-button link size="small" :loading="row.watchdog_refreshing" @click="refreshWatchdog(row)">Refresh</el-button>
-                </span>
-              </div>
+              <div v-if="row.remote_watchdog_reachable && row.remote_watchdog_paused" class="machine-session-meta-item machine-session-resume">
+                  <span class="label">Resume</span>
+                  <span class="value machine-session-remote-control">
+                    <el-button link type="primary" size="small" :loading="row.resume_loading" @click="resumeSession(row)">Resume</el-button>
+                  </span>
+                </div>
               <div class="machine-session-meta-item">
                 <span class="label">Process</span>
                 <span class="value">{{ formatProcess(row) }}</span>
@@ -139,20 +136,11 @@
                 <span class="label">Last seen</span>
                 <span class="value">{{ formatDateTime(row.last_seen_at) }}</span>
               </div>
-              <div class="machine-session-meta-item">
-                <span class="label">Disconnect</span>
-                <span class="value">{{ row.disconnect_reason || '-' }}</span>
-              </div>
-              <div v-if="row.termination_reason" class="machine-session-meta-item">
-                <span class="label">Termination cause</span>
-                <span class="value">{{ formatEndReason(row.termination_reason) }}</span>
-              </div>
-              <div v-if="hasTerminationDetail(row)" class="machine-session-meta-item machine-session-meta-wide">
-                <span class="label">Termination details</span>
-                <div class="machine-session-end-details">
-                  <div v-if="row.termination_detail.command">Command: {{ row.termination_detail.command }}</div>
-                  <div v-if="row.termination_detail.summary">{{ row.termination_detail.summary }}</div>
-                  <pre v-if="row.termination_detail.traceback">{{ row.termination_detail.traceback }}</pre>
+              <div v-if="row.termination_reason || hasTerminationDetail(row)" class="machine-session-meta-item machine-session-meta-wide">
+                <span class="label">Termination</span>
+                <div class="value machine-session-termination-value">
+                  {{ formatEndReason(row.termination_reason) }}<span v-if="terminationDetailText(row)"> ({{ terminationDetailText(row) }})</span>
+                  <pre v-if="row.termination_detail?.traceback">{{ row.termination_detail.traceback }}</pre>
                 </div>
               </div>
               <div class="machine-session-meta-item machine-session-meta-wide">
@@ -212,6 +200,7 @@
         v-if="sessions.length"
         :data="sessions"
         row-key="client_id"
+        :expand-row-keys="expandedSessionIds"
         border
         stripe
         class="machine-history-table"
@@ -241,13 +230,10 @@
                   <span class="label">Integrity</span>
                   <span class="value">{{ scope.row.integrity || '-' }}</span>
                 </div>
-                <div class="machine-session-meta-item machine-session-resume">
+                <div v-if="scope.row.remote_watchdog_reachable && scope.row.remote_watchdog_paused" class="machine-session-meta-item machine-session-resume">
                   <span class="label">Resume</span>
                   <span class="value machine-session-remote-control">
-                    {{ scope.row.remote_watchdog_reachable ? (scope.row.remote_watchdog_paused ? 'Ready' : 'Not paused') : 'Unavailable' }}
-                    <el-button v-if="scope.row.remote_watchdog_reachable && scope.row.remote_watchdog_paused" link type="primary" size="small"
-                      :loading="scope.row.resume_loading" @click="resumeSession(scope.row)">Resume</el-button>
-                    <el-button link size="small" :loading="scope.row.watchdog_refreshing" @click="refreshWatchdog(scope.row)">Refresh</el-button>
+                    <el-button link type="primary" size="small" :loading="scope.row.resume_loading" @click="resumeSession(scope.row)">Resume</el-button>
                   </span>
                 </div>
                 <div class="machine-session-meta-item">
@@ -266,20 +252,11 @@
                   <span class="label">Last seen</span>
                   <span class="value">{{ formatDateTime(scope.row.last_seen_at) }}</span>
                 </div>
-                <div class="machine-session-meta-item">
-                  <span class="label">Disconnect</span>
-                  <span class="value">{{ scope.row.disconnect_reason || '-' }}</span>
-                </div>
-                <div v-if="scope.row.termination_reason" class="machine-session-meta-item">
-                  <span class="label">Termination cause</span>
-                  <span class="value">{{ formatEndReason(scope.row.termination_reason) }}</span>
-                </div>
-                <div v-if="hasTerminationDetail(scope.row)" class="machine-session-meta-item machine-session-meta-wide">
-                  <span class="label">Termination details</span>
-                  <div class="machine-session-end-details">
-                    <div v-if="scope.row.termination_detail.command">Command: {{ scope.row.termination_detail.command }}</div>
-                    <div v-if="scope.row.termination_detail.summary">{{ scope.row.termination_detail.summary }}</div>
-                    <pre v-if="scope.row.termination_detail.traceback">{{ scope.row.termination_detail.traceback }}</pre>
+                <div v-if="scope.row.termination_reason || hasTerminationDetail(scope.row)" class="machine-session-meta-item machine-session-meta-wide">
+                  <span class="label">Termination</span>
+                  <div class="value machine-session-termination-value">
+                    {{ formatEndReason(scope.row.termination_reason) }}<span v-if="terminationDetailText(scope.row)"> ({{ terminationDetailText(scope.row) }})</span>
+                    <pre v-if="scope.row.termination_detail?.traceback">{{ scope.row.termination_detail.traceback }}</pre>
                   </div>
                 </div>
                 <div class="machine-session-meta-item machine-session-meta-wide">
@@ -438,13 +415,10 @@ export default {
         sessions: [],
       },
       mobileExpandedSessionIds: [],
-      resumeTimers: new Map(),
+      expandedSessionIds: [],
     }
   },
 
-  beforeUnmount() {
-    this.clearResumeTimers()
-  },
 
   computed: {
     dialogTitle() {
@@ -463,11 +437,12 @@ export default {
         item.device_display_name || item.display_hostname || item.device_alias || item.hostname || '',
       ).trim()
       this.visible = true
+      this.expandedSessionIds = []
+      this.mobileExpandedSessionIds = []
       return this.loadHistory()
     },
 
     async loadHistory() {
-      this.mobileExpandedSessionIds = []
       if (!this.machineId) {
         this.history = { sessions: [] }
         return
@@ -481,24 +456,25 @@ export default {
           ...(payload || {}),
           sessions: (Array.isArray(payload?.sessions) ? payload.sessions : []).map(session => {
             const old = previous.get(session.client_id)
-            const pending = this.resumeTimers.get(session.client_id)
             return {
               ...session,
-              commands: [],
-              command_loaded: false,
-              command_loading: false,
-              command_has_more: false,
-              command_next_cursor: '',
+              commands: old?.commands || [],
+              command_loaded: old?.command_loaded || false,
+              command_loading: old?.command_loading || false,
+              command_has_more: old?.command_has_more || false,
+              command_next_cursor: old?.command_next_cursor || '',
               resume_loading: old?.resume_loading || false,
-              remote_resume: pending && old?.remote_resume?.command_id === pending.commandId
-                ? old.remote_resume : session.remote_resume,
-              watchdog_refreshing: false,
             }
           }),
         }
-        for (const snapshot of payload?.sessions || []) {
-          const current = this.sessions.find(row => row.client_id === snapshot.client_id)
-          if (current) this.syncResumeSnapshot(current, snapshot)
+        const available = new Set(this.sessions.map(row => row.client_id))
+        this.expandedSessionIds = this.expandedSessionIds.filter(id => available.has(id))
+        this.mobileExpandedSessionIds = this.mobileExpandedSessionIds.filter(id => available.has(id))
+        const expanded = new Set([...this.expandedSessionIds, ...this.mobileExpandedSessionIds])
+        for (const row of this.sessions) {
+          if (expanded.has(row.client_id) && Number(row.command_count || 0) && !row.command_loading) {
+            this.loadSessionCommands(row)
+          }
         }
       } catch (e) {
         ElMessage.error(e.message || 'Failed to load connection history')
@@ -508,10 +484,11 @@ export default {
     },
 
     handleSessionExpand(row, expandedRows) {
-      const expanded = Array.isArray(expandedRows)
-        && expandedRows.some(item => item?.client_id === row?.client_id)
+      this.expandedSessionIds = Array.isArray(expandedRows)
+        ? expandedRows.map(item => item?.client_id).filter(Boolean)
+        : []
+      const expanded = this.expandedSessionIds.includes(row?.client_id)
       if (!expanded) return
-      this.refreshWatchdog?.(row)
       if (row?.command_loaded || row?.command_loading || !Number(row?.command_count || 0)) return
       this.loadSessionCommands(row)
     },
@@ -531,7 +508,6 @@ export default {
       }
 
       this.mobileExpandedSessionIds = [...this.mobileExpandedSessionIds, clientId]
-      this.refreshWatchdog?.(row)
       if (!row.command_loaded && !row.command_loading && Number(row.command_count || 0)) {
         return this.loadSessionCommands(row)
       }
@@ -547,135 +523,35 @@ export default {
           cursor: append ? row.command_next_cursor : '',
         })
 
-        if (!this.sessions.includes(row)) return
+        const current = this.sessions.find(item => item.client_id === row.client_id)
+        if (!current) return
 
         const items = Array.isArray(data?.items) ? data.items : []
-        row.commands = append ? [...(row.commands || []), ...items] : items
-        row.command_next_cursor = String(data?.next_cursor || '')
-        row.command_has_more = data?.has_more === true
-        row.command_loaded = true
+        current.commands = append ? [...(current.commands || []), ...items] : items
+        current.command_next_cursor = String(data?.next_cursor || '')
+        current.command_has_more = data?.has_more === true
+        current.command_loaded = true
       } catch (e) {
         ElMessage.error(e.message || 'Failed to load connection activities')
       } finally {
-        if (this.sessions.includes(row)) {
-          row.command_loading = false
-        }
+        const current = this.sessions.find(item => item.client_id === row.client_id)
+        if (current) current.command_loading = false
       }
-    },
-
-    // One fresh GET per Detail expansion or click; match by ID as rows may be replaced.
-    async refreshWatchdog(row) {
-      if (!row?.client_id || !this.machineId || row.watchdog_refreshing) return
-      const machineId = this.machineId
-      const clientId = row.client_id
-      row.watchdog_refreshing = true
-      try {
-        const data = await getMachineConnectionHistory(machineId, { cache: 'no-store' })
-        if (machineId !== this.machineId) return
-        const match = (data?.sessions || []).find(item => item.client_id === clientId)
-        const current = this.sessions.find(item => item.client_id === clientId)
-        if (!match || !current) return
-        current.remote_watchdog_reachable = match.remote_watchdog_reachable
-        current.remote_watchdog_paused = match.remote_watchdog_paused
-        this.syncResumeSnapshot(current, match)
-      } catch (e) {
-        ElMessage.error(e.message || 'Failed to refresh Remote Watchdog')
-      } finally {
-        row.watchdog_refreshing = false
-      }
-    },
-
-    syncResumeSnapshot(row, snapshot) {
-      const pending = this.resumeTimers.get(row.client_id)
-      const outcome = snapshot.remote_resume
-      if (pending && outcome?.command_id === pending.commandId) {
-        if (['delivered', 'failed', 'timeout', 'online'].includes(outcome.status)) {
-          this.applyResumeResult({ client_id: row.client_id, ...outcome })
-        } else {
-          row.remote_resume = outcome
-        }
-      } else if (!pending && !row.resume_loading) {
-        row.remote_resume = outcome
-      }
-    },
-
-    clearResumeTimeout(clientId) {
-      const pending = this.resumeTimers.get(clientId)
-      if (pending) clearTimeout(pending.timer)
-      this.resumeTimers.delete(clientId)
-    },
-
-    clearResumeTimers() {
-      for (const pending of this.resumeTimers.values()) clearTimeout(pending.timer)
-      this.resumeTimers.clear()
-    },
-
-    startResumeTimeout(row, commandId) {
-      if (!commandId || !['queued', 'received'].includes(row.remote_resume?.status)) return
-      const clientId = row.client_id
-      this.clearResumeTimeout(clientId)
-      const timer = setTimeout(() => {
-        if (this.resumeTimers.get(clientId)?.commandId !== commandId) return
-        this.resumeTimers.delete(clientId)
-        const current = this.sessions.find(item => item.client_id === clientId)
-        if (current?.remote_resume?.command_id === commandId) {
-          current.remote_resume = { command_id: commandId, status: 'timeout', detail: '' }
-        }
-        ElMessage.error('Remote Watchdog did not respond within 60 seconds; Resume status is unknown')
-      }, 60000)
-      this.resumeTimers.set(clientId, { timer, commandId })
     },
 
     async resumeSession(row) {
       if (!row?.client_id || !row.remote_watchdog_reachable || !row.remote_watchdog_paused || row.resume_loading) return
       row.resume_loading = true
-      row.remote_resume = null
       try {
-        const result = await queueHttpControlAction(row.client_id, 'resume')
-        if (!result?.command_id) throw new Error('Resume request returned no command ID')
-        const current = this.sessions.find(item => item.client_id === row.client_id) || row
-        if (current.remote_resume?.command_id !== result.command_id) {
-          current.remote_resume = { command_id: result.command_id, status: 'queued', detail: '' }
-        }
-        this.startResumeTimeout(current, result.command_id)
-        if (['queued', 'received'].includes(current.remote_resume?.status)) {
-          ElMessage.success('Resume queued')
-        }
+        await queueHttpControlAction(row.client_id, 'resume')
+        ElMessage.success('Resume queued for Remote Watchdog')
       } catch (e) {
+        // Immediate HTTP validation failures have no queued command to notify about.
         ElMessage.error(e.message || 'Failed to queue resume')
       } finally {
         row.resume_loading = false
         const current = this.sessions.find(item => item.client_id === row.client_id)
         if (current) current.resume_loading = false
-      }
-    },
-
-    markClientOnline(clientId) {
-      const pending = this.resumeTimers.get(clientId)
-      if (pending) this.clearResumeTimeout(clientId)
-      const row = this.sessions.find(item => item.client_id === clientId)
-      if (!row) return
-      row.remote_watchdog_paused = false
-      if (pending || ['queued', 'received', 'delivered'].includes(row.remote_resume?.status)) {
-        row.remote_resume = { ...row.remote_resume, status: 'online', detail: '' }
-      }
-    },
-
-    applyResumeResult(payload = {}) {
-      const pending = this.resumeTimers.get(payload.client_id)
-      const row = this.sessions.find(item => item.client_id === payload.client_id)
-      if (!payload.command_id ||
-        (pending && pending.commandId !== payload.command_id) ||
-        (!pending && (!row ||
-          (row.remote_resume?.command_id && row.remote_resume.command_id !== payload.command_id) ||
-          (!row.remote_resume?.command_id && !row.resume_loading)))) return
-      if (row && ['online', 'timeout'].includes(row.remote_resume?.status)) return
-      if (row) row.remote_resume = { command_id: payload.command_id, status: payload.status, detail: payload.detail || '' }
-      if (['failed', 'delivered', 'timeout', 'online'].includes(payload.status)) {
-        this.clearResumeTimeout(payload.client_id)
-        if (payload.status === 'failed') ElMessage.error(payload.detail || 'Resume failed')
-        else if (payload.status === 'timeout') ElMessage.error('Remote Watchdog did not respond within 60 seconds; Resume status is unknown')
-        else if (payload.status === 'delivered') ElMessage.success('Client notified to reconnect')
       }
     },
 
@@ -734,6 +610,11 @@ export default {
 
     formatLaunchModeValue(row) {
       return formatLaunchMode(row?.launch_mode, row?.launch_source)
+    },
+
+    terminationDetailText(row) {
+      const details = row?.termination_detail || {}
+      return [details.command ? `Command: ${details.command}` : '', details.summary || ''].filter(Boolean).join('; ')
     },
 
     hasTerminationDetail(row) {

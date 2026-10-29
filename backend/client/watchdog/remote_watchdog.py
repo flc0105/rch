@@ -119,7 +119,7 @@ class RemoteHttpWatchdogMonitor:
 
         raise ValueError(f'Unsupported remote HTTP control action: {command_text}')
    
-    def _report_resume_result(self, command_id: str, status: str, detail: str = ''):
+    def _report_control_result(self, command_id: str, status: str, detail: str = ''):
         if not command_id:
             return
         body = json.dumps({'command_id': command_id, 'status': status, 'detail': detail}).encode('utf-8')
@@ -148,12 +148,12 @@ class RemoteHttpWatchdogMonitor:
                 try:
                     self._execute_command(command)
                 except Exception as exc:
-                    if command == 'resume':
-                        self._report_resume_result(command_id, 'failed', str(exc))
+                    if command in ('resume', 'clone'):
+                        self._report_control_result(command_id, 'failed', str(exc))
                     raise
                 else:
-                    if command == 'resume':
-                        self._report_resume_result(command_id, 'delivered')
+                    if command in ('resume', 'clone'):
+                        self._report_control_result(command_id, 'delivered')
         except urllib.error.HTTPError as e:
             self._log_http_error(f'http control poll failed: client_id={self.client_id}, http_status={e.code}, url={poll_url}')
         except urllib.error.URLError as e:

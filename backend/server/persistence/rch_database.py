@@ -121,10 +121,10 @@ class RchDatabase:
                 # Connection history uses one canonical set of termination columns.
                 columns = {row[1] for row in conn.execute('PRAGMA table_info(connection_sessions)')}
                 required = {'termination_reason', 'termination_detail_json'}
-                if not required.issubset(columns):
+                if not required.issubset(columns) or 'disconnect_reason' in columns:
                     raise RuntimeError(
                         'rch.db connection_sessions has an incompatible schema; '
-                        'back up the database and initialize a fresh runtime/rch.db'
+                        'back up the database and apply the standalone schema update before starting Server'
                     )
                 conn.commit()
             except Exception:
@@ -206,7 +206,6 @@ class RchDatabase:
                 last_seen_at TEXT NOT NULL DEFAULT '',
                 duration_ms INTEGER NOT NULL DEFAULT 0,
                 connection_state TEXT NOT NULL DEFAULT '',
-                disconnect_reason TEXT NOT NULL DEFAULT '',
                 termination_reason TEXT NOT NULL DEFAULT '',
                 termination_detail_json TEXT NOT NULL DEFAULT '{}',
                 tracking_source TEXT NOT NULL DEFAULT 'connection_lifecycle',

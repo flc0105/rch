@@ -45,7 +45,7 @@ def count_previous_abnormal_rows(connection):
     return connection.execute(
         f"SELECT COUNT(*) FROM connection_sessions WHERE disconnected_at != '' "
         f"AND termination_reason IN ({conditions}) "
-        "AND (connection_state != 'interrupted' OR disconnect_reason != 'interrupted')",
+        "AND connection_state != 'interrupted'",
         ABNORMAL_REASONS,
     ).fetchone()[0]
 
@@ -53,10 +53,9 @@ def count_previous_abnormal_rows(connection):
 def normalize_abnormal_states(connection):
     conditions = ', '.join('?' for _ in ABNORMAL_REASONS)
     cursor = connection.execute(
-        f"UPDATE connection_sessions SET connection_state = 'interrupted', "
-        f"disconnect_reason = 'interrupted' WHERE disconnected_at != '' "
+        f"UPDATE connection_sessions SET connection_state = 'interrupted' WHERE disconnected_at != '' "
         f"AND termination_reason IN ({conditions}) "
-        "AND (connection_state != 'interrupted' OR disconnect_reason != 'interrupted')",
+        "AND connection_state != 'interrupted'",
         ABNORMAL_REASONS,
     )
     return cursor.rowcount
@@ -169,7 +168,7 @@ def migrate(database_path, dry_run=False):
             needs_state_update = connection.execute(
                 "SELECT COUNT(*) FROM connection_sessions WHERE disconnected_at != '' "
                 "AND reason IN ('connection_lost', 'transport_error', 'timeout', 'unexpected_disconnect', 'client_error') "
-                "AND (connection_state != 'interrupted' OR disconnect_reason != 'interrupted')"
+                "AND connection_state != 'interrupted'"
             ).fetchone()[0]
         print(f'Prior abnormal sessions to update: {needs_state_update}')
         if not operations and not needs_state_update:

@@ -511,7 +511,17 @@ try {
 }
 $script = Join-Path $release 'rchclient.py'
 Write-Host "[bootstrap] Launching detached Client: $py $script"
-Start-Process -FilePath $py -ArgumentList ('"' + $script + '"') -WorkingDirectory $release -WindowStyle Hidden
+# Start-Process inherits these scoped launch markers, avoiding parent-tree misclassification.
+$oldLaunchMode = $env:RCH_CLIENT_LAUNCH_MODE
+$oldLaunchSource = $env:RCH_CLIENT_LAUNCH_SOURCE
+try {
+    $env:RCH_CLIENT_LAUNCH_MODE = 'detached'
+    $env:RCH_CLIENT_LAUNCH_SOURCE = 'detached_process'
+    Start-Process -FilePath $py -ArgumentList ('"' + $script + '"') -WorkingDirectory $release -WindowStyle Hidden
+} finally {
+    $env:RCH_CLIENT_LAUNCH_MODE = $oldLaunchMode
+    $env:RCH_CLIENT_LAUNCH_SOURCE = $oldLaunchSource
+}
 Write-Host '[bootstrap] Client process launched (detached)'
 Write-Host 'Bootstrap complete.'
 '''

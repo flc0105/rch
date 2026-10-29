@@ -25,7 +25,7 @@ Worker 不需要通过 Client 的 Socket 命令执行器获取控制命令，因
 ```text
                          Server Web
             ┌────────────────────────────────┐
-Web 按钮 ────┤  HTTP Control：保存待执行操作   │
+Web 按钮 ────┤  HTTP Control：按实例 FIFO 保存待执行操作   │
 HTTP POST ───┤  每个 client_id 一个待取命令槽   │
 Server 命令 ─┘              │                 │
             └───────────────┼─────────────────┘
@@ -233,7 +233,9 @@ Web 的 **info → Watchdog** 在这种情况下显示 **Lifecycle managed by la
 | Linux | `~/.config/rchclient/runtime_config.json` |
 | iOS | `~/Documents/.rchclient/runtime_config.json` |
 
-Remote HTTP Control 的 `resume` 将唤醒原 Client 进程中的重连等待，不会启动新进程。Connection History 展开实例 Details 后，Resume 字段显示 `Ready`（可达且已暂停）、`Not paused`（可达且未暂停）或 `Unavailable`（当前无法确认可恢复）；只有可达且暂停的实例允许按原 `client_id` 精确发送 Resume。Watchdog 每次 HTTP 领取前查询本机主进程的暂停状态，确认主进程响应后将状态随本次请求传给 Server。Local Watchdog 始终沿用独立心跳线程和原有超时恢复条件；暂停连接不会停止该心跳。暂停 IPC 不可达时，原有 `kill/relaunch/clone` HTTP Control 领取仍可继续。Server 采用逐实例 FIFO 待处理队列，单实例最多积压 32 条指令，超出时拒绝新指令。HTTP Control 仍沿用现有匿名领取方式。Resume 使用每次投递的随机命令 ID 记录入队、领取和 Watchdog 执行结果；在 60 秒内未取得交付结果时，按需将请求标记超时并清理未领取的命令，允许重试；History Detail 展开或点击小型 Refresh 时发起一次非缓存查询，按实例 ID 更新当前 Detail；即使期间重载历史列表，Resume 的 60 秒等待和前台结果通知仍持续有效，不增加轮询；Watchdog 通过现有 HTTP 控制通道反馈唤醒成功或本机 IPC 错误，Server 将最终重连确认为 Online，并通过 SSE 通知已打开的 Connection History，前台通过提示消息报告交付结果或超时，而 Detail 只展示简洁可达性及 Resume 入口。该状态只在 Server 内存保留，重启 Server 后会清空。被结束的进程不再通过 IPC 回答状态探测，其最后一次可达记录会在超时后过期。
+Remote HTTP Control 通过原 Client 的 `client_id` 投递 `kill`、`relaunch`、`clone`、`resume`；待处理指令按实例 FIFO 排队（最多 32 条），新指令不会覆盖之前的指令。指令超时时间及队列上限统一定义在 `ControlCommandStore` 类顶部。Server 在指令领取时发布 `httpctl_consumed` SSE 事件；当未领取或领取后未收到确认且超过超时预算时，会主动发布 `httpctl_timeout`。`clone` 和 `resume` 成功执行后由 Worker 回传 ACK；`kill`、`relaunch` 执行时 Worker 即将退出，领取即视为交付。超时和执行失败会写入 Notification Center，并通过 `notification_center_updated` SSE 触发前端通知弹窗；Watchdog 偏好中控制超时、控制失败默认开启，指令领取调试通知默认关闭。Web 控制操作入队成功后立即显示一次 Toast，该反馈仅表示请求已入队。HTTP Control 继续使用原有匿名领取接口，指令状态仍保存在 Server 进程内存，Server 重启会丢失待处理队列。
+
+`resume` 唤醒原 Client 进程中的重连等待，不会创建新进程。Connection History 的展开 Details 只在该实例通过 Remote Watchdog IPC 报告**可达且暂停**时展示 Resume 小入口；其他实例不展示 Resume 字段，也不因展开 Details 产生额外状态刷新。可达快照由现有 HTTP 领取请求更新，最后一次有效上报在约 35 秒后失效。Local Watchdog 沿用独立心跳线程与原有超时恢复判定；暂停期间该线程继续更新心跳。
 
 ### 操作状态和重置
 
@@ -377,7 +379,7 @@ set --reset LOCAL_WATCHDOG_ENABLED
 
 **切换 Remote / Local** 时，Web 服务会经正常 Client 命令通道修改相应配置，并重新初始化 Watchdog。目标 Client 已离线或命令通道不可用时，这类开关操作可能失败。
 
-**点击 Kill / Relaunch / Clone** 时，界面先要求确认，再通过 HTTP Control 将动作放入 Server 待执行槽位。它不直接依赖 Client 当前能否处理普通命令，因此即便状态查询失败，仍可能成功入队；但实际执行必须依靠原有 Remote Worker 持续运行并可访问 Server。
+**点击 Kill / Relaunch / Clone** 时，界面先要求确认，再通过 HTTP Control 将动作加入 Server 的待执行队列。它不直接依赖 Client 当前能否处理普通命令，因此即便状态查询失败，仍可能成功入队；但实际执行必须依靠原有 Remote Worker 持续运行并可访问 Server。
 
 Web 页面提示动作已发送或已入队，只能视为 Server 接受了指令。应通过 Client 进程变化、重新连接情况和 Watchdog 日志确认最终效果。
 

@@ -738,3 +738,26 @@ def test_client_info_reports_watchdog_effective_state_for_launchd(monkeypatch):
     assert 'remote_watchdog_enabled' not in info
     assert 'local_watchdog_enabled' not in info
     assert info['feature_manifest']['watchdog'] is True
+
+
+def test_windows_powershell_bootstrap_not_confused_with_ancestor_services(monkeypatch):
+    _prepare(monkeypatch, [
+        _FakeParent('powershell.exe', r'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe'),
+        _FakeParent('services.exe', r'C:\Windows\System32\services.exe'),
+    ], is_tty=True, platform='win32')
+    assert ClientInfoBuilder._detect_launch_context('windows') == {'mode': 'terminal', 'source': 'powershell'}
+
+    _prepare(monkeypatch, [_FakeParent('services.exe', r'C:\Windows\System32\services.exe')], is_tty=False, platform='win32')
+    assert ClientInfoBuilder._detect_launch_context('windows') == {'mode': 'system_service', 'source': 'windows_service'}
+
+
+def test_windows_bootstrap_sets_detached_launch_mode_for_start_process():
+    from server.application.agent.agent_bootstrap_script_service import AgentBootstrapScriptService
+    script = AgentBootstrapScriptService().generate_powershell_script({
+        'server_host': '127.0.0.1', 'server_port': 8787, 'web_port': 8085,
+    })
+    assert "$env:RCH_CLIENT_LAUNCH_MODE = 'detached'" in script
+    assert "$env:RCH_CLIENT_LAUNCH_SOURCE = 'detached_process'" in script
+    assert 'try {' in script and '} finally {' in script
+    assert 'try {{' not in script
+    assert 'Start-Process -FilePath $py' in script

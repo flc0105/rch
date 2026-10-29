@@ -108,7 +108,7 @@ def detect_launch_context(os_alias: str) -> dict:
     if is_windows:
         if has_any(('taskeng.exe', 'taskhostw.exe', 'schtasks.exe')):
             return {'mode': 'scheduled', 'source': 'schtasks'}
-        if has_any(('services.exe',)):
+        if direct_parent[0] == 'services.exe' or direct_parent[1].endswith(('\\services.exe', '/services.exe')):
             return {'mode': 'system_service', 'source': 'windows_service'}
     else:
         if has_any(('/cron', '/crond', ' cron', ' crond')) or any(

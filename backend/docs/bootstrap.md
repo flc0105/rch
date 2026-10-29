@@ -268,3 +268,5 @@ One-liners 负责生成和复制部署入口；Bootstrap 完成下载、校验�
 Bundle SHA-256 能发现下载内容与当前 Server 所返回摘要不一致的情况；但如果 HTTP 通信本身受到篡改，攻击者也可能替换摘要及文件。因此，应先建立可信的 Server 和传输环境。匿名生成与构建端点还可能消耗 Server 的构建资源，需要做好网络访问约束。
 
 Bootstrap 不会清理所有旧版本，也不会替旧 Client 自动完成运行中进程交接。其目标是安装并启动一个 Client 实例；之后的连接、更新和生命周期管理属于独立功能。对重复部署同一版本，应特别注意 Release 目录替换和可能并存的 Client 进程。
+
+Windows PowerShell bootstrap 使用 `Start-Process` 启动独立 Client，并在创建子进程期间传入 `RCH_CLIENT_LAUNCH_MODE=detached` 与 `RCH_CLIENT_LAUNCH_SOURCE=detached_process`。Client 优先采用显式启动标识；未提供标识时，Windows Service 判定只检查直接父进程是否为 `services.exe`。

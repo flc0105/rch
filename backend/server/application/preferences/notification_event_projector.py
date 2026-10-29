@@ -17,6 +17,9 @@ class NotificationEventProjector:
         'screen_view_lifecycle',
         'artifact_created',
         'device_event',
+        'httpctl_timeout',
+        'httpctl_consumed',
+        'httpctl_result',
     }
 
     def __init__(self, *, history_store, server):
@@ -40,6 +43,37 @@ class NotificationEventProjector:
         notification['shown_at'] = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
         stored, created = self.history_store.add_notification(notification)
         return stored if created else None
+
+    def _build_httpctl_timeout(self, payload):
+        action = str(payload.get('command') or 'control').strip()
+        client_id = str(payload.get('client_id') or '').strip()
+        detail = str(payload.get('detail') or 'Timed out waiting for Remote Watchdog').strip()
+        return self._notification(
+            'watchdog_control_timeout', 'Watchdog Control Timeout',
+            f'{self._device_name(client_id)} · {action}: {detail}',
+            'error', {'client_id': client_id, 'command': action, 'command_id': payload.get('command_id') or ''},
+        )
+
+    def _build_httpctl_consumed(self, payload):
+        client_id = str(payload.get('client_id') or '').strip()
+        action = str(payload.get('command') or 'control').strip()
+        return self._notification(
+            'watchdog_control_received', 'Watchdog Control Received',
+            f'{self._device_name(client_id)} · {action} received by Remote Watchdog',
+            'info', {'client_id': client_id, 'command': action, 'command_id': payload.get('command_id') or ''},
+        )
+
+    def _build_httpctl_result(self, payload):
+        if str(payload.get('status') or '') != 'failed':
+            return None
+        client_id = str(payload.get('client_id') or '').strip()
+        action = str(payload.get('command') or 'resume').strip()
+        detail = str(payload.get('detail') or '').strip()
+        return self._notification(
+            'watchdog_control_failed', 'Watchdog Control Failed',
+            f'{self._device_name(client_id)} · {action} failed{f": {detail}" if detail else ""}',
+            'error', {'client_id': client_id, 'command': action, 'command_id': payload.get('command_id') or ''},
+        )
 
     def _build_server_cleanup_completed(self, payload):
         removed_files = int(payload.get('removed_files') or 0)

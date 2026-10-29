@@ -219,11 +219,6 @@ export default {
                 if (reconnecting) void this.refreshForegroundTask?.();
             });
 
-            es.addEventListener('httpctl_result', (event) => {
-                const payload = JSON.parse(event.data || '{}');
-                this.$refs?.machineConnectionHistoryDialogRef?.applyResumeResult(payload);
-            });
-
             es.addEventListener('foreground_task_changed', (event) => {
                 const payload = JSON.parse(event.data || '{}');
                 if (!payload.client_id || !payload.task) return;
@@ -247,6 +242,21 @@ export default {
             es.addEventListener('notification_center_updated', (event) => {
                 const payload = JSON.parse(event.data || '{}');
                 this.applySseNotificationCenterUpdate(payload);
+                // Watchdog outcomes are persisted once and delivered through the
+                // same SSE notification event; no dialog-owned timers or polling.
+                if (payload.action !== 'added') return;
+                const notification = payload.notification || {};
+                const key = notification.notification_key;
+                if (!['watchdog_control_timeout', 'watchdog_control_failed', 'watchdog_control_received'].includes(key)) return;
+                this.showSseNotification(key, {
+                    title: notification.title,
+                    message: notification.message,
+                    type: notification.type,
+                    duration: notification.type === 'error' ? 7000 : 5000,
+                }, {
+                    eventId: notification.event_id || event.lastEventId,
+                    context: notification.context || {},
+                });
             });
 
             es.addEventListener('server_cleanup_completed', (event) => {
@@ -607,7 +617,6 @@ export default {
                 const payload = JSON.parse(event.data);
                 const conn = payload.connection;
                 this.upsertConnection(conn);
-                this.$refs?.machineConnectionHistoryDialogRef?.markClientOnline(conn.client_id);
                 if (conn.client_id === this.selectedId) void this.refreshForegroundTask?.();
 
                 const recoverySource = payload.recovery_source;

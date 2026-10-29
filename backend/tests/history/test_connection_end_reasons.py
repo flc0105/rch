@@ -68,7 +68,7 @@ def test_connection_history_new_fields_preserve_existing_state_and_detail(tmp_pa
     assert item['termination_detail']['summary'] == 'RuntimeError: crash'
     assert 'Traceback' in item['termination_detail']['traceback']
     assert item['connection_state'] == 'interrupted'
-    assert item['disconnect_reason'] == 'interrupted'
+    assert item['connection_state'] == 'interrupted'
     # Later close callbacks must not replace the first conclusive diagnosis.
     store.record_disconnected(_connection(), termination_reason='transport_error', details={'summary': 'later'})
     assert store.get_history('machine-A')['sessions'][0]['termination_reason'] == 'client_error'
@@ -78,16 +78,16 @@ def test_connection_history_new_fields_preserve_existing_state_and_detail(tmp_pa
 def test_connection_history_schema_uses_explicit_termination_columns(tmp_path):
     db, store = _new_store(tmp_path)
     columns = {entry['name'] for entry in db.connection().execute('PRAGMA table_info(connection_sessions)')}
-    assert {'termination_reason', 'termination_detail_json', 'disconnect_reason'} <= columns
+    assert {'termination_reason', 'termination_detail_json'} <= columns
+    assert 'disconnect_reason' not in columns
     assert 'reason' not in columns
     assert 'detail_json' not in columns
     assert 'error_diagnostics_json' not in columns
     store.record_disconnected(_connection(), termination_reason='transport_error', details={
         'summary': 'Connection reset', 'traceback': 'Traceback (most recent call last): ...',
     })
-    row = db.connection().execute("SELECT termination_reason, termination_detail_json, disconnect_reason FROM connection_sessions").fetchone()
+    row = db.connection().execute("SELECT termination_reason, termination_detail_json FROM connection_sessions").fetchone()
     assert row['termination_reason'] == 'transport_error'
-    assert row['disconnect_reason'] == 'interrupted'
     assert 'Connection reset' in row['termination_detail_json']
     assert store.get_history('machine-A')['sessions'][0]['termination_detail']['summary'] == 'Connection reset'
     db.close_thread_connection()
@@ -112,7 +112,7 @@ def test_interrupted_tag_stays_unchanged_when_server_recovers(tmp_path):
     store.reconcile_active_sessions('machine-A', set())
     item = store.get_history('machine-A')['sessions'][0]
     assert item['connection_state'] == 'interrupted'
-    assert item['disconnect_reason'] == 'server_interrupted'
+    assert item['connection_state'] == 'interrupted'
     assert item['termination_reason'] == ''
     assert item['termination_detail'] == {}
     db.close_thread_connection()
@@ -174,7 +174,7 @@ def test_server_requested_reason_groups_server_and_client_reports(tmp_path):
     )
     assert item['termination_reason'] == 'server_requested_disconnect'
     assert item['termination_detail'] == {}
-    assert item['disconnect_reason'] == 'disconnected'
+    assert item['connection_state'] == 'offline'
 
 
 def test_client_restart_and_update_take_precedence_over_socket_eof(tmp_path):
@@ -321,7 +321,7 @@ def test_voluntary_shutdown_has_offline_tag_and_optional_command(tmp_path):
             item = store.get_history('machine-A')['sessions'][0]
             assert item['termination_reason'] == cause
             assert item['connection_state'] == 'offline'
-            assert item['disconnect_reason'] == 'disconnected'
+            assert item['connection_state'] == 'offline'
             assert item['termination_detail'] == {'command': 'kill_instance'}
             db.close_thread_connection()
 
@@ -337,7 +337,7 @@ def test_abnormal_shutdown_has_interrupted_tag_and_actual_diagnostics(tmp_path):
             item = store.get_history('machine-A')['sessions'][0]
             assert item['termination_reason'] == cause
             assert item['connection_state'] == 'interrupted'
-            assert item['disconnect_reason'] == 'interrupted'
+            assert item['connection_state'] == 'interrupted'
             assert item['termination_detail'] == details
             db.close_thread_connection()
 
@@ -435,3 +435,34 @@ def test_client_report_can_include_command():
                              'detail': {'command': 'kill_instance'}}]
     finally:
         client.close()
+
+
+def test_standalone_drop_disconnect_reason_preserves_connection_history_and_other_tables(tmp_path):
+    """The one-shot SQL is applied outside the Server, without a built-in schema migration."""
+    db_path = tmp_path / 'rch.db'
+    db = RchDatabase(str(db_path))
+    history = ConnectionHistoryStore(db)
+    history.record_connected(_connection())
+    history.record_disconnected(_connection(), termination_reason='server_requested_disconnect',
+                                details={'command': 'httpctl kill'})
+    db.close_thread_connection()
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("CREATE TABLE independent_values(value TEXT)")
+        conn.execute("INSERT INTO independent_values VALUES ('keep')")
+        conn.execute("ALTER TABLE connection_sessions ADD COLUMN disconnect_reason TEXT NOT NULL DEFAULT ''")
+        conn.execute("UPDATE connection_sessions SET disconnect_reason = 'disconnected'")
+
+    with pytest.raises(RuntimeError, match='incompatible schema'):
+        RchDatabase(str(db_path))
+    # Equivalent to the supplied standalone .sql file, executed with Server stopped.
+    with sqlite3.connect(db_path) as conn:
+        conn.executescript('BEGIN IMMEDIATE; ALTER TABLE connection_sessions DROP COLUMN disconnect_reason; COMMIT;')
+        assert conn.execute('PRAGMA integrity_check').fetchone()[0] == 'ok'
+        assert 'disconnect_reason' not in {row[1] for row in conn.execute('PRAGMA table_info(connection_sessions)')}
+        assert conn.execute('SELECT value FROM independent_values').fetchone()[0] == 'keep'
+    restored = RchDatabase(str(db_path))
+    row = ConnectionHistoryStore(restored).get_history('machine-A')['sessions'][0]
+    assert row['termination_reason'] == 'server_requested_disconnect'
+    assert row['termination_detail'] == {'command': 'httpctl kill'}
+    assert row['connection_state'] == 'offline'
+    restored.close_thread_connection()

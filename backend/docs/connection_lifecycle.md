@@ -149,11 +149,11 @@ RCH 将当前 Session、最近设备和历史会话分别管理：
 - **最近设备** 保留 `machine_id` 关联的机器快照、别名等信息。没有活动 Session 的设备仍可以作为 Offline 条目出现在设备列表；有当前会话的机器不会再额外叠加同一机器的离线快照。
 - **连接历史** 持久化在 `runtime/rch.db` 的 `connection_sessions` 中，记录各 `machine_id` / `client_id` 会话的连接、断开、最后响应时间和持续时间，并可关联对应的 Activity 数量与执行摘要。
 
-Connection History 在桌面端以表格展示会话，手机端改为卡片。卡片保留连接状态、Client ID、上线/离线时间、持续时间和 Activity 数量；展开 Details 可查看主机、系统、用户、Integrity、启动模式、结束原因及 Activity 记录，并可继续加载后续 Activity。两种布局使用同一会话数据和活动查询。展开的 Details 使用 Resume 字段显示 `Ready`、`Not paused` 或 `Unavailable`，分别对应可达且已暂停、可达但未暂停、不可达。只有近期可达且已暂停的实例显示 **Resume**；点击后精确向该实例的 `client_id` 投递 HTTP Control 恢复请求。结果会显示入队、领取、唤醒交付、失败或重新上线状态，打开详情和刷新历史时也可查询最新结果。可达状态在 Watchdog 通过本机 IPC 确认 Client 进程响应后，随原有 HTTP 领取请求更新；失去报告后约 35 秒过期。
+Connection History 在桌面端以表格展示会话，手机端改为卡片。卡片保留连接状态、Client ID、上线/离线时间、持续时间和 Activity 数量；展开 Details 可查看主机、系统、用户、Integrity、启动模式、结束原因及 Activity 记录，并可继续加载后续 Activity。两种布局使用同一会话数据和活动查询。仅当某实例的 Remote Watchdog 近期确认该 Client **已暂停且可唤醒**时，Details 才显示 Resume 小入口，并按该实例的 `client_id` 精确投递 HTTP Control 请求。展开详情不产生额外请求，历史顶部 Refresh 可以重新读取缓存快照。HTTP Control 入队成功时立即显示一次操作反馈；交付超时、失败以及可选的领取调试信息通过 Notification Center 的新增 SSE 事件显示通知弹窗，统一受 Notification Preferences 的 Watchdog 开关控制。
 
 ### Connection History 的结束原因
 
-Connection History 的列表在主动结束时显示 **Offline**，在连接丢失、传输错误、超时、协议截断或 Client 异常时显示 **Interrupted**。Server 启动后核对出的旧会话仍使用 Interrupted。展开记录后，**Termination cause** 显示分类；**Termination details** 显示实际关闭命令或错误摘要与 traceback。`connection_sessions.termination_reason` 和 `termination_detail_json` 分别保存分类和详情。
+Connection History 的列表在主动结束时显示 **Offline**，在连接丢失、传输错误、超时、协议截断或 Client 异常时显示 **Interrupted**。Server 启动后核对出的旧会话仍使用 Interrupted。展开记录后，**Termination** 在一个字段中显示既有结束原因文案，命令或错误摘要非空时追加括号详情；可用的 traceback 保留原文。`connection_sessions.termination_reason` 和 `termination_detail_json` 分别保存分类和详情。
 
 | Termination cause | Connection History 状态 | 采集条件 |
 | --- | --- | --- |
@@ -245,7 +245,7 @@ PY
 数据库核对使用当前的 `termination_reason` 与 `termination_detail_json` 字段。测试环境在 Server 停止写库后，可以用 `sqlite3` 查看最近会话：
 
 ```sql
-SELECT client_id, connection_state, disconnect_reason,
+SELECT client_id, connection_state,
        termination_reason, termination_detail_json
 FROM connection_sessions
 ORDER BY connected_at_ms DESC LIMIT 12;
