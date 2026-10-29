@@ -165,6 +165,7 @@
                   @open-screen-view-tab="openScreenViewInNewTab"
                   @open-clipboard="openClipboardDialog"
                   @open-processes="openProcessDialog"
+                  @hint-preload="hintPreload"
                   @open-one-liners="openOneLinersDialog"
                   @open-quick-actions="openQuickActionsDialog"
                   @run-quick-action="runPinnedQuickAction"
@@ -284,9 +285,11 @@
     :get-tab-scoped-headers="getTabScopedHeaders"
   />
 
-  <DocumentsDialog ref="documentsDialogRef" />
+  <component :is="dialogComponents.documents" v-if="dialogComponents.documents" ref="documentsDialogRef" />
 
-  <KeychainManagerDialog
+  <component
+    :is="dialogComponents.keychains"
+    v-if="dialogComponents.keychains"
     ref="keychainManagerDialogRef"
     :current-connection="currentConnection"
     :machine-alias-map="machineAliasMap"
@@ -323,7 +326,9 @@
     @job-deleted="handleBackgroundJobDeleted"
   />
 
-  <PreviewDialog
+  <component
+    :is="dialogComponents.preview"
+    v-if="dialogComponents.preview"
     ref="previewDialogRef"
     :selected-id="selectedId"
     :remote-files-dialog-visible="remoteFilesDialogVisible"
@@ -360,7 +365,9 @@
     @open-log-viewer="openLogViewerDialog"
   />
 
-  <ProcessDialogs
+  <component
+    :is="dialogComponents.processes"
+    v-if="dialogComponents.processes"
     ref="processDialogRef"
     :selected-id="selectedId"
     :tab-id="tabId"
@@ -393,7 +400,9 @@
     @open-builder="openAgentBuilderDialog"
   />
 
-  <PtyDialog
+  <component
+    :is="dialogComponents.pty"
+    v-if="dialogComponents.pty"
     ref="ptyDialogRef"
     :selected-id="selectedId"
     :current-connection="currentConnection"
@@ -563,7 +572,6 @@ import TerminalToolbar from './components/TerminalToolbar.vue'
 import CommandInputBar from './components/CommandInputBar.vue'
 import TerminalOutput from './components/TerminalOutput.vue'
 import ConnectionInfoDialogs from './components/ConnectionInfoDialogs.vue'
-import ProcessDialogs from './components/ProcessDialogs.vue'
 import AgentBuilderDialog from './components/AgentBuilderDialog.vue'
 import AgentOutputsDialog from './components/AgentOutputsDialog.vue'
 import CommandHistoryDialog from './components/CommandHistoryDialog.vue'
@@ -572,14 +580,10 @@ import RemoteFilesDialog from './components/RemoteFilesDialog.vue'
 import ArtifactDialog from './components/ArtifactDialog.vue'
 import ExternalToolManagerDialog from './components/ExternalToolManagerDialog.vue'
 import LogViewerDialog from './components/LogViewerDialog.vue'
-import KeychainManagerDialog from './components/KeychainManagerDialog.vue'
-import DocumentsDialog from './components/DocumentsDialog.vue'
 import ScriptLibraryDialog from './components/ScriptLibraryDialog.vue'
 import BackgroundJobsDialog from './components/BackgroundJobsDialog.vue'
-import PreviewDialog from './components/PreviewDialog.vue'
 import TerminalJsonDialog from './components/TerminalJsonDialog.vue'
 import { createTerminalTaskCapture } from './composables/terminalTaskCapture.js'
-import PtyDialog from './components/PtyDialog.vue'
 import ScreenViewDialog from './components/ScreenViewDialog.vue'
 import ClipboardDialog from './components/ClipboardDialog.vue'
 import OneLinersDialog from './components/OneLinersDialog.vue'
@@ -591,11 +595,49 @@ import TransferCenterDrawer from './components/TransferCenterDrawer.vue'
 import { changeAdminPassword, getAuthorizationInfo, getAuthSession, resetAdminApiToken } from './api/authApi.js'
 import { loadLayoutPreferences, saveLayoutPreferences } from './utils/layoutPreferences.js'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { markRaw } from 'vue'
+import { scheduleIdleWarmup } from './utils/idleWarmup.js'
 import { getConnectionTask } from './api/connectionsApi.js'
 import { cancelTask } from './api/tasksApi.js'
 import { normalizeForegroundTask, shouldShowTaskNotice, formatTaskTime } from './utils/foregroundTask.js'
 
 import { ArrowDown, ArrowUp, Bell, Grid, Sort, User } from '@element-plus/icons-vue'
+
+// Keep a single in-flight module per dialog, shared by idle warmup, hover and click.
+const optionalDialogLoaders = {
+  preview: () => import('./components/PreviewDialog.vue'),
+  documents: () => import('./components/DocumentsDialog.vue'),
+  pty: () => import('./components/PtyDialog.vue'),
+  processes: () => import('./components/ProcessDialogs.vue'),
+  keychains: () => import('./components/KeychainManagerDialog.vue'),
+}
+const optionalDialogRequests = new Map()
+function loadOptionalDialog(name) {
+  if (!optionalDialogLoaders[name]) return Promise.reject(new Error(`Unknown dialog: ${name}`))
+  if (!optionalDialogRequests.has(name)) {
+    const request = optionalDialogLoaders[name]().then(result => markRaw(result.default))
+      .catch(error => {
+        optionalDialogRequests.delete(name) // Failed imports may be retried.
+        throw error
+      })
+    optionalDialogRequests.set(name, request)
+  }
+  return optionalDialogRequests.get(name)
+}
+const optionalDialogRefs = {
+  preview: 'previewDialogRef',
+  documents: 'documentsDialogRef',
+  pty: 'ptyDialogRef',
+  processes: 'processDialogRef',
+  keychains: 'keychainManagerDialogRef',
+}
+const hoverWarmupTargets = {
+  documents: 'documents',
+  keychains: 'keychains',
+  pty: 'pty',
+  processes: 'processes',
+  artifacts: 'preview',
+}
 
 export default {
   components: {
@@ -613,14 +655,10 @@ export default {
     Grid,
     Sort,
     User,
-    PtyDialog,
     TerminalJsonDialog,
-    PreviewDialog,
     BackgroundJobsDialog,
     ExecutionInteractionDialog,
     ScriptLibraryDialog,
-    KeychainManagerDialog,
-    DocumentsDialog,
     ExternalToolManagerDialog,
     LogViewerDialog,
     ArtifactDialog,
@@ -629,7 +667,6 @@ export default {
     MachineConnectionHistoryDialog,
     AgentOutputsDialog,
     AgentBuilderDialog,
-    ProcessDialogs,
     ConnectionInfoDialogs,
     TerminalOutput,
     CommandInputBar,
@@ -656,6 +693,8 @@ export default {
       taskCancelSending: false,
       remoteFilesDialogVisible: false,
       pendingRemoteUploadRefresh: null,
+      dialogComponents: { preview: null, documents: null, pty: null, processes: null, keychains: null },
+      cancelIdleWarmup: null,
 
       connectionInfoCollapsed: layoutPreferences.connectionInfoCollapsed,
       deviceSidebarCollapsed: layoutPreferences.deviceSidebarCollapsed,
@@ -728,6 +767,30 @@ export default {
   },
 
   methods: {
+    hintPreload(actionId) {
+      const target = hoverWarmupTargets[String(actionId || '').trim().toLowerCase()]
+      if (target) void loadOptionalDialog(target).catch(() => {})
+    },
+
+    async ensureOptionalDialog(name) {
+      const component = await loadOptionalDialog(name)
+      if (!this.dialogComponents[name]) {
+        this.dialogComponents[name] = component
+        await this.$nextTick()
+      }
+      return this.$refs[optionalDialogRefs[name]]
+    },
+
+    async callOptionalDialog(name, method, ...args) {
+      try {
+        const dialog = await this.ensureOptionalDialog(name)
+        return dialog?.[method]?.(...args)
+      } catch (error) {
+        console.error(`Failed to load ${name} dialog`, error)
+        ElMessage.error('Unable to open dialog')
+      }
+    },
+
     openForegroundTaskDetails() {
       if (this.showCurrentTaskNotice) this.taskDialogVisible = true
     },
@@ -935,11 +998,11 @@ export default {
     },
 
     openDocumentsDialog() {
-      return this.$refs.documentsDialogRef?.open()
+      return this.callOptionalDialog('documents', 'open')
     },
 
     openKeychainManagerDialog() {
-      return this.$refs.keychainManagerDialogRef?.open()
+      return this.callOptionalDialog('keychains', 'open')
     },
 
     refreshExternalToolsIfOpen() {
@@ -947,7 +1010,7 @@ export default {
     },
 
     openExternalToolMetaEditor(toolId) {
-      return this.$refs.previewDialogRef?.openExternalToolMetaEditor(toolId)
+      return this.callOptionalDialog('preview', 'openExternalToolMetaEditor', toolId)
     },
 
     triggerRemoteUploadInput() {
@@ -1000,7 +1063,7 @@ export default {
     },
 
     openPtyDialog() {
-      return this.$refs.ptyDialogRef?.open()
+      return this.callOptionalDialog('pty', 'open')
     },
 
     openOneLinersDialog() {
@@ -1072,7 +1135,7 @@ export default {
 
     openProcessDialog(sortBy = '') {
       if (this.currentConnection?.feature_manifest?.process_monitor === false) return
-      return this.$refs.processDialogRef?.open(typeof sortBy === 'string' ? sortBy : '')
+      return this.callOptionalDialog('processes', 'open', typeof sortBy === 'string' ? sortBy : '')
     },
 
     async loadAuthSession() {
@@ -1255,35 +1318,35 @@ export default {
     },
 
     previewRemoteEntry(row) {
-      return this.$refs.previewDialogRef?.previewRemoteEntry(row)
+      return this.callOptionalDialog('preview', 'previewRemoteEntry', row)
     },
 
     previewArtifact(row) {
-      return this.$refs.previewDialogRef?.previewArtifact(row)
+      return this.callOptionalDialog('preview', 'previewArtifact', row)
     },
 
     previewBackgroundJobFile(file) {
-      return this.$refs.previewDialogRef?.previewBackgroundJobFile(file)
+      return this.callOptionalDialog('preview', 'previewBackgroundJobFile', file)
     },
 
     openNewRemoteScriptEditor(scriptName = 'new_script.py') {
-      return this.$refs.previewDialogRef?.openNewRemoteScriptEditor(scriptName)
+      return this.callOptionalDialog('preview', 'openNewRemoteScriptEditor', scriptName)
     },
 
     openRemoteScriptEditorInternal(scriptName) {
-      return this.$refs.previewDialogRef?.openRemoteScriptEditorInternal(scriptName)
+      return this.callOptionalDialog('preview', 'openRemoteScriptEditorInternal', scriptName)
     },
 
     openNewRemoteJobEditor(scriptName = 'new_job.py') {
-      return this.$refs.previewDialogRef?.openNewRemoteJobEditor(scriptName)
+      return this.callOptionalDialog('preview', 'openNewRemoteJobEditor', scriptName)
     },
 
     openNewSharedFileEditor(filename = 'new_file.txt') {
-      return this.$refs.previewDialogRef?.openNewSharedFileEditor(filename)
+      return this.callOptionalDialog('preview', 'openNewSharedFileEditor', filename)
     },
 
     openRemoteJobEditor(scriptName) {
-      return this.$refs.previewDialogRef?.openRemoteJobEditor(scriptName)
+      return this.callOptionalDialog('preview', 'openRemoteJobEditor', scriptName)
     },
 
     openMachineConnectionHistory(item) {
@@ -1370,6 +1433,14 @@ export default {
       this.loadTransferItems(),
     ])
     this.initSSE()
+    // Start code-only warmup after first paint; dialogs/PTY sockets are not mounted.
+    this.cancelIdleWarmup = scheduleIdleWarmup([
+      () => loadOptionalDialog('preview'),
+      () => loadOptionalDialog('documents'),
+      () => loadOptionalDialog('pty'),
+      () => loadOptionalDialog('processes'),
+      () => loadOptionalDialog('keychains'),
+    ])
     void this.refreshForegroundTask()
     this.foregroundTaskTimer = setInterval(() => {
       void this.refreshForegroundTask()
@@ -1382,6 +1453,7 @@ export default {
   },
 
   beforeUnmount() {
+    this.cancelIdleWarmup?.()
     if (this.foregroundTaskTimer) clearInterval(this.foregroundTaskTimer)
     this.foregroundQuerySequence += 1
     if (this.eventSource) this.eventSource.close()

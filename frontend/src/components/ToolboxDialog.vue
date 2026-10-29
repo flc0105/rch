@@ -61,6 +61,8 @@
             type="button"
             :disabled="action.disabled && !action.shortcut"
             :title="action.disabled && action.shortcut ? `Unavailable: ${action.label}` : action.label"
+            @pointerenter="!action.disabled && $emit('hint-preload', action.id)"
+            @focus="!action.disabled && $emit('hint-preload', action.id)"
             @click="handleActionClick(action, $event)"
           >
             <span class="toolbox-icon" :class="{ 'toolbox-icon-accent': action.accent }">
@@ -231,7 +233,7 @@ export default {
     pinLoading: { type: Boolean, default: false },
     currentPlatform: { type: String, default: '' },
   },
-  emits: ['update:visible', 'launch', 'load-pin-options', 'add-pin', 'remove-pin', 'launch-pin'],
+  emits: ['update:visible', 'launch', 'hint-preload', 'load-pin-options', 'add-pin', 'remove-pin', 'launch-pin'],
   data() {
     return { query: '', contextMenuAction: null, contextMenuX: 0, contextMenuY: 0, contextMenuSerial: 0,
       shortcutPickerVisible: false, iconPickerVisible: false, shortcutKind: 'script', shortcutResource: '', shortcutIcon: 'file-code', shortcutLabel: '',

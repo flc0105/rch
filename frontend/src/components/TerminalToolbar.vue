@@ -80,6 +80,8 @@
             size="small"
             :class="['tool-btn', 'ml-0', { 'tool-btn-accent': action.accent }]"
             :disabled="isActionDisabled(action.id)"
+            @pointerenter="hintPreload(action.id)"
+            @focus="hintPreload(action.id)"
             @click="runAction(action.id)"
           >
             {{ action.label }}
@@ -115,6 +117,8 @@
             size="small"
             :class="['tool-btn', 'ml-0', { 'tool-btn-accent': action.accent }]"
             :disabled="isActionDisabled(action.id)"
+            @pointerenter="hintPreload(action.id)"
+            @focus="hintPreload(action.id)"
             @click="runAction(action.id)"
           >
             {{ action.label }}
@@ -137,6 +141,8 @@
             size="small"
             :class="['tool-btn', 'ml-0', { 'tool-btn-accent': action.accent }]"
             :disabled="isActionDisabled(action.id)"
+            @pointerenter="hintPreload(action.id)"
+            @focus="hintPreload(action.id)"
             @click="runAction(action.id)"
           >{{ action.label }}</el-button>
           <template #dropdown>
@@ -156,7 +162,9 @@
           size="small"
           :class="['tool-btn', 'ml-0', { 'tool-btn-accent': action.accent }]"
           :disabled="isActionDisabled(action.id)"
-          @click="runAction(action.id)"
+          @pointerenter="hintPreload(action.id)"
+            @focus="hintPreload(action.id)"
+            @click="runAction(action.id)"
         >
           {{ action.label }}
         </el-button>
@@ -181,6 +189,8 @@
               <el-dropdown-item
                 :command="`action:${action.id}`"
                 :disabled="isActionDisabled(action.id)"
+                @pointerenter="hintPreload(action.id)"
+                @focus="hintPreload(action.id)"
               >
                 {{ action.label }}
               </el-dropdown-item>
@@ -231,6 +241,7 @@
       :pin-loading="toolboxPinsLoading || toolboxPinsSaving"
       :current-platform="toolboxCurrentPlatform"
       @launch="launchToolboxAction"
+    @hint-preload="hintPreload"
       @load-pin-options="loadToolboxPinOptions"
       @add-pin="addToolboxPin"
       @remove-pin="removeToolboxPin"
@@ -292,6 +303,7 @@ export default {
 
   emits: [
     'layout-command',
+    'hint-preload',
     'open-remote-files',
     'open-manage-pins',
     'open-connection-history',
@@ -413,6 +425,9 @@ export default {
   },
 
   methods: {
+    hintPreload(actionId) {
+      if (!this.isActionDisabled(actionId)) this.$emit('hint-preload', actionId)
+    },
     actionOptions(id) {
       if (id === 'quick-actions') {
         return this.pinnedQuickActions.map((item, index) => ({

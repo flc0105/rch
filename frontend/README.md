@@ -13,3 +13,21 @@ Administrator sign-in sends only a lightweight reversible masked password field,
 ## Banner utilities
 
 The right side of the banner shows Online Nodes, followed by Transfers, Notifications, and a Utilities dropdown. The Utilities menu opens One-liners or Build Agent without requiring a selected online Client. Sign out stays separate from the icon group.
+
+## Production asset delivery
+
+Build with `npm run build`, then copy **the entire** `frontend/dist/` directory
+(including `assets/*.gz`) to `backend/static/`. Flask automatically serves the
+precompressed JavaScript and CSS when the browser supports gzip. Vite-generated
+hashed assets use a long-lived browser cache; deploy all new assets before
+updating `index.html` and retain old hashed assets while older tabs may still be
+open.
+
+Optional editors and dialogs download after the page's first paint during
+browser idle time. Moving the pointer over a supported toolbar, More-menu, or
+Toolbox action can preload its dialog earlier.
+
+Element Plus registers the UI components used by the application through explicit
+named imports, with individual component styles. Its loading directive and
+programmatic message/confirmation/notification APIs are imported explicitly.
+No Vite auto-registration plugin or full Element Plus installation is required.

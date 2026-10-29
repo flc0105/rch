@@ -1,17 +1,14 @@
 import {createApp} from 'vue'
-import ElementPlus, {ElLoading, ElMessage, ElMessageBox, ElNotification,} from 'element-plus'
-
-import 'element-plus/dist/index.css'
+import { registerElementPlusComponents } from './utils/elementPlusRegistry.js'
+// Element Plus components and v-loading are registered from explicit named imports.
+// Keep service styles for explicit JavaScript API calls (messages, confirms, notices).
+import 'element-plus/es/components/message/style/css'
+import 'element-plus/es/components/message-box/style/css'
+import 'element-plus/es/components/notification/style/css'
+import 'element-plus/es/components/loading/style/css'
 import './styles/mobileDialogs.css'
 import { installMobileDialogScrollLock } from './utils/mobileDialogScrollLock.js'
 // The standalone Screen View tab shares this authenticated entry without mounting the main dashboard.
-
-// 兼容旧代码里的 ElementPlus.ElMessage / ElementPlus.ElMessageBox
-window.ElementPlus = ElementPlus
-window.ElementPlus.ElMessage = ElMessage
-window.ElementPlus.ElMessageBox = ElMessageBox
-window.ElementPlus.ElNotification = ElNotification
-window.ElementPlus.ElLoading = ElLoading
 
 async function mountApp() {
     const standalone = new URLSearchParams(window.location.search).has('screen_view_client')
@@ -19,7 +16,8 @@ async function mountApp() {
         ? await import('./ScreenViewTab.vue')
         : await import('./App.vue')
 
-    const app = createApp(Root).use(ElementPlus)
+    const app = createApp(Root)
+    registerElementPlusComponents(app)
     const stopMobileDialogScrollLock = installMobileDialogScrollLock()
     app.mount('#app')
     app.onUnmount(stopMobileDialogScrollLock)

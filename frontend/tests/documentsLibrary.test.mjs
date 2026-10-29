@@ -12,7 +12,8 @@ test('Documents is a server-only toolbar action', () => {
   assert.match(toolbar, /'open-documents'/)
   assert.match(toolbar, /documents: 'open-documents'/)
   assert.match(app, /@open-documents="openDocumentsDialog"/)
-  assert.match(app, /<DocumentsDialog ref="documentsDialogRef"/)
+  assert.match(app, /:is="dialogComponents.documents"/)
+  assert.match(app, /return this\.callOptionalDialog\('documents', 'open'\)/)
 })
 
 test('Documents supports live Markdown preview and conflict revisions', () => {

@@ -1,6 +1,10 @@
 from datetime import timedelta
+import mimetypes
+import os
+import re
 
-from flask import Flask, redirect, request
+from flask import Flask, redirect, request, send_from_directory
+from werkzeug.utils import safe_join
 
 from server.config.config import (
     SESSION_COOKIE_NAME,
@@ -41,8 +45,34 @@ from server.web.routes.device_events import create_device_events_blueprint
 from server.web.routes.transfers import create_transfers_blueprint
 
 
+# Only content-hashed Vite assets are immutable; HTML and API responses are not.
+_HASHED_ASSET = re.compile(r'^/assets/.+[.-][A-Za-z0-9_-]{8,}\.(?:js|css)$')
+
+
+class StaticGzipFlask(Flask):
+    def send_static_file(self, filename):
+        # Compress only ordinary static JS/CSS responses. Range requests receive
+        # the uncompressed resource to preserve byte offsets.
+        if (request.method in ('GET', 'HEAD')
+                and 'Range' not in request.headers
+                and filename.startswith('assets/')
+                and filename.endswith(('.js', '.css'))):
+            if request.accept_encodings['gzip'] > 0:
+                compressed = safe_join(self.static_folder, filename + '.gz')
+                if compressed and os.path.isfile(compressed):
+                    response = send_from_directory(self.static_folder, filename + '.gz')
+                    response.mimetype = mimetypes.guess_type(filename)[0] or 'application/octet-stream'
+                    response.headers['Content-Encoding'] = 'gzip'
+                    response.vary.add('Accept-Encoding')
+                    return response
+            response = super().send_static_file(filename)
+            response.vary.add('Accept-Encoding')
+            return response
+        return super().send_static_file(filename)
+
+
 def create_app(server_instance):
-    app = Flask(__name__, static_folder='../../static', static_url_path='')
+    app = StaticGzipFlask(__name__, static_folder='../../static', static_url_path='')
     app.config['MAX_CONTENT_LENGTH'] = WEB_HTTP_UPLOAD_MAX_BYTES
     app.config['SECRET_KEY'] = WEB_SESSION_SECRET
     app.config['SESSION_COOKIE_NAME'] = SESSION_COOKIE_NAME
@@ -84,6 +114,13 @@ def create_app(server_instance):
     app.register_blueprint(create_device_monitor_blueprint(server_instance))
     app.register_blueprint(create_device_events_blueprint(server_instance))
     app.register_blueprint(create_transfers_blueprint(server_instance))
+
+    @app.after_request
+    def cache_hashed_static_assets(response):
+        if (request.endpoint == 'static' and response.status_code == 200
+                and _HASHED_ASSET.fullmatch(request.path or '')):
+            response.headers['Cache-Control'] = 'public, max-age=31536000, immutable'
+        return response
 
     @app.before_request
     def enforce_authentication():

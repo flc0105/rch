@@ -1,4 +1,5 @@
 import { h } from 'vue';
+import { ElNotification } from 'element-plus';
 import {
     formatTerminalCommandFinishedLine,
     TERMINAL_BACKGROUND_PREFIX,
@@ -193,7 +194,7 @@ export default {
                 );
             }
 
-            ElementPlus.ElNotification(notificationOptions);
+            ElNotification(notificationOptions);
         },
 
         initSSE() {
