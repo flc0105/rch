@@ -86,6 +86,7 @@
 
 <script>
 import { ElMessage } from 'element-plus'
+import { webSocketUrl } from '../api/streamApi.js'
 import { Terminal } from 'xterm'
 import { FitAddon } from 'xterm-addon-fit'
 import 'xterm/css/xterm.css'
@@ -507,12 +508,8 @@ export default {
       }
 
       // 后端如果返回 /api/xxx/ws，就通过 Vite dev server 代理
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
       const path = raw.startsWith('/') ? raw : `/${raw}`
-
-      const url = new URL(`${protocol}//${window.location.host}${path}`)
-      url.port = window.location.port === '5173' ? '8086' : String(Number(window.location.port || (protocol === 'wss:' ? 443 : 80)) + 1)
-      return url.toString()
+      return webSocketUrl(path)
     },
 
     openPtySocket() {

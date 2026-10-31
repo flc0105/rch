@@ -186,6 +186,7 @@
 import { ElMessage } from 'element-plus'
 import { Close, FullScreen } from '@element-plus/icons-vue'
 import * as screenViewApi from '../api/screenViewApi.js'
+import { webSocketUrl } from '../api/streamApi.js'
 import FullJpegScreenRenderer from './screen/FullJpegScreenRenderer.vue'
 import KeyframeDeltaScreenRenderer from './screen/KeyframeDeltaScreenRenderer.vue'
 
@@ -943,10 +944,7 @@ export default {
       this.closeScreenSocket()
 
       try {
-        const url = new URL(this.screenWsPath, window.location.href)
-        url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
-        url.port = window.location.port === '5173' ? '8086' : String(Number(window.location.port || (url.protocol === 'wss:' ? 443 : 80)) + 1)
-        const ws = new WebSocket(url.toString())
+        const ws = new WebSocket(webSocketUrl(this.screenWsPath))
         this.screenWs = ws
 
         ws.onopen = () => {

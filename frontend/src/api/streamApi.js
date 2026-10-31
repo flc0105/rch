@@ -3,7 +3,10 @@
 export function webSocketUrl(path) {
   const url = new URL(path, window.location.href)
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
-  url.port = window.location.port === '5173' ? '8086' : String(Number(window.location.port || (url.protocol === 'wss:' ? 443 : 80)) + 1)
+  // Vite forwards /ws to the configured Server WS port; production listens at HTTP port + 1.
+  if (!import.meta.env?.DEV) {
+    url.port = String(Number(window.location.port || (url.protocol === 'wss:' ? 443 : 80)) + 1)
+  }
   return url.toString()
 }
 

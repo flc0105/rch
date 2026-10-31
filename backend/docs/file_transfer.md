@@ -123,7 +123,7 @@ Web 远程文件下载、预览、压缩下载和受管理的下发任务通过 
 
 ### 浏览器到远程设备的两段搬运
 
-浏览器向远程设备传文件时，Server 先通过 8085 创建一条方向为 `server_to_client` 的 Transfer，返回 `transfer_id`、8085 端口、内容路径和一次性上传 Token。Browser 再使用 `XMLHttpRequest` 将文件的**原始字节流**直接 POST 给 8085；不需要让基础 Web API 先接收一整份 multipart 文件。
+浏览器向远程设备传文件时，Server 先通过 8085 创建一条方向为 `server_to_client` 的 Transfer，返回 `transfer_id`、同源内容路径和一次性上传 Token。Browser 再使用 `XMLHttpRequest` 将文件的**原始字节流**直接 POST 给 8085；不需要让基础 Web API 先接收一整份 multipart 文件。
 
 8085 验证并消费 Token 后，按约 1 MiB 的块大小读取请求体、写入 Server 临时文件，并约每 250 毫秒同步一次进度；收到全部字节还会检查是否与声明长度一致。Server 随后提交受管理的下发任务，通知 Client 从 8085 暂存下载端点拉取文件并保存至目标目录。
 

@@ -163,6 +163,8 @@ WebSocket 帧发送 JSON 消息 `{ "id": "...", "event": "...", "data": { ... } 
 
 两条 WS 通道使用与 8085 Web API 相同的管理员会话 Cookie 或 `Authorization: Bearer <API token>`。浏览器 Origin 仅允许与 Web HTTP 服务相同的主机/端口（另支持本地 Vite 开发端口）。无有效凭据时连接关闭。
 
+WS 监听端口由 `RCH_WEB_PORT + 1` 计算。Vite 开发服务器的 `/ws` 由 `frontend/vite.config.js` 代理到该端口，其 HTTP `/api` 代理使用同一个 `RCH_WEB_PORT` 配置；如需更换 Vite 端口，Server 和 Vite 同时配置 `RCH_VITE_PORT`。浏览器开发模式经同源 `/ws`，生产模式通过当前 HTTP 端口 + 1 直接连接 WS；无固定的 `8086` 客户端特判。
+
 ### 通用浏览器事件订阅
 
 连接后，Server 为当前 `tab_id` 创建异步有界队列。全局事件广播，带 `target_tab_id` 的事件仅投递到指定页签。跨线程生产者通过事件循环线程安全调度发送，不为每条 WebSocket 分配一个长期等待的 HTTP 工作线程。缓冲溢出时关闭该连接，客户端从 HTTP API 恢复权威状态。15 秒内没有业务消息时发送 `ping` JSON 事件。

@@ -137,7 +137,7 @@ export default {
       agentForm: {
         server_host: window.location.hostname || '127.0.0.1',
         server_port: 9999,
-        web_port: 8085,
+        web_port: 0,
         target_os: 'mac',
         builder: '',
         target_arch: 'arm64',
@@ -200,7 +200,7 @@ export default {
       this.visible = true
       this.agentForm.server_host = window.location.hostname || '127.0.0.1'
       this.agentForm.server_port = 9999
-      this.agentForm.web_port = 8085
+      this.agentForm.web_port = 0
 
       this.platformLoading = true
       try {

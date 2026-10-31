@@ -140,7 +140,7 @@ export default {
       return {
         serverHost: location?.hostname || 'localhost',
         serverPort: '9999',
-        webPort: '8085',
+        webPort: '',
       }
     },
 

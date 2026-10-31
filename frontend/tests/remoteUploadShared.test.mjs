@@ -54,7 +54,7 @@ globalThis.fetch = async (url, options) => {
       destination_path: '/home/test',
     })
     return {ok: true, json: async () => ({code: 0, data: {
-      transfer_id: 'tr-1', browser_upload_port: 8085,
+      transfer_id: 'tr-1',
       browser_upload_path: '/api/transfers/browser-upload/tr-1/content',
       browser_upload_token: 'token-123',
     }})}
@@ -71,11 +71,13 @@ globalThis.fetch = async (url, options) => {
 const file = {name: 'report.txt', size: 17}
 const headers = {'X-Tab-Id': 'tab-42'}
 try {
-  // Production 8085 and Vite development 5173 both use the same-origin /api path.
+  // Browser uploads always use same-origin /api under production and Vite proxy ports.
   const contentPath = '/api/transfers/browser-upload/tr-1/content'
-  const uploadDescriptor = {browser_upload_port: 8085, browser_upload_path: contentPath}
+  const uploadDescriptor = {browser_upload_path: contentPath}
   assert.equal(buildBrowserUploadContentUrl(uploadDescriptor), contentPath)
   window.location.href = 'http://127.0.0.1:5173/'
+  assert.equal(buildBrowserUploadContentUrl(uploadDescriptor), contentPath)
+  window.location.href = 'http://127.0.0.1:5300/'
   assert.equal(buildBrowserUploadContentUrl(uploadDescriptor), contentPath)
   assert.equal(buildBrowserUploadContentUrl({browser_upload_path: contentPath.slice(1)}), contentPath)
   assert.throws(() => buildBrowserUploadContentUrl({}), /endpoint is unavailable/)
@@ -155,4 +157,4 @@ assert.deepEqual(JSON.parse(JSON.stringify(dialog.called[0])), {
 assert.equal(event2.target.value, '')
 assert.equal(dialog.state.remoteUploadLoading, false)
 assert.ok(dialog.events.some(([name, info]) => name === 'upload-started' && info.taskId === 'task-shared'))
-console.log('Shared remote upload API: same-origin 8085 via /api, Transfer Center creation, failure, both dialogs passed')
+console.log('Shared remote upload API: same-origin through /api, Transfer Center creation, failure, both dialogs passed')

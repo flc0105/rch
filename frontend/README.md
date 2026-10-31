@@ -33,3 +33,26 @@ Element Plus is installed globally with its complete stylesheet so all component
 styles, child-component styles, directives, and layout rules match the original UI.
 Programmatic message/confirmation/notification APIs remain imported directly where
 used. The Vite auto-registration plugin is not required.
+
+## Local development ports
+
+The Server HTTP listener is configured by `RCH_WEB_PORT` (default `8085`);
+its WebSocket listener always uses the next port. Start the Vite developer
+server with **the same** `RCH_WEB_PORT` environment value as the Server:
+
+```sh
+RCH_WEB_PORT=9090 python3 backend/run_web.py
+# From frontend/ in a second terminal:
+RCH_WEB_PORT=9090 npm run dev
+```
+
+Vite forwards `/api` to the configured HTTP port and `/ws` to HTTP port + 1.
+Browser uploads use `/api/...` URLs on the current page origin, so the dev
+server proxy is applied without browser CORS changes. The PTY, Screen and
+notification WebSocket paths all use the same browser URL helper.
+The Vite listening port can be overridden with `RCH_VITE_PORT` (default `5173`);
+provide the same value to the Server when using a nondefault development port
+so its WebSocket Origin check accepts the development page.
+
+In production, RCH serves the built frontend on its HTTP port; the browser
+connects WebSocket directly to that HTTP port + 1.
