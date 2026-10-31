@@ -1,5 +1,6 @@
 import queue
 import socket
+import time
 import uuid
 
 from client.bootstrap.connection_lifecycle import ClientConnectionLifecycle
@@ -13,6 +14,8 @@ from core.utils.logger import logger
 
 class Client:
     RECONNECT_INTERVAL = RECONNECT_INTERVAL_SECONDS
+    # Server heartbeat is sent every 30 seconds; allow four missed intervals.
+    RECEIVE_IDLE_TIMEOUT_SECONDS = 120
 
     def __init__(self, address, process_recovery_watchdog_manager=None):
         self.address = address
@@ -51,8 +54,14 @@ class Client:
         连接异常后的恢复逻辑
         """
         logger.error(error, exc_info=True)
-        self.connection_lifecycle.reset_connection()
-        self.connect()
+        while True:
+            try:
+                self.connection_lifecycle.reset_connection()
+                self.connect()
+                return
+            except Exception as reconnect_error:
+                logger.error('Client reconnection failed: %s', reconnect_error, exc_info=True)
+                time.sleep(self.RECONNECT_INTERVAL)
 
     def wait(self):
         while True:
@@ -60,6 +69,12 @@ class Client:
                 receiver_error = self.receiver_worker.pop_error()
                 if receiver_error is not None:
                     raise receiver_error
+
+                idle = self.receiver_worker.receive_idle_seconds()
+                if idle is not None and idle >= self.RECEIVE_IDLE_TIMEOUT_SECONDS:
+                    raise TimeoutError(
+                        f'Server inbound message timeout: no message for {idle:.1f}s'
+                    )
 
                 result = self.server.recv_command(timeout=0.5)
                 if result:

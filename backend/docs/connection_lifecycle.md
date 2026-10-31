@@ -135,7 +135,21 @@ Server 的 Session 收包循环在捕获 Socket 错误时进入会话关闭处�
 
 这是一组**连接关闭的副作用**，不是“达到 Stale 阈值”会执行的操作。如果只是心跳不新鲜而 Socket 未报告断开，不能假定所有相关任务都已经完成清理。
 
-Python Client 在连接丢失时会停止接收 Worker、关闭旧连接、处理相关后台任务并重建连接运行态，然后重新拨号、握手、启动接收 Worker。默认失败重试间隔为 **5 秒**。同一个 Python Client 进程使用自己的 `client_id` 重新连接；重启或另开 Client 进程则有新的实例身份。Go Client 也会在 TCP 拨号失败后等待约 5 秒再次尝试，并在接收连接发生错误后重建 Session。
+Python Client 在连接丢失时会停止接收 Worker、对旧 Socket 执行 `shutdown` 并关闭它，处理相关后台任务并重建连接运行态，然后重新拨号、握手、启动接收 Worker。默认失败重试间隔为 **5 秒**；如果重新握手失败，也会继续尝试。同一个 Python Client 进程使用自己的 `client_id` 重新连接；重启或另开 Client 进程则有新的实例身份。Go Client 也会在 TCP 拨号失败后等待约 5 秒再次尝试，并在接收连接发生错误后重建 Session。
+
+### Python Client 半开 TCP 自愈
+
+Server 正常每 **30 秒**发送一次 Heartbeat。Python Client 接收 Worker 会记录最近一次**完整入站消息**的本地单调时钟时间；在连接已建立后，如果连续 **120 秒**没有收到任何完整消息，主循环视为接收链路失活并触发普通断线恢复。正常命令执行、PTY 和后台任务不会使这项检测自动暂停；收到任意完整 Server 消息都会刷新计时。客户端不会向 Server 新增轮询请求。
+
+失活时会关闭旧 Socket、停止并收束旧接收 Worker，再走现有断线运行态清理、重拨号和握手流程。这个检测可以处理 macOS 休眠恢复后 TCP 在系统中仍显示 `ESTABLISHED`、但应用层已经不收消息的情况；本机网络恢复和 Server 可达后，同一 Client 进程会使用原有 `client_id` 再次上线。它不需要 Remote Control Watchdog，也不会自动重启 Client 进程。正常失联期间的 Job、PTY、Screen、Monitor 和 Transfer 依旧按已有连接丢失语义清理。
+
+复现与回归（在项目 `backend` 目录执行，不连接真实 RCH Server）：
+
+```bash
+PYTHONPATH=. python3 -m pytest -q tests/connection/test_client_socket_recovery.py
+```
+
+测试使用本机回环的真实 TCP Socket，保留建立状态而故意不发送任何数据；缩短**测试实例自身**的失活阈值，验证超时、Heartbeat 重置、`shutdown` 唤醒阻塞 `recv`、握手失败再次重试和旧接收线程退出。生产代码默认阈值仍为 120 秒。
 
 ### 最近设备与连接历史
 

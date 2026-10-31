@@ -35,8 +35,12 @@ class ClientConnectionLifecycle:
         关闭当前连接
         """
         try:
+            self.client.server.shutdown()
+        except OSError:
+            pass
+        try:
             self.client.server.close()
-        except Exception:
+        except OSError:
             pass
 
     def reset_connection(self):
@@ -45,6 +49,8 @@ class ClientConnectionLifecycle:
         """
         self.client.receiver_worker.stop()
         self.close_current_connection()
+        if not self.client.receiver_worker.join():
+            logger.warning('Previous ClientReceiver did not exit after connection shutdown')
         self.handle_connection_lost()
         self.client.receiver_worker.reset_runtime()
         self.client.server = self.create_connection()
