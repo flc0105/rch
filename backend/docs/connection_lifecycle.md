@@ -6,7 +6,7 @@ Server 负责建立和移除会话、发送心跳、计算 RTT、维护设备快
 
 ## Python Client 的主动连接暂停
 
-`pause_connection` 是 Python Client 的普通 Session 命令。Client 完整发送该命令的结果后，关闭当前主 TCP Socket，执行原有断线运行态清理，并将连接门控从 `active` 切为 `paused`。Client 进程继续运行，暂停期间不进行自动拨号，也不触发 120 秒入站超时自愈。Server 仍按正常断线处理 Session，并在连接历史中记录 Offline。
+`pause_connection` 是 Python Client 的普通 Session 命令。Client 完整发送该命令的结果后，通过现有 `session_end` 消息上报 `client_paused`（Connection History 和离线通知显示 `Client paused`），然后关闭当前主 TCP Socket，执行原有断线运行态清理，并将连接门控从 `active` 切为 `paused`。Client 进程继续运行，暂停期间不进行自动拨号，也不触发 120 秒入站超时自愈。Server 仍按正常断线处理 Session，并在连接历史中记录 Offline；真正的意外断线仍使用 `connection_lost`。不额外保存 Server Pause 状态。
 
 Remote Control Watchdog 与主连接独立运行。Client 内置通用本地 IPC 接收器，通过 Unix Domain Socket（macOS/Linux）或 Windows Named Pipe 接受经认证的 `connection.resume` 消息。Watchdog Worker 能在收到 `resume` HTTP Control 动作时通过该 IPC 恢复原进程的 `active` 门控；Client 仍沿用原 `client_id` 和连接重试流程，原有 `relaunch` 则继续用于进程替换。Client 不检查 Remote Watchdog 是否开启才允许暂停。若 Watchdog 关闭，可通过重启 Client 进程恢复默认的 `active` 状态。
 

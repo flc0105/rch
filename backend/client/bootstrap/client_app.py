@@ -108,6 +108,9 @@ class Client:
                 if result:
                     self.server.send_result(*result)
                     if self.server.consume_pause_request():
+                        # Identify an intentional pause after the command result and
+                        # before closing the socket; ordinary losses remain unchanged.
+                        self.server.report_session_end('client_paused', command='pause_connection')
                         self.connection_lifecycle.pause()
                         # Even an early Resume during socket cleanup must reconnect.
                         self.connection_lifecycle.wait_until_active()

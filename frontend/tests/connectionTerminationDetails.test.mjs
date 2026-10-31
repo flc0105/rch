@@ -19,7 +19,7 @@ test('Connection History combines existing cause and optional details into Termi
   assert.doesNotMatch(dialog, /Termination cause|Termination details/)
   for (const label of [
     'Server requested disconnect', 'Client exit', 'Client restart', 'Client update',
-    'Connection lost', 'Transport error', 'Timeout', 'Unexpected disconnect', 'Client error',
+    'Client paused', 'Connection lost', 'Transport error', 'Timeout', 'Unexpected disconnect', 'Client error',
   ]) {
     assert.ok(dialog.includes(label), `missing reason ${label}`)
   }

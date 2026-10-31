@@ -191,6 +191,27 @@ def test_client_restart_and_update_take_precedence_over_socket_eof(tmp_path):
             db.close_thread_connection()
 
 
+def test_client_pause_reason_is_recorded_as_normal_offline_and_overrides_eof(tmp_path):
+    db, store = _new_store(tmp_path)
+    ctx = ClientSessionContext()
+    dispatcher = ServerInboundMessageDispatcher(SimpleNamespace(context=ctx))
+    dispatcher.dispatch({
+        'type': MSG_TYPE_SESSION_END,
+        'reason': 'client_paused',
+        'detail': {'command': 'pause_connection'},
+    })
+    assert ctx.client_session_end['reason'] == 'client_paused'
+    item = _complete_session(
+        store,
+        client_end=ctx.client_session_end,
+        failure={'reason': 'connection_lost', 'detail': {}},
+    )
+    assert item['termination_reason'] == 'client_paused'
+    assert item['termination_detail'] == {'command': 'pause_connection'}
+    assert item['connection_state'] == 'offline'
+    db.close_thread_connection()
+
+
 def test_kill_instance_client_report_is_server_requested_disconnect(tmp_path):
     db, store = _new_store(tmp_path)
     item = _complete_session(

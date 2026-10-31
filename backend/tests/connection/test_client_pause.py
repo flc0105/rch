@@ -119,9 +119,10 @@ def test_pause_result_is_sent_before_socket_is_closed():
     records = []
     client.connect = lambda: records.append('connect')
     client.server.send_result.side_effect = lambda *args: records.append('result')
+    client.server.report_session_end.side_effect = lambda *args, **kw: records.append(('end', args, kw))
     client.connection_lifecycle.pause.side_effect = lambda: records.append('pause')
     client._wait_for_commands()
-    assert records == ['result', 'pause', 'connect']
+    assert records == ['result', ('end', ('client_paused',), {'command': 'pause_connection'}), 'pause', 'connect']
 
 
 def test_paused_client_does_not_call_idle_recovery_or_read_messages():

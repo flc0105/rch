@@ -202,7 +202,7 @@ class ConnectionHistoryStore:
             duration_ms = max(int((end - start).total_seconds() * 1000), 0) if start and end else 0
             last_seen_at = str(connection.get('last_seen_at') or row['last_seen_at'] or '').strip()
             normal_end = termination_reason in (
-                'server_requested_disconnect', 'client_exit', 'client_restart', 'client_update'
+                'server_requested_disconnect', 'client_exit', 'client_restart', 'client_update', 'client_paused'
             )
             termination_detail = {}
             if isinstance(details, dict):

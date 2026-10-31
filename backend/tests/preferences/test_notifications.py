@@ -148,3 +148,13 @@ class NotificationConnectionOfflineTests(unittest.TestCase):
 
         self.assertEqual(notification['message'], 'Mac went offline · Reason: Connection lost')
         self.assertEqual(notification['context']['termination_reason'], 'connection_lost')
+
+    def test_offline_notification_for_client_pause(self):
+        projector = NotificationEventProjector(history_store=None, server=None)
+        notification = projector._build_connection_offline({
+            'client_id': 'client-X',
+            'connection': {'client_id': 'client-X', 'hostname': 'Mac'},
+            'termination_reason': 'client_paused',
+        })
+        self.assertEqual(notification['message'], 'Mac went offline · Reason: Client paused')
+        self.assertEqual(notification['context']['termination_reason'], 'client_paused')

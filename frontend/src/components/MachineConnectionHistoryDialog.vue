@@ -600,6 +600,7 @@ export default {
         client_exit: 'Client exit',
         client_restart: 'Client restart',
         client_update: 'Client update',
+        client_paused: 'Client paused',
         connection_lost: 'Connection lost',
         transport_error: 'Transport error',
         timeout: 'Timeout',

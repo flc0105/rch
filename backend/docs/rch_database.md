@@ -69,7 +69,7 @@
 | `last_seen_at` | 该连接最近一次心跳/被看见的时间。 |
 | `duration_ms` | 连接持续时长；在线显示时可以根据当前时间动态计算。 |
 | `connection_state` | 保存的连接状态，如在线/离线。 |
-| `termination_reason` | 会话终止类别，在 Connection History 中以 **Termination** 呈现；Server requested disconnect、Client exit / restart / update、Connection lost、Transport error、Timeout、Unexpected disconnect 和 Client error 各有对应采集路径。 |
+| `termination_reason` | 会话终止类别，在 Connection History 中以 **Termination** 呈现；Server requested disconnect、Client exit / restart / update、Client paused、Connection lost、Transport error、Timeout、Unexpected disconnect 和 Client error 各有对应采集路径。 |
 | `termination_detail_json` | 会话结束详情 JSON；主动结束时记录操作命令 `command`（如 `kill_instance`、`disconnect`、`httpctl kill`），捕获异常时记录 `summary`、`traceback`，在 **Termination** 中展示。无额外详情时为空对象。 |
 | `tracking_source` | 连接状态记录的来源标记。 |
 | `snapshot_json` | 连接阶段的主机、系统、进程、运行方式、Watchdog 配置等快照，支持历史详情展示；其中 `launch_mode` 保存标准化运行形态，`launch_source` 保存可识别的具体启动环境，定义见 [Client Launch Mode](launch_mode.md)。 |
