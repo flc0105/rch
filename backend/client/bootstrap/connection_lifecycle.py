@@ -1,4 +1,5 @@
 import json
+import threading
 import time
 
 from client.connection.server_connection import ServerConnection
@@ -19,6 +20,25 @@ class ClientConnectionLifecycle:
 
     def __init__(self, client):
         self.client = client
+        self._active = threading.Event()
+        self._active.set()
+
+    @property
+    def is_paused(self):
+        return not self._active.is_set()
+
+    def pause(self):
+        """Disconnect this instance and inhibit automatic reconnect attempts."""
+        self._active.clear()
+        self.reset_connection()
+        logger.info('Client main connection paused')
+
+    def resume(self):
+        """Re-enable the existing connection loop without replacing this process."""
+        self._active.set()
+
+    def wait_until_active(self):
+        self._active.wait()
 
     def create_connection(self):
         """

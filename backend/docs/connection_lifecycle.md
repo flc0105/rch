@@ -4,6 +4,14 @@ RCH 使用持续存在的 TCP Client Session 承载命令与运行时消息，�
 
 Server 负责建立和移除会话、发送心跳、计算 RTT、维护设备快照与连接历史；Python / Go Client 负责连接、回复和重新拨号；Web 通过 API 与 WebSocket 接收会话信息，再根据当前时间更新设备展示状态。下面按照这一条链路说明各部分怎样协作，以及需要调整时应修改什么。
 
+## Python Client 的主动连接暂停
+
+`pause_connection` 是 Python Client 的普通 Session 命令。Client 完整发送该命令的结果后，关闭当前主 TCP Socket，执行原有断线运行态清理，并将连接门控从 `active` 切为 `paused`。Client 进程继续运行，暂停期间不进行自动拨号，也不触发 120 秒入站超时自愈。Server 仍按正常断线处理 Session，并在连接历史中记录 Offline。
+
+Remote Control Watchdog 与主连接独立运行。Client 内置通用本地 IPC 接收器，通过 Unix Domain Socket（macOS/Linux）或 Windows Named Pipe 接受经认证的 `connection.resume` 消息。Watchdog Worker 能在收到 `resume` HTTP Control 动作时通过该 IPC 恢复原进程的 `active` 门控；Client 仍沿用原 `client_id` 和连接重试流程，原有 `relaunch` 则继续用于进程替换。Client 不检查 Remote Watchdog 是否开启才允许暂停。若 Watchdog 关闭，可通过重启 Client 进程恢复默认的 `active` 状态。
+
+Server HTTP Control 已支持向原 `client_id` 投递 `resume`：独立 Watchdog Worker 领取指令后通过本地 IPC 唤醒原进程，并返回执行 ACK。`delivered` 表示 IPC 唤醒已被原进程确认；最终在线状态由原 Client 重新握手确认。可以用已认证的 `POST /api/connections/<client_id>/control` 发送 `{"command":"resume"}`，或在 Server 命令上下文使用 `httpctl resume --client-id <client_id>`；无需新增 Server Pause 状态、Machine 状态或 History UI。
+
 ## 从握手到活动会话
 
 Client 连接 Server 的 TCP Socket（默认端口 `9999`），建立传输后发送包含 `client_id`、设备标识、系统信息、工作目录及命令能力的握手信息。Server 接收该信息，创建 `ClientSession`，并以 `client_id` 登记在活动连接管理器中。`client_id` 表示一次 Client 实例身份；`machine_id` 用于将不同实例关联到同一台设备，不能用两者互相替代。

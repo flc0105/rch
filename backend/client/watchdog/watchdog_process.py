@@ -78,6 +78,7 @@ class ClientWatchdogProcess:
     def __init__(
         self,
         client_id: str,
+        local_ipc_environment: dict,
         remote_control_watchdog_enabled: bool,
         remote_control_watchdog_base_url: str,
         remote_control_watchdog_interval_seconds: float,
@@ -88,6 +89,7 @@ class ClientWatchdogProcess:
         local_heartbeat_watchdog_log_file_path: str,
     ):
         self.client_id = str(client_id or '').strip()
+        self.local_ipc_environment = dict(local_ipc_environment or {})
         self.remote_control_watchdog_enabled = bool(remote_control_watchdog_enabled)
         self.remote_control_watchdog_base_url = str(remote_control_watchdog_base_url or '').rstrip('/')
         self.remote_control_watchdog_interval_seconds = max(float(remote_control_watchdog_interval_seconds or 0), 1.0)
@@ -152,7 +154,7 @@ class ClientWatchdogProcess:
 
         popen_kwargs = {
             'cwd': os.getcwd(),
-            'env': dict(os.environ),
+            'env': {**os.environ, **self.local_ipc_environment},
             'stdin': subprocess.DEVNULL,
             'stdout': subprocess.DEVNULL,
             'stderr': subprocess.DEVNULL,

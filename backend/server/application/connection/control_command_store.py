@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime
 
 
-HTTP_CONTROL_COMMANDS = {'kill', 'relaunch', 'clone'}
+HTTP_CONTROL_COMMANDS = {'kill', 'relaunch', 'clone', 'resume'}
 
 
 class ControlCommandStore:
@@ -14,6 +14,7 @@ class ControlCommandStore:
         'kill': 60.0,
         'relaunch': 60.0,
         'clone': 60.0,
+        'resume': 60.0,
     }
     MAX_PENDING_COMMANDS = 32
     COMPLETED_OUTCOME_RETENTION_SECONDS = 300.0
@@ -120,7 +121,7 @@ class ControlCommandStore:
             raise ValueError('Unsupported HTTP control result')
         with self._lock:
             outcome = self._outcomes_by_id.get(command_id)
-            if not outcome or outcome['client_id'] != cid or outcome['command'] != 'clone':
+            if not outcome or outcome['client_id'] != cid or outcome['command'] not in ('clone', 'resume'):
                 raise ValueError('Unknown HTTP control request')
             if outcome['status'] in ('online', 'timeout', 'delivered', 'failed'):
                 return self._public_outcome(outcome)

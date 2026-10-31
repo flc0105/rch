@@ -58,7 +58,7 @@
 | `xt which <name>` | 查找工具可执行文件 |
 | `xt run <name> [--] [args]` | 执行 External Tool；`xt <name> ...` 也是直接执行入口 |
 | `httpctl help` | 显示 HTTP 控制通道支持的操作 |
-| `httpctl kill` / `httpctl relaunch` / `httpctl clone` | 终止、重新启动或克隆当前 Agent，属于高风险管理操作 |
+| `httpctl kill` / `httpctl relaunch` / `httpctl clone` / `httpctl resume --client-id ID` | 终止、重新启动、克隆或通过 HTTP Control 唤醒指定原 Client 实例 |
 
 Alias 的模板参数、平台覆盖与安全边界见 [Aliases / Quick Actions](alias_quick_actions.md)；Script 的参数与授权见 [Scripts](scripts.md)；Job 运行状态见 [Background Jobs](background_jobs.md)；External Tool 见 [External Tools](external_tools.md)。
 

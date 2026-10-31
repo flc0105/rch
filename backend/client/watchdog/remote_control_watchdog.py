@@ -9,12 +9,13 @@ import urllib.error
 import urllib.request
 
 from client.runtime.client_util import spawn_new_instance, is_process_alive
+from client.runtime.local_ipc import send_local_command
 from client.watchdog.watchdog_environment import without_process_recovery_watchdog_environment
 from client.watchdog.recovery_source import RECOVERY_SOURCE_ENV
 from client.runtime.launch_context import detached_launch_environment
 from client.watchdog.watchdog_action import WatchdogActionExecutor
 
-HTTP_CONTROL_COMMANDS = {'kill', 'relaunch', 'clone'}
+HTTP_CONTROL_COMMANDS = {'kill', 'relaunch', 'clone', 'resume'}
 
 def _build_remote_control_watchdog_file_logger(log_file_path: str):
     logger_name = f'remote_control_watchdog_file_logger::{os.path.abspath(log_file_path)}'
@@ -104,6 +105,10 @@ class RemoteControlWatchdogMonitor:
             self.action_executor.spawn_new_instance()
             return
 
+        if command_text == 'resume':
+            send_local_command('connection.resume')
+            return
+
         raise ValueError(f'Unsupported remote HTTP control action: {command_text}')
    
     def _report_control_result(self, command_id: str, status: str, detail: str = ''):
@@ -133,11 +138,12 @@ class RemoteControlWatchdogMonitor:
                 try:
                     self._execute_command(command)
                 except Exception as exc:
-                    if command == 'clone':
+                    if command in ('clone', 'resume'):
                         self._report_control_result(command_id, 'failed', str(exc))
                     raise
                 else:
-                    if command == 'clone':
+                    if command in ('clone', 'resume'):
+                        # 'delivered' confirms IPC acknowledgement, not TCP reconnection.
                         self._report_control_result(command_id, 'delivered')
         except urllib.error.HTTPError as e:
             self._log_http_error(f'http control poll failed: client_id={self.client_id}, http_status={e.code}, url={poll_url}')

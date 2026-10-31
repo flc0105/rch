@@ -119,11 +119,11 @@ HTTP 控制相关接口及权限如下：
 
 | 接口 | 作用 | 权限 |
 | --- | --- | --- |
-| `GET /api/httpctl/actions` | 获取 `kill`、`relaunch`、`clone` 的动作名称及描述，用于展示可用操作 | 需认证 |
+| `GET /api/httpctl/actions` | 获取 `kill`、`relaunch`、`clone`、`resume` 的动作名称及描述，用于展示可用操作 | 需认证 |
 | `POST /api/connections/<client_id>/control` | 给指定 Client 存入一条待执行动作 | 需认证 |
 | `GET /api/connections/<client_id>/control` | Worker 获取并消费当前待执行动作 | 允许匿名访问 |
 
-POST 的请求体使用 `command` 字段，只接受 `kill`、`relaunch`、`clone`，其他动作会被拒绝。服务端在识别动作时会忽略前后空格和大小写。
+POST 的请求体使用 `command` 字段，只接受 `kill`、`relaunch`、`clone`、`resume`，其他动作会被拒绝。服务端在识别动作时会忽略前后空格和大小写。
 
 管理员 API Token 可以通过 `Authorization: Bearer <TOKEN>`、`X-Auth-Token` 或 `X-API-Token` 提交。也支持项目已有的管理员登录 Session 机制。不要将 Token 写入项目文件、提交到版本库，或在共享终端历史中留下明文。
 
@@ -151,7 +151,15 @@ httpctl kill
 
 这会要求 Worker 强制终止选中的 Client，不自动拉起替代实例。只应在确定可以终止该实例时执行。
 
-Server 控制台命令需要有可选中的目标连接；如果目标已完全离线且无法选中，使用指定 `client_id` 的 HTTP POST 更直接。无论通过哪个入口提交，都适用“每客户端一个命令槽”和“入队不等于执行”的规则。
+暂停的 Python Client 可用原实例的 Client ID 唤醒：
+
+```text
+httpctl resume --client-id <client_id>
+```
+
+也可直接在 Server 根控制台（`server>`）执行相同命令，或从管理员 API 向 `/api/connections/<client_id>/control` POST `{"command":"resume"}`。已暂停的实例不在在线连接列表中，因此应使用 Connection History 中的**原 client_id**，不要使用同一 Machine 新上线的其他实例 ID。Worker 收到 `resume` 后通过本地 IPC 唤醒原进程；Server 的 `delivered` ACK 代表 IPC 接受指令，最终上线以该实例重新握手为准。未启用 Remote Control Watchdog 的实例不能通过此通道远程唤醒。
+
+Server 控制台命令通常使用当前选中的连接；离线 Resume 必须提供准确的 `--client-id`，或使用指定 Client ID 的 HTTP POST。入队成功表示请求已安排执行，并不等于目标 Client 已经上线。
 
 ## 本地心跳与进程恢复
 
@@ -234,7 +242,7 @@ Web 的 **info → Watchdog** 在这种情况下显示 **Lifecycle managed by la
 | Linux | `~/.config/rchclient/runtime_config.json` |
 | iOS | `~/Documents/.rchclient/runtime_config.json` |
 
-Remote HTTP Control 通过原 Client 的 `client_id` 投递 `kill`、`relaunch`、`clone`；待处理指令按实例 FIFO 排队（最多 32 条），新指令不会覆盖之前的指令。指令超时时间及队列上限统一定义在 `ControlCommandStore` 类顶部。Server 在指令领取时发布 `httpctl_consumed` SSE 事件；当未领取或领取后未收到确认且超过超时预算时，会主动发布 `httpctl_timeout`。`clone` 成功执行后由 Worker 回传 ACK；`kill`、`relaunch` 执行时 Worker 即将退出，领取即视为交付。超时和执行失败会写入 Notification Center，并通过 `notification_center_updated` SSE 触发前端通知弹窗；Watchdog 偏好中控制超时、控制失败默认开启，指令领取调试通知默认关闭。Web 控制操作入队成功后立即显示一次 Toast，该反馈仅表示请求已入队。HTTP Control 继续使用原有匿名领取接口，指令状态仍保存在 Server 进程内存，Server 重启会丢失待处理队列。
+Remote HTTP Control 通过原 Client 的 `client_id` 投递 `kill`、`relaunch`、`clone`、`resume`；待处理指令按实例 FIFO 排队（最多 32 条），新指令不会覆盖之前的指令。指令超时时间及队列上限统一定义在 `ControlCommandStore` 类顶部。Server 在指令领取时发布 `httpctl_consumed` SSE 事件；当未领取或领取后未收到确认且超过超时预算时，会主动发布 `httpctl_timeout`。`clone` 和 `resume` 成功执行后由 Worker 回传 ACK；`resume` 的 `delivered` 只确认原 Client IPC 已接受唤醒。`kill`、`relaunch` 执行时 Worker 即将退出，领取即视为交付。超时和执行失败会写入 Notification Center，并通过 `notification_center_updated` SSE 触发前端通知弹窗；Watchdog 偏好中控制超时、控制失败默认开启，指令领取调试通知默认关闭。Web 控制操作入队成功后立即显示一次 Toast，该反馈仅表示请求已入队。HTTP Control 继续使用原有匿名领取接口，指令状态仍保存在 Server 进程内存，Server 重启会丢失待处理队列。
 
 ### 操作状态和重置
 

@@ -33,6 +33,11 @@ class CommandSessionMixin:
             return 0, str(exc)
         return 1, f'{name} set'
 
+    @desc('Pause this Client connection without terminating its process', group='session')
+    def pause_connection(self):
+        self.socket.request_pause()
+        return 1, 'Client connection will pause after this result is sent'
+
     @desc('Terminate current session', group='session')
     # @confirm('Terminate this Client session and close its connection?')
     def kill_instance(self):

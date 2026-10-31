@@ -28,9 +28,19 @@ class ServerConnection(RCHSocket):
         self.runtime = ClientRuntime(self, features=features)
         self.pending_message_queue = queue.Queue()
         self.is_connected = False
+        self._pause_requested = False
 
         self.message_router = ClientInboundMessageRouter(self)
         self.message_dispatcher = ClientInboundMessageDispatcher(self)
+
+    def request_pause(self):
+        # Applied by Client.wait only after the final result frame is sent.
+        self._pause_requested = True
+
+    def consume_pause_request(self):
+        requested = self._pause_requested
+        self._pause_requested = False
+        return requested
 
     def mark_connected(self):
         self.is_connected = True

@@ -25,6 +25,7 @@ class ClientWatchdogManager:
         self._watchdog_process = None
         self._local_heartbeat_watchdog_feeder = None
         self._started = False
+        self.local_ipc_environment = {}
 
 
     def _current_enabled_modes(self):
@@ -63,6 +64,7 @@ class ClientWatchdogManager:
         if self._watchdog_process is None:
             self._watchdog_process = ClientWatchdogProcess(
                 client_id=self.client_id,
+                local_ipc_environment=self.local_ipc_environment,
                 remote_control_watchdog_enabled=self._current_enabled_modes()['remote_control_watchdog'],
                 remote_control_watchdog_base_url=UPLOAD_BASE_URL,
                 remote_control_watchdog_interval_seconds=REMOTE_CONTROL_WATCHDOG_INTERVAL_SECONDS,

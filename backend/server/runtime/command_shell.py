@@ -89,6 +89,7 @@ class ServerCommandShell:
             ['pwd', 'Show local working directory'],
             ['exit, quit', 'Exit the server console'],
             ['kill <index>', 'Send kill command to a target session'],
+            ['httpctl resume --client-id <id>', 'Wake a paused Client by its original instance ID'],
         ]
 
         print()
@@ -426,6 +427,14 @@ class ServerCommandShell:
                 self.open_connection(self.get_target_connection(target))
             else:
                 self.open_connection(self.get_last_connection())
+            return
+
+        if name == 'httpctl':
+            # Offline Clients cannot be selected as active sessions, but their
+            # Remote Control Watchdogs still receive explicit client_id commands.
+            from server.application.command.control_builtin_support import ControlBuiltinSupport
+            for status, message in ControlBuiltinSupport(conn=None).httpctl(arg):
+                write(status, message)
             return
 
         if name == 'kill':

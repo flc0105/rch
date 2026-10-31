@@ -32,6 +32,20 @@ class Client:
             from client.watchdog.client_watchdog_manager import ClientWatchdogManager
             self.watchdog_manager = ClientWatchdogManager(client_id=self.client_id)
         self.connection_lifecycle = ClientConnectionLifecycle(self)
+        self.local_ipc = None
+        ipc = None
+        try:
+            from client.runtime.local_ipc import LocalIpcServer
+            ipc = LocalIpcServer()
+            ipc.register('connection.resume', self.connection_lifecycle.resume)
+            ipc.start()
+            self.local_ipc = ipc
+            if self.watchdog_manager is not None:
+                self.watchdog_manager.local_ipc_environment = ipc.child_environment()
+        except (ImportError, OSError, RuntimeError) as exc:
+            if ipc is not None:
+                ipc.stop()
+            logger.warning('Local IPC unavailable: %s', exc)
 
         log_runtime_config_overrides_if_any()
 
@@ -55,6 +69,8 @@ class Client:
         """
         logger.error(error, exc_info=True)
         while True:
+            if self.connection_lifecycle.is_paused is True:
+                return
             try:
                 self.connection_lifecycle.reset_connection()
                 self.connect()
@@ -64,7 +80,19 @@ class Client:
                 time.sleep(self.RECONNECT_INTERVAL)
 
     def wait(self):
+        try:
+            self._wait_for_commands()
+        finally:
+            if getattr(self, 'local_ipc', None) is not None:
+                self.local_ipc.stop()
+
+    def _wait_for_commands(self):
         while True:
+            if (getattr(self, 'connection_lifecycle', None) is not None
+                    and self.connection_lifecycle.is_paused):
+                self.connection_lifecycle.wait_until_active()
+                self.connect()
+                continue
             try:
                 receiver_error = self.receiver_worker.pop_error()
                 if receiver_error is not None:
@@ -79,6 +107,11 @@ class Client:
                 result = self.server.recv_command(timeout=0.5)
                 if result:
                     self.server.send_result(*result)
+                    if self.server.consume_pause_request():
+                        self.connection_lifecycle.pause()
+                        # Even an early Resume during socket cleanup must reconnect.
+                        self.connection_lifecycle.wait_until_active()
+                        self.connect()
             except queue.Empty:
                 continue
             except SystemExit:

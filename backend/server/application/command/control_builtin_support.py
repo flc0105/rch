@@ -19,6 +19,10 @@ HTTP_CONTROL_ACTIONS = {
         'label': 'Clone',
         'description': 'Launch another agent instance without stopping the current one.',
     },
+    'resume': {
+        'label': 'Resume',
+        'description': 'Wake the same paused Client process via Remote Control Watchdog.',
+    },
 }
 
 
@@ -34,7 +38,7 @@ class ControlBuiltinSupport:
 
 
     def _format_httpctl_usage(self) -> str:
-        lines = ['Usage: httpctl <action>', '']
+        lines = ['Usage: httpctl <action> [--client-id CLIENT_ID for resume]', '']
         for action, spec in HTTP_CONTROL_ACTIONS.items():
             lines.append(f'  {action:<8} {spec["description"]}')
         return '\n'.join(lines)
@@ -65,16 +69,18 @@ class ControlBuiltinSupport:
             yield 1, self._format_httpctl_usage()
             return
 
-        if len(parts) > 1:
-            yield 0, self._format_httpctl_usage()
-            return
-
         try:
             action = self._resolve_http_control_action(parts[0])
-            client_id = self._get_client_id()
-
+            # A paused instance has no selectable online session. Explicitly target its
+            # original client_id instead of guessing a different Client on the machine.
+            if len(parts) == 3 and parts[1] == '--client-id' and action['action'] == 'resume':
+                client_id = parts[2].strip()
+            elif len(parts) == 1:
+                client_id = self._get_client_id()
+            else:
+                raise ValueError(self._format_httpctl_usage())
             if not client_id:
-                raise ValueError('Missing client_id for current connection')
+                raise ValueError('Missing client_id: select a connection or use resume --client-id CLIENT_ID')
 
             payload = self.control_command_store.set_pending_command(
                 client_id,
