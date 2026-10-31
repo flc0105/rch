@@ -1,8 +1,4 @@
-import json
-import queue
-from datetime import datetime
-
-from flask import Blueprint, Response, request, stream_with_context
+from flask import Blueprint, request
 
 from server.application.command.control_builtin_support import HTTP_CONTROL_ACTIONS
 from server.application.connection.control_command_store import (
@@ -71,34 +67,5 @@ def create_stream_control_blueprint(server_instance):
             web_service.event_bus.publish('httpctl_result', {'client_id': client_id, **outcome})
             return outcome
         return responder.json_endpoint(_execute)
-
-    @blueprint.get('/api/stream')
-    def stream():
-        tab_id = (request.args.get('tab_id') or '').strip()
-        q = web_service.event_bus.subscribe(tab_id=tab_id)
-
-        def event_stream():
-            try:
-                while True:
-                    try:
-                        item = q.get(timeout=15)
-                        yield f"id: {item['id']}\n"
-                        yield f"event: {item['event']}\n"
-                        yield f"data: {json.dumps(item['data'], ensure_ascii=False)}\n\n"
-                    except queue.Empty:
-                        yield 'event: ping\n'
-                        yield f"data: {json.dumps({'time': datetime.now().isoformat()}, ensure_ascii=False)}\n\n"
-            finally:
-                web_service.event_bus.unsubscribe(q)
-
-        return Response(
-            stream_with_context(event_stream()),
-            mimetype='text/event-stream',
-            headers={
-                'Cache-Control': 'no-cache',
-                'Connection': 'keep-alive',
-                'X-Accel-Buffering': 'no',
-            },
-        )
 
     return blueprint

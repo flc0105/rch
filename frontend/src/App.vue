@@ -192,6 +192,7 @@
   :tab-id="tabId"
   @append-output="appendOutput"
   @set-active-task="setActiveTask"
+  @check-task-state="refreshForegroundTask"
   @terminal-submission-start="startTerminalSubmission"
   @terminal-submission-finish="finishTerminalSubmission"
   @clear-output="clearOutput"
@@ -853,6 +854,11 @@ export default {
       if (id === this.selectedId) this.foregroundQuerySequence += 1
       const task = normalizeForegroundTask(payload)
       this.foregroundTasks = { ...this.foregroundTasks, [id]: task }
+      // The task slot is authoritative; a missing completion event must not leave Run disabled.
+      // Never clear a different task while an actual server task is still active.
+      if (task.state === 'Idle' && this.activeTaskIds[id]) {
+        void this.recoverFinishedTask(id, this.activeTaskIds[id])
+      }
       this.syncForegroundTaskNotice(id, task)
     },
 

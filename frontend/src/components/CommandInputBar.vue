@@ -150,6 +150,7 @@ export default {
   emits: [
     'append-output',
     'set-active-task',
+    'check-task-state',
     'terminal-submission-start',
     'terminal-submission-finish',
     'clear-output',
@@ -261,7 +262,8 @@ export default {
   try {
     const data = await sendCommandApi(clientId, command, this.getTabScopedHeaders())
     const taskId = data && data.task_id
-    this.$emit('set-active-task', clientId, taskId || '', cancelPolicy)
+    this.$emit('set-active-task', clientId, taskId || '', cancelPolicy, data?.history_entry_id || '')
+    if (typeof window !== 'undefined') window.setTimeout(() => this.$emit('check-task-state'), 400)
 
     this.commandText = ''
     this.commandCandidatesLoadedFor = ''
@@ -362,7 +364,8 @@ export default {
       try {
         const data = await sendCommandApi(clientId, text, this.getTabScopedHeaders())
         const taskId = String(data?.task_id || '')
-        this.$emit('set-active-task', clientId, taskId, cancelPolicy)
+        this.$emit('set-active-task', clientId, taskId, cancelPolicy, data?.history_entry_id || '')
+        if (typeof window !== 'undefined') window.setTimeout(() => this.$emit('check-task-state'), 400)
         return taskId
       } catch (error) {
         if (echoToTerminal) {

@@ -14,9 +14,9 @@ SOCKET_ADDR = (SOCKET_HOST, SOCKET_PORT)
 
 WEB_HOST = '0.0.0.0'
 WEB_PORT = int(os.getenv('RCH_WEB_PORT', '8085'))
-WEB_FILE_TRANSFER_PORT = WEB_PORT + 1
-if not (1 <= SOCKET_PORT <= 65535 and 1 <= WEB_PORT <= 65534) or SOCKET_PORT in (WEB_PORT, WEB_FILE_TRANSFER_PORT):
-    raise ValueError('Invalid or overlapping RCH socket/web/file ports')
+WEB_WS_PORT = WEB_PORT + 1
+if not (1 <= SOCKET_PORT <= 65535 and 1 <= WEB_PORT <= 65534) or SOCKET_PORT in (WEB_PORT, WEB_WS_PORT):
+    raise ValueError('Invalid or overlapping RCH socket/web/ws ports')
 
 # ------------------ auth ------------------ #
 HIDDEN_DEVICES_REQUIRE_PASSWORD = os.getenv('RCH_HIDDEN_DEVICES_REQUIRE_PASSWORD', 'true').strip().lower() in {

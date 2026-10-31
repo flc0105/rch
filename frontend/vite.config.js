@@ -52,7 +52,7 @@ export default defineConfig({
       },
 
       '/ws': {
-        target: 'ws://127.0.0.1:8085',
+        target: 'ws://127.0.0.1:8086',
         changeOrigin: true,
         ws: true,
       },

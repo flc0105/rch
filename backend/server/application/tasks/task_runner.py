@@ -103,6 +103,7 @@ class WebTaskRunner:
             'command_result',
             {
                 'task_id': context.task_id,
+                'history_entry_id': self._get_history_entry_id(context),
                 'client_id': context.client_id,
                 'command': context.command,
                 'command_id': self._get_runtime_command_id(context),
@@ -123,6 +124,7 @@ class WebTaskRunner:
             'command_complete',
             {
                 'task_id': context.task_id,
+                'history_entry_id': self._get_history_entry_id(context),
                 'client_id': context.client_id,
                 'command': context.command,
                 'command_id': self._get_runtime_command_id(context),

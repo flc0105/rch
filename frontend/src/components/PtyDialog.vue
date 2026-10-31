@@ -510,7 +510,9 @@ export default {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
       const path = raw.startsWith('/') ? raw : `/${raw}`
 
-      return `${protocol}//${window.location.host}${path}`
+      const url = new URL(`${protocol}//${window.location.host}${path}`)
+      url.port = window.location.port === '5173' ? '8086' : String(Number(window.location.port || (protocol === 'wss:' ? 443 : 80)) + 1)
+      return url.toString()
     },
 
     openPtySocket() {

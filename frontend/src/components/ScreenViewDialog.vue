@@ -945,6 +945,7 @@ export default {
       try {
         const url = new URL(this.screenWsPath, window.location.href)
         url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+        url.port = window.location.port === '5173' ? '8086' : String(Number(window.location.port || (url.protocol === 'wss:' ? 443 : 80)) + 1)
         const ws = new WebSocket(url.toString())
         this.screenWs = ws
 

@@ -39,13 +39,13 @@ cd backend
 python run_web.py
 ```
 
-该入口启动 Server Socket、心跳、Web 服务和独立文件传输服务。默认 Socket 端口为 `9999`，Web/API 端口为 `8085`，文件传输端口自动使用 Web 端口加一，即默认 `8086`。只运行 `rchserver.py` 则启动 Socket Server 和控制台，不会启动同一套 Web 登录页面；它仍会在加载 Server 配置时初始化管理员凭据。
+该入口启动 Server Socket、心跳、直接 Flask HTTP（包含文件传输）和独立 WebSocket 服务。默认 Socket 端口为 `9999`、HTTP 端口为 `8085`、WebSocket 端口为 `8086`（Web 端口 + 1）。只运行 `rchserver.py` 则启动 Socket Server 和控制台，不会启动同一套 Web 登录页面；它仍会在加载 Server 配置时初始化管理员凭据。
 
 运行时确实读取以下相关环境变量：
 
 | 环境变量 | 默认值 | 作用 |
 |---|---|---|
-| `RCH_WEB_PORT` | `8085` | Web/API 监听端口，同时决定文件传输端口 `+1` |
+| `RCH_WEB_PORT` | `8085` | Web/API/HTTP 文件传输端口；独立 WebSocket 监听 `+1` |
 | `RCH_SOCKET_PORT` | `9999` | Client Socket 监听端口 |
 | `RCH_SERVER_RUNTIME_DIR` | `backend/runtime`（项目固定路径） | Server 所有持久 runtime 数据的根目录；绝对路径或相对于 `backend/` 的路径 |
 | `RCH_WEB_AUTH_SESSION_DAYS` | `7` | 浏览器持久 Session 的有效天数 |
@@ -154,7 +154,7 @@ unset RCH_API_TOKEN
 
 Desktop Notifier 是这个 Token 的实际使用场景。Notifier 会携带相同的 `Authorization: Bearer ...` 访问 `/api/notifications/stream`，并支持在其独立的 `config.json` 配置 `token`，或通过 **Notifier 进程自己的** `RCH_NOTIFIER_TOKEN` 环境变量注入。该环境变量不会生成或修改 RCH Server 的 `auth.json`。Notifier 虽然只读取通知流，但使用的仍是管理员 Token，配置文件的保存权限应按管理员凭据处理。
 
-Web API、文件传输服务与 PTY/Screen WebSocket 分别有对应的认证或访问令牌机制。当前部分路由明确用 `@allow_anonymous` 跳过通用认证守卫，8086 专用文件传输服务也不是这个 Flask WebAuthGuard 的完整镜像；因此不能据此声称 **所有** HTTP、Socket 或 WebSocket 通道都由管理员 API Token 统一保护。
+8085 Flask Web API 受管理员 Session/Token 守卫保护；受控浏览器原始文件上传和部分 Client 传输路径依靠各自的一次性令牌或原有 HTTP 访问策略。8086 的浏览器实时 WebSocket 检查管理员 Session/Token，PTY/Screen 则使用对应会话的一次性 WebSocket Ticket。
 
 ## 委托给执行任务的临时权限
 

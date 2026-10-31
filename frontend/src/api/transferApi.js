@@ -33,18 +33,13 @@ export async function createBrowserUploadTransfer(payload = {}, headers = {}) {
 }
 
 export function buildBrowserUploadContentUrl(transfer = {}) {
-  const port = String(transfer?.browser_upload_port || '').trim()
   const path = String(transfer?.browser_upload_path || '').trim()
-  if (!port || !path) {
+  if (!path) {
     throw new Error('Browser file transfer endpoint is unavailable')
   }
 
-  const url = new URL(window.location.href)
-  url.port = port
-  url.pathname = path.startsWith('/') ? path : `/${path}`
-  url.search = ''
-  url.hash = ''
-  return url.toString()
+  // The upload shares the Web API origin; keep Vite's /api proxy in the request path.
+  return path.startsWith('/') ? path : `/${path}`
 }
 
 // Shared browser -> Server -> Client upload path used by both remote file dialogs.

@@ -60,6 +60,12 @@ class WebCommandHistoryApi:
             'changed': bool(changed),
         }
 
+    def get_command_execution_history_entry(self, machine_id: str, entry_id: str):
+        entry = self.server.command_history.view_service.get_execution_entry(machine_id, entry_id)
+        if entry is None:
+            raise ValueError('Activity not found')
+        return entry
+
     def delete_command_execution_history_entry(self, machine_id: str, entry_id: str):
         deleted = self.server.command_history.write_service.delete_execution_entry_by_machine_id(machine_id, entry_id)
         return {

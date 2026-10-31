@@ -2,13 +2,15 @@ export default {
     data() {
         return {
             activeTaskIds: {},
+            activeTaskHistoryIds: {},
+            taskOutputCounts: {},
             activeTaskCancelPolicies: {},
             completedTaskIds: {},
         }
     },
 
     methods: {
-        setActiveTask(clientId, taskId, cancelPolicy = '') {
+        setActiveTask(clientId, taskId, cancelPolicy = '', historyEntryId = '') {
             if (!clientId) return;
 
             const normalizedTaskId = String(taskId || '').trim();
@@ -29,6 +31,7 @@ export default {
                 ...this.activeTaskIds,
                 [clientId]: normalizedTaskId
             };
+            if (historyEntryId) this.activeTaskHistoryIds = { ...this.activeTaskHistoryIds, [normalizedTaskId]: historyEntryId };
             this.activeTaskCancelPolicies = {
                 ...this.activeTaskCancelPolicies,
                 [clientId]: cancelPolicy === 'none' ? 'none' : '',
@@ -57,6 +60,51 @@ export default {
             }
 
             this.clearActiveTask(clientId, normalizedTaskId);
+            if (normalizedTaskId) {
+                const histories = {...this.activeTaskHistoryIds};
+                delete histories[normalizedTaskId];
+                this.activeTaskHistoryIds = histories;
+                const counts = {...this.taskOutputCounts};
+                delete counts[normalizedTaskId];
+                this.taskOutputCounts = counts;
+            }
+        },
+
+        noteTaskOutput(taskId) {
+            const id = String(taskId || '').trim();
+            if (id) this.taskOutputCounts = { ...this.taskOutputCounts, [id]: (this.taskOutputCounts[id] || 0) + 1 };
+        },
+
+        async recoverFinishedTask(clientId, taskId, historyEntryId = '') {
+            const id = String(taskId || '').trim();
+            if (!id || this.completedTaskIds[id]) return;
+            const entryId = String(historyEntryId || this.activeTaskHistoryIds[id] || '').trim();
+            const conn = (this.connections || []).find(item => item.client_id === clientId);
+            const machineId = String(conn?.machine_id || '').trim();
+            const alreadyDelivered = this.taskOutputCounts[id] || 0;
+            // Release the UI immediately, even when the history endpoint is temporarily unavailable.
+            this.markTaskCompleted(clientId, id);
+            if (!entryId || !machineId) return;
+            try {
+                const { getCommandExecutionEntry } = await import('../api/connectionsApi.js');
+                const entry = await getCommandExecutionEntry(machineId, entryId);
+                if (entry.client_id !== clientId || !entry.finished_at) return;
+                // Dialog presentations own their output; do not echo them into Terminal.
+                if (entry.presentation && entry.presentation !== 'terminal') return;
+                const records = entry.result?.output_records || [];
+                for (const record of records.slice(alreadyDelivered)) {
+                    this.appendOutput(clientId, record.text || '', '', {
+                        task_id: id, history_entry_id: entryId, recovered: true,
+                    });
+                }
+                const { formatTerminalCommandFinishedLine } = await import('./terminalMarkers.js');
+                this.appendOutput(clientId, formatTerminalCommandFinishedLine(
+                    entry.invocation?.input || entry.action || '',
+                    entry.status === 'success' ? 'Success' : 'Failed',
+                ), entry.status === 'success' ? 'success' : 'error', { task_id: id, recovered: true });
+            } catch (error) {
+                console.warn('Unable to recover finished task output', error);
+            }
         },
 
         clearActiveTask(clientId, taskId = '') {

@@ -12,6 +12,7 @@ from server.config.config import (
     WEB_HTTP_UPLOAD_MAX_BYTES,
     WEB_SESSION_SECRET,
 )
+from server.web.file_transfer_app import create_browser_upload_blueprint
 from server.web.api_response import WebApiResponder
 from server.web.auth_guard import WebAuthGuard
 from server.web.routes.interactions import create_interaction_blueprint
@@ -36,7 +37,6 @@ from server.web.routes.toolbar_preferences import create_toolbar_preferences_blu
 from server.web.routes.notification_preferences import create_notification_preferences_blueprint
 from server.web.routes.terminal_context_preferences import create_terminal_context_preferences_blueprint
 from server.web.routes.notification_history import create_notification_history_blueprint
-from server.web.routes.notification_stream import create_notification_stream_blueprint
 from server.web.routes.screen_view import create_screen_view_blueprint
 from server.web.routes.server_cleanup import create_server_cleanup_blueprint
 from server.web.routes.clipboard import create_clipboard_blueprint
@@ -91,7 +91,6 @@ def create_app(server_instance):
     app.register_blueprint(create_notification_preferences_blueprint(server_instance))
     app.register_blueprint(create_terminal_context_preferences_blueprint(server_instance))
     app.register_blueprint(create_notification_history_blueprint(server_instance))
-    app.register_blueprint(create_notification_stream_blueprint(server_instance))
     app.register_blueprint(create_server_cleanup_blueprint(server_instance))
     app.register_blueprint(create_command_execution_blueprint(server_instance))
     app.register_blueprint(create_stream_control_blueprint(server_instance))
@@ -114,6 +113,7 @@ def create_app(server_instance):
     app.register_blueprint(create_device_monitor_blueprint(server_instance))
     app.register_blueprint(create_device_events_blueprint(server_instance))
     app.register_blueprint(create_transfers_blueprint(server_instance))
+    app.register_blueprint(create_browser_upload_blueprint(server_instance))
 
     @app.after_request
     def cache_hashed_static_assets(response):

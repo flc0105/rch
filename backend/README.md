@@ -601,7 +601,7 @@ Current JS modules include:
 
 ### Command execution
 
-Commands are submitted from the web UI to the selected client. The server tracks active web tasks and streams responses via SSE.
+Commands are submitted from the web UI to the selected client. The server tracks active web tasks and publishes responses over the independent WebSocket event stream.
 
 The same backend command pipeline is also usable from the server CLI, so the project is not web-only.
 
@@ -2677,7 +2677,7 @@ Templates can substitute:
 
 The displayed snippet can be edited/copied without changing the static catalog source.
 
-The server listens on the Socket port (`RCH_SOCKET_PORT`, default `9999`) and Web port (`RCH_WEB_PORT`, default `8085`). The separate file transfer HTTP service always listens on **Web port + 1** (default `8086`); the unused standalone PTY WebSocket listener has been removed. PTY/Screen WebSockets remain on the Web port.
+The server listens on the Socket port (`RCH_SOCKET_PORT`, default `9999`) and Web port (`RCH_WEB_PORT`, default `8085`). The Flask/Werkzeug HTTP server directly handles file upload/download on the Web port, without ASGI/WSGI bridging. The dedicated WebSocket listener runs on **Web port + 1** (default `8086`) for PTY, Screen and live events. FastAPI/Uvicorn are not used.
 
 Agent Builder, Bootstrap, and One-liners accept only Socket and Web ports. `/api/agent/platform` supplies both configured server defaults. The derived file transfer port is not independently configurable. For external port mapping, forward the Web port and its following file-transfer port together.
 

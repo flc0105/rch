@@ -5,7 +5,7 @@ import {
     TERMINAL_BACKGROUND_PREFIX,
     TERMINAL_FILE_READY_PREFIX,
 } from './terminalMarkers.js';
-import { openSseStream } from '../api/streamApi.js';
+import { openWebEventStream } from '../api/streamApi.js';
 import { loadNotificationPreferences } from '../api/notificationPreferencesApi.js';
 import { loadTransfers } from '../api/transferApi.js';
 import { loadNotificationHistory } from '../api/notificationHistoryApi.js';
@@ -201,7 +201,7 @@ export default {
             if (this.eventSource) this.eventSource.close();
 
             const tabId = this.ensureTabId();
-            const es = openSseStream(tabId);
+            const es = openWebEventStream(tabId);
             this.eventSource = es;
 
             const getConnectionLabel = (clientId) => {
@@ -216,7 +216,8 @@ export default {
                 void this.$refs.executionInteractionDialogRef?.reloadPending(tabId);
                 // The initial selection already fetches a snapshot. Reconnects
                 // must resync because the transient SSE bus has no replay.
-                if (reconnecting) void this.refreshForegroundTask?.();
+                // The server does not replay transient command events; reconcile after every open.
+                void this.refreshForegroundTask?.();
             });
 
             es.addEventListener('foreground_task_changed', (event) => {
@@ -683,6 +684,7 @@ export default {
 
             es.addEventListener('command_result', (event) => {
                 const payload = JSON.parse(event.data);
+                this.noteTaskOutput?.(payload.task_id);
                 const metadata = payload.metadata && typeof payload.metadata === 'object' ? payload.metadata : {};
                 const isQuickActionDialog = metadata.quick_action === true && metadata.quick_action_presentation === 'dialog';
                 const handledByQuickActionDialog = isQuickActionDialog
@@ -1045,7 +1047,7 @@ this.appendOutput(payload.client_id, `${TERMINAL_BACKGROUND_PREFIX} ${payload.te
 
 
             es.onerror = () => {
-                // EventSource reconnects automatically
+                // WebSocket transport reconnects and the next open resyncs authoritative task state
             };
         },
 

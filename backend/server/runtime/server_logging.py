@@ -31,12 +31,3 @@ def install_server_file_logging(runtime_dir):
     handler._rch_server_runtime_log = True
     root_logger.addHandler(handler)
     return handler
-
-
-def attach_uvicorn_file_logging(handler):
-    """Call after uvicorn.Config(), which reinstalls Uvicorn's own handlers."""
-    # uvicorn.error propagates to uvicorn; uvicorn.access does not.
-    for name in ('uvicorn', 'uvicorn.access'):
-        uvicorn_logger = logging.getLogger(name)
-        if handler not in uvicorn_logger.handlers:
-            uvicorn_logger.addHandler(handler)

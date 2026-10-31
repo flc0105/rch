@@ -70,6 +70,13 @@ def create_command_history_blueprint(server_instance):
 
         return responder.json_endpoint(_execute, default_error_status=500)
 
+    @blueprint.get('/api/machines/<machine_id>/command-history/full/<entry_id>')
+    def get_command_execution_history_entry(machine_id, entry_id):
+        return responder.json_endpoint(
+            lambda: command_history_api.get_command_execution_history_entry(machine_id, entry_id),
+            default_error_status=404,
+        )
+
     @blueprint.delete('/api/machines/<machine_id>/command-history/full/<entry_id>')
     def delete_command_execution_history_entry(machine_id, entry_id):
         return responder.json_endpoint(

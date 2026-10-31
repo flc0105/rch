@@ -1,3 +1,5 @@
+> **协议迁移：** RCH Server 目前将通知实时订阅改为 `ws://<host>:8086/ws/notifications?last_event_id=<cursor>`（TLS 部署使用 WSS），JSON `event/data/id` 消息，管理员 Bearer Token 经 WebSocket 握手的 `Authorization` 头传递。旧 HTTP SSE `/api/notifications/stream` 已停止提供。本文其余内容描述的是旧版独立 Desktop Notifier 实现；该独立消费者源码未包含在本次 RCH 代码基线中，必须单独升级后才能继续接收实时通知。通知 SQLite 历史及 Web Notification Center 仍在 Server 端保留。
+
 # Desktop Notifier：独立桌面通知消费者
 
 RCH Desktop Notifier 是独立于 Server、浏览器和远程 Python Client 的**本机通知进程**。它以 Bearer Token 连接 Server 的持久通知 SSE 流，按照用户的投递偏好接收通知，把标题和正文交给操作系统的通知接口，并将处理进度保存在本地游标文件中。它由本地通知进程负责投递，与浏览器 Notification Center 和远程 Client 各自独立运行。

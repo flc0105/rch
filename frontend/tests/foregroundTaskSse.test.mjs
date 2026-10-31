@@ -69,16 +69,16 @@ test('the SSE listener applies payload snapshots without HTTP query', () => {
 })
 
 
-test('first SSE open avoids duplicate snapshot and reconnect fetches once', () => {
+test('both initial WebSocket open and reconnect reconcile authoritative task snapshots', () => {
   const handler = sse.match(/es\.addEventListener\('open', \(\) => \{([\s\S]*?)\n            \}\);/)
   assert.ok(handler)
   const open = new Function('tabId', `return function open() {${handler[1]}\n}`)('tab-a')
   let fetches = 0
   const state = { sseReady: false, $refs: {}, refreshForegroundTask() { fetches++ } }
   open.call(state)
-  assert.equal(fetches, 0)
-  open.call(state)
   assert.equal(fetches, 1)
+  open.call(state)
+  assert.equal(fetches, 2)
 })
 
 test('local task-id arrival clears a premature own-task notice', () => {

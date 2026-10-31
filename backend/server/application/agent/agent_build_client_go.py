@@ -28,15 +28,12 @@ class ClientGoBuilder:
         server_web_host = (server_web_host or server_host).strip() or server_host
         template = f'''package config
 
-import "strconv"
-
 var SERVER_ADDR = "{server_host}:{server_port}"
 var SERVER_WEB_SCHEME = "{server_web_scheme}"
 var SERVER_WEB_HOST = "{server_web_host}"
 var SERVER_WEB_PORT = {web_port}
-var SERVER_FILE_TRANSFER_PORT = SERVER_WEB_PORT + 1
 var UPLOAD_BASE_URL = SERVER_WEB_SCHEME + "://" + SERVER_WEB_HOST + ":" + "{web_port}"
-var FILE_TRANSFER_BASE_URL = SERVER_WEB_SCHEME + "://" + SERVER_WEB_HOST + ":" + strconv.Itoa(SERVER_FILE_TRANSFER_PORT)
+var FILE_TRANSFER_BASE_URL = UPLOAD_BASE_URL
 var CLIENT_BUILD_VERSION = "{build_version}"
 '''
         with open(config_path, 'w', encoding='utf-8') as f:

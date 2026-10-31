@@ -195,6 +195,7 @@ class WebTaskService:
             'task_id': context.task_id,
             'client_id': request.client_id,
             'command': request.command,
+            'history_entry_id': context.history_entry_id,
         }
 
     def submit_web_command(

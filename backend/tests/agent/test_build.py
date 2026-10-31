@@ -161,7 +161,7 @@ def test_explicit_bundle_generates_valid_source_zip():
             assert 'client/config/config.py' in z.namelist()
             cfg = z.read('client/config/config.py').decode()
             ast.parse(cfg)
-            assert 'SERVER_FILE_TRANSFER_PORT = SERVER_WEB_PORT + 1' in cfg
+            assert 'FILE_TRANSFER_BASE_URL = UPLOAD_BASE_URL' in cfg
             assert 'SERVER_WEB_PORT = 8085' in cfg
             assert 'rchclient.py' in z.namelist()
             assert all(not n.startswith('server/') for n in z.namelist())

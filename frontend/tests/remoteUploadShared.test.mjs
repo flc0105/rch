@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import vm from 'node:vm'
-import { uploadRemoteFileToClient } from '../src/api/transferApi.js'
+import { buildBrowserUploadContentUrl, uploadRemoteFileToClient } from '../src/api/transferApi.js'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const originalFetch = globalThis.fetch
@@ -30,7 +30,7 @@ class FakeXHR {
   send(file) {
     postCount++
     assert.equal(this.method, 'POST')
-    assert.equal(this.url, 'http://test.example:8086/api/transfers/browser-upload/tr-1/content')
+    assert.equal(this.url, '/api/transfers/browser-upload/tr-1/content')
     assert.equal(this.headers['Content-Type'], 'application/octet-stream')
     assert.equal(this.headers['X-RCH-Transfer-Token'], 'token-123')
     assert.equal(file.name, 'report.txt')
@@ -54,7 +54,7 @@ globalThis.fetch = async (url, options) => {
       destination_path: '/home/test',
     })
     return {ok: true, json: async () => ({code: 0, data: {
-      transfer_id: 'tr-1', browser_upload_port: 8086,
+      transfer_id: 'tr-1', browser_upload_port: 8085,
       browser_upload_path: '/api/transfers/browser-upload/tr-1/content',
       browser_upload_token: 'token-123',
     }})}
@@ -71,6 +71,15 @@ globalThis.fetch = async (url, options) => {
 const file = {name: 'report.txt', size: 17}
 const headers = {'X-Tab-Id': 'tab-42'}
 try {
+  // Production 8085 and Vite development 5173 both use the same-origin /api path.
+  const contentPath = '/api/transfers/browser-upload/tr-1/content'
+  const uploadDescriptor = {browser_upload_port: 8085, browser_upload_path: contentPath}
+  assert.equal(buildBrowserUploadContentUrl(uploadDescriptor), contentPath)
+  window.location.href = 'http://127.0.0.1:5173/'
+  assert.equal(buildBrowserUploadContentUrl(uploadDescriptor), contentPath)
+  assert.equal(buildBrowserUploadContentUrl({browser_upload_path: contentPath.slice(1)}), contentPath)
+  assert.throws(() => buildBrowserUploadContentUrl({}), /endpoint is unavailable/)
+
   const result = await uploadRemoteFileToClient({file, clientId: 'client-A', destinationPath: '/home/test', headers})
   assert.equal(result.task_id, 'task-123')
   assert.equal(started, 1)
@@ -146,4 +155,4 @@ assert.deepEqual(JSON.parse(JSON.stringify(dialog.called[0])), {
 assert.equal(event2.target.value, '')
 assert.equal(dialog.state.remoteUploadLoading, false)
 assert.ok(dialog.events.some(([name, info]) => name === 'upload-started' && info.taskId === 'task-shared'))
-console.log('Shared remote upload API: 8086, Transfer Center creation, failure, both dialogs passed')
+console.log('Shared remote upload API: same-origin 8085 via /api, Transfer Center creation, failure, both dialogs passed')

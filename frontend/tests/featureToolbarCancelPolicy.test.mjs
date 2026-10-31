@@ -196,7 +196,7 @@ test('terminal submission attaches the matched policy to task ID and blocks canc
   })
   await options.methods.sendCommand.call(state)
   assert.equal(sends.length, 1)
-  assert.deepEqual(events.find(item => item[0] === 'set-active-task'), ['set-active-task', 'abc', 'task-from-set', 'none'])
+  assert.deepEqual(events.find(item => item[0] === 'set-active-task'), ['set-active-task', 'abc', 'task-from-set', 'none', ''])
   state.currentActiveTaskId = 'task-from-set'
   state.currentActiveTaskCancelPolicy = 'none'
   await options.methods.cancelCurrentTask.call(state)

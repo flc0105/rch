@@ -2,7 +2,7 @@
 
 RCH 使用持续存在的 TCP Client Session 承载命令与运行时消息，并通过周期性 Heartbeat 观察会话是否仍能正常响应。设备列表中的 `online`、`stale`、`offline` 既反映 Socket 会话是否被关闭，也反映最近一次心跳回复的新鲜度；连接历史则独立记录每一段会话的起止时间，并按会话显示 Activity 执行摘要。它们相关，但不是一份状态数据的不同名称。
 
-Server 负责建立和移除会话、发送心跳、计算 RTT、维护设备快照与连接历史；Python / Go Client 负责连接、回复和重新拨号；Web 通过 API 与 SSE 接收会话信息，再根据当前时间更新设备展示状态。下面按照这一条链路说明各部分怎样协作，以及需要调整时应修改什么。
+Server 负责建立和移除会话、发送心跳、计算 RTT、维护设备快照与连接历史；Python / Go Client 负责连接、回复和重新拨号；Web 通过 API 与 WebSocket 接收会话信息，再根据当前时间更新设备展示状态。下面按照这一条链路说明各部分怎样协作，以及需要调整时应修改什么。
 
 ## 从握手到活动会话
 
@@ -16,7 +16,7 @@ Client ── TCP connect / handshake ──→ Server Socket
                                         ├─ 建立 ClientSession / 登记 client_id
                                         ├─ 初始化 connected_at、last_seen_at
                                         ├─ 保存设备快照与连接历史
-                                        └─ connection_online ──→ Web SSE
+                                        └─ connection_online ──→ Web WebSocket
 ```
 
 活动会话和持久化设备资料是两个层次。连接管理器保存当前 Server 进程中的 Session；最近设备存储则保存设备的历史身份和快照。断线设备可以继续显示在最近设备列表中，其 Socket 已从活动会话中移除。
@@ -61,7 +61,7 @@ Python Client 在消息路由中立即回复 `heartbeat_ack`，携带相同的 I
 
 45 秒衡量的是**距上一次有效 ACK 的时间**，不是距上一次发送 Heartbeat 的时间。假设第 0 秒收到 ACK，第 30 秒发送新 Heartbeat 却没有回复，那么在第 45 秒之后可能判为 Stale；如果随后收到 ACK 且会话没有断开，会恢复 Online。状态恰好跨越阈值时，前端的计时刷新还可能产生额外的显示延迟。
 
-`last_seen_at` 在当前 Server Session 中由**连接注册**和**Heartbeat ACK**更新，不应把任意命令输出、SSE Ping 或浏览器 API 成功请求解释为设备 Heartbeat 的延续。
+`last_seen_at` 在当前 Server Session 中由**连接注册**和**Heartbeat ACK**更新，不应把任意命令输出、WebSocket Ping 或浏览器 API 成功请求解释为设备 Heartbeat 的延续。
 
 ## RTT 与连接诊断数据
 
@@ -100,7 +100,7 @@ Python Client 会回传 `server_ts`。当前 Go Client 的 Heartbeat ACK 则返�
 
 ## Web 如何持续更新连接状态
 
-浏览器首先通过 `GET /api/connections` 取得当前活动会话和最近设备快照。之后使用通用 SSE `/api/stream` 接收 Server 推送的状态变化：
+浏览器首先通过 `GET /api/connections` 取得当前活动会话和最近设备快照。之后使用通用 WebSocket `/ws/events` 接收 Server 推送的状态变化：
 
 ```text
 Server ConnectionManager
@@ -113,11 +113,11 @@ Server ConnectionManager
               └── connection_offline    → 标记离线并清理前台活跃任务
 ```
 
-Web 不是单纯显示最后收到的一份 `connection_state`。它在本地以 `statusNowTick` 每 **30 秒**推动一次状态重算：先尊重明确的 Offline / 断开标记，再把当前时间与 `last_seen_at` 比较，阈值优先使用 Server 返回的 `stale_after_seconds`（缺失时回退为 45 秒）。因此不需要一条专门的 `connection_stale` SSE，设备卡片也能在心跳不再更新时转为 Stale。但由于计时刷新不是逐秒运行，UI 变化可能晚于精确阈值。
+Web 不是单纯显示最后收到的一份 `connection_state`。它在本地以 `statusNowTick` 每 **30 秒**推动一次状态重算：先尊重明确的 Offline / 断开标记，再把当前时间与 `last_seen_at` 比较，阈值优先使用 Server 返回的 `stale_after_seconds`（缺失时回退为 45 秒）。因此不需要一条专门的 `connection_stale` WebSocket 事件，设备卡片也能在心跳不再更新时转为 Stale。但由于计时刷新不是逐秒运行，UI 变化可能晚于精确阈值。
 
 界面还有一项优先条件：对于**没有被明确标记为 Offline**、且携带 `is_transfer_active` 标记的连接，当前前端状态计算会优先展示 Online。因此判断异常时，应区分 Server 返回的 `connection_state` 和浏览器最终计算出的显示状态，不要只依据颜色认定 Socket 是否健康。
 
-上线与离线会产生 `connection_online` / `connection_offline` 事件，并可进入通知系统。`connection_offline` payload 同时携带本次连接的 `termination_reason`，前端离线通知直接显示该原因。Stale 由最近心跳时间计算，在确认 Socket 关闭时才发布 Offline 生命周期事件。浏览器 SSE 流使用独立的保活链路，Client Socket 的心跳与状态由 Server 单独管理。
+上线与离线会产生 `connection_online` / `connection_offline` 事件，并可进入通知系统。`connection_offline` payload 同时携带本次连接的 `termination_reason`，前端离线通知直接显示该原因。Stale 由最近心跳时间计算，在确认 Socket 关闭时才发布 Offline 生命周期事件。浏览器 WebSocket 流使用独立的保活链路，Client Socket 的心跳与状态由 Server 单独管理。
 
 ## Terminal Connection Context
 
@@ -125,7 +125,7 @@ Terminal 输入栏下方可以显示一行连接上下文标签，用于快速�
 
 标签值从当前连接快照读取，并复用 Connection Info 的状态、最近响应时间、RTT、时间和启动模式格式化规则。可选字段包括 Status、Hostname、Address、Client ID、OS 信息、Manufacturer、Model、Integrity、Build Version、Client Revision、Machine ID、Fingerprint Basis、Last Seen、Connected At、Disconnected At、RTT、Working Directory、PID、Process Name、Launch Command、Launch Mode、Client Log、Username 和 Python Version。连接切换后，标签内容随当前连接更新。
 
-可选 **Task** 显示当前 Client 前台执行状态：`Idle`、`Running`、`Cancelling`。该状态来自 Server 的执行槽，浏览器通过 SSE 状态通知和每 2 秒一次的快照同步更新，因此重开标签页或刷新后仍可恢复；Basic Info 的 Task 字段采用相同状态。Terminal 在已有前台任务占用时以输出警告行显示 `[ Details ]` 链接，展示执行信息和适用的取消操作。
+可选 **Task** 显示当前 Client 前台执行状态：`Idle`、`Running`、`Cancelling`。该状态来自 Server 的执行槽，浏览器通过 WebSocket 事件更新，并在首次订阅、重新连接及切换设备时读取权威快照，因此重开标签页或刷新后仍可恢复；Basic Info 的 Task 字段采用相同状态。Terminal 在已有前台任务占用时以输出警告行显示 `[ Details ]` 链接，展示执行信息和适用的取消操作。
 
 字段选择保存在 `settings` 表的 `terminal_context_preferences` 命名空间中，字段 ID 按用户选择顺序保存。`GET /api/terminal/context-preferences` 读取当前选择，`PUT /api/terminal/context-preferences` 保存选择，数据结构为 `{"field_ids": ["integrity", "pid"]}`。该偏好只决定显示哪些信息，不改变 Client 上报的数据或连接生命周期状态。
 
@@ -145,7 +145,7 @@ RCH 将当前 Session、最近设备和历史会话分别管理：
 - **最近设备** 保留 `machine_id` 关联的机器快照、别名等信息。没有活动 Session 的设备仍可以作为 Offline 条目出现在设备列表；有当前会话的机器不会再额外叠加同一机器的离线快照。
 - **连接历史** 持久化在 `runtime/rch.db` 的 `connection_sessions` 中，记录各 `machine_id` / `client_id` 会话的连接、断开、最后响应时间和持续时间，并可关联对应的 Activity 数量与执行摘要。
 
-Connection History 在桌面端以表格展示会话，手机端改为卡片。卡片保留连接状态、Client ID、上线/离线时间、持续时间和 Activity 数量；展开 Details 可查看主机、系统、用户、Integrity、启动模式、结束原因及 Activity 记录，并可继续加载后续 Activity。两种布局使用同一会话数据和活动查询。展开详情按需加载 Activity；历史顶部 Refresh 会重新读取会话并保留已展开的 Activity。HTTP Control 入队成功时立即显示操作反馈；交付超时、失败以及可选的领取调试信息通过 Notification Center 的 SSE 事件显示通知弹窗，统一受 Notification Preferences 的 Watchdog 开关控制。
+Connection History 在桌面端以表格展示会话，手机端改为卡片。卡片保留连接状态、Client ID、上线/离线时间、持续时间和 Activity 数量；展开 Details 可查看主机、系统、用户、Integrity、启动模式、结束原因及 Activity 记录，并可继续加载后续 Activity。两种布局使用同一会话数据和活动查询。展开详情按需加载 Activity；历史顶部 Refresh 会重新读取会话并保留已展开的 Activity。HTTP Control 入队成功时立即显示操作反馈；交付超时、失败以及可选的领取调试信息通过 Notification Center 的 WebSocket 事件显示通知弹窗，统一受 Notification Preferences 的 Watchdog 开关控制。
 
 ### Connection History 的结束原因
 
@@ -280,10 +280,10 @@ set RECONNECT_INTERVAL_SECONDS 8
 
 看到某台机器显示 Stale，第一步应查看 `last_seen_at` 与 `last_heartbeat_ack_at` 是否停滞、TCP Session 是否尚在、`last_heartbeat_sent_at` 是否仍推进。Server 持续发送而 ACK 不更新，通常意味着消息无法及时往返或 Client 处理链路出现问题；只有传输层确认关闭才会进入正常的断开清理流程。不要仅通过延迟变长判断 Client 已断开。
 
-当 RTT 为空时，先确认 Client 是否返回可解析的 `server_ts`；Go Client 的当前 ACK 格式本身就不会提供该字段。RTT 数值长期不变时，同时检查最后 ACK 时间，避免把旧值误当成最新响应。如果 Server 仍记录 Online，而浏览器已经显示 Stale，还应检查浏览器时间、最后一次 SSE 更新、`statusNowTick` 刷新和展示覆盖条件。Server 时间以无时区偏移的 ISO 字符串序列化，跨时区浏览器的 `Date.parse()` 可能带来时间差偏差；不能把这种环境问题简单归因为设备断线。
+当 RTT 为空时，先确认 Client 是否返回可解析的 `server_ts`；Go Client 的当前 ACK 格式本身就不会提供该字段。RTT 数值长期不变时，同时检查最后 ACK 时间，避免把旧值误当成最新响应。如果 Server 仍记录 Online，而浏览器已经显示 Stale，还应检查浏览器时间、最后一次 WebSocket 更新、`statusNowTick` 刷新和展示覆盖条件。Server 时间以无时区偏移的 ISO 字符串序列化，跨时区浏览器的 `Date.parse()` 可能带来时间差偏差；不能把这种环境问题简单归因为设备断线。
 
 如果设备已经 Offline 但仍留在列表，应查看它是否来自 Recent Device 缓存。若历史出现 Interrupted，应检查历史会话的恢复核对，而不是寻找所谓第四种实时连接状态。
 
 最后，下面两种看起来也叫 Heartbeat 的机制与这里的 TCP Socket 心跳不同：
 
-**Watchdog** 依靠 Client 本地心跳文件或独立 HTTP 控制链来监视和管理 Client 主进程，使用自己的周期与超时，不计算设备列表的 Socket RTT；详见 [Watchdog](watchdog.md)。**SSE Ping** 用于浏览器与 Server 之间的 EventSource 流保活，不能替代 Client 的 TCP ACK；详见 [SSE Notifications](sse_notifications.md)。连接相关的执行记录和历史命令属于另外的数据模型，详见 [Command History](command_history.md)。
+**Watchdog** 依靠 Client 本地心跳文件或独立 HTTP 控制链来监视和管理 Client 主进程，使用自己的周期与超时，不计算设备列表的 Socket RTT；详见 [Watchdog](watchdog.md)。**WebSocket Ping** 用于浏览器与 Server 之间的 WebSocket 流保活，不能替代 Client 的 TCP ACK；详见 [WebSocket Notifications](sse_notifications.md)。连接相关的执行记录和历史命令属于另外的数据模型，详见 [Command History](command_history.md)。

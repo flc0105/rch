@@ -36,7 +36,20 @@
     flex: 1 1 auto !important; min-height: 0 !important;
     overflow: auto;
   }
-  .command-execution-detail-dialog.el-dialog > .el-dialog__body { overflow-y: auto !important; }
+  .command-execution-detail-dialog.el-dialog > .el-dialog__body {
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    min-height: 0 !important;
+    flex: 1 1 auto !important;
+    touch-action: pan-y;
+    -webkit-overflow-scrolling: touch;
+  }
+  .command-execution-detail-dialog .fixed-dialog-body {
+    height: auto !important;
+    max-height: none !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+  }
 }
 
 @media (max-width: 768px) {

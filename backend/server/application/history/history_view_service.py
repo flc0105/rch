@@ -7,6 +7,10 @@ from server.config.config import COMMAND_HISTORY_PAGE_SIZE, COMMAND_HISTORY_MAX_
 
 
 class HistoryViewService:
+    def get_execution_entry(self, machine_id: str, activity_id: str):
+        """Fetch one exact Activity record for reliable terminal output recovery."""
+        return self.store._get_entry(machine_id, activity_id)
+
     def __init__(self, store):
         self.store = store
         self.artifact_view_projector = ArtifactReferenceViewProjector()

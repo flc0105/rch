@@ -3,7 +3,7 @@ import secrets
 import threading
 
 from core.protocol.message_types import MSG_TYPE_TRANSFER_CANCEL
-from server.config.config import WEB_FILE_TRANSFER_PORT
+from server.config.config import WEB_PORT
 
 
 class WebTransferApi:
@@ -78,7 +78,7 @@ class WebTransferApi:
 
         return {
             **transfer,
-            'browser_upload_port': WEB_FILE_TRANSFER_PORT,
+            'browser_upload_port': WEB_PORT,
             'browser_upload_path': f'/api/transfers/browser-upload/{transfer_id}/content',
             'browser_upload_token': upload_token,
         }

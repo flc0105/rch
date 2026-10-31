@@ -1,3 +1,4 @@
+import asyncio
 import queue
 import threading
 import uuid
@@ -8,17 +9,17 @@ from core.utils.logger import logger
 
 class WebEventBus:
     """
-    简单线程安全事件总线，供 SSE 使用。
+    线程安全事件总线，供浏览器 WebSocket 和内部服务使用。
 
     支持：
     - 全局广播事件
     - 按 tab_id 定向推送事件
-    - 在 SSE 投递前由 Server 持久化可通知事件
+    - 在 WebSocket 投递前由 Server 持久化可通知事件
 
     设计原则：
     - 连接状态 / artifact / background job 等全局事件继续广播
     - 前台命令输出类事件可按 tab_id 定向，避免多个浏览器页签互相污染
-    - Notification Center 的持久化不依赖浏览器是否成功消费 SSE
+    - Notification Center 的持久化不依赖浏览器是否成功消费实时事件
     """
 
     def __init__(self):
@@ -48,6 +49,18 @@ class WebEventBus:
         }
         with self._lock:
             self._subscribers.append(subscriber)
+        return q
+
+    def subscribe_async(self, tab_id='', event_types=None, max_pending=512):
+        """Register an asyncio consumer without a dedicated waiting worker thread."""
+        loop = asyncio.get_running_loop()
+        q = asyncio.Queue(maxsize=max_pending)
+        filtered = {str(value).strip() for value in event_types} if event_types else None
+        with self._lock:
+            self._subscribers.append({
+                'queue': q, 'loop': loop, 'tab_id': str(tab_id or '').strip(),
+                'event_types': filtered, 'overflowed': False,
+            })
         return q
 
     def unsubscribe(self, q: queue.Queue):
@@ -109,7 +122,7 @@ class WebEventBus:
         try:
             return recorder(event_type, data, event_id, target_tab_id)
         except Exception:
-            logger.error('Failed to persist notification for SSE event: %s', event_type, exc_info=True)
+            logger.error('Failed to persist notification for web event: %s', event_type, exc_info=True)
             return None
 
     def _deliver(self, event_item: dict, target_tab_id: str = ''):
@@ -125,6 +138,23 @@ class WebEventBus:
                 continue
 
             try:
-                q.put_nowait(event_item)
+                loop = subscriber.get('loop')
+                if loop is not None:
+                    def deliver(current_queue=q, current_subscriber=subscriber, event=event_item):
+                        if current_subscriber['overflowed']:
+                            return
+                        if current_queue.full():
+                            # Disconnect a slow consumer, so it reloads durable state.
+                            current_subscriber['overflowed'] = True
+                            while not current_queue.empty():
+                                current_queue.get_nowait()
+                            current_queue.put_nowait(None)
+                        else:
+                            current_queue.put_nowait(event)
+                    loop.call_soon_threadsafe(deliver)
+                else:
+                    q.put_nowait(event_item)
+            except RuntimeError:
+                self.unsubscribe(q)
             except Exception:
-                pass
+                logger.error('Failed to deliver web event', exc_info=True)

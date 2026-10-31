@@ -1,43 +1,23 @@
-import os
 import time
 
-from flask import Flask, request, send_file
+from flask import Blueprint, request
 
 from core.transfer_settings import DEFAULT_HTTP_TRANSFER_BUFFER_SIZE
-from server.config.config import WEB_HTTP_UPLOAD_MAX_BYTES
 from server.web.api_response import WebApiResponder
-from server.web.artifact_upload import save_uploaded_artifact_from_request
+from server.web.auth_guard import allow_anonymous
 
 
-def create_file_transfer_app(server_instance):
-    """
-    Client <-> Server 专用文件传输 WSGI 应用。
-
-    该应用由 Werkzeug 直接监听独立端口，不挂载到 FastAPI/ASGI，避免大文件
-    request body 经过 WSGIMiddleware 聚合。Remote File Browser 的文件本体也直接走该端口。
-    """
-    app = Flask('rch_file_transfer')
-    app.config['MAX_CONTENT_LENGTH'] = WEB_HTTP_UPLOAD_MAX_BYTES
+def create_browser_upload_blueprint(server_instance):
+    """Raw, chunked browser upload on the main direct Werkzeug HTTP server."""
+    app = Blueprint('browser_upload_content', __name__)
 
     artifact_api = server_instance.web_service.artifact_api
     command_execution_api = server_instance.web_service.command_execution_api
     transfer_api = server_instance.web_service.transfer_api
     responder = WebApiResponder()
 
-    @app.after_request
-    def add_browser_transfer_cors_headers(response):
-        if (request.path or '').startswith('/api/transfers/browser-upload/'):
-            origin = str(request.headers.get('Origin') or '').strip()
-            if origin:
-                response.headers['Access-Control-Allow-Origin'] = origin
-                response.headers['Vary'] = 'Origin'
-            response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
-            response.headers['Access-Control-Allow-Headers'] = 'Content-Type, X-RCH-Transfer-Token'
-            response.headers['Access-Control-Max-Age'] = '600'
-            response.headers['Cache-Control'] = 'no-store'
-        return response
-
     @app.route('/api/transfers/browser-upload/<transfer_id>/content', methods=['POST', 'OPTIONS'])
+    @allow_anonymous
     def upload_browser_transfer(transfer_id):
         if request.method == 'OPTIONS':
             return '', 204
@@ -146,28 +126,5 @@ def create_file_transfer_app(server_instance):
                 raise
 
         return responder.json_endpoint(_execute, default_error_status=500)
-
-    @app.post('/api/files/upload')
-    def upload_file():
-        return responder.json_endpoint(
-            lambda: save_uploaded_artifact_from_request(artifact_api),
-            default_error_status=500,
-        )
-
-    @app.get('/api/upload-tmp/<temp_id>/<filename>')
-    def download_upload_tmp_file(temp_id, filename):
-        try:
-            file_path = artifact_api.get_upload_temp_file_path(temp_id, filename)
-            return send_file(
-                file_path,
-                as_attachment=True,
-                download_name=os.path.basename(file_path),
-            )
-        except Exception as exc:
-            return responder.map_common_error(exc)
-
-    @app.errorhandler(413)
-    def file_too_large(_):
-        return responder.fail('File is too large', 413)
 
     return app
