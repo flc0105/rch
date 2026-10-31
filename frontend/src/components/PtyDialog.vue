@@ -1,14 +1,34 @@
 <template>
   <el-dialog
     v-model="visible"
-    title="Remote PTY"
-    width="900px"
-    top="6vh"
-    class="fixed-dialog pty-dialog"
+    :width="ptyFullscreen ? '100vw' : '900px'"
+    :top="ptyFullscreen ? '0' : '6vh'"
+    :class="['fixed-dialog', 'pty-dialog', { 'pty-dialog-fullscreen': ptyFullscreen }]"
+    :show-close="false"
     modal-class="pty-overlay"
     @close="closePtyDialog"
     @closed="handlePtyDialogClosed"
   >
+    <template #header>
+      <div class="pty-dialog-header">
+        <span class="pty-dialog-title">Remote PTY</span>
+        <div class="pty-header-actions">
+          <el-tooltip :content="ptyFullscreen ? 'Exit Fullscreen' : 'Fullscreen'" placement="bottom">
+            <button
+              type="button"
+              class="pty-header-action"
+              :aria-label="ptyFullscreen ? 'Exit Fullscreen' : 'Fullscreen'"
+              @click="togglePtyFullscreen"
+            >
+              <el-icon><FullScreen /></el-icon>
+            </button>
+          </el-tooltip>
+          <button type="button" class="pty-header-action" aria-label="Close" title="Close" @click="visible = false">
+            <el-icon><Close /></el-icon>
+          </button>
+        </div>
+      </div>
+    </template>
     <div class="fixed-dialog-body pty-shell">
       <div class="pty-toolbar">
         <div class="pty-toolbar-left">
@@ -48,22 +68,16 @@
             Switch
           </el-button>
 
-          <el-button
-            size="small"
-            :disabled="!ptyTerm"
-            @click="focusPtyInput"
-          >
-            Focus
-          </el-button>
-
-          <el-button
-            size="small"
-            :loading="ptyClosing"
-            :disabled="ptyLoading || ptyClosing"
-            @click="closePtyDialog"
-          >
-            Close
-          </el-button>
+          <el-dropdown trigger="click" @command="handlePtyMoreCommand">
+            <el-button size="small">More</el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="focus" :disabled="!ptyTerm">Focus</el-dropdown-item>
+                <el-dropdown-item command="paste" :disabled="!ptySessionId || ptyClosing">Paste</el-dropdown-item>
+                <el-dropdown-item command="copy" :disabled="!ptyTerm">Copy</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
         </div>
       </div>
 
@@ -82,10 +96,33 @@
       </div>
     </div>
   </el-dialog>
+
+  <!-- Safari/iOS may disallow clipboard reads on HTTP: use native Paste in this input. -->
+  <el-dialog
+    v-model="ptyPasteVisible"
+    title="Paste into PTY"
+    width="420px"
+    append-to-body
+    @opened="$refs.ptyPasteInput?.focus()"
+  >
+    <textarea
+      ref="ptyPasteInput"
+      v-model="ptyPasteText"
+      class="pty-paste-input"
+      rows="5"
+      placeholder="Tap and hold here to paste"
+    />
+    <template #footer>
+      <el-button @click="ptyPasteVisible = false">Cancel</el-button>
+      <el-button type="primary" :disabled="!ptyPasteText || !ptySessionId" @click="sendPtyPastedText(ptyPasteText)">Paste</el-button>
+    </template>
+  </el-dialog>
 </template>
 
 <script>
 import { ElMessage } from 'element-plus'
+import { FullScreen, Close } from '@element-plus/icons-vue'
+import { getPtyBufferText } from '../utils/ptyText.js'
 import { webSocketUrl } from '../api/streamApi.js'
 import { Terminal } from 'xterm'
 import { FitAddon } from 'xterm-addon-fit'
@@ -93,6 +130,7 @@ import 'xterm/css/xterm.css'
 
 export default {
   name: 'PtyDialog',
+  components: { FullScreen, Close },
 
   props: {
     selectedId: {
@@ -114,6 +152,9 @@ export default {
   data() {
     return {
       visible: false,
+      ptyFullscreen: false,
+      ptyPasteVisible: false,
+      ptyPasteText: '',
       shellPath: '',
       ptyLoading: false,
       ptyClosing: false,
@@ -147,6 +188,7 @@ export default {
   },
 
   beforeUnmount() {
+    this.ptyPasteVisible = false
     this.resetPtyInputQueue()
     this.clearPtyResizeTimer()
     this.sendPtyWs({ type: 'close' })
@@ -164,6 +206,9 @@ export default {
       if (this.ptyLoading || this.ptyClosing) return
 
       this.visible = true
+      this.ptyFullscreen = false
+      this.ptyPasteVisible = false
+      this.ptyPasteText = ''
       this.ptyUserClosing = false
       this.shellPath = ''
 
@@ -320,6 +365,7 @@ export default {
     },
 
     async closePtyDialog() {
+      this.ptyPasteVisible = false
       if (this.ptyClosing) {
         this.visible = false
         return
@@ -358,6 +404,9 @@ export default {
 
     handlePtyDialogClosed() {
       this.visible = false
+      this.ptyFullscreen = false
+      this.ptyPasteVisible = false
+      this.ptyPasteText = ''
       this.resetPtyInputQueue()
       this.clearPtyResizeTimer()
       this.closePtySocket()
@@ -454,6 +503,78 @@ export default {
       if (!text) return
       if (this.ptyTerm) {
         this.ptyTerm.write(text)
+      }
+    },
+
+    togglePtyFullscreen() {
+      this.ptyFullscreen = !this.ptyFullscreen
+      this.$nextTick(() => this.schedulePtyResize())
+    },
+
+    handlePtyMoreCommand(command) {
+      if (command === 'focus') this.focusPtyInput()
+      else if (command === 'paste') void this.pasteIntoPty()
+      else if (command === 'copy') void this.copyPtyOutput()
+    },
+
+    async pasteIntoPty() {
+      if (!this.ptySessionId || this.ptyClosing) return
+      try {
+        if (!window.isSecureContext || typeof navigator.clipboard?.readText !== 'function') {
+          throw new Error('Clipboard read requires a secure context')
+        }
+        const text = await navigator.clipboard.readText()
+        if (!text) {
+          ElMessage.warning('Clipboard is empty')
+          return
+        }
+        if (this.visible && this.ptySessionId) this.sendPtyPastedText(text)
+      } catch (_) {
+        if (!this.visible || !this.ptySessionId) return
+        // iOS Safari and non-secure LAN origins can reject clipboard.readText.
+        // Let the user invoke the native Paste action in an editable textarea.
+        this.ptyPasteText = ''
+        this.ptyPasteVisible = true
+      }
+    },
+
+    sendPtyPastedText(text) {
+      if (!this.ptySessionId || !text) return
+      // Use the same UTF-8/base64 input queue as xterm's normal keyboard input.
+      this.queuePtyInput(String(text))
+      this.ptyPasteVisible = false
+      this.ptyPasteText = ''
+      this.$nextTick(() => this.focusPtyInput())
+    },
+
+    async copyPtyOutput() {
+      const text = getPtyBufferText(this.ptyTerm)
+      if (!text) {
+        ElMessage.warning('No PTY output to copy')
+        return
+      }
+      try {
+        if (window.isSecureContext && typeof navigator.clipboard?.writeText === 'function') {
+          await navigator.clipboard.writeText(text)
+        } else {
+          const textarea = document.createElement('textarea')
+          textarea.value = text
+          textarea.setAttribute('readonly', '')
+          textarea.style.position = 'fixed'
+          textarea.style.opacity = '0'
+          document.body.appendChild(textarea)
+          try {
+            textarea.focus()
+            textarea.select()
+            textarea.setSelectionRange(0, text.length)
+            if (!document.execCommand('copy')) throw new Error('Copy failed')
+          } finally {
+            textarea.remove()
+          }
+        }
+        ElMessage.success('PTY output copied')
+      } catch (_) {
+        ElMessage.error('Cannot access clipboard')
       }
     },
 
@@ -718,6 +839,61 @@ export default {
 </script>
 
 <style scoped>
+.pty-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.pty-dialog-title {
+  color: var(--el-text-color-primary);
+  font-size: var(--el-dialog-title-font-size);
+  line-height: var(--el-dialog-font-line-height);
+}
+
+.pty-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pty-header-action {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--el-color-info);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.pty-header-action:hover,
+.pty-header-action:focus-visible {
+  color: var(--el-color-primary);
+  background: var(--el-fill-color-light);
+  outline: none;
+}
+
+.pty-paste-input {
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  font: inherit;
+  padding: 10px;
+  border-radius: 6px;
+  border: 1px solid var(--el-border-color);
+  color: var(--el-text-color-primary);
+  background: var(--el-fill-color-blank);
+  resize: vertical;
+}
+
 .pty-shell {
   display: flex;
   flex-direction: column;
@@ -869,6 +1045,30 @@ export default {
 </style>
 
 <style>
+.pty-overlay .el-dialog.pty-dialog-fullscreen {
+  width: 100vw !important;
+  max-width: 100vw !important;
+  height: 100dvh !important;
+  max-height: 100dvh !important;
+  margin: 0 !important;
+  top: 0 !important;
+  border-radius: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.pty-overlay .pty-dialog-fullscreen .el-dialog__header { flex: 0 0 auto !important; }
+.pty-overlay .pty-dialog-fullscreen .el-dialog__body {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+}
+.pty-overlay .pty-dialog-fullscreen .pty-shell { flex: 1 1 auto; min-height: 0; }
+.pty-overlay .pty-dialog-fullscreen .pty-screen-shell { min-height: 0; }
+.pty-overlay .pty-dialog-fullscreen .pty-terminal-host { min-height: 0; }
+
 /* PtyDialog: xterm 由组件内部管理，弹窗只负责固定高度和内部滚动。 */
 .pty-overlay .el-dialog {
   overflow: hidden !important;
