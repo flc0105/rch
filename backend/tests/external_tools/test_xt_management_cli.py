@@ -133,9 +133,24 @@ def test_instance_create_start_stop_restart_status_logs_and_preset():
         list(cli.xt('instance create frp.frpc --id ../../escape'))
     with pytest.raises(ValueError, match='daemon'):
         list(cli.xt('instance create python-embed.test --id demo'))
-    with pytest.raises(ValueError, match='duplicate'):
+    with pytest.raises(ValueError, match='already exists.*xt instance start office-frpc'):
         list(cli.xt('instance create frp.frpc --id office-frpc'))
     assert next(cli.xt('instance create frp.frps --id frps-9 --start'))[0] == 1
+
+
+def test_duplicate_create_is_validation_error_without_client_mutation_or_notification():
+    cli = Cli()
+    events = []
+    cli._publish_xt_lifecycle = lambda *args, **kwargs: events.append((args, kwargs))
+    assert next(cli.xt('instance create frp.frps --id existing')) == (1, 'Created frp.frps/existing')
+    calls_before = len([command for command, _ in cli.calls if command == 'external_tool_instance_create'])
+    with pytest.raises(ValueError, match='Instance "existing" already exists for frp.frps'):
+        list(cli.xt('instance create frp.frps --id existing --start'))
+    assert len([command for command, _ in cli.calls if command == 'external_tool_instance_create']) == calls_before
+    assert not any(command == 'external_tool_start' for command, _ in cli.calls)
+    assert len(events) == 1  # original successful creation only
+    # Duplicate names in other modules remain valid (identity is module-scoped).
+    assert next(cli.xt('instance create frp.frpc --id existing')) == (1, 'Created frp.frpc/existing')
 
 
 def test_client_persistent_instance_definition_and_log_cursor(tmp_path, monkeypatch):
@@ -158,8 +173,17 @@ def test_client_persistent_instance_definition_and_log_cursor(tmp_path, monkeypa
     with log.open('a') as stream:
         stream.write('second\n')
     assert client.instance_log_chunk_payload({**payload, 'cursor': first['cursor']})['content'] == 'second\n'
-    with pytest.raises(FileExistsError):
+    with pytest.raises(FileExistsError, match='already in use.*runtime directory exists.*xt instance start') as duplicate:
         client.create_instance_payload(payload)
+    assert '[Errno 17]' not in str(duplicate.value)
+    # An unrecognized directory must not be overwritten either.
+    conflict = {**payload, 'instance_id': 'orphan'}
+    orphan_dir = expected.parent.parent / 'orphan'
+    orphan_dir.mkdir()
+    (orphan_dir / 'user-data.txt').write_text('keep me', encoding='utf-8')
+    with pytest.raises(FileExistsError, match='Instance ID "orphan" is already in use'):
+        client.create_instance_payload(conflict)
+    assert (orphan_dir / 'user-data.txt').read_text(encoding='utf-8') == 'keep me' 
     with pytest.raises(ValueError):
         client.create_instance_payload({**payload, 'instance_id': '../evil'})
     # A Web-created daemon has state.json but no instance.json; commands share it.

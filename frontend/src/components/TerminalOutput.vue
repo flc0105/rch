@@ -123,7 +123,10 @@
           <div
               v-else
               class="terminal-line"
-              :class="`line-${entry.line.kind || 'default'}`"
+              :class="[`line-${entry.line.kind || 'default'}`, {
+                'terminal-warning-with-actions': entry.line.kind === 'warning' &&
+                  (getSuggestedCommandAction(entry.line) || getClientRevisionDetails(entry.line)),
+              }]"
           >
             <span
                 v-if="entry.line.kind === 'command'"
@@ -1446,6 +1449,12 @@ export default {
 }
 
 @media (max-width: 768px) {
+  /* Warning action links follow the warning text rather than squeezing it. */
+  .terminal-warning-with-actions { display: block; overflow-wrap: anywhere; }
+  .terminal-warning-with-actions .terminal-action-link-spaced {
+    display: inline-block;
+    white-space: nowrap;
+  }
   .client-revision-info-row {
     grid-template-columns: 118px minmax(0, 1fr);
   }

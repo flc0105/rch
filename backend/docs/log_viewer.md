@@ -1,5 +1,7 @@
 # Log Viewer
 
+移动端打开 Log Viewer 时默认占满屏幕，日志内容区使用剩余高度；桌面端保持独立窗口大小。
+
 **Log Viewer** 用于在 Web 界面中查看**在线 Client 文件系统上的文本日志**，支持手动刷新、持续跟踪、搜索当前已加载内容，以及查看文件轮转或截断后的新增内容。Server 自身的 `server.log` 通过 [Logging](logging.md) 中的本地文件路径查看；命令执行记录见 [Command History](command_history.md)。
 
 主日志的产生、路径和保留策略见 [Server / Client Logging](logging.md)。

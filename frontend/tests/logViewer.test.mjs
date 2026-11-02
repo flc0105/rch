@@ -158,3 +158,13 @@ test('External Tools / Watchdog forward log source to single App viewer', () => 
   assert.match(info, /<WatchdogInfoPanel[\s\S]*@open-log-viewer/)
   assert.equal((watchdog.match(/class="watchdog-log-link"/g) || []).length, 3)
 })
+
+test('Log Viewer uses mobile full-screen dialog and fills remaining vertical space', () => {
+  const mobile = component.match(/@media \(max-width: 768px\) \{([\s\S]*?)\n\}/)?.[1]
+  assert.ok(mobile, 'mobile fullscreen layout must exist')
+  assert.match(mobile, /\.log-viewer-dialog\.el-dialog\s*\{[^}]*width:\s*100vw\s*!important;/)
+  assert.match(mobile, /\.log-viewer-dialog\.el-dialog\s*\{[^}]*height:\s*100dvh\s*!important;/)
+  assert.match(mobile, /\.log-viewer-dialog\.el-dialog\s*\{[^}]*margin:\s*0\s*!important;/)
+  assert.match(mobile, /\.log-viewer-dialog \.log-viewer-body\s*\{[^}]*height:\s*auto\s*!important;/)
+  assert.doesNotMatch(component, /@media \(max-width: 460px\)[\s\S]*?\.log-viewer-dialog\.el-dialog \{ margin-top: 2vh/)
+})

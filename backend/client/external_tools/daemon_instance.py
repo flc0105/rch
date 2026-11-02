@@ -173,7 +173,15 @@ class ExternalToolDaemonInstance(ExternalToolCommon):
         # An existing runtime directory might contain a previously started Web instance.
         # Never overwrite its configuration/state on CLI create.
         os.makedirs(os.path.dirname(directory), exist_ok=True)
-        os.mkdir(directory)
+        try:
+            os.mkdir(directory)
+        except FileExistsError as exc:
+            raise FileExistsError(
+                f'Instance ID "{payload["instance_id"]}" is already in use for '
+                f'{payload["tool_id"]} (runtime directory exists). '
+                'Choose another --id or start the existing instance with '
+                f'"xt instance start {payload["tool_id"]} {payload["instance_id"]}".'
+            ) from exc
         definition = {
             'tool_id': payload['tool_id'],
             'package_id': payload['package_id'],

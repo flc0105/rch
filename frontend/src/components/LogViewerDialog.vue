@@ -345,10 +345,31 @@ export default {
 </style>
 
 <style>
-.log-viewer-dialog.el-dialog { width: min(960px, calc(100vw - 24px)) !important; }
-@media (max-width: 460px) {
-  .log-viewer-dialog.el-dialog { margin-top: 2vh !important; }
-  .log-viewer-dialog .el-dialog__body { padding: 12px !important; }
+@media (min-width: 769px) {
+  .log-viewer-dialog.el-dialog { width: min(960px, calc(100vw - 24px)) !important; }
+}
+@media (max-width: 768px) {
+  .log-viewer-dialog.el-dialog {
+    width: 100vw !important;
+    max-width: 100vw !important;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+  }
+  .log-viewer-dialog .el-dialog__body {
+    display: flex;
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+    padding: 12px !important;
+  }
+  .log-viewer-dialog .log-viewer-body {
+    flex: 1 1 auto;
+    width: 100%;
+    height: auto !important;
+    min-height: 0;
+  }
   .log-viewer-dialog .el-dialog__header { margin-right: 0; padding: 14px 16px 6px; }
 }
 </style>

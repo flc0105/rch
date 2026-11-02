@@ -391,7 +391,7 @@ xt instance logs [<package.module>] <instance-id> [--follow|-f]
 
 `xt package list` 查询 Server Catalog 并针对当前 Client 检查安装状态；`--installed` 或 `-i` 仅返回已安装的 Package。安装与卸载沿用现有 Client Package Installer；有运行中的实例时，卸载操作遵循原有安全检查。`xt module list` 返回 Package 在当前平台上的 Module ID、执行模式和内部 Binary。
 
-`xt instance create` 仅适用于 `execution=daemon` Module：通过 `--id` 指定实例身份，可通过 `--preset` 选择已经在 Server 保存的 Module Preset，`--params` 用 JSON 对象覆盖参数；同名业务参数 `instance_name` 没有显式提供时，使用 `--id`。创建将参数保存在 Client 的 `~/.ops/external_tools/runtime/<package>/<module>/instances/<id>/instance.json`，不启动进程；添加 `--start` 会在创建后立即启动。**Instance ID** 以字母、数字或 `_` 开头，可包含字母、数字、`_ . -`，最多 96 个字符；同一 Module 下不可重名。
+`xt instance create` 仅适用于 `execution=daemon` Module：通过 `--id` 指定实例身份，可通过 `--preset` 选择已经在 Server 保存的 Module Preset，`--params` 用 JSON 对象覆盖参数；同名业务参数 `instance_name` 没有显式提供时，使用 `--id`。创建将参数保存在 Client 的 `~/.ops/external_tools/runtime/<package>/<module>/instances/<id>/instance.json`，不启动进程；添加 `--start` 会在创建后立即启动。**Instance ID** 以字母、数字或 `_` 开头，可包含字母、数字、`_ . -`，最多 96 个字符；同一 Module 下不可重名；重复创建会提示已有实例及可用的 `xt instance start` 命令。若运行目录已存在（包括未登记的旧目录），创建会提示目录冲突并保留原内容。
 
 `start/stop/restart/status/logs` 可直接使用实例 ID；Server 会在当前选中的 Client 上查找所有 Daemon Module，仅唯一匹配时执行。如果多个 Module 下存在同名实例，则提示候选并要求使用 `<package.module> <instance-id>` 指定目标。
 

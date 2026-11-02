@@ -449,6 +449,12 @@ class ExternalToolCliBuiltinSupport:
         start_payload = builder.build_client_start_payload(meta, params=params, instance_id=instance_id,
                   platform_alias=self._client_platform(), arch=self._client_arch())
         target = f'{meta["tool_id"]}/{instance_id}'
+        if any(row['module_id'] == meta['tool_id'] and row['instance_id'] == instance_id
+               for row in self._load_instance_rows([meta])):
+            raise ValueError(
+                f'Instance "{instance_id}" already exists for {meta["tool_id"]}. '
+                f'Use "xt instance start {instance_id}" to start it, or choose a different --id.'
+            )
         try:
             created = self._nested_json('external_tool_instance_create', start_payload)
         except Exception as exc:
