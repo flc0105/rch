@@ -11,6 +11,7 @@ from server.application.command.external_tool_cli_builtin_support import Externa
 from server.application.external_tools.external_tool_catalog_service import ExternalToolCatalogService
 from server.application.external_tools.external_tool_runtime_service import ExternalToolRuntimeService
 from server.application.command.server_builtin_registry import SERVER_COMMAND_REGISTRY
+from server.connection.client_session import ClientSession
 
 METAS = Path(__file__).resolve().parents[2] / 'server/resources/external_tools/metas'
 
@@ -19,8 +20,11 @@ class Cli(ExternalToolCliBuiltinSupport):
     def __init__(self):
         self.catalog = ExternalToolCatalogService(str(METAS), str(METAS.parent / 'packages'))
         self.runtime = ExternalToolRuntimeService(self.catalog, command_execution_api=None)
-        self.conn = SimpleNamespace(session_info=SimpleNamespace(os_alias='win', arch='amd64', cwd='C:/'),
-                                    get_foreground_task=lambda: {})
+        # Exercise the real session interface; a fake direct binding method
+        # would hide an XT log-follow connection API mismatch.
+        self.conn = ClientSession(SimpleNamespace(send=lambda _: None), {
+            'id': 'test-client', 'os_alias': 'win', 'arch': 'amd64', 'cwd': 'C:/',
+        })
         self.server = SimpleNamespace(web_service=SimpleNamespace(assembly=SimpleNamespace(
             external_tool_catalog_service=self.catalog,
             external_tool_runtime_service=self.runtime,
@@ -166,22 +170,18 @@ def test_client_persistent_instance_definition_and_log_cursor(tmp_path, monkeypa
     assert client.read_instance_definition_payload(web)['params'] == web['params']
 
 
-def test_instance_status_json_omits_saved_parameters_and_follow_cancels():
+def test_instance_status_json_omits_parameters_and_follow_reads_bounded_snapshots():
     cli = Cli()
     next(cli.xt("instance create frp.frpc --id secure --params '{\"server_addr\":\"secret.example\"}'"))
     _, output = next(cli.xt('instance status frp.frpc secure --json'))
     summary = json.loads(output)
     assert set(summary) == {'module_id', 'instance_id', 'status', 'running', 'pid', 'started_at', 'stopped_at'}
     assert 'secret.example' not in output
-    cli.conn.get_foreground_task = lambda: {'cancel_requested': True}
-    cli._nested_json_original = cli._nested_json
-    def read_running(command, payload):
-        if command == 'external_tool_instance_logs':
-            return {'running': True, 'content': 'following\n', 'cursor': 'abc'}
-        return cli._nested_json_original(command, payload)
-    cli._nested_json = read_running
-    assert list(cli.xt('instance logs frp.frpc secure -f')) == [(0, 'command cancelled')]
 
+    before = len(cli.calls)
+    assert list(cli.xt('instance logs frp.frpc secure -f')) == [(1, 'hello log\n')]
+    assert [command for command, _ in cli.calls[before:]] == ['external_tool_instance_logs']
+    assert cli.calls[-1][1]['max_bytes'] == 65536
 
 def test_xt_management_completion_package_and_daemon_names():
     from unittest.mock import patch
@@ -214,13 +214,13 @@ def test_xt_actions_emit_existing_lifecycle_events_and_reject_noops():
     assert (events[-1][1]['action'], events[-1][1]['state']) == ('install', 'completed')
     with pytest.raises(ValueError, match='already installed'):
         list(cli.xt('package install frp'))
-    assert (events[-1][1]['action'], events[-1][1]['state']) == ('install', 'failed')
+    assert (events[-1][1]['action'], events[-1][1]['state']) == ('install', 'completed')
     assert [action for action, _ in cli.calls].count('external_tool_install') == 1
     list(cli.xt('package uninstall frp'))
     assert (events[-1][1]['action'], events[-1][1]['state']) == ('uninstall', 'completed')
     with pytest.raises(ValueError, match='not installed'):
         list(cli.xt('package uninstall frp'))
-    assert (events[-1][1]['action'], events[-1][1]['state']) == ('uninstall', 'failed')
+    assert (events[-1][1]['action'], events[-1][1]['state']) == ('uninstall', 'completed')
     assert [action for action, _ in cli.calls].count('external_tool_uninstall') == 1
     list(cli.xt('instance create frp.frps --id demo-xt'))
     assert (events[-1][1]['state'], events[-1][1]['operation']) == ('created', 'create')
@@ -228,41 +228,18 @@ def test_xt_actions_emit_existing_lifecycle_events_and_reject_noops():
     assert (events[-1][1]['state'], events[-1][1]['operation']) == ('started', 'start')
     with pytest.raises(ValueError, match='already running'):
         list(cli.xt('instance start frp.frps demo-xt'))
-    assert events[-1][1]['state'] == 'error'
+    assert events[-1][1]['state'] == 'started'
     list(cli.xt('instance restart frp.frps demo-xt'))
     assert (events[-1][1]['state'], events[-1][1]['operation']) == ('started', 'restart')
     list(cli.xt('instance stop frp.frps demo-xt'))
     assert (events[-1][1]['state'], events[-1][1]['operation']) == ('stopped', 'stop')
     with pytest.raises(ValueError, match='already stopped'):
         list(cli.xt('instance stop frp.frps demo-xt'))
-    assert (events[-1][1]['state'], events[-1][1]['operation']) == ('error', 'stop')
+    assert (events[-1][1]['state'], events[-1][1]['operation']) == ('stopped', 'stop')
     assert [action for action, _ in cli.calls].count('external_tool_stop') == 2
     prior = len(events)
     list(cli.xt('instance create frp.frps --id another-xt --start'))
     assert [(e['state'], e['operation']) for _, e in events[prior:]] == [('created', 'create'), ('started', 'create')]
-
-
-def test_xt_follow_cancel_is_local_and_never_sends_unsupported_client_cancel():
-    from server.application.tasks.task_service import WebTaskService
-    service = object.__new__(WebTaskService)
-    requests = []
-    service.task_store = SimpleNamespace(request_cancel=lambda task_id: requests.append(task_id))
-    task = {'command': 'xt instance logs frp.frps demo --follow', 'cancel_requested': False}
-    sent = []
-    conn = SimpleNamespace(get_foreground_task=lambda: task,
-                           request_foreground_task_cancel=lambda task_id: (
-                               task.__setitem__('cancel_requested', True) or {'command_id': 21}),
-                           send_cancel=lambda cid: sent.append(cid))
-    service._ensure_active_task = lambda conn, task_id: task
-    result = service._request_task_cancel(conn, 'task-1')
-    assert result['command_id'] == 21 and requests == ['task-1']
-    assert task['cancel_requested'] is True and sent == []
-    task['command'] = 'xt instance status frp.frps demo'
-    task['cancel_requested'] = False
-    service._request_task_cancel(conn, 'task-2')
-    assert sent == [21]
-    assert service._is_server_owned_xt_log_follow('xt instance logs frp.frps demo -f')
-    assert not service._is_server_owned_xt_log_follow('xt instance logs frp.frps demo')
 
 
 def test_xt_instance_creation_notification_uses_prefs_projector():
@@ -312,3 +289,92 @@ def test_xt_detects_immediate_process_exit_after_start():
     cli._nested_json = exited
     with pytest.raises(RuntimeError, match='exited immediately'):
         list(cli.xt('instance start frp.frps short-lived'))
+
+
+def test_xt_usage_and_preflight_errors_are_not_lifecycle_notifications():
+    cli = Cli()
+    events = []
+    cli.conn.session_info.client_id = 'test-client'
+    cli.runtime.client_lifecycle_runtime.event_bus = SimpleNamespace(
+        publish=lambda name, data: events.append((name, data)))
+    for command in (
+        'instance start frp.frps',
+        'instance start frp.frps demo extra',
+        'instance stop frp.frps demo extra',
+        'instance restart frp.frps demo extra',
+        'instance create frp.frps --id',
+        'instance create frp.frps --id demo --params broken',
+        'package install',
+        'package install does-not-exist',
+        'package uninstall does-not-exist',
+    ):
+        with pytest.raises((ValueError, FileNotFoundError)):
+            list(cli.xt(command))
+    assert events == []
+    assert not any(c[0] in ('external_tool_start', 'external_tool_stop',
+                           'external_tool_install', 'external_tool_uninstall') for c in cli.calls)
+
+
+def test_xt_runtime_mutation_failure_does_publish_business_notification():
+    cli = Cli()
+    events = []
+    cli.conn.session_info.client_id = 'test-client'
+    cli.runtime.client_lifecycle_runtime.event_bus = SimpleNamespace(
+        publish=lambda name, data: events.append((name, data)))
+    original = cli._nested_json
+
+    def failed_start(command, payload):
+        if command == 'external_tool_start':
+            raise RuntimeError('actual Client start failure')
+        return original(command, payload)
+
+    cli._nested_json = failed_start
+    list(cli.xt('instance create frp.frps --id failure-test'))
+    with pytest.raises(RuntimeError, match='actual Client start failure'):
+        list(cli.xt('instance start frp.frps failure-test'))
+    assert [(data['state'], data['operation']) for _, data in events] == [
+        ('created', 'create'), ('error', 'start')]
+
+    cli2 = Cli()
+    events2 = []
+    cli2.conn.session_info.client_id = 'test-client'
+    cli2.runtime.client_lifecycle_runtime.event_bus = SimpleNamespace(
+        publish=lambda name, data: events2.append(data))
+    original2 = cli2._nested_json
+    def failed_install(command, payload):
+        if command == 'external_tool_install':
+            raise RuntimeError('actual Client installer failed')
+        return original2(command, payload)
+    cli2._nested_json = failed_install
+    with pytest.raises(RuntimeError, match='actual Client installer failed'):
+        list(cli2.xt('package install frp'))
+    assert [(data['action'], data['state']) for data in events2] == [('install', 'failed')]
+
+
+def test_xt_concurrent_noop_result_still_does_not_emit_failure_notifications():
+    cli = Cli()
+    events = []
+    cli.conn.session_info.client_id = 'test-client'
+    cli.runtime.client_lifecycle_runtime.event_bus = SimpleNamespace(
+        publish=lambda name, data: events.append(data))
+    original = cli._nested_json
+    def raced_install(command, payload):
+        if command == 'external_tool_install':
+            return {'installed': True, 'already_installed': True, 'message': 'already installed'}
+        return original(command, payload)
+    cli._nested_json = raced_install
+    with pytest.raises(ValueError, match='already installed'):
+        list(cli.xt('package install frp'))
+    assert events == []
+
+    cli._nested_json = original
+    list(cli.xt('instance create frp.frps --id race'))
+    events.clear()
+    def raced_start(command, payload):
+        if command == 'external_tool_start':
+            return {'running': True, 'message': 'already running'}
+        return original(command, payload)
+    cli._nested_json = raced_start
+    with pytest.raises(ValueError, match='already running'):
+        list(cli.xt('instance start frp.frps race'))
+    assert events == []

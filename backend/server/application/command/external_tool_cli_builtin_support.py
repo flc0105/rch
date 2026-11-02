@@ -354,9 +354,15 @@ class ExternalToolCliBuiltinSupport:
             raise ValueError(f'Package {names[0]} is already installed; no installation performed')
         if operation == 'uninstall' and status == 'not_installed':
             raise ValueError(f'Package {names[0]} is not installed; nothing to uninstall')
-        result = self._nested_json('external_tool_install' if operation == 'install' else 'external_tool_uninstall', payload)
-        if result.get('installed') is not (operation == 'install'):
-            raise RuntimeError(result.get('message') or f'Package {operation} failed')
+        try:
+            result = self._nested_json('external_tool_install' if operation == 'install' else 'external_tool_uninstall', payload)
+            if result.get('installed') is not (operation == 'install'):
+                raise RuntimeError(result.get('message') or f'Package {operation} failed')
+        except Exception as exc:
+            self._publish_xt_lifecycle('package', operation, names[0], 'failed', error=str(exc))
+            raise
+        # A concurrent change can turn the dispatched request into a no-op;
+        # it is a CLI state conflict, not a failed installation operation.
         if operation == 'install' and result.get('already_installed'):
             raise ValueError(f'Package {names[0]} was already installed; no installation performed')
         if operation == 'uninstall' and result.get('removed') is False:
@@ -442,16 +448,25 @@ class ExternalToolCliBuiltinSupport:
         builder = self._runtime_service().payload_builder
         start_payload = builder.build_client_start_payload(meta, params=params, instance_id=instance_id,
                   platform_alias=self._client_platform(), arch=self._client_arch())
-        created = self._nested_json('external_tool_instance_create', start_payload)
+        target = f'{meta["tool_id"]}/{instance_id}'
+        try:
+            created = self._nested_json('external_tool_instance_create', start_payload)
+        except Exception as exc:
+            self._publish_xt_lifecycle('instance', 'create', target, 'error', error=str(exc))
+            raise
         # Creation is durable even if the optional start fails afterwards.
-        self._publish_xt_lifecycle('instance', 'create', f'{meta["tool_id"]}/{instance_id}', 'created')
+        self._publish_xt_lifecycle('instance', 'create', target, 'created')
         if options.get('--start'):
-            started = self._nested_json('external_tool_start', start_payload)
-            if started.get('running') is not True or 'already running' in str(started.get('message') or '').lower():
-                raise RuntimeError('Instance created, but start failed: ' + str(started.get('message') or 'unknown error'))
-            confirmed = self._nested_json('external_tool_status', self._instance_action_payload(meta, instance_id))
-            if confirmed.get('running') is not True:
-                raise RuntimeError('Instance created, but exited immediately after start; see instance logs')
+            try:
+                started = self._nested_json('external_tool_start', start_payload)
+                if started.get('running') is not True or 'already running' in str(started.get('message') or '').lower():
+                    raise RuntimeError('Instance created, but start failed: ' + str(started.get('message') or 'unknown error'))
+                confirmed = self._nested_json('external_tool_status', self._instance_action_payload(meta, instance_id))
+                if confirmed.get('running') is not True:
+                    raise RuntimeError('Instance created, but exited immediately after start; see instance logs')
+            except Exception as exc:
+                self._publish_xt_lifecycle('instance', 'start', target, 'error', error=str(exc))
+                raise
             return 1, f'Created and started {meta["tool_id"]}/{instance_id} (pid {started.get("pid")})'
         return 1, f'Created {meta["tool_id"]}/{instance_id}'
 
@@ -482,6 +497,50 @@ class ExternalToolCliBuiltinSupport:
             {'MODULE': r['module_id'], 'INSTANCE': r['instance_id'], 'STATUS': r['status'], 'PID': r['pid']} for r in rows
         ], 'json' if json_output else 'table')
 
+    def _follow_instance_logs(self, payload: dict):
+        """Follow Client log snapshots using the Server foreground cancellation flag.
+
+        A snapshot is a bounded Client RPC, not the lifetime of the Follow task.
+        Clear its command binding before waiting for the next snapshot so a user
+        cancelling the Server-side follow does not cancel a finished Client RPC.
+        """
+        cursor = ''
+        while True:
+            if (self.conn.get_foreground_task() or {}).get('cancel_requested'):
+                yield 0, 'command cancelled'
+                return
+            try:
+                data = self._nested_json('external_tool_instance_logs', {
+                    **payload, 'cursor': cursor, 'max_bytes': 65536,
+                })
+            except Exception:
+                if (self.conn.get_foreground_task() or {}).get('cancel_requested'):
+                    yield 0, 'command cancelled'
+                    return
+                raise
+            finally:
+                # Only this short snapshot's command ID is cleared, not the
+                # foreground task. The Server Follow still owns the task slot.
+                self.conn.runtime.bind_foreground_command_id(None)
+            if (self.conn.get_foreground_task() or {}).get('cancel_requested'):
+                yield 0, 'command cancelled'
+                return
+            if data.get('reset'):
+                yield 1, '[Log rotated]'
+            content = str(data.get('content') or '')
+            if content:
+                yield 1, content
+            if not data.get('running'):
+                if not content:
+                    yield 1, '[Log stream ended]'
+                return
+            cursor = str(data.get('cursor') or '')
+            for _ in range(5):
+                if (self.conn.get_foreground_task() or {}).get('cancel_requested'):
+                    yield 0, 'command cancelled'
+                    return
+                time.sleep(0.2)
+
     def _instance_operation(self, operation: str, args: str):
         tokens = self._tokens(args)
         json_output = operation == 'status' and tokens[-1:] == ['--json']
@@ -497,7 +556,8 @@ class ExternalToolCliBuiltinSupport:
                              (' [--json]' if operation == 'status' else ' [--follow|-f]' if operation == 'logs' else ''))
         meta = self._instance_meta(tokens[0])
         instance_id = self._instance_id(tokens[1])
-        definition = self._instance_read(meta, instance_id)  # reject nonexistent instance
+        if not (operation == 'logs' and follow):
+            definition = self._instance_read(meta, instance_id)
         payload = self._instance_action_payload(meta, instance_id, operation)
         if operation in ('start', 'stop', 'restart'):
             before = self._nested_json('external_tool_status', payload)
@@ -506,29 +566,47 @@ class ExternalToolCliBuiltinSupport:
                 raise ValueError(f'Instance {meta["tool_id"]}/{instance_id} is already running')
             if operation in ('stop', 'restart') and not running:
                 raise ValueError(f'Instance {meta["tool_id"]}/{instance_id} is already stopped')
-        if operation in ('start', 'restart'):
-            if operation == 'restart':
-                stopped = self._nested_json('external_tool_stop', payload)
-                if (stopped.get('running') or not isinstance(stopped.get('stop_result'), dict)
-                        or stopped['stop_result'].get('already_stopped')):
-                    raise RuntimeError('Restart aborted: process was not stopped by this operation')
-            start_payload = self._runtime_service().payload_builder.build_client_start_payload(meta,
-                      params=definition['params'], instance_id=instance_id,
-                      platform_alias=self._client_platform(), arch=self._client_arch())
-            result = self._nested_json('external_tool_start', start_payload)
-            if result.get('running') is not True or 'already running' in str(result.get('message') or '').lower():
-                raise RuntimeError(result.get('message') or 'Instance did not start')
-            confirmed = self._nested_json('external_tool_status', payload)
-            if confirmed.get('running') is not True:
-                raise RuntimeError('Instance exited immediately after start; see instance logs')
-            yield 1, f'{"Restarted" if operation == "restart" else "Started"} {meta["tool_id"]}/{instance_id} (pid {result.get("pid")})'
-        elif operation == 'stop':
-            result = self._nested_json('external_tool_stop', payload)
-            if (result.get('running') or not isinstance(result.get('stop_result'), dict)
-                    or result['stop_result'].get('already_stopped')):
-                raise RuntimeError('Instance was already stopped or is still running; stop did not change its state')
-            yield 1, f'Stopped {meta["tool_id"]}/{instance_id}'
-        elif operation == 'status':
+        if operation in ('start', 'stop', 'restart'):
+            dispatched = False
+            try:
+                if operation in ('start', 'restart'):
+                    if operation == 'restart':
+                        dispatched = True
+                        stopped = self._nested_json('external_tool_stop', payload)
+                        if isinstance(stopped.get('stop_result'), dict) and stopped['stop_result'].get('already_stopped'):
+                            dispatched = False
+                            raise ValueError('Instance was already stopped; restart did not occur')
+                        if stopped.get('running') or not isinstance(stopped.get('stop_result'), dict):
+                            raise RuntimeError('Restart aborted: process was not stopped by this operation')
+                    start_payload = self._runtime_service().payload_builder.build_client_start_payload(meta,
+                              params=definition['params'], instance_id=instance_id,
+                              platform_alias=self._client_platform(), arch=self._client_arch())
+                    dispatched = True
+                    result = self._nested_json('external_tool_start', start_payload)
+                    if 'already running' in str(result.get('message') or '').lower():
+                        dispatched = False
+                        raise ValueError('Instance was already running; start did not occur')
+                    if result.get('running') is not True:
+                        raise RuntimeError(result.get('message') or 'Instance did not start')
+                    confirmed = self._nested_json('external_tool_status', payload)
+                    if confirmed.get('running') is not True:
+                        raise RuntimeError('Instance exited immediately after start; see instance logs')
+                    yield 1, f'{"Restarted" if operation == "restart" else "Started"} {meta["tool_id"]}/{instance_id} (pid {result.get("pid")})'
+                if operation == 'stop':
+                    dispatched = True
+                    result = self._nested_json('external_tool_stop', payload)
+                    if isinstance(result.get('stop_result'), dict) and result['stop_result'].get('already_stopped'):
+                        dispatched = False
+                        raise ValueError('Instance was already stopped; stop did not occur')
+                    if result.get('running') or not isinstance(result.get('stop_result'), dict):
+                        raise RuntimeError('Instance is still running; stop failed')
+                    yield 1, f'Stopped {meta["tool_id"]}/{instance_id}'
+            except Exception as exc:
+                if dispatched:
+                    self._publish_xt_lifecycle('instance', operation,
+                        f'{meta["tool_id"]}/{instance_id}', 'error', error=str(exc))
+                raise
+        if operation == 'status':
             result = self._nested_json('external_tool_status', payload)
             summary = {
                 'module_id': meta['tool_id'], 'instance_id': instance_id, 'status': result.get('status'),
@@ -537,31 +615,14 @@ class ExternalToolCliBuiltinSupport:
             }
             yield render_structured_result(StructuredCommandResult(status=1, data=summary,
                                           shape='dict', width=16), output_format='json' if json_output else 'table')
-        elif operation == 'logs':
-            cursor = ''
-            emitted = False
-            while True:
-                task = self.conn.get_foreground_task() or {}
-                if task.get('cancel_requested'):
-                    yield 0, 'command cancelled'
-                    return
-                data = self._nested_json('external_tool_instance_logs', {**payload, 'cursor': cursor, 'max_bytes': 65536})
-                if data.get('reset'):
-                    yield 1, '[Log rotated]'
-                content = str(data.get('content') or '')
-                if content:
-                    emitted = True
-                    yield 1, content
-                if not follow or not data.get('running'):
-                    if not emitted:
-                        yield 1, 'No log output.'
-                    return
-                cursor = str(data.get('cursor') or '')
-                for _ in range(5):
-                    if (self.conn.get_foreground_task() or {}).get('cancel_requested'):
-                        yield 0, 'command cancelled'
-                        return
-                    time.sleep(0.2)
+        if operation == 'logs':
+            if follow:
+                yield from self._follow_instance_logs(payload)
+                return
+            data = self._nested_json('external_tool_instance_logs', {**payload, 'max_bytes': 65536})
+            if data.get('reset'):
+                yield 1, '[Log rotated]'
+            yield 1, str(data.get('content') or '') or 'No log output.'
 
     def _management(self, group: str, args: str):
         action, remainder = self._split_first_token(args)
@@ -572,12 +633,7 @@ class ExternalToolCliBuiltinSupport:
                 return
             if action in ('install', 'uninstall'):
                 target, _ = self._split_first_token(remainder)
-                try:
-                    outcome = self._package_action(action, remainder)
-                except Exception as exc:
-                    if target:
-                        self._publish_xt_lifecycle('package', action, target, 'failed', error=str(exc))
-                    raise
+                outcome = self._package_action(action, remainder)
                 self._publish_xt_lifecycle('package', action, target, 'completed', result={'message': outcome[1]})
                 yield outcome
                 return
@@ -600,21 +656,16 @@ class ExternalToolCliBuiltinSupport:
                     idx = tokens.index('--id')
                     instance_id = tokens[idx + 1] if idx + 1 < len(tokens) else ''
                 target = f'{module_id}/{instance_id}' if module_id and instance_id else ''
-                try:
-                    if action == 'create':
-                        outcome = self._instance_create(remainder)
-                        results = [outcome]
-                    else:
-                        results = None
-                    if results is not None:
-                        for item in results:
-                            yield item
-                    else:
-                        yield from self._instance_operation(action, remainder)
-                except Exception as exc:
-                    if target and action in ('create', 'start', 'stop', 'restart'):
-                        self._publish_xt_lifecycle('instance', action, target, 'error', error=str(exc))
-                    raise
+                if action == 'create':
+                    outcome = self._instance_create(remainder)
+                    results = [outcome]
+                else:
+                    results = None
+                if results is not None:
+                    for item in results:
+                        yield item
+                else:
+                    yield from self._instance_operation(action, remainder)
                 if target and action in ('create', 'start', 'stop', 'restart'):
                     state = ('created' if action == 'create' and '--start' not in tokens else
                              'stopped' if action == 'stop' else 'started')

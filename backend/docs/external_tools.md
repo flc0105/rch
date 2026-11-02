@@ -393,7 +393,7 @@ xt instance logs <package.module> <instance-id> [--follow|-f]
 
 `xt instance create` 仅适用于 `execution=daemon` Module：通过 `--id` 指定实例身份，可通过 `--preset` 选择已经在 Server 保存的 Module Preset，`--params` 用 JSON 对象覆盖参数；同名业务参数 `instance_name` 没有显式提供时，使用 `--id`。创建将参数保存在 Client 的 `~/.ops/external_tools/runtime/<package>/<module>/instances/<id>/instance.json`，不启动进程；添加 `--start` 会在创建后立即启动。**Instance ID** 以字母、数字或 `_` 开头，可包含字母、数字、`_ . -`，最多 96 个字符；同一 Module 下不可重名。
 
-之后 `start/restart` 使用保存的参数与当前 Server Module 定义重建启动 Payload；已有的 Web Manager 启动实例也可从其 `state.json` 参数读取。`stop/status` 复用原有 Client 进程状态；`logs` 默认读取该实例 stdout 最近最多 64 KiB，`--follow` 每秒增量读取并在实例停止后结束，可以使用 Terminal 取消（Ctrl+C）停止追踪。`status --json` 只提供进程状态摘要，避免输出配置参数。所有管理操作通过当前 Client 的前台命令执行。
+之后 `start/restart` 使用保存的参数与当前 Server Module 定义重建启动 Payload；已有的 Web Manager 启动实例也可从其 `state.json` 参数读取。`stop/status` 复用原有 Client 进程状态；`logs` 默认读取该实例 stdout 最近最多 64 KiB；`--follow` 由 Server 按照 Job Logs 的前台取消流程增量读取 Client 日志；每次 Client 读取都是短命令，Follow 在前台任务收到取消请求后结束并释放任务槽。实例停止时也结束跟随。取消 Follow 不会停止实例。`status --json` 只提供进程状态摘要，避免输出配置参数。所有管理操作通过当前 Client 的前台命令执行。
 
 例如：
 
@@ -526,11 +526,13 @@ already-running instances. If a concurrent change races with the check, the
 Client's operation result is checked again before reporting success.
 
 State-changing `xt` operations publish the existing `external_tool_lifecycle`
-events. Notification Center persists the corresponding events, and SSE/Desktop
+events only after a Client mutation has been dispatched. Invalid syntax, missing
+arguments, invalid parameters and preflight no-op rejections are ordinary CLI
+errors and do not generate lifecycle notifications. Notification Center persists the corresponding events, and SSE/Desktop
 notification delivery uses the existing per-event notification preferences.
 Instance creation adds the `external_tool_daemon_created` preference; queries
 (`list`, `status`, `logs`) do not generate lifecycle notifications.
 
-`xt instance logs <module> <id> --follow` is followed by the Server: cancelling
-its foreground task stops the Server-side follower instead of trying to cancel
-the short-lived Client log-read RPC. Cancellation does not stop the daemon.
+`xt instance logs <module> <id> --follow` keeps the follow loop on the Server,
+checking the foreground task cancellation flag between bounded Client log reads;
+the log reader exits and the daemon instance continues running.
