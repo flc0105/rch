@@ -487,15 +487,36 @@ class ExternalToolCliBuiltinSupport:
                 self._catalog_service().get_package(target)
         if not metas:
             return self._render_rows([], 'json' if json_output else 'table')
+        rows = self._load_instance_rows(metas)
+        return self._render_rows(rows if json_output else [
+            {'MODULE': r['module_id'], 'INSTANCE': r['instance_id'], 'STATUS': r['status'], 'PID': r['pid']} for r in rows
+        ], 'json' if json_output else 'table')
+
+    def _load_instance_rows(self, metas: list[dict]) -> list[dict]:
+        if not metas:
+            return []
         payload = {'tools': [{'tool_id': m['tool_id'], 'package_id': m['package_id'], 'module_id': m['id'],
                              'display_name': m.get('display_name') or m['tool_id']} for m in metas]}
         result = self._nested_json('external_tool_list_instances_all', payload)
         rows = [{'module_id': item.get('tool_id') or '', 'instance_id': item.get('instance_id') or '',
                  'status': item.get('status') or '', 'pid': item.get('pid') or ''} for item in result.get('items') or []]
         rows.sort(key=lambda row: (row['module_id'], row['instance_id']))
-        return self._render_rows(rows if json_output else [
-            {'MODULE': r['module_id'], 'INSTANCE': r['instance_id'], 'STATUS': r['status'], 'PID': r['pid']} for r in rows
-        ], 'json' if json_output else 'table')
+        return rows
+
+    def _resolve_instance_target(self, tokens: list[str]) -> tuple[dict, str]:
+        if len(tokens) == 2:
+            return self._instance_meta(tokens[0]), self._instance_id(tokens[1])
+        instance_id = self._instance_id(tokens[0])
+        metas = [m for m in self._catalog_service().list_tools()
+                 if str(m.get('execution') or '') == 'daemon']
+        matches = sorted({row['module_id'] for row in self._load_instance_rows(metas)
+                          if row['instance_id'] == instance_id})
+        if not matches:
+            raise FileNotFoundError(f'Instance not found on selected Client: {instance_id}')
+        if len(matches) > 1:
+            choices = ', '.join(f'{module} {instance_id}' for module in matches)
+            raise ValueError(f'Ambiguous instance ID "{instance_id}"; specify <package.module> <instance-id>: {choices}')
+        return self._instance_meta(matches[0]), instance_id
 
     def _follow_instance_logs(self, payload: dict):
         """Follow Client log snapshots using the Server foreground cancellation flag.
@@ -551,11 +572,10 @@ class ExternalToolCliBuiltinSupport:
             if sum(t in ('--follow', '-f') for t in tokens) != 1:
                 raise ValueError('Specify --follow only once')
             tokens = [t for t in tokens if t not in ('--follow', '-f')]
-        if len(tokens) != 2:
-            raise ValueError(f'Usage: xt instance {operation} <package.module> <instance-id>' +
+        if len(tokens) not in (1, 2):
+            raise ValueError(f'Usage: xt instance {operation} [<package.module>] <instance-id>' +
                              (' [--json]' if operation == 'status' else ' [--follow|-f]' if operation == 'logs' else ''))
-        meta = self._instance_meta(tokens[0])
-        instance_id = self._instance_id(tokens[1])
+        meta, instance_id = self._resolve_instance_target(tokens)
         if not (operation == 'logs' and follow):
             definition = self._instance_read(meta, instance_id)
         payload = self._instance_action_payload(meta, instance_id, operation)
@@ -623,6 +643,7 @@ class ExternalToolCliBuiltinSupport:
             if data.get('reset'):
                 yield 1, '[Log rotated]'
             yield 1, str(data.get('content') or '') or 'No log output.'
+        return f'{meta["tool_id"]}/{instance_id}'
 
     def _management(self, group: str, args: str):
         action, remainder = self._split_first_token(args)
@@ -650,22 +671,14 @@ class ExternalToolCliBuiltinSupport:
                 if action in ('status', 'logs'):
                     self._suppress_query_history()
                 tokens = self._tokens(remainder)
-                module_id = tokens[0] if tokens else ''
-                instance_id = (tokens[1] if len(tokens) > 1 else '') if action != 'create' else ''
-                if action == 'create' and '--id' in tokens:
-                    idx = tokens.index('--id')
-                    instance_id = tokens[idx + 1] if idx + 1 < len(tokens) else ''
-                target = f'{module_id}/{instance_id}' if module_id and instance_id else ''
                 if action == 'create':
-                    outcome = self._instance_create(remainder)
-                    results = [outcome]
+                    module_id = tokens[0] if tokens else ''
+                    idx = tokens.index('--id') if '--id' in tokens else -1
+                    instance_id = tokens[idx + 1] if idx >= 0 and idx + 1 < len(tokens) else ''
+                    target = f'{module_id}/{instance_id}' if module_id and instance_id else ''
+                    yield self._instance_create(remainder)
                 else:
-                    results = None
-                if results is not None:
-                    for item in results:
-                        yield item
-                else:
-                    yield from self._instance_operation(action, remainder)
+                    target = yield from self._instance_operation(action, remainder)
                 if target and action in ('create', 'start', 'stop', 'restart'):
                     state = ('created' if action == 'create' and '--start' not in tokens else
                              'stopped' if action == 'stop' else 'started')

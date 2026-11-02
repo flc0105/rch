@@ -378,3 +378,72 @@ def test_xt_concurrent_noop_result_still_does_not_emit_failure_notifications():
     with pytest.raises(ValueError, match='already running'):
         list(cli.xt('instance start frp.frps race'))
     assert events == []
+
+
+def test_instance_short_name_routes_all_operations_and_keeps_qualified_form():
+    cli = Cli()
+    assert next(cli.xt('instance create frp.frps --id xt-test-frps'))[0] == 1
+    before = len(cli.calls)
+    assert next(cli.xt('instance start xt-test-frps'))[0] == 1
+    assert cli.calls[before][0] == 'external_tool_list_instances_all'
+    assert ('frp.frps', 'xt-test-frps') in cli.running_instances
+
+    _, status_text = next(cli.xt('instance status xt-test-frps --json'))
+    assert json.loads(status_text)['module_id'] == 'frp.frps'
+    assert next(cli.xt('instance logs xt-test-frps')) == (1, 'hello log\n')
+    assert list(cli.xt('instance logs xt-test-frps --follow')) == [(1, 'hello log\n')]
+    assert next(cli.xt('instance restart xt-test-frps'))[0] == 1
+    assert next(cli.xt('instance stop xt-test-frps'))[0] == 1
+    assert ('frp.frps', 'xt-test-frps') not in cli.running_instances
+    # Fully qualified form remains valid for the same instance.
+    assert next(cli.xt('instance start frp.frps xt-test-frps'))[0] == 1
+    assert next(cli.xt('instance stop frp.frps xt-test-frps'))[0] == 1
+
+
+def test_instance_short_name_ambiguity_is_safe_and_explicit():
+    cli = Cli()
+    events = []
+    cli.conn.session_info.client_id = 'test-client'
+    cli.runtime.client_lifecycle_runtime.event_bus = SimpleNamespace(
+        publish=lambda name, data: events.append((name, data)))
+    list(cli.xt('instance create frp.frpc --id shared-id'))
+    list(cli.xt('instance create frp.frps --id shared-id'))
+    before_events = len(events)
+    for operation in ('start', 'stop', 'restart', 'status', 'logs'):
+        before_calls = len(cli.calls)
+        with pytest.raises(ValueError, match=r'Ambiguous instance ID.*frp\.frpc shared-id.*frp\.frps shared-id'):
+            list(cli.xt(f'instance {operation} shared-id'))
+        assert all(name not in ('external_tool_start', 'external_tool_stop', 'external_tool_status',
+                                'external_tool_instance_logs')
+                   for name, _ in cli.calls[before_calls:])
+        assert len(events) == before_events
+    assert next(cli.xt('instance start frp.frps shared-id'))[0] == 1
+    assert ('frp.frps', 'shared-id') in cli.running_instances
+    assert ('frp.frpc', 'shared-id') not in cli.running_instances
+
+
+def test_instance_short_name_not_found_and_validation_do_not_mutate():
+    cli = Cli()
+    with pytest.raises(FileNotFoundError, match='Instance not found on selected Client: unknown'):
+        list(cli.xt('instance stop unknown'))
+    with pytest.raises(ValueError, match='Instance ID'):
+        list(cli.xt('instance status ../bad'))
+    with pytest.raises(ValueError, match='Usage: xt instance start'):
+        list(cli.xt('instance start frp.frps xt-test-frps extra'))
+    assert not any(action in ('external_tool_start', 'external_tool_stop', 'external_tool_status')
+                   for action, _ in cli.calls)
+
+
+def test_instance_short_name_success_notifications_reference_resolved_module():
+    cli = Cli()
+    events = []
+    cli.conn.session_info.client_id = 'test-client'
+    cli.runtime.client_lifecycle_runtime.event_bus = SimpleNamespace(
+        publish=lambda name, data: events.append(data))
+    list(cli.xt('instance create frp.frps --id xt-test-frps'))
+    list(cli.xt('instance start xt-test-frps'))
+    assert (events[-1]['operation'], events[-1]['tool_id'], events[-1]['instance_id']) == (
+        'start', 'frp.frps', 'xt-test-frps')
+    list(cli.xt('instance stop xt-test-frps'))
+    assert (events[-1]['operation'], events[-1]['tool_id'], events[-1]['instance_id']) == (
+        'stop', 'frp.frps', 'xt-test-frps')
