@@ -1174,7 +1174,7 @@ The Server terminal has its own command layer in addition to Client commands and
 | `rtt` | Show heartbeat RTT / last-seen state | Reads the live connection/session metrics |
 | `httpctl kill|relaunch|clone` | Queue an independent HTTP control action for the selected Client | Does not depend on the normal command socket remaining usable |
 | `saveout <client-command>` | Run a Client command and save the complete output as an Artifact | Creates a `command_output` Artifact and records source metadata |
-| `xt ...` | External Tool CLI facade | Supports `xt exec list [--json]` and `xt exec <name> [--] <native args>` |
+| `xt ...` | External Tool CLI | `xt package` install/list/uninstall; `xt module list`; `xt instance` daemon lifecycle/logs; `xt exec` native commands |
 
 ### `alias`
 
@@ -2224,7 +2224,7 @@ xt exec ffmpeg -version
 xt exec ffmpeg -- -i input.mp4 output.mp4
 ```
 
-Install packages from External Tool Manager before running `xt exec`; `xt exec list` shows installed, public Exec entries for the selected Client.
+Install packages from External Tool Manager or with `xt package install <package-id>` before running `xt exec`; `xt exec list` shows installed, public Exec entries for the selected Client. For persistent daemons use `xt instance create <package.module> --id <id> [--start]`, then `xt instance start|stop|restart|status|logs <package.module> <id>`; see `docs/external_tools.md` for the full CLI reference.
 
 ### Script SDK `xt`
 

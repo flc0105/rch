@@ -1,4 +1,5 @@
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -6,6 +7,7 @@ import time
 from types import SimpleNamespace
 
 from core.utils.parsing import split_shell_arguments
+from core.utils.log_reader import read_text_log_chunk
 from client.external_tools.common import ExternalToolCommon
 from client.external_tools.launcher import apply_external_tool_launcher
 from core.external_tools.paths import EXTERNAL_TOOLS_RUNTIME_ROOT, external_tool_instances_runtime_parts
@@ -141,6 +143,81 @@ class ExternalToolDaemonInstance(ExternalToolCommon):
 
     def read_pid(self, pid_file: str):
         return read_pid_file(pid_file)
+
+    @staticmethod
+    def _instance_definition_path(payload: dict) -> str:
+        # Identity is validated before building paths; no silent sanitization of IDs.
+        package_id = str(payload.get('package_id') or '').strip()
+        module_id = str(payload.get('module_id') or '').strip()
+        instance_id = str(payload.get('instance_id') or '').strip()
+        for label, value in (('package_id', package_id), ('module_id', module_id), ('instance_id', instance_id)):
+            if not value or not re.fullmatch(r'[A-Za-z0-9_][A-Za-z0-9_.-]{0,95}', value) or value in ('.', '..'):
+                raise ValueError(f'invalid {label}: {value}')
+        return os.path.join(
+            ExternalToolDaemonInstance._expand_instance_root(),
+            *external_tool_instances_runtime_parts(package_id, module_id),
+            instance_id, 'instance.json',
+        )
+
+    @staticmethod
+    def _expand_instance_root() -> str:
+        return os.path.abspath(os.path.expandvars(os.path.expanduser(EXTERNAL_TOOLS_RUNTIME_ROOT)))
+
+    def create_instance_payload(self, payload: dict) -> dict:
+        self.validate_package_payload(payload, 'instance-create')
+        path = self._instance_definition_path(payload)
+        params = payload.get('params')
+        if not isinstance(params, dict):
+            raise ValueError('instance params must be an object')
+        directory = os.path.dirname(path)
+        # An existing runtime directory might contain a previously started Web instance.
+        # Never overwrite its configuration/state on CLI create.
+        os.makedirs(os.path.dirname(directory), exist_ok=True)
+        os.mkdir(directory)
+        definition = {
+            'tool_id': payload['tool_id'],
+            'package_id': payload['package_id'],
+            'module_id': payload['module_id'],
+            'instance_id': payload['instance_id'],
+            'params': params,
+            'created_at': time.strftime('%Y-%m-%dT%H:%M:%S'),
+        }
+        try:
+            self.write_json(path, definition)
+        except Exception:
+            try:
+                if os.path.isfile(path):
+                    os.unlink(path)
+                os.rmdir(directory)
+            except OSError:
+                pass
+            raise
+        return {**definition, 'status': 'created', 'running': False}
+
+    def read_instance_definition_payload(self, payload: dict) -> dict:
+        path = self._instance_definition_path(payload)
+        if os.path.isfile(path):
+            data = self.read_json(path)
+        else:
+            # Web Manager already persists started instances in state.json. Both
+            # entry points operate on the same live instances without migration.
+            data = self.read_json(os.path.join(os.path.dirname(path), 'state.json'))
+            if not data:
+                raise FileNotFoundError(f'Instance does not exist: {payload.get("tool_id")}/{payload.get("instance_id")}')
+        if any(str(data.get(key) or '') != str(payload.get(key) or '') for key in ('tool_id', 'package_id', 'module_id', 'instance_id')):
+            raise ValueError('instance definition identity mismatch')
+        if not isinstance(data.get('params'), dict):
+            raise ValueError('invalid instance definition params')
+        return data
+
+    def instance_log_chunk_payload(self, payload: dict) -> dict:
+        self.read_instance_definition_payload(payload)
+        path = self._instance_definition_path(payload)
+        log_path = os.path.join(os.path.dirname(path), 'stdout.log')
+        chunk = read_text_log_chunk(log_path, min(max(int(payload.get('max_bytes') or 65536), 1), 65536), cursor=payload.get('cursor') or None)
+        return {**chunk, 'running': self.status_from_payload(payload)['running']}
+
+        return read_pid_file(pid_file)
     def is_pid_alive(self, pid) -> bool:
         return is_pid_alive(pid)
     def is_windows_pid_alive(self, pid: int) -> bool:
@@ -176,6 +253,7 @@ class ExternalToolDaemonInstance(ExternalToolCommon):
         pid_file = self.pid_file_from_payload(payload)
         stdout = self.stdout_from_payload(payload)
         state = self.read_json(state_file)
+        definition = self.read_json(os.path.join(os.path.dirname(state_file), 'instance.json'))
 
         pid = self.read_pid(pid_file)
         alive = self.is_pid_alive(pid)
@@ -198,6 +276,8 @@ class ExternalToolDaemonInstance(ExternalToolCommon):
             status = 'stale'
         elif state:
             status = state.get('last_status') or 'stopped'
+        elif definition:
+            status = 'created'
         else:
             status = 'not_started'
 
@@ -219,7 +299,7 @@ class ExternalToolDaemonInstance(ExternalToolCommon):
             'stderr': runtime.get('stderr') or state.get('stderr') or '',
             'runtime': runtime,
             'config': state.get('config') or {},
-            'params': state.get('params') or {},
+            'params': state.get('params') or definition.get('params') or {},
             'install': state.get('install') or {},
             'argv': state.get('argv') or runtime.get('argv') or [],
             'cwd': state.get('cwd') or runtime.get('cwd') or '',

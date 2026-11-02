@@ -346,7 +346,7 @@ Metadata 的 **Edit Metadata** 功能打开 Server 上的 Package JSON。保存�
 
 ## 终端和 Script 的调用通路
 
-External Tool Manager 负责安装和常驻实例管理；`xt` 和 Script SDK 则提供更加轻量的**已安装 Exec 调用**入口，它们不会将一个任意命令名自动变成可安装工具。
+External Tool Manager 和终端 `xt package` / `xt instance` 共用 Client 的安装与服务生命周期。`xt exec` 和 Script SDK 提供已安装 Exec 的直接命令调用。
 
 ### 终端控制入口
 
@@ -366,9 +366,46 @@ xt exec python -- -c "print(1 + 1)"
 
 `python` Exec 由 `python-embed` Package 公开，当前只支持 Windows amd64；需先在目标 Client 安装该 Package。`xt exec python -c ...` 使用已安装的 `python.exe`，不影响该 Package 现有的 Oneshot Module。
 
-`xt exec list` 仅显示 `EXEC`、`PACKAGE` 两列；`xt exec list --json` 仅返回 `exec_name`、`package_id` 两个字段。`xt exec info` 查看 Exec Metadata 及安装状态，`xt exec which` 返回 Client 上已安装的实际路径。安装仍在 External Tool Manager 中完成。不同 Package 如果在当前平台提供相同 Exec 名称，会产生歧义错误，应使目标平台可用的 Exec 名称保持唯一。
+`xt exec list` 仅显示 `EXEC`、`PACKAGE` 两列；`xt exec list --json` 仅返回 `exec_name`、`package_id` 两个字段。`xt exec info` 查看 Exec Metadata 及安装状态，`xt exec which` 返回 Client 上已安装的实际路径。`xt package install` 也可安装 Package。不同 Package 如果在当前平台提供相同 Exec 名称，会产生歧义错误，应使目标平台可用的 Exec 名称保持唯一。
 
 Exec CLI 会在 Client 上创建子进程，标准输出与错误输出通过常规命令流返回；它具有取消/等待行为，但不自动在 Manager 中登记为 Daemon 实例。与 Module 运行不同，它面向 Exec 级直接命令调用。
+
+### Package、Module 与 Instance 命令
+
+在 Server Terminal 中选定目标 Client 后，可以查看该客户端平台支持的 Package、执行安装操作，以及管理独立持久的 Daemon Instance：
+
+```text
+xt package list [--installed|-i] [--json]
+xt package install <package-id>
+xt package uninstall <package-id>
+xt module list <package-id> [--json]
+
+xt instance create <package.module> --id <instance-id> [--preset <name>] [--params '<JSON对象>'] [--start]
+xt instance list [<package-id>|<package.module>] [--json]
+xt instance start <package.module> <instance-id>
+xt instance stop <package.module> <instance-id>
+xt instance restart <package.module> <instance-id>
+xt instance status <package.module> <instance-id> [--json]
+xt instance logs <package.module> <instance-id> [--follow|-f]
+```
+
+`xt package list` 查询 Server Catalog 并针对当前 Client 检查安装状态；`--installed` 或 `-i` 仅返回已安装的 Package。安装与卸载沿用现有 Client Package Installer；有运行中的实例时，卸载操作遵循原有安全检查。`xt module list` 返回 Package 在当前平台上的 Module ID、执行模式和内部 Binary。
+
+`xt instance create` 仅适用于 `execution=daemon` Module：通过 `--id` 指定实例身份，可通过 `--preset` 选择已经在 Server 保存的 Module Preset，`--params` 用 JSON 对象覆盖参数；同名业务参数 `instance_name` 没有显式提供时，使用 `--id`。创建将参数保存在 Client 的 `~/.ops/external_tools/runtime/<package>/<module>/instances/<id>/instance.json`，不启动进程；添加 `--start` 会在创建后立即启动。**Instance ID** 以字母、数字或 `_` 开头，可包含字母、数字、`_ . -`，最多 96 个字符；同一 Module 下不可重名。
+
+之后 `start/restart` 使用保存的参数与当前 Server Module 定义重建启动 Payload；已有的 Web Manager 启动实例也可从其 `state.json` 参数读取。`stop/status` 复用原有 Client 进程状态；`logs` 默认读取该实例 stdout 最近最多 64 KiB，`--follow` 每秒增量读取并在实例停止后结束，可以使用 Terminal 取消（Ctrl+C）停止追踪。`status --json` 只提供进程状态摘要，避免输出配置参数。所有管理操作通过当前 Client 的前台命令执行。
+
+例如：
+
+```text
+xt package list --installed
+xt module list frp
+xt package install frp
+xt instance create frp.frpc --id office-frpc --params '{"server_addr":"127.0.0.1","server_port":7001}' --start
+xt instance status frp.frpc office-frpc --json
+xt instance logs frp.frpc office-frpc --follow
+xt instance stop frp.frpc office-frpc
+```
 
 ### 脚本访问的执行上下文
 
@@ -476,3 +513,24 @@ Server 会在安装成功/失败、卸载成功/失败，以及 Daemon 启动、
 - **不是完整事务系统。** 安装、解压、生成配置、启动进程分别执行；中途失败可能留下缓存、部分解压文件或运行文件，需要根据实际状态处理。
 - **外部程序继承 Client 所在设备的执行权限。** 安装包、脚本和命令模板应当来自可信来源；管理界面不会为每个工具自动创建独立的操作系统权限沙箱。
 - **Server Metadata 的修改不会自动重建已安装程序。** 更新配置后要重新评估安装包、平台路径和现有实例，避免以为保存 JSON 就已经更新了远端进程。
+
+
+### `xt` lifecycle state checks and notifications
+
+`xt package install/uninstall` now checks the selected Client's actual package
+installation before acting. Repeated installs and absent-package uninstalls
+report an explicit no-op error rather than a false success. `xt instance
+start/stop/restart` checks current process liveness before the transition;
+`restart` requires a running instance, and stop/start refuse already-stopped or
+already-running instances. If a concurrent change races with the check, the
+Client's operation result is checked again before reporting success.
+
+State-changing `xt` operations publish the existing `external_tool_lifecycle`
+events. Notification Center persists the corresponding events, and SSE/Desktop
+notification delivery uses the existing per-event notification preferences.
+Instance creation adds the `external_tool_daemon_created` preference; queries
+(`list`, `status`, `logs`) do not generate lifecycle notifications.
+
+`xt instance logs <module> <id> --follow` is followed by the Server: cancelling
+its foreground task stops the Server-side follower instead of trying to cancel
+the short-lived Client log-read RPC. Cancellation does not stop the daemon.

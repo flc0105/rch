@@ -353,6 +353,7 @@ class NotificationEventProjector:
         state = str(payload.get('state') or '').strip().lower()
         operation = str(payload.get('operation') or '').strip().lower()
         mapping = {
+            ('daemon', 'created'): 'external_tool_daemon_created',
             ('daemon', 'started'): 'external_tool_daemon_started',
             ('daemon', 'stopped'): 'external_tool_daemon_stopped',
             ('daemon', 'error'): 'external_tool_daemon_error',
@@ -391,6 +392,8 @@ class NotificationEventProjector:
         if state in {'error', 'failed'}:
             actions.append({'id': 'view-log', 'type': 'view_external_tool_log', 'label': 'View Log', 'url': ''})
 
+        if action == 'daemon' and state == 'created':
+            return self._notification(key, 'External Tool Instance Created', f'{device} · {label} instance created', 'success', context, actions)
         if action == 'daemon' and state == 'started':
             return self._notification(key, 'External Tool Daemon Started', f'{device} · {label} daemon started successfully', 'success', context, actions)
         if action == 'daemon' and state == 'stopped':

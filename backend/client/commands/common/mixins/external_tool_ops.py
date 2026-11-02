@@ -68,6 +68,27 @@ class CommandExternalToolMixin:
         except Exception as e:
             return 0, f'Failed to resolve external tool launcher: {e}'
 
+    @desc('Create a persistent external tool instance definition', group='runtime', suggest=False)
+    def external_tool_instance_create(self, arg=''):
+        try:
+            return self._json_result(self.external_tool_service.create_instance_payload(self._decode_external_tool_payload(arg)))
+        except Exception as e:
+            return 0, f'Failed to create external tool instance: {e}'
+
+    @desc('Read a persistent external tool instance definition', group='runtime', suggest=False)
+    def external_tool_instance_read(self, arg=''):
+        try:
+            return self._json_result(self.external_tool_service.read_instance_definition_payload(self._decode_external_tool_payload(arg)))
+        except Exception as e:
+            return 0, f'Failed to read external tool instance: {e}'
+
+    @desc('Read a bounded incremental external tool instance log', group='runtime', suggest=False)
+    def external_tool_instance_logs(self, arg=''):
+        try:
+            return self._json_result(self.external_tool_service.instance_log_chunk_payload(self._decode_external_tool_payload(arg)))
+        except Exception as e:
+            return 0, f'Failed to read external tool instance logs: {e}'
+
     @desc('Start an external tool instance', group='runtime', suggest=False)
     def external_tool_start(self, arg=''):
         try:

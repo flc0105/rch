@@ -314,6 +314,7 @@ export default {
                 const serviceLabel = `${serviceName}${instanceLabel}`;
                 const errorText = String(payload.error || payload.message || '').trim();
                 const notificationKey = {
+                    'daemon:created': 'external_tool_daemon_created',
                     'daemon:started': 'external_tool_daemon_started',
                     'daemon:stopped': 'external_tool_daemon_stopped',
                     'daemon:error': 'external_tool_daemon_error',
@@ -364,7 +365,11 @@ export default {
                 let type = 'info';
                 let message = `${deviceName} · ${serviceLabel} updated`;
 
-                if (action === 'daemon' && state === 'started') {
+                if (action === 'daemon' && state === 'created') {
+                    title = 'External Tool Instance Created';
+                    type = 'success';
+                    message = `${deviceName} · ${serviceLabel} instance created`;
+                } else if (action === 'daemon' && state === 'started') {
                     title = 'External Tool Daemon Started';
                     type = 'success';
                     message = `${deviceName} · ${serviceLabel} daemon started successfully`;

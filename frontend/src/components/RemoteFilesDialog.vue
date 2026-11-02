@@ -1640,12 +1640,12 @@ export default {
       if (!context.clientId || !targetPath || /[\r\n]/.test(targetPath)) return
 
       try {
-        // Client `cd` takes the entire raw tail as a path (including spaces).
+        // Echo before submitting: fast Client results can arrive by SSE before HTTP returns.
+        this.$emit('append-output', context.clientId, `> cd ${targetPath}`, 'command')
         const result = await sendCommand(context.clientId, `cd ${targetPath}`, this.getTabScopedHeaders())
         if (!this.isRemoteFilesContextActive(context)) return
         const taskId = result?.task_id || ''
         this.$emit('set-active-task', context.clientId, taskId)
-        this.$emit('append-output', context.clientId, `> cd ${targetPath}`, 'command')
         ElMessage.success('CWD change submitted')
       } catch (e) {
         if (!this.isRemoteFilesContextActive(context)) return

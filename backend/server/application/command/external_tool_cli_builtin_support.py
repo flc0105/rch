@@ -1,6 +1,10 @@
-"""Server-side `xt exec` command facade for installed client executables."""
+"""Server-side External Tool CLI: package, module, instance and public exec."""
 
 import json
+import logging
+import re
+import shlex
+import time
 
 from core.external_tools.install_status import is_installed_status, normalize_install_status
 from core.protocol.structured_arg_codec import encode_structured_arg
@@ -12,9 +16,9 @@ class ExternalToolCliBuiltinSupport:
     xt 轻量 CLI 门面。
 
     约束：
-    - 只解析 package.execs 的原生 exec name
-    - 不提供 install；安装仍属于 package/web external tool 管理
-    - 执行时只运行已安装 package exec，并把原始参数追加到 argv
+    - Exec 只解析 package.execs 暴露的原生命令，原生 argv 不被改写。
+    - Package / Instance 复用既有 Client 操作并根据真实状态确认转移。
+    - 状态变化通过现有 External Tool lifecycle / Notification 管线广播。
     """
 
     def __init__(self, server, conn, command_processor_factory, history_entry_id_provider):
@@ -246,13 +250,390 @@ class ExternalToolCliBuiltinSupport:
         for item in self._iter_nested_command(command):
             yield item
 
+    def _nested_json(self, command: str, payload: dict) -> dict:
+        status, text = self._collect_nested_command_text(f'{command} {encode_structured_arg(payload)}')
+        if not status:
+            raise RuntimeError(text or f'{command} failed')
+        try:
+            result = json.loads(text)
+        except (ValueError, TypeError) as exc:
+            raise RuntimeError(f'{command} returned invalid JSON: {text[:300]}') from exc
+        if not isinstance(result, dict):
+            raise RuntimeError(f'{command} returned invalid response')
+        return result
+
+    @staticmethod
+    def _render_rows(rows: list[dict], output_format: str = 'table'):
+        return render_structured_result(StructuredCommandResult(status=1, data=rows, shape='table'), output_format=output_format)
+
+    @staticmethod
+    def _tokens(text: str) -> list[str]:
+        try:
+            return shlex.split(str(text or ''))
+        except ValueError as exc:
+            raise ValueError(f'Invalid xt arguments: {exc}') from exc
+
+    def _installed_packages(self, packages: list[dict]) -> dict[tuple[str, str], dict]:
+        builder = self._runtime_service().payload_builder
+        payloads, keys = [], []
+        for package in packages:
+            package_id = str(package.get('id') or '')
+            try:
+                payload = builder.build_client_install_payload(package, platform_alias=self._client_platform(), arch=self._client_arch())
+                key = (package_id, str(payload.get('package_key') or ''))
+                payloads.append(payload)
+            except ValueError as exc:
+                key = (package_id, '')
+                payloads.append({'error': str(exc), 'package_id': package_id})
+            keys.append(key)
+        if not payloads:
+            return {}
+        result = self._nested_json('external_tool_install_statuses', {'tools': payloads})
+        items = result.get('items') or []
+        return {key: items[idx] if idx < len(items) and isinstance(items[idx], dict) else {}
+                for idx, key in enumerate(keys)}
+
+    def _package_list(self, args: str):
+        tokens = self._tokens(args)
+        if any(token not in ('--json', '--installed', '-i') for token in tokens) or len(tokens) != len(set(tokens)):
+            raise ValueError('Usage: xt package list [--installed|-i] [--json]')
+        packages = [p for p in self._catalog_service().list_packages() if not p.get('error')
+                    and self._catalog_service()._platform_matches(p, self._client_platform())
+                    and self._catalog_service()._arch_matches(p, self._client_arch())]
+        statuses = self._installed_packages(packages)
+        only_installed = '--installed' in tokens or '-i' in tokens
+        rows = []
+        for package in packages:
+            package_id = str(package.get('id') or '')
+            key = self._catalog_service().select_package_key(package, self._client_platform(), self._client_arch())
+            installed = is_installed_status(self._install_status_text(statuses.get((package_id, key))))
+            if only_installed and not installed:
+                continue
+            rows.append({'package_id': package_id, 'display_name': package.get('display_name') or package_id,
+                         'installed': installed})
+        rows.sort(key=lambda row: row['package_id'])
+        return self._render_rows(rows if '--json' in tokens else [
+            {'PACKAGE': row['package_id'], 'NAME': row['display_name'], 'INSTALLED': 'yes' if row['installed'] else 'no'} for row in rows
+        ], 'json' if '--json' in tokens else 'table')
+
+    def _publish_xt_lifecycle(self, group: str, operation: str, target: str, state: str, *,
+                              result: dict | None = None, error: str = ''):
+        """Use the existing Web Manager lifecycle bus/projector and notification preferences."""
+        client_id = str(getattr(getattr(self.conn, 'session_info', None), 'client_id', '') or '').strip()
+        if not client_id:
+            return
+        kwargs = {'client_id': client_id, 'operation': operation, 'state': state,
+                  'result': result, 'error': error}
+        try:
+            lifecycle = getattr(self._runtime_service(), 'client_lifecycle_runtime', None)
+            if lifecycle is None:
+                return
+            if group == 'package':
+                kwargs.update(action=operation, package=self._catalog_service().get_package(target))
+            else:
+                kwargs.update(action='daemon', meta=self._instance_meta(target.split('/', 1)[0]),
+                              instance_id=target.split('/', 1)[1])
+            lifecycle._publish_lifecycle(**kwargs)
+        except Exception:
+            # Notification failure must never hide the original command result.
+            logging.getLogger(__name__).exception('Failed to publish xt lifecycle event')
+
+    def _package_action(self, operation: str, args: str):
+        names = self._tokens(args)
+        if len(names) != 1:
+            raise ValueError(f'Usage: xt package {operation} <package-id>')
+        package = self._catalog_service().get_package(names[0])
+        payload = self._runtime_service().payload_builder.build_client_install_payload(package,
+                       platform_alias=self._client_platform(), arch=self._client_arch())
+        before = self._nested_json('external_tool_install_status', payload)
+        status = self._install_status_text(before)
+        if status in ('unknown', 'error'):
+            raise RuntimeError(f'Cannot verify installation status for {names[0]}: {before.get("error") or status}')
+        installed = is_installed_status(status)
+        if operation == 'install' and installed:
+            raise ValueError(f'Package {names[0]} is already installed; no installation performed')
+        if operation == 'uninstall' and status == 'not_installed':
+            raise ValueError(f'Package {names[0]} is not installed; nothing to uninstall')
+        result = self._nested_json('external_tool_install' if operation == 'install' else 'external_tool_uninstall', payload)
+        if result.get('installed') is not (operation == 'install'):
+            raise RuntimeError(result.get('message') or f'Package {operation} failed')
+        if operation == 'install' and result.get('already_installed'):
+            raise ValueError(f'Package {names[0]} was already installed; no installation performed')
+        if operation == 'uninstall' and result.get('removed') is False:
+            raise ValueError(f'Package {names[0]} was not installed; nothing removed')
+        return 1, str(result.get('message') or f'Package {names[0]} {operation} completed')
+
+    def _module_list(self, args: str):
+        tokens = self._tokens(args)
+        if len(tokens) not in (1, 2) or (len(tokens) == 2 and tokens[-1] != '--json'):
+            raise ValueError('Usage: xt module list <package-id> [--json]')
+        package = self._catalog_service().get_package(tokens[0])
+        package_key = self._catalog_service().select_package_key(package, self._client_platform(), self._client_arch())
+        rows = []
+        for module in package.get('modules') or []:
+            try:
+                self._catalog_service().resolve_binary_rel_path(package, module.get('binary') or '', package_key)
+            except ValueError:
+                continue
+            rows.append({'module_id': f'{package["id"]}.{module["id"]}',
+                         'execution': module.get('execution') or '', 'binary': module.get('binary') or ''})
+        return self._render_rows(rows if '--json' in tokens else [
+            {'MODULE': row['module_id'], 'EXECUTION': row['execution'], 'BINARY': row['binary']} for row in rows
+        ], 'json' if '--json' in tokens else 'table')
+
+    def _instance_meta(self, tool_id: str) -> dict:
+        meta = self._catalog_service().get_tool(tool_id)
+        if str(meta.get('execution') or '') != 'daemon':
+            raise ValueError(f'Instance commands require a daemon module: {tool_id}')
+        return meta
+
+    @staticmethod
+    def _instance_id(value: str) -> str:
+        if not re.fullmatch(r'[A-Za-z0-9_][A-Za-z0-9_.-]{0,95}', str(value or '')) or value in ('.', '..'):
+            raise ValueError('Instance ID must be 1-96 characters: letters, digits, _, . or -; start with letter, digit or _')
+        return value
+
+    def _instance_action_payload(self, meta: dict, instance_id: str, action: str = 'status') -> dict:
+        return self._runtime_service().payload_builder.build_client_action_payload(meta, action,
+                   instance_id=self._instance_id(instance_id))
+
+    def _instance_read(self, meta: dict, instance_id: str) -> dict:
+        payload = self._instance_action_payload(meta, instance_id)
+        return self._nested_json('external_tool_instance_read', payload)
+
+    def _instance_create(self, args: str):
+        tokens = self._tokens(args)
+        if not tokens:
+            raise ValueError('Usage: xt instance create <package.module> --id <instance-id> [--preset <name>] [--params <JSON>] [--start]')
+        meta = self._instance_meta(tokens[0])
+        options = {}; index = 1
+        while index < len(tokens):
+            key = tokens[index]
+            if key not in ('--id', '--preset', '--params', '--start') or key in options:
+                raise ValueError(f'Invalid or repeated create option: {key}')
+            if key == '--start':
+                options[key] = True
+            else:
+                index += 1
+                if index >= len(tokens):
+                    raise ValueError(f'Missing value for {key}')
+                options[key] = tokens[index]
+            index += 1
+        instance_id = self._instance_id(options.get('--id') or '')
+        params = {}
+        if '--preset' in options:
+            web = self.server.web_service.assembly
+            presets = web.external_tool_param_preset_store.list_presets(meta['tool_id'])
+            matches = [p for p in presets if p.get('name') == options['--preset'] or p.get('preset_id') == options['--preset']]
+            if len(matches) != 1:
+                raise FileNotFoundError(f'Preset not found: {options["--preset"]}')
+            params.update(matches[0]['params'])
+        if '--params' in options:
+            try:
+                overrides = json.loads(options['--params'])
+            except ValueError as exc:
+                raise ValueError(f'Invalid --params JSON: {exc}') from exc
+            if not isinstance(overrides, dict):
+                raise ValueError('--params must be a JSON object')
+            params.update(overrides)
+        # A module with an instance_name parameter should normally match the CLI identity.
+        if 'instance_name' not in params and any(p.get('name') == 'instance_name' for p in meta.get('params') or []):
+            params['instance_name'] = instance_id
+        builder = self._runtime_service().payload_builder
+        start_payload = builder.build_client_start_payload(meta, params=params, instance_id=instance_id,
+                  platform_alias=self._client_platform(), arch=self._client_arch())
+        created = self._nested_json('external_tool_instance_create', start_payload)
+        # Creation is durable even if the optional start fails afterwards.
+        self._publish_xt_lifecycle('instance', 'create', f'{meta["tool_id"]}/{instance_id}', 'created')
+        if options.get('--start'):
+            started = self._nested_json('external_tool_start', start_payload)
+            if started.get('running') is not True or 'already running' in str(started.get('message') or '').lower():
+                raise RuntimeError('Instance created, but start failed: ' + str(started.get('message') or 'unknown error'))
+            confirmed = self._nested_json('external_tool_status', self._instance_action_payload(meta, instance_id))
+            if confirmed.get('running') is not True:
+                raise RuntimeError('Instance created, but exited immediately after start; see instance logs')
+            return 1, f'Created and started {meta["tool_id"]}/{instance_id} (pid {started.get("pid")})'
+        return 1, f'Created {meta["tool_id"]}/{instance_id}'
+
+    def _instance_list(self, args: str):
+        tokens = self._tokens(args)
+        if len(tokens) > 2 or (len(tokens) == 2 and tokens[-1] != '--json'):
+            raise ValueError('Usage: xt instance list [<package-id>|<package.module>] [--json]')
+        if tokens == ['--json']:
+            tokens = ['', '--json']
+        target = tokens[0] if tokens else ''
+        json_output = '--json' in tokens
+        metas = [m for m in self._catalog_service().list_tools() if str(m.get('execution') or '') == 'daemon'
+                 and (not target or m.get('package_id') == target or m.get('tool_id') == target)]
+        if target and not metas:
+            if '.' in target:
+                self._instance_meta(target)  # distinguish an unknown module from a non-daemon one
+            else:
+                self._catalog_service().get_package(target)
+        if not metas:
+            return self._render_rows([], 'json' if json_output else 'table')
+        payload = {'tools': [{'tool_id': m['tool_id'], 'package_id': m['package_id'], 'module_id': m['id'],
+                             'display_name': m.get('display_name') or m['tool_id']} for m in metas]}
+        result = self._nested_json('external_tool_list_instances_all', payload)
+        rows = [{'module_id': item.get('tool_id') or '', 'instance_id': item.get('instance_id') or '',
+                 'status': item.get('status') or '', 'pid': item.get('pid') or ''} for item in result.get('items') or []]
+        rows.sort(key=lambda row: (row['module_id'], row['instance_id']))
+        return self._render_rows(rows if json_output else [
+            {'MODULE': r['module_id'], 'INSTANCE': r['instance_id'], 'STATUS': r['status'], 'PID': r['pid']} for r in rows
+        ], 'json' if json_output else 'table')
+
+    def _instance_operation(self, operation: str, args: str):
+        tokens = self._tokens(args)
+        json_output = operation == 'status' and tokens[-1:] == ['--json']
+        if json_output:
+            tokens.pop()
+        follow = operation == 'logs' and any(t in ('--follow', '-f') for t in tokens)
+        if follow:
+            if sum(t in ('--follow', '-f') for t in tokens) != 1:
+                raise ValueError('Specify --follow only once')
+            tokens = [t for t in tokens if t not in ('--follow', '-f')]
+        if len(tokens) != 2:
+            raise ValueError(f'Usage: xt instance {operation} <package.module> <instance-id>' +
+                             (' [--json]' if operation == 'status' else ' [--follow|-f]' if operation == 'logs' else ''))
+        meta = self._instance_meta(tokens[0])
+        instance_id = self._instance_id(tokens[1])
+        definition = self._instance_read(meta, instance_id)  # reject nonexistent instance
+        payload = self._instance_action_payload(meta, instance_id, operation)
+        if operation in ('start', 'stop', 'restart'):
+            before = self._nested_json('external_tool_status', payload)
+            running = before.get('running') is True
+            if operation == 'start' and running:
+                raise ValueError(f'Instance {meta["tool_id"]}/{instance_id} is already running')
+            if operation in ('stop', 'restart') and not running:
+                raise ValueError(f'Instance {meta["tool_id"]}/{instance_id} is already stopped')
+        if operation in ('start', 'restart'):
+            if operation == 'restart':
+                stopped = self._nested_json('external_tool_stop', payload)
+                if (stopped.get('running') or not isinstance(stopped.get('stop_result'), dict)
+                        or stopped['stop_result'].get('already_stopped')):
+                    raise RuntimeError('Restart aborted: process was not stopped by this operation')
+            start_payload = self._runtime_service().payload_builder.build_client_start_payload(meta,
+                      params=definition['params'], instance_id=instance_id,
+                      platform_alias=self._client_platform(), arch=self._client_arch())
+            result = self._nested_json('external_tool_start', start_payload)
+            if result.get('running') is not True or 'already running' in str(result.get('message') or '').lower():
+                raise RuntimeError(result.get('message') or 'Instance did not start')
+            confirmed = self._nested_json('external_tool_status', payload)
+            if confirmed.get('running') is not True:
+                raise RuntimeError('Instance exited immediately after start; see instance logs')
+            yield 1, f'{"Restarted" if operation == "restart" else "Started"} {meta["tool_id"]}/{instance_id} (pid {result.get("pid")})'
+        elif operation == 'stop':
+            result = self._nested_json('external_tool_stop', payload)
+            if (result.get('running') or not isinstance(result.get('stop_result'), dict)
+                    or result['stop_result'].get('already_stopped')):
+                raise RuntimeError('Instance was already stopped or is still running; stop did not change its state')
+            yield 1, f'Stopped {meta["tool_id"]}/{instance_id}'
+        elif operation == 'status':
+            result = self._nested_json('external_tool_status', payload)
+            summary = {
+                'module_id': meta['tool_id'], 'instance_id': instance_id, 'status': result.get('status'),
+                'running': result.get('running'), 'pid': result.get('pid') or '',
+                'started_at': result.get('started_at') or '', 'stopped_at': result.get('stopped_at') or '',
+            }
+            yield render_structured_result(StructuredCommandResult(status=1, data=summary,
+                                          shape='dict', width=16), output_format='json' if json_output else 'table')
+        elif operation == 'logs':
+            cursor = ''
+            emitted = False
+            while True:
+                task = self.conn.get_foreground_task() or {}
+                if task.get('cancel_requested'):
+                    yield 0, 'command cancelled'
+                    return
+                data = self._nested_json('external_tool_instance_logs', {**payload, 'cursor': cursor, 'max_bytes': 65536})
+                if data.get('reset'):
+                    yield 1, '[Log rotated]'
+                content = str(data.get('content') or '')
+                if content:
+                    emitted = True
+                    yield 1, content
+                if not follow or not data.get('running'):
+                    if not emitted:
+                        yield 1, 'No log output.'
+                    return
+                cursor = str(data.get('cursor') or '')
+                for _ in range(5):
+                    if (self.conn.get_foreground_task() or {}).get('cancel_requested'):
+                        yield 0, 'command cancelled'
+                        return
+                    time.sleep(0.2)
+
+    def _management(self, group: str, args: str):
+        action, remainder = self._split_first_token(args)
+        if group == 'package':
+            if action == 'list':
+                self._suppress_query_history()
+                yield self._package_list(remainder)
+                return
+            if action in ('install', 'uninstall'):
+                target, _ = self._split_first_token(remainder)
+                try:
+                    outcome = self._package_action(action, remainder)
+                except Exception as exc:
+                    if target:
+                        self._publish_xt_lifecycle('package', action, target, 'failed', error=str(exc))
+                    raise
+                self._publish_xt_lifecycle('package', action, target, 'completed', result={'message': outcome[1]})
+                yield outcome
+                return
+        elif group == 'module' and action == 'list':
+            self._suppress_query_history()
+            yield self._module_list(remainder)
+            return
+        elif group == 'instance':
+            if action == 'list':
+                self._suppress_query_history()
+                yield self._instance_list(remainder)
+                return
+            if action == 'create' or action in ('start', 'stop', 'restart', 'status', 'logs'):
+                if action in ('status', 'logs'):
+                    self._suppress_query_history()
+                tokens = self._tokens(remainder)
+                module_id = tokens[0] if tokens else ''
+                instance_id = (tokens[1] if len(tokens) > 1 else '') if action != 'create' else ''
+                if action == 'create' and '--id' in tokens:
+                    idx = tokens.index('--id')
+                    instance_id = tokens[idx + 1] if idx + 1 < len(tokens) else ''
+                target = f'{module_id}/{instance_id}' if module_id and instance_id else ''
+                try:
+                    if action == 'create':
+                        outcome = self._instance_create(remainder)
+                        results = [outcome]
+                    else:
+                        results = None
+                    if results is not None:
+                        for item in results:
+                            yield item
+                    else:
+                        yield from self._instance_operation(action, remainder)
+                except Exception as exc:
+                    if target and action in ('create', 'start', 'stop', 'restart'):
+                        self._publish_xt_lifecycle('instance', action, target, 'error', error=str(exc))
+                    raise
+                if target and action in ('create', 'start', 'stop', 'restart'):
+                    state = ('created' if action == 'create' and '--start' not in tokens else
+                             'stopped' if action == 'stop' else 'started')
+                    if action != 'create' or '--start' in tokens:
+                        self._publish_xt_lifecycle('instance', action, target, state)
+                return
+        raise ValueError(f'Unsupported xt {group} action: {action or "(none)"}')
+
     def xt(self, arg=''):
-        usage = ('Usage: xt exec list [--json] | xt exec info <name> [--json] | '
-                 'xt exec which <name> | xt exec <name> [--] <raw args...>')
+        usage = ('Usage: xt package list|install|uninstall ... | xt module list <package-id> | '
+                 'xt instance create|list|start|stop|restart|status|logs ... | '
+                 'xt exec list|info|which|<exec-name> ...')
         subcommand, rest = self._split_first_token(arg)
         if subcommand in ('', 'help', '-h', '--help'):
             self._suppress_query_history()
             yield 1, usage
+            return
+        if subcommand in ('package', 'module', 'instance'):
+            yield from self._management(subcommand, rest)
             return
         if subcommand != 'exec':
             raise ValueError(usage)

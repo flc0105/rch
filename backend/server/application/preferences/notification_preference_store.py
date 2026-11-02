@@ -24,6 +24,7 @@ DEFAULT_NOTIFICATION_PREFERENCES = {
         'background_job_running': True,
         'background_job_stopped': True,
         'background_job_error': True,
+        'external_tool_daemon_created': True,
         'external_tool_daemon_started': True,
         'external_tool_daemon_stopped': True,
         'external_tool_daemon_error': True,

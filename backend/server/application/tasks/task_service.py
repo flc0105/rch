@@ -139,7 +139,10 @@ class WebTaskService:
             raise RuntimeError('failed to request task cancellation')
 
         command_id = cancel_info.get('command_id')
-        if command_id:
+        # xt logs --follow is a Server-side polling generator. The cancellation
+        # flag stops it; cancelling the short nested Client read instead would be
+        # rejected as non-cancellable and pollute its JSON response.
+        if command_id and not self._is_server_owned_xt_log_follow((conn.get_foreground_task() or {}).get('command') or ''):
             conn.send_cancel(command_id)
 
         result = dict(cancel_info)
@@ -229,6 +232,15 @@ class WebTaskService:
         except ValueError:
             return False
         return len(parts) == 2 and parts[0] == 'httpctl' and parts[1].lower() in HTTP_CONTROL_COMMANDS
+
+    @staticmethod
+    def _is_server_owned_xt_log_follow(command: str) -> bool:
+        try:
+            parts = shlex.split(str(command or '').strip())
+        except ValueError:
+            return False
+        return (len(parts) == 6 and parts[:3] == ['xt', 'instance', 'logs']
+                and parts[-1] in ('--follow', '-f'))
 
     def cancel_web_task(self, task_id: str):
         try:

@@ -303,6 +303,18 @@ class ExternalToolCommandCompletionProvider(ServerCompletionSessionMixin, Comman
         ('xt exec info ', 'Show Exec details'),
         ('xt exec which ', 'Show installed executable path'),
         ('xt exec ', 'Run an installed external tool exec'),
+        ('xt package list', 'List available packages'),
+        ('xt package list --installed', 'List installed packages'),
+        ('xt package install ', 'Install a package'),
+        ('xt package uninstall ', 'Uninstall a package'),
+        ('xt module list ', 'List package modules'),
+        ('xt instance create ', 'Create an instance'),
+        ('xt instance list', 'List persistent instances'),
+        ('xt instance start ', 'Start an instance'),
+        ('xt instance stop ', 'Stop an instance'),
+        ('xt instance restart ', 'Restart an instance'),
+        ('xt instance status ', 'Read instance status'),
+        ('xt instance logs ', 'Read or follow instance logs'),
     )
 
     def __init__(self, server, external_tool_catalog_service):
@@ -313,16 +325,52 @@ class ExternalToolCommandCompletionProvider(ServerCompletionSessionMixin, Comman
         words = str(context.argument_text or '').strip().lower().split()
         if not words:
             return self._build_subcommand_candidates()
-        if words[0] != 'exec':
+        if words[0] == 'exec':
+            if len(words) == 1:
+                return self._build_subcommand_candidates()[:4] + self._build_exec_candidates(context)
+            if words[1] in {'info', 'which'}:
+                return self._build_exec_candidates(context) if len(words) <= 3 else []
+            if words[1] == 'list':
+                return []
+            return self._build_exec_candidates(context) if len(words) == 2 else []
+        if words[0] not in ('package', 'module', 'instance'):
             return []
+        # All suggestions replace the entire input; native arguments never enter this parser.
         if len(words) == 1:
-            return self._build_subcommand_candidates() + self._build_exec_candidates(context)
-        if words[1] in {'info', 'which'}:
-            return self._build_exec_candidates(context) if len(words) <= 3 else []
-        if words[1] == 'list':
+            return [c for c in self._build_subcommand_candidates() if c.insert_text.startswith('xt ' + words[0])]
+        if words[0] == 'package' and words[1] in ('install', 'uninstall') and len(words) <= 3:
+            return self._build_package_candidates(context, f'xt package {words[1]} ')
+        if words[0] == 'module' and words[1] == 'list' and len(words) <= 3:
+            return self._build_package_candidates(context, 'xt module list ')
+        if words[0] == 'instance' and words[1] in ('create', 'start', 'stop', 'restart', 'status', 'logs') and len(words) <= 3:
+            return self._build_module_candidates(context, f'xt instance {words[1]} ')
+        if words[0] == 'instance' and words[1] == 'list' and len(words) <= 3:
+            return self._build_package_candidates(context, 'xt instance list ')
+        return []
+
+    def _build_package_candidates(self, context: CompletionContext, prefix: str):
+        try:
+            packages = self.external_tool_catalog_service.list_packages()
+        except Exception:
             return []
-        # After an Exec name, all remaining tokens belong to the native program.
-        return self._build_exec_candidates(context) if len(words) == 2 else []
+        return [CompletionCandidate(title=prefix + package['id'], insert_text=prefix + package['id'],
+                description=package.get('display_name') or '', source=self.source, group=self.group,
+                kind='external_tool_package', name=package['id'], priority=30)
+                for package in packages if package.get('id') and not package.get('error')
+                and self.external_tool_catalog_service._platform_matches(package, self.get_client_platform(context))
+                and self.external_tool_catalog_service._arch_matches(package, self.get_client_arch(context))]
+
+    def _build_module_candidates(self, context: CompletionContext, prefix: str):
+        try:
+            modules = self.external_tool_catalog_service.list_tools()
+        except Exception:
+            return []
+        return [CompletionCandidate(title=prefix + module['tool_id'], insert_text=prefix + module['tool_id'],
+                description=module.get('display_name') or '', source=self.source, group=self.group,
+                kind='external_tool_module', name=module['tool_id'], priority=30)
+                for module in modules if module.get('tool_id') and module.get('execution') == 'daemon'
+                and self.external_tool_catalog_service._platform_matches(module['package_meta'], self.get_client_platform(context))
+                and self.external_tool_catalog_service._arch_matches(module['package_meta'], self.get_client_arch(context))]
 
     def _build_subcommand_candidates(self) -> list[CompletionCandidate]:
         return [

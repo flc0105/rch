@@ -21,6 +21,7 @@ export const DEFAULT_SSE_NOTIFICATION_PREFERENCES = {
     background_job_running: true,
     background_job_stopped: true,
     background_job_error: true,
+    external_tool_daemon_created: true,
     external_tool_daemon_started: true,
     external_tool_daemon_stopped: true,
     external_tool_daemon_error: true,
@@ -87,6 +88,7 @@ export const SSE_NOTIFICATION_GROUPS = [
   {
     title: 'External Tools',
     items: [
+      { key: 'external_tool_daemon_created', label: 'Instance created' },
       { key: 'external_tool_daemon_started', label: 'Daemon started' },
       { key: 'external_tool_daemon_stopped', label: 'Daemon stopped' },
       { key: 'external_tool_daemon_error', label: 'Daemon error' },

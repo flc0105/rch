@@ -143,7 +143,7 @@ Provider 内部按 `priority` 与标题排序、按插入文本去重；某个 P
 
 ## Server Registry 静态子命令补全
 
-对于 `xt exec`，输入 `xt exec ` 可补全 `list`、`info`、`which` 与当前目标平台 Catalog 提供的公开 Exec 名称；输入 `xt exec info ` 或 `xt exec which ` 可补全对应的 Exec 名称。已输入 Exec 名称后，后续原生参数不由 XT 补全器接管。
+对于 `xt exec`，输入 `xt exec ` 可补全 `list`、`info`、`which` 与当前目标平台 Catalog 提供的公开 Exec 名称；输入 `xt exec info ` 或 `xt exec which ` 可补全对应的 Exec 名称。`xt package` 提供 list/install/uninstall 与 Package 名称候选，`xt module list` 提供 Package 候选，`xt instance` 提供 create/list/start/stop/restart/status/logs 与 Daemon Module 候选。已输入 Exec 名称后，后续原生参数不由 XT 补全器接管。
 
 Server 注册表 `server_builtin_registry.py` 是一级 Builtin 与 `alias/job/script/xt/history/httpctl` 子命令唯一的静态定义来源。`RegisteredServerSubcommandCompletionProvider` 从该表生成 `script list/view/exec/run`、`job list/start/logs/ps/status/stop/stop-all` 等结构；动态 `script exec <path>`、`job start <name>` 仍由专门 Provider 查询当前 Server Catalog。前端 `CommandInputBar` 对 `script`、`job` 进入既有按上下文缓存的 Server 补全流程，不再识别旧 `exec`。
 
