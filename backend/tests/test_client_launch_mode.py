@@ -18,6 +18,11 @@ class _FakeParent:
     process_name: str
     executable: str = ''
     command: tuple[str, ...] = ()
+    process_id: int = 0
+
+    @property
+    def pid(self):
+        return self.process_id
 
     def name(self):
         return self.process_name
@@ -197,6 +202,45 @@ def test_cron_and_schtasks_outrank_intermediate_shell(monkeypatch):
     }
 
 
+
+def test_windows_task_scheduler_svchost_launch_is_scheduled(monkeypatch):
+    cmd = _FakeParent('cmd.exe', r'C:\Windows\System32\cmd.exe', ('cmd.exe', '/c', 'python', 'rchclient.py'))
+    schedule_host = _FakeParent('svchost.exe', r'C:\Windows\System32\svchost.exe',
+                                ('svchost.exe', '-k', 'netsvcs', '-p', '-s', 'Schedule'),
+                                process_id=970)
+    _prepare(monkeypatch, [cmd, schedule_host], is_tty=False, platform='win32')
+    assert ClientInfoBuilder._detect_launch_context('windows') == {
+        'mode': 'scheduled', 'source': 'schtasks',
+    }
+
+
+def test_windows_task_scheduler_service_pid_matches_shared_host(monkeypatch):
+    import psutil
+    cmd = _FakeParent('powershell.exe', r'C:\Windows\System32\WindowsPowerShell\powershell.exe')
+    schedule_host = _FakeParent('svchost.exe', r'C:\Windows\System32\svchost.exe',
+                                ('svchost.exe', '-k', 'netsvcs'), process_id=551)
+    _prepare(monkeypatch, [cmd, schedule_host], is_tty=False, platform='win32')
+    monkeypatch.setattr(psutil, 'win_service_get', lambda _name: SimpleNamespace(
+        as_dict=lambda: {'pid': 551},
+    ), raising=False)
+    assert ClientInfoBuilder._detect_launch_context('windows') == {
+        'mode': 'scheduled', 'source': 'schtasks',
+    }
+
+
+def test_windows_unrelated_svchost_not_assumed_scheduled(monkeypatch):
+    import psutil
+    powershell = _FakeParent('powershell.exe', 'powershell.exe')
+    other_host = _FakeParent('svchost.exe', r'C:\Windows\System32\svchost.exe',
+                             ('svchost.exe', '-k', 'netsvcs'), process_id=551)
+    _prepare(monkeypatch, [powershell, other_host], is_tty=False, platform='win32')
+    monkeypatch.setattr(psutil, 'win_service_get', lambda _name: SimpleNamespace(
+        as_dict=lambda: {'pid': 552},
+    ), raising=False)
+    assert ClientInfoBuilder._detect_launch_context('windows') == {
+        'mode': 'terminal_background', 'source': 'powershell',
+    }
+
 def test_windows_terminal_and_detached_modes(monkeypatch):
     powershell = _FakeParent(
         'powershell.exe',
@@ -342,6 +386,59 @@ def test_recent_device_uses_latest_launch_snapshot_without_old_source_leak(tmp_p
     db.close_thread_connection()
 
 
+
+
+def test_windows_elevated_bgrun_and_legacy_cli_options():
+    from client.commands.platform.win import WindowsCommands
+
+    seen = []
+    command = SimpleNamespace(win_privilege=SimpleNamespace(
+        spawn_elevated_instance=lambda *, bgrun=False: seen.append(bgrun) or (1, 'ok'),
+    ))
+    assert WindowsCommands.spawn_elevated_instance(command, '--no-confirm') == (1, 'ok')
+    assert seen.pop() is False
+    assert WindowsCommands.spawn_elevated_instance(command, '--bgrun --no-confirm') == (1, 'ok')
+    assert seen.pop() is True
+    assert WindowsCommands.spawn_elevated_instance(command, '--bad --no-confirm') == (
+        0, 'Usage: spawn_elevated_instance [--bgrun] [--no-confirm]',
+    )
+    assert seen == []
+
+
+def test_windows_background_elevation_uses_hidden_bootstrap_with_detached_context(monkeypatch):
+    import base64
+    import ctypes
+    import subprocess
+    import sys
+    from client.commands.platform.services.win.privilege_service import WinPrivilegeService
+
+    calls = []
+    shell = SimpleNamespace(ShellExecuteW=lambda *args: calls.append(args) or 42)
+    monkeypatch.setattr(ctypes, 'windll', SimpleNamespace(shell32=shell), raising=False)
+    monkeypatch.setattr(sys, 'executable', r'C:\Tools\Python 3.13\python.exe')
+    monkeypatch.setattr(sys, 'argv', [r'C:\Program Files\RCH\rchclient.py', '--flag', "O'Brian value"])
+    monkeypatch.setattr(sys, 'frozen', False, raising=False)
+    monkeypatch.setattr('os.getcwd', lambda: r'C:\RCH Files')
+    monkeypatch.setenv('SystemRoot', r'C:\Windows')
+
+    assert WinPrivilegeService(None).spawn_elevated_instance(bgrun=True)[0] == 1
+    _handle, verb, path, arguments, cwd, show = calls[0]
+    assert verb == 'runas'
+    assert path.endswith('WindowsPowerShell/v1.0/powershell.exe') or path.endswith(
+        r'WindowsPowerShell\v1.0\powershell.exe')
+    assert show == 0
+    assert cwd == r'C:\RCH Files'
+    assert '-WindowStyle Hidden -EncodedCommand ' in arguments
+    encoded = arguments.split(' -EncodedCommand ', 1)[1]
+    ps = base64.b64decode(encoded).decode('utf-16-le')
+    assert 'CreateNoWindow = $true' in ps
+    assert 'UseShellExecute = $false' in ps
+    assert 'RCH_CLIENT_LAUNCH_MODE' in ps and "'detached'" in ps
+    assert 'RCH_CLIENT_LAUNCH_SOURCE' in ps and "'detached_process'" in ps
+    assert "O''Brian" in ps
+    assert r'C:\Program Files\RCH\rchclient.py' in ps
+    assert r'C:\Tools\Python 3.13\python.exe' in ps
+    assert 'RCH_PROCESS_RECOVERY_WATCHDOG_SESSION' in ps
 
 def test_macos_elevated_command_keeps_default_and_adds_detached_option():
     from client.commands.platform.mac import MacCommands

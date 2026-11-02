@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 
 
@@ -108,6 +109,28 @@ def detect_launch_context(os_alias: str) -> dict:
     if is_windows:
         if has_any(('taskeng.exe', 'taskhostw.exe', 'schtasks.exe')):
             return {'mode': 'scheduled', 'source': 'schtasks'}
+
+        # Modern Task Scheduler launches tasks from the Schedule service's
+        # svchost.exe, rather than necessarily via taskeng.exe/taskhostw.exe.
+        schedule_pid = None
+        try:
+            service = psutil.win_service_get('Schedule')
+            schedule_pid = int(service.as_dict().get('pid') or 0)
+        except (AttributeError, ValueError, TypeError, OSError, psutil.Error):
+            pass
+        for item, row in zip(parents, parent_rows):
+            if row[0] != 'svchost.exe':
+                continue
+            if schedule_pid:
+                try:
+                    if int(item.pid) == schedule_pid:
+                        return {'mode': 'scheduled', 'source': 'schtasks'}
+                except (AttributeError, ValueError, TypeError):
+                    pass
+            # The dedicated svchost host also advertises the Schedule service.
+            if re.search(r'(?<!\S)-s\s+schedule(?=\s|$)', row[2]):
+                return {'mode': 'scheduled', 'source': 'schtasks'}
+
         if direct_parent[0] == 'services.exe' or direct_parent[1].endswith(('\\services.exe', '/services.exe')):
             return {'mode': 'system_service', 'source': 'windows_service'}
     else:

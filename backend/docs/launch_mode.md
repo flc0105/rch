@@ -378,7 +378,14 @@ Detached (detached process)
 
 这也是 Windows 上验证标准 detached helper 最稳定的方式。
 
+### 9.5.1 Windows elevated background launch
+
+`spawn_elevated_instance --bgrun` 保留 UAC 提权，但以隐藏的短生命周期 PowerShell 启动器创建不显示控制台、独立于发起终端的 elevated Client。该 Client 在握手时报告 `Detached (detached process)`；不带参数的 `spawn_elevated_instance` 仍按原行为启动可见控制台。`--no-confirm` 仅跳过 RCH 的交互确认，不能跳过 Windows UAC。Session 0 或无可交互桌面的环境不保证能够完成 UAC 授权。
+
 ### 9.6 Task Scheduler
+
+现代 Windows 的 Task Scheduler 可能直接通过运行 Schedule 服务的 `svchost.exe` 启动程序，而非经过 `taskeng.exe` / `taskhostw.exe`。RCH 同时检测传统 Scheduler 父进程、`Schedule` 服务 PID 和明确的 `svchost -s Schedule` 宿主；无法从进程链可靠确定时应使用启动器显式设置 `RCH_CLIENT_LAUNCH_MODE=scheduled` 与 `RCH_CLIENT_LAUNCH_SOURCE=schtasks`。一次 Client 的启动类型在握手阶段采样，改变任务定义后必须重新启动新的 Client 进程才会更新。
+
 
 先创建一次性任务，再手动运行。下面示例在 CMD 中执行；替换真实 Python 与项目路径：
 
