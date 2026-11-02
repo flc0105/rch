@@ -1,5 +1,7 @@
+import errno
 import os
 import select
+import time
 import shutil
 import signal
 import struct
@@ -48,7 +50,7 @@ class UnixPtyBackend:
                 env.setdefault('COLORTERM', 'truecolor')
 
                 try:
-                    os.execve(shell_path, [shell_path, '-i'], env)
+                    os.execve(shell_path, self.shell_arguments(shell_path), env)
                 except Exception as e:
                     try:
                         os.write(exec_write_fd, str(e).encode('utf-8', errors='replace'))
@@ -100,6 +102,14 @@ class UnixPtyBackend:
 
         threading.Thread(target=self.reader_loop, args=(pty_session_id,), daemon=True).start()
         return True
+
+    @staticmethod
+    def shell_arguments(shell_path: str) -> list[str]:
+        # Login profiles initialize PATH (notably Homebrew on macOS), while
+        # interactive startup still loads aliases, prompts and shell options.
+        if os.path.basename(shell_path) in ('zsh', 'bash'):
+            return [shell_path, '-l', '-i']
+        return [shell_path, '-i']
 
     def resolve_shell_path(self, shell: str = '') -> str:
         requested = str(shell or '').strip()
@@ -162,10 +172,32 @@ class UnixPtyBackend:
         master_fd = session.master_fd
         pid = session.pid
         exit_code = 0
+        reaped = False
+        drain_deadline = None
 
         if master_fd is None:
             self.manager.finalize_session(pty_session_id, exit_code=exit_code)
             return
+
+        def reap_child():
+            nonlocal reaped, exit_code, drain_deadline
+            if reaped:
+                return
+            try:
+                waited_pid, status = os.waitpid(pid, os.WNOHANG)
+            except ChildProcessError:
+                reaped = True
+                return
+            if waited_pid != pid:
+                return
+            reaped = True
+            if os.WIFEXITED(status):
+                exit_code = os.WEXITSTATUS(status)
+            elif os.WIFSIGNALED(status):
+                exit_code = 128 + os.WTERMSIG(status)
+            # Drain output remaining in the master after shell exit, but don't
+            # hang indefinitely if a background child retained the slave FD.
+            drain_deadline = time.monotonic() + 0.5
 
         try:
             while True:
@@ -173,27 +205,29 @@ class UnixPtyBackend:
                 if not current or current.closed:
                     break
 
-                readable, _, _ = select.select([master_fd], [], [], 0.2)
+                timeout = 0.2 if drain_deadline is None else min(
+                    0.2, max(0.0, drain_deadline - time.monotonic()))
+                readable, _, _ = select.select([master_fd], [], [], timeout)
                 if master_fd in readable:
-                    chunk = os.read(master_fd, 4096)
+                    try:
+                        chunk = os.read(master_fd, 4096)
+                    except OSError as exc:
+                        # Linux PTY masters signal ordinary slave EOF with EIO.
+                        if exc.errno == errno.EIO:
+                            break
+                        raise
                     if not chunk:
                         break
                     self.manager.send_output(pty_session_id, chunk)
 
-                try:
-                    waited_pid, status = os.waitpid(pid, os.WNOHANG)
-                    if waited_pid == pid:
-                        if os.WIFEXITED(status):
-                            exit_code = os.WEXITSTATUS(status)
-                        elif os.WIFSIGNALED(status):
-                            exit_code = 128 + os.WTERMSIG(status)
-                        break
-                except ChildProcessError:
+                reap_child()
+                if drain_deadline is not None and time.monotonic() >= drain_deadline:
                     break
-        except Exception as e:
+        except Exception as exc:
             if self.manager.get_session(pty_session_id):
-                self.manager.send_error(pty_session_id, str(e))
+                self.manager.send_error(pty_session_id, str(exc))
         finally:
+            reap_child()
             self.manager.finalize_session(pty_session_id, exit_code=exit_code)
 
     def resize_fd(self, master_fd: int, cols: int, rows: int):

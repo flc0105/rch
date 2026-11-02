@@ -38,8 +38,8 @@ class CommandHistoryOrchestrator:
         if not record_activity:
             return activity_id
         origin = {'web': 'web_terminal', 'quick_action': 'web_ui', 'cli': 'cli',
-                  'web_api': 'web_api'}.get(source, source or 'cli')
-        presentation = 'terminal' if origin in {'web_terminal', 'cli'} else 'none'
+                  'web_api': 'web_api', 'rch_cli': 'rch_cli'}.get(source, source or 'cli')
+        presentation = 'terminal' if origin in {'web_terminal', 'cli', 'rch_cli'} else 'none'
         kind, action, target, arguments = 'command', 'invoke', None, {}
         text = str(command).strip()
         if metadata.get('quick_action'):
@@ -58,9 +58,7 @@ class CommandHistoryOrchestrator:
         else:
             # Raw script exec / script run is identified by its *real dispatch type*,
             # not by guessing whether its text looks like a shell command.
-            if source == 'web':
-                presentation = 'terminal'
-            elif source == 'cli':
+            if source in ('web', 'cli', 'rch_cli'):
                 presentation = 'terminal'
         invocation = {'input': text, 'arguments': arguments}
         if target:

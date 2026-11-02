@@ -1,7 +1,7 @@
 """Quick History: terminal submissions and replay-index policy, independent of Activity.
 
 Recording rules live here (not scattered through execution, Activity, or UI):
-* Record manually submitted Web Terminal / Server CLI commands, regardless of
+* Record manually submitted Web Terminal / Server CLI / RCH CLI commands, regardless of
   success, error, cancellation, interruption or timeout.
 * Never record `history`, `history clear`, `history run N` or `!N`:
   these are Quick management/replay operations, not new submitted commands.
@@ -17,7 +17,7 @@ from server.application.history.history_record_policy import CommandHistoryRecor
 from server.config.config import COMMAND_HISTORY_RECENT_LIMIT
 
 
-QUICK_TERMINAL_SOURCES = frozenset({'web', 'web_terminal', 'cli'})
+QUICK_TERMINAL_SOURCES = frozenset({'web', 'web_terminal', 'cli', 'rch_cli'})
 QUICK_EXCLUDED_TASK_TYPES = frozenset({'upload', 'remote_file', 'process', 'job_control', 'external_tool'})
 QUICK_EXCLUDED_META_FLAGS = frozenset({'quick_action', 'script_run'})
 QUICK_MANAGEMENT_PATTERN = re.compile(r'^history(?:\s|$)', re.IGNORECASE)

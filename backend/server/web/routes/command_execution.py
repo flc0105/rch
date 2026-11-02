@@ -6,6 +6,7 @@ from server.web.api_response import WebApiResponder
 from server.web.auth_guard import allow_anonymous
 from server.web.request_parsers import (
     get_optional_tab_id,
+    get_optional_header_text,
     get_required_command,
     get_json_payload,
 )
@@ -26,6 +27,7 @@ def create_command_execution_blueprint(server_instance):
                 client_id,
                 get_required_command(),
                 tab_id=get_optional_tab_id(),
+                source='rch_cli' if get_optional_header_text('X-RCH-Command-Source') == 'rch_cli' else 'web',
             ),
             default_error_status=500,
         )

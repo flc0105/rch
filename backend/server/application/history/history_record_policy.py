@@ -7,7 +7,7 @@ create Activity candidates in this first release.
 """
 class CommandHistoryRecordPolicy:
     NON_RECORD_TASK_TYPES = frozenset({'upload', 'remote_file', 'process', 'job_control', 'external_tool'})
-    RECORD_SOURCES = frozenset({'web', 'web_terminal', 'web_api', 'quick_action', 'cli'})
+    RECORD_SOURCES = frozenset({'web', 'web_terminal', 'web_api', 'quick_action', 'cli', 'rch_cli'})
 
     @staticmethod
     def is_internal_external_tool_command(command):
