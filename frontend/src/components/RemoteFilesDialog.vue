@@ -44,6 +44,7 @@
                 <el-dropdown-menu>
                   <el-dropdown-item command="refresh">Refresh</el-dropdown-item>
                   <el-dropdown-item command="up" :disabled="!remoteFilesParentPath">Parent Directory</el-dropdown-item>
+                  <el-dropdown-item command="set_cwd" :disabled="!remoteFilesCurrentPath">Set as CWD</el-dropdown-item>
 
                   <el-dropdown-item divided disabled>Quick Jump</el-dropdown-item>
                   <el-dropdown-item command="root" :disabled="quickJumpLoading">Root</el-dropdown-item>
@@ -223,6 +224,7 @@
 
                 <template #dropdown>
                   <el-dropdown-menu>
+                    <el-dropdown-item command="set_cwd" :disabled="!remoteFilesCurrentPath">Set as CWD</el-dropdown-item>
                     <el-dropdown-item command="toggle_pin">
                       {{ remotePinButtonText }}
                     </el-dropdown-item>
@@ -491,6 +493,7 @@
                         <el-dropdown-item command="copy">Copy</el-dropdown-item>
                         <el-dropdown-item command="cut">Cut</el-dropdown-item>
                         <el-dropdown-item command="copy_path">Copy Path</el-dropdown-item>
+                        <el-dropdown-item v-if="row.is_dir" command="set_cwd">Set as CWD</el-dropdown-item>
                         <el-dropdown-item v-if="isZipEntry(row)" command="extract" divided :disabled="remoteZipExtracting">Extract Here</el-dropdown-item>
                         <el-dropdown-item command="delete">Delete</el-dropdown-item>
                       </el-dropdown-menu>
@@ -703,6 +706,7 @@
                               <el-dropdown-item command="copy">Copy</el-dropdown-item>
                               <el-dropdown-item command="cut">Cut</el-dropdown-item>
                               <el-dropdown-item command="copy_path">Copy Path</el-dropdown-item>
+                              <el-dropdown-item v-if="row.is_dir" command="set_cwd">Set as CWD</el-dropdown-item>
                               <el-dropdown-item v-if="isZipEntry(row)" command="extract" divided :disabled="remoteZipExtracting">Extract Here</el-dropdown-item>
                               <el-dropdown-item command="delete">Delete</el-dropdown-item>
                             </el-dropdown-menu>
@@ -768,6 +772,7 @@
                         <el-dropdown-item v-if="!row.is_parent_entry" command="copy">Copy</el-dropdown-item>
                         <el-dropdown-item v-if="!row.is_parent_entry" command="cut">Cut</el-dropdown-item>
                         <el-dropdown-item v-if="!row.is_parent_entry" command="copy_path">Copy Path</el-dropdown-item>
+                        <el-dropdown-item v-if="row.is_dir && !row.is_parent_entry" command="set_cwd">Set as CWD</el-dropdown-item>
                         <el-dropdown-item v-if="isZipEntry(row)" command="extract" :disabled="remoteZipExtracting">Extract Here</el-dropdown-item>
                         <el-dropdown-item v-if="!row.is_parent_entry" command="delete">Delete</el-dropdown-item>
                       </el-dropdown-menu>
@@ -854,6 +859,7 @@ import RemotePinsDialog from './RemotePinsDialog.vue'
 import RemoteZipPeekDialog from './RemoteZipPeekDialog.vue'
 import { formatBytes as formatBytesValue } from '../utils/formatters.js'
 import { uploadRemoteFileToClient } from '../api/transferApi.js'
+import { sendCommand } from '../api/connectionsApi.js'
 
 
 export default {
@@ -1628,6 +1634,25 @@ export default {
       }
     },
 
+    async setRemoteDirectoryAsCwd(path) {
+      const context = this.captureRemoteFilesContext()
+      const targetPath = String(path || '').trim()
+      if (!context.clientId || !targetPath || /[\r\n]/.test(targetPath)) return
+
+      try {
+        // Client `cd` takes the entire raw tail as a path (including spaces).
+        const result = await sendCommand(context.clientId, `cd ${targetPath}`, this.getTabScopedHeaders())
+        if (!this.isRemoteFilesContextActive(context)) return
+        const taskId = result?.task_id || ''
+        this.$emit('set-active-task', context.clientId, taskId)
+        this.$emit('append-output', context.clientId, `> cd ${targetPath}`, 'command')
+        ElMessage.success('CWD change submitted')
+      } catch (e) {
+        if (!this.isRemoteFilesContextActive(context)) return
+        ElMessage.error(e.message || 'Failed to set CWD')
+      }
+    },
+
     handleRemoteMobileToolsCommand(command) {
       if (command && typeof command === 'object') {
         return this.jumpToPath(command)
@@ -1637,6 +1662,7 @@ export default {
         return this.jumpToPath(command)
       }
 
+      if (command === 'set_cwd') return this.setRemoteDirectoryAsCwd(this.remoteFilesCurrentPath)
       if (command === 'refresh') return this.refreshRemoteDirectory()
       if (command === 'up') return this.goToRemoteParent()
       if (command === 'new_folder') return this.createRemoteDirectory()
@@ -1660,6 +1686,7 @@ export default {
     },
 
     handleRemoteToolbarMoreCommand(command) {
+      if (command === 'set_cwd') return this.setRemoteDirectoryAsCwd(this.remoteFilesCurrentPath)
       if (command === 'toggle_pin') {
         this.toggleCurrentPinnedQuickJump()
         return
@@ -1712,6 +1739,7 @@ export default {
 
     handleRemoteMoreAction(command, row) {
       if (!row || row.is_parent_entry) return
+      if (command === 'set_cwd' && row.is_dir) return this.setRemoteDirectoryAsCwd(row.path)
 
       if (command === 'rename') {
         this.renameRemoteEntry(row)

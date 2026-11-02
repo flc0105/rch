@@ -310,7 +310,19 @@ class ExternalToolCommandCompletionProvider(ServerCompletionSessionMixin, Comman
         self.external_tool_catalog_service = external_tool_catalog_service
 
     def complete(self, context: CompletionContext) -> list[CompletionCandidate]:
-        return self._build_exec_candidates(context)
+        words = str(context.argument_text or '').strip().lower().split()
+        if not words:
+            return self._build_subcommand_candidates()
+        if words[0] != 'exec':
+            return []
+        if len(words) == 1:
+            return self._build_subcommand_candidates() + self._build_exec_candidates(context)
+        if words[1] in {'info', 'which'}:
+            return self._build_exec_candidates(context) if len(words) <= 3 else []
+        if words[1] == 'list':
+            return []
+        # After an Exec name, all remaining tokens belong to the native program.
+        return self._build_exec_candidates(context) if len(words) == 2 else []
 
     def _build_subcommand_candidates(self) -> list[CompletionCandidate]:
         return [

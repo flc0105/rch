@@ -15,9 +15,29 @@
           <div class="machine-history-machine-id">machine_id: {{ shortenMachineId(machineId) }}</div>
         </div>
 
-        <el-button size="small" @click="loadHistory">
-          Refresh
-        </el-button>
+        <div class="machine-history-toolbar-actions">
+          <el-popover placement="bottom-end" trigger="click" :width="280">
+            <template #reference>
+              <el-button size="small">Filter{{ activeFilterCount ? ` (${activeFilterCount})` : '' }}</el-button>
+            </template>
+            <div class="machine-history-filters">
+              <label>Integrity</label>
+              <el-select v-model="filters.integrity" placeholder="All" clearable size="small">
+                <el-option v-for="item in integrityOptions" :key="item.value" :label="item.label" :value="item.value" />
+              </el-select>
+              <label>Launch Mode</label>
+              <el-select v-model="filters.launchMode" placeholder="All" clearable size="small">
+                <el-option v-for="item in launchModeOptions" :key="item.value" :label="item.label" :value="item.value" />
+              </el-select>
+              <label>Termination</label>
+              <el-select v-model="filters.termination" placeholder="All" clearable size="small">
+                <el-option v-for="item in terminationOptions" :key="item.value" :label="item.label" :value="item.value" />
+              </el-select>
+              <el-button size="small" text :disabled="!activeFilterCount" @click="clearFilters">Clear filters</el-button>
+            </div>
+          </el-popover>
+          <el-button size="small" @click="loadHistory">Refresh</el-button>
+        </div>
       </div>
 
       <div class="machine-history-stats">
@@ -48,9 +68,9 @@
         :title="`${history.unassigned_command_count} activity record(s) have no client_id and cannot be assigned to a session.`"
       />
 
-      <div v-if="sessions.length" class="machine-history-mobile-list">
+      <div v-if="filteredSessions.length" class="machine-history-mobile-list">
         <article
-          v-for="(row, index) in sessions"
+          v-for="(row, index) in filteredSessions"
           :key="`mobile-${row.client_id}`"
           class="machine-history-mobile-card"
         >
@@ -191,8 +211,8 @@
       </div>
 
       <el-table
-        v-if="sessions.length"
-        :data="sessions"
+        v-if="filteredSessions.length"
+        :data="filteredSessions"
         row-key="client_id"
         :expand-row-keys="expandedSessionIds"
         border
@@ -375,7 +395,7 @@
       </el-table>
 
       <div v-else-if="!loading" class="empty-state machine-history-empty">
-        No connection history for this machine yet
+        {{ sessions.length ? 'No connections match the selected filters' : 'No connection history for this machine yet' }}
       </div>
 
       <div v-if="history.tracking_started_at" class="machine-history-footer-note">
@@ -404,6 +424,7 @@ export default {
       },
       mobileExpandedSessionIds: [],
       expandedSessionIds: [],
+      filters: { integrity: '', launchMode: '', termination: '' },
     }
   },
 
@@ -416,6 +437,30 @@ export default {
     sessions() {
       return Array.isArray(this.history.sessions) ? this.history.sessions : []
     },
+
+    activeFilterCount() {
+      return Object.values(this.filters).filter(Boolean).length
+    },
+
+    integrityOptions() {
+      return this.buildFilterOptions('integrity', value => value[0].toUpperCase() + value.slice(1))
+    },
+
+    launchModeOptions() {
+      return this.buildFilterOptions('launch_mode', value => formatLaunchMode(value))
+    },
+
+    terminationOptions() {
+      return this.buildFilterOptions('termination_reason', value => this.formatEndReason(value))
+    },
+
+    filteredSessions() {
+      return this.sessions.filter(row =>
+        (!this.filters.integrity || this.filterValue(row.integrity) === this.filters.integrity) &&
+        (!this.filters.launchMode || this.filterValue(row.launch_mode) === this.filters.launchMode) &&
+        (!this.filters.termination || this.filterValue(row.termination_reason) === this.filters.termination)
+      )
+    },
   },
 
   methods: {
@@ -427,7 +472,21 @@ export default {
       this.visible = true
       this.expandedSessionIds = []
       this.mobileExpandedSessionIds = []
+      this.clearFilters()
       return this.loadHistory()
+    },
+
+    filterValue(value) {
+      return String(value || '').trim().toLowerCase() || 'unknown'
+    },
+
+    buildFilterOptions(field, labelFor) {
+      const values = new Set(this.sessions.map(row => this.filterValue(row[field])))
+      return [...values].sort().map(value => ({ value, label: labelFor(value) }))
+    },
+
+    clearFilters() {
+      this.filters = { integrity: '', launchMode: '', termination: '' }
     },
 
     async loadHistory() {
@@ -645,6 +704,24 @@ export default {
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 14px;
+}
+
+.machine-history-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.machine-history-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.machine-history-filters label {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 
 .machine-history-identity {
@@ -935,6 +1012,15 @@ export default {
 }
 
 @media (max-width: 768px) {
+  .machine-history-toolbar {
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .machine-history-toolbar-actions {
+    margin-left: auto;
+  }
+
   .machine-history-body {
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;

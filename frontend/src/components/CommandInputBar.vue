@@ -727,9 +727,11 @@ export default {
     },
 
     buildXtCommandCompletionQuery(rawText, argumentText) {
-      const subcommand = String(argumentText || '').trim().split(/\s+/, 1)[0] || ''
-      const contextKey = ['info', 'which', 'run'].includes(subcommand) ? subcommand : 'root'
-      const requestInput = contextKey === 'root' ? 'xt ' : `xt ${contextKey} `
+      const parts = String(argumentText || '').trim().toLowerCase().split(/\s+/)
+      const contextKey = parts[0] === 'exec' && ['info', 'which'].includes(parts[1])
+        ? parts[1] : parts[0] === 'exec' ? 'exec' : 'root'
+      const requestInput = contextKey === 'root' ? 'xt '
+        : contextKey === 'exec' ? 'xt exec ' : `xt exec ${contextKey} `
 
       return {
         rawText,
