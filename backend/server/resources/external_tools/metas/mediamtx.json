@@ -22,7 +22,7 @@
       "root": ""
     }
   },
-  "execs": {
+  "binaries": {
     "mediamtx": {
       "paths": {
         "darwin-arm64": "mediamtx"
@@ -39,7 +39,7 @@
       "display_name": "MediaMTX Server",
       "description": "Accepts published streams and serves them over RTSP, HLS, and WebRTC.",
       "execution": "daemon",
-      "exec": "mediamtx",
+      "binary": "mediamtx",
       "params": [
         {
           "name": "instance_name",

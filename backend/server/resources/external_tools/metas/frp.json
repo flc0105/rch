@@ -36,7 +36,7 @@
       "root": ""
     }
   },
-  "execs": {
+  "binaries": {
     "frps": {
       "paths": {
         "darwin-arm64": "frps",
@@ -62,7 +62,7 @@
       "display_name": "FRP Server",
       "description": "Runs the relay that accepts FRP client connections.",
       "execution": "daemon",
-      "exec": "frps",
+      "binary": "frps",
       "params": [
         {
           "name": "instance_name",
@@ -117,7 +117,7 @@
       "display_name": "FRP Client",
       "description": "Connects local services to an FRP relay.",
       "execution": "daemon",
-      "exec": "frpc",
+      "binary": "frpc",
       "params": [
         {
           "name": "instance_name",
@@ -224,7 +224,7 @@
       "display_name": "FRP Client SOCKS5",
       "description": "Runs FRP's built-in SOCKS5 client plugin and exposes the SOCKS5 entrypoint on the FRPS remote port.",
       "execution": "daemon",
-      "exec": "frpc",
+      "binary": "frpc",
       "params": [
         {
           "name": "instance_name",

@@ -34,10 +34,11 @@ External Tools 的三个基本概念：
 | 概念 | 标识及职责 |
 |---|---|
 | **Package** | 用 `id` 标识；定义版本、平台安装包、安装位置、可执行文件及 Module 集合 |
-| **Exec** | Package 内 `execs` 定义的入口名称；映射到各平台安装包中的实际相对路径，可供 `xt` 和 SDK 调用 |
+| **Binary** | Package 内 `binaries` 定义的程序路径和可选 Launcher，供 Module 启动与安装检查使用 |
+| **Exec** | 可选 `execs` 定义的公开一次性命令；通过 `binary` 指向实际 Binary，供 `xt exec` 和 Script SDK 调用 |
 | **Module** | Package 内 `modules[]` 定义的运行方式；使用 `package_id.module_id` 作为 `tool_id`，选择一个 Exec 并声明 Daemon 或 Oneshot、参数、命令模板及生命周期 |
 
-例如，一个程序包可以定义 `server` 与 `client` 两个 Module，分别使用同一包中的两个 Exec；也可以用同一个 Exec 定义多个不同参数预设的 Module。**安装以 Package 为单位，启动和停止以 Module / Instance 为单位**，这是后续各类操作的基础。
+例如，一个程序包可以定义 `server` 与 `client` 两个 Module，分别使用同一包中的两个 Binary；也可以用同一个 Binary 定义多个不同参数预设的 Module。**安装以 Package 为单位，启动和停止以 Module / Instance 为单位**，这是后续各类操作的基础。
 
 管理界面主要面向所选目标 Client：可以查询 Package 的安装状态，安装、卸载、启动 Module、查看实例；每一步使用的目标平台和架构都来自当前 Client 会话，并由服务端再次核对。
 
@@ -62,7 +63,7 @@ External Tool 以 JSON Metadata 描述一个可安装的 Package。Server 读取
       "root": ""
     }
   },
-  "execs": {
+  "binaries": {
     "heartbeat": {
       "paths": { "common-all": "heartbeat.py" },
       "launcher": { "type": "client_python", "prefix_args": ["-u"] }
@@ -75,7 +76,7 @@ External Tool 以 JSON Metadata 描述一个可安装的 Package。Server 读取
     {
       "id": "heartbeat",
       "execution": "daemon",
-      "exec": "heartbeat",
+      "binary": "heartbeat",
       "params": [
         { "name": "interval", "type": "number", "default": 2, "min": 0.2, "max": 3600 }
       ],
@@ -95,7 +96,7 @@ External Tool 以 JSON Metadata 描述一个可安装的 Package。Server 读取
 }
 ```
 
-这份定义使 `heartbeat` 成为一个可被安装和识别的 Exec，同时形成 `python-heartbeat-log.heartbeat` Module。`runtime.argv` 使用参数和路径占位符描述真实启动命令；运行弹窗输入的 `interval` 会在执行前经过类型转换，然后代入启动参数。此例是 Metadata 结构说明；实际使用前还须保证 ZIP 文件已在 Server 的 Package 下载目录中可用。
+这份定义声明内部 Binary `heartbeat` 与 `python-heartbeat-log.heartbeat` Module；没有 `execs` 的 Package 不对终端公开原生命令。`runtime.argv` 使用参数和路径占位符描述真实启动命令；运行弹窗输入的 `interval` 会在执行前经过类型转换，然后代入启动参数。此例是 Metadata 结构说明；实际使用前还须保证 ZIP 文件已在 Server 的 Package 下载目录中可用。
 
 ### 包、入口和模块的映射
 
@@ -104,14 +105,15 @@ External Tool 以 JSON Metadata 描述一个可安装的 Package。Server 读取
 | Package | `id`、`name`、`display_name`、`description`、`version` | 标识、名称和展示信息 |
 | Package | `category`、`tags` | Catalog 分类与辅助展示 |
 | Package | `platform_packages` | 每个平台/架构对应的安装包及下载地址，必需 |
-| Package | `execs` | 可执行入口名称及各安装包中的路径，必需 |
+| Package | `binaries` | 内部可执行路径映射，必需 |
+| Package | `execs` | 可选，公开的原生 CLI 命令名及对应 `binary` |
 | Package | `install.install_dir` | 安装目录模板 |
 | Package | `params` | Package 级公共运行参数，可为空 |
-| Package | `modules` | Module 数组，至少需要一个有效 Module |
-| Exec | `paths` | `package_key → 相对路径`，必须有可用映射 |
-| Exec | `enabled`、`description`、`arg_mode` | 是否进入可用 Exec 列表、说明及 CLI 选项 |
-| Exec | `launcher` | 可选的启动器与前置参数 |
-| Module | `id`、`display_name`、`exec` | Module 标识、展示名称与所选 Exec |
+| Package | `modules` | Module 数组；只公开 CLI Exec 的 Package 可不声明 Module |
+| Binary | `paths` | `package_key → 相对路径`，必须有可用映射 |
+| Binary | `launcher` | 可选的启动器与前置参数 |
+| Exec | `binary`、`description`、`arg_mode` | 公开 Exec 名称、所指 Binary 与 CLI 选项 |
+| Module | `id`、`display_name`、`binary` | Module 标识、展示名称与所选 Binary |
 | Module | `execution` | 必须是 `daemon` 或 `oneshot` |
 | Module | `params` | Module 自己的参数声明 |
 | Module | `runtime`、`runtimes` | 通用运行模板和按平台覆盖的运行模板 |
@@ -163,7 +165,7 @@ External Tool 的共享参数解析对缺失的可选值采用适合命令模板
 
 ### 命令模板和配置生成
 
-Metadata 内使用 `{{name}}` 引用当前构建上下文。常用变量包括 `package_id`、`module_id`、`tool_id`、`version`、`platform`、`arch`、`package_key`、`package_root`、`install_dir`、`instance_id`、`instance_runtime_dir`、`state_file`，以及 `{{bin_<exec_name>}}` 一类执行路径和运行参数名称。
+Metadata 内使用 `{{name}}` 引用当前构建上下文。常用变量包括 `package_id`、`module_id`、`tool_id`、`version`、`platform`、`arch`、`package_key`、`package_root`、`install_dir`、`instance_id`、`instance_runtime_dir`、`state_file`，以及 `{{bin_<binary_name>}}` 一类执行路径和运行参数名称。
 
 例如：
 
@@ -322,7 +324,7 @@ External Tool Manager 的主要视图是 **Packages** 和 **Instances**。
 
 **Packages** 展示 Server Catalog，并按当前目标 Client 过滤适用 Package。用户可以选择设备，查看 Package 安装状态、下载 Package、Install、Uninstall、Clear Package Cache、查看状态及编辑 Metadata。Package 下再展开可执行的 Module，按 Daemon/Oneshot 显示对应 Run 操作。
 
-External Tool Manager 中实际派发到 Client 的 Install、Uninstall、Clear Package Cache、Start、Oneshot Run、Stop、Remove Instance、Clear Logs 会在 Activity Center 留下各自的一条 `External Tool` 语义记录。记录按所选机器归属，执行成功、失败和超时由真实结果确定，不复制运行配置、敏感参数或程序输出；安装状态、日志查看、Launcher 预览等只读操作不记 Activity。终端 `xt` 的 `list/info/which/help` 等查询保留用户实际输入的 Quick History，但不生成 Activity；真实 `xt run <exec>` / `xt <exec>` 形成一条 `external_tool · run_exec` Activity，保留真实输入与 Exec 身份，不记录内部 `external_tool_*` 结构化派发命令。Script SDK 仍归属于 Script 本身，不另外生成 External Tool Activity。
+External Tool Manager 中实际派发到 Client 的 Install、Uninstall、Clear Package Cache、Start、Oneshot Run、Stop、Remove Instance、Clear Logs 会在 Activity Center 留下各自的一条 `External Tool` 语义记录。记录按所选机器归属，执行成功、失败和超时由真实结果确定，不复制运行配置、敏感参数或程序输出；安装状态、日志查看、Launcher 预览等只读操作不记 Activity。终端 `xt` 的 `exec list` 和 `help` 等查询保留用户实际输入的 Quick History，但不生成 Activity；真实 `xt exec <exec>` 形成一条 `external_tool · run_exec` Activity，保留真实输入与 Exec 身份，不记录内部 `external_tool_*` 结构化派发命令。Script SDK 仍归属于 Script 本身，不另外生成 External Tool Activity。
 
 **Instances** 展示当前设备已有 Daemon 实例，包含实例标识、状态、PID、端口/参数相关信息和开始时间等。对于具体实例，可查看日志、请求停止、查看详细信息、重启、清理日志或移除实例；运行中的实例不可直接执行清理文件的操作。
 
@@ -351,15 +353,20 @@ External Tool Manager 负责安装和常驻实例管理；`xt` 和 Script SDK �
 在已选择目标 Client 的 Server Terminal 中，可用：
 
 ```text
-xt list
-xt info ffmpeg
-xt which ffmpeg
-xt ffmpeg -- -version
+xt exec list
+xt exec list --json
+xt exec info ffmpeg
+xt exec which ffmpeg
+xt exec ffmpeg -- -version
+xt exec python -V
+xt exec python -- -c "print(1 + 1)"
 ```
 
-`xt list` 根据当前 Client 平台与架构列出可解析的 Exec；`xt info` 查看指定 Exec 的信息，`xt which` 查询它在 Client 上已安装的可执行文件位置；最后一条把 `-version` 作为原始命令行参数传给对应 Exec。`--` 可明确区分 `xt` 自身语法和目标程序参数。
+`xt exec list` 列出当前 Client 平台支持、已安装且在 Metadata 的 `execs` 中明确公开的命令；`xt exec ffmpeg -- -version` 把 `-version` 作为原始命令行参数传给 FFmpeg。`--` 可明确区分 `xt` 自身语法和目标程序参数。
 
-`xt list --json` 也可输出结构化 JSON；终端支持的具体调用形式可查看 `xt` 帮助。**`xt install` 不支持**，需要先在 Manager 中完成安装。不同 Package 如果在当前平台提供相同 Exec 名称，会产生歧义错误，应使目标平台可用的 Exec 名称保持唯一。
+`python` Exec 由 `python-embed` Package 公开，当前只支持 Windows amd64；需先在目标 Client 安装该 Package。`xt exec python -c ...` 使用已安装的 `python.exe`，不影响该 Package 现有的 Oneshot Module。
+
+`xt exec list` 仅显示 `EXEC`、`PACKAGE` 两列；`xt exec list --json` 仅返回 `exec_name`、`package_id` 两个字段。`xt exec info` 查看 Exec Metadata 及安装状态，`xt exec which` 返回 Client 上已安装的实际路径。安装仍在 External Tool Manager 中完成。不同 Package 如果在当前平台提供相同 Exec 名称，会产生歧义错误，应使目标平台可用的 Exec 名称保持唯一。
 
 Exec CLI 会在 Client 上创建子进程，标准输出与错误输出通过常规命令流返回；它具有取消/等待行为，但不自动在 Manager 中登记为 Daemon 实例。与 Module 运行不同，它面向 Exec 级直接命令调用。
 
@@ -445,7 +452,7 @@ Server 会在安装成功/失败、卸载成功/失败，以及 Daemon 启动、
 
 | 现象 | 应检查的机制 |
 |---|---|
-| Catalog 显示某 Package 无效 | JSON 结构、必填的 `platform_packages` / `execs` / `modules`、Module 引用的 Exec |
+| Catalog 显示某 Package 无效 | JSON 结构、必填的 `platform_packages` / `binaries` / `execs`（如有）/ `modules`（如有）、Module/Exec 引用的 Binary |
 | 目标设备看不到或无法安装工具 | 平台及架构匹配、`compatible_targets`、目标会话信息，是否出现多个候选 Package Key |
 | Package 下载返回不存在 | Server 的 Package 目录是否有 Metadata 指定的 ZIP；Metadata 存在不等于 ZIP 已存在 |
 | Installed 为 False，但安装目录存在 | 是否缺少任何声明的 Exec 路径；安装状态不由旧状态文件决定 |

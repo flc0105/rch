@@ -1,19 +1,19 @@
-from core.external_tools.payload import primary_exec_name
+from core.external_tools.payload import primary_binary_name
 from server.application.external_tools.external_tool_runtime_component import ExternalToolRuntimeComponent
 
 
 class ExternalToolInstallSupport(ExternalToolRuntimeComponent):
     """Client install payload helpers."""
 
-    def _primary_exec_name(self, package: dict, module: dict | None = None) -> str:
-        return primary_exec_name(package, module)
+    def _primary_binary_name(self, package: dict, module: dict | None = None) -> str:
+        return primary_binary_name(package, module)
 
     def _default_package_skip_template(self, package: dict, context: dict) -> str:
         del package, context
         # Package-first install state should be tied to the package extraction
-        # directory, not to one runnable executable. Multi-exec packages such as
+        # directory, not to one runnable executable. Multi-binary packages such as
         # frp can expose frps/frpc from the same installation, and using the first
-        # exec as the package marker makes status fragile. Module start still
+        # binary as the package marker makes status fragile. Module start still
         # validates the concrete executable through runtime.argv.
         return '{{install_dir}}'
 

@@ -10,7 +10,7 @@ from core.platform.normalization import normalize_arch, normalize_platform, plat
 from core.external_tools.selector import (
     package_arch_matches,
     package_platform_matches,
-    resolve_exec_rel_path,
+    resolve_binary_rel_path,
     select_package_key,
 )
 
@@ -25,7 +25,7 @@ class ExternalToolCatalogService:
     v2 convention:
     - one meta file describes one installable package
     - package may expose multiple daemon modules under modules[]
-    - package may expose multiple CLI execs under execs{}
+    - package declares internal binaries{}; optional execs{} exports CLI commands
     - platform/arch selection is resolved from platform_packages{}
     - side is no longer a capability constraint; target host decides platform/arch
     """
@@ -133,8 +133,8 @@ class ExternalToolCatalogService:
     def select_package_key(self, package: dict, platform_alias: str = '', arch: str = '') -> str:
         return select_package_key(package, platform_alias=platform_alias, arch=arch, log=logger)
 
-    def resolve_exec_rel_path(self, package: dict, exec_name: str, package_key: str) -> str:
-        return resolve_exec_rel_path(package, exec_name, package_key)
+    def resolve_binary_rel_path(self, package: dict, binary_name: str, package_key: str) -> str:
+        return resolve_binary_rel_path(package, binary_name, package_key)
 
     def get_meta_path(self, package_id: str) -> str:
         meta = self.get_package(package_id)
@@ -238,9 +238,13 @@ class ExternalToolCatalogService:
                 continue
 
             for exec_name, exec_item in (package.get('execs') or {}).items():
-                if not isinstance(exec_item, dict) or not exec_item.get('enabled', True):
+                if not isinstance(exec_item, dict):
                     continue
-                rel_path = str((exec_item.get('paths') or {}).get(package_key) or '').strip()
+                binary_name = exec_item.get('binary') or ''
+                try:
+                    rel_path = self.resolve_binary_rel_path(package, binary_name, package_key)
+                except ValueError:
+                    continue
                 if not rel_path:
                     continue
                 items.append({

@@ -21,7 +21,7 @@
       "root": ""
     }
   },
-  "execs": {
+  "binaries": {
     "novnc-web": {
       "paths": {
         "darwin-arm64": "utils/novnc_proxy"
@@ -38,7 +38,7 @@
       "display_name": "noVNC Web Gateway",
       "description": "Proxies a VNC endpoint into a browser-accessible noVNC session.",
       "execution": "daemon",
-      "exec": "novnc-web",
+      "binary": "novnc-web",
       "params": [
         {
           "name": "instance_name",

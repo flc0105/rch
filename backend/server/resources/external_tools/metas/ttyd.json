@@ -41,7 +41,7 @@
       "source": "https://github.com/hectorgarcia-cw/ttyd/releases/tag/1.7.7"
     }
   },
-  "execs": {
+  "binaries": {
     "ttyd": {
       "paths": {
         "darwin-arm64": "bin/ttyd",
@@ -65,7 +65,7 @@
       "display_name": "ttyd Web Terminal",
       "description": "Starts a browser-accessible terminal session.",
       "execution": "daemon",
-      "exec": "ttyd",
+      "binary": "ttyd",
       "params": [
         {
           "name": "instance_name",

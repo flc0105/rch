@@ -48,12 +48,17 @@
       "notes": "Windows amd64 gyan.dev release essentials archive. The archive keeps its upstream top-level directory ffmpeg-8.1.1-essentials_build; only ffmpeg is exposed by this meta."
     }
   },
-  "execs": {
+  "binaries": {
     "ffmpeg": {
       "paths": {
         "darwin-amd64": "ffmpeg",
         "win-amd64": "bin/ffmpeg.exe"
       }
+    }
+  },
+  "execs": {
+    "ffmpeg": {
+      "binary": "ffmpeg"
     }
   },
   "install": {
@@ -66,7 +71,7 @@
       "display_name": "FFmpeg Version Test",
       "description": "Checks the installed FFmpeg binary and reports its build version.",
       "execution": "oneshot",
-      "exec": "ffmpeg",
+      "binary": "ffmpeg",
       "params": [],
       "runtime": {
         "cwd": "{{install_dir}}/{{package_root}}",
@@ -84,7 +89,7 @@
       "display_name": "FFmpeg Screen Push",
       "description": "Publishes the target screen as a low-latency RTSP stream.",
       "execution": "daemon",
-      "exec": "ffmpeg",
+      "binary": "ffmpeg",
       "params": [
         {
           "name": "instance_name",
@@ -336,7 +341,7 @@
       "display_name": "FFmpeg Screen Recording",
       "description": "Records the client desktop to a local fragmented MP4. Start and stop manually in Instances; Windows stop may not finalize the last fragment.",
       "execution": "daemon",
-      "exec": "ffmpeg",
+      "binary": "ffmpeg",
       "params": [
         {
           "name": "instance_name",

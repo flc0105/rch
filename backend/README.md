@@ -1174,7 +1174,7 @@ The Server terminal has its own command layer in addition to Client commands and
 | `rtt` | Show heartbeat RTT / last-seen state | Reads the live connection/session metrics |
 | `httpctl kill|relaunch|clone` | Queue an independent HTTP control action for the selected Client | Does not depend on the normal command socket remaining usable |
 | `saveout <client-command>` | Run a Client command and save the complete output as an Artifact | Creates a `command_output` Artifact and records source metadata |
-| `xt ...` | External Tool CLI facade | Supports list/info/which/direct execution of already-installed external-tool executables |
+| `xt ...` | External Tool CLI facade | Supports `xt exec list [--json]` and `xt exec <name> [--] <native args>` |
 
 ### `alias`
 
@@ -2216,17 +2216,15 @@ The lightweight Server terminal facade operates on the selected Client and only 
 Examples:
 
 ```text
-xt
-xt list
-xt list --json
-xt info ffmpeg
-xt which ffmpeg
-xt ffmpeg -version
-xt ffmpeg -- -i input.mp4 output.mp4
-xt run ffmpeg -- -version
+xt exec list
+xt exec list --json
+xt exec info ffmpeg
+xt exec which ffmpeg
+xt exec ffmpeg -version
+xt exec ffmpeg -- -i input.mp4 output.mp4
 ```
 
-`xt install` is intentionally not supported; installation remains an External Tool Manager responsibility.
+Install packages from External Tool Manager before running `xt exec`; `xt exec list` shows installed, public Exec entries for the selected Client.
 
 ### Script SDK `xt`
 

@@ -76,34 +76,54 @@ def normalize_platform_packages(meta: dict) -> dict[str, dict]:
     return packages
 
 
-def normalize_execs(meta: dict, platform_packages: dict[str, dict]) -> dict[str, dict]:
-    raw = meta.get('execs')
+def normalize_binaries(meta: dict, platform_packages: dict[str, dict]) -> dict[str, dict]:
+    raw = meta.get('binaries')
     if not isinstance(raw, dict) or not raw:
-        raise ValueError('execs is required')
+        raise ValueError('binaries is required')
 
-    execs = {}
+    binaries = {}
     for name, value in raw.items():
-        exec_name = str(name or '').strip()
-        if not exec_name:
-            continue
-        source = value if isinstance(value, dict) else {}
-        paths = source.get('paths') if isinstance(source.get('paths'), dict) else {}
+        binary_name = str(name or '').strip()
+        if not binary_name or not isinstance(value, dict):
+            raise ValueError('binary name and object are required')
+        paths = value.get('paths') if isinstance(value.get('paths'), dict) else {}
         normalized_paths = {}
         for key, path in paths.items():
             package_key = str(key or '').strip().lower().replace('_', '-')
             if package_key in platform_packages and str(path or '').strip():
                 normalized_paths[package_key] = str(path or '').strip()
         if not normalized_paths:
-            raise ValueError(f'exec {exec_name} requires paths for platform packages')
-        item = dict(source)
-        item['name'] = exec_name
+            raise ValueError(f'binary {binary_name} requires paths for platform packages')
+        item = dict(value)
+        item['name'] = binary_name
         item['paths'] = normalized_paths
         item['description'] = str(item.get('description') or '').strip()
-        item['enabled'] = bool(item.get('enabled', True))
+        binaries[binary_name] = item
+    return binaries
+
+
+def normalize_execs(meta: dict, binaries: dict[str, dict]) -> dict[str, dict]:
+    raw = meta.get('execs')
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict) or not raw:
+        raise ValueError('execs must be a non-empty object when provided')
+    execs = {}
+    for name, value in raw.items():
+        exec_name = str(name or '').strip()
+        if not exec_name or not isinstance(value, dict):
+            raise ValueError('exec name and object are required')
+        if 'paths' in value or 'enabled' in value:
+            raise ValueError(f'exec {exec_name} must only export a binary, not declare binary paths or enable flags')
+        binary_name = str(value.get('binary') or '').strip()
+        if binary_name not in binaries:
+            raise ValueError(f'exec {exec_name} references unknown binary: {binary_name}')
+        item = dict(value)
+        item['name'] = exec_name
+        item['binary'] = binary_name
+        item['description'] = str(item.get('description') or '').strip()
         item['arg_mode'] = str(item.get('arg_mode') or 'raw_append').strip() or 'raw_append'
         execs[exec_name] = item
-    if not execs:
-        raise ValueError('execs is required')
     return execs
 
 
@@ -113,6 +133,8 @@ def normalize_module(package: dict, item: Any) -> dict:
     module_id = str(item.get('id') or item.get('name') or '').strip()
     if not module_id:
         return {}
+    if 'exec' in item:
+        raise ValueError(f'module {module_id} uses deprecated exec; use binary')
     module = deepcopy(item)
     package_id = package.get('id') or ''
     tool_id = f'{package_id}.{module_id}'
@@ -128,9 +150,9 @@ def normalize_module(package: dict, item: Any) -> dict:
     module['execution'] = str(module.get('execution') or '').strip().lower()
     if module['execution'] not in ('daemon', 'oneshot'):
         raise ValueError(f'module {module_id} execution must be daemon or oneshot')
-    module['exec'] = str(module.get('exec') or module_id).strip()
-    if module['exec'] not in (package.get('execs') or {}):
-        raise ValueError(f'module {module_id} references unknown exec: {module["exec"]}')
+    module['binary'] = str(module.get('binary') or '').strip()
+    if module['binary'] not in (package.get('binaries') or {}):
+        raise ValueError(f'module {module_id} references unknown binary: {module["binary"]}')
 
     common_params = normalize_param_specs(package.get('params'))
     module_params = normalize_param_specs(module.get('params'))
@@ -191,7 +213,9 @@ def normalize_meta(meta: dict, path: str = '') -> dict:
     item['platforms'] = derive_package_platforms(platform_packages)
     item['arches'] = derive_package_arches(platform_packages)
     item['arch'] = ','.join(item['arches']) if len(item['arches']) > 1 else (item['arches'][0] if item['arches'] else '')
-    item['execs'] = normalize_execs(item, platform_packages)
+    item['binaries'] = normalize_binaries(item, platform_packages)
+    if 'execs' in item:
+        item['execs'] = normalize_execs(item, item['binaries'])
 
     item['install'] = item.get('install') if isinstance(item.get('install'), dict) else {}
     item['config'] = item.get('config') if isinstance(item.get('config'), dict) else {}
@@ -203,8 +227,8 @@ def normalize_meta(meta: dict, path: str = '') -> dict:
         module = normalize_module(item, module_item)
         if module:
             modules.append(module)
-    if not modules:
-        raise ValueError('modules is required')
+    if not modules and not item.get('execs'):
+        raise ValueError('modules or execs is required')
     item['modules'] = modules
 
     if path:

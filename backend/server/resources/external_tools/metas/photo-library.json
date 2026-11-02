@@ -22,7 +22,7 @@
       "notes": "Source-only Python bundle; first start installs requirements with pip into bundle-local vendor/pyX.Y. Requires Python, pip and initial network access."
     }
   },
-  "execs": {
+  "binaries": {
     "photo-library": {
       "paths": {
         "common-all": "app.py"
@@ -46,7 +46,7 @@
       "display_name": "Photo Library Web",
       "description": "Runs Photo Library with configurable HTTP bind and optional persistent data/storage roots. Clear either directory field to use the original project-local directory.",
       "execution": "daemon",
-      "exec": "photo-library",
+      "binary": "photo-library",
       "params": [
         {
           "name": "instance_name",

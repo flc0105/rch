@@ -21,11 +21,16 @@
       "root": ""
     }
   },
-  "execs": {
+  "binaries": {
     "python": {
       "paths": {
         "win-amd64": "python.exe"
       }
+    }
+  },
+  "execs": {
+    "python": {
+      "binary": "python"
     }
   },
   "install": {
@@ -38,7 +43,7 @@
       "display_name": "Python Embed Test",
       "description": "Runs a Python snippet and shows its output.",
       "execution": "oneshot",
-      "exec": "python",
+      "binary": "python",
       "params": [
         {
           "name": "code",
@@ -65,7 +70,7 @@
       "display_name": "Python Embed Run Remote PY",
       "description": "Select a remote .py file and run it with this Python Embed runtime. stdout/stderr are returned in the oneshot result.",
       "execution": "oneshot",
-      "exec": "python",
+      "binary": "python",
       "params": [
         {
           "name": "script_file",

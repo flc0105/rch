@@ -26,7 +26,7 @@
       "notes": "Upstream macOS Apple Silicon server archive. Rename the upstream archive to the project-standard filename; archive root contains the silverbullet executable."
     }
   },
-  "execs": {
+  "binaries": {
     "silverbullet": {
       "paths": {
         "darwin-arm64": "silverbullet"
@@ -43,7 +43,7 @@
       "display_name": "SilverBullet",
       "description": "Starts SilverBullet in classic single-space mode for a selected Client-side folder.",
       "execution": "daemon",
-      "exec": "silverbullet",
+      "binary": "silverbullet",
       "params": [
         {
           "name": "instance_name",

@@ -20,7 +20,7 @@
       "root": ""
     }
   },
-  "execs": {
+  "binaries": {
     "java-bundle-demo": {
       "paths": {
         "common-all": "java-bundle-demo.jar"
@@ -45,7 +45,7 @@
       "display_name": "Java Bundle Demo Web",
       "description": "Serves the static demo page with the JDK built-in HTTP server.",
       "execution": "daemon",
-      "exec": "java-bundle-demo",
+      "binary": "java-bundle-demo",
       "params": [
         {
           "name": "port",

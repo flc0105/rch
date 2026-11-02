@@ -60,7 +60,7 @@
       "notes": "RCH ZIP contains verified upstream tar.gz plus launch.sh. First start extracts upstream with native tar to preserve symlinks and executable permissions."
     }
   },
-  "execs": {
+  "binaries": {
     "code-server": {
       "paths": {
         "darwin-arm64": "launch.sh",
@@ -80,7 +80,7 @@
       "display_name": "code-server Web IDE",
       "description": "Serve a selected project directory in a browser. The login password is generated in the client user config on first run.",
       "execution": "daemon",
-      "exec": "code-server",
+      "binary": "code-server",
       "params": [
         {
           "name": "instance_name",

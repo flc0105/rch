@@ -113,7 +113,7 @@ class ExternalToolInstaller(ExternalToolCommon):
         status = self.install_status_payload(payload)
         if not status.get('installed'):
             missing = status.get('missing_execs') or {}
-            install_log.append(f'Validation failed; missing execs: {missing or "-"}')
+            install_log.append(f'Validation failed; missing binaries: {missing or "-"}')
             self.write_install_log(install_dir, install_log)
             if missing:
                 raise FileNotFoundError(f'Package was extracted but configured executable paths were not found: {missing}')
@@ -123,7 +123,7 @@ class ExternalToolInstaller(ExternalToolCommon):
         self.chmod(executable_path)
         for name, path in (status.get('exec_paths') or {}).items():
             self.chmod(path)
-            install_log.append(f'Validated exec {name}: {path}')
+            install_log.append(f'Validated binary {name}: {path}')
 
         source = package_info.get('source') or 'unknown'
         persisted_install_log = self.write_install_log(install_dir, install_log)

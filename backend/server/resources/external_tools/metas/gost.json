@@ -34,7 +34,7 @@
       "root": ""
     }
   },
-  "execs": {
+  "binaries": {
     "gost": {
       "paths": {
         "darwin-arm64": "gost",
@@ -53,7 +53,7 @@
       "display_name": "GOST SOCKS5",
       "description": "Runs a basic SOCKS5 proxy.",
       "execution": "daemon",
-      "exec": "gost",
+      "binary": "gost",
       "params": [
         {
           "name": "instance_name",

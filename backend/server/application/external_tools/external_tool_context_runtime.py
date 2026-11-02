@@ -57,12 +57,12 @@ class ExternalToolContextRuntime(ExternalToolRuntimeComponent):
         install_template = str((package.get('install') or {}).get('install_dir') or '{{external_tools_root}}/{{package_id}}/{{version}}/{{package_key}}')
         install_dir = self._render_value(install_template, context)
         context['install_dir'] = install_dir
-        rel_execs, abs_bins = self._resolved_exec_context(package, package_key, install_dir)
-        context['exec'] = rel_execs
+        rel_binaries, abs_bins = self._resolved_exec_context(package, package_key, install_dir)
+        context['binary'] = rel_binaries
         context['bin'] = abs_bins
-        for name, rel_path in rel_execs.items():
+        for name, rel_path in rel_binaries.items():
             safe = re.sub(r'[^A-Za-z0-9_]+', '_', name).strip('_')
-            context[f'exec_{safe}'] = rel_path
+            context[f'binary_{safe}'] = rel_path
             context[f'bin_{safe}'] = abs_bins.get(name) or ''
         return context
     def _module_base_context(
@@ -146,21 +146,21 @@ class ExternalToolContextRuntime(ExternalToolRuntimeComponent):
         """
         install_dir = str(context.get('install_dir') or '').strip()
         package_key = str(context.get('package_key') or '').strip()
-        rel_execs = {}
+        rel_binaries = {}
         raw_bins = {}
-        for exec_name in (package.get('execs') or {}).keys():
+        for binary_name in (package.get('binaries') or {}).keys():
             try:
-                rel_path = self.catalog_service.resolve_exec_rel_path(package, exec_name, package_key)
+                rel_path = self.catalog_service.resolve_binary_rel_path(package, binary_name, package_key)
             except Exception:
                 continue
             rel_path = str(rel_path or '').strip().lstrip('/\\')
-            rel_execs[exec_name] = rel_path
-            raw_bins[exec_name] = os.path.join(install_dir, rel_path)
-        context['exec'] = rel_execs
+            rel_binaries[binary_name] = rel_path
+            raw_bins[binary_name] = os.path.join(install_dir, rel_path)
+        context['binary'] = rel_binaries
         context['bin'] = raw_bins
         for name, path in raw_bins.items():
             safe = re.sub(r'[^A-Za-z0-9_]+', '_', name).strip('_')
-            context[f'exec_{safe}'] = rel_execs.get(name) or ''
+            context[f'binary_{safe}'] = rel_binaries.get(name) or ''
             context[f'bin_{safe}'] = path
         return context
     def _assert_package_usable(self, package: dict, platform_alias: str = '', arch: str = ''):

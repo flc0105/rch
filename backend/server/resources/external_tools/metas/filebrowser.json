@@ -37,7 +37,7 @@
       "notes": "Archive has no top-level directory; filebrowser.exe is at the archive root."
     }
   },
-  "execs": {
+  "binaries": {
     "filebrowser": {
       "paths": {
         "darwin-arm64": "filebrowser",
@@ -56,7 +56,7 @@
       "display_name": "File Browser",
       "description": "Serves a selected directory through a browser-based file manager.",
       "execution": "daemon",
-      "exec": "filebrowser",
+      "binary": "filebrowser",
       "params": [
         {
           "name": "instance_name",

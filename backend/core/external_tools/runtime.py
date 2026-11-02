@@ -32,20 +32,20 @@ def resolved_exec_context(
     package: dict,
     package_key: str,
     install_dir: str,
-    resolve_exec_rel_path: Callable[[dict, str, str], str],
+    resolve_binary_rel_path: Callable[[dict, str, str], str],
     path_expander: Callable[[Any], str] = expand_path,
 ) -> tuple[dict, dict]:
-    rel_execs = {}
+    rel_binaries = {}
     abs_bins = {}
-    for exec_name in (package.get('execs') if isinstance(package, dict) else {}) or {}:
+    for binary_name in (package.get('binaries') if isinstance(package, dict) else {}) or {}:
         try:
-            rel_path = resolve_exec_rel_path(package, exec_name, package_key)
+            rel_path = resolve_binary_rel_path(package, binary_name, package_key)
         except Exception:
             continue
         rel_path = str(rel_path or '').strip().lstrip('/\\')
-        rel_execs[exec_name] = rel_path
-        abs_bins[exec_name] = path_expander(os.path.join(install_dir, rel_path))
-    return rel_execs, abs_bins
+        rel_binaries[binary_name] = rel_path
+        abs_bins[binary_name] = path_expander(os.path.join(install_dir, rel_path))
+    return rel_binaries, abs_bins
 
 
 def missing_exec_paths(abs_bins: dict, path_expander: Callable[[Any], str] = expand_path) -> dict:

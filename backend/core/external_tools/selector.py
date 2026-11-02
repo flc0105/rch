@@ -128,13 +128,13 @@ def select_package_key(package: dict, platform_alias: Any = '', arch: Any = '', 
     raise ValueError(f'{package_id} does not support {target_platform}/{target_arch}')
 
 
-def resolve_exec_rel_path(package: dict, exec_name: Any, package_key: Any) -> str:
-    execs = package.get('execs') if isinstance(package.get('execs'), dict) else {}
-    exec_item = execs.get(str(exec_name or '').strip())
-    if not isinstance(exec_item, dict):
-        raise ValueError(f'exec not found: {exec_name}')
-    paths = exec_item.get('paths') if isinstance(exec_item.get('paths'), dict) else {}
+def resolve_binary_rel_path(package: dict, binary_name: Any, package_key: Any) -> str:
+    binaries = package.get('binaries') if isinstance(package.get('binaries'), dict) else {}
+    binary_item = binaries.get(str(binary_name or '').strip())
+    if not isinstance(binary_item, dict):
+        raise ValueError(f'binary not found: {binary_name}')
+    paths = binary_item.get('paths') if isinstance(binary_item.get('paths'), dict) else {}
     rel_path = str(paths.get(str(package_key or '').strip()) or '').strip()
     if not rel_path:
-        raise ValueError(f'exec {exec_name} does not support {package_key}')
+        raise ValueError(f'binary {binary_name} does not support {package_key}')
     return rel_path

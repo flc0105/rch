@@ -7,12 +7,12 @@ from typing import Any
 from core.external_tools.install_status import INSTALL_STATUS_INSTALLED, INSTALL_STATUS_NOT_INSTALLED
 
 
-def primary_exec_name(package: dict, module: dict | None = None) -> str:
+def primary_binary_name(package: dict, module: dict | None = None) -> str:
     source_package = package if isinstance(package, dict) else {}
     source_module = module if isinstance(module, dict) else {}
-    if source_module.get('exec'):
-        return str(source_module.get('exec') or '').strip()
-    for name in (source_package.get('execs') or {}).keys():
+    if source_module.get('binary'):
+        return str(source_module.get('binary') or '').strip()
+    for name in (source_package.get('binaries') or {}).keys():
         return str(name or '').strip()
     return ''
 
@@ -118,7 +118,7 @@ def client_install_payload(
             filename=filename,
             download_url=download_url,
             executable_rel_path=executable_rel_path,
-            exec_paths=(context or {}).get('exec') or {},
+            exec_paths=(context or {}).get('binary') or {},
         ),
         'install': install_section_payload(
             install_dir=(context or {}).get('install_dir') or '',
@@ -156,7 +156,7 @@ def client_module_payload(
             filename=filename,
             download_url=download_url,
             executable_rel_path=executable_rel_path,
-            exec_paths=source_context.get('exec') or {},
+            exec_paths=source_context.get('binary') or {},
         ),
         'install': install_section_payload(
             install_dir=source_context.get('install_dir') or '',

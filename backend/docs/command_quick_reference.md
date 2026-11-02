@@ -55,9 +55,9 @@
 | `history` / `history list` | 查看 Quick History 的 Recent 列表 |
 | `history run <index>` | 按 Quick History 序号重放命令，**可能再次执行原来的危险操作** |
 | `history clear` | 清理当前设备 Quick Recent，保留 Activity Center 及 Pin |
-| `xt list` / `xt info <name>` | 查看 External Tool 列表 / 具体工具信息 |
-| `xt which <name>` | 查找工具可执行文件 |
-| `xt run <name> [--] [args]` | 执行 External Tool；`xt <name> ...` 也是直接执行入口 |
+| `xt exec list [--json]` | 列出当前 Client 已安装并公开的 Exec 命令 |
+| `xt exec info <name>` / `xt exec which <name>` | 查看 Exec 元信息 / 客户端安装路径 |
+| `xt exec <name> [--] <args...>` | 将原生命令行参数传给所选 Client 上已安装的 Exec |
 | `httpctl help` | 显示 HTTP 控制通道支持的操作 |
 | `httpctl kill` / `httpctl relaunch` / `httpctl clone` / `httpctl resume --client-id ID` | 终止、重新启动、克隆或通过 HTTP Control 唤醒指定原 Client 实例 |
 

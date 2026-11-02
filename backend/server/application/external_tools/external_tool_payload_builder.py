@@ -37,10 +37,10 @@ class ExternalToolClientPayloadBuilder(ExternalToolRuntimeComponent):
             download_url = f'/api/external-tools/packages/{filename}'
         return download_url
 
-    def _exec_launcher(self, package: dict, exec_name: str) -> dict:
-        execs = package.get('execs') if isinstance(package.get('execs'), dict) else {}
-        exec_item = execs.get(exec_name) if isinstance(execs.get(exec_name), dict) else {}
-        launcher = exec_item.get('launcher')
+    def _binary_launcher(self, package: dict, binary_name: str) -> dict:
+        binaries = package.get('binaries') if isinstance(package.get('binaries'), dict) else {}
+        binary_item = binaries.get(binary_name) if isinstance(binaries.get(binary_name), dict) else {}
+        launcher = binary_item.get('launcher')
         return dict(launcher) if isinstance(launcher, dict) else {}
 
     @staticmethod
@@ -57,8 +57,8 @@ class ExternalToolClientPayloadBuilder(ExternalToolRuntimeComponent):
             arch,
             f'client launcher {meta.get("tool_id") or meta.get("id") or "unknown"}',
         )
-        exec_name = self.install_support._primary_exec_name(package, meta)
-        launcher = self._exec_launcher(package, exec_name)
+        binary_name = self.install_support._primary_binary_name(package, meta)
+        launcher = self._binary_launcher(package, binary_name)
         if not launcher or str(launcher.get('type') or 'direct').strip().lower() in ('', 'direct'):
             raise ValueError('external tool module does not use a configurable launcher')
         return {
@@ -84,8 +84,8 @@ class ExternalToolClientPayloadBuilder(ExternalToolRuntimeComponent):
         filename = str(package_file.get('filename') or '').strip()
         if not filename:
             raise ValueError('platform package filename is required')
-        exec_name = self.install_support._primary_exec_name(package)
-        rel_path = (context.get('exec') or {}).get(exec_name) or ''
+        binary_name = self.install_support._primary_binary_name(package)
+        rel_path = (context.get('binary') or {}).get(binary_name) or ''
         return build_shared_client_install_payload(
             package,
             context,
@@ -122,8 +122,8 @@ class ExternalToolClientPayloadBuilder(ExternalToolRuntimeComponent):
         if isinstance(runtime_argv, list):
             runtime['argv'] = self._append_runtime_extra_args(runtime_argv, runtime, context)
         config_payload = config_payload_from_rendered(rendered_meta, lambda value: self._render_value(value, context))
-        exec_name = self.install_support._primary_exec_name(package, meta)
-        rel_path = (context.get('exec') or {}).get(exec_name) or ''
+        binary_name = self.install_support._primary_binary_name(package, meta)
+        rel_path = (context.get('binary') or {}).get(binary_name) or ''
         payload = build_shared_client_module_payload(
             meta,
             context,
@@ -139,7 +139,7 @@ class ExternalToolClientPayloadBuilder(ExternalToolRuntimeComponent):
             lifecycle=rendered_meta.get('lifecycle') or {},
             install_if_needed=False,
         )
-        launcher = self._exec_launcher(package, exec_name)
+        launcher = self._binary_launcher(package, binary_name)
         if launcher:
             payload['launcher'] = launcher
             override = self._launcher_override(launcher_override)
@@ -175,8 +175,8 @@ class ExternalToolClientPayloadBuilder(ExternalToolRuntimeComponent):
         if isinstance(runtime_argv, list):
             runtime['argv'] = self._append_runtime_extra_args(runtime_argv, runtime, context)
         config_payload = config_payload_from_rendered(rendered_meta, lambda value: self._render_value(value, context))
-        exec_name = self.install_support._primary_exec_name(package, meta)
-        rel_path = (context.get('exec') or {}).get(exec_name) or ''
+        binary_name = self.install_support._primary_binary_name(package, meta)
+        rel_path = (context.get('binary') or {}).get(binary_name) or ''
         payload = build_shared_client_module_payload(
             meta,
             context,
@@ -194,7 +194,7 @@ class ExternalToolClientPayloadBuilder(ExternalToolRuntimeComponent):
             run_id=run_id,
             timeout_sec=self.process_state._oneshot_timeout_sec(meta, runtime),
         )
-        launcher = self._exec_launcher(package, exec_name)
+        launcher = self._binary_launcher(package, binary_name)
         if launcher:
             payload['launcher'] = launcher
             override = self._launcher_override(launcher_override)
@@ -253,13 +253,13 @@ class ExternalToolClientPayloadBuilder(ExternalToolRuntimeComponent):
         context = self.context_runtime.build_client_package_context(package, platform_alias=platform_value, arch=arch_value)
         package_file = self._package_file(package, context.get('package_key') or '')
         filename = str(package_file.get('filename') or '').strip()
-        rel_path = self.catalog_service.resolve_exec_rel_path(package, exec_name, context.get('package_key') or '')
+        rel_path = self.catalog_service.resolve_binary_rel_path(package, exec_item.get('binary') or '', context.get('package_key') or '')
         payload_exec_options = {
             'arg_mode': exec_options.get('arg_mode') or exec_item.get('arg_mode') or 'raw_append',
             'cwd': cwd or exec_options.get('cwd') or exec_item.get('cwd') or '',
             'timeout_sec': exec_options.get('timeout_sec') if exec_options.get('timeout_sec') is not None else exec_item.get('timeout_sec'),
         }
-        launcher = self._exec_launcher(package, exec_name)
+        launcher = self._binary_launcher(package, exec_item.get('binary') or '')
         if launcher:
             payload_exec_options['launcher'] = launcher
         return build_shared_client_exec_payload(

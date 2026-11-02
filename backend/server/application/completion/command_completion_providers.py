@@ -299,10 +299,10 @@ class ExternalToolCommandCompletionProvider(ServerCompletionSessionMixin, Comman
     group = 'external_tool'
 
     SUBCOMMANDS = (
-        ('xt list', 'List external tool execs'),
-        ('xt info ', 'Show external tool exec info'),
-        ('xt which ', 'Show external tool executable path'),
-        ('xt run ', 'Run external tool exec with raw args'),
+        ('xt exec list', 'List available external tool execs'),
+        ('xt exec info ', 'Show Exec details'),
+        ('xt exec which ', 'Show installed executable path'),
+        ('xt exec ', 'Run an installed external tool exec'),
     )
 
     def __init__(self, server, external_tool_catalog_service):
@@ -344,8 +344,6 @@ class ExternalToolCommandCompletionProvider(ServerCompletionSessionMixin, Comman
                 continue
 
             insert_text = f'{prefix}{exec_name}'.strip()
-            if prefix == 'xt run ':
-                insert_text = f'{insert_text} '
 
             result.append(CompletionCandidate(
                 title=insert_text,
@@ -366,9 +364,9 @@ class ExternalToolCommandCompletionProvider(ServerCompletionSessionMixin, Comman
 
     def _resolve_exec_insert_prefix(self, argument_text: str) -> str:
         parts = str(argument_text or '').strip().split()
-        if parts and parts[0] in {'info', 'which', 'run'}:
-            return f'xt {parts[0]} '
-        return 'xt '
+        if len(parts) >= 2 and parts[0] == 'exec' and parts[1] in {'info', 'which'}:
+            return f'xt exec {parts[1]} '
+        return 'xt exec '
 
 
 class RemoteClientCommandCompletionProvider(CommandCompletionProvider):

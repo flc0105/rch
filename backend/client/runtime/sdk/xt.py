@@ -12,7 +12,7 @@ from core.platform.normalization import normalize_arch, normalize_platform
 from core.external_tools.selector import (
     package_arch_matches,
     package_platform_matches,
-    resolve_exec_rel_path,
+    resolve_binary_rel_path,
     select_package_key,
 )
 from core.external_tools.template import render_value
@@ -171,11 +171,11 @@ def _resolve_exec_target(exec_name: str) -> dict:
         if not package_arch_matches(package, arch_value):
             continue
         exec_item = (package.get('execs') or {}).get(target)
-        if not isinstance(exec_item, dict) or not exec_item.get('enabled', True):
+        if not isinstance(exec_item, dict):
             continue
         try:
             package_key = select_package_key(package, platform_alias=platform_value, arch=arch_value)
-            rel_path = resolve_exec_rel_path(package, target, package_key)
+            rel_path = resolve_binary_rel_path(package, exec_item.get('binary') or '', package_key)
         except Exception:
             continue
         matches.append({
@@ -226,16 +226,16 @@ def _client_package_context(package: dict, package_key: str) -> dict:
         install_template = '{{external_tools_root}}/{{package_id}}/{{version}}/{{package_key}}'
     context_payload['install_dir'] = render_value(install_template, context_payload)
 
-    rel_execs = {}
+    rel_binaries = {}
     raw_bins = {}
-    for name in (package.get('execs') or {}).keys():
+    for name in (package.get('binaries') or {}).keys():
         try:
-            rel_path = resolve_exec_rel_path(package, name, package_key).lstrip('/\\')
+            rel_path = resolve_binary_rel_path(package, name, package_key).lstrip('/\\')
         except Exception:
             continue
-        rel_execs[name] = rel_path
+        rel_binaries[name] = rel_path
         raw_bins[name] = os.path.join(context_payload['install_dir'], rel_path)
-    context_payload['exec'] = rel_execs
+    context_payload['binary'] = rel_binaries
     context_payload['bin'] = raw_bins
     return context_payload
 
@@ -274,7 +274,7 @@ def _build_exec_payload(exec_name: str, raw_args: Any = '', cwd: str = '') -> di
     context_payload = _client_package_context(package, package_key)
     exec_item = target.get('exec_item') if isinstance(target.get('exec_item'), dict) else {}
     exec_options = target.get('exec_options') if isinstance(target.get('exec_options'), dict) else {}
-    rel_path = resolve_exec_rel_path(package, exec_name, package_key)
+    rel_path = resolve_binary_rel_path(package, exec_item.get('binary') or '', package_key)
     payload = client_exec_payload(
         package,
         context_payload,

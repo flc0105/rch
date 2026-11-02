@@ -83,7 +83,7 @@ class ExternalToolRuntimeBase:
             package,
             package_key,
             install_dir,
-            self.catalog_service.resolve_exec_rel_path,
+            self.catalog_service.resolve_binary_rel_path,
             self._expand_path,
         )
     def _missing_exec_paths(self, abs_bins: dict) -> dict:

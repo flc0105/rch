@@ -23,7 +23,7 @@
       "notes": "Thin xt adapter for sqlite-web 0.8.1. Uses Client Python >=3.9. First start installs pinned dependencies into bundle-local vendor/pyX.Y using pip; later starts reuse them."
     }
   },
-  "execs": {
+  "binaries": {
     "sqlite-web": {
       "paths": {
         "common-all": "app.py"
@@ -47,7 +47,7 @@
       "display_name": "SQLite Web",
       "description": "Starts sqlite-web without binding the tool to a user database at launch. Open a Client-side path or upload a database from the browser after the Web UI starts.",
       "execution": "daemon",
-      "exec": "sqlite-web",
+      "binary": "sqlite-web",
       "params": [
         {
           "name": "instance_name",

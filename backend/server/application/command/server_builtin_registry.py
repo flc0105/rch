@@ -79,11 +79,8 @@ SERVER_COMMAND_SPECS = (
     command('saveout', 'Save Client command output as Artifact', expects_arguments=True),
     command('notify', 'Run a Client command and notify when finished', expects_arguments=True),
     command('xt', 'External tool catalog and execution', children=(
-        ('list', 'List external tools', 'xt list'),
-        ('info', 'Show external tool details', 'xt info <name>'),
-        ('which', 'Locate external executable', 'xt which <name>'),
-        ('run', 'Execute external tool', 'xt run <name> [--] [args]'),
-    ), default='list', allow_direct=True),
+        ('exec', 'List or execute installed external tool commands', 'xt exec list [--json] | xt exec info|which <name> | xt exec <name> [--] [args]'),
+    ), default='help'),
     command('help', 'Show Server builtin commands and subcommands', handler='server_help'),
 )
 

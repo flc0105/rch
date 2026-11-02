@@ -1323,7 +1323,7 @@ export default {
         package_meta: pkg,
         package: pkg.package || {},
         package_install: pkg.install || {},
-        package_execs: pkg.execs || {},
+        package_binaries: pkg.binaries || {},
         package_platforms: pkg.platforms || [],
         package_archs: pkg.archs || [],
         version: module.version || pkg.version || '',
@@ -1352,10 +1352,10 @@ export default {
 
     getModuleLauncher(module) {
       if (!module) return null
-      const execName = String(module.exec || '').trim()
-      const execs = module.package_execs && typeof module.package_execs === 'object' ? module.package_execs : {}
-      const execItem = execName && execs[execName] && typeof execs[execName] === 'object' ? execs[execName] : {}
-      const launcher = execItem.launcher && typeof execItem.launcher === 'object' ? execItem.launcher : null
+      const binaryName = String(module.binary || '').trim()
+      const binaries = module.package_binaries && typeof module.package_binaries === 'object' ? module.package_binaries : {}
+      const binaryItem = binaryName && binaries[binaryName] && typeof binaries[binaryName] === 'object' ? binaries[binaryName] : {}
+      const launcher = binaryItem.launcher && typeof binaryItem.launcher === 'object' ? binaryItem.launcher : null
       const launcherType = String(launcher?.type || 'direct').trim().toLowerCase()
       return launcher && launcherType !== 'direct' ? launcher : null
     },

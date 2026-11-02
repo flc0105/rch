@@ -20,7 +20,7 @@
       "root": ""
     }
   },
-  "execs": {
+  "binaries": {
     "python-bundle-demo": {
       "paths": {
         "common-all": "app.py"
@@ -44,7 +44,7 @@
       "display_name": "Python Bundle Demo Web",
       "description": "Serves the bundled static demo page with Flask.",
       "execution": "daemon",
-      "exec": "python-bundle-demo",
+      "binary": "python-bundle-demo",
       "params": [
         {
           "name": "port",

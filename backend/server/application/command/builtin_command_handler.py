@@ -6,8 +6,9 @@ from server.application.command.builtin_command_support import (
     PinnedPathBuiltinSupport,
     RttBuiltinSupport,
     ScriptBuiltinSupport,
-    UploadBuiltinSupport, ExternalToolCliBuiltinSupport,
+    UploadBuiltinSupport,
 )
+from server.application.command.external_tool_cli_builtin_support import ExternalToolCliBuiltinSupport
 from server.application.command.command_output_builtin_support import CommandOutputBuiltinSupport
 from server.application.command.command_notify_builtin_support import CommandNotifyBuiltinSupport
 from server.application.command.control_builtin_support import ControlBuiltinSupport
