@@ -123,26 +123,16 @@ class PtyProtocolTests(unittest.TestCase):
         self.assertEqual(bridge.forward_keys(b']\x1dx'), (b'\x1d\x1dx', False))
         self.assertEqual(bridge.forward_keys(b'\x1dq'), (b'', True))
 
-    def test_width_override_caps_open_and_later_resize(self):
-        api = FakeApi()
-        term = ScriptedTerminal([None, b'\x1dq'], dimensions=[(110, 30), (80, 32)])
-        ws = FakeSocket([status('open')])
-        ptycli.run_pty(api, 'abc', 'ws://host/ws/events', terminal=term,
-                       connect=lambda *a, **kw: ws, cols_limit=55)
-        self.assertEqual(api.calls[0][2]['cols'], 55)
-        self.assertIn({'type': 'resize', 'cols': 55, 'rows': 32}, ws.sent)
-
-    def test_pty_args_shell_and_width_cap(self):
-        self.assertEqual(ptycli.parse_pty_options(''), ('', None))
-        self.assertEqual(ptycli.parse_pty_options('/bin/zsh'), ('/bin/zsh', None))
-        self.assertEqual(ptycli.parse_pty_options('--cols 55'), ('', 55))
-        self.assertEqual(ptycli.parse_pty_options('/bin/bash --cols=60'), ('/bin/bash', 60))
-        for invalid in ('--cols', '--cols nope', '--cols 8', '--cols 500',
-                        '--cols 60 --cols 80', '/bin/zsh extra', '--not-an-option'):
+    def test_pty_args_accept_optional_shell_only(self):
+        self.assertEqual(ptycli.parse_pty_options(''), '')
+        self.assertEqual(ptycli.parse_pty_options('/bin/zsh'), '/bin/zsh')
+        self.assertEqual(ptycli.parse_pty_options('"/bin/zsh"'), '/bin/zsh')
+        for invalid in ('--cols 55', '/bin/bash --cols=60',
+                        '/bin/zsh extra', '--not-an-option'):
             with self.subTest(invalid=invalid), self.assertRaises(ptycli.RchPtyError):
                 ptycli.parse_pty_options(invalid)
 
-    def test_cli_routes_width_override_to_pty_only(self):
+    def test_cli_routes_remote_pty_shell(self):
         import io
         from unittest.mock import patch
         import rchcli
@@ -150,14 +140,14 @@ class PtyProtocolTests(unittest.TestCase):
         api.connections = lambda: [
             {'client_id': 'client-A', 'hostname': 'Mac', 'connection_state': 'online',
              'connected_at': '2026-11-01T00:00:00'}]
-        commands = iter(['0', ':pty /bin/bash --cols 60', 'bg', 'quit'])
+        commands = iter(['0', ':pty /bin/bash', 'bg', 'quit'])
         console = rchcli.RemoteConsole(api, object(), 'tab-id', output=io.StringIO(),
                                        reader=lambda _: next(commands),
                                        ws_url='ws://host/ws/events')
         with patch('rchcli_pty.run_pty') as run:
             console.repl()
         run.assert_called_once_with(api, 'client-A', 'ws://host/ws/events',
-                                    shell='/bin/bash', cols_limit=60)
+                                    shell='/bin/bash')
         self.assertEqual(api.calls, [])
 
     def test_resize_and_terminal_restore_on_close(self):
@@ -166,6 +156,8 @@ class PtyProtocolTests(unittest.TestCase):
         ws = FakeSocket([status('open')])
         ptycli.run_pty(api, 'abc', 'ws://host/ws/events', terminal=term,
                        connect=lambda *a, **kw: ws)
+        self.assertEqual(api.calls[0][2]['cols'], 60)
+        self.assertEqual(api.calls[0][2]['rows'], 20)
         self.assertIn({'type': 'resize', 'cols': 90, 'rows': 35}, ws.sent)
         self.assertEqual((term.entries, term.exits), (1, 1))
 
@@ -228,6 +220,24 @@ class PtyProtocolTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 with terminal:
                     raise ValueError('injected')
+            self.assertEqual(termios.tcgetattr(slave), old)
+        finally:
+            os.close(master)
+            os.close(slave)
+
+    @unittest.skipUnless(os.name == 'posix', 'Requires a real Unix PTY')
+    def test_unix_terminal_private_screen_and_cursor_restoration(self):
+        master, slave = pty.openpty()
+        try:
+            old = termios.tcgetattr(slave)
+            terminal = ptycli.UnixTerminal(slave, slave)
+            with terminal:
+                enter = os.read(master, 4096)
+                self.assertIn(b'\x1b[?1049h\x1b[2J\x1b[H', enter)
+                terminal.write(b'remote$ ')
+            exit_data = os.read(master, 4096)
+            self.assertIn(b'\x1b[?1049l', exit_data)
+            self.assertNotIn(b'\x1b[H', exit_data)
             self.assertEqual(termios.tcgetattr(slave), old)
         finally:
             os.close(master)

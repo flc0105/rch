@@ -254,6 +254,7 @@ class RemoteConsole:
         self.color = self.color_backend != 'none'
         self.unfinished_cancel = None
         self.completion_draft = None
+        self._readline = None
 
     def write(self, message, color=None):
         # Pythonista's console rejects NUL in text; show it visibly instead.
@@ -477,7 +478,7 @@ class RemoteConsole:
         self.line('Next input appends to this command; Enter runs it, :complete browses further, :clear discards.')
 
     def _install_readline_completion(self):
-        # Pythonista may not provide readline. :complete remains available there.
+        # Pythonista has no readline; system terminals may use GNU or macOS libedit.
         if self.reader is not input:
             return None
         try:
@@ -487,24 +488,75 @@ class RemoteConsole:
         except (ImportError, AttributeError):
             return None
         cache = []
+
         def complete(text, state):
             if state == 0:
                 cache.clear()
                 raw = readline.get_line_buffer()
-                if readline.get_endidx() != len(raw):
+                end = readline.get_endidx()
+                if end != len(raw):
                     return None
+                # Server insert_text contains the whole command. Readline/libedit
+                # replaces only its active span, which may begin after `download `.
+                # Return that span's replacement, not the command prefix twice.
                 try:
-                    cache.extend(str(i['insert_text']) for i in self.completion_candidates(raw))
+                    begin = readline.get_begidx()
+                except AttributeError:
+                    begin = 0
+                if not isinstance(begin, int) or begin < 0 or begin > end:
+                    begin = 0
+                if text and raw[begin:end] != text and raw.endswith(text):
+                    # Some libedit builds report different word boundaries.
+                    begin = end - len(text)
+                elif not text and begin == 0 and raw.endswith((' ', '\t')):
+                    begin = end  # Empty active word after an argument separator.
+                prefix = raw[:begin]
+                try:
+                    for item in self.completion_candidates(raw):
+                        full = self._completion_text(item)
+                        if full.startswith(prefix):
+                            cache.append(full[begin:])
                 except RchCliError:
                     return None
             return cache[state] if state < len(cache) else None
+
         readline.set_completer_delims('')
         readline.set_completer(complete)
-        readline.parse_and_bind('tab: complete')
+        backend = str(getattr(readline, 'backend', '') or '').lower()
+        if backend in ('editline', 'libedit') or (not backend and 'libedit' in (readline.__doc__ or '').lower()):
+            readline.parse_and_bind('bind ^I rl_complete')
+        else:
+            readline.parse_and_bind('tab: complete')
+        self._readline = readline
+
         def restore():
+            self._readline = None
             readline.set_completer(old_completer)
             readline.set_completer_delims(old_delims)
         return restore
+
+    def _repl_prompt(self, name, color):
+        label = name + '> '
+        if self.color_backend == 'ansi' and self._readline is not None:
+            # Readline must not count color escapes as printable prompt columns.
+            return '\001' + color + '\002' + label + '\001' + self.RESET + '\002'
+        return self.style(label, color)
+
+    def _read_repl_input(self, prompt, draft):
+        if not draft or self._readline is None:
+            return self.read_console_input(prompt), False
+        readline = self._readline
+
+        def prefill():
+            readline.insert_text(draft)
+
+        # Keep the draft in the editable input buffer, not in the prompt:
+        # Up/Down and cursor movement must replace or edit the actual line.
+        readline.set_startup_hook(prefill)
+        try:
+            return self.read_console_input(prompt), True
+        finally:
+            readline.set_startup_hook(None)
 
     def _render_preview(self, preview):
         if not isinstance(preview, dict):
@@ -707,7 +759,7 @@ class RemoteConsole:
         self.line('  bg, exit                Return to server>')
         self.line('  :complete <input>       Choose a completion; :complete again continues draft')
         self.line('  :clear                  Discard a completion draft')
-        self.line('  :pty [shell] [--cols N] Remote PTY (macOS/Linux; Ctrl+] then q closes)')
+        self.line('  :pty [shell]           Remote PTY (macOS/Linux; Ctrl+] then q closes)')
         self.line('  Tab                     Complete input (when readline is available)')
         self.line('  Ctrl+C                  Request task cancellation, wait for final state')
         self.line('  Other commands          Executed by RCH Server')
@@ -727,9 +779,11 @@ class RemoteConsole:
                         self.write(draft)
                     prompt = ''
                 else:
-                    prompt = self.style(name + '> ', prompt_color) + draft
+                    prompt = self._repl_prompt(name, prompt_color)
+                    if self._readline is None:
+                        prompt += draft
                 try:
-                    raw = self.read_console_input(prompt)
+                    raw, editable_draft = self._read_repl_input(prompt, draft)
                 except RchCliError as exc:
                     self.line('Error: ' + str(exc), color=self.RED)
                     continue
@@ -741,6 +795,11 @@ class RemoteConsole:
                     continue
                 raw_text = str(raw or '')
                 local_command = raw_text.strip()
+                # With readline the draft was inserted into the editable buffer.
+                # Typing :complete or :clear after it keeps the picker shortcuts.
+                if editable_draft and draft and local_command in (draft + ':complete', draft + ':clear'):
+                    local_command = local_command[len(draft):]
+                    raw_text = local_command
                 try:
                     if local_command == ':clear':
                         self.completion_draft = None
@@ -749,7 +808,7 @@ class RemoteConsole:
                         query = raw_text.strip('\n\r').lstrip()[len(':complete'):].lstrip()
                         self.show_completions(query or draft)
                         continue
-                    command = (draft + raw_text).strip() if draft else local_command
+                    command = (draft + raw_text).strip() if draft and not editable_draft else local_command
                     if not command:
                         continue
                     if '\x00' in command:
@@ -761,12 +820,9 @@ class RemoteConsole:
                                 raise RchCliError('PTY requires a macOS/Linux system terminal')
                             from rchcli_pty import RchPtyError, parse_pty_options, run_pty
                             try:
-                                shell, cols_limit = parse_pty_options(command[5:].strip())
-                                options = {'shell': shell}
-                                if cols_limit is not None:
-                                    options['cols_limit'] = cols_limit
+                                shell = parse_pty_options(command[5:].strip())
                                 run_pty(self.api, self.selected['client_id'], self.ws_url,
-                                        **options)
+                                        shell=shell)
                             except RchPtyError as exc:
                                 self.line('PTY: ' + str(exc), color=self.RED)
                             else:

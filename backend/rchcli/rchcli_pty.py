@@ -42,6 +42,9 @@ class UnixTerminal:
         self._saved = termios.tcgetattr(self.input_fd)
         try:
             tty.setraw(self.input_fd)
+            # PTY gets its own display. Keep the ordinary CLI scrollback and
+            # cursor position in the main screen, even if remote Vim exits badly.
+            self.write(b'\x1b[?1049h\x1b[2J\x1b[H')
         except BaseException:
             termios.tcsetattr(self.input_fd, termios.TCSADRAIN, self._saved)
             self._saved = None
@@ -53,7 +56,7 @@ class UnixTerminal:
             try:
                 # A detached Vim may not get to emit its final alternate-screen
                 # reset before the PTY socket closes. Restore our local display.
-                self.write(b'\x1b[?25h\x1b[?1049l\x1b[0m')
+                self.write(b'\x1b[?25h\x1b[0m\x1b[?1049l')
             finally:
                 termios.tcsetattr(self.input_fd, termios.TCSADRAIN, self._saved)
                 self._saved = None
@@ -126,33 +129,14 @@ class PtyBridge:
 
 
 def parse_pty_options(raw):
-    """Return (remote shell, optional width cap) for the local :pty command."""
+    """Return the optional remote shell for the local :pty command."""
     try:
         tokens = shlex.split(raw)
     except ValueError as exc:
         raise RchPtyError(f'Invalid PTY arguments: {exc}') from exc
-    shell = ''
-    cols_limit = None
-    index = 0
-    while index < len(tokens):
-        arg = tokens[index]
-        if arg == '--cols' or arg.startswith('--cols='):
-            if cols_limit is not None:
-                raise RchPtyError('--cols specified twice')
-            if arg == '--cols':
-                index += 1
-                value = tokens[index] if index < len(tokens) else ''
-            else:
-                value = arg.partition('=')[2]
-            if not value.isdecimal() or not 20 <= int(value) <= 400:
-                raise RchPtyError('--cols must be an integer between 20 and 400')
-            cols_limit = int(value)
-        elif arg.startswith('-') or shell:
-            raise RchPtyError('Usage: :pty [shell] [--cols 20..400]')
-        else:
-            shell = arg
-        index += 1
-    return shell, cols_limit
+    if len(tokens) > 1 or (tokens and tokens[0].startswith('-')):
+        raise RchPtyError('Usage: :pty [shell]')
+    return tokens[0] if tokens else ''
 
 
 def pty_websocket_url(event_url, ws_path):
@@ -167,7 +151,7 @@ def pty_websocket_url(event_url, ws_path):
     return urlunsplit((event.scheme, event.netloc, proxy_prefix + issued.path, issued.query, ''))
 
 
-def run_pty(api, client_id, event_url, shell='', *, cols_limit=None, terminal=None, connect=None, open_timeout=20):
+def run_pty(api, client_id, event_url, shell='', *, terminal=None, connect=None, open_timeout=20):
     """Open and drive a remote PTY until shell exit, Ctrl+] q, or disconnect.
 
     ``api`` is the existing rchcli.RchApi; ``event_url`` is its event WS URL.
@@ -183,8 +167,6 @@ def run_pty(api, client_id, event_url, shell='', *, cols_limit=None, terminal=No
             raise RchPtyError('Install websockets>=14 to use PTY mode') from exc
     try:
         cols, rows = terminal.size()
-        if cols_limit is not None:
-            cols = min(cols, cols_limit)
     except OSError as exc:
         raise RchPtyError(f'Cannot read local terminal size: {exc}') from exc
     result = api.request('POST', '/api/connections/' + quote(client_id, safe='') + '/pty/open', {
@@ -219,8 +201,6 @@ def run_pty(api, client_id, event_url, shell='', *, cols_limit=None, terminal=No
                 while bridge.status == 'open':
                     # Polling dimensions also works on terminals without SIGWINCH.
                     next_size = terminal.size()
-                    if cols_limit is not None:
-                        next_size = (min(next_size[0], cols_limit), next_size[1])
                     if next_size != last_size:
                         ws.send(json.dumps({'type': 'resize', 'cols': next_size[0], 'rows': next_size[1]}))
                         last_size = next_size

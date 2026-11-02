@@ -645,6 +645,10 @@ export default {
         return this.buildXtCommandCompletionQuery(rawText, argumentText)
       }
 
+      if (commandName === 'job') {
+        return this.buildJobCommandCompletionQuery(rawText, argumentText)
+      }
+
       return {
         rawText,
         commandName,
@@ -705,6 +709,20 @@ export default {
         fileSystemProxyCommand: proxyCommand,
         fileSystemTargetCommand: commandPrefix,
         fileSystemCompletionMode: String(rule?.mode || 'path'),
+      }
+    },
+
+    buildJobCommandCompletionQuery(rawText, argumentText) {
+      const subcommand = String(argumentText || '').trim().split(/\s+/, 1)[0].toLowerCase()
+      const contextKey = ['start', 'stop', 'status', 'logs'].includes(subcommand) ? subcommand : 'root'
+      const requestInput = contextKey === 'root' ? 'job ' : `job ${contextKey} `
+
+      return {
+        rawText,
+        commandName: 'job',
+        requestInput,
+        cacheKey: this.buildCommandCompletionCandidateCacheKey('job', contextKey),
+        requiresRemoteClient: false,
       }
     },
 

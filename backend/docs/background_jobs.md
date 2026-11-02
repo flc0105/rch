@@ -151,6 +151,12 @@ Job 的模块管理、执行查询和运行控制分属不同操作。模块目�
 | `job status <name>` | Client 查询 `JobManager` 当前状态 |
 | `job stop <name>` | Client 发送停止请求，最终状态仍依赖 Job 本身上报 |
 | `job stop-all` | Client 向当前所有运行 Job 发停止请求 |
+| `job logs <name>` | Server 读取当前设备指定 Job 最近一次实例的已持久化上报消息 |
+| `job logs <name> --follow`（或 `-f`） | Server 持续推送该实例新增上报；Ctrl+C 请求取消查看任务，Job 继续运行 |
+
+Job 名称补全统一由 `JobCommandCompletionProvider` 提供：`job start` 从当前设备适用的 Catalog 读取模块名称，`job stop` 与 `job status` 从该设备的运行中或正在停止的实例读取 Job Key；`job logs` 则包含当前设备已保存的历史实例名称。Web Terminal 与远程 RCH CLI 复用相同的补全 API。
+
+`job logs` 是 Server Builtin，Web Terminal、Server Console 与远程 RCH CLI 通过同一命令解释器执行。默认只读取一次；`--follow` 每两秒拉取最新上报并按消息序号去重，到 Job 结束时自动返回；执行期间可以使用现有 Task Cancel（CLI 的 Ctrl+C 或 Web 取消操作）停止查看，不会停止 Job 本身。
 
 Server Builtin `job` 的命令候选来自 `SERVER_COMMAND_REGISTRY`，不纳入 Client 命令 Manifest。Job 的执行/控制属于内部请求，不在首批 Command/Alias/Script Activity Center 记录范围内。需要区分 HTTP 请求已接受、前台控制命令已完成和后台 Job 最终状态三个时点。
 

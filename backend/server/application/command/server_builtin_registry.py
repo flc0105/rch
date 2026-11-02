@@ -56,6 +56,7 @@ SERVER_COMMAND_SPECS = (
     command('job', 'Manage Client jobs from the Server', children=(
         ('list', 'List available Server jobs (optionally --json)', 'job list [--json]'),
         ('start', 'Start a Client job', 'job start <name> [--mode MODE] [--params JSON]', 'public', ('mode','params')),
+        ('logs', 'Read stored Job reports or follow new reports', 'job logs <name> [--follow|-f]'),
         ('ps', 'Show running jobs', 'job ps'),
         ('status', 'Query job state', 'job status <name>'),
         ('stop', 'Stop a running job', 'job stop <name>'),

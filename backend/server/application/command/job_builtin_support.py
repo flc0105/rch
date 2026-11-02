@@ -1,6 +1,7 @@
 """Server-owned Job CLI; only internal job_control packets reach the Client."""
 import json
 import shlex
+import time
 
 from server.application.command.command_types import COMMAND_TYPE_JOB_CONTROL
 from core.platform.catalog_visibility import visible_on_platform
@@ -10,7 +11,7 @@ from core.utils.job_control_result import decode_job_control_result
 class JobBuiltinSupport:
     HELP = (
         'job [list|start <name> [--mode inproc|subprocess] [--params JSON]|'
-        'stop <name>|ps|status <name>|stop-all]'
+        'stop <name>|ps|status <name>|stop-all|logs <name> [--follow|-f]]'
     )
 
     def __init__(self, server, conn, remote_execution_service, history_entry_id_provider=None):
@@ -64,6 +65,79 @@ class JobBuiltinSupport:
             history.record_background_job_result(self.conn, entry_id, result)
         yield (status, result['message'], *rest)
 
+    def _job_logs(self, args, job_api):
+        """Stream persisted report messages using the same Server Job API as Web."""
+        follow = False
+        names = []
+        for token in args:
+            if token in ('--follow', '-f'):
+                if follow:
+                    yield 0, 'Specify --follow only once'
+                    return
+                follow = True
+            elif token.startswith('-'):
+                yield 0, f'Unknown job logs option: {token}'
+                return
+            else:
+                names.append(token)
+        if len(names) != 1:
+            yield 0, 'Usage: job logs <name> [--follow|-f]'
+            return
+
+        name = names[0]
+        try:
+            # The list is newest first. Keep following this exact job_id rather
+            # than switching silently when a new instance with the same name runs.
+            rows = job_api.list_background_jobs(self.client_id)
+            row = next((item for item in rows if isinstance(item, dict)
+                        and any(str(item.get(key) or '').casefold() == name.casefold()
+                                for key in ('job_key', 'job_name', 'job_id'))), None)
+            if not row:
+                yield 0, f'No reported Job found for: {name}'
+                return
+            job_id = str(row.get('job_id') or '')
+            if not job_id:
+                yield 0, 'Job record is missing its job_id'
+                return
+            job = job_api.get_background_job(self.client_id, job_id)
+            yield 1, (f"Job {job.get('job_key') or job.get('job_name') or name} "
+                      f"[{job.get('state') or 'unknown'}] {job_id}")
+            cursor = 0
+            while True:
+                # These records describe historical Job output. An error report
+                # is not an error in the 'job logs' query itself.
+                for message in job.get('messages') or []:
+                    if not isinstance(message, dict):
+                        continue
+                    try:
+                        seq = int(message.get('seq') or 0)
+                    except (ValueError, TypeError):
+                        continue
+                    if seq <= cursor:
+                        continue
+                    cursor = seq
+                    text = str(message.get('text') or '')
+                    if text:
+                        if int(message.get('status') or 0) == 0:
+                            text = '[error] ' + text
+                        yield 1, text
+                if not follow:
+                    return
+                if str(job.get('state') or '').lower() not in ('running', 'stopping'):
+                    yield 1, '[Job finished]'
+                    return
+                # Foreground Task cancellation is the existing Web/CLI Ctrl+C
+                # mechanism. No separate control command or CLI parser is needed.
+                for _ in range(10):
+                    task = self.conn.get_foreground_task() or {}
+                    if task.get('cancel_requested'):
+                        yield 0, 'command cancelled'
+                        return
+                    time.sleep(0.2)
+                job = job_api.get_background_job(self.client_id, job_id)
+        except (ValueError, FileNotFoundError, LookupError) as exc:
+            yield 0, str(exc)
+
     def job(self, arg=''):
         from server.application.command.server_builtin_registry import SERVER_COMMAND_REGISTRY
         try:
@@ -96,6 +170,10 @@ class JobBuiltinSupport:
                 return
             names = [str(item.get('job_name') or '') for item in jobs if item.get('job_name')]
             yield 1, '\n'.join(names) if names else 'No background jobs available'
+            return
+
+        if subcommand == 'logs':
+            yield from self._job_logs(args, job_api)
             return
 
         if subcommand == 'start':

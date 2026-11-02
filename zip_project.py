@@ -11,6 +11,8 @@ BASE_DIR = Path(__file__).resolve().parent
 TARGET_DIRS = [
     "backend",
     "frontend",
+    "desktop_notifier",
+    "tools"
 ]
 
 # 需要忽略的路径，相对于 BASE_DIR

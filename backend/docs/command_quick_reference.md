@@ -50,6 +50,7 @@
 | `job list` | 查看 Server 已登记的 Job 定义；可选 `--json` |
 | `job start <name> [--mode MODE] [--params JSON]` | 在目标 Client 启动 Job，并可指定运行模式和参数 |
 | `job ps` / `job status <name>` | 查看正在运行的 Job / 单个 Job 状态 |
+| `job logs <name> [--follow\|-f]` | 查看该设备最新一次 Job 实例的上报内容；可持续追踪并取消查看任务 |
 | `job stop <name>` / `job stop-all` | 停止指定 Job / 所有正在运行的 Job |
 | `history` / `history list` | 查看 Quick History 的 Recent 列表 |
 | `history run <index>` | 按 Quick History 序号重放命令，**可能再次执行原来的危险操作** |

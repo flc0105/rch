@@ -434,7 +434,7 @@ class RemoteClientCommandCompletionProvider(CommandCompletionProvider):
 
 
 class JobCommandCompletionProvider(ServerCompletionSessionMixin, CommandCompletionProvider):
-    """Dynamic job start candidates; static subcommands come from the registry."""
+    """Job names for lifecycle commands and stored reports via shared Web/CLI completion."""
     command_names = ('job',)
     source = 'server_job'
     group = 'job'
@@ -443,21 +443,49 @@ class JobCommandCompletionProvider(ServerCompletionSessionMixin, CommandCompleti
         ServerCompletionSessionMixin.__init__(self, server)
 
     def complete(self, context: CompletionContext) -> list[CompletionCandidate]:
-        tail = str(context.argument_text or '').strip().lower()
-        if tail and tail != 'start' and not tail.startswith('start '):
+        parts = str(context.argument_text or '').lstrip().split(None, 1)
+        if not parts or parts[0].lower() not in ('start', 'stop', 'status', 'logs'):
+            return []
+        action = parts[0].lower()
+        # Names are the second argument only. Do not suggest replacements after
+        # a complete name when editing options such as --mode / --params.
+        if len(parts) > 1 and len(parts[1].split()) > 1:
             return []
         client_id = self.get_client_id(context)
         if not client_id:
             return []
-        try:
-            items = self.server.web_service.job_api.list_background_job_catalog(client_id)
-        except (AttributeError, ValueError, LookupError):
-            return []
-        platform = self.get_client_platform(context)
-        return [CompletionCandidate(
-            title=f'job start {name}', insert_text=f'job start {name}',
-            description='Start a Server-managed job on this Client', source=self.source,
-            group=self.group, kind='job', name=name, priority=31 + i,
-        ) for i, item in enumerate(items or [])
-            if (name := str(item.get('job_name') or '').strip())
-            and visible_on_platform(item, platform)]
+        job_api = self.server.web_service.job_api
+        names = []
+        # Status may also report not_running for catalog Jobs. Stop should only
+        # suggest Job keys that are actually active on the selected device.
+        if action in ('stop', 'status', 'logs'):
+            try:
+                jobs = job_api.list_background_jobs(client_id)
+            except (AttributeError, ValueError, LookupError):
+                jobs = []
+            names.extend(str(item.get('job_key') or item.get('job_name') or '').strip()
+                         for item in (jobs or []) if isinstance(item, dict)
+                         and (action == 'logs' or str(item.get('state') or '').lower() in ('running', 'stopping')))
+        if action in ('start', 'status'):
+            try:
+                items = job_api.list_background_job_catalog(client_id)
+            except (AttributeError, ValueError, LookupError):
+                items = []
+            platform = self.get_client_platform(context)
+            names.extend(str(item.get('job_name') or '').strip() for item in (items or [])
+                         if isinstance(item, dict) and visible_on_platform(item, platform))
+        seen = set()
+        result = []
+        for name in names:
+            if not name or name.lower() in seen:
+                continue
+            seen.add(name.lower())
+            result.append(CompletionCandidate(
+                title=f'job {action} {name}', insert_text=f'job {action} {name}',
+                description={'start': 'Start this Job', 'stop': 'Stop this running Job',
+                             'status': 'Show this Job status',
+                             'logs': 'View stored Job reports'}[action],
+                source=self.source, group=self.group, kind='job', name=name,
+                priority=31 + len(result),
+            ))
+        return result
