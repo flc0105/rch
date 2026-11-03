@@ -56,7 +56,8 @@ class AgentBuilder:
     def build_agent(self, server_host: str, server_port: int,
                     web_port: int, target_os: str = 'mac',
                     builder: str = '', target_arch: str = '',
-                    server_web_scheme: str = 'http', server_web_host: str = '') -> dict:
+                    server_web_scheme: str = 'http', server_web_host: str = '',
+                    listener_protocol: str = 'tcp', tls_fingerprint: str = '') -> dict:
         builder = (builder or '').strip().lower()
         if not builder:
             raise ValueError('builder is required')
@@ -64,6 +65,11 @@ class AgentBuilder:
         target_os = (target_os or 'mac').strip().lower()
         server_web_scheme = (server_web_scheme or 'http').strip().lower() or 'http'
         server_web_host = (server_web_host or server_host).strip() or server_host
+
+        if listener_protocol not in ('tcp', 'tls_tcp'):
+            raise ValueError('Invalid listener transport')
+        if listener_protocol == 'tls_tcp' and (builder != 'bundle' or len(tls_fingerprint) != 64):
+            raise ValueError('TLS/TCP requires Bundle and a pinned server certificate')
 
         if builder not in self.SUPPORTED_BUILDERS:
             raise ValueError(f'Unsupported builder: {builder}')
@@ -88,6 +94,9 @@ class AgentBuilder:
                 server_web_scheme=server_web_scheme,
                 server_web_host=server_web_host,
             )
+            if builder == 'bundle':
+                common_args['listener_protocol'] = listener_protocol
+                common_args['tls_fingerprint'] = tls_fingerprint
             module_name, class_name, _ = AGENT_BUILDERS[builder]
             build_module = importlib.import_module(module_name)
             builder_class = getattr(build_module, class_name)

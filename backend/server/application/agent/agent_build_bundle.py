@@ -18,7 +18,8 @@ class BundleBuilder:
     def build(self, *, work_dir: str, server_host: str, server_port: int,
               web_port: int, file_transfer_port: int, build_id: str, build_version: str,
               target_os: str, target_arch: str,
-              server_web_scheme: str = 'http', server_web_host: str = '') -> dict:
+              server_web_scheme: str = 'http', server_web_host: str = '',
+              listener_protocol: str = 'tcp', tls_fingerprint: str = '') -> dict:
         # Bundle is platform-independent; target_os and target_arch are only for
         # the common builder dispatch interface.
         staging_dir = os.path.join(work_dir, 'bundle')
@@ -33,6 +34,8 @@ class BundleBuilder:
             build_version,
             server_web_scheme,
             server_web_host,
+            listener_protocol,
+            tls_fingerprint,
         )
         bundle_name = bundle_archive_name(build_id)
         bundle_path = os.path.join(work_dir, bundle_name)

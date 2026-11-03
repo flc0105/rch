@@ -10,6 +10,8 @@ PROFILE_DIR = os.path.join(BASE_DIR, 'profiles')
 DEFAULT_CONFIG = {
     'server_host': '127.0.0.1',
     'server_port': 9999,
+    'server_transport': 'tcp',
+    'server_tls_fingerprint': '',
     'server_web_scheme': 'http',
     'server_web_host': '127.0.0.1',
     'server_web_port': 8085,

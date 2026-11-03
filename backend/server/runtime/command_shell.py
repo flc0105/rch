@@ -229,7 +229,7 @@ class ServerCommandShell:
                 time.sleep(3600)
             except KeyboardInterrupt:
                 print(Colors.RESET)
-                self.server.listener.stop()
+                self.server.listener_manager.stop_all()
                 return
 
     def _print_unread_messages(self, session: ClientSession):
@@ -446,7 +446,7 @@ class ServerCommandShell:
             return
 
         if cmd in ['quit', 'exit']:
-            self.server.listener.stop()
+            self.server.listener_manager.stop_all()
             sys.exit(0)
 
         if cmd in ['cls', 'clear']:
@@ -482,7 +482,7 @@ class ServerCommandShell:
                 self._handle_console_command(cmd)
             except KeyboardInterrupt:
                 print(Colors.RESET)
-                self.server.listener.stop()
+                self.server.listener_manager.stop_all()
                 sys.exit(0)
             except _ConsoleInputUnavailable as e:
                 write(0, f'[-] Console input unavailable; continuing without interactive console ({e})')

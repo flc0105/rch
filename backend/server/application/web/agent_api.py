@@ -37,6 +37,8 @@ class WebAgentApi:
         server_web_scheme: str = 'http',
         server_web_host: str = '',
         source: str = 'manual',
+        listener_protocol: str = 'tcp',
+        tls_fingerprint: str = '',
     ):
         lifecycle_context = {
             'builder': str(builder or '').strip(),
@@ -54,6 +56,8 @@ class WebAgentApi:
                 target_arch=target_arch,
                 server_web_scheme=server_web_scheme,
                 server_web_host=server_web_host,
+                listener_protocol=listener_protocol,
+                tls_fingerprint=tls_fingerprint,
             )
             record = self.agent_output_registry.register_output(
                 build_result,

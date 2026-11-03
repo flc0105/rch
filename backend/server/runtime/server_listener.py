@@ -1,230 +1,86 @@
+"""Socket endpoint; each instance owns one listening socket and its lifecycle."""
 import errno
-import json
 import socket
+import ssl
 import threading
 import time
-import traceback
 
+from core.protocol.rchsocket import RCHSocket
 from core.utils.logger import logger
-from server.connection.transport.client_transport import ClientTransport
+from server.runtime.session_acceptor import SessionAcceptor
 
 
-class ServerListener:
+class ServerListener(SessionAcceptor):
     _CLOSED_SOCKET_ERRNOS = {
-        errno.EBADF,
-        errno.EINVAL,
-        getattr(errno, 'ENOTSOCK', 88),
-        10038,  # Windows WSAENOTSOCK
+        errno.EBADF, errno.EINVAL, getattr(errno, 'ENOTSOCK', 88), 10038,
     }
 
-    def __init__(self, server):
-        self.server = server
+    def __init__(self, server, config=None, ssl_context=None):
+        super().__init__(server)
+        self.config = dict(config or {})
+        self.listener_id = self.config.get('id', 'tcp-default')
+        self.name = self.config.get('name', 'TCP')
+        self.protocol = self.config.get('protocol', 'tcp')
+        self.address = (self.config.get('host', server.address[0] if hasattr(server, 'address') else ''),
+                        int(self.config.get('port', server.address[1] if hasattr(server, 'address') else 9999)))
+        self.socket = RCHSocket() if config or not hasattr(server, 'socket') else server.socket
+        self.ssl_context = ssl_context
         self._stop_event = threading.Event()
+        self._thread = None
 
     def stop(self):
-        """
-        停止监听。关闭 socket 用于唤醒阻塞中的 accept()。
-        """
+        """Stop accepting new sessions; existing sessions remain active."""
         self._stop_event.set()
         try:
-            self.server.socket.shutdown()
+            self.socket.shutdown()
         except OSError:
             pass
-        finally:
-            try:
-                self.server.socket.close()
-            except OSError:
-                pass
+        try:
+            self.socket.close()
+        except OSError:
+            pass
+        if self._thread and self._thread is not threading.current_thread():
+            self._thread.join(timeout=1.5)
 
-    def _is_closed_socket_error(self, exc: OSError) -> bool:
+    def _is_closed_socket_error(self, exc):
         return getattr(exc, 'errno', None) in self._CLOSED_SOCKET_ERRNOS
 
     def _bind_server_socket(self):
-        """
-        绑定并启动监听
-        """
-        self.server.socket.bind(self.server.address)
-        logger.info('Listening on port {}'.format(self.server.address[1]))
+        self.socket.bind(self.address)
+        logger.info('Listener %s (%s) on %s:%s', self.listener_id, self.protocol, *self.address)
 
-    def _receive_client_info(self, raw_sock, addr):
-        """
-        接收客户端初始信息
-        """
-        raw_sock.settimeout(5)
-        try:
-            transport = ClientTransport(raw_sock, addr)
-            return transport.recv(), transport
-        finally:
-            raw_sock.settimeout(None)
-
-    def _build_connection_info(self, addr, info: dict) -> dict:
-        """
-        构造客户端连接信息
-        """
-        return {**{'addr': f'{addr[0]}:{addr[1]}'}, **info}
-
-    def _register_connection(self, transport: ClientTransport, addr, info: dict):
-        session = self.server.web_service.connection_api.create_web_connection(transport, addr, info)
-        self.server.connections.add(session)
-        logger.info('Connection has been established: {}'.format(addr))
-        self.server.web_service.connection_api.handle_connection_registered(session)
-        return session
+    def start(self):
+        """Bind synchronously so failures are visible to the API caller."""
+        self._bind_server_socket()
+        self._thread = threading.Thread(target=self.serve, kwargs={'already_bound': True},
+                                        daemon=True, name=f'listener-{self.listener_id}')
+        self._thread.start()
 
     def _accept_connection(self):
-        """
-        接受一个新连接并完成初始化
-        """
-        raw_sock, addr = self.server.socket.accept()
-
-        try:
-            info, transport = self._receive_client_info(raw_sock, addr)
-        except json.JSONDecodeError:
-            raw_sock.close()
-            logger.error('Failed to establish session: invalid client handshake from {}'.format(addr))
-            return None
-        except Exception as e:
-            raw_sock.close()
-            logger.error('Error establishing connection: {}'.format(e))
-            return None
-
-        info = self._build_connection_info(addr, info)
-        return self._register_connection(transport, addr, info)
-
-    def _start_connection_handler(self, session):
-        """
-        启动客户端会话接收线程
-        """
-        threading.Thread(
-            target=self.connection_handler,
-            args=(session,),
-            daemon=True
-        ).start()
-
-    def _notify_connection_closed(self, session):
-        """
-        通知等待中的主线程：该连接已关闭
-        """
-        session.runtime.message_queue.put(0, None, 1)
-
-    def _remove_connection(self, session):
-        """
-        从连接管理器中移除连接
-        """
-        self.server.connections.remove(session)
-
-    def _handle_connection_closed(self, session, error=None):
-        """
-        处理连接关闭后的清理逻辑
-
-        关键点：
-        - 不管 recent-device / event-bus / 其它副作用是否抛异常
-        - 都必须保证连接最终从 ConnectionManager 中移除
-        """
-        client_id = getattr(getattr(session, 'session_info', None), 'client_id', '')
-        if error is not None:
-            if isinstance(error, (socket.timeout, TimeoutError)) or getattr(error, 'errno', None) == errno.ETIMEDOUT:
-                reason = 'timeout'
-            elif str(error) == 'Connection closed':
-                reason = 'connection_lost'
-            elif str(error) == 'Connection aborted':
-                reason = 'unexpected_disconnect'
-            else:
-                reason = 'transport_error'
-            diagnostics = {}
-            if reason == 'unexpected_disconnect':
-                diagnostics['summary'] = 'Protocol frame was interrupted'
-            elif reason in ('transport_error', 'timeout'):
-                diagnostics = {
-                    'summary': f'{type(error).__name__}: {error}'[:500],
-                    'traceback': traceback.format_exc()[-12000:],
-                }
-            session.context.transport_failure = {'reason': reason, 'detail': diagnostics}
-        logger.error(f'Connection closed: {session.address} client_id={client_id}')
-
-        try:
+        raw_sock, addr = self.socket.accept()
+        if self.ssl_context is not None:
             try:
-                self.server.web_service.connection_api.handle_connection_closed(session)
-            except Exception:
-                logger.error(
-                    'handle_connection_closed failed: addr=%s client_id=%s',
-                    session.address,
-                    client_id,
-                    exc_info=True,
-                )
+                raw_sock.settimeout(5)
+                raw_sock = self.ssl_context.wrap_socket(raw_sock, server_side=True)
+            except (OSError, ssl.SSLError) as exc:
+                logger.warning('TLS handshake failed on %s from %s: %s', self.listener_id, addr, exc)
+                raw_sock.close()
+                return None
+        return self.accept_session(raw_sock, addr, listener_id=self.listener_id,
+                                   listener_name=self.name, protocol=self.protocol)
 
+    def serve(self, already_bound=False):
+        if not already_bound:
             try:
-                self._notify_connection_closed(session)
-            except Exception:
-                logger.error(
-                    'notify_connection_closed failed: addr=%s client_id=%s',
-                    session.address,
-                    client_id,
-                    exc_info=True,
-                )
-        finally:
-            try:
-                before_len = len(self.server.connections)
-                logger.warning(
-                    'Removing connection from manager: addr=%s client_id=%s size_before=%s',
-                    session.address,
-                    client_id,
-                    before_len,
-                )
-                self._remove_connection(session)
-                after_len = len(self.server.connections)
-                logger.warning(
-                    'Removed connection from manager: addr=%s client_id=%s size_after=%s',
-                    session.address,
-                    client_id,
-                    after_len,
-                )
-            except Exception:
-                logger.error(
-                    'remove_connection failed: addr=%s client_id=%s',
-                    session.address,
-                    client_id,
-                    exc_info=True,
-                )
-
-    def _handle_connection_receive_error(self, session):
-        """
-        处理接收线程中的非致命异常
-        """
-        logger.error(f'Error receiving from {session.address}', exc_info=True)
-        time.sleep(1)
-
-    def connection_handler(self, session):
-        """
-        处理接收的子线程
-        """
-        while 1:
-            try:
-                session.recv_message()
-            except socket.error as exc:
-                self._handle_connection_closed(session, exc)
-                break
-            except Exception:
-                self._handle_connection_receive_error(session)
-
-    def serve(self):
-        """
-        接受新连接的线程
-        """
-        try:
-            self._bind_server_socket()
-        except Exception as e:
-            logger.error('Error binding socket: {}'.format(e))
-            return
-
+                self._bind_server_socket()
+            except OSError as exc:
+                logger.error('Listener bind failed: %s', exc)
+                return
         while not self._stop_event.is_set():
             try:
-                session = self._accept_connection()
-                if session is None:
-                    continue
-                self._start_connection_handler(session)
-            except OSError as e:
-                if self._stop_event.is_set() or self._is_closed_socket_error(e):
-                    return
-                logger.error(e)
-                # 避免持续性 accept 错误形成 CPU / 日志热循环。
+                self._accept_connection()
+            except OSError as exc:
+                if self._stop_event.is_set() or self._is_closed_socket_error(exc):
+                    break
+                logger.error('Listener accept error: %s', exc)
                 time.sleep(0.1)

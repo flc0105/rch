@@ -1038,7 +1038,7 @@ Below is a reorganized roadmap based on current priorities and project direction
 ### Remote visibility and control expansions
 
 - [ ] Add screen view support
-- [ ] Add listener management, including creating and switching listener types such as WS / TCP / HTTP
+- [ ] Add WS and HTTP Agent transport adapters to the existing TCP/TLS listener manager
 - [ ] Add notifier integrations for online alerts, such as email or SMS
 - [ ] Add an external tool manager for companion tooling such as FRP or VNC
 - [ ] Add Telegram bot support
@@ -2675,9 +2675,9 @@ Templates can substitute:
 
 The displayed snippet can be edited/copied without changing the static catalog source.
 
-The server listens on the Socket port (`RCH_SOCKET_PORT`, default `9999`) and Web port (`RCH_WEB_PORT`, default `8085`). The Flask/Werkzeug HTTP server directly handles file upload/download on the Web port, without ASGI/WSGI bridging. The dedicated WebSocket listener runs on **Web port + 1** (default `8086`) for PTY, Screen and live events. FastAPI/Uvicorn are not used.
+The default TCP Agent listener uses `RCH_SOCKET_PORT` (default `9999`), and additional TCP/TLS listeners can be managed from the Web UI. The Web server uses `RCH_WEB_PORT` (default `8085`). The Flask/Werkzeug HTTP server directly handles file upload/download on the Web port, without ASGI/WSGI bridging. The dedicated WebSocket listener runs on **Web port + 1** (default `8086`) for PTY, Screen and live events. FastAPI/Uvicorn are not used.
 
-Agent Builder, Bootstrap, and One-liners accept only Socket and Web ports. `/api/agent/platform` supplies both configured server defaults. The derived file transfer port is not independently configurable. For external port mapping, forward the Web port and its following file-transfer port together.
+Agent Builder accepts a Listener selection for Bundle builds alongside existing Socket and Web ports. Bootstrap and One-liners continue to use the original TCP Socket and Web port inputs. `/api/agent/platform` supplies the default server ports. The derived file transfer port is not independently configurable. For external port mapping, forward the Web port and its following file-transfer port together.
 
 
 ---
@@ -2933,7 +2933,6 @@ Current genuine future work includes:
 - result `actions[]` in a structured result model
 - Job process/subprocess execution
 - detached Jobs
-- Listener management
 - operation/audit event log
 - browser/system desktop notifications
 
@@ -2972,3 +2971,7 @@ Toolbox → Log Viewer defaults to the current online Client main log path (repo
 External Tools instance logs and Watchdog file paths open the shared viewer.
 Streaming uses Device Monitor snapshots forwarded over the existing SSE stream;
 there is no Server-local file selection or System Events feed in the first version.
+
+### Multi-listener TCP / TLS TCP
+
+The Web UI manages TCP and TLS/TCP Agent connection listeners under Utilities → Listeners. Python Bundle agents select their listener when built; the Device Sidebar shows listener origin. Configuration and lightweight certificate pinning are described in [Listener setup](docs/listeners.md).

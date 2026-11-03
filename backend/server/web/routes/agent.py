@@ -57,6 +57,19 @@ def create_agent_blueprint(server_instance):
             except ValueError:
                 raise ValueError('web_port must be integer')
 
+            listener_id = str(payload.get('listener_id') or '').strip()
+            listener_protocol = 'tcp'
+            tls_fingerprint = ''
+            if listener_id:
+                selected = server_instance.listener_manager.get(listener_id)
+                if int(selected['port']) != server_port:
+                    raise ValueError('Server port does not match selected listener')
+                listener_protocol = selected['protocol']
+                if listener_protocol == 'tls_tcp':
+                    if builder != 'bundle':
+                        raise ValueError('TLS/TCP is supported by Bundle only')
+                    tls_fingerprint = server_instance.listener_manager.certificate_fingerprint(listener_id)
+
             result = agent_api.build_agent(
                 server_host,
                 server_port,
@@ -67,6 +80,8 @@ def create_agent_blueprint(server_instance):
                 server_web_scheme,
                 server_web_host,
                 source,
+                listener_protocol=listener_protocol,
+                tls_fingerprint=tls_fingerprint,
             )
             result['download_url'] = f'/api/agent/download/{result["file_name"]}'
             if builder == 'bundle':

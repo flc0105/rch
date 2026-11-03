@@ -1,8 +1,12 @@
 import json
+import hashlib
+import hmac
+import ssl
 import threading
 import time
 
 from client.connection.server_connection import ServerConnection
+from client.config.config import RUNTIME_CONFIG
 from client.runtime.client_info_builder import ClientInfoBuilder
 from core.utils.logger import logger
 
@@ -76,12 +80,35 @@ class ClientConnectionLifecycle:
         self.client.server = self.create_connection()
 
     def connect_socket(self):
-        """
-        建立到底层服务端的连接；失败时持续重试
-        """
-        logger.info(f'Connecting to {self.client.address}')
-
-        while not self.client.server.connect(self.client.address):
+        """Connect and optionally verify the server's pinned TLS certificate."""
+        protocol = str(RUNTIME_CONFIG.get('server_transport') or 'tcp').strip()
+        fingerprint = str(RUNTIME_CONFIG.get('server_tls_fingerprint') or '').lower().strip()
+        if protocol not in ('tcp', 'tls_tcp'):
+            raise ValueError('Unknown server transport')
+        if protocol == 'tls_tcp' and (len(fingerprint) != 64 or any(c not in '0123456789abcdef' for c in fingerprint)):
+            raise ValueError('Invalid TLS certificate fingerprint')
+        logger.info('Connecting to %s via %s', self.client.address, protocol)
+        while True:
+            try:
+                if self.client.server.connect(self.client.address):
+                    if protocol == 'tls_tcp':
+                        # No CA infrastructure required; the Bundle pins the exact server cert.
+                        # Check the peer before any RCH info or command is sent.
+                        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+                        context.check_hostname = False
+                        context.verify_mode = ssl.CERT_NONE
+                        context.minimum_version = ssl.TLSVersion.TLSv1_2
+                        wrapped = context.wrap_socket(self.client.server.socket,
+                                                      server_hostname=self.client.address[0])
+                        actual = hashlib.sha256(wrapped.getpeercert(binary_form=True)).hexdigest()
+                        if not hmac.compare_digest(actual, fingerprint):
+                            wrapped.close()
+                            raise ssl.SSLError('TLS server certificate fingerprint mismatch')
+                        self.client.server.socket = wrapped
+                    return
+            except (OSError, ssl.SSLError) as exc:
+                logger.warning('Connection attempt failed: %s', exc)
+            self.client.server.close()
             time.sleep(self.client.RECONNECT_INTERVAL)
             print('Attempting to reconnect...')
             self.client.server = self.create_connection()

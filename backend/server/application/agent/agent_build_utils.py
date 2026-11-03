@@ -37,7 +37,8 @@ def copy_source_paths(source_dir: str, relative_paths, dst: str):
 
 def inject_python_client_config(source_dir: str, client_dir: str, server_host: str, server_port: int, web_port: int,
                    file_transfer_port: int,
-                   build_version: str, server_web_scheme: str = 'http', server_web_host: str = ''):
+                   build_version: str, server_web_scheme: str = 'http', server_web_host: str = '',
+                   listener_protocol: str = 'tcp', tls_fingerprint: str = ''):
     config_path = os.path.join(client_dir, 'client', 'config', 'config.py')
     server_web_host = (server_web_host or server_host).strip() or server_host
     revision_manifest = build_client_revision_manifest(source_dir)
@@ -48,6 +49,8 @@ def inject_python_client_config(source_dir: str, client_dir: str, server_host: s
 SERVER_HOST = "{server_host}"
 SERVER_PORT = {server_port}
 SERVER_ADDR = (SERVER_HOST, SERVER_PORT)
+SERVER_TRANSPORT = {json.dumps(listener_protocol)}
+SERVER_TLS_FINGERPRINT = {json.dumps(tls_fingerprint)}
 
 SERVER_WEB_SCHEME = "{server_web_scheme}"
 SERVER_WEB_HOST = "{server_web_host}"
@@ -59,6 +62,8 @@ CLIENT_BUILD_VERSION = "{build_version}"
 RUNTIME_CONFIG = {{
     'server_host': SERVER_HOST,
     'server_port': SERVER_PORT,
+    'server_transport': SERVER_TRANSPORT,
+    'server_tls_fingerprint': SERVER_TLS_FINGERPRINT,
     'server_web_scheme': SERVER_WEB_SCHEME,
     'server_web_host': SERVER_WEB_HOST,
     'server_web_port': SERVER_WEB_PORT,

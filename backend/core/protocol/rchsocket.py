@@ -35,17 +35,19 @@ class RCHSocket:
         with self._send_lock:
             self._send_packet(encoded)
 
-    def recv(self) -> dict:
-        data = self._recv_packet()
+    def recv(self, max_bytes=None) -> dict:
+        data = self._recv_packet(max_bytes=max_bytes)
         return json.loads(data.decode())
 
     def _send_packet(self, data: bytes) -> None:
         self.socket.sendall(struct.pack(self.HEADER_FORMAT, len(data)))
         self.socket.sendall(data)
 
-    def _recv_packet(self) -> bytes:
+    def _recv_packet(self, max_bytes=None) -> bytes:
         header = self._recv_exactly(self.HEADER_SIZE)
         length = struct.unpack(self.HEADER_FORMAT, header)[0]
+        if max_bytes is not None and (length <= 0 or length > max_bytes):
+            raise ValueError('Invalid initial client info frame size')
         return self._recv_exactly(length)
 
     def _recv_exactly(self, size: int) -> bytes:

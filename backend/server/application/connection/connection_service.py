@@ -139,6 +139,9 @@ class WebConnectionService:
         return {
             'client_id': info.client_id,
             'addr': info.addr,
+            'listener_id': getattr(session, 'listener_id', ''),
+            'listener_name': getattr(session, 'listener_name', ''),
+            'listener_protocol': getattr(session, 'listener_protocol', 'tcp'),
             'hostname': info.hostname,
             'machine_id': info.machine_id,
             # 'machine_id_version': info.machine_id_version,
@@ -208,6 +211,9 @@ class WebConnectionService:
             offline_item = {
                 'client_id': item.get('client_id') or '',
                 'addr': item.get('addr') or '',
+                'listener_id': item.get('listener_id') or '',
+                'listener_name': item.get('listener_name') or '',
+                'listener_protocol': item.get('listener_protocol') or 'tcp',
                 'hostname': item.get('hostname') or 'Unknown',
                 'machine_id': item.get('machine_id') or '',
                 # 'machine_id_version': item.get('machine_id_version') or '',

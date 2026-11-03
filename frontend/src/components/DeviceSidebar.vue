@@ -136,6 +136,10 @@
             </div>
             <div class="device-os">
               {{ formatOsLabel(item.os_type, item.os_ver) }}
+              <el-tag v-if="item.listener_name" size="small" type="info" effect="plain" class="device-listener-tag"
+                      :title="`${item.listener_protocol === 'tls_tcp' ? 'TLS/TCP' : 'TCP'} · ${item.listener_name}`">
+                {{ item.listener_name }}
+              </el-tag>
             </div>
           </div>
 
@@ -1181,6 +1185,8 @@ async removeConnectionPermanently(item) {
 .device-dot-offline {
   background: #94a3b8;
 }
+.device-listener-tag { margin-left: 6px; max-width: 120px; vertical-align: middle; }
+.device-listener-tag :deep(.el-tag__content) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>
 
 <style>

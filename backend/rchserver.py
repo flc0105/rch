@@ -11,7 +11,7 @@ from server.connection.client_session import ClientSession
 from server.connection.connection_manager import ConnectionManager
 from server.runtime.command_shell import ServerCommandShell
 from server.runtime.server_heartbeat_runner import ServerHeartbeatRunner
-from server.runtime.server_listener import ServerListener
+from server.runtime.listener_manager import ListenerManager
 
 
 class Server:
@@ -33,7 +33,7 @@ class Server:
         # 由 Server 负责触发应用层装配，再拿到 Facade。
         self.web_service = ServerWebService.from_server(self)
 
-        self.listener = ServerListener(self)
+        self.listener_manager = ListenerManager(self)
         self.heartbeat_runner = ServerHeartbeatRunner(self)
         self.command_shell = ServerCommandShell(self)
 
@@ -55,7 +55,7 @@ class Server:
         """
         接受新连接的线程
         """
-        return self.listener.serve()
+        return self.listener_manager.start_all()
 
     def heartbeat_loop(self):
         """

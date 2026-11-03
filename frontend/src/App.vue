@@ -47,6 +47,7 @@
                 <el-dropdown-menu>
                   <el-dropdown-item command="one-liners">One-liners</el-dropdown-item>
                   <el-dropdown-item command="build-agent">Build Agent</el-dropdown-item>
+                  <el-dropdown-item command="listeners">Listeners</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
@@ -383,6 +384,8 @@
     @open-log-viewer="openLogViewerDialog"
   />
 
+  <ListenerManagerDialog ref="listenerManagerDialogRef" />
+
   <AgentBuilderDialog
     ref="agentBuilderDialogRef"
     @built="refreshAgentOutputsIfOpen"
@@ -580,6 +583,7 @@ import CommandInputBar from './components/CommandInputBar.vue'
 import TerminalOutput from './components/TerminalOutput.vue'
 import ConnectionInfoDialogs from './components/ConnectionInfoDialogs.vue'
 import AgentBuilderDialog from './components/AgentBuilderDialog.vue'
+import ListenerManagerDialog from './components/ListenerManagerDialog.vue'
 import AgentOutputsDialog from './components/AgentOutputsDialog.vue'
 import MachineConnectionHistoryDialog from './components/MachineConnectionHistoryDialog.vue'
 import RemoteFilesDialog from './components/RemoteFilesDialog.vue'
@@ -677,6 +681,7 @@ export default {
     MachineConnectionHistoryDialog,
     AgentOutputsDialog,
     AgentBuilderDialog,
+    ListenerManagerDialog,
     ConnectionInfoDialogs,
     TerminalOutput,
     CommandInputBar,
@@ -1337,6 +1342,7 @@ export default {
     handleBannerUtilityCommand(command) {
       if (command === 'one-liners') return this.openOneLinersDialog()
       if (command === 'build-agent') return this.openAgentBuilderDialog()
+      if (command === 'listeners') return this.$refs.listenerManagerDialogRef?.open()
     },
 
     openAgentBuilderDialog() {

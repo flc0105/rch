@@ -17,6 +17,18 @@
           class="agent-builder-form"
           @submit.prevent="buildAgent"
       >
+        <el-form-item label="Listener">
+          <el-select v-model="agentForm.listener_id" placeholder="Select listener" style="width:100%" @change="applyListener">
+            <el-option v-for="item in compatibleListeners" :key="item.id" :label="`${item.name} · ${item.protocol === 'tls_tcp' ? 'TLS/TCP' : 'TCP'} :${item.port}`" :value="item.id" />
+          </el-select>
+        </el-form-item>
+
+        <el-form-item v-if="selectedListener" label="Protocol">
+          <el-tag :type="selectedListener.protocol === 'tls_tcp' ? 'success' : 'info'">
+            {{ selectedListener.protocol === 'tls_tcp' ? 'TLS/TCP (pinned certificate)' : 'TCP' }}
+          </el-tag>
+        </el-form-item>
+
         <el-form-item label="Server IP" required>
           <el-input
               v-model="agentForm.server_host"
@@ -28,6 +40,7 @@
           <el-input
               v-model.number="agentForm.server_port"
               type="number"
+              :disabled="!!agentForm.listener_id"
               placeholder="8000"
           />
         </el-form-item>
@@ -113,6 +126,7 @@
 <script>
 import {ElMessage} from 'element-plus'
 import { getAgentPlatform, buildAgent as requestAgentBuild, agentDownloadUrl } from '../api/agentApi.js'
+import { listListeners } from '../api/listenersApi.js'
 
 const BUILDER_LABELS = {
   bundle: 'Bundle',
@@ -135,7 +149,9 @@ export default {
       agentBuilding: false,
       agentServerTargetOs: 'mac',
       supportedBuilders: [],
+      listeners: [],
       agentForm: {
+        listener_id: '',
         server_host: window.location.hostname || '127.0.0.1',
         server_port: 9999,
         web_port: 0,
@@ -147,6 +163,11 @@ export default {
   },
 
   computed: {
+    selectedListener() { return this.listeners.find(item => item.id === this.agentForm.listener_id) },
+    compatibleListeners() {
+      return this.listeners.filter(item => this.agentForm.builder === 'bundle' || item.protocol === 'tcp')
+    },
+
     availableBuilders() {
       return this.supportedBuilders.map(value => ({value, label: BUILDER_LABELS[value] || value}))
     },
@@ -189,6 +210,10 @@ export default {
   watch: {
     'agentForm.builder'() {
       this.applyAgentBuilderRules()
+      if (!this.compatibleListeners.some(item => item.id === this.agentForm.listener_id)) {
+        this.agentForm.listener_id = this.compatibleListeners[0]?.id || ''
+        this.applyListener()
+      }
     },
 
     'agentForm.target_os'() {
@@ -197,15 +222,36 @@ export default {
   },
 
   methods: {
+    async loadListeners() {
+      try {
+        const response = await listListeners()
+        const result = await response.json()
+        if (!response.ok || result.code !== 0) throw new Error(result.message || 'Cannot load listeners')
+        this.listeners = result.data || []
+        this.agentForm.listener_id = this.compatibleListeners[0]?.id || ''
+        this.applyListener()
+      } catch (error) {
+        this.listeners = []
+        ElMessage.error(error.message)
+      }
+    },
+
+    applyListener() {
+      const selected = this.listeners.find(item => item.id === this.agentForm.listener_id)
+      if (selected) this.agentForm.server_port = selected.port
+    },
+
     async open() {
       this.visible = true
       this.agentForm.server_host = window.location.hostname || '127.0.0.1'
       this.agentForm.server_port = 9999
       this.agentForm.web_port = 0
+      this.agentForm.listener_id = ''
 
       this.platformLoading = true
       try {
         await this.loadAgentServerPlatform()
+        await this.loadListeners()
       } finally {
         this.platformLoading = false
       }
@@ -318,6 +364,15 @@ export default {
         return
       }
 
+      const selectedListener = this.listeners.find(item => item.id === this.agentForm.listener_id)
+      if (!selectedListener) {
+        ElMessage.warning('Select a listener')
+        return
+      }
+      if (selectedListener.protocol === 'tls_tcp' && this.agentForm.builder !== 'bundle') {
+        ElMessage.warning('TLS/TCP supports Bundle only')
+        return
+      }
       if (!this.agentForm.web_port) {
         ElMessage.warning('Please enter web port')
         return
