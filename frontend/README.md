@@ -4,6 +4,19 @@ This template should help get you started developing with Vue 3 in Vite. The tem
 
 Learn more about IDE Support for Vue in the [Vue Docs Scaling up Guide](https://vuejs.org/guide/scaling-up/tooling.html#ide-support).
 
+## Frontend feature APIs
+
+HTTP request URLs, methods, headers, and payload construction live in
+`src/api/<feature>Api.js`. Dialogs and composables own UI state, current-Client
+context checks, confirmation prompts, and user-facing results. Shared request
+helpers live in `src/api/http.js`; existing API modules keep their specific
+response contracts.
+
+Remote Files uses `remoteFilesApi.js` for directory, ZIP and file operations,
+`remotePinsApi.js` for pinned paths, and the shared `transferApi.js` for uploads.
+These remote-file APIs return the native `Response` so dialogs can check whether
+the selected Client or active request changed before processing results.
+
 ## Log Viewer and sign-in
 
 Log Viewer reads remote Client files. Its Browse button and remote path occupy the first toolbar row, with the remaining controls on the second row. Wrap is enabled by default, and the gutter displays line numbers relative to the currently loaded log buffer (search results retain those numbers). Watchdog log links appear immediately after each file path.

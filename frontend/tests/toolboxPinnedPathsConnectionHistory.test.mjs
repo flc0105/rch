@@ -20,6 +20,20 @@ const deferred = () => {
   return { promise, resolve }
 }
 
+function pinnedApi(fetchRequest) {
+  const url = clientId => `/api/connections/${encodeURIComponent(clientId)}/pinned_paths`
+  return {
+    listRemotePinnedPaths: (clientId, options = {}) => fetchRequest(url(clientId), options),
+    saveRemotePinnedPath: (clientId, payload, method = 'POST') => fetchRequest(url(clientId), {
+      method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+    }),
+    deleteRemotePinnedPath: (clientId, displayName) => fetchRequest(url(clientId), {
+      method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ display_name: displayName }),
+    }),
+  }
+}
+
 function pinsDialog({ items = [], promptValue = 'Saved Folder', selectedId = 'client-1', before = [] } = {}) {
   const requests = [], messages = [], emitted = []
   const responses = [...before]
@@ -27,10 +41,10 @@ function pinsDialog({ items = [], promptValue = 'Saved Folder', selectedId = 'cl
     RemoteFilePicker: {},
     ElMessage: { warning: value => messages.push(['warning', value]), success: value => messages.push(['success', value]), error: value => messages.push(['error', value]) },
     ElMessageBox: { prompt: async (...args) => { messages.push(['prompt', ...args]); return { value: promptValue } }, confirm: async () => {} },
-    fetch: async (url, init = {}) => {
+    ...pinnedApi(async (url, init = {}) => {
       requests.push({ url, init })
       return responses.shift() || ok(init.method === 'POST' ? { items: [{ display_name: promptValue, path: '/var/data' }] } : { items })
-    },
+    }),
   })
   const instance = {
     ...opts.data(), ...opts.methods, modelValue: true, selectedId, items,
@@ -91,7 +105,11 @@ test('existing Remote Files pins manager can open directly from Toolbox, includi
   const p = options('../src/components/RemoteFilesDialog.vue', {
     RemotePinsDialog: {}, RemoteZipPeekDialog: {}, MoreFilled: {}, formatBytesValue() {},
     ElMessage: { warning: value => { throw Error(value) } }, ElMessageBox: {},
-    fetch: async url => { requests.push(url); await ready.promise; return ok({ items: [{ display_name: 'Documents', path: '/Documents' }] }) },
+    listRemotePinnedPaths: async clientId => {
+      requests.push(`/api/connections/${encodeURIComponent(clientId)}/pinned_paths`)
+      await ready.promise
+      return ok({ items: [{ display_name: 'Documents', path: '/Documents' }] })
+    },
   })
   const instance = {
     ...p.data(), ...p.methods,
@@ -176,7 +194,7 @@ test('Pinned Paths title and one-shot Refresh update only the active device', as
     RemoteFilePicker: {},
     ElMessage: { error: value => calls.push(value) },
     ElMessageBox: {},
-    fetch: async () => { await pending.promise; return ok({ items: [{ display_name: 'Old', path: '/old' }] }) },
+    listRemotePinnedPaths: async () => { await pending.promise; return ok({ items: [{ display_name: 'Old', path: '/old' }] }) },
   })
   const instance = { ...delayedOptions.data(), ...delayedOptions.methods, selectedId: 'client-1', modelValue: true, $emit: (...event) => calls.push(event) }
   const task = instance.refreshPinnedPaths()

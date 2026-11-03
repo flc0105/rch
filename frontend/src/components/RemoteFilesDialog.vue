@@ -853,6 +853,8 @@
 </template>
 
 <script>
+import { listRemoteDirectory, getRemoteSystemPaths, pasteRemoteFiles, createRemoteZip, extractRemoteZip, makeRemoteDirectory, renameRemoteFile, downloadRemoteFile, downloadRemoteZip, deleteRemoteFile, deleteRemoteEntries } from '../api/remoteFilesApi.js'
+import { listRemotePinnedPaths, saveRemotePinnedPath, deleteRemotePinnedPath } from '../api/remotePinsApi.js'
 import {ElMessage, ElMessageBox} from 'element-plus'
 import { MoreFilled } from '@element-plus/icons-vue'
 import RemotePinsDialog from './RemotePinsDialog.vue'
@@ -1277,24 +1279,8 @@ export default {
       this.remoteFilesLoading = true
 
       try {
-        const url = new URL(
-            `/api/connections/${encodeURIComponent(context.clientId)}/remote-files`,
-            window.location.origin
-        )
-
-        if (path) url.searchParams.set('path', path)
-
-        url.searchParams.set('page', String(page || 1))
-        url.searchParams.set('page_size', String(this.remoteFilesPageSize || 50))
-        url.searchParams.set('show_hidden', this.showHiddenFiles ? 'true' : 'false')
-
         const searchKeyword = this.normalizeRemoteSearchKeyword()
-        if (searchKeyword) {
-          url.searchParams.set('search', searchKeyword)
-          url.searchParams.set('recursive', this.remoteSearchRecursive ? 'true' : 'false')
-        }
-
-        const res = await fetch(url.pathname + url.search, {signal: controller.signal})
+        const res = await listRemoteDirectory(context.clientId, { path, page, pageSize: this.remoteFilesPageSize, showHidden: this.showHiddenFiles, search: searchKeyword, recursive: this.remoteSearchRecursive }, { signal: controller.signal })
         const json = await res.json()
 
         if (!this.isRemoteFilesContextActive(context) || requestSeq !== this.remoteDirectoryRequestSeq) return
@@ -1598,15 +1584,7 @@ export default {
       }
 
       try {
-        const res = await fetch(`/api/connections/${encodeURIComponent(clientId)}/remote-files/paste`, {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json', 'X-RCH-Origin': 'web_ui'},
-          body: JSON.stringify({
-            paths,
-            destination_dir: this.remoteFilesCurrentPath,
-            operation: this.remoteClipboardMode,
-          }),
-        })
+        const res = await pasteRemoteFiles(clientId, { paths, destination_dir: this.remoteFilesCurrentPath, operation: this.remoteClipboardMode })
 
         const json = await res.json()
 
@@ -1834,15 +1812,7 @@ export default {
         if (!this.isRemoteFilesContextActive(context)) return
 
         this.remoteZipCreating = true
-        const res = await fetch(`/api/connections/${encodeURIComponent(clientId)}/remote-files/create-zip`, {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json', 'X-RCH-Origin': 'web_ui'},
-          body: JSON.stringify({
-            paths,
-            destination_dir: this.remoteFilesCurrentPath,
-            archive_name: archiveName,
-          }),
-        })
+        const res = await createRemoteZip(clientId, { paths, destination_dir: this.remoteFilesCurrentPath, archive_name: archiveName })
         const json = await res.json()
 
         if (!this.isRemoteFilesContextActive(context)) return
@@ -1891,14 +1861,7 @@ export default {
 
         if (!this.isRemoteFilesContextActive(context)) return
         this.remoteZipExtracting = true
-        const res = await fetch(`/api/connections/${encodeURIComponent(clientId)}/remote-files/extract-zip`, {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json', 'X-RCH-Origin': 'web_ui'},
-          body: JSON.stringify({
-            path: row.path,
-            destination_dir: this.remoteFilesCurrentPath,
-          }),
-        })
+        const res = await extractRemoteZip(clientId, { path: row.path, destination_dir: this.remoteFilesCurrentPath })
         const json = await res.json()
 
         if (!this.isRemoteFilesContextActive(context)) return
@@ -1950,11 +1913,7 @@ export default {
         const separator = base.includes('\\') ? '\\' : '/'
         const fullPath = `${base}${base ? separator : ''}${folderName}`
 
-        const res = await fetch(`/api/connections/${encodeURIComponent(clientId)}/remote-files/mkdir`, {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json', 'X-RCH-Origin': 'web_ui'},
-          body: JSON.stringify({path: fullPath}),
-        })
+        const res = await makeRemoteDirectory(clientId, fullPath)
 
         const json = await res.json()
 
@@ -2000,14 +1959,7 @@ export default {
         const newName = String(value || '').trim()
         if (!newName || newName === row.name || !this.isRemoteFilesContextActive(context)) return
 
-        const res = await fetch(`/api/connections/${encodeURIComponent(clientId)}/remote-files/rename`, {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json', 'X-RCH-Origin': 'web_ui'},
-          body: JSON.stringify({
-            old_path: row.path,
-            new_name: newName,
-          }),
-        })
+        const res = await renameRemoteFile(clientId, row.path, newName)
 
         const json = await res.json()
 
@@ -2038,22 +1990,12 @@ export default {
       }
 
       try {
-        const url = new URL(
-            `/api/connections/${encodeURIComponent(clientId)}/remote-files/download`,
-            window.location.origin
-        )
-
-        url.searchParams.set('path', row.path)
-
         ElMessage.success({
           message: `Download started: ${row.name || 'file'}`,
           duration: 1800,
         })
 
-        const res = await fetch(url.pathname + url.search, {
-          method: 'POST',
-          headers: {...this.getTabScopedHeaders(), 'X-RCH-Origin': 'web_ui'},
-        })
+        const res = await downloadRemoteFile(clientId, row.path, this.getTabScopedHeaders())
         const json = await res.json()
 
         if (!this.isRemoteFilesContextActive(context)) return
@@ -2101,18 +2043,7 @@ export default {
           duration: 1800,
         })
 
-        const res = await fetch(`/api/connections/${encodeURIComponent(clientId)}/remote-files/download-zip`, {
-          method: 'POST',
-          headers: {
-            ...this.getTabScopedHeaders(),
-            'Content-Type': 'application/json',
-            'X-RCH-Origin': 'web_ui',
-          },
-          body: JSON.stringify({
-            paths,
-            archive_name: '',
-          }),
-        })
+        const res = await downloadRemoteZip(clientId, paths, this.getTabScopedHeaders())
 
         const json = await res.json()
 
@@ -2164,14 +2095,7 @@ export default {
         )
 
         if (!this.isRemoteFilesContextActive(context)) return
-        const url = new URL(
-            `/api/connections/${encodeURIComponent(clientId)}/remote-files`,
-            window.location.origin
-        )
-
-        url.searchParams.set('path', row.path)
-
-        const res = await fetch(url.pathname + url.search, {method: 'DELETE', headers: {'X-RCH-Origin': 'web_ui'}})
+        const res = await deleteRemoteFile(clientId, row.path)
         const json = await res.json()
 
         if (!this.isRemoteFilesContextActive(context)) return
@@ -2217,11 +2141,7 @@ export default {
         )
 
         if (!this.isRemoteFilesContextActive(context)) return
-        const res = await fetch(`/api/connections/${encodeURIComponent(clientId)}/remote-files/batch`, {
-          method: 'DELETE',
-          headers: {'Content-Type': 'application/json', 'X-RCH-Origin': 'web_ui'},
-          body: JSON.stringify({paths}),
-        })
+        const res = await deleteRemoteEntries(clientId, paths)
 
         const json = await res.json()
 
@@ -2253,7 +2173,7 @@ export default {
       this.remotePinnedJumpLoading = true
 
       try {
-        const res = await fetch(`/api/connections/${encodeURIComponent(context.clientId)}/pinned_paths`)
+        const res = await listRemotePinnedPaths(context.clientId)
         const json = await res.json()
 
         if (!this.isRemoteFilesContextActive(context)) return
@@ -2349,11 +2269,7 @@ export default {
             }
 
         if (!this.isRemoteFilesContextActive(context)) return
-        const res = await fetch(`/api/connections/${encodeURIComponent(clientId)}/pinned_paths`, {
-          method,
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify(body),
-        })
+        const res = await saveRemotePinnedPath(clientId, body, method)
 
         const json = await res.json()
 
@@ -2396,11 +2312,7 @@ export default {
         }
 
         if (!this.isRemoteFilesContextActive(context)) return false
-        const res = await fetch(`/api/connections/${encodeURIComponent(clientId)}/pinned_paths`, {
-          method: 'DELETE',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({display_name: item.display_name}),
-        })
+        const res = await deleteRemotePinnedPath(clientId, item.display_name)
 
         const json = await res.json()
 
@@ -2465,7 +2377,7 @@ export default {
       this.quickJumpLoading = true
 
       try {
-        const res = await fetch(`/api/connections/${encodeURIComponent(context.clientId)}/system-paths`)
+        const res = await getRemoteSystemPaths(context.clientId)
         const json = await res.json()
 
         if (!this.isRemoteFilesContextActive(context)) return

@@ -203,6 +203,7 @@
 </template>
 
 <script>
+import { listRemoteDirectory, getRemoteSystemPaths } from '../api/remoteFilesApi.js'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { formatBytes as formatBytesValue } from '../utils/formatters.js'
 import { uploadRemoteFileToClient } from '../api/transferApi.js'
@@ -370,17 +371,7 @@ export default {
       this.remoteFilesLoading = true
 
       try {
-        const url = new URL(
-          `/api/connections/${encodeURIComponent(this.selectedId)}/remote-files`,
-          window.location.origin
-        )
-
-        if (path) url.searchParams.set('path', path)
-        url.searchParams.set('page', String(page || 1))
-        url.searchParams.set('page_size', String(this.remoteFilesPageSize || 50))
-        url.searchParams.set('show_hidden', 'false')
-
-        const res = await fetch(url.pathname + url.search)
+        const res = await listRemoteDirectory(this.selectedId, { path, page, pageSize: this.remoteFilesPageSize, showHidden: false })
         const json = await res.json()
 
         if (!res.ok || json.code !== 0) {
@@ -574,7 +565,7 @@ export default {
       this.quickJumpLoading = true
 
       try {
-        const res = await fetch(`/api/connections/${encodeURIComponent(this.selectedId)}/system-paths`)
+        const res = await getRemoteSystemPaths(this.selectedId)
         const json = await res.json()
 
         if (res.ok && json.code === 0 && json.data) {

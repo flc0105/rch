@@ -79,6 +79,7 @@
 </template>
 
 <script>
+import { listRemotePinnedPaths, saveRemotePinnedPath, deleteRemotePinnedPath } from '../api/remotePinsApi.js'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import RemoteFilePicker from './RemoteFilePicker.vue'
 
@@ -124,9 +125,7 @@ export default {
       if (!clientId || this.refreshing || !this.modelValue) return
       this.refreshing = true
       try {
-        const response = await fetch(`/api/connections/${encodeURIComponent(clientId)}/pinned_paths`, {
-          cache: 'no-store',
-        })
+        const response = await listRemotePinnedPaths(clientId, { cache: 'no-store' })
         const json = await response.json()
         if (clientId !== String(this.selectedId || '').trim() || !this.modelValue) return
         if (!response.ok || json.code !== 0) {
@@ -171,7 +170,7 @@ export default {
         if (!displayName) return
 
         // POST updates existing names; creating from the manager must not silently replace a Pin.
-        const latestRes = await fetch(`/api/connections/${encodeURIComponent(clientId)}/pinned_paths`)
+        const latestRes = await listRemotePinnedPaths(clientId)
         const latestJson = await latestRes.json()
         if (!latestRes.ok || latestJson.code !== 0) {
           throw new Error(latestJson.message || 'Failed to check pinned paths')
@@ -183,11 +182,7 @@ export default {
           return
         }
 
-        const res = await fetch(`/api/connections/${encodeURIComponent(clientId)}/pinned_paths`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ display_name: displayName, path }),
-        })
+        const res = await saveRemotePinnedPath(clientId, { display_name: displayName, path })
         const json = await res.json()
         if (clientId !== String(this.selectedId || '').trim() || !this.modelValue) return
         if (!res.ok || json.code !== 0) throw new Error(json.message || 'Failed to save pinned path')
@@ -240,15 +235,7 @@ export default {
         const path = String(pathValue || '').trim()
         if (!path) return
 
-        const res = await fetch(`/api/connections/${encodeURIComponent(this.selectedId)}/pinned_paths`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            original_display_name: item.display_name,
-            display_name: displayName,
-            path,
-          }),
-        })
+        const res = await saveRemotePinnedPath(this.selectedId, { original_display_name: item.display_name, display_name: displayName, path }, 'PUT')
 
         const json = await res.json()
 
@@ -283,11 +270,7 @@ export default {
           }
         )
 
-        const res = await fetch(`/api/connections/${encodeURIComponent(this.selectedId)}/pinned_paths`, {
-          method: 'DELETE',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ display_name: item.display_name }),
-        })
+        const res = await deleteRemotePinnedPath(this.selectedId, item.display_name)
 
         const json = await res.json()
 

@@ -91,6 +91,7 @@
 </template>
 
 <script>
+import { inspectRemoteZip, readRemoteZipEntry } from '../api/remoteFilesApi.js'
 import { formatBytes as formatBytesValue } from '../utils/formatters.js'
 
 export default {
@@ -145,11 +146,7 @@ export default {
       this.loading = true
 
       try {
-        const res = await fetch(`/api/connections/${encodeURIComponent(this.selectedId)}/remote-files/zip-peek`, {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({path: this.archivePath}),
-        })
+        const res = await inspectRemoteZip(this.selectedId, this.archivePath)
         const json = await res.json()
 
         if (!res.ok || json.code !== 0) {
@@ -179,14 +176,7 @@ export default {
       this.entryLoading = true
 
       try {
-        const res = await fetch(`/api/connections/${encodeURIComponent(this.selectedId)}/remote-files/zip-entry`, {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({
-            path: this.archivePath,
-            entry_name: data.entry_name,
-          }),
-        })
+        const res = await readRemoteZipEntry(this.selectedId, this.archivePath, data.entry_name)
         const json = await res.json()
 
         if (!res.ok || json.code !== 0) {
