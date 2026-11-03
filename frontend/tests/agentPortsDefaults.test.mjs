@@ -10,6 +10,7 @@ const platform = {code: 0, data: {socket_port: 12000, web_port: 9000, target_os:
 const sandbox = {
   window: {location: {hostname: 'example.test', protocol: 'http:'}},
   fetch: async () => ({ok: true, json: async () => platform}),
+  getAgentPlatform: () => sandbox.fetch('/api/agent/platform'),
   ElMessage: {warning() {}, error() {}, success() {}},
   navigator: {},
   terminalOneLiners,

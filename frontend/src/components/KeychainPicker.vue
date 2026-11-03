@@ -81,6 +81,7 @@
 
 <script>
 import { ElMessage } from 'element-plus'
+import { listKeychains, getKeychainCredential } from '../api/keychainsApi.js'
 
 const SHARED_MACHINE_ID = '__shared__'
 
@@ -184,8 +185,7 @@ export default {
 
       this.loading = true
       try {
-        const query = new URLSearchParams({ machine_id: requestedMachineId })
-        const response = await fetch(`/api/keychains?${query.toString()}`)
+        const response = await listKeychains(requestedMachineId)
         const payload = await response.json()
         if (!response.ok || payload.code !== 0) {
           throw new Error(payload.message || 'Failed to load credentials')
@@ -211,7 +211,7 @@ export default {
 
       this.selecting = true
       try {
-        const response = await fetch(`/api/keychains/${encodeURIComponent(row.cred_id)}`)
+        const response = await getKeychainCredential(row.cred_id)
         const payload = await response.json()
         if (!response.ok || payload.code !== 0) {
           throw new Error(payload.message || 'Failed to read credential')

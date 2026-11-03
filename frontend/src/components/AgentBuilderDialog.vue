@@ -112,6 +112,7 @@
 
 <script>
 import {ElMessage} from 'element-plus'
+import { getAgentPlatform, buildAgent as requestAgentBuild, agentDownloadUrl } from '../api/agentApi.js'
 
 const BUILDER_LABELS = {
   bundle: 'Bundle',
@@ -234,7 +235,7 @@ export default {
 
     async loadAgentServerPlatform() {
       try {
-        const res = await fetch('/api/agent/platform')
+        const res = await getAgentPlatform()
         const json = await res.json()
 
         if (!res.ok || json.code !== 0) {
@@ -325,11 +326,7 @@ export default {
       this.agentBuilding = true
 
       try {
-        const res = await fetch('/api/agent/build', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify(this.buildAgentPayload()),
-        })
+        const res = await requestAgentBuild(this.buildAgentPayload())
 
         const json = await res.json()
 
@@ -338,7 +335,7 @@ export default {
         }
 
         const data = json.data || {}
-        const downloadUrl = data.download_url || `/api/agent/download/${encodeURIComponent(data.file_name)}`
+        const downloadUrl = data.download_url || agentDownloadUrl(data.file_name)
 
         ElMessage.success('Build completed. Downloading...')
 

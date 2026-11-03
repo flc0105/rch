@@ -13,6 +13,7 @@ const sandbox = {
   window: {location: {hostname: 'example.test', protocol: 'http:'}},
   ElMessage: {warning() {}, error() {}, success() {}},
   fetch: null,
+  getAgentPlatform: () => sandbox.fetch('/api/agent/platform'),
 }
 vm.runInNewContext(script.replace(/^import\s+.*?\n/gm, '').replace('export default {', 'globalThis.component = {'), sandbox)
 const definition = sandbox.component

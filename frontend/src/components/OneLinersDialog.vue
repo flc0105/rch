@@ -92,6 +92,7 @@
 <script>
 import { ElMessage } from 'element-plus'
 import { terminalOneLiners } from '../data/terminalOneLiners.js'
+import { getAgentPlatform } from '../api/agentApi.js'
 
 export default {
   name: 'OneLinersDialog',
@@ -146,7 +147,7 @@ export default {
 
     async loadServerPlatform() {
       try {
-        const res = await fetch('/api/agent/platform')
+        const res = await getAgentPlatform()
         const json = await res.json()
 
         if (!res.ok || json.code !== 0) {

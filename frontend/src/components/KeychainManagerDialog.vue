@@ -486,6 +486,7 @@
 <script>
 import { ElMessage, ElMessageBox } from 'element-plus'
 import PasswordGeneratorDialog from './PasswordGeneratorDialog.vue'
+import { listKeychains, getKeychainCredential, saveKeychainCredential, deleteKeychainCredential } from '../api/keychainsApi.js'
 
 export default {
   name: 'KeychainManagerDialog',
@@ -686,11 +687,8 @@ export default {
       this.loading = true
 
       try {
-        const url = new URL('/api/keychains', window.location.origin)
         const machineId = this.normalizeMachineId(this.machineIdFilter)
-        if (machineId) url.searchParams.set('machine_id', machineId)
-
-        const res = await fetch(url.pathname + url.search)
+        const res = await listKeychains(machineId)
         const json = await res.json()
         if (!res.ok || json.code !== 0) {
           throw new Error(json.message || 'Failed to load keychains')
@@ -711,7 +709,7 @@ export default {
     },
 
     async fetchCredential(credId) {
-      const res = await fetch(`/api/keychains/${encodeURIComponent(credId)}`)
+      const res = await getKeychainCredential(credId)
       const json = await res.json()
       if (!res.ok || json.code !== 0) {
         throw new Error(json.message || 'Failed to load credential')
@@ -928,16 +926,7 @@ export default {
       this.saving = true
       try {
         const isEdit = this.editorMode === 'edit' && this.editingCredId
-        const url = isEdit
-          ? `/api/keychains/${encodeURIComponent(this.editingCredId)}`
-          : '/api/keychains'
-        const method = isEdit ? 'PUT' : 'POST'
-
-        const res = await fetch(url, {
-          method,
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(this.buildSavePayload()),
-        })
+        const res = await saveKeychainCredential(this.buildSavePayload(), isEdit ? this.editingCredId : '')
         const json = await res.json()
         if (!res.ok || json.code !== 0) {
           throw new Error(json.message || 'Save failed')
@@ -966,9 +955,7 @@ export default {
           { type: 'warning', confirmButtonText: 'Delete', cancelButtonText: 'Cancel' },
         )
 
-        const res = await fetch(`/api/keychains/${encodeURIComponent(row.cred_id)}`, {
-          method: 'DELETE',
-        })
+        const res = await deleteKeychainCredential(row.cred_id)
         const json = await res.json()
         if (!res.ok || json.code !== 0) {
           throw new Error(json.message || 'Delete failed')

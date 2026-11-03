@@ -395,6 +395,7 @@
 import {ElMessage, ElMessageBox} from 'element-plus'
 import {Delete, Download, MoreFilled} from '@element-plus/icons-vue'
 import {formatBytes, formatDateTimeStandard} from '../utils/formatters.js'
+import { listAgentOutputs, deleteAgentOutput } from '../api/agentApi.js'
 
 export default {
   name: 'AgentOutputsDialog',
@@ -673,7 +674,7 @@ export default {
       if (!silent) this.loading = true
 
       try {
-        const res = await fetch('/api/agent/outputs')
+        const res = await listAgentOutputs()
         const json = await res.json()
 
         if (!res.ok || json.code !== 0) {
@@ -697,9 +698,7 @@ export default {
       const normalized = String(fileName || '').trim()
       if (!normalized) throw new Error('Invalid file name')
 
-      const res = await fetch(`/api/agent/outputs/${encodeURIComponent(normalized)}`, {
-        method: 'DELETE',
-      })
+      const res = await deleteAgentOutput(normalized)
       const json = await res.json()
 
       if (!res.ok || json.code !== 0) {

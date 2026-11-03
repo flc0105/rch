@@ -30,6 +30,13 @@ Artifacts uses `artifactsApi.js` for shared files, command output, upload, editi
 Send To and deletion. Connection Info, Preview and output-saving components reuse
 those APIs; responses remain native `Response` objects for the existing UI handlers.
 
+Keychains uses `keychainsApi.js` for machine-scoped credential listing,
+reading, saving and deletion across the manager and parameter picker. Agent
+Builder, Agent Outputs and One-liners share `agentApi.js` for platform metadata,
+build submission, output management and download URLs. These APIs return native
+`Response` objects; validation, scope checks, and user-facing feedback remain
+in the calling dialogs.
+
 The Toolbar, More menu, and Toolbox honor explicit `false` values in the
 selected Client’s `feature_manifest`. For example, `remote_files`, `scripts`,
 and `jobs` suppress their associated launch actions and Script shortcuts.
