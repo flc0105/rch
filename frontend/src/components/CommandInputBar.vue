@@ -85,9 +85,9 @@ import TerminalConnectionContext from './TerminalConnectionContext.vue'
 import {
   sendCommand as sendCommandApi,
   getCommandCandidates,
-  getCommandHistory,
   getCommandCompletions,
 } from '../api/connectionsApi.js'
+import { getCommandHistory } from '../api/commandHistoryApi.js'
 import { cancelTask } from '../api/tasksApi.js'
 import {
   formatTerminalCancelRequestedLine,

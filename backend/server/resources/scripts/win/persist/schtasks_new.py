@@ -69,7 +69,7 @@ if ($env:RCH_TASK_SYSTEM -eq '1') {
     $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
 } else {
     $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
-    $principal = New-ScheduledTaskPrincipal -UserId $sid -LogonType Interactive -RunLevel LeastPrivilege
+    $principal = New-ScheduledTaskPrincipal -UserId $sid -LogonType Interactive -RunLevel Limited
 }
 $settings = New-ScheduledTaskSettingsSet
 $params = @{

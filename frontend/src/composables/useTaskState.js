@@ -86,7 +86,7 @@ export default {
             this.markTaskCompleted(clientId, id);
             if (!entryId || !machineId) return;
             try {
-                const { getCommandExecutionEntry } = await import('../api/connectionsApi.js');
+                const { getCommandExecutionEntry } = await import('../api/commandHistoryApi.js');
                 const entry = await getCommandExecutionEntry(machineId, entryId);
                 if (entry.client_id !== clientId || !entry.finished_at) return;
                 // Dialog presentations own their output; do not echo them into Terminal.

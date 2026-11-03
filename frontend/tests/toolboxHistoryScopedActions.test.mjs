@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
 import vm from 'node:vm'
 import {test} from 'node:test'
+import * as historyApi from '../src/api/commandHistoryApi.js'
 
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8')
 const source = read('../src/components/CommandHistoryDialog.vue')
@@ -17,7 +18,13 @@ function historyInstance({tab='quick', kind='', errors=false, query=''} = {}) {
   }
   const ElMessage = {success:msg => notices.push(msg), error:msg=>{throw Error(msg)}, warning:msg=>{throw Error(msg)}}
   const ElMessageBox = {confirm:async(...args)=>{prompts.push(args)}}
-  const ctx = {...mockIcons, ElMessage, ElMessageBox, CommandExecutionDetailDialog:{}, diffDateTimeMs(){}, fetch, URLSearchParams, window: { clearTimeout() {} }}
+  // Exercise the real API functions with an instance-scoped transport stub.
+  const api = Object.fromEntries(Object.entries(historyApi).map(([name, fn]) => [name, (...args) => {
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = fetch
+    try { return fn(...args) } finally { globalThis.fetch = originalFetch }
+  }]))
+  const ctx = {...mockIcons, ...api, ElMessage, ElMessageBox, CommandExecutionDetailDialog:{}, diffDateTimeMs(){}, fetch, URLSearchParams, window: { clearTimeout() {} }}
   vm.runInNewContext(script.replace(/^import\s+[\s\S]*?\s+from\s+['"][^'"]+['"];?\s*$/gm,'')
     .replace('export default {','const options = {') + '\nglobalThis.options = options', ctx)
   const options = ctx.options

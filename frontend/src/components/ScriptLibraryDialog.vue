@@ -290,6 +290,10 @@
 
 <script>
 import { ElMessage, ElMessageBox } from 'element-plus'
+import {
+  getScriptCatalog, runLibraryScript, createScriptFolder, renameScriptFolder,
+  deleteScriptFolder, renameLibraryScript, uploadLibraryScript, deleteLibraryScript,
+} from '../api/scriptLibraryApi.js'
 import ScriptRunDialog from './ScriptRunDialog.vue'
 import { findJsonOutput } from '../utils/terminalJson.js'
 import { TERMINAL_RUN_SCRIPT_PREFIX } from '../composables/terminalMarkers.js'
@@ -750,7 +754,7 @@ export default {
       this.loading = true
 
       try {
-        const res = await fetch('/api/scripts/catalog')
+        const res = await getScriptCatalog()
         const json = await res.json()
         if (!res.ok || json.code !== 0) {
           throw new Error(json.message || 'Failed to load script catalog')
@@ -1330,11 +1334,9 @@ getPreferredScriptDirectoryForCurrentConnection() {
       script_display_name: displayName || scriptName,
       params: { ...params },
     })
-    const res = await fetch(`/api/connections/${encodeURIComponent(this.selectedId)}/scripts/run`, {
-      method: 'POST',
-      headers: this.buildJsonHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ script_name: scriptName, params, presentation: 'terminal' }),
-    })
+    const res = await runLibraryScript(this.selectedId,
+      { script_name: scriptName, params, presentation: 'terminal' },
+      this.buildJsonHeaders({ 'Content-Type': 'application/json' }))
     const json = await res.json()
     if (!res.ok || json.code !== 0) throw new Error(json.message || 'Failed to run script')
     const taskId = String(json.data?.task_id || '')
@@ -1391,11 +1393,9 @@ getPreferredScriptDirectoryForCurrentConnection() {
           })
         }
 
-        const res = await fetch(`/api/connections/${encodeURIComponent(this.selectedId)}/scripts/run`, {
-          method: 'POST',
-          headers: this.buildJsonHeaders({ 'Content-Type': 'application/json' }),
-          body: JSON.stringify({ script_name: item.script_name, params, presentation, run_id: runId }),
-        })
+        const res = await runLibraryScript(this.selectedId,
+          { script_name: item.script_name, params, presentation, run_id: runId },
+          this.buildJsonHeaders({ 'Content-Type': 'application/json' }))
         const json = await res.json()
         if (!res.ok || json.code !== 0) throw new Error(json.message || 'Failed to run script')
 
@@ -1474,11 +1474,7 @@ getPreferredScriptDirectoryForCurrentConnection() {
           return
         }
 
-        const res = await fetch('/api/scripts/folders', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ directory }),
-        })
+        const res = await createScriptFolder(directory)
         const json = await res.json()
         if (!res.ok || json.code !== 0) throw new Error(json.message || 'Failed to create folder')
 
@@ -1517,14 +1513,7 @@ getPreferredScriptDirectoryForCurrentConnection() {
           return
         }
 
-        const res = await fetch('/api/scripts/folders/rename', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            directory: currentDirectory,
-            new_directory: newDirectory,
-          }),
-        })
+        const res = await renameScriptFolder(currentDirectory, newDirectory)
         const json = await res.json()
         if (!res.ok || json.code !== 0) throw new Error(json.message || 'Failed to rename folder')
 
@@ -1561,11 +1550,7 @@ getPreferredScriptDirectoryForCurrentConnection() {
 
         const parentDirectory = this.getParentScriptDirectory(currentDirectory)
 
-        const res = await fetch('/api/scripts/folders', {
-          method: 'DELETE',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ directory: currentDirectory }),
-        })
+        const res = await deleteScriptFolder(currentDirectory)
         const json = await res.json()
         if (!res.ok || json.code !== 0) throw new Error(json.message || 'Failed to delete folder')
 
@@ -1605,11 +1590,7 @@ getPreferredScriptDirectoryForCurrentConnection() {
           return
         }
 
-        const res = await fetch('/api/scripts/rename', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: normalized, new_name: newName }),
-        })
+        const res = await renameLibraryScript(normalized, newName)
         const json = await res.json()
         if (!res.ok || json.code !== 0) throw new Error(json.message || 'Failed to rename script')
 
@@ -1653,10 +1634,7 @@ getPreferredScriptDirectoryForCurrentConnection() {
         formData.append('file', file, file.name)
         formData.append('directory', this.selectedDirectory || '')
 
-        const res = await fetch('/api/scripts/upload', {
-          method: 'POST',
-          body: formData,
-        })
+        const res = await uploadLibraryScript(formData)
 
         const json = await res.json()
         if (!res.ok || json.code !== 0) {
@@ -1690,11 +1668,7 @@ getPreferredScriptDirectoryForCurrentConnection() {
           cancelButtonText: 'Cancel',
         })
 
-        const res = await fetch('/api/scripts/delete', {
-          method: 'DELETE',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: normalized }),
-        })
+        const res = await deleteLibraryScript(normalized)
         const json = await res.json()
         if (!res.ok || json.code !== 0) throw new Error(json.message || 'Failed to delete script')
 

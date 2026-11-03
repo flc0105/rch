@@ -397,6 +397,10 @@
 
 <script>
 import { ElMessage, ElMessageBox } from 'element-plus'
+import {
+  fetchQuickCommandHistory, fetchCommandActivities, pinHistoryCommand,
+  movePinnedHistoryCommand, deleteCommandActivity, clearQuickHistory, clearCommandActivities,
+} from '../api/commandHistoryApi.js'
 import CommandExecutionDetailDialog from './CommandExecutionDetailDialog.vue'
 import {EditPen} from "@element-plus/icons-vue";
 import { Star, StarFilled, ArrowUp, ArrowDown } from '@element-plus/icons-vue'
@@ -681,14 +685,9 @@ Star,
       this.commandExecutionHistoryLoading = true
 
       try {
-        const params = new URLSearchParams({ limit: '50' })
-        if (query) params.set('query', query)
-        if (this.activityKindFilter) params.set('kind', this.activityKindFilter)
-        if (this.activityErrorsOnly) params.set('errors', 'true')
-
-        const res = await fetch(
-          `/api/machines/${encodeURIComponent(machineId)}/command-history/full?${params.toString()}`,
-        )
+        const res = await fetchCommandActivities(machineId, {
+          query, kind: this.activityKindFilter, errors: this.activityErrorsOnly,
+        })
         const json = await res.json()
 
         if (
@@ -770,7 +769,7 @@ Star,
       this.commandHistoryLoading = true
 
       try {
-        const quickRes = await fetch(`/api/machines/${encodeURIComponent(machineId)}/command-history`)
+        const quickRes = await fetchQuickCommandHistory(machineId)
         const quickJson = await quickRes.json()
 
         if (!quickRes.ok || quickJson.code !== 0) {
@@ -802,18 +801,9 @@ Star,
       const cursor = this.commandExecutionNextCursor
       this.commandExecutionLoadingMore = true
       try {
-        const params = new URLSearchParams({ limit: '50' })
-        if (cursor) {
-          params.set('cursor', cursor)
-        }
-        if (query) {
-          params.set('query', query)
-        }
-        if (this.activityKindFilter) params.set('kind', this.activityKindFilter)
-        if (this.activityErrorsOnly) params.set('errors', 'true')
-        const res = await fetch(
-          `/api/machines/${encodeURIComponent(machineId)}/command-history/full?${params.toString()}`,
-        )
+        const res = await fetchCommandActivities(machineId, {
+          cursor, query, kind: this.activityKindFilter, errors: this.activityErrorsOnly,
+        })
         const json = await res.json()
         if (!res.ok || json.code !== 0) {
           throw new Error(json.message || 'Failed to load more execution history')
@@ -879,16 +869,7 @@ Star,
       this.commandHistoryPinningCommand = commandText
 
       try {
-        const res = await fetch(`/api/machines/${encodeURIComponent(machineId)}/command-history/pin`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            command: commandText,
-            is_pinned: !row.is_pinned,
-          }),
-        })
+        const res = await pinHistoryCommand(machineId, commandText, !row.is_pinned)
 
         const json = await res.json()
 
@@ -940,16 +921,7 @@ Star,
       if (directionText === 'down' && !this.canMovePinned(row, 'down')) return
 
       try {
-        const res = await fetch(`/api/machines/${encodeURIComponent(machineId)}/command-history/pin/move`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            command: String(row.command || ''),
-            direction: directionText,
-          }),
-        })
+        const res = await movePinnedHistoryCommand(machineId, String(row.command || ''), directionText)
 
         const json = await res.json()
 
@@ -991,9 +963,7 @@ Star,
 
         this.commandExecutionDeletingEntryId = row.activity_id
 
-        const res = await fetch(`/api/machines/${encodeURIComponent(machineId)}/command-history/full/${encodeURIComponent(row.activity_id)}`, {
-          method: 'DELETE',
-        })
+        const res = await deleteCommandActivity(machineId, row.activity_id)
 
         const json = await res.json()
 
@@ -1036,12 +1006,7 @@ Star,
           confirmButtonText: 'Clear',
           cancelButtonText: 'Cancel',
         })
-        const params = new URLSearchParams()
-        if (query) params.set('query', query)
-        const suffix = params.toString() ? `?${params.toString()}` : ''
-        const res = await fetch(`/api/machines/${encodeURIComponent(machineId)}/command-history${suffix}`, {
-          method: 'DELETE',
-        })
+        const res = await clearQuickHistory(machineId, query)
         const json = await res.json()
         if (!res.ok || json.code !== 0) throw new Error(json.message || 'Failed to clear command history')
 
@@ -1085,12 +1050,7 @@ Star,
           'Clear Activities',
           { type: 'warning', confirmButtonText: 'Clear', cancelButtonText: 'Cancel' },
         )
-        const params = new URLSearchParams()
-        if (kind) params.set('kind', kind)
-        if (errors) params.set('errors', 'true')
-        if (query) params.set('query', query)
-        const suffix = params.toString() ? `?${params.toString()}` : ''
-        const res = await fetch(`/api/machines/${encodeURIComponent(machineId)}/command-history/full${suffix}`, { method: 'DELETE' })
+        const res = await clearCommandActivities(machineId, { kind, errors, query })
         const json = await res.json()
         if (!res.ok || json.code !== 0) throw new Error(json.message || 'Failed to clear activities')
         this.commandExecutionDetailDialogVisible = false

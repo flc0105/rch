@@ -257,6 +257,7 @@ import ToolboxDialog from './ToolboxDialog.vue'
 import { killConnection as killConnectionApi } from '../api/connectionsApi.js'
 import { loadToolbarPreferences, saveToolbarPreferences } from '../api/toolbarPreferencesApi.js'
 import { listQuickActions } from '../api/quickActionsApi.js'
+import { getScriptCatalog } from '../api/scriptLibraryApi.js'
 import {
   DEFAULT_TOOLBAR_PREFERENCES,
   TOOLBAR_ACTION_CATALOG,
@@ -632,7 +633,7 @@ export default {
       this.toolboxQuickActions = []
       try {
         const [scripts, actions] = await Promise.all([
-          fetch('/api/scripts/catalog').then(async res => {
+          getScriptCatalog().then(async res => {
             const json = await res.json()
             if (!res.ok || json.code !== 0) throw Error(json.message || 'Failed to load scripts')
             return json.data?.items || []

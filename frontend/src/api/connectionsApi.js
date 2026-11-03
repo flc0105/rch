@@ -82,11 +82,6 @@ export function getCommandCompletions(clientId, payload = {}) {
   )
 }
 
-export function getCommandHistory(machineId) {
-  if (!machineId) return Promise.resolve([])
-  return apiData(`/api/machines/${encodeURIComponent(machineId)}/command-history`, {}, [])
-}
-
 export function getMachineConnectionHistory(machineId) {
   if (!machineId) return Promise.resolve({ sessions: [] })
   return apiData(`/api/machines/${encodeURIComponent(machineId)}/connection-history`, {}, { sessions: [] })
@@ -111,6 +106,3 @@ export function getConnectionTask(clientId) {
   return apiData(`/api/connections/${encodeURIComponent(clientId)}/task`, {}, { state: 'Idle' })
 }
 
-export function getCommandExecutionEntry(machineId, entryId) {
-  return apiData(`/api/machines/${encodeURIComponent(machineId)}/command-history/full/${encodeURIComponent(entryId)}`, {}, {})
-}

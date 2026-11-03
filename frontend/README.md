@@ -17,6 +17,13 @@ Remote Files uses `remoteFilesApi.js` for directory, ZIP and file operations,
 These remote-file APIs return the native `Response` so dialogs can check whether
 the selected Client or active request changed before processing results.
 
+Script Library uses `scriptLibraryApi.js` for catalog, folder and script editing,
+upload, delete, and execution submission. Command History uses
+`commandHistoryApi.js` for Quick History, Activity Center, pinned commands and
+scoped deletion. Both APIs return native `Response` to their dialogs so UI
+feedback, pagination, and request-generation checks stay in the components;
+command completion and task-result recovery also use `commandHistoryApi.js`.
+
 ## Log Viewer and sign-in
 
 Log Viewer reads remote Client files. Its Browse button and remote path occupy the first toolbar row, with the remaining controls on the second row. Wrap is enabled by default, and the gutter displays line numbers relative to the currently loaded log buffer (search results retain those numbers). Watchdog log links appear immediately after each file path.

@@ -8,6 +8,7 @@ import vm from 'node:vm'
 const here = dirname(fileURLToPath(import.meta.url))
 const source = readFileSync(resolve(here, '../src/components/CommandHistoryDialog.vue'), 'utf8')
 const detail = readFileSync(resolve(here, '../src/components/CommandExecutionDetailDialog.vue'), 'utf8')
+const historyApi = readFileSync(resolve(here, '../src/api/commandHistoryApi.js'), 'utf8')
 const quick = source.match(/<el-tab-pane label="Quick History"[\s\S]*?<\/el-tab-pane>/)?.[0]
 const activity = source.match(/<el-tab-pane label="Activity Center"[\s\S]*?<\/el-tab-pane>/)?.[0]
 assert.ok(quick && activity, 'Quick History and Activity Center must remain')
@@ -18,7 +19,7 @@ const context = {console, EditPen:{}, CommandExecutionDetailDialog:{}, TextCurso
   ArrowUp:{}, ArrowDown:{}, Terminal:{}, Zap:{}, FileCode2:{}, CheckCircle2:{}, XCircle:{},
   CircleDashed:{}, Ban:{}, Clock3:{}, ChevronRight:{}, AlertTriangle:{}, FolderOpen:{}, ArrowDownToLine:{}, ArrowUpToLine:{}, Wrench:{}, BriefcaseBusiness:{}, diffDateTimeMs: () => 0}
 vm.runInNewContext(
-  script.replace(/^import\s+.*?\s+from\s+.*?\n/gm,'').replace('export default {','globalThis.component = {'),
+  script.replace(/^import\s+[\s\S]*?\s+from\s+['"][^'"]+['"]\s*;?\s*$/gm, '').replace('export default {','globalThis.component = {'),
   context,
 )
 const component = context.component
@@ -48,8 +49,10 @@ test('Only necessary Quick columns are hidden, Use/Pin/ordering remain', () => {
 test('Kind and Errors filters are sent for both pages and scoped bulk clear', () => {
   assert.match(activity, /v-model="activityKindFilter"/)
   assert.match(activity, /v-model="activityErrorsOnly"/)
-  assert.equal((source.match(/params\.set\('kind', this\.activityKindFilter\)/g) || []).length,2)
-  assert.equal((source.match(/params\.set\('errors', 'true'\)/g) || []).length,3)
+  assert.equal((source.match(/fetchCommandActivities\(machineId,/g) || []).length, 2)
+  assert.match(historyApi, /if \(kind\) params\.set\('kind', kind\)/)
+  assert.match(historyApi, /if \(errors\) params\.set\('errors', 'true'\)/)
+  assert.match(source, /clearCommandActivities\(machineId, \{ kind, errors, query \}\)/)
 })
 
 test('Activity labels use semantic invocation, Details use new Activity ID', () => {
