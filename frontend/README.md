@@ -24,6 +24,11 @@ scoped deletion. Both APIs return native `Response` to their dialogs so UI
 feedback, pagination, and request-generation checks stay in the components;
 command completion and task-result recovery also use `commandHistoryApi.js`.
 
+The Toolbar, More menu, and Toolbox honor explicit `false` values in the
+selected Client’s `feature_manifest`. For example, `remote_files`, `scripts`,
+and `jobs` suppress their associated launch actions and Script shortcuts.
+Missing declarations from older Clients retain their previous behavior.
+
 ## Log Viewer and sign-in
 
 Log Viewer reads remote Client files. Its Browse button and remote path occupy the first toolbar row, with the remaining controls on the second row. Wrap is enabled by default, and the gutter displays line numbers relative to the currently loaded log buffer (search results retain those numbers). Watchdog log links appear immediately after each file path.

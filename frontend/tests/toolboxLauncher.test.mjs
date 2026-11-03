@@ -352,3 +352,32 @@ test('Toolbox icons open the shared context menu on mobile long press and cancel
   assert.equal([...timers.values()].some(timer => timer.delay === 520), false, 'movement must cancel the long-press timer')
   assert.equal(bodyClasses.has('device-touch-callout-guard'), false)
 })
+
+test('Go feature manifest hides unsupported actions and pinned script shortcuts', () => {
+  const app = mountToolbar()
+  app.instance.currentConnection = { feature_manifest: {
+    remote_files: false, scripts: false, jobs: false, pty: false,
+    screen_view: false, clipboard: false, external_tool: false,
+    process_monitor: false,
+  } }
+  const inToolbar = Array.from(app.options.computed.toolbarActions.call(app.instance), item => item.id)
+  const inMore = Array.from(app.options.computed.moreActions.call(app.instance), item => item.id)
+  for (const id of ['remote-files', 'scripts', 'pty', 'screen-view', 'clipboard']) {
+    assert.ok(!inToolbar.includes(id), `${id} should not be displayed`)
+  }
+  for (const id of ['jobs', 'external-tools', 'processes']) {
+    assert.ok(!inMore.includes(id), `${id} should not be displayed`)
+  }
+  app.instance.toolbarPreferences.toolbox_shortcuts = [{ kind: 'script', script_name: 'ops/demo', icon: 'rocket' }]
+  app.instance.toolboxScripts = [{ script_name: 'ops/demo' }]
+  app.instance.toolboxPinsLoaded = true
+  const entries = Array.from(app.options.computed.toolboxActions.call(app.instance), item => item.id)
+  assert.ok(!entries.includes('shortcut:0'), 'script shortcut should be hidden for unsupported Clients')
+  app.instance.runAction('scripts')
+  assert.deepEqual(app.events, [])
+
+  // Older Python Clients without a feature declaration retain their legacy actions.
+  app.instance.currentConnection = { feature_manifest: {} }
+  const restored = Array.from(app.options.computed.toolbarActions.call(app.instance), item => item.id)
+  assert.ok(restored.includes('remote-files') && restored.includes('scripts'))
+})

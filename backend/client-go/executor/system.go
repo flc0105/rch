@@ -33,17 +33,20 @@ func detectOSVersion() string {
 func detectIntegrity() string {
 	if runtime.GOOS == "windows" {
 		if err := exec.Command("cmd", "/C", "net session >nul 2>&1").Run(); err == nil {
-			return "su"
+			return "High"
 		}
-		return "user"
+		return "Medium"
 	}
 
 	if out, err := exec.Command("sh", "-c", "id -u").CombinedOutput(); err == nil {
 		if strings.TrimSpace(string(out)) == "0" {
-			return "su"
+			if os.Getenv("SUDO_USER") != "" {
+				return "Root (via sudo)"
+			}
+			return "Root"
 		}
 	}
-	return "user"
+	return "User"
 }
 
 func detectMachineToken() string {

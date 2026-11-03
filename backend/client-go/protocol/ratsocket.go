@@ -5,10 +5,13 @@ import (
 	"encoding/json"
 	"io"
 	"net"
+	"sync"
+	"time"
 )
 
 type RATSocket struct {
-	conn net.Conn
+	conn   net.Conn
+	sendMu sync.Mutex
 }
 
 func NewRATSocket(conn net.Conn) *RATSocket {
@@ -16,6 +19,8 @@ func NewRATSocket(conn net.Conn) *RATSocket {
 }
 
 func (r *RATSocket) Send(data map[string]interface{}) error {
+	r.sendMu.Lock()
+	defer r.sendMu.Unlock()
 	bytes, err := json.Marshal(data)
 	if err != nil {
 		return err
@@ -56,4 +61,9 @@ func (r *RATSocket) Close() error {
 		return nil
 	}
 	return r.conn.Close()
+}
+
+// Read deadlines are used by the terminating session while awaiting Server ACK.
+func (r *RATSocket) SetReadDeadline(deadline time.Time) error {
+	return r.conn.SetReadDeadline(deadline)
 }

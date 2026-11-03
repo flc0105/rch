@@ -18,12 +18,30 @@ var (
 	)
 
 	_ = Register(
-		"kill",
-		Usage("kill"),
+		"kill_instance",
+		Usage("kill_instance"),
 		Help("Terminate current session"),
 		Group("session"),
 		Suggest(),
-		cmdKill,
+		cmdKillInstance,
+	)
+
+	_ = Register(
+		"relaunch_instance",
+		Usage("relaunch_instance [--no-confirm]"),
+		Help("Restart this client in a new process"),
+		Group("session"),
+		Suggest(),
+		cmdRelaunchInstance,
+	)
+
+	_ = Register(
+		"spawn_instance",
+		Usage("spawn_instance"),
+		Help("Start another client process"),
+		Group("session"),
+		Suggest(),
+		cmdSpawnInstance,
 	)
 
 	_ = Register(
@@ -49,10 +67,38 @@ func cmdHelp(_ *Session, _ []string) (int, string) {
 	return 1, RenderHelpText()
 }
 
-func cmdKill(s *Session, _ []string) (int, string) {
+func cmdKillInstance(s *Session, args []string) (int, string) {
+	if len(args) != 0 {
+		return 0, "Usage: kill_instance"
+	}
+	s.ReportSessionEnd("server_requested_disconnect", "kill_instance")
 	_ = s.Sock.Close()
 	os.Exit(0)
 	return 1, ""
+}
+
+func cmdRelaunchInstance(s *Session, args []string) (int, string) {
+	if len(args) > 1 || (len(args) == 1 && args[0] != "--no-confirm") {
+		return 0, "Usage: relaunch_instance [--no-confirm]"
+	}
+	if _, err := spawnClientInstance(); err != nil {
+		return 0, fmt.Sprintf("Failed to restart client: %v", err)
+	}
+	s.ReportSessionEnd("client_restart", "relaunch_instance")
+	_ = s.Sock.Close()
+	os.Exit(0)
+	return 1, ""
+}
+
+func cmdSpawnInstance(_ *Session, args []string) (int, string) {
+	if len(args) != 0 {
+		return 0, "Usage: spawn_instance"
+	}
+	pid, err := spawnClientInstance()
+	if err != nil {
+		return 0, fmt.Sprintf("Failed to spawn client: %v", err)
+	}
+	return 1, fmt.Sprintf("New client instance started, pid=%d", pid)
 }
 
 func cmdCd(s *Session, args []string) (int, string) {

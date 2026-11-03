@@ -1,6 +1,7 @@
 package executor
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"sort"
@@ -10,13 +11,19 @@ import (
 
 type CommandHandler func(*Session, []string) (int, string)
 
+// CommandRunner handles cancellable commands and optional interim output.
+type CommandRunner func(context.Context, *Session, string, func(int, string)) (int, string)
+
 type CommandSpec struct {
-	Name    string
-	Usage   string
-	Help    string
-	Group   string
-	Suggest bool
-	Handler CommandHandler
+	Name         string
+	Usage        string
+	Help         string
+	Group        string
+	Suggest      bool
+	CancelPolicy string
+	Output       string
+	Handler      CommandHandler
+	Runner       CommandRunner
 }
 
 type CommandOption func(*CommandSpec)
@@ -32,8 +39,10 @@ var (
 
 func Register(name string, parts ...interface{}) struct{} {
 	spec := CommandSpec{
-		Name:  strings.TrimSpace(strings.ToLower(name)),
-		Group: "misc",
+		Name:         strings.TrimSpace(strings.ToLower(name)),
+		Group:        "misc",
+		CancelPolicy: "none",
+		Output:       "collect",
 	}
 
 	if spec.Name == "" {
@@ -45,8 +54,14 @@ func Register(name string, parts ...interface{}) struct{} {
 		case CommandOption:
 			v(&spec)
 
+		case CommandRunner:
+			if spec.Handler != nil || spec.Runner != nil {
+				panic(fmt.Sprintf("duplicate handler for command: %s", spec.Name))
+			}
+			spec.Runner = v
+
 		case CommandHandler:
-			if spec.Handler != nil {
+			if spec.Handler != nil || spec.Runner != nil {
 				panic(fmt.Sprintf("duplicate handler for command: %s", spec.Name))
 			}
 			spec.Handler = v
@@ -54,7 +69,7 @@ func Register(name string, parts ...interface{}) struct{} {
 		default:
 			handler, ok := tryConvertHandler(part)
 			if ok {
-				if spec.Handler != nil {
+				if spec.Handler != nil || spec.Runner != nil {
 					panic(fmt.Sprintf("duplicate handler for command: %s", spec.Name))
 				}
 				spec.Handler = handler
@@ -65,7 +80,7 @@ func Register(name string, parts ...interface{}) struct{} {
 		}
 	}
 
-	if spec.Handler == nil {
+	if spec.Handler == nil && spec.Runner == nil {
 		panic(fmt.Sprintf("command handler is required: %s", spec.Name))
 	}
 
@@ -145,6 +160,18 @@ func Group(value string) CommandOption {
 	}
 }
 
+func Output(value string) CommandOption {
+	return func(spec *CommandSpec) {
+		spec.Output = value
+	}
+}
+
+func CancelPolicy(value string) CommandOption {
+	return func(spec *CommandSpec) {
+		spec.CancelPolicy = value
+	}
+}
+
 func Suggest() CommandOption {
 	return func(spec *CommandSpec) {
 		spec.Suggest = true
@@ -183,11 +210,13 @@ func CommandManifest() []interface{} {
 	result := make([]interface{}, 0, len(commands))
 	for _, cmd := range commands {
 		result = append(result, map[string]interface{}{
-			"name":    cmd.Name,
-			"usage":   defaultUsage(cmd),
-			"help":    cmd.Help,
-			"group":   cmd.Group,
-			"suggest": cmd.Suggest,
+			"name":          cmd.Name,
+			"usage":         defaultUsage(cmd),
+			"help":          cmd.Help,
+			"group":         cmd.Group,
+			"suggest":       cmd.Suggest,
+			"cancel_policy": cmd.CancelPolicy,
+			"output":        cmd.Output,
 		})
 	}
 	return result

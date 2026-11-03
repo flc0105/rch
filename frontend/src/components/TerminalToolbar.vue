@@ -388,6 +388,7 @@ export default {
       }))
       const shortcuts = (this.toolbarPreferences.toolbox_shortcuts || []).flatMap((pin, index) => {
         if (pin.kind === 'quick_action' && !isQuickActionSupportedOnPlatform(pin.platform, this.toolboxCurrentPlatform)) return []
+        if (pin.kind === 'script' && !this.isActionAvailable('scripts')) return []
         const resource = pin.kind === 'script'
           ? this.toolboxScripts.find(item => item.script_name === pin.script_name)
           : this.toolboxQuickActions.find(item => item.platform === pin.platform && item.alias === pin.alias && item.in_current_scope === true)
@@ -445,6 +446,9 @@ export default {
     },
     isActionAvailable(actionId) {
       const featureByAction = {
+        'remote-files': 'remote_files',
+        scripts: 'scripts',
+        jobs: 'jobs',
         pty: 'pty',
         'screen-view': 'screen_view',
         clipboard: 'clipboard',
@@ -633,7 +637,8 @@ export default {
       this.toolboxQuickActions = []
       try {
         const [scripts, actions] = await Promise.all([
-          getScriptCatalog().then(async res => {
+          (this.isActionAvailable('scripts') ? getScriptCatalog() : Promise.resolve(null)).then(async res => {
+            if (!res) return []
             const json = await res.json()
             if (!res.ok || json.code !== 0) throw Error(json.message || 'Failed to load scripts')
             return json.data?.items || []
@@ -685,6 +690,7 @@ export default {
     async launchToolboxPin(pin, presentation = 'dialog') {
       if (!this.toolboxVisible || this.deviceActionDisabled) return
       if (pin.kind === 'script') {
+        if (!this.isActionAvailable('scripts')) return
         if (!this.toolboxScripts.some(item => item.script_name === pin.script_name && isScriptSupportedOnPlatform(item, this.toolboxCurrentPlatform))) return
         if (presentation !== 'terminal') this.closeToolboxForMobileLaunch()
         this.$emit('run-toolbox-script', pin.script_name)

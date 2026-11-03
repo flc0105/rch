@@ -24,10 +24,6 @@ func NewClientID() string {
 	)
 }
 
-func DetectHandshakeOSVersion() string {
-	return detectOSVersion()
-}
-
 func DetectHandshakeIntegrity() string {
 	return detectIntegrity()
 }
