@@ -534,6 +534,7 @@
 </template>
 
 <script>
+import { getBackgroundJobs } from '../api/backgroundJobsApi.js'
 import { formatBytesHuman, formatDateTimeStandard as formatDateTimeStandardValue, formatLaunchMode } from '../utils/formatters.js'
 import { formatConnectionLastSeen as formatConnectionLastSeenValue, formatConnectionRtt as formatConnectionRttValue, formatConnectionStatus as formatConnectionStatusValue, getConnectionDisplayState as getConnectionDisplayStateValue } from '../utils/connectionInfoFormatting.js'
 import { ElMessage } from 'element-plus'
@@ -1072,7 +1073,7 @@ export default {
     },
 
     async loadConnectionInfoJobCount(clientId) {
-      const res = await fetch(`/api/connections/${encodeURIComponent(clientId)}/background-jobs`)
+      const res = await getBackgroundJobs(clientId)
       const json = await res.json()
 
       if (res.ok && json.code === 0 && Array.isArray(json.data)) {

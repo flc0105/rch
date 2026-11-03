@@ -210,6 +210,7 @@
 </template>
 
 <script>
+import { saveCommandOutputArtifact } from '../api/artifactsApi.js'
 import { formatDateTimePreserveFraction } from '../utils/formatters.js'
 import { ElMessage } from 'element-plus'
 
@@ -333,12 +334,7 @@ export default {
 
       this.saveOutputLoading = true
       try {
-        const res = await fetch('/api/artifacts/command-output/save', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
+        const res = await saveCommandOutputArtifact({
             content: JSON.stringify(output, null, 2),
             category: 'job_output',
             client_id: String(this.item.client_id || ''),
@@ -353,7 +349,6 @@ export default {
               format: 'json',
               record_count: records.length,
             },
-          }),
         })
 
         const json = await res.json()

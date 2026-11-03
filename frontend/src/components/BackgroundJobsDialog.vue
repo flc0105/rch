@@ -341,6 +341,8 @@
 </template>
 
 <script>
+import { getBackgroundJobCatalog, getBackgroundJobs, getBackgroundJobDetail, startBackgroundJob as requestBackgroundJobStart, stopBackgroundJob as requestBackgroundJobStop } from '../api/backgroundJobsApi.js'
+import { deleteBackgroundJobRecord, uploadServerJob, deleteServerJob } from '../api/backgroundJobsApi.js'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import BackgroundJobStartDialog from './BackgroundJobStartDialog.vue'
 import BackgroundJobDetailDialog from './BackgroundJobDetailDialog.vue'
@@ -1123,15 +1125,11 @@ export default {
         return null
       }
 
-      const res = await fetch(`/api/connections/${encodeURIComponent(this.selectedId)}/background-jobs/start`, {
-        method: 'POST',
-        headers: { ...this.buildJsonHeaders(), 'X-RCH-Origin': 'web_ui' },
-        body: JSON.stringify({
-          job_name: normalized,
-          params,
-          execution_mode: String(executionMode || '').trim().toLowerCase() === 'subprocess' ? 'subprocess' : 'inproc',
-        }),
-      })
+      const res = await requestBackgroundJobStart(
+        this.selectedId, normalized, params,
+        String(executionMode || '').trim().toLowerCase() === 'subprocess' ? 'subprocess' : 'inproc',
+        this.buildJsonHeaders(),
+      )
 
       const json = await res.json()
       if (!res.ok || json.code !== 0) {
@@ -1175,7 +1173,7 @@ export default {
       this.backgroundJobModulesLoading = true
 
       try {
-        const res = await fetch(`/api/connections/${encodeURIComponent(this.selectedId)}/background-jobs/catalog`)
+        const res = await getBackgroundJobCatalog(this.selectedId)
         const json = await res.json()
 
         if (!res.ok || json.code !== 0) {
@@ -1200,7 +1198,7 @@ export default {
       this.backgroundJobsLoading = true
 
       try {
-        const res = await fetch(`/api/connections/${encodeURIComponent(this.selectedId)}/background-jobs`)
+        const res = await getBackgroundJobs(this.selectedId)
         const json = await res.json()
 
         if (!res.ok || json.code !== 0) {
@@ -1236,9 +1234,7 @@ export default {
       }
 
       try {
-        const res = await fetch(
-          `/api/connections/${encodeURIComponent(this.selectedId)}/background-jobs/${encodeURIComponent(normalizedJobId)}`
-        )
+        const res = await getBackgroundJobDetail(this.selectedId, normalizedJobId)
         const json = await res.json()
         if (!res.ok || json.code !== 0) {
           throw new Error(json.message || 'Failed to load background job detail')
@@ -1309,11 +1305,7 @@ export default {
           }
         )
 
-        const res = await fetch(`/api/connections/${encodeURIComponent(this.selectedId)}/background-jobs/stop`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-RCH-Origin': 'web_ui' },
-          body: JSON.stringify({ job_key: jobKey }),
-        })
+        const res = await requestBackgroundJobStop(this.selectedId, jobKey)
 
         const json = await res.json()
         if (!res.ok || json.code !== 0) {
@@ -1363,10 +1355,7 @@ export default {
           }
         )
 
-        const res = await fetch(
-          `/api/connections/${encodeURIComponent(this.selectedId)}/background-jobs/${encodeURIComponent(jobId)}`,
-          { method: 'DELETE' }
-        )
+        const res = await deleteBackgroundJobRecord(this.selectedId, jobId)
         const json = await res.json()
         if (!res.ok || json.code !== 0) {
           throw new Error(json.message || 'Failed to delete background job record')
@@ -1433,10 +1422,7 @@ export default {
         const formData = new FormData()
         formData.append('file', file, file.name)
 
-        const res = await fetch('/api/jobs/upload', {
-          method: 'POST',
-          body: formData,
-        })
+        const res = await uploadServerJob(formData)
 
         const json = await res.json()
         if (!res.ok || json.code !== 0) {
@@ -1477,11 +1463,7 @@ export default {
           }
         )
 
-        const res = await fetch('/api/jobs/delete', {
-          method: 'DELETE',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: normalizedScriptName }),
-        })
+        const res = await deleteServerJob(normalizedScriptName)
 
         const json = await res.json()
         if (!res.ok || json.code !== 0) {

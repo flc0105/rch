@@ -3,6 +3,7 @@ import {readFileSync} from 'node:fs'
 import {dirname, resolve} from 'node:path'
 import {fileURLToPath} from 'node:url'
 import vm from 'node:vm'
+import { saveArtifactContent } from '../src/api/artifactsApi.js'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const source = readFileSync(resolve(root, 'src/components/PreviewDialog.vue'), 'utf8')
@@ -23,7 +24,11 @@ const sandbox = {
     fetchCalls.push({url, options})
     return response
   },
+  saveArtifactContent,
 }
+// The component uses the actual Artifact API; its fetch runs in the module realm.
+const originalFetch = globalThis.fetch
+globalThis.fetch = sandbox.fetch
 vm.runInNewContext(script.replace(/^import\s+[^\n]*\n/gm, '').replace('export default {', 'globalThis.component = {'), sandbox)
 const comp = sandbox.component
 function makeVm() {
@@ -151,4 +156,5 @@ assert.equal(nextSource.previewFileCodec, 'utf-8')
 assert.equal(nextSource.previewEditable, true)
 assert.equal(nextSource.previewEditMode, true)
 
+globalThis.fetch = originalFetch
 console.log('Preview text strict encoding, readonly, reload and save requests passed')

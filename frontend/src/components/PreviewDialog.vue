@@ -212,6 +212,8 @@
 </template>
 
 <script>
+import { previewArtifact, uploadArtifact, saveArtifactContent } from '../api/artifactsApi.js'
+import { saveServerJob, downloadServerJob, previewBackgroundJobFile } from '../api/backgroundJobsApi.js'
 import {ElMessage} from 'element-plus'
 import {Close, FullScreen} from '@element-plus/icons-vue'
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api'
@@ -768,7 +770,7 @@ export default {
       this.previewArtifactInfo = row  // 保存 artifact 信息，用于后续刷新
 
       await this.loadPreviewPayload(
-          () => fetch(`/api/artifacts/${encodeURIComponent(row.artifact_id)}/preview`),
+          () => previewArtifact(row.artifact_id),
           row.original_name || row.stored_name || 'Artifact Preview',
       )
 
@@ -783,7 +785,7 @@ export default {
 
       if (file.artifact_id) {
         await this.loadPreviewPayload(
-            () => fetch(`/api/artifacts/${encodeURIComponent(file.artifact_id)}/preview`),
+            () => previewArtifact(file.artifact_id),
             file.original_name || file.stored_name || 'Job File Preview',
         )
         return
@@ -795,7 +797,7 @@ export default {
       }
 
       await this.loadPreviewPayload(
-          () => fetch(file.preview_url),
+          () => previewBackgroundJobFile(file.preview_url),
           file.original_name || file.stored_name || 'Job File Preview',
       )
     },
@@ -903,14 +905,7 @@ export default {
       this.previewSaving = true
 
       try {
-        const res = await fetch('/api/jobs/save', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({
-            name: this.previewFilePath,
-            content,
-          }),
-        })
+        const res = await saveServerJob(this.previewFilePath, content)
 
         const json = await res.json()
         if (!res.ok || json.code !== 0) {
@@ -1003,10 +998,7 @@ export default {
           saved_at: new Date().toISOString(),
         }))
 
-        const res = await fetch('/api/files/upload', {
-          method: 'POST',
-          body: formData,
-        })
+        const res = await uploadArtifact(formData)
 
         const json = await res.json()
         if (!res.ok || json.code !== 0) {
@@ -1046,14 +1038,7 @@ export default {
       this.previewSaving = true
 
       try {
-        const res = await fetch(`/api/artifacts/${encodeURIComponent(this.previewFilePath)}/content`, {
-          method: 'PUT',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({
-            content,
-            encoding: this.previewFileCodec,
-          }),
-        })
+        const res = await saveArtifactContent(this.previewFilePath, content, this.previewFileCodec)
 
         const json = await res.json()
         if (!res.ok || json.code !== 0) {
@@ -1496,7 +1481,7 @@ print(value)
       }
 
       try {
-        const res = await fetch(`/api/jobs/download?name=${encodeURIComponent(normalizedScriptName)}`)
+        const res = await downloadServerJob(normalizedScriptName)
         if (!res.ok) {
           throw new Error(`Failed to load job: ${res.statusText}`)
         }
@@ -1772,7 +1757,7 @@ print(value)
           throw new Error('Invalid artifact')
         }
 
-        const res = await fetch(`/api/artifacts/${encodeURIComponent(this.previewFilePath)}/preview`)
+        const res = await previewArtifact(this.previewFilePath)
 
         return await this.parsePreviewTextResponse(res, 'Failed to reload artifact')
       }
@@ -1805,7 +1790,7 @@ print(value)
           throw new Error('Invalid job name')
         }
 
-        const res = await fetch(`/api/jobs/download?name=${encodeURIComponent(this.previewFilePath)}`)
+        const res = await downloadServerJob(this.previewFilePath)
 
         if (!res.ok) {
           throw new Error(`Failed to reload job: ${res.statusText}`)

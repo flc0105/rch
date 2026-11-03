@@ -271,6 +271,7 @@
 </template>
 
 <script>
+import { saveCommandOutputArtifact } from '../api/artifactsApi.js'
 import {ElMessage} from 'element-plus'
 import TerminalLinkedText from './TerminalLinkedText.vue'
 import {
@@ -1139,13 +1140,7 @@ export default {
     },
 
     async saveTerminalOutputArtifactBody(body) {
-      const res = await fetch('/api/artifacts/command-output/save', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(body),
-      })
+      const res = await saveCommandOutputArtifact(body)
 
       const json = await res.json()
       if (!res.ok || json.code !== 0) {

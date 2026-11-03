@@ -491,6 +491,7 @@
 </template>
 
 <script>
+import { listArtifacts, uploadArtifact, renameArtifact as requestRenameArtifact, sendArtifactToClient, deleteArtifact as deleteArtifactRequest, clearArtifacts } from '../api/artifactsApi.js'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { setRemoteClipboardArtifactFile } from '../api/clipboardApi.js'
 import { formatBytes as formatBytesValue } from '../utils/formatters.js'
@@ -961,8 +962,7 @@ export default {
       this.artifactLoading = true
 
       try {
-        const url = new URL('/api/artifacts', window.location.origin)
-        const res = await fetch(url.pathname + url.search)
+        const res = await listArtifacts()
         const json = await res.json()
 
         if (!res.ok || json.code !== 0) {
@@ -1038,11 +1038,7 @@ export default {
       formData.append('file', file)
       formData.append('artifact_type', 'shared_files')
 
-      const res = await fetch('/api/files/upload', {
-        method: 'POST',
-        headers: this.buildJsonHeaders(),
-        body: formData,
-      })
+      const res = await uploadArtifact(formData, this.buildJsonHeaders())
       const json = await res.json()
 
       if (!res.ok || json.code !== 0) {
@@ -1126,14 +1122,9 @@ export default {
         const newName = String(value || '').trim()
         if (!newName || newName === oldName) return
 
-        const res = await fetch(`/api/artifacts/${encodeURIComponent(row.artifact_id)}/rename`, {
-          method: 'POST',
-          headers: this.buildJsonHeaders({ 'Content-Type': 'application/json' }),
-          body: JSON.stringify({
-            name: newName,
-            original_name: newName,
-          }),
-        })
+        const res = await requestRenameArtifact(
+          row.artifact_id, newName, this.buildJsonHeaders({ 'Content-Type': 'application/json' }),
+        )
 
         const json = await this.readJsonResponse(res, 'Rename failed')
         if (!res.ok || json.code !== 0) {
@@ -1208,14 +1199,9 @@ export default {
       )
 
       try {
-        const res = await fetch(`/api/artifacts/${encodeURIComponent(row.artifact_id)}/send-to-client`, {
-          method: 'POST',
-          headers: this.buildJsonHeaders({ 'Content-Type': 'application/json' }),
-          body: JSON.stringify({
-            client_id: clientId,
-            target_path: targetCwd,
-          }),
-        })
+        const res = await sendArtifactToClient(
+          row.artifact_id, clientId, targetCwd, this.buildJsonHeaders({ 'Content-Type': 'application/json' }),
+        )
         const json = await res.json()
 
         if (!res.ok || json.code !== 0) {
@@ -1240,9 +1226,7 @@ export default {
       const artifactId = String(row?.artifact_id || '').trim()
       if (!artifactId) throw new Error('Invalid artifact')
 
-      const res = await fetch(`/api/artifacts/${encodeURIComponent(artifactId)}`, {
-        method: 'DELETE',
-      })
+      const res = await deleteArtifactRequest(artifactId)
       const json = await this.readJsonResponse(res, 'Delete failed')
 
       if (!res.ok || json.code !== 0) {
@@ -1336,14 +1320,9 @@ export default {
 
         this.artifactClearing = true
 
-        const res = await fetch('/api/artifacts/clear', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            type: activeType,
-            machine_id: this.showArtifactMachineFilter ? (this.artifactMachineIdFilter || '') : '',
-          }),
-        })
+        const res = await clearArtifacts(
+          activeType, this.showArtifactMachineFilter ? (this.artifactMachineIdFilter || '') : '',
+        )
 
         const json = await res.json()
         if (!res.ok || json.code !== 0) {

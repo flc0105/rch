@@ -24,6 +24,12 @@ scoped deletion. Both APIs return native `Response` to their dialogs so UI
 feedback, pagination, and request-generation checks stay in the components;
 command completion and task-result recovery also use `commandHistoryApi.js`.
 
+Background Jobs uses `backgroundJobsApi.js` for its per-Client catalog, running
+jobs, job details and lifecycle requests, plus server-side Job script editing.
+Artifacts uses `artifactsApi.js` for shared files, command output, upload, editing,
+Send To and deletion. Connection Info, Preview and output-saving components reuse
+those APIs; responses remain native `Response` objects for the existing UI handlers.
+
 The Toolbar, More menu, and Toolbox honor explicit `false` values in the
 selected Client’s `feature_manifest`. For example, `remote_files`, `scripts`,
 and `jobs` suppress their associated launch actions and Script shortcuts.
