@@ -21,6 +21,7 @@ from core.protocol.message_types import (
     MSG_TYPE_MONITOR_CLOSE,
     MSG_TYPE_TRANSFER_START,
     MSG_TYPE_TRANSFER_CANCEL,
+    MSG_TYPE_SESSION_END_ACK,
 )
 
 class ClientInboundMessageDispatcher:
@@ -41,6 +42,10 @@ class ClientInboundMessageDispatcher:
 
     def dispatch(self, data: dict):
         message_type = data.get('type')
+
+        if message_type == MSG_TYPE_SESSION_END_ACK:
+            self.connection.acknowledge_session_end(str(data.get('end_id') or ''))
+            return None
 
         if message_type in self.IMMEDIATE_MESSAGE_TYPES:
             return self._dispatch_immediate_message(data)

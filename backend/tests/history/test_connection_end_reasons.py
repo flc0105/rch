@@ -128,7 +128,7 @@ def test_client_end_message_is_validated_bounded_and_captured():
     assert context.client_session_end['reason'] == 'client_error'
     assert len(context.client_session_end['detail']['summary']) == 500
     assert len(context.client_session_end['detail']['traceback']) == 12000
-    dispatcher.dispatch({'type': MSG_TYPE_SESSION_END, 'reason': 'server_requested_disconnect'})
+    dispatcher.dispatch({'type': MSG_TYPE_SESSION_END, 'reason': 'invalid_reason'})
     assert context.client_session_end['reason'] == 'client_error'
 
 
@@ -138,9 +138,10 @@ def test_client_reports_reason_before_shutdown():
         captured = []
         client.send = captured.append
         client.report_session_end('client_restart')
-        assert captured == [{
-            'type': MSG_TYPE_SESSION_END, 'reason': 'client_restart',
-        }]
+        assert len(captured) == 1
+        assert captured[0]['type'] == MSG_TYPE_SESSION_END
+        assert captured[0]['reason'] == 'client_restart'
+        assert len(captured[0]['end_id']) == 32
     finally:
         client.close()
 
@@ -218,7 +219,7 @@ def test_kill_instance_client_report_is_server_requested_disconnect(tmp_path):
         store,
         client_end={
             'at': time.monotonic(),
-            'reason': 'client_exit',
+            'reason': 'server_requested_disconnect',
             'detail': {'command': 'kill_instance'},
         },
         failure={'reason': 'connection_lost', 'detail': {}},
@@ -226,6 +227,22 @@ def test_kill_instance_client_report_is_server_requested_disconnect(tmp_path):
     assert item['termination_reason'] == 'server_requested_disconnect'
     assert item['termination_detail'] == {'command': 'kill_instance'}
     assert item['connection_state'] == 'offline'
+    db.close_thread_connection()
+
+
+def test_connection_history_uses_reported_reason_not_command_text(tmp_path):
+    db, store = _new_store(tmp_path)
+    item = _complete_session(
+        store,
+        client_end={
+            'at': time.monotonic(),
+            'reason': 'client_exit',
+            'detail': {'command': 'kill_instance'},
+        },
+        failure={'reason': 'transport_error', 'detail': {'summary': 'reset'}},
+    )
+    assert item['termination_reason'] == 'client_exit'
+    assert item['termination_detail'] == {'command': 'kill_instance'}
     db.close_thread_connection()
 
 
@@ -451,9 +468,12 @@ def test_client_report_can_include_command():
     try:
         captured = []
         client.send = captured.append
-        client.report_session_end('client_exit', command='kill_instance')
-        assert captured == [{'type': MSG_TYPE_SESSION_END, 'reason': 'client_exit',
-                             'detail': {'command': 'kill_instance'}}]
+        client.report_session_end('server_requested_disconnect', command='kill_instance')
+        assert len(captured) == 1
+        assert captured[0]['type'] == MSG_TYPE_SESSION_END
+        assert captured[0]['reason'] == 'server_requested_disconnect'
+        assert captured[0]['detail'] == {'command': 'kill_instance'}
+        assert len(captured[0]['end_id']) == 32
     finally:
         client.close()
 

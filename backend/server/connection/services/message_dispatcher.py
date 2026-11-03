@@ -4,6 +4,7 @@ from core.protocol.message_types import (
     MSG_TYPE_HEARTBEAT_ACK,
     MSG_TYPE_CANCEL_ACK,
     MSG_TYPE_SESSION_END,
+    MSG_TYPE_SESSION_END_ACK,
     MSG_TYPE_RESULT,
     MSG_TYPE_PTY_OPENED,
     MSG_TYPE_PTY_OUTPUT,
@@ -59,7 +60,7 @@ class ServerInboundMessageDispatcher:
 
         if message_type == MSG_TYPE_SESSION_END:
             reason = str(data.get('reason') or '')
-            if reason in ('client_exit', 'client_restart', 'client_update', 'client_paused', 'client_error'):
+            if reason in ('client_exit', 'client_restart', 'client_update', 'client_paused', 'client_error', 'server_requested_disconnect'):
                 detail = data.get('detail') if isinstance(data.get('detail'), dict) else {}
                 self.session.context.client_session_end = {
                     'at': time.monotonic(),
@@ -70,6 +71,9 @@ class ServerInboundMessageDispatcher:
                         'traceback': str(detail.get('traceback') or '')[:12000],
                     },
                 }
+                end_id = str(data.get('end_id') or '')
+                if end_id:
+                    self.session.send({'type': MSG_TYPE_SESSION_END_ACK, 'end_id': end_id})
             return None
 
         if message_type in self.IMMEDIATE_MESSAGE_TYPES:

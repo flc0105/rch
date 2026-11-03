@@ -182,6 +182,8 @@ Connection History 的列表在主动结束时显示 **Offline**，在连接丢�
 | Unexpected disconnect | Interrupted | 连接在协议帧传输途中中止，或关闭时缺少明确结束报告 |
 | Client error | Interrupted | Client 终止性异常上报错误摘要与堆栈 |
 
+Client 主动结束、重启、更新或暂停连接时，使用统一的 `session_end` 上报：Client 附带一次性 `end_id`，Server 收到并保存结束原因后返回 `session_end_ack`。Client 通过现有接收线程等待确认（最多 2 秒）后关闭 Socket，避免 Windows 等平台在进程快速退出时丢失尚未处理的结束信息。`kill_instance` 由 Client 直接报告 `server_requested_disconnect`；`relaunch_instance` 报告 `client_restart`，不通过 Server 命令文字猜测断连原因。确认超时或发送失败会在 Client 日志中记录，断线诊断仍以 Server 实际收到的信息为准。Web Disconnect 属于 Server 直接发起关闭，继续使用其独立的请求记录。
+
 设备断电、系统强制终止和网络中断由 Server 捕获的 Socket 现象归类。详情显示该连接实际收到的诊断信息。
 
 

@@ -1,5 +1,7 @@
 import os
 import queue
+import threading
+import uuid
 
 from client.connection.message_dispatcher import ClientInboundMessageDispatcher
 from client.connection.message_router import ClientInboundMessageRouter
@@ -21,6 +23,8 @@ class ServerConnection(RCHSocket):
     本地运行能力统一放在 ClientRuntime 中，避免连接层继续膨胀。
     """
 
+    SESSION_END_ACK_TIMEOUT_SECONDS = 2.0
+
     def __init__(self, *, features=None):
         super().__init__()
         self.client_id = None
@@ -29,6 +33,9 @@ class ServerConnection(RCHSocket):
         self.pending_message_queue = queue.Queue()
         self.is_connected = False
         self._pause_requested = False
+        self._session_end_lock = threading.Lock()
+        self._session_end_ack = threading.Event()
+        self._pending_session_end_id = ''
 
         self.message_router = ClientInboundMessageRouter(self)
         self.message_dispatcher = ClientInboundMessageDispatcher(self)
@@ -57,9 +64,21 @@ class ServerConnection(RCHSocket):
         except Exception:
             pass
 
-    def report_session_end(self, reason: str, *, command: str = '', summary: str = '', traceback_text: str = ''):
-        try:
-            message = {'type': MSG_TYPE_SESSION_END, 'reason': reason}
+    def acknowledge_session_end(self, end_id: str):
+        if end_id and end_id == self._pending_session_end_id:
+            self._session_end_ack.set()
+
+    def report_session_end(self, reason: str, *, command: str = '', summary: str = '', traceback_text: str = '') -> bool:
+        """Report an intentional exit and wait until Server has recorded its reason.
+
+        The existing receiver thread processes the ACK. A bounded timeout avoids
+        holding shutdown indefinitely when the transport is already broken.
+        """
+        with self._session_end_lock:
+            end_id = uuid.uuid4().hex
+            self._pending_session_end_id = end_id
+            self._session_end_ack.clear()
+            message = {'type': MSG_TYPE_SESSION_END, 'reason': reason, 'end_id': end_id}
             if command or summary or traceback_text:
                 message['detail'] = {
                     key: value for key, value in (
@@ -68,9 +87,19 @@ class ServerConnection(RCHSocket):
                         ('traceback', str(traceback_text or '')[:12000]),
                     ) if value
                 }
-            self.send(message)
-        except OSError:
-            pass
+            try:
+                self.send(message)
+                if not self.is_connected:
+                    return False
+                acknowledged = self._session_end_ack.wait(self.SESSION_END_ACK_TIMEOUT_SECONDS)
+                if not acknowledged:
+                    logger.warning('Session end not acknowledged by Server: reason=%s', reason)
+                return acknowledged
+            except OSError as exc:
+                logger.warning('Session end could not be reported: reason=%s error=%s', reason, exc)
+                return False
+            finally:
+                self._pending_session_end_id = ''
 
     def send_result(self, id: int, status: int, result: str, eof: int = 1):
         data = {

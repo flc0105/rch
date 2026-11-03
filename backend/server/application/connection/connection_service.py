@@ -551,8 +551,6 @@ class WebConnectionService:
             reason, detail = 'client_restart', {'command': 'httpctl relaunch'}
         elif client_end and time.monotonic() - client_end.get('at', time.monotonic()) < 120:
             reason, detail = client_end['reason'], client_end.get('detail', {})
-            if reason == 'client_exit' and str(detail.get('command') or '').strip() == 'kill_instance':
-                reason = 'server_requested_disconnect'
         elif failure:
             reason, detail = failure['reason'], failure.get('detail', {})
         else:
