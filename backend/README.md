@@ -2974,4 +2974,4 @@ there is no Server-local file selection or System Events feed in the first versi
 
 ### Multi-listener TCP / TLS TCP
 
-The Web UI manages TCP and TLS/TCP Agent connection listeners under Utilities → Listeners. Python Bundle agents select their listener when built; the Device Sidebar shows listener origin. Configuration and lightweight certificate pinning are described in [Listener setup](docs/listeners.md).
+The Web UI manages TCP and TLS/TCP Agent connection listeners under Utilities → Listeners. Python Bundle and Go Loader builds can select TCP or TLS/TCP listeners; Go Loader passes the selected listener to the Bundle it downloads. The Device Sidebar shows listener origin. Configuration and lightweight certificate pinning are described in [Listener setup](docs/listeners.md).

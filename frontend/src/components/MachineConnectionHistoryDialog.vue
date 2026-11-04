@@ -475,7 +475,7 @@ export default {
     formatListener(row) {
       const name = String(row?.listener_name || '').trim()
       const port = Number(row?.listener_port || 0)
-      return [name, port > 0 ? `:${port}` : ''].filter(Boolean).join(' · ') || '-'
+      return name && port > 0 ? `${name} (port ${port})` : (name || (port > 0 ? `Port ${port}` : '-'))
     },
 
     open(item = {}) {

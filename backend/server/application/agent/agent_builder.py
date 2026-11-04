@@ -16,8 +16,8 @@ from server.runtime.listener_protocols import get_listener_protocol
 # All builders are peers; even Bundle may be unregistered. Restart after editing this map.
 AGENT_BUILDERS = {
     'bundle': ('server.application.agent.agent_build_bundle', 'BundleBuilder', BUNDLE_ARTIFACT_STEM),
-    # 'pyinstaller': ('server.application.agent.agent_build_pyinstaller', 'PyInstallerBuilder', 'pyinstaller'),
-    # 'go': ('server.application.agent.agent_build_client_go', 'ClientGoBuilder', 'go-client'),
+    'pyinstaller': ('server.application.agent.agent_build_pyinstaller', 'PyInstallerBuilder', 'pyinstaller'),
+    'go': ('server.application.agent.agent_build_client_go', 'ClientGoBuilder', 'go-client'),
     'go_loader': ('server.application.agent.agent_build_go_loader', 'GoLoaderBuilder', 'go-loader'),
 }
 
@@ -58,7 +58,8 @@ class AgentBuilder:
                     web_port: int, target_os: str = 'mac',
                     builder: str = '', target_arch: str = '',
                     server_web_scheme: str = 'http', server_web_host: str = '',
-                    listener_protocol: str = 'tcp', tls_fingerprint: str = '') -> dict:
+                    listener_protocol: str = 'tcp', tls_fingerprint: str = '',
+                    listener_id: str = '') -> dict:
         builder = (builder or '').strip().lower()
         if not builder:
             raise ValueError('builder is required')
@@ -95,6 +96,8 @@ class AgentBuilder:
             if builder == 'bundle':
                 common_args['listener_protocol'] = listener_protocol
                 common_args['tls_fingerprint'] = tls_fingerprint
+            if builder == 'go_loader':
+                common_args['listener_id'] = listener_id
             module_name, class_name, _ = AGENT_BUILDERS[builder]
             build_module = importlib.import_module(module_name)
             builder_class = getattr(build_module, class_name)

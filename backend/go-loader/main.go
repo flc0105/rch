@@ -469,7 +469,7 @@ func resolveWorkDir() (string, error) {
 	return workDir, nil
 }
 
-func requestBundleBuild() (*BundleBuildResponse, error) {
+func bundleBuildPayload(listenerID string) map[string]any {
 	payload := map[string]any{
 		"server_host":       config.ServerSocketHost,
 		"server_port":       config.ServerSocketPort,
@@ -481,7 +481,14 @@ func requestBundleBuild() (*BundleBuildResponse, error) {
 		"target_arch":       "",
 		"source":            "loader",
 	}
+	if listenerID != "" {
+		payload["listener_id"] = listenerID
+	}
+	return payload
+}
 
+func requestBundleBuild() (*BundleBuildResponse, error) {
+	payload := bundleBuildPayload(config.ServerListenerID)
 	body, _ := json.Marshal(payload)
 	req, err := http.NewRequest(http.MethodPost, buildURL(config.BundleBuildAPIPath), bytes.NewReader(body))
 	if err != nil {

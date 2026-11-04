@@ -47,9 +47,9 @@ class TlsTcpListenerProtocol(TcpListenerProtocol):
     name = 'tls_tcp'
     label = 'TLS/TCP'
     build_label = 'TLS/TCP (pinned certificate)'
-    supported_builders = ('bundle',)
+    supported_builders = ('bundle', 'go_loader')
     notice = 'A self-signed certificate is generated once. Bundle agents pin its fingerprint.'
-    builder_warning = 'TLS/TCP supports Bundle only'
+    builder_warning = 'TLS/TCP supports Bundle and Go (Loader) only'
 
     @staticmethod
     def _certificate_paths(listener_id, cert_dir):
@@ -91,12 +91,12 @@ class TlsTcpListenerProtocol(TcpListenerProtocol):
         return hashlib.sha256(ssl.PEM_cert_to_DER_cert(pem)).hexdigest()
 
     def validate_build(self, builder, fingerprint):
-        if builder != 'bundle' or len(fingerprint) != 64:
-            raise ValueError('TLS/TCP requires Bundle and a pinned server certificate')
+        if builder not in self.supported_builders or len(fingerprint) != 64:
+            raise ValueError('TLS/TCP requires Bundle or Go (Loader) and a pinned server certificate')
 
     def build_fingerprint(self, listener_id, builder, cert_dir):
-        if builder != 'bundle':
-            raise ValueError('TLS/TCP is supported by Bundle only')
+        if builder not in self.supported_builders:
+            raise ValueError('TLS/TCP supports Bundle and Go (Loader) only')
         fingerprint = self.certificate_fingerprint(listener_id, cert_dir)
         self.validate_build(builder, fingerprint)
         return fingerprint

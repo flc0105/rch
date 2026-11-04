@@ -2,6 +2,7 @@ package config
 
 const ServerSocketHost = "127.0.0.1"
 const ServerSocketPort = 9999
+const ServerListenerID = ""
 const ServerWebScheme = "http"
 const ServerWebHost = "127.0.0.1"
 const ServerWebPort = 8085

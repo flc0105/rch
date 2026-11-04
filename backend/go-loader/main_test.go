@@ -68,3 +68,17 @@ func TestBuildNamesMustNotEscapeReleaseRoot(t *testing.T) {
 		t.Fatal("valid build version rejected")
 	}
 }
+
+func TestBundleBuildPayloadListenerSelection(t *testing.T) {
+	defaultPayload := bundleBuildPayload("")
+	if _, exists := defaultPayload["listener_id"]; exists {
+		t.Fatal("default TCP request must remain unchanged")
+	}
+	tlsPayload := bundleBuildPayload("tls-abc123")
+	if tlsPayload["listener_id"] != "tls-abc123" {
+		t.Fatalf("TLS listener not forwarded: %#v", tlsPayload)
+	}
+	if tlsPayload["builder"] != "bundle" || tlsPayload["server_port"] != 9999 {
+		t.Fatal("existing bundle fields changed")
+	}
+}

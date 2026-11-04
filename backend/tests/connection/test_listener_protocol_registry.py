@@ -40,7 +40,7 @@ class _ConnectingSocket:
 def test_registered_protocols_expose_build_rules_without_manager_switches():
     definitions = {entry['id']: entry for entry in list_listener_protocols()}
     assert definitions['tcp']['supported_builders'] is None
-    assert definitions['tls_tcp']['supported_builders'] == ['bundle']
+    assert definitions['tls_tcp']['supported_builders'] == ['bundle', 'go_loader']
     assert definitions['tls_tcp']['build_label'] == 'TLS/TCP (pinned certificate)'
     with pytest.raises(ValueError, match='Unsupported listener protocol'):
         get_listener_protocol('not_registered')
@@ -67,8 +67,9 @@ def test_factory_provides_build_settings_and_pinned_tls_connection(tmp_path):
         assert settings['listener_protocol'] == 'tls_tcp'
         assert settings['tls_fingerprint'] == manager.certificate_fingerprint(tls['id'])
         assert len(settings['tls_fingerprint']) == 64
-        assert manager.list()[1]['supported_builders'] == ['bundle']
-        with pytest.raises(ValueError, match='Bundle only'):
+        assert manager.list()[1]['supported_builders'] == ['bundle', 'go_loader']
+        assert manager.build_settings(tls['id'], secure_port, 'go_loader') == settings
+        with pytest.raises(ValueError, match='Bundle and Go'):
             manager.build_settings(tls['id'], secure_port, 'go')
         with pytest.raises(ValueError, match='does not match'):
             manager.build_settings(tls['id'], secure_port + 1, 'bundle')

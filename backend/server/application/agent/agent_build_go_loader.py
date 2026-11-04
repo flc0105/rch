@@ -23,13 +23,15 @@ class GoLoaderBuilder:
 
     def _inject_go_loader_config(self, client_dir: str, server_host: str, server_port: int, web_port: int,
                                  file_transfer_port: int,
-                                 build_version: str, server_web_scheme: str = 'http', server_web_host: str = ''):
+                                 build_version: str, server_web_scheme: str = 'http', server_web_host: str = '',
+                                 listener_id: str = ''):
         config_path = os.path.join(client_dir, 'go-loader', 'config', 'config.go')
         server_web_host = (server_web_host or server_host).strip() or server_host
         template = f'''package config
 
 const ServerSocketHost = "{server_host}"
 const ServerSocketPort = {server_port}
+const ServerListenerID = "{listener_id}"
 const ServerWebScheme = "{server_web_scheme}"
 const ServerWebHost = "{server_web_host}"
 const ServerWebPort = {web_port}
@@ -45,7 +47,7 @@ const BundleReportAPIPath = "/api/agent/loader/report"
     def _build_with_go_loader(self, work_dir: str, server_host: str, server_port: int,
                               web_port: int, file_transfer_port: int, target_os: str, target_arch: str,
                               build_id: str = '', build_version: str = 'dev', server_web_scheme: str = 'http',
-                              server_web_host: str = '') -> dict:
+                              server_web_host: str = '', listener_id: str = '') -> dict:
         go_project_dir = os.path.join(self.source_dir, 'go-loader')
         if not os.path.isdir(go_project_dir):
             raise FileNotFoundError('go-loader directory not found')
@@ -62,6 +64,7 @@ const BundleReportAPIPath = "/api/agent/loader/report"
             build_version,
             server_web_scheme,
             server_web_host,
+            listener_id,
         )
 
         go_target = self.GO_TARGET_MAP[target_os]

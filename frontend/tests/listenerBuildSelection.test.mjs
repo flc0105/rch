@@ -14,7 +14,7 @@ const component = context.module.exports
 function state(builder, listenerId) {
   return {
     agentForm: { builder, listener_id: listenerId, server_host: 'example.org', server_port: 9999, web_port: 8085, target_os: 'mac', target_arch: 'arm64' },
-    listeners: [{id:'lan',name:'Local',protocol:'tcp',port:9999,supported_builders:null,protocol_label:'TCP'}, {id:'secure',name:'Public',protocol:'tls_tcp',port:9443,supported_builders:['bundle'],protocol_label:'TLS/TCP'}],
+    listeners: [{id:'lan',name:'Local',protocol:'tcp',port:9999,supported_builders:null,protocol_label:'TCP'}, {id:'secure',name:'Public',protocol:'tls_tcp',port:9443,supported_builders:['bundle','go_loader'],protocol_label:'TLS/TCP'}],
   }
 }
 
@@ -26,11 +26,14 @@ test('Bundle builder can choose TCP or TLS listeners', () => {
   assert.equal(component.methods.buildAgentPayload.call(s).listener_id,'secure')
 })
 
-test('Go builders see only TCP listeners', () => {
-  for(const builder of ['go','go_loader','pyinstaller']) {
+test('Go Loader supports TLS; Go Simple and PyInstaller remain TCP only', () => {
+  for(const builder of ['go','pyinstaller']) {
     const s=state(builder,'lan')
     assert.deepEqual(Array.from(component.computed.compatibleListeners.call(s), x => x.id), ['lan'])
   }
+  const loader=state('go_loader','secure')
+  assert.deepEqual(Array.from(component.computed.compatibleListeners.call(loader), x => x.id), ['lan','secure'])
+  assert.equal(component.methods.buildAgentPayload.call(loader).listener_id, 'secure')
 })
 
 test('Builder compatibility follows protocol metadata rather than protocol names', () => {

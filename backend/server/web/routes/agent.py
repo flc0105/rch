@@ -77,6 +77,7 @@ def create_agent_blueprint(server_instance):
                 source,
                 listener_protocol=listener_protocol,
                 tls_fingerprint=tls_fingerprint,
+                listener_id=listener_id,
             )
             result['download_url'] = f'/api/agent/download/{result["file_name"]}'
             if builder == 'bundle':

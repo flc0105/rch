@@ -17,21 +17,21 @@
 
       <div class="one-liners-config-row">
         <label class="one-liners-config-field">
-          <span>Server IP</span>
-          <el-input
-            v-model="serverForm.serverHost"
-            size="small"
-            placeholder="Server IP"
-          />
-        </label>
-
-        <label class="one-liners-config-field">
           <span>Listener</span>
           <el-select v-if="listeners.length" v-model="selectedListenerId" size="small" style="width: 100%" @change="onListenerChange">
             <el-option v-for="listener in listeners" :key="listener.id" :value="listener.id"
                        :label="`${listener.name} · ${listener.protocol_label || listener.protocol?.toUpperCase()} :${listener.port}`" />
           </el-select>
           <el-input v-else v-model="serverForm.serverPort" size="small" placeholder="9999" />
+        </label>
+
+        <label class="one-liners-config-field">
+          <span>Server IP</span>
+          <el-input
+            v-model="serverForm.serverHost"
+            size="small"
+            placeholder="Server IP"
+          />
         </label>
 
         <label class="one-liners-config-field">
