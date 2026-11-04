@@ -82,30 +82,30 @@ Connection History 使用既有 `connection_sessions.snapshot_json` 保存这两
 
 当前判定按以下优先级工作：
 
-1. **显式标准化环境**：RCH 自己明确知道最终进程形态时，使用 `RCH_CLIENT_LAUNCH_MODE` / `RCH_CLIENT_LAUNCH_SOURCE`。
+1. **显式标准化环境（非 macOS）**：其他平台保留启动器传入的标准化运行形态。macOS 不把环境变量当作 Detached 或 launchd 托管的判断依据。
 2. **iOS/Pythonista**：记录为 `ide / pythonista`。
-3. **Scheduler / Service manager**：cron、Task Scheduler、systemd、LaunchAgent/LaunchDaemon、Windows Service 优先于中间 Shell。
+3. **Scheduler / Service manager**：cron、Task Scheduler、systemd、Windows Service 继续沿用原有检测；macOS 只有 `launchctl list` 的运行作业 PID 与当前进程一致，且 `launchctl print` 在正确 domain 下再次证实 `running`、PID 和 LaunchAgent/LaunchDaemon 类型时才归为对应服务。
 4. **POSIX 独立 session**：没有交互 TTY 且当前进程是 session leader 时，记录为 `detached / new_session`。
 5. **直接 Shell**：识别 zsh/bash/sh/fish/CMD/PowerShell 等直接父进程，再根据 TTY、前台进程组或 Windows console 判断 Terminal / Terminal background。
 6. **IDE**：识别 PyCharm / pydevd / JetBrains 环境。
 7. **剩余交互式 TTY**：记录为 `terminal`，source 可为空。
 8. **Windows 无控制台剩余进程**：记录为 `detached / detached_process`。
-9. 其他情况：`unknown`。
+9. **macOS 无控制终端**：在没有已验证服务、Shell 或 IDE 宿主时，若系统报告没有控制终端则归为 `detached`。其他情况为 `unknown`。
 
 Service/Scheduler 检测会查看进程祖先链，因此 `cron → sh -c → python` 仍能归为 `Scheduled (cron)`。Shell 分类只认**直接父 Shell**，这样 PyCharm 内置 Terminal 会显示 Terminal，而 PyCharm Run/Debug 会显示 IDE。
 
 ## 5. RCH 自己创建的新 Client
 
-普通 Duplicate/Restart 与 SSH Bootstrap 等路径创建独立 Client，并显式传递 detached 形态：
+普通 Duplicate/Restart 与 SSH Bootstrap 等路径创建独立 Client：
 
 - POSIX：`start_new_session=True`，记录 `detached / new_session`；
 - Windows：独立后台进程，记录 `detached / detached_process`。
 
-启动环境中显式传递标准化形态；短生命周期 Bootstrap 退出后，即使 Client 被 PID 1 收养，仍保留 `detached / new_session`。环境里不传 `spawn_instance`、`relaunch_instance` 等内部动作名。因此即使原 Client 来自 `IDE (PyCharm)`，新建的独立 Client 仍显示 `Detached (...)`。
+启动器仍可携带标准化环境供其他平台使用。macOS 则根据进程自己的 session、控制终端和 launchd 作业确认状态：短生命周期 Bootstrap 退出、Client 被 `launchd` 收养，不会因此被认作 LaunchAgent。原 Client 即使来自 `IDE (PyCharm)`，采用 `start_new_session=True` 启动的新 Client 仍按实际新会话显示 `Detached`。
 
 macOS `spawn_elevated_instance --detached` 也通过短生命周期提权 bootstrap 创建真正的 new-session root Client，最终显示 `Detached (new session)`。默认不带 `--detached` 的 elevated 启动保留原调用链，Launch Mode 按其真实宿主环境判定。
 
-LaunchAgent / LaunchDaemon 由统一 launchd manager 显式写入 `user_service/launchagent` 或 `system_service/launchdaemon`；详见 [macOS launchd Service Management](launchd.md)。
+LaunchAgent / LaunchDaemon 的判定读取当前 launchd 作业的实际 PID 和类型；服务管理器安装的 plist 环境字段不再作为服务判定依据。详见 [macOS launchd Service Management](launchd.md)。
 
 ## 6. 测试准备
 
@@ -431,8 +431,8 @@ IDE (Pythonista)
 | 现象 | 检查方式 |
 | --- | --- |
 | PyCharm Run 显示 Terminal | 查看是不是实际从 PyCharm 内置 Terminal 手动启动；直接父进程为 Shell 时分类就是 Terminal。 |
-| Duplicate/Restart 后仍显示 IDE | 新 Client 应使用标准 detached 环境；检查运行代码是否已包含 detached launch marker。 |
-| LaunchAgent/Daemon 显示 IDE/Unknown | 用统一 launchd manager 安装，检查 plist 的 Launch Mode 环境，并用 `launchctl print` 确认真实 service target。 |
+| Duplicate/Restart 后仍显示 IDE | 检查新 Client 是否真正独立启动（POSIX `start_new_session=True`），以及 session ID 与进程 PID。macOS 不依赖 detached 环境标记。 |
+| LaunchAgent/Daemon 显示 IDE/Unknown | 运行 `launchctl list` 核对当前 Client PID 对应的作业，再以 `launchctl print gui/<uid>/<label>`、`user/<uid>/<label>` 或 `system/<label>` 核对 `state`、`pid` 和 `type`。macOS 上仅设置环境标记不会改变分类。 |
 | cron 显示 Terminal background | 检查进程祖先中是否还能识别 cron/crond；scheduler 检测应优先于中间 `sh -c`。 |
 | 同一 Client 重连后分类没有变化 | 这是预期行为；Launch Mode 是进程级快照，不是每次网络连接重新采集。 |
 | History 中旧记录显示 Unknown | 旧会话快照没有 `launch_mode/launch_source` 时不会回填推断。 |

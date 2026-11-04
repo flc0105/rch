@@ -149,7 +149,7 @@ RCH_CLIENT_LAUNCH_MODE=system_service
 RCH_CLIENT_LAUNCH_SOURCE=launchdaemon
 ```
 
-因此 Server Basic Info 与 Connection History 可以稳定显示 `User service (LaunchAgent)` 或 `System service (LaunchDaemon)`，不需要依赖父进程链猜测。完整字段定义与其他启动方式见 [Client Launch Mode](launch_mode.md)。
+这些环境字段保留在服务定义中供启动时追踪；实际 Client 的 Launch Mode 会查询 launchd 运行作业，要求作业 PID、运行状态和 LaunchAgent/LaunchDaemon 类型明确匹配当前进程才显示 `User service (LaunchAgent)` 或 `System service (LaunchDaemon)`。若缺少匹配，按进程的真实 session/控制终端状态继续分类。完整字段定义与其他启动方式见 [Client Launch Mode](launch_mode.md)。
 
 ## 7. 日志与权限
 

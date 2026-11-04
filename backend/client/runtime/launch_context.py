@@ -1,6 +1,8 @@
 import os
 import re
+import subprocess
 import sys
+from functools import lru_cache
 
 
 LAUNCH_MODE_ENV = 'RCH_CLIENT_LAUNCH_MODE'
@@ -17,21 +19,75 @@ VALID_LAUNCH_MODES = {
 }
 
 
-LAUNCHD_SOURCES = {'launchagent', 'launchdaemon'}
+
+@lru_cache(maxsize=4)
+def _verified_launchd_job_for_pid(pid: int):
+    """Identify a running launchd *job*, not a process merely adopted by launchd.
+
+    `launchctl list` supplies a running job's label and PID in the current
+    bootstrap domain. Verify the exact job with `launchctl print` in an
+    explicit domain; an anonymous job or a PID in another job is not proof.
+    """
+    if sys.platform != 'darwin':
+        return None
+
+    try:
+        listed = subprocess.run(
+            ['/bin/launchctl', 'list'], capture_output=True, text=True,
+            timeout=2, check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if listed.returncode != 0:
+        return None
+
+    labels = []
+    for line in listed.stdout.splitlines():
+        fields = line.split(None, 2)
+        if len(fields) != 3 or fields[0] != str(pid):
+            continue
+        label = fields[2].strip()
+        # launchd also tracks adopted/anonymous processes. Only named jobs count.
+        if not label or 'anonymous' in label.lower() or '/' in label:
+            continue
+        labels.append(label)
+
+    if not labels:
+        return None
+
+    try:
+        uid = os.getuid()
+    except (AttributeError, OSError):
+        return None
+
+    for label in labels:
+        for domain, expected_type, mode, source in (
+            (f'gui/{uid}', 'LaunchAgent', 'user_service', 'launchagent'),
+            (f'user/{uid}', 'LaunchAgent', 'user_service', 'launchagent'),
+            ('system', 'LaunchDaemon', 'system_service', 'launchdaemon'),
+        ):
+            try:
+                detail = subprocess.run(
+                    ['/bin/launchctl', 'print', f'{domain}/{label}'],
+                    capture_output=True, text=True, timeout=2, check=False,
+                )
+            except (OSError, subprocess.TimeoutExpired):
+                continue
+            if detail.returncode != 0:
+                continue
+            output = detail.stdout
+            if (re.search(r'^[ \t]*pid[ \t]*=[ \t]*' + re.escape(str(pid)) + r'[ \t]*$', output, re.M)
+                    and re.search(r'^[ \t]*state[ \t]*=[ \t]*running[ \t]*$', output, re.M | re.I)
+                    and re.search(r'^[ \t]*type[ \t]*=[ \t]*' + expected_type + r'[ \t]*$', output, re.M | re.I)):
+                return {'mode': mode, 'source': source}
+    return None
 
 
 def is_launchd_managed_client() -> bool:
-    """Return whether launchd owns this Client's process lifecycle."""
-    explicit_mode = str(os.environ.get(LAUNCH_MODE_ENV) or '').strip().lower()
-    explicit_source = str(os.environ.get(LAUNCH_SOURCE_ENV) or '').strip().lower()
-    if explicit_source in LAUNCHD_SOURCES and explicit_mode in {'user_service', 'system_service'}:
-        return True
-
+    """Only an actual matching launchd job can own the macOS Client."""
     if sys.platform != 'darwin':
         return False
-
-    context = detect_launch_context('macos')
-    return str(context.get('source') or '').strip().lower() in LAUNCHD_SOURCES
+    return _verified_launchd_job_for_pid(os.getpid()) is not None
 
 
 def with_launch_context_environment(source=None, *, mode: str, launch_source: str = '') -> dict:
@@ -62,7 +118,10 @@ def detached_launch_environment(source=None) -> dict:
 def detect_launch_context(os_alias: str) -> dict:
     """Classify the current Client by its external process-hosting mode."""
     explicit_mode = str(os.environ.get(LAUNCH_MODE_ENV) or '').strip().lower()
-    if explicit_mode in VALID_LAUNCH_MODES:
+    is_macos = os_alias in {'mac', 'macos'} or sys.platform == 'darwin'
+    # On macOS the OS process/job state is authoritative. Inherited launch
+    # markers can describe a former parent, not the current process.
+    if not is_macos and explicit_mode in VALID_LAUNCH_MODES:
         return {
             'mode': explicit_mode,
             'source': str(os.environ.get(LAUNCH_SOURCE_ENV) or '').strip().lower(),
@@ -141,33 +200,17 @@ def detect_launch_context(os_alias: str) -> dict:
 
         systemd_rows = [row for row in parent_rows if row[0] == 'systemd' or '/systemd' in row[1]]
         direct_systemd = bool(systemd_rows and direct_parent in systemd_rows)
-        if os.environ.get('INVOCATION_ID') or direct_systemd:
+        if not is_macos and (os.environ.get('INVOCATION_ID') or direct_systemd):
             user_managed = any('--user' in row[2] for row in systemd_rows)
             return {
                 'mode': 'user_service' if user_managed else 'system_service',
                 'source': 'systemd_user' if user_managed else 'systemd',
             }
 
-        if os_alias in {'mac', 'macos'} or sys.platform == 'darwin':
-            xpc_service = str(os.environ.get('XPC_SERVICE_NAME') or '').strip()
-            direct_launchd = direct_parent[0] == 'launchd' or direct_parent[1].endswith('/launchd')
-            is_launchd_job = bool(
-                direct_launchd
-                or (
-                    xpc_service
-                    and xpc_service != '0'
-                    and not xpc_service.startswith('application.')
-                )
-            )
-            if is_launchd_job:
-                try:
-                    is_system = os.getuid() == 0
-                except Exception:
-                    is_system = False
-                return {
-                    'mode': 'system_service' if is_system else 'user_service',
-                    'source': 'launchdaemon' if is_system else 'launchagent',
-                }
+        if is_macos:
+            managed = _verified_launchd_job_for_pid(os.getpid())
+            if managed is not None:
+                return managed
 
     def has_interactive_terminal():
         for stream in (sys.stdin, sys.stdout, sys.stderr):
@@ -235,5 +278,17 @@ def detect_launch_context(os_alias: str) -> dict:
 
     if is_windows:
         return {'mode': 'detached', 'source': 'detached_process'}
+
+    if is_macos and not interactive_terminal:
+        # If the process is no longer associated with a controlling terminal,
+        # it is running detached even when it is not the session leader.
+        try:
+            import psutil
+            controlling_tty = psutil.Process().terminal()
+        except (AttributeError, OSError, psutil.Error):
+            pass
+        else:
+            if controlling_tty is None:
+                return {'mode': 'detached', 'source': ''}
 
     return {'mode': 'unknown', 'source': ''}

@@ -96,25 +96,31 @@ def test_pycharm_run_is_ide_but_pycharm_terminal_remains_terminal(monkeypatch):
     assert ClientInfoBuilder._detect_launch_context('mac') == {'mode': 'terminal', 'source': 'zsh'}
 
 
-def test_explicit_detached_shape_outranks_inherited_pycharm_context(monkeypatch):
+def test_detached_session_outweighs_inherited_pycharm_context(monkeypatch):
     pycharm = _FakeParent('pycharm', '/Applications/PyCharm.app/Contents/MacOS/pycharm', ('pycharm',))
-    _prepare(monkeypatch, [pycharm], is_tty=False)
-    monkeypatch.setenv(launch_context.LAUNCH_MODE_ENV, 'detached')
-    monkeypatch.setenv(launch_context.LAUNCH_SOURCE_ENV, 'new_session')
+    _prepare(monkeypatch, [pycharm], is_tty=False, platform='darwin')
+    monkeypatch.setattr(launch_context.os, 'getpid', lambda: 1234)
+    monkeypatch.setattr(launch_context.os, 'getsid', lambda _pid: 1234)
+    # A detached child can inherit the IDE's environment without being hosted by it.
+    monkeypatch.setenv('PYCHARM_HOSTED', '1')
+    monkeypatch.setenv(launch_context.LAUNCH_MODE_ENV, 'ide')
     assert ClientInfoBuilder._detect_launch_context('mac') == {
         'mode': 'detached', 'source': 'new_session'
     }
 
 
 
-def test_launchd_watchdog_policy_uses_explicit_launch_shape(monkeypatch):
-    _prepare(monkeypatch, [], is_tty=False, platform='linux')
+def test_launchd_management_requires_live_job_not_environment(monkeypatch):
+    _prepare(monkeypatch, [], is_tty=False, platform='darwin')
     monkeypatch.setenv(launch_context.LAUNCH_MODE_ENV, 'user_service')
     monkeypatch.setenv(launch_context.LAUNCH_SOURCE_ENV, 'launchagent')
-    assert launch_context.is_launchd_managed_client() is True
-
-    monkeypatch.setenv(launch_context.LAUNCH_SOURCE_ENV, 'systemd_user')
+    monkeypatch.setattr(launch_context, '_verified_launchd_job_for_pid', lambda _pid: None)
     assert launch_context.is_launchd_managed_client() is False
+
+    monkeypatch.setattr(launch_context, '_verified_launchd_job_for_pid', lambda _pid: {
+        'mode': 'user_service', 'source': 'launchagent',
+    })
+    assert launch_context.is_launchd_managed_client() is True
 
 def test_detached_launch_environment_records_shape_not_internal_action(monkeypatch):
     monkeypatch.setattr(launch_context.os, 'name', 'posix')
@@ -167,25 +173,126 @@ def test_posix_new_session_without_tty_is_detached(monkeypatch):
     }
 
 
-def test_macos_launchagent_and_launchdaemon(monkeypatch):
+def test_macos_launchagent_and_launchdaemon_require_verified_job(monkeypatch):
     _prepare(monkeypatch, [], is_tty=False, platform='darwin')
     monkeypatch.setenv('XPC_SERVICE_NAME', 'com.example.rch.agent')
-    monkeypatch.setattr(launch_context.os, 'getuid', lambda: 501)
+    monkeypatch.setenv(launch_context.LAUNCH_MODE_ENV, 'system_service')
+    monkeypatch.setenv(launch_context.LAUNCH_SOURCE_ENV, 'launchdaemon')
+    monkeypatch.setattr(launch_context, '_verified_launchd_job_for_pid', lambda _pid: None)
+    monkeypatch.setattr(launch_context.os, 'getpid', lambda: 1234)
+    monkeypatch.setattr(launch_context.os, 'getsid', lambda _pid: 1234)
+    launchd = _FakeParent('launchd', '/sbin/launchd', ('/sbin/launchd',))
+    monkeypatch.setattr(psutil, 'Process', lambda: _FakeProcess([launchd]))
     assert ClientInfoBuilder._detect_launch_context('mac') == {
-        'mode': 'user_service', 'source': 'launchagent'
+        'mode': 'detached', 'source': 'new_session',
     }
 
-    monkeypatch.setattr(launch_context.os, 'getuid', lambda: 0)
+    monkeypatch.setattr(launch_context, '_verified_launchd_job_for_pid', lambda _pid: {
+        'mode': 'user_service', 'source': 'launchagent',
+    })
     assert ClientInfoBuilder._detect_launch_context('mac') == {
-        'mode': 'system_service', 'source': 'launchdaemon'
+        'mode': 'user_service', 'source': 'launchagent',
+    }
+    monkeypatch.setattr(launch_context, '_verified_launchd_job_for_pid', lambda _pid: {
+        'mode': 'system_service', 'source': 'launchdaemon',
+    })
+    assert ClientInfoBuilder._detect_launch_context('mac') == {
+        'mode': 'system_service', 'source': 'launchdaemon',
     }
 
+
+def test_macos_go_loader_orphan_without_launch_marker_is_detached(monkeypatch):
     launchd = _FakeParent('launchd', '/sbin/launchd', ('/sbin/launchd',))
     _prepare(monkeypatch, [launchd], is_tty=False, platform='darwin')
-    monkeypatch.setattr(launch_context.os, 'getuid', lambda: 501)
+    monkeypatch.setattr(launch_context.os, 'getpid', lambda: 4290)
+    monkeypatch.setattr(launch_context.os, 'getsid', lambda _pid: 4290)
+    monkeypatch.setattr(launch_context, '_verified_launchd_job_for_pid', lambda _pid: None)
     assert ClientInfoBuilder._detect_launch_context('mac') == {
-        'mode': 'user_service', 'source': 'launchagent'
+        'mode': 'detached', 'source': 'new_session',
     }
+
+
+def test_launchctl_verifies_running_job_pid_and_type(monkeypatch):
+    _prepare(monkeypatch, [], is_tty=False, platform='darwin')
+    monkeypatch.setattr(launch_context.os, 'getuid', lambda: 501)
+    launch_context._verified_launchd_job_for_pid.cache_clear()
+    calls = []
+
+    def fake_run(args, **kwargs):
+        calls.append(args)
+        if args[1] == 'list':
+            return SimpleNamespace(returncode=0, stdout='PID Status Label\n1234 0 com.rch.client\n')
+        if args[2] == 'gui/501/com.rch.client':
+            return SimpleNamespace(returncode=0, stdout='state = running\npid = 1234\ntype = LaunchAgent\n')
+        return SimpleNamespace(returncode=1, stdout='')
+
+    monkeypatch.setattr(launch_context.subprocess, 'run', fake_run)
+    try:
+        assert launch_context._verified_launchd_job_for_pid(1234) == {
+            'mode': 'user_service', 'source': 'launchagent',
+        }
+        assert ['/bin/launchctl', 'print', 'gui/501/com.rch.client'] in calls
+    finally:
+        launch_context._verified_launchd_job_for_pid.cache_clear()
+
+
+@pytest.mark.parametrize('list_line,detail', [
+    ('1234 0 0x123.anonymous.python', 'state = running\npid = 1234\ntype = LaunchAgent'),
+    ('1234 0 com.rch.client', 'state = running\npid = 9999\ntype = LaunchAgent'),
+    ('1234 0 com.rch.client', 'state = waiting\npid = 1234\ntype = LaunchAgent'),
+    ('1234 0 com.rch.client', 'state = running\npid = 1234\ntype = Other'),
+    ('9999 0 com.rch.client', 'state = running\npid = 1234\ntype = LaunchAgent'),
+])
+def test_launchctl_rejects_unverified_or_anonymous_pid(monkeypatch, list_line, detail):
+    _prepare(monkeypatch, [], is_tty=False, platform='darwin')
+    monkeypatch.setattr(launch_context.os, 'getuid', lambda: 501)
+    launch_context._verified_launchd_job_for_pid.cache_clear()
+
+    def fake_run(args, **kwargs):
+        if args[1] == 'list':
+            return SimpleNamespace(returncode=0, stdout='PID Status Label\n' + list_line)
+        return SimpleNamespace(returncode=0, stdout=detail)
+
+    monkeypatch.setattr(launch_context.subprocess, 'run', fake_run)
+    try:
+        assert launch_context._verified_launchd_job_for_pid(1234) is None
+    finally:
+        launch_context._verified_launchd_job_for_pid.cache_clear()
+
+
+def test_launchctl_system_daemon_matches_exact_job_pid(monkeypatch):
+    _prepare(monkeypatch, [], is_tty=False, platform='darwin')
+    monkeypatch.setattr(launch_context.os, 'getuid', lambda: 0)
+    launch_context._verified_launchd_job_for_pid.cache_clear()
+
+    def fake_run(args, **kwargs):
+        if args[1] == 'list':
+            return SimpleNamespace(returncode=0, stdout='PID Status Label\n4421 0 com.rch.client')
+        if args[2] == 'system/com.rch.client':
+            return SimpleNamespace(returncode=0, stdout='state = running\npid = 4421\ntype = LaunchDaemon')
+        return SimpleNamespace(returncode=1, stdout='')
+
+    monkeypatch.setattr(launch_context.subprocess, 'run', fake_run)
+    try:
+        assert launch_context._verified_launchd_job_for_pid(4421) == {
+            'mode': 'system_service', 'source': 'launchdaemon',
+        }
+    finally:
+        launch_context._verified_launchd_job_for_pid.cache_clear()
+
+
+def test_macos_unmanaged_no_tty_non_leader_is_detached(monkeypatch):
+    _prepare(monkeypatch, [], is_tty=False, platform='darwin')
+    monkeypatch.setattr(launch_context, '_verified_launchd_job_for_pid', lambda _pid: None)
+    monkeypatch.setattr(launch_context.os, 'getpid', lambda: 5011)
+    monkeypatch.setattr(launch_context.os, 'getsid', lambda _pid: 5000)
+
+    class ProcessWithNoTty(_FakeProcess):
+        def terminal(self):
+            return None
+
+    monkeypatch.setattr(psutil, 'Process', lambda: ProcessWithNoTty([]))
+    assert ClientInfoBuilder._detect_launch_context('mac') == {'mode': 'detached', 'source': ''}
 
 
 def test_cron_and_schtasks_outrank_intermediate_shell(monkeypatch):

@@ -39,7 +39,7 @@ Client 主进程尝试将 Python Logging 同步镜像到 Client temp root 的 `c
 
 `process_id`、`username`、`process_name`、`launch_command`、`cwd` 等描述的是**创建这份握手信息那一刻**。普通平台的用户和进程名由 `psutil` 查询；iOS 使用平台专用的进程信息方法；查询失败时可能返回空字符串。客户端不会因为进程经过几小时后 CPU、运行时长或环境信息改变，就不断发送新的 `info` 消息。
 
-`launch_mode` 描述 Client 的外部运行形态，取值为 `terminal`、`terminal_background`、`ide`、`detached`、`user_service`、`system_service`、`scheduled` 或 `unknown`。`launch_source` 保存该形态下可识别的具体环境，例如 `zsh`、`powershell`、`pycharm`、`launchagent`、`launchdaemon`、`cron` 或 `schtasks`。判定在 Client 进程生命周期内只采集一次，网络重连继续沿用同一结果；由 Client 自身重新创建出的独立后台进程按其实际进程形态记录为 `detached`。macOS launchd manager 写入明确的 `user_service/launchagent` 或 `system_service/launchdaemon` 运行环境，使 LaunchAgent/LaunchDaemon 不依赖父进程启发式识别。无法可靠识别的环境使用 `unknown`。完整分类表、判定优先级与跨平台实机测试命令见 [Client Launch Mode](launch_mode.md)。
+`launch_mode` 描述 Client 的外部运行形态，取值为 `terminal`、`terminal_background`、`ide`、`detached`、`user_service`、`system_service`、`scheduled` 或 `unknown`。`launch_source` 保存该形态下可识别的具体环境，例如 `zsh`、`powershell`、`pycharm`、`launchagent`、`launchdaemon`、`cron` 或 `schtasks`。判定在 Client 进程生命周期内只采集一次，网络重连继续沿用同一结果；由 Client 自身重新创建出的独立后台进程按其实际进程形态记录为 `detached`。macOS 对 LaunchAgent/LaunchDaemon 通过 launchd 的运行作业与当前 PID 双重核对；Detached 则依靠 session/控制终端状态，不依赖启动器环境标记。无法可靠识别的环境使用 `unknown`。完整分类表、判定优先级与跨平台实机测试命令见 [Client Launch Mode](launch_mode.md)。
 
 `integrity` 由 Client 权限探测逻辑计算，不是对 Server 授予的权限。`python_execution_mode` 和传输模式表示 Client 当前配置，不构成“此 Client 支持所有 Web 功能”的通用能力证明。界面如需展示某个实时可执行状态，应调用相应的运行时 API，而不是反复读取握手快照。
 
