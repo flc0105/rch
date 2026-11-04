@@ -799,6 +799,8 @@ The Agent Builder coordinates dispatch and output management. **Bundle** is a Py
 
 All four build modes are peers in the single `AGENT_BUILDERS` registry in `server/application/agent/agent_builder.py`. Each builder is a standalone class with `build()`; shared source staging and Python config injection live in `agent_build_utils.py`, not in the dispatch layer. To disable any builder, including Bundle, remove its registry entry and restart the Server; its module file can remain installed. Missing modules are also excluded. An empty registry is valid and `/api/agent/platform` then returns `builders: []`. Every build request must explicitly specify a registered `builder`; there is no implicit Bundle fallback. The Agent Builder UI only shows available modes.
 
+Both Go build modes share `server/application/agent/agent_go_build_runner.py` for cross-compilation targets and the Go subprocess lifecycle. It captures stdout/stderr, enforces a 600-second compilation timeout, and returns consistent errors for nonzero exit codes, timeouts, and missing output binaries.
+
 ### PyInstaller
 
 - Builds a Python client executable for the current server platform

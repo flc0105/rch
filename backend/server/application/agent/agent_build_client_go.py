@@ -1,17 +1,13 @@
 """Optional experimental Go Client builder; independently removable."""
 import os
-import subprocess
 from core.utils.logger import logger
+from server.application.agent.agent_go_build_runner import GO_TARGET_MAP as SHARED_GO_TARGET_MAP, run_go_build
 from server.application.agent.agent_build_utils import copy_source_paths
 
 
 class ClientGoBuilder:
     GO_INCLUDE_PATHS = ('client-go',)
-    GO_TARGET_MAP = {
-        'win': {'GOOS': 'windows', 'suffix': '.exe', 'label': 'windows'},
-        'mac': {'GOOS': 'darwin', 'suffix': '', 'label': 'mac'},
-        'linux': {'GOOS': 'linux', 'suffix': '', 'label': 'linux'},
-    }
+    GO_TARGET_MAP = SHARED_GO_TARGET_MAP
     BUILD_STATUS_MESSAGE = 'Build completed.'
 
     def __init__(self, source_dir: str):
@@ -62,7 +58,7 @@ var CLIENT_BUILD_VERSION = "{build_version}"
         go_target = self.GO_TARGET_MAP[target_os]
         output_name = self._build_go_output_name(target_os, target_arch, build_id)
         output_path = os.path.join(client_copy, 'client-go', output_name)
-        self._run_go_build(os.path.join(client_copy, 'client-go'), output_path, go_target['GOOS'], target_arch)
+        run_go_build(os.path.join(client_copy, 'client-go'), output_path, go_target['GOOS'], target_arch)
 
         return {
             'file_path': output_path,
@@ -71,19 +67,6 @@ var CLIENT_BUILD_VERSION = "{build_version}"
             'target_arch': target_arch,
             'target_os': target_os,
         }
-
-    def _run_go_build(self, cwd: str, output_path: str, goos: str, goarch: str):
-        env = os.environ.copy()
-        env.update({'CGO_ENABLED': '0', 'GOOS': goos, 'GOARCH': goarch})
-        cmd = ['go', 'build', '-trimpath', '-ldflags', '-s -w', '-o', output_path, '.']
-        result = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, env=env)
-        if result.returncode != 0:
-            raise RuntimeError(f'Go build failed: {result.stderr or result.stdout}')
-        if not os.path.exists(output_path):
-            raise RuntimeError(f'Build output not found: {output_path}')
-        if goos != 'windows':
-            os.chmod(output_path, 0o755)
-
 
     def build(self, **kwargs):
         target_os = kwargs.get('target_os', '')
