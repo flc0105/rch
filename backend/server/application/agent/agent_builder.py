@@ -75,7 +75,6 @@ class AgentBuilder:
 
         if not 1 <= int(web_port) <= 65534:
             raise ValueError('web_port must be between 1 and 65534')
-        file_transfer_port = int(web_port)
 
         work_dir = tempfile.mkdtemp(prefix='agent_build_')
         build_id = self._build_id_text()
@@ -87,7 +86,6 @@ class AgentBuilder:
                 server_host=server_host,
                 server_port=server_port,
                 web_port=web_port,
-                file_transfer_port=file_transfer_port,
                 build_id=build_id,
                 build_version=build_version,
                 server_web_scheme=server_web_scheme,

@@ -22,7 +22,6 @@ class GoLoaderBuilder:
         return f'rchclient-go-loader-{target_os}-{normalized_arch}-{build_id}{suffix}'
 
     def _inject_go_loader_config(self, client_dir: str, server_host: str, server_port: int, web_port: int,
-                                 file_transfer_port: int,
                                  build_version: str, server_web_scheme: str = 'http', server_web_host: str = '',
                                  listener_id: str = ''):
         config_path = os.path.join(client_dir, 'go-loader', 'config', 'config.go')
@@ -35,7 +34,6 @@ const ServerListenerID = "{listener_id}"
 const ServerWebScheme = "{server_web_scheme}"
 const ServerWebHost = "{server_web_host}"
 const ServerWebPort = {web_port}
-const ServerFileTransferPort = ServerWebPort + 1
 const LoaderBuildVersion = "{build_version}"
 const BundleBaseDirName = "client_bundle"
 const BundleBuildAPIPath = "/api/agent/build"
@@ -45,7 +43,7 @@ const BundleReportAPIPath = "/api/agent/loader/report"
             f.write(template)
 
     def _build_with_go_loader(self, work_dir: str, server_host: str, server_port: int,
-                              web_port: int, file_transfer_port: int, target_os: str, target_arch: str,
+                              web_port: int, target_os: str, target_arch: str,
                               build_id: str = '', build_version: str = 'dev', server_web_scheme: str = 'http',
                               server_web_host: str = '', listener_id: str = '') -> dict:
         go_project_dir = os.path.join(self.source_dir, 'go-loader')
@@ -60,7 +58,6 @@ const BundleReportAPIPath = "/api/agent/loader/report"
             server_host,
             server_port,
             web_port,
-            file_transfer_port,
             build_version,
             server_web_scheme,
             server_web_host,

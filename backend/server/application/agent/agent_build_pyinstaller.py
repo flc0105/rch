@@ -24,7 +24,7 @@ class PyInstallerBuilder:
         return f'rchclient-pyinstaller-{target_os}-{build_id}{suffix}'
 
     def _build_with_pyinstaller(self, work_dir: str, server_host: str, server_port: int,
-                                web_port: int, file_transfer_port: int, target_os: str,
+                                web_port: int, target_os: str,
                                 build_id: str = '', build_version: str = 'dev', server_web_scheme: str = 'http',
                                 server_web_host: str = '') -> dict:
         current_target = self._get_current_pyinstaller_target()
@@ -43,7 +43,6 @@ class PyInstallerBuilder:
             server_host,
             server_port,
             web_port,
-            file_transfer_port,
             build_version,
             server_web_scheme,
             server_web_host,

@@ -22,7 +22,6 @@ class ClientGoBuilder:
         return f'rchclient-go-client-{target_os}-{normalized_arch}-{build_id}{suffix}'
 
     def _inject_go_config(self, client_dir: str, server_host: str, server_port: int, web_port: int,
-                          file_transfer_port: int,
                           build_version: str, server_web_scheme: str = 'http', server_web_host: str = ''):
         config_path = os.path.join(client_dir, 'client-go', 'config', 'config.go')
         server_web_host = (server_web_host or server_host).strip() or server_host
@@ -40,7 +39,7 @@ var CLIENT_BUILD_VERSION = "{build_version}"
             f.write(template)
 
     def _build_with_go(self, work_dir: str, server_host: str, server_port: int,
-                       web_port: int, file_transfer_port: int, target_os: str, target_arch: str,
+                       web_port: int, target_os: str, target_arch: str,
                        build_id: str = '', build_version: str = 'dev', server_web_scheme: str = 'http',
                        server_web_host: str = '') -> dict:
         go_project_dir = os.path.join(self.source_dir, 'client-go')
@@ -55,7 +54,6 @@ var CLIENT_BUILD_VERSION = "{build_version}"
             server_host,
             server_port,
             web_port,
-            file_transfer_port,
             build_version,
             server_web_scheme,
             server_web_host,

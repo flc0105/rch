@@ -23,8 +23,12 @@ test('Open Files uses regular Element Plus table and keeps show-more', () => {
   assert.match(source, /<el-table\s+[^>]*:data="visibleOpenFiles"/)
   assert.match(source, /label="Path"/)
   assert.match(source, /label="FD"/)
-  assert.match(source, /Copy Path/)
-  assert.match(source, /v-if="isLogFilePath\(row\.path\)"/)
+  const openFilesSection = source.match(/<section class="process-detail-section process-open-files-section">([\s\S]*?)<\/section>/)?.[1]
+  assert.ok(openFilesSection)
+  assert.doesNotMatch(openFilesSection, /label="Actions"|Copy Path|View Log/)
+  assert.ok(!('copyOpenFilePath' in component.methods))
+  assert.ok(!('viewOpenFileLog' in component.methods))
+  assert.ok(!('isLogFilePath' in component.methods))
   assert.match(source, /openFilesHiddenCount > 0 \|\| openFilesExpanded/)
   const dialog = { processDetail: { open_files: Array.from({ length: 12 }, (_, index) => ({ path: `${index}.txt` })) }, openFilesExpanded: false }
   assert.equal(component.computed.visibleOpenFiles.call(dialog).length, 10)
@@ -53,25 +57,13 @@ test('PID 0 opens detail monitoring while negative and absent PIDs are rejected'
   assert.equal(opened.length, 1)
 })
 
-test('.log action opens existing Log Viewer for selected Client, paths copy without alteration', async () => {
-  const copied = []
-  const emitted = []
-  const { component, source } = loadProcess({
-    window: { isSecureContext: true },
-    navigator: { clipboard: { writeText: async path => copied.push(path) } },
-    ElMessage: { success: text => copied.push(text), error: text => { throw new Error(text) } },
-  })
-  const dialog = { ...component.methods, selectedId: 'target-client', $emit: (...args) => emitted.push(args) }
-  const path = 'C:\\Users\\方良辰\\data\\run.LOG'
-  assert.equal(dialog.isLogFilePath(path), true)
-  assert.equal(dialog.isLogFilePath('run.log.1'), false)
-  dialog.viewOpenFileLog(path)
-  dialog.viewOpenFileLog('foo.txt')
-  assert.equal(emitted.length, 1)
-  assert.deepEqual(JSON.parse(JSON.stringify(emitted[0])), ['open-log-viewer', { clientId: 'target-client', path }])
-  await dialog.copyOpenFilePath(path)
-  assert.equal(copied[0], path)
+test('Open Files no longer declares a log viewer emitter or actions', () => {
+  const { component, source } = loadProcess()
   const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
-  assert.match(app, /ref="processDialogRef"[\s\S]*?@open-log-viewer="openLogViewerDialog"/)
-  assert.match(source, /@click="viewOpenFileLog\(row\.path\)"/)
+  assert.deepEqual(Array.from(component.emits || []), [])
+  assert.doesNotMatch(source, /copyOpenFilePath|viewOpenFileLog|isLogFilePath|copyOpenFilePathFallback/)
+  const processDialog = app.match(/ref="processDialogRef"([\s\S]*?)\/>/)?.[1]
+  assert.ok(processDialog)
+  assert.doesNotMatch(processDialog, /open-log-viewer/)
+  assert.match(app, /ref="connectionInfoDialogRef"[\s\S]*?@open-log-viewer="openLogViewerDialog"/)
 })

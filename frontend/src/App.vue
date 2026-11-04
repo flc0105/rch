@@ -382,7 +382,6 @@
     ref="processDialogRef"
     :selected-id="selectedId"
     :tab-id="tabId"
-    @open-log-viewer="openLogViewerDialog"
   />
 
   <ListenerManagerDialog ref="listenerManagerDialogRef" />

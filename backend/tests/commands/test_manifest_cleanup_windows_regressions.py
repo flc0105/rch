@@ -141,7 +141,7 @@ def test_agent_bundle_injection_without_revision_parts(tmp_path):
     with patch('server.application.agent.agent_build_utils.build_client_revision_manifest',
                return_value={'revision': 'rev123', 'files': {'client/test.py': 'abc'}}) as builder:
         inject_python_client_config(str(tmp_path), str(tmp_path), '127.0.0.1', 9999, 8085,
-                                    8086, 'build-test')
+                                    'build-test')
     builder.assert_called_once_with(str(tmp_path))
     generated = (config_dir / 'config.py').read_text(encoding='utf-8')
     assert 'CLIENT_SOURCE_REVISION = "rev123"' in generated

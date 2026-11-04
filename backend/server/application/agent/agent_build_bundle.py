@@ -16,7 +16,7 @@ class BundleBuilder:
         self.source_dir = source_dir
 
     def build(self, *, work_dir: str, server_host: str, server_port: int,
-              web_port: int, file_transfer_port: int, build_id: str, build_version: str,
+              web_port: int, build_id: str, build_version: str,
               target_os: str, target_arch: str,
               server_web_scheme: str = 'http', server_web_host: str = '',
               listener_protocol: str = 'tcp', tls_fingerprint: str = '') -> dict:
@@ -30,7 +30,6 @@ class BundleBuilder:
             server_host,
             server_port,
             web_port,
-            file_transfer_port,
             build_version,
             server_web_scheme,
             server_web_host,

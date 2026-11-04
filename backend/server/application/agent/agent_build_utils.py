@@ -36,7 +36,6 @@ def copy_source_paths(source_dir: str, relative_paths, dst: str):
 
 
 def inject_python_client_config(source_dir: str, client_dir: str, server_host: str, server_port: int, web_port: int,
-                   file_transfer_port: int,
                    build_version: str, server_web_scheme: str = 'http', server_web_host: str = '',
                    listener_protocol: str = 'tcp', tls_fingerprint: str = ''):
     config_path = os.path.join(client_dir, 'client', 'config', 'config.py')

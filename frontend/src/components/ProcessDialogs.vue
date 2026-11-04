@@ -331,23 +331,6 @@
               >
                 <template #default="{ row }">{{ row.fd == null || row.fd < 0 ? '-' : row.fd }}</template>
               </el-table-column>
-              <el-table-column
-                label="Actions"
-                width="180"
-                align="center"
-                fixed="right"
-              >
-                <template #default="{ row }">
-                  <div class="process-action-buttons">
-                    <el-button size="small" link type="primary" :disabled="!row.path" @click="copyOpenFilePath(row.path)">
-                      Copy Path
-                    </el-button>
-                    <el-button v-if="isLogFilePath(row.path)" size="small" link type="primary" @click="viewOpenFileLog(row.path)">
-                      View Log
-                    </el-button>
-                  </div>
-                </template>
-              </el-table-column>
             </el-table>
             <div v-if="openFilesHiddenCount > 0 || openFilesExpanded" class="process-open-files-footer">
               <el-button link type="primary" size="small" @click="openFilesExpanded = !openFilesExpanded">
@@ -367,7 +350,6 @@ import { sortProcessRows } from '../utils/processSorting.js'
 
 export default {
   name: 'ProcessDialogs',
-  emits: ['open-log-viewer'],
 
 
   props: {
@@ -533,51 +515,6 @@ export default {
   },
 
   methods: {
-    isLogFilePath(path) {
-      return /\.log$/i.test(String(path || ''))
-    },
-
-    viewOpenFileLog(path) {
-      if (!this.isLogFilePath(path)) return
-      this.$emit('open-log-viewer', { clientId: this.selectedId, path })
-    },
-
-    async copyOpenFilePath(path) {
-      const text = String(path || '')
-      if (!text) return
-      try {
-        if (window.isSecureContext && navigator.clipboard?.writeText) {
-          await navigator.clipboard.writeText(text)
-        } else {
-          this.copyOpenFilePathFallback(text)
-        }
-        ElMessage.success('Path copied')
-      } catch (_error) {
-        try {
-          this.copyOpenFilePathFallback(text)
-          ElMessage.success('Path copied')
-        } catch (_fallbackError) {
-          ElMessage.error('Failed to copy path')
-        }
-      }
-    },
-
-    copyOpenFilePathFallback(text) {
-      const textarea = document.createElement('textarea')
-      textarea.value = text
-      textarea.setAttribute('readonly', '')
-      textarea.style.position = 'fixed'
-      textarea.style.left = '-9999px'
-      document.body.appendChild(textarea)
-      try {
-        textarea.focus()
-        textarea.select()
-        if (!document.execCommand('copy')) throw new Error('Copy failed')
-      } finally {
-        textarea.remove()
-      }
-    },
-
     formatUsagePercent(value) {
       return value === null || value === undefined || !Number.isFinite(Number(value))
         ? '-'
