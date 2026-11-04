@@ -110,11 +110,7 @@ class ExternalToolRequestContextApi:
         if session_info is None:
             raise ValueError(f'target client session info not found: {client_id}')
 
-        platform_alias = str(
-            getattr(session_info, 'os_alias', '') or
-            getattr(session_info, 'os_type', '') or
-            ''
-        ).strip()
+        platform_alias = str(getattr(session_info, 'os_alias', '') or '').strip()
         arch = str(getattr(session_info, 'arch', '') or '').strip()
 
         if not platform_alias or not arch:

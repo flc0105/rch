@@ -118,7 +118,7 @@ Web Remote Files 还会使用 `browse_dir`、`preview_path`、`download_paths`�
 |---|---|---|
 | `kill_instance` | 结束当前 Client 会话 / 实例 | 会使当前连接断开 |
 | `relaunch_instance` | 重新启动 Client 并尝试重新连接 | 依赖平台可以实际创建/交接新进程 |
-| `reexec_instance` | 用当前程序替换进程并重启 | 属于影响连接的管理操作 |
+| `reexec_instance` | 用当前程序替换进程并重启（macOS/Linux） | 属于影响连接的管理操作；Windows 不提供 |
 | `spawn_instance` | 启动额外的 Client 实例 | 可能形成多个连接及多实例资源占用 |
 | `keyboard_send` | 向目标设备发送模拟键盘输入 | 依赖系统自动化权限及活动桌面会话 |
 

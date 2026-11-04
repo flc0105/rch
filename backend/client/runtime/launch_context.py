@@ -137,12 +137,14 @@ def _verified_windows_service_for_pid(pid: int):
 
 def detect_launch_context(os_alias: str) -> dict:
     """Classify the Client from operating-system process and supervisor facts."""
-    is_macos = os_alias in {'mac', 'macos'} or sys.platform == 'darwin'
+    # Product-level classification uses the canonical platform identity.
+    # Native launchctl/systemd/Win32 API guards above still use the host OS.
+    is_macos = os_alias == 'mac'
     if os_alias == 'ios':
         return {'mode': 'ide', 'source': 'pythonista'}
 
-    is_windows = os_alias in {'win', 'windows'} or os.name == 'nt'
-    is_linux = os_alias == 'linux' or (sys.platform == 'linux' and not is_windows)
+    is_windows = os_alias == 'win'
+    is_linux = os_alias == 'linux'
 
     try:
         import psutil

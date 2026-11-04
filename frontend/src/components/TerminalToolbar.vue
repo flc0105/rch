@@ -264,7 +264,7 @@ import {
   TOOLBAR_ACTION_OPTIONS,
   cloneToolbarPreferences,
   normalizeToolbarPreferences,
-  normalizeToolboxPlatform, isScriptSupportedOnPlatform, isQuickActionSupportedOnPlatform,
+  isScriptSupportedOnPlatform, isQuickActionSupportedOnPlatform,
 } from '../data/toolbarPreferences.js'
 
 export default {
@@ -361,13 +361,7 @@ export default {
       return username || hostname || 'Interactive Shell'
     },
     toolboxCurrentPlatform() {
-      const conn = this.currentConnection || {}
-      const candidates = [conn.os_alias, conn.os_type, conn.platform, conn.system, conn.os, conn.os_name]
-      for (const candidate of candidates) {
-        const platform = normalizeToolboxPlatform(candidate)
-        if (['mac', 'win', 'linux', 'ios'].includes(platform)) return platform
-      }
-      return ''
+      return this.currentConnection?.os_alias || ''
     },
     deviceActionDisabled() {
       return !this.selectedId || this.currentConnectionOffline

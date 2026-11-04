@@ -95,6 +95,12 @@ ce728284ec284dcab7704f5ba3d44c83ceab1606e7f2c2d531d52583cf5f6aee
 
 因此，运行期间修改主机名或系统环境，并不保证已运行的 Client 立刻改变其握手身份。重新创建进程或显式刷新身份后，才会基于新特征生成不同结果。运行时的 `LocalIdentity.arch` 会经平台架构别名归一化；**指纹本身仍使用探测到的原始 `arch` 值进行指纹规范化**，不能拿展示用架构名重新计算散列。
 
+客户端启动时通过 `core.platform.platform_identity.detect_platform_info()` 生成标准平台别名，
+`get_local_identity().os_alias` 将 `win`、`mac`、`linux`、`ios`（未知系统为 `unknown`）作为产品平台标识传入握手。
+Server 和 Web 的连接功能开关、脚本/Job 筛选及工具兼容判断直接消费该字段；
+`os_type`、`os_name`、`os_full` 保留为展示信息。调用 Win32、launchd、systemd、POSIX
+等本机 API 的实现仍按真实运行平台选择系统接口。
+
 ## 3. 从握手到活动连接
 
 Python Client 在创建 Client 对象时生成 `client_id`，组装握手时通过 `ClientInfoBuilder` 读取本地 `LocalIdentity`。以下是与身份相关的**精简消息示意**：

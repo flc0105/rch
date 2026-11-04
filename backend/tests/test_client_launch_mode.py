@@ -300,7 +300,7 @@ def test_windows_task_scheduler_svchost_launch_is_scheduled(monkeypatch):
                                 ('svchost.exe', '-k', 'netsvcs', '-p', '-s', 'Schedule'),
                                 process_id=970)
     _prepare(monkeypatch, [cmd, schedule_host], is_tty=False, platform='win32')
-    assert ClientInfoBuilder._detect_launch_context('windows') == {
+    assert ClientInfoBuilder._detect_launch_context('win') == {
         'mode': 'scheduled', 'source': 'schtasks',
     }
 
@@ -314,7 +314,7 @@ def test_windows_task_scheduler_service_pid_matches_shared_host(monkeypatch):
     monkeypatch.setattr(psutil, 'win_service_get', lambda _name: SimpleNamespace(
         as_dict=lambda: {'pid': 551},
     ), raising=False)
-    assert ClientInfoBuilder._detect_launch_context('windows') == {
+    assert ClientInfoBuilder._detect_launch_context('win') == {
         'mode': 'scheduled', 'source': 'schtasks',
     }
 
@@ -328,7 +328,7 @@ def test_windows_unrelated_svchost_not_assumed_scheduled(monkeypatch):
     monkeypatch.setattr(psutil, 'win_service_get', lambda _name: SimpleNamespace(
         as_dict=lambda: {'pid': 552},
     ), raising=False)
-    assert ClientInfoBuilder._detect_launch_context('windows') == {
+    assert ClientInfoBuilder._detect_launch_context('win') == {
         'mode': 'detached', 'source': 'detached_process',
     }
 
@@ -1014,10 +1014,10 @@ def test_windows_powershell_bootstrap_not_confused_with_ancestor_services(monkey
     monkeypatch.setattr(ctypes, 'windll', SimpleNamespace(kernel32=SimpleNamespace(
         GetConsoleProcessList=lambda _ids, _length: 1,
     )), raising=False)
-    assert ClientInfoBuilder._detect_launch_context('windows') == {'mode': 'terminal', 'source': 'powershell'}
+    assert ClientInfoBuilder._detect_launch_context('win') == {'mode': 'terminal', 'source': 'powershell'}
 
     _prepare(monkeypatch, [_FakeParent('services.exe', r'C:\Windows\System32\services.exe')], is_tty=False, platform='win32')
-    assert ClientInfoBuilder._detect_launch_context('windows') == {'mode': 'detached', 'source': 'detached_process'}
+    assert ClientInfoBuilder._detect_launch_context('win') == {'mode': 'detached', 'source': 'detached_process'}
 
 
 def test_windows_bootstrap_launches_without_mode_environment():
@@ -1052,11 +1052,11 @@ def test_windows_detached_console_window_does_not_make_a_terminal(monkeypatch):
     monkeypatch.setattr(ctypes, 'windll', SimpleNamespace(kernel32=kernel), raising=False)
     powershell = _FakeParent('powershell.exe', r'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe')
     _prepare(monkeypatch, [powershell], is_tty=False, platform='win32')
-    assert ClientInfoBuilder._detect_launch_context('windows') == {
+    assert ClientInfoBuilder._detect_launch_context('win') == {
         'mode': 'detached', 'source': 'detached_process',
     }
     _prepare(monkeypatch, [], is_tty=False, platform='win32')
-    assert ClientInfoBuilder._detect_launch_context('windows') == {
+    assert ClientInfoBuilder._detect_launch_context('win') == {
         'mode': 'detached', 'source': 'detached_process',
     }
 

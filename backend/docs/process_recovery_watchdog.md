@@ -8,7 +8,7 @@ Client 启动时由单一 `watchdog` Feature 决定是否导入监督实现（ma
 
 开启后，Client 在建立连接之前启动单独的 `--process-recovery-watchdog-worker` 进程。Worker 使用 `psutil` 对 PID 和创建时间进行联合检查，区分 PID 复用及僵尸进程。正常情况下只保留一条监督链：Client 死亡后，原 Worker 按 3、10、30、60、120、最高 300 秒的退避间隔重启 Client；运行至少 300 秒视为恢复稳定，重置连续失败计数。Worker 持续重试，不因达到失败次数而永久放弃。
 
-复活后的 Client 继承内部监督会话标记并复用原 Worker，不再次创建 Worker。单独 `spawn_instance`、`clone` 或 `relaunch_instance` 创建的新实例**不继承**原监督会话，会独立建立自己的监督链。`reexec_instance` 仍在同一 PID 内执行，监督会话保留。
+复活后的 Client 继承内部监督会话标记并复用原 Worker，不再次创建 Worker。单独 `spawn_instance`、`clone` 或 `relaunch_instance` 创建的新实例**不继承**原监督会话，会独立建立自己的监督链。macOS/Linux 的 `reexec_instance` 在同一 PID 内执行，监督会话保留；Windows 不注册该命令。
 
 单独的轮转日志存储于 Client temp root 下的 `watchdog_logs/process_recovery_watchdog.log`（包括 `.1`、`.2` 备份）。Windows 的 root 目录名为 `rch_client_temp`；POSIX 为 `rch_client_temp_u<effective_uid>`，因此 root/elevated 与普通用户监督进程不会共享同一个私有目录。Remote Control Watchdog 和 Local Heartbeat Watchdog 的日志也使用 `watchdog_logs/`，各自保留独立文件。Worker 的控制会话保存在同一 root 的 `watchdog_sessions/rch_process_recovery_watchdog_*/`，仅用于当次监督会话，不承载业务数据。系统临时目录可能被操作系统清理，不能作为持久日志备份。
 
@@ -16,7 +16,7 @@ Client 启动时由单一 `watchdog` Feature 决定是否导入监督实现（ma
 
 - `kill_instance`、本机 `KeyboardInterrupt` 以及 Remote Control Watchdog 的 `kill` 在退出前明确停止 Process Recovery Watchdog，不会因为主动关闭而自动复活。
 - `relaunch_instance` 与 Remote Control Watchdog 的 `relaunch` 先建立独立新 Client，再停止旧实例的监督链；新实例自己负责保护。
-- `reexec_instance` 沿用原 PID 与监督关系；意外失败则由 Supervisor 尝试恢复。
+- macOS/Linux 的 `reexec_instance` 沿用原 PID 与监督关系；意外失败则由 Supervisor 尝试恢复。Windows 使用 `relaunch_instance`。
 - `update` 下载并启动的新 Client 在 **PID/握手就绪验证完成前不启用** Process Recovery Watchdog。旧 Client 确认验收后通过临时 `.accepted` 标记激活新 Client，再等待 `.adopted` 确认。只有验收通过才能交接。`--keep-old` 保留旧监督链；普通更新退出旧 Client 前停止旧监督链。
 
 注意：如果用户在系统层直接 `kill -9` 或强制结束 Client，Supervisor 无法辨别人工操作还是意外死亡，默认视为异常并复活。要永久停止 Client，请先禁用 Process Recovery Watchdog，或使用正式生命周期命令。

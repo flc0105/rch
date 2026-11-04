@@ -850,32 +850,8 @@ export default {
     },
 
     resolvePreferredScriptDirectoryPlatform() {
-  const connection = this.currentConnection || {}
-  const candidates = [
-    this.currentConnectionPlatform,
-    connection.os_alias,
-    connection.os_type,
-    connection.type,
-    connection.platform,
-    connection.system,
-    connection.os,
-    connection.os_name,
-  ]
-
-  for (const candidate of candidates) {
-    const text = String(candidate || '').trim().toLowerCase()
-    if (!text) continue
-
-    if (text.includes('ios') || text.includes('iphone') || text.includes('ipad')) {
-      return 'ios'
-    }
-
-    const normalized = this.normalizeClientPlatform(text)
-    if (normalized) return normalized
-  }
-
-  return ''
-},
+      return this.currentConnectionPlatform
+    },
 //
 // getPreferredScriptDirectoryForCurrentConnection() {
 //   const platform = this.resolvePreferredScriptDirectoryPlatform()
@@ -1023,38 +999,8 @@ getPreferredScriptDirectoryForCurrentConnection() {
       return value
     },
 
-    normalizeClientPlatform(osType = '') {
-      const value = String(osType || '').trim().toLowerCase()
-      if (!value) return ''
-      if (value.includes('darwin') || value.includes('mac')) return 'mac'
-      if (value.includes('win')) return 'win'
-      if (value.includes('linux')) return 'linux'
-      if (/(ubuntu|debian|centos|fedora|redhat|rhel|alpine|arch)/.test(value)) return 'linux'
-      return this.normalizeScriptPlatform(value)
-    },
-
     resolveCurrentConnectionPlatform() {
-      const conn = this.currentConnection || {}
-      const candidates = [
-        conn.os_alias,
-        conn.os_type,
-        conn.platform,
-        conn.system,
-        conn.os,
-        conn.os_name,
-      ]
-
-      for (const candidate of candidates) {
-        const normalized = this.normalizeClientPlatform(candidate)
-        if (['mac', 'win', 'linux', 'ios'].includes(normalized)) return normalized
-      }
-
-      for (const candidate of candidates) {
-        const normalized = this.normalizeClientPlatform(candidate)
-        if (normalized) return normalized
-      }
-
-      return ''
+      return this.currentConnection?.os_alias || ''
     },
 
     formatScriptPlatformLabel(item) {

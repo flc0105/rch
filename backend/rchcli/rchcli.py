@@ -332,7 +332,7 @@ class RemoteConsole:
             self.line('No active sessions')
             return
         for index, item in enumerate(connections):
-            self.line(f'{index:>3}  {self.display_name(item):<24} {item.get("os_alias") or item.get("os_type") or "?":<8} '
+            self.line(f'{index:>3}  {self.display_name(item):<24} {item.get("os_alias") or "?":<8} '
                       f'{item.get("integrity") or "-":<10} {item.get("client_id") or ""}')
 
     def status(self):

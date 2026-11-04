@@ -875,13 +875,7 @@ export default {
 
   computed: {
     currentClientPlatform() {
-      return this.normalizePlatform(
-        this.currentConnection?.os_alias ||
-        this.currentConnection?.os_type ||
-        this.currentConnection?.platform ||
-        this.currentConnection?.system ||
-        '',
-      )
+      return this.currentConnection?.os_alias || ''
     },
 
     currentClientArch() {
@@ -1599,12 +1593,12 @@ async loadAllClientInstances(deviceId = '', showToast = true) {
       const id = this.normalizeMachineId(machineId)
       if (!id || id === '__all__') return ''
       const conn = this.findConnectionByMachineId(id) || (id === this.currentMachineId ? this.currentConnection : null)
-      return this.normalizePlatform(conn?.os_alias || conn?.os_type || conn?.platform || conn?.system || '')
+      return conn?.os_alias || ''
     },
 
     getPlatformForConnectionId(deviceId) {
       const conn = this.findConnectionById(deviceId) || (this.normalizeDeviceId(deviceId) === this.currentDeviceId ? this.currentConnection : null)
-      return this.normalizePlatform(conn?.os_alias || conn?.os_type || conn?.platform || conn?.system || '')
+      return conn?.os_alias || ''
     },
 
     getArchForMachineId(machineId) {

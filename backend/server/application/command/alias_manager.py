@@ -130,10 +130,9 @@ class AliasManager:
     # ------------------ 平台解析 ------------------ #
     def get_platform_for_connection(self, conn=None) -> str:
         session_info = getattr(conn, 'session_info', None)
-        os_type = str(getattr(session_info, 'os_type', '') or '').strip().lower()
         os_alias = str(getattr(session_info, 'os_alias', '') or '').strip().lower()
         return self.normalize_platform(
-            os_alias or os_type,
+            os_alias,
             allow_empty=True,
             allow_unknown=True,
         )

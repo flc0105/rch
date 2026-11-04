@@ -19,6 +19,12 @@ class WindowsCommands(CommonCommands):
         self.win_media = WinMediaService(self)
         self.win_privilege = WinPrivilegeService(self)
 
+    # Windows os.execv() starts a new PID instead of replacing the current one.
+    # Keep this override unregistered so the POSIX-only command is absent from
+    # Windows manifests, help and command completion.
+    def reexec_instance(self):
+        return 0, 'Process replacement is unavailable on Windows'
+
     @desc('Run a program without waiting (detached)', group='execution')
     def run(self, command):
         """

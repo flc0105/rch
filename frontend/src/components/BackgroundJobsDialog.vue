@@ -788,38 +788,8 @@ export default {
       return value
     },
 
-    normalizeClientPlatform(osType = '') {
-      const value = String(osType || '').trim().toLowerCase()
-      if (!value) return ''
-      if (value.includes('darwin') || value.includes('mac')) return 'mac'
-      if (value.includes('win')) return 'win'
-      if (value.includes('linux')) return 'linux'
-      if (/(ubuntu|debian|centos|fedora|redhat|rhel|alpine|arch)/.test(value)) return 'linux'
-      return this.normalizeJobPlatform(value)
-    },
-
     resolveCurrentConnectionPlatform() {
-      const conn = this.currentConnection || {}
-      const candidates = [
-        conn.os_alias,
-        conn.os_type,
-        conn.platform,
-        conn.system,
-        conn.os,
-        conn.os_name,
-      ]
-
-      for (const candidate of candidates) {
-        const normalized = this.normalizeClientPlatform(candidate)
-        if (['mac', 'win', 'linux', 'ios'].includes(normalized)) return normalized
-      }
-
-      for (const candidate of candidates) {
-        const normalized = this.normalizeClientPlatform(candidate)
-        if (normalized) return normalized
-      }
-
-      return ''
+      return this.currentConnection?.os_alias || ''
     },
 
     syncBackgroundJobPlatformFilterWithConnection() {
