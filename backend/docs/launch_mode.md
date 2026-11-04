@@ -381,7 +381,7 @@ Detached (detached process)
 
 ### 9.5.1 Windows elevated background launch
 
-`spawn_elevated_instance --detached` 保留 UAC 提权，但以隐藏的短生命周期 PowerShell 启动器创建不显示控制台、独立于发起终端的 elevated Client。该 Client 在握手时报告 `Detached (detached process)`；不带参数的 `spawn_elevated_instance` 仍按原行为启动可见控制台。`--no-confirm` 仅跳过 RCH 的交互确认，不能跳过 Windows UAC。Session 0 或无可交互桌面的环境不保证能够完成 UAC 授权。
+`spawn_elevated_instance --detached` 经 Windows UAC 授权后，由短生命周期 Python 启动器以 `DETACHED_PROCESS` 创建无控制台的 elevated Client，复用原 Client 启动参数并返回新进程的 PID；启动失败时返回错误及日志路径。新 Client 在握手时报告 `Detached (detached process)`。不带参数的 `spawn_elevated_instance` 仍按原行为启动可见控制台。此方式需要本机可用的 Python 解释器；`--no-confirm` 仅跳过 RCH 的交互确认，仍需 Windows UAC 授权。在 Session 0 或无可交互桌面的环境中应使用适当的系统服务启动方式。
 
 ### 9.6 Task Scheduler
 

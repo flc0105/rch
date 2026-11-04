@@ -592,41 +592,46 @@ def test_windows_elevated_detached_and_cli_options():
     assert seen == []
 
 
-def test_windows_detached_elevation_uses_native_create_process_flags(monkeypatch):
+def test_windows_detached_elevation_uses_python_helper_and_reports_child_pid(monkeypatch, tmp_path):
     import base64
     import ctypes
-    import subprocess
+    import json
     import sys
     from client.commands.platform.services.win.privilege_service import WinPrivilegeService
 
     calls = []
-    shell = SimpleNamespace(ShellExecuteW=lambda *args: calls.append(args) or 42)
-    monkeypatch.setattr(ctypes, 'windll', SimpleNamespace(shell32=shell), raising=False)
+
+    def shell_execute(*args):
+        calls.append(args)
+        status_path = next(tmp_path.glob('client_elevation_*')) / 'launch-status.json'
+        status_path.write_text(json.dumps({'ok': True, 'pid': 32123}), encoding='utf-8')
+        return 42
+
+    monkeypatch.setattr(ctypes, 'windll', SimpleNamespace(
+        shell32=SimpleNamespace(ShellExecuteW=shell_execute)), raising=False)
     monkeypatch.setattr(sys, 'executable', r'C:\Tools\Python 3.13\python.exe')
     monkeypatch.setattr(sys, 'argv', [r'C:\Program Files\RCH\rchclient.py', '--flag', "O'Brian value"])
     monkeypatch.setattr(sys, 'frozen', False, raising=False)
     monkeypatch.setattr('os.getcwd', lambda: r'C:\RCH Files')
-    monkeypatch.setenv('SystemRoot', r'C:\Windows')
+    monkeypatch.setattr('client.runtime.temp_workspace.get_temp_category_dir', lambda *a, **k: str(tmp_path))
 
-    assert WinPrivilegeService(None).spawn_elevated_instance(detached=True)[0] == 1
+    ok, message = WinPrivilegeService(None).spawn_elevated_instance(detached=True)
+    assert ok == 1
+    assert 'PID: 32123' in message
     _handle, verb, path, arguments, cwd, show = calls[0]
     assert verb == 'runas'
-    assert path.endswith('WindowsPowerShell/v1.0/powershell.exe') or path.endswith(
-        r'WindowsPowerShell\v1.0\powershell.exe')
-    assert show == 0
+    assert path.endswith(r'C:\Tools\Python 3.13\python.exe')
     assert cwd == r'C:\RCH Files'
-    assert '-WindowStyle Hidden -EncodedCommand ' in arguments
-    encoded = arguments.split(' -EncodedCommand ', 1)[1]
-    ps = base64.b64decode(encoded).decode('utf-16-le')
-    assert 'CreateProcessW' in ps
-    assert '0x208' in ps
-    assert 'GetLastWin32Error' in ps
-    assert 'RCH_CLIENT_LAUNCH_MODE' not in ps
-    assert 'RCH_CLIENT_LAUNCH_SOURCE' not in ps
-    assert "O''Brian" in ps
-    assert r'C:\Program Files\RCH\rchclient.py' in ps
-    assert r'C:\Tools\Python 3.13\python.exe' in ps
-    assert 'RCH_PROCESS_RECOVERY_WATCHDOG_SESSION' in ps
+    assert show == 0
+    assert '-c' in arguments
+    assert 'DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP' in arguments
+    request = json.loads(base64.b64decode(arguments.rsplit(' ', 1)[-1]))
+    assert request['argv'][0].endswith(r'C:\Tools\Python 3.13\python.exe')
+    assert request['argv'][1].endswith(r'C:\Program Files\RCH\rchclient.py')
+    assert request['argv'][2:] == ['--flag', "O'Brian value"]
+    assert 'RCH_PROCESS_RECOVERY_WATCHDOG_SESSION' in request['clear_env']
+    assert 'RCH_CLIENT_LAUNCH_MODE' not in request['clear_env']
+
 
 def test_macos_elevated_command_keeps_default_and_adds_detached_option():
     from client.commands.platform.mac import MacCommands

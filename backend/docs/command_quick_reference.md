@@ -153,7 +153,7 @@ Server 的 `xt ...` 是面向用户的统一目录与运行入口；Client 另�
 | `idletime` | 查看用户空闲时间 |
 | `run <command>` | 启动程序而不等待完成；不等于收集输出的 `shell` |
 | `run_elevated <command>` | 请求以管理员权限执行命令，可能弹出 UAC 授权 |
-| `spawn_elevated_instance [--detached]` | 请求以提升权限启动新 Client 实例；Windows 的 `--bgrun` 使用后台无控制台的 detached 方式（仍可能弹出 UAC） |
+| `spawn_elevated_instance [--detached]` | 请求以提升权限启动新 Client 实例；Windows 的 `--detached` 使用后台无控制台的 detached 方式（仍可能弹出 UAC） |
 
 ### macOS
 

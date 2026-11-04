@@ -37,7 +37,7 @@ class CommandUpdateMixin:
     BUILD_API_TIMEOUT = (15, 600)
     DOWNLOAD_TIMEOUT = (15, 600)
     DOWNLOAD_CHUNK_SIZE = 64 * 1024
-    UPDATE_READY_TIMEOUT_SECONDS = 10
+    UPDATE_READY_TIMEOUT_SECONDS = 30
     UPDATE_READY_STABILIZE_SECONDS = 2
     UPDATE_READY_POLL_INTERVAL_SECONDS = 0.25
     UPDATE_EXIT_DELAY_SECONDS = 0.5
@@ -237,17 +237,17 @@ class CommandUpdateMixin:
             pass
 
     def _wait_for_updated_client_ready(self, process, ready_path: str, error_path: str) -> dict:
-        deadline = time.time() + self.UPDATE_READY_TIMEOUT_SECONDS
+        deadline = time.monotonic() + self.UPDATE_READY_TIMEOUT_SECONDS
 
-        while time.time() < deadline:
+        while time.monotonic() < deadline:
             self._checkpoint()
 
             if os.path.isfile(ready_path):
                 with open(ready_path, 'r', encoding='utf-8') as file_obj:
                     payload = json.load(file_obj)
                 if int(payload.get('pid') or 0) == int(process.pid):
-                    stabilize_deadline = time.time() + self.UPDATE_READY_STABILIZE_SECONDS
-                    while time.time() < stabilize_deadline:
+                    stabilize_deadline = time.monotonic() + self.UPDATE_READY_STABILIZE_SECONDS
+                    while time.monotonic() < stabilize_deadline:
                         self._checkpoint()
                         return_code = process.poll()
                         if return_code is not None:
