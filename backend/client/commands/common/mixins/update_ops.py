@@ -38,7 +38,7 @@ class CommandUpdateMixin:
     DOWNLOAD_TIMEOUT = (15, 600)
     DOWNLOAD_CHUNK_SIZE = 64 * 1024
     UPDATE_READY_TIMEOUT_SECONDS = 10
-    UPDATE_READY_STABILIZE_SECONDS = 5
+    UPDATE_READY_STABILIZE_SECONDS = 2
     UPDATE_READY_POLL_INTERVAL_SECONDS = 0.25
     UPDATE_EXIT_DELAY_SECONDS = 0.5
 
@@ -245,8 +245,7 @@ class CommandUpdateMixin:
             if os.path.isfile(ready_path):
                 with open(ready_path, 'r', encoding='utf-8') as file_obj:
                     payload = json.load(file_obj)
-                if (int(payload.get('pid') or 0) == int(process.pid)
-                        and payload.get('server_registered') is True):
+                if int(payload.get('pid') or 0) == int(process.pid):
                     stabilize_deadline = time.time() + self.UPDATE_READY_STABILIZE_SECONDS
                     while time.time() < stabilize_deadline:
                         self._checkpoint()
@@ -391,8 +390,6 @@ class CommandUpdateMixin:
             )
             ready_payload = self._wait_for_updated_client_ready(process, ready_path, error_path)
             self._activate_updated_client_watchdog(process, ready_path)
-            if process.poll() is not None:
-                raise RuntimeError('Updated Client exited after watchdog activation')
             update_ready = True
 
             new_client_id = str(ready_payload.get('client_id') or '').strip()

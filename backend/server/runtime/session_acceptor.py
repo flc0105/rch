@@ -7,7 +7,6 @@ import time
 import traceback
 
 from core.utils.logger import logger
-from core.protocol.message_types import MSG_TYPE_UPDATE_REGISTRATION_ACK
 from server.connection.transport.client_transport import ClientTransport
 
 
@@ -25,17 +24,6 @@ class SessionAcceptor:
                                                 listener_id=listener_id,
                                                 listener_name=listener_name, listener_port=listener_port,
                                                 protocol=protocol)
-            probe = info.get('update_registration_probe')
-            if isinstance(probe, str) and 0 < len(probe) <= 180:
-                # Acknowledgment only after the Session has been registered on Server.
-                try:
-                    session.send({'type': MSG_TYPE_UPDATE_REGISTRATION_ACK,
-                                  'probe': probe, 'client_id': session.session_info.client_id})
-                except Exception as exc:
-                    # No receive handler was started yet. Roll back registration
-                    # instead of leaving a phantom online session in the manager.
-                    self._handle_connection_closed(session, exc)
-                    raise
             self._start_connection_handler(session)
             return session
         except Exception as exc:

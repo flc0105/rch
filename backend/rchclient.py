@@ -39,7 +39,6 @@ def _write_update_ready_marker(file_path: str, client: Client):
         'pid': os.getpid(),
         'client_id': client.client_id,
         'client_revision': str((client.info or {}).get('client_revision') or ''),
-        'server_registered': bool(getattr(client, 'update_server_registered', False)),
     }
     with open(temp_path, 'w', encoding='utf-8') as file_obj:
         json.dump(payload, file_obj)
@@ -95,8 +94,6 @@ def main():
     client = None
     try:
         client = Client(SERVER_ADDR, process_recovery_watchdog_manager=process_recovery_watchdog)
-        if update_ready_file:
-            client.update_registration_probe = os.path.basename(update_ready_file)
         client.connect()
         _write_update_ready_marker(update_ready_file, client)
         if update_ready_file:

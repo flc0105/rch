@@ -6,7 +6,6 @@ from client.connection.server_connection import ServerConnection
 from client.connection.transport_connectors import get_connector
 from client.config.config import RUNTIME_CONFIG
 from client.runtime.client_info_builder import ClientInfoBuilder
-from core.protocol.message_types import MSG_TYPE_UPDATE_REGISTRATION_ACK
 from core.utils.logger import logger
 
 
@@ -106,28 +105,10 @@ class ClientConnectionLifecycle:
         ).build()
         if self.client.recovery_source:
             info['recovery_source'] = self.client.recovery_source
-        update_probe = str(getattr(self.client, 'update_registration_probe', '') or '')
-        if update_probe:
-            info['update_registration_probe'] = update_probe
         self.client.info = info
         handshake_json = json.dumps(info, ensure_ascii=False, indent=2)
         logger.info('Client handshake info:\n%s', handshake_json)
         self.client.server.send(info)
-        if update_probe:
-            # The update candidate must receive proof that Server registered it,
-            # not just that its local socket accepted an info frame.
-            sock = self.client.server.socket
-            previous_timeout = sock.gettimeout()
-            try:
-                sock.settimeout(8)
-                receipt = self.client.server.recv()
-            finally:
-                sock.settimeout(previous_timeout)
-            if (receipt.get('type') != MSG_TYPE_UPDATE_REGISTRATION_ACK
-                    or receipt.get('probe') != update_probe
-                    or receipt.get('client_id') != self.client.client_id):
-                raise RuntimeError('Update candidate was not confirmed by Server')
-            self.client.update_server_registered = True
         self.client.server.mark_connected()
         # The source describes only the first successful startup handshake.
         self.client.recovery_source = ''

@@ -57,16 +57,19 @@ def create_agent_blueprint(server_instance):
             except ValueError:
                 raise ValueError('web_port must be integer')
 
-            if source == 'update' and not payload.get('listener_id'):
-                # Older running Clients supply only the port. Resolve from the
-                # Server's configured listener rather than silently building TCP.
-                payload['listener_id'] = server_instance.listener_manager.resolve_update_listener(
+            listener_id = str(payload.get('listener_id') or '').strip()
+            if source == 'update':
+                # Always verify the requested transport against the selected
+                # endpoint, including requests that explicitly supply its ID.
+                resolved_id = server_instance.listener_manager.resolve_update_listener(
                     server_port,
                     str(payload.get('server_transport') or '').strip(),
                     str(payload.get('server_tls_fingerprint') or '').strip().lower(),
                 )
+                if listener_id and listener_id != resolved_id:
+                    raise ValueError('Update listener does not match connection settings')
+                listener_id = resolved_id
 
-            listener_id = str(payload.get('listener_id') or '').strip()
             listener_protocol = 'tcp'
             tls_fingerprint = ''
             if listener_id:

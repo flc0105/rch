@@ -71,13 +71,18 @@ class Client:
         while True:
             if self.connection_lifecycle.is_paused is True:
                 return
+            # A completed TCP connect can still fail immediately at the protocol
+            # layer (for example, plaintext sent to a TLS endpoint). Throttle
+            # every recovery attempt, not just failed socket connections.
+            time.sleep(self.RECONNECT_INTERVAL)
+            if self.connection_lifecycle.is_paused is True:
+                return
             try:
                 self.connection_lifecycle.reset_connection()
                 self.connect()
                 return
             except Exception as reconnect_error:
                 logger.error('Client reconnection failed: %s', reconnect_error, exc_info=True)
-                time.sleep(self.RECONNECT_INTERVAL)
 
     def wait(self):
         try:

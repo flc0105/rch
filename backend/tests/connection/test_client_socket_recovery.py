@@ -140,7 +140,8 @@ def test_reconnection_retries_failed_handshake_instead_of_exiting():
         client._recover_from_connection_error(TimeoutError('idle'))
     assert client.connect.call_count == 2
     assert client.connection_lifecycle.reset_connection.call_count == 2
-    sleep.assert_called_once_with(0.01)
+    assert sleep.call_count == 2  # both the initial loss and the failed handshake are paced
+    sleep.assert_any_call(0.01)
 
 
 def test_receiver_stale_stop_event_cannot_restart_old_socket_reader():

@@ -12,6 +12,10 @@ Remote Control Watchdog 与主连接独立运行。Client 内置通用本地 IPC
 
 Server HTTP Control 已支持向原 `client_id` 投递 `resume`：独立 Watchdog Worker 领取指令后通过本地 IPC 唤醒原进程，并返回执行 ACK。`delivered` 表示 IPC 唤醒已被原进程确认；最终在线状态由原 Client 重新握手确认。可以用已认证的 `POST /api/connections/<client_id>/control` 发送 `{"command":"resume"}`，或在 Server 命令上下文使用 `httpctl resume --client-id <client_id>`；无需新增 Server Pause 状态、Machine 状态或 History UI。
 
+## 异常断线后的重连
+
+Python Client 的主连接因 Socket 关闭、传输错误或接收超时而意外中断时，先等待 `RECONNECT_INTERVAL_SECONDS`（默认 5 秒），再清理旧连接并重新拨号。后续拨号或握手失败仍按该间隔继续重试；这样端口可建立 TCP 连接、但对方拒绝应用协议（例如明文 TCP 误连 TLS Listener）时也不会高速反复拨号。手动 `pause_connection` 不自动重连。
+
 ## 从握手到活动会话
 
 Client 连接 Server 的 TCP Socket（默认端口 `9999`），建立传输后发送包含 `client_id`、设备标识、系统信息、工作目录及命令能力的握手信息。Server 接收该信息，创建 `ClientSession`，并以 `client_id` 登记在活动连接管理器中。`client_id` 表示一次 Client 实例身份；`machine_id` 用于将不同实例关联到同一台设备，不能用两者互相替代。
