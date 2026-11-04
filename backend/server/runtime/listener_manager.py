@@ -90,6 +90,24 @@ class ListenerManager:
             return {'listener_protocol': protocol.name,
                     'tls_fingerprint': protocol.build_fingerprint(listener_id, builder, self.cert_dir)}
 
+    def resolve_update_listener(self, server_port, transport='', fingerprint=''):
+        """Resolve an update listener by configured port and optional transport/pin.
+
+        Older Clients submit only a port, which must resolve unambiguously.
+        Never inject a client-supplied certificate pin into a generated Bundle.
+        """
+        with self._lock:
+            matches = [item for item in self._configs
+                       if int(item['port']) == int(server_port)
+                       and (not transport or item['protocol'] == transport)
+                       and item.get('enabled', True)]
+            if fingerprint:
+                matches = [item for item in matches
+                           if self.certificate_fingerprint(item['id']) == fingerprint]
+            if len(matches) != 1:
+                raise ValueError('Update transport does not match exactly one configured listener')
+            return matches[0]['id']
+
     def _make_listener(self, item):
         protocol = get_listener_protocol(item['protocol'])
         return protocol.create_listener(self.server, item, self.cert_dir)

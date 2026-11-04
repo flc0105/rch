@@ -540,11 +540,21 @@ class WebConnectionService:
         session.services.heartbeat_service.mark_disconnected()
         payload = self.serialize_connection(session)
         if self.recent_device_store:
-            self.recent_device_store.upsert_from_connection(payload)
-            self.recent_device_store.mark_offline(
-                machine_id=payload.get('machine_id') or '',
-                disconnected_at=payload.get('disconnected_at') or '',
-            )
+            # During update both instances can be online briefly. Closing the old
+            # session must not overwrite the newer machine-level cache as offline.
+            machine_key = self._machine_key(payload.get('machine_id'))
+            replacement = next((other for other in self.server.connections.all()
+                                if other is not session and machine_key
+                                and self._machine_key(other.session_info.machine_id) == machine_key
+                                and self._build_connection_state(other) == 'online'), None)
+            if replacement is not None:
+                self.recent_device_store.upsert_from_connection(self.serialize_connection(replacement))
+            else:
+                self.recent_device_store.upsert_from_connection(payload)
+                self.recent_device_store.mark_offline(
+                    machine_id=payload.get('machine_id') or '',
+                    disconnected_at=payload.get('disconnected_at') or '',
+                )
         request = getattr(session.context, 'server_disconnect_request', None)
         client_end = getattr(session.context, 'client_session_end', None)
         failure = getattr(session.context, 'transport_failure', None)

@@ -102,9 +102,9 @@ Web Terminal 提交 update
     ↓
 安全解压至临时目录 → 检查入口脚本 → 发布到 releases/
     ↓
-启动独立 Python Client → 新实例建立 TCP 连接并发送握手
+启动独立 Python Client → 新实例建立 TCP/TLS 连接并发送握手
     ↓
-核对启动标记中的 PID → 短暂检查新进程仍存活
+Server 注册新会话后发更新确认 → 检查新进程 PID / 存活
     ↓
 默认：原 Client 延迟退出    /    --keep-old：原 Client 保留
 ```
@@ -119,9 +119,9 @@ update --keep-old
 
 ### 新旧进程的切换条件
 
-非 iOS 平台启动新的 Python 进程时，将 `--update-ready-file` 交给新进程。新进程完成本地 Socket 连接、发送 `info` 握手后，写入包含 `pid`、`client_id` 和 `client_revision` 的就绪文件。旧 Client 最多等待 **10 秒**，要求标记中的 PID 与自己创建的新进程一致，并继续观察新进程约 **2 秒**，确认它没有立即退出。
+非 iOS 平台启动新的 Python 进程时，将 `--update-ready-file` 交给新进程。新进程通过 Socket/TLS 发送 `info` 后，必须收到 **Server 在注册该 Session 完成后发回的更新确认**，才能写入包含 `pid`、`client_id`、`client_revision` 和 `server_registered` 的就绪文件。旧 Client 最多等待 **10 秒**，要求 PID 一致且 `server_registered` 为真，并继续观察新进程约 **5 秒**，确认它没有立即退出。只有本地发送过握手不再算成功。
 
-就绪文件意味着新进程已经执行到**本地连接与握手发送阶段**；若新进程提前退出或就绪等待超时，原 Client 会报告失败，尝试终止未通过交接的新进程，**不会主动退出旧 Client**。启动异常日志可附在错误信息中，探针文件最后会清理。
+就绪文件意味着新进程已经收到**Server 注册会话的确认**，而不只是本地发送了握手；若新进程提前退出或就绪等待超时，原 Client 会报告失败，尝试终止未通过交接的新进程，**不会主动退出旧 Client**。启动异常日志可附在错误信息中，探针文件最后会清理。
 
 就绪确认后，默认先报告执行结果，再短暂延迟、停止当前 Watchdog Manager、关闭 Socket 并退出原进程。Windows 在关闭旧连接前会先完成 TCP 发送方向的有序关闭，让已经发送的 `client_update` 会话结束通知先到达 Server；其他桌面平台继续直接关闭旧连接。`--keep-old` 跳过这个旧进程退出步骤。因此保留旧实例时，在设备上可能同时看到多个具有不同 `client_id` 的活动连接。与设备身份、连接历史的区别，详见 [Connection Lifecycle](connection_lifecycle.md)。
 
@@ -193,7 +193,7 @@ Agent Output 或其他构建产物。删除不可恢复，应在批准 Preview �
 
 遇到更新提示没有出现时，先确认目标设备当前是否真正 Online、Client 是否提交了 `client_revision`、是否在源码模式下尚未重启，以及 Server 当前是否运行在预期的源码目录。若整体 Revision 不同却没有逐文件差异，检查握手中是否提供了 `client_revision_files`。这些诊断信息都依赖当前连接快照，而不是历史设备缓存。
 
-更新失败可按请求构建、下载、解压、启动与交接的实际阶段定位：构建依赖 Server 的构建能力与源码文件；下载依赖目标 Client 对 8085 Web 端口的访问；新 Release 启动还依赖目标系统的 Python 解释器、所需第三方依赖及 Socket 9999 可达。安装验证需要同时检查 HTTP 下载端口与 Client 的 TCP Socket 连接端口。连接地址在构建时已注入 Bundle，因此 Server 上生成构建的地址参数必须对目标设备可用。
+更新失败可按请求构建、下载、解压、启动与交接的实际阶段定位：构建依赖 Server 的构建能力与源码文件；下载依赖目标 Client 对 8085 Web 端口的访问；新 Release 启动还依赖目标系统的 Python 解释器、所需第三方依赖及 对应 Listener 的 TCP/TLS 端口可达。安装验证需要同时检查 HTTP 下载端口与 Agent 主连接端口。连接地址在构建时已注入 Bundle，因此 Server 上生成构建的地址参数必须对目标设备可用。对于当前 `update`，Server 会根据运行中 Client 的连接端口和传输类型选取真实 Listener，再将 TLS 证书指纹从 Server 自身证书取得并注入新 Bundle；较早的 Client 仅传端口时也须唯一匹配对应 Listener，不能默认为 TCP。Listener 不存在、被停用、存在多个候选或 TLS 指纹不匹配时构建失败，原进程保留。
 
 若新进程没有按时提交就绪标记或在稳定性检查期间退出，旧进程会保留；这属于避免过早关闭旧连接的交接保护，不是原子级自动回滚已解压文件的事务。反之，成功交接后的新进程仍可能在稍后因运行环境或网络问题断开，不能将短暂存活检查解释为长期健康保证。
 
