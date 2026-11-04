@@ -14,7 +14,7 @@ class SessionAcceptor:
     def __init__(self, server):
         self.server = server
 
-    def accept_session(self, raw_sock, addr, *, listener_id='', listener_name='', protocol='tcp'):
+    def accept_session(self, raw_sock, addr, *, listener_id='', listener_name='', listener_port=None, protocol='tcp'):
         try:
             info, transport = self._receive_client_info(raw_sock, addr)
             if not isinstance(info, dict) or info.get('type') != 'info':
@@ -22,7 +22,7 @@ class SessionAcceptor:
             info = self._build_connection_info(addr, info)
             session = self._register_connection(transport, addr, info,
                                                 listener_id=listener_id,
-                                                listener_name=listener_name,
+                                                listener_name=listener_name, listener_port=listener_port,
                                                 protocol=protocol)
             self._start_connection_handler(session)
             return session
@@ -48,10 +48,11 @@ class SessionAcceptor:
         """
         return {**{'addr': f'{addr[0]}:{addr[1]}'}, **info}
 
-    def _register_connection(self, transport: ClientTransport, addr, info: dict, *, listener_id='', listener_name='', protocol='tcp'):
+    def _register_connection(self, transport: ClientTransport, addr, info: dict, *, listener_id='', listener_name='', listener_port=None, protocol='tcp'):
         session = self.server.web_service.connection_api.create_web_connection(transport, addr, info)
         session.listener_id = listener_id
         session.listener_name = listener_name
+        session.listener_port = listener_port
         session.listener_protocol = protocol
         self.server.connections.add(session)
         logger.info('Connection has been established: {}'.format(addr))

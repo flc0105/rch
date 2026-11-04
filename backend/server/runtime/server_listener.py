@@ -67,7 +67,8 @@ class ServerListener(SessionAcceptor):
                 raw_sock.close()
                 return None
         return self.accept_session(raw_sock, addr, listener_id=self.listener_id,
-                                   listener_name=self.name, protocol=self.protocol)
+                                   listener_name=self.name, listener_port=self.address[1],
+                                   protocol=self.protocol)
 
     def serve(self, already_bound=False):
         if not already_bound:

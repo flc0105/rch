@@ -119,6 +119,10 @@
               <div class="device-name">
                 {{ formatDeviceName(item) }}
               </div>
+              <el-tag v-if="item.listener_name" size="small" type="info" effect="plain" class="device-listener-tag"
+                      :title="`${(item.listener_protocol || 'tcp').replaceAll('_', '/').toUpperCase()} · ${item.listener_name}`">
+                {{ item.listener_name }}
+              </el-tag>
               <ClockAlert
                 v-if="getConnectionDisplayState(item) === 'online' && item.client_revision_state === 'outdated'"
                 class="device-update-indicator"
@@ -136,10 +140,6 @@
             </div>
             <div class="device-os">
               {{ formatOsLabel(item.os_type, item.os_ver) }}
-              <el-tag v-if="item.listener_name" size="small" type="info" effect="plain" class="device-listener-tag"
-                      :title="`${(item.listener_protocol || 'tcp').replaceAll('_', '/').toUpperCase()} · ${item.listener_name}`">
-                {{ item.listener_name }}
-              </el-tag>
             </div>
           </div>
 
@@ -1185,7 +1185,17 @@ async removeConnectionPermanently(item) {
 .device-dot-offline {
   background: #94a3b8;
 }
-.device-listener-tag { margin-left: 6px; max-width: 120px; vertical-align: middle; }
+.device-listener-tag {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 76px;
+  height: 17px;
+  padding: 0 5px;
+  line-height: 15px;
+  font-size: 10px;
+  font-weight: 500;
+  border-radius: 4px;
+}
 .device-listener-tag :deep(.el-tag__content) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>
 

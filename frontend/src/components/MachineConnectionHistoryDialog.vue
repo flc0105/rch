@@ -127,6 +127,10 @@
                 <span class="value">{{ formatOs(row) }}</span>
               </div>
               <div class="machine-session-meta-item">
+                <span class="label">Listener</span>
+                <span class="value">{{ formatListener(row) }}</span>
+              </div>
+              <div class="machine-session-meta-item">
                 <span class="label">User</span>
                 <span class="value">{{ row.username || '-' }}</span>
               </div>
@@ -231,6 +235,10 @@
                 <div class="machine-session-meta-item">
                   <span class="label">Address</span>
                   <span class="value">{{ scope.row.addr || '-' }}</span>
+                </div>
+                <div class="machine-session-meta-item">
+                  <span class="label">Listener</span>
+                  <span class="value">{{ formatListener(scope.row) }}</span>
                 </div>
                 <div class="machine-session-meta-item">
                   <span class="label">OS</span>
@@ -464,6 +472,12 @@ export default {
   },
 
   methods: {
+    formatListener(row) {
+      const name = String(row?.listener_name || '').trim()
+      const port = Number(row?.listener_port || 0)
+      return [name, port > 0 ? `:${port}` : ''].filter(Boolean).join(' · ') || '-'
+    },
+
     open(item = {}) {
       this.machineId = String(item.machine_id || '').trim()
       this.deviceName = String(

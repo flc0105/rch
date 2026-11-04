@@ -18,6 +18,7 @@ class AgentBootstrapScriptService:
         web_port = payload.get('web_port')
         web_host = (payload.get('web_host') or server_host).strip() or server_host
         web_scheme = (payload.get('web_scheme') or 'http').strip() or 'http'
+        listener_id = str(payload.get('listener_id') or '').strip()
 
         if not server_host:
             raise ValueError('server_host is required')
@@ -45,6 +46,7 @@ class AgentBootstrapScriptService:
             'web_host': web_host,
             'web_port': web_port,
             'web_scheme': web_scheme,
+            'listener_id': listener_id,
         }
 
     def generate_python_script(self, payload: dict) -> str:
@@ -55,6 +57,7 @@ class AgentBootstrapScriptService:
             params['web_host'],
             params['web_port'],
             params['web_scheme'],
+            params['listener_id'],
         )
 
     def generate_powershell_script(self, payload: dict) -> str:
@@ -63,9 +66,10 @@ class AgentBootstrapScriptService:
             params['server_host'],
             params['server_port'],
             params['web_port'],
+            params['listener_id'],
         )
 
-    def _generate_python_script(self, server_host, server_port, web_host, web_port, web_scheme='http'):
+    def _generate_python_script(self, server_host, server_port, web_host, web_port, web_scheme='http', listener_id=''):
         import json
         script = _PYTHON_BOOTSTRAP
         for key, value in {
@@ -74,17 +78,19 @@ class AgentBootstrapScriptService:
             '@WEB_HOST@': json.dumps(web_host),
             '@WEB_PORT@': str(web_port),
             '@WEB_SCHEME@': json.dumps(web_scheme),
+            '@LISTENER_ID@': json.dumps(listener_id),
         }.items():
             script = script.replace(key, value)
         return script
 
-    def _generate_powershell_script(self, server_host, server_port, web_port):
+    def _generate_powershell_script(self, server_host, server_port, web_port, listener_id=''):
         import json
         script = _POWERSHELL_BOOTSTRAP
         for key, value in {
             '@SERVER_HOST@': json.dumps(server_host),
             '@SERVER_PORT@': str(server_port),
             '@WEB_PORT@': str(web_port),
+            '@LISTENER_ID@': json.dumps(listener_id),
         }.items():
             script = script.replace(key, value)
         return script
@@ -113,6 +119,7 @@ SERVER_PORT = @SERVER_PORT@
 WEB_HOST = @WEB_HOST@
 WEB_PORT = @WEB_PORT@
 WEB_SCHEME = @WEB_SCHEME@
+LISTENER_ID = @LISTENER_ID@
 BASE_URL = f"{WEB_SCHEME}://{WEB_HOST}:{WEB_PORT}"
 MIN_PYTHON = (3, 10)
 
@@ -282,6 +289,8 @@ def build_bundle():
         'web_port': WEB_PORT, 'target_os': 'bundle', 'builder': 'bundle',
         'target_arch': '', 'source': 'bootstrap',
     }
+    if LISTENER_ID:
+        payload['listener_id'] = LISTENER_ID
     log(f'Requesting Bundle build: {BASE_URL}/api/agent/build')
     result = json.loads(request_bytes(f'{BASE_URL}/api/agent/build', payload))
     if result.get('code') != 0:
@@ -367,6 +376,7 @@ _POWERSHELL_BOOTSTRAP = r'''$ErrorActionPreference = 'Stop'
 $ip = @SERVER_HOST@
 $serverPort=@SERVER_PORT@
 $webPort=@WEB_PORT@
+$listenerId=@LISTENER_ID@
 $bundleDir = Join-Path $env:USERPROFILE 'client_bundle'
 $runtimeDir = Join-Path $bundleDir 'runtimes\python-embed'
 $downloadsDir = Join-Path $bundleDir 'downloads'
@@ -471,7 +481,9 @@ $body = @{
     server_host=$ip; server_port=$serverPort; web_port=$webPort;
     target_os='bundle'; builder='bundle'; target_arch=''; source='bootstrap';
     server_web_scheme='http'; server_web_host=$ip
-} | ConvertTo-Json -Compress
+}
+if ($listenerId) { $body['listener_id'] = $listenerId }
+$body = $body | ConvertTo-Json -Compress
 Write-Host "[bootstrap] Requesting Bundle build: http://$ip`:$webPort/api/agent/build"
 $response = Invoke-RestMethod "http://$ip`:$webPort/api/agent/build" -Method Post -ContentType 'application/json' -Body $body
 if ($response.code -ne 0) { throw "Build failed: $($response.message)" }

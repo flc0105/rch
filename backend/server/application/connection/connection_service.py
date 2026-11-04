@@ -141,6 +141,7 @@ class WebConnectionService:
             'addr': info.addr,
             'listener_id': getattr(session, 'listener_id', ''),
             'listener_name': getattr(session, 'listener_name', ''),
+            'listener_port': getattr(session, 'listener_port', None),
             'listener_protocol': getattr(session, 'listener_protocol', 'tcp'),
             'hostname': info.hostname,
             'machine_id': info.machine_id,

@@ -26,12 +26,12 @@
         </label>
 
         <label class="one-liners-config-field">
-          <span>Server port</span>
-          <el-input
-            v-model="serverForm.serverPort"
-            size="small"
-            placeholder="9999"
-          />
+          <span>Listener</span>
+          <el-select v-if="listeners.length" v-model="selectedListenerId" size="small" style="width: 100%" @change="onListenerChange">
+            <el-option v-for="listener in listeners" :key="listener.id" :value="listener.id"
+                       :label="`${listener.name} · ${listener.protocol_label || listener.protocol?.toUpperCase()} :${listener.port}`" />
+          </el-select>
+          <el-input v-else v-model="serverForm.serverPort" size="small" placeholder="9999" />
         </label>
 
         <label class="one-liners-config-field">
@@ -93,6 +93,7 @@
 import { ElMessage } from 'element-plus'
 import { terminalOneLiners } from '../data/terminalOneLiners.js'
 import { getAgentPlatform } from '../api/agentApi.js'
+import { listListeners } from '../api/listenersApi.js'
 
 export default {
   name: 'OneLinersDialog',
@@ -102,6 +103,8 @@ export default {
       visible: false,
       oneLiners: terminalOneLiners,
       oneLinerOverrides: {},
+      listeners: [],
+      selectedListenerId: '',
       serverForm: this.getDefaultServerForm(),
     }
   },
@@ -126,9 +129,12 @@ export default {
   methods: {
     async open() {
       this.oneLinerOverrides = {}
+      this.listeners = []
+      this.selectedListenerId = ''
       this.serverForm = this.getDefaultServerForm()
       this.visible = true
       await this.loadServerPlatform()
+      await this.loadListeners()
     },
 
     close() {
@@ -168,17 +174,48 @@ export default {
       }
     },
 
+    async loadListeners() {
+      try {
+        const res = await listListeners()
+        const json = await res.json()
+        if (!res.ok || json.code !== 0) throw new Error(json.message || 'Failed to load listeners')
+        this.listeners = Array.isArray(json.data) ? json.data : []
+        const selected = this.listeners.find(item => item.id === 'tcp-default')
+          || this.listeners.find(item => Number(item.port) === Number(this.serverForm.serverPort) && item.protocol === 'tcp')
+          || this.listeners[0]
+        this.selectedListenerId = selected?.id || ''
+        if (selected) this.onListenerChange(selected.id)
+      } catch (_error) {
+        // Keep the existing manual port field if Listener management is unavailable.
+        this.listeners = []
+        this.selectedListenerId = ''
+      }
+    },
+
+    onListenerChange(id) {
+      const listener = this.listeners.find(item => item.id === id)
+      if (listener) this.serverForm.serverPort = String(listener.port)
+    },
+
     renderOneLinerCode(code) {
+      const listener = this.listeners.find(item => item.id === this.selectedListenerId)
+      // Keep the original command exactly as before when using the default TCP listener.
+      const listenerId = listener?.id && listener.id !== 'tcp-default' && /^[A-Za-z0-9_-]+$/.test(listener.id)
+        ? listener.id : ''
       const replacements = {
         server_host: String(this.serverForm.serverHost || '').trim(),
         server_port: String(this.serverForm.serverPort || '').trim(),
         web_port: String(this.serverForm.webPort || '').trim(),
+        listener_payload_python: listenerId ? `,'listener_id':'${listenerId}'` : '',
+        listener_payload_ps1: listenerId ? ',`"listener_id`":`"' + listenerId + '`"' : '',
       }
 
       return String(code || '')
         .replace(/{{\s*server_host\s*}}/g, replacements.server_host)
         .replace(/{{\s*server_port\s*}}/g, replacements.server_port)
         .replace(/{{\s*web_port\s*}}/g, replacements.web_port)
+        .replace(/{{\s*listener_payload_python\s*}}/g, replacements.listener_payload_python)
+        .replace(/{{\s*listener_payload_ps1\s*}}/g, replacements.listener_payload_ps1)
         .trim()
     },
 

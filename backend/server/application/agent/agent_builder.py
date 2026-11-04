@@ -16,8 +16,8 @@ from server.runtime.listener_protocols import get_listener_protocol
 # All builders are peers; even Bundle may be unregistered. Restart after editing this map.
 AGENT_BUILDERS = {
     'bundle': ('server.application.agent.agent_build_bundle', 'BundleBuilder', BUNDLE_ARTIFACT_STEM),
-    'pyinstaller': ('server.application.agent.agent_build_pyinstaller', 'PyInstallerBuilder', 'pyinstaller'),
-    'go': ('server.application.agent.agent_build_client_go', 'ClientGoBuilder', 'go-client'),
+    # 'pyinstaller': ('server.application.agent.agent_build_pyinstaller', 'PyInstallerBuilder', 'pyinstaller'),
+    # 'go': ('server.application.agent.agent_build_client_go', 'ClientGoBuilder', 'go-client'),
     'go_loader': ('server.application.agent.agent_build_go_loader', 'GoLoaderBuilder', 'go-loader'),
 }
 

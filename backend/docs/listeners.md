@@ -8,7 +8,7 @@ In the Web UI, open **Utilities → Listeners**. Add a listener with a name, pro
 
 Listener configuration is stored at `backend/runtime/listeners.json` (or under `RCH_SERVER_RUNTIME_DIR`). The default entry initially uses `RCH_SOCKET_PORT`, default `9999`. Ports used by the HTTP and browser WebSocket services are reserved. Enabled listeners start when Server starts. If a bind fails, the Listener view shows an error status.
 
-Select **Build Agent → Bundle → Listener** to embed the selected listener's protocol and port. Set Server IP to the address reachable from the Agent (not the listener's `0.0.0.0` bind address). Other builders retain TCP-only support. The device sidebar shows the current or most recently used listener for each device.
+Select **Build Agent → Bundle → Listener** to embed the selected listener's protocol and port. Set Server IP to the address reachable from the Agent (not the listener's `0.0.0.0` bind address). Other builders retain TCP-only support. The device sidebar shows a compact listener label next to each device name. Connection History snapshots record the listener name and local listening port for new connections.
 
 ## TLS certificate pinning
 
@@ -28,4 +28,4 @@ These endpoints use the existing authenticated Web API session or token:
 - `PATCH /api/listeners/<id>` — set `{ "enabled": true | false }`
 - `DELETE /api/listeners/<id>` — remove a nondefault listener and stop accepting
 
-For `POST /api/agent/build`, Bundle requests may add `listener_id` alongside existing Server Host/Port/Web Port fields. Server validates the port against the selected listener and automatically injects the listener protocol and pinned certificate fingerprint. Without `listener_id`, the preexisting TCP Bundle build remains supported.
+For `POST /api/agent/build`, Bundle requests may add `listener_id` alongside existing Server Host/Port/Web Port fields. Server validates the port against the selected listener and automatically injects the listener protocol and pinned certificate fingerprint. Without `listener_id`, the preexisting TCP Bundle build remains supported. One-liners may select a listener; TLS selections pass the listener ID to the generated Python/PowerShell bootstrap and then into the Bundle build request, where the existing registry resolves the TLS fingerprint. The default TCP one-liners keep their previous command form.

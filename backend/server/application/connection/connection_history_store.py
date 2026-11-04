@@ -10,7 +10,9 @@ class ConnectionHistoryStore:
     SCHEMA_VERSION = 1
 
     SNAPSHOT_FIELDS = (
-        'machine_id', 'client_id', 'hostname', 'addr', 'os_type', 'os_alias', 'os_ver',
+        'machine_id', 'client_id', 'hostname', 'addr',
+        'listener_id', 'listener_name', 'listener_protocol', 'listener_port',
+        'os_type', 'os_alias', 'os_ver',
         'os_name', 'os_full', 'arch', 'manufacturer', 'model', 'integrity', 'cwd',
         'build_version', 'python_ver', 'process_id', 'launch_command', 'launch_mode',
         'launch_source', 'username',
