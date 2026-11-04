@@ -12,6 +12,7 @@ import time
 from uuid import uuid4
 
 from client.watchdog.watchdog_paths import get_watchdog_log_path, get_existing_watchdog_log_path
+from client.runtime.client_util import get_executable_argv
 from client.runtime.temp_workspace import get_temp_category_dir
 from client.watchdog.recovery_source import RECOVERY_SOURCE_ENV, PROCESS_RECOVERY_WATCHDOG
 from client.watchdog.watchdog_environment import without_process_recovery_watchdog_environment
@@ -92,8 +93,7 @@ def _logger():
 
 
 def _worker_command(session, parent_pid, parent_started, launch_argv, cwd):
-    executable = os.path.realpath(sys.executable)
-    prefix = [executable] if getattr(sys, 'frozen', False) else [executable, os.path.realpath(sys.argv[0])]
+    prefix = get_executable_argv(include_runtime_args=False)
     return [*prefix, '--process-recovery-watchdog-worker', '--process-recovery-watchdog-session', session,
             '--process-recovery-watchdog-parent-pid', str(parent_pid),
             '--process-recovery-watchdog-parent-started', repr(parent_started),
@@ -102,10 +102,7 @@ def _worker_command(session, parent_pid, parent_started, launch_argv, cwd):
 
 
 def _launch_argv():
-    executable = os.path.realpath(sys.executable)
-    if getattr(sys, 'frozen', False):
-        return [executable, *sys.argv[1:]]
-    return [executable, os.path.realpath(sys.argv[0]), *sys.argv[1:]]
+    return get_executable_argv()
 
 
 def _detached_kwargs(cwd, env):

@@ -27,26 +27,26 @@ def wrap_path(path):
     return f'"{path}"' if ' ' in path else path
 
 
+def get_executable_argv(*, include_runtime_args=True):
+    """统一生成当前 Client 的 argv，供 subprocess / execv 直接使用。"""
+    argv = [os.path.realpath(sys.executable)]
+    if not getattr(sys, 'frozen', False):
+        argv.append(os.path.realpath(sys.argv[0]))
+    if include_runtime_args:
+        argv.extend(sys.argv[1:])
+    return argv
+
+
 def get_executable_path():
-    """
-    获取当前脚本的执行命令，用于重启或后台启动
+    """获取当前 Client 的启动命令，用于 Shell、launchd 和状态展示。
 
-    适配 macOS 和 Windows:
-    - 开发模式 (python script.py): 返回 "python script.py"
-    - 打包模式 (pyinstaller): 返回可执行文件路径
+    源码模式包含 Python、脚本及参数；打包模式包含程序及运行参数。
+    与 subprocess 使用的 argv 共用同一份来源。
     """
-    executable = wrap_path(os.path.realpath(sys.executable))
-
-    if getattr(sys, 'frozen', False):
-        return executable
-    else:
-        script_path = os.path.realpath(sys.argv[0])
-        args = sys.argv[1:]
-        argv = wrap_path(script_path)
-        if args:
-            args_str = ' '.join(wrap_path(arg) for arg in args)
-            return f'{executable} {argv} {args_str}'
-        return f'{executable} {argv}'
+    argv = get_executable_argv()
+    if os.name == 'nt':
+        return subprocess.list2cmdline(argv)
+    return shlex.join(argv)
 
 
 def get_runtime_root() -> str:
@@ -64,52 +64,21 @@ def get_runtime_root() -> str:
 
 
 def get_executable_path_for_shell():
-    """返回 (shell, args) 元组，用于 ShellExecuteW"""
-    executable = wrap_path(os.path.realpath(sys.executable))
-    script_path = os.path.realpath(sys.argv[0])
-    args = sys.argv[1:]
-
-    if not getattr(sys, 'frozen', False):
-        cmd_parts = [executable, wrap_path(script_path)]
-        if args:
-            cmd_parts.extend(wrap_path(arg) for arg in args)
-        cmd = ' '.join(cmd_parts)
-        return r'c:\windows\system32\cmd.exe', f'/c {cmd}'
-    else:
-        return executable, None
+    """返回 (shell, args) 元组，用于 ShellExecuteW。"""
+    argv = get_executable_argv()
+    if getattr(sys, 'frozen', False):
+        return argv[0], subprocess.list2cmdline(argv[1:]) or None
+    return r'c:\windows\system32\cmd.exe', '/c ' + subprocess.list2cmdline(argv)
 
 
 def get_exec_and_args():
+    """返回 (executable, parameters)，用于 ShellExecuteW。
+
+    源码模式：Python 解释器 + 脚本路径和运行参数；
+    打包模式：可执行文件 + 运行参数。
     """
-    返回 (executable, params)
-
-    - 开发模式:
-        executable = python.exe
-        params = "script.py" args...
-
-    - 打包模式:
-        executable = exe
-        params = args...
-    """
-    executable = os.path.realpath(sys.executable)
-
-    if getattr(sys, 'frozen', False):
-        # 👉 打包模式
-        args = sys.argv[1:]
-        params = ' '.join(wrap_path(arg) for arg in args) if args else None
-        return executable, params
-
-    else:
-        # 👉 开发模式
-        script_path = os.path.realpath(sys.argv[0])
-        args = sys.argv[1:]
-
-        params_parts = [wrap_path(script_path)]
-        if args:
-            params_parts.extend(wrap_path(arg) for arg in args)
-
-        params = ' '.join(params_parts)
-        return executable, params
+    argv = get_executable_argv()
+    return argv[0], subprocess.list2cmdline(argv[1:]) or None
 
 
 def get_system_paths():
@@ -183,7 +152,6 @@ def reset(socket):
 
 
 def reexec_restart(socket):
-    restart_command = get_executable_path()
     socket.report_session_end('client_restart', command='reexec_instance')
 
     try:
@@ -191,39 +159,20 @@ def reexec_restart(socket):
     except Exception:
         pass
 
-    if getattr(sys, 'frozen', False):
-        launch_cwd = os.path.dirname(os.path.realpath(sys.executable))
-    else:
-        launch_cwd = os.path.dirname(os.path.realpath(sys.argv[0]))
-
+    launch_cwd = get_runtime_root()
     try:
         os.chdir(launch_cwd)
     except Exception:
         pass
 
-    if os.name == 'nt':
-        argv = shlex.split(restart_command, posix=False)
-    elif os.name == 'posix':
-        argv = shlex.split(restart_command)
-    else:
-        raise RuntimeError(f'Unsupported os.name: {os.name}')
-
-    if not argv:
-        raise RuntimeError('Empty restart argv')
-
+    # Shell 命令不能反向 split 成 argv，尤其是 Windows 含空格路径。
+    argv = get_executable_argv()
     os.execv(argv[0], argv)
 
 
 def spawn_new_instance(*, start_new_session=True, stderr_path=''):
-    restart_argv = [os.path.realpath(sys.executable)]
-    if not getattr(sys, 'frozen', False):
-        restart_argv.append(os.path.realpath(sys.argv[0]))
-    restart_argv.extend(sys.argv[1:])
-
-    if getattr(sys, 'frozen', False):
-        launch_cwd = os.path.dirname(os.path.realpath(sys.executable))
-    else:
-        launch_cwd = os.path.dirname(os.path.realpath(sys.argv[0]))
+    restart_argv = get_executable_argv()
+    launch_cwd = get_runtime_root()
 
     from client.watchdog.watchdog_environment import without_process_recovery_watchdog_environment
 

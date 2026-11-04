@@ -1,9 +1,9 @@
 import os
 import platform
-import sys
 import time
 
 from client.commands.runtime.context import CommandCancelledError, CommandTimeoutError
+from client.runtime.client_util import get_executable_path
 from core.utils.command_output import StructuredCommandResult, render_structured_result
 
 
@@ -103,8 +103,6 @@ class MacSystemService:
     def build_process_info(self):
         import psutil
         process = psutil.Process()
-        executable_path = os.path.realpath(sys.executable)
-        script_path = os.path.realpath(''.join(sys.argv))
 
         return {
             'hostname': platform.node(),
@@ -118,7 +116,7 @@ class MacSystemService:
             'python_version': platform.python_version(),
             'process_id': os.getpid(),
             'current_user': process.username(),
-            'launch_command': f'{executable_path} {script_path}',
+            'launch_command': get_executable_path(),
             'process_uptime': f'{round(time.time() - process.create_time(), 2)}s',
             'cwd': os.getcwd()
         }

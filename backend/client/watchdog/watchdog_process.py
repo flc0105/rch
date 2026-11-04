@@ -5,6 +5,7 @@ import sys
 import time
 
 from client.watchdog.watchdog_action import WatchdogActionExecutor
+from client.runtime.client_util import get_executable_argv
 from client.watchdog.recovery_source import LOCAL_HEARTBEAT_WATCHDOG
 
 
@@ -102,36 +103,13 @@ class ClientWatchdogProcess:
 
 
     def _build_parent_launch_argv(self):
-        if getattr(sys, 'frozen', False):
-            return [os.path.realpath(sys.executable), *sys.argv[1:]]
-
-        return [os.path.realpath(sys.executable), os.path.realpath(sys.argv[0]), *sys.argv[1:]]
+        return get_executable_argv()
 
 
     def _build_worker_argv(self):
         parent_launch_argv_json = json.dumps(self._build_parent_launch_argv())
-
-        if getattr(sys, 'frozen', False):
-            return [
-                os.path.realpath(sys.executable),
-                '--watchdog-worker',
-                '--watch-parent-pid', str(os.getpid()),
-                '--watch-client-id', self.client_id,
-                '--watch-launch-cwd', os.getcwd(),
-                '--watch-parent-launch-argv-json', parent_launch_argv_json,
-                '--watch-remote-control-watchdog-enabled', '1' if self.remote_control_watchdog_enabled else '0',
-                '--watch-remote-control-watchdog-base-url', self.remote_control_watchdog_base_url,
-                '--watch-remote-control-watchdog-interval-seconds', str(self.remote_control_watchdog_interval_seconds),
-                '--watch-remote-control-watchdog-log-file-path', self.remote_control_watchdog_log_file_path,
-                '--watch-local-heartbeat-watchdog-enabled', '1' if self.local_heartbeat_watchdog_enabled else '0',
-                '--watch-local-heartbeat-watchdog-timeout-seconds', str(self.local_heartbeat_watchdog_timeout_seconds),
-                '--watch-local-heartbeat-watchdog-heartbeat-file-path', self.local_heartbeat_watchdog_heartbeat_file_path,
-                '--watch-local-heartbeat-watchdog-log-file-path', self.local_heartbeat_watchdog_log_file_path,
-            ]
-
         return [
-            os.path.realpath(sys.executable),
-            os.path.realpath(sys.argv[0]),
+            *get_executable_argv(include_runtime_args=False),
             '--watchdog-worker',
             '--watch-parent-pid', str(os.getpid()),
             '--watch-client-id', self.client_id,

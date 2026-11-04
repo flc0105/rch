@@ -28,7 +28,6 @@ class WinPrivilegeService:
         import base64
         import os
         import subprocess
-        import sys
 
         from client.watchdog.watchdog_environment import PROCESS_RECOVERY_WATCHDOG_ENV_KEYS
         from client.watchdog.recovery_source import RECOVERY_SOURCE_ENV
@@ -36,10 +35,8 @@ class WinPrivilegeService:
         def ps_quote(value):
             return "'" + str(value).replace("'", "''") + "'"
 
-        executable = os.path.realpath(sys.executable)
-        argv = list(sys.argv[1:]) if getattr(sys, 'frozen', False) else [
-            os.path.realpath(sys.argv[0]), *sys.argv[1:],
-        ]
+        from client.runtime.client_util import get_executable_argv
+        executable, *argv = get_executable_argv()
         lines = [
             "$ErrorActionPreference = 'Stop'",
             '$psi = New-Object System.Diagnostics.ProcessStartInfo',

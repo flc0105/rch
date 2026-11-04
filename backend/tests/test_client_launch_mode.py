@@ -120,7 +120,7 @@ def test_launchd_management_requires_live_job_not_environment(monkeypatch):
 def test_spawn_new_instance_marks_the_new_client_as_detached(monkeypatch):
     captured = {}
     monkeypatch.setattr(client_util.os, 'name', 'posix')
-    monkeypatch.setattr(client_util, 'get_executable_path', lambda: 'python3 /tmp/rchclient.py')
+    monkeypatch.setattr(client_util, 'get_executable_argv', lambda: ['python3', '/tmp/rchclient.py'])
     monkeypatch.setattr(client_util.sys, 'argv', ['/tmp/rchclient.py'])
     monkeypatch.setattr(client_util.subprocess, 'Popen', lambda *args, **kwargs: captured.update({
         'args': args, 'kwargs': kwargs,
