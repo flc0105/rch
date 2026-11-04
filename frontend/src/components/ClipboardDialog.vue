@@ -78,6 +78,13 @@
               </div>
             </div>
             <el-button
+              v-if="!file.is_directory"
+              size="small"
+              @click="previewRemoteFile(file)"
+            >
+              Preview
+            </el-button>
+            <el-button
               size="small"
               :loading="!!remoteDownloadingPaths[file.path]"
               :disabled="remoteDownloadAllLoading"
@@ -181,12 +188,14 @@
       </div>
     </template>
   </el-dialog>
+  <RemoteZipPeekDialog ref="remoteZipPeekDialogRef" :selected-id="String(selectedId || '')" />
 </template>
 
 <script>
 import { formatBytesHuman } from '../utils/formatters.js'
 import { ElMessage } from 'element-plus'
 import { Loading } from '@element-plus/icons-vue'
+import RemoteZipPeekDialog from './RemoteZipPeekDialog.vue'
 import {
   downloadRemoteClipboardDirectory,
   downloadRemoteClipboardFile,
@@ -200,13 +209,13 @@ import {
 
 export default {
   name: 'ClipboardDialog',
-  components: { Loading },
+  components: { Loading, RemoteZipPeekDialog },
   props: {
     selectedId: { type: [String, Number], default: '' },
     currentConnection: { type: Object, default: null },
     getTabScopedHeaders: { type: Function, default: null },
   },
-  emits: ['artifacts-maybe-changed'],
+  emits: ['artifacts-maybe-changed', 'preview-file'],
   data() {
     return {
       visible: false,
@@ -350,6 +359,15 @@ export default {
       document.body.appendChild(link)
       link.click()
       link.remove()
+    },
+    previewRemoteFile(file) {
+      if (!file?.path || file.is_directory) return
+      const name = String(file.name || file.path).trim().toLowerCase()
+      if (name.endsWith('.zip')) {
+        this.$refs.remoteZipPeekDialogRef?.open(file)
+      } else {
+        this.$emit('preview-file', { ...file, client_id: String(this.selectedId || ''), is_dir: false })
+      }
     },
     async downloadRemoteFile(file) {
       const path = String(file?.path || '')

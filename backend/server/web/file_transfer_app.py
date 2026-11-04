@@ -110,7 +110,7 @@ def create_browser_upload_blueprint(server_instance):
                 return command_execution_api.submit_web_upload(
                     client_id,
                     temp_path,
-                    safe_name,
+                    filename,
                     target_path,
                     tab_id=tab_id,
                     transfer_id=transfer_id,

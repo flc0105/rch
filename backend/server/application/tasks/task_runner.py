@@ -234,6 +234,7 @@ class WebTaskRunner:
             context.session,
             context.metadata.get('local_path') or '',
             remote_path=context.metadata.get('remote_path') or '',
+            display_name=context.metadata.get('display_name') or '',
             history_entry_id=context.history_entry_id,
             source=context.source,
             task_id=context.task_id,

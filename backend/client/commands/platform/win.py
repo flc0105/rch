@@ -68,9 +68,9 @@ class WindowsCommands(CommonCommands):
     @confirm('This may show a Windows UAC permission prompt and wait for authorization. Continue?')
     def spawn_elevated_instance(self, options=''):
         option = options.strip()
-        if option not in ('', '--bgrun'):
-            return 0, 'Usage: spawn_elevated_instance [--bgrun] [--no-confirm]'
-        return self.win_privilege.spawn_elevated_instance(bgrun=(option == '--bgrun'))
+        if option not in ('', '--detached'):
+            return 0, 'Usage: spawn_elevated_instance [--detached] [--no-confirm]'
+        return self.win_privilege.spawn_elevated_instance(detached=(option == '--detached'))
 
     @argument_command('netstat', spec=NETSTAT_ARGUMENT_SPEC)
     def _acmd_netstat(self, args_dict, payload=None):

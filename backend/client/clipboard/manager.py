@@ -1,6 +1,5 @@
 import json
 import os
-import shutil
 import uuid
 from client.runtime.temp_workspace import make_client_temp_dir, cleanup_temp_path, get_temp_category_dir
 from client.runtime.user_identity import get_macos_console_user_identity
@@ -35,7 +34,7 @@ class ClipboardManager:
             else get_temp_category_dir('clipboard_staging', private=True)
         )
         self.adapter = self._build_adapter()
-        self._clear_staging_on_startup()
+        self._ensure_staging_directory(self.staging_dir)
 
     def _build_adapter(self):
         if self._os_alias == 'win':
@@ -465,21 +464,6 @@ class ClipboardManager:
             paths.append(target_path)
 
         return paths
-
-    def _clear_staging_on_startup(self):
-        try:
-            if os.path.isdir(self.staging_dir):
-                shutil.rmtree(
-                    self.staging_dir,
-                    ignore_errors=True,
-                )
-
-            self._ensure_staging_directory(
-                self.staging_dir
-            )
-
-        except Exception:
-            pass
 
     def _get_macos_console_identity(self):
         if self._os_alias != 'mac':

@@ -436,6 +436,7 @@
     :current-connection="currentConnection"
     :get-tab-scoped-headers="getTabScopedHeaders"
     @artifacts-maybe-changed="refreshArtifactsIfOpen"
+    @preview-file="previewRemoteEntry"
   />
 
   <OneLinersDialog

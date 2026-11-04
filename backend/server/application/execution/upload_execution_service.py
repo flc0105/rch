@@ -58,6 +58,11 @@ class UploadExecutionService:
         relative_url = artifact_service.build_upload_temp_download_relative_url(staged_path)
         return artifact_service, staged_path, safe_name, relative_url
 
+    @staticmethod
+    def _transfer_filename(local_path: str, display_name: str = '') -> str:
+        # Staging uses an ASCII safe name; the target filename is user metadata.
+        return os.path.basename(str(display_name or local_path).replace('\\', '/')) or 'upload.bin'
+
     def _cleanup_staged_upload(self, artifact_service, staged_path: str):
         try:
             artifact_service.cleanup_upload_temp_file(staged_path)
@@ -70,6 +75,7 @@ class UploadExecutionService:
             local_path: str,
             *,
             remote_path: str = '',
+            display_name: str = '',
             history_entry_id: str = '',
             source: str = 'web',
             task_id: str = '',
@@ -85,6 +91,7 @@ class UploadExecutionService:
 
         try:
             artifact_service, staged_path, safe_name, relative_url = self._stage_upload(local_path)
+            safe_name = self._transfer_filename(local_path, display_name)
             session = self.get_connection(target)
             client_id = session.session_info.client_id
             staged_size = os.path.getsize(staged_path)
@@ -227,6 +234,7 @@ class UploadExecutionService:
             local_path: str,
             *,
             remote_path: str = '',
+            display_name: str = '',
             history_entry_id: str = '',
             build_http_receive_command,
             source: str = 'web',
@@ -251,6 +259,7 @@ class UploadExecutionService:
                 target,
                 local_path,
                 remote_path=remote_path,
+                display_name=display_name,
                 history_entry_id=history_entry_id,
                 source=source,
                 task_id=task_id,
@@ -271,6 +280,7 @@ class UploadExecutionService:
 
         try:
             artifact_service, staged_path, safe_name, relative_url = self._stage_upload(local_path)
+            safe_name = self._transfer_filename(local_path, display_name)
             session = self.get_connection(target)
             client_id = session.session_info.client_id
             staged_size = os.path.getsize(staged_path)

@@ -381,7 +381,7 @@ Detached (detached process)
 
 ### 9.5.1 Windows elevated background launch
 
-`spawn_elevated_instance --bgrun` 保留 UAC 提权，但以隐藏的短生命周期 PowerShell 启动器创建不显示控制台、独立于发起终端的 elevated Client。该 Client 在握手时报告 `Detached (detached process)`；不带参数的 `spawn_elevated_instance` 仍按原行为启动可见控制台。`--no-confirm` 仅跳过 RCH 的交互确认，不能跳过 Windows UAC。Session 0 或无可交互桌面的环境不保证能够完成 UAC 授权。
+`spawn_elevated_instance --detached` 保留 UAC 提权，但以隐藏的短生命周期 PowerShell 启动器创建不显示控制台、独立于发起终端的 elevated Client。该 Client 在握手时报告 `Detached (detached process)`；不带参数的 `spawn_elevated_instance` 仍按原行为启动可见控制台。`--no-confirm` 仅跳过 RCH 的交互确认，不能跳过 Windows UAC。Session 0 或无可交互桌面的环境不保证能够完成 UAC 授权。
 
 ### 9.6 Task Scheduler
 

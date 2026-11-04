@@ -572,24 +572,27 @@ def test_recent_device_uses_latest_launch_snapshot_without_old_source_leak(tmp_p
 
 
 
-def test_windows_elevated_bgrun_and_legacy_cli_options():
+def test_windows_elevated_detached_and_cli_options():
     from client.commands.platform.win import WindowsCommands
 
     seen = []
     command = SimpleNamespace(win_privilege=SimpleNamespace(
-        spawn_elevated_instance=lambda *, bgrun=False: seen.append(bgrun) or (1, 'ok'),
+        spawn_elevated_instance=lambda *, detached=False: seen.append(detached) or (1, 'ok'),
     ))
     assert WindowsCommands.spawn_elevated_instance(command, '--no-confirm') == (1, 'ok')
     assert seen.pop() is False
-    assert WindowsCommands.spawn_elevated_instance(command, '--bgrun --no-confirm') == (1, 'ok')
+    assert WindowsCommands.spawn_elevated_instance(command, '--detached --no-confirm') == (1, 'ok')
     assert seen.pop() is True
+    assert WindowsCommands.spawn_elevated_instance(command, '--bgrun --no-confirm') == (
+        0, 'Usage: spawn_elevated_instance [--detached] [--no-confirm]',
+    )
     assert WindowsCommands.spawn_elevated_instance(command, '--bad --no-confirm') == (
-        0, 'Usage: spawn_elevated_instance [--bgrun] [--no-confirm]',
+        0, 'Usage: spawn_elevated_instance [--detached] [--no-confirm]',
     )
     assert seen == []
 
 
-def test_windows_background_elevation_uses_hidden_bootstrap_with_detached_context(monkeypatch):
+def test_windows_detached_elevation_uses_native_create_process_flags(monkeypatch):
     import base64
     import ctypes
     import subprocess
@@ -605,7 +608,7 @@ def test_windows_background_elevation_uses_hidden_bootstrap_with_detached_contex
     monkeypatch.setattr('os.getcwd', lambda: r'C:\RCH Files')
     monkeypatch.setenv('SystemRoot', r'C:\Windows')
 
-    assert WinPrivilegeService(None).spawn_elevated_instance(bgrun=True)[0] == 1
+    assert WinPrivilegeService(None).spawn_elevated_instance(detached=True)[0] == 1
     _handle, verb, path, arguments, cwd, show = calls[0]
     assert verb == 'runas'
     assert path.endswith('WindowsPowerShell/v1.0/powershell.exe') or path.endswith(
@@ -615,8 +618,9 @@ def test_windows_background_elevation_uses_hidden_bootstrap_with_detached_contex
     assert '-WindowStyle Hidden -EncodedCommand ' in arguments
     encoded = arguments.split(' -EncodedCommand ', 1)[1]
     ps = base64.b64decode(encoded).decode('utf-16-le')
-    assert 'CreateNoWindow = $true' in ps
-    assert 'UseShellExecute = $false' in ps
+    assert 'CreateProcessW' in ps
+    assert '0x208' in ps
+    assert 'GetLastWin32Error' in ps
     assert 'RCH_CLIENT_LAUNCH_MODE' not in ps
     assert 'RCH_CLIENT_LAUNCH_SOURCE' not in ps
     assert "O''Brian" in ps

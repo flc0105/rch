@@ -72,7 +72,7 @@ test('Device offline disables both Clipboard choices', () => {
 })
 
 test('Clipboard dialog opens Send directly without fetching remote clipboard, Get retains original load', async () => {
-  const { options, vue } = optionsFrom('../src/components/ClipboardDialog.vue', { Loading: {} })
+  const { options, vue } = optionsFrom('../src/components/ClipboardDialog.vue', { Loading: {}, RemoteZipPeekDialog: {} })
   assert.match(vue, /<el-tab-pane label="Get" name="get">/)
   assert.match(vue, /<el-tab-pane label="Send" name="send">/)
   const calls = []
