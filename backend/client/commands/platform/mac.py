@@ -1,4 +1,5 @@
 from client.commands.arguments.decorators import argument_command
+from client.commands.runtime.interrupts import timeout
 from client.commands.common.commands import CommonCommands
 from client.commands.platform.services.mac.automation_service import MacAutomationService
 from client.commands.platform.services.mac.file_inspection_service import MacFileInspectionService
@@ -42,6 +43,7 @@ class MacCommands(CommonCommands):
         return self.mac_media.capture_webcam_photo()
 
     @desc('Launch a new instance with elevated privileges', group='privilege')
+    @timeout(150)
     @confirm('This may show an operating system permission prompt and wait for authorization. Continue?')
     def spawn_elevated_instance(self, options=''):
         """以 root 权限启动新实例，返回 PID"""

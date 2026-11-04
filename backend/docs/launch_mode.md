@@ -82,15 +82,14 @@ Connection History 使用既有 `connection_sessions.snapshot_json` 保存这两
 
 当前判定按以下优先级工作：
 
-1. **显式标准化环境（非 macOS）**：其他平台保留启动器传入的标准化运行形态。macOS 不把环境变量当作 Detached 或 launchd 托管的判断依据。
-2. **iOS/Pythonista**：记录为 `ide / pythonista`。
-3. **Scheduler / Service manager**：cron、Task Scheduler、systemd、Windows Service 继续沿用原有检测；macOS 只有 `launchctl list` 的运行作业 PID 与当前进程一致，且 `launchctl print` 在正确 domain 下再次证实 `running`、PID 和 LaunchAgent/LaunchDaemon 类型时才归为对应服务。
-4. **POSIX 独立 session**：没有交互 TTY 且当前进程是 session leader 时，记录为 `detached / new_session`。
-5. **直接 Shell**：识别 zsh/bash/sh/fish/CMD/PowerShell 等直接父进程，再根据 TTY、前台进程组或 Windows console 判断 Terminal / Terminal background。
-6. **IDE**：识别 PyCharm / pydevd / JetBrains 环境。
-7. **剩余交互式 TTY**：记录为 `terminal`，source 可为空。
-8. **Windows 无控制台剩余进程**：记录为 `detached / detached_process`。
-9. **macOS 无控制终端**：在没有已验证服务、Shell 或 IDE 宿主时，若系统报告没有控制终端则归为 `detached`。其他情况为 `unknown`。
+1. **iOS/Pythonista**：记录为 `ide / pythonista`。
+2. **Scheduler / Service manager**：cron、Task Scheduler 根据实际进程宿主识别；macOS 通过运行中的 launchd 作业和 PID 验证；Linux 将当前进程的 cgroup 所属 `.service` unit 与 `systemctl show` 的 `ActiveState=active`、`MainPID` 精确核对；Windows 将当前 PID 与运行中的 SCM 服务注册信息匹配。
+3. **POSIX 独立 session**：没有交互 TTY 且当前进程是 session leader 时，记录为 `detached / new_session`。
+4. **直接 Shell**：识别 zsh/bash/sh/fish/CMD/PowerShell 等直接父进程，根据控制终端或前台进程组判断。Windows 先通过 `GetConsoleProcessList` 核实当前进程是否附着控制台，再检查标准流是否可交互。继承的控制台句柄和 `GetConsoleWindow()` 都不能单独证明 Terminal；没有控制台附着的 Shell 子进程归为 Detached。
+5. **IDE**：识别 PyCharm / pydevd / JetBrains 环境。
+6. **剩余交互式 TTY**：记录为 `terminal`，source 可为空。
+7. **Windows 无控制台剩余进程**：记录为 `detached / detached_process`。
+8. **macOS 无控制终端**：在没有已验证服务、Shell 或 IDE 宿主时，若系统报告没有控制终端则归为 `detached`。其他情况为 `unknown`。
 
 Service/Scheduler 检测会查看进程祖先链，因此 `cron → sh -c → python` 仍能归为 `Scheduled (cron)`。Shell 分类只认**直接父 Shell**，这样 PyCharm 内置 Terminal 会显示 Terminal，而 PyCharm Run/Debug 会显示 IDE。
 
@@ -99,13 +98,15 @@ Service/Scheduler 检测会查看进程祖先链，因此 `cron → sh -c → py
 普通 Duplicate/Restart 与 SSH Bootstrap 等路径创建独立 Client：
 
 - POSIX：`start_new_session=True`，记录 `detached / new_session`；
-- Windows：独立后台进程，记录 `detached / detached_process`。
+- Windows：使用 `DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP` 创建独立后台进程，记录 `detached / detached_process`；PowerShell One-liner 也经短生命周期 Python 启动器使用同一组进程标志。
 
-启动器仍可携带标准化环境供其他平台使用。macOS 则根据进程自己的 session、控制终端和 launchd 作业确认状态：短生命周期 Bootstrap 退出、Client 被 `launchd` 收养，不会因此被认作 LaunchAgent。原 Client 即使来自 `IDE (PyCharm)`，采用 `start_new_session=True` 启动的新 Client 仍按实际新会话显示 `Detached`。
+各平台均根据进程与服务管理器的实际状态确认 Launch Mode。macOS 的短生命周期 Bootstrap 退出、Client 被 `launchd` 收养后，仍按它自己的 session/控制终端状态归类。原 Client 即使来自 `IDE (PyCharm)`，采用 `start_new_session=True` 启动的新 Client 也按实际新会话显示 `Detached`。
 
-macOS `spawn_elevated_instance --detached` 也通过短生命周期提权 bootstrap 创建真正的 new-session root Client，最终显示 `Detached (new session)`。默认不带 `--detached` 的 elevated 启动保留原调用链，Launch Mode 按其真实宿主环境判定。
+macOS `spawn_elevated_instance` 经系统管理员授权后，由 root shell 执行 `get_executable_path()` 提供的原始 Client 启动命令；不会向 Client 追加内部 bootstrap 参数。命令返回**新 Client 的实际 PID**；如果管理员取消授权、启动失败或 Client 立即退出，则返回错误详情。启动时保留原有命令行参数，包括 `--profile tls-local` 等连接配置，TLS 校验沿用对应 profile。`--detached` 使用新 Session，预期显示 `Detached (new session)`；默认模式不强制新建 Session，Launch Mode 按实际进程状态判定。返回 PID 表示已启动 Client 进程；Server 上线状态仍需单独核实。
 
-LaunchAgent / LaunchDaemon 的判定读取当前 launchd 作业的实际 PID 和类型；服务管理器安装的 plist 环境字段不再作为服务判定依据。详见 [macOS launchd Service Management](launchd.md)。
+在 macOS 实机测试时，先运行 `spawn_elevated_instance`，再用 `ps -o pid,ppid,user,command -p <PID>` 验证返回的 PID 确实属于 root Python Client（不是 `osascript`）。可进一步用 `acmd ps --pid <PID>` 检查进程，并在 Server 设备列表中确认新实例使用目标 Listener 上线。如果命令报告启动失败，查看其错误输出；若新进程启动后没有上线，查看回执中给出的 root Client 启动 stderr 日志路径。
+
+LaunchAgent / LaunchDaemon 的判定读取当前 launchd 作业的实际 PID 和类型，安装的 plist 无需写入启动模式标记。详见 [macOS launchd Service Management](launchd.md)。
 
 ## 6. 测试准备
 
@@ -303,11 +304,11 @@ Linux 的 Terminal、后台 Shell 与 cron 可以直接复用上一节对应命�
 User service (systemd --user)
 ```
 
-检测器通过 systemd 进程形态和 `INVOCATION_ID` 识别 systemd job。普通 Terminal 即使祖先链最终回到 systemd user manager，只要直接父进程仍是 Shell，就保持 Terminal 分类。
+检测器读取 `/proc/<pid>/cgroup` 所属的 systemd `.service` unit，要求 `systemctl --user show <unit>` 的 `MainPID` 为当前 Client PID 且 `ActiveState=active`。一般终端和服务启动的其他子进程不会因为父进程是 systemd 或继承 `INVOCATION_ID` 而误判为用户服务。
 
 ### system systemd
 
-系统级 unit 直接运行 Client，预期：
+系统级 unit 直接运行 Client，且 `systemctl show <unit>` 的 `MainPID` 为 Client PID、`ActiveState=active` 时，预期：
 
 ```text
 System service (systemd)
@@ -341,7 +342,7 @@ Set-Location <RCH_ROOT>
 Terminal (PowerShell)
 ```
 
-### 9.3 Terminal background
+### 9.3 无控制台后台进程
 
 在保持当前 PowerShell 窗口存活的情况下，用无控制台 Python 启动：
 
@@ -350,13 +351,13 @@ $Py = (Get-Command pythonw.exe).Source
 Start-Process $Py -ArgumentList '<RCH_ROOT>\backend\rchclient.py' -WorkingDirectory '<RCH_ROOT>'
 ```
 
-在父 PowerShell 仍存在时，预期：
+预期：
 
 ```text
-Terminal background (PowerShell)
+Detached (detached process)
 ```
 
-如果父 Shell 已退出，后续进程树信息可能不同，因此此项测试应在启动后立即查看。
+`pythonw.exe` 不提供交互控制台；PowerShell 中直接执行 `python.exe`，仍按 9.2 验证 Terminal 模式。
 
 ### 9.4 PyCharm
 
@@ -384,7 +385,7 @@ Detached (detached process)
 
 ### 9.6 Task Scheduler
 
-现代 Windows 的 Task Scheduler 可能直接通过运行 Schedule 服务的 `svchost.exe` 启动程序，而非经过 `taskeng.exe` / `taskhostw.exe`。RCH 同时检测传统 Scheduler 父进程、`Schedule` 服务 PID 和明确的 `svchost -s Schedule` 宿主；无法从进程链可靠确定时应使用启动器显式设置 `RCH_CLIENT_LAUNCH_MODE=scheduled` 与 `RCH_CLIENT_LAUNCH_SOURCE=schtasks`。一次 Client 的启动类型在握手阶段采样，改变任务定义后必须重新启动新的 Client 进程才会更新。
+现代 Windows 的 Task Scheduler 可能通过运行 Schedule 服务的 `svchost.exe` 启动程序，也可能经过 `taskeng.exe` / `taskhostw.exe`。RCH 检查这些实际调度宿主，以及 `Schedule` 服务的 PID；如果进程关系已消失、无法确认调度宿主，就按当前进程的控制台状态分类。每个 Client 在启动时采样一次，改变任务定义后需启动新进程才能更新。
 
 
 先创建一次性任务，再手动运行。下面示例在 CMD 中执行；替换真实 Python 与项目路径：
@@ -408,13 +409,13 @@ schtasks /Delete /TN RCHLaunchModeTest /F
 
 ### 9.7 Windows Service
 
-Client 由真正的 Windows Service/SCM 运行时，进程祖先可识别为 `services.exe`，预期：
+Client 的 PID 与 Windows Service Control Manager 当前运行的服务 PID 一致时，预期：
 
 ```text
 System service (Windows Service)
 ```
 
-普通 Python 脚本本身不实现 Windows Service 协议；测试时应使用项目实际部署的 Service wrapper 或受支持的 Windows Service 宿主。
+普通 Python 脚本本身不实现 Windows Service 协议；测试时应使用将 **Client 进程本身** 注册为服务 PID 的服务宿主。若服务 wrapper 另行派生 Python 子进程、SCM 登记的 PID 仍属于 wrapper，则 Python Client 按自身进程状态分类。
 
 ## 10. iOS / Pythonista
 
@@ -431,8 +432,8 @@ IDE (Pythonista)
 | 现象 | 检查方式 |
 | --- | --- |
 | PyCharm Run 显示 Terminal | 查看是不是实际从 PyCharm 内置 Terminal 手动启动；直接父进程为 Shell 时分类就是 Terminal。 |
-| Duplicate/Restart 后仍显示 IDE | 检查新 Client 是否真正独立启动（POSIX `start_new_session=True`），以及 session ID 与进程 PID。macOS 不依赖 detached 环境标记。 |
-| LaunchAgent/Daemon 显示 IDE/Unknown | 运行 `launchctl list` 核对当前 Client PID 对应的作业，再以 `launchctl print gui/<uid>/<label>`、`user/<uid>/<label>` 或 `system/<label>` 核对 `state`、`pid` 和 `type`。macOS 上仅设置环境标记不会改变分类。 |
+| Duplicate/Restart 后仍显示 IDE | 检查新 Client 是否真正独立启动（POSIX `start_new_session=True`），以及 session ID 与进程 PID。 |
+| LaunchAgent/Daemon 显示 IDE/Unknown | 运行 `launchctl list` 核对当前 Client PID 对应的作业，再以 `launchctl print gui/<uid>/<label>`、`user/<uid>/<label>` 或 `system/<label>` 核对 `state`、`pid` 和 `type`。 |
 | cron 显示 Terminal background | 检查进程祖先中是否还能识别 cron/crond；scheduler 检测应优先于中间 `sh -c`。 |
 | 同一 Client 重连后分类没有变化 | 这是预期行为；Launch Mode 是进程级快照，不是每次网络连接重新采集。 |
 | History 中旧记录显示 Unknown | 旧会话快照没有 `launch_mode/launch_source` 时不会回填推断。 |

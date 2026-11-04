@@ -12,7 +12,6 @@ from client.runtime.client_util import spawn_new_instance, is_process_alive
 from client.runtime.local_ipc import send_local_command
 from client.watchdog.watchdog_environment import without_process_recovery_watchdog_environment
 from client.watchdog.recovery_source import RECOVERY_SOURCE_ENV
-from client.runtime.launch_context import detached_launch_environment
 from client.watchdog.watchdog_action import WatchdogActionExecutor
 
 HTTP_CONTROL_COMMANDS = {'kill', 'relaunch', 'clone', 'resume'}

@@ -320,10 +320,6 @@ def launch(python, directory):
         kwargs['creationflags'] = 0x00000008 | 0x00000200
     else:
         kwargs['start_new_session'] = True
-    # The bootstrap exits after launching; parent PID 1 does not mean systemd owns the Client.
-    kwargs['env'] = dict(os.environ,
-                         RCH_CLIENT_LAUNCH_MODE='detached',
-                         RCH_CLIENT_LAUNCH_SOURCE=('detached_process' if sys.platform == 'win32' else 'new_session'))
     log(f'Launching detached Client: {python} {script} (cwd={directory})')
     subprocess.Popen([str(python), str(script)], **kwargs)
     log('Client process launched (detached)')
@@ -523,17 +519,11 @@ try {
 }
 $script = Join-Path $release 'rchclient.py'
 Write-Host "[bootstrap] Launching detached Client: $py $script"
-# Start-Process inherits these scoped launch markers, avoiding parent-tree misclassification.
-$oldLaunchMode = $env:RCH_CLIENT_LAUNCH_MODE
-$oldLaunchSource = $env:RCH_CLIENT_LAUNCH_SOURCE
-try {
-    $env:RCH_CLIENT_LAUNCH_MODE = 'detached'
-    $env:RCH_CLIENT_LAUNCH_SOURCE = 'detached_process'
-    Start-Process -FilePath $py -ArgumentList ('"' + $script + '"') -WorkingDirectory $release -WindowStyle Hidden
-} finally {
-    $env:RCH_CLIENT_LAUNCH_MODE = $oldLaunchMode
-    $env:RCH_CLIENT_LAUNCH_SOURCE = $oldLaunchSource
-}
+# CreateNoWindow hides a console but does not guarantee process detachment.
+# Use Python's Windows DETACHED_PROCESS flags, as Duplicate and Update do.
+$launchCode = 'import os,subprocess,sys; script=os.path.abspath(sys.argv[1]); subprocess.Popen([sys.executable,script],cwd=os.path.dirname(script),stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,close_fds=True,creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP)'
+& $py -c $launchCode $script
+if ($LASTEXITCODE -ne 0) { throw "Client launch failed (exit code $LASTEXITCODE)" }
 Write-Host '[bootstrap] Client process launched (detached)'
 Write-Host 'Bootstrap complete.'
 '''

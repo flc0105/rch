@@ -5,21 +5,6 @@ import sys
 from functools import lru_cache
 
 
-LAUNCH_MODE_ENV = 'RCH_CLIENT_LAUNCH_MODE'
-LAUNCH_SOURCE_ENV = 'RCH_CLIENT_LAUNCH_SOURCE'
-VALID_LAUNCH_MODES = {
-    'terminal',
-    'terminal_background',
-    'ide',
-    'detached',
-    'user_service',
-    'system_service',
-    'scheduled',
-    'unknown',
-}
-
-
-
 @lru_cache(maxsize=4)
 def _verified_launchd_job_for_pid(pid: int):
     """Identify a running launchd *job*, not a process merely adopted by launchd.
@@ -90,47 +75,74 @@ def is_launchd_managed_client() -> bool:
     return _verified_launchd_job_for_pid(os.getpid()) is not None
 
 
-def with_launch_context_environment(source=None, *, mode: str, launch_source: str = '') -> dict:
-    """Return an environment carrying only the normalized launch shape of a new Client."""
-    env = dict(os.environ if source is None else source)
-    normalized_mode = str(mode or '').strip().lower()
-    if normalized_mode not in VALID_LAUNCH_MODES:
-        raise ValueError(f'Unsupported launch mode: {mode}')
+def _verified_systemd_unit_for_pid(pid: int):
+    """Verify that this Linux process is the MainPID of an active .service unit.
 
-    env[LAUNCH_MODE_ENV] = normalized_mode
-    normalized_source = str(launch_source or '').strip().lower()
-    if normalized_source:
-        env[LAUNCH_SOURCE_ENV] = normalized_source
-    else:
-        env.pop(LAUNCH_SOURCE_ENV, None)
-    return env
+    A parent named systemd or an inherited INVOCATION_ID cannot establish
+    supervision: detached children can outlive their original parent.
+    """
+    if sys.platform != 'linux':
+        return None
+    try:
+        with open(f'/proc/{pid}/cgroup', encoding='utf-8') as handle:
+            memberships = [line.strip().split(':', 2) for line in handle]
+    except (OSError, UnicodeError):
+        return None
+    for fields in memberships:
+        if len(fields) != 3 or fields[1] not in ('', 'name=systemd'):
+            continue
+        segments = fields[2].strip('/').split('/')
+        # systemd's login user@UID.service is itself a system service; a
+        # process inside its app.slice is not automatically its MainPID.
+        units = [part for part in segments if part.endswith('.service')
+                 and not re.fullmatch(r'user@\d+\.service', part)]
+        if not units:
+            continue
+        unit = units[-1]
+        user_unit = any(
+            re.fullmatch(r'user@\d+\.service', part) for part in segments
+        )
+        command = ['systemctl']
+        if user_unit:
+            command.append('--user')
+        command.extend(['show', unit, '--property=MainPID', '--property=ActiveState'])
+        try:
+            result = subprocess.run(command, capture_output=True, text=True,
+                                    timeout=2, check=False)
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        if result.returncode != 0:
+            continue
+        properties = dict(line.split('=', 1) for line in result.stdout.splitlines()
+                          if '=' in line)
+        if properties.get('MainPID') == str(pid) and properties.get('ActiveState') == 'active':
+            return {'mode': 'user_service' if user_unit else 'system_service',
+                    'source': 'systemd_user' if user_unit else 'systemd'}
+    return None
 
 
-def detached_launch_environment(source=None) -> dict:
-    launch_source = 'detached_process' if os.name == 'nt' else 'new_session'
-    return with_launch_context_environment(
-        source,
-        mode='detached',
-        launch_source=launch_source,
-    )
+def _verified_windows_service_for_pid(pid: int):
+    """Match the current process PID to a running Service Control Manager entry."""
+    try:
+        import psutil
+        iterator = psutil.win_service_iter()
+        for service in iterator:
+            data = service.as_dict()
+            if data.get('status') == 'running' and int(data.get('pid') or 0) == pid:
+                return {'mode': 'system_service', 'source': 'windows_service'}
+    except (AttributeError, OSError, ValueError, TypeError, psutil.Error):
+        pass
+    return None
 
 
 def detect_launch_context(os_alias: str) -> dict:
-    """Classify the current Client by its external process-hosting mode."""
-    explicit_mode = str(os.environ.get(LAUNCH_MODE_ENV) or '').strip().lower()
+    """Classify the Client from operating-system process and supervisor facts."""
     is_macos = os_alias in {'mac', 'macos'} or sys.platform == 'darwin'
-    # On macOS the OS process/job state is authoritative. Inherited launch
-    # markers can describe a former parent, not the current process.
-    if not is_macos and explicit_mode in VALID_LAUNCH_MODES:
-        return {
-            'mode': explicit_mode,
-            'source': str(os.environ.get(LAUNCH_SOURCE_ENV) or '').strip().lower(),
-        }
-
     if os_alias == 'ios':
         return {'mode': 'ide', 'source': 'pythonista'}
 
     is_windows = os_alias in {'win', 'windows'} or os.name == 'nt'
+    is_linux = os_alias == 'linux' or (sys.platform == 'linux' and not is_windows)
 
     try:
         import psutil
@@ -166,6 +178,9 @@ def detect_launch_context(os_alias: str) -> dict:
         )
 
     if is_windows:
+        service = _verified_windows_service_for_pid(os.getpid())
+        if service is not None:
+            return service
         if has_any(('taskeng.exe', 'taskhostw.exe', 'schtasks.exe')):
             return {'mode': 'scheduled', 'source': 'schtasks'}
 
@@ -190,22 +205,16 @@ def detect_launch_context(os_alias: str) -> dict:
             if re.search(r'(?<!\S)-s\s+schedule(?=\s|$)', row[2]):
                 return {'mode': 'scheduled', 'source': 'schtasks'}
 
-        if direct_parent[0] == 'services.exe' or direct_parent[1].endswith(('\\services.exe', '/services.exe')):
-            return {'mode': 'system_service', 'source': 'windows_service'}
     else:
         if has_any(('/cron', '/crond', ' cron', ' crond')) or any(
             row[0] in {'cron', 'crond'} for row in parent_rows
         ):
             return {'mode': 'scheduled', 'source': 'cron'}
 
-        systemd_rows = [row for row in parent_rows if row[0] == 'systemd' or '/systemd' in row[1]]
-        direct_systemd = bool(systemd_rows and direct_parent in systemd_rows)
-        if not is_macos and (os.environ.get('INVOCATION_ID') or direct_systemd):
-            user_managed = any('--user' in row[2] for row in systemd_rows)
-            return {
-                'mode': 'user_service' if user_managed else 'system_service',
-                'source': 'systemd_user' if user_managed else 'systemd',
-            }
+        if is_linux:
+            managed = _verified_systemd_unit_for_pid(os.getpid())
+            if managed is not None:
+                return managed
 
         if is_macos:
             managed = _verified_launchd_job_for_pid(os.getpid())
@@ -213,6 +222,23 @@ def detect_launch_context(os_alias: str) -> dict:
                 return managed
 
     def has_interactive_terminal():
+        if is_windows:
+            # Windows can retain console handles (or report isatty()) even when
+            # a new process was created with DETACHED_PROCESS. Ask the OS if
+            # *this process* belongs to a console before inspecting I/O.
+            try:
+                import ctypes
+                kernel32 = ctypes.windll.kernel32
+                get_console_process_list = kernel32.GetConsoleProcessList
+                get_console_process_list.argtypes = [ctypes.POINTER(ctypes.c_uint32), ctypes.c_uint32]
+                get_console_process_list.restype = ctypes.c_uint32
+                process_ids = (ctypes.c_uint32 * 1)()
+                if get_console_process_list(process_ids, 1) == 0:
+                    return False
+            except (AttributeError, OSError, TypeError, ValueError):
+                # Without a confirmed console attachment, prefer Detached.
+                return False
+
         for stream in (sys.stdin, sys.stdout, sys.stderr):
             try:
                 if stream is not None and stream.isatty():
@@ -221,9 +247,19 @@ def detect_launch_context(os_alias: str) -> dict:
                 continue
         if is_windows:
             try:
-                import ctypes
-                return bool(ctypes.windll.kernel32.GetConsoleWindow())
-            except Exception:
+                get_std_handle = kernel32.GetStdHandle
+                get_std_handle.argtypes = [ctypes.c_uint32]
+                get_std_handle.restype = ctypes.c_void_p
+                get_console_mode = kernel32.GetConsoleMode
+                get_console_mode.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint32)]
+                get_console_mode.restype = ctypes.c_int
+                mode = ctypes.c_uint32()
+                for stream_id in (-10, -11, -12):
+                    handle = get_std_handle(stream_id)
+                    if handle and handle != ctypes.c_void_p(-1).value:
+                        if get_console_mode(handle, ctypes.byref(mode)):
+                            return True
+            except (AttributeError, OSError, TypeError, ValueError):
                 pass
         return False
 
@@ -265,6 +301,10 @@ def detect_launch_context(os_alias: str) -> dict:
         return not interactive_terminal
 
     if shell_source:
+        # A short-lived PowerShell/cmd bootstrap may still be the parent at
+        # startup. Without an attached console the child is a detached process.
+        if is_windows and not interactive_terminal:
+            return {'mode': 'detached', 'source': 'detached_process'}
         return {
             'mode': 'terminal_background' if is_background_terminal_job() else 'terminal',
             'source': shell_source,

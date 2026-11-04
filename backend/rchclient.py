@@ -27,17 +27,6 @@ def _pop_argv_value(flag_name: str) -> str:
     return ''
 
 
-def _run_elevated_detached_bootstrap():
-    """Create the elevated Client as a real detached process, then let the bootstrap exit."""
-    try:
-        sys.argv.remove('--elevated-detached-bootstrap')
-    except ValueError:
-        pass
-
-    from client.runtime.client_util import spawn_new_instance
-    spawn_new_instance()
-
-
 def _write_update_ready_marker(file_path: str, client: Client):
     target_path = os.path.abspath(str(file_path or '').strip()) if file_path else ''
     if not target_path:
@@ -80,9 +69,6 @@ def _activate_watchdog_after_update_acceptance(ready_file, manager):
 
 
 def main():
-    if '--elevated-detached-bootstrap' in sys.argv[1:]:
-        _run_elevated_detached_bootstrap()
-        return
     if '--watchdog-worker' in sys.argv[1:]:
         from client.watchdog.watchdog_process import run_watchdog_worker_from_argv
         run_watchdog_worker_from_argv()

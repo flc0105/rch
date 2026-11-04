@@ -269,4 +269,4 @@ Bundle SHA-256 能发现下载内容与当前 Server 所返回摘要不一致的
 
 Bootstrap 不会清理所有旧版本，也不会替旧 Client 自动完成运行中进程交接。其目标是安装并启动一个 Client 实例；之后的连接、更新和生命周期管理属于独立功能。对重复部署同一版本，应特别注意 Release 目录替换和可能并存的 Client 进程。
 
-Windows PowerShell bootstrap 使用 `Start-Process` 启动独立 Client，并在创建子进程期间传入 `RCH_CLIENT_LAUNCH_MODE=detached` 与 `RCH_CLIENT_LAUNCH_SOURCE=detached_process`。Client 优先采用显式启动标识；未提供标识时，Windows Service 判定只检查直接父进程是否为 `services.exe`。
+Windows PowerShell Bootstrap 通过 `System.Diagnostics.ProcessStartInfo` 的 `CreateNoWindow` 创建无控制台的后台 Client。Client 依据实际控制台附着状态判断 Detached；只有当前 PID 匹配 Windows Service Control Manager 已注册且正在运行的服务时，才显示 `System service (Windows Service)`。

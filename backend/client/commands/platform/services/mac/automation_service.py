@@ -1,6 +1,10 @@
+import os
+import re
+import shlex
 import subprocess
+import tempfile
 
-from client.runtime.client_util import get_executable_path
+from client.runtime.client_util import get_executable_path, get_runtime_root
 
 
 class MacAutomationService:
@@ -29,30 +33,50 @@ class MacAutomationService:
         return process
 
     def sudo_self(self, *, detached=False):
-        """以 root 权限启动新实例，返回 PID。"""
-        cmd = get_executable_path()
+        """Authorize once, start the real Client command and report its PID."""
+        command = get_executable_path()
         if detached:
-            cmd = f'{cmd} --elevated-detached-bootstrap'
+            # macOS has setsid(2), but not a guaranteed setsid(1) command.
+            # The built-in Perl launcher calls setsid then execs the Client,
+            # preserving the PID without modifying rchclient's argv.
+            launcher = 'setsid() != -1 or die "setsid failed: $!"; exec @ARGV or die "exec failed: $!";'
+            command = f'/usr/bin/perl -MPOSIX=setsid -e {shlex.quote(launcher)} -- {command}'
 
-        popen_kwargs = {
-            'stdout': subprocess.DEVNULL,
-            'stderr': subprocess.DEVNULL,
-        }
-        if detached:
-            popen_kwargs.update({
-                'stdin': subprocess.DEVNULL,
-                'start_new_session': True,
-            })
-
-        # 默认模式保持原有生命周期；--detached 只让提权进程充当短生命周期 bootstrap。
-        proc = subprocess.Popen(
-            ['osascript', '-e', f'do shell script "{cmd}" with administrator privileges'],
-            **popen_kwargs,
+        log_fd, log_path = tempfile.mkstemp(prefix='rch-elevated-', suffix='.log')
+        os.close(log_fd)
+        log_file = shlex.quote(log_path)
+        script = (
+            f'cd {shlex.quote(get_runtime_root())} || exit 1; '
+            f'{command} </dev/null >>{log_file} 2>&1 & '
+            'rch_pid=$!; sleep 1; '
+            'if kill -0 "$rch_pid" 2>/dev/null; then '
+            'printf "RCH_ELEVATED_CLIENT_PID=%s\\n" "$rch_pid"; '
+            f'printf "RCH_ELEVATED_CLIENT_LOG=%s\\n" {log_file}; '
+            'else '
+            f'tail -c 3000 {log_file} 2>/dev/null; '
+            'exit 1; fi'
         )
-
-        if detached:
-            return 1, f'New detached instance launch requested with sudo (bootstrap PID: {proc.pid})'
-        return 1, f'New instance launched with sudo (parent PID: {proc.pid})'
+        applescript = (
+            f'do shell script "{self.escape_osascript_text(script)}" '
+            'with administrator privileges'
+        )
+        try:
+            result = subprocess.run(
+                ['osascript', '-e', applescript], capture_output=True,
+                text=True, timeout=120, check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            return 0, f'Elevated Client launch failed: {exc} (startup log: {log_path})'
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout or '').strip()
+            return 0, f'Elevated Client launch failed: {detail or f"osascript exited {result.returncode}"} (startup log: {log_path})'
+        match = re.search(r'RCH_ELEVATED_CLIENT_PID=(\d+)', result.stdout or '')
+        if not match:
+            return 0, f'Elevated Client launch failed: no Client PID (startup log: {log_path})'
+        return 1, (
+            f'Elevated Client process started (PID: {int(match.group(1))}) '
+            f'(startup stderr: {log_path}); connection not yet verified'
+        )
 
     def sudo_run(self, command):
         """以 root 权限执行命令 (macOS)"""

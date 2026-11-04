@@ -59,8 +59,6 @@ def _prepare(monkeypatch, parents=(), *, is_tty=False, platform='linux'):
     monkeypatch.delenv('INVOCATION_ID', raising=False)
     monkeypatch.delenv('XPC_SERVICE_NAME', raising=False)
     monkeypatch.delenv('PYCHARM_HOSTED', raising=False)
-    monkeypatch.delenv(launch_context.LAUNCH_MODE_ENV, raising=False)
-    monkeypatch.delenv(launch_context.LAUNCH_SOURCE_ENV, raising=False)
 
 
 def test_terminal_and_terminal_background_are_distinguished_by_tty(monkeypatch):
@@ -103,7 +101,6 @@ def test_detached_session_outweighs_inherited_pycharm_context(monkeypatch):
     monkeypatch.setattr(launch_context.os, 'getsid', lambda _pid: 1234)
     # A detached child can inherit the IDE's environment without being hosted by it.
     monkeypatch.setenv('PYCHARM_HOSTED', '1')
-    monkeypatch.setenv(launch_context.LAUNCH_MODE_ENV, 'ide')
     assert ClientInfoBuilder._detect_launch_context('mac') == {
         'mode': 'detached', 'source': 'new_session'
     }
@@ -112,8 +109,6 @@ def test_detached_session_outweighs_inherited_pycharm_context(monkeypatch):
 
 def test_launchd_management_requires_live_job_not_environment(monkeypatch):
     _prepare(monkeypatch, [], is_tty=False, platform='darwin')
-    monkeypatch.setenv(launch_context.LAUNCH_MODE_ENV, 'user_service')
-    monkeypatch.setenv(launch_context.LAUNCH_SOURCE_ENV, 'launchagent')
     monkeypatch.setattr(launch_context, '_verified_launchd_job_for_pid', lambda _pid: None)
     assert launch_context.is_launchd_managed_client() is False
 
@@ -121,15 +116,6 @@ def test_launchd_management_requires_live_job_not_environment(monkeypatch):
         'mode': 'user_service', 'source': 'launchagent',
     })
     assert launch_context.is_launchd_managed_client() is True
-
-def test_detached_launch_environment_records_shape_not_internal_action(monkeypatch):
-    monkeypatch.setattr(launch_context.os, 'name', 'posix')
-    env = launch_context.detached_launch_environment({'PYCHARM_HOSTED': '1'})
-    assert env[launch_context.LAUNCH_MODE_ENV] == 'detached'
-    assert env[launch_context.LAUNCH_SOURCE_ENV] == 'new_session'
-    assert 'spawn_instance' not in env.values()
-    assert 'relaunch_instance' not in env.values()
-
 
 def test_spawn_new_instance_marks_the_new_client_as_detached(monkeypatch):
     captured = {}
@@ -143,8 +129,8 @@ def test_spawn_new_instance_marks_the_new_client_as_detached(monkeypatch):
     client_util.spawn_new_instance()
 
     env = captured['kwargs']['env']
-    assert env[launch_context.LAUNCH_MODE_ENV] == 'detached'
-    assert env[launch_context.LAUNCH_SOURCE_ENV] == 'new_session'
+    assert 'RCH_CLIENT_LAUNCH_MODE' not in env
+    assert 'RCH_CLIENT_LAUNCH_SOURCE' not in env
     assert captured['kwargs']['start_new_session'] is True
 
 
@@ -176,8 +162,6 @@ def test_posix_new_session_without_tty_is_detached(monkeypatch):
 def test_macos_launchagent_and_launchdaemon_require_verified_job(monkeypatch):
     _prepare(monkeypatch, [], is_tty=False, platform='darwin')
     monkeypatch.setenv('XPC_SERVICE_NAME', 'com.example.rch.agent')
-    monkeypatch.setenv(launch_context.LAUNCH_MODE_ENV, 'system_service')
-    monkeypatch.setenv(launch_context.LAUNCH_SOURCE_ENV, 'launchdaemon')
     monkeypatch.setattr(launch_context, '_verified_launchd_job_for_pid', lambda _pid: None)
     monkeypatch.setattr(launch_context.os, 'getpid', lambda: 1234)
     monkeypatch.setattr(launch_context.os, 'getsid', lambda _pid: 1234)
@@ -345,7 +329,7 @@ def test_windows_unrelated_svchost_not_assumed_scheduled(monkeypatch):
         as_dict=lambda: {'pid': 552},
     ), raising=False)
     assert ClientInfoBuilder._detect_launch_context('windows') == {
-        'mode': 'terminal_background', 'source': 'powershell',
+        'mode': 'detached', 'source': 'detached_process',
     }
 
 def test_windows_terminal_and_detached_modes(monkeypatch):
@@ -354,6 +338,9 @@ def test_windows_terminal_and_detached_modes(monkeypatch):
         r'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe',
         ('powershell.exe',),
     )
+    import ctypes
+    kernel = SimpleNamespace(GetConsoleProcessList=lambda _ids, _length: 1)
+    monkeypatch.setattr(ctypes, 'windll', SimpleNamespace(kernel32=kernel), raising=False)
     _prepare(monkeypatch, [powershell], is_tty=True, platform='win32')
     assert ClientInfoBuilder._detect_launch_context('win') == {
         'mode': 'terminal', 'source': 'powershell'
@@ -372,24 +359,92 @@ def test_interactive_tty_without_known_shell_is_still_terminal(monkeypatch):
 
 
 def test_systemd_user_and_system_services(monkeypatch):
-    systemd_user = _FakeParent('systemd', '/usr/lib/systemd/systemd', ('systemd', '--user'))
-    _prepare(monkeypatch, [systemd_user], is_tty=False)
+    _prepare(monkeypatch, [_FakeParent('systemd')], is_tty=False)
+    monkeypatch.setattr(launch_context, '_verified_systemd_unit_for_pid', lambda pid: {
+        'mode': 'user_service', 'source': 'systemd_user',
+    })
     assert ClientInfoBuilder._detect_launch_context('linux') == {
         'mode': 'user_service', 'source': 'systemd_user'
     }
-
-    systemd = _FakeParent('systemd', '/usr/lib/systemd/systemd', ('/sbin/init',))
-    _prepare(monkeypatch, [systemd], is_tty=False)
+    monkeypatch.setattr(launch_context, '_verified_systemd_unit_for_pid', lambda pid: {
+        'mode': 'system_service', 'source': 'systemd',
+    })
     assert ClientInfoBuilder._detect_launch_context('linux') == {
         'mode': 'system_service', 'source': 'systemd'
     }
+
+
+def test_linux_does_not_trust_inherited_systemd_markers_or_parent(monkeypatch):
+    _prepare(monkeypatch, [_FakeParent('systemd')], is_tty=False)
+    monkeypatch.setenv('INVOCATION_ID', 'pretend-service')
+    monkeypatch.setattr(launch_context, '_verified_systemd_unit_for_pid', lambda pid: None)
+    monkeypatch.setattr(launch_context.os, 'getpid', lambda: 111)
+    monkeypatch.setattr(launch_context.os, 'getsid', lambda _pid: 123)
+    assert ClientInfoBuilder._detect_launch_context('linux') == {
+        'mode': 'unknown', 'source': ''
+    }
+
+
+def test_linux_systemd_requires_active_unit_and_exact_main_pid(monkeypatch):
+    import builtins
+    import io
+    _prepare(monkeypatch, [], is_tty=False)
+    monkeypatch.setattr(launch_context.sys, 'platform', 'linux')
+    native_open = builtins.open
+    cgroup = {'content': '0::/user.slice/user-1000.slice/user@1000.service/app.slice/rch-agent.service\n'}
+    def fake_open(path, *args, **kwargs):
+        if path == '/proc/4321/cgroup':
+            return io.StringIO(cgroup['content'])
+        return native_open(path, *args, **kwargs)
+    monkeypatch.setattr(builtins, 'open', fake_open)
+    calls = []
+    props = {'text': 'ActiveState=active\nMainPID=4321\n'}
+    def fake_run(args, **kwargs):
+        calls.append(args)
+        return SimpleNamespace(returncode=0, stdout=props['text'])
+    monkeypatch.setattr(launch_context.subprocess, 'run', fake_run)
+    assert launch_context._verified_systemd_unit_for_pid(4321) == {
+        'mode': 'user_service', 'source': 'systemd_user'
+    }
+    assert calls[-1] == ['systemctl', '--user', 'show', 'rch-agent.service',
+                         '--property=MainPID', '--property=ActiveState']
+    props['text'] = 'ActiveState=active\nMainPID=9999\n'
+    assert launch_context._verified_systemd_unit_for_pid(4321) is None
+    props['text'] = 'ActiveState=inactive\nMainPID=4321\n'
+    assert launch_context._verified_systemd_unit_for_pid(4321) is None
+    cgroup['content'] = '0::/system.slice/rch-agent.service\n'
+    props['text'] = 'ActiveState=active\nMainPID=4321\n'
+    assert launch_context._verified_systemd_unit_for_pid(4321) == {
+        'mode': 'system_service', 'source': 'systemd'
+    }
+    assert calls[-1][0:3] == ['systemctl', 'show', 'rch-agent.service']
+    cgroup['content'] = '0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-terminal.scope\n'
+    assert launch_context._verified_systemd_unit_for_pid(4321) is None
+
+
+def test_launch_mode_markers_never_override_observed_windows_or_linux_mode(monkeypatch):
+    for platform, os_alias, parent, mode, source in (
+        ('linux', 'linux', 'zsh', 'terminal', 'zsh'),
+        ('win32', 'win', 'powershell.exe', 'terminal', 'powershell'),
+    ):
+        _prepare(monkeypatch, [_FakeParent(parent)], is_tty=True, platform=platform)
+        monkeypatch.setenv('RCH_CLIENT_LAUNCH_MODE', 'system_service')
+        monkeypatch.setenv('RCH_CLIENT_LAUNCH_SOURCE', 'forged')
+        if platform == 'linux':
+            monkeypatch.setattr(launch_context, '_verified_systemd_unit_for_pid', lambda pid: None)
+        else:
+            import ctypes
+            monkeypatch.setattr(ctypes, 'windll', SimpleNamespace(kernel32=SimpleNamespace(
+                GetConsoleProcessList=lambda _ids, _length: 1,
+            )), raising=False)
+        assert ClientInfoBuilder._detect_launch_context(os_alias) == {'mode': mode, 'source': source}
 
 
 def test_windows_service_and_unknown(monkeypatch):
     services = _FakeParent('services.exe', r'C:\Windows\System32\services.exe', ('services.exe',))
     _prepare(monkeypatch, [services], is_tty=False, platform='win32')
     assert ClientInfoBuilder._detect_launch_context('win') == {
-        'mode': 'system_service', 'source': 'windows_service'
+        'mode': 'detached', 'source': 'detached_process'
     }
 
     parent = _FakeParent('custom-launcher', '/opt/custom-launcher', ('custom-launcher',))
@@ -397,6 +452,28 @@ def test_windows_service_and_unknown(monkeypatch):
     monkeypatch.setattr(launch_context.os, 'getpid', lambda: 1234)
     monkeypatch.setattr(launch_context.os, 'getsid', lambda _pid: 1000)
     assert ClientInfoBuilder._detect_launch_context('linux') == {'mode': 'unknown', 'source': ''}
+
+
+def test_windows_scm_service_matching_exact_running_pid(monkeypatch):
+    import psutil
+    _prepare(monkeypatch, [_FakeParent('services.exe')], is_tty=False, platform='win32')
+    monkeypatch.setattr(launch_context.os, 'getpid', lambda: 9876)
+    entry = {'status': 'running', 'pid': 9876}
+    monkeypatch.setattr(psutil, 'win_service_iter', lambda: [SimpleNamespace(
+        as_dict=lambda: dict(entry),
+    )], raising=False)
+    assert ClientInfoBuilder._detect_launch_context('win') == {
+        'mode': 'system_service', 'source': 'windows_service'
+    }
+    entry['pid'] = 9999
+    assert ClientInfoBuilder._detect_launch_context('win') == {
+        'mode': 'detached', 'source': 'detached_process'
+    }
+    entry['pid'] = 9876
+    entry['status'] = 'stopped'
+    assert ClientInfoBuilder._detect_launch_context('win') == {
+        'mode': 'detached', 'source': 'detached_process'
+    }
 
 
 def test_pythonista_is_reported_as_ide(monkeypatch):
@@ -540,8 +617,8 @@ def test_windows_background_elevation_uses_hidden_bootstrap_with_detached_contex
     ps = base64.b64decode(encoded).decode('utf-16-le')
     assert 'CreateNoWindow = $true' in ps
     assert 'UseShellExecute = $false' in ps
-    assert 'RCH_CLIENT_LAUNCH_MODE' in ps and "'detached'" in ps
-    assert 'RCH_CLIENT_LAUNCH_SOURCE' in ps and "'detached_process'" in ps
+    assert 'RCH_CLIENT_LAUNCH_MODE' not in ps
+    assert 'RCH_CLIENT_LAUNCH_SOURCE' not in ps
     assert "O''Brian" in ps
     assert r'C:\Program Files\RCH\rchclient.py' in ps
     assert r'C:\Tools\Python 3.13\python.exe' in ps
@@ -567,56 +644,32 @@ def test_macos_elevated_command_keeps_default_and_adds_detached_option():
     )
 
 
-def test_macos_elevated_detached_uses_short_lived_bootstrap(monkeypatch):
+def test_macos_elevation_uses_original_launch_command_without_client_bootstrap_flags(monkeypatch):
     import client.commands.platform.services.mac.automation_service as automation_service
-
     captured = []
     monkeypatch.setattr(
-        automation_service,
-        'get_executable_path',
-        lambda: '/usr/bin/python3 /tmp/rchclient.py',
+        automation_service, 'get_executable_path',
+        lambda: '"/tmp/python with spaces" "/tmp/rchclient.py" --profile tls-local',
     )
     monkeypatch.setattr(
-        automation_service.subprocess,
-        'Popen',
-        lambda *args, **kwargs: captured.append((args, kwargs)) or SimpleNamespace(pid=4321),
+        automation_service.subprocess, 'run',
+        lambda argv, **kwargs: captured.append((argv, kwargs)) or SimpleNamespace(
+            returncode=0, stderr='', stdout='RCH_ELEVATED_CLIENT_PID=4321\n',
+        ),
     )
-
     service = automation_service.MacAutomationService(SimpleNamespace())
-    status, text = service.sudo_self(detached=False)
-    assert status == 1
-    assert 'parent PID: 4321' in text
-    legacy_args, legacy_kwargs = captured.pop()
-    assert '--elevated-detached-bootstrap' not in legacy_args[0][-1]
-    assert 'start_new_session' not in legacy_kwargs
-
-    status, text = service.sudo_self(detached=True)
-    assert status == 1
-    assert 'bootstrap PID: 4321' in text
-    detached_args, detached_kwargs = captured.pop()
-    assert '--elevated-detached-bootstrap' in detached_args[0][-1]
-    assert detached_kwargs['start_new_session'] is True
-    assert detached_kwargs['stdin'] is automation_service.subprocess.DEVNULL
-
-
-def test_elevated_detached_bootstrap_removes_internal_flag_before_spawn(monkeypatch):
-    import rchclient
-    import client.runtime.client_util as runtime_client_util
-
-    calls = []
-    monkeypatch.setattr(rchclient.sys, 'argv', [
-        '/tmp/rchclient.py', '--elevated-detached-bootstrap',
-    ])
-    monkeypatch.setattr(
-        runtime_client_util,
-        'spawn_new_instance',
-        lambda: calls.append(tuple(rchclient.sys.argv)) or SimpleNamespace(pid=9876),
-    )
-
-    rchclient._run_elevated_detached_bootstrap()
-
-    assert calls == [('/tmp/rchclient.py',)]
-
+    for detached in (False, True):
+        status, message = service.sudo_self(detached=detached)
+        assert status == 1
+        assert 'PID: 4321' in message
+        args, kwargs = captured.pop()
+        assert args[:2] == ['osascript', '-e']
+        assert chr(92) + '"/tmp/python with spaces' in args[2]
+        assert '--profile tls-local' in args[2]
+        assert '--elevated-bootstrap' not in args[2]
+        assert '--elevated-detached-bootstrap' not in args[2]
+        assert ('/usr/bin/perl -MPOSIX=setsid' in args[2]) is detached
+        assert kwargs['capture_output'] is True
 
 
 def _make_launchd_manager(monkeypatch, tmp_path, *, kind='agent', scope='user'):
@@ -717,8 +770,7 @@ def test_launchd_install_only_installs_definition_and_sets_launch_shape(monkeypa
     assert payload['ProgramArguments'] == ['/usr/bin/python3', '/tmp/rchclient.py']
     assert payload['RunAtLoad'] is True
     assert payload['KeepAlive'] is True
-    assert payload['EnvironmentVariables'][launch_context.LAUNCH_MODE_ENV] == 'user_service'
-    assert payload['EnvironmentVariables'][launch_context.LAUNCH_SOURCE_ENV] == 'launchagent'
+    assert 'EnvironmentVariables' not in payload
     assert '/bin/sh' not in payload['ProgramArguments']
 
 
@@ -949,19 +1001,138 @@ def test_windows_powershell_bootstrap_not_confused_with_ancestor_services(monkey
         _FakeParent('powershell.exe', r'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe'),
         _FakeParent('services.exe', r'C:\Windows\System32\services.exe'),
     ], is_tty=True, platform='win32')
+    import ctypes
+    monkeypatch.setattr(ctypes, 'windll', SimpleNamespace(kernel32=SimpleNamespace(
+        GetConsoleProcessList=lambda _ids, _length: 1,
+    )), raising=False)
     assert ClientInfoBuilder._detect_launch_context('windows') == {'mode': 'terminal', 'source': 'powershell'}
 
     _prepare(monkeypatch, [_FakeParent('services.exe', r'C:\Windows\System32\services.exe')], is_tty=False, platform='win32')
-    assert ClientInfoBuilder._detect_launch_context('windows') == {'mode': 'system_service', 'source': 'windows_service'}
+    assert ClientInfoBuilder._detect_launch_context('windows') == {'mode': 'detached', 'source': 'detached_process'}
 
 
-def test_windows_bootstrap_sets_detached_launch_mode_for_start_process():
+def test_windows_bootstrap_launches_without_mode_environment():
     from server.application.agent.agent_bootstrap_script_service import AgentBootstrapScriptService
     script = AgentBootstrapScriptService().generate_powershell_script({
         'server_host': '127.0.0.1', 'server_port': 8787, 'web_port': 8085,
     })
-    assert "$env:RCH_CLIENT_LAUNCH_MODE = 'detached'" in script
-    assert "$env:RCH_CLIENT_LAUNCH_SOURCE = 'detached_process'" in script
-    assert 'try {' in script and '} finally {' in script
+    assert 'RCH_CLIENT_LAUNCH_MODE' not in script
+    assert 'RCH_CLIENT_LAUNCH_SOURCE' not in script
+    assert '& $py -c $launchCode $script' in script
+    assert 'subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP' in script
+    assert '$startInfo.CreateNoWindow' not in script
     assert 'try {{' not in script
-    assert 'Start-Process -FilePath $py' in script
+
+
+def test_windows_detached_console_window_does_not_make_a_terminal(monkeypatch):
+    """ConPTY / a hidden console host is not evidence of usable console I/O."""
+    import ctypes
+
+    def get_std_handle(_stream):
+        return 123
+
+    def get_console_mode(_handle, _mode):
+        return 0
+
+    kernel = SimpleNamespace(
+        GetConsoleWindow=lambda: 123456,  # Not proof of console attachment.
+        GetConsoleProcessList=lambda _ids, _length: 0,
+        GetStdHandle=get_std_handle,
+        GetConsoleMode=get_console_mode,
+    )
+    monkeypatch.setattr(ctypes, 'windll', SimpleNamespace(kernel32=kernel), raising=False)
+    powershell = _FakeParent('powershell.exe', r'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe')
+    _prepare(monkeypatch, [powershell], is_tty=False, platform='win32')
+    assert ClientInfoBuilder._detect_launch_context('windows') == {
+        'mode': 'detached', 'source': 'detached_process',
+    }
+    _prepare(monkeypatch, [], is_tty=False, platform='win32')
+    assert ClientInfoBuilder._detect_launch_context('windows') == {
+        'mode': 'detached', 'source': 'detached_process',
+    }
+
+
+def test_windows_actual_console_std_handle_is_terminal(monkeypatch):
+    import ctypes
+
+    kernel = SimpleNamespace(
+        GetConsoleWindow=lambda: 123456,
+        GetConsoleProcessList=lambda _ids, _length: 1,
+        GetStdHandle=lambda _stream: 123,
+        GetConsoleMode=lambda _handle, _mode: 1,
+    )
+    monkeypatch.setattr(ctypes, 'windll', SimpleNamespace(kernel32=kernel), raising=False)
+    _prepare(monkeypatch, [_FakeParent('cmd.exe')], is_tty=False, platform='win32')
+    assert ClientInfoBuilder._detect_launch_context('win') == {
+        'mode': 'terminal', 'source': 'cmd',
+    }
+
+
+def test_windows_no_console_attachment_is_detached_despite_tty_and_inherited_handles(monkeypatch):
+    import ctypes
+    kernel = SimpleNamespace(
+        GetConsoleWindow=lambda: 100,
+        GetConsoleProcessList=lambda _ids, _length: 0,
+        GetStdHandle=lambda _stream: 123,
+        GetConsoleMode=lambda _handle, _mode: 1,
+    )
+    monkeypatch.setattr(ctypes, 'windll', SimpleNamespace(kernel32=kernel), raising=False)
+    _prepare(monkeypatch, [_FakeParent('powershell.exe')], is_tty=True, platform='win32')
+    assert ClientInfoBuilder._detect_launch_context('win') == {
+        'mode': 'detached', 'source': 'detached_process',
+    }
+
+
+def test_windows_console_query_unavailable_does_not_guess_terminal(monkeypatch):
+    import ctypes
+    monkeypatch.setattr(ctypes, 'windll', SimpleNamespace(kernel32=SimpleNamespace()), raising=False)
+    _prepare(monkeypatch, [_FakeParent('cmd.exe')], is_tty=True, platform='win32')
+    assert ClientInfoBuilder._detect_launch_context('win') == {
+        'mode': 'detached', 'source': 'detached_process',
+    }
+
+
+def test_windows_duplicate_and_update_use_detached_process_flags(monkeypatch):
+    import subprocess
+    captured = []
+    monkeypatch.setattr(client_util.os, 'name', 'nt')
+    monkeypatch.setattr(subprocess, 'DETACHED_PROCESS', 0x8, raising=False)
+    monkeypatch.setattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0x200, raising=False)
+    monkeypatch.setattr(client_util.subprocess, 'Popen', lambda *a, **kw: captured.append((a, kw)) or SimpleNamespace(pid=12))
+    client_util._spawn_new_instance_process(['python.exe', 'rchclient.py'], {}, True)
+    monkeypatch.setattr(client_util, '_resolve_python_command_for_source_bundle', lambda: ['python.exe'])
+    client_util.spawn_detached_python_script('rchclient.py')
+    assert len(captured) == 2
+    for _args, kwargs in captured:
+        assert kwargs['creationflags'] == 0x208
+
+
+def test_powershell_one_liner_really_detaches_using_windows_process_flags(monkeypatch):
+    import re
+    import subprocess
+    import sys
+    from server.application.agent.agent_bootstrap_script_service import AgentBootstrapScriptService
+
+    script = AgentBootstrapScriptService().generate_powershell_script({
+        'server_host': '127.0.0.1', 'server_port': 9999, 'web_port': 8085,
+    })
+    match = re.search(r"^\$launchCode = '([^'\r\n]+)'$", script, re.MULTILINE)
+    assert match, 'one-liner must use a real detached process launcher'
+    code = match.group(1)
+    compile(code, '<powershell-detached-launcher>', 'exec')
+    seen = []
+    monkeypatch.setattr(subprocess, 'DETACHED_PROCESS', 0x8, raising=False)
+    monkeypatch.setattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0x200, raising=False)
+    monkeypatch.setattr(subprocess, 'Popen', lambda *a, **kw: seen.append((a, kw)) or SimpleNamespace(pid=345))
+    monkeypatch.setattr(sys, 'argv', ['launcher', '/path with spaces/rchclient.py'])
+    exec(code, {'__name__': '__main__'})
+    assert len(seen) == 1
+    args, kwargs = seen[0]
+    assert args[0][1] == '/path with spaces/rchclient.py'
+    assert kwargs['creationflags'] == 0x208
+    assert kwargs['stdin'] == subprocess.DEVNULL
+    assert kwargs['stdout'] == subprocess.DEVNULL
+    assert kwargs['stderr'] == subprocess.DEVNULL
+    assert '& $py -c $launchCode $script' in script
+    assert '$startInfo.CreateNoWindow' not in script
+    assert 'RCH_CLIENT_LAUNCH_MODE' not in script

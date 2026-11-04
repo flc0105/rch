@@ -15,7 +15,7 @@ from client.watchdog.watchdog_paths import get_watchdog_log_path, get_existing_w
 from client.runtime.temp_workspace import get_temp_category_dir
 from client.watchdog.recovery_source import RECOVERY_SOURCE_ENV, PROCESS_RECOVERY_WATCHDOG
 from client.watchdog.watchdog_environment import without_process_recovery_watchdog_environment
-from client.runtime.launch_context import detached_launch_environment, is_launchd_managed_client
+from client.runtime.launch_context import is_launchd_managed_client
 
 
 _ENV_SESSION = 'RCH_PROCESS_RECOVERY_WATCHDOG_SESSION'
@@ -340,7 +340,7 @@ def run_process_supervisor(session, parent_pid, parent_started, launch_argv, cwd
             if child is not None:
                 child.poll()  # Reap the last subprocess; avoid accumulating zombies.
             failures = next_failures
-            env = detached_launch_environment(without_process_recovery_watchdog_environment())
+            env = without_process_recovery_watchdog_environment()
             env.update({_ENV_SESSION: session, _ENV_PID: str(supervisor_pid),
                         _ENV_STARTED: repr(supervisor_started),
                         RECOVERY_SOURCE_ENV: PROCESS_RECOVERY_WATCHDOG})

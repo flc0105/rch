@@ -49,8 +49,6 @@ class WinPrivilegeService:
             '$psi.UseShellExecute = $false',
             '$psi.CreateNoWindow = $true',
             '$psi.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden',
-            "$psi.EnvironmentVariables['RCH_CLIENT_LAUNCH_MODE'] = 'detached'",
-            "$psi.EnvironmentVariables['RCH_CLIENT_LAUNCH_SOURCE'] = 'detached_process'",
         ]
         for key in (*PROCESS_RECOVERY_WATCHDOG_ENV_KEYS, RECOVERY_SOURCE_ENV):
             lines.append(f'[void]$psi.EnvironmentVariables.Remove({ps_quote(key)})')

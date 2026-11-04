@@ -21,7 +21,7 @@ from client.watchdog.process_recovery_watchdog import (
 )
 from core.utils.command_output import StructuredCommandResult, render_structured_result
 from client.commands.runtime.shell_command_runner import ShellCommandRunner
-from client.runtime.launch_context import LAUNCH_MODE_ENV, LAUNCH_SOURCE_ENV, is_launchd_managed_client
+from client.runtime.launch_context import is_launchd_managed_client
 
 
 class RecoverySourceTests(unittest.TestCase):
@@ -134,16 +134,15 @@ class RecoverySourceTests(unittest.TestCase):
 
 
 class LaunchdWatchdogPolicyTests(unittest.TestCase):
-    def test_launchd_requires_actual_running_job_even_with_environment_markers(self):
+    def test_launchd_requires_actual_running_job_pid(self):
         for mode, source in (('user_service', 'launchagent'), ('system_service', 'launchdaemon')):
             with self.subTest(source=source), patch('client.runtime.launch_context.sys.platform', 'darwin'), \
-                 patch('client.runtime.launch_context._verified_launchd_job_for_pid', return_value=None), \
-                 patch.dict(os.environ, {LAUNCH_MODE_ENV: mode, LAUNCH_SOURCE_ENV: source}):
+                 patch('client.runtime.launch_context._verified_launchd_job_for_pid', return_value=None):
                 self.assertFalse(is_launchd_managed_client())
             with self.subTest(source=source), patch('client.runtime.launch_context.sys.platform', 'darwin'), \
                  patch('client.runtime.launch_context._verified_launchd_job_for_pid', return_value={
                      'mode': mode, 'source': source,
-                 }), patch.dict(os.environ, {LAUNCH_MODE_ENV: 'detached'}):
+                 }):
                 self.assertTrue(is_launchd_managed_client())
 
     def test_watchdog_manager_suppresses_remote_and_local_even_when_configured(self):

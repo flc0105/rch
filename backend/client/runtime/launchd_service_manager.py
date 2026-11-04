@@ -8,7 +8,6 @@ import sys
 from dataclasses import dataclass
 
 from client.runtime.client_util import get_executable_path, get_runtime_root
-from client.runtime.launch_context import LAUNCH_MODE_ENV, LAUNCH_SOURCE_ENV
 from client.runtime.user_identity import (
     get_posix_user_identity,
     resolve_macos_target_user_identity,
@@ -271,18 +270,12 @@ class LaunchdServiceManager:
         return status
 
     def _build_plist(self) -> dict:
-        launch_mode = 'user_service' if self.target.kind == 'agent' else 'system_service'
-        launch_source = 'launchagent' if self.target.kind == 'agent' else 'launchdaemon'
         payload = {
             'Label': self.target.label,
             'ProgramArguments': list(self.program_arguments),
             'WorkingDirectory': self.working_directory,
             'RunAtLoad': self.run_at_load,
             'KeepAlive': self.keep_alive,
-            'EnvironmentVariables': {
-                LAUNCH_MODE_ENV: launch_mode,
-                LAUNCH_SOURCE_ENV: launch_source,
-            },
         }
 
         if self.target.kind == 'daemon':

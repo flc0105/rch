@@ -137,19 +137,7 @@ LaunchAgent 是面向具体 GUI 用户的操作，Manager 按以下顺序解析 
 
 Manager 直接把当前 Client 可执行命令拆成 `ProgramArguments`，不经过 `/bin/sh -c`。同时保存当前 runtime root 为 `WorkingDirectory`，并根据参数写入 `RunAtLoad` 与 `KeepAlive`。
 
-Manager 还会为被 launchd 启动的新 Client 写入标准化环境：
-
-```text
-LaunchAgent:
-RCH_CLIENT_LAUNCH_MODE=user_service
-RCH_CLIENT_LAUNCH_SOURCE=launchagent
-
-LaunchDaemon:
-RCH_CLIENT_LAUNCH_MODE=system_service
-RCH_CLIENT_LAUNCH_SOURCE=launchdaemon
-```
-
-这些环境字段保留在服务定义中供启动时追踪；实际 Client 的 Launch Mode 会查询 launchd 运行作业，要求作业 PID、运行状态和 LaunchAgent/LaunchDaemon 类型明确匹配当前进程才显示 `User service (LaunchAgent)` 或 `System service (LaunchDaemon)`。若缺少匹配，按进程的真实 session/控制终端状态继续分类。完整字段定义与其他启动方式见 [Client Launch Mode](launch_mode.md)。
+Client 会查询 launchd 当前正在运行的作业，要求 PID、`running` 状态和 LaunchAgent/LaunchDaemon 类型明确匹配当前进程，才能归类为 `User service (LaunchAgent)` 或 `System service (LaunchDaemon)`。plist 仅包含真正用于启动与管理进程的系统字段，无需加入启动模式声明。完整字段定义与其他启动方式见 [Client Launch Mode](launch_mode.md)。
 
 ## 7. 日志与权限
 

@@ -6,7 +6,6 @@ import sys
 from pathlib import Path
 
 from core.device.local_identity import get_local_identity
-from client.runtime.launch_context import detached_launch_environment
 
 
 def check_privilege():
@@ -215,8 +214,11 @@ def reexec_restart(socket):
     os.execv(argv[0], argv)
 
 
-def spawn_new_instance():
-    restart_command = get_executable_path()
+def spawn_new_instance(*, start_new_session=True, stderr_path=''):
+    restart_argv = [os.path.realpath(sys.executable)]
+    if not getattr(sys, 'frozen', False):
+        restart_argv.append(os.path.realpath(sys.argv[0]))
+    restart_argv.extend(sys.argv[1:])
 
     if getattr(sys, 'frozen', False):
         launch_cwd = os.path.dirname(os.path.realpath(sys.executable))
@@ -225,22 +227,31 @@ def spawn_new_instance():
 
     from client.watchdog.watchdog_environment import without_process_recovery_watchdog_environment
 
+    stderr_file = open(stderr_path, 'ab') if stderr_path else None
     popen_kwargs = {
         'cwd': launch_cwd,
-        'env': detached_launch_environment(without_process_recovery_watchdog_environment()),
+        'env': without_process_recovery_watchdog_environment(),
         'stdin': subprocess.DEVNULL,
         'stdout': subprocess.DEVNULL,
-        'stderr': subprocess.DEVNULL,
+        'stderr': stderr_file or subprocess.DEVNULL,
         'close_fds': True,
     }
 
+    try:
+        return _spawn_new_instance_process(restart_argv, popen_kwargs, start_new_session)
+    finally:
+        if stderr_file is not None:
+            stderr_file.close()
+
+
+def _spawn_new_instance_process(restart_argv, popen_kwargs, start_new_session):
     if os.name == 'nt':
         creationflags = 0
         creationflags |= getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0)
         creationflags |= getattr(subprocess, 'DETACHED_PROCESS', 0)
 
         return subprocess.Popen(
-            restart_command,
+            restart_argv,
             shell=False,
             creationflags=creationflags,
             **popen_kwargs,
@@ -248,9 +259,9 @@ def spawn_new_instance():
 
     if os.name == 'posix':
         return subprocess.Popen(
-            shlex.split(restart_command),
+            restart_argv,
             shell=False,
-            start_new_session=True,
+            start_new_session=start_new_session,
             **popen_kwargs,
         )
 
@@ -325,7 +336,7 @@ def spawn_detached_python_script(script_path: str, cwd: str = '', args=None, std
 
     popen_kwargs = {
         'cwd': launch_cwd,
-        'env': detached_launch_environment(without_process_recovery_watchdog_environment()),
+        'env': without_process_recovery_watchdog_environment(),
         'stdin': subprocess.DEVNULL,
         'stdout': subprocess.DEVNULL,
         'stderr': stderr_file or subprocess.DEVNULL,

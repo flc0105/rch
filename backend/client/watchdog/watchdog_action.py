@@ -7,7 +7,6 @@ import time
 from client.runtime.client_util import is_process_alive
 from client.watchdog.watchdog_environment import without_process_recovery_watchdog_environment
 from client.watchdog.recovery_source import RECOVERY_SOURCE_ENV
-from client.runtime.launch_context import detached_launch_environment
 
 class WatchdogActionExecutor:
     def __init__(self, parent_pid: int, launch_cwd: str, parent_launch_argv: list[str]):
@@ -38,7 +37,7 @@ class WatchdogActionExecutor:
         if not self.parent_launch_argv:
             raise RuntimeError('Missing parent launch argv')
 
-        env = detached_launch_environment(without_process_recovery_watchdog_environment())
+        env = without_process_recovery_watchdog_environment()
         if recovery_source:
             env[RECOVERY_SOURCE_ENV] = recovery_source
         popen_kwargs = {

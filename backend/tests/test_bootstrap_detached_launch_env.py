@@ -1,20 +1,20 @@
-"""Generated SSH bootstrap supplies the detached launch shape explicitly."""
+"""Generated bootstrap launches detached processes using OS flags."""
 from server.application.agent.agent_bootstrap_script_service import AgentBootstrapScriptService
 
 
-def test_generated_bootstrap_marks_detached_mode_on_child():
+def test_generated_bootstrap_uses_process_flags_without_mode_markers():
     code = AgentBootstrapScriptService().generate_python_script({
         'server_host': '127.0.0.1', 'server_port': 8123,
         'web_host': '127.0.0.1', 'web_port': 8124,
     })
     assert "kwargs['start_new_session'] = True" in code
-    assert "RCH_CLIENT_LAUNCH_MODE='detached'" in code
-    assert "RCH_CLIENT_LAUNCH_SOURCE=('detached_process' if sys.platform == 'win32' else 'new_session')" in code
+    assert 'RCH_CLIENT_LAUNCH_MODE' not in code
+    assert 'RCH_CLIENT_LAUNCH_SOURCE' not in code
     assert "subprocess.Popen([str(python), str(script)], **kwargs)" in code
     compile(code, '<generated-bootstrap>', 'exec')
 
 
-def test_generated_bootstrap_passes_shape_to_detached_child(monkeypatch, tmp_path):
+def test_generated_bootstrap_launches_detached_child_without_markers(monkeypatch, tmp_path):
     """Check the subprocess kwargs, not only the generated source text."""
     import sys
     from types import SimpleNamespace
@@ -29,6 +29,14 @@ def test_generated_bootstrap_passes_shape_to_detached_child(monkeypatch, tmp_pat
     captured = {}
     monkeypatch.setattr(subprocess, 'Popen', lambda *args, **kw: captured.update(kw) or SimpleNamespace(pid=7))
     namespace['launch'](sys.executable, tmp_path)
-    assert captured['env']['RCH_CLIENT_LAUNCH_MODE'] == 'detached'
-    assert captured['env']['RCH_CLIENT_LAUNCH_SOURCE'] == 'new_session'
+    assert 'env' not in captured
     assert captured['start_new_session'] is True
+
+
+def test_windows_powershell_bootstrap_uses_detached_process_flags():
+    script = AgentBootstrapScriptService().generate_powershell_script({
+        'server_host': 'localhost', 'server_port': 9999, 'web_port': 8085,
+    })
+    assert 'subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP' in script
+    assert '& $py -c $launchCode $script' in script
+    assert '$startInfo.CreateNoWindow' not in script

@@ -70,9 +70,6 @@ def test_watchdog_single_capability_independent_of_set(monkeypatch):
 
 
 def test_launchd_capability_is_loaded(monkeypatch):
-    from client.runtime.launch_context import LAUNCH_MODE_ENV, LAUNCH_SOURCE_ENV
-    monkeypatch.setenv(LAUNCH_MODE_ENV, 'user_service')
-    monkeypatch.setenv(LAUNCH_SOURCE_ENV, 'launchagent')
     assert feature_config.resolve_features('mac', {})['watchdog'] is True
 
 
