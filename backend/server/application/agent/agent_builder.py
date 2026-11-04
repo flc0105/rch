@@ -9,6 +9,7 @@ from uuid import uuid4
 from core.platform.normalization import normalize_arch
 from core.client_revision import BUNDLE_ARTIFACT_STEM
 from server.config.config import SERVER_RUNTIME_DIR
+from server.runtime.listener_protocols import get_listener_protocol
 
 
 # Single registration point. Remove an entry to disable a builder without deleting its file.
@@ -66,10 +67,7 @@ class AgentBuilder:
         server_web_scheme = (server_web_scheme or 'http').strip().lower() or 'http'
         server_web_host = (server_web_host or server_host).strip() or server_host
 
-        if listener_protocol not in ('tcp', 'tls_tcp'):
-            raise ValueError('Invalid listener transport')
-        if listener_protocol == 'tls_tcp' and (builder != 'bundle' or len(tls_fingerprint) != 64):
-            raise ValueError('TLS/TCP requires Bundle and a pinned server certificate')
+        get_listener_protocol(listener_protocol).validate_build(builder, tls_fingerprint)
 
         if builder not in self.SUPPORTED_BUILDERS:
             raise ValueError(f'Unsupported builder: {builder}')

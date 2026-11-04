@@ -61,14 +61,9 @@ def create_agent_blueprint(server_instance):
             listener_protocol = 'tcp'
             tls_fingerprint = ''
             if listener_id:
-                selected = server_instance.listener_manager.get(listener_id)
-                if int(selected['port']) != server_port:
-                    raise ValueError('Server port does not match selected listener')
-                listener_protocol = selected['protocol']
-                if listener_protocol == 'tls_tcp':
-                    if builder != 'bundle':
-                        raise ValueError('TLS/TCP is supported by Bundle only')
-                    tls_fingerprint = server_instance.listener_manager.certificate_fingerprint(listener_id)
+                settings = server_instance.listener_manager.build_settings(listener_id, server_port, builder)
+                listener_protocol = settings['listener_protocol']
+                tls_fingerprint = settings['tls_fingerprint']
 
             result = agent_api.build_agent(
                 server_host,

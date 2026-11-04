@@ -19,13 +19,13 @@
       >
         <el-form-item label="Listener">
           <el-select v-model="agentForm.listener_id" placeholder="Select listener" style="width:100%" @change="applyListener">
-            <el-option v-for="item in compatibleListeners" :key="item.id" :label="`${item.name} · ${item.protocol === 'tls_tcp' ? 'TLS/TCP' : 'TCP'} :${item.port}`" :value="item.id" />
+            <el-option v-for="item in compatibleListeners" :key="item.id" :label="`${item.name} · ${item.protocol_label} :${item.port}`" :value="item.id" />
           </el-select>
         </el-form-item>
 
         <el-form-item v-if="selectedListener" label="Protocol">
-          <el-tag :type="selectedListener.protocol === 'tls_tcp' ? 'success' : 'info'">
-            {{ selectedListener.protocol === 'tls_tcp' ? 'TLS/TCP (pinned certificate)' : 'TCP' }}
+          <el-tag :type="selectedListener.supported_builders ? 'success' : 'info'">
+            {{ selectedListener.protocol_build_label }}
           </el-tag>
         </el-form-item>
 
@@ -165,7 +165,7 @@ export default {
   computed: {
     selectedListener() { return this.listeners.find(item => item.id === this.agentForm.listener_id) },
     compatibleListeners() {
-      return this.listeners.filter(item => this.agentForm.builder === 'bundle' || item.protocol === 'tcp')
+      return this.listeners.filter(item => item.supported_builders === null || item.supported_builders?.includes(this.agentForm.builder))
     },
 
     availableBuilders() {
@@ -369,8 +369,8 @@ export default {
         ElMessage.warning('Select a listener')
         return
       }
-      if (selectedListener.protocol === 'tls_tcp' && this.agentForm.builder !== 'bundle') {
-        ElMessage.warning('TLS/TCP supports Bundle only')
+      if (selectedListener.supported_builders !== null && !selectedListener.supported_builders?.includes(this.agentForm.builder)) {
+        ElMessage.warning(selectedListener.builder_warning || 'Unsupported builder')
         return
       }
       if (!this.agentForm.web_port) {

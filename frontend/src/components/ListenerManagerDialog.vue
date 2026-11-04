@@ -4,7 +4,7 @@
       <el-table :data="listeners" size="small" empty-text="No listeners">
         <el-table-column prop="name" label="Name" min-width="120" />
         <el-table-column label="Protocol" width="110">
-          <template #default="{ row }">{{ row.protocol === 'tls_tcp' ? 'TLS/TCP' : 'TCP' }}</template>
+          <template #default="{ row }">{{ row.protocol_label }}</template>
         </el-table-column>
         <el-table-column label="Bind" min-width="155">
           <template #default="{ row }">{{ row.host || '0.0.0.0' }}:{{ row.port }}</template>
@@ -25,15 +25,14 @@
         <el-form-item label="Name"><el-input v-model="form.name" maxlength="60" placeholder="e.g. Public TLS" /></el-form-item>
         <el-form-item label="Protocol">
           <el-select v-model="form.protocol" style="width:100%">
-            <el-option label="TCP" value="tcp" />
-            <el-option label="TLS/TCP" value="tls_tcp" />
+            <el-option v-for="protocol in protocols" :key="protocol.id" :label="protocol.label" :value="protocol.id" />
           </el-select>
         </el-form-item>
         <el-form-item label="Bind address"><el-input v-model="form.host" placeholder="0.0.0.0 (all interfaces)" /></el-form-item>
         <el-form-item label="Port"><el-input v-model.number="form.port" type="number" min="1" max="65535" /></el-form-item>
       </el-form>
-      <el-alert v-if="form.protocol === 'tls_tcp'" type="info" :closable="false" show-icon
-                title="A self-signed certificate is generated once. Bundle agents pin its fingerprint." />
+      <el-alert v-if="selectedProtocol?.notice" type="info" :closable="false" show-icon
+                :title="selectedProtocol.notice" />
     </div>
     <template #footer>
       <el-button @click="visible = false">Close</el-button>
@@ -44,12 +43,15 @@
 </template>
 <script>
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { listListeners, createListener, removeListener, setListenerEnabled } from '../api/listenersApi.js'
+import { listListeners, listListenerProtocols, createListener, removeListener, setListenerEnabled } from '../api/listenersApi.js'
 
 export default {
   name: 'ListenerManagerDialog',
-  data() { return { visible: false, loading: false, saving: false, listeners: [],
+  data() { return { visible: false, loading: false, saving: false, listeners: [], protocols: [],
     form: { name: '', protocol: 'tcp', host: '0.0.0.0', port: 9443 } } },
+  computed: {
+    selectedProtocol() { return this.protocols.find(item => item.id === this.form.protocol) },
+  },
   methods: {
     async open() { this.visible = true; await this.load() },
     async requestResponse(request) {
@@ -60,7 +62,10 @@ export default {
     },
     async load() {
       this.loading = true
-      try { this.listeners = await this.requestResponse(listListeners()) || [] }
+      try {
+        this.protocols = await this.requestResponse(listListenerProtocols()) || []
+        this.listeners = await this.requestResponse(listListeners()) || []
+      }
       catch (error) { ElMessage.error(error.message) }
       finally { this.loading = false }
     },

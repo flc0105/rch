@@ -1,17 +1,14 @@
 """Manage independent TCP/TLS listening endpoints sharing one SessionAcceptor contract."""
-import hashlib
 import json
 import os
 import socket
-import ssl
-import subprocess
 import tempfile
 import threading
 import uuid
 
 from core.utils.logger import logger
 from server.config.config import SERVER_RUNTIME_DIR, WEB_PORT, WEB_WS_PORT
-from server.runtime.server_listener import ServerListener
+from server.runtime.listener_protocols import get_listener_protocol, list_listener_protocols
 
 
 class ListenerManager:
@@ -54,8 +51,7 @@ class ListenerManager:
 
     def _validate(self, item, existing):
         if not isinstance(item, dict): raise ValueError('Invalid listener')
-        if item.get('protocol') not in ('tcp', 'tls_tcp'):
-            raise ValueError('protocol must be tcp or tls_tcp')
+        get_listener_protocol(item.get('protocol'))
         name = str(item.get('name') or '').strip()
         if not name or len(name) > 60: raise ValueError('Listener name required (max 60 chars)')
         host = str(item.get('host') or '').strip()
@@ -75,44 +71,28 @@ class ListenerManager:
             if int(other['port']) == port and self._host_overlap(host, other['host']):
                 raise ValueError('Listener host/port conflicts with an existing listener')
 
-    def _certificate_paths(self, listener_id):
-        return (os.path.join(self.cert_dir, listener_id + '.crt'),
-                os.path.join(self.cert_dir, listener_id + '.key'))
-
-    def _ensure_tls_files(self, listener_id):
-        cert, key = self._certificate_paths(listener_id)
-        if os.path.isfile(cert) and os.path.isfile(key): return cert, key
-        if os.path.exists(cert) != os.path.exists(key):
-            raise RuntimeError('TLS certificate and key must both exist')
-        os.makedirs(self.cert_dir, mode=0o700, exist_ok=True)
-        # OpenSSL is only needed when first creating a TLS listener.
-        result = subprocess.run(['openssl', 'req', '-x509', '-newkey', 'rsa:2048',
-                                 '-sha256', '-nodes', '-days', '3650',
-                                 '-subj', '/CN=RCH Listener '+listener_id,
-                                 '-keyout', key, '-out', cert], capture_output=True, text=True)
-        if result.returncode:
-            for path in (key, cert):
-                if os.path.exists(path): os.remove(path)
-            raise RuntimeError('Failed to create TLS certificate: ' + result.stderr[-400:])
-        os.chmod(key, 0o600)
-        return cert, key
-
     def certificate_fingerprint(self, listener_id):
         with self._lock:
             config = self.get(listener_id)
-            if config['protocol'] != 'tls_tcp': return ''
-            cert, _ = self._ensure_tls_files(listener_id)
-            with open(cert, encoding='ascii') as f: pem = f.read()
-            return hashlib.sha256(ssl.PEM_cert_to_DER_cert(pem)).hexdigest()
+            protocol = get_listener_protocol(config['protocol'])
+            return protocol.certificate_fingerprint(listener_id, self.cert_dir)
+
+    def list_protocols(self):
+        return list_listener_protocols()
+
+    def build_settings(self, listener_id, server_port, builder):
+        """Resolve build-time transport metadata without protocol-specific branches."""
+        with self._lock:
+            config = self.get(listener_id)
+            if int(config['port']) != int(server_port):
+                raise ValueError('Server port does not match selected listener')
+            protocol = get_listener_protocol(config['protocol'])
+            return {'listener_protocol': protocol.name,
+                    'tls_fingerprint': protocol.build_fingerprint(listener_id, builder, self.cert_dir)}
 
     def _make_listener(self, item):
-        context = None
-        if item['protocol'] == 'tls_tcp':
-            cert, key = self._ensure_tls_files(item['id'])
-            context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-            context.minimum_version = ssl.TLSVersion.TLSv1_2
-            context.load_cert_chain(cert, key)
-        return ServerListener(self.server, config=item, ssl_context=context)
+        protocol = get_listener_protocol(item['protocol'])
+        return protocol.create_listener(self.server, item, self.cert_dir)
 
     def _start_unlocked(self, item):
         if item['id'] in self._running: return
@@ -150,9 +130,19 @@ class ListenerManager:
             for session in self.server.connections.all():
                 key = getattr(session, 'listener_id', '')
                 counts[key] = counts.get(key, 0) + 1
-            return [{**item, 'status': 'listening' if item['id'] in self._running else ('error' if item['id'] in self._errors else 'stopped'),
-                     'last_error': self._errors.get(item['id'], ''),
-                     'connections': counts.get(item['id'], 0)} for item in self._configs]
+            rows = []
+            for item in self._configs:
+                protocol = get_listener_protocol(item['protocol'])
+                metadata = protocol.describe()
+                rows.append({**item,
+                             'status': 'listening' if item['id'] in self._running else ('error' if item['id'] in self._errors else 'stopped'),
+                             'last_error': self._errors.get(item['id'], ''),
+                             'connections': counts.get(item['id'], 0),
+                             'protocol_label': metadata['label'],
+                             'protocol_build_label': metadata['build_label'],
+                             'supported_builders': metadata['supported_builders'],
+                             'builder_warning': metadata['builder_warning']})
+            return rows
 
     def create(self, payload):
         with self._lock:

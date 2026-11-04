@@ -1,6 +1,6 @@
 # TCP and TLS/TCP listeners
 
-The Server accepts reverse Agent connections through multiple independently managed listeners. Each listener has an ID, name, TCP bind address, port, protocol (`tcp` or `tls_tcp`) and enabled state. All accepted connections share the existing `info` handshake, `ClientSession` pool, command router, heartbeat, PTY and file-transfer control messages.
+The Server accepts reverse Agent connections through multiple independently managed listeners. Each listener has an ID, name, TCP bind address, port, protocol (`tcp` or `tls_tcp`) and enabled state. All accepted connections share the existing `info` handshake, `ClientSession` pool, command router, heartbeat, PTY and file-transfer control messages. Server endpoint protocols register their own listener construction, certificate provisioning and supported Agent builders. The management UI reads available protocol definitions from the Server rather than maintaining a separate protocol list. The Python Client independently selects its registered connection strategy from `server_transport`. For a new socket-compatible transport, register the Server listener implementation and the corresponding Python Agent connector independently; both keep using the existing RCH message and Session handling after connection.
 
 ## Configure
 
@@ -22,7 +22,8 @@ This first version authenticates the **Server endpoint to the Bundle**, but does
 
 These endpoints use the existing authenticated Web API session or token:
 
-- `GET /api/listeners` — list listener configurations, status, session counts and errors
+- `GET /api/listeners` — list listener configurations, status, session counts, errors and protocol build metadata
+- `GET /api/listener-protocols` — list registered protocol names, labels and build support
 - `POST /api/listeners` — create and immediately start a listener (`name`, `protocol`, `host`, `port`)
 - `PATCH /api/listeners/<id>` — set `{ "enabled": true | false }`
 - `DELETE /api/listeners/<id>` — remove a nondefault listener and stop accepting

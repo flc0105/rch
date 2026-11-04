@@ -13,6 +13,10 @@ def create_listener_blueprint(server_instance):
     def list_listeners():
         return responder.json_endpoint(manager.list)
 
+    @blueprint.get('/api/listener-protocols')
+    def list_listener_protocols():
+        return responder.json_endpoint(manager.list_protocols)
+
     @blueprint.post('/api/listeners')
     def create_listener():
         return responder.json_endpoint(lambda: manager.create(get_json_payload()))
