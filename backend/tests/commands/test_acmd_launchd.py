@@ -270,26 +270,14 @@ def test_launchd_without_active_client_connection_fails_closed(monkeypatch):
     assert called == []
 
 
-def test_launchd_command_dispatch_never_issues_script_grant():
-    issued = []
-
-    class StubGrants:
-        def issue_script_grant(self, **kwargs):
-            issued.append(kwargs)
-            return {'token': 'unused'}
-
-    session = SimpleNamespace(
-        session_info=SimpleNamespace(os_alias='mac'),
-        context=SimpleNamespace(script_grant_service=StubGrants()),
-    )
+def test_launchd_command_dispatch_has_no_execution_token():
+    session = SimpleNamespace(session_info=SimpleNamespace(os_alias='mac'))
     channel = ClientSessionCommandChannel(session)
     extra = {'name': 'launchd', 'args': {'_args': ['status', 'agent']}}
     acmd = channel.build_command_payload('acmd launchd status agent', MSG_TYPE_ACMD, extra)
     ordinary = channel.build_command_payload('interaction_demo', 'command')
     assert acmd['extra'] == extra
-    assert '__script_grant__' not in acmd['extra']
     assert 'extra' not in ordinary
-    assert not issued
 
 
 def test_launchd_invalid_args_do_not_request_approval(monkeypatch):
@@ -332,18 +320,10 @@ def test_launchd_no_confirm_requires_both_choices_and_never_asks(monkeypatch, co
     assert not calls
 
 
-def test_launchd_server_skips_grant_for_no_confirm():
-    issued = []
-    class GrantService:
-        def issue_script_grant(self, **kwargs):
-            issued.append(kwargs)
-            return {'token': 'unexpected'}
-    session = SimpleNamespace(
-        session_info=SimpleNamespace(os_alias='mac'),
-        context=SimpleNamespace(script_grant_service=GrantService()),
-    )
+def test_launchd_no_confirm_keeps_normal_acmd_payload():
+    session = SimpleNamespace(session_info=SimpleNamespace(os_alias='mac'))
     channel = ClientSessionCommandChannel(session)
     extra = {'name': 'launchd', 'args': {'_args': ['status', 'agent'], 'no-confirm': True}}
     sent = channel.build_command_payload('acmd launchd status agent --no-confirm', MSG_TYPE_ACMD, extra)
-    assert not issued
-    assert '__script_grant__' not in sent['extra']
+    assert sent['extra'] == extra
+

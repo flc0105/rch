@@ -22,7 +22,7 @@ from core.protocol.message_types import (
     MSG_TYPE_TRANSFER_START,
     MSG_TYPE_TRANSFER_CANCEL,
     MSG_TYPE_SESSION_END_ACK,
-    MSG_TYPE_INTERACTION_SESSION,
+    MSG_TYPE_CLIENT_SESSION_TOKEN,
 )
 
 class ClientInboundMessageDispatcher:
@@ -44,8 +44,10 @@ class ClientInboundMessageDispatcher:
     def dispatch(self, data: dict):
         message_type = data.get('type')
 
-        if message_type == MSG_TYPE_INTERACTION_SESSION:
-            self.connection.interaction_session_token = str(data.get('token') or '')
+        if message_type == MSG_TYPE_CLIENT_SESSION_TOKEN:
+            self.connection.client_session_token = str(data.get('token') or '')
+            from client.http.session_auth import set_token
+            set_token(self.connection.client_session_token)
             return None
 
         if message_type == MSG_TYPE_SESSION_END_ACK:

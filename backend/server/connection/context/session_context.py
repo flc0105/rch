@@ -11,7 +11,7 @@ class ClientSessionContext:
     - is_interactive
     - command_history
     - artifact_service
-    - script_grant_service
+    - client_session_token_service
     - on_unexpected_message
     - on_heartbeat_updated
     - connected_at
@@ -28,7 +28,7 @@ class ClientSessionContext:
         self.command_history = None
         self.command_history_orchestrator = None
         self.artifact_service = None
-        self.script_grant_service = None
+        self.client_session_token_service = None
         self.on_unexpected_message = None
         self.on_heartbeat_updated = None
         self.on_pty_opened = None

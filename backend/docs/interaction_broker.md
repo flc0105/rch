@@ -111,7 +111,7 @@ preview['row_ids'] = ['a', 'b']
 
 交互必须绑定正在运行的 Web Task，而不是仅凭 `client_id` 就允许弹出窗口。Server 保存并核对当前 `task_id`、`client_id`、`tab_id`，交互回复时重新确认任务仍在 `running` 状态。Client 发起交互时，Server 先验证连接建立时发放的一次性会话凭证，再验证请求中的 `command_id` 与当前前台命令相同。
 
-Client 命令和 Script 通过受限的 `POST /api/interactions/client/request` 进入 Broker。普通 Client 命令和 ACMD 在连接时获得同一份会话级交互凭证，无需为每条命令声明 Scope 或单独签发 Grant；Script SDK 则继续使用 `interactions:request` Script Grant。两条路径均核对当前前台 Web 任务、Client 和命令 ID。Server Builtin 在 Server 内部直接访问 Broker，不需要 Client 的 Script Grant，但同样需要当前 Web Task 和标签页身份。
+Client 命令、ACMD 与 Script SDK 通过 `POST /api/interactions/client/request` 进入 Broker，共用 Client Session Token；Server 核对当前连接、前台 Web 任务、Client ID、命令 ID 和标签页身份。Server Builtin 在 Server 内部直接访问 Broker。
 
 调用方同步等待 Broker 回复。Broker 在等待期间会检查期限、任务是否仍在运行以及当前命令是否仍对应前台任务；超时或任务结束后移除待处理请求并发送解决事件。对已回答、已过期或失效的请求再次回答会报错，不会让原任务恢复执行。
 
@@ -119,7 +119,7 @@ Client 命令和 Script 通过受限的 `POST /api/interactions/client/request` 
 
 ## Script 的交互上下文
 
-Script 在 `SCRIPT_METADATA` 中声明 `interactions:request`，然后通过 SDK 的 `context` 或 `interactions` 模块调用。适用于从 Web 启动、运行在 **inproc Python 执行策略**中且具有有效 Client 命令上下文的 Script；不能假定 `subprocess_pipe` 脚本或任意脱离 Web Task 的后台 Python 代码也能弹出页面交互。
+Script 通过 SDK 的 `context` 或 `interactions` 模块调用。适用于从 Web 启动、运行在 **inproc Python 执行策略**中且具有有效 Client 命令上下文的 Script；不能假定 `subprocess_pipe` 脚本或任意脱离 Web Task 的后台 Python 代码也能弹出页面交互。
 
 ```python
 SCRIPT_METADATA = {
@@ -129,7 +129,6 @@ SCRIPT_METADATA = {
     'category': 'Example',
     'platforms': ['*'],
     'params': [],
-    'api_grants': ['interactions:request'],
 }
 
 from client.runtime.sdk import context
@@ -149,7 +148,7 @@ else:
 
 `secret=True` 只意味着 Web 输入控件按保密模式呈现，**不意味着字符串会自动加密存储或永远不会出现在日志里**。脚本不应 `print()` 保密输入，也不应把它插入结果文本。用户取消/超时会导致输入和选择抛出 `ScriptSdkInteractionError`，需要在执行重要操作之前捕获或结束当前流程。
 
-脚本 Metadata 声明授权不等于绕过 Web 用户批准。若没有有效执行 Grant、缺少 `command_id`、当前任务或 Web 标签页失效，请求会失败；不能把这种失败当作默认允许。
+Interaction 仍需要当前 Client Session Token、有效 `command_id`、前台 Web 任务和标签页。用户拒绝或超时按原交互协议返回结果。
 
 ## Client 命令的交互接口
 
@@ -172,9 +171,9 @@ class CommandExampleMixin:
         return 1, f'Accepted label: {label}'
 ```
 
-新的 Mixin 还需接入当前 Client 公共命令组，命令才能被发现。普通 Client 命令不需要声明 Interaction Scope。连接级交互凭证随 Client 握手后的会话消息下发，只有当前 Web Task 的命令能使用它。执行时必须在有活动 Web Task 的普通前台命令上下文中调用。
+新的 Mixin 还需接入当前 Client 公共命令组，命令才能被发现。普通 Client 命令通过连接级 Token 请求 Interaction，只有当前 Web Task 的命令能使用它。执行时必须在有活动 Web Task 的普通前台命令上下文中调用。
 
-Server Builtin 使用已经存在的 `self.interactions`，不需要 Client Grant：
+Server Builtin 使用已经存在的 `self.interactions`，直接使用内部 Broker：
 
 ```python
 from server.application.command.interaction_builtin_support import BuiltinInteractionError
@@ -211,7 +210,7 @@ Web 的统一交互窗口根据 `kind` 生成输入控件、选择列表或 Prev
 | 现象 | 原因或排查方向 |
 |---|---|
 | 没有弹出交互窗口 | 没有活跃 Web Task、标签页不匹配、SSE 未到达；检查待处理请求与任务状态 |
-| Client 提示缺少授权 | Client 未收到当前连接的交互凭证，或 Script Metadata / 执行 Grant 不完整 |
+| Client 提示缺少授权 | Client 未收到当前连接的 Client Session Token，或当前没有有效 Web Task |
 | `@confirm` 拒绝后仍有后续操作 | 应确认危险操作只写在获得批准之后的路径中 |
 | 输入/选择突然失败 | 用户取消、交互超时或原执行任务已结束 |
 | Preview 返回值不是布尔值 | 声明了 `switches` 或 `row_ids`，应解析并验证对象回复 |

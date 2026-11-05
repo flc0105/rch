@@ -215,7 +215,7 @@ Content-Type: application/json
 
 这直接影响 Server 设备库存：新 `machine_id` 会作为新的机器键写入最近设备；原别名、隐藏、排序、分组和历史引用仍绑定旧 Machine ID。当前代码没有靠主机名或相似硬件信息自动把两个不同哈希合并的迁移逻辑；即使它们确实来自同一物理设备，也不能假定用户偏好会自动转移。
 
-**机器指纹用于身份归集。** 认证仍由 Session、Bearer Token 和 Script Grant 等机制处理；SHA-256 在这里用于确定性标识，没有签名或硬件可信证明功能。握手中的 `machine_id` 与 `machine_fingerprint_basis` 是 Client 自报字段，不能证明其未被伪造；更不能据此绕开 Session / Bearer / Script Grant 等认证体系。原始 `native_id` 虽未单独出现在正常 Web 连接载荷，但 `machine_fingerprint_basis` 可能包含它；Server 序列化该字段并将其保存到最近设备快照，因此日志、诊断导出与 API 数据应控制访问范围。不要随意公开完整 Basis。
+**机器指纹用于身份归集。** 认证仍由 Session、Bearer Token 和 Client Session Token 等机制处理；SHA-256 在这里用于确定性标识，没有签名或硬件可信证明功能。握手中的 `machine_id` 与 `machine_fingerprint_basis` 是 Client 自报字段，不能证明其未被伪造；更不能据此绕开 Session / Bearer / Client Session Token 等认证体系。原始 `native_id` 虽未单独出现在正常 Web 连接载荷，但 `machine_fingerprint_basis` 可能包含它；Server 序列化该字段并将其保存到最近设备快照，因此日志、诊断导出与 API 数据应控制访问范围。不要随意公开完整 Basis。
 
 遇到设备重复、丢失分组或历史不连续，应依次确认：
 

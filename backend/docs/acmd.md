@@ -82,8 +82,8 @@ acmd ps --port 8080 --json --with-actions
 - `kill_proc / kill_port / pkill / pgrep` 不再是注册的 Client 命令。
 - 进程选择和发信号都在 Client 执行。不预设 PID 白名单或进程保护名单；
   操作系统权限仍决定实际信号是否成功。对 PID 创建时间、名称、可执行
-  文件和端口归属进行重检，拒绝预览后身份发生变化的进程。服务器下发的 Interaction
-  Grant 仅授予显式注册需要交互的 ACMD；无确认模式不请求 Grant。
+  文件和端口归属进行重检，拒绝预览后身份发生变化的进程。
+  当前连接的 Client Session Token 允许 ACMD 使用 Interaction；`--no-confirm` 不发起交互。
 
 ## 从输入文本构造参数对象
 

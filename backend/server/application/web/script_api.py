@@ -2,7 +2,6 @@ import json
 
 from core.protocol.structured_arg_codec import encode_structured_arg
 from core.utils.script_metadata import resolve_script_params
-from server.application.auth.script_grant_service import SCRIPT_GRANT_REQUEST_KEY
 
 
 class WebScriptApi:
@@ -70,21 +69,6 @@ class WebScriptApi:
     def delete_script(self, script_name: str):
         return self.script_catalog_service.delete_script(script_name)
 
-    def _build_script_grant_request(self, metadata: dict, script_name: str) -> dict:
-        api_grants = metadata.get('api_grants') if isinstance(metadata, dict) else None
-        if not api_grants:
-            return {}
-        return {
-            'script_name': script_name,
-            'api_grants': api_grants,
-        }
-
-    def _strip_reserved_params(self, params: dict) -> dict:
-        normalized = dict(params or {}) if isinstance(params, dict) else {}
-        normalized.pop(SCRIPT_GRANT_REQUEST_KEY, None)
-        normalized.pop('script_grant_request', None)
-        return normalized
-
     def run_script(self, client_id: str, script_name: str, params=None, tab_id: str = '',
                    presentation: str = '', run_id: str = ''):
         normalized_script_name = str(script_name or '').strip()
@@ -102,14 +86,10 @@ class WebScriptApi:
                 metadata = item.get('metadata') or {}
                 break
         normalized_params = resolve_script_params(metadata, params if isinstance(params, dict) else {})
-        normalized_params = self._strip_reserved_params(normalized_params)
         payload = {
             'script_name': normalized_script_name,
             'params': normalized_params,
         }
-        grant_request = self._build_script_grant_request(metadata, normalized_script_name)
-        if grant_request:
-            payload['script_grant_request'] = grant_request
         return self.command_execution_api.submit_web_command(
             client_id,
             f'script run {encode_structured_arg(payload)}',

@@ -2,7 +2,7 @@
 
 RCH 的 Keychains 是一个**由 Server 管理、按机器身份分组的凭据存储与调用功能**。它解决两个相连但不同的问题：管理员在 Web 中维护登录凭据与通用 Secret；经过授权的 Client Script 在运行时从 Server 获取所需值，而不是将密码硬编码在脚本库中。Keychains 不使用 Client 操作系统的密码钥匙串，也不是与 Server Admin 登录共用的账号数据库。
 
-本文集中解释数据模型、机器范围、管理页面、明文读写路径、Script SDK 与权限、安全边界。完整的临时 Grant 签发生命周期见 [Administrator Authentication](admin_auth.md) 与 [Scripts](scripts.md)；一般 SDK 约定见 [Script SDK API](script-sdk.md)；机器指纹如何变化见 [Device Identity](device_identity.md)。这些独立主题不在此重复展开。
+本文集中解释数据模型、机器范围、管理页面、明文读写路径、Script SDK 与权限、安全边界。Client Session Token 的使用与 HTTP 白名单见 [Client Session API](client_session_api.md)；一般 SDK 约定见 [Script SDK API](script-sdk.md)；机器指纹如何变化见 [Device Identity](device_identity.md)。这些独立主题不在此重复展开。
 
 ## 一、数据模型与存放范围
 
@@ -114,18 +114,18 @@ Script、Background Job 和 External Tool 的共享参数表单支持在 `passwo
 
 随机整数优先用 `window.crypto.getRandomValues()`，并使用拒绝采样避免取模偏差；**如果 Web Crypto 不可用，源码会退回 `Math.random()`**。因此不要声称所有情况下都具备密码学级随机性，尤其不要把该回退路径用于高安全性密码生成。生成的密码和从 Keychains 复制的值一样会进入系统剪贴板，具有剪贴板暴露风险。
 
-## 五、HTTP API：管理与脚本解析是不同入口
+## 五、Keychains HTTP API
 
-所有 Keychains API 都经过 Web 的统一认证守卫：可以由有效管理员 Session、管理员 API Token 或匹配路由的 Script Grant 访问。**Script Grant 仅放行明确声明的方法和路径**；拥有 `keychains:resolve` 不能据此 PUT/DELETE 任意记录。管理页面依赖登录态，而不是在网页里嵌入脚本 Grant。
+管理员 Session / Admin API Token 保有完整后台权限；连接中的 Client Session Token 则可以操作当前机器和 Server Shared Keychains 的全部凭据，包含明文详情和创建、更新、删除。不能操作其他机器的凭据。允许的方法/路径在 [Client API Policy](client_session_api.md) 集中维护。
 
-| Method | Path | 主要用途 | 脚本 Grant |
-| --- | --- | --- | --- |
-| `GET` | `/api/keychains?machine_id=...` | 列表及机器选项；未填机器 ID 时跨范围列出，默认隐藏值 | `keychains:list` |
-| `GET` | `/api/keychains/<cred_id>` | 按 ID 获取完整详情，含明文 | 无对应 Grant 路由，管理员认证通道 |
-| `POST` | `/api/keychains/resolve` | 按 `name`、可选 `kind` 和机器/Shared 范围解析完整值 | `keychains:resolve` |
-| `POST` | `/api/keychains` | 创建 Login 或 Secret | `keychains:create` |
-| `PUT` | `/api/keychains/<cred_id>` | 编辑记录，可改变 Host Scope | 无对应 Grant 路由，管理员认证通道 |
-| `DELETE` | `/api/keychains/<cred_id>` | 删除记录 | 无对应 Grant 路由，管理员认证通道 |
+| Method | Path | 主要用途 |
+| --- | --- | --- |
+| `GET` | `/api/keychains?machine_id=...` | 机器范围的凭据列表（不含明文） |
+| `GET` | `/api/keychains/<cred_id>` | 指定凭据的完整明文详情 |
+| `POST` | `/api/keychains/resolve` | 按名称和当前机器/Shared 解析凭据 |
+| `POST` | `/api/keychains` | 创建 Login/Secret |
+| `PUT` | `/api/keychains/<cred_id>` | 更新已有凭据 |
+| `DELETE` | `/api/keychains/<cred_id>` | 删除凭据 |
 
 `POST /api/keychains/resolve` 的请求示意：
 
@@ -140,22 +140,22 @@ Script、Background Job 和 External Tool 的共享参数表单支持在 `passwo
 
 返回业务数据在统一响应对象的 `data.item` 中，`item.secret_value` 是真正明文；`GET /api/keychains` 的 `data.items` 则移除了这一字段。创建、编辑与删除的返回 `item` 同样使用公开形式，不附带明文；**只有详情及 Resolve 是明文读取路径**。`WebKeychainApi` 会根据当前/已存机器列表补全展示 `hostname`，但是 `hostname` 不用于鉴别授权。
 
-当前 HTTP 层并没有针对不同 Machine ID 的额外每设备 ACL，Script Grant 策略也不根据请求体的 `machine_id` 或 `name` 执行细粒度判断。**该权限模型按 API 路由授权**；访问路径后续能操作的机器与条目范围取决于路由本身的校验。
+Client Token 请求会先通过 API 方法/路径白名单，再由 Keychain API 校验机器归属；当前机器与 Server Shared 均可访问。管理员请求保留跨机器操作能力。
 
 ## 六、Script SDK 如何读取与创建 Keychains
 
-Client Script 使用 `from client.runtime.sdk import keychains`。SDK 模块直接复用 `client.runtime.keychains`，发起 HTTP 请求到 Server 的上述管理 API；只是在正常 Script 上下文中自动附带 `X-Script-Grant-Token`，并将结果转换为更适合脚本消费的对象。它不会通过 Socket 指令去读取 Client 操作系统密码库。
+Client Script 使用 `from client.runtime.sdk import keychains`。SDK 模块直接复用 `client.runtime.keychains`，发起 HTTP 请求到 Server 的上述管理 API；自动附带 `X-Client-Session-Token`，并将结果转换为更适合脚本消费的对象。它不会通过 Socket 指令去读取 Client 操作系统密码库。
 
 ### 常用 SDK 能力
 
-| SDK 调用 | 返回内容 | 需要的 Grant |
+| SDK 调用 | 返回内容 | 认证 |
 | --- | --- | --- |
-| `keychains.list(scope='machine')` / `list_keychains(...)` | 元数据字典列表；不含明文值 | `keychains:list` |
-| `keychains.get_secret(name, scope='machine', machine_id='')` | `SecretValue` | `keychains:resolve` |
-| `keychains.get_login(name, scope='machine', machine_id='')` | `LoginCredential` | `keychains:resolve` |
-| `keychains.get_keychain(name, kind='', scope='machine', machine_id='')` | 按 `kind` 返回 `LoginCredential` 或 `SecretCredential` | `keychains:resolve` |
-| `keychains.create_secret(name, value, scope='machine', note='')` | `SecretCredential` | `keychains:create` |
-| `keychains.create_login(name, username, password, scope='machine', site='', note='')` | `LoginCredential` | `keychains:create` |
+| `keychains.list(scope='machine')` / `list_keychains(...)` | 元数据字典列表；不含明文值 | Client Session Token |
+| `keychains.get_secret(name, scope='machine', machine_id='')` | `SecretValue` | Client Session Token |
+| `keychains.get_login(name, scope='machine', machine_id='')` | `LoginCredential` | Client Session Token |
+| `keychains.get_keychain(name, kind='', scope='machine', machine_id='')` | 按 `kind` 返回 `LoginCredential` 或 `SecretCredential` | Client Session Token |
+| `keychains.create_secret(name, value, scope='machine', note='')` | `SecretCredential` | Client Session Token |
+| `keychains.create_login(name, username, password, scope='machine', site='', note='')` | `LoginCredential` | Client Session Token |
 
 与 Web 原始列表的 `cred_id` 不同，SDK 对列表项规范化后用 `id` 表示凭据 ID；不要假定列表查询会返回密码值。`get_keychain` 也不是“返回未经包装的原始 HTTP JSON”，它会按实际类型返回对象。
 
@@ -165,7 +165,6 @@ Client Script 使用 `from client.runtime.sdk import keychains`。SDK 模块直�
 SCRIPT_METADATA = {
     "display_name": "Use a stored credential",
     "params": [],
-    "api_grants": ["keychains:resolve"],
 }
 
 from client.runtime.sdk import keychains
@@ -183,15 +182,11 @@ shared_token = keychains.get_secret("shared-api-token", scope="shared")
 
 `SecretValue` 使用包装器降低意外明文打印：`str(value)`、`repr(value)` 显示掩码；`.getvalue()` 才返回字符串。它**不是加密对象或机密计算容器**；实际使用密码时终归会生成明文字符串，且 Secret 已经经由 Server→Client HTTP 响应传输。
 
-### Script Grant 的实际边界
+### Client Session Token 的机器范围
 
-Scripts 在可信 Metadata 中声明 `keychains:list`、`keychains:resolve` 或 `keychains:create`；正常 Web 结构化运行时 Server 签发与命令相关、有效期和次数受限的临时 Grant。`ClientApiClient` 仅在请求指向配置的 Server API Base URL 时自动附加 `X-Script-Grant-Token`。授权码和客户端身份校验的完整机制见 [Scripts](scripts.md) 与 [Administrator Authentication](admin_auth.md)。
+Client 可以完整读取、创建、更新、删除属于自己机器和 Server Shared 范围的 Keychains；其他机器的凭据不在当前 Client 的访问范围内。凭据列表隐藏明文；详情与 Resolve 返回明文。管理员凭据保持 Server 全局管理能力。
 
-**不要混淆三件事：**
-
-1. Grant 使这次 HTTP 请求可以到达该方法/路径；它不检查脚本传入的 `machine_id` 是否等于执行 Client 的 Machine，也不按凭据名称设置访问白名单。
-2. `keychains:resolve` 授权的是 `POST /api/keychains/resolve`，不等于授权 `GET /api/keychains/<cred_id>`、修改和删除。
-3. 获得 Grant 不等于进入受限制的 Python 沙箱。脚本执行环境及本机副作用仍遵循 Script Runtime 的独立规则；不要运行未经审查的脚本来访问敏感凭据。
+`ClientApiClient` 只对配置的 Server API 地址自动携带 Client Session Token，失效的连接 Token 无法再访问该 API。
 
 ## 七、使用边界与故障排查
 
@@ -200,14 +195,14 @@ Scripts 在可信 Metadata 中声明 `keychains:list`、`keychains:resolve` 或 
 | Web 看不到某台机器的凭据 | Host Scope 过滤是否选错、该机器当前 `machine_id` 是否变化、对应 JSON 文件是否存在 |
 | 同名创建失败 | 相同 Machine/Shared 范围下是否已有同名项（大小写不敏感，Login 与 Secret 共用名称空间） |
 | Script `get_secret` 报 Not Found | 当前 Machine ID 与创建时是否一致；是否应显式使用 `scope='shared'`；名字及类型是否匹配 |
-| Script 报 `Authentication required` 或缺少 Grant | Script Metadata 是否声明正确 Scope、是否从能签发 Grant 的正常运行入口执行、临时 Grant 是否过期 |
-| 调用列表成功但不能取明文 | `keychains:list` 与 `keychains:resolve` 是不同 Scope；列表本身不含 `secret_value` |
+| Client Script 报 `Authentication required` | Client 是否连接、Client API Token 是否有效、HTTP 路径是否列入白名单 |
+| 调用列表成功但不能取明文 | 列表不含 `secret_value`；使用详情或 Resolve 获取明文 |
 | 在 UI 中点 Hide 之后仍担心泄漏 | Hide 只影响展示缓存；此前写入剪贴板、脚本变量或网络传输的值不由 Hide 收回 |
 | 更换设备或重装系统后凭据消失 | 检查旧 Machine ID 的 Server JSON，必要时通过管理端迁移范围；不要尝试按 `client_id` 查找 |
 | 创建成功但备份里找不到记录 | 凭据文件存在于 Server `runtime/keychains/`，不是 Client 本地和 `rch.db` |
 | Password Generator 结果没有进入 Keychains | 生成器是独立助手，必须手动复制并在新建/编辑表单保存 |
 
-从安全角度，务必把 Server Keychains 目录、Server 登录态、API Token、脚本代码、日志和系统剪贴板视作同一条风险链。Web 列表掩码、`SecretValue` 掩码与临时 Grant 都有各自用途，但**并不构成对存储明文、浏览器明文以及具备对应路由权限的脚本读取行为的端到端保密保证**。
+从安全角度，务必把 Server Keychains 目录、Server 登录态、API Token、脚本代码、日志和系统剪贴板视作同一条风险链。Web 列表掩码、`SecretValue` 掩码与 Client Token 认证各有用途，但**并不构成对存储明文、浏览器明文以及具备对应路由权限的脚本读取行为的端到端保密保证**。
 
 ## 实现边界与相关模块
 
@@ -215,6 +210,6 @@ Scripts 在可信 Metadata 中声明 `keychains:list`、`keychains:resolve` 或 
 - Web 管理/解析外观和 HTTP 路由：`server/application/web/keychain_api.py`、`server/web/routes/keychains.py`。
 - Web 凭据页面、密码生成器：`KeychainManagerDialog.vue`、`PasswordGeneratorDialog.vue`。
 - Client 侧 SDK 与 HTTP 访问：`client/runtime/keychains.py`、`client/runtime/sdk/keychains.py`、`client/http/client_api.py`。
-- 路由 Scope 和认证：`server/application/auth/script_grant_policy.py`、`server/web/auth_guard.py`。
+- Client API 路由与认证：`server/application/auth/client_api_policy.py`、`server/web/auth_guard.py`。
 
 本文聚焦 Keychains 的数据与操作边界；正式 Server 管理员认证、Script 通用授权、设备指纹的计算与生命周期均由相应文档解释，避免相同机制多处重复且日后出现不一致。

@@ -307,7 +307,7 @@ def create_ws_handler(server_instance, flask_app):
             'Cookie': headers.get('Cookie', ''),
             'Authorization': headers.get('Authorization', ''),
         }):
-            guard = WebAuthGuard(script_grant_service=getattr(server_instance.web_service, 'script_grant_service', None))
+            guard = WebAuthGuard(client_session_token_service=getattr(server_instance.web_service, 'client_session_token_service', None))
             return guard.has_valid_static_token() or guard.has_valid_session()
 
     async def stream_events(connection, tab_id):

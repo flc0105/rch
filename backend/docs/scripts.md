@@ -13,7 +13,7 @@ Script 的一次 Web 执行顺序为：
 1. Web 从 Server 获取 Catalog，显示目录、描述、平台与运行参数。
 2. 用户选择目标 Client，填入参数并选择结果展示位置。
 3. Server 依据相应脚本的 Metadata 转换参数，组织结构化运行请求，把 Script 源码读取出来并构造远程 `script` 类型任务。
-4. 如果 Metadata 声明受保护的 Server API 权限，Server 在向 Client 下发时为本次命令签发短期 Script Grant。
+4. Script 使用已连接 Client 的统一 Session Token 调用允许的 Server API。
 5. Client 通过普通前台命令执行上下文执行 Python，回传输出与终态；Server 更新命令任务及关联历史，Web 通过既有消息渠道展示结果。
 
 数据与控制经过不同的边界：浏览器负责操作和表单、Server 持有 Library 与授权上下文、Client 使用本机 Python 环境运行代码。执行内容不会因为放在 Server Script Library 而自动拥有 Server 文件系统或管理员权限。
@@ -61,7 +61,6 @@ print("Finished")
 
 `name` 是可选的元数据标识；实际从 Catalog 调用时仍使用脚本文件的相对路径。`display_name`、`description`、`category`、`tags` 主要用于展示。`platforms` 经过通用平台别名规范化；对 **Web Script Library**，未声明或使用 `*` 表示无平台限定，Web 会根据选中的 Client 平台控制运行按钮与兼容平台展示。**Terminal `script list` / 补全与 Web 不同：未声明平台的脚本不会显示，但显式执行仍不被此筛选阻止。** 这两种列表判断都不能保证脚本在目标系统有完整的运行库或权限。
 
-`api_grants` 也是 Script Metadata 的顶层字段，但它不属于普通业务参数。它声明脚本执行期间希望调用的受保护 Server API，具体签发与边界见后文。
 
 ### 参数如何形成并绑定
 
@@ -99,9 +98,9 @@ Server 会给命令任务附加 `script_run`、`script_run_name`、`script_run_i
 
 ### 终端轻量入口和结构化入口
 
-Server 另有 `script exec` 入口，它按文件名称读取 Library 脚本，并将随后按命令行扫描解析的参数交给 Script 执行计划。它适合快速发起一次性脚本执行，但不是 Web 的 Metadata 参数表单：不要假设 `script exec` 一定会应用同一套必填表单逻辑、自动构造 Metadata API Grant 或弹出 Script Run Dialog。
+Server 另有 `script exec` 入口，它按文件名称读取 Library 脚本，并将随后按命令行扫描解析的参数交给 Script 执行计划。它适合快速发起一次性脚本执行，但不是 Web 的 Metadata 参数表单：不要假设 `script exec` 一定会应用同一套必填表单逻辑 或弹出 Script Run Dialog。
 
-`script run` 则是内部结构化参数入口，Web 正常通过专用 HTTP API 产生对应 Payload；它可以携带用户参数、Script Name 和由受信任 Metadata 得来的 Grant Request。手动构造 Payload 与直接传原始 Python 文本不是一回事，正式界面操作建议使用 Script Library。
+`script run` 则是内部结构化参数入口，Web 正常通过专用 HTTP API 产生对应 Payload；它可以携带用户参数、Script Name 。手动构造 Payload 与直接传原始 Python 文本不是一回事，正式界面操作建议使用 Script Library。
 
 普通 Script 运行的输出经过 Python 执行策略收集后回到既有命令结果链。`print()` 可作为标准结果输出；`context.progress()` 在 In-process 且有命令所有者时可显式推送进度文本。当前 Script 默认采用 **collect** 执行调用，不应把 Script 简单等同为逐行 stdout 的真正 Shell Stream。对于输出较大、持续很久的任务，结果何时送达以及能否及时取消，还与执行策略相关。
 
@@ -161,9 +160,9 @@ Script SDK 的作用是在**当前 Client 的本次任务内**以明确的接口
 
 `command.run_shell()` 在 Client 本机运行 Shell，并返回包含 `returncode`、`stdout`、`stderr` 的结果对象；`command.run_background()` 启动后台 OS 进程，并不把它变成一个可由 Job Manager 管理的 Job；`command.stream_shell()` 提供流式 Shell 执行入口。`command.run_client(name, ...)` 与动态导出命令调用需要 In-process 命令所有者；它们直接调用 Client 导出函数，不会再向 Server 发送第二条前台命令。
 
-`artifact.save(path, ...)` 上传 Client 本地文件并将其注册为 Server Artifact，可设置正式 Artifact 类型与分类；`artifact.list/get/download/find_by_file_name` 用于查询和回取 Artifact，需要对应的 API Grant。上传文件本身不意味着一定进入 Transfer Center：只有另行创建并绑定受管理 `transfer_id` 的流程才具有那一套进度记录。Artifact 的引用、清理和历史关联见 [Artifacts](artifacts.md)。
+`artifact.save(path, ...)` 上传 Client 本地文件并将其注册为 Server Artifact，可设置正式 Artifact 类型与分类；`artifact.list/get/download/find_by_file_name` 用于查询和回取 Artifact，使用当前 Client Session Token。上传文件本身不意味着一定进入 Transfer Center：只有另行创建并绑定受管理 `transfer_id` 的流程才具有那一套进度记录。Artifact 的引用、清理和历史关联见 [Artifacts](artifacts.md)。
 
-`workspace` 无需 Grant 即可访问运行上下文提供的系统路径；访问 Server 的 Pinned Paths 则需要 `workspace:read`。`keychains` 允许读取或创建 Server 管理的凭据，需要对应 `keychains:resolve` / `keychains:create`；实际脚本应避免输出凭据明文。`xt` 依照 External Tool Catalog 在 Client 本机解析并运行程序，需要 `external_tools:catalog`，安装状态与执行生命周期由 External Tools 自身处理。`events.emit()` 用于向 Server 上报结构化 Device Event，与 `print()` 日志和临时 UI Interaction 是不同的数据链。
+`workspace` 可以读取运行上下文和 Server Pinned Paths；`keychains` 可以访问当前机器与 Shared 凭据，实际脚本应避免输出凭据明文；`xt` 依照 External Tool Catalog 在 Client 本机解析并运行程序，安装状态与执行生命周期由 External Tools 自身处理。`events.emit()` 用于向 Server 上报结构化 Device Event，与 `print()` 日志和临时 UI Interaction 是不同的数据链。
 
 下面展示的是接口协作方式，不依赖项目已有任何一个脚本实例：
 
@@ -195,7 +194,6 @@ context.progress(f"Saved artifact: {saved.get('artifact_id', '')}")
 ```python
 SCRIPT_METADATA = {
     "name": "ops/parent",
-    "api_grants": ["scripts:read"],
     "params": [],
 }
 
@@ -207,38 +205,21 @@ if not result.ok:
 print(result.stdout)
 ```
 
-子脚本会再次按照自己的 Metadata 解析收到的参数，但**不会按子脚本的 Metadata 重新签发 Script Grant**。它沿用调用者的临时上下文和授权，因此父脚本必须主动声明整个执行链所需的权限。当前实现还检测自调用、嵌套重复调用，并限制嵌套深度（最多 8 层活跃子脚本）。子脚本的标准输出与标准错误被捕获后作为结果返回，通常由父脚本决定打印哪些内容。它不会触发新的 Server `script run` 任务，也不会形成独立的 Web Script Run Dialog。
+子脚本会再次按照自己的 Metadata 解析收到的参数，但**复用同一 Client Session Token**，不生成子脚本授权凭证。当前实现还检测自调用、嵌套重复调用，并限制嵌套深度（最多 8 层活跃子脚本）。子脚本的标准输出与标准错误被捕获后作为结果返回，通常由父脚本决定打印哪些内容。它不会触发新的 Server `script run` 任务，也不会形成独立的 Web Script Run Dialog。
 
 子脚本通过 `exec()` 执行的是 Server Library 提供的 Python 源码；这不是隔离沙箱。只有可信脚本适合被这样复用。父脚本同步调用期间同样会受到顶层命令任务的寿命和占用约束。
 
-## 6. Script Grant 与用户交互
+## 6. Client Session Token 与用户交互
 
-### 临时授权如何进入执行上下文
-
-普通 Web 管理员 Session 和管理员 API Token 是浏览器/外部程序的认证体系，不应直接交给脚本。Script 要访问受保护的 Server API 时，在静态 Metadata 中声明 `api_grants`，例如：
-
-```python
-SCRIPT_METADATA = {
-    "name": "ops/review_and_read",
-    "params": [],
-    "api_grants": ["interactions:request", "artifacts:list"],
-}
-```
-
-Web 读取实际 Script Metadata，Server 在构造结构化运行任务时将请求的 Scopes 与 Script Name 一起传到可信命令通道。命令通道依据允许的 Scope 生成一次性随机 Token，与当前 Client、Machine、`command_id` 和 Script Name 绑定；Client 只收到执行所需的短期凭据。SDK 的 HTTP Client 对相应 Server API 自动附带 `X-Script-Grant-Token`，无需脚本手写管理员 Bearer Token。
-
-默认 Grant 有效期为 300 秒，最多使用 100 次；请求中的 TTL/次数不能突破这两个服务端上限。签发时只接受策略允许的 Scope，服务端按 HTTP 方法与路径校验。完成、断开或 Grant 到期、次数耗尽后无法继续使用。它是一种**按 URL/方法授权**的临时能力，不等于针对 Artifact ID、Keychain 名称、远程设备目录的细粒度资源权限，也不限制脚本在本机自行执行 Python/OS 操作。
-
-特别注意：Web 结构化运行会基于 Metadata 创建 Grant Request；终端 `script exec` 的轻量执行方式不会自动采取相同的授权请求构造流程。直接在另一个环境启动 Python 文件也不会自动获得 Server Script Grant。如果缺少权限，SDK 应明确报错，而不是建议把管理员 API Token 硬编码进脚本。详细的认证体系与 Script Grant 机制见 [Administrator Authentication](admin_auth.md)。
+Script、Command 和 Job 复用当前 Client 连接时获得的 Client Session Token，API 方法和路径在 [Client Session Token](client_session_api.md) 的策略文件中集中维护。客户端使用 `ClientApiClient` 时，会自动向 Server API 发送 `X-Client-Session-Token`。管理员 Token 仍只用于 Web 管理员和外部管理程序。
 
 ### 执行中请求浏览器决策
 
-在 Web 发起、In-process 且具备 `interactions:request` Grant 的 Script 中，可以通过 `context.confirm()`、`context.ask()`、`context.select()`、`context.approve_preview()`、`context.select_preview_rows()` 请求浏览器交互。这是一次受任务身份约束的 Interaction Broker 往返，不是 Shell stdin，也不是额外发起一条命令。
+在 Web 发起、具有当前 Client 连接和前台命令上下文的 Script 中，可以通过 `context.confirm()`、`context.ask()`、`context.select()`、`context.approve_preview()`、`context.select_preview_rows()` 请求浏览器交互。这是一次受任务身份约束的 Interaction Broker 往返，不是 Shell stdin，也不是额外发起一条命令。
 
 ```python
 SCRIPT_METADATA = {
     "name": "ops/review_action",
-    "api_grants": ["interactions:request"],
     "params": [],
 }
 
@@ -266,9 +247,9 @@ Script 的任务状态和文本结果属于命令执行通道，Output 可以在
 
 Script 输出可以是人类可读文本，也可以显式打印 JSON。需要让 Terminal JSON Viewer 识别一段结构化结果时，应保证输出为完整、合法的 JSON；混入调试信息、多行日志或 Python `dict` 的 `repr` 不等于 JSON。`scripts.run(...).json()` 则仅解析子脚本的 stdout，并与浏览器端的 Table/Flat/Raw 展示相互独立。更多规则见 [Structured Command Output](structured_output.md)。
 
-一个 Script 执行完毕后，可通过命令任务关联对应的 Command History Entry；相关历史的具体保留数量、输出截断、删除规则由 Command History 管理。脚本源码本身在 Library 文件系统中持久保存，但 `inproc` 中的 Python 全局执行状态、浏览器当前弹窗、临时 Script Grant 和等待中的 Interaction 都不是可在 Server 重启后恢复的持久脚本会话。
+一个 Script 执行完毕后，可通过命令任务关联对应的 Command History Entry；相关历史的具体保留数量、输出截断、删除规则由 Command History 管理。脚本源码本身在 Library 文件系统中持久保存，但 `inproc` 中的 Python 全局执行状态、浏览器当前弹窗、连接期 Token 和等待中的 Interaction 都不是可在 Server 重启后恢复的持久脚本会话。
 
-需要注意脚本执行路径的副作用：对 Client 磁盘、进程、网络和外部工具的操作由脚本代码本身控制。Script Grant 的 URL 访问范围不是 Python 沙箱；不要执行未经审查的 Script Library 源码，也不要因为表单完成校验就省略高风险操作前的目标核对。
+需要注意脚本执行路径的副作用：对 Client 磁盘、进程、网络和外部工具的操作由脚本代码本身控制。Client API 的 URL 白名单不是 Python 沙箱；不要执行未经审查的 Script Library 源码，也不要因为表单完成校验就省略高风险操作前的目标核对。
 
 ## 8. Web API、扩展接入与常见边界
 
@@ -297,9 +278,9 @@ Run API 要求 `script_name` 非空、`params` 为对象，并明确提供 `pres
 | 看得到脚本但不能 Run | 目标 Client 是否已选中；Metadata `platforms` 是否包含该 Client；脚本是否仍存在于 Catalog |
 | 表单参数报错 | `params` 的真实类型、必填/default、数值范围、远程路径单选/多选、`path_list` 的行结构 |
 | 提交成功后没有结果 | 前台任务是否仍运行；消息是否匹配 Client/Task；Dialog 的 `run_id` 是否一致 |
-| SDK 提示缺少 Grant | 顶层 Script 的静态 Metadata 是否声明所需 Scope；是否使用了正常 Web 结构化运行入口 |
+| SDK 调用 Server API 失败 | Client 是否连接、请求路径是否在 Client API 白名单中 |
 | 子脚本调用失败 | `scripts:read`、Library 相对名称、递归调用限制以及被调脚本的实际参数 |
-| 部分 Client 命令或 Interaction 不可用 | Python 执行策略是否为 `inproc`，当前是否有命令所有者和有效交互 Grant |
+| 部分 Client 命令或 Interaction 不可用 | 当前是否有 Client Session Token、前台命令和对应 Web Task |
 | 无法取消长时间脚本 | In-process 不支持任意强制中断；Subprocess 的取消也取决于进程控制和清理完成 |
 | 输出不是 JSON 表格 | stdout 是否是单一合法 JSON，是否混入进度文本、日志或非 JSON 的 Python 表示 |
 | 上传文件后找不到 | Artifact 类型、返回的 `artifact_id`、Client/Command 关联及 Artifact 当前可用性 |

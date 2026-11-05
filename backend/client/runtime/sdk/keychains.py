@@ -5,9 +5,6 @@ Script SDK keychains 入口。
 """
 
 from client.runtime.keychains import (  # noqa: F401
-    KEYCHAINS_CREATE_GRANT,
-    KEYCHAINS_LIST_GRANT,
-    KEYCHAINS_RESOLVE_GRANT,
     KeychainError,
     LoginCredential,
     MACHINE_SCOPE,
@@ -25,9 +22,6 @@ from client.runtime.keychains import (  # noqa: F401
 )
 
 __all__ = [
-    'KEYCHAINS_CREATE_GRANT',
-    'KEYCHAINS_LIST_GRANT',
-    'KEYCHAINS_RESOLVE_GRANT',
     'KeychainError',
     'LoginCredential',
     'MACHINE_SCOPE',

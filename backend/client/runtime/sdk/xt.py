@@ -18,8 +18,6 @@ from core.external_tools.selector import (
 from core.external_tools.template import render_value
 
 
-EXTERNAL_TOOLS_CATALOG_GRANT = 'external_tools:catalog'
-
 
 class ScriptSdkExternalToolError(RuntimeError):
     """Script SDK external tool 统一异常。"""
@@ -90,13 +88,6 @@ def _require_exec_name(value) -> str:
     return text
 
 
-def _missing_grant_message() -> str:
-    return (
-        f'External tool SDK requires script grant: {EXTERNAL_TOOLS_CATALOG_GRANT}. '
-        f'Add SCRIPT_METADATA["api_grants"] = ["{EXTERNAL_TOOLS_CATALOG_GRANT}"] to this script.'
-    )
-
-
 def _target_platform() -> str:
     value = normalize_platform(context.os_alias())
     if not value:
@@ -135,7 +126,7 @@ def _load_client_catalog() -> dict:
     except ClientApiError as exc:
         message = str(exc) or 'Failed to load external tool catalog'
         if message in {'Authentication required', 'Forbidden'}:
-            raise ScriptSdkExternalToolError(_missing_grant_message()) from None
+            raise ScriptSdkExternalToolError('Client Session Token authentication required') from None
         raise ScriptSdkExternalToolError(message) from None
     except Exception as exc:
         raise ScriptSdkExternalToolError(str(exc) or 'Failed to load external tool catalog') from exc

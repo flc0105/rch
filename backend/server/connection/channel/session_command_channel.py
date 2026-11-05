@@ -1,8 +1,5 @@
 from core.protocol.message_types import MSG_TYPE_COMMAND, MSG_TYPE_CANCEL, MSG_TYPE_SCRIPT, MSG_TYPE_ACMD
-from server.application.auth.script_grant_service import (
-    SCRIPT_GRANT_REQUEST_KEY,
-    SCRIPT_GRANT_TOKEN_KEY,
-)
+
 
 
 class ClientSessionCommandChannel:
@@ -23,25 +20,6 @@ class ClientSessionCommandChannel:
         self._message_id_counter += 1
         return self._message_id_counter
 
-    def _build_script_grant_extra(self, command_id: int, extra: dict) -> dict:
-        prepared_extra = dict(extra or {})
-        grant_request = prepared_extra.pop(SCRIPT_GRANT_REQUEST_KEY, None)
-        if not isinstance(grant_request, dict) or not grant_request:
-            return prepared_extra
-
-        script_grant_service = getattr(self.session.context, 'script_grant_service', None)
-        if script_grant_service is None:
-            return prepared_extra
-
-        grant_payload = script_grant_service.issue_script_grant(
-            session=self.session,
-            command_id=command_id,
-            grant_request=grant_request,
-        )
-        if grant_payload:
-            prepared_extra[SCRIPT_GRANT_TOKEN_KEY] = grant_payload
-        return prepared_extra
-
     def build_command_payload(self, command: str, command_type: str = MSG_TYPE_COMMAND, extra=None) -> dict:
         data = {
             'type': command_type,
@@ -49,8 +27,6 @@ class ClientSessionCommandChannel:
             'text': command,
         }
         if extra:
-            if command_type == MSG_TYPE_SCRIPT and isinstance(extra, dict):
-                extra = self._build_script_grant_extra(data.get('id'), extra)
             data['extra'] = extra
         return data
 

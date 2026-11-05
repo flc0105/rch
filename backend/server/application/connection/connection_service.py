@@ -29,14 +29,14 @@ class WebConnectionService:
         artifact_service,
         recent_device_store=None,
         connection_history_store=None,
-        script_grant_service=None,
+        client_session_token_service=None,
     ):
         self.server = server
         self.event_bus = event_bus
         self.artifact_service = artifact_service
         self.recent_device_store = recent_device_store
         self.connection_history_store = connection_history_store
-        self.script_grant_service = script_grant_service
+        self.client_session_token_service = client_session_token_service
 
     def _now(self):
         return datetime.now()
@@ -489,7 +489,7 @@ class WebConnectionService:
         session.context.command_history = self.server.command_history
         session.context.command_history_orchestrator = self.server.command_history_orchestrator
         session.context.artifact_service = self.artifact_service
-        session.context.script_grant_service = self.script_grant_service
+        session.context.client_session_token_service = self.client_session_token_service
 
         session.context.on_unexpected_message = (
             lambda status, text, end: self.publish_background_message(session, status, text, end)
@@ -536,10 +536,10 @@ class WebConnectionService:
             self.connection_history_store.record_connected(payload)
         # Send once after registration and before advertising the connection as
         # online; commands do not need individual Interaction grants.
-        if self.script_grant_service is not None:
-            token = self.script_grant_service.issue_client_interaction_session(session)
-            from core.protocol.message_types import MSG_TYPE_INTERACTION_SESSION
-            session.send({'type': MSG_TYPE_INTERACTION_SESSION, 'token': token})
+        if self.client_session_token_service is not None:
+            token = self.client_session_token_service.issue(session)
+            from core.protocol.message_types import MSG_TYPE_CLIENT_SESSION_TOKEN
+            session.send({'type': MSG_TYPE_CLIENT_SESSION_TOKEN, 'token': token})
         self.publish_connection_online(session)
 
     def handle_connection_closed(self, session: ClientSession):
@@ -574,9 +574,9 @@ class WebConnectionService:
                 payload, termination_reason=reason, details=detail
             )
         try:
-            if self.script_grant_service is not None:
-                self.script_grant_service.revoke_client_interaction_session(session)
-                self.script_grant_service.revoke_by_client(session.session_info.client_id)
+            if self.client_session_token_service is not None:
+                self.client_session_token_service.revoke(session)
+                
         except Exception:
             pass
         try:

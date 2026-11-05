@@ -114,7 +114,7 @@ Client → Server 示例：
 
 一个命令可以产生多条 `result`：`eof: 0` 表示本条输出**未终结命令**，`eof: 1` 表示命令输出流结束；`status` 和 `text` 由命令实现提供，不能把 `eof` 理解为“成功标志”。Client 输出方法支持先发中间结果再发最终结果，Server 等待逻辑以 `eof` 判断何时结束等待。正常执行返回的 `cwd` 也会更新 Server Session 中的工作目录快照。
 
-Server 的结果分配并不是“把任何相同类型的消息广播给所有任务”。`ServerResultDispatcher` 将 `id` 与 **`pending_command_ids` 队首**比较：匹配才把 `(status, text, eof)` 放入当前命令的 `message_queue`；不匹配时走 `on_unexpected_message` 回调（Web 通常把它发表为后台消息），没有回调时才依交互状态选择日志或未读消息队列。`wait_for_result()` 对队列逐条 `yield`，直到遇到 `eof` 后退出，并清理历史关联和 Script Grant。
+Server 的结果分配并不是“把任何相同类型的消息广播给所有任务”。`ServerResultDispatcher` 将 `id` 与 **`pending_command_ids` 队首**比较：匹配才把 `(status, text, eof)` 放入当前命令的 `message_queue`；不匹配时走 `on_unexpected_message` 回调（Web 通常把它发表为后台消息），没有回调时才依交互状态选择日志或未读消息队列。`wait_for_result()` 对队列逐条 `yield`，直到遇到 `eof` 后退出，并清理历史关联和 Client Session Token。
 
 这意味着当前 Server 的命令结果等待机制按**单个会话的当前等待命令**设计，并非支持多个命令在同一个结果队列里同时无序交错回包的通用多路复用 RPC。扩展前台命令并发时，必须同步设计更严格的结果归属，而不能只依靠消息 `id` 的存在。
 

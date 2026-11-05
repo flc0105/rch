@@ -12,7 +12,7 @@ Usage:
 
 说明：
 - 这个工具只读取服务端 runtime/keychains 里的凭证。
-- 第一版使用 allow_anonymous 的 resolve 接口，适合个人运维环境；当前已收口到 script grant 临时授权。
+- 使用当前 Client Session Token 访问自身机器或 Shared Keychains。
 - SecretValue 默认打印为掩码，必须显式 .getvalue() 才返回真实值。
 """
 
@@ -24,9 +24,6 @@ from typing import Any
 SHARED_SCOPE = 'shared'
 MACHINE_SCOPE = 'machine'
 SHARED_MACHINE_ID = '__shared__'
-KEYCHAINS_LIST_GRANT = 'keychains:list'
-KEYCHAINS_RESOLVE_GRANT = 'keychains:resolve'
-KEYCHAINS_CREATE_GRANT = 'keychains:create'
 
 
 class KeychainError(RuntimeError):
@@ -87,14 +84,6 @@ class SecretCredential:
 
 def _safe_text(value: Any) -> str:
     return '' if value is None else str(value).strip()
-
-
-def _build_missing_grant_message(scope: str = KEYCHAINS_RESOLVE_GRANT) -> str:
-    normalized_scope = _safe_text(scope) or KEYCHAINS_RESOLVE_GRANT
-    return (
-        f'Keychains access requires script grant: {normalized_scope}. '
-        f'Add SCRIPT_METADATA["api_grants"] = ["{normalized_scope}"] to this script.'
-    )
 
 
 def _normalize_scope(scope: str) -> str:
@@ -162,7 +151,7 @@ def _list_keychain_items(*, scope: str = MACHINE_SCOPE) -> builtins.list[dict]:
     except ClientApiError as exc:
         message = str(exc) or 'Failed to list keychains'
         if message in {'Authentication required', 'Forbidden'}:
-            raise KeychainError(_build_missing_grant_message(KEYCHAINS_LIST_GRANT)) from None
+            raise KeychainError('Client Session Token authentication required') from None
         raise KeychainError(message) from None
     except Exception as exc:
         # 其他异常保留原始原因，便于定位网络/序列化等非授权问题。
@@ -203,7 +192,7 @@ def _request_keychain_item(name: str, *, kind: str = '', scope: str = MACHINE_SC
     except ClientApiError as exc:
         message = str(exc) or 'Failed to resolve keychain'
         if message in {'Authentication required', 'Forbidden'}:
-            raise KeychainError(_build_missing_grant_message(KEYCHAINS_RESOLVE_GRANT)) from None
+            raise KeychainError('Client Session Token authentication required') from None
         raise KeychainError(message) from None
     except Exception as exc:
         # 其他异常保留原始原因，便于定位网络/序列化等非授权问题。
@@ -230,7 +219,7 @@ def _create_keychain_item(payload: dict) -> dict:
     except ClientApiError as exc:
         message = str(exc) or 'Failed to create keychain'
         if message in {'Authentication required', 'Forbidden'}:
-            raise KeychainError(_build_missing_grant_message(KEYCHAINS_CREATE_GRANT)) from None
+            raise KeychainError('Client Session Token authentication required') from None
         raise KeychainError(message) from None
     except Exception as exc:
         # 其他异常保留原始原因，便于定位网络/序列化等非授权问题。

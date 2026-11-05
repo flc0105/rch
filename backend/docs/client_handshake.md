@@ -125,7 +125,7 @@ Server 监听线程把初始 JSON 与接受连接时得到的来源地址结合�
 
 标准字段与扩展字段的区别会影响后续读取方式，但它们均属于当前会话的握手资料。Server 并不依靠 `SessionInfo` 自动探测远端能力：未上报的字段会使用默认值或空集合，不能由此推断远端实际运行了哪些功能。
 
-注册过程完成后，Server 通过 `client_id` 管理在线 `ClientSession`，绑定命令历史、Artifact、临时 Script Grant、PTY、Screen View、Clipboard、Monitor 和 Transfer 的会话回调；设置初始连接时间和最近活跃时间；按 `machine_id` 更新最近设备缓存与连接历史；在发布 `connection_online` SSE 前向该 Client 发送连接级 Interaction 凭证（每次连接一份，断连撤销），最后发布 `connection_online` SSE。Server 不会因为握手带来了 `machine_id` 就用它替代 `client_id` 定位执行目标：同一台机器上可能同时运行多条 Client 连接。
+注册过程完成后，Server 通过 `client_id` 管理在线 `ClientSession`，绑定命令历史、Artifact、Client Session Token、PTY、Screen View、Clipboard、Monitor 和 Transfer 的会话回调；设置初始连接时间和最近活跃时间；按 `machine_id` 更新最近设备缓存与连接历史；在发布 `connection_online` SSE 前向该 Client 发送连接期 Client Session Token（每次连接一份，断连撤销），最后发布 `connection_online` SSE。Server 不会因为握手带来了 `machine_id` 就用它替代 `client_id` 定位执行目标：同一台机器上可能同时运行多条 Client 连接。
 
 对外查询时，**完整会话信息、设备列表摘要和专用能力 API 并不是同一份 JSON**：
 

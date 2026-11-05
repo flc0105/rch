@@ -1,6 +1,6 @@
 """Script SDK: 按 Script Library 名称读取并在当前 Client 内同步执行子脚本。
 
-子脚本沿用调用者的临时 Script Grant，不会自动获得新增权限。
+子脚本使用当前连接的 Client Session Token。
 """
 import contextlib
 import io
@@ -57,14 +57,13 @@ def _valid_name(name: str) -> str:
 def run(name: str, params: dict | None = None, *, timeout: int = 30) -> ScriptResult:
     """下载 Script Library 脚本并同步执行，返回 stdout/stderr/状态。
 
-    调用方需在 SCRIPT_METADATA['api_grants'] 中声明 'scripts:read'。
-    仅在当前 Client 执行，不派发另一条 Server command，不创建新 grant。
+    仅在当前 Client 执行，不派发另一条 Server command。
     """
     script_name = _valid_name(name)
     if params is not None and not isinstance(params, dict):
         raise ValueError('params must be a dict')
-    if not context.get_script_grant_token():
-        raise ScriptSdkScriptsError('scripts.run requires SCRIPT_METADATA api_grants: ["scripts:read"]')
+    if not context.get_client_session_token():
+        raise ScriptSdkScriptsError('A connected Client session is required to run scripts')
     active = _active_scripts.get()
     if script_name == context.script_name() or script_name in active:
         raise ScriptSdkScriptsError(f'Recursive script invocation: {script_name}')

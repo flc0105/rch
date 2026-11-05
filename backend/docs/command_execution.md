@@ -82,7 +82,7 @@ WebTaskRunner 消费执行事件
 |---|---|---|---|
 | `client_id` | Client 运行实例启动时 | 目标 Client 实例 | 定位当前 Socket 会话与前台执行槽 |
 | `task_id` | Server 接受 Web Task 时 | 一次 Web 提交 | 取消 API、Web 活动状态、WebSocket 关联 |
-| `command_id` | 真正下发 Client 消息时 | 该 Socket 会话上的一条命令消息 | 匹配 `result`、`cancel_ack`、取消目标及 Script Grant |
+| `command_id` | 真正下发 Client 消息时 | 该 Socket 会话上的一条命令消息 | 匹配 `result`、`cancel_ack`、取消目标及 Client Session Token |
 | `history_entry_id` | 满足记录策略的执行开始时 | 一条持久化执行历史 | SQLite 输出记录、状态、回放与 Artifact 关联 |
 | `tab_id` | 浏览器标签页上下文建立时 | 发起操作的浏览器标签页 | 定向投递 `command_result` / `command_complete` |
 
@@ -104,7 +104,7 @@ WebTaskRunner 消费执行事件
 - **普通 Client 命令**：在目标 Client 的命令注册体系中解释，不等同于默认交给系统 Shell；显式的 Shell-like 命令另有解析和执行约束。
 - **Alias**：先根据机器平台等上下文将用户输入展开为真实执行计划，但执行历史通常保留原始用户输入；可输出展开提示。
 - **ACMD**：按命名参数解析，将参数字典通过协议的 `extra` 提交给 Client 的结构化命令处理器。
-- **Script**：Server 可以为 Script 组装额外执行参数及最小权限的 Script Grant，再通过对应的远程执行类型下发；Web Dialog 与 Terminal 输出走同一个 Task 生命周期。
+- **Script**：Server 可以为 Script 组装额外执行参数及最小权限的 Client Session Token，再通过对应的远程执行类型下发；Web Dialog 与 Terminal 输出走同一个 Task 生命周期。
 
 在代码层面，执行器先给出 `(status, result)` 迭代输出，流水线再转换为 `CommandExecutionEvent`：`started`、`progress`、`chunk`、`error`、`cancelled`、`completed`。结构化 `result` 可以自带 `event_type`，但普通 `(status, text)` 也可进入统一事件流。`status=0` 通常生成错误事件，其他状态生成普通输出块。
 
@@ -139,7 +139,7 @@ Web 首次选中设备、切换设备、WebSocket 重连和设备重新上线时
 
 ## 5. Socket 结果如何抵达 Web 并形成最终状态
 
-远程命令通过 `ClientSessionCommandChannel.send_command()` 构造 `type/id/text` 和必要的 `extra`，将它发送给 Client。Script 若声明受保护的 Server API Scope，可在 `extra` 中携带与本次 `command_id` 绑定的短期 Grant；Server 按 Script Metadata 和既有策略签发。普通 Client 命令及 ACMD 不再逐命令签发 Interaction Grant：Client 在连接建立时收到会话凭证，发起交互时 Server 核验当前 Web Task 和命令身份。
+远程命令通过 `ClientSessionCommandChannel.send_command()` 构造 `type/id/text` 和必要的 `extra`，将它发送给 Client。Client 连接注册时获得一枚 Client Session Token，普通命令、ACMD、Script 和 Job 统一使用这枚凭证访问中央白名单内的 HTTP API，不按单次执行签发凭证或声明 API Scope。交互请求额外核对当前 Web Task 和命令身份。
 
 收到 Client 返回的 `result` 时，Server 先更新相关工作目录，再交给结果分发器。只有 `id` 与当前队首等待的 `command_id` 匹配，才将 `(status, text, eof)` 投入对应的执行结果队列；正常输出因此按照该等待流逐块消费，直到终止标记 `eof`。不匹配的结果会落入独立的未预期消息处理路径，不能简单并入当前 Terminal 命令的输出。
 
@@ -183,7 +183,7 @@ Client 的执行上下文决定是否能取消：对于不支持取消的策略�
 
 **历史条目在任务提交阶段按策略创建，而非完成后无条件补写。** 集中的 `CommandHistoryRecordPolicy` 判断应否记录，避免把 Web 高频文件浏览、部分进程控制、Job 控制、上传、结构化 JSON 任务等大量操作污染用户命令历史。用户手动输入的普通命令与符合回放条件的执行通常会记录；Script 等其他模块不一定创建这一类历史条目。规则应在同一策略入口扩展，而不是在每个按钮里各写一套判断。
 
-对允许记录的执行，SQLite Entry 从 `running` 开始，连续输出追加 `status/text/eof` 等记录，并更新行数、字符数、截断标记。持久化输出有数量和字符上限，因此**实时 WebSocket 中看到的全部输出不保证永久完整保留在历史中**。最后更新 Entry 的成功/错误状态、结束时间及最终工作目录。`command_id → history_entry_id` 映射还允许关联命令产生的 Artifact；当等待流结束时，对应映射和按命令授予的临时 Script Grant 会清理。
+对允许记录的执行，SQLite Entry 从 `running` 开始，连续输出追加 `status/text/eof` 等记录，并更新行数、字符数、截断标记。持久化输出有数量和字符上限，因此**实时 WebSocket 中看到的全部输出不保证永久完整保留在历史中**。最后更新 Entry 的成功/错误状态、结束时间及最终工作目录。`command_id → history_entry_id` 映射还允许关联命令产生的 Artifact；当等待流结束时，对应映射和按命令授予的临时 Client Session Token 会清理。
 
 Command History 与 Web Task 终态存在一个语义差别：历史的结束状态主要是 `success/error`，Web Task 可以进一步显示 `cancelled`。因此查询历史不能直接等价还原 Web 的每一项任务状态和取消 ACK。
 

@@ -14,7 +14,6 @@ from core.utils.formatting import format_dict
 from core.utils.parsing import scan_args
 from core.utils.script_metadata import read_script_metadata_from_file
 from core.platform.catalog_visibility import visible_on_platform
-from server.application.auth.script_grant_service import SCRIPT_GRANT_REQUEST_KEY
 from server.application.command.command_execution_event import CommandExecutionEvent
 from server.application.history.quick_history import QuickHistoryRecordPolicy
 from server.config.config import SCRIPT_PATH
@@ -212,9 +211,6 @@ class ScriptBuiltinSupport:
 
         script_extra = dict(params)
         script_extra['__script_name__'] = script_name
-        grant_request = payload.get('script_grant_request')
-        if isinstance(grant_request, dict) and grant_request:
-            script_extra[SCRIPT_GRANT_REQUEST_KEY] = grant_request
 
         script_path = self._resolve_script_path(script_name)
         plan_executor = self.plan_executor_factory()

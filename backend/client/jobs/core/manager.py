@@ -130,6 +130,7 @@ class JobManager:
             'job_name': job_instance.job_name,
             'job_key': job_instance.job_key,
             'execution_mode': job_instance.execution_mode,
+            'client_session_token': str(getattr(self.socket, 'client_session_token', '') or ''),
         }
 
     def is_running(self, job_name: str) -> bool:
@@ -305,6 +306,9 @@ class JobManager:
         env = os.environ.copy()
         existing_pythonpath = str(env.get('PYTHONPATH') or '').strip()
         env['PYTHONPATH'] = backend_root + (os.pathsep + existing_pythonpath if existing_pythonpath else '')
+        # Pass the active connection credential only in the child process environment,
+        # not the on-disk Job context JSON file.
+        env['RCH_CHILD_SESSION_TOKEN'] = str(getattr(self.socket, 'client_session_token', '') or '')
 
         popen_kwargs = {
             'stdin': subprocess.PIPE,

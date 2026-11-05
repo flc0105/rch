@@ -4,8 +4,6 @@ from urllib.parse import quote
 from client.runtime.sdk import context
 
 
-WORKSPACE_READ_GRANT = 'workspace:read'
-
 
 class ScriptSdkWorkspaceError(RuntimeError):
     """Script SDK workspace 统一异常。"""
@@ -14,13 +12,6 @@ class ScriptSdkWorkspaceError(RuntimeError):
 
 def _safe_text(value) -> str:
     return '' if value is None else str(value).strip()
-
-
-def _missing_grant_message() -> str:
-    return (
-        f'Workspace access requires script grant: {WORKSPACE_READ_GRANT}. '
-        f'Add SCRIPT_METADATA["api_grants"] = ["{WORKSPACE_READ_GRANT}"] to this script.'
-    )
 
 
 def _current_client_id() -> str:
@@ -41,7 +32,7 @@ def _request_workspace() -> dict:
     except ClientApiError as exc:
         message = str(exc) or 'Failed to read workspace'
         if message in {'Authentication required', 'Forbidden'}:
-            raise ScriptSdkWorkspaceError(_missing_grant_message()) from None
+            raise ScriptSdkWorkspaceError('Client Session Token authentication required') from None
         raise ScriptSdkWorkspaceError(message) from None
     except Exception as exc:
         raise ScriptSdkWorkspaceError(str(exc) or 'Failed to read workspace') from exc

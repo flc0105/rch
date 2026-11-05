@@ -156,6 +156,8 @@ def _start_control_reader(job_instance):
 
 
 def _build_sdk_context(job_instance) -> dict:
+    from client.http.session_auth import get_token
+
     return {
         'client_id': job_instance.client_id or '',
         'command_id': job_instance.command_id if job_instance.command_id is not None else '',
@@ -167,6 +169,7 @@ def _build_sdk_context(job_instance) -> dict:
         'job_name': job_instance.job_name,
         'job_key': job_instance.job_key,
         'execution_mode': 'subprocess',
+        'client_session_token': get_token(),
     }
 
 
@@ -177,7 +180,10 @@ def main() -> int:
 
     try:
         context = _load_context(args.context_file)
+        from client.http.session_auth import set_token
         from client.runtime.sdk.context import use_script_sdk_context
+
+        set_token(os.environ.pop('RCH_CHILD_SESSION_TOKEN', ''))
 
         job_instance = _load_job_instance(context)
         _control_thread, _stop_requested, _stop_notify = _start_control_reader(job_instance)

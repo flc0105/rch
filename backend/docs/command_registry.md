@@ -148,7 +148,7 @@ Web 通过 `GET /api/connections/{client_id}/command-candidates` 获取候选，
 
 普通 Client 命令和 ACMD 均可在当前 Web Task 中使用 Interaction Broker，使用连接建立时发放的会话凭证，不需要逐命令声明 Scope。`@confirm` 仍负责命令确认，`--no-confirm` 跳过该确认；`@desc(..., interaction=True)` 只用于 Manifest 显示提示，不参与访问权限判断。
 
-涉及 `CommandInteractions`、预览、Secret 输入、批准/拒绝时，详细使用和应答边界参阅 [Interaction Broker](interaction_broker.md)；Script 的 Metadata 和 Script SDK 授权则由 [Scripts](scripts.md) 与 [Admin Auth](admin_auth.md) 解释。**普通命令的 `api_grants` 声明并不等于任意 ACMD 或 Shell 文本都会获得同样的授权。**
+涉及 `CommandInteractions`、预览、Secret 输入、批准/拒绝时，详细使用和应答边界参阅 [Interaction Broker](interaction_broker.md)；Script SDK 的 Client API 路由由 [Client Session API](client_session_api.md) 说明；Command、ACMD 和 Script 共用 Client Session Token。
 
 取消与超时同样需要对应执行逻辑真正支持。`ShellCommandRunner` 会先应用方法上 `command_timeout` / `command_cancel_mode` 等策略元数据，再调用该方法或 Shell；中断检查点与注册的取消处理器需要由实现自身正确执行。对会读写外部文件、启动子进程或调用 HTTP 的新功能，必须验证取消发生在执行前、执行中以及失败清理阶段时的实际效果。安全敏感操作的鉴权与确认不能仅依赖命令是否出现在补全列表。
 
@@ -159,9 +159,9 @@ Web 通过 `GET /api/connections/{client_id}/command-candidates` 获取候选，
 1. **确定归属**：操作应在 Server 还是目标 Client 上执行？是普通单参数、结构化 ACMD，还是 Script？确认不会与已有 Server Builtin 或 Alias 冲突。
 2. **编写业务层**：在已有的 Domain Service 中复用文件、系统和进程能力，避免将复杂逻辑堆进命令入口；明确返回状态、异常、输出和副作用。
 3. **注册在正确平台**：普通命令检查 `@desc` 和 Mixin/平台继承链；ACMD 检查 `@argument_command`、Spec、实际平台类与 Registry。Server Builtin 检查 Handler 和对应 Support Service。
-4. **核对执行契约**：检查参数文本或结构化对象、回传状态、`command_id` 绑定、超时和取消；需要授权/交互时同时检查 Server 可信元数据及 Grant。
+4. **核对执行契约**：检查参数文本或结构化对象、回传状态、`command_id` 绑定、超时和取消；涉及 HTTP Client API 时核对 Client Session Token 和中央路由白名单；交互检查当前 Web Task。
 5. **验证发现**：在新建或重新连接的 Client 会话上查 `help`、`command_manifest`、`command-candidates`；需要参数补全才扩展 Completion Provider。
-6. **跑边界测试**：覆盖无效参数、未知命令、未支持平台、没有 Grant、取消/超时、Session 断开、重复调用；验证主线执行结果与 Web Task/History 正常关联。
+6. **跑边界测试**：覆盖无效参数、未知命令、未支持平台、无效 Client Session Token、取消/超时、Session 断开、重复调用；验证主线执行结果与 Web Task/History 正常关联。
 
 排查现象时可以按位置定位：
 

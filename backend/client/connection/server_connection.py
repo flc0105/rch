@@ -28,7 +28,7 @@ class ServerConnection(RCHSocket):
     def __init__(self, *, features=None):
         super().__init__()
         self.client_id = None
-        self.interaction_session_token = ''
+        self.client_session_token = ''
 
         self.runtime = ClientRuntime(self, features=features)
         self.pending_message_queue = queue.Queue()
@@ -55,6 +55,9 @@ class ServerConnection(RCHSocket):
 
     def mark_disconnected(self):
         self.is_connected = False
+        self.client_session_token = ''
+        from client.http.session_auth import clear_token
+        clear_token()
 
     def reset_runtime_state(self):
         try:

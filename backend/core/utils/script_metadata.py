@@ -36,6 +36,7 @@ def normalize_script_metadata(metadata: dict | None, fallback_name: str = '') ->
     if not isinstance(metadata, dict) or not metadata:
         return {}
     normalized = deepcopy(metadata)
+    normalized.pop('api_grants', None)
     fallback = str(fallback_name or '').strip()
     name = str(metadata.get('name') or fallback).strip() or fallback
     display_name = str(metadata.get('display_name') or name or fallback).strip() or name or fallback

@@ -8,39 +8,11 @@
 from client.runtime.sdk import artifact, command, context, keychains, scripts, workspace, xt
 ```
 
-如果脚本需要访问受保护的 Server API，需要在脚本顶部声明 `SCRIPT_METADATA["api_grants"]`：
-
-```python
-SCRIPT_METADATA = {
-    "display_name": "Example Script",
-    "params": [],
-    "api_grants": [
-        "artifacts:list",
-        "artifacts:download",
-        "keychains:resolve",
-    ]
-}
-```
-
-`api_grants` 只做 API URL 级授权，不做 artifact type / artifact id 等资源级校验。
-
-## Grants
-
-| Grant | API | 用途 |
-|---|---|---|
-| `artifacts:list` | `GET /api/artifacts` | 查询 artifacts |
-| `artifacts:download` | `GET /api/artifacts/<artifact_id>/download` | 下载 artifact |
-| `artifacts:raw` | `GET /api/artifacts/<artifact_id>/raw` | 读取 artifact raw 内容 |
-| `artifacts:preview` | `GET /api/artifacts/<artifact_id>/preview` | 读取 artifact preview |
-| `keychains:resolve` | `POST /api/keychains/resolve` | 查询 keychain |
-| `keychains:create` | `POST /api/keychains` | 创建 keychain |
-| `external_tools:catalog` | `GET /api/external-tools/catalog` | 查询 external tool catalog |
-| `workspace:read` | `GET /api/connections/<client_id>/pinned_paths` | 查询 pinned workspace paths |
-| `scripts:read` | `GET /api/scripts/download` | 读取 Script Library 的脚本用于当前 Client 中执行 |
+Client SDK 使用当前连接统一的 **Client Session Token** 调用允许的 Server API。无须在 `SCRIPT_METADATA` 声明权限或为单次 Script 获取临时凭证。客户端的 HTTP 方法/路径白名单统一在 [Client Session Token & Client HTTP API](client_session_api.md) 中维护。
 
 ## `context`
 
-`context` 读取当前脚本运行上下文，不需要 grant。
+`context` 读取当前脚本运行上下文，不需要额外的 HTTP 授权声明。
 
 ```python
 from client.runtime.sdk import context
@@ -89,13 +61,12 @@ context.get_arch()
 context.get_script_name()
 context.get_system_paths()
 context.get_script_context()
-context.get_script_grant()
-context.get_script_grant_token()
+context.get_client_session_token()
 ```
 
 ## `command`
 
-`command` 用于在当前 client 执行 shell 或调用已导出的 client command，不需要 grant。
+`command` 用于在当前 client 执行 shell 或调用已导出的 client command，不需要额外的 HTTP 授权声明。
 
 ```python
 from client.runtime.sdk import command
@@ -141,10 +112,6 @@ result.text
 SCRIPT_METADATA = {
     "display_name": "Artifact Example",
     "params": [],
-    "api_grants": [
-        "artifacts:list",
-        "artifacts:download",
-    ]
 }
 
 from client.runtime.sdk import artifact
@@ -167,13 +134,13 @@ print("downloaded_path =", path)
 
 常用 API：
 
-| API | Grant | 说明                |
+| API | API access | 说明                |
 |---|---|-------------------|
-| `artifact.save(path, type='files', category='script', extra=None, timeout=None)` | 当前上传入口未强制 script grant | 上传本地文件            |
-| `artifact.list(type='', machine_id='')` | `artifacts:list` | 查询 artifacts      |
-| `artifact.get(ref, type='shared_files')` | `artifacts:list` | 解析 artifact 元数据   |
+| `artifact.save(path, type='files', category='script', extra=None, timeout=None)` | 独立上传入口 | 上传本地文件            |
+| `artifact.list(type='', machine_id='')` | Client Session Token | 查询 artifacts      |
+| `artifact.get(ref, type='shared_files')` | Client Session Token | 解析 artifact 元数据   |
 | `artifact.download(ref, type='shared_files', target_path='', timeout=None)` | `artifacts:list` + `artifacts:download` | 下载 artifact       |
-| `artifact.find_by_file_name(file_name, type='', machine_id='', exact=True)` | `artifacts:list` | 按文件名查找 artifacts  |
+| `artifact.find_by_file_name(file_name, type='', machine_id='', exact=True)` | Client Session Token | 按文件名查找 artifacts  |
 
 支持的 `type`：
 
@@ -186,14 +153,13 @@ print("downloaded_path =", path)
 
 ## `scripts` — 复用 Script Library 脚本
 
-需要在调用方的 `SCRIPT_METADATA["api_grants"]` 声明 `"scripts:read"`，Server 仅允许读取脚本源代码，**不授予创建或修改脚本权限**。在当前 Client 的同一次脚本执行中同步运行子脚本，不提交第二条远程命令。
+Client 使用当前连接的 Session Token 读取 Script Library 源代码；此 SDK 调用不负责修改脚本。在当前 Client 的同一次脚本执行中同步运行子脚本，不提交第二条远程命令。
 
 ```python
 SCRIPT_METADATA = {
     "name": "macos/backup/example",
     "platforms": ["macos"],
     "params": [],
-    "api_grants": ["scripts:read"],
 }
 from client.runtime.sdk import scripts, context
 
@@ -213,20 +179,16 @@ else:
 | `ScriptResult.stdout`, `.stderr`, `.text` | 子脚本输出；可直接保存到文件 |
 | `ScriptResult.json()` | 解析 stdout 为 JSON，格式无效会抛异常 |
 
-注意：子脚本与调用方共享同一个 Client 执行上下文及临时 grant，不会按子脚本 metadata 重新签发权限。调用方需要显式声明所有期望使用的 grant。子脚本在当前进程执行，适用于可信的 Script Library 代码；不要调用不可信的脚本。该调用捕获子脚本的 stdout/stderr；父脚本可通过 `context.progress()` 输出实时进度。
+子脚本与调用方使用同一个 Client Session Token，不需要另外申请权限。子脚本在当前进程执行，适用于可信的 Script Library 代码；不要调用不可信的脚本。该调用捕获子脚本的 stdout/stderr；父脚本可通过 `context.progress()` 输出实时进度。
 
 ## `keychains`
 
-`keychains` 用于创建和读取 keychain。读取需要 `keychains:resolve`，创建需要 `keychains:create`。
+`keychains` 用于创建和读取当前机器或 Server Shared Keychains。
 
 ```python
 SCRIPT_METADATA = {
     "display_name": "Keychains Example",
     "params": [],
-    "api_grants": [
-        "keychains:create",
-        "keychains:resolve",
-    ]
 }
 
 from client.runtime.sdk import keychains
@@ -247,13 +209,13 @@ print("shared_secret =", shared_secret.getvalue())
 
 常用 API：
 
-| API | Grant | 说明 |
+| API | API access | 说明 |
 |---|---|---|
-| `keychains.create_secret(name, value='', scope='machine', note='')` | `keychains:create` | 创建 secret |
-| `keychains.create_login(name, username, password='', scope='machine', site='', note='')` | `keychains:create` | 创建 login |
-| `keychains.get_secret(name, scope='machine', machine_id='')` | `keychains:resolve` | 读取 secret |
-| `keychains.get_login(name, scope='machine', machine_id='')` | `keychains:resolve` | 读取 login |
-| `keychains.get_keychain(name, kind='', scope='machine', machine_id='')` | `keychains:resolve` | 读取 keychain 原始数据 |
+| `keychains.create_secret(name, value='', scope='machine', note='')` | Client Session Token | 创建 secret |
+| `keychains.create_login(name, username, password='', scope='machine', site='', note='')` | Client Session Token | 创建 login |
+| `keychains.get_secret(name, scope='machine', machine_id='')` | Client Session Token | 读取 secret |
+| `keychains.get_login(name, scope='machine', machine_id='')` | Client Session Token | 读取 login |
+| `keychains.get_keychain(name, kind='', scope='machine', machine_id='')` | Client Session Token | 读取 keychain 原始数据 |
 
 说明：
 
@@ -269,9 +231,6 @@ print("shared_secret =", shared_secret.getvalue())
 SCRIPT_METADATA = {
     "display_name": "External Tool Example",
     "params": [],
-    "api_grants": [
-        "external_tools:catalog",
-    ]
 }
 
 from client.runtime.sdk import xt
@@ -292,14 +251,14 @@ print("ok =", result.ok)
 
 常用 API：
 
-| API | Grant | 说明 |
+| API | API access | 说明 |
 |---|---|---|
-| `xt.tool(exec_name)` | `external_tools:catalog` | 获取 external tool handle |
-| `xt.run(exec_name, raw_args='', timeout=None, cwd='')` | `external_tools:catalog` | 执行 external tool |
-| `xt.is_installed(exec_name)` | `external_tools:catalog` | 判断是否已安装 |
-| `xt.which(exec_name)` | `external_tools:catalog` | 获取可执行文件路径 |
-| `xt.<exec_name>(raw_args='', timeout=None, cwd='')` | `external_tools:catalog` | 快捷执行，例如 `xt.ffmpeg('-version')` |
-| `xt.<exec_name>.is_installed` | `external_tools:catalog` | 快捷判断安装状态 |
+| `xt.tool(exec_name)` | Client Session Token | 获取 external tool handle |
+| `xt.run(exec_name, raw_args='', timeout=None, cwd='')` | Client Session Token | 执行 external tool |
+| `xt.is_installed(exec_name)` | Client Session Token | 判断是否已安装 |
+| `xt.which(exec_name)` | Client Session Token | 获取可执行文件路径 |
+| `xt.<exec_name>(raw_args='', timeout=None, cwd='')` | Client Session Token | 快捷执行，例如 `xt.ffmpeg('-version')` |
+| `xt.<exec_name>.is_installed` | Client Session Token | 快捷判断安装状态 |
 
 返回对象：
 
@@ -324,7 +283,7 @@ ScriptSdkExternalToolError: External tool is not installed for current client: f
 
 `workspace` 分两类能力：
 
-1. `system_paths`：来自 client 握手上下文，不需要 grant。
+1. `system_paths`：来自 client 握手上下文，不需要额外的 HTTP 授权声明。
 2. pinned paths：来自 Server API，需要 `workspace:read`。
 
 ```python
@@ -339,7 +298,7 @@ print("system_paths =", workspace.system_paths())
 
 系统路径 API：
 
-| API | Grant | 说明 |
+| API | API access | 说明 |
 |---|---|---|
 | `workspace.system_paths()` | 不需要 | 返回当前 client 系统路径 |
 | `workspace.root()` | 不需要 | root 路径 |
@@ -357,9 +316,6 @@ pinned paths API：
 SCRIPT_METADATA = {
     "display_name": "Workspace Example",
     "params": [],
-    "api_grants": [
-        "workspace:read",
-    ]
 }
 
 from client.runtime.sdk import workspace
@@ -372,12 +328,12 @@ print("paths =", paths)
 print("pics =", workspace.path("pics"))
 ```
 
-| API | Grant | 说明 |
+| API | API access | 说明 |
 |---|---|---|
-| `workspace.list()` | `workspace:read` | 返回当前 client 的 pinned paths 列表 |
-| `workspace.as_dict()` | `workspace:read` | 返回 `{display_name: path}` |
-| `workspace.get(display_name, default='')` | `workspace:read` | 按 display name 获取 pinned path |
-| `workspace.path(display_name, default='')` | `workspace:read` | `workspace.get()` 的别名 |
+| `workspace.list()` | Client Session Token | 返回当前 client 的 pinned paths 列表 |
+| `workspace.as_dict()` | Client Session Token | 返回 `{display_name: path}` |
+| `workspace.get(display_name, default='')` | Client Session Token | 按 display name 获取 pinned path |
+| `workspace.path(display_name, default='')` | Client Session Token | `workspace.get()` 的别名 |
 
 ## 完整示例
 
@@ -385,11 +341,6 @@ print("pics =", workspace.path("pics"))
 SCRIPT_METADATA = {
     "display_name": "Script SDK Smoke Test",
     "params": [],
-    "api_grants": [
-        "external_tools:catalog",
-        "workspace:read",
-        "keychains:resolve",
-    ]
 }
 
 from client.runtime.sdk import context, workspace, xt, keychains
@@ -410,7 +361,7 @@ print("secret =", secret.getvalue())
 
 ## Execution interaction (Web Script, inproc)
 
-A Script can opt in to browser-based confirmation and text input. Declare `api_grants: ["interactions:request"]` in `SCRIPT_METADATA` (alongside any other needed grants). This feature requires a Web-launched Client script with the `inproc` Python execution strategy; it is **not** shell stdin and does not intercept other commands.
+Client scripts can request browser confirmation and text input through the active Web foreground task. No per-script API permission is needed; the Client Session Token authenticates the HTTP request. This is not shell stdin.
 
 ```python
 SCRIPT_METADATA = {
@@ -418,7 +369,6 @@ SCRIPT_METADATA = {
     "display_name": "Interaction Example",
     "platforms": ["mac"],
     "params": [],
-    "api_grants": ["interactions:request"],
 }
 
 if not context.confirm("Perform the example operation?", timeout=90):
@@ -434,7 +384,7 @@ Ordinary Client commands can invoke the same Interaction Broker through `Command
 
 ### Execution interactions: Select and Secret
 
-Scripts that opt into `"api_grants": ["interactions:request"]` may use:
+Scripts running in a Web foreground task may use:
 
 ```python
 mode = context.select('Choose mode', ['Preview', 'Execute'])
@@ -450,7 +400,7 @@ execution remains unchanged unless the new APIs are explicitly called.
 
 ### Structured Preview → Approval
 
-Use `context.approve_preview()` for **structured execution plans** rather than adding a table to a text-only `context.confirm()` prompt. This is opt-in and requires `SCRIPT_METADATA["api_grants"]` to include `"interactions:request"` like the existing input functions. It displays an Element Plus summary, table and collapsible details; only explicit approval returns `True`.
+Use `context.approve_preview()` for **structured execution plans** rather than adding a table to a text-only `context.confirm()` prompt. It requires an active Web foreground task and Client session. It displays an Element Plus summary, table and collapsible details; only explicit approval returns `True`.
 
 ```python
 from client.runtime.sdk import context
@@ -475,7 +425,7 @@ if not context.approve_preview('Execute this plan?', plan, title='Backup preview
 
 Authorized Client commands use `CommandInteractions(self).approve_preview(message, plan, title=...)` with the same data format. The Script `mac/recon/personal_mac_backup_preview` provides a real preview use case.
 
-Ordinary Client commands and ACMD use one connection-bound interaction credential issued after the Client handshake; no per-command `api_grants` declaration or Script Grant is needed. Scripts retain their own `SCRIPT_METADATA.api_grants` and Script Grant lifecycle.
+Client commands, ACMD, scripts and jobs use the same Client Session Token. Interaction also checks the current Web foreground task.
 
 Presentation constraints: `summary` up to 16 label/value entries; `columns` up to 8 `{key,label}` pairs; `rows` up to 100 dictionaries keyed by declared column keys; `details` up to 16 `{title,content}` entries. All values are plain strings, not HTML. Only the preview UI changes: existing `confirm`, `ask`, `select`, and `secret` remain unchanged. Reject/timeout returns `False`. A preview approves a request, **not** a persistent server-side plan: the caller must verify its own actual targets before executing.
 
@@ -551,8 +501,7 @@ Process Manager UI keeps its internal `kill_process <pid>` path):
   `--json` returns structured rows without actions. Add `--with-actions`
   to include optional `_actions` entries for `acmd kill` in JSON output.
 
-The Server issues task-bound `interactions:request` grants only for trusted ACMD
-handlers declaring them, and only for interactive calls. Process identity and
+Client commands use the existing Client Session Token when invoking an interactive Web task. Process identity and
 port ownership are verified again before signalling, including in `--no-confirm`.
 The public `kill_proc`, `kill_port`, `pkill` and `pgrep` commands are removed.
 The Web UI's `kill_process` handler remains unchanged.

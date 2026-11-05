@@ -13,9 +13,10 @@ class CommandInteractions:
 
     def request(self, kind, message, *, title='', options=None, preview=None, timeout=60):
         from client.http.client_api import ClientApiClient
+        from core.protocol.client_api_auth import CLIENT_SESSION_TOKEN_HEADER
 
         socket = getattr(self.owner, 'socket', None)
-        token = str(getattr(socket, 'interaction_session_token', '') or '').strip()
+        token = str(getattr(socket, 'client_session_token', '') or '').strip()
         command_id = getattr(self.owner, 'command_id', None)
         if not token or type(command_id) is not int:
             raise CommandInteractionError('An active Client command connection is required for interaction')
@@ -23,7 +24,7 @@ class CommandInteractions:
         self.owner._checkpoint(fallback_timeout=240)
         result = ClientApiClient().post_data(
             '/api/interactions/client/request', timeout=timeout + 15,
-            headers={'X-Client-Interaction-Token': token},
+            headers={CLIENT_SESSION_TOKEN_HEADER: token},
             json={'command_id': command_id, 'kind': kind, 'title': title, 'message': message,
                   'options': options if options is not None else [],
                   'preview': preview, 'timeout_seconds': timeout},

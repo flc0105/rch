@@ -1,4 +1,4 @@
-"""Opt-in Web interaction for Client inproc scripts; never uses shell stdin."""
+"""Web interaction for Client scripts; never uses shell stdin."""
 from client.http.client_api import ClientApiClient
 from client.runtime.sdk import context
 
@@ -8,16 +8,15 @@ class ScriptSdkInteractionError(RuntimeError):
 
 
 def _request(kind, message, *, title='', timeout=90, placeholder='', options=None, preview=None):
-    if not context.get_script_grant_token():
-        raise ScriptSdkInteractionError(
-            'Interaction requires SCRIPT_METADATA api_grants: ["interactions:request"]'
-        )
+    if not context.get_client_session_token():
+        raise ScriptSdkInteractionError('A connected Client session is required for interaction')
     if context.get_command_id() is None:
         raise ScriptSdkInteractionError('Interaction requires a running Client script command')
     timeout = max(1, min(int(timeout), 180))
     data = ClientApiClient().post_data(
         '/api/interactions/client/request',
         json={'kind': kind, 'title': str(title), 'message': str(message),
+              'command_id': context.get_command_id(),
               'placeholder': str(placeholder), 'timeout_seconds': timeout,
               'options': options if options is not None else [], 'preview': preview},
         timeout=timeout + 15,

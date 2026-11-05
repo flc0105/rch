@@ -88,15 +88,13 @@ class CommandExecutionMixin:
 
     def _merge_script_kwargs_with_context(self, kwargs=None):
         merged = dict(kwargs or {})
-        script_grant = merged.pop('__script_grant__', None)
         script_name = merged.pop('__script_name__', None)
-        merged.pop('__script_grant_request__', None)
 
         context = self._build_script_context()
         if script_name:
             context['script_name'] = str(script_name or '').strip()
-        if isinstance(script_grant, dict) and script_grant:
-            context['script_grant'] = script_grant
+        socket = getattr(self, 'socket', None)
+        context['client_session_token'] = str(getattr(socket, 'client_session_token', '') or '')
         merged['__context__'] = context
         return merged
 

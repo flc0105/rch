@@ -114,7 +114,7 @@ SDK 还提供 `artifact.list(type=..., machine_id=...)` 和 `artifact.find_by_fi
 
 SDK 的默认值有意不同：`save()` 默认上传到 `files`，`get()` / `download()` 默认从 `shared_files` 查找。因此如果保存到 `files`，随后就需要明确传入 `type="files"`。如果无特殊 Client 目录解析器，下载目标路径会依据任务工作目录解析；传入以分隔符结尾的目录，或者传入现存目录时，SDK 会把文件名追加到该目录。
 
-SDK 读取 Artifact 列表、下载内容时使用 Server API；权限应符合当前调用上下文的 Web 认证或 Script Grant 策略。Artifact ID 是定位符，不是自动获得所有文件访问权限的临时签名 URL。
+SDK 读取 Artifact 列表、下载内容时使用 Server API；权限应符合当前调用上下文的 Web 认证或 Client Session Token 策略。Artifact ID 是定位符，不是自动获得所有文件访问权限的临时签名 URL。
 
 ## 共享文件与远程任务的衔接
 
@@ -167,4 +167,4 @@ Web API 以 `/api/artifacts` 为主入口。以下是接口协议的边界，用
 
 上传文件的兼容入口 `POST /api/files/upload` 同时存在于基础 Web 服务（默认 8085）和专用传输服务（默认 8086）。其 multipart 表单包含 `file`，可携带 `artifact_type`、`category`、`client_id`、`source_command_id`、Job 来源信息及 JSON `extra`。接口完成后返回注册的 Artifact 描述，浏览器再通过正式 Artifact URL 访问它。**选择 8086 并不自动意味着 Client 使用可取消传输策略，也不保证 Transfer Center 会创建进度记录。**
 
-Artifact 管理路由通常由 Web Session 或管理员 API Token 保护；Script Grant 对列表、下载、Raw 和 Preview 等读取请求有单独的 Scope 授权规则。`/api/files/upload` 是专门标记的匿名入口，8086 文件上传服务也不是完整复用基础 Web 的会话认证中间件；因此不要将 `artifact_id`、上传路径或可下载 URL 理解为已包含完整身份校验的能力。对外暴露这些接口时，应同时考虑网络入口、管理员凭据和实际调用方权限。认证方式详见 [Administrator Authentication](admin_auth.md)。
+Artifact 管理路由通常由 Web Session 或管理员 API Token 保护；Client Session Token 对列表、下载、Raw 和 Preview 等读取请求有单独的 Scope 授权规则。`/api/files/upload` 是专门标记的匿名入口，8086 文件上传服务也不是完整复用基础 Web 的会话认证中间件；因此不要将 `artifact_id`、上传路径或可下载 URL 理解为已包含完整身份校验的能力。对外暴露这些接口时，应同时考虑网络入口、管理员凭据和实际调用方权限。认证方式详见 [Administrator Authentication](admin_auth.md)。

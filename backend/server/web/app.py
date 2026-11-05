@@ -83,7 +83,7 @@ def create_app(server_instance):
 
     responder = WebApiResponder()
     auth_guard = WebAuthGuard(
-        script_grant_service=getattr(server_instance.web_service, 'script_grant_service', None),
+        client_session_token_service=getattr(server_instance.web_service, 'client_session_token_service', None),
     )
 
     app.register_blueprint(create_auth_blueprint())

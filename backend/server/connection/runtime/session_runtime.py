@@ -143,13 +143,7 @@ class ClientSessionRuntime:
             except Exception:
                 pass
 
-            try:
-                script_grant_service = getattr(connection.context, 'script_grant_service', None)
-                if script_grant_service is not None:
-                    client_id = getattr(connection.session_info, 'client_id', '') or ''
-                    script_grant_service.revoke_by_command(client_id=client_id, command_id=command_id)
-            except Exception:
-                pass
+
 
 
 

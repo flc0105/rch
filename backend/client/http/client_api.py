@@ -4,18 +4,21 @@ from urllib.parse import quote
 import requests
 
 from client.config.config import FILE_TRANSFER_BASE_URL, UPLOAD_BASE_URL
-# from client.runtime.sdk.context import get_script_grant_token
+from client.http.session_auth import get_token
+from core.protocol.client_api_auth import CLIENT_SESSION_TOKEN_HEADER
 
 
-def _get_script_grant_token() -> str:
-    """
-    延迟读取 Script SDK 上下文，避免 client_api 与 sdk.artifact 形成初始化循环。
-    """
+def _get_client_session_token():
+    # Subprocess Python scripts receive token through their SDK context.
     try:
-        from client.runtime.sdk.context import get_script_grant_token
-        return get_script_grant_token()
+        from client.runtime.sdk.context import get_client_session_token
+        token = get_client_session_token()
+        if token:
+            return token
     except ImportError:
-        return ''
+        pass
+    return get_token()
+
 
 class ClientApiError(RuntimeError):
     """
@@ -65,17 +68,17 @@ class ClientApiClient:
     def normalize_file_transfer_url(self, path_or_url: str) -> str:
         return self.build_file_transfer_url(path_or_url)
 
-    def _should_attach_script_grant(self, url: str) -> bool:
+    def _should_attach_session_token(self, url: str) -> bool:
         base_url = (self.base_url or '').rstrip('/')
         return bool(base_url and (url == base_url or url.startswith(base_url + '/')))
 
     def _build_headers(self, url: str, headers=None) -> dict:
         merged = dict(headers or {})
-        token = _get_script_grant_token()
-        if token and self._should_attach_script_grant(url):
-            has_header = any(str(key).lower() == 'x-script-grant-token' for key in merged.keys())
+        token = _get_client_session_token()
+        if token and self._should_attach_session_token(url):
+            has_header = any(str(key).lower() == CLIENT_SESSION_TOKEN_HEADER.lower() for key in merged.keys())
             if not has_header:
-                merged['X-Script-Grant-Token'] = token
+                merged[CLIENT_SESSION_TOKEN_HEADER] = token
         return merged
 
     def build_file_upload_url(self) -> str:

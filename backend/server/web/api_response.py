@@ -30,6 +30,8 @@ class WebApiResponder:
             return self.fail(str(error), 400)
         if isinstance(error, FileNotFoundError):
             return self.fail('file not found', 404)
+        if isinstance(error, PermissionError):
+            return self.fail('Forbidden', 403)
         return self.fail(str(error), 500)
 
     def json_endpoint(self, func, *, default_error_status=400):
@@ -43,6 +45,8 @@ class WebApiResponder:
             return self.fail(e, 400)
         except FileNotFoundError as e:
             return self.fail(e, 404)
+        except PermissionError:
+            return self.fail('Forbidden', 403)
         except Exception as e:
             logger.error(f'Web API error: {e}', exc_info=True)
             traceback.print_exc()

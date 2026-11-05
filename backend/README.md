@@ -1378,7 +1378,7 @@ help
 
 ## Client command confirmation decorator
 
-Commands exported with `@desc` may also use `@confirm` to request an Interaction Broker confirmation **before** the method body is called. The annotation works in either decorator order, does not require editing the method body, and automatically declares the command-bound `interactions:request` grant. For example:
+Commands exported with `@desc` may also use `@confirm` to request an Interaction Broker confirmation **before** the method body is called. The annotation works in either decorator order, does not require editing the method body, and uses the current Client Session Token. For example:
 
 ```python
 from core.utils.decorator import confirm, desc
@@ -1389,7 +1389,7 @@ def sensitive_action(self, arg=''):
     return 1, 'Action completed'
 ```
 
-If the user rejects the prompt, it expires, or the Broker is unavailable, the method **does not execute** and the command returns a failed/cancelled result. Commands without `@confirm` behave as before. This first implementation uses the existing Client-originated Interaction Broker request, not Server-side pre-execution approval. The prompt requires an active Web task/interaction grant; direct calls without that context fail closed. The annotation must exist in the **Server-deployed trusted command source** as well as the Client; restart Server and Client after adding it so Server can automatically attach the grant. Elevated `run_elevated` and `spawn_elevated_instance` on macOS/Windows require Broker confirmation by default; `--no-confirm` on these methods bypasses only Broker (including for headless Server CLI) and does not suppress the operating system privilege prompt. `relaunch_instance` requires Client Interaction Broker confirmation; `kill_instance` currently has no active `@confirm` decorator and does not show that confirmation.
+If the user rejects the prompt, it expires, or the Broker is unavailable, the method **does not execute** and the command returns a failed/cancelled result. Commands without `@confirm` behave as before. This first implementation uses the existing Client-originated Interaction Broker request, not Server-side pre-execution approval. The prompt requires an active Web task and Client Session Token; direct calls without that context fail closed. Elevated `run_elevated` and `spawn_elevated_instance` on macOS/Windows require Broker confirmation by default; `--no-confirm` on these methods bypasses only Broker (including for headless Server CLI) and does not suppress the operating system privilege prompt. `relaunch_instance` requires Client Interaction Broker confirmation; `kill_instance` currently has no active `@confirm` decorator and does not show that confirmation.
 
 ## User-facing Client command reference
 
@@ -2244,7 +2244,7 @@ result = xt.ffmpeg("-version")
 result = xt.run("ffmpeg", "-version")
 ```
 
-This requires the `external_tools:catalog` Script grant and executes on the current Client.
+This uses the connected Client Session Token and executes on the current Client.
 
 ---
 
@@ -2273,7 +2273,7 @@ os_type
 os_alias
 os_ver
 system_paths
-script grant/token
+client_session_token
 ```
 
 ### `command`
@@ -2326,25 +2326,9 @@ Provides:
 - machine-scoped pinned paths from Server
 - root/home/desktop/documents/downloads/temp/executable/iCloud helpers
 
-### Temporary Script grants
+### Client Session Token
 
-Scripts can declare API grants in:
-
-```python
-SCRIPT_METADATA["api_grants"]
-```
-
-Current grant policy includes controlled access to:
-
-- Artifact list/download/raw/preview
-- Keychain resolve/create
-- External Tool catalog
-- Workspace/pinned paths
-
-Temporary grants support scope restrictions, TTL, max-use count, and Client/command binding.
-
----
-
+Client、Command、Script 和 Job 使用同一枚连接期 Client Session Token 调用允许的 Server HTTP API。Server 仅接受 `ClientApiPolicy.ROUTES` 明确列入的方法/路径，客户端统一使用 `X-Client-Session-Token`；管理员 API Token 和登录会话独立。详见 [Client Session API](docs/client_session_api.md)。
 
 ## Jobs: current Web/runtime feature set
 
@@ -2390,8 +2374,8 @@ Current features include:
 - remote file/folder picker integration
 - structured `run_script` payload execution
 - Script SDK context injection
-- temporary Script API grant/token generation
-- grant scope/TTL/max-use/client/command binding
+- one Client Session Token for Client commands, Scripts, and Background Jobs
+- centrally configured Client HTTP API allowlist
 - Artifact/Keychain/External Tool/Workspace SDK integration
 
 `exec <script.py>` remains a lighter server built-in path, while `run_script` is the metadata/structured execution path used by the Web Script Library.
@@ -2450,7 +2434,7 @@ The Frontend includes:
 - secret reveal workflow
 - Password Generator dialog
 
-The Script SDK can consume the same store through grant-controlled APIs.
+The Script SDK can access the current Client machine and Server Shared Keychains with its Client Session Token.
 
 ---
 
@@ -2762,22 +2746,9 @@ The Client has its own external runtime-config JSON outside bundled source as do
 ---
 
 
-## Authentication and temporary grants addendum
+## Authentication and Client APIs
 
-In addition to the session login and static admin API token documented above, Script execution has a temporary grant mechanism.
-
-A temporary Script grant can constrain:
-
-- allowed API scopes
-- TTL / expiration
-- maximum uses
-- target Client
-- source command
-
-This lets a Script call selected Server APIs without handing the Script the unrestricted admin token.
-
-The current grant model is URL/scope-oriented rather than a full resource-level RBAC system.
-
+Web 管理员登录 Session 与 Admin API Token 保留完整的管理接口权限。Client Session Token 在 Client 连接注册时发放、断开时失效，供该 Client 的命令、脚本与 SDK 调用明确开放的 Client API；业务请求无需额外声明或申请 Scope。允许的 HTTP 方法和路径由 [Client API Policy](docs/client_session_api.md) 集中维护。
 
 ## Web UI modules currently present
 

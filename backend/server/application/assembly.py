@@ -1,7 +1,7 @@
 from server.application.agent.agent_bootstrap_script_service import AgentBootstrapScriptService
 from server.application.agent.agent_builder import AgentBuilder
 from server.application.agent.agent_output_registry import AgentOutputRegistry
-from server.application.auth.script_grant_service import ScriptGrantService
+from server.application.auth.client_session_token_service import ClientSessionTokenService
 from server.application.artifact.artifact_service import WebArtifactService
 from server.application.artifact.remote_file_service import WebRemoteFileService
 from server.application.history.transfer_activity_recorder import TransferActivityRecorder
@@ -110,7 +110,7 @@ class ServerApplicationAssembly:
         # ------------------ domain/application services ------------------ #
         self.artifact_service = WebArtifactService()
         self.file_service = self.artifact_service
-        self.script_grant_service = ScriptGrantService()
+        self.client_session_token_service = ClientSessionTokenService()
 
         self.remote_execution_service = RemoteExecutionService(
             self.server,
@@ -147,7 +147,7 @@ class ServerApplicationAssembly:
             artifact_service=self.artifact_service,
             recent_device_store=self.recent_device_store,
             connection_history_store=self.connection_history_store,
-            script_grant_service=self.script_grant_service,
+            client_session_token_service=self.client_session_token_service,
         )
 
         self.task_runner = WebTaskRunner(

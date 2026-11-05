@@ -424,7 +424,7 @@ if ffmpeg.is_installed:
 
 SDK 还提供 `xt.run("ffmpeg", "-version")` 和 `xt.ffmpeg("-version")` 等入口，并可通过 `which()`、`status()` 获取 Exec 信息。运行结果包含 `returncode`、`stdout`、`stderr`、`command`，`ok` 表示成功。
 
-Script 使用这项能力须在 Metadata 的 `api_grants` 中声明 `external_tools:catalog`，并使用支持 Client 内部服务的 **In-process Python 执行模式**。SDK 会向 Server 请求 Catalog 定义，但安装状态由当前 Client 的文件系统判断；它不能绕过 Web/Client 权限凭空安装不存在的工具。
+Script 使用这项能力依靠当前 Client Session Token，并使用支持 Client 内部服务的 **In-process Python 执行模式**。SDK 会向 Server 请求 Catalog 定义，但安装状态由当前 Client 的文件系统判断；它不能绕过 Web/Client 权限凭空安装不存在的工具。
 
 ## 状态查询、日志与事件分发
 
@@ -504,7 +504,7 @@ Server 会在安装成功/失败、卸载成功/失败，以及 Daemon 启动、
 | Clear Logs / Remove 不允许操作 | 必须先停止目标实例；二者也不是卸载 Package |
 | Oneshot 返回 Failed | 查看 `returncode`、`timed_out`、`stdout`、`stderr` 和超时设置 |
 | Preset 无法加载或运行 | Metadata 参数名称可能变化；Preset 不保证永远符合当前类型与范围要求 |
-| Script SDK 提示权限或执行模式错误 | 确认 `external_tools:catalog` Grant 和 In-process Python 模式 |
+| Script SDK 提示权限或执行模式错误 | 确认 Client Session Token、Client API 白名单和当前 Python 执行模式 |
 | `xt` 找不到或出现歧义 | 确认 Exec 已安装，且目标平台同名 Exec 不产生多个候选 |
 
 几个行为边界应始终区分：

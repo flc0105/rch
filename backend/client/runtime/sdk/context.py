@@ -229,13 +229,13 @@ def select_preview_rows(message: str, preview: dict, *, title='Review execution 
     return request_rows(message, preview, title=title, timeout=timeout)
 
 
-def get_script_grant() -> dict:
-    value = get_current_context().get('script_grant', {})
-    return dict(value) if isinstance(value, dict) else {}
-
-
-def get_script_grant_token() -> str:
-    return _safe_text(get_script_grant().get('token'))
+def get_client_session_token() -> str:
+    """Connection-bound HTTP API credential, if a Client session is active."""
+    token = _safe_text(get_current_context().get('client_session_token', ''))
+    if token:
+        return token
+    owner = get_command_owner()
+    return _safe_text(getattr(getattr(owner, 'socket', None), 'client_session_token', ''))
 
 
 @contextmanager

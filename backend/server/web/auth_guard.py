@@ -1,7 +1,7 @@
 import hmac
 from functools import wraps
 
-from flask import current_app, request, session
+from flask import current_app, g, request, session
 
 from server.config import config as server_config
 
@@ -36,8 +36,8 @@ class WebAuthGuard:
     SESSION_USER_KEY = 'rat_admin_username'
     SESSION_CREDENTIAL_VERSION_KEY = 'rch_admin_credential_version'
 
-    def __init__(self, script_grant_service=None):
-        self.script_grant_service = script_grant_service
+    def __init__(self, client_session_token_service=None):
+        self.client_session_token_service = client_session_token_service
 
     def _get_authorization_token(self) -> str:
         header = str(request.headers.get('Authorization') or '').strip()
@@ -80,23 +80,20 @@ class WebAuthGuard:
         self.logout_user()
         return False
 
-    def has_valid_script_grant(self) -> bool:
-        if self.script_grant_service is None:
-            return False
-        return self.script_grant_service.authorize_request(
-            method=request.method,
-            path=request.path,
-            headers=request.headers,
-        )
-
     def is_authenticated(self) -> bool:
-        if self.has_valid_static_token() or self.has_valid_session() or self.has_valid_script_grant():
+        # Admin credentials grant the existing Admin API access. A connected
+        # Client credential only opens explicitly allowlisted Client API routes.
+        if self.has_valid_static_token() or self.has_valid_session():
             return True
-        if self.script_grant_service is None:
+        service = self.client_session_token_service
+        if service is None:
             return False
-        return self.script_grant_service.authorize_client_interaction_request(
-            method=request.method, path=request.path, headers=request.headers,
-        )
+        identity = service.authenticate(method=request.method, path=request.path, headers=request.headers)
+        if identity is None:
+            return False
+        # Business handlers may check ownership for machine-bound resources.
+        g.client_session_identity = identity
+        return True
 
     def get_session_username(self) -> str:
         return str(session.get(self.SESSION_USER_KEY) or '').strip()

@@ -1,6 +1,6 @@
 # Administrator Authentication
 
-Server 对受保护 Web API 建立统一的管理员身份边界：浏览器依靠经签名的 Session Cookie，外部 HTTP 客户端使用管理员 API Token；由 Server 授权运行的 Script 可以在限定范围内使用临时 Grant，Client 命令的 Web Interaction 使用连接级凭证。三类凭据的来源、可达接口和失效条件不同，但最终由同一请求守卫判断是否放行。
+Server 的 Web 管理员使用经签名的 Session Cookie 或管理员 API Token；已连接的 Client 使用 Client Session Token 访问专门开放的 Client API。两种身份由同一请求守卫识别，Client API 白名单独立维护。
 
 管理员凭据的持久根默认是项目固定的 `backend/runtime/auth.json`（通过 `SERVER_RUNTIME_DIR` 配置）。Server 启动时装载完整凭据；Web 账户菜单修改管理员密码或重置 API Token 时，会原子更新同一文件并立即重新加载认证配置，因此这些操作不需要重启 Server。
 
@@ -122,7 +122,7 @@ Server 还原密码并继续使用原有的 scrypt 哈希校验，`auth.json` �
 
 Session 主要由以下两个接口管理：`GET /api/auth/session` 可检测当前是否已认证；`POST /api/auth/logout` 清除当前会话。`/api/auth/session` 本身允许匿名请求，未认证时返回 `authenticated: false`，而不是把它视为一个必须登录才能访问的页面。Web 首页在未认证时跳转登录页，受保护的 `/api/` 请求失败则返回 `401`；前端收到该状态会引导用户重新登录。
 
-登录后的右上角账户入口显示 `auth.json` 当前用户名。菜单中的 **Authorization Info** 通过 `GET /api/auth/info` 读取用户名和管理员 API Token，并提供复制操作。**Reset** 调用 `POST /api/auth/token/reset` 生成新的随机 Token、原子保存 `auth.json` 并立即刷新 Server 内存中的 Token；响应通过 `Cache-Control: no-store` 返回新 Token，当前浏览器 Session 保持有效，旧 Token 从下一次请求起失效。重置后应更新使用旧 Token 的外部 HTTP 客户端。此操作只更换 `api_token`；用户名、密码哈希和 Session Secret 保持不变，后两项不返回前端。**Change Password** 使用 `POST /api/auth/password`，当前密码和新密码沿用登录页相同的轻量掩码字段传输。上述账户管理接口只接受管理员 Session 或管理员静态 Token，不接受 Script Grant 作为账户管理权限。
+登录后的右上角账户入口显示 `auth.json` 当前用户名。菜单中的 **Authorization Info** 通过 `GET /api/auth/info` 读取用户名和管理员 API Token，并提供复制操作。**Reset** 调用 `POST /api/auth/token/reset` 生成新的随机 Token、原子保存 `auth.json` 并立即刷新 Server 内存中的 Token；响应通过 `Cache-Control: no-store` 返回新 Token，当前浏览器 Session 保持有效，旧 Token 从下一次请求起失效。重置后应更新使用旧 Token 的外部 HTTP 客户端。此操作只更换 `api_token`；用户名、密码哈希和 Session Secret 保持不变，后两项不返回前端。**Change Password** 使用 `POST /api/auth/password`，当前密码和新密码沿用登录页相同的轻量掩码字段传输。上述账户管理接口只接受管理员 Session 或管理员静态 Token，不接受 Client Session Token 作为账户管理权限。
 
 当前 Session 是 Flask Cookie Session：Cookie 默认名为 `rch_admin_session`，默认有效期七天，设置了 `HttpOnly` 和 `SameSite=Lax`，并用 `session_secret` 签名。会话状态由签名 Cookie 维护；Logout 清除当前浏览器的认证会话。每个 Session 还绑定基于当前用户名、密码哈希和 Session Secret 计算的凭据标识，因此修改密码并重启后，旧 Cookie 即使仍在有效期内也会被拒绝。
 
@@ -154,51 +154,19 @@ unset RCH_API_TOKEN
 
 Desktop Notifier 是这个 Token 的实际使用场景。Notifier 会携带相同的 `Authorization: Bearer ...` 访问 `/api/notifications/stream`，并支持在其独立的 `config.json` 配置 `token`，或通过 **Notifier 进程自己的** `RCH_NOTIFIER_TOKEN` 环境变量注入。该环境变量不会生成或修改 RCH Server 的 `auth.json`。Notifier 虽然只读取通知流，但使用的仍是管理员 Token，配置文件的保存权限应按管理员凭据处理。
 
-8085 Flask Web API 受管理员 Session/Token 守卫保护；受控浏览器原始文件上传和部分 Client 传输路径依靠各自的一次性令牌或原有 HTTP 访问策略。8086 的浏览器实时 WebSocket 检查管理员 Session/Token，PTY/Screen 则使用对应会话的一次性 WebSocket Ticket。
+8085 Flask Web API 采用管理员 Session/Token 或 Client Session Token（仅允许的 Client API）认证；受控浏览器原始文件上传和部分 Client 传输路径依靠各自的一次性令牌或原有 HTTP 访问策略。8086 的浏览器实时 WebSocket 检查管理员 Session/Token，PTY/Screen 则使用对应会话的一次性 WebSocket Ticket。
 
-## 委托给执行任务的临时权限
+## Client Session Token
 
-Script Grant 让当前 Client 上运行的 Script 在需要访问受保护的 Server API 时，获得临时且限定范围的权限，而不是把 `auth.json` 里的长期 API Token 复制到设备。Server 为每个授权任务生成随机 Grant Token，仅保存它的 SHA-256 哈希，并把授权与 `client_id`、`command_id` 以及来源名称关联。
+Client 连接注册后获得一枚随机 Client Session Token，供 Client Command、ACMD、Script、Job 和 SDK 在连接期间访问专门开放的 HTTP API。请求使用 `X-Client-Session-Token`，`ClientApiClient` 自动附加到配置的 Server API 地址；断线立即撤销，重连轮换。Client Token 与管理员 Session Cookie、管理员 API Token 是不同的认证身份。
 
-普通 Script 在顶部的 `SCRIPT_METADATA` 中声明所需 Scope，例如：
+Client API 方法和路径统一登记在 [`ClientApiPolicy.ROUTES`](client_session_api.md)，未登记的管理员 API（包括对其他设备的命令下发、账户管理）不会接受 Client Token。Keychain 的当前机器和 Server Shared 范围允许完整凭据读取与维护；详细身份与路由规则参阅 [Client Session Token & Client HTTP API](client_session_api.md)。
 
-```python
-SCRIPT_METADATA = {
-    "display_name": "API Reader",
-    "params": [],
-    "api_grants": ["artifacts:list"],
-}
-
-from client.http.client_api import ClientApiClient
-
-artifacts = ClientApiClient().get_data('/api/artifacts')
-print(artifacts)
-```
-
-这是说明声明与调用关系的最小示例，不属于项目已有实例清单。通过 Web Script 运行入口启动时，Server 从受信任的 Script Catalog Metadata 构建授权请求，在下发执行命令时签发 Grant；Client 将 Grant 放进 Script SDK 上下文。`ClientApiClient` 在访问自己配置的 Server Web API 基地址时自动附加 `X-Script-Grant-Token`，不要求开发者手工输入管理员 Token。
-
-普通 Client 命令与 ACMD 的 Web Interaction 通过连接建立时的一次性会话凭证进行调用方识别，无需逐命令声明 `interactions:request`。Script SDK 使用的受限 API Grant 仍按 Script Metadata 声明与现有 Scope 策略签发；普通 Shell 命令不会因此得到 Web 管理员权限。
-
-Grant 的默认生命周期如下：
-
-| 约束 | 当前行为 |
-|---|---|
-| 生存时间 | 默认最多 300 秒，申请更大值会被限制至上限 |
-| 使用次数 | 默认最多 100 次成功匹配并授权的请求 |
-| 请求提交 | 专用 `X-Script-Grant-Token` 请求头 |
-| Scope | 仅允许 Server Policy 中明确列出的 HTTP Method + Path |
-| 清理 | 到期、用尽、对应命令完成或目标 Client 断开后失效 |
-| 存储 | Server 内存，不持久化到 `auth.json` 或 SQLite |
-
-例如 `artifacts:list` 只允许匹配 `GET /api/artifacts`；`interactions:request` 匹配交互请求端点。当前还支持脚本读取、Artifact 读取/下载、Keychain 及部分工作区查询等明确映射的 Scope。完整的实际允许路由以现行 `ScriptGrantPolicy` 为准，不应自行拼造 Scope 名称。未知 Scope 在签发时会被丢弃，若最后没有有效 Scope，就不会签发 Grant。
-
-它是**Method/URL 级**权限判断，不是全面的资源级 RBAC。例如具有某个 Artifact 下载路径 Scope，并不意味着 Grant Service 还会根据 Artifact 类型、归属或敏感程度作独立的细粒度授权。同样，Grant 的 `client_id` 和 `command_id` 主要用于签发时绑定、任务回收，以及 Interaction Broker 等需要任务身份的专用校验；普通 Scope 授权函数本身基于 Token、Method、Path、到期时间和使用次数判断。
-
-只有真正走过 Grant 签发流程的 Script 才有该上下文。`context.get_script_grant_token()` 可以读取当前临时 Token，但不要打印、记录到日志或转发到其他主机；SDK 的自动请求头处理只面向配置中的 Server Web API 基地址，不代表对任意 URL、独立 8086 通道也自动授予权限。对于 Interaction Broker 的用户确认和输入类型，参阅独立的 Interaction Broker 与 Script SDK 文档。
+Command、Script 和 Job 使用同一连接期凭证。Web Browser Interaction 仍核对当前前台任务、命令 ID 和浏览器 Tab。
 
 ## 访问控制与运维安全
 
-除 OPTIONS、静态资源和标注为 `@allow_anonymous` 的端点以外，Web 请求按以下条件放行：**有效管理员 API Token、有效 Session、有效 Script Grant**，三者满足任何一项即可。没有认证的 API 调用返回 `401`，非 API 页面则跳转 `/login.html`。Script Grant 只覆盖在 Policy 中能匹配的请求；它不能取代整个管理界面的管理员登录。
+除 OPTIONS、静态资源和标注为 `@allow_anonymous` 的端点以外，Web 请求按以下条件放行：**有效管理员 API Token、有效管理员 Session、且请求路径在白名单内的有效 Client Session Token**，三者满足任何一项即可。没有认证的 API 调用返回 `401`，非 API 页面则跳转 `/login.html`。Client Session Token 只对 `ClientApiPolicy.ROUTES` 列出的 Client API 生效。
 
 遇到登录或 API 访问失败时，优先按下面的实际边界判断：
 
@@ -211,9 +179,9 @@ Grant 的默认生命周期如下：
 | 修改密码后浏览器被退出 | 旧 Session 绑定的凭据标识已失效，属于预期行为 |
 | 修改密码后 curl 仍可使用原 Token | 密码轮换不会修改独立的 `api_token` |
 | Desktop Notifier 提示 401 | 检查当前 Server API Token、Notifier 配置和 URL，而不是 Session Cookie |
-| Script API 调用提示未认证 | 检查是否由受支持的运行入口签发 Grant、Scope 是否匹配、是否超时/用尽 |
+| Script API 调用提示未认证 | 确认 Client 当前已连接、持有 Client Session Token，且路由已列入 `ClientApiPolicy.ROUTES` |
 | 已经输入正确密码却不能连接 | 检查 Server 的工作目录、启动报错、Web 端口与 HTTPS 反向代理配置 |
 
 安全上还需区分三种轮换：改密码会影响 Web 登录及旧 Session；改 `api_token` 会影响 curl、Notifier 和其他外部 API 客户端；改 `session_secret` 会使现有签名 Cookie 失效。删除整个文件会同时重置全部三种凭据。上述操作均应在受控停机、备份和重启过程中完成，避免多实例使用不同的凭据文件。
 
-`RCH_HIDDEN_DEVICES_REQUIRE_PASSWORD` 和 `RCH_HIDDEN_DEVICES_PASSWORD` 是隐藏设备访问相关的独立配置，**不是 Web 管理员用户名/密码**。也不要把网络端口可访问、上传接口未设相同守卫，或 Script Grant 能访问某条路由，等同于整个 Server 已实施统一的细粒度访问控制。公网部署前，应结合代理、TLS、网络隔离及独立通道的访问控制一起审查。
+`RCH_HIDDEN_DEVICES_REQUIRE_PASSWORD` 和 `RCH_HIDDEN_DEVICES_PASSWORD` 是隐藏设备访问相关的独立配置，**不是 Web 管理员用户名/密码**。也不要把网络端口可访问、上传接口未设相同守卫，或 Client Session Token 能访问某条路由，等同于整个 Server 已实施统一的细粒度访问控制。公网部署前，应结合代理、TLS、网络隔离及独立通道的访问控制一起审查。

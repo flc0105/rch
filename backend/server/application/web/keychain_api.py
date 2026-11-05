@@ -1,6 +1,7 @@
 from server.application.keychains.keychain_store import KeychainStore
 
 
+
 class WebKeychainApi:
     """
     Web 凭证管理子外观。
@@ -102,20 +103,55 @@ class WebKeychainApi:
         normalized['hostname'] = self._resolve_hostname(machine_id, normalized.get('hostname') or '')
         return normalized
 
+    def _client_identity(self):
+        # The Web API also runs in standalone service tests (no Flask context).
+        try:
+            from flask import g
+            return getattr(g, 'client_session_identity', None)
+        except (ImportError, RuntimeError):
+            return None
+
+    def _client_machine_id(self) -> str:
+        identity = self._client_identity()
+        if not identity:
+            return ''
+        return self._safe_text(identity.get('machine_id'))
+
+    def _check_client_keychain_machine(self, machine_id: str):
+        identity = self._client_identity()
+        if identity is None:
+            return
+        client_machine = self._safe_text(identity.get('machine_id'))
+        if machine_id != KeychainStore.SHARED_MACHINE_ID and (not client_machine or machine_id != client_machine):
+            raise PermissionError('Client may access only its machine or Server Shared Keychains')
+
+    def _visible_machines(self):
+        machines = self.list_machines()
+        client_machine = self._client_machine_id()
+        if not client_machine:
+            return machines
+        return [item for item in machines
+                if item.get('machine_id') in (client_machine, KeychainStore.SHARED_MACHINE_ID)]
+
     def list_keychains(self, machine_id: str = '') -> dict:
-        normalized_machine_id = self._safe_text(machine_id)
+        normalized_machine_id = self._safe_text(machine_id) or self._client_machine_id()
+        if self._client_identity() is not None and not normalized_machine_id:
+            raise PermissionError('Client machine identity is required')
+        self._check_client_keychain_machine(normalized_machine_id)
         return {
             'items': self.keychain_store.list_items(normalized_machine_id, reveal=False),
-            'machines': self.list_machines(),
+            'machines': self._visible_machines(),
             'shared_machine_id': KeychainStore.SHARED_MACHINE_ID,
             'shared_hostname': KeychainStore.SHARED_HOSTNAME,
         }
 
     def get_keychain_item(self, cred_id: str) -> dict:
         item = self.keychain_store.get_item(cred_id, reveal=True)
+        if item:
+            self._check_client_keychain_machine(item.get('machine_id') or '')
         return {
             'item': item,
-            'machines': self.list_machines(),
+            'machines': self._visible_machines(),
         }
 
     def resolve_keychain_item(self, payload: dict) -> dict:
@@ -139,6 +175,7 @@ class WebKeychainApi:
         else:
             raise ValueError('scope must be machine or shared')
 
+        self._check_client_keychain_machine(machine_id)
         item = self.keychain_store.get_item_by_name(machine_id, name, kind=kind, reveal=True)
         return {
             'item': item,
@@ -147,28 +184,41 @@ class WebKeychainApi:
         }
 
     def create_keychain_item(self, payload: dict) -> dict:
-        item = self.keychain_store.create_item(self._normalize_payload(payload))
+        normalized = self._normalize_payload(payload)
+        self._check_client_keychain_machine(normalized['machine_id'])
+        item = self.keychain_store.create_item(normalized)
         return {
             'item': self.keychain_store.public_item(item),
             'items': self.keychain_store.list_items(item.get('machine_id') or '', reveal=False),
-            'machines': self.list_machines(),
+            'machines': self._visible_machines(),
             'message': f'Saved credential: {item.get("name", "")}',
         }
 
     def update_keychain_item(self, cred_id: str, payload: dict) -> dict:
-        item = self.keychain_store.update_item(cred_id, self._normalize_payload(payload))
+        existing = self.keychain_store.get_item(cred_id, reveal=False)
+        if existing:
+            self._check_client_keychain_machine(existing.get('machine_id') or '')
+        data = dict(payload or {})
+        if existing and not data.get('machine_id'):
+            data['machine_id'] = existing.get('machine_id')
+        normalized = self._normalize_payload(data)
+        self._check_client_keychain_machine(normalized['machine_id'])
+        item = self.keychain_store.update_item(cred_id, normalized)
         return {
             'item': self.keychain_store.public_item(item),
             'items': self.keychain_store.list_items(item.get('machine_id') or '', reveal=False),
-            'machines': self.list_machines(),
+            'machines': self._visible_machines(),
             'message': f'Updated credential: {item.get("name", "")}',
         }
 
     def delete_keychain_item(self, cred_id: str) -> dict:
+        existing = self.keychain_store.get_item(cred_id, reveal=False)
+        if existing:
+            self._check_client_keychain_machine(existing.get('machine_id') or '')
         item = self.keychain_store.delete_item(cred_id)
         return {
             'item': self.keychain_store.public_item(item),
             'items': self.keychain_store.list_items(item.get('machine_id') or '', reveal=False),
-            'machines': self.list_machines(),
+            'machines': self._visible_machines(),
             'message': f'Deleted credential: {item.get("name", "")}',
         }
