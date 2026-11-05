@@ -1,4 +1,6 @@
+import os
 import sys
+import threading
 
 from client.runtime.client_util import reset, spawn_new_instance, reexec_restart
 from client.commands.runtime.command_variable_resolver import CommandVariableResolutionError
@@ -42,6 +44,9 @@ class CommandSessionMixin:
     # @confirm('Terminate this Client session and close its connection?')
     def kill_instance(self):
         self.socket.report_session_end('server_requested_disconnect', command='kill_instance')
+        watchdog_manager = getattr(self.socket, 'watchdog_manager', None)
+        if watchdog_manager is not None:
+            watchdog_manager.stop()
         manager = getattr(self.socket, 'process_recovery_watchdog_manager', None)
         if manager is not None:
             manager.stop()
@@ -62,4 +67,7 @@ class CommandSessionMixin:
     @desc('Start a new client instance without exiting current process', group='session')
     def spawn_instance(self):
         process = spawn_new_instance()
+        # Duplicate 已是独立 session；父进程只负责异步回收退出状态，避免 zombie。
+        if os.name == 'posix' and callable(getattr(process, 'wait', None)):
+            threading.Thread(target=process.wait, name='rch-duplicate-reaper', daemon=True).start()
         return 1, f'New client instance started, pid={process.pid}'

@@ -18,6 +18,7 @@ const sandbox = {
   ArchivePreviewPanel: {},
   FullScreen: {},
   Close: {},
+  document: {createElement: tag => ({tag})},
   formatBytes: value => `${value} B`,
   ElMessage: {success: message => messages.push(message),
     warning: message => messages.push(message), error: message => messages.push(message)},
@@ -66,7 +67,11 @@ assert.match(source, /\.preview-toolbar-left\s+:deep\(\.el-button\)\s*\{[^}]*\bm
 assert.match(source, /<el-dropdown-item command="paste">Paste<\/el-dropdown-item>/)
 assert.match(source, /<el-dropdown-item command="clear">Clear<\/el-dropdown-item>/)
 assert.match(source, /command="reload"/)
-assert.match(source, />\s*Truncated\s*<\/el-tag>/)
+assert.match(source, /v-if="previewTruncated"[\s\S]*?type="danger"[\s\S]*?Truncated/)
+assert.doesNotMatch(source, /preview-truncation-notice/)
+assert.match(source, /afterLineNumber: model\.getLineCount\(\)/)
+assert.match(source, /node\.textContent = '… Preview truncated'/)
+
 assert.doesNotMatch(source, /preview-fullscreen-toggle/)
 const vmActions = makeVm()
 const invoked = []
@@ -121,6 +126,33 @@ vmRemote.previewFileCodec = 'utf-16-be'
 response = fakePayload({})
 await vmRemote.saveToRemoteFile('Changed')
 assert.equal(JSON.parse(fetchCalls.at(-1).options.body).encoding, 'utf-16-be')
+
+const vmTruncated = makeVm()
+const originalPrefix = 'Real file data\nNo inserted markers'
+response = fakePayload({type: 'text', name: 'long.txt', content: originalPrefix,
+  encoding: 'utf-8', editable: false, truncated: true})
+await vmTruncated.loadPreviewPayload(() => sandbox.fetch('/preview'))
+assert.equal(vmTruncated.previewTruncated, true)
+assert.equal(vmTruncated.previewText, originalPrefix)
+assert.equal(vmTruncated.initCalls.at(-1).text, originalPrefix)
+assert.equal(vmTruncated.previewEditable, false)
+const inserted = []
+const removed = []
+const mockEditor = {
+  getModel: () => ({getLineCount: () => 2}),
+  changeViewZones: callback => callback({
+    addZone: zone => {inserted.push(zone); return 'zone-1'},
+    removeZone: id => removed.push(id),
+  }),
+}
+vmTruncated.updateMonacoTruncationZone(mockEditor)
+assert.equal(inserted.length, 1)
+assert.equal(inserted[0].afterLineNumber, 2)
+assert.equal(inserted[0].domNode.textContent, '… Preview truncated')
+assert.equal(vmTruncated.previewText, originalPrefix)
+vmTruncated.previewTruncated = false
+vmTruncated.updateMonacoTruncationZone(mockEditor)
+assert.deepEqual(removed, ['zone-1'])
 
 const vmReload = makeVm()
 vmReload.previewEditMode = true

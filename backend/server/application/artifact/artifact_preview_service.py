@@ -182,8 +182,6 @@ class ArtifactPreviewService:
                     'artifact_id': artifact.get('artifact_id', ''),
                 }
             text = decoded['content']
-            if decoded['truncated']:
-                text += '\n\n...(已截断)'
 
             return {
                 'type': 'text',

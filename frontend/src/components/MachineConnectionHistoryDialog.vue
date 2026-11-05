@@ -291,7 +291,8 @@
               >
                 <el-table
                   v-if="scope.row.commands && scope.row.commands.length"
-                  :data="scope.row.commands"
+                  :data="activityTableRows(scope.row)"
+                  :span-method="activityTableSpanMethod"
                   size="small"
                   border
                   max-height="320"
@@ -300,7 +301,18 @@
                 >
                   <el-table-column label="Time" width="160">
                     <template #default="commandScope">
-                      {{ formatDateTime(commandScope.row.started_at || commandScope.row.created_at) }}
+                      <div
+                        v-if="commandScope.row.__load_more"
+                        class="machine-session-command-table-load-more"
+                      >
+                        <el-button
+                          size="small"
+                          plain
+                          :loading="scope.row.command_loading"
+                          @click="loadSessionCommands(scope.row, true)"
+                        >Load More</el-button>
+                      </div>
+                      <template v-else>{{ formatDateTime(commandScope.row.started_at || commandScope.row.created_at) }}</template>
                     </template>
                   </el-table-column>
                   <el-table-column label="Status" width="90">
@@ -336,19 +348,6 @@
                   No activities
                 </div>
 
-                <div
-                  v-if="scope.row.command_has_more"
-                  class="machine-session-command-load-more"
-                >
-                  <el-button
-                    size="small"
-                    plain
-                    :loading="scope.row.command_loading"
-                    @click="loadSessionCommands(scope.row, true)"
-                  >
-                    Load More
-                  </el-button>
-                </div>
               </div>
             </div>
           </template>
@@ -715,6 +714,16 @@ export default {
       return 'info'
     },
 
+    activityTableRows(row) {
+      const entries = row.commands || []
+      return row.command_has_more ? [...entries, {__load_more: true}] : entries
+    },
+
+    activityTableSpanMethod({row, columnIndex}) {
+      if (!row.__load_more) return [1, 1]
+      return columnIndex === 0 ? [1, 4] : [0, 0]
+    },
+
     commandStatusTagType(status) {
       if (status === 'success') return 'success'
       if (status === 'error') return 'danger'
@@ -990,6 +999,12 @@ export default {
   display: flex;
   justify-content: center;
   margin-top: 10px;
+}
+
+.machine-session-command-table-load-more {
+  display: flex;
+  justify-content: center;
+  width: 100%;
 }
 
 .machine-session-command-text,

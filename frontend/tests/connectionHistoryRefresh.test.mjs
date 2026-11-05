@@ -120,3 +120,23 @@ test('Connection History fetches only 20 sessions at a time and 10 activities pe
   ])
   assert.equal(dialog.sessions[0].commands.length, 2)
 })
+
+
+test('detail Activity Load More is the final row inside the scrollable table', () => {
+  const { template, options } = component('../src/components/MachineConnectionHistoryDialog.vue')
+  assert.match(template, /:data="activityTableRows\(scope\.row\)"/)
+  assert.match(template, /:span-method="activityTableSpanMethod"/)
+  assert.match(template, /max-height="320"/)
+  assert.match(template, /commandScope\.row\.__load_more/)
+  assert.match(template, /class="machine-session-command-table-load-more"[\s\S]*?@click="loadSessionCommands\(scope\.row, true\)"/)
+  assert.match(template, /\.machine-session-command-table-load-more\s*\{\s*display:\s*flex;\s*justify-content:\s*center;\s*width:\s*100%;\s*\}/)
+  assert.doesNotMatch(template, /v-if="scope\.row\.command_has_more"\s+class="machine-session-command-load-more"/)
+  const dialog = makeDialog(options)
+  const row = {commands: Array.from({length: 10}, (_, i) => ({activity_id: String(i)})), command_has_more: true}
+  const tableRows = dialog.activityTableRows(row)
+  assert.equal(tableRows.length, 11)
+  assert.equal(tableRows[0].activity_id, '0')
+  assert.deepEqual(Array.from(dialog.activityTableSpanMethod({row: tableRows[10], columnIndex: 0})), [1, 4])
+  assert.deepEqual(Array.from(dialog.activityTableSpanMethod({row: tableRows[10], columnIndex: 1})), [0, 0])
+  assert.equal(dialog.activityTableRows({...row, command_has_more: false}).length, 10)
+})

@@ -213,7 +213,7 @@ class PreviewTextEncodingTests(unittest.TestCase):
             self.assertFalse(payload['editable'])
             self.assertTrue(payload['content'].startswith(expected_prefix))
             self.assertNotIn('�', payload['content'])
-            self.assertTrue(payload['content'].endswith('...(已截断)'))
+            self.assertEqual(expected_prefix, payload['content'])
 
     def test_truncation_does_not_hide_invalid_bytes_after_preview(self):
         limit = 204800

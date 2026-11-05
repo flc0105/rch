@@ -259,6 +259,7 @@ import PreviewImageInfoDialog from './PreviewImageInfoDialog.vue'
 const monacoEditorStore = new WeakMap()
 const monacoInitFrameStore = new WeakMap()
 const monacoLayoutFrameStore = new WeakMap()
+const monacoTruncationZoneStore = new WeakMap()
 
 function getPreviewMonacoEditor(vm) {
   return monacoEditorStore.get(vm) || null
@@ -553,6 +554,8 @@ export default {
             setPreviewMonacoEditor(this, nextEditor)
           }
 
+          this.updateMonacoTruncationZone(getPreviewMonacoEditor(this))
+
           const layoutFrame = window.requestAnimationFrame(() => {
             setStoredFrame(monacoLayoutFrameStore, this, null)
 
@@ -566,6 +569,25 @@ export default {
         })
 
         setStoredFrame(monacoInitFrameStore, this, frame)
+      })
+    },
+
+    updateMonacoTruncationZone(editor) {
+      if (!editor?.changeViewZones) return
+      editor.changeViewZones(accessor => {
+        const oldZone = monacoTruncationZoneStore.get(editor)
+        if (oldZone) accessor.removeZone(oldZone)
+        monacoTruncationZoneStore.delete(editor)
+        const model = editor.getModel?.()
+        if (!this.previewTruncated || !model) return
+        const node = document.createElement('div')
+        node.className = 'preview-truncation-zone'
+        node.textContent = '… Preview truncated'
+        monacoTruncationZoneStore.set(editor, accessor.addZone({
+          afterLineNumber: model.getLineCount(),
+          heightInPx: 26,
+          domNode: node,
+        }))
       })
     },
 
@@ -2099,6 +2121,13 @@ print(value)
 
 .edit-text-area {
   min-height: 400px;
+}
+
+.monaco-editor-container :deep(.preview-truncation-zone) {
+  padding: 5px 10px;
+  color: var(--el-color-danger);
+  font-size: 12px;
+  font-style: italic;
 }
 
 .monaco-editor-container {

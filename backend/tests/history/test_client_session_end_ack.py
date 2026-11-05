@@ -97,7 +97,8 @@ def test_kill_reports_canonical_reason_before_closing():
     actions = []
     connection = SimpleNamespace(
         report_session_end=lambda reason, **kw: actions.append(('report', reason, kw)) or True,
-        process_recovery_watchdog_manager=SimpleNamespace(stop=lambda: actions.append(('watchdog',))),
+        watchdog_manager=SimpleNamespace(stop=lambda: actions.append(('shared_watchdog',))),
+        process_recovery_watchdog_manager=SimpleNamespace(stop=lambda: actions.append(('recovery_watchdog',))),
         close=lambda: actions.append(('close',)),
     )
     with pytest.raises(SystemExit) as exc:
@@ -105,7 +106,8 @@ def test_kill_reports_canonical_reason_before_closing():
     assert exc.value.code == 0
     assert actions == [
         ('report', 'server_requested_disconnect', {'command': 'kill_instance'}),
-        ('watchdog',),
+        ('shared_watchdog',),
+        ('recovery_watchdog',),
         ('close',),
     ]
 
@@ -132,3 +134,64 @@ def test_relaunch_reports_restart_before_exit(monkeypatch):
         ('close',),
         ('exit', 0),
     ]
+
+
+def test_duplicate_reaps_exited_detached_child_without_waiting_for_client_exit(monkeypatch):
+    """Duplicate's parent can keep serving while the independent child is reaped."""
+    from client.commands.common.mixins import session_ops
+    import threading
+
+    waited = threading.Event()
+    release = threading.Event()
+    class DetachedChild:
+        pid = 24680
+        def wait(self):
+            waited.set()
+            assert release.wait(timeout=3)
+            return 0
+
+    monkeypatch.setattr(session_ops, 'spawn_new_instance', DetachedChild)
+    try:
+        result = CommandSessionMixin.spawn_instance(SimpleNamespace())
+        assert result == (1, 'New client instance started, pid=24680')
+        assert waited.wait(timeout=2)
+    finally:
+        release.set()
+
+
+def test_kill_without_enabled_watchdog_still_closes(monkeypatch):
+    calls = []
+    connection = SimpleNamespace(
+        report_session_end=lambda *a, **kw: calls.append('report'),
+        close=lambda: calls.append('close'),
+    )
+    with pytest.raises(SystemExit) as exc:
+        CommandSessionMixin.kill_instance(SimpleNamespace(socket=connection))
+    assert exc.value.code == 0
+    assert calls == ['report', 'close']
+
+@pytest.mark.skipif(__import__('os').name != 'posix', reason='POSIX child reaping only')
+def test_duplicate_detached_child_is_reaped_after_exiting(monkeypatch):
+    """An actual detached duplicate is reaped without shutting down its parent."""
+    import subprocess
+    import sys
+    import time
+    from client.commands.common.mixins import session_ops
+
+    started = []
+    def launch():
+        child = subprocess.Popen(
+            [sys.executable, '-c', 'import time; time.sleep(0.05)'],
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, close_fds=True, start_new_session=True,
+        )
+        started.append(child)
+        return child
+
+    monkeypatch.setattr(session_ops, 'spawn_new_instance', launch)
+    assert CommandSessionMixin.spawn_instance(SimpleNamespace())[0] == 1
+    child = started[0]
+    deadline = time.monotonic() + 3
+    while child.returncode is None and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert child.returncode == 0

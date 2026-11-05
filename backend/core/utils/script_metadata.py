@@ -1,4 +1,5 @@
 import ast
+import warnings
 from copy import deepcopy
 
 from core.metadata.parameters import coerce_param_value, normalize_param_specs, resolve_param_values
@@ -13,7 +14,12 @@ def read_script_metadata_from_source(source_text: str, fallback_name: str = '') 
     if not text.strip():
         return {}
     try:
-        tree = ast.parse(text)
+        # Catalog metadata scanning should not emit compile-time escape warnings
+        # from user scripts. Python reports those when scripts are executed.
+        with warnings.catch_warnings():
+            warnings.filterwarnings('ignore', category=SyntaxWarning,
+                                    message=r'invalid escape sequence')
+            tree = ast.parse(text)
     except Exception:
         return {}
     metadata = extract_metadata_from_module_ast(tree, _METADATA_KEYS)

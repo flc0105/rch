@@ -43,6 +43,8 @@ Server 命令 ─┘              │                 │
 
 Remote Control Watchdog 和 Local Heartbeat Watchdog 的检查由同一个 Worker 循环依次执行：先确认原 Client PID 仍然存在，再检查 Remote Control Watchdog，随后检查 Local Heartbeat Watchdog，最后短暂休眠。循环的基础休眠时间为约 0.5 秒，但 Remote HTTP 请求本身可能等待最多 5 秒，所以 Local Heartbeat Watchdog 检查不是严格固定间隔的实时调度。
 
+主动 Disconnect 会先停止当前 Client 的 Local/Remote 共享 Watchdog Worker 和心跳线程，然后停止 Process Recovery Watchdog 并关闭连接。意外退出时仍按已启用的 Watchdog 规则恢复。
+
 **Worker 绑定原 Client PID 的生命周期。** Worker 持续监控启动时记录的 PID，原进程结束后 Worker 随之退出。完全退出后的独立进程恢复由 Process Recovery Watchdog 等其他机制负责。Local Heartbeat Watchdog 针对的主要是进程仍存在、但心跳已停止的情况。
 
 HTTP Control 根据 `client_id` 而不是主机名、`machine_id` 或 PID 定位目标。同一台机器运行多个 Client 时，它们有不同的 `client_id` 和心跳文件。
