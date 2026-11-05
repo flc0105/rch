@@ -427,11 +427,6 @@ def detect_machine_identity_components(platform_info=None) -> dict:
     }
 
 
-def _detect_machine_identity_components() -> dict:
-    # Backward-compatible private alias; new runtime code should use get_local_identity().
-    return detect_machine_identity_components()
-
-
 def build_machine_identity_payload(raw_components=None) -> dict:
     raw = dict(raw_components) if isinstance(raw_components, dict) else detect_machine_identity_components()
 

@@ -57,13 +57,6 @@ PROCESS_RECOVERY_WATCHDOG_ENABLED = False
 # expose=True 的配置会出现在普通 set 输出和 set 自动补全中，也允许通过 set KEY value 修改。
 # expose=False 的配置保留在本文件和 set --all 输出中，但默认不允许直接 set 修改。
 # 如果以后希望隐藏项也允许修改，把 RuntimeConfigService.is_supported_key() 改为调用 is_known_config_key() 即可。
-_RUNTIME_CONFIG_DEPRECATED_KEYS = {
-    'HTTP_UPLOAD_TIMEOUT',
-    'HTTP_DOWNLOAD_CONNECT_TIMEOUT',
-    'HTTP_DOWNLOAD_READ_TIMEOUT',
-}
-
-
 _RUNTIME_CONFIG_META = {
     'COMMAND_DEFAULT_TIMEOUT': {
         'group': 'command',

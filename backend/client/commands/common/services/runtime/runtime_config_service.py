@@ -257,14 +257,9 @@ class RuntimeConfigService:
         overrides = load_runtime_overrides()
         defaults = self.get_default_values()
 
-        deprecated_keys = getattr(runtime_config, '_RUNTIME_CONFIG_DEPRECATED_KEYS', set())
-        if not isinstance(deprecated_keys, (set, list, tuple)):
-            deprecated_keys = set()
-        deprecated_keys = {str(key).strip().upper() for key in deprecated_keys if str(key).strip()}
-
         removed = []
         for key in list(overrides.keys()):
-            if key in deprecated_keys or (key in defaults and overrides[key] == defaults[key]):
+            if key in defaults and overrides[key] == defaults[key]:
                 overrides.pop(key, None)
                 removed.append(key)
 

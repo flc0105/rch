@@ -11,15 +11,4 @@ def get_console_logger():
     return logger
 
 
-def get_file_logger(filename):
-    logger = logging.getLogger("file_logger")
-    logger.setLevel(logging.DEBUG)
-    formatter = logging.Formatter('[%(asctime)s] %(levelname)s: %(funcName)s -> %(message)s',
-                                  datefmt='%Y-%m-%d %H:%M:%S')
-    file_handler = logging.FileHandler(filename)
-    file_handler.setFormatter(formatter)
-    logger.addHandler(file_handler)
-    return logger
-
-
 logger = get_console_logger()

@@ -23,11 +23,6 @@ def mark_output(text, level='info'):
     return f'{marker} {value}'
 
 
-def mark_multiline_output(text, level='info'):
-    value = '' if text is None else str(text)
-    return '\n'.join(mark_output(line, level) if line else line for line in value.splitlines())
-
-
 def info(text):
     return mark_output(text, 'info')
 

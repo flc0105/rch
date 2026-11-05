@@ -1,4 +1,3 @@
-import sys
 import time
 from datetime import datetime, timezone
 from typing import Any, Iterable, Mapping
@@ -108,22 +107,6 @@ def format_bytes_precise(size_in_bytes) -> str:
         trim_trailing_zeros=False,
         max_unit='GB',
     )
-
-
-def draw_progress_bar(progress: int, total: int, bar_len: int = 50) -> None:
-    if total <= 0:
-        return
-
-    completed = int(bar_len * progress / total)
-    percent = round(100 * progress / total)
-    bar = '=' * completed
-    spaces = '-' * (bar_len - completed)
-
-    sys.stdout.write(f'\r[{bar}{spaces}] {percent} %')
-    sys.stdout.flush()
-
-    if progress >= total:
-        sys.stdout.write('\n')
 
 
 def print_table(headers: Iterable[Any], data: Iterable[Iterable[Any]]) -> None:
