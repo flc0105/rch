@@ -29,6 +29,7 @@ class PreviewImageService:
     - 只给 preview_path 使用
     - 不影响 download_path / download_paths
     - 不影响 screenshot / webcam / pickupload 等平台命令
+    - 启用压缩时，所有支持的图片预览统一转为 JPEG；透明图片会先铺白底
     - PIL 不存在或图片无法处理时，静默回退为原文件上传，只写本地日志
     """
 
@@ -86,14 +87,11 @@ class PreviewImageService:
             image = Image.open(file_path)
             image = ImageOps.exif_transpose(image)
 
-            output_format = self._select_output_format(image)
-            suffix = '.png' if output_format == 'PNG' else '.jpg'
             base_name = os.path.splitext(os.path.basename(file_path))[0] or 'preview'
-
             temp_dir = make_client_temp_dir('preview_temp', prefix='preview_')
-            output_path = os.path.join(temp_dir, f'{base_name}_preview{suffix}')
+            output_path = os.path.join(temp_dir, f'{base_name}_preview.jpg')
 
-            self._save_compressed_image(image, output_path, output_format)
+            self._save_compressed_image(image, output_path)
             compressed_size = os.path.getsize(output_path)
 
             if compressed_size <= 0:
@@ -118,6 +116,7 @@ class PreviewImageService:
                 extra={
                     'compress': True,
                     'quality': self.quality,
+                    'format': 'JPEG',
                 },
             )
         except Exception as e:
@@ -135,11 +134,6 @@ class PreviewImageService:
         suffix = os.path.splitext(str(file_path or '').lower())[1]
         return suffix in self.IMAGE_EXTENSIONS
 
-    def _select_output_format(self, image) -> str:
-        if self._has_alpha(image):
-            return 'PNG'
-        return 'JPEG'
-
     def _has_alpha(self, image) -> bool:
         if image.mode in ('RGBA', 'LA'):
             return True
@@ -147,39 +141,28 @@ class PreviewImageService:
             return True
         return False
 
-    def _save_compressed_image(self, image, output_path: str, output_format: str):
-        if output_format == 'PNG':
-            image.save(
-                output_path,
-                format='PNG',
-                optimize=True,
-                compress_level=self._quality_to_png_compress_level(self.quality),
-            )
-            return
-
-        if image.mode not in ('RGB', 'L'):
-            image = image.convert('RGB')
-
+    def _save_compressed_image(self, image, output_path: str):
+        image = self._prepare_jpeg_image(image)
         image.save(
             output_path,
             format='JPEG',
             quality=self.quality,
-            optimize=True,
-            progressive=True,
         )
 
-    def _quality_to_png_compress_level(self, quality: int) -> int:
-        """
-        PNG 没有 JPEG quality 语义，这里把 quality 粗略映射到 compress_level。
-        quality 越低，压缩等级越高。
-        """
-        normalized = self.normalize_quality(quality)
-        level = round((95 - normalized) / 94 * 9)
-        if level < 0:
-            return 0
-        if level > 9:
-            return 9
-        return int(level)
+    def _prepare_jpeg_image(self, image):
+        if self._has_alpha(image):
+            return self._flatten_alpha_to_background(image, (255, 255, 255))
+        if image.mode not in ('RGB', 'L'):
+            return image.convert('RGB')
+        return image
+
+    def _flatten_alpha_to_background(self, image, background_rgb):
+        from PIL import Image
+
+        rgba = image.convert('RGBA')
+        background = Image.new('RGBA', rgba.size, background_rgb + (255,))
+        background.alpha_composite(rgba)
+        return background.convert('RGB')
 
     def _cleanup_dir(self, temp_dir: str):
         cleanup_temp_path(temp_dir)

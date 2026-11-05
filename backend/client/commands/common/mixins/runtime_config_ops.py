@@ -6,7 +6,6 @@ from core.utils.parsing import split_shell_arguments
 from client.commands.common.services.runtime.runtime_config_service import RuntimeConfigService
 from core.utils.decorator import desc
 from client.commands.runtime.interrupts import timeout
-from core.utils.logger import logger
 from core.utils.output_marker import success, info, error, warning
 from client.runtime.launch_context import is_launchd_managed_client
 
@@ -15,14 +14,6 @@ class CommandRuntimeConfigMixin:
     """
     client runtime_config 查询与修改命令。
     """
-
-    WATCHDOG_CONFIG_KEYS = {
-        'REMOTE_CONTROL_WATCHDOG_ENABLED',
-        'REMOTE_CONTROL_WATCHDOG_INTERVAL_SECONDS',
-        'LOCAL_HEARTBEAT_WATCHDOG_ENABLED',
-        'LOCAL_HEARTBEAT_WATCHDOG_INTERVAL_SECONDS',
-        'LOCAL_HEARTBEAT_WATCHDOG_TIMEOUT_SECONDS',
-    }
 
     @property
     def runtime_config_service(self):
@@ -178,93 +169,11 @@ class CommandRuntimeConfigMixin:
             return 0, error(f'Failed to reset all runtime config overrides: {e}')
 
     def _apply_runtime_config_side_effects(self, key: str, value):
-        """
-        处理少数不能只靠模块变量替换实时生效的配置。
-        """
-        effects = []
-
-        if key == 'RECONNECT_INTERVAL_SECONDS':
-            try:
-                import rchclient
-                rchclient.Client.RECONNECT_INTERVAL = value
-                effects.append(success('Applied: Client.RECONNECT_INTERVAL updated'))
-            except Exception as e:
-                logger.warning(f'Failed to apply reconnect interval runtime update: {e}')
-
-        if key == 'COMMAND_DEFAULT_SHELL_TIMEOUT':
-            try:
-                from client.commands.common.mixins.execution_ops import CommandExecutionMixin
-                CommandExecutionMixin.DEFAULT_SHELL_TIMEOUT = value
-                effects.append(success('Applied: CommandExecutionMixin.DEFAULT_SHELL_TIMEOUT updated'))
-            except Exception as e:
-                logger.warning(f'Failed to apply shell timeout runtime update: {e}')
-
-        if key == 'COMMAND_DEFAULT_STREAM_TIMEOUT':
-            try:
-                from client.commands.common.mixins.execution_ops import CommandExecutionMixin
-                CommandExecutionMixin.DEFAULT_STREAM_TIMEOUT = value
-                effects.append(success('Applied: CommandExecutionMixin.DEFAULT_STREAM_TIMEOUT updated'))
-            except Exception as e:
-                logger.warning(f'Failed to apply stream timeout runtime update: {e}')
-
-        if key == 'SCREEN_FRAME_STRATEGY':
-            effects.append(warning('Applies to new Screen View sessions; restart the current Screen View to switch mode'))
-
-        launchd_managed = is_launchd_managed_client()
-        watchdog_supported = bool(getattr(getattr(self.socket, 'runtime', None), 'features', {}).get('watchdog', True))
-
-        if key == 'PROCESS_RECOVERY_WATCHDOG_ENABLED':
-            if not watchdog_supported:
-                effects.append(warning('Saved: watchdog is unavailable on this Client; restart with watchdog support to apply'))
-            manager = getattr(self.socket, 'process_recovery_watchdog_manager', None) if watchdog_supported else None
-            if manager is not None:
-                self._checkpoint()
-                try:
-                    if value and not launchd_managed:
-                        manager.start()
-                    else:
-                        manager.stop()
-                except Exception as exc:
-                    logger.warning('Process Recovery Watchdog runtime update failed: %s', exc)
-                    effects.append(warning(f'Saved: Process Recovery Watchdog could not start/stop: {exc}'))
-                else:
-                    if launchd_managed:
-                        effects.append(warning('Saved: launchd manages this Client; Process Recovery Watchdog remains disabled'))
-                    else:
-                        effects.append(success('Applied: Process Recovery Watchdog runtime updated'))
-                    # Remote Control Watchdog / Local Heartbeat Watchdog workers inherit the supervisor environment at launch.
-                    from client.config import runtime_config
-                    if (runtime_config.REMOTE_CONTROL_WATCHDOG_ENABLED
-                            or runtime_config.LOCAL_HEARTBEAT_WATCHDOG_ENABLED):
-                        if not self._restart_watchdog_manager():
-                            effects.append(warning('Saved: Remote Control Watchdog / Local Heartbeat Watchdog worker could not restart'))
-                self._checkpoint()
-
-        if key in self.WATCHDOG_CONFIG_KEYS:
-            if not watchdog_supported:
-                effects.append(warning('Saved: watchdog is unavailable on this Client; restart with watchdog support to apply'))
-            elif self._restart_watchdog_manager():
-                if launchd_managed:
-                    effects.append(warning('Saved: launchd manages this Client; Client watchdogs remain disabled'))
-                else:
-                    effects.append(success('Applied: watchdog runtime restarted'))
-            else:
-                effects.append(warning('Saved: watchdog worker did not restart; check Client logs'))
-
-        return effects
-
-    def _restart_watchdog_manager(self) -> bool:
-        watchdog_manager = getattr(self.socket, 'watchdog_manager', None)
-        if watchdog_manager is None:
-            return False
-
-        try:
-            self._checkpoint()
-            watchdog_manager.stop()
-            self._checkpoint()
-            watchdog_manager.start()
-            self._checkpoint()
-            return True
-        except Exception as e:
-            logger.warning(f'Failed to restart watchdog runtime after config update: {e}')
-            return False
+        # The persistent configuration service changes values; registered effects
+        # handle only settings that also need active lifecycle operations.
+        effects = getattr(self, '_runtime_config_effects', None)
+        if effects is None:
+            from client.commands.common.services.runtime.runtime_config_effects import RuntimeConfigEffects
+            effects = RuntimeConfigEffects(self, is_launchd_managed_client)
+            self._runtime_config_effects = effects
+        return effects.apply(key, value)

@@ -1,5 +1,4 @@
 import ast
-import sys
 from dataclasses import dataclass
 
 from client.config.runtime_config_utils import format_runtime_config_value
@@ -195,7 +194,6 @@ class RuntimeConfigService:
 
         setattr(runtime_config, normalized_key, new_value)
         self._refresh_runtime_override_markers()
-        self._sync_loaded_runtime_symbols(normalized_key, old_value, new_value)
 
         return RuntimeConfigUpdateResult(
             key=normalized_key,
@@ -224,7 +222,6 @@ class RuntimeConfigService:
         store_path = remove_runtime_override(normalized_key)
         setattr(runtime_config, normalized_key, default_value)
         self._refresh_runtime_override_markers()
-        self._sync_loaded_runtime_symbols(normalized_key, old_value, default_value)
 
         return RuntimeConfigUpdateResult(
             key=normalized_key,
@@ -238,11 +235,6 @@ class RuntimeConfigService:
 
     def reset_all_overrides(self) -> str:
         defaults = self.get_default_values()
-        old_values = {
-            key: getattr(runtime_config, key)
-            for key in self._iter_runtime_config_keys()
-        }
-
         store_path = clear_runtime_overrides()
 
         for key, default_value in defaults.items():
@@ -250,10 +242,6 @@ class RuntimeConfigService:
                 setattr(runtime_config, key, default_value)
 
         self._refresh_runtime_override_markers()
-
-        for key, old_value in old_values.items():
-            if key in defaults:
-                self._sync_loaded_runtime_symbols(key, old_value, defaults[key])
 
         return store_path
 
@@ -429,39 +417,3 @@ class RuntimeConfigService:
         except Exception:
             pass
 
-    def _sync_loaded_runtime_symbols(self, key: str, old_value, new_value):
-        """
-        兼容当前代码中已有的 from client.config.runtime_config import KEY 写法。
-
-        这里只改当前进程内已经加载的 client/core/rchclient 模块同名常量，
-        不读写任何源码文件。
-        """
-        for module_name, module in list(sys.modules.items()):
-            if module is None:
-                continue
-            if not self._should_touch_loaded_module(module_name):
-                continue
-
-            self._set_attr_if_equal(module, key, old_value, new_value)
-            module_dict = getattr(module, '__dict__', {}) or {}
-            for value in list(module_dict.values()):
-                if isinstance(value, type):
-                    self._set_attr_if_equal(value, key, old_value, new_value)
-
-    def _should_touch_loaded_module(self, module_name: str) -> bool:
-        return (
-            module_name == 'rchclient'
-            or module_name.startswith('client.')
-            or module_name.startswith('core.')
-        )
-
-    def _set_attr_if_equal(self, target, key: str, old_value, new_value):
-        if not hasattr(target, key):
-            return
-        try:
-            current_value = getattr(target, key)
-            if current_value != old_value:
-                return
-            setattr(target, key, new_value)
-        except Exception:
-            pass

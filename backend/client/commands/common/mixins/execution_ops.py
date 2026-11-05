@@ -9,10 +9,7 @@ from client.commands.strategies.python_execution.factory import (
     get_python_execution_mode
 )
 from client.commands.common.services.process.process_execution_service import ProcessExecutionService
-from client.config.runtime_config import (
-    COMMAND_DEFAULT_SHELL_TIMEOUT,
-    COMMAND_DEFAULT_STREAM_TIMEOUT,
-)
+from client.config import runtime_config
 from core.utils.decorator import desc
 
 
@@ -32,8 +29,14 @@ class CommandExecutionMixin:
     system/network 命令已拆到 system_ops.py
     """
 
-    DEFAULT_SHELL_TIMEOUT = COMMAND_DEFAULT_SHELL_TIMEOUT
-    DEFAULT_STREAM_TIMEOUT = COMMAND_DEFAULT_STREAM_TIMEOUT
+    @property
+    def DEFAULT_SHELL_TIMEOUT(self):
+        return runtime_config.COMMAND_DEFAULT_SHELL_TIMEOUT
+
+    @property
+    def DEFAULT_STREAM_TIMEOUT(self):
+        return runtime_config.COMMAND_DEFAULT_STREAM_TIMEOUT
+
     PROCESS_KILL_GRACE_SECONDS = 2
     # 固定子进程等待轮询间隔，不再作为 runtime_config 暴露。
     PROCESS_WAIT_POLL_INTERVAL = 0.2

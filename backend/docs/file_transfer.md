@@ -78,7 +78,7 @@ Remote Files 上传到设备
 
 ## 客户端的字节处理机制
 
-`HTTP_TRANSFER_MODE` 是 Python Client 的运行时配置，当前源码默认值为 `legacy`；运行时配置可以覆盖默认值。代码中的正式拼写是 **`cancelable`**，不是 `cancellable`。策略由 HTTP File Transfer Service 选择，负责改变**上传/下载的客户端数据处理方式**，只决定 Client 数据处理与取消策略，不改变 Server HTTP 路由。
+`HTTP_TRANSFER_MODE` 是 Python Client 的运行时配置，当前源码默认值为 `cancelable`；运行时配置可以覆盖默认值。代码中的正式拼写是 **`cancelable`**，不是 `cancellable`。策略由 HTTP File Transfer Service 选择，负责改变**上传/下载的客户端数据处理方式**，只决定 Client 数据处理与取消策略，不改变 Server HTTP 路由。
 
 | 行为 | `legacy` | `cancelable` |
 | --- | --- | --- |
@@ -108,7 +108,7 @@ Cancelable 上传构造 multipart 的头部、文件内容及尾部，在 `read(
 
 | 配置 | 当前默认值及意义 |
 | --- | --- |
-| `HTTP_TRANSFER_MODE` | `legacy`；可选 `legacy` / `cancelable` |
+| `HTTP_TRANSFER_MODE` | `cancelable`；可选 `legacy` / `cancelable` |
 | `HTTP_TRANSFER_BUFFER_SIZE` | 1 MiB，允许 64 KiB 至 16 MiB |
 
 Legacy HTTP 上传与下载使用内部固定的 Requests 网络超时：连接等待 15 秒、单次网络读取等待 120 秒（接收到数据后重新计时），不暴露运行时配置。Cancelable 保持原有请求行为，通过执行上下文协作取消。Server 的通用 HTTP 上传请求体上限为 10 GiB；这个服务端上限与 Legacy 的 1 GiB 客户端保护相互独立。
@@ -215,7 +215,7 @@ Web 端的 `tab_id` 用于把 Transfer 关联到发起的浏览器标签，并�
 
 ### 部署与异常定位
 
-**正常的大文件 Remote Files 上传**，优先确保浏览器到 Server 8085 以及目标 Client 到 Server 8085 双向可达；浏览器端上传成功只代表第一阶段暂存完成，仍需观察后续 Client 下载阶段。若文件很大且需要实时上传字节进度或可取消性，应检查 Client 的 `HTTP_TRANSFER_MODE` 是否设置为 `cancelable`。`legacy` 是默认的兼容方案，不会因为换成 8085 就拥有流式上传和取消能力。
+**正常的大文件 Remote Files 上传**，优先确保浏览器到 Server 8085 以及目标 Client 到 Server 8085 双向可达；浏览器端上传成功只代表第一阶段暂存完成，仍需观察后续 Client 下载阶段。若文件很大且需要实时上传字节进度或可取消性，应检查 Client 的 `HTTP_TRANSFER_MODE` 是否设置为 `cancelable`。`legacy` 不提供流式上传和取消能力。
 
 | 现象 | 核查重点 |
 | --- | --- |

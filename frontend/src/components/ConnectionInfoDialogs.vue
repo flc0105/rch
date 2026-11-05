@@ -734,12 +734,16 @@ export default {
     },
 
     runtimeConfigEditorNumberMin() {
-      const value = Number(this.runtimeConfigEditorItem?.min_value)
+      const rawValue = this.runtimeConfigEditorItem?.min_value
+      if (rawValue === null || rawValue === undefined || rawValue === '') return undefined
+      const value = Number(rawValue)
       return Number.isFinite(value) ? value : undefined
     },
 
     runtimeConfigEditorNumberMax() {
-      const value = Number(this.runtimeConfigEditorItem?.max_value)
+      const rawValue = this.runtimeConfigEditorItem?.max_value
+      if (rawValue === null || rawValue === undefined || rawValue === '') return undefined
+      const value = Number(rawValue)
       return Number.isFinite(value) ? value : undefined
     },
 

@@ -7,7 +7,6 @@ from client.commands.common.services.filesystem.path_resolver import PathResolve
 from client.commands.common.services.filesystem.preview_image_service import PreviewImageService
 from client.commands.common.services.transfer.http_file_transfer_service import CommandHttpFileTransferService
 from client.commands.runtime.context import CommandCancelledError, CommandExecutionContext
-from client.config import runtime_config
 from client.http.client_api import ClientApiClient
 from core.protocol.message_types import MSG_TYPE_TRANSFER_UPDATE
 
@@ -24,7 +23,6 @@ class _TransferTaskOwner(CommandRuntimeMixin):
         self.socket = connection
         self.command_id = None
         self.execution_context = execution_context
-        self.HTTP_TRANSFER_MODE = runtime_config.HTTP_TRANSFER_MODE
 
         self._path_resolver = PathResolver(iter_checked=self._iter_checked)
         self._archive_service = ArchiveService(

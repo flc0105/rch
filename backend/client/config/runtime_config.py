@@ -24,8 +24,7 @@ COMMAND_DEFAULT_SHELL_TIMEOUT = 30
 COMMAND_DEFAULT_STREAM_TIMEOUT = 300
 
 # ------------------ http transfer strategy ------------------ #
-# HTTP_TRANSFER_MODE = 'cancelable'
-HTTP_TRANSFER_MODE = 'legacy'
+HTTP_TRANSFER_MODE = 'cancelable'
 
 # ------------------ http file transfer ------------------ #
 # 所有 HTTP 文件传输统一使用同一个 buffer。
@@ -40,8 +39,7 @@ PREVIEW_IMAGE_COMPRESS_QUALITY = 75
 PYTHON_EXECUTION_MODE = 'inproc'
 
 # ------------------ screen view strategy ------------------ #
-# SCREEN_FRAME_STRATEGY = 'keyframe_delta'
-SCREEN_FRAME_STRATEGY = 'full_jpeg'
+SCREEN_FRAME_STRATEGY = 'keyframe_delta'
 
 
 RECONNECT_INTERVAL_SECONDS = 5

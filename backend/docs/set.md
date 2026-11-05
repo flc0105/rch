@@ -55,11 +55,11 @@ set --reset PYTHON_EXECUTION_MODE
 
 ### 2.1 HTTP 文件传输 — `HTTP_TRANSFER_MODE`
 
-默认：**`legacy`**
+默认：**`cancelable`**
 
 | 选项 | 特点 | 更适合的情况 |
 |---|---|---|
-| `legacy` | 使用较传统的 HTTP 文件上传/下载方式。上传的 multipart 内容可能被整体缓存在内存中；运行中取消不受支持 | 小文件、保持默认行为、无需中途取消的任务 |
+| `legacy` | 使用较传统的 HTTP 文件上传/下载方式。上传的 multipart 内容可能被整体缓存在内存中；运行中取消不受支持 | 小文件、需要传统传输方式的任务 |
 | `cancelable` | 流式传输，按块处理文件，支持进度回报与协作取消；大文件上传不必整体装入内存 | 大文件、弱网、需要观察传输进度或中途取消的任务 |
 
 ```text
@@ -95,7 +95,7 @@ set PYTHON_EXECUTION_MODE subprocess_pipe
 
 ### 2.3 Screen View 画面 — `SCREEN_FRAME_STRATEGY`
 
-默认：**`full_jpeg`**
+默认：**`keyframe_delta`**
 
 | 选项 | 特点 | 更适合的情况 |
 |---|---|---|
@@ -119,7 +119,7 @@ set SCREEN_FRAME_STRATEGY keyframe_delta
 | Command | `COMMAND_DEFAULT_SHELL_TIMEOUT` | `30` 秒 | Shell 命令的一般兜底超时 |
 | Command | `COMMAND_DEFAULT_STREAM_TIMEOUT` | `300` 秒 | 流式命令的一般兜底超时 |
 | Preview | `PREVIEW_IMAGE_COMPRESS_ENABLED` | `false` | 在图片预览上传前尝试压缩，仅影响相应预览流程 |
-| Preview | `PREVIEW_IMAGE_COMPRESS_QUALITY` | `75` | 预览压缩的图片质量参数 |
+| Preview | `PREVIEW_IMAGE_COMPRESS_QUALITY` | `75` | 统一控制预览 JPEG 的质量；PNG 等图片也会先转换成 JPEG 预览 |
 | Connection | `RECONNECT_INTERVAL_SECONDS` | `5` 秒 | Client 断线后再次尝试连接的间隔 |
 | Watchdog | `REMOTE_CONTROL_WATCHDOG_ENABLED` | `false` | 启用独立 HTTP 远程进程控制 |
 | Watchdog | `LOCAL_HEARTBEAT_WATCHDOG_ENABLED` | `false` | 启用本地心跳超时恢复 |
@@ -194,6 +194,31 @@ set --reset-all
 ```
 
 一般建议修改一项、验证一项；重点观察下一次传输、下一次脚本执行或重新建立的 Screen View 会话。出现问题时，先核对配置来源与当前实际运行状态，不要只根据配置页面显示的值推断已经开始的任务也切换了策略。
+
+## 6. 逐项验证操作（16 项）
+
+以下均在已连接的**测试 Client** 上操作。先在 **Info → Configuration** 核对当前值与 `default / override`，通过终端 `set` 查询也可。需要长期运行的测试不要在生产 Client 上故意断网或终止进程。改动后可在同一进程直接测试，最后用 `set --reset KEY` 恢复；默认值变化不会覆盖已保存在 JSON 中的旧 override。
+
+| 配置项 | 验证步骤与成功判据 |
+|---|---|
+| `COMMAND_DEFAULT_TIMEOUT`（只读） | `set --all` 确认默认是 `None`；运行带独立超时的 Shell/Stream 命令，确认其仍使用专用设置。普通 `set KEY value` 不开放此项。 |
+| `COMMAND_DEFAULT_SHELL_TIMEOUT` | `set COMMAND_DEFAULT_SHELL_TIMEOUT 2`；执行一个约 4 秒的 Shell 命令，确认发生超时；再执行一个短命令确认正常。重置为 30 秒后重复长命令应可完成。具体终止时间依进程和平台而定。 |
+| `COMMAND_DEFAULT_STREAM_TIMEOUT` | `set COMMAND_DEFAULT_STREAM_TIMEOUT 2`；运行持续输出、超过 2 秒的 `shell_stream` 或流式脚本，确认流被超时终止；重置后同一任务正常结束。 |
+| `HTTP_TRANSFER_MODE` | `set HTTP_TRANSFER_MODE legacy`；启动新的 Remote Files 上传/下载任务，检查传输成功且 Legacy 阶段不支持协作取消。`set --reset HTTP_TRANSFER_MODE` 后新任务应使用默认 `cancelable`，显示进度并允许取消。不要用已开始的传输验证策略切换。 |
+| `HTTP_TRANSFER_BUFFER_SIZE` | `set HTTP_TRANSFER_BUFFER_SIZE 65536`；新建一次数十 MiB 的上传/下载并核对内容完整、进度正常；检查新传输策略的读取块大小为 65536 字节（开发测试或调试日志）。重置后应恢复 1048576 字节。 |
+| `PREVIEW_IMAGE_COMPRESS_ENABLED` | `set PREVIEW_IMAGE_COMPRESS_ENABLED true`；通过 `preview_path` 分别预览一张 JPG 和一张 PNG，核对画面正常、上传的是压缩预览，且 PNG 预览会转换为 JPEG；设为 `false` 后重新预览，比较传输后的文件类型/大小。其他文件下载不应变化。 |
+| `PREVIEW_IMAGE_COMPRESS_QUALITY` | 先启用图片压缩，再 `set PREVIEW_IMAGE_COMPRESS_QUALITY 40`；对同一张 JPG 或 PNG 新建预览，与改成 `90` 后的预览比较 JPEG 预览文件大小和画质；同一个数值同时控制两种来源图片。最后依次重置这两个设置。图片复杂度会影响差异。 |
+| `PYTHON_EXECUTION_MODE` | `set PYTHON_EXECUTION_MODE subprocess_pipe`；执行一段输出 PID 的 Python 脚本，核对脚本正常输出；对测试长脚本尝试取消，确认能停止子进程。重置为 `inproc` 后再次执行短脚本。 |
+| `SCREEN_FRAME_STRATEGY` | `set SCREEN_FRAME_STRATEGY full_jpeg`；重新打开 Screen View，检查策略标识和正常显示；重置为默认 `keyframe_delta` 后使用 Restart/新建会话，再确认策略标识、关键帧和变化区域刷新。仅在启用 Screen View 的平台提供该设置。 |
+| `RECONNECT_INTERVAL_SECONDS` | `set RECONNECT_INTERVAL_SECONDS 2`；在测试环境短暂阻断 Client → Server 的网络连接，查看日志中下一次重连等待约 2 秒；恢复网络并重置到 5 秒。已进入的单次睡眠不被追溯缩短。 |
+| `REMOTE_CONTROL_WATCHDOG_ENABLED` | `set REMOTE_CONTROL_WATCHDOG_ENABLED true`；查看 `watchdog --json` 是否显示启用和 Worker 状态；`set --reset REMOTE_CONTROL_WATCHDOG_ENABLED` 后确认关闭/Worker 状态更新。 |
+| `REMOTE_CONTROL_WATCHDOG_INTERVAL_SECONDS`（只读） | `set --all` 核对默认 15 秒；在启用 Remote Control Watchdog 后用 `watchdog --json` 核对 `interval_seconds`。此项不能由前台直接编辑。 |
+| `LOCAL_HEARTBEAT_WATCHDOG_ENABLED` | `set LOCAL_HEARTBEAT_WATCHDOG_ENABLED true`；使用 `watchdog --json` 检查本地心跳 Feeder 和 Worker，确认心跳文件更新；重置后确认停止。 |
+| `LOCAL_HEARTBEAT_WATCHDOG_INTERVAL_SECONDS`（只读） | `set --all` 核对默认 5 秒；启用本地心跳时核对 `watchdog --json` 的 heartbeat interval 与心跳文件更新。此项不能在线编辑。 |
+| `LOCAL_HEARTBEAT_WATCHDOG_TIMEOUT_SECONDS`（只读） | `set --all` 核对默认 15 秒；启用本地心跳后使用 `watchdog --json` 核对 timeout 值。无需人为制造心跳故障。 |
+| `PROCESS_RECOVERY_WATCHDOG_ENABLED` | `set PROCESS_RECOVERY_WATCHDOG_ENABLED true`；检查 `watchdog --json` 的配置与 Supervisor 运行状态，再 `set --reset PROCESS_RECOVERY_WATCHDOG_ENABLED` 并确认停止。不要通过强制杀死生产 Client 来测试。 |
+
+**一组完整的配置回归：** 逐项 `set KEY value` → 观察下一次业务操作 → `set --reset KEY` → 再测操作；额外在测试 Client 上设置多项覆盖后运行 `set --reset-all`，确认 JSON override 已清除、各默认值恢复、Watchdog 重新进入默认关闭状态。确认 `set --json` 的当前值、默认值和来源与实际运行一致。Watchdog 被 Feature 禁用或 macOS launchd 接管时，以提示信息及实际状态为准。
 
 ---
 

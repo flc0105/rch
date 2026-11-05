@@ -5,7 +5,7 @@ from client.config.config import (
     CLIENT_SOURCE_REVISION,
     CLIENT_SOURCE_REVISION_FILES,
 )
-from client.config.runtime_config import HTTP_TRANSFER_MODE, PYTHON_EXECUTION_MODE
+from client.config import runtime_config
 from core.client_revision import build_client_revision_manifest
 from client.runtime.client_logging import get_client_log_path
 from core.device.local_identity import get_local_identity
@@ -85,8 +85,8 @@ class ClientInfoBuilder:
             'cwd': os.getcwd(),
             'python_ver': platform.python_version(),
 
-            'http_transfer_mode': HTTP_TRANSFER_MODE,
-            'python_execution_mode': PYTHON_EXECUTION_MODE,
+            'http_transfer_mode': runtime_config.HTTP_TRANSFER_MODE,
+            'python_execution_mode': runtime_config.PYTHON_EXECUTION_MODE,
 
             'command_manifest': self._build_command_manifest(),
             'feature_manifest': dict(features),

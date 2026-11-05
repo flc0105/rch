@@ -5,7 +5,7 @@ from client.commands.common.services.filesystem.file_system_service import FileS
 from client.commands.common.services.filesystem.path_resolver import PathResolver
 from core.protocol.structured_arg_codec import StructuredArgCodec
 from client.http.client_api import ClientApiClient
-from client.config.runtime_config import COMMAND_DEFAULT_TIMEOUT
+from client.config import runtime_config
 from core.utils.output_marker import info, success, warning, error
 
 class CommandBindingMixin:
@@ -111,7 +111,7 @@ class CommandRuntimeMixin:
         # COMMAND_DEFAULT_TIMEOUT 只作为没有专用 timeout 时的通用兜底。
         if fallback_timeout is not None:
             return fallback_timeout
-        return COMMAND_DEFAULT_TIMEOUT
+        return runtime_config.COMMAND_DEFAULT_TIMEOUT
 
     def _ensure_not_cancelled(self):
         context = self._get_execution_context()

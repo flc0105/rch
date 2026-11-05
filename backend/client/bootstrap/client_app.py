@@ -5,7 +5,7 @@ import uuid
 
 from client.bootstrap.connection_lifecycle import ClientConnectionLifecycle
 from client.bootstrap.receiver_worker import ClientReceiverWorker
-from client.config.runtime_config import RECONNECT_INTERVAL_SECONDS
+from client.config import runtime_config
 from client.config.runtime_config_reporter import log_runtime_config_overrides_if_any
 from client.config.feature_config import resolve_features
 from client.watchdog.recovery_source import consume_recovery_source
@@ -13,7 +13,14 @@ from core.utils.logger import logger
 
 
 class Client:
-    RECONNECT_INTERVAL = RECONNECT_INTERVAL_SECONDS
+    @property
+    def RECONNECT_INTERVAL(self):
+        return getattr(self, '_reconnect_interval_override', runtime_config.RECONNECT_INTERVAL_SECONDS)
+
+    @RECONNECT_INTERVAL.setter
+    def RECONNECT_INTERVAL(self, interval):
+        self._reconnect_interval_override = interval
+
     # Server heartbeat is sent every 30 seconds; allow four missed intervals.
     RECEIVE_IDLE_TIMEOUT_SECONDS = 120
 

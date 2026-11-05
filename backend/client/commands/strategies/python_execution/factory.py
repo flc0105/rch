@@ -1,10 +1,7 @@
 from client.commands.strategies.python_execution.inproc import InProcessPythonExecutionStrategy
 from client.commands.strategies.python_execution.subprocess_pipe import SubprocessPipePythonExecutionStrategy
 
-try:
-    from client.config.runtime_config import PYTHON_EXECUTION_MODE
-except Exception:
-    PYTHON_EXECUTION_MODE = 'inproc'
+from client.config import runtime_config
 
 
 def normalize_python_execution_mode(mode: str = '', default_mode: str = 'inproc') -> str:
@@ -20,7 +17,7 @@ def normalize_python_execution_mode(mode: str = '', default_mode: str = 'inproc'
 
 
 def get_python_execution_mode() -> str:
-    return normalize_python_execution_mode(PYTHON_EXECUTION_MODE)
+    return normalize_python_execution_mode(runtime_config.PYTHON_EXECUTION_MODE)
 
 
 def build_python_execution_strategy(owner, mode: str = '', default_mode: str = 'inproc'):

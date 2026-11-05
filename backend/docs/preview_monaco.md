@@ -143,7 +143,7 @@ Server 在预览响应中返回 `content`、`encoding` 和 `editable`；Web 的 
 - **Open Original**：浏览器新标签页打开当前预览 URL；对 Remote Files 来说可能是**已上传到 Server 的预览副本**，不是直接访问 Client 的本地磁盘。
 - **Image Info**：仅当 Server 成功提取 `image_info` 时显示，另开一个详情弹窗，展示宽高、格式、色彩模式、文件字节数，以及可读取的相机厂商、镜头、拍摄时间、曝光时间、ISO 等 EXIF 字段。Pillow 不可用或解析失败时信息可能为空，但这不必让整个图片预览失败。
 
-远端图片上传预览前，Client 的 `PreviewImageService` 可以根据 `PREVIEW_IMAGE_COMPRESS_ENABLED` / `PREVIEW_IMAGE_COMPRESS_QUALITY` 尝试创建较小的临时预览图，**默认关闭**。启用后视透明通道等条件选择 PNG 或 JPEG；若处理失败、Pillow 缺失、生成结果反而不更小，就上传原文件。这一可选压缩**只影响预览路径**，不改变普通下载的源文件，也不构成非破坏性图片编辑器。
+远端图片上传预览前，Client 的 `PreviewImageService` 可以根据 `PREVIEW_IMAGE_COMPRESS_ENABLED` / `PREVIEW_IMAGE_COMPRESS_QUALITY` 尝试创建较小的临时预览图，**默认关闭**。启用后，支持的图片预览统一重新编码为 JPEG；透明图片会先铺白底，因此 `PREVIEW_IMAGE_COMPRESS_QUALITY` 用一个数值同时控制原始 JPG、PNG 和其他常见图片的预览质量。若处理失败、Pillow 缺失，或生成结果反而不更小，就上传原文件。这一可选压缩**只影响预览路径**，不改变普通下载的源文件，也不构成非破坏性图片编辑器。
 
 图片预览没有 Monaco 编辑、Save 文本回写，也没有文本工具栏的 Fullscreen 切换。不能把浏览器打开原图误解为“已经支持裁剪、旋转、缩放保存和图片编码转换”。
 

@@ -1,7 +1,7 @@
 from client.commands.runtime.interrupts import cancel_policy
 import os
 
-from client.config.runtime_config import HTTP_TRANSFER_MODE
+from client.config import runtime_config
 from core.utils.decorator import desc
 from core.utils.output_marker import error, success, info
 
@@ -17,7 +17,7 @@ class CommandFileCliMixin:
         try:
             if not str(filename or '').strip():
                 return 0, 'Usage: download <file>'
-            if HTTP_TRANSFER_MODE == 'legacy':
+            if runtime_config.HTTP_TRANSFER_MODE == 'legacy':
                 self._set_cancel_policy(
                     mode='none',
                     message='Current HTTP transfer mode is legacy; download cancellation is not supported')
@@ -46,7 +46,7 @@ class CommandFileCliMixin:
         try:
 
             # 如果传输模式为legacy在正式上传之前设置不可取消
-            if HTTP_TRANSFER_MODE == 'legacy':
+            if runtime_config.HTTP_TRANSFER_MODE == 'legacy':
                 self._set_cancel_policy(
                     mode='none',
                     message='Current HTTP transfer mode is legacy; upload cancellation is not supported')

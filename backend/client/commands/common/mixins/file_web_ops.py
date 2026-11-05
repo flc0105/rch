@@ -7,7 +7,7 @@ from client.commands.runtime.context import CommandCancelledError, CommandTimeou
 from client.commands.runtime.interrupts import cancel_policy
 from client.commands.common.services.transfer.http_file_transfer_service import CommandHttpFileTransferService
 from client.commands.common.services.filesystem.preview_image_service import PreviewImageService
-from client.config.runtime_config import HTTP_TRANSFER_MODE
+from client.config import runtime_config
 from core.utils.decorator import desc
 
 
@@ -28,8 +28,6 @@ class CommandFileWebMixin:
       - legacy：保留原版 requests files=/iter_content 行为，不支持取消
       - cancelable：支持取消和实时进度
     """
-
-    HTTP_TRANSFER_MODE = HTTP_TRANSFER_MODE
 
     @property
     def http_file_transfer_service(self):
@@ -58,7 +56,7 @@ class CommandFileWebMixin:
         下载单个路径到 server artifact files 区
         """
         try:
-            if HTTP_TRANSFER_MODE == 'legacy':
+            if runtime_config.HTTP_TRANSFER_MODE == 'legacy':
                 self._set_cancel_policy(
                     mode='none',
                     message='Current HTTP transfer mode is legacy; download cancellation is not supported')

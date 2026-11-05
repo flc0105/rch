@@ -2,13 +2,6 @@ import os
 
 from client.config import runtime_config
 
-from client.config.runtime_config import (
-    LOCAL_HEARTBEAT_WATCHDOG_INTERVAL_SECONDS,
-    LOCAL_HEARTBEAT_WATCHDOG_TIMEOUT_SECONDS,
-    REMOTE_CONTROL_WATCHDOG_INTERVAL_SECONDS,
-
-)
-
 from client.config.config import UPLOAD_BASE_URL
 from client.watchdog.watchdog_paths import get_watchdog_log_path, get_existing_watchdog_log_path
 from client.watchdog.local_heartbeat_watchdog import LocalHeartbeatWatchdogFeeder
@@ -54,7 +47,7 @@ class ClientWatchdogManager:
         if self._local_heartbeat_watchdog_feeder is None:
             self._local_heartbeat_watchdog_feeder = LocalHeartbeatWatchdogFeeder(
                 client_id=self.client_id,
-                heartbeat_interval_seconds=LOCAL_HEARTBEAT_WATCHDOG_INTERVAL_SECONDS,
+                heartbeat_interval_seconds=runtime_config.LOCAL_HEARTBEAT_WATCHDOG_INTERVAL_SECONDS,
                 heartbeat_file_path=self._build_local_heartbeat_watchdog_heartbeat_file_path(),
                 local_heartbeat_watchdog_log_file_path=self._build_local_heartbeat_watchdog_log_file_path(),
             )
@@ -67,10 +60,10 @@ class ClientWatchdogManager:
                 local_ipc_environment=self.local_ipc_environment,
                 remote_control_watchdog_enabled=self._current_enabled_modes()['remote_control_watchdog'],
                 remote_control_watchdog_base_url=UPLOAD_BASE_URL,
-                remote_control_watchdog_interval_seconds=REMOTE_CONTROL_WATCHDOG_INTERVAL_SECONDS,
+                remote_control_watchdog_interval_seconds=runtime_config.REMOTE_CONTROL_WATCHDOG_INTERVAL_SECONDS,
                 remote_control_watchdog_log_file_path=self._build_remote_control_watchdog_log_file_path(),
                 local_heartbeat_watchdog_enabled=self._current_enabled_modes()['local_heartbeat_watchdog'],
-                local_heartbeat_watchdog_timeout_seconds=LOCAL_HEARTBEAT_WATCHDOG_TIMEOUT_SECONDS,
+                local_heartbeat_watchdog_timeout_seconds=runtime_config.LOCAL_HEARTBEAT_WATCHDOG_TIMEOUT_SECONDS,
                 local_heartbeat_watchdog_heartbeat_file_path=self._build_local_heartbeat_watchdog_heartbeat_file_path(),
                 local_heartbeat_watchdog_log_file_path=self._build_local_heartbeat_watchdog_log_file_path(),
             )
@@ -80,12 +73,12 @@ class ClientWatchdogManager:
             ('client_id', self.client_id),
             ('main_process_pid', os.getpid()),
             ('remote_control_watchdog_enabled', runtime_config.REMOTE_CONTROL_WATCHDOG_ENABLED),
-            ('remote_control_watchdog_interval_seconds', REMOTE_CONTROL_WATCHDOG_INTERVAL_SECONDS),
+            ('remote_control_watchdog_interval_seconds', runtime_config.REMOTE_CONTROL_WATCHDOG_INTERVAL_SECONDS),
             ('remote_http_control_url', self._build_remote_http_control_url()),
             ('remote_control_watchdog_log_file_path', self._build_remote_control_watchdog_log_file_path()),
             ('local_heartbeat_watchdog_enabled', runtime_config.LOCAL_HEARTBEAT_WATCHDOG_ENABLED),
-            ('local_heartbeat_watchdog_heartbeat_interval_seconds', LOCAL_HEARTBEAT_WATCHDOG_INTERVAL_SECONDS),
-            ('local_heartbeat_watchdog_timeout_seconds', LOCAL_HEARTBEAT_WATCHDOG_TIMEOUT_SECONDS),
+            ('local_heartbeat_watchdog_heartbeat_interval_seconds', runtime_config.LOCAL_HEARTBEAT_WATCHDOG_INTERVAL_SECONDS),
+            ('local_heartbeat_watchdog_timeout_seconds', runtime_config.LOCAL_HEARTBEAT_WATCHDOG_TIMEOUT_SECONDS),
             ('local_heartbeat_watchdog_heartbeat_file_path', self._build_local_heartbeat_watchdog_heartbeat_file_path()),
             ('local_heartbeat_watchdog_log_file_path', self._build_local_heartbeat_watchdog_log_file_path()),
         ]
@@ -162,15 +155,15 @@ class ClientWatchdogManager:
                 'worker_pid': watchdog_worker_pid,
                 'worker_alive': watchdog_worker_alive,
                 'control_url': self._build_remote_http_control_url(),
-                'interval_seconds': REMOTE_CONTROL_WATCHDOG_INTERVAL_SECONDS,
+                'interval_seconds': runtime_config.REMOTE_CONTROL_WATCHDOG_INTERVAL_SECONDS,
                 'log_path': get_existing_watchdog_log_path('client_remote_control_watchdog.log'),
             },
             'local_heartbeat_watchdog': {
                 'enabled': local_configured,
                 'worker_pid': watchdog_worker_pid,
                 'worker_alive': watchdog_worker_alive,
-                'heartbeat_interval_seconds': LOCAL_HEARTBEAT_WATCHDOG_INTERVAL_SECONDS,
-                'timeout_seconds': LOCAL_HEARTBEAT_WATCHDOG_TIMEOUT_SECONDS,
+                'heartbeat_interval_seconds': runtime_config.LOCAL_HEARTBEAT_WATCHDOG_INTERVAL_SECONDS,
+                'timeout_seconds': runtime_config.LOCAL_HEARTBEAT_WATCHDOG_TIMEOUT_SECONDS,
                 'heartbeat_file_path': heartbeat_file_path if os.path.isfile(heartbeat_file_path) else '',
                 'log_path': get_existing_watchdog_log_path('client_local_heartbeat_watchdog.log'),
                 'feeder_thread_name': local_feeder_thread_name,

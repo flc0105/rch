@@ -3,6 +3,7 @@ import os
 import shutil
 import time
 
+from client.config import runtime_config
 from client.commands.runtime.context import CommandCancelledError
 from client.commands.strategies.http_transfer.factory import build_http_transfer_strategy
 from client.http.client_api import ClientApiClient
@@ -29,7 +30,7 @@ class CommandHttpFileTransferService:
         self.client_api = client_api or getattr(owner, 'client_api', None) or ClientApiClient()
 
     def get_transfer_strategy(self):
-        transfer_mode = getattr(self.owner, 'HTTP_TRANSFER_MODE', '')
+        transfer_mode = runtime_config.HTTP_TRANSFER_MODE
         return build_http_transfer_strategy(self.owner, transfer_mode)
 
     def build_http_upload_form_data(

@@ -2,7 +2,7 @@ import os
 import platform
 import sys
 
-from client.config.runtime_config import RECONNECT_INTERVAL_SECONDS
+from client.config import runtime_config
 from client.runtime.client_util import get_executable_path
 from core.utils.command_output import StructuredCommandResult
 from core.utils.logger import logger
@@ -68,7 +68,7 @@ class WinSystemService:
                 info['integrity'] = ''
 
             info['exec_path'] = get_executable_path()
-            info['reconnect_interval'] = RECONNECT_INTERVAL_SECONDS
+            info['reconnect_interval'] = runtime_config.RECONNECT_INTERVAL_SECONDS
             info['cwd'] = os.getcwd()
 
             # Python 信息
