@@ -10,7 +10,6 @@ from core.metadata.parameters import (
 from core.metadata.source import extract_metadata_from_class_ast, extract_metadata_from_module_ast
 from core.platform.normalization import (
     is_platform_supported as _is_platform_supported,
-    normalize_platform_alias,
     normalize_platforms,
 )
 
@@ -57,10 +56,6 @@ def normalize_job_key(value: str) -> str:
     if text.endswith('.py'):
         text = text[:-3]
     return os.path.basename(text)
-
-def normalize_job_platform(value: str) -> str:
-    return normalize_platform_alias(value, wildcard=True)
-
 
 def normalize_job_platforms(platforms) -> list[str]:
     return normalize_platforms(platforms, wildcard=True)

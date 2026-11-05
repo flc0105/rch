@@ -203,8 +203,8 @@ export default {
         },
 
         markConnectionLocallyRemoved(payload = {}) {
-            const clientId = this.normalizeClientId(payload.client_id || payload.clientId)
-            const machineId = this.normalizeMachineId(payload.machine_id || payload.machineId)
+            const clientId = this.normalizeClientId(payload.client_id)
+            const machineId = this.normalizeMachineId(payload.machine_id)
 
             const clientIds = { ...(this.locallyRemovedConnections?.clientIds || {}) }
             const offlineMachineIds = { ...(this.locallyRemovedConnections?.offlineMachineIds || {}) }
@@ -219,8 +219,8 @@ export default {
         },
 
         clearConnectionLocallyRemoved(payload = {}) {
-            const clientId = this.normalizeClientId(payload.client_id || payload.clientId)
-            const machineId = this.normalizeMachineId(payload.machine_id || payload.machineId)
+            const clientId = this.normalizeClientId(payload.client_id)
+            const machineId = this.normalizeMachineId(payload.machine_id)
 
             const clientIds = { ...(this.locallyRemovedConnections?.clientIds || {}) }
             const offlineMachineIds = { ...(this.locallyRemovedConnections?.offlineMachineIds || {}) }

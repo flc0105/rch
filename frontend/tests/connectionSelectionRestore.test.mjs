@@ -82,3 +82,12 @@ page.ensureSelectedConnectionVisible()
 assert.equal(page.selectedId, 'client-A')
 
 console.log('connection selection restore tests passed')
+
+// DeviceSidebar emits snake_case IDs for optimistic removal and failed-removal restore.
+page = createPage([clientA, clientB])
+page.markConnectionLocallyRemoved({client_id: 'client-A', machine_id: 'machine-1'})
+assert.equal(page.locallyRemovedConnections.clientIds['client-A'], true)
+assert.equal(page.locallyRemovedConnections.offlineMachineIds['machine-1'], true)
+page.clearConnectionLocallyRemoved({client_id: 'client-A', machine_id: 'machine-1'})
+assert.equal(page.locallyRemovedConnections.clientIds['client-A'], undefined)
+assert.equal(page.locallyRemovedConnections.offlineMachineIds['machine-1'], undefined)

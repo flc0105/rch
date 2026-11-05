@@ -64,10 +64,6 @@ class AliasManager:
 
         return normalized
 
-    # 兼容现有内部调用；新的跨模块调用使用公开 normalize_platform。
-    def _normalize_platform(self, *args, **kwargs):
-        return self.normalize_platform(*args, **kwargs)
-
     def get_supported_platforms(self) -> tuple[str, ...]:
         return tuple(self.SUPPORTED_PLATFORMS)
 

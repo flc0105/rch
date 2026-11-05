@@ -24,16 +24,6 @@ def decode_text_bytes(raw: bytes) -> tuple[str, str]:
     return text, codec
 
 
-def preview_text_bytes(raw: bytes) -> dict:
-    """Unknown text is display-only; replacement characters are never editable."""
-    try:
-        text, codec = decode_text_bytes(raw)
-        return {"content": text, "encoding": codec, "editable": True}
-    except (UnicodeError, ValueError):
-        return {"content": raw.decode("utf-8", errors="replace"),
-                "encoding": "unknown", "editable": False}
-
-
 def preview_text_file(file_obj, max_preview_bytes: int) -> dict:
     """Validate the entire file, displaying at most max_preview_bytes of complete text.
 

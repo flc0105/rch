@@ -3,7 +3,7 @@ from copy import deepcopy
 
 from core.metadata.parameters import coerce_param_value, normalize_param_specs, resolve_param_values
 from core.metadata.source import extract_metadata_from_module_ast
-from core.platform.normalization import normalize_platform_alias, normalize_platforms
+from core.platform.normalization import normalize_platforms
 
 _METADATA_KEYS = ('SCRIPT_METADATA', 'script_metadata', 'metadata', 'META', 'meta')
 
@@ -26,10 +26,6 @@ def read_script_metadata_from_file(file_path: str, fallback_name: str = '') -> d
             return read_script_metadata_from_source(file_obj.read(), fallback_name=fallback_name)
     except Exception:
         return {}
-
-
-def normalize_script_platform(value: str) -> str:
-    return normalize_platform_alias(value, wildcard=True)
 
 
 def normalize_script_platforms(platforms) -> list[str]:

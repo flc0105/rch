@@ -8,7 +8,7 @@ from server.application.documents.document_library_service import DocumentLibrar
 import tempfile
 import unittest
 from types import SimpleNamespace
-from core.utils.text_encoding import decode_text_bytes, preview_text_bytes, encode_for_existing_file
+from core.utils.text_encoding import decode_text_bytes, encode_for_existing_file
 from server.application.artifact.artifact_preview_service import ArtifactPreviewService
 from server.application.web.artifact_api import WebArtifactApi
 from client.commands.common.services.filesystem.file_system_service import FileSystemService
@@ -130,7 +130,6 @@ class PreviewTextEncodingTests(unittest.TestCase):
         for codec, raw in variants.items():
             with self.subTest(codec=codec):
                 self.assertEqual((content, codec), decode_text_bytes(raw))
-                self.assertEqual({'content': content, 'encoding': codec, 'editable': True}, preview_text_bytes(raw))
                 self.assertEqual(raw, encode_for_existing_file(content, codec, raw))
                 new_content = content + 'New\n'
                 payload = encode_for_existing_file(new_content, codec, raw)
@@ -142,8 +141,8 @@ class PreviewTextEncodingTests(unittest.TestCase):
         for raw in (b'\xd6\xd0\xce\xc4', b'\xff', b'A\x00B',
                     b'A\x00B\x00', b'\xff\xfe\x00', b'\xff\xfe\x00\x00A'):
             with self.subTest(raw=raw):
-                self.assertEqual('unknown', preview_text_bytes(raw)['encoding'])
-                self.assertFalse(preview_text_bytes(raw)['editable'])
+                with self.assertRaises((UnicodeError, ValueError)):
+                    decode_text_bytes(raw)
                 with self.assertRaises(ValueError):
                     encode_for_existing_file('anything', 'utf-8', raw)
 

@@ -119,13 +119,6 @@ def _external_tool_service():
     return service
 
 
-def _build_catalog_request_payload() -> dict:
-    return {
-        'platform': _target_platform(),
-        'arch': _target_arch(),
-    }
-
-
 def _load_client_catalog() -> dict:
     try:
         from client.http.client_api import ClientApiClient, ClientApiError

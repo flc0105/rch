@@ -460,8 +460,3 @@ def build_machine_identity_payload(raw_components=None) -> dict:
         'raw_components': raw,
         'normalized_components': normalized,
     }
-
-
-def build_machine_identity_demo_text() -> str:
-    payload = build_machine_identity_payload()
-    return json.dumps(payload, ensure_ascii=False, indent=2)
