@@ -36,14 +36,14 @@ Artifact 对象可能从普通文件列表、终端运行结果、通知动作�
 }
 ```
 
-- `type` 决定显示文本、图片或不支持格式的占位信息。只有 `text` 才创建 Monaco 实例。
+- `type` 决定显示文本、图片或不支持格式的占位信息。只有 `text` 才创建 Monaco 实例；`archive` 通过共享 `ArchivePreviewPanel` 浏览 ZIP 目录与受限文本条目，不支持编辑归档内容。
 - `name` 用作标题和语言识别依据；`content` 是编辑器的初始文本。
 - `truncated` 和 `editable` 共同决定 Edit 是否可用：内容必须完整且能严格无损解码。`encoding` 由 Server 对原始字节判断，并用于原编码写回。
 - `image` 类型改为读取 `url`，如果附带 `image_info` 则允许打开图片信息弹窗；`unsupported` 不会偷偷尝试用 Monaco 打开二进制内容。
 
-对普通 Artifact 文本，预览服务根据文件扩展名和 MIME 推断预览类型；它最多向浏览器发送前 **512 KiB（524,288 字节，默认可配置）**范围内的完整字符文本；编码校验使用增量解码器流式检查**整份文件**，所以即使截断边界落在 UTF-8 多字节序列或 UTF-16 字符中间，也不会错误地显示 `unknown`。超过预览限额设置 `truncated=true`，并在可见文本后补上截断提示，避免超大文本直接进入浏览器。
+普通 Artifact 预览先检查文件签名识别图片与 ZIP（`archive`），再以严格流式解码判定其他文件是否为文本；扩展名只用于语法高亮，不决定预览资格。它最多向浏览器发送前 **512 KiB（524,288 字节，默认可配置）**范围内的完整字符文本；编码校验使用增量解码器流式检查**整份文件**，所以即使截断边界落在 UTF-8 多字节序列或 UTF-16 字符中间，也不会错误地显示 `unknown`。超过预览限额设置 `truncated=true`，并在可见文本后补上截断提示，避免超大文本直接进入浏览器。
 
-读取先尝试严格识别 UTF-8、UTF-8 BOM 和带 BOM 的 UTF-16 LE/BE，只有解码成功且不含明显二进制控制字符、内容未截断时才允许编辑。未知编码文件仍可用替换字符进行**只读**预览；替换后的文本绝不能保存。预览截断发生于字节层，因此即使编码可识别，截断内容也不可编辑。
+读取先尝试严格识别 UTF-8、UTF-8 BOM 和带 BOM 的 UTF-16 LE/BE，只有解码成功且不含明显二进制控制字符、内容未截断时才允许编辑。编码不受支持或含二进制控制字符的文件直接返回 `unsupported`，不会显示有损替换文本供编辑。预览截断发生于字节层，因此即使编码可识别，截断内容也不可编辑。
 
 ### Remote Files 有额外的传输阶段
 
@@ -56,7 +56,7 @@ Remote Files 选中一台 Client 上的文件
     → Client TransferManager 读取文件并上传
     → Server 将文件记录为 previews Artifact
     → ArtifactPreviewService 识别类型并构造 payload
-    → Browser 显示 Monaco 或图片
+    → Browser 显示 Monaco、图片或 ZIP Archive Preview（ZIP 已由 Client 本地 Peek 时跳过整包上传）
 ```
 
 这种预览缓存与持久 Shared Files 不同。它属于 `previews` 分类，可以在 Server 启动清理中被清除。预览传输完成也不意味着原文件后来没有被其他程序修改。
@@ -69,7 +69,7 @@ Web 使用 `monaco-editor` 的 ESM 编辑器 API，在组件内部建立/复用 
 
 ### 只读 Preview、Edit 与 Save
 
-普通文本的工具栏显示 **Copy、Edit**（Edit 仅在可无损编辑时出现），未知编码或截断内容只有 Copy。全屏图标在右上角标题栏关闭按钮旁边，与 Screen View 一致。选择 Edit 后切换为 **Save、More、Cancel**；Paste、Clear、Reload 在 More 下拉菜单里。它们的含义如下：
+普通文本的工具栏显示 **Copy、Edit**（Edit 仅在可无损编辑时出现），截断内容只有 Copy；不支持的二进制编码显示 `unsupported` 占位，不打开 Monaco。全屏图标在右上角标题栏关闭按钮旁边，与 Screen View 一致。选择 Edit 后切换为 **Save、More、Cancel**；Paste、Clear、Reload 在 More 下拉菜单里。它们的含义如下：
 
 | 操作 | 实际行为或限制 |
 | --- | --- |
@@ -130,7 +130,7 @@ External Tools 的 Metadata 编辑直接以 JSON 文本打开共用 Monaco，保
 
 无 BOM 的 UTF-16 不进行猜测；GBK、Shift-JIS 等编码不进行自动转换。仅包含 ASCII 字节的文件天然也满足 UTF-8 严格解码，无法从原始字节唯一证明它采用哪种单字节编码。截断预览即使编码确定，`editable` 也必定是 `false`。
 
-Server 在预览响应中返回 `content`、`encoding` 和 `editable`；Web 的 Monaco 只消费 Unicode 字符串，编码标签取自服务端 codec，而不再根据字符串内容猜测。未知编码预览可能含 `�`，但其 `editable=false`，用户不能从 UI 启动 Edit。
+Server 在预览响应中返回 `content`、`encoding` 和 `editable`；Web 的 Monaco 只消费 Unicode 字符串，编码标签取自服务端 codec，而不再根据字符串内容猜测。不支持的编码被服务端识别为 `unsupported`，不再用替换字符冒充可预览文本。
 
 保存时 Web 将确定的 codec 传给 Artifact 或 Remote Files 的对应保存入口；真正写文件的 Server/Client 端重新检查**当前目标文件**是否仍可严格解码且 codec 一致，再将全部内容编码为字节，成功后才打开目标进行覆盖。编码不匹配、编码失败、未知编码和无法表示的字符均直接报错，文件不会因编码错误被截断，也不会隐式回退为 UTF-8。编码校验不等同于磁盘写入中断恢复，也不提供多用户编辑冲突合并。
 

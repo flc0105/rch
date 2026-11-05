@@ -1,8 +1,9 @@
-import mimetypes
 import os
+import mimetypes
 from fractions import Fraction
 
 from core.utils.text_encoding import preview_text_file
+from core.utils.zip_peek import ZipPeekService
 
 
 class ArtifactPreviewService:
@@ -49,6 +50,26 @@ class ArtifactPreviewService:
                 return 'text'
 
         return 'unsupported'
+
+    @staticmethod
+    def _detect_file_signature(file_path: str) -> str:
+        with open(file_path, 'rb') as f:
+            head = f.read(16)
+        if (head.startswith(b'\x89PNG\r\n\x1a\n')
+                or head.startswith(b'\xff\xd8\xff')
+                or head.startswith((b'GIF87a', b'GIF89a'))
+                or head.startswith(b'BM')
+                or (head.startswith(b'RIFF') and head[8:12] == b'WEBP')):
+            return 'image'
+        if head.startswith((b'PK\x03\x04', b'PK\x05\x06', b'PK\x07\x08')):
+            return 'archive'
+        return ''
+
+    def inspect_zip_artifact(self, artifact_id: str) -> dict:
+        return ZipPeekService().inspect_zip(self.artifact_service.get_artifact_file_path(artifact_id))
+
+    def read_zip_artifact_entry(self, artifact_id: str, entry_name: str) -> dict:
+        return ZipPeekService().read_zip_text_entry(self.artifact_service.get_artifact_file_path(artifact_id), entry_name)
 
     def _normalize_image_info_value(self, value, tag=None):
         """
@@ -133,7 +154,14 @@ class ArtifactPreviewService:
         if not os.path.isfile(file_path):
             raise FileNotFoundError('file not found')
 
-        preview_type = self.guess_preview_type(display_name)
+        preview_type = self._detect_file_signature(file_path)
+
+        if preview_type == 'archive':
+            return {
+                'type': 'archive',
+                'name': os.path.basename(display_name),
+                'artifact_id': artifact.get('artifact_id', ''),
+            }
 
         if preview_type == 'image':
             return {
@@ -144,9 +172,15 @@ class ArtifactPreviewService:
                 'image_info': self._build_image_info_payload(file_path, display_name, artifact),
             }
 
-        if preview_type == 'text':
+        if not preview_type:
             with open(file_path, 'rb') as file_obj:
                 decoded = preview_text_file(file_obj, self.artifact_service.MAX_PREVIEW_TEXT_BYTES)
+            if decoded['encoding'] == 'unknown':
+                return {
+                    'type': 'unsupported',
+                    'name': os.path.basename(display_name),
+                    'artifact_id': artifact.get('artifact_id', ''),
+                }
             text = decoded['content']
             if decoded['truncated']:
                 text += '\n\n...(已截断)'

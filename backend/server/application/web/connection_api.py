@@ -25,8 +25,8 @@ class WebConnectionApi:
     def serialize_connection(self, session):
         return self.connection_service.serialize_connection(session)
 
-    def get_machine_connection_history(self, machine_id: str):
-        return self.connection_service.get_machine_connection_history(machine_id)
+    def get_machine_connection_history(self, machine_id: str, *, limit: int = 20, offset: int = 0):
+        return self.connection_service.get_machine_connection_history(machine_id, limit=limit, offset=offset)
 
     def get_machine_connection_commands(self, machine_id: str, client_id: str, *, limit=None, cursor: str = ''):
         return self.connection_service.get_machine_connection_commands(

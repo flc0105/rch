@@ -80,3 +80,43 @@ test('termination uses original reason text and includes details only when prese
   assert.match(template, /<span v-if="terminationDetailText\(scope.row\)"> \(/)
   assert.doesNotMatch(template, /Server interrupted/)
 })
+
+test('Connection History fetches only 20 sessions at a time and 10 activities per detail page', async () => {
+  const calls = []
+  const { template, options } = component('../src/components/MachineConnectionHistoryDialog.vue', {
+    getMachineConnectionHistory: async (machine, params) => {
+      calls.push(['history', machine, params.limit, params.offset])
+      const start = params.offset
+      const length = start === 40 ? 5 : 20
+      return { sessions: Array.from({ length }, (_, i) => ({client_id: `client-${start + i}`, command_count: 30})), has_more: start < 40 }
+    },
+    getMachineConnectionCommands: async (machine, client, params) => {
+      calls.push(['activities', machine, client, params.limit, params.cursor])
+      return { items: [{activity_id: params.cursor || 'initial'}], has_more: !params.cursor, next_cursor: params.cursor ? '' : 'second' }
+    },
+    ElMessage: { error(message) { throw Error(message) } },
+  })
+  assert.match(template, /@click="loadMoreHistory"/)
+  assert.match(template, /@click="loadHistory\(\)"/)
+  const dialog = makeDialog(options)
+  await dialog.loadHistory()
+  assert.equal(dialog.sessions.length, 20)
+  assert.equal(dialog.history.has_more, true)
+  await dialog.loadMoreHistory()
+  assert.equal(dialog.sessions.length, 40)
+  await dialog.loadMoreHistory()
+  assert.equal(dialog.sessions.length, 45)
+  assert.equal(dialog.history.has_more, false)
+  assert.deepEqual(calls.slice(0, 3), [
+    ['history', 'M', 20, 0],
+    ['history', 'M', 20, 20],
+    ['history', 'M', 20, 40],
+  ])
+  await dialog.loadSessionCommands(dialog.sessions[0])
+  await dialog.loadSessionCommands(dialog.sessions[0], true)
+  assert.deepEqual(calls.slice(3), [
+    ['activities', 'M', 'client-0', 10, ''],
+    ['activities', 'M', 'client-0', 10, 'second'],
+  ])
+  assert.equal(dialog.sessions[0].commands.length, 2)
+})

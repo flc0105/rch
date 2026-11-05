@@ -91,9 +91,13 @@ Artifact 的三个 URL 含义不同：
 | `/api/artifacts/{artifact_id}/raw` | 直接以文件响应返回内容，适合浏览器显示图片等 |
 | `/api/artifacts/{artifact_id}/preview` | 返回用于预览界面的结构化描述，而非直接返回整个原始文件 |
 
-预览根据扩展名和 MIME 类型区分图片、文本和不支持的格式。图片预览返回 Raw URL；如果运行环境安装 Pillow，还可能附加尺寸、格式和部分 EXIF 信息。文本预览默认最多显示文件前 **512 KiB**，同时校验完整文件的编码；支持严格 UTF-8、UTF-8 BOM 与带 BOM 的 UTF-16。无法无损识别编码时只读显示；超过限额会标记 `truncated`，不允许将截断内容直接保存覆盖原文件。无法识别为图片或文本时仍可下载，但 Preview 会返回 `unsupported`。
+预览首先检查文件内容签名：图片使用 PNG/JPEG/GIF/WebP/BMP 签名，ZIP 返回正式的 `archive` 类型；其余文件严格流式校验内容是否为文本，而不是仅按扩展名或 MIME 判断。无扩展名的合法文本也可预览，扩展名只帮助选择编辑器语法高亮。图片预览返回 Raw URL；如果运行环境安装 Pillow，还可能附加尺寸、格式和部分 EXIF 信息。文本默认最多显示前 **512 KiB**，但会继续校验**整份文件**是否为严格 UTF-8、UTF-8 BOM 或带 BOM 的 UTF-16；控制字符/不支持的二进制编码返回 `unsupported`。超过显示上限标记 `truncated` 且禁止编辑；写回时重新校验完整原始字节及大小限制。
+
+ZIP Artifact 的树形列表和文本条目预览通过 `GET /api/artifacts/{artifact_id}/zip-peek` 与 `POST /api/artifacts/{artifact_id}/zip-entry` 读取，界面统一使用 `ArchivePreviewPanel`。归档预览限制：ZIP 本体最多 2 GiB，目录条目最多 5,000，单个文本条目最多 2 MiB；不支持就地修改 ZIP 内文件。Remote Files 的 ZIP 则继续由 Client 本地读取归档结构，无需上传整份 ZIP。
 
 Preview Dialog 对可编辑文本提供编辑入口；保存实际修改的是 **Server 上的 Artifact 文件**，并同步更新其元数据大小和更新时间。它不会自动将编辑内容同步回最初的 Client 文件。如果是 Remote Files 中的远程文件编辑，则要使用那条独立的远端保存链路。被截断的预览不应作为完整内容直接覆盖保存。
+
+PTY Dialog 的 **More → Save to Artifact** 直接复用 Command Output Artifact 保存路径：把当前 xterm 的文本缓冲区（包含滚动历史）存成 `pty_output_yyyyMMdd_HHmmss.txt`，归类为 `command_output`，不修改 PTY 会话或当前命令执行。
 
 ### 从 Script SDK 使用 Artifact
 
@@ -167,4 +171,4 @@ Web API 以 `/api/artifacts` 为主入口。以下是接口协议的边界，用
 
 上传文件的兼容入口 `POST /api/files/upload` 同时存在于基础 Web 服务（默认 8085）和专用传输服务（默认 8086）。其 multipart 表单包含 `file`，可携带 `artifact_type`、`category`、`client_id`、`source_command_id`、Job 来源信息及 JSON `extra`。接口完成后返回注册的 Artifact 描述，浏览器再通过正式 Artifact URL 访问它。**选择 8086 并不自动意味着 Client 使用可取消传输策略，也不保证 Transfer Center 会创建进度记录。**
 
-Artifact 管理路由通常由 Web Session 或管理员 API Token 保护；Client Session Token 对列表、下载、Raw 和 Preview 等读取请求有单独的 Scope 授权规则。`/api/files/upload` 是专门标记的匿名入口，8086 文件上传服务也不是完整复用基础 Web 的会话认证中间件；因此不要将 `artifact_id`、上传路径或可下载 URL 理解为已包含完整身份校验的能力。对外暴露这些接口时，应同时考虑网络入口、管理员凭据和实际调用方权限。认证方式详见 [Administrator Authentication](admin_auth.md)。
+Artifact 管理路由通常由 Web Session 或管理员 API Token 保护；Client Session Token 对登记在 `ClientApiPolicy.ROUTES` 中的 HTTP 方法和路径有明确准入规则。`/api/files/upload` 是专门标记的匿名入口，8086 文件上传服务也不是完整复用基础 Web 的会话认证中间件；因此不要将 `artifact_id`、上传路径或可下载 URL 理解为已包含完整身份校验的能力。对外暴露这些接口时，应同时考虑网络入口、管理员凭据和实际调用方权限。认证方式详见 [Administrator Authentication](admin_auth.md)。

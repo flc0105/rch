@@ -15,6 +15,7 @@ let response = null
 const sandbox = {
   console,
   PreviewImageInfoDialog: {},
+  ArchivePreviewPanel: {},
   FullScreen: {},
   Close: {},
   formatBytes: value => `${value} B`,

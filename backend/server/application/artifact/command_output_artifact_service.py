@@ -235,13 +235,19 @@ class CommandOutputArtifactService:
                 or str(extra_payload.get('saved_from') or '').strip() == 'terminal_toolbar'
             )
         )
+        is_pty_toolbar_export = (
+            normalized_category == self.DEFAULT_CATEGORY
+            and (str(source or '').strip() == 'pty_toolbar_action'
+                 or str(extra_payload.get('saved_from') or '').strip() == 'pty_toolbar')
+        )
         allocation = self.allocate_output_path(
             category=normalized_category,
             machine_id=machine_id,
             source_command=allocation_name_source,
             now=now,
             output_format=normalized_format,
-            output_name_prefix='terminal_output' if is_terminal_toolbar_export else '',
+            output_name_prefix=('pty_output' if is_pty_toolbar_export else
+                                'terminal_output' if is_terminal_toolbar_export else ''),
         )
 
         with open(allocation['file_path'], 'w', encoding='utf-8', errors='replace') as file_obj:

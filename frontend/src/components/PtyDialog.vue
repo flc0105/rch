@@ -75,6 +75,7 @@
                 <el-dropdown-item command="focus" :disabled="!ptyTerm">Focus</el-dropdown-item>
                 <el-dropdown-item command="paste" :disabled="!ptySessionId || ptyClosing">Paste</el-dropdown-item>
                 <el-dropdown-item command="copy" :disabled="!ptyTerm">Copy</el-dropdown-item>
+                <el-dropdown-item command="save-artifact" :disabled="!ptyTerm || ptySaving">Save to Artifact</el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
@@ -123,6 +124,7 @@
 import { ElMessage } from 'element-plus'
 import { FullScreen, Close } from '@element-plus/icons-vue'
 import { getPtyBufferText } from '../utils/ptyText.js'
+import { saveCommandOutputArtifact } from '../api/artifactsApi.js'
 import { webSocketUrl } from '../api/streamApi.js'
 import { Terminal } from 'xterm'
 import { FitAddon } from 'xterm-addon-fit'
@@ -158,6 +160,7 @@ export default {
       shellPath: '',
       ptyLoading: false,
       ptyClosing: false,
+      ptySaving: false,
       ptySessionId: '',
       ptySeq: 0,
       ptyStatus: '',
@@ -515,6 +518,38 @@ export default {
       if (command === 'focus') this.focusPtyInput()
       else if (command === 'paste') void this.pasteIntoPty()
       else if (command === 'copy') void this.copyPtyOutput()
+      else if (command === 'save-artifact') void this.savePtyOutputArtifact()
+    },
+
+    async savePtyOutputArtifact() {
+      if (this.ptySaving) return
+      const content = getPtyBufferText(this.ptyTerm)
+      if (!content.trim()) {
+        ElMessage.warning('No PTY output to save')
+        return
+      }
+      this.ptySaving = true
+      try {
+        const res = await saveCommandOutputArtifact({
+          content,
+          category: 'command_output',
+          client_id: String(this.selectedId || ''),
+          hostname: String(this.currentConnection?.hostname || ''),
+          machine_id: String(this.currentConnection?.machine_id || ''),
+          source: 'pty_toolbar_action',
+          source_command: '',
+          output_format: 'text',
+          extra: { saved_from: 'pty_toolbar' },
+        })
+        const json = await res.json()
+        if (!res.ok || json.code !== 0) throw new Error(json.message || 'Save failed')
+        ElMessage.success('Saved to Command Output')
+        this.$emit('artifact-saved', json.data || null)
+      } catch (error) {
+        ElMessage.error(error.message || 'Save failed')
+      } finally {
+        this.ptySaving = false
+      }
     },
 
     async pasteIntoPty() {

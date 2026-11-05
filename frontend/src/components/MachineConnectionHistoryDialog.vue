@@ -36,7 +36,7 @@
               <el-button size="small" text :disabled="!activeFilterCount" @click="clearFilters">Clear filters</el-button>
             </div>
           </el-popover>
-          <el-button size="small" @click="loadHistory">Refresh</el-button>
+          <el-button size="small" @click="loadHistory()">Refresh</el-button>
         </div>
       </div>
 
@@ -406,6 +406,10 @@
         {{ sessions.length ? 'No connections match the selected filters' : 'No connection history for this machine yet' }}
       </div>
 
+      <div v-if="history.has_more" class="machine-session-command-load-more">
+        <el-button size="small" plain :loading="loadingMore" @click="loadMoreHistory">Load More</el-button>
+      </div>
+
       <div v-if="history.tracking_started_at" class="machine-history-footer-note">
         Connection lifecycle and activity records are stored in rch.db. Activity summaries are loaded for each client session.
       </div>
@@ -425,6 +429,8 @@ export default {
     return {
       visible: false,
       loading: false,
+      loadingMore: false,
+      historyRequestSeq: 0,
       machineId: '',
       deviceName: '',
       history: {
@@ -484,6 +490,7 @@ export default {
         item.device_display_name || item.display_hostname || item.device_alias || item.hostname || '',
       ).trim()
       this.visible = true
+      this.historyRequestSeq += 1
       this.expandedSessionIds = []
       this.mobileExpandedSessionIds = []
       this.clearFilters()
@@ -503,19 +510,26 @@ export default {
       this.filters = { integrity: '', launchMode: '', termination: '' }
     },
 
-    async loadHistory() {
+    async loadMoreHistory() {
+      if (!this.history.has_more || this.loading || this.loadingMore) return
+      return this.loadHistory(true)
+    },
+
+    async loadHistory(append = false) {
       if (!this.machineId) {
         this.history = { sessions: [] }
         return
       }
 
-      this.loading = true
+      const seq = ++this.historyRequestSeq
+      if (append) this.loadingMore = true
+      else this.loading = true
       try {
-        const payload = await getMachineConnectionHistory(this.machineId)
+        const offset = append ? this.sessions.length : 0
+        const payload = await getMachineConnectionHistory(this.machineId, { limit: 20, offset })
+        if (seq !== this.historyRequestSeq) return
         const previous = new Map(this.sessions.map(row => [row.client_id, row]))
-        this.history = {
-          ...(payload || {}),
-          sessions: (Array.isArray(payload?.sessions) ? payload.sessions : []).map(session => {
+        const nextRows = (Array.isArray(payload?.sessions) ? payload.sessions : []).map(session => {
             const old = previous.get(session.client_id)
             return {
               ...session,
@@ -525,7 +539,10 @@ export default {
               command_has_more: old?.command_has_more || false,
               command_next_cursor: old?.command_next_cursor || '',
             }
-          }),
+          })
+        this.history = {
+          ...(payload || {}),
+          sessions: append ? [...this.sessions, ...nextRows] : nextRows,
         }
         const available = new Set(this.sessions.map(row => row.client_id))
         this.expandedSessionIds = this.expandedSessionIds.filter(id => available.has(id))
@@ -539,7 +556,10 @@ export default {
       } catch (e) {
         ElMessage.error(e.message || 'Failed to load connection history')
       } finally {
-        this.loading = false
+        if (seq === this.historyRequestSeq) {
+          this.loading = false
+          this.loadingMore = false
+        }
       }
     },
 
@@ -579,7 +599,7 @@ export default {
       row.command_loading = true
       try {
         const data = await getMachineConnectionCommands(this.machineId, row.client_id, {
-          limit: 50,
+          limit: 10,
           cursor: append ? row.command_next_cursor : '',
         })
 

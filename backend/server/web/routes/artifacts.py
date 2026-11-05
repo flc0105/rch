@@ -48,6 +48,16 @@ def create_artifacts_blueprint(server_instance):
     def preview_artifact(artifact_id):
         return responder.file_endpoint(lambda: artifact_api.build_artifact_preview_payload(artifact_id))
 
+    @blueprint.get('/api/artifacts/<artifact_id>/zip-peek')
+    def peek_artifact_zip(artifact_id):
+        return responder.file_endpoint(lambda: artifact_api.inspect_zip_artifact(artifact_id))
+
+    @blueprint.post('/api/artifacts/<artifact_id>/zip-entry')
+    def read_artifact_zip_entry(artifact_id):
+        payload = get_json_payload()
+        return responder.file_endpoint(
+            lambda: artifact_api.read_zip_artifact_entry(artifact_id, payload.get('entry_name', '')))
+
     @blueprint.delete('/api/artifacts/<artifact_id>')
     def delete_artifact(artifact_id):
         return responder.file_endpoint(lambda: artifact_api.delete_artifact(artifact_id))

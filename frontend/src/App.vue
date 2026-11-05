@@ -420,6 +420,7 @@
     :selected-id="selectedId"
     :current-connection="currentConnection"
     :get-tab-scoped-headers="getTabScopedHeaders"
+    @artifact-saved="refreshArtifactsIfOpen"
   />
 
   <ScreenViewDialog

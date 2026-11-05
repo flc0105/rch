@@ -197,6 +197,12 @@ class WebArtifactService:
     def build_preview_payload(self, artifact_id: str) -> dict:
         return self.preview_service.build_preview_payload(artifact_id)
 
+    def inspect_zip_artifact(self, artifact_id: str) -> dict:
+        return self.preview_service.inspect_zip_artifact(artifact_id)
+
+    def read_zip_artifact_entry(self, artifact_id: str, entry_name: str) -> dict:
+        return self.preview_service.read_zip_artifact_entry(artifact_id, entry_name)
+
     def create_upload_temp_file(self, upload) -> tuple[str, str]:
         return self.temp_file_service.create_upload_temp_file(upload)
 

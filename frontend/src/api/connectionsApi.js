@@ -82,9 +82,10 @@ export function getCommandCompletions(clientId, payload = {}) {
   )
 }
 
-export function getMachineConnectionHistory(machineId) {
-  if (!machineId) return Promise.resolve({ sessions: [] })
-  return apiData(`/api/machines/${encodeURIComponent(machineId)}/connection-history`, {}, { sessions: [] })
+export function getMachineConnectionHistory(machineId, { limit = 20, offset = 0 } = {}) {
+  if (!machineId) return Promise.resolve({ sessions: [], has_more: false })
+  const query = new URLSearchParams({ limit: String(limit), offset: String(offset) })
+  return apiData(`/api/machines/${encodeURIComponent(machineId)}/connection-history?${query}`, {}, { sessions: [], has_more: false })
 }
 
 export function getMachineConnectionCommands(machineId, clientId, params = {}) {

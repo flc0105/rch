@@ -832,11 +832,6 @@
   </el-dialog>
 
 
-  <RemoteZipPeekDialog
-      ref="remoteZipPeekDialogRef"
-      :selected-id="remoteFilesClientId"
-  />
-
   <RemotePinsDialog
       v-model="pinManagerVisible"
       :selected-id="remoteFilesClientId"
@@ -851,7 +846,6 @@ import { listRemotePinnedPaths, saveRemotePinnedPath, deleteRemotePinnedPath } f
 import {ElMessage, ElMessageBox} from 'element-plus'
 import { MoreFilled } from '@element-plus/icons-vue'
 import RemotePinsDialog from './RemotePinsDialog.vue'
-import RemoteZipPeekDialog from './RemoteZipPeekDialog.vue'
 import { formatBytes as formatBytesValue } from '../utils/formatters.js'
 import { uploadRemoteFileToClient } from '../api/transferApi.js'
 import { sendCommand } from '../api/connectionsApi.js'
@@ -862,7 +856,6 @@ export default {
 
   components: {
     RemotePinsDialog,
-    RemoteZipPeekDialog,
     MoreFilled,
   },
 
@@ -2489,10 +2482,6 @@ export default {
 
     previewRow(row) {
       if (!row || row.is_dir || row.is_parent_entry) return
-      if (this.isZipEntry(row)) {
-        this.$refs.remoteZipPeekDialogRef?.open(row)
-        return
-      }
       this.$emit('preview', {
         ...row,
         client_id: this.remoteFilesClientId,

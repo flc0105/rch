@@ -30,6 +30,12 @@ class WebArtifactApi:
     def build_artifact_preview_payload(self, artifact_id: str):
         return self.artifact_service.build_preview_payload(artifact_id)
 
+    def inspect_zip_artifact(self, artifact_id: str):
+        return self.artifact_service.inspect_zip_artifact(artifact_id)
+
+    def read_zip_artifact_entry(self, artifact_id: str, entry_name: str):
+        return self.artifact_service.read_zip_artifact_entry(artifact_id, entry_name)
+
     def get_artifact_file_path(self, artifact_id: str):
         return self.artifact_service.get_artifact_file_path(artifact_id)
 
@@ -223,11 +229,10 @@ class WebArtifactApi:
         file_path = artifact.get('saved_path', '')
         if not file_path or not os.path.isfile(file_path):
             raise FileNotFoundError('Artifact file not found')
-        preview_type = self.artifact_service.guess_preview_type(artifact.get('original_name', ''))
-        if preview_type != 'text':
-            raise ValueError('Only text files can be edited')
         with open(file_path, 'rb') as f:
             original_bytes = f.read()
+        if len(original_bytes) > self.artifact_service.MAX_PREVIEW_TEXT_BYTES:
+            raise ValueError('Truncated text files cannot be edited')
         encoded_bytes = encode_for_existing_file(content, encoding, original_bytes)
         with open(file_path, 'wb') as f:
             f.write(encoded_bytes)

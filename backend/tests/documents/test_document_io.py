@@ -173,10 +173,13 @@ class PreviewTextEncodingTests(unittest.TestCase):
                 with self.subTest(codec=codec):
                     target.write_bytes(raw)
                     payload = service.build_preview_payload('aid')
-                    self.assertEqual('text', payload['type'])
-                    self.assertEqual(codec, payload['encoding'])
-                    self.assertEqual(editable, payload['editable'])
-                    self.assertEqual(False, payload['truncated'])
+                    if codec == 'unknown':
+                        self.assertEqual('unsupported', payload['type'])
+                    else:
+                        self.assertEqual('text', payload['type'])
+                        self.assertEqual(codec, payload['encoding'])
+                        self.assertEqual(editable, payload['editable'])
+                        self.assertEqual(False, payload['truncated'])
             target.write_bytes(b'A' * 204800 + b'B')
             payload = service.build_preview_payload('aid')
             self.assertTrue(payload['truncated'])
@@ -224,9 +227,7 @@ class PreviewTextEncodingTests(unittest.TestCase):
                 with self.subTest(suffix=suffix):
                     target.write_bytes(b'A' * limit + suffix)
                     payload = service.build_preview_payload('aid')
-                    self.assertTrue(payload['truncated'])
-                    self.assertEqual('unknown', payload['encoding'])
-                    self.assertFalse(payload['editable'])
+                    self.assertEqual('unsupported', payload['type'])
             target.write_bytes(b'A' * limit)
             payload = service.build_preview_payload('aid')
             self.assertFalse(payload['truncated'])
@@ -239,7 +240,7 @@ class PreviewTextEncodingTests(unittest.TestCase):
             artifact = {'saved_path': str(target), 'original_name': 'sample.txt', 'artifact_id': 'aid'}
             api = WebArtifactApi.__new__(WebArtifactApi)
             api.get_artifact_by_id = lambda _id: artifact
-            api.artifact_service = SimpleNamespace(guess_preview_type=lambda _name: 'text')
+            api.artifact_service = SimpleNamespace(MAX_PREVIEW_TEXT_BYTES=204800)
             for codec, raw in [
                 ('utf-8', 'hello'.encode('utf-8')),
                 ('utf-8-sig', b'\xef\xbb\xbfhello'),
@@ -257,6 +258,10 @@ class PreviewTextEncodingTests(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         api.update_artifact_content('aid', 'bad', 'other')
                     self.assertEqual(preserved, target.read_bytes())
+            target.write_bytes(b'A' * 204801)
+            with self.assertRaisesRegex(ValueError, 'Truncated text'):
+                api.update_artifact_content('aid', 'change', 'utf-8')
+            self.assertEqual(b'A' * 204801, target.read_bytes())
             target.write_bytes(b'\xd6\xd0\xce\xc4')
             with self.assertRaisesRegex(ValueError, 'unknown'):
                 api.update_artifact_content('aid', 'change', 'utf-8')

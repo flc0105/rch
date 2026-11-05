@@ -154,12 +154,24 @@ class HistoryViewService:
             return self._activity_page(str(machine_id or '').strip() or 'unknown_machine',
                                        limit=limit, cursor=cursor, query=query, kind=kind, errors=errors)
 
-    def get_connection_command_counts_by_machine_id(self, machine_id):
-        rows = self.store.database.connection().execute('''
-            SELECT client_id, COUNT(*) AS command_count FROM activity_records
-            WHERE machine_id = ? GROUP BY client_id
-        ''', (machine_id,)).fetchall()
+    def get_connection_command_counts_by_machine_id(self, machine_id, client_ids=None):
+        ids = [str(value) for value in (client_ids or []) if str(value)]
+        if not ids:
+            return {}
+        placeholders = ', '.join('?' for _ in ids)
+        rows = self.store.database.connection().execute(
+            f"SELECT client_id, COUNT(*) AS command_count FROM activity_records "
+            f"WHERE machine_id = ? AND client_id IN ({placeholders}) GROUP BY client_id",
+            (machine_id, *ids),
+        ).fetchall()
         return {row['client_id']: int(row['command_count']) for row in rows}
+
+    def get_connection_command_totals(self, machine_id):
+        row = self.store.database.connection().execute('''
+            SELECT COUNT(*) AS total, SUM(CASE WHEN client_id = '' THEN 1 ELSE 0 END) AS unassigned
+            FROM activity_records WHERE machine_id = ?
+        ''', (machine_id,)).fetchone()
+        return {'total': int(row['total'] or 0), 'unassigned': int(row['unassigned'] or 0)}
 
     def get_connection_command_page(self, machine_id, client_id, *, limit=None, cursor=''):
         if not str(client_id or '').strip():

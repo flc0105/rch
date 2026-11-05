@@ -39,6 +39,15 @@ export function previewArtifact(artifactId) {
   return fetch(artifactUrl(artifactId, '/preview'))
 }
 
+export function inspectArtifactZip(artifactId) {
+  return fetch(artifactUrl(artifactId, '/zip-peek'))
+}
+
+export function readArtifactZipEntry(artifactId, entryName) {
+  return fetch(artifactUrl(artifactId, '/zip-entry'),
+    jsonRequestOptions('POST', { entry_name: entryName }))
+}
+
 export function saveArtifactContent(artifactId, content, encoding) {
   return fetch(artifactUrl(artifactId, '/content'),
     jsonRequestOptions('PUT', { content, encoding }))

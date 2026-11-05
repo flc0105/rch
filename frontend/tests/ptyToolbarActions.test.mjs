@@ -5,7 +5,7 @@ import vm from 'node:vm'
 import { getPtyBufferText } from '../src/utils/ptyText.js'
 
 const source = readFileSync(new URL('../src/components/PtyDialog.vue', import.meta.url), 'utf8')
-function makeDialog({ secure = true, readText = async () => 'clipboard', writeText = async () => {} } = {}) {
+function makeDialog({ secure = true, readText = async () => 'clipboard', writeText = async () => {}, saveOutput = async () => ({ok:true, json:async () => ({code:0, data:{artifact_id:'A'}})}) } = {}) {
   const messages = []
   const script = source.match(/<script>([\s\S]*?)<\/script>/)?.[1]
   assert.ok(script)
@@ -13,7 +13,7 @@ function makeDialog({ secure = true, readText = async () => 'clipboard', writeTe
     .replace('export default {', 'const component = {') + '\nglobalThis.component = component'
   const context = {
     window: { isSecureContext: secure }, navigator: { clipboard: { readText, writeText } },
-    getPtyBufferText, setTimeout, clearTimeout, FullScreen: {}, Close: {}, WebSocket: { OPEN: 1 },
+    getPtyBufferText, saveCommandOutputArtifact: saveOutput, setTimeout, clearTimeout, FullScreen: {}, Close: {}, WebSocket: { OPEN: 1 },
     ElMessage: {
       warning: message => messages.push(['warning', message]),
       error: message => messages.push(['error', message]),
@@ -146,4 +146,35 @@ test('fullscreen schedules and emits the updated terminal dimensions to WS', asy
   assert.equal(sent[0].type, 'resize')
   assert.equal(sent[0].cols, 148)
   assert.equal(sent[0].rows, 41)
+})
+
+
+test('PTY More saves the entire current terminal buffer through Command Output Artifact API', async () => {
+  const requests = []
+  const emitted = []
+  const { dialog, messages } = makeDialog({ saveOutput: async payload => {
+    requests.push(payload)
+    return { ok: true, json: async () => ({code: 0, data: {artifact_id: 'saved-pty'}}) }
+  } })
+  assert.match(source, /<el-dropdown-item command="save-artifact"[^>]*>Save to Artifact<\/el-dropdown-item>/)
+  dialog.selectedId = 'client-1'
+  dialog.currentConnection = { machine_id: 'machine-1', hostname: 'test-host' }
+  dialog.ptyTerm = fakeBuffer([{text: '$ echo hello'}, {text: 'world', wrapped: true}, {text: 'done'}])
+  dialog.$emit = (...args) => emitted.push(args)
+  await dialog.savePtyOutputArtifact()
+  assert.equal(requests.length, 1)
+  assert.equal(requests[0].content, '$ echo helloworld\ndone')
+  assert.equal(requests[0].client_id, 'client-1')
+  assert.equal(requests[0].machine_id, 'machine-1')
+  assert.equal(requests[0].source, 'pty_toolbar_action')
+  assert.equal(requests[0].category, 'command_output')
+  assert.equal(dialog.ptySaving, false)
+  assert.equal(emitted[0][0], 'artifact-saved')
+  assert.deepEqual(messages, [['success', 'Saved to Command Output']])
+})
+
+
+test('App refreshes an open Artifact Manager after PTY saves output', () => {
+  const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
+  assert.match(app, /:is="dialogComponents\.pty"[\s\S]*?@artifact-saved="refreshArtifactsIfOpen"/)
 })

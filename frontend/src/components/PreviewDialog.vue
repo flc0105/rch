@@ -182,6 +182,14 @@
         </div>
       </template>
 
+      <template v-else-if="previewType === 'archive'">
+        <ArchivePreviewPanel
+          ref="archivePreviewRef"
+          :inspect="archiveInspect"
+          :read-entry="archiveReadEntry"
+        />
+      </template>
+
       <template v-else-if="previewType === 'text'">
         <!-- Monaco Editor 容器：这个 id 保留，方便调试定位 -->
         <div
@@ -212,7 +220,9 @@
 </template>
 
 <script>
-import { previewArtifact, uploadArtifact, saveArtifactContent } from '../api/artifactsApi.js'
+import { previewArtifact, uploadArtifact, saveArtifactContent, inspectArtifactZip, readArtifactZipEntry } from '../api/artifactsApi.js'
+import { inspectRemoteZip, readRemoteZipEntry } from '../api/remoteFilesApi.js'
+import ArchivePreviewPanel from './ArchivePreviewPanel.vue'
 import { saveServerJob, downloadServerJob, previewBackgroundJobFile } from '../api/backgroundJobsApi.js'
 import {ElMessage} from 'element-plus'
 import {Close, FullScreen} from '@element-plus/icons-vue'
@@ -310,6 +320,7 @@ export default {
 
   components: {
     PreviewImageInfoDialog,
+    ArchivePreviewPanel,
     Close,
     FullScreen,
   },
@@ -341,6 +352,8 @@ export default {
       previewFullscreen: false,
       previewLoading: false,
       previewType: '',
+      archiveInspect: null,
+      archiveReadEntry: null,
       previewTitle: '',
       previewUrl: '',
       previewText: '',
@@ -740,6 +753,21 @@ export default {
         return
       }
 
+      if (/\.zip$/i.test(String(row.name || row.path))) {
+        this.resetPreviewState()
+        this.previewSource = 'remote_file'
+        this.previewFilePath = row.path
+        this.previewRemoteClientId = clientId
+        this.previewTitle = row.name || 'ZIP Preview'
+        this.previewType = 'archive'
+        this.archiveInspect = () => inspectRemoteZip(clientId, row.path)
+        this.archiveReadEntry = entryName => readRemoteZipEntry(clientId, row.path, entryName)
+        this.previewDialogVisible = true
+        await this.$nextTick()
+        await this.$refs.archivePreviewRef?.loadArchive()
+        return
+      }
+
       // 记录文件路径和对应设备，避免全局选择变化后写到其他 Client。
       this.previewFilePath = row.path
       this.previewRemoteClientId = clientId
@@ -1099,6 +1127,13 @@ export default {
 
         if (this.previewType === 'image') {
           this.previewUrl = data.url || ''
+        } else if (this.previewType === 'archive') {
+          const artifactId = String(data.artifact_id || '')
+          if (!artifactId) throw new Error('Archive artifact is missing')
+          this.archiveInspect = () => inspectArtifactZip(artifactId)
+          this.archiveReadEntry = entryName => readArtifactZipEntry(artifactId, entryName)
+          await this.$nextTick()
+          await this.$refs.archivePreviewRef?.loadArchive()
         } else if (this.previewType === 'text') {
           this.previewText = data.content || ''
           this.previewTruncated = data.truncated || false
@@ -1904,6 +1939,8 @@ print(value)
     resetPreviewState() {
       this.previewFullscreen = false
       this.previewType = ''
+      this.archiveInspect = null
+      this.archiveReadEntry = null
       this.previewTitle = ''
       this.previewUrl = ''
       this.previewText = ''

@@ -229,31 +229,45 @@ class ConnectionHistoryStore:
                 ),
             )
 
-    def get_history(self, machine_id: str) -> dict:
+    def get_history(self, machine_id: str, *, limit: int = 20, offset: int = 0) -> dict:
         machine_id_text = str(machine_id or '').strip()
+        page_size = min(max(int(limit), 1), 20)
+        page_offset = max(int(offset), 0)
         if not machine_id_text:
             return {
                 'schema_version': self.SCHEMA_VERSION,
-                'machine_id': '',
-                'tracking_started_at': '',
-                'sessions': [],
+                'machine_id': '', 'tracking_started_at': '',
+                'connection_count': 0, 'online_connection_count': 0,
+                'total_online_duration_ms': 0,
+                'sessions': [], 'has_more': False, 'next_offset': 0,
             }
 
         with self._lock:
-            rows = self.database.connection().execute(
-                '''SELECT * FROM connection_sessions WHERE machine_id = ?
-                   ORDER BY connected_at_ms DESC, client_id DESC''',
-                (machine_id_text,),
-            ).fetchall()
+            conn = self.database.connection()
+            # One aggregate row retains the existing toolbar statistics. Only the
+            # requested page of session snapshots is fetched or deserialized.
+            totals = conn.execute('''
+                SELECT COUNT(*) AS connection_count,
+                       MIN(NULLIF(connected_at, '')) AS tracking_started_at,
+                       SUM(CASE WHEN disconnected_at = '' THEN 1 ELSE 0 END) AS online_count,
+                       SUM(duration_ms) AS total_duration_ms
+                FROM connection_sessions WHERE machine_id = ?
+            ''', (machine_id_text,)).fetchone()
+            rows = conn.execute('''
+                SELECT * FROM connection_sessions WHERE machine_id = ?
+                ORDER BY connected_at_ms DESC, client_id DESC
+                LIMIT ? OFFSET ?
+            ''', (machine_id_text, page_size + 1, page_offset)).fetchall()
+            has_more = len(rows) > page_size
             now_iso = self._now_iso()
-            sessions = [self._row_to_session(row, now_iso=now_iso) for row in rows]
-            tracking_started_at = min(
-                (str(row['connected_at'] or '') for row in rows if str(row['connected_at'] or '')),
-                default='',
-            )
             return {
                 'schema_version': self.SCHEMA_VERSION,
                 'machine_id': machine_id_text,
-                'tracking_started_at': tracking_started_at,
-                'sessions': sessions,
+                'tracking_started_at': str(totals['tracking_started_at'] or ''),
+                'connection_count': int(totals['connection_count'] or 0),
+                'online_connection_count': int(totals['online_count'] or 0),
+                'total_online_duration_ms': int(totals['total_duration_ms'] or 0),
+                'sessions': [self._row_to_session(row, now_iso=now_iso) for row in rows[:page_size]],
+                'has_more': has_more,
+                'next_offset': page_offset + page_size if has_more else 0,
             }

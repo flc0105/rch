@@ -50,7 +50,8 @@ def create_connections_blueprint(server_instance):
     @blueprint.get('/api/machines/<machine_id>/connection-history')
     def get_machine_connection_history(machine_id):
         return responder.json_endpoint(
-            lambda: connection_api.get_machine_connection_history(machine_id),
+            lambda: connection_api.get_machine_connection_history(
+                machine_id, limit=request.args.get('limit', 20), offset=request.args.get('offset', 0)),
             default_error_status=500,
         )
 
