@@ -42,9 +42,13 @@
               </button>
               <template #dropdown>
                 <el-dropdown-menu>
+                  <el-dropdown-item divided disabled>Current Directory</el-dropdown-item>
                   <el-dropdown-item command="refresh">Refresh</el-dropdown-item>
                   <el-dropdown-item command="up" :disabled="!remoteFilesParentPath">Parent Directory</el-dropdown-item>
+                  <el-dropdown-item command="new_folder">New Folder</el-dropdown-item>
+                  <el-dropdown-item command="upload" :disabled="remoteUploadLoading">Upload</el-dropdown-item>
                   <el-dropdown-item command="set_cwd" :disabled="!remoteFilesCurrentPath">Set as CWD</el-dropdown-item>
+                  <el-dropdown-item command="toggle_pin">{{ remotePinButtonText }}</el-dropdown-item>
 
                   <el-dropdown-item divided disabled>Quick Jump</el-dropdown-item>
                   <el-dropdown-item command="root" :disabled="quickJumpLoading">Root</el-dropdown-item>
@@ -54,35 +58,24 @@
                   <el-dropdown-item command="downloads" :disabled="quickJumpLoading">Downloads</el-dropdown-item>
                   <el-dropdown-item command="temp" :disabled="quickJumpLoading">Temp</el-dropdown-item>
                   <el-dropdown-item command="executable" :disabled="quickJumpLoading">Program Directory</el-dropdown-item>
+                  <el-dropdown-item v-if="hasPinnedQuickJumps" disabled>Pinned Paths</el-dropdown-item>
                   <el-dropdown-item
-                      v-for="(item, index) in remotePinnedJumpItems"
+                      v-for="item in remotePinnedJumpItems"
                       :key="`mobile-pinned-jump-${item.display_name}-${item.path}`"
-                      :divided="index === 0"
                       :command="{ type: 'pinned_jump', display_name: item.display_name, path: item.path }"
                       :disabled="remotePinnedJumpLoading"
                   >
                     {{ item.display_name }}
                   </el-dropdown-item>
-                  <el-dropdown-item divided command="input_navigate">Go to Folder</el-dropdown-item>
+                  <el-dropdown-item command="input_navigate">Go to Folder</el-dropdown-item>
 
-                  <el-dropdown-item divided command="new_folder">New Folder</el-dropdown-item>
-                  <el-dropdown-item command="upload" :disabled="remoteUploadLoading">Upload</el-dropdown-item>
+                  <el-dropdown-item divided disabled>Batch &amp; Clipboard</el-dropdown-item>
                   <el-dropdown-item command="download_selected" :disabled="!hasRemoteSelection || remoteZipDownloading">
-                    Download{{ remoteSelectedPaths.length ? ' (' + remoteSelectedPaths.length + ')' : '' }}
+                    Download Selected{{ remoteSelectedPaths.length ? ' (' + remoteSelectedPaths.length + ')' : '' }}
                   </el-dropdown-item>
                   <el-dropdown-item command="delete_selected" :disabled="!hasRemoteSelection">
-                    Delete{{ remoteSelectedPaths.length ? ' (' + remoteSelectedPaths.length + ')' : '' }}
+                    Delete Selected{{ remoteSelectedPaths.length ? ' (' + remoteSelectedPaths.length + ')' : '' }}
                   </el-dropdown-item>
-
-                  <el-dropdown-item divided disabled>View</el-dropdown-item>
-                  <el-dropdown-item command="view_card">{{ remoteMobileViewMode === 'card' ? '✓ Card' : 'Card' }}</el-dropdown-item>
-                  <el-dropdown-item command="view_list">{{ remoteMobileViewMode === 'list' ? '✓ List' : 'List' }}</el-dropdown-item>
-
-                  <el-dropdown-item divided command="toggle_recursive">
-                    {{ remoteSearchRecursive ? '✓ Recursive Search' : 'Recursive Search' }}
-                  </el-dropdown-item>
-                  <el-dropdown-item command="toggle_pin">{{ remotePinButtonText }} Current Path</el-dropdown-item>
-                  <el-dropdown-item v-if="hasPinnedQuickJumps" command="manage_pins">Manage Pins</el-dropdown-item>
                   <el-dropdown-item command="copy" :disabled="!hasRemoteSelection">Copy Selected</el-dropdown-item>
                   <el-dropdown-item command="cut" :disabled="!hasRemoteSelection">Cut Selected</el-dropdown-item>
                   <el-dropdown-item command="create_zip" :disabled="!hasRemoteSelection || remoteZipCreating">Create ZIP</el-dropdown-item>
@@ -96,6 +89,13 @@
                     Select All
                   </el-dropdown-item>
                   <el-dropdown-item command="clear_selection" :disabled="!hasRemoteSelection">Clear Selection</el-dropdown-item>
+
+                  <el-dropdown-item divided disabled>View</el-dropdown-item>
+                  <el-dropdown-item command="view_card">{{ remoteMobileViewMode === 'card' ? '✓ Card' : 'Card' }}</el-dropdown-item>
+                  <el-dropdown-item command="view_list">{{ remoteMobileViewMode === 'list' ? '✓ List' : 'List' }}</el-dropdown-item>
+                  <el-dropdown-item command="toggle_recursive">
+                    {{ remoteSearchRecursive ? '✓ Recursive Search' : 'Recursive Search' }}
+                  </el-dropdown-item>
                   <el-dropdown-item command="toggle_hidden">{{ showHiddenFiles ? 'Hide Hidden' : 'Show Hidden' }}</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
@@ -227,13 +227,6 @@
                     <el-dropdown-item command="set_cwd" :disabled="!remoteFilesCurrentPath">Set as CWD</el-dropdown-item>
                     <el-dropdown-item command="toggle_pin">
                       {{ remotePinButtonText }}
-                    </el-dropdown-item>
-
-                    <el-dropdown-item
-                        v-if="hasPinnedQuickJumps"
-                        command="manage_pins"
-                    >
-                      Manage Pins
                     </el-dropdown-item>
 
                     <el-dropdown-item
@@ -930,7 +923,7 @@ export default {
       remoteClipboardMode: '',
       remoteClipboardSourcePath: '',
 
-      remoteMobileViewMode: 'card',
+      remoteMobileViewMode: 'list',
     }
   },
 
@@ -1667,11 +1660,6 @@ export default {
       if (command === 'set_cwd') return this.setRemoteDirectoryAsCwd(this.remoteFilesCurrentPath)
       if (command === 'toggle_pin') {
         this.toggleCurrentPinnedQuickJump()
-        return
-      }
-
-      if (command === 'manage_pins') {
-        this.openPinnedQuickJumpManager()
         return
       }
 

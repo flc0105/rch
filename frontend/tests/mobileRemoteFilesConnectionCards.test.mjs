@@ -20,12 +20,12 @@ test('Remote Files mobile toolbar uses one compact action dropdown and keeps des
     RemotePinsDialog: {}, RemoteZipPeekDialog: {}, formatBytesValue: value => String(value), uploadRemoteFileToClient() {},
     ElMessage: {}, ElMessageBox: {},
   })
-  assert.equal(options.data().remoteMobileViewMode, 'card')
+  assert.equal(options.data().remoteMobileViewMode, 'list')
   assert.match(vue, /class="remote-mobile-tools-dropdown"[\s\S]*?class="remote-mobile-tools-button"/)
   assert.match(vue, /class="remote-mobile-search-row"[\s\S]*?class="remote-mobile-search-input"/)
   assert.match(vue, /command="view_card"[\s\S]*?command="view_list"/)
   assert.match(vue, /class="remote-files-toolbar"[\s\S]*?Quick Jump/)
-  for (const command of ['refresh', 'up', 'root', 'input_navigate', 'new_folder', 'upload', 'download_selected', 'delete_selected', 'toggle_recursive', 'toggle_pin', 'manage_pins', 'copy', 'cut', 'create_zip', 'paste', 'clear_clipboard', 'toggle_select_all', 'clear_selection', 'toggle_hidden']) {
+  for (const command of ['refresh', 'up', 'root', 'input_navigate', 'new_folder', 'upload', 'download_selected', 'delete_selected', 'toggle_recursive', 'toggle_pin', 'copy', 'cut', 'create_zip', 'paste', 'clear_clipboard', 'toggle_select_all', 'clear_selection', 'toggle_hidden']) {
     assert.match(vue, new RegExp(`command="${command}"`), `${command} should be available from the mobile action dropdown or its shared action menu`)
   }
   assert.ok(vue.indexOf('class="remote-mobile-breadcrumb-row"') < vue.indexOf('class="remote-mobile-search-row"'), 'mobile search must sit below the breadcrumb row')
@@ -50,6 +50,30 @@ test('Remote Files mobile toolbar uses one compact action dropdown and keeps des
   }
   assert.match(vue, /\.remote-files-toolbar\s*\{\s*display:\s*none !important;/)
   assert.match(vue, /\.remote-mobile-pagination\s*\{\s*display:\s*flex;/)
+})
+
+test('Mobile top More keeps four ordered separator groups and removes only Manage Pins entries', () => {
+  const { vue } = optionsFrom('../src/components/RemoteFilesDialog.vue', {
+    RemotePinsDialog: {}, RemoteZipPeekDialog: {}, formatBytesValue: value => String(value), uploadRemoteFileToClient() {},
+    ElMessage: {}, ElMessageBox: {},
+  })
+  const mobile = vue.split('class="remote-mobile-tools-dropdown"')[1].split('</el-dropdown-menu>')[0]
+  const desktop = vue.split('@command="handleRemoteToolbarMoreCommand"')[1].split('</el-dropdown-menu>')[0]
+  const headers = [...mobile.matchAll(/<el-dropdown-item divided disabled>([^<]+)<\/el-dropdown-item>/g)].map(match => match[1])
+  assert.deepEqual(headers, ['Current Directory', 'Quick Jump', 'Batch &amp; Clipboard', 'View'])
+  assert.equal((mobile.match(/\bdivided\b/g) || []).length, 4, 'one separator per section, no ad-hoc dividers')
+  const commands = [...mobile.matchAll(/<el-dropdown-item\b(?:(?!>).)*\scommand="([^"]+)"/gs)].map(match => match[1])
+  assert.deepEqual(commands, [
+    'refresh', 'up', 'new_folder', 'upload', 'set_cwd', 'toggle_pin',
+    'root', 'home', 'desktop', 'documents', 'downloads', 'temp', 'executable', 'input_navigate',
+    'download_selected', 'delete_selected', 'copy', 'cut', 'create_zip', 'paste', 'clear_clipboard', 'toggle_select_all', 'clear_selection',
+    'view_card', 'view_list', 'toggle_recursive', 'toggle_hidden',
+  ])
+  assert.match(mobile, /v-if="hasPinnedQuickJumps" disabled>Pinned Paths<\/el-dropdown-item>[\s\S]*?v-for="item in remotePinnedJumpItems"[\s\S]*?type: 'pinned_jump'/)
+  assert.doesNotMatch(mobile, /manage_pins|Manage Pins/)
+  assert.doesNotMatch(desktop, /manage_pins|Manage Pins/)
+  assert.match(vue, /<RemotePinsDialog[\s\S]*?@updated="handlePinnedQuickJumpsUpdated"/)
+  assert.match(vue, /openPinnedQuickJumpManager\(\)/, 'Toolbox may still open the existing dialog')
 })
 
 test('Remote Files compact page range is stable at the beginning, middle, and end', () => {
