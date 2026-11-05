@@ -5,7 +5,7 @@ SCRIPT_METADATA = {'name': 'test/interaction/test_preview',
  'tags': ['test', 'interaction'],
  'platforms': ['*'],
  'params': [],
- 'api_grants': ['interactions:request']}
+ }
 
 from client.runtime.sdk import context
 preview = {

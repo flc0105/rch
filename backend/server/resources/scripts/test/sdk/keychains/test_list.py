@@ -5,7 +5,7 @@ SCRIPT_METADATA = {'name': 'test/sdk/keychains/test_list',
  'tags': ['test', 'sdk', 'keychains'],
  'platforms': ['*'],
  'params': [],
- 'api_grants': ['keychains:list']}
+ }
 
 from client.runtime.sdk import keychains
 items = keychains.list()

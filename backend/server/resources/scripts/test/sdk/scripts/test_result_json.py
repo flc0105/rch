@@ -5,7 +5,7 @@ SCRIPT_METADATA = {'name': 'test/sdk/scripts/test_result_json',
  'tags': ['test', 'sdk', 'scripts'],
  'platforms': ['*'],
  'params': [],
- 'api_grants': []}
+ }
 
 from client.runtime.sdk.scripts import ScriptResult
 result = ScriptResult(name='local', returncode=0, stdout="{\"ok\": true}")

@@ -5,7 +5,7 @@ SCRIPT_METADATA = {'name': 'test/sdk/scripts/test_run',
  'tags': ['test', 'sdk', 'scripts'],
  'platforms': ['*'],
  'params': [],
- 'api_grants': ['scripts:read']}
+ }
 
 from client.runtime.sdk import scripts
 result = scripts.run('test/sdk/context/test_context')

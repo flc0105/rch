@@ -1,11 +1,11 @@
 SCRIPT_METADATA = {'name': 'test/sdk/context/test_context',
  'display_name': 'Test Context SDK',
- 'description': 'Check the current Script context, environment, grant, and progress output.',
+ 'description': 'Check the current Script context, environment, session token, and progress output.',
  'category': 'Test',
  'tags': ['test', 'sdk', 'context'],
  'platforms': ['*'],
  'params': [],
- 'api_grants': ['workspace:read']}
+ }
 
 from client.runtime.sdk import context
 
@@ -33,12 +33,9 @@ script_context = context.get_script_context()
 assert isinstance(script_context, dict)
 print('Context keys:', ', '.join(sorted(script_context)) or '(none)')
 
-grant = context.get_script_grant()
-token = context.get_script_grant_token()
-assert isinstance(grant, dict)
-assert isinstance(token, str) and token, 'Script grant token is missing.'
-print('Grant scopes:', grant.get('scopes') or grant.get('api_grants') or [])
-print('Grant token present:', bool(token))
+token = context.get_client_session_token()
+assert isinstance(token, str) and token, 'Client session token is missing.'
+print('Client session token present:', bool(token))
 
 context.progress('SDK context progress test')
 print('PASS')

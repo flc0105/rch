@@ -10,7 +10,6 @@ SCRIPT_METADATA = {
          'type': 'string', 'required': False, 'default': '',
          'description': 'Optional path containing one directory-level *.'},
     ],
-    'api_grants': ['interactions:request'],
 }
 
 from client.runtime.sdk import context

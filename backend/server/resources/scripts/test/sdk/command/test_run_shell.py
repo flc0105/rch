@@ -5,7 +5,7 @@ SCRIPT_METADATA = {'name': 'test/sdk/command/test_run_shell',
  'tags': ['test', 'sdk', 'command'],
  'platforms': ['*'],
  'params': [],
- 'api_grants': []}
+ }
 
 from client.runtime.sdk import command
 result = command.run_shell('echo rch-sdk-shell')

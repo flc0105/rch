@@ -6,7 +6,6 @@ SCRIPT_METADATA = {
     'tags': ['test', 'sdk', 'variables'],
     'platforms': ['*'],
     'params': [],
-    'api_grants': [],
 }
 
 from client.runtime.sdk import variables

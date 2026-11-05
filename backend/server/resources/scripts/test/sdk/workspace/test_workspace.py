@@ -5,7 +5,7 @@ SCRIPT_METADATA = {'name': 'test/sdk/workspace/test_workspace',
  'tags': ['test', 'sdk', 'workspace'],
  'platforms': ['*'],
  'params': [],
- 'api_grants': ['workspace:read']}
+ }
 
 from client.runtime.sdk import workspace
 

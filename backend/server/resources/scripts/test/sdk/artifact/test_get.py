@@ -5,7 +5,7 @@ SCRIPT_METADATA = {'name': 'test/sdk/artifact/test_get',
  'tags': ['test', 'sdk', 'artifact'],
  'platforms': ['*'],
  'params': [],
- 'api_grants': ['artifacts:list']}
+ }
 
 import os
 import tempfile

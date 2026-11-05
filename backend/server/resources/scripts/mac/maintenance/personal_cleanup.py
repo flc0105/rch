@@ -4,7 +4,6 @@ SCRIPT_METADATA = {
     "description": "Preview and approve cleanup.",
     "platforms": ["mac"],
     "category": "Maintenance",
-    "api_grants": ["interactions:request"],
     "params": [
         {"name": "cleanup_paths", "label": "Cleanup paths",
          "type": "path_list", "required": False,

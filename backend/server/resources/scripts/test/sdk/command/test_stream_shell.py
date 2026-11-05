@@ -5,7 +5,7 @@ SCRIPT_METADATA = {'name': 'test/sdk/command/test_stream_shell',
  'tags': ['test', 'sdk', 'command'],
  'platforms': ['*'],
  'params': [],
- 'api_grants': []}
+ }
 
 from client.runtime.sdk import command
 result = command.stream_shell('ping -c 4 127.0.0.1', timeout=10)

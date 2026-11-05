@@ -16,7 +16,7 @@ SCRIPT_METADATA = {'name': 'test/sdk/xt/test_run',
              'description': 'Arguments for the selected executable.',
              'required': False,
              'default': '-version'}],
- 'api_grants': ['external_tools:catalog']}
+ }
 
 from client.runtime.sdk import xt
 exec_name = kwargs.get('exec_name') or 'ffmpeg'

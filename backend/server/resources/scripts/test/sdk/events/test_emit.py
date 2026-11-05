@@ -5,7 +5,7 @@ SCRIPT_METADATA = {'name': 'test/sdk/events/test_emit',
  'tags': ['test', 'sdk', 'events'],
  'platforms': ['*'],
  'params': [],
- 'api_grants': []}
+ }
 
 from client.runtime.sdk import events
 result = events.emit('sdk.test', data={'status': 'ok'}, message='Script SDK event test')

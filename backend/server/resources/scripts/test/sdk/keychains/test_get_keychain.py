@@ -5,7 +5,7 @@ SCRIPT_METADATA = {'name': 'test/sdk/keychains/test_get_keychain',
  'tags': ['test', 'sdk', 'keychains'],
  'platforms': ['*'],
  'params': [],
- 'api_grants': ['keychains:create', 'keychains:resolve']}
+ }
 
 import uuid
 from client.runtime.sdk import keychains

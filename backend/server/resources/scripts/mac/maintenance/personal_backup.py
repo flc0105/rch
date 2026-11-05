@@ -4,7 +4,6 @@ SCRIPT_METADATA = {
     "description": "Preview and approve a personal Mac backup before uploading.",
     "platforms": ["mac"],
     "category": "Maintenance",
-    "api_grants": ["scripts:read", "interactions:request"],
     "params": [
         {"name": "include_zshrc", "label": "Zsh configuration", "type": "boolean", "default": True},
         {"name": "include_zsh_history", "label": "Zsh history", "type": "boolean", "default": True},

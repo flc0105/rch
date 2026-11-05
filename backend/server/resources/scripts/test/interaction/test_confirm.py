@@ -5,7 +5,7 @@ SCRIPT_METADATA = {'name': 'test/interaction/test_confirm',
  'tags': ['test', 'interaction'],
  'platforms': ['*'],
  'params': [],
- 'api_grants': ['interactions:request']}
+ }
 
 from client.runtime.sdk import context
 approved = context.confirm('Approve this harmless test?', title='Confirm Test')

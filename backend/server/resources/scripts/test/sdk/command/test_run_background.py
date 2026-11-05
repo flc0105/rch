@@ -5,7 +5,7 @@ SCRIPT_METADATA = {'name': 'test/sdk/command/test_run_background',
  'tags': ['test', 'sdk', 'command'],
  'platforms': ['*'],
  'params': [],
- 'api_grants': []}
+ }
 
 from client.runtime.sdk import command
 process = command.run_background('echo rch-sdk-background')

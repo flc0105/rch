@@ -5,7 +5,7 @@ SCRIPT_METADATA = {'name': 'test/interaction/test_input',
  'tags': ['test', 'interaction'],
  'platforms': ['*'],
  'params': [],
- 'api_grants': ['interactions:request']}
+ }
 
 from client.runtime.sdk import context
 value = context.ask('Enter a short test label:', title='Input Test', placeholder='Sample')

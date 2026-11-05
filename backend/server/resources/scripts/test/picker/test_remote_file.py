@@ -9,7 +9,7 @@ SCRIPT_METADATA = {'name': 'test/picker/test_remote_file',
              'type': 'remote_file',
              'description': 'Select a path.',
              'required': True}],
- 'api_grants': []}
+ }
 
 path = kwargs['selected_path']
 assert isinstance(path, str) and path.strip()

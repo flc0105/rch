@@ -5,7 +5,7 @@ SCRIPT_METADATA = {'name': 'test/interaction/test_select',
  'tags': ['test', 'interaction'],
  'platforms': ['*'],
  'params': [],
- 'api_grants': ['interactions:request']}
+ }
 
 from client.runtime.sdk import context
 choice = context.select('Choose a value:', ['Alpha', 'Beta'], title='Select Test')

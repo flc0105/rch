@@ -10,7 +10,7 @@ SCRIPT_METADATA = {'name': 'test/picker/test_remote_files',
              'description': 'Select one or more paths.',
              'required': True,
              'multiple': True}],
- 'api_grants': []}
+ }
 
 paths = kwargs['selected_paths']
 assert isinstance(paths, list), 'Expected a list of remote paths.'
