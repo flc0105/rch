@@ -4,7 +4,6 @@ import hashlib
 import os
 import shutil
 import sys
-import tempfile
 import time
 
 from core.utils.filesystem import safe_file_size
@@ -45,17 +44,6 @@ class ClientCleanupService:
     ACTIVE_GRACE_SECONDS = 60
     ARCHIVE_GRACE_SECONDS = 300
     CLIPBOARD_STAGING_GRACE_SECONDS = 3600
-
-    LEGACY_TEMP_PATTERNS = {
-        'remote_job_temp': ('rat_remote_*.py',),
-        'preview_temp': ('rat_preview_*',),
-        'clipboard_temp': ('rch_clipboard_upload_*',),
-        'clipboard_helper_temp': (
-            'rch_windows_clipboard_*.py',
-            'rch_macos_clipboard_*.py',
-        ),
-        'media_temp': (),
-    }
 
     def __init__(self, *, checkpoint=None, current_bundle_resolver=None):
         self.checkpoint = checkpoint
@@ -108,6 +96,9 @@ class ClientCleanupService:
                 seen.add(path)
                 # A preview is a snapshot, not permission to remove files that
                 # became active after it was produced. Re-evaluate live guards.
+                if not self._owned_candidate_path(item['name'], path):
+                    result['skipped_paths'].append(path + ' (outside managed cleanup paths)')
+                    continue
                 if not self._eligible_runtime_path(item['name'], path):
                     result['skipped_paths'].append(path + ' (active or not yet stale)')
                     continue
@@ -122,9 +113,17 @@ class ClientCleanupService:
                     continue
                 self._remove_path(path, result)
             for directory in item.get('prune_dirs') or []:
-                # The original clean removed now-empty managed temp directories.
-                # rmdir never deletes a directory that gained contents after scanning.
-                self._prune_empty_directory(directory)
+                # Only the category directory and the owning root can be pruned.
+                if item['name'] not in (
+                    'remote_job_temp', 'preview_temp', 'clipboard_temp', 'clipboard_helper_temp',
+                    'media_temp', 'archive_temp', 'client_logs', 'clipboard_staging',
+                    'watchdog_heartbeats', 'watchdog_sessions',
+                ):
+                    continue
+                managed_root = os.path.abspath(get_client_temp_root(create=False))
+                category_dir = os.path.abspath(get_temp_category_dir(item['name'], create=False))
+                if os.path.abspath(directory) in (category_dir, managed_root):
+                    self._prune_empty_directory(directory)
             items.append(result)
         return {
             'items': items,
@@ -134,6 +133,41 @@ class ClientCleanupService:
             'error_count': sum(len(i['errors']) for i in items),
             'skipped_count': sum(bool(i['skipped'] or i['skipped_paths']) for i in items),
         }
+
+    def _owned_candidate_path(self, category: str, path: str) -> bool:
+        """Only execute paths the current Client can produce for this category."""
+        if not os.path.isabs(path):
+            return False
+        path = os.path.abspath(path)
+        name = os.path.basename(path)
+        if category in (
+            'remote_job_temp', 'preview_temp', 'clipboard_temp', 'clipboard_helper_temp',
+            'media_temp', 'archive_temp', 'client_logs', 'clipboard_staging',
+            'watchdog_heartbeats', 'watchdog_sessions',
+        ):
+            managed_root = os.path.abspath(get_client_temp_root(create=False))
+            category_root = os.path.abspath(get_temp_category_dir(category, create=False))
+            return (os.path.commonpath([managed_root, category_root]) == managed_root
+                    and category_root != managed_root
+                    and os.path.dirname(path) == category_root
+                    and not os.path.islink(category_root))
+        if category == 'runtime_config_temp':
+            return (os.path.dirname(path) == os.path.dirname(os.path.abspath(get_runtime_config_path()))
+                    and fnmatch.fnmatch(name, '.rch_runtime_config_*.json.tmp'))
+        if category == 'bundle_archive_residue':
+            return (os.path.dirname(path) == os.path.abspath(get_client_bundle_download_dir())
+                    and is_bundle_archive(name))
+        if category in ('bundle_old_releases', 'bundle_extracting_residue', 'bundle_probe_files'):
+            release_dir = os.path.abspath(get_client_bundle_release_dir())
+            if os.path.dirname(path) != release_dir:
+                return False
+            if category == 'bundle_extracting_residue':
+                return '.extracting.' in name
+            if category == 'bundle_probe_files':
+                return (fnmatch.fnmatch(name, '.update_ready_*.json')
+                        or fnmatch.fnmatch(name, '.update_startup_*.log'))
+            return True
+        return False
 
     def _candidate_identity(self, path):
         info = os.lstat(path)
@@ -242,14 +276,14 @@ class ClientCleanupService:
     def _clean_temp_item(self, name: str) -> dict:
         result = self._new_result(name)
         self._clean_managed_temp_category(name, result)
-        self._clean_legacy_temp_patterns(name, result)
         return result
 
     def _clean_managed_temp_category(self, category: str, result: dict):
         root = os.path.abspath(get_client_temp_root(create=False))
         category_dir = os.path.abspath(get_temp_category_dir(category, create=False))
         self._note_scan(result, category_dir)
-        if not os.path.isdir(root) or os.path.islink(root) or os.path.islink(category_dir):
+        if (not os.path.isdir(root) or os.path.islink(root) or os.path.islink(category_dir)
+                or category_dir == root or os.path.commonpath([root, category_dir]) != root):
             return
 
         # Flat layout: <Client temp root>/<category>/<item>. Do not invent
@@ -376,32 +410,6 @@ class ClientCleanupService:
             return self._stale_watchdog_session(path)
         return True
 
-    def _clean_legacy_temp_patterns(self, name: str, result: dict):
-        patterns = self.LEGACY_TEMP_PATTERNS.get(name) or ()
-        if not patterns:
-            return
-
-        temp_root = os.path.abspath(tempfile.gettempdir())
-        managed_root = os.path.abspath(get_client_temp_root(create=False))
-        for pattern in patterns:
-            self._note_scan(result, os.path.join(temp_root, pattern))
-        try:
-            names = sorted(os.listdir(temp_root))
-        except Exception:
-            return
-
-        for entry_name in names:
-            self._checkpoint()
-            if not any(fnmatch.fnmatch(entry_name, pattern) for pattern in patterns):
-                continue
-            path = os.path.abspath(os.path.join(temp_root, entry_name))
-            if path == managed_root or path.startswith(managed_root + os.sep):
-                continue
-            if path_contains_active_temp(path):
-                result['skipped_paths'].append(path)
-                continue
-            self._remove_path(path, result)
-
     def _clean_runtime_config_temp(self) -> dict:
         result = self._new_result('runtime_config_temp')
         config_path = os.path.abspath(get_runtime_config_path())
@@ -411,7 +419,6 @@ class ClientCleanupService:
             return result
 
         patterns = (
-            '.runtime_config_*.json.tmp',
             '.rch_runtime_config_*.json.tmp',
         )
         for name in sorted(os.listdir(directory)):

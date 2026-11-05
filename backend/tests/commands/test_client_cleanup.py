@@ -15,7 +15,6 @@ def managed(tmp_path, monkeypatch):
     monkeypatch.setattr(cleanup, 'get_client_temp_root', lambda create=False: str(root))
     monkeypatch.setattr(cleanup, 'get_temp_category_dir', lambda category, create=False: str(root / category))
     monkeypatch.setattr(cleanup, 'get_client_log_path', lambda: '')
-    monkeypatch.setattr(cleanup.tempfile, 'gettempdir', lambda: str(tmp_path))
     return root
 
 
@@ -34,7 +33,7 @@ def test_flat_category_scan_never_crosses_other_categories(managed):
     service = cleanup.ClientCleanupService()
     service.ITEMS = ('preview_temp',)
     plan = service.plan()['items'][0]
-    assert plan['scanned_paths'] == [str(target), str(managed.parent / 'rat_preview_*')]
+    assert plan['scanned_paths'] == [str(target)]
     assert [x['path'] for x in plan['paths']] == [str(target / 'finished.jpg')]
     assert not any('watchdog_heartbeats/preview_temp' in p for p in plan['scanned_paths'])
     assert (target / 'finished.jpg').exists()
@@ -132,7 +131,7 @@ def test_heartbeat_and_watchdog_session_skip_active_processes(managed, monkeypat
     assert executed['removed_files'] == 0 and executed['removed_dirs'] == 0
 
 
-def test_new_categories_do_not_scan_legacy_cross_roots(managed):
+def test_managed_categories_scan_only_owned_root(managed):
     svc = cleanup.ClientCleanupService()
     names = {'archive_temp', 'client_logs', 'clipboard_staging', 'watchdog_heartbeats', 'watchdog_sessions'}
     assert names.issubset(set(svc.ITEMS))
@@ -234,3 +233,46 @@ def test_posix_client_temp_root_is_private(monkeypatch, tmp_path):
     monkeypatch.setattr(temp_workspace.tempfile, 'gettempdir', lambda: str(tmp_path))
     root = temp_workspace.get_client_temp_root(create=True)
     assert stat.S_IMODE(os.stat(root).st_mode) == 0o700
+
+
+def test_cleanup_never_discovers_legacy_files_outside_owned_root(managed):
+    outsider = managed.parent / 'rat_preview_other_application.txt'
+    outsider.write_text('must stay')
+    owned = managed / 'preview_temp'
+    owned.mkdir()
+    (owned / 'finished.jpg').write_bytes(b'old')
+    service = cleanup.ClientCleanupService()
+    service.ITEMS = ('preview_temp',)
+    plan = service.plan()
+    assert [entry['path'] for entry in plan['items'][0]['paths']] == [str(owned / 'finished.jpg')]
+    service.execute_plan(plan, {'preview_temp'})
+    assert outsider.read_text() == 'must stay'
+    assert not (owned / 'finished.jpg').exists()
+
+
+def test_cleanup_rejects_modified_plan_with_unowned_path(managed):
+    outsider = managed.parent / 'outside.log'
+    outsider.write_text('must stay')
+    service = cleanup.ClientCleanupService()
+    service.ITEMS = ('preview_temp',)
+    plan = service.plan()
+    plan['items'][0]['paths'] = [{
+        'path': str(outsider),
+        'identity': service._candidate_identity(str(outsider)),
+        'tree_signature': service._tree_signature(str(outsider)),
+    }]
+    result = service.execute_plan(plan, {'preview_temp'})
+    assert result['removed_files'] == 0
+    assert outsider.read_text() == 'must stay'
+    assert 'outside managed cleanup paths' in result['items'][0]['skipped_paths'][0]
+
+
+def test_cleanup_rejects_unowned_prune_dir_in_plan(managed):
+    outsider = managed.parent / 'empty_other_app'
+    outsider.mkdir()
+    service = cleanup.ClientCleanupService()
+    service.ITEMS = ('preview_temp',)
+    plan = service.plan()
+    plan['items'][0]['prune_dirs'] = [str(outsider)]
+    service.execute_plan(plan, {'preview_temp'})
+    assert outsider.is_dir()

@@ -879,13 +879,7 @@ export default {
     },
 
     currentClientArch() {
-      return this.normalizeArch(
-        this.currentConnection?.arch ||
-        this.currentConnection?.cpu_arch ||
-        this.currentConnection?.architecture ||
-        this.currentConnection?.machine_arch ||
-        '',
-      )
+      return this.normalizeArch(this.currentConnection?.arch || '')
     },
 
     allModules() {
@@ -1605,12 +1599,12 @@ async loadAllClientInstances(deviceId = '', showToast = true) {
       const id = this.normalizeMachineId(machineId)
       if (!id || id === '__all__') return ''
       const conn = this.findConnectionByMachineId(id) || (id === this.currentMachineId ? this.currentConnection : null)
-      return this.normalizeArch(conn?.arch || conn?.cpu_arch || conn?.architecture || conn?.machine_arch || '')
+      return this.normalizeArch(conn?.arch || '')
     },
 
     getArchForConnectionId(deviceId) {
       const conn = this.findConnectionById(deviceId) || (this.normalizeDeviceId(deviceId) === this.currentDeviceId ? this.currentConnection : null)
-      return this.normalizeArch(conn?.arch || conn?.cpu_arch || conn?.architecture || conn?.machine_arch || '')
+      return this.normalizeArch(conn?.arch || '')
     },
 
     getActionDeviceId(item) {

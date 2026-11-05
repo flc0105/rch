@@ -280,7 +280,7 @@ def test_receive_error_classification(tmp_path):
             ))
 
     server = FakeServer()
-    listener = ServerListener(server)
+    listener = ServerListener(server, config={'host': '127.0.0.1', 'port': 9999})
     for exc, expected in (
         (OSError('Connection closed'), 'connection_lost'),
         (OSError('Connection aborted'), 'unexpected_disconnect'),

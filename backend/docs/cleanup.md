@@ -76,7 +76,7 @@ clean --no-confirm
 
 ### 清理类别
 
-Client 的常见临时数据位于目标设备系统临时目录中的 Client temp root 下，按用途分目录。Windows 使用 `rch_client_temp/`；POSIX 使用 `rch_client_temp_u<effective_uid>/`，并以 `0700` 保护根目录，使 root/elevated Client 与普通用户 Client 各自管理自己的临时空间。部分配置中转和 Bundle 数据因功能原因保留在各自原位置。当前命令只扫描当前 Client 所属 temp root，并覆盖以下项目：
+Client 的常见临时数据位于目标设备系统临时目录中的 Client temp root 下，按用途分目录。Windows 使用 `rch_client_temp/`；POSIX 使用 `rch_client_temp_u<effective_uid>/`，并以 `0700` 保护根目录，使 root/elevated Client 与普通用户 Client 各自管理自己的临时空间。部分配置中转和 Bundle 数据因功能原因保留在各自原位置。普通临时类别只扫描当前 Client 所属的 temp root；配置中转和 Bundle 类别只扫描对应功能实际使用的目录与文件名。不会扫描当前管理范围之外的系统临时文件。清理项目包括：
 
 | 类别 | 清理什么 | 应特别注意 |
 | --- | --- | --- |

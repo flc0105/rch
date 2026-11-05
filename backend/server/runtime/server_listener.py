@@ -15,15 +15,14 @@ class ServerListener(SessionAcceptor):
         errno.EBADF, errno.EINVAL, getattr(errno, 'ENOTSOCK', 88), 10038,
     }
 
-    def __init__(self, server, config=None, ssl_context=None):
+    def __init__(self, server, config: dict, ssl_context=None):
         super().__init__(server)
-        self.config = dict(config or {})
+        self.config = dict(config)
         self.listener_id = self.config.get('id', 'tcp-default')
         self.name = self.config.get('name', 'TCP')
         self.protocol = self.config.get('protocol', 'tcp')
-        self.address = (self.config.get('host', server.address[0] if hasattr(server, 'address') else ''),
-                        int(self.config.get('port', server.address[1] if hasattr(server, 'address') else 9999)))
-        self.socket = RCHSocket() if config or not hasattr(server, 'socket') else server.socket
+        self.address = (self.config['host'], int(self.config['port']))
+        self.socket = RCHSocket()
         self.ssl_context = ssl_context
         self._stop_event = threading.Event()
         self._thread = None

@@ -12,7 +12,6 @@ class AliasManager:
     PLACEHOLDER_PATTERN = r'<[A-Za-z_][A-Za-z0-9_-]*>'
     NAMED_PARAMETER_PATTERN = re.compile(r'^[A-Za-z_][A-Za-z0-9_-]*$')
     SUPPORTED_PLATFORMS = ('common', 'win', 'mac', 'linux', 'ios')
-    # QUERY_PLATFORMS = SUPPORTED_PLATFORMS + ('all',)
     QUERY_PLATFORMS = SUPPORTED_PLATFORMS
 
     def __init__(self):
@@ -70,27 +69,21 @@ class AliasManager:
     def _normalize_alias_payload(self, payload) -> dict:
         normalized = self._create_empty_aliases()
         if not isinstance(payload, dict):
-            return normalized
+            raise ValueError('Alias definitions must be grouped by platform')
+        unknown = set(payload) - set(self.SUPPORTED_PLATFORMS)
+        if unknown:
+            raise ValueError(f'Unknown alias platform groups: {", ".join(sorted(unknown))}')
 
-        has_group_keys = any(key in payload for key in self.SUPPORTED_PLATFORMS)
-        if has_group_keys:
-            for platform_name in self.SUPPORTED_PLATFORMS:
-                platform_aliases = payload.get(platform_name) or {}
-                if not isinstance(platform_aliases, dict):
-                    continue
+        for platform_name in self.SUPPORTED_PLATFORMS:
+            platform_aliases = payload.get(platform_name, {})
+            if not isinstance(platform_aliases, dict):
+                raise ValueError(f'Alias definitions for {platform_name} must be an object')
 
-                normalized[platform_name] = {
-                    str(alias_name).strip(): str(command_text)
-                    for alias_name, command_text in platform_aliases.items()
-                    if str(alias_name).strip() and str(command_text).strip()
-                }
-            return normalized
-
-        normalized['common'] = {
-            str(alias_name).strip(): str(command_text)
-            for alias_name, command_text in payload.items()
-            if str(alias_name).strip() and str(command_text).strip()
-        }
+            normalized[platform_name] = {
+                str(alias_name).strip(): str(command_text)
+                for alias_name, command_text in platform_aliases.items()
+                if str(alias_name).strip() and str(command_text).strip()
+            }
         return normalized
 
     def _file_state(self):
@@ -113,8 +106,6 @@ class AliasManager:
 
     def _ensure_fresh(self):
         """File-based live reload; no user-facing reload subcommand necessary."""
-        if not hasattr(self, 'alias_path'):
-            return
         if self._file_state() != getattr(self, '_file_signature', None):
             self.load_aliases()
 

@@ -14,7 +14,7 @@
 - **`*_json`**：SQLite `TEXT` 中存放的 JSON 对象或数组。它们不是另一张可独立更新的关系表；同一业务的固定列通常是筛选、排序或标识所需字段，JSON 保存扩展的业务内容或快照。
 - **布尔量**：SQLite 没有独立的布尔列类型，这里通常以整数 `0/1` 保存；展示时由 Server 转成 `false/true`。
 
-正常启动、完成 History 模块初始化后，当前结构共有 **16 张应用表**（不计 SQLite 自己的 `sqlite_sequence` 等内部对象）。其中 `activity_records` 由 History 模块创建；单独初始化 SQLite 数据库、却没有启动 History 时，可能只能看到另外 15 张表。空表是正常情况，不代表对应功能没有实现。
+正常启动、完成 History 模块初始化后，当前结构共有 **15 张应用表**（不计 SQLite 自己的 `sqlite_sequence` 等内部对象）。其中 `activity_records` 由 History 模块创建；单独初始化 SQLite 数据库、却没有启动 History 时，可能只能看到另外 14 张表。空表是正常情况，不代表对应功能没有实现。
 
 ## 业务功能与数据表速查
 
@@ -30,7 +30,6 @@
 | Remote Files → Pinned Paths | `pinned_paths` | 每台设备收藏的路径名称和路径文本 |
 | External Tools → 参数预设 | `external_tool_presets` | 按工具保存的命名参数预设 |
 | Background Jobs | `background_jobs`、`background_job_messages`、`background_job_files` | Job 实例状态、输出消息、生成文件的引用 |
-| 数据库自身状态 | `schema_migrations` | 已应用的数据库结构记录，不对应前台功能 |
 | **旧执行记录结构** | `command_executions` | 当前仍可能存在，但**不是现行 Activity Center 的读取来源** |
 
 以下每组“字段”列举的均为实际数据库列。**主键（PK）**决定记录唯一性；“引用”是业务关联，不一定存在数据库外键约束。
@@ -288,19 +287,6 @@
 
 两张子表对 `background_jobs` 都有外键并设置 **`ON DELETE CASCADE`**；删除 Job 主记录会删除关联的消息和文件引用。Artifact 文件与注册元数据位于独立存储，删除本表的文件引用仍会保留 Artifact 实体。详见 [Background Jobs](background_jobs.md) 和 [Artifacts](artifacts.md)。
 
-## 数据库管理表
-
-### `schema_migrations` — 结构初始化记录
-
-**前台对应：无。** 此表供 Server 判断数据库结构是否已初始化到可识别状态，不属于业务记录。
-
-| 字段 | 含义 |
-| --- | --- |
-| `version`（PK） | 已应用的数据库结构编号。 |
-| `applied_at` | 该结构记录的应用时间。 |
-
-`schema_migrations` 记录基础结构的初始化进度。部分业务表由各自模块初始化，因此检查完整表结构可使用 `sqlite_master` 或 `PRAGMA table_info`。
-
 ## 表之间如何关联
 
 ```text
@@ -320,13 +306,14 @@ Server 全局
 ├─ notifications            通知历史
 ├─ settings                 工具栏和通知偏好
 ├─ external_tool_presets    工具参数预设
-├─ schema_migrations        数据库结构状态
 └─ command_executions       仍保留的旧执行表（非现行 Activity 来源）
 ```
 
 上述缩进表示**业务关联**，并不都对应 SQLite `FOREIGN KEY`：明确设有外键级联的只有 `device_group_members.group_id`，以及两个 Job 子表的 `job_id`。其他按 `machine_id`、`client_id`、`artifact_id` 的关联主要由业务服务维护；删除父侧记录时不要假设 SQLite 会自动清理所有关联数据。
 
 ## 查看、校验与备份
+
+RCH 直接使用固定的最终表结构初始化空数据库；对于已经存在的 `rch.db`，启动时核查结构而不修改或搬迁业务表。部署前请在 Server 停止的情况下完成必要的 SQLite 结构调整并保留备份。
 
 ### 只读查看
 
