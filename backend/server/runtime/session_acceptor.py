@@ -59,6 +59,9 @@ class SessionAcceptor:
         try:
             self.server.web_service.connection_api.handle_connection_registered(session)
         except Exception:
+            service = getattr(session.context, 'script_grant_service', None)
+            if service is not None:
+                service.revoke_client_interaction_session(session)
             self.server.connections.remove(session)
             raise
         return session

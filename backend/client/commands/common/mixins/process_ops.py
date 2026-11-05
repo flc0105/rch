@@ -81,7 +81,7 @@ class CommandProcessMixin:
             return 0, str(e)
 
 
-    @argument_command('kill', spec=KILL_ARGUMENT_SPEC, api_grants=('interactions:request',))
+    @argument_command('kill', spec=KILL_ARGUMENT_SPEC, interaction=True)
     def _acmd_kill(self, args_dict, payload=None):
         from client.commands.common.services.process.approved_process_service import (
             ClientCommandInteractions, ProcessApprovalError, find_targets,

@@ -139,7 +139,7 @@ Client 将剩余的 `Alice` 作为完整字符串 `arg` 传入方法，方法返
 
 | 注解 | 用途 | 关键参数与行为 |
 |---|---|---|
-| `@desc(text, group='general', suggest=True, api_grants=())` | **导出命令**，描述帮助文本和补全分类 | `text` 是帮助说明；`group` 用于 Help 分组；`suggest=False` 不进入推荐列表但仍可以执行；`api_grants` 为该命令申请受限 Web API 授权范围 |
+| `@desc(text, group='general', suggest=True, interaction=False)` | **导出命令**，描述帮助文本和补全分类 | `text` 是帮助说明；`group` 用于 Help 分组；`suggest=False` 不进入推荐列表但仍可以执行；`interaction` 表示命令通常会请求 Web 交互 |
 | `@confirm(message=None)` | 执行方法体**之前**请求 Web 确认 | 不传参数时生成默认提示；同意才进入原函数，拒绝、超时或没有可用交互时返回失败；自动附加 `interactions:request` Grant 声明；在命令参数中显式传入 `--no-confirm` 时直接调用原方法 |
 | `@timeout(seconds)` | 声明命令默认的正数超时预算 | 请求方指定的有效超时只可缩短预算；这是执行上下文的期限，不保证强制终止任意 Python 代码 |
 | `@cancel_policy(mode='none', message='')` | 声明命令可以采用的取消机制 | `none` 不接受取消；`cooperative` 在检查点响应；`process` 用于实际由命令管理的子进程；`message` 是取消不可用等情况的解释文本 |
@@ -182,9 +182,9 @@ class CommandExampleMixin:
 
 运行 `approved_demo` 时，系统先通过当前 Web Task 发出确认，只有用户明确批准才调用方法。`@confirm` 自动申请命令交互所需的 `interactions:request` 范围；单独写一个没有 `@desc` 的私有方法不会变成可远程执行的命令。
 
-所有 `@confirm` 命令都支持显式 `--no-confirm`：命令输入参数开头或末尾的该标记会在进入方法体前移除，此次执行无需请求 Interaction Broker。Server 根据可信命令注解识别该标记，不签发不需要的 `interactions:request` Grant。未提供标记时照常请求确认。操作系统自身的 UAC / sudo 授权按平台机制执行。
+所有 `@confirm` 命令都支持显式 `--no-confirm`：命令输入参数开头或末尾的该标记会在进入方法体前移除，此次执行无需请求 Interaction Broker。该标记由命令装饰器解析，不请求 Interaction Broker。未提供标记时照常请求确认。操作系统自身的 UAC / sudo 授权按平台机制执行。
 
-如果需要自定义文本输入、选择或先展示计划再批准，则在命令内部显式使用 `CommandInteractions`，并在 `@desc` 中声明交互 Grant：
+如果需要自定义文本输入、选择或先展示计划再批准，则在命令内部显式使用 `CommandInteractions`，并可在 `@desc` 中设置 `interaction=True` 以提示界面：
 
 ```python
 from core.utils.decorator import desc
@@ -193,8 +193,7 @@ from client.commands.common.services.interaction_service import (
 )
 
 class CommandExampleMixin:
-    @desc('Choose a demonstration label', group='general',
-          api_grants=('interactions:request',))
+    @desc('Choose a demonstration label', group='general', interaction=True)
     def choose_label(self, arg=''):
         ui = CommandInteractions(self)
         try:
@@ -206,7 +205,7 @@ class CommandExampleMixin:
         return 1, f'Selected {label}'
 ```
 
-Server 会从可信的命令定义读取 `api_grants` 并为当前命令生成临时授权；只有 Client 自己声明、但 Server 不认识的命令，不能仅靠上报 Manifest 就获得授权。交互必须绑定正在运行的 Web Task；Server CLI 或脱离 Web 前台任务的调用未必有可回应的页面。输入与 Preview 请求在原命令中等待，不会嵌套执行另一条命令。更完整的 `confirm`、`input`、`secret`、`select`、Preview（含勾选行和开关）、Script 使用方法见 [Interaction Broker](interaction_broker.md)。
+所有正常下发的 Client 普通命令和 ACMD 都可使用 Interaction Broker，无需逐命令声明 Scope。Server 只验证连接级凭证及当前 Web Task/命令身份。交互必须绑定正在运行的 Web Task；Server CLI 或脱离 Web 前台任务的调用未必有可回应的页面。输入与 Preview 请求在原命令中等待，不会嵌套执行另一条命令。更完整的 `confirm`、`input`、`secret`、`select`、Preview（含勾选行和开关）、Script 使用方法见 [Interaction Broker](interaction_broker.md)。
 
 ### 状态与结果通道
 

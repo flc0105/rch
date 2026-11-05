@@ -3,7 +3,7 @@ import re
 
 
 
-def desc(text, group='general', suggest=True, api_grants=(), *, output='collect', interaction=False):
+def desc(text, group='general', suggest=True, *, output='collect', interaction=False):
     """
     装饰器函数，用于为函数或方法添加命令元信息。
 
@@ -11,7 +11,6 @@ def desc(text, group='general', suggest=True, api_grants=(), *, output='collect'
         text (str): 帮助文案
         group (str): 命令分组
         suggest (bool): 是否默认出现在自动补全候选中
-        api_grants (tuple): 命令请求的 API 授权范围
         output (str): collect (final result) or stream (progressive output)
         interaction (bool): 命令可能在执行中请求 Interaction Broker
 
@@ -28,10 +27,6 @@ def desc(text, group='general', suggest=True, api_grants=(), *, output='collect'
         setattr(func, 'help', text)
         setattr(func, 'group', group)
         setattr(func, 'suggest', suggest)
-        # Preserve scopes declared by independent method decorators such as @confirm.
-        setattr(func, 'api_grants', tuple(dict.fromkeys(
-            (*getattr(func, 'api_grants', ()), *api_grants)
-        )))
         return func
 
     return attr_decorator
@@ -52,7 +47,6 @@ def confirm(message=None):
     """Require a Client Interaction Broker confirmation before calling a command.
 
     Works with @desc in either order; no changes to the command body are needed.
-    Only exported Client commands receive automatic Server-issued grants.
     """
     def decorator(func):
         prompt = message if message is not None else f"Execute command '{func.__name__}'?"
@@ -82,9 +76,6 @@ def confirm(message=None):
             return func(self, *args, **kwargs)
 
         wrapper.requires_confirmation = True
-        wrapper.api_grants = tuple(dict.fromkeys(
-            (*getattr(func, 'api_grants', ()), 'interactions:request')
-        ))
         return wrapper
 
     if callable(message):

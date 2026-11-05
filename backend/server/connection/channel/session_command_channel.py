@@ -1,8 +1,4 @@
 from core.protocol.message_types import MSG_TYPE_COMMAND, MSG_TYPE_CANCEL, MSG_TYPE_SCRIPT, MSG_TYPE_ACMD
-from importlib import import_module
-from client.commands.runtime.catalog import CommandCatalog
-from client.commands.common.commands import CommonCommands
-from core.utils.decorator import _strip_confirm_bypass
 from server.application.auth.script_grant_service import (
     SCRIPT_GRANT_REQUEST_KEY,
     SCRIPT_GRANT_TOKEN_KEY,
@@ -52,74 +48,6 @@ class ClientSessionCommandChannel:
             'id': self.generate_message_id(),
             'text': command,
         }
-        # Only explicitly interactive Client commands receive task-bound grants.
-        # Other Client and shell commands are untouched.
-        if command_type == MSG_TYPE_COMMAND:
-            import shlex
-            try:
-                parts = shlex.split(command or '')
-            except ValueError:
-                parts = []
-            # Resolve grants from the Server's trusted command definitions,
-            # never from a Client-supplied command manifest.
-            method = getattr(CommonCommands, parts[0], None) if parts else None
-            if parts and (method is None or not hasattr(method, 'help')):
-                # Platform-only commands also carry trusted method annotations.
-                session_info = getattr(self.session, 'session_info', None)
-                os_alias = str(getattr(session_info, 'os_alias', '') or '').lower()
-                platform_info = CommandCatalog.PLATFORM_COMMAND_MODULES.get(os_alias)
-                if platform_info:
-                    module_name, class_name = platform_info
-                    try:
-                        command_class = getattr(import_module(module_name), class_name)
-                    except (ImportError, AttributeError):
-                        method = None  # Unavailable platform module: never issue an unverified grant.
-                    else:
-                        method = getattr(command_class, parts[0], None)
-            grants = getattr(method, 'api_grants', ()) if callable(method) and hasattr(method, 'help') else ()
-            if (grants and parts and getattr(method, 'requires_confirmation', False)
-                    and len(parts) > 1 and _strip_confirm_bypass(command[len(parts[0]):].strip())[0]):
-                grants = tuple(scope for scope in grants if scope != 'interactions:request')
-            if grants:
-                extra = self._build_script_grant_extra(data['id'], {
-                    **(extra if isinstance(extra, dict) else {}),
-                    SCRIPT_GRANT_REQUEST_KEY: {
-                        'script_name': f'client-command:{parts[0]}',
-                        'api_grants': list(grants),
-                        'ttl_seconds': 300,
-                    },
-                })
-        if command_type == MSG_TYPE_ACMD and isinstance(extra, dict):
-            # ACMD grants use trusted Server-side command classes, never a Client
-            # manifest or caller-supplied requested scopes. Platform-only ACMDs
-            # (such as macOS launchd) need the same task-bound Broker grant.
-            name = str(extra.get('name') or '').strip()
-            method = getattr(CommonCommands, f'_acmd_{name}', None)
-            if getattr(method, 'argument_command_name', None) != name:
-                method = None
-                os_alias = str(getattr(getattr(self.session, 'session_info', None), 'os_alias', '') or '').lower()
-                platform_info = CommandCatalog.PLATFORM_COMMAND_MODULES.get(os_alias)
-                if platform_info:
-                    module_name, class_name = platform_info
-                    try:
-                        command_class = getattr(import_module(module_name), class_name)
-                    except (ImportError, AttributeError):
-                        pass
-                    else:
-                        candidate = getattr(command_class, f'_acmd_{name}', None)
-                        if getattr(candidate, 'argument_command_name', None) == name:
-                            method = candidate
-            scopes = getattr(method, 'argument_command_grants', ()) if method else ()
-            args = extra.get('args') if isinstance(extra.get('args'), dict) else {}
-            skip_confirmation = args.get('no-confirm') in (True, 'true', '1', 'yes', 'on')
-            if scopes and not skip_confirmation:
-                extra = self._build_script_grant_extra(data['id'], {
-                    **extra, SCRIPT_GRANT_REQUEST_KEY: {
-                        'script_name': f'client-acmd:{name}',
-                        'api_grants': list(scopes),
-                        'ttl_seconds': 300,
-                    },
-                })
         if extra:
             if command_type == MSG_TYPE_SCRIPT and isinstance(extra, dict):
                 extra = self._build_script_grant_extra(data.get('id'), extra)

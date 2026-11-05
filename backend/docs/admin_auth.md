@@ -1,6 +1,6 @@
 # Administrator Authentication
 
-Server 对受保护 Web API 建立统一的管理员身份边界：浏览器依靠经签名的 Session Cookie，外部 HTTP 客户端使用管理员 API Token；由 Server 授权运行的 Script 和 Client 命令可以在限定范围内使用临时 Grant。三类凭据的来源、可达接口和失效条件不同，但最终由同一请求守卫判断是否放行。
+Server 对受保护 Web API 建立统一的管理员身份边界：浏览器依靠经签名的 Session Cookie，外部 HTTP 客户端使用管理员 API Token；由 Server 授权运行的 Script 可以在限定范围内使用临时 Grant，Client 命令的 Web Interaction 使用连接级凭证。三类凭据的来源、可达接口和失效条件不同，但最终由同一请求守卫判断是否放行。
 
 管理员凭据的持久根默认是项目固定的 `backend/runtime/auth.json`（通过 `SERVER_RUNTIME_DIR` 配置）。Server 启动时装载完整凭据；Web 账户菜单修改管理员密码或重置 API Token 时，会原子更新同一文件并立即重新加载认证配置，因此这些操作不需要重启 Server。
 
@@ -158,7 +158,7 @@ Desktop Notifier 是这个 Token 的实际使用场景。Notifier 会携带相�
 
 ## 委托给执行任务的临时权限
 
-Script Grant 让当前 Client 上运行的 Script 或受支持的 Client 命令，在需要访问受保护的 Server API 时，获得临时且限定范围的权限，而不是把 `auth.json` 里的长期 API Token 复制到设备。Server 为每个授权任务生成随机 Grant Token，仅保存它的 SHA-256 哈希，并把授权与 `client_id`、`command_id` 以及来源名称关联。
+Script Grant 让当前 Client 上运行的 Script 在需要访问受保护的 Server API 时，获得临时且限定范围的权限，而不是把 `auth.json` 里的长期 API Token 复制到设备。Server 为每个授权任务生成随机 Grant Token，仅保存它的 SHA-256 哈希，并把授权与 `client_id`、`command_id` 以及来源名称关联。
 
 普通 Script 在顶部的 `SCRIPT_METADATA` 中声明所需 Scope，例如：
 
@@ -177,7 +177,7 @@ print(artifacts)
 
 这是说明声明与调用关系的最小示例，不属于项目已有实例清单。通过 Web Script 运行入口启动时，Server 从受信任的 Script Catalog Metadata 构建授权请求，在下发执行命令时签发 Grant；Client 将 Grant 放进 Script SDK 上下文。`ClientApiClient` 在访问自己配置的 Server Web API 基地址时自动附加 `X-Script-Grant-Token`，不要求开发者手工输入管理员 Token。
 
-普通 Client 命令则可以通过已有的 `@desc` 注解声明权限，例如 `@desc('...', api_grants=('interactions:request',))`；Server 根据受信任的命令方法定义签发 Grant。该机制只针对明确声明了 Grant 的命令或脚本，并非所有 Shell-like 命令都会获得授权。直接在终端运行普通 Shell 命令，也不能凭一段自报的 Metadata 自行向 Server 申请管理员权限。
+普通 Client 命令与 ACMD 的 Web Interaction 通过连接建立时的一次性会话凭证进行调用方识别，无需逐命令声明 `interactions:request`。Script SDK 使用的受限 API Grant 仍按 Script Metadata 声明与现有 Scope 策略签发；普通 Shell 命令不会因此得到 Web 管理员权限。
 
 Grant 的默认生命周期如下：
 

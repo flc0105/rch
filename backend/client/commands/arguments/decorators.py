@@ -1,7 +1,7 @@
 from client.commands.arguments.models import ArgumentCommandSpec
 
 
-def argument_command(name: str, spec: ArgumentCommandSpec | None = None, *, api_grants=(), output='collect'):
+def argument_command(name: str, spec: ArgumentCommandSpec | None = None, *, interaction=False, output='collect'):
     """
     标记一个 acmd 实验命令处理方法
     """
@@ -11,6 +11,6 @@ def argument_command(name: str, spec: ArgumentCommandSpec | None = None, *, api_
         func.command_output = output
         func.argument_command_name = name
         func.argument_command_spec = spec
-        func.argument_command_grants = tuple(api_grants)
+        func.command_interaction = bool(interaction)
         return func
     return decorator

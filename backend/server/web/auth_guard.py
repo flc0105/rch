@@ -90,7 +90,13 @@ class WebAuthGuard:
         )
 
     def is_authenticated(self) -> bool:
-        return self.has_valid_static_token() or self.has_valid_session() or self.has_valid_script_grant()
+        if self.has_valid_static_token() or self.has_valid_session() or self.has_valid_script_grant():
+            return True
+        if self.script_grant_service is None:
+            return False
+        return self.script_grant_service.authorize_client_interaction_request(
+            method=request.method, path=request.path, headers=request.headers,
+        )
 
     def get_session_username(self) -> str:
         return str(session.get(self.SESSION_USER_KEY) or '').strip()

@@ -2,10 +2,6 @@
 
 
 def command_metadata(handler, *, kind='command'):
-    grants = (
-        *getattr(handler, 'api_grants', ()),
-        *getattr(handler, 'argument_command_grants', ()),
-    )
     output = getattr(handler, 'command_output', 'collect')
     return {
         'kind': kind,
@@ -14,8 +10,7 @@ def command_metadata(handler, *, kind='command'):
         'timeout': getattr(handler, 'command_timeout', None),
         'interaction': {
             'may_request': bool(getattr(handler, 'command_interaction', False)
-                                or getattr(handler, 'requires_confirmation', False)
-                                or 'interactions:request' in grants),
+                                or getattr(handler, 'requires_confirmation', False)),
         },
         'output': output,
         **({'confirmation': True} if getattr(handler, 'requires_confirmation', False) else {}),

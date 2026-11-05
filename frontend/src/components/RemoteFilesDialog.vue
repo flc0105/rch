@@ -42,7 +42,7 @@
               </button>
               <template #dropdown>
                 <el-dropdown-menu>
-                  <el-dropdown-item divided disabled>Current Directory</el-dropdown-item>
+                  <el-dropdown-item disabled>Current Directory</el-dropdown-item>
                   <el-dropdown-item command="refresh">Refresh</el-dropdown-item>
                   <el-dropdown-item command="up" :disabled="!remoteFilesParentPath">Parent Directory</el-dropdown-item>
                   <el-dropdown-item command="new_folder">New Folder</el-dropdown-item>

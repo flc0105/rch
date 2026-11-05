@@ -91,7 +91,7 @@ class MacCommands(CommonCommands):
         """查看压缩包内容"""
         return self.mac_file_inspection.acmd_archive_peek(args_dict, payload)
 
-    @argument_command('launchd', spec=LAUNCHD_ARGUMENT_SPEC, api_grants=('interactions:request',))
+    @argument_command('launchd', spec=LAUNCHD_ARGUMENT_SPEC, interaction=True)
     def _acmd_launchd(self, args_dict, payload=None):
         return self.mac_system.acmd_launchd(args_dict, payload)
 

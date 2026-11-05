@@ -534,6 +534,12 @@ class WebConnectionService:
             self.recent_device_store.upsert_from_connection(payload)
         if self.connection_history_store:
             self.connection_history_store.record_connected(payload)
+        # Send once after registration and before advertising the connection as
+        # online; commands do not need individual Interaction grants.
+        if self.script_grant_service is not None:
+            token = self.script_grant_service.issue_client_interaction_session(session)
+            from core.protocol.message_types import MSG_TYPE_INTERACTION_SESSION
+            session.send({'type': MSG_TYPE_INTERACTION_SESSION, 'token': token})
         self.publish_connection_online(session)
 
     def handle_connection_closed(self, session: ClientSession):
@@ -569,6 +575,7 @@ class WebConnectionService:
             )
         try:
             if self.script_grant_service is not None:
+                self.script_grant_service.revoke_client_interaction_session(session)
                 self.script_grant_service.revoke_by_client(session.session_info.client_id)
         except Exception:
             pass

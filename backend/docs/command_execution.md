@@ -139,7 +139,7 @@ Web 首次选中设备、切换设备、WebSocket 重连和设备重新上线时
 
 ## 5. Socket 结果如何抵达 Web 并形成最终状态
 
-远程命令通过 `ClientSessionCommandChannel.send_command()` 构造 `type/id/text` 和必要的 `extra`，将它发送给 Client。对 Script/某些带受保护能力声明的 Client 命令，附加参数可能包含与本次 `command_id` 绑定的短期 Grant；授予范围取自 Server 信任的声明，绝不只根据握手 Manifest 中的自报内容批准权限。
+远程命令通过 `ClientSessionCommandChannel.send_command()` 构造 `type/id/text` 和必要的 `extra`，将它发送给 Client。Script 若声明受保护的 Server API Scope，可在 `extra` 中携带与本次 `command_id` 绑定的短期 Grant；Server 按 Script Metadata 和既有策略签发。普通 Client 命令及 ACMD 不再逐命令签发 Interaction Grant：Client 在连接建立时收到会话凭证，发起交互时 Server 核验当前 Web Task 和命令身份。
 
 收到 Client 返回的 `result` 时，Server 先更新相关工作目录，再交给结果分发器。只有 `id` 与当前队首等待的 `command_id` 匹配，才将 `(status, text, eof)` 投入对应的执行结果队列；正常输出因此按照该等待流逐块消费，直到终止标记 `eof`。不匹配的结果会落入独立的未预期消息处理路径，不能简单并入当前 Terminal 命令的输出。
 

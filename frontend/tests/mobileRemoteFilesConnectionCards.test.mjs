@@ -59,9 +59,10 @@ test('Mobile top More keeps four ordered separator groups and removes only Manag
   })
   const mobile = vue.split('class="remote-mobile-tools-dropdown"')[1].split('</el-dropdown-menu>')[0]
   const desktop = vue.split('@command="handleRemoteToolbarMoreCommand"')[1].split('</el-dropdown-menu>')[0]
-  const headers = [...mobile.matchAll(/<el-dropdown-item divided disabled>([^<]+)<\/el-dropdown-item>/g)].map(match => match[1])
+  const headers = [...mobile.matchAll(/<el-dropdown-item (?:divided )?disabled>([^<]+)<\/el-dropdown-item>/g)].map(match => match[1])
   assert.deepEqual(headers, ['Current Directory', 'Quick Jump', 'Batch &amp; Clipboard', 'View'])
-  assert.equal((mobile.match(/\bdivided\b/g) || []).length, 4, 'one separator per section, no ad-hoc dividers')
+  assert.match(mobile, /<el-dropdown-menu>\s*<el-dropdown-item disabled>Current Directory<\/el-dropdown-item>/, 'first section must not begin with a separator')
+  assert.equal((mobile.match(/\bdivided\b/g) || []).length, 3, 'separators appear only between sections')
   const commands = [...mobile.matchAll(/<el-dropdown-item\b(?:(?!>).)*\scommand="([^"]+)"/gs)].map(match => match[1])
   assert.deepEqual(commands, [
     'refresh', 'up', 'new_folder', 'upload', 'set_cwd', 'toggle_pin',

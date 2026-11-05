@@ -9,16 +9,18 @@ from server.application.auth.script_grant_policy import ScriptGrantPolicy
 SCRIPT_GRANT_REQUEST_KEY = '__script_grant_request__'
 SCRIPT_GRANT_TOKEN_KEY = '__script_grant__'
 SCRIPT_GRANT_HEADER = 'X-Script-Grant-Token'
+CLIENT_INTERACTION_HEADER = 'X-Client-Interaction-Token'
 
 
 class ScriptGrantService:
     """
-    Script SDK 临时授权服务。
+    Script SDK 临时授权与 Client 连接级 Interaction 凭证服务。
 
     职责：
     - 签发单次脚本执行使用的临时 token
     - 保存 grant 与 command/client 的绑定关系
-    - 校验 token 生命周期、使用次数、scope 与 Web API URL
+    - 校验 Script token 生命周期、使用次数、scope 与 Web API URL
+    - 给每条 Client 连接提供一次专用 Interaction 凭证；断开时撤销
 
     注意：
     - 只做 API URL 级别授权
@@ -37,6 +39,7 @@ class ScriptGrantService:
         self._lock = threading.RLock()
         self._grants_by_hash = {}
         self._token_hash_by_command = {}
+        self._client_interaction_sessions = {}
 
     def _now(self) -> datetime:
         return datetime.now()
@@ -184,6 +187,40 @@ class ScriptGrantService:
             stored = self._grants_by_hash.get(token_hash)
             if stored is grant:
                 stored['used_count'] = int(stored.get('used_count') or 0) + 1
+
+    def issue_client_interaction_session(self, session) -> str:
+        """Issue one interaction credential for a connected Client socket."""
+        client_id = self._get_session_identity(session)['client_id']
+        if not client_id:
+            raise ValueError('Client ID is required for interactions')
+        token = secrets.token_urlsafe(32)
+        with self._lock:
+            self._client_interaction_sessions[client_id] = (self._hash_token(token), session)
+        return token
+
+    def get_client_interaction_identity(self, token: str) -> dict | None:
+        """Resolve a Client connection credential; no per-command grant is issued."""
+        if not token:
+            return None
+        token_hash = self._hash_token(token)
+        with self._lock:
+            for client_id, (stored_hash, session) in self._client_interaction_sessions.items():
+                if secrets.compare_digest(token_hash, stored_hash):
+                    return {'client_id': client_id, 'session': session}
+        return None
+
+    def revoke_client_interaction_session(self, session):
+        client_id = self._get_session_identity(session)['client_id']
+        with self._lock:
+            stored = self._client_interaction_sessions.get(client_id)
+            if stored is not None and stored[1] is session:
+                self._client_interaction_sessions.pop(client_id, None)
+
+    def authorize_client_interaction_request(self, *, method: str, path: str, headers=None) -> bool:
+        if method.upper() != 'POST' or path != '/api/interactions/client/request':
+            return False
+        token = self._get_header_value(headers, CLIENT_INTERACTION_HEADER)
+        return self.get_client_interaction_identity(token) is not None
 
     def get_interaction_identity(self, token: str) -> dict | None:
         """Return only identity of a valid interaction grant; never expose token."""

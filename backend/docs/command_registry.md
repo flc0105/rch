@@ -62,12 +62,12 @@ class CommandDiagnosticsMixin:
 
 这是**新增扩展的示意代码**，并非项目已注册的现成命令。接入方式是在适当的 `Common*Commands` 继承列表加入 `CommandDiagnosticsMixin`，或者将方法放入已被继承的现有 Mixin，然后启动加载该命令类的 Client。
 
-`@desc(text, group='general', suggest=True, api_grants=())` 将元数据挂在方法上：
+`@desc(text, group='general', suggest=True, interaction=False)` 将元数据挂在方法上：
 
 - `help`：导出识别和帮助描述。**缺少 `@desc` 的普通方法不会作为普通 Client 命令被 ShellCommandRunner 分派**，哪怕它恰好是 public method。
 - `group`：`help` 分组及 Command Manifest 的分类；不会单独决定权限或平台。
 - `suggest`：控制是否出现在默认帮助/候选展示中。`suggest=False` 不会禁止执行，Manifest 中仍可能包含该项，由展示层过滤。
-- `api_grants`：普通命令需要调用受授权 Client API 时声明的范围；单凭 Manifest 中的字符串不会让 Server 信任该声明。
+- `interaction`：标记通常可能请求 Web 交互，用于 Manifest 提示，不控制命令执行权限。
 
 普通 Runner 的调用约定是：先通过项目解析器分离首个命令名称及其余文本；然后以方法签名决定调用 `handler()` 还是 `handler(arg)`。因此普通命令更适合无参或**单段原始参数文本**；多值、可验证的选项建议使用 ACMD。命令返回一般为 `(status, result)`，其中 `1` 表示成功、`0` 表示失败；其他输出约定需与执行链保持一致。中间流式结果应复用 `CommandBase` 的 `_send_interim_result()` / `_send_info()` 等方法，并遵守 `command_id` 绑定，而不是自己创建 Web SSE 事件。
 
@@ -146,7 +146,7 @@ Web 通过 `GET /api/connections/{client_id}/command-candidates` 获取候选，
 
 ## 六、受保护能力与执行策略如何接入
 
-普通 Client 命令通过 `@desc(..., api_grants=('interactions:request',))` 声明所需受保护范围；若只需执行前确认，也可使用 `@confirm`。`@confirm` 和 `@desc` 两种装饰器顺序在当前实现中都能够保留帮助元数据及交互授权要求。实际 Grant 由 Server `ClientSessionCommandChannel.build_command_payload()` 对**可信的本地 `CommonCommands` 或对应平台类的方法注解**进行查找后签发，且仅在命令调用需要该范围时提供。Client 自报的 Manifest 不能凭空增加 Grant。
+普通 Client 命令和 ACMD 均可在当前 Web Task 中使用 Interaction Broker，使用连接建立时发放的会话凭证，不需要逐命令声明 Scope。`@confirm` 仍负责命令确认，`--no-confirm` 跳过该确认；`@desc(..., interaction=True)` 只用于 Manifest 显示提示，不参与访问权限判断。
 
 涉及 `CommandInteractions`、预览、Secret 输入、批准/拒绝时，详细使用和应答边界参阅 [Interaction Broker](interaction_broker.md)；Script 的 Metadata 和 Script SDK 授权则由 [Scripts](scripts.md) 与 [Admin Auth](admin_auth.md) 解释。**普通命令的 `api_grants` 声明并不等于任意 ACMD 或 Shell 文本都会获得同样的授权。**
 
@@ -232,6 +232,6 @@ The viewer's Clear View clears browser display only. External Tools' existing
 
 ## 命令 Manifest 元数据
 
-Client 普通命令的 `@desc` 可以声明 `output='collect'|'stream'`、`interaction=True|False`，并保留 `help/group/suggest/api_grants`。取消能力由现有 `@cancel_policy('none'|'cooperative'|'process')` 声明，命令执行时仍可根据具体执行模式更新当前取消策略。`@cancel_policy`、`@timeout`、`@confirm` 仍各自定义实际执行行为。命令扫描器统一提取 `name/kind/source/help/group/suggest/cancel_policy/timeout/confirmation/interaction/output`；ACMD 注册表也生成相同字段。每个可补全的 ACMD 条目使用真实插入文本作为 `name`，隐藏命令不加入握手清单。
+Client 普通命令的 `@desc` 可以声明 `output='collect'|'stream'`、`interaction=True|False`，并保留 `help/group/suggest`。取消能力由现有 `@cancel_policy('none'|'cooperative'|'process')` 声明，命令执行时仍可根据具体执行模式更新当前取消策略。`@cancel_policy`、`@timeout`、`@confirm` 仍各自定义实际执行行为。命令扫描器统一提取 `name/kind/source/help/group/suggest/cancel_policy/timeout/confirmation/interaction/output`；ACMD 注册表也生成相同字段。每个可补全的 ACMD 条目使用真实插入文本作为 `name`，隐藏命令不加入握手清单。
 
-Manifest 的取消与 Timeout 信息反映命令默认声明；实际执行中的取消策略以运行态为准。带有 `confirmation: true` 的命令由 `@confirm` 请求 Interaction Broker 确认；所有这类命令均接受 `--no-confirm`。`interaction.may_request` 是声明或授权范围提供的“可能请求交互”提示，不表示每次执行都会产生弹窗。
+Manifest 的取消与 Timeout 信息反映命令默认声明；实际执行中的取消策略以运行态为准。带有 `confirmation: true` 的命令由 `@confirm` 请求 Interaction Broker 确认；所有这类命令均接受 `--no-confirm`。`interaction.may_request` 是当前命令声明的“可能请求交互”提示，不表示每次执行都会产生弹窗。

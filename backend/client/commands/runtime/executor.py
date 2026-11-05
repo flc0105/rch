@@ -57,11 +57,7 @@ class CommandExecutor:
         timeout = self._extract_timeout(payload_options)
         if timeout is None:
             timeout = self._extract_timeout(options)
-        grant = None
-        if isinstance(options, dict) and isinstance(options.get('__script_grant__'), dict):
-            grant = options['__script_grant__']
-        return CommandExecutionRequest(command_id=command_id, timeout=timeout,
-                                       interaction_grant=grant)
+        return CommandExecutionRequest(command_id=command_id, timeout=timeout)
 
     def _get_or_create_execution_context(self, command_id, timeout=None):
         return self.context_store.get_or_create(command_id, timeout=timeout)
@@ -94,7 +90,6 @@ class CommandExecutor:
             commands.bind_execution(request.command_id, execution_context)
         else:
             commands.command_id = request.command_id
-        commands._interaction_grant = request.interaction_grant
         return commands
 
     def _prepare_commands(self, request: CommandExecutionRequest):
@@ -118,14 +113,9 @@ class CommandExecutor:
     def execute_bound_request(self, request: CommandExecutionRequest, invoke: Callable[[Any], Any]):
         def _runner():
             commands = self._prepare_commands(request)
-            try:
-                # Common entry checkpoint for command / acmd / script, previously duplicated
-                # through the shared execution entry, never command-specific wrappers.
-                commands._checkpoint()
-                return invoke(commands)
-            finally:
-                commands._interaction_grant = None
-
+            # Common entry checkpoint for command / acmd / script.
+            commands._checkpoint()
+            return invoke(commands)
         return self._execute_with_cleanup(request.command_id, _runner)
 
     def execute_command(self, command_id, command, options=None):

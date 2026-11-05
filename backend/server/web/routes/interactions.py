@@ -1,7 +1,7 @@
 """Browser response API and restricted Client Script SDK interaction transport."""
 from flask import Blueprint, request
 
-from server.application.auth.script_grant_service import SCRIPT_GRANT_HEADER
+from server.application.auth.script_grant_service import SCRIPT_GRANT_HEADER, CLIENT_INTERACTION_HEADER
 from server.web.api_response import WebApiResponder
 
 
@@ -28,24 +28,39 @@ def create_interaction_blueprint(server_instance):
     @bp.post('/api/interactions/client/request')
     def client_request():
         def work():
-            # Authentication middleware requires interactions:request scope. In addition,
-            # bind the grant identity to the *active* foreground Client command.
-            token = str(request.headers.get(SCRIPT_GRANT_HEADER) or '')
-            grant = service.script_grant_service.get_interaction_identity(token)
-            if not grant:
-                raise ValueError('An active interaction Script Grant is required')
-            client_id = grant['client_id']
-            conn = server_instance.get_target_connection_by_client_id(client_id)
+            # Scripts use their task-bound grant; ordinary Commands/ACMD use
+            # the credential issued once when the Client socket connected.
+            client_token = str(request.headers.get(CLIENT_INTERACTION_HEADER) or '')
+            if client_token:
+                identity = service.script_grant_service.get_client_interaction_identity(client_token)
+                if not identity:
+                    raise ValueError('Invalid Client interaction session')
+                client_id = identity['client_id']
+                conn = server_instance.get_target_connection_by_client_id(client_id)
+                if conn is not identity['session']:
+                    raise ValueError('Client interaction session is no longer active')
+                body = request.get_json(silent=True) or {}
+                command_id = body.get('command_id')
+                if type(command_id) is not int:
+                    raise ValueError('An active command ID is required for interaction')
+            else:
+                token = str(request.headers.get(SCRIPT_GRANT_HEADER) or '')
+                grant = service.script_grant_service.get_interaction_identity(token)
+                if not grant:
+                    raise ValueError('An active interaction Script Grant is required')
+                client_id = grant['client_id']
+                conn = server_instance.get_target_connection_by_client_id(client_id)
+                command_id = grant['command_id']
+                body = request.get_json(silent=True) or {}
             foreground = conn.get_foreground_task() or {}
-            if foreground.get('command_id') != grant['command_id']:
-                raise ValueError('Script Grant does not match active foreground command')
+            if foreground.get('command_id') != command_id:
+                raise ValueError('Interaction does not match active foreground command')
             task_id = str(foreground.get('task_id') or '').strip()
             task = service.task_store.get_task(task_id)
             if not task or task.get('client_id') != client_id:
                 raise ValueError('Active Web task not found')
             if not task.get('tab_id'):
-                raise ValueError('Web tab is required for script interaction')
-            body = request.get_json(silent=True) or {}
+                raise ValueError('Web tab is required for interaction')
             return broker.request(
                 task_id=task_id, client_id=client_id, tab_id=task.get('tab_id') or '',
                 kind=body.get('kind'), message=body.get('message'),

@@ -475,7 +475,7 @@ if not context.approve_preview('Execute this plan?', plan, title='Backup preview
 
 Authorized Client commands use `CommandInteractions(self).approve_preview(message, plan, title=...)` with the same data format. The Script `mac/recon/personal_mac_backup_preview` provides a real preview use case.
 
-Ordinary Client commands declare the interaction permission on the registered method using `@desc(..., api_grants=('interactions:request',))`. The Server reads these grants from its trusted `CommonCommands` definitions; no separate command-name grant list is needed.
+Ordinary Client commands and ACMD use one connection-bound interaction credential issued after the Client handshake; no per-command `api_grants` declaration or Script Grant is needed. Scripts retain their own `SCRIPT_METADATA.api_grants` and Script Grant lifecycle.
 
 Presentation constraints: `summary` up to 16 label/value entries; `columns` up to 8 `{key,label}` pairs; `rows` up to 100 dictionaries keyed by declared column keys; `details` up to 16 `{title,content}` entries. All values are plain strings, not HTML. Only the preview UI changes: existing `confirm`, `ask`, `select`, and `secret` remain unchanged. Reject/timeout returns `False`. A preview approves a request, **not** a persistent server-side plan: the caller must verify its own actual targets before executing.
 

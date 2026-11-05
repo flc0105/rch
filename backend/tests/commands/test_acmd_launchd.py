@@ -260,23 +260,23 @@ def test_launchd_cancelled_selection_never_executes_sdk(monkeypatch):
     assert calls == []
 
 
-def test_launchd_without_broker_grant_fails_closed(monkeypatch):
+def test_launchd_without_active_client_connection_fails_closed(monkeypatch):
     called = []
     monkeypatch.setattr(launchd, 'manage', lambda **kwargs: called.append(kwargs))
-    # A bare registry test has no bound Web Task and consequently no Broker grant.
+    # A bare registry has no connected Client or Web task.
     status, message = _execute(_registry(), 'acmd launchd status agent')
     assert status == 0
-    assert 'no active interaction grant' in message
+    assert 'active Client command connection' in message
     assert called == []
 
 
-def test_launchd_server_grant_is_signed_from_trusted_mac_registration():
+def test_launchd_command_dispatch_never_issues_script_grant():
     issued = []
 
     class StubGrants:
-        def issue_script_grant(self, *, session, command_id, grant_request):
-            issued.append((command_id, grant_request))
-            return {'token': 'sample', 'scopes': grant_request['api_grants']}
+        def issue_script_grant(self, **kwargs):
+            issued.append(kwargs)
+            return {'token': 'unused'}
 
     session = SimpleNamespace(
         session_info=SimpleNamespace(os_alias='mac'),
@@ -284,19 +284,12 @@ def test_launchd_server_grant_is_signed_from_trusted_mac_registration():
     )
     channel = ClientSessionCommandChannel(session)
     extra = {'name': 'launchd', 'args': {'_args': ['status', 'agent']}}
-    sent = channel.build_command_payload('acmd launchd status agent', MSG_TYPE_ACMD, extra)
-    assert sent['extra']['__script_grant__']['scopes'] == ['interactions:request']
-    assert issued[0][1]['script_name'] == 'client-acmd:launchd'
-    assert '__script_grant_request__' not in sent['extra']
-    # The grant cannot be tricked into appearing for the same name on Linux.
-    linux_session = SimpleNamespace(
-        session_info=SimpleNamespace(os_alias='linux'),
-        context=SimpleNamespace(script_grant_service=StubGrants()),
-    )
-    no_grant = ClientSessionCommandChannel(linux_session).build_command_payload(
-        'acmd launchd status agent', MSG_TYPE_ACMD, extra)
-    assert '__script_grant__' not in no_grant['extra']
-    assert len(issued) == 1
+    acmd = channel.build_command_payload('acmd launchd status agent', MSG_TYPE_ACMD, extra)
+    ordinary = channel.build_command_payload('interaction_demo', 'command')
+    assert acmd['extra'] == extra
+    assert '__script_grant__' not in acmd['extra']
+    assert 'extra' not in ordinary
+    assert not issued
 
 
 def test_launchd_invalid_args_do_not_request_approval(monkeypatch):

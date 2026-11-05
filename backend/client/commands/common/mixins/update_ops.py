@@ -466,8 +466,7 @@ class CommandUpdateMixin:
                 lines.append(error(f'  {message}'))
         return '\n'.join(lines)
 
-    @desc('Clean Client residue and obsolete bundle releases', group='maintenance',
-          api_grants=('interactions:request',))
+    @desc('Clean Client residue and obsolete bundle releases', group='maintenance', interaction=True)
     @cancel_policy('cooperative')
     def clean(self, arg=''):
         """Preview selectable cleanup categories; --no-confirm executes without Broker."""

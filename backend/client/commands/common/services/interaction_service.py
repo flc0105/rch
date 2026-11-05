@@ -1,4 +1,4 @@
-"""Interaction Broker access for ordinary Client commands with active grants."""
+"""Interaction Broker access for ordinary Client commands on the current connection."""
 
 
 class CommandInteractionError(RuntimeError):
@@ -6,7 +6,7 @@ class CommandInteractionError(RuntimeError):
 
 
 class CommandInteractions:
-    """Use the active, command-bound interaction grant; never submit a new Command."""
+    """Use the Client connection credential and current command identity."""
 
     def __init__(self, owner):
         self.owner = owner
@@ -14,16 +14,17 @@ class CommandInteractions:
     def request(self, kind, message, *, title='', options=None, preview=None, timeout=60):
         from client.http.client_api import ClientApiClient
 
-        grant = getattr(self.owner, '_interaction_grant', None) or {}
-        token = str(grant.get('token') or '').strip()
-        if not token:
-            raise CommandInteractionError('This Client command has no active interaction grant')
+        socket = getattr(self.owner, 'socket', None)
+        token = str(getattr(socket, 'interaction_session_token', '') or '').strip()
+        command_id = getattr(self.owner, 'command_id', None)
+        if not token or type(command_id) is not int:
+            raise CommandInteractionError('An active Client command connection is required for interaction')
         timeout = max(1, min(int(timeout), 180))
         self.owner._checkpoint(fallback_timeout=240)
         result = ClientApiClient().post_data(
             '/api/interactions/client/request', timeout=timeout + 15,
-            headers={'X-Script-Grant-Token': token},
-            json={'kind': kind, 'title': title, 'message': message,
+            headers={'X-Client-Interaction-Token': token},
+            json={'command_id': command_id, 'kind': kind, 'title': title, 'message': message,
                   'options': options if options is not None else [],
                   'preview': preview, 'timeout_seconds': timeout},
         )
