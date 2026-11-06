@@ -9,6 +9,7 @@ RCH 将多处文件预览和文本编辑集中到同一个 Web 组件。它既�
 | 功能入口 | 打开时的数据来源 | 文本编辑模式 | Save 实际写入目标 |
 | --- | --- | --- | --- |
 | **Remote Files** 文件 Preview | `POST /api/connections/{client_id}/remote-files/preview`；先从指定 Client 传至 Server 预览 Artifact | 先只读；内容完整且编码可无损识别时可 Edit | `POST /api/connections/{client_id}/remote-files/save`；**原 Client 上原路径** |
+| **Web Terminal** `edit <path>` | 复用 Remote Files 的 Preview API 与当前选中的 Client | 加载后直接进入 Monaco 编辑模式；只接受完整、可编辑的文本 | 与 Remote Files 相同，点击 Save 才写回**原 Client 上的原路径** |
 | **Artifacts**（含 `files`、`shared_files`、`previews`、`command_output` 等适用文件） | `GET /api/artifacts/{artifact_id}/preview` | 文本、未截断且编码可无损识别时可 Edit | `PUT /api/artifacts/{artifact_id}/content`；**Server Artifact 文件** |
 | **Shared Files → 新建文件** | 在 Web 创建空 Monaco 模型 | 直接可编辑 | `POST /api/files/upload`；创建 `shared_files` Artifact，之后切换为 Artifact 编辑来源 |
 | **Script Library → 新建 / 编辑 Python Script** | 默认脚本模板，或 `GET /api/scripts/download?name=...` | 直接可编辑 | `POST /api/scripts/save`；**Server 脚本资源** |
@@ -44,6 +45,12 @@ Artifact 对象可能从普通文件列表、终端运行结果、通知动作�
 普通 Artifact 预览先检查文件签名识别图片与 ZIP（`archive`），再以严格流式解码判定其他文件是否为文本；扩展名只用于语法高亮，不决定预览资格。它最多向浏览器发送前 **512 KiB（524,288 字节，默认可配置）**范围内的完整字符文本；编码校验使用增量解码器流式检查**整份文件**，所以即使截断边界落在 UTF-8 多字节序列或 UTF-16 字符中间，也不会错误地显示 `unknown`。超过预览限额设置 `truncated=true`，工具栏保留 `Truncated` 标签，文本编辑器末尾单独显示英文截断提示；提示不属于文件正文，也不会进入 Copy 或保存内容。
 
 读取先尝试严格识别 UTF-8、UTF-8 BOM 和带 BOM 的 UTF-16 LE/BE，只有解码成功且不含明显二进制控制字符、内容未截断时才允许编辑。编码不受支持或含二进制控制字符的文件直接返回 `unsupported`，不会显示有损替换文本供编辑。预览截断发生于字节层，因此即使编码可识别，截断内容也不可编辑。
+
+### Web Terminal：直接编辑远程文件
+
+在 Web Terminal 输入 `edit <远端文件路径>`，例如 `edit ./config/app.json`、`edit "my notes.txt"`、`edit /Users/flc/Desktop/example.py`，会直接打开共享 Monaco Dialog 的编辑状态，显示 **Save / More / Cancel**。当前选中的 Client 就是文件来源；相对路径由目标 Client 的当前工作目录解析。该入口也可以搭配 Terminal 的 `@@` 路径补全。编辑内容在点击 **Save** 前只保存在浏览器中；Save 沿用 Remote Files 的原编码写回 API。
+
+预览服务器的默认文本上限为 **512 KiB**。如果文件超过上限（返回 `truncated=true`）、是图片/压缩包/二进制内容，或者编码不可无损编辑，`edit` 会直接提示不支持编辑，不打开截断文本的编辑窗口。Remote Files Browser 原有的 **Preview → Edit → Save** 顺序保持不变。`edit` 由 Web 前端处理，不会作为 Client Shell 命令发送，也不是 RCHCLI 的本地编辑器命令。
 
 ### Remote Files 有额外的传输阶段
 

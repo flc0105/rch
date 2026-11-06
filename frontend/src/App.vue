@@ -198,6 +198,7 @@
   @terminal-submission-start="startTerminalSubmission"
   @terminal-submission-finish="finishTerminalSubmission"
   @clear-output="clearOutput"
+  @edit-remote-file="editRemoteFile"
 />
 
                 <!--                <TerminalOutput-->
@@ -1374,6 +1375,10 @@ export default {
 
     previewRemoteEntry(row) {
       return this.callOptionalDialog('preview', 'previewRemoteEntry', row)
+    },
+
+    editRemoteFile(row) {
+      return this.callOptionalDialog('preview', 'editRemoteEntry', row)
     },
 
     previewArtifact(row) {

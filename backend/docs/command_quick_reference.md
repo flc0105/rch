@@ -9,6 +9,7 @@
 | 类型 | 典型写法 | 在哪里处理 | 主要区别 |
 |---|---|---|---|
 | **Server Builtin** | `alias list`、`script list`、`job ps` | Server 先处理，再按需要访问 Client | 用于服务端目录、别名、历史、任务与连接控制；同名时优先于 Client 普通命令 |
+| **Web Terminal 本地操作** | `clear`、`cls`、`edit <path>` | 浏览器前端 | `edit` 复用 Remote Files 的预览/保存链路直接打开 Monaco 编辑器；不转发到 Client 命令执行器 |
 | **Client 普通内置命令** | `pwd`、`set`、`clean` | 目标 Client | 已导出的 RCH 操作；通常接收一段原始参数文本 |
 | **Client Shell** | `shell <命令>`、系统可执行程序名称 | 目标 Client 的操作系统 | `shell` 明确启动系统子进程；未匹配 RCH 内置方法的普通输入也可能回退到系统 Shell |
 | **ACMD** | `acmd ps --name python` | Server 解析入口、Client 校验并执行 | 使用独立注册表及结构化参数校验；**不会**在不支持时回退到系统 Shell |

@@ -763,7 +763,11 @@ export default {
       this.previewText = ''
     },
 
-    async previewRemoteEntry(row) {
+    editRemoteEntry(row) {
+      return this.previewRemoteEntry(row, { editImmediately: true })
+    },
+
+    async previewRemoteEntry(row, { editImmediately = false } = {}) {
       if (!row || !row.path || row.is_dir || row.is_parent_entry) {
         ElMessage.warning('Please select a file')
         return
@@ -775,7 +779,7 @@ export default {
         return
       }
 
-      if (/\.zip$/i.test(String(row.name || row.path))) {
+      if (!editImmediately && /\.zip$/i.test(String(row.name || row.path))) {
         this.resetPreviewState()
         this.previewSource = 'remote_file'
         this.previewFilePath = row.path
@@ -803,10 +807,11 @@ export default {
           }),
           row.name || 'File Preview',
           clientId,
+          { editImmediately },
       )
 
-      // 重置编辑模式
-      this.previewEditMode = false
+      // Remote Files Browser 仍从只读预览开始。
+      if (!editImmediately) this.previewEditMode = false
     },
 
     async previewArtifact(row) {
@@ -1123,8 +1128,9 @@ export default {
       }
     },
 
-    async loadPreviewPayload(fetcher, fallbackTitle = 'File Preview', remoteClientId = '') {
-      this.previewDialogVisible = true
+    async loadPreviewPayload(fetcher, fallbackTitle = 'File Preview', remoteClientId = '', { editImmediately = false } = {}) {
+      // Terminal edit must validate the complete editable payload before opening a dialog.
+      this.previewDialogVisible = !editImmediately
       this.previewLoading = true
       this.resetPreviewState()
       this.previewRemoteClientId = remoteClientId
@@ -1143,6 +1149,12 @@ export default {
         }
 
         const data = json.data || {}
+        if (editImmediately) {
+          if (data.truncated) throw new Error('File exceeds the editable preview size limit')
+          if (data.type !== 'text') throw new Error('Only text files can be edited')
+          if (data.editable !== true) throw new Error('This text file cannot be edited')
+          this.previewDialogVisible = true
+        }
         this.previewType = data.type || 'unsupported'
         this.previewTitle = data.name || fallbackTitle
         this.previewImageInfo = data.image_info || null
@@ -1160,6 +1172,7 @@ export default {
           this.previewText = data.content || ''
           this.previewTruncated = data.truncated || false
           this.previewEditable = data.editable === true && !this.previewTruncated
+          this.previewEditMode = editImmediately
           this.previewFileCodec = data.encoding || 'unknown'
           this.previewOriginalContent = this.previewText
           this.previewFileSize = formatBytes(data.size || this.previewText.length)
@@ -1168,7 +1181,7 @@ export default {
 
           // 等待 DOM 渲染完成后初始化编辑器
           this.$nextTick(() => {
-            this.initMonacoEditor(this.previewText, true)
+            this.initMonacoEditor(this.previewText, !editImmediately)
           })
         }
       } catch (e) {

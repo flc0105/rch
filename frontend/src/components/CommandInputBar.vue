@@ -154,6 +154,7 @@ export default {
     'terminal-submission-start',
     'terminal-submission-finish',
     'clear-output',
+    'edit-remote-file',
   ],
 
   data() {
@@ -322,8 +323,34 @@ export default {
     // },
 
 
+    parseRemoteEditPath(argument) {
+      const raw = String(argument || '').trim()
+      if (!raw) return ''
+      const quote = raw[0]
+      if (quote === '"' || quote === "'") {
+        if (raw.length < 2 || raw[raw.length - 1] !== quote) return null
+        const inner = raw.slice(1, -1)
+        return quote === '"'
+          ? inner.replace(/\\(["\\$`])/g, '$1')
+          : inner.replace(/'\\''/g, "'")
+      }
+      return raw
+    },
+
     handleLocalFrontendCommand(command) {
-  const normalizedCommand = String(command || '').trim().toLowerCase()
+  const rawCommand = String(command || '').trim()
+  const editPrefix = /^edit(?=\s|$)/i.exec(rawCommand)
+  if (editPrefix) {
+    const path = this.parseRemoteEditPath(rawCommand.slice(editPrefix[0].length))
+    if (!path) {
+      ElMessage.warning('Usage: edit <remote file path>')
+    } else {
+      this.$emit('edit-remote-file', {client_id: String(this.selectedId), path})
+      this.commandText = ''
+    }
+    return true
+  }
+  const normalizedCommand = rawCommand.toLowerCase()
 
   const localCommandHandlers = {
     clear: () => {

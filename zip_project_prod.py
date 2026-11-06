@@ -22,7 +22,6 @@ IGNORE_PATHS = {
     "frontend/.vscode",
     "backend/runtime",
     "backend/venv",
-
     "backend/server/resources/external_tools/packages"
 }
 
