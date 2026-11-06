@@ -24,6 +24,8 @@ Client（远程设备）
 
 浏览器不直接挂载远程磁盘，也不要求远端开放 SMB、SFTP 等文件服务。一次目录浏览由浏览器请求 Server 的目录 API，Server 通过已建立的 Client 连接执行文件系统查询，再将目录条目、统计和分页信息返回前端。与单纯列目录不同，上传、下载与预览会涉及实际文件内容，使用专门的文件传输服务和 Server Artifact 存储。
 
+**Go (Simple) Client 支持范围。** Go Client 复用同一套结构化命令协议，支持目录浏览、分页、隐藏文件过滤、名称搜索与递归搜索，以及新建目录、重命名、单项/批量删除、复制和移动。握手提供 Root、Home、Desktop、Documents、Downloads、Temp 和 Program Directory 路径。另支持 Remote Files 的浏览器上传（Server 暂存 → Client）、下载到 Server Artifact、批量 ZIP 下载、文件预览缓存上传、受限文本保存、ZIP Peek／条目文本预览／创建和安全解压；传输使用独立于前台命令的可取消任务。图片预览上传原始字节，不做图片压缩或格式转换，也不引入图片处理第三方库。Server 仍负责按文件实际内容决定图片、文本、ZIP 等预览类型；Go 不自行渲染预览界面。Go 的批量操作沿用 Python 的成功数、失败数与错误列表结构；路径权限由 Go Client 所在系统账号决定。
+
 远程操作分成两类，影响它们与普通命令的并发关系：
 
 | 类型 | 典型操作 | 执行方式 |

@@ -189,14 +189,17 @@ Heartbeat 更新连接的最近活跃信息、RTT 和可能的当前工作目录
 
 ## 附录：Go Client（非主要维护路径）
 
+Go Client 支持 TCP 和 TLS/TCP 监听器。Go (Simple) 构建时注入 Listener 协议和 Server 证书 SHA-256 指纹；未选择 TLS/TCP 时使用 TCP。TLS/TCP 在验证证书指纹通过后发送 Client 握手消息。
+
 这一独立实现只用于解释连接能力边界，不属于上文 Python Client 握手工作流。它在 TCP 连接后同样发送 `type: "info"`，并在同一进程的重新连接间沿用 Client ID，但当前上报内容较少：
 
 - 基础字段包括 `id`、`os_type`、`os_ver`、`hostname`、`cwd`、`integrity`、`go_version` 和 `build_version`。
-- `command_manifest` 来自其自身的命令执行器；没有上报 `variable_manifest`。
-- `system_paths` 当前为空列表，Server 将其归一为空字典。
-- 没有上报 Python Client 使用的 `machine_id`、`machine_fingerprint_basis`、`client_revision` 及其源码指纹明细。
+- `command_manifest` 来自 Go 自身的命令执行器，涵盖基本文件操作；`variable_manifest` 仍为空列表。
+- `system_paths` 提供 Root、Home、Desktop、Documents、Downloads、Temp 和可执行文件目录，用于 Remote Files Quick Jump。
+- `machine_id` 和 `machine_fingerprint_basis` 使用 Go 的机器身份实现；`client_revision` 及 Python 源码指纹明细没有上报。
+- `feature_manifest.remote_files=true` 表示 Go 可使用目录导航及基本文件管理命令；文件传输、Preview 和 ZIP 功能尚需对应执行模块。
 
-因此，该实现即使在线，也不能直接视为具备本篇介绍的完整机器归并、变量提示和源码 Revision 检测能力。相关代码位于 `backend/client-go/`；上文的功能开发与故障判断默认针对 Python Client。
+Go Client 的连接、身份、目录管理、Remote Files HTTP 上传／下载／预览／ZIP 传输和命令 Manifest 可独立于 Python Client 使用；完整脚本、作业、PTY、屏幕等功能仍须按各 Client 实际能力判断。Go 的图片文件预览只上传原始字节，不负责图片压缩。相关代码位于 `backend/client-go/`。
 
 ## Capability Metadata 与启动 Feature
 

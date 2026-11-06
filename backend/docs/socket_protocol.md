@@ -206,8 +206,10 @@ Server 接收线程遇到 `socket.error` 后执行连接关闭处理，通知 We
 
 下面仅记录该独立实现与上文 Python Client 协议的边界，不作为主要协议流程的前置条件或功能清单。
 
+**连接传输。** Go Client 根据构建时注入的 `SERVER_TRANSPORT` 选择 `tcp`（默认）或 `tls_tcp`；TLS/TCP 使用与 Python Client 相同的 Server 证书 SHA-256 指纹校验，在 TLS 握手成功并验证指纹后发送 RCH 握手。证书指纹由所选 Listener 的构建配置注入。
+
 **帧实现。** `backend/client-go/protocol/ratsocket.go` 也使用“4 字节长度头 + JSON 消息体”，但长度头采用 `binary.LittleEndian`、`uint32`，接收通过 `io.ReadFull`。Python 侧使用原生格式有符号整数长度头；两者在常见 little-endian 机器上可以互通，不代表已经实现跨任意字节序的统一封包协议。Go 的 `Send()` 分别用一次 `conn.Write()` 发送头和正文，目前没有 Python 端相应的并发发送锁和短写补发循环；该接收端也未显式规定最大消息长度。
 
-**消息范围。** `backend/client-go/handler/router.go` 当前只处理 `heartbeat` 和 `command`，命令执行后返回单条 `result(eof=1)`。它不具备上文 Python Client 的完整 Immediate/Deferred 路由，也不能凭相似的消息外壳推定支持 Script、ACMD、PTY、Screen、Clipboard、Monitor 或 Transfer 控制。其 Heartbeat ACK 的 `client_ts` 为 Unix 秒数，且没有回传 `server_ts`，所以不能依赖它提供相同的 RTT 数据。
+**消息范围。** `backend/client-go/handler/router.go` 支持 `heartbeat`、`command` 与前台取消 `cancel`；可取消命令及 `shell_stream` 能分段返回 `result(eof=0)`，结束时返回 `result(eof=1)`。Remote Files 的目录查询和基础文件操作复用 `command` 消息、`__json__:` 结构化参数及 JSON 文本结果，Server 原有 WebRemoteFileService 可直接调用。`transfer_start` 会明确返回不支持的状态；Script、ACMD、PTY、Screen、Clipboard、Monitor 等消息仍未接入对应 Go 执行器。Heartbeat ACK 包含 `server_ts`、`client_ts` 和当前工作目录，Server 可用原始 `server_ts` 计算 RTT。
 
 如需维护这一独立实现，应分别核对 `backend/client-go/protocol/ratsocket.go`、`connection/client.go` 和 `handler/router.go`，而不把这些实现差异混入 Python Client 功能开发步骤。

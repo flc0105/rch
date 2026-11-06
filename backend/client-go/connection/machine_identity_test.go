@@ -83,8 +83,11 @@ func TestHandshakeFieldsAndCapabilities(t *testing.T) {
 	if features, ok := payload["feature_manifest"].(map[string]bool); !ok || len(features) < 10 {
 		t.Fatalf("feature manifest missing: %#v", payload["feature_manifest"])
 	} else {
+		if !features["remote_files"] {
+			t.Error("remote_files must be enabled for basic file management")
+		}
 		for name, allowed := range features {
-			if allowed {
+			if name != "remote_files" && allowed {
 				t.Errorf("unsupported feature %q is enabled", name)
 			}
 		}
@@ -92,8 +95,14 @@ func TestHandshakeFieldsAndCapabilities(t *testing.T) {
 	if v, ok := payload["variable_manifest"].([]interface{}); !ok || len(v) != 0 {
 		t.Fatalf("variable manifest must be []: %#v", payload["variable_manifest"])
 	}
-	if _, ok := payload["system_paths"].(map[string]string); !ok {
+	if paths, ok := payload["system_paths"].(map[string]string); !ok {
 		t.Fatalf("system paths must be object: %#v", payload["system_paths"])
+	} else {
+		for _, name := range []string{"root", "home", "desktop", "documents", "downloads", "temp", "executable"} {
+			if paths[name] == "" {
+				t.Errorf("missing Quick Jump system path %q", name)
+			}
+		}
 	}
 	if pid, ok := payload["process_id"].(int); !ok || pid != os.Getpid() {
 		t.Fatalf("unexpected process PID: %#v", payload["process_id"])

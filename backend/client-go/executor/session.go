@@ -15,6 +15,7 @@ type Session struct {
 	HostName             string
 	Cwd                  string
 	CurrentCommandID     int
+	transfers            transferTracker
 	shellMu              sync.Mutex
 	shellCommandID       int
 	shellCancel          context.CancelFunc

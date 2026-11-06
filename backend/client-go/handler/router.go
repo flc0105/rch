@@ -33,13 +33,14 @@ func Handle(session *executor.Session, msg map[string]interface{}) {
 		})
 
 	case "transfer_start":
-		if transferID, ok := msg["transfer_id"].(string); ok && strings.TrimSpace(transferID) != "" {
-			_ = session.Sock.Send(map[string]interface{}{
-				"type": "transfer_update", "transfer_id": transferID,
-				"state": "failed", "stage": "failed", "cancel_supported": false,
-				"error": "Managed file transfer is not supported on this Client",
-			})
-		}
+		id, _ := msg["transfer_id"].(string)
+		operation, _ := msg["operation"].(string)
+		payload, _ := msg["payload"].(map[string]interface{})
+		session.StartTransfer(id, operation, payload)
+
+	case "transfer_cancel":
+		id, _ := msg["transfer_id"].(string)
+		session.CancelTransfer(id)
 
 	case "script", "acmd", "job_control":
 		// These are distinct protocol message types, not shell commands.

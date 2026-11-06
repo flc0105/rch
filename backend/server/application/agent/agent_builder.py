@@ -17,7 +17,7 @@ from server.runtime.listener_protocols import get_listener_protocol
 AGENT_BUILDERS = {
     'bundle': ('server.application.agent.agent_build_bundle', 'BundleBuilder', BUNDLE_ARTIFACT_STEM),
     # 'pyinstaller': ('server.application.agent.agent_build_pyinstaller', 'PyInstallerBuilder', 'pyinstaller'),
-    # 'go': ('server.application.agent.agent_build_client_go', 'ClientGoBuilder', 'go-client'),
+    'go': ('server.application.agent.agent_build_client_go', 'ClientGoBuilder', 'go-client'),
     'go_loader': ('server.application.agent.agent_build_go_loader', 'GoLoaderBuilder', 'go-loader'),
 }
 
@@ -91,7 +91,7 @@ class AgentBuilder:
                 server_web_scheme=server_web_scheme,
                 server_web_host=server_web_host,
             )
-            if builder == 'bundle':
+            if builder in ('bundle', 'go'):
                 common_args['listener_protocol'] = listener_protocol
                 common_args['tls_fingerprint'] = tls_fingerprint
             if builder == 'go_loader':

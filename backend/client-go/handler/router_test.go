@@ -103,7 +103,7 @@ func TestNonexistentCancelRejectedWithoutBlocking(t *testing.T) {
 func TestUnsupportedTransferFinishesWithFailure(t *testing.T) {
 	session, peer := pair(t)
 	go Handle(session, map[string]interface{}{
-		"type": "transfer_start", "transfer_id": "transfer-123", "operation": "server_to_client_file",
+		"type": "transfer_start", "transfer_id": "transfer-123", "operation": "unsupported_transfer",
 	})
 	result := receive(t, peer)
 	if result["type"] != "transfer_update" || result["transfer_id"] != "transfer-123" ||

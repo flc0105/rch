@@ -14,15 +14,43 @@ import (
 
 var unsupportedFeatures = []string{
 	"external_tool", "process_monitor", "pty", "screen_view", "screen_input",
-	"clipboard", "watchdog", "remote_files", "jobs", "scripts",
+	"clipboard", "watchdog", "jobs", "scripts",
 }
 
 func featureManifest() map[string]bool {
-	manifest := make(map[string]bool, len(unsupportedFeatures))
+	manifest := make(map[string]bool, len(unsupportedFeatures)+1)
 	for _, name := range unsupportedFeatures {
 		manifest[name] = false
 	}
+	manifest["remote_files"] = true
 	return manifest
+}
+
+// Handshake paths provide the existing Remote Files Quick Jump locations.
+func systemPaths() map[string]string {
+	home, _ := os.UserHomeDir()
+	root := string(filepath.Separator)
+	if runtime.GOOS == "windows" {
+		root = filepath.VolumeName(home) + string(filepath.Separator)
+		if root == string(filepath.Separator) {
+			root = `C:\`
+		}
+	}
+	executable, _ := os.Executable()
+	paths := map[string]string{
+		"root": root,
+		"temp": os.TempDir(),
+	}
+	if home != "" {
+		paths["home"] = home
+		paths["desktop"] = filepath.Join(home, "Desktop")
+		paths["documents"] = filepath.Join(home, "Documents")
+		paths["downloads"] = filepath.Join(home, "Downloads")
+	}
+	if executable != "" {
+		paths["executable"] = filepath.Dir(executable)
+	}
+	return paths
 }
 
 func processDetails() (username, processName, launchCommand string) {
@@ -106,6 +134,6 @@ func (c *Client) buildHandshake(cwd string) map[string]interface{} {
 		"command_manifest":          executor.CommandManifest(),
 		"feature_manifest":          featureManifest(),
 		"variable_manifest":         []interface{}{},
-		"system_paths":              map[string]string{},
+		"system_paths":              systemPaths(),
 	}
 }

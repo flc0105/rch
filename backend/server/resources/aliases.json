@@ -71,7 +71,8 @@
     "clear_terminal": "printf '\\033[2J\\033[3J\\033[H'",
     "clean_sidecars": "find . -name \"._*\" -type f -delete && find . -name \".DS_Store\" -type f -delete",
     "current_launchd": "launchctl list | awk -v p=\"$PPID\" '$1==p{print $3}'",
-    "count_in": "grep -RoiFI \"<keyword>\" \"<path>\" | wc -l"
+    "count_in": "grep -RoiFI \"<keyword>\" \"<path>\" | wc -l",
+    "allow_exec": "chmod u+x <path> && xattr -d com.apple.quarantine <path>"
   },
   "linux": {},
   "ios": {}

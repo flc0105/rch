@@ -818,6 +818,10 @@ Both Go build modes share `server/application/agent/agent_go_build_runner.py` fo
 
 `Go (Simple)` is positioned as a **small and lightweight baseline client** for cases where a compact executable is preferred and the full Python/PyInstaller delivery path is too heavy.
 
+Go (Simple) can target a TCP listener or TLS/TCP listener. TLS builds embed the
+selected listener certificate SHA-256 fingerprint, verified by the Go Client before
+sending its RCH handshake. Builds with no TLS listener selection use TCP.
+
 Current intent and positioning:
 
 - minimal cross-platform standalone Go client path
@@ -833,6 +837,14 @@ It is intended for simple capabilities such as:
 - basic shell execution
 - `cd` / `pwd`-style command support
 - `getinfo`-style environment reporting
+- Remote Files directory listing, pagination, searching, Quick Jump system paths,
+  directory creation, rename/delete, and file/directory copy or move; the existing
+  Server Remote Files API uses the same structured command contract as Python
+
+Go (Simple) currently handles the filesystem management part of Remote Files.
+File byte transfers, preview/edit, ZIP operations and browser upload remain Python
+Client features. The Go feature manifest advertises the base Remote Files capability;
+those extra actions still need their corresponding Go transfer/preview handlers.
 - screenshot/basic artifact upload flows
 - basic file transfer/download-oriented operations
 

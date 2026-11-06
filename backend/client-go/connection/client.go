@@ -1,10 +1,9 @@
 package connection
 
 import (
-	"net"
+	"log"
 	"time"
 
-	"client-go/config"
 	"client-go/executor"
 	"client-go/handler"
 	"client-go/protocol"
@@ -21,8 +20,9 @@ func New() *Client {
 
 func (c *Client) Run() {
 	for {
-		conn, err := net.Dial("tcp", config.SERVER_ADDR)
+		conn, err := dialServer()
 		if err != nil {
+			log.Printf("RCH connection failed: %v", err)
 			time.Sleep(5 * time.Second)
 			continue
 		}
@@ -35,6 +35,7 @@ func (c *Client) Run() {
 		for {
 			msg, err := sock.Recv()
 			if err != nil {
+				session.CloseTransfers()
 				_ = conn.Close()
 				break
 			}
