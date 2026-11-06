@@ -1,6 +1,7 @@
 package executor
 
 import (
+	"client-go/config"
 	"context"
 	"os/exec"
 	"runtime"
@@ -55,8 +56,13 @@ func parseCommand(raw string) (string, []string) {
 }
 
 func (s *Session) runShellContext(ctx context.Context, command string) (int, string) {
-	cmd := newShellCommand(ctx, command, s.Cwd)
+	timedCtx, cancel := context.WithTimeout(ctx, time.Duration(config.Runtime().Seconds("COMMAND_DEFAULT_SHELL_TIMEOUT"))*time.Second)
+	defer cancel()
+	cmd := newShellCommand(timedCtx, command, s.Cwd)
 	out, err := cmd.CombinedOutput()
+	if timedCtx.Err() == context.DeadlineExceeded {
+		return 0, "Command timed out"
+	}
 	if err != nil {
 		if len(out) > 0 {
 			return 0, string(out)

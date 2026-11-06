@@ -2,11 +2,13 @@ package executor
 
 import (
 	"bytes"
+	"client-go/config"
 	"context"
 	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
 	"unicode/utf8"
 )
 
@@ -25,8 +27,13 @@ func cmdShell(ctx context.Context, s *Session, command string, _ func(int, strin
 	if strings.TrimSpace(command) == "" {
 		return 0, "Usage: shell <command>"
 	}
-	cmd := newShellCommand(ctx, command, s.Cwd)
+	timedCtx, cancel := context.WithTimeout(ctx, time.Duration(config.Runtime().Seconds("COMMAND_DEFAULT_SHELL_TIMEOUT"))*time.Second)
+	defer cancel()
+	cmd := newShellCommand(timedCtx, command, s.Cwd)
 	output, err := cmd.CombinedOutput()
+	if timedCtx.Err() == context.DeadlineExceeded {
+		return 0, "Command timed out"
+	}
 	if ctx.Err() != nil {
 		return 0, "Command cancelled"
 	}
@@ -48,13 +55,18 @@ func cmdShellStream(ctx context.Context, s *Session, command string, interim fun
 	if strings.TrimSpace(command) == "" {
 		return 0, "Usage: shell_stream <command>"
 	}
-	cmd := newShellCommand(ctx, command, s.Cwd)
+	timedCtx, cancel := context.WithTimeout(ctx, time.Duration(config.Runtime().Seconds("COMMAND_DEFAULT_STREAM_TIMEOUT"))*time.Second)
+	defer cancel()
+	cmd := newShellCommand(timedCtx, command, s.Cwd)
 	stdout := &streamOutputWriter{status: 1, emit: interim}
 	stderr := &streamOutputWriter{status: 0, emit: interim}
 	cmd.Stdout, cmd.Stderr = stdout, stderr
 	err := cmd.Run()
 	stdout.Flush()
 	stderr.Flush()
+	if timedCtx.Err() == context.DeadlineExceeded {
+		return 0, "Command timed out"
+	}
 	if ctx.Err() != nil {
 		return 0, "Command cancelled"
 	}

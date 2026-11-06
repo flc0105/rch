@@ -96,9 +96,11 @@ Alias 的模板参数、平台覆盖与安全边界见 [Aliases / Quick Actions]
 | `userenum` | 枚举系统用户账户 | 可见范围受目标系统权限约束 |
 | `is_elevated` | 检查 Client 是否具有提升的系统权限 | 只检查当前进程权限，不自动提权 |
 | `ifconfig` | 查看目标设备网络接口 | 输出格式由 RCH 的平台信息提供者决定 |
-| `set` | 查看及修改 Client Runtime Config | 无参查看可暴露设置；`set --all` 查看更完整列表 |
+| `set` | 查看及修改 Client Runtime Config | Python / Go 均支持 `set --json`、`set KEY value`、`set --reset KEY`，可通过 Info → Configuration 编辑 |
 | `set KEY value` | 设置允许覆盖的 Runtime Config 项 | 可能影响客户端运行行为，修改前确认范围 |
+| `SCRIPT_DEFAULT_TIMEOUT` | Script 默认运行时长，单位为秒 | Python / Go 默认 300 秒；Go 的外部 Python 执行器会按时终止子进程 |
 | `set --reset KEY` / `set --reset-all` | 还原一项 / 全部运行时覆盖值 | `--reset-all` 影响所有已保存的覆盖设置 |
+| `SCRIPT_PYTHON_PATH` | Go Client 外部 Python 解释器路径 | 留空时按 `PATH` 查找；仅 Go Client 配置包含此项 |
 | `watchdog` | 查看 Client Watchdog 的当前状态 | 用于判断 Local Heartbeat Watchdog / Remote Control Watchdog / Process Recovery Watchdog 配置与运行状态 |
 
 ### 文件、传输、清理和更新

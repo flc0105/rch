@@ -120,7 +120,7 @@ macOS Script 可以通过 `client.runtime.sdk.launchd` 统一管理 LaunchAgent 
 
 ### In-process 与独立子进程
 
-Client 的 `PYTHON_EXECUTION_MODE` 决定当前 Script 使用哪种 Python 执行策略，当前有效值是 `inproc` 和 `subprocess_pipe`，默认配置为 `inproc`，在 Client Runtime Configuration 中的 `PYTHON_EXECUTION_MODE` 配置项选择。当前 Script 的 collect 调用传入 `COMMAND_DEFAULT_STREAM_TIMEOUT`（默认 300 秒）作为超时参数；`subprocess_pipe` 会把有效超时用于等待子进程，`inproc` 的 `exec()` 则不能靠这一参数自动强制中断正在执行的 Python 代码。这与 Job 的 `inproc/subprocess` 模式是不同的配置和执行管理器。
+Client 的 `PYTHON_EXECUTION_MODE` 决定当前 Script 使用哪种 Python 执行策略，当前有效值是 `inproc` 和 `subprocess_pipe`，默认配置为 `inproc`，在 Client Runtime Configuration 中的 `PYTHON_EXECUTION_MODE` 配置项选择。Script 使用独立的 `SCRIPT_DEFAULT_TIMEOUT`（默认 300 秒），通过 `set SCRIPT_DEFAULT_TIMEOUT <秒数>` 或 Info → Configuration 设置。`subprocess_pipe` 按该限制等待并终止超时子进程；`inproc` 会在脚本返回后检查是否超时，进程内的 Python `exec()` 无法安全地在执行途中强制中断。这与 Job 的 `inproc/subprocess` 模式是不同的配置和执行管理器。
 
 | 特性 | `inproc` | `subprocess_pipe` |
 |---|---|---|
@@ -140,9 +140,9 @@ Subprocess 的源码通过 stdin 送入 Python `-u -`，运行上下文与参数
 
 Go Client 使用可选的本机 Python 解释器运行普通 Python Script。收到 Server 下发的 `type=script` 消息后，依次在系统 `PATH` 查找解释器：Windows 优先 `python`、再找 `python3`；macOS/Linux 优先 `python3`、再找 `python`。没有找到解释器时，本次 Script 返回明确错误，不会安装 Python 或影响 Go Client 连接。
 
-Web Script Library 保留现有 `SCRIPT_METADATA.params` 表单和 Server 参数校验：Server 根据 Schema 解析 `required`、`default`、类型和选项，再将参数字典通过 `extra` 交给 Go Client。Go 通过独立 Python 子进程执行收到的源码，提供 `kwargs` 及参数同名全局变量，支持常规 `print()`、标准库和目标机器已安装的 Python 包。脚本在目标 Client 工作目录中运行，stdout/stderr 通过已有命令结果通道回传；执行占用前台任务槽，支持取消，默认超时为 300 秒。
+Web Script Library 保留现有 `SCRIPT_METADATA.params` 表单和 Server 参数校验：Server 根据 Schema 解析 `required`、`default`、类型和选项，再将参数字典通过 `extra` 交给 Go Client。Go 通过独立 Python 子进程执行收到的源码，提供 `kwargs` 及参数同名全局变量，支持常规 `print()`、标准库和目标机器已安装的 Python 包。脚本在目标 Client 工作目录中运行，stdout/stderr 通过已有命令结果通道回传；执行占用前台任务槽，支持取消，默认超时为 300 秒，可以通过 `SCRIPT_DEFAULT_TIMEOUT` 调整。
 
-这一执行环境提供普通 Python 运行能力，不注入 Python Client 的 Script SDK（例如 `context`、`artifact`、`scripts`、`keychains`、`workspace` 和导出的 Client 命令）。依赖这些 SDK 的脚本需选择 Python Client；在 Go Client 上调用时，按实际导入或名称错误反馈。Go 端第一版没有独立 `set` 运行时配置或 Python 路径选项；使用系统解释器，超时也不新增独立配置字段。
+这一执行环境提供普通 Python 运行能力，不注入 Python Client 的 Script SDK（例如 `context`、`artifact`、`scripts`、`keychains`、`workspace` 和导出的 Client 命令）。依赖这些 SDK 的脚本需选择 Python Client；在 Go Client 上调用时，按实际导入或名称错误反馈。Go Client 提供 `set` 命令及 Info → Configuration 设置。`SCRIPT_PYTHON_PATH` 默认留空并按系统 `PATH` 查找解释器；填写后直接使用指定路径，无法找到该解释器时报告错误。`SCRIPT_DEFAULT_TIMEOUT` 控制 Script 子进程运行时长（默认 300 秒）。配置写入用户配置目录的 `rchclient/runtime_config_go.json`，重新启动后继续生效。
 
 ### 注入的名称与身份
 

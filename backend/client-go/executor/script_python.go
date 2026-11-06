@@ -2,6 +2,7 @@ package executor
 
 import (
 	"bytes"
+	"client-go/config"
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,8 +13,6 @@ import (
 	"strings"
 	"time"
 )
-
-const externalPythonScriptTimeout = 300 * time.Second
 
 // The Server owns SCRIPT_METADATA parsing and schema validation; the Client
 // receives the resulting parameters in the script message's extra field.
@@ -35,7 +34,16 @@ type externalPythonScriptPayload struct {
 	Params map[string]interface{} `json:"params"`
 }
 
-func findExternalPython() (string, error) {
+func findExternalPython() (string, error) { return findExternalPythonWithConfig(config.Runtime()) }
+
+func findExternalPythonWithConfig(settings *config.RuntimeStore) (string, error) {
+	if configured := settings.PythonPath(); configured != "" {
+		path, err := exec.LookPath(configured)
+		if err != nil {
+			return "", fmt.Errorf("configured Python interpreter %q is unavailable: %w", configured, err)
+		}
+		return path, nil
+	}
 	candidates := []string{"python3", "python"}
 	if runtime.GOOS == "windows" {
 		candidates = []string{"python", "python3"}
@@ -52,6 +60,10 @@ func findExternalPython() (string, error) {
 // process. stdout and stderr use the same interim-result protocol as shell_stream.
 // The foreground task slot and cancellation belong to the Handler.
 func RunExternalPythonScript(ctx context.Context, session *Session, source interface{}, extra interface{}, emit func(int, string)) (int, string) {
+	return runExternalPythonScriptWithConfig(ctx, session, source, extra, emit, config.Runtime())
+}
+
+func runExternalPythonScriptWithConfig(ctx context.Context, session *Session, source interface{}, extra interface{}, emit func(int, string), settings *config.RuntimeStore) (int, string) {
 	code, ok := source.(string)
 	if !ok || strings.TrimSpace(code) == "" {
 		return 0, "Invalid script source"
@@ -68,11 +80,12 @@ func RunExternalPythonScript(ctx context.Context, session *Session, source inter
 	if err != nil {
 		return 0, fmt.Sprintf("Invalid script parameters: %v", err)
 	}
-	python, err := findExternalPython()
+	python, err := findExternalPythonWithConfig(settings)
 	if err != nil {
 		return 0, err.Error()
 	}
-	ctx, cancel := context.WithTimeout(ctx, externalPythonScriptTimeout)
+	seconds := settings.Seconds("SCRIPT_DEFAULT_TIMEOUT")
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(seconds)*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, python, "-u", "-c", externalPythonBootstrap)
 	cmd.Dir = session.Cwd
@@ -86,7 +99,7 @@ func RunExternalPythonScript(ctx context.Context, session *Session, source inter
 	stdout.Flush()
 	stderr.Flush()
 	if ctx.Err() == context.DeadlineExceeded {
-		return 0, "Script timed out after 300 seconds"
+		return 0, fmt.Sprintf("Script timed out after %d seconds", seconds)
 	}
 	if ctx.Err() == context.Canceled {
 		return 0, "Script cancelled"

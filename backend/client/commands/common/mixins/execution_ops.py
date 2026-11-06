@@ -99,12 +99,12 @@ class CommandExecutionMixin:
         merged['__context__'] = context
         return merged
 
-    def _execute_python_collect(self, code, kwargs=None, mode: str = '', default_mode: str = 'inproc'):
+    def _execute_python_collect(self, code, kwargs=None, mode: str = '', default_mode: str = 'inproc', timeout=None):
         strategy = self._get_python_execution_strategy(mode=mode, default_mode=default_mode)
         return strategy.execute_collect(
             code,
             kwargs=self._merge_script_kwargs_with_context(kwargs),
-            timeout=self.DEFAULT_STREAM_TIMEOUT,
+            timeout=self.DEFAULT_STREAM_TIMEOUT if timeout is None else timeout,
         )
 
     def _execute_python_stream(self, code, kwargs=None, mode: str = '', default_mode: str = 'inproc'):
@@ -122,12 +122,25 @@ class CommandExecutionMixin:
         - 默认只走 stream
         - 当前进程 / 子进程由 script strategy 决定
         """
-        return self._execute_python_collect(
-            code,
-            kwargs=kwargs,
-            mode=get_python_execution_mode(),
-            default_mode='inproc',
-        )
+        script_timeout = runtime_config.SCRIPT_DEFAULT_TIMEOUT
+        self._set_timeout(script_timeout)
+        try:
+            result = self._execute_python_collect(
+                code,
+                kwargs=kwargs,
+                mode=get_python_execution_mode(),
+                default_mode='inproc',
+                timeout=script_timeout,
+            )
+        except (subprocess.TimeoutExpired, CommandTimeoutError):
+            return 0, f'Script timed out after {script_timeout} seconds'
+        except CommandCancelledError:
+            return 0, 'Script cancelled'
+        # In-process execution returns control only after user Python finishes.
+        context = self._get_execution_context()
+        if context and context.is_timeout_expired(fallback_timeout=script_timeout):
+            return 0, f'{result[1]}\nScript exceeded timeout of {script_timeout} seconds'
+        return result
 
     # ------------------ 进程执行服务 ------------------ #
     def _get_process_execution_service(self):

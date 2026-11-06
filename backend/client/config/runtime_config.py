@@ -22,6 +22,7 @@ from core import transfer_settings
 COMMAND_DEFAULT_TIMEOUT = None
 COMMAND_DEFAULT_SHELL_TIMEOUT = 30
 COMMAND_DEFAULT_STREAM_TIMEOUT = 300
+SCRIPT_DEFAULT_TIMEOUT = 300
 
 # ------------------ http transfer strategy ------------------ #
 HTTP_TRANSFER_MODE = 'cancelable'
@@ -72,6 +73,13 @@ _RUNTIME_CONFIG_META = {
         'group': 'command',
         'expose': True,
         'desc': 'Default timeout for stream command execution.',
+    },
+    'SCRIPT_DEFAULT_TIMEOUT': {
+        'group': 'script',
+        'expose': True,
+        'desc': 'Default timeout for Script execution (seconds).',
+        'min': 1,
+        'max': 86400,
     },
     'HTTP_TRANSFER_MODE': {
         'group': 'transfer',
