@@ -175,6 +175,7 @@ export default {
       autocompleteNavigationBaseCursorPosition: 0,
       autocompleteNavigationIndex: -1,
       autocompleteNavigationPreviewActive: false,
+      explicitPathContinuation: null,
     }
   },
 
@@ -196,6 +197,7 @@ export default {
           this.commandCandidates = []
           this.commandCandidatesLoadedFor = ''
           this.clearCommandCompletionCandidateCache()
+          this.explicitPathContinuation = null
         }
 
         if (value) {
@@ -212,6 +214,7 @@ export default {
 
     'currentConnection.machine_id'(value, oldValue) {
       if (value !== oldValue && this.selectedId) {
+        this.explicitPathContinuation = null
         this.reloadCommandCandidates({ reset: true, silent: true })
       }
     },
@@ -219,6 +222,7 @@ export default {
     'currentConnection.cwd'(value, oldValue) {
       if (value !== oldValue) {
         this.clearCommandCompletionCandidateCache()
+        this.explicitPathContinuation = null
       }
     },
   },
@@ -239,6 +243,7 @@ export default {
   // add 暂时关闭命令自动补全下拉 2026-04-07
   this.closeAutocomplete()
   this.clearAutocompleteNavigationState()
+  this.explicitPathContinuation = null
 
   if (!command) {
     ElMessage.warning('Please enter a command')
@@ -515,7 +520,7 @@ export default {
         if (start > 0 && !/[\s=:'"]/.test(previous)) continue
         activeMarker = { start, end: markerPattern.lastIndex, quote: previous === '"' || previous === "'" ? previous : '' }
       }
-      if (!activeMarker) return null
+      if (!activeMarker) return this.parseContinuedExplicitPathCompletionQuery(rawText, cursor)
 
       // Keep the text after a marker intact, including following command arguments.
       let replaceEnd = activeMarker.end
@@ -554,6 +559,39 @@ export default {
       }
     },
 
+    parseContinuedExplicitPathCompletionQuery(rawText, cursor) {
+      const lastDirectory = this.explicitPathContinuation
+      if (!lastDirectory || !rawText.startsWith(lastDirectory.before) || !rawText.endsWith(lastDirectory.after)) {
+        return null
+      }
+
+      const pathStart = lastDirectory.before.length
+      const pathEnd = rawText.length - lastDirectory.after.length
+      if (cursor <= pathStart || cursor > pathEnd) return null
+      const encodedPrefix = rawText.slice(pathStart, cursor)
+      if (!encodedPrefix.startsWith(lastDirectory.encodedPath)) return null
+      const typedSuffix = encodedPrefix.slice(lastDirectory.encodedPath.length)
+      // A directory selection is complete until the user explicitly types a separator.
+      if (!/^[\/\\]/.test(typedSuffix)) return null
+      const decodedSuffix = lastDirectory.quote === '"' && !/^win/i.test(String(this.currentConnection?.os_type || ''))
+        ? typedSuffix.replace(/\\(["\\$`])/g, '$1') : typedSuffix
+      const pathPrefix = lastDirectory.path + decodedSuffix
+      const pathParts = this.splitFileSystemCandidatePath(pathPrefix)
+      return {
+        explicitPath: true,
+        rawText,
+        markerStart: pathStart,
+        markerEnd: pathStart,
+        replaceEnd: pathEnd,
+        cursorPosition: cursor,
+        pathPrefix,
+        quote: lastDirectory.quote,
+        requestInput: `download ${pathParts.candidatePrefix}`,
+        cacheKey: this.buildCommandCompletionCandidateCacheKey('explicit_path', pathParts.lookupPath),
+        requiresRemoteClient: true,
+      }
+    },
+
     quoteExplicitPathCandidate(path, quote) {
       const value = String(path || '')
       const isWindows = /^win/i.test(String(this.currentConnection?.os_type || ''))
@@ -572,19 +610,14 @@ export default {
       const candidatePath = String(item?.candidatePath || '')
       if (!candidatePath) return null
       const isDirectory = item.isDir === true || item.kind === 'directory'
-      // A directory is a navigation step: retain the marker and query its children.
-      // Only accepting a file (or the explicit current-directory choice) ends the marker.
-      const marker = completionQuery.rawText.slice(completionQuery.markerStart, completionQuery.markerEnd)
-      const isWindows = /^win/i.test(String(this.currentConnection?.os_type || ''))
-      const separator = isWindows ? '\\' : '/'
-      const directoryPath = isDirectory && !/[\\/]$/.test(candidatePath)
-        ? `${candidatePath}${separator}` : candidatePath
-      const replacement = this.quoteExplicitPathCandidate(
-        isDirectory ? `${marker}${directoryPath}` : candidatePath,
-        completionQuery.quote,
-      )
+      // Like the cd provider, selecting a directory inserts the path as-is.
+      // A manually typed separator is what opens the next level.
+      const replacement = this.quoteExplicitPathCandidate(candidatePath, completionQuery.quote)
       const name = completionQuery.rawText.slice(0, completionQuery.markerStart)
         + replacement + completionQuery.rawText.slice(completionQuery.replaceEnd)
+      const addedQuotes = !completionQuery.quote && replacement.startsWith('"') && replacement.endsWith('"')
+      const pathStart = completionQuery.markerStart + (addedQuotes ? 1 : 0)
+      const pathEnd = completionQuery.markerStart + replacement.length - (addedQuotes ? 1 : 0)
       return {
         ...item,
         name,
@@ -592,37 +625,27 @@ export default {
         displayText: candidatePath,
         groupLabel: isDirectory ? 'directory' : 'file',
         searchPath: candidatePath.toLowerCase(),
-        // If we inserted surrounding quotes for a folder containing spaces,
-        // keep the caret inside them so the next path segment stays quoted.
-        caretPosition: completionQuery.markerStart + replacement.length
-          - (isDirectory && !completionQuery.quote && replacement.startsWith('"') ? 1 : 0),
+        caretPosition: isDirectory ? pathEnd : completionQuery.markerStart + replacement.length,
+        // Only directories retain @@ during arrow-key preview for manual navigation.
+        // File candidates insert their final path as soon as they are selected.
+        previewName: isDirectory ? name.slice(0, pathStart) + '@@' + name.slice(pathStart) : name,
+        previewCaretPosition: isDirectory ? pathEnd + 2 : completionQuery.markerStart + replacement.length,
         explicitPath: true,
-        continueAutocomplete: isDirectory,
+        explicitDirectoryContinuation: isDirectory ? {
+          path: candidatePath,
+          before: name.slice(0, pathStart),
+          after: name.slice(pathEnd),
+          encodedPath: name.slice(pathStart, pathEnd),
+          quote: completionQuery.quote || (addedQuotes ? '"' : ''),
+        } : null,
       }
     },
 
     filterExplicitPathCompletionCandidates(candidates, completionQuery) {
       const prefix = String(completionQuery.pathPrefix || '').toLowerCase()
-      const matches = (Array.isArray(candidates) ? candidates : [])
+      return (Array.isArray(candidates) ? candidates : [])
         .filter(item => !prefix || String(item?.searchPath || '').startsWith(prefix))
-      // After browsing into a directory, let the user finish with that directory
-      // instead of being forced to select a file or manually remove the marker.
-      const currentDirectory = String(completionQuery.pathPrefix || '')
-      if (/[\\/]$/.test(currentDirectory)) {
-        const replacement = this.quoteExplicitPathCandidate(currentDirectory, completionQuery.quote)
-        const name = completionQuery.rawText.slice(0, completionQuery.markerStart)
-          + replacement + completionQuery.rawText.slice(completionQuery.replaceEnd)
-        matches.unshift({
-          name,
-          value: name,
-          displayText: currentDirectory,
-          help: 'Use this directory',
-          groupLabel: 'directory',
-          caretPosition: completionQuery.markerStart + replacement.length,
-          explicitPath: true,
-        })
-      }
-      return matches.slice(0, 50)
+        .slice(0, 50)
     },
 
     parseVariableCompletionQuery(queryString) {
@@ -1144,9 +1167,21 @@ export default {
     },
 
     handleCommandTextUpdate(value) {
+      const text = String(value || '')
+      const directory = this.explicitPathContinuation
+      if (directory) {
+        const matchesContext = text.startsWith(directory.before) && text.endsWith(directory.after)
+        const pathText = matchesContext
+          ? text.slice(directory.before.length, text.length - directory.after.length) : ''
+        if (pathText !== directory.encodedPath &&
+          !pathText.startsWith(`${directory.encodedPath}/`) &&
+          !pathText.startsWith(`${directory.encodedPath}\\`)) {
+          this.explicitPathContinuation = null
+        }
+      }
       this.clearAutocompleteNavigationState()
       this.autocompleteCandidateQueryText = ''
-      this.commandText = String(value || '')
+      this.commandText = text
     },
 
     handleCommandInputKeydown(event) {
@@ -1229,34 +1264,35 @@ export default {
     },
 
     commitAutocompleteNavigationPreview() {
-      const committedText = String(this.commandText || '')
+      const previewText = String(this.commandText || '')
 
-      if (!committedText) {
+      if (!previewText) {
         this.clearAutocompleteNavigationState()
         return
       }
 
-      // 右方向键只提交 preview，不执行命令、不刷新 provider、不关闭候选列表。
-      // 继续输入 / 时，会按正常输入变更触发下一层 filesystem completion。
+      // A preview retains @@ so typing a separator can browse deeper.
+      // ArrowRight confirms the current candidate and removes the marker.
       const committedIndex = this.autocompleteNavigationIndex
       const committedCandidate = this.autocompleteCandidateItems[committedIndex]
+      const committedText = committedCandidate?.explicitPath
+        ? this.getCandidateInsertText(committedCandidate) : previewText
       this.autocompleteNavigationBaseText = ''
       this.autocompleteNavigationBaseCursorPosition = 0
       this.autocompleteNavigationPreviewActive = false
-      const enteringDirectory = committedCandidate?.continueAutocomplete === true
-      // Every directory level starts with a fresh candidate list and selection.
-      this.autocompleteNavigationIndex = enteringDirectory ? -1 : committedIndex
-      this.autocompleteCandidateQueryText = enteringDirectory ? '' : committedText
+      const selectedDirectory = !!committedCandidate?.explicitDirectoryContinuation
+      this.explicitPathContinuation = committedCandidate?.explicitPath
+        ? (committedCandidate.explicitDirectoryContinuation || null) : null
+      this.autocompleteNavigationIndex = selectedDirectory ? -1 : committedIndex
+      this.autocompleteCandidateQueryText = selectedDirectory ? '' : committedText
       this.commandText = committedText
-      this.highlightAutocompleteCandidate(enteringDirectory ? -1 : committedIndex)
+      this.highlightAutocompleteCandidate(selectedDirectory ? -1 : committedIndex)
       this.focusInput()
 
       if (Number.isInteger(committedCandidate?.caretPosition)) {
         this.setCommandInputCaretPosition(committedCandidate.caretPosition)
       }
-      if (committedCandidate?.continueAutocomplete) {
-        this.refreshAutocompleteSuggestionsForCurrentText()
-      }
+      if (selectedDirectory) this.closeAutocomplete()
     },
 
     refreshAutocompleteSuggestionsForCurrentText() {
@@ -1299,7 +1335,7 @@ export default {
         ? this.getPreviousAutocompleteCandidateIndex(currentIndex, candidates.length)
         : this.getNextAutocompleteCandidateIndex(currentIndex, candidates.length)
       const nextCandidate = candidates[nextIndex]
-      const nextCommandText = this.getCandidateInsertText(nextCandidate)
+      const nextCommandText = this.getCandidatePreviewText(nextCandidate)
 
       if (!nextCommandText) {
         return false
@@ -1314,6 +1350,9 @@ export default {
       this.autocompleteNavigationPreviewActive = true
       this.autocompleteNavigationIndex = nextIndex
       this.commandText = nextCommandText
+      if (Number.isInteger(nextCandidate?.previewCaretPosition)) {
+        this.setCommandInputCaretPosition(nextCandidate.previewCaretPosition)
+      }
       this.highlightAutocompleteCandidate(nextIndex)
 
       return true
@@ -1354,9 +1393,12 @@ export default {
       this.autocompleteNavigationIndex = index
 
       if (this.autocompleteNavigationPreviewActive) {
-        const text = this.getCandidateInsertText(item)
+        const text = this.getCandidatePreviewText(item)
         if (text) {
           this.commandText = text
+          if (Number.isInteger(item?.previewCaretPosition)) {
+            this.setCommandInputCaretPosition(item.previewCaretPosition)
+          }
         }
       }
     },
@@ -1383,16 +1425,27 @@ export default {
       if (!text) return
 
       this.clearAutocompleteNavigationState()
+      this.explicitPathContinuation = item?.explicitPath
+        ? (item.explicitDirectoryContinuation || null) : null
       this.commandText = text
       this.focusInput()
 
       if (Number.isInteger(item?.caretPosition)) {
         this.setCommandInputCaretPosition(item.caretPosition)
       }
-      if (item?.continueAutocomplete) {
+      if (item?.explicitDirectoryContinuation) {
+        this.autocompleteNavigationIndex = -1
+        this.autocompleteCandidateQueryText = ''
+        this.highlightAutocompleteCandidate(-1)
+        this.closeAutocomplete()
+      } else if (item?.continueAutocomplete) {
         this.highlightAutocompleteCandidate(-1)
         this.refreshAutocompleteSuggestionsForCurrentText()
       }
+    },
+
+    getCandidatePreviewText(item) {
+      return item?.explicitPath ? String(item.previewName || '') : this.getCandidateInsertText(item)
     },
 
     getCandidateInsertText(item) {
@@ -1752,6 +1805,7 @@ const pinnedHistoryItems = historyItems.filter(item => item && item.is_pinned)
     },
 
     setCommandText(value) {
+      this.explicitPathContinuation = null
       this.commandText = String(value || '')
       this.focusInput()
     },

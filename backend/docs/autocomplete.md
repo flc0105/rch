@@ -82,36 +82,46 @@ Script 的执行候选来自 Server 脚本目录，**只根据 Script Metadata `
 
 ### 从相对路径逐层选择文件
 
-假设需要指定当前工作目录下的 `./test/folder/file.txt`，可以这样操作：
+例如要填写当前 Client 工作目录中的 `test/folder/file.txt`，先输入 `allow_exec @@tes`。候选中包含 `test` 目录时，按 **↓** 只进行预览：输入框显示 `allow_exec @@test`，**`@@` 仍在，且不会自动添加 `/`**。此时有两种操作：
 
-1. 输入 `allow_exec @@tes`。输入框根据 `tes` 过滤当前工作目录的候选。如果 `test` 在第一项，按一次 **↓** 预览该候选；在其他位置则继续按 **↓** 或 **↑** 选择。
-2. 按 **→** 确认所选目录，输入变成 `allow_exec @@test/`；候选列表自动切换为 `test/` 下的内容。**每进入一层目录，选中位置都会重置**，下一次按 **↓** 从新列表第一项开始。
-3. 如果最终参数就是 `test` 目录，直接选择下拉列表第一项 **Use this directory**，得到 `allow_exec test/`；若需要更深的路径，则向下选择 `folder` 并按 **→**，进入 `allow_exec @@test/folder/`。
-4. 在 `test/folder/` 下选中 `file.txt` 并按 **→**，或直接点击文件，完成为 `allow_exec test/folder/file.txt`。**文件选定后 `@@` 会自动移除**，留下可以提交的命令。
+- **继续浏览**：直接手动输入 `/`，变成 `allow_exec @@test/`，随后查询并显示 `test/` 内的目录和文件；继续按 ↑ / ↓ 预览下一项，并在需要进入的目录后手动输入 `/`。
+- **完成路径插入**：按 **→**，或直接用鼠标／触屏点击候选，才会移除 `@@`，变成 `allow_exec test`。此时可以直接运行使用该目录的命令。如果已确认了一个目录但想继续深入，也可以在它后面手动输入 `/`，继续查找下一层。
 
-`test/folder/file.txt` 与 `./test/folder/file.txt` 都相对于当前 Client 的工作目录。需要手动指定当前目录前缀时，可先输入 `@@./tes`，按候选实际返回的路径继续导航。任何一层目录都可以通过 **Use this directory** 结束目录选择；继续选择子目录时，`@@` 会一直保留。
+```text
+allow_exec @@tes
+  ↓ 预览 test             → allow_exec @@test
+  手动输入 /              → allow_exec @@test/           （查看 test 下的候选）
+  ↓ 预览 folder           → allow_exec @@test/folder
+  手动输入 /              → allow_exec @@test/folder/    （查看 folder 下的候选）
+  ↓ 选择 file.txt         → allow_exec test/folder/file.txt（文件直接完成回填）
+```
+
+如果只要 `test` 目录，则从 `allow_exec @@test` 直接按 **→**，得到 `allow_exec test`，不需要输入 `/`。也可以直接点击 `test` 候选完成提交。使用显式相对路径前缀时，从 `@@./tes` 开始。路径由当前 Client 的文件系统补全 Provider 返回，最后的命令是否接受该目录或文件仍按对应命令的参数规则处理。
 
 ### 从绝对路径或命名参数开始
 
-macOS / Linux 可以直接输入 `@@/Users/f`、`@@/var/lo`，Windows 可以输入 `@@C:\Users\`。补全会按最后一个路径分隔符定位要查询的父目录，然后过滤其子项。例如：
+macOS / Linux 可输入 `@@/Users/f`，Windows 可输入 `@@C:\Users\`。例如：
 
 ```text
-myalias --path=@@/Users/f
-  → 选择 flc       → myalias --path=@@/Users/flc/
-  → 选择 Desktop   → myalias --path=@@/Users/flc/Desktop/
-  → 选择 file.txt  → myalias --path=/Users/flc/Desktop/file.txt
+myalias --path=@@/Users/f --verbose
+  ↓ 预览 flc              → myalias --path=@@/Users/flc --verbose
+  手动输入 /              → myalias --path=@@/Users/flc/ --verbose
+  ↓ 预览 Desktop          → myalias --path=@@/Users/flc/Desktop --verbose
+  手动输入 /              → myalias --path=@@/Users/flc/Desktop/ --verbose
+  ↓ 选择 file.txt         → myalias --path=/Users/flc/Desktop/file.txt --verbose
 ```
 
-选择时仅替换**光标所在的 `@@` 路径片段**，前后命令、Alias、选项和其他参数保持原样。如果目录或文件名包含空格、引号或 Shell 特殊字符，回填会按当前平台和已有引号上下文进行适当引用与转义。候选路径的最终执行仍由对应命令负责。
+选择候选时仅改变光标所在的路径片段；命令、Alias、选项及其余参数保留。路径包含空格时补全会加上必要的引号，方向键预览时将 `@@` 放在引号里面，例如 `myalias --path="@@/Users/My Folder"`。方向键预览的光标在目录路径末尾、结束引号之前，可以直接输入 `/`（Windows 可输入 `\`）继续浏览。
 
-### 键盘和鼠标交互
+### 键盘和鼠标操作
 
-- **↑ / ↓**：在当前层的候选中移动并预览输入文本；**→**：确认当前预览，进入选中的目录或完成文件/目录插入。方向键操作**不会执行**命令。
-- **Use this directory**：接受当前已经进入的目录，去掉 `@@`，结束路径补全。该选项在目录末尾（如 `@@test/`）的候选中出现。
-- **点击候选**：点击目录时立即进入下一层并刷新下拉列表；点击文件或 **Use this directory** 时完成参数替换。移动端使用同样的点击流程。
-- **Escape**：取消当前方向键预览并恢复预览前的输入。选定路径后，使用 Terminal 的 **Run / Enter** 正常提交命令。
+- **↑ / ↓**：选中目录时预览路径并保留 `@@`；选中文件时直接回填完整路径并移除 `@@`。
+- **手动输入 `/`（Windows 也可用 `\`）**：查询预览路径对应目录的下一层候选；每一层均由手动输入分隔符触发，不会自动进入子目录。
+- **→**：确认当前预览的目录，移除 `@@`，不执行命令、不自动追加分隔符；文件在选择时已完成回填。直接点击目录或文件候选也会确认，触屏设备使用点击完成选择。
+- **Escape**：取消方向键预览并恢复预览前输入。
+- **Run / Enter**：执行输入框当前的命令。目录预览需先按 → 或点击候选移除 `@@`；文件选中后已经是可提交的路径。
 
-**目录导航与文件选择使用同一套 `@@` 候选列表。** 输入 `@@` 后既可浏览层级，也可从当前目录直接选择文件。远程候选通过现有 `download` 文件系统 Provider 获取；Python Client 和 Go Client 复用各自的只读补全入口。普通命令名、已登记参数和 `${...}` 变量补全继续使用既有机制。
+`@@` 同时展示目录和文件。Python Client 与 Go Client 都通过当前远程设备的只读 `download` 文件系统补全 Provider 获取候选；普通命令名、已登记路径参数、变量 `${...}` 的原有自动补全保持不变。
 
 ## 变量占位符补全
 

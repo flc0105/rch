@@ -154,18 +154,20 @@ test('cached results regenerate their insertion for the newest input within the 
   const q2 = build(ctx, next)
   assert.equal(q1.cacheKey, q2.cacheKey)
   const results = ctx.filterCommandCompletionCandidates(cached, q2)
-  assert.equal(results[0].name, 'different --file @@docs/ --other')
+  assert.equal(results[0].name, 'different --file docs --other')
 })
 
-test('arrow-preview keeps the original cursor for markers before later arguments', () => {
+test('file arrow selection immediately replaces @@ and preserves later arguments', () => {
   const raw = 'alias --file @@ --suffix'
-  const { ctx } = setup(raw.indexOf('@@') + 2)
+  const { ctx, input } = setup(raw.indexOf('@@') + 2)
   const query = build(ctx, raw)
   const item = normalize(ctx, query, [file('abc.txt')])[0]
   ctx.autocompleteCandidateItems = [item]
   ctx.autocompleteCandidateQueryText = raw
   ctx.commandText = raw
   assert.equal(ctx.previewAutocompleteCandidateByArrowKey('ArrowDown'), true)
+  assert.equal(ctx.commandText, 'alias --file abc.txt --suffix')
+  assert.equal(input.selectionStart, 'alias --file abc.txt'.length)
   assert.equal(ctx.getCommandInputCursorPosition(raw), raw.indexOf('@@') + 2)
   ctx.commitAutocompleteNavigationPreview()
   assert.equal(ctx.commandText, 'alias --file abc.txt --suffix')
@@ -188,335 +190,456 @@ test('pasted quoted marker also completes when cursor is after its closing quote
 })
 
 
-test('selecting nested directories preserves the marker until a file is chosen', () => {
-  const { ctx, input } = setup('anyalias --path=@@/Us --verbose'.indexOf('@@/Us') + '@@/Us'.length)
-  const raw = 'anyalias --path=@@/Us --verbose'
-  const first = build(ctx, raw)
-  const users = normalize(ctx, first, [file('/Users', true)])[0]
-  assert.equal(users.name, 'anyalias --path=@@/Users/ --verbose')
-  assert.equal(users.continueAutocomplete, true)
-  ctx.applyAutocompleteCandidateToInput(users)
-  assert.equal(input.selectionStart, 'anyalias --path=@@/Users/'.length)
 
-  let query = build(ctx, ctx.commandText)
-  assert.equal(query.requestInput, 'download /Users/')
-  const flc = normalize(ctx, query, [file('/Users/flc', true)])[0]
-  ctx.applyAutocompleteCandidateToInput(flc)
-  assert.equal(ctx.commandText, 'anyalias --path=@@/Users/flc/ --verbose')
+const typeAtCaret = (ctx, input, value) => {
+  const cursor = input.selectionStart
+  const nextText = ctx.commandText.slice(0, cursor) + value + ctx.commandText.slice(cursor)
+  ctx.handleCommandTextUpdate(nextText)
+  input.selectionStart = cursor + value.length
+}
 
-  query = build(ctx, ctx.commandText)
-  assert.equal(query.requestInput, 'download /Users/flc/')
-  const desktop = normalize(ctx, query, [file('/Users/flc/Desktop', true)])[0]
-  ctx.applyAutocompleteCandidateToInput(desktop)
-  assert.equal(ctx.commandText, 'anyalias --path=@@/Users/flc/Desktop/ --verbose')
-
-  query = build(ctx, ctx.commandText)
-  assert.equal(query.requestInput, 'download /Users/flc/Desktop/')
-  const finalFile = normalize(ctx, query, [file('/Users/flc/Desktop/aa.txt')])[0]
-  ctx.applyAutocompleteCandidateToInput(finalFile)
-  assert.equal(ctx.commandText, 'anyalias --path=/Users/flc/Desktop/aa.txt --verbose')
-  assert.equal(finalFile.continueAutocomplete, false)
+test('choosing a directory inserts it without @@ or a slash and is immediately runnable', () => {
+  const raw = 'allow_exec @@I'
+  const { ctx, input } = setup(raw.length)
+  const folder = normalize(ctx, build(ctx, raw), [file('Inbox', true)])[0]
+  let requested = 0
+  ctx.$refs.commandInputRef.getData = () => { requested++ }
+  ctx.applyAutocompleteCandidateToInput(folder)
+  assert.equal(ctx.commandText, 'allow_exec Inbox')
+  assert.equal(input.selectionStart, 'allow_exec Inbox'.length)
+  assert.equal(ctx.parseExplicitPathCompletionQuery(ctx.commandText), null)
+  assert.equal(requested, 0)
+  assert.equal(ctx.explicitPathContinuation.path, 'Inbox')
   assert.ok(!ctx.commandText.includes('@@'))
 })
 
-test('a directory can be finalized using the current-directory choice', () => {
-  const raw = 'myalias --directory @@/Users/flc/ --flag'
-  const { ctx, input } = setup(raw.indexOf(' --flag'))
-  const query = build(ctx, raw)
-  const choices = ctx.filterCommandCompletionCandidates(normalize(ctx, query, [file('/Users/flc/Desktop', true)]), query)
-  assert.equal(choices[0].help, 'Use this directory')
-  assert.equal(choices[0].name, 'myalias --directory /Users/flc/ --flag')
-  assert.equal(choices[1].name, 'myalias --directory @@/Users/flc/Desktop/ --flag')
-  ctx.applyAutocompleteCandidateToInput(choices[0])
-  assert.equal(ctx.commandText, 'myalias --directory /Users/flc/ --flag')
-  assert.equal(input.selectionStart, 'myalias --directory /Users/flc/'.length)
+test('only manually typed slash loads the next level; selecting a file ends completion', () => {
+  const raw = 'allow_exec @@I'
+  const { ctx, input } = setup(raw.length)
+  ctx.applyAutocompleteCandidateToInput(normalize(ctx, build(ctx, raw), [file('Inbox', true)])[0])
+  typeAtCaret(ctx, input, '/')
+  assert.equal(ctx.commandText, 'allow_exec Inbox/')
+  let query = build(ctx, ctx.commandText)
+  assert.equal(query.requestInput, 'download Inbox/')
+  assert.equal(query.pathPrefix, 'Inbox/')
+  const items = ctx.filterCommandCompletionCandidates(normalize(ctx, query, [
+    file('Inbox/Nested', true), file('Inbox/a.txt'),
+  ]), query)
+  assert.deepEqual(Array.from(items, item => item.displayText), ['Inbox/Nested', 'Inbox/a.txt'])
+  assert.ok(items.every(item => item.help !== 'Use this directory'))
+  ctx.applyAutocompleteCandidateToInput(items[0])
+  assert.equal(ctx.commandText, 'allow_exec Inbox/Nested')
+  assert.equal(build(ctx, ctx.commandText), null)
+  typeAtCaret(ctx, input, '/')
+  query = build(ctx, ctx.commandText)
+  assert.equal(query.requestInput, 'download Inbox/Nested/')
+  ctx.applyAutocompleteCandidateToInput(normalize(ctx, query, [file('Inbox/Nested/next.txt')])[0])
+  assert.equal(ctx.commandText, 'allow_exec Inbox/Nested/next.txt')
+  assert.equal(ctx.explicitPathContinuation, null)
 })
 
-test('directory navigation preserves quoted paths with spaces and continues querying', () => {
-  const raw = 'alias --path=@@/Users/Fl --other'
-  const { ctx, input } = setup(raw.indexOf(' --other'))
-  const initial = build(ctx, raw)
-  const folder = normalize(ctx, initial, [file('/Users/Fl C', true)])[0]
-  assert.equal(folder.name, 'alias --path="@@/Users/Fl C/" --other')
-  ctx.applyAutocompleteCandidateToInput(folder)
-  assert.equal(input.selectionStart, 'alias --path="@@/Users/Fl C/'.length)
-  const next = build(ctx, ctx.commandText)
-  assert.equal(next.pathPrefix, '/Users/Fl C/')
-  assert.equal(next.requestInput, 'download /Users/Fl C/')
-  const selected = normalize(ctx, next, [file('/Users/Fl C/data.txt')])[0]
-  ctx.applyAutocompleteCandidateToInput(selected)
-  assert.equal(ctx.commandText, 'alias --path="/Users/Fl C/data.txt" --other')
+test('manually entering / after selection works for absolute paths and option suffixes', () => {
+  const raw = 'myalias --path=@@/Us --verbose'
+  const { ctx, input } = setup(raw.indexOf(' --verbose'))
+  ctx.applyAutocompleteCandidateToInput(normalize(ctx, build(ctx, raw), [file('/Users', true)])[0])
+  assert.equal(ctx.commandText, 'myalias --path=/Users --verbose')
+  assert.equal(build(ctx, ctx.commandText), null)
+  typeAtCaret(ctx, input, '/')
+  let query = build(ctx, ctx.commandText)
+  assert.equal(query.requestInput, 'download /Users/')
+  typeAtCaret(ctx, input, 'fl')
+  query = build(ctx, ctx.commandText)
+  assert.equal(query.pathPrefix, '/Users/fl')
+  assert.equal(query.requestInput, 'download /Users/')
+  ctx.applyAutocompleteCandidateToInput(normalize(ctx, query, [file('/Users/flc', true)])[0])
+  assert.equal(ctx.commandText, 'myalias --path=/Users/flc --verbose')
 })
 
-test('Windows path navigation retains backslash separators and finishes on file', () => {
-  const raw = 'alias --file @@C:\\Us'
-  const { ctx } = setup(raw.length)
-  ctx.currentConnection.os_type = 'Windows'
-  const query = build(ctx, raw)
-  const candidate = normalize(ctx, query, [file('C:\\Users', true)])[0]
-  assert.equal(candidate.name, 'alias --file @@C:\\Users\\')
-  ctx.applyAutocompleteCandidateToInput(candidate)
-  const next = build(ctx, ctx.commandText)
-  assert.equal(next.requestInput, 'download C:\\Users\\')
-  const final = normalize(ctx, next, [file('C:\\Users\\hello.txt')])[0]
-  assert.equal(final.name, 'alias --file C:\\Users\\hello.txt')
+test('selection inside quoted option stays inside quotes and can descend with slash', () => {
+  const raw = 'alias --path="@@/Users/Fl" --other'
+  const { ctx, input } = setup(raw.indexOf('" --other'))
+  ctx.applyAutocompleteCandidateToInput(normalize(ctx, build(ctx, raw), [file('/Users/Fl C', true)])[0])
+  assert.equal(ctx.commandText, 'alias --path="/Users/Fl C" --other')
+  assert.equal(input.selectionStart, 'alias --path="/Users/Fl C'.length)
+  typeAtCaret(ctx, input, '/')
+  const query = build(ctx, ctx.commandText)
+  assert.equal(query.pathPrefix, '/Users/Fl C/')
+  assert.equal(query.requestInput, 'download /Users/Fl C/')
+  ctx.applyAutocompleteCandidateToInput(normalize(ctx, query, [file('/Users/Fl C/note.txt')])[0])
+  assert.equal(ctx.commandText, 'alias --path="/Users/Fl C/note.txt" --other')
 })
 
-test('directory selection triggers autocomplete refresh without requiring another marker', async () => {
-  const raw = 'alias @@/Us'
-  const { ctx } = setup(raw.length)
-  let refreshed = ''
-  ctx.$refs.commandInputRef.activated = false
-  ctx.$refs.commandInputRef.getData = value => { refreshed = value }
-  const query = build(ctx, raw)
-  const directory = normalize(ctx, query, [file('/Users', true)])[0]
-  ctx.applyAutocompleteCandidateToInput(directory)
-  await new Promise(resolve => setTimeout(resolve, 10))
-  assert.equal(ctx.$refs.commandInputRef.activated, true)
-  assert.equal(refreshed, 'alias @@/Users/')
+test('automatically added quotes for a directory with spaces allow manual slash inside', () => {
+  const raw = 'alias @@/tmp/my'
+  const { ctx, input } = setup(raw.length)
+  ctx.applyAutocompleteCandidateToInput(normalize(ctx, build(ctx, raw), [file('/tmp/my folder', true)])[0])
+  assert.equal(ctx.commandText, 'alias "/tmp/my folder"')
+  assert.equal(input.selectionStart, 'alias "/tmp/my folder'.length)
+  typeAtCaret(ctx, input, '/')
+  const query = build(ctx, ctx.commandText)
+  assert.equal(query.pathPrefix, '/tmp/my folder/')
+  ctx.applyAutocompleteCandidateToInput(normalize(ctx, query, [file('/tmp/my folder/a.txt')])[0])
+  assert.equal(ctx.commandText, 'alias "/tmp/my folder/a.txt"')
 })
 
-test('arrow preview commit continues browsing directories and keeps marker', () => {
-  const raw = 'alias --path=@@/Us --flag'
-  const { ctx, input } = setup(raw.indexOf(' --flag'))
-  const query = build(ctx, raw)
-  const folder = normalize(ctx, query, [file('/Users', true)])[0]
-  ctx.autocompleteCandidateItems = [folder]
-  ctx.autocompleteCandidateQueryText = raw
-  ctx.commandText = raw
-  assert.equal(ctx.previewAutocompleteCandidateByArrowKey('ArrowDown'), true)
-  assert.equal(ctx.commandText, 'alias --path=@@/Users/ --flag')
-  ctx.commitAutocompleteNavigationPreview()
-  assert.equal(input.selectionStart, 'alias --path=@@/Users/'.length)
-  assert.equal(ctx.commandText, 'alias --path=@@/Users/ --flag')
-})
-
-
-test('intermediate quoted paths decode shell escapes before remote lookup', () => {
+test('shell-metacharacter directory prefix decodes before requesting next level', () => {
   const raw = 'alias @@/tmp/pr'
   const { ctx, input } = setup(raw.length)
-  const first = build(ctx, raw)
-  const folder = normalize(ctx, first, [file('/tmp/price$20', true)])[0]
-  assert.equal(folder.name, 'alias "@@/tmp/price\\$20/"')
-  ctx.applyAutocompleteCandidateToInput(folder)
-  assert.equal(input.selectionStart, 'alias "@@/tmp/price\\$20/'.length)
-  const next = build(ctx, ctx.commandText)
-  assert.equal(next.pathPrefix, '/tmp/price$20/')
-  assert.equal(next.requestInput, 'download /tmp/price$20/')
+  ctx.applyAutocompleteCandidateToInput(normalize(ctx, build(ctx, raw), [file('/tmp/price$20', true)])[0])
+  assert.equal(ctx.commandText, 'alias "/tmp/price\\$20"')
+  typeAtCaret(ctx, input, '/')
+  assert.equal(build(ctx, ctx.commandText).requestInput, 'download /tmp/price$20/')
 })
 
+test('Windows paths use manually typed backslash to continue into subdirectories', () => {
+  const raw = 'alias --file @@C:\\Us'
+  const { ctx, input } = setup(raw.length)
+  ctx.currentConnection.os_type = 'Windows'
+  ctx.applyAutocompleteCandidateToInput(normalize(ctx, build(ctx, raw), [file('C:\\Users', true)])[0])
+  assert.equal(ctx.commandText, 'alias --file C:\\Users')
+  assert.equal(build(ctx, ctx.commandText), null)
+  typeAtCaret(ctx, input, '\\')
+  const query = build(ctx, ctx.commandText)
+  assert.equal(query.requestInput, 'download C:\\Users\\')
+  ctx.applyAutocompleteCandidateToInput(normalize(ctx, query, [file('C:\\Users\\hello.txt')])[0])
+  assert.equal(ctx.commandText, 'alias --file C:\\Users\\hello.txt')
+})
 
-test('Windows directory containing spaces remains navigable inside quotes', () => {
+test('Windows quoted path with spaces is completed without extra trailing slash', () => {
   const raw = 'alias @@C:\\Pro --flag'
   const { ctx, input } = setup(raw.indexOf(' --flag'))
   ctx.currentConnection.os_type = 'Windows'
-  const folder = normalize(ctx, build(ctx, raw), [file('C:\\Program Files', true)])[0]
-  ctx.applyAutocompleteCandidateToInput(folder)
-  assert.equal(ctx.commandText, 'alias "@@C:\\Program Files\\" --flag')
-  assert.equal(input.selectionStart, 'alias "@@C:\\Program Files\\'.length)
-  const next = build(ctx, ctx.commandText)
-  assert.ok(next)
-  assert.equal(next.requestInput, 'download C:\\Program Files\\')
+  ctx.applyAutocompleteCandidateToInput(normalize(ctx, build(ctx, raw), [file('C:\\Program Files', true)])[0])
+  assert.equal(ctx.commandText, 'alias "C:\\Program Files" --flag')
+  typeAtCaret(ctx, input, '\\')
+  assert.equal(build(ctx, ctx.commandText).requestInput, 'download C:\\Program Files\\')
 })
 
-
-test('real select and blur lifecycle reopens Inbox with its children instead of the old entry', async () => {
-  const raw = 'allow_exec @@I'
+test('arrow preview + right arrow commits directory without separator or immediate refresh', () => {
+  const raw = 'alias @@te'
   const { ctx, input } = setup(raw.length)
-  ctx.commandText = raw
-  ctx.commandCompletionCandidatesByContext = {}
-  ctx.commandCompletionCandidatesLoadPromises = {}
-  ctx.hasRunningWebTask = false
-  ctx.waitForCommandCompletionDebounce = async () => true
-  const calls = []
-  sandbox.getCommandCompletions = async (_clientId, payload) => {
-    calls.push(payload.raw_input)
-    if (payload.raw_input === 'download Inbox/') {
-      return { items: [file('Inbox/Nested', true), file('Inbox/aa.txt')] }
-    }
-    if (payload.raw_input === 'download Inbox/Nested/') {
-      return { items: [file('Inbox/Nested/next.txt')] }
-    }
-    return { items: [file('Inbox', true)] }
-  }
-  const autocomplete = ctx.$refs.commandInputRef
-  autocomplete.activated = false
-  autocomplete.suggestions = []
-  autocomplete.getData = value => {
-    // Element Plus only shows the returned candidates when activated.
-    ctx.queryCommandCandidates(value, items => {
-      autocomplete.suggestions = items
-      autocomplete.visible = !!autocomplete.activated && items.length > 0
-    })
-  }
-  const first = normalize(ctx, build(ctx, raw), [file('Inbox', true)])[0]
-  // Element Plus emits model update, then select, then clears the old list.
-  ctx.handleCommandTextUpdate(first.value)
-  ctx.handleCandidateSelect(first)
-  autocomplete.activated = false
-  autocomplete.suggestions = []
-  await new Promise(resolve => setTimeout(resolve, 25))
-  assert.equal(ctx.commandText, 'allow_exec @@Inbox/')
-  assert.equal(autocomplete.activated, true)
-  assert.equal(autocomplete.visible, true)
-  assert.ok(calls.includes('download Inbox/'))
-  assert.deepEqual(Array.from(autocomplete.suggestions, item => item.displayText), [
-    'Inbox/', 'Inbox/Nested', 'Inbox/aa.txt',
-  ])
-  assert.equal(input.selectionStart, 'allow_exec @@Inbox/'.length)
-
-  const nested = autocomplete.suggestions.find(item => item.displayText === 'Inbox/Nested')
-  ctx.handleCommandTextUpdate(nested.value)
-  ctx.handleCandidateSelect(nested)
-  autocomplete.activated = false
-  autocomplete.suggestions = []
-  await new Promise(resolve => setTimeout(resolve, 25))
-  assert.equal(ctx.commandText, 'allow_exec @@Inbox/Nested/')
-  assert.equal(autocomplete.visible, true)
-  assert.ok(calls.includes('download Inbox/Nested/'))
-  const final = autocomplete.suggestions.find(item => item.displayText === 'Inbox/Nested/next.txt')
-  assert.ok(final)
-  ctx.handleCommandTextUpdate(final.value)
-  ctx.handleCandidateSelect(final)
-  assert.equal(ctx.commandText, 'allow_exec Inbox/Nested/next.txt')
-})
-
-test('an older explicit request cannot replace suggestions for the newly selected folder', async () => {
-  const oldText = 'allow_exec @@I'
-  const newText = 'allow_exec @@Inbox/'
-  const { ctx, input } = setup(newText.length)
-  ctx.commandText = newText
-  input.selectionStart = newText.length
-  ctx.buildCommandCompletionCandidates = async () => [file('Inbox', true)]
-  let invoked = false
-  await ctx.queryCommandCandidates(oldText, () => { invoked = true })
-  assert.equal(invoked, false)
-})
-
-test('directory refresh supports Element Plus exposed activated ref and ignores stale text', async () => {
-  const raw = 'myalias @@In'
-  const { ctx } = setup(raw.length)
-  const autocomplete = ctx.$refs.commandInputRef
-  autocomplete.activated = { value: false }
-  const requested = []
-  autocomplete.getData = value => requested.push(value)
-  const selected = normalize(ctx, build(ctx, raw), [file('Inbox', true)])[0]
-  ctx.applyAutocompleteCandidateToInput(selected)
-  await new Promise(resolve => setTimeout(resolve, 10))
-  assert.equal(autocomplete.activated.value, true)
-  assert.deepEqual(requested, ['myalias @@Inbox/'])
-
-  autocomplete.activated.value = false
-  ctx.applyAutocompleteCandidateToInput(normalize(ctx, build(ctx, ctx.commandText), [file('Inbox/Nested', true)])[0])
-  // A user edit before the deferred refresh must supersede the old request.
-  ctx.commandText = 'myalias --other'
-  await new Promise(resolve => setTimeout(resolve, 10))
-  assert.deepEqual(requested, ['myalias @@Inbox/'])
-  assert.equal(autocomplete.activated.value, false)
-})
-
-test('right-arrow directory commit clears prior third-item selection before next ArrowDown', () => {
-  const raw = 'alias @@t'
-  const { ctx } = setup(raw.length)
   const highlighted = []
-  ctx.$refs.commandInputRef.highlight = index => highlighted.push(index)
+  const autocomplete = ctx.$refs.commandInputRef
+  autocomplete.highlight = index => highlighted.push(index)
+  let autoRequests = 0
+  autocomplete.getData = () => { autoRequests++ }
   ctx.commandText = raw
-  const first = build(ctx, raw)
-  ctx.autocompleteCandidateItems = normalize(ctx, first, [
-    file('temp', true), file('tiles', true), file('test', true),
+  ctx.autocompleteCandidateItems = normalize(ctx, build(ctx, raw), [
+    file('team', true), file('temp', true), file('test', true),
   ])
   ctx.autocompleteCandidateQueryText = raw
-  for (let i = 0; i < 3; i++) assert.equal(ctx.previewAutocompleteCandidateByArrowKey('ArrowDown'), true)
-  assert.equal(ctx.autocompleteNavigationIndex, 2)
-  assert.equal(ctx.commandText, 'alias @@test/')
+  for (let i = 0; i < 3; i++) ctx.previewAutocompleteCandidateByArrowKey('ArrowDown')
+  assert.equal(ctx.commandText, 'alias @@test')
+  assert.equal(input.selectionStart, 'alias @@test'.length)
   ctx.commitAutocompleteNavigationPreview()
-  assert.equal(ctx.autocompleteNavigationIndex, -1)
-  assert.equal(ctx.autocompleteCandidateQueryText, '')
-  assert.equal(highlighted.at(-1), -1)
-
-  const nextQuery = build(ctx, ctx.commandText)
-  const nextItems = ctx.filterCommandCompletionCandidates(normalize(ctx, nextQuery, [
-    file('test/folder', true), file('test/a.txt'), file('test/b.txt'),
-  ]), nextQuery)
-  ctx.setAutocompleteCandidateItems(nextItems, ctx.commandText)
-  assert.equal(ctx.autocompleteNavigationIndex, -1)
-  assert.equal(ctx.previewAutocompleteCandidateByArrowKey('ArrowDown'), true)
-  assert.equal(ctx.autocompleteNavigationIndex, 0)
-  assert.equal(ctx.commandText, 'alias test/') // "Use this directory" is first in this level
-})
-
-test('clicking a directory also resets the Element Plus highlight and next level selection', () => {
-  const raw = 'alias @@tes'
-  const { ctx } = setup(raw.length)
-  const highlighted = []
-  ctx.$refs.commandInputRef.highlight = index => highlighted.push(index)
-  ctx.commandText = raw
-  const selected = normalize(ctx, build(ctx, raw), [file('test', true)])[0]
-  ctx.autocompleteNavigationIndex = 2
-  ctx.applyAutocompleteCandidateToInput(selected)
+  assert.equal(ctx.commandText, 'alias test')
   assert.equal(ctx.autocompleteNavigationIndex, -1)
   assert.equal(highlighted.at(-1), -1)
-  assert.equal(ctx.commandText, 'alias @@test/')
+  assert.equal(autoRequests, 0)
+  typeAtCaret(ctx, input, '/')
+  const query = build(ctx, ctx.commandText)
+  assert.equal(query.requestInput, 'download test/')
+  ctx.setAutocompleteCandidateItems(normalize(ctx, query, [file('test/folder', true)]), ctx.commandText)
+  ctx.previewAutocompleteCandidateByArrowKey('ArrowDown')
+  ctx.commitAutocompleteNavigationPreview()
+  assert.equal(ctx.commandText, 'alias test/folder')
 })
 
-test('keyboard can descend from a relative directory into a file and finish without marker', () => {
-  const { ctx } = setup('alias @@tes'.length)
-  ctx.commandText = 'alias @@tes'
-  let query = build(ctx, ctx.commandText)
-  let children = normalize(ctx, query, [file('test', true)])
-  ctx.setAutocompleteCandidateItems(children, ctx.commandText)
-  assert.equal(ctx.previewAutocompleteCandidateByArrowKey('ArrowDown'), true)
-  ctx.commitAutocompleteNavigationPreview()
-  assert.equal(ctx.commandText, 'alias @@test/')
-
-  query = build(ctx, ctx.commandText)
-  children = ctx.filterCommandCompletionCandidates(normalize(ctx, query, [file('test/folder', true)]), query)
-  ctx.setAutocompleteCandidateItems(children, ctx.commandText)
-  // "Use this directory" occupies the first row; folder is the second.
-  ctx.previewAutocompleteCandidateByArrowKey('ArrowDown')
-  ctx.previewAutocompleteCandidateByArrowKey('ArrowDown')
-  ctx.commitAutocompleteNavigationPreview()
-  assert.equal(ctx.commandText, 'alias @@test/folder/')
-
-  query = build(ctx, ctx.commandText)
-  children = ctx.filterCommandCompletionCandidates(normalize(ctx, query, [file('test/folder/file.txt')]), query)
-  ctx.setAutocompleteCandidateItems(children, ctx.commandText)
-  ctx.previewAutocompleteCandidateByArrowKey('ArrowDown')
-  ctx.previewAutocompleteCandidateByArrowKey('ArrowDown')
-  ctx.commitAutocompleteNavigationPreview()
-  assert.equal(ctx.commandText, 'alias test/folder/file.txt')
+test('cached old directory candidates are discarded after explicit typed slash', async () => {
+  const old = 'allow_exec @@I'
+  const { ctx, input } = setup(old.length)
+  ctx.applyAutocompleteCandidateToInput(normalize(ctx, build(ctx, old), [file('Inbox', true)])[0])
+  typeAtCaret(ctx, input, '/')
+  ctx.commandText = 'allow_exec Inbox/'
+  input.selectionStart = ctx.commandText.length
+  ctx.buildCommandCompletionCandidates = async () => [file('Inbox', true)]
+  let emitted = false
+  await ctx.queryCommandCandidates(old, () => { emitted = true })
+  assert.equal(emitted, false)
 })
 
-test('remote refresh after third-item right-arrow selection starts next level unhighlighted', async () => {
-  const raw = 'alias @@te'
-  const { ctx } = setup(raw.length)
-  ctx.commandText = raw
+test('continuation does not leak into edited commands or later file selections', () => {
+  const raw = 'alias @@do'
+  const { ctx, input } = setup(raw.length)
+  ctx.applyAutocompleteCandidateToInput(normalize(ctx, build(ctx, raw), [file('docs', true)])[0])
+  ctx.commandText = 'alias --other'
+  input.selectionStart = ctx.commandText.length
+  assert.equal(build(ctx, ctx.commandText), null)
+  ctx.commandText = 'alias docs'
+  input.selectionStart = ctx.commandText.length
+  assert.equal(build(ctx, ctx.commandText), null) // no separator even on restored text
+  typeAtCaret(ctx, input, '/')
+  const query = build(ctx, ctx.commandText)
+  assert.ok(query)
+  ctx.applyAutocompleteCandidateToInput(normalize(ctx, query, [file('docs/notes.txt')])[0])
+  assert.equal(ctx.explicitPathContinuation, null)
+})
+
+test('a real command completion request after manual / uses the remote download provider', async () => {
+  const raw = 'allow_exec @@I'
+  const { ctx, input } = setup(raw.length)
+  ctx.selectedId = 'client-1'
   ctx.hasRunningWebTask = false
   ctx.commandCompletionCandidatesByContext = {}
   ctx.commandCompletionCandidatesLoadPromises = {}
   ctx.waitForCommandCompletionDebounce = async () => true
-  const autocomplete = ctx.$refs.commandInputRef
-  autocomplete.highlightedIndex = -1
-  autocomplete.highlight = index => { autocomplete.highlightedIndex = index }
-  autocomplete.getData = value => ctx.queryCommandCandidates(value, suggestions => {
-    autocomplete.suggestions = suggestions
-  })
-  sandbox.getCommandCompletions = async (_clientId, payload) => payload.raw_input === 'download '
-    ? { items: [file('team', true), file('temp', true), file('test', true)] }
-    : { items: [file('test/a.txt'), file('test/folder', true)] }
+  ctx.commandText = raw
+  const picked = normalize(ctx, build(ctx, raw), [file('Inbox', true)])[0]
+  ctx.handleCommandTextUpdate(picked.name)
+  ctx.handleCandidateSelect(picked)
+  typeAtCaret(ctx, input, '/')
+  const calls = []
+  sandbox.getCommandCompletions = async (clientId, request) => {
+    calls.push([clientId, request.raw_input])
+    return { items: [file('Inbox/Nested', true), file('Inbox/aa.txt')] }
+  }
+  const items = await new Promise(resolve => ctx.queryCommandCandidates(ctx.commandText, resolve))
+  assert.deepEqual(calls, [['client-1', 'download Inbox/']])
+  assert.deepEqual(Array.from(items, item => item.displayText), ['Inbox/Nested', 'Inbox/aa.txt'])
+  assert.ok(items.every(item => !item.name.includes('@@')))
+})
 
-  await new Promise(resolve => ctx.queryCommandCandidates(raw, () => resolve()))
-  ctx.previewAutocompleteCandidateByArrowKey('ArrowDown')
-  ctx.previewAutocompleteCandidateByArrowKey('ArrowDown')
-  ctx.previewAutocompleteCandidateByArrowKey('ArrowDown')
-  assert.equal(ctx.autocompleteNavigationIndex, 2)
+test('mouse selection then repeated manual separators reuses new directory context', () => {
+  const raw = 'anyalias @@te --other'
+  const { ctx, input } = setup(raw.indexOf(' --other'))
+  const first = normalize(ctx, build(ctx, raw), [file('test', true)])[0]
+  ctx.handleCandidateSelect(first)
+  assert.equal(ctx.commandText, 'anyalias test --other')
+  assert.equal(build(ctx, ctx.commandText), null)
+  typeAtCaret(ctx, input, '/')
+  let q = build(ctx, ctx.commandText)
+  ctx.handleCandidateSelect(normalize(ctx, q, [file('test/folder', true)])[0])
+  assert.equal(ctx.commandText, 'anyalias test/folder --other')
+  typeAtCaret(ctx, input, '/')
+  q = build(ctx, ctx.commandText)
+  ctx.handleCandidateSelect(normalize(ctx, q, [file('test/folder/file.txt')])[0])
+  assert.equal(ctx.commandText, 'anyalias test/folder/file.txt --other')
+})
+
+test('continuation requires a leading separator and matches its original option context', () => {
+  const raw = 'alias --dir=@@do --mode safe'
+  const { ctx, input } = setup(raw.indexOf(' --mode'))
+  ctx.handleCandidateSelect(normalize(ctx, build(ctx, raw), [file('docs', true)])[0])
+  assert.equal(ctx.commandText, 'alias --dir=docs --mode safe')
+  ctx.commandText = 'alias --dir=docs/sub --mode altered'
+  input.selectionStart = 'alias --dir=docs/sub'.length
+  assert.equal(build(ctx, ctx.commandText), null)
+  ctx.commandText = 'alias --dir=docs-extra --mode safe'
+  input.selectionStart = 'alias --dir=docs-extra'.length
+  assert.equal(build(ctx, ctx.commandText), null)
+  ctx.commandText = 'alias --dir=docs/sub --mode safe'
+  input.selectionStart = 'alias --dir=docs/sub'.length
+  assert.equal(build(ctx, ctx.commandText).requestInput, 'download docs/')
+})
+
+test('an unrelated direct directory argument is not silently treated as explicit completion', () => {
+  const raw = 'myalias @@dir'
+  const { ctx, input } = setup(raw.length)
+  ctx.handleCandidateSelect(normalize(ctx, build(ctx, raw), [file('directory', true)])[0])
+  ctx.commandText = 'myalias different/'
+  input.selectionStart = ctx.commandText.length
+  assert.equal(build(ctx, ctx.commandText), null)
+  ctx.commandText = 'myalias directory/'
+  input.selectionStart = ctx.commandText.length
+  assert.equal(build(ctx, ctx.commandText).requestInput, 'download directory/')
+})
+
+test('standard cd directory selection still returns the directory without a trailing slash', () => {
+  const { ctx } = setup(0)
+  const query = {
+    fileSystemProxyCommand: 'cd',
+    fileSystemTargetCommand: 'cd',
+  }
+  const selected = ctx.normalizeFileSystemCompletionCandidate(file('docs', true), query)
+  assert.equal(selected.name, 'cd docs')
+})
+
+test('editing away from the selected directory expires the continuation context', () => {
+  const raw = 'alias @@do'
+  const { ctx, input } = setup(raw.length)
+  ctx.handleCandidateSelect(normalize(ctx, build(ctx, raw), [file('docs', true)])[0])
+  assert.ok(ctx.explicitPathContinuation)
+  ctx.handleCommandTextUpdate('alias something-else')
+  assert.equal(ctx.explicitPathContinuation, null)
+  ctx.handleCommandTextUpdate('alias docs/')
+  input.selectionStart = ctx.commandText.length
+  assert.equal(build(ctx, ctx.commandText), null)
+})
+
+test('switching the selected remote client resets pending path continuation', () => {
+  const raw = 'alias @@do'
+  const { ctx } = setup(raw.length)
+  ctx.handleCandidateSelect(normalize(ctx, build(ctx, raw), [file('docs', true)])[0])
+  assert.ok(ctx.explicitPathContinuation)
+  ctx.clearCommandCompletionCandidateCache = () => {}
+  ctx.reloadCommandCandidates = () => {}
+  sandbox.component.watch.selectedId.handler.call(ctx, 'client-2', 'client-1')
+  assert.equal(ctx.explicitPathContinuation, null)
+})
+
+
+test('ls @@Desk keeps marker while navigating, slash opens Desktop children, right arrow alone commits', () => {
+  const raw = 'ls @@Desk'
+  const { ctx, input } = setup(raw.length)
+  const candidates = normalize(ctx, build(ctx, raw), [file('Desktop', true)])
+  ctx.commandText = raw
+  ctx.autocompleteCandidateItems = candidates
+  ctx.autocompleteCandidateQueryText = raw
+  const key = (name) => {
+    const event = { key: name, prevented: false, stopped: false,
+      preventDefault() { this.prevented = true }, stopPropagation() { this.stopped = true } }
+    ctx.handleCommandInputKeydown(event)
+    return event
+  }
+
+  assert.equal(key('ArrowDown').prevented, true)
+  assert.equal(ctx.commandText, 'ls @@Desktop')
+  assert.equal(input.selectionStart, 'ls @@Desktop'.length)
+  assert.equal(build(ctx, ctx.commandText).pathPrefix, 'Desk') // preview uses original query until edited
+
+  // Typing / edits the previewed path rather than confirming it; @@ remains.
+  typeAtCaret(ctx, input, '/')
+  assert.equal(ctx.commandText, 'ls @@Desktop/')
+  assert.equal(ctx.autocompleteNavigationPreviewActive, false)
+  const nextQuery = build(ctx, ctx.commandText)
+  assert.equal(nextQuery.requestInput, 'download Desktop/')
+  const nextItems = normalize(ctx, nextQuery, [file('Desktop/Documents', true), file('Desktop/note.txt')])
+  ctx.autocompleteCandidateItems = nextItems
+  ctx.autocompleteCandidateQueryText = ctx.commandText
+  assert.equal(key('ArrowDown').prevented, true)
+  assert.equal(ctx.commandText, 'ls @@Desktop/Documents')
+  assert.equal(input.selectionStart, 'ls @@Desktop/Documents'.length)
+  assert.equal(key('ArrowRight').prevented, true)
+  assert.equal(ctx.commandText, 'ls Desktop/Documents')
+  assert.equal(input.selectionStart, 'ls Desktop/Documents'.length)
+  assert.equal(ctx.explicitPathContinuation.path, 'Desktop/Documents')
+})
+
+test('file paths commit on arrow selection while directories alone preserve @@', () => {
+  const raw = 'allow_exec @@a'
+  const { ctx, input } = setup(raw.length)
+  const choices = normalize(ctx, build(ctx, raw), [
+    file('assets', true), file('archive.txt'),
+  ])
+  ctx.commandText = raw
+  ctx.autocompleteCandidateItems = choices
+  ctx.autocompleteCandidateQueryText = raw
+
+  assert.equal(ctx.previewAutocompleteCandidateByArrowKey('ArrowDown'), true)
+  assert.equal(ctx.commandText, 'allow_exec @@assets')
+  assert.equal(input.selectionStart, 'allow_exec @@assets'.length)
+
+  assert.equal(ctx.previewAutocompleteCandidateByArrowKey('ArrowDown'), true)
+  assert.equal(ctx.commandText, 'allow_exec archive.txt')
+  assert.equal(input.selectionStart, 'allow_exec archive.txt'.length)
+  assert.equal(ctx.explicitPathContinuation ?? null, null)
   ctx.commitAutocompleteNavigationPreview()
-  await new Promise(resolve => setTimeout(resolve, 25))
-  assert.equal(ctx.commandText, 'alias @@test/')
-  assert.equal(autocomplete.suggestions.length, 3) // current directory, subdirectory and file
-  assert.equal(ctx.autocompleteNavigationIndex, -1)
-  assert.equal(autocomplete.highlightedIndex, -1)
+  assert.equal(ctx.commandText, 'allow_exec archive.txt')
+})
+
+test('quoted file path chosen by keyboard or mouse commits directly, leaving other args intact', () => {
+  const raw = 'custom --path=@@/Users/Fl --other'
+  const candidatePath = '/Users/Fl C/notes.txt'
+  const caret = raw.indexOf(' --other')
+  const { ctx, input } = setup(caret)
+  const [candidate] = normalize(ctx, build(ctx, raw), [file(candidatePath)])
+  ctx.commandText = raw
+  ctx.autocompleteCandidateItems = [candidate]
+  ctx.autocompleteCandidateQueryText = raw
+  assert.equal(ctx.previewAutocompleteCandidateByArrowKey('ArrowDown'), true)
+  assert.equal(ctx.commandText, 'custom --path="/Users/Fl C/notes.txt" --other')
+  assert.equal(input.selectionStart, 'custom --path="/Users/Fl C/notes.txt"'.length)
+  assert.equal(ctx.explicitPathContinuation ?? null, null)
+
+  const second = setup(caret)
+  const [item] = normalize(second.ctx, build(second.ctx, raw), [file(candidatePath)])
+  second.ctx.commandText = raw
+  second.ctx.handleCandidateSelect(item)
+  assert.equal(second.ctx.commandText, 'custom --path="/Users/Fl C/notes.txt" --other')
+  assert.equal(second.ctx.explicitPathContinuation, null)
+})
+
+test('right-arrow confirmation and mouse selection remove @@ but passive arrow preview does not', () => {
+  const raw = 'ls @@Desk'
+  const { ctx } = setup(raw.length)
+  const [candidate] = normalize(ctx, build(ctx, raw), [file('Desktop', true)])
+  ctx.commandText = raw
+  ctx.autocompleteCandidateItems = [candidate]
+  ctx.autocompleteCandidateQueryText = raw
   ctx.previewAutocompleteCandidateByArrowKey('ArrowDown')
-  assert.equal(ctx.autocompleteNavigationIndex, 0)
-  assert.equal(ctx.commandText, 'alias test/')
+  assert.equal(ctx.commandText, 'ls @@Desktop')
+  ctx.commitAutocompleteNavigationPreview()
+  assert.equal(ctx.commandText, 'ls Desktop')
+
+  const second = setup(raw.length)
+  const [item] = normalize(second.ctx, build(second.ctx, raw), [file('Desktop', true)])
+  second.ctx.commandText = raw
+  second.ctx.handleCandidateSelect(item)
+  assert.equal(second.ctx.commandText, 'ls Desktop')
+})
+
+test('previewing quoted and middle-of-command directories preserves marker and caret', () => {
+  for (const [raw, candidatePath, expectedPreview, expectedFinal] of [
+    ['myalias --path=@@/Users/Fl --verbose', '/Users/Fl C', 'myalias --path="@@/Users/Fl C" --verbose', 'myalias --path="/Users/Fl C" --verbose'],
+    ['myalias --path="@@/Users/Fl" --verbose', '/Users/Fl C', 'myalias --path="@@/Users/Fl C" --verbose', 'myalias --path="/Users/Fl C" --verbose'],
+  ]) {
+    const pos = raw.indexOf(' --verbose') - (raw.includes('"@@') ? 1 : 0)
+    const { ctx, input } = setup(pos)
+    const [item] = normalize(ctx, build(ctx, raw), [file(candidatePath, true)])
+    ctx.commandText = raw
+    ctx.autocompleteCandidateItems = [item]
+    ctx.autocompleteCandidateQueryText = raw
+    ctx.previewAutocompleteCandidateByArrowKey('ArrowDown')
+    assert.equal(ctx.commandText, expectedPreview)
+    const caret = input.selectionStart
+    assert.equal(expectedPreview[caret], '"')
+    typeAtCaret(ctx, input, '/')
+    assert.match(ctx.commandText, /@@\/Users\/Fl C\//)
+    assert.equal(build(ctx, ctx.commandText).requestInput, 'download /Users/Fl C/')
+    // Commit via fresh candidate after restoring the original list, not by slash typing.
+    const again = setup(pos)
+    const [fresh] = normalize(again.ctx, build(again.ctx, raw), [file(candidatePath, true)])
+    again.ctx.commandText = raw
+    again.ctx.handleCandidateSelect(fresh)
+    assert.equal(again.ctx.commandText, expectedFinal)
+  }
+})
+
+test('Windows preview retains @@ until commit and backslash can descend', () => {
+  const raw = 'cmd --file @@C:\\Us --flag'
+  const { ctx, input } = setup(raw.indexOf(' --flag'))
+  ctx.currentConnection.os_type = 'Windows'
+  const [item] = normalize(ctx, build(ctx, raw), [file('C:\\Users', true)])
+  ctx.commandText = raw
+  ctx.autocompleteCandidateItems = [item]
+  ctx.autocompleteCandidateQueryText = raw
+  ctx.previewAutocompleteCandidateByArrowKey('ArrowDown')
+  assert.equal(ctx.commandText, 'cmd --file @@C:\\Users --flag')
+  typeAtCaret(ctx, input, '\\')
+  assert.equal(ctx.commandText, 'cmd --file @@C:\\Users\\ --flag')
+  assert.equal(build(ctx, ctx.commandText).requestInput, 'download C:\\Users\\')
+})
+
+test('arrow-preview + typed / refreshes actual next-level remote candidates rather than the old list', async () => {
+  const raw = 'ls @@Desk'
+  const { ctx, input } = setup(raw.length)
+  ctx.commandText = raw
+  ctx.autocompleteCandidateItems = normalize(ctx, build(ctx, raw), [file('Desktop', true)])
+  ctx.autocompleteCandidateQueryText = raw
+  ctx.commandCompletionCandidatesByContext = {}
+  ctx.commandCompletionCandidatesLoadPromises = {}
+  ctx.waitForCommandCompletionDebounce = async () => true
+  ctx.previewAutocompleteCandidateByArrowKey('ArrowDown')
+  assert.equal(ctx.commandText, 'ls @@Desktop')
+  typeAtCaret(ctx, input, '/')
+  const requests = []
+  sandbox.getCommandCompletions = async (clientId, params) => {
+    requests.push([clientId, params.raw_input])
+    return { items: [file('Desktop/notes.txt'), file('Desktop/Projects', true)] }
+  }
+  const returned = await new Promise(resolve => ctx.queryCommandCandidates(ctx.commandText, resolve))
+  assert.deepEqual(requests, [['device-1', 'download Desktop/']])
+  assert.deepEqual(Array.from(returned, item => item.displayText), ['Desktop/notes.txt', 'Desktop/Projects'])
+  assert.equal(returned[0].previewName, 'ls Desktop/notes.txt')
+  assert.equal(returned[0].name, 'ls Desktop/notes.txt')
 })
