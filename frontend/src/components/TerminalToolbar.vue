@@ -448,6 +448,7 @@ export default {
         clipboard: 'clipboard',
         'external-tools': 'external_tool',
         processes: 'process_monitor',
+        'log-viewer': 'log_viewer',
       }
       const feature = featureByAction[actionId]
       // Older connections without a manifest retain their existing actions.

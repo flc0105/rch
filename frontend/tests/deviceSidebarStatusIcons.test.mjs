@@ -5,8 +5,10 @@ import { dirname, resolve } from 'node:path'
 
 const source = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), '../src/components/DeviceSidebar.vue'), 'utf8')
 assert.match(source, /import \{ ClockAlert, ShieldPlus \} from '@lucide\/vue'/)
-assert.match(source, /<ClockAlert\s+v-if="getConnectionDisplayState\(item\) === 'online' && item.client_revision_state === 'outdated'"/)
-assert.match(source, /<ShieldPlus\s+v-if="getConnectionDisplayState\(item\) === 'online' && isElevated\(item\)"/)
+assert.match(source, /<el-tooltip\s+v-if="getConnectionDisplayState\(item\) === 'online' && item.client_revision_state === 'outdated'"\s+content="Outdated"/)
+assert.match(source, /<ClockAlert class="device-update-indicator" :size="13" \/>/)
+assert.match(source, /<el-tooltip\s+v-if="getConnectionDisplayState\(item\) === 'online' && isElevated\(item\)"\s+content="Elevated"/)
+assert.match(source, /<ShieldPlus class="device-elevated-indicator" :size="13" \/>/)
 assert.doesNotMatch(source, /<CaretTop\s*\/>/)
 const block = source.match(/isElevated\(item\) \{([\s\S]*?)\n    \},/)
 assert.ok(block)

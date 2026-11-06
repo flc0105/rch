@@ -83,12 +83,13 @@
             </div>
 
             <div
-              v-if="monitorError"
+              v-if="monitorDisplayError"
               class="monitor-dashboard-error"
             >
-              {{ monitorError }}
+              {{ monitorDisplayError }}
             </div>
 
+            <template v-else>
             <div class="monitor-overview-grid">
               <div class="monitor-overview-card" @click="openProcessesFromDashboard('cpu_percent')">
                 <div class="monitor-card-label">CPU</div>
@@ -245,6 +246,7 @@
                 {{ monitorStatus === 'opening' ? 'Waiting for storage data…' : 'No volumes available' }}
               </div>
             </div>
+            </template>
             </template>
           </div>
         </el-tab-pane>
@@ -695,8 +697,16 @@ export default {
       return Array.isArray(volumes) ? volumes : []
     },
 
+    monitorDisplayError() {
+      if (this.monitorError) return this.monitorError
+      if (this.currentConnection?.feature_manifest?.device_monitor === false) {
+        return 'Device monitoring is not supported on this Client'
+      }
+      return ''
+    },
+
     monitorDisplayState() {
-      if (this.monitorError || this.monitorStatus === 'error') return 'error'
+      if (this.monitorDisplayError || this.monitorStatus === 'error') return 'error'
       if (this.monitorStatus === 'open' || this.monitorStatus === 'live') return 'live'
       if (this.monitorStatus === 'opening') return 'opening'
       if (this.getConnectionDisplayState(this.currentConnection || {}) === 'offline') return 'offline'
@@ -879,6 +889,7 @@ export default {
 
     async startDeviceMonitor() {
       if (!this.infoVisible || this.activeTab !== 'dashboard' || !this.selectedId) return
+      if (this.currentConnection?.feature_manifest?.device_monitor === false) return
       if (this.monitorSessionId || this.monitorStarting) return
 
       this.monitorStarting = true

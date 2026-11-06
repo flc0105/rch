@@ -42,6 +42,12 @@ def test_external_tool_and_process_monitor_platform_features():
     assert disabled['pty'] is True  # Independent core capability
 
 
+def test_log_viewer_capability_can_be_disabled_independently():
+    for platform in ('mac', 'win', 'linux', 'ios'):
+        assert feature_config.resolve_features(platform, {})['log_viewer'] is True
+        assert feature_config.resolve_features(platform, {'log_viewer': False})['log_viewer'] is False
+
+
 def test_features_validate_user_overrides(monkeypatch):
     selected = feature_config.resolve_features('mac', {
         'screen_view': False, 'screen_input': True, 'pty': False,

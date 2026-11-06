@@ -6,6 +6,8 @@
 
 主日志的产生、路径和保留策略见 [Server / Client Logging](logging.md)。
 
+Web 的 Log Viewer 入口由 `feature_manifest.log_viewer` 控制：声明为 `false` 的 Client 不显示入口；没有明确声明 `false` 时继续显示入口。Python Client 默认支持，可在 `feature_config.py` 的 `FEATURE_OVERRIDES` 中关闭；Go Client 当前声明不支持。
+
 Log Viewer 的 `log_file` Monitor Session 使用标准库读取客户端日志；在 iOS / Pythonista 中无需安装 `psutil`。文件必须位于该 Client 可读取的路径下。
 
 ## 打开日志与选择来源

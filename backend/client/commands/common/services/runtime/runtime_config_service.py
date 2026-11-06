@@ -54,7 +54,8 @@ class RuntimeConfigService:
         defaults = self.get_default_values()
 
         items = []
-        for key in sorted(self._iter_runtime_config_keys()):
+        # Preserve the runtime_config.py definition order in set --json.
+        for key in self._iter_runtime_config_keys():
             if not self._feature_available(key) or (not include_hidden and not self.is_exposed_key(key)):
                 continue
 

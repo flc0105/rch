@@ -82,6 +82,8 @@ Client 主进程尝试将 Python Logging 同步镜像到 Client temp root 的 `c
 
 RCH 的能力发现并非 Server 在每次 Web 打开下拉框时扫描 Client 对象。Python Client 在构建握手时，通过其执行器与命令注册体系组装两份独立的 Manifest，并另行采集系统路径。这些信息最终挂在**这一条 ClientSession** 上；不同平台、不同 Client 构建可以提交不同结果。
 
+Web 以 `feature_manifest.log_viewer=false` 隐藏 Log Viewer，以 `feature_manifest.device_monitor=false` 在 Dashboard 显示不支持状态并停止建立监控会话；Go Client 当前将这两项声明为 `false`。Python Client 的 `log_viewer` 默认开启，可通过其启动 Feature 配置关闭。
+
 Go Client 的 `feature_manifest.scripts=true` 表示它能通过目标机器的外部 Python 解释器执行普通 Python Script；实际执行时若无法在 `PATH` 中找到 Python，会向该任务返回错误。Script Library 的 Schema 参数仍由 Server 解析，Go 端不提供 Python Client SDK。详见 [Scripts](scripts.md)。
 
 ### 命令注册表形成的 Command Manifest

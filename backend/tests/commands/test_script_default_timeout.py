@@ -22,6 +22,14 @@ def test_script_timeout_in_config_payload_and_persistence(script_settings, tmp_p
     keys = {item['key']: item for item in service.build_config_payload()['items']}
     assert keys['SCRIPT_DEFAULT_TIMEOUT']['default_value'] == 300
     assert keys['SCRIPT_DEFAULT_TIMEOUT']['group'] == 'script'
+    ordered = [item['key'] for item in service.build_config_payload()['items']]
+    assert ordered.index('SCRIPT_DEFAULT_TIMEOUT') == ordered.index('COMMAND_DEFAULT_STREAM_TIMEOUT') + 1
+    # The client declares display order; the UI consumes the returned list unchanged.
+    declared = [
+        key for key in service._iter_runtime_config_keys()
+        if service.is_exposed_key(key) and service._feature_available(key)
+    ]
+    assert ordered == declared
     service.set_config_value('SCRIPT_DEFAULT_TIMEOUT', '45')
     assert runtime_config.SCRIPT_DEFAULT_TIMEOUT == 45
     assert service.build_config_payload()['items']

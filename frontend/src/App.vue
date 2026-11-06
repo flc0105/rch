@@ -1000,6 +1000,7 @@ export default {
       const requested = source && typeof source === 'object' ? source : {}
       const selectedClientId = String(this.currentConnection?.client_id || '').trim()
       const targetClientId = String(requested.clientId || this.selectedId || '').trim()
+      if (targetClientId === selectedClientId && this.currentConnection?.feature_manifest?.log_viewer === false) return
       const useDefaultLog = !String(requested.path || '').trim()
         && !!selectedClientId && targetClientId === selectedClientId
         && !this.isCurrentConnectionOffline

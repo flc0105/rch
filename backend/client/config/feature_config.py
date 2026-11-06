@@ -12,10 +12,10 @@ external_tool and process_monitor only control Web entry availability.
 FEATURE_OVERRIDES = {}
 
 _DEFAULTS = {
-    'mac': {'external_tool': True, 'process_monitor': True, 'pty': True, 'screen_view': True, 'screen_input': True, 'clipboard': True, 'watchdog': True},
-    'win': {'external_tool': True, 'process_monitor': True, 'pty': True, 'screen_view': True, 'screen_input': True, 'clipboard': True, 'watchdog': True},
-    'linux': {'external_tool': True, 'process_monitor': True, 'pty': True, 'screen_view': False, 'screen_input': False, 'clipboard': False, 'watchdog': True},
-    'ios': {'external_tool': False, 'process_monitor': False, 'pty': False, 'screen_view': False, 'screen_input': False, 'clipboard': True, 'watchdog': False},
+    'mac': {'external_tool': True, 'process_monitor': True, 'pty': True, 'screen_view': True, 'screen_input': True, 'clipboard': True, 'watchdog': True, 'log_viewer': True},
+    'win': {'external_tool': True, 'process_monitor': True, 'pty': True, 'screen_view': True, 'screen_input': True, 'clipboard': True, 'watchdog': True, 'log_viewer': True},
+    'linux': {'external_tool': True, 'process_monitor': True, 'pty': True, 'screen_view': False, 'screen_input': False, 'clipboard': False, 'watchdog': True, 'log_viewer': True},
+    'ios': {'external_tool': False, 'process_monitor': False, 'pty': False, 'screen_view': False, 'screen_input': False, 'clipboard': True, 'watchdog': False, 'log_viewer': True},
 }
 
 def resolve_features(os_alias=None, overrides=None):

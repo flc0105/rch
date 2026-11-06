@@ -2,6 +2,8 @@
 
 Device Monitor 用于在用户打开监控界面时，按需从指定 Client 采集系统或进程状态，并持续将结果送到当前浏览器。它以 **Monitor Session** 为工作单位：Server 建立会话并绑定设备与浏览器标签页，Client 在独立工作线程中采样，Server 再通过定向 SSE 推送 Snapshot。监控过程不占用普通命令的 Foreground Command Slot，也不要求前端反复执行 Shell-like 命令。
 
+当 Client 明确声明 `feature_manifest.device_monitor=false`，Dashboard 显示不支持提示，不启动 Monitor Session，也不展示空白指标；监控会话上报错误时，Dashboard 显示原始错误信息并隐藏尚未取得数据的指标。Go Client 当前不提供 Device Monitor，Python Client 仍按其 Monitor Session 实现工作。
+
 Connection Info 中的 **Dashboard** 和独立的 **Process Manager（Processes / Apps）** 是这套机制的两个完整应用：前者关心设备资源，后者关心进程列表、图形应用和单个进程的详情。它们使用共同的传输协议，却拥有不同的 Session ID、采样内容和生命周期。即使同时打开，二者也无需共享相同的采样周期。
 
 ## 1. 按需会话与消息链路

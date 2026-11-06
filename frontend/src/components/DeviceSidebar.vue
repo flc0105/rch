@@ -123,20 +123,24 @@
                       :title="`${(item.listener_protocol || 'tcp').replaceAll('_', '/').toUpperCase()} · ${item.listener_name}`">
                 {{ item.listener_name }}
               </el-tag>
-              <ClockAlert
+              <el-tooltip
                 v-if="getConnectionDisplayState(item) === 'online' && item.client_revision_state === 'outdated'"
-                class="device-update-indicator"
-                :size="13"
-                aria-label="Client update available"
-                title="Client update available"
-              />
-              <ShieldPlus
+                content="Outdated"
+                placement="top"
+              >
+                <span class="device-indicator-tooltip" aria-label="Outdated">
+                  <ClockAlert class="device-update-indicator" :size="13" />
+                </span>
+              </el-tooltip>
+              <el-tooltip
                 v-if="getConnectionDisplayState(item) === 'online' && isElevated(item)"
-                class="device-elevated-indicator"
-                :size="13"
-                aria-label="Elevated client"
-                title="Elevated client"
-              />
+                content="Elevated"
+                placement="top"
+              >
+                <span class="device-indicator-tooltip" aria-label="Elevated">
+                  <ShieldPlus class="device-elevated-indicator" :size="13" />
+                </span>
+              </el-tooltip>
             </div>
             <div class="device-os">
               {{ formatOsLabel(item.os_type, item.os_ver) }}
@@ -1122,6 +1126,12 @@ async removeConnectionPermanently(item) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.device-indicator-tooltip {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
 }
 
 .device-update-indicator,
