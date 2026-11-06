@@ -136,6 +136,14 @@ Subprocess 的源码通过 stdin 送入 Python `-u -`，运行上下文与参数
 
 **重要：** `subprocess_pipe` 不意味着交互 SDK、导出的 Client 命令和所有只针对 In-process 编写的辅助函数都能保持可用。尤其 `context.confirm()` 等基于正在执行的 Client 上下文的 Web Interaction 应在受支持的 In-process Web Script 中使用。独立进程或嵌套脚本对 SDK 的支持应按具体接口判定，不能仅因可 import 模块就认定全部功能可用。
 
+### Go Client：外部 Python 执行
+
+Go Client 使用可选的本机 Python 解释器运行普通 Python Script。收到 Server 下发的 `type=script` 消息后，依次在系统 `PATH` 查找解释器：Windows 优先 `python`、再找 `python3`；macOS/Linux 优先 `python3`、再找 `python`。没有找到解释器时，本次 Script 返回明确错误，不会安装 Python 或影响 Go Client 连接。
+
+Web Script Library 保留现有 `SCRIPT_METADATA.params` 表单和 Server 参数校验：Server 根据 Schema 解析 `required`、`default`、类型和选项，再将参数字典通过 `extra` 交给 Go Client。Go 通过独立 Python 子进程执行收到的源码，提供 `kwargs` 及参数同名全局变量，支持常规 `print()`、标准库和目标机器已安装的 Python 包。脚本在目标 Client 工作目录中运行，stdout/stderr 通过已有命令结果通道回传；执行占用前台任务槽，支持取消，默认超时为 300 秒。
+
+这一执行环境提供普通 Python 运行能力，不注入 Python Client 的 Script SDK（例如 `context`、`artifact`、`scripts`、`keychains`、`workspace` 和导出的 Client 命令）。依赖这些 SDK 的脚本需选择 Python Client；在 Go Client 上调用时，按实际导入或名称错误反馈。Go 端第一版没有独立 `set` 运行时配置或 Python 路径选项；使用系统解释器，超时也不新增独立配置字段。
+
 ### 注入的名称与身份
 
 在 In-process Script 内，执行环境包含 `__name__ = '__main__'`、`kwargs`、参数对应的全局名称和 Script SDK 的模块入口。SDK 模块包括 `context`、`command`、`artifact`、`events`、`scripts`、`keychains`、`workspace`、`xt`。部分有 `@desc` 标记的 Client 导出命令还可作为便捷函数被注入；与 Python 内建函数、SDK 名称或保留上下文名称冲突的命令不会覆盖那些名称。

@@ -14,7 +14,7 @@ import (
 
 var unsupportedFeatures = []string{
 	"external_tool", "process_monitor", "pty", "screen_view", "screen_input",
-	"clipboard", "watchdog", "jobs", "scripts",
+	"clipboard", "watchdog", "jobs",
 }
 
 func featureManifest() map[string]bool {
@@ -23,6 +23,7 @@ func featureManifest() map[string]bool {
 		manifest[name] = false
 	}
 	manifest["remote_files"] = true
+	manifest["scripts"] = true
 	return manifest
 }
 

@@ -80,11 +80,14 @@ func TestHandshakeFieldsAndCapabilities(t *testing.T) {
 	if features, ok := payload["feature_manifest"].(map[string]bool); !ok || len(features) < 10 {
 		t.Fatalf("feature manifest missing: %#v", payload["feature_manifest"])
 	} else {
+		if !features["scripts"] {
+			t.Error("scripts must be enabled for external Python execution")
+		}
 		if !features["remote_files"] {
 			t.Error("remote_files must be enabled for basic file management")
 		}
 		for name, allowed := range features {
-			if name != "remote_files" && allowed {
+			if name != "remote_files" && name != "scripts" && allowed {
 				t.Errorf("unsupported feature %q is enabled", name)
 			}
 		}

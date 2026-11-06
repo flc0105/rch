@@ -67,9 +67,10 @@ test('only the empty top-level command list is re-ordered; typed-query filtering
 
 test('common_ops remains the canonical group name, with no command_ops alias', () => {
   const source = readFileSync(new URL('../src/components/CommandInputBar.vue', import.meta.url), 'utf8')
-  assert.match(source, /'python', 'acmd', 'common_ops', 'server', 'alias'/)
+  assert.match(source, /'python', 'acmd', 'common_ops', 'frontend', 'server', 'alias'/)
   assert.doesNotMatch(source, /command_ops|maintainance/)
   assert.deepEqual(Array.from(methods.sortDefaultCommandCandidates([
-    candidate('server', 'job'), candidate('common_ops', 'hostname'), candidate('acmd', 'acmd'),
-  ]), item => item.group), ['acmd', 'common_ops', 'server'])
+    candidate('server', 'job'), candidate('frontend', 'edit', 'frontend'),
+    candidate('common_ops', 'hostname'), candidate('acmd', 'acmd'),
+  ]), item => item.group), ['acmd', 'common_ops', 'frontend', 'server'])
 })

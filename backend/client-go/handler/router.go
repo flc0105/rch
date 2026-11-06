@@ -42,12 +42,44 @@ func Handle(session *executor.Session, msg map[string]interface{}) {
 		id, _ := msg["transfer_id"].(string)
 		session.CancelTransfer(id)
 
-	case "script", "acmd", "job_control":
+	case "acmd", "job_control":
 		// These are distinct protocol message types, not shell commands.
 		// Every received executable request must produce a terminal result.
 		if id, ok := messageID(msg, "id"); ok {
 			sendResult(session, id, 0, fmt.Sprintf("Unsupported command type on this Client: %s", msg["type"]))
 		}
+
+	case "script":
+		id, ok := messageID(msg, "id")
+		if !ok {
+			return
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		if !session.BeginShell(id, cancel) {
+			cancel()
+			sendResult(session, id, 0, "Client is busy executing a foreground command")
+			return
+		}
+		go func() {
+			defer cancel()
+			status, result := executor.RunExternalPythonScript(ctx, session, msg["text"], msg["extra"], func(streamStatus int, chunk string) {
+				_ = session.Sock.Send(map[string]interface{}{
+					"type": "result", "id": id, "status": streamStatus,
+					"text": chunk, "cwd": session.Cwd, "eof": 0,
+				})
+			})
+			cancelled, cancelID := session.EndShell(id)
+			if cancelled {
+				status, result = 0, "Script cancelled"
+			}
+			sendResult(session, id, status, result)
+			if cancelled {
+				_ = session.Sock.Send(map[string]interface{}{
+					"type": "cancel_ack", "id": cancelID,
+					"target_id": id, "accepted": true, "state": "stopped",
+				})
+			}
+		}()
 
 	case "command":
 		id, ok := messageID(msg, "id")

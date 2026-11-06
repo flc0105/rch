@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net"
+	"os/exec"
 	"runtime"
 	"strings"
 	"testing"
@@ -35,7 +36,7 @@ func receive(t *testing.T, peer *protocol.RATSocket) map[string]interface{} {
 }
 
 func TestUnsupportedExecutionMessagesReturnFailure(t *testing.T) {
-	for _, typ := range []string{"script", "acmd", "job_control"} {
+	for _, typ := range []string{"acmd", "job_control"} {
 		t.Run(typ, func(t *testing.T) {
 			session, peer := pair(t)
 			go Handle(session, map[string]interface{}{"type": typ, "id": float64(27), "text": "script body"})
@@ -272,5 +273,53 @@ func TestShellStreamCancelledAfterRealOutputAndSubsequentCommand(t *testing.T) {
 	next := receive(t, peer)
 	if next["id"] != float64(203) || next["status"] != float64(1) {
 		t.Fatalf("command after cancel failed: %#v", next)
+	}
+}
+
+func TestScriptMessageExecutesExternalPythonAndReturnsFinalFrame(t *testing.T) {
+	if _, err := exec.LookPath("python3"); err != nil {
+		if _, err := exec.LookPath("python"); err != nil {
+			t.Skip("no Python interpreter")
+		}
+	}
+	session, peer := pair(t)
+	Handle(session, map[string]interface{}{
+		"type": "script", "id": float64(90),
+		"text":  "print('hi:' + kwargs['target'])",
+		"extra": map[string]interface{}{"target": "folder one"},
+	})
+	var chunks []string
+	for i := 0; i < 12; i++ {
+		result := receive(t, peer)
+		if result["id"] != float64(90) || result["type"] != "result" {
+			t.Fatalf("invalid script frame: %#v", result)
+		}
+		if result["eof"] == float64(1) {
+			if result["status"] != float64(1) {
+				t.Fatalf("script failed: %#v", result)
+			}
+			if !strings.Contains(strings.Join(chunks, "\n"), "hi:folder one") {
+				t.Fatalf("output missing: %#v", chunks)
+			}
+			return
+		}
+		chunks = append(chunks, result["text"].(string))
+	}
+	t.Fatal("script missing EOF frame")
+}
+
+func TestScriptBadParametersFailWithoutBreakingSession(t *testing.T) {
+	session, peer := pair(t)
+	Handle(session, map[string]interface{}{
+		"type": "script", "id": float64(91), "text": "print('hi')", "extra": []string{"wrong"},
+	})
+	result := receive(t, peer)
+	if result["eof"] != float64(1) || result["status"] != float64(0) || !strings.Contains(result["text"].(string), "parameters") {
+		t.Fatalf("unexpected script failure: %#v", result)
+	}
+	go Handle(session, map[string]interface{}{"type": "command", "id": float64(92), "text": "pwd"})
+	next := receive(t, peer)
+	if next["eof"] != float64(1) || next["status"] != float64(1) {
+		t.Fatalf("command slot not released: %#v", next)
 	}
 }

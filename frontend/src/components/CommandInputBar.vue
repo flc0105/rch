@@ -1627,7 +1627,9 @@ const pinnedHistoryItems = historyItems.filter(item => item && item.is_pinned)
         const aliasCandidates = visibleSystemCandidates.filter(item => item.source === 'alias')
         const scriptCandidates = visibleSystemCandidates.filter(item => item.source === 'script')
         const commonOpsCandidates = this.buildCommonOpsCandidates()
+        const frontendCandidates = this.buildFrontendCommandCandidates()
 
+        frontendCandidates.forEach(pushUniqueCandidate)
         clientCandidates.forEach(pushUniqueCandidate)
         acmdCandidates.forEach(pushUniqueCandidate)
         serverCandidates.forEach(pushUniqueCandidate)
@@ -1678,6 +1680,13 @@ const pinnedHistoryItems = historyItems.filter(item => item && item.is_pinned)
       return String(this.currentConnection?.machine_id || '').trim()
     },
 
+    buildFrontendCommandCandidates() {
+      return [
+        { name: 'edit', help: 'Edit a remote text file', source: 'frontend', group: 'frontend' },
+        { name: 'clear', help: 'Clear terminal output', source: 'frontend', group: 'frontend' },
+      ]
+    },
+
     buildCommonOpsCandidates() {
       return [
         {
@@ -1712,7 +1721,7 @@ const pinnedHistoryItems = historyItems.filter(item => item && item.is_pinned)
       const groupOrder = [
         'shell', 'execution', 'session', 'system', 'network', 'privilege',
         'media', 'file', 'automation', 'transfer', 'runtime', 'maintenance',
-        'python', 'acmd', 'common_ops', 'server', 'alias',
+        'python', 'acmd', 'common_ops', 'frontend', 'server', 'alias',
       ]
       const rank = new Map(groupOrder.map((name, index) => [name, index]))
       const groupOf = (item) => {
