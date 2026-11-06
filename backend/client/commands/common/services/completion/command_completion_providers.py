@@ -179,6 +179,21 @@ class DownloadPathCommandCompletionProvider(FileSystemChildPathCommandCompletion
         return f'Download file -> {path}'
 
 
+class EditPathCommandCompletionProvider(DownloadPathCommandCompletionProvider):
+    """Remote text-file editor path completion for the local RCHCLI command."""
+
+    command_names = ('edit',)
+    source = 'client_edit'
+
+    def build_insert_text(self, candidate_path: str, item: dict | None = None) -> str:
+        return f'edit {candidate_path}'.strip()
+
+    def build_description(self, path: str, item: dict | None = None) -> str:
+        if bool((item or {}).get('is_dir')):
+            return f'Enter directory -> {path}'
+        return f'Edit file -> {path}'
+
+
 class RuntimeConfigSetCommandCompletionProvider(CommandCompletionProvider):
     """
     client set 命令 runtime_config 补全。

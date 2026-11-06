@@ -9,8 +9,8 @@ import (
 	"strings"
 )
 
-// The Web Terminal reuses the same read-only cd/download path completion contract
-// for explicit path markers, regardless of which Client implementation is connected.
+// Path completion is used by Web Terminal and RCHCLI, including the local
+// `edit` command; it does not execute the requested command.
 var _ = Register(
 	"command_completions",
 	Usage("command_completions <payload>"),
@@ -64,7 +64,7 @@ func completeFileSystemCommands(ctx context.Context, session *Session, raw strin
 	prefix := strings.TrimSpace(input[:cursor])
 	command, argument, hasArgument := strings.Cut(prefix, " ")
 	command = strings.ToLower(command)
-	if command != "cd" && command != "download" {
+	if command != "cd" && command != "download" && command != "edit" {
 		return jsonResult(map[string]interface{}{"items": []interface{}{}})
 	}
 	if !hasArgument {

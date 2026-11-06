@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Remote RCH operator console (HTTP command API + WebSocket events).
 
-Only the Server interprets RCH commands. This program implements the console
-navigation and the transport needed to receive their live output.
+The Server interprets remote RCH commands. This program handles local console
+navigation and editing, plus transport for remote command output.
 """
 
 import argparse
@@ -60,7 +60,7 @@ class RchApi:
         self.timeout = timeout
         self.opener = build_opener(NoCredentialRedirects())
 
-    def request(self, method, path, payload=None, extra_headers=None):
+    def request(self, method, path, payload=None, extra_headers=None, *, timeout=None):
         body = None if payload is None else json.dumps(payload).encode('utf-8')
         headers = {'Authorization': 'Bearer ' + self.token, 'Accept': 'application/json'}
         if body is not None:
@@ -69,7 +69,7 @@ class RchApi:
         # Only the exact RCH root is accepted by endpoint_urls; paths stay local.
         request = Request(self.root + path, data=body, headers=headers, method=method)
         try:
-            with self.opener.open(request, timeout=self.timeout) as response:
+            with self.opener.open(request, timeout=self.timeout if timeout is None else timeout) as response:
                 result = json.load(response)
         except HTTPError as exc:
             try:
@@ -403,18 +403,43 @@ class RemoteConsole:
                     if item.startswith(text.lower())]
 
         client_id = self.selected['client_id']
-        query = text.strip().lower()
+        query_text = text.strip()
+        query_lower = query_text.lower()
         catalog = self.api.command_candidates(client_id)
         result = []
         seen = set()
 
         def add(candidate):
             value = str(candidate.get('insert_text') or candidate.get('name') or '').strip()
-            if value and value.lower().startswith(query) and value.lower() not in seen:
-                seen.add(value.lower())
+            metadata = candidate.get('metadata') or {}
+            is_path = (
+                candidate.get('kind') in ('directory', 'file', 'path')
+                or (isinstance(metadata, dict) and metadata.get('isDir') is True)
+            )
+            # Keep filesystem matching case-sensitive. In particular, on macOS
+            # `/Users` and `/usr` both matched `/Us` here; libedit then computed
+            # their case-sensitive common prefix as `/` and erased the typed
+            # path fragment. Command names/subcommands remain case-insensitive.
+            matches = value.startswith(query_text) if is_path else value.lower().startswith(query_lower)
+            dedupe_key = value if is_path else value.lower()
+            if value and matches and dedupe_key not in seen:
+                seen.add(dedupe_key)
                 result.append({**candidate, 'insert_text': value,
                                'title': str(candidate.get('title') or value),
                                'description': str(candidate.get('description') or candidate.get('help') or '')})
+
+        # `edit` is implemented locally by RCHCLI (not by the remote Client
+        # manifest), but its path arguments use the same Client completion API.
+        if ' ' not in text and 'edit'.startswith(query_lower):
+            add({
+                'name': 'edit',
+                'title': 'edit',
+                'insert_text': 'edit',
+                'description': 'Edit a remote text file with the local terminal editor',
+                'source': 'rchcli',
+                'group': 'local',
+                'kind': 'local_command',
+            })
 
         # Like the Web command bar: first-token suggestions come from the
         # command catalog, not the context-specific command-completions API.
@@ -759,6 +784,7 @@ class RemoteConsole:
         self.line('  bg, exit                Return to server>')
         self.line('  :complete <input>       Choose a completion; :complete again continues draft')
         self.line('  :clear                  Discard a completion draft')
+        self.line('  edit <remote-path>      Edit remote text using local vim/vi')
         self.line('  :pty [shell]           Remote PTY (macOS/Linux; Ctrl+] then q closes)')
         self.line('  Tab                     Complete input (when readline is available)')
         self.line('  Ctrl+C                  Request task cancellation, wait for final state')
@@ -815,6 +841,16 @@ class RemoteConsole:
                         raise RchCliError('Invalid command (NUL character); re-enter the text')
                     self.completion_draft = None
                     if self.selected:
+                        parts = command.split(None, 1)
+                        if parts[0].lower() == 'edit':
+                            from rchcli_edit import RemoteEditError, RemoteFileEditor
+                            try:
+                                path = parts[1] if len(parts) > 1 else ''
+                                message = RemoteFileEditor(self.api).edit(self.selected['client_id'], path)
+                                self.line(message, color=self.GREEN)
+                            except RemoteEditError as exc:
+                                raise RchCliError(str(exc)) from exc
+                            continue
                         if command == ':pty' or command.startswith(':pty '):
                             if os.name != 'posix' or sys.platform == 'ios':
                                 raise RchCliError('PTY requires a macOS/Linux system terminal')

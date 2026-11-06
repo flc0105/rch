@@ -434,7 +434,7 @@ class RemoteClientCommandCompletionProvider(CommandCompletionProvider):
     代理 client 侧 CommandCompletionProvider。
     """
 
-    command_names = ('cd', 'set', 'download')
+    command_names = ('cd', 'set', 'download', 'edit')
     source = 'client'
     group = 'client'
 

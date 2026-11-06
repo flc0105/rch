@@ -26,6 +26,8 @@ func TestCommandCompletionsFilesDirectoriesAndPrefixes(t *testing.T) {
 	}{
 		{"cd ", []string{"dir one", "dir two"}},
 		{"download ", []string{"dir one", "dir two", "file one.txt"}},
+		{"edit ", []string{"dir one", "dir two", "file one.txt"}},
+		{"edit dir one/", []string{"dir one/child.txt"}},
 		{"download dir one/", []string{"dir one/child.txt"}},
 		{"unknown ", []string{}},
 	}

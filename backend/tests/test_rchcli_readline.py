@@ -134,6 +134,45 @@ class ReadlineSetupTests(unittest.TestCase):
                          'download /Users/')
         restore()
 
+    def test_path_filter_keeps_case_sensitive_match_and_prevents_libedit_common_prefix_regression(self):
+        rc, rd, restore = self._setup('editline')
+        rc.api.completions = lambda client_id, raw: [
+            {'insert_text': 'cd /Users', 'kind': 'directory'},
+            {'insert_text': 'cd /usr', 'kind': 'directory'},
+        ]
+        rd.buffer = 'cd /Us'
+        rd.begin_index = 0
+
+        candidates = rc.completion_candidates('cd /Us')
+        self.assertEqual([item['insert_text'] for item in candidates], ['cd /Users'])
+        self.assertEqual(rd.completer('cd /Us', 0), 'cd /Users/')
+        self.assertIsNone(rd.completer('cd /Us', 1))
+        restore()
+
+    def test_path_filter_remains_case_sensitive_for_lowercase_prefix(self):
+        rc = make_console()
+        rc.api.completions = lambda client_id, raw: [
+            {'insert_text': 'cd /Users', 'kind': 'directory'},
+            {'insert_text': 'cd /usr', 'kind': 'directory'},
+        ]
+        candidates = rc.completion_candidates('cd /us')
+        self.assertEqual([item['insert_text'] for item in candidates], ['cd /usr'])
+
+    def test_edit_is_suggested_as_local_command_and_uses_remote_path_completion(self):
+        rc = make_console()
+        local = rc.completion_candidates('edi')
+        self.assertIn('edit', [item['insert_text'] for item in local])
+
+        rc.api.completions = lambda client_id, raw: [
+            {'insert_text': 'edit /Users/flc/Desktop', 'kind': 'directory'},
+            {'insert_text': 'edit /Users/flc/notes.txt', 'kind': 'file'},
+        ]
+        paths = rc.completion_candidates('edit /Users/flc/')
+        self.assertEqual(
+            [item['insert_text'] for item in paths],
+            ['edit /Users/flc/Desktop', 'edit /Users/flc/notes.txt'],
+        )
+
     def test_mac_libedit_multiword_job_name_no_prefix_duplication(self):
         rc, rd, restore = self._setup('editline')
         rc.completion_candidates = lambda raw: [
