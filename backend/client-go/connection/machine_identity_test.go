@@ -53,7 +53,7 @@ func TestFingerprintVersionPrefersDottedDigits(t *testing.T) {
 
 func TestHandshakeFieldsAndCapabilities(t *testing.T) {
 	id := detectHostIdentity()
-	c := &Client{clientID: "go-test-id", identity: id}
+	c := &Client{clientID: "go-test-id", identity: id, launch: launchContext{"terminal_background", "zsh"}}
 	payload := c.buildHandshake("/some/workspace")
 	required := []string{
 		"machine_id", "machine_fingerprint_basis", "os_type", "os_alias", "os_name", "os_ver",
@@ -74,11 +74,8 @@ func TestHandshakeFieldsAndCapabilities(t *testing.T) {
 	if payload["os_type"] == runtime.GOOS && runtime.GOOS != "linux" {
 		t.Fatalf("os_type should be a display name rather than GOOS: %v", payload["os_type"])
 	}
-	if _, ok := payload["launch_mode"]; ok {
-		t.Fatal("launch mode was not requested")
-	}
-	if _, ok := payload["launch_source"]; ok {
-		t.Fatal("launch source was not requested")
+	if payload["launch_mode"] != "terminal_background" || payload["launch_source"] != "zsh" {
+		t.Fatalf("launch snapshot missing or modified: mode=%v source=%v", payload["launch_mode"], payload["launch_source"])
 	}
 	if features, ok := payload["feature_manifest"].(map[string]bool); !ok || len(features) < 10 {
 		t.Fatalf("feature manifest missing: %#v", payload["feature_manifest"])

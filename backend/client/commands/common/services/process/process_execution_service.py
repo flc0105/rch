@@ -6,6 +6,7 @@ import threading
 import time
 
 from client.commands.runtime.context import CommandCancelledError, CommandTimeoutError
+from core.utils.parsing import split_shell_arguments
 
 
 class ProcessExecutionService:
@@ -197,37 +198,67 @@ class ProcessExecutionService:
         effective_timeout = getattr(self.owner, 'DEFAULT_STREAM_TIMEOUT', None) if timeout is None else timeout
         return self.wait_process_with_cancel_support(process, timeout=effective_timeout)
 
+    @staticmethod
+    def _reap_independent_process(process: subprocess.Popen):
+        # The caller returns immediately; reap exited children to avoid zombies.
+        threading.Thread(
+            target=process.wait,
+            name=f'rch-process-reaper-{process.pid}',
+            daemon=True,
+        ).start()
+
+    def spawn_detached_program(self, command: str):
+        """Exec the specified program in a new session without a shell intermediary."""
+        argv = split_shell_arguments(command, literal_backslashes=(os.name == 'nt'))
+        if not argv:
+            raise ValueError('Program is required')
+
+        # Permit a bare executable filename in the current Client directory,
+        # even when that directory is not in PATH (normal on Unix).
+        if not os.path.dirname(argv[0]):
+            local_program = os.path.join(os.getcwd(), argv[0])
+            if os.path.isfile(local_program):
+                argv[0] = local_program
+
+        kwargs = {
+            'stdin': subprocess.DEVNULL,
+            'stdout': subprocess.DEVNULL,
+            'stderr': subprocess.DEVNULL,
+            'close_fds': True,
+        }
+        if os.name == 'nt':
+            kwargs['creationflags'] = (
+                subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+            )
+        else:
+            kwargs['start_new_session'] = True
+
+        process = subprocess.Popen(argv, **kwargs)
+        self._reap_independent_process(process)
+        return process
+
     def spawn_background_process(self, command: str):
-        """
-        启动后台进程并立即返回
-        """
+        """Launch a shell command in background; its PID belongs to the shell."""
         if os.name == 'nt':
             creation_flags = 0
             for attr_name in ('DETACHED_PROCESS', 'CREATE_NEW_PROCESS_GROUP'):
                 creation_flags |= getattr(subprocess, attr_name, 0)
-
-            return subprocess.Popen(
+            process = subprocess.Popen(
                 command,
                 shell=True,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
-                creationflags=creation_flags
+                creationflags=creation_flags,
             )
-
-        return subprocess.Popen(
-            command,
-            shell=True,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True
-        )
-
-
-
-
-
-
-
-
+        else:
+            process = subprocess.Popen(
+                command,
+                shell=True,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+        self._reap_independent_process(process)
+        return process

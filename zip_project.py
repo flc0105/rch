@@ -21,15 +21,12 @@ IGNORE_PATHS = {
     "frontend/node_modules",
     "frontend/.vite",
     "frontend/.vscode",
-
-    "backend/client-go",
-    "backend/go-loader",
     "backend/runtime",
     "backend/static",
     "backend/venv",
-    "backend/server/resources/jobs",
-    "backend/server/resources/scripts",
-    "backend/server/resources/aliases.json",
+    #"backend/server/resources/jobs",
+    #"backend/server/resources/scripts",
+    #"backend/server/resources/aliases.json",
     "backend/server/resources/external_tools/packages",
 }
 

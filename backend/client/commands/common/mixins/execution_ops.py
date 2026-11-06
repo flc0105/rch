@@ -20,6 +20,7 @@ class CommandExecutionMixin:
     这里只保留执行相关逻辑：
     - shell
     - bgrun
+    - run_detached
     - shell_stream
     - pyexec
     - pyexec_stream
@@ -209,6 +210,9 @@ class CommandExecutionMixin:
         """
         return self._get_process_execution_service().spawn_background_process(command)
 
+    def _spawn_detached_program(self, command: str):
+        return self._get_process_execution_service().spawn_detached_program(command)
+
     # ------------------ 基础执行命令 ------------------ #
     @desc('Change working directory', group='shell')
     def cd(self, path):
@@ -263,6 +267,22 @@ class CommandExecutionMixin:
             return 0, 'Command timed out and was terminated'
         except Exception as e:
             return 0, f'Failed to start background process: {e}'
+
+    @desc('Start an independent program in a new session', group='execution')
+    def run_detached(self, command):
+        command_text = (command or '').strip()
+        if not command_text:
+            return 0, 'Usage: run_detached <program> [args...]'
+
+        try:
+            process = self._spawn_detached_program(command_text)
+            return 1, (
+                f'Detached process started\n'
+                f'PID: {process.pid}\n'
+                f'Command: {command_text}'
+            )
+        except Exception as e:
+            return 0, f'Failed to start detached process: {e}'
 
     @desc('Run a command with live output', group='execution', output='stream')
     @cancel_policy('process')

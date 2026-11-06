@@ -31,6 +31,9 @@ class iOSCommands(CommonCommands):
     def bgrun(self, command=''):
         return self.shell(command)
 
+    def run_detached(self, command=''):
+        return self.shell(command)
+
     def is_elevated(self):
         return 0, 'Privilege elevation is unavailable on iOS'
 

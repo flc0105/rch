@@ -12,10 +12,11 @@ import (
 type Client struct {
 	clientID string
 	identity hostIdentity
+	launch   launchContext
 }
 
 func New() *Client {
-	return &Client{clientID: executor.NewClientID(), identity: detectHostIdentity()}
+	return &Client{clientID: executor.NewClientID(), identity: detectHostIdentity(), launch: detectLaunchContext()}
 }
 
 func (c *Client) Run() {

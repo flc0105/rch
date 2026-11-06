@@ -8,7 +8,7 @@
 
 `launch_source` 保存该形态下可识别的具体宿主、Shell、IDE 或系统服务管理器。
 
-例如：
+Python Client 在 PyCharm 直接启动时，例如：
 
 ```text
 launch_mode=ide
@@ -27,7 +27,7 @@ RCH 的 `spawn_instance`、`relaunch_instance`、update、Watchdog recovery 等�
 
 ## 2. 标准 Launch Mode
 
-当前标准 mode 固定为八类：
+Python Client 使用以下八类标准 mode。Go Client 使用其中七类：`terminal`、`terminal_background`、`detached`、`user_service`、`system_service`、`scheduled` 和 `unknown`，不识别 `ide`。
 
 | `launch_mode` | UI | 含义 | 常见 `launch_source` |
 | --- | --- | --- | --- |
@@ -55,7 +55,7 @@ Scheduled (Task Scheduler)
 
 ## 3. 判定时机与生命周期
 
-Launch Mode 在 Client 进程生命周期内采集一次并缓存。Socket 断线、重连、Heartbeat 或页面刷新不会重新判定。
+Python 和 Go Client 的 Launch Mode 均在 Client 进程生命周期内采集一次并缓存。Socket 断线、重连、Heartbeat 或页面刷新不会重新判定。
 
 这样可以避免父进程退出或进程被系统重新收养后，同一个 Client 的 Launch Mode 在运行期间改变。新的 OS 进程会重新形成自己的 Launch Mode 快照。
 
@@ -86,12 +86,12 @@ Connection History 使用既有 `connection_sessions.snapshot_json` 保存这两
 2. **Scheduler / Service manager**：cron、Task Scheduler 根据实际进程宿主识别；macOS 通过运行中的 launchd 作业和 PID 验证；Linux 将当前进程的 cgroup 所属 `.service` unit 与 `systemctl show` 的 `ActiveState=active`、`MainPID` 精确核对；Windows 将当前 PID 与运行中的 SCM 服务注册信息匹配。
 3. **POSIX 独立 session**：没有交互 TTY 且当前进程是 session leader 时，记录为 `detached / new_session`。
 4. **直接 Shell**：识别 zsh/bash/sh/fish/CMD/PowerShell 等直接父进程，根据控制终端或前台进程组判断。Windows 先通过 `GetConsoleProcessList` 核实当前进程是否附着控制台，再检查标准流是否可交互。继承的控制台句柄和 `GetConsoleWindow()` 都不能单独证明 Terminal；没有控制台附着的 Shell 子进程归为 Detached。
-5. **IDE**：识别 PyCharm / pydevd / JetBrains 环境。
+5. **IDE（仅 Python Client）**：识别 PyCharm / pydevd / JetBrains 环境。
 6. **剩余交互式 TTY**：记录为 `terminal`，source 可为空。
 7. **Windows 无控制台剩余进程**：记录为 `detached / detached_process`。
-8. **macOS 无控制终端**：在没有已验证服务、Shell 或 IDE 宿主时，若系统报告没有控制终端则归为 `detached`。其他情况为 `unknown`。
+8. **macOS 无控制终端**：在没有已验证服务或 Shell（以及 Python Client 的 IDE）宿主时，若系统报告没有控制终端则归为 `detached`。其他情况为 `unknown`。
 
-Service/Scheduler 检测会查看进程祖先链，因此 `cron → sh -c → python` 仍能归为 `Scheduled (cron)`。Shell 分类只认**直接父 Shell**，这样 PyCharm 内置 Terminal 会显示 Terminal，而 PyCharm Run/Debug 会显示 IDE。
+Service/Scheduler 检测会查看进程祖先链，因此 `cron → sh -c → python` 仍能归为 `Scheduled (cron)`。Shell 分类只认**直接父 Shell**，因此 PyCharm 内置 Terminal 显示 Terminal，Python Client 通过 PyCharm Run/Debug 启动显示 IDE。Go Client 不使用 PyCharm 环境变量或祖先信息进行 IDE 分类；它根据当前进程的 Session、控制终端及服务宿主确定模式。macOS 使用系统 `getsid()` 获取 Session ID，并识别 `-zsh` 等登录 Shell 名称。
 
 ## 5. RCH 自己创建的新 Client
 

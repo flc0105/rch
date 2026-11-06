@@ -1308,6 +1308,7 @@ The Client command manifest contains the common execution primitives that are ea
 cd
 shell
 bgrun
+run_detached
 shell_stream
 pyexec
 pyexec_stream
@@ -1320,6 +1321,7 @@ Their roles are intentionally different:
 | `cd <path>` | Changes the Client process working directory; without an argument, reports current CWD |
 | `shell <command>` | Runs a shell command and waits for the final result |
 | `bgrun <command>` | Starts a background process and returns immediately with the PID |
+| `run_detached <program> [args...]` | Starts the executable directly in an independent background session and returns its PID; no shell is involved |
 | `shell_stream <command>` | Runs a subprocess while streaming output live to the terminal |
 | `pyexec <code>` | Executes Python and returns collected output |
 | `pyexec_stream <code>` | Executes Python with streaming output |

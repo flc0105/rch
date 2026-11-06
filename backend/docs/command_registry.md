@@ -194,7 +194,7 @@ iOS 的命令可见性由 `iOSCommands` 的实际导出方法和 ACMD Registry �
 普通 Client 命令的可见名称直接来自 `@desc` 修饰的方法名，`group`
 决定 Manifest、Client Help 和 Info → Commands 的分类。重命名后不保留旧名称兼容入口。
 本次分组使用 `shell`（`cd`、`pwd`）、`execution`（`shell`、`shell_stream`、
-`bgrun`、`pyexec`、`pyexec_stream`）、`file`（`file_shred`、`zip_dir`、`unzip`）、
+`bgrun`、`run_detached`、`pyexec`、`pyexec_stream`）、`file`（`file_shred`、`zip_dir`、`unzip`）、
 `session`（`var`、`kill_instance`、`reexec_instance`、`relaunch_instance`、`spawn_instance`）、
 `runtime`（`watchdog`、`set`）、`maintenance`（`clean`、`update`）、
 `transfer`（`download`）、`automation`（`keyboard_send`）、

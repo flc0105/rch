@@ -41,7 +41,7 @@ Client 主进程尝试将 Python Logging 同步镜像到 Client temp root 的 `c
 
 `launch_mode` 描述 Client 的外部运行形态，取值为 `terminal`、`terminal_background`、`ide`、`detached`、`user_service`、`system_service`、`scheduled` 或 `unknown`。`launch_source` 保存该形态下可识别的具体环境，例如 `zsh`、`powershell`、`pycharm`、`launchagent`、`launchdaemon`、`cron` 或 `schtasks`。判定在 Client 进程生命周期内只采集一次，网络重连继续沿用同一结果；由 Client 自身重新创建出的独立后台进程按其实际进程形态记录为 `detached`。macOS 对 LaunchAgent/LaunchDaemon 通过 launchd 的运行作业与当前 PID 双重核对；Detached 则依靠 session/控制终端状态，不依赖启动器环境标记。无法可靠识别的环境使用 `unknown`。完整分类表、判定优先级与跨平台实机测试命令见 [Client Launch Mode](launch_mode.md)。
 
-`integrity` 由 Client 权限探测逻辑计算，不是对 Server 授予的权限。`python_execution_mode` 和传输模式表示 Client 当前配置，不构成“此 Client 支持所有 Web 功能”的通用能力证明。界面如需展示某个实时可执行状态，应调用相应的运行时 API，而不是反复读取握手快照。
+`integrity` 由 Client 权限探测逻辑计算：Go 与 Python Client 在 Windows 上均从当前进程 Token 的 `TokenIntegrityLevel` SID 读取完整性 RID，映射为 `Untrusted`、`Low`、`Medium`、`Medium High`、`High`、`System`、`Protected` 或 `Unknown`；POSIX 则依据 effective UID 区分 `User`、`Root` 和 `Root (via sudo)`。Go Client 同样在进程启动时采集 `launch_mode` / `launch_source`，重连时保持快照。`python_execution_mode` 和传输模式表示 Client 当前配置，不构成“此 Client 支持所有 Web 功能”的通用能力证明。界面如需展示某个实时可执行状态，应调用相应的运行时 API，而不是反复读取握手快照。
 
 ### 消息结构示意
 
@@ -193,7 +193,8 @@ Go Client 支持 TCP 和 TLS/TCP 监听器。Go (Simple) 构建时注入 Listene
 
 这一独立实现只用于解释连接能力边界，不属于上文 Python Client 握手工作流。它在 TCP 连接后同样发送 `type: "info"`，并在同一进程的重新连接间沿用 Client ID，但当前上报内容较少：
 
-- 基础字段包括 `id`、`os_type`、`os_ver`、`hostname`、`cwd`、`integrity`、`go_version` 和 `build_version`。
+- 基础字段包括 `id`、`os_type`、`os_ver`、`hostname`、`cwd`、`integrity`、`go_version` 和 `build_version`；其中 Windows `integrity` 读取当前进程 Token 的完整性 RID。
+- `launch_mode` / `launch_source` 支持 `terminal`、`terminal_background`、`detached`、`user_service`、`system_service`、`scheduled`、`unknown` 七类外部运行形态，不使用 Python Client 的 `ide` 分类；启动时采集一次并在重连时复用，服务类型由实际管理器与当前进程 PID 核对。
 - `command_manifest` 来自 Go 自身的命令执行器，涵盖基本文件操作；`variable_manifest` 仍为空列表。
 - `system_paths` 提供 Root、Home、Desktop、Documents、Downloads、Temp 和可执行文件目录，用于 Remote Files Quick Jump。
 - `machine_id` 和 `machine_fingerprint_basis` 使用 Go 的机器身份实现；`client_revision` 及 Python 源码指纹明细没有上报。

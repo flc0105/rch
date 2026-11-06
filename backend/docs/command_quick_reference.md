@@ -78,11 +78,12 @@ Alias 的模板参数、平台覆盖与安全边界见 [Aliases / Quick Actions]
 | `shell <command>` | 启动系统 Shell 子进程，等待完成后收集输出 | 适合短任务；非零退出码通常返回失败 |
 | `shell_stream <command>` | 启动 Shell 子进程，边运行边发送标准输出/错误 | 适合观察日志或持续输出；交互式终端使用 PTY |
 | `bgrun <command>` | 在后台启动程序并尽快返回 PID | 不等待最终结果，也不持续收集输出 |
+| `run_detached <program> [args...]` | 直接启动程序并创建独立后台进程，返回程序 PID | 无 Shell 中间进程；不解释管道或重定向；标准流关闭 |
 | `pyexec <code>` | 在 Client Python 环境执行代码并汇总输出 | 执行模式依赖 Python Runtime 配置 |
 | `pyexec_stream <code>` | 执行 Python 代码并推送中间输出 | 按当前 Python 执行模式流式输出 |
 | `piplist` | 列出当前 Client Python 环境中的第三方包 | 查询**目标 Client**的解释器环境 |
 
-**`shell`、`shell_stream`、`bgrun` 依赖目标平台可创建系统子进程。** 在普通 iOS / Pythonista 中，这类操作通常受限；`pyexec`、进程内 Script 和进程内 Job 使用 Python 执行路径，按其自身依赖与权限运行。详见 [iOS / Pythonista](ios_pythonista.md) 与 [Shell-like Commands](shell_like_commands.md)。
+**`shell`、`shell_stream`、`bgrun`、`run_detached` 依赖目标平台可创建系统子进程。** 在普通 iOS / Pythonista 中，这类操作通常受限；`pyexec`、进程内 Script 和进程内 Job 使用 Python 执行路径，按其自身依赖与权限运行。详见 [iOS / Pythonista](ios_pythonista.md) 与 [Shell-like Commands](shell_like_commands.md)。
 
 ### 系统信息、网络和运行环境
 

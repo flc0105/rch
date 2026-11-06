@@ -81,6 +81,7 @@ Server 的命令层同样拥有自己的快捷入口和历史重放。例如 `!<
 | `shell <command>` | 启动一次性 Shell 子进程，收集最终输出 | 使用受管理子进程，可请求取消 |
 | `shell_stream <command>` | 启动 Shell 子进程，持续推送 stdout/stderr | 使用受管理子进程，可请求取消 |
 | `bgrun <command>` | 启动后台进程并立即返回 PID | 不等待执行完成，也不提供本次命令的持续取消能力 |
+| `run_detached <program> [args...]` | 直接执行程序并启动独立后台进程 | PID 属于目标程序；不经过 Shell；退出后由 Client 回收进程状态 |
 | `cd <path>` | 修改 Client 自己的当前工作目录 | 后续命令可观察到目录变化 |
 
 例如：
@@ -104,6 +105,16 @@ bgrun echo hello
 ```
 
 会尝试在后台启动命令并报告进程 PID，不代表该命令最终成功完成。后台进程的标准输入、输出和错误输出不会继续由当前命令收集。
+
+如果需要真正独立的程序进程，而不是由 Shell 启动命令，使用：
+
+```text
+run_detached ./my-program --config "settings with spaces.json"
+```
+
+`run_detached` 使用目标 Client 当前工作目录，支持带引号的路径和参数。当前目录里的可执行文件可直接写文件名（不要求把 `.` 加入 `PATH`）。macOS/Linux 创建新 Session；Windows 使用独立后台进程标志。标准输入、输出、错误均重定向到空设备，Client 在子进程退出后回收其状态；命令返回后不持续控制子进程。如果需要 Shell 的管道、环境变量展开或重定向，显式传入对应 Shell 作为程序，例如 `run_detached sh -c "..."`，这时 PID 属于所启动的 Shell。启动前应确保文件已具备执行权限。
+
+`bgrun` 仍提供 Shell 命令执行方式，并在 Shell 退出后回收进程状态；返回的 PID 可能属于 Shell 中间进程。两种命令都只确认启动成功，不等待程序最终完成。
 
 Python 执行也有收集输出与流式输出两种入口，其运行模式由 Client 的 Python Runtime Configuration 决定。`inproc` 在当前解释器中执行，不可强制杀停；`subprocess_pipe` 在受管理子进程中运行，支持取消与进程终止。执行策略会在运行时设置相应的取消能力，而不是仅靠命令名称判断。这些入口仍属于普通命令体系，但和 `script` 协议的完整脚本运行流程不是同一件事。
 

@@ -53,7 +53,7 @@ RCH 为 iOS 选择独立的平台能力实现，但保留 Server / Client 的统
 
 RCH 的浏览器终端按 Client 平台分派命令。iOS Client **不支持交互式 PTY 会话**；普通 RCH Command 和进程内 Python Script 沿各自的 Python 执行路径运行。
 
-`getinfo`、`uptime` 属于 `system` 命令分组；`uptime` 读取 iOS 的系统启动时间和运行时长。iOS 平台命令使用下划线命名：`clear_console`、`keep_awake`、`kill_app`、`open_in`、`quick_look`、`pick_upload`、`get_location`、`list_contacts`。`getinfo` 等其他命令沿用既有名称。iOS 不注册 `mkdir`、`rm`、`rmdir`、`acmd ps` 或 `acmd kill`，也不展示系统 Shell/子进程、`bgrun`、`is_elevated`、`piplist`、`keyboard_send`、`userenum`、`spawn_instance`、`relaunch_instance`、`reexec_instance` 等桌面专用入口；远程文件操作、脚本和 Job 继续走各自通道。
+`getinfo`、`uptime` 属于 `system` 命令分组；`uptime` 读取 iOS 的系统启动时间和运行时长。iOS 平台命令使用下划线命名：`clear_console`、`keep_awake`、`kill_app`、`open_in`、`quick_look`、`pick_upload`、`get_location`、`list_contacts`。`getinfo` 等其他命令沿用既有名称。iOS 不注册 `mkdir`、`rm`、`rmdir`、`acmd ps` 或 `acmd kill`，也不展示系统 Shell/子进程、`bgrun`、`run_detached`、`is_elevated`、`piplist`、`keyboard_send`、`userenum`、`spawn_instance`、`relaunch_instance`、`reexec_instance` 等桌面专用入口；远程文件操作、脚本和 Job 继续走各自通道。
 
 Pythonista 提供文本、图片剪贴板接口，实际能力由模块和系统授权决定；RCH 的 **iOS 文件剪贴板暂不支持**。文件读写可使用沙盒路径，文件传输使用 RCH 通道，系统文件选择器负责获得其他授权位置的文件，参见 [Clipboard](clipboard.md) 与 [File Transfer](file_transfer.md)。
 
