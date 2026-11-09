@@ -3,7 +3,6 @@ import { ElNotification } from 'element-plus';
 import {
     formatTerminalCommandFinishedLine,
     TERMINAL_BACKGROUND_PREFIX,
-    TERMINAL_FILE_READY_PREFIX,
 } from './terminalMarkers.js';
 import { openWebEventStream } from '../api/streamApi.js';
 import { loadNotificationPreferences } from '../api/notificationPreferencesApi.js';
@@ -1013,21 +1012,8 @@ this.appendOutput(payload.client_id, `${TERMINAL_BACKGROUND_PREFIX} ${payload.te
     //     return;
     // }
 
-                if (payload.client_id) {
-                    this.appendOutput(
-    payload.client_id,
-    `${TERMINAL_FILE_READY_PREFIX} ${fileName}`,
-    'success',
-    {
-        artifactInfo: {
-            artifact_id: payload.artifact_id || '',
-            artifact_type: payload.artifact_type || '',
-            category: payload.category || '',
-            original_name: payload.original_name || fileName,
-        },
-    }
-);
-                }
+                this.recordTerminalArtifact(payload);
+
 
                 if (!this.selectedId || payload.client_id === this.selectedId || !payload.client_id) {
                     const downloadUrl = payload.download_url || `/api/artifacts/${encodeURIComponent(payload.artifact_id)}/download`;

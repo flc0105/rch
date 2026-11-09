@@ -53,6 +53,7 @@ class WebArtifactApi:
             'hostname': artifact_info.get('hostname', ''),
             'machine_id': artifact_info.get('machine_id', ''),
             'client_id': artifact_info.get('client_id', ''),
+            'source_command_id': artifact_info.get('source_command_id'),
             'original_name': artifact_info.get('original_name', ''),
             'stored_name': artifact_info.get('stored_name', ''),
             'size': artifact_info.get('size', 0),

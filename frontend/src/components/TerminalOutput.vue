@@ -40,20 +40,19 @@
         >
           <template v-if="isCommandFinishedLine(entry.line)">
             <div
-                v-if="!isTerminalBlockCollapsed(block) && getTerminalTailActionItems(lines, entry.index).length > 0"
+                v-for="actionItem in (!isTerminalBlockCollapsed(block) ? getTerminalTailActionItems(lines, entry.index, block) : [])"
+                :key="actionItem.key"
                 class="terminal-line"
                 :class="`line-${entry.line.kind || 'default'}`"
             >
               <a
-                  v-for="(actionItem, actionIndex) in getTerminalTailActionItems(lines, entry.index)"
-                  :key="actionItem.key"
                   href="#"
                   class="table-action-link-aux terminal-text"
-                  :class="{ 'terminal-action-link-spaced': actionIndex > 0 }"
                   @click.prevent.stop="handleTerminalActionClick(actionItem)"
-              >
-                [ {{ actionItem.type === 'preview' ? 'Preview' : 'View JSON' }} ]
-              </a>
+              >{{ actionItem.type === 'preview' ? '[ Preview ]' : '[ View JSON ]' }}</a><span
+                  v-if="actionItem.type === 'preview'"
+                  class="terminal-text"
+              > {{ actionItem.fileName }}</span>
             </div>
 
             <div
@@ -181,17 +180,6 @@
             >
               [ Details ]
             </a>
-
-            <a
-                v-for="(actionItem, actionIndex) in getTerminalInlineActionItems(lines, entry.index)"
-                :key="actionItem.key"
-                href="#"
-                class="table-action-link-aux terminal-text"
-                :class="{ 'terminal-action-link-spaced': actionIndex > 0 }"
-                @click.prevent.stop="handleTerminalActionClick(actionItem)"
-            >
-              [ {{ actionItem.type === 'preview' ? 'Preview' : 'JSON' }} ]
-            </a>
           </div>
         </template>
       </div>
@@ -276,7 +264,6 @@ import {ElMessage} from 'element-plus'
 import TerminalLinkedText from './TerminalLinkedText.vue'
 import {
   isTerminalCommandFinishedText,
-  TERMINAL_FILE_READY_PREFIX,
 } from '../composables/terminalMarkers.js'
 import { buildTerminalOutputJson, buildTerminalOutputText } from '../utils/terminalOutputExport.js'
 import { canRerunTerminalSource } from '../utils/terminalRerun.js'
@@ -291,6 +278,11 @@ export default {
 
   props: {
     lines: {
+      type: Array,
+      default: () => [],
+    },
+
+    artifacts: {
       type: Array,
       default: () => [],
     },
@@ -403,11 +395,6 @@ export default {
     },
 
 
-    isFileReadyLine(line) {
-      const text = line?.text || ''
-      return text.startsWith(TERMINAL_FILE_READY_PREFIX)
-    },
-
     isCommandFinishedLine(line) {
       if (line?.meta?.operation_id) return line.meta.event_type === 'completed'
       return isTerminalCommandFinishedText(line?.text || '')
@@ -422,66 +409,35 @@ export default {
       return String(block?.commandLine?.line?.text || '')
     },
 
-    getTerminalInlineActionItems(lines, index) {
-      const line = lines[index]
-      if (!line) return []
-
-      if (!this.isFileReadyLine(line)) return []
-
-      const groupItems = this.getTerminalCommandGroupActionItems(lines, index) || []
-      const usedKeysBefore = this.getUsedInlineActionKeysBeforeLine(lines, index)
-
-      const previewItem = groupItems.find(item => {
-        return item.type === 'preview' && !usedKeysBefore.has(item.key)
-      })
-
-      return previewItem ? [previewItem] : []
-    },
-
-    getTerminalTailActionItems(lines, index) {
+    getTerminalTailActionItems(lines, index, block = null) {
       const line = lines[index]
       if (!line || !this.isCommandFinishedLine(line)) return []
 
-      const groupItems = this.getTerminalCommandGroupActionItems(lines, index) || []
-      const usedKeysUpToCurrent = this.getUsedInlineActionKeysUpToLine(lines, index)
-
-      return groupItems.filter(item => !usedKeysUpToCurrent.has(item.key))
+      return [
+        ...this.getTerminalBlockArtifactActions(block),
+        ...this.getTerminalCommandGroupActionItems(lines, index),
+      ]
     },
 
-    getUsedInlineActionKeysBeforeLine(lines, endIndexExclusive) {
-      const used = new Set()
+    getTerminalBlockArtifactActions(block) {
+      if (!block?.commandLine || !String(block.commandLine.line?.text || '').startsWith('> ') ||
+          !block.bodyLines?.some(entry => this.isCommandFinishedLine(entry.line))) return []
+      if (!['command', 'script', 'alias'].includes(block.operation?.kind || block.blockType)) return []
+      const sourceCommandId = block.commandId
+      if (sourceCommandId === null || sourceCommandId === undefined || sourceCommandId === '') return []
 
-      for (let i = 0; i < endIndexExclusive; i += 1) {
-        const line = lines[i]
-        if (!this.isFileReadyLine(line)) continue
-
-        const groupItems = this.getTerminalCommandGroupActionItems(lines, i) || []
-        const previewItem = groupItems.find(item => item.type === 'preview' && !used.has(item.key))
-
-        if (previewItem) {
-          used.add(previewItem.key)
-        }
-      }
-
-      return used
-    },
-
-    getUsedInlineActionKeysUpToLine(lines, endIndexInclusive) {
-      const used = new Set()
-
-      for (let i = 0; i <= endIndexInclusive; i += 1) {
-        const line = lines[i]
-        if (!this.isFileReadyLine(line)) continue
-
-        const groupItems = this.getTerminalCommandGroupActionItems(lines, i) || []
-        const previewItem = groupItems.find(item => item.type === 'preview' && !used.has(item.key))
-
-        if (previewItem) {
-          used.add(previewItem.key)
-        }
-      }
-
-      return used
+      const seen = new Set()
+      return (this.artifacts || []).filter(artifact => {
+        if (String(artifact.source_command_id) !== String(sourceCommandId)) return false
+        if (!artifact.artifact_id || seen.has(artifact.artifact_id)) return false
+        seen.add(artifact.artifact_id)
+        return true
+      }).map(artifact => ({
+        type: 'preview',
+        key: `preview:${artifact.artifact_id}`,
+        fileName: artifact.original_name || 'file',
+        line: { artifactInfo: artifact },
+      }))
     },
 
     getTerminalCommandGroupStartIndex(lines, endIndex) {
@@ -523,14 +479,6 @@ export default {
 
       groupLines.forEach((item, itemIndex) => {
         if (!item) return
-
-        if (item.isArtifactMessage && item.artifactInfo && item.artifactInfo.artifact_id) {
-          result.push({
-            type: 'preview',
-            key: `preview:${item.artifactInfo.artifact_id}:${itemIndex}`,
-            line: item,
-          })
-        }
 
         if (item.isJsonMessage) {
           result.push({

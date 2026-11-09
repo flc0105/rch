@@ -30,7 +30,7 @@ function makeModel() {
     canRerunTerminalSource, getTerminalReplayAction, TerminalLinkedText: {},
     isTerminalRemoteUploadText:()=>false,
     isTerminalCommandFinishedText:text=>String(text).startsWith('[Command finished]'),
-    TERMINAL_FILE_READY_PREFIX:'[File Ready]', TERMINAL_RUN_SCRIPT_PREFIX:'[Run Script]',
+    TERMINAL_RUN_SCRIPT_PREFIX:'[Run Script]',
   })
   const view = { lines:[], ...render.data() }
   for (const [name, value] of Object.entries(render.methods)) view[name] = value.bind(view)

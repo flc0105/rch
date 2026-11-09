@@ -12,6 +12,7 @@ export default {
         return {
             outputs: {},
             terminalOperationRegistry: {},
+            terminalArtifactLinks: {},
         }
     },
 
@@ -137,6 +138,23 @@ export default {
                 }
             }
             return 0;
+        },
+
+        recordTerminalArtifact(payload) {
+            const clientId = String(payload?.client_id || '').trim();
+            const sourceCommandId = String(payload?.source_command_id ?? '').trim();
+            const artifactId = String(payload?.artifact_id || '').trim();
+            if (!clientId || !sourceCommandId || !artifactId) return;
+
+            const existing = this.terminalArtifactLinks[clientId] || [];
+            if (existing.some(item => item.artifact_id === artifactId)) return;
+            this.terminalArtifactLinks[clientId] = [...existing, {
+                artifact_id: artifactId,
+                source_command_id: sourceCommandId,
+                artifact_type: String(payload.artifact_type || ''),
+                category: String(payload.category || ''),
+                original_name: String(payload.original_name || payload.stored_name || 'file'),
+            }];
         },
 
         ensureOutputBucket(clientId) {
@@ -297,6 +315,7 @@ export default {
         clearOutput() {
             if (this.selectedId) {
                 this.outputs[this.selectedId] = [];
+                delete this.terminalArtifactLinks[this.selectedId];
                 for (const [id, operation] of Object.entries(this.terminalOperationRegistry)) {
                     if (String(operation.client_id) === String(this.selectedId)) delete this.terminalOperationRegistry[id];
                 }
@@ -320,6 +339,9 @@ export default {
     computed: {
         currentOutputLines() {
             return this.outputs[this.selectedId] || [];
+        },
+        currentTerminalArtifactLinks() {
+            return this.terminalArtifactLinks[this.selectedId] || [];
         },
     },
 }

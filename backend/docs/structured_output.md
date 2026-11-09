@@ -325,6 +325,8 @@ Web Terminal 将一次用户发起的 Command、Script、Quick Action 或上传�
 
 **Run again** 的可用性由操作携带的 `replay` 执行描述决定：真实 Command 保存命令文本，Script 保存脚本身份和参数，Quick Action 保存别名、平台及实际提交的参数，并由 Quick Action API 重新执行。Remote Upload 和 Artifact Send 不提供通用重跑描述。Block Dropdown、JSON Viewer 均采用相同规则，重跑创建新的操作与任务。已经显示的操作与结果不会因重跑而被覆盖。终端操作起始行的 `> ` 标记保留，用于区分操作开始与完成行；Command 与 Quick Action 的终端执行显示 `$>` 提示符，Script、Remote Upload、Artifact Send 等操作标题显示 `> [XXX]`。SSE 命令结果到达时，如果当前终端已经没有对应操作的起始行，终端会以任务身份补建起始标记，并将后续输出和完成状态归入同一块。Remote Files 与 Remote Folder Picker 上传、Artifact Send 在冲突预检查阶段发生错误时，会显示带起始行及失败结束行的操作块；用户取消冲突选择时不产生执行记录。Folder Picker 经嵌套弹窗转发的操作身份与 Remote Files 一致。Remote Files 的 Set CWD 命令同样使用独立操作 ID 关联任务结果。
 
+执行期间由 Command、Script 或 Quick Action 产生的 Artifact 在带有相同设备和命令 ID 的终端块中显示 `[Preview] 文件名`，位置在 `[Command finished]` 前；每个 Artifact 单独显示一行，单文件同样显示文件名。Artifact 创建事件使用 `source_command_id` 与命令结果中的 `command_id` 关联；即使文件晚于完成事件到达，仍可更新对应块。终端不再写入 `[File Ready]` 行，通知中心与 Artifacts 保持原有访问入口。Remote Files 等独立操作不产生此类终端预览链接。
+
 ## JSON Viewer 的 Run Again 与行级操作输出
 
 Terminal 输出块菜单的 **Run again** 适用于真实 Command、携带可重跑脚本身份的 Script，以及保存了别名、平台和参数的 Quick Action。Quick Action 必须通过专用 API 执行，不将可见标题或展开后的命令传给 Shell。Remote Upload 和 Artifact Send 没有通用重放所需的文件上下文，菜单项保持禁用；JSON Viewer 使用同一资格规则。

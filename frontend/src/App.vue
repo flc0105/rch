@@ -211,6 +211,7 @@
                 <TerminalOutput
                   ref="terminalOutputRef"
                   :lines="currentOutputLines"
+                  :artifacts="currentTerminalArtifactLinks"
                   :selected-id="selectedId"
                   :current-connection="currentConnection"
                   @preview-artifact="previewArtifact"

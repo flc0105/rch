@@ -3,7 +3,6 @@ export const TERMINAL_REMOTE_UPLOAD_PREFIX = '[Remote Upload]'
 export const TERMINAL_COMMAND_FINISHED_PREFIX = '[Command finished]'
 export const TERMINAL_CANCEL_REQUESTED_PREFIX = '[Cancel requested]'
 export const TERMINAL_COMMAND_FAILED_PREFIX = '[Command failed]'
-export const TERMINAL_FILE_READY_PREFIX = '[File Ready]'
 export const TERMINAL_BACKGROUND_PREFIX = '[Background]'
 
 export function isTerminalRunScriptText(text) {
