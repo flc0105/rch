@@ -214,8 +214,14 @@ class CommandFileWebMixin:
 
             resolved_destination = self.path_resolver.require_existing_directory_from_arg(destination_dir)
             entry_name = str(payload.get('entry_name') or '')
-            result = (self.archive_service.extract_zip_entry(archive_path, resolved_destination, entry_name)
-                      if entry_name else self.archive_service.extract_zip_smart(archive_path, resolved_destination))
+            if payload.get('inspect') is True:
+                result = self.archive_service.inspect_extract_target(archive_path, resolved_destination, entry_name)
+            elif 'conflict_policy' in payload:
+                result = self.archive_service.extract_zip_with_policy(
+                    archive_path, resolved_destination, entry_name, str(payload['conflict_policy']))
+            else:
+                result = (self.archive_service.extract_zip_entry(archive_path, resolved_destination, entry_name)
+                          if entry_name else self.archive_service.extract_zip_smart(archive_path, resolved_destination))
             return 1, json.dumps(result, ensure_ascii=False)
         except CommandCancelledError:
             return 0, 'Command cancelled'
@@ -364,6 +370,26 @@ class CommandFileWebMixin:
         except Exception as e:
             return 0, f'Failed to rename path: {e}'
 
+    @desc('Inspect a remote upload destination', group='file_path', suggest=False)
+    def inspect_remote_upload(self, arg=''):
+        try:
+            from client.commands.common.services.filesystem.conflict_policy import path_kind, allowed_actions
+            payload = self.structured_arg_codec.decode(arg)
+            if not isinstance(payload, dict):
+                return 0, 'Invalid inspect upload payload'
+            directory = self.path_resolver.require_existing_directory_from_arg(payload.get('destination_dir', ''))
+            filename = str(payload.get('filename') or '')
+            if not filename or filename in ('.', '..') or os.path.basename(filename) != filename or '\\' in filename or '/' in filename:
+                return 0, 'Invalid upload filename'
+            target = os.path.join(directory, filename)
+            kind = path_kind(target)
+            conflicts = ([{'source': filename, 'target': target, 'source_kind': 'file',
+                           'target_kind': kind, 'allowed_actions': allowed_actions('file', kind)}]
+                         if kind else [])
+            return 1, json.dumps({'conflicts': conflicts}, ensure_ascii=False)
+        except Exception as exc:
+            return 0, f'Failed to inspect upload: {exc}'
+
     @desc('Paste copied or moved files into a directory', group='file_path', suggest=False)
     def paste_paths(self, arg=''):
         try:
@@ -381,8 +407,12 @@ class CommandFileWebMixin:
             if not isinstance(raw_paths, list) or not raw_paths:
                 return 0, 'paths is required and must be a non-empty list'
 
-            return 1, json.dumps(self.file_system_service.paste_paths(
-                raw_paths, destination_dir, operation).to_dict(), ensure_ascii=False)
+            inspect = payload.get('inspect') is True
+            policies = payload.get('conflict_policies')
+            if policies is not None and (not isinstance(policies, list) or len(policies) != len(raw_paths)):
+                return 0, 'Invalid conflict policies'
+            result = self.file_system_service.paste_paths(raw_paths, destination_dir, operation, policies=policies, inspect=inspect)
+            return 1, json.dumps(result if inspect else result.to_dict(), ensure_ascii=False)
         except CommandCancelledError:
             return 0, 'Command cancelled'
         except CommandTimeoutError:

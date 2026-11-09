@@ -8,6 +8,7 @@ import zipfile
 
 from core.utils.zip_peek import ZipPeekService
 from client.commands.common.services.filesystem.path_resolver import PathResolver
+from client.commands.common.services.filesystem.conflict_policy import apply_path, describe_conflict
 from client.runtime.temp_workspace import get_temp_category_dir
 
 
@@ -202,6 +203,62 @@ class ArchiveService(ZipPeekService):
             candidate = os.path.join(destination_dir, f'{clean_name}_{index}')
             index += 1
         return candidate
+
+    def inspect_extract_target(self, archive_path: str, destination_dir: str, entry_name: str = '') -> dict:
+        """Inspect a selected ZIP root without writing any destination data."""
+        path = self._require_zip_file(archive_path)
+        destination = self.path_resolver.validate_directory_exists(destination_dir)
+        with zipfile.ZipFile(path) as archive:
+            validated = self._validate_extract_infos(archive.infolist())
+            if not validated:
+                raise ValueError('ZIP archive is empty')
+            if entry_name:
+                requested = str(entry_name).replace('\\', '/')
+                if '..' in requested.split('/'):
+                    raise ValueError('Unsafe ZIP entry selection')
+                requested = self._normalize_zip_member_name(requested)
+                files = [info for info, name in validated if name == requested and not self._zip_info_is_dir(info)]
+                descendants = [name for _, name in validated if name.startswith(requested + '/')]
+                if len(files) > 1 or (files and descendants):
+                    raise ValueError('Ambiguous ZIP entry selection')
+                kind = 'file' if files else 'directory'
+                if not files and not descendants and not any(name == requested for _, name in validated):
+                    raise FileNotFoundError('ZIP entry not found')
+                name = requested.rsplit('/', 1)[-1]
+            else:
+                root = self._detect_single_root_directory(validated)
+                name = root or (os.path.splitext(os.path.basename(path))[0] or 'archive')
+                kind = 'directory'
+        target = os.path.join(destination, name)
+        # The ZIP root is virtual until the extraction is staged.
+        existing = describe_conflict(path, target)
+        if existing:
+            from client.commands.common.services.filesystem.conflict_policy import allowed_actions, path_kind
+            existing['source_kind'] = kind
+            existing['target_kind'] = path_kind(target)
+            existing['allowed_actions'] = allowed_actions(kind, existing['target_kind'])
+        return {'conflicts': [existing] if existing else [], 'target': target}
+
+    def extract_zip_with_policy(self, archive_path: str, destination_dir: str,
+                                entry_name: str = '', policy: str = 'stop') -> dict:
+        """Use existing bounded safe extractor into a private stage, then commit by policy."""
+        destination = self.path_resolver.validate_directory_exists(destination_dir)
+        inspected = self.inspect_extract_target(archive_path, destination, entry_name)
+        target = inspected['target']
+        from client.commands.common.services.filesystem.conflict_policy import allowed_actions, path_kind
+        conflict = inspected['conflicts']
+        if conflict and policy not in conflict[0]['allowed_actions']:
+            raise FileExistsError(f'Invalid conflict policy for {target}')
+        with tempfile.TemporaryDirectory(prefix='.rch-zip-stage-', dir=destination) as stage:
+            result = (self.extract_zip_entry(archive_path, stage, entry_name)
+                      if entry_name else self.extract_zip_smart(archive_path, stage))
+            source = result['extracted_to']
+            actual_kind = path_kind(source)
+            expected_kind = 'file' if entry_name and not os.path.isdir(source) else 'directory'
+            if actual_kind != expected_kind:
+                raise ValueError('Extracted entry type changed unexpectedly')
+            output = apply_path(source, target, 'move', policy)
+        return {**result, 'destination_dir': destination, 'extracted_to': output}
 
     def extract_zip_entry(self, archive_path: str, destination_dir: str, entry_name: str) -> dict:
         """Extract exactly one ZIP file or directory subtree without replacing destination files."""

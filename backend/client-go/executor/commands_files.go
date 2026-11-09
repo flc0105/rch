@@ -25,6 +25,7 @@ var (
 	_ = Register("delete_path", Usage("delete_path <path>"), Help("Delete a file or directory"), Group("file_path"), CancelPolicy("cooperative"), CommandRunner(deletePath))
 	_ = Register("delete_paths", Usage("delete_paths <payload>"), Help("Delete multiple paths"), Group("file_path"), CancelPolicy("cooperative"), CommandRunner(deletePaths))
 	_ = Register("paste_paths", Usage("paste_paths <payload>"), Help("Copy or move paths"), Group("file_path"), CancelPolicy("cooperative"), CommandRunner(pastePaths))
+	_ = Register("inspect_remote_upload", Usage("inspect_remote_upload <payload>"), Help("Inspect upload destination"), Group("file_path"), CommandRunner(simpleRemoteRunner(inspectRemoteUpload)))
 )
 
 // Run fast filesystem mutations without blocking the socket's heartbeat loop.
@@ -515,14 +516,66 @@ func pastePaths(ctx context.Context, s *Session, raw string, _ func(int, string)
 	if err != nil {
 		return 0, "Failed to paste paths: " + err.Error()
 	}
+	if payloadBool(payload["inspect"]) {
+		conflicts := []map[string]interface{}{}
+		planned := map[string]string{}
+		for index, raw := range paths {
+			source, err := remotePath(s, raw)
+			if err != nil {
+				return 0, err.Error()
+			}
+			if _, err := os.Lstat(source); err != nil {
+				return 0, err.Error()
+			}
+			target := filepath.Join(destination, filepath.Base(source))
+			conflict, err := remoteConflict(source, target, index)
+			if err != nil {
+				return 0, err.Error()
+			}
+			sourceKind, err := remoteKind(source)
+			if err != nil {
+				return 0, err.Error()
+			}
+			if conflict == nil {
+				if prior, found := planned[filepath.Clean(target)]; found {
+					conflict = map[string]interface{}{
+						"index": index, "source": source, "target": target, "source_kind": sourceKind,
+						"target_kind": prior, "allowed_actions": remoteAllowed(sourceKind, prior),
+					}
+				}
+			}
+			planned[filepath.Clean(target)] = sourceKind
+			if conflict != nil {
+				conflicts = append(conflicts, conflict)
+			}
+		}
+		return jsonResult(map[string]interface{}{"conflicts": conflicts})
+	}
+	policies, hasPolicy := payload["conflict_policies"]
+	var decision []interface{}
+	if hasPolicy {
+		var ok bool
+		decision, ok = policies.([]interface{})
+		if !ok || len(decision) != len(paths) {
+			return 0, "Invalid conflict policies"
+		}
+	}
 	result := batchRemoteResult{Total: len(paths), Errors: []string{}}
-	for _, raw := range paths {
+	for index, raw := range paths {
 		if ctx.Err() != nil {
 			return 0, "Command cancelled"
 		}
 		source, err := remotePath(s, raw)
 		if err == nil {
-			err = copyOrMovePath(ctx, source, destination, operation)
+			if hasPolicy {
+				policy, ok := decision[index].(string)
+				if !ok {
+					return 0, "Invalid conflict policy"
+				}
+				err = applyRemoteConflict(ctx, source, filepath.Join(destination, filepath.Base(source)), operation, policy)
+			} else {
+				err = copyOrMovePath(ctx, source, destination, operation)
+			}
 		}
 		if err != nil {
 			result.appendError(raw, err)

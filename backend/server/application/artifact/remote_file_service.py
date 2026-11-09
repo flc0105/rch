@@ -418,7 +418,7 @@ class WebRemoteFileService:
             source='web_remote_file',
         )
 
-    def extract_zip(self, client_id: str, path: str, destination_dir: str, entry_name: str = '', *, origin: str = 'web_ui') -> dict:
+    def extract_zip(self, client_id: str, path: str, destination_dir: str, entry_name: str = '', *, origin: str = 'web_ui', inspect=False, conflict_policy=None) -> dict:
         if not (path or '').strip():
             raise ValueError('path is required')
         if not (destination_dir or '').strip():
@@ -427,6 +427,15 @@ class WebRemoteFileService:
         arguments = {'path': path.strip(), 'destination_dir': destination_dir.strip()}
         if entry_name:
             arguments['entry_name'] = entry_name
+        if inspect:
+            return self.remote_execution_service.run_foreground_json_command(
+                client_id, self._build_command('extract_zip_path', {**arguments, 'inspect': True}),
+                task_type='remote_file', source='web_remote_file',
+            )
+        if conflict_policy is not None:
+            if conflict_policy not in ('stop', 'merge', 'replace', 'keep_both'):
+                raise ValueError('Invalid conflict policy')
+            arguments['conflict_policy'] = conflict_policy
         return self._run_mutation(client_id, 'extract_archive', arguments, 'extract_zip_path', arguments, json_result=True, origin=origin)
 
     def delete_paths(self, client_id: str, paths: list[str], *, origin: str = 'web_ui') -> dict:
@@ -452,7 +461,7 @@ class WebRemoteFileService:
             'message': result_text
         }
 
-    def paste_paths(self, client_id: str, paths: list[str], destination_dir: str, operation: str = 'copy', *, origin: str = 'web_ui') -> dict:
+    def paste_paths(self, client_id: str, paths: list[str], destination_dir: str, operation: str = 'copy', *, origin: str = 'web_ui', inspect=False, conflict_policies=None) -> dict:
         if not isinstance(paths, list) or not paths:
             raise ValueError('paths is required and must be a non-empty list')
         if not (destination_dir or '').strip():
@@ -471,15 +480,40 @@ class WebRemoteFileService:
         if normalized_operation not in ('copy', 'move'):
             raise ValueError('operation must be copy or move')
 
-        result_text = self._run_mutation(client_id, 'copy_files' if normalized_operation == 'copy' else 'move_files', {'paths': normalized_paths, 'count': len(normalized_paths), 'destination_dir': normalized_destination_dir}, 'paste_paths', {'paths': normalized_paths, 'destination_dir': normalized_destination_dir, 'operation': normalized_operation}, json_result=True, batch=True, origin=origin)
-        result_text = result_text['message']
+        payload = {'paths': normalized_paths, 'destination_dir': normalized_destination_dir, 'operation': normalized_operation}
+        if inspect:
+            return self.remote_execution_service.run_foreground_json_command(
+                client_id, self._build_command('paste_paths', {**payload, 'inspect': True}),
+                task_type='remote_file', source='web_remote_file',
+            )
+        if conflict_policies is not None:
+            if not isinstance(conflict_policies, list) or len(conflict_policies) != len(normalized_paths) or any(
+                item not in ('stop', 'merge', 'replace', 'keep_both') for item in conflict_policies
+            ):
+                raise ValueError('Invalid conflict policies')
+            payload['conflict_policies'] = conflict_policies
+        result_text = self._run_mutation(client_id, 'copy_files' if normalized_operation == 'copy' else 'move_files', {'paths': normalized_paths, 'count': len(normalized_paths), 'destination_dir': normalized_destination_dir}, 'paste_paths', payload, json_result=True, batch=True, origin=origin)
+        summary = result_text
+        result_text = summary['message']
 
         return {
             'paths': normalized_paths,
+            'succeeded': summary['succeeded'],
+            'failed': summary['failed'],
+            'errors': summary.get('errors') or [],
             'destination_dir': normalized_destination_dir,
             'operation': normalized_operation,
             'message': result_text,
         }
+
+    def inspect_upload(self, client_id: str, destination_dir: str, filename: str) -> dict:
+        if not destination_dir or not filename:
+            raise ValueError('destination_dir and filename are required')
+        return self.remote_execution_service.run_foreground_json_command(
+            client_id, self._build_command('inspect_remote_upload', {
+                'destination_dir': destination_dir, 'filename': filename,
+            }), task_type='remote_file', source='web_remote_file',
+        )
 
     def preview_file(
             self,

@@ -16,6 +16,7 @@ const sandbox = {
   },
   ElMessageBox: { confirm: async () => {} },
   downloadRemoteZipEntry, extractRemoteZip,
+  prepareExtractConflict: async () => null,
   window: { open(url) { notifications.push(['open', url]) } },
 }
 vm.runInNewContext(script.replace(/^import[^\n]*\n/gm, '').replace('export default {', 'globalThis.component = {'), sandbox)

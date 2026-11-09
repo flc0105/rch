@@ -384,6 +384,13 @@ func (s *Session) downloadTransferFile(ctx context.Context, id string, payload m
 	if err != nil {
 		return err
 	}
+	policy, policySpecified := payload["conflict_policy"].(string)
+	if payload["conflict_policy"] != nil && !policySpecified {
+		return fmt.Errorf("invalid upload conflict policy")
+	}
+	if policySpecified && !validRemoteUploadPolicy(policy) {
+		return fmt.Errorf("invalid upload conflict policy")
+	}
 	if err := os.MkdirAll(saveDir, 0755); err != nil {
 		return err
 	}
@@ -395,9 +402,9 @@ func (s *Session) downloadTransferFile(ctx context.Context, id string, payload m
 		return errors.New("save_dir is not a directory")
 	}
 	target := filepath.Join(saveDir, filename)
-	if _, err := os.Lstat(target); err == nil {
+	if _, err := os.Lstat(target); err == nil && (!policySpecified || policy == "stop") {
 		return fmt.Errorf("target already exists: %s", target)
-	} else if !os.IsNotExist(err) {
+	} else if err != nil && !os.IsNotExist(err) {
 		return err
 	}
 	s.transferUpdate(id, map[string]interface{}{"state": "running", "stage": "transferring", "filename": filename, "transferred_bytes": int64(0), "progress_supported": true})
@@ -443,8 +450,14 @@ func (s *Session) downloadTransferFile(ctx context.Context, id string, payload m
 		return err
 	}
 	// Link ensures a concurrent file creation cannot be silently overwritten.
-	if err := os.Link(tmp.Name(), target); err != nil {
-		return err
+	if policySpecified {
+		if err := stageRemoteTransferFile(ctx, tmp.Name(), target, policy); err != nil {
+			return err
+		}
+	} else {
+		if err := os.Link(tmp.Name(), target); err != nil {
+			return err
+		}
 	}
 	s.transferUpdate(id, map[string]interface{}{"state": "completed", "stage": "completed", "filename": filename, "transferred_bytes": size, "total_bytes": size, "progress_supported": true})
 	return nil

@@ -86,3 +86,7 @@ export function deleteRemoteFile(clientId, path) {
 export function deleteRemoteEntries(clientId, paths) {
   return fetch(remoteFilesUrl(clientId, '/batch'), webUiJson('DELETE', { paths }))
 }
+
+export function inspectRemoteUpload(clientId, destinationDir, filename) {
+  return fetch(remoteFilesUrl(clientId, '/inspect-upload'), webUiJson('POST', { destination_dir: destinationDir, filename }))
+}

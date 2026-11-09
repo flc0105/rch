@@ -23,6 +23,7 @@ class WebTransferApi:
         filename: str,
         total_bytes,
         destination_path: str = '',
+        conflict_policy=None,
         tab_id: str = '',
         origin: str = 'web_api',
         feature: str = 'remote_files',
@@ -36,6 +37,9 @@ class WebTransferApi:
             raise ValueError('filename is required')
         if not normalized_tab_id:
             raise ValueError('tab_id is required')
+
+        if conflict_policy is not None and conflict_policy not in ('stop', 'replace', 'keep_both'):
+            raise ValueError('Invalid upload conflict policy')
 
         transfer = self.transfer_service.create_transfer(
             client_id=normalized_client_id,
@@ -60,6 +64,7 @@ class WebTransferApi:
                 'filename': normalized_filename,
                 'total_bytes': total_bytes,
                 'destination_path': str(destination_path or '').strip(),
+                'conflict_policy': conflict_policy,
                 'tab_id': normalized_tab_id,
             }
 

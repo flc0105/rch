@@ -285,6 +285,7 @@ class ClientTransferManager:
         url = str(payload.get('url') or '').strip()
         filename = str(payload.get('filename') or '').strip()
         save_dir = str(payload.get('save_dir') or '').strip()
+        conflict_policy = payload.get('conflict_policy')
 
         if not url:
             if not relative_url:
@@ -300,23 +301,34 @@ class ClientTransferManager:
         if os.path.exists(target_dir) and not os.path.isdir(target_dir):
             raise NotADirectoryError(f'Target path is not a directory: {target_dir}')
 
-        os.makedirs(target_dir, exist_ok=True)
         target_path = os.path.join(target_dir, os.path.basename(filename))
+        commit = None
+        if conflict_policy is not None:
+            from client.commands.common.services.filesystem.conflict_policy import prepare_upload_file_commit
+            commit = prepare_upload_file_commit(target_path, conflict_policy)
 
+        os.makedirs(target_dir, exist_ok=True)
+        staged = ''
         try:
-            service.download_file_from_http(
-                url,
-                target_path,
-                transfer_id=transfer_id,
-            )
+            if commit is None:
+                service.download_file_from_http(url, target_path, transfer_id=transfer_id)
+            else:
+                fd, staged = tempfile.mkstemp(prefix='.rch-upload-', dir=target_dir)
+                os.close(fd)
+                service.download_file_from_http(
+                    url, staged, transfer_id=transfer_id, commit=commit,
+                )
         except Exception:
-            if context_cancelled(owner.execution_context):
+            if conflict_policy is None and context_cancelled(owner.execution_context):
                 try:
                     if os.path.isfile(target_path):
                         os.remove(target_path)
                 except Exception:
                     pass
             raise
+        finally:
+            if staged and os.path.lexists(staged):
+                os.unlink(staged)
 
     def _send_update(self, transfer_id: str, **payload):
         normalized_id = str(transfer_id or '').strip()

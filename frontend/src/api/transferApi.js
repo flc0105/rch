@@ -43,12 +43,13 @@ export function buildBrowserUploadContentUrl(transfer = {}) {
 }
 
 // Shared browser -> Server -> Client upload path used by both remote file dialogs.
-export async function uploadRemoteFileToClient({file, clientId, destinationPath, headers = {}}) {
+export async function uploadRemoteFileToClient({file, clientId, destinationPath, conflictPolicy = null, headers = {}}) {
   const transfer = await createBrowserUploadTransfer({
     client_id: clientId,
     filename: file.name,
     total_bytes: file.size,
     destination_path: destinationPath,
+    ...(conflictPolicy !== null ? { conflict_policy: conflictPolicy } : {}),
   }, headers)
   const transferId = String(transfer?.transfer_id || '').trim()
 

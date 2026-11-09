@@ -114,9 +114,23 @@ Browser 的 Copy、Cut 和 Paste 使用的是**界面内部的远程路径列表
 - **Cut**：目标目录 Paste 时将源文件或目录移动过去。
 - **Copy Path**：仅将所选远程路径字符串复制到浏览器所在机器的剪贴板，不复制文件内容。
 
-例如从 `/tmp` 选中 `a.txt`、`b.txt` 并 Copy，到 `/tmp/backup` Paste，会在目标目录创建相同名称的文件。目标已有同名项时会报告冲突，**不会覆盖原文件**；源目录与目标目录相同、或试图把一个目录放进它自身或其子目录，也会失败。
+例如从 `/tmp` 选中 `a.txt`、`b.txt` 并 Copy，到 `/tmp/backup` Paste，会在目标目录创建相同名称的文件。默认情况下，目标已有同名项会报告冲突，不覆盖原文件；启用全局冲突询问后，可在执行前选择停止、替换或保留两个，同名目录还可以合并。源目录与目标目录相同、或试图把一个目录放进它自身或其子目录，仍会受到路径安全校验。
 
-多项复制或移动同样是逐项执行，允许部分成功，不提供整个批次的事务性回滚。Cut 操作成功提交后，界面清空待移动路径；Copy 列表可保留，便于重复粘贴。目标操作完成后应刷新目录，检查成功数量与失败记录。
+多项复制或移动同样是逐项执行，允许部分成功，不提供整个批次的事务性回滚。Cut 只有在全部源项目移动成功后才清空待移动路径；Copy 列表可保留，便于重复粘贴。部分成功时界面会显示对应数量和失败信息。目标操作完成后应刷新目录，检查实际结果。
+
+### 文件冲突策略与全局设置
+
+在 **Settings → Remote Files** 中可切换 **Ask when a destination already exists**。这个设置由 Server 保存，全局应用于从 Web Remote Files 发起的复制、移动、**Extract Here**、ZIP 预览中的 **Extract to...**，以及 Browser 和 Remote Folder Picker 的文件上传。默认 **关闭**，保持两种 Client 各自的既有文件处理行为。开启后，前端在目标冲突时提供选择；目标无冲突时直接执行。
+
+| 目标冲突 | 可选动作 | 执行效果 |
+|---|---|---|
+| 文件与文件 | Stop / Replace / Keep Both | 停止本次操作；用新文件替换目标文件；或保留目标并把新文件保存为唯一名称 |
+| 目录与目录 | Stop / Merge / Replace / Keep Both | 停止；递归合并并覆盖同名文件、保留目标独有内容；整体替换目标目录；或将新目录保存为唯一名称 |
+| 文件与目录（类型不一致） | Stop / Keep Both | 停止；或改名保存新项目，保留原项目 |
+
+**Keep Both** 使用时间戳和短哈希构造新的名称，并在 Client 写入时校验名称唯一性；文件名保持扩展名。**Merge** 与 **Replace** 的区别尤其重要：Merge 会保留原目标目录中源目录没有的项目；Replace 会把整个目标目录换成新目录，原目标独有的文件也会被移除。目录合并时如果内部还有文件/目录类型冲突，会拒绝该操作，需处理冲突后重试。批量 Copy/Move 的选择按顶层源项目逐项应用，不保证整批事务性回滚。
+
+冲突检测在远端 Client 执行，Browser 通过一次检查请求收集待处理项目的冲突，再由同一 Client 在实际提交时重新校验目标类型及策略。设置控制是否询问；具体动作通过请求参数传递，不依赖 Interaction Broker。停止或取消选择不会自动转为覆盖。此设置不改变 Save 文本、新建文件夹、重命名或删除的原有行为。
 
 ## Activity Center 操作记录
 
@@ -126,7 +140,7 @@ Web Remote Files 的真正远程文件修改动作会在 Client 命令成功派�
 
 ### 远端到 Server 的文件搬运
 
-Browser 可以选择文件上传，也可拖放文件到当前目录。上传由 Server 创建传输记录和临时上传凭证，浏览器通过独立文件传输端点传送二进制，随后由 Client 接收并写入指定远程路径。界面报告 **Upload started** 表示上传任务已创建。查看 Transfer Center 的终态，再刷新远程目录以确认文件已保存。
+Browser 可以选择文件上传，也可拖放文件到当前目录。上传由 Server 创建传输记录和临时上传凭证，浏览器通过独立文件传输端点传送二进制，随后由 Client 接收并写入指定远程路径。界面报告 **Upload started** 表示上传任务已创建。查看 Transfer Center 的终态，再刷新远程目录以确认文件已保存。上传同名文件时，设置关闭会保留现有差异：Python Client 默认覆盖，Go Client 默认拒绝；开启冲突询问后可选 Stop、Replace、Keep Both，传输落盘时由 Client 再次校验选择的策略。
 
 下载方向相反：
 
@@ -154,7 +168,7 @@ Browser 对 ZIP 提供三种实际不同的操作：
 
 Create ZIP 可以选择多个文件和目录，并指定生成目录和归档名称；名称不含 `.zip` 时会补上扩展名。已存在同名 ZIP 就报冲突，不覆盖。写入异常时会尝试清理尚未完成的输出文件。
 
-Peek ZIP 先校验压缩包，再展示树形目录、文件数量、压缩与未压缩体积等信息；可选择文本条目读取内容而不必解压整个归档。在远程 ZIP 预览中，选中单个文件可以通过 **Download** 将原始字节经 Transfer Center 下载为文件 Artifact，二进制或超过文本预览限制的条目同样可下载；目录打包下载不在该入口提供。选中文件或目录后可点 **Extract to...**，用 Remote Folder Picker 选择已有远端目标目录（也可选当前目录），确认后只解压所选文件或目录子树。选中的嵌套文件/目录会以自身名称出现在目标目录，不附带上级 ZIP 路径。目标已存在时报冲突，不覆盖。它有独立的预览限制：
+Peek ZIP 先校验压缩包，再展示树形目录、文件数量、压缩与未压缩体积等信息；可选择文本条目读取内容而不必解压整个归档。在远程 ZIP 预览中，选中单个文件可以通过 **Download** 将原始字节经 Transfer Center 下载为文件 Artifact，二进制或超过文本预览限制的条目同样可下载；目录打包下载不在该入口提供。选中文件或目录后可点 **Extract to...**，用 Remote Folder Picker 选择已有远端目标目录（也可选当前目录），确认后只解压所选文件或目录子树。选中的嵌套文件/目录会以自身名称出现在目标目录，不附带上级 ZIP 路径。默认目标已存在时报冲突；开启冲突询问后，文件可以选择替换或保留两个，目录可以选择合并、替换或保留两个。它有独立的预览限制：
 
 | 限制 | 当前阈值 |
 |---|---:|
@@ -164,7 +178,7 @@ Peek ZIP 先校验压缩包，再展示树形目录、文件数量、压缩与�
 
 这些只约束 Peek 和条目文本预览，**不等同于单项下载、ZIP 创建与解压的限制**。
 
-Extract Here 仍负责整个 ZIP，会分析顶层结构：仅有单一根目录时尽量保留该目录层次；存在多个顶层项目时，在目标目录下新建一个包装目录，防止解压内容散落。解压对绝对路径、父目录穿越、ZIP 符号链接及写入目标路径做安全检查，同时限制最多 **50,000 条目**、声明未压缩总大小最多 **20 GiB**。遇到错误会尝试清理本次新建的目标目录，但这不等于对任何中断、权限错误或系统故障都提供完整回滚保证。
+Extract Here 仍负责整个 ZIP，会分析顶层结构：仅有单一根目录时尽量保留该目录层次；存在多个顶层项目时，在目标目录下新建一个包装目录，防止解压内容散落。默认遇到单一根目录同名会报错，多根包装目录同名则会尝试自动添加数字后缀；开启冲突询问后可根据目标类型选择适用的策略。解压对绝对路径、父目录穿越、ZIP 符号链接及写入目标路径做安全检查，同时限制最多 **50,000 条目**、声明未压缩总大小最多 **20 GiB**。遇到错误会尝试清理本次新建的目标目录，但这不等于对任何中断、权限错误或系统故障都提供完整回滚保证。
 
 ### 文件内容的查看和回写
 
@@ -237,16 +251,18 @@ Browser、Picker 的目录浏览共用 `/api/connections/{client_id}/remote-file
 | POST | `.../remote-files/rename` | 重命名 |
 | DELETE | `.../remote-files` | 删除单个路径 |
 | DELETE | `.../remote-files/batch` | 批量删除 |
-| POST | `.../remote-files/paste` | 复制或移动多个路径 |
+| POST | `.../remote-files/paste` | 复制或移动多个路径；可预检并指定各源项目冲突策略 |
 | POST | `.../remote-files/download` | 下载一个远程文件，生成 Artifact |
 | POST | `.../remote-files/download-zip` | 打包下载多个路径 |
 | POST | `.../remote-files/download-zip-entry` | 从远端 ZIP 下载单个文件条目 |
 | POST | `.../remote-files/create-zip` | 在远端创建 ZIP |
 | POST | `.../remote-files/zip-peek` | 查询 ZIP 结构 |
 | POST | `.../remote-files/zip-entry` | 读取 ZIP 内文本条目 |
-| POST | `.../remote-files/extract-zip` | 在远端解压整个 ZIP，或使用 `entry_name` 选择文件/目录 |
+| POST | `.../remote-files/extract-zip` | 在远端解压整个 ZIP，或使用 `entry_name` 选择文件/目录；可预检和指定冲突策略 |
 | POST | `.../remote-files/preview` | 生成文件预览 |
 | POST | `.../remote-files/save` | 保存编辑后的文本文件 |
+| POST | `.../remote-files/inspect-upload` | 检查当前目标文件夹中待上传的文件是否存在同名冲突 |
+| GET / PUT | `/api/remote-files/conflict-preferences` | 读取或修改全局 `ask_on_conflict` 设置 |
 
 上述 `...` 省略的是相同前缀 `/api/connections/{client_id}`。Pinned Paths、系统路径 Quick Jump、Artifact 下载和文件 Transfer 另有对应接口，不应误认为都由目录浏览 API 负责。
 
@@ -279,7 +295,7 @@ Content-Type: application/json
 }
 ```
 
-`operation` 只接受 `copy` 或 `move`，省略时按 `copy` 处理。该请求不会自动创建 `/tmp/backup`，也不会覆盖目标中的同名文件。返回结果应核对成功数量和 `Errors` 文本，特别是同时处理多个路径时。若要移动，则将 `operation` 改为 `move`；无需先向系统 Clipboard 写入路径。
+`operation` 只接受 `copy` 或 `move`，省略时按 `copy` 处理。该请求不会自动创建 `/tmp/backup`，默认也不会覆盖目标中的同名文件。设置 `inspect: true` 可只检查冲突而不提交写入；正式请求可用 `conflict_policies` 为各源项目指定策略。ZIP 解压接口同样接受 `inspect: true` 和 `conflict_policy`。请求返回包含成功/失败数量及错误信息，应逐项核对，特别是同时处理多个路径时。若要移动，则将 `operation` 改为 `move`；无需先向系统 Clipboard 写入路径。
 
 创建目录使用 `mkdir` 接口的 `{"path":"/tmp/backup"}`；重命名使用 `{"old_path":"/tmp/old.txt","new_name":"new.txt"}`。保存文本使用 `{"path":"/tmp/note.txt","content":"...","encoding":"utf-8"}`。这些都是直接改变远程文件系统的请求，应确认目标设备及绝对路径正确后再操作。
 

@@ -49,8 +49,8 @@ class WebRemoteFileApi:
         return self.remote_file_service.delete_paths(client_id, paths, origin=origin)
 
 
-    def paste_remote_paths(self, client_id: str, paths: list[str], destination_dir: str, operation: str = 'copy', *, origin: str = 'web_ui'):
-        return self.remote_file_service.paste_paths(client_id, paths, destination_dir, operation, origin=origin)
+    def paste_remote_paths(self, client_id: str, paths: list[str], destination_dir: str, operation: str = 'copy', *, origin: str = 'web_ui', inspect=False, conflict_policies=None):
+        return self.remote_file_service.paste_paths(client_id, paths, destination_dir, operation, origin=origin, inspect=inspect, conflict_policies=conflict_policies)
 
     def preview_remote_file(
         self,
@@ -127,8 +127,11 @@ class WebRemoteFileApi:
     def read_remote_zip_entry(self, client_id: str, path: str, entry_name: str):
         return self.remote_file_service.read_zip_entry(client_id, path, entry_name)
 
-    def extract_remote_zip(self, client_id: str, path: str, destination_dir: str, entry_name: str = '', *, origin: str = 'web_ui'):
-        return self.remote_file_service.extract_zip(client_id, path, destination_dir, entry_name=entry_name, origin=origin)
+    def extract_remote_zip(self, client_id: str, path: str, destination_dir: str, entry_name: str = '', *, origin: str = 'web_ui', inspect=False, conflict_policy=None):
+        return self.remote_file_service.extract_zip(client_id, path, destination_dir, entry_name=entry_name, origin=origin, inspect=inspect, conflict_policy=conflict_policy)
+
+    def inspect_remote_upload(self, client_id: str, destination_dir: str, filename: str):
+        return self.remote_file_service.inspect_upload(client_id, destination_dir, filename)
 
     def read_remote_file(
         self,

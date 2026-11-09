@@ -253,6 +253,7 @@ class RemoteExecutionService:
         command: str = '',
         tab_id: str = '',
         transfer_id: str = '',
+        conflict_policy=None,
         use_transfer_manager: bool = False,
     ):
         return self.upload_execution_service.iter_upload_events(
@@ -267,5 +268,6 @@ class RemoteExecutionService:
             command=command,
             tab_id=tab_id,
             transfer_id=transfer_id,
+            conflict_policy=conflict_policy,
             use_transfer_manager=use_transfer_manager,
         )

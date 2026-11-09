@@ -25,6 +25,7 @@ def create_transfers_blueprint(server_instance):
                 filename=payload.get('filename') or '',
                 total_bytes=payload.get('total_bytes'),
                 destination_path=payload.get('destination_path') or '',
+                conflict_policy=payload.get('conflict_policy'),
                 tab_id=get_optional_tab_id(),
                 origin='web_ui' if request.headers.get('X-RCH-Origin') == 'web_ui' else 'web_api',
                 feature=request.headers.get('X-RCH-Feature') if request.headers.get('X-RCH-Feature') in ('remote_files', 'remote_file_picker') else 'remote_files',

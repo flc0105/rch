@@ -241,6 +241,7 @@ class WebTaskRunner:
             command=context.command,
             tab_id=self._get_task_tab_id(context),
             transfer_id=context.metadata.get('transfer_id') or '',
+            conflict_policy=context.metadata.get('conflict_policy'),
             use_transfer_manager=True,
         )
 

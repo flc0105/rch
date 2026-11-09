@@ -116,6 +116,7 @@ function component(fileName) {
     ElMessage: {warning() {}, error(e) {throw Error(e)}, success() {}},
     ElMessageBox: {}, RemotePinsDialog: {}, RemoteZipPeekDialog: {}, MoreFilled: {},
     formatBytesValue: (x) => x,
+    prepareUploadConflict: async () => null,
     uploadRemoteFileToClient: async (args) => {
       called.push(args)
       return {task_id: 'task-shared'}
@@ -141,7 +142,7 @@ const event = {target: {files: [file], value: 'report.txt'}}
 await picker.state.handleRemoteUploadChange(event)
 assert.equal(picker.called.length, 1)
 assert.deepEqual(JSON.parse(JSON.stringify(picker.called[0])), {
-  file, clientId: 'client-A', destinationPath: '/home/test',
+  file, clientId: 'client-A', destinationPath: '/home/test', conflictPolicy: null,
   headers: {...headers, 'X-RCH-Origin': 'web_ui', 'X-RCH-Feature': 'remote_file_picker'},
 })
 assert.equal(event.target.value, '')
@@ -151,7 +152,7 @@ const event2 = {target: {files: [file], value: 'report.txt'}}
 await dialog.state.handleUploadChange(event2)
 assert.equal(dialog.called.length, 1)
 assert.deepEqual(JSON.parse(JSON.stringify(dialog.called[0])), {
-  file, clientId: 'client-A', destinationPath: '/home/test',
+  file, clientId: 'client-A', destinationPath: '/home/test', conflictPolicy: null,
   headers: {...headers, 'X-RCH-Origin': 'web_ui', 'X-RCH-Feature': 'remote_files'},
 })
 assert.equal(event2.target.value, '')

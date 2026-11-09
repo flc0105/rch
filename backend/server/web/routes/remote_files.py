@@ -1,6 +1,7 @@
 from flask import Blueprint, request
 
 from server.web.api_response import WebApiResponder
+from server.application.preferences.settings_store import SettingsStore
 from server.web.request_parsers import get_json_payload, get_optional_remote_path, get_optional_tab_id, parse_paging_args
 
 
@@ -9,6 +10,25 @@ def create_remote_files_blueprint(server_instance):
     web_service = server_instance.web_service
     remote_file_api = web_service.remote_file_api
     responder = WebApiResponder()
+    conflict_settings = SettingsStore(server_instance.database, 'remote_file_conflicts')
+
+    @blueprint.get('/api/remote-files/conflict-preferences')
+    def get_remote_file_conflict_preferences():
+        return responder.json_endpoint(lambda: {
+            'ask_on_conflict': conflict_settings.read().get('ask_on_conflict') is True,
+        })
+
+    @blueprint.put('/api/remote-files/conflict-preferences')
+    def save_remote_file_conflict_preferences():
+        def _save():
+            payload = get_json_payload()
+            if not isinstance(payload.get('ask_on_conflict'), bool):
+                raise ValueError('ask_on_conflict must be a boolean')
+            result = {'ask_on_conflict': payload['ask_on_conflict']}
+            conflict_settings.write(result)
+            return result
+        return responder.json_endpoint(_save)
+
 
     def activity_origin():
         return 'web_ui' if request.headers.get('X-RCH-Origin') == 'web_ui' else 'web_api'
@@ -115,6 +135,15 @@ def create_remote_files_blueprint(server_instance):
 
         return responder.json_endpoint(_execute, default_error_status=500)
 
+    @blueprint.post('/api/connections/<client_id>/remote-files/inspect-upload')
+    def inspect_remote_upload(client_id):
+        def _execute():
+            payload = get_json_payload()
+            return remote_file_api.inspect_remote_upload(
+                client_id, str(payload.get('destination_dir') or ''), str(payload.get('filename') or ''),
+            )
+        return responder.json_endpoint(_execute)
+
     @blueprint.post('/api/connections/<client_id>/remote-files/create-zip')
     def create_remote_zip(client_id):
         def _execute():
@@ -174,7 +203,7 @@ def create_remote_files_blueprint(server_instance):
             if not destination_dir:
                 raise ValueError('destination_dir is required')
             entry_name = str(payload.get('entry_name') or '')
-            return remote_file_api.extract_remote_zip(client_id, path, destination_dir, entry_name=entry_name, origin=activity_origin())
+            return remote_file_api.extract_remote_zip(client_id, path, destination_dir, entry_name=entry_name, origin=activity_origin(), inspect=payload.get('inspect') is True, conflict_policy=payload.get('conflict_policy'))
 
         return responder.json_endpoint(_execute, default_error_status=500)
 
@@ -204,7 +233,7 @@ def create_remote_files_blueprint(server_instance):
             if operation not in ('copy', 'move'):
                 raise ValueError('operation must be copy or move')
 
-            return remote_file_api.paste_remote_paths(client_id, paths, destination_dir, operation, origin=activity_origin())
+            return remote_file_api.paste_remote_paths(client_id, paths, destination_dir, operation, origin=activity_origin(), inspect=payload.get('inspect') is True, conflict_policies=payload.get('conflict_policies'))
 
         return responder.json_endpoint(_execute, default_error_status=500)
 

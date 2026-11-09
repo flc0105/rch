@@ -298,6 +298,7 @@ class WebTaskService:
         remote_path: str = '',
         tab_id: str = '',
         transfer_id: str = '',
+        conflict_policy=None,
     ):
         command = f'upload {display_name}'
         return self._submit_request(
@@ -314,6 +315,7 @@ class WebTaskService:
                     'remote_path': remote_path,
                     'upload_tmp_dir': getattr(self.file_service, 'upload_tmp_dir', ''),
                     'transfer_id': (transfer_id or '').strip(),
+                    'conflict_policy': conflict_policy,
                 },
                 use_foreground_guard=False,
             )

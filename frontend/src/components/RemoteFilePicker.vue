@@ -217,6 +217,7 @@ import { listRemoteDirectory, getRemoteSystemPaths } from '../api/remoteFilesApi
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { formatBytes as formatBytesValue } from '../utils/formatters.js'
 import { uploadRemoteFileToClient } from '../api/transferApi.js'
+import { prepareUploadConflict } from '../utils/remoteFileConflicts.js'
 
 export default {
   name: 'RemoteFilePicker',
@@ -552,8 +553,12 @@ export default {
       )
 
       try {
+        const clientId = String(this.selectedId || '')
+        const destinationPath = this.remoteFilesCurrentPath
+        const conflictPolicy = await prepareUploadConflict(clientId, destinationPath, file.name)
+        if (conflictPolicy === false || String(this.selectedId || '') !== clientId || this.remoteFilesCurrentPath !== destinationPath) return
         const result = await uploadRemoteFileToClient({
-          file, clientId: this.selectedId, destinationPath: this.remoteFilesCurrentPath,
+          file, clientId, destinationPath, conflictPolicy,
           headers: {...this.buildRequestHeaders(), 'X-RCH-Origin': 'web_ui', 'X-RCH-Feature': 'remote_file_picker'},
         })
         const taskId = result.task_id

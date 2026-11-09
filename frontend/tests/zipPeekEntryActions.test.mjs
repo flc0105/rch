@@ -59,6 +59,7 @@ test('file transfer opens downloaded artifact and folder extraction sends the se
   const calls = [], messages = [], notifications = []
   const component = evaluate('RemoteZipEntryActions.vue', {
     RemoteFilePicker: {},
+    prepareExtractConflict: async () => null,
     ElMessage: {success: value => messages.push(value), error: err => {throw new Error(err)}},
     ElMessageBox: {confirm: async (...args) => calls.push(['confirm',...args])},
     downloadRemoteZipEntry: async (...args) => {calls.push(['download',...args]); return {ok:true,json:async()=>({code:0,data:{artifact:{artifact_id:'abc',download_url:'/dl/abc'}}})}},

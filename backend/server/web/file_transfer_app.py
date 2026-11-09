@@ -114,6 +114,7 @@ def create_browser_upload_blueprint(server_instance):
                     target_path,
                     tab_id=tab_id,
                     transfer_id=transfer_id,
+                    conflict_policy=grant.get('conflict_policy'),
                 )
             except Exception as exc:
                 transfer_api.clear_browser_upload_runtime(transfer_id)

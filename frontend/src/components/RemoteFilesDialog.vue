@@ -848,6 +848,7 @@ import { MoreFilled } from '@element-plus/icons-vue'
 import RemotePinsDialog from './RemotePinsDialog.vue'
 import { formatBytes as formatBytesValue } from '../utils/formatters.js'
 import { uploadRemoteFileToClient } from '../api/transferApi.js'
+import { preparePasteConflicts, prepareExtractConflict, prepareUploadConflict } from '../utils/remoteFileConflicts.js'
 import { sendCommand } from '../api/connectionsApi.js'
 
 
@@ -1222,8 +1223,10 @@ export default {
       )
 
       try {
+        const conflictPolicy = await prepareUploadConflict(clientId, targetPath, file.name)
+        if (conflictPolicy === false || String(this.remoteFilesClientId || '') !== clientId || this.remoteFilesCurrentPath !== targetPath) return
         const result = await uploadRemoteFileToClient({
-          file, clientId, destinationPath: targetPath,
+          file, clientId, destinationPath: targetPath, conflictPolicy,
           headers: {...this.getTabScopedHeaders(), 'X-RCH-Origin': 'web_ui', 'X-RCH-Feature': 'remote_files'},
         })
         const taskId = result.task_id
@@ -1570,7 +1573,10 @@ export default {
       }
 
       try {
-        const res = await pasteRemoteFiles(clientId, { paths, destination_dir: this.remoteFilesCurrentPath, operation: this.remoteClipboardMode })
+        const request = { paths, destination_dir: this.remoteFilesCurrentPath, operation: this.remoteClipboardMode }
+        const conflicts = await preparePasteConflicts(clientId, request)
+        if (conflicts === false || !this.isRemoteFilesContextActive(context)) return
+        const res = await pasteRemoteFiles(clientId, { ...request, ...(conflicts || {}) })
 
         const json = await res.json()
 
@@ -1582,10 +1588,12 @@ export default {
         const actionText = this.remoteClipboardMode === 'move' ? 'Moved' : 'Copied'
         const message = json.data?.message || `${actionText} ${paths.length} item(s)`
 
-        ElMessage.success(`${actionText} ${paths.length} item(s)`)
+        const failed = Number(json.data?.failed || 0)
+        if (failed > 0) ElMessage.warning(`${actionText} ${json.data?.succeeded || 0} of ${paths.length} item(s). ${failed} failed.`)
+        else ElMessage.success(`${actionText} ${paths.length} item(s)`)
         await this.refreshRemoteDirectory()
 
-        if (this.remoteClipboardMode === 'move') {
+        if (this.remoteClipboardMode === 'move' && failed === 0) {
           this.clearRemoteClipboard()
         }
 
@@ -1842,7 +1850,10 @@ export default {
 
         if (!this.isRemoteFilesContextActive(context)) return
         this.remoteZipExtracting = true
-        const res = await extractRemoteZip(clientId, { path: row.path, destination_dir: this.remoteFilesCurrentPath })
+        const request = { path: row.path, destination_dir: this.remoteFilesCurrentPath }
+        const conflicts = await prepareExtractConflict(clientId, request)
+        if (conflicts === false || !this.isRemoteFilesContextActive(context)) return
+        const res = await extractRemoteZip(clientId, { ...request, ...(conflicts || {}) })
         const json = await res.json()
 
         if (!this.isRemoteFilesContextActive(context)) return

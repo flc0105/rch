@@ -82,6 +82,7 @@ class UploadExecutionService:
             command: str = '',
             tab_id: str = '',
             transfer_id: str = '',
+        conflict_policy=None,
     ):
         artifact_service = None
         staged_path = ''
@@ -173,6 +174,7 @@ class UploadExecutionService:
                     'relative_url': relative_url,
                     'filename': safe_name,
                     'save_dir': remote_path,
+                    **({'conflict_policy': conflict_policy} if conflict_policy is not None else {}),
                 },
             })
 
@@ -242,6 +244,7 @@ class UploadExecutionService:
             command: str = '',
             tab_id: str = '',
             transfer_id: str = '',
+        conflict_policy=None,
             use_transfer_manager: bool = False,
     ):
         """
@@ -266,6 +269,7 @@ class UploadExecutionService:
                 command=command,
                 tab_id=tab_id,
                 transfer_id=transfer_id,
+                conflict_policy=conflict_policy,
             )
             return
 

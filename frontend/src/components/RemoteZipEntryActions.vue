@@ -14,6 +14,7 @@
 import { ElMessage, ElMessageBox } from 'element-plus'
 import RemoteFilePicker from './RemoteFilePicker.vue'
 import { downloadRemoteZipEntry, extractRemoteZip } from '../api/remoteFilesApi.js'
+import { prepareExtractConflict } from '../utils/remoteFileConflicts.js'
 
 export default {
   name: 'RemoteZipEntryActions',
@@ -91,9 +92,10 @@ export default {
           String(this.archivePath || '').trim() !== archivePath) return
       this.extracting = true
       try {
-        const response = await extractRemoteZip(clientId, {
-          path: archivePath, destination_dir: destinationDir, entry_name: entry.path,
-        })
+        const request = { path: archivePath, destination_dir: destinationDir, entry_name: entry.path }
+        const conflicts = await prepareExtractConflict(clientId, request)
+        if (conflicts === false || String(this.selectedId || '').trim() !== clientId || String(this.archivePath || '').trim() !== archivePath) return
+        const response = await extractRemoteZip(clientId, { ...request, ...(conflicts || {}) })
         const json = await response.json()
         if (!response.ok || json.code !== 0) throw new Error(json.message || 'ZIP entry extraction failed')
         ElMessage.success(`Extracted to: ${json.data?.extracted_to || destinationDir}`)

@@ -6,6 +6,7 @@ import time
 from client.commands.common.services.filesystem.path_resolver import PathResolver
 from client.commands.common.services.filesystem.batch_file_result import BatchFileResult
 from core.utils.text_encoding import encode_for_existing_file
+from client.commands.common.services.filesystem.conflict_policy import apply_path, describe_conflict
 
 
 class FileSystemService:
@@ -309,15 +310,39 @@ class FileSystemService:
 
         return target_path
 
-    def paste_paths(self, source_paths: list[str], destination_dir: str, operation: str) -> BatchFileResult:
+    def paste_paths(self, source_paths: list[str], destination_dir: str, operation: str, policies=None, inspect=False) -> BatchFileResult | dict:
+        if inspect:
+            conflicts = []
+            planned = {}
+            for index, source_path in enumerate(source_paths):
+                resolved = self.path_resolver.require_existing_path_from_arg(str(source_path or '').strip())
+                target = os.path.join(destination_dir, os.path.basename(os.path.abspath(resolved)))
+                conflict = describe_conflict(resolved, target, index)
+                if not conflict and os.path.normcase(target) in planned:
+                    from client.commands.common.services.filesystem.conflict_policy import path_kind, allowed_actions
+                    target_kind = planned[os.path.normcase(target)]
+                    source_kind = path_kind(resolved)
+                    conflict = {
+                        'index': index, 'source': resolved, 'target': target,
+                        'source_kind': source_kind, 'target_kind': target_kind,
+                        'allowed_actions': allowed_actions(source_kind, target_kind),
+                    }
+                if conflict:
+                    conflicts.append(conflict)
+                planned[os.path.normcase(target)] = ('directory' if os.path.isdir(resolved) else 'file')
+            return {'conflicts': conflicts}
         succeeded, errors = 0, []
-        for source_path in source_paths:
+        for index, source_path in enumerate(source_paths):
             try:
                 path = str(source_path or '').strip()
                 if not path:
                     raise ValueError('Path is required')
                 resolved = self.path_resolver.require_existing_path_from_arg(path)
-                self.copy_or_move_single_path(resolved, destination_dir, operation)
+                if policies is None:
+                    self.copy_or_move_single_path(resolved, destination_dir, operation)
+                else:
+                    policy = policies[index] if index < len(policies) else 'stop'
+                    apply_path(resolved, os.path.join(destination_dir, os.path.basename(os.path.abspath(resolved))), operation, policy)
                 succeeded += 1
             except Exception as exc:
                 errors.append(f'{source_path}: {exc}')

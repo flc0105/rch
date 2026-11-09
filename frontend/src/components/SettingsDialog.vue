@@ -137,6 +137,23 @@
         </div>
       </el-tab-pane>
 
+      <el-tab-pane label="Remote Files" name="remote-files">
+        <div v-loading="remoteFileConflictLoading" class="settings-tab-scroll">
+          <div class="remote-files-settings">
+            <div class="remote-files-settings-heading">File conflicts</div>
+            <div class="remote-files-settings-row">
+              <div class="remote-files-settings-copy">
+                <div class="remote-files-settings-title">Ask when a destination already exists</div>
+                <div class="settings-note settings-note-inline">
+                  Ask before copying, moving, extracting ZIPs, or uploading to an existing name. Applies to every device.
+                </div>
+              </div>
+              <el-switch v-model="remoteFileConflictDraft.ask_on_conflict" aria-label="Ask on file conflict" />
+            </div>
+          </div>
+        </div>
+      </el-tab-pane>
+
       <el-tab-pane label="Notifications" name="notifications">
         <div v-loading="notificationLoading" class="settings-tab-scroll">
           <div class="notification-master-row">
@@ -228,6 +245,7 @@ import {
   normalizeConnectionContextPreferences,
 } from '../data/connectionContextFields.js'
 import { CONNECTION_CONTEXT_ICONS } from '../data/connectionContextIcons.js'
+import { loadRemoteFileConflictPreferences, saveRemoteFileConflictPreferences } from '../api/remoteFileConflictPreferencesApi.js'
 
 export default {
   name: 'SettingsDialog',
@@ -238,6 +256,9 @@ export default {
     return {
       visible: false,
       activeTab: 'toolbar',
+      remoteFileConflictLoading: false,
+      remoteFileConflictSaving: false,
+      remoteFileConflictDraft: { ask_on_conflict: false },
 
       toolbarLoading: false,
       toolbarSaving: false,
@@ -258,11 +279,13 @@ export default {
 
   computed: {
     activeLoading() {
+      if (this.activeTab === 'remote-files') return this.remoteFileConflictLoading
       if (this.activeTab === 'notifications') return this.notificationLoading
       if (this.activeTab === 'connection-context') return this.connectionContextLoading
       return this.toolbarLoading
     },
     activeSaving() {
+      if (this.activeTab === 'remote-files') return this.remoteFileConflictSaving
       if (this.activeTab === 'notifications') return this.notificationSaving
       if (this.activeTab === 'connection-context') return this.connectionContextSaving
       return this.toolbarSaving
@@ -285,12 +308,13 @@ export default {
   methods: {
     async open(tab = 'toolbar') {
       this.visible = true
-      this.activeTab = ['notifications', 'connection-context'].includes(tab) ? tab : 'toolbar'
+      this.activeTab = ['notifications', 'connection-context', 'remote-files'].includes(tab) ? tab : 'toolbar'
 
       await Promise.all([
         this.loadToolbarSettings(),
         this.loadNotificationSettings(),
         this.loadConnectionContextSettings(),
+        this.loadRemoteFileConflictSettings(),
       ])
     },
 
@@ -440,7 +464,34 @@ export default {
       }
     },
 
+    async loadRemoteFileConflictSettings() {
+      this.remoteFileConflictLoading = true
+      try {
+        const saved = await loadRemoteFileConflictPreferences()
+        this.remoteFileConflictDraft = { ask_on_conflict: saved.ask_on_conflict === true }
+      } catch (error) {
+        ElMessage.error(error.message || 'Failed to load remote file settings')
+      } finally {
+        this.remoteFileConflictLoading = false
+      }
+    },
+    async saveRemoteFileConflictSettings() {
+      this.remoteFileConflictSaving = true
+      try {
+        const saved = await saveRemoteFileConflictPreferences(this.remoteFileConflictDraft)
+        this.remoteFileConflictDraft = { ask_on_conflict: saved.ask_on_conflict === true }
+        ElMessage.success('Remote file settings updated')
+      } catch (error) {
+        ElMessage.error(error.message || 'Failed to save remote file settings')
+      } finally {
+        this.remoteFileConflictSaving = false
+      }
+    },
     resetActiveDefaults() {
+      if (this.activeTab === 'remote-files') {
+        this.remoteFileConflictDraft = { ask_on_conflict: false }
+        return
+      }
       if (this.activeTab === 'notifications') {
         this.resetNotificationDefaults()
         return
@@ -452,6 +503,7 @@ export default {
       this.resetToolbarDefaults()
     },
     saveActiveSettings() {
+      if (this.activeTab === 'remote-files') return this.saveRemoteFileConflictSettings()
       if (this.activeTab === 'notifications') {
         return this.saveNotificationSettings()
       }
@@ -479,6 +531,40 @@ export default {
 .settings-section-heading,
 .settings-section-title {
   font-weight: 650;
+}
+
+/* A single preference should read as a setting, not a card nested in a card. */
+.remote-files-settings {
+  padding: 6px 2px 0;
+}
+
+.remote-files-settings-heading {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--el-text-color-primary);
+}
+
+.remote-files-settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 14px 0 16px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+
+.remote-files-settings-copy {
+  min-width: 0;
+}
+
+.remote-files-settings-title {
+  font-size: 13px;
+  line-height: 1.5;
+  font-weight: 600;
+}
+
+.remote-files-settings-row :deep(.el-switch) {
+  flex: 0 0 auto;
 }
 
 .settings-section {
@@ -717,4 +803,5 @@ export default {
   overflow-y: auto;
   padding: 4px 6px 4px 0;
 }
+
 </style>
