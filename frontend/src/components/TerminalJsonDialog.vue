@@ -198,6 +198,7 @@
 </template>
 
 <script>
+import { canRerunTerminalSource } from '../utils/terminalRerun.js'
 import { h, ref } from 'vue'
 import { ElMessage, ElMessageBox, ElRadioGroup, ElRadioButton } from 'element-plus'
 import { JSON_ROW_ACTIONS, getJsonRenderModel } from '../utils/terminalJson.js'
@@ -260,11 +261,10 @@ export default {
 
     canRunAgain() {
       const info = this.commandInfo || {}
-      if (info.blockType === 'remote_upload') return false
-      if (info.blockType === 'script' || info.is_script === true) {
-        return !!String(info.script_name || info.scriptMeta?.script_name || '').trim()
-      }
-      return !!String(info.commandText || '').trim()
+      return canRerunTerminalSource({
+        ...info,
+        blockType: info.is_script === true ? 'script' : (info.blockType || 'command'),
+      })
     },
 
     hasTerminalJsonRenderView() {

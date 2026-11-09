@@ -98,7 +98,7 @@
                     </el-dropdown-item>
                     <el-dropdown-item
                         command="rerun-command"
-                        :disabled="isTerminalRemoteUploadBlock(block)"
+                        :disabled="!canRerunTerminalBlock(block)"
                     >
                       Run again
                     </el-dropdown-item>
@@ -281,6 +281,7 @@ import {
   TERMINAL_RUN_SCRIPT_PREFIX,
 } from '../composables/terminalMarkers.js'
 import { buildTerminalOutputJson, buildTerminalOutputText } from '../utils/terminalOutputExport.js'
+import { canRerunTerminalSource } from '../utils/terminalRerun.js'
 
 export default {
   name: 'TerminalOutput',
@@ -747,13 +748,36 @@ export default {
       const scriptMeta = this.buildTerminalBlockScriptMeta(block)
       const isScript = terminalBlockType === 'script' || !!scriptMeta.script_name || commandText.toLowerCase().startsWith(TERMINAL_RUN_SCRIPT_PREFIX.toLowerCase())
       const isRemoteUpload = isTerminalRemoteUploadText(commandText)
+      const isArtifactSend = commandText.startsWith('[Artifact Send]')
+      const isQuickAction = this.getTerminalBlockMetaList(block).some(meta => meta.quick_action === true)
+
+      let blockType = 'command'
+      if (terminalBlockType && terminalBlockType !== 'command' && terminalBlockType !== 'script') {
+        blockType = terminalBlockType
+      } else if (isScript) {
+        blockType = 'script'
+      } else if (isRemoteUpload) {
+        blockType = 'remote_upload'
+      } else if (isArtifactSend) {
+        blockType = 'artifact_send'
+      } else if (isQuickAction) {
+        blockType = 'quick_action'
+      }
 
       return {
-        blockType: isScript ? 'script' : (isRemoteUpload ? 'remote_upload' : 'command'),
+        blockType,
         commandId: this.normalizeNullableInt(this.findTerminalBlockMetaValue(block, ['command_id', 'source_command_id'])),
         taskId: String(this.findTerminalBlockMetaValue(block, ['task_id']) || '').trim(),
         scriptMeta,
       }
+    },
+
+    canRerunTerminalBlock(block) {
+      return canRerunTerminalSource({
+        blockType: block?.blockType,
+        commandText: this.getTerminalBlockCommandText(block),
+        scriptMeta: block?.scriptMeta,
+      })
     },
 
     isTerminalScriptRunBlock(block) {
@@ -919,10 +943,7 @@ export default {
     },
 
     rerunTerminalBlock(block) {
-      if (this.isTerminalRemoteUploadBlock(block)) {
-        ElMessage.warning('Remote upload cannot be run again from terminal history')
-        return
-      }
+      if (!this.canRerunTerminalBlock(block)) return
 
       const isScript = this.isTerminalScriptRunBlock(block)
       const commandText = this.getTerminalBlockCommandText(block)

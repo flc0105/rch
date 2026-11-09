@@ -319,6 +319,8 @@ Viewer 的操作包括：
 
 ## JSON Viewer 的 Run Again 与行级操作输出
 
+Terminal 输出块菜单的 **Run again** 适用于真实 Command 与携带可重跑脚本身份的 Script。Remote Upload、Artifact Send、Quick Action 等专用操作没有通过通用命令入口重放的执行定义，菜单项保持禁用；JSON Viewer 同样只允许有效的 Command 或 Script 来源使用该操作。
+
 JSON Viewer 支持对有效来源的 Command 或 Script 使用 **Run Again**，发起一次新的执行并在 Terminal 中留下新执行记录。当前 Viewer 不关闭；新任务完成后仅在输出能解析为完整合法 JSON 时替换 Viewer 中展示的数据，否则提示错误并保留原数据显示。此前的 Terminal 历史内容始终不变。
 
 Table 的 `_actions` 继续是可选的行级元数据。用户确认执行命令后，可以选择 Terminal 或 New Dialog：前者使用原终端输出，后者仅在当前前端的结果弹窗显示执行输出，不关闭原 JSON Viewer。两种动作均复用既有 `/api/connections/{client_id}/command` 请求及任务结果 SSE。

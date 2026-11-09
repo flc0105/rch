@@ -1200,6 +1200,7 @@ export default {
         this.$emit(
           'append-output', clientId,
           `> [Artifact Send] ${displayName} -> ${deviceLabel} :: ${targetCwdLabel}`, 'command',
+          { terminal_block_type: 'artifact_send' },
         )
         const res = await sendArtifactToClient(
           row.artifact_id, clientId, targetCwd, this.buildJsonHeaders({ 'Content-Type': 'application/json' }), conflictPolicy,

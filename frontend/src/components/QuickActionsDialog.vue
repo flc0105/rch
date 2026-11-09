@@ -752,7 +752,7 @@ export default {
         }
         this.resultVisible = true
       } else {
-        this.$emit('append-output', this.selectedId, `> ${displayCommand}`, 'command')
+        this.$emit('append-output', this.selectedId, `> ${displayCommand}`, 'command', { terminal_block_type: 'quick_action' })
       }
 
       this.runSubmitting = true
