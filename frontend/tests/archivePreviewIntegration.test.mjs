@@ -28,7 +28,7 @@ test('ZIP is a PreviewDialog type and uses artifact ZIP APIs without creating a 
   let requests = []
   let loaded = 0
   const options = evaluate(previewSource, {
-    ArchivePreviewPanel: {}, PreviewImageInfoDialog: {}, FullScreen: {}, Close: {},
+    ArchivePreviewPanel: {}, RemoteZipEntryActions: {}, PreviewImageInfoDialog: {}, FullScreen: {}, Close: {},
     inspectArtifactZip: id => { requests.push(['inspect', id]); return {} },
     readArtifactZipEntry: (id, entry) => { requests.push(['read', id, entry]); return {} },
     ElMessage: { error(message) { throw new Error(message) } },
@@ -50,7 +50,7 @@ test('ZIP is a PreviewDialog type and uses artifact ZIP APIs without creating a 
 test('Remote ZIP enters PreviewDialog and uses client peek; existing Clipboard ZIP wrapper stays', async () => {
   const calls = []
   const options = evaluate(previewSource, {
-    ArchivePreviewPanel: {}, PreviewImageInfoDialog: {}, FullScreen: {}, Close: {},
+    ArchivePreviewPanel: {}, RemoteZipEntryActions: {}, PreviewImageInfoDialog: {}, FullScreen: {}, Close: {},
     inspectRemoteZip: (client, path) => { calls.push(['peek', client, path]); return {} },
     readRemoteZipEntry: (client, path, entry) => { calls.push(['entry', client, path, entry]); return {} },
     ElMessage: { error(message) { throw new Error(message) }, warning(message) { throw new Error(message) } },

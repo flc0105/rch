@@ -15,7 +15,7 @@ let response = null
 const sandbox = {
   console,
   PreviewImageInfoDialog: {},
-  ArchivePreviewPanel: {},
+  ArchivePreviewPanel: {}, RemoteZipEntryActions: {},
   FullScreen: {},
   Close: {},
   document: {createElement: tag => ({tag})},

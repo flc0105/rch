@@ -82,6 +82,20 @@ def create_remote_files_blueprint(server_instance):
 
         return responder.json_endpoint(_execute, default_error_status=500)
 
+    @blueprint.post('/api/connections/<client_id>/remote-files/download-zip-entry')
+    def download_remote_zip_entry(client_id):
+        def _execute():
+            payload = get_json_payload()
+            path = (payload.get('path') or '').strip()
+            entry_name = str(payload.get('entry_name') or '')
+            if not path or not entry_name:
+                raise ValueError('path and entry_name are required')
+            return remote_file_api.download_remote_zip_entry(
+                client_id, path, entry_name, tab_id=get_optional_tab_id(),
+                origin=activity_origin(), feature=transfer_feature(),
+            )
+        return responder.json_endpoint(_execute, default_error_status=500)
+
     @blueprint.post('/api/connections/<client_id>/remote-files/download-zip')
     def download_remote_paths_as_zip(client_id):
         def _execute():
@@ -159,7 +173,8 @@ def create_remote_files_blueprint(server_instance):
                 raise ValueError('path is required')
             if not destination_dir:
                 raise ValueError('destination_dir is required')
-            return remote_file_api.extract_remote_zip(client_id, path, destination_dir, origin=activity_origin())
+            entry_name = str(payload.get('entry_name') or '')
+            return remote_file_api.extract_remote_zip(client_id, path, destination_dir, entry_name=entry_name, origin=activity_origin())
 
         return responder.json_endpoint(_execute, default_error_status=500)
 

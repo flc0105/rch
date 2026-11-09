@@ -87,10 +87,11 @@ func (s *Session) StartTransfer(id, operation string, payload map[string]interfa
 		return
 	}
 	allowed := map[string]bool{
-		"client_to_server_file":    true,
-		"client_to_server_preview": true,
-		"client_to_server_zip":     true,
-		"server_to_client_file":    true,
+		"client_to_server_file":      true,
+		"client_to_server_preview":   true,
+		"client_to_server_zip":       true,
+		"client_to_server_zip_entry": true,
+		"server_to_client_file":      true,
 	}
 	if !allowed[operation] {
 		s.transferUpdate(id, map[string]interface{}{"state": "failed", "stage": "failed", "cancel_supported": false, "error": "Unsupported transfer operation: " + operation})
@@ -173,6 +174,34 @@ func (s *Session) runTransfer(ctx context.Context, id, operation string, payload
 			filename += ".zip"
 		}
 		return s.uploadTransferFile(ctx, id, name, filename, "files", "bundle")
+	case "client_to_server_zip_entry":
+		archivePath, err := remoteExisting(s, payloadText(payload["path"]), false)
+		if err != nil {
+			return err
+		}
+		entryName := payloadText(payload["entry_name"])
+		if entryName == "" {
+			return fmt.Errorf("entry_name is required")
+		}
+		tempDir, err := os.MkdirTemp("", "rch-go-zip-entry-*")
+		if err != nil {
+			return err
+		}
+		defer os.RemoveAll(tempDir)
+		s.transferUpdate(id, map[string]interface{}{"state": "running", "stage": "preparing"})
+		result, err := extractRemoteZipEntry(ctx, archivePath, tempDir, entryName)
+		if err != nil {
+			return err
+		}
+		extracted := result["extracted_to"].(string)
+		info, err := os.Stat(extracted)
+		if err != nil {
+			return err
+		}
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("ZIP entry download requires a file")
+		}
+		return s.uploadTransferFile(ctx, id, extracted, filepath.Base(extracted), "files", "download")
 	case "server_to_client_file":
 		return s.downloadTransferFile(ctx, id, payload)
 	default:

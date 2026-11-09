@@ -213,7 +213,9 @@ class CommandFileWebMixin:
                 return 0, 'destination_dir is required'
 
             resolved_destination = self.path_resolver.require_existing_directory_from_arg(destination_dir)
-            result = self.archive_service.extract_zip_smart(archive_path, resolved_destination)
+            entry_name = str(payload.get('entry_name') or '')
+            result = (self.archive_service.extract_zip_entry(archive_path, resolved_destination, entry_name)
+                      if entry_name else self.archive_service.extract_zip_smart(archive_path, resolved_destination))
             return 1, json.dumps(result, ensure_ascii=False)
         except CommandCancelledError:
             return 0, 'Command cancelled'

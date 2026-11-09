@@ -187,6 +187,17 @@
           ref="archivePreviewRef"
           :inspect="archiveInspect"
           :read-entry="archiveReadEntry"
+          :entry-actions="previewSource === 'remote_file'"
+          @download-entry="downloadArchiveEntry"
+          @extract-entry="extractArchiveEntry"
+        />
+        <RemoteZipEntryActions
+          v-if="previewSource === 'remote_file'"
+          ref="archiveActionsRef"
+          :selected-id="previewRemoteClientId"
+          :archive-path="previewFilePath"
+          @artifacts-maybe-changed="$emit('artifacts-maybe-changed')"
+          @remote-directory-maybe-changed="$emit('remote-directory-maybe-changed')"
         />
       </template>
 
@@ -223,6 +234,7 @@
 import { previewArtifact, uploadArtifact, saveArtifactContent, inspectArtifactZip, readArtifactZipEntry } from '../api/artifactsApi.js'
 import { inspectRemoteZip, readRemoteZipEntry } from '../api/remoteFilesApi.js'
 import ArchivePreviewPanel from './ArchivePreviewPanel.vue'
+import RemoteZipEntryActions from './RemoteZipEntryActions.vue'
 import { saveServerJob, downloadServerJob, previewBackgroundJobFile } from '../api/backgroundJobsApi.js'
 import {ElMessage} from 'element-plus'
 import {Close, FullScreen} from '@element-plus/icons-vue'
@@ -322,6 +334,7 @@ export default {
   components: {
     PreviewImageInfoDialog,
     ArchivePreviewPanel,
+    RemoteZipEntryActions,
     Close,
     FullScreen,
   },
@@ -761,6 +774,14 @@ export default {
       }
 
       this.previewText = ''
+    },
+
+    downloadArchiveEntry(entry) {
+      this.$refs.archiveActionsRef?.downloadEntry(entry)
+    },
+
+    extractArchiveEntry(entry) {
+      this.$refs.archiveActionsRef?.extractEntry(entry)
     },
 
     editRemoteEntry(row) {

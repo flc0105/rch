@@ -55,9 +55,15 @@
             <span class="ellipsis" :title="selectedEntry?.path || ''">
               {{ selectedEntry?.path || 'File Content' }}
             </span>
-            <span v-if="selectedEntry && !selectedEntry.is_dir" class="remote-zip-peek-entry-meta">
-              {{ formatBytes(selectedEntry.size) }}
-            </span>
+            <div class="remote-zip-peek-panel-actions">
+              <span v-if="selectedEntry && !selectedEntry.is_dir" class="remote-zip-peek-entry-meta">
+                {{ formatBytes(selectedEntry.size) }}
+              </span>
+              <template v-if="entryActions && selectedEntry">
+                <el-button v-if="!selectedEntry.is_dir" size="small" link type="primary" @click="$emit('download-entry', selectedEntry)">Download</el-button>
+                <el-button size="small" link type="primary" @click="$emit('extract-entry', selectedEntry)">Extract To…</el-button>
+              </template>
+            </div>
           </div>
 
           <div class="remote-zip-peek-content-shell" v-loading="entryLoading">
@@ -85,7 +91,9 @@ export default {
   props: {
     inspect: { type: Function, required: true },
     readEntry: { type: Function, required: true },
+    entryActions: { type: Boolean, default: false },
   },
+  emits: ['download-entry', 'extract-entry'],
   data() {
     return {
       loading: false,
@@ -96,6 +104,7 @@ export default {
       entryType: '',
       entryContent: '',
       entryError: '',
+      entryRequestSeq: 0,
       defaultExpandedKeys: [],
       zipTreeProps: { children: 'children', label: 'name' },
     }
@@ -119,24 +128,27 @@ export default {
       }
     },
     async handleTreeNodeClick(data) {
-      if (!data || data.is_dir || !data.entry_name) return
+      if (!data) return
+      const requestSeq = ++this.entryRequestSeq
       this.selectedEntry = data
       this.entryType = ''
       this.entryContent = ''
       this.entryError = ''
+      if (data.is_dir || !data.entry_name) { this.entryLoading = false; return }
       this.entryLoading = true
       try {
         const res = await this.readEntry(data.entry_name)
         const json = await res.json()
         if (!res.ok || json.code !== 0) throw new Error(json.message || 'Failed to read ZIP entry')
+        if (requestSeq !== this.entryRequestSeq) return
         const payload = json.data || {}
         this.entryType = payload.type || ''
         if (this.entryType === 'text') this.entryContent = String(payload.content || '')
         else this.entryError = payload.message || 'This archive entry cannot be previewed as text'
       } catch (e) {
-        this.entryError = e?.message || 'Failed to read ZIP entry'
+        if (requestSeq === this.entryRequestSeq) this.entryError = e?.message || 'Failed to read ZIP entry'
       } finally {
-        this.entryLoading = false
+        if (requestSeq === this.entryRequestSeq) this.entryLoading = false
       }
     },
     setAllExpanded(expanded) {
@@ -151,6 +163,7 @@ export default {
       apply(rootNodes)
     },
     resetState() {
+      this.entryRequestSeq += 1
       this.loading = false
       this.entryLoading = false
       this.archiveInfo = null

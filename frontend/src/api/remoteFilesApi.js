@@ -50,6 +50,11 @@ export function readRemoteZipEntry(clientId, path, entryName) {
     jsonRequestOptions('POST', { path, entry_name: entryName }))
 }
 
+export function downloadRemoteZipEntry(clientId, path, entryName, headers = {}) {
+  return fetch(remoteFilesUrl(clientId, '/download-zip-entry'),
+    webUiJson('POST', { path, entry_name: entryName }, headers))
+}
+
 export function makeRemoteDirectory(clientId, path) {
   return fetch(remoteFilesUrl(clientId, '/mkdir'), webUiJson('POST', { path }))
 }

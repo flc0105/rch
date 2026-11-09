@@ -69,7 +69,7 @@ test('App routes edit through the lazy shared preview dialog', () => {
 const requests = []
 let nextResponse = null
 const previewSandbox = {
-  console, ArchivePreviewPanel: {}, PreviewImageInfoDialog: {}, Close: {}, FullScreen: {},
+  console, ArchivePreviewPanel: {}, RemoteZipEntryActions: {}, PreviewImageInfoDialog: {}, Close: {}, FullScreen: {},
   formatBytes: value => `${value} B`,
   ElMessage: { error: message => errors.push(message), warning: message => warnings.push(message), success() {} },
   fetch: async (url, options) => {

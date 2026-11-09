@@ -260,6 +260,43 @@ class WebRemoteFileService:
                 self.transfer_service.fail_transfer(transfer_id, str(exc), client_id=client_id)
             raise
 
+    def download_zip_entry(self, client_id: str, path: str, entry_name: str,
+                           tab_id: str = '', *, origin: str = 'web_api', feature: str = 'remote_files') -> dict:
+        if not (path or '').strip() or not entry_name:
+            raise ValueError('path and entry_name are required')
+        if self.transfer_service is None:
+            raise RuntimeError('transfer_service is not available')
+        normalized_path = path.strip()
+        filename = entry_name.replace('\\', '/').rstrip('/').split('/')[-1]
+        if not filename or filename in ('.', '..'):
+            raise ValueError('Invalid ZIP entry name')
+        session = self.remote_execution_service.get_connection(client_id)
+        transfer = self.transfer_service.create_transfer(
+            client_id=client_id, direction='client_to_server', filename=filename,
+            hostname=getattr(session.session_info, 'hostname', '') or '',
+            source_path=f'{normalized_path} :: {entry_name}', destination_path='Artifacts',
+            tab_id=tab_id, stage='preparing',
+            metadata={'source': 'remote_zip_entry_download', 'transport': 'client_transfer_manager'},
+        )
+        transfer_id = transfer.get('transfer_id') or ''
+        recorder = getattr(self.transfer_service, 'activity_recorder', None)
+        if recorder is not None:
+            recorder.track(transfer_id, session, action='download_files', origin=origin,
+                           arguments={'path': normalized_path, 'entry_name': entry_name,
+                                      'filename': filename, 'count': 1, 'source': feature})
+        try:
+            self._start_client_transfer(session, transfer_id, 'client_to_server_zip_entry',
+                                        {'path': normalized_path, 'entry_name': entry_name})
+            _, artifact = self._wait_for_transfer_artifact(transfer_id)
+            return {'path': normalized_path, 'entry_name': entry_name,
+                    'message': 'ZIP entry transfer completed', 'artifact': artifact,
+                    'transfer_id': transfer_id}
+        except Exception as exc:
+            current = self.transfer_service.get_transfer(transfer_id)
+            if current and current.get('state') == 'running':
+                self.transfer_service.fail_transfer(transfer_id, str(exc), client_id=client_id)
+            raise
+
     def download_paths_as_zip(
             self,
             client_id: str,
@@ -381,13 +418,16 @@ class WebRemoteFileService:
             source='web_remote_file',
         )
 
-    def extract_zip(self, client_id: str, path: str, destination_dir: str, *, origin: str = 'web_ui') -> dict:
+    def extract_zip(self, client_id: str, path: str, destination_dir: str, entry_name: str = '', *, origin: str = 'web_ui') -> dict:
         if not (path or '').strip():
             raise ValueError('path is required')
         if not (destination_dir or '').strip():
             raise ValueError('destination_dir is required')
 
-        return self._run_mutation(client_id, 'extract_archive', {'path': path.strip(), 'destination_dir': destination_dir.strip()}, 'extract_zip_path', {'path': path.strip(), 'destination_dir': destination_dir.strip()}, json_result=True, origin=origin)
+        arguments = {'path': path.strip(), 'destination_dir': destination_dir.strip()}
+        if entry_name:
+            arguments['entry_name'] = entry_name
+        return self._run_mutation(client_id, 'extract_archive', arguments, 'extract_zip_path', arguments, json_result=True, origin=origin)
 
     def delete_paths(self, client_id: str, paths: list[str], *, origin: str = 'web_ui') -> dict:
         """

@@ -8,26 +8,37 @@
     class="remote-zip-peek-dialog"
     @closed="resetState"
   >
-    <ArchivePreviewPanel ref="archivePanelRef" :inspect="inspectArchive" :read-entry="readArchiveEntry" />
+    <ArchivePreviewPanel
+      ref="archivePanelRef" :inspect="inspectArchive" :read-entry="readArchiveEntry"
+      entry-actions @download-entry="downloadEntry" @extract-entry="extractEntry"
+    />
+    <RemoteZipEntryActions ref="archiveActionsRef" :selected-id="archiveClientId" :archive-path="archivePath" />
     <template #footer><el-button size="small" @click="visible = false">Close</el-button></template>
   </el-dialog>
 </template>
 
 <script>
 import ArchivePreviewPanel from './ArchivePreviewPanel.vue'
+import RemoteZipEntryActions from './RemoteZipEntryActions.vue'
 import { inspectRemoteZip, readRemoteZipEntry } from '../api/remoteFilesApi.js'
 
 export default {
   name: 'RemoteZipPeekDialog',
-  components: { ArchivePreviewPanel },
+  components: { ArchivePreviewPanel, RemoteZipEntryActions },
   props: { selectedId: { type: String, default: '' } },
-  data() { return { visible: false, archivePath: '', archiveName: '' } },
+  data() { return { visible: false, archivePath: '', archiveName: '', archiveClientId: '' } },
   methods: {
-    resetState() { this.$refs.archivePanelRef?.resetState() },
-    inspectArchive() { return inspectRemoteZip(this.selectedId, this.archivePath) },
-    readArchiveEntry(entryName) { return readRemoteZipEntry(this.selectedId, this.archivePath, entryName) },
+    resetState() {
+      this.$refs.archivePanelRef?.resetState()
+      this.$refs.archiveActionsRef?.cancelSelection()
+    },
+    downloadEntry(entry) { this.$refs.archiveActionsRef?.downloadEntry(entry) },
+    extractEntry(entry) { this.$refs.archiveActionsRef?.extractEntry(entry) },
+    inspectArchive() { return inspectRemoteZip(this.archiveClientId, this.archivePath) },
+    readArchiveEntry(entryName) { return readRemoteZipEntry(this.archiveClientId, this.archivePath, entryName) },
     async open(row) {
       if (!this.selectedId || !row?.path) return
+      this.archiveClientId = String(this.selectedId)
       this.archivePath = String(row.path).trim()
       this.archiveName = String(row.name || '').trim() || 'archive.zip'
       this.visible = true

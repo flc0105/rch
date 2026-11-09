@@ -203,6 +203,82 @@ class ArchiveService(ZipPeekService):
             index += 1
         return candidate
 
+    def extract_zip_entry(self, archive_path: str, destination_dir: str, entry_name: str) -> dict:
+        """Extract exactly one ZIP file or directory subtree without replacing destination files."""
+        path = self._require_zip_file(archive_path)
+        destination = self.path_resolver.validate_directory_exists(destination_dir)
+        requested = str(entry_name or '').replace('\\', '/')
+        if '..' in requested.split('/'):
+            raise ValueError('Unsafe ZIP entry selection')
+        requested = self._normalize_zip_member_name(requested)
+        if not requested:
+            raise ValueError('ZIP entry is required')
+
+        with zipfile.ZipFile(path, 'r') as archive:
+            validated = self._validate_extract_infos(archive.infolist())
+            exact = [(info, name) for info, name in validated if name == requested]
+            descendants = [(info, name) for info, name in validated if name.startswith(requested + '/')]
+            files = [info for info, _ in exact if not self._zip_info_is_dir(info)]
+            if len(files) > 1 or (files and descendants):
+                raise ValueError('Ambiguous ZIP entry selection')
+            is_dir = not files and (bool(exact) or bool(descendants))
+            if not files and not is_dir:
+                raise FileNotFoundError(f'ZIP entry not found: {requested}')
+            selected = (exact + descendants) if is_dir else [next(item for item in exact if item[0] is files[0])]
+            # Multiple central directory records targeting one output path are ambiguous.
+            names = [name for _, name in selected]
+            if len(names) != len(set(names)):
+                raise ValueError('Duplicate ZIP entry paths')
+
+            output = os.path.join(destination, requested.rsplit('/', 1)[-1])
+            if os.path.lexists(output):
+                raise FileExistsError(f'Extract target already exists: {output}')
+            created = False
+            file_count = 0
+            dir_count = 0
+            try:
+                if is_dir:
+                    os.mkdir(output)
+                    created = True
+                    dir_count = 1
+                for info, name in selected:
+                    self._checkpoint()
+                    if name == requested and is_dir:
+                        continue
+                    relative = name[len(requested) + 1:] if is_dir else ''
+                    target = os.path.join(output, *relative.split('/')) if relative else output
+                    if is_dir and os.path.commonpath([os.path.realpath(output), os.path.realpath(target)]) != os.path.realpath(output):
+                        raise ValueError(f'Unsafe ZIP extraction path: {info.filename}')
+                    if self._zip_info_is_dir(info):
+                        os.makedirs(target, exist_ok=True)
+                        dir_count += 1
+                        continue
+                    os.makedirs(os.path.dirname(target), exist_ok=True)
+                    with archive.open(info) as source, open(target, 'xb') as sink:
+                        created = True
+                        while True:
+                            self._checkpoint()
+                            chunk = source.read(1024 * 1024)
+                            if not chunk:
+                                break
+                            sink.write(chunk)
+                    file_count += 1
+            except Exception:
+                if created:
+                    if is_dir:
+                        shutil.rmtree(output, ignore_errors=True)
+                    else:
+                        try:
+                            os.unlink(output)
+                        except OSError:
+                            pass
+                raise
+        return {
+            'archive_path': path, 'destination_dir': destination,
+            'extracted_to': output, 'mode': 'selected_entry',
+            'file_count': file_count, 'dir_count': dir_count,
+        }
+
     def extract_zip_smart(self, archive_path: str, destination_dir: str) -> dict:
         path = self._require_zip_file(archive_path)
         destination = self.path_resolver.validate_directory_exists(destination_dir)

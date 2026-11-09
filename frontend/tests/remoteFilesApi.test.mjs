@@ -6,7 +6,7 @@ import { dirname, resolve } from 'node:path'
 import {
   listRemoteDirectory, getRemoteSystemPaths, pasteRemoteFiles, createRemoteZip,
   extractRemoteZip, inspectRemoteZip, readRemoteZipEntry, makeRemoteDirectory,
-  renameRemoteFile, downloadRemoteFile, downloadRemoteZip, deleteRemoteFile,
+  renameRemoteFile, downloadRemoteFile, downloadRemoteZip, downloadRemoteZipEntry, deleteRemoteFile,
   deleteRemoteEntries,
 } from '../src/api/remoteFilesApi.js'
 import {
@@ -58,6 +58,8 @@ test('remote file operations preserve endpoint, method, body and web origin', as
     [() => pasteRemoteFiles('c d', {paths:['/a'], destination_dir:'/b', operation:'move'}), '/paste', 'POST', {paths:['/a'], destination_dir:'/b', operation:'move'}],
     [() => createRemoteZip('c d', {paths:['/a'], destination_dir:'/b', archive_name:'x.zip'}), '/create-zip', 'POST', {paths:['/a'], destination_dir:'/b', archive_name:'x.zip'}],
     [() => extractRemoteZip('c d', {path:'/x.zip', destination_dir:'/b'}), '/extract-zip', 'POST', {path:'/x.zip', destination_dir:'/b'}],
+    [() => extractRemoteZip('c d', {path:'/x.zip', entry_name:'nested/dir', destination_dir:'/b'}), '/extract-zip', 'POST', {path:'/x.zip', entry_name:'nested/dir', destination_dir:'/b'}],
+    [() => downloadRemoteZipEntry('c d', '/x.zip', 'nested/file.bin'), '/download-zip-entry', 'POST', {path:'/x.zip', entry_name:'nested/file.bin'}],
     [() => makeRemoteDirectory('c d', '/new'), '/mkdir', 'POST', {path:'/new'}],
     [() => renameRemoteFile('c d', '/a', 'b'), '/rename', 'POST', {old_path:'/a', new_name:'b'}],
     [() => downloadRemoteZip('c d', ['/a'], {'X-RCH-Tab-ID':'one'}), '/download-zip', 'POST', {paths:['/a'],archive_name:''}],

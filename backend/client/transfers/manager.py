@@ -1,4 +1,5 @@
 import os
+import tempfile
 import threading
 
 from client.commands.base import CommandRuntimeMixin
@@ -70,12 +71,14 @@ class ClientTransferManager:
     OP_CLIENT_TO_SERVER_FILE = 'client_to_server_file'
     OP_CLIENT_TO_SERVER_PREVIEW = 'client_to_server_preview'
     OP_CLIENT_TO_SERVER_ZIP = 'client_to_server_zip'
+    OP_CLIENT_TO_SERVER_ZIP_ENTRY = 'client_to_server_zip_entry'
     OP_SERVER_TO_CLIENT_FILE = 'server_to_client_file'
 
     SUPPORTED_OPERATIONS = {
         OP_CLIENT_TO_SERVER_FILE,
         OP_CLIENT_TO_SERVER_PREVIEW,
         OP_CLIENT_TO_SERVER_ZIP,
+        OP_CLIENT_TO_SERVER_ZIP_ENTRY,
         OP_SERVER_TO_CLIENT_FILE,
     }
 
@@ -195,6 +198,8 @@ class ClientTransferManager:
                 self._run_client_to_server_preview(service, owner, transfer_id, payload)
             elif operation == self.OP_CLIENT_TO_SERVER_ZIP:
                 self._run_client_to_server_zip(service, owner, transfer_id, payload)
+            elif operation == self.OP_CLIENT_TO_SERVER_ZIP_ENTRY:
+                self._run_client_to_server_zip_entry(service, owner, transfer_id, payload)
             elif operation == self.OP_SERVER_TO_CLIENT_FILE:
                 self._run_server_to_client_file(service, owner, transfer_id, payload)
 
@@ -260,6 +265,20 @@ class ClientTransferManager:
             extra=payload.get('extra') if isinstance(payload.get('extra'), dict) else None,
             transfer_id=transfer_id,
         )
+
+    def _run_client_to_server_zip_entry(self, service, owner, transfer_id: str, payload: dict):
+        archive_path = owner.path_resolver.require_existing_file_from_arg(payload.get('path') or '')
+        entry_name = str(payload.get('entry_name') or '')
+        if not entry_name:
+            raise ValueError('entry_name is required')
+        with tempfile.TemporaryDirectory(prefix='rch-zip-entry-') as temp_dir:
+            extracted = owner.archive_service.extract_zip_entry(archive_path, temp_dir, entry_name)
+            selected_path = extracted['extracted_to']
+            if not os.path.isfile(selected_path):
+                raise ValueError('ZIP entry download requires a file')
+            service.upload_single_file_to_server_result(
+                selected_path, artifact_type='files', category='download', transfer_id=transfer_id,
+            )
 
     def _run_server_to_client_file(self, service, owner, transfer_id: str, payload: dict):
         relative_url = str(payload.get('relative_url') or '').strip()

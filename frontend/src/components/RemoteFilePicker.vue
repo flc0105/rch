@@ -6,6 +6,7 @@
     top="8vh"
     class="fixed-dialog remote-file-picker-dialog"
     modal-class="remote-file-picker-overlay"
+    :append-to-body="appendToBody"
     @update:model-value="handleVisibleChange"
   >
     <div class="remote-file-picker-body">
@@ -187,6 +188,15 @@
         </el-button>
 
         <el-button
+          v-if="selectionMode === 'folder' && !multiple && allowCurrentFolder"
+          type="primary"
+          :disabled="!remoteFilesCurrentPath || remoteFilesLoading"
+          @click="selectCurrentFolder"
+        >
+          Select Current Folder
+        </el-button>
+
+        <el-button
           v-if="multiple"
           type="primary"
           :disabled="!remoteSelectedPaths.length"
@@ -237,6 +247,9 @@ export default {
       default: 'file',
       validator: value => ['file', 'folder'].includes(value),
     },
+
+    allowCurrentFolder: { type: Boolean, default: false },
+    appendToBody: { type: Boolean, default: false },
 
     getTabScopedHeaders: {
       type: Function,
@@ -459,6 +472,13 @@ export default {
       if (!this.isRemoteRowSelectable(row)) return
 
       this.$emit('select', this.multiple ? [row.path] : row.path)
+      this.closePicker()
+    },
+
+    selectCurrentFolder() {
+      if (this.selectionMode !== 'folder' || this.multiple || !this.allowCurrentFolder ||
+          !this.remoteFilesCurrentPath || this.remoteFilesLoading) return
+      this.$emit('select', this.remoteFilesCurrentPath)
       this.closePicker()
     },
 
