@@ -356,6 +356,7 @@ class UploadExecutionService:
                 'filename': safe_name,
                 'save_dir': remote_path,
                 'transfer_id': active_transfer_id,
+                'conflict_policy': 'stop' if conflict_policy is None else conflict_policy,
             })
 
             result_iter = self.command_stream_service.stream_command(

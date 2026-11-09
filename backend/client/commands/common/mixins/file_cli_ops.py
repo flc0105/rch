@@ -1,5 +1,6 @@
 from client.commands.runtime.interrupts import cancel_policy
 import os
+import tempfile
 
 from client.config import runtime_config
 from core.utils.decorator import desc
@@ -75,15 +76,21 @@ class CommandFileCliMixin:
             if os.path.exists(target_dir) and not os.path.isdir(target_dir):
                 return 0, error(f'Target path is not a directory: {target_dir}')
 
-            os.makedirs(target_dir, exist_ok=True)
             target_path = os.path.join(target_dir, os.path.basename(filename))
+            from client.commands.common.services.filesystem.conflict_policy import prepare_upload_file_commit
+            commit = prepare_upload_file_commit(target_path, payload.get('conflict_policy', 'stop'))
+            os.makedirs(target_dir, exist_ok=True)
 
             self._send_info(f'Preparing HTTP download: {url}', 0)
-            self.http_file_transfer_service.download_file_from_http(
-                url,
-                target_path,
-                transfer_id=transfer_id,
-            )
+            fd, staged = tempfile.mkstemp(prefix='.rch-upload-', dir=target_dir)
+            os.close(fd)
+            try:
+                self.http_file_transfer_service.download_file_from_http(
+                    url, staged, transfer_id=transfer_id, commit=commit, display_filename=os.path.basename(filename),
+                )
+            finally:
+                if os.path.lexists(staged):
+                    os.unlink(staged)
             file_size = os.path.getsize(target_path)
 
             lines = [

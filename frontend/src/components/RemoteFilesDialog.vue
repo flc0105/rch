@@ -1839,7 +1839,7 @@ export default {
 
       try {
         await ElMessageBox.confirm(
-            `Extract "${row.name}" into the current directory? A ZIP with one root folder is extracted directly; otherwise a new folder is created automatically.`,
+            `Extract "${row.name}" into the current directory?`,
             'Extract ZIP',
             {
               type: 'warning',

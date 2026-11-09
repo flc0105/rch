@@ -185,6 +185,14 @@ func TestConflictZipSelectedMergeReplaceAndInspect(t *testing.T) {
 	if readConflictTestFile(t, filepath.Join(destination, "root", "shared")) != "OLD" {
 		t.Fatal("inspect modified target")
 	}
+	// Without a user decision, extracting a colliding folder must fail unchanged.
+	status, text = executeRemote(t, s, remoteCommand("extract_zip_path", map[string]interface{}{"path": archivePath, "destination_dir": destination}))
+	if status != 0 {
+		t.Fatalf("default ZIP extraction unexpectedly succeeded: %s", text)
+	}
+	if readConflictTestFile(t, filepath.Join(destination, "root", "shared")) != "OLD" {
+		t.Fatal("default ZIP extraction changed existing content")
+	}
 	for _, policy := range []string{"merge", "replace"} {
 		status, text = executeRemote(t, s, remoteCommand("extract_zip_path", map[string]interface{}{"path": archivePath, "destination_dir": destination, "conflict_policy": policy}))
 		if status != 1 {
@@ -236,5 +244,45 @@ func TestUploadConflictPolicyValidation(t *testing.T) {
 		if !validRemoteUploadPolicy(policy) {
 			t.Fatalf("valid policy rejected: %q", policy)
 		}
+	}
+}
+
+func TestZipDefaultRejectsExistingWrapperFolder(t *testing.T) {
+	s := testFileSession(t)
+	archivePath := filepath.Join(s.Cwd, "bundle.zip")
+	file, err := os.Create(archivePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writer := zip.NewWriter(file)
+	for _, name := range []string{"first.txt", "second.txt"} {
+		entry, err := writer.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := entry.Write([]byte("new")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	destination := filepath.Join(s.Cwd, "output")
+	existing := filepath.Join(destination, "bundle", "leave.txt")
+	writeConflictTestFile(t, existing, "original")
+	status, result := executeRemote(t, s, remoteCommand("extract_zip_path", map[string]interface{}{
+		"path": archivePath, "destination_dir": destination,
+	}))
+	if status != 0 {
+		t.Fatalf("expected wrapper collision to stop, got: %s", result)
+	}
+	if readConflictTestFile(t, existing) != "original" {
+		t.Fatal("extraction changed the existing directory")
+	}
+	if _, err := os.Stat(filepath.Join(destination, "bundle_1")); !os.IsNotExist(err) {
+		t.Fatal("default extraction must not silently rename the wrapper folder")
 	}
 }

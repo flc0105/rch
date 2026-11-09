@@ -64,7 +64,7 @@ class WebTransferApi:
                 'filename': normalized_filename,
                 'total_bytes': total_bytes,
                 'destination_path': str(destination_path or '').strip(),
-                'conflict_policy': conflict_policy,
+                'conflict_policy': conflict_policy if conflict_policy is not None else 'stop',
                 'tab_id': normalized_tab_id,
             }
 

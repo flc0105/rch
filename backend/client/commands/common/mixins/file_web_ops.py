@@ -220,8 +220,8 @@ class CommandFileWebMixin:
                 result = self.archive_service.extract_zip_with_policy(
                     archive_path, resolved_destination, entry_name, str(payload['conflict_policy']))
             else:
-                result = (self.archive_service.extract_zip_entry(archive_path, resolved_destination, entry_name)
-                          if entry_name else self.archive_service.extract_zip_smart(archive_path, resolved_destination))
+                result = self.archive_service.extract_zip_with_policy(
+                    archive_path, resolved_destination, entry_name, 'stop')
             return 1, json.dumps(result, ensure_ascii=False)
         except CommandCancelledError:
             return 0, 'Command cancelled'

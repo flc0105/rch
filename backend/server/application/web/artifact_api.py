@@ -194,7 +194,7 @@ class WebArtifactApi:
         )
 
 
-    def send_artifact_to_client(self, artifact_id: str, client_id: str, target_path: str = '', tab_id: str = ''):
+    def send_artifact_to_client(self, artifact_id: str, client_id: str, target_path: str = '', tab_id: str = '', conflict_policy='stop'):
         if self.command_execution_api is None:
             raise RuntimeError('command_execution_api is not available')
 
@@ -206,12 +206,16 @@ class WebArtifactApi:
         if not display_name:
             raise ValueError('display_name is required')
 
+        if conflict_policy not in ('stop', 'replace', 'keep_both'):
+            raise ValueError('Invalid upload conflict policy')
+
         task_info = self.command_execution_api.submit_web_upload(
             client_id,
             file_path,
             display_name,
             remote_path=target_path,
             tab_id=tab_id,
+            conflict_policy=conflict_policy,
         )
         return {
             **task_info,

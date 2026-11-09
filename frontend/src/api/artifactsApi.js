@@ -21,9 +21,9 @@ export function renameArtifact(artifactId, name, headers = {}) {
     jsonRequestOptions('POST', { name, original_name: name }, headers))
 }
 
-export function sendArtifactToClient(artifactId, clientId, targetPath, headers = {}) {
+export function sendArtifactToClient(artifactId, clientId, targetPath, headers = {}, conflictPolicy = 'stop') {
   return fetch(artifactUrl(artifactId, '/send-to-client'),
-    jsonRequestOptions('POST', { client_id: clientId, target_path: targetPath }, headers))
+    jsonRequestOptions('POST', { client_id: clientId, target_path: targetPath, conflict_policy: conflictPolicy }, headers))
 }
 
 export function deleteArtifact(artifactId) {

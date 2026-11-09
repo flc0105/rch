@@ -132,7 +132,7 @@ test('artifact rename and send-to preserve tab headers and complete original pay
   assert.equal(send.url, '/api/artifacts/id%2F1/send-to-client')
   assert.equal(send.options.method, 'POST')
   assert.equal(send.options.headers['X-RCH-Tab-ID'], 'tab1')
-  assert.deepEqual(jsonBody(send), { client_id: 'client/7', target_path: 'C:\\Temp Folder' })
+  assert.deepEqual(jsonBody(send), { client_id: 'client/7', target_path: 'C:\\Temp Folder', conflict_policy: 'stop' })
 })
 
 test('artifact clear is scoped by category and optional machine, output/save content unchanged', async () => {

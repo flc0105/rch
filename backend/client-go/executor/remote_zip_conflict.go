@@ -2,7 +2,6 @@ package executor
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -128,8 +127,15 @@ func extractRemoteZipPolicy(ctx context.Context, s *Session, payload map[string]
 	if payloadBool(payload["inspect"]) {
 		return jsonResult(map[string]interface{}{"conflicts": conflict, "target": target})
 	}
-	policy, ok := payload["conflict_policy"].(string)
-	if !ok {
+	policy := "stop"
+	if supplied, exists := payload["conflict_policy"]; exists {
+		provided, ok := supplied.(string)
+		if !ok {
+			return 0, "invalid conflict policy"
+		}
+		policy = provided
+	}
+	if policy != "stop" && policy != "replace" && policy != "merge" && policy != "keep_both" {
 		return 0, "invalid conflict policy"
 	}
 	if destKind != "" && !remoteActionAllowed(srcKind, destKind, policy) {
@@ -140,9 +146,8 @@ func extractRemoteZipPolicy(ctx context.Context, s *Session, payload map[string]
 		return 0, err.Error()
 	}
 	defer os.RemoveAll(stage)
-	legacy := map[string]string{"path": archivePath, "destination_dir": stage, "entry_name": entry}
-	data, _ := json.Marshal(legacy)
-	status, out := extractRemoteZip(ctx, s, "__json__:"+base64.URLEncoding.EncodeToString(data), nil)
+	legacy := map[string]interface{}{"path": archivePath, "destination_dir": stage, "entry_name": entry}
+	status, out := extractRemoteZipStaged(ctx, s, legacy)
 	if status != 1 {
 		return status, out
 	}

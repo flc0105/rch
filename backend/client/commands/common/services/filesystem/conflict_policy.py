@@ -192,6 +192,11 @@ def prepare_upload_file_commit(target, policy):
     """Validate an upload decision before transfer and return its publish callback."""
     if not isinstance(policy, str) or policy not in UPLOAD_FILE_POLICIES:
         raise ValueError('Invalid upload conflict policy')
+    kind = path_kind(target)
+    if kind and policy not in allowed_actions('file', kind):
+        raise FileExistsError(f'Upload target already exists: {target}')
+    if kind and policy == 'stop':
+        raise FileExistsError(f'Upload target already exists: {target}')
     return lambda staged: commit_download_file(staged, target, policy)
 
 

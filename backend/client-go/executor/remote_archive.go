@@ -442,9 +442,11 @@ func extractRemoteZip(ctx context.Context, s *Session, raw string, _ func(int, s
 	if err != nil {
 		return 0, err.Error()
 	}
-	if payloadBool(payload["inspect"]) || payload["conflict_policy"] != nil {
-		return extractRemoteZipPolicy(ctx, s, payload)
-	}
+	return extractRemoteZipPolicy(ctx, s, payload)
+}
+
+// extractRemoteZipStaged is used only inside the private ZIP staging directory.
+func extractRemoteZipStaged(ctx context.Context, s *Session, payload map[string]interface{}) (int, string) {
 	source, err := remoteExisting(s, payloadText(payload["path"]), false)
 	if err != nil {
 		return 0, err.Error()

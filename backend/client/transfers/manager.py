@@ -64,8 +64,8 @@ class ClientTransferManager:
     Client 端独立文件传输任务管理器。
 
     只承载由 Server 明确下发的 Web/Transfer Center 文件搬运任务，不替代现有
-    upload/download CLI 命令入口。这样 Web 大文件不再占 command foreground slot，
-    而原有 CLI 行为保持不变。
+    upload/download CLI 命令入口。Web 大文件不占 command foreground slot；
+    上传目标的同名校验由共享文件系统策略模块负责。
     """
 
     OP_CLIENT_TO_SERVER_FILE = 'client_to_server_file'
@@ -302,30 +302,17 @@ class ClientTransferManager:
             raise NotADirectoryError(f'Target path is not a directory: {target_dir}')
 
         target_path = os.path.join(target_dir, os.path.basename(filename))
-        commit = None
-        if conflict_policy is not None:
-            from client.commands.common.services.filesystem.conflict_policy import prepare_upload_file_commit
-            commit = prepare_upload_file_commit(target_path, conflict_policy)
+        from client.commands.common.services.filesystem.conflict_policy import prepare_upload_file_commit
+        commit = prepare_upload_file_commit(target_path, 'stop' if conflict_policy is None else conflict_policy)
 
         os.makedirs(target_dir, exist_ok=True)
         staged = ''
         try:
-            if commit is None:
-                service.download_file_from_http(url, target_path, transfer_id=transfer_id)
-            else:
-                fd, staged = tempfile.mkstemp(prefix='.rch-upload-', dir=target_dir)
-                os.close(fd)
-                service.download_file_from_http(
-                    url, staged, transfer_id=transfer_id, commit=commit,
-                )
-        except Exception:
-            if conflict_policy is None and context_cancelled(owner.execution_context):
-                try:
-                    if os.path.isfile(target_path):
-                        os.remove(target_path)
-                except Exception:
-                    pass
-            raise
+            fd, staged = tempfile.mkstemp(prefix='.rch-upload-', dir=target_dir)
+            os.close(fd)
+            service.download_file_from_http(
+                url, staged, transfer_id=transfer_id, commit=commit, display_filename=os.path.basename(filename),
+            )
         finally:
             if staged and os.path.lexists(staged):
                 os.unlink(staged)
@@ -343,6 +330,3 @@ class ClientTransferManager:
         except Exception:
             pass
 
-
-def context_cancelled(context: CommandExecutionContext | None) -> bool:
-    return bool(context and context.is_cancel_requested())

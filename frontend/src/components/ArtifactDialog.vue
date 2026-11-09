@@ -492,6 +492,7 @@
 
 <script>
 import { listArtifacts, uploadArtifact, renameArtifact as requestRenameArtifact, sendArtifactToClient, deleteArtifact as deleteArtifactRequest, clearArtifacts } from '../api/artifactsApi.js'
+import { prepareUploadConflict } from '../utils/remoteFileConflicts.js'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { setRemoteClipboardArtifactFile } from '../api/clipboardApi.js'
 import { formatBytes as formatBytesValue } from '../utils/formatters.js'
@@ -1191,16 +1192,17 @@ export default {
         return
       }
 
-      this.$emit(
-        'append-output',
-        clientId,
-        `> [Artifact Send] ${displayName} -> ${deviceLabel} :: ${targetCwdLabel}`,
-        'command'
-      )
-
       try {
+        const conflictPolicy = await prepareUploadConflict(clientId, targetCwd || '.', displayName)
+        if (conflictPolicy === false ||
+            String(this.selectedId || this.currentConnection?.client_id || '').trim() !== clientId ||
+            this.getCurrentDeviceCwd() !== targetCwd) return
+        this.$emit(
+          'append-output', clientId,
+          `> [Artifact Send] ${displayName} -> ${deviceLabel} :: ${targetCwdLabel}`, 'command',
+        )
         const res = await sendArtifactToClient(
-          row.artifact_id, clientId, targetCwd, this.buildJsonHeaders({ 'Content-Type': 'application/json' }),
+          row.artifact_id, clientId, targetCwd, this.buildJsonHeaders({ 'Content-Type': 'application/json' }), conflictPolicy,
         )
         const json = await res.json()
 

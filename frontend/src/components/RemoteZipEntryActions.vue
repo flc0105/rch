@@ -80,7 +80,7 @@ export default {
       try {
         await this.$nextTick()
         await ElMessageBox.confirm(
-          `Extract "${entry.name}" to "${destinationDir}"? Existing files will not be overwritten.`,
+          `Extract "${entry.name}" to "${destinationDir}"?`,
           'Extract ZIP Entry',
           { type: 'warning', confirmButtonText: 'Extract', cancelButtonText: 'Cancel' },
         )

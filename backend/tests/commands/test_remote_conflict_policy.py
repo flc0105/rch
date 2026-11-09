@@ -176,3 +176,90 @@ def test_upload_transfer_rejects_invalid_policy_without_creating_folder(tmp_path
     manager._run_server_to_client_file(FakeService(), owner, 'transfer-2', valid)
     assert (destination / 'upload.txt').read_bytes() == b'new data'
     assert len(called) == 1
+
+
+def test_default_upload_rejects_existing_without_starting_transfer(tmp_path):
+    from types import SimpleNamespace
+    from client.transfers.manager import ClientTransferManager
+
+    destination = tmp_path / 'target'
+    destination.mkdir()
+    existing = destination / 'asset.dat'
+    existing.write_bytes(b'original')
+    calls = []
+
+    class FakeService:
+        def download_file_from_http(self, *args, **kwargs):
+            calls.append(args)
+            with open(args[1], 'wb') as stream:
+                stream.write(b'incoming')
+            kwargs['commit'](args[1])
+
+    owner = SimpleNamespace(
+        path_resolver=PathResolver(),
+        client_api=SimpleNamespace(normalize_file_transfer_url=lambda url: url),
+        execution_context=None,
+    )
+    manager = ClientTransferManager(connection=None)
+    request = {'url': 'http://localhost/sample', 'filename': 'asset.dat', 'save_dir': str(destination)}
+    with pytest.raises(FileExistsError):
+        manager._run_server_to_client_file(FakeService(), owner, 't', request)
+    assert existing.read_bytes() == b'original'
+    assert not calls
+    assert sorted(x.name for x in destination.iterdir()) == ['asset.dat']
+
+    # Explicit selection is the only path to replacing a remote file.
+    manager._run_server_to_client_file(FakeService(), owner, 't2', {**request, 'conflict_policy': 'replace'})
+    assert existing.read_bytes() == b'incoming'
+
+
+def test_default_zip_extract_rejects_existing_without_auto_rename(tmp_path):
+    archive = tmp_path / 'archive.zip'
+    with zipfile.ZipFile(archive, 'w') as handle:
+        handle.writestr('notes.txt', 'new')
+    dest = tmp_path / 'dest'
+    dest.mkdir()
+    existing = dest / 'archive'
+    existing.mkdir()
+    (existing / 'keep.txt').write_text('old')
+    service = ArchiveService(PathResolver())
+    with pytest.raises(FileExistsError):
+        service.extract_zip_with_policy(str(archive), str(dest), policy='stop')
+    assert (existing / 'keep.txt').read_text() == 'old'
+    assert [x.name for x in dest.iterdir()] == ['archive']
+
+
+def test_artifact_send_forwards_only_explicit_upload_policy(tmp_path):
+    from types import SimpleNamespace
+    from server.application.web.artifact_api import WebArtifactApi
+
+    calls = []
+    fake = SimpleNamespace(
+        get_artifact_by_id=lambda item: {'artifact_type': 'shared_files', 'original_name': 'sample.bin'},
+        get_artifact_file_path=lambda item: str(tmp_path / 'sample.bin'),
+    )
+    command_api = SimpleNamespace(submit_web_upload=lambda *args, **kwargs: calls.append((args, kwargs)) or {'task_id': 'task-1'})
+    api = WebArtifactApi(None, None, fake, command_execution_api=command_api)
+    result = api.send_artifact_to_client('id', 'device', '/dest')
+    assert result['task_id'] == 'task-1'
+    assert calls[-1][1]['conflict_policy'] == 'stop'
+    api.send_artifact_to_client('id', 'device', '/dest', conflict_policy='keep_both')
+    assert calls[-1][1]['conflict_policy'] == 'keep_both'
+    with pytest.raises(ValueError, match='Invalid upload conflict policy'):
+        api.send_artifact_to_client('id', 'device', '/dest', conflict_policy='merge')
+    assert len(calls) == 2
+
+
+def test_remote_zip_api_defaults_to_explicit_stop(monkeypatch):
+    from types import SimpleNamespace
+    from server.application.artifact.remote_file_service import WebRemoteFileService
+    svc = WebRemoteFileService(SimpleNamespace(), None)
+    submissions = []
+    def record(*args, **kwargs):
+        submissions.append((args, kwargs))
+        return {'extracted_to': '/dst/archive'}
+    monkeypatch.setattr(svc, '_run_mutation', record)
+    svc.extract_zip('client', '/archive.zip', '/dst')
+    assert submissions[-1][0][4]['conflict_policy'] == 'stop'
+    svc.extract_zip('client', '/archive.zip', '/dst', conflict_policy='merge')
+    assert submissions[-1][0][4]['conflict_policy'] == 'merge'

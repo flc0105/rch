@@ -120,7 +120,7 @@ Browser 的 Copy、Cut 和 Paste 使用的是**界面内部的远程路径列表
 
 ### 文件冲突策略与全局设置
 
-在 **Settings → Remote Files** 中可切换 **Ask when a destination already exists**。这个设置由 Server 保存，全局应用于从 Web Remote Files 发起的复制、移动、**Extract Here**、ZIP 预览中的 **Extract to...**，以及 Browser 和 Remote Folder Picker 的文件上传。默认 **关闭**，保持两种 Client 各自的既有文件处理行为。开启后，前端在目标冲突时提供选择；目标无冲突时直接执行。
+在 **Settings → Remote Files** 中可切换 **Ask when a destination already exists**。这个设置由 Server 保存，全局应用于从 Web Remote Files 发起的复制、移动、**Extract Here**、ZIP 预览中的 **Extract to...**，Browser / Remote Folder Picker 上传，以及 Artifact Manager 的 **Send to Current Device**。默认 **关闭**：所有目标同名冲突均拒绝执行并报错，不覆盖、不合并、不自动改名。开启后，前端在目标冲突时提供选择；目标无冲突时直接执行。
 
 | 目标冲突 | 可选动作 | 执行效果 |
 |---|---|---|
@@ -140,7 +140,7 @@ Web Remote Files 的真正远程文件修改动作会在 Client 命令成功派�
 
 ### 远端到 Server 的文件搬运
 
-Browser 可以选择文件上传，也可拖放文件到当前目录。上传由 Server 创建传输记录和临时上传凭证，浏览器通过独立文件传输端点传送二进制，随后由 Client 接收并写入指定远程路径。界面报告 **Upload started** 表示上传任务已创建。查看 Transfer Center 的终态，再刷新远程目录以确认文件已保存。上传同名文件时，设置关闭会保留现有差异：Python Client 默认覆盖，Go Client 默认拒绝；开启冲突询问后可选 Stop、Replace、Keep Both，传输落盘时由 Client 再次校验选择的策略。
+Browser 可以选择文件上传，也可拖放文件到当前目录。上传由 Server 创建传输记录和临时上传凭证，浏览器通过独立文件传输端点传送二进制，随后由 Client 接收并写入指定远程路径。界面报告 **Upload started** 表示上传任务已创建。查看 Transfer Center 的终态，再刷新远程目录以确认文件已保存。上传同名文件时，设置关闭一律拒绝上传并报错（Python、Go Client 一致）；开启冲突询问后可选 Stop、Replace、Keep Both，传输落盘时由 Client 再次校验选择的策略。Artifact Manager 的 **Send to Current Device** 使用同一个全局设置与冲突询问流程；Server 的文件上传命令不经过 Browser 询问时默认拒绝同名目标。
 
 下载方向相反：
 
@@ -178,7 +178,7 @@ Peek ZIP 先校验压缩包，再展示树形目录、文件数量、压缩与�
 
 这些只约束 Peek 和条目文本预览，**不等同于单项下载、ZIP 创建与解压的限制**。
 
-Extract Here 仍负责整个 ZIP，会分析顶层结构：仅有单一根目录时尽量保留该目录层次；存在多个顶层项目时，在目标目录下新建一个包装目录，防止解压内容散落。默认遇到单一根目录同名会报错，多根包装目录同名则会尝试自动添加数字后缀；开启冲突询问后可根据目标类型选择适用的策略。解压对绝对路径、父目录穿越、ZIP 符号链接及写入目标路径做安全检查，同时限制最多 **50,000 条目**、声明未压缩总大小最多 **20 GiB**。遇到错误会尝试清理本次新建的目标目录，但这不等于对任何中断、权限错误或系统故障都提供完整回滚保证。
+Extract Here 仍负责整个 ZIP，会分析顶层结构：仅有单一根目录时尽量保留该目录层次；存在多个顶层项目时，在目标目录下新建一个包装目录，防止解压内容散落。无论是单一根目录还是多个顶层项目形成的包装目录，默认遇到同名目标都拒绝解压；开启冲突询问后可根据目标类型选择适用的策略。解压对绝对路径、父目录穿越、ZIP 符号链接及写入目标路径做安全检查，同时限制最多 **50,000 条目**、声明未压缩总大小最多 **20 GiB**。遇到错误会尝试清理本次新建的目标目录，但这不等于对任何中断、权限错误或系统故障都提供完整回滚保证。
 
 ### 文件内容的查看和回写
 
@@ -295,7 +295,7 @@ Content-Type: application/json
 }
 ```
 
-`operation` 只接受 `copy` 或 `move`，省略时按 `copy` 处理。该请求不会自动创建 `/tmp/backup`，默认也不会覆盖目标中的同名文件。设置 `inspect: true` 可只检查冲突而不提交写入；正式请求可用 `conflict_policies` 为各源项目指定策略。ZIP 解压接口同样接受 `inspect: true` 和 `conflict_policy`。请求返回包含成功/失败数量及错误信息，应逐项核对，特别是同时处理多个路径时。若要移动，则将 `operation` 改为 `move`；无需先向系统 Clipboard 写入路径。
+`operation` 只接受 `copy` 或 `move`，省略时按 `copy` 处理。该请求不会自动创建 `/tmp/backup`；目标同名时默认拒绝执行，原有文件不被更改。设置 `inspect: true` 可只检查冲突而不提交写入；正式请求可用 `conflict_policies` 为各源项目指定策略。ZIP 解压接口同样接受 `inspect: true` 和 `conflict_policy`。请求返回包含成功/失败数量及错误信息，应逐项核对，特别是同时处理多个路径时。若要移动，则将 `operation` 改为 `move`；无需先向系统 Clipboard 写入路径。
 
 创建目录使用 `mkdir` 接口的 `{"path":"/tmp/backup"}`；重命名使用 `{"old_path":"/tmp/old.txt","new_name":"new.txt"}`。保存文本使用 `{"path":"/tmp/note.txt","content":"...","encoding":"utf-8"}`。这些都是直接改变远程文件系统的请求，应确认目标设备及绝对路径正确后再操作。
 

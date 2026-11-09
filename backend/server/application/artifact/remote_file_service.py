@@ -432,10 +432,10 @@ class WebRemoteFileService:
                 client_id, self._build_command('extract_zip_path', {**arguments, 'inspect': True}),
                 task_type='remote_file', source='web_remote_file',
             )
-        if conflict_policy is not None:
-            if conflict_policy not in ('stop', 'merge', 'replace', 'keep_both'):
-                raise ValueError('Invalid conflict policy')
-            arguments['conflict_policy'] = conflict_policy
+        policy = 'stop' if conflict_policy is None else conflict_policy
+        if policy not in ('stop', 'merge', 'replace', 'keep_both'):
+            raise ValueError('Invalid conflict policy')
+        arguments['conflict_policy'] = policy
         return self._run_mutation(client_id, 'extract_archive', arguments, 'extract_zip_path', arguments, json_result=True, origin=origin)
 
     def delete_paths(self, client_id: str, paths: list[str], *, origin: str = 'web_ui') -> dict:

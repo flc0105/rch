@@ -322,9 +322,9 @@ class CommandHttpFileTransferService:
                 if temp_archive_dir:
                     shutil.rmtree(temp_archive_dir, ignore_errors=True)
 
-    def download_file_from_http(self, url: str, target_path: str, *, transfer_id: str = '', commit=None):
+    def download_file_from_http(self, url: str, target_path: str, *, transfer_id: str = '', commit=None, display_filename: str = ''):
         strategy = self.get_transfer_strategy()
-        filename = os.path.basename(target_path)
+        filename = display_filename or os.path.basename(target_path)
         progress_callback = self._build_progress_callback(
             transfer_id,
             'transferring',

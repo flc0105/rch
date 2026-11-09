@@ -18,8 +18,8 @@ async function chooseConflict(conflict) {
   const content = defineComponent({
     setup() {
       return () => h('div', [
-        h('p', { style: 'overflow-wrap:anywhere' }, `Already exists: ${conflict.target || ''}`),
-        h('p', `${conflict.source_kind || 'Item'} → ${conflict.target_kind || 'item'}`),
+        h('p', { style: 'overflow-wrap:anywhere' }, `A ${conflict.target_kind === 'directory' ? 'folder' : 'file'} already exists at ${conflict.target || 'the destination'}.`),
+        h('p', 'Choose how to handle this conflict:'),
         h(ElSelect, {
           modelValue: choice.value,
           'onUpdate:modelValue': value => { choice.value = value },
@@ -49,7 +49,7 @@ export async function conflictsEnabled() {
 
 // null: prompt disabled; false: user stopped/cancelled; object: operation arguments.
 export async function preparePasteConflicts(clientId, request) {
-  if (!await conflictsEnabled()) return null
+  if (!await conflictsEnabled()) return { conflict_policies: (request.paths || []).map(() => 'stop') }
   const preview = await expectData(await pasteRemoteFiles(clientId, { ...request, inspect: true }), 'Conflict inspection')
   const policies = (request.paths || []).map(() => 'stop')
   for (const conflict of (preview.conflicts || [])) {
@@ -64,7 +64,7 @@ export async function preparePasteConflicts(clientId, request) {
 }
 
 export async function prepareExtractConflict(clientId, request) {
-  if (!await conflictsEnabled()) return null
+  if (!await conflictsEnabled()) return { conflict_policy: 'stop' }
   const preview = await expectData(await extractRemoteZip(clientId, { ...request, inspect: true }), 'ZIP conflict inspection')
   const conflicts = preview.conflicts || []
   if (!conflicts.length) return { conflict_policy: 'stop' }
@@ -74,7 +74,7 @@ export async function prepareExtractConflict(clientId, request) {
 }
 
 export async function prepareUploadConflict(clientId, destinationDir, filename) {
-  if (!await conflictsEnabled()) return null
+  if (!await conflictsEnabled()) return 'stop'
   const preview = await expectData(await inspectRemoteUpload(clientId, destinationDir, filename), 'Upload conflict inspection')
   const conflicts = preview.conflicts || []
   if (!conflicts.length) return 'stop'

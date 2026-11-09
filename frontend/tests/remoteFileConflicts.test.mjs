@@ -29,11 +29,11 @@ function createEnvironment({ enabled = true, action = 'keep_both', conflicts = [
   return { ...env.exports, calls }
 }
 
-test('disabled global setting keeps legacy behavior without inspecting target', async () => {
+test('disabled global setting sends stop for every operation without inspecting target', async () => {
   const ui = createEnvironment({ enabled: false })
-  assert.equal(await ui.preparePasteConflicts('c', { paths: ['/a'], destination_dir: '/b' }), null)
-  assert.equal(await ui.prepareExtractConflict('c', { path: '/a.zip', destination_dir: '/b' }), null)
-  assert.equal(await ui.prepareUploadConflict('c', '/b', 'name.txt'), null)
+  assert.equal(JSON.stringify(await ui.preparePasteConflicts('c', { paths: ['/a'], destination_dir: '/b' })), JSON.stringify({ conflict_policies: ['stop'] }))
+  assert.equal(JSON.stringify(await ui.prepareExtractConflict('c', { path: '/a.zip', destination_dir: '/b' })), JSON.stringify({ conflict_policy: 'stop' }))
+  assert.equal(await ui.prepareUploadConflict('c', '/b', 'name.txt'), 'stop')
   assert.equal(ui.calls.length, 0)
 })
 
@@ -88,4 +88,14 @@ test('Remote Files setting uses the shared fixed-height dialog and no nested car
   assert.match(source, /\.settings-dialog \.settings-tab-scroll\s*\{[\s\S]*?height:\s*100%;[\s\S]*?overflow-y:\s*auto;/)
   assert.doesNotMatch(source, /settings-dialog--compact/)
   assert.match(section, /v-model="remoteFileConflictDraft\.ask_on_conflict"/)
+})
+
+
+test('conflict prompt uses a human-readable description, without type arrows', async () => {
+  const conflicts = [{source_kind: 'file', target_kind: 'file', target: '/dest/report.txt', allowed_actions: ['stop','replace','keep_both']}]
+  const ui = createEnvironment({ conflicts, action: 'replace' })
+  assert.equal(await ui.prepareUploadConflict('c', '/dest', 'report.txt'), 'replace')
+  assert.doesNotMatch(source, /source_kind\s*\|\|[^\n]*→/)
+  assert.match(source, /Choose how to handle this conflict:/)
+  assert.match(source, /A \$\{conflict\.target_kind/)
 })

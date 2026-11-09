@@ -142,6 +142,7 @@ def create_artifacts_blueprint(server_instance):
                 client_id,
                 target_path=target_path,
                 tab_id=get_optional_tab_id(),
+                conflict_policy=payload.get('conflict_policy', 'stop'),
             )
         return responder.json_endpoint(_execute, default_error_status=500)
 
