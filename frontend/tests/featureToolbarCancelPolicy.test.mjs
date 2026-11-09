@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import vm from 'node:vm'
+import { createTerminalOperation, operationHeaders } from '../src/utils/terminalOperation.js'
+
 import useTaskState from '../src/composables/useTaskState.js'
 
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8')
@@ -179,6 +181,7 @@ test('terminal submission attaches the matched policy to task ID and blocks canc
     TerminalConnectionContext: {}, formatTerminalCancelRequestedLine: () => 'requested',
     formatTerminalCommandFailedLine: x => String(x),
     sendCommandApi: async (...args) => { sends.push(args); return { task_id: 'task-from-set' } },
+    createTerminalOperation, operationHeaders,
     cancelTask: async id => { cancellations.push(id) },
   }
   const { options } = vueOptions('../src/components/CommandInputBar.vue', globals)
@@ -196,7 +199,9 @@ test('terminal submission attaches the matched policy to task ID and blocks canc
   })
   await options.methods.sendCommand.call(state)
   assert.equal(sends.length, 1)
-  assert.deepEqual(events.find(item => item[0] === 'set-active-task'), ['set-active-task', 'abc', 'task-from-set', 'none', ''])
+  const boundTaskEvent = events.find(item => item[0] === 'set-active-task')
+  assert.deepEqual(boundTaskEvent.slice(0, 5), ['set-active-task', 'abc', 'task-from-set', 'none', ''])
+  assert.match(boundTaskEvent[5], /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/)
   state.currentActiveTaskId = 'task-from-set'
   state.currentActiveTaskCancelPolicy = 'none'
   await options.methods.cancelCurrentTask.call(state)

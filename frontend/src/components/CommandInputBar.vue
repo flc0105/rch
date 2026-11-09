@@ -81,6 +81,7 @@
 
 <script>
 import { ElMessage } from 'element-plus'
+import { createTerminalOperation, operationHeaders } from '../utils/terminalOperation.js'
 import TerminalConnectionContext from './TerminalConnectionContext.vue'
 import {
   sendCommand as sendCommandApi,
@@ -264,12 +265,14 @@ export default {
   const clientId = this.selectedId
   this.sending = true
   this.$emit('terminal-submission-start', clientId, command)
-  this.$emit('append-output', clientId, '> ' + command, 'command')
+  const operation = createTerminalOperation({ kind: 'command', action: 'invoke', clientId,
+    invocation: { input: command }, replay: { type: 'command', command } })
+  this.$emit('append-output', clientId, '> ' + command, 'command', { operation })
 
   try {
-    const data = await sendCommandApi(clientId, command, this.getTabScopedHeaders())
+    const data = await sendCommandApi(clientId, command, operationHeaders(operation, this.getTabScopedHeaders()))
     const taskId = data && data.task_id
-    this.$emit('set-active-task', clientId, taskId || '', cancelPolicy, data?.history_entry_id || '')
+    this.$emit('set-active-task', clientId, taskId || '', cancelPolicy, data?.history_entry_id || '', operation.operation_id)
     if (typeof window !== 'undefined') window.setTimeout(() => this.$emit('check-task-state'), 400)
 
     this.commandText = ''
@@ -277,7 +280,7 @@ export default {
     this.clearCommandCompletionCandidateCache()
     await this.loadCommandCandidates(this.selectedId)
   } catch (e) {
-    this.$emit('append-output', this.selectedId, formatTerminalCommandFailedLine(e.message || 'unknown error'), 'error')
+    this.$emit('append-output', clientId, formatTerminalCommandFailedLine(e.message || 'unknown error'), 'error', { operation_id: operation.operation_id, event_type: 'submission_error' })
     ElMessage.error(e.message || 'Command failed')
     this.commandText = ''
   } finally {
@@ -378,7 +381,7 @@ export default {
 
     // Viewer actions are ordinary terminal commands. Presentation stays in the UI:
     // neither this submission nor the API receives UI-specific metadata.
-    async submitViewerCommand(command, expectedClientId, echoToTerminal) {
+    async submitViewerCommand(command, expectedClientId, echoToTerminal, suppliedOperation = null) {
       const text = String(command || '').trim()
       const clientId = String(this.selectedId || '')
       if (!text || !clientId || clientId !== String(expectedClientId || '')) {
@@ -393,16 +396,19 @@ export default {
       const cancelPolicy = this.getSubmittedCommandCancelPolicy(text)
       this.sending = true
       this.$emit('terminal-submission-start', clientId, text)
-      if (echoToTerminal) this.$emit('append-output', clientId, '> ' + text, 'command')
+      const operation = suppliedOperation || createTerminalOperation({ kind: 'command', action: 'invoke', clientId,
+        invocation: { input: text }, replay: { type: 'command', command: text },
+        presentation: echoToTerminal ? 'terminal' : 'dialog' })
+      if (echoToTerminal) this.$emit('append-output', clientId, '> ' + text, 'command', { operation })
       try {
-        const data = await sendCommandApi(clientId, text, this.getTabScopedHeaders())
+        const data = await sendCommandApi(clientId, text, operationHeaders(operation, this.getTabScopedHeaders()))
         const taskId = String(data?.task_id || '')
-        this.$emit('set-active-task', clientId, taskId, cancelPolicy, data?.history_entry_id || '')
+        this.$emit('set-active-task', clientId, taskId, cancelPolicy, data?.history_entry_id || '', operation.operation_id)
         if (typeof window !== 'undefined') window.setTimeout(() => this.$emit('check-task-state'), 400)
         return taskId
       } catch (error) {
         if (echoToTerminal) {
-          this.$emit('append-output', clientId, formatTerminalCommandFailedLine(error.message || 'unknown error'), 'error')
+          this.$emit('append-output', clientId, formatTerminalCommandFailedLine(error.message || 'unknown error'), 'error', { operation_id: operation.operation_id, event_type: 'submission_error' })
         }
         ElMessage.error(error.message || 'Command failed')
         return ''
@@ -412,12 +418,12 @@ export default {
       }
     },
 
-    async runResultActionCommand(command, expectedClientId, presentation = 'terminal') {
-      return this.submitViewerCommand(command, expectedClientId, presentation !== 'dialog')
+    async runResultActionCommand(command, expectedClientId, presentation = 'terminal', operation = null) {
+      return this.submitViewerCommand(command, expectedClientId, presentation !== 'dialog', operation)
     },
 
-    async runJsonViewerRefreshCommand(command, expectedClientId) {
-      return this.submitViewerCommand(command, expectedClientId, true)
+    async runJsonViewerRefreshCommand(command, expectedClientId, operation = null) {
+      return this.submitViewerCommand(command, expectedClientId, true, operation)
     },
 
     async runCommandText(command) {

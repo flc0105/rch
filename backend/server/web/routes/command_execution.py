@@ -3,6 +3,7 @@ import os
 from flask import Blueprint, send_file
 
 from server.web.api_response import WebApiResponder
+from server.web.operation_id import get_optional_operation_id
 from server.web.auth_guard import allow_anonymous
 from server.web.request_parsers import (
     get_optional_tab_id,
@@ -27,6 +28,7 @@ def create_command_execution_blueprint(server_instance):
                 client_id,
                 get_required_command(),
                 tab_id=get_optional_tab_id(),
+                metadata={'operation_id': operation_id} if (operation_id := get_optional_operation_id()) else {},
                 source='rch_cli' if get_optional_header_text('X-RCH-Command-Source') == 'rch_cli' else 'web',
             ),
             default_error_status=500,

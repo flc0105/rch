@@ -1,6 +1,7 @@
 from flask import Blueprint, request
 
 from server.web.api_response import WebApiResponder
+from server.web.operation_id import get_optional_operation_id
 from server.web.request_parsers import get_json_payload, get_optional_tab_id
 
 
@@ -24,6 +25,7 @@ def create_transfers_blueprint(server_instance):
                 client_id=payload.get('client_id') or '',
                 filename=payload.get('filename') or '',
                 total_bytes=payload.get('total_bytes'),
+                operation_id=get_optional_operation_id(),
                 destination_path=payload.get('destination_path') or '',
                 conflict_policy=payload.get('conflict_policy'),
                 tab_id=get_optional_tab_id(),

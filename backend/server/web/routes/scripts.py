@@ -1,6 +1,7 @@
 from flask import Blueprint, Response, request
 
 from server.web.api_response import WebApiResponder
+from server.web.operation_id import get_optional_operation_id
 from server.web.request_parsers import get_json_payload, get_optional_tab_id
 
 
@@ -129,6 +130,7 @@ def create_script_blueprint(server_instance):
                 tab_id=get_optional_tab_id(),
                 presentation=payload.get('presentation'),
                 run_id=payload.get('run_id'),
+                operation_id=get_optional_operation_id(),
             )
         return responder.json_endpoint(_execute, default_error_status=500)
 

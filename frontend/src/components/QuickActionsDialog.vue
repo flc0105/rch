@@ -280,6 +280,7 @@
 </template>
 
 <script>
+import { createTerminalOperation, operationHeaders } from '../utils/terminalOperation.js'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { findJsonOutput } from '../utils/terminalJson.js'
 import {
@@ -350,6 +351,7 @@ function emptyRun() {
     taskId: '',
     alias: '',
     platform: '',
+    arguments: [],
     clientId: '',
     displayCommand: '',
     resolvedCommand: '',
@@ -456,7 +458,15 @@ export default {
   methods: {
     viewResultJson() {
       if (!this.resultJsonText) return
-      this.$emit('open-json', { jsonText: this.resultJsonText, clientId: this.activeRun.clientId })
+      this.$emit('open-json', {
+        jsonText: this.resultJsonText,
+        clientId: this.activeRun.clientId,
+        jsonCommandInfo: { operation: {
+          kind: 'alias',
+          replay: { type: 'alias', alias: this.activeRun.alias,
+            platform: this.activeRun.platform, arguments: Array.isArray(this.activeRun.arguments) ? [...this.activeRun.arguments] : [] },
+        } },
+      })
     },
     platformLabel(platform) {
       return PLATFORM_LABELS[String(platform || '').trim().toLowerCase()] || String(platform || 'Unknown')
@@ -735,10 +745,26 @@ export default {
       const args = values.map(value => this.quoteDisplayArg(value))
       return [row.alias, ...args].join(' ')
     },
-    async executeItem(row, values, presentation) {
-      if (this.runSubmitting || !this.selectedId) return
+    async runQuickActionFromTerminalBlock(payload = {}) {
+      if (!this.selectedId || String(payload.clientId || '') !== String(this.selectedId)) {
+        ElMessage.warning('The target device has changed')
+        return ''
+      }
+      const alias = String(payload.alias || '').trim()
+      const platform = String(payload.platform || '').trim()
+      if (!alias || !platform || !Array.isArray(payload.arguments) ||
+          !payload.arguments.every(value => typeof value === 'string')) return ''
+      return this.executeItem({ alias, platform }, [...payload.arguments], 'terminal', payload.operation)
+    },
+    async executeItem(row, values, presentation, suppliedOperation = null) {
+      if (this.runSubmitting || !this.selectedId) return ''
       const runId = this.createRunId()
       const displayCommand = this.buildDisplayCommand(row, values)
+      const operation = presentation === 'terminal' ? suppliedOperation || createTerminalOperation({
+        kind: 'alias', action: 'invoke', clientId: this.selectedId,
+        invocation: { alias: row.alias, platform: row.platform, arguments: values },
+        replay: { type: 'alias', alias: row.alias, platform: row.platform, arguments: [...values] },
+      }) : null
 
       if (presentation === 'dialog') {
         this.activeRun = {
@@ -747,12 +773,13 @@ export default {
           clientId: String(this.selectedId),
           alias: row.alias,
           platform: row.platform,
+          arguments: [...values],
           displayCommand,
           status: 'Running',
         }
         this.resultVisible = true
       } else {
-        this.$emit('append-output', this.selectedId, `> ${displayCommand}`, 'command', { terminal_block_type: 'quick_action' })
+        this.$emit('append-output', this.selectedId, `> ${displayCommand}`, 'command', { operation })
       }
 
       this.runSubmitting = true
@@ -766,15 +793,17 @@ export default {
             presentation,
             run_id: runId,
           },
-          this.getTabScopedHeaders ? this.getTabScopedHeaders() : {},
+          operation ? operationHeaders(operation, this.getTabScopedHeaders ? this.getTabScopedHeaders() : {})
+            : (this.getTabScopedHeaders ? this.getTabScopedHeaders() : {}),
         )
-        this.$emit('set-active-task', this.selectedId, data.task_id || '')
+        this.$emit('set-active-task', this.selectedId, data.task_id || '', '', '', operation?.operation_id || '')
 
         if (presentation === 'dialog' && this.activeRun.runId === runId) {
           this.activeRun.taskId = data.task_id || ''
           this.activeRun.displayCommand = data.display_command || displayCommand
           this.activeRun.resolvedCommand = data.resolved_command || ''
         }
+        return data.task_id || ''
       } catch (e) {
         if (presentation === 'dialog' && this.activeRun.runId === runId) {
           this.activeRun.complete = true
@@ -782,9 +811,11 @@ export default {
           this.activeRun.status = 'Failed'
           this.activeRun.output += `${this.activeRun.output ? '\n' : ''}${e.message || 'Quick Action failed'}`
         } else {
-          this.$emit('append-output', this.selectedId, `Quick Action failed: ${e.message || 'unknown error'}`, 'error')
+          this.$emit('append-output', this.selectedId, `Quick Action failed: ${e.message || 'unknown error'}`, 'error',
+            { operation_id: operation?.operation_id || '', event_type: 'submission_error' })
         }
         ElMessage.error(e.message || 'Quick Action failed')
+        return ''
       } finally {
         this.runSubmitting = false
       }

@@ -215,6 +215,7 @@
 <script>
 import { listRemoteDirectory, getRemoteSystemPaths } from '../api/remoteFilesApi.js'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { createTerminalOperation, operationHeaders } from '../utils/terminalOperation.js'
 import { formatBytes as formatBytesValue } from '../utils/formatters.js'
 import { uploadRemoteFileToClient } from '../api/transferApi.js'
 import { prepareUploadConflict } from '../utils/remoteFileConflicts.js'
@@ -545,24 +546,22 @@ export default {
 
       this.remoteUploadLoading = true
 
-      this.$emit(
-        'append-output',
-        this.selectedId,
-        `> [Remote Upload] ${file.name} -> ${this.remoteFilesCurrentPath}`,
-        'command'
-      )
-
+      let operation = null
       try {
         const clientId = String(this.selectedId || '')
         const destinationPath = this.remoteFilesCurrentPath
         const conflictPolicy = await prepareUploadConflict(clientId, destinationPath, file.name)
         if (conflictPolicy === false || String(this.selectedId || '') !== clientId || this.remoteFilesCurrentPath !== destinationPath) return
+        operation = createTerminalOperation({ kind: 'transfer', action: 'upload_files', clientId,
+          invocation: { source: 'remote_file_picker', filename: file.name, destination: destinationPath }, replay: null })
+        this.$emit('append-output', clientId, `> [Remote Upload] ${file.name} -> ${destinationPath}`,
+          'command', { operation })
         const result = await uploadRemoteFileToClient({
           file, clientId, destinationPath, conflictPolicy,
-          headers: {...this.buildRequestHeaders(), 'X-RCH-Origin': 'web_ui', 'X-RCH-Feature': 'remote_file_picker'},
+          headers: operationHeaders(operation, {...this.buildRequestHeaders(), 'X-RCH-Origin': 'web_ui', 'X-RCH-Feature': 'remote_file_picker'}),
         })
         const taskId = result.task_id
-        this.$emit('set-active-task', this.selectedId, taskId || '')
+        this.$emit('set-active-task', clientId, taskId || '', '', '', operation.operation_id)
         this.$emit('upload-started', {
           source: 'remote_file_picker',
           taskId: taskId || '',
@@ -575,7 +574,7 @@ export default {
           'append-output',
           this.selectedId,
           `[Upload failed] ${e.message || 'unknown error'}`,
-          'error'
+          'error', { operation_id: operation?.operation_id || '', event_type: 'submission_error' }
         )
         ElMessage.error(e.message || 'Upload failed')
       } finally {

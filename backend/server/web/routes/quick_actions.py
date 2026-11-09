@@ -1,6 +1,7 @@
 from flask import Blueprint
 
 from server.web.api_response import WebApiResponder
+from server.web.operation_id import get_optional_operation_id
 from server.web.request_parsers import get_json_payload, get_optional_tab_id
 
 
@@ -65,6 +66,7 @@ def create_quick_actions_blueprint(server_instance):
                 presentation=payload.get('presentation') or 'dialog',
                 run_id=payload.get('run_id') or '',
                 tab_id=get_optional_tab_id(),
+                operation_id=get_optional_operation_id(),
             )
         return responder.json_endpoint(_execute, default_error_status=500)
 

@@ -596,6 +596,7 @@ import LogViewerDialog from './components/LogViewerDialog.vue'
 import ScriptLibraryDialog from './components/ScriptLibraryDialog.vue'
 import TerminalJsonDialog from './components/TerminalJsonDialog.vue'
 import { createTerminalTaskCapture } from './composables/terminalTaskCapture.js'
+import { createTerminalOperation } from './utils/terminalOperation.js'
 import ScreenViewDialog from './components/ScreenViewDialog.vue'
 import ClipboardDialog from './components/ClipboardDialog.vue'
 import OneLinersDialog from './components/OneLinersDialog.vue'
@@ -1107,6 +1108,7 @@ export default {
       this.$refs.terminalJsonDialogRef?.open({
         isJsonMessage: true,
         jsonText: payload.jsonText,
+        jsonCommandInfo: payload.jsonCommandInfo || {},
       })
     },
 
@@ -1422,15 +1424,18 @@ export default {
     async runTerminalJsonResultAction(payload = {}) {
       const inDialog = payload.presentation === 'dialog'
       const viewer = this.$refs.terminalJsonDialogRef
+      const operation = createTerminalOperation({ kind: 'command', action: 'invoke', clientId: payload.clientId,
+        invocation: { input: payload.command }, replay: { type: 'command', command: payload.command },
+        presentation: inDialog ? 'dialog' : 'terminal' })
       const capture = inDialog ? this.terminalTaskCapture.begin({
         clientId: payload.clientId,
-        command: payload.command,
+        operationId: operation.operation_id,
         suppress: true,
         onResult: event => viewer?.handleResultActionCommandResult(event, payload.runId),
         onComplete: event => viewer?.handleResultActionCommandComplete(event, payload.runId),
       }) : null
       const taskId = await this.$refs.commandInputBarRef?.runResultActionCommand(
-        payload.command, payload.clientId, payload.presentation,
+        payload.command, payload.clientId, payload.presentation, operation,
       ) || ''
       if (!taskId) capture?.cancel()
       else capture?.bind(taskId)
@@ -1440,15 +1445,28 @@ export default {
 
     async runTerminalJsonAgain(payload = {}) {
       const viewer = this.$refs.terminalJsonDialogRef
+      const isScript = payload.type === 'script'
+      const isAlias = payload.type === 'alias'
+      const operation = createTerminalOperation({ kind: isScript ? 'script' : isAlias ? 'alias' : 'command',
+        action: isScript ? 'run' : 'invoke', clientId: payload.clientId,
+        invocation: isScript
+          ? { script_name: payload.script_name, params: payload.params || {} }
+          : isAlias ? { alias: payload.alias, platform: payload.platform, arguments: payload.arguments }
+            : { input: payload.command },
+        replay: isScript ? { ...payload } : isAlias
+          ? { type: 'alias', alias: payload.alias, platform: payload.platform, arguments: [...payload.arguments] }
+          : { type: 'command', command: payload.command },
+      })
       const capture = this.terminalTaskCapture.begin({
-        clientId: payload.clientId,
-        command: payload.type === 'script' ? '' : payload.command,
+        clientId: payload.clientId, operationId: operation.operation_id,
         onResult: event => viewer?.handleJsonRefreshResult(event, payload.runId),
         onComplete: event => viewer?.handleJsonRefreshComplete(event, payload.runId),
       })
-      const taskId = payload.type === 'script'
-        ? await this.$refs.scriptLibraryDialogRef?.runScriptFromTerminalBlock(payload)
-        : await this.$refs.commandInputBarRef?.runJsonViewerRefreshCommand(payload.command, payload.clientId)
+      const taskId = isScript
+        ? await this.$refs.scriptLibraryDialogRef?.runScriptFromTerminalBlock({ ...payload, operation })
+        : isAlias
+          ? await this.$refs.quickActionsDialogRef?.runQuickActionFromTerminalBlock({ ...payload, operation })
+          : await this.$refs.commandInputBarRef?.runJsonViewerRefreshCommand(payload.command, payload.clientId, operation)
       if (!taskId) capture.cancel()
       else capture.bind(taskId)
       payload.onDone?.(!!taskId)
@@ -1457,12 +1475,16 @@ export default {
 
     rerunTerminalBlock(payload = {}) {
       const type = String(payload.type || '').trim()
-
       if (type === 'script') {
         return this.$refs.scriptLibraryDialogRef?.runScriptFromTerminalBlock(payload)
       }
-
-      return this.$refs.commandInputBarRef?.runCommandText(payload.command || '')
+      if (type === 'alias') {
+        return this.$refs.quickActionsDialogRef?.runQuickActionFromTerminalBlock(payload)
+      }
+      if (type === 'command') {
+        return this.$refs.commandInputBarRef?.runCommandText(payload.command || '')
+      }
+      return null
     },
 
     applyHistoryCommand(row) {

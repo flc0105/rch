@@ -3,6 +3,7 @@ import os
 from flask import Blueprint, request, send_file
 
 from server.web.api_response import WebApiResponder
+from server.web.operation_id import get_optional_operation_id
 from server.web.artifact_upload import save_uploaded_artifact_from_request
 from server.web.auth_guard import allow_anonymous
 from server.web.request_parsers import (
@@ -143,6 +144,7 @@ def create_artifacts_blueprint(server_instance):
                 target_path=target_path,
                 tab_id=get_optional_tab_id(),
                 conflict_policy=payload.get('conflict_policy', 'stop'),
+                operation_id=get_optional_operation_id(),
             )
         return responder.json_endpoint(_execute, default_error_status=500)
 

@@ -706,6 +706,8 @@ export default {
                 if (!handledByQuickActionDialog && !handledByScriptDialog && !handledByTerminalCapture) {
                     this.appendOutput(payload.client_id, payload.text || '', '', {
                         task_id: payload.task_id || '',
+                        operation_id: metadata.operation_id || '',
+                        event_type: 'output',
                         command: payload.command || '',
                         command_id: payload.command_id ?? null,
                         metadata,
@@ -751,6 +753,10 @@ export default {
                         finishKind,
                         {
                             task_id: payload.task_id || '',
+                            operation_id: metadata.operation_id || '',
+                            event_type: 'completed',
+                            execution_status: statusText,
+                            execution_success: Boolean(payload.success),
                             command: payload.command || '',
                             command_id: payload.command_id ?? payload.source_command_id ?? null,
                             metadata,

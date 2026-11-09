@@ -25,6 +25,7 @@ class WebTransferApi:
         destination_path: str = '',
         conflict_policy=None,
         tab_id: str = '',
+        operation_id: str = '',
         origin: str = 'web_api',
         feature: str = 'remote_files',
     ):
@@ -52,6 +53,7 @@ class WebTransferApi:
             metadata={
                 'source': 'remote_file_upload',
                 'browser_stage': True,
+                'operation_id': operation_id,
             },
         )
         transfer_id = str(transfer.get('transfer_id') or '').strip()
@@ -65,6 +67,7 @@ class WebTransferApi:
                 'total_bytes': total_bytes,
                 'destination_path': str(destination_path or '').strip(),
                 'conflict_policy': conflict_policy if conflict_policy is not None else 'stop',
+                'operation_id': operation_id,
                 'tab_id': normalized_tab_id,
             }
 
@@ -84,6 +87,7 @@ class WebTransferApi:
             **transfer,
             'browser_upload_path': f'/api/transfers/browser-upload/{transfer_id}/content',
             'browser_upload_token': upload_token,
+            **({'operation_id': operation_id} if operation_id else {}),
         }
 
     def consume_browser_upload_grant(self, transfer_id: str, token: str) -> dict | None:

@@ -70,7 +70,7 @@ class WebScriptApi:
         return self.script_catalog_service.delete_script(script_name)
 
     def run_script(self, client_id: str, script_name: str, params=None, tab_id: str = '',
-                   presentation: str = '', run_id: str = ''):
+                   presentation: str = '', run_id: str = '', operation_id: str = ''):
         normalized_script_name = str(script_name or '').strip()
         if not normalized_script_name:
             raise ValueError('script_name is required')
@@ -95,6 +95,7 @@ class WebScriptApi:
             f'script run {encode_structured_arg(payload)}',
             tab_id=tab_id,
             metadata={
+                'operation_id': operation_id,
                 'script_run': True,
                 'script_run_id': normalized_run_id,
                 'script_run_name': normalized_script_name,

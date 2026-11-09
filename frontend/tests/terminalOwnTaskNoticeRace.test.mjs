@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
 import { shouldShowTaskNotice } from '../src/utils/foregroundTask.js'
+import { createTerminalOperation, operationHeaders } from '../src/utils/terminalOperation.js'
+
 
 const appSource = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
 const inputSource = readFileSync(new URL('../src/components/CommandInputBar.vue', import.meta.url), 'utf8')
@@ -38,8 +40,8 @@ const notices = (app, id = 'client-A') => (app.outputs[id] || []).filter(item =>
 function makeSendCommand(api, state) {
   const match = inputSource.match(/    async sendCommand\(\) \{([\s\S]*?)\n\},\n\n    \/\/ async sendCommand\(\)/)
   assert.ok(match, 'real sendCommand method available')
-  const send = new Function('sendCommandApi', 'ElMessage', 'formatTerminalCommandFailedLine',
-    `return async function sendCommand() {${match[1]}\n}`)(api, { warning() {}, error() {} }, text => text)
+  const send = new Function('sendCommandApi', 'ElMessage', 'formatTerminalCommandFailedLine', 'createTerminalOperation', 'operationHeaders',
+    `return async function sendCommand() {${match[1]}\n}`)(api, { warning() {}, error() {} }, text => text, createTerminalOperation, operationHeaders)
   return send.bind({
     commandText: running.command, selectedId: 'client-A', sending: false,
     closeAutocomplete() {}, clearAutocompleteNavigationState() {},

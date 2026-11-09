@@ -4,6 +4,7 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import vm from 'node:vm'
 import { canRerunTerminalSource } from '../src/utils/terminalRerun.js'
+import { getTerminalReplayAction } from '../src/utils/terminalOperation.js'
 import { JSON_ROW_ACTIONS, getJsonRenderModel, buildJsonTableModel, buildJsonGroupedModel, buildJsonFlatModel, normalizeJsonRowActions, formatJsonFlatValue } from '../src/utils/terminalJson.js'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -15,7 +16,7 @@ assert.match(template, /@click="runAgain"/)
 const script = source.match(/<script>([\s\S]*?)<\/script>/)?.[1] || ''
 const errors = []
 const warnings = []
-const sandbox = { canRerunTerminalSource, JSON_ROW_ACTIONS, getJsonRenderModel, buildJsonTableModel, buildJsonGroupedModel, buildJsonFlatModel, normalizeJsonRowActions, formatJsonFlatValue,
+const sandbox = { canRerunTerminalSource, getTerminalReplayAction, JSON_ROW_ACTIONS, getJsonRenderModel, buildJsonTableModel, buildJsonGroupedModel, buildJsonFlatModel, normalizeJsonRowActions, formatJsonFlatValue,
   h: (tag, props, children) => ({ tag, props, children }), ref: value => ({value}),
   ElRadioGroup: '', ElRadioButton: '', ElMessageBox: { confirm: async () => {} },
   ElMessage: { error: message => errors.push(message), warning: message => warnings.push(message), success: () => {} },
@@ -34,7 +35,7 @@ function viewerFor(commandInfo, clientId = 'client-A') {
   viewer.open({ isJsonMessage: true, jsonText: '[{"pid":1}]', jsonCommandInfo: commandInfo })
   return { viewer, emitted }
 }
-const sourceCommand = { blockType: 'command', commandText: 'echo "[{\\"pid\\":1}]"' }
+const sourceCommand = { blockType: 'command', commandText: 'echo "[{\\"pid\\":1}]"', operation: {replay: { type: 'command', command: 'echo "[{\\"pid\\":1}]"' }} }
 const {viewer, emitted} = viewerFor(sourceCommand)
 assert.equal(viewer.canRunAgain, true)
 await viewer.runAgain()
@@ -85,7 +86,7 @@ await viewer.runAgain()
 assert.equal(emitted.length, 4)
 assert.match(warnings.at(-1), /target device/)
 
-const scriptInfo = {blockType:'script',script_name:'diagnostics/mac_python',script_path:'diagnostics/mac_python.py',params:{limit:4},script_display_name:'Python List'}
+const scriptInfo = {blockType:'script',script_name:'diagnostics/mac_python',script_path:'diagnostics/mac_python.py',params:{limit:4},script_display_name:'Python List', operation: { replay: {type:'script',script_name:'diagnostics/mac_python',script_path:'diagnostics/mac_python.py',params:{limit:4},script_display_name:'Python List'} }}
 const scriptTest = viewerFor(scriptInfo)
 await scriptTest.viewer.runAgain()
 const scriptEvent = scriptTest.emitted[0][1]
@@ -110,6 +111,17 @@ for (const commandInfo of [
   assert.equal(blocked.emitted.length, 0)
 }
 
+const aliasInfo = { blockType:'quick_action', operation: { kind:'alias', replay: {
+  type:'alias', alias:'getinfo', platform:'mac', arguments:['--verbose'],
+} } }
+const aliasTest = viewerFor(aliasInfo)
+assert.equal(aliasTest.viewer.canRunAgain, true)
+await aliasTest.viewer.runAgain()
+assert.equal(aliasTest.emitted[0][1].type, 'alias')
+assert.equal(aliasTest.emitted[0][1].alias, 'getinfo')
+assert.equal(aliasTest.emitted[0][1].platform, 'mac')
+assert.equal(aliasTest.emitted[0][1].arguments[0], '--verbose')
+
 const noSource = viewerFor({})
 assert.equal(noSource.viewer.canRunAgain, false)
 await noSource.viewer.runAgain()
@@ -124,7 +136,7 @@ closeTest.viewer.handleJsonRefreshResult({client_id:'client-A', text:'{"changed"
 closeTest.viewer.handleJsonRefreshComplete({client_id:'client-A'}, staleId)
 assert.equal(closeTest.viewer.text, '')
 
-// A local task capture is used; no view-specific request metadata is sent.
+// A local task capture is used; operation UUIDs are propagated through task metadata.
 const app = readFileSync(resolve(root, 'src/App.vue'), 'utf8')
 const input = readFileSync(resolve(root, 'src/components/CommandInputBar.vue'), 'utf8')
 const library = readFileSync(resolve(root, 'src/components/ScriptLibraryDialog.vue'), 'utf8')

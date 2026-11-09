@@ -493,6 +493,7 @@
 <script>
 import { listArtifacts, uploadArtifact, renameArtifact as requestRenameArtifact, sendArtifactToClient, deleteArtifact as deleteArtifactRequest, clearArtifacts } from '../api/artifactsApi.js'
 import { prepareUploadConflict } from '../utils/remoteFileConflicts.js'
+import { createTerminalOperation, operationHeaders } from '../utils/terminalOperation.js'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { setRemoteClipboardArtifactFile } from '../api/clipboardApi.js'
 import { formatBytes as formatBytesValue } from '../utils/formatters.js'
@@ -1192,18 +1193,21 @@ export default {
         return
       }
 
+      let operation = null
       try {
         const conflictPolicy = await prepareUploadConflict(clientId, targetCwd || '.', displayName)
         if (conflictPolicy === false ||
             String(this.selectedId || this.currentConnection?.client_id || '').trim() !== clientId ||
             this.getCurrentDeviceCwd() !== targetCwd) return
+        operation = createTerminalOperation({ kind: 'transfer', action: 'upload_files', clientId,
+          invocation: { source: 'artifact_send', artifact_id: row.artifact_id, destination: targetCwd }, replay: null })
         this.$emit(
           'append-output', clientId,
           `> [Artifact Send] ${displayName} -> ${deviceLabel} :: ${targetCwdLabel}`, 'command',
-          { terminal_block_type: 'artifact_send' },
+          { operation },
         )
         const res = await sendArtifactToClient(
-          row.artifact_id, clientId, targetCwd, this.buildJsonHeaders({ 'Content-Type': 'application/json' }), conflictPolicy,
+          row.artifact_id, clientId, targetCwd, operationHeaders(operation, this.buildJsonHeaders({ 'Content-Type': 'application/json' })), conflictPolicy,
         )
         const json = await res.json()
 
@@ -1212,14 +1216,15 @@ export default {
         }
 
         const taskId = json.data && json.data.task_id
-        this.$emit('set-active-task', clientId, taskId || '')
+        this.$emit('set-active-task', clientId, taskId || '', '', '', operation.operation_id)
         ElMessage.success(`Send started: ${displayName}`)
       } catch (e) {
         this.$emit(
           'append-output',
           clientId,
           `[Artifact send failed] ${e.message || 'unknown error'}`,
-          'error'
+          'error',
+          operation ? { operation_id: operation.operation_id, event_type: 'submission_error' } : {}
         )
         ElMessage.error(e.message || 'Send failed')
       }

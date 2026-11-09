@@ -289,6 +289,7 @@
 </template>
 
 <script>
+import { createTerminalOperation, operationHeaders } from '../utils/terminalOperation.js'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   getScriptCatalog, runLibraryScript, createScriptFolder, renameScriptFolder,
@@ -523,8 +524,8 @@ export default {
       if (!this.resultJsonText) return
       this.$emit('open-json', { jsonText: this.resultJsonText, clientId: this.activeRun.clientId })
     },
-    forwardAppendOutput(clientId, line, kind) {
-      this.$emit('append-output', clientId, line, kind)
+    forwardAppendOutput(clientId, line, kind, meta) {
+      this.$emit('append-output', clientId, line, kind, meta)
     },
 
     forwardSetActiveTask(clientId, taskId) {
@@ -1272,9 +1273,13 @@ getPreferredScriptDirectoryForCurrentConnection() {
     return ''
   }
   try {
+    const operation = payload.operation || createTerminalOperation({ kind: 'script', action: 'run', clientId: this.selectedId,
+      invocation: { script_name: scriptName, params },
+      replay: { type: 'script', script_name: scriptName, script_path: scriptPath,
+        script_display_name: displayName || scriptName, params } })
     const commandText = `> ${TERMINAL_RUN_SCRIPT_PREFIX} ${displayName || scriptName}`
     this.$emit('append-output', this.selectedId, commandText, 'command', {
-      terminal_block_type: 'script',
+      operation,
       script_name: scriptName,
       script_path: scriptPath,
       script_display_name: displayName || scriptName,
@@ -1282,14 +1287,16 @@ getPreferredScriptDirectoryForCurrentConnection() {
     })
     const res = await runLibraryScript(this.selectedId,
       { script_name: scriptName, params, presentation: 'terminal' },
-      this.buildJsonHeaders({ 'Content-Type': 'application/json' }))
+      operationHeaders(operation, this.buildJsonHeaders({ 'Content-Type': 'application/json' })))
     const json = await res.json()
     if (!res.ok || json.code !== 0) throw new Error(json.message || 'Failed to run script')
     const taskId = String(json.data?.task_id || '')
-    this.$emit('set-active-task', this.selectedId, taskId)
+    this.$emit('set-active-task', this.selectedId, taskId, '', '', operation.operation_id)
     ElMessage.success(`Run request submitted: ${displayName || scriptName}`)
     return taskId
   } catch (e) {
+    this.$emit('append-output', this.selectedId, `Script failed: ${e.message || 'unknown error'}`, 'error',
+      { operation_id: operation.operation_id, event_type: 'submission_error' })
     ElMessage.error(e.message || 'Failed to run script')
     return ''
   }
@@ -1311,6 +1318,7 @@ getPreferredScriptDirectoryForCurrentConnection() {
       if (this.scriptRunSubmitting) return
 
       let runId = ''
+      let operation = null
       try {
         const params = this.buildScriptRunParams(item)
         this.scriptRunSubmitting = true
@@ -1329,9 +1337,13 @@ getPreferredScriptDirectoryForCurrentConnection() {
           this.resultVisible = true
         } else {
           // Terminal output keeps its original command block and re-run metadata.
+          operation = createTerminalOperation({ kind: 'script', action: 'run', clientId: this.selectedId,
+            invocation: { script_name: item.script_name, params },
+            replay: { type: 'script', script_name: item.script_name, script_path: item.path || '',
+              script_display_name: displayName, params } })
           const commandText = `> ${TERMINAL_RUN_SCRIPT_PREFIX} ${displayName}`
           this.$emit('append-output', this.selectedId, commandText, 'command', {
-            terminal_block_type: 'script',
+            operation,
             script_name: item.script_name || '',
             script_path: item.path || `${item.script_name || ''}.py`,
             script_display_name: displayName,
@@ -1341,12 +1353,13 @@ getPreferredScriptDirectoryForCurrentConnection() {
 
         const res = await runLibraryScript(this.selectedId,
           { script_name: item.script_name, params, presentation, run_id: runId },
-          this.buildJsonHeaders({ 'Content-Type': 'application/json' }))
+          operation ? operationHeaders(operation, this.buildJsonHeaders({ 'Content-Type': 'application/json' }))
+            : this.buildJsonHeaders({ 'Content-Type': 'application/json' }))
         const json = await res.json()
         if (!res.ok || json.code !== 0) throw new Error(json.message || 'Failed to run script')
 
         const taskId = json.data && json.data.task_id
-        this.$emit('set-active-task', this.selectedId, taskId || '')
+        this.$emit('set-active-task', this.selectedId, taskId || '', '', '', operation?.operation_id || '')
         ElMessage.success(`Run request submitted: ${displayName}`)
         this.closeScriptRunDialog()
       } catch (e) {
@@ -1355,6 +1368,10 @@ getPreferredScriptDirectoryForCurrentConnection() {
           this.activeRun.success = false
           this.activeRun.status = 'Failed'
           this.activeRun.output += `${this.activeRun.output ? '\n' : ''}${e.message || 'Failed to run script'}`
+        }
+        if (presentation === 'terminal' && operation) {
+          this.$emit('append-output', this.selectedId, `Script failed: ${e.message || 'unknown error'}`, 'error',
+            { operation_id: operation.operation_id, event_type: 'submission_error' })
         }
         ElMessage.error(e.message || 'Failed to run script')
       } finally {

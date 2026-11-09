@@ -59,7 +59,7 @@ class WebTaskService:
             source=request.source,
             should_record=None,
             task_type=request.task_type,
-            metadata=request.metadata,
+            metadata={key: value for key, value in request.metadata.items() if key != 'operation_id'},
         )
 
         try:
@@ -199,6 +199,7 @@ class WebTaskService:
             'client_id': request.client_id,
             'command': request.command,
             'history_entry_id': context.history_entry_id,
+            **({'operation_id': request.metadata['operation_id']} if request.metadata.get('operation_id') else {}),
         }
 
     def submit_web_command(
@@ -299,6 +300,7 @@ class WebTaskService:
         tab_id: str = '',
         transfer_id: str = '',
         conflict_policy=None,
+        operation_id: str = '',
     ):
         command = f'upload {display_name}'
         return self._submit_request(
@@ -316,6 +318,7 @@ class WebTaskService:
                     'upload_tmp_dir': getattr(self.file_service, 'upload_tmp_dir', ''),
                     'transfer_id': (transfer_id or '').strip(),
                     'conflict_policy': conflict_policy,
+                    'operation_id': operation_id,
                 },
                 use_foreground_guard=False,
             )

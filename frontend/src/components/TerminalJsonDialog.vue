@@ -199,6 +199,7 @@
 
 <script>
 import { canRerunTerminalSource } from '../utils/terminalRerun.js'
+import { getTerminalReplayAction } from '../utils/terminalOperation.js'
 import { h, ref } from 'vue'
 import { ElMessage, ElMessageBox, ElRadioGroup, ElRadioButton } from 'element-plus'
 import { JSON_ROW_ACTIONS, getJsonRenderModel } from '../utils/terminalJson.js'
@@ -261,10 +262,7 @@ export default {
 
     canRunAgain() {
       const info = this.commandInfo || {}
-      return canRerunTerminalSource({
-        ...info,
-        blockType: info.is_script === true ? 'script' : (info.blockType || 'command'),
-      })
+      return canRerunTerminalSource({ operation: info.operation })
     },
 
     hasTerminalJsonRenderView() {
@@ -376,19 +374,14 @@ export default {
       }
 
       const info = this.commandInfo || {}
-      const isScript = info.blockType === 'script' || info.is_script === true
-      const script = info.scriptMeta || {}
+      const replay = getTerminalReplayAction(info.operation)
+      if (!replay) return
       const runId = this.createResultActionRunId()
       this.refreshRun = { runId, clientId, chunks: [] }
       this.refreshRunning = true
       this.$emit('rerun-json', {
         runId, clientId,
-        type: isScript ? 'script' : 'command',
-        command: String(info.commandText || '').trim(),
-        script_name: String(info.script_name || script.script_name || '').trim(),
-        script_path: String(info.script_path || script.script_path || '').trim(),
-        script_display_name: String(info.script_display_name || script.script_display_name || '').trim(),
-        params: { ...(info.params || script.params || {}) },
+        ...replay,
         onDone: ok => {
           if (!ok && this.refreshRun?.runId === runId) {
             this.refreshRunning = false

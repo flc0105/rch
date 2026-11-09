@@ -194,7 +194,7 @@ class WebArtifactApi:
         )
 
 
-    def send_artifact_to_client(self, artifact_id: str, client_id: str, target_path: str = '', tab_id: str = '', conflict_policy='stop'):
+    def send_artifact_to_client(self, artifact_id: str, client_id: str, target_path: str = '', tab_id: str = '', conflict_policy='stop', operation_id: str = ''):
         if self.command_execution_api is None:
             raise RuntimeError('command_execution_api is not available')
 
@@ -216,6 +216,7 @@ class WebArtifactApi:
             remote_path=target_path,
             tab_id=tab_id,
             conflict_policy=conflict_policy,
+            operation_id=operation_id,
         )
         return {
             **task_info,

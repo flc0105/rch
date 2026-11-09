@@ -152,6 +152,7 @@ class WebCommandExecutionApi:
         tab_id: str = '',
         transfer_id: str = '',
         conflict_policy=None,
+        operation_id: str = '',
     ):
         upload_payload = self._normalize_upload_payload(local_path, display_name, remote_path)
         return self.task_service.submit_web_upload(
@@ -162,4 +163,5 @@ class WebCommandExecutionApi:
             tab_id=(tab_id or '').strip(),
             transfer_id=(transfer_id or '').strip(),
             conflict_policy=conflict_policy,
+            operation_id=operation_id,
         )

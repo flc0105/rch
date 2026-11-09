@@ -51,7 +51,7 @@ test('both Result Dialogs only offer View JSON for detected JSON and route to ex
     const section = contents.match(new RegExp(String.raw`<div class="${metaClass}">([\s\S]*?)<pre class="(?:quick-action|script)-result-output"`))?.[1] || ''
     assert.match(section, /<el-button[^>]+size="small"[^>]+@click="viewResultJson"[^>]*>View JSON<\/el-button>/)
     assert.match(contents, /findJsonOutput\(this\.activeRun\.output\)/)
-    assert.match(contents, /this\.\$emit\('open-json', \{ jsonText: this\.resultJsonText, clientId: this\.activeRun\.clientId \}\)/)
+    assert.match(contents, /this\.\$emit\('open-json',\s*\{\s*jsonText:\s*this\.resultJsonText,\s*clientId:\s*this\.activeRun\.clientId/)
   }
 })
 
@@ -66,13 +66,21 @@ test('Script and Quick Action Result Dialog actions pass recognized JSON and cur
     vm.runInNewContext(code, sandbox, { timeout: 1000 })
     const events = []
     const instance = {
-      activeRun: { clientId:'client-1', output:'{ "state": "ok" }' },
+      activeRun: { clientId:'client-1', output:'{ "state": "ok" }', alias:'info', platform:'mac', arguments:[] },
       $emit: (...args) => events.push(args),
     }
     Object.defineProperty(instance, 'resultJsonText', {get() { return sandbox.component.computed.resultJsonText.call(instance) }})
     assert.equal(instance.resultJsonText, '{ "state": "ok" }')
     sandbox.component.methods.viewResultJson.call(instance)
-    assert.deepEqual(JSON.parse(JSON.stringify(events[0])), ['open-json', {jsonText:'{ "state": "ok" }', clientId:'client-1'}])
+    const event = JSON.parse(JSON.stringify(events[0]))
+    assert.equal(event[0], 'open-json')
+    assert.equal(event[1].jsonText, '{ "state": "ok" }')
+    assert.equal(event[1].clientId, 'client-1')
+    if (path.includes('QuickActions')) {
+      assert.deepEqual(event[1].jsonCommandInfo.operation, {
+        kind: 'alias', replay: {type: 'alias', alias: 'info', platform: 'mac', arguments: []},
+      })
+    }
     instance.activeRun.output = 'plain output'
     assert.equal(instance.resultJsonText, null)
     sandbox.component.methods.viewResultJson.call(instance)

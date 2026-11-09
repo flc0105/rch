@@ -2,6 +2,8 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
+import { createTerminalOperation, operationHeaders } from '../src/utils/terminalOperation.js'
+
 
 const api = readFileSync(new URL('../src/api/artifactsApi.js', import.meta.url), 'utf8')
 const dialog = readFileSync(new URL('../src/components/ArtifactDialog.vue', import.meta.url), 'utf8')
@@ -33,6 +35,7 @@ test('Artifact Send asks for policy and does not submit when user stops', async 
   const logs = []
   let decision = false
   const env = {
+    createTerminalOperation, operationHeaders,
     DragUploadDialog: {},
     ElMessage: { success() {}, error(message) { throw new Error(message) }, warning() {} },
     ElMessageBox: { confirm: async () => {} },

@@ -29,8 +29,8 @@
               class="terminal-line terminal-line-command"
               :class="`line-${block.commandLine.line.kind || 'default'}`"
           >
-            <span class="terminal-prefix">$</span>
-            <span class="terminal-text">{{ block.commandLine.line.text }}</span>
+            <span v-if="!block.operation || block.operation.kind === 'command'" class="terminal-prefix">$</span>
+            <span class="terminal-text">{{ getTerminalBlockDisplayTitle(block) }}</span>
           </div>
         </div>
 
@@ -92,7 +92,7 @@
                     </el-dropdown-item>
                     <el-dropdown-item
                         command="copy-command"
-                        :disabled="isTerminalRemoteUploadBlock(block) || isTerminalScriptRunBlock(block)"
+                        :disabled="getTerminalBlockReplayCommand(block) === ''"
                     >
                       Copy command
                     </el-dropdown-item>
@@ -129,7 +129,7 @@
               }]"
           >
             <span
-                v-if="entry.line.kind === 'command'"
+                v-if="entry.line.kind === 'command' && (!block.operation || block.operation.kind === 'command')"
                 class="terminal-prefix"
             >$</span>
 
@@ -276,12 +276,11 @@ import {ElMessage} from 'element-plus'
 import TerminalLinkedText from './TerminalLinkedText.vue'
 import {
   isTerminalCommandFinishedText,
-  isTerminalRemoteUploadText,
   TERMINAL_FILE_READY_PREFIX,
-  TERMINAL_RUN_SCRIPT_PREFIX,
 } from '../composables/terminalMarkers.js'
 import { buildTerminalOutputJson, buildTerminalOutputText } from '../utils/terminalOutputExport.js'
 import { canRerunTerminalSource } from '../utils/terminalRerun.js'
+import { getTerminalReplayAction } from '../utils/terminalOperation.js'
 
 export default {
   name: 'TerminalOutput',
@@ -328,8 +327,25 @@ export default {
       const safeLines = Array.isArray(this.lines) ? this.lines : []
       const blocks = []
       let currentBlock = null
+      const operationBlocks = new Map()
 
       safeLines.forEach((line, index) => {
+        const operationId = String(line?.meta?.operation_id || line?.meta?.operation?.operation_id || '').trim()
+        if (operationId) {
+          let operationBlock = operationBlocks.get(operationId)
+          if (!operationBlock) {
+            operationBlock = { key: `terminal-operation-${operationId}`, startIndex: index,
+              commandLine: null, lines: [], operationId }
+            operationBlocks.set(operationId, operationBlock)
+            blocks.push(operationBlock)
+          }
+          const entry = { line, index }
+          operationBlock.lines.push(entry)
+          if (line?.kind === 'command' && !operationBlock.commandLine) operationBlock.commandLine = entry
+          // An unrelated event cannot be silently appended to the previous operation.
+          currentBlock = null
+          return
+        }
         const entry = {line, index}
         const shouldStartNewBlock =
             !currentBlock ||
@@ -393,7 +409,13 @@ export default {
     },
 
     isCommandFinishedLine(line) {
+      if (line?.meta?.operation_id) return line.meta.event_type === 'completed'
       return isTerminalCommandFinishedText(line?.text || '')
+    },
+
+    getTerminalBlockDisplayTitle(block) {
+      // The leading > is the terminal's operation-start marker, even for non-shell actions.
+      return String(block?.commandLine?.line?.text || '')
     },
 
     getTerminalInlineActionItems(lines, index) {
@@ -481,6 +503,11 @@ export default {
       const safeLines = Array.isArray(lines) ? lines : []
       if (!safeLines.length || endIndex < 0) return []
 
+      const operationId = String(safeLines[endIndex]?.meta?.operation_id || safeLines[endIndex]?.meta?.operation?.operation_id || '').trim()
+      if (operationId) {
+        return safeLines.slice(0, endIndex + 1).filter(line =>
+          String(line?.meta?.operation_id || line?.meta?.operation?.operation_id || '') === operationId)
+      }
       const startIndex = this.getTerminalCommandGroupStartIndex(safeLines, endIndex)
       return safeLines.slice(startIndex, endIndex + 1)
     },
@@ -606,6 +633,7 @@ export default {
 
       return {
         blockType: commandBlock.blockType || (isScript ? 'script' : 'command'),
+        operation: commandBlock.operation || null,
         commandText,
         commandId: sourceCommandId,
         taskId: commandBlock.taskId || '',
@@ -744,40 +772,40 @@ export default {
 
     buildTerminalBlockModel(block) {
       const commandText = this.getTerminalBlockCommandText(block)
-      const terminalBlockType = String(this.findTerminalBlockMetaValue(block, ['terminal_block_type', 'terminalBlockType']) || '').trim()
-      const scriptMeta = this.buildTerminalBlockScriptMeta(block)
-      const isScript = terminalBlockType === 'script' || !!scriptMeta.script_name || commandText.toLowerCase().startsWith(TERMINAL_RUN_SCRIPT_PREFIX.toLowerCase())
-      const isRemoteUpload = isTerminalRemoteUploadText(commandText)
-      const isArtifactSend = commandText.startsWith('[Artifact Send]')
-      const isQuickAction = this.getTerminalBlockMetaList(block).some(meta => meta.quick_action === true)
-
-      let blockType = 'command'
-      if (terminalBlockType && terminalBlockType !== 'command' && terminalBlockType !== 'script') {
-        blockType = terminalBlockType
-      } else if (isScript) {
-        blockType = 'script'
-      } else if (isRemoteUpload) {
-        blockType = 'remote_upload'
-      } else if (isArtifactSend) {
-        blockType = 'artifact_send'
-      } else if (isQuickAction) {
-        blockType = 'quick_action'
+      const operation = this.findTerminalBlockMetaValue(block, ['operation'])
+      if (operation?.operation_id) {
+        return {
+          operation, blockType: operation.kind === 'transfer' ? 'remote_upload'
+            : operation.kind === 'alias' ? 'quick_action' : operation.kind,
+          commandId: this.normalizeNullableInt(this.findTerminalBlockMetaValue(block, ['command_id', 'source_command_id'])),
+          taskId: String(this.findTerminalBlockMetaValue(block, ['task_id']) || ''),
+          scriptMeta: operation.kind === 'script' ? {
+            script_name: String(operation.replay?.script_name || ''),
+            script_path: String(operation.replay?.script_path || ''),
+            script_display_name: String(operation.replay?.script_display_name || ''),
+            params: { ...(operation.replay?.params || {}) },
+          } : this.buildTerminalBlockScriptMeta(block),
+        }
       }
-
+      // Unowned server events can still carry structured execution metadata.
+      // Visible titles never determine the operation type or replay capability.
+      const metadata = this.findTerminalBlockMetaValue(block, ['metadata']) || {}
       return {
-        blockType,
+        blockType: metadata.script_run === true ? 'script'
+          : metadata.quick_action === true ? 'quick_action' : 'command',
         commandId: this.normalizeNullableInt(this.findTerminalBlockMetaValue(block, ['command_id', 'source_command_id'])),
         taskId: String(this.findTerminalBlockMetaValue(block, ['task_id']) || '').trim(),
-        scriptMeta,
+        scriptMeta: this.buildTerminalBlockScriptMeta(block),
       }
     },
 
+    getTerminalBlockReplayCommand(block) {
+      return getTerminalReplayAction(block?.operation)?.type === 'command'
+        ? (getTerminalReplayAction(block?.operation)?.command || '') : ''
+    },
+
     canRerunTerminalBlock(block) {
-      return canRerunTerminalSource({
-        blockType: block?.blockType,
-        commandText: this.getTerminalBlockCommandText(block),
-        scriptMeta: block?.scriptMeta,
-      })
+      return canRerunTerminalSource({ operation: block?.operation })
     },
 
     isTerminalScriptRunBlock(block) {
@@ -785,11 +813,7 @@ export default {
     },
 
     isTerminalRemoteUploadBlock(block) {
-      if (String(block?.blockType || '').trim() === 'remote_upload') {
-        return true
-      }
-
-      return isTerminalRemoteUploadText(this.getTerminalBlockCommandText(block))
+      return String(block?.blockType || '').trim() === 'remote_upload'
     },
 
     getTerminalBlockArtifactCategory(block) {
@@ -822,7 +846,9 @@ export default {
 
     canUseTerminalBlockActions(block) {
       if (!block || !block.commandLine) return false
-      return this.getTerminalBlockOutputText(block).trim().length > 0
+      // An output-free Quick Action must still expose its valid Run again action.
+      return this.getTerminalBlockOutputText(block).trim().length > 0 ||
+        (block.operation?.kind === 'alias' && this.canRerunTerminalBlock(block))
     },
 
     getTerminalBlockKey(block) {
@@ -916,8 +942,8 @@ export default {
     },
 
     copyTerminalBlockCommand(block) {
-      if (this.isTerminalRemoteUploadBlock(block)) {
-        ElMessage.warning('Remote upload is not a reusable command')
+      if (getTerminalReplayAction(block?.operation)?.type !== 'command') {
+        ElMessage.warning('This operation has no reusable shell command')
         return
       }
 
@@ -926,7 +952,7 @@ export default {
         return
       }
 
-      const commandText = this.getTerminalBlockCommandText(block)
+      const commandText = getTerminalReplayAction(block?.operation)?.command || ''
 
       if (!commandText) {
         ElMessage.warning('No command to copy')
@@ -944,28 +970,11 @@ export default {
 
     rerunTerminalBlock(block) {
       if (!this.canRerunTerminalBlock(block)) return
-
-      const isScript = this.isTerminalScriptRunBlock(block)
-      const commandText = this.getTerminalBlockCommandText(block)
-      const scriptMeta = block?.scriptMeta || this.buildTerminalBlockScriptMeta(block)
-
-      if (!isScript && !commandText) {
-        ElMessage.warning('No command to run')
-        return
-      }
-
-      if (isScript && !String(scriptMeta.script_name || '').trim()) {
-        ElMessage.warning('Missing script name')
-        return
-      }
-
+      const replay = getTerminalReplayAction(block?.operation)
+      if (!replay) return
       this.$emit('rerun-terminal-block', {
-        type: isScript ? 'script' : 'command',
-        command: isScript ? '' : commandText,
-        script_name: scriptMeta.script_name || '',
-        script_path: scriptMeta.script_path || '',
-        script_display_name: scriptMeta.script_display_name || '',
-        params: scriptMeta.params || {},
+        ...replay,
+        clientId: String(block?.operation?.client_id || ''),
       })
     },
 

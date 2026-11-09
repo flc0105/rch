@@ -154,6 +154,7 @@ class WebQuickActionApi:
             presentation: str = 'dialog',
             run_id: str = '',
             tab_id: str = '',
+            operation_id: str = '',
     ) -> dict:
         session = self._get_session(client_id)
         platform_name = self.alias_manager.normalize_platform(platform)
@@ -188,6 +189,7 @@ class WebQuickActionApi:
         )
 
         metadata = {
+            'operation_id': operation_id,
             'quick_action': True,
             'quick_action_run_id': normalized_run_id,
             'quick_action_alias': alias_name,

@@ -317,11 +317,19 @@ Viewer 的操作包括：
 
 只需要面向终端显示简单结果时，直接返回 `(status, text)` 即可；需要同一组数据提供人类可读文本和 JSON 两种表示时，使用 `StructuredCommandResult` 更合适。Web Terminal 再根据收到的 JSON 形状决定展示方式，两层职责保持独立。
 
+## Web Terminal 操作身份与事件关联
+
+Web Terminal 将一次用户发起的 Command、Script、Quick Action 或上传视为一个带业务身份的操作。操作的 `kind`、`action` 与 `invocation` 沿用 Activity History 的语义；终端块的标题由展示层处理，标题中的 `[Run Script]`、`[Remote Upload]` 和 `[Artifact Send]` 等文字只用于阅读。只有真实 Command 的执行文本才能作为 Shell Command 重跑。
+
+浏览器为每次已确认提交的操作创建临时 `operation_id`，并通过 `X-RCH-Operation-ID` 请求头传给 Server。Server 校验 UUID，随 Web Task 元数据和执行 SSE 回传；浏览器将同一操作的输出、完成状态与 JSON 内容关联到对应终端块。`task_id`、`transfer_id` 和 Activity History ID 继续分别承担执行、传输与历史记录职责，浏览器操作 ID 不写入 Activity History。浏览器上传由 Transfer Center 管理上传阶段，再由 Web Task 报告目标设备传输的最终执行状态。
+
+**Run again** 的可用性由操作携带的 `replay` 执行描述决定：真实 Command 保存命令文本，Script 保存脚本身份和参数，Quick Action 保存别名、平台及实际提交的参数，并由 Quick Action API 重新执行。Remote Upload 和 Artifact Send 不提供通用重跑描述。Block Dropdown、JSON Viewer 均采用相同规则，重跑创建新的操作与任务。已经显示的操作与结果不会因重跑而被覆盖。终端操作起始行的 `> ` 标记保留，用于区分操作开始与完成行；仅真实 Shell 命令显示 `$` 提示符。
+
 ## JSON Viewer 的 Run Again 与行级操作输出
 
-Terminal 输出块菜单的 **Run again** 适用于真实 Command 与携带可重跑脚本身份的 Script。Remote Upload、Artifact Send、Quick Action 等专用操作没有通过通用命令入口重放的执行定义，菜单项保持禁用；JSON Viewer 同样只允许有效的 Command 或 Script 来源使用该操作。
+Terminal 输出块菜单的 **Run again** 适用于真实 Command、携带可重跑脚本身份的 Script，以及保存了别名、平台和参数的 Quick Action。Quick Action 必须通过专用 API 执行，不将可见标题或展开后的命令传给 Shell。Remote Upload 和 Artifact Send 没有通用重放所需的文件上下文，菜单项保持禁用；JSON Viewer 使用同一资格规则。
 
-JSON Viewer 支持对有效来源的 Command 或 Script 使用 **Run Again**，发起一次新的执行并在 Terminal 中留下新执行记录。当前 Viewer 不关闭；新任务完成后仅在输出能解析为完整合法 JSON 时替换 Viewer 中展示的数据，否则提示错误并保留原数据显示。此前的 Terminal 历史内容始终不变。
+JSON Viewer 支持对有效来源的 Command、Script 或 Quick Action 使用 **Run Again**，包括 Quick Action Result Dialog 打开的 JSON。发起一次新的执行并在 Terminal 中留下新执行记录。当前 Viewer 不关闭；新任务完成后仅在输出能解析为完整合法 JSON 时替换 Viewer 中展示的数据，否则提示错误并保留原数据显示。此前的 Terminal 历史内容始终不变。
 
 Table 的 `_actions` 继续是可选的行级元数据。用户确认执行命令后，可以选择 Terminal 或 New Dialog：前者使用原终端输出，后者仅在当前前端的结果弹窗显示执行输出，不关闭原 JSON Viewer。两种动作均复用既有 `/api/connections/{client_id}/command` 请求及任务结果 SSE。
 

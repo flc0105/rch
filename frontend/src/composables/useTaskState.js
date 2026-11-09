@@ -10,7 +10,7 @@ export default {
     },
 
     methods: {
-        setActiveTask(clientId, taskId, cancelPolicy = '', historyEntryId = '') {
+        setActiveTask(clientId, taskId, cancelPolicy = '', historyEntryId = '', operationId = '') {
             if (!clientId) return;
 
             const normalizedTaskId = String(taskId || '').trim();
@@ -18,6 +18,12 @@ export default {
             if (!normalizedTaskId) {
                 this.clearActiveTask(clientId);
                 return;
+            }
+
+            const operation = this.terminalOperationRegistry?.[String(operationId || '')];
+            if (operation && String(operation.client_id) === String(clientId)) {
+                operation.task_id = normalizedTaskId;
+                if (operation.status === 'submitting') operation.status = 'accepted';
             }
 
             // 处理极短命令 race：complete SSE 可能早于 POST 返回。

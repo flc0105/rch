@@ -844,6 +844,7 @@
 import { listRemoteDirectory, getRemoteSystemPaths, pasteRemoteFiles, createRemoteZip, extractRemoteZip, makeRemoteDirectory, renameRemoteFile, downloadRemoteFile, downloadRemoteZip, deleteRemoteFile, deleteRemoteEntries } from '../api/remoteFilesApi.js'
 import { listRemotePinnedPaths, saveRemotePinnedPath, deleteRemotePinnedPath } from '../api/remotePinsApi.js'
 import {ElMessage, ElMessageBox} from 'element-plus'
+import { createTerminalOperation, operationHeaders } from '../utils/terminalOperation.js'
 import { MoreFilled } from '@element-plus/icons-vue'
 import RemotePinsDialog from './RemotePinsDialog.vue'
 import { formatBytes as formatBytesValue } from '../utils/formatters.js'
@@ -1215,23 +1216,21 @@ export default {
       const targetPath = this.remoteFilesCurrentPath
       this.remoteUploadLoading = true
 
-      this.$emit(
-          'append-output',
-          clientId,
-          `> [Remote Upload] ${file.name} -> ${targetPath}`,
-          'command'
-      )
-
+      let operation = null
       try {
         const conflictPolicy = await prepareUploadConflict(clientId, targetPath, file.name)
         if (conflictPolicy === false || String(this.remoteFilesClientId || '') !== clientId || this.remoteFilesCurrentPath !== targetPath) return
+        operation = createTerminalOperation({ kind: 'transfer', action: 'upload_files', clientId,
+          invocation: { source: 'remote_files', filename: file.name, destination: targetPath }, replay: null })
+        this.$emit('append-output', clientId, `> [Remote Upload] ${file.name} -> ${targetPath}`,
+          'command', { operation })
         const result = await uploadRemoteFileToClient({
           file, clientId, destinationPath: targetPath, conflictPolicy,
-          headers: {...this.getTabScopedHeaders(), 'X-RCH-Origin': 'web_ui', 'X-RCH-Feature': 'remote_files'},
+          headers: operationHeaders(operation, {...this.getTabScopedHeaders(), 'X-RCH-Origin': 'web_ui', 'X-RCH-Feature': 'remote_files'}),
         })
         const taskId = result.task_id
 
-        this.$emit('set-active-task', clientId, taskId || '')
+        this.$emit('set-active-task', clientId, taskId || '', '', '', operation.operation_id)
         this.$emit('upload-started', {
           taskId: taskId || '',
           clientId,
@@ -1244,7 +1243,7 @@ export default {
             'append-output',
             clientId,
             `[Upload failed] ${e.message || 'unknown error'}`,
-            'error'
+            'error', { operation_id: operation?.operation_id || '', event_type: 'submission_error' }
         )
 
         ElMessage.error(e.message || 'Upload failed')

@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import vm from 'node:vm'
+import { createTerminalOperation, operationHeaders } from '../src/utils/terminalOperation.js'
+
 import { JSON_ROW_ACTIONS, getJsonRenderModel, buildJsonTableModel, buildJsonGroupedModel, buildJsonFlatModel, normalizeJsonRowActions, formatJsonFlatValue, isJsonContainerText, isJsonStartLine, parseJsonLines, jsonBracketDelta } from '../src/utils/terminalJson.js'
 
 const base = resolve(dirname(fileURLToPath(import.meta.url)), '../src')
@@ -196,6 +198,7 @@ const barSource = readFileSync(resolve(base, 'components/CommandInputBar.vue'), 
 const barScript = barSource.match(/<script>([\s\S]*?)<\/script>/)?.[1] || ''
 const apiCalls = [], terminalEvents = [], feedback = []
 const barSandbox = {
+  createTerminalOperation, operationHeaders,
   ElMessage:{warning: msg => feedback.push(msg), error: msg => feedback.push(msg)},
   TerminalConnectionContext: {},
   sendCommandApi: async (...args) => {apiCalls.push(args); return {task_id:'task-33'}},
@@ -208,7 +211,8 @@ const bar = { ...barSandbox.component.data(), selectedId:'client-A', commandText
 for (const [name, method] of Object.entries(barSandbox.component.methods)) bar[name] = method.bind(bar)
 assert.equal(await bar.runResultActionCommand('echo hello', 'client-A'), 'task-33')
 assert.equal(await bar.runResultActionCommand('echo dialog', 'client-A', 'dialog'), 'task-33')
-assert.equal(apiCalls[1].length, 3, 'dialog must never send UI metadata to command API')
+assert.equal(apiCalls[1].length, 3, 'dialog uses the existing command API')
+assert.ok(apiCalls[1][2]['X-RCH-Operation-ID'], 'dialog task has an operation correlation ID')
 assert.equal(terminalEvents.filter(item=>item[0]==='append-output').length,1,
   'Dialog command must not be echoed into Terminal')
 
