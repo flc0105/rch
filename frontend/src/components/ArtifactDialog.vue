@@ -494,6 +494,7 @@
 import { listArtifacts, uploadArtifact, renameArtifact as requestRenameArtifact, sendArtifactToClient, deleteArtifact as deleteArtifactRequest, clearArtifacts } from '../api/artifactsApi.js'
 import { prepareUploadConflict } from '../utils/remoteFileConflicts.js'
 import { createTerminalOperation, operationHeaders } from '../utils/terminalOperation.js'
+import { formatTerminalCommandFinishedLine } from '../composables/terminalMarkers.js'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { setRemoteClipboardArtifactFile } from '../api/clipboardApi.js'
 import { formatBytes as formatBytesValue } from '../utils/formatters.js'
@@ -1219,13 +1220,19 @@ export default {
         this.$emit('set-active-task', clientId, taskId || '', '', '', operation.operation_id)
         ElMessage.success(`Send started: ${displayName}`)
       } catch (e) {
-        this.$emit(
-          'append-output',
-          clientId,
-          `[Artifact send failed] ${e.message || 'unknown error'}`,
-          'error',
-          operation ? { operation_id: operation.operation_id, event_type: 'submission_error' } : {}
-        )
+        const failedDuringPreflight = !operation
+        const title = `[Artifact Send] ${displayName} -> ${deviceLabel} :: ${targetCwdLabel}`
+        if (failedDuringPreflight) {
+          operation = createTerminalOperation({ kind: 'transfer', action: 'upload_files', clientId,
+            invocation: { source: 'artifact_send', artifact_id: row.artifact_id, destination: targetCwd }, replay: null })
+          this.$emit('append-output', clientId, `> ${title}`, 'command', { operation })
+        }
+        this.$emit('append-output', clientId, `[Artifact send failed] ${e.message || 'unknown error'}`,
+          'error', { operation_id: operation.operation_id, event_type: 'submission_error' })
+        if (failedDuringPreflight) {
+          this.$emit('append-output', clientId, formatTerminalCommandFinishedLine(title, 'Failed'),
+            'error', { operation_id: operation.operation_id, event_type: 'completed', execution_status: 'failed', execution_success: false })
+        }
         ElMessage.error(e.message || 'Send failed')
       }
     },

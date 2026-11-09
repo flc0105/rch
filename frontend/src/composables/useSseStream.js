@@ -704,9 +704,10 @@ export default {
                     : false;
 
                 if (!handledByQuickActionDialog && !handledByScriptDialog && !handledByTerminalCapture) {
+                    const operationId = this.ensureTerminalTaskStart(payload);
                     this.appendOutput(payload.client_id, payload.text || '', '', {
                         task_id: payload.task_id || '',
-                        operation_id: metadata.operation_id || '',
+                        operation_id: operationId || '',
                         event_type: 'output',
                         command: payload.command || '',
                         command_id: payload.command_id ?? null,
@@ -744,6 +745,7 @@ export default {
                     : false;
 
                 if (!handledByQuickActionDialog && !handledByScriptDialog && !handledByTerminalCapture) {
+                    const operationId = this.ensureTerminalTaskStart(payload);
                     const finishedCommand = metadata.quick_action === true
                         ? (metadata.quick_action_display_command || payload.command)
                         : payload.command;
@@ -753,7 +755,7 @@ export default {
                         finishKind,
                         {
                             task_id: payload.task_id || '',
-                            operation_id: metadata.operation_id || '',
+                            operation_id: operationId || '',
                             event_type: 'completed',
                             execution_status: statusText,
                             execution_success: Boolean(payload.success),

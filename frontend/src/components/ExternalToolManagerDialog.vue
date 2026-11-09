@@ -1920,12 +1920,12 @@ async loadAllClientInstances(deviceId = '', showToast = true) {
       return this.$refs.remoteFilePickerRef?.loadRemoteDirectory(path || '', 1)
     },
 
-    forwardAppendOutput(clientId, line, kind) {
-      this.$emit('append-output', clientId, line, kind)
+    forwardAppendOutput(clientId, line, kind, meta) {
+      this.$emit('append-output', clientId, line, kind, meta)
     },
 
-    forwardSetActiveTask(clientId, taskId) {
-      this.$emit('set-active-task', clientId, taskId)
+    forwardSetActiveTask(clientId, taskId, cancelPolicy = '', historyEntryId = '', operationId = '') {
+      this.$emit('set-active-task', clientId, taskId, cancelPolicy, historyEntryId, operationId)
     },
 
     forwardRemoteUploadStarted(payload) {

@@ -216,6 +216,7 @@
 import { listRemoteDirectory, getRemoteSystemPaths } from '../api/remoteFilesApi.js'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { createTerminalOperation, operationHeaders } from '../utils/terminalOperation.js'
+import { formatTerminalCommandFinishedLine } from '../composables/terminalMarkers.js'
 import { formatBytes as formatBytesValue } from '../utils/formatters.js'
 import { uploadRemoteFileToClient } from '../api/transferApi.js'
 import { prepareUploadConflict } from '../utils/remoteFileConflicts.js'
@@ -546,10 +547,10 @@ export default {
 
       this.remoteUploadLoading = true
 
+      const clientId = String(this.selectedId || '')
+      const destinationPath = this.remoteFilesCurrentPath
       let operation = null
       try {
-        const clientId = String(this.selectedId || '')
-        const destinationPath = this.remoteFilesCurrentPath
         const conflictPolicy = await prepareUploadConflict(clientId, destinationPath, file.name)
         if (conflictPolicy === false || String(this.selectedId || '') !== clientId || this.remoteFilesCurrentPath !== destinationPath) return
         operation = createTerminalOperation({ kind: 'transfer', action: 'upload_files', clientId,
@@ -570,12 +571,19 @@ export default {
         })
         ElMessage.success(`Upload started: ${file.name}`)
       } catch (e) {
-        this.$emit(
-          'append-output',
-          this.selectedId,
-          `[Upload failed] ${e.message || 'unknown error'}`,
-          'error', { operation_id: operation?.operation_id || '', event_type: 'submission_error' }
-        )
+        const failedDuringPreflight = !operation
+        const title = `[Remote Upload] ${file.name} -> ${destinationPath}`
+        if (failedDuringPreflight) {
+          operation = createTerminalOperation({ kind: 'transfer', action: 'upload_files', clientId,
+            invocation: { source: 'remote_file_picker', filename: file.name, destination: destinationPath }, replay: null })
+          this.$emit('append-output', clientId, `> ${title}`, 'command', { operation })
+        }
+        this.$emit('append-output', clientId, `[Upload failed] ${e.message || 'unknown error'}`,
+          'error', { operation_id: operation.operation_id, event_type: 'submission_error' })
+        if (failedDuringPreflight) {
+          this.$emit('append-output', clientId, formatTerminalCommandFinishedLine(title, 'Failed'),
+            'error', { operation_id: operation.operation_id, event_type: 'completed', execution_status: 'failed', execution_success: false })
+        }
         ElMessage.error(e.message || 'Upload failed')
       } finally {
         this.remoteUploadLoading = false

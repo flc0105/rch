@@ -845,6 +845,7 @@ import { listRemoteDirectory, getRemoteSystemPaths, pasteRemoteFiles, createRemo
 import { listRemotePinnedPaths, saveRemotePinnedPath, deleteRemotePinnedPath } from '../api/remotePinsApi.js'
 import {ElMessage, ElMessageBox} from 'element-plus'
 import { createTerminalOperation, operationHeaders } from '../utils/terminalOperation.js'
+import { formatTerminalCommandFinishedLine } from '../composables/terminalMarkers.js'
 import { MoreFilled } from '@element-plus/icons-vue'
 import RemotePinsDialog from './RemotePinsDialog.vue'
 import { formatBytes as formatBytesValue } from '../utils/formatters.js'
@@ -1239,12 +1240,19 @@ export default {
 
         ElMessage.success(`Upload started: ${file.name}`)
       } catch (e) {
-        this.$emit(
-            'append-output',
-            clientId,
-            `[Upload failed] ${e.message || 'unknown error'}`,
-            'error', { operation_id: operation?.operation_id || '', event_type: 'submission_error' }
-        )
+        const failedDuringPreflight = !operation
+        const title = `[Remote Upload] ${file.name} -> ${targetPath}`
+        if (failedDuringPreflight) {
+          operation = createTerminalOperation({ kind: 'transfer', action: 'upload_files', clientId,
+            invocation: { source: 'remote_files', filename: file.name, destination: targetPath }, replay: null })
+          this.$emit('append-output', clientId, `> ${title}`, 'command', { operation })
+        }
+        this.$emit('append-output', clientId, `[Upload failed] ${e.message || 'unknown error'}`,
+          'error', { operation_id: operation.operation_id, event_type: 'submission_error' })
+        if (failedDuringPreflight) {
+          this.$emit('append-output', clientId, formatTerminalCommandFinishedLine(title, 'Failed'),
+            'error', { operation_id: operation.operation_id, event_type: 'completed', execution_status: 'failed', execution_success: false })
+        }
 
         ElMessage.error(e.message || 'Upload failed')
       } finally {
@@ -1611,12 +1619,15 @@ export default {
       if (!context.clientId || !targetPath || /[\r\n]/.test(targetPath)) return
 
       try {
-        // Echo before submitting: fast Client results can arrive by SSE before HTTP returns.
-        this.$emit('append-output', context.clientId, `> cd ${targetPath}`, 'command')
-        const result = await sendCommand(context.clientId, `cd ${targetPath}`, this.getTabScopedHeaders())
+        // Register the same operation identity as a terminal-submitted command.
+        const command = `cd ${targetPath}`
+        const operation = createTerminalOperation({ kind: 'command', action: 'invoke', clientId: context.clientId,
+          invocation: { input: command }, replay: { type: 'command', command } })
+        this.$emit('append-output', context.clientId, `> ${command}`, 'command', { operation })
+        const result = await sendCommand(context.clientId, command, operationHeaders(operation, this.getTabScopedHeaders()))
         if (!this.isRemoteFilesContextActive(context)) return
         const taskId = result?.task_id || ''
-        this.$emit('set-active-task', context.clientId, taskId)
+        this.$emit('set-active-task', context.clientId, taskId, '', result?.history_entry_id || '', operation.operation_id)
         ElMessage.success('CWD change submitted')
       } catch (e) {
         if (!this.isRemoteFilesContextActive(context)) return

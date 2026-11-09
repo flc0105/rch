@@ -528,8 +528,8 @@ export default {
       this.$emit('append-output', clientId, line, kind, meta)
     },
 
-    forwardSetActiveTask(clientId, taskId) {
-      this.$emit('set-active-task', clientId, taskId)
+    forwardSetActiveTask(clientId, taskId, cancelPolicy = '', historyEntryId = '', operationId = '') {
+      this.$emit('set-active-task', clientId, taskId, cancelPolicy, historyEntryId, operationId)
     },
 
     refreshRemoteFilePickerDirectory(path = '') {

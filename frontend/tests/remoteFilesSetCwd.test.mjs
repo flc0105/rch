@@ -1,3 +1,4 @@
+import { createTerminalOperation, operationHeaders } from '../src/utils/terminalOperation.js'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
@@ -11,7 +12,7 @@ const messages = []
 const sandbox = {
   ElMessage: { success: text => messages.push(text), error: text => messages.push(text) },
   ElMessageBox: {}, RemotePinsDialog: {}, RemoteZipPeekDialog: {}, MoreFilled: {},
-  formatBytesValue: () => 0,
+  formatBytesValue: () => 0, createTerminalOperation, operationHeaders,
   sendCommand: async (...args) => { ordering.push('send'); calls.push(args); return { task_id: 'task-cd' } },
   uploadRemoteFileToClient: async () => ({}),
 }
@@ -38,6 +39,13 @@ test('desktop/mobile toolbar and folder More all submit cd on active connection'
   assert.deepEqual(ordering, ['echo', 'send', 'echo', 'send', 'echo', 'send', 'echo', 'send'])
   assert.equal(calls[0][0], 'client-A')
   assert.equal(calls[0][2]['X-Tab-Id'], 'tab-1')
+  assert.match(calls[0][2]['X-RCH-Operation-ID'], /^[0-9a-f-]{36}$/)
+  const startEvents = events.filter(item => item[0] === 'append-output')
+  assert.equal(startEvents.length, 4)
+  assert.ok(startEvents.every(item => item[4]?.operation?.operation_id))
+  const starts = events.filter(item => item[0] === 'set-active-task')
+  assert.equal(starts.length, 4)
+  assert.equal(starts[0][5], startEvents[0][4].operation.operation_id)
   assert.ok(events.some(item => item[0] === 'set-active-task' && item[2] === 'task-cd'))
   assert.ok(messages.includes('CWD change submitted'))
 })

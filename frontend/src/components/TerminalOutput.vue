@@ -29,7 +29,7 @@
               class="terminal-line terminal-line-command"
               :class="`line-${block.commandLine.line.kind || 'default'}`"
           >
-            <span v-if="!block.operation || block.operation.kind === 'command'" class="terminal-prefix">$</span>
+            <span v-if="showsTerminalDollarPrompt(block)" class="terminal-prefix">$</span>
             <span class="terminal-text">{{ getTerminalBlockDisplayTitle(block) }}</span>
           </div>
         </div>
@@ -129,7 +129,7 @@
               }]"
           >
             <span
-                v-if="entry.line.kind === 'command' && (!block.operation || block.operation.kind === 'command')"
+                v-if="entry.line.kind === 'command' && showsTerminalDollarPrompt(block)"
                 class="terminal-prefix"
             >$</span>
 
@@ -411,6 +411,10 @@ export default {
     isCommandFinishedLine(line) {
       if (line?.meta?.operation_id) return line.meta.event_type === 'completed'
       return isTerminalCommandFinishedText(line?.text || '')
+    },
+
+    showsTerminalDollarPrompt(block) {
+      return !block?.operation || block.operation.kind === 'command' || block.operation.kind === 'alias'
     },
 
     getTerminalBlockDisplayTitle(block) {

@@ -1,4 +1,5 @@
 import { isJsonContainerText, isJsonStartLine, parseJsonLines, jsonBracketDelta } from '../utils/terminalJson.js'
+import { createTerminalOperation } from '../utils/terminalOperation.js'
 import {
     TERMINAL_BACKGROUND_PREFIX,
     isTerminalCancelRequestedText,
@@ -96,7 +97,8 @@ export default {
             const lineText = segment === '' ? ' ' : segment;
             const line = {
                 text: lineText,
-                kind: kind || this.inferLineKind(segment),
+                kind: kind || (meta?.event_type === 'output' && String(segment).startsWith('> ')
+                    ? 'default' : this.inferLineKind(segment)),
                 isMultiline: false,
                 isArtifactMessage: false,
                 artifactInfo: null,
@@ -140,6 +142,38 @@ export default {
         ensureOutputBucket(clientId) {
             if (!clientId) return;
             if (!this.outputs[clientId]) this.outputs[clientId] = [];
+        },
+
+        ensureTerminalTaskStart(payload) {
+            const clientId = String(payload?.client_id || '').trim();
+            const taskId = String(payload?.task_id || '').trim();
+            const metadata = payload?.metadata && typeof payload.metadata === 'object' ? payload.metadata : {};
+            const incomingOperationId = String(metadata.operation_id || '').trim();
+            if (!clientId || (!taskId && !incomingOperationId)) return incomingOperationId;
+
+            // A local operation may already have a start line even before its HTTP response.
+            const existing = (this.outputs[clientId] || []).find(line => line?.kind === 'command' && (
+                (incomingOperationId && String(line.meta?.operation_id || line.meta?.operation?.operation_id || '') === incomingOperationId) ||
+                (taskId && String(line.meta?.task_id || '') === taskId)
+            ));
+            if (existing) {
+                return String(existing.meta?.operation_id || existing.meta?.operation?.operation_id || incomingOperationId);
+            }
+
+            const kind = metadata.quick_action === true ? 'alias'
+                : metadata.script_run === true ? 'script' : 'command';
+            const title = metadata.quick_action === true
+                ? (metadata.quick_action_display_command || payload.command)
+                : metadata.script_run === true
+                    ? `[Run Script] ${metadata.script_run_name || payload.command || 'script'}`
+                    : payload.command;
+            const operation = createTerminalOperation({ kind, action: kind === 'script' ? 'run' : 'invoke',
+                clientId, invocation: { input: String(payload.command || ''), task_id: taskId }, replay: null });
+            if (incomingOperationId) operation.operation_id = incomingOperationId;
+            this.appendOutput(clientId, `> ${String(title || `[Task] ${taskId}`).trim()}`, 'command', {
+                operation, task_id: taskId,
+            });
+            return operation.operation_id;
         },
 
         appendOutput(clientId, text, kind = '', meta = null) {

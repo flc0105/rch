@@ -323,7 +323,7 @@ Web Terminal 将一次用户发起的 Command、Script、Quick Action 或上传�
 
 浏览器为每次已确认提交的操作创建临时 `operation_id`，并通过 `X-RCH-Operation-ID` 请求头传给 Server。Server 校验 UUID，随 Web Task 元数据和执行 SSE 回传；浏览器将同一操作的输出、完成状态与 JSON 内容关联到对应终端块。`task_id`、`transfer_id` 和 Activity History ID 继续分别承担执行、传输与历史记录职责，浏览器操作 ID 不写入 Activity History。浏览器上传由 Transfer Center 管理上传阶段，再由 Web Task 报告目标设备传输的最终执行状态。
 
-**Run again** 的可用性由操作携带的 `replay` 执行描述决定：真实 Command 保存命令文本，Script 保存脚本身份和参数，Quick Action 保存别名、平台及实际提交的参数，并由 Quick Action API 重新执行。Remote Upload 和 Artifact Send 不提供通用重跑描述。Block Dropdown、JSON Viewer 均采用相同规则，重跑创建新的操作与任务。已经显示的操作与结果不会因重跑而被覆盖。终端操作起始行的 `> ` 标记保留，用于区分操作开始与完成行；仅真实 Shell 命令显示 `$` 提示符。
+**Run again** 的可用性由操作携带的 `replay` 执行描述决定：真实 Command 保存命令文本，Script 保存脚本身份和参数，Quick Action 保存别名、平台及实际提交的参数，并由 Quick Action API 重新执行。Remote Upload 和 Artifact Send 不提供通用重跑描述。Block Dropdown、JSON Viewer 均采用相同规则，重跑创建新的操作与任务。已经显示的操作与结果不会因重跑而被覆盖。终端操作起始行的 `> ` 标记保留，用于区分操作开始与完成行；Command 与 Quick Action 的终端执行显示 `$>` 提示符，Script、Remote Upload、Artifact Send 等操作标题显示 `> [XXX]`。SSE 命令结果到达时，如果当前终端已经没有对应操作的起始行，终端会以任务身份补建起始标记，并将后续输出和完成状态归入同一块。Remote Files 与 Remote Folder Picker 上传、Artifact Send 在冲突预检查阶段发生错误时，会显示带起始行及失败结束行的操作块；用户取消冲突选择时不产生执行记录。Folder Picker 经嵌套弹窗转发的操作身份与 Remote Files 一致。Remote Files 的 Set CWD 命令同样使用独立操作 ID 关联任务结果。
 
 ## JSON Viewer 的 Run Again 与行级操作输出
 

@@ -123,7 +123,7 @@ test('typed completion is determined by event type, not a command-looking output
   assert.doesNotMatch(view.getTerminalBlockOutputText(block), /printf \(Success\)/)
 })
 
-test('non-command operation starts keep >, without adding a shell $ prompt', () => {
+test('command and Quick Action alias use $> while other operation titles keep >', () => {
   const {state, view, blocks}=makeModel()
   for (const [kind, title] of [
     ['transfer','[Remote Upload] sample.zip -> /tmp'],
@@ -133,10 +133,19 @@ test('non-command operation starts keep >, without adding a shell $ prompt', () 
   ]) {
     const op=createTerminalOperation({kind,action:'invoke',clientId:'client-a',replay:null})
     state.appendOutput('client-a',`> ${title}`,'command',{operation:op})
-    assert.equal(view.getTerminalBlockDisplayTitle(blocks().at(-1)), `> ${title}`)
+    const block = blocks().at(-1)
+    assert.equal(view.getTerminalBlockDisplayTitle(block), `> ${title}`)
+    assert.equal(`${view.showsTerminalDollarPrompt(block) ? '$' : ''}${view.getTerminalBlockDisplayTitle(block)}`,
+      kind === 'alias' ? '$> cwd' : `> ${title}`)
   }
+  const command = createTerminalOperation({kind:'command',action:'invoke',clientId:'client-a',replay:null})
+  state.appendOutput('client-a','> whoami','command',{operation:command})
+  assert.equal(view.showsTerminalDollarPrompt(blocks().at(-1)), true)
+  assert.equal(view.showsTerminalDollarPrompt({operation:null}), true)
   assert.equal(view.canRerunTerminalBlock(blocks()[0]), false)
-  assert.match(read('../src/components/TerminalOutput.vue'), /v-if="!block.operation \|\| block.operation.kind === 'command'" class="terminal-prefix">\$/)
+  const template = read('../src/components/TerminalOutput.vue')
+  assert.match(template, /v-if="showsTerminalDollarPrompt\(block\)" class="terminal-prefix">\$/)
+  assert.match(template, /v-if="entry.line.kind === 'command' && showsTerminalDollarPrompt\(block\)"/)
 })
 
 
