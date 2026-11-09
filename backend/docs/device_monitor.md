@@ -95,7 +95,7 @@ Dashboard 将变化速度不同的数据拆到不同 Channel，使用的配置�
 
 `network` 使用设备累计接收/发送字节计数，以两次采样的时间差计算 **bytes/s** 速率，同时选取处于活动状态的网络接口及 IPv4。该速率统计设备全部网络活动；Remote Files、Transfer Center 和 RCH Socket 的独立传输进度需在各自界面查看。第一次采样未建立有效计数器差值时，速率可能显示零值。
 
-`storage` 对实际磁盘分区采集容量、已用、剩余及挂载信息，并按平台过滤虚拟/不适合展示的卷。macOS 重点展示系统根卷与 `/Volumes` 下的卷；Windows 结合驱动器类型和卷标；其他平台过滤 proc、sysfs 等伪文件系统。对 macOS APFS 根卷，Collector 按共享 Container 的容量语义规范化 used/free/total，使数字可以相互对应。
+`storage` 对实际磁盘分区采集容量、已用、剩余及挂载信息，并按平台过滤虚拟/不适合展示的卷。macOS 重点展示系统根卷与 `/Volumes` 下的卷；Windows 结合驱动器类型和卷标；其他平台过滤 proc、sysfs 等伪文件系统。对 macOS APFS 根卷，Collector 按共享 Container 的容量语义规范化 used/free/total，使数字可以相互对应。在 Dashboard 中点击有挂载路径的磁盘/分区卡片，会先关闭 Connection Info，再打开 Remote File Browser 并定位到该挂载路径；键盘 Enter 或 Space 也可触发这一操作。
 
 `battery` 返回是否可用、百分比、是否接电及可得时的剩余秒数；设备没有可访问的电池信息时返回 `available: false`，Dashboard 显示 No battery，而非把不存在的电池错误解释为 0%。
 

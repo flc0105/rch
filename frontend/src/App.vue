@@ -374,6 +374,7 @@
     :status-now-tick="statusNowTick"
     :tab-id="tabId"
     @open-processes="openProcessDialog"
+    @open-remote-files="openRemoteFilesDialog"
     @open-log-viewer="openLogViewerDialog"
   />
 
@@ -983,8 +984,8 @@ export default {
       return this.$refs.artifactDialogRef?.refreshIfOpen()
     },
 
-    openRemoteFilesDialog() {
-      this.$refs.remoteFilesDialogRef?.open()
+    openRemoteFilesDialog(path = '') {
+      this.$refs.remoteFilesDialogRef?.open(path)
     },
 
     openManagePinnedPathsDialog() {

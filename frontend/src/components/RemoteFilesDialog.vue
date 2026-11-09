@@ -1152,7 +1152,7 @@ export default {
       if (controller) controller.abort()
     },
 
-    async open() {
+    async open(path = '') {
       const clientId = String(this.selectedId || '').trim()
       if (!clientId) {
         ElMessage.warning('Please select a device')
@@ -1167,7 +1167,7 @@ export default {
 
       this.loadQuickJumpPaths()
       this.loadPinnedQuickJumps()
-      await this.loadRemoteDirectory('', 1)
+      await this.loadRemoteDirectory(path, 1)
     },
 
     close() {

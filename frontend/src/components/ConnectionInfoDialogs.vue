@@ -210,6 +210,12 @@
                   v-for="volume in monitorVolumes"
                   :key="`${volume.device}-${volume.mountpoint}`"
                   class="monitor-storage-card"
+                  :class="{ 'monitor-storage-card-clickable': !!volume.mountpoint }"
+                  :role="volume.mountpoint ? 'button' : undefined"
+                  :tabindex="volume.mountpoint ? 0 : undefined"
+                  @click="openVolumeFromDashboard(volume)"
+                  @keydown.enter.prevent="openVolumeFromDashboard(volume)"
+                  @keydown.space.prevent="openVolumeFromDashboard(volume)"
                 >
                   <div class="monitor-storage-title-row">
                     <div class="monitor-storage-title-wrap">
@@ -545,7 +551,7 @@ import IosDashboardPanel from './IosDashboardPanel.vue'
 
 export default {
   name: 'ConnectionInfoDialogs',
-  emits: ['open-processes', 'open-log-viewer'],
+  emits: ['open-processes', 'open-log-viewer', 'open-remote-files'],
   components: { WatchdogInfoPanel, IosDashboardPanel },
 
   props: {
@@ -578,6 +584,7 @@ export default {
     return {
       infoVisible: false,
       pendingProcessSort: '',
+      pendingRemoteFilesPath: '',
       valueVisible: false,
       loading: false,
       jobCount: 0,
@@ -831,10 +838,19 @@ export default {
       this.infoVisible = false
     },
 
+    openVolumeFromDashboard(volume) {
+      if (!this.infoVisible || !volume?.mountpoint) return
+      this.pendingRemoteFilesPath = volume.mountpoint
+      this.infoVisible = false
+    },
+
     handleInfoDialogClosed() {
       const sortBy = this.pendingProcessSort
+      const path = this.pendingRemoteFilesPath
       this.pendingProcessSort = ''
+      this.pendingRemoteFilesPath = ''
       if (sortBy) this.$emit('open-processes', sortBy)
+      else if (path) this.$emit('open-remote-files', path)
     },
 
     async open() {
@@ -844,6 +860,7 @@ export default {
       }
 
       this.pendingProcessSort = ''
+      this.pendingRemoteFilesPath = ''
       this.infoVisible = true
       this.loading = true
       this.jobCount = 0
@@ -1896,6 +1913,15 @@ export default {
 .monitor-storage-card {
   padding: 11px 12px;
   background: #fff;
+}
+
+.monitor-storage-card-clickable {
+  cursor: pointer;
+}
+
+.monitor-storage-card-clickable:hover,
+.monitor-storage-card-clickable:focus-visible {
+  border-color: var(--el-color-primary);
 }
 
 .monitor-storage-title-row,
