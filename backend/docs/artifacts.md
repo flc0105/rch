@@ -4,6 +4,8 @@ Artifact 是保存在 RCH Server 上的文件资源，具有稳定 `artifact_id`
 
 ## 文件空间与导航
 
+Artifact Manager 可以从顶部 Banner → Utilities → Artifacts 独立打开，作为 Server 文件中心使用；此入口不要求选择 Client，隐藏“Send to Current Device”等设备操作。从已选择设备的工具栏打开时，仍可使用原有的设备发送操作。两种入口共用 Saved / Shared 文件、目录、搜索、预览、下载和管理能力。
+
 Artifact Manager 有两个一级空间：
 
 - **Saved Files**：Server 保存的文件，可按设备、目录和名称查看。默认打开 **All Files**，按创建时间降序显示。设备筛选是可选的；设备离线不影响 Server 上已保存的文件。

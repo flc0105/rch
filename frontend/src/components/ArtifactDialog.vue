@@ -173,14 +173,14 @@
                         <el-dropdown-item command="rename">Rename</el-dropdown-item>
                         <el-dropdown-item command="move">Move to Folder</el-dropdown-item>
                         <el-dropdown-item
-                          v-if="isSharedFileItem(row)"
+                          v-if="isSharedFileItem(row) && !standaloneMode"
                           command="send-current-device"
                           :disabled="!selectedId"
                         >
                           Send to Current Device
                         </el-dropdown-item>
                         <el-dropdown-item
-                          v-if="isSharedFileItem(row)"
+                          v-if="isSharedFileItem(row) && !standaloneMode"
                           command="send-current-device-clipboard"
                           :disabled="!selectedId"
                         >
@@ -295,14 +295,14 @@
                             <el-dropdown-item command="rename">Rename</el-dropdown-item>
                             <el-dropdown-item command="move">Move to Folder</el-dropdown-item>
                             <el-dropdown-item
-                              v-if="isSharedFileItem(row)"
+                              v-if="isSharedFileItem(row) && !standaloneMode"
                               command="send-current-device"
                               :disabled="!selectedId"
                             >
                               Send
                             </el-dropdown-item>
                             <el-dropdown-item
-                              v-if="isSharedFileItem(row)"
+                              v-if="isSharedFileItem(row) && !standaloneMode"
                               command="send-current-device-clipboard"
                               :disabled="!selectedId"
                             >
@@ -451,6 +451,7 @@ export default {
   data() {
     return {
       visible: false,
+      standaloneMode: false,
       artifactLoading: false,
       artifactItems: [],
       artifactMachines: [],
@@ -665,7 +666,8 @@ export default {
       return formatBytesValue(value)
     },
 
-    async open() {
+    async open({ standalone = false } = {}) {
+      this.standaloneMode = standalone
       this.artifactActiveTab = 'saved'
       this.artifactMachineIdFilter = ''
       this.selectedFolderId = ''
@@ -1157,6 +1159,7 @@ export default {
     },
 
     async sendArtifactToCurrentDeviceClipboard(row) {
+      if (this.standaloneMode) return
       if (!row || !row.artifact_id || !this.isSharedFileItem(row)) {
         ElMessage.warning('Invalid shared file')
         return
@@ -1177,6 +1180,7 @@ export default {
     },
 
     async sendArtifactToCurrentDevice(row) {
+      if (this.standaloneMode) return
       if (!row || !row.artifact_id) {
         ElMessage.warning('Invalid artifact')
         return
@@ -1208,10 +1212,11 @@ export default {
         return
       }
 
+      if (this.standaloneMode) return
       let operation = null
       try {
         const conflictPolicy = await prepareUploadConflict(clientId, targetCwd || '.', displayName)
-        if (conflictPolicy === false ||
+        if (conflictPolicy === false || this.standaloneMode ||
             String(this.selectedId || this.currentConnection?.client_id || '').trim() !== clientId ||
             this.getCurrentDeviceCwd() !== targetCwd) return
         operation = createTerminalOperation({ kind: 'transfer', action: 'upload_files', clientId,
@@ -1391,6 +1396,9 @@ export default {
 
 .artifact-folder-heading {
   display: flex;
+  height: 34px;
+  min-height: 34px;
+  box-sizing: border-box;
   align-items: center;
   justify-content: space-between;
   gap: 4px;

@@ -48,6 +48,7 @@
                   <el-dropdown-item command="one-liners">One-liners</el-dropdown-item>
                   <el-dropdown-item command="build-agent">Build Agent</el-dropdown-item>
                   <el-dropdown-item command="listeners">Listeners</el-dropdown-item>
+                  <el-dropdown-item command="artifacts">Artifacts</el-dropdown-item>
                   <el-dropdown-item command="settings">Settings</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
@@ -936,6 +937,10 @@ export default {
       return this.$refs.artifactDialogRef?.open()
     },
 
+    openServerArtifactsDialog() {
+      return this.$refs.artifactDialogRef?.open({ standalone: true })
+    },
+
     openScreenViewDialog() {
       return this.$refs.screenViewDialogRef?.open()
     },
@@ -1360,6 +1365,7 @@ export default {
       if (command === 'one-liners') return this.openOneLinersDialog()
       if (command === 'build-agent') return this.openAgentBuilderDialog()
       if (command === 'listeners') return this.$refs.listenerManagerDialogRef?.open()
+      if (command === 'artifacts') return this.openServerArtifactsDialog()
       if (command === 'settings') return this.openSettingsDialog()
     },
 
