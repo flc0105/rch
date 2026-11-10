@@ -841,6 +841,7 @@
 </template>
 
 <script>
+import { copyTextFallback } from '../utils/clipboard.js'
 import { listRemoteDirectory, getRemoteSystemPaths, pasteRemoteFiles, createRemoteZip, extractRemoteZip, makeRemoteDirectory, renameRemoteFile, downloadRemoteFile, downloadRemoteZip, deleteRemoteFile, deleteRemoteEntries } from '../api/remoteFilesApi.js'
 import { listRemotePinnedPaths, saveRemotePinnedPath, deleteRemotePinnedPath } from '../api/remotePinsApi.js'
 import {ElMessage, ElMessageBox} from 'element-plus'
@@ -1466,11 +1467,11 @@ export default {
           return
         }
 
-        this.copyTextFallback(text)
+        copyTextFallback(text)
         ElMessage.success('Path copied')
       } catch (e) {
         try {
-          this.copyTextFallback(text)
+          copyTextFallback(text)
           ElMessage.success('Path copied')
         } catch (fallbackError) {
           ElMessage.error('Failed to copy path')
@@ -1478,30 +1479,6 @@ export default {
       }
     },
 
-    copyTextFallback(text) {
-      const textarea = document.createElement('textarea')
-
-      textarea.value = String(text || '')
-      textarea.setAttribute('readonly', '')
-      textarea.style.position = 'fixed'
-      textarea.style.left = '-9999px'
-      textarea.style.top = '0'
-      textarea.style.opacity = '0'
-
-      document.body.appendChild(textarea)
-
-      textarea.focus()
-      textarea.select()
-      textarea.setSelectionRange(0, textarea.value.length)
-
-      const ok = document.execCommand('copy')
-
-      document.body.removeChild(textarea)
-
-      if (!ok) {
-        throw new Error('Fallback copy failed')
-      }
-    },
 
     // async copyRemotePath(row) {
     //   if (!row || !row.path || row.is_parent_entry) {

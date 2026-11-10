@@ -25,7 +25,7 @@ class CommandSpec:
     handler: str
     subcommands: tuple[SubcommandSpec, ...] = ()
     default: str = ''
-    allow_direct: bool = False
+    dispatch_subcommand: bool = False
     suggest: bool = True
     group: str = 'server'
     expects_arguments: bool = False
@@ -34,10 +34,10 @@ class CommandSpec:
         return next((item for item in self.subcommands if item.name == name), None)
 
 
-def command(name, description, handler=None, children=(), default='', allow_direct=False, group='server', expects_arguments=False):
+def command(name, description, handler=None, children=(), default='', dispatch_subcommand=False, group='server', expects_arguments=False):
     return CommandSpec(name, description, handler or name,
                        tuple(SubcommandSpec(*item) for item in children),
-                       default, allow_direct, True, group, expects_arguments)
+                       default, dispatch_subcommand, True, group, expects_arguments)
 
 
 SERVER_COMMAND_SPECS = (
@@ -47,12 +47,12 @@ SERVER_COMMAND_SPECS = (
         ('view', 'Read script source on the Server', 'script view <path>'),
         ('exec', 'Execute a script with CLI arguments', 'script exec <path> [options]'),
         ('run', 'Execute a script with structured JSON payload', 'script run <__json__:payload>'),
-    ), default='list'),
+    ), default='list', dispatch_subcommand=True),
     command('alias', 'List or manage aliases for this Client platform', children=(
         ('list', 'List current effective aliases (optionally --json)', 'alias list [--json]'),
         ('set', 'Save an alias', 'alias set [--platform PLATFORM] name = command'),
         ('unset', 'Remove an alias', 'alias unset [--platform PLATFORM] name'),
-    ), default='list'),
+    ), default='list', dispatch_subcommand=True),
     command('job', 'Manage Client jobs from the Server', children=(
         ('list', 'List available Server jobs (optionally --json)', 'job list [--json]'),
         ('start', 'Start a Client job', 'job start <name> [--mode MODE] [--params JSON]', 'public', ('mode','params')),
@@ -61,7 +61,7 @@ SERVER_COMMAND_SPECS = (
         ('status', 'Query job state', 'job status <name>'),
         ('stop', 'Stop a running job', 'job stop <name>'),
         ('stop-all', 'Stop all running jobs', 'job stop-all'),
-    ), default='list'),
+    ), default='list', dispatch_subcommand=True),
     command('history', 'Show Quick History or replay by index', children=(
         ('list', 'Display Quick History', 'history'),
         ('clear', 'Clear Quick Recent', 'history clear'),
@@ -83,6 +83,7 @@ SERVER_COMMAND_SPECS = (
         ('package', 'List, install or uninstall external tool packages', 'xt package list [--installed|-i] [--json] | install|uninstall <package-id>'),
         ('module', 'List package modules', 'xt module list <package-id> [--json]'),
         ('instance', 'Manage persistent daemon instances', 'xt instance create|list|start|stop|restart|status|logs ...'),
+        ('help', 'Show external tool usage', 'xt help'),
     ), default='help'),
     command('help', 'Show Server builtin commands and subcommands', handler='server_help'),
 )
@@ -118,8 +119,6 @@ class ServerCommandRegistry:
         # Default list commands support --json without repeating `list`.
         if token == '--json' and spec.default == 'list':
             return spec, 'list', text
-        if spec.allow_direct:
-            return spec, '__direct__', text
         raise ValueError(f'Unsupported {spec.name} subcommand: {token}. Use: {self.usage(spec.name)}')
 
     def parse_arguments(self, name, subcommand, raw_tail):

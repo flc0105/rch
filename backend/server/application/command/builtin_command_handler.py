@@ -132,23 +132,11 @@ class BuiltinCommandHandler:
         except ValueError as exc:
             return iter(((0, str(exc)),))
         handler = getattr(self, spec.handler)
-        if subcommand is None:
-            return handler(remaining)
-        if name == 'script':
-            return self.script_support.script(subcommand, remaining)
-        if name == 'alias':
-            return self.alias_support.execute_subcommand(subcommand, remaining)
-        if name == 'job':
-            return self.job_support.execute_subcommand(subcommand, remaining)
-        # XT, History and HTTP control keep their existing business-specific
-        # argument semantics; only command/subcommand recognition is centralized.
-        if name == 'history' and subcommand == 'list':
-            return handler('')
-        if name == 'xt' and subcommand == '__direct__':
-            return handler(remaining)
-        if name == 'httpctl' and subcommand == 'help':
-            return handler('help')
-        return handler(subcommand + ((' ' + remaining) if remaining else ''))
+        if spec.dispatch_subcommand:
+            return handler(subcommand, remaining)
+        if subcommand is not None:
+            return handler(subcommand + ((' ' + remaining) if remaining else ''))
+        return handler(remaining)
 
     def server_help(self, target=''):
         target = str(target or '').strip()
@@ -200,17 +188,15 @@ class BuiltinCommandHandler:
             yield item
 
 
-    def script(self, arg=''):
-        # Subcommand resolution is managed by the shared registry.
-        yield from self.script_support.script(*self.REGISTRY.parse('script', arg)[1:])
+    def script(self, subcommand, remaining=''):
+        yield from self.script_support.script(subcommand, remaining)
 
-    def alias(self, arg=''):
-        for item in self.alias_support.alias(arg):
-            yield item
+    def alias(self, subcommand, remaining=''):
+        yield from self.alias_support.execute_subcommand(subcommand, remaining)
 
 
-    def job(self, arg=''):
-        yield from self.job_support.job(arg)
+    def job(self, subcommand, remaining=''):
+        yield from self.job_support.execute_subcommand(subcommand, remaining)
 
     def history(self, arg):
         for item in self.history_support.history(arg):

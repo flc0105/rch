@@ -7,8 +7,7 @@ SCRIPT_METADATA = {
     "params": []
 }
 
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
+
 """List locally reachable HTTP/HTTPS listening services on macOS as a flat JSON array.
 
 Only Python's standard library and the macOS system utilities `lsof` and `ps`

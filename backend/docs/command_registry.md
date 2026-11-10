@@ -124,11 +124,11 @@ Server 命令入口由 `server.application.command.server_builtin_registry.SERVE
 
 Server Builtin 的 `group` 统一默认 `server`，每个主命令不再指定 `script/alias/job/history/control/external_tool` 等独立 Group；Manifest 继续输出 `group=server`，供 Client / Server 来源区分。
 
-新增主命令只需在同一 Registry 声明 `name/description/handler`；有子命令时声明 `SubcommandSpec` 的 `name/usage/description`、默认子命令及直接快捷模式。公用解析器区分子命令并保留参数尾部原文（如 Alias 右侧 Shell 模板、XT 参数、结构化 `__json__:`），具体参数校验和真实业务执行仍由原 Support / Service 负责。执行方法继续 `yield status, message`。
+新增主命令只需在同一 Registry 声明 `name/description/handler`；有子命令时声明 `SubcommandSpec` 的 `name/usage/description`、默认子命令及子命令调用形式。公用解析器区分子命令并保留参数尾部原文（如 Alias 右侧 Shell 模板、XT 参数、结构化 `__json__:`），具体参数校验和真实业务执行仍由原 Support / Service 负责。执行方法继续 `yield status, message`。
 
 Registry 同时产生 Server Manifest、`help` 和静态子命令补全候选，Info → Commands 保留原有的单列命令卡片；在 Command List 标题处切换 Client / Server，并可在当前来源内按命令名称或描述搜索。Client 模式先按 Group 名称（不区分大小写），同组再按命令名称排序；Server 模式只显示一级 Builtin，不展示冗余的 Group 行，子命令不伪装成独立顶层命令。Server `help` 聚合已注册的 Server 主命令与当前 Client Manifest，并按 Group 显示标题的字母顺序（组内命令名也按字母顺序）列出 Client 的 `[Shell]`、`[File]`、`[Session]`、`[Acmd]` 等分组及说明。它**不会展开动态 Alias 名称和命令内容**；`help alias` 只解释 `alias` 管理命令的用法。`help server/client/alias/script/script run` 可查询对应命令帮助。需要动态内容时使用既有补全 Provider，例如 `script exec <path>` 与 `job start <name>`；不重复手写另一份静态菜单。普通 Client 命令 Manifest 的 `@desc` 与 `suggest` 行为保持原样。
 
-当前聚合的一级命令包括 `alias`（默认生效列表、`list/set/unset`）、`job`（`list/start/ps/status/stop/stop-all`）、`script`（`list/view/exec/run`）、`xt`（`list/info/which/run`，保留 `xt <exec>` 直接执行）、`history`（默认 Quick 列表、`clear/run`）及原有 `notify/saveout/gopin/rtt/httpctl/upload`。`exec` 和 `run_script` **不再作为独立 Server 顶级命令**：Terminal 改为 `script exec <path> [options]`，Script Library UI 使用 `script run __json__:...`，Server 最终都沿用原 `COMMAND_TYPE_SCRIPT` Client 协议，绝不把 Base64 当成 Client 命令解析。
+当前聚合的一级命令包括 `alias`（默认生效列表、`list/set/unset`）、`job`（`list/start/ps/status/stop/stop-all`）、`script`（`list/view/exec/run`）、`xt`（`exec/package/module/instance/help`；Exec 使用 `xt exec <name>`）、`history`（默认 Quick 列表、`clear/run`）及原有 `notify/saveout/gopin/rtt/httpctl/upload`。`exec` 和 `run_script` **不再作为独立 Server 顶级命令**：Terminal 改为 `script exec <path> [options]`，Script Library UI 使用 `script run __json__:...`，Server 最终都沿用原 `COMMAND_TYPE_SCRIPT` Client 协议，绝不把 Base64 当成 Client 命令解析。
 
 测试用的 `interaction_*` 演示命令已从 Client 注册类和源码中移除，真实的 Interaction Broker、Script SDK 授权与进程预览命令依然保留。Server 的 `disconnect` Builtin 及其专用处理器已经删除；Client 会话控制命令与现有 Web 连接管理接口未改变。Builtin 的 `description` 只写简短说明，不能将 `<usage> | <description>` 的格式拼入描述；参数用法由独立 `usage`/子命令规格承担。默认 `gopin` 列表只显示保存名称与路径，不再打印机器 ID，持久化隔离仍按机器 ID 完成。
 

@@ -341,6 +341,7 @@
 </template>
 
 <script>
+import { normalizeServerJobFilename } from '../utils/jobFilename.js'
 import { getBackgroundJobCatalog, getBackgroundJobs, getBackgroundJobDetail, startBackgroundJob as requestBackgroundJobStart, stopBackgroundJob as requestBackgroundJobStop } from '../api/backgroundJobsApi.js'
 import { deleteBackgroundJobRecord, uploadServerJob, deleteServerJob } from '../api/backgroundJobsApi.js'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -1349,18 +1350,6 @@ export default {
       this.backgroundJobMessageDialogVisible = true
     },
 
-    normalizeServerJobFilename(scriptName, fallbackName = 'new_job.py') {
-      let normalized = String(scriptName || '').trim().replace(/\\/g, '/').replace(/^\/+/, '')
-      if (!normalized) {
-        normalized = fallbackName
-      }
-
-      if (!/\.py$/i.test(normalized)) {
-        normalized = `${normalized}.py`
-      }
-
-      return normalized
-    },
 
     triggerServerJobUpload() {
       if (!this.selectedId) {
@@ -1399,7 +1388,7 @@ export default {
           throw new Error(json.message || 'Failed to upload job')
         }
 
-        const uploadedName = this.normalizeServerJobFilename(json.data?.name || file.name)
+        const uploadedName = normalizeServerJobFilename(json.data?.name || file.name)
         ElMessage.success(`Job uploaded: ${uploadedName}`)
 
         if (this.visible) {
@@ -1416,7 +1405,7 @@ export default {
     },
 
     async deleteBackgroundJobModule(scriptName) {
-      const normalizedScriptName = this.normalizeServerJobFilename(scriptName)
+      const normalizedScriptName = normalizeServerJobFilename(scriptName)
       if (!normalizedScriptName) {
         ElMessage.warning('Invalid job name')
         return

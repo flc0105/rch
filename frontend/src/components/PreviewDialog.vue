@@ -231,6 +231,8 @@
 </template>
 
 <script>
+import { copyTextFallback } from '../utils/clipboard.js'
+import { normalizeServerJobFilename } from '../utils/jobFilename.js'
 import { previewArtifact, uploadArtifact, saveArtifactContent, inspectArtifactZip, readArtifactZipEntry } from '../api/artifactsApi.js'
 import { inspectRemoteZip, readRemoteZipEntry } from '../api/remoteFilesApi.js'
 import ArchivePreviewPanel from './ArchivePreviewPanel.vue'
@@ -267,6 +269,41 @@ import 'monaco-editor/min/vs/editor/editor.main.css'
 import {formatBytes} from '../utils/formatters.js'
 import * as externalToolsApi from '../api/externalToolsApi.js'
 import PreviewImageInfoDialog from './PreviewImageInfoDialog.vue'
+
+// A preview source owns its label and the operations it supports. Business
+// implementations remain in the existing component methods for minimal change.
+const PREVIEW_SOURCE_OPERATIONS = Object.freeze({
+  remote_file: {
+    label: 'Remote File', requiresCompleteContent: true,
+    save: (vm, content) => vm.saveToRemoteFile(content),
+    reload: vm => vm.fetchLatestRemoteFileTextPayload(),
+  },
+  artifact: {
+    label: 'Artifact', requiresCompleteContent: true,
+    save: (vm, content) => vm.saveToArtifact(content),
+    reload: vm => vm.fetchLatestArtifactTextPayload(),
+  },
+  new_shared_file: {
+    label: 'Artifact',
+    save: (vm, content) => vm.saveToNewSharedFile(content),
+    reload: () => { throw new Error('This file has not been created yet') },
+  },
+  background_job: {
+    label: 'Background Job',
+    save: (vm, content) => vm.saveToBackgroundJob(content),
+    reload: vm => vm.fetchLatestBackgroundJobTextPayload(),
+  },
+  server_script: {
+    label: 'Server Script',
+    save: (vm, content) => vm.saveToServerScript(content),
+    reload: vm => vm.fetchLatestServerScriptTextPayload(),
+  },
+  external_tool_meta: {
+    label: 'External Tool Meta',
+    save: (vm, content) => vm.saveToExternalToolMeta(content),
+    reload: vm => vm.fetchLatestExternalToolMetaTextPayload(),
+  },
+})
 
 const monacoEditorStore = new WeakMap()
 const monacoInitFrameStore = new WeakMap()
@@ -381,7 +418,7 @@ export default {
       previewFileCodec: 'utf-8',   // 服务端确认的写回编码（与显示标签分离）
       previewFileSize: '',         // 文件大小显示
       previewFileEncoding: 'UTF-8', // 文件编码
-      previewSource: '',  // 'remote_file' 或 'artifact'
+      previewSource: '',  // 由 PREVIEW_SOURCE_OPERATIONS 定义可用来源
       previewArtifactInfo: null,
       previewImageInfo: null,
       previewImageInfoDialogVisible: false,
@@ -409,25 +446,7 @@ export default {
     },
 
     previewSourceLabel() {
-      if (this.previewSource === 'remote_file') {
-        return 'Remote File'
-      }
-      if (this.previewSource === 'artifact') {
-        return 'Artifact'
-      }
-      if (this.previewSource === 'new_shared_file') {
-        return 'Artifact'
-      }
-      if (this.previewSource === 'background_job') {
-        return 'Background Job'
-      }
-      if (this.previewSource === 'server_script') {
-        return 'Server Script'
-      }
-      if (this.previewSource === 'external_tool_meta') {
-        return 'External Tool Meta'
-      }
-      return 'Unknown'
+      return PREVIEW_SOURCE_OPERATIONS[this.previewSource]?.label || 'Unknown'
     },
   },
 
@@ -879,29 +898,16 @@ export default {
     },
 
     async saveEditedContent() {
-      if ((this.previewSource === 'remote_file' || this.previewSource === 'artifact') &&
-          (this.previewTruncated || !this.previewEditable)) {
+      const source = PREVIEW_SOURCE_OPERATIONS[this.previewSource]
+      if (source?.requiresCompleteContent && (this.previewTruncated || !this.previewEditable)) {
         ElMessage.warning('Editing is disabled for this file')
         return
       }
-      const currentContent = this.getMonacoEditorContent()
-
-      // 根据来源选择不同的保存方式
-      if (this.previewSource === 'remote_file') {
-        await this.saveToRemoteFile(currentContent)
-      } else if (this.previewSource === 'artifact') {
-        await this.saveToArtifact(currentContent)
-      } else if (this.previewSource === 'new_shared_file') {
-        await this.saveToNewSharedFile(currentContent)
-      } else if (this.previewSource === 'background_job') {
-        await this.saveToBackgroundJob(currentContent)
-      } else if (this.previewSource === 'server_script') {
-        await this.saveToServerScript(currentContent)
-      } else if (this.previewSource === 'external_tool_meta') {
-        await this.saveToExternalToolMeta(currentContent)
-      } else {
+      if (!source) {
         ElMessage.warning('Unknown preview source')
+        return
       }
+      await source.save(this, this.getMonacoEditorContent())
     },
 
     async saveToExternalToolMeta(content) {
@@ -1243,11 +1249,11 @@ export default {
           return
         }
 
-        this.copyTextFallback(content)
+        copyTextFallback(content)
         ElMessage.success('Content copied')
       } catch (e) {
         try {
-          this.copyTextFallback(content)
+          copyTextFallback(content)
           ElMessage.success('Content copied')
         } catch (fallbackError) {
           ElMessage.error('Failed to copy content')
@@ -1255,30 +1261,6 @@ export default {
       }
     },
 
-    copyTextFallback(text) {
-      const textarea = document.createElement('textarea')
-
-      textarea.value = String(text || '')
-      textarea.setAttribute('readonly', '')
-      textarea.style.position = 'fixed'
-      textarea.style.left = '-9999px'
-      textarea.style.top = '0'
-      textarea.style.opacity = '0'
-
-      document.body.appendChild(textarea)
-
-      textarea.focus()
-      textarea.select()
-      textarea.setSelectionRange(0, textarea.value.length)
-
-      const ok = document.execCommand('copy')
-
-      document.body.removeChild(textarea)
-
-      if (!ok) {
-        throw new Error('Fallback copy failed')
-      }
-    },
 
     // async copyPreviewText() {
     //   const content = this.getMonacoEditorContent()
@@ -1388,19 +1370,9 @@ print(value)
       })
     },
 
-    normalizeServerJobFilename(scriptName, fallbackName = 'new_job.py') {
-      let normalized = String(scriptName || '').trim().replace(/\\/g, '/').replace(/^\/+/, '')
-      if (!normalized) {
-        normalized = fallbackName
-      }
-      if (!/\.py$/i.test(normalized)) {
-        normalized = `${normalized}.py`
-      }
-      return normalized
-    },
 
     buildServerJobTemplate(scriptName = 'new_job.py') {
-      const normalizedScriptName = this.normalizeServerJobFilename(scriptName)
+      const normalizedScriptName = normalizeServerJobFilename(scriptName)
       const classBaseName = normalizedScriptName
           .replace(/\.py$/i, '')
           .split('/')
@@ -1489,7 +1461,7 @@ print(value)
         return
       }
 
-      const normalizedScriptName = this.normalizeServerJobFilename(scriptName)
+      const normalizedScriptName = normalizeServerJobFilename(scriptName)
       const content = this.buildServerJobTemplate(normalizedScriptName)
 
       this.previewSource = 'background_job'
@@ -1565,7 +1537,7 @@ print(value)
         return
       }
 
-      let normalizedScriptName = this.normalizeServerJobFilename(scriptName, 'new_job.py')
+      let normalizedScriptName = normalizeServerJobFilename(scriptName, 'new_job.py')
       if (!normalizedScriptName) {
         ElMessage.warning('Invalid script name')
         return
@@ -1606,9 +1578,9 @@ print(value)
     handleBackgroundJobDeleted(normalizedName) {
       if (
           this.previewDialogVisible &&
-          (this.previewSource === 'server_job' || this.previewSource === 'background_job')
+          this.previewSource === 'background_job'
       ) {
-        const currentPreviewName = this.normalizeServerJobFilename(this.previewFilePath || this.previewTitle || '')
+        const currentPreviewName = normalizeServerJobFilename(this.previewFilePath || this.previewTitle || '')
 
         if (currentPreviewName === normalizedName) {
           this.previewDialogVisible = false
@@ -1828,101 +1800,100 @@ print(value)
     },
 
     async fetchLatestPreviewTextPayload() {
-      if (this.previewSource === 'remote_file') {
-        const clientId = String(this.previewRemoteClientId || '').trim()
-        if (!clientId || !this.previewFilePath) {
-          throw new Error('Invalid remote file path')
-        }
-
-        const res = await fetch(`/api/connections/${encodeURIComponent(clientId)}/remote-files/preview`, {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({path: this.previewFilePath}),
-        })
-
-        return await this.parsePreviewTextResponse(res, 'Failed to reload remote file')
-      }
-
-      if (this.previewSource === 'artifact') {
-        if (!this.previewFilePath) {
-          throw new Error('Invalid artifact')
-        }
-
-        const res = await previewArtifact(this.previewFilePath)
-
-        return await this.parsePreviewTextResponse(res, 'Failed to reload artifact')
-      }
-
-      if (this.previewSource === 'server_script') {
-        if (!this.previewFilePath) {
-          throw new Error('Invalid script name')
-        }
-
-        const res = await fetch(`/api/scripts/download?name=${encodeURIComponent(this.previewFilePath)}`)
-
-        if (!res.ok) {
-          throw new Error(`Failed to reload script: ${res.statusText}`)
-        }
-
-        const content = await res.text()
-
-        return {
-          content,
-          name: this.previewTitle || this.previewFilePath,
-          size: content.length,
-          truncated: false,
-          encoding: 'utf-8',
-          editable: true,
-        }
-      }
-
-      if (this.previewSource === 'background_job') {
-        if (!this.previewFilePath) {
-          throw new Error('Invalid job name')
-        }
-
-        const res = await downloadServerJob(this.previewFilePath)
-
-        if (!res.ok) {
-          throw new Error(`Failed to reload job: ${res.statusText}`)
-        }
-
-        const content = await res.text()
-
-        return {
-          content,
-          name: this.previewTitle || this.previewFilePath,
-          size: content.length,
-          truncated: false,
-          encoding: 'utf-8',
-          editable: true,
-        }
-      }
-
-      if (this.previewSource === 'external_tool_meta') {
-        if (!this.previewFilePath) {
-          throw new Error('Invalid external tool id')
-        }
-
-        const data = await externalToolsApi.loadExternalToolMetaContent(this.previewFilePath)
-        const content = data.content || ''
-
-        return {
-          content,
-          name: data.name || this.previewTitle || `${this.previewFilePath}.json`,
-          size: data.size || content.length,
-          truncated: false,
-          encoding: 'utf-8',
-          editable: true,
-        }
-      }
-
-      if (this.previewSource === 'new_shared_file') {
-        throw new Error('This file has not been created yet')
-      }
-
-      throw new Error('Unknown preview source')
+      const source = PREVIEW_SOURCE_OPERATIONS[this.previewSource]
+      if (!source) throw new Error('Unknown preview source')
+      return source.reload(this)
     },
+
+    async fetchLatestRemoteFileTextPayload() {
+      const clientId = String(this.previewRemoteClientId || '').trim()
+      if (!clientId || !this.previewFilePath) {
+        throw new Error('Invalid remote file path')
+      }
+
+      const res = await fetch(`/api/connections/${encodeURIComponent(clientId)}/remote-files/preview`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({path: this.previewFilePath}),
+      })
+
+      return await this.parsePreviewTextResponse(res, 'Failed to reload remote file')
+    },
+
+    async fetchLatestArtifactTextPayload() {
+      if (!this.previewFilePath) {
+        throw new Error('Invalid artifact')
+      }
+
+      const res = await previewArtifact(this.previewFilePath)
+
+      return await this.parsePreviewTextResponse(res, 'Failed to reload artifact')
+    },
+
+    async fetchLatestServerScriptTextPayload() {
+      if (!this.previewFilePath) {
+        throw new Error('Invalid script name')
+      }
+
+      const res = await fetch(`/api/scripts/download?name=${encodeURIComponent(this.previewFilePath)}`)
+
+      if (!res.ok) {
+        throw new Error(`Failed to reload script: ${res.statusText}`)
+      }
+
+      const content = await res.text()
+
+      return {
+        content,
+        name: this.previewTitle || this.previewFilePath,
+        size: content.length,
+        truncated: false,
+        encoding: 'utf-8',
+        editable: true,
+      }
+    },
+
+    async fetchLatestBackgroundJobTextPayload() {
+      if (!this.previewFilePath) {
+        throw new Error('Invalid job name')
+      }
+
+      const res = await downloadServerJob(this.previewFilePath)
+
+      if (!res.ok) {
+        throw new Error(`Failed to reload job: ${res.statusText}`)
+      }
+
+      const content = await res.text()
+
+      return {
+        content,
+        name: this.previewTitle || this.previewFilePath,
+        size: content.length,
+        truncated: false,
+        encoding: 'utf-8',
+        editable: true,
+      }
+    },
+
+    async fetchLatestExternalToolMetaTextPayload() {
+      if (!this.previewFilePath) {
+        throw new Error('Invalid external tool id')
+      }
+
+      const data = await externalToolsApi.loadExternalToolMetaContent(this.previewFilePath)
+      const content = data.content || ''
+
+      return {
+        content,
+        name: data.name || this.previewTitle || `${this.previewFilePath}.json`,
+        size: data.size || content.length,
+        truncated: false,
+        encoding: 'utf-8',
+        editable: true,
+      }
+    },
+
 
     async parsePreviewTextResponse(res, fallbackMessage = 'Failed to reload file') {
       const json = await res.json()

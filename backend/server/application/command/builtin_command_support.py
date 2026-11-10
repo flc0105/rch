@@ -413,7 +413,6 @@ class AliasBuiltinSupport:
             yield from self._alias_unset(remaining)
         else:
             raise ValueError(f'Unsupported alias subcommand: {subcommand}')
-
     def alias(self, arg=''):
         from server.application.command.server_builtin_registry import SERVER_COMMAND_REGISTRY
         _, subcommand, remaining = SERVER_COMMAND_REGISTRY.parse('alias', arg)
@@ -548,7 +547,7 @@ class HistoryBuiltinSupport:
     def history(self, arg):
         arg_text = (arg or '').strip()
 
-        if not arg_text:
+        if arg_text in ('', 'list'):
             entries = self._get_resolvable_quick_history()
             if not entries:
                 yield 1, 'No command history available\n\nTip: use history run <index> or !<index> to run a history item quickly'

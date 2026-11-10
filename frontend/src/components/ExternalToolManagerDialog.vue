@@ -783,6 +783,7 @@
 </template>
 
 <script>
+import { copyTextFallback } from '../utils/clipboard.js'
 import { formatBytesHuman, formatDateTimeShort } from '../utils/formatters.js'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import * as externalToolsApi from '../api/externalToolsApi.js'
@@ -2605,12 +2606,12 @@ async uninstallClientTool(item, deviceId) {
         if (window.isSecureContext && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
           await navigator.clipboard.writeText(command)
         } else {
-          this.copyTextFallback(command)
+          copyTextFallback(command)
         }
         ElMessage.success(data.installed ? 'Command copied' : 'Command copied; package is not installed yet')
       } catch (e) {
         try {
-          this.copyTextFallback(command)
+          copyTextFallback(command)
           ElMessage.success(data.installed ? 'Command copied' : 'Command copied; package is not installed yet')
         } catch (_) {
           ElMessage.error('Failed to copy command')
@@ -2618,22 +2619,6 @@ async uninstallClientTool(item, deviceId) {
       }
     },
 
-    copyTextFallback(text) {
-      const textarea = document.createElement('textarea')
-      textarea.value = String(text || '')
-      textarea.setAttribute('readonly', '')
-      textarea.style.position = 'fixed'
-      textarea.style.left = '-9999px'
-      textarea.style.top = '0'
-      textarea.style.opacity = '0'
-      document.body.appendChild(textarea)
-      textarea.focus()
-      textarea.select()
-      textarea.setSelectionRange(0, textarea.value.length)
-      const ok = document.execCommand('copy')
-      document.body.removeChild(textarea)
-      if (!ok) throw new Error('Fallback copy failed')
-    },
 
     showDetailDialog({ title = '', subtitle = '', sections = [], copyText = '' } = {}) {
       this.detailDialogTitle = title || 'Details'
@@ -2666,12 +2651,12 @@ async uninstallClientTool(item, deviceId) {
         if (window.isSecureContext && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
           await navigator.clipboard.writeText(this.detailCopyText)
         } else {
-          this.copyTextFallback(this.detailCopyText)
+          copyTextFallback(this.detailCopyText)
         }
         ElMessage.success('Copied')
       } catch (e) {
         try {
-          this.copyTextFallback(this.detailCopyText)
+          copyTextFallback(this.detailCopyText)
           ElMessage.success('Copied')
         } catch (_) {
           ElMessage.error('Failed to copy')
@@ -2854,7 +2839,7 @@ async uninstallClientTool(item, deviceId) {
         if (window.isSecureContext && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
           await navigator.clipboard.writeText(text)
         } else {
-          this.copyTextFallback(text)
+          copyTextFallback(text)
         }
         ElMessage.success('Copied')
       } catch (_) {
