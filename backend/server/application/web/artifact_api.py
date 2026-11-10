@@ -1,6 +1,4 @@
-import json
 import os
-from datetime import datetime
 
 from core.utils.text_encoding import encode_for_existing_file
 from server.application.artifact.artifact_events import publish_artifact_created
@@ -13,9 +11,10 @@ class WebArtifactApi:
         self.artifact_service = artifact_service
         self.command_execution_api = command_execution_api
 
-    def list_artifacts(self, artifact_type: str = '', machine_id: str = ''):
+    def list_artifacts(self, artifact_type: str = '', machine_id: str = '', **filters):
         return {
-            'items': self.artifact_service.list_artifacts(artifact_type=artifact_type, machine_id=machine_id),
+            'items': self.artifact_service.list_artifacts(artifact_type=artifact_type, machine_id=machine_id, **filters),
+            'folders': self.artifact_service.list_folders(),
             'machines': self.artifact_service.list_artifact_machines(),
         }
 
@@ -25,8 +24,45 @@ class WebArtifactApi:
     def rename_artifact(self, artifact_id: str, new_name: str):
         return self.artifact_service.rename_artifact(artifact_id, new_name)
 
-    def clear_artifacts(self, artifact_type: str, machine_id: str = ''):
-        return self.artifact_service.clear_artifacts(artifact_type, machine_id=machine_id)
+    def clear_artifacts(self, artifact_type: str = '', machine_id: str = '', **filters):
+        return self.artifact_service.clear_artifacts(artifact_type, machine_id=machine_id, **filters)
+
+    def create_folder(self, scope, name, parent_id=''):
+        return self.artifact_service.create_folder(scope, name, parent_id)
+
+    def rename_folder(self, folder_id, name):
+        return self.artifact_service.rename_folder(folder_id, name)
+
+    def delete_folder(self, folder_id):
+        return self.artifact_service.delete_folder(folder_id)
+
+    def move_artifact(self, artifact_id, folder_id):
+        return self.artifact_service.move_artifact(artifact_id, folder_id)
+
+    def save_preview_to_saved(self, artifact_id: str, folder_id: str = ''):
+        artifact = self.artifact_service.save_preview_to_saved(artifact_id, folder_id)
+        self.publish_artifact_created(artifact)
+        return artifact
+
+    def create_file(self, scope: str, name: str, machine_id: str = '', folder_id: str = ''):
+        if scope != 'shared':
+            raise ValueError('Create File is only available in Shared Files')
+        name = os.path.basename(str(name or '').strip())
+        if not name or name in ('.', '..'):
+            raise ValueError('Invalid file name')
+        if folder_id:
+            folder = self.artifact_service.registry_service.catalog.get_folder(folder_id)
+            if folder['scope'] != scope:
+                raise ValueError('Folder does not belong to this file space')
+        artifact = self.artifact_service.save_text_artifact(
+            artifact_type='shared_files',
+            category='manual', hostname='', machine_id=machine_id,
+            original_name=name, content='',
+        )
+        if folder_id:
+            artifact = self.artifact_service.move_artifact(artifact['artifact_id'], folder_id)
+        self.publish_artifact_created(artifact)
+        return artifact
 
     def build_artifact_preview_payload(self, artifact_id: str):
         return self.artifact_service.build_preview_payload(artifact_id)
@@ -90,7 +126,7 @@ class WebArtifactApi:
                                 job_key: str = '',
                                 # source_type: str = 'client_upload',
                                 # related_path: str = '',
-                                source_command_id=None, transfer_buffer_size=None, extra=None):
+                                source_command_id=None, transfer_buffer_size=None, extra=None, folder_id: str = ''):
         resolved_hostname, resolved_machine_id, addr = self.resolve_client_context(client_id)
         hostname = hostname or resolved_hostname
         machine_id = machine_id or resolved_machine_id
@@ -111,6 +147,8 @@ class WebArtifactApi:
             transfer_buffer_size=transfer_buffer_size,
             extra=extra,
         )
+        if folder_id:
+            artifact = self.artifact_service.move_artifact(artifact['artifact_id'], folder_id)
         try:
             self.bind_uploaded_artifact_to_history(client_id, source_command_id, artifact)
         except Exception:
@@ -226,15 +264,5 @@ class WebArtifactApi:
         with open(file_path, 'wb') as f:
             f.write(encoded_bytes)
         file_size = os.path.getsize(file_path)
-        meta_path = artifact.get('_meta_path', '')
-        if meta_path and os.path.isfile(meta_path):
-            try:
-                with open(meta_path, 'r', encoding='utf-8') as f:
-                    meta = json.load(f)
-                meta['size'] = file_size
-                meta['updated_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                with open(meta_path, 'w', encoding='utf-8') as f:
-                    json.dump(meta, f, ensure_ascii=False, indent=2)
-            except Exception:
-                pass
+        self.artifact_service.update_artifact_size(artifact_id)
         return {'artifact_id': artifact_id, 'size': file_size, 'encoding': encoding, 'message': 'File updated successfully'}

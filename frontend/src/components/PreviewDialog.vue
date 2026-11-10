@@ -47,6 +47,10 @@
           class="preview-toolbar"
       >
         <div class="preview-toolbar-left">
+          <el-button v-if="previewSource === 'remote_file' && previewCacheArtifactId"
+                     size="small" :loading="previewSaving" @click="saveRemotePreviewToSaved">
+            Save to Saved Files
+          </el-button>
           <template v-if="previewType === 'text'">
             <!--            <el-button-->
             <!--              size="small"-->
@@ -233,7 +237,7 @@
 <script>
 import { copyTextFallback } from '../utils/clipboard.js'
 import { normalizeServerJobFilename } from '../utils/jobFilename.js'
-import { previewArtifact, uploadArtifact, saveArtifactContent, inspectArtifactZip, readArtifactZipEntry } from '../api/artifactsApi.js'
+import { previewArtifact, uploadArtifact, saveArtifactContent, inspectArtifactZip, readArtifactZipEntry, savePreviewToSaved } from '../api/artifactsApi.js'
 import { inspectRemoteZip, readRemoteZipEntry } from '../api/remoteFilesApi.js'
 import ArchivePreviewPanel from './ArchivePreviewPanel.vue'
 import RemoteZipEntryActions from './RemoteZipEntryActions.vue'
@@ -386,6 +390,11 @@ export default {
       type: Boolean,
       default: false,
     },
+
+    getTabScopedHeaders: {
+      type: Function,
+      default: () => ({}),
+    },
   },
 
   emits: [
@@ -420,6 +429,8 @@ export default {
       previewFileEncoding: 'UTF-8', // 文件编码
       previewSource: '',  // 由 PREVIEW_SOURCE_OPERATIONS 定义可用来源
       previewArtifactInfo: null,
+      sharedCreateFolderId: '',
+      previewCacheArtifactId: '',
       previewImageInfo: null,
       previewImageInfoDialogVisible: false,
       previewDetectedLanguage: 'Plain Text', // Monaco 识别语言
@@ -842,7 +853,7 @@ export default {
       await this.loadPreviewPayload(
           () => fetch(`/api/connections/${encodeURIComponent(clientId)}/remote-files/preview`, {
             method: 'POST',
-            headers: {'Content-Type': 'application/json'},
+            headers: {'Content-Type': 'application/json', ...(this.getTabScopedHeaders?.() || {})},
             body: JSON.stringify({path: row.path}),
           }),
           row.name || 'File Preview',
@@ -895,6 +906,22 @@ export default {
           () => previewBackgroundJobFile(file.preview_url),
           file.original_name || file.stored_name || 'Job File Preview',
       )
+    },
+
+    async saveRemotePreviewToSaved() {
+      if (!this.previewCacheArtifactId) return
+      this.previewSaving = true
+      try {
+        const response = await savePreviewToSaved(this.previewCacheArtifactId)
+        const json = await response.json()
+        if (!response.ok || json.code !== 0) throw new Error(json.message || 'Failed to save preview')
+        ElMessage.success('Saved to Saved Files / Downloads')
+        this.$emit('artifacts-maybe-changed')
+      } catch (error) {
+        ElMessage.error(error.message || 'Failed to save preview')
+      } finally {
+        this.previewSaving = false
+      }
     },
 
     async saveEditedContent() {
@@ -1074,6 +1101,7 @@ export default {
           formData.append('file', blob, filename)
         }
         formData.append('artifact_type', 'shared_files')
+        if (this.sharedCreateFolderId) formData.append('folder_id', this.sharedCreateFolderId)
         formData.append('extra', JSON.stringify({
           source: 'shared_file_editor',
           saved_from: 'artifact_dialog_create_file',
@@ -1176,6 +1204,7 @@ export default {
         }
 
         const data = json.data || {}
+        this.previewCacheArtifactId = remoteClientId ? String(data.artifact_id || '') : ''
         if (editImmediately) {
           if (data.truncated) throw new Error('File exceeds the editable preview size limit')
           if (data.type !== 'text') throw new Error('Only text files can be edited')
@@ -1338,7 +1367,7 @@ print(value)
       return normalized
     },
 
-    openNewSharedFileEditor(filename = 'new_file.txt') {
+    openNewSharedFileEditor(filename = 'new_file.txt', folderId = '') {
       const normalizedFilename = this.normalizeSharedArtifactFilename(filename)
       if (!normalizedFilename) {
         ElMessage.warning('Invalid file name')
@@ -1348,6 +1377,7 @@ print(value)
       const content = ''
 
       this.previewFullscreen = false
+      this.sharedCreateFolderId = String(folderId || '')
       this.previewSource = 'new_shared_file'
       this.previewFilePath = normalizedFilename
       this.previewTitle = normalizedFilename
@@ -1813,7 +1843,7 @@ print(value)
 
       const res = await fetch(`/api/connections/${encodeURIComponent(clientId)}/remote-files/preview`, {
         method: 'POST',
-        headers: {'Content-Type': 'application/json'},
+        headers: {'Content-Type': 'application/json', ...(this.getTabScopedHeaders?.() || {})},
         body: JSON.stringify({path: this.previewFilePath}),
       })
 
@@ -1964,6 +1994,8 @@ print(value)
 
 
     resetPreviewState() {
+      this.sharedCreateFolderId = ''
+      this.previewCacheArtifactId = ''
       this.previewFullscreen = false
       this.previewType = ''
       this.archiveInspect = null

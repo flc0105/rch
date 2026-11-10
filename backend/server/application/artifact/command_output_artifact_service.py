@@ -166,11 +166,9 @@ class CommandOutputArtifactService:
             artifact_type=self.ARTIFACT_TYPE,
             machine_id=machine_id,
             original_name=output_name,
-            category=normalized_category,
         )
 
         allocation['original_name'] = output_name
-        allocation['category'] = normalized_category
         return allocation
 
     def register_output_artifact(self, *, allocation: dict, category: str, hostname: str, machine_id: str,
@@ -193,7 +191,6 @@ class CommandOutputArtifactService:
             machine_id=allocation.get('machine_id') or (machine_id or '').strip() or 'unknown_machine',
             original_name=allocation.get('original_name') or os.path.basename(allocation.get('file_path', '')) or 'cmd_output.txt',
             file_path=allocation['file_path'],
-            meta_path=allocation['meta_path'],
             stored_name=allocation['stored_name'],
             source_command_id=source_command_id,
             client_id=client_id,

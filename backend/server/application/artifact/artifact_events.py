@@ -7,7 +7,7 @@ def publish_artifact_created(event_bus, artifact_info: dict):
     event_bus.publish('artifact_created', {
         'artifact_id': artifact_info.get('artifact_id', ''),
         'artifact_type': artifact_info.get('artifact_type', ''),
-        'category': artifact_info.get('category', ''),
+        'source_kind': artifact_info.get('source_kind', ''),
         'hostname': artifact_info.get('hostname', ''),
         'machine_id': artifact_info.get('machine_id', ''),
         'client_id': artifact_info.get('client_id', ''),

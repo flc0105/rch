@@ -656,7 +656,7 @@ class WebConnectionService:
             'client_id': client_id,
             'artifact_id': artifact_info.get('artifact_id', ''),
             'artifact_type': artifact_info.get('artifact_type', ''),
-            'category': artifact_info.get('category', ''),
+            'source_kind': artifact_info.get('source_kind', ''),
             'hostname': artifact_info.get('hostname', ''),
             'machine_id': artifact_info.get('machine_id', ''),
             'original_name': artifact_info.get('original_name', ''),

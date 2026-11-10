@@ -22,10 +22,44 @@ def create_artifacts_blueprint(server_instance):
     def get_artifacts():
         artifact_type = (request.args.get('type') or '').strip()
         machine_id = (request.args.get('machine_id') or '').strip()
+        filters = {key: (request.args.get(key) or '').strip() for key in ('scope', 'folder_id', 'source_kind', 'search')}
         return responder.json_endpoint(
-            lambda: artifact_api.list_artifacts(artifact_type=artifact_type, machine_id=machine_id),
+            lambda: artifact_api.list_artifacts(artifact_type=artifact_type, machine_id=machine_id, **filters),
             default_error_status=500,
         )
+
+    @blueprint.post('/api/artifacts/folders')
+    def create_artifact_folder():
+        payload = get_json_payload()
+        return responder.json_endpoint(lambda: artifact_api.create_folder(
+            payload.get('scope', ''), payload.get('name', ''), payload.get('parent_id', '')))
+
+    @blueprint.post('/api/artifacts/folders/<folder_id>/rename')
+    def rename_artifact_folder(folder_id):
+        payload = get_json_payload()
+        return responder.json_endpoint(lambda: artifact_api.rename_folder(folder_id, payload.get('name', '')))
+
+    @blueprint.delete('/api/artifacts/folders/<folder_id>')
+    def delete_artifact_folder(folder_id):
+        return responder.json_endpoint(lambda: artifact_api.delete_folder(folder_id))
+
+    @blueprint.post('/api/artifacts/<artifact_id>/move')
+    def move_artifact_folder(artifact_id):
+        payload = get_json_payload()
+        return responder.json_endpoint(lambda: artifact_api.move_artifact(artifact_id, payload.get('folder_id', '')))
+
+    @blueprint.post('/api/artifacts/create')
+    def create_empty_artifact():
+        payload = get_json_payload()
+        return responder.json_endpoint(lambda: artifact_api.create_file(
+            payload.get('scope', ''), payload.get('name', ''),
+            payload.get('machine_id', ''), payload.get('folder_id', '')))
+
+    @blueprint.post('/api/artifacts/<artifact_id>/save-to-saved')
+    def save_preview_to_saved(artifact_id):
+        payload = get_json_payload()
+        return responder.json_endpoint(lambda: artifact_api.save_preview_to_saved(
+            artifact_id, payload.get('folder_id', '')))
 
     @blueprint.get('/api/artifacts/<artifact_id>/download')
     def download_artifact(artifact_id):
@@ -79,9 +113,10 @@ def create_artifacts_blueprint(server_instance):
             payload = get_json_payload()
             artifact_type = (payload.get('type') or '').strip()
             machine_id = (payload.get('machine_id') or '').strip()
-            if not artifact_type:
-                raise ValueError('type is required')
-            return artifact_api.clear_artifacts(artifact_type, machine_id=machine_id)
+            scope = (payload.get('scope') or '').strip()
+            folder_id = (payload.get('folder_id') or '').strip()
+            return artifact_api.clear_artifacts(artifact_type, machine_id=machine_id,
+                                                scope=scope, folder_id=folder_id)
         return responder.json_endpoint(_execute, default_error_status=500)
 
     @blueprint.post('/api/artifacts/command-output/save')

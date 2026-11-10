@@ -345,6 +345,7 @@
     ref="previewDialogRef"
     :selected-id="selectedId"
     :remote-files-dialog-visible="remoteFilesDialogVisible"
+    :get-tab-scoped-headers="getTabScopedHeaders"
     @remote-directory-maybe-changed="refreshRemoteDirectory"
     @artifacts-maybe-changed="refreshArtifactsIfOpen"
     @scripts-maybe-changed="refreshScriptsIfOpen"
@@ -1414,8 +1415,8 @@ export default {
       return this.callOptionalDialog('preview', 'openNewRemoteJobEditor', scriptName)
     },
 
-    openNewSharedFileEditor(filename = 'new_file.txt') {
-      return this.callOptionalDialog('preview', 'openNewSharedFileEditor', filename)
+    openNewSharedFileEditor(filename = 'new_file.txt', folderId = '') {
+      return this.callOptionalDialog('preview', 'openNewSharedFileEditor', filename, folderId)
     },
 
     openRemoteJobEditor(scriptName) {

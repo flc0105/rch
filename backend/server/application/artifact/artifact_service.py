@@ -9,20 +9,11 @@ from server.config.config import WEB_FILES_ROOT_DIR, WEB_PREVIEW_TEXT_MAX_BYTES
 class WebArtifactService:
     MAX_PREVIEW_TEXT_BYTES = WEB_PREVIEW_TEXT_MAX_BYTES
 
-    CATEGORY_FILES = 'files'
-    CATEGORY_PREVIEWS = 'previews'
-    CATEGORY_SHARED_FILES = 'shared_files'
-    CATEGORY_COMMAND_OUTPUT = 'command_output'
-    CATEGORY_UPLOAD_TMP = 'upload_tmp'
-
     def __init__(self):
         self.web_root_dir = WEB_FILES_ROOT_DIR
         self.artifacts_root_dir = os.path.join(self.web_root_dir, 'artifacts')
-        self.files_dir = os.path.join(self.artifacts_root_dir, self.CATEGORY_FILES)
-        self.previews_dir = os.path.join(self.artifacts_root_dir, self.CATEGORY_PREVIEWS)
-        self.shared_files_dir = os.path.join(self.artifacts_root_dir, self.CATEGORY_SHARED_FILES)
-        self.command_output_dir = os.path.join(self.artifacts_root_dir, self.CATEGORY_COMMAND_OUTPUT)
-        self.upload_tmp_dir = os.path.join(self.artifacts_root_dir, self.CATEGORY_UPLOAD_TMP)
+        self.previews_dir = os.path.join(self.artifacts_root_dir, 'previews')
+        self.upload_tmp_dir = os.path.join(self.artifacts_root_dir, 'upload_tmp')
 
         self._prepare_dirs()
         self.registry_service = ArtifactRegistryService(self)
@@ -32,17 +23,14 @@ class WebArtifactService:
 
     def _prepare_dirs(self):
         os.makedirs(self.artifacts_root_dir, exist_ok=True)
-        os.makedirs(self.files_dir, exist_ok=True)
         os.makedirs(self.previews_dir, exist_ok=True)
-        os.makedirs(self.shared_files_dir, exist_ok=True)
-        os.makedirs(self.command_output_dir, exist_ok=True)
         os.makedirs(self.upload_tmp_dir, exist_ok=True)
 
-    def allocate_artifact_path(self, artifact_type: str, machine_id: str, original_name: str, category: str = '') -> dict:
-        return self.registry_service.allocate_artifact_path(artifact_type, machine_id, original_name, category=category)
+    def allocate_artifact_path(self, artifact_type: str, machine_id: str, original_name: str) -> dict:
+        return self.registry_service.allocate_artifact_path(artifact_type, machine_id, original_name)
 
     def register_existing_artifact(self, *, artifact_type: str, category: str, hostname: str, machine_id: str,
-                                   original_name: str, file_path: str, meta_path: str, stored_name: str,
+                                   original_name: str, file_path: str, stored_name: str,
 
                                    # source_type: str = '',
                                    source_command_id=None, client_id: str = '', addr: str = '',
@@ -58,7 +46,6 @@ class WebArtifactService:
             machine_id=machine_id,
             original_name=original_name,
             file_path=file_path,
-            meta_path=meta_path,
             stored_name=stored_name,
             # source_type=source_type,
             source_command_id=source_command_id,
@@ -170,8 +157,32 @@ class WebArtifactService:
             extra=extra,
         )
 
-    def list_artifacts(self, artifact_type: str = '', machine_id: str = '') -> list[dict]:
-        return self.registry_service.list_artifacts(artifact_type=artifact_type, machine_id=machine_id)
+    def list_artifacts(self, artifact_type: str = '', machine_id: str = '', **filters) -> list[dict]:
+        return self.registry_service.list_artifacts(artifact_type=artifact_type, machine_id=machine_id, **filters)
+
+    def save_preview_to_saved(self, artifact_id: str, folder_id: str = ''):
+        return self.registry_service.save_preview_to_saved(artifact_id, folder_id)
+
+    def prune_missing_previews(self):
+        return self.registry_service.prune_missing_previews()
+
+    def list_folders(self, scope: str = ''):
+        return self.registry_service.list_folders(scope)
+
+    def create_folder(self, scope: str, name: str, parent_id: str = ''):
+        return self.registry_service.create_folder(scope, name, parent_id)
+
+    def rename_folder(self, folder_id: str, name: str):
+        return self.registry_service.rename_folder(folder_id, name)
+
+    def delete_folder(self, folder_id: str):
+        return self.registry_service.delete_folder(folder_id)
+
+    def move_artifact(self, artifact_id: str, folder_id: str):
+        return self.registry_service.move_artifact(artifact_id, folder_id)
+
+    def update_artifact_size(self, artifact_id: str):
+        return self.registry_service.update_artifact_size(artifact_id)
 
     def list_artifact_machines(self) -> list[dict]:
         return self.registry_service.list_artifact_machines()
@@ -188,8 +199,8 @@ class WebArtifactService:
     def rename_artifact(self, artifact_id: str, new_name: str) -> dict:
         return self.registry_service.rename_artifact(artifact_id, new_name)
 
-    def clear_artifacts(self, artifact_type: str, machine_id: str = '') -> dict:
-        return self.registry_service.clear_artifacts(artifact_type, machine_id=machine_id)
+    def clear_artifacts(self, artifact_type: str = '', machine_id: str = '', **filters) -> dict:
+        return self.registry_service.clear_artifacts(artifact_type, machine_id=machine_id, **filters)
 
     def guess_preview_type(self, filename: str) -> str:
         return self.preview_service.guess_preview_type(filename)

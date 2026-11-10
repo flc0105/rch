@@ -317,6 +317,8 @@ class ServerCleanupService:
             if not self._is_within_root(path, root_dir) or not os.path.isfile(path):
                 continue
             self._remove_path(path, result)
+        # Cache files and the private SQLite preview index follow the same lifecycle.
+        self.artifact_service.prune_missing_previews()
         return result
 
     def _cleanup_upload_tmp(self, paths) -> dict:

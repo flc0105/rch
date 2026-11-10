@@ -18,6 +18,7 @@ function component(name, callbacks) {
     uploadRemoteFileToClient: async () => { throw Error('Upload should not execute') },
     sendArtifactToClient: async () => { throw Error('Artifact send should not execute') },
     RemotePinsDialog: {}, RemoteZipPeekDialog: {}, MoreFilled: {}, DragUploadDialog: {},
+    File: {}, Folder: {}, FolderOpen: {},
     formatBytesValue: value => value,
   }
   vm.runInNewContext(tag.replace(/^import\s+[\s\S]*?\s+from\s+['"][^'"]+['"]\s*;?\s*$/gm, '')

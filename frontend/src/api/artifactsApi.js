@@ -8,6 +8,23 @@ export function listArtifacts() {
   return fetch('/api/artifacts')
 }
 
+export function createArtifactFolder(scope, name, parentId = '') {
+  return fetch('/api/artifacts/folders', jsonRequestOptions('POST', { scope, name, parent_id: parentId }))
+}
+
+export function renameArtifactFolder(folderId, name) {
+  return fetch(`/api/artifacts/folders/${encodeURIComponent(folderId)}/rename`,
+    jsonRequestOptions('POST', { name }))
+}
+
+export function deleteArtifactFolder(folderId) {
+  return fetch(`/api/artifacts/folders/${encodeURIComponent(folderId)}`, { method: 'DELETE' })
+}
+
+export function moveArtifactToFolder(artifactId, folderId) {
+  return fetch(artifactUrl(artifactId, '/move'), jsonRequestOptions('POST', { folder_id: folderId }))
+}
+
 export function uploadArtifact(formData, headers) {
   return fetch('/api/files/upload', {
     method: 'POST',
@@ -30,9 +47,11 @@ export function deleteArtifact(artifactId) {
   return fetch(artifactUrl(artifactId), { method: 'DELETE' })
 }
 
-export function clearArtifacts(type, machineId = '') {
-  return fetch('/api/artifacts/clear',
-    jsonRequestOptions('POST', { type, machine_id: machineId }))
+export function clearArtifacts(type, machineId = '', scope = '', folderId = '') {
+  const payload = { type, machine_id: machineId }
+  if (scope) payload.scope = scope
+  if (folderId) payload.folder_id = folderId
+  return fetch('/api/artifacts/clear', jsonRequestOptions('POST', payload))
 }
 
 export function previewArtifact(artifactId) {
@@ -55,4 +74,9 @@ export function saveArtifactContent(artifactId, content, encoding) {
 
 export function saveCommandOutputArtifact(payload) {
   return fetch('/api/artifacts/command-output/save', jsonRequestOptions('POST', payload))
+}
+
+export function savePreviewToSaved(artifactId, folderId = '') {
+  return fetch(artifactUrl(artifactId, '/save-to-saved'),
+    jsonRequestOptions('POST', { folder_id: folderId }))
 }

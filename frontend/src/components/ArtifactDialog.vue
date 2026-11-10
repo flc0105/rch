@@ -2,134 +2,85 @@
   <el-dialog
     :model-value="visible"
     title="Artifact Manager"
-    width="1160px"
+    width="min(1280px, 96vw)"
     top="5vh"
     class="fixed-dialog artifact-dialog"
     modal-class="artifact-overlay"
     @update:model-value="handleVisibleChange"
   >
     <div class="fixed-dialog-body">
-      <div class="dialog-head">
-        <div class="dialog-head-left">
-          <el-button
-            class="artifact-toolbar-btn"
-            size="small"
-            @click="loadArtifacts"
-          >
-            Refresh
-          </el-button>
-
-          <el-button
-            class="artifact-toolbar-btn"
-            size="small"
-            type="danger"
-            :disabled="!selectedArtifactIds.length"
-            :loading="artifactBulkDeleting"
-            @click="deleteSelectedArtifacts"
-          >
-            Delete {{ selectedArtifactIds.length ? ` (${selectedArtifactIds.length})` : '' }}
-          </el-button>
-
-          <el-button
-            class="artifact-toolbar-btn"
-            size="small"
-            type="danger"
-            :loading="artifactClearing"
-            @click="clearArtifactCategory"
-          >
-            Clear
-          </el-button>
-
-          <div
-            v-if="isSharedFilesTab"
-            class="artifact-shared-actions"
-          >
-            <el-button
-              class="artifact-toolbar-btn"
-              size="small"
-
-              plain
-              @click="createSharedFilePrompt"
-            >
-              Create File
-            </el-button>
-
-            <el-button
-              class="artifact-toolbar-btn"
-              size="small"
-
-              plain
-              :loading="sharedFileUploading"
-              @click="triggerSharedFileUpload"
-            >
-              Upload
-            </el-button>
-          </div>
-        </div>
-
-        <div class="dialog-head-right">
-          <div class="dialog-path-box artifact-search-box">
-            <el-input
-              v-model="artifactKeyword"
-              clearable
-              size="small"
-              placeholder="Search"
-            />
-          </div>
-          <div
-            v-if="showArtifactMachineFilter"
-            class="dialog-path-box artifact-filter-box"
-          >
-            <el-select
-              v-model="artifactMachineIdFilter"
-              clearable
-              filterable
-              size="small"
-              placeholder="Filter by device"
-              @change="handleMachineFilterChange"
-            >
-              <el-option
-                v-for="item in artifactMachineOptions"
-                :key="item.machine_id"
-                :label="formatArtifactMachineOptionLabel(item)"
-                :value="item.machine_id"
-              />
-            </el-select>
-          </div>
-        </div>
-      </div>
-
       <el-tabs
         :model-value="artifactActiveTab"
         class="artifact-tabs"
         @update:model-value="handleActiveTabChange"
       >
-        <el-tab-pane name="files">
-          <template #label>
-            Downloads ({{ artifactCountMap.files || 0 }})
-          </template>
+        <el-tab-pane name="saved">
+          <template #label>Saved Files ({{ artifactCountMap.saved || 0 }})</template>
         </el-tab-pane>
-
-        <el-tab-pane name="command_output">
-          <template #label>
-            Command Output ({{ artifactCountMap.command_output || 0 }})
-          </template>
-        </el-tab-pane>
-
-        <el-tab-pane name="previews">
-          <template #label>
-            Previews ({{ artifactCountMap.previews || 0 }})
-          </template>
-        </el-tab-pane>
-
-        <el-tab-pane name="shared_files">
-          <template #label>
-            Shared Files ({{ artifactCountMap.shared_files || 0 }})
-          </template>
+        <el-tab-pane name="shared">
+          <template #label>Shared Files ({{ artifactCountMap.shared || 0 }})</template>
         </el-tab-pane>
       </el-tabs>
 
-      <div class="dialog-table-shell">
+      <div class="artifact-dialog-toolbar" role="toolbar" aria-label="Artifact actions">
+        <div class="artifact-toolbar-group">
+          <el-button class="toolbar-btn" size="small" @click="loadArtifacts">Refresh</el-button>
+          <el-button v-if="isSharedFilesTab" class="toolbar-btn" size="small" @click="createSharedFilePrompt">Create File</el-button>
+          <el-button v-if="isSharedFilesTab" class="toolbar-btn" size="small" :loading="sharedFileUploading" @click="triggerSharedFileUpload">Upload</el-button>
+          <span class="artifact-toolbar-divider" aria-hidden="true"></span>
+          <el-button class="toolbar-btn" size="small" :disabled="!canEditSelectedFolder" @click="renameFolderPrompt">Rename Folder</el-button>
+          <el-button class="toolbar-btn" size="small" :disabled="!canEditSelectedFolder" @click="deleteSelectedFolder">Delete Folder</el-button>
+          <el-button class="toolbar-btn" size="small" type="danger" plain :disabled="!selectedArtifactIds.length"
+                     :loading="artifactBulkDeleting" @click="deleteSelectedArtifacts">
+            Delete {{ selectedArtifactIds.length ? ` (${selectedArtifactIds.length})` : '' }}
+          </el-button>
+          <el-button class="toolbar-btn" size="small" type="danger" :loading="artifactClearing"
+                     @click="clearCurrentArtifacts">Clear</el-button>
+        </div>
+        <div class="artifact-toolbar-filters">
+          <el-input v-model="artifactKeyword" class="artifact-toolbar-search" clearable size="small" placeholder="Search" />
+          <el-select v-if="showArtifactMachineFilter" v-model="artifactMachineIdFilter"
+                     class="artifact-toolbar-device" clearable filterable size="small"
+                     placeholder="Filter by device" @change="handleMachineFilterChange">
+            <el-option v-for="item in artifactMachineOptions" :key="item.machine_id"
+                       :label="formatArtifactMachineOptionLabel(item)" :value="item.machine_id" />
+          </el-select>
+        </div>
+      </div>
+
+      <div class="artifact-library-body">
+        <aside class="artifact-folder-sidebar">
+          <div class="artifact-folder-heading">
+            <span>Folders</span>
+            <el-button size="small" text type="primary" @click="createFolderPrompt">New Folder</el-button>
+          </div>
+          <el-tree
+            :key="artifactActiveTab"
+            :data="folderTreeNodes"
+            node-key="folder_id"
+            :props="{ label: 'name', children: 'children' }"
+            :default-expand-all="true"
+            highlight-current
+            :current-node-key="selectedFolderId || '__all__'"
+            @node-click="handleFolderSelect"
+          >
+            <template #default="{ data }">
+              <span class="artifact-tree-entry">
+                <FolderOpen v-if="data.folder_id === '__all__'" :size="15" aria-hidden="true" />
+                <Folder v-else :size="15" aria-hidden="true" />
+                <span class="ellipsis">{{ data.name }}</span>
+              </span>
+            </template>
+          </el-tree>
+        </aside>
+
+        <section class="artifact-main-panel">
+          <div class="artifact-location">
+            <span class="artifact-location-title" :title="currentFolderLabel">{{ currentFolderLabel }}</span>
+            <span class="artifact-location-count">{{ filteredArtifactItems.length }} files</span>
+          </div>
+
+          <div class="dialog-table-shell">
         <el-table
           :data="filteredArtifactItems"
           v-loading="artifactLoading"
@@ -143,70 +94,41 @@
         >
           <el-table-column
             type="selection"
-            width="46"
+            width="40"
             align="center"
           />
           <el-table-column
             prop="original_name"
             label="Name"
-            min-width="270"
+            min-width="240"
             show-overflow-tooltip
           >
 
             <template #default="{ row }">
-              <div class="ellipsis">
-                {{ formatArtifactName(row) }}
-              </div>
-            </template>
-          </el-table-column>
-
-          <el-table-column
-            v-if="!isSharedFilesTab"
-            label="Hostname"
-            min-width="180"
-            show-overflow-tooltip
-          >
-            <template #default="{ row }">
-              <div class="ellipsis">
-                {{ row.hostname || '-' }}
-              </div>
-            </template>
-          </el-table-column>
-
-          <el-table-column
-            v-if="!isSharedFilesTab"
-            label="Category"
-            min-width="150"
-            show-overflow-tooltip
-          >
-            <template #default="{ row }">
-              <div class="ellipsis">
-                {{ row.category || '-' }}
+              <div class="artifact-file-name" :title="formatArtifactName(row)">
+                <File :size="16" aria-hidden="true" />
+                <span class="ellipsis">{{ formatArtifactName(row) }}</span>
               </div>
             </template>
           </el-table-column>
 
           <el-table-column
             label="Size"
-            width="110"
-            align="center"
+            width="104"
+            align="right"
+            show-overflow-tooltip
           >
             <template #default="{ row }">
-              {{ formatBytes(row.size) }}
+              <span class="ellipsis" :title="formatBytes(row.size)">{{ formatBytes(row.size) }}</span>
             </template>
           </el-table-column>
 
-<!--          <el-table-column-->
-<!--            label="Created"-->
-<!--            width="170"-->
-<!--            show-overflow-tooltip-->
-<!--          >-->
 
-<el-table-column
-  label="Created"
-  :width="isSharedFilesTab ? 220 : 170"
-  show-overflow-tooltip
->
+          <el-table-column
+            label="Created"
+            width="166"
+            show-overflow-tooltip
+          >
             <template #default="{ row }">
               <div class="ellipsis">
                 {{ row.created_at || '-' }}
@@ -216,9 +138,8 @@
 
           <el-table-column
             label="Actions"
-            :width="isSharedFilesTab ? 190 : 200"
+            width="188"
             align="center"
-            fixed="right"
           >
             <template #default="{ row }">
               <div class="table-actions table-actions-links">
@@ -249,9 +170,8 @@
                         <el-dropdown-item command="info">
                           Info
                         </el-dropdown-item>
-                        <el-dropdown-item command="rename">
-                          Rename
-                        </el-dropdown-item>
+                        <el-dropdown-item command="rename">Rename</el-dropdown-item>
+                        <el-dropdown-item command="move">Move to Folder</el-dropdown-item>
                         <el-dropdown-item
                           v-if="isSharedFileItem(row)"
                           command="send-current-device"
@@ -320,33 +240,14 @@
               </div>
 
               <div class="mobile-file-card-top">
-                <div class="mobile-file-icon">📄</div>
+                <div class="mobile-file-icon"><File :size="20" aria-hidden="true" /></div>
 
                 <div class="mobile-file-main">
                   <div class="mobile-file-name">
                     {{ formatArtifactName(row) }}
                   </div>
 
-                  <div
-                    v-if="row.hostname && !isSharedFileItem(row)"
-                    class="mobile-file-tags"
-                  >
-                    <el-tag size="small">
-                      {{ row.hostname }}
-                    </el-tag>
-                  </div>
-
                   <div class="mobile-file-meta">
-                    <div
-                      v-if="!isSharedFileItem(row)"
-                      class="mobile-file-meta-item"
-                    >
-                      <div class="mobile-file-meta-label">Category</div>
-                      <div class="mobile-file-meta-value">
-                        {{ row.category || '-' }}
-                      </div>
-                    </div>
-
                     <div class="mobile-file-meta-item">
                       <div class="mobile-file-meta-label">Size</div>
                       <div class="mobile-file-meta-value">
@@ -391,9 +292,8 @@
                             <el-dropdown-item command="info">
                               Info
                             </el-dropdown-item>
-                            <el-dropdown-item command="rename">
-                              Rename
-                            </el-dropdown-item>
+                            <el-dropdown-item command="rename">Rename</el-dropdown-item>
+                            <el-dropdown-item command="move">Move to Folder</el-dropdown-item>
                             <el-dropdown-item
                               v-if="isSharedFileItem(row)"
                               command="send-current-device"
@@ -434,6 +334,8 @@
             </div>
           </div>
         </div>
+          </div>
+        </section>
       </div>
     </div>
   </el-dialog>
@@ -441,12 +343,23 @@
   <DragUploadDialog
     v-model="sharedFileUploadDialogVisible"
     title="Upload Shared Files"
-    helper-text="Drag files here or click the drop zone to choose files. Files will not upload until you click Upload."
+    helper-text="Drag files here or choose files to upload to the selected file space."
     button-text="Upload"
     :multiple="true"
     :loading="sharedFileUploading"
     @upload="uploadSharedFiles"
   />
+
+  <el-dialog v-model="moveDialogVisible" title="Move to Folder" width="420px">
+    <el-select v-model="moveTargetFolderId" filterable placeholder="Destination folder" style="width:100%">
+      <el-option v-for="folder in moveFolderOptions" :key="folder.folder_id"
+                 :label="folderFolderPath(folder)" :value="folder.folder_id" />
+    </el-select>
+    <template #footer>
+      <el-button @click="moveDialogVisible = false">Cancel</el-button>
+      <el-button type="primary" :disabled="!moveTargetFolderId" @click="confirmMoveArtifact">Move</el-button>
+    </template>
+  </el-dialog>
 
   <el-dialog
     v-model="artifactInfoDialogVisible"
@@ -491,7 +404,7 @@
 </template>
 
 <script>
-import { listArtifacts, uploadArtifact, renameArtifact as requestRenameArtifact, sendArtifactToClient, deleteArtifact as deleteArtifactRequest, clearArtifacts } from '../api/artifactsApi.js'
+import { listArtifacts, uploadArtifact, renameArtifact as requestRenameArtifact, sendArtifactToClient, deleteArtifact as deleteArtifactRequest, clearArtifacts, createArtifactFolder, renameArtifactFolder, deleteArtifactFolder, moveArtifactToFolder } from '../api/artifactsApi.js'
 import { prepareUploadConflict } from '../utils/remoteFileConflicts.js'
 import { createTerminalOperation, operationHeaders } from '../utils/terminalOperation.js'
 import { formatTerminalCommandFinishedLine } from '../composables/terminalMarkers.js'
@@ -499,12 +412,16 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { setRemoteClipboardArtifactFile } from '../api/clipboardApi.js'
 import { formatBytes as formatBytesValue } from '../utils/formatters.js'
 import DragUploadDialog from './DragUploadDialog.vue'
+import { File, Folder, FolderOpen } from '@lucide/vue'
 
 export default {
   name: 'ArtifactDialog',
 
   components: {
     DragUploadDialog,
+    File,
+    Folder,
+    FolderOpen,
   },
 
   props: {
@@ -537,7 +454,12 @@ export default {
       artifactLoading: false,
       artifactItems: [],
       artifactMachines: [],
-      artifactActiveTab: 'files',
+      artifactActiveTab: 'saved',
+      artifactFolders: [],
+      moveDialogVisible: false,
+      moveArtifactItem: null,
+      moveTargetFolderId: '',
+      selectedFolderId: '',
       artifactMachineIdFilter: '',
       artifactKeyword: '',
       selectedArtifactIds: [],
@@ -552,19 +474,38 @@ export default {
 
   computed: {
     isSharedFilesTab() {
-      return String(this.artifactActiveTab || '').trim() === 'shared_files'
-    },
-
-    isCommandOutputTab() {
-      return String(this.artifactActiveTab || '').trim() === 'command_output'
+      return this.artifactActiveTab === 'shared'
     },
 
     showArtifactMachineFilter() {
       return !this.isSharedFilesTab
     },
 
-    showArtifactCategoryColumn() {
-      return !this.isSharedFilesTab && !this.isCommandOutputTab
+    currentFolderLabel() {
+      if (!this.selectedFolderId) return 'All Files'
+      return (this.artifactFolders || []).find(folder => folder.folder_id === this.selectedFolderId)?.name || 'All Files'
+    },
+
+    folderTreeNodes() {
+      const folders = (this.artifactFolders || [])
+        .filter(folder => folder.scope === this.artifactActiveTab)
+      const nodes = folders.map(folder => ({ ...folder, children: [] }))
+      const byId = Object.fromEntries(nodes.map(node => [node.folder_id, node]))
+      const roots = []
+      nodes.forEach(node => {
+        if (node.parent_id && byId[node.parent_id]) byId[node.parent_id].children.push(node)
+        else roots.push(node)
+      })
+      return [{ folder_id: '__all__', name: 'All Files', children: [] }, ...roots]
+    },
+
+    moveFolderOptions() {
+      return (this.artifactFolders || []).filter(folder => folder.scope === this.moveArtifactItem?.scope)
+    },
+
+    canEditSelectedFolder() {
+      const folder = (this.artifactFolders || []).find(item => item.folder_id === this.selectedFolderId)
+      return Boolean(folder && !folder.preset)
     },
 
     artifactMachineOptions() {
@@ -601,20 +542,17 @@ export default {
     },
 
     filteredArtifactItems() {
-      const activeType = String(this.artifactActiveTab || '').trim()
       const machineId = String(this.artifactMachineIdFilter || '').trim()
       const keyword = String(this.artifactKeyword || '').trim().toLowerCase()
-
       return (this.artifactItems || []).filter(item => {
-        if (activeType && item.artifact_type !== activeType) return false
-        if (!this.isSharedFileItem(item) && machineId && item.machine_id !== machineId) return false
-
+        if (item.scope !== this.artifactActiveTab) return false
+        if (this.selectedFolderId && item.folder_id !== this.selectedFolderId) return false
+        if (!this.isSharedFilesTab && machineId && item.machine_id !== machineId) return false
         if (keyword) {
-          const fileName = this.formatArtifactName(item).toLowerCase()
-          const category = String(item?.category || '').trim().toLowerCase()
-          if (!fileName.includes(keyword) && !category.includes(keyword)) return false
+          const searchable = [this.formatArtifactName(item), item.source_kind, item.hostname,
+            this.folderNameForArtifact(item)].join(' ').toLowerCase()
+          if (!searchable.includes(keyword)) return false
         }
-
         return true
       })
     },
@@ -625,26 +563,10 @@ export default {
     },
 
     artifactCountMap() {
-      const machineId = String(this.artifactMachineIdFilter || '').trim()
-      const keyword = String(this.artifactKeyword || '').trim().toLowerCase()
-      const counts = { files: 0, previews: 0, shared_files: 0, command_output: 0 }
-
+      const counts = { saved: 0, shared: 0 }
       ;(this.artifactItems || []).forEach(item => {
-        if (!item) return
-
-        const type = String(item.artifact_type || '').trim()
-        if (!Object.prototype.hasOwnProperty.call(counts, type)) return
-        if (type !== 'shared_files' && machineId && item.machine_id !== machineId) return
-
-        if (keyword) {
-          const fileName = this.formatArtifactName(item).toLowerCase()
-          const category = String(item?.category || '').trim().toLowerCase()
-          if (!fileName.includes(keyword) && !category.includes(keyword)) return
-        }
-
-        counts[type] += 1
+        if (Object.prototype.hasOwnProperty.call(counts, item.scope)) counts[item.scope] += 1
       })
-
       return counts
     },
 
@@ -654,12 +576,96 @@ export default {
   },
 
   methods: {
+    folderNameForArtifact(item) {
+      return (this.artifactFolders || []).find(folder => folder.folder_id === item?.folder_id)?.name || 'Unfiled'
+    },
+
+    handleFolderSelect(node) {
+      this.selectedFolderId = node.folder_id === '__all__' ? '' : node.folder_id
+      this.selectedArtifactIds = []
+    },
+
+    async requestArtifactMutation(request, fallback) {
+      const response = await request
+      const json = await response.json()
+      if (!response.ok || json.code !== 0) throw new Error(json.message || fallback)
+      await this.loadArtifacts()
+      return json.data || {}
+    },
+
+    async createFolderPrompt() {
+      try {
+        const { value } = await ElMessageBox.prompt('Folder name', 'New Folder', {
+          inputPattern: /\S/, inputErrorMessage: 'Folder name is required',
+        })
+        await this.requestArtifactMutation(createArtifactFolder(this.artifactActiveTab,
+          String(value || '').trim(), this.selectedFolderId), 'Failed to create folder')
+      } catch (error) {
+        if (!this.isDialogCancel(error)) ElMessage.error(error.message || 'Failed to create folder')
+      }
+    },
+
+    async renameFolderPrompt() {
+      if (!this.canEditSelectedFolder) return
+      try {
+        const folder = this.artifactFolders.find(item => item.folder_id === this.selectedFolderId)
+        const { value } = await ElMessageBox.prompt('Folder name', 'Rename Folder', { inputValue: folder.name })
+        await this.requestArtifactMutation(renameArtifactFolder(folder.folder_id, String(value || '').trim()),
+          'Failed to rename folder')
+      } catch (error) {
+        if (!this.isDialogCancel(error)) ElMessage.error(error.message || 'Failed to rename folder')
+      }
+    },
+
+    async deleteSelectedFolder() {
+      if (!this.canEditSelectedFolder) return
+      try {
+        await ElMessageBox.confirm('Delete this empty folder?', 'Delete Folder', { type: 'warning' })
+        await this.requestArtifactMutation(deleteArtifactFolder(this.selectedFolderId), 'Failed to delete folder')
+        this.selectedFolderId = ''
+      } catch (error) {
+        if (!this.isDialogCancel(error)) ElMessage.error(error.message || 'Failed to delete folder')
+      }
+    },
+
+    folderFolderPath(folder) {
+      const byId = Object.fromEntries((this.artifactFolders || []).map(item => [item.folder_id, item]))
+      const parts = [folder.name]
+      let current = folder.parent_id
+      const seen = new Set([folder.folder_id])
+      while (current && byId[current] && !seen.has(current)) {
+        seen.add(current)
+        parts.unshift(byId[current].name)
+        current = byId[current].parent_id
+      }
+      return parts.join(' / ')
+    },
+
+    moveArtifactPrompt(row) {
+      this.moveArtifactItem = row
+      this.moveTargetFolderId = row.folder_id || ''
+      this.moveDialogVisible = true
+    },
+
+    async confirmMoveArtifact() {
+      if (!this.moveArtifactItem || !this.moveTargetFolderId) return
+      try {
+        await this.requestArtifactMutation(moveArtifactToFolder(this.moveArtifactItem.artifact_id,
+          this.moveTargetFolderId), 'Failed to move file')
+        this.moveDialogVisible = false
+      } catch (error) {
+        ElMessage.error(error.message || 'Failed to move file')
+      }
+    },
+
     formatBytes(value) {
       return formatBytesValue(value)
     },
 
     async open() {
-      this.artifactMachineIdFilter = this.getCurrentMachineId()
+      this.artifactActiveTab = 'saved'
+      this.artifactMachineIdFilter = ''
+      this.selectedFolderId = ''
       this.visible = true
       await this.loadArtifacts()
     },
@@ -745,7 +751,6 @@ export default {
             ['stored_name', 'Stored Name'],
             ['artifact_id', 'Artifact ID'],
             ['artifact_type', 'Artifact Type'],
-            ['category', 'Category'],
             ['size', 'Size'],
             ['created_at', 'Created At'],
             ['is_available', 'Available'],
@@ -771,7 +776,6 @@ export default {
           title: 'Paths / URLs',
           fields: [
             ['saved_path', 'Saved Path'],
-            ['_meta_path', 'Meta Path'],
             ['download_url', 'Download URL'],
             ['raw_url', 'Raw URL'],
             ['preview_url', 'Preview URL'],
@@ -882,12 +886,11 @@ export default {
     },
 
     isSharedFileItem(item) {
-      return String(item?.artifact_type || '').trim() === 'shared_files'
+      return item?.scope === 'shared'
     },
 
     useArtifactMoreMenu(item) {
-      const type = String(item?.artifact_type || '').trim()
-      return type === 'files' || type === 'command_output' || type === 'shared_files'
+      return item?.scope === 'saved' || item?.scope === 'shared'
     },
 
     isDialogCancel(e) {
@@ -949,11 +952,9 @@ export default {
     },
 
     async handleActiveTabChange(tabName) {
-      this.artifactActiveTab = tabName || 'files'
+      this.artifactActiveTab = tabName || 'saved'
+      this.selectedFolderId = ''
       this.selectedArtifactIds = []
-      if (!this.isSharedFilesTab && !this.artifactMachineIdFilter) {
-        this.artifactMachineIdFilter = this.getCurrentMachineId()
-      }
       await this.loadArtifacts()
     },
 
@@ -975,10 +976,12 @@ export default {
         const data = json.data || {}
         this.artifactItems = Array.isArray(data.items) ? data.items : []
         this.artifactMachines = Array.isArray(data.machines) ? data.machines : []
+        this.artifactFolders = Array.isArray(data.folders) ? data.folders : []
         this.pruneArtifactSelection()
       } catch (e) {
         this.artifactItems = []
         this.artifactMachines = []
+        this.artifactFolders = []
         ElMessage.error(e.message || 'Failed to load artifacts')
       } finally {
         this.artifactLoading = false
@@ -1026,13 +1029,14 @@ export default {
           return
         }
 
-        this.$emit('open-new-shared-file-editor', filename)
+        this.$emit('open-new-shared-file-editor', filename, this.selectedFolderId)
       } catch (e) {
         if (e === 'cancel' || e === 'close') return
       }
     },
 
     triggerSharedFileUpload() {
+      if (!this.isSharedFilesTab) return
       this.sharedFileUploadDialogVisible = true
     },
 
@@ -1040,6 +1044,7 @@ export default {
       const formData = new FormData()
       formData.append('file', file)
       formData.append('artifact_type', 'shared_files')
+      if (this.selectedFolderId) formData.append('folder_id', this.selectedFolderId)
 
       const res = await uploadArtifact(formData, this.buildJsonHeaders())
       const json = await res.json()
@@ -1052,6 +1057,7 @@ export default {
     },
 
     async uploadSharedFiles(files) {
+      if (!this.isSharedFilesTab) return
       const uploadFiles = Array.isArray(files) ? files.filter(Boolean) : []
       if (!uploadFiles.length) return
 
@@ -1078,6 +1084,11 @@ export default {
     async handleArtifactMoreCommand(row, command) {
       if (command === 'info') {
         this.openArtifactInfoDialog(row)
+        return
+      }
+
+      if (command === 'move') {
+        await this.moveArtifactPrompt(row)
         return
       }
 
@@ -1316,39 +1327,19 @@ export default {
       }
     },
 
-    async clearArtifactCategory() {
-      const activeType = String(this.artifactActiveTab || '').trim()
-
-      if (!activeType) {
-        ElMessage.warning('Please select a category')
-        return
-      }
-
+    async clearCurrentArtifacts() {
+      const scope = this.artifactActiveTab
       try {
-        const suffix = this.showArtifactMachineFilter && this.artifactMachineIdFilter ? ' for selected device' : ''
-
-        await ElMessageBox.confirm(
-          `Clear all ${activeType}${suffix}?`,
-          'Clear Artifacts',
-          { type: 'warning', confirmButtonText: 'Clear', cancelButtonText: 'Cancel' }
-        )
-
+        const where = this.selectedFolderId ? ` in ${this.folderNameForArtifact({ folder_id: this.selectedFolderId })}` : ''
+        const device = !this.isSharedFilesTab && this.artifactMachineIdFilter ? ' for selected device' : ''
+        await ElMessageBox.confirm(`Clear all ${scope} files${where}${device}?`,
+          'Clear Artifacts', { type: 'warning', confirmButtonText: 'Clear', cancelButtonText: 'Cancel' })
         this.artifactClearing = true
-
-        const res = await clearArtifacts(
-          activeType, this.showArtifactMachineFilter ? (this.artifactMachineIdFilter || '') : '',
-        )
-
-        const json = await res.json()
-        if (!res.ok || json.code !== 0) {
-          throw new Error(json.message || 'Clear failed')
-        }
-
-        ElMessage.success(`Cleared ${json.data?.deleted_count || 0} item(s)`)
-        await this.loadArtifacts()
-      } catch (e) {
-        if (e === 'cancel' || e === 'close' || e?.toString?.().includes('cancel')) return
-        ElMessage.error(e.message || 'Clear failed')
+        const result = await this.requestArtifactMutation(clearArtifacts('',
+          this.isSharedFilesTab ? '' : this.artifactMachineIdFilter, scope, this.selectedFolderId), 'Clear failed')
+        ElMessage.success(`Cleared ${result.deleted_count || 0} item(s)`)
+      } catch (error) {
+        if (!this.isDialogCancel(error)) ElMessage.error(error.message || 'Clear failed')
       } finally {
         this.artifactClearing = false
       }
@@ -1358,101 +1349,183 @@ export default {
 </script>
 
 <style scoped>
+/* Artifacts: navigation on the left, current folder and operations on the right. */
 .fixed-dialog-body {
   height: 100%;
   min-height: 0;
-  overflow: hidden;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
-
-.dialog-head {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 12px;
-  align-items: center;
-  margin-bottom: 12px;
-  flex-shrink: 0;
-}
-
-.dialog-head-left,
-.dialog-head-right,
-.artifact-shared-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.dialog-head-left {
-  justify-content: flex-start;
-  flex-wrap: nowrap;
-}
-
-.dialog-head-right {
-  justify-content: flex-end;
-  width: auto;
-  margin-left: auto;
-}
-
-.dialog-head :deep(.el-button.artifact-toolbar-btn) {
-  height: 32px;
-  min-height: 32px;
-  margin: 0;
-  padding-inline: 12px;
-  border-radius: 10px;
-  white-space: nowrap;
-}
-
-.artifact-filter-box {
-  display: flex;
-  justify-content: flex-end;
-  min-width: 280px;
-}
-
-.artifact-search-box {
-  flex: 0 1 260px;
-  min-width: 220px;
-  max-width: 280px;
-}
-
-.artifact-search-box :deep(.el-input__wrapper) {
-  min-height: 32px;
-  height: 32px;
-  border-radius: 10px;
-  font-size: 12px;
-}
-
-.artifact-filter-box :deep(.el-select) {
-  display: block;
-  width: 300px;
-  font-size: 12px;
-}
-
-.artifact-filter-box :deep(.el-select__wrapper),
-.artifact-filter-box :deep(.el-input__wrapper) {
-  min-height: 32px;
-  height: 32px;
-  border-radius: 10px;
-  font-size: 12px;
-}
-
 
 .artifact-tabs {
   flex: 0 0 auto;
-  min-height: 0;
 }
 
 .artifact-tabs :deep(.el-tabs__header) {
   margin-bottom: 12px;
 }
 
+.artifact-library-body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  gap: 14px;
+}
+
+.artifact-folder-sidebar {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 204px;
+  min-height: 0;
+  min-width: 0;
+  padding: 10px 8px;
+  background: var(--el-fill-color-lighter, #f8fafc);
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 10px;
+}
+
+.artifact-folder-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 0 4px 10px;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.artifact-folder-heading :deep(.el-button) {
+  margin: 0;
+  padding: 0 4px;
+  font-size: 12px;
+}
+
+.artifact-folder-sidebar :deep(.el-tree) {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: transparent;
+  font-size: 13px;
+}
+
+.artifact-folder-sidebar :deep(.el-tree-node__content) {
+  min-height: 32px;
+  height: auto;
+  border-radius: 6px;
+}
+
+.artifact-main-panel {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.artifact-dialog-toolbar {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  padding: 1px 0 13px;
+}
+
+.artifact-toolbar-group,
+.artifact-toolbar-filters {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  min-width: 0;
+}
+
+.artifact-toolbar-filters {
+  margin-left: auto;
+}
+
+.artifact-dialog-toolbar :deep(.el-button) {
+  margin: 0;
+  height: 32px;
+  padding: 0 11px;
+  white-space: nowrap;
+}
+
+.artifact-toolbar-divider {
+  width: 1px;
+  height: 22px;
+  margin: 0 2px;
+  background: var(--el-border-color);
+}
+
+.artifact-toolbar-search { width: 170px; }
+.artifact-toolbar-device { width: 205px; }
+
+.artifact-dialog-toolbar :deep(.el-input__wrapper),
+.artifact-dialog-toolbar :deep(.el-select__wrapper) {
+  min-height: 32px;
+}
+
+.artifact-location {
+  display: flex;
+  align-items: baseline;
+  flex: 0 0 auto;
+  gap: 9px;
+  padding: 3px 0 12px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.artifact-location-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.artifact-location-count {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.artifact-tree-entry,
+.artifact-file-name {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.artifact-tree-entry > svg,
+.artifact-file-name > svg {
+  flex: 0 0 auto;
+  color: var(--el-text-color-secondary);
+}
+
+.artifact-file-name .ellipsis,
+.artifact-tree-entry .ellipsis {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .dialog-table-shell {
   flex: 1 1 auto;
-  min-height: 320px;
-  height: auto;
-  max-height: none;
+  min-height: 0;
+  min-width: 0;
+  height: 100%;
   overflow: hidden;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
 }
 
 .dialog-table-shell :deep(.el-table),
@@ -1484,6 +1557,9 @@ export default {
 
 .dialog-table-shell :deep(.el-table .cell) {
   line-height: 1.5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .ellipsis {
@@ -1502,7 +1578,7 @@ export default {
 }
 
 .table-actions-links {
-  gap: 10px;
+  gap: 8px;
 }
 
 .table-action-link {
@@ -1586,13 +1662,6 @@ export default {
   word-break: break-word;
 }
 
-.mobile-file-tags {
-  margin-top: 10px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
 .mobile-file-meta {
   margin-top: 8px;
   display: grid;
@@ -1615,7 +1684,9 @@ export default {
   margin-top: 2px;
   font-size: 12px;
   color: var(--text);
-  word-break: break-word;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   line-height: 1.4;
 }
 
@@ -1708,36 +1779,20 @@ export default {
   line-height: 1.5;
 }
 
-@media (max-width: 960px) {
-  .dialog-head {
-    grid-template-columns: 1fr;
-  }
-
-  .dialog-head-left,
-  .dialog-head-right,
-  .artifact-shared-actions {
-    width: 100%;
-  }
-
-  .dialog-head-left {
-    flex-wrap: wrap;
-  }
-
-  .dialog-head-right,
-  .artifact-filter-box,
-  .artifact-shared-actions {
-    justify-content: flex-start;
-    margin-left: 0;
-  }
-
-  .artifact-filter-box,
-  .artifact-filter-box :deep(.el-select) {
-    width: 100%;
-    min-width: 0;
-  }
+@media (max-width: 1080px) {
+  .artifact-library-body { gap: 10px; }
+  .artifact-folder-sidebar { flex-basis: 180px; }
+  .artifact-toolbar-filters { margin-left: 0; }
 }
 
-@media (max-width: 768px), (max-height: 720px) {
+@media (max-width: 860px) {
+  .artifact-library-body { flex-direction: column; }
+  .artifact-folder-sidebar { flex: 0 0 auto; max-height: 174px; }
+  .artifact-folder-sidebar :deep(.el-tree) { min-height: 70px; }
+  .artifact-main-panel { min-height: 0; }
+}
+
+@media (max-width: 1080px), (max-height: 720px) {
   .dialog-table-shell {
     display: none !important;
   }
@@ -1764,46 +1819,16 @@ export default {
 }
 
 @media (max-width: 640px) {
-  .dialog-head-left,
-  .dialog-head-right,
-  .artifact-shared-actions {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    align-items: stretch;
-    gap: 8px;
-  }
-
-  .dialog-head :deep(.el-button.artifact-toolbar-btn) {
-    width: 100%;
-    padding-inline: 8px;
-  }
-
-  .artifact-filter-box,
-  .artifact-filter-box :deep(.el-select),
-  .artifact-search-box {
-    width: 100%;
-    min-width: 0;
-    max-width: none;
-  }
-
-  .artifact-search-box,
-  .artifact-filter-box {
-    grid-column: 1 / -1;
-  }
-
-  .mobile-file-meta {
-    grid-template-columns: 1fr;
-  }
-
-  .mobile-file-actions {
-    gap: 6px;
-  }
-
+  .artifact-dialog-toolbar { align-items: stretch; }
+  .artifact-toolbar-group { width: 100%; }
+  .artifact-toolbar-filters { width: 100%; }
+  .artifact-toolbar-search,
+  .artifact-toolbar-device { flex: 1 1 160px; width: auto; min-width: 0; }
+  .mobile-file-meta { grid-template-columns: 1fr; }
+  .mobile-file-actions { gap: 6px; }
   .mobile-file-actions :deep(.el-button),
   .mobile-file-actions :deep(.el-dropdown),
-  .mobile-file-actions .table-action-link {
-    flex: 1 1 calc(50% - 6px);
-  }
+  .mobile-file-actions .table-action-link { flex: 1 1 calc(50% - 6px); }
 }
 </style>
 
@@ -1843,7 +1868,7 @@ export default {
 
 .artifact-overlay .dialog-table-shell {
   flex: 1 1 auto !important;
-  min-height: 320px !important;
+  min-height: 0 !important;
   height: auto !important;
   max-height: none !important;
   overflow: hidden !important;
@@ -1861,7 +1886,7 @@ export default {
   overflow-x: auto !important;
 }
 
-@media (max-width: 768px), (max-height: 720px) {
+@media (max-width: 1080px), (max-height: 720px) {
   .artifact-overlay .el-dialog {
     width: 100vw !important;
     max-width: 100vw !important;

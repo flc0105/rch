@@ -36,7 +36,7 @@ test('Artifact Send asks for policy and does not submit when user stops', async 
   let decision = false
   const env = {
     createTerminalOperation, operationHeaders,
-    DragUploadDialog: {},
+    DragUploadDialog: {}, File: {}, Folder: {}, FolderOpen: {},
     ElMessage: { success() {}, error(message) { throw new Error(message) }, warning() {} },
     ElMessageBox: { confirm: async () => {} },
     prepareUploadConflict: async (clientId, dir, file) => {

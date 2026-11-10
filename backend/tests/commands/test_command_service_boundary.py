@@ -76,9 +76,9 @@ def test_job_control_command_is_identical_and_download_is_client_owned():
 
 def test_artifact_created_payload_keeps_web_notification_shape():
     bus = EventBus()
-    publish_artifact_created(bus, {'artifact_id': 'a', 'category': 'command_output', 'source_command_id': 13})
+    publish_artifact_created(bus, {'artifact_id': 'a', 'source_kind': 'command_output', 'source_command_id': 13})
     assert bus.events == [('artifact_created', {
-        'artifact_id': 'a', 'artifact_type': '', 'category': 'command_output',
+        'artifact_id': 'a', 'artifact_type': '', 'source_kind': 'command_output',
         'hostname': '', 'machine_id': '', 'client_id': '', 'source_command_id': 13,
         'original_name': '', 'stored_name': '', 'size': 0, 'created_at': '',
         'download_url': '', 'preview_url': '',

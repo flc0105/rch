@@ -7,7 +7,7 @@ class ArtifactReference:
 
     artifact_id: str = ''
     artifact_type: str = ''
-    category: str = ''
+    source_kind: str = ''
     hostname: str = ''
     machine_id: str = ''
     client_id: str = ''
@@ -27,7 +27,7 @@ class ArtifactReference:
         return cls(
             artifact_id=str(payload.get('artifact_id') or ''),
             artifact_type=str(payload.get('artifact_type') or ''),
-            category=str(payload.get('category') or ''),
+            source_kind=str(payload.get('source_kind') or ''),
             hostname=str(payload.get('hostname') or ''),
             machine_id=str(payload.get('machine_id') or ''),
             client_id=str(payload.get('client_id') or ''),
@@ -45,7 +45,7 @@ class ArtifactReference:
         return {
             'artifact_id': self.artifact_id,
             'artifact_type': self.artifact_type,
-            'category': self.category,
+            'source_kind': self.source_kind,
             'hostname': self.hostname,
             'machine_id': self.machine_id,
             'client_id': self.client_id,

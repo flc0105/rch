@@ -315,7 +315,7 @@ class NotificationEventProjector:
                 'client_id': payload.get('client_id') or '',
                 'artifact_id': artifact_id,
                 'artifact_type': payload.get('artifact_type') or '',
-                'category': payload.get('category') or '',
+                'source_kind': payload.get('source_kind') or '',
                 'original_name': payload.get('original_name') or file_name,
             },
             [

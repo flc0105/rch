@@ -26,8 +26,9 @@ command completion and task-result recovery also use `commandHistoryApi.js`.
 
 Background Jobs uses `backgroundJobsApi.js` for its per-Client catalog, running
 jobs, job details and lifecycle requests, plus server-side Job script editing.
-Artifacts uses `artifactsApi.js` for shared files, command output, upload, editing,
-Send To and deletion. Connection Info, Preview and output-saving components reuse
+Artifact Manager uses `artifactsApi.js` for Saved Files / Shared Files, virtual folders,
+search and device filtering, Shared Files creation/upload, file editing, Send To and deletion.
+Saved Files are created by explicit capture, download, clipboard, Script/Job or output-saving operations. Connection Info, Preview and output-saving components reuse
 those APIs; responses remain native `Response` objects for the existing UI handlers.
 
 Keychains uses `keychainsApi.js` for machine-scoped credential listing,

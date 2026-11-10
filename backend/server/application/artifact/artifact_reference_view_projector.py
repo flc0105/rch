@@ -6,7 +6,7 @@ class ArtifactReferenceViewProjector:
 
     _COMMON_FIELDS = (
         'artifact_type',
-        'category',
+        'source_kind',
         'hostname',
         'machine_id',
         'client_id',
