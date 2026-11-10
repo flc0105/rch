@@ -1,6 +1,7 @@
 """Optional Go Loader builder; independently removable from Client-Go."""
 import os
 from core.utils.logger import logger
+from core.agent_build_contract import AgentBuilderKind, agent_output_filename
 from server.application.agent.agent_go_build_runner import GO_TARGET_MAP as SHARED_GO_TARGET_MAP, run_go_build
 from server.application.agent.agent_build_utils import copy_source_paths
 
@@ -15,7 +16,7 @@ class GoLoaderBuilder:
 
     def _build_go_loader_output_name(self, target_os: str, normalized_arch: str, build_id: str) -> str:
         suffix = self.GO_TARGET_MAP[target_os]['suffix']
-        return f'rchclient-go-loader-{target_os}-{normalized_arch}-{build_id}{suffix}'
+        return agent_output_filename(AgentBuilderKind.GO_LOADER, build_id, target_os=target_os, target_arch=normalized_arch, suffix=suffix)
 
     def _inject_go_loader_config(self, client_dir: str, server_host: str, server_port: int, web_port: int,
                                  build_version: str, server_web_scheme: str = 'http', server_web_host: str = '',

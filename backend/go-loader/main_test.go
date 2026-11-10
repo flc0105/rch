@@ -64,7 +64,7 @@ func TestBuildNamesMustNotEscapeReleaseRoot(t *testing.T) {
 			t.Fatalf("unsafe name accepted: %q", name)
 		}
 	}
-	if !safeBuildName("source-bundle-20261016") {
+	if !safeBuildName("python_20261106_175136_0e8ae4") {
 		t.Fatal("valid build version rejected")
 	}
 }
@@ -78,7 +78,7 @@ func TestBundleBuildPayloadListenerSelection(t *testing.T) {
 	if tlsPayload["listener_id"] != "tls-abc123" {
 		t.Fatalf("TLS listener not forwarded: %#v", tlsPayload)
 	}
-	if tlsPayload["builder"] != "bundle" || tlsPayload["server_port"] != 9999 {
+	if tlsPayload["builder"] != "python" || tlsPayload["server_port"] != 9999 {
 		t.Fatal("existing bundle fields changed")
 	}
 }

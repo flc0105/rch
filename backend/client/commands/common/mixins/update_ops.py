@@ -21,6 +21,7 @@ from client.config.config import (
 )
 from core.external_tools.archive import safe_extract_zip_archive
 from core.client_revision import is_bundle_archive
+from core.agent_build_contract import AgentBuilderKind
 from core.device.local_identity import get_local_identity
 from client.runtime.client_util import (
     build_bundle_extract_dir,
@@ -51,7 +52,7 @@ class CommandUpdateMixin:
             'server_web_host': SERVER_WEB_HOST,
             'web_port': SERVER_WEB_PORT,
             'target_os': 'bundle',
-            'builder': 'bundle',
+            'builder': AgentBuilderKind.PYTHON.value,
             'target_arch': '',
             'source': 'update',
             'server_transport': str(RUNTIME_CONFIG.get('server_transport') or 'tcp'),

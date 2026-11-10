@@ -1,5 +1,6 @@
 import hashlib
 import os
+from core.agent_build_contract import AgentBuilderKind, agent_output_filename
 
 
 CLIENT_BUNDLE_SOURCE_PATHS = (
@@ -31,15 +32,15 @@ CLIENT_REVISION_EXCLUDE_EXTENSIONS = {
 REVISION_DIGEST_LENGTH = 16
 
 # One naming contract for Bundle build versions, release folders and ZIP archives.
-BUNDLE_ARTIFACT_STEM = 'rchclient-source-bundle'
+PYTHON_ARTIFACT_STEM = AgentBuilderKind.PYTHON.value
 
 
 def bundle_archive_name(build_id: str) -> str:
-    return f'{BUNDLE_ARTIFACT_STEM}-{build_id}.zip'
+    return agent_output_filename(AgentBuilderKind.PYTHON, build_id, suffix='.zip')
 
 
 def is_bundle_archive(name: str) -> bool:
-    return (isinstance(name, str) and name.startswith(BUNDLE_ARTIFACT_STEM + '-')
+    return (isinstance(name, str) and name.startswith(PYTHON_ARTIFACT_STEM + '_')
             and name.lower().endswith('.zip'))
 
 

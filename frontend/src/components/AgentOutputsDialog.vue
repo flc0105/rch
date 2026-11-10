@@ -43,6 +43,28 @@
         </div>
 
         <div class="agent-outputs-toolbar-right">
+          <el-input
+              v-model="outputSearch"
+              clearable
+              size="small"
+              class="agent-output-search"
+              placeholder="Search"
+          />
+          <el-select
+              v-model="outputListenerFilter"
+              class="agent-output-listener-filter"
+              clearable
+              filterable
+              size="small"
+              placeholder="Filter listener"
+          >
+            <el-option
+                v-for="listener in listenerOptions"
+                :key="listener.id"
+                :label="listener.name"
+                :value="listener.id"
+            />
+          </el-select>
           <el-select
               v-model="outputBuilderFilter"
               class="agent-output-builder-filter"
@@ -54,7 +76,7 @@
             <el-option
                 v-for="builder in builderOptions"
                 :key="builder"
-                :label="builder"
+                :label="displayAgentBuilder(builder)"
                 :value="builder"
             />
           </el-select>
@@ -71,7 +93,6 @@
             :data="filteredOutputs"
             v-loading="loading"
             stripe
-            border
             height="100%"
             table-layout="fixed"
             row-key="file_name"
@@ -87,7 +108,8 @@
 
           <el-table-column
               label="Filename"
-              min-width="340"
+              min-width="320"
+              show-overflow-tooltip
           >
             <template #default="{ row }">
               <div class="agent-output-file-cell">
@@ -95,7 +117,10 @@
                     class="agent-output-file-name"
                     :title="row.file_name"
                 >
-                  {{ row.file_name || '-' }}
+                  <FileArchiveIcon v-if="isArchiveOutput(row.file_name)" :size="16" aria-hidden="true" />
+                  <FileTerminalIcon v-else-if="isExecutableOutput(row.file_name, row.builder)" :size="16" aria-hidden="true" />
+                  <FileIcon v-else :size="16" aria-hidden="true" />
+                  <span class="agent-output-ellipsis">{{ row.file_name || '-' }}</span>
                 </div>
               </div>
             </template>
@@ -103,30 +128,28 @@
 
           <el-table-column
               label="Builder"
-              min-width="70"
+              width="146"
+              show-overflow-tooltip
           >
             <template #default="{ row }">
-              {{ row.builder || '-' }}
+              {{ displayAgentBuilder(row.builder) }}
             </template>
           </el-table-column>
 
           <el-table-column
-              label="OS"
-              min-width="70"
+              label="Listener"
+              min-width="150"
+              show-overflow-tooltip
           >
             <template #default="{ row }">
-              <!--              <el-tag-->
-              <!--                size="small"-->
-              <!--                effect="plain"-->
-              <!--              >-->
-              {{ describeAgentTargetOs(row.target_os) }}
-              <!--              </el-tag>-->
+              <span class="agent-output-ellipsis" :title="row.listener_name || '-'">{{ row.listener_name || '-' }}</span>
             </template>
           </el-table-column>
 
           <el-table-column
               label="Size"
-              min-width="80"
+              width="108"
+              show-overflow-tooltip
               align="center"
           >
             <template #default="{ row }">
@@ -134,78 +157,26 @@
             </template>
           </el-table-column>
 
-          <el-table-column
-              label="Actions"
-              width="160"
-              align="center"
-              fixed="right"
-          >
+          <el-table-column label="Actions" width="180" align="center">
             <template #default="{ row }">
-              <div class="agent-output-actions">
-                <el-tooltip
-                    content="Download"
-                    placement="top"
-                >
-                  <el-button
-                      size="small"
-                      type="primary"
-                      circle
-                      plain
-                      title="Download"
-                      aria-label="Download"
-                      :disabled="!row.download_url"
-                      @click="downloadAgentOutput(row)"
-                  >
-                    <el-icon>
-                      <DownloadIcon/>
-                    </el-icon>
-                  </el-button>
-                </el-tooltip>
-
-                <el-tooltip
-                    content="Delete"
-                    placement="top"
-                >
-                  <el-button
-                      size="small"
-                      type="danger"
-                      circle
-                      plain
-                      title="Delete"
-                      aria-label="Delete"
-                      :loading="isAgentOutputDeleting(row.file_name)"
-                      :disabled="isAgentOutputDeleting(row.file_name)"
-                      @click="deleteAgentOutput(row)"
-                  >
-                    <el-icon>
-                      <DeleteIcon/>
-                    </el-icon>
-                  </el-button>
-                </el-tooltip>
-
-                <el-dropdown
-                    trigger="click"
-                    placement="bottom-end"
-                    @command="command => handleAgentOutputMoreCommand(command, row)"
-                >
-                  <el-button
-                      size="small"
-                      circle
-                      plain
-                      title="More"
-                      aria-label="More"
-                  >
-                    <el-icon>
-                      <MoreFilledIcon/>
-                    </el-icon>
-                  </el-button>
-
+              <div class="agent-output-actions table-actions table-actions-links">
+                <a
+                    href="#"
+                    class="table-action-link"
+                    :class="{ disabled: !row.download_url }"
+                    @click.prevent="downloadAgentOutput(row)"
+                >Download</a>
+                <a
+                    href="#"
+                    class="table-action-link"
+                    :class="{ disabled: isAgentOutputDeleting(row.file_name) }"
+                    @click.prevent="deleteAgentOutput(row)"
+                >Delete</a>
+                <el-dropdown trigger="click" placement="bottom-end"
+                             @command="command => handleAgentOutputMoreCommand(command, row)">
+                  <span class="table-action-link">More</span>
                   <template #dropdown>
-                    <el-dropdown-menu>
-                      <el-dropdown-item command="info">
-                        Info
-                      </el-dropdown-item>
-                    </el-dropdown-menu>
+                    <el-dropdown-menu><el-dropdown-item command="info">Info</el-dropdown-item></el-dropdown-menu>
                   </template>
                 </el-dropdown>
               </div>
@@ -244,7 +215,9 @@
 
               <div class="agent-output-mobile-top">
                 <div class="agent-output-mobile-icon">
-                  📦
+                  <FileArchiveIcon v-if="isArchiveOutput(row.file_name)" :size="21" aria-hidden="true" />
+                  <FileTerminalIcon v-else-if="isExecutableOutput(row.file_name, row.builder)" :size="21" aria-hidden="true" />
+                  <FileIcon v-else :size="21" aria-hidden="true" />
                 </div>
 
                 <div class="agent-output-mobile-main">
@@ -257,16 +230,11 @@
 
                   <div class="agent-output-mobile-tags">
                     <el-tag size="small">
-                      {{ row.builder || '-' }}
+                      {{ displayAgentBuilder(row.builder) }}
                     </el-tag>
 
-                    <el-tag
-                        v-if="String(row.builder || '').trim().toLowerCase() !== 'bundle'"
-                        size="small"
-                        type="info"
-                        effect="plain"
-                    >
-                      {{ describeAgentTargetOs(row.target_os) }} / {{ row.target_arch || '-' }}
+                    <el-tag v-if="row.listener_name" size="small" type="info" effect="plain">
+                      {{ row.listener_name }}
                     </el-tag>
                   </div>
 
@@ -393,7 +361,9 @@
 
 <script>
 import {ElMessage, ElMessageBox} from 'element-plus'
-import {Delete, Download, MoreFilled} from '@element-plus/icons-vue'
+import {MoreFilled} from '@element-plus/icons-vue'
+import {File, FileArchive, FileTerminal} from '@lucide/vue'
+import {displayAgentBuilder, AGENT_BUILDER} from '../data/agentBuilderTypes.js'
 import {formatBytes, formatDateTimeStandard} from '../utils/formatters.js'
 import { listAgentOutputs, deleteAgentOutput } from '../api/agentApi.js'
 
@@ -401,8 +371,9 @@ export default {
   name: 'AgentOutputsDialog',
 
   components: {
-    DeleteIcon: Delete,
-    DownloadIcon: Download,
+    FileIcon: File,
+    FileArchiveIcon: FileArchive,
+    FileTerminalIcon: FileTerminal,
     MoreFilledIcon: MoreFilled,
   },
 
@@ -428,6 +399,8 @@ export default {
       loading: false,
       outputs: [],
       outputBuilderFilter: '',
+      outputListenerFilter: '',
+      outputSearch: '',
       selectedOutputFileNames: [],
       bulkDeleting: false,
       agentOutputsDeleting: {},
@@ -446,10 +419,28 @@ export default {
       return Array.from(builders).sort((a, b) => a.localeCompare(b))
     },
 
+    listenerOptions() {
+      const listeners = new Map()
+      for (const row of this.outputs || []) {
+        const id = String(row?.listener_id || '').trim()
+        const name = String(row?.listener_name || '').trim()
+        if (id && name) listeners.set(id, name)
+      }
+      return [...listeners].map(([id, name]) => ({id, name}))
+        .sort((a, b) => a.name.localeCompare(b.name))
+    },
+
     filteredOutputs() {
-      const builder = String(this.outputBuilderFilter || '').trim()
-      if (!builder) return this.outputs || []
-      return (this.outputs || []).filter(item => String(item?.builder || '').trim() === builder)
+      const builder = this.outputBuilderFilter
+      const listener = this.outputListenerFilter
+      const keyword = this.outputSearch.trim().toLowerCase()
+      return (this.outputs || []).filter(item => {
+        if (builder && item.builder !== builder) return false
+        if (listener && item.listener_id !== listener) return false
+        if (!keyword) return true
+        return [item.file_name, item.build_version, item.listener_name, displayAgentBuilder(item.builder)]
+          .some(value => String(value || '').toLowerCase().includes(keyword))
+      })
     },
 
     selectedOutputs() {
@@ -476,9 +467,14 @@ export default {
         {
           key: 'builder',
           label: 'Builder',
-          value: row.builder || '-',
+          value: displayAgentBuilder(row.builder),
         },
 
+        {
+          key: 'listener_name',
+          label: 'Listener',
+          value: row.listener_name || '-',
+        },
         {
           key: 'build_version',
           label: 'Version',
@@ -531,6 +527,16 @@ export default {
   },
 
   methods: {
+    displayAgentBuilder,
+
+    isArchiveOutput(name) {
+      return /\.(zip|tar|tgz|gz|7z|rar)$/i.test(String(name || ''))
+    },
+
+    isExecutableOutput(name, builder) {
+      return [AGENT_BUILDER.GO, AGENT_BUILDER.GO_LOADER].includes(builder) || /\.(exe|app|bin)$/i.test(String(name || ''))
+    },
+
     async open() {
       this.visible = true
       await this.loadAgentOutputs()
@@ -870,11 +876,12 @@ export default {
   margin: 0;
 }
 
-.agent-output-builder-filter {
-  width: 180px;
-}
+.agent-output-builder-filter, .agent-output-listener-filter { width: 155px; }
+.agent-output-search { width: 210px; }
+.agent-outputs-toolbar-right :deep(.el-input__wrapper) { min-height: 32px; border-radius: 10px; }
 
-.agent-output-builder-filter :deep(.el-select__wrapper) {
+.agent-output-builder-filter :deep(.el-select__wrapper),
+.agent-output-listener-filter :deep(.el-select__wrapper) {
   min-height: 32px;
   height: 32px;
   border-radius: 10px;
@@ -905,8 +912,9 @@ export default {
 
 .agent-output-file-cell {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
   min-width: 0;
   padding: 2px 0;
 }
@@ -915,8 +923,15 @@ export default {
   min-width: 0;
   color: #111827;
   line-height: 1.45;
-  word-break: break-all;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+  overflow: hidden;
 }
+
+.agent-output-file-name :deep(svg) { flex-shrink: 0; }
+.agent-output-ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
 
 .agent-output-mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
@@ -929,8 +944,7 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  padding-top: 2px;
+  gap: 12px;
 }
 
 .agent-output-actions :deep(.el-button) {
@@ -941,6 +955,18 @@ export default {
   opacity: 0.55;
   pointer-events: none;
 }
+
+.agent-output-actions .table-action-link {
+  display: inline-flex;
+  align-items: center;
+  color: var(--el-color-primary);
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+}
+.agent-output-actions .table-action-link:hover { text-decoration: underline; }
 
 .agent-outputs-mobile-wrap {
   display: none;
@@ -1004,7 +1030,7 @@ export default {
   height: 36px;
   border-radius: 12px;
   background: #f5f7fa;
-  font-size: 20px;
+  color: #64748b;
 }
 
 .agent-output-mobile-main {
@@ -1119,6 +1145,9 @@ export default {
     align-items: stretch;
     flex-direction: column;
   }
+  .agent-outputs-toolbar-right { flex-wrap: wrap; width: 100%; justify-content: flex-start; }
+  .agent-output-builder-filter, .agent-output-listener-filter, .agent-output-search { width: min(100%, 190px); }
+
 
   .agent-outputs-toolbar-left,
   .agent-outputs-toolbar-right {

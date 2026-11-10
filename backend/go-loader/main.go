@@ -476,8 +476,8 @@ func bundleBuildPayload(listenerID string) map[string]any {
 		"web_port":          config.ServerWebPort,
 		"server_web_scheme": config.ServerWebScheme,
 		"server_web_host":   config.ServerWebHost,
-		"builder":           "bundle",
-		"target_os":         "bundle",
+		"builder":           "python",
+		"target_os":         "",
 		"target_arch":       "",
 		"source":            "loader",
 	}

@@ -40,6 +40,7 @@ class WebAgentApi:
         listener_protocol: str = 'tcp',
         tls_fingerprint: str = '',
         listener_id: str = '',
+        listener_name: str = '',
     ):
         lifecycle_context = {
             'builder': str(builder or '').strip(),
@@ -74,6 +75,8 @@ class WebAgentApi:
                     'server_web_scheme': server_web_scheme,
                     'server_web_host': server_web_host,
                     'source': source,
+                    'listener_id': listener_id,
+                    'listener_name': listener_name,
                 },
             )
         except Exception as exc:

@@ -104,13 +104,13 @@ curl -fsS -X POST 'http://192.0.2.10:8085/api/agent/build' \
 响应中的 `data.file_name` 是生成的 Loader 文件名，`data.download_url` 是下载地址。先把该构建结果下载到目标设备，再赋予执行权限并运行，例如：
 
 ```bash
-chmod +x ./rchclient-go-loader-linux-amd64-<build-id>
-./rchclient-go-loader-linux-amd64-<build-id>
+chmod +x ./go_loader_linux_amd64_<build-id>
+./go_loader_linux_amd64_<build-id>
 ```
 
 `<build-id>` 是占位符，实际名称应以本次构建返回值为准。Windows 目标直接运行对应 `.exe`；macOS 目标使用相应系统架构的可执行文件。将 Loader 传到目标设备、确认来源可信再执行；不能从示例路径推断它已经存在于本机。下载接口使用 `/api/agent/download/{filename}`，不需要先执行 Python Bootstrap。
 
-Loader 启动后会先报告设备 OS、架构、主机名和网络地址，再确定 Python 运行环境，然后主动请求 `builder: "bundle"` 的新 Bundle 构建、下载 ZIP、校验返回的 SHA-256、暂存解压到 Release，最后启动独立 Python Client 并退出 Loader。Loader 报告安装进度；完成后到 Server Connections 检查 Client 上线状态。
+Loader 启动后会先报告设备 OS、架构、主机名和网络地址，再确定 Python 运行环境，然后主动请求 `builder: "python"` 的新 Bundle 构建、下载 ZIP、校验返回的 SHA-256、暂存解压到 Release，最后启动独立 Python Client 并退出 Loader。Loader 报告安装进度；完成后到 Server Connections 检查 Client 上线状态。
 
 ## 四、Bootstrap API 与构建请求
 
@@ -142,9 +142,9 @@ POST /api/agent/build
 Content-Type: application/json
 ```
 
-并在请求中指定 `builder: "bundle"`、`target_os: "bundle"`，以及 Server 地址、Socket/Web 端口和 `source: "bootstrap"` 等参数。Server 构建 Python Source Bundle 后，返回构建版本、产物文件名、下载地址及该 Bundle 的 SHA-256。Bootstrap 随后通过 `/api/agent/download/{filename}` 下载该 ZIP。
+并在请求中指定 `builder: "python"`、`target_os: ""`，以及 Server 地址、Socket/Web 端口和 `source: "bootstrap"` 等参数。Server 构建 Python Source Bundle 后，返回构建版本、产物文件名、下载地址及该 Bundle 的 SHA-256。Bootstrap 随后通过 `/api/agent/download/{filename}` 下载该 ZIP。
 
-Go Loader 的首次构建同样使用 `POST /api/agent/build`，但请求 `builder: "go_loader"` 并提供目标 OS 和架构；目标设备运行 Loader 后，它会另行发送 `builder: "bundle"` 的构建请求。Go Loader 并不把它自己的二进制作为最终 Python Client，也不依赖目标设备安装 Go。
+Go Loader 的首次构建同样使用 `POST /api/agent/build`，但请求 `builder: "go_loader"` 并提供目标 OS 和架构；目标设备运行 Loader 后，它会另行发送 `builder: "python"` 的构建请求。Go Loader 并不把它自己的二进制作为最终 Python Client，也不依赖目标设备安装 Go。
 
 Bootstrap 的生成、Bundle 构建和产物下载接口当前允许匿名访问。因此它们必须部署在符合预期的网络和访问控制边界内；不要把“Web 管理界面需要登录”误认为这些启动接口自动受同一登录流程保护。Bundle 构建仍依赖 Server 已注册并可用的 Bundle Builder。
 

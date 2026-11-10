@@ -138,10 +138,9 @@ A few implementation-level characteristics are important when reading the rest o
 
 - Build downloadable client artifacts from the web panel
 - Includes multiple build modes such as:
-  - **PyInstaller**
-  - **Bundle**
-  - **Go (Simple)**
-  - **Go (Loader)**
+  - **Python Bundle** (`python`)
+  - **Go** (`go`)
+  - **Go Loader** (`go_loader`)
 - Injects build/version metadata into generated outputs
 - Exposes build and download APIs
 - Supports an `update` workflow on the Python client that can request a fresh **bundle**, download it automatically, extract it, and launch the new client bundle
@@ -785,38 +784,28 @@ Important nuance: alias placeholders stay intentionally simple. Parameters are b
 
 ## Agent Build Modes
 
-The Agent Builder coordinates dispatch and output management. **Bundle** is a Python source build mode, not an implicit default or mandatory registration, and requires Python on the target machine. Go Loader is independently registered and builds its own executable, but its runtime still requests a Python Bundle from the Server; unregistering Bundle prevents that runtime download.
+The Agent Builder coordinates dispatch and output management. **Python Bundle** (`python`) packages Python source files and requires Python on the target machine. Go Loader (`go_loader`) independently builds an executable that requests a Python Bundle (`python`) from the Server at runtime.
 
-**Required builder module** (do not remove):
+**Registered builder modules:**
 
-- Bundle: `server/application/agent/agent_build_bundle.py`
+- Python Bundle (`python`): `server/application/agent/agent_build_bundle.py`
+- Go (`go`): `server/application/agent/agent_build_client_go.py`
+- Go Loader (`go_loader`): `server/application/agent/agent_build_go_loader.py`
 
-**Optional builder modules** (each can be removed independently):
-
-- PyInstaller: `server/application/agent/agent_build_pyinstaller.py`
-- Experimental Go (Simple) Client: `server/application/agent/agent_build_client_go.py`
-- Go Loader: `server/application/agent/agent_build_go_loader.py`
-
-All four build modes are peers in the single `AGENT_BUILDERS` registry in `server/application/agent/agent_builder.py`. Each builder is a standalone class with `build()`; shared source staging and Python config injection live in `agent_build_utils.py`, not in the dispatch layer. To disable any builder, including Bundle, remove its registry entry and restart the Server; its module file can remain installed. Missing modules are also excluded. An empty registry is valid and `/api/agent/platform` then returns `builders: []`. Every build request must explicitly specify a registered `builder`; there is no implicit Bundle fallback. The Agent Builder UI only shows available modes.
+All three build modes are registered in `AGENT_BUILDERS` in `server/application/agent/agent_builder.py`. Each has its own `build()` method; shared source staging and Python configuration injection live in `agent_build_utils.py`. Each build request must specify a registered builder, and the Agent Builder UI displays the available modes.
 
 Both Go build modes share `server/application/agent/agent_go_build_runner.py` for cross-compilation targets and the Go subprocess lifecycle. It captures stdout/stderr, enforces a 600-second compilation timeout, and returns consistent errors for nonzero exit codes, timeouts, and missing output binaries.
 
-### PyInstaller
-
-- Builds a Python client executable for the current server platform
-- Injects build metadata
-- Good for environments where Python source bundling is not desired
-
-### Bundle
+### Python Bundle
 
 - Packages `client/`, `core/`, and `rchclient.py` into a zip archive
 - Injects build version into the bundle configuration
 - Designed for source-based delivery/update flows
 - Used by the Python-client `update` workflow to fetch and launch a newer bundle automatically
 
-### Go (Simple)
+### Go
 
-`Go (Simple)` is positioned as a **small and lightweight baseline client** for cases where a compact executable is preferred and the full Python/PyInstaller delivery path is too heavy.
+The Go builder is a lightweight standalone client option for use cases where a smaller executable is preferred.
 
 Go (Simple) can target a TCP listener or TLS/TCP listener. TLS builds embed the
 selected listener certificate SHA-256 fingerprint, verified by the Go Client before
@@ -826,7 +815,6 @@ Current intent and positioning:
 
 - minimal cross-platform standalone Go client path
 - better fit for lightweight execution scenarios
-- useful when PyInstaller output is too bulky
 - useful when a full source bundle is not convenient to land on the target
 
 Compared with the Python client, the current Go (Simple) path is intentionally basic and should be understood as a minimal feature subset.
@@ -1101,7 +1089,7 @@ The following limitations come from the current execution model, transport split
    - In other words, the UI/server can request cancellation, but “stop immediately and cleanly at any point” is not something the current script execution model can guarantee.
 
 3. **There is still no single lightweight, cross-platform, feature-complete agent form factor**
-   - The build pipeline is currently split across different delivery styles (for example, Python bundle / PyInstaller / Go-related build paths), which reflects a trade-off rather than a solved packaging story.
+   - The build pipeline is currently split across different delivery styles (for example, Python Bundle / Go / Go Loader), which reflects a trade-off rather than a solved packaging story.
    - Heavier builds provide broader feature coverage, while lighter paths are better for footprint but do not yet represent a clean “small binary with full feature parity everywhere” solution.
    - A truly lightweight executable agent that is also cross-platform and feature-complete is still missing.
 
@@ -2705,7 +2693,7 @@ The Server does not need to continuously rebuild bundles just to detect Client s
 
 ### Bootstrap runtime and release layout
 
-Python Bootstrap, Windows PowerShell Bootstrap, and the standalone Go Loader request an explicit `bundle` build and consume its `sha256` value from `/api/agent/build`. The downloaded ZIP is checksum-checked, safely extracted to a staging directory, and installed afresh for each run. All use the following layout under the target user's home directory:
+Python Bootstrap, Windows PowerShell Bootstrap, and the standalone Go Loader request an explicit `python` build and consume its `sha256` value from `/api/agent/build`. The downloaded ZIP is checksum-checked, safely extracted to a staging directory, and installed afresh for each run. All use the following layout under the target user's home directory:
 
 ```text
 ~/client_bundle/
@@ -2714,7 +2702,7 @@ Python Bootstrap, Windows PowerShell Bootstrap, and the standalone Go Loader req
 └── releases/<build_version>/
 ```
 
-Bundle artifact naming is defined only in `core/client_revision.py` (`BUNDLE_ARTIFACT_STEM`).
+Bundle artifact naming is defined only in `core/client_revision.py` (`PYTHON_ARTIFACT_STEM`).
 For new builds, `build_version` equals the ZIP filename without `.zip`, and both
 Bootstrap/Go Loader and Client Update install under that same release folder name.
 Existing releases are not renamed or removed during installation.

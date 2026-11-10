@@ -56,5 +56,5 @@ class BundleBuilder:
             'file_name': bundle_name,
             'warnings': [self.BUILD_STATUS_MESSAGE],
             'target_arch': 'n/a',
-            'target_os': 'bundle',
+            'target_os': '',
         }

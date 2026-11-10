@@ -127,13 +127,7 @@
 import {ElMessage} from 'element-plus'
 import { getAgentPlatform, buildAgent as requestAgentBuild, agentDownloadUrl } from '../api/agentApi.js'
 import { listListeners } from '../api/listenersApi.js'
-
-const BUILDER_LABELS = {
-  bundle: 'Bundle',
-  pyinstaller: 'PyInstaller',
-  go: 'Go (Simple)',
-  go_loader: 'Go (Loader)',
-}
+import {AGENT_BUILDER, AGENT_BUILDER_LABEL} from '../data/agentBuilderTypes.js'
 
 export default {
   name: 'AgentBuilderDialog',
@@ -169,41 +163,33 @@ export default {
     },
 
     availableBuilders() {
-      return this.supportedBuilders.map(value => ({value, label: BUILDER_LABELS[value] || value}))
+      return this.supportedBuilders.map(value => ({value, label: AGENT_BUILDER_LABEL[value] || value}))
     },
 
     agentBuilderAlertText() {
       if (!this.agentForm.builder) return ''
-      if (this.agentForm.builder === 'pyinstaller') {
-        return `Standalone executable. Can only build for the same OS as the current server (${this.describeAgentTargetOs(this.agentServerTargetOs)}).`
-      }
-
-      if (this.agentForm.builder === 'bundle') {
+      if (this.agentForm.builder === AGENT_BUILDER.PYTHON) {
         return 'Source ZIP package. Includes the Python client source files.'
         // return 'Source ZIP package. Includes the Python client source files.\nOne-liner: python3 -c "import requests; exec(requests.post(\'http://' + this.agentForm.server_host + ':' + this.agentForm.web_port + '/api/agent/bootstrap\', json={\'server_host\':\'' + this.agentForm.server_host + '\',\'server_port\':' + this.agentForm.server_port + ',\'web_port\':' + this.agentForm.web_port + '}).text)"'
       }
 
-      if (this.agentForm.builder === 'go_loader') {
+      if (this.agentForm.builder === AGENT_BUILDER.GO_LOADER) {
         return 'Downloads the bundle and runs it with Python.'
       }
 
       return 'Lightweight Go client for basic commands.'
     },
 
-    isBundleBuilder() {
-      return this.agentForm.builder === 'bundle'
-    },
-
-    isPyInstallerBuilder() {
-      return this.agentForm.builder === 'pyinstaller'
+    isPythonBuilder() {
+      return this.agentForm.builder === AGENT_BUILDER.PYTHON
     },
 
     isAgentTargetOsDisabled() {
-      return this.isBundleBuilder || this.isPyInstallerBuilder
+      return this.isPythonBuilder
     },
 
     isAgentTargetArchDisabled() {
-      return this.isBundleBuilder || this.isPyInstallerBuilder
+      return this.isPythonBuilder
     },
   },
 
@@ -264,7 +250,6 @@ export default {
         win: 'Windows',
         mac: 'macOS',
         linux: 'Linux',
-        bundle: 'Bundle',
       }
 
       return mapping[targetOs] || targetOs || 'macOS'
@@ -316,15 +301,9 @@ export default {
     },
 
     applyAgentBuilderRules() {
-      if (this.agentForm.builder === 'bundle') {
+      if (this.agentForm.builder === AGENT_BUILDER.PYTHON) {
         this.agentForm.target_os = 'mac'
         this.agentForm.target_arch = 'arm64'
-        return
-      }
-
-      if (this.agentForm.builder === 'pyinstaller') {
-        this.agentForm.target_os = this.agentServerTargetOs || 'mac'
-        this.agentForm.target_arch = this.getDefaultAgentTargetArch(this.agentForm.target_os)
         return
       }
 
@@ -339,11 +318,8 @@ export default {
         server_web_host: this.agentForm.server_host,
       }
 
-      if (this.agentForm.builder === 'bundle') {
-        payload.target_os = 'bundle'
-        payload.target_arch = ''
-      } else if (this.agentForm.builder === 'pyinstaller') {
-        payload.target_os = this.agentServerTargetOs || this.agentForm.target_os || 'mac'
+      if (this.agentForm.builder === AGENT_BUILDER.PYTHON) {
+        payload.target_os = ''
         payload.target_arch = ''
       }
 

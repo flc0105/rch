@@ -286,7 +286,7 @@ def build_bundle():
     payload = {
         'server_host': SERVER_HOST, 'server_port': SERVER_PORT,
         'server_web_scheme': WEB_SCHEME, 'server_web_host': WEB_HOST,
-        'web_port': WEB_PORT, 'target_os': 'bundle', 'builder': 'bundle',
+        'web_port': WEB_PORT, 'target_os': '', 'builder': 'python',
         'target_arch': '', 'source': 'bootstrap',
     }
     if LISTENER_ID:
@@ -475,7 +475,7 @@ if (-not $py) {
 
 $body = @{
     server_host=$ip; server_port=$serverPort; web_port=$webPort;
-    target_os='bundle'; builder='bundle'; target_arch=''; source='bootstrap';
+    target_os=''; builder='python'; target_arch=''; source='bootstrap';
     server_web_scheme='http'; server_web_host=$ip
 }
 if ($listenerId) { $body['listener_id'] = $listenerId }

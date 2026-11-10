@@ -1,4 +1,5 @@
 import json
+from core.artifact_contract import ArtifactSourceKind
 
 from core.protocol.structured_arg_codec import encode_structured_arg
 from core.protocol.message_types import MSG_TYPE_TRANSFER_START
@@ -206,6 +207,11 @@ class WebRemoteFileService:
             raise RuntimeError('Artifact was not found after HTTP upload completed')
         return terminal, artifact
 
+    @staticmethod
+    def _download_source_kind(feature: str) -> str:
+        return (ArtifactSourceKind.CLIPBOARD.value if feature == 'clipboard'
+                else ArtifactSourceKind.DOWNLOADS.value)
+
     def download_file(self, client_id: str, path: str, history_entry_id: str = '', tab_id: str = '', *, origin: str = 'web_api', feature: str = 'remote_files') -> dict:
         if not (path or '').strip():
             raise ValueError('path is required')
@@ -244,7 +250,7 @@ class WebRemoteFileService:
                 {
                     'path': normalized_path,
                     'artifact_type': 'files',
-                    'category': 'download',
+                    'category': self._download_source_kind(feature),
                 },
             )
             _, artifact = self._wait_for_transfer_artifact(transfer_id)
@@ -352,7 +358,7 @@ class WebRemoteFileService:
                     'paths': normalized_paths,
                     'archive_name': archive_name,
                     'artifact_type': 'files',
-                    'category': 'bundle',
+                    'category': self._download_source_kind(feature),
                 },
             )
             _, artifact = self._wait_for_transfer_artifact(transfer_id)

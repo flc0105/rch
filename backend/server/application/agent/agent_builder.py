@@ -7,7 +7,7 @@ from datetime import datetime
 from uuid import uuid4
 
 from core.platform.normalization import normalize_arch
-from core.client_revision import BUNDLE_ARTIFACT_STEM
+from core.agent_build_contract import AgentBuilderKind, agent_build_version
 from server.config.config import SERVER_RUNTIME_DIR
 from server.runtime.listener_protocols import get_listener_protocol
 
@@ -15,10 +15,9 @@ from server.runtime.listener_protocols import get_listener_protocol
 # Single registration point. Remove an entry to disable a builder without deleting its file.
 # All builders are peers; even Bundle may be unregistered. Restart after editing this map.
 AGENT_BUILDERS = {
-    'bundle': ('server.application.agent.agent_build_bundle', 'BundleBuilder', BUNDLE_ARTIFACT_STEM),
-    # 'pyinstaller': ('server.application.agent.agent_build_pyinstaller', 'PyInstallerBuilder', 'pyinstaller'),
-    'go': ('server.application.agent.agent_build_client_go', 'ClientGoBuilder', 'go-client'),
-    'go_loader': ('server.application.agent.agent_build_go_loader', 'GoLoaderBuilder', 'go-loader'),
+    AgentBuilderKind.PYTHON.value: ('server.application.agent.agent_build_bundle', 'BundleBuilder'),
+    AgentBuilderKind.GO.value: ('server.application.agent.agent_build_client_go', 'ClientGoBuilder'),
+    AgentBuilderKind.GO_LOADER.value: ('server.application.agent.agent_build_go_loader', 'GoLoaderBuilder'),
 }
 
 
@@ -31,7 +30,7 @@ class AgentBuilder:
 
     @property
     def SUPPORTED_BUILDERS(self) -> set[str]:
-        return {name for name, (module_name, _, _) in AGENT_BUILDERS.items()
+        return {name for name, (module_name, _) in AGENT_BUILDERS.items()
                 if importlib.util.find_spec(module_name) is not None}
 
     def list_supported_builders(self) -> list[str]:
@@ -43,16 +42,11 @@ class AgentBuilder:
         os.makedirs(self.output_dir, exist_ok=True)
 
     def _build_id_text(self) -> str:
-        stamp = datetime.now().strftime('%Y%m%d-%H%M%S')
-        return f'{stamp}-{uuid4().hex[:8]}'
-
-    def _build_kind_text(self, builder: str) -> str:
-        builder_name = (builder or '').strip().lower()
-        definition = AGENT_BUILDERS.get(builder_name)
-        return definition[2] if definition else (builder_name or 'build')
+        stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        return f'{stamp}_{uuid4().hex[:6]}'
 
     def _build_version_text(self, builder: str, build_id: str) -> str:
-        return f'{self._build_kind_text(builder)}-{build_id}'
+        return agent_build_version(builder, build_id)
 
     def build_agent(self, server_host: str, server_port: int,
                     web_port: int, target_os: str = 'mac',
@@ -91,12 +85,12 @@ class AgentBuilder:
                 server_web_scheme=server_web_scheme,
                 server_web_host=server_web_host,
             )
-            if builder in ('bundle', 'go'):
+            if builder in (AgentBuilderKind.PYTHON.value, AgentBuilderKind.GO.value):
                 common_args['listener_protocol'] = listener_protocol
                 common_args['tls_fingerprint'] = tls_fingerprint
-            if builder == 'go_loader':
+            if builder == AgentBuilderKind.GO_LOADER.value:
                 common_args['listener_id'] = listener_id
-            module_name, class_name, _ = AGENT_BUILDERS[builder]
+            module_name, class_name = AGENT_BUILDERS[builder]
             build_module = importlib.import_module(module_name)
             builder_class = getattr(build_module, class_name)
             result = builder_class(self.source_dir).build(

@@ -3,13 +3,14 @@ import {readFileSync} from 'node:fs'
 import {dirname, resolve} from 'node:path'
 import {fileURLToPath} from 'node:url'
 import vm from 'node:vm'
+import { AGENT_BUILDER, AGENT_BUILDER_LABEL } from '../src/data/agentBuilderTypes.js'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const source = readFileSync(resolve(root, 'src/components/AgentBuilderDialog.vue'), 'utf8')
 assert.match(source, /v-for="builder in availableBuilders"/)
 assert.doesNotMatch(source, /<el-radio label="(?:pyinstaller|go|go_loader)"/)
 const script = source.split('<script>')[1].split('</script>')[0]
-const sandbox = {
+const sandbox = { AGENT_BUILDER, AGENT_BUILDER_LABEL,
   window: {location: {hostname: 'example.test', protocol: 'http:'}},
   ElMessage: {warning() {}, error() {}, success() {}},
   fetch: null,
@@ -26,7 +27,7 @@ function makeInstance() {
   return obj
 }
 
-let response = ['bundle', 'go_loader']
+let response = ['python', 'go_loader']
 sandbox.fetch = async url => {
   assert.equal(url, '/api/agent/platform')
   return {ok: true, json: async () => ({code: 0, data: {
@@ -37,20 +38,20 @@ const builder = makeInstance()
 // A previously selected plugin disappears after its registration is disabled.
 builder.agentForm.builder = 'pyinstaller'
 await builder.loadAgentServerPlatform()
-assert.equal(builder.agentForm.builder, 'bundle')
-assert.deepEqual(Array.from(builder.availableBuilders, item => item.label), ['Bundle', 'Go (Loader)'])
+assert.equal(builder.agentForm.builder, 'python')
+assert.deepEqual(Array.from(builder.availableBuilders, item => item.label), ['Python Bundle', 'Go Loader'])
 assert.equal(builder.agentForm.server_port, 12000)
 assert.equal(builder.agentForm.web_port, 9000)
 
 // After re-enabling it on Server, the existing original labels and order reappear.
-response = ['bundle', 'pyinstaller', 'go', 'go_loader']
+response = ['python', 'go', 'go_loader']
 await builder.loadAgentServerPlatform()
 assert.deepEqual(Array.from(builder.availableBuilders, item => item.label),
-  ['Bundle', 'PyInstaller', 'Go (Simple)', 'Go (Loader)'])
+  ['Python Bundle', 'Go', 'Go Loader'])
 
 // Bundle is not special: registry without Bundle must select an available builder.
 response = ['go_loader']
-builder.agentForm.builder = 'bundle'
+builder.agentForm.builder = 'python'
 await builder.loadAgentServerPlatform()
 assert.equal(builder.agentForm.builder, 'go_loader')
 assert.deepEqual(Array.from(builder.availableBuilders, item => item.value), ['go_loader'])

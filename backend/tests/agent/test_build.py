@@ -16,7 +16,7 @@ import sys
 import zipfile
 from pathlib import Path
 import pytest
-from core.client_revision import BUNDLE_ARTIFACT_STEM
+from core.client_revision import PYTHON_ARTIFACT_STEM
 from server.application.agent.agent_builder import AgentBuilder, AGENT_BUILDERS
 
 
@@ -72,7 +72,7 @@ class AgentBuilderTests(unittest.TestCase):
                     'file_name': 'agent.zip',
                     'warnings': [],
                     'target_arch': 'n/a',
-                    'target_os': 'bundle',
+                    'target_os': '',
                 }
 
             with patch('server.application.agent.agent_builder.tempfile.mkdtemp', return_value=work_dir), \
@@ -81,7 +81,7 @@ class AgentBuilderTests(unittest.TestCase):
                     server_host='127.0.0.1',
                     server_port=9000,
                     web_port=8080,
-                    builder='bundle',
+                    builder='python',
                 )
 
             self.assertFalse(os.path.exists(work_dir))
@@ -102,7 +102,7 @@ class AgentBuilderTests(unittest.TestCase):
                         server_host='127.0.0.1',
                         server_port=9000,
                         web_port=8080,
-                            builder='bundle',
+                            builder='python',
                     )
 
             self.assertFalse(os.path.exists(work_dir))
@@ -152,10 +152,10 @@ def test_explicit_bundle_generates_valid_source_zip():
         agent = _agent(root)
         with patch('server.application.agent.agent_build_utils.build_client_revision_manifest',
                    return_value={'revision': 'abc', 'parts': {}, 'files': {}}):
-            result = agent.build_agent('host.example', 9999, 8085, builder='bundle')
-        assert result['builder'] == 'bundle'
-        assert result['target_os'] == 'bundle'
-        assert result['file_name'].startswith(BUNDLE_ARTIFACT_STEM + '-')
+            result = agent.build_agent('host.example', 9999, 8085, builder='python')
+        assert result['builder'] == 'python'
+        assert result['target_os'] == ''
+        assert result['file_name'].startswith(PYTHON_ARTIFACT_STEM + '_')
         assert result['file_name'] == result['build_version'] + '.zip'
         with zipfile.ZipFile(result['file_path']) as z:
             assert 'client/config/config.py' in z.namelist()

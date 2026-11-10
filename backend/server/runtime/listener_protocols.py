@@ -7,6 +7,7 @@ import hashlib
 import os
 import ssl
 import subprocess
+from core.agent_build_contract import AgentBuilderKind, AGENT_BUILDER_LABELS
 
 
 class TcpListenerProtocol:
@@ -47,9 +48,9 @@ class TlsTcpListenerProtocol(TcpListenerProtocol):
     name = 'tls_tcp'
     label = 'TLS/TCP'
     build_label = 'TLS/TCP (pinned certificate)'
-    supported_builders = ('bundle', 'go', 'go_loader')
-    notice = 'A self-signed certificate is generated once. Bundle and Go clients pin its fingerprint.'
-    builder_warning = 'TLS/TCP supports Bundle, Go (Simple), and Go (Loader)'
+    supported_builders = tuple(kind.value for kind in AgentBuilderKind)
+    notice = 'A self-signed certificate is generated once. Supported clients pin its fingerprint.'
+    builder_warning = 'TLS/TCP supports ' + ', '.join(AGENT_BUILDER_LABELS.values())
 
     @staticmethod
     def _certificate_paths(listener_id, cert_dir):
@@ -96,7 +97,7 @@ class TlsTcpListenerProtocol(TcpListenerProtocol):
 
     def build_fingerprint(self, listener_id, builder, cert_dir):
         if builder not in self.supported_builders:
-            raise ValueError('TLS/TCP supports Bundle, Go (Simple), and Go (Loader)')
+            raise ValueError(self.builder_warning)
         fingerprint = self.certificate_fingerprint(listener_id, cert_dir)
         self.validate_build(builder, fingerprint)
         return fingerprint

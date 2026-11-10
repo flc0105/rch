@@ -137,8 +137,8 @@ def test_go_runner_chmod_error_is_structured(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize('module_name,builder_name,go_dir,expected_prefix', [
-    ('agent_build_client_go', 'ClientGoBuilder', 'client-go', 'rchclient-go-client-'),
-    ('agent_build_go_loader', 'GoLoaderBuilder', 'go-loader', 'rchclient-go-loader-'),
+    ('agent_build_client_go', 'ClientGoBuilder', 'client-go', 'go_'),
+    ('agent_build_go_loader', 'GoLoaderBuilder', 'go-loader', 'go_loader_'),
 ])
 @pytest.mark.parametrize('target_os,goos,suffix', [
     ('win', 'windows', '.exe'),
@@ -176,7 +176,7 @@ def test_both_go_builders_use_same_runner_and_platform_map(
         options['listener_id'] = 'listener-abc'
 
     output = builder_class(str(source_dir)).build(**options)
-    expected_name = f'{expected_prefix}{target_os}-arm64-B123{suffix}'
+    expected_name = f'{expected_prefix}{target_os}_arm64_B123{suffix}'
     expected_dir = work_dir / 'rat' / go_dir
     assert output == {
         'file_path': str(expected_dir / expected_name),

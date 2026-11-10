@@ -40,14 +40,14 @@ class _ConnectingSocket:
 def test_registered_protocols_expose_build_rules_without_manager_switches():
     definitions = {entry['id']: entry for entry in list_listener_protocols()}
     assert definitions['tcp']['supported_builders'] is None
-    assert definitions['tls_tcp']['supported_builders'] == ['bundle', 'go_loader']
+    assert definitions['tls_tcp']['supported_builders'] == ['python', 'go', 'go_loader']
     assert definitions['tls_tcp']['build_label'] == 'TLS/TCP (pinned certificate)'
     with pytest.raises(ValueError, match='Unsupported listener protocol'):
         get_listener_protocol('not_registered')
-    with pytest.raises(ValueError, match='Bundle'):
+    with pytest.raises(ValueError, match='Python'):
         get_listener_protocol('tls_tcp').validate_build('go', '0' * 64)
     with pytest.raises(ValueError, match='pinned'):
-        get_listener_protocol('tls_tcp').validate_build('bundle', 'bad')
+        get_listener_protocol('tls_tcp').validate_build('python', 'bad')
 
 
 def test_factory_provides_build_settings_and_pinned_tls_connection(tmp_path):
@@ -63,16 +63,16 @@ def test_factory_provides_build_settings_and_pinned_tls_connection(tmp_path):
         secure_port = _free_port()
         tls = manager.create({'name': 'Secure', 'protocol': 'tls_tcp',
                               'host': '127.0.0.1', 'port': secure_port})
-        settings = manager.build_settings(tls['id'], secure_port, 'bundle')
+        settings = manager.build_settings(tls['id'], secure_port, 'python')
         assert settings['listener_protocol'] == 'tls_tcp'
         assert settings['tls_fingerprint'] == manager.certificate_fingerprint(tls['id'])
         assert len(settings['tls_fingerprint']) == 64
-        assert manager.list()[1]['supported_builders'] == ['bundle', 'go_loader']
+        assert manager.list()[1]['supported_builders'] == ['python', 'go', 'go_loader']
         assert manager.build_settings(tls['id'], secure_port, 'go_loader') == settings
         with pytest.raises(ValueError, match='Bundle and Go'):
             manager.build_settings(tls['id'], secure_port, 'go')
         with pytest.raises(ValueError, match='does not match'):
-            manager.build_settings(tls['id'], secure_port + 1, 'bundle')
+            manager.build_settings(tls['id'], secure_port + 1, 'python')
 
         connector = get_connector('tls_tcp')
         config = {'server_tls_fingerprint': settings['tls_fingerprint']}

@@ -82,7 +82,7 @@ def _build_endpoint(monkeypatch, manager, tmp_path, payload):
 
 def _payload(**overrides):
     values = {'source': 'update', 'server_host': '127.0.0.1', 'server_port': 9443,
-              'web_port': 8085, 'builder': 'bundle', 'target_os': 'bundle',
+              'web_port': 8085, 'builder': 'python', 'target_os': '',
               'server_transport': 'tls_tcp', 'server_tls_fingerprint': 'a' * 64,
               'listener_id': 'tls-local'}
     values.update(overrides)

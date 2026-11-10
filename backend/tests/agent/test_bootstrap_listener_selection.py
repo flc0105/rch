@@ -31,7 +31,7 @@ def test_python_tls_bootstrap_forwards_listener_to_existing_build():
     assert 'LISTENER_ID = "tls-abc123"' in source
     assert payload['listener_id'] == 'tls-abc123'
     assert payload['server_port'] == 9443
-    assert payload['builder'] == 'bundle'
+    assert payload['builder'] == 'python'
 
 
 def test_python_default_tcp_bootstrap_keeps_original_build_payload():

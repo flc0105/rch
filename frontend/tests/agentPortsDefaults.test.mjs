@@ -3,11 +3,12 @@ import {readFileSync} from 'node:fs'
 import {resolve, dirname} from 'node:path'
 import {fileURLToPath} from 'node:url'
 import vm from 'node:vm'
+import {AGENT_BUILDER, AGENT_BUILDER_LABEL} from '../src/data/agentBuilderTypes.js'
 import {terminalOneLiners} from '../src/data/terminalOneLiners.js'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const platform = {code: 0, data: {socket_port: 12000, web_port: 9000, target_os: 'mac', builders: ['bundle', 'pyinstaller', 'go', 'go_loader']}}
-const sandbox = {
+const platform = {code: 0, data: {socket_port: 12000, web_port: 9000, target_os: 'mac', builders: ['python', 'go', 'go_loader']}}
+const sandbox = {AGENT_BUILDER, AGENT_BUILDER_LABEL,
   window: {location: {hostname: 'example.test', protocol: 'http:'}},
   fetch: async () => ({ok: true, json: async () => platform}),
   getAgentPlatform: () => sandbox.fetch('/api/agent/platform'),

@@ -1,6 +1,7 @@
 import os
 import hashlib
 
+from core.agent_build_contract import AgentBuilderKind
 from flask import Blueprint, send_file
 
 from server.web.api_response import WebApiResponder
@@ -72,8 +73,10 @@ def create_agent_blueprint(server_instance):
 
             listener_protocol = 'tcp'
             tls_fingerprint = ''
+            listener_name = ''
             if listener_id:
                 settings = server_instance.listener_manager.build_settings(listener_id, server_port, builder)
+                listener_name = server_instance.listener_manager.get(listener_id)['name']
                 listener_protocol = settings['listener_protocol']
                 tls_fingerprint = settings['tls_fingerprint']
 
@@ -90,9 +93,10 @@ def create_agent_blueprint(server_instance):
                 listener_protocol=listener_protocol,
                 tls_fingerprint=tls_fingerprint,
                 listener_id=listener_id,
+                listener_name=listener_name,
             )
             result['download_url'] = f'/api/agent/download/{result["file_name"]}'
-            if builder == 'bundle':
+            if builder == AgentBuilderKind.PYTHON.value:
                 digest = hashlib.sha256()
                 with open(agent_api.get_built_agent_file_path(result['file_name']), 'rb') as artifact:
                     for chunk in iter(lambda: artifact.read(1024 * 1024), b''):
