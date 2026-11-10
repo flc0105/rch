@@ -13,7 +13,7 @@ function method(source, name, next, deps = {}) {
   assert.ok(start >= 0, `${name} must exist`)
   const code = source.slice(start, source.indexOf(next, start))
   const body = code.slice(code.indexOf('{') + 1, code.lastIndexOf('}'))
-  return new Function(...Object.keys(deps), `return function ${name}(${name === 'syncForegroundTaskNotice' ? 'clientId, task' : name === 'startTerminalSubmission' ? 'clientId, command' : 'clientId'}) {${body}}`)(...Object.values(deps))
+  return new Function(...Object.keys(deps), `return function ${name}(${name === 'syncForegroundTaskNotice' ? 'clientId, task' : name === 'startTerminalSubmission' ? 'clientId, command, echoToTerminal = true' : 'clientId'}) {${body}}`)(...Object.values(deps))
 }
 
 const start = method(appSource, 'startTerminalSubmission', '\n    finishTerminalSubmission(')
@@ -27,7 +27,8 @@ const running = {
 function makeApp() {
   return {
     selectedId: 'client-A', tabId: 'tab-A', pendingTerminalSubmissions: {},
-    activeTaskIds: {}, foregroundTasks: {}, outputs: {},
+    activeTaskIds: {}, foregroundTasks: {}, outputs: {}, followJumps: [],
+    scrollToBottom(force) { this.followJumps.push(force) },
     startTerminalSubmission: start, finishTerminalSubmission: finish,
     syncForegroundTaskNotice: sync,
     ensureOutputBucket(id) { this.outputs[id] ??= [] },
@@ -132,4 +133,17 @@ test('pending command of another client does not suppress current client notice'
   state.startTerminalSubmission('client-B', running.command)
   state.syncForegroundTaskNotice('client-A', running)
   assert.equal(notices(state).length, 1)
+})
+
+test('new terminal submission returns to the latest output; dialog-only submission does not', () => {
+  const state = makeApp()
+  state.startTerminalSubmission('client-A', 'pyexec_stream print(1)')
+  assert.deepEqual(state.followJumps, [true])
+  assert.deepEqual(state.pendingTerminalSubmissions['client-A'], { command: 'pyexec_stream print(1)' })
+
+  state.startTerminalSubmission('client-A', 'view json', false)
+  assert.deepEqual(state.followJumps, [true], 'dialog-only execution must not scroll Terminal')
+
+  state.startTerminalSubmission('client-B', 'another client')
+  assert.deepEqual(state.followJumps, [true], 'other client must not scroll current Terminal')
 })

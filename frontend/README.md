@@ -60,6 +60,8 @@ as lossless display segments and rejoined for exports. Bursts of Web Task
 output arrive in bounded batches; all records are persisted, while Terminal
 viewport updates are coalesced to one per animation frame. Programmatic layout
 changes do not disable bottom-follow; a user scroll away from the end does.
+Submitting a new command in Terminal resumes bottom-follow and reloads the latest
+history window when older output is visible; dialog-only commands do not move it.
 
 History is local to the browser profile; browser storage deletion, private mode
 or quota errors can affect persistence. The UI reports an unavailable history

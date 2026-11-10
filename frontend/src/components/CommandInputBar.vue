@@ -395,7 +395,7 @@ export default {
 
       const cancelPolicy = this.getSubmittedCommandCancelPolicy(text)
       this.sending = true
-      this.$emit('terminal-submission-start', clientId, text)
+      this.$emit('terminal-submission-start', clientId, text, echoToTerminal)
       const operation = suppliedOperation || createTerminalOperation({ kind: 'command', action: 'invoke', clientId,
         invocation: { input: text }, replay: { type: 'command', command: text },
         presentation: echoToTerminal ? 'terminal' : 'dialog' })

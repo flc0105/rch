@@ -828,10 +828,13 @@ export default {
       if (this.showCurrentTaskNotice) this.taskDialogVisible = true
     },
 
-    startTerminalSubmission(clientId, command) {
+    startTerminalSubmission(clientId, command, echoToTerminal = true) {
       const id = String(clientId || '').trim()
       if (!id) return
       this.pendingTerminalSubmissions = { ...this.pendingTerminalSubmissions, [id]: { command } }
+      // A new terminal command takes the reader back to the live tail. Dialog-only
+      // requests must not move the terminal while the user is reading history.
+      if (echoToTerminal && id === String(this.selectedId || '')) this.scrollToBottom(true)
     },
 
     finishTerminalSubmission(clientId) {

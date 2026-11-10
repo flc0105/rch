@@ -588,7 +588,11 @@ export default {
             const view = this.terminalViewStates?.[this.selectedId];
             if (this._terminalHistory && view) {
                 if (!force && !view.follow) return;
-                if (force && view.hasNewer) { void this.restoreTerminalViewport(this.selectedId); return; }
+                if (force && view.hasNewer) {
+                    view.follow = true;
+                    void this.restoreTerminalViewport(this.selectedId);
+                    return;
+                }
                 view.follow = true;
             }
             this.$nextTick(() => {

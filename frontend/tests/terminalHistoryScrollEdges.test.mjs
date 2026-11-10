@@ -271,3 +271,39 @@ test('an in-flight downward tail read cannot restore history cleared in the mean
   assert.equal(host.outputs.dev.length, 0)
   assert.equal(restores, 0)
 })
+
+test('forced bottom follow resumes immediately before latest IndexedDB window is loaded', () => {
+  const options = loadOptions('../src/composables/useTerminalOutput.js', config)
+  const view = { follow: false, hasOlder: true, hasNewer: true, loading: false }
+  const reloaded = []
+  const host = {
+    selectedId: 'dev', _terminalHistory: {}, terminalViewStates: { dev: view },
+    restoreTerminalViewport(clientId) { reloaded.push(clientId); return new Promise(() => {}) },
+    $nextTick() { throw new Error('must backfill history instead of scrolling old window') },
+  }
+  options.methods.scrollToBottom.call(host, true)
+  assert.equal(view.follow, true, 'new command must allow immediately arriving output to follow')
+  assert.deepEqual(reloaded, ['dev'], 'latest history window must be loaded once')
+  assert.equal(view.hasNewer, true, 'the history read still owns the newer cursor')
+})
+
+test('submitting while reading old history restores latest rows without another wheel gesture', async () => {
+  const options = loadOptions('../src/composables/useTerminalOutput.js', config)
+  const scrolls = []
+  const host = {
+    ...options.data(), selectedId: 'dev',
+    $refs: { terminalOutputRef: { scrollToBottom() { scrolls.push('bottom') } } },
+    $nextTick(callback) { callback?.(); return Promise.resolve() },
+    _terminalHistory: { async readBefore() { return makeRows(700, 1000) } },
+  }
+  for (const [name, fn] of Object.entries(options.methods)) host[name] = fn.bind(host)
+  host.outputs.dev = makeRows(200, 400)
+  host.terminalViewStates.dev = { follow: false, hasOlder: true, hasNewer: true, loading: false }
+  host.scrollToBottom(true)
+  assert.equal(host.terminalViewStates.dev.follow, true)
+  for (let i = 0; i < 8 && !scrolls.length; i++) await new Promise(resolve => setTimeout(resolve, 0))
+  assert.equal(host.outputs.dev[0].__terminalSeq, 700)
+  assert.equal(host.outputs.dev.at(-1).__terminalSeq, 999)
+  assert.deepEqual(scrolls, ['bottom'])
+  assert.equal(host.terminalViewStates.dev.hasNewer, false)
+})
