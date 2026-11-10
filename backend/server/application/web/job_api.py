@@ -1,7 +1,4 @@
 
-from core.utils.job_metadata import normalize_job_key, normalize_job_execution_allowed, normalize_job_execution_mode
-
-
 class WebJobApi:
     """
     Web 后台任务子外观。
@@ -57,66 +54,10 @@ class WebJobApi:
 
     def list_background_job_catalog(self, client_id: str):
         del client_id
-        normalized = []
-        seen = set()
-
-        for item in self.list_jobs() or []:
-            if not isinstance(item, dict):
-                continue
-
-            job_name = str(item.get('job_name') or item.get('name') or item.get('job_key') or '').strip()
-            if not job_name:
-                continue
-
-            dedupe_key = job_name
-            if dedupe_key in seen:
-                continue
-            seen.add(dedupe_key)
-
-            normalized.append({
-                **item,
-                'job_name': job_name,
-                'job_key': str(item.get('job_key') or job_name).strip() or job_name,
-                'display_name': str(item.get('display_name') or item.get('name') or job_name).strip() or job_name,
-                'description': str(item.get('description') or '').strip(),
-                'metadata': item.get('metadata') or {},
-                'source': 'job',
-            })
-
-        normalized.sort(key=lambda item: item.get('job_name', '').lower())
-        return normalized
-
-    def _get_job_metadata(self, job_name: str) -> dict:
-        target = normalize_job_key(job_name)
-        for item in self.list_jobs() or []:
-            if not isinstance(item, dict):
-                continue
-            candidate = normalize_job_key(item.get('job_name') or item.get('name') or '')
-            if candidate == target:
-                metadata = item.get('metadata') or {}
-                return metadata if isinstance(metadata, dict) else {}
-        return {}
+        return self.job_catalog_service.list_background_job_catalog()
 
     def prepare_background_job_start(self, client_id: str, job_name: str, execution_mode: str | None = None):
-        normalized_job_name = (job_name or '').strip()
-        if not normalized_job_name:
-            raise ValueError('job_name is required')
-
-        if self.background_job_service.has_active_job(client_id, normalized_job_name):
-            job_key = normalize_job_key(normalized_job_name)
-            raise ValueError(f'Job is already running: {job_key}')
-
-        metadata = self._get_job_metadata(normalized_job_name)
-        metadata_default = str(metadata.get('execution_mode') or 'inproc').strip() or 'inproc'
-        normalized_mode = normalize_job_execution_mode(execution_mode, default=metadata_default)
-        allowed_modes = normalize_job_execution_allowed(metadata.get('allowed'))
-        if normalized_mode not in allowed_modes:
-            raise ValueError(
-                f'Execution mode "{normalized_mode}" is not supported by background job '
-                f'"{normalized_job_name}"; allowed: {allowed_modes}'
-            )
-
-        return normalized_mode
+        return self.background_job_service.prepare_job_start(client_id, job_name, execution_mode)
 
     def start_background_job(self, client_id: str, job_name: str, params=None, execution_mode: str = 'inproc', *, origin='web_api'):
         normalized_job_name = (job_name or '').strip()

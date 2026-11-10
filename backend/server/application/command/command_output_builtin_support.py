@@ -3,6 +3,7 @@ import re
 from datetime import datetime
 
 from core.utils.parsing import parse
+from server.application.artifact.artifact_events import publish_artifact_created
 
 
 class CommandOutputBuiltinSupport:
@@ -19,12 +20,14 @@ class CommandOutputBuiltinSupport:
     DEFAULT_CATEGORY = 'command_output'
     OUTPUT_TIME_FORMAT = '%Y%m%d_%H%M%S'
 
-    def __init__(self, server, conn, plan_builder, plan_executor_factory, history_entry_id_provider):
+    def __init__(self, server, conn, plan_builder, plan_executor_factory, history_entry_id_provider, artifact_service, event_bus):
         self.server = server
         self.conn = conn
         self.plan_builder = plan_builder
         self.plan_executor_factory = plan_executor_factory
         self.history_entry_id_provider = history_entry_id_provider
+        self.artifact_service = artifact_service
+        self.event_bus = event_bus
 
     def _now(self):
         return datetime.now()
@@ -64,7 +67,7 @@ class CommandOutputBuiltinSupport:
 
     def _allocate_output_artifact(self, *, command: str, category: str) -> dict:
         session_info = self._get_session_info()
-        return self.server.web_service.artifact_api.allocate_command_output_artifact_path(
+        return self.artifact_service.allocate_command_output_artifact_path(
             category=category,
             machine_id=getattr(session_info, 'machine_id', '') or 'unknown_machine',
             source_command=command,
@@ -72,7 +75,7 @@ class CommandOutputBuiltinSupport:
 
     def _register_output_artifact(self, *, allocation: dict, command: str, category: str, extra: dict) -> dict:
         session_info = self._get_session_info()
-        return self.server.web_service.artifact_api.register_command_output_artifact(
+        artifact = self.artifact_service.register_command_output_artifact(
             allocation=allocation,
             category=category,
             hostname=getattr(session_info, 'hostname', '') or 'unknown_host',
@@ -84,6 +87,11 @@ class CommandOutputBuiltinSupport:
             source_command_id=self._get_source_command_id(),
             extra=extra,
         )
+        try:
+            publish_artifact_created(self.event_bus, artifact)
+        except Exception:
+            pass  # Notification failure must not invalidate a saved artifact.
+        return artifact
 
     def _build_inner_executor(self, command: str):
         name, arg = parse(command)

@@ -497,8 +497,10 @@ class JobCommandCompletionProvider(ServerCompletionSessionMixin, CommandCompleti
     source = 'server_job'
     group = 'job'
 
-    def __init__(self, server):
+    def __init__(self, server, job_catalog_service, background_job_service):
         ServerCompletionSessionMixin.__init__(self, server)
+        self.job_catalog_service = job_catalog_service
+        self.background_job_service = background_job_service
 
     def complete(self, context: CompletionContext) -> list[CompletionCandidate]:
         parts = str(context.argument_text or '').lstrip().split(None, 1)
@@ -512,13 +514,12 @@ class JobCommandCompletionProvider(ServerCompletionSessionMixin, CommandCompleti
         client_id = self.get_client_id(context)
         if not client_id:
             return []
-        job_api = self.server.web_service.job_api
         names = []
         # Status may also report not_running for catalog Jobs. Stop should only
         # suggest Job keys that are actually active on the selected device.
         if action in ('stop', 'status', 'logs'):
             try:
-                jobs = job_api.list_background_jobs(client_id)
+                jobs = self.background_job_service.list_jobs(client_id)
             except (AttributeError, ValueError, LookupError):
                 jobs = []
             names.extend(str(item.get('job_key') or item.get('job_name') or '').strip()
@@ -526,7 +527,7 @@ class JobCommandCompletionProvider(ServerCompletionSessionMixin, CommandCompleti
                          and (action == 'logs' or str(item.get('state') or '').lower() in ('running', 'stopping')))
         if action in ('start', 'status'):
             try:
-                items = job_api.list_background_job_catalog(client_id)
+                items = self.job_catalog_service.list_background_job_catalog()
             except (AttributeError, ValueError, LookupError):
                 items = []
             platform = self.get_client_platform(context)

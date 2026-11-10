@@ -4,7 +4,7 @@ from pathlib import Path
 
 from werkzeug.utils import secure_filename
 
-from core.utils.job_metadata import read_job_metadata_from_file
+from core.utils.job_metadata import read_job_metadata_from_file, normalize_job_key
 
 
 class JobCatalogService:
@@ -48,6 +48,39 @@ class JobCatalogService:
                 continue
             jobs.append(self._build_job_item(file_path))
         return sorted(jobs, key=lambda x: x['job_name'])
+
+    def list_background_job_catalog(self) -> list[dict]:
+        normalized = []
+        seen = set()
+        for item in self.list_jobs() or []:
+            if not isinstance(item, dict):
+                continue
+            job_name = str(item.get('job_name') or item.get('name') or item.get('job_key') or '').strip()
+            if not job_name or job_name in seen:
+                continue
+            seen.add(job_name)
+            normalized.append({
+                **item,
+                'job_name': job_name,
+                'job_key': str(item.get('job_key') or job_name).strip() or job_name,
+                'display_name': str(item.get('display_name') or item.get('name') or job_name).strip() or job_name,
+                'description': str(item.get('description') or '').strip(),
+                'metadata': item.get('metadata') or {},
+                'source': 'job',
+            })
+        normalized.sort(key=lambda item: item.get('job_name', '').lower())
+        return normalized
+
+    def get_job_metadata(self, job_name: str) -> dict:
+        target = normalize_job_key(job_name)
+        for item in self.list_jobs() or []:
+            if not isinstance(item, dict):
+                continue
+            candidate = normalize_job_key(item.get('job_name') or item.get('name') or '')
+            if candidate == target:
+                metadata = item.get('metadata') or {}
+                return metadata if isinstance(metadata, dict) else {}
+        return {}
 
     def get_job_content(self, job_name: str) -> str:
         """

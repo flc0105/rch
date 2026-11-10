@@ -3,7 +3,7 @@ import threading
 from datetime import datetime
 
 from server.application.command.command_types import COMMAND_TYPE_JOB_CONTROL
-from core.utils.job_metadata import normalize_job_key, normalize_job_execution_mode
+from core.utils.job_metadata import normalize_job_key, normalize_job_execution_mode, normalize_job_execution_allowed
 from core.utils.job_control_result import decode_job_control_result
 
 
@@ -33,11 +33,30 @@ class BackgroundJobService:
         self._lifecycle_lock = threading.RLock()
 
     @staticmethod
-    def _build_job_control_command(action: str, **payload) -> str:
+    def build_job_control_command(action: str, **payload) -> str:
         return json.dumps({'action': action, **payload}, ensure_ascii=False, separators=(',', ':'))
 
+    def prepare_job_start(self, client_id: str, job_name: str, execution_mode: str | None = None):
+        normalized_job_name = (job_name or '').strip()
+        if not normalized_job_name:
+            raise ValueError('job_name is required')
+        if self.has_active_job(client_id, normalized_job_name):
+            job_key = normalize_job_key(normalized_job_name)
+            raise ValueError(f'Job is already running: {job_key}')
+
+        metadata = self.job_catalog_service.get_job_metadata(normalized_job_name)
+        metadata_default = str(metadata.get('execution_mode') or 'inproc').strip() or 'inproc'
+        normalized_mode = normalize_job_execution_mode(execution_mode, default=metadata_default)
+        allowed_modes = normalize_job_execution_allowed(metadata.get('allowed'))
+        if normalized_mode not in allowed_modes:
+            raise ValueError(
+                f'Execution mode "{normalized_mode}" is not supported by background job '
+                f'"{normalized_job_name}"; allowed: {allowed_modes}'
+            )
+        return normalized_mode
+
     def _build_start_job_command(self, job_name: str, params=None, execution_mode: str = 'inproc') -> str:
-        return self._build_job_control_command(
+        return self.build_job_control_command(
             'start', job_name=str(job_name or '').strip(), params=dict(params or {}),
             execution_mode=normalize_job_execution_mode(execution_mode, default='inproc'),
         )
@@ -93,7 +112,7 @@ class BackgroundJobService:
 
         text = self._execute_job_action(
             client_id, 'stop', {'job_key': job_key},
-            self._build_job_control_command('stop', job_key=job_key), origin=origin,
+            self.build_job_control_command('stop', job_key=job_key), origin=origin,
         )
         return {
             'client_id': client_id,

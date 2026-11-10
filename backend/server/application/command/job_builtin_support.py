@@ -14,10 +14,12 @@ class JobBuiltinSupport:
         'stop <name>|ps|status <name>|stop-all|logs <name> [--follow|-f]]'
     )
 
-    def __init__(self, server, conn, remote_execution_service, history_entry_id_provider=None):
+    def __init__(self, server, conn, remote_execution_service, background_job_service, job_catalog_service, history_entry_id_provider=None):
         self.server = server
         self.conn = conn
         self.remote_execution_service = remote_execution_service
+        self.background_job_service = background_job_service
+        self.job_catalog_service = job_catalog_service
         self.history_entry_id_provider = history_entry_id_provider or (lambda: '')
 
     @property
@@ -26,7 +28,7 @@ class JobBuiltinSupport:
 
     def _send(self, action, **payload):
         # Already inside the terminal's foreground slot: never acquire it again.
-        command = self.server.web_service.job_api.background_job_service._build_job_control_command(action, **payload)
+        command = self.background_job_service.build_job_control_command(action, **payload)
         actions = {'start': 'start_job', 'stop': 'stop_job', 'stop_all': 'stop_all_jobs'}
         history = getattr(self.server, 'command_history_orchestrator', None)
         entry_id = self.history_entry_id_provider() or ''
@@ -65,8 +67,8 @@ class JobBuiltinSupport:
             history.record_background_job_result(self.conn, entry_id, result)
         yield (status, result['message'], *rest)
 
-    def _job_logs(self, args, job_api):
-        """Stream persisted report messages using the same Server Job API as Web."""
+    def _job_logs(self, args):
+        """Stream persisted reports through the shared Job application service."""
         follow = False
         names = []
         for token in args:
@@ -88,7 +90,7 @@ class JobBuiltinSupport:
         try:
             # The list is newest first. Keep following this exact job_id rather
             # than switching silently when a new instance with the same name runs.
-            rows = job_api.list_background_jobs(self.client_id)
+            rows = self.background_job_service.list_jobs(self.client_id)
             row = next((item for item in rows if isinstance(item, dict)
                         and any(str(item.get(key) or '').casefold() == name.casefold()
                                 for key in ('job_key', 'job_name', 'job_id'))), None)
@@ -99,7 +101,7 @@ class JobBuiltinSupport:
             if not job_id:
                 yield 0, 'Job record is missing its job_id'
                 return
-            job = job_api.get_background_job(self.client_id, job_id)
+            job = self.background_job_service.get_job(self.client_id, job_id)
             yield 1, (f"Job {job.get('job_key') or job.get('job_name') or name} "
                       f"[{job.get('state') or 'unknown'}] {job_id}")
             cursor = 0
@@ -134,7 +136,7 @@ class JobBuiltinSupport:
                         yield 0, 'command cancelled'
                         return
                     time.sleep(0.2)
-                job = job_api.get_background_job(self.client_id, job_id)
+                job = self.background_job_service.get_job(self.client_id, job_id)
         except (ValueError, FileNotFoundError, LookupError) as exc:
             yield 0, str(exc)
 
@@ -153,14 +155,12 @@ class JobBuiltinSupport:
         except ValueError as exc:
             yield 0, f'Invalid job arguments: {exc}'
             return
-        job_api = self.server.web_service.job_api
-
         if subcommand == 'list':
             if args not in ([], ['--json']):
                 yield 0, self.HELP
                 return
             platform = str(getattr(getattr(self.conn, 'session_info', None), 'os_alias', '') or '')
-            jobs = [item for item in job_api.list_background_job_catalog(self.client_id)
+            jobs = [item for item in self.job_catalog_service.list_background_job_catalog()
                     if visible_on_platform(item, platform)]
             if args == ['--json']:
                 yield 1, json.dumps([{'name': str(item.get('job_name') or ''),
@@ -173,7 +173,7 @@ class JobBuiltinSupport:
             return
 
         if subcommand == 'logs':
-            yield from self._job_logs(args, job_api)
+            yield from self._job_logs(args)
             return
 
         if subcommand == 'start':
@@ -199,7 +199,7 @@ class JobBuiltinSupport:
                     yield 0, '--params must contain a JSON object'
                     return
             try:
-                mode = job_api.prepare_background_job_start(self.client_id, name, mode)
+                mode = self.background_job_service.prepare_job_start(self.client_id, name, mode)
             except (ValueError, FileNotFoundError) as exc:
                 yield 0, str(exc)
                 return

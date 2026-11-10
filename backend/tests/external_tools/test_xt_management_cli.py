@@ -25,13 +25,12 @@ class Cli(ExternalToolCliBuiltinSupport):
         self.conn = ClientSession(SimpleNamespace(send=lambda _: None), {
             'id': 'test-client', 'os_alias': 'win', 'arch': 'amd64', 'cwd': 'C:/',
         })
-        self.server = SimpleNamespace(web_service=SimpleNamespace(assembly=SimpleNamespace(
-            external_tool_catalog_service=self.catalog,
-            external_tool_runtime_service=self.runtime,
-            external_tool_param_preset_store=SimpleNamespace(list_presets=lambda _: [
-                {'name': 'office', 'preset_id': 'abc', 'params': {'server_addr': '192.0.2.1'}}
-            ]),
-        )))
+        self.server = SimpleNamespace()
+        self.catalog_service = self.catalog
+        self.runtime_service = self.runtime
+        self.param_preset_store = SimpleNamespace(list_presets=lambda _: [
+            {'name': 'office', 'preset_id': 'abc', 'params': {'server_addr': '192.0.2.1'}}
+        ])
         self.command_processor_factory = None
         self.history_entry_id_provider = lambda: ''
         self.calls = []

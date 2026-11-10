@@ -96,6 +96,8 @@ WebTaskRunner 消费执行事件
 
 `CommandExecutionPipeline` 统一负责“开始、逐段输出、错误、结束”事件；实际执行入口则由 `CommandExecutor` 处理。这个分层允许 Web、Server CLI 等不同入口沿用命令解释规则，而不要求它们都使用 Web Task。
 
+Server Built-in 的 Job、Artifact、设备事件、Pinned Path 和 External Tool 等能力由应用装配层交给 `CommandExecutorFactory`，命令处理器直接使用相应业务服务和 Store。Web API 也调用这些服务，因此终端命令与管理界面共用同一套校验、数据及事件发布规则。
+
 首先会处理纯语法入口（例如历史索引快捷回放），再按名称解析。Server Built-in 由独立处理器接管；否则交给命令规划器，规划器可以解析 Alias、构造普通 Client 命令、ACMD 参数命令或结构化 Script 计划。规划器只产生应当执行的命令类型、文本与 `extra`，真正的远程执行交给 Session 的命令通道。
 
 需要区分以下语义：

@@ -16,7 +16,9 @@ class CommandExecutor:
         remote_execution_service=None,
         planner=None,
         use_foreground_guard: bool = False,
-        foreground_source: str = 'cli'
+        foreground_source: str = 'cli',
+        *,
+        builtin_services
     ):
         self.conn = conn
         self.server = server
@@ -41,6 +43,7 @@ class CommandExecutor:
             history_entry_id_provider=self._get_current_history_entry_id,
             plan_executor_factory=self._create_plan_executor,
             command_processor_factory=self._create_nested_command_processor,
+            builtin_services=builtin_services,
         )
 
     def _get_current_history_entry_id(self) -> str:

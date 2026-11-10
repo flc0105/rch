@@ -29,10 +29,10 @@ class JobApi:
             {'seq': 2, 'status': 0, 'text': 'failure report'},
         ]
         self.state = 'running'
-    def list_background_jobs(self, client_id):
+    def list_jobs(self, client_id):
         assert client_id == 'client-A'
         return self.jobs
-    def get_background_job(self, client_id, job_id):
+    def get_job(self, client_id, job_id):
         assert client_id == 'client-A' and job_id in ('new-id', 'old-id', 'other-id')
         self.details += 1
         return dict(job_id=job_id, job_key='clip', state=self.state, messages=list(self.output))
@@ -46,8 +46,10 @@ class JobServerTests(unittest.TestCase):
             session_info=SimpleNamespace(client_id='client-A'),
             get_foreground_task=lambda: self.task,
         )
-        self.server = SimpleNamespace(web_service=SimpleNamespace(job_api=self.api))
-        self.support = JobBuiltinSupport(self.server, self.conn, None)
+        self.server = SimpleNamespace()
+        self.support = JobBuiltinSupport(
+            self.server, self.conn, None, background_job_service=self.api, job_catalog_service=None,
+        )
 
     def run_builtin(self, args):
         return list(self.support.job(args))
@@ -157,14 +159,15 @@ class JobCompletionTests(unittest.TestCase):
                  'visible_on_platform': lambda item, platform: platform in item.get('platforms', [])}
         exec(compile(ast.Module(body=[cls], type_ignores=[]), '<provider>', 'exec'), scope)
         class Api:
-            def list_background_job_catalog(self, client_id):
+            def list_background_job_catalog(self):
                 return [{'job_name': 'alpha', 'platforms': ['mac']},
                         {'job_name': 'win_only', 'platforms': ['win']}]
-            def list_background_jobs(self, client_id):
+            def list_jobs(self, client_id):
                 return [{'job_key': 'alpha', 'state': 'running'},
                         {'job_key': 'beta', 'state': 'stopping'},
                         {'job_key': 'old', 'state': 'stopped'}]
-        provider = scope['JobCommandCompletionProvider'](SimpleNamespace(web_service=SimpleNamespace(job_api=Api())))
+        api = Api()
+        provider = scope['JobCommandCompletionProvider'](SimpleNamespace(), api, api)
         for action, expected in [('start', ['alpha']), ('stop', ['alpha','beta']),
                                  ('status', ['alpha', 'beta']), ('logs', ['alpha', 'beta', 'old'])]:
             with self.subTest(action=action):

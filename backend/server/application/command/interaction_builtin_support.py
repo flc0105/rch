@@ -6,19 +6,19 @@ class BuiltinInteractionError(RuntimeError):
 
 
 class BuiltinInteractionSupport:
-    def __init__(self, server, conn):
-        self.server = server
+    def __init__(self, interaction_broker, task_store, conn):
+        self.interaction_broker = interaction_broker
+        self.task_store = task_store
         self.conn = conn
 
     def _request(self, kind, message, *, title='', timeout=90, placeholder='', options=None, preview=None):
         foreground = self.conn.get_foreground_task() or {}
         task_id = str(foreground.get('task_id') or '').strip()
         client_id = str(getattr(getattr(self.conn, 'session_info', None), 'client_id', '') or '')
-        service = self.server.web_service
-        task = service.task_store.get_task(task_id) if task_id else None
+        task = self.task_store.get_task(task_id) if task_id else None
         if not task or task.get('client_id') != client_id or not task.get('tab_id'):
             raise BuiltinInteractionError('Interactive RCH builtin requires an active Web task')
-        return service.interaction_broker.request(
+        return self.interaction_broker.request(
             task_id=task_id, client_id=client_id, tab_id=task['tab_id'],
             kind=kind, message=message, title=title,
             timeout_seconds=timeout, placeholder=placeholder, options=options, preview=preview,

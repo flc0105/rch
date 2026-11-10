@@ -36,6 +36,7 @@ class BuiltinCommandHandler:
         history_entry_id_provider,
         plan_executor_factory,
         command_processor_factory,
+        builtin_services,
     ):
         self.conn = conn
         self.server = server
@@ -44,6 +45,7 @@ class BuiltinCommandHandler:
         self.history_entry_id_provider = history_entry_id_provider
         self.plan_executor_factory = plan_executor_factory
         self.command_processor_factory = command_processor_factory
+        self.services = builtin_services
 
         self.upload_support = UploadBuiltinSupport(
             conn=self.conn,
@@ -53,6 +55,8 @@ class BuiltinCommandHandler:
         self.job_support = JobBuiltinSupport(
             server=self.server, conn=self.conn,
             remote_execution_service=self.remote_execution_service,
+            background_job_service=self.services.background_job_service,
+            job_catalog_service=self.services.job_catalog_service,
             history_entry_id_provider=self.history_entry_id_provider,
         )
         self.script_support = ScriptBuiltinSupport(
@@ -66,12 +70,14 @@ class BuiltinCommandHandler:
             plan_builder=self.plan_builder,
             plan_executor_factory=self.plan_executor_factory,
             history_entry_id_provider=self.history_entry_id_provider,
+            artifact_service=self.services.artifact_service,
+            event_bus=self.services.event_bus,
         )
         self.command_notify_support = CommandNotifyBuiltinSupport(
-            server=self.server,
             conn=self.conn,
             plan_builder=self.plan_builder,
             history_entry_id_provider=self.history_entry_id_provider,
+            device_event_service=self.services.device_event_service,
         )
 
         self.alias_support = AliasBuiltinSupport(
@@ -85,7 +91,7 @@ class BuiltinCommandHandler:
             command_processor_factory=self.command_processor_factory,
         )
         self.pinned_path_support = PinnedPathBuiltinSupport(
-            pinned_path_store=self.server.web_service.pinned_path_api.pinned_path_store,
+            pinned_path_store=self.services.pinned_path_store,
             command_history=self.server.command_history,
             conn=self.conn,
             history_entry_id_provider=self.history_entry_id_provider,
@@ -103,6 +109,9 @@ class BuiltinCommandHandler:
             conn=self.conn,
             command_processor_factory=self.command_processor_factory,
             history_entry_id_provider=self.history_entry_id_provider,
+            catalog_service=self.services.external_tool_catalog_service,
+            runtime_service=self.services.external_tool_runtime_service,
+            param_preset_store=self.services.external_tool_param_preset_store,
         )
 
     def get_command_candidates(self):

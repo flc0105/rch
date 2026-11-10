@@ -3,6 +3,7 @@ import os
 from datetime import datetime
 
 from core.utils.text_encoding import encode_for_existing_file
+from server.application.artifact.artifact_events import publish_artifact_created
 
 
 class WebArtifactApi:
@@ -43,25 +44,7 @@ class WebArtifactApi:
         return self.artifact_service.get_artifact_by_id(artifact_id)
 
     def publish_artifact_created(self, artifact_info: dict):
-        if not isinstance(artifact_info, dict):
-            return
-
-        self.event_bus.publish('artifact_created', {
-            'artifact_id': artifact_info.get('artifact_id', ''),
-            'artifact_type': artifact_info.get('artifact_type', ''),
-            'category': artifact_info.get('category', ''),
-            'hostname': artifact_info.get('hostname', ''),
-            'machine_id': artifact_info.get('machine_id', ''),
-            'client_id': artifact_info.get('client_id', ''),
-            'source_command_id': artifact_info.get('source_command_id'),
-            'original_name': artifact_info.get('original_name', ''),
-            'stored_name': artifact_info.get('stored_name', ''),
-            'size': artifact_info.get('size', 0),
-            'created_at': artifact_info.get('created_at', ''),
-            # 'source_type': artifact_info.get('source_type', ''),
-            'download_url': artifact_info.get('download_url', ''),
-            'preview_url': artifact_info.get('preview_url', ''),
-        })
+        publish_artifact_created(self.event_bus, artifact_info)
 
     def bind_uploaded_artifact_to_history(self, client_id: str, source_command_id, artifact: dict) -> bool:
         if not client_id or source_command_id is None:

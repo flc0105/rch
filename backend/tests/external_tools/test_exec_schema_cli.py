@@ -94,10 +94,10 @@ class CliProbe(ExternalToolCliBuiltinSupport):
     def __init__(self):
         self.captured = []
         self.conn = SimpleNamespace(session_info=SimpleNamespace(os_alias='mac', arch='amd64', cwd='/tmp'))
-        self.server = SimpleNamespace(web_service=SimpleNamespace(assembly=SimpleNamespace(
-            external_tool_catalog_service=catalog(),
-            external_tool_runtime_service=ExternalToolRuntimeService(catalog(), command_execution_api=None),
-        )))
+        self.server = SimpleNamespace()
+        self.catalog_service = catalog()
+        self.runtime_service = ExternalToolRuntimeService(self.catalog_service, command_execution_api=None)
+        self.param_preset_store = None
         self.command_processor_factory = None
         self.history_entry_id_provider = lambda: ''
 

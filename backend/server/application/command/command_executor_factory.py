@@ -18,12 +18,19 @@ class CommandExecutorFactory:
     def __init__(self, server, remote_execution_service):
         self.server = server
         self.remote_execution_service = remote_execution_service
+        self.builtin_services = None
+
+    def bind_builtin_services(self, services):
+        self.builtin_services = services
 
     def create(self, conn, *, use_foreground_guard: bool = False, foreground_source: str = 'cli'):
+        if self.builtin_services is None:
+            raise RuntimeError('Command builtin services have not been bound')
         return CommandExecutor(
             conn,
             self.server,
             remote_execution_service=self.remote_execution_service,
+            builtin_services=self.builtin_services,
             use_foreground_guard=use_foreground_guard,
             foreground_source=foreground_source,
         )

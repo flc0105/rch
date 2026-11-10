@@ -6,6 +6,7 @@ from server.application.artifact.artifact_service import WebArtifactService
 from server.application.artifact.remote_file_service import WebRemoteFileService
 from server.application.history.transfer_activity_recorder import TransferActivityRecorder
 from server.application.command.command_executor_factory import CommandExecutorFactory
+from server.application.command.command_builtin_services import CommandBuiltinServices
 from server.application.completion.command_completion_service import ServerCommandCompletionService
 from server.application.connection.connection_history_store import ConnectionHistoryStore
 from server.application.connection.connection_service import WebConnectionService
@@ -198,6 +199,8 @@ class ServerApplicationAssembly:
             server=self.server,
             remote_execution_service=self.remote_execution_service,
             pinned_path_store=self.pinned_path_store,
+            job_catalog_service=self.job_catalog_service,
+            background_job_service=self.background_job_service,
             external_tool_catalog_service=self.external_tool_catalog_service,
         )
 
@@ -343,6 +346,19 @@ class ServerApplicationAssembly:
         )
 
         self._wire_cross_dependencies()
+        self.command_executor_factory.bind_builtin_services(CommandBuiltinServices(
+            background_job_service=self.background_job_service,
+            job_catalog_service=self.job_catalog_service,
+            artifact_service=self.artifact_service,
+            event_bus=self.event_bus,
+            device_event_service=self.device_event_service,
+            pinned_path_store=self.pinned_path_store,
+            external_tool_catalog_service=self.external_tool_catalog_service,
+            external_tool_runtime_service=self.external_tool_runtime_service,
+            external_tool_param_preset_store=self.external_tool_param_preset_store,
+            interaction_broker=self.interaction_broker,
+            task_store=self.task_store,
+        ))
 
     def _wire_cross_dependencies(self):
         """

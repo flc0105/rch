@@ -17,11 +17,11 @@ class CommandNotifyBuiltinSupport:
 
     EVENT_KIND = 'command.notify.finished'
 
-    def __init__(self, server, conn, plan_builder, history_entry_id_provider):
-        self.server = server
+    def __init__(self, conn, plan_builder, history_entry_id_provider, device_event_service):
         self.conn = conn
         self.plan_builder = plan_builder
         self.history_entry_id_provider = history_entry_id_provider
+        self.device_event_service = device_event_service
 
     @staticmethod
     def _duration_ms(started_at: float) -> int:
@@ -66,7 +66,7 @@ class CommandNotifyBuiltinSupport:
         }
 
         try:
-            self.server.web_service.device_event_api.ingest(payload)
+            self.device_event_service.ingest(payload)
         except Exception:
             # notify 是附加提醒；提醒失败不能改变被包装命令本身的执行结果。
             logger.error('Failed to emit notify completion event', exc_info=True)

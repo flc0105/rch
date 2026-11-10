@@ -18,7 +18,7 @@ class ServerCommandCompletionService:
     server 侧 command bar 补全服务。
     """
 
-    def __init__(self, server, remote_execution_service, pinned_path_store, external_tool_catalog_service=None):
+    def __init__(self, server, remote_execution_service, pinned_path_store, job_catalog_service, background_job_service, external_tool_catalog_service=None):
         self.server = server
         self.parser = CommandCompletionParser()
         self.registry = CommandCompletionRegistry([
@@ -31,7 +31,10 @@ class ServerCommandCompletionService:
                 command_history=server.command_history,
             ),
             RegisteredServerSubcommandCompletionProvider(),
-            JobCommandCompletionProvider(server=server),
+            JobCommandCompletionProvider(
+                server=server, job_catalog_service=job_catalog_service,
+                background_job_service=background_job_service,
+            ),
             ScriptCommandCompletionProvider(
                 server=server,
             ),

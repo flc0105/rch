@@ -21,11 +21,14 @@ class ExternalToolCliBuiltinSupport:
     - 状态变化通过现有 External Tool lifecycle / Notification 管线广播。
     """
 
-    def __init__(self, server, conn, command_processor_factory, history_entry_id_provider):
+    def __init__(self, server, conn, command_processor_factory, history_entry_id_provider, catalog_service, runtime_service, param_preset_store):
         self.server = server
         self.conn = conn
         self.command_processor_factory = command_processor_factory
         self.history_entry_id_provider = history_entry_id_provider
+        self.catalog_service = catalog_service
+        self.runtime_service = runtime_service
+        self.param_preset_store = param_preset_store
 
     def _history(self):
         return getattr(self.server, 'command_history_orchestrator', None)
@@ -35,26 +38,10 @@ class ExternalToolCliBuiltinSupport:
         if history is not None:
             history.suppress_xt_query(self.conn, self.history_entry_id_provider())
 
-    def _catalog_service(self):
-        web_service = getattr(self.server, 'web_service', None)
-        assembly = getattr(web_service, 'assembly', None)
-        service = getattr(assembly, 'external_tool_catalog_service', None)
-        if service is None:
-            raise RuntimeError('external tool catalog service is not available')
-        return service
-
-    def _runtime_service(self):
-        web_service = getattr(self.server, 'web_service', None)
-        assembly = getattr(web_service, 'assembly', None)
-        service = getattr(assembly, 'external_tool_runtime_service', None)
-        if service is None:
-            raise RuntimeError('external tool runtime service is not available')
-        return service
-
     def _client_platform(self) -> str:
         info = getattr(self.conn, 'session_info', None)
         value = getattr(info, 'os_alias', '') if info is not None else ''
-        normalized = self._catalog_service()._normalize_platform(value or '')
+        normalized = self.catalog_service._normalize_platform(value or '')
         if not normalized:
             raise ValueError('client platform is required for external tool command resolution')
         return normalized
@@ -62,7 +49,7 @@ class ExternalToolCliBuiltinSupport:
     def _client_arch(self) -> str:
         info = getattr(self.conn, 'session_info', None)
         value = getattr(info, 'arch', '') if info is not None else ''
-        normalized = self._catalog_service()._normalize_arch(value or '')
+        normalized = self.catalog_service._normalize_arch(value or '')
         if not normalized:
             raise ValueError('client arch is required for external tool command resolution')
         return normalized
@@ -89,14 +76,14 @@ class ExternalToolCliBuiltinSupport:
         return raw
 
     def _resolve_exec_target(self, exec_name: str) -> dict:
-        return self._catalog_service().resolve_exec_target(
+        return self.catalog_service.resolve_exec_target(
             exec_name,
             platform_alias=self._client_platform(),
             arch=self._client_arch(),
         )
 
     def _build_client_payload(self, target: dict, raw_args: str = '') -> dict:
-        runtime_service = self._runtime_service()
+        runtime_service = self.runtime_service
         payload = runtime_service.payload_builder.build_client_exec_payload(
             target,
             raw_args=self._strip_raw_arg_separator(raw_args),
@@ -164,7 +151,7 @@ class ExternalToolCliBuiltinSupport:
         return result
 
     def _build_cli_list_payload(self) -> list[dict]:
-        catalog = self._catalog_service()
+        catalog = self.catalog_service
         items = catalog.list_exec_targets(
             platform_alias=self._client_platform(),
             arch=self._client_arch(),
@@ -274,7 +261,7 @@ class ExternalToolCliBuiltinSupport:
             raise ValueError(f'Invalid xt arguments: {exc}') from exc
 
     def _installed_packages(self, packages: list[dict]) -> dict[tuple[str, str], dict]:
-        builder = self._runtime_service().payload_builder
+        builder = self.runtime_service.payload_builder
         payloads, keys = [], []
         for package in packages:
             package_id = str(package.get('id') or '')
@@ -297,15 +284,15 @@ class ExternalToolCliBuiltinSupport:
         tokens = self._tokens(args)
         if any(token not in ('--json', '--installed', '-i') for token in tokens) or len(tokens) != len(set(tokens)):
             raise ValueError('Usage: xt package list [--installed|-i] [--json]')
-        packages = [p for p in self._catalog_service().list_packages() if not p.get('error')
-                    and self._catalog_service()._platform_matches(p, self._client_platform())
-                    and self._catalog_service()._arch_matches(p, self._client_arch())]
+        packages = [p for p in self.catalog_service.list_packages() if not p.get('error')
+                    and self.catalog_service._platform_matches(p, self._client_platform())
+                    and self.catalog_service._arch_matches(p, self._client_arch())]
         statuses = self._installed_packages(packages)
         only_installed = '--installed' in tokens or '-i' in tokens
         rows = []
         for package in packages:
             package_id = str(package.get('id') or '')
-            key = self._catalog_service().select_package_key(package, self._client_platform(), self._client_arch())
+            key = self.catalog_service.select_package_key(package, self._client_platform(), self._client_arch())
             installed = is_installed_status(self._install_status_text(statuses.get((package_id, key))))
             if only_installed and not installed:
                 continue
@@ -325,11 +312,11 @@ class ExternalToolCliBuiltinSupport:
         kwargs = {'client_id': client_id, 'operation': operation, 'state': state,
                   'result': result, 'error': error}
         try:
-            lifecycle = getattr(self._runtime_service(), 'client_lifecycle_runtime', None)
+            lifecycle = getattr(self.runtime_service, 'client_lifecycle_runtime', None)
             if lifecycle is None:
                 return
             if group == 'package':
-                kwargs.update(action=operation, package=self._catalog_service().get_package(target))
+                kwargs.update(action=operation, package=self.catalog_service.get_package(target))
             else:
                 kwargs.update(action='daemon', meta=self._instance_meta(target.split('/', 1)[0]),
                               instance_id=target.split('/', 1)[1])
@@ -342,8 +329,8 @@ class ExternalToolCliBuiltinSupport:
         names = self._tokens(args)
         if len(names) != 1:
             raise ValueError(f'Usage: xt package {operation} <package-id>')
-        package = self._catalog_service().get_package(names[0])
-        payload = self._runtime_service().payload_builder.build_client_install_payload(package,
+        package = self.catalog_service.get_package(names[0])
+        payload = self.runtime_service.payload_builder.build_client_install_payload(package,
                        platform_alias=self._client_platform(), arch=self._client_arch())
         before = self._nested_json('external_tool_install_status', payload)
         status = self._install_status_text(before)
@@ -373,12 +360,12 @@ class ExternalToolCliBuiltinSupport:
         tokens = self._tokens(args)
         if len(tokens) not in (1, 2) or (len(tokens) == 2 and tokens[-1] != '--json'):
             raise ValueError('Usage: xt module list <package-id> [--json]')
-        package = self._catalog_service().get_package(tokens[0])
-        package_key = self._catalog_service().select_package_key(package, self._client_platform(), self._client_arch())
+        package = self.catalog_service.get_package(tokens[0])
+        package_key = self.catalog_service.select_package_key(package, self._client_platform(), self._client_arch())
         rows = []
         for module in package.get('modules') or []:
             try:
-                self._catalog_service().resolve_binary_rel_path(package, module.get('binary') or '', package_key)
+                self.catalog_service.resolve_binary_rel_path(package, module.get('binary') or '', package_key)
             except ValueError:
                 continue
             rows.append({'module_id': f'{package["id"]}.{module["id"]}',
@@ -388,7 +375,7 @@ class ExternalToolCliBuiltinSupport:
         ], 'json' if '--json' in tokens else 'table')
 
     def _instance_meta(self, tool_id: str) -> dict:
-        meta = self._catalog_service().get_tool(tool_id)
+        meta = self.catalog_service.get_tool(tool_id)
         if str(meta.get('execution') or '') != 'daemon':
             raise ValueError(f'Instance commands require a daemon module: {tool_id}')
         return meta
@@ -400,7 +387,7 @@ class ExternalToolCliBuiltinSupport:
         return value
 
     def _instance_action_payload(self, meta: dict, instance_id: str, action: str = 'status') -> dict:
-        return self._runtime_service().payload_builder.build_client_action_payload(meta, action,
+        return self.runtime_service.payload_builder.build_client_action_payload(meta, action,
                    instance_id=self._instance_id(instance_id))
 
     def _instance_read(self, meta: dict, instance_id: str) -> dict:
@@ -428,8 +415,7 @@ class ExternalToolCliBuiltinSupport:
         instance_id = self._instance_id(options.get('--id') or '')
         params = {}
         if '--preset' in options:
-            web = self.server.web_service.assembly
-            presets = web.external_tool_param_preset_store.list_presets(meta['tool_id'])
+            presets = self.param_preset_store.list_presets(meta['tool_id'])
             matches = [p for p in presets if p.get('name') == options['--preset'] or p.get('preset_id') == options['--preset']]
             if len(matches) != 1:
                 raise FileNotFoundError(f'Preset not found: {options["--preset"]}')
@@ -445,7 +431,7 @@ class ExternalToolCliBuiltinSupport:
         # A module with an instance_name parameter should normally match the CLI identity.
         if 'instance_name' not in params and any(p.get('name') == 'instance_name' for p in meta.get('params') or []):
             params['instance_name'] = instance_id
-        builder = self._runtime_service().payload_builder
+        builder = self.runtime_service.payload_builder
         start_payload = builder.build_client_start_payload(meta, params=params, instance_id=instance_id,
                   platform_alias=self._client_platform(), arch=self._client_arch())
         target = f'{meta["tool_id"]}/{instance_id}'
@@ -484,13 +470,13 @@ class ExternalToolCliBuiltinSupport:
             tokens = ['', '--json']
         target = tokens[0] if tokens else ''
         json_output = '--json' in tokens
-        metas = [m for m in self._catalog_service().list_tools() if str(m.get('execution') or '') == 'daemon'
+        metas = [m for m in self.catalog_service.list_tools() if str(m.get('execution') or '') == 'daemon'
                  and (not target or m.get('package_id') == target or m.get('tool_id') == target)]
         if target and not metas:
             if '.' in target:
                 self._instance_meta(target)  # distinguish an unknown module from a non-daemon one
             else:
-                self._catalog_service().get_package(target)
+                self.catalog_service.get_package(target)
         if not metas:
             return self._render_rows([], 'json' if json_output else 'table')
         rows = self._load_instance_rows(metas)
@@ -513,7 +499,7 @@ class ExternalToolCliBuiltinSupport:
         if len(tokens) == 2:
             return self._instance_meta(tokens[0]), self._instance_id(tokens[1])
         instance_id = self._instance_id(tokens[0])
-        metas = [m for m in self._catalog_service().list_tools()
+        metas = [m for m in self.catalog_service.list_tools()
                  if str(m.get('execution') or '') == 'daemon']
         matches = sorted({row['module_id'] for row in self._load_instance_rows(metas)
                           if row['instance_id'] == instance_id})
@@ -604,7 +590,7 @@ class ExternalToolCliBuiltinSupport:
                             raise ValueError('Instance was already stopped; restart did not occur')
                         if stopped.get('running') or not isinstance(stopped.get('stop_result'), dict):
                             raise RuntimeError('Restart aborted: process was not stopped by this operation')
-                    start_payload = self._runtime_service().payload_builder.build_client_start_payload(meta,
+                    start_payload = self.runtime_service.payload_builder.build_client_start_payload(meta,
                               params=definition['params'], instance_id=instance_id,
                               platform_alias=self._client_platform(), arch=self._client_arch())
                     dispatched = True
