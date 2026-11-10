@@ -3,7 +3,13 @@
       class="terminal-output"
       :class="{ 'terminal-output-empty': !lines.length }"
       ref="terminalOutputRef"
+      @scroll.passive="handleTerminalViewportScroll"
+      @wheel.passive="handleTerminalEdgeWheel"
+      @touchstart.passive="handleTerminalEdgeTouchStart"
+      @touchmove.passive="handleTerminalEdgeTouchMove"
+      @pointerup.passive="handleTerminalViewportScroll"
   >
+    <div ref="terminalHistoryTopEdge" class="terminal-history-top-edge" aria-hidden="true"></div>
     <div v-if="!lines.length" class="terminal-empty">
       <div class="terminal-empty-title">Console ready</div>
       <div class="terminal-empty-text">
@@ -15,6 +21,7 @@
       <div
           v-for="block in terminalBlocks"
           :key="block.key"
+          :data-terminal-block-key="block.key"
           class="terminal-command-block"
           :class="{
             'terminal-command-block-actionable': canUseTerminalBlockActions(block),
@@ -27,6 +34,7 @@
         >
           <div
               class="terminal-line terminal-line-command"
+              :data-terminal-seq="block.commandLine.line.__terminalSeq ?? null"
               :class="`line-${block.commandLine.line.kind || 'default'}`"
           >
             <span v-if="showsTerminalDollarPrompt(block)" class="terminal-prefix">$</span>
@@ -57,6 +65,7 @@
 
             <div
                 class="terminal-line terminal-command-finished-row"
+                :data-terminal-seq="entry.line.__terminalSeq ?? null"
                 :class="`line-${entry.line.kind || 'default'}`"
             >
               <span class="terminal-text">{{ entry.line.text }}</span>
@@ -122,6 +131,7 @@
           <div
               v-else
               class="terminal-line"
+              :data-terminal-seq="entry.line.__terminalSeq ?? null"
               :class="[`line-${entry.line.kind || 'default'}`, {
                 'terminal-warning-with-actions': entry.line.kind === 'warning' &&
                   (getSuggestedCommandAction(entry.line) || getClientRevisionDetails(entry.line)),
@@ -266,6 +276,7 @@ import {
   isTerminalCommandFinishedText,
 } from '../composables/terminalMarkers.js'
 import { buildTerminalOutputJson, buildTerminalOutputText } from '../utils/terminalOutputExport.js'
+import { TERMINAL_HISTORY } from '../data/terminalHistoryConfig.js'
 import { canRerunTerminalSource } from '../utils/terminalRerun.js'
 import { getTerminalReplayAction } from '../utils/terminalOperation.js'
 
@@ -280,6 +291,10 @@ export default {
     lines: {
       type: Array,
       default: () => [],
+    },
+    historyReader: {
+      type: Function,
+      default: null,
     },
 
     artifacts: {
@@ -298,7 +313,7 @@ export default {
     },
   },
 
-  emits: ['preview-artifact', 'open-json', 'artifact-saved', 'rerun-terminal-block', 'suggest-command', 'open-task-details'],
+  emits: ['preview-artifact', 'open-json', 'artifact-saved', 'rerun-terminal-block', 'suggest-command', 'open-task-details', 'terminal-scroll'],
 
   data() {
     return {
@@ -314,9 +329,29 @@ export default {
     }
   },
 
+  mounted() {
+    if (typeof window !== 'undefined') {
+      this.setupTerminalHistoryEdgeObserver()
+      window.addEventListener('resize', this.setupTerminalHistoryEdgeObserver)
+    }
+  },
+  beforeUnmount() {
+    this._terminalHistoryEdgeObserver?.disconnect()
+    this._terminalObservedScrollRoot?.removeEventListener('scroll', this.handleTerminalViewportScroll)
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('resize', this.setupTerminalHistoryEdgeObserver)
+    }
+  },
+
   computed: {
     terminalBlocks() {
-      const safeLines = Array.isArray(this.lines) ? this.lines : []
+      return this.buildTerminalBlocksFromLines(this.lines)
+    },
+  },
+
+  methods: {
+    buildTerminalBlocksFromLines(inputLines) {
+      const safeLines = Array.isArray(inputLines) ? inputLines : []
       const blocks = []
       let currentBlock = null
       const operationBlocks = new Map()
@@ -346,7 +381,7 @@ export default {
 
         if (shouldStartNewBlock) {
           currentBlock = {
-            key: `terminal-block-${index}`,
+            key: `terminal-block-${line?.__terminalSeq ?? index}`,
             startIndex: index,
             commandLine: line?.kind === 'command' ? entry : null,
             lines: [],
@@ -379,9 +414,106 @@ export default {
         }
       })
     },
-  },
 
-  methods: {
+
+    terminalScrollElement() {
+      const mobile = typeof window !== 'undefined' && window.matchMedia?.('(max-width: 960px)').matches
+      return mobile ? (document.getElementById('app') || document.scrollingElement || document.documentElement)
+        : this.$refs.terminalOutputRef
+    },
+    setupTerminalHistoryEdgeObserver() {
+      this._terminalHistoryEdgeObserver?.disconnect()
+      this._terminalObservedScrollRoot?.removeEventListener('scroll', this.handleTerminalViewportScroll)
+      const root = this.terminalScrollElement()
+      const edge = this.$refs.terminalHistoryTopEdge
+      if (!root || !edge) return
+      // On narrow screens #app owns scrolling, not the TerminalOutput element.
+      this._terminalObservedScrollRoot = root !== this.$refs.terminalOutputRef ? root : null
+      this._terminalObservedScrollRoot?.addEventListener('scroll', this.handleTerminalViewportScroll, { passive: true })
+      if (typeof IntersectionObserver === 'undefined') return
+      this._terminalHistoryEdgeObserver = new IntersectionObserver(entries => {
+        if (entries.some(entry => entry.isIntersecting)) this.handleTerminalViewportScroll()
+      }, { root, rootMargin: `${TERMINAL_HISTORY.scrollEdgePx}px 0px 0px 0px` })
+      this._terminalHistoryEdgeObserver.observe(edge)
+    },
+    requestOlderTerminalPage() {
+      const element = this.terminalScrollElement()
+      if (element?.scrollTop <= TERMINAL_HISTORY.scrollEdgePx) {
+        this.$emit('terminal-scroll', { atTop: true, atBottom: false })
+      }
+    },
+    handleTerminalEdgeWheel(event) {
+      if (event.deltaY < 0) this.requestOlderTerminalPage()
+    },
+    handleTerminalEdgeTouchStart(event) {
+      this._terminalHistoryTouchY = event.touches?.[0]?.clientY
+    },
+    handleTerminalEdgeTouchMove(event) {
+      const y = event.touches?.[0]?.clientY
+      if (Number.isFinite(y) && Number.isFinite(this._terminalHistoryTouchY) && y > this._terminalHistoryTouchY) {
+        this.requestOlderTerminalPage()
+      }
+      this._terminalHistoryTouchY = y
+    },
+    handleTerminalViewportScroll() {
+      const element = this.terminalScrollElement()
+      if (!element) return
+      this.$emit('terminal-scroll', {
+        atTop: element.scrollTop <= TERMINAL_HISTORY.scrollEdgePx,
+        atBottom: element.scrollHeight - element.scrollTop - element.clientHeight <= TERMINAL_HISTORY.bottomTolerancePx,
+      })
+    },
+    captureScrollAnchor() {
+      const element = this.terminalScrollElement()
+      if (!element) return null
+      const viewport = element.getBoundingClientRect?.()
+      const top = viewport?.top ?? 0
+      const bottom = viewport?.bottom ?? Infinity
+      // A single command block can contain hundreds of output lines. Use the
+      // stable persisted row sequence, not the (moving) block's top, as anchor.
+      const rows = this.$refs.terminalOutputRef?.querySelectorAll?.('[data-terminal-seq]') || []
+      const row = [...rows].find(item => {
+        const rect = item.getBoundingClientRect()
+        return rect.bottom > top && rect.top < bottom
+      })
+      return {
+        scrollTop: element.scrollTop, scrollHeight: element.scrollHeight,
+        seq: row?.getAttribute('data-terminal-seq'), top: row?.getBoundingClientRect().top,
+      }
+    },
+    restoreScrollAnchor(anchor, { scrollDelta = 0, revealOlder = false } = {}) {
+      const element = this.terminalScrollElement()
+      if (!element || !anchor) return
+      const rows = this.$refs.terminalOutputRef?.querySelectorAll?.('[data-terminal-seq]') || []
+      const row = anchor.seq == null ? null : [...rows].find(item => item.getAttribute('data-terminal-seq') === anchor.seq)
+      if (row) {
+        // Account for wheel/drag movement during the asynchronous history read.
+        element.scrollTop += row.getBoundingClientRect().top - (anchor.top - scrollDelta)
+      } else {
+        // The anchored row may have left the window while paging forward.
+        element.scrollTop = anchor.scrollTop + scrollDelta + element.scrollHeight - anchor.scrollHeight
+      }
+      if (revealOlder) {
+        // At the exact top, expose a small amount of the adjacent older page.
+        // The movement is bounded by the viewport, never a jump to page one.
+        element.scrollTop = Math.max(0, element.scrollTop - element.clientHeight * 0.35)
+      }
+    },
+    async getCompleteTerminalBlocks() {
+      if (!this.historyReader) return this.terminalBlocks
+      const allLines = await this.historyReader(String(this.selectedId || ''))
+      return this.buildTerminalBlocksFromLines(allLines)
+    },
+    async findCompleteTerminalBlock(block) {
+      if (!this.historyReader) return block
+      const all = await this.getCompleteTerminalBlocks()
+      const operationId = block?.operationId
+      if (operationId) return all.find(item => item.operationId === operationId) || block
+      const firstSeq = block?.lines?.[0]?.line?.__terminalSeq
+      const lastSeq = block?.lines?.at(-1)?.line?.__terminalSeq
+      return all.find(item => item.lines.some(entry =>
+        entry.line?.__terminalSeq === firstSeq || entry.line?.__terminalSeq === lastSeq)) || block
+    },
 
     shouldParseTerminalLineLinks(line) {
       if (!line) return false
@@ -391,7 +523,9 @@ export default {
     },
 
     hasTerminalBlockOutput(block) {
-      return this.getTerminalBlockOutputText(block).trim().length > 0
+      return this.getTerminalBlockOutputText(block).trim().length > 0 ||
+        Boolean(this.historyReader && !block?.commandLine &&
+          block?.lines?.some(entry => this.isCommandFinishedLine(entry.line)))
     },
 
 
@@ -791,15 +925,21 @@ export default {
     },
 
     getTerminalBlockOutputText(block) {
-      return this.getTerminalBlockOutputLineEntries(block)
-          .map(entry => this.normalizeTerminalOutputLineText(entry.line?.text))
-          .join('\n')
+      const parts = []
+      this.getTerminalBlockOutputLineEntries(block).forEach(entry => {
+        const text = entry.line?.__terminalContinuation ? String(entry.line.text ?? '')
+          : this.normalizeTerminalOutputLineText(entry.line?.text)
+        if (entry.line?.__terminalContinuation && parts.length) parts[parts.length - 1] += text
+        else parts.push(text)
+      })
+      return parts.join('\n')
     },
 
     canUseTerminalBlockActions(block) {
-      if (!block || !block.commandLine) return false
+      if (!block || (!block.commandLine && !(this.historyReader &&
+        block.lines?.some(entry => this.isCommandFinishedLine(entry.line))))) return false
       // An output-free Quick Action must still expose its valid Run again action.
-      return this.getTerminalBlockOutputText(block).trim().length > 0 ||
+      return this.hasTerminalBlockOutput(block) ||
         (block.operation?.kind === 'alias' && this.canRerunTerminalBlock(block))
     },
 
@@ -931,7 +1071,8 @@ export default {
     },
 
     async copyTerminalBlockOutput(block) {
-      const outputText = this.getTerminalBlockOutputText(block)
+      const completeBlock = await this.findCompleteTerminalBlock(block)
+      const outputText = this.getTerminalBlockOutputText(completeBlock)
 
       if (!outputText.trim()) {
         ElMessage.warning('No output to copy')
@@ -973,8 +1114,8 @@ export default {
       }
     },
 
-    buildTerminalToolbarJsonEntries() {
-      return buildTerminalOutputJson(this.terminalBlocks.map(block => ({
+    buildTerminalToolbarJsonEntries(blocks = this.terminalBlocks) {
+      return buildTerminalOutputJson(blocks.map(block => ({
         hasCommand: Boolean(block.commandLine),
         command: this.getTerminalBlockCommandText(block),
         result: this.getTerminalBlockOutputText(block),
@@ -992,21 +1133,33 @@ export default {
       }
       return {
         content: buildTerminalOutputText(this.lines.map(line => ({
-          text: this.normalizeTerminalOutputLineText(line?.text),
+          text: line?.__terminalContinuation ? String(line.text ?? '') : this.normalizeTerminalOutputLineText(line?.text),
+          __terminalContinuation: line?.__terminalContinuation,
         }))),
         format: 'text',
         commandCount: this.terminalBlocks.filter(block => block.commandLine).length,
       }
     },
 
-    async copyAllTerminalOutput(format = 'text') {
-      const output = this.getTerminalToolbarOutput(format)
-      if (!output.content.trim() || (output.format === 'json' && output.commandCount === 0)) {
-        ElMessage.warning(output.format === 'json' ? 'No command output to copy' : 'No terminal output to copy')
-        return
+    async getCompleteTerminalToolbarOutput(format = 'text') {
+      if (!this.historyReader) return this.getTerminalToolbarOutput(format)
+      const lines = await this.historyReader(String(this.selectedId || ''))
+      if (String(format || '').trim().toLowerCase() === 'json') {
+        const entries = this.buildTerminalToolbarJsonEntries(this.buildTerminalBlocksFromLines(lines))
+        return { content: JSON.stringify(entries, null, 2), format: 'json', commandCount: entries.length }
       }
+      return { content: buildTerminalOutputText(lines.map(line => ({
+        text: this.normalizeTerminalOutputLineText(line?.text),
+      }))), format: 'text', commandCount: 0 }
+    },
 
+    async copyAllTerminalOutput(format = 'text') {
       try {
+        const output = await this.getCompleteTerminalToolbarOutput(format)
+        if (!output.content.trim() || (output.format === 'json' && output.commandCount === 0)) {
+          ElMessage.warning(output.format === 'json' ? 'No command output to copy' : 'No terminal output to copy')
+          return
+        }
         await this.copyTextToClipboard(output.content)
         ElMessage.success(output.format === 'json' ? 'Terminal JSON copied' : 'Terminal output copied')
       } catch (error) {
@@ -1015,13 +1168,12 @@ export default {
     },
 
     async saveAllTerminalOutputArtifact(format = 'text') {
-      const output = this.getTerminalToolbarOutput(format)
-      if (!output.content.trim() || (output.format === 'json' && output.commandCount === 0)) {
-        ElMessage.warning(output.format === 'json' ? 'No command output to save' : 'No terminal output to save')
-        return
-      }
-
       try {
+        const output = await this.getCompleteTerminalToolbarOutput(format)
+        if (!output.content.trim() || (output.format === 'json' && output.commandCount === 0)) {
+          ElMessage.warning(output.format === 'json' ? 'No command output to save' : 'No terminal output to save')
+          return
+        }
         await this.saveTerminalOutputArtifactBody({
           content: output.content,
           artifact_type: 'command_output',
@@ -1239,7 +1391,8 @@ export default {
     async saveTerminalBlockOutput(block) {
       if (this.isSavingTerminalBlock(block)) return
 
-      const outputText = this.getTerminalBlockOutputText(block)
+      const completeBlock = await this.findCompleteTerminalBlock(block)
+      const outputText = this.getTerminalBlockOutputText(completeBlock)
       if (!outputText.trim()) {
         ElMessage.warning('No output to save')
         return
@@ -1248,7 +1401,7 @@ export default {
       this.setTerminalBlockSaving(block, true)
 
       try {
-        const body = this.buildTerminalOutputArtifactSaveBody(block, outputText)
+        const body = this.buildTerminalOutputArtifactSaveBody(completeBlock, outputText)
         await this.saveTerminalOutputArtifactBody(body)
       } catch (e) {
         ElMessage.error(e.message || 'Save failed')
@@ -1262,10 +1415,16 @@ export default {
 
 <style scoped>
 /* ========== 终端输出区 ========== */
+.terminal-history-top-edge {
+  height: 1px;
+  pointer-events: none;
+}
 .terminal-output {
   flex: 1;
   min-height: 0;
   overflow: auto;
+  /* Sequence-based viewport restoration owns anchoring during history swaps. */
+  overflow-anchor: none;
   padding: 18px 18px 22px;
   color: var(--terminal-text);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;

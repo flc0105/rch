@@ -42,6 +42,28 @@ selected Client’s `feature_manifest`. For example, `remote_files`, `scripts`,
 and `jobs` suppress their associated launch actions and Script shortcuts.
 Missing declarations from older Clients retain their previous behavior.
 
+## Terminal history and performance
+
+The Web Terminal saves complete output per signed-in user, browser tab and Client
+in IndexedDB. It renders a bounded recent window and loads earlier or later
+records automatically while scrolling. Browser refresh restores the recent
+window. `Clear` deletes the entire selected Client's stored transcript, while
+Copy and Save to Artifact read the complete transcript, including hidden rows.
+Command-level output actions also resolve their full stored command block.
+
+All display and storage tuning values live in
+`src/data/terminalHistoryConfig.js`: initial window, scroll load batch, visible
+row/byte caps, hot-memory cache, per-record display segment size, IndexedDB
+chunk size, write debounce and scroll thresholds. The limits constrain **DOM
+rendering**, not the saved transcript. Very long individual lines are stored
+as lossless display segments and rejoined for exports.
+
+History is local to the browser profile; browser storage deletion, private mode
+or quota errors can affect persistence. The UI reports an unavailable history
+store rather than silently discarding unsaved output. Sign out clears that
+user/tab's browser terminal history. Large complete exports remain subject to
+browser clipboard/memory and existing Artifact upload limits.
+
 ## Log Viewer and sign-in
 
 Log Viewer reads remote Client files. Its Browse button and remote path occupy the first toolbar row, with the remaining controls on the second row. Wrap is enabled by default, and the gutter displays line numbers relative to the currently loaded log buffer (search results retain those numbers). Watchdog log links appear immediately after each file path.

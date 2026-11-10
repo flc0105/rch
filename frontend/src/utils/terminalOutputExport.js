@@ -1,5 +1,11 @@
 export function buildTerminalOutputText(lines) {
-  return (Array.isArray(lines) ? lines : []).map(line => String(line?.text ?? '')).join('\n')
+  const result = []
+  for (const line of Array.isArray(lines) ? lines : []) {
+    const value = String(line?.text ?? '')
+    if (line?.__terminalContinuation && result.length) result[result.length - 1] += value
+    else result.push(value)
+  }
+  return result.join('\n')
 }
 
 export function buildTerminalOutputJson(entries) {

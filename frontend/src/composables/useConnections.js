@@ -1003,13 +1003,13 @@ const passwordInput = h({
             this.ensureOutputBucket?.(normalizedClientId)
             const lines = Array.isArray(this.outputs?.[normalizedClientId]) ? this.outputs[normalizedClientId] : []
             this.outputs[normalizedClientId] = lines.filter(line => line?.meta?.clientRevisionNotice !== true)
+            this.setTerminalNotice(normalizedClientId, 'revision', null)
         },
 
         hasClientRevisionNotice(clientId) {
             const normalizedClientId = this.normalizeClientId(clientId)
             if (!normalizedClientId) return false
-            const lines = Array.isArray(this.outputs?.[normalizedClientId]) ? this.outputs[normalizedClientId] : []
-            return lines.some(line => line?.meta?.clientRevisionNotice === true)
+            return Boolean(this.getTerminalNotice(normalizedClientId, 'revision'))
         },
 
         appendClientRevisionNotice(item, revisionStatus = null) {

@@ -1,3 +1,6 @@
+import { TERMINAL_HISTORY } from '../data/terminalHistoryConfig.js'
+import { TerminalHistoryStore, trimTerminalWindow, splitLongTerminalLine } from '../utils/terminalHistoryStore.js'
+import { ElMessage } from 'element-plus'
 import { isJsonContainerText, isJsonStartLine, parseJsonLines, jsonBracketDelta } from '../utils/terminalJson.js'
 import { createTerminalOperation } from '../utils/terminalOperation.js'
 import {
@@ -13,6 +16,8 @@ export default {
             outputs: {},
             terminalOperationRegistry: {},
             terminalArtifactLinks: {},
+            terminalViewStates: {},
+            terminalNotices: {},
         }
     },
 
@@ -160,6 +165,10 @@ export default {
         ensureOutputBucket(clientId) {
             if (!clientId) return;
             if (!this.outputs[clientId]) this.outputs[clientId] = [];
+            if (!this.terminalViewStates) this.terminalViewStates = {};
+            if (!this.terminalViewStates[clientId]) {
+                this.terminalViewStates[clientId] = { follow: true, loading: false, hasOlder: false, hasNewer: false };
+            }
         },
 
         ensureTerminalTaskStart(payload) {
@@ -177,6 +186,13 @@ export default {
             if (existing) {
                 return String(existing.meta?.operation_id || existing.meta?.operation?.operation_id || incomingOperationId);
             }
+            // A very long task may push its start line out of the render window.
+            // Its operation identity is still registered; avoid inventing a second start.
+            const known = Object.values(this.terminalOperationRegistry).find(operation =>
+                String(operation.client_id || '') === clientId && operation.startLineRecorded === true && (
+                    (incomingOperationId && operation.operation_id === incomingOperationId) ||
+                    (taskId && String(operation.task_id || '') === taskId)));
+            if (known) return String(known.operation_id);
 
             const kind = metadata.quick_action === true ? 'alias'
                 : metadata.script_run === true ? 'script' : 'command';
@@ -225,7 +241,36 @@ export default {
                 ? { ...inputMeta, operation_id: operationId, ...(associated ? { operation: associated } : {}) }
                 : inputMeta;
             const raw = String(text ?? '');
+            if (associated && kind === 'command' && raw.startsWith('> ')) associated.startLineRecorded = true;
             const normalized = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+            const added = [];
+            const commit = () => {
+                if (this._terminalHistory && added.length) {
+                    const parts = added.flatMap(line => splitLongTerminalLine(line));
+                    added.splice(0, added.length, ...parts);
+                }
+                if (inputMeta.foregroundTaskNotice || inputMeta.clientRevisionNotice) {
+                    const noticeType = inputMeta.foregroundTaskNotice ? 'foreground' : 'revision';
+                    this.setTerminalNotice(clientId, noticeType, added[added.length - 1] || null);
+                    this.outputs[clientId].push(...added);
+                    return;
+                }
+                if (this._terminalHistory) {
+                    this._terminalHistory.append(clientId, added);
+                    const view = this.terminalViewStates[clientId];
+                    if (view.follow) {
+                        this.outputs[clientId] = trimTerminalWindow(
+                            [...this.outputs[clientId], ...added], 'newer', TERMINAL_HISTORY);
+                        view.hasOlder = (this.outputs[clientId][0]?.__terminalSeq || 0) > 0;
+                    } else {
+                        view.hasNewer = true;
+                    }
+                } else {
+                    this.outputs[clientId].push(...added);
+                }
+                if (String(clientId) === String(this.selectedId)) this.scrollToBottom();
+            };
 
             if (this.isTerminalJsonText(normalized.trim())) {
                 const line = this.buildTerminalOutputLine(normalized.trim(), kind, {
@@ -233,8 +278,8 @@ export default {
                     forceJson: true,
                     jsonText: normalized.trim()
                 });
-                this.outputs[clientId].push(line);
-                this.scrollToBottom();
+                added.push(line);
+                commit();
                 return;
             }
 
@@ -242,9 +287,7 @@ export default {
             const bufferKey = `${clientId}:${operationId || 'general'}`;
 
             const pushNormalLine = (segment, lineKind = kind, lineMeta = resolvedMeta) => {
-                this.outputs[clientId].push(
-                    this.buildTerminalOutputLine(segment, lineKind, lineMeta)
-                );
+                added.push(this.buildTerminalOutputLine(segment, lineKind, lineMeta));
             };
 
             const flushJsonBuffer = (buffer) => {
@@ -257,7 +300,7 @@ export default {
 
                 buffer.lines.forEach((line, index) => {
                     const isLast = index === buffer.lines.length - 1;
-                    this.outputs[clientId].push(
+                    added.push(
                         this.buildTerminalOutputLine(line, buffer.kind || kind, {
                             ...(buffer.meta || {}),
                             forceJson: isLast,
@@ -309,12 +352,170 @@ export default {
                 pushNormalLine(segment);
             });
 
-            this.scrollToBottom();
+            commit();
+        },
+
+        setTerminalNotice(clientId, type, line) {
+            const notices = { ...(this.terminalNotices?.[clientId] || {}) };
+            if (line) notices[type] = line;
+            else delete notices[type];
+            this.terminalNotices = { ...this.terminalNotices, [clientId]: notices };
+        },
+        getTerminalNotice(clientId, type) {
+            return this.terminalNotices?.[clientId]?.[type] || null;
+        },
+
+        async initializeTerminalHistory() {
+            const username = String(this.currentAuthUsername || '').trim();
+            const tab = String(this.tabId || '').trim();
+            if (!username || !tab) return;
+            const store = new TerminalHistoryStore({
+                scope: JSON.stringify([username, tab]),
+                onError: error => {
+                    console.error('Terminal history storage failed:', error);
+                    ElMessage.error('Terminal history storage unavailable; recent output is kept in memory')
+                },
+            });
+            try {
+                await store.database();
+                this._terminalHistory = store;
+                for (const [clientId, lines] of Object.entries(this.outputs)) {
+                    if (lines.length) store.append(clientId, lines);
+                }
+                await this.restoreTerminalViewport(this.selectedId);
+            } catch (error) {
+                console.warn('Terminal history unavailable; using in-memory output:', error);
+                ElMessage.error('Browser history storage unavailable; output will remain in memory only');
+            }
+        },
+
+        async restoreTerminalViewport(clientId, follow = true) {
+            const id = String(clientId || '').trim();
+            if (!id || !this._terminalHistory) return;
+            this.ensureOutputBucket(id);
+            const generation = this._terminalViewGeneration = (this._terminalViewGeneration || 0) + 1;
+            const view = this.terminalViewStates[id];
+            view.loading = true;
+            try {
+                const recent = await this._terminalHistory.readBefore(id, Infinity,
+                    TERMINAL_HISTORY.initialLines, TERMINAL_HISTORY.initialBytes);
+                if (generation !== this._terminalViewGeneration || id !== this.selectedId) return;
+                this.outputs[id] = trimTerminalWindow([...recent,
+                    ...Object.values(this.terminalNotices?.[id] || {})], 'newer', TERMINAL_HISTORY);
+                view.follow = follow;
+                view.hasOlder = (recent[0]?.__terminalSeq || 0) > 0;
+                view.hasNewer = false;
+                if (follow) this.scrollToBottom(true);
+            } catch (error) {
+                console.error('Unable to load Terminal history', error);
+                ElMessage.error('Unable to load Terminal history');
+            } finally {
+                view.loading = false;
+            }
+        },
+
+        async loadTerminalHistory(direction) {
+            const id = String(this.selectedId || '').trim();
+            if (!id || !this._terminalHistory) return;
+            const view = this.terminalViewStates[id];
+            if (!view || view.loading || (direction === 'older' && !view.hasOlder) ||
+                (direction === 'newer' && !view.hasNewer)) return;
+            if (direction !== 'older' && direction !== 'newer') return;
+            const old = this.outputs[id] || [];
+            const historyRows = old.filter(line => Number.isSafeInteger(line?.__terminalSeq));
+            const notices = old.filter(line => line?.meta?.foregroundTaskNotice || line?.meta?.clientRevisionNotice);
+            const cursor = direction === 'older'
+                ? historyRows[0]?.__terminalSeq : historyRows[historyRows.length - 1]?.__terminalSeq;
+            if (cursor === undefined) return;
+            view.loading = true;
+            const terminal = this.$refs.terminalOutputRef;
+            const anchor = terminal?.captureScrollAnchor?.();
+            try {
+                // Reaching the top of the *rendered window* is ordinary pagination.
+                // Never interpret it as a request to jump to the first stored record.
+                const next = direction === 'older'
+                    ? await this._terminalHistory.readBefore(id, cursor, TERMINAL_HISTORY.loadLines, TERMINAL_HISTORY.loadBytes)
+                    : await this._terminalHistory.readAfter(id, cursor, TERMINAL_HISTORY.loadLines, TERMINAL_HISTORY.loadBytes);
+                if (id !== this.selectedId || this.outputs[id] !== old) return;
+                // Resolve the saved tail before touching the visible window. Awaiting an
+                // IndexedDB request after the Vue state change lets the browser paint the
+                // new (possibly final) rows before we can restore the reading position.
+                const tail = direction === 'newer'
+                    ? await this._terminalHistory.readBefore(id, Infinity, 1, Infinity) : null;
+                if (id !== this.selectedId || this.outputs[id] !== old) return;
+                const element = terminal?.terminalScrollElement?.();
+                // A user can keep scrolling while IndexedDB reads. Preserve that movement
+                // instead of restoring the viewport to the position from request start.
+                const scrollDelta = element && anchor ? element.scrollTop - anchor.scrollTop : 0;
+                const revealOlder = direction === 'older' && element?.scrollTop <= 1;
+                if (direction === 'older') {
+                    const merged = trimTerminalWindow([...next, ...historyRows], 'older', TERMINAL_HISTORY);
+                    this.outputs[id] = [...merged, ...notices];
+                    view.hasOlder = next.length > 0 && (next[0].__terminalSeq || 0) > 0;
+                    view.hasNewer = merged.at(-1)?.__terminalSeq < historyRows.at(-1)?.__terminalSeq || view.hasNewer;
+                } else {
+                    const merged = trimTerminalWindow([...historyRows, ...next], 'newer', TERMINAL_HISTORY);
+                    this.outputs[id] = [...merged, ...notices];
+                    view.hasOlder = (merged[0]?.__terminalSeq || 0) > 0;
+                    // Compare to the storage's current tail rather than assuming one batch reached it.
+                    view.hasNewer = Boolean(tail.length && merged.at(-1)?.__terminalSeq < tail[0].__terminalSeq);
+                }
+                await this.$nextTick();
+                if (id === this.selectedId) {
+                    terminal?.restoreScrollAnchor?.(anchor, { scrollDelta, revealOlder });
+                }
+            } catch (error) {
+                console.error('Unable to scroll Terminal history', error);
+                ElMessage.error('Unable to load more Terminal history');
+            } finally {
+                view.loading = false;
+            }
+        },
+
+        handleTerminalScroll({ atTop, atBottom } = {}) {
+            const view = this.terminalViewStates[this.selectedId];
+            if (!view) return;
+            if (atTop && view.hasOlder) {
+                view.follow = false;
+                void this.loadTerminalHistory('older');
+            } else if (atBottom && view.hasNewer) {
+                void this.loadTerminalHistory('newer');
+            } else if (atBottom && !view.hasNewer) {
+                view.follow = true;
+            } else if (!atBottom) {
+                view.follow = false;
+            }
+        },
+
+        async getCompleteTerminalHistory(clientId) {
+            const id = String(clientId || this.selectedId || '').trim();
+            if (this._terminalHistory) {
+                const history = await this._terminalHistory.readAll(id);
+                return [...history, ...Object.values(this.terminalNotices?.[id] || {})];
+            }
+            return this.outputs[id] || [];
+        },
+
+        async purgeTerminalHistory() {
+            if (this._terminalHistory) await this._terminalHistory.clearScope();
         },
 
         clearOutput() {
             if (this.selectedId) {
-                this.outputs[this.selectedId] = [];
+                const clientId = this.selectedId;
+                this.outputs[clientId] = [];
+                this.terminalNotices = { ...this.terminalNotices, [clientId]: {} };
+                this.terminalViewStates[clientId] = { follow: true, loading: false, hasOlder: false, hasNewer: false };
+                this._terminalViewGeneration = (this._terminalViewGeneration || 0) + 1;
+                if (this._terminalJsonBuffers) {
+                    for (const key of Object.keys(this._terminalJsonBuffers)) {
+                        if (key.startsWith(`${clientId}:`)) delete this._terminalJsonBuffers[key];
+                    }
+                }
+                if (this._terminalHistory) void this._terminalHistory.clear(clientId).catch(error => {
+                    console.error('Unable to permanently clear Terminal history', error);
+                    ElMessage.error('Unable to delete stored Terminal history');
+                });
                 delete this.terminalArtifactLinks[this.selectedId];
                 for (const [id, operation] of Object.entries(this.terminalOperationRegistry)) {
                     if (String(operation.client_id) === String(this.selectedId)) delete this.terminalOperationRegistry[id];
@@ -322,7 +523,13 @@ export default {
             }
         },
 
-        scrollToBottom() {
+        scrollToBottom(force = false) {
+            const view = this.terminalViewStates?.[this.selectedId];
+            if (this._terminalHistory && view) {
+                if (!force && !view.follow) return;
+                if (force && view.hasNewer) { void this.restoreTerminalViewport(this.selectedId); return; }
+                view.follow = true;
+            }
             this.$nextTick(() => {
                 const terminalOutput = this.$refs.terminalOutputRef;
 
@@ -338,7 +545,13 @@ export default {
 
     computed: {
         currentOutputLines() {
-            return this.outputs[this.selectedId] || [];
+            const clientId = this.selectedId;
+            const notices = Object.values(this.terminalNotices?.[clientId] || {});
+            const rendered = this.outputs[clientId] || [];
+            return [...rendered, ...notices.filter(line =>
+                !rendered.some(item => item?.meta?.foregroundTaskNotice === line?.meta?.foregroundTaskNotice &&
+                    item?.meta?.clientRevisionNotice === line?.meta?.clientRevisionNotice &&
+                    item?.text === line?.text))];
         },
         currentTerminalArtifactLinks() {
             return this.terminalArtifactLinks[this.selectedId] || [];

@@ -176,7 +176,7 @@
                   @open-settings="openSettingsDialog"
                   @clear="clearOutput"
                   @clear-selection="clearSelectedConnection"
-                  @bottom="scrollToBottom"
+                  @bottom="scrollToBottom(true)"
                   @copy-terminal-output="copyTerminalOutput('text')"
                   @copy-terminal-json="copyTerminalOutput('json')"
                   @save-terminal-output="saveTerminalOutputArtifact('text')"
@@ -211,6 +211,7 @@
                 <TerminalOutput
                   ref="terminalOutputRef"
                   :lines="currentOutputLines"
+                  :history-reader="getCompleteTerminalHistory"
                   :artifacts="currentTerminalArtifactLinks"
                   :selected-id="selectedId"
                   :current-connection="currentConnection"
@@ -220,6 +221,7 @@
                   @rerun-terminal-block="rerunTerminalBlock"
                   @suggest-command="applyTerminalSuggestedCommand"
                   @open-task-details="openForegroundTaskDetails"
+                  @terminal-scroll="handleTerminalScroll"
                 />
               </div>
             </section>
@@ -786,6 +788,7 @@ export default {
   watch: {
     ...AppTerminalModule.watch,
     selectedId() {
+      if (this._terminalHistory) void this.restoreTerminalViewport(this.selectedId)
       this.foregroundQuerySequence += 1
       this.taskDialogVisible = false
       void this.refreshForegroundTask()
@@ -850,6 +853,7 @@ export default {
       if (visible && existing?.meta?.foregroundTaskKey === noticeKey && existing?.meta?.foregroundTaskState === task.state) return
       if (existing) {
         this.outputs[clientId] = lines.filter(line => line?.meta?.foregroundTaskNotice !== true)
+        this.setTerminalNotice?.(clientId, 'foreground', null)
       }
       if (visible) {
         this.appendOutput(clientId,
@@ -1219,7 +1223,8 @@ export default {
       }
 
       if (command === 'sign-out') {
-        window.RatAuth?.logout?.()
+        void this.purgeTerminalHistory().catch(error => console.warn('Unable to clear browser terminal history', error))
+          .finally(() => window.RatAuth?.logout?.())
       }
     },
 
@@ -1517,6 +1522,7 @@ export default {
       this.loadSseNotificationHistory(),
       this.loadTransferItems(),
     ])
+    await this.initializeTerminalHistory()
     this.initSSE()
     // Start code-only warmup after first paint; dialogs/PTY sockets are not mounted.
     this.cancelIdleWarmup = scheduleIdleWarmup([
