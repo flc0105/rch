@@ -145,11 +145,14 @@ Web 首次选中设备、切换设备、WebSocket 重连和设备重新上线时
 
 收到 Client 返回的 `result` 时，Server 先更新相关工作目录，再交给结果分发器。只有 `id` 与当前队首等待的 `command_id` 匹配，才将 `(status, text, eof)` 投入对应的执行结果队列；正常输出因此按照该等待流逐块消费，直到终止标记 `eof`。不匹配的结果会落入独立的未预期消息处理路径，不能简单并入当前 Terminal 命令的输出。
 
-`WebTaskRunner` 消费标准化事件后执行两件相互独立的操作：向 WebEventBus 发布 `command_result`，并在存在 `history_entry_id` 时追加到 SQLite 历史。最后统一发布 `command_complete`。典型 WebSocket 消息如下：
+`WebTaskRunner` 消费标准化事件后执行两件相互独立的操作：将每块输出按原始顺序追加到 SQLite 历史，并通过 WebEventBus 发送到执行任务的标签页。零散输出使用 `command_result`；密集输出按时间、条数和字节数合并为 `command_result_batch`，其 `results` 数组逐项保留原有的 `status` 和 `text`，不拼接文本或丢弃空块。批次在短时间内刷新，任务结束前强制发完最后一批，然后才发布 `command_complete`。典型 WebSocket 消息如下：
 
 ```text
 event: command_result
 data: {"task_id":"<task-id>","client_id":"<client-id>","command":"pwd","command_id":1,"status":1,"text":"/home/user","metadata":{},"time":"<server-local-iso-time>"}
+
+event: command_result_batch
+data: {"task_id":"<task-id>","client_id":"<client-id>","command":"pwd","command_id":1,"results":[{"status":1,"text":"first"},{"status":1,"text":"second"}],"metadata":{},"time":"<server-local-iso-time>"}
 
 event: command_complete
 data: {"task_id":"<task-id>","client_id":"<client-id>","command":"pwd","command_id":1,"success":true,"status":"success","metadata":{},"cancel_requested":false,"cancelled":false,"time":"<server-local-iso-time>"}
@@ -157,7 +160,7 @@ data: {"task_id":"<task-id>","client_id":"<client-id>","command":"pwd","command_
 
 Web 在 `ws://<host>:8086/ws/events?tab_id=<browser-tab-id>` 订阅事件。提交时将同一 `tab_id` 通过 `X-Tab-Id` 传给 Server，Server 才能把该 Task 的输出和完成事件送到相应标签页，而不是传播给所有打开的终端。若提交时没有提供有效 `tab_id`，事件总线不会具有这个定向范围，因此前端应保持两端使用同一标签页标识。
 
-普通 Terminal 将 `command_result.text` 追加到当前设备的输出视图，接到 `command_complete` 后显示成功、失败或取消提示，并清除活动 Task。对于 Script、Quick Action 的 Dialog 展示，前端根据请求 Metadata 把这一 Task 的事件交给相应对话框处理，而不是另建执行引擎。前端还维护少量“已完成 Task ID”标记，处理**完成 WebSocket 比提交 HTTP 返回更早到达**的竞态，避免短命任务被迟到的 `setActiveTask` 重新显示成 Busy。
+普通 Terminal 将 `command_result.text` 或 `command_result_batch.results` 中的每条文本按序写入完整输出历史，并按浏览器绘制帧合并可见窗口更新，接到 `command_complete` 后显示成功、失败或取消提示，并清除活动 Task。对于 Script、Quick Action 的 Dialog 展示，前端根据请求 Metadata 把这一 Task 的事件交给相应对话框处理，而不是另建执行引擎。前端还维护少量“已完成 Task ID”标记，处理**完成 WebSocket 比提交 HTTP 返回更早到达**的竞态，避免短命任务被迟到的 `setActiveTask` 重新显示成 Busy。
 
 最终状态由结果流汇总得到。`status=0` 的失败块通常使 Task 进入 `error`；可以被明确识别的非致命取消能力提示不会被误当成致命执行失败。若已发出取消请求且实际收到取消或超时类结果，则可判为 `cancelled`。单纯调用取消 API，或者 Client 给出“接受取消”的 ACK，均不等于已经进入取消终态。
 

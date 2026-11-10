@@ -7,7 +7,9 @@
       @wheel.passive="handleTerminalEdgeWheel"
       @touchstart.passive="handleTerminalEdgeTouchStart"
       @touchmove.passive="handleTerminalEdgeTouchMove"
+      @pointerdown.passive="noteUserTerminalScroll"
       @pointerup.passive="handleTerminalViewportScroll"
+      @keydown.passive="noteUserTerminalScroll"
   >
     <div ref="terminalHistoryTopEdge" class="terminal-history-top-edge" aria-hidden="true"></div>
     <div v-if="!lines.length" class="terminal-empty">
@@ -436,19 +438,25 @@ export default {
       }, { root, rootMargin: `${TERMINAL_HISTORY.scrollEdgePx}px 0px 0px 0px` })
       this._terminalHistoryEdgeObserver.observe(edge)
     },
+    noteUserTerminalScroll() {
+      this._terminalUserScrollUntil = Date.now() + 800
+    },
     requestOlderTerminalPage() {
       const element = this.terminalScrollElement()
       if (element?.scrollTop <= TERMINAL_HISTORY.scrollEdgePx) {
-        this.$emit('terminal-scroll', { atTop: true, atBottom: false })
+        this.$emit('terminal-scroll', { atTop: true, atBottom: false, userInitiated: true })
       }
     },
     handleTerminalEdgeWheel(event) {
+      this.noteUserTerminalScroll()
       if (event.deltaY < 0) this.requestOlderTerminalPage()
     },
     handleTerminalEdgeTouchStart(event) {
+      this.noteUserTerminalScroll()
       this._terminalHistoryTouchY = event.touches?.[0]?.clientY
     },
     handleTerminalEdgeTouchMove(event) {
+      this.noteUserTerminalScroll()
       const y = event.touches?.[0]?.clientY
       if (Number.isFinite(y) && Number.isFinite(this._terminalHistoryTouchY) && y > this._terminalHistoryTouchY) {
         this.requestOlderTerminalPage()
@@ -461,6 +469,7 @@ export default {
       this.$emit('terminal-scroll', {
         atTop: element.scrollTop <= TERMINAL_HISTORY.scrollEdgePx,
         atBottom: element.scrollHeight - element.scrollTop - element.clientHeight <= TERMINAL_HISTORY.bottomTolerancePx,
+        userInitiated: Date.now() <= (this._terminalUserScrollUntil || 0),
       })
     },
     captureScrollAnchor() {

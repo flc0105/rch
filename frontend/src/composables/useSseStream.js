@@ -337,33 +337,44 @@ export default {
                 this.upsertConnection(conn);
             });
 
-            es.addEventListener('command_result', (event) => {
-                const payload = JSON.parse(event.data);
-                this.noteTaskOutput?.(payload.task_id);
+            const handleCommandResults = (payload, results) => {
+                const items = Array.isArray(results) ? results : [];
+                if (!items.length) return;
+                this.noteTaskOutput?.(payload.task_id, items.length);
                 const metadata = payload.metadata && typeof payload.metadata === 'object' ? payload.metadata : {};
                 const isQuickActionDialog = metadata.quick_action === true && metadata.quick_action_presentation === 'dialog';
-                const handledByQuickActionDialog = isQuickActionDialog
-                    ? this.handleQuickActionCommandResult?.({...payload, metadata}) === true
-                    : false;
-
-
-                const handledByTerminalCapture = this.routeTerminalTaskCapture?.('result', payload) === true;
                 const isScriptDialog = metadata.script_run === true && metadata.script_run_presentation === 'dialog';
-                const handledByScriptDialog = isScriptDialog
-                    ? this.handleScriptCommandResult?.({...payload, metadata}) === true
-                    : false;
-
-                if (!handledByQuickActionDialog && !handledByScriptDialog && !handledByTerminalCapture) {
-                    const operationId = this.ensureTerminalTaskStart(payload);
-                    this.appendOutput(payload.client_id, payload.text || '', '', {
+                const terminalItems = [];
+                let operationId = '';
+                for (const item of items) {
+                    const result = { ...payload, status: item.status, text: item.text, metadata };
+                    const handledByQuickActionDialog = isQuickActionDialog
+                        ? this.handleQuickActionCommandResult?.(result) === true : false;
+                    const handledByTerminalCapture = this.routeTerminalTaskCapture?.('result', result) === true;
+                    const handledByScriptDialog = isScriptDialog
+                        ? this.handleScriptCommandResult?.(result) === true : false;
+                    if (handledByQuickActionDialog || handledByScriptDialog || handledByTerminalCapture) continue;
+                    if (!operationId) operationId = this.ensureTerminalTaskStart(result);
+                    terminalItems.push({ text: item.text || '', meta: {
                         task_id: payload.task_id || '',
                         operation_id: operationId || '',
                         event_type: 'output',
                         command: payload.command || '',
                         command_id: payload.command_id ?? null,
                         metadata,
-                    });
+                    } });
                 }
+                if (terminalItems.length) this.appendOutputBatch(payload.client_id, terminalItems);
+            };
+
+            es.addEventListener('command_result', (event) => {
+                const payload = JSON.parse(event.data);
+                handleCommandResults(payload, [{ status: payload.status, text: payload.text }]);
+            });
+
+            es.addEventListener('command_result_batch', (event) => {
+                const payload = JSON.parse(event.data);
+                handleCommandResults(payload, payload.results);
             });
 
             es.addEventListener('command_complete', async (event) => {

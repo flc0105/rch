@@ -76,9 +76,9 @@ export default {
             }
         },
 
-        noteTaskOutput(taskId) {
+        noteTaskOutput(taskId, count = 1) {
             const id = String(taskId || '').trim();
-            if (id) this.taskOutputCounts = { ...this.taskOutputCounts, [id]: (this.taskOutputCounts[id] || 0) + 1 };
+            if (id) this.taskOutputCounts = { ...this.taskOutputCounts, [id]: (this.taskOutputCounts[id] || 0) + count };
         },
 
         async recoverFinishedTask(clientId, taskId, historyEntryId = '') {

@@ -1,12 +1,67 @@
 import logging
 import os
 import shutil
+import threading
 from datetime import datetime
 
 from server.application.command.command_execution_event import CommandExecutionEvent
 from server.application.command.command_execution_pipeline import CommandExecutionPipeline
 from server.application.execution.execution_context import TaskExecutionContext
 from server.application.tasks.task_status import TaskStreamSummary, WebTaskStatus
+
+
+class _TaskResultBatch:
+    """Merge bursts of task output before the tab-scoped WebSocket queue.
+
+    Each source chunk remains a separate entry, so output boundaries, status and
+    JSON formatting are unchanged. Flush under one lock, including completion,
+    so a timer can never publish output after command_complete.
+    """
+
+    MAX_ITEMS = 128
+    MAX_BYTES = 32 * 1024
+    MAX_DELAY = 0.03
+
+    def __init__(self, publish):
+        self.publish = publish
+        self.lock = threading.RLock()
+        self.items = []
+        self.bytes = 0
+        self.timer = None
+        self.closed = False
+
+    def add(self, status, text):
+        with self.lock:
+            if self.closed:
+                raise RuntimeError('Task result batch already closed')
+            item = {'status': status, 'text': text}
+            self.items.append(item)
+            self.bytes += len(text.encode('utf-8'))
+            if len(self.items) >= self.MAX_ITEMS or self.bytes >= self.MAX_BYTES:
+                self._flush_locked()
+            elif self.timer is None:
+                self.timer = threading.Timer(self.MAX_DELAY, self.flush)
+                self.timer.daemon = True
+                self.timer.start()
+
+    def _flush_locked(self):
+        if self.timer is not None:
+            self.timer.cancel()
+            self.timer = None
+        if not self.items:
+            return
+        items, self.items = self.items, []
+        self.bytes = 0
+        self.publish(items)
+
+    def flush(self):
+        with self.lock:
+            self._flush_locked()
+
+    def close(self):
+        with self.lock:
+            self.closed = True
+            self._flush_locked()
 
 
 class WebTaskRunner:
@@ -115,6 +170,26 @@ class WebTaskRunner:
             target_tab_id=target_tab_id,
         )
 
+    def _publish_task_result_batch(self, context: TaskExecutionContext, results):
+        if len(results) == 1:
+            item = results[0]
+            self._publish_task_result(context, item['status'], item['text'])
+            return
+        self.event_bus.publish(
+            'command_result_batch',
+            {
+                'task_id': context.task_id,
+                'history_entry_id': self._get_history_entry_id(context),
+                'client_id': context.client_id,
+                'command': context.command,
+                'command_id': self._get_runtime_command_id(context),
+                'metadata': dict(context.metadata or {}),
+                'results': results,
+                'time': datetime.now().isoformat(),
+            },
+            target_tab_id=self._get_task_tab_id(context),
+        )
+
     def _publish_task_complete(self, context: TaskExecutionContext):
         target_tab_id = self._get_task_tab_id(context)
         task = self._get_task(context.task_id)
@@ -139,7 +214,11 @@ class WebTaskRunner:
         )
 
     def _publish_stream_chunk(self, context: TaskExecutionContext, status: int, text: str):
-        self._publish_task_result(context, status, text)
+        batch = getattr(context, '_result_batch', None)
+        if batch is None:
+            self._publish_task_result(context, status, text)
+        else:
+            batch.add(status, text)
         self._append_history_output(context, status, text)
 
     def _record_stream_chunk(self, context: TaskExecutionContext, status: int, result, summary: TaskStreamSummary):
@@ -202,6 +281,8 @@ class WebTaskRunner:
 
     def _run_task_events(self, context: TaskExecutionContext, event_iter):
         summary = TaskStreamSummary()
+        batch = _TaskResultBatch(lambda results: self._publish_task_result_batch(context, results))
+        context._result_batch = batch
 
         try:
             self._consume_event_iter(context, event_iter, summary)
@@ -215,8 +296,13 @@ class WebTaskRunner:
             summary.mark_exception(exc)
             self._record_stream_chunk(context, 0, str(exc), summary)
         finally:
-            final_status = self._resolve_final_status(context, summary)
-            self._finalize_stream(context, final_status, summary)
+            try:
+                # All output must be queued before the completion event.
+                batch.close()
+                final_status = self._resolve_final_status(context, summary)
+                self._finalize_stream(context, final_status, summary)
+            finally:
+                del context._result_batch
 
     def _iter_command_events(self, context: TaskExecutionContext):
         context.history_entry_id = self._get_history_entry_id(context)

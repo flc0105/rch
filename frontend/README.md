@@ -56,7 +56,10 @@ All display and storage tuning values live in
 row/byte caps, hot-memory cache, per-record display segment size, IndexedDB
 chunk size, write debounce and scroll thresholds. The limits constrain **DOM
 rendering**, not the saved transcript. Very long individual lines are stored
-as lossless display segments and rejoined for exports.
+as lossless display segments and rejoined for exports. Bursts of Web Task
+output arrive in bounded batches; all records are persisted, while Terminal
+viewport updates are coalesced to one per animation frame. Programmatic layout
+changes do not disable bottom-follow; a user scroll away from the end does.
 
 History is local to the browser profile; browser storage deletion, private mode
 or quota errors can affect persistence. The UI reports an unavailable history

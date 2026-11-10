@@ -210,6 +210,71 @@ export default {
             return operation.operation_id;
         },
 
+        // Stream batches share one history append and one visible-window commit.
+        // Individual chunks still go through the existing JSON/operation parser.
+        appendOutputBatch(clientId, entries) {
+            if (!Array.isArray(entries) || !entries.length) return;
+            const pending = [];
+            this._terminalBatchLines = pending;
+            try {
+                for (const entry of entries) {
+                    this.appendOutput(clientId, entry.text, entry.kind || '', entry.meta || {});
+                }
+            } finally {
+                this._terminalBatchLines = null;
+                if (pending.length) this.commitTerminalLines(clientId, pending, true);
+            }
+        },
+
+        flushTerminalVisibleLines(clientId) {
+            const queues = this._terminalRenderQueues;
+            const pending = queues?.[clientId];
+            if (!pending) return;
+            delete queues[clientId];
+            if (pending.frame !== null && typeof cancelAnimationFrame === 'function') {
+                cancelAnimationFrame(pending.frame);
+            }
+            if (!pending.lines.length) return;
+            const view = this.terminalViewStates[clientId];
+            if (!view?.follow) {
+                if (view) view.hasNewer = true;
+                return;
+            }
+            this.outputs[clientId] = trimTerminalWindow(
+                [...this.outputs[clientId], ...pending.lines], 'newer', TERMINAL_HISTORY);
+            view.hasOlder = (this.outputs[clientId][0]?.__terminalSeq || 0) > 0;
+            if (String(clientId) === String(this.selectedId)) this.scrollToBottom();
+        },
+
+        commitTerminalLines(clientId, lines, deferVisible = false) {
+            if (!lines.length) return;
+            if (!this._terminalHistory) {
+                this.outputs[clientId].push(...lines);
+                if (String(clientId) === String(this.selectedId)) this.scrollToBottom();
+                return;
+            }
+            this._terminalHistory.append(clientId, lines);
+            const view = this.terminalViewStates[clientId];
+            if (!view.follow) {
+                view.hasNewer = true;
+                return;
+            }
+            if (!this._terminalRenderQueues) this._terminalRenderQueues = {};
+            let queue = this._terminalRenderQueues[clientId];
+            if (!queue) {
+                queue = { lines: [], frame: null };
+                this._terminalRenderQueues[clientId] = queue;
+            }
+            // A long burst only needs the latest display window. Historical rows
+            // have already been persisted in full above.
+            queue.lines = trimTerminalWindow([...queue.lines, ...lines], 'newer', TERMINAL_HISTORY);
+            if (!deferVisible || typeof requestAnimationFrame !== 'function') {
+                this.flushTerminalVisibleLines(clientId);
+            } else if (queue.frame === null) {
+                queue.frame = requestAnimationFrame(() => this.flushTerminalVisibleLines(clientId));
+            }
+        },
+
         appendOutput(clientId, text, kind = '', meta = null) {
             if (!clientId) return;
             this.ensureOutputBucket(clientId);
@@ -256,20 +321,11 @@ export default {
                     this.outputs[clientId].push(...added);
                     return;
                 }
-                if (this._terminalHistory) {
-                    this._terminalHistory.append(clientId, added);
-                    const view = this.terminalViewStates[clientId];
-                    if (view.follow) {
-                        this.outputs[clientId] = trimTerminalWindow(
-                            [...this.outputs[clientId], ...added], 'newer', TERMINAL_HISTORY);
-                        view.hasOlder = (this.outputs[clientId][0]?.__terminalSeq || 0) > 0;
-                    } else {
-                        view.hasNewer = true;
-                    }
+                if (this._terminalBatchLines) {
+                    this._terminalBatchLines.push(...added);
                 } else {
-                    this.outputs[clientId].push(...added);
+                    this.commitTerminalLines(clientId, added, inputMeta.event_type === 'output');
                 }
-                if (String(clientId) === String(this.selectedId)) this.scrollToBottom();
             };
 
             if (this.isTerminalJsonText(normalized.trim())) {
@@ -472,17 +528,17 @@ export default {
             }
         },
 
-        handleTerminalScroll({ atTop, atBottom } = {}) {
+        handleTerminalScroll({ atTop, atBottom, userInitiated = false } = {}) {
             const view = this.terminalViewStates[this.selectedId];
             if (!view) return;
-            if (atTop && view.hasOlder) {
-                view.follow = false;
+            if (atTop && view.hasOlder && (userInitiated || !view.follow)) {
+                if (userInitiated) view.follow = false;
                 void this.loadTerminalHistory('older');
             } else if (atBottom && view.hasNewer) {
                 void this.loadTerminalHistory('newer');
             } else if (atBottom && !view.hasNewer) {
                 view.follow = true;
-            } else if (!atBottom) {
+            } else if (!atBottom && userInitiated) {
                 view.follow = false;
             }
         },
@@ -503,6 +559,11 @@ export default {
         clearOutput() {
             if (this.selectedId) {
                 const clientId = this.selectedId;
+                if (this._terminalRenderQueues?.[clientId]) {
+                    const queued = this._terminalRenderQueues[clientId];
+                    if (queued.frame !== null && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(queued.frame);
+                    delete this._terminalRenderQueues[clientId];
+                }
                 this.outputs[clientId] = [];
                 this.terminalNotices = { ...this.terminalNotices, [clientId]: {} };
                 this.terminalViewStates[clientId] = { follow: true, loading: false, hasOlder: false, hasNewer: false };
