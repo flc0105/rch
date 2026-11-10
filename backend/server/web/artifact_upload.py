@@ -15,6 +15,7 @@ def save_uploaded_artifact_from_request(artifact_api):
         upload,
         artifact_type=get_optional_form_text('artifact_type', 'files'),
         category=get_optional_form_text('category', ''),
+        source_kind=get_optional_form_text('source_kind', ''),
         client_id=get_optional_form_text('client_id', ''),
         hostname=get_optional_form_text('hostname', ''),
         machine_id=get_optional_form_text('machine_id', ''),
@@ -27,6 +28,7 @@ def save_uploaded_artifact_from_request(artifact_api):
         transfer_buffer_size=parse_optional_int_form('transfer_buffer_size'),
         extra=parse_optional_json_form('extra'),
         folder_id=get_optional_form_text('folder_id', ''),
+        folder=get_optional_form_text('folder', ''),
     )
 
     return artifact

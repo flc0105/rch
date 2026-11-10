@@ -1238,7 +1238,6 @@ export default {
         source_task_id: block?.taskId || '',
         source_command_id: sourceCommandId,
         saved_from: savedFrom,
-        category: this.getTerminalBlockArtifactCategory(block),
         saved_at: new Date().toISOString(),
       }
 
@@ -1290,7 +1289,7 @@ export default {
         throw new Error(json.message || 'Save failed')
       }
 
-      ElMessage.success('Saved to Command Output')
+      ElMessage.success(body?.source === 'terminal_toolbar_action' ? 'Saved to Terminal Logs' : 'Saved to Command Output')
       this.$emit('artifact-saved', json.data || null)
       return json.data || null
     },

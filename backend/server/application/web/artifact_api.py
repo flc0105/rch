@@ -121,19 +121,37 @@ class WebArtifactApi:
     def get_upload_temp_file_path(self, temp_id: str, filename: str):
         return self.artifact_service.get_upload_temp_file_path(temp_id, filename)
 
-    def save_http_uploaded_file(self, upload, artifact_type: str = 'files', category: str = '', client_id: str = '',
+    def save_http_uploaded_file(self, upload, artifact_type: str = 'files', category: str = '', source_kind: str = '', client_id: str = '',
                                 hostname: str = '', machine_id: str = '', job_id: str = '', job_name: str = '',
                                 job_key: str = '',
                                 # source_type: str = 'client_upload',
                                 # related_path: str = '',
-                                source_command_id=None, transfer_buffer_size=None, extra=None, folder_id: str = ''):
+                                source_command_id=None, transfer_buffer_size=None, extra=None, folder_id: str = '',
+                                folder: str = ''):
+        if source_kind and category:
+            raise ValueError('Specify source_kind or category, not both')
+        # Resolve explicit folder names before receiving any file bytes.
+        if folder and folder_id:
+            raise ValueError('Specify folder or folder_id, not both')
+        if folder:
+            scope = 'shared' if artifact_type == 'shared_files' else 'saved' if artifact_type != 'previews' else 'preview'
+            folder_id = self.artifact_service.registry_service.catalog.resolve_folder(scope, folder)
+        # Reject invalid destinations before creating physical files or catalog rows.
+        if folder_id:
+            folder_info = self.artifact_service.registry_service.catalog.get_folder(folder_id)
+            expected_scope = ('shared' if artifact_type == 'shared_files' else
+                              'preview' if artifact_type == 'previews' else 'saved')
+            if folder_info['scope'] != expected_scope:
+                raise ValueError('Folder does not belong to this file space')
+            if expected_scope == 'saved' and not folder_info['preset']:
+                raise ValueError('Saved Files only supports preset folders')
         resolved_hostname, resolved_machine_id, addr = self.resolve_client_context(client_id)
         hostname = hostname or resolved_hostname
         machine_id = machine_id or resolved_machine_id
         artifact = self.artifact_service.save_http_uploaded_file(
             upload,
             artifact_type=artifact_type,
-            category=category,
+            category=(source_kind or category),
             client_id=client_id,
             hostname=hostname,
             machine_id=machine_id,

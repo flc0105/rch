@@ -170,7 +170,7 @@ test('PTY More saves the entire current terminal buffer through Command Output A
   assert.equal(requests[0].category, 'command_output')
   assert.equal(dialog.ptySaving, false)
   assert.equal(emitted[0][0], 'artifact-saved')
-  assert.deepEqual(messages, [['success', 'Saved to Command Output']])
+  assert.deepEqual(messages, [['success', 'Saved to Terminal Logs']])
 })
 
 

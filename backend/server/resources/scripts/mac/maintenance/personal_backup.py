@@ -336,7 +336,7 @@ def main(params):
                              json.dumps(manifest, indent=2, ensure_ascii=False) + '\n')
         zip_size = output.stat().st_size
         emit(f'Approved ZIP: {output.name} ({formatted_size(zip_size)})')
-        saved = artifact.save(str(output), type='shared_files', category='script',
+        saved = artifact.save(str(output), type='shared_files',
                               extra={'purpose': 'mac_personal_backup', 'export_date': today})
         emit(f'Artifact uploaded: {saved.get("artifact_id", "")}')
         for group, count in actual_counts.items():

@@ -168,7 +168,7 @@ Script SDK 的作用是在**当前 Client 的本次任务内**以明确的接口
 
 `command.run_shell()` 在 Client 本机运行 Shell，并返回包含 `returncode`、`stdout`、`stderr` 的结果对象；`command.run_background()` 启动后台 OS 进程，并不把它变成一个可由 Job Manager 管理的 Job；`command.stream_shell()` 提供流式 Shell 执行入口。`command.run_client(name, ...)` 与动态导出命令调用需要 In-process 命令所有者；它们直接调用 Client 导出函数，不会再向 Server 发送第二条前台命令。
 
-`artifact.save(path, ...)` 上传 Client 本地文件并将其注册为 Server Artifact，可设置正式 Artifact 类型与分类；`artifact.list/get/download/find_by_file_name` 用于查询和回取 Artifact，使用当前 Client Session Token。上传文件本身不意味着一定进入 Transfer Center：只有另行创建并绑定受管理 `transfer_id` 的流程才具有那一套进度记录。Artifact 的引用、清理和历史关联见 [Artifacts](artifacts.md)。
+`artifact.save(path, ...)` 上传 Client 本地文件并将其注册为 Server Artifact，可通过 folder 指定 Server 虚拟目录；`artifact.list/get/download/find_by_file_name` 用于查询和回取 Artifact，使用当前 Client Session Token。上传文件本身不意味着一定进入 Transfer Center：只有另行创建并绑定受管理 `transfer_id` 的流程才具有那一套进度记录。Artifact 的引用、清理和历史关联见 [Artifacts](artifacts.md)。
 
 `workspace` 可以读取运行上下文和 Server Pinned Paths；`keychains` 可以访问当前机器与 Shared 凭据，实际脚本应避免输出凭据明文；`xt` 依照 External Tool Catalog 在 Client 本机解析并运行程序，安装状态与执行生命周期由 External Tools 自身处理。`events.emit()` 用于向 Server 上报结构化 Device Event，与 `print()` 日志和临时 UI Interaction 是不同的数据链。
 
@@ -189,7 +189,7 @@ from client.runtime.sdk import context, artifact
 
 report = Path(kwargs["target"]) / "report.txt"
 report.write_text("Health check completed\n", encoding="utf-8")
-saved = artifact.save(str(report), category="script")
+saved = artifact.save(str(report), folder="Script Files")
 context.progress(f"Saved artifact: {saved.get('artifact_id', '')}")
 ```
 

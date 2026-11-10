@@ -150,7 +150,7 @@ class Job(ABC):
                     'stored_name': file_info.get('stored_name', ''),
                     'relative_path': file_info.get('relative_path', ''),
                     'size': file_info.get('size', 0),
-                    'category': file_info.get('category', ''),
+                    'source_kind': file_info.get('source_kind', ''),
                     'hostname': file_info.get('hostname', ''),
                     'client_id': file_info.get('client_id', ''),
                     'download_url': file_info.get('download_url', ''),
@@ -165,12 +165,14 @@ class Job(ABC):
         file_path,
         category=None,
         *,
+        folder: str = '',
         artifact_type: str = 'files',
         extra: dict | None = None,
     ) -> dict:
         form_data = {
             'artifact_type': (artifact_type or 'files').strip() or 'files',
             'category': (category or '').strip() or 'default',
+            **({'folder': folder} if folder else {}),
             'client_id': self.client_id,
             'hostname': self.hostname,
             'job_id': self.job_id,
@@ -189,12 +191,14 @@ class Job(ABC):
         file_path,
         category=None,
         *,
+        folder: str = '',
         artifact_type: str = 'files',
         extra: dict | None = None,
     ):
         form_data = self._build_upload_form_data(
             file_path,
             category=category,
+            folder=folder,
             artifact_type=artifact_type,
             extra=extra,
         )

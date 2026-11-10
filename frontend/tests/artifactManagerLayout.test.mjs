@@ -72,3 +72,20 @@ test('location label follows selected folder ID and stays All Files at root', ()
   ctx.selectedFolderId = 'missing'
   assert.equal(component.computed.currentFolderLabel.call(ctx), 'All Files')
 })
+
+
+test('Saved Files has fixed folder navigation; only Shared Files exposes folder editing', () => {
+  const sidebar = template.slice(template.indexOf('class="artifact-folder-heading"'), template.indexOf('</aside>'))
+  const toolbar = template.slice(template.indexOf('class="artifact-dialog-toolbar"'), template.indexOf('class="artifact-library-body"'))
+  assert.match(sidebar, /v-if="isSharedFilesTab"[^>]*@click="createFolderPrompt"/)
+  assert.match(toolbar, /v-if="isSharedFilesTab"[^>]*@click="renameFolderPrompt"/)
+  assert.match(toolbar, /v-if="isSharedFilesTab"[^>]*@click="deleteSelectedFolder"/)
+  assert.equal(component.computed.canEditSelectedFolder.call({
+    isSharedFilesTab: false, selectedFolderId: 'custom',
+    artifactFolders: [{ folder_id: 'custom', preset: 0 }],
+  }), false)
+  assert.equal(component.computed.canEditSelectedFolder.call({
+    isSharedFilesTab: true, selectedFolderId: 'custom',
+    artifactFolders: [{ folder_id: 'custom', preset: 0 }],
+  }), true)
+})

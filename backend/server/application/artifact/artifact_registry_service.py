@@ -184,7 +184,9 @@ class ArtifactRegistryService:
             # related_path=related_path,
             extra=extra,
         )
-        scope, source_kind, folder_id = classify_artifact(artifact_type, category, extra)
+        producer_category = ('job_file' if job_id and artifact_type == 'files' and
+                             str(category or '').strip().lower() in ('', 'default') else category)
+        scope, source_kind, folder_id = classify_artifact(artifact_type, producer_category, extra)
         meta.update({'scope': scope, 'source_kind': source_kind, 'folder_id': folder_id})
         return self.catalog.save(meta)
 
@@ -235,7 +237,7 @@ class ArtifactRegistryService:
                                 transfer_buffer_size=None,
                                 extra: dict | None = None) -> dict:
         normalized_type = self._normalize_artifact_type(artifact_type or self.TYPE_FILES)
-        normalized_category = (category or '').strip() or 'default'
+        normalized_category = (category or '').strip()
         if normalized_type == self.TYPE_SHARED_FILES:
             normalized_hostname = ''
             normalized_machine_id = ''
@@ -280,7 +282,7 @@ class ArtifactRegistryService:
                            source_command_id=None, job_id: str = '', job_name: str = '', job_key: str = '',
                            extra: dict | None = None) -> dict:
         normalized_type = self._normalize_artifact_type(artifact_type)
-        normalized_category = (category or '').strip() or 'default'
+        normalized_category = (category or '').strip()
 
         if normalized_type == self.TYPE_SHARED_FILES:
             normalized_hostname = ''

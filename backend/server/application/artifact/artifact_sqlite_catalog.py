@@ -13,12 +13,20 @@ SAVED_FOLDERS = (
     ('webcam', 'Webcam'),
     ('downloads', 'Downloads'),
     ('clipboard', 'Clipboard'),
-    ('script_output', 'Script Output'),
-    ('job_output', 'Job Output'),
+    ('script_output', 'Script Files'),
+    ('job_output', 'Job Files'),
     ('command_output', 'Command Output'),
     ('terminal_logs', 'Terminal Logs'),
     ('inbox', 'Inbox'),
 )
+
+SAVED_FOLDER_IDS = frozenset(f'saved:{key}' for key, _ in SAVED_FOLDERS)
+# Preserve stable folder IDs from the SQLite catalog while making the origin
+# categories unambiguous: these contain produced files, not stdout snapshots.
+SOURCE_FOLDER_IDS = {
+    'script_file': 'saved:script_output',
+    'job_file': 'saved:job_output',
+}
 
 
 def classify_artifact(artifact_type, category='', extra=None):
@@ -29,27 +37,27 @@ def classify_artifact(artifact_type, category='', extra=None):
         return 'preview', 'preview_cache', None
     category = str(category or '').lower().strip()
     source = str((extra or {}).get('source') or '').lower().strip()
-    if category in ('screenshot', 'screenshots'):
+    # Command output is a saved execution result, regardless of whether the
+    # originating command was a script, a background job, or a shell command.
+    if source in ('pty_toolbar_action', 'terminal_toolbar_action') or category in ('pty_output', 'terminal_logs', 'terminal_output'):
+        kind = 'terminal_logs'
+    elif artifact_type == 'command_output' or category == 'command_output':
+        kind = 'command_output'
+    elif category in ('screenshot', 'screenshots', 'app_screenshot', 'scheduled_screenshot'):
         kind = 'screenshots'
     elif category in ('webcam', 'camera'):
         kind = 'webcam'
     elif category in ('clipboard', 'clipboard_image', 'clipboard_file'):
         kind = 'clipboard'
-    elif category in ('script', 'script_output'):
-        kind = 'script_output'
-    elif category == 'job_output':
-        kind = 'job_output'
-    elif source == 'pty_toolbar_action' or category in ('pty_output', 'terminal_logs', 'terminal_output'):
-        kind = 'terminal_logs'
-    elif source == 'terminal_toolbar_action':
-        kind = 'terminal_logs'
-    elif artifact_type == 'command_output' or category == 'command_output':
-        kind = 'command_output'
+    elif category in ('script', 'script_output', 'script_file'):
+        kind = 'script_file'
+    elif category in ('job_output', 'job_file'):
+        kind = 'job_file'
     elif category in ('download', 'downloads', 'browser_download', 'bundle'):
         kind = 'downloads'
     else:
         kind = 'inbox'
-    return 'saved', kind, f'saved:{kind}'
+    return 'saved', kind, SOURCE_FOLDER_IDS.get(kind, f'saved:{kind}')
 
 
 class ArtifactSqliteCatalog:
@@ -91,6 +99,74 @@ class ArtifactSqliteCatalog:
                     (folder_id, scope, parent_id, name, preset, created_at)
                     VALUES (?, 'saved', NULL, ?, 1, ?)''',
                     (f'saved:{key}', name, datetime.now().isoformat(timespec='seconds')))
+            self._normalize_saved_folders(conn)
+            self._upgrade_saved_folder_names(conn)
+            self._normalize_existing_output_records(conn)
+
+    @staticmethod
+    def _upgrade_saved_folder_names(conn):
+        # Rename the v12 preset folders in place, retaining their stable IDs
+        # and every existing Artifact relationship. Labels no longer conflate
+        # generated files with saved command output.
+        for folder_id, new_name in (
+            ('saved:script_output', 'Script Files'),
+            ('saved:job_output', 'Job Files'),
+        ):
+            conn.execute('UPDATE artifact_folders SET name=? WHERE folder_id=? AND scope=?',
+                         (new_name, folder_id, 'saved'))
+
+    @staticmethod
+    def _normalize_existing_output_records(conn):
+        """Align v12 execution snapshots and generated files with the new folder meanings."""
+        rows = conn.execute("""SELECT artifact_id, folder_id, source_kind, payload_json FROM artifact_entries
+            WHERE scope='saved' AND source_kind IN ('script_output', 'job_output')""").fetchall()
+        for row in rows:
+            payload = json.loads(row['payload_json'])
+            old_kind = row['source_kind']
+            old_folder = row['folder_id']
+            if payload.get('artifact_type') == 'command_output':
+                extra = payload.get('extra') or {}
+                source = str(extra.get('source') or '').strip()
+                target_kind = ('terminal_logs' if source in ('pty_toolbar_action', 'terminal_toolbar_action')
+                               else 'command_output')
+                old_auto_folder = old_folder in ('saved:script_output', 'saved:job_output', 'saved:command_output')
+                new_folder = ('saved:terminal_logs' if target_kind == 'terminal_logs' else 'saved:command_output') if old_auto_folder else old_folder
+            elif old_kind in ('script_output', 'job_output'):
+                target_kind = 'script_file' if old_kind == 'script_output' else 'job_file'
+                new_folder = old_folder
+            else:
+                continue
+            if target_kind == old_kind and new_folder == old_folder:
+                continue
+            payload['source_kind'] = target_kind
+            payload['folder_id'] = new_folder
+            conn.execute('UPDATE artifact_entries SET source_kind=?, folder_id=?, payload_json=? WHERE artifact_id=?',
+                         (target_kind, new_folder, json.dumps(payload, ensure_ascii=False), row['artifact_id']))
+
+    @staticmethod
+    def _saved_folder_id(source_kind):
+        kind = str(source_kind or '').strip()
+        target = f'saved:{kind}'
+        return SOURCE_FOLDER_IDS.get(kind, target if target in SAVED_FOLDER_IDS else 'saved:inbox')
+
+    def _normalize_saved_folders(self, conn):
+        """Retire earlier user-defined Saved folders without deleting any file bytes."""
+        custom = conn.execute("SELECT 1 FROM artifact_folders WHERE scope='saved' AND preset=0 LIMIT 1").fetchone()
+        misplaced = conn.execute("""SELECT 1 FROM artifact_entries
+            WHERE scope='saved' AND (folder_id IS NULL OR folder_id NOT IN
+                (SELECT folder_id FROM artifact_folders WHERE scope='saved' AND preset=1)) LIMIT 1""").fetchone()
+        if not custom and not misplaced:
+            return
+        rows = conn.execute("""SELECT artifact_id, source_kind, payload_json FROM artifact_entries
+            WHERE scope='saved' AND (folder_id IS NULL OR folder_id NOT IN
+                (SELECT folder_id FROM artifact_folders WHERE scope='saved' AND preset=1))""").fetchall()
+        for row in rows:
+            payload = json.loads(row['payload_json'])
+            target = self._saved_folder_id(row['source_kind'])
+            payload['folder_id'] = target
+            conn.execute('UPDATE artifact_entries SET folder_id=?, payload_json=? WHERE artifact_id=?',
+                         (target, json.dumps(payload, ensure_ascii=False), row['artifact_id']))
+        conn.execute("DELETE FROM artifact_folders WHERE scope='saved' AND preset=0")
 
     @contextmanager
     def _connect(self):
@@ -146,6 +222,11 @@ class ArtifactSqliteCatalog:
         artifact_id = payload['artifact_id']
         scope = payload['scope']
         folder_id = payload.get('folder_id') or None
+        if scope == 'saved':
+            folder_id = folder_id or self._saved_folder_id(payload.get('source_kind'))
+            if folder_id not in SAVED_FOLDER_IDS:
+                raise ValueError('Saved Files only supports preset folders')
+            payload['folder_id'] = folder_id
         with self._connect() as conn:
             if folder_id:
                 folder = conn.execute('SELECT scope FROM artifact_folders WHERE folder_id=?', (folder_id,)).fetchone()
@@ -179,6 +260,11 @@ class ArtifactSqliteCatalog:
                     already += 1
                     continue
                 folder_id = payload.get('folder_id') or None
+                if payload['scope'] == 'saved':
+                    folder_id = folder_id or self._saved_folder_id(payload.get('source_kind'))
+                    if folder_id not in SAVED_FOLDER_IDS:
+                        raise ValueError('Saved Files only supports preset folders')
+                    payload['folder_id'] = folder_id
                 if folder_id:
                     folder = conn.execute('SELECT scope FROM artifact_folders WHERE folder_id=?',
                                           (folder_id,)).fetchone()
@@ -210,9 +296,36 @@ class ArtifactSqliteCatalog:
         if row is None or row['scope'] != scope:
             raise ValueError('Invalid parent folder')
 
-    def create_folder(self, scope, name, parent_id=''):
+    def resolve_folder(self, scope: str, folder: str) -> str:
+        """Resolve a user-supplied virtual folder name/path without creating folders."""
+        value = str(folder or '').strip().strip('/')
+        if not value:
+            return ''
         if scope not in ('saved', 'shared'):
-            raise ValueError('Invalid file space')
+            raise ValueError('Folder is not available for this artifact type')
+        with self._connect() as conn:
+            if value.startswith('saved:') or value.startswith('shared:'):
+                row = conn.execute('SELECT folder_id FROM artifact_folders WHERE folder_id=? AND scope=?',
+                                   (value, scope)).fetchone()
+                if not row:
+                    raise ValueError('Unknown folder for file space')
+                return row['folder_id']
+            parent = None
+            for name in value.split('/'):
+                name = name.strip()
+                if not name or name in ('.', '..') or '\\' in name:
+                    raise ValueError('Invalid folder path')
+                row = conn.execute("""SELECT folder_id FROM artifact_folders WHERE scope=?
+                    AND IFNULL(parent_id, '')=? AND name=? COLLATE NOCASE""",
+                    (scope, parent or '', name)).fetchone()
+                if not row:
+                    raise ValueError(f'Unknown {scope} folder: {name}')
+                parent = row['folder_id']
+            return parent or ''
+
+    def create_folder(self, scope, name, parent_id=''):
+        if scope != 'shared':
+            raise ValueError('Only Shared Files supports folder management')
         name = str(name or '').strip()
         if not name or name in ('.', '..') or '/' in name or '\\' in name or len(name) > 120:
             raise ValueError('Invalid folder name')
@@ -236,6 +349,8 @@ class ArtifactSqliteCatalog:
 
     def rename_folder(self, folder_id, name):
         current = self.get_folder(folder_id)
+        if current['scope'] != 'shared':
+            raise ValueError('Only Shared Files supports folder management')
         if current['preset']:
             raise ValueError('Preset folders cannot be renamed')
         name = str(name or '').strip()
@@ -251,6 +366,8 @@ class ArtifactSqliteCatalog:
 
     def delete_folder(self, folder_id):
         folder = self.get_folder(folder_id)
+        if folder['scope'] != 'shared':
+            raise ValueError('Only Shared Files supports folder management')
         if folder['preset']:
             raise ValueError('Preset folders cannot be deleted')
         with self._connect() as conn:
@@ -270,5 +387,7 @@ class ArtifactSqliteCatalog:
             folder = self.get_folder(folder_id)
             if folder['scope'] != payload['scope']:
                 raise ValueError('Use a dedicated copy action to change sharing scope')
-        payload['folder_id'] = folder_id or None
+            if payload['scope'] == 'saved' and not folder['preset']:
+                raise ValueError('Saved Files only supports preset folders')
+        payload['folder_id'] = folder_id or ('saved:inbox' if payload['scope'] == 'saved' else None)
         return self.save(payload)

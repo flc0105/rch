@@ -28,8 +28,8 @@
           <el-button v-if="isSharedFilesTab" class="toolbar-btn" size="small" @click="createSharedFilePrompt">Create File</el-button>
           <el-button v-if="isSharedFilesTab" class="toolbar-btn" size="small" :loading="sharedFileUploading" @click="triggerSharedFileUpload">Upload</el-button>
           <span class="artifact-toolbar-divider" aria-hidden="true"></span>
-          <el-button class="toolbar-btn" size="small" :disabled="!canEditSelectedFolder" @click="renameFolderPrompt">Rename Folder</el-button>
-          <el-button class="toolbar-btn" size="small" :disabled="!canEditSelectedFolder" @click="deleteSelectedFolder">Delete Folder</el-button>
+          <el-button v-if="isSharedFilesTab" class="toolbar-btn" size="small" :disabled="!canEditSelectedFolder" @click="renameFolderPrompt">Rename Folder</el-button>
+          <el-button v-if="isSharedFilesTab" class="toolbar-btn" size="small" :disabled="!canEditSelectedFolder" @click="deleteSelectedFolder">Delete Folder</el-button>
           <el-button class="toolbar-btn" size="small" type="danger" plain :disabled="!selectedArtifactIds.length"
                      :loading="artifactBulkDeleting" @click="deleteSelectedArtifacts">
             Delete {{ selectedArtifactIds.length ? ` (${selectedArtifactIds.length})` : '' }}
@@ -52,7 +52,7 @@
         <aside class="artifact-folder-sidebar">
           <div class="artifact-folder-heading">
             <span>Folders</span>
-            <el-button size="small" text type="primary" @click="createFolderPrompt">New Folder</el-button>
+            <el-button v-if="isSharedFilesTab" size="small" text type="primary" @click="createFolderPrompt">New Folder</el-button>
           </div>
           <el-tree
             :key="artifactActiveTab"
@@ -500,12 +500,14 @@ export default {
     },
 
     moveFolderOptions() {
-      return (this.artifactFolders || []).filter(folder => folder.scope === this.moveArtifactItem?.scope)
+      return (this.artifactFolders || []).filter(folder =>
+        folder.scope === this.moveArtifactItem?.scope &&
+        (folder.scope === 'shared' || folder.preset))
     },
 
     canEditSelectedFolder() {
       const folder = (this.artifactFolders || []).find(item => item.folder_id === this.selectedFolderId)
-      return Boolean(folder && !folder.preset)
+      return Boolean(this.isSharedFilesTab && folder && !folder.preset)
     },
 
     artifactMachineOptions() {
@@ -594,6 +596,7 @@ export default {
     },
 
     async createFolderPrompt() {
+      if (!this.isSharedFilesTab) return
       try {
         const { value } = await ElMessageBox.prompt('Folder name', 'New Folder', {
           inputPattern: /\S/, inputErrorMessage: 'Folder name is required',

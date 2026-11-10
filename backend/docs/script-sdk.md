@@ -116,7 +116,7 @@ SCRIPT_METADATA = {
 
 from client.runtime.sdk import artifact
 
-saved = artifact.save("/tmp/a.txt", type="shared_files", category="script")
+saved = artifact.save("/tmp/a.txt", type="shared_files", folder="Team")  # Shared Files 中需先创建 Team
 print("saved =", saved)
 
 items = artifact.list(type="shared_files")
@@ -136,7 +136,8 @@ print("downloaded_path =", path)
 
 | API | API access | 说明                |
 |---|---|-------------------|
-| `artifact.save(path, type='files', category='script', extra=None, timeout=None)` | 独立上传入口 | 上传本地文件            |
+| `artifact.save(path, type='files', folder='', extra=None, timeout=None)` | 独立上传入口 | 上传本地文件            |
+| `artifact.upload(path, folder='', ...)` | 独立上传入口 | 与 `artifact.save` 一致，脚本默认进入 Saved Files / Script Files |
 | `artifact.list(type='', machine_id='')` | Client Session Token | 查询 artifacts      |
 | `artifact.get(ref, type='shared_files')` | Client Session Token | 解析 artifact 元数据   |
 | `artifact.download(ref, type='shared_files', target_path='', timeout=None)` | `artifacts:list` + `artifacts:download` | 下载 artifact       |

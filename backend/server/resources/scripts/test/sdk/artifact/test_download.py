@@ -17,7 +17,7 @@ with tempfile.TemporaryDirectory(prefix='rch_sdk_artifact_') as directory:
     source = os.path.join(directory, name)
     with open(source, 'w', encoding='utf-8') as stream:
         stream.write('RCH Script SDK artifact test\n')
-    item = artifact.save(source, type='files', category='sdk_test')
+    item = artifact.save(source, type='files', folder='Script Files')
     artifact_id = item.get('artifact_id') or item.get('id')
     assert artifact_id, 'No artifact ID was returned.'
     destination = os.path.join(directory, 'downloaded.txt')

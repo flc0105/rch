@@ -543,7 +543,7 @@ export default {
         })
         const json = await res.json()
         if (!res.ok || json.code !== 0) throw new Error(json.message || 'Save failed')
-        ElMessage.success('Saved to Command Output')
+        ElMessage.success('Saved to Terminal Logs')
         this.$emit('artifact-saved', json.data || null)
       } catch (error) {
         ElMessage.error(error.message || 'Save failed')

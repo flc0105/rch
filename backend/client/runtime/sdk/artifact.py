@@ -35,18 +35,20 @@ def _unwrap_api_payload(payload: dict) -> Any:
     return payload.get('data') if 'data' in payload else payload
 
 
-def _build_form_data(*, artifact_type: str, category: str, extra: dict | None = None) -> dict:
+def _build_form_data(*, artifact_type: str, folder: str, extra: dict | None = None) -> dict:
     owner = get_command_owner()
     if owner is not None and hasattr(owner, 'http_file_transfer_service'):
         return owner.http_file_transfer_service.build_http_upload_form_data(
             artifact_type=artifact_type,
-            category=category,
+            source_kind=('script_file' if artifact_type != 'shared_files' else 'shared_upload'),
+            folder=folder,
             extra=extra,
         )
 
     payload = {
         'artifact_type': artifact_type,
-        'category': category,
+        'source_kind': 'script_file' if artifact_type != 'shared_files' else 'shared_upload',
+        'folder': folder,
         'client_id': get_client_id(),
         'source_command_id': get_command_id() if get_command_id() is not None else '',
     }
@@ -102,17 +104,18 @@ def _parse_upload_response(response, file_path: str) -> dict:
     return data
 
 
-def save(path: str, *, type: str = 'files', category: str = 'script', extra: dict | None = None,
+def save(path: str, *, type: str = 'files', folder: str = '', extra: dict | None = None,
          timeout=None) -> dict:
     """
     上传 client 本地文件到 server artifact。
 
     用法：
-        item = artifact.save('/tmp/a.log')
+        item = artifact.save('/tmp/a.log')  # Saved Files / Script Files
+        item = artifact.save('/tmp/image.png', folder='Screenshots')
         item = artifact.save('/tmp/a.log', type='shared_files')
     """
     artifact_type = _normalize_artifact_type(type, default='files')
-    normalized_category = _safe_text(category) or 'script'
+    normalized_folder = _safe_text(folder)
     file_path = _resolve_local_file(path)
     owner = get_command_owner()
 
@@ -120,7 +123,8 @@ def save(path: str, *, type: str = 'files', category: str = 'script', extra: dic
         response = owner.http_file_transfer_service.upload_file_to_server_via_http(
             file_path,
             artifact_type=artifact_type,
-            category=normalized_category,
+            source_kind=('script_file' if artifact_type != 'shared_files' else 'shared_upload'),
+            folder=normalized_folder,
             extra=extra,
         )
         return _parse_upload_response(response, file_path)
@@ -130,7 +134,7 @@ def save(path: str, *, type: str = 'files', category: str = 'script', extra: dic
         filename=os.path.basename(file_path),
         form_data=_build_form_data(
             artifact_type=artifact_type,
-            category=normalized_category,
+            folder=normalized_folder,
             extra=extra,
         ),
         timeout=timeout or 120,
@@ -244,6 +248,9 @@ def download(ref: str, *, type: str = 'shared_files', target_path: str = '', tim
 def get(ref: str, *, type: str = 'shared_files') -> dict:
     return _resolve_artifact(ref, _normalize_artifact_type(type, default='shared_files'))
 
+
+# Upload 与 save 使用相同的文件保存入口及 folder 规则。
+upload = save
 
 # 语义化别名，方便脚本里按动作阅读。
 list_artifacts = list

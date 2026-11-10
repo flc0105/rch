@@ -40,7 +40,7 @@ def _build_script_upload_form_data(
     metadata=None,
     script_name: str = '',
     artifact_type: str = 'files',
-    category: str = 'default',
+    folder: str = '',
 ) -> dict:
     ctx = _extract_script_context(context)
     resolved_script_name = _resolve_script_name(
@@ -50,7 +50,8 @@ def _build_script_upload_form_data(
 
     form_data = {
         'artifact_type': (artifact_type or 'files').strip() or 'files',
-        'category': (category or 'default').strip() or 'default',
+        'source_kind': 'script_file' if artifact_type != 'shared_files' else 'shared_upload',
+        'folder': str(folder or '').strip(),
         'client_id': str(ctx.get('client_id') or '').strip(),
         'source_command_id': ctx.get('command_id') if ctx.get('command_id') is not None else '',
     }
@@ -71,7 +72,7 @@ def upload_file(
     file_source,
     *,
     filename: str = '',
-    category: str = 'default',
+    folder: str = '',
     artifact_type: str = 'files',
     context=None,
     metadata=None,
@@ -87,7 +88,7 @@ def upload_file(
         resp = upload_file(
             buf,
             filename='a.png',
-            category='download',
+            folder='Downloads',
             context=kwargs,
             metadata=SCRIPT_METADATA,
         )
@@ -105,7 +106,7 @@ def upload_file(
         metadata=metadata,
         script_name=script_name,
         artifact_type=artifact_type,
-        category=category,
+        folder=folder,
     )
 
     upload_name = str(filename or '').strip()
