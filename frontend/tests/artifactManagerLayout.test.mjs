@@ -7,7 +7,7 @@ const source = readFileSync(new URL('../src/components/ArtifactDialog.vue', impo
 const template = source.slice(source.indexOf('<template>'), source.indexOf('<script>'))
 const script = source.match(/<script>([\s\S]*?)<\/script>/)?.[1]
 assert.ok(script)
-const sandbox = { DragUploadDialog: {}, File: {}, Folder: {}, FolderOpen: {}, ElMessage: {}, ElMessageBox: {} }
+const sandbox = { ARTIFACT_SCOPE: { SAVED: 'saved', SHARED: 'shared', PREVIEW: 'preview' }, ARTIFACT_FOLDER_ALL: '__all__', DragUploadDialog: {}, File: {}, Folder: {}, FolderOpen: {}, ElMessage: {}, ElMessageBox: {} }
 vm.runInNewContext(script.replace(/^import\s+[^\n]*\n/gm, '')
   .replace('export default {', 'globalThis.component = {'), sandbox)
 const component = sandbox.component

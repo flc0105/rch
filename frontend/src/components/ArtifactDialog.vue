@@ -14,10 +14,10 @@
         class="artifact-tabs"
         @update:model-value="handleActiveTabChange"
       >
-        <el-tab-pane name="saved">
+        <el-tab-pane :name="ARTIFACT_SCOPE.SAVED">
           <template #label>Saved Files ({{ artifactCountMap.saved || 0 }})</template>
         </el-tab-pane>
-        <el-tab-pane name="shared">
+        <el-tab-pane :name="ARTIFACT_SCOPE.SHARED">
           <template #label>Shared Files ({{ artifactCountMap.shared || 0 }})</template>
         </el-tab-pane>
       </el-tabs>
@@ -61,12 +61,12 @@
             :props="{ label: 'name', children: 'children' }"
             :default-expand-all="true"
             highlight-current
-            :current-node-key="selectedFolderId || '__all__'"
+            :current-node-key="selectedFolderId || ARTIFACT_FOLDER_ALL"
             @node-click="handleFolderSelect"
           >
             <template #default="{ data }">
               <span class="artifact-tree-entry">
-                <FolderOpen v-if="data.folder_id === '__all__'" :size="15" aria-hidden="true" />
+                <FolderOpen v-if="data.folder_id === ARTIFACT_FOLDER_ALL" :size="15" aria-hidden="true" />
                 <Folder v-else :size="15" aria-hidden="true" />
                 <span class="ellipsis">{{ data.name }}</span>
               </span>
@@ -171,7 +171,7 @@
                           Info
                         </el-dropdown-item>
                         <el-dropdown-item command="rename">Rename</el-dropdown-item>
-                        <el-dropdown-item command="move">Move to Folder</el-dropdown-item>
+                        <el-dropdown-item v-if="isSharedFileItem(row)" command="move">Move to Folder</el-dropdown-item>
                         <el-dropdown-item
                           v-if="isSharedFileItem(row) && !standaloneMode"
                           command="send-current-device"
@@ -293,7 +293,7 @@
                               Info
                             </el-dropdown-item>
                             <el-dropdown-item command="rename">Rename</el-dropdown-item>
-                            <el-dropdown-item command="move">Move to Folder</el-dropdown-item>
+                            <el-dropdown-item v-if="isSharedFileItem(row)" command="move">Move to Folder</el-dropdown-item>
                             <el-dropdown-item
                               v-if="isSharedFileItem(row) && !standaloneMode"
                               command="send-current-device"
@@ -413,6 +413,7 @@ import { setRemoteClipboardArtifactFile } from '../api/clipboardApi.js'
 import { formatBytes as formatBytesValue } from '../utils/formatters.js'
 import DragUploadDialog from './DragUploadDialog.vue'
 import { File, Folder, FolderOpen } from '@lucide/vue'
+import { ARTIFACT_SCOPE, ARTIFACT_FOLDER_ALL } from '../data/artifactConstants.js'
 
 export default {
   name: 'ArtifactDialog',
@@ -450,12 +451,14 @@ export default {
 
   data() {
     return {
+      ARTIFACT_SCOPE,
+      ARTIFACT_FOLDER_ALL,
       visible: false,
       standaloneMode: false,
       artifactLoading: false,
       artifactItems: [],
       artifactMachines: [],
-      artifactActiveTab: 'saved',
+      artifactActiveTab: ARTIFACT_SCOPE.SAVED,
       artifactFolders: [],
       moveDialogVisible: false,
       moveArtifactItem: null,
@@ -475,7 +478,7 @@ export default {
 
   computed: {
     isSharedFilesTab() {
-      return this.artifactActiveTab === 'shared'
+      return this.artifactActiveTab === ARTIFACT_SCOPE.SHARED
     },
 
     showArtifactMachineFilter() {
@@ -497,13 +500,13 @@ export default {
         if (node.parent_id && byId[node.parent_id]) byId[node.parent_id].children.push(node)
         else roots.push(node)
       })
-      return [{ folder_id: '__all__', name: 'All Files', children: [] }, ...roots]
+      return [{ folder_id: ARTIFACT_FOLDER_ALL, name: 'All Files', children: [] }, ...roots]
     },
 
     moveFolderOptions() {
       return (this.artifactFolders || []).filter(folder =>
-        folder.scope === this.moveArtifactItem?.scope &&
-        (folder.scope === 'shared' || folder.preset))
+        folder.scope === ARTIFACT_SCOPE.SHARED &&
+        this.moveArtifactItem?.scope === ARTIFACT_SCOPE.SHARED)
     },
 
     canEditSelectedFolder() {
@@ -584,7 +587,7 @@ export default {
     },
 
     handleFolderSelect(node) {
-      this.selectedFolderId = node.folder_id === '__all__' ? '' : node.folder_id
+      this.selectedFolderId = node.folder_id === ARTIFACT_FOLDER_ALL ? '' : node.folder_id
       this.selectedArtifactIds = []
     },
 
@@ -646,13 +649,14 @@ export default {
     },
 
     moveArtifactPrompt(row) {
+      if (!this.isSharedFileItem(row)) return
       this.moveArtifactItem = row
       this.moveTargetFolderId = row.folder_id || ''
       this.moveDialogVisible = true
     },
 
     async confirmMoveArtifact() {
-      if (!this.moveArtifactItem || !this.moveTargetFolderId) return
+      if (!this.isSharedFileItem(this.moveArtifactItem) || !this.moveTargetFolderId) return
       try {
         await this.requestArtifactMutation(moveArtifactToFolder(this.moveArtifactItem.artifact_id,
           this.moveTargetFolderId), 'Failed to move file')
@@ -668,7 +672,7 @@ export default {
 
     async open({ standalone = false } = {}) {
       this.standaloneMode = standalone
-      this.artifactActiveTab = 'saved'
+      this.artifactActiveTab = ARTIFACT_SCOPE.SAVED
       this.artifactMachineIdFilter = ''
       this.selectedFolderId = ''
       this.visible = true
@@ -891,11 +895,11 @@ export default {
     },
 
     isSharedFileItem(item) {
-      return item?.scope === 'shared'
+      return item?.scope === ARTIFACT_SCOPE.SHARED
     },
 
     useArtifactMoreMenu(item) {
-      return item?.scope === 'saved' || item?.scope === 'shared'
+      return item?.scope === ARTIFACT_SCOPE.SAVED || item?.scope === ARTIFACT_SCOPE.SHARED
     },
 
     isDialogCancel(e) {
@@ -957,7 +961,7 @@ export default {
     },
 
     async handleActiveTabChange(tabName) {
-      this.artifactActiveTab = tabName || 'saved'
+      this.artifactActiveTab = tabName || ARTIFACT_SCOPE.SAVED
       this.selectedFolderId = ''
       this.selectedArtifactIds = []
       await this.loadArtifacts()
@@ -1093,6 +1097,7 @@ export default {
       }
 
       if (command === 'move') {
+        if (!this.isSharedFileItem(row)) return
         await this.moveArtifactPrompt(row)
         return
       }

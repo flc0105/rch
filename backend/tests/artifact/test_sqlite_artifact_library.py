@@ -28,7 +28,7 @@ def test_default_folders_and_cross_scope_move_guards(tmp_path):
     shared_folder = catalog.create_folder('shared', 'Team')
     item = make_record(tmp_path / 'image.png', 'id-1')
     catalog.save(item)
-    with pytest.raises(ValueError, match='sharing scope'):
+    with pytest.raises(ValueError, match='Only Shared Files'):
         catalog.move('id-1', shared_folder['folder_id'])
     assert catalog.get('id-1')['folder_id'] == 'saved:screenshots'
 
@@ -60,17 +60,25 @@ def test_shared_folder_hierarchy_and_fixed_saved_folders(tmp_path):
     c.delete_folder(child['folder_id'])
 
 
-def test_saved_inbox_default_and_preset_move(tmp_path):
+def test_saved_uses_single_source_kind_and_rejects_any_move(tmp_path):
+    import sqlite3
     c = ArtifactSqliteCatalog(str(tmp_path / 'db.sqlite3'))
-    no_category = make_record(tmp_path / 'general.txt', 'general', source_kind='inbox', folder_id=None)
-    assert c.save(no_category)['folder_id'] == 'saved:inbox'
-    assert c.get('general')['folder_id'] == 'saved:inbox'
-    moved = c.move('general', 'saved:screenshots')
-    assert moved['folder_id'] == 'saved:screenshots'
-    assert moved['source_kind'] == 'inbox'  # moving does not rewrite provenance
-    assert c.move('general', '')['folder_id'] == 'saved:inbox'
+    item = make_record(tmp_path / 'general.txt', 'general', source_kind='inbox', folder_id=None)
+    assert c.save(item)['folder_id'] == 'saved:inbox'
+    assert c.list(scope='saved', folder_id='saved:inbox')[0]['artifact_id'] == 'general'
+    assert c.list(folder_id='saved:inbox')[0]['artifact_id'] == 'general'
+    with pytest.raises(ValueError, match='Only Shared Files'):
+        c.move('general', 'saved:screenshots')
+    with pytest.raises(ValueError, match='Only Shared Files'):
+        c.move('general', '')
+    with sqlite3.connect(c.db_path) as conn:
+        stored_folder, stored_kind, raw = conn.execute(
+            'SELECT folder_id, source_kind, payload_json FROM artifact_entries WHERE artifact_id=?',
+            ('general',)).fetchone()
+    assert stored_folder is None and stored_kind == 'inbox'
+    assert 'folder_id' not in json.loads(raw)
     bad = make_record(tmp_path / 'bad.txt', 'bad', folder_id='arbitrary-folder')
-    with pytest.raises(ValueError, match='preset folders'):
+    with pytest.raises(ValueError, match='must match source_kind'):
         c.save(bad)
     assert c.get('bad') is None
 
@@ -116,7 +124,7 @@ def test_source_classification_and_preview_is_not_in_saved_all_files(tmp_path):
     ]
     for t, category, extra, expected in cases:
         assert classify_artifact(t, category, extra) == ('saved', expected,
-            {'script_file': 'saved:script_output', 'job_file': 'saved:job_output'}.get(expected, f'saved:{expected}'))
+            f'saved:{expected}')
     assert classify_artifact('shared_files', '', {})[:2] == ('shared', 'shared_upload')
     assert classify_artifact('previews', '', {})[:2] == ('preview', 'preview_cache')
     c = ArtifactSqliteCatalog(str(tmp_path / 'db.sqlite3'))
@@ -157,7 +165,7 @@ def test_bulk_import_is_transactional_on_folder_conflict(tmp_path):
     one = make_record(tmp_path / 'one.txt', 'one')
     two = make_record(tmp_path / 'two.txt', 'two')
     two['folder_id'] = 'nonexistent-folder'
-    with pytest.raises(ValueError, match='preset folders'):
+    with pytest.raises(ValueError, match='must match source_kind'):
         c.import_records([one, two])
     assert c.get('one') is None
     assert c.get('two') is None
@@ -189,20 +197,47 @@ def test_saved_files_cannot_be_manually_created_through_shared_create_endpoint(t
         api.create_file('saved', 'no-machine.txt')
 
 
-def test_existing_script_and_job_output_snapshots_join_command_output_without_moving_bytes(tmp_path):
+def test_canonical_saved_ids_and_sources_are_strict(tmp_path):
+    c = ArtifactSqliteCatalog(str(tmp_path / 'catalog.sqlite3'))
+    assert c.resolve_folder('saved', 'Script Files') == 'saved:script_file'
+    assert c.resolve_folder('saved', 'Job Files') == 'saved:job_file'
+    for old_id in ('saved:script_output', 'saved:job_output'):
+        with pytest.raises((KeyError, ValueError)):
+            c.resolve_folder('saved', old_id)
+    assert classify_artifact('command_output', 'job_output') == (
+        'saved', 'command_output', 'saved:command_output')
+    with pytest.raises(ValueError, match='Unknown artifact producer category'):
+        classify_artifact('files', 'unknown-producer')
+    bad = make_record(tmp_path / 'bad-artifact', 'invalid', source_kind='script_output', folder_id=None)
+    with pytest.raises(ValueError):
+        c.save(bad)
+
+
+def test_shared_source_and_folder_remain_independent(tmp_path):
+    c = ArtifactSqliteCatalog(str(tmp_path / 'db.sqlite3'))
+    parent = c.create_folder('shared', 'Team')
+    first = c.create_folder('shared', 'One', parent['folder_id'])
+    second = c.create_folder('shared', 'Two', parent['folder_id'])
+    item = make_record(tmp_path / 'shared.bin', 'shared-one', scope='shared',
+                       source_kind='shared_upload', folder_id=first['folder_id'])
+    c.save(item)
+    moved = c.move('shared-one', second['folder_id'])
+    assert moved['source_kind'] == 'shared_upload'
+    assert moved['folder_id'] == second['folder_id']
+    assert (tmp_path / 'shared.bin').is_file()
+
+
+def test_old_saved_folder_display_name_does_not_block_canonical_id(tmp_path):
+    """Existing Script Files labels cannot shadow the new script_file ID."""
+    import sqlite3
     db = tmp_path / 'catalog.sqlite3'
     catalog = ArtifactSqliteCatalog(str(db))
-    script_path = tmp_path / 'script.json'
-    job_path = tmp_path / 'job.json'
-    script = make_record(script_path, 'old-script', source_kind='script_output', folder_id='saved:script_output')
-    script['artifact_type'] = 'command_output'
-    job = make_record(job_path, 'old-job', source_kind='job_output', folder_id='saved:job_output')
-    job['artifact_type'] = 'command_output'
-    catalog.save(script)
-    catalog.save(job)
+    with sqlite3.connect(db) as conn:
+        conn.execute("DELETE FROM artifact_folders WHERE folder_id='saved:script_file'")
+        conn.execute("INSERT INTO artifact_folders VALUES (?, 'saved', NULL, 'Script Files', 1, ?)",
+                     ('saved:script_output', '2026-11-10'))
     reopened = ArtifactSqliteCatalog(str(db))
-    assert reopened.get('old-script')['folder_id'] == 'saved:command_output'
-    assert reopened.get('old-job')['folder_id'] == 'saved:command_output'
-    assert reopened.get('old-script')['source_kind'] == 'command_output'
-    assert reopened.get('old-job')['source_kind'] == 'command_output'
-    assert script_path.read_text() == job_path.read_text() == 'untouched content'
+    assert reopened.get_folder('saved:script_file')['name'] == 'Script Files'
+    with pytest.raises(FileNotFoundError):
+        reopened.get_folder('saved:script_output')
+    assert len(reopened.list_folders('saved')) == 9

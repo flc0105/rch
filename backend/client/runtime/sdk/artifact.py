@@ -3,6 +3,7 @@ import json
 import os
 from typing import Any
 
+from core.artifact_contract import ArtifactType, ArtifactSourceKind
 from client.http.client_api import ClientApiClient, ClientApiError
 from client.runtime.sdk.context import get_client_id, get_command_id, get_command_owner
 
@@ -12,7 +13,7 @@ class ScriptSdkArtifactError(RuntimeError):
     pass
 
 
-FORMAL_ARTIFACT_TYPES = {'files', 'previews', 'shared_files', 'command_output'}
+FORMAL_ARTIFACT_TYPES = frozenset(item.value for item in ArtifactType)
 
 
 def _safe_text(value) -> str:
@@ -40,14 +41,14 @@ def _build_form_data(*, artifact_type: str, folder: str, extra: dict | None = No
     if owner is not None and hasattr(owner, 'http_file_transfer_service'):
         return owner.http_file_transfer_service.build_http_upload_form_data(
             artifact_type=artifact_type,
-            source_kind=('script_file' if artifact_type != 'shared_files' else 'shared_upload'),
+            source_kind=(ArtifactSourceKind.SCRIPT_FILE.value if artifact_type != ArtifactType.SHARED_FILES.value else ArtifactSourceKind.SHARED_UPLOAD.value),
             folder=folder,
             extra=extra,
         )
 
     payload = {
         'artifact_type': artifact_type,
-        'source_kind': 'script_file' if artifact_type != 'shared_files' else 'shared_upload',
+        'source_kind': ArtifactSourceKind.SCRIPT_FILE.value if artifact_type != ArtifactType.SHARED_FILES.value else ArtifactSourceKind.SHARED_UPLOAD.value,
         'folder': folder,
         'client_id': get_client_id(),
         'source_command_id': get_command_id() if get_command_id() is not None else '',
@@ -123,7 +124,7 @@ def save(path: str, *, type: str = 'files', folder: str = '', extra: dict | None
         response = owner.http_file_transfer_service.upload_file_to_server_via_http(
             file_path,
             artifact_type=artifact_type,
-            source_kind=('script_file' if artifact_type != 'shared_files' else 'shared_upload'),
+            source_kind=(ArtifactSourceKind.SCRIPT_FILE.value if artifact_type != ArtifactType.SHARED_FILES.value else ArtifactSourceKind.SHARED_UPLOAD.value),
             folder=normalized_folder,
             extra=extra,
         )

@@ -1,6 +1,9 @@
 import os
 
 from core.utils.text_encoding import encode_for_existing_file
+from core.artifact_contract import (
+    ArtifactScope, ArtifactType, ArtifactSourceKind, scope_for_type, SAVED_SOURCE_BY_FOLDER_ID, classify_artifact,
+)
 from server.application.artifact.artifact_events import publish_artifact_created
 
 
@@ -45,7 +48,7 @@ class WebArtifactApi:
         return artifact
 
     def create_file(self, scope: str, name: str, machine_id: str = '', folder_id: str = ''):
-        if scope != 'shared':
+        if scope != ArtifactScope.SHARED.value:
             raise ValueError('Create File is only available in Shared Files')
         name = os.path.basename(str(name or '').strip())
         if not name or name in ('.', '..'):
@@ -55,7 +58,7 @@ class WebArtifactApi:
             if folder['scope'] != scope:
                 raise ValueError('Folder does not belong to this file space')
         artifact = self.artifact_service.save_text_artifact(
-            artifact_type='shared_files',
+            artifact_type=ArtifactType.SHARED_FILES.value,
             category='manual', hostname='', machine_id=machine_id,
             original_name=name, content='',
         )
@@ -121,7 +124,7 @@ class WebArtifactApi:
     def get_upload_temp_file_path(self, temp_id: str, filename: str):
         return self.artifact_service.get_upload_temp_file_path(temp_id, filename)
 
-    def save_http_uploaded_file(self, upload, artifact_type: str = 'files', category: str = '', source_kind: str = '', client_id: str = '',
+    def save_http_uploaded_file(self, upload, artifact_type: str = ArtifactType.FILES.value, category: str = '', source_kind: str = '', client_id: str = '',
                                 hostname: str = '', machine_id: str = '', job_id: str = '', job_name: str = '',
                                 job_key: str = '',
                                 # source_type: str = 'client_upload',
@@ -133,18 +136,26 @@ class WebArtifactApi:
         # Resolve explicit folder names before receiving any file bytes.
         if folder and folder_id:
             raise ValueError('Specify folder or folder_id, not both')
+        expected_scope = scope_for_type(artifact_type)
         if folder:
-            scope = 'shared' if artifact_type == 'shared_files' else 'saved' if artifact_type != 'previews' else 'preview'
-            folder_id = self.artifact_service.registry_service.catalog.resolve_folder(scope, folder)
+            folder_id = self.artifact_service.registry_service.catalog.resolve_folder(
+                expected_scope.value, folder)
         # Reject invalid destinations before creating physical files or catalog rows.
         if folder_id:
             folder_info = self.artifact_service.registry_service.catalog.get_folder(folder_id)
-            expected_scope = ('shared' if artifact_type == 'shared_files' else
-                              'preview' if artifact_type == 'previews' else 'saved')
-            if folder_info['scope'] != expected_scope:
+            if folder_info['scope'] != expected_scope.value:
                 raise ValueError('Folder does not belong to this file space')
-            if expected_scope == 'saved' and not folder_info['preset']:
-                raise ValueError('Saved Files only supports preset folders')
+            if expected_scope == ArtifactScope.SAVED and folder_id not in SAVED_SOURCE_BY_FOLDER_ID:
+                raise ValueError('Unknown Saved Files folder')
+            if expected_scope == ArtifactScope.PREVIEW:
+                raise ValueError('Preview cache does not support folders')
+        # Validate classification before writing upload bytes; an explicit Saved
+        # folder overrides the producer hint as the single source classification.
+        if expected_scope == ArtifactScope.SAVED and not folder_id:
+            producer_hint = source_kind or category
+            if job_id and producer_hint.strip().lower() in ('', 'default'):
+                producer_hint = ArtifactSourceKind.JOB_FILE.value
+            classify_artifact(artifact_type, producer_hint, extra)
         resolved_hostname, resolved_machine_id, addr = self.resolve_client_context(client_id)
         hostname = hostname or resolved_hostname
         machine_id = machine_id or resolved_machine_id
@@ -164,9 +175,8 @@ class WebArtifactApi:
             # related_path=related_path,
             transfer_buffer_size=transfer_buffer_size,
             extra=extra,
+            folder_id=folder_id,
         )
-        if folder_id:
-            artifact = self.artifact_service.move_artifact(artifact['artifact_id'], folder_id)
         try:
             self.bind_uploaded_artifact_to_history(client_id, source_command_id, artifact)
         except Exception:
@@ -239,7 +249,7 @@ class WebArtifactApi:
             raise RuntimeError('command_execution_api is not available')
 
         artifact = self.get_artifact_by_id(artifact_id)
-        if artifact.get('artifact_type') != 'shared_files':
+        if artifact.get('artifact_type') != ArtifactType.SHARED_FILES.value:
             raise ValueError('Only shared files can be sent to client')
         file_path = self.get_artifact_file_path(artifact_id)
         display_name = (artifact.get('original_name') or artifact.get('stored_name') or os.path.basename(file_path)).strip()

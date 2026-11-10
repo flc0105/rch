@@ -12,6 +12,7 @@ function component(name, callbacks) {
   assert.ok(tag)
   const env = {
     createTerminalOperation, operationHeaders, formatTerminalCommandFinishedLine,
+    ARTIFACT_SCOPE: { SAVED: 'saved', SHARED: 'shared', PREVIEW: 'preview' }, ARTIFACT_FOLDER_ALL: '__all__',
     ElMessage: { error() {}, warning() {}, success() {} },
     ElMessageBox: { confirm: async () => {} },
     prepareUploadConflict: callbacks.prepareUploadConflict,

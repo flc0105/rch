@@ -65,7 +65,7 @@ class WebArtifactService:
                                 source_command_id=None, addr: str = '',
                                 # related_path: str = '',
                                 transfer_buffer_size=None,
-                                extra: dict | None = None) -> dict:
+                                extra: dict | None = None, folder_id: str = '') -> dict:
         return self.registry_service.save_http_uploaded_file(
             file,
             artifact_type=artifact_type,
@@ -82,6 +82,7 @@ class WebArtifactService:
             # related_path=related_path,
             transfer_buffer_size=transfer_buffer_size,
             extra=extra,
+            folder_id=folder_id,
         )
 
     def allocate_command_output_artifact_path(self, *, category: str, machine_id: str, source_command: str, now=None) -> dict:

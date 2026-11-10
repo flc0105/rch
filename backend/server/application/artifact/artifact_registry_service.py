@@ -8,7 +8,11 @@ from pathlib import Path
 from werkzeug.utils import secure_filename
 
 from core import transfer_settings
-from server.application.artifact.artifact_sqlite_catalog import ArtifactSqliteCatalog, classify_artifact
+from core.artifact_contract import (
+    ArtifactType, ArtifactScope, ArtifactSourceKind, SAVED_SOURCE_BY_FOLDER_ID,
+    classify_artifact, scope_for_type,
+)
+from server.application.artifact.artifact_sqlite_catalog import ArtifactSqliteCatalog
 
 
 class ArtifactRegistryService:
@@ -28,17 +32,11 @@ class ArtifactRegistryService:
 
     ARTIFACT_TIME_FORMAT = '%Y-%m-%d %H:%M:%S'
 
-    TYPE_FILES = 'files'
-    TYPE_PREVIEWS = 'previews'
-    TYPE_SHARED_FILES = 'shared_files'
-    TYPE_COMMAND_OUTPUT = 'command_output'
-
-    FORMAL_TYPES = {
-        TYPE_FILES,
-        TYPE_PREVIEWS,
-        TYPE_SHARED_FILES,
-        TYPE_COMMAND_OUTPUT,
-    }
+    TYPE_FILES = ArtifactType.FILES.value
+    TYPE_PREVIEWS = ArtifactType.PREVIEWS.value
+    TYPE_SHARED_FILES = ArtifactType.SHARED_FILES.value
+    TYPE_COMMAND_OUTPUT = ArtifactType.COMMAND_OUTPUT.value
+    FORMAL_TYPES = frozenset(item.value for item in ArtifactType)
 
     def __init__(self, artifact_service):
         self.artifact_service = artifact_service
@@ -162,7 +160,7 @@ class ArtifactRegistryService:
                                       source_command_id=None, client_id: str = '', addr: str = '',
                                       job_id: str = '', job_name: str = '', job_key: str = '',
                                       # related_path: str = '',
-                                      extra: dict | None = None) -> dict:
+                                      extra: dict | None = None, folder_id: str = '') -> dict:
         artifact_id = uuid.uuid4().hex
         file_size = os.path.getsize(file_path) if os.path.isfile(file_path) else 0
         meta = self._build_meta_payload(
@@ -184,10 +182,20 @@ class ArtifactRegistryService:
             # related_path=related_path,
             extra=extra,
         )
-        producer_category = ('job_file' if job_id and artifact_type == 'files' and
+        producer_category = (ArtifactSourceKind.JOB_FILE.value if job_id and artifact_type == self.TYPE_FILES and
                              str(category or '').strip().lower() in ('', 'default') else category)
-        scope, source_kind, folder_id = classify_artifact(artifact_type, producer_category, extra)
-        meta.update({'scope': scope, 'source_kind': source_kind, 'folder_id': folder_id})
+        scope = scope_for_type(artifact_type).value
+        if scope == ArtifactScope.SAVED.value and folder_id:
+            # Explicit Saved destination determines the one canonical classification.
+            source_kind = SAVED_SOURCE_BY_FOLDER_ID[folder_id].value
+            folder_id = None
+        else:
+            scope, source_kind, default_folder_id = classify_artifact(
+                artifact_type, producer_category, extra)
+            folder_id = None if scope == ArtifactScope.SAVED.value else folder_id or default_folder_id
+        meta.update({'scope': scope, 'source_kind': source_kind})
+        if folder_id:
+            meta['folder_id'] = folder_id
         return self.catalog.save(meta)
 
     def register_existing_artifact(self, *, artifact_type: str, category: str, hostname: str, machine_id: str,
@@ -196,7 +204,7 @@ class ArtifactRegistryService:
                                    source_command_id=None, client_id: str = '', addr: str = '',
                                    job_id: str = '', job_name: str = '', job_key: str = '',
                                    # related_path: str = '',
-                                   extra: dict | None = None) -> dict:
+                                   extra: dict | None = None, folder_id: str = '') -> dict:
         with self._lock:
             return self._finalize_registered_artifact(
                 artifact_type=artifact_type,
@@ -215,6 +223,7 @@ class ArtifactRegistryService:
                 job_key=job_key,
                 # related_path=related_path,
                 extra=extra,
+                folder_id=folder_id,
             )
 
     def _normalize_transfer_buffer_size(self, value) -> int:
@@ -235,7 +244,7 @@ class ArtifactRegistryService:
                                 source_command_id=None, addr: str = '',
                                 # related_path: str = '',
                                 transfer_buffer_size=None,
-                                extra: dict | None = None) -> dict:
+                                extra: dict | None = None, folder_id: str = '') -> dict:
         normalized_type = self._normalize_artifact_type(artifact_type or self.TYPE_FILES)
         normalized_category = (category or '').strip()
         if normalized_type == self.TYPE_SHARED_FILES:
@@ -275,6 +284,7 @@ class ArtifactRegistryService:
             job_key=job_key,
             # related_path=related_path,
             extra=extra,
+            folder_id=folder_id,
         )
 
     def save_text_artifact(self, *, artifact_type: str, category: str, hostname: str, machine_id: str,
@@ -338,8 +348,7 @@ class ArtifactRegistryService:
             self._normalize_artifact_type(artifact_type)
         with self._lock:
             items = self.catalog.list(
-                scope=scope or ('shared' if artifact_type == self.TYPE_SHARED_FILES else
-                                'preview' if artifact_type == self.TYPE_PREVIEWS else ''),
+                scope=scope or (scope_for_type(artifact_type).value if artifact_type in (self.TYPE_SHARED_FILES, self.TYPE_PREVIEWS) else ''),
                 folder_id=folder_id, machine_id=self._normalize_machine_id(machine_id) if machine_id else '',
                 source_kind=source_kind, search=search,
             )
@@ -350,25 +359,24 @@ class ArtifactRegistryService:
     def save_preview_to_saved(self, artifact_id: str, folder_id: str = '') -> dict:
         with self._lock:
             preview = self.get_artifact_by_id(artifact_id)
-            if preview.get('scope') != 'preview':
+            if preview.get('scope') != ArtifactScope.PREVIEW.value:
                 raise ValueError('Only preview cache can be saved to Saved Files')
-            if folder_id and self.catalog.get_folder(folder_id)['scope'] != 'saved':
+            if folder_id and folder_id not in SAVED_SOURCE_BY_FOLDER_ID:
                 raise ValueError('Target folder must belong to Saved Files')
             source_path = self.get_artifact_file_path(artifact_id)
-            allocated = self.allocate_artifact_path('files', preview.get('machine_id', ''),
-                                                     preview.get('original_name', 'preview'), 'download')
+            allocated = self.allocate_artifact_path(self.TYPE_FILES, preview.get('machine_id', ''),
+                                                     preview.get('original_name', 'preview'))
             shutil.copyfile(source_path, allocated['file_path'])
             try:
                 created = self.register_existing_artifact(
-                    artifact_type='files', category='download',
+                    artifact_type=self.TYPE_FILES, category=ArtifactSourceKind.DOWNLOADS.value,
                     hostname=preview.get('hostname', ''), machine_id=preview.get('machine_id', ''),
                     client_id=preview.get('client_id', ''), addr=preview.get('addr', ''),
                     original_name=preview.get('original_name', 'preview'),
                     file_path=allocated['file_path'], stored_name=allocated['stored_name'],
                     extra={'source': 'saved_remote_preview'},
+                    folder_id=folder_id,
                 )
-                if folder_id:
-                    created = self.move_artifact(created['artifact_id'], folder_id)
                 return created
             except Exception:
                 self._safe_remove_file(allocated['file_path'])
