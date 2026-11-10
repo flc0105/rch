@@ -15,14 +15,14 @@ Client Device Event / Server 各业务模块
                   ↓
           WebEventBus.publish()
                   ├──→ 通用 WebSocket：/ws/events?tab_id=<tab_id>
-                  │       └──→ Web UI 实时更新 / Toast / 交互消息
+                  │       └──→ Web UI 连接 / 任务 / 文件等实时状态与交互消息
                   │
                   └──→ NotificationEventProjector
                            ↓ 仅投影符合条件的事件
                        SQLite notifications
                            ↓
                     notification_center_updated
-                           ├──→ Web Notification Center
+                           ├──→ Web UI Toast（遵守当前显示偏好）/ Notification Center
                            └──→ 专用 WebSocket：/ws/notifications?last_event_id=<cursor>
                                     └──→ Desktop Notifier 等消费者
 ```
@@ -189,7 +189,7 @@ Web UI 初始化或 WS 重连后查询当前 Task 快照；已结束但漏掉 `c
 
 ## 浏览器及桌面通知的消费
 
-Web UI 主要订阅通用 `/ws/events`。它在连接打开后监听不同事件名称，并按业务类型生成 Element Plus Toast；另外在加载时调用历史接口，在收到 `notification_center_updated` 时更新 Notification Center 状态。
+Web UI 主要订阅通用 `/ws/events`。原始业务事件驱动连接、任务、文件等实时状态更新；服务端通过 `NotificationEventProjector` 生成并持久化通知，随后发布 `notification_center_updated`。Web UI 使用该通知对象的标题、正文、类型、上下文和 Actions 显示 Element Plus Toast，并同步 Notification Center；初次加载时从历史接口获取已有记录。Toast 时长与所选设备显示范围属于前端展示策略。
 
 - **Toast** 是短暂提示，是否弹出由浏览器当前通知偏好决定。
 - **Notification Center** 是独立的持久历史视图，支持按 `success` / `info` / `warning` / `error` 查看、删除单条，以及清空全部或仅清空当前筛选类型。

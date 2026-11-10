@@ -1,35 +1,29 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
-import { dirname, resolve } from 'node:path'
 import vm from 'node:vm'
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const source = readFileSync(resolve(root, 'src/composables/useSseStream.js'), 'utf8')
+const source = readFileSync(new URL('../src/composables/useSseStream.js', import.meta.url), 'utf8')
 const start = source.indexOf("es.addEventListener('connection_online', (event) => {")
 const end = source.indexOf("es.addEventListener('connection_offline'", start)
 assert.ok(start >= 0 && end > start)
 const fragment = source.slice(start, end)
-for (const [value, suffix] of [
-  ['', ''], ['local_heartbeat_watchdog', ' (recovered by Local Heartbeat Watchdog)'],
-  ['process_recovery_watchdog', ' (recovered by Process Recovery Watchdog)'], ['unknown', ''],
-]) {
+
+for (const recoverySource of ['', 'local_heartbeat_watchdog', 'process_recovery_watchdog']) {
   let handler
-  const ctx = { notifications: [], connections: [],
+  const ctx = {
+    selectedId: 'c1', connections: [], refreshCount: 0, popups: [],
     upsertConnection(conn) { this.connections.push(conn) },
-    showSseNotification(key, data, meta) { this.notifications.push({ key, data, meta }) },
+    refreshForegroundTask() { this.refreshCount++ },
+    showSseNotification(...args) { this.popups.push(args) },
   }
   const es = { addEventListener(_, callback) { handler = callback } }
   vm.runInNewContext(`(function(){ ${fragment} }).call(context)`, { es, context: ctx })
   const payload = { connection: { client_id: 'c1', hostname: 'Mac' } }
-  if (value) payload.recovery_source = value
+  if (recoverySource) payload.recovery_source = recoverySource
   handler({ data: JSON.stringify(payload), lastEventId: 'event-1' })
   assert.equal(ctx.connections.length, 1)
-  assert.equal(ctx.notifications.length, 1)
-  const notification = ctx.notifications[0]
-  assert.equal(notification.key, 'connection_online')
-  assert.equal(notification.data.title, 'Device Online')
-  assert.equal(notification.data.message, 'Mac is now available' + suffix)
-  assert.equal(notification.meta.context.recovery_source || '', suffix ? value : '')
+  assert.equal(ctx.connections[0].hostname, 'Mac')
+  assert.equal(ctx.refreshCount, 1)
+  assert.equal(ctx.popups.length, 0, 'raw connection event must not independently format a Toast')
 }
-console.log('online recovery notification SSE tests passed')
+console.log('online connection side effects verified; popup comes from normalized notification')

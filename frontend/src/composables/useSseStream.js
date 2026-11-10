@@ -196,18 +196,28 @@ export default {
             ElNotification(notificationOptions);
         },
 
+        // Toast lifetime is UI presentation policy; notification content and actions
+        // come exclusively from the persisted server projection.
+        getSseNotificationDuration(notification) {
+            const key = notification.notification_key;
+            const type = notification.type;
+            if (key === 'connection_online' || key === 'connection_offline') return undefined;
+            if (key === 'file_transfer_started') return 3500;
+            if (key === 'file_transfer_stopped') return 4500;
+            if (key === 'artifact_created' || (key === 'device_event' && type === 'info')) return 6000;
+            if (key === 'pty_opened' || key === 'pty_closed'
+                || key === 'screen_view_started' || key === 'screen_view_closed') return 4000;
+            if (key === 'pty_error' || key === 'screen_view_error') return 5000;
+            if (key === 'server_cleanup_completed' && type === 'warning') return 8000;
+            return type === 'error' ? 7000 : 5000;
+        },
+
         initSSE() {
             if (this.eventSource) this.eventSource.close();
 
             const tabId = this.ensureTabId();
             const es = openWebEventStream(tabId);
             this.eventSource = es;
-
-            const getConnectionLabel = (clientId) => {
-                const normalizedClientId = String(clientId || '').trim();
-                const conn = this.connections.find(item => item.client_id === normalizedClientId) || {};
-                return conn.hostname || conn.client_id || normalizedClientId || 'Unknown device';
-            };
 
             es.addEventListener('open', () => {
                 const reconnecting = this.sseReady;
@@ -242,240 +252,35 @@ export default {
             es.addEventListener('notification_center_updated', (event) => {
                 const payload = JSON.parse(event.data || '{}');
                 this.applySseNotificationCenterUpdate(payload);
-                // Watchdog outcomes are persisted once and delivered through the
-                // same SSE notification event; no dialog-owned timers or polling.
                 if (payload.action !== 'added') return;
-                const notification = payload.notification || {};
-                const key = notification.notification_key;
-                if (!['watchdog_control_timeout', 'watchdog_control_failed', 'watchdog_control_received'].includes(key)) return;
-                this.showSseNotification(key, {
+                const notification = payload.notification;
+                if (!notification || !notification.notification_key) return;
+
+                // The Notification Center is global; File Ready Toast remains
+                // scoped to the currently selected device, as before.
+                const clientId = notification.context?.client_id;
+                if (notification.notification_key === 'artifact_created'
+                    && this.selectedId && clientId && clientId !== this.selectedId) return;
+
+                this.showSseNotification(notification.notification_key, {
                     title: notification.title,
                     message: notification.message,
                     type: notification.type,
-                    duration: notification.type === 'error' ? 7000 : 5000,
+                    duration: this.getSseNotificationDuration(notification),
                 }, {
                     eventId: notification.event_id || event.lastEventId,
                     context: notification.context || {},
+                    actions: notification.actions || [],
                 });
             });
 
-            es.addEventListener('server_cleanup_completed', (event) => {
-                const payload = JSON.parse(event.data || '{}');
-                const removedFiles = Number(payload.removed_files || 0);
-                const removedRecords = Number(payload.removed_records || 0);
-                const bytesFreed = Number(payload.bytes_freed || 0);
-                const errorCount = Number(payload.error_count || 0);
-                const logUrl = String(payload.log_url || '').trim();
-                const sizeLabel = typeof this.formatBytes === 'function'
-                    ? this.formatBytes(bytesFreed)
-                    : `${bytesFreed} B`;
-                const messageParts = [
-                    `${removedFiles} file${removedFiles === 1 ? '' : 's'}`,
-                    `${removedRecords} record${removedRecords === 1 ? '' : 's'}`,
-                    sizeLabel,
-                ];
-                if (errorCount) messageParts.push(`${errorCount} error${errorCount === 1 ? '' : 's'}`);
-
-                this.showSseNotification('server_cleanup_completed', {
-                    title: errorCount ? 'Server Cleanup Completed with Errors' : 'Server Cleanup Completed',
-                    message: messageParts.join(' · '),
-                    type: errorCount ? 'warning' : 'success',
-                    duration: errorCount ? 8000 : 5000,
-                }, {
-                    eventId: event.lastEventId,
-                    context: {
-                        run_id: payload.run_id || '',
-                        trigger: payload.trigger || '',
-                        removed_files: removedFiles,
-                        removed_dirs: Number(payload.removed_dirs || 0),
-                        removed_records: removedRecords,
-                        bytes_freed: bytesFreed,
-                        error_count: errorCount,
-                    },
-                    actions: logUrl ? [{
-                        id: 'view-cleanup-log',
-                        type: 'view_server_cleanup_log',
-                        label: 'View Cleanup Log',
-                        url: logUrl,
-                    }] : [],
-                });
-            });
-
-            es.addEventListener('external_tool_lifecycle', async (event) => {
-                const payload = JSON.parse(event.data || '{}');
-                const action = String(payload.action || '').trim().toLowerCase();
-                const state = String(payload.state || '').trim().toLowerCase();
-                const operation = String(payload.operation || '').trim().toLowerCase();
-                const deviceName = getConnectionLabel(payload.client_id);
-                const serviceName = payload.display_name || payload.tool_id || payload.package_id || 'external tool';
-                const instanceId = String(payload.instance_id || '').trim();
-                const instanceLabel = instanceId ? `/${instanceId}` : '';
-                const serviceLabel = `${serviceName}${instanceLabel}`;
-                const errorText = String(payload.error || payload.message || '').trim();
-                const notificationKey = {
-                    'daemon:created': 'external_tool_daemon_created',
-                    'daemon:started': 'external_tool_daemon_started',
-                    'daemon:stopped': 'external_tool_daemon_stopped',
-                    'daemon:error': 'external_tool_daemon_error',
-                    'install:completed': 'external_tool_install_completed',
-                    'install:failed': 'external_tool_install_failed',
-                    'uninstall:completed': 'external_tool_uninstall_completed',
-                    'uninstall:failed': 'external_tool_uninstall_failed',
-                }[`${action}:${state}`];
-
-                if (!notificationKey) {
-                    await this.refreshExternalToolsIfOpen?.();
-                    return;
-                }
-
-                const context = {
-                    client_id: payload.client_id || '',
-                    action,
-                    state,
-                    operation,
-                    tool_id: payload.tool_id || '',
-                    package_id: payload.package_id || '',
-                    module_id: payload.module_id || '',
-                    display_name: payload.display_name || '',
-                    instance_id: instanceId,
-                    status: payload.status || '',
-                    pid: payload.pid ?? null,
-                    returncode: payload.returncode ?? null,
-                    duration_sec: payload.duration_sec ?? null,
-                    error: payload.error || '',
-                    log_excerpt: payload.log_excerpt || '',
-                };
-                const actions = [
-                    {
-                        id: 'open-external-tools',
-                        type: 'open_external_tools',
-                        label: 'Open External Tools',
-                    },
-                ];
-                if (state === 'error' || state === 'failed') {
-                    actions.push({
-                        id: 'view-log',
-                        type: 'view_external_tool_log',
-                        label: 'View Log',
-                    });
-                }
-
-                let title = 'External Tool';
-                let type = 'info';
-                let message = `${deviceName} · ${serviceLabel} updated`;
-
-                if (action === 'daemon' && state === 'created') {
-                    title = 'External Tool Instance Created';
-                    type = 'success';
-                    message = `${deviceName} · ${serviceLabel} instance created`;
-                } else if (action === 'daemon' && state === 'started') {
-                    title = 'External Tool Daemon Started';
-                    type = 'success';
-                    message = `${deviceName} · ${serviceLabel} daemon started successfully`;
-                } else if (action === 'daemon' && state === 'stopped') {
-                    title = 'External Tool Daemon Stopped';
-                    type = 'warning';
-                    message = `${deviceName} · ${serviceLabel} daemon stopped successfully`;
-                } else if (action === 'daemon' && state === 'error') {
-                    title = operation === 'stop' ? 'External Tool Daemon Stop Error' : 'External Tool Daemon Start Error';
-                    type = 'error';
-                    message = `${deviceName} · ${serviceLabel} daemon ${operation || 'operation'} failed${errorText ? `: ${errorText}` : ''}`;
-                } else if (action === 'install' && state === 'completed') {
-                    title = 'External Tool Install Completed';
-                    type = 'success';
-                    message = `${deviceName} · ${serviceName} install completed${payload.message ? `: ${payload.message}` : ' successfully'}`;
-                } else if (action === 'install' && state === 'failed') {
-                    title = 'External Tool Install Failed';
-                    type = 'error';
-                    message = `${deviceName} · ${serviceName} install failed${errorText ? `: ${errorText}` : ''}`;
-                } else if (action === 'uninstall' && state === 'completed') {
-                    title = 'External Tool Uninstall Completed';
-                    type = 'success';
-                    message = `${deviceName} · ${serviceName} uninstall completed${payload.message ? `: ${payload.message}` : ' successfully'}`;
-                } else if (action === 'uninstall' && state === 'failed') {
-                    title = 'External Tool Uninstall Failed';
-                    type = 'error';
-                    message = `${deviceName} · ${serviceName} uninstall failed${errorText ? `: ${errorText}` : ''}`;
-                }
-
-                this.showSseNotification(notificationKey, {
-                    title,
-                    message,
-                    type,
-                    duration: type === 'error' ? 7000 : 5000,
-                }, {
-                    eventId: event.lastEventId,
-                    context,
-                    actions,
-                });
-
+            es.addEventListener('external_tool_lifecycle', async () => {
                 await this.refreshExternalToolsIfOpen?.();
             });
 
             es.addEventListener('agent_build_lifecycle', async (event) => {
                 const payload = JSON.parse(event.data || '{}');
-                const state = String(payload.state || '').trim().toLowerCase();
-                const notificationKey = {
-                    completed: 'agent_build_completed',
-                    error: 'agent_build_error',
-                }[state];
-                if (!notificationKey) return;
-
-                const targetOs = String(payload.target_os || '').trim();
-                const targetArch = String(payload.target_arch || '').trim();
-                const builder = String(payload.builder || '').trim();
-                const fileName = String(payload.file_name || '').trim();
-                const errorText = String(payload.error || '').trim();
-                const context = {
-                    state,
-                    builder,
-                    target_os: targetOs,
-                    target_arch: targetArch,
-                    source: payload.source || '',
-                    file_name: fileName,
-                    error: errorText,
-                };
-                const actions = [];
-
-                if (state === 'completed' && payload.download_url) {
-                    actions.push({
-                        id: 'download',
-                        type: 'agent_download',
-                        label: 'Download',
-                        url: payload.download_url,
-                    });
-                }
-                actions.push({
-                    id: 'open-agents',
-                    type: 'open_agents',
-                    label: 'Open Agents',
-                });
-
-                let title = 'Agent Build';
-                let type = 'info';
-                let message = '';
-                if (state === 'completed') {
-                    title = 'Agent Build Completed';
-                    type = 'success';
-                    message = `Agent build completed successfully${fileName ? ` · ${fileName}` : ''}`;
-                } else if (state === 'error') {
-                    title = 'Agent Build Error';
-                    type = 'error';
-                    message = `Agent build failed${errorText ? `: ${errorText}` : ''}`;
-                }
-
-                this.showSseNotification(notificationKey, {
-                    title,
-                    message,
-                    type,
-                    duration: state === 'error' ? 7000 : 5000,
-                }, {
-                    eventId: event.lastEventId,
-                    context,
-                    actions,
-                });
-
-                if (state === 'completed') {
+                if (String(payload.state || '').trim().toLowerCase() === 'completed') {
                     await this.refreshAgentOutputsIfOpen?.();
                 }
             });
@@ -499,158 +304,17 @@ export default {
                 this.upsertTransferItem(payload);
             });
 
-            es.addEventListener('file_transfer_lifecycle', (event) => {
-                const payload = JSON.parse(event.data || '{}');
-                const lifecycle = String(payload.lifecycle || '').trim().toLowerCase();
-                const state = String(payload.state || '').trim().toLowerCase();
-                const filename = String(payload.filename || 'File transfer').trim() || 'File transfer';
-                const deviceName = getConnectionLabel(payload.client_id);
-                const stage = String(payload.stage || '').trim().toLowerCase();
-                const direction = String(payload.direction || '').trim().toLowerCase();
-                const errorText = String(payload.error || '').trim();
-
-                let routeLabel = '';
-                if (stage === 'uploading_to_server') {
-                    routeLabel = 'Browser → Server';
-                } else if (direction === 'server_to_client') {
-                    routeLabel = `Server → ${deviceName}`;
-                } else {
-                    routeLabel = `${deviceName} → Server`;
-                }
-
-                const actions = [
-                    {
-                        id: 'open-transfers',
-                        type: 'open_transfers',
-                        label: 'Open Transfers',
-                    },
-                ];
-                const context = {
-                    transfer_id: payload.transfer_id || '',
-                    client_id: payload.client_id || '',
-                    filename,
-                    direction,
-                    state,
-                    stage,
-                };
-
-                if (lifecycle === 'started') {
-                    this.showSseNotification('file_transfer_started', {
-                        title: 'File Transfer Started',
-                        message: `${filename} · ${routeLabel}`,
-                        type: 'info',
-                        duration: 3500,
-                    }, {
-                        eventId: event.lastEventId,
-                        context,
-                        actions,
-                    });
-                    return;
-                }
-
-                if (lifecycle === 'stopped') {
-                    const cancelled = state === 'cancelled';
-                    this.showSseNotification('file_transfer_stopped', {
-                        title: cancelled ? 'File Transfer Stopped' : 'File Transfer Completed',
-                        message: cancelled
-                            ? `${filename} · Cancelled · ${routeLabel}`
-                            : `${filename} · Completed · ${routeLabel}`,
-                        type: cancelled ? 'warning' : 'success',
-                        duration: 4500,
-                    }, {
-                        eventId: event.lastEventId,
-                        context,
-                        actions,
-                    });
-                    return;
-                }
-
-                if (lifecycle === 'error') {
-                    this.showSseNotification('file_transfer_error', {
-                        title: 'File Transfer Error',
-                        message: `${filename} · ${routeLabel}${errorText ? `: ${errorText}` : ''}`,
-                        type: 'error',
-                        duration: 7000,
-                    }, {
-                        eventId: event.lastEventId,
-                        context: { ...context, error: errorText },
-                        actions,
-                    });
-                }
-            });
-
-            es.addEventListener('device_event', (event) => {
-                const payload = JSON.parse(event.data || '{}');
-                const deviceName = payload.hostname || getConnectionLabel(payload.client_id);
-                const kind = String(payload.kind || 'device.event').trim() || 'device.event';
-                const detail = String(payload.message || kind).trim() || kind;
-                const context = {
-                    client_id: payload.client_id || '',
-                    event_id: payload.event_id || '',
-                    kind,
-                    occurred_at: payload.occurred_at || '',
-                    source: payload.source || {},
-                    data: payload.data || {},
-                };
-
-                if (kind === 'command.notify.finished') {
-                    const succeeded = String(context.data.status || '').trim().toLowerCase() === 'success';
-                    this.showSseNotification('device_event', {
-                        title: succeeded ? 'Command Completed' : 'Command Failed',
-                        message: detail,
-                        type: succeeded ? 'success' : 'error',
-                        duration: succeeded ? 5000 : 7000,
-                    }, {
-                        eventId: event.lastEventId,
-                        context,
-                    });
-                    return;
-                }
-
-                this.showSseNotification('device_event', {
-                    title: 'Device Event',
-                    message: `${deviceName} · ${detail}`,
-                    type: 'info',
-                    duration: 6000,
-                }, {
-                    eventId: event.lastEventId,
-                    context,
-                });
-            });
-
             es.addEventListener('connection_online', (event) => {
                 const payload = JSON.parse(event.data);
                 const conn = payload.connection;
                 this.upsertConnection(conn);
                 if (conn.client_id === this.selectedId) void this.refreshForegroundTask?.();
-
-                const recoverySource = payload.recovery_source;
-                const recoveryLabel = {
-                    local_heartbeat_watchdog: 'Local Heartbeat Watchdog',
-                    process_recovery_watchdog: 'Process Recovery Watchdog',
-                }[recoverySource] || '';
-                this.showSseNotification('connection_online', {
-                    title: 'Device Online',
-                    message: `${conn.hostname || conn.client_id} is now available${recoveryLabel ? ` (recovered by ${recoveryLabel})` : ''}`,
-                    type: 'success'
-                }, {
-                    eventId: event.lastEventId,
-                    context: {
-                        client_id: conn.client_id || '',
-                        hostname: conn.hostname || '',
-                        ...(recoveryLabel ? { recovery_source: recoverySource } : {}),
-                    },
-                });
             });
 
             es.addEventListener('connection_offline', (event) => {
                 const payload = JSON.parse(event.data);
                 const clientId = payload.client_id;
                 const conn = payload.connection || this.connections.find(item => item.client_id === clientId) || {client_id: clientId};
-                const terminationReason = String(payload.termination_reason || '').trim();
-                const reasonLabel = terminationReason
-                    ? terminationReason.replace(/_/g, ' ').replace(/^./, value => value.toUpperCase())
-                    : '';
 
                 this.upsertConnection({
                     ...conn,
@@ -661,19 +325,6 @@ export default {
 
                 this.clearActiveTask(clientId);
                 this.applyForegroundTaskUpdate?.(clientId, { state: 'Idle' });
-
-                this.showSseNotification('connection_offline', {
-                    title: 'Device Offline',
-                    message: `${(conn && conn.hostname) || clientId} went offline${reasonLabel ? ` · Reason: ${reasonLabel}` : ''}`,
-                    type: 'warning'
-                }, {
-                    eventId: event.lastEventId,
-                    context: {
-                        client_id: clientId || '',
-                        hostname: conn?.hostname || '',
-                        ...(terminationReason ? {termination_reason: terminationReason} : {}),
-                    },
-                });
             });
 
             es.addEventListener('connection_heartbeat', (event) => {
@@ -815,52 +466,8 @@ this.appendOutput(payload.client_id, `${TERMINAL_BACKGROUND_PREFIX} ${payload.te
                 this.scheduleBackgroundJobsRefresh?.(payload.client_id);
             });
 
-            es.addEventListener('background_job_lifecycle', async (event) => {
+            es.addEventListener('background_job_lifecycle', (event) => {
                 const payload = JSON.parse(event.data || '{}');
-                const state = String(payload.state || payload.status || '').trim().toLowerCase();
-                const jobName = payload.display_name || payload.job_key || payload.job_name || 'background job';
-                const deviceName = getConnectionLabel(payload.client_id);
-
-                let title = 'Background Job';
-                let type = 'info';
-                let stateText = state || 'updated';
-
-                if (state === 'running') {
-                    title = 'Background Job Started';
-                    type = 'success';
-                    stateText = 'started';
-                } else if (state === 'stopped') {
-                    title = 'Background Job Finished';
-                    type = 'success';
-                    stateText = 'finished';
-                } else if (state === 'error') {
-                    title = 'Background Job Error';
-                    type = 'error';
-                    stateText = 'ended with error';
-                }
-
-                const notificationKey = {
-                    running: 'background_job_running',
-                    stopped: 'background_job_stopped',
-                    error: 'background_job_error',
-                }[state] || `background_job_${state || 'updated'}`;
-
-                this.showSseNotification(notificationKey, {
-                    title,
-                    message: `${jobName} ${stateText} on ${deviceName}`,
-                    type,
-                    duration: 5000,
-                }, {
-                    eventId: event.lastEventId,
-                    context: {
-                        client_id: payload.client_id || '',
-                        job_id: payload.job_id || '',
-                        job_key: payload.job_key || payload.job_name || '',
-                        display_name: payload.display_name || '',
-                        state,
-                    },
-                });
-
                 this.scheduleBackgroundJobsRefresh?.(payload.client_id);
             });
 
@@ -878,132 +485,8 @@ this.appendOutput(payload.client_id, `${TERMINAL_BACKGROUND_PREFIX} ${payload.te
                 await this.refreshArtifactsIfOpen?.();
             });
 
-            es.addEventListener('pty_lifecycle', (event) => {
-                const payload = JSON.parse(event.data || '{}');
-                const state = String(payload.state || '').trim().toLowerCase();
-                const deviceName = getConnectionLabel(payload.client_id);
-
-                if (state === 'opened') {
-                    this.showSseNotification('pty_opened', {
-                        title: 'PTY Started',
-                        message: `PTY session started on ${deviceName}`,
-                        type: 'success',
-                        duration: 4000,
-                    }, {
-                        eventId: event.lastEventId,
-                        context: {
-                            client_id: payload.client_id || '',
-                            pty_session_id: payload.pty_session_id || '',
-                            state,
-                        },
-                    });
-                    return;
-                }
-
-                if (state === 'closed') {
-                    const exitCode = payload.exit_code === null || payload.exit_code === undefined
-                        ? ''
-                        : `, exit=${payload.exit_code}`;
-                    this.showSseNotification('pty_closed', {
-                        title: 'PTY Stopped',
-                        message: `PTY session stopped on ${deviceName}${exitCode}`,
-                        type: 'warning',
-                        duration: 4000,
-                    }, {
-                        eventId: event.lastEventId,
-                        context: {
-                            client_id: payload.client_id || '',
-                            pty_session_id: payload.pty_session_id || '',
-                            state,
-                            exit_code: payload.exit_code ?? null,
-                        },
-                    });
-                    return;
-                }
-
-                if (state === 'error') {
-                    this.showSseNotification('pty_error', {
-                        title: 'PTY Error',
-                        message: payload.error
-                            ? `PTY session ended on ${deviceName}: ${payload.error}`
-                            : `PTY session ended with an error on ${deviceName}`,
-                        type: 'error',
-                        duration: 5000,
-                    }, {
-                        eventId: event.lastEventId,
-                        context: {
-                            client_id: payload.client_id || '',
-                            pty_session_id: payload.pty_session_id || '',
-                            state,
-                            error: payload.error || '',
-                        },
-                    });
-                }
-            });
-
-            es.addEventListener('screen_view_lifecycle', (event) => {
-                const payload = JSON.parse(event.data || '{}');
-                const state = String(payload.state || '').trim().toLowerCase();
-                const deviceName = getConnectionLabel(payload.client_id);
-
-                if (state === 'started') {
-                    this.showSseNotification('screen_view_started', {
-                        title: 'Screen View Started',
-                        message: `Screen view started on ${deviceName}`,
-                        type: 'success',
-                        duration: 4000,
-                    }, {
-                        eventId: event.lastEventId,
-                        context: {
-                            client_id: payload.client_id || '',
-                            screen_session_id: payload.screen_session_id || '',
-                            state,
-                        },
-                    });
-                    return;
-                }
-
-                if (state === 'closed') {
-                    this.showSseNotification('screen_view_closed', {
-                        title: 'Screen View Stopped',
-                        message: `Screen view stopped on ${deviceName}`,
-                        type: 'warning',
-                        duration: 4000,
-                    }, {
-                        eventId: event.lastEventId,
-                        context: {
-                            client_id: payload.client_id || '',
-                            screen_session_id: payload.screen_session_id || '',
-                            state,
-                        },
-                    });
-                    return;
-                }
-
-                if (state === 'error') {
-                    this.showSseNotification('screen_view_error', {
-                        title: 'Screen View Error',
-                        message: payload.error
-                            ? `Screen view ended on ${deviceName}: ${payload.error}`
-                            : `Screen view ended with an error on ${deviceName}`,
-                        type: 'error',
-                        duration: 5000,
-                    }, {
-                        eventId: event.lastEventId,
-                        context: {
-                            client_id: payload.client_id || '',
-                            screen_session_id: payload.screen_session_id || '',
-                            state,
-                            error: payload.error || '',
-                        },
-                    });
-                }
-            });
-
             es.addEventListener('artifact_created', async (event) => {
                 const payload = JSON.parse(event.data || '{}');
-                const fileName = payload.original_name || payload.stored_name || 'file';
-
                 if (!payload.artifact_id) return;
 
     //                 // Command Output 是用户主动保存的命令输出，不按“远程文件已准备好”处理。
@@ -1013,37 +496,8 @@ this.appendOutput(payload.client_id, `${TERMINAL_BACKGROUND_PREFIX} ${payload.te
     // }
 
                 this.recordTerminalArtifact(payload);
-
-
-                if (!this.selectedId || payload.client_id === this.selectedId || !payload.client_id) {
-                    const downloadUrl = payload.download_url || `/api/artifacts/${encodeURIComponent(payload.artifact_id)}/download`;
-                    const context = {
-                        client_id: payload.client_id || '',
-                        artifact_id: payload.artifact_id || '',
-                        artifact_type: payload.artifact_type || '',
-                        category: payload.category || '',
-                        original_name: payload.original_name || fileName,
-                    };
-                    const actions = [
-                        { id: 'download', type: 'artifact_download', label: 'Download', url: downloadUrl },
-                        { id: 'preview', type: 'artifact_preview', label: 'Preview' },
-                        { id: 'open-artifacts', type: 'open_artifacts', label: 'Open Artifacts' },
-                    ];
-                    this.showSseNotification('artifact_created', {
-                        title: 'File Ready',
-                        message: `${fileName} has been saved`,
-                        type: 'success',
-                        duration: 6000
-                    }, {
-                        eventId: event.lastEventId,
-                        context,
-                        actions,
-                    });
-                }
-
                 await this.refreshArtifactsIfOpen?.();
             });
-
 
             es.onerror = () => {
                 // WebSocket transport reconnects and the next open resyncs authoritative task state

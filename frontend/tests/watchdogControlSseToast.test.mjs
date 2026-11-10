@@ -5,7 +5,7 @@ import { test } from 'node:test'
 
 const source = readFileSync(new URL('../src/composables/useSseStream.js', import.meta.url), 'utf8')
 const start = source.indexOf("es.addEventListener('notification_center_updated', (event) => {")
-const end = source.indexOf("es.addEventListener('server_cleanup_completed'", start)
+const end = source.indexOf("es.addEventListener('external_tool_lifecycle'", start)
 assert.ok(start >= 0 && end > start, 'SSE notification center handler must exist')
 const handlerSource = source.slice(start, end)
 
@@ -20,6 +20,10 @@ function createHarness(preferences = {}) {
         watchdog_control_received: false,
         ...preferences,
       },
+    },
+    selectedId: '',
+    getSseNotificationDuration(notification) {
+      return notification.type === 'error' ? 7000 : 5000
     },
     applySseNotificationCenterUpdate(payload) { history.push(payload) },
     showSseNotification(key, options, context) {
@@ -67,12 +71,13 @@ test('Receipt popup is suppressed by default but appears when Watchdog preferenc
   assert.equal(harness.popups[0].context.eventId, 'event-1')
 })
 
-test('Unrelated notifications and history replay/delete do not show duplicate popups', () => {
+test('Any canonical notification can show a popup; history delete does not', () => {
   const { emit, history, popups } = createHarness()
   emit('artifact_created')
   emit('watchdog_control_timeout', 'error', 'deleted')
   assert.equal(history.length, 2)
-  assert.equal(popups.length, 0)
+  assert.equal(popups.length, 1)
+  assert.equal(popups[0].key, 'artifact_created')
 })
 
 test('Watchdog delivery obeys the global and individual switches', () => {

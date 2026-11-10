@@ -1,44 +1,34 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
-import { dirname, resolve } from 'node:path'
 import vm from 'node:vm'
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const source = readFileSync(resolve(root, 'src/composables/useSseStream.js'), 'utf8')
+const source = readFileSync(new URL('../src/composables/useSseStream.js', import.meta.url), 'utf8')
 const start = source.indexOf("es.addEventListener('connection_offline', (event) => {")
 const end = source.indexOf("es.addEventListener('connection_heartbeat'", start)
 assert.ok(start >= 0 && end > start)
 const fragment = source.slice(start, end)
 
-function run(payload) {
+for (const terminationReason of ['connection_lost', 'client_paused', '']) {
   let handler
+  const updates = [], cleared = [], foreground = [], popups = []
   const ctx = {
-    notifications: [],
     connections: [],
-    upsertConnection(conn) { this.connections.push(conn) },
-    clearActiveTask() {},
-    showSseNotification(key, data, meta) { this.notifications.push({ key, data, meta }) },
+    upsertConnection(conn) { updates.push(conn) },
+    clearActiveTask(clientId) { cleared.push(clientId) },
+    applyForegroundTaskUpdate(clientId, task) { foreground.push({clientId, task}) },
+    showSseNotification(...args) { popups.push(args) },
   }
   const es = { addEventListener(_, callback) { handler = callback } }
   vm.runInNewContext(`(function(){ ${fragment} }).call(context)`, { es, context: ctx })
-  handler({ data: JSON.stringify(payload), lastEventId: 'event-offline-1' })
-  return ctx.notifications[0]
+  handler({data: JSON.stringify({
+    client_id: 'c1', connection: {client_id: 'c1', hostname: 'Mac'},
+    termination_reason: terminationReason, time: 't1',
+  })})
+  assert.equal(updates.length, 1)
+  assert.equal(updates[0].connection_state, 'offline')
+  assert.equal(updates[0].is_transfer_active, false)
+  assert.deepEqual(cleared, ['c1'])
+  assert.equal(foreground[0].task.state, 'Idle')
+  assert.equal(popups.length, 0, 'raw offline event must not independently format a Toast')
 }
-
-const withReason = run({
-  client_id: 'c1',
-  connection: { client_id: 'c1', hostname: 'Mac' },
-  termination_reason: 'connection_lost',
-})
-assert.equal(withReason.data.message, 'Mac went offline · Reason: Connection lost')
-assert.equal(withReason.meta.context.termination_reason, 'connection_lost')
-
-const withoutReason = run({
-  client_id: 'c2',
-  connection: { client_id: 'c2', hostname: 'iPhone' },
-})
-assert.equal(withoutReason.data.message, 'iPhone went offline')
-assert.equal(withoutReason.meta.context.termination_reason || '', '')
-
-console.log('offline reason notification SSE tests passed')
+console.log('offline connection side effects verified; popup comes from normalized notification')
