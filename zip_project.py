@@ -24,6 +24,7 @@ IGNORE_PATHS = {
     "backend/runtime",
     "backend/static",
     "backend/venv",
+    "backend/.pytest_cache",
     #"backend/server/resources/jobs",
     #"backend/server/resources/scripts",
     #"backend/server/resources/aliases.json",

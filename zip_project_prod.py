@@ -22,6 +22,7 @@ IGNORE_PATHS = {
     "frontend/.vscode",
     "backend/runtime",
     "backend/venv",
+    "backend/.pytest_cache",
     "backend/server/resources/external_tools/packages"
 }
 
