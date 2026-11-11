@@ -37,8 +37,6 @@ class CommandHttpFileTransferService:
         self,
         *,
         artifact_type: str,
-        category: str = '',
-        source_kind: str = '',
         folder: str = '',
         extra: dict | None = None,
         transfer_buffer_size: int | None = None,
@@ -47,8 +45,6 @@ class CommandHttpFileTransferService:
 
         payload = {
             'artifact_type': (artifact_type or 'files').strip() or 'files',
-            **({'category': category.strip()} if category else {}),
-            **({'source_kind': source_kind.strip()} if source_kind else {}),
             **({'folder': folder} if folder else {}),
             'client_id': client_id,
             'source_command_id': self.owner.command_id if self.owner.command_id is not None else '',
@@ -150,8 +146,6 @@ class CommandHttpFileTransferService:
         file_path: str,
         *,
         artifact_type: str = 'files',
-        category: str = 'default',
-        source_kind: str = '',
         folder: str = '',
         extra: dict | None = None,
         progress_callback=None,
@@ -160,8 +154,6 @@ class CommandHttpFileTransferService:
         strategy = self.get_transfer_strategy()
         form_data = self.build_http_upload_form_data(
             artifact_type=artifact_type,
-            category='' if source_kind else category,
-            source_kind=source_kind,
             folder=folder,
             extra=extra,
             transfer_buffer_size=strategy.get_buffer_size(),
@@ -179,7 +171,7 @@ class CommandHttpFileTransferService:
         file_path: str,
         *,
         artifact_type: str = 'files',
-        category: str = 'default',
+        folder: str = '',
         extra: dict | None = None,
         upload_name: str = '',
         transfer_id: str = '',
@@ -217,7 +209,7 @@ class CommandHttpFileTransferService:
         upload_url = self.client_api.build_file_upload_url()
         form_data = self.build_http_upload_form_data(
             artifact_type=artifact_type,
-            category=category,
+            folder=folder,
             extra=extra,
             transfer_buffer_size=strategy.get_buffer_size(),
         )
@@ -283,7 +275,7 @@ class CommandHttpFileTransferService:
         *,
         archive_name: str = '',
         artifact_type: str = 'files',
-        category: str = 'default',
+        folder: str = '',
         extra: dict | None = None,
         transfer_id: str = '',
     ):
@@ -310,7 +302,7 @@ class CommandHttpFileTransferService:
             return self.upload_single_file_to_server_result(
                 temp_archive_path,
                 artifact_type=artifact_type,
-                category=category,
+                folder=folder,
                 extra=extra,
                 transfer_id=transfer_id,
                 send_preparing=False,

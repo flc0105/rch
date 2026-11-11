@@ -261,7 +261,7 @@ class AppScreenshotMonitor(Job):
 
                 filename = build_artifact_filename('screenshot', 'png')
                 self.upload_file_via_http(
-                    screenshot_path, 'app_screenshot', filename=filename,
+                    screenshot_path, folder='Screenshots', filename=filename,
                     extra={'origin': ArtifactOrigin.JOB.value},
                 )
 

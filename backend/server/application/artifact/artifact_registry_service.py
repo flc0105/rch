@@ -153,7 +153,7 @@ class ArtifactRegistryService:
         except Exception:
             pass
 
-    def _finalize_registered_artifact(self, *, artifact_type: str, category: str, hostname: str, machine_id: str,
+    def _finalize_registered_artifact(self, *, artifact_type: str, source_kind: str, hostname: str, machine_id: str,
                                       original_name: str, file_path: str, stored_name: str,
 
                                       # source_type: str = '',
@@ -182,8 +182,6 @@ class ArtifactRegistryService:
             # related_path=related_path,
             extra=extra,
         )
-        producer_category = (ArtifactSourceKind.JOB_FILE.value if job_id and artifact_type == self.TYPE_FILES and
-                             str(category or '').strip().lower() in ('', 'default') else category)
         scope = scope_for_type(artifact_type).value
         if scope == ArtifactScope.SAVED.value and folder_id:
             # Explicit Saved destination determines the one canonical classification.
@@ -191,14 +189,14 @@ class ArtifactRegistryService:
             folder_id = None
         else:
             scope, source_kind, default_folder_id = classify_artifact(
-                artifact_type, producer_category, extra)
+                artifact_type, source_kind, extra)
             folder_id = None if scope == ArtifactScope.SAVED.value else folder_id or default_folder_id
         meta.update({'scope': scope, 'source_kind': source_kind})
         if folder_id:
             meta['folder_id'] = folder_id
         return self.catalog.save(meta)
 
-    def register_existing_artifact(self, *, artifact_type: str, category: str, hostname: str, machine_id: str,
+    def register_existing_artifact(self, *, artifact_type: str, source_kind: str, hostname: str, machine_id: str,
                                    original_name: str, file_path: str, stored_name: str,
                                    # source_type: str = '',
                                    source_command_id=None, client_id: str = '', addr: str = '',
@@ -208,7 +206,7 @@ class ArtifactRegistryService:
         with self._lock:
             return self._finalize_registered_artifact(
                 artifact_type=artifact_type,
-                category=category,
+                source_kind=source_kind,
                 hostname=hostname,
                 machine_id=machine_id,
                 original_name=original_name,
@@ -237,7 +235,7 @@ class ArtifactRegistryService:
             self.MAX_TRANSFER_BUFFER_SIZE,
         )
 
-    def save_http_uploaded_file(self, file, artifact_type: str = '', category: str = '', client_id: str = '',
+    def save_http_uploaded_file(self, file, artifact_type: str = '', source_kind: str = '', client_id: str = '',
                                 hostname: str = '', machine_id: str = '', job_id: str = '', job_name: str = '',
                                 job_key: str = '',
                                 # source_type: str = '',
@@ -246,7 +244,7 @@ class ArtifactRegistryService:
                                 transfer_buffer_size=None,
                                 extra: dict | None = None, folder_id: str = '') -> dict:
         normalized_type = self._normalize_artifact_type(artifact_type or self.TYPE_FILES)
-        normalized_category = (category or '').strip()
+        normalized_source_kind = (source_kind or '').strip()
         if normalized_type == self.TYPE_SHARED_FILES:
             normalized_hostname = ''
             normalized_machine_id = ''
@@ -269,7 +267,7 @@ class ArtifactRegistryService:
         file.save(file_path, buffer_size=buffer_size)
         return self.register_existing_artifact(
             artifact_type=normalized_type,
-            category=normalized_category,
+            source_kind=normalized_source_kind,
             hostname=normalized_hostname,
             machine_id=allocated['machine_id'],
             original_name=file.filename,
@@ -287,12 +285,12 @@ class ArtifactRegistryService:
             folder_id=folder_id,
         )
 
-    def save_text_artifact(self, *, artifact_type: str, category: str, hostname: str, machine_id: str,
+    def save_text_artifact(self, *, artifact_type: str, source_kind: str, hostname: str, machine_id: str,
                            original_name: str, content: str, client_id: str = '', addr: str = '',
                            source_command_id=None, job_id: str = '', job_name: str = '', job_key: str = '',
                            extra: dict | None = None) -> dict:
         normalized_type = self._normalize_artifact_type(artifact_type)
-        normalized_category = (category or '').strip()
+        normalized_source_kind = (source_kind or '').strip()
 
         if normalized_type == self.TYPE_SHARED_FILES:
             normalized_hostname = ''
@@ -319,7 +317,7 @@ class ArtifactRegistryService:
 
         return self.register_existing_artifact(
             artifact_type=normalized_type,
-            category=normalized_category,
+            source_kind=normalized_source_kind,
             hostname=normalized_hostname,
             machine_id=allocated['machine_id'],
             original_name=original_name,
@@ -369,7 +367,7 @@ class ArtifactRegistryService:
             shutil.copyfile(source_path, allocated['file_path'])
             try:
                 created = self.register_existing_artifact(
-                    artifact_type=self.TYPE_FILES, category=ArtifactSourceKind.DOWNLOADS.value,
+                    artifact_type=self.TYPE_FILES, source_kind=ArtifactSourceKind.DOWNLOADS.value,
                     hostname=preview.get('hostname', ''), machine_id=preview.get('machine_id', ''),
                     client_id=preview.get('client_id', ''), addr=preview.get('addr', ''),
                     original_name=preview.get('original_name', 'preview'),

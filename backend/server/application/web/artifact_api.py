@@ -59,7 +59,7 @@ class WebArtifactApi:
                 raise ValueError('Folder does not belong to this file space')
         artifact = self.artifact_service.save_text_artifact(
             artifact_type=ArtifactType.SHARED_FILES.value,
-            category='manual', hostname='', machine_id=machine_id,
+            source_kind=ArtifactSourceKind.SHARED_UPLOAD.value, hostname='', machine_id=machine_id,
             original_name=name, content='',
         )
         if folder_id:
@@ -124,15 +124,13 @@ class WebArtifactApi:
     def get_upload_temp_file_path(self, temp_id: str, filename: str):
         return self.artifact_service.get_upload_temp_file_path(temp_id, filename)
 
-    def save_http_uploaded_file(self, upload, artifact_type: str = ArtifactType.FILES.value, category: str = '', source_kind: str = '', client_id: str = '',
+    def save_http_uploaded_file(self, upload, artifact_type: str = ArtifactType.FILES.value, client_id: str = '',
                                 hostname: str = '', machine_id: str = '', job_id: str = '', job_name: str = '',
                                 job_key: str = '',
                                 # source_type: str = 'client_upload',
                                 # related_path: str = '',
                                 source_command_id=None, transfer_buffer_size=None, extra=None, folder_id: str = '',
                                 folder: str = ''):
-        if source_kind and category:
-            raise ValueError('Specify source_kind or category, not both')
         # Resolve explicit folder names before receiving any file bytes.
         if folder and folder_id:
             raise ValueError('Specify folder or folder_id, not both')
@@ -149,20 +147,13 @@ class WebArtifactApi:
                 raise ValueError('Unknown Saved Files folder')
             if expected_scope == ArtifactScope.PREVIEW:
                 raise ValueError('Preview cache does not support folders')
-        # Validate classification before writing upload bytes; an explicit Saved
-        # folder overrides the producer hint as the single source classification.
-        if expected_scope == ArtifactScope.SAVED and not folder_id:
-            producer_hint = source_kind or category
-            if job_id and producer_hint.strip().lower() in ('', 'default'):
-                producer_hint = ArtifactSourceKind.JOB_FILE.value
-            classify_artifact(artifact_type, producer_hint, extra)
         resolved_hostname, resolved_machine_id, addr = self.resolve_client_context(client_id)
         hostname = hostname or resolved_hostname
         machine_id = machine_id or resolved_machine_id
         artifact = self.artifact_service.save_http_uploaded_file(
             upload,
             artifact_type=artifact_type,
-            category=(source_kind or category),
+            source_kind='',
             client_id=client_id,
             hostname=hostname,
             machine_id=machine_id,

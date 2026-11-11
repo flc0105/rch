@@ -2,6 +2,7 @@ import json
 import os
 from datetime import datetime
 
+from core.artifact_contract import ArtifactSourceKind
 from core.utils.artifact_naming import build_artifact_filename, build_command_name, clean_artifact_label
 
 
@@ -110,7 +111,7 @@ class CommandOutputArtifactService:
 
         return self.artifact_service.register_existing_artifact(
             artifact_type=self.ARTIFACT_TYPE,
-            category=normalized_category,
+            source_kind=ArtifactSourceKind.COMMAND_OUTPUT.value,
             hostname=(hostname or '').strip() or 'unknown_host',
             machine_id=allocation.get('machine_id') or (machine_id or '').strip() or 'unknown_machine',
             original_name=allocation.get('original_name') or os.path.basename(allocation.get('file_path', '')) or 'cmd_output.txt',

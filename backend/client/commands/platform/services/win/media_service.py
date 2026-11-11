@@ -41,7 +41,7 @@ class WinMediaService:
             filename = build_artifact_filename('screenshot', 'png')
             self.owner.http_file_transfer_service.upload_single_file_to_server_result(
                 temp_file,
-                category='screenshot',
+                folder='Screenshots',
                 upload_name=filename,
                 extra={'origin': ArtifactOrigin.SCREENSHOT_COMMAND.value},
             )

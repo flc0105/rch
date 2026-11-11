@@ -29,7 +29,7 @@ class WebArtifactService:
     def allocate_artifact_path(self, artifact_type: str, machine_id: str, original_name: str) -> dict:
         return self.registry_service.allocate_artifact_path(artifact_type, machine_id, original_name)
 
-    def register_existing_artifact(self, *, artifact_type: str, category: str, hostname: str, machine_id: str,
+    def register_existing_artifact(self, *, artifact_type: str, source_kind: str, hostname: str, machine_id: str,
                                    original_name: str, file_path: str, stored_name: str,
 
                                    # source_type: str = '',
@@ -41,7 +41,7 @@ class WebArtifactService:
                                    extra: dict | None = None) -> dict:
         return self.registry_service.register_existing_artifact(
             artifact_type=artifact_type,
-            category=category,
+            source_kind=source_kind,
             hostname=hostname,
             machine_id=machine_id,
             original_name=original_name,
@@ -58,7 +58,7 @@ class WebArtifactService:
             extra=extra,
         )
 
-    def save_http_uploaded_file(self, file, artifact_type: str = '', category: str = '', client_id: str = '',
+    def save_http_uploaded_file(self, file, artifact_type: str = '', source_kind: str = '', client_id: str = '',
                                 hostname: str = '', machine_id: str = '', job_id: str = '', job_name: str = '',
                                 job_key: str = '',
                                 # source_type: str = '',
@@ -69,7 +69,7 @@ class WebArtifactService:
         return self.registry_service.save_http_uploaded_file(
             file,
             artifact_type=artifact_type,
-            category=category,
+            source_kind=source_kind,
             client_id=client_id,
             hostname=hostname,
             machine_id=machine_id,
@@ -138,13 +138,13 @@ class WebArtifactService:
         )
 
 
-    def save_text_artifact(self, *, artifact_type: str, category: str, hostname: str, machine_id: str,
+    def save_text_artifact(self, *, artifact_type: str, source_kind: str, hostname: str, machine_id: str,
                            original_name: str, content: str, client_id: str = '', addr: str = '',
                            source_command_id=None, job_id: str = '', job_name: str = '', job_key: str = '',
                            extra: dict | None = None) -> dict:
         return self.registry_service.save_text_artifact(
             artifact_type=artifact_type,
-            category=category,
+            source_kind=source_kind,
             hostname=hostname,
             machine_id=machine_id,
             original_name=original_name,

@@ -105,7 +105,7 @@ def test_command_media_upload_passes_wire_name_and_origin(tmp_path):
     owner = SimpleNamespace(socket=SimpleNamespace(client_id='abc'), command_id=None, _send_info=lambda *args: None)
     service = CommandHttpFileTransferService(owner, client_api=client_api)
     service.get_transfer_strategy = lambda: strategy
-    service.upload_single_file_to_server_result(str(local), category='screenshot',
+    service.upload_single_file_to_server_result(str(local), folder='Screenshots',
         upload_name='screenshot_20261110_183218.png', extra={'origin': 'screenshot_command'})
     assert strategy.upload_file.call_args.kwargs['filename'] == 'screenshot_20261110_183218.png'
     assert 'screenshot_command' in strategy.upload_file.call_args.args[2]['extra']
@@ -130,7 +130,7 @@ def test_macos_screenshot_sends_generated_artifact_name(monkeypatch, tmp_path):
     monkeypatch.setattr(media_service, 'cleanup_temp_path', lambda path: None)
     media_service.MacMediaService(owner).capture_screenshot()
     options = transfer.upload_single_file_to_server_result.call_args.kwargs
-    assert options['category'] == 'screenshot'
+    assert options['folder'] == 'Screenshots'
     assert options['upload_name'].startswith('screenshot_')
     assert options['upload_name'].endswith('.png')
     assert options['extra'] == {'origin': 'screenshot_command'}
@@ -158,7 +158,7 @@ def test_windows_screenshot_uses_wire_name_not_local_temp(monkeypatch, tmp_path)
     monkeypatch.setattr(media_service, 'cleanup_temp_path', lambda path: None)
     media_service.WinMediaService(owner).capture_screenshot()
     options = transfer.upload_single_file_to_server_result.call_args.kwargs
-    assert options['category'] == 'screenshot'
+    assert options['folder'] == 'Screenshots'
     assert options['upload_name'].startswith('screenshot_')
     assert options['upload_name'].endswith('.png')
     assert options['extra'] == {'origin': 'screenshot_command'}
@@ -174,7 +174,7 @@ def test_job_upload_can_send_short_artifact_name_and_preserve_local_photo_temp(t
         def run(self):
             pass
     job = object.__new__(StubJob)
-    job._build_upload_form_data = lambda *args, **kwargs: {'category': 'job_file', 'job_id': 'job-1'}
+    job._build_upload_form_data = lambda *args, **kwargs: {'folder': 'Job Files', 'job_id': 'job-1'}
     calls = []
     class Response:
         ok = True
@@ -186,8 +186,8 @@ def test_job_upload_can_send_short_artifact_name_and_preserve_local_photo_temp(t
             return {'data': {'artifact_id': 'A'}}
     job.client_api = API()
     job._report_uploaded_file = lambda info: None
-    Job.upload_file_via_http(job, str(local), category='job_file',
+    Job.upload_file_via_http(job, str(local), folder='Job Files',
                              filename='photo_20261110_183218.jpg')
     assert calls == [(str(local), 'photo_20261110_183218.jpg',
-                      {'category': 'job_file', 'job_id': 'job-1'})]
+                      {'folder': 'Job Files', 'job_id': 'job-1'})]
     assert local.read_bytes() == b'jpg'

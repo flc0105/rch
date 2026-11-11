@@ -232,7 +232,7 @@ class ClientTransferManager:
         service.upload_single_file_to_server_result(
             source_path,
             artifact_type=str(payload.get('artifact_type') or 'files'),
-            category=str(payload.get('category') or 'download'),
+            folder=str(payload.get('folder') or 'Downloads'),
             extra=payload.get('extra') if isinstance(payload.get('extra'), dict) else None,
             transfer_id=transfer_id,
         )
@@ -244,7 +244,6 @@ class ClientTransferManager:
             service.upload_single_file_to_server_result(
                 prepared_file.upload_path,
                 artifact_type='previews',
-                category='preview_cache',
                 extra=prepared_file.extra,
                 transfer_id=transfer_id,
             )
@@ -261,7 +260,7 @@ class ClientTransferManager:
             resolved_paths,
             archive_name=str(payload.get('archive_name') or '').strip(),
             artifact_type=str(payload.get('artifact_type') or 'files'),
-            category=str(payload.get('category') or 'bundle'),
+            folder=str(payload.get('folder') or 'Downloads'),
             extra=payload.get('extra') if isinstance(payload.get('extra'), dict) else None,
             transfer_id=transfer_id,
         )
@@ -277,7 +276,7 @@ class ClientTransferManager:
             if not os.path.isfile(selected_path):
                 raise ValueError('ZIP entry download requires a file')
             service.upload_single_file_to_server_result(
-                selected_path, artifact_type='files', category='download', transfer_id=transfer_id,
+                selected_path, artifact_type='files', folder='Downloads', transfer_id=transfer_id,
             )
 
     def _run_server_to_client_file(self, service, owner, transfer_id: str, payload: dict):

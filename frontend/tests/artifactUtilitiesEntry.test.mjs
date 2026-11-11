@@ -39,7 +39,7 @@ test('standalone mode hides both device send actions in desktop and mobile menu'
   assert.equal((template.match(/command="send-current-device"/g) || []).length, 2)
   assert.equal((template.match(/command="send-current-device-clipboard"/g) || []).length, 2)
   let reloaded = 0
-  const state = { standaloneMode: false, artifactActiveTab: 'shared', artifactMachineIdFilter: 'm1', selectedFolderId: 'x', visible: false, loadArtifacts() { reloaded++ } }
+  const state = { standaloneMode: false, artifactActiveTab: 'shared', artifactMachineIdFilter: 'm1', selectedFolderId: 'x', visible: false, getCurrentMachineId: () => 'm-current', loadArtifacts() { reloaded++ } }
   await methods.open.call(state, { standalone: true })
   assert.equal(state.standaloneMode, true)
   assert.equal(state.visible, true)
@@ -47,6 +47,7 @@ test('standalone mode hides both device send actions in desktop and mobile menu'
   assert.equal(reloaded, 1)
   await methods.open.call(state)
   assert.equal(state.standaloneMode, false, 'opening from device toolbar must restore device actions')
+  assert.equal(state.artifactMachineIdFilter, 'm-current')
   assert.equal(reloaded, 2)
 })
 

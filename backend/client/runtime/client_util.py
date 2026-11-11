@@ -351,13 +351,13 @@ def is_process_alive(pid: int) -> bool:
 
 
 
-def upload_file_via_http(file_source=None, filename=None, upload_url=None, category=None, client_id=None):
+def upload_file_via_http(file_source=None, filename=None, upload_url=None, folder='', client_id=None):
     import os
     import requests
 
     form_data = {
         'artifact_type': 'files',
-        'category': category,
+        'folder': folder,
         'client_id': client_id,
     }
 

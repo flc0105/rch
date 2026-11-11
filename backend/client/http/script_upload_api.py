@@ -1,7 +1,7 @@
 import json
 import os
 
-from core.artifact_contract import ArtifactType, ArtifactSourceKind, ArtifactOrigin
+from core.artifact_contract import ArtifactType, ArtifactOrigin
 from client.http.client_api import ClientApiClient
 
 
@@ -51,8 +51,7 @@ def _build_script_upload_form_data(
 
     form_data = {
         'artifact_type': (artifact_type or 'files').strip() or 'files',
-        'source_kind': ArtifactSourceKind.SCRIPT_FILE.value if artifact_type != ArtifactType.SHARED_FILES.value else ArtifactSourceKind.SHARED_UPLOAD.value,
-        'folder': str(folder or '').strip(),
+        'folder': str(folder or '').strip() or ('Script Files' if artifact_type == ArtifactType.FILES.value else ''),
         'client_id': str(ctx.get('client_id') or '').strip(),
         'source_command_id': ctx.get('command_id') if ctx.get('command_id') is not None else '',
     }

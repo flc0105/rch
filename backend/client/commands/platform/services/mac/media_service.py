@@ -37,7 +37,7 @@ class MacMediaService:
             self.owner._send_success('Screenshot captured successfully', 0)
             return self.owner.http_file_transfer_service.upload_single_file_to_server_result(
                 screenshot_path,
-                category='screenshot',
+                folder='Screenshots',
                 upload_name=build_artifact_filename('screenshot', 'png'),
                 extra={'origin': ArtifactOrigin.SCREENSHOT_COMMAND.value},
             )
@@ -78,7 +78,7 @@ class MacMediaService:
             if os.path.getsize(temp_file) > 0:
                 self.owner.http_file_transfer_service.upload_single_file_to_server_result(
                     temp_file,
-                    category='webcam',
+                    folder='Webcam',
                     upload_name=build_artifact_filename('webcam', 'jpg'),
                     extra={'origin': ArtifactOrigin.WEBCAM_COMMAND.value},
                 )

@@ -51,36 +51,6 @@ SAVED_FOLDER_NAMES = {
 SAVED_FOLDER_IDS = {kind: f'{ArtifactScope.SAVED.value}:{kind.value}' for kind in SAVED_FOLDER_NAMES}
 SAVED_SOURCE_BY_FOLDER_ID = {folder_id: kind for kind, folder_id in SAVED_FOLDER_IDS.items()}
 
-# Producer hints are parsed at the ingestion boundary. Stored source kinds use
-# only the canonical ArtifactSourceKind values, never these producer spellings.
-PRODUCER_HINTS = {
-    'screenshot': ArtifactSourceKind.SCREENSHOTS,
-    'screenshots': ArtifactSourceKind.SCREENSHOTS,
-    'app_screenshot': ArtifactSourceKind.SCREENSHOTS,
-    'scheduled_screenshot': ArtifactSourceKind.SCREENSHOTS,
-    'webcam': ArtifactSourceKind.WEBCAM,
-    'camera': ArtifactSourceKind.WEBCAM,
-    'clipboard': ArtifactSourceKind.CLIPBOARD,
-    'clipboard_image': ArtifactSourceKind.CLIPBOARD,
-    'clipboard_file': ArtifactSourceKind.CLIPBOARD,
-    'script': ArtifactSourceKind.SCRIPT_FILE,
-    'script_file': ArtifactSourceKind.SCRIPT_FILE,
-    'job_file': ArtifactSourceKind.JOB_FILE,
-    'job_output': ArtifactSourceKind.JOB_FILE,  # File uploads, not execution snapshots
-    'command_output': ArtifactSourceKind.COMMAND_OUTPUT,
-    'terminal_logs': ArtifactSourceKind.TERMINAL_LOGS,
-    'terminal_output': ArtifactSourceKind.TERMINAL_LOGS,
-    'pty_output': ArtifactSourceKind.TERMINAL_LOGS,
-    'download': ArtifactSourceKind.DOWNLOADS,
-    'downloads': ArtifactSourceKind.DOWNLOADS,
-    'browser_download': ArtifactSourceKind.DOWNLOADS,
-    'bundle': ArtifactSourceKind.DOWNLOADS,
-    'recording': ArtifactSourceKind.INBOX,
-    'manual': ArtifactSourceKind.INBOX,
-    'other': ArtifactSourceKind.INBOX,
-    'default': ArtifactSourceKind.INBOX,
-    'inbox': ArtifactSourceKind.INBOX,
-}
 TERMINAL_SNAPSHOT_SOURCES = frozenset({'pty_toolbar_action', 'terminal_toolbar_action'})
 
 
@@ -106,8 +76,9 @@ def saved_kind_for_folder(folder_id):
     return SAVED_SOURCE_BY_FOLDER_ID[folder_id]
 
 
-def classify_artifact(artifact_type, producer_hint='', extra=None):
+def classify_artifact(artifact_type, source_kind='', extra=None):
     artifact_type = parse_artifact_type(artifact_type)
+    source = ArtifactSourceKind(source_kind) if source_kind else ArtifactSourceKind.INBOX
     scope = scope_for_type(artifact_type)
     if scope == ArtifactScope.SHARED:
         return scope.value, ArtifactSourceKind.SHARED_UPLOAD.value, None
@@ -117,9 +88,4 @@ def classify_artifact(artifact_type, producer_hint='', extra=None):
     if artifact_type == ArtifactType.COMMAND_OUTPUT:
         source = (ArtifactSourceKind.TERMINAL_LOGS if origin in TERMINAL_SNAPSHOT_SOURCES
                   else ArtifactSourceKind.COMMAND_OUTPUT)
-    else:
-        hint = str(producer_hint or '').strip().lower()
-        if hint not in PRODUCER_HINTS and hint:
-            raise ValueError(f'Unknown artifact producer category: {producer_hint}')
-        source = PRODUCER_HINTS[hint] if hint else ArtifactSourceKind.INBOX
     return scope.value, source.value, SAVED_FOLDER_IDS[source]

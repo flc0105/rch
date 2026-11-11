@@ -189,7 +189,7 @@ class ClipboardManager:
             artifact = self._upload_bytes_artifact(
                 raw,
                 filename=build_artifact_filename('clipboard', 'png'),
-                category='clipboard_image',
+                folder='Clipboard',
                 extra={
                     'clipboard_kind': 'image',
                 },
@@ -245,7 +245,7 @@ class ClipboardManager:
         data: bytes,
         *,
         filename: str,
-        category: str,
+        folder: str,
         extra: dict,
     ) -> dict:
         temp_dir = make_client_temp_dir(
@@ -265,7 +265,7 @@ class ClipboardManager:
             return self._upload_file_artifact(
                 path,
                 filename=filename,
-                category=category,
+                folder=folder,
                 extra=extra,
             )
 
@@ -277,7 +277,7 @@ class ClipboardManager:
         path: str,
         *,
         filename: str,
-        category: str,
+        folder: str,
         extra: dict,
     ) -> dict:
         client_id = str(
@@ -291,7 +291,7 @@ class ClipboardManager:
 
         form = {
             'artifact_type': 'files',
-            'category': category,
+            'folder': folder,
             'client_id': client_id,
             'extra': json.dumps(
                 extra or {},

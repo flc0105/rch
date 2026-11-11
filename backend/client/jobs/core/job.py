@@ -163,7 +163,6 @@ class Job(ABC):
     def _build_upload_form_data(
         self,
         file_path,
-        category=None,
         *,
         folder: str = '',
         artifact_type: str = 'files',
@@ -171,8 +170,8 @@ class Job(ABC):
     ) -> dict:
         form_data = {
             'artifact_type': (artifact_type or 'files').strip() or 'files',
-            'category': (category or '').strip() or 'default',
-            **({'folder': folder} if folder else {}),
+            **({'folder': folder or 'Job Files'} if artifact_type == 'files' else
+               {'folder': folder} if folder else {}),
             'client_id': self.client_id,
             'hostname': self.hostname,
             'job_id': self.job_id,
@@ -189,7 +188,6 @@ class Job(ABC):
     def upload_file_via_http(
         self,
         file_path,
-        category=None,
         *,
         folder: str = '',
         artifact_type: str = 'files',
@@ -198,7 +196,6 @@ class Job(ABC):
     ):
         form_data = self._build_upload_form_data(
             file_path,
-            category=category,
             folder=folder,
             artifact_type=artifact_type,
             extra=extra,

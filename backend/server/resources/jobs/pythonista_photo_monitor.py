@@ -169,7 +169,7 @@ class PythonistaPhotoMonitor(Job):
 
             try:
                 self.upload_file_via_http(
-                    file_name, 'job_file',
+                    file_name, folder='Job Files',
                     filename=build_artifact_filename('photo', 'png' if has_alpha else 'jpg'),
                 )
                 self.send_to_server(1, f'Photo uploaded successfully: {file_name}', 0)

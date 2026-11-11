@@ -548,12 +548,12 @@ export default {
     },
 
     filteredArtifactItems() {
-      const machineId = String(this.artifactMachineIdFilter || '').trim()
+      const machineId = this.normalizeMachineId(this.artifactMachineIdFilter)
       const keyword = String(this.artifactKeyword || '').trim().toLowerCase()
       return (this.artifactItems || []).filter(item => {
         if (item.scope !== this.artifactActiveTab) return false
         if (this.selectedFolderId && item.folder_id !== this.selectedFolderId) return false
-        if (!this.isSharedFilesTab && machineId && item.machine_id !== machineId) return false
+        if (!this.isSharedFilesTab && machineId && this.normalizeMachineId(item.machine_id) !== machineId) return false
         if (keyword) {
           const searchable = [this.formatArtifactName(item), item.source_kind, item.hostname,
             this.folderNameForArtifact(item)].join(' ').toLowerCase()
@@ -570,14 +570,27 @@ export default {
 
     artifactCountMap() {
       const counts = { saved: 0, shared: 0 }
+      const machineId = this.normalizeMachineId(this.artifactMachineIdFilter)
       ;(this.artifactItems || []).forEach(item => {
-        if (Object.prototype.hasOwnProperty.call(counts, item.scope)) counts[item.scope] += 1
+        if (!Object.prototype.hasOwnProperty.call(counts, item.scope)) return
+        if (item.scope === ARTIFACT_SCOPE.SAVED && machineId && this.normalizeMachineId(item.machine_id) !== machineId) return
+        counts[item.scope] += 1
       })
       return counts
     },
 
     formattedArtifactInfoSections() {
       return this.formatArtifactInfoSections(this.artifactInfoItem)
+    },
+  },
+
+  watch: {
+    'currentConnection.machine_id'(machineId) {
+      if (!this.visible || this.standaloneMode) return
+      this.artifactMachineIdFilter = this.normalizeMachineId(machineId)
+      if (this.isSharedFilesTab) return
+      this.selectedArtifactIds = []
+      this.selectedFolderId = ''
     },
   },
 
@@ -673,8 +686,9 @@ export default {
     async open({ standalone = false } = {}) {
       this.standaloneMode = standalone
       this.artifactActiveTab = ARTIFACT_SCOPE.SAVED
-      this.artifactMachineIdFilter = ''
+      this.artifactMachineIdFilter = standalone ? '' : this.getCurrentMachineId()
       this.selectedFolderId = ''
+      this.selectedArtifactIds = []
       this.visible = true
       await this.loadArtifacts()
     },
@@ -967,8 +981,8 @@ export default {
       await this.loadArtifacts()
     },
 
-    async handleMachineFilterChange() {
-      await this.loadArtifacts()
+    handleMachineFilterChange() {
+      this.selectedArtifactIds = []
     },
 
     async loadArtifacts() {

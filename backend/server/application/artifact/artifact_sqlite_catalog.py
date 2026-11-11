@@ -48,33 +48,12 @@ class ArtifactSqliteCatalog:
                 CREATE INDEX IF NOT EXISTS idx_artifact_entries_folder ON artifact_entries(folder_id, created_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_artifact_entries_machine ON artifact_entries(machine_id, created_at DESC);
             ''')
-            self._enforce_saved_source_identity(conn)
             for kind, name in SAVED_FOLDER_NAMES.items():
                 conn.execute('''INSERT OR IGNORE INTO artifact_folders
                     (folder_id, scope, parent_id, name, preset, created_at)
                     VALUES (?, ?, NULL, ?, 1, ?)''',
                     (SAVED_FOLDER_IDS[kind], ArtifactScope.SAVED.value, name, datetime.now().isoformat(timespec='seconds')))
 
-
-    @staticmethod
-    def _enforce_saved_source_identity(conn):
-        """Saved has one persisted classification; retire independent folder links."""
-        rows = conn.execute('SELECT artifact_id, payload_json FROM artifact_entries WHERE scope=?',
-                            (ArtifactScope.SAVED.value,)).fetchall()
-        for row in rows:
-            payload = json.loads(row['payload_json'])
-            # Invalid source values are rejected rather than routed through an old alias.
-            saved_folder_id(payload['source_kind'])
-            if 'folder_id' in payload:
-                del payload['folder_id']
-                conn.execute('UPDATE artifact_entries SET payload_json=? WHERE artifact_id=?',
-                             (json.dumps(payload, ensure_ascii=False), row['artifact_id']))
-        conn.execute('UPDATE artifact_entries SET folder_id=NULL WHERE scope=? AND folder_id IS NOT NULL',
-                     (ArtifactScope.SAVED.value,))
-        canonical_ids = tuple(SAVED_SOURCE_BY_FOLDER_ID)
-        placeholders = ', '.join('?' for _ in canonical_ids)
-        conn.execute(f'DELETE FROM artifact_folders WHERE scope=? AND folder_id NOT IN ({placeholders})',
-                     (ArtifactScope.SAVED.value, *canonical_ids))
 
     @contextmanager
     def _connect(self):
@@ -102,8 +81,8 @@ class ArtifactSqliteCatalog:
     @staticmethod
     def _stored_payload(payload):
         stored = dict(payload)
-        stored.pop('category', None)
-        stored.pop('_meta_path', None)
+        if 'category' in stored or '_meta_path' in stored:
+            raise ValueError('Obsolete Artifact metadata fields: category or _meta_path')
         if stored['scope'] == ArtifactScope.SAVED.value:
             folder_id = stored.pop('folder_id', None)
             canonical_id = saved_folder_id(stored['source_kind'])

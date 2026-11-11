@@ -3,7 +3,7 @@ import json
 import os
 from typing import Any
 
-from core.artifact_contract import ArtifactType, ArtifactSourceKind, ArtifactOrigin
+from core.artifact_contract import ArtifactType, ArtifactOrigin
 from client.http.client_api import ClientApiClient, ClientApiError
 from client.runtime.sdk.context import get_client_id, get_command_id, get_command_owner
 
@@ -41,14 +41,12 @@ def _build_form_data(*, artifact_type: str, folder: str, extra: dict | None = No
     if owner is not None and hasattr(owner, 'http_file_transfer_service'):
         return owner.http_file_transfer_service.build_http_upload_form_data(
             artifact_type=artifact_type,
-            source_kind=(ArtifactSourceKind.SCRIPT_FILE.value if artifact_type != ArtifactType.SHARED_FILES.value else ArtifactSourceKind.SHARED_UPLOAD.value),
             folder=folder,
             extra=extra,
         )
 
     payload = {
         'artifact_type': artifact_type,
-        'source_kind': ArtifactSourceKind.SCRIPT_FILE.value if artifact_type != ArtifactType.SHARED_FILES.value else ArtifactSourceKind.SHARED_UPLOAD.value,
         'folder': folder,
         'client_id': get_client_id(),
         'source_command_id': get_command_id() if get_command_id() is not None else '',
@@ -116,7 +114,7 @@ def save(path: str, *, type: str = 'files', folder: str = '', extra: dict | None
         item = artifact.save('/tmp/a.log', type='shared_files')
     """
     artifact_type = _normalize_artifact_type(type, default='files')
-    normalized_folder = _safe_text(folder)
+    normalized_folder = _safe_text(folder) or ('Script Files' if artifact_type == ArtifactType.FILES.value else '')
     if artifact_type != ArtifactType.SHARED_FILES.value and normalized_folder.lower() == 'screenshots':
         extra = {'origin': ArtifactOrigin.SCRIPT.value, **(extra or {})}
     file_path = _resolve_local_file(path)
@@ -126,7 +124,6 @@ def save(path: str, *, type: str = 'files', folder: str = '', extra: dict | None
         response = owner.http_file_transfer_service.upload_file_to_server_via_http(
             file_path,
             artifact_type=artifact_type,
-            source_kind=(ArtifactSourceKind.SCRIPT_FILE.value if artifact_type != ArtifactType.SHARED_FILES.value else ArtifactSourceKind.SHARED_UPLOAD.value),
             folder=normalized_folder,
             extra=extra,
         )

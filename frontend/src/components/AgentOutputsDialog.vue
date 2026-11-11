@@ -138,7 +138,7 @@
 
           <el-table-column
               label="Listener"
-              min-width="150"
+              width="120"
               show-overflow-tooltip
           >
             <template #default="{ row }">

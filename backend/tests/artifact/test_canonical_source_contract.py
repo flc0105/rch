@@ -36,7 +36,7 @@ def test_folder_selection_replaces_sdk_origin_for_saved_before_persist(tmp_path)
     api, catalog = api_for(tmp_path)
     item = api.save_http_uploaded_file(
         Upload(), artifact_type=ArtifactType.FILES.value,
-        source_kind=ArtifactSourceKind.SCRIPT_FILE.value, folder='Screenshots')
+        folder='Screenshots')
     assert item['scope'] == ArtifactScope.SAVED.value
     assert item['source_kind'] == ArtifactSourceKind.SCREENSHOTS.value
     assert item['folder_id'] == SAVED_FOLDER_IDS[ArtifactSourceKind.SCREENSHOTS]
@@ -57,7 +57,6 @@ def test_shared_upload_keeps_source_and_can_move_to_another_folder(tmp_path):
     first = catalog.create_folder(ArtifactScope.SHARED.value, 'First')
     second = catalog.create_folder(ArtifactScope.SHARED.value, 'Second')
     item = api.save_http_uploaded_file(Upload(), artifact_type=ArtifactType.SHARED_FILES.value,
-                                       source_kind=ArtifactSourceKind.SHARED_UPLOAD.value,
                                        folder_id=first['folder_id'])
     assert item['source_kind'] == ArtifactSourceKind.SHARED_UPLOAD.value
     assert item['folder_id'] == first['folder_id']
@@ -71,10 +70,7 @@ def test_invalid_saved_folder_is_rejected_before_file_write(tmp_path):
     api, catalog = api_for(tmp_path)
     upload = Upload()
     with pytest.raises(ValueError):
-        api.save_http_uploaded_file(upload, source_kind=ArtifactSourceKind.SCRIPT_FILE.value,
-                                    folder='Not a real folder')
-    with pytest.raises(ValueError, match='Unknown artifact producer category'):
-        api.save_http_uploaded_file(upload, source_kind='invalid-kind')
+        api.save_http_uploaded_file(upload, folder='Not a real folder')
     assert catalog.list() == []
     assert not (tmp_path / 'artifacts' / 'objects').exists()
 
