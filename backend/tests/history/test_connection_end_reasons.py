@@ -51,11 +51,11 @@ def test_connection_history_persists_launch_mode_snapshot(tmp_path):
     assert session['launch_source'] == 'pycharm'
 
     row = db.connection().execute(
-        'SELECT snapshot_json FROM connection_sessions WHERE machine_id = ? AND client_id = ?',
+        'SELECT snapshot FROM connection_sessions WHERE machine_id = ? AND client_id = ?',
         ('machine-A', 'client-X'),
     ).fetchone()
-    assert '"launch_mode":"ide"' in row['snapshot_json']
-    assert '"launch_source":"pycharm"' in row['snapshot_json']
+    assert '"launch_mode":"ide"' in row['snapshot']
+    assert '"launch_source":"pycharm"' in row['snapshot']
 
 
 def test_connection_history_new_fields_preserve_existing_state_and_detail(tmp_path):
@@ -67,8 +67,8 @@ def test_connection_history_new_fields_preserve_existing_state_and_detail(tmp_pa
     assert item['termination_reason'] == 'client_error'
     assert item['termination_detail']['summary'] == 'RuntimeError: crash'
     assert 'Traceback' in item['termination_detail']['traceback']
-    assert item['connection_state'] == 'interrupted'
-    assert item['connection_state'] == 'interrupted'
+    assert item['disconnected_at'] != ''
+    assert item['disconnected_at'] != ''
     # Later close callbacks must not replace the first conclusive diagnosis.
     store.record_disconnected(_connection(), termination_reason='transport_error', details={'summary': 'later'})
     assert store.get_history('machine-A')['sessions'][0]['termination_reason'] == 'client_error'
@@ -78,7 +78,7 @@ def test_connection_history_new_fields_preserve_existing_state_and_detail(tmp_pa
 def test_connection_history_schema_uses_explicit_termination_columns(tmp_path):
     db, store = _new_store(tmp_path)
     columns = {entry['name'] for entry in db.connection().execute('PRAGMA table_info(connection_sessions)')}
-    assert {'termination_reason', 'termination_detail_json'} <= columns
+    assert {'termination_reason', 'termination_detail'} <= columns
     assert 'disconnect_reason' not in columns
     assert 'reason' not in columns
     assert 'detail_json' not in columns
@@ -86,9 +86,9 @@ def test_connection_history_schema_uses_explicit_termination_columns(tmp_path):
     store.record_disconnected(_connection(), termination_reason='transport_error', details={
         'summary': 'Connection reset', 'traceback': 'Traceback (most recent call last): ...',
     })
-    row = db.connection().execute("SELECT termination_reason, termination_detail_json FROM connection_sessions").fetchone()
+    row = db.connection().execute("SELECT termination_reason, termination_detail FROM connection_sessions").fetchone()
     assert row['termination_reason'] == 'transport_error'
-    assert 'Connection reset' in row['termination_detail_json']
+    assert 'Connection reset' in row['termination_detail']
     assert store.get_history('machine-A')['sessions'][0]['termination_detail']['summary'] == 'Connection reset'
     db.close_thread_connection()
 
@@ -105,14 +105,14 @@ def test_unrecognized_connection_history_columns_stop_without_rewriting(tmp_path
         columns = {row[1] for row in connection.execute('PRAGMA table_info(connection_sessions)')}
     assert 'reason' in columns
     assert 'termination_reason' not in columns
-    assert 'termination_detail_json' in columns
+    assert 'termination_detail' in columns
 
-def test_interrupted_tag_stays_unchanged_when_server_recovers(tmp_path):
+def test_reconciled_session_has_offline_time_and_no_reason(tmp_path):
     db, store = _new_store(tmp_path)
     store.reconcile_active_sessions('machine-A', set())
     item = store.get_history('machine-A')['sessions'][0]
-    assert item['connection_state'] == 'interrupted'
-    assert item['connection_state'] == 'interrupted'
+    assert item['disconnected_at'] != ''
+    assert item['disconnected_at'] != ''
     assert item['termination_reason'] == ''
     assert item['termination_detail'] == {}
     db.close_thread_connection()
@@ -175,7 +175,7 @@ def test_server_requested_reason_groups_server_and_client_reports(tmp_path):
     )
     assert item['termination_reason'] == 'server_requested_disconnect'
     assert item['termination_detail'] == {}
-    assert item['connection_state'] == 'offline'
+    assert item['disconnected_at'] != ''
 
 
 def test_client_restart_and_update_take_precedence_over_socket_eof(tmp_path):
@@ -209,7 +209,7 @@ def test_client_pause_reason_is_recorded_as_normal_offline_and_overrides_eof(tmp
     )
     assert item['termination_reason'] == 'client_paused'
     assert item['termination_detail'] == {'command': 'pause_connection'}
-    assert item['connection_state'] == 'offline'
+    assert item['disconnected_at'] != ''
     db.close_thread_connection()
 
 
@@ -226,7 +226,7 @@ def test_kill_instance_client_report_is_server_requested_disconnect(tmp_path):
     )
     assert item['termination_reason'] == 'server_requested_disconnect'
     assert item['termination_detail'] == {'command': 'kill_instance'}
-    assert item['connection_state'] == 'offline'
+    assert item['disconnected_at'] != ''
     db.close_thread_connection()
 
 
@@ -345,7 +345,7 @@ def test_new_session_reuses_client_identity_and_resets_diagnosis(tmp_path):
     item = store.get_history('machine-A')['sessions'][0]
     assert item['termination_reason'] == ''
     assert item['termination_detail'] == {}
-    assert item['connection_state'] == 'online'
+    assert item['disconnected_at'] == ''
 
 
 def test_voluntary_shutdown_has_offline_tag_and_optional_command(tmp_path):
@@ -358,13 +358,13 @@ def test_voluntary_shutdown_has_offline_tag_and_optional_command(tmp_path):
                                       details={'command': 'kill_instance'})
             item = store.get_history('machine-A')['sessions'][0]
             assert item['termination_reason'] == cause
-            assert item['connection_state'] == 'offline'
-            assert item['connection_state'] == 'offline'
+            assert item['disconnected_at'] != ''
+            assert item['disconnected_at'] != ''
             assert item['termination_detail'] == {'command': 'kill_instance'}
             db.close_thread_connection()
 
 
-def test_abnormal_shutdown_has_interrupted_tag_and_actual_diagnostics(tmp_path):
+def test_abnormal_shutdown_is_offline_with_actual_diagnostics(tmp_path):
     for cause in ('connection_lost', 'transport_error', 'timeout', 'unexpected_disconnect', 'client_error'):
         with tempfile.TemporaryDirectory() as directory:
             db = RchDatabase(os.path.join(directory, 'rch.db'))
@@ -374,8 +374,8 @@ def test_abnormal_shutdown_has_interrupted_tag_and_actual_diagnostics(tmp_path):
             store.record_disconnected(_connection(), termination_reason=cause, details=details)
             item = store.get_history('machine-A')['sessions'][0]
             assert item['termination_reason'] == cause
-            assert item['connection_state'] == 'interrupted'
-            assert item['connection_state'] == 'interrupted'
+            assert item['disconnected_at'] != ''
+            assert item['disconnected_at'] != ''
             assert item['termination_detail'] == details
             db.close_thread_connection()
 
@@ -440,7 +440,7 @@ def test_protocol_and_storage_preserve_command_metadata(tmp_path):
     db, store = _new_store(tmp_path)
     item = _complete_session(store, client_end=ctx.client_session_end)
     assert item['termination_reason'] == 'client_restart'
-    assert item['connection_state'] == 'offline'
+    assert item['disconnected_at'] != ''
     assert item['termination_detail'] == {'command': 'relaunch_instance'}
     db.close_thread_connection()
 
@@ -459,7 +459,7 @@ def test_server_requested_detail_uses_original_intent(tmp_path):
     item = _complete_session(store, request={'at': time.monotonic(), 'command': 'disconnect'},
                              failure={'reason': 'connection_lost', 'detail': {}})
     assert item['termination_reason'] == 'server_requested_disconnect'
-    assert item['connection_state'] == 'offline'
+    assert item['disconnected_at'] != ''
     assert item['termination_detail'] == {'command': 'disconnect'}
 
 
@@ -505,5 +505,5 @@ def test_standalone_drop_disconnect_reason_preserves_connection_history_and_othe
     row = ConnectionHistoryStore(restored).get_history('machine-A')['sessions'][0]
     assert row['termination_reason'] == 'server_requested_disconnect'
     assert row['termination_detail'] == {'command': 'httpctl kill'}
-    assert row['connection_state'] == 'offline'
+    assert row['disconnected_at'] != ''
     restored.close_thread_connection()

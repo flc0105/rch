@@ -1,5 +1,5 @@
 import threading
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 from core.utils.datetime_utils import parse_iso_datetime
@@ -7,16 +7,19 @@ from core.utils.json_utils import compact_json_dumps, json_loads_dict
 class ConnectionHistoryStore:
     """SQLite-backed machine/client connection lifecycle history."""
 
-    SCHEMA_VERSION = 1
-
     SNAPSHOT_FIELDS = (
-        'machine_id', 'client_id', 'hostname', 'addr',
+        'hostname', 'addr',
         'listener_id', 'listener_name', 'listener_protocol', 'listener_port',
-        'os_type', 'os_alias', 'os_ver',
-        'os_name', 'os_full', 'arch', 'manufacturer', 'model', 'integrity', 'cwd',
-        'build_version', 'python_ver', 'process_id', 'launch_command', 'launch_mode',
-        'launch_source', 'username',
-        'process_name', 'http_transfer_mode', 'python_execution_mode',
+        'os_name', 'os_ver', 'integrity',
+        'build_version', 'python_ver', 'process_id', 'launch_command',
+        'launch_mode', 'launch_source', 'username', 'process_name',
+    )
+
+    # Only fields consumed by Connection History are exposed in the session VO.
+    SESSION_VIEW_FIELDS = (
+        'addr', 'listener_name', 'os_name', 'os_ver', 'integrity',
+        'build_version', 'process_id', 'launch_mode', 'launch_source',
+        'username', 'process_name',
     )
 
     def __init__(self, database):
@@ -25,15 +28,28 @@ class ConnectionHistoryStore:
 
     @staticmethod
     def _now_iso() -> str:
-        return datetime.now().isoformat()
+        return datetime.now(timezone.utc).isoformat()
+
+    @staticmethod
+    def _parse_utc(value: str):
+        parsed = parse_iso_datetime(value)
+        if parsed is not None and parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed
+
+    @classmethod
+    def _elapsed_ms(cls, start_time: str, end_time: str) -> int:
+        start = cls._parse_utc(start_time)
+        end = cls._parse_utc(end_time)
+        return max(int((end - start).total_seconds() * 1000), 0) if start and end else 0
 
     def _to_ms(self, value: str) -> int:
-        parsed = parse_iso_datetime(value)
+        parsed = self._parse_utc(value)
         return int(parsed.timestamp() * 1000) if parsed is not None else 0
 
     def _build_snapshot(self, connection: dict, previous: dict | None = None) -> dict:
         previous = previous if isinstance(previous, dict) else {}
-        result = dict(previous)
+        result = {field: previous[field] for field in self.SNAPSHOT_FIELDS if field in previous}
         for field in self.SNAPSHOT_FIELDS:
             value = connection.get(field)
             if value is None:
@@ -41,14 +57,11 @@ class ConnectionHistoryStore:
             if isinstance(value, str) and not value and field in result:
                 continue
             result[field] = value
-        last_seen_at = str(connection.get('last_seen_at') or '').strip()
-        if last_seen_at:
-            result['last_seen_at'] = last_seen_at
         return result
 
     def _row_to_session(self, row, *, now_iso: str = '') -> dict:
-        snapshot = json_loads_dict(row['snapshot_json'])
-        result = dict(snapshot)
+        snapshot = json_loads_dict(row['snapshot'])
+        result = {field: snapshot.get(field) for field in self.SESSION_VIEW_FIELDS if field in snapshot}
         result.update({
             'machine_id': row['machine_id'],
             'client_id': row['client_id'],
@@ -56,18 +69,11 @@ class ConnectionHistoryStore:
             'disconnected_at': row['disconnected_at'],
             'last_seen_at': row['last_seen_at'],
             'duration_ms': int(row['duration_ms'] or 0),
-            'connection_state': row['connection_state'],
             'termination_reason': row['termination_reason'],
-            'termination_detail': json_loads_dict(row['termination_detail_json']),
-            'tracking_source': row['tracking_source'] or 'connection_lifecycle',
-            'commands': [],
+            'termination_detail': json_loads_dict(row['termination_detail']),
         })
-        if not str(result.get('disconnected_at') or '').strip():
-            result['connection_state'] = 'online'
-            start = parse_iso_datetime(result.get('connected_at'))
-            end = parse_iso_datetime(now_iso or self._now_iso())
-            if start is not None and end is not None:
-                result['duration_ms'] = max(int((end - start).total_seconds() * 1000), 0)
+        if not str(result['disconnected_at'] or '').strip():
+            result['duration_ms'] = self._elapsed_ms(result['connected_at'], now_iso or self._now_iso())
         return result
 
     def _record_connected_tx(self, conn, connection: dict):
@@ -81,7 +87,7 @@ class ConnectionHistoryStore:
             'SELECT * FROM connection_sessions WHERE machine_id = ? AND client_id = ?',
             (machine_id, client_id),
         ).fetchone()
-        previous_snapshot = json_loads_dict(existing['snapshot_json']) if existing else {}
+        previous_snapshot = json_loads_dict(existing['snapshot']) if existing else {}
         snapshot = self._build_snapshot(connection, previous_snapshot)
         last_seen_at = str(connection.get('last_seen_at') or connected_at).strip()
 
@@ -90,9 +96,9 @@ class ConnectionHistoryStore:
                 '''
                 INSERT INTO connection_sessions(
                     machine_id, client_id, connected_at, connected_at_ms, disconnected_at,
-                    disconnected_at_ms, last_seen_at, duration_ms, connection_state,
-                    termination_reason, termination_detail_json, tracking_source, snapshot_json
-                ) VALUES (?, ?, ?, ?, '', 0, ?, 0, 'online', '', '{}', 'connection_lifecycle', ?)
+                    disconnected_at_ms, last_seen_at, duration_ms,
+                    termination_reason, termination_detail, snapshot
+                ) VALUES (?, ?, ?, ?, '', 0, ?, 0, '', '{}', ?)
                 ''',
                 (machine_id, client_id, connected_at, self._to_ms(connected_at), last_seen_at, compact_json_dumps(snapshot or {})),
             )
@@ -103,8 +109,8 @@ class ConnectionHistoryStore:
             '''
             UPDATE connection_sessions SET
                 connected_at = ?, connected_at_ms = ?, disconnected_at = '', disconnected_at_ms = 0,
-                last_seen_at = ?, duration_ms = 0, connection_state = 'online',
-                termination_reason = '', termination_detail_json = '{}', snapshot_json = ?
+                last_seen_at = ?, duration_ms = 0,
+                termination_reason = '', termination_detail = '{}', snapshot = ?
             WHERE machine_id = ? AND client_id = ?
             ''',
             (
@@ -132,22 +138,17 @@ class ConnectionHistoryStore:
                 self._record_connected_tx(conn, connection)
                 return
 
-            snapshot = self._build_snapshot(connection, json_loads_dict(row['snapshot_json']))
+            snapshot = self._build_snapshot(connection, json_loads_dict(row['snapshot']))
             last_seen_at = str(connection.get('last_seen_at') or row['last_seen_at'] or '').strip()
             disconnected_at = str(row['disconnected_at'] or '').strip()
             duration_ms = int(row['duration_ms'] or 0)
-            state = row['connection_state']
             if not disconnected_at:
-                state = 'online'
-                start = parse_iso_datetime(row['connected_at'])
-                end = parse_iso_datetime(self._now_iso())
-                if start is not None and end is not None:
-                    duration_ms = max(int((end - start).total_seconds() * 1000), 0)
+                duration_ms = self._elapsed_ms(row['connected_at'], self._now_iso())
 
             conn.execute(
-                '''UPDATE connection_sessions SET last_seen_at = ?, duration_ms = ?, connection_state = ?, snapshot_json = ?
+                '''UPDATE connection_sessions SET last_seen_at = ?, duration_ms = ?, snapshot = ?
                    WHERE machine_id = ? AND client_id = ?''',
-                (last_seen_at, duration_ms, state, compact_json_dumps(snapshot or {}), machine_id, client_id),
+                (last_seen_at, duration_ms, compact_json_dumps(snapshot or {}), machine_id, client_id),
             )
 
     def reconcile_active_sessions(self, machine_id: str, active_client_ids: set[str]):
@@ -165,12 +166,9 @@ class ConnectionHistoryStore:
                 if str(row['client_id'] or '').strip() in active_ids:
                     continue
                 disconnected_at = str(row['last_seen_at'] or row['connected_at'] or self._now_iso()).strip()
-                start = parse_iso_datetime(row['connected_at'])
-                end = parse_iso_datetime(disconnected_at)
-                duration_ms = max(int((end - start).total_seconds() * 1000), 0) if start and end else 0
+                duration_ms = self._elapsed_ms(row['connected_at'], disconnected_at)
                 conn.execute(
-                    '''UPDATE connection_sessions SET disconnected_at = ?, disconnected_at_ms = ?, duration_ms = ?,
-                       connection_state = 'interrupted'
+                    '''UPDATE connection_sessions SET disconnected_at = ?, disconnected_at_ms = ?, duration_ms = ?
                        WHERE machine_id = ? AND client_id = ?''',
                     (disconnected_at, self._to_ms(disconnected_at), duration_ms, machine_id_text, row['client_id']),
                 )
@@ -198,10 +196,8 @@ class ConnectionHistoryStore:
             if str(row['disconnected_at'] or '').strip():
                 return
 
-            snapshot = self._build_snapshot(connection, json_loads_dict(row['snapshot_json']))
-            start = parse_iso_datetime(row['connected_at'])
-            end = parse_iso_datetime(disconnected_at)
-            duration_ms = max(int((end - start).total_seconds() * 1000), 0) if start and end else 0
+            snapshot = self._build_snapshot(connection, json_loads_dict(row['snapshot']))
+            duration_ms = self._elapsed_ms(row['connected_at'], disconnected_at)
             last_seen_at = str(connection.get('last_seen_at') or row['last_seen_at'] or '').strip()
             normal_end = termination_reason in (
                 'server_requested_disconnect', 'client_exit', 'client_restart', 'client_update', 'client_paused'
@@ -213,33 +209,30 @@ class ConnectionHistoryStore:
                     value = str(details.get(key) or '').strip()
                     if value:
                         termination_detail[key] = value[:limit]
-            end_state = 'offline' if normal_end else 'interrupted'
             conn.execute(
                 '''
                 UPDATE connection_sessions SET
                     disconnected_at = ?, disconnected_at_ms = ?, last_seen_at = ?, duration_ms = ?,
-                    connection_state = ?, termination_reason = ?,
-                    termination_detail_json = ?, snapshot_json = ?
+                    termination_reason = ?, termination_detail = ?, snapshot = ?
                 WHERE machine_id = ? AND client_id = ?
                 ''',
                 (
                     disconnected_at, self._to_ms(disconnected_at), last_seen_at, duration_ms,
-                    end_state, str(termination_reason or ''), compact_json_dumps(termination_detail),
+                    str(termination_reason or ''), compact_json_dumps(termination_detail),
                     compact_json_dumps(snapshot or {}), machine_id, client_id,
                 ),
             )
 
-    def get_history(self, machine_id: str, *, limit: int = 20, offset: int = 0) -> dict:
+    def get_history(self, machine_id: str, *, limit: int = 20, offset: int = 0, client_id_search: str = '') -> dict:
         machine_id_text = str(machine_id or '').strip()
         page_size = min(max(int(limit), 1), 20)
         page_offset = max(int(offset), 0)
         if not machine_id_text:
             return {
-                'schema_version': self.SCHEMA_VERSION,
-                'machine_id': '', 'tracking_started_at': '',
+                'machine_id': '',
                 'connection_count': 0, 'online_connection_count': 0,
                 'total_online_duration_ms': 0,
-                'sessions': [], 'has_more': False, 'next_offset': 0,
+                'sessions': [], 'has_more': False,
             }
 
         with self._lock:
@@ -248,26 +241,26 @@ class ConnectionHistoryStore:
             # requested page of session snapshots is fetched or deserialized.
             totals = conn.execute('''
                 SELECT COUNT(*) AS connection_count,
-                       MIN(NULLIF(connected_at, '')) AS tracking_started_at,
                        SUM(CASE WHEN disconnected_at = '' THEN 1 ELSE 0 END) AS online_count,
                        SUM(duration_ms) AS total_duration_ms
                 FROM connection_sessions WHERE machine_id = ?
             ''', (machine_id_text,)).fetchone()
-            rows = conn.execute('''
-                SELECT * FROM connection_sessions WHERE machine_id = ?
-                ORDER BY connected_at_ms DESC, client_id DESC
-                LIMIT ? OFFSET ?
-            ''', (machine_id_text, page_size + 1, page_offset)).fetchall()
+            search = str(client_id_search or '').strip()
+            escaped = search.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+            query = "SELECT * FROM connection_sessions WHERE machine_id = ?"
+            params = [machine_id_text]
+            if escaped:
+                query += " AND client_id LIKE ? ESCAPE '\\'"
+                params.append(f'%{escaped}%')
+            query += ' ORDER BY connected_at_ms DESC, client_id DESC LIMIT ? OFFSET ?'
+            rows = conn.execute(query, (*params, page_size + 1, page_offset)).fetchall()
             has_more = len(rows) > page_size
             now_iso = self._now_iso()
             return {
-                'schema_version': self.SCHEMA_VERSION,
                 'machine_id': machine_id_text,
-                'tracking_started_at': str(totals['tracking_started_at'] or ''),
                 'connection_count': int(totals['connection_count'] or 0),
                 'online_connection_count': int(totals['online_count'] or 0),
                 'total_online_duration_ms': int(totals['total_duration_ms'] or 0),
                 'sessions': [self._row_to_session(row, now_iso=now_iso) for row in rows[:page_size]],
                 'has_more': has_more,
-                'next_offset': page_offset + page_size if has_more else 0,
             }

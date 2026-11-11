@@ -161,7 +161,7 @@ test('Connection History mobile cards preserve session detail and activity contr
   })
   assert.match(vue, /class="machine-history-mobile-list"/)
   assert.match(vue, /class="machine-history-table"/)
-  for (const field of ['Hostname', 'Address', 'OS', 'User', 'Process', 'Launch mode', 'Build', 'Last seen', 'Termination', 'cwd']) {
+  for (const field of ['Address', 'OS', 'User', 'Process', 'Launch mode', 'Build', 'Last seen', 'Termination']) {
     assert.match(vue, new RegExp(`>${field}<`), `${field} should remain in mobile details`)
   }
   assert.match(vue, /@click="toggleMobileSessionDetails\(row\)"/)
@@ -172,7 +172,7 @@ test('Connection History mobile cards preserve session detail and activity contr
   const instance = { ...options.data(), ...options.methods }
   const loaded = []
   instance.loadSessionCommands = row => loaded.push(row.client_id)
-  const session = { client_id: 'client-1', command_count: 2, command_loaded: false, command_loading: false }
+  const session = { client_id: 'client-1', activity_count: 2, command_loaded: false, command_loading: false }
   instance.toggleMobileSessionDetails(session)
   assert.equal(instance.isMobileSessionExpanded(session), true)
   assert.deepEqual(loaded, ['client-1'])

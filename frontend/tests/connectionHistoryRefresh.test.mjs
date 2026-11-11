@@ -30,14 +30,14 @@ test('top Refresh retains Activity details and expanded state, then updates the 
   const next = deferred()
   let detailCalls = 0
   const { template, options } = component('../src/components/MachineConnectionHistoryDialog.vue', {
-    getMachineConnectionHistory: async () => ({ sessions: [{ client_id: 'X', command_count: 1 }] }),
+    getMachineConnectionHistory: async () => ({ sessions: [{ client_id: 'X', activity_count: 1 }] }),
     getMachineConnectionCommands: async () => { detailCalls++; return next.promise },
     ElMessage: { error(message) { throw Error(message) } },
   })
   assert.match(template, /:expand-row-keys="expandedSessionIds"/)
   const instance = makeDialog(options)
   instance.history = { sessions: [{
-    client_id: 'X', command_count: 1, commands: [{ activity_id: 'prior' }], command_loaded: true,
+    client_id: 'X', activity_count: 1, commands: [{ activity_id: 'prior' }], command_loaded: true,
     command_loading: false, command_next_cursor: 'next', command_has_more: true,
   }] }
   instance.expandedSessionIds = ['X']
@@ -57,12 +57,12 @@ test('top Refresh retains Activity details and expanded state, then updates the 
 test('an in-flight Activity response follows the new session row across Refresh', async () => {
   const pending = deferred()
   const { options } = component('../src/components/MachineConnectionHistoryDialog.vue', {
-    getMachineConnectionHistory: async () => ({ sessions: [{ client_id: 'X', command_count: 1 }] }),
+    getMachineConnectionHistory: async () => ({ sessions: [{ client_id: 'X', activity_count: 1 }] }),
     getMachineConnectionCommands: async () => pending.promise,
     ElMessage: { error(message) { throw Error(message) } },
   })
   const dialog = makeDialog(options)
-  dialog.history = { sessions: [{ client_id: 'X', command_count: 1, commands: [], command_loaded: false, command_loading: false }] }
+  dialog.history = { sessions: [{ client_id: 'X', activity_count: 1, commands: [], command_loaded: false, command_loading: false }] }
   const inflight = dialog.loadSessionCommands(dialog.sessions[0])
   await dialog.loadHistory()
   pending.resolve({ items: [{ activity_id: 'still-present' }], next_cursor: '', has_more: false })
@@ -88,7 +88,7 @@ test('Connection History fetches only 20 sessions at a time and 10 activities pe
       calls.push(['history', machine, params.limit, params.offset])
       const start = params.offset
       const length = start === 40 ? 5 : 20
-      return { sessions: Array.from({ length }, (_, i) => ({client_id: `client-${start + i}`, command_count: 30})), has_more: start < 40 }
+      return { sessions: Array.from({ length }, (_, i) => ({client_id: `client-${start + i}`, activity_count: 30})), has_more: start < 40 }
     },
     getMachineConnectionCommands: async (machine, client, params) => {
       calls.push(['activities', machine, client, params.limit, params.cursor])
@@ -129,7 +129,7 @@ test('detail Activity Load More is the final row inside the scrollable table', (
   assert.match(template, /max-height="320"/)
   assert.match(template, /commandScope\.row\.__load_more/)
   assert.match(template, /class="machine-session-command-table-load-more"[\s\S]*?@click="loadSessionCommands\(scope\.row, true\)"/)
-  assert.match(template, /\.machine-session-command-table-load-more\s*\{\s*display:\s*flex;\s*justify-content:\s*center;\s*width:\s*100%;\s*\}/)
+  assert.match(template, /\.machine-session-command-table-load-more\s*\{\s*display:\s*flex;\s*justify-content:\s*center;\s*width:\s*100%;/)
   assert.doesNotMatch(template, /v-if="scope\.row\.command_has_more"\s+class="machine-session-command-load-more"/)
   const dialog = makeDialog(options)
   const row = {commands: Array.from({length: 10}, (_, i) => ({activity_id: String(i)})), command_has_more: true}

@@ -85,7 +85,8 @@ test('Listener tag follows device name before status icons; history details show
   const history = readFileSync(new URL('../src/components/MachineConnectionHistoryDialog.vue', import.meta.url), 'utf8')
   assert.equal((history.match(/<span class="label">Listener<\/span>/g) || []).length, 2)
   assert.match(history, /formatListener\(row\)/)
-  assert.match(history, /port \${port}/)
+  assert.doesNotMatch(history, /port \${port}/)
+  assert.match(history, /return String\(row\?\.listener_name \|\| ''\)\.trim\(\) \|\| '-'/)
 })
 
 test('banner Utilities opens the existing Settings dialog', () => {

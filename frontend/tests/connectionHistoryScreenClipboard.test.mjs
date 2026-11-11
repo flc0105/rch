@@ -49,12 +49,12 @@ test('Connection History keeps all main columns visible with adaptive widths and
 
 test('Connection History shows an empty-state immediately for zero activities and shortens cwd label', () => {
   const { vue, options } = optionsFrom('../src/components/MachineConnectionHistoryDialog.vue')
-  assert.match(vue, /<span class="label">cwd<\/span>/)
+  assert.doesNotMatch(vue, /<span class="label">cwd<\/span>/)
   assert.doesNotMatch(vue, /Current \/ last cwd/)
-  assert.match(vue, /v-else-if="!scope\.row\.command_loading && \(scope\.row\.command_loaded \|\| !Number\(scope\.row\.command_count \|\| 0\)\)"/)
+  assert.match(vue, /v-else-if="!scope\.row\.command_loading && \(scope\.row\.command_loaded \|\| !Number\(scope\.row\.activity_count \|\| 0\)\)"/)
   assert.match(vue, /No activities/)
   let requests = 0
-  const empty = { client_id: 'empty', command_count: 0, command_loaded: false, command_loading: false }
+  const empty = { client_id: 'empty', activity_count: 0, command_loaded: false, command_loading: false }
   options.methods.handleSessionExpand.call({ loadSessionCommands() { requests++ } }, empty, [empty])
   assert.equal(requests, 0, 'empty session should not request records')
 })
@@ -63,7 +63,7 @@ test('Connection History session pagination keeps one summary row per activity',
   const calls = []
   const { options } = optionsFrom('../src/components/MachineConnectionHistoryDialog.vue', {
     ElMessage: { error: (message) => { throw new Error(message) } },
-    getMachineConnectionHistory: async () => ({ sessions: [ { client_id: 'c1', command_count: 2 } ] }),
+    getMachineConnectionHistory: async () => ({ sessions: [ { client_id: 'c1', activity_count: 2 } ] }),
     getMachineConnectionCommands: async (_machine, _client, query) => {
       calls.push({ ...query })
       return calls.length === 1

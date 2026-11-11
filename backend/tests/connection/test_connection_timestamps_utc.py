@@ -110,8 +110,8 @@ def test_history_store_rejects_legacy_naive_timestamp_and_keeps_new_utc_heartbea
         session = history['sessions'][0]
         assert session['connected_at'] == ''
         assert session['last_seen_at'].endswith('+00:00')
-        assert history['tracking_started_at'] == ''
-        assert session['connection_state'] == 'online'
+        assert 'tracking_started_at' not in history
+        assert session['disconnected_at'] == ''
 
         store.record_connected({
             'machine_id': 'machine-A',
@@ -167,6 +167,6 @@ def test_legacy_naive_disconnect_time_does_not_turn_offline_history_online(tmp_p
 
         session = store.get_history('machine-D')['sessions'][0]
         assert session['disconnected_at'] == ''
-        assert session['connection_state'] == 'offline'
+        assert session['disconnected_at'] != ''
     finally:
         database.close_thread_connection()

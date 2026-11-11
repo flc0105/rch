@@ -19,7 +19,9 @@ def test_new_database_creates_only_final_tables_and_indexes(tmp_path):
     assert 'schema_migrations' not in _tables(conn)
     assert {'artifact_entries', 'artifact_folders', 'agent_outputs'} <= _tables(conn)
     assert 'snapshot_json' in {row[1] for row in conn.execute('PRAGMA table_info(background_job_files)')}
-    assert 'termination_detail_json' in {row[1] for row in conn.execute('PRAGMA table_info(connection_sessions)')}
+    columns = {row[1] for row in conn.execute('PRAGMA table_info(connection_sessions)')}
+    assert {'termination_detail', 'snapshot', 'connected_at_ms', 'disconnected_at_ms'} <= columns
+    assert {'connection_state', 'tracking_source', 'termination_detail_json', 'snapshot_json'} .isdisjoint(columns)
     assert len(list(conn.execute("SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'idx_%'"))) == 23
     assert db.integrity_check() == 'ok'
     db.close_thread_connection()

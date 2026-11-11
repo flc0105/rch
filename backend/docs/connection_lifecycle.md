@@ -173,20 +173,20 @@ RCH 将当前 Session、最近设备和历史会话分别管理：
 
 Connection History 首次只加载 **20 条**连接会话，点击底部 **Load More** 再向 Server 请求下一页 20 条；Server 使用 SQLite `LIMIT 21 OFFSET` 仅读取本页记录并多取 1 条判断是否有下一页，不提前拉取未加载会话的快照。页首总数与时长使用 SQL 聚合保留统计，不读取全部历史行后在内存切片。每条会话展开后的 Activity **每页最多 10 条**，继续点击 Load More 获取后续 10 条。
 
-Connection History 在桌面端以表格展示会话，手机端改为卡片。卡片保留连接状态、Client ID、上线/离线时间、持续时间和 Activity 数量；展开 Details 可查看主机、系统、用户、Integrity、启动模式、结束原因及 Activity 记录，并可继续加载后续 Activity。两种布局使用同一会话数据和活动查询。展开详情按需加载 Activity；历史顶部 Refresh 会重新读取会话并保留已展开的 Activity。 顶部 Filter 可按 Integrity、Launch Mode 类型和 Termination 类型组合过滤桌面表格与手机卡片；Launch Mode 忽略 `launch_source`（如 PyCharm），Termination 忽略 `termination_detail`，筛选只影响本地当前显示的会话，不改变顶部总统计或历史存储。HTTP Control 入队成功时立即显示操作反馈；交付超时、失败以及可选的领取调试信息通过 Notification Center 的 WebSocket 事件显示通知弹窗，统一受 Notification Preferences 的 Watchdog 开关控制。
+Connection History 在桌面端以表格展示会话，手机端改为卡片。卡片保留在线/离线状态、Client ID、上线/离线时间、持续时间和 Activity 数量；在线记录的 Offline 时间显示为 `-`。展开 Details 可查看地址、系统名称与版本、Listener 名称、用户、Integrity、进程、启动模式、结束原因及 Activity 记录，并可继续加载后续 Activity。两种布局使用同一会话数据和活动查询。展开详情按需加载 Activity；历史顶部 Refresh 会重新读取会话并保留已展开的 Activity。顶部 Client ID 搜索可匹配整份数据库历史并按页返回结果，顶部统计维持设备整体口径。Filter 可按 Integrity、Launch Mode 类型和 Termination 类型组合过滤桌面表格与手机卡片；Launch Mode 忽略 `launch_source`（如 PyCharm），Termination 忽略 `termination_detail`，筛选只影响本地当前显示的会话，不改变顶部总统计或历史存储。HTTP Control 入队成功时立即显示操作反馈；交付超时、失败以及可选的领取调试信息通过 Notification Center 的 WebSocket 事件显示通知弹窗，统一受 Notification Preferences 的 Watchdog 开关控制。
 
 ### Connection History 的结束原因
 
-Connection History 的列表在主动结束时显示 **Offline**，在连接丢失、传输错误、超时、协议截断或 Client 异常时显示 **Interrupted**。Server 启动后核对出的旧会话仍使用 Interrupted。展开记录后，**Termination** 在一个字段中显示既有结束原因文案，命令或错误摘要非空时追加括号详情；可用的 traceback 保留原文。`connection_sessions.termination_reason` 和 `termination_detail_json` 分别保存分类和详情。
+Connection History 通过 `disconnected_at` 区分 **Online** / **Offline**：有断开时间的记录统一显示 Offline，异常断开原因继续显示在展开详情的 **Termination**。Server 启动后核对出的旧会话如缺少明确结束事件，`termination_reason` 可能为空。Termination 的 `command`、`summary`、`traceback` 来自 `connection_sessions.termination_detail`。
 
 | Termination cause | Connection History 状态 | 采集条件 |
 | --- | --- | --- |
 | Server requested disconnect | Offline | Web Disconnect、Server 控制台 `kill`、远程 `kill_instance`、`httpctl kill`，详情保存实际执行入口或命令 |
-| Client exit / Client restart / Client update | Offline | Python Client 退出、重启或完成更新时上报结束；有操作命令时写入详情 |
-| Connection lost | Interrupted | Socket 在报文边界处收到 TCP EOF |
-| Transport error / Timeout | Interrupted | Server 捕获 Socket 传输异常或超时，详情包含错误摘要及可取得的堆栈 |
-| Unexpected disconnect | Interrupted | 连接在协议帧传输途中中止，或关闭时缺少明确结束报告 |
-| Client error | Interrupted | Client 终止性异常上报错误摘要与堆栈 |
+| Client exit / Client restart / Client update / Client paused | Offline | Client 主动结束上报 |
+| Connection lost | Offline | Socket 在报文边界处收到 TCP EOF |
+| Transport error / Timeout | Offline | Socket 传输异常或超时 |
+| Unexpected disconnect | Offline | 协议帧传输中断或没有明确结束报告 |
+| Client error | Offline | Client 终止性异常 |
 
 Client 主动结束、重启、更新或暂停连接时，使用统一的 `session_end` 上报：Client 附带一次性 `end_id`，Server 收到并保存结束原因后返回 `session_end_ack`。Client 通过现有接收线程等待确认（最多 2 秒）后关闭 Socket，避免 Windows 等平台在进程快速退出时丢失尚未处理的结束信息。`kill_instance` 由 Client 直接报告 `server_requested_disconnect`；`relaunch_instance` 报告 `client_restart`，不通过 Server 命令文字猜测断连原因。确认超时或发送失败会在 Client 日志中记录，断线诊断仍以 Server 实际收到的信息为准。Web Disconnect 属于 Server 直接发起关闭，继续使用其独立的请求记录。
 
@@ -268,11 +268,11 @@ PY
 
 主动结束也可直接验证：Web Disconnect、Server 控制台 `kill`、远程 `kill_instance`、`relaunch_instance` 及 Server `httpctl kill`。这些记录显示 **Offline**；详情中有实际命令时显示 `Command`。按 **Client exit / restart / update** 的各自执行路径上报。
 
-数据库核对使用当前的 `termination_reason` 与 `termination_detail_json` 字段。测试环境在 Server 停止写库后，可以用 `sqlite3` 查看最近会话：
+数据库核对使用当前的 `termination_reason` 与 `termination_detail` 字段。测试环境在 Server 停止写库后，可以用 `sqlite3` 查看最近会话：
 
 ```sql
-SELECT client_id, connection_state,
-       termination_reason, termination_detail_json
+SELECT client_id, connected_at, disconnected_at,
+       termination_reason, termination_detail
 FROM connection_sessions
 ORDER BY connected_at_ms DESC LIMIT 12;
 ```

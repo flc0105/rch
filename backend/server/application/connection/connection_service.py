@@ -308,7 +308,7 @@ class WebConnectionService:
         recent_offline = self._build_recent_offline_entries(active_connections)
         return active_connections + recent_offline
 
-    def get_machine_connection_history(self, machine_id: str, *, limit: int = 20, offset: int = 0) -> dict:
+    def get_machine_connection_history(self, machine_id: str, *, limit: int = 20, offset: int = 0, client_id_search: str = '') -> dict:
         machine_id_text = str(machine_id or '').strip()
         if not machine_id_text:
             raise ValueError('Invalid machine id')
@@ -327,41 +327,38 @@ class WebConnectionService:
                 self.connection_history_store.record_heartbeat(self.serialize_connection(session))
 
             self.connection_history_store.reconcile_active_sessions(machine_id_text, active_client_ids)
-            lifecycle_payload = self.connection_history_store.get_history(machine_id_text, limit=limit, offset=offset)
+            lifecycle_payload = self.connection_history_store.get_history(machine_id_text, limit=limit, offset=offset, client_id_search=client_id_search)
         else:
             lifecycle_payload = {
                 'machine_id': machine_id_text,
-                'tracking_started_at': '',
                 'sessions': [], 'connection_count': 0, 'online_connection_count': 0,
-                'total_online_duration_ms': 0, 'has_more': False, 'next_offset': 0,
+                'total_online_duration_ms': 0, 'has_more': False,
             }
 
         view = self.server.command_history.view_service
         loaded_ids = [session.get('client_id') for session in lifecycle_payload.get('sessions') or []]
-        command_counts = view.get_connection_command_counts_by_machine_id(machine_id_text, loaded_ids)
+        activity_counts = view.get_connection_command_counts_by_machine_id(machine_id_text, loaded_ids)
         totals = view.get_connection_command_totals(machine_id_text)
-        unassigned_command_count = totals['unassigned']
+        unassigned_activity_count = totals['unassigned']
 
         sessions = []
 
         for session in lifecycle_payload.get('sessions') or []:
             copied = dict(session)
             client_id = str(copied.get('client_id') or '').strip()
-            copied['command_count'] = int(command_counts.get(client_id, 0) or 0)
+            copied['activity_count'] = int(activity_counts.get(client_id, 0) or 0)
 
             sessions.append(copied)
 
         return {
             'machine_id': machine_id_text,
-            'tracking_started_at': lifecycle_payload.get('tracking_started_at') or '',
             'connection_count': lifecycle_payload.get('connection_count', 0),
             'online_connection_count': lifecycle_payload.get('online_connection_count', 0),
-            'command_count': totals['total'],
+            'activity_count': totals['total'],
             'total_online_duration_ms': lifecycle_payload.get('total_online_duration_ms', 0),
-            'unassigned_command_count': unassigned_command_count,
+            'unassigned_activity_count': unassigned_activity_count,
             'sessions': sessions,
             'has_more': lifecycle_payload.get('has_more', False),
-            'next_offset': lifecycle_payload.get('next_offset', 0),
         }
 
     def get_machine_connection_commands(

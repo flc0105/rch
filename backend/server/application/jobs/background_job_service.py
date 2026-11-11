@@ -201,7 +201,7 @@ class BackgroundJobService:
                 return str(row['machine_id'] or '').strip(), hostname, addr
 
             row = conn.execute(
-                'SELECT machine_id, snapshot_json '
+                'SELECT machine_id, snapshot '
                 'FROM connection_sessions '
                 'WHERE client_id = ? '
                 'ORDER BY connected_at_ms DESC LIMIT 1',
@@ -211,7 +211,7 @@ class BackgroundJobService:
                 hostname = ''
                 addr = ''
                 try:
-                    snapshot = json.loads(str(row['snapshot_json'] or '{}'))
+                    snapshot = json.loads(str(row['snapshot'] or '{}'))
                     if isinstance(snapshot, dict):
                         hostname = str(snapshot.get('hostname') or '').strip()
                         addr = str(snapshot.get('addr') or '').strip()

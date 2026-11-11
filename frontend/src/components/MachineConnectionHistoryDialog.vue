@@ -16,6 +16,15 @@
         </div>
 
         <div class="machine-history-toolbar-actions">
+          <el-input
+            v-model="clientSearch"
+            class="machine-history-client-search"
+            placeholder="Search Client ID"
+            aria-label="Search Client ID"
+            clearable
+            size="small"
+            @input="onClientSearchInput"
+          />
           <el-popover placement="bottom-end" trigger="click" :width="280">
             <template #reference>
               <el-button size="small">Filter{{ activeFilterCount ? ` (${activeFilterCount})` : '' }}</el-button>
@@ -51,7 +60,7 @@
         </div>
         <div class="machine-history-stat">
           <div class="machine-history-stat-label">Total Activities</div>
-          <div class="machine-history-stat-value">{{ history.command_count || 0 }}</div>
+          <div class="machine-history-stat-value">{{ history.activity_count || 0 }}</div>
         </div>
         <div class="machine-history-stat">
           <div class="machine-history-stat-label">Total Online Time</div>
@@ -60,12 +69,12 @@
       </div>
 
       <el-alert
-        v-if="history.unassigned_command_count"
+        v-if="history.unassigned_activity_count"
         class="machine-history-alert"
         type="warning"
         :closable="false"
         show-icon
-        :title="`${history.unassigned_command_count} activity record(s) have no client_id and cannot be assigned to a session.`"
+        :title="`${history.unassigned_activity_count} activity record(s) have no client_id and cannot be assigned to a session.`"
       />
 
       <div v-if="filteredSessions.length" class="machine-history-mobile-list">
@@ -91,7 +100,7 @@
             </div>
             <div class="machine-history-mobile-field">
               <span>Offline</span>
-              <strong>{{ row.connection_state === 'online' ? 'online' : formatDateTime(row.disconnected_at) }}</strong>
+              <strong>{{ !row.disconnected_at ? '-' : formatDateTime(row.disconnected_at) }}</strong>
             </div>
             <div class="machine-history-mobile-field">
               <span>Duration</span>
@@ -99,7 +108,7 @@
             </div>
             <div class="machine-history-mobile-field">
               <span>Activities</span>
-              <strong>{{ row.command_count || 0 }}</strong>
+              <strong>{{ row.activity_count || 0 }}</strong>
             </div>
           </div>
 
@@ -114,10 +123,6 @@
 
           <div v-if="isMobileSessionExpanded(row)" class="machine-history-mobile-details">
             <div class="machine-session-meta-grid">
-              <div class="machine-session-meta-item">
-                <span class="label">Hostname</span>
-                <span class="value">{{ row.hostname || '-' }}</span>
-              </div>
               <div class="machine-session-meta-item">
                 <span class="label">Address</span>
                 <span class="value">{{ row.addr || '-' }}</span>
@@ -161,14 +166,10 @@
                   <pre v-if="row.termination_detail?.traceback">{{ row.termination_detail.traceback }}</pre>
                 </div>
               </div>
-              <div class="machine-session-meta-item machine-session-meta-wide">
-                <span class="label">cwd</span>
-                <span class="value">{{ row.cwd || '-' }}</span>
-              </div>
             </div>
 
             <div class="machine-session-command-header">
-              <span>Activities ({{ row.command_count || 0 }})</span>
+              <span>Activities ({{ row.activity_count || 0 }})</span>
             </div>
             <div class="machine-session-command-section" v-loading="row.command_loading">
               <div
@@ -193,16 +194,16 @@
               </div>
 
               <div
-                v-if="!row.commands?.length && !row.command_loading && (row.command_loaded || !Number(row.command_count || 0))"
+                v-if="!row.commands?.length && !row.command_loading && (row.command_loaded || !Number(row.activity_count || 0))"
                 class="empty-state compact"
               >
                 No activities
               </div>
 
-              <div v-if="row.command_has_more" class="machine-session-command-load-more">
+              <div v-if="row.command_has_more" class="machine-session-command-load-more machine-session-command-load-more-inline">
                 <el-button
                   size="small"
-                  plain
+                  link
                   :loading="row.command_loading"
                   @click="loadSessionCommands(row, true)"
                 >
@@ -228,10 +229,6 @@
           <template #default="scope">
             <div class="machine-session-detail">
               <div class="machine-session-meta-grid">
-                <div class="machine-session-meta-item">
-                  <span class="label">Hostname</span>
-                  <span class="value">{{ scope.row.hostname || '-' }}</span>
-                </div>
                 <div class="machine-session-meta-item">
                   <span class="label">Address</span>
                   <span class="value">{{ scope.row.addr || '-' }}</span>
@@ -275,14 +272,10 @@
                     <pre v-if="scope.row.termination_detail?.traceback">{{ scope.row.termination_detail.traceback }}</pre>
                   </div>
                 </div>
-                <div class="machine-session-meta-item machine-session-meta-wide">
-                  <span class="label">cwd</span>
-                  <span class="value">{{ scope.row.cwd || '-' }}</span>
-                </div>
               </div>
 
               <div class="machine-session-command-header">
-                <span>Activities ({{ scope.row.command_count || 0 }})</span>
+                <span>Activities ({{ scope.row.activity_count || 0 }})</span>
               </div>
 
               <div
@@ -307,7 +300,7 @@
                       >
                         <el-button
                           size="small"
-                          plain
+                          link
                           :loading="scope.row.command_loading"
                           @click="loadSessionCommands(scope.row, true)"
                         >Load More</el-button>
@@ -342,7 +335,7 @@
                 </el-table>
 
                 <div
-                  v-else-if="!scope.row.command_loading && (scope.row.command_loaded || !Number(scope.row.command_count || 0))"
+                  v-else-if="!scope.row.command_loading && (scope.row.command_loaded || !Number(scope.row.activity_count || 0))"
                   class="empty-state compact"
                 >
                   No activities
@@ -384,7 +377,7 @@
 
         <el-table-column label="Offline" min-width="80" class-name="machine-history-time-column" show-overflow-tooltip>
           <template #default="scope">
-            {{ scope.row.connection_state === 'online' ? 'online' : formatDateTime(scope.row.disconnected_at) }}
+            {{ !scope.row.disconnected_at ? '-' : formatDateTime(scope.row.disconnected_at) }}
           </template>
         </el-table-column>
 
@@ -396,7 +389,7 @@
 
         <el-table-column label="Activities" width="90" align="right">
           <template #default="scope">
-            {{ scope.row.command_count || 0 }}
+            {{ scope.row.activity_count || 0 }}
           </template>
         </el-table-column>
       </el-table>
@@ -405,13 +398,10 @@
         {{ sessions.length ? 'No connections match the selected filters' : 'No connection history for this machine yet' }}
       </div>
 
-      <div v-if="history.has_more" class="machine-session-command-load-more">
-        <el-button size="small" plain :loading="loadingMore" @click="loadMoreHistory">Load More</el-button>
+      <div v-if="history.has_more" class="machine-history-table-load-more">
+        <el-button size="small" link :loading="loadingMore" @click="loadMoreHistory">Load More</el-button>
       </div>
 
-      <div v-if="history.tracking_started_at" class="machine-history-footer-note">
-        Connection lifecycle and activity records are stored in rch.db. Activity summaries are loaded for each client session.
-      </div>
     </div>
   </el-dialog>
 </template>
@@ -438,6 +428,8 @@ export default {
       mobileExpandedSessionIds: [],
       expandedSessionIds: [],
       filters: { integrity: '', launchMode: '', termination: '' },
+      clientSearch: '',
+      clientSearchTimer: null,
     }
   },
 
@@ -476,11 +468,13 @@ export default {
     },
   },
 
+  beforeUnmount() {
+    clearTimeout(this.clientSearchTimer)
+  },
+
   methods: {
     formatListener(row) {
-      const name = String(row?.listener_name || '').trim()
-      const port = Number(row?.listener_port || 0)
-      return name && port > 0 ? `${name} (port ${port})` : (name || (port > 0 ? `Port ${port}` : '-'))
+      return String(row?.listener_name || '').trim() || '-'
     },
 
     open(item = {}) {
@@ -489,6 +483,8 @@ export default {
         item.device_display_name || item.display_hostname || item.device_alias || item.hostname || '',
       ).trim()
       this.visible = true
+      clearTimeout(this.clientSearchTimer)
+      this.clientSearch = ''
       this.historyRequestSeq += 1
       this.expandedSessionIds = []
       this.mobileExpandedSessionIds = []
@@ -509,6 +505,12 @@ export default {
       this.filters = { integrity: '', launchMode: '', termination: '' }
     },
 
+    onClientSearchInput() {
+      this.historyRequestSeq += 1
+      clearTimeout(this.clientSearchTimer)
+      this.clientSearchTimer = setTimeout(() => this.loadHistory(), 250)
+    },
+
     async loadMoreHistory() {
       if (!this.history.has_more || this.loading || this.loadingMore) return
       return this.loadHistory(true)
@@ -525,7 +527,9 @@ export default {
       else this.loading = true
       try {
         const offset = append ? this.sessions.length : 0
-        const payload = await getMachineConnectionHistory(this.machineId, { limit: 20, offset })
+        const payload = await getMachineConnectionHistory(this.machineId, {
+          limit: 20, offset, clientIdSearch: this.clientSearch,
+        })
         if (seq !== this.historyRequestSeq) return
         const previous = new Map(this.sessions.map(row => [row.client_id, row]))
         const nextRows = (Array.isArray(payload?.sessions) ? payload.sessions : []).map(session => {
@@ -548,7 +552,7 @@ export default {
         this.mobileExpandedSessionIds = this.mobileExpandedSessionIds.filter(id => available.has(id))
         const expanded = new Set([...this.expandedSessionIds, ...this.mobileExpandedSessionIds])
         for (const row of this.sessions) {
-          if (expanded.has(row.client_id) && Number(row.command_count || 0) && !row.command_loading) {
+          if (expanded.has(row.client_id) && Number(row.activity_count || 0) && !row.command_loading) {
             this.loadSessionCommands(row)
           }
         }
@@ -568,7 +572,7 @@ export default {
         : []
       const expanded = this.expandedSessionIds.includes(row?.client_id)
       if (!expanded) return
-      if (row?.command_loaded || row?.command_loading || !Number(row?.command_count || 0)) return
+      if (row?.command_loaded || row?.command_loading || !Number(row?.activity_count || 0)) return
       this.loadSessionCommands(row)
     },
 
@@ -587,7 +591,7 @@ export default {
       }
 
       this.mobileExpandedSessionIds = [...this.mobileExpandedSessionIds, clientId]
-      if (!row.command_loaded && !row.command_loading && Number(row.command_count || 0)) {
+      if (!row.command_loaded && !row.command_loading && Number(row.activity_count || 0)) {
         return this.loadSessionCommands(row)
       }
     },
@@ -659,7 +663,7 @@ export default {
     },
 
     formatOs(row) {
-      const type = String(row?.os_type || row?.os_name || '').trim()
+      const type = String(row?.os_name || '').trim()
       const version = String(row?.os_ver || '').trim()
       return [type, version].filter(Boolean).join(' ') || '-'
     },
@@ -703,15 +707,11 @@ export default {
     },
 
     sessionStatusText(row) {
-      if (row?.connection_state === 'online') return 'online'
-      if (row?.connection_state === 'interrupted') return 'interrupted'
-      return 'offline'
+      return row?.disconnected_at ? 'offline' : 'online'
     },
 
     sessionStatusTagType(row) {
-      if (row?.connection_state === 'online') return 'success'
-      if (row?.connection_state === 'interrupted') return 'warning'
-      return 'info'
+      return row?.disconnected_at ? 'info' : 'success'
     },
 
     activityTableRows(row) {
@@ -754,6 +754,11 @@ export default {
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
+}
+
+.machine-history-client-search {
+  width: 190px;
+  max-width: 100%;
 }
 
 .machine-history-filters {
@@ -1001,10 +1006,25 @@ export default {
   margin-top: 10px;
 }
 
+.machine-session-command-load-more-inline {
+  border-top: 1px solid var(--el-border-color-lighter);
+  padding-top: 7px;
+}
+
+.machine-history-table-load-more {
+  display: flex;
+  justify-content: center;
+  padding: 8px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-top: 0;
+  background: var(--el-fill-color-extra-light);
+}
+
 .machine-session-command-table-load-more {
   display: flex;
   justify-content: center;
   width: 100%;
+  padding: 3px 0;
 }
 
 .machine-session-command-text,
@@ -1053,13 +1073,6 @@ export default {
   padding: 56px 0;
 }
 
-.machine-history-footer-note {
-  margin-top: 12px;
-  color: var(--el-text-color-secondary);
-  font-size: 12px;
-  line-height: 1.6;
-}
-
 @media (max-width: 768px) {
   .machine-history-toolbar {
     flex-wrap: wrap;
@@ -1067,7 +1080,10 @@ export default {
   }
 
   .machine-history-toolbar-actions {
-    margin-left: auto;
+    margin-left: 0;
+    width: 100%;
+    flex-wrap: wrap;
+    justify-content: flex-start;
   }
 
   .machine-history-body {

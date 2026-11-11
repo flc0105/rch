@@ -6,7 +6,7 @@ const dialog = readFileSync(new URL('../src/components/MachineConnectionHistoryD
 
 test('Connection History preserves State, but removes redundant Disconnect detail', () => {
   assert.match(dialog, /sessionStatusText\(scope\.row\)/)
-  assert.match(dialog, /if \(row\?\.connection_state === 'interrupted'\) return 'interrupted'/)
+  assert.match(dialog, /return row\?\.disconnected_at \? 'offline' : 'online'/)
   assert.doesNotMatch(dialog, /disconnect_reason|<span class="label">Disconnect<\/span>/)
 })
 
