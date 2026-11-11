@@ -52,7 +52,7 @@ Content-Type: application/json
 
 `update` 构建请求携带当前 Client 的传输类型和 TLS 证书指纹，Server 根据现有 Listener 配置与连接端口选择对应的入口，且必须核对所选 Listener ID 与传输类型一致；若出现 TCP/TLS 端口、协议或指纹不匹配，则拒绝构建。生成的 Bundle 由 Server 注入 TCP/TLS 参数和证书指纹，更新流程本身不增加连接消息或额外状态查询。
 
-Server 在临时工作目录复制 Bundle 所需源码，注入 Client 配置后打包，再把构建结果复制到 `SERVER_RUNTIME_DIR/agent_output/`（默认 `backend/runtime/agent_output/`）。同目录下的 `agent_outputs.sqlite3` 保存构建时间、Build Version、Builder、Listener ID、构建时名称快照、系统和架构、连接参数及请求来源等信息。文件大小根据磁盘实体计算。构建成功会发布 `agent_build_lifecycle` 事件（`completed`），失败则发布 `error`。
+Server 在临时工作目录复制 Bundle 所需源码，注入 Client 配置后打包，再把构建结果复制到 `SERVER_RUNTIME_DIR/agent_output/`（默认 `backend/runtime/agent_output/`）。构建元数据保存在 Server 的 `runtime/rch.db` 的 `agent_outputs` 表中，包括构建时间、Build Version、Builder、Listener ID、构建时名称快照、系统和架构、连接参数及请求来源等信息。文件大小根据磁盘实体计算。构建成功会发布 `agent_build_lifecycle` 事件（`completed`），失败则发布 `error`。
 
 `POST /api/agent/build` 的 Bundle 响应提供 `file_name`、`build_version`、`download_url` 以及服务端对实际 ZIP 计算的 `sha256`。产物下载通过 **Web/API 端口**上的 `GET /api/agent/download/{filename}` 完成，不经过文件传输专线的 8086。构建产物可以通过 `/api/agent/outputs` 查看，并通过相应删除接口移除；删除某个 Server 构建产物，不会卸载已安装在远程设备上的 Release。
 

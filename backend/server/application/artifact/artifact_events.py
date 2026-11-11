@@ -4,10 +4,9 @@
 def publish_artifact_created(event_bus, artifact_info: dict):
     if not isinstance(artifact_info, dict):
         return
-    event_bus.publish('artifact_created', {
+    event = {
         'artifact_id': artifact_info.get('artifact_id', ''),
         'artifact_type': artifact_info.get('artifact_type', ''),
-        'source_kind': artifact_info.get('source_kind', ''),
         'hostname': artifact_info.get('hostname', ''),
         'machine_id': artifact_info.get('machine_id', ''),
         'client_id': artifact_info.get('client_id', ''),
@@ -18,4 +17,7 @@ def publish_artifact_created(event_bus, artifact_info: dict):
         'created_at': artifact_info.get('created_at', ''),
         'download_url': artifact_info.get('download_url', ''),
         'preview_url': artifact_info.get('preview_url', ''),
-    })
+    }
+    if artifact_info.get('scope') == 'saved':
+        event['category'] = artifact_info['category']
+    event_bus.publish('artifact_created', event)

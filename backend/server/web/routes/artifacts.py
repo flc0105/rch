@@ -22,7 +22,7 @@ def create_artifacts_blueprint(server_instance):
     def get_artifacts():
         artifact_type = (request.args.get('type') or '').strip()
         machine_id = (request.args.get('machine_id') or '').strip()
-        filters = {key: (request.args.get(key) or '').strip() for key in ('scope', 'folder_id', 'source_kind', 'search')}
+        filters = {key: (request.args.get(key) or '').strip() for key in ('scope', 'folder_id', 'category', 'search')}
         return responder.json_endpoint(
             lambda: artifact_api.list_artifacts(artifact_type=artifact_type, machine_id=machine_id, **filters),
             default_error_status=500,

@@ -1,19 +1,18 @@
-"""Saved has a single classification; Shared retains an independent folder."""
-
+"""Artifact Saved category and Shared folder end-to-end contract."""
 import json
 import sqlite3
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
 pytest.importorskip('werkzeug', reason='Artifact Web integration requires Werkzeug')
 
 from core.artifact_contract import (
-    ArtifactScope, ArtifactSourceKind, ArtifactType, SAVED_FOLDER_IDS, scope_for_type,
+    ArtifactScope, ArtifactCategory, ArtifactType, SAVED_FOLDER_IDS, scope_for_type,
 )
 from server.application.artifact.artifact_registry_service import ArtifactRegistryService
 from server.application.artifact.artifact_service import WebArtifactService
+from server.persistence.rch_database import RchDatabase
 from server.application.web.artifact_api import WebArtifactApi
 
 
@@ -21,63 +20,92 @@ class Upload:
     filename = 'example.txt'
 
     def save(self, destination, buffer_size=None):
-        Path(destination).write_text('RCH canonical artifact test', encoding='utf-8')
+        Path(destination).write_text('Canonical artifact test', encoding='utf-8')
 
 
 def api_for(tmp_path):
     service = WebArtifactService.__new__(WebArtifactService)
+    service.database = RchDatabase(str(tmp_path / 'rch.db'))
     service.artifacts_root_dir = str(tmp_path / 'artifacts')
     service.previews_dir = str(tmp_path / 'artifacts' / 'previews')
     service.registry_service = ArtifactRegistryService(service)
     return WebArtifactApi(None, None, service), service.registry_service.catalog
 
 
-def test_folder_selection_replaces_sdk_origin_for_saved_before_persist(tmp_path):
+@pytest.mark.parametrize('category,expected', [
+    ('screenshots', 'screenshots'), ('ScReenShots', 'screenshots'),
+    ('SCRIPT_FILES', 'script_files'), ('job_files', 'job_files'),
+    ('clipboard', 'clipboard'), ('webcam', 'webcam'), ('downloads', 'downloads'),
+    ('command_output', 'command_output'), ('terminal_logs', 'terminal_logs'),
+    ('inbox', 'inbox'), ('script_file', 'inbox'), ('random', 'inbox'),
+    ('', 'inbox'), (None, 'inbox'),
+])
+def test_upload_category_is_the_only_saved_folder_source(tmp_path, category, expected):
     api, catalog = api_for(tmp_path)
-    item = api.save_http_uploaded_file(
-        Upload(), artifact_type=ArtifactType.FILES.value,
-        folder='Screenshots')
+    item = api.save_http_uploaded_file(Upload(), artifact_type='files', category=category)
     assert item['scope'] == ArtifactScope.SAVED.value
-    assert item['source_kind'] == ArtifactSourceKind.SCREENSHOTS.value
-    assert item['folder_id'] == SAVED_FOLDER_IDS[ArtifactSourceKind.SCREENSHOTS]
-    assert catalog.list(scope=ArtifactScope.SAVED.value, folder_id=item['folder_id'])[0]['artifact_id'] == item['artifact_id']
-    with sqlite3.connect(catalog.db_path) as conn:
-        folder_id, json_data = conn.execute(
-            'SELECT folder_id, payload_json FROM artifact_entries WHERE artifact_id=?',
-            (item['artifact_id'],)).fetchone()
-    assert folder_id is None
-    assert 'folder_id' not in json.loads(json_data)
+    assert item['category'] == expected
+    assert item['folder_id'] == f'saved:{expected}'
+    assert catalog.list(scope='saved', category=expected)[0]['artifact_id'] == item['artifact_id']
+    with sqlite3.connect(catalog.database.db_path) as conn:
+        folder_id, db_category, raw = conn.execute('SELECT folder_id, category, payload_json FROM artifact_entries WHERE artifact_id=?',
+                                                  (item['artifact_id'],)).fetchone()
+    assert folder_id is None and db_category == expected
+    assert 'folder_id' not in json.loads(raw)
     assert Path(item['saved_path']).exists()
     with pytest.raises(ValueError, match='Only Shared Files'):
-        api.move_artifact(item['artifact_id'], SAVED_FOLDER_IDS[ArtifactSourceKind.DOWNLOADS])
+        api.move_artifact(item['artifact_id'], SAVED_FOLDER_IDS[ArtifactCategory.DOWNLOADS])
 
 
-def test_shared_upload_keeps_source_and_can_move_to_another_folder(tmp_path):
+def test_shared_upload_has_folder_but_no_category(tmp_path):
     api, catalog = api_for(tmp_path)
-    first = catalog.create_folder(ArtifactScope.SHARED.value, 'First')
-    second = catalog.create_folder(ArtifactScope.SHARED.value, 'Second')
-    item = api.save_http_uploaded_file(Upload(), artifact_type=ArtifactType.SHARED_FILES.value,
-                                       folder_id=first['folder_id'])
-    assert item['source_kind'] == ArtifactSourceKind.SHARED_UPLOAD.value
+    first = catalog.create_folder('shared', 'First')
+    second = catalog.create_folder('shared', 'Second')
+    item = api.save_http_uploaded_file(Upload(), artifact_type='shared_files', folder_id=first['folder_id'])
+    assert item['scope'] == 'shared'
+    assert 'category' not in item
     assert item['folder_id'] == first['folder_id']
+    assert item['extra']['source_kind'] == 'shared_upload'
     moved = api.move_artifact(item['artifact_id'], second['folder_id'])
-    assert moved['source_kind'] == ArtifactSourceKind.SHARED_UPLOAD.value
+    assert 'category' not in moved
     assert moved['folder_id'] == second['folder_id']
+    with sqlite3.connect(catalog.database.db_path) as conn:
+        assert conn.execute('SELECT category FROM artifact_entries WHERE artifact_id=?',
+                            (item['artifact_id'],)).fetchone()[0] is None
     assert Path(item['saved_path']).exists()
 
 
-def test_invalid_saved_folder_is_rejected_before_file_write(tmp_path):
+def test_api_rejects_shared_category_even_if_empty_and_saved_folder(tmp_path):
     api, catalog = api_for(tmp_path)
-    upload = Upload()
-    with pytest.raises(ValueError):
-        api.save_http_uploaded_file(upload, folder='Not a real folder')
+    for category in ('', 'screenshots', 'InBoX'):
+        with pytest.raises(ValueError, match='Only Saved Files'):
+            api.save_http_uploaded_file(Upload(), artifact_type='shared_files', category=category)
+    with pytest.raises(ValueError, match='Saved Files uploads use category'):
+        api.save_http_uploaded_file(Upload(), folder='Screenshots')
+    with pytest.raises(ValueError, match='Saved Files uploads use category'):
+        api.save_http_uploaded_file(Upload(), folder_id='saved:screenshots')
     assert catalog.list() == []
     assert not (tmp_path / 'artifacts' / 'objects').exists()
 
 
-def test_canonical_scope_and_kind_are_closed_sets():
+def test_preview_saved_into_selected_category_folder(tmp_path):
+    api, catalog = api_for(tmp_path)
+    preview = api.save_http_uploaded_file(Upload(), artifact_type='previews')
+    assert 'category' not in preview
+    saved = api.artifact_service.registry_service.save_preview_to_saved(
+        preview['artifact_id'], 'saved:script_files')
+    assert saved['category'] == 'script_files'
+    assert saved['folder_id'] == 'saved:script_files'
+    assert catalog.get(saved['artifact_id'])['category'] == 'script_files'
+    assert catalog.get(preview['artifact_id']).get('category') is None
+    default = api.artifact_service.registry_service.save_preview_to_saved(preview['artifact_id'])
+    assert default['category'] == 'downloads'
+    assert default['folder_id'] == 'saved:downloads'
+
+
+def test_scope_type_and_category_enum_are_closed(tmp_path):
     assert scope_for_type(ArtifactType.COMMAND_OUTPUT) == ArtifactScope.SAVED
     with pytest.raises(ValueError):
-        scope_for_type('not_an_artifact_type')
+        scope_for_type('bogus')
     with pytest.raises(ValueError):
-        ArtifactSourceKind('script_output')
+        ArtifactCategory('script_file')

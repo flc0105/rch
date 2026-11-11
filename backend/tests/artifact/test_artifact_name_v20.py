@@ -63,14 +63,14 @@ def test_raw_script_name_overrides_display_and_command(tmp_path):
 def test_clipboard_raw_image_uses_timestamp_and_file_name_is_unmodified(monkeypatch):
     owner = ClipboardManager.__new__(ClipboardManager)
     uploaded = {}
-    def upload(data, *, filename, folder, extra):
-        uploaded.update(filename=filename, folder=folder, extra=extra)
+    def upload(data, *, filename, category, extra):
+        uploaded.update(filename=filename, category=category, extra=extra)
         return dict(original_name=filename)
     owner._upload_bytes_artifact = upload
     result = owner._materialize_snapshot({'kind': 'image', 'data': b'png', 'format': 'png'})
     assert result['kind'] == 'image'
     assert uploaded['filename'].startswith('clipboard_') and uploaded['filename'].endswith('.png')
     assert len(uploaded['filename']) == len('clipboard_YYYYMMDD_HHMMSS.png')
-    assert uploaded['folder'] == 'Clipboard'
+    assert uploaded['category'] == 'clipboard'
     assert uploaded['extra'] == {'clipboard_kind': 'image'}
     assert build_artifact_filename('clipboard', 'png', now=STAMP) == 'clipboard_20261110_183218.png'

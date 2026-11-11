@@ -126,7 +126,7 @@ class iOSConsoleService:
 
             form_data = self.owner.http_file_transfer_service.build_http_upload_form_data(
                 artifact_type='files',
-                folder='Downloads',
+                category='downloads',
             )
 
             if kind == 'photo':
@@ -142,7 +142,7 @@ class iOSConsoleService:
 
                 response = self.owner.client_api.upload_file_source(
                     buf,
-                    filename=f'photo_{get_time()}.png',
+                    filename=f'photo_{get_time()}.jpg',
                     form_data=form_data,
                     timeout=30,
                 )
@@ -171,6 +171,7 @@ class iOSConsoleService:
             except Exception:
                 result['response_text'] = response.text
 
+            self.owner.client_api.parse_json_response(response)
             return 1, json.dumps(result, ensure_ascii=False)
         except Exception as e:
             return 0, f'Failed to pick/upload: {e}'

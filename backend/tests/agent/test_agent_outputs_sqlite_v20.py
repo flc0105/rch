@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from server.application.agent.agent_output_registry import AgentOutputRegistry
+from server.persistence.rch_database import RchDatabase
 from server.application.maintenance.server_cleanup_service import ServerCleanupService
 
 
@@ -23,7 +24,7 @@ def register(registry, path, *, source='manual', listener_id='listener-1', liste
 
 
 def test_registry_uses_sqlite_with_compact_columns(tmp_path):
-    registry = AgentOutputRegistry(str(tmp_path))
+    registry = AgentOutputRegistry(str(tmp_path), RchDatabase(str(tmp_path / 'rch.db')))
     result = register(registry, tmp_path / 'rchclient_go_mac_arm64')
     assert result['build_time'] and result['size'] == 11
     assert result['listener_name'] == 'Original Listener'
@@ -35,14 +36,14 @@ def test_registry_uses_sqlite_with_compact_columns(tmp_path):
     assert result['source'] == 'manual'
     assert not (tmp_path / '.metadata').exists()
 
-    with sqlite3.connect(registry.db_path) as conn:
+    with sqlite3.connect(registry.database.db_path) as conn:
         columns = {row[1] for row in conn.execute('PRAGMA table_info(agent_outputs)')}
         assert {'created_at', 'listener_name_snapshot', 'connect_host', 'connect_port',
                 'web_scheme', 'web_host', 'web_port', 'source', 'listener_id'} <= columns
         assert not {'size', 'warnings', 'build_time', 'updated_at', 'listener_name', 'server_host'} & columns
         assert conn.execute('SELECT COUNT(*) FROM agent_outputs').fetchone()[0] == 1
 
-    again = AgentOutputRegistry(str(tmp_path))
+    again = AgentOutputRegistry(str(tmp_path), RchDatabase(str(tmp_path / 'rch.db')))
     assert again.list_outputs()[0]['file_name'] == 'rchclient_go_mac_arm64'
     assert again.get_output_record('rchclient_go_mac_arm64')['size'] == 11
     (tmp_path / 'rchclient_go_mac_arm64').write_bytes(b'NEW')
@@ -50,7 +51,7 @@ def test_registry_uses_sqlite_with_compact_columns(tmp_path):
 
 
 def test_only_indexed_outputs_are_listed_and_deleted(tmp_path):
-    registry = AgentOutputRegistry(str(tmp_path))
+    registry = AgentOutputRegistry(str(tmp_path), RchDatabase(str(tmp_path / 'rch.db')))
     (tmp_path / 'unindexed.zip').write_bytes(b'untracked')
     (tmp_path / '.metadata').mkdir()
     (tmp_path / '.metadata' / 'unindexed.zip.json').write_text('{}')
@@ -59,10 +60,6 @@ def test_only_indexed_outputs_are_listed_and_deleted(tmp_path):
         registry.get_output_record('unindexed.zip')
     with pytest.raises(ValueError):
         registry.get_output_record('../other.zip')
-    with pytest.raises(ValueError):
-        registry.get_output_record('agent_outputs.sqlite3')
-    with pytest.raises(ValueError):
-        registry.register_output({'file_name': 'agent_outputs.sqlite3'})
 
     register(registry, tmp_path / 'registered.zip')
     assert len(registry.list_outputs()) == 1
@@ -73,7 +70,7 @@ def test_only_indexed_outputs_are_listed_and_deleted(tmp_path):
 
 
 def test_list_uses_current_listener_name_with_deleted_snapshot_fallback(tmp_path):
-    registry = AgentOutputRegistry(str(tmp_path))
+    registry = AgentOutputRegistry(str(tmp_path), RchDatabase(str(tmp_path / 'rch.db')))
     register(registry, tmp_path / 'one.zip')
     config = {'name': 'Renamed Listener'}
     class Listener:
@@ -99,7 +96,7 @@ def test_list_uses_current_listener_name_with_deleted_snapshot_fallback(tmp_path
 
 
 def test_cleanup_deletes_transient_rows_and_files_without_sidecar(tmp_path):
-    registry = AgentOutputRegistry(str(tmp_path))
+    registry = AgentOutputRegistry(str(tmp_path), RchDatabase(str(tmp_path / 'rch.db')))
     register(registry, tmp_path / 'bootstrap.zip', source='bootstrap')
     register(registry, tmp_path / 'manual.zip', source='manual')
     cleanup = ServerCleanupService.__new__(ServerCleanupService)

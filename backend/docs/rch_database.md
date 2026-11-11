@@ -14,7 +14,7 @@
 - **`*_json`**：SQLite `TEXT` 中存放的 JSON 对象或数组。它们不是另一张可独立更新的关系表；同一业务的固定列通常是筛选、排序或标识所需字段，JSON 保存扩展的业务内容或快照。
 - **布尔量**：SQLite 没有独立的布尔列类型，这里通常以整数 `0/1` 保存；展示时由 Server 转成 `false/true`。
 
-正常启动、完成 History 模块初始化后，当前结构共有 **15 张应用表**（不计 SQLite 自己的 `sqlite_sequence` 等内部对象）。其中 `activity_records` 由 History 模块创建；单独初始化 SQLite 数据库、却没有启动 History 时，可能只能看到另外 14 张表。空表是正常情况，不代表对应功能没有实现。
+正常启动、完成 History 模块初始化后，当前结构共有 **18 张应用表**（不计 SQLite 自己的 `sqlite_sequence` 等内部对象）。其中 `activity_records` 由 History 模块创建；单独初始化 SQLite 数据库、却没有启动 History 时，可能只能看到另外 17 张表。空表是正常情况，不代表对应功能没有实现。
 
 ## 业务功能与数据表速查
 
@@ -30,6 +30,8 @@
 | Remote Files → Pinned Paths | `pinned_paths` | 每台设备收藏的路径名称和路径文本 |
 | External Tools → 参数预设 | `external_tool_presets` | 按工具保存的命名参数预设 |
 | Background Jobs | `background_jobs`、`background_job_messages`、`background_job_files` | Job 实例状态、输出消息、生成文件的引用 |
+| Artifact Manager → Saved / Shared Files | `artifact_entries`、`artifact_folders` | 文件索引、九种 Saved 分类及 Shared 逻辑目录；文件字节保留在磁盘 |
+| Agent Outputs | `agent_outputs` | 构建记录、构建时 Listener 快照、平台与连接信息；二进制构建产物保留在磁盘 |
 | **旧执行记录结构** | `command_executions` | 当前仍可能存在，但**不是现行 Activity Center 的读取来源** |
 
 以下每组“字段”列举的均为实际数据库列。**主键（PK）**决定记录唯一性；“引用”是业务关联，不一定存在数据库外键约束。
@@ -285,7 +287,32 @@
 | `created_at` | 文件关联记录时间。 |
 | `snapshot_json` | 文件描述快照，例如原始名称、相对路径、大小及展示链接等；即使 Artifact 注册信息被清理，仍可保留部分历史显示信息。 |
 
-两张子表对 `background_jobs` 都有外键并设置 **`ON DELETE CASCADE`**；删除 Job 主记录会删除关联的消息和文件引用。Artifact 文件与注册元数据位于独立存储，删除本表的文件引用仍会保留 Artifact 实体。详见 [Background Jobs](background_jobs.md) 和 [Artifacts](artifacts.md)。
+两张子表对 `background_jobs` 都有外键并设置 **`ON DELETE CASCADE`**；删除 Job 主记录会删除关联的消息和文件引用。Artifact 注册元数据位于同一个 `rch.db` 的 `artifact_entries` 表，但文件本体仍在磁盘；删除本表的文件引用不会级联删除 Artifact 实体。详见 [Background Jobs](background_jobs.md) 和 [Artifacts](artifacts.md)。
+
+## Artifact 和 Agent Outputs
+
+### `artifact_entries` — Artifact 文件索引
+
+| 字段 | 含义 |
+| --- | --- |
+| `artifact_id`（PK） | 稳定 Artifact 标识；API 和 Job 可以按此引用。 |
+| `scope` | `saved`、`shared` 或 `preview`。 |
+| `folder_id` | Shared 的目录 ID；Saved 不持久存目录 ID。 |
+| `category` | Saved 的九种规范分类之一；Shared/Preview 为 NULL。 |
+| `machine_id` | Saved 文件关联的设备。 |
+| `created_at` | 注册时间，用于列表排序。 |
+| `saved_path` | 磁盘上的文件路径，不是 BLOB。 |
+| `payload_json` | 文件名、关联信息和其他业务元数据。 |
+
+### `artifact_folders` — 逻辑目录
+
+`folder_id`（PK）、`scope`、`parent_id`、`name`、`preset`、`created_at` 保存 Saved 的固定九目录和 Shared 的可管理目录层级。Saved 使用 `saved:<category>` 目录 ID，由 `category` 决定，不通过移动文件修改分类；Shared 的父目录和文件目录由外键维护。
+
+### `agent_outputs` — Server 构建产物索引
+
+`file_name` 是主键；`builder`、`build_version`、`source`、`created_at`、`target_os`、`target_arch` 和 `listener_id`、`listener_name_snapshot` 记录构建身份及 Listener 快照；`connect_host`、`connect_port`、`web_scheme`、`web_host`、`web_port` 保存当时的连接参数。文件体积实时从磁盘读取，不保存重复的大小列。实际构建文件仍位于 `runtime/agent_output/`。
+
+这三张表与其余业务表同由 `RchDatabase` 初始化并验证，使用同一套 SQLite 连接和事务接口；各个业务服务继续负责自己的业务校验。
 
 ## 表之间如何关联
 
@@ -298,6 +325,8 @@
 ├─ pinned_commands          + command → Quick Pins
 ├─ activity_records         + activity_id → Activity Center
 ├─ pinned_paths             + display_name → 收藏路径
+├─ artifact_entries         + artifact_id → Artifact 元数据
+├─ artifact_folders         → Saved/Shared 逻辑目录
 └─ background_jobs          + job_id → Job 实例
    ├─ background_job_messages → Job 输出
    └─ background_job_files    → Artifact 引用
@@ -306,6 +335,7 @@ Server 全局
 ├─ notifications            通知历史
 ├─ settings                 工具栏和通知偏好
 ├─ external_tool_presets    工具参数预设
+├─ agent_outputs            Agent 构建产物元数据
 └─ command_executions       仍保留的旧执行表（非现行 Activity 来源）
 ```
 
@@ -313,7 +343,7 @@ Server 全局
 
 ## 查看、校验与备份
 
-RCH 直接使用固定的最终表结构初始化空数据库；对于已经存在的 `rch.db`，启动时核查结构而不修改或搬迁业务表。部署前请在 Server 停止的情况下完成必要的 SQLite 结构调整并保留备份。
+RCH 直接使用固定的最终表结构初始化空数据库，包含 Artifact 与 Agent Outputs 的三张业务表。对于已经存在的 `rch.db`，启动时会检查新表及原表结构，**不会自动补表、搬迁旧数据库或进行 Schema 迁移**。旧结构不匹配时拒绝启动。采用全新 Schema 前应先停止 Server 并备份 Runtime；需要保留旧数据的部署必须在系统外另行制定离线数据处理方案。
 
 ### 只读查看
 
@@ -326,7 +356,7 @@ sqlite3 -readonly runtime/rch.db 'SELECT namespace, updated_at_ms FROM settings;
 sqlite3 -readonly runtime/rch.db 'SELECT type, COUNT(*) FROM notifications GROUP BY type;'
 ```
 
-使用自定义 Runtime 目录时将 `runtime/rch.db` 替换为真实路径。`PRAGMA table_info(...)` 会列出类型、默认值和主键位置；也可以按表名查看其他 15 张表。SQL 查询示例刻意不打印命令文本、JSON 参数、通知正文等可能包含敏感信息的内容。
+使用自定义 Runtime 目录时将 `runtime/rch.db` 替换为真实路径。`PRAGMA table_info(...)` 会列出类型、默认值和主键位置；也可以按表名查看其他应用表。SQL 查询示例刻意不打印命令文本、JSON 参数、通知正文等可能包含敏感信息的内容。
 
 ### 备份与完整性
 
@@ -337,7 +367,7 @@ sqlite3 runtime/rch.db '.backup /path/to/backup/rch.db'
 sqlite3 -readonly runtime/rch.db 'PRAGMA integrity_check;'
 ```
 
-确保备份目标目录预先存在且可写；第二条正常应返回 `ok`。如果没有安装 sqlite3 CLI，可以使用支持 SQLite 在线备份的数据库管理工具。需要完整恢复 RCH 时，还应另行备份 `auth.json`、Artifacts、Documents、Keychains、Agent 构建产物等数据；仅恢复 `rch.db` **无法找回这些文件**。
+确保备份目标目录预先存在且可写；第二条正常应返回 `ok`。如果没有安装 sqlite3 CLI，可以使用支持 SQLite 在线备份的数据库管理工具。需要完整恢复 RCH 时，还应另行备份 `auth.json`、Artifact 实体、Documents、Keychains、Agent 构建产物等文件；仅恢复 `rch.db` **无法找回这些文件**。
 
 ### 常见误解与数据保护
 

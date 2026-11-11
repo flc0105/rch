@@ -555,7 +555,7 @@ export default {
         if (this.selectedFolderId && item.folder_id !== this.selectedFolderId) return false
         if (!this.isSharedFilesTab && machineId && this.normalizeMachineId(item.machine_id) !== machineId) return false
         if (keyword) {
-          const searchable = [this.formatArtifactName(item), item.source_kind, item.hostname,
+          const searchable = [this.formatArtifactName(item), item.category, item.hostname,
             this.folderNameForArtifact(item)].join(' ').toLowerCase()
           if (!searchable.includes(keyword)) return false
         }

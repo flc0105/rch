@@ -74,6 +74,12 @@ func TestRemoteTransferDownloadAndRawPreviewUpload(t *testing.T) {
 				fields[item.FormName()] = string(b)
 			}
 		}
+		if fields["artifact_type"] == "previews" {
+			if _, exists := fields["category"]; exists {
+				http.Error(w, "Preview uploads must omit category", http.StatusBadRequest)
+				return
+			}
+		}
 		mu.Lock()
 		received = append(received, struct {
 			typ, category, filename string
@@ -95,8 +101,8 @@ func TestRemoteTransferDownloadAndRawPreviewUpload(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, job := range []struct{ operation, typ, category string }{
-		{"client_to_server_file", "files", "download"},
-		{"client_to_server_preview", "previews", "preview_cache"},
+		{"client_to_server_file", "files", "downloads"},
+		{"client_to_server_preview", "previews", ""},
 	} {
 		Handle(session, map[string]interface{}{"type": "transfer_start", "transfer_id": job.operation, "operation": job.operation, "payload": map[string]interface{}{"path": imagePath}})
 		updates := waitTransfer(t, func() map[string]interface{} { return receive(t, peer) })
@@ -111,7 +117,7 @@ func TestRemoteTransferDownloadAndRawPreviewUpload(t *testing.T) {
 		t.Fatalf("unexpected upload count: %d", len(received))
 	}
 	for idx, item := range received {
-		if item.typ != []string{"files", "previews"}[idx] || item.category != []string{"download", "preview_cache"}[idx] || item.filename != "原始图片.png" || !bytes.Equal(item.data, raw) {
+		if item.typ != []string{"files", "previews"}[idx] || item.category != []string{"downloads", ""}[idx] || item.filename != "原始图片.png" || !bytes.Equal(item.data, raw) {
 			t.Errorf("upload changed file or metadata: %#v", item)
 		}
 	}
@@ -223,7 +229,7 @@ func TestRemoteMultiFileZipTransferPreservesBothFiles(t *testing.T) {
 		defer file.Close()
 		uploadedName = header.Filename
 		zipBytes, _ = io.ReadAll(file)
-		if r.FormValue("category") != "bundle" || r.FormValue("artifact_type") != "files" {
+		if r.FormValue("category") != "downloads" || r.FormValue("artifact_type") != "files" {
 			http.Error(w, "wrong artifact metadata", 400)
 			return
 		}

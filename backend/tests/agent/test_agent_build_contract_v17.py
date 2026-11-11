@@ -1,6 +1,7 @@
 from core.agent_build_contract import AgentBuilderKind, agent_build_version, agent_output_filename
 from core.client_revision import bundle_archive_name, is_bundle_archive
 from server.application.agent.agent_output_registry import AgentOutputRegistry
+from server.persistence.rch_database import RchDatabase
 
 
 def test_canonical_builder_names_and_build_versions():
@@ -18,7 +19,7 @@ def test_canonical_builder_names_and_build_versions():
 
 
 def test_registry_persists_listener_name_and_id(tmp_path):
-    registry = AgentOutputRegistry(str(tmp_path))
+    registry = AgentOutputRegistry(str(tmp_path), RchDatabase(str(tmp_path / 'rch.db')))
     (tmp_path / 'python_test.zip').write_bytes(b'ZIP')
     record = registry.register_output(
         {'file_name': 'python_test.zip', 'build_version': 'python_test', 'builder': 'python'},

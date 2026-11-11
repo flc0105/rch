@@ -37,15 +37,21 @@ class CommandHttpFileTransferService:
         self,
         *,
         artifact_type: str,
+        category: str = '',
         folder: str = '',
         extra: dict | None = None,
         transfer_buffer_size: int | None = None,
     ) -> dict:
+        if category and artifact_type not in ('files', 'command_output'):
+            raise ValueError('Only Saved Files can have category')
+        if folder and artifact_type != 'shared_files':
+            raise ValueError('Only Shared Files uploads can specify folder')
         client_id = getattr(self.owner.socket, 'client_id', '') or ''
 
         payload = {
             'artifact_type': (artifact_type or 'files').strip() or 'files',
-            **({'folder': folder} if folder else {}),
+            **({'category': category} if category and artifact_type in ('files', 'command_output') else {}),
+            **({'folder': folder} if folder and artifact_type == 'shared_files' else {}),
             'client_id': client_id,
             'source_command_id': self.owner.command_id if self.owner.command_id is not None else '',
         }
@@ -146,6 +152,7 @@ class CommandHttpFileTransferService:
         file_path: str,
         *,
         artifact_type: str = 'files',
+        category: str = '',
         folder: str = '',
         extra: dict | None = None,
         progress_callback=None,
@@ -154,6 +161,7 @@ class CommandHttpFileTransferService:
         strategy = self.get_transfer_strategy()
         form_data = self.build_http_upload_form_data(
             artifact_type=artifact_type,
+            category=category,
             folder=folder,
             extra=extra,
             transfer_buffer_size=strategy.get_buffer_size(),
@@ -171,6 +179,7 @@ class CommandHttpFileTransferService:
         file_path: str,
         *,
         artifact_type: str = 'files',
+        category: str = '',
         folder: str = '',
         extra: dict | None = None,
         upload_name: str = '',
@@ -209,6 +218,7 @@ class CommandHttpFileTransferService:
         upload_url = self.client_api.build_file_upload_url()
         form_data = self.build_http_upload_form_data(
             artifact_type=artifact_type,
+            category=category,
             folder=folder,
             extra=extra,
             transfer_buffer_size=strategy.get_buffer_size(),
@@ -275,6 +285,7 @@ class CommandHttpFileTransferService:
         *,
         archive_name: str = '',
         artifact_type: str = 'files',
+        category: str = '',
         folder: str = '',
         extra: dict | None = None,
         transfer_id: str = '',
@@ -302,7 +313,8 @@ class CommandHttpFileTransferService:
             return self.upload_single_file_to_server_result(
                 temp_archive_path,
                 artifact_type=artifact_type,
-                folder=folder,
+                category=category,
+            folder=folder,
                 extra=extra,
                 transfer_id=transfer_id,
                 send_preparing=False,

@@ -9,7 +9,8 @@ from server.config.config import WEB_FILES_ROOT_DIR, WEB_PREVIEW_TEXT_MAX_BYTES
 class WebArtifactService:
     MAX_PREVIEW_TEXT_BYTES = WEB_PREVIEW_TEXT_MAX_BYTES
 
-    def __init__(self):
+    def __init__(self, database):
+        self.database = database
         self.web_root_dir = WEB_FILES_ROOT_DIR
         self.artifacts_root_dir = os.path.join(self.web_root_dir, 'artifacts')
         self.previews_dir = os.path.join(self.artifacts_root_dir, 'previews')
@@ -29,57 +30,49 @@ class WebArtifactService:
     def allocate_artifact_path(self, artifact_type: str, machine_id: str, original_name: str) -> dict:
         return self.registry_service.allocate_artifact_path(artifact_type, machine_id, original_name)
 
-    def register_existing_artifact(self, *, artifact_type: str, source_kind: str, hostname: str, machine_id: str,
+    def register_existing_artifact(self, *, artifact_type: str, category: str, hostname: str, machine_id: str,
                                    original_name: str, file_path: str, stored_name: str,
 
-                                   # source_type: str = '',
                                    source_command_id=None, client_id: str = '', addr: str = '',
                                    job_id: str = '',
                                    job_name: str = '',
                                    job_key: str = '',
-                                   # related_path: str = '',
                                    extra: dict | None = None) -> dict:
         return self.registry_service.register_existing_artifact(
             artifact_type=artifact_type,
-            source_kind=source_kind,
+            category=category,
             hostname=hostname,
             machine_id=machine_id,
             original_name=original_name,
             file_path=file_path,
             stored_name=stored_name,
-            # source_type=source_type,
             source_command_id=source_command_id,
             client_id=client_id,
             addr=addr,
             job_id=job_id,
             job_name=job_name,
             job_key=job_key,
-            # related_path=related_path,
             extra=extra,
         )
 
-    def save_http_uploaded_file(self, file, artifact_type: str = '', source_kind: str = '', client_id: str = '',
+    def save_http_uploaded_file(self, file, artifact_type: str = '', category: str = '', client_id: str = '',
                                 hostname: str = '', machine_id: str = '', job_id: str = '', job_name: str = '',
                                 job_key: str = '',
-                                # source_type: str = '',
                                 source_command_id=None, addr: str = '',
-                                # related_path: str = '',
                                 transfer_buffer_size=None,
                                 extra: dict | None = None, folder_id: str = '') -> dict:
         return self.registry_service.save_http_uploaded_file(
             file,
             artifact_type=artifact_type,
-            source_kind=source_kind,
+            category=category,
             client_id=client_id,
             hostname=hostname,
             machine_id=machine_id,
             job_id=job_id,
             job_name=job_name,
             job_key=job_key,
-            # source_type=source_type,
             source_command_id=source_command_id,
             addr=addr,
-            # related_path=related_path,
             transfer_buffer_size=transfer_buffer_size,
             extra=extra,
             folder_id=folder_id,
@@ -138,13 +131,13 @@ class WebArtifactService:
         )
 
 
-    def save_text_artifact(self, *, artifact_type: str, source_kind: str, hostname: str, machine_id: str,
+    def save_text_artifact(self, *, artifact_type: str, category: str, hostname: str, machine_id: str,
                            original_name: str, content: str, client_id: str = '', addr: str = '',
                            source_command_id=None, job_id: str = '', job_name: str = '', job_key: str = '',
                            extra: dict | None = None) -> dict:
         return self.registry_service.save_text_artifact(
             artifact_type=artifact_type,
-            source_kind=source_kind,
+            category=category,
             hostname=hostname,
             machine_id=machine_id,
             original_name=original_name,

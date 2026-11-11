@@ -109,7 +109,7 @@ class ServerApplicationAssembly:
             self.server.command_history, self.transfer_service)
 
         # ------------------ domain/application services ------------------ #
-        self.artifact_service = WebArtifactService()
+        self.artifact_service = WebArtifactService(self.server.database)
         self.file_service = self.artifact_service
         self.client_session_token_service = ClientSessionTokenService()
 
@@ -188,7 +188,7 @@ class ServerApplicationAssembly:
         self.keychain_store = KeychainStore()
         self.document_library_service = DocumentLibraryService(DOCUMENT_ROOTS, WEB_PREVIEW_TEXT_MAX_BYTES)
         self.agent_builder = AgentBuilder()
-        self.agent_output_registry = AgentOutputRegistry(self.agent_builder.output_dir)
+        self.agent_output_registry = AgentOutputRegistry(self.agent_builder.output_dir, self.server.database)
         self.agent_bootstrap_script_service = AgentBootstrapScriptService()
         self.pty_session_service = PtySessionService(self.server, event_bus=self.event_bus)
         self.screen_view_session_service = ScreenViewSessionService(self.server, event_bus=self.event_bus)

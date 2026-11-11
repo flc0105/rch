@@ -27,13 +27,13 @@ RCH_SERVER_RUNTIME_DIR=/data/rch-runtime python backend/run_web.py
 | 路径 | 用途 |
 | --- | --- |
 | `SERVER_RUNTIME_DIR/auth.json` | 管理员凭据和 Web Session 密钥 |
-| `SERVER_RUNTIME_DIR/rch.db` | SQLite 历史、通知等数据 |
+| `SERVER_RUNTIME_DIR/rch.db` | 统一 SQLite：历史、通知、Artifact 和 Agent Outputs 元数据 |
 | `SERVER_RUNTIME_DIR/web_files/` | Artifact / Shared Files / 上传存储 |
 | `SERVER_RUNTIME_DIR/keychains/` | Server 凭据相关文件 |
 | `SERVER_RUNTIME_DIR/cleanup_logs/` | 清理日志 |
 | `SERVER_RUNTIME_DIR/server.log`、`server.log.1` ～ `.5` | `run_web.py` 的 Server 日志及自动轮转备份 |
 | `SERVER_RUNTIME_DIR/logs/` | Go Loader 上报日志 |
-| `SERVER_RUNTIME_DIR/agent_output/` | Agent 构建产物及其元数据 |
+| `SERVER_RUNTIME_DIR/agent_output/` | Agent 构建产物文件（元数据位于 `rch.db`） |
 
 上述位置都由 Server 的配置目录派生，不能再分别由启动 CWD 决定。Client 侧的三个 Watchdog 日志**不在这里**，它们位于客户端用户配置目录的 `logs/` 下，参见 [Watchdog](watchdog.md)。
 

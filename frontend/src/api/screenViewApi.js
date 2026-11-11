@@ -45,7 +45,7 @@ export function uploadScreenViewScreenshot(blob, metadata = {}) {
   }
 
   form.append('artifact_type', 'files')
-  form.append('folder', 'Screenshots')
+  form.append('category', 'screenshots')
   form.append('client_id', String(metadata.clientId || ''))
   form.append('hostname', String(metadata.hostname || ''))
   form.append('machine_id', String(metadata.machineId || ''))

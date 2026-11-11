@@ -2,7 +2,7 @@ import os
 
 from core.utils.text_encoding import encode_for_existing_file
 from core.artifact_contract import (
-    ArtifactScope, ArtifactType, ArtifactSourceKind, scope_for_type, SAVED_SOURCE_BY_FOLDER_ID, classify_artifact,
+    ArtifactScope, ArtifactType, scope_for_type,
 )
 from server.application.artifact.artifact_events import publish_artifact_created
 
@@ -59,7 +59,7 @@ class WebArtifactApi:
                 raise ValueError('Folder does not belong to this file space')
         artifact = self.artifact_service.save_text_artifact(
             artifact_type=ArtifactType.SHARED_FILES.value,
-            source_kind=ArtifactSourceKind.SHARED_UPLOAD.value, hostname='', machine_id=machine_id,
+            category='', hostname='', machine_id=machine_id,
             original_name=name, content='',
         )
         if folder_id:
@@ -126,44 +126,39 @@ class WebArtifactApi:
 
     def save_http_uploaded_file(self, upload, artifact_type: str = ArtifactType.FILES.value, client_id: str = '',
                                 hostname: str = '', machine_id: str = '', job_id: str = '', job_name: str = '',
-                                job_key: str = '',
-                                # source_type: str = 'client_upload',
-                                # related_path: str = '',
-                                source_command_id=None, transfer_buffer_size=None, extra=None, folder_id: str = '',
-                                folder: str = ''):
-        # Resolve explicit folder names before receiving any file bytes.
-        if folder and folder_id:
-            raise ValueError('Specify folder or folder_id, not both')
+                                job_key: str = '', source_command_id=None, transfer_buffer_size=None, extra=None,
+                                category: str | None = None, folder_id: str = '', folder: str = ''):
         expected_scope = scope_for_type(artifact_type)
-        if folder:
-            folder_id = self.artifact_service.registry_service.catalog.resolve_folder(
-                expected_scope.value, folder)
-        # Reject invalid destinations before creating physical files or catalog rows.
-        if folder_id:
-            folder_info = self.artifact_service.registry_service.catalog.get_folder(folder_id)
-            if folder_info['scope'] != expected_scope.value:
-                raise ValueError('Folder does not belong to this file space')
-            if expected_scope == ArtifactScope.SAVED and folder_id not in SAVED_SOURCE_BY_FOLDER_ID:
-                raise ValueError('Unknown Saved Files folder')
-            if expected_scope == ArtifactScope.PREVIEW:
+        if expected_scope == ArtifactScope.SAVED:
+            if folder or folder_id:
+                raise ValueError('Saved Files uploads use category, not folder')
+        else:
+            if category is not None:
+                raise ValueError('Only Saved Files can have category')
+            if expected_scope == ArtifactScope.PREVIEW and (folder or folder_id):
                 raise ValueError('Preview cache does not support folders')
+            if folder and folder_id:
+                raise ValueError('Specify folder or folder_id, not both')
+            if folder:
+                folder_id = self.artifact_service.registry_service.catalog.resolve_folder(
+                    expected_scope.value, folder)
+            if folder_id:
+                folder_info = self.artifact_service.registry_service.catalog.get_folder(folder_id)
+                if folder_info['scope'] != expected_scope.value:
+                    raise ValueError('Folder does not belong to this file space')
         resolved_hostname, resolved_machine_id, addr = self.resolve_client_context(client_id)
-        hostname = hostname or resolved_hostname
-        machine_id = machine_id or resolved_machine_id
         artifact = self.artifact_service.save_http_uploaded_file(
             upload,
             artifact_type=artifact_type,
-            source_kind='',
+            category=category or '',
             client_id=client_id,
-            hostname=hostname,
-            machine_id=machine_id,
+            hostname=hostname or resolved_hostname,
+            machine_id=machine_id or resolved_machine_id,
             job_id=job_id,
             job_name=job_name,
             job_key=job_key,
-            # source_type=source_type,
             source_command_id=source_command_id,
             addr=addr,
-            # related_path=related_path,
             transfer_buffer_size=transfer_buffer_size,
             extra=extra,
             folder_id=folder_id,

@@ -73,7 +73,7 @@ class CommandFileWebMixin:
             return self.http_file_transfer_service.upload_single_file_to_server_result(
                 file_path,
                 artifact_type='files',
-                folder='Downloads',
+                category='downloads',
                 transfer_id=transfer_id,
             )
         except CommandCancelledError:
@@ -109,7 +109,7 @@ class CommandFileWebMixin:
                 resolved_paths,
                 archive_name=archive_name,
                 artifact_type='files',
-                folder='Downloads',
+                category='downloads',
                 transfer_id=transfer_id,
             )
         except CommandCancelledError:

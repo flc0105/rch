@@ -1,95 +1,62 @@
 """SQLite index for Server artifacts; logical folders never move underlying files."""
 
 import json
-import os
-import sqlite3
 import uuid
 from contextlib import contextmanager
 from datetime import datetime
 
 
 from core.artifact_contract import (
-    ArtifactScope, ArtifactSourceKind, SAVED_FOLDER_NAMES, SAVED_FOLDER_IDS,
-    SAVED_SOURCE_BY_FOLDER_ID, classify_artifact, saved_folder_id, saved_kind_for_folder,
+    ArtifactScope, SAVED_CATEGORY_FOLDERS, SAVED_FOLDER_IDS, normalize_saved_category,
+    SAVED_CATEGORY_BY_FOLDER_ID, saved_folder_id, saved_category_for_folder,
 )
 
 
 class ArtifactSqliteCatalog:
     """The only runtime metadata source: files remain on disk, paths are independent of folders."""
 
-    def __init__(self, db_path):
-        self.db_path = os.path.abspath(db_path)
-        os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
-        with self._connect() as conn:
-            conn.executescript('''
-                CREATE TABLE IF NOT EXISTS artifact_folders (
-                    folder_id TEXT PRIMARY KEY,
-                    scope TEXT NOT NULL CHECK(scope IN ('saved', 'shared')),
-                    parent_id TEXT REFERENCES artifact_folders(folder_id),
-                    name TEXT NOT NULL COLLATE NOCASE,
-                    preset INTEGER NOT NULL DEFAULT 0,
-                    created_at TEXT NOT NULL
-                );
-                CREATE INDEX IF NOT EXISTS idx_artifact_folders_scope ON artifact_folders(scope, parent_id);
-                CREATE UNIQUE INDEX IF NOT EXISTS uq_artifact_folders_siblings
-                    ON artifact_folders(scope, IFNULL(parent_id, ''), name COLLATE NOCASE);
-                CREATE TABLE IF NOT EXISTS artifact_entries (
-                    artifact_id TEXT PRIMARY KEY,
-                    scope TEXT NOT NULL CHECK(scope IN ('saved', 'shared', 'preview')),
-                    folder_id TEXT REFERENCES artifact_folders(folder_id),
-                    source_kind TEXT NOT NULL,
-                    machine_id TEXT NOT NULL DEFAULT '',
-                    created_at TEXT NOT NULL,
-                    saved_path TEXT NOT NULL,
-                    payload_json TEXT NOT NULL
-                );
-                CREATE INDEX IF NOT EXISTS idx_artifact_entries_scope_time
-                    ON artifact_entries(scope, created_at DESC, artifact_id DESC);
-                CREATE INDEX IF NOT EXISTS idx_artifact_entries_folder ON artifact_entries(folder_id, created_at DESC);
-                CREATE INDEX IF NOT EXISTS idx_artifact_entries_machine ON artifact_entries(machine_id, created_at DESC);
-            ''')
-            for kind, name in SAVED_FOLDER_NAMES.items():
+    def __init__(self, database):
+        self.database = database
+        # The unified rch.db schema is owned exclusively by RchDatabase.
+        with self.database.transaction() as conn:
+            for kind, name in SAVED_CATEGORY_FOLDERS.items():
                 conn.execute('''INSERT OR IGNORE INTO artifact_folders
                     (folder_id, scope, parent_id, name, preset, created_at)
                     VALUES (?, ?, NULL, ?, 1, ?)''',
-                    (SAVED_FOLDER_IDS[kind], ArtifactScope.SAVED.value, name, datetime.now().isoformat(timespec='seconds')))
-
+                    (SAVED_FOLDER_IDS[kind], ArtifactScope.SAVED.value, name,
+                     datetime.now().isoformat(timespec='seconds')))
 
     @contextmanager
-    def _connect(self):
-        conn = sqlite3.connect(self.db_path, timeout=15)
-        conn.row_factory = sqlite3.Row
-        try:
-            conn.execute('PRAGMA foreign_keys=ON')
-            conn.execute('PRAGMA busy_timeout=15000')
-            conn.execute('PRAGMA journal_mode=WAL')
-            yield conn
-            conn.commit()
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            conn.close()
+    def _connect(self, *, write=False):
+        if write:
+            with self.database.transaction() as conn:
+                yield conn
+        else:
+            yield self.database.connection()
 
     @staticmethod
     def _public_payload(payload):
         """Derive the Saved folder from its only classification field."""
         if payload['scope'] == ArtifactScope.SAVED.value:
-            payload['folder_id'] = saved_folder_id(payload['source_kind'])
+            payload['folder_id'] = saved_folder_id(payload['category'])
         return payload
 
     @staticmethod
     def _stored_payload(payload):
         stored = dict(payload)
-        if 'category' in stored or '_meta_path' in stored:
-            raise ValueError('Obsolete Artifact metadata fields: category or _meta_path')
+        if 'source_kind' in stored or '_meta_path' in stored:
+            raise ValueError('Obsolete Artifact metadata fields: source_kind or _meta_path')
         if stored['scope'] == ArtifactScope.SAVED.value:
             folder_id = stored.pop('folder_id', None)
-            canonical_id = saved_folder_id(stored['source_kind'])
+            stored['category'] = normalize_saved_category(stored.get('category')).value
+            canonical_id = saved_folder_id(stored['category'])
             if folder_id and folder_id != canonical_id:
-                raise ValueError('Saved folder must match source_kind')
+                raise ValueError('Saved folder must match category')
         else:
-            ArtifactSourceKind(stored['source_kind'])
+            if 'category' in stored:
+                raise ValueError('Only Saved Files can have category')
+            if stored['scope'] == ArtifactScope.PREVIEW.value and stored.get('folder_id'):
+                raise ValueError('Preview cache does not support folders')
         return stored
 
     def get(self, artifact_id):
@@ -97,8 +64,8 @@ class ArtifactSqliteCatalog:
             row = conn.execute('SELECT payload_json FROM artifact_entries WHERE artifact_id=?', (artifact_id,)).fetchone()
         return self._public_payload(json.loads(row['payload_json'])) if row else None
 
-    def list(self, *, scope='', folder_id='', machine_id='', source_kind='', search=''):
-        if folder_id in SAVED_SOURCE_BY_FOLDER_ID:
+    def list(self, *, scope='', folder_id='', machine_id='', category='', search=''):
+        if folder_id in SAVED_CATEGORY_BY_FOLDER_ID:
             if scope and scope != ArtifactScope.SAVED.value:
                 raise ValueError('Saved folder belongs only to Saved Files')
             scope = ArtifactScope.SAVED.value
@@ -112,17 +79,19 @@ class ArtifactSqliteCatalog:
             params.append(ArtifactScope.PREVIEW.value)
         if folder_id:
             if scope == ArtifactScope.SAVED.value:
-                requested_kind = saved_kind_for_folder(folder_id).value
-                if source_kind and source_kind != requested_kind:
-                    raise ValueError('Saved folder and source_kind must match')
-                source_kind = requested_kind
+                requested_kind = saved_category_for_folder(folder_id).value
+                if category and normalize_saved_category(category).value != requested_kind:
+                    raise ValueError('Saved folder and category must match')
+                category = requested_kind
             else:
                 where.append('folder_id=?')
                 params.append(folder_id)
-        if source_kind:
-            ArtifactSourceKind(source_kind)
-            where.append('source_kind=?')
-            params.append(source_kind)
+        if category:
+            if scope and scope != ArtifactScope.SAVED.value:
+                raise ValueError('Only Saved Files can be filtered by category')
+            category = normalize_saved_category(category).value
+            where.append('category=?')
+            params.append(category)
         if machine_id:
             where.append('machine_id=?')
             params.append(machine_id)
@@ -139,21 +108,21 @@ class ArtifactSqliteCatalog:
         stored = self._stored_payload(payload)
         scope = ArtifactScope(stored['scope'])
         folder_id = stored.get('folder_id') or None
-        with self._connect() as conn:
+        with self._connect(write=True) as conn:
             if folder_id:
                 folder = conn.execute('SELECT scope FROM artifact_folders WHERE folder_id=?',
                                       (folder_id,)).fetchone()
                 if not folder or folder['scope'] != scope.value:
                     raise ValueError('Folder does not belong to this file space')
             conn.execute('''INSERT INTO artifact_entries
-                (artifact_id, scope, folder_id, source_kind, machine_id, created_at, saved_path, payload_json)
+                (artifact_id, scope, folder_id, category, machine_id, created_at, saved_path, payload_json)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(artifact_id) DO UPDATE SET
                     scope=excluded.scope, folder_id=excluded.folder_id,
-                    source_kind=excluded.source_kind, machine_id=excluded.machine_id,
+                    category=excluded.category, machine_id=excluded.machine_id,
                     created_at=excluded.created_at, saved_path=excluded.saved_path,
                     payload_json=excluded.payload_json''',
-                (stored['artifact_id'], scope.value, folder_id, stored['source_kind'],
+                (stored['artifact_id'], scope.value, folder_id, stored.get('category'),
                  stored.get('machine_id', ''), stored['created_at'], stored['saved_path'],
                  json.dumps(stored, ensure_ascii=False)))
         return self._public_payload(dict(stored))
@@ -161,7 +130,7 @@ class ArtifactSqliteCatalog:
     def import_records(self, records):
         '''Atomically import canonical records, leaving existing artifact IDs unchanged.'''
         imported, already = 0, 0
-        with self._connect() as conn:
+        with self._connect(write=True) as conn:
             for payload in records:
                 stored = self._stored_payload(payload)
                 existing = conn.execute('SELECT saved_path FROM artifact_entries WHERE artifact_id=?',
@@ -178,16 +147,16 @@ class ArtifactSqliteCatalog:
                     if not folder or folder['scope'] != stored['scope']:
                         raise ValueError(f"Invalid folder for imported artifact: {stored['artifact_id']}")
                 conn.execute('''INSERT INTO artifact_entries
-                    (artifact_id, scope, folder_id, source_kind, machine_id, created_at, saved_path, payload_json)
+                    (artifact_id, scope, folder_id, category, machine_id, created_at, saved_path, payload_json)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
-                    (stored['artifact_id'], stored['scope'], folder_id, stored['source_kind'],
+                    (stored['artifact_id'], stored['scope'], folder_id, stored.get('category'),
                      stored.get('machine_id', ''), stored['created_at'], stored['saved_path'],
                      json.dumps(stored, ensure_ascii=False)))
                 imported += 1
         return imported, already
 
     def delete(self, artifact_id):
-        with self._connect() as conn:
+        with self._connect(write=True) as conn:
             conn.execute('DELETE FROM artifact_entries WHERE artifact_id=?', (artifact_id,))
 
     def list_folders(self, scope=''):
@@ -211,7 +180,7 @@ class ArtifactSqliteCatalog:
         if ArtifactScope(scope) not in (ArtifactScope.SAVED, ArtifactScope.SHARED):
             raise ValueError('Folder is not available for this artifact type')
         with self._connect() as conn:
-            if value in SAVED_SOURCE_BY_FOLDER_ID or conn.execute(
+            if value in SAVED_CATEGORY_BY_FOLDER_ID or conn.execute(
                     'SELECT 1 FROM artifact_folders WHERE folder_id=? AND scope=?', (value, scope)).fetchone():
                 row = conn.execute('SELECT folder_id FROM artifact_folders WHERE folder_id=? AND scope=?',
                                    (value, scope)).fetchone()
@@ -238,7 +207,7 @@ class ArtifactSqliteCatalog:
         if not name or name in ('.', '..') or '/' in name or '\\' in name or len(name) > 120:
             raise ValueError('Invalid folder name')
         folder_id = uuid.uuid4().hex
-        with self._connect() as conn:
+        with self._connect(write=True) as conn:
             self._validate_parent(conn, scope, parent_id)
             dup = conn.execute('''SELECT 1 FROM artifact_folders WHERE scope=?
                 AND IFNULL(parent_id,'')=? AND name=? COLLATE NOCASE''', (scope, parent_id or '', name)).fetchone()
@@ -264,7 +233,7 @@ class ArtifactSqliteCatalog:
         name = str(name or '').strip()
         if not name or '/' in name or '\\' in name or len(name) > 120:
             raise ValueError('Invalid folder name')
-        with self._connect() as conn:
+        with self._connect(write=True) as conn:
             if conn.execute('''SELECT 1 FROM artifact_folders WHERE scope=?
                 AND IFNULL(parent_id,'')=? AND name=? COLLATE NOCASE AND folder_id!=?''',
                 (current['scope'], current['parent_id'] or '', name, folder_id)).fetchone():
@@ -278,7 +247,7 @@ class ArtifactSqliteCatalog:
             raise ValueError('Only Shared Files supports folder management')
         if folder['preset']:
             raise ValueError('Preset folders cannot be deleted')
-        with self._connect() as conn:
+        with self._connect(write=True) as conn:
             if conn.execute('SELECT 1 FROM artifact_entries WHERE folder_id=?', (folder_id,)).fetchone() or \
                conn.execute('SELECT 1 FROM artifact_folders WHERE parent_id=?', (folder_id,)).fetchone():
                 raise ValueError('Folder must be empty')

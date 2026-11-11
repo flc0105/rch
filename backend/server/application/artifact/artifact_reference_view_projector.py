@@ -6,7 +6,6 @@ class ArtifactReferenceViewProjector:
 
     _COMMON_FIELDS = (
         'artifact_type',
-        'source_kind',
         'hostname',
         'machine_id',
         'client_id',
@@ -35,6 +34,9 @@ class ArtifactReferenceViewProjector:
                 artifact = artifact_service.get_artifact_by_id(artifact_id)
                 for key in self._COMMON_FIELDS:
                     copied[key] = artifact.get(key, copied.get(key, ''))
+                copied.pop('category', None)
+                if artifact.get('scope') == 'saved':
+                    copied['category'] = artifact['category']
                 if include_created_at:
                     copied['created_at'] = artifact.get('created_at', copied.get('created_at', ''))
                 copied[path_key] = artifact.get('saved_path', copied.get(path_key, ''))

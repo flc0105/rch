@@ -41,8 +41,13 @@ def _build_script_upload_form_data(
     metadata=None,
     script_name: str = '',
     artifact_type: str = 'files',
+    category: str = '',
     folder: str = '',
 ) -> dict:
+    if folder and artifact_type != ArtifactType.SHARED_FILES.value:
+        raise ValueError('Saved Files use category, not folder')
+    if category and artifact_type == ArtifactType.SHARED_FILES.value:
+        raise ValueError('Only Saved Files can have category')
     ctx = _extract_script_context(context)
     resolved_script_name = _resolve_script_name(
         metadata=metadata,
@@ -51,7 +56,8 @@ def _build_script_upload_form_data(
 
     form_data = {
         'artifact_type': (artifact_type or 'files').strip() or 'files',
-        'folder': str(folder or '').strip() or ('Script Files' if artifact_type == ArtifactType.FILES.value else ''),
+        **({'category': str(category).strip()} if artifact_type == ArtifactType.FILES.value and str(category or '').strip() else {}),
+        **({'folder': str(folder).strip()} if artifact_type == ArtifactType.SHARED_FILES.value and folder else {}),
         'client_id': str(ctx.get('client_id') or '').strip(),
         'source_command_id': ctx.get('command_id') if ctx.get('command_id') is not None else '',
     }
@@ -60,7 +66,7 @@ def _build_script_upload_form_data(
     extra = {}
     if resolved_script_name:
         extra['script_name'] = resolved_script_name
-    if artifact_type != ArtifactType.SHARED_FILES.value and str(folder or '').strip().lower() == 'screenshots':
+    if artifact_type != ArtifactType.SHARED_FILES.value and str(category or '').strip().casefold() == 'screenshots':
         extra['origin'] = ArtifactOrigin.SCRIPT.value
     if extra:
         form_data['extra'] = json.dumps(extra, ensure_ascii=False)
@@ -72,6 +78,7 @@ def upload_file(
     file_source,
     *,
     filename: str = '',
+    category: str = '',
     folder: str = '',
     artifact_type: str = 'files',
     context=None,
@@ -88,7 +95,7 @@ def upload_file(
         resp = upload_file(
             buf,
             filename='a.png',
-            folder='Downloads',
+            category='downloads',
             context=kwargs,
             metadata=SCRIPT_METADATA,
         )
@@ -106,6 +113,7 @@ def upload_file(
         metadata=metadata,
         script_name=script_name,
         artifact_type=artifact_type,
+        category=category,
         folder=folder,
     )
 

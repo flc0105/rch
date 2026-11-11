@@ -36,18 +36,20 @@ def _unwrap_api_payload(payload: dict) -> Any:
     return payload.get('data') if 'data' in payload else payload
 
 
-def _build_form_data(*, artifact_type: str, folder: str, extra: dict | None = None) -> dict:
+def _build_form_data(*, artifact_type: str, category: str, folder: str, extra: dict | None = None) -> dict:
     owner = get_command_owner()
     if owner is not None and hasattr(owner, 'http_file_transfer_service'):
         return owner.http_file_transfer_service.build_http_upload_form_data(
             artifact_type=artifact_type,
+            category=category,
             folder=folder,
             extra=extra,
         )
 
     payload = {
         'artifact_type': artifact_type,
-        'folder': folder,
+        **({'category': category} if category and artifact_type in ('files', 'command_output') else {}),
+        **({'folder': folder} if artifact_type == 'shared_files' and folder else {}),
         'client_id': get_client_id(),
         'source_command_id': get_command_id() if get_command_id() is not None else '',
     }
@@ -103,19 +105,28 @@ def _parse_upload_response(response, file_path: str) -> dict:
     return data
 
 
-def save(path: str, *, type: str = 'files', folder: str = '', extra: dict | None = None,
+def save(path: str, *, type: str = 'files', category: str = '', folder: str = '', extra: dict | None = None,
          timeout=None) -> dict:
     """
     上传 client 本地文件到 server artifact。
 
     用法：
-        item = artifact.save('/tmp/a.log')  # Saved Files / Script Files
-        item = artifact.save('/tmp/image.png', folder='Screenshots')
+        item = artifact.save('/tmp/a.log')  # Saved Files / Inbox
+        item = artifact.save('/tmp/image.png', category='screenshots')
         item = artifact.save('/tmp/a.log', type='shared_files')
     """
     artifact_type = _normalize_artifact_type(type, default='files')
-    normalized_folder = _safe_text(folder) or ('Script Files' if artifact_type == ArtifactType.FILES.value else '')
-    if artifact_type != ArtifactType.SHARED_FILES.value and normalized_folder.lower() == 'screenshots':
+    if artifact_type in (ArtifactType.FILES.value, ArtifactType.COMMAND_OUTPUT.value):
+        if folder:
+            raise ValueError('Saved Files use category, not folder')
+        normalized_category = _safe_text(category)
+        normalized_folder = ''
+    else:
+        if category:
+            raise ValueError('Only Saved Files can have category')
+        normalized_category = ''
+        normalized_folder = _safe_text(folder)
+    if normalized_category.casefold() == 'screenshots':
         extra = {'origin': ArtifactOrigin.SCRIPT.value, **(extra or {})}
     file_path = _resolve_local_file(path)
     owner = get_command_owner()
@@ -124,6 +135,7 @@ def save(path: str, *, type: str = 'files', folder: str = '', extra: dict | None
         response = owner.http_file_transfer_service.upload_file_to_server_via_http(
             file_path,
             artifact_type=artifact_type,
+            category=normalized_category,
             folder=normalized_folder,
             extra=extra,
         )
@@ -134,6 +146,7 @@ def save(path: str, *, type: str = 'files', folder: str = '', extra: dict | None
         filename=os.path.basename(file_path),
         form_data=_build_form_data(
             artifact_type=artifact_type,
+            category=normalized_category,
             folder=normalized_folder,
             extra=extra,
         ),

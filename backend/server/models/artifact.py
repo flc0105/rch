@@ -7,7 +7,7 @@ class ArtifactReference:
 
     artifact_id: str = ''
     artifact_type: str = ''
-    source_kind: str = ''
+    category: str = ''
     hostname: str = ''
     machine_id: str = ''
     client_id: str = ''
@@ -27,7 +27,7 @@ class ArtifactReference:
         return cls(
             artifact_id=str(payload.get('artifact_id') or ''),
             artifact_type=str(payload.get('artifact_type') or ''),
-            source_kind=str(payload.get('source_kind') or ''),
+            category=(str(payload.get('category') or '') if payload.get('artifact_type') in ('files', 'command_output') else ''),
             hostname=str(payload.get('hostname') or ''),
             machine_id=str(payload.get('machine_id') or ''),
             client_id=str(payload.get('client_id') or ''),
@@ -42,10 +42,9 @@ class ArtifactReference:
         )
 
     def to_dict(self) -> dict:
-        return {
+        data = {
             'artifact_id': self.artifact_id,
             'artifact_type': self.artifact_type,
-            'source_kind': self.source_kind,
             'hostname': self.hostname,
             'machine_id': self.machine_id,
             'client_id': self.client_id,
@@ -58,3 +57,6 @@ class ArtifactReference:
             'raw_url': self.raw_url,
             'preview_url': self.preview_url,
         }
+        if self.artifact_type in ('files', 'command_output'):
+            data['category'] = self.category
+        return data

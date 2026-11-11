@@ -117,7 +117,7 @@ class PythonistaClipboardMonitor(Job):
                     )
 
                     try:
-                        self.upload_file_via_http(file_name, folder='Clipboard')
+                        self.upload_file_via_http(file_name, category='clipboard')
                         self.send_to_server(1, f'Clipboard image uploaded successfully: {file_name}', 0)
                     finally:
                         try:

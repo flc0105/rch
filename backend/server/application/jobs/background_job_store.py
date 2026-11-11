@@ -74,7 +74,7 @@ class BackgroundJobStore:
         return {
             'artifact_id': str(source.get('artifact_id') or ''),
             'artifact_type': str(source.get('artifact_type') or ''),
-            'source_kind': str(source.get('source_kind') or ''),
+            **({'category': str(source['category'])} if 'category' in source else {}),
             'hostname': str(source.get('hostname') or job_item.get('hostname') or ''),
             'machine_id': str(source.get('machine_id') or job_item.get('machine_id') or ''),
             'client_id': str(source.get('client_id') or job_item.get('client_id') or ''),

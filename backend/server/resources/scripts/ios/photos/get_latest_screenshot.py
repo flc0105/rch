@@ -58,7 +58,7 @@ def main():
     resp = upload_file(
         buf,
         filename=filename,
-        folder='Screenshots',
+        category='screenshots',
         context=kwargs,
         metadata=SCRIPT_METADATA,
     )

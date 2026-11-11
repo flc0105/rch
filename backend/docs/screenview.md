@@ -167,7 +167,7 @@ FPS 是目标采集上限，而不是保证的实际显示帧率。如果截图�
 
 Open in New Tab 使用现有 Screen View 和 Clipboard 控件，并通过同一个 Server 创建会话。打开新标签页时，先结束原 Screen View 会话，再进入新标签页建立会话；从主页面重复打开同一 Client 时会提示已开启，而不会抢占新标签页。关闭新标签页时会请求 Server 释放会话。新标签页沿用原 Screen View 的设备名称展示（hostname 与短 machine_id），不显示完整 client_id。新标签页的控制工具栏不占用画面布局高度，默认隐藏；仅将鼠标移到画面顶部居中的细长触发条时浮现，离开工具栏后收起，打开下拉菜单期间保持可操作。画面保持原始宽高比，不拉伸或裁剪。
 
-**Screenshot** 不会在点击时额外发送一次远程截图命令。浏览器直接读取已经渲染的完整图像或 Delta Canvas，按当前 Quality 重新编码为 JPEG，再上传到 `/api/files/upload`，保存为 `folder=Screenshots` 的 Artifact。这样保存的是当时页面已经看到的画面，而不是之后重新采集的另一帧。上传的附加信息包含 Client、会话、编码策略、尺寸和采集记录相关元数据。
+**Screenshot** 不会在点击时额外发送一次远程截图命令。浏览器直接读取已经渲染的完整图像或 Delta Canvas，按当前 Quality 重新编码为 JPEG，再上传到 `/api/files/upload`，保存为 `category=screenshots` 的 Saved Artifact。这样保存的是当时页面已经看到的画面，而不是之后重新采集的另一帧。上传的附加信息包含 Client、会话、编码策略、尺寸和采集记录相关元数据。
 
 **Clipboard** 只提供联动入口，不意味着每一帧或每次复制都会持续自动同步。文本、图像及文件/目录的剪贴板读写由独立 Clipboard 功能处理，需要用户显式发起对应操作。
 

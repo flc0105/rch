@@ -13,25 +13,37 @@ Artifact Manager 有两个一级空间：
 
 两个空间共用文件存储和 SQLite 目录机制，但用户需要明确选择共享空间才能让文件走 Shared 的发送操作；移动目录不能改变共享范围。只有 Shared Files 可以新建、重命名与删除自定义目录；Saved Files 的目录结构固定，只有预设目录。**Create File / Upload 只在 Shared Files 显示**，Saved Files 的文件仅通过截图、下载、脚本/Job 输出、剪贴板、命令/终端保存等正式保存动作产生。Shared 文件创建入口使用现有编辑器流程。
 
-Saved Files 预设目录为：`Screenshots`、`Webcam`、`Downloads`、`Clipboard`、`Script Files`、`Job Files`、`Command Output`、`Terminal Logs`，另有 `Inbox` 作为未明确指定来源时的默认目录。Saved Files 不能创建、重命名或删除目录；Shared Files 的自建目录支持嵌套、重命名和空目录删除。Saved 目录是不可移动的来源分类，`source_kind` 是 Saved 文件唯一的持久归类字段；目录 ID 由 `source_kind` 推导，不能 Move。Shared 的 `source_kind` 与 `folder_id` 独立，允许在共享目录间移动。UI 不再使用重复的 Source 筛选，正式 Artifact 数据也不再保存 `category`。
+Saved Files 共有九个预设分类，`category` 与目录严格一对一；分类值与显示目录名如下：
 
-备份时应同时保存 `catalog.sqlite3` 和 Artifact 实体文件。Saved 记录的来源字段必须使用规范 `source_kind`，不接受旧的生产者别名；Shared Files 的目录关系由独立 `folder_id` 保存。
+| category | Saved 目录 |
+|---|---|
+| `screenshots` | Screenshots |
+| `webcam` | Webcam |
+| `downloads` | Downloads |
+| `clipboard` | Clipboard |
+| `script_files` | Script Files |
+| `job_files` | Job Files |
+| `command_output` | Command Output |
+| `terminal_logs` | Terminal Logs |
+| `inbox` | Inbox |
 
-预设分配遵循当前生产来源：截图上传进 Screenshots，摄像头进 Webcam，远程与浏览器下载进 Downloads，剪贴板进 Clipboard，Script SDK 生成的实体文件进 Script Files，Job 产出的实体文件进 Job Files，单次命令、Script 与 Job 的执行输出快照统一进 Command Output，用户显式保存的 Web Terminal 与 PTY 日志进 Terminal Logs。无法识别来源的普通上传进 Inbox；Script SDK 默认为 Script Files。**所有普通文件都使用同一套 Catalog，不再为来源建立各自的独立 Tab。**
+`category` 输入大小写不敏感，按固定值规范化；缺失或不在九种之内均归入 `inbox`。Saved 目录 ID 恒为 `saved:<category>`，读取时由分类计算，不能移动或自行创建目录。Shared Files 不存在 `category`，仅通过目录 ID 管理自建共享目录（允许嵌套、重命名和移动文件）；额外上传来源如有需要放入结构化的 `extra`。
+
+预设分配遵循当前生产来源：截图上传进 Screenshots，摄像头进 Webcam，远程与浏览器下载进 Downloads，剪贴板进 Clipboard，Script SDK 生成的实体文件进 Script Files，Job 产出的实体文件进 Job Files，单次命令、Script 与 Job 的执行输出快照统一进 Command Output，用户显式保存的 Web Terminal 与 PTY 日志进 Terminal Logs。未知类别或未指定类别的上传统一进 Inbox；Script SDK 需要显式传 `category=script_files` 才进入 Script Files。**所有普通文件都使用同一套 Catalog，不再为来源建立各自的独立 Tab。**
 
 ## SQLite、实际文件与备份
 
-**SQLite 是唯一的 Artifact 元数据源。** Catalog 存在 `runtime/web_files/artifacts/catalog.sqlite3`，两张业务表分别管理文件记录和逻辑目录。元数据包含 `artifact_id`、`scope`、`source_kind`、设备和命令/Job 关联信息、创建时间及文件路径；只有 Shared Files 持久存储 `folder_id`。Saved Files 的目录 ID 读取时根据 `source_kind` 生成。其他 RCH 业务仍使用 `runtime/rch.db`，Artifact Catalog 单独存放以隔离文件管理的数据和备份边界。
+**Artifact 元数据统一保存在 Server 的 `runtime/rch.db`。** 其中 `artifact_entries` 管理文件记录，`artifact_folders` 管理逻辑目录；文件本体继续位于 `runtime/web_files/artifacts/`。元数据包含 `artifact_id`、`scope`、设备和命令/Job 关联信息、创建时间及文件路径。`artifact_entries.category` 仅对 Saved Files 非空，Shared/Preview 为 NULL 且对外元数据没有 `category`；只有 Shared Files 持久存储 `folder_id`。Saved Files 的目录 ID 读取时由 `category` 推导。所有元数据访问共用 `RchDatabase` 的连接、事务与 Schema 校验。
 
 新文件内容保存到 `runtime/web_files/artifacts/objects/`，存储名包含随机后缀。`original_name` 用于显示和下载，`stored_name` 对应磁盘文件；**Rename 只更新显示名，Shared Move 只更新目录 ID**，不会移动大文件，也不会改变稳定的 Artifact ID 或 `/api/artifacts/{id}` URL。Preview 缓存内容继续在独立 `previews/` 路径里，由 Server 启动清理规则管理；Preview 是操作，不在 Saved Files 或 Shared Files 中作为永久目录展示。
 
-恢复数据必须同时备份 SQLite Catalog 和 Artifact 文件内容，且应在停服状态下备份以保证二者一致。只备份 SQLite 会缺少内容；只备份文件则缺少 ID、来源和目录关联。当前服务使用 `saved_path` 检查文件可用性，文件已经不在磁盘上时，列表可标记 `File removed`。
+恢复数据必须同时备份 `rch.db` 和 Artifact 文件内容，且应在停服状态下备份以保证二者一致。只备份 SQLite 会缺少内容；只备份文件则缺少 ID、来源和目录关联。当前服务使用 `saved_path` 检查文件可用性，文件已经不在磁盘上时，列表可标记 `File removed`。
 
 ## 访问、预览和编辑
 
 | 操作 | 行为 |
 |---|---|
-| `/api/artifacts` | 返回文件列表、设备列表和逻辑目录；支持 `scope`、`folder_id`、`machine_id`、`source_kind`、`search`；默认排除 Preview 临时缓存 |
+| `/api/artifacts` | 返回文件列表、设备列表和逻辑目录；支持 `scope`、`folder_id`、`machine_id`、`category`、`search`；默认排除 Preview 临时缓存 |
 | `/api/artifacts/{id}/download` | 用显示名下载文件 |
 | `/api/artifacts/{id}/raw` | 直接传输文件字节 |
 | `/api/artifacts/{id}/preview` | 文本、图片、归档等预览描述 |
@@ -44,7 +56,7 @@ Saved Files 预设目录为：`Screenshots`、`Webcam`、`Downloads`、`Clipboar
 | `/api/artifacts/folders/{id}/rename` | 仅在 Shared Files 重命名自建目录 |
 | `/api/artifacts/folders/{id}`（DELETE） | 仅在 Shared Files 删除空的自建目录 |
 | `/api/artifacts/create` | 仅允许在 Shared 创建空文本文件 |
-| `/api/files/upload` | 上传文件，使用 `folder` 指定实际目标目录名，或使用内部目录 ID `folder_id`；不再接受 `category` / `source_kind` 上传参数 |
+| `/api/files/upload` | Saved Files 传 `category`（不传或未知值归 Inbox），按固定映射选择目录；Shared Files 不允许传 `category`，可传 `folder` 或 `folder_id` 指定现有共享目录；Preview 不需要分类或目录 |
 | `/api/artifacts/command-output/save` | 按既有 Text/JSON 协议保存命令、Script、Job 或终端输出 |
 | `/api/artifacts/{id}/send-to-client` | 仅 Shared Files 可提交设备下发任务 |
 
@@ -52,18 +64,18 @@ Saved Files 预设目录为：`Screenshots`、`Webcam`、`Downloads`、`Clipboar
 
 ## SDK 与来源分类
 
-Client Script SDK 使用 `artifact.save(path, folder=..., extra=...)` 和 `artifact.upload(path, folder=...)`，`folder` 表示目标虚拟目录名。SDK 在脚本执行上下文中默认保存到 **Saved Files / Script Files**；例如指定 `folder='Screenshots'` 则改存到截图目录。Job 产出的实际文件默认进 **Job Files**；普通来源未知的非 SDK 上传进入 **Inbox**。对于 `type='shared_files'`，默认写到 Shared Files 根目录；`folder` 可填写已存在的共享文件夹路径。Saved Files 仅允许九个固定来源目录，非法目录会在写入实体文件前拒绝。上传时统一传 `folder`，由 Server 根据已登记目录确定 Saved 文件的 `source_kind`。Script SDK 默认传 `Script Files`、Job 默认传 `Job Files`；普通上传不传目录时进入 Inbox。Shared 保留独立的来源与目录字段。
+Client Script SDK 使用 `artifact.save(path, category=..., extra=...)` 和 `artifact.upload(path, category=...)` 上传 Saved 文件；不指定 `category` 时归入 `inbox`，指定 `category='script_files'` 进入 Script Files，指定 `category='screenshots'` 则保存到 Screenshots。Job 的实体文件默认传 `category='job_files'`；普通非 SDK 上传未传类别时进 `inbox`。分类字段按上表匹配，仅此九种有效，未知值也直接保存到 Inbox。Shared 使用 `artifact.save(path, type='shared_files', folder=...)`，默认写入共享根目录，`folder` 指定已存在的共享路径；Shared 不允许传 `category`。内部 SQLite 只储存 Saved 的规范 `category`，Shared 只持久化共享 `folder_id`；文件实体不因分类逻辑变化而移动。
 
 **Command Output** 收纳单次命令、Script 和 Job 的执行输出快照（含 Text/JSON）；**Script Files / Job Files** 收纳脚本与 Job 实际生成并上传的文件；**Terminal Logs** 收纳整个终端或 PTY 会话的显式保存。文件名和 Job/Command 关联元数据仍按各自来源保留。
 
 ```python
 from client.runtime.sdk import artifact
 
-script_file = artifact.save('./report.txt')                   # Saved / Script Files
-screenshot = artifact.upload('./shot.png', folder='Screenshots') # Saved / Screenshots
+script_file = artifact.save('./report.txt', category='script_files')  # Saved / Script Files
+screenshot = artifact.upload('./shot.png', category='screenshots')  # Saved / Screenshots
 shared = artifact.save('./tool.zip', type='shared_files', folder='Team/Tools')
 ```
 
-自动创建的文件采用 `类型_yyyyMMdd_HHmmss[_简短标识].扩展名`：截图使用 `screenshot_...`、摄像头 `webcam_...`、自动上传的相册照片 `photo_...`、单次命令结果 `command_output_..._首个命令词`、脚本执行输出 `script_..._脚本名`、Job 消息快照 `job_output_..._Job名`，整个终端/PTY 导出分别使用 `terminal_output_...`、`pty_output_...`。命令词摘要使用通用 `build_command_name`，不按特定命令维护特殊规则；生成时间使用各生产端的本地时间。明确指定的文件名、剪贴板原始文件名和远程下载原始文件名保持原样。`extra.origin` 记录截图产生的入口（截图命令、Screen View、Script 或 Job），与决定 Saved 目录的 `source_kind` 分开。
+自动创建的文件采用 `类型_yyyyMMdd_HHmmss[_简短标识].扩展名`：截图使用 `screenshot_...`、摄像头 `webcam_...`、自动上传的相册照片 `photo_...`、单次命令结果 `command_output_..._首个命令词`、脚本执行输出 `script_..._脚本名`、Job 消息快照 `job_output_..._Job名`，整个终端/PTY 导出分别使用 `terminal_output_...`、`pty_output_...`。命令词摘要使用通用 `build_command_name`，不按特定命令维护特殊规则；生成时间使用各生产端的本地时间。明确指定的文件名、剪贴板原始文件名和远程下载原始文件名保持原样。`extra.origin` 记录截图产生的入口（截图命令、Screen View、Script 或 Job），与决定 Saved 目录的 `category` 分开。
 
 文件下载与发送到 Client 的实际进度仍由 File Transfer 管理；`artifact_created` 表示 Server 已登记文件，`file_transfer_lifecycle` 表示传输生命周期，二者是不同事件。Transfer Center 的 Recent 和长期 Activity 也遵守各自的记录范围，参见 [File Transfer](file_transfer.md)。

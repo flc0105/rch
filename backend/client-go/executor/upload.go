@@ -47,14 +47,12 @@ func (s *Session) uploadFileToServer(filePath string, category string) (map[stri
 	writer := multipart.NewWriter(body)
 
 	_ = writer.WriteField("artifact_type", "files")
-	_ = writer.WriteField("category", defaultString(category, "default"))
-	if category == "screenshot" {
+	_ = writer.WriteField("category", defaultString(category, "inbox"))
+	if category == "screenshots" {
 		_ = writer.WriteField("extra", `{"origin":"screenshot_command"}`)
 	}
 	_ = writer.WriteField("client_id", s.ClientID)
 	_ = writer.WriteField("hostname", s.HostName)
-	// 	_ = writer.WriteField("source_type", "client_upload")
-	// 	_ = writer.WriteField("related_path", "")
 	if s.CurrentCommandID > 0 {
 		_ = writer.WriteField("source_command_id", strconv.Itoa(s.CurrentCommandID))
 	}

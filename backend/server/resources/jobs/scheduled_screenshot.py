@@ -57,7 +57,7 @@ class ScheduledScreenshot(Job):
             return
 
         try:
-            response = self.upload_file_via_http(screenshot_path, folder='Screenshots',
+            response = self.upload_file_via_http(screenshot_path, category='screenshots',
                                                       extra={'origin': ArtifactOrigin.JOB.value})
             self.send_to_server(1, f'Upload result: {response.text}', 0)
         finally:

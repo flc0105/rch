@@ -32,10 +32,10 @@ test('folder ID and device filter work without an overlapping source filter', ()
     { folder_id: 'saved:downloads', name: 'Downloads', scope: 'saved', parent_id: null, preset: 1 },
   ]
   s.artifactItems = [
-    { artifact_id: 'a', scope: 'saved', source_kind: 'screenshots', folder_id: 'saved:screenshots', machine_id: 'm1', original_name: 'a.png' },
-    { artifact_id: 'b', scope: 'saved', source_kind: 'downloads', folder_id: 'saved:downloads', machine_id: 'm1', original_name: 'b.png' },
-    { artifact_id: 'c', scope: 'saved', source_kind: 'downloads', folder_id: 'saved:downloads', machine_id: 'm2', original_name: 'c.zip' },
-    { artifact_id: 'd', scope: 'shared', source_kind: 'shared_upload', folder_id: null, original_name: 'd.zip' },
+    { artifact_id: 'a', scope: 'saved', category: 'screenshots', folder_id: 'saved:screenshots', machine_id: 'm1', original_name: 'a.png' },
+    { artifact_id: 'b', scope: 'saved', category: 'downloads', folder_id: 'saved:downloads', machine_id: 'm1', original_name: 'b.png' },
+    { artifact_id: 'c', scope: 'saved', category: 'downloads', folder_id: 'saved:downloads', machine_id: 'm2', original_name: 'c.zip' },
+    { artifact_id: 'd', scope: 'shared', folder_id: null, original_name: 'd.zip' },
   ]
   assert.equal(c.computed.filteredArtifactItems.call(s).length, 3)
   s.selectedFolderId = 'saved:downloads'
