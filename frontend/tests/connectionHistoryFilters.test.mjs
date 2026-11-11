@@ -37,7 +37,7 @@ test('filter is server-side; two matching rows do not show the unfiltered Load M
       connection_count: 103,
       filter_options: {
         integrity: ['high', 'medium', 'unknown'], launch_mode: ['ide', 'terminal'],
-        termination_reason: ['client_exit', 'timeout', 'unknown'],
+        termination_reason: ['client_exit', 'timeout'],
       },
     }
     return {
@@ -50,6 +50,7 @@ test('filter is server-side; two matching rows do not show the unfiltered Load M
   assert.equal(dialog.canLoadMoreHistory, true)
   assert.deepEqual(Array.from(dialog.integrityOptions, item => item.value), ['high', 'medium', 'unknown'])
   assert.deepEqual(Array.from(dialog.launchModeOptions, item => item.label), ['IDE', 'Terminal'])
+  assert.deepEqual(Array.from(dialog.terminationOptions, item => item.value), ['client_exit'])
   dialog.filters.integrity = 'high'
   dialog.filters.launchMode = 'ide'
   dialog.filters.termination = 'client_exit'
@@ -57,6 +58,7 @@ test('filter is server-side; two matching rows do not show the unfiltered Load M
   assert.equal(dialog.activeFilterCount, 3)
   assert.deepEqual(Array.from(dialog.sessions, item => item.client_id), ['A', 'B'])
   assert.equal(dialog.canLoadMoreHistory, false)
+  assert.deepEqual(Array.from(dialog.terminationOptions, item => item.value), ['client_exit', 'timeout'])
   assert.equal(dialog.history.connection_count, 103)
   await dialog.loadMoreHistory()
   assert.equal(calls.length, 2)

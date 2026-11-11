@@ -254,14 +254,19 @@ class ConnectionHistoryStore:
                 FROM connection_sessions WHERE machine_id = ?
             ''', (machine_id_text,)).fetchone()
             # Filter and search before LIMIT/OFFSET so has_more describes visible results.
-            # Missing snapshot values use the same `unknown` option as the UI.
+            # Missing snapshot properties can be filtered as unknown, but a connection
+            # without a termination reason (notably an online one) has no cause to filter.
             fields = {
                 'integrity': "CASE WHEN json_valid(snapshot) THEN json_extract(snapshot, '$.integrity') END",
                 'launch_mode': "CASE WHEN json_valid(snapshot) THEN json_extract(snapshot, '$.launch_mode') END",
                 'termination_reason': 'termination_reason',
             }
             def value_expression(field):
-                return f"COALESCE(NULLIF(LOWER(TRIM(CAST({fields[field]} AS TEXT))), ''), 'unknown')"
+                nonempty = f"NULLIF(LOWER(TRIM(CAST({fields[field]} AS TEXT))), '')"
+                if field == 'termination_reason':
+                    # `unknown` is not a valid termination cause; exclude bad old data.
+                    return f"NULLIF({nonempty}, 'unknown')"
+                return f"COALESCE({nonempty}, 'unknown')"
 
             # The dropdown values cover the entire machine, not only the loaded page.
             option_rows = conn.execute(
@@ -271,7 +276,8 @@ class ConnectionHistoryStore:
                 (machine_id_text,),
             ).fetchall()
             filter_options = {
-                field: sorted({row[field] for row in option_rows}) for field in fields
+                field: sorted({row[field] for row in option_rows if row[field] is not None})
+                for field in fields
             }
 
             search = str(client_id_search or '').strip()

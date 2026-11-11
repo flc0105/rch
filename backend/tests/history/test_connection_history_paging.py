@@ -165,10 +165,10 @@ def test_server_filters_before_pagination_and_dropdown_options_cover_all_history
     assert result['filter_options']['integrity'] == ['high', 'medium', 'unknown']
     assert result['filter_options']['launch_mode'] == ['ide', 'terminal']
     assert 'timeout' in result['filter_options']['termination_reason']
-    assert 'unknown' in result['filter_options']['termination_reason']
+    assert 'unknown' not in result['filter_options']['termination_reason']
     assert not store.get_history('M', client_id_search='node_06', integrity='high')['sessions']
     assert [row['client_id'] for row in store.get_history('M', client_id_search='NODE_00', integrity='high')['sessions']] == ['node_006', 'node_003']
-    assert [row['client_id'] for row in store.get_history('M', integrity='unknown', termination_reason='unknown')['sessions']]
+    assert not store.get_history('M', integrity='unknown', termination_reason='unknown')['sessions']
     assert store.get_history('M', integrity="x' OR 1=1 --")['sessions'] == []
     database.close_thread_connection()
 
@@ -248,4 +248,56 @@ def test_invalid_snapshot_is_treated_as_unknown_for_filtering(tmp_path):
     assert [row['client_id'] for row in page['sessions']] == ['corrupt']
     assert page['filter_options']['integrity'] == ['unknown']
     assert not page['has_more']
+    database.close_thread_connection()
+
+def test_termination_filter_excludes_online_blank_and_invalid_unknown(tmp_path):
+    """Online has no termination cause; bad old values cannot become selectable causes."""
+    database = RchDatabase(str(tmp_path / 'rch.db'))
+    store = ConnectionHistoryStore(database)
+    store.record_connected({
+        'machine_id': 'M', 'client_id': 'online', 'connected_at': '2026-11-11T09:00:00+00:00',
+    })
+    store.record_connected({
+        'machine_id': 'M', 'client_id': 'closed', 'connected_at': '2026-11-11T08:00:00+00:00',
+    })
+    store.record_disconnected({
+        'machine_id': 'M', 'client_id': 'closed', 'disconnected_at': '2026-11-11T08:05:00+00:00',
+    }, termination_reason='timeout')
+    store.record_connected({
+        'machine_id': 'M', 'client_id': 'unexplained', 'connected_at': '2026-11-11T06:00:00+00:00',
+    })
+    store.record_disconnected({
+        'machine_id': 'M', 'client_id': 'unexplained', 'disconnected_at': '2026-11-11T06:05:00+00:00',
+    })
+    conn = database.connection()
+    for client_id, reason in [('legacy-empty', ''), ('legacy-unknown', 'unknown')]:
+        conn.execute(
+            '''INSERT INTO connection_sessions (
+                machine_id, client_id, connected_at, connected_at_ms, disconnected_at,
+                disconnected_at_ms, last_seen_at, duration_ms, termination_reason,
+                termination_detail, snapshot
+            ) VALUES ('M', ?, '2026-11-11T07:00:00+00:00', 1,
+                      '2026-11-11T07:01:00+00:00', 2, '', 60000, ?, '{}', '{}')''',
+            (client_id, reason),
+        )
+    all_rows = store.get_history('M')
+    assert all_rows['connection_count'] == 5
+    assert len(all_rows['sessions']) == 5
+    assert all_rows['filter_options']['termination_reason'] == ['timeout', 'unexpected_disconnect']
+    assert [r['client_id'] for r in store.get_history('M', termination_reason='timeout')['sessions']] == ['closed']
+    assert [r['client_id'] for r in store.get_history('M', termination_reason='unexpected_disconnect')['sessions']] == ['unexplained']
+    assert store.get_history('M', termination_reason='unknown')['sessions'] == []
+    assert store.get_history('M', client_id_search='online')['sessions'][0]['termination_reason'] == ''
+    database.close_thread_connection()
+
+
+def test_online_only_history_has_no_termination_filter_options(tmp_path):
+    database = RchDatabase(str(tmp_path / 'rch.db'))
+    store = ConnectionHistoryStore(database)
+    store.record_connected({
+        'machine_id': 'M', 'client_id': 'online', 'connected_at': '2026-11-11T09:00:00+00:00',
+    })
+    page = store.get_history('M')
+    assert page['filter_options']['termination_reason'] == []
+    assert page['sessions'][0]['client_id'] == 'online'
     database.close_thread_connection()
