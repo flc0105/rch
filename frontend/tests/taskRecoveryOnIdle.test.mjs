@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import taskState from '../src/composables/useTaskState.js';
-import { normalizeForegroundTask } from '../src/utils/foregroundTask.js';
+import { normalizeForegroundTask, foregroundTaskNoticeKey, shouldShowTaskNotice } from '../src/utils/foregroundTask.js';
 
 const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8');
 const start = app.indexOf('    applyForegroundTaskUpdate(');
@@ -10,12 +10,12 @@ const end = app.indexOf('\n    async refreshForegroundTask()', start);
 assert.ok(start >= 0 && end > start);
 const body = app.slice(start, end).match(/\{([\s\S]*)\},\s*$/)?.[1];
 assert.ok(body);
-const apply = new Function('normalizeForegroundTask', `return function applyForegroundTaskUpdate(clientId, payload) {${body}}`)(normalizeForegroundTask);
+const apply = new Function('normalizeForegroundTask', 'foregroundTaskNoticeKey', 'shouldShowTaskNotice', `return function applyForegroundTaskUpdate(clientId, payload, fromSnapshot = false) {${body}}`)(normalizeForegroundTask, foregroundTaskNoticeKey, shouldShowTaskNotice);
 
 function fixture() {
   const state = {
     ...taskState.data(),
-    selectedId: 'c1', connections: [], foregroundTasks: {}, foregroundQuerySequence: 0,
+    selectedId: 'c1', connections: [], foregroundTasks: {}, foregroundQuerySequence: 0, foregroundNoticeEntries: {},
     outputs: [],
     syncForegroundTaskNotice() {}, appendOutput(...args) { this.outputs.push(args) },
     applyForegroundTaskUpdate: apply,

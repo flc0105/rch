@@ -116,7 +116,7 @@ Server Built-in 的 Job、Artifact、设备事件、Pinned Path 和 External Too
 
 Connection Info 的 **Task** 字段显示 `Idle`、`Running` 或 `Cancelling`；Terminal Connection Context 也可以选择 **Task** 标签。Server 从当前 ClientSession 的前台任务槽返回状态，不依赖浏览器中保留的 Web Task ID。页面启动或切换 Client 时读取快照，并订阅前台任务状态变更事件；每 2 秒同步一次状态作为重连兜底。任务结束后状态回到 `Idle`。
 
-当所选 Client 被其他标签页或前一次页面会话的任务占用，Terminal 在输出区显示警告行及 **[ Details ]** 链接，沿用终端其他状态提示的交互样式。当前页面提交 Terminal 命令时，通过前台任务中的 `tab_id` 与命令文本识别提交中的任务，避免状态 WebSocket 先于 HTTP 响应时短暂显示自身任务警告；页面刷新后不存在提交中记录，仍立即显示已有运行任务。详情包含执行命令、来源、任务类型、开始时间、持续时间、任务／命令 ID 与取消状态。可以取消的 Web 命令通过已有 Task Cancel API 请求取消；`cancel_policy=none`、尚未绑定 Client 命令 ID、已经请求取消或非 Web 来源的任务不开放此按钮。状态查询不占用前台槽，也不产生远程命令。
+当页面打开、刷新或首次切换到某个 Client 时，首次成功取得的权威 Task 快照若包含既有运行任务，Terminal 在输出区显示一次警告行及 **[ Details ]** 链接，沿用终端其他状态提示的交互样式。后续 SSE 与状态刷新仍实时更新 Task、Busy 和取消能力，但不会新建警告；既有警告只跟随同一任务的取消状态更新，并在任务结束或被替换后移除。本页操作开始或已有新的前台事件时，尚未完成的首次提示判定即关闭，防止 Terminal 命令、文件浏览等操作误触发黄色警告。每个 Client 在同一页面生命周期内只判定一次；刷新页面会重新判定。警告属于内存中的临时界面状态，不写入 Terminal 的持久输出历史，恢复历史和分页时也不应将其作为命令输出重现。详情包含执行命令、来源、任务类型、开始时间、持续时间、任务／命令 ID 与取消状态。可以取消的 Web 命令通过已有 Task Cancel API 请求取消；`cancel_policy=none`、尚未绑定 Client 命令 ID、已经请求取消或非 Web 来源的任务不开放此按钮。状态查询不占用前台槽，也不产生远程命令。
 
 ## 4. 前台串行约束与执行并发
 

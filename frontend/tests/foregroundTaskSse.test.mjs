@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
-import { normalizeForegroundTask } from '../src/utils/foregroundTask.js'
+import { normalizeForegroundTask, foregroundTaskNoticeKey, shouldShowTaskNotice } from '../src/utils/foregroundTask.js'
 
 const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
 const sse = readFileSync(new URL('../src/composables/useSseStream.js', import.meta.url), 'utf8')
@@ -14,7 +14,7 @@ function method(name, end, deps = {}) {
   return new Function(...Object.keys(deps), `return function ${name}(clientId, payload) {${body}}`)(...Object.values(deps))
 }
 
-const applyUpdate = method('applyForegroundTaskUpdate', '\n    async refreshForegroundTask()', { normalizeForegroundTask })
+const applyUpdate = method('applyForegroundTaskUpdate', '\n    async refreshForegroundTask()', { normalizeForegroundTask, foregroundTaskNoticeKey, shouldShowTaskNotice })
 const refreshSource = app.match(/    async refreshForegroundTask\(\) \{([\s\S]*?)\n    \},\n\n    async cancelForegroundTask\(/)
 assert.ok(refreshSource)
 const makeRefresh = getConnectionTask => new Function('getConnectionTask', 'normalizeForegroundTask',
@@ -23,7 +23,7 @@ const makeRefresh = getConnectionTask => new Function('getConnectionTask', 'norm
 
 function fixture(getConnectionTask) {
   return {
-    selectedId: 'A', foregroundQuerySequence: 0, foregroundTasks: {},
+    selectedId: 'A', foregroundQuerySequence: 0, foregroundTasks: {}, foregroundNoticeEntries: {},
     isCurrentConnectionOffline: false, notices: [],
     syncForegroundTaskNotice(id, task) { this.notices.push([id, task.state]) },
     applyForegroundTaskUpdate: applyUpdate,
@@ -81,14 +81,9 @@ test('both initial WebSocket open and reconnect reconcile authoritative task sna
   assert.equal(fetches, 2)
 })
 
-test('local task-id arrival clears a premature own-task notice', () => {
-  const watcher = app.match(/    currentActiveTaskId\(\) \{([\s\S]*?)\n    \},/)
-  assert.ok(watcher)
-  const onOwnTaskChanged = new Function(`return function(){${watcher[1]}\n}`)()
-  const state = { selectedId: 'A', currentForegroundTask: { state: 'Running', task_id: 'mine' }, calls: [],
-    syncForegroundTaskNotice(id, task) { this.calls.push([id, task.task_id]) } }
-  onOwnTaskChanged.call(state)
-  assert.deepEqual(state.calls, [['A', 'mine']])
+test('local task-id changes do not drive task notice creation', () => {
+  assert.doesNotMatch(app, /    currentActiveTaskId\(\) \{([\s\S]*?)syncForegroundTaskNotice/)
+  assert.match(app, /const entry = this.foregroundNoticeEntries\[id\]/)
 })
 
 

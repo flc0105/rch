@@ -153,7 +153,6 @@ export default {
     'set-active-task',
     'check-task-state',
     'terminal-submission-start',
-    'terminal-submission-finish',
     'clear-output',
     'edit-remote-file',
   ],
@@ -284,7 +283,6 @@ export default {
     ElMessage.error(e.message || 'Command failed')
     this.commandText = ''
   } finally {
-    this.$emit('terminal-submission-finish', clientId)
     this.sending = false
   }
 },
@@ -413,7 +411,6 @@ export default {
         ElMessage.error(error.message || 'Command failed')
         return ''
       } finally {
-        this.$emit('terminal-submission-finish', clientId)
         this.sending = false
       }
     },

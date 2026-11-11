@@ -221,7 +221,7 @@ assert.deepEqual(Array.from(apiCalls[0]).slice(0,2), ['client-A','echo hello'])
 assert.equal(apiCalls[0][2]['X-Tab-Id'], 'tab-A')
 assert.equal(bar.commandText, 'my unfinished draft')
 assert.deepEqual(terminalEvents.slice(0, 4).map(event => event[0]), [
-  'terminal-submission-start', 'append-output', 'set-active-task', 'terminal-submission-finish',
+  'terminal-submission-start', 'append-output', 'set-active-task', 'terminal-submission-start',
 ])
 bar.selectedId = 'client-B'
 assert.equal(await bar.runResultActionCommand('echo wrong', 'client-A'), '')

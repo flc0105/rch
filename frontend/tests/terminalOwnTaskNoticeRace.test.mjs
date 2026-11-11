@@ -1,149 +1,76 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
-import { shouldShowTaskNotice } from '../src/utils/foregroundTask.js'
+import { fixture, notices, task, source } from './foregroundTaskNoticeFixture.mjs'
 import { createTerminalOperation, operationHeaders } from '../src/utils/terminalOperation.js'
 
-
-const appSource = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
 const inputSource = readFileSync(new URL('../src/components/CommandInputBar.vue', import.meta.url), 'utf8')
-
-function method(source, name, next, deps = {}) {
-  const start = source.indexOf(`    ${name}(`)
-  assert.ok(start >= 0, `${name} must exist`)
-  const code = source.slice(start, source.indexOf(next, start))
-  const body = code.slice(code.indexOf('{') + 1, code.lastIndexOf('}'))
-  return new Function(...Object.keys(deps), `return function ${name}(${name === 'syncForegroundTaskNotice' ? 'clientId, task' : name === 'startTerminalSubmission' ? 'clientId, command, echoToTerminal = true' : 'clientId'}) {${body}}`)(...Object.values(deps))
-}
-
-const start = method(appSource, 'startTerminalSubmission', '\n    finishTerminalSubmission(')
-const finish = method(appSource, 'finishTerminalSubmission', '\n    syncForegroundTaskNotice(')
-const sync = method(appSource, 'syncForegroundTaskNotice', '\n    applyForegroundTaskUpdate(', { shouldShowTaskNotice })
-const running = {
-  state: 'Running', task_id: 'job-23', source: 'web', tab_id: 'tab-A',
-  command: 'shell sleep 5', command_id: '13', started_at: '2026-10-29T00:00:00Z',
-}
-
-function makeApp() {
-  return {
-    selectedId: 'client-A', tabId: 'tab-A', pendingTerminalSubmissions: {},
-    activeTaskIds: {}, foregroundTasks: {}, outputs: {}, followJumps: [],
-    scrollToBottom(force) { this.followJumps.push(force) },
-    startTerminalSubmission: start, finishTerminalSubmission: finish,
-    syncForegroundTaskNotice: sync,
-    ensureOutputBucket(id) { this.outputs[id] ??= [] },
-    appendOutput(id, text, kind, meta) { this.outputs[id].push({ text, kind, meta }) },
-    setActiveTask(id, taskId) { if (taskId) this.activeTaskIds[id] = taskId },
-  }
-}
-const notices = (app, id = 'client-A') => (app.outputs[id] || []).filter(item => item.meta?.foregroundTaskNotice)
-
-function makeSendCommand(api, state) {
+function sendCommand(api, page) {
   const match = inputSource.match(/    async sendCommand\(\) \{([\s\S]*?)\n\},\n\n    \/\/ async sendCommand\(\)/)
-  assert.ok(match, 'real sendCommand method available')
+  assert.ok(match)
   const send = new Function('sendCommandApi', 'ElMessage', 'formatTerminalCommandFailedLine', 'createTerminalOperation', 'operationHeaders',
     `return async function sendCommand() {${match[1]}\n}`)(api, { warning() {}, error() {} }, text => text, createTerminalOperation, operationHeaders)
   return send.bind({
-    commandText: running.command, selectedId: 'client-A', sending: false,
-    closeAutocomplete() {}, clearAutocompleteNavigationState() {},
-    handleLocalFrontendCommand() { return false },
-    getSubmittedCommandCancelPolicy() { return '' },
-    getTabScopedHeaders() { return { 'X-Tab-Id': 'tab-A' } },
+    commandText: task.command, selectedId: 'A', sending: false,
+    closeAutocomplete() {}, clearAutocompleteNavigationState() {}, handleLocalFrontendCommand() { return false },
+    getSubmittedCommandCancelPolicy() { return '' }, getTabScopedHeaders() { return { 'X-Tab-Id': 'reused-tab' } },
     clearCommandCompletionCandidateCache() {}, async loadCommandCandidates() {},
     $emit(type, ...args) {
-      if (type === 'terminal-submission-start') state.startTerminalSubmission(...args)
-      if (type === 'terminal-submission-finish') state.finishTerminalSubmission(...args)
-      if (type === 'set-active-task') {
-        state.setActiveTask(args[0], args[1]);
-        state.syncForegroundTaskNotice(args[0], state.foregroundTasks[args[0]] || { state: 'Idle' })
-      }
+      if (type === 'terminal-submission-start') page.startTerminalSubmission(...args)
+      if (type === 'set-active-task' && args[1]) page.activeTaskIds[args[0]] = args[1]
     },
   })
 }
 
-test('deterministic repro: Running SSE before pending POST response never flashes own warning', async () => {
-  let resolvePost
-  const state = makeApp()
-  const send = makeSendCommand(() => new Promise(resolve => { resolvePost = resolve }), state)
-  const inFlight = send()
-  assert.deepEqual(state.pendingTerminalSubmissions['client-A'], { command: running.command })
-  // This is the exact old race: no local task id yet, SSE has already delivered Running.
-  assert.equal(shouldShowTaskNotice(running, ''), true, 'old implementation would flash')
-  state.foregroundTasks['client-A'] = running
-  state.syncForegroundTaskNotice('client-A', running)
-  assert.equal(notices(state).length, 0)
-  resolvePost({ task_id: running.task_id })
-  await inFlight
-  assert.equal(notices(state).length, 0)
-  assert.equal(state.activeTaskIds['client-A'], running.task_id)
-  assert.deepEqual(state.pendingTerminalSubmissions, {})
+test('Running SSE before Terminal POST returns cannot insert an entry notice', async () => {
+  let resolve
+  const page = fixture(() => new Promise(done => { resolve = done }))
+  page.enter()
+  const send = sendCommand(() => Promise.resolve({ task_id: task.task_id }), page)
+  const request = send()
+  page.applyForegroundTaskUpdate('A', task)
+  await request
+  assert.equal(page.activeTaskIds.A, task.task_id)
+  assert.equal(page.foregroundTasks.A.state, 'Running')
+  assert.equal(notices(page).length, 0)
+  resolve(task)
+  await Promise.resolve()
+  assert.equal(notices(page).length, 0)
 })
 
-test('refresh with a Running task displays the yellow notice immediately, even with reused tab ID', () => {
-  const state = makeApp() // no in-memory pending submission after page reload
-  state.foregroundTasks['client-A'] = running
-  state.syncForegroundTaskNotice('client-A', running)
-  assert.equal(notices(state).length, 1)
-  assert.equal(notices(state)[0].text, '[!] Client is running a task.')
-  assert.equal(notices(state)[0].meta.foregroundTaskKey, 'job-23:13:2026-10-29T00:00:00Z')
+test('command_complete before Server Idle never flashes yellow on local task-id removal', async () => {
+  const page = fixture(async () => ({ state: 'Idle' }))
+  page.enter()
+  await Promise.resolve()
+  page.applyForegroundTaskUpdate('A', task)
+  page.activeTaskIds.A = task.task_id
+  delete page.activeTaskIds.A // command_complete clears it before Idle arrives
+  page.syncForegroundTaskNotice('A', task)
+  assert.equal(notices(page).length, 0)
+  page.applyForegroundTaskUpdate('A', { state: 'Idle' })
+  assert.equal(notices(page).length, 0)
 })
 
-test('a different tab with the same command is never hidden during our local submission', () => {
-  const state = makeApp()
-  state.startTerminalSubmission('client-A', running.command)
-  state.syncForegroundTaskNotice('client-A', { ...running, tab_id: 'tab-B' })
-  assert.equal(notices(state).length, 1)
+test('pointer/keyboard interaction closes an outstanding initial snapshot gate', async () => {
+  let resolve
+  const page = fixture(() => new Promise(done => { resolve = done }))
+  page.enter()
+  page.closePendingTaskNoticeEntry()
+  resolve(task)
+  await Promise.resolve()
+  await Promise.resolve()
+  assert.equal(page.foregroundNoticeEntries.A.status, 'closed')
+  assert.equal(notices(page).length, 0)
+  assert.match(source, /@pointerdown\.capture="closePendingTaskNoticeEntry\(\)"/)
+  assert.match(source, /@keydown\.capture="closePendingTaskNoticeEntry\(\)"/)
 })
 
-test('same-tab but different command, source or missing ownership remain visible', () => {
-  for (const patch of [
-    { command: 'shell sleep 6' }, { source: 'cli' }, { tab_id: '' }, { task_id: '' },
-  ]) {
-    const state = makeApp()
-    state.startTerminalSubmission('client-A', running.command)
-    state.syncForegroundTaskNotice('client-A', { ...running, ...patch })
-    assert.equal(notices(state).length, 1, JSON.stringify(patch))
-  }
-})
-
-test('failed POST immediately restores the warning if the task really is running', async () => {
-  const state = makeApp()
-  const send = makeSendCommand(() => Promise.reject(new Error('HTTP failed')), state)
-  state.foregroundTasks['client-A'] = running
-  await send()
-  assert.equal(notices(state).length, 1)
-  assert.deepEqual(state.pendingTerminalSubmissions, {})
-})
-
-test('Idle arriving ahead of POST response is not reclassified as Running after completion', async () => {
-  let resolvePost
-  const state = makeApp()
-  const send = makeSendCommand(() => new Promise(resolve => { resolvePost = resolve }), state)
-  const inFlight = send()
-  state.syncForegroundTaskNotice('client-A', running)
-  state.foregroundTasks['client-A'] = { state: 'Idle' }
-  state.syncForegroundTaskNotice('client-A', { state: 'Idle' })
-  resolvePost({ task_id: running.task_id })
-  await inFlight
-  assert.equal(notices(state).length, 0)
-})
-
-test('pending command of another client does not suppress current client notice', () => {
-  const state = makeApp()
-  state.startTerminalSubmission('client-B', running.command)
-  state.syncForegroundTaskNotice('client-A', running)
-  assert.equal(notices(state).length, 1)
-})
-
-test('new terminal submission returns to the latest output; dialog-only submission does not', () => {
-  const state = makeApp()
-  state.startTerminalSubmission('client-A', 'pyexec_stream print(1)')
-  assert.deepEqual(state.followJumps, [true])
-  assert.deepEqual(state.pendingTerminalSubmissions['client-A'], { command: 'pyexec_stream print(1)' })
-
-  state.startTerminalSubmission('client-A', 'view json', false)
-  assert.deepEqual(state.followJumps, [true], 'dialog-only execution must not scroll Terminal')
-
-  state.startTerminalSubmission('client-B', 'another client')
-  assert.deepEqual(state.followJumps, [true], 'other client must not scroll current Terminal')
+test('Terminal submission retains follow-tail behavior without pending-command string matching', () => {
+  const page = fixture()
+  page.startTerminalSubmission('A', 'shell sleep 10')
+  page.startTerminalSubmission('A', 'view json', false)
+  page.startTerminalSubmission('B', 'other client')
+  assert.deepEqual(page.scrollCalls, [true])
+  assert.doesNotMatch(source, /pendingTerminalSubmissions|finishTerminalSubmission/)
+  assert.doesNotMatch(inputSource, /terminal-submission-finish/)
 })

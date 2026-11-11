@@ -10,6 +10,9 @@ import {
     isTerminalCommandFinishedText,
 } from './terminalMarkers.js';
 
+// Entry-only task warnings are UI state, not durable Terminal history.
+const isTransientTaskNotice = line => line?.meta?.foregroundTaskNotice === true
+
 export default {
     data() {
         return {
@@ -315,9 +318,12 @@ export default {
                     const parts = added.flatMap(line => splitLongTerminalLine(line));
                     added.splice(0, added.length, ...parts);
                 }
-                if (inputMeta.foregroundTaskNotice || inputMeta.clientRevisionNotice) {
-                    const noticeType = inputMeta.foregroundTaskNotice ? 'foreground' : 'revision';
-                    this.setTerminalNotice(clientId, noticeType, added[added.length - 1] || null);
+                if (inputMeta.foregroundTaskNotice) {
+                    this.setTerminalNotice(clientId, 'foreground', added[added.length - 1] || null);
+                    return;
+                }
+                if (inputMeta.clientRevisionNotice) {
+                    this.setTerminalNotice(clientId, 'revision', added[added.length - 1] || null);
                     this.outputs[clientId].push(...added);
                     return;
                 }
@@ -436,7 +442,8 @@ export default {
                 await store.database();
                 this._terminalHistory = store;
                 for (const [clientId, lines] of Object.entries(this.outputs)) {
-                    if (lines.length) store.append(clientId, lines);
+                    const durable = lines.filter(line => !isTransientTaskNotice(line));
+                    if (durable.length) store.append(clientId, durable);
                 }
                 await this.restoreTerminalViewport(this.selectedId);
             } catch (error) {
@@ -456,8 +463,8 @@ export default {
                 const recent = await this._terminalHistory.readBefore(id, Infinity,
                     TERMINAL_HISTORY.initialLines, TERMINAL_HISTORY.initialBytes);
                 if (generation !== this._terminalViewGeneration || id !== this.selectedId) return;
-                this.outputs[id] = trimTerminalWindow([...recent,
-                    ...Object.values(this.terminalNotices?.[id] || {})], 'newer', TERMINAL_HISTORY);
+                this.outputs[id] = trimTerminalWindow(recent.filter(line => !isTransientTaskNotice(line)),
+                    'newer', TERMINAL_HISTORY);
                 view.follow = follow;
                 view.hasOlder = (recent[0]?.__terminalSeq || 0) > 0;
                 view.hasNewer = false;
@@ -478,8 +485,8 @@ export default {
                 (direction === 'newer' && !view.hasNewer)) return;
             if (direction !== 'older' && direction !== 'newer') return;
             const old = this.outputs[id] || [];
-            const historyRows = old.filter(line => Number.isSafeInteger(line?.__terminalSeq));
-            const notices = old.filter(line => line?.meta?.foregroundTaskNotice || line?.meta?.clientRevisionNotice);
+            const historyRows = old.filter(line => Number.isSafeInteger(line?.__terminalSeq) && !isTransientTaskNotice(line));
+            const notices = old.filter(line => line?.meta?.clientRevisionNotice);
             const cursor = direction === 'older'
                 ? historyRows[0]?.__terminalSeq : historyRows[historyRows.length - 1]?.__terminalSeq;
             if (cursor === undefined) return;
@@ -489,9 +496,10 @@ export default {
             try {
                 // Reaching the top of the *rendered window* is ordinary pagination.
                 // Never interpret it as a request to jump to the first stored record.
-                const next = direction === 'older'
+                const next = (direction === 'older'
                     ? await this._terminalHistory.readBefore(id, cursor, TERMINAL_HISTORY.loadLines, TERMINAL_HISTORY.loadBytes)
-                    : await this._terminalHistory.readAfter(id, cursor, TERMINAL_HISTORY.loadLines, TERMINAL_HISTORY.loadBytes);
+                    : await this._terminalHistory.readAfter(id, cursor, TERMINAL_HISTORY.loadLines, TERMINAL_HISTORY.loadBytes))
+                    .filter(line => !isTransientTaskNotice(line));
                 if (id !== this.selectedId || this.outputs[id] !== old) return;
                 // Resolve the saved tail before touching the visible window. Awaiting an
                 // IndexedDB request after the Vue state change lets the browser paint the
@@ -547,9 +555,10 @@ export default {
             const id = String(clientId || this.selectedId || '').trim();
             if (this._terminalHistory) {
                 const history = await this._terminalHistory.readAll(id);
-                return [...history, ...Object.values(this.terminalNotices?.[id] || {})];
+                return [...history.filter(line => !isTransientTaskNotice(line)),
+                    ...Object.values(this.terminalNotices?.[id] || {}).filter(line => !isTransientTaskNotice(line))];
             }
-            return this.outputs[id] || [];
+            return (this.outputs[id] || []).filter(line => !isTransientTaskNotice(line));
         },
 
         async purgeTerminalHistory() {
@@ -612,7 +621,7 @@ export default {
         currentOutputLines() {
             const clientId = this.selectedId;
             const notices = Object.values(this.terminalNotices?.[clientId] || {});
-            const rendered = this.outputs[clientId] || [];
+            const rendered = (this.outputs[clientId] || []).filter(line => !isTransientTaskNotice(line));
             return [...rendered, ...notices.filter(line =>
                 !rendered.some(item => item?.meta?.foregroundTaskNotice === line?.meta?.foregroundTaskNotice &&
                     item?.meta?.clientRevisionNotice === line?.meta?.clientRevisionNotice &&

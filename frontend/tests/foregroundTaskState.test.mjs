@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
-import { normalizeForegroundTask, shouldShowTaskNotice, formatTaskTime } from '../src/utils/foregroundTask.js'
+import { normalizeForegroundTask, foregroundTaskNoticeKey, shouldShowTaskNotice, formatTaskTime } from '../src/utils/foregroundTask.js'
 import { resolveConnectionContextValue, CONNECTION_CONTEXT_FIELD_CATALOG } from '../src/data/connectionContextFields.js'
 
 test('task state normalizes Idle, Running, Cancelling for refresh', () => {
@@ -11,12 +11,14 @@ test('task state normalizes Idle, Running, Cancelling for refresh', () => {
   assert.equal(normalizeForegroundTask({ state: 'Cancelling' }).state, 'Cancelling')
 })
 
-test('other tab and refreshed tab show task notice; own active tab does not', () => {
+test('a notice is visible only for the task admitted by the first entry snapshot', () => {
   const running = { state: 'Running', task_id: 'abc' }
-  assert.equal(shouldShowTaskNotice(running, ''), true)
-  assert.equal(shouldShowTaskNotice(running, 'different'), true)
-  assert.equal(shouldShowTaskNotice(running, 'abc'), false)
-  assert.equal(shouldShowTaskNotice({ state: 'Idle' }, ''), false)
+  assert.equal(foregroundTaskNoticeKey(running), 'task:abc')
+  assert.equal(shouldShowTaskNotice(running, ''), false)
+  assert.equal(shouldShowTaskNotice(running, 'task:different'), false)
+  assert.equal(shouldShowTaskNotice(running, 'task:abc'), true)
+  assert.equal(shouldShowTaskNotice({ ...running, state: 'Cancelling' }, 'task:abc'), true)
+  assert.equal(shouldShowTaskNotice({ state: 'Idle' }, 'task:abc'), false)
 })
 
 test('Task is a Connection Context option with the same status', () => {
@@ -53,7 +55,8 @@ test('task notice uses existing Terminal warning line and inline Details, never 
   const terminal = readFileSync(new URL('../src/components/TerminalOutput.vue', import.meta.url), 'utf8')
   assert.doesNotMatch(app, /class="task-running-notice"/)
   assert.doesNotMatch(app, /\.task-running-notice\s*\{/)
-  assert.match(app, /this\.appendOutput\(clientId,[\s\S]*?foregroundTaskNotice: true/)
+  assert.match(app, /this\.setTerminalNotice\(clientId, 'foreground', this\.buildTerminalOutputLine\(/)
+  assert.doesNotMatch(app, /this\.appendOutput\(clientId,[\s\S]*?foregroundTaskNotice: true/)
   assert.match(app, /this\.outputs\[clientId\] = lines\.filter\(line => line\?\.meta\?\.foregroundTaskNotice !== true\)/)
   assert.match(app, /@open-task-details="openForegroundTaskDetails"/)
   assert.match(terminal, /entry\.line\?\.meta\?\.foregroundTaskNotice/)

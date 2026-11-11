@@ -1,5 +1,5 @@
 <template>
-  <div class="app">
+  <div class="app" @pointerdown.capture="closePendingTaskNoticeEntry()" @keydown.capture="closePendingTaskNoticeEntry()">
     <header class="banner">
       <div class="banner-left">
         <div class="banner-title">Remote Control Hub</div>
@@ -198,7 +198,6 @@
   @set-active-task="setActiveTask"
   @check-task-state="refreshForegroundTask"
   @terminal-submission-start="startTerminalSubmission"
-  @terminal-submission-finish="finishTerminalSubmission"
   @clear-output="clearOutput"
   @edit-remote-file="editRemoteFile"
 />
@@ -618,7 +617,7 @@ import { markRaw } from 'vue'
 import { scheduleIdleWarmup } from './utils/idleWarmup.js'
 import { getConnectionTask } from './api/connectionsApi.js'
 import { cancelTask } from './api/tasksApi.js'
-import { normalizeForegroundTask, shouldShowTaskNotice, formatTaskTime } from './utils/foregroundTask.js'
+import { normalizeForegroundTask, foregroundTaskNoticeKey, shouldShowTaskNotice, formatTaskTime } from './utils/foregroundTask.js'
 
 import { ArrowDown, ArrowUp, Bell, Grid, Sort, User } from '@element-plus/icons-vue'
 
@@ -713,7 +712,7 @@ export default {
       statusNowTick: Date.now(),
       statusTickTimer: null,
       foregroundTasks: {},
-      pendingTerminalSubmissions: {},
+      foregroundNoticeEntries: {},
       foregroundQuerySequence: 0,
       taskDialogVisible: false,
       taskCancelSending: false,
@@ -756,8 +755,8 @@ export default {
       return this.foregroundTasks[this.selectedId] || { state: 'Idle' }
     },
     showCurrentTaskNotice() {
-      return shouldShowTaskNotice(this.currentForegroundTask, this.currentActiveTaskId,
-        this.pendingTerminalSubmissions[this.selectedId], this.tabId)
+      return shouldShowTaskNotice(this.currentForegroundTask,
+        this.foregroundNoticeEntries[this.selectedId]?.taskKey)
     },
     currentTaskDetails() {
       const task = this.currentForegroundTask
@@ -794,11 +793,14 @@ export default {
       if (this._terminalHistory) void this.restoreTerminalViewport(this.selectedId)
       this.foregroundQuerySequence += 1
       this.taskDialogVisible = false
-      void this.refreshForegroundTask()
-    },
-    currentActiveTaskId() {
       const clientId = String(this.selectedId || '').trim()
-      if (clientId) this.syncForegroundTaskNotice(clientId, this.currentForegroundTask)
+      const firstEntry = !!clientId && !Object.hasOwn(this.foregroundNoticeEntries, clientId)
+      if (firstEntry) {
+        this.foregroundNoticeEntries = {
+          ...this.foregroundNoticeEntries, [clientId]: { status: 'pending', taskKey: '' },
+        }
+      }
+      void this.refreshForegroundTask()
     },
   },
 
@@ -831,56 +833,76 @@ export default {
       if (this.showCurrentTaskNotice) this.taskDialogVisible = true
     },
 
-    startTerminalSubmission(clientId, command, echoToTerminal = true) {
+    closePendingTaskNoticeEntry(clientId = this.selectedId) {
+      const id = String(clientId || '').trim()
+      if (this.foregroundNoticeEntries[id]?.status !== 'pending') return
+      // Once the page is interactive, a newly observed task is not an entry-time task.
+      this.foregroundNoticeEntries = {
+        ...this.foregroundNoticeEntries, [id]: { status: 'closed', taskKey: '' },
+      }
+    },
+
+    startTerminalSubmission(clientId, _command, echoToTerminal = true) {
       const id = String(clientId || '').trim()
       if (!id) return
-      this.pendingTerminalSubmissions = { ...this.pendingTerminalSubmissions, [id]: { command } }
+      this.closePendingTaskNoticeEntry(id)
       // A new terminal command takes the reader back to the live tail. Dialog-only
       // requests must not move the terminal while the user is reading history.
       if (echoToTerminal && id === String(this.selectedId || '')) this.scrollToBottom(true)
     },
 
-    finishTerminalSubmission(clientId) {
-      const id = String(clientId || '').trim()
-      if (!this.pendingTerminalSubmissions[id]) return
-      const next = { ...this.pendingTerminalSubmissions }
-      delete next[id]
-      this.pendingTerminalSubmissions = next
-      this.syncForegroundTaskNotice(id, this.foregroundTasks[id] || { state: 'Idle' })
-    },
-
-    syncForegroundTaskNotice(clientId, task) {
+    syncForegroundTaskNotice(clientId, task, allowCreate = false) {
       this.ensureOutputBucket(clientId)
       const lines = this.outputs[clientId] || []
-      const existing = lines.find(line => line?.meta?.foregroundTaskNotice === true)
-      const visible = shouldShowTaskNotice(task, this.activeTaskIds[clientId] || '',
-        this.pendingTerminalSubmissions[clientId], this.tabId)
-      const noticeKey = `${task?.task_id || ''}:${task?.command_id || ''}:${task?.started_at || ''}`
-      if (visible && existing?.meta?.foregroundTaskKey === noticeKey && existing?.meta?.foregroundTaskState === task.state) return
-      if (existing) {
+      // Task notices are transient overlays, never Terminal output/history rows.
+      // Remove any preexisting in-memory warning rows before checking the current notice.
+      if (lines.some(line => line?.meta?.foregroundTaskNotice === true)) {
         this.outputs[clientId] = lines.filter(line => line?.meta?.foregroundTaskNotice !== true)
-        this.setTerminalNotice?.(clientId, 'foreground', null)
       }
+      const entry = this.foregroundNoticeEntries[clientId]
+      const visible = shouldShowTaskNotice(task, entry?.taskKey)
+      const noticeKey = foregroundTaskNoticeKey(task)
+      const current = this.getTerminalNotice(clientId, 'foreground')
+      if (visible && !current && !allowCreate) return
+      if (visible && current?.meta?.foregroundTaskKey === noticeKey && current?.meta?.foregroundTaskState === task.state) return
+      if (current) this.setTerminalNotice(clientId, 'foreground', null)
       if (visible) {
-        this.appendOutput(clientId,
+        this.setTerminalNotice(clientId, 'foreground', this.buildTerminalOutputLine(
           task.state === 'Cancelling' ? '[!] Task cancellation requested.' : '[!] Client is running a task.',
-          'warning', { foregroundTaskNotice: true, foregroundTaskKey: noticeKey, foregroundTaskState: task.state })
+          'warning', { foregroundTaskNotice: true, foregroundTaskKey: noticeKey, foregroundTaskState: task.state }))
       }
     },
 
-    applyForegroundTaskUpdate(clientId, payload) {
+    applyForegroundTaskUpdate(clientId, payload, fromSnapshot = false) {
       const id = String(clientId || '').trim()
       if (!id) return
       // Only this client's SSE can supersede its in-flight snapshot request.
       if (id === this.selectedId) this.foregroundQuerySequence += 1
       const task = normalizeForegroundTask(payload)
+      const entry = this.foregroundNoticeEntries[id]
+      let admittedNow = false
+      if (entry?.status === 'pending') {
+        // Only the first authoritative entry snapshot may create a notice. Any
+        // preceding SSE or local interaction closes the gate for this page.
+        const taskKey = fromSnapshot ? foregroundTaskNoticeKey(task) : ''
+        admittedNow = !!taskKey
+        this.foregroundNoticeEntries = {
+          ...this.foregroundNoticeEntries,
+          [id]: { status: taskKey ? 'active' : 'closed', taskKey },
+        }
+      } else if (entry?.status === 'active' && !shouldShowTaskNotice(task, entry.taskKey)) {
+        // Idle or another task permanently retires the admitted task notice.
+        this.foregroundNoticeEntries = {
+          ...this.foregroundNoticeEntries, [id]: { status: 'closed', taskKey: '' },
+        }
+      }
       this.foregroundTasks = { ...this.foregroundTasks, [id]: task }
       // The task slot is authoritative; a missing completion event must not leave Run disabled.
       // Never clear a different task while an actual server task is still active.
       if (task.state === 'Idle' && this.activeTaskIds[id]) {
         void this.recoverFinishedTask(id, this.activeTaskIds[id])
       }
-      this.syncForegroundTaskNotice(id, task)
+      this.syncForegroundTaskNotice(id, task, admittedNow)
     },
 
     async refreshForegroundTask() {
@@ -894,9 +916,10 @@ export default {
       try {
         const nextTask = normalizeForegroundTask(await getConnectionTask(clientId))
         if (this.selectedId !== clientId || sequence !== this.foregroundQuerySequence) return
-        this.applyForegroundTaskUpdate(clientId, nextTask)
+        this.applyForegroundTaskUpdate(clientId, nextTask, true)
       } catch (_error) {
         // A temporary status request failure must not invent an Idle transition.
+        this.closePendingTaskNoticeEntry(clientId)
       }
     },
 
