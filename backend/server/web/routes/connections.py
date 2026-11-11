@@ -52,7 +52,10 @@ def create_connections_blueprint(server_instance):
         return responder.json_endpoint(
             lambda: connection_api.get_machine_connection_history(
                 machine_id, limit=request.args.get('limit', 20), offset=request.args.get('offset', 0),
-                client_id_search=request.args.get('client_id_search', '')),
+                client_id_search=request.args.get('client_id_search', ''),
+                integrity=request.args.get('integrity', ''),
+                launch_mode=request.args.get('launch_mode', ''),
+                termination_reason=request.args.get('termination_reason', '')),
             default_error_status=500,
         )
 

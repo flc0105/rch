@@ -69,7 +69,7 @@
 | `disconnected_at`、`disconnected_at_ms` | 断开时间及其毫秒表示；未断开时为空文本和零值。 |
 | `last_seen_at` | 连接最后一次心跳或响应时间。 |
 | `duration_ms` | 连接记录的持续时长，在线会话查询时由当前 UTC 时间更新。 |
-| `termination_reason` | 连接结束原因，用于 Connection History 的 Termination 详情；空值表示未记录到明确原因。 |
+| `termination_reason` | 连接结束原因，用于 Connection History 的 Termination 详情；在线时为空，离线但无法确认具体原因时为 `unexpected_disconnect`。 |
 | `termination_detail` | 结束时的结构化详情对象（JSON 文本），可包含操作命令 `command`、异常摘要 `summary` 和 `traceback`。 |
 | `snapshot` | 连接期间的主机地址、四个 Listener 属性、OS 名称/版本、进程、构建与启动信息快照（JSON 文本）。字段只保留当前历史与关联服务使用的数据。 |
 

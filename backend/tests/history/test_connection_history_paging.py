@@ -132,3 +132,120 @@ def test_connection_history_service_returns_explicit_activity_counts(tmp_path):
     assert not {'command_count', 'unassigned_command_count', 'tracking_started_at', 'next_offset', 'schema_version'} & result.keys()
     assert not {'commands', 'command_count', 'connection_state', 'schema_version'} & result['sessions'][0].keys()
     db.close_thread_connection()
+
+
+def test_server_filters_before_pagination_and_dropdown_options_cover_all_history(tmp_path):
+    """Two matching rows in a 103-row machine do not imply another filtered page."""
+    import json
+
+    database = RchDatabase(str(tmp_path / 'rch.db'))
+    store = ConnectionHistoryStore(database)
+    conn = database.connection()
+    for index in range(103):
+        special = index in (3, 6)  # Outside the latest 20 rows.
+        values = {
+            'integrity': 'High' if special else ('Medium' if index % 2 else ''),
+            'launch_mode': 'IDE' if special else 'terminal',
+            'launch_source': 'pycharm' if index == 3 else 'vscode',
+        }
+        conn.execute(
+            '''INSERT INTO connection_sessions(
+                machine_id, client_id, connected_at, connected_at_ms,
+                disconnected_at, disconnected_at_ms, last_seen_at, duration_ms,
+                termination_reason, termination_detail, snapshot
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+            ('M', f'node_{index:03}', '2026-11-11T00:00:00+00:00', index,
+             '2026-11-11T00:01:00+00:00', index + 1, '2026-11-11T00:01:00+00:00', 60000,
+             'timeout' if special else ('client_exit' if index % 2 else ''), '{}', json.dumps(values)),
+        )
+    result = store.get_history('M', integrity='HIGH', launch_mode='ide', termination_reason='TIMEOUT')
+    assert [row['client_id'] for row in result['sessions']] == ['node_006', 'node_003']
+    assert not result['has_more']
+    assert result['connection_count'] == 103
+    assert result['filter_options']['integrity'] == ['high', 'medium', 'unknown']
+    assert result['filter_options']['launch_mode'] == ['ide', 'terminal']
+    assert 'timeout' in result['filter_options']['termination_reason']
+    assert 'unknown' in result['filter_options']['termination_reason']
+    assert not store.get_history('M', client_id_search='node_06', integrity='high')['sessions']
+    assert [row['client_id'] for row in store.get_history('M', client_id_search='NODE_00', integrity='high')['sessions']] == ['node_006', 'node_003']
+    assert [row['client_id'] for row in store.get_history('M', integrity='unknown', termination_reason='unknown')['sessions']]
+    assert store.get_history('M', integrity="x' OR 1=1 --")['sessions'] == []
+    database.close_thread_connection()
+
+
+def test_server_filtered_pages_have_true_has_more_until_last_match(tmp_path):
+    database = RchDatabase(str(tmp_path / 'rch.db'))
+    store = ConnectionHistoryStore(database)
+    for i in range(55):
+        store.record_connected({
+            'machine_id': 'M', 'client_id': f'n{i:03}',
+            'connected_at': f'2026-11-11T10:00:{i:02}+00:00',
+            'integrity': 'High' if i % 2 == 0 else 'Low',
+            'launch_mode': 'terminal',
+        })
+    first = store.get_history('M', integrity='high')
+    assert len(first['sessions']) == 20
+    assert first['has_more'] is True
+    second = store.get_history('M', integrity='high', offset=20)
+    assert len(second['sessions']) == 8
+    assert second['has_more'] is False
+    assert not store.get_history('M', integrity='high', offset=28)['sessions']
+    database.close_thread_connection()
+
+
+def test_connection_service_preserves_machine_totals_when_search_and_filters_are_combined(tmp_path):
+    from types import SimpleNamespace
+    from server.application.connection.connection_service import WebConnectionService
+
+    database = RchDatabase(str(tmp_path / 'rch.db'))
+    store = ConnectionHistoryStore(database)
+    for client_id, integrity, mode, reason in [
+        ('node_A', 'High', 'IDE', 'timeout'),
+        ('node_B', 'Low', 'terminal', 'client_exit'),
+        ('other_C', 'High', 'IDE', 'timeout'),
+    ]:
+        item = {'machine_id': 'machine-test', 'client_id': client_id,
+                'connected_at': '2026-11-11T10:00:00+00:00',
+                'integrity': integrity, 'launch_mode': mode}
+        store.record_connected(item)
+        store.record_disconnected({**item, 'disconnected_at': '2026-11-11T10:01:00+00:00'},
+                                  termination_reason=reason)
+
+    class ActivityView:
+        def get_connection_command_counts_by_machine_id(self, machine_id, client_ids):
+            assert machine_id == 'machine-test'
+            assert client_ids == ['node_A']
+            return {'node_A': 2}
+
+        def get_connection_command_totals(self, machine_id):
+            return {'total': 25, 'unassigned': 3}
+
+    server = SimpleNamespace(connections=SimpleNamespace(all=lambda: []),
+                             command_history=SimpleNamespace(view_service=ActivityView()))
+    service = WebConnectionService(server, None, None, connection_history_store=store)
+    result = service.get_machine_connection_history(
+        'machine-test', client_id_search='NODE_', integrity='high',
+        launch_mode='ide', termination_reason='timeout',
+    )
+    assert [item['client_id'] for item in result['sessions']] == ['node_A']
+    assert result['sessions'][0]['activity_count'] == 2
+    assert result['has_more'] is False
+    assert result['connection_count'] == 3
+    assert result['activity_count'] == 25
+    assert result['unassigned_activity_count'] == 3
+    assert result['filter_options']['integrity'] == ['high', 'low']
+    database.close_thread_connection()
+
+
+def test_invalid_snapshot_is_treated_as_unknown_for_filtering(tmp_path):
+    database = RchDatabase(str(tmp_path / 'rch.db'))
+    store = ConnectionHistoryStore(database)
+    store.record_connected({'machine_id': 'M', 'client_id': 'corrupt'})
+    database.connection().execute(
+        "UPDATE connection_sessions SET snapshot = 'not-json' WHERE client_id = 'corrupt'"
+    )
+    page = store.get_history('M', integrity='unknown', launch_mode='unknown')
+    assert [row['client_id'] for row in page['sessions']] == ['corrupt']
+    assert page['filter_options']['integrity'] == ['unknown']
+    assert not page['has_more']
+    database.close_thread_connection()

@@ -10,13 +10,15 @@ function component(path, injected = {}) {
   assert.ok(script)
   const body = script.replace(/^import\s+[\s\S]*?\s+from\s+['"][^'"]+['"]\s*;?\s*$/gm, '')
     .replace('export default {', 'const options = {') + '\nglobalThis.options = options'
-  const context = { ...injected }
+  const context = { clearTimeout, setTimeout, ...injected }
   vm.runInNewContext(body, context)
   return { template, options: context.options }
 }
 function makeDialog(options) {
   const instance = Object.assign({}, options.data(), options.methods, { machineId: 'M' })
-  Object.defineProperty(instance, 'sessions', { get() { return options.computed.sessions.call(instance) } })
+  for (const [name, fn] of Object.entries(options.computed)) {
+    Object.defineProperty(instance, name, { get() { return fn.call(instance) } })
+  }
   return instance
 }
 function deferred() {
@@ -139,4 +141,40 @@ test('detail Activity Load More is the final row inside the scrollable table', (
   assert.deepEqual(Array.from(dialog.activityTableSpanMethod({row: tableRows[10], columnIndex: 0})), [1, 4])
   assert.deepEqual(Array.from(dialog.activityTableSpanMethod({row: tableRows[10], columnIndex: 1})), [0, 0])
   assert.equal(dialog.activityTableRows({...row, command_has_more: false}).length, 10)
+})
+
+test('an Activity page from another machine never attaches to a reused Client ID', async () => {
+  const pending = deferred()
+  const { options } = component('../src/components/MachineConnectionHistoryDialog.vue', {
+    getMachineConnectionCommands: async () => pending.promise,
+    ElMessage: { error(message) { throw Error(message) } },
+  })
+  const dialog = makeDialog(options)
+  dialog.history = { sessions: [{ client_id: 'same', activity_count: 1, command_loading: false }] }
+  const fetching = dialog.loadSessionCommands(dialog.sessions[0])
+  dialog.machineId = 'M2'
+  dialog.history = { sessions: [{ client_id: 'same', activity_count: 1, command_loading: false }] }
+  pending.resolve({ items: [{ activity_id: 'from-M' }], has_more: true, next_cursor: 'more' })
+  await fetching
+  assert.equal(dialog.sessions[0].commands, undefined)
+  assert.equal(dialog.sessions[0].command_loading, false)
+})
+
+test('Activity Load More cannot replay the first page without a usable cursor', async () => {
+  const calls = []
+  const { options } = component('../src/components/MachineConnectionHistoryDialog.vue', {
+    getMachineConnectionCommands: async (_, __, query) => {
+      calls.push(query)
+      return { items: [{ activity_id: 'one' }], has_more: true, next_cursor: '' }
+    },
+    ElMessage: { error(message) { throw Error(message) } },
+  })
+  const dialog = makeDialog(options)
+  dialog.history = { sessions: [{ client_id: 'X', activity_count: 1, command_loading: false }] }
+  const row = dialog.sessions[0]
+  await dialog.loadSessionCommands(row)
+  assert.equal(row.command_has_more, false)
+  assert.equal(dialog.activityTableRows(row).length, 1)
+  await dialog.loadSessionCommands(row, true)
+  assert.equal(calls.length, 1)
 })

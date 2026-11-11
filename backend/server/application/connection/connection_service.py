@@ -308,7 +308,11 @@ class WebConnectionService:
         recent_offline = self._build_recent_offline_entries(active_connections)
         return active_connections + recent_offline
 
-    def get_machine_connection_history(self, machine_id: str, *, limit: int = 20, offset: int = 0, client_id_search: str = '') -> dict:
+    def get_machine_connection_history(
+        self, machine_id: str, *, limit: int = 20, offset: int = 0,
+        client_id_search: str = '', integrity: str = '', launch_mode: str = '',
+        termination_reason: str = '',
+    ) -> dict:
         machine_id_text = str(machine_id or '').strip()
         if not machine_id_text:
             raise ValueError('Invalid machine id')
@@ -327,12 +331,16 @@ class WebConnectionService:
                 self.connection_history_store.record_heartbeat(self.serialize_connection(session))
 
             self.connection_history_store.reconcile_active_sessions(machine_id_text, active_client_ids)
-            lifecycle_payload = self.connection_history_store.get_history(machine_id_text, limit=limit, offset=offset, client_id_search=client_id_search)
+            lifecycle_payload = self.connection_history_store.get_history(
+                machine_id_text, limit=limit, offset=offset, client_id_search=client_id_search,
+                integrity=integrity, launch_mode=launch_mode, termination_reason=termination_reason,
+            )
         else:
             lifecycle_payload = {
                 'machine_id': machine_id_text,
                 'sessions': [], 'connection_count': 0, 'online_connection_count': 0,
                 'total_online_duration_ms': 0, 'has_more': False,
+                'filter_options': {'integrity': [], 'launch_mode': [], 'termination_reason': []},
             }
 
         view = self.server.command_history.view_service
@@ -359,6 +367,7 @@ class WebConnectionService:
             'unassigned_activity_count': unassigned_activity_count,
             'sessions': sessions,
             'has_more': lifecycle_payload.get('has_more', False),
+            'filter_options': lifecycle_payload.get('filter_options', {}),
         }
 
     def get_machine_connection_commands(

@@ -10,7 +10,7 @@ function optionsFrom(path, globals = {}) {
   assert.ok(script)
   const js = script.replace(/^import\s+[\s\S]*?\s+from\s+['"][^'"]+['"]\s*$/gm, '')
     .replace('export default {', 'const options = {') + '\nglobalThis.options = options'
-  const context = { ...globals }
+  const context = { clearTimeout, setTimeout, ...globals }
   vm.runInNewContext(js, context, { timeout: 1000 })
   return { vue, options: context.options }
 }

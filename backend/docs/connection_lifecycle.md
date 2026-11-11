@@ -173,11 +173,11 @@ RCH 将当前 Session、最近设备和历史会话分别管理：
 
 Connection History 首次只加载 **20 条**连接会话，点击底部 **Load More** 再向 Server 请求下一页 20 条；Server 使用 SQLite `LIMIT 21 OFFSET` 仅读取本页记录并多取 1 条判断是否有下一页，不提前拉取未加载会话的快照。页首总数与时长使用 SQL 聚合保留统计，不读取全部历史行后在内存切片。每条会话展开后的 Activity **每页最多 10 条**，继续点击 Load More 获取后续 10 条。
 
-Connection History 在桌面端以表格展示会话，手机端改为卡片。卡片保留在线/离线状态、Client ID、上线/离线时间、持续时间和 Activity 数量；在线记录的 Offline 时间显示为 `-`。展开 Details 可查看地址、系统名称与版本、Listener 名称、用户、Integrity、进程、启动模式、结束原因及 Activity 记录，并可继续加载后续 Activity。两种布局使用同一会话数据和活动查询。展开详情按需加载 Activity；历史顶部 Refresh 会重新读取会话并保留已展开的 Activity。顶部 Client ID 搜索可匹配整份数据库历史并按页返回结果，顶部统计维持设备整体口径。Filter 可按 Integrity、Launch Mode 类型和 Termination 类型组合过滤桌面表格与手机卡片；Launch Mode 忽略 `launch_source`（如 PyCharm），Termination 忽略 `termination_detail`，筛选只影响本地当前显示的会话，不改变顶部总统计或历史存储。HTTP Control 入队成功时立即显示操作反馈；交付超时、失败以及可选的领取调试信息通过 Notification Center 的 WebSocket 事件显示通知弹窗，统一受 Notification Preferences 的 Watchdog 开关控制。
+Connection History 在桌面端以表格展示会话，手机端改为卡片。卡片保留在线/离线状态、Client ID、上线/离线时间、持续时间和 Activity 数量；在线记录的 Offline 时间显示为 `-`。展开 Details 可查看地址、系统名称与版本、Listener 名称、用户、Integrity、进程、启动模式、结束原因及 Activity 记录，并可继续加载后续 Activity。两种布局使用同一会话数据和活动查询。展开详情按需加载 Activity；历史顶部 Refresh 会重新读取会话并保留已展开的 Activity。顶部 Client ID 搜索与 Integrity、Launch Mode、Termination 三种 Filter 共同在 Server 的 SQLite 查询中匹配完整历史，再按每页 20 条分页；Load More 仅在当前查询确实还有匹配记录时显示。筛选选项从该设备完整历史中生成，不受已加载页限制。Launch Mode 只比较类型，不比较 `launch_source`（如 PyCharm）；Termination 只比较结束原因，不比较 `termination_detail`。顶部统计始终是整台设备的统计，不受搜索和筛选影响。HTTP Control 入队成功时立即显示操作反馈；交付超时、失败以及可选的领取调试信息通过 Notification Center 的 WebSocket 事件显示通知弹窗，统一受 Notification Preferences 的 Watchdog 开关控制。
 
 ### Connection History 的结束原因
 
-Connection History 通过 `disconnected_at` 区分 **Online** / **Offline**：有断开时间的记录统一显示 Offline，异常断开原因继续显示在展开详情的 **Termination**。Server 启动后核对出的旧会话如缺少明确结束事件，`termination_reason` 可能为空。Termination 的 `command`、`summary`、`traceback` 来自 `connection_sessions.termination_detail`。
+Connection History 通过 `disconnected_at` 区分 **Online** / **Offline**：有断开时间的记录统一显示 Offline，异常断开原因继续显示在展开详情的 **Termination**。历史核对发现数据库中仍标记在线、但 Server 当前无对应活动 Client 的记录时，将其结束原因记为 `unexpected_disconnect`；已明确分类的断开原因保持不变。在线会话的 `termination_reason` 为空。Termination 的 `command`、`summary`、`traceback` 来自 `connection_sessions.termination_detail`。
 
 | Termination cause | Connection History 状态 | 采集条件 |
 | --- | --- | --- |

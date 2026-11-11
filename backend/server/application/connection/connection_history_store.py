@@ -168,9 +168,11 @@ class ConnectionHistoryStore:
                 disconnected_at = str(row['last_seen_at'] or row['connected_at'] or self._now_iso()).strip()
                 duration_ms = self._elapsed_ms(row['connected_at'], disconnected_at)
                 conn.execute(
-                    '''UPDATE connection_sessions SET disconnected_at = ?, disconnected_at_ms = ?, duration_ms = ?
+                    '''UPDATE connection_sessions SET disconnected_at = ?, disconnected_at_ms = ?, duration_ms = ?,
+                       termination_reason = ?
                        WHERE machine_id = ? AND client_id = ?''',
-                    (disconnected_at, self._to_ms(disconnected_at), duration_ms, machine_id_text, row['client_id']),
+                    (disconnected_at, self._to_ms(disconnected_at), duration_ms, 'unexpected_disconnect',
+                     machine_id_text, row['client_id']),
                 )
 
     def record_disconnected(self, connection: dict, *, termination_reason: str = '', details: dict = None):
@@ -180,6 +182,7 @@ class ConnectionHistoryStore:
             return
 
         disconnected_at = str(connection.get('disconnected_at') or self._now_iso()).strip()
+        reason = str(termination_reason or '').strip() or 'unexpected_disconnect'
         with self._lock, self.database.transaction() as conn:
             row = conn.execute(
                 'SELECT * FROM connection_sessions WHERE machine_id = ? AND client_id = ?',
@@ -199,7 +202,7 @@ class ConnectionHistoryStore:
             snapshot = self._build_snapshot(connection, json_loads_dict(row['snapshot']))
             duration_ms = self._elapsed_ms(row['connected_at'], disconnected_at)
             last_seen_at = str(connection.get('last_seen_at') or row['last_seen_at'] or '').strip()
-            normal_end = termination_reason in (
+            normal_end = reason in (
                 'server_requested_disconnect', 'client_exit', 'client_restart', 'client_update', 'client_paused'
             )
             termination_detail = {}
@@ -218,12 +221,16 @@ class ConnectionHistoryStore:
                 ''',
                 (
                     disconnected_at, self._to_ms(disconnected_at), last_seen_at, duration_ms,
-                    str(termination_reason or ''), compact_json_dumps(termination_detail),
+                    reason, compact_json_dumps(termination_detail),
                     compact_json_dumps(snapshot or {}), machine_id, client_id,
                 ),
             )
 
-    def get_history(self, machine_id: str, *, limit: int = 20, offset: int = 0, client_id_search: str = '') -> dict:
+    def get_history(
+        self, machine_id: str, *, limit: int = 20, offset: int = 0,
+        client_id_search: str = '', integrity: str = '', launch_mode: str = '',
+        termination_reason: str = '',
+    ) -> dict:
         machine_id_text = str(machine_id or '').strip()
         page_size = min(max(int(limit), 1), 20)
         page_offset = max(int(offset), 0)
@@ -233,6 +240,7 @@ class ConnectionHistoryStore:
                 'connection_count': 0, 'online_connection_count': 0,
                 'total_online_duration_ms': 0,
                 'sessions': [], 'has_more': False,
+                'filter_options': {'integrity': [], 'launch_mode': [], 'termination_reason': []},
             }
 
         with self._lock:
@@ -245,13 +253,44 @@ class ConnectionHistoryStore:
                        SUM(duration_ms) AS total_duration_ms
                 FROM connection_sessions WHERE machine_id = ?
             ''', (machine_id_text,)).fetchone()
+            # Filter and search before LIMIT/OFFSET so has_more describes visible results.
+            # Missing snapshot values use the same `unknown` option as the UI.
+            fields = {
+                'integrity': "CASE WHEN json_valid(snapshot) THEN json_extract(snapshot, '$.integrity') END",
+                'launch_mode': "CASE WHEN json_valid(snapshot) THEN json_extract(snapshot, '$.launch_mode') END",
+                'termination_reason': 'termination_reason',
+            }
+            def value_expression(field):
+                return f"COALESCE(NULLIF(LOWER(TRIM(CAST({fields[field]} AS TEXT))), ''), 'unknown')"
+
+            # The dropdown values cover the entire machine, not only the loaded page.
+            option_rows = conn.execute(
+                'SELECT DISTINCT ' + ', '.join(
+                    f'{value_expression(field)} AS {field}' for field in fields
+                ) + ' FROM connection_sessions WHERE machine_id = ?',
+                (machine_id_text,),
+            ).fetchall()
+            filter_options = {
+                field: sorted({row[field] for row in option_rows}) for field in fields
+            }
+
             search = str(client_id_search or '').strip()
             escaped = search.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
-            query = "SELECT * FROM connection_sessions WHERE machine_id = ?"
+            query = 'SELECT * FROM connection_sessions WHERE machine_id = ?'
             params = [machine_id_text]
             if escaped:
                 query += " AND client_id LIKE ? ESCAPE '\\'"
                 params.append(f'%{escaped}%')
+            selected = {
+                'integrity': integrity,
+                'launch_mode': launch_mode,
+                'termination_reason': termination_reason,
+            }
+            for field, raw_value in selected.items():
+                value = str(raw_value or '').strip().lower()
+                if value:
+                    query += f' AND {value_expression(field)} = ?'
+                    params.append(value)
             query += ' ORDER BY connected_at_ms DESC, client_id DESC LIMIT ? OFFSET ?'
             rows = conn.execute(query, (*params, page_size + 1, page_offset)).fetchall()
             has_more = len(rows) > page_size
@@ -263,4 +302,5 @@ class ConnectionHistoryStore:
                 'total_online_duration_ms': int(totals['total_duration_ms'] or 0),
                 'sessions': [self._row_to_session(row, now_iso=now_iso) for row in rows[:page_size]],
                 'has_more': has_more,
+                'filter_options': filter_options,
             }

@@ -31,15 +31,15 @@
             </template>
             <div class="machine-history-filters">
               <label>Integrity</label>
-              <el-select v-model="filters.integrity" placeholder="All" clearable size="small">
+              <el-select v-model="filters.integrity" placeholder="All" clearable size="small" @change="onFilterChange">
                 <el-option v-for="item in integrityOptions" :key="item.value" :label="item.label" :value="item.value" />
               </el-select>
               <label>Launch Mode</label>
-              <el-select v-model="filters.launchMode" placeholder="All" clearable size="small">
+              <el-select v-model="filters.launchMode" placeholder="All" clearable size="small" @change="onFilterChange">
                 <el-option v-for="item in launchModeOptions" :key="item.value" :label="item.label" :value="item.value" />
               </el-select>
               <label>Termination</label>
-              <el-select v-model="filters.termination" placeholder="All" clearable size="small">
+              <el-select v-model="filters.termination" placeholder="All" clearable size="small" @change="onFilterChange">
                 <el-option v-for="item in terminationOptions" :key="item.value" :label="item.label" :value="item.value" />
               </el-select>
               <el-button size="small" text :disabled="!activeFilterCount" @click="clearFilters">Clear filters</el-button>
@@ -77,9 +77,9 @@
         :title="`${history.unassigned_activity_count} activity record(s) have no client_id and cannot be assigned to a session.`"
       />
 
-      <div v-if="filteredSessions.length" class="machine-history-mobile-list">
+      <div v-if="sessions.length" class="machine-history-mobile-list">
         <article
-          v-for="(row, index) in filteredSessions"
+          v-for="(row, index) in sessions"
           :key="`mobile-${row.client_id}`"
           class="machine-history-mobile-card"
         >
@@ -216,8 +216,8 @@
       </div>
 
       <el-table
-        v-if="filteredSessions.length"
-        :data="filteredSessions"
+        v-if="sessions.length"
+        :data="sessions"
         row-key="client_id"
         :expand-row-keys="expandedSessionIds"
         border
@@ -395,10 +395,10 @@
       </el-table>
 
       <div v-else-if="!loading" class="empty-state machine-history-empty">
-        {{ sessions.length ? 'No connections match the selected filters' : 'No connection history for this machine yet' }}
+        {{ (activeFilterCount || clientSearch.trim()) ? 'No connections match the selected filters' : 'No connection history for this machine yet' }}
       </div>
 
-      <div v-if="history.has_more" class="machine-history-table-load-more">
+      <div v-if="canLoadMoreHistory" class="machine-history-table-load-more">
         <el-button size="small" link :loading="loadingMore" @click="loadMoreHistory">Load More</el-button>
       </div>
 
@@ -420,6 +420,7 @@ export default {
       loading: false,
       loadingMore: false,
       historyRequestSeq: 0,
+      loadedHistoryQueryKey: '',
       machineId: '',
       deviceName: '',
       history: {
@@ -447,6 +448,18 @@ export default {
       return Object.values(this.filters).filter(Boolean).length
     },
 
+    currentHistoryQueryKey() {
+      return JSON.stringify([
+        this.machineId, this.clientSearch.trim(),
+        this.filters.integrity, this.filters.launchMode, this.filters.termination,
+      ])
+    },
+
+    canLoadMoreHistory() {
+      return this.history.has_more === true && !this.loading && !this.loadingMore &&
+        this.loadedHistoryQueryKey === this.currentHistoryQueryKey
+    },
+
     integrityOptions() {
       return this.buildFilterOptions('integrity', value => value[0].toUpperCase() + value.slice(1))
     },
@@ -457,14 +470,6 @@ export default {
 
     terminationOptions() {
       return this.buildFilterOptions('termination_reason', value => this.formatEndReason(value))
-    },
-
-    filteredSessions() {
-      return this.sessions.filter(row =>
-        (!this.filters.integrity || this.filterValue(row.integrity) === this.filters.integrity) &&
-        (!this.filters.launchMode || this.filterValue(row.launch_mode) === this.filters.launchMode) &&
-        (!this.filters.termination || this.filterValue(row.termination_reason) === this.filters.termination)
-      )
     },
   },
 
@@ -486,23 +491,27 @@ export default {
       clearTimeout(this.clientSearchTimer)
       this.clientSearch = ''
       this.historyRequestSeq += 1
+      this.loadedHistoryQueryKey = ''
+      this.history = { sessions: [], has_more: false }
       this.expandedSessionIds = []
       this.mobileExpandedSessionIds = []
-      this.clearFilters()
+      this.filters = { integrity: '', launchMode: '', termination: '' }
       return this.loadHistory()
     },
 
-    filterValue(value) {
-      return String(value || '').trim().toLowerCase() || 'unknown'
-    },
-
     buildFilterOptions(field, labelFor) {
-      const values = new Set(this.sessions.map(row => this.filterValue(row[field])))
-      return [...values].sort().map(value => ({ value, label: labelFor(value) }))
+      return (this.history.filter_options?.[field] || []).map(value => ({ value, label: labelFor(value) }))
     },
 
     clearFilters() {
+      if (!this.activeFilterCount) return
       this.filters = { integrity: '', launchMode: '', termination: '' }
+      return this.onFilterChange()
+    },
+
+    onFilterChange() {
+      clearTimeout(this.clientSearchTimer)
+      return this.loadHistory()
     },
 
     onClientSearchInput() {
@@ -512,7 +521,7 @@ export default {
     },
 
     async loadMoreHistory() {
-      if (!this.history.has_more || this.loading || this.loadingMore) return
+      if (!this.canLoadMoreHistory) return
       return this.loadHistory(true)
     },
 
@@ -522,13 +531,17 @@ export default {
         return
       }
 
+      clearTimeout(this.clientSearchTimer)
       const seq = ++this.historyRequestSeq
+      const queryKey = this.currentHistoryQueryKey
       if (append) this.loadingMore = true
       else this.loading = true
       try {
         const offset = append ? this.sessions.length : 0
         const payload = await getMachineConnectionHistory(this.machineId, {
           limit: 20, offset, clientIdSearch: this.clientSearch,
+          integrity: this.filters.integrity, launchMode: this.filters.launchMode,
+          termination: this.filters.termination,
         })
         if (seq !== this.historyRequestSeq) return
         const previous = new Map(this.sessions.map(row => [row.client_id, row]))
@@ -547,6 +560,7 @@ export default {
           ...(payload || {}),
           sessions: append ? [...this.sessions, ...nextRows] : nextRows,
         }
+        this.loadedHistoryQueryKey = queryKey
         const available = new Set(this.sessions.map(row => row.client_id))
         this.expandedSessionIds = this.expandedSessionIds.filter(id => available.has(id))
         this.mobileExpandedSessionIds = this.mobileExpandedSessionIds.filter(id => available.has(id))
@@ -598,27 +612,34 @@ export default {
 
     async loadSessionCommands(row, append = false) {
       if (!this.machineId || !row?.client_id || row.command_loading) return
+      if (append && (!row.command_has_more || !row.command_next_cursor)) return
 
+      const machineId = this.machineId
       row.command_loading = true
       try {
-        const data = await getMachineConnectionCommands(this.machineId, row.client_id, {
+        const data = await getMachineConnectionCommands(machineId, row.client_id, {
           limit: 10,
           cursor: append ? row.command_next_cursor : '',
         })
 
+        if (this.machineId !== machineId) return
         const current = this.sessions.find(item => item.client_id === row.client_id)
         if (!current) return
 
         const items = Array.isArray(data?.items) ? data.items : []
         current.commands = append ? [...(current.commands || []), ...items] : items
         current.command_next_cursor = String(data?.next_cursor || '')
-        current.command_has_more = data?.has_more === true
+        current.command_has_more = data?.has_more === true && !!current.command_next_cursor
         current.command_loaded = true
       } catch (e) {
-        ElMessage.error(e.message || 'Failed to load connection activities')
+        if (this.machineId === machineId) {
+          ElMessage.error(e.message || 'Failed to load connection activities')
+        }
       } finally {
-        const current = this.sessions.find(item => item.client_id === row.client_id)
-        if (current) current.command_loading = false
+        if (this.machineId === machineId) {
+          const current = this.sessions.find(item => item.client_id === row.client_id)
+          if (current) current.command_loading = false
+        }
       }
     },
 
@@ -626,7 +647,7 @@ export default {
     activityKindLabel(kind) {
       return ({
         command: 'Command', alias: 'Alias', script: 'Script',
-        remote_files: 'Remote Files', transfer: 'Transfer', external_tool: 'External Tool',
+        remote_files: 'Remote Files', transfer: 'Transfer', external_tool: 'External Tool', background_job: 'Background Job',
       })[kind] || 'Activity'
     },
 

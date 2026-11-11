@@ -107,14 +107,34 @@ def test_unrecognized_connection_history_columns_stop_without_rewriting(tmp_path
     assert 'termination_reason' not in columns
     assert 'termination_detail' in columns
 
-def test_reconciled_session_has_offline_time_and_no_reason(tmp_path):
+def test_reconciled_session_has_unexpected_disconnect_reason(tmp_path):
     db, store = _new_store(tmp_path)
     store.reconcile_active_sessions('machine-A', set())
     item = store.get_history('machine-A')['sessions'][0]
     assert item['disconnected_at'] != ''
     assert item['disconnected_at'] != ''
-    assert item['termination_reason'] == ''
+    assert item['termination_reason'] == 'unexpected_disconnect'
     assert item['termination_detail'] == {}
+    db.close_thread_connection()
+
+
+def test_missing_end_reason_is_unexpected_disconnect_but_known_reason_is_preserved(tmp_path):
+    db, store = _new_store(tmp_path)
+    store.record_disconnected(_connection(), termination_reason='  ')
+    item = store.get_history('machine-A')['sessions'][0]
+    assert item['termination_reason'] == 'unexpected_disconnect'
+    store.record_disconnected(_connection(), termination_reason='client_exit')
+    assert store.get_history('machine-A')['sessions'][0]['termination_reason'] == 'unexpected_disconnect'
+    db.close_thread_connection()
+
+
+def test_reconcile_leaves_current_and_already_closed_records_unchanged(tmp_path):
+    db, store = _new_store(tmp_path)
+    store.reconcile_active_sessions('machine-A', {'client-X'})
+    assert store.get_history('machine-A')['sessions'][0]['termination_reason'] == ''
+    store.record_disconnected(_connection(), termination_reason='timeout')
+    store.reconcile_active_sessions('machine-A', set())
+    assert store.get_history('machine-A')['sessions'][0]['termination_reason'] == 'timeout'
     db.close_thread_connection()
 
 
