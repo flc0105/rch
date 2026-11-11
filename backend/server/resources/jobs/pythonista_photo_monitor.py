@@ -21,6 +21,7 @@ import time
 
 from client.jobs.core.job import Job
 from core.utils.formatting import get_size, get_time
+from core.utils.artifact_naming import build_artifact_filename
 from core.utils.logger import logger
 
 
@@ -143,6 +144,7 @@ class PythonistaPhotoMonitor(Job):
             width = getattr(asset, 'pixel_width', None) or getattr(image, 'width', 0)
             height = getattr(asset, 'pixel_height', None) or getattr(image, 'height', 0)
 
+            # Keep the unique local temporary name, expose a short Artifact name.
             base_name = f'photo_{get_time()}_{int(ts)}_{width}x{height}'
             has_alpha = getattr(image, 'mode', '') in ('RGBA', 'LA') or (
                 getattr(image, 'mode', '') == 'P' and 'transparency' in getattr(image, 'info', {})
@@ -166,7 +168,10 @@ class PythonistaPhotoMonitor(Job):
             )
 
             try:
-                self.upload_file_via_http(file_name, 'photo_library_image')
+                self.upload_file_via_http(
+                    file_name, 'job_file',
+                    filename=build_artifact_filename('photo', 'png' if has_alpha else 'jpg'),
+                )
                 self.send_to_server(1, f'Photo uploaded successfully: {file_name}', 0)
                 return True
             finally:

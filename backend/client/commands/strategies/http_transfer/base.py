@@ -117,6 +117,8 @@ class HttpTransferStrategy:
         upload_url: str,
         form_data: dict,
         progress_callback=None,
+        *,
+        filename: str = '',
     ):
         raise NotImplementedError
 

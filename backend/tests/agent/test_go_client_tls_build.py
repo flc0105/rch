@@ -13,7 +13,7 @@ from server.runtime.listener_protocols import get_listener_protocol
 
 def test_go_client_registered_and_tls_listener_allows_it():
     source = Path(__file__).resolve().parents[2] / 'server/application/agent/agent_builder.py'
-    assert "'go': ('server.application.agent.agent_build_client_go'" in source.read_text()
+    assert "AgentBuilderKind.GO.value: ('server.application.agent.agent_build_client_go'" in source.read_text()
     tls = get_listener_protocol('tls_tcp')
     assert 'go' in tls.describe()['supported_builders']
     tls.validate_build('go', 'a' * 64)
@@ -49,7 +49,7 @@ def test_builder_injects_transport_and_fingerprint(tmp_path, monkeypatch, transp
     assert f'var SERVER_TRANSPORT = "{transport}"' in text
     assert f'var SERVER_TLS_FINGERPRINT = "{pin}"' in text
     assert 'var SERVER_ADDR = "test.example:9443"' in text
-    assert result['file_name'].endswith('-mac-arm64-test')
+    assert result['file_name'] == 'rchclient_go_mac_arm64_test'
     assert len(calls) == 1 and calls[0][2:] == ('darwin', 'arm64')
 
 
@@ -86,4 +86,7 @@ def test_agent_build_dispatch_passes_selected_tls_settings(tmp_path, monkeypatch
     assert result['builder'] == 'go'
     assert args['listener_protocol'] == 'tls_tcp'
     assert args['tls_fingerprint'] == 'a' * 64
+    import re
+    assert re.fullmatch(r'\d{8}_\d{6}_[0-9a-f]{8}', args['build_id'])
+    assert result['build_version'] == 'go_' + args['build_id']
     assert (Path(agent.output_dir) / 'client-go-test').is_file()

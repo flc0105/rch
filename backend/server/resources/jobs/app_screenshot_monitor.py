@@ -35,7 +35,8 @@ import time
 import tempfile
 
 from client.jobs.core.job import Job
-from core.utils.formatting import get_time
+from core.utils.artifact_naming import build_artifact_filename
+from core.artifact_contract import ArtifactOrigin
 from core.utils.logger import logger
 
 
@@ -258,9 +259,11 @@ class AppScreenshotMonitor(Job):
                 mode_text = 'Window' if self.mode == 'window' else 'Fullscreen'
                 self.send_to_server(1, f'{mode_text} captured ({file_size} bytes)', 0)
 
-                filename = f'{self.target_app}_screenshot_{get_time()}.png'
-                # self.upload_file_via_http(screenshot_path, f'{self.target_app}_screenshots')
-                self.upload_file_via_http(screenshot_path, f'app_screenshot')
+                filename = build_artifact_filename('screenshot', 'png')
+                self.upload_file_via_http(
+                    screenshot_path, 'app_screenshot', filename=filename,
+                    extra={'origin': ArtifactOrigin.JOB.value},
+                )
 
                 self.screenshot_count += 1
                 self.send_to_server(1, f'Uploaded (total: {self.screenshot_count})', 0)

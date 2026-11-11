@@ -1204,24 +1204,6 @@ export default {
       }
     },
 
-    buildTerminalOutputFilename(block) {
-      const now = new Date()
-      const pad = value => String(value).padStart(2, '0')
-      const timestamp = [
-        now.getFullYear(),
-        pad(now.getMonth() + 1),
-        pad(now.getDate()),
-      ].join('') + '_' + [
-        pad(now.getHours()),
-        pad(now.getMinutes()),
-        pad(now.getSeconds()),
-      ].join('')
-
-      const prefix = this.isTerminalScriptRunBlock(block) ? 'script' : 'cmd'
-      return `${prefix}_${timestamp}.txt`
-    },
-
-
     buildTerminalOutputArtifactExtra(block, options = {}) {
       const sourceCommandId = this.getTerminalBlockSourceCommandId(block)
       const isScript = this.isTerminalScriptRunBlock(block)

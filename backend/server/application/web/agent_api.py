@@ -18,8 +18,9 @@ class WebAgentApi:
     - 提供 Go loader 上报落盘能力
     """
 
-    def __init__(self, agent_builder, agent_output_registry, bootstrap_script_service=None, event_bus=None):
+    def __init__(self, agent_builder, agent_output_registry, bootstrap_script_service=None, event_bus=None, server=None):
         self.agent_builder = agent_builder
+        self.server = server
         self.agent_output_registry = agent_output_registry
         self.bootstrap_script_service = bootstrap_script_service
         self.event_bus = event_bus
@@ -105,15 +106,25 @@ class WebAgentApi:
         return record
 
     def get_built_agent_file_path(self, filename: str):
-        file_path = os.path.join(self.agent_builder.output_dir, os.path.basename(filename))
-        if not os.path.isfile(file_path):
-            raise FileNotFoundError('File not found')
-        return file_path
+        # Only registered build artifacts may be downloaded; the SQLite catalog
+        # lives beside the binaries and must never be served as an Agent output.
+        try:
+            record = self.agent_output_registry.get_output_record(filename)
+        except ValueError as exc:
+            raise FileNotFoundError('File not found') from exc
+        return os.path.join(self.agent_builder.output_dir, record['file_name'])
 
     def list_agent_outputs(self):
         results = []
         for item in self.agent_output_registry.list_outputs():
             copied = dict(item)
+            listener_id = copied.get('listener_id')
+            listener_manager = getattr(self.server, 'listener_manager', None)
+            if listener_id and listener_manager is not None:
+                try:
+                    copied['listener_name'] = listener_manager.get(listener_id)['name']
+                except (ValueError, KeyError):
+                    pass  # Deleted Listener: retain the build-time name snapshot.
             file_name = str(copied.get('file_name') or '').strip()
             copied['download_url'] = f'/api/agent/download/{file_name}' if file_name else ''
             copied['delete_url'] = f'/api/agent/outputs/{file_name}' if file_name else ''

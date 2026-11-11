@@ -113,7 +113,7 @@ def test_sdk_owner_upload_forwards_explicit_folder(monkeypatch, tmp_path):
     monkeypatch.setattr(artifact, 'ClientApiClient', Api)
     artifact.save(str(path), folder='Screenshots')
     assert calls == [{'artifact_type': 'files', 'source_kind': 'script_file',
-                      'folder': 'Screenshots', 'extra': None}]
+                      'folder': 'Screenshots', 'extra': {'origin': 'script'}}]
 
 
 def test_web_upload_resolves_folder_before_persisting(tmp_path):

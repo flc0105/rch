@@ -22,7 +22,8 @@ import time
 import schedule
 
 from client.jobs.core.job import Job
-from core.utils.formatting import get_time
+from core.utils.artifact_naming import build_artifact_filename
+from core.artifact_contract import ArtifactOrigin
 from core.utils.logger import logger
 
 
@@ -47,7 +48,7 @@ class ScheduledScreenshot(Job):
         raise RuntimeError('Unsupported operating system')
 
     def _run_capture_task(self):
-        screenshot_name = f'screenshot_{get_time()}.png'
+        screenshot_name = build_artifact_filename('screenshot', 'png')
         self._capture_screenshot(screenshot_name)
 
         screenshot_path = os.path.abspath(screenshot_name)
@@ -56,7 +57,8 @@ class ScheduledScreenshot(Job):
             return
 
         try:
-            response = self.upload_file_via_http(screenshot_path, 'scheduled_screenshot')
+            response = self.upload_file_via_http(screenshot_path, 'scheduled_screenshot',
+                                                      extra={'origin': ArtifactOrigin.JOB.value})
             self.send_to_server(1, f'Upload result: {response.text}', 0)
         finally:
             try:

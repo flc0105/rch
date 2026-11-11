@@ -1,7 +1,8 @@
 import json
 import os
-import re
 from datetime import datetime
+
+from core.utils.artifact_naming import build_artifact_filename, build_command_name, clean_artifact_label
 
 
 class CommandOutputArtifactService:
@@ -11,15 +12,6 @@ class CommandOutputArtifactService:
     SCRIPT_CATEGORY = 'script_output'
     JOB_CATEGORY = 'job_output'
 
-    OUTPUT_TIME_FORMAT = '%Y%m%d_%H%M%S'
-    SECOND_TOKEN_MAX_LENGTH = 10
-
-    WRAPPER_COMMANDS = {
-        'acmd',
-        'read',
-        'exec',
-        'shell',
-    }
 
     def __init__(self, artifact_service):
         self.artifact_service = artifact_service
@@ -37,103 +29,35 @@ class CommandOutputArtifactService:
             raise ValueError('output_format must be text or json')
         return normalized
 
-    def _get_prefix(self, category: str) -> str:
-        normalized_category = self._normalize_category(category)
-
-        if normalized_category == self.SCRIPT_CATEGORY:
-            return 'script'
-
-        if normalized_category == self.JOB_CATEGORY:
-            return 'job'
-
-        return 'cmd'
-
-    def _clean_label_part(self, value: str) -> str:
-        text = str(value or '').strip().lower()
-        text = re.sub(r'[^a-z0-9]+', '_', text)
-        return text.strip('_')
-
-    def _strip_script_display_prefix(self, source_command: str) -> str:
-        text = str(source_command or '').strip()
-        return re.sub(r'^\[Run Script\]\s*', '', text, flags=re.IGNORECASE).strip()
-
-    def _build_script_label(self, source_command: str) -> str:
-        text = self._strip_script_display_prefix(source_command)
-        label = self._clean_label_part(text)
-
-        # Script display name 可以完整保留，避免 [Run Script] Get Chrome Tabs 只生成 get。
-        return label[:64].strip('_') or 'script'
-
-    def _build_command_label(self, source_command: str) -> str:
-        text = self._strip_script_display_prefix(source_command)
-        tokens = [
-            item
-            for item in re.split(r'\s+', text)
-            if item
-        ]
-
-        if not tokens:
-            return 'output'
-
-        first = self._clean_label_part(tokens[0])
-        if not first:
-            return 'output'
-
-        if first not in self.WRAPPER_COMMANDS or len(tokens) < 2:
-            return first
-
-        second = self._clean_label_part(tokens[1])
-
-        # 第二段不足 10 位才保留；过长直接丢弃。
-        if second and len(second) < self.SECOND_TOKEN_MAX_LENGTH:
-            return f'{first}_{second}'
-
-        return first
+    @staticmethod
+    def _raw_output_name(name: str) -> str:
+        leaf = str(name or '').strip().replace('\\', '/').rsplit('/', 1)[-1]
+        if leaf.lower().endswith('.py'):
+            leaf = leaf[:-3]
+        return clean_artifact_label(leaf, max_length=48)
 
     def build_output_name(self, *, category: str, source_command: str, now=None, output_format: str = 'text',
                          output_name_prefix: str = '') -> str:
         current_time = now or self._now()
         normalized_category = self._normalize_category(category)
         normalized_format = self._normalize_output_format(output_format)
-        prefix = self._get_prefix(normalized_category)
-        timestamp = current_time.strftime(self.OUTPUT_TIME_FORMAT)
+        normalized_format_extension = 'json' if normalized_format == 'json' else 'txt'
         if output_name_prefix:
-            clean_prefix = self._clean_label_part(output_name_prefix)
-            if not clean_prefix:
-                raise ValueError('output_name_prefix must contain a valid filename prefix')
-            extension = '.json' if normalized_format == 'json' else '.txt'
-            return f'{clean_prefix}_{timestamp}{extension}'
+            return build_artifact_filename(output_name_prefix, normalized_format_extension, now=current_time)
 
         if normalized_category == self.JOB_CATEGORY:
-            label = self._clean_label_part(source_command)[:64].strip('_') or 'output'
-            return f'job_output_{timestamp}_{label}.json'
-
+            return build_artifact_filename('job_output', 'json', now=current_time,
+                                           label=self._raw_output_name(source_command))
         if normalized_category == self.SCRIPT_CATEGORY:
-            label = self._build_script_label(source_command)
-        else:
-            label = self._build_command_label(source_command)
+            return build_artifact_filename('script', normalized_format_extension, now=current_time,
+                                           label=self._raw_output_name(source_command))
+        return build_artifact_filename('command_output', normalized_format_extension, now=current_time,
+                                       label=build_command_name(source_command))
 
-        extension = '.json' if normalized_format == 'json' else '.txt'
-        return f'{prefix}_{timestamp}_{label}{extension}'
-
-    def _resolve_script_output_name_source(self, *, source_command: str, extra: dict | None = None) -> str:
-        resolved_source_command = str(source_command or '').strip()
-        if resolved_source_command:
-            return resolved_source_command
-
+    def _resolve_script_output_name_source(self, *, extra: dict | None = None) -> str:
+        # The execution display command and script display_name are not file identifiers.
         payload = extra if isinstance(extra, dict) else {}
-
-        # 文件名沿用原 terminal 展示名规则：优先用可见脚本名，不使用脚本路径。
-        script_display_name = str(payload.get('script_display_name') or '').strip()
-        if script_display_name:
-            return script_display_name
-
-        script_name = str(payload.get('script_name') or '').replace('\\', '/').strip()
-        if script_name:
-            leaf_name = script_name.rsplit('/', 1)[-1]
-            return leaf_name[:-3] if leaf_name.endswith('.py') else leaf_name
-
-        return ''
+        return str(payload.get('script_name') or '').strip()
 
     def build_extra(self, *, source: str, source_command: str, extra: dict | None = None, saved_at=None) -> dict:
         payload = dict(extra or {})
@@ -217,12 +141,10 @@ class CommandOutputArtifactService:
                 raise ValueError('JSON output must contain valid JSON') from error
 
         allocation_name_source = source_command
-        if normalized_category == self.SCRIPT_CATEGORY:
-            # script 类型的 meta 不再写展示命令，但文件名仍沿用 script_name。
-            allocation_name_source = self._resolve_script_output_name_source(
-                source_command=source_command,
-                extra=extra,
-            )
+        if normalized_category == self.JOB_CATEGORY:
+            allocation_name_source = job_name
+        elif normalized_category == self.SCRIPT_CATEGORY:
+            allocation_name_source = self._resolve_script_output_name_source(extra=extra)
 
         extra_payload = extra if isinstance(extra, dict) else {}
         is_terminal_toolbar_export = (

@@ -276,12 +276,7 @@ class ServerCleanupService:
                 continue
 
             file_path = os.path.abspath(os.path.join(self.agent_output_registry.output_dir, file_name))
-            metadata_path = os.path.abspath(os.path.join(
-                self.agent_output_registry.metadata_dir,
-                f'{file_name}.json',
-            ))
             output_size = safe_file_size(file_path)
-            metadata_size = safe_file_size(metadata_path)
             try:
                 self.agent_output_registry.delete_output(file_name)
             except Exception as exc:
@@ -296,15 +291,6 @@ class ServerCleanupService:
                     'path': file_path,
                     'size': output_size,
                     'detail': 'agent transient output',
-                })
-            if metadata_size:
-                result['removed_files'] += 1
-                result['bytes_freed'] += metadata_size
-                result['entries'].append({
-                    'kind': 'file',
-                    'path': metadata_path,
-                    'size': metadata_size,
-                    'detail': 'agent transient metadata',
                 })
 
         return result

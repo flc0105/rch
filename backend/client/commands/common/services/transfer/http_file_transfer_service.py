@@ -181,15 +181,16 @@ class CommandHttpFileTransferService:
         artifact_type: str = 'files',
         category: str = 'default',
         extra: dict | None = None,
+        upload_name: str = '',
         transfer_id: str = '',
         send_preparing: bool = True,
     ):
         file_size = os.path.getsize(file_path)
-        filename = os.path.basename(file_path)
+        filename = upload_name or os.path.basename(file_path)
         strategy = self.get_transfer_strategy()
         progress_supported = strategy.get_mode_name() != 'legacy'
 
-        self.owner._send_info(self.build_http_upload_start_message(file_path, file_size), 0)
+        self.owner._send_info(self.build_http_upload_start_message(filename, file_size), 0)
 
         if transfer_id and send_preparing:
             self._send_transfer_update(
@@ -227,12 +228,10 @@ class CommandHttpFileTransferService:
         )
 
         try:
-            response = strategy.upload_file(
-                file_path,
-                upload_url,
-                form_data,
-                progress_callback=progress_callback,
-            )
+            upload_options = {'progress_callback': progress_callback}
+            if upload_name:
+                upload_options['filename'] = filename
+            response = strategy.upload_file(file_path, upload_url, form_data, **upload_options)
             response.raise_for_status()
 
             if transfer_id:

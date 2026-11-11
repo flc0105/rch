@@ -6,9 +6,9 @@ RCH 使用两种不同的身份描述 Client：`build_version` 标识一次可�
 
 ## 构建产物与源码身份
 
-Server 的 Agent Builder 为每次构建生成独立的 `build_id`，形式为本地时间戳 `YYYYMMDD_HHMMSS` 加 6 位十六进制随机后缀。它再结合构建类型产生 `build_version`，并记录在产物元数据中。**即使源码相同，每次构建也产生独立的 Build Version。** Client 是否需要更新由源码 Revision 判断。
+Server 的 Agent Builder 为每次构建生成独立的 `build_id`，形式为本地时间戳 `YYYYMMDD_HHMMSS` 加 8 位十六进制随机后缀。它再结合构建类型产生 `build_version`，并记录在产物元数据中。**即使源码相同，每次构建也产生独立的 Build Version。** Client 是否需要更新由源码 Revision 判断。
 
-Python Source Bundle 使用统一的命名契约：`python_YYYYMMDD_HHMMSS_XXXXXX.zip`；对应 `build_version` 是去掉 `.zip` 后的名称。该名称同时用作更新后的 Release 目录名，因而下载文件、解压目录和运行实例所报告的 Build Version 可以互相定位。
+Python Source Bundle 的下载文件名为 `rchclient_python_YYYYMMDD_HHMMSS_XXXXXXXX.zip`；对应 `build_version` 为 `python_YYYYMMDD_HHMMSS_XXXXXXXX`。构建版本同样用于 Release 目录及运行实例标识，文件名和版本号通过共同的构建 ID 关联。
 
 `client_revision` 则由 `build_client_revision_manifest()` 计算。它遍历构成 Python Client Bundle 的三个根：`client/`、`core/` 和 `rchclient.py`，按确定顺序把相对路径、分隔符与文件内容纳入 SHA-256，取前 **16 个十六进制字符**作为整体 Revision。同时生成文件级差异数据：
 
@@ -52,7 +52,7 @@ Content-Type: application/json
 
 `update` 构建请求携带当前 Client 的传输类型和 TLS 证书指纹，Server 根据现有 Listener 配置与连接端口选择对应的入口，且必须核对所选 Listener ID 与传输类型一致；若出现 TCP/TLS 端口、协议或指纹不匹配，则拒绝构建。生成的 Bundle 由 Server 注入 TCP/TLS 参数和证书指纹，更新流程本身不增加连接消息或额外状态查询。
 
-Server 在临时工作目录复制 Bundle 所需源码，注入 Client 配置后打包，再把构建结果复制到 `SERVER_RUNTIME_DIR/agent_output/`（默认 `backend/runtime/agent_output/`）。同目录下的 `.metadata/<filename>.json` 保存构建时间、Build Version、Builder、Listener ID/名称、系统和架构、连接参数及请求来源等信息。构建成功会发布 `agent_build_lifecycle` 事件（`completed`），失败则发布 `error`。
+Server 在临时工作目录复制 Bundle 所需源码，注入 Client 配置后打包，再把构建结果复制到 `SERVER_RUNTIME_DIR/agent_output/`（默认 `backend/runtime/agent_output/`）。同目录下的 `agent_outputs.sqlite3` 保存构建时间、Build Version、Builder、Listener ID、构建时名称快照、系统和架构、连接参数及请求来源等信息。文件大小根据磁盘实体计算。构建成功会发布 `agent_build_lifecycle` 事件（`completed`），失败则发布 `error`。
 
 `POST /api/agent/build` 的 Bundle 响应提供 `file_name`、`build_version`、`download_url` 以及服务端对实际 ZIP 计算的 `sha256`。产物下载通过 **Web/API 端口**上的 `GET /api/agent/download/{filename}` 完成，不经过文件传输专线的 8086。构建产物可以通过 `/api/agent/outputs` 查看，并通过相应删除接口移除；删除某个 Server 构建产物，不会卸载已安装在远程设备上的 Release。
 
@@ -140,7 +140,7 @@ update --keep-old
 ```text
 ~/client_bundle/
 ├── downloads/
-│   └── python_<build_id>.zip
+│   └── rchclient_python_<build_id>.zip
 └── releases/
     └── python_<build_id>/
         ├── rchclient.py

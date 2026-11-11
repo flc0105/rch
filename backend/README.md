@@ -2702,7 +2702,7 @@ Python Bootstrap, Windows PowerShell Bootstrap, and the standalone Go Loader req
 └── releases/<build_version>/
 ```
 
-Bundle artifact naming is defined only in `core/client_revision.py` (`PYTHON_ARTIFACT_STEM`).
+Agent output filenames use the fixed `rchclient` prefix and builder kind from `core/agent_build_contract.py`; Python bundle archive detection is in `core/client_revision.py`.
 For new builds, `build_version` equals the ZIP filename without `.zip`, and both
 Bootstrap/Go Loader and Client Update install under that same release folder name.
 Existing releases are not renamed or removed during installation.

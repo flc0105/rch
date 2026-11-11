@@ -34,7 +34,8 @@ export function pollScreenView(screenSessionId, afterSeq = 0) {
 
 
 export function uploadScreenViewScreenshot(blob, metadata = {}) {
-  const filename = String(metadata.filename || 'screenview.jpg').trim() || 'screenview.jpg'
+  const filename = String(metadata.filename || '').trim()
+  if (!filename) throw new Error('Screenshot filename is required')
   const form = new FormData()
 
   if (typeof File === 'function') {
@@ -50,6 +51,7 @@ export function uploadScreenViewScreenshot(blob, metadata = {}) {
   form.append('machine_id', String(metadata.machineId || ''))
   form.append('extra', JSON.stringify({
     source: 'screen_view',
+    origin: 'screen_view',
     screen_session_id: String(metadata.screenSessionId || ''),
     frame_strategy: String(metadata.frameStrategy || ''),
     quality: Number(metadata.quality || 0),

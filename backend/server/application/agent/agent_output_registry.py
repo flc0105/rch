@@ -1,155 +1,161 @@
-from typing import Optional
-import json
-import os
+"""SQLite catalog for Server-built Agent output binaries."""
+
+from contextlib import closing, contextmanager
 from datetime import datetime
+import os
+import sqlite3
+from typing import Optional
 
 
 class AgentOutputRegistry:
-    """
-    管理 agent_output 目录下的构建产物及其元数据。
-
-    设计：
-    - 文件实体保存在 runtime/agent_output
-    - 元数据单独保存在 runtime/agent_output/.metadata/<filename>.json
-    - 列表展示时以真实文件为准，元数据缺失时自动降级为文件系统信息
-    """
-
-    METADATA_DIR_NAME = '.metadata'
+    DB_NAME = 'agent_outputs.sqlite3'
+    FIELDS = (
+        'file_name', 'builder', 'build_version', 'source', 'created_at',
+        'target_os', 'target_arch', 'listener_id', 'listener_name_snapshot',
+        'connect_host', 'connect_port', 'web_scheme', 'web_host', 'web_port',
+    )
 
     def __init__(self, output_dir: str):
         self.output_dir = os.path.abspath(output_dir)
-        self.metadata_dir = os.path.join(self.output_dir, self.METADATA_DIR_NAME)
         os.makedirs(self.output_dir, exist_ok=True)
-        os.makedirs(self.metadata_dir, exist_ok=True)
+        self.db_path = os.path.join(self.output_dir, self.DB_NAME)
+        with self._connection() as conn:
+            conn.execute('PRAGMA journal_mode=WAL')
+            with conn:
+                conn.execute('''CREATE TABLE IF NOT EXISTS agent_outputs (
+                    file_name TEXT PRIMARY KEY,
+                    builder TEXT NOT NULL,
+                    build_version TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    target_os TEXT NOT NULL,
+                    target_arch TEXT NOT NULL,
+                    listener_id TEXT NOT NULL,
+                    listener_name_snapshot TEXT NOT NULL,
+                    connect_host TEXT NOT NULL,
+                    connect_port INTEGER NOT NULL,
+                    web_scheme TEXT NOT NULL,
+                    web_host TEXT NOT NULL,
+                    web_port INTEGER NOT NULL
+                )''')
+                conn.execute('CREATE INDEX IF NOT EXISTS idx_agent_outputs_created ON agent_outputs(created_at DESC, file_name DESC)')
+                conn.execute('CREATE INDEX IF NOT EXISTS idx_agent_outputs_listener ON agent_outputs(listener_id, created_at DESC)')
+                conn.execute('CREATE INDEX IF NOT EXISTS idx_agent_outputs_source ON agent_outputs(source)')
 
-    def _normalize_filename(self, filename: str) -> str:
-        name = os.path.basename(str(filename or '').strip())
-        if not name or name in {'.', '..'}:
+    @contextmanager
+    def _connection(self):
+        # Each request gets its own connection for Web and cleanup threads.
+        with closing(sqlite3.connect(self.db_path, timeout=15)) as conn:
+            conn.row_factory = sqlite3.Row
+            yield conn
+
+    @staticmethod
+    def _normalize_filename(filename: str) -> str:
+        name = str(filename or '').strip()
+        if (not name or name in {'.', '..'} or name.startswith('.') or
+                name in {AgentOutputRegistry.DB_NAME, AgentOutputRegistry.DB_NAME + '-wal',
+                         AgentOutputRegistry.DB_NAME + '-shm'} or
+                os.path.basename(name) != name or '/' in name or '\\' in name):
             raise ValueError('Invalid file name')
         return name
 
-    def _metadata_path(self, filename: str) -> str:
-        safe_name = self._normalize_filename(filename)
-        return os.path.join(self.metadata_dir, f'{safe_name}.json')
-
     def _safe_join_output(self, filename: str) -> str:
-        safe_name = self._normalize_filename(filename)
-        file_path = os.path.abspath(os.path.join(self.output_dir, safe_name))
+        file_path = os.path.abspath(os.path.join(self.output_dir, self._normalize_filename(filename)))
         if os.path.dirname(file_path) != self.output_dir:
             raise ValueError('Invalid file name')
         return file_path
 
-    def _serialize_datetime(self, value) -> str:
-        if isinstance(value, datetime):
-            return value.isoformat()
-        text = str(value or '').strip()
-        return text
+    @staticmethod
+    def _port(value) -> int:
+        return int(value or 0)
 
-    def _read_metadata(self, filename: str) -> dict:
-        metadata_path = self._metadata_path(filename)
-        if not os.path.isfile(metadata_path):
-            return {}
-
-        try:
-            with open(metadata_path, 'r', encoding='utf-8') as fp:
-                payload = json.load(fp)
-            return payload if isinstance(payload, dict) else {}
-        except Exception:
-            return {}
-
-    def _write_metadata(self, filename: str, payload: dict) -> None:
-        metadata_path = self._metadata_path(filename)
-        with open(metadata_path, 'w', encoding='utf-8') as fp:
-            json.dump(payload, fp, ensure_ascii=False, indent=2)
+    @staticmethod
+    def _to_record(row: sqlite3.Row, size: int) -> dict:
+        data = dict(row)
+        # Keep the existing Agent Outputs API without storing duplicate aliases.
+        return {
+            'file_name': data['file_name'],
+            'size': size,
+            'build_time': data['created_at'],
+            'build_version': data['build_version'],
+            'builder': data['builder'],
+            'source': data['source'],
+            'target_os': data['target_os'],
+            'target_arch': data['target_arch'],
+            'listener_id': data['listener_id'],
+            'listener_name': data['listener_name_snapshot'],
+            'server_host': data['connect_host'],
+            'server_port': data['connect_port'],
+            'server_web_scheme': data['web_scheme'],
+            'server_web_host': data['web_host'],
+            'web_port': data['web_port'],
+            'warnings': [],
+        }
 
     def register_output(self, build_result: dict, *, source: str = 'manual', request_payload: Optional[dict] = None) -> dict:
         payload = dict(request_payload or {})
-        file_name = self._normalize_filename(build_result.get('file_name'))
-        file_path = self._safe_join_output(file_name)
-        stat = os.stat(file_path)
+        filename = self._normalize_filename(build_result.get('file_name'))
+        file_path = self._safe_join_output(filename)
+        os.stat(file_path)  # A successful build must have produced its binary before registration.
         created_at = datetime.now().isoformat()
-
-        record = {
-            'file_name': file_name,
-            'build_time': created_at,
-            'created_at': created_at,
-            'updated_at': created_at,
-            'build_version': str(build_result.get('build_version') or '').strip(),
-            'builder': str(build_result.get('builder') or payload.get('builder') or '').strip(),
-            'listener_id': str(payload.get('listener_id') or '').strip(),
-            'listener_name': str(payload.get('listener_name') or '').strip(),
-            'source': str(source or payload.get('source') or 'web_manual_build').strip() or 'manual',
-            'target_os': str(build_result.get('target_os') or payload.get('target_os') or '').strip(),
-            'target_arch': str(build_result.get('target_arch') or payload.get('target_arch') or '').strip(),
-            'size': int(build_result.get('size') or stat.st_size or 0),
-            'server_host': str(payload.get('server_host') or '').strip(),
-            'server_port': int(payload.get('server_port') or 0),
-            'web_port': int(payload.get('web_port') or 0),
-            'server_web_scheme': str(payload.get('server_web_scheme') or 'http').strip() or 'http',
-            'server_web_host': str(payload.get('server_web_host') or payload.get('server_host') or '').strip(),
-            'warnings': build_result.get('warnings') or [],
-        }
-        self._write_metadata(file_name, record)
-        return self.get_output_record(file_name)
+        values = (
+            filename,
+            str(build_result.get('builder') or payload.get('builder') or '').strip(),
+            str(build_result.get('build_version') or '').strip(),
+            str(source or payload.get('source') or 'manual').strip(),
+            created_at,
+            str(build_result.get('target_os') or payload.get('target_os') or '').strip(),
+            str(build_result.get('target_arch') or payload.get('target_arch') or '').strip(),
+            str(payload.get('listener_id') or '').strip(),
+            str(payload.get('listener_name') or '').strip(),
+            str(payload.get('server_host') or '').strip(),
+            self._port(payload.get('server_port')),
+            str(payload.get('server_web_scheme') or 'http').strip(),
+            str(payload.get('server_web_host') or payload.get('server_host') or '').strip(),
+            self._port(payload.get('web_port')),
+        )
+        columns = ', '.join(self.FIELDS)
+        placeholders = ', '.join('?' for _ in self.FIELDS)
+        update = ', '.join(f'{column}=excluded.{column}' for column in self.FIELDS if column != 'file_name')
+        with self._connection() as conn:
+            with conn:
+                conn.execute(f'INSERT INTO agent_outputs ({columns}) VALUES ({placeholders}) '
+                             f'ON CONFLICT(file_name) DO UPDATE SET {update}', values)
+        return self.get_output_record(filename)
 
     def get_output_record(self, filename: str) -> dict:
-        file_name = self._normalize_filename(filename)
-        file_path = self._safe_join_output(file_name)
-        if not os.path.isfile(file_path):
-            raise FileNotFoundError('File not found')
-
-        metadata = self._read_metadata(file_name)
-        stat = os.stat(file_path)
-        build_time = str(metadata.get('build_time') or metadata.get('created_at') or '').strip()
-        if not build_time:
-            build_time = datetime.fromtimestamp(stat.st_mtime).isoformat()
-
-        record = {
-            'file_name': file_name,
-            'size': int(stat.st_size),
-            'build_time': build_time,
-            'build_version': str(metadata.get('build_version') or '').strip(),
-            'builder': str(metadata.get('builder') or '').strip(),
-            'listener_id': str(metadata.get('listener_id') or '').strip(),
-            'listener_name': str(metadata.get('listener_name') or '').strip(),
-            'source': str(metadata.get('source') or '').strip(),
-            'target_os': str(metadata.get('target_os') or '').strip(),
-            'target_arch': str(metadata.get('target_arch') or '').strip(),
-            'server_host': str(metadata.get('server_host') or '').strip(),
-            'server_port': int(metadata.get('server_port') or 0),
-            'web_port': int(metadata.get('web_port') or 0),
-            'server_web_scheme': str(metadata.get('server_web_scheme') or 'http').strip() or 'http',
-            'server_web_host': str(metadata.get('server_web_host') or metadata.get('server_host') or '').strip(),
-            'warnings': metadata.get('warnings') or [],
-        }
-        return record
+        filename = self._normalize_filename(filename)
+        with self._connection() as conn:
+            row = conn.execute('SELECT * FROM agent_outputs WHERE file_name=?', (filename,)).fetchone()
+        if row is None:
+            raise FileNotFoundError('Agent output is not registered')
+        try:
+            size = os.stat(self._safe_join_output(filename)).st_size
+        except FileNotFoundError:
+            raise FileNotFoundError('File not found') from None
+        return self._to_record(row, size)
 
     def list_outputs(self) -> list:
+        with self._connection() as conn:
+            rows = conn.execute('SELECT * FROM agent_outputs ORDER BY created_at DESC, file_name DESC').fetchall()
         results = []
-        for entry in os.listdir(self.output_dir):
-            if entry.startswith('.'):
-                continue
-            file_path = os.path.join(self.output_dir, entry)
-            if not os.path.isfile(file_path):
-                continue
+        for row in rows:
             try:
-                results.append(self.get_output_record(entry))
-            except Exception:
+                size = os.stat(self._safe_join_output(row['file_name'])).st_size
+            except FileNotFoundError:
                 continue
-
-        results.sort(key=lambda item: str(item.get('build_time') or ''), reverse=True)
+            results.append(self._to_record(row, size))
         return results
 
     def delete_output(self, filename: str) -> dict:
-        file_name = self._normalize_filename(filename)
-        file_path = self._safe_join_output(file_name)
-        metadata_path = self._metadata_path(file_name)
-
-        if not os.path.isfile(file_path):
-            raise FileNotFoundError('File not found')
-
+        filename = self._normalize_filename(filename)
+        file_path = self._safe_join_output(filename)
+        with self._connection() as conn:
+            row = conn.execute('SELECT 1 FROM agent_outputs WHERE file_name=?', (filename,)).fetchone()
+        if row is None:
+            raise FileNotFoundError('Agent output is not registered')
         os.remove(file_path)
-        if os.path.isfile(metadata_path):
-            os.remove(metadata_path)
-
-        return {'deleted': True, 'file_name': file_name}
+        with self._connection() as conn:
+            with conn:
+                conn.execute('DELETE FROM agent_outputs WHERE file_name=?', (filename,))
+        return {'deleted': True, 'file_name': filename}

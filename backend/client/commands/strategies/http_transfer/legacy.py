@@ -10,7 +10,7 @@ class LegacyHttpTransferStrategy(HttpTransferStrategy):
     # Requests connect/read I/O timeouts; the read timeout resets as data arrives.
     _NETWORK_TIMEOUT = (15, 120)
 
-    def upload_file(self, file_path: str, upload_url: str, form_data: dict, progress_callback=None):
+    def upload_file(self, file_path: str, upload_url: str, form_data: dict, progress_callback=None, *, filename: str = ''):
         file_size = os.path.getsize(file_path)
         if file_size > 1024 * 1024 * 1024:
             raise ValueError(
@@ -25,7 +25,7 @@ class LegacyHttpTransferStrategy(HttpTransferStrategy):
             with open(file_path, 'rb') as file_obj:
                 return session.post(
                     upload_url,
-                    files={'file': (os.path.basename(file_path), file_obj)},
+                    files={'file': (filename or os.path.basename(file_path), file_obj)},
                     data=form_data,
                     timeout=self._NETWORK_TIMEOUT,
                 )

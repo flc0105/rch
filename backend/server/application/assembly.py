@@ -316,6 +316,7 @@ class ServerApplicationAssembly:
             agent_output_registry=self.agent_output_registry,
             bootstrap_script_service=self.agent_bootstrap_script_service,
             event_bus=self.event_bus,
+            server=self.server,
         )
 
         self.process_control_api = WebProcessControlApi(

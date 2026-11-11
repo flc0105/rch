@@ -104,8 +104,8 @@ curl -fsS -X POST 'http://192.0.2.10:8085/api/agent/build' \
 响应中的 `data.file_name` 是生成的 Loader 文件名，`data.download_url` 是下载地址。先把该构建结果下载到目标设备，再赋予执行权限并运行，例如：
 
 ```bash
-chmod +x ./go_loader_linux_amd64_<build-id>
-./go_loader_linux_amd64_<build-id>
+chmod +x ./rchclient_go_loader_linux_amd64_<build-id>
+./rchclient_go_loader_linux_amd64_<build-id>
 ```
 
 `<build-id>` 是占位符，实际名称应以本次构建返回值为准。Windows 目标直接运行对应 `.exe`；macOS 目标使用相应系统架构的可执行文件。将 Loader 传到目标设备、确认来源可信再执行；不能从示例路径推断它已经存在于本机。下载接口使用 `/api/agent/download/{filename}`，不需要先执行 Python Bootstrap。

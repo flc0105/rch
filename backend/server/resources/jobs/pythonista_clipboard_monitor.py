@@ -28,7 +28,8 @@ import threading
 import time
 
 from client.jobs.core.job import Job
-from core.utils.formatting import get_size, get_time
+from core.utils.formatting import get_size
+from core.utils.artifact_naming import build_artifact_filename
 from core.utils.logger import logger
 
 
@@ -103,7 +104,7 @@ class PythonistaClipboardMonitor(Job):
             if image_hash != self.image_hash:
                 self.image_hash = image_hash
 
-                file_name = f'clipboard_image_{get_time()}.png'
+                file_name = build_artifact_filename('clipboard', 'png')
 
                 try:
                     image_for_hash.save(file_name, 'PNG')

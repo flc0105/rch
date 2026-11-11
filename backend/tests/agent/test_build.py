@@ -156,7 +156,8 @@ def test_explicit_bundle_generates_valid_source_zip():
         assert result['builder'] == 'python'
         assert result['target_os'] == ''
         assert result['file_name'].startswith(PYTHON_ARTIFACT_STEM + '_')
-        assert result['file_name'] == result['build_version'] + '.zip'
+        assert result['file_name'] == 'rchclient_' + result['build_version'] + '.zip'
+        assert result['build_version'].startswith('python_')
         with zipfile.ZipFile(result['file_path']) as z:
             assert 'client/config/config.py' in z.namelist()
             cfg = z.read('client/config/config.py').decode()

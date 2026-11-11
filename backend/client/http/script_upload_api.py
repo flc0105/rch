@@ -1,7 +1,7 @@
 import json
 import os
 
-from core.artifact_contract import ArtifactType, ArtifactSourceKind
+from core.artifact_contract import ArtifactType, ArtifactSourceKind, ArtifactOrigin
 from client.http.client_api import ClientApiClient
 
 
@@ -57,14 +57,14 @@ def _build_script_upload_form_data(
         'source_command_id': ctx.get('command_id') if ctx.get('command_id') is not None else '',
     }
 
-    # artifact meta 只带 script_name，一个字段，不带整份 SCRIPT_METADATA
+    # Keep the script identity and capture origin, without uploading full SCRIPT_METADATA.
+    extra = {}
     if resolved_script_name:
-        form_data['extra'] = json.dumps(
-            {
-                'script_name': resolved_script_name,
-            },
-            ensure_ascii=False,
-        )
+        extra['script_name'] = resolved_script_name
+    if artifact_type != ArtifactType.SHARED_FILES.value and str(folder or '').strip().lower() == 'screenshots':
+        extra['origin'] = ArtifactOrigin.SCRIPT.value
+    if extra:
+        form_data['extra'] = json.dumps(extra, ensure_ascii=False)
 
     return form_data
 

@@ -40,11 +40,11 @@ class CommandOutputArtifactFormatTests(unittest.TestCase):
     def test_output_names_select_txt_or_json_without_changing_default(self):
         self.assertEqual(
             self.service.build_output_name(category='command_output', source_command='', now=self.fixed_now),
-            'cmd_20261027_090000_output.txt',
+            'command_output_20261027_090000_output.txt',
         )
         self.assertEqual(
             self.service.build_output_name(category='command_output', source_command='', now=self.fixed_now, output_format='json'),
-            'cmd_20261027_090000_output.json',
+            'command_output_20261027_090000_output.json',
         )
         self.assertEqual(
             self.service.build_output_name(category='job_output', source_command='report', now=self.fixed_now),

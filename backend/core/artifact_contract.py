@@ -9,6 +9,14 @@ class ArtifactType(str, Enum):
     COMMAND_OUTPUT = 'command_output'
 
 
+class ArtifactOrigin(str, Enum):
+    SCREENSHOT_COMMAND = 'screenshot_command'
+    WEBCAM_COMMAND = 'webcam_command'
+    SCREEN_VIEW = 'screen_view'
+    SCRIPT = 'script'
+    JOB = 'job'
+
+
 class ArtifactScope(str, Enum):
     SAVED = 'saved'
     SHARED = 'shared'

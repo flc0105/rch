@@ -8,6 +8,9 @@ class AgentBuilderKind(str, Enum):
     GO_LOADER = 'go_loader'
 
 
+AGENT_FILENAME_STEM = 'rchclient'
+
+
 AGENT_BUILDER_LABELS = {
     AgentBuilderKind.PYTHON: 'Python Bundle',
     AgentBuilderKind.GO: 'Go',
@@ -21,7 +24,7 @@ def agent_build_version(builder, build_id: str) -> str:
 
 def agent_output_filename(builder, build_id: str, *, target_os='', target_arch='', suffix='') -> str:
     kind = AgentBuilderKind(builder)
-    stem = kind.value
+    stem = f'{AGENT_FILENAME_STEM}_{kind.value}'
     if kind != AgentBuilderKind.PYTHON:
         if not target_os or not target_arch:
             raise ValueError('Executable output requires OS and architecture')

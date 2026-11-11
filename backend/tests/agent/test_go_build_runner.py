@@ -137,8 +137,8 @@ def test_go_runner_chmod_error_is_structured(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize('module_name,builder_name,go_dir,expected_prefix', [
-    ('agent_build_client_go', 'ClientGoBuilder', 'client-go', 'go_'),
-    ('agent_build_go_loader', 'GoLoaderBuilder', 'go-loader', 'go_loader_'),
+    ('agent_build_client_go', 'ClientGoBuilder', 'client-go', 'rchclient_go_'),
+    ('agent_build_go_loader', 'GoLoaderBuilder', 'go-loader', 'rchclient_go_loader_'),
 ])
 @pytest.mark.parametrize('target_os,goos,suffix', [
     ('win', 'windows', '.exe'),

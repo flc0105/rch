@@ -123,4 +123,4 @@ so its WebSocket Origin check accepts the development page.
 In production, RCH serves the built frontend on its HTTP port; the browser
 connects WebSocket directly to that HTTP port + 1.
 
-Agent Outputs 以 `python`、`go`、`go_loader` 为正式 Builder ID，显示为 Python Bundle、Go、Go Loader；输出文件名和 Build Version 使用统一的构建时间及六位哈希后缀。列表支持 Builder、Listener 和搜索过滤，Utilities 中可直接进入。
+Agent Outputs 以 `python`、`go`、`go_loader` 为正式 Builder ID，显示为 Python Bundle、Go、Go Loader；输出文件名固定以 `rchclient` 为前缀，Build Version 使用 Builder 名；两者共用构建时间与八位哈希后缀。列表支持 Builder、Listener 和搜索过滤，Utilities 中可直接进入。

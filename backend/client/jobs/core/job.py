@@ -194,6 +194,7 @@ class Job(ABC):
         folder: str = '',
         artifact_type: str = 'files',
         extra: dict | None = None,
+        filename: str = '',
     ):
         form_data = self._build_upload_form_data(
             file_path,
@@ -203,11 +204,12 @@ class Job(ABC):
             extra=extra,
         )
 
-        response = self.client_api.upload_file(
-            file_path,
-            form_data,
-            timeout=30,
-        )
+        if filename:
+            response = self.client_api.upload_file_source(
+                file_path, filename=filename, form_data=form_data, timeout=30,
+            )
+        else:
+            response = self.client_api.upload_file(file_path, form_data, timeout=30)
 
         payload = self.client_api.try_parse_json(response)
 

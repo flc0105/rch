@@ -1,6 +1,6 @@
+from core.utils.artifact_naming import build_artifact_filename
 import json
 import os
-import uuid
 from client.runtime.temp_workspace import make_client_temp_dir, cleanup_temp_path, get_temp_category_dir
 from client.runtime.user_identity import get_macos_console_user_identity
 from pathlib import Path
@@ -188,10 +188,7 @@ class ClipboardManager:
 
             artifact = self._upload_bytes_artifact(
                 raw,
-                filename=(
-                    f'clipboard_'
-                    f'{uuid.uuid4().hex[:8]}.png'
-                ),
+                filename=build_artifact_filename('clipboard', 'png'),
                 category='clipboard_image',
                 extra={
                     'clipboard_kind': 'image',

@@ -12,13 +12,13 @@ class CancelableMultipartUploadStream:
     可取消的 multipart/form-data 流。
     """
 
-    def __init__(self, owner, file_path: str, form_data: dict, chunk_size: int, progress_callback=None):
+    def __init__(self, owner, file_path: str, form_data: dict, chunk_size: int, progress_callback=None, *, filename: str = ''):
         self.owner = owner
         self.file_path = file_path
         self.form_data = form_data or {}
         self.chunk_size = max(int(chunk_size or 1), 1)
         self.boundary = f'----ratboundary{uuid.uuid4().hex}'
-        self.file_name = os.path.basename(file_path)
+        self.file_name = filename or os.path.basename(file_path)
         self.file_size = os.path.getsize(file_path)
         self.progress_callback = progress_callback
         self._file_bytes_read = 0
@@ -155,7 +155,7 @@ class CancelableHttpTransferStrategy(HttpTransferStrategy):
         self.owner._register_cleanup_handler(lambda: session.close())
         return session
 
-    def upload_file(self, file_path: str, upload_url: str, form_data: dict, progress_callback=None):
+    def upload_file(self, file_path: str, upload_url: str, form_data: dict, progress_callback=None, *, filename: str = ''):
         self.configure_context_for_upload()
         self.owner._ensure_not_cancelled()
 
@@ -167,6 +167,7 @@ class CancelableHttpTransferStrategy(HttpTransferStrategy):
             form_data,
             chunk_size=self.get_buffer_size(),
             progress_callback=progress_callback,
+            filename=filename,
         )
         self.owner._register_cancel_handler(stream.close)
         self.owner._register_cleanup_handler(stream.close)

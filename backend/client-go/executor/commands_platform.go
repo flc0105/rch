@@ -102,7 +102,7 @@ func cmdDownload(s *Session, args []string) (int, string) {
 }
 
 func captureScreenshotToTemp(workDir string) (string, error) {
-	filePath := filepath.Join(os.TempDir(), fmt.Sprintf("screenshot_%d.png", time.Now().Unix()))
+	filePath := filepath.Join(os.TempDir(), buildScreenshotFilename(time.Now()))
 
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
@@ -141,4 +141,9 @@ func captureScreenshotToTemp(workDir string) (string, error) {
 	}
 
 	return filePath, nil
+}
+
+// buildScreenshotFilename names the captured Artifact; directory placement is separate.
+func buildScreenshotFilename(capturedAt time.Time) string {
+	return fmt.Sprintf("screenshot_%s.png", capturedAt.Format("20060102_150405"))
 }

@@ -77,4 +77,6 @@ screenshot = artifact.upload('./shot.png', folder='Screenshots') # Saved / Scree
 shared = artifact.save('./tool.zip', type='shared_files', folder='Team/Tools')
 ```
 
+自动创建的文件采用 `类型_yyyyMMdd_HHmmss[_简短标识].扩展名`：截图使用 `screenshot_...`、摄像头 `webcam_...`、自动上传的相册照片 `photo_...`、单次命令结果 `command_output_..._首个命令词`、脚本执行输出 `script_..._脚本名`、Job 消息快照 `job_output_..._Job名`，整个终端/PTY 导出分别使用 `terminal_output_...`、`pty_output_...`。命令词摘要使用通用 `build_command_name`，不按特定命令维护特殊规则；生成时间使用各生产端的本地时间。明确指定的文件名、剪贴板原始文件名和远程下载原始文件名保持原样。`extra.origin` 记录截图产生的入口（截图命令、Screen View、Script 或 Job），与决定 Saved 目录的 `source_kind` 分开。
+
 文件下载与发送到 Client 的实际进度仍由 File Transfer 管理；`artifact_created` 表示 Server 已登记文件，`file_transfer_lifecycle` 表示传输生命周期，二者是不同事件。Transfer Center 的 Recent 和长期 Activity 也遵守各自的记录范围，参见 [File Transfer](file_transfer.md)。

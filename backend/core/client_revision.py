@@ -1,6 +1,6 @@
 import hashlib
 import os
-from core.agent_build_contract import AgentBuilderKind, agent_output_filename
+from core.agent_build_contract import AGENT_FILENAME_STEM, AgentBuilderKind, agent_output_filename
 
 
 CLIENT_BUNDLE_SOURCE_PATHS = (
@@ -31,8 +31,8 @@ CLIENT_REVISION_EXCLUDE_EXTENSIONS = {
 }
 REVISION_DIGEST_LENGTH = 16
 
-# One naming contract for Bundle build versions, release folders and ZIP archives.
-PYTHON_ARTIFACT_STEM = AgentBuilderKind.PYTHON.value
+# The downloadable archive keeps the agent name; build_version remains builder-based.
+PYTHON_ARTIFACT_STEM = f'{AGENT_FILENAME_STEM}_{AgentBuilderKind.PYTHON.value}'
 
 
 def bundle_archive_name(build_id: str) -> str:

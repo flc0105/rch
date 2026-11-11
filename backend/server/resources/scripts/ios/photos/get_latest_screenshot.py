@@ -14,6 +14,7 @@ from datetime import datetime
 import photos
 
 from client.http.script_upload_api import upload_file
+from core.utils.artifact_naming import build_artifact_filename
 
 UTI_EXT = {
     'public.jpeg': '.jpg',
@@ -49,8 +50,7 @@ def main():
     data_io = asset.get_image_data(original=False)
     ext = guess_ext(data_io)
 
-    dt = asset_datetime(asset).strftime('%Y%m%d_%H%M%S')
-    filename = f'SCREENSHOT_{dt}{ext}'
+    filename = build_artifact_filename('screenshot', ext, now=asset_datetime(asset))
 
     buf = io.BytesIO(data_io.getvalue())
     buf.name = filename

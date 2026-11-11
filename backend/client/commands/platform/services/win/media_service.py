@@ -1,6 +1,7 @@
 import os
 
-from core.utils.formatting import get_time
+from core.utils.artifact_naming import build_artifact_filename
+from core.artifact_contract import ArtifactOrigin
 from client.runtime.temp_workspace import make_client_temp_file, cleanup_temp_path
 
 
@@ -37,10 +38,12 @@ class WinMediaService:
             self.owner._send_interim_result(1, f'Screenshot captured ({file_size} bytes)', 0)
 
             # 上传文件
-            filename = f'screenshot_{get_time()}.png'
+            filename = build_artifact_filename('screenshot', 'png')
             self.owner.http_file_transfer_service.upload_single_file_to_server_result(
                 temp_file,
                 category='screenshot',
+                upload_name=filename,
+                extra={'origin': ArtifactOrigin.SCREENSHOT_COMMAND.value},
             )
 
             self.owner._send_final_result(1, f'Screenshot uploaded: {filename}')

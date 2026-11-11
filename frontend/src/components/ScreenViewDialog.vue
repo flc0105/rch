@@ -186,6 +186,7 @@
 import { ElMessage } from 'element-plus'
 import { Close, FullScreen } from '@element-plus/icons-vue'
 import * as screenViewApi from '../api/screenViewApi.js'
+import { formatDateTimeLocal } from '../utils/formatters.js'
 import { webSocketUrl } from '../api/streamApi.js'
 import FullJpegScreenRenderer from './screen/FullJpegScreenRenderer.vue'
 import KeyframeDeltaScreenRenderer from './screen/KeyframeDeltaScreenRenderer.vue'
@@ -521,10 +522,9 @@ export default {
       const connection = this.currentConnection || {}
       const hostname = String(connection.hostname || '').trim()
       const machineId = String(connection.machine_id || '').trim()
-      const safeTarget = this.shortenMachineId(machineId) || String(this.targetClientId || 'screen')
-      const timestamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z')
+      const stamp = formatDateTimeLocal(new Date()).replace(/[-:]/g, '').replace(' ', '_')
       const artifact = await screenViewApi.uploadScreenViewScreenshot(blob, {
-        filename: `screenview_${safeTarget}_${timestamp}.jpg`,
+        filename: `screenshot_${stamp}.jpg`,
         clientId: this.targetClientId,
         hostname,
         machineId,

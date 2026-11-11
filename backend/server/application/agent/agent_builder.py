@@ -18,6 +18,8 @@ AGENT_BUILDERS = {
     AgentBuilderKind.PYTHON.value: ('server.application.agent.agent_build_bundle', 'BundleBuilder'),
     AgentBuilderKind.GO.value: ('server.application.agent.agent_build_client_go', 'ClientGoBuilder'),
     AgentBuilderKind.GO_LOADER.value: ('server.application.agent.agent_build_go_loader', 'GoLoaderBuilder'),
+    # Optional PyInstaller remains available as a source module; not registered by default.
+    # 'pyinstaller': ('server.application.agent.agent_build_pyinstaller', 'PyInstallerBuilder'),
 }
 
 
@@ -43,7 +45,7 @@ class AgentBuilder:
 
     def _build_id_text(self) -> str:
         stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        return f'{stamp}_{uuid4().hex[:6]}'
+        return f'{stamp}_{uuid4().hex[:8]}'
 
     def _build_version_text(self, builder: str, build_id: str) -> str:
         return agent_build_version(builder, build_id)

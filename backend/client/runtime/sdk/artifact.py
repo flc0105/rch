@@ -3,7 +3,7 @@ import json
 import os
 from typing import Any
 
-from core.artifact_contract import ArtifactType, ArtifactSourceKind
+from core.artifact_contract import ArtifactType, ArtifactSourceKind, ArtifactOrigin
 from client.http.client_api import ClientApiClient, ClientApiError
 from client.runtime.sdk.context import get_client_id, get_command_id, get_command_owner
 
@@ -117,6 +117,8 @@ def save(path: str, *, type: str = 'files', folder: str = '', extra: dict | None
     """
     artifact_type = _normalize_artifact_type(type, default='files')
     normalized_folder = _safe_text(folder)
+    if artifact_type != ArtifactType.SHARED_FILES.value and normalized_folder.lower() == 'screenshots':
+        extra = {'origin': ArtifactOrigin.SCRIPT.value, **(extra or {})}
     file_path = _resolve_local_file(path)
     owner = get_command_owner()
 

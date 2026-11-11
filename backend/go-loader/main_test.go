@@ -64,7 +64,7 @@ func TestBuildNamesMustNotEscapeReleaseRoot(t *testing.T) {
 			t.Fatalf("unsafe name accepted: %q", name)
 		}
 	}
-	if !safeBuildName("python_20261106_175136_0e8ae4") {
+	if !safeBuildName("python_20261106_175136_0e8ae4f2") {
 		t.Fatal("valid build version rejected")
 	}
 }
