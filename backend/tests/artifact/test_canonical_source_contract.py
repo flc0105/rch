@@ -65,7 +65,7 @@ def test_shared_upload_has_folder_but_no_category(tmp_path):
     assert item['scope'] == 'shared'
     assert 'category' not in item
     assert item['folder_id'] == first['folder_id']
-    assert item['extra']['source_kind'] == 'shared_upload'
+    assert not item.get('extra') or 'source_kind' not in item['extra']
     moved = api.move_artifact(item['artifact_id'], second['folder_id'])
     assert 'category' not in moved
     assert moved['folder_id'] == second['folder_id']

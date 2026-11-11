@@ -1,7 +1,6 @@
 import os
 
 from core.utils.artifact_naming import build_artifact_filename
-from core.artifact_contract import ArtifactOrigin
 from client.runtime.temp_workspace import make_client_temp_file, cleanup_temp_path
 
 
@@ -43,7 +42,7 @@ class WinMediaService:
                 temp_file,
                 category='screenshots',
                 upload_name=filename,
-                extra={'origin': ArtifactOrigin.SCREENSHOT_COMMAND.value},
+                extra={'saved_from': 'client_command', 'source_command': 'screenshot'},
             )
 
             self.owner._send_final_result(1, f'Screenshot uploaded: {filename}')

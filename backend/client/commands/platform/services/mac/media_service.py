@@ -5,7 +5,6 @@ import shlex
 from client.commands.runtime.context import CommandCancelledError, CommandTimeoutError
 from core.utils.formatting import get_size
 from core.utils.artifact_naming import build_artifact_filename
-from core.artifact_contract import ArtifactOrigin
 from client.runtime.temp_workspace import make_client_temp_file, cleanup_temp_path
 
 
@@ -39,7 +38,7 @@ class MacMediaService:
                 screenshot_path,
                 category='screenshots',
                 upload_name=build_artifact_filename('screenshot', 'png'),
-                extra={'origin': ArtifactOrigin.SCREENSHOT_COMMAND.value},
+                extra={'saved_from': 'client_command', 'source_command': 'screenshot'},
             )
         except CommandCancelledError:
             return 0, 'Screenshot command cancelled'
@@ -82,7 +81,7 @@ class MacMediaService:
                     temp_file,
                     category='webcam',
                     upload_name=build_artifact_filename('webcam', 'jpg'),
-                    extra={'origin': ArtifactOrigin.WEBCAM_COMMAND.value},
+                    extra={'saved_from': 'client_command', 'source_command': 'webcam_snap'},
                 )
                 if not status:
                     return 0, f'Webcam upload failed: {message}'

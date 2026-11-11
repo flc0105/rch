@@ -291,6 +291,47 @@ class BackgroundJobStore:
                 conn.execute('SELECT * FROM background_jobs WHERE job_id = ?', (job['job_id'],)).fetchone()
             )
 
+    def artifact_job_links(self, artifact_ids: list[str]) -> dict[str, list[dict]]:
+        """Project links from the authoritative job ledger without copying job IDs into Artifact rows."""
+        ids = sorted(set(str(item or '').strip() for item in artifact_ids if str(item or '').strip()))
+        if not ids:
+            return {}
+        rows = []
+        with self._lock:
+            # Artifact lists are unpaginated; chunk IDs below SQLite's variable limit.
+            for offset in range(0, len(ids), 400):
+                batch = ids[offset:offset + 400]
+                markers = ','.join('?' for _ in batch)
+                rows.extend(self.database.connection().execute(
+                    f'''SELECT f.artifact_id, b.job_id, b.job_key, b.job_name
+                        FROM background_job_files f
+                        JOIN background_jobs b ON b.job_id = f.job_id
+                        WHERE f.artifact_id IN ({markers})
+                        ORDER BY f.association_id''', batch,
+                ).fetchall())
+        result = {}
+        for row in rows:
+            result.setdefault(row['artifact_id'], []).append({
+                'job_id': row['job_id'], 'job_key': row['job_key'], 'job_name': row['job_name'],
+            })
+        return result
+
+    def link_artifact(self, job_id: str, artifact: dict) -> None:
+        """Register a Job Detail saved artifact in the same association ledger as job uploads."""
+        job_id = str(job_id or '').strip()
+        artifact_id = str(artifact.get('artifact_id') or '').strip()
+        if not job_id or not artifact_id:
+            raise ValueError('job_id and artifact_id are required')
+        with self._lock, self.database.transaction() as conn:
+            row = conn.execute('SELECT * FROM background_jobs WHERE job_id=?', (job_id,)).fetchone()
+            if row is None:
+                raise ValueError('Background job not found')
+            job = dict(row)
+            snapshot = json_dumps_or_default(self._build_file_snapshot(artifact, job), '{}')
+            conn.execute('''INSERT OR IGNORE INTO background_job_files
+                (job_id, artifact_id, created_at, snapshot_json) VALUES (?, ?, ?, ?)''',
+                (job_id, artifact_id, self._now_iso(), snapshot))
+
     def append_file_report(self, payload: dict) -> dict:
         with self._lock, self.database.transaction() as conn:
             job = self._ensure_job(conn, payload)

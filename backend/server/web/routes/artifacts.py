@@ -124,32 +124,30 @@ def create_artifacts_blueprint(server_instance):
         def _execute():
             payload = get_json_payload()
 
+            if any(key in payload for key in ('source', 'category', 'job_name')):
+                raise ValueError('Use output_kind and extra.saved_from for output saves')
             content = payload.get('content', '')
-            category = (payload.get('category') or 'command_output').strip()
+            output_kind = str(payload.get('output_kind') or 'command').strip()
             client_id = (payload.get('client_id') or '').strip()
             hostname = (payload.get('hostname') or '').strip()
             machine_id = (payload.get('machine_id') or '').strip()
-            source = (payload.get('source') or '').strip()
             source_command = (payload.get('source_command') or '').strip()
             source_command_id = payload.get('source_command_id')
             output_format = str(payload.get('output_format') or 'text').strip().lower()
             job_id = (payload.get('job_id') or '').strip()
-            job_name = (payload.get('job_name') or '').strip()
             job_key = (payload.get('job_key') or '').strip()
             extra = payload.get('extra') if isinstance(payload.get('extra'), dict) else {}
 
             return artifact_api.save_command_output_artifact(
                 content=content,
-                category=category,
+                output_kind=output_kind,
                 client_id=client_id,
                 hostname=hostname,
                 machine_id=machine_id,
-                source=source,
                 source_command=source_command,
                 source_command_id=source_command_id,
                 output_format=output_format,
                 job_id=job_id,
-                job_name=job_name,
                 job_key=job_key,
                 extra=extra,
             )

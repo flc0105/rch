@@ -43,14 +43,14 @@ def test_timestamped_names_share_one_contract():
 
 def test_command_script_job_and_terminal_names():
     service = CommandOutputArtifactService(SimpleNamespace())
-    assert service.build_output_name(category='command_output', source_command='acmd clipboard get', now=STAMP) == 'command_output_20261110_183218_acmd_clipboard.txt'
-    assert service.build_output_name(category='script_output', source_command='tools/trash_items.py', now=STAMP) == 'script_20261110_183218_trash_items.txt'
-    assert service.build_output_name(category='job_output', source_command='example_monitor', now=STAMP) == 'job_output_20261110_183218_example_monitor.json'
-    assert service.build_output_name(category='command_output', source_command='', now=STAMP, output_name_prefix='terminal_output', output_format='json') == 'terminal_output_20261110_183218.json'
-    assert service.build_output_name(category='command_output', source_command='', now=STAMP, output_name_prefix='pty_output') == 'pty_output_20261110_183218.txt'
+    assert service.build_output_name(output_kind='command', source_command='acmd clipboard get', now=STAMP) == 'command_output_20261110_183218_acmd_clipboard.txt'
+    assert service.build_output_name(output_kind='script', source_command='script exec tools/trash_items.py', script_path='tools/trash_items.py', now=STAMP) == 'script_20261110_183218_trash_items.txt'
+    assert service.build_output_name(output_kind='job', source_command='', job_key='example_monitor', now=STAMP, output_format='json') == 'job_output_20261110_183218_example_monitor.json'
+    assert service.build_output_name(output_kind='command', source_command='', now=STAMP, saved_from='terminal_toolbar', output_format='json') == 'terminal_output_20261110_183218.json'
+    assert service.build_output_name(output_kind='command', source_command='', now=STAMP, saved_from='pty_toolbar') == 'pty_output_20261110_183218.txt'
 
 
-def test_job_uses_job_name_not_instance_display_name(tmp_path):
+def test_job_uses_job_key_not_instance_display_name(tmp_path):
     class FakeRegistry:
         def allocate_artifact_path(self, *, original_name, machine_id, artifact_type):
             return dict(file_path=str(tmp_path / original_name), original_name=original_name,
@@ -60,12 +60,12 @@ def test_job_uses_job_name_not_instance_display_name(tmp_path):
     service = CommandOutputArtifactService(FakeRegistry())
     service._now = lambda: STAMP
     item = service.save_text_output(
-        content='{}', category='job_output', output_format='json',
-        hostname='mac', machine_id='machine', source_command='Example Monitor 4a2de06d',
-        job_name='example_monitor', job_id='4a2de06d',
+        content='{}', output_kind='job', output_format='json',
+        hostname='mac', machine_id='machine', job_key='clipboard_monitor',
+        extra={'saved_from': 'background_job_detail'},
     )
-    assert item['original_name'] == 'job_output_20261110_183218_example_monitor.json'
-    assert item['job_id'] == '4a2de06d'
+    assert item['original_name'] == 'job_output_20261110_183218_clipboard_monitor.json'
+    assert 'job_id' not in item
 
 
 def test_cancelable_multipart_uses_explicit_name_without_renaming_local_path(tmp_path):
@@ -106,9 +106,9 @@ def test_command_media_upload_passes_wire_name_and_origin(tmp_path):
     service = CommandHttpFileTransferService(owner, client_api=client_api)
     service.get_transfer_strategy = lambda: strategy
     service.upload_single_file_to_server_result(str(local), category='screenshots',
-        upload_name='screenshot_20261110_183218.png', extra={'origin': 'screenshot_command'})
+        upload_name='screenshot_20261110_183218.png', extra={'saved_from': 'client_command', 'source_command': 'screenshot'})
     assert strategy.upload_file.call_args.kwargs['filename'] == 'screenshot_20261110_183218.png'
-    assert 'screenshot_command' in strategy.upload_file.call_args.args[2]['extra']
+    assert 'client_command' in strategy.upload_file.call_args.args[2]['extra']
     assert local.read_bytes() == b'xyz'
 
 
@@ -133,7 +133,7 @@ def test_macos_screenshot_sends_generated_artifact_name(monkeypatch, tmp_path):
     assert options['category'] == 'screenshots'
     assert options['upload_name'].startswith('screenshot_')
     assert options['upload_name'].endswith('.png')
-    assert options['extra'] == {'origin': 'screenshot_command'}
+    assert options['extra'] == {'saved_from': 'client_command', 'source_command': 'screenshot'}
     assert transfer.upload_single_file_to_server_result.call_args.args[0] == str(local)
 
 
@@ -161,7 +161,7 @@ def test_windows_screenshot_uses_wire_name_not_local_temp(monkeypatch, tmp_path)
     assert options['category'] == 'screenshots'
     assert options['upload_name'].startswith('screenshot_')
     assert options['upload_name'].endswith('.png')
-    assert options['extra'] == {'origin': 'screenshot_command'}
+    assert options['extra'] == {'saved_from': 'client_command', 'source_command': 'screenshot'}
     assert transfer.upload_single_file_to_server_result.call_args.args[0] == str(local)
 
 

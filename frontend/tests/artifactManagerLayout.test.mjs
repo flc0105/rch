@@ -44,7 +44,7 @@ test('all file, folder, and bulk-action handlers stay reachable', () => {
   }
   for (const label of ['Saved Files', 'Shared Files', 'All Files', 'New Folder',
     'Create File', 'Upload', 'Refresh', 'Clear', 'Preview', 'Download', 'More',
-    'Size', 'Created', 'Actions']) assert.ok(source.includes(label), label)
+    'Size', 'Saved', 'Actions']) assert.ok(source.includes(label), label)
 })
 
 test('file table uses compact non-wrapping columns and Lucide icons', () => {
@@ -58,7 +58,7 @@ test('file table uses compact non-wrapping columns and Lucide icons', () => {
   assert.match(template, /<Folder v-else :size="15"/)
   assert.match(source, /\.dialog-table-shell :deep\(\.el-table \.cell\)[\s\S]*white-space:\s*nowrap;/)
   assert.ok(table.includes('min-width="240"'))
-  assert.ok(table.includes('label="Size"') && table.includes('label="Created"'))
+  assert.ok(table.includes('label="Size"') && table.includes('label="Saved"'))
   assert.ok(table.includes('label="Actions"'))
 })
 

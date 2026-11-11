@@ -18,7 +18,7 @@ class HistoryViewService:
     def _resolve_artifact(self, file_item):
         return self.artifact_view_projector.project(
             file_item, self.store.artifact_service,
-            path_key='saved_path', allow_local_path_fallback=True, include_created_at=True,
+            path_key='saved_path', allow_local_path_fallback=True, include_saved_at=True,
         )
 
     @staticmethod

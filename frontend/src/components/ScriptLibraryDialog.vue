@@ -522,7 +522,16 @@ export default {
   methods: {
     viewResultJson() {
       if (!this.resultJsonText) return
-      this.$emit('open-json', { jsonText: this.resultJsonText, clientId: this.activeRun.clientId })
+      this.$emit('open-json', {
+        jsonText: this.resultJsonText,
+        clientId: this.activeRun.clientId,
+        jsonCommandInfo: {
+          blockType: 'script',
+          is_script: true,
+          script_path: this.activeRun.scriptPath,
+          script_name: this.activeRun.scriptPath,
+        },
+      })
     },
     forwardAppendOutput(clientId, line, kind, meta) {
       this.$emit('append-output', clientId, line, kind, meta)

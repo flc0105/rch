@@ -26,7 +26,8 @@ class CommandFileCliMixin:
             file_path = self.path_resolver.require_existing_file_from_arg(filename)
             return self.http_file_transfer_service.upload_single_file_to_server_result(
                 file_path,
-                category='downloads'
+                category='downloads',
+                extra={'saved_from': 'client_command', 'source_command': f'download {filename}'},
             )
         except Exception as e:
             return 0, f'Failed to download file: {e}'

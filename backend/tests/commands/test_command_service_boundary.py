@@ -80,7 +80,7 @@ def test_artifact_created_payload_keeps_web_notification_shape():
     assert bus.events == [('artifact_created', {
         'artifact_id': 'a', 'artifact_type': '', 'category': 'command_output',
         'hostname': '', 'machine_id': '', 'client_id': '', 'source_command_id': 13,
-        'original_name': '', 'stored_name': '', 'size': 0, 'created_at': '',
+        'original_name': '', 'stored_name': '', 'size': 0, 'saved_at': '',
         'download_url': '', 'preview_url': '',
     })]
     publish_artifact_created(bus, 'invalid')

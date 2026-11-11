@@ -294,6 +294,7 @@ class ServerApplicationAssembly:
             event_bus=self.event_bus,
             artifact_service=self.artifact_service,
             command_execution_api=self.command_execution_api,
+            background_job_store=self.background_job_store,
         )
 
         self.remote_file_api = WebRemoteFileApi(

@@ -23,13 +23,13 @@ def test_clipboard_download_single_and_zip_uses_clipboard_source():
     service, sends = make_service()
     service.download_file('c1', '/tmp/a.txt', feature='clipboard')
     service.download_paths_as_zip('c1', ['/tmp/a.txt', '/tmp/b.txt'], feature='clipboard')
-    assert sends[0][1]['folder'] == 'Clipboard'
-    assert sends[1][1]['folder'] == 'Clipboard'
+    assert sends[0][1]['category'] == 'clipboard'
+    assert sends[1][1]['category'] == 'clipboard'
 
 
 def test_remote_files_download_stays_in_downloads():
     service, sends = make_service()
     service.download_file('c1', '/tmp/a.txt', feature='remote_files')
     service.download_paths_as_zip('c1', ['/tmp/a.txt'], feature='remote_files')
-    assert sends[0][1]['folder'] == 'Downloads'
-    assert sends[1][1]['folder'] == 'Downloads'
+    assert sends[0][1]['category'] == 'downloads'
+    assert sends[1][1]['category'] == 'downloads'

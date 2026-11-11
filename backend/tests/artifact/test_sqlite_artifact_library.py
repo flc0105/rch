@@ -18,7 +18,7 @@ def make_record(path, artifact_id, scope='saved', category='screenshots', folder
         'artifact_id': artifact_id, 'scope': scope,
         'machine_id': 'machine-one' if scope == 'saved' else '',
         'saved_path': str(path), 'original_name': path.name,
-        'stored_name': path.name, 'created_at': '2026-11-10 09:00:00',
+        'stored_name': path.name, 'saved_at': '2026-11-10 09:00:00',
     }
     if scope == 'saved':
         record['category'] = category

@@ -23,7 +23,6 @@ import schedule
 
 from client.jobs.core.job import Job
 from core.utils.artifact_naming import build_artifact_filename
-from core.artifact_contract import ArtifactOrigin
 from core.utils.logger import logger
 
 
@@ -58,7 +57,7 @@ class ScheduledScreenshot(Job):
 
         try:
             response = self.upload_file_via_http(screenshot_path, category='screenshots',
-                                                      extra={'origin': ArtifactOrigin.JOB.value})
+                                                      extra={'saved_from': 'background_job'},)
             self.send_to_server(1, f'Upload result: {response.text}', 0)
         finally:
             try:

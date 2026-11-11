@@ -602,7 +602,6 @@ export default {
         command_name: commandName,
         name: commandName,
         source_command: commandName,
-        category: String(payload.category || 'command_output').trim() || 'command_output',
       }
     },
 

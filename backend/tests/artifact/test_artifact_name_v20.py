@@ -27,7 +27,7 @@ def test_two_word_prefixes_are_centralized_not_subcommand_whitelist():
         assert build_command_name(command) == label
 
 
-def test_raw_script_name_overrides_display_and_command(tmp_path):
+def test_script_path_and_job_key_define_names_without_display_name_fallback(tmp_path):
     class Registry:
         def allocate_artifact_path(self, **kw):
             name = kw['original_name']
@@ -39,25 +39,23 @@ def test_raw_script_name_overrides_display_and_command(tmp_path):
     service = CommandOutputArtifactService(Registry())
     service._now = lambda: STAMP
     data = service.save_text_output(
-        content='ok', category='script_output', hostname='host', machine_id='m',
-        source_command='[Run Script] User Friendly Title',
-        extra={'script_name': 'tools/trash_items.py', 'script_display_name': 'User Friendly Title'},
+        content='ok', output_kind='script', hostname='host', machine_id='m',
+        source_command='script exec tools/trash_items.py',
+        extra={'saved_from': 'terminal_output', 'script_path': 'tools/trash_items.py'},
     )
     assert data['original_name'] == 'script_20261110_183218_trash_items.txt'
-
-    # No raw identifier: omit the optional suffix rather than use a display name.
-    data2 = service.save_text_output(
-        content='ok', category='script_output', hostname='host', machine_id='m',
-        source_command='[Run Script] Pretty Name', extra={'script_display_name': 'Pretty Name'},
-    )
-    assert data2['original_name'] == 'script_20261110_183218.txt'
-
+    with pytest.raises(ValueError, match='script_path is required'):
+        service.save_text_output(
+            content='ok', output_kind='script', hostname='host', machine_id='m',
+            source_command='[Run Script] Pretty Name',
+            extra={'saved_from': 'terminal_json_viewer'},
+        )
     job = service.save_text_output(
-        content='{}', category='job_output', hostname='host', machine_id='m',
-        job_name='example_monitor', job_id='aabbcc', source_command='Example Monitor aabbcc',
-        output_format='json',
+        content='{}', output_kind='job', hostname='host', machine_id='m',
+        job_key='clipboard_monitor', output_format='json',
+        extra={'saved_from': 'background_job_detail'},
     )
-    assert job['original_name'] == 'job_output_20261110_183218_example_monitor.json'
+    assert job['original_name'] == 'job_output_20261110_183218_clipboard_monitor.json'
 
 
 def test_clipboard_raw_image_uses_timestamp_and_file_name_is_unmodified(monkeypatch):
@@ -72,5 +70,5 @@ def test_clipboard_raw_image_uses_timestamp_and_file_name_is_unmodified(monkeypa
     assert uploaded['filename'].startswith('clipboard_') and uploaded['filename'].endswith('.png')
     assert len(uploaded['filename']) == len('clipboard_YYYYMMDD_HHMMSS.png')
     assert uploaded['category'] == 'clipboard'
-    assert uploaded['extra'] == {'clipboard_kind': 'image'}
+    assert uploaded['extra'] == {'saved_from': 'clipboard'}
     assert build_artifact_filename('clipboard', 'png', now=STAMP) == 'clipboard_20261110_183218.png'

@@ -1103,9 +1103,7 @@ export default {
         formData.append('artifact_type', 'shared_files')
         if (this.sharedCreateFolderId) formData.append('folder_id', this.sharedCreateFolderId)
         formData.append('extra', JSON.stringify({
-          source: 'shared_file_editor',
           saved_from: 'artifact_dialog_create_file',
-          saved_at: new Date().toISOString(),
         }))
 
         const res = await uploadArtifact(formData)

@@ -9,14 +9,6 @@ class ArtifactType(str, Enum):
     COMMAND_OUTPUT = 'command_output'
 
 
-class ArtifactOrigin(str, Enum):
-    SCREENSHOT_COMMAND = 'screenshot_command'
-    WEBCAM_COMMAND = 'webcam_command'
-    SCREEN_VIEW = 'screen_view'
-    SCRIPT = 'script'
-    JOB = 'job'
-
-
 class ArtifactScope(str, Enum):
     SAVED = 'saved'
     SHARED = 'shared'
@@ -49,8 +41,6 @@ SAVED_CATEGORY_FOLDERS = {
 }
 SAVED_FOLDER_IDS = {category: f'{ArtifactScope.SAVED.value}:{category.value}' for category in SAVED_CATEGORY_FOLDERS}
 SAVED_CATEGORY_BY_FOLDER_ID = {folder_id: category for category, folder_id in SAVED_FOLDER_IDS.items()}
-
-TERMINAL_SNAPSHOT_SOURCES = frozenset({'pty_toolbar_action', 'terminal_toolbar_action'})
 
 
 def normalize_saved_category(value):

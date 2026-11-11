@@ -33,11 +33,35 @@ Saved Files 共有九个预设分类，`category` 与目录严格一对一；分
 
 ## SQLite、实际文件与备份
 
-**Artifact 元数据统一保存在 Server 的 `runtime/rch.db`。** 其中 `artifact_entries` 管理文件记录，`artifact_folders` 管理逻辑目录；文件本体继续位于 `runtime/web_files/artifacts/`。元数据包含 `artifact_id`、`scope`、设备和命令/Job 关联信息、创建时间及文件路径。`artifact_entries.category` 仅对 Saved Files 非空，Shared/Preview 为 NULL 且对外元数据没有 `category`；只有 Shared Files 持久存储 `folder_id`。Saved Files 的目录 ID 读取时由 `category` 推导。所有元数据访问共用 `RchDatabase` 的连接、事务与 Schema 校验。
+**Artifact 元数据统一保存在 Server 的 `runtime/rch.db`。** 其中 `artifact_entries` 管理文件记录，`artifact_folders` 管理逻辑目录；文件本体继续位于 `runtime/web_files/artifacts/`。元数据包含 `artifact_id`、`scope`、设备和命令引用、保存时间 `saved_at` 及文件路径；Job 关系由 `background_job_files` 记录。`artifact_entries.category` 仅对 Saved Files 非空，Shared/Preview 为 NULL 且对外元数据没有 `category`；只有 Shared Files 持久存储 `folder_id`。Saved Files 的目录 ID 读取时由 `category` 推导。所有元数据访问共用 `RchDatabase` 的连接、事务与 Schema 校验。
 
 新文件内容保存到 `runtime/web_files/artifacts/objects/`，存储名包含随机后缀。`original_name` 用于显示和下载，`stored_name` 对应磁盘文件；**Rename 只更新显示名，Shared Move 只更新目录 ID**，不会移动大文件，也不会改变稳定的 Artifact ID 或 `/api/artifacts/{id}` URL。Preview 缓存内容继续在独立 `previews/` 路径里，由 Server 启动清理规则管理；Preview 是操作，不在 Saved Files 或 Shared Files 中作为永久目录展示。
 
 恢复数据必须同时备份 `rch.db` 和 Artifact 文件内容，且应在停服状态下备份以保证二者一致。只备份 SQLite 会缺少内容；只备份文件则缺少 ID、来源和目录关联。当前服务使用 `saved_path` 检查文件可用性，文件已经不在磁盘上时，列表可标记 `File removed`。
+
+
+### Artifact 保存时间、来源与关联
+
+每条 Artifact **仅有一个保存时间**：`saved_at` 是 `artifact_entries` 的时间列，也是返回给前端的顶层字段；它是 Server 登记文件的时间。`extra` 不再存第二份 `saved_at` 或 `created_at`。`artifact_folders.created_at` 是另一张表的目录创建时间，Agent Outputs 等其他业务的 `created_at` 也不受影响。
+
+`category` 决定 Saved 的九个固定目录，不负责描述产生入口。`extra.saved_from` 记录入口，不再接受重复的 `origin/source/source_kind` 或把 Job ID 复制进去。实际来源信息按需要记录，不强迫所有文件带相同字段：
+
+| 保存入口 | `extra.saved_from` | 可选上下文 |
+|---|---|---|
+| `saveout` | `saveout` | `source_command`、`started_at`、`finished_at`、`final_status` |
+| Terminal 单块保存 | `terminal_output` | `source_command`、Script 的 `script_path` 与可用的执行时间/状态 |
+| Terminal JSON Viewer | `terminal_json_viewer` | 同上；将当前展示的完整 JSON 原文保存为文本输出（`.txt`） |
+| Terminal 工具栏 / PTY 工具栏 | `terminal_toolbar` / `pty_toolbar` | 无须伪造执行命令 |
+| Job Detail → Save Output | `background_job_detail` | 可用的执行时间/状态；Job 关系从关联表查询 |
+| RCH Client 截图、摄像头、下载命令 | `client_command` | 真实 RCH `source_command` |
+| Screen View 的截图 | `screen_view` | `jpeg_quality`（使用的 JPEG 质量） |
+| Clipboard 图片和文件下载 | `clipboard` | 可选 `source_path` / 多路径 `source_paths` |
+| Remote File Browser 下载 | `remote_file_browser` | `source_path` 或 `source_paths`，ZIP 条目可加 `source_entry` |
+| Script SDK / Job 自动文件 | `script_sdk` / `background_job` | 已知时的 `script_path`，Job 关系另存关联表 |
+
+输出保存 API 的 `output_kind` 仅决定命名：`script` 以真实 `script_path` 叶子名命名，`job` 以稳定 `job_key` 命名，普通命令用命令摘要；它不是 Saved `category`，也不会写进 `extra`。Terminal/PTY 整段保存到 `terminal_logs`，其余六类输出保存操作归入 `command_output`。
+
+Job ↔ Artifact 的正式关联是 `background_job_files(job_id, artifact_id)`。Job 文件自动上报和 Job Detail 手动保存均登记此关联；Artifact 查询时投影 `linked_jobs`，不重复写入 Artifact 持久化元数据。删除 Artifact 与 Job 各自遵守现有生命周期与清理规则。
 
 ## 访问、预览和编辑
 
@@ -57,7 +81,7 @@ Saved Files 共有九个预设分类，`category` 与目录严格一对一；分
 | `/api/artifacts/folders/{id}`（DELETE） | 仅在 Shared Files 删除空的自建目录 |
 | `/api/artifacts/create` | 仅允许在 Shared 创建空文本文件 |
 | `/api/files/upload` | Saved Files 传 `category`（不传或未知值归 Inbox），按固定映射选择目录；Shared Files 不允许传 `category`，可传 `folder` 或 `folder_id` 指定现有共享目录；Preview 不需要分类或目录 |
-| `/api/artifacts/command-output/save` | 按既有 Text/JSON 协议保存命令、Script、Job 或终端输出 |
+| `/api/artifacts/command-output/save` | 用 `output_kind=command/script/job` 选择文件名，`output_format=text/json` 选择内容格式；Saved 的 `category` 由保存入口决定 |
 | `/api/artifacts/{id}/send-to-client` | 仅 Shared Files 可提交设备下发任务 |
 
 预览会使用文件签名识别图片、ZIP 和文本；文本查看仍有 512 KiB 预览上限，大于上限时不允许直接编辑覆盖。ZIP 预览使用 `zip-peek`、`zip-entry` 读取结构和条目，不解压覆盖原文件。Remote Files 的 Preview 是独立的临时下载行为，在请求携带当前 `X-Tab-Id` 后，会显示在当前标签页的 Transfer Center Recent 中；这类普通预览仍不自动制造长期 Activity 下载记录。
@@ -66,7 +90,7 @@ Saved Files 共有九个预设分类，`category` 与目录严格一对一；分
 
 Client Script SDK 使用 `artifact.save(path, category=..., extra=...)` 和 `artifact.upload(path, category=...)` 上传 Saved 文件；不指定 `category` 时归入 `inbox`，指定 `category='script_files'` 进入 Script Files，指定 `category='screenshots'` 则保存到 Screenshots。Job 的实体文件默认传 `category='job_files'`；普通非 SDK 上传未传类别时进 `inbox`。分类字段按上表匹配，仅此九种有效，未知值也直接保存到 Inbox。Shared 使用 `artifact.save(path, type='shared_files', folder=...)`，默认写入共享根目录，`folder` 指定已存在的共享路径；Shared 不允许传 `category`。内部 SQLite 只储存 Saved 的规范 `category`，Shared 只持久化共享 `folder_id`；文件实体不因分类逻辑变化而移动。
 
-**Command Output** 收纳单次命令、Script 和 Job 的执行输出快照（含 Text/JSON）；**Script Files / Job Files** 收纳脚本与 Job 实际生成并上传的文件；**Terminal Logs** 收纳整个终端或 PTY 会话的显式保存。文件名和 Job/Command 关联元数据仍按各自来源保留。
+**Command Output** 收纳单次命令、Script 和 Job 的执行输出快照（含 Text/JSON）；**Script Files / Job Files** 收纳脚本与 Job 实际生成并上传的文件；**Terminal Logs** 收纳整个终端或 PTY 会话的显式保存。文件名按脚本实际路径叶子名和 Job 的稳定 `job_key` 生成。命令引用使用 Artifact 顶层的 `source_command_id`；Job 关联只存在于 `background_job_files`，Artifact 详情可按关系投影，不在 Artifact 顶层或 `extra` 中重复保存 Job ID/Key。
 
 ```python
 from client.runtime.sdk import artifact
@@ -76,6 +100,6 @@ screenshot = artifact.upload('./shot.png', category='screenshots')  # Saved / Sc
 shared = artifact.save('./tool.zip', type='shared_files', folder='Team/Tools')
 ```
 
-自动创建的文件采用 `类型_yyyyMMdd_HHmmss[_简短标识].扩展名`：截图使用 `screenshot_...`、摄像头 `webcam_...`、自动上传的相册照片 `photo_...`、单次命令结果 `command_output_..._首个命令词`、脚本执行输出 `script_..._脚本名`、Job 消息快照 `job_output_..._Job名`，整个终端/PTY 导出分别使用 `terminal_output_...`、`pty_output_...`。命令词摘要使用通用 `build_command_name`，不按特定命令维护特殊规则；生成时间使用各生产端的本地时间。明确指定的文件名、剪贴板原始文件名和远程下载原始文件名保持原样。`extra.origin` 记录截图产生的入口（截图命令、Screen View、Script 或 Job），与决定 Saved 目录的 `category` 分开。
+自动创建的文件采用 `类型_yyyyMMdd_HHmmss[_简短标识].扩展名`：截图使用 `screenshot_...`、摄像头 `webcam_...`、自动上传的相册照片 `photo_...`、单次命令结果 `command_output_..._首个命令词`、脚本执行输出 `script_..._脚本名`、Job 消息快照 `job_output_..._job_key`，整个终端/PTY 导出分别使用 `terminal_output_...`、`pty_output_...`。命令词摘要使用通用 `build_command_name`，不按特定命令维护特殊规则；生成时间使用各生产端的本地时间。明确指定的文件名、剪贴板原始文件名和远程下载原始文件名保持原样。`extra.saved_from` 只描述文件实际保存入口；执行命令用 `extra.source_command` 存储真实命令，Screen View 截图可记录 `extra.jpeg_quality`。多路径自动 Bundle ZIP 统一使用 `bundle_yyyyMMdd_HHmmss.zip`，单目录 ZIP 继续采用 `<目录名>.zip`，用户明确指定的名称不被覆盖。
 
 文件下载与发送到 Client 的实际进度仍由 File Transfer 管理；`artifact_created` 表示 Server 已登记文件，`file_transfer_lifecycle` 表示传输生命周期，二者是不同事件。Transfer Center 的 Recent 和长期 Activity 也遵守各自的记录范围，参见 [File Transfer](file_transfer.md)。

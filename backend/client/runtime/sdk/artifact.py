@@ -3,7 +3,7 @@ import json
 import os
 from typing import Any
 
-from core.artifact_contract import ArtifactType, ArtifactOrigin
+from core.artifact_contract import ArtifactType
 from client.http.client_api import ClientApiClient, ClientApiError
 from client.runtime.sdk.context import get_client_id, get_command_id, get_command_owner
 
@@ -126,8 +126,8 @@ def save(path: str, *, type: str = 'files', category: str = '', folder: str = ''
             raise ValueError('Only Saved Files can have category')
         normalized_category = ''
         normalized_folder = _safe_text(folder)
-    if normalized_category.casefold() == 'screenshots':
-        extra = {'origin': ArtifactOrigin.SCRIPT.value, **(extra or {})}
+    if artifact_type != ArtifactType.SHARED_FILES.value:
+        extra = {'saved_from': 'script_sdk', **(extra or {})}
     file_path = _resolve_local_file(path)
     owner = get_command_owner()
 

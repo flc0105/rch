@@ -39,15 +39,15 @@ class CommandOutputArtifactFormatTests(unittest.TestCase):
 
     def test_output_names_select_txt_or_json_without_changing_default(self):
         self.assertEqual(
-            self.service.build_output_name(category='command_output', source_command='', now=self.fixed_now),
+            self.service.build_output_name(output_kind='command', source_command='', now=self.fixed_now),
             'command_output_20261027_090000_output.txt',
         )
         self.assertEqual(
-            self.service.build_output_name(category='command_output', source_command='', now=self.fixed_now, output_format='json'),
+            self.service.build_output_name(output_kind='command', source_command='', now=self.fixed_now, output_format='json'),
             'command_output_20261027_090000_output.json',
         )
         self.assertEqual(
-            self.service.build_output_name(category='job_output', source_command='report', now=self.fixed_now),
+            self.service.build_output_name(output_kind='job', source_command='', job_key='report', now=self.fixed_now, output_format='json'),
             'job_output_20261027_090000_report.json',
         )
 
@@ -56,10 +56,10 @@ class CommandOutputArtifactFormatTests(unittest.TestCase):
         self.service._now = lambda: self.fixed_now
         artifact = self.service.save_text_output(
             content=content,
-            category='command_output',
+            output_kind='command',
             hostname='demo-host',
             machine_id='machine-1',
-            source='terminal_toolbar_action',
+            extra={'saved_from': 'terminal_toolbar'},
             output_format='json',
         )
         path = Path(artifact['file_path'])
@@ -73,10 +73,10 @@ class CommandOutputArtifactFormatTests(unittest.TestCase):
         self.service._now = lambda: self.fixed_now
         artifact = self.service.save_text_output(
             content='terminal output',
-            category='command_output',
+            output_kind='command',
             hostname='demo-host',
             machine_id='machine-1',
-            source='terminal_toolbar_action',
+            extra={'saved_from': 'terminal_toolbar'},
             output_format='text',
         )
         self.assertEqual(artifact['original_name'], 'terminal_output_20261027_090000.txt')
@@ -86,10 +86,9 @@ class CommandOutputArtifactFormatTests(unittest.TestCase):
         self.service._now = lambda: self.fixed_now
         artifact = self.service.save_text_output(
             content='terminal output',
-            category='command_output',
+            output_kind='command',
             hostname='demo-host',
             machine_id='machine-1',
-            source='terminal_export',
             extra={'saved_from': 'terminal_toolbar'},
             output_format='text',
         )
@@ -98,10 +97,11 @@ class CommandOutputArtifactFormatTests(unittest.TestCase):
     def test_json_format_rejects_invalid_json_and_unknown_formats(self):
         with self.assertRaisesRegex(ValueError, 'valid JSON'):
             self.service.save_text_output(
-                content='not json', category='command_output', hostname='demo', machine_id='machine-1', output_format='json',
+                content='not json', output_kind='command', hostname='demo', machine_id='machine-1',
+                extra={'saved_from': 'terminal_output'}, output_format='json',
             )
         with self.assertRaisesRegex(ValueError, 'output_format must be text or json'):
-            self.service.build_output_name(category='command_output', source_command='', output_format='xml')
+            self.service.build_output_name(output_kind='command', source_command='', output_format='xml')
 
 
 if __name__ == '__main__':

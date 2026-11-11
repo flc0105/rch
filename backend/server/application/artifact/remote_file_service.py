@@ -206,9 +206,9 @@ class WebRemoteFileService:
         return terminal, artifact
 
     @staticmethod
-    def _download_folder(feature: str) -> str:
-        return ('Clipboard' if feature == 'clipboard'
-                else 'Downloads')
+    def _download_category(feature: str) -> str:
+        return ('clipboard' if feature == 'clipboard'
+                else 'downloads')
 
     def download_file(self, client_id: str, path: str, history_entry_id: str = '', tab_id: str = '', *, origin: str = 'web_api', feature: str = 'remote_files') -> dict:
         if not (path or '').strip():
@@ -248,7 +248,11 @@ class WebRemoteFileService:
                 {
                     'path': normalized_path,
                     'artifact_type': 'files',
-                    'folder': self._download_folder(feature),
+                    'category': self._download_category(feature),
+                    'extra': {
+                        'saved_from': 'clipboard' if feature == 'clipboard' else 'remote_file_browser',
+                        'source_path': normalized_path,
+                    },
                 },
             )
             _, artifact = self._wait_for_transfer_artifact(transfer_id)
@@ -290,7 +294,10 @@ class WebRemoteFileService:
                                       'filename': filename, 'count': 1, 'source': feature})
         try:
             self._start_client_transfer(session, transfer_id, 'client_to_server_zip_entry',
-                                        {'path': normalized_path, 'entry_name': entry_name})
+                                        {'path': normalized_path, 'entry_name': entry_name,
+                                         'category': self._download_category(feature),
+                                         'extra': {'saved_from': 'clipboard' if feature == 'clipboard' else 'remote_file_browser',
+                                                   'source_path': normalized_path, 'source_entry': entry_name}})
             _, artifact = self._wait_for_transfer_artifact(transfer_id)
             return {'path': normalized_path, 'entry_name': entry_name,
                     'message': 'ZIP entry transfer completed', 'artifact': artifact,
@@ -356,7 +363,11 @@ class WebRemoteFileService:
                     'paths': normalized_paths,
                     'archive_name': archive_name,
                     'artifact_type': 'files',
-                    'folder': self._download_folder(feature),
+                    'category': self._download_category(feature),
+                    'extra': {
+                        'saved_from': 'clipboard' if feature == 'clipboard' else 'remote_file_browser',
+                        'source_paths': normalized_paths,
+                    },
                 },
             )
             _, artifact = self._wait_for_transfer_artifact(transfer_id)

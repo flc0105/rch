@@ -94,6 +94,11 @@ gopin logs
 
 这会尝试切换到 Pin 所指向的远程目录。执行前必须先保存该 Pin，并确保当前 Client 能够访问对应路径；仅有显示名称而无有效路径不会自动创建目录。
 
+
+从 Remote File Browser 下载到 Server Saved Files 的文件使用 `category=downloads`，`extra.saved_from=remote_file_browser`；从系统 Clipboard 打开的相同下载链路使用 `category=clipboard`、`extra.saved_from=clipboard`。单文件、从 ZIP 下载单条目、批量 ZIP 均遵守相同规则。`source_path` 或 `source_paths` 保存实际远端路径，ZIP 内条目可另记 `source_entry`。
+
+多路径、未指定 ZIP 文件名的自动打包使用公共 Artifact 命名器生成 `bundle_yyyyMMdd_HHmmss.zip`，Remote Files 与 Clipboard 复用同一实现；单目录 ZIP 仍为 `<目录名>.zip`，自定义文件名保持原样。这两种下载路径都不会根据旧的 `folder` 上传参数猜测 Saved `category`。
+
 ## 远程文件操作的生命周期
 
 ### 写入、删除及重命名

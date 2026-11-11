@@ -50,14 +50,8 @@ export function uploadScreenViewScreenshot(blob, metadata = {}) {
   form.append('hostname', String(metadata.hostname || ''))
   form.append('machine_id', String(metadata.machineId || ''))
   form.append('extra', JSON.stringify({
-    source: 'screen_view',
-    origin: 'screen_view',
-    screen_session_id: String(metadata.screenSessionId || ''),
-    frame_strategy: String(metadata.frameStrategy || ''),
-    quality: Number(metadata.quality || 0),
-    width: Number(metadata.width || 0),
-    height: Number(metadata.height || 0),
-    captured_at: new Date().toISOString(),
+    saved_from: 'screen_view',
+    jpeg_quality: Number(metadata.quality || 0),
   }))
 
   return apiData('/api/files/upload', {

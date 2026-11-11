@@ -8,15 +8,25 @@ from server.application.artifact.artifact_events import publish_artifact_created
 
 
 class WebArtifactApi:
-    def __init__(self, server, event_bus, artifact_service, command_execution_api=None):
+    def __init__(self, server, event_bus, artifact_service, command_execution_api=None, background_job_store=None):
         self.server = server
         self.event_bus = event_bus
         self.artifact_service = artifact_service
         self.command_execution_api = command_execution_api
+        self.background_job_store = background_job_store
+
+    def _project_job_links(self, artifacts):
+        if not self.background_job_store:
+            return artifacts
+        links = self.background_job_store.artifact_job_links([row.get('artifact_id') for row in artifacts])
+        return [dict(row, linked_jobs=links[row['artifact_id']]) if row['artifact_id'] in links else row
+                for row in artifacts]
 
     def list_artifacts(self, artifact_type: str = '', machine_id: str = '', **filters):
+        artifacts = self.artifact_service.list_artifacts(
+            artifact_type=artifact_type, machine_id=machine_id, **filters)
         return {
-            'items': self.artifact_service.list_artifacts(artifact_type=artifact_type, machine_id=machine_id, **filters),
+            'items': self._project_job_links(artifacts),
             'folders': self.artifact_service.list_folders(),
             'machines': self.artifact_service.list_artifact_machines(),
         }
@@ -80,7 +90,8 @@ class WebArtifactApi:
         return self.artifact_service.get_artifact_file_path(artifact_id)
 
     def get_artifact_by_id(self, artifact_id: str):
-        return self.artifact_service.get_artifact_by_id(artifact_id)
+        artifact = self.artifact_service.get_artifact_by_id(artifact_id)
+        return self._project_job_links([artifact])[0] if artifact else None
 
     def publish_artifact_created(self, artifact_info: dict):
         publish_artifact_created(self.event_bus, artifact_info)
@@ -125,8 +136,7 @@ class WebArtifactApi:
         return self.artifact_service.get_upload_temp_file_path(temp_id, filename)
 
     def save_http_uploaded_file(self, upload, artifact_type: str = ArtifactType.FILES.value, client_id: str = '',
-                                hostname: str = '', machine_id: str = '', job_id: str = '', job_name: str = '',
-                                job_key: str = '', source_command_id=None, transfer_buffer_size=None, extra=None,
+                                hostname: str = '', machine_id: str = '', job_id: str = '', source_command_id=None, transfer_buffer_size=None, extra=None,
                                 category: str | None = None, folder_id: str = '', folder: str = ''):
         expected_scope = scope_for_type(artifact_type)
         if expected_scope == ArtifactScope.SAVED:
@@ -154,15 +164,14 @@ class WebArtifactApi:
             client_id=client_id,
             hostname=hostname or resolved_hostname,
             machine_id=machine_id or resolved_machine_id,
-            job_id=job_id,
-            job_name=job_name,
-            job_key=job_key,
             source_command_id=source_command_id,
             addr=addr,
             transfer_buffer_size=transfer_buffer_size,
             extra=extra,
             folder_id=folder_id,
         )
+        if job_id and self.background_job_store and self.background_job_store.get_job_for_scope(job_id):
+            self.background_job_store.link_artifact(job_id, artifact)
         try:
             self.bind_uploaded_artifact_to_history(client_id, source_command_id, artifact)
         except Exception:
@@ -174,27 +183,18 @@ class WebArtifactApi:
         return artifact
 
 
-    def allocate_command_output_artifact_path(self, *, category: str, machine_id: str, source_command: str) -> dict:
+    def allocate_command_output_artifact_path(self, *, output_kind: str, machine_id: str, source_command: str) -> dict:
         return self.artifact_service.allocate_command_output_artifact_path(
-            category=category,
-            machine_id=machine_id,
-            source_command=source_command,
+            output_kind=output_kind, machine_id=machine_id, source_command=source_command,
         )
 
-    def register_command_output_artifact(self, *, allocation: dict, category: str, hostname: str, machine_id: str,
-                                         client_id: str = '', addr: str = '', source: str = '',
-                                         source_command: str = '', source_command_id=None, extra=None) -> dict:
+    def register_command_output_artifact(self, *, allocation: dict, output_kind: str, hostname: str, machine_id: str,
+                                         client_id: str = '', addr: str = '', source_command: str = '',
+                                         source_command_id=None, extra=None) -> dict:
         artifact = self.artifact_service.register_command_output_artifact(
-            allocation=allocation,
-            category=category,
-            hostname=hostname,
-            machine_id=machine_id,
-            client_id=client_id,
-            addr=addr,
-            source=source,
-            source_command=source_command,
-            source_command_id=source_command_id,
-            extra=extra if isinstance(extra, dict) else {},
+            allocation=allocation, output_kind=output_kind, hostname=hostname, machine_id=machine_id,
+            client_id=client_id, addr=addr, source_command=source_command,
+            source_command_id=source_command_id, extra=extra if isinstance(extra, dict) else {},
         )
         try:
             self.publish_artifact_created(artifact)
@@ -202,32 +202,24 @@ class WebArtifactApi:
             pass
         return artifact
 
-
-    def save_command_output_artifact(self, *, content: str, category: str = 'command_output',
+    def save_command_output_artifact(self, *, content: str, output_kind: str = 'command',
                                      client_id: str = '', hostname: str = '', machine_id: str = '',
-                                     source: str = '', source_command: str = '', source_command_id=None,
-                                     job_id: str = '', job_name: str = '', job_key: str = '',
-                                     extra=None, output_format: str = 'text'):
+                                     source_command: str = '', source_command_id=None,
+                                     job_id: str = '', job_key: str = '', extra=None, output_format: str = 'text'):
         resolved_hostname, resolved_machine_id, addr = self.resolve_client_context(client_id)
-        hostname = hostname or resolved_hostname
-        machine_id = machine_id or resolved_machine_id
-
-        return self.artifact_service.save_command_output_artifact(
-            content=content,
-            category=category,
-            client_id=client_id,
-            hostname=hostname,
-            machine_id=machine_id,
-            source=source,
-            source_command=source_command,
-            source_command_id=source_command_id,
-            addr=addr,
-            job_id=job_id,
-            job_name=job_name,
-            job_key=job_key,
-            extra=extra if isinstance(extra, dict) else {},
-            output_format=output_format,
+        if job_id and (not self.background_job_store or not self.background_job_store.get_job_for_scope(
+                job_id, machine_id=machine_id or resolved_machine_id)):
+            raise ValueError('Background job not found in this machine')
+        artifact = self.artifact_service.save_command_output_artifact(
+            content=content, output_kind=output_kind, client_id=client_id,
+            hostname=hostname or resolved_hostname, machine_id=machine_id or resolved_machine_id,
+            source_command=source_command, source_command_id=source_command_id,
+            addr=addr, job_key=job_key,
+            extra=extra if isinstance(extra, dict) else {}, output_format=output_format,
         )
+        if job_id:
+            self.background_job_store.link_artifact(job_id, artifact)
+        return artifact
 
 
     def send_artifact_to_client(self, artifact_id: str, client_id: str, target_path: str = '', tab_id: str = '', conflict_policy='stop', operation_id: str = ''):

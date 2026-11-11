@@ -24,7 +24,7 @@ class ArtifactReferenceViewProjector:
         *,
         path_key: str = 'saved_path',
         allow_local_path_fallback: bool = False,
-        include_created_at: bool = False,
+        include_saved_at: bool = False,
     ) -> dict:
         copied = dict(file_item or {})
         artifact_id = str(copied.get('artifact_id') or '').strip()
@@ -37,8 +37,8 @@ class ArtifactReferenceViewProjector:
                 copied.pop('category', None)
                 if artifact.get('scope') == 'saved':
                     copied['category'] = artifact['category']
-                if include_created_at:
-                    copied['created_at'] = artifact.get('created_at', copied.get('created_at', ''))
+                if include_saved_at:
+                    copied['saved_at'] = artifact.get('saved_at', copied.get('saved_at', ''))
                 copied[path_key] = artifact.get('saved_path', copied.get(path_key, ''))
                 copied['is_available'] = artifact.get('is_available', True)
                 copied['status_text'] = artifact.get('status_text', '')

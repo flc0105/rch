@@ -49,7 +49,7 @@ func (s *Session) uploadFileToServer(filePath string, category string) (map[stri
 	_ = writer.WriteField("artifact_type", "files")
 	_ = writer.WriteField("category", defaultString(category, "inbox"))
 	if category == "screenshots" {
-		_ = writer.WriteField("extra", `{"origin":"screenshot_command"}`)
+		_ = writer.WriteField("extra", `{"saved_from":"client_command","source_command":"screenshot"}`)
 	}
 	_ = writer.WriteField("client_id", s.ClientID)
 	_ = writer.WriteField("hostname", s.HostName)

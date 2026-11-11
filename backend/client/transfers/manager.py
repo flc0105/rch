@@ -276,7 +276,10 @@ class ClientTransferManager:
             if not os.path.isfile(selected_path):
                 raise ValueError('ZIP entry download requires a file')
             service.upload_single_file_to_server_result(
-                selected_path, artifact_type='files', category='downloads', transfer_id=transfer_id,
+                selected_path, artifact_type='files',
+                category=str(payload.get('category') or 'downloads'),
+                extra=payload.get('extra') if isinstance(payload.get('extra'), dict) else None,
+                transfer_id=transfer_id,
             )
 
     def _run_server_to_client_file(self, service, owner, transfer_id: str, payload: dict):

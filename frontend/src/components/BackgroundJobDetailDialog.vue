@@ -328,26 +328,21 @@ export default {
         },
         records,
       }
-      const sourceCommand = String(
-        this.item.display_name || this.item.job_name || this.item.job_key || 'job'
-      ).trim()
-
       this.saveOutputLoading = true
       try {
         const res = await saveCommandOutputArtifact({
             content: JSON.stringify(output, null, 2),
-            category: 'job_output',
+            output_kind: 'job',
             client_id: String(this.item.client_id || ''),
             hostname: String(this.item.hostname || this.currentConnection?.hostname || ''),
             machine_id: String(this.item.machine_id || this.currentConnection?.machine_id || ''),
-            source: 'background_job_detail',
-            source_command: sourceCommand,
             job_id: String(this.item.job_id || ''),
-            job_name: String(this.item.job_name || ''),
             job_key: String(this.item.job_key || ''),
+            output_format: 'json',
             extra: {
-              format: 'json',
-              record_count: records.length,
+              saved_from: 'background_job_detail',
+              ...(this.item.started_at ? {started_at: String(this.item.started_at)} : {}),
+              ...(this.item.finished_at ? {finished_at: String(this.item.finished_at)} : {}),
             },
         })
 

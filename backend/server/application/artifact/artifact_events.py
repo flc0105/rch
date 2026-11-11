@@ -14,7 +14,7 @@ def publish_artifact_created(event_bus, artifact_info: dict):
         'original_name': artifact_info.get('original_name', ''),
         'stored_name': artifact_info.get('stored_name', ''),
         'size': artifact_info.get('size', 0),
-        'created_at': artifact_info.get('created_at', ''),
+        'saved_at': artifact_info.get('saved_at', ''),
         'download_url': artifact_info.get('download_url', ''),
         'preview_url': artifact_info.get('preview_url', ''),
     }

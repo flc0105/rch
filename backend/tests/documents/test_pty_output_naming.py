@@ -29,11 +29,11 @@ def test_pty_toolbar_export_uses_timestamped_command_output_artifact(tmp_path):
         register_existing_artifact=register_existing_artifact,
     ))
     service._now = lambda: datetime(2026, 11, 5, 14, 23, 9)
-    result = service.save_text_output(content='$ echo hello\nhello', category='command_output',
+    result = service.save_text_output(content='$ echo hello\nhello', output_kind='command',
                                       client_id='client', machine_id='machine',
-                                      source='pty_toolbar_action', hostname='host')
+                                      extra={'saved_from': 'pty_toolbar'}, hostname='host')
     assert result['original_name'] == 'pty_output_20261105_142309.txt'
     assert allocated[0]['artifact_type'] == 'command_output'
     assert (tmp_path / result['original_name']).read_text() == '$ echo hello\nhello'
     assert registered[0]['source_command_id'] is None
-    assert registered[0]['extra']['source'] == 'pty_toolbar_action'
+    assert registered[0]['extra']['saved_from'] == 'pty_toolbar'

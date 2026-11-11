@@ -176,8 +176,6 @@ class Job(ABC):
             'client_id': self.client_id,
             'hostname': self.hostname,
             'job_id': self.job_id,
-            'job_name': self.job_name,
-            'job_key': self.job_key,
             'source_command_id': self.command_id if self.command_id is not None else '',
         }
 

@@ -101,7 +101,7 @@ class ArtifactSqliteCatalog:
         condition = ' WHERE ' + ' AND '.join(where) if where else ''
         with self._connect() as conn:
             rows = conn.execute('SELECT payload_json FROM artifact_entries' + condition +
-                                ' ORDER BY created_at DESC, artifact_id DESC', params).fetchall()
+                                ' ORDER BY saved_at DESC, artifact_id DESC', params).fetchall()
         return [self._public_payload(json.loads(row['payload_json'])) for row in rows]
 
     def save(self, payload):
@@ -115,15 +115,15 @@ class ArtifactSqliteCatalog:
                 if not folder or folder['scope'] != scope.value:
                     raise ValueError('Folder does not belong to this file space')
             conn.execute('''INSERT INTO artifact_entries
-                (artifact_id, scope, folder_id, category, machine_id, created_at, saved_path, payload_json)
+                (artifact_id, scope, folder_id, category, machine_id, saved_at, saved_path, payload_json)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(artifact_id) DO UPDATE SET
                     scope=excluded.scope, folder_id=excluded.folder_id,
                     category=excluded.category, machine_id=excluded.machine_id,
-                    created_at=excluded.created_at, saved_path=excluded.saved_path,
+                    saved_at=excluded.saved_at, saved_path=excluded.saved_path,
                     payload_json=excluded.payload_json''',
                 (stored['artifact_id'], scope.value, folder_id, stored.get('category'),
-                 stored.get('machine_id', ''), stored['created_at'], stored['saved_path'],
+                 stored.get('machine_id', ''), stored['saved_at'], stored['saved_path'],
                  json.dumps(stored, ensure_ascii=False)))
         return self._public_payload(dict(stored))
 
@@ -147,10 +147,10 @@ class ArtifactSqliteCatalog:
                     if not folder or folder['scope'] != stored['scope']:
                         raise ValueError(f"Invalid folder for imported artifact: {stored['artifact_id']}")
                 conn.execute('''INSERT INTO artifact_entries
-                    (artifact_id, scope, folder_id, category, machine_id, created_at, saved_path, payload_json)
+                    (artifact_id, scope, folder_id, category, machine_id, saved_at, saved_path, payload_json)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
                     (stored['artifact_id'], stored['scope'], folder_id, stored.get('category'),
-                     stored.get('machine_id', ''), stored['created_at'], stored['saved_path'],
+                     stored.get('machine_id', ''), stored['saved_at'], stored['saved_path'],
                      json.dumps(stored, ensure_ascii=False)))
                 imported += 1
         return imported, already

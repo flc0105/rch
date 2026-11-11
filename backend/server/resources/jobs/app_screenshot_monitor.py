@@ -36,7 +36,6 @@ import tempfile
 
 from client.jobs.core.job import Job
 from core.utils.artifact_naming import build_artifact_filename
-from core.artifact_contract import ArtifactOrigin
 from core.utils.logger import logger
 
 
@@ -262,7 +261,7 @@ class AppScreenshotMonitor(Job):
                 filename = build_artifact_filename('screenshot', 'png')
                 self.upload_file_via_http(
                     screenshot_path, category='screenshots', filename=filename,
-                    extra={'origin': ArtifactOrigin.JOB.value},
+                    extra={'saved_from': 'background_job'},
                 )
 
                 self.screenshot_count += 1

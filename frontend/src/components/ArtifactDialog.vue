@@ -125,13 +125,13 @@
 
 
           <el-table-column
-            label="Created"
+            label="Saved"
             width="166"
             show-overflow-tooltip
           >
             <template #default="{ row }">
               <div class="ellipsis">
-                {{ row.created_at || '-' }}
+                {{ row.saved_at || '-' }}
               </div>
             </template>
           </el-table-column>
@@ -258,7 +258,7 @@
                     <div class="mobile-file-meta-item">
                       <div class="mobile-file-meta-label">Created</div>
                       <div class="mobile-file-meta-value">
-                        {{ row.created_at || '-' }}
+                        {{ row.saved_at || '-' }}
                       </div>
                     </div>
                   </div>
@@ -775,7 +775,7 @@ export default {
             ['artifact_id', 'Artifact ID'],
             ['artifact_type', 'Artifact Type'],
             ['size', 'Size'],
-            ['created_at', 'Created At'],
+            ['saved_at', 'Saved At'],
             ['is_available', 'Available'],
             ['status_text', 'Status'],
           ],
@@ -789,9 +789,7 @@ export default {
             ['client_id', 'Client ID'],
             ['addr', 'Address'],
             ['source_command_id', 'Source Command ID'],
-            ['job_id', 'Job ID'],
-            ['job_name', 'Job Name'],
-            ['job_key', 'Job Key'],
+            ['linked_jobs', 'Jobs'],
           ],
         },
         {

@@ -15,7 +15,7 @@ class ArtifactReference:
     stored_name: str = ''
     saved_path: str = ''
     size: int = 0
-    created_at: str = ''
+    saved_at: str = ''
     download_url: str = ''
     raw_url: str = ''
     preview_url: str = ''
@@ -35,7 +35,7 @@ class ArtifactReference:
             stored_name=str(payload.get('stored_name') or ''),
             saved_path=str(payload.get('saved_path') or ''),
             size=int(payload.get('size', 0) or 0),
-            created_at=str(payload.get('created_at') or ''),
+            saved_at=str(payload.get('saved_at') or ''),
             download_url=str(payload.get('download_url') or ''),
             raw_url=str(payload.get('raw_url') or ''),
             preview_url=str(payload.get('preview_url') or ''),
@@ -52,7 +52,7 @@ class ArtifactReference:
             'stored_name': self.stored_name,
             'saved_path': self.saved_path,
             'size': self.size,
-            'created_at': self.created_at,
+            'saved_at': self.saved_at,
             'download_url': self.download_url,
             'raw_url': self.raw_url,
             'preview_url': self.preview_url,

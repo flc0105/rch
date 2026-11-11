@@ -117,8 +117,7 @@ class ArtifactRegistryService:
 
     def _build_meta_payload(self, *, artifact_id: str, artifact_type: str, hostname: str, machine_id: str,
                             original_name: str, stored_name: str, file_path: str, size: int,
-                            source_command_id=None, client_id: str = '', addr: str = '', job_id: str = '',
-                            job_name: str = '', job_key: str = '',
+                            source_command_id=None, client_id: str = '', addr: str = '',
                             extra: dict | None = None) -> dict:
         payload = {
             'artifact_id': artifact_id,
@@ -131,15 +130,18 @@ class ArtifactRegistryService:
             'stored_name': stored_name,
             'saved_path': file_path,
             'size': int(size or 0),
-            'created_at': self._now_text(),
+            'saved_at': self._now_text(),
             'source_command_id': source_command_id,
-            'job_id': job_id,
-            'job_name': job_name,
-            'job_key': job_key,
         }
         payload.update(self._build_artifact_urls(artifact_id))
         if isinstance(extra, dict):
-            payload['extra'] = extra
+            # The saved timestamp and Job association have one authoritative home.
+            # Do not admit a second time source or retired provenance aliases.
+            retired = {'saved_at', 'created_at', 'source', 'origin', 'source_kind',
+                       'clipboard_kind', 'job_id', 'job_name', 'job_key'} & extra.keys()
+            if retired:
+                raise ValueError('Unsupported Artifact extra fields: ' + ', '.join(sorted(retired)))
+            payload['extra'] = dict(extra)
         return payload
 
     def _safe_remove_file(self, path: str):
@@ -151,9 +153,7 @@ class ArtifactRegistryService:
 
     def _finalize_registered_artifact(self, *, artifact_type: str, category: str, hostname: str, machine_id: str,
                                       original_name: str, file_path: str, stored_name: str,
-
                                       source_command_id=None, client_id: str = '', addr: str = '',
-                                      job_id: str = '', job_name: str = '', job_key: str = '',
                                       extra: dict | None = None, folder_id: str = '') -> dict:
         artifact_id = uuid.uuid4().hex
         file_size = os.path.getsize(file_path) if os.path.isfile(file_path) else 0
@@ -169,9 +169,6 @@ class ArtifactRegistryService:
             source_command_id=source_command_id,
             client_id=client_id,
             addr=addr,
-            job_id=job_id,
-            job_name=job_name,
-            job_key=job_key,
             extra=extra,
         )
         scope = scope_for_type(artifact_type)
@@ -191,16 +188,11 @@ class ArtifactRegistryService:
                 raise ValueError('Preview cache does not support folders')
             if folder_id:
                 meta['folder_id'] = folder_id
-            # Auxiliary source annotation belongs in structured metadata, not a category column.
-            extras = dict(meta.get('extra') or {})
-            extras.setdefault('source_kind', 'shared_upload' if scope == ArtifactScope.SHARED else 'preview_cache')
-            meta['extra'] = extras
         return self.catalog.save(meta)
 
     def register_existing_artifact(self, *, artifact_type: str, category: str, hostname: str, machine_id: str,
                                    original_name: str, file_path: str, stored_name: str,
                                    source_command_id=None, client_id: str = '', addr: str = '',
-                                   job_id: str = '', job_name: str = '', job_key: str = '',
                                    extra: dict | None = None, folder_id: str = '') -> dict:
         with self._lock:
             return self._finalize_registered_artifact(
@@ -210,13 +202,10 @@ class ArtifactRegistryService:
                 machine_id=machine_id,
                 original_name=original_name,
                 file_path=file_path,
-                    stored_name=stored_name,
+                stored_name=stored_name,
                 source_command_id=source_command_id,
                 client_id=client_id,
                 addr=addr,
-                job_id=job_id,
-                job_name=job_name,
-                job_key=job_key,
                 extra=extra,
                 folder_id=folder_id,
             )
@@ -233,8 +222,7 @@ class ArtifactRegistryService:
         )
 
     def save_http_uploaded_file(self, file, artifact_type: str = '', category: str = '', client_id: str = '',
-                                hostname: str = '', machine_id: str = '', job_id: str = '', job_name: str = '',
-                                job_key: str = '',
+                                hostname: str = '', machine_id: str = '',
                                 source_command_id=None, addr: str = '',
                                 transfer_buffer_size=None,
                                 extra: dict | None = None, folder_id: str = '') -> dict:
@@ -246,9 +234,6 @@ class ArtifactRegistryService:
             client_id = ''
             addr = ''
             source_command_id = None
-            job_id = ''
-            job_name = ''
-            job_key = ''
         else:
             normalized_hostname = (hostname or '').strip() or 'unknown_host'
             normalized_machine_id = (machine_id or '').strip() or 'unknown_machine'
@@ -272,9 +257,6 @@ class ArtifactRegistryService:
                 source_command_id=source_command_id,
                 client_id=client_id,
                 addr=addr,
-                job_id=job_id,
-                job_name=job_name,
-                job_key=job_key,
                 extra=extra,
                 folder_id=folder_id,
             )
@@ -284,7 +266,7 @@ class ArtifactRegistryService:
 
     def save_text_artifact(self, *, artifact_type: str, category: str, hostname: str, machine_id: str,
                            original_name: str, content: str, client_id: str = '', addr: str = '',
-                           source_command_id=None, job_id: str = '', job_name: str = '', job_key: str = '',
+                           source_command_id=None,
                            extra: dict | None = None) -> dict:
         normalized_type = self._normalize_artifact_type(artifact_type)
         normalized_category = (category or '').strip()
@@ -295,9 +277,6 @@ class ArtifactRegistryService:
             client_id = ''
             addr = ''
             source_command_id = None
-            job_id = ''
-            job_name = ''
-            job_key = ''
         else:
             normalized_hostname = (hostname or '').strip() or 'unknown_host'
             normalized_machine_id = (machine_id or '').strip() or 'unknown_machine'
@@ -323,9 +302,6 @@ class ArtifactRegistryService:
             source_command_id=source_command_id,
             client_id=client_id,
             addr=addr,
-            job_id=job_id,
-            job_name=job_name,
-            job_key=job_key,
             extra=extra,
         )
 
@@ -370,7 +346,7 @@ class ArtifactRegistryService:
                     client_id=preview.get('client_id', ''), addr=preview.get('addr', ''),
                     original_name=preview.get('original_name', 'preview'),
                     file_path=allocated['file_path'], stored_name=allocated['stored_name'],
-                    extra={'source': 'saved_remote_preview'},
+                    extra={'saved_from': 'remote_file_preview'},
                     folder_id=folder_id,
                 )
                 return created

@@ -18,6 +18,8 @@ test('Screen View saved snapshot uses the shared local timestamp and screenshot 
 
 test('Screen View screenshot metadata distinguishes its capture origin from folder classification', () => {
   assert.match(api, /form\.append\('category', 'screenshots'\)/)
-  assert.match(api, /origin: 'screen_view'/)
-  assert.match(api, /screen_session_id:/)
+  assert.match(api, /saved_from: 'screen_view'/)
+  assert.match(api, /jpeg_quality:/)
+  assert.doesNotMatch(api, /origin: 'screen_view'/)
+  assert.doesNotMatch(api, /screen_session_id:/)
 })

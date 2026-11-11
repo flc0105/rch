@@ -32,11 +32,7 @@ class WebArtifactService:
 
     def register_existing_artifact(self, *, artifact_type: str, category: str, hostname: str, machine_id: str,
                                    original_name: str, file_path: str, stored_name: str,
-
                                    source_command_id=None, client_id: str = '', addr: str = '',
-                                   job_id: str = '',
-                                   job_name: str = '',
-                                   job_key: str = '',
                                    extra: dict | None = None) -> dict:
         return self.registry_service.register_existing_artifact(
             artifact_type=artifact_type,
@@ -49,15 +45,11 @@ class WebArtifactService:
             source_command_id=source_command_id,
             client_id=client_id,
             addr=addr,
-            job_id=job_id,
-            job_name=job_name,
-            job_key=job_key,
             extra=extra,
         )
 
     def save_http_uploaded_file(self, file, artifact_type: str = '', category: str = '', client_id: str = '',
-                                hostname: str = '', machine_id: str = '', job_id: str = '', job_name: str = '',
-                                job_key: str = '',
+                                hostname: str = '', machine_id: str = '',
                                 source_command_id=None, addr: str = '',
                                 transfer_buffer_size=None,
                                 extra: dict | None = None, folder_id: str = '') -> dict:
@@ -68,9 +60,6 @@ class WebArtifactService:
             client_id=client_id,
             hostname=hostname,
             machine_id=machine_id,
-            job_id=job_id,
-            job_name=job_name,
-            job_key=job_key,
             source_command_id=source_command_id,
             addr=addr,
             transfer_buffer_size=transfer_buffer_size,
@@ -78,62 +67,36 @@ class WebArtifactService:
             folder_id=folder_id,
         )
 
-    def allocate_command_output_artifact_path(self, *, category: str, machine_id: str, source_command: str, now=None) -> dict:
+    def allocate_command_output_artifact_path(self, *, output_kind: str, machine_id: str, source_command: str, now=None) -> dict:
         return self.command_output_service.allocate_output_path(
-            category=category,
-            machine_id=machine_id,
-            source_command=source_command,
-            now=now,
+            output_kind=output_kind, machine_id=machine_id,
+            source_command=source_command, now=now,
         )
 
-    def register_command_output_artifact(self, *, allocation: dict, category: str, hostname: str, machine_id: str,
-                                         client_id: str = '', addr: str = '', source: str = '',
-                                         source_command: str = '', source_command_id=None,
-                                         job_id: str = '', job_name: str = '', job_key: str = '',
-                                         extra: dict | None = None, saved_at=None) -> dict:
+    def register_command_output_artifact(self, *, allocation: dict, output_kind: str, hostname: str, machine_id: str,
+                                         client_id: str = '', addr: str = '', source_command: str = '',
+                                         source_command_id=None, extra: dict | None = None) -> dict:
         return self.command_output_service.register_output_artifact(
-            allocation=allocation,
-            category=category,
-            hostname=hostname,
-            machine_id=machine_id,
-            client_id=client_id,
-            addr=addr,
-            source=source,
-            source_command=source_command,
-            source_command_id=source_command_id,
-            job_id=job_id,
-            job_name=job_name,
-            job_key=job_key,
-            extra=extra,
-            saved_at=saved_at,
+            allocation=allocation, output_kind=output_kind, hostname=hostname, machine_id=machine_id,
+            client_id=client_id, addr=addr, source_command=source_command,
+            source_command_id=source_command_id, extra=extra,
         )
 
-    def save_command_output_artifact(self, *, content: str, category: str, hostname: str, machine_id: str,
-                                     client_id: str = '', addr: str = '', source: str = '',
-                                     source_command: str = '', source_command_id=None,
-                                     job_id: str = '', job_name: str = '', job_key: str = '',
-                                     extra: dict | None = None, output_format: str = 'text') -> dict:
+    def save_command_output_artifact(self, *, content: str, output_kind: str, hostname: str, machine_id: str,
+                                     client_id: str = '', addr: str = '', source_command: str = '',
+                                     source_command_id=None, job_key: str = '', extra: dict | None = None,
+                                     output_format: str = 'text') -> dict:
         return self.command_output_service.save_text_output(
-            content=content,
-            category=category,
-            hostname=hostname,
-            machine_id=machine_id,
-            client_id=client_id,
-            addr=addr,
-            source=source,
-            source_command=source_command,
-            source_command_id=source_command_id,
-            job_id=job_id,
-            job_name=job_name,
-            job_key=job_key,
-            extra=extra,
+            content=content, output_kind=output_kind, hostname=hostname, machine_id=machine_id,
+            client_id=client_id, addr=addr, source_command=source_command,
+            source_command_id=source_command_id, job_key=job_key, extra=extra,
             output_format=output_format,
         )
 
 
     def save_text_artifact(self, *, artifact_type: str, category: str, hostname: str, machine_id: str,
                            original_name: str, content: str, client_id: str = '', addr: str = '',
-                           source_command_id=None, job_id: str = '', job_name: str = '', job_key: str = '',
+                           source_command_id=None,
                            extra: dict | None = None) -> dict:
         return self.registry_service.save_text_artifact(
             artifact_type=artifact_type,
@@ -145,9 +108,6 @@ class WebArtifactService:
             client_id=client_id,
             addr=addr,
             source_command_id=source_command_id,
-            job_id=job_id,
-            job_name=job_name,
-            job_key=job_key,
             extra=extra,
         )
 

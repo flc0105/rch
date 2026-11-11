@@ -3,10 +3,10 @@ import posixpath
 import shutil
 import stat
 import tempfile
-import time
 import zipfile
 
 from core.utils.zip_peek import ZipPeekService
+from core.utils.artifact_naming import build_artifact_filename
 from client.commands.common.services.filesystem.path_resolver import PathResolver
 from client.commands.common.services.filesystem.conflict_policy import apply_path, describe_conflict
 from client.runtime.temp_workspace import get_temp_category_dir
@@ -47,8 +47,7 @@ class ArchiveService(ZipPeekService):
             base_name = os.path.basename(paths[0].rstrip('/\\')) or 'download'
             return f'{base_name}.zip'
 
-        timestamp = time.strftime('%Y%m%d-%H%M%S')
-        return f'bundle_{timestamp}.zip'
+        return build_artifact_filename('bundle', 'zip')
 
     def iter_directory_files(self, directory: str):
         for root, _, files in self._iter(os.walk(directory), check_interval=64):

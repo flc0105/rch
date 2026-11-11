@@ -190,9 +190,7 @@ class ClipboardManager:
                 raw,
                 filename=build_artifact_filename('clipboard', 'png'),
                 category='clipboard',
-                extra={
-                    'clipboard_kind': 'image',
-                },
+                extra={'saved_from': 'clipboard'},
             )
 
             return {

@@ -726,6 +726,10 @@ export default {
           ? String(scriptMeta.script_display_name || scriptMeta.script_name || commandText).trim()
           : commandText
 
+      // The invocation is the actual submitted command; a Script Library
+      // presentation title is not itself a command that was executed.
+      const sourceCommand = this.getTerminalBlockExecutedCommand(commandBlock)
+
       return {
         blockType: commandBlock.blockType || (isScript ? 'script' : 'command'),
         operation: commandBlock.operation || null,
@@ -737,9 +741,9 @@ export default {
         source_command_id: sourceCommandId,
         command_name: commandName,
         name: commandName,
-        source_command: commandName,
+        source_command: sourceCommand,
         source_task_id: commandBlock.taskId || '',
-        category: this.getTerminalBlockArtifactCategory(commandBlock),
+        output_kind: this.getTerminalBlockOutputKind(commandBlock),
         is_script: isScript,
 
         script_name: scriptMeta.script_name || '',
@@ -803,6 +807,15 @@ export default {
       return String(block?.commandText || this.normalizeTerminalBlockCommandText(block?.commandLine?.line?.text)).trim()
     },
 
+    getTerminalBlockExecutedCommand(block) {
+      // A displayed Script title is not an executed CLI command. Only use the
+      // submitted invocation, or the original text for a historical raw block.
+      const replay = block?.operation?.replay
+      return String(block?.operation?.invocation?.input ||
+          (replay?.type === 'command' ? replay.command : '') ||
+          (!block?.operation ? this.getTerminalBlockCommandText(block) : '')).trim()
+    },
+
     normalizeTerminalOutputLineText(text) {
       const value = String(text ?? '')
       return value === ' ' ? '' : value
@@ -858,8 +871,8 @@ export default {
           : {}
 
       return {
-        script_name: String(this.findTerminalBlockMetaValue(block, ['script_name']) || '').trim(),
-        script_path: String(this.findTerminalBlockMetaValue(block, ['script_path', 'path']) || '').trim(),
+        script_name: String(this.findTerminalBlockMetaValue(block, ['script_name', 'script_run_name']) || '').trim(),
+        script_path: String(this.findTerminalBlockMetaValue(block, ['script_path', 'script_run_name', 'path']) || '').trim(),
         script_display_name: String(this.findTerminalBlockMetaValue(block, ['script_display_name', 'display_name']) || '').trim(),
         params,
       }
@@ -868,29 +881,32 @@ export default {
     buildTerminalBlockModel(block) {
       const commandText = this.getTerminalBlockCommandText(block)
       const operation = this.findTerminalBlockMetaValue(block, ['operation'])
+      const serverScriptRun = this.findTerminalBlockMetaValue(block, ['script_run']) === true
+      const recordedScriptMeta = this.buildTerminalBlockScriptMeta(block)
       if (operation?.operation_id) {
         return {
-          operation, blockType: operation.kind === 'transfer' ? 'remote_upload'
+          operation, blockType: serverScriptRun && operation.kind === 'command' ? 'script'
+            : operation.kind === 'transfer' ? 'remote_upload'
             : operation.kind === 'alias' ? 'quick_action' : operation.kind,
           commandId: this.normalizeNullableInt(this.findTerminalBlockMetaValue(block, ['command_id', 'source_command_id'])),
           taskId: String(this.findTerminalBlockMetaValue(block, ['task_id']) || ''),
           scriptMeta: operation.kind === 'script' ? {
-            script_name: String(operation.replay?.script_name || ''),
-            script_path: String(operation.replay?.script_path || ''),
-            script_display_name: String(operation.replay?.script_display_name || ''),
-            params: { ...(operation.replay?.params || {}) },
-          } : this.buildTerminalBlockScriptMeta(block),
+            script_name: String(operation.replay?.script_name || recordedScriptMeta.script_name),
+            script_path: String(operation.replay?.script_path || recordedScriptMeta.script_path),
+            script_display_name: String(operation.replay?.script_display_name || recordedScriptMeta.script_display_name),
+            params: { ...recordedScriptMeta.params, ...(operation.replay?.params || {}) },
+          } : recordedScriptMeta,
         }
       }
       // Unowned server events can still carry structured execution metadata.
       // Visible titles never determine the operation type or replay capability.
       const metadata = this.findTerminalBlockMetaValue(block, ['metadata']) || {}
       return {
-        blockType: metadata.script_run === true ? 'script'
+        blockType: serverScriptRun ? 'script'
           : metadata.quick_action === true ? 'quick_action' : 'command',
         commandId: this.normalizeNullableInt(this.findTerminalBlockMetaValue(block, ['command_id', 'source_command_id'])),
         taskId: String(this.findTerminalBlockMetaValue(block, ['task_id']) || '').trim(),
-        scriptMeta: this.buildTerminalBlockScriptMeta(block),
+        scriptMeta: recordedScriptMeta,
       }
     },
 
@@ -911,10 +927,10 @@ export default {
       return String(block?.blockType || '').trim() === 'remote_upload'
     },
 
-    getTerminalBlockArtifactCategory(block) {
+    getTerminalBlockOutputKind(block) {
       return this.isTerminalScriptRunBlock(block)
-          ? 'script_output'
-          : 'command_output'
+          ? 'script'
+          : 'command'
     },
 
     getTerminalBlockSourceCommandId(block) {
@@ -1186,17 +1202,15 @@ export default {
         await this.saveTerminalOutputArtifactBody({
           content: output.content,
           artifact_type: 'command_output',
-          category: 'command_output',
+          output_kind: 'command',
           client_id: String(this.selectedId || ''),
           hostname: String(this.currentConnection?.hostname || ''),
           machine_id: String(this.currentConnection?.machine_id || ''),
-          source: 'terminal_toolbar_action',
           source_command: '',
           source_command_id: null,
           output_format: output.format,
           extra: {
             saved_from: 'terminal_toolbar',
-            output_format: output.format,
           },
         })
       } catch (error) {
@@ -1205,60 +1219,36 @@ export default {
     },
 
     buildTerminalOutputArtifactExtra(block, options = {}) {
-      const sourceCommandId = this.getTerminalBlockSourceCommandId(block)
-      const isScript = this.isTerminalScriptRunBlock(block)
-
-      const artifactSource = String(options.source || '').trim()
-          || (isScript ? 'script_terminal_inline_action' : 'terminal_inline_action')
-
       const savedFrom = String(options.savedFrom || '').trim() || 'terminal_output'
-
-      const baseExtra = {
-        source: artifactSource,
-        wrapper_command: '',
-        source_history_entry_id: '',
-        source_task_id: block?.taskId || '',
-        source_command_id: sourceCommandId,
-        saved_from: savedFrom,
-        saved_at: new Date().toISOString(),
+      const commandText = this.getTerminalBlockExecutedCommand(block)
+      const isScript = this.isTerminalScriptRunBlock(block)
+      const extra = { saved_from: savedFrom }
+      if (commandText) extra.source_command = commandText
+      const startedAt = this.findTerminalBlockMetaValue(block, ['started_at'])
+      const finishedAt = this.findTerminalBlockMetaValue(block, ['finished_at'])
+      const finalStatus = this.findTerminalBlockMetaValue(block, ['final_status'])
+      if (startedAt) extra.started_at = String(startedAt)
+      if (finishedAt) extra.finished_at = String(finishedAt)
+      if (finalStatus) extra.final_status = String(finalStatus)
+      if (isScript) {
+        const scriptMeta = block?.scriptMeta || this.buildTerminalBlockScriptMeta(block)
+        if (scriptMeta.script_path) extra.script_path = String(scriptMeta.script_path)
       }
-
-      if (!isScript) {
-        baseExtra.source_command = this.getTerminalBlockCommandText(block)
-        return baseExtra
-      }
-
-      const scriptMeta = block?.scriptMeta || this.buildTerminalBlockScriptMeta(block)
-
-      return {
-        ...baseExtra,
-        script_name: scriptMeta.script_name || '',
-        script_path: scriptMeta.script_path || '',
-        script_display_name: scriptMeta.script_display_name || '',
-        params: scriptMeta.params || {},
-      }
+      return extra
     },
 
-
     buildTerminalOutputArtifactSaveBody(block, content, options = {}) {
-      const commandText = this.getTerminalBlockCommandText(block)
-      const artifactCategory = this.getTerminalBlockArtifactCategory(block)
-      const sourceCommandId = this.getTerminalBlockSourceCommandId(block)
+      const commandText = this.getTerminalBlockExecutedCommand(block)
       const isScript = this.isTerminalScriptRunBlock(block)
-
-      const source = String(options.source || '').trim()
-          || (isScript ? 'script_terminal_inline_action' : 'terminal_inline_action')
-
       return {
         content,
-        artifact_type: 'command_output',
-        category: artifactCategory,
+        output_kind: isScript ? 'script' : 'command',
         client_id: String(this.selectedId || ''),
         hostname: String(this.currentConnection?.hostname || ''),
         machine_id: String(this.currentConnection?.machine_id || ''),
-        source,
-        source_command: isScript ? '' : commandText,
-        source_command_id: sourceCommandId,
+        source_command: commandText,
+        source_command_id: this.getTerminalBlockSourceCommandId(block),
+        output_format: String(options.outputFormat || 'text'),
         extra: this.buildTerminalOutputArtifactExtra(block, options),
       }
     },
@@ -1271,7 +1261,7 @@ export default {
         throw new Error(json.message || 'Save failed')
       }
 
-      ElMessage.success(body?.source === 'terminal_toolbar_action' ? 'Saved to Terminal Logs' : 'Saved to Command Output')
+      ElMessage.success(body?.extra?.saved_from === 'terminal_toolbar' ? 'Saved to Terminal Logs' : 'Saved to Command Output')
       this.$emit('artifact-saved', json.data || null)
       return json.data || null
     },
@@ -1291,6 +1281,7 @@ export default {
 
       const scriptMeta = Object.keys(directScriptMeta).length ? directScriptMeta : fallbackScriptMeta
       const isScript = !!context.is_script || String(context.blockType || '').trim() === 'script'
+          || !!String(scriptMeta.script_path || '').trim()
 
       return {
         key: `terminal-json-viewer-save-${Date.now()}`,
@@ -1334,8 +1325,8 @@ export default {
         const block = this.normalizeTerminalJsonSaveBlock(payload.saveContext)
 
         const body = this.buildTerminalOutputArtifactSaveBody(block, content, {
-          source: 'terminal_json_viewer_action',
           savedFrom: 'terminal_json_viewer',
+          outputFormat: 'text',
         })
 
         await this.saveTerminalOutputArtifactBody(body)
@@ -1346,37 +1337,6 @@ export default {
       }
     },
 
-
-    // buildTerminalOutputArtifactExtra(block) {
-    //   const outputEntries = this.getTerminalBlockOutputLineEntries(block)
-    //   const sourceCommandId = this.getTerminalBlockSourceCommandId(block)
-    //   const isScript = this.isTerminalScriptRunBlock(block)
-    //   const baseExtra = {
-    //     source: isScript ? 'script_terminal_inline_action' : 'terminal_inline_action',
-    //     wrapper_command: '',
-    //     source_history_entry_id: '',
-    //     source_task_id: block?.taskId || '',
-    //     source_command_id: sourceCommandId,
-    //     saved_from: 'terminal_output',
-    //     category: this.getTerminalBlockArtifactCategory(block),
-    //     line_count: outputEntries.length,
-    //     saved_at: new Date().toISOString(),
-    //   }
-    //
-    //   if (!isScript) {
-    //     baseExtra.source_command = this.getTerminalBlockCommandText(block)
-    //     return baseExtra
-    //   }
-    //
-    //   const scriptMeta = block?.scriptMeta || this.buildTerminalBlockScriptMeta(block)
-    //   return {
-    //     ...baseExtra,
-    //     script_name: scriptMeta.script_name || '',
-    //     script_path: scriptMeta.script_path || '',
-    //     script_display_name: scriptMeta.script_display_name || '',
-    //     params: scriptMeta.params || {},
-    //   }
-    // },
 
     async saveTerminalBlockOutput(block) {
       if (this.isSavingTerminalBlock(block)) return

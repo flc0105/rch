@@ -10,7 +10,7 @@ import (
 	"client-go/config"
 )
 
-func TestSavedUploadCategoryIsCanonicalAndScreenshotOriginPreserved(t *testing.T) {
+func TestSavedUploadCategoryIsCanonicalAndCommandSourceRecorded(t *testing.T) {
 	filePath := filepath.Join(t.TempDir(), "capture.png")
 	if err := os.WriteFile(filePath, []byte("image"), 0600); err != nil {
 		t.Fatal(err)
@@ -34,7 +34,7 @@ func TestSavedUploadCategoryIsCanonicalAndScreenshotOriginPreserved(t *testing.T
 	if _, err := session.uploadFileToServer(filePath, "screenshots"); err != nil {
 		t.Fatal(err)
 	}
-	if gotCategory != "screenshots" || gotExtra != `{"origin":"screenshot_command"}` {
+	if gotCategory != "screenshots" || gotExtra != `{"saved_from":"client_command","source_command":"screenshot"}` {
 		t.Fatalf("wrong screenshot classification %q extra %q", gotCategory, gotExtra)
 	}
 	if _, err := session.uploadFileToServer(filePath, ""); err != nil {

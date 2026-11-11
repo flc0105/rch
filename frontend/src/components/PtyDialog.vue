@@ -532,11 +532,10 @@ export default {
       try {
         const res = await saveCommandOutputArtifact({
           content,
-          category: 'command_output',
+          output_kind: 'command',
           client_id: String(this.selectedId || ''),
           hostname: String(this.currentConnection?.hostname || ''),
           machine_id: String(this.currentConnection?.machine_id || ''),
-          source: 'pty_toolbar_action',
           source_command: '',
           output_format: 'text',
           extra: { saved_from: 'pty_toolbar' },

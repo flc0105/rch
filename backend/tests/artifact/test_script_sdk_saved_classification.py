@@ -108,7 +108,7 @@ def test_sdk_owner_upload_forwards_explicit_category(monkeypatch, tmp_path):
     monkeypatch.setattr(artifact, 'ClientApiClient', Api)
     artifact.save(str(source), category='screenshots')
     assert calls == [{'artifact_type': 'files', 'category': 'screenshots', 'folder': '',
-                      'extra': {'origin': 'script'}}]
+                      'extra': {'saved_from': 'script_sdk'}}]
 
 
 def test_web_api_passes_saved_category_without_folder_to_storage(tmp_path):
