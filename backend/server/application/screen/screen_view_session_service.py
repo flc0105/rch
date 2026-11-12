@@ -35,56 +35,6 @@ class ScreenViewSessionService:
     MIN_QUALITY = SCREEN_MIN_QUALITY
     MAX_QUALITY = SCREEN_MAX_QUALITY
 
-    def _begin_activity(self, item, session, arguments):
-        history = getattr(self.server, 'command_history_orchestrator', None)
-        if history is None:
-            return
-        item['_activity_id'] = history.begin_semantic_execution(
-            session, 'screen_view', 'session', arguments, command_type='screen_view',
-        )
-        item['_activity_conn'] = session
-
-    def _confirm_activity(self, item):
-        history = getattr(self.server, 'command_history_orchestrator', None)
-        activity_id = item.get('_activity_id')
-        if not history or not activity_id:
-            return
-        # Called under the session lock: an early Client ACK is completed here.
-        history.confirm_dispatch(item['_activity_conn'], activity_id, '', command_type='screen_view')
-        item['_activity_confirmed'] = True
-        if item.get('_activity_opened'):
-            history.update_semantic_details(item['_activity_conn'], activity_id, item['_activity_opened'])
-        if item.get('_activity_result'):
-            self._finish_activity(item, *item['_activity_result'])
-
-    def _record_opened(self, item, **details):
-        history = getattr(self.server, 'command_history_orchestrator', None)
-        item['_activity_opened'] = {'opened_at': datetime.now().astimezone().isoformat(), **details}
-        if history and item.get('_activity_confirmed'):
-            history.update_semantic_details(
-                item['_activity_conn'], item['_activity_id'], item['_activity_opened'],
-            )
-
-    def _finish_activity(self, item, status, details=None):
-        history = getattr(self.server, 'command_history_orchestrator', None)
-        activity_id = item.get('_activity_id')
-        if not history or not activity_id or item.get('_activity_finished'):
-            return
-        item['_activity_result'] = (status, dict(details or {}))
-        if item.get('_activity_confirmed'):
-            item['_activity_finished'] = True
-            if details:
-                history.update_semantic_details(item['_activity_conn'], activity_id, details)
-            history.finalize_execution(
-                item['_activity_conn'], activity_id, status == 'success', status=status,
-            )
-
-    def _discard_activity(self, item):
-        history = getattr(self.server, 'command_history_orchestrator', None)
-        activity_id = item.pop('_activity_id', '')
-        if history and activity_id:
-            history.discard_activity_intent(activity_id)
-
     def __init__(self, server, event_bus=None):
         self.server = server
         self.event_bus = event_bus
@@ -130,7 +80,7 @@ class ScreenViewSessionService:
             ):
                 raise ValueError('Screen View is already open for this device')
             self._sessions[screen_session_id] = item
-            self._begin_activity(item, session, {'session_id': screen_session_id})
+
 
         try:
             session.send({
@@ -139,11 +89,7 @@ class ScreenViewSessionService:
                 'fps': item['fps'],
                 'quality': item['quality'],
             })
-            with self._lock:
-                self._confirm_activity(item)
         except Exception as e:
-            with self._lock:
-                self._discard_activity(item)
             event_item = None
             with self._lock:
                 item['status'] = 'error'
@@ -212,7 +158,6 @@ class ScreenViewSessionService:
                 return {'ok': True}
             item['control_enabled'] = False
             item['status'] = 'closing'
-            item['_close_reason'] = 'user_closed' if user_initiated else 'viewer_disconnected'
         try:
             session = self.server.get_target_connection_by_client_id(item['client_id'])
             session.send({
@@ -254,7 +199,6 @@ class ScreenViewSessionService:
                 return
             item['status'] = 'open'
             item['opened_at'] = time.time()
-            self._record_opened(item)
             item['frame_strategy'] = self._normalize_frame_strategy(frame_strategy)
             if fps is not None:
                 item['fps'] = normalize_screen_fps(fps)
@@ -349,9 +293,6 @@ class ScreenViewSessionService:
             item['status'] = 'closed'
             item['closed_at'] = time.time()
             item['control_enabled'] = False
-            self._finish_activity(item, 'success' if item.get('opened_at') else 'interrupted', {
-                'end_reason': (item.get('_close_reason') or 'ended') if item.get('opened_at') else 'closed_before_open',
-            })
             if item.get('open_notified') and not item.get('close_notified'):
                 item['close_notified'] = True
                 event_item = dict(item)
@@ -369,9 +310,6 @@ class ScreenViewSessionService:
             item['error'] = str(message or 'Screen capture failed')
             item['closed_at'] = time.time()
             item['control_enabled'] = False
-            self._finish_activity(item, 'error', {
-                'end_reason': 'error', 'error': item['error'][:256],
-            })
             if not item.get('close_notified'):
                 item['close_notified'] = True
                 event_item = dict(item)
@@ -401,7 +339,6 @@ class ScreenViewSessionService:
                 item['closed_at'] = now
                 item['error'] = 'Client disconnected'
                 item['control_enabled'] = False
-                self._finish_activity(item, 'interrupted', {'end_reason': 'connection_lost'})
                 if item.get('open_notified') and not item.get('close_notified'):
                     item['close_notified'] = True
                     event_items.append(dict(item))

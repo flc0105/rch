@@ -489,6 +489,11 @@ class WebConnectionService:
         )
         session.context.command_history = self.server.command_history
         session.context.command_history_orchestrator = self.server.command_history_orchestrator
+        tracker = getattr(self.server, 'client_activity_tracker', None)
+        if tracker is not None:
+            session.context.on_client_message_send = tracker.dispatch
+            session.context.on_client_message_received = tracker.received
+            session.context.on_client_request_failed = tracker.request_failed
         session.context.artifact_service = self.artifact_service
         session.context.client_session_token_service = self.client_session_token_service
 
@@ -598,6 +603,9 @@ class WebConnectionService:
             )
         except Exception:
             pass
+        tracker = getattr(self.server, 'client_activity_tracker', None)
+        if tracker is not None:
+            tracker.disconnected(session)
         try:
             self.server.web_service.device_monitor_api.device_monitor_session_service.handle_client_disconnected(
                 session.session_info.client_id

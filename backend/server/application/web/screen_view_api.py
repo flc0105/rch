@@ -17,6 +17,15 @@ class WebScreenViewApi:
         return self.screen_view_session_service.send_input(screen_session_id, event)
 
     def close_screen_view(self, screen_session_id: str, *, user_initiated=True) -> dict:
+        item = self.screen_view_session_service._get_required(screen_session_id)
+        tracker = getattr(self.screen_view_session_service.server, 'client_activity_tracker', None)
+        if tracker is not None:
+            try:
+                conn = self.screen_view_session_service.server.get_target_connection_by_client_id(item['client_id'])
+            except Exception:
+                conn = None
+            if conn is not None:
+                tracker.note_close(conn, 'screen_view', screen_session_id, 'user_closed' if user_initiated else 'viewer_disconnected')
         return self.screen_view_session_service.close_session(screen_session_id, user_initiated=user_initiated)
 
     def poll_screen_view(self, screen_session_id: str, after_seq: int = 0) -> dict:

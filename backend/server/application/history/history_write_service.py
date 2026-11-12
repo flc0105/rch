@@ -2,6 +2,8 @@
 from server.models.artifact import ArtifactReference
 from server.models.records import OutputRecordBase
 
+from server.application.history.activity_definitions import ActivityKind
+
 
 class HistoryWriteService:
     def __init__(self, store):
@@ -69,7 +71,7 @@ class HistoryWriteService:
         with self.store._lock, self.store.database.transaction():
             rows = self.store.database.connection().execute(
                 "SELECT machine_id, activity_id FROM activity_records "
-                "WHERE status = 'running' AND kind IN ('pty', 'screen_view')"
+                "WHERE status = 'running' AND kind IN (?, ?)", ActivityKind.SESSION_KINDS
             ).fetchall()
             for row in rows:
                 entry = self.store._get_entry(row['machine_id'], row['activity_id'])

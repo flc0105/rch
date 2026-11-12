@@ -4,6 +4,7 @@ import json
 
 from server.application.artifact.artifact_reference_view_projector import ArtifactReferenceViewProjector
 from server.config.config import COMMAND_HISTORY_PAGE_SIZE, COMMAND_HISTORY_MAX_PAGE_SIZE
+from server.application.history.activity_definitions import ActivityKind, ui_activity_summary
 
 
 class HistoryViewService:
@@ -92,25 +93,9 @@ class HistoryViewService:
         invocation = entry['invocation']
         if kind == 'script':
             return str(invocation.get('target') or 'Script')
-        if kind in {'pty', 'screen_view'}:
-            args = invocation.get('arguments') or {}
-            return ('PTY' if kind == 'pty' else 'Screen View') + (' · ' + str(args['shell']) if kind == 'pty' and args.get('shell') else '')
-        if kind == 'clipboard':
-            args = invocation.get('arguments') or {}
-            label = {'set_text': 'Set text', 'set_image': 'Set image',
-                     'set_files': 'Set files', 'set_artifact_file': 'Send Artifact file'}.get(action, 'Set clipboard')
-            if action == 'set_text':
-                preview = str(args.get('text') or '').replace('\n', ' ').replace('\r', ' ')[:64]
-                return f'{label} · {preview}' if preview else label
-            if action == 'set_image':
-                return f"{label} · {args['filename']}" if args.get('filename') else label
-            if args.get('names'):
-                return f"{label} · {', '.join(args['names'][:2])}"
-            return label
-        if kind == 'process':
-            args = invocation.get('arguments') or {}
-            name = str(args.get('name') or '').strip()
-            return ('Kill app ' if action == 'kill_app' else 'Kill process ') + (name + ' ' if name else '') + f"(PID {args.get('pid') or '?'})"
+        summary = ui_activity_summary(kind, action, invocation.get('arguments') or {})
+        if summary is not None:
+            return summary
         if kind in {'command', 'alias'}:
             # Show the user invocation, not an internal resolved command or encoded payload.
             return str(invocation.get('input') or invocation.get('target') or kind)
@@ -167,7 +152,7 @@ class HistoryViewService:
         return {'items': items, 'next_cursor': next_cursor, 'has_more': has_more, 'total_count': count}
 
     def get_execution_history_page(self, machine_id, *, limit=None, cursor='', query='', kind='', errors=False):
-        if kind and kind not in {'command', 'alias', 'script', 'remote_files', 'transfer', 'external_tool', 'background_job', 'pty', 'screen_view', 'clipboard', 'process'}:
+        if kind and kind not in {'command', 'alias', 'script', 'remote_files', 'transfer', 'external_tool', 'background_job', *ActivityKind.SESSION_KINDS, ActivityKind.CLIPBOARD, ActivityKind.PROCESS}:
             raise ValueError('Invalid activity kind')
         with self.store._lock:
             return self._activity_page(str(machine_id or '').strip() or 'unknown_machine',

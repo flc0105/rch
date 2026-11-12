@@ -5,6 +5,7 @@ from server.application.app_facade import ServerWebService
 from server.application.command.alias_manager import AliasManager
 from server.application.history.history_orchestrator import CommandHistoryOrchestrator
 from server.application.history.history_store import CommandHistoryStore
+from server.application.history.client_activity_tracker import ClientActivityTracker
 from server.config.config import RCH_DB_PATH, SOCKET_ADDR
 from server.persistence.rch_database import RchDatabase
 from server.connection.client_session import ClientSession
@@ -28,6 +29,7 @@ class Server:
         self.database = RchDatabase(RCH_DB_PATH)
         self.command_history = CommandHistoryStore(self.database)
         self.command_history_orchestrator = CommandHistoryOrchestrator(self.command_history)
+        self.client_activity_tracker = ClientActivityTracker(self.command_history_orchestrator)
 
         # composition root:
         # 由 Server 负责触发应用层装配，再拿到 Facade。

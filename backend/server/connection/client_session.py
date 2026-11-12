@@ -42,8 +42,11 @@ class ClientSession:
     def get_info_extra(self, key: str, default=None):
         return self.session_info.get_extra(key, default)
 
-    def send(self, data: dict):
-        self.transport.send(data)
+    def send(self, data: dict, *, operation=None):
+        observer = self.context.on_client_message_send
+        if callable(observer):
+            return observer(self, data, self.transport.send, operation=operation)
+        return self.transport.send(data)
 
     def recv(self):
         return self.transport.recv()
@@ -79,7 +82,11 @@ class ClientSession:
         return self.command_channel.send_cancel(target_command_id)
 
     def handle_received_message(self, data: dict):
-        return self.services.message_dispatcher.dispatch(data)
+        result = self.services.message_dispatcher.dispatch(data)
+        observer = self.context.on_client_message_received
+        if callable(observer):
+            observer(self, data)
+        return result
 
     def recv_message(self):
         data = self.transport.recv()

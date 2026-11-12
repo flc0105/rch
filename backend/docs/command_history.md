@@ -22,6 +22,8 @@ Transfer Activity 的 `resolved` 只记录已存在的 `transfer_id`（如有）
 
 ### PTY、Screen View、Clipboard 与 Process 操作
 
+这四类操作的 Activity 统一由 Server 的执行／消息派发协调层管理。PTY、Screen View 的 Open 和 Clipboard Set 在 Client 消息发送成功后才持久化，按各自 Session ID 或 Request ID 关联 Client 回执；结束和断线更新原 Activity。Process Kill 通过前台执行协调器记录实际派发和最终结果。业务会话管理负责真实执行状态，不直接维护 Activity ID、History 写入或持久化事务。
+
 PTY 与 Screen View 每个远端会话只记录一条 `kind=pty|screen_view, action=session` Activity。真正派发 Open 后创建记录，Client 的 `opened` 回执写入 `resolved.opened_at`（PTY 还写入实际 Shell），记录在会话期间保持 `running`；终止后在同一条记录写入 `finished_at`、`resolved.end_reason` 和最终状态。主动 Close、自动关闭与 PTY 切换 Shell 都结束原会话；切换 Shell 会为新会话建立新 Activity，旧会话的结束原因是 `shell_switched`。进程自然退出、网络断开、服务端重启、启动失败分别依实际结果写入结束原因及 `success/interrupted/error`。WebSocket 自动清理、重复 Close 不增加第二条 Activity。键盘输入、Resize、帧、FPS/Quality、Screen Control 输入不产生独立记录。
 
 Clipboard 的用户写入操作使用 `kind=clipboard` 与 `set_text|set_image|set_files|set_artifact_file`。Server 确认已派发 Client 后开始记录，收到对应 `clipboard_result` 成功才完成；失败和超时保留对应状态。Text 保存最多 2,048 个字符的正文、原始字符数与截断标记；Image 保存文件名、MIME 类型和字节数，不额外持久化图片；Files 保存根项数量和最多 20 个根名称；Artifact File 保存原始文件名快照与 Artifact ID。文件字节、机器绝对源路径和临时下载 URL 不写入 Activity。Capabilities、Get 属于只读请求，不产生 Clipboard Activity；Get 文件的实际传输仍使用既有 Transfer Activity。

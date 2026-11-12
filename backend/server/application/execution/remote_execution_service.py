@@ -1,4 +1,7 @@
 from core.protocol.structured_arg_codec import encode_structured_arg
+from server.application.history.activity_definitions import (
+    ActivityKind, ActivityAction, SemanticOperation, process_arguments,
+)
 from server.application.command.command_types import COMMAND_TYPE_COMMAND
 from server.application.execution.command_stream_service import CommandStreamService
 from server.application.execution.foreground_execution_service import ForegroundExecutionService
@@ -205,7 +208,7 @@ class RemoteExecutionService:
         task_type: str = TASK_TYPE_COMMAND,
         source: str = 'foreground',
         task_id: str = '',
-        activity: dict = None,
+        activity=None,
     ) -> str:
         def execute(entry_id):
             return self.foreground_execution_service.run_foreground_text_command(
@@ -222,10 +225,19 @@ class RemoteExecutionService:
         if activity and self.history_orchestrator:
             session = self.get_connection(target)
             return self.history_orchestrator.execute_semantic_operation(
-                session, activity['kind'], activity['action'], activity['arguments'],
+                session, activity.kind, activity.action, activity.arguments,
                 execute, command_type=command_type,
             )
         return execute(history_entry_id)
+
+    def run_process_termination(self, client_id, pid, *, action, name=''):
+        if action not in (ActivityAction.KILL_PROCESS, ActivityAction.KILL_APP):
+            raise ValueError('Invalid process termination action')
+        return self.run_foreground_text_command(
+            client_id, f'kill_process {int(pid)}',
+            task_type='process', source='web_process',
+            activity=SemanticOperation(ActivityKind.PROCESS, action, process_arguments(pid, name)),
+        )
 
     def run_foreground_json_command(
         self,

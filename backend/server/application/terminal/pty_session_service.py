@@ -16,56 +16,6 @@ from core.protocol.message_types import (
 class PtySessionService:
     TERMINAL_SESSION_RETENTION_SECONDS = 300
 
-    def _begin_activity(self, item, session, arguments):
-        history = getattr(self.server, 'command_history_orchestrator', None)
-        if history is None:
-            return
-        item['_activity_id'] = history.begin_semantic_execution(
-            session, 'pty', 'session', arguments, command_type='pty',
-        )
-        item['_activity_conn'] = session
-
-    def _confirm_activity(self, item):
-        history = getattr(self.server, 'command_history_orchestrator', None)
-        activity_id = item.get('_activity_id')
-        if not history or not activity_id:
-            return
-        # Called under the session lock: an early Client ACK is completed here.
-        history.confirm_dispatch(item['_activity_conn'], activity_id, '', command_type='pty')
-        item['_activity_confirmed'] = True
-        if item.get('_activity_opened'):
-            history.update_semantic_details(item['_activity_conn'], activity_id, item['_activity_opened'])
-        if item.get('_activity_result'):
-            self._finish_activity(item, *item['_activity_result'])
-
-    def _record_opened(self, item, **details):
-        history = getattr(self.server, 'command_history_orchestrator', None)
-        item['_activity_opened'] = {'opened_at': datetime.now().astimezone().isoformat(), **details}
-        if history and item.get('_activity_confirmed'):
-            history.update_semantic_details(
-                item['_activity_conn'], item['_activity_id'], item['_activity_opened'],
-            )
-
-    def _finish_activity(self, item, status, details=None):
-        history = getattr(self.server, 'command_history_orchestrator', None)
-        activity_id = item.get('_activity_id')
-        if not history or not activity_id or item.get('_activity_finished'):
-            return
-        item['_activity_result'] = (status, dict(details or {}))
-        if item.get('_activity_confirmed'):
-            item['_activity_finished'] = True
-            if details:
-                history.update_semantic_details(item['_activity_conn'], activity_id, details)
-            history.finalize_execution(
-                item['_activity_conn'], activity_id, status == 'success', status=status,
-            )
-
-    def _discard_activity(self, item):
-        history = getattr(self.server, 'command_history_orchestrator', None)
-        activity_id = item.pop('_activity_id', '')
-        if history and activity_id:
-            history.discard_activity_intent(activity_id)
-
     def __init__(self, server, event_bus=None):
         self.server = server
         self.event_bus = event_bus
@@ -99,9 +49,7 @@ class PtySessionService:
         }
         with self._lock:
             self._sessions[pty_id] = item
-            self._begin_activity(item, session, {
-                'session_id': pty_id, 'shell': item['shell'],
-            })
+
 
         try:
             session.send({
@@ -112,11 +60,7 @@ class PtySessionService:
                 'cols': item['cols'],
                 'rows': item['rows'],
             })
-            with self._lock:
-                self._confirm_activity(item)
         except Exception as e:
-            with self._lock:
-                self._discard_activity(item)
             event_item = None
             with self._lock:
                 item['status'] = 'error'
@@ -170,9 +114,6 @@ class PtySessionService:
             if item['status'] in ('closing', 'closed', 'error'):
                 return {'ok': True}
             item['status'] = 'closing'
-            item['_close_reason'] = 'shell_switched' if reason == 'switch_shell' else (
-                'user_closed' if user_initiated else 'viewer_disconnected'
-            )
             client_id = item['client_id']
 
         session = self.server.get_target_connection_by_client_id(client_id)
@@ -215,7 +156,6 @@ class PtySessionService:
             item['opened_at'] = time.time()
             if shell:
                 item['shell'] = str(shell)
-            self._record_opened(item, shell=item['shell'])
 
             if not item.get('open_notified'):
                 item['open_notified'] = True
@@ -249,11 +189,6 @@ class PtySessionService:
             item['status'] = 'closed'
             item['closed_at'] = time.time()
             item['exit_code'] = exit_code
-            reason = item.get('_close_reason') or 'exited'
-            self._finish_activity(item, 'success' if item.get('opened_at') else 'interrupted', {
-                'end_reason': reason if item.get('opened_at') else 'closed_before_open',
-                'exit_code': exit_code,
-            })
 
             if item.get('open_notified') and not item.get('close_notified'):
                 item['close_notified'] = True
@@ -272,9 +207,6 @@ class PtySessionService:
             item['status'] = 'error'
             item['error'] = str(message or 'PTY error')
             item['closed_at'] = time.time()
-            self._finish_activity(item, 'error', {
-                'end_reason': 'error', 'error': item['error'][:256],
-            })
             item['seq'] += 1
             item['chunks'].append({
                 'seq': item['seq'],
@@ -307,7 +239,6 @@ class PtySessionService:
                 item['status'] = 'closed'
                 item['closed_at'] = now
                 item['error'] = 'Client disconnected'
-                self._finish_activity(item, 'interrupted', {'end_reason': 'connection_lost'})
                 session_ids.append(item['pty_session_id'])
 
                 if item.get('open_notified') and not item.get('close_notified'):
