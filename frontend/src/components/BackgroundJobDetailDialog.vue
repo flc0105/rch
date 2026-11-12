@@ -168,7 +168,7 @@
 
                 <div class="background-job-file-meta">
                   <span>{{ formatBytes(file.size || 0) }}</span>
-                  <span>{{ formatDateTimeStandard(file.created_at) || '-' }}</span>
+                  <span>{{ formatDateTimeStandard(file.linked_at) || '-' }}</span>
                   <span v-if="getBackgroundJobFileStatusText(file)">
                     [{{ getBackgroundJobFileStatusText(file) }}]
                   </span>

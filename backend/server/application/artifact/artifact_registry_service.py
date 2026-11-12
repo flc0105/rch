@@ -1,6 +1,7 @@
 import os
 import shutil
 import threading
+import unicodedata
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -373,7 +374,10 @@ class ArtifactRegistryService:
 
     def rename_artifact(self, artifact_id: str, new_name: str) -> dict:
         display_name = (new_name or '').strip()
-        if not display_name or not secure_filename(display_name):
+        # This changes only a display name, not the physical storage filename.
+        # Preserve Unicode names; reject path separators and control characters.
+        if (not display_name or display_name in ('.', '..') or len(display_name) > 255
+                or any(char in '/\\' or unicodedata.category(char) in ('Cc', 'Cs') for char in display_name)):
             raise ValueError('new name is invalid')
         with self._lock:
             artifact = self.get_artifact_by_id(artifact_id)

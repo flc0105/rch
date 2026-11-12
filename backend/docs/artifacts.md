@@ -35,7 +35,7 @@ Saved Files 共有九个预设分类，`category` 与目录严格一对一；分
 
 **Artifact 元数据统一保存在 Server 的 `runtime/rch.db`。** 其中 `artifact_entries` 管理文件记录，`artifact_folders` 管理逻辑目录；文件本体继续位于 `runtime/web_files/artifacts/`。元数据包含 `artifact_id`、`scope`、设备和命令引用、保存时间 `saved_at` 及文件路径；Job 关系由 `background_job_files` 记录。`artifact_entries.category` 仅对 Saved Files 非空，Shared/Preview 为 NULL 且对外元数据没有 `category`；只有 Shared Files 持久存储 `folder_id`。Saved Files 的目录 ID 读取时由 `category` 推导。所有元数据访问共用 `RchDatabase` 的连接、事务与 Schema 校验。
 
-新文件内容保存到 `runtime/web_files/artifacts/objects/`，存储名包含随机后缀。`original_name` 用于显示和下载，`stored_name` 对应磁盘文件；**Rename 只更新显示名，Shared Move 只更新目录 ID**，不会移动大文件，也不会改变稳定的 Artifact ID 或 `/api/artifacts/{id}` URL。Preview 缓存内容继续在独立 `previews/` 路径里，由 Server 启动清理规则管理；Preview 是操作，不在 Saved Files 或 Shared Files 中作为永久目录展示。
+新文件内容保存到 `runtime/web_files/artifacts/objects/`，存储名包含随机后缀。`original_name` 用于显示和下载，`stored_name` 对应磁盘文件；**Rename 只更新显示名（支持 Unicode，拒绝路径分隔符及控制字符），Shared Move 只更新目录 ID**，不会移动大文件，也不会改变稳定的 Artifact ID 或 `/api/artifacts/{id}` URL。Preview 缓存内容继续在独立 `previews/` 路径里，由 Server 启动清理规则管理；Preview 是操作，不在 Saved Files 或 Shared Files 中作为永久目录展示。
 
 恢复数据必须同时备份 `rch.db` 和 Artifact 文件内容，且应在停服状态下备份以保证二者一致。只备份 SQLite 会缺少内容；只备份文件则缺少 ID、来源和目录关联。当前服务使用 `saved_path` 检查文件可用性，文件已经不在磁盘上时，列表可标记 `File removed`。
 

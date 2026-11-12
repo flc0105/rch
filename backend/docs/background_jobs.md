@@ -184,3 +184,5 @@ Subprocess 只能隔离 Python 任务进程，不能替代操作系统访问控�
 ### 终端 Job 列表范围
 
 `job`、`job list` 和 `job list --json` 只展示 Metadata `platforms` 对当前设备适用的资源；没写 `platforms` 或声明为空时不显示在终端 Job 列表及补全中，不再读取目录名推断平台。`job start` 的名称补全复用相同的过滤。它只控制 Server 终端命令目录，不收窄 Background Jobs Web 管理 UI Catalog，也不修改 Client 的 JobManager 执行协议。
+
+Job Detail 的 Files 列表显示关联时刻 `background_job_files.linked_at`（不是 Artifact 的 `saved_at` 或已废弃的文件关联 `created_at`）。原始文件被删除后仍可根据精简快照保留名称与大小。
