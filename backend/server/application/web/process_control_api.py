@@ -14,21 +14,21 @@ class WebProcessControlApi:
         self.server = server
         self.remote_execution_service = remote_execution_service
 
-    def _get_session(self, client_id: str):
-        return self.server.get_target_connection_by_client_id(client_id)
-
-    def _terminate_process(self, client_id: str, pid: int):
-        self._get_session(client_id)
+    def _terminate_process(self, client_id: str, pid: int, action: str, name: str = ''):
         result_text = self.remote_execution_service.run_foreground_text_command(
             client_id,
             f'kill_process {pid}',
             task_type='process',
             source='web_process',
+            activity={
+                'kind': 'process', 'action': action,
+                'arguments': {'pid': int(pid), 'name': ' '.join(str(name or '').split())[:160]},
+            },
         )
         return {'message': result_text}
 
-    def kill_process(self, client_id: str, pid: int):
-        return self._terminate_process(client_id, pid)
+    def kill_process(self, client_id: str, pid: int, name: str = ''):
+        return self._terminate_process(client_id, pid, 'kill_process', name)
 
-    def kill_app(self, client_id: str, pid: int):
-        return self._terminate_process(client_id, pid)
+    def kill_app(self, client_id: str, pid: int, name: str = ''):
+        return self._terminate_process(client_id, pid, 'kill_app', name)

@@ -59,6 +59,7 @@ class CommandHistoryStore:
                 ON activity_records(machine_id, kind, started_at_ms DESC)''')
             conn.execute('''CREATE INDEX IF NOT EXISTS idx_activity_client_time
                 ON activity_records(machine_id, client_id, started_at_ms DESC)''')
+        self.write_service.interrupt_orphaned_sessions()
 
     @staticmethod
     def _now_iso():

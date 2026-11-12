@@ -16,10 +16,10 @@ export function updateScreenView(screenSessionId, payload = {}) {
   )
 }
 
-export function closeScreenView(screenSessionId) {
+export function closeScreenView(screenSessionId, payload = {}) {
   return apiData(
     `/api/screen-view/${encodeURIComponent(screenSessionId)}/close`,
-    { method: 'POST' },
+    jsonRequestOptions('POST', payload),
     {},
   )
 }

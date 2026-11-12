@@ -53,6 +53,33 @@ class HistoryWriteService:
                 resolved['errors'] = [str(error)[:250] for error in result.get('errors', [])[:20]]
             self.store._update_entry(entry)
 
+    def update_activity_resolved(self, conn, entry_id, details):
+        """Attach bounded session lifecycle details while Activity is in progress."""
+        if conn is None or not entry_id or not isinstance(details, dict):
+            return
+        with self.store._lock, self.store.database.transaction():
+            entry = self.store._get_entry(self.store._get_machine_id_from_conn(conn), entry_id)
+            if entry is None or entry['status'] != 'running':
+                return
+            entry['resolved'].update(details)
+            self.store._update_entry(entry)
+
+    def interrupt_orphaned_sessions(self):
+        """Close PTY/Screen Activities left running by a previous Server process."""
+        with self.store._lock, self.store.database.transaction():
+            rows = self.store.database.connection().execute(
+                "SELECT machine_id, activity_id FROM activity_records "
+                "WHERE status = 'running' AND kind IN ('pty', 'screen_view')"
+            ).fetchall()
+            for row in rows:
+                entry = self.store._get_entry(row['machine_id'], row['activity_id'])
+                if not entry:
+                    continue
+                entry['resolved']['end_reason'] = 'server_restarted'
+                entry['status'] = 'interrupted'
+                entry['finished_at'] = self.store._now_iso()
+                self.store._update_entry(entry)
+
     def append_output_for_connection(self, conn, entry_id, status, text, eof=0):
         if conn is None or not entry_id:
             return

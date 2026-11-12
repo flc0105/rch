@@ -9,18 +9,11 @@ SCRIPT_METADATA = {
             "name": "kind",
             "label": "Source",
             "type": "select",
+            "control": "button_group",
             "options": ["photo", "file"],
             "required": False,
             "default": "photo",
             "description": "Choose a photo or document using the iOS picker."
-        },
-        {
-            "name": "file_path",
-            "label": "Remote File",
-            "type": "remote_file",
-            "required": False,
-            "default": "",
-            "description": "Choose an existing file on this device, or leave blank for the iOS picker."
         }
     ]
 }
@@ -29,25 +22,18 @@ import os
 import tempfile
 from datetime import datetime
 from client.runtime.sdk import artifact
+from core.utils.artifact_naming import build_artifact_filename
 
 
 def main():
     kind = str(kwargs.get('kind', 'photo') or 'photo').strip().lower()
-    selected_path = str(kwargs.get('file_path', '') or '').strip()
-
-    # A remote selected path bypasses the iOS picker and uploads as-is.
-    if selected_path:
-        uploaded = artifact.save(selected_path, type='saved', category='downloads')
-        print(uploaded)
-        return
-
     if kind == 'file':
         import dialogs
         file_path = dialogs.pick_document()
         if not file_path:
             print('No file selected')
             return
-        uploaded = artifact.save(file_path, type='saved', category='downloads')
+        uploaded = artifact.save(file_path, type='saved')
         print(uploaded)
         return
 
@@ -60,19 +46,18 @@ def main():
         print('No photo selected')
         return
 
+    # Keep the simple PIL-based JPEG upload path.
+    if image.mode not in ('RGB', 'L'):
+        image = image.convert('RGB')
+
     # The photo picker supplies a PIL image. Preserve the JPEG upload format.
     if image.mode not in ('RGB', 'L'):
         image = image.convert('RGB')
-    filename = 'photo_{}.jpg'.format(datetime.now().strftime('%Y%m%d-%H%M%S'))
-    with tempfile.NamedTemporaryFile(prefix=filename[:-4] + '_', suffix='.jpg', delete=False) as tmp:
-        file_path = tmp.name
-    try:
+    with tempfile.TemporaryDirectory(prefix='rch-photo-upload-') as directory:
+        filename = build_artifact_filename('photo', 'jpg')
+        file_path = os.path.join(directory, filename)
         image.save(file_path, format='JPEG', quality=90)
-        uploaded = artifact.save(file_path, type='saved', category='downloads')
-        print(uploaded)
-    finally:
-        if os.path.isfile(file_path):
-            os.remove(file_path)
+        print(artifact.save(file_path, type='saved', category='downloads'))
 
 
 main()

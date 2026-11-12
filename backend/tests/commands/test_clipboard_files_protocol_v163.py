@@ -104,8 +104,10 @@ class FakeClipboardSession:
     def get_capabilities(self, client_id):
         return {'capabilities': {'platform': 'win', 'files': self.files}}
 
-    def set_clipboard(self, client_id, payload):
+    def set_clipboard(self, client_id, payload, *, action, arguments=None):
         self.sent.append((client_id, payload))
+        self.action = action
+        self.arguments = arguments
         return {'ok': True}
 
 
@@ -146,6 +148,8 @@ def test_artifact_send_uses_files_protocol_and_cleans_stage(tmp_path):
                    'url': '/api/temporary/report'}],
         'roots': ['报表.txt'],
     })]
+    assert session.action == 'set_artifact_file'
+    assert session.arguments == {'count': 1, 'names': ['报表.txt'], 'names_truncated': False, 'artifact_id': 'artifact-1'}
     assert artifacts.cleaned == [str(file_path)]
 
 

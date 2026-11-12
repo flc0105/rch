@@ -11,8 +11,8 @@ class WebTerminalApi:
     def resize_pty_session(self, pty_session_id: str, cols: int, rows: int) -> dict:
         return self.pty_session_service.resize_session(pty_session_id, cols, rows)
 
-    def close_pty_session(self, pty_session_id: str) -> dict:
-        return self.pty_session_service.close_session(pty_session_id)
+    def close_pty_session(self, pty_session_id: str, *, user_initiated=True, reason='') -> dict:
+        return self.pty_session_service.close_session(pty_session_id, user_initiated=user_initiated, reason=reason)
 
     def poll_pty_session(self, pty_session_id: str, after_seq: int = 0) -> dict:
         return self.pty_session_service.get_updates(pty_session_id, after_seq=after_seq)

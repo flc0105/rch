@@ -14,6 +14,7 @@ function loadComponent(path) {
     'ArrowUp', 'ArrowDown', 'Terminal', 'Zap', 'FileCode2', 'CheckCircle2', 'XCircle',
     'CircleDashed', 'Ban', 'Clock3', 'ChevronRight', 'AlertTriangle', 'FolderOpen',
     'ArrowDownToLine', 'ArrowUpToLine', 'Wrench', 'BriefcaseBusiness',
+    'Monitor', 'Clipboard', 'Activity',
   ].map(name => [name, {}]))
   vm.runInNewContext(
     script.replace(/^import\s+[\s\S]*?\s+from\s+['"][^'"]+['"]\s*;?\s*$/gm, '')
@@ -29,6 +30,7 @@ const center = loadComponent('../src/components/CommandHistoryDialog.vue')
 test('Connection History and Activity Center label every persisted activity kind identically', () => {
   for (const kind of [
     'command', 'alias', 'script', 'remote_files', 'transfer', 'external_tool', 'background_job',
+    'pty', 'screen_view', 'clipboard', 'process',
   ]) {
     assert.equal(history.component.methods.activityKindLabel(kind),
       center.component.methods.buildActivityKindLabel(kind), `Unexpected label for ${kind}`)

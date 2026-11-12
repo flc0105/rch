@@ -28,7 +28,7 @@ class WebCommandHistoryApi:
         return None
 
     def clear_command_execution_history(self, machine_id: str, *, query: str = '', kind: str = '', errors: bool = False):
-        if kind and kind not in {'command', 'alias', 'script', 'remote_files', 'transfer', 'external_tool', 'background_job'}:
+        if kind and kind not in {'command', 'alias', 'script', 'remote_files', 'transfer', 'external_tool', 'background_job', 'pty', 'screen_view', 'clipboard', 'process'}:
             raise ValueError('Invalid activity kind')
         removed_count = self.server.command_history.write_service.clear_execution_history_by_machine_id(
             machine_id, query=query, kind=kind, errors=errors)

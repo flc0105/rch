@@ -16,8 +16,8 @@ class WebScreenViewApi:
     def send_screen_input(self, screen_session_id: str, event: dict) -> dict:
         return self.screen_view_session_service.send_input(screen_session_id, event)
 
-    def close_screen_view(self, screen_session_id: str) -> dict:
-        return self.screen_view_session_service.close_session(screen_session_id)
+    def close_screen_view(self, screen_session_id: str, *, user_initiated=True) -> dict:
+        return self.screen_view_session_service.close_session(screen_session_id, user_initiated=user_initiated)
 
     def poll_screen_view(self, screen_session_id: str, after_seq: int = 0) -> dict:
         return self.screen_view_session_service.get_updates(screen_session_id, after_seq=after_seq)

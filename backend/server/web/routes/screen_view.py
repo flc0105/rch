@@ -49,9 +49,11 @@ def create_screen_view_blueprint(server_instance):
 
     @blueprint.post('/api/screen-view/<screen_session_id>/close')
     def close_screen_view(screen_session_id):
-        return responder.json_endpoint(
-            lambda: screen_view_api.close_screen_view(screen_session_id),
-            default_error_status=500,
-        )
+        def _execute():
+            payload = get_json_payload()
+            return screen_view_api.close_screen_view(
+                screen_session_id, user_initiated=payload.get('reason') != 'cleanup',
+            )
+        return responder.json_endpoint(_execute, default_error_status=500)
 
     return blueprint

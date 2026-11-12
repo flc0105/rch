@@ -205,17 +205,27 @@ class RemoteExecutionService:
         task_type: str = TASK_TYPE_COMMAND,
         source: str = 'foreground',
         task_id: str = '',
+        activity: dict = None,
     ) -> str:
-        return self.foreground_execution_service.run_foreground_text_command(
-            target,
-            command,
-            command_type=command_type,
-            extra=extra,
-            history_entry_id=history_entry_id,
-            task_type=task_type,
-            source=source,
-            task_id=task_id,
-        )
+        def execute(entry_id):
+            return self.foreground_execution_service.run_foreground_text_command(
+                target,
+                command,
+                command_type=command_type,
+                extra=extra,
+                history_entry_id=entry_id,
+                task_type=task_type,
+                source=source,
+                task_id=task_id,
+            )
+
+        if activity and self.history_orchestrator:
+            session = self.get_connection(target)
+            return self.history_orchestrator.execute_semantic_operation(
+                session, activity['kind'], activity['action'], activity['arguments'],
+                execute, command_type=command_type,
+            )
+        return execute(history_entry_id)
 
     def run_foreground_json_command(
         self,

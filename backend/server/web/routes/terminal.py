@@ -55,6 +55,12 @@ def create_terminal_blueprint(server_instance):
 
     @blueprint.post('/api/pty/<pty_session_id>/close')
     def close_pty(pty_session_id):
-        return responder.json_endpoint(lambda: terminal_api.close_pty_session(pty_session_id), default_error_status=500)
+        def _execute():
+            payload = get_json_payload()
+            return terminal_api.close_pty_session(
+                pty_session_id, user_initiated=payload.get('reason') != 'switch_shell',
+                reason=payload.get('reason') or '',
+            )
+        return responder.json_endpoint(_execute, default_error_status=500)
 
     return blueprint

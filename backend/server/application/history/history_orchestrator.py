@@ -140,6 +140,37 @@ class CommandHistoryOrchestrator:
             }
         return activity_id
 
+    def begin_semantic_execution(self, conn, kind, action, arguments, *, origin='web_ui', command_type=''):
+        """Prepare a bounded UI operation; only confirmed Client dispatch is persisted."""
+        if conn is None:
+            return ''
+        activity_id = uuid.uuid4().hex
+        with self._lock:
+            self._pending[activity_id] = {
+                'conn': conn, 'kind': kind, 'action': action, 'origin': origin,
+                'presentation': 'none', 'invocation': {'arguments': dict(arguments)},
+                'resolved': {'command_type': command_type or kind},
+                'created_at': self.history_store._now_iso(),
+            }
+        return activity_id
+
+    def execute_semantic_operation(self, conn, kind, action, arguments, execute, *, command_type='command'):
+        """Record one dispatched operation around its existing execution callback."""
+        entry_id = self.begin_semantic_execution(
+            conn, kind, action, arguments, command_type=command_type,
+        )
+        try:
+            result = execute(entry_id)
+        except Exception:
+            self.finalize_execution(conn, entry_id, False)
+            raise
+        self.finalize_execution(conn, entry_id, True)
+        return result
+
+    def update_semantic_details(self, conn, entry_id, details):
+        if entry_id and details:
+            self.history_store.write_service.update_activity_resolved(conn, entry_id, details)
+
     def discard_activity_intent(self, entry_id):
         with self._lock:
             self._pending.pop(entry_id, None)

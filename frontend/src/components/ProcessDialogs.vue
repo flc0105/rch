@@ -861,7 +861,7 @@ export default {
           }
         )
 
-        const res = await fetch(`/api/connections/${encodeURIComponent(this.selectedId)}/processes/${encodeURIComponent(pid)}/kill`, { method: 'POST' })
+        const res = await fetch(`/api/connections/${encodeURIComponent(this.selectedId)}/processes/${encodeURIComponent(pid)}/kill`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) })
         const json = await res.json()
         if (res.ok && json.code === 0) {
           ElMessage.success(`Process "${name}" (PID: ${pid}) terminated`)
@@ -890,7 +890,7 @@ export default {
           }
         )
 
-        const res = await fetch(`/api/connections/${encodeURIComponent(this.selectedId)}/apps/${encodeURIComponent(pid)}/kill`, { method: 'POST' })
+        const res = await fetch(`/api/connections/${encodeURIComponent(this.selectedId)}/apps/${encodeURIComponent(pid)}/kill`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) })
         const json = await res.json()
         if (res.ok && json.code === 0) {
           ElMessage.success(`Application "${name}" (PID: ${pid}) terminated`)

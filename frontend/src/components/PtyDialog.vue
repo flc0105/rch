@@ -194,7 +194,6 @@ export default {
     this.ptyPasteVisible = false
     this.resetPtyInputQueue()
     this.clearPtyResizeTimer()
-    this.sendPtyWs({ type: 'close' })
     this.closePtySocket()
     this.disposePtyTerminal()
   },
@@ -293,7 +292,7 @@ export default {
         const res = await fetch(`/api/pty/${encodeURIComponent(previousSessionId)}/close`, {
           method: 'POST',
           headers: this.buildJsonHeaders({ 'Content-Type': 'application/json' }),
-          body: '{}',
+          body: JSON.stringify({ reason: 'switch_shell' }),
         })
         const json = await res.json()
         if (!res.ok || json.code !== 0) {
@@ -378,8 +377,6 @@ export default {
       this.resetPtyInputQueue()
       this.clearPtyResizeTimer()
       this.ptyUserClosing = true
-      this.sendPtyWs({ type: 'close' })
-      this.closePtySocket()
 
       const ptyId = this.ptySessionId
       this.visible = false
@@ -400,6 +397,7 @@ export default {
         })
       } catch (_) {
       } finally {
+        this.closePtySocket()
         this.disposePtyTerminal()
         this.ptyClosing = false
       }

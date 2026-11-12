@@ -1,6 +1,7 @@
 from flask import Blueprint
 
 from server.web.api_response import WebApiResponder
+from server.web.request_parsers import get_json_payload
 
 
 def create_system_inspection_blueprint(server_instance):
@@ -22,7 +23,7 @@ def create_system_inspection_blueprint(server_instance):
     def kill_process(client_id, pid):
         """终止进程"""
         return responder.json_endpoint(
-            lambda: process_control_api.kill_process(client_id, pid),
+            lambda: process_control_api.kill_process(client_id, pid, get_json_payload().get('name', '')),
             default_error_status=500,
         )
 
@@ -30,7 +31,7 @@ def create_system_inspection_blueprint(server_instance):
     def kill_app(client_id, pid):
         """终止应用"""
         return responder.json_endpoint(
-            lambda: process_control_api.kill_app(client_id, pid),
+            lambda: process_control_api.kill_app(client_id, pid, get_json_payload().get('name', '')),
             default_error_status=500,
         )
 

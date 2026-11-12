@@ -1,4 +1,5 @@
 import json
+import mimetypes
 import os
 
 
@@ -15,9 +16,15 @@ class WebClipboardApi:
         return self.clipboard_session_service.get_clipboard(client_id)
 
     def set_text(self, client_id: str, text: str) -> dict:
+        content = str(text or '')
         return self.clipboard_session_service.set_clipboard(
             client_id,
-            {'kind': 'text', 'text': str(text or '')},
+            {'kind': 'text', 'text': content},
+            action='set_text',
+            arguments={
+                'text': content[:2048], 'length': len(content),
+                'truncated': len(content) > 2048,
+            },
         )
 
     def set_image(self, client_id: str, upload) -> dict:
@@ -28,6 +35,12 @@ class WebClipboardApi:
             return self.clipboard_session_service.set_clipboard(
                 client_id,
                 {'kind': 'image', 'items': [item]},
+                action='set_image',
+                arguments={
+                    'filename': str(item.get('name') or '')[:160],
+                    'mime_type': mimetypes.guess_type(str(item.get('name') or ''))[0] or 'application/octet-stream',
+                    'size_bytes': os.path.getsize(temp_path),
+                },
             )
         finally:
             self._cleanup_temp_paths(temp_paths)
@@ -99,7 +112,7 @@ class WebClipboardApi:
             if not normalized_roots:
                 raise ValueError('clipboard file roots are empty')
 
-            return self._set_files_payload(client_id, items, normalized_roots)
+            return self._set_files_payload(client_id, items, normalized_roots, action='set_files')
         finally:
             self._cleanup_temp_paths(temp_paths)
 
@@ -138,11 +151,19 @@ class WebClipboardApi:
                     'url': relative_url,
                 }],
                 [display_name],
+                action='set_artifact_file', artifact_id=normalized_artifact_id,
             )
         finally:
             self._cleanup_temp_paths(temp_paths)
 
-    def _set_files_payload(self, client_id: str, items: list, roots: list) -> dict:
+    def _set_files_payload(self, client_id: str, items: list, roots: list, *, action: str, artifact_id='') -> dict:
+        arguments = {
+            'count': len(roots),
+            'names': [str(name).replace('\\', '/').split('/')[-1][:160] for name in roots[:20]],
+            'names_truncated': len(roots) > 20,
+        }
+        if artifact_id:
+            arguments['artifact_id'] = artifact_id
         return self.clipboard_session_service.set_clipboard(
             client_id,
             {
@@ -150,6 +171,7 @@ class WebClipboardApi:
                 'items': items,
                 'roots': roots,
             },
+            action=action, arguments=arguments,
         )
 
     def _stage_upload(self, upload) -> tuple[dict, str]:

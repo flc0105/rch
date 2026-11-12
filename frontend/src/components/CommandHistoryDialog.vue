@@ -313,6 +313,10 @@
                 <el-option label="Transfer" value="transfer" />
                 <el-option label="External Tool" value="external_tool" />
                 <el-option label="Background Job" value="background_job" />
+                <el-option label="PTY" value="pty" />
+                <el-option label="Screen View" value="screen_view" />
+                <el-option label="Clipboard" value="clipboard" />
+                <el-option label="Process" value="process" />
               </el-select>
               <el-checkbox v-model="activityErrorsOnly">Errors</el-checkbox>
             </div>
@@ -350,7 +354,7 @@
                     </div>
                     <div class="activity-entry-subtitle">
                       <span>{{ formatDateTimeStandard(item.started_at || item.created_at) || '-' }}</span>
-                      <span v-if="['remote_files', 'transfer', 'external_tool', 'background_job'].includes(item.kind) || isActivityProblem(item.status)" class="activity-summary-preview" :class="{ 'activity-error-preview': isActivityProblem(item.status) }">{{ buildCommandExecutionSingleLineSummary(item) }}</span>
+                      <span v-if="['remote_files', 'transfer', 'external_tool', 'background_job', 'pty', 'screen_view', 'clipboard', 'process'].includes(item.kind) || isActivityProblem(item.status)" class="activity-summary-preview" :class="{ 'activity-error-preview': isActivityProblem(item.status) }">{{ buildCommandExecutionSingleLineSummary(item) }}</span>
                       <span v-if="item.files?.length">{{ item.files.length }} file(s)</span>
                       <span v-if="item.result?.truncated">Truncated</span>
                     </div>
@@ -405,7 +409,7 @@ import CommandExecutionDetailDialog from './CommandExecutionDetailDialog.vue'
 import {EditPen} from "@element-plus/icons-vue";
 import { Star, StarFilled, ArrowUp, ArrowDown } from '@element-plus/icons-vue'
 import { diffDateTimeMs } from '../utils/formatters.js'
-import { Terminal, Zap, FileCode2, CheckCircle2, XCircle, CircleDashed, Ban, Clock3, ChevronRight, AlertTriangle, TextCursorInput, FolderOpen, ArrowDownToLine, ArrowUpToLine, Wrench, BriefcaseBusiness } from '@lucide/vue'
+import { Terminal, Zap, FileCode2, CheckCircle2, XCircle, CircleDashed, Ban, Clock3, ChevronRight, AlertTriangle, TextCursorInput, FolderOpen, ArrowDownToLine, ArrowUpToLine, Wrench, BriefcaseBusiness, Monitor, Clipboard, Activity } from '@lucide/vue'
 
 export default {
   name: 'CommandHistoryDialog',
@@ -556,7 +560,8 @@ Star,
   methods: {
     getActivityKindIcon(kind, action) {
       if (kind === 'transfer') return action === 'upload_files' ? ArrowUpToLine : ArrowDownToLine
-      return ({ command: Terminal, alias: Zap, script: FileCode2, remote_files: FolderOpen, external_tool: Wrench, background_job: BriefcaseBusiness })[kind] || Terminal
+      return ({ command: Terminal, alias: Zap, script: FileCode2, remote_files: FolderOpen, external_tool: Wrench, background_job: BriefcaseBusiness,
+        pty: Terminal, screen_view: Monitor, clipboard: Clipboard, process: Activity })[kind] || Terminal
     },
     getActivityStatusIcon(status) {
       if (status === 'success') return CheckCircle2
@@ -566,10 +571,30 @@ Star,
       return Clock3
     },
     buildActivityKindLabel(kind) {
-      return ({ command: 'Command', alias: 'Alias', script: 'Script', remote_files: 'Remote Files', transfer: 'Transfer', external_tool: 'External Tool', background_job: 'Background Job' })[kind] || 'Activity'
+      return ({ command: 'Command', alias: 'Alias', script: 'Script', remote_files: 'Remote Files', transfer: 'Transfer', external_tool: 'External Tool', background_job: 'Background Job', pty: 'PTY', screen_view: 'Screen View', clipboard: 'Clipboard', process: 'Process' })[kind] || 'Activity'
     },
     buildActivityLabel(item) {
       const invocation = item?.invocation || {}
+      if (item?.kind === 'pty' || item?.kind === 'screen_view') {
+        const label = item.kind === 'pty' ? 'PTY' : 'Screen View'
+        const shell = item.kind === 'pty' ? String(invocation.arguments?.shell || '').trim() : ''
+        return shell ? `${label} · ${shell}` : label
+      }
+      if (item?.kind === 'clipboard') {
+        const args = invocation.arguments || {}
+        const label = ({ set_text: 'Set text', set_image: 'Set image', set_files: 'Set files',
+          set_artifact_file: 'Send Artifact file' })[item.action] || 'Set clipboard'
+        if (item.action === 'set_text') {
+          const preview = String(args.text || '').replace(/[\r\n]+/g, ' ').slice(0, 64)
+          return preview ? `${label} · ${preview}` : label
+        }
+        if (item.action === 'set_image') return args.filename ? `${label} · ${args.filename}` : label
+        return Array.isArray(args.names) && args.names.length ? `${label} · ${args.names.slice(0, 2).join(', ')}` : label
+      }
+      if (item?.kind === 'process') {
+        const args = invocation.arguments || {}
+        return `${item.action === 'kill_app' ? 'Kill app' : 'Kill process'} ${args.name ? `${args.name} ` : ''}(PID ${args.pid ?? '?'})`
+      }
       if (item?.kind === 'transfer') {
         const args = invocation.arguments || {}
         const name = String(args.filename || args.path || '').split(/[\\/]/).pop()
@@ -1148,7 +1173,7 @@ Star,
 
     buildCommandExecutionSummary(item) {
       const status = String(item?.status || '').toLowerCase()
-      if (['remote_files', 'transfer', 'external_tool', 'background_job'].includes(item?.kind)) {
+      if (['remote_files', 'transfer', 'external_tool', 'background_job', 'pty', 'screen_view', 'clipboard', 'process'].includes(item?.kind)) {
         const firstLine = String(item?.result?.output_records?.[0]?.text || '').split(/\r?\n/)[0].trim()
         if (firstLine && firstLine.length <= 128) return firstLine
       }

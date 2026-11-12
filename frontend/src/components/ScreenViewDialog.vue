@@ -1095,23 +1095,29 @@ export default {
       this.fallbackPollTimer = null
     },
 
-    async closeRemoteSession(showError = false) {
+    async closeRemoteSession(showError = false, userInitiated = false) {
       const screenSessionId = this.screenSessionId
       this.disableControl(true)
       this.screenSessionId = ''
       this.stopFallbackPolling()
-      this.closeScreenSocket()
-      if (!screenSessionId) return
+      if (!screenSessionId) {
+        this.closeScreenSocket()
+        return
+      }
       try {
-        await screenViewApi.closeScreenView(screenSessionId)
+        await screenViewApi.closeScreenView(screenSessionId, {
+          reason: userInitiated ? 'user' : 'cleanup',
+        })
       } catch (e) {
         if (showError) ElMessage.error(e?.message || 'Failed to close screen view')
+      } finally {
+        this.closeScreenSocket()
       }
     },
 
     handleDialogClose() {
       this.userClosing = true
-      this.closeRemoteSession(false)
+      this.closeRemoteSession(false, true)
     },
 
     handleDialogClosed() {

@@ -111,7 +111,7 @@ def create_ws_handler(server_instance, flask_app):
                         rows=message.get('rows') or 32,
                     )
                 elif msg_type == 'close':
-                    terminal_api.close_pty_session(pty_session_id)
+                    terminal_api.close_pty_session(pty_session_id, user_initiated=True)
                     break
 
         try:
@@ -133,12 +133,12 @@ def create_ws_handler(server_instance, flask_app):
                     raise exc
         except ConnectionClosed:
             try:
-                terminal_api.close_pty_session(pty_session_id)
+                terminal_api.close_pty_session(pty_session_id, user_initiated=False)
             except Exception:
                 pass
         except Exception:
             try:
-                terminal_api.close_pty_session(pty_session_id)
+                terminal_api.close_pty_session(pty_session_id, user_initiated=False)
             except Exception:
                 pass
             try:
@@ -150,7 +150,7 @@ def create_ws_handler(server_instance, flask_app):
                 if task and not task.done():
                     task.cancel()
             try:
-                terminal_api.close_pty_session(pty_session_id)
+                terminal_api.close_pty_session(pty_session_id, user_initiated=False)
             except Exception:
                 pass
 
@@ -241,7 +241,7 @@ def create_ws_handler(server_instance, flask_app):
                         message.get('event') if isinstance(message.get('event'), dict) else {},
                     )
                 elif msg_type == 'close':
-                    screen_view_api.close_screen_view(screen_session_id)
+                    screen_view_api.close_screen_view(screen_session_id, user_initiated=True)
                     break
 
         try:
@@ -263,12 +263,12 @@ def create_ws_handler(server_instance, flask_app):
                     raise exc
         except ConnectionClosed:
             try:
-                screen_view_api.close_screen_view(screen_session_id)
+                screen_view_api.close_screen_view(screen_session_id, user_initiated=False)
             except Exception:
                 pass
         except Exception:
             try:
-                screen_view_api.close_screen_view(screen_session_id)
+                screen_view_api.close_screen_view(screen_session_id, user_initiated=False)
             except Exception:
                 pass
             try:
@@ -280,7 +280,7 @@ def create_ws_handler(server_instance, flask_app):
                 if task and not task.done():
                     task.cancel()
             try:
-                screen_view_api.close_screen_view(screen_session_id)
+                screen_view_api.close_screen_view(screen_session_id, user_initiated=False)
             except Exception:
                 pass
 

@@ -311,7 +311,7 @@ export default {
       if (entry?.kind === 'external_tool' && entry?.action === 'run_exec') {
         return entry?.invocation?.input || '-'
       }
-      if (['remote_files', 'external_tool', 'background_job'].includes(entry?.kind) || (entry?.kind === 'transfer' && !entry?.invocation?.input)) {
+      if (['remote_files', 'external_tool', 'background_job', 'pty', 'screen_view', 'clipboard', 'process'].includes(entry?.kind) || (entry?.kind === 'transfer' && !entry?.invocation?.input)) {
         return JSON.stringify(entry.invocation?.arguments || {}, null, 2)
       }
       return entry?.invocation?.input || '-'
