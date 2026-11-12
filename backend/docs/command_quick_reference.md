@@ -187,13 +187,15 @@ iOS 的 RCH Client 专门实现了一组可在 Pythonista 中通过 Python / iOS
 | `whoami` / `getinfo` / `uptime` | 查看当前身份 / iOS 设备信息 / 系统运行时间 |
 | `md5sum` | 计算文件 MD5（用于文件比对，不适合作为安全校验） |
 | `clipboard_read` / `clipboard_write` | 读取 / 写入文本剪贴板 |
-| `openurl` / `open_in` | 打开 URL / 将文件交给其他 App |
-| `quick_look` / `pick_upload` | 预览文件 / 选取照片或文件并上传 |
-| `get_location` / `list_contacts` | 读取获授权的定位 / 联系人信息 |
+| `get_location` | 读取获授权的定位信息 |
+| `list_contacts` | 以 JSON 读取获授权的联系人信息 |
+| `list_reminders` | 以 JSON 列出提醒事项及其备注、日期、优先级、链接和通知信息 |
 | `speak` | 使用设备语音合成朗读文本 |
 | `keep_awake` | 请求保持屏幕唤醒；不保证 App 长期后台运行 |
 | `clear_console` | 清理 Pythonista 控制台输出 |
-| `kill_app` | 请求结束当前 App / Client；会中断连接 |
+
+
+`ios/console` Script Library 提供 Open URL、Open In、Quick Look、Pick & Upload、Kill App 和 Close Editor Tabs。文件脚本可在参数表单中使用 Remote File Picker 选择本机文件。
 
 这些是 **RCH 在 iOS 上的内置命令**，通过 Python 与受授权的平台接口执行。iOS 不注册 `acmd ps` / `acmd kill`，也不提供系统 Shell、后台子进程、用户枚举、提权检查和软件包枚举命令。部分操作需要设备端用户授权或在前台使用。详情见 [iOS / Pythonista](ios_pythonista.md)。
 
@@ -218,7 +220,6 @@ ACMD 统一使用 `acmd <name> ...` 前缀，使用独立的命令注册表、�
 | **iOS** | `acmd find` / `acmd tree` | 按关键字查找文件或展示目录树 |
 | **iOS** | `acmd head` / `acmd tail` | 阅读文本文件开头 / 末尾若干行 |
 | **iOS** | `acmd wget` | 从 URL 下载文件 |
-| **iOS** | `acmd tcp_ping` / `acmd ping` | 测量 TCP 连接或 ICMP 请求延迟；是否可用受系统网络权限影响 |
 
 示例（只展示语法，不表示允许随意操作目标设备）：
 

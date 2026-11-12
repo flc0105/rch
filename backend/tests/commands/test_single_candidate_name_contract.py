@@ -20,20 +20,20 @@ def test_command_candidate_aggregation_uses_name_for_dedup_and_server_precedence
     session = SimpleNamespace(session_info=SimpleNamespace(command_manifest=[
         {'name': 'acmd help', 'source': 'client'},
         {'name': 'script', 'source': 'client'},  # Server builtin wins.
-        {'name': 'acmd ping', 'source': 'client'},
+        {'name': 'acmd find', 'source': 'client'},
     ]))
     api.server.get_target_connection_by_client_id = lambda _client_id: session
     server_commands = [
         {'name': 'script ', 'source': 'server', 'group': 'server'},
         {'name': 'alias', 'source': 'server', 'group': 'server'},
-        {'name': 'acmd ping', 'source': 'server', 'group': 'server'},
+        {'name': 'acmd find', 'source': 'server', 'group': 'server'},
     ]
     api.command_executor_factory.create.return_value.get_command_candidates.return_value = server_commands
     candidates = api.get_command_candidates('client-1')
     assert all('template' not in item for item in candidates)
     assert [item['name'] for item in candidates].count('acmd help') == 1
     assert 'script' not in [item['name'] for item in candidates]
-    assert [item['name'] for item in candidates].count('acmd ping') == 1
+    assert [item['name'] for item in candidates].count('acmd find') == 1
     assert candidates[0]['source'] == 'client'
 
 

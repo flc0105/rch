@@ -3,7 +3,6 @@ from client.commands.common.commands import CommonCommands
 from client.commands.runtime.interrupts import timeout
 from client.commands.platform.services.ios.console_service import iOSConsoleService
 from client.commands.platform.services.ios.file_system_service import iOSFileSystemService
-from client.commands.platform.services.ios.network_service import iOSNetworkService
 from client.commands.platform.services.ios.system_service import iOSSystemService
 from client.commands.platform.specs.ios import *
 from core.utils.decorator import desc
@@ -17,7 +16,6 @@ class iOSCommands(CommonCommands):
         self.ios_file_system = iOSFileSystemService(self)
         self.ios_system = iOSSystemService(self)
         self.ios_console = iOSConsoleService(self)
-        self.ios_network = iOSNetworkService(self)
 
     # iOS has no OS shell/subprocess or system process-inspection privileges.
     # These overrides deliberately have no @desc metadata: they are not exported
@@ -102,56 +100,44 @@ class iOSCommands(CommonCommands):
 
     # ------------------ 剪贴板 ------------------ #
 
-    @desc('Read clipboard text', group='mobile')
+    @desc('Read clipboard text', group='device')
     def clipboard_read(self):
         return self.ios_console.read_clipboard()
 
-    @desc('Write clipboard text', group='mobile')
+    @desc('Write clipboard text', group='device')
     def clipboard_write(self, text=''):
         return self.ios_console.write_clipboard(text)
 
     # ------------------ 手机常用 ------------------ #
 
-    @desc('Open URL', group='console')
-    def openurl(self, url):
-        return self.ios_console.open_url(url)
-
     @desc('Clear console output', group='console')
     def clear_console(self):
         return self.ios_console.clear_console()
 
-    @desc('QuickLook preview file', group='console')
-    def quick_look(self, path):
-        return self.ios_console.quick_look(path)
-
-    @desc('Open file in other app', group='console')
-    def open_in(self, path):
-        return self.ios_console.open_in(path)
-
-    @desc('Get current location', group='mobile')
+    @desc('Get current location', group='device')
     @timeout(15)
     def get_location(self):
         return self.ios_console.get_location()
 
-    @desc('Speak text', group='mobile')
+    @desc('Speak text', group='device')
     def speak(self, text=''):
         return self.ios_console.speak(text)
 
-    @desc('List contacts via CNContactStore', group='mobile')
-    def list_contacts(self):
+    @desc('List contacts via CNContactStore', group='device')
+    def list_contacts(self, arg=''):
+        if str(arg or '').strip():
+            return 0, 'Usage: list_contacts'
         return self.ios_system.list_contacts()
 
-    @desc('Pick photo or file and upload', group='console')
-    def pick_upload(self, kind='photo'):
-        return self.ios_console.pick_upload(kind)
+    @desc('List reminders', group='device')
+    def list_reminders(self, arg=''):
+        if str(arg or '').strip():
+            return 0, 'Usage: list_reminders'
+        return self.ios_system.list_reminders()
 
     @desc('Keep screen awake', group='console')
     def keep_awake(self, arg):
         return self.ios_console.keep_awake(arg)
-
-    @desc('Force quit app', group='console')
-    def kill_app(self):
-        return self.ios_console.kill_app()
 
     @argument_command('alert', spec=ALERT_ARGUMENT_SPEC)
     def alert(self, args_dict, payload=None):
@@ -181,11 +167,4 @@ class iOSCommands(CommonCommands):
     def wget(self, args_dict, payload=None):
         return self.ios_file_system.acmd_wget(args_dict)
 
-    @argument_command('tcp_ping', spec=TCP_PING_ARGUMENT_SPEC, output='stream')
-    def tcp_ping(self, args_dict, payload=None):
-        return self.ios_network.acmd_tcp_ping(args_dict)
-
-    @argument_command('ping', spec=PING_ARGUMENT_SPEC, output='stream')
-    def ping(self, args_dict, payload=None):
-        return self.ios_network.acmd_ping(args_dict)
 

@@ -12,19 +12,23 @@ def test_ios_manifest_exposes_new_names_only():
     commands = iOSCommands(DummyConnection())
     names = {item['name'] for item in commands.get_command_manifest_payload()}
     renamed = {
-        'clear_console', 'keep_awake', 'kill_app', 'open_in', 'quick_look',
-        'pick_upload', 'get_location', 'list_contacts',
+        'clear_console', 'keep_awake', 'get_location', 'list_contacts',
+        'list_reminders',
     }
     removed = {
+        'openurl', 'open_in', 'quick_look', 'pick_upload', 'kill_app',
         'clearconsole', 'keepawake', 'killapp', 'openin', 'quicklook',
         'pickupload', 'getlocation', 'listcontacts', 'mkdir', 'rm', 'rmdir',
         'shell', 'shell_stream', 'bgrun', 'run_detached', 'is_elevated', 'piplist',
         'keyboard_send', 'userenum', 'spawn_instance',
         'relaunch_instance', 'reexec_instance', 'acmd ps', 'acmd kill',
+        'acmd ping', 'acmd tcp_ping',
     }
     assert renamed <= names
     assert not (removed & names)
-    assert {'getinfo', 'uptime', 'acmd ping', 'acmd help'} <= names
+    assert {'getinfo', 'uptime', 'acmd help'} <= names
+    device = {'clipboard_read', 'clipboard_write', 'get_location', 'speak', 'list_contacts', 'list_reminders'}
+    assert {entry['group'] for entry in commands.get_command_manifest_payload() if entry['name'] in device} == {'device'}
     assert {entry['group'] for entry in commands.get_command_manifest_payload() if entry['name'] in ('getinfo', 'uptime')} == {'system'}
     assert len(names) == len(commands.get_command_manifest_payload())
 
@@ -34,7 +38,8 @@ def test_ios_acmd_registry_and_help_do_not_expose_process_commands():
     registry = ArgumentCommandRegistry(commands)
     assert not registry.has_command('ps')
     assert not registry.has_command('kill')
-    assert registry.has_command('ping')
+    assert not registry.has_command('ping')
+    assert not registry.has_command('tcp_ping')
     assert 'ps' not in {item['name'] for item in registry.list_command_entries()}
 
 
@@ -71,3 +76,13 @@ def test_ios_uptime_returns_command_error_on_native_failure(monkeypatch):
     status, output = iOSCommands(DummyConnection()).uptime()
     assert status == 0
     assert 'unavailable' in output
+
+
+def test_ping_scripts_remain_independent_of_removed_command_utilities():
+    from pathlib import Path
+    scripts_root = Path(__file__).resolve().parents[2] / 'server/resources/scripts/ios/network'
+    for name in ('icmp_ping.py', 'tcp_ping.py'):
+        assert (scripts_root / name).is_file()
+    services = Path(__file__).resolve().parents[2] / 'client/commands/platform'
+    assert not (services / 'services/ios/network_service.py').exists()
+    assert not (services / 'utils/network_util.py').exists()

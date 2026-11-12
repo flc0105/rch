@@ -9,7 +9,6 @@ import pytest
 import requests
 
 from client.commands.platform.services.mac import media_service as mac_media
-from client.commands.platform.services.ios import console_service as ios_console
 from client.http.client_api import ClientApiClient, ClientApiError
 from client.jobs.core.job import Job
 
@@ -72,63 +71,6 @@ def test_macos_webcam_failed_capture_or_upload_is_failure(
     assert status == 0 and expected_message in message
     assert transfer.upload_single_file_to_server_result.called == (capture_status == 0)
     assert cleaned == [temp_path]
-
-
-@pytest.mark.parametrize('http_status,api_code,expected_command_status', [
-    (200, 0, 1),
-    (422, 1, 0),
-    (200, 7, 0),
-])
-def test_ios_photo_upload_jpeg_bytes_jpg_name_and_http_result(
-    monkeypatch, http_status, api_code, expected_command_status
-):
-    seen = {}
-
-    class FakeImage:
-        mode = 'RGBA'
-        def convert(self, mode):
-            assert mode == 'RGB'
-            self.mode = mode
-            return self
-        def save(self, buffer, *, format, quality):
-            assert format == 'JPEG' and quality == 90
-            buffer.write(b'\xff\xd8\xff\xdbjpegbytes\xff\xd9')
-
-    monkeypatch.setitem(sys.modules, 'photos', SimpleNamespace(pick_image=lambda: FakeImage()))
-    monkeypatch.setitem(sys.modules, 'dialogs', SimpleNamespace(pick_document=lambda: None))
-    monkeypatch.setattr(ios_console, 'get_time', lambda: '20261111-121500')
-
-    def build_form(**kwargs):
-        seen['form'] = kwargs
-        return kwargs
-
-    def upload_file_source(file_source, *, filename, form_data, timeout):
-        seen['name'] = filename
-        seen['bytes'] = file_source.getvalue()
-        seen['data'] = form_data
-        return SimpleNamespace(
-            ok=(http_status < 400), status_code=http_status,
-            json=lambda: {'code': api_code, 'message': 'Upload rejected' if api_code else ''}, text='',
-        )
-
-    owner = SimpleNamespace(
-        http_file_transfer_service=SimpleNamespace(build_http_upload_form_data=build_form),
-        client_api=SimpleNamespace(
-            upload_file_source=upload_file_source,
-            parse_json_response=ClientApiClient().parse_json_response,
-        ),
-    )
-    status, body = ios_console.iOSConsoleService(owner).pick_upload('photo')
-    assert status == expected_command_status
-    assert seen['name'] == 'photo_20261111-121500.jpg'
-    assert seen['bytes'].startswith(b'\xff\xd8')
-    assert seen['bytes'].endswith(b'\xff\xd9')
-    assert seen['form'] == {'artifact_type': 'saved', 'category': 'downloads'}
-    assert 'folder' not in seen['data']
-    if expected_command_status:
-        assert f'"status_code": {http_status}' in body
-    else:
-        assert 'Failed to pick/upload' in body
 
 
 @pytest.mark.parametrize('status_code,api_code,expected_error', [

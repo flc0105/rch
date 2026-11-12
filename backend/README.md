@@ -1462,29 +1462,16 @@ The following tables are generated from current `@desc(...)` declarations with `
 
 | Command | Group | What it does |
 | --- | --- | --- |
-| `clearconsole` | `console` | Clear console output |
-| `keepawake` | `console` | Keep screen awake |
-| `killapp` | `console` | Force quit app |
-| `openin` | `console` | Open file in other app |
-| `openurl` | `console` | Open URL |
-| `pickupload` | `console` | Pick photo or file and upload |
-| `quicklook` | `console` | QuickLook preview file |
-| `getlocation` | `mobile` | Get current location |
-| `listcontacts` | `mobile` | List contacts via CNContactStore |
-| `clipboard_read` | `mobile` | Read clipboard text |
-| `speak` | `mobile` | Speak text |
-| `clipboard_write` | `mobile` | Write clipboard text |
-| `getinfo` | `platform` | Get system information |
-| `cat` | `shell` | Read text file |
-| `echo` | `shell` | Echo text or expand environment variables |
-| `ls` | `shell` | List directory contents |
-| `md5sum` | `shell` | Compute file MD5 |
-| `mkdir` | `shell` | Create directory |
-| `printenv` | `shell` | Print environment variables |
-| `rm` | `shell` | Remove file |
-| `rmdir` | `shell` | Remove directory recursively |
-| `touch` | `shell` | Create empty file |
-| `whoami` | `shell` | Show current username |
+| `getinfo` / `uptime` | `system` | iOS system details and uptime |
+| `clear_console` / `keep_awake` | `console` | Console output and screen sleep |
+| `get_location` | `device` | Device location (with permission) |
+| `list_contacts` | `device` | Contacts in JSON format (with permission) |
+| `list_reminders` | `device` | Reminders with notes, dates and alerts in JSON format |
+| `clipboard_read` / `clipboard_write` | `device` | Read or write clipboard text |
+| `speak` | `device` | Speak text aloud |
+| `ls` / `cat` / `touch` / `md5sum` | `shell` | File utilities |
+
+The iOS Script Library contains `ios/console` actions for opening URLs, previewing or sharing files, choosing/uploading photos or files, closing editor tabs, and quitting Pythonista. File inputs support the Remote File Picker.
 
 > Linux currently relies primarily on the common command set plus common `acmd` specs.
 
@@ -1507,8 +1494,6 @@ Current specs:
 | iOS | `head` | Show first N lines of a text file |
 | iOS | `tail` | Show last N lines of a text file |
 | iOS | `wget` | Download file from URL |
-| iOS | `tcp_ping` | Measure TCP connection latency to a target host and port |
-| iOS | `ping` | Send ICMP echo requests to a target host to measure network latency |
 | macOS | `msgbox` | Show a native macOS dialog |
 | macOS | `notify` | Show a native macOS notification |
 | macOS | `sqlite_query` | Read-only SQLite query |

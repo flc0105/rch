@@ -188,7 +188,7 @@ Terminal 的 `script exec` 路径候选和 `job start` Job 名称候选复用相
 
 Linux 通过平台类导出 `getinfo [--json]`，返回平铺的 `StructuredCommandResult` 系统信息。
 
-iOS 的命令可见性由 `iOSCommands` 的实际导出方法和 ACMD Registry 决定。平台类会屏蔽不适用于 Pythonista 的继承命令，并将移动端命令统一为 `clear_console`、`keep_awake`、`kill_app`、`open_in`、`quick_look`、`pick_upload`、`get_location`、`list_contacts`；`acmd ps/kill` 不在 iOS 注册。iOS 的 `getinfo` 和基于 Pythonista 系统接口的 `uptime` 均归入 `system` 命令组。
+iOS 的命令可见性由 `iOSCommands` 的实际导出方法和 ACMD Registry 决定。平台类会屏蔽不适用于 Pythonista 的继承命令，并将设备命令归入 `device` 分组（`clipboard_read`、`clipboard_write`、`get_location`、`speak`、`list_contacts`、`list_reminders`），将 `clear_console`、`keep_awake` 归入 `console`；`acmd ps/kill` 不在 iOS 注册。iOS 的 `getinfo` 和基于 Pythonista 系统接口的 `uptime` 均归入 `system` 命令组。`list_reminders` 和 `list_contacts` 无需参数，直接输出 JSON。原先的文件预览、分享、上传、打开链接和退出 App 入口归入 Script Library 的 `ios/console`。
 
 
 普通 Client 命令的可见名称直接来自 `@desc` 修饰的方法名，`group`
@@ -204,8 +204,8 @@ iOS 的命令可见性由 `iOSCommands` 的实际导出方法和 ACMD Registry �
 `python`（`piplist`）。`ip` 已不再注册为 Client 命令。
 
 结构化传输入口现在名为 `receive_file`，其原有参数及 HTTP 流程不变。
-iOS 专属 `clipboard_read` / `clipboard_write` 仅调整命令名称，
-其他 iOS 分组与内部 `acmd`/Structured Payload 命令保持不变。
+iOS 专属 `clipboard_read` / `clipboard_write` 和其他设备命令统一使用 `device` 分组；
+内部 `acmd` 和 Structured Payload 命令按原有执行流程运行。
 
 Client 生命周期的 `relaunch_instance` 仍调用原有新建进程再退出逻辑；
 `reexec_instance` 仅在 macOS/Linux 注册，使用 `os.execv()` 替换当前进程。

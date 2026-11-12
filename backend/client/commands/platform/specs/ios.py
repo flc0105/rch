@@ -90,35 +90,3 @@ WGET_ARGUMENT_SPEC = ArgumentCommandSpec(
                            help_text='Show this help message'),
     ]
 )
-
-TCP_PING_ARGUMENT_SPEC = ArgumentCommandSpec(
-    name='tcp_ping',
-    description='Measure TCP connection latency to a target host and port',
-    options=[
-        ArgumentOptionSpec(name='host', option_type='str', required=True, default=None, allow_empty=False,
-                           help_text='Target hostname or IP address', positional_index=0),
-        ArgumentOptionSpec(name='port', option_type='int', required=False, default=80, alias='p',
-                           help_text='Target TCP port'),
-        ArgumentOptionSpec(name='count', option_type='int', required=False, default=4, alias='c',
-                           help_text='Number of connection attempts'),
-        ArgumentOptionSpec(name='help', option_type='flag', required=False, default=False, alias='h',
-                           help_text='Show this help message'),
-    ]
-)
-
-PING_ARGUMENT_SPEC = ArgumentCommandSpec(
-    name='ping',
-    description='Send ICMP echo requests to a target host to measure network latency',
-    options=[
-        ArgumentOptionSpec(name='host', option_type='str', required=True, default=None, allow_empty=False,
-                           help_text='Target hostname or IP address', positional_index=0),
-        ArgumentOptionSpec(name='count', option_type='int', required=False, default=4, alias='c',
-                           help_text='Number of ping requests'),
-        ArgumentOptionSpec(name='help', option_type='flag', required=False, default=False, alias='h',
-                           help_text='Show this help message'),
-    ],
-    examples=[
-        'acmd ping 127.0.0.1',
-        'acmd ping 127.0.0.1 -c 8',
-    ]
-)
