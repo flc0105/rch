@@ -38,9 +38,9 @@ def test_existing_command_output_in_rch_db_can_be_listed_on_startup(tmp_path):
                 category, machine_id, saved_at, saved_path, client_id,
                 source_command_id, extra)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-            ('old-command-output', 'saved', None, 'result.txt', 7,
+            ('d0' * 16, 'saved', None, 'result.txt', 7,
              'command_output', 'machine-1', '2026-11-11 16:09:56',
-             'objects/result.txt', 'client-1', None, json.dumps({'saved_from': 'saveout'})),
+             'objects/d0/' + ('d0' * 16), 'client-1', None, json.dumps({'saved_from': 'saveout'})),
         )
     try:
         items = catalog.list()

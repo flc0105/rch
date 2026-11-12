@@ -14,9 +14,9 @@ def test_pty_toolbar_export_uses_timestamped_command_output_artifact(tmp_path):
     def allocate_artifact_path(**kwargs):
         allocated.append(kwargs)
         return {
-            'file_path': str(tmp_path / kwargs['original_name']),
-            'meta_path': str(tmp_path / 'metadata.json'),
-            'stored_name': kwargs['original_name'],
+            'artifact_id': 'a1' * 16,
+            'file_path': str(tmp_path / ('a1' * 16)),
+            'stored_name': 'a1' * 16,
             'machine_id': kwargs['machine_id'],
         }
 
@@ -33,7 +33,7 @@ def test_pty_toolbar_export_uses_timestamped_command_output_artifact(tmp_path):
                                       client_id='client', machine_id='machine',
                                       extra={'saved_from': 'pty_toolbar'}, hostname='host')
     assert result['original_name'] == 'pty_output_20261105_142309.txt'
-    assert allocated[0]['artifact_type'] == 'command_output'
-    assert (tmp_path / result['original_name']).read_text() == '$ echo hello\nhello'
+    assert allocated[0]['artifact_type'] == 'saved'
+    assert (tmp_path / ('a1' * 16)).read_text() == '$ echo hello\nhello'
     assert registered[0]['source_command_id'] is None
     assert registered[0]['extra']['saved_from'] == 'pty_toolbar'

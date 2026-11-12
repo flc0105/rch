@@ -13,7 +13,6 @@ class WebArtifactService:
         self.database = database
         self.web_root_dir = WEB_FILES_ROOT_DIR
         self.artifacts_root_dir = os.path.join(self.web_root_dir, 'artifacts')
-        self.previews_dir = os.path.join(self.artifacts_root_dir, 'preview')
         self.upload_tmp_dir = os.path.join(self.artifacts_root_dir, 'upload_tmp')
 
         self._prepare_dirs()
@@ -24,14 +23,13 @@ class WebArtifactService:
 
     def _prepare_dirs(self):
         os.makedirs(self.artifacts_root_dir, exist_ok=True)
-        os.makedirs(self.previews_dir, exist_ok=True)
         os.makedirs(self.upload_tmp_dir, exist_ok=True)
 
     def allocate_artifact_path(self, artifact_type: str, machine_id: str, original_name: str) -> dict:
         return self.registry_service.allocate_artifact_path(artifact_type, machine_id, original_name)
 
     def register_existing_artifact(self, *, artifact_type: str, category: str, hostname: str, machine_id: str,
-                                   original_name: str, file_path: str, stored_name: str,
+                                   original_name: str, file_path: str, artifact_id: str,
                                    source_command_id=None, client_id: str = '', addr: str = '',
                                    extra: dict | None = None) -> dict:
         return self.registry_service.register_existing_artifact(
@@ -41,7 +39,7 @@ class WebArtifactService:
             machine_id=machine_id,
             original_name=original_name,
             file_path=file_path,
-            stored_name=stored_name,
+            artifact_id=artifact_id,
             source_command_id=source_command_id,
             client_id=client_id,
             addr=addr,

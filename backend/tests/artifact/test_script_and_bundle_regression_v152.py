@@ -112,8 +112,9 @@ def test_terminal_json_viewer_output_uses_script_name_and_text_extension(tmp_pat
     class OutputSink:
         def allocate_artifact_path(self, **kwargs):
             return {'machine_id': 'machine-a', 'original_name': kwargs['original_name'],
-                    'file_path': str(tmp_path / kwargs['original_name']),
-                    'stored_name': kwargs['original_name']}
+                    'artifact_id': 'a1' * 16,
+                    'file_path': str(tmp_path / ('a1' * 16)),
+                    'stored_name': 'a1' * 16}
 
         def register_existing_artifact(self, **kwargs):
             return kwargs
@@ -128,4 +129,4 @@ def test_terminal_json_viewer_output_uses_script_name_and_text_extension(tmp_pat
                'script_path': 'common/recon/list_disks.py'},
     )
     assert saved['original_name'] == 'script_20261111_154851_list_disks.txt'
-    assert (tmp_path / saved['original_name']).read_text() == '[{"name":"disk"}]'
+    assert (tmp_path / saved['artifact_id']).read_text() == '[{"name":"disk"}]'

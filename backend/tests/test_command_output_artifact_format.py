@@ -1,6 +1,7 @@
 import json
 import tempfile
 import unittest
+import uuid
 from datetime import datetime
 from pathlib import Path
 
@@ -11,18 +12,18 @@ class FakeArtifactService:
     def __init__(self, root):
         self.root = Path(root)
 
-    def allocate_artifact_path(self, *, artifact_type, machine_id, original_name, category=''):
-        directory = self.root / category / machine_id
+    def allocate_artifact_path(self, *, artifact_type, machine_id, original_name):
+        artifact_id = uuid.uuid4().hex
+        directory = self.root / 'objects' / artifact_id[:2]
         directory.mkdir(parents=True, exist_ok=True)
-        file_path = directory / original_name
+        file_path = directory / artifact_id
         return {
+            'artifact_id': artifact_id,
             'artifact_type': artifact_type,
-            'category': category,
             'machine_id': machine_id,
             'original_name': original_name,
-            'stored_name': original_name,
+            'stored_name': artifact_id,
             'file_path': str(file_path),
-            'meta_path': str(file_path) + '.meta.json',
         }
 
     def register_existing_artifact(self, **payload):
@@ -63,9 +64,9 @@ class CommandOutputArtifactFormatTests(unittest.TestCase):
             output_format='json',
         )
         path = Path(artifact['file_path'])
-        self.assertEqual(path.suffix, '.json')
+        self.assertEqual(path.suffix, '')
         self.assertEqual(artifact['original_name'], 'terminal_output_20261027_090000.json')
-        self.assertEqual(path.name, 'terminal_output_20261027_090000.json')
+        self.assertEqual(path.name, artifact['artifact_id'])
         self.assertEqual(path.read_text(encoding='utf-8'), content)
         self.assertEqual(json.loads(path.read_text(encoding='utf-8'))[0]['command'], 'pwd')
 
@@ -80,7 +81,7 @@ class CommandOutputArtifactFormatTests(unittest.TestCase):
             output_format='text',
         )
         self.assertEqual(artifact['original_name'], 'terminal_output_20261027_090000.txt')
-        self.assertEqual(Path(artifact['file_path']).name, 'terminal_output_20261027_090000.txt')
+        self.assertEqual(Path(artifact['file_path']).name, artifact['artifact_id'])
 
     def test_terminal_toolbar_saved_from_metadata_uses_fixed_timestamp_name(self):
         self.service._now = lambda: self.fixed_now

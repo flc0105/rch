@@ -206,7 +206,9 @@ class ServerCleanupService:
         ]
 
     def _snapshot_preview_cache(self) -> list[str]:
-        return self._list_files_recursively(self.artifact_service.previews_dir)
+        # Snapshot only previews existing at startup; new files may be created while
+        # the deferred cleanup runs and must remain available.
+        return [row['artifact_id'] for row in self.artifact_service.list_artifacts(artifact_type='preview')]
 
     def _snapshot_upload_tmp(self) -> list[str]:
         root_dir = os.path.abspath(self.artifact_service.upload_tmp_dir)
@@ -295,16 +297,34 @@ class ServerCleanupService:
 
         return result
 
-    def _cleanup_preview_cache(self, file_paths) -> dict:
+    def _cleanup_preview_cache(self, artifact_ids) -> dict:
         result = self._new_item_result('preview_cache')
-        root_dir = os.path.abspath(self.artifact_service.previews_dir)
-        for file_path in file_paths or []:
-            path = os.path.abspath(str(file_path or '').strip())
-            if not self._is_within_root(path, root_dir) or not os.path.isfile(path):
+        for artifact_id in artifact_ids or []:
+            try:
+                artifact = self.artifact_service.get_artifact_by_id(artifact_id)
+            except FileNotFoundError:
                 continue
-            self._remove_path(path, result)
-        # Cache files and the private SQLite preview index follow the same lifecycle.
-        self.artifact_service.prune_missing_previews()
+            except Exception as exc:
+                result['errors'].append(f'{artifact_id}: {exc}')
+                continue
+            if artifact.get('artifact_type') != 'preview':
+                continue
+            path = self.artifact_service.registry_service.catalog.physical_path(artifact['saved_path'])
+            size = safe_file_size(path)
+            existed = os.path.isfile(path)
+            try:
+                self.artifact_service.delete_artifact(artifact_id)
+            except Exception as exc:
+                result['errors'].append(f'{artifact_id}: {exc}')
+                continue
+            result['removed_records'] += 1
+            if existed:
+                result['removed_files'] += 1
+                result['bytes_freed'] += size
+                result['entries'].append({
+                    'kind': 'file', 'path': path, 'size': size,
+                    'detail': 'preview cache',
+                })
         return result
 
     def _cleanup_upload_tmp(self, paths) -> dict:

@@ -293,18 +293,23 @@
 
 | 字段 | 含义 |
 | --- | --- |
-| `artifact_id`（PK） | 稳定 Artifact 标识；API 和 Job 可以按此引用。 |
-| `scope` | `saved`、`shared` 或 `preview`。 |
-| `folder_id` | Shared 的目录 ID；Saved 不持久存目录 ID。 |
-| `category` | Saved 的九种规范分类之一；Shared/Preview 为 NULL。 |
-| `machine_id` | Saved 文件关联的设备。 |
-| `created_at` | 注册时间，用于列表排序。 |
-| `saved_path` | 磁盘上的文件路径，不是 BLOB。 |
-| `payload_json` | 文件名、关联信息和其他业务元数据。 |
+| `artifact_id`（PK） | 32 位十六进制文件身份，同时用作无扩展名磁盘存储名。 |
+| `artifact_type` | `saved`、`shared` 或 `preview`。 |
+| `folder_id` | Shared 的目录 ID；Saved、Preview 为 NULL。 |
+| `original_name` | 原始展示及下载名，包含原有扩展名。 |
+| `size` | 文件字节数。 |
+| `category` | Saved 的规范分类；Shared/Preview 为 NULL。 |
+| `machine_id` | 文件来源设备 ID。 |
+| `saved_at` | 文件保存时间，用于列表排序。 |
+| `saved_path` | 相对于 Artifact 存储根目录的 `objects/<ID前两位>/<artifact_id>`，无扩展名。 |
+| `client_id`、`source_command_id` | 来源 Client 和命令关联。 |
+| `extra` | 来源等结构化扩展信息。 |
 
-### `artifact_folders` — 逻辑目录
+Artifact 实体文件存储在 `runtime/web_files/artifacts/objects/` 的 256 个 ID 前缀分片下；与 SQLite 保存的 `original_name` 独立。下载响应使用 `original_name` 恢复用户文件名。
 
-`folder_id`（PK）、`scope`、`parent_id`、`name`、`preset`、`created_at` 保存 Saved 的固定九目录和 Shared 的可管理目录层级。Saved 使用 `saved:<category>` 目录 ID，由 `category` 决定，不通过移动文件修改分类；Shared 的父目录和文件目录由外键维护。
+### `artifact_folders` — Shared 文件目录
+
+`folder_id`（PK）、`parent_id`、`name`、`created_at` 仅存 Shared 的自定义目录与树结构。Saved 的九个目录由分类映射产生虚拟 ID，不写入目录表。
 
 ### `agent_outputs` — Server 构建产物索引
 

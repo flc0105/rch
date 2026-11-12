@@ -17,15 +17,7 @@ from server.application.artifact.artifact_sqlite_catalog import ArtifactSqliteCa
 
 
 class ArtifactRegistryService:
-    """
-    Artifact 注册/查询服务。
-
-    当前正式 artifact 保留：
-    - files
-    - previews
-    - shared_files
-    - command_output
-    """
+    """Artifact 登记、物理文件分配与查询。"""
 
     DEFAULT_TRANSFER_BUFFER_SIZE = transfer_settings.DEFAULT_HTTP_TRANSFER_BUFFER_SIZE
     MIN_TRANSFER_BUFFER_SIZE = transfer_settings.MIN_HTTP_TRANSFER_BUFFER_SIZE
@@ -56,55 +48,22 @@ class ArtifactRegistryService:
             raise ValueError(f'Unsupported artifact type: {artifact_type}')
         return normalized
 
-    def _build_stored_filename(self, original_name: str) -> str:
-        safe_name = secure_filename(original_name or '')
-        if not safe_name:
-            safe_name = 'unnamed_file'
-
-        ext = Path(safe_name).suffix
-        stem = Path(safe_name).stem
-        unique_suffix = uuid.uuid4().hex[:8]
-        return f'{stem}_{unique_suffix}{ext}'
-
-    def _ensure_directory(self, path: str) -> str:
-        os.makedirs(path, exist_ok=True)
-        return path
-
-    def _get_preview_machine_dir(self, machine_id: str) -> str:
-        return self._ensure_directory(
-            os.path.join(
-                self.artifact_service.previews_dir,
-                self._normalize_machine_id(machine_id),
-            )
-        )
-
-    def _build_unique_path(self, directory: str, filename: str) -> str:
-        base_name = os.path.basename(filename) or 'file.bin'
-        stem, ext = os.path.splitext(base_name)
-        candidate = os.path.join(directory, base_name)
-        index = 1
-        while os.path.exists(candidate):
-            candidate = os.path.join(directory, f'{stem}_{index}{ext}')
-            index += 1
-        return candidate
-
-    def _resolve_storage_dir(self, artifact_type: str, machine_id: str) -> str:
-        if self._normalize_artifact_type(artifact_type) == self.TYPE_PREVIEW:
-            return self._get_preview_machine_dir(machine_id)
-        # Physical files use stable opaque names. Logical folders are exclusively in SQLite.
-        return self._ensure_directory(os.path.join(self.artifact_service.artifacts_root_dir, 'objects'))
-
     def allocate_artifact_path(self, artifact_type: str, machine_id: str, original_name: str) -> dict:
         normalized_type = self._normalize_artifact_type(artifact_type)
-        file_dir = self._resolve_storage_dir(normalized_type, machine_id)
-        stored_name = self._build_stored_filename(original_name)
-        target_path = self._build_unique_path(file_dir, stored_name)
-        final_stored_name = os.path.basename(target_path)
+        # Artifact ID is the sole physical identity, independent of the display name.
+        while True:
+            artifact_id = uuid.uuid4().hex
+            relative = self.catalog.object_relative_path(artifact_id)
+            target_path = os.path.join(self.artifact_service.artifacts_root_dir, *relative.parts)
+            if not os.path.lexists(target_path):
+                break
+        os.makedirs(os.path.dirname(target_path), exist_ok=True)
         return {
+            'artifact_id': artifact_id,
             'artifact_type': normalized_type,
             'machine_id': '' if normalized_type == self.TYPE_SHARED else self._normalize_machine_id(machine_id),
             'original_name': original_name,
-            'stored_name': final_stored_name,
+            'stored_name': artifact_id,
             'file_path': target_path,
         }
 
@@ -116,7 +75,7 @@ class ArtifactRegistryService:
         }
 
     def _build_meta_payload(self, *, artifact_id: str, artifact_type: str, hostname: str, machine_id: str,
-                            original_name: str, stored_name: str, file_path: str, size: int,
+                            original_name: str, file_path: str, size: int,
                             source_command_id=None, client_id: str = '', addr: str = '',
                             extra: dict | None = None) -> dict:
         payload = {
@@ -148,10 +107,12 @@ class ArtifactRegistryService:
             pass
 
     def _finalize_registered_artifact(self, *, artifact_type: str, category: str, hostname: str, machine_id: str,
-                                      original_name: str, file_path: str, stored_name: str,
+                                      original_name: str, file_path: str, artifact_id: str,
                                       source_command_id=None, client_id: str = '', addr: str = '',
                                       extra: dict | None = None, folder_id: str = '') -> dict:
-        artifact_id = uuid.uuid4().hex
+        expected_path = self.catalog.physical_path(self.catalog.object_relative_path(artifact_id).as_posix())
+        if os.path.realpath(file_path) != expected_path:
+            raise ValueError('Artifact file path must match artifact_id')
         file_size = os.path.getsize(file_path) if os.path.isfile(file_path) else 0
         meta = self._build_meta_payload(
             artifact_id=artifact_id,
@@ -159,7 +120,6 @@ class ArtifactRegistryService:
             hostname=hostname,
             machine_id=machine_id,
             original_name=original_name,
-            stored_name=stored_name,
             file_path=file_path,
             size=file_size,
             source_command_id=source_command_id,
@@ -186,7 +146,7 @@ class ArtifactRegistryService:
         return self.catalog.save(meta)
 
     def register_existing_artifact(self, *, artifact_type: str, category: str, hostname: str, machine_id: str,
-                                   original_name: str, file_path: str, stored_name: str,
+                                   original_name: str, file_path: str, artifact_id: str,
                                    source_command_id=None, client_id: str = '', addr: str = '',
                                    extra: dict | None = None, folder_id: str = '') -> dict:
         with self._lock:
@@ -197,7 +157,7 @@ class ArtifactRegistryService:
                 machine_id=machine_id,
                 original_name=original_name,
                 file_path=file_path,
-                stored_name=stored_name,
+                artifact_id=artifact_id,
                 source_command_id=source_command_id,
                 client_id=client_id,
                 addr=addr,
@@ -239,8 +199,8 @@ class ArtifactRegistryService:
         )
         file_path = allocated['file_path']
         buffer_size = self._normalize_transfer_buffer_size(transfer_buffer_size)
-        file.save(file_path, buffer_size=buffer_size)
         try:
+            file.save(file_path, buffer_size=buffer_size)
             return self.register_existing_artifact(
                 artifact_type=normalized_type,
                 category=normalized_category,
@@ -248,7 +208,7 @@ class ArtifactRegistryService:
                 machine_id=allocated['machine_id'],
                 original_name=file.filename,
                 file_path=file_path,
-                stored_name=allocated['stored_name'],
+                artifact_id=allocated['artifact_id'],
                 source_command_id=source_command_id,
                 client_id=client_id,
                 addr=addr,
@@ -286,19 +246,23 @@ class ArtifactRegistryService:
         with open(file_path, 'w', encoding='utf-8', errors='replace') as file_obj:
             file_obj.write('' if content is None else str(content))
 
-        return self.register_existing_artifact(
-            artifact_type=normalized_type,
-            category=normalized_category,
-            hostname=normalized_hostname,
-            machine_id=allocated['machine_id'],
-            original_name=original_name,
-            file_path=file_path,
-            stored_name=allocated['stored_name'],
-            source_command_id=source_command_id,
-            client_id=client_id,
-            addr=addr,
-            extra=extra,
-        )
+        try:
+            return self.register_existing_artifact(
+                artifact_type=normalized_type,
+                category=normalized_category,
+                hostname=normalized_hostname,
+                machine_id=allocated['machine_id'],
+                original_name=original_name,
+                file_path=file_path,
+                artifact_id=allocated['artifact_id'],
+                source_command_id=source_command_id,
+                client_id=client_id,
+                addr=addr,
+                extra=extra,
+            )
+        except Exception:
+            self._safe_remove_file(file_path)
+            raise
 
 
     def _normalize_meta_for_view(self, payload: dict) -> dict:
@@ -336,7 +300,7 @@ class ArtifactRegistryService:
                     hostname='', machine_id=preview.get('machine_id', ''),
                     client_id=preview.get('client_id', ''), addr='',
                     original_name=preview.get('original_name', 'preview'),
-                    file_path=allocated['file_path'], stored_name=allocated['stored_name'],
+                    file_path=allocated['file_path'], artifact_id=allocated['artifact_id'],
                     extra={'saved_from': 'remote_file_preview'},
                     folder_id=folder_id,
                 )

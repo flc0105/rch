@@ -115,7 +115,7 @@ class CommandOutputArtifactService:
             machine_id=allocation.get('machine_id') or str(machine_id or '').strip() or 'unknown_machine',
             original_name=allocation.get('original_name') or os.path.basename(allocation.get('file_path', '')),
             file_path=allocation['file_path'],
-            stored_name=allocation['stored_name'],
+            artifact_id=allocation['artifact_id'],
             source_command_id=source_command_id,
             client_id=client_id, addr=addr, extra=metadata,
         )

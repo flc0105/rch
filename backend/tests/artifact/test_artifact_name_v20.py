@@ -31,8 +31,9 @@ def test_script_path_and_job_key_define_names_without_display_name_fallback(tmp_
     class Registry:
         def allocate_artifact_path(self, **kw):
             name = kw['original_name']
-            return dict(file_path=str(tmp_path / name), original_name=name,
-                        stored_name=name, machine_id='m')
+            identifier = __import__('uuid').uuid4().hex
+            return dict(file_path=str(tmp_path / identifier), original_name=name,
+                        stored_name=identifier, artifact_id=identifier, machine_id='m')
         def register_existing_artifact(self, **kw):
             return kw
 

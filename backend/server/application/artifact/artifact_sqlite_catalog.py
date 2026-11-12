@@ -5,6 +5,7 @@ import uuid
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
+from core.utils.logger import logger
 from core.artifact_contract import (
     ArtifactType, SAVED_CATEGORY_FOLDERS, SAVED_FOLDER_IDS, SAVED_CATEGORY_BY_FOLDER_ID,
     saved_folder_id, saved_category_for_folder, normalize_saved_category,
@@ -17,6 +18,13 @@ class ArtifactSqliteCatalog:
     def __init__(self, database, storage_root):
         self.database = database
         self.storage_root = Path(storage_root).resolve()
+
+    @staticmethod
+    def object_relative_path(artifact_id):
+        value = str(artifact_id or '')
+        if len(value) != 32 or any(ch not in '0123456789abcdef' for ch in value):
+            raise ValueError('Invalid Artifact ID')
+        return Path('objects') / value[:2] / value
 
     @contextmanager
     def _connect(self, *, write=False):
@@ -53,7 +61,9 @@ class ArtifactSqliteCatalog:
             return None
         item = dict(row)
         item['extra'] = json.loads(item['extra'] or '{}')
-        item['stored_name'] = Path(item['saved_path']).name
+        if item['saved_path'] != self.object_relative_path(item['artifact_id']).as_posix():
+            raise ValueError('Artifact storage path does not match ID')
+        item['stored_name'] = item['artifact_id']
         if item['category'] is None:
             item.pop('category')
         if item['artifact_type'] == ArtifactType.SAVED.value:
@@ -81,7 +91,10 @@ class ArtifactSqliteCatalog:
         extra = item.get('extra') or {}
         if not isinstance(extra, dict):
             raise ValueError('Artifact extra must be an object')
-        return (str(item['artifact_id']), kind, folder_id, str(item['original_name']),
+        artifact_id = str(item['artifact_id'])
+        if self._relative_path(item['saved_path']) != self.object_relative_path(artifact_id).as_posix():
+            raise ValueError('Artifact storage path does not match ID')
+        return (artifact_id, kind, folder_id, str(item['original_name']),
                 int(item.get('size') or 0), category, str(item.get('machine_id') or ''),
                 str(item['saved_at']), self._relative_path(item['saved_path']),
                 str(item.get('client_id') or ''),
@@ -119,7 +132,13 @@ class ArtifactSqliteCatalog:
         condition=' WHERE '+' AND '.join(clauses) if clauses else ''
         with self._connect() as conn:
             rows=conn.execute('SELECT * FROM artifact_entries'+condition+' ORDER BY saved_at DESC, artifact_id DESC',params).fetchall()
-        return [self._row_to_artifact(r) for r in rows]
+        items = []
+        for row in rows:
+            try:
+                items.append(self._row_to_artifact(row))
+            except (ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
+                logger.warning('Skipping invalid Artifact row %s: %s', row['artifact_id'], exc)
+        return items
 
     def _verify_folder(self, conn, folder_id):
         if folder_id and not conn.execute('SELECT 1 FROM artifact_folders WHERE folder_id=?',(folder_id,)).fetchone():

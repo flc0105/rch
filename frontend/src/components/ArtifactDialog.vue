@@ -770,7 +770,7 @@ export default {
       if (!row || typeof row !== 'object') return []
       const sections = [
         { key: 'basic', title: 'Basic', fields: [
-          ['original_name', 'Original Name'], ['stored_name', 'Stored Name'],
+          ['original_name', 'Original Name'],
           ['saved_path', 'Saved Path'], ['artifact_id', 'Artifact ID'],
           ['artifact_type', 'Artifact Type'], ['size', 'Size'],
           ['saved_at', 'Saved At'], ['category', 'Category'], ['folder_id', 'Folder ID'],

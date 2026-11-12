@@ -53,8 +53,9 @@ def test_command_script_job_and_terminal_names():
 def test_job_uses_job_key_not_instance_display_name(tmp_path):
     class FakeRegistry:
         def allocate_artifact_path(self, *, original_name, machine_id, artifact_type):
-            return dict(file_path=str(tmp_path / original_name), original_name=original_name,
-                        stored_name=original_name, machine_id=machine_id)
+            identifier = 'a1' * 16
+            return dict(file_path=str(tmp_path / identifier), original_name=original_name,
+                        stored_name=identifier, artifact_id=identifier, machine_id=machine_id)
         def register_existing_artifact(self, **kwargs):
             return kwargs
     service = CommandOutputArtifactService(FakeRegistry())

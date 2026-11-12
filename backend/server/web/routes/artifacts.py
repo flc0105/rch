@@ -1,4 +1,5 @@
 import os
+import mimetypes
 
 from flask import Blueprint, request, send_file
 
@@ -78,8 +79,17 @@ def create_artifacts_blueprint(server_instance):
     @blueprint.get('/api/artifacts/<artifact_id>/raw')
     def raw_artifact(artifact_id):
         try:
+            artifact = artifact_api.get_artifact_by_id(artifact_id)
             file_path = artifact_api.get_artifact_file_path(artifact_id)
-            return send_file(file_path, as_attachment=False)
+            display_name = artifact['original_name']
+            mime_type = mimetypes.guess_type(display_name)[0] or 'application/octet-stream'
+            # Only safe raster images and plain text are rendered inline on the web origin.
+            inline_types = {'image/png', 'image/jpeg', 'image/gif', 'image/webp',
+                            'image/bmp', 'text/plain'}
+            response = send_file(file_path, as_attachment=mime_type not in inline_types,
+                                 download_name=display_name, mimetype=mime_type)
+            response.headers['X-Content-Type-Options'] = 'nosniff'
+            return response
         except Exception as e:
             return responder.map_common_error(e)
 
