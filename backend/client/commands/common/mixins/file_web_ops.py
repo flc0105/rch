@@ -72,7 +72,7 @@ class CommandFileWebMixin:
             file_path = self.path_resolver.require_existing_file_from_arg(source_path)
             return self.http_file_transfer_service.upload_single_file_to_server_result(
                 file_path,
-                artifact_type='files',
+                artifact_type='saved',
                 category='downloads',
                 transfer_id=transfer_id,
             )
@@ -108,7 +108,7 @@ class CommandFileWebMixin:
             return self.http_file_transfer_service.upload_paths_as_zip_to_server_result(
                 resolved_paths,
                 archive_name=archive_name,
-                artifact_type='files',
+                artifact_type='saved',
                 category='downloads',
                 transfer_id=transfer_id,
             )
@@ -242,7 +242,7 @@ class CommandFileWebMixin:
             prepared_file = self.preview_image_service.prepare_upload_file(file_path)
             return self.http_file_transfer_service.upload_single_file_to_server_result(
                 prepared_file.upload_path,
-                artifact_type='previews',
+                artifact_type='preview',
                 extra=prepared_file.extra,
             )
         except CommandCancelledError:

@@ -13,7 +13,7 @@ class WebArtifactService:
         self.database = database
         self.web_root_dir = WEB_FILES_ROOT_DIR
         self.artifacts_root_dir = os.path.join(self.web_root_dir, 'artifacts')
-        self.previews_dir = os.path.join(self.artifacts_root_dir, 'previews')
+        self.previews_dir = os.path.join(self.artifacts_root_dir, 'preview')
         self.upload_tmp_dir = os.path.join(self.artifacts_root_dir, 'upload_tmp')
 
         self._prepare_dirs()
@@ -120,11 +120,11 @@ class WebArtifactService:
     def prune_missing_previews(self):
         return self.registry_service.prune_missing_previews()
 
-    def list_folders(self, scope: str = ''):
-        return self.registry_service.list_folders(scope)
+    def list_folders(self, artifact_type: str = ''):
+        return self.registry_service.list_folders(artifact_type)
 
-    def create_folder(self, scope: str, name: str, parent_id: str = ''):
-        return self.registry_service.create_folder(scope, name, parent_id)
+    def create_folder(self, artifact_type: str, name: str, parent_id: str = ''):
+        return self.registry_service.create_folder(artifact_type, name, parent_id)
 
     def rename_folder(self, folder_id: str, name: str):
         return self.registry_service.rename_folder(folder_id, name)

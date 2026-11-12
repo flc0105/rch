@@ -3,13 +3,6 @@ from enum import Enum
 
 
 class ArtifactType(str, Enum):
-    FILES = 'files'
-    PREVIEWS = 'previews'
-    SHARED_FILES = 'shared_files'
-    COMMAND_OUTPUT = 'command_output'
-
-
-class ArtifactScope(str, Enum):
     SAVED = 'saved'
     SHARED = 'shared'
     PREVIEW = 'preview'
@@ -39,7 +32,7 @@ SAVED_CATEGORY_FOLDERS = {
     ArtifactCategory.TERMINAL_LOGS: 'Terminal Logs',
     ArtifactCategory.INBOX: 'Inbox',
 }
-SAVED_FOLDER_IDS = {category: f'{ArtifactScope.SAVED.value}:{category.value}' for category in SAVED_CATEGORY_FOLDERS}
+SAVED_FOLDER_IDS = {category: f'{ArtifactType.SAVED.value}:{category.value}' for category in SAVED_CATEGORY_FOLDERS}
 SAVED_CATEGORY_BY_FOLDER_ID = {folder_id: category for category, folder_id in SAVED_FOLDER_IDS.items()}
 
 
@@ -58,16 +51,6 @@ def parse_artifact_type(value):
     return ArtifactType(value)
 
 
-def scope_for_type(value):
-    artifact_type = parse_artifact_type(value)
-    return {
-        ArtifactType.FILES: ArtifactScope.SAVED,
-        ArtifactType.COMMAND_OUTPUT: ArtifactScope.SAVED,
-        ArtifactType.SHARED_FILES: ArtifactScope.SHARED,
-        ArtifactType.PREVIEWS: ArtifactScope.PREVIEW,
-    }[artifact_type]
-
-
 def saved_folder_id(category):
     return SAVED_FOLDER_IDS[ArtifactCategory(category)]
 
@@ -77,8 +60,8 @@ def saved_category_for_folder(folder_id):
 
 
 def classify_artifact(artifact_type, category=''):
-    scope = scope_for_type(artifact_type)
-    if scope != ArtifactScope.SAVED:
-        return scope.value, None, None
+    normalized_type = parse_artifact_type(artifact_type)
+    if normalized_type != ArtifactType.SAVED:
+        return normalized_type.value, None, None
     normalized = normalize_saved_category(category)
-    return scope.value, normalized.value, SAVED_FOLDER_IDS[normalized]
+    return normalized_type.value, normalized.value, SAVED_FOLDER_IDS[normalized]

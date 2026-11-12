@@ -6,8 +6,7 @@ class ArtifactReferenceViewProjector:
 
     _COMMON_FIELDS = (
         'artifact_type',
-        'hostname',
-        'machine_id',
+                'machine_id',
         'client_id',
         'original_name',
         'stored_name',
@@ -35,7 +34,7 @@ class ArtifactReferenceViewProjector:
                 for key in self._COMMON_FIELDS:
                     copied[key] = artifact.get(key, copied.get(key, ''))
                 copied.pop('category', None)
-                if artifact.get('scope') == 'saved':
+                if artifact.get('artifact_type') == 'saved':
                     copied['category'] = artifact['category']
                 if include_saved_at:
                     copied['saved_at'] = artifact.get('saved_at', copied.get('saved_at', ''))

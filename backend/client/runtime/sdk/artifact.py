@@ -20,7 +20,7 @@ def _safe_text(value) -> str:
     return '' if value is None else str(value).strip()
 
 
-def _normalize_artifact_type(value: str, default: str = 'files') -> str:
+def _normalize_artifact_type(value: str, default: str = 'saved') -> str:
     artifact_type = _safe_text(value) or default
     if artifact_type not in FORMAL_ARTIFACT_TYPES:
         raise ValueError(f'Unsupported artifact type: {artifact_type}')
@@ -48,8 +48,8 @@ def _build_form_data(*, artifact_type: str, category: str, folder: str, extra: d
 
     payload = {
         'artifact_type': artifact_type,
-        **({'category': category} if category and artifact_type in ('files', 'command_output') else {}),
-        **({'folder': folder} if artifact_type == 'shared_files' and folder else {}),
+        **({'category': category} if category and artifact_type in ('saved',) else {}),
+        **({'folder': folder} if artifact_type == 'shared' and folder else {}),
         'client_id': get_client_id(),
         'source_command_id': get_command_id() if get_command_id() is not None else '',
     }
@@ -105,7 +105,7 @@ def _parse_upload_response(response, file_path: str) -> dict:
     return data
 
 
-def save(path: str, *, type: str = 'files', category: str = '', folder: str = '', extra: dict | None = None,
+def save(path: str, *, type: str = 'saved', category: str = '', folder: str = '', extra: dict | None = None,
          timeout=None) -> dict:
     """
     上传 client 本地文件到 server artifact。
@@ -113,10 +113,10 @@ def save(path: str, *, type: str = 'files', category: str = '', folder: str = ''
     用法：
         item = artifact.save('/tmp/a.log')  # Saved Files / Inbox
         item = artifact.save('/tmp/image.png', category='screenshots')
-        item = artifact.save('/tmp/a.log', type='shared_files')
+        item = artifact.save('/tmp/a.log', type='shared')
     """
-    artifact_type = _normalize_artifact_type(type, default='files')
-    if artifact_type in (ArtifactType.FILES.value, ArtifactType.COMMAND_OUTPUT.value):
+    artifact_type = _normalize_artifact_type(type, default='saved')
+    if artifact_type in (ArtifactType.SAVED.value, ArtifactType.SAVED.value):
         if folder:
             raise ValueError('Saved Files use category, not folder')
         normalized_category = _safe_text(category)
@@ -126,7 +126,7 @@ def save(path: str, *, type: str = 'files', category: str = '', folder: str = ''
             raise ValueError('Only Saved Files can have category')
         normalized_category = ''
         normalized_folder = _safe_text(folder)
-    if artifact_type != ArtifactType.SHARED_FILES.value:
+    if artifact_type != ArtifactType.SHARED.value:
         extra = {'saved_from': 'script_sdk', **(extra or {})}
     file_path = _resolve_local_file(path)
     owner = get_command_owner()
@@ -159,7 +159,7 @@ def list(type: str = '', machine_id: str = '') -> list[dict]:
     """列出 server artifact。"""
     params = {}
     if _safe_text(type):
-        params['type'] = _normalize_artifact_type(type, default='files')
+        params['type'] = _normalize_artifact_type(type, default='saved')
     if _safe_text(machine_id):
         params['machine_id'] = _safe_text(machine_id)
 
@@ -233,15 +233,15 @@ def _resolve_artifact(ref: str, artifact_type: str) -> dict:
     raise FileNotFoundError(f'artifact not found: {target}')
 
 
-def download(ref: str, *, type: str = 'shared_files', target_path: str = '', timeout=None) -> str:
+def download(ref: str, *, type: str = 'shared', target_path: str = '', timeout=None) -> str:
     """
     从 server artifact 下载到 client 本地。
 
     用法：
-        local_path = artifact.download('artifact_id', type='shared_files')
-        local_path = artifact.download('tool.zip', type='shared_files', target_path='./downloads/')
+        local_path = artifact.download('artifact_id', type='shared')
+        local_path = artifact.download('tool.zip', type='shared', target_path='./downloads/')
     """
-    artifact_type = _normalize_artifact_type(type, default='shared_files')
+    artifact_type = _normalize_artifact_type(type, default='shared')
     item = _resolve_artifact(ref, artifact_type)
     filename = item.get('original_name') or item.get('stored_name') or item.get('artifact_id') or 'artifact.bin'
     local_path = _resolve_target_path(target_path, filename)
@@ -258,8 +258,8 @@ def download(ref: str, *, type: str = 'shared_files', target_path: str = '', tim
     return local_path
 
 
-def get(ref: str, *, type: str = 'shared_files') -> dict:
-    return _resolve_artifact(ref, _normalize_artifact_type(type, default='shared_files'))
+def get(ref: str, *, type: str = 'shared') -> dict:
+    return _resolve_artifact(ref, _normalize_artifact_type(type, default='shared'))
 
 
 # Upload 与 save 使用相同的文件保存入口及 folder 规则。

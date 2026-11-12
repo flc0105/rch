@@ -247,7 +247,7 @@ class WebRemoteFileService:
                 'client_to_server_file',
                 {
                     'path': normalized_path,
-                    'artifact_type': 'files',
+                    'artifact_type': 'saved',
                     'category': self._download_category(feature),
                     'extra': {
                         'saved_from': 'clipboard' if feature == 'clipboard' else 'remote_file_browser',
@@ -362,7 +362,7 @@ class WebRemoteFileService:
                 {
                     'paths': normalized_paths,
                     'archive_name': archive_name,
-                    'artifact_type': 'files',
+                    'artifact_type': 'saved',
                     'category': self._download_category(feature),
                     'extra': {
                         'saved_from': 'clipboard' if feature == 'clipboard' else 'remote_file_browser',

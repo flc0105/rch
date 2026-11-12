@@ -9,7 +9,7 @@ from core.utils.artifact_naming import build_artifact_filename, build_command_na
 
 
 class CommandOutputArtifactService:
-    ARTIFACT_TYPE = 'command_output'
+    ARTIFACT_TYPE = 'saved'
     OUTPUT_KINDS = frozenset({'command', 'script', 'job'})
     SAVED_FROM = frozenset({
         'saveout', 'terminal_output', 'terminal_json_viewer',

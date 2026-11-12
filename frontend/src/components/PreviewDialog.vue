@@ -1100,7 +1100,7 @@ export default {
         } else {
           formData.append('file', blob, filename)
         }
-        formData.append('artifact_type', 'shared_files')
+        formData.append('artifact_type', 'shared')
         if (this.sharedCreateFolderId) formData.append('folder_id', this.sharedCreateFolderId)
         formData.append('extra', JSON.stringify({
           saved_from: 'artifact_dialog_create_file',

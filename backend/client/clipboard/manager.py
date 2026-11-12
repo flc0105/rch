@@ -51,7 +51,7 @@ class ClipboardManager:
             'platform': self._os_alias,
             'text': bool(caps.get('text')),
             'image': bool(caps.get('image')),
-            'files': bool(caps.get('files')),
+            'saved': bool(caps.get('saved')),
         }
 
     def handle_get(self, request_id: str, mode: str = 'content'):
@@ -116,7 +116,7 @@ class ClipboardManager:
 
                 self.adapter.set_image(paths[0])
 
-            elif kind == 'files':
+            elif kind == 'saved':
                 items = (
                     normalized.get('items')
                     if isinstance(normalized.get('items'), list)
@@ -198,7 +198,7 @@ class ClipboardManager:
                 'artifact': artifact,
             }
 
-        if kind == 'files':
+        if kind == 'saved':
             paths = (
                 snapshot.get('paths')
                 if isinstance(snapshot.get('paths'), list)
@@ -232,8 +232,8 @@ class ClipboardManager:
                 })
 
             return {
-                'kind': 'files',
-                'files': files,
+                'kind': 'saved',
+                'saved': files,
             }
 
         return {'kind': 'empty'}
@@ -288,7 +288,7 @@ class ClipboardManager:
         )
 
         form = {
-            'artifact_type': 'files',
+            'artifact_type': 'saved',
             'category': category,
             'client_id': client_id,
             'extra': json.dumps(

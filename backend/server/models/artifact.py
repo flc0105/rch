@@ -27,7 +27,7 @@ class ArtifactReference:
         return cls(
             artifact_id=str(payload.get('artifact_id') or ''),
             artifact_type=str(payload.get('artifact_type') or ''),
-            category=(str(payload.get('category') or '') if payload.get('artifact_type') in ('files', 'command_output') else ''),
+            category=(str(payload.get('category') or '') if payload.get('artifact_type') in ('saved',) else ''),
             hostname=str(payload.get('hostname') or ''),
             machine_id=str(payload.get('machine_id') or ''),
             client_id=str(payload.get('client_id') or ''),
@@ -57,6 +57,6 @@ class ArtifactReference:
             'raw_url': self.raw_url,
             'preview_url': self.preview_url,
         }
-        if self.artifact_type in ('files', 'command_output'):
+        if self.artifact_type in ('saved',):
             data['category'] = self.category
         return data

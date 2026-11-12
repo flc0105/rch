@@ -166,13 +166,13 @@ class Job(ABC):
         *,
         category: str = '',
         folder: str = '',
-        artifact_type: str = 'files',
+        artifact_type: str = 'saved',
         extra: dict | None = None,
     ) -> dict:
         form_data = {
-            'artifact_type': (artifact_type or 'files').strip() or 'files',
-            **({'category': category or 'job_files'} if artifact_type == 'files' else
-               {'folder': folder} if artifact_type == 'shared_files' and folder else {}),
+            'artifact_type': (artifact_type or 'saved').strip() or 'saved',
+            **({'category': category or 'job_files'} if artifact_type == 'saved' else
+               {'folder': folder} if artifact_type == 'shared' and folder else {}),
             'client_id': self.client_id,
             'hostname': self.hostname,
             'job_id': self.job_id,
@@ -190,7 +190,7 @@ class Job(ABC):
         *,
         category: str = '',
         folder: str = '',
-        artifact_type: str = 'files',
+        artifact_type: str = 'saved',
         extra: dict | None = None,
         filename: str = '',
     ):

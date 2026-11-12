@@ -132,9 +132,9 @@ func (s *Session) runTransfer(ctx context.Context, id, operation string, payload
 		if !info.Mode().IsRegular() {
 			return fmt.Errorf("not a regular file: %s", path)
 		}
-		typ, category := "files", "downloads"
+		typ, category := "saved", "downloads"
 		if operation == "client_to_server_preview" {
-			typ, category = "previews", ""
+			typ, category = "preview", ""
 		}
 		if operation == "client_to_server_file" {
 			if v := payloadText(payload["artifact_type"]); v != "" {
@@ -173,7 +173,7 @@ func (s *Session) runTransfer(ctx context.Context, id, operation string, payload
 		if !strings.HasSuffix(strings.ToLower(filename), ".zip") {
 			filename += ".zip"
 		}
-		return s.uploadTransferFile(ctx, id, name, filename, "files", "downloads")
+		return s.uploadTransferFile(ctx, id, name, filename, "saved", "downloads")
 	case "client_to_server_zip_entry":
 		archivePath, err := remoteExisting(s, payloadText(payload["path"]), false)
 		if err != nil {
@@ -201,7 +201,7 @@ func (s *Session) runTransfer(ctx context.Context, id, operation string, payload
 		if !info.Mode().IsRegular() {
 			return fmt.Errorf("ZIP entry download requires a file")
 		}
-		return s.uploadTransferFile(ctx, id, extracted, filepath.Base(extracted), "files", "downloads")
+		return s.uploadTransferFile(ctx, id, extracted, filepath.Base(extracted), "saved", "downloads")
 	case "server_to_client_file":
 		return s.downloadTransferFile(ctx, id, payload)
 	default:
@@ -290,7 +290,7 @@ func (s *Session) uploadTransferFile(ctx context.Context, id, filePath, filename
 	go func() {
 		defer bodyWriter.Close()
 		fields := map[string]string{"artifact_type": artifactType, "client_id": s.ClientID, "hostname": s.HostName}
-		if artifactType == "files" || artifactType == "command_output" {
+		if artifactType == "saved" {
 			fields["category"] = defaultString(category, "inbox")
 		}
 		for key, value := range fields {

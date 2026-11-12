@@ -9,7 +9,7 @@ const template = source.slice(0, source.indexOf('<script>'))
 const styles = source.split('<style scoped>')[1]
 const script = source.match(/<script>([\s\S]*?)<\/script>/)?.[1]
 assert.ok(script)
-const sandbox = { ARTIFACT_SCOPE: { SAVED: 'saved', SHARED: 'shared', PREVIEW: 'preview' }, ARTIFACT_FOLDER_ALL: '__all__', DragUploadDialog: {}, File: {}, Folder: {}, FolderOpen: {}, ElMessage: {}, ElMessageBox: {} }
+const sandbox = { ARTIFACT_TYPE: { SAVED: 'saved', SHARED: 'shared', PREVIEW: 'preview' }, ARTIFACT_FOLDER_ALL: '__all__', DragUploadDialog: {}, File: {}, Folder: {}, FolderOpen: {}, ElMessage: {}, ElMessageBox: {} }
 vm.runInNewContext(script.replace(/^import\s+[^\n]*\n/gm, '').replace('export default {', 'globalThis.component = {'), sandbox)
 const methods = sandbox.component.methods
 

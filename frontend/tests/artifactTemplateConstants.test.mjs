@@ -9,7 +9,7 @@ const script = source.match(/<script>([\s\S]*?)<\/script>/)?.[1]
 assert.ok(script, 'ArtifactDialog must contain an Options API script')
 
 const sandbox = {
-  ARTIFACT_SCOPE: Object.freeze({ SAVED: 'saved', SHARED: 'shared', PREVIEW: 'preview' }),
+  ARTIFACT_TYPE: Object.freeze({ SAVED: 'saved', SHARED: 'shared', PREVIEW: 'preview' }),
   ARTIFACT_FOLDER_ALL: '__all__',
   DragUploadDialog: {}, File: {}, Folder: {}, FolderOpen: {},
   ElMessage: {}, ElMessageBox: {},
@@ -29,11 +29,11 @@ test('every artifact constant referenced in the template is exposed by the Optio
     ...Object.keys(component.props || {}),
   ])
   const constants = new Set(template.match(/\bARTIFACT_[A-Z_]+\b/g) || [])
-  assert.deepEqual([...constants].sort(), ['ARTIFACT_FOLDER_ALL', 'ARTIFACT_SCOPE'])
+  assert.deepEqual([...constants].sort(), ['ARTIFACT_FOLDER_ALL', 'ARTIFACT_TYPE'])
   for (const name of constants) {
     assert.ok(publicNames.has(name), `${name} referenced in template but unavailable on Vue Options API render context`)
   }
-  assert.equal(data.ARTIFACT_SCOPE.SAVED, 'saved')
-  assert.equal(data.ARTIFACT_SCOPE.SHARED, 'shared')
+  assert.equal(data.ARTIFACT_TYPE.SAVED, 'saved')
+  assert.equal(data.ARTIFACT_TYPE.SHARED, 'shared')
   assert.equal(data.ARTIFACT_FOLDER_ALL, '__all__')
 })

@@ -1201,7 +1201,7 @@ export default {
         }
         await this.saveTerminalOutputArtifactBody({
           content: output.content,
-          artifact_type: 'command_output',
+          artifact_type: 'saved',
           output_kind: 'command',
           client_id: String(this.selectedId || ''),
           hostname: String(this.currentConnection?.hostname || ''),

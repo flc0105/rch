@@ -125,7 +125,7 @@ class iOSConsoleService:
             kind = (kind or 'photo').strip().lower()
 
             form_data = self.owner.http_file_transfer_service.build_http_upload_form_data(
-                artifact_type='files',
+                artifact_type='saved',
                 category='downloads',
             )
 

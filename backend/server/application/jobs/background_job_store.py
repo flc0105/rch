@@ -69,23 +69,9 @@ class BackgroundJobStore:
 
     @staticmethod
     def _build_file_snapshot(file_info: dict, job: dict | None = None) -> dict:
-        source = dict(file_info or {}) if isinstance(file_info, dict) else {}
-        job_item = dict(job or {}) if isinstance(job, dict) else {}
-        return {
-            'artifact_id': str(source.get('artifact_id') or ''),
-            'artifact_type': str(source.get('artifact_type') or ''),
-            **({'category': str(source['category'])} if 'category' in source else {}),
-            'hostname': str(source.get('hostname') or job_item.get('hostname') or ''),
-            'machine_id': str(source.get('machine_id') or job_item.get('machine_id') or ''),
-            'client_id': str(source.get('client_id') or job_item.get('client_id') or ''),
-            'original_name': str(source.get('original_name') or ''),
-            'stored_name': str(source.get('stored_name') or ''),
-            'relative_path': str(source.get('relative_path') or source.get('saved_path') or ''),
-            'size': int(source.get('size', 0) or 0),
-            'download_url': str(source.get('download_url') or ''),
-            'raw_url': str(source.get('raw_url') or ''),
-            'preview_url': str(source.get('preview_url') or ''),
-        }
+        source = file_info if isinstance(file_info, dict) else {}
+        return {'original_name': str(source.get('original_name') or ''),
+                'size': int(source.get('size') or 0)}
 
     def backfill_file_snapshots(self, artifacts: list[dict] | None) -> int:
         """Backfill old associations while their Artifact metadata still exists."""
@@ -105,7 +91,7 @@ class BackgroundJobStore:
                        b.machine_id, b.client_id, b.hostname
                 FROM background_job_files f
                 JOIN background_jobs b ON b.job_id = f.job_id
-                WHERE f.snapshot_json = '' OR f.snapshot_json = '{}'
+                WHERE f.snapshot = '' OR f.snapshot = '{}'
                 '''
             ).fetchall()
             for row in rows:
@@ -121,7 +107,7 @@ class BackgroundJobStore:
                     },
                 )
                 conn.execute(
-                    'UPDATE background_job_files SET snapshot_json = ? WHERE association_id = ?',
+                    'UPDATE background_job_files SET snapshot = ? WHERE association_id = ?',
                     (json_dumps_or_default(snapshot, '{}'), int(row['association_id'])),
                 )
                 updated += 1
@@ -329,7 +315,7 @@ class BackgroundJobStore:
             job = dict(row)
             snapshot = json_dumps_or_default(self._build_file_snapshot(artifact, job), '{}')
             conn.execute('''INSERT OR IGNORE INTO background_job_files
-                (job_id, artifact_id, created_at, snapshot_json) VALUES (?, ?, ?, ?)''',
+                (job_id, artifact_id, linked_at, snapshot) VALUES (?, ?, ?, ?)''',
                 (job_id, artifact_id, self._now_iso(), snapshot))
 
     def append_file_report(self, payload: dict) -> dict:
@@ -342,21 +328,21 @@ class BackgroundJobStore:
             artifact_id = str(file_info.get('artifact_id') or '').strip()
             event_time = str(payload.get('time') or self._now_iso())
             if artifact_id:
-                snapshot_json = json_dumps_or_default(self._build_file_snapshot(file_info, job), '{}')
+                snapshot = json_dumps_or_default(self._build_file_snapshot(file_info, job), '{}')
                 conn.execute(
                     '''
-                    INSERT OR IGNORE INTO background_job_files(job_id, artifact_id, created_at, snapshot_json)
+                    INSERT OR IGNORE INTO background_job_files(job_id, artifact_id, linked_at, snapshot)
                     VALUES (?, ?, ?, ?)
                     ''',
-                    (job['job_id'], artifact_id, event_time, snapshot_json),
+                    (job['job_id'], artifact_id, event_time, snapshot),
                 )
                 conn.execute(
                     '''
                     UPDATE background_job_files
-                    SET snapshot_json = ?
+                    SET snapshot = ?
                     WHERE job_id = ? AND artifact_id = ?
                     ''',
-                    (snapshot_json, job['job_id'], artifact_id),
+                    (snapshot, job['job_id'], artifact_id),
                 )
 
             state = str(job.get('state') or 'unknown')
@@ -420,7 +406,7 @@ class BackgroundJobStore:
         ).fetchall()
         file_rows = conn.execute(
             '''
-            SELECT association_id, artifact_id, created_at, snapshot_json
+            SELECT association_id, artifact_id, linked_at, snapshot
             FROM background_job_files
             WHERE job_id = ?
             ORDER BY association_id ASC
@@ -440,12 +426,12 @@ class BackgroundJobStore:
         ]
         job['files'] = []
         for row in file_rows:
-            snapshot = json_loads_or_default(row['snapshot_json'], {})
+            snapshot = json_loads_or_default(row['snapshot'], {})
             if not isinstance(snapshot, dict):
                 snapshot = {}
             snapshot['association_id'] = int(row['association_id'])
             snapshot['artifact_id'] = str(row['artifact_id'] or snapshot.get('artifact_id') or '')
-            snapshot['created_at'] = str(row['created_at'] or '')
+            snapshot['linked_at'] = str(row['linked_at'] or '')
             job['files'].append(snapshot)
         return job
 

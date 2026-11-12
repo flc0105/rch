@@ -231,7 +231,7 @@ class ClientTransferManager:
         source_path = owner.path_resolver.require_existing_file_from_arg(payload.get('path') or '')
         service.upload_single_file_to_server_result(
             source_path,
-            artifact_type=str(payload.get('artifact_type') or 'files'),
+            artifact_type=str(payload.get('artifact_type') or 'saved'),
             category=str(payload.get('category') or 'downloads'),
             extra=payload.get('extra') if isinstance(payload.get('extra'), dict) else None,
             transfer_id=transfer_id,
@@ -243,7 +243,7 @@ class ClientTransferManager:
         try:
             service.upload_single_file_to_server_result(
                 prepared_file.upload_path,
-                artifact_type='previews',
+                artifact_type='preview',
                 extra=prepared_file.extra,
                 transfer_id=transfer_id,
             )
@@ -259,7 +259,7 @@ class ClientTransferManager:
         service.upload_paths_as_zip_to_server_result(
             resolved_paths,
             archive_name=str(payload.get('archive_name') or '').strip(),
-            artifact_type=str(payload.get('artifact_type') or 'files'),
+            artifact_type=str(payload.get('artifact_type') or 'saved'),
             category=str(payload.get('category') or 'downloads'),
             extra=payload.get('extra') if isinstance(payload.get('extra'), dict) else None,
             transfer_id=transfer_id,
@@ -276,7 +276,7 @@ class ClientTransferManager:
             if not os.path.isfile(selected_path):
                 raise ValueError('ZIP entry download requires a file')
             service.upload_single_file_to_server_result(
-                selected_path, artifact_type='files',
+                selected_path, artifact_type='saved',
                 category=str(payload.get('category') or 'downloads'),
                 extra=payload.get('extra') if isinstance(payload.get('extra'), dict) else None,
                 transfer_id=transfer_id,

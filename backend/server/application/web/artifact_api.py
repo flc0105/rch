@@ -2,7 +2,7 @@ import os
 
 from core.utils.text_encoding import encode_for_existing_file
 from core.artifact_contract import (
-    ArtifactScope, ArtifactType, scope_for_type,
+    ArtifactType,
 )
 from server.application.artifact.artifact_events import publish_artifact_created
 
@@ -22,11 +22,19 @@ class WebArtifactApi:
         return [dict(row, linked_jobs=links[row['artifact_id']]) if row['artifact_id'] in links else row
                 for row in artifacts]
 
+    @staticmethod
+    def _list_item(artifact: dict) -> dict:
+        """Explicit list response: no internal path diagnostics or extra payload."""
+        fields = ('artifact_id', 'artifact_type', 'folder_id', 'original_name',
+                  'stored_name', 'size', 'category', 'machine_id', 'saved_at',
+                  'is_available', 'download_url', 'raw_url', 'preview_url')
+        return {key: artifact[key] for key in fields if key in artifact}
+
     def list_artifacts(self, artifact_type: str = '', machine_id: str = '', **filters):
         artifacts = self.artifact_service.list_artifacts(
             artifact_type=artifact_type, machine_id=machine_id, **filters)
         return {
-            'items': self._project_job_links(artifacts),
+            'items': [self._list_item(item) for item in artifacts],
             'folders': self.artifact_service.list_folders(),
             'machines': self.artifact_service.list_artifact_machines(),
         }
@@ -40,8 +48,8 @@ class WebArtifactApi:
     def clear_artifacts(self, artifact_type: str = '', machine_id: str = '', **filters):
         return self.artifact_service.clear_artifacts(artifact_type, machine_id=machine_id, **filters)
 
-    def create_folder(self, scope, name, parent_id=''):
-        return self.artifact_service.create_folder(scope, name, parent_id)
+    def create_folder(self, artifact_type, name, parent_id=''):
+        return self.artifact_service.create_folder(artifact_type, name, parent_id)
 
     def rename_folder(self, folder_id, name):
         return self.artifact_service.rename_folder(folder_id, name)
@@ -57,18 +65,18 @@ class WebArtifactApi:
         self.publish_artifact_created(artifact)
         return artifact
 
-    def create_file(self, scope: str, name: str, machine_id: str = '', folder_id: str = ''):
-        if scope != ArtifactScope.SHARED.value:
+    def create_file(self, artifact_type: str, name: str, machine_id: str = '', folder_id: str = ''):
+        if artifact_type != ArtifactType.SHARED.value:
             raise ValueError('Create File is only available in Shared Files')
         name = os.path.basename(str(name or '').strip())
         if not name or name in ('.', '..'):
             raise ValueError('Invalid file name')
         if folder_id:
             folder = self.artifact_service.registry_service.catalog.get_folder(folder_id)
-            if folder['scope'] != scope:
+            if folder['artifact_type'] != artifact_type:
                 raise ValueError('Folder does not belong to this file space')
         artifact = self.artifact_service.save_text_artifact(
-            artifact_type=ArtifactType.SHARED_FILES.value,
+            artifact_type=ArtifactType.SHARED.value,
             category='', hostname='', machine_id=machine_id,
             original_name=name, content='',
         )
@@ -135,26 +143,26 @@ class WebArtifactApi:
     def get_upload_temp_file_path(self, temp_id: str, filename: str):
         return self.artifact_service.get_upload_temp_file_path(temp_id, filename)
 
-    def save_http_uploaded_file(self, upload, artifact_type: str = ArtifactType.FILES.value, client_id: str = '',
+    def save_http_uploaded_file(self, upload, artifact_type: str = ArtifactType.SAVED.value, client_id: str = '',
                                 hostname: str = '', machine_id: str = '', job_id: str = '', source_command_id=None, transfer_buffer_size=None, extra=None,
                                 category: str | None = None, folder_id: str = '', folder: str = ''):
-        expected_scope = scope_for_type(artifact_type)
-        if expected_scope == ArtifactScope.SAVED:
+        expected_type = ArtifactType(artifact_type)
+        if expected_type == ArtifactType.SAVED:
             if folder or folder_id:
                 raise ValueError('Saved Files uploads use category, not folder')
         else:
             if category is not None:
                 raise ValueError('Only Saved Files can have category')
-            if expected_scope == ArtifactScope.PREVIEW and (folder or folder_id):
+            if expected_type == ArtifactType.PREVIEW and (folder or folder_id):
                 raise ValueError('Preview cache does not support folders')
             if folder and folder_id:
                 raise ValueError('Specify folder or folder_id, not both')
             if folder:
                 folder_id = self.artifact_service.registry_service.catalog.resolve_folder(
-                    expected_scope.value, folder)
+                    expected_type.value, folder)
             if folder_id:
                 folder_info = self.artifact_service.registry_service.catalog.get_folder(folder_id)
-                if folder_info['scope'] != expected_scope.value:
+                if folder_info['artifact_type'] != expected_type.value:
                     raise ValueError('Folder does not belong to this file space')
         resolved_hostname, resolved_machine_id, addr = self.resolve_client_context(client_id)
         artifact = self.artifact_service.save_http_uploaded_file(
@@ -227,7 +235,7 @@ class WebArtifactApi:
             raise RuntimeError('command_execution_api is not available')
 
         artifact = self.get_artifact_by_id(artifact_id)
-        if artifact.get('artifact_type') != ArtifactType.SHARED_FILES.value:
+        if artifact.get('artifact_type') != ArtifactType.SHARED.value:
             raise ValueError('Only shared files can be sent to client')
         file_path = self.get_artifact_file_path(artifact_id)
         display_name = (artifact.get('original_name') or artifact.get('stored_name') or os.path.basename(file_path)).strip()
@@ -259,7 +267,7 @@ class WebArtifactApi:
         artifact = self.get_artifact_by_id(artifact_id)
         if not artifact:
             raise FileNotFoundError('Artifact not found')
-        file_path = artifact.get('saved_path', '')
+        file_path = self.get_artifact_file_path(artifact_id)
         if not file_path or not os.path.isfile(file_path):
             raise FileNotFoundError('Artifact file not found')
         with open(file_path, 'rb') as f:

@@ -1,5 +1,5 @@
-// Serialized Artifact API scope values, shared by the manager navigation.
-export const ARTIFACT_SCOPE = Object.freeze({
+// Serialized Artifact API type values, shared by the manager navigation.
+export const ARTIFACT_TYPE = Object.freeze({
   SAVED: 'saved',
   SHARED: 'shared',
   PREVIEW: 'preview',

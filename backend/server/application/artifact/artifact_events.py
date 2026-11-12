@@ -18,6 +18,6 @@ def publish_artifact_created(event_bus, artifact_info: dict):
         'download_url': artifact_info.get('download_url', ''),
         'preview_url': artifact_info.get('preview_url', ''),
     }
-    if artifact_info.get('scope') == 'saved':
+    if artifact_info.get('artifact_type') == 'saved':
         event['category'] = artifact_info['category']
     event_bus.publish('artifact_created', event)

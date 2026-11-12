@@ -40,13 +40,13 @@ def _build_script_upload_form_data(
     context=None,
     metadata=None,
     script_name: str = '',
-    artifact_type: str = 'files',
+    artifact_type: str = 'saved',
     category: str = '',
     folder: str = '',
 ) -> dict:
-    if folder and artifact_type != ArtifactType.SHARED_FILES.value:
+    if folder and artifact_type != ArtifactType.SHARED.value:
         raise ValueError('Saved Files use category, not folder')
-    if category and artifact_type == ArtifactType.SHARED_FILES.value:
+    if category and artifact_type == ArtifactType.SHARED.value:
         raise ValueError('Only Saved Files can have category')
     ctx = _extract_script_context(context)
     resolved_script_name = _resolve_script_name(
@@ -55,9 +55,9 @@ def _build_script_upload_form_data(
     )
 
     form_data = {
-        'artifact_type': (artifact_type or 'files').strip() or 'files',
-        **({'category': str(category).strip()} if artifact_type == ArtifactType.FILES.value and str(category or '').strip() else {}),
-        **({'folder': str(folder).strip()} if artifact_type == ArtifactType.SHARED_FILES.value and folder else {}),
+        'artifact_type': (artifact_type or 'saved').strip() or 'saved',
+        **({'category': str(category).strip()} if artifact_type == ArtifactType.SAVED.value and str(category or '').strip() else {}),
+        **({'folder': str(folder).strip()} if artifact_type == ArtifactType.SHARED.value and folder else {}),
         'client_id': str(ctx.get('client_id') or '').strip(),
         'source_command_id': ctx.get('command_id') if ctx.get('command_id') is not None else '',
     }
@@ -77,7 +77,7 @@ def upload_file(
     filename: str = '',
     category: str = '',
     folder: str = '',
-    artifact_type: str = 'files',
+    artifact_type: str = 'saved',
     context=None,
     metadata=None,
     script_name: str = '',

@@ -8,8 +8,12 @@ export function listArtifacts() {
   return fetch('/api/artifacts')
 }
 
-export function createArtifactFolder(scope, name, parentId = '') {
-  return fetch('/api/artifacts/folders', jsonRequestOptions('POST', { scope, name, parent_id: parentId }))
+export function getArtifactDetail(artifactId) {
+  return fetch(artifactUrl(artifactId))
+}
+
+export function createArtifactFolder(artifact_type, name, parentId = '') {
+  return fetch('/api/artifacts/folders', jsonRequestOptions('POST', { artifact_type, name, parent_id: parentId }))
 }
 
 export function renameArtifactFolder(folderId, name) {
@@ -47,9 +51,8 @@ export function deleteArtifact(artifactId) {
   return fetch(artifactUrl(artifactId), { method: 'DELETE' })
 }
 
-export function clearArtifacts(type, machineId = '', scope = '', folderId = '') {
-  const payload = { type, machine_id: machineId }
-  if (scope) payload.scope = scope
+export function clearArtifacts(type, machineId = '', folderId = '') {
+  const payload = { artifact_type: type, machine_id: machineId }
   if (folderId) payload.folder_id = folderId
   return fetch('/api/artifacts/clear', jsonRequestOptions('POST', payload))
 }

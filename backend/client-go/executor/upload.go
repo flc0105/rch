@@ -46,7 +46,7 @@ func (s *Session) uploadFileToServer(filePath string, category string) (map[stri
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
 
-	_ = writer.WriteField("artifact_type", "files")
+	_ = writer.WriteField("artifact_type", "saved")
 	_ = writer.WriteField("category", defaultString(category, "inbox"))
 	if category == "screenshots" {
 		_ = writer.WriteField("extra", `{"saved_from":"client_command","source_command":"screenshot"}`)

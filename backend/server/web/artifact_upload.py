@@ -16,7 +16,7 @@ def save_uploaded_artifact_from_request(artifact_api):
     upload = get_required_upload()
     artifact = artifact_api.save_http_uploaded_file(
         upload,
-        artifact_type=get_optional_form_text('artifact_type', 'files'),
+        artifact_type=get_optional_form_text('artifact_type', 'saved'),
         client_id=get_optional_form_text('client_id', ''),
         hostname=get_optional_form_text('hostname', ''),
         machine_id=get_optional_form_text('machine_id', ''),

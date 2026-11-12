@@ -8,7 +8,7 @@ import pytest
 pytest.importorskip('werkzeug', reason='Artifact Web integration requires Werkzeug')
 
 from core.artifact_contract import (
-    ArtifactScope, ArtifactCategory, ArtifactType, SAVED_FOLDER_IDS, scope_for_type,
+    ArtifactCategory, ArtifactType, SAVED_FOLDER_IDS,
 )
 from server.application.artifact.artifact_registry_service import ArtifactRegistryService
 from server.application.artifact.artifact_service import WebArtifactService
@@ -27,7 +27,7 @@ def api_for(tmp_path):
     service = WebArtifactService.__new__(WebArtifactService)
     service.database = RchDatabase(str(tmp_path / 'rch.db'))
     service.artifacts_root_dir = str(tmp_path / 'artifacts')
-    service.previews_dir = str(tmp_path / 'artifacts' / 'previews')
+    service.previews_dir = str(tmp_path / 'artifacts' / 'preview')
     service.registry_service = ArtifactRegistryService(service)
     return WebArtifactApi(None, None, service), service.registry_service.catalog
 
@@ -36,14 +36,14 @@ def api_for(tmp_path):
     ('screenshots', 'screenshots'), ('ScReenShots', 'screenshots'),
     ('SCRIPT_FILES', 'script_files'), ('job_files', 'job_files'),
     ('clipboard', 'clipboard'), ('webcam', 'webcam'), ('downloads', 'downloads'),
-    ('command_output', 'command_output'), ('terminal_logs', 'terminal_logs'),
+    ('saved', 'saved'), ('terminal_logs', 'terminal_logs'),
     ('inbox', 'inbox'), ('script_file', 'inbox'), ('random', 'inbox'),
     ('', 'inbox'), (None, 'inbox'),
 ])
 def test_upload_category_is_the_only_saved_folder_source(tmp_path, category, expected):
     api, catalog = api_for(tmp_path)
-    item = api.save_http_uploaded_file(Upload(), artifact_type='files', category=category)
-    assert item['scope'] == ArtifactScope.SAVED.value
+    item = api.save_http_uploaded_file(Upload(), artifact_type='saved', category=category)
+    assert item['scope'] == ArtifactType.SAVED.value
     assert item['category'] == expected
     assert item['folder_id'] == f'saved:{expected}'
     assert catalog.list(scope='saved', category=expected)[0]['artifact_id'] == item['artifact_id']
@@ -61,7 +61,7 @@ def test_shared_upload_has_folder_but_no_category(tmp_path):
     api, catalog = api_for(tmp_path)
     first = catalog.create_folder('shared', 'First')
     second = catalog.create_folder('shared', 'Second')
-    item = api.save_http_uploaded_file(Upload(), artifact_type='shared_files', folder_id=first['folder_id'])
+    item = api.save_http_uploaded_file(Upload(), artifact_type='shared', folder_id=first['folder_id'])
     assert item['scope'] == 'shared'
     assert 'category' not in item
     assert item['folder_id'] == first['folder_id']
@@ -79,7 +79,7 @@ def test_api_rejects_shared_category_even_if_empty_and_saved_folder(tmp_path):
     api, catalog = api_for(tmp_path)
     for category in ('', 'screenshots', 'InBoX'):
         with pytest.raises(ValueError, match='Only Saved Files'):
-            api.save_http_uploaded_file(Upload(), artifact_type='shared_files', category=category)
+            api.save_http_uploaded_file(Upload(), artifact_type='shared', category=category)
     with pytest.raises(ValueError, match='Saved Files uploads use category'):
         api.save_http_uploaded_file(Upload(), folder='Screenshots')
     with pytest.raises(ValueError, match='Saved Files uploads use category'):
@@ -90,7 +90,7 @@ def test_api_rejects_shared_category_even_if_empty_and_saved_folder(tmp_path):
 
 def test_preview_saved_into_selected_category_folder(tmp_path):
     api, catalog = api_for(tmp_path)
-    preview = api.save_http_uploaded_file(Upload(), artifact_type='previews')
+    preview = api.save_http_uploaded_file(Upload(), artifact_type='preview')
     assert 'category' not in preview
     saved = api.artifact_service.registry_service.save_preview_to_saved(
         preview['artifact_id'], 'saved:script_files')
@@ -104,8 +104,8 @@ def test_preview_saved_into_selected_category_folder(tmp_path):
 
 
 def test_scope_type_and_category_enum_are_closed(tmp_path):
-    assert scope_for_type(ArtifactType.COMMAND_OUTPUT) == ArtifactScope.SAVED
+    assert ArtifactType(ArtifactType.SAVED) == ArtifactType.SAVED
     with pytest.raises(ValueError):
-        scope_for_type('bogus')
+        ArtifactType('bogus')
     with pytest.raises(ValueError):
         ArtifactCategory('script_file')

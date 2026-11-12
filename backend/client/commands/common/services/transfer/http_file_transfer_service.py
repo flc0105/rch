@@ -42,16 +42,16 @@ class CommandHttpFileTransferService:
         extra: dict | None = None,
         transfer_buffer_size: int | None = None,
     ) -> dict:
-        if category and artifact_type not in ('files', 'command_output'):
+        if category and artifact_type != 'saved':
             raise ValueError('Only Saved Files can have category')
-        if folder and artifact_type != 'shared_files':
+        if folder and artifact_type != 'shared':
             raise ValueError('Only Shared Files uploads can specify folder')
         client_id = getattr(self.owner.socket, 'client_id', '') or ''
 
         payload = {
-            'artifact_type': (artifact_type or 'files').strip() or 'files',
-            **({'category': category} if category and artifact_type in ('files', 'command_output') else {}),
-            **({'folder': folder} if folder and artifact_type == 'shared_files' else {}),
+            'artifact_type': (artifact_type or 'saved').strip() or 'saved',
+            **({'category': category} if category and artifact_type == 'saved' else {}),
+            **({'folder': folder} if folder and artifact_type == 'shared' else {}),
             'client_id': client_id,
             'source_command_id': self.owner.command_id if self.owner.command_id is not None else '',
         }
@@ -151,7 +151,7 @@ class CommandHttpFileTransferService:
         self,
         file_path: str,
         *,
-        artifact_type: str = 'files',
+        artifact_type: str = 'saved',
         category: str = '',
         folder: str = '',
         extra: dict | None = None,
@@ -178,7 +178,7 @@ class CommandHttpFileTransferService:
         self,
         file_path: str,
         *,
-        artifact_type: str = 'files',
+        artifact_type: str = 'saved',
         category: str = '',
         folder: str = '',
         extra: dict | None = None,
@@ -284,7 +284,7 @@ class CommandHttpFileTransferService:
         resolved_paths: list[str],
         *,
         archive_name: str = '',
-        artifact_type: str = 'files',
+        artifact_type: str = 'saved',
         category: str = '',
         folder: str = '',
         extra: dict | None = None,

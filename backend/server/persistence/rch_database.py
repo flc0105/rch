@@ -6,7 +6,7 @@ from contextlib import contextmanager
 
 # Canonical persisted schema. Database initialization never rewrites existing records.
 FINAL_SCHEMA_STATEMENTS = (
-    'CREATE TABLE "background_job_files" (\n                association_id INTEGER PRIMARY KEY AUTOINCREMENT,\n                job_id TEXT NOT NULL,\n                artifact_id TEXT NOT NULL,\n                created_at TEXT NOT NULL DEFAULT \'\', snapshot_json TEXT NOT NULL DEFAULT \'{}\',\n                FOREIGN KEY(job_id) REFERENCES "background_jobs"(job_id) ON DELETE CASCADE,\n                UNIQUE(job_id, artifact_id)\n            )',
+    'CREATE TABLE "background_job_files" (\n                association_id INTEGER PRIMARY KEY AUTOINCREMENT,\n                job_id TEXT NOT NULL,\n                artifact_id TEXT NOT NULL,\n                linked_at TEXT NOT NULL DEFAULT \'\', snapshot TEXT NOT NULL DEFAULT \'{}\',\n                FOREIGN KEY(job_id) REFERENCES "background_jobs"(job_id) ON DELETE CASCADE,\n                UNIQUE(job_id, artifact_id)\n            )',
     'CREATE TABLE "background_job_messages" (\n                message_id INTEGER PRIMARY KEY AUTOINCREMENT,\n                job_id TEXT NOT NULL,\n                status INTEGER NOT NULL DEFAULT 1,\n                text TEXT NOT NULL DEFAULT \'\',\n                eof INTEGER NOT NULL DEFAULT 0,\n                created_at TEXT NOT NULL DEFAULT \'\',\n                FOREIGN KEY(job_id) REFERENCES "background_jobs"(job_id) ON DELETE CASCADE\n            )',
     'CREATE TABLE "background_jobs" (\n                job_id TEXT PRIMARY KEY,\n                machine_id TEXT NOT NULL DEFAULT \'\',\n                client_id TEXT NOT NULL DEFAULT \'\',\n                hostname TEXT NOT NULL DEFAULT \'\',\n                addr TEXT NOT NULL DEFAULT \'\',\n                job_name TEXT NOT NULL DEFAULT \'\',\n                job_key TEXT NOT NULL DEFAULT \'\',\n                thread_name TEXT NOT NULL DEFAULT \'\',\n                command_id INTEGER,\n                execution_mode TEXT NOT NULL DEFAULT \'inproc\',\n                state TEXT NOT NULL DEFAULT \'unknown\',\n                created_at TEXT NOT NULL DEFAULT \'\',\n                started_at TEXT NOT NULL DEFAULT \'\',\n                updated_at TEXT NOT NULL DEFAULT \'\',\n                finished_at TEXT NOT NULL DEFAULT \'\',\n                params_json TEXT NOT NULL DEFAULT \'{}\'\n            )',
     'CREATE TABLE "command_executions" (\n                entry_id TEXT PRIMARY KEY,\n                machine_id TEXT NOT NULL,\n                client_id TEXT NOT NULL DEFAULT \'\',\n                hostname TEXT NOT NULL DEFAULT \'\',\n                addr TEXT NOT NULL DEFAULT \'\',\n                command TEXT NOT NULL,\n                raw_command TEXT NOT NULL DEFAULT \'\',\n                source TEXT NOT NULL DEFAULT \'\',\n                status TEXT NOT NULL DEFAULT \'\',\n                created_at TEXT NOT NULL DEFAULT \'\',\n                started_at TEXT NOT NULL DEFAULT \'\',\n                started_at_ms INTEGER NOT NULL DEFAULT 0,\n                updated_at TEXT NOT NULL DEFAULT \'\',\n                finished_at TEXT NOT NULL DEFAULT \'\',\n                cwd_start TEXT NOT NULL DEFAULT \'\',\n                cwd_end TEXT NOT NULL DEFAULT \'\',\n                output_line_count INTEGER NOT NULL DEFAULT 0,\n                output_chunk_count INTEGER NOT NULL DEFAULT 0,\n                output_char_count INTEGER NOT NULL DEFAULT 0,\n                output_truncated INTEGER NOT NULL DEFAULT 0,\n                output_records_json TEXT NOT NULL DEFAULT \'[]\',\n                files_json TEXT NOT NULL DEFAULT \'[]\'\n            )',
@@ -22,21 +22,26 @@ FINAL_SCHEMA_STATEMENTS = (
     'CREATE TABLE settings (\n                namespace TEXT PRIMARY KEY,\n                value_json TEXT NOT NULL,\n                updated_at_ms INTEGER NOT NULL DEFAULT 0\n            )',
     """CREATE TABLE artifact_folders (
                     folder_id TEXT PRIMARY KEY,
-                    scope TEXT NOT NULL CHECK(scope IN ('saved', 'shared')),
                     parent_id TEXT REFERENCES artifact_folders(folder_id),
                     name TEXT NOT NULL COLLATE NOCASE,
-                    preset INTEGER NOT NULL DEFAULT 0,
                     created_at TEXT NOT NULL
                 )""",
     """CREATE TABLE artifact_entries (
                     artifact_id TEXT PRIMARY KEY,
-                    scope TEXT NOT NULL CHECK(scope IN ('saved', 'shared', 'preview')),
+                    artifact_type TEXT NOT NULL CHECK(artifact_type IN ('saved', 'shared', 'preview')),
                     folder_id TEXT REFERENCES artifact_folders(folder_id),
-                    category TEXT CHECK((scope='saved' AND category IS NOT NULL) OR (scope!='saved' AND category IS NULL)),
+                    original_name TEXT NOT NULL,
+                    size INTEGER NOT NULL DEFAULT 0,
+                    category TEXT,
                     machine_id TEXT NOT NULL DEFAULT '',
                     saved_at TEXT NOT NULL,
                     saved_path TEXT NOT NULL,
-                    payload_json TEXT NOT NULL
+                    client_id TEXT NOT NULL DEFAULT '',
+                    source_command_id TEXT,
+                    extra TEXT NOT NULL DEFAULT '{}',
+                    CHECK((artifact_type='saved' AND category IS NOT NULL AND folder_id IS NULL) OR
+                          (artifact_type='shared' AND category IS NULL) OR
+                          (artifact_type='preview' AND category IS NULL AND folder_id IS NULL))
                 )""",
     """CREATE TABLE agent_outputs (
                     file_name TEXT PRIMARY KEY,
@@ -54,9 +59,9 @@ FINAL_SCHEMA_STATEMENTS = (
                     web_host TEXT NOT NULL,
                     web_port INTEGER NOT NULL
                 )""",
-    'CREATE INDEX idx_artifact_folders_scope ON artifact_folders(scope, parent_id)',
-    "CREATE UNIQUE INDEX uq_artifact_folders_siblings ON artifact_folders(scope, IFNULL(parent_id, ''), name COLLATE NOCASE)",
-    'CREATE INDEX idx_artifact_entries_scope_time ON artifact_entries(scope, saved_at DESC, artifact_id DESC)',
+    'CREATE INDEX idx_artifact_folders_parent ON artifact_folders(parent_id)',
+    "CREATE UNIQUE INDEX uq_artifact_folders_siblings ON artifact_folders(IFNULL(parent_id, ''), name COLLATE NOCASE)",
+    'CREATE INDEX idx_artifact_entries_type_time ON artifact_entries(artifact_type, saved_at DESC, artifact_id DESC)',
     'CREATE INDEX idx_artifact_entries_folder ON artifact_entries(folder_id, saved_at DESC)',
     'CREATE INDEX idx_artifact_entries_machine ON artifact_entries(machine_id, saved_at DESC)',
     'CREATE INDEX idx_agent_outputs_created ON agent_outputs(created_at DESC, file_name DESC)',

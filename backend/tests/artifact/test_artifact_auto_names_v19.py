@@ -88,7 +88,7 @@ def test_legacy_multipart_uses_explicit_name_without_renaming_local_path(tmp_pat
     session = Mock()
     strategy.create_http_session = lambda: session
     strategy.upload_file(str(local), 'https://example.invalid', {}, filename='webcam_20261110_183218.jpg')
-    upload = session.post.call_args.kwargs['files']['file']
+    upload = session.post.call_args.kwargs['saved']['file']
     assert upload[0] == 'webcam_20261110_183218.jpg'
     assert local.read_bytes() == b'xyz'
 

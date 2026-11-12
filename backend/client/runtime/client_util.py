@@ -356,7 +356,7 @@ def upload_file_via_http(file_source=None, filename=None, upload_url=None, categ
     import requests
 
     form_data = {
-        'artifact_type': 'files',
+        'artifact_type': 'saved',
         'category': category,
         'client_id': client_id,
     }

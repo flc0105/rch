@@ -148,7 +148,7 @@ class ArtifactPreviewService:
 
     def build_preview_payload(self, artifact_id: str) -> dict:
         artifact = self.artifact_service.registry_service.get_artifact_by_id(artifact_id)
-        file_path = artifact.get('saved_path', '')
+        file_path = self.artifact_service.get_artifact_file_path(artifact_id)
         display_name = artifact.get('original_name') or artifact.get('stored_name') or 'artifact'
 
         if not os.path.isfile(file_path):

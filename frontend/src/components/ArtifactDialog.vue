@@ -14,10 +14,10 @@
         class="artifact-tabs"
         @update:model-value="handleActiveTabChange"
       >
-        <el-tab-pane :name="ARTIFACT_SCOPE.SAVED">
+        <el-tab-pane :name="ARTIFACT_TYPE.SAVED">
           <template #label>Saved Files ({{ artifactCountMap.saved || 0 }})</template>
         </el-tab-pane>
-        <el-tab-pane :name="ARTIFACT_SCOPE.SHARED">
+        <el-tab-pane :name="ARTIFACT_TYPE.SHARED">
           <template #label>Shared Files ({{ artifactCountMap.shared || 0 }})</template>
         </el-tab-pane>
       </el-tabs>
@@ -404,7 +404,7 @@
 </template>
 
 <script>
-import { listArtifacts, uploadArtifact, renameArtifact as requestRenameArtifact, sendArtifactToClient, deleteArtifact as deleteArtifactRequest, clearArtifacts, createArtifactFolder, renameArtifactFolder, deleteArtifactFolder, moveArtifactToFolder } from '../api/artifactsApi.js'
+import { listArtifacts, getArtifactDetail, uploadArtifact, renameArtifact as requestRenameArtifact, sendArtifactToClient, deleteArtifact as deleteArtifactRequest, clearArtifacts, createArtifactFolder, renameArtifactFolder, deleteArtifactFolder, moveArtifactToFolder } from '../api/artifactsApi.js'
 import { prepareUploadConflict } from '../utils/remoteFileConflicts.js'
 import { createTerminalOperation, operationHeaders } from '../utils/terminalOperation.js'
 import { formatTerminalCommandFinishedLine } from '../composables/terminalMarkers.js'
@@ -413,7 +413,7 @@ import { setRemoteClipboardArtifactFile } from '../api/clipboardApi.js'
 import { formatBytes as formatBytesValue } from '../utils/formatters.js'
 import DragUploadDialog from './DragUploadDialog.vue'
 import { File, Folder, FolderOpen } from '@lucide/vue'
-import { ARTIFACT_SCOPE, ARTIFACT_FOLDER_ALL } from '../data/artifactConstants.js'
+import { ARTIFACT_TYPE, ARTIFACT_FOLDER_ALL } from '../data/artifactConstants.js'
 
 export default {
   name: 'ArtifactDialog',
@@ -451,14 +451,14 @@ export default {
 
   data() {
     return {
-      ARTIFACT_SCOPE,
+      ARTIFACT_TYPE,
       ARTIFACT_FOLDER_ALL,
       visible: false,
       standaloneMode: false,
       artifactLoading: false,
       artifactItems: [],
       artifactMachines: [],
-      artifactActiveTab: ARTIFACT_SCOPE.SAVED,
+      artifactActiveTab: ARTIFACT_TYPE.SAVED,
       artifactFolders: [],
       moveDialogVisible: false,
       moveArtifactItem: null,
@@ -478,7 +478,7 @@ export default {
 
   computed: {
     isSharedFilesTab() {
-      return this.artifactActiveTab === ARTIFACT_SCOPE.SHARED
+      return this.artifactActiveTab === ARTIFACT_TYPE.SHARED
     },
 
     showArtifactMachineFilter() {
@@ -492,7 +492,7 @@ export default {
 
     folderTreeNodes() {
       const folders = (this.artifactFolders || [])
-        .filter(folder => folder.scope === this.artifactActiveTab)
+        .filter(folder => folder.artifact_type === this.artifactActiveTab)
       const nodes = folders.map(folder => ({ ...folder, children: [] }))
       const byId = Object.fromEntries(nodes.map(node => [node.folder_id, node]))
       const roots = []
@@ -505,13 +505,13 @@ export default {
 
     moveFolderOptions() {
       return (this.artifactFolders || []).filter(folder =>
-        folder.scope === ARTIFACT_SCOPE.SHARED &&
-        this.moveArtifactItem?.scope === ARTIFACT_SCOPE.SHARED)
+        folder.artifact_type === ARTIFACT_TYPE.SHARED &&
+        this.moveArtifactItem?.artifact_type === ARTIFACT_TYPE.SHARED)
     },
 
     canEditSelectedFolder() {
       const folder = (this.artifactFolders || []).find(item => item.folder_id === this.selectedFolderId)
-      return Boolean(this.isSharedFilesTab && folder && !folder.preset)
+      return Boolean(this.isSharedFilesTab && folder && !folder.is_preset)
     },
 
     artifactMachineOptions() {
@@ -551,7 +551,7 @@ export default {
       const machineId = this.normalizeMachineId(this.artifactMachineIdFilter)
       const keyword = String(this.artifactKeyword || '').trim().toLowerCase()
       return (this.artifactItems || []).filter(item => {
-        if (item.scope !== this.artifactActiveTab) return false
+        if (item.artifact_type !== this.artifactActiveTab) return false
         if (this.selectedFolderId && item.folder_id !== this.selectedFolderId) return false
         if (!this.isSharedFilesTab && machineId && this.normalizeMachineId(item.machine_id) !== machineId) return false
         if (keyword) {
@@ -572,9 +572,9 @@ export default {
       const counts = { saved: 0, shared: 0 }
       const machineId = this.normalizeMachineId(this.artifactMachineIdFilter)
       ;(this.artifactItems || []).forEach(item => {
-        if (!Object.prototype.hasOwnProperty.call(counts, item.scope)) return
-        if (item.scope === ARTIFACT_SCOPE.SAVED && machineId && this.normalizeMachineId(item.machine_id) !== machineId) return
-        counts[item.scope] += 1
+        if (!Object.prototype.hasOwnProperty.call(counts, item.artifact_type)) return
+        if (item.artifact_type === ARTIFACT_TYPE.SAVED && machineId && this.normalizeMachineId(item.machine_id) !== machineId) return
+        counts[item.artifact_type] += 1
       })
       return counts
     },
@@ -685,7 +685,7 @@ export default {
 
     async open({ standalone = false } = {}) {
       this.standaloneMode = standalone
-      this.artifactActiveTab = ARTIFACT_SCOPE.SAVED
+      this.artifactActiveTab = ARTIFACT_TYPE.SAVED
       this.artifactMachineIdFilter = standalone ? '' : this.getCurrentMachineId()
       this.selectedFolderId = ''
       this.selectedArtifactIds = []
@@ -750,114 +750,47 @@ export default {
       return row?.original_name || row?.stored_name || 'artifact'
     },
 
-    openArtifactInfoDialog(row) {
+    async openArtifactInfoDialog(row) {
       if (!row || !row.artifact_id) {
         ElMessage.warning('Invalid artifact')
         return
       }
-
-      this.artifactInfoItem = { ...row }
-      this.artifactInfoDialogVisible = true
+      try {
+        const res = await getArtifactDetail(row.artifact_id)
+        const json = await res.json()
+        if (!res.ok || json.code !== 0) throw new Error(json.message || 'Failed to load artifact')
+        this.artifactInfoItem = json.data || null
+        this.artifactInfoDialogVisible = true
+      } catch (error) {
+        ElMessage.error(error.message || 'Failed to load artifact')
+      }
     },
 
     formatArtifactInfoSections(row) {
-      if (!row || typeof row !== 'object') {
-        return []
-      }
-
+      if (!row || typeof row !== 'object') return []
       const sections = [
-        {
-          key: 'basic',
-          title: 'Basic',
-          fields: [
-            ['original_name', 'Original Name'],
-            ['stored_name', 'Stored Name'],
-            ['artifact_id', 'Artifact ID'],
-            ['artifact_type', 'Artifact Type'],
-            ['size', 'Size'],
-            ['saved_at', 'Saved At'],
-            ['is_available', 'Available'],
-            ['status_text', 'Status'],
-          ],
-        },
-        {
-          key: 'source',
-          title: 'Source',
-          fields: [
-            ['hostname', 'Hostname'],
-            ['machine_id', 'Machine ID'],
-            ['client_id', 'Client ID'],
-            ['addr', 'Address'],
-            ['source_command_id', 'Source Command ID'],
-            ['linked_jobs', 'Jobs'],
-          ],
-        },
-        {
-          key: 'paths',
-          title: 'Paths / URLs',
-          fields: [
-            ['saved_path', 'Saved Path'],
-            ['download_url', 'Download URL'],
-            ['raw_url', 'Raw URL'],
-            ['preview_url', 'Preview URL'],
-          ],
-        },
-        {
-          key: 'extra',
-          title: 'Extra',
-          fields: [
-            ['extra', 'Extra'],
-          ],
-        },
+        { key: 'basic', title: 'Basic', fields: [
+          ['original_name', 'Original Name'], ['stored_name', 'Stored Name'],
+          ['saved_path', 'Saved Path'], ['artifact_id', 'Artifact ID'],
+          ['artifact_type', 'Artifact Type'], ['size', 'Size'],
+          ['saved_at', 'Saved At'], ['category', 'Category'], ['folder_id', 'Folder ID'],
+        ] },
+        { key: 'source', title: 'Source', fields: [
+          ['machine_id', 'Machine ID'], ['client_id', 'Client ID'],
+          ['source_command_id', 'Source Command ID'],
+          ['linked_jobs', 'Jobs'],
+        ] },
       ]
-
-      const usedKeys = new Set()
-      const result = []
-
-      sections.forEach(section => {
-        const items = []
-
-        section.fields.forEach(([key, label]) => {
-          if (!Object.prototype.hasOwnProperty.call(row, key)) return
-
-          const formattedValue = this.formatArtifactInfoValue(key, row[key])
-          if (formattedValue === '-') return
-
-          items.push({
-            key,
-            label,
-            value: formattedValue,
-          })
-          usedKeys.add(key)
-        })
-
-        if (items.length) {
-          result.push({
-            key: section.key,
-            title: section.title,
-            items,
-          })
-        }
-      })
-
-      const otherItems = Object.keys(row)
-        .filter(key => !usedKeys.has(key))
-        .sort((a, b) => a.localeCompare(b))
-        .map(key => ({
-          key,
-          label: key,
-          value: this.formatArtifactInfoValue(key, row[key]),
-        }))
+      const result = sections.map(section => ({ ...section, items: section.fields
+        .filter(([key]) => Object.prototype.hasOwnProperty.call(row, key))
+        .map(([key, label]) => ({ key, label, value: this.formatArtifactInfoValue(key, row[key]) }))
         .filter(item => item.value !== '-')
-
-      if (otherItems.length) {
-        result.push({
-          key: 'other',
-          title: 'Other Meta',
-          items: otherItems,
-        })
-      }
-
+      })).filter(section => section.items.length)
+      const extras = row.extra && typeof row.extra === 'object' && !Array.isArray(row.extra) ? row.extra : {}
+      const extraItems = Object.keys(extras).sort((a, b) => a.localeCompare(b))
+        .map(key => ({ key, label: key, value: this.formatArtifactInfoValue(key, extras[key]) }))
+        .filter(item => item.value !== '-')
+      if (extraItems.length) result.push({ key: 'extras', title: 'Extras', items: extraItems })
       return result
     },
 
@@ -907,11 +840,11 @@ export default {
     },
 
     isSharedFileItem(item) {
-      return item?.scope === ARTIFACT_SCOPE.SHARED
+      return item?.artifact_type === ARTIFACT_TYPE.SHARED
     },
 
     useArtifactMoreMenu(item) {
-      return item?.scope === ARTIFACT_SCOPE.SAVED || item?.scope === ARTIFACT_SCOPE.SHARED
+      return item?.artifact_type === ARTIFACT_TYPE.SAVED || item?.artifact_type === ARTIFACT_TYPE.SHARED
     },
 
     isDialogCancel(e) {
@@ -973,7 +906,7 @@ export default {
     },
 
     async handleActiveTabChange(tabName) {
-      this.artifactActiveTab = tabName || ARTIFACT_SCOPE.SAVED
+      this.artifactActiveTab = tabName || ARTIFACT_TYPE.SAVED
       this.selectedFolderId = ''
       this.selectedArtifactIds = []
       await this.loadArtifacts()
@@ -1064,7 +997,7 @@ export default {
     async uploadSingleSharedFile(file) {
       const formData = new FormData()
       formData.append('file', file)
-      formData.append('artifact_type', 'shared_files')
+      formData.append('artifact_type', 'shared')
       if (this.selectedFolderId) formData.append('folder_id', this.selectedFolderId)
 
       const res = await uploadArtifact(formData, this.buildJsonHeaders())
@@ -1361,7 +1294,7 @@ export default {
           'Clear Artifacts', { type: 'warning', confirmButtonText: 'Clear', cancelButtonText: 'Cancel' })
         this.artifactClearing = true
         const result = await this.requestArtifactMutation(clearArtifacts('',
-          this.isSharedFilesTab ? '' : this.artifactMachineIdFilter, scope, this.selectedFolderId), 'Clear failed')
+          this.isSharedFilesTab ? '' : this.artifactMachineIdFilter, this.selectedFolderId), 'Clear failed')
         ElMessage.success(`Cleared ${result.deleted_count || 0} item(s)`)
       } catch (error) {
         if (!this.isDialogCancel(error)) ElMessage.error(error.message || 'Clear failed')
