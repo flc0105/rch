@@ -103,6 +103,53 @@ def test_dynamic_timeout_and_reconnect_read_in_same_process(isolated_config):
     assert (executor.DEFAULT_SHELL_TIMEOUT, executor.DEFAULT_STREAM_TIMEOUT, client.RECONNECT_INTERVAL) == (30, 300, 5)
 
 
+def test_inbound_timeout_runtime_config_is_persisted_and_reset(isolated_config):
+    service = RuntimeConfigService()
+    key = 'SERVER_INBOUND_TIMEOUT_SECONDS'
+    assert runtime_config._RUNTIME_CONFIG_DEFAULTS[key] == 120
+    meta = service.get_config_meta(key)
+    assert meta['group'] == 'connection'
+    assert meta['min'] == 0
+    assert service.is_supported_key(key)
+    assert (service.get_value_type(runtime_config.SERVER_INBOUND_TIMEOUT_SECONDS),
+            runtime_config.SERVER_INBOUND_TIMEOUT_SECONDS) == ('integer', 120)
+
+    result = service.set_config_value(key, '0')
+    assert (result.new_value, result.source) == (0, 'override')
+    assert runtime_config.SERVER_INBOUND_TIMEOUT_SECONDS == 0
+    assert json.loads(isolated_config.read_text(encoding='utf-8'))[key] == 0
+    assert next(item for item in service.build_config_payload()['items'] if item['key'] == key)['value'] == 0
+
+    with pytest.raises(ValueError, match='must be >= 0'):
+        service.set_config_value(key, '-1')
+    with pytest.raises(ValueError, match='Invalid integer'):
+        service.set_config_value(key, 'invalid')
+    assert runtime_config.SERVER_INBOUND_TIMEOUT_SECONDS == 0
+
+    reset = service.reset_config_key(key)
+    assert (reset.new_value, reset.source) == (120, 'default')
+    assert runtime_config.SERVER_INBOUND_TIMEOUT_SECONDS == 120
+    assert not isolated_config.exists()
+
+
+def test_set_command_updates_inbound_timeout_on_current_client(isolated_config):
+    from client.commands.common.mixins.runtime_config_ops import CommandRuntimeConfigMixin
+
+    owner = CommandRuntimeConfigMixin()
+    owner.socket = SimpleNamespace(runtime=SimpleNamespace(features={'watchdog': False}))
+    owner._checkpoint = lambda: None
+
+    status, message = owner.set('SERVER_INBOUND_TIMEOUT_SECONDS 0')
+    assert status == 1, message
+    assert runtime_config.SERVER_INBOUND_TIMEOUT_SECONDS == 0
+    assert json.loads(isolated_config.read_text(encoding='utf-8'))['SERVER_INBOUND_TIMEOUT_SECONDS'] == 0
+
+    status, message = owner.set('--reset SERVER_INBOUND_TIMEOUT_SECONDS')
+    assert status == 1, message
+    assert runtime_config.SERVER_INBOUND_TIMEOUT_SECONDS == 120
+    assert not isolated_config.exists()
+
+
 def test_writes_never_reflect_into_unrelated_loaded_modules(isolated_config, monkeypatch):
     svc = RuntimeConfigService()
     ghost = types.ModuleType('client.runtime.unrelated_config')

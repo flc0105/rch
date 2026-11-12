@@ -1,10 +1,19 @@
 SCRIPT_METADATA = {
-    "name": "ios/recon/playlist_songs",
+    "name": "ios/media/playlist_songs",
     "display_name": "Playlist Songs",
-    "description": "Export songs from a specified playlist in the iOS music library",
+    "description": "Browse songs from a playlist in your iOS music library.",
     "platforms": ["ios"],
-    "category": "Recon",
-    "params": []
+    "category": "Media",
+    "params": [
+        {
+            "name": "playlist_name",
+            "label": "Playlist",
+            "type": "string",
+            "required": False,
+            "default": "",
+            "description": "Leave blank to browse your favorite songs."
+        }
+    ]
 }
 
 import ctypes
@@ -18,14 +27,6 @@ NSBundle.bundleWithPath_('/System/Library/Frameworks/MediaPlayer.framework').loa
 
 MPMediaLibrary = ObjCClass('MPMediaLibrary')
 MPMediaQuery = ObjCClass('MPMediaQuery')
-
-
-# =========================
-# 直接在这里写死 playlist 名称
-# 留空则默认找 Favorite Songs / 喜爱的歌曲 / 收藏的歌曲
-# =========================
-PLAYLIST_NAME = 'My Playlist'
-
 
 _auth_done = False
 _auth_status = None
@@ -88,18 +89,15 @@ def num_to_int(x, default=0):
 
 def safe_call(obj, selector_name, default=None):
     try:
-        fn = getattr(obj, selector_name)
-        return fn()
+        return getattr(obj, selector_name)()
     except Exception:
         return default
 
 
 def media_prop(obj, prop_name, default=None):
     try:
-        v = obj.valueForProperty_(ns(prop_name))
-        if v is None:
-            return default
-        return v
+        value = obj.valueForProperty_(ns(prop_name))
+        return default if value is None else value
     except Exception:
         return default
 
@@ -109,9 +107,17 @@ def nsdate_to_iso(d):
         return ''
     try:
         ts = float(d.timeIntervalSince1970())
-        return datetime.datetime.utcfromtimestamp(ts).strftime('%Y-%m-%d %H:%M:%S')
+        return datetime.datetime.fromtimestamp(ts, datetime.timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
     except Exception:
         return ''
+
+
+def duration_mmss(value):
+    try:
+        seconds = max(0, int(round(float(value or 0))))
+    except (ValueError, TypeError, OverflowError):
+        seconds = 0
+    return '{:02d}:{:02d}'.format(seconds // 60, seconds % 60)
 
 
 def iter_nsarray(arr):
@@ -123,7 +129,7 @@ def iter_nsarray(arr):
 
 
 def normalize_name(s):
-    return ''.join(str(s).lower().split())
+    return ''.join(str(s).casefold().split())
 
 
 def playlist_name(pl):
@@ -131,13 +137,6 @@ def playlist_name(pl):
     if not name:
         name = media_prop(pl, 'name', '')
     return ns_to_py(name)
-
-
-def playlist_persistent_id(pl):
-    v = safe_call(pl, 'persistentID', None)
-    if v is None:
-        v = media_prop(pl, 'persistentID', None)
-    return ns_to_py(v)
 
 
 def playlist_items(pl):
@@ -148,89 +147,72 @@ def playlist_items(pl):
 
 
 def is_default_favorites_name(name):
-    n = normalize_name(name)
-
-    candidates = [
-        'favoritesongs',
-        'favorites',
-        'favouritesongs',
-        'favourites',
-        '喜爱的歌曲',
-        '喜愛的歌曲',
-        '最喜爱的歌曲',
-        '最喜愛的歌曲',
-        '收藏的歌曲',
-        '我喜爱的歌曲',
-        '我喜愛的歌曲',
-    ]
-
-    return any(normalize_name(c) == n for c in candidates)
+    candidates = (
+        '喜爱歌曲',       # 实测名称
+        '喜爱的歌曲',     # 简体中文 Apple 文档
+        '喜好歌曲',       # 繁体中文 Apple 文档
+        'Favorite Songs', # 英文 Apple 文档
+    )
+    return normalize_name(name) in {normalize_name(c) for c in candidates}
 
 
-def find_playlist():
+def find_playlist(target_name):
     query = MPMediaQuery.playlistsQuery()
     collections = query.collections()
-
     if collections is None:
-        return None, []
+        return None
 
-    all_playlists = []
-
-    target_name = str(PLAYLIST_NAME).strip()
     target_norm = normalize_name(target_name)
-
-    exact_matches = []
     favorite_matches = []
 
     for pl in iter_nsarray(collections):
         name = playlist_name(pl)
-        items = playlist_items(pl)
-        count = int(items.count()) if items is not None else 0
-
-        row = {
-            'name': name,
-            'persistentID': playlist_persistent_id(pl),
-            'count': count,
-        }
-        all_playlists.append(row)
-
-        if target_name:
+        if target_norm:
             if normalize_name(name) == target_norm:
-                exact_matches.append(pl)
-        else:
-            if is_default_favorites_name(name):
-                favorite_matches.append(pl)
+                return pl
+        elif is_default_favorites_name(name):
+            favorite_matches.append(pl)
 
-    if target_name:
-        if exact_matches:
-            return exact_matches[0], all_playlists
-        return None, all_playlists
-
-    # PLAYLIST_NAME 为空时,默认找 favorites。
-    # 如果有多个候选,优先选择歌多的那个。
     if favorite_matches:
         favorite_matches.sort(
             key=lambda p: int(playlist_items(p).count()) if playlist_items(p) is not None else 0,
             reverse=True
         )
-        return favorite_matches[0], all_playlists
+        return favorite_matches[0]
 
-    return None, all_playlists
+    return None
 
 
 def get_persistent_id(item):
-    v = safe_call(item, 'persistentID', None)
-    if v is None:
-        v = media_prop(item, 'persistentID', None)
-    return ns_to_py(v)
+    value = safe_call(item, 'persistentID', None)
+    if value is None:
+        value = media_prop(item, 'persistentID', None)
+    return ns_to_py(value)
 
 
-def song_row(item, index):
+def date_property(item, selector, key):
+    value = safe_call(item, selector, None)
+    if value is None:
+        value = media_prop(item, key, None)
+    return value
+
+
+def release_year(date):
+    if date is None:
+        return None
+    try:
+        ts = float(date.timeIntervalSince1970())
+        return datetime.datetime.fromtimestamp(ts, datetime.timezone.utc).year
+    except Exception:
+        return None
+
+
+def song_row(item):
     date_added = media_prop(item, 'dateAdded', None)
-    rating = media_prop(item, 'rating', 0)
+    last_played = date_property(item, 'lastPlayedDate', 'lastPlayedDate')
+    release_date = date_property(item, 'releaseDate', 'releaseDate')
 
     return {
-        'index': index,
         'persistentID': get_persistent_id(item),
         'artist': ns_to_py(safe_call(item, 'artist', '')),
         'title': ns_to_py(safe_call(item, 'title', '')),
@@ -240,23 +222,18 @@ def song_row(item, index):
         'composer': ns_to_py(safe_call(item, 'composer', '')),
         'playCount': num_to_int(safe_call(item, 'playCount', 0), 0),
         'skipCount': num_to_int(safe_call(item, 'skipCount', 0), 0),
-        'rating': num_to_int(rating, 0),
         'dateAdded': nsdate_to_iso(date_added),
-        'durationSeconds': float(safe_call(item, 'playbackDuration', 0) or 0),
+        'lastPlayedDate': nsdate_to_iso(last_played),
+        'year': release_year(release_date),
+        'duration': duration_mmss(safe_call(item, 'playbackDuration', 0)),
     }
 
 
 def export_playlist_songs(pl):
     items = playlist_items(pl)
-    rows = []
-
     if items is None:
-        return rows
-
-    for index, item in enumerate(iter_nsarray(items)):
-        rows.append(song_row(item, index))
-
-    return rows
+        return []
+    return [song_row(item) for item in iter_nsarray(items)]
 
 
 def main():
@@ -265,14 +242,9 @@ def main():
         print(json.dumps([], ensure_ascii=False, indent=2))
         return
 
-    pl, all_playlists = find_playlist()
-
-    if pl is None:
-        print(json.dumps([], ensure_ascii=False, indent=2))
-        return
-
-    rows = export_playlist_songs(pl)
-
+    target_name = str(kwargs.get('playlist_name', '') or '').strip()
+    pl = find_playlist(target_name)
+    rows = export_playlist_songs(pl) if pl is not None else []
     print(json.dumps(rows, ensure_ascii=False, indent=2))
 
 

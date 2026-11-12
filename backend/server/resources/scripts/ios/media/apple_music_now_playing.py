@@ -1,9 +1,9 @@
 SCRIPT_METADATA = {
-    "name": "ios/music/apple_music_now_playing",
-    "display_name": "Apple Music Now Playing",
-    "description": "Retrieve currently playing media information from the iOS Music app",
+    "name": "ios/media/apple_music_now_playing",
+    "display_name": "Now Playing",
+    "description": "See what's playing in the iOS Music app.",
     "platforms": ["ios"],
-    "category": "Recon",
+    "category": "Media",
     "params": []
 }
 
@@ -14,11 +14,22 @@ load_framework('MediaPlayer')
 
 MPMusicPlayerController = ObjCClass('MPMusicPlayerController')
 
+PLAYBACK_STATUS = {
+    0: 'Stopped',
+    1: 'Playing',
+    2: 'Paused',
+    3: 'Interrupted',
+    4: 'Seeking Forward',
+    5: 'Seeking Backward',
+}
+
+
 def msg_obj_0(obj, selector_name):
     c.objc_msgSend.restype = c_void_p
     c.objc_msgSend.argtypes = [c_void_p, c_void_p]
     p = c.objc_msgSend(obj.ptr, sel(selector_name))
     return ObjCInstance(p) if p else None
+
 
 def msg_obj_1(obj, selector_name, arg):
     c.objc_msgSend.restype = c_void_p
@@ -27,12 +38,13 @@ def msg_obj_1(obj, selector_name, arg):
     p = c.objc_msgSend(obj.ptr, sel(selector_name), arg_ptr)
     return ObjCInstance(p) if p else None
 
+
 def get_now_playing():
     player = MPMusicPlayerController.systemMusicPlayer()
     item = player.nowPlayingItem()
 
     info = {
-        'state': int(player.playbackState()),
+        'status': PLAYBACK_STATUS.get(int(player.playbackState()), 'Unknown'),
         'title': None,
         'artist': None,
         'album': None,

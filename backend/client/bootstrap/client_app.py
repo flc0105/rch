@@ -21,9 +21,6 @@ class Client:
     def RECONNECT_INTERVAL(self, interval):
         self._reconnect_interval_override = interval
 
-    # Server heartbeat is sent every 30 seconds; allow four missed intervals.
-    RECEIVE_IDLE_TIMEOUT_SECONDS = 120
-
     def __init__(self, address, process_recovery_watchdog_manager=None):
         self.address = address
         self.client_id = str(uuid.uuid4())
@@ -111,7 +108,9 @@ class Client:
                     raise receiver_error
 
                 idle = self.receiver_worker.receive_idle_seconds()
-                if idle is not None and idle >= self.RECEIVE_IDLE_TIMEOUT_SECONDS:
+                # Server heartbeat is sent every 30 seconds; allow four missed intervals.
+                inbound_timeout = runtime_config.SERVER_INBOUND_TIMEOUT_SECONDS
+                if inbound_timeout > 0 and idle is not None and idle >= inbound_timeout:
                     raise TimeoutError(
                         f'Server inbound message timeout: no message for {idle:.1f}s'
                     )

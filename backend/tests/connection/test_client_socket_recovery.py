@@ -9,6 +9,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 from client.bootstrap.client_app import Client
+from client.config import runtime_config
 from client.bootstrap.connection_lifecycle import ClientConnectionLifecycle
 from client.bootstrap.receiver_worker import ClientReceiverWorker
 from core.protocol.rchsocket import RCHSocket
@@ -49,7 +50,7 @@ def _send(server, data):
     transport.send(data)
 
 
-def test_silent_established_tcp_triggers_client_recovery_without_fin_or_rst():
+def test_silent_established_tcp_triggers_client_recovery_without_fin_or_rst(monkeypatch):
     client_sock, server_sock = _open_tcp_pair()
     connection = _ReceiveConnection(client_sock)
     worker = ClientReceiverWorker()
@@ -57,7 +58,7 @@ def test_silent_established_tcp_triggers_client_recovery_without_fin_or_rst():
     probe = Client.__new__(Client)
     probe.receiver_worker = worker
     probe.server = Mock()
-    probe.RECEIVE_IDLE_TIMEOUT_SECONDS = 0.1
+    monkeypatch.setattr(runtime_config, 'SERVER_INBOUND_TIMEOUT_SECONDS', 0.1)
     pending = queue.Queue()
     probe.server.recv_command.side_effect = lambda timeout: pending.get(timeout=timeout)
     observed = []
@@ -82,6 +83,74 @@ def test_silent_established_tcp_triggers_client_recovery_without_fin_or_rst():
         connection.close()
         assert worker.join(timeout=2)
         server_sock.close()
+
+
+def test_disabled_inbound_timeout_does_not_reconnect_after_ios_suspension(monkeypatch):
+    monkeypatch.setattr(runtime_config, 'SERVER_INBOUND_TIMEOUT_SECONDS', 0)
+    client = Client.__new__(Client)
+    client.connection_lifecycle = SimpleNamespace(is_paused=False)
+    client.receiver_worker = Mock()
+    client.receiver_worker.pop_error.return_value = None
+    client.receiver_worker.receive_idle_seconds.return_value = 644
+    client.server = Mock()
+    client.server.recv_command.side_effect = SystemExit()
+    client._recover_from_connection_error = Mock()
+
+    client._wait_for_commands()
+
+    client.server.recv_command.assert_called_once_with(timeout=0.5)
+    client._recover_from_connection_error.assert_not_called()
+
+
+def test_timeout_change_is_read_on_next_active_loop_iteration(monkeypatch):
+    monkeypatch.setattr(runtime_config, 'SERVER_INBOUND_TIMEOUT_SECONDS', 0)
+    client = Client.__new__(Client)
+    client.connection_lifecycle = SimpleNamespace(is_paused=False)
+    client.receiver_worker = Mock()
+    client.receiver_worker.pop_error.return_value = None
+    client.receiver_worker.receive_idle_seconds.return_value = 644
+    client.server = Mock()
+
+    def enable_timeout(timeout):
+        runtime_config.SERVER_INBOUND_TIMEOUT_SECONDS = 120
+        raise queue.Empty()
+
+    client.server.recv_command.side_effect = enable_timeout
+    recovered = []
+
+    def observe_recovery(error):
+        recovered.append(error)
+        raise _NoMoreWait()
+
+    client._recover_from_connection_error = observe_recovery
+    with pytest.raises(_NoMoreWait):
+        client._wait_for_commands()
+
+    assert client.server.recv_command.call_count == 1
+    assert len(recovered) == 1
+    assert isinstance(recovered[0], TimeoutError)
+    assert '644' in str(recovered[0])
+
+
+def test_disabled_idle_timeout_still_recovers_from_receiver_error(monkeypatch):
+    monkeypatch.setattr(runtime_config, 'SERVER_INBOUND_TIMEOUT_SECONDS', 0)
+    client = Client.__new__(Client)
+    client.connection_lifecycle = SimpleNamespace(is_paused=False)
+    client.receiver_worker = Mock()
+    client.receiver_worker.pop_error.return_value = OSError('socket disconnected')
+    client.server = Mock()
+    observed = []
+
+    def observe_recovery(error):
+        observed.append(error)
+        raise _NoMoreWait()
+
+    client._recover_from_connection_error = observe_recovery
+    with pytest.raises(_NoMoreWait):
+        client._wait_for_commands()
+    assert len(observed) == 1
+    assert isinstance(observed[0], OSError)
+    client.server.recv_command.assert_not_called()
 
 
 def test_real_heartbeat_resets_receive_idle_deadline():

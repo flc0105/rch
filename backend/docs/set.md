@@ -121,6 +121,7 @@ set SCREEN_FRAME_STRATEGY keyframe_delta
 | Preview | `PREVIEW_IMAGE_COMPRESS_ENABLED` | `false` | 在图片预览上传前尝试压缩，仅影响相应预览流程 |
 | Preview | `PREVIEW_IMAGE_COMPRESS_QUALITY` | `75` | 统一控制预览 JPEG 的质量；PNG 等图片也会先转换成 JPEG 预览 |
 | Connection | `RECONNECT_INTERVAL_SECONDS` | `5` 秒 | Client 断线后再次尝试连接的间隔 |
+| Connection | `SERVER_INBOUND_TIMEOUT_SECONDS` | `120` 秒 | Client 连续未收到 Server 消息达到该时长时主动重连；`0` 表示禁用此超时 |
 | Watchdog | `REMOTE_CONTROL_WATCHDOG_ENABLED` | `false` | 启用独立 HTTP 远程进程控制 |
 | Watchdog | `LOCAL_HEARTBEAT_WATCHDOG_ENABLED` | `false` | 启用本地心跳超时恢复 |
 | Watchdog | `PROCESS_RECOVERY_WATCHDOG_ENABLED` | `false` | Client 进程异常消失时，由独立监督进程尝试复活 |
@@ -211,6 +212,7 @@ set --reset-all
 | `PYTHON_EXECUTION_MODE` | `set PYTHON_EXECUTION_MODE subprocess_pipe`；执行一段输出 PID 的 Python 脚本，核对脚本正常输出；对测试长脚本尝试取消，确认能停止子进程。重置为 `inproc` 后再次执行短脚本。 |
 | `SCREEN_FRAME_STRATEGY` | `set SCREEN_FRAME_STRATEGY full_jpeg`；重新打开 Screen View，检查策略标识和正常显示；重置为默认 `keyframe_delta` 后使用 Restart/新建会话，再确认策略标识、关键帧和变化区域刷新。仅在启用 Screen View 的平台提供该设置。 |
 | `RECONNECT_INTERVAL_SECONDS` | `set RECONNECT_INTERVAL_SECONDS 2`；在测试环境短暂阻断 Client → Server 的网络连接，查看日志中下一次重连等待约 2 秒；恢复网络并重置到 5 秒。已进入的单次睡眠不被追溯缩短。 |
+| `SERVER_INBOUND_TIMEOUT_SECONDS` | `set SERVER_INBOUND_TIMEOUT_SECONDS 0`；iOS 切后台后恢复前台时，如原 Socket 仍可用，继续处理后续 Heartbeat。`set --reset SERVER_INBOUND_TIMEOUT_SECONDS` 恢复默认 120 秒。 |
 | `REMOTE_CONTROL_WATCHDOG_ENABLED` | `set REMOTE_CONTROL_WATCHDOG_ENABLED true`；查看 `watchdog --json` 是否显示启用和 Worker 状态；`set --reset REMOTE_CONTROL_WATCHDOG_ENABLED` 后确认关闭/Worker 状态更新。 |
 | `REMOTE_CONTROL_WATCHDOG_INTERVAL_SECONDS`（只读） | `set --all` 核对默认 15 秒；在启用 Remote Control Watchdog 后用 `watchdog --json` 核对 `interval_seconds`。此项不能由前台直接编辑。 |
 | `LOCAL_HEARTBEAT_WATCHDOG_ENABLED` | `set LOCAL_HEARTBEAT_WATCHDOG_ENABLED true`；使用 `watchdog --json` 检查本地心跳 Feeder 和 Worker，确认心跳文件更新；重置后确认停止。 |

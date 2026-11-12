@@ -44,6 +44,8 @@ SCREEN_FRAME_STRATEGY = 'keyframe_delta'
 
 
 RECONNECT_INTERVAL_SECONDS = 5
+# Set to 0 to disable Client-side inbound idle timeout recovery.
+SERVER_INBOUND_TIMEOUT_SECONDS = 120
 REMOTE_CONTROL_WATCHDOG_ENABLED = False
 REMOTE_CONTROL_WATCHDOG_INTERVAL_SECONDS = 15
 LOCAL_HEARTBEAT_WATCHDOG_ENABLED = False
@@ -122,6 +124,12 @@ _RUNTIME_CONFIG_META = {
         'group': 'connection',
         'expose': True,
         'desc': 'Reconnect interval after client connection loss.',
+    },
+    'SERVER_INBOUND_TIMEOUT_SECONDS': {
+        'group': 'connection',
+        'expose': True,
+        'desc': 'Seconds without an inbound Server message before reconnecting; 0 disables this timeout.',
+        'min': 0,
     },
     'REMOTE_CONTROL_WATCHDOG_ENABLED': {
         'group': 'watchdog',

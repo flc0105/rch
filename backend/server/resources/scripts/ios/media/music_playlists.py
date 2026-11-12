@@ -1,9 +1,9 @@
 SCRIPT_METADATA = {
-    "name": "ios/recon/music_playlists",
-    "display_name": "Music Playlists",
-    "description": "List all playlists in the iOS music library with their song counts",
+    "name": "ios/media/music_playlists",
+    "display_name": "Playlists",
+    "description": "Browse the playlists in your iOS music library.",
     "platforms": ["ios"],
-    "category": "Recon",
+    "category": "Media",
     "params": []
 }
 
@@ -148,12 +148,11 @@ def list_playlists():
     if collections is None:
         return rows
 
-    for index, pl in enumerate(iter_nsarray(collections)):
+    for pl in iter_nsarray(collections):
         items = playlist_items(pl)
         count = int(items.count()) if items is not None else 0
 
         rows.append({
-            'index': index,
             'name': playlist_name(pl),
             'persistentID': playlist_persistent_id(pl),
             'count': count,

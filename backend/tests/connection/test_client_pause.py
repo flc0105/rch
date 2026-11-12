@@ -13,6 +13,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 from client.bootstrap.client_app import Client
+from client.config import runtime_config
 from client.bootstrap.connection_lifecycle import ClientConnectionLifecycle
 from client.connection.server_connection import ServerConnection
 from client.runtime.local_ipc import LocalIpcServer, send_local_command
@@ -140,14 +141,14 @@ def test_paused_client_does_not_call_idle_recovery_or_read_messages():
     client.receiver_worker.pop_error.assert_not_called()
 
 
-def test_paused_client_stays_offline_past_receive_idle_timeout():
+def test_paused_client_stays_offline_past_receive_idle_timeout(monkeypatch):
     client = Client.__new__(Client)
     client.server = Mock()
     client.receiver_worker = Mock()
     client.receiver_worker.pop_error.return_value = None
     client.receiver_worker.receive_idle_seconds.return_value = None
     client.server.recv_command.side_effect = SystemExit()
-    client.RECEIVE_IDLE_TIMEOUT_SECONDS = 0.01
+    monkeypatch.setattr(runtime_config, 'SERVER_INBOUND_TIMEOUT_SECONDS', 0.01)
     lifecycle = ClientConnectionLifecycle(client)
     lifecycle._active.clear()
     client.connection_lifecycle = lifecycle

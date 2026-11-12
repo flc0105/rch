@@ -294,6 +294,7 @@ ORDER BY connected_at_ms DESC LIMIT 12;
 | Web 设备状态重算频率 | `30` 秒 | `frontend/src/App.vue` 的 `statusTickTimer`，修改前端并重新加载相应构建 |
 | Web 缺少阈值时的回退值 | `45` 秒 | `frontend/src/composables/useConnections.js` 等连接展示逻辑；正常请求优先使用服务端返回值 |
 | Python Client 重连等待 | `5` 秒 | `backend/client/config/runtime_config.py` 的 `RECONNECT_INTERVAL_SECONDS`，支持通过 Client Runtime Config 的 `set` 命令覆盖 |
+| Python Client 入站消息空闲超时 | `120` 秒 | `backend/client/config/runtime_config.py` 的 `SERVER_INBOUND_TIMEOUT_SECONDS`，可通过 `set` 调整；`0` 禁用 Client 主动入站空闲超时 |
 | Go Client 拨号失败等待 | `5` 秒 | `backend/client-go/connection/client.go` 中的重试循环，需重建并部署 Go Client |
 
 例如，在目标 Python Client 的命令上下文中运行：
@@ -303,6 +304,8 @@ set RECONNECT_INTERVAL_SECONDS 8
 ```
 
 会通过 Runtime Config 保存覆盖值，并尝试同步更新正在运行的 `Client.RECONNECT_INTERVAL`。查询 `set` 可以看到配置来源；`set --reset RECONNECT_INTERVAL_SECONDS` 恢复默认值。这一 Client 设置**不是 Server 心跳发送周期**，也不会更改 Server 的 45 秒 Stale 阈值。
+
+对于进入后台后可能长时间挂起的 iOS Client，可以在该 Client 上执行 `set SERVER_INBOUND_TIMEOUT_SECONDS 0`，避免仅因挂起期间未处理 Server 消息而主动重连。此配置会写入该设备的 `runtime_config.json`；需要恢复默认检测时运行 `set --reset SERVER_INBOUND_TIMEOUT_SECONDS`。Socket 断开和接收异常仍沿用原有重连逻辑。
 
 服务器的 Heartbeat Interval 和 Stale Threshold 当前是代码常量，并没有对应的可直接修改的 Server 环境变量。不能假设设置一个同名环境变量就会生效。调整它们时宜保持一致的时间预算：如果心跳间隔远大于 Stale 阈值，即使正常设备也可能周期性出现 Stale。
 
