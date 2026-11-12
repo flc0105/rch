@@ -24,7 +24,7 @@ MPMediaQuery = ObjCClass('MPMediaQuery')
 # 直接在这里写死 playlist 名称
 # 留空则默认找 Favorite Songs / 喜爱的歌曲 / 收藏的歌曲
 # =========================
-PLAYLIST_NAME = ''
+PLAYLIST_NAME = 'My Playlist'
 
 
 _auth_done = False

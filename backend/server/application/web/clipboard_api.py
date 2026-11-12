@@ -109,7 +109,7 @@ class WebClipboardApi:
             raise ValueError('artifact_id is required')
 
         capabilities = self.get_capabilities(client_id)
-        if not capabilities.get('saved'):
+        if not capabilities.get('files'):
             raise RuntimeError('Target clipboard does not support files')
 
         artifact = self.artifact_service.get_artifact_by_id(normalized_artifact_id)
@@ -146,7 +146,7 @@ class WebClipboardApi:
         return self.clipboard_session_service.set_clipboard(
             client_id,
             {
-                'kind': 'saved',
+                'kind': 'files',
                 'items': items,
                 'roots': roots,
             },
