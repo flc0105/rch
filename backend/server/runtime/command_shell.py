@@ -20,7 +20,7 @@ class ServerCommandShell:
     def __init__(self, server):
         self.server = server
         self.command_execution_pipeline = CommandExecutionPipeline(
-            command_history_orchestrator=server.command_history_orchestrator,
+            activity_coordinator=server.activity_coordinator,
         )
 
     # def list_connections(self):
@@ -280,7 +280,7 @@ class ServerCommandShell:
         """
         执行交互命令并输出结果。
         """
-        entry_id = self.server.command_history_orchestrator.begin_execution(
+        entry_id = self.server.command_adapter.prepare_command(
             session,
             cmd,
             source='cli',

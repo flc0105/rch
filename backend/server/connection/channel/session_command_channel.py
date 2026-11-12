@@ -40,13 +40,16 @@ class ClientSessionCommandChannel:
     def send_command(self, command: str, type=MSG_TYPE_COMMAND, extra=None, history_entry_id: str = ''):
         data = self.build_command_payload(command, type, extra)
 
-        history_orchestrator = getattr(self.session.context, 'command_history_orchestrator', None)
+        coordinator = getattr(self.session.context, 'activity_coordinator', None)
 
+        adapter = getattr(self.session.context, 'command_dispatch_adapter', None)
+        if adapter is not None:
+            history_entry_id = history_entry_id or adapter.scoped_entry(self.session)
         bound_task = self.session.runtime.bind_command_execution(
             data.get('id'),
             session=self.session,
             history_entry_id=history_entry_id,
-            history_orchestrator=history_orchestrator,
+            coordinator=coordinator,
         )
         # Register before sending: a very fast Client (e.g. invalid download)
         # can reply before the caller starts iterating wait_for_result().
@@ -60,16 +63,17 @@ class ClientSessionCommandChannel:
         # Persist only after the transport has accepted an actual Client command.
         # This is deliberately restricted to explicitly prepared Activity intents:
         # internal requests and pure Server builtins never create Activity.
-        if history_orchestrator is not None:
-            history_orchestrator.confirm_dispatch(
-                self.session, history_entry_id, command, command_type=type,
-            )
+        if adapter is not None:
+            adapter.dispatch(self.session, history_entry_id, command, type)
 
         if bound_task and bound_task.get('cancel_requested'):
             self.send_cancel(data.get('id'))
 
-        return self.wait_for_result(data.get('id'), command if type == MSG_TYPE_COMMAND else None,
-                                    already_registered=True)
+        results = self.wait_for_result(data.get('id'), command if type == MSG_TYPE_COMMAND else None,
+                                       already_registered=True)
+        if adapter is not None:
+            return adapter.observe_result(self.session, history_entry_id, type, command, results)
+        return results
 
     def send_cancel(self, target_command_id: int):
         data = self.build_cancel_payload(target_command_id)

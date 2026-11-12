@@ -33,7 +33,7 @@ class ClientSessionRuntime:
         command_id: int,
         session=None,
         history_entry_id: str = '',
-        history_orchestrator=None,
+        coordinator=None,
     ):
         """
         在命令实际下发时，统一绑定：
@@ -44,7 +44,7 @@ class ClientSessionRuntime:
             command_id,
             session=session,
             history_entry_id=history_entry_id,
-            history_orchestrator=history_orchestrator,
+            coordinator=coordinator,
         )
 
     # ------------------ history binding ------------------ #
@@ -135,9 +135,9 @@ class ClientSessionRuntime:
             if self.pending_command_ids.peek_first() == command_id:
                 self.pending_command_ids.get()
             try:
-                history_orchestrator = getattr(connection.context, 'command_history_orchestrator', None)
-                if history_orchestrator is not None:
-                    history_orchestrator.clear_command_entry(connection, command_id)
+                coordinator = getattr(connection.context, 'activity_coordinator', None)
+                if coordinator is not None:
+                    coordinator.clear_command_entry(connection, command_id)
                 else:
                     self.clear_history_entry(command_id)
             except Exception:

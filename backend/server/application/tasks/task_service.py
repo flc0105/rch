@@ -46,14 +46,14 @@ class WebTaskService:
         self.file_service = file_service
         self.task_runner = task_runner
         self.transfer_service = transfer_service
-        self.history_orchestrator = self.server.command_history_orchestrator
+        self.activity_coordinator = self.server.activity_coordinator
 
     def _create_task_with_history(
         self,
         conn,
         request: WebExecutionTaskRequest,
     ):
-        entry_id = self.history_orchestrator.begin_execution(
+        entry_id = self.server.command_adapter.prepare_command(
             conn,
             request.command,
             source=request.source,
@@ -72,7 +72,7 @@ class WebTaskService:
         except Exception:
             if entry_id:
                 try:
-                    self.history_orchestrator.discard_execution(conn, entry_id)
+                    self.activity_coordinator.discard(conn, entry_id)
                 except Exception:
                     # Cleanup must not replace the original task creation failure.
                     pass
@@ -88,7 +88,7 @@ class WebTaskService:
             self.task_store.delete_task(task_id)
         if history_entry_id:
             try:
-                self.history_orchestrator.discard_execution(conn, history_entry_id)
+                self.activity_coordinator.discard(conn, history_entry_id)
             except Exception:
                 # Cleanup must not replace the original submission failure.
                 pass
@@ -278,7 +278,7 @@ class WebTaskService:
 
         client_id = task.get('client_id') or ''
         cancel_info = self._request_task_cancel(conn, task_id)
-        self.history_orchestrator.update_execution_status(
+        self.activity_coordinator.update_status(
             conn, cancel_info.get('history_entry_id') or '', 'cancelling'
         )
         command_id = cancel_info.get('command_id')

@@ -31,64 +31,28 @@ class WebRemoteFileService:
         return f'{name} {encode_structured_arg(payload)}'
 
     def _run_mutation(self, client_id, action, arguments, command_name, payload, *, json_result=False, batch=False, origin='web_ui'):
-        """One dispatched file operation -> one semantic Activity, never Quick.
-
-        The command channel itself confirms transport dispatch. Pre-send errors
-        discard an intent without creating a persistent Activity.
-        """
-        runner = self.remote_execution_service
-        orchestrator = getattr(runner, 'history_orchestrator', None)
+        """Execute a remote file mutation; the dispatch adapter records its result."""
         command = self._build_command(command_name, payload)
-        session = runner.get_connection(client_id) if orchestrator else None
-        activity_id = (orchestrator.begin_remote_files_execution(session, action, arguments, command_name,
-                                                                 command if action != 'save_file' else None, origin=origin)
-                       if orchestrator else '')
-        recorded = False
-        try:
-            kwargs = {'task_type': 'remote_file', 'source': 'web_remote_file',
-                      'history_entry_id': activity_id}
-            if json_result:
-                result = runner.run_foreground_json_command(client_id, command, **kwargs)
-                if batch:
-                    # Client reports counts explicitly: the transport success code
-                    # alone cannot distinguish all-success from partial-success.
-                    if not isinstance(result, dict) or not all(k in result for k in ('status', 'total', 'succeeded', 'failed', 'message')):
-                        raise RuntimeError('Invalid remote batch result')
-                    if (not all(isinstance(result[k], int) and not isinstance(result[k], bool)
-                                for k in ('status', 'total', 'succeeded', 'failed'))
-                            or result['status'] not in (0, 1)
-                            or result['total'] != result['succeeded'] + result['failed']
-                            or result['total'] != len(arguments['paths'])
-                            or result['succeeded'] < 0 or result['failed'] < 0):
-                        raise RuntimeError('Invalid remote batch counts')
-                    output = str(result['message'])
-                    ok = result['status'] == 1 and result['failed'] == 0
-                    original_success = result['status'] == 1
-                else:
-                    output = json.dumps(result, ensure_ascii=False)
-                    ok = original_success = True
-            else:
-                result = runner.run_foreground_text_command(client_id, command, **kwargs)
-                output = str(result)
-                ok = original_success = True
-            if activity_id:
-                orchestrator.append_output(session, activity_id, int(ok), output)
-                orchestrator.finalize_execution(session, activity_id, ok)
-            recorded = True
-            if not original_success:
-                raise RuntimeError(output or 'Remote file operation failed')
-            return result
-        except Exception as exc:
-            if activity_id and not recorded:
-                # Never echo the encoded content of save_file_content into History.
-                safe_error = ('Remote file save failed' if action == 'save_file' else str(exc))
-                orchestrator.append_output(session, activity_id, 0, safe_error)
-                status = 'timed_out' if isinstance(exc, TimeoutError) else ('interrupted' if isinstance(exc, ConnectionError) else 'error')
-                orchestrator.finalize_execution(session, activity_id, False, status=status)
-            raise
-        finally:
-            if activity_id:
-                orchestrator.discard_execution(session, activity_id)
+        kwargs = {'task_type': 'remote_file', 'source': 'web_remote_file'}
+        if json_result:
+            result = self.remote_execution_service.run_foreground_json_command(client_id, command, **kwargs)
+            if batch:
+                # Client reports counts explicitly: the transport success code
+                # alone cannot distinguish all-success from partial-success.
+                if not isinstance(result, dict) or not all(k in result for k in ('status', 'total', 'succeeded', 'failed', 'message')):
+                    raise RuntimeError('Invalid remote batch result')
+                if (not all(isinstance(result[k], int) and not isinstance(result[k], bool)
+                            for k in ('status', 'total', 'succeeded', 'failed'))
+                    or result['status'] not in (0, 1)
+                    or result['total'] != result['succeeded'] + result['failed']
+                    or result['total'] != len(arguments['paths'])
+                    or result['succeeded'] < 0 or result['failed'] < 0):
+                    raise RuntimeError('Invalid remote batch counts')
+                if result['status'] != 1:
+                    raise RuntimeError(str(result['message']) or 'Remote file operation failed')
+        else:
+            result = self.remote_execution_service.run_foreground_text_command(client_id, command, **kwargs)
+        return result
 
     def browse_directory(
             self,
@@ -234,11 +198,6 @@ class WebRemoteFileService:
             },
         )
         transfer_id = transfer.get('transfer_id') or ''
-        recorder = getattr(self.transfer_service, 'activity_recorder', None)
-        if recorder is not None:
-            recorder.track(transfer_id, session, action='download_files', origin=origin,
-                           arguments={'path': normalized_path, 'filename': transfer['filename'],
-                                      'count': 1, 'source': feature})
 
         try:
             self._start_client_transfer(
@@ -287,11 +246,6 @@ class WebRemoteFileService:
             metadata={'source': 'remote_zip_entry_download', 'transport': 'client_transfer_manager'},
         )
         transfer_id = transfer.get('transfer_id') or ''
-        recorder = getattr(self.transfer_service, 'activity_recorder', None)
-        if recorder is not None:
-            recorder.track(transfer_id, session, action='download_files', origin=origin,
-                           arguments={'path': normalized_path, 'entry_name': entry_name,
-                                      'filename': filename, 'count': 1, 'source': feature})
         try:
             self._start_client_transfer(session, transfer_id, 'client_to_server_zip_entry',
                                         {'path': normalized_path, 'entry_name': entry_name,
@@ -348,11 +302,6 @@ class WebRemoteFileService:
             },
         )
         transfer_id = transfer.get('transfer_id') or ''
-        recorder = getattr(self.transfer_service, 'activity_recorder', None)
-        if recorder is not None:
-            recorder.track(transfer_id, session, action='download_files', origin=origin,
-                           arguments={'paths': normalized_paths, 'filename': transfer['filename'],
-                                      'count': len(normalized_paths), 'source': feature})
 
         try:
             self._start_client_transfer(

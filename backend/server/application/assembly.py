@@ -4,7 +4,10 @@ from server.application.agent.agent_output_registry import AgentOutputRegistry
 from server.application.auth.client_session_token_service import ClientSessionTokenService
 from server.application.artifact.artifact_service import WebArtifactService
 from server.application.artifact.remote_file_service import WebRemoteFileService
-from server.application.history.transfer_activity_recorder import TransferActivityRecorder
+from server.application.history.activity_bindings import (
+    remote_file_bindings, job_bindings, external_tool_bindings, process_bindings,
+)
+from server.application.history.activity_definitions import ActivityKind
 from server.application.command.command_executor_factory import CommandExecutorFactory
 from server.application.command.command_builtin_services import CommandBuiltinServices
 from server.application.completion.command_completion_service import ServerCommandCompletionService
@@ -105,11 +108,13 @@ class ServerApplicationAssembly:
         self.task_store = WebTaskStore()
         self.interaction_broker = InteractionBroker(self.event_bus, self.task_store)
         self.transfer_service = TransferService(self.event_bus)
-        self.transfer_service.activity_recorder = TransferActivityRecorder(
-            self.server.command_history, self.transfer_service)
+        self.transfer_service.lifecycle_adapter = self.server.lifecycle_adapter
+        self.server.lifecycle_adapter.bind_transfer_service(self.transfer_service)
 
         # ------------------ domain/application services ------------------ #
         self.artifact_service = WebArtifactService(self.server.database)
+        self.artifact_service = self.server.lifecycle_adapter.instrument_artifacts(
+            self.artifact_service, self.server.get_target_connection_by_client_id)
         self.file_service = self.artifact_service
         self.client_session_token_service = ClientSessionTokenService()
 
@@ -128,6 +133,8 @@ class ServerApplicationAssembly:
             artifact_service=self.artifact_service,
             transfer_service=self.transfer_service,
         )
+        self.remote_file_service = self.server.command_adapter.instrument(
+            self.remote_file_service, remote_file_bindings())
 
         self.recent_device_store = RecentDeviceStore(self.server.database)
         self.device_group_store = DeviceGroupStore(self.server.database)
@@ -183,6 +190,8 @@ class ServerApplicationAssembly:
             job_catalog_service=self.job_catalog_service,
             server=self.server,
         )
+        self.background_job_service = self.server.command_adapter.instrument(
+            self.background_job_service, job_bindings())
 
         self.pinned_path_store = PinnedPathStore(self.server.database)
         self.keychain_store = KeychainStore()
@@ -192,7 +201,8 @@ class ServerApplicationAssembly:
         self.agent_bootstrap_script_service = AgentBootstrapScriptService()
         self.pty_session_service = PtySessionService(self.server, event_bus=self.event_bus)
         self.screen_view_session_service = ScreenViewSessionService(self.server, event_bus=self.event_bus)
-        self.clipboard_session_service = ClipboardSessionService(self.server)
+        self.clipboard_session_service = self.server.lifecycle_adapter.instrument_clipboard(
+            ClipboardSessionService(self.server))
         self.device_monitor_session_service = DeviceMonitorSessionService(self.server, event_bus=self.event_bus)
 
         self.command_completion_service = ServerCommandCompletionService(
@@ -270,6 +280,8 @@ class ServerApplicationAssembly:
             param_preset_store=self.external_tool_param_preset_store,
             server=self.server,
         )
+        self.external_tool_api.client_lifecycle = self.server.command_adapter.instrument(
+            self.external_tool_api.client_lifecycle, external_tool_bindings())
 
         self.command_history_api = WebCommandHistoryApi(
             server=self.server,
@@ -324,14 +336,25 @@ class ServerApplicationAssembly:
             server=self.server,
             remote_execution_service=self.remote_execution_service,
         )
+        self.process_control_api = self.server.command_adapter.instrument(
+            self.process_control_api, process_bindings())
 
         self.terminal_api = WebTerminalApi(
             pty_session_service=self.pty_session_service,
         )
+        self.terminal_api = self.server.lifecycle_adapter.instrument_closes(
+            self.terminal_api, kind=ActivityKind.PTY, method='close_pty_session',
+            identifier='pty_session_id',
+            reason=lambda a: 'shell_switched' if a['reason'] == 'switch_shell'
+                else 'user_closed' if a['user_initiated'] else 'viewer_disconnected')
 
         self.screen_view_api = WebScreenViewApi(
             screen_view_session_service=self.screen_view_session_service,
         )
+        self.screen_view_api = self.server.lifecycle_adapter.instrument_closes(
+            self.screen_view_api, kind=ActivityKind.SCREEN_VIEW, method='close_screen_view',
+            identifier='screen_session_id',
+            reason=lambda a: 'user_closed' if a['user_initiated'] else 'viewer_disconnected')
 
         self.clipboard_api = WebClipboardApi(
             clipboard_session_service=self.clipboard_session_service,

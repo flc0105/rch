@@ -30,7 +30,7 @@ class OperationCorrelationTests(TestCase):
     def test_history_records_business_metadata_without_browser_runtime_id(self):
         identifier = '7cd4bb58-99b5-4fa7-9f22-fbd877ab0c95'
         server = Mock()
-        server.command_history_orchestrator.begin_execution.return_value = 'entry-1'
+        server.command_adapter.prepare_command.return_value = 'entry-1'
         task_store = Mock()
         task_store.create_task.return_value = {'task_id': 'task-1'}
         service = WebTaskService(server, task_store, Mock(), Mock())
@@ -40,7 +40,7 @@ class OperationCorrelationTests(TestCase):
             metadata={'operation_id': identifier, 'script_run': True})
         task = service._create_task_with_history(Mock(), request)
         self.assertEqual(task['history_entry_id'], 'entry-1')
-        metadata = server.command_history_orchestrator.begin_execution.call_args.kwargs['metadata']
+        metadata = server.command_adapter.prepare_command.call_args.kwargs['metadata']
         self.assertEqual(metadata, {'script_run': True})
         self.assertEqual(request.metadata['operation_id'], identifier)
 

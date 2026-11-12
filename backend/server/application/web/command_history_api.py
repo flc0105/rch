@@ -1,3 +1,5 @@
+from server.application.history.activity_definitions import ActivityKind
+
 class WebCommandHistoryApi:
     """
     Web 命令历史子外观。
@@ -28,7 +30,7 @@ class WebCommandHistoryApi:
         return None
 
     def clear_command_execution_history(self, machine_id: str, *, query: str = '', kind: str = '', errors: bool = False):
-        if kind and kind not in {'command', 'alias', 'script', 'remote_files', 'transfer', 'external_tool', 'background_job', 'pty', 'screen_view', 'clipboard', 'process'}:
+        if kind and kind not in ActivityKind.ALL:
             raise ValueError('Invalid activity kind')
         removed_count = self.server.command_history.write_service.clear_execution_history_by_machine_id(
             machine_id, query=query, kind=kind, errors=errors)

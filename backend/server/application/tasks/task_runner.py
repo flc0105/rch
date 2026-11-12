@@ -81,10 +81,10 @@ class WebTaskRunner:
         self.task_store = task_store
         self.remote_execution_service = remote_execution_service
         self.command_executor_factory = command_executor_factory
-        self.history_orchestrator = self.server.command_history_orchestrator
+        self.activity_coordinator = self.server.activity_coordinator
         self.logger = logging.getLogger(__name__)
         self.command_execution_pipeline = CommandExecutionPipeline(
-            command_history_orchestrator=self.history_orchestrator,
+            activity_coordinator=self.activity_coordinator,
             error_logger=self.logger,
         )
 
@@ -133,7 +133,7 @@ class WebTaskRunner:
 
     def _append_history_output(self, context: TaskExecutionContext, status: int, text: str):
         history_entry_id = self._get_history_entry_id(context)
-        self.history_orchestrator.append_output(
+        self.activity_coordinator.append_output(
             context.session,
             history_entry_id,
             status,
@@ -143,7 +143,7 @@ class WebTaskRunner:
 
     def _finalize_history(self, context: TaskExecutionContext, final_status: str):
         history_entry_id = self._get_history_entry_id(context)
-        self.history_orchestrator.finalize_execution(
+        self.activity_coordinator.finish(
             context.session,
             history_entry_id,
             final_status == WebTaskStatus.SUCCESS,

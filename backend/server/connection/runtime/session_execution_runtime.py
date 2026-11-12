@@ -166,7 +166,7 @@ class SessionExecutionRuntime:
         command_id: int,
         session=None,
         history_entry_id: str = '',
-        history_orchestrator=None,
+        coordinator=None,
     ):
         """
         命令真正下发时，统一完成：
@@ -174,7 +174,7 @@ class SessionExecutionRuntime:
         - history entry 绑定 command_id
 
         这里保留最新基线里的 orchestrator 路径：
-        - 如果存在 history_orchestrator，则优先通过 orchestrator 绑定
+        - 如果存在 coordinator，则优先通过 orchestrator 绑定
         - 否则直接写入本地 history binding store
         """
         resolved_history_entry_id = (history_entry_id or '').strip()
@@ -192,8 +192,8 @@ class SessionExecutionRuntime:
                     resolved_history_entry_id = (self._task.get('history_entry_id') or '').strip()
 
         if resolved_history_entry_id:
-            if history_orchestrator is not None and session is not None:
-                history_orchestrator.bind_command_entry(
+            if coordinator is not None and session is not None:
+                coordinator.bind_command_entry(
                     session,
                     command_id,
                     resolved_history_entry_id

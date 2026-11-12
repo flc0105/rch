@@ -71,18 +71,6 @@ class WebTransferApi:
                 'tab_id': normalized_tab_id,
             }
 
-        recorder = getattr(self.transfer_service, 'activity_recorder', None)
-        if recorder is not None and self.server is not None:
-            try:
-                conn = self.server.get_target_connection_by_client_id(normalized_client_id)
-            except Exception:
-                conn = None
-            if conn is not None:
-                recorder.track(transfer_id, conn, action='upload_files', origin=origin, arguments={
-                    'filename': normalized_filename, 'destination_path': destination_path,
-                    'size': total_bytes, 'count': 1, 'source': feature,
-                })
-
         return {
             **transfer,
             'browser_upload_path': f'/api/transfers/browser-upload/{transfer_id}/content',

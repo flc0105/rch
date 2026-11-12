@@ -42,10 +42,10 @@ class ClientSession:
     def get_info_extra(self, key: str, default=None):
         return self.session_info.get_extra(key, default)
 
-    def send(self, data: dict, *, operation=None):
+    def send(self, data: dict):
         observer = self.context.on_client_message_send
         if callable(observer):
-            return observer(self, data, self.transport.send, operation=operation)
+            return observer(self, data, self.transport.send)
         return self.transport.send(data)
 
     def recv(self):

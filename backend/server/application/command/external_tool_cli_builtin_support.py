@@ -30,14 +30,6 @@ class ExternalToolCliBuiltinSupport:
         self.runtime_service = runtime_service
         self.param_preset_store = param_preset_store
 
-    def _history(self):
-        return getattr(self.server, 'command_history_orchestrator', None)
-
-    def _suppress_query_history(self):
-        history = self._history()
-        if history is not None:
-            history.suppress_xt_query(self.conn, self.history_entry_id_provider())
-
     def _client_platform(self) -> str:
         info = getattr(self.conn, 'session_info', None)
         value = getattr(info, 'os_alias', '') if info is not None else ''
@@ -230,9 +222,6 @@ class ExternalToolCliBuiltinSupport:
     def _run_exec(self, exec_name: str, raw_args: str):
         target = self._resolve_exec_target(exec_name)
         payload = self._build_client_payload(target, raw_args=raw_args)
-        history = self._history()
-        if history is not None:
-            history.prepare_xt_run(self.conn, self.history_entry_id_provider(), target)
         command = f'external_tool_exec {encode_structured_arg(payload)}'
         for item in self._iter_nested_command(command):
             yield item
@@ -641,7 +630,6 @@ class ExternalToolCliBuiltinSupport:
         action, remainder = self._split_first_token(args)
         if group == 'package':
             if action == 'list':
-                self._suppress_query_history()
                 yield self._package_list(remainder)
                 return
             if action in ('install', 'uninstall'):
@@ -651,17 +639,13 @@ class ExternalToolCliBuiltinSupport:
                 yield outcome
                 return
         elif group == 'module' and action == 'list':
-            self._suppress_query_history()
             yield self._module_list(remainder)
             return
         elif group == 'instance':
             if action == 'list':
-                self._suppress_query_history()
                 yield self._instance_list(remainder)
                 return
             if action == 'create' or action in ('start', 'stop', 'restart', 'status', 'logs'):
-                if action in ('status', 'logs'):
-                    self._suppress_query_history()
                 tokens = self._tokens(remainder)
                 if action == 'create':
                     module_id = tokens[0] if tokens else ''
@@ -685,7 +669,6 @@ class ExternalToolCliBuiltinSupport:
                  'xt exec list|info|which|<exec-name> ...')
         subcommand, rest = self._split_first_token(arg)
         if subcommand in ('', 'help', '-h', '--help'):
-            self._suppress_query_history()
             yield 1, usage
             return
         if subcommand in ('package', 'module', 'instance'):
@@ -696,27 +679,23 @@ class ExternalToolCliBuiltinSupport:
 
         exec_name, raw_args = self._split_first_token(rest)
         if exec_name in ('', 'help', '-h', '--help'):
-            self._suppress_query_history()
             yield 1, usage
             return
         if exec_name == 'list':
             if raw_args not in ('', '--json'):
                 raise ValueError('Usage: xt exec list [--json]')
-            self._suppress_query_history()
             yield self._render_cli_list('json' if raw_args == '--json' else 'table')
             return
         if exec_name == 'info':
             name, info_args = self._split_first_token(raw_args)
             if not name or info_args not in ('', '--json'):
                 raise ValueError('Usage: xt exec info <name> [--json]')
-            self._suppress_query_history()
             yield self._format_info(name, 'json' if info_args == '--json' else 'table')
             return
         if exec_name == 'which':
             name, other = self._split_first_token(raw_args)
             if not name or other:
                 raise ValueError('Usage: xt exec which <name>')
-            self._suppress_query_history()
             for item in self._which(name):
                 yield item
             return

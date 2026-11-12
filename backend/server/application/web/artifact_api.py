@@ -104,17 +104,6 @@ class WebArtifactApi:
     def publish_artifact_created(self, artifact_info: dict):
         publish_artifact_created(self.event_bus, artifact_info)
 
-    def bind_uploaded_artifact_to_history(self, client_id: str, source_command_id, artifact: dict) -> bool:
-        if not client_id or source_command_id is None:
-            return False
-        if not isinstance(artifact, dict) or not artifact:
-            return False
-        try:
-            session = self.server.get_target_connection_by_client_id(client_id)
-        except Exception:
-            return False
-        return bool(self.server.command_history_orchestrator.bind_uploaded_artifact(session, source_command_id, artifact))
-
     def resolve_client_context(self, client_id: str) -> tuple[str, str, str]:
         hostname = ''
         machine_id = ''
@@ -180,10 +169,6 @@ class WebArtifactApi:
         )
         if job_id and self.background_job_store and self.background_job_store.get_job_for_scope(job_id):
             self.background_job_store.link_artifact(job_id, artifact)
-        try:
-            self.bind_uploaded_artifact_to_history(client_id, source_command_id, artifact)
-        except Exception:
-            pass
         try:
             self.publish_artifact_created(artifact)
         except Exception:

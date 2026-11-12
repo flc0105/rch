@@ -4,7 +4,7 @@ import json
 
 from server.application.artifact.artifact_reference_view_projector import ArtifactReferenceViewProjector
 from server.config.config import COMMAND_HISTORY_PAGE_SIZE, COMMAND_HISTORY_MAX_PAGE_SIZE
-from server.application.history.activity_definitions import ActivityKind, ui_activity_summary
+from server.application.history.activity_definitions import ActivityKind, activity_summary
 
 
 class HistoryViewService:
@@ -86,44 +86,6 @@ class HistoryViewService:
         with self.store._lock:
             return self._build_quick_history(str(machine_id or '').strip() or 'unknown_machine')
 
-    @staticmethod
-    def _connection_activity_summary(entry):
-        kind = entry['kind']
-        action = entry['action']
-        invocation = entry['invocation']
-        if kind == 'script':
-            return str(invocation.get('target') or 'Script')
-        summary = ui_activity_summary(kind, action, invocation.get('arguments') or {})
-        if summary is not None:
-            return summary
-        if kind in {'command', 'alias'}:
-            # Show the user invocation, not an internal resolved command or encoded payload.
-            return str(invocation.get('input') or invocation.get('target') or kind)
-        args = invocation.get('arguments') or {}
-        if kind == 'remote_files':
-            actions = {
-                'create_directory': 'Create directory', 'delete_files': 'Delete files',
-                'rename_files': 'Rename', 'copy_files': 'Copy files',
-                'move_files': 'Move files', 'create_archive': 'Create archive',
-                'extract_archive': 'Extract archive', 'save_file': 'Save file',
-            }
-            return actions.get(action, action or 'Remote Files')
-        if kind == 'transfer':
-            return 'Upload files' if action == 'upload_files' else 'Download files' if action == 'download_files' else (action or 'Transfer')
-        if kind == 'background_job':
-            labels = {'start_job': 'Start', 'stop_job': 'Stop', 'stop_all_jobs': 'Stop all jobs'}
-            return f"{labels.get(action, action or 'Background Job')} {args.get('job_name') or args.get('job_key') or ''}".strip()
-        if kind == 'external_tool':
-            actions = {
-                'install_package': 'Install', 'uninstall_package': 'Uninstall',
-                'clear_package_cache': 'Clear cache', 'start_instance': 'Start',
-                'run_oneshot': 'Run', 'run_exec': 'Run', 'stop_instance': 'Stop',
-                'remove_instance': 'Remove', 'clear_instance_logs': 'Clear logs',
-            }
-            target = args.get('exec_name') or args.get('tool_id') or args.get('package_id') or ''
-            return f"{actions.get(action, action or 'External Tool')} {target}".strip()
-        return action or kind or 'Activity'
-
     def _activity_page(self, machine_id, *, client_id='', limit=None, cursor='', query='', kind='', errors=False, connection_summary=False):
         size = self._limit(limit)
         filters = {'client_id': client_id, 'query': query, 'kind': kind, 'errors': errors}
@@ -139,7 +101,7 @@ class HistoryViewService:
                 # Avoid resolving artifacts or sending full command output to this list.
                 items.append({
                     'activity_id': entry['activity_id'], 'kind': entry['kind'],
-                    'action': entry['action'], 'summary': self._connection_activity_summary(entry),
+                    'action': entry['action'], 'summary': activity_summary(entry),
                     'status': entry['status'], 'created_at': entry['created_at'],
                     'started_at': entry['started_at'], 'finished_at': entry['finished_at'],
                 })
@@ -152,7 +114,7 @@ class HistoryViewService:
         return {'items': items, 'next_cursor': next_cursor, 'has_more': has_more, 'total_count': count}
 
     def get_execution_history_page(self, machine_id, *, limit=None, cursor='', query='', kind='', errors=False):
-        if kind and kind not in {'command', 'alias', 'script', 'remote_files', 'transfer', 'external_tool', 'background_job', *ActivityKind.SESSION_KINDS, ActivityKind.CLIPBOARD, ActivityKind.PROCESS}:
+        if kind and kind not in ActivityKind.ALL:
             raise ValueError('Invalid activity kind')
         with self.store._lock:
             return self._activity_page(str(machine_id or '').strip() or 'unknown_machine',

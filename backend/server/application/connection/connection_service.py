@@ -488,12 +488,13 @@ class WebConnectionService:
             })
         )
         session.context.command_history = self.server.command_history
-        session.context.command_history_orchestrator = self.server.command_history_orchestrator
-        tracker = getattr(self.server, 'client_activity_tracker', None)
-        if tracker is not None:
-            session.context.on_client_message_send = tracker.dispatch
-            session.context.on_client_message_received = tracker.received
-            session.context.on_client_request_failed = tracker.request_failed
+        session.context.activity_coordinator = self.server.activity_coordinator
+        lifecycle = getattr(self.server, 'lifecycle_adapter', None)
+        if lifecycle is not None:
+            session.context.on_client_message_send = lifecycle.dispatch
+            session.context.on_client_message_received = lifecycle.received
+            session.context.on_client_request_failed = lifecycle.request_failed
+        session.context.command_dispatch_adapter = getattr(self.server, 'command_adapter', None)
         session.context.artifact_service = self.artifact_service
         session.context.client_session_token_service = self.client_session_token_service
 
@@ -603,9 +604,9 @@ class WebConnectionService:
             )
         except Exception:
             pass
-        tracker = getattr(self.server, 'client_activity_tracker', None)
-        if tracker is not None:
-            tracker.disconnected(session)
+        lifecycle = getattr(self.server, 'lifecycle_adapter', None)
+        if lifecycle is not None:
+            lifecycle.disconnected(session)
         try:
             self.server.web_service.device_monitor_api.device_monitor_session_service.handle_client_disconnected(
                 session.session_info.client_id

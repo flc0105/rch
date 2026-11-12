@@ -1,7 +1,4 @@
 from core.protocol.structured_arg_codec import encode_structured_arg
-from server.application.history.activity_definitions import (
-    ActivityKind, ActivityAction, SemanticOperation, process_arguments,
-)
 from server.application.command.command_types import COMMAND_TYPE_COMMAND
 from server.application.execution.command_stream_service import CommandStreamService
 from server.application.execution.foreground_execution_service import ForegroundExecutionService
@@ -32,7 +29,6 @@ class RemoteExecutionService:
         self.server = server
         self.artifact_service = artifact_service
         self.transfer_service = transfer_service
-        self.history_orchestrator = getattr(server, 'command_history_orchestrator', None)
 
         self.command_stream_service = CommandStreamService(server)
         self.foreground_execution_service = ForegroundExecutionService(
@@ -50,75 +46,6 @@ class RemoteExecutionService:
 
     def _build_http_receive_command(self, payload: dict) -> str:
         return f'{self.HTTP_RECEIVE_COMMAND_NAME} {encode_structured_arg(payload)}'
-
-    def create_history_entry(self, target, command: str, source: str = 'cli', should_record: bool = True, task_type: str = '') -> str:
-        session = self.get_connection(target)
-
-        if self.history_orchestrator is not None:
-            return self.history_orchestrator.begin_execution(
-                session,
-                command,
-                source=source,
-                should_record=should_record,
-                task_type=task_type,
-            )
-
-        if not should_record:
-            return ''
-
-        command_text = (command or '').strip()
-        if not command_text:
-            return ''
-
-        return self.server.command_history.create_entry_for_connection(
-            session,
-            command_text,
-            source=source
-        )
-
-    def finalize_history_entry(self, target, entry_id: str, ok: bool, cwd_end: str = ''):
-        if not entry_id:
-            return
-
-        session = self.get_connection(target)
-
-        if self.history_orchestrator is not None:
-            self.history_orchestrator.finalize_execution(
-                session,
-                entry_id,
-                ok,
-                cwd_end=cwd_end
-            )
-            return
-
-        self.server.command_history.finish_entry(
-            entry_id,
-            ok=ok,
-            cwd_end=cwd_end or session.session_info.cwd
-        )
-
-    def append_history_output(self, target, entry_id: str, status: int, text: str, eof: int = 0):
-        if not entry_id:
-            return
-
-        session = self.get_connection(target)
-
-        if self.history_orchestrator is not None:
-            self.history_orchestrator.append_output(
-                session,
-                entry_id,
-                status,
-                text,
-                eof
-            )
-            return
-
-        self.server.command_history.append_output(
-            entry_id,
-            status,
-            text,
-            eof=eof
-        )
 
     def stream_command(
         self,
@@ -208,35 +135,10 @@ class RemoteExecutionService:
         task_type: str = TASK_TYPE_COMMAND,
         source: str = 'foreground',
         task_id: str = '',
-        activity=None,
     ) -> str:
-        def execute(entry_id):
-            return self.foreground_execution_service.run_foreground_text_command(
-                target,
-                command,
-                command_type=command_type,
-                extra=extra,
-                history_entry_id=entry_id,
-                task_type=task_type,
-                source=source,
-                task_id=task_id,
-            )
-
-        if activity and self.history_orchestrator:
-            session = self.get_connection(target)
-            return self.history_orchestrator.execute_semantic_operation(
-                session, activity.kind, activity.action, activity.arguments,
-                execute, command_type=command_type,
-            )
-        return execute(history_entry_id)
-
-    def run_process_termination(self, client_id, pid, *, action, name=''):
-        if action not in (ActivityAction.KILL_PROCESS, ActivityAction.KILL_APP):
-            raise ValueError('Invalid process termination action')
-        return self.run_foreground_text_command(
-            client_id, f'kill_process {int(pid)}',
-            task_type='process', source='web_process',
-            activity=SemanticOperation(ActivityKind.PROCESS, action, process_arguments(pid, name)),
+        return self.foreground_execution_service.run_foreground_text_command(
+            target, command, command_type=command_type, extra=extra,
+            history_entry_id=history_entry_id, task_type=task_type, source=source, task_id=task_id,
         )
 
     def run_foreground_json_command(

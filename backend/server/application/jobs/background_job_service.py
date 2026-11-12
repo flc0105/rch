@@ -121,47 +121,27 @@ class BackgroundJobService:
         }
 
     def _execute_job_action(self, client_id, action, arguments, command, *, origin):
-        history = getattr(self.server, 'command_history_orchestrator', None)
-        conn = self.remote_execution_service.get_connection(client_id)
-        entry_id = ''
-        if history is not None:
-            entry_id = history.begin_background_job_execution(
-                conn, {'start': 'start_job', 'stop': 'stop_job'}[action], arguments, origin=origin,
-            )
+        # The Client can emit progress before its final structured result.
+        # Decode only the final packet, never a concatenation of progress text.
+        status, wire_text = 0, ''
+        visible_parts = []
+        for item in self.remote_execution_service.stream_foreground_command(
+            client_id, command, command_type=COMMAND_TYPE_JOB_CONTROL,
+            task_type='job_control', source='web_background_job',
+        ):
+            status, wire_text = item[0], item[1] if len(item) > 1 else ''
+            visible_parts.append(str(wire_text or ''))
         try:
-            # The Client can emit progress before its final structured result.
-            # Decode only the final packet, never a concatenation of progress text.
-            status, wire_text = 0, ''
-            visible_parts = []
-            for item in self.remote_execution_service.stream_foreground_command(
-                client_id, command, command_type=COMMAND_TYPE_JOB_CONTROL,
-                history_entry_id=entry_id, task_type='job_control', source='web_background_job',
-            ):
-                status, wire_text = item[0], item[1] if len(item) > 1 else ''
-                visible_parts.append(str(wire_text or ''))
-            try:
-                result = decode_job_control_result(wire_text, action)
-            except (ValueError, TypeError):
-                result = None
-            if history is not None and result is not None:
-                history.record_background_job_result(conn, entry_id, result)
-            message = result['message'] if result is not None else wire_text
-            if status == 1 and result is None:
-                raise RuntimeError('Invalid Job control response')
-            if history is not None:
-                history.append_output(conn, entry_id, status, message)
-                history.update_execution_status(conn, entry_id, 'success' if status == 1 else 'error')
-            if status != 1:
-                raise RuntimeError(message or 'Job control failed')
-            # Keep the Web API's existing combined progress + result message.
-            # Only the final safe summary is persisted in Activity.
-            return '\n'.join(part for part in [*visible_parts[:-1], message] if part).strip()
-        except Exception:
-            if history is not None:
-                history.update_execution_status(conn, entry_id, 'error')
-                # No Activity exists if dispatch never happened.
-                history.discard_activity_intent(entry_id)
-            raise
+            result = decode_job_control_result(wire_text, action)
+        except (ValueError, TypeError):
+            result = None
+        message = result['message'] if result is not None else wire_text
+        if status == 1 and result is None:
+            raise RuntimeError('Invalid Job control response')
+        if status != 1:
+            raise RuntimeError(message or 'Job control failed')
+        # Keep the Web API's existing combined progress + result message.
+        return '\n'.join(part for part in [*visible_parts[:-1], message] if part).strip()
 
     def _resolve_client_context(self, client_id: str) -> tuple[str, str, str]:
         client_id_text = str(client_id or '').strip()

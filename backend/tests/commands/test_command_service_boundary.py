@@ -97,6 +97,7 @@ def test_dependencies_are_immutable_and_explicit():
 
 def test_saveout_keeps_artifact_created_and_history_binding(tmp_path):
     from server.application.command.command_output_builtin_support import CommandOutputBuiltinSupport
+    from server.application.history.lifecycle_adapter import LifecycleAdapter
 
     bus = EventBus()
     file_path = tmp_path / 'output.txt'
@@ -106,23 +107,27 @@ def test_saveout_keeps_artifact_created_and_history_binding(tmp_path):
         def allocate_command_output_artifact_path(self, **kwargs):
             return {'file_path': str(file_path), 'machine_id': 'machine1', 'original_name': 'output.txt'}
 
-        def register_command_output_artifact(self, **kwargs):
-            assert kwargs['source_command_id'] == 'cmd1'
+        def register_command_output_artifact(self, *, allocation, output_kind, hostname, machine_id,
+                                             client_id='', addr='', source_command='', source_command_id=None,
+                                             extra=None):
+            assert source_command_id == 'cmd1'
             return {'artifact_id': 'a1', 'category': 'command_output', 'original_name': 'output.txt', 'size': 6}
 
-    server = SimpleNamespace(command_history_orchestrator=SimpleNamespace(
-        history_store=SimpleNamespace(append_file_for_connection=lambda *args: attached.append(args)),
-    ))
     conn = SimpleNamespace(
         session_info=SimpleNamespace(machine_id='machine1', hostname='host', client_id='c1'),
         get_foreground_task=lambda: {'command_id': 'cmd1'},
     )
-    support = CommandOutputBuiltinSupport(server, conn, None, None, lambda: 'h1', Artifacts(), bus)
+    # The lifecycle adapter owns Activity attachment, not the saveout builtin.
+    coordinator = SimpleNamespace(bind_uploaded_artifact=lambda current, command_id, artifact:
+                                  attached.append((current, 'h1' if command_id == 'cmd1' else '', artifact)))
+    adapter = LifecycleAdapter(coordinator)
+    artifact_service = adapter.instrument_artifacts(Artifacts(), lambda client_id: conn if client_id == 'c1' else None)
+    support = CommandOutputBuiltinSupport(SimpleNamespace(), conn, None, None, lambda: 'h1', artifact_service, bus)
     support._build_inner_executor = lambda command: lambda: [(1, 'hello')]
     result = list(support.saveout('echo hello'))
     assert result and result[-1][0] == 1
     assert file_path.read_text() == 'hello\n'
-    assert attached and attached[0][1] == 'h1' and attached[0][2]['artifact_id'] == 'a1'
+    assert attached and attached[0][0] is conn and attached[0][1] == 'h1' and attached[0][2]['artifact_id'] == 'a1'
     assert len(bus.events) == 1 and bus.events[0][1]['artifact_id'] == 'a1'
 
 

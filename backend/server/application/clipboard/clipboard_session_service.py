@@ -80,11 +80,7 @@ class ClipboardSessionService:
             self._pending[request_id] = item
 
         try:
-            session.send(
-                {**message, 'clipboard_request_id': request_id},
-                operation={'action': operation_action, 'arguments': operation_details or {}}
-                if operation_action else None,
-            )
+            session.send({**message, 'clipboard_request_id': request_id})
             if not event.wait(self.REQUEST_TIMEOUT_SECONDS):
                 raise TimeoutError('Clipboard operation timed out')
             result = item.get('result') or {}

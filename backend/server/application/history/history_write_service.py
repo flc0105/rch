@@ -2,7 +2,6 @@
 from server.models.artifact import ArtifactReference
 from server.models.records import OutputRecordBase
 
-from server.application.history.activity_definitions import ActivityKind
 
 
 class HistoryWriteService:
@@ -12,10 +11,6 @@ class HistoryWriteService:
     @staticmethod
     def _machine_id(machine_id):
         return str(machine_id or '').strip() or 'unknown_machine'
-
-    def create_entry_for_connection(self, conn, command, source='cli'):
-        # Public history creation runs through the orchestrator dispatch boundary.
-        return ''
 
     def create_activity_for_dispatch(self, conn, activity_id, activity):
         info = getattr(conn, 'session_info', None)
@@ -66,12 +61,12 @@ class HistoryWriteService:
             entry['resolved'].update(details)
             self.store._update_entry(entry)
 
-    def interrupt_orphaned_sessions(self):
-        """Close PTY/Screen Activities left running by a previous Server process."""
+    def interrupt_orphaned_activities(self):
+        """Mark unfinished Activity records from a previous Server process as interrupted."""
         with self.store._lock, self.store.database.transaction():
             rows = self.store.database.connection().execute(
                 "SELECT machine_id, activity_id FROM activity_records "
-                "WHERE status = 'running' AND kind IN (?, ?)", ActivityKind.SESSION_KINDS
+                "WHERE status = 'running'"
             ).fetchall()
             for row in rows:
                 entry = self.store._get_entry(row['machine_id'], row['activity_id'])

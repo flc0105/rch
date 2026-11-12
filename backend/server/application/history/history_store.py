@@ -59,7 +59,7 @@ class CommandHistoryStore:
                 ON activity_records(machine_id, kind, started_at_ms DESC)''')
             conn.execute('''CREATE INDEX IF NOT EXISTS idx_activity_client_time
                 ON activity_records(machine_id, client_id, started_at_ms DESC)''')
-        self.write_service.interrupt_orphaned_sessions()
+        self.write_service.interrupt_orphaned_activities()
 
     @staticmethod
     def _now_iso():
@@ -163,9 +163,6 @@ class CommandHistoryStore:
         row = self.database.connection().execute(
             f"SELECT COUNT(*) FROM activity_records WHERE {' AND '.join(clauses)}", tuple(params)).fetchone()
         return int(row[0] if row else 0)
-
-    def create_entry_for_connection(self, conn, command, source='cli'):
-        return self.write_service.create_entry_for_connection(conn, command, source=source)
 
     def append_output_for_connection(self, conn, entry_id, status, text, eof=0):
         return self.write_service.append_output_for_connection(conn, entry_id, status, text, eof=eof)

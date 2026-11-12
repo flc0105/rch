@@ -49,7 +49,7 @@ class _Transport:
 def _executor(guard):
     transport = _Transport()
     session = ClientSession(transport)
-    server = SimpleNamespace(command_history_orchestrator=None)
+    server = SimpleNamespace(command_adapter=SimpleNamespace(describe_plan=lambda *args, **kwargs: None))
     executor = CommandExecutor.__new__(CommandExecutor)
     executor.conn = session
     executor.server = server

@@ -15,8 +15,8 @@ class WebProcessControlApi:
         self.remote_execution_service = remote_execution_service
 
     def _terminate_process(self, client_id: str, pid: int, action: str, name: str = ''):
-        result_text = self.remote_execution_service.run_process_termination(
-            client_id, pid, action=action, name=name,
+        result_text = self.remote_execution_service.run_foreground_text_command(
+            client_id, f'kill_process {int(pid)}', task_type='process', source='web_process',
         )
         return {'message': result_text}
 

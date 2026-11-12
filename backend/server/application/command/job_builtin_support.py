@@ -30,13 +30,7 @@ class JobBuiltinSupport:
         # Already inside the terminal's foreground slot: never acquire it again.
         command = self.background_job_service.build_job_control_command(action, **payload)
         actions = {'start': 'start_job', 'stop': 'stop_job', 'stop_all': 'stop_all_jobs'}
-        history = getattr(self.server, 'command_history_orchestrator', None)
         entry_id = self.history_entry_id_provider() or ''
-        if history is not None and action in actions:
-            arguments = {key: payload[key] for key in ('job_name', 'job_key', 'execution_mode') if key in payload}
-            entry_id = history.begin_background_job_execution(
-                self.conn, actions[action], arguments, origin='cli', entry_id=entry_id,
-            )
         kwargs = {'command_type': COMMAND_TYPE_JOB_CONTROL}
         if entry_id and action in actions:
             kwargs['history_entry_id'] = entry_id
@@ -63,8 +57,6 @@ class JobBuiltinSupport:
             else:
                 yield pending_result  # Transport / Client failure, not structured.
             return
-        if history is not None:
-            history.record_background_job_result(self.conn, entry_id, result)
         yield (status, result['message'], *rest)
 
     def _job_logs(self, args):

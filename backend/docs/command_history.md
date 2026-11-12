@@ -2,6 +2,17 @@
 
 Activity Center 与 Quick History 服务不同目的：前者保留**实际向 Client 提交的操作事实及结果**，后者保存手动终端命令的最近一次执行状态，失败命令也可以重试；Pinned Commands 是独立的用户收藏。它们共享 `machine_id` 设备作用域，但 Activity 的删除不重建或覆盖 Quick Recent。现有旧 Execution History 不导入新的 Activity 存储，正式记录从空表开始；不保留双份运行时读写路径。
 
+## Activity 的统一协调边界
+
+Activity 只有一个生命周期所有者：`ActivityCoordinator`，负责操作意图、Client 实际派发确认、持久化、结果写入及最终状态。唯一的持久化实现仍为 `HistoryWriteService`，Quick History 与 Pin 保持独立。所有受支持的 `kind`、`action` 和可保存的展示摘要由 `activity_definitions` 定义，不再由各业务服务拼接历史记录。
+
+系统只通过**两种事件适配方式**接入：
+
+- `CommandDispatchAdapter`：普通命令、Alias、Script、Remote Files 修改、External Tool、Job 控制和 Process Kill。显式操作身份在 Application 装配处声明，通用命令通道在消息成功交付传输层后确认派发，Client 结果或同步操作结果结束记录。CLI 的只读 Builtin 以及内部 RPC 不单独产生活动。
+- `LifecycleAdapter`：PTY、Screen View、Clipboard 写入、Transfer，以及已登记 Artifact 对当前命令的关联。监听明确的 Session/Request/Transfer ID 和 Client 回执；早到回执、重复 Close、断线和超时仅更新原有 Activity。文件上传在 Browser→Server 暂存阶段不记 Activity，Client 转交确认后才创建。
+
+Application 装配层提供语义绑定，API 负责转发业务请求，业务会话服务负责运行状态，Client 传输层只负责发送和接收。**这些层不负责创建或结束 Activity，也不持有历史 ID 状态机**。Activity 记录失败不可反向阻断已经有效的业务操作；未发生 Client 派发的操作不得生成持久记录。Server 重启后遗留的 `running` Activity 统一结束为 `interrupted`，不建立额外表或协议兼容层。
+
 ## 一次操作如何进入 Activity
 
 Server 接收请求时保留原始调用身份，解析 Server Builtin、Alias、History Replay 或 Script Library，得到真实远程执行计划。纯 Server 查询如 `rtt`、`history` 列表、`alias list`、无参数 `script`（等同 `script list`）、参数校验失败，都**不会**生成 Activity。只有显式可记录的操作已实际交给 Client 命令通道，发送成功后才创建持久记录；发送前允许分配内部关联 ID，以便结果输出、取消和 Artifact 归属，不代表已经执行或持久化。

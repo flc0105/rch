@@ -12,15 +12,6 @@ class WebTerminalApi:
         return self.pty_session_service.resize_session(pty_session_id, cols, rows)
 
     def close_pty_session(self, pty_session_id: str, *, user_initiated=True, reason='') -> dict:
-        item = self.pty_session_service._get_required(pty_session_id)
-        tracker = getattr(self.pty_session_service.server, 'client_activity_tracker', None)
-        if tracker is not None:
-            try:
-                conn = self.pty_session_service.server.get_target_connection_by_client_id(item['client_id'])
-            except Exception:
-                conn = None
-            if conn is not None:
-                tracker.note_close(conn, 'pty', pty_session_id, 'shell_switched' if reason == 'switch_shell' else ('user_closed' if user_initiated else 'viewer_disconnected'))
         return self.pty_session_service.close_session(pty_session_id, user_initiated=user_initiated, reason=reason)
 
     def poll_pty_session(self, pty_session_id: str, after_seq: int = 0) -> dict:

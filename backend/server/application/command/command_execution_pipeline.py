@@ -14,8 +14,8 @@ class CommandExecutionPipeline:
     - 统一 finalize history
     """
 
-    def __init__(self, command_history_orchestrator, error_logger=None):
-        self.command_history_orchestrator = command_history_orchestrator
+    def __init__(self, activity_coordinator, error_logger=None):
+        self.activity_coordinator = activity_coordinator
         self.error_logger = error_logger or logging.getLogger(__name__)
 
     def _resolve_cwd_end(self, cwd_end_provider=None) -> str:
@@ -28,7 +28,7 @@ class CommandExecutionPipeline:
         if not context.history_entry_id:
             return
 
-        self.command_history_orchestrator.finalize_execution(
+        self.activity_coordinator.finish(
             context.session,
             context.history_entry_id,
             final_ok,
