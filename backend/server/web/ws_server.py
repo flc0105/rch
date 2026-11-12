@@ -400,10 +400,10 @@ def create_ws_handler(server_instance, flask_app):
     return dispatch
 
 
-async def run_ws_server(server_instance, flask_app, ready=None):
+async def run_ws_server(server_instance, flask_app, ready, stop_event):
     handler = create_ws_handler(server_instance, flask_app)
     async with serve(handler, '0.0.0.0', WEB_WS_PORT, max_size=16 * 1024 * 1024):
         if ready is not None:
             ready.set()
-        await asyncio.Future()
+        await asyncio.to_thread(stop_event.wait)
 

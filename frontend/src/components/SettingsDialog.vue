@@ -190,10 +190,33 @@
           </div>
         </div>
       </el-tab-pane>
+
+      <el-tab-pane label="Server" name="server">
+        <div class="settings-tab-scroll">
+          <section class="settings-section">
+            <div class="settings-section-title">Server Maintenance</div>
+            <div class="server-maintenance-row">
+              <div>
+                <div class="server-maintenance-title">Restart Server</div>
+                <div class="settings-note settings-note-inline">Restart the current RCH Server process.</div>
+              </div>
+              <el-button :loading="maintenanceAction === 'restart'" :disabled="!!maintenanceAction" @click="confirmServerMaintenance('restart')">Restart</el-button>
+            </div>
+            <div class="server-maintenance-row">
+              <div>
+                <div class="server-maintenance-title">Shutdown Server</div>
+                <div class="settings-note settings-note-inline">Stop the current RCH Server process.</div>
+              </div>
+              <el-button type="danger" plain :loading="maintenanceAction === 'shutdown'" :disabled="!!maintenanceAction" @click="confirmServerMaintenance('shutdown')">Shutdown</el-button>
+            </div>
+            <div v-if="maintenanceStatus" class="server-maintenance-status" role="status">{{ maintenanceStatus }}</div>
+          </section>
+        </div>
+      </el-tab-pane>
     </el-tabs>
 
     <template #footer>
-      <div class="settings-footer">
+      <div v-if="activeTab !== 'server'" class="settings-footer">
         <el-button :disabled="activeLoading || activeSaving" @click="resetActiveDefaults">
           Reset Default
         </el-button>
@@ -213,7 +236,7 @@
 </template>
 
 <script>
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   loadToolbarPreferences,
   saveToolbarPreferences,
@@ -246,6 +269,8 @@ import {
 } from '../data/connectionContextFields.js'
 import { CONNECTION_CONTEXT_ICONS } from '../data/connectionContextIcons.js'
 import { loadRemoteFileConflictPreferences, saveRemoteFileConflictPreferences } from '../api/remoteFileConflictPreferencesApi.js'
+import { getServerMaintenance, performServerMaintenance } from '../api/serverMaintenanceApi.js'
+import { getAuthorizationInfo } from '../api/authApi.js'
 
 export default {
   name: 'SettingsDialog',
@@ -256,6 +281,8 @@ export default {
     return {
       visible: false,
       activeTab: 'toolbar',
+      maintenanceAction: '',
+      maintenanceStatus: '',
       remoteFileConflictLoading: false,
       remoteFileConflictSaving: false,
       remoteFileConflictDraft: { ask_on_conflict: false },
@@ -306,9 +333,63 @@ export default {
   },
 
   methods: {
+    async confirmServerMaintenance(action) {
+      if (this.maintenanceAction) return
+      const restart = action === 'restart'
+      try {
+        await ElMessageBox.confirm(
+          restart
+            ? 'Restart the RCH Server? All connected clients will briefly disconnect.'
+            : 'Shut down the RCH Server? All connected clients will disconnect.',
+          restart ? 'Restart Server' : 'Shutdown Server',
+          { type: 'warning', confirmButtonText: restart ? 'Restart' : 'Shutdown' },
+        )
+      } catch {
+        return
+      }
+
+      this.maintenanceAction = action
+      let accepted = false
+      this.maintenanceStatus = restart ? 'Requesting restart...' : 'Requesting shutdown...'
+      try {
+        const adminToken = String((await getAuthorizationInfo())?.api_token || '').trim()
+        if (!adminToken) throw new Error('Administrator API Token unavailable')
+        const previous = restart ? await getServerMaintenance(adminToken) : null
+        if (restart && !previous?.instance_id) throw new Error('Could not read Server instance identity')
+        await performServerMaintenance(action, adminToken)
+        accepted = true
+        if (!restart) {
+          this.maintenanceStatus = 'Server shutdown requested.'
+          return
+        }
+
+        this.maintenanceStatus = 'Restarting Server...'
+        // The old process can still serve HTTP after accepting the request.
+        // Require a distinct startup identity before reporting success.
+        for (let attempt = 0; attempt < 45; attempt++) {
+          await new Promise(resolve => setTimeout(resolve, 1000))
+          try {
+            const current = await getServerMaintenance(adminToken)
+            if (current.instance_id && current.instance_id !== previous.instance_id) {
+              this.maintenanceStatus = 'Server restarted.'
+              ElMessage.success('Server restarted')
+              return
+            }
+          } catch {
+            // Connection loss is expected while the Server restarts.
+          }
+        }
+        throw new Error('Server restart was not confirmed. Check the Server log.')
+      } catch (error) {
+        this.maintenanceStatus = error.message || 'Server maintenance failed'
+        ElMessage.error(this.maintenanceStatus)
+      } finally {
+        if (restart || !accepted) this.maintenanceAction = ''
+      }
+    },
     async open(tab = 'toolbar') {
       this.visible = true
-      this.activeTab = ['notifications', 'connection-context', 'remote-files'].includes(tab) ? tab : 'toolbar'
+      this.activeTab = ['notifications', 'connection-context', 'remote-files', 'server'].includes(tab) ? tab : 'toolbar'
 
       await Promise.all([
         this.loadToolbarSettings(),
@@ -531,6 +612,30 @@ export default {
 .settings-section-heading,
 .settings-section-title {
   font-weight: 650;
+}
+
+.server-maintenance-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 16px;
+  border-bottom: 1px solid var(--el-border-color-extra-light);
+}
+
+.server-maintenance-row:last-of-type {
+  border-bottom: none;
+}
+
+.server-maintenance-title {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.server-maintenance-status {
+  padding: 14px 16px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 
 /* A single preference should read as a setting, not a card nested in a card. */

@@ -57,11 +57,11 @@ class Server:
         """
         return self.listener_manager.start_all()
 
-    def heartbeat_loop(self):
+    def heartbeat_loop(self, stop_event=None):
         """
         周期性向所有在线 session 发送 heartbeat。
         """
-        return self.heartbeat_runner.run()
+        return self.heartbeat_runner.run(stop_event)
 
     def schedule_startup_cleanup(self):
         return self.web_service.server_cleanup_api.schedule_startup_cleanup()

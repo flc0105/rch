@@ -8,9 +8,9 @@ class ServerHeartbeatRunner:
     def __init__(self, server):
         self.server = server
 
-    def run(self):
+    def run(self, stop_event=None):
 
-        while 1:
+        while stop_event is None or not stop_event.is_set():
             try:
                 sessions = self.server.connections.all()
                 for session in sessions:
@@ -21,4 +21,7 @@ class ServerHeartbeatRunner:
             except Exception as e:
                 logger.error(f'Heartbeat loop error: {e}', exc_info=True)
 
-            time.sleep(HEARTBEAT_INTERVAL_SECONDS)
+            if stop_event is None:
+                time.sleep(HEARTBEAT_INTERVAL_SECONDS)
+            else:
+                stop_event.wait(HEARTBEAT_INTERVAL_SECONDS)

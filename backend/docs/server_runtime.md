@@ -61,3 +61,24 @@ tail -n 100 -F backend/runtime/server.log
 轮转适用于当前 `run_web.py` 的单进程 Web Server 入口，不要让多个独立 Server 进程
 同时轮转同一个文件。直接 `print()`、程序启动早期导入失败的 traceback 和子进程
 直接写向 stdout/stderr 的内容不属于 Python Logger，仍依赖原启动方式的标准输出捕获。
+
+## Web Server Maintenance
+
+管理员可在 **Settings → Server → Server Maintenance** 执行当前 Server 的 **Shutdown** 或 **Restart**。两项操作都需要二次确认，并要求当前没有执行中的前台任务、后台 Job 或文件传输；存在活动操作时，接口返回 HTTP 409，停止相应任务后再操作。
+
+- `GET /api/server/maintenance` 返回当前运行实例的 `instance_id`，用于区分重启前后的进程实例。
+- `POST /api/server/shutdown` 在确认接受后关闭 HTTP、WebSocket 和 Client Listener，停止心跳、关闭现有 Client 连接，再退出 `run_web.py`。
+- `POST /api/server/restart` 先执行同样的清理，然后通过 `os.execv()` 重新运行当前 `run_web.py`。它保留当前进程 PID、启动参数、环境和工作目录，也适用于通过 `nohup python3 run_web.py &` 启动的进程。
+
+这三个接口统一使用管理员 API Token（`Authorization: Bearer <token>`，也可使用 `X-Auth-Token` 或 `X-API-Token`）；浏览器 Settings 会取得当前管理员 API Token 后随维护请求提交。`curl`、rchcli 和其他脚本可直接调用。请求不检查 `Origin`、`Referer` 或 `Sec-Fetch-Site`，管理员 Web Session Cookie 和 Client Session Token 均不能直接授权维护接口。重复发起的生命周期操作返回 HTTP 409。POST 成功表示操作已接受，关闭过程在 HTTP 响应完成后执行。前端 Restart 在新实例返回不同 `instance_id` 后显示成功；超时则提示检查 Server 日志。
+
+使用管理员 API Token 直接调用 Restart（默认 Web 端口为 `8085`）：
+
+```bash
+curl -fsS -X POST 'http://127.0.0.1:8085/api/server/restart' \
+  -H "Authorization: Bearer ${RCH_ADMIN_API_TOKEN}"
+```
+
+将 `RCH_ADMIN_API_TOKEN` 设置为当前管理员 API Token；Shutdown 把 URL 末尾改为 `/api/server/shutdown`。
+
+如果 Restart 后出现 Python 启动错误，新进程可能无法启动；可从 Server 终端日志或 `SERVER_RUNTIME_DIR/server.log` 查看原因并手动运行 `run_web.py`。

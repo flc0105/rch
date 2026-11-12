@@ -22,13 +22,18 @@ IGNORE_PATHS = {
     "frontend/.vite",
     "frontend/.vscode",
     "backend/runtime",
-    "backend/static",
+    "backend/static", # 生产环境解除
     "backend/venv",
     "backend/.pytest_cache",
     #"backend/server/resources/jobs",
     #"backend/server/resources/scripts",
     #"backend/server/resources/aliases.json",
     "backend/server/resources/external_tools/packages",
+    "desktop_notifier/.venv",
+    "desktop_notifier/config.json",
+    "desktop_notifier/state.json",
+    "desktop_notifier/nohup.out",
+    "backend/docs/.silverbullet.auth.json"
 }
 
 # 统一转换为 Path
@@ -60,6 +65,31 @@ def should_ignore(path: Path) -> bool:
 
     # 忽略 __pycache__ 或 pycache 目录
     if any(part in {"__pycache__", "pycache"} for part in rel_path.parts):
+        return True
+
+    # 忽略任何层级的虚拟环境、依赖目录及开发缓存
+    if any(part in {
+        ".venv", "venv", "node_modules", ".git", ".idea", ".vscode",
+        ".vite", ".pytest_cache", ".mypy_cache", ".ruff_cache"
+    } for part in rel_path.parts):
+        return True
+
+    # 忽略系统元数据、备份和临时文件
+    if path.is_file() and (
+        path.name in {".DS_Store", "Thumbs.db", "desktop.ini"}
+        or path.suffix in {".pyo", ".bak", ".swp", ".swo"}
+        or path.name.endswith("~")
+    ):
+        return True
+
+    # 忽略本地环境配置，但保留可提交的示例配置
+    if path.is_file() and (
+        path.name == ".env"
+        or (
+            path.name.startswith(".env.")
+            and path.name not in {".env.example", ".env.sample", ".env.template"}
+        )
+    ):
         return True
 
     # 忽略指定路径及其子路径
