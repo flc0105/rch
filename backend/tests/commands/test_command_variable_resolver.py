@@ -16,7 +16,8 @@ def test_launch_mode_and_detail_variables_share_the_client_launch_snapshot(monke
     manifest = resolver.get_manifest_payload()
     rch_names = {item['name'] for item in manifest if item['namespace'] == 'rch'}
     assert {'launch_mode', 'launch_detail'} <= rch_names
-    assert len(rch_names) == 25
+    assert len(rch_names) == 26
+    assert 'chassis_type' in rch_names
     assert 'launch_source' not in rch_names
 
 

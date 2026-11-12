@@ -17,6 +17,7 @@ class SessionInfo:
     arch: str = 'Unknown'
     manufacturer: str = 'Unknown'
     model: str = 'Unknown'
+    chassis_type: str = 'unknown'
     integrity: str = '?'
     cwd: str = ''
     build_version: str = ''
@@ -46,6 +47,7 @@ class SessionInfo:
             'arch',
             'manufacturer',
             'model',
+            'chassis_type',
             'integrity',
             'cwd',
             'build_version',
@@ -80,6 +82,7 @@ class SessionInfo:
             arch=str(payload.get('arch') or 'Unknown'),
             manufacturer=str(payload.get('manufacturer') or 'Unknown'),
             model=str(payload.get('model') or 'Unknown'),
+            chassis_type=str(payload.get('chassis_type') or 'unknown'),
             integrity=str(payload.get('integrity') or '?'),
             cwd=str(payload.get('cwd') or ''),
             build_version=(payload.get('build_version') or 'Unknown'),
@@ -106,6 +109,7 @@ class SessionInfo:
             'arch': self.arch,
             'manufacturer': self.manufacturer,
             'model': self.model,
+            'chassis_type': self.chassis_type,
             'integrity': self.integrity,
             'cwd': self.cwd,
             'build_version': self.build_version,

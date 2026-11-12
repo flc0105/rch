@@ -155,6 +155,7 @@ class WebConnectionService:
             'arch': info.arch,
             'manufacturer': info.manufacturer,
             'model': info.model,
+            'chassis_type': info.chassis_type,
             'integrity': info.integrity,
             'cwd': info.cwd,
             'connected_at': session.context.connected_at,
@@ -228,6 +229,7 @@ class WebConnectionService:
                 'arch': item.get('arch') or 'Unknown',
                 'manufacturer': item.get('manufacturer') or 'Unknown',
                 'model': item.get('model') or 'Unknown',
+                'chassis_type': item.get('chassis_type') or 'unknown',
 
                 'integrity': item.get('integrity') or '?',
                 'cwd': item.get('cwd') or '',

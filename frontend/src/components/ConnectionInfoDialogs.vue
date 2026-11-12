@@ -656,6 +656,7 @@ export default {
         { label: 'Arch', value: conn.arch },
         { label: 'Manufacturer', value: conn.manufacturer },
         { label: 'Model', value: conn.model },
+        { label: 'Chassis Type', value: conn.chassis_type || 'unknown' },
         { label: 'Integrity', value: conn.integrity || '-' },
         { label: 'Build Version', value: conn.build_version || '-' },
         { label: 'Client Revision', value: conn.client_revision || '-', mono: true },

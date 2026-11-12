@@ -9,6 +9,7 @@ from client.config import runtime_config
 from core.client_revision import build_client_revision_manifest
 from client.runtime.client_logging import get_client_log_path
 from core.device.local_identity import get_local_identity
+from core.device.chassis_type import get_chassis_type
 from client.runtime.client_util import check_privilege, get_executable_path, get_system_paths
 from client.runtime.launch_context import detect_launch_context
 
@@ -66,6 +67,7 @@ class ClientInfoBuilder:
             'arch': identity.arch,
             'manufacturer': identity.manufacturer,
             'model': identity.model,
+            'chassis_type': get_chassis_type(),
 
             'hostname': identity.hostname,
             'machine_id': identity.machine_id,

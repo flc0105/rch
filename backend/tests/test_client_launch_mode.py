@@ -535,7 +535,7 @@ def test_server_connection_payload_exposes_launch_snapshot():
         client_id='client-1', addr='127.0.0.1', hostname='host', machine_id='machine',
         machine_fingerprint_basis='basis', os_type='macOS', os_alias='mac', os_ver='15.0',
         os_name='macOS', os_full='macOS test', arch='arm64', manufacturer='Apple', model='Mac',
-        integrity='user', cwd='/tmp', build_version='dev', client_revision='',
+        chassis_type='laptop', integrity='user', cwd='/tmp', build_version='dev', client_revision='',
         get_extra=lambda key, default=None: extras.get(key, default),
     )
     context = SimpleNamespace(
@@ -548,6 +548,7 @@ def test_server_connection_payload_exposes_launch_snapshot():
     payload = service.serialize_connection(session)
     assert payload['launch_mode'] == 'user_service'
     assert payload['launch_source'] == 'launchagent'
+    assert payload['chassis_type'] == 'laptop'
 
 def test_recent_device_uses_latest_launch_snapshot_without_old_source_leak(tmp_path):
     db = RchDatabase(str(tmp_path / 'rch.db'))

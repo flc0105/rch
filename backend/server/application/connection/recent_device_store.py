@@ -241,6 +241,7 @@ class RecentDeviceStore:
                 'arch': str(connection_payload.get('arch') or previous.get('arch') or ''),
                 'manufacturer': str(connection_payload.get('manufacturer') or previous.get('manufacturer') or ''),
                 'model': str(connection_payload.get('model') or previous.get('model') or ''),
+                'chassis_type': str(connection_payload.get('chassis_type') or previous.get('chassis_type') or 'unknown'),
 
                 'integrity': str(connection_payload.get('integrity') or previous.get('integrity') or ''),
                 'cwd': str(connection_payload.get('cwd') or previous.get('cwd') or ''),

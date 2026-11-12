@@ -36,7 +36,7 @@ def test_connection_payload_serializes_all_lifecycle_times_as_utc():
         client_id='client-C', addr='127.0.0.1:9999', hostname='host-C',
         machine_id='machine-C', machine_fingerprint_basis='basis',
         os_type='Linux', os_alias='linux', os_ver='test', os_name='Linux',
-        os_full='Linux test', arch='x86_64', manufacturer='', model='',
+        os_full='Linux test', arch='x86_64', manufacturer='', model='', chassis_type='unknown',
         integrity='user', cwd='/', build_version='dev', client_revision='',
         get_extra=lambda _key, _default=None: None,
     )

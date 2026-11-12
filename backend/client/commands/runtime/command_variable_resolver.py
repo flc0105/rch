@@ -15,6 +15,7 @@ from client.runtime.client_util import (
     wrap_path,
 )
 from core.device.local_identity import get_local_identity
+from core.device.chassis_type import get_chassis_type
 from core.utils.formatting import get_readable_time, get_time
 
 
@@ -74,6 +75,7 @@ class CommandVariableResolver:
             'arch': ('Current machine architecture.', self._get_arch),
             'manufacturer': ('Current machine manufacturer.', self._get_manufacturer),
             'model': ('Current machine model.', self._get_model),
+            'chassis_type': ('Current device chassis type.', self._get_chassis_type),
             'timestamp': ('Current compact local timestamp: yyyyMMdd-HHmmss.', self._get_timestamp),
             'datetime': ('Current local date/time: yyyy-MM-dd HH:mm:ss.', self._get_datetime),
         }
@@ -311,6 +313,9 @@ class CommandVariableResolver:
 
     def _get_model(self, _command_id=None):
         return self._get_local_identity().model
+
+    def _get_chassis_type(self, _command_id=None):
+        return get_chassis_type()
 
     def _get_timestamp(self, _command_id=None):
         return get_time()

@@ -57,7 +57,7 @@ var --unset pid
 
 ## Client 运行时信息的引用
 
-`rch` 命名空间当前包含 **25 个内置变量**。它们统一使用 `${rch:name}` 语法，但各自返回的含义不同。
+`rch` 命名空间当前包含 **26 个内置变量**。它们统一使用 `${rch:name}` 语法，但各自返回的含义不同。
 
 ### 主进程与工作目录字段
 
@@ -122,6 +122,7 @@ shell echo ${rch:hostname} ${rch:client_id} ${rch:machine_id}
 | `${rch:arch}` | 机器架构 |
 | `${rch:manufacturer}` | 设备制造商 |
 | `${rch:model}` | 设备型号 |
+| `${rch:chassis_type}` | 设备机箱分类：`desktop`、`laptop`、`server`、`phone`、`tablet`、`convertible`、`handheld`、`mobile` 或 `unknown` |
 
 `platform` / `os_alias` 用于需要统一平台判断的场景；`os_type`、`os_name` 和 `os_ver` 则分别提供显示名称、系统名称与版本信息。部分硬件属性由平台提供，不能假定所有设备都会返回同样详细的制造商、型号信息。
 
@@ -348,6 +349,6 @@ Script 可使用进程内或 `subprocess_pipe` Python 执行方式。两者都�
 | Script 中使用 `variables` 提示 `NameError` | 添加 `from client.runtime.sdk import variables` 显式导入 |
 | Subprocess Script 的 `rch:pid` 不等于 `os.getpid()` | 前者表示主 Client，后者是当前 Python 子进程 |
 
-RCH Variables 提供 25 个运行时变量、4 个 Path 快捷变量、进程 Environment 与连接级自定义 `var` 命名空间。Web 端展示变量模板和补全；`var` 命令负责自定义变量的设置和查询。
+RCH Variables 提供 26 个运行时变量、4 个 Path 快捷变量、进程 Environment 与连接级自定义 `var` 命名空间。Web 端展示变量模板和补全；`var` 命令负责自定义变量的设置和查询。
 
 使用环境变量时尤其应注意敏感信息和命令构造：读取 `${env:NAME}` 不等于安全输出，变量值中的空格、引号、换行或 Shell 特殊字符都可能改变命令行为。对于需要精确控制参数边界的脚本，优先使用 Python 的结构化参数和 SDK 返回值处理，而不是把未知内容直接拼接进 Shell 命令。
