@@ -301,7 +301,8 @@ def test_rejected_cancel_does_not_register_terminal_ack():
     router.handle_cancel_message({'id': 9, 'target_id': 31})
     ctx.finish()
     assert [entry['state'] for entry in sent] == ['rejected']
-    assert len(results) == 1
+    # A rejected cancel is an ACK, not a failed output chunk on the running task.
+    assert not results
 
 
 def test_cancel_after_context_finished_rejected_without_callback():
@@ -309,7 +310,7 @@ def test_cancel_after_context_finished_rejected_without_callback():
     ctx.finish()
     router.handle_cancel_message({'id': 10, 'target_id': 31})
     assert [entry['state'] for entry in sent] == ['finished']
-    assert len(results) == 1
+    assert not results
 
 
 @pytest.mark.parametrize('binary', [True, False])

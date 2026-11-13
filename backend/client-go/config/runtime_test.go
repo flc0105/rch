@@ -59,8 +59,8 @@ func TestRuntimeConfigJsonContract(t *testing.T) {
 		t.Fatal("incorrect store path")
 	}
 	items, ok := payload["items"].([]map[string]interface{})
-	if !ok || len(items) != 4 {
-		t.Fatalf("expected exactly four exposed items: %#v", payload)
+	if !ok || len(items) != 6 {
+		t.Fatalf("expected exactly six exposed items: %#v", payload)
 	}
 	keys := make([]string, 0, len(items))
 	for _, item := range items {
@@ -74,7 +74,7 @@ func TestRuntimeConfigJsonContract(t *testing.T) {
 			t.Fatal("not editable")
 		}
 	}
-	if !reflect.DeepEqual(keys, []string{"COMMAND_DEFAULT_SHELL_TIMEOUT", "COMMAND_DEFAULT_STREAM_TIMEOUT", "SCRIPT_DEFAULT_TIMEOUT", "SCRIPT_PYTHON_PATH"}) {
+	if !reflect.DeepEqual(keys, []string{"COMMAND_DEFAULT_SHELL_TIMEOUT", "COMMAND_DEFAULT_STREAM_TIMEOUT", "SCRIPT_DEFAULT_EXECUTION_MODE", "SCRIPT_DEFAULT_OUTPUT_MODE", "SCRIPT_DEFAULT_TIMEOUT", "SCRIPT_PYTHON_PATH"}) {
 		t.Fatalf("keys: %v", keys)
 	}
 }

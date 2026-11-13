@@ -1,5 +1,6 @@
 from core.protocol.control import ControlRequest
-from server.application.scripts.script_run_service import prepare_script_control
+from server.application.scripts.script_run_service import prepare_script_control, script_run_options
+from core.protocol.script_execution import ExecutionMode
 
 
 class WebScriptApi:
@@ -67,8 +68,13 @@ class WebScriptApi:
     def delete_script(self, script_name: str):
         return self.script_catalog_service.delete_script(script_name)
 
+    def get_run_options(self, client_id, script_name):
+        return script_run_options(self.script_catalog_service.scripts_root_dir, script_name,
+                                  self.command_execution_api.get_runtime_config(client_id))
+
     def run_script(self, client_id: str, script_name: str, params=None, tab_id: str = '',
-                   presentation: str = '', run_id: str = '', operation_id: str = ''):
+                   presentation: str = '', run_id: str = '', operation_id: str = '',
+                   execution_mode=None, output_mode=None):
         normalized_script_name = str(script_name or '').strip()
         if not normalized_script_name:
             raise ValueError('script_name is required')
@@ -78,7 +84,9 @@ class WebScriptApi:
         normalized_run_id = str(run_id or '').strip()
         if normalized_presentation == 'dialog' and not normalized_run_id:
             raise ValueError('run_id is required for dialog presentation')
-        request = prepare_script_control(self.script_catalog_service.scripts_root_dir, normalized_script_name, params if params is not None else {})
+        request = prepare_script_control(self.script_catalog_service.scripts_root_dir, normalized_script_name, params if params is not None else {},
+                                         config=self.command_execution_api.get_runtime_config(client_id),
+                                         execution_mode=execution_mode, output_mode=output_mode)
         return self.command_execution_api.submit_web_control(
             client_id, request['script_name'], ControlRequest('script', 'run', request),
             tab_id=tab_id, metadata={
@@ -87,6 +95,9 @@ class WebScriptApi:
                 'script_run_id': normalized_run_id,
                 'script_run_name': request['script_name'],
                 'script_run_arguments': request['params'],
+                'execution_mode': request['execution_mode'],
+                'output_mode': request['output_mode'],
+                'cancel_policy': ExecutionMode(request['execution_mode']).cancel_policy,
                 'script_run_presentation': normalized_presentation,
             },
         )

@@ -410,7 +410,7 @@ Trade-offs:
 - `inproc` is lightweight and direct, but cancellation/isolation are limited
 - `subprocess_pipe` is heavier, but gives better cancellation/timeout/process control behavior
 
-The current runtime configuration selects the active default mode (`PYTHON_EXECUTION_MODE`), and the client handshake reports that mode back to the server.
+The current runtime configuration selects the active default mode (`SCRIPT_DEFAULT_EXECUTION_MODE`), and the client handshake reports that mode back to the server.
 
 ### Python collect vs stream, and script execution semantics
 
@@ -1336,7 +1336,7 @@ subprocess_pipe
 The active strategy is controlled by:
 
 ```text
-PYTHON_EXECUTION_MODE
+SCRIPT_DEFAULT_EXECUTION_MODE
 ```
 
 and is exposed through Client Runtime Configuration.

@@ -89,6 +89,8 @@ Script Run 表单可以选择 **Dialog** 或 **Terminal**：
 {
   "script_name": "ops/health_probe",
   "params": {"target": "/tmp", "limit": 20, "verbose": false},
+  "execution_mode": "inproc",
+  "output_mode": "collect",
   "presentation": "dialog",
   "run_id": "unique-ui-run-id"
 }
@@ -98,21 +100,42 @@ Server 会给命令任务附加 `script_run`、`script_run_name`、`script_run_i
 
 ### 终端轻量入口和结构化入口
 
-Server 的 `script exec <path> [options]` 使用 `shlex` 与 `scan_args` 将 CLI 选项解析为参数对象，随后与 Script Library Web 表单使用**相同的 Script Metadata 参数校验、默认值和源码加载入口**。Web 不再生成伪造的 `script run` 命令。两端最终发送相同形状的 Control 请求。Web 任务消费提交时已经准备好的源码与参数，不再次加载脚本文件：
+Server 的 `script exec [--execution-mode MODE] [--output-mode MODE] <path> [options]` 使用 `shlex` 与 `scan_args` 将 CLI 选项解析为参数对象，随后与 Script Library Web 表单使用**相同的 Script Metadata 参数校验、默认值和源码加载入口**。Web 不再生成伪造的 `script run` 命令。两端最终发送相同形状的 Control 请求。Web 任务消费提交时已经准备好的源码与参数，不再次加载脚本文件：
 
 ```json
-{"type":"control","id":49,"domain":"script","action":"run","payload":{"script_name":"ops/health_probe","source":"<Server 提供的脚本源码>","params":{"target":"/tmp","limit":20}}}
+{"type":"control","id":49,"domain":"script","action":"run","payload":{"script_name":"ops/health_probe","source":"<Server 提供的脚本源码>","params":{"target":"/tmp","limit":20},"execution_mode":"inproc","output_mode":"collect"}}
 ```
 
-只有 Server 从 Script Library 获取和校验源码，Client 继续运行现有 Script 执行器；`execution_mode`、`output_mode` 未作为本轮可选的 Script 请求参数，不改变既有执行默认值或 SDK 能力。
+Server 统一准备 Script Control 的源码、业务参数与已解析的两个运行模式。`execution_mode`、`output_mode` 是独立的 Control 字段，不属于脚本 `params`，Client 不再另选默认值。CLI 模式选项必须位于脚本路径之前，路径之后仍是业务参数，例如：
 
-普通 Script 运行的输出经过 Python 执行策略收集后回到既有命令结果链。`print()` 可作为标准结果输出；`context.progress()` 在 In-process 且有命令所有者时可显式推送进度文本。当前 Script 默认采用 **collect** 执行调用，不应把 Script 简单等同为逐行 stdout 的真正 Shell Stream。对于输出较大、持续很久的任务，结果何时送达以及能否及时取消，还与执行策略相关。
+```text
+script exec --execution-mode subprocess_pipe --output-mode stream ops/health_probe --limit 20
+```
+
+### 每脚本运行模式 Schema
+
+可选的 `SCRIPT_METADATA.execution` 声明如下；两个子对象分别独立约束执行模式与输出模式：
+
+```python
+SCRIPT_METADATA = {
+    'name': 'ops/health_probe',
+    'execution': {
+        'modes': {'allowed': ['inproc', 'subprocess_pipe'], 'default': 'inproc'},
+        'output': {'allowed': ['collect', 'stream'], 'default': 'stream'},
+    },
+    'params': [],
+}
+```
+
+优先级为：**本次显式选择 → 对应 Schema default → 目标 Client 当前 Configuration/set 值**。允许范围为 Schema allowed 与 Client 实际支持模式的交集。allowed 缺省表示该维度的全部有效枚举；default 必须属于 allowed。若默认值不在交集内，Dialog 不代选，用户须选有效模式；CLI 需显式指定。没有可用值、未知值或非法 Schema 时拒绝运行。`execution` 完全省略时，两个维度直接使用 Client 配置默认值（Python: inproc + collect；Go: subprocess_pipe + collect）。Dialog 打开与提交时读取实时配置，不依赖握手快照；本次选择不修改 Configuration/set。
+
+`collect`：普通 stdout/stderr 在执行结束时汇总返回，取消/超时仍返回已捕获的文本。`stream`：按行、显式 flush 或长行片段即时输出，末尾无换行的片段也保留；stderr 本身不表示失败，最终退出状态才决定成功与否。现有 `context.progress()` 是独立 SDK 事件，在具备该事件能力的 In-process 中仍可实时发送。子进程 SDK 没有新建独立 IPC。两个 Strategy 只返回执行结果，统一执行入口发送唯一终态；超时/取消采用明确的结构化事件。
 
 执行记录属于命令任务生命周期，可与 Command History 的来源、状态、输出限制和 Artifact 关联协作，但 Script Library 本身不自动在数据库中保存每次运行的全部独立 Script Session 对象。
 
 ### Script Activity 记录
 
-首批 Activity Center 将 Script Library 的 Run/Run in Terminal 及 Terminal 中的 `script exec <script>` 都归为 `kind=script/action=run`。`invocation.input` 保留真实入口，`invocation.target` 保存 Script 名称或路径，`invocation.arguments` 保存 Script Library 的实际参数对象（Terminal `script exec` 用 `argv` 表示原始命令行参数）。真正的 Client 请求是 `control(domain=script, action=run)`；公共 Activity 不复制 Server 读取的脚本源码，也不伪造 Shell 命令。
+首批 Activity Center 将 Script Library 的 Run/Run in Terminal 及 Terminal 中的 `script exec <script>` 都归为 `kind=script/action=run`。`invocation.input` 保留真实入口，`invocation.target` 保存 Script 名称或路径，`invocation.arguments` 保存 Script Library 的实际参数对象（Terminal 原始命令保留在 invocation.input，实际参数及运行模式分别记录在 invocation.arguments 与 resolved）。真正的 Client 请求是 `control(domain=script, action=run)`；公共 Activity 不复制 Server 读取的脚本源码，也不伪造 Shell 命令。
 
 Activity 只在 Script 真的被提交给 Client 时创建；单纯列出脚本、查看/编辑元数据或打开目录不会产生记录。Script Cancel 只更新当前 Run Activity 的状态（`cancelling`、`cancelled` 等），不额外制造 `stop` Activity。Details 沿用实际任务结果的输出记录和 Artifact；Quick History 不接收 Script Library 的内部可执行 Payload。
 
@@ -124,17 +147,17 @@ macOS Script 可以通过 `client.runtime.sdk.launchd` 统一管理 LaunchAgent 
 
 ### In-process 与独立子进程
 
-Client 的 `PYTHON_EXECUTION_MODE` 决定当前 Script 使用哪种 Python 执行策略，当前有效值是 `inproc` 和 `subprocess_pipe`，默认配置为 `inproc`，在 Client Runtime Configuration 中的 `PYTHON_EXECUTION_MODE` 配置项选择。Script 使用独立的 `SCRIPT_DEFAULT_TIMEOUT`（默认 300 秒），通过 `set SCRIPT_DEFAULT_TIMEOUT <秒数>` 或 Info → Configuration 设置。`subprocess_pipe` 按该限制等待并终止超时子进程；`inproc` 会在脚本返回后检查是否超时，进程内的 Python `exec()` 无法安全地在执行途中强制中断。这与 Job 的 `inproc/subprocess` 模式是不同的配置和执行管理器。
+`SCRIPT_DEFAULT_EXECUTION_MODE` 是 Script 未明确指定执行模式时的 Client 配置默认值（Python 默认 `inproc`），`SCRIPT_DEFAULT_OUTPUT_MODE` 的默认值为 `collect`。Script 使用本次已解析的模式；普通 `pyexec` / `pyexec_stream` 继续复用默认执行策略，分别收集或流式输出。Script 使用独立的 `SCRIPT_DEFAULT_TIMEOUT`（默认 300 秒），通过 `set SCRIPT_DEFAULT_TIMEOUT <秒数>` 或 Info → Configuration 设置。`subprocess_pipe` 按该限制等待并终止超时子进程；`inproc` 会在脚本返回后检查是否超时，进程内的 Python `exec()` 无法安全地在执行途中强制中断。这与 Job 的 `inproc/subprocess` 模式是不同的配置和执行管理器。
 
 | 特性 | `inproc` | `subprocess_pipe` |
 |---|---|---|
 | 运行位置 | Client 进程的 Python 解释器 | 同一设备上另启 Python 子进程，通过 stdin 传入启动代码 |
-| 标准输出 | 在 Client 进程中收集 `stdout/stderr` | `communicate()` 收集子进程 `stdout/stderr` |
+| 标准输出 | 当前执行上下文捕获 Python stdout/stderr，支持 collect/stream | 合并读取 stdout/stderr 管道，支持 collect/stream |
 | Client 已导出命令 | 可直接通过 SDK 调用当前命令对象 | 无完整命令对象，不能直接调用导出命令 |
 | 取消 | 当前 Python 执行策略声明不支持强制取消 | 子进程可注册终止处理器，支持进程级取消 |
 | 隔离 | 与 Client 进程共享解释器及全局运行风险 | Python 进程隔离，仍共享目标机器权限和文件访问范围 |
 
-Subprocess 的源码通过 stdin 送入 Python `-u -`，运行上下文与参数通过序列化数据传入，不需要先在磁盘生成临时 `.py` 脚本。执行过程中异常被捕获并回报，执行结束或取消时处理子进程清理。In-process 的取消策略为 `none`：Web 的取消请求被接受并不意味着能中断 Python 里正在运行或阻塞的任意代码。两种方式均受命令上下文中的超时处理约束，但其可中断能力不同。
+Subprocess 的源码通过 stdin 送入 Python `-u -`，运行上下文与参数通过序列化数据传入，不需要先在磁盘生成临时 `.py` 脚本。执行过程中异常被捕获并回报，执行结束或取消时处理子进程清理。In-process 的取消策略为 `none`：Web 不提供强制取消入口，Client 明确拒绝取消请求。In-process 的超时在 Python 返回或支持检查点的 SDK 操作处判定，不能安全地强杀任意 Python 代码。In-process 捕获当前 Python 执行上下文的文本输出，其他线程日志不混入；脚本自行创建的线程和原生文件描述符输出不自动纳入捕获，需完整进程输出隔离时选择 subprocess_pipe。两种方式均受命令上下文中的超时处理约束，但其可中断能力不同。
 
 脚本主动调用 `sys.exit()`（包括 `sys.exit(0)`）或抛出 `SystemExit`、`KeyboardInterrupt`，在 `inproc` 下会被本次 Script 执行边界捕获并标记为**任务失败**，不会据此退出 Client 主循环；`subprocess_pipe` 下也会作为失败退出子进程（即使退出参数是 0）。普通 Python 异常仍按既有错误输出返回；此前已经产生的 stdout/stderr 尽量保留。脚本如需正常结束，应直接运行到末尾或从入口函数返回，而不是调用 `sys.exit(0)`。`inproc` 并不是进程沙箱：`os._exit()`、原生扩展崩溃、致命信号等仍可能终止 Client；需要隔离此类故障时应选择 `subprocess_pipe` 并核对 SDK 可用性。
 
@@ -142,7 +165,7 @@ Subprocess 的源码通过 stdin 送入 Python `-u -`，运行上下文与参数
 
 ### Go Client：外部 Python 执行
 
-Go Client 使用可选的本机 Python 解释器运行普通 Python Script。收到 Server 下发的 `control(domain=script, action=run)` 消息后，依次在系统 `PATH` 查找解释器：Windows 优先 `python`、再找 `python3`；macOS/Linux 优先 `python3`、再找 `python`。没有找到解释器时，本次 Script 返回明确错误，不会安装 Python 或影响 Go Client 连接。
+Go Client 使用可选的本机 Python 解释器运行普通 Python Script。仅支持 `subprocess_pipe`，配置默认 `subprocess_pipe + collect`，也可选择 `stream`。收到 Server 下发的 `control(domain=script, action=run)` 消息后，依次在系统 `PATH` 查找解释器：Windows 优先 `python`、再找 `python3`；macOS/Linux 优先 `python3`、再找 `python`。没有找到解释器时，本次 Script 返回明确错误，不会安装 Python 或影响 Go Client 连接。
 
 Web Script Library 保留现有 `SCRIPT_METADATA.params` 表单和 Server 参数校验：Server 根据 Schema 解析 `required`、`default`、类型和选项，再将参数字典通过 `extra` 交给 Go Client。Go 通过独立 Python 子进程执行收到的源码，提供 `kwargs` 及参数同名全局变量，支持常规 `print()`、标准库和目标机器已安装的 Python 包。脚本在目标 Client 工作目录中运行，stdout/stderr 通过已有命令结果通道回传；执行占用前台任务槽，支持取消，默认超时为 300 秒，可以通过 `SCRIPT_DEFAULT_TIMEOUT` 调整。
 
@@ -304,7 +327,7 @@ Run API 要求 `script_name` 非空、`params` 为对象，并明确提供 `pres
 
 `script` / `script list` 默认沿用原 `exec` 无参数时的 Server Script 相对路径列表。`script list --json` 输出简化的 `name`（相对路径）、`display_name`、`description` 与 `params`（仅参数名数组）；`script view <path>` 返回 Server 上的脚本源码，严格限制在 Script 根目录。
 
-`script exec <path> [options]` 使用 `shlex`、`scan_args` 得到参数对象，Script Library UI 直接提交结构化参数。两端均按同一份 Script Metadata 规范化，再经 `control(domain=script, action=run)` 执行。Server 不注册独立的 `exec`、`run_script` 或 `script run` 入口，Client 不注册 Script 文本命令；脚本运行所需源码作为受控请求的 `payload.source` 提供。
+`script exec [--execution-mode MODE] [--output-mode MODE] <path> [options]` 使用 `shlex`、`scan_args` 得到参数对象，Script Library UI 直接提交结构化参数。两端均按同一份 Script Metadata 规范化，再经 `control(domain=script, action=run)` 执行。Server 不注册独立的 `exec`、`run_script` 或 `script run` 入口，Client 不注册 Script 文本命令；脚本运行所需源码作为受控请求的 `payload.source` 提供。
 
 ### 终端列表的平台筛选
 

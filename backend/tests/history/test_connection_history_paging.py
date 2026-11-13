@@ -82,7 +82,7 @@ def test_client_id_search_queries_all_sessions_not_just_loaded_page(tmp_path):
     assert { 'listener_id', 'listener_name', 'listener_port', 'listener_protocol',
              'os_name', 'os_ver' } <= snapshot.keys()
     assert {'os_type', 'arch', 'manufacturer', 'model', 'client_id', 'machine_id',
-            'last_seen_at', 'python_execution_mode', 'http_transfer_mode'}.isdisjoint(snapshot)
+            'last_seen_at', 'script_default_execution_mode', 'http_transfer_mode'}.isdisjoint(snapshot)
     database.close_thread_connection()
 
 

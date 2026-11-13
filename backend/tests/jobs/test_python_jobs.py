@@ -58,17 +58,16 @@ class InprocScriptExitBoundaryTests(unittest.TestCase):
                 self.owner.reset_mock()
                 result = self.strategy.execute_stream(code)
                 self.assertEqual(result[0], 0)
-                errors = [call.args[1] for call in self.owner._send_interim_result.call_args_list
-                          if call.args[0] == 0]
-                self.assertTrue(any('SystemExit' in err or 'KeyboardInterrupt' in err for err in errors))
+                self.assertTrue('SystemExit' in result[1] or 'KeyboardInterrupt' in result[1])
                 self.owner._send_final_result.assert_not_called()
                 self.assertEqual((sys.stdout, sys.stderr), before)
         messages = [call.args[1] for call in self.owner._send_interim_result.call_args_list]
         self.assertNotIn('Code execution completed', messages)
 
     def test_stream_success(self):
-        self.strategy.execute_stream('print("ok")')
-        self.owner._send_final_result.assert_called_once_with(1, 'Code execution completed')
+        assert self.strategy.execute_stream('print("ok")') == (1, 'Code execution completed')
+        self.owner._send_final_result.assert_not_called()
+        self.owner._send_interim_result.assert_called_once_with(1, 'ok', 0)
 
 
 class SubprocessScriptExitBoundaryTests(unittest.TestCase):
@@ -87,8 +86,8 @@ class SubprocessScriptExitBoundaryTests(unittest.TestCase):
         owner = Mock()
         owner._build_process_creation_kwargs.return_value = {}
         owner._resolve_timeout.return_value = 10
-        SubprocessPipePythonExecutionStrategy(owner).execute_stream('import sys; sys.exit(0)')
-        owner._send_final_result.assert_called_once_with(0, 'Process exited with code 1')
+        assert SubprocessPipePythonExecutionStrategy(owner).execute_stream('import sys; sys.exit(0)') == (0, 'Process exited with code 1')
+        owner._send_final_result.assert_not_called()
 
     def test_successful_subprocess_script_remains_successful(self):
         owner = Mock()

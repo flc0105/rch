@@ -38,8 +38,8 @@ RCH 为每台 Client 提供一套可以在线查询和调整的运行配置。�
 ```text
 set
 set HTTP_TRANSFER_MODE cancelable
-set PYTHON_EXECUTION_MODE subprocess_pipe
-set --reset PYTHON_EXECUTION_MODE
+set SCRIPT_DEFAULT_EXECUTION_MODE subprocess_pipe
+set --reset SCRIPT_DEFAULT_EXECUTION_MODE
 ```
 
 配置名不区分输入时的大小写，但文档和界面统一使用大写名称。布尔值可使用 `true` / `false`；数字项按配置自身的单位和范围填写。`set KEY` **不是**单项查询语法：查询请使用 `set` 或 `set --json`。
@@ -76,7 +76,7 @@ set HTTP_TRANSFER_MODE cancelable
 
 通常保持默认缓冲区即可。传输是否可取消取决于所选 HTTP Transfer 模式。
 
-### 2.2 Python 执行 — `PYTHON_EXECUTION_MODE`
+### 2.2 Script 默认执行 — `SCRIPT_DEFAULT_EXECUTION_MODE`
 
 默认：**`inproc`**
 
@@ -86,12 +86,22 @@ set HTTP_TRANSFER_MODE cancelable
 | `subprocess_pipe` | 使用独立 Python 子进程执行，通过管道接收代码与输出；支持终止子进程来取消执行 | 可能长期运行、希望具备更明确取消能力的脚本 |
 
 ```text
-set PYTHON_EXECUTION_MODE subprocess_pipe
+set SCRIPT_DEFAULT_EXECUTION_MODE subprocess_pipe
 ```
 
 `subprocess_pipe` 需要启动额外进程，会带来一定的启动开销；它也不是安全沙箱或权限隔离机制。与主进程执行相比，进程状态和运行环境存在差异，重要脚本应先测试。`inproc` 无法安全强制中断正在运行的任意 Python 代码，不宜把前台取消按钮理解为随时可以停止脚本。
 
 切换策略后，以**下一次执行**使用的模式为准；已经运行的脚本不会被迁移到另一种执行方式。
+
+`SCRIPT_DEFAULT_OUTPUT_MODE` 默认 `collect`，可设置 `stream`：
+
+```text
+set SCRIPT_DEFAULT_OUTPUT_MODE stream
+set --reset SCRIPT_DEFAULT_OUTPUT_MODE
+```
+
+Script 的本次选择和 Metadata default 优先于这两个配置。未声明运行模式的脚本使用实时配置。Go Client 的执行模式仅 `subprocess_pipe`，输出模式仍有 collect/stream。具体 Schema、CLI 运行选项及取消边界见 [Scripts](scripts.md)。
+
 
 ### 2.3 Screen View 画面 — `SCREEN_FRAME_STRATEGY`
 
@@ -157,7 +167,7 @@ set HTTP_TRANSFER_MODE cancelable
 ### 希望 Python 长任务可以被取消
 
 ```text
-set PYTHON_EXECUTION_MODE subprocess_pipe
+set SCRIPT_DEFAULT_EXECUTION_MODE subprocess_pipe
 ```
 
 先使用非关键脚本验证运行环境和输出，再应用到日常任务。
@@ -184,7 +194,7 @@ set --reset SCREEN_FRAME_STRATEGY
 
 ```text
 set --reset HTTP_TRANSFER_MODE
-set --reset PYTHON_EXECUTION_MODE
+set --reset SCRIPT_DEFAULT_EXECUTION_MODE
 set --reset SCREEN_FRAME_STRATEGY
 ```
 
@@ -209,7 +219,7 @@ set --reset-all
 | `HTTP_TRANSFER_BUFFER_SIZE` | `set HTTP_TRANSFER_BUFFER_SIZE 65536`；新建一次数十 MiB 的上传/下载并核对内容完整、进度正常；检查新传输策略的读取块大小为 65536 字节（开发测试或调试日志）。重置后应恢复 1048576 字节。 |
 | `PREVIEW_IMAGE_COMPRESS_ENABLED` | `set PREVIEW_IMAGE_COMPRESS_ENABLED true`；通过 `preview_path` 分别预览一张 JPG 和一张 PNG，核对画面正常、上传的是压缩预览，且 PNG 预览会转换为 JPEG；设为 `false` 后重新预览，比较传输后的文件类型/大小。其他文件下载不应变化。 |
 | `PREVIEW_IMAGE_COMPRESS_QUALITY` | 先启用图片压缩，再 `set PREVIEW_IMAGE_COMPRESS_QUALITY 40`；对同一张 JPG 或 PNG 新建预览，与改成 `90` 后的预览比较 JPEG 预览文件大小和画质；同一个数值同时控制两种来源图片。最后依次重置这两个设置。图片复杂度会影响差异。 |
-| `PYTHON_EXECUTION_MODE` | `set PYTHON_EXECUTION_MODE subprocess_pipe`；执行一段输出 PID 的 Python 脚本，核对脚本正常输出；对测试长脚本尝试取消，确认能停止子进程。重置为 `inproc` 后再次执行短脚本。 |
+| `SCRIPT_DEFAULT_EXECUTION_MODE` | `set SCRIPT_DEFAULT_EXECUTION_MODE subprocess_pipe`；执行一段输出 PID 的 Python 脚本，核对脚本正常输出；对测试长脚本尝试取消，确认能停止子进程。重置为 `inproc` 后再次执行短脚本。 |
 | `SCREEN_FRAME_STRATEGY` | `set SCREEN_FRAME_STRATEGY full_jpeg`；重新打开 Screen View，检查策略标识和正常显示；重置为默认 `keyframe_delta` 后使用 Restart/新建会话，再确认策略标识、关键帧和变化区域刷新。仅在启用 Screen View 的平台提供该设置。 |
 | `RECONNECT_INTERVAL_SECONDS` | `set RECONNECT_INTERVAL_SECONDS 2`；在测试环境短暂阻断 Client → Server 的网络连接，查看日志中下一次重连等待约 2 秒；恢复网络并重置到 5 秒。已进入的单次睡眠不被追溯缩短。 |
 | `SERVER_INBOUND_TIMEOUT_SECONDS` | `set SERVER_INBOUND_TIMEOUT_SECONDS 0`；iOS 切后台后恢复前台时，如原 Socket 仍可用，继续处理后续 Heartbeat。`set --reset SERVER_INBOUND_TIMEOUT_SECONDS` 恢复默认 120 秒。 |

@@ -42,7 +42,7 @@ class ClientRuntime:
             'job': self.job_manager.execute,
             'remote_files': self.remote_files_manager.execute,
             'script': self.script_manager.execute,
-        })
+        }, cancel_policies={'script': self.script_manager.cancel_policy})
         self.features = dict(features if features is not None else resolve_features())
         self.pty_manager = None
         self.screen_view_manager = None

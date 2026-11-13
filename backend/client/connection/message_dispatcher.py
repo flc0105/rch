@@ -65,6 +65,9 @@ class ClientInboundMessageDispatcher:
         return self.connection.message_router.dispatch(data)
 
     def _dispatch_deferred_message(self, data: dict):
+        if data.get('type') == MSG_TYPE_CONTROL:
+            self.connection.runtime.control_dispatcher.prepare(
+                data.get('id'), data.get('domain'), data.get('action'), data.get('payload'))
         self.connection.enqueue_pending_message(data)
         return None
 

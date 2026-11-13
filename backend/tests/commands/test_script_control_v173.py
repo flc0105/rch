@@ -1,4 +1,4 @@
-"""Script UI and terminal submit the same typed Control request without new modes."""
+"""Script UI and terminal submit the same typed Control request with resolved modes."""
 import sys
 import types
 from types import SimpleNamespace
@@ -11,6 +11,12 @@ from client.scripts.manager import ScriptManager
 from core.protocol.control import ControlRequest
 from server.application.scripts.script_run_service import prepare_script_control
 
+
+CONFIG = {'items': [
+    {'key':'SCRIPT_DEFAULT_EXECUTION_MODE','value':'inproc','choices':['inproc','subprocess_pipe']},
+    {'key':'SCRIPT_DEFAULT_OUTPUT_MODE','value':'collect','choices':['collect','stream']},
+]}
+MODES = {'execution_mode':'inproc','output_mode':'collect'}
 
 SCRIPT_SOURCE = '''SCRIPT_METADATA = {
     "name": "example", "params": [
@@ -26,23 +32,23 @@ def test_script_control_preparation_validates_metadata_once_for_cli_and_ui(tmp_p
     script = tmp_path / 'folder' / 'ping.py'
     script.parent.mkdir()
     script.write_text(SCRIPT_SOURCE, encoding='utf-8')
-    cli = prepare_script_control(str(tmp_path), 'folder/ping.py', {'host': 'example.com', 'port': '80'})
-    web = prepare_script_control(str(tmp_path), 'folder/ping', {'host': 'example.com', 'port': 80})
+    cli = prepare_script_control(str(tmp_path), 'folder/ping.py', {'host': 'example.com', 'port': '80'}, config=CONFIG)
+    web = prepare_script_control(str(tmp_path), 'folder/ping', {'host': 'example.com', 'port': 80}, config=CONFIG)
     assert cli == web == {
         'script_name': 'folder/ping', 'source': SCRIPT_SOURCE,
-        'params': {'host': 'example.com', 'port': 80},
+        'params': {'host': 'example.com', 'port': 80}, **MODES,
     }
-    assert not {'presentation', 'execution_mode', 'output_mode'} & cli.keys()
+    assert 'presentation' not in cli
     with pytest.raises(ValueError, match='Missing required'):
-        prepare_script_control(str(tmp_path), 'folder/ping', {})
+        prepare_script_control(str(tmp_path), 'folder/ping', {}, config=CONFIG)
     with pytest.raises(ValueError, match='outside'):
-        prepare_script_control(str(tmp_path), '../elsewhere', {})
+        prepare_script_control(str(tmp_path), '../elsewhere', {}, config=CONFIG)
 
 
 def test_script_control_client_runs_existing_script_strategy(tmp_path):
     payload = {
         'script_name': 'folder/ping', 'source': SCRIPT_SOURCE,
-        'params': {'host': 'example.com', 'port': 80},
+        'params': {'host': 'example.com', 'port': 80}, **MODES,
     }
     socket = SimpleNamespace()
     manager = ScriptManager()
@@ -71,6 +77,7 @@ def test_script_cli_and_web_use_one_payload_and_web_presentation_stays_runtime_o
     builtin = ScriptBuiltinSupport(
         SimpleNamespace(build_script_plan=lambda p: {'command_type': 'control', 'domain': 'script', 'action': 'run', 'payload': p}),
         lambda: (lambda plan: (lambda: (cli_plans.append(plan) or iter([(1, 'completed')])))),
+        remote_execution_service=SimpleNamespace(run_json_command=lambda *a, **kw: CONFIG),
     )
     assert list(builtin.script('exec', 'folder/ping.py --host example.com --port 80')) == [(1, 'completed')]
     assert cli_plans[0]['command_type'] == 'control'
@@ -84,6 +91,7 @@ def test_script_cli_and_web_use_one_payload_and_web_presentation_stays_runtime_o
             return {'ok': True}
 
     web_api = WebScriptApi(WebCommandExecutionApi(Tasks()), SimpleNamespace(scripts_root_dir=str(tmp_path)))
+    web_api.command_execution_api.get_runtime_config = lambda client_id: CONFIG
     assert web_api.run_script('client-a', 'folder/ping.py', {'host': 'example.com', 'port': 80}, presentation='dialog', run_id='r-1') == {'ok': True}
     assert web_requests[0][1] == cli_plans[0]['payload']['script_name']
     assert web_requests[0][2].payload == cli_plans[0]['payload']
@@ -106,18 +114,20 @@ def test_script_task_dispatches_control_not_a_fake_command(tmp_path, monkeypatch
             calls.append((conn, command, kwargs))
             yield 1, 'printed'
 
+    from server.application.command.command_execution_pipeline import CommandExecutionPipeline
+    runner.command_execution_pipeline = CommandExecutionPipeline(None)
     runner.remote_execution_service = Remote()
     runner._get_history_entry_id = lambda context: 'history-1'
     context = SimpleNamespace(
         session=object(), history_entry_id='', command='ping',
         metadata={'script_run_presentation': 'dialog'},
-        control=ControlRequest('script', 'run', prepare_script_control(str(tmp_path), 'ping', {})),
+        control=ControlRequest('script', 'run', prepare_script_control(str(tmp_path), 'ping', {}, config=CONFIG)),
     )
     script.write_text('raise RuntimeError("should not reload")\n', encoding='utf-8')
     events = list(runner._iter_control_events(context))
     assert calls[0][1] == ''
     assert calls[0][2]['command_type'] == 'control'
     assert calls[0][2]['domain'] == 'script' and calls[0][2]['action'] == 'run'
-    assert calls[0][2]['payload'] == {'script_name': 'ping', 'source': 'print(12)\n', 'params': {}}
+    assert calls[0][2]['payload'] == {'script_name': 'ping', 'source': 'print(12)\n', 'params': {}, **MODES}
     assert 'presentation' not in calls[0][2]['payload']
     assert len(events) == 3

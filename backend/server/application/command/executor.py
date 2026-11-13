@@ -44,6 +44,7 @@ class CommandExecutor:
             plan_executor_factory=self._create_plan_executor,
             command_processor_factory=self._create_nested_command_processor,
             builtin_services=builtin_services,
+            use_foreground_guard=self.use_foreground_guard,
         )
 
     def _get_current_history_entry_id(self) -> str:
@@ -73,6 +74,8 @@ class CommandExecutor:
 
     def _execute_remote_plan(self, plan: dict):
         self.server.command_adapter.describe_plan(self.conn, self.current_history_entry_id, plan)
+        if plan.get("cancel_policy") and not self.use_foreground_guard:
+            self.conn.runtime.set_foreground_cancel_policy(plan["cancel_policy"])
         if self.use_foreground_guard:
             return partial(
                 self.remote_execution_service.stream_foreground_command,
@@ -84,6 +87,7 @@ class CommandExecutor:
                 history_entry_id=self.current_history_entry_id,
                 task_type=TASK_TYPE_COMMAND,
                 source=self.foreground_source,
+                cancel_policy=plan.get('cancel_policy', ''),
             )
 
         return partial(

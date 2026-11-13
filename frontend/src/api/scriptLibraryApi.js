@@ -1,8 +1,12 @@
-import { jsonRequestOptions } from './http.js'
+import { apiData, jsonRequestOptions } from './http.js'
 
 // Return the native Response so the dialog retains its existing UI error handling.
 export function getScriptCatalog() {
   return fetch('/api/scripts/catalog')
+}
+
+export function getScriptRunOptions(clientId, name) {
+  return apiData(`/api/connections/${encodeURIComponent(clientId)}/scripts/run-options?name=${encodeURIComponent(name)}`)
 }
 
 export function runLibraryScript(clientId, payload, headers = {}) {

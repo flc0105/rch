@@ -24,7 +24,7 @@ class CommandExecutionPipeline:
             cwd_end = cwd_end_provider() or ''
         return cwd_end
 
-    def _finalize_history(self, context: ExecutionContext, final_ok: bool, cwd_end_provider=None):
+    def _finalize_history(self, context: ExecutionContext, final_ok: bool, cwd_end_provider=None, final_status=""):
         if not context.history_entry_id:
             return
 
@@ -33,9 +33,11 @@ class CommandExecutionPipeline:
             context.history_entry_id,
             final_ok,
             cwd_end=self._resolve_cwd_end(cwd_end_provider),
+            **({'status': final_status} if final_status else {}),
         )
 
-    def _build_output_event(self, status: int, result) -> CommandExecutionEvent:
+    @staticmethod
+    def build_output_event(status: int, result) -> CommandExecutionEvent:
         """
         结果转标准事件。
 
@@ -80,6 +82,7 @@ class CommandExecutionPipeline:
     ):
         final_ok = True
         cancelled = False
+        final_status = ""
 
         yield CommandExecutionEvent.started(
             context.command,
@@ -99,12 +102,16 @@ class CommandExecutionPipeline:
                 for item in func():
                     status = item[0]
                     result = item[1] if len(item) > 1 else ''
-                    event = self._build_output_event(status, result)
+                    event = self.build_output_event(status, result)
 
                     if event.event_type == CommandExecutionEvent.ERROR:
                         final_ok = False
+                        reason = event.payload.get('failure_reason')
+                        if reason in ('timed_out', 'interrupted'):
+                            final_status = reason
                     elif event.event_type == CommandExecutionEvent.CANCELLED:
                         cancelled = True
+                        final_status = 'cancelled'
                         final_ok = False
 
                     yield event
@@ -131,6 +138,7 @@ class CommandExecutionPipeline:
                     context,
                     final_ok and not cancelled,
                     cwd_end_provider=cwd_end_provider,
+                    final_status=final_status,
                 )
 
         if cancelled:

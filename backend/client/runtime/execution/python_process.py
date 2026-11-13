@@ -4,8 +4,7 @@ import time
 
 from client.runtime.execution.context import CommandCancelledError, CommandTimeoutError
 from client.runtime.execution.python_execution.factory import (
-    build_python_execution_strategy,
-    get_python_execution_mode
+    build_python_execution_strategy
 )
 from client.runtime.execution.process.process_execution_service import ProcessExecutionService
 from client.config import runtime_config
@@ -89,12 +88,12 @@ class PythonProcessExecutionMixin:
             timeout=self.DEFAULT_STREAM_TIMEOUT if timeout is None else timeout,
         )
 
-    def _execute_python_stream(self, code, kwargs=None, mode: str = '', default_mode: str = 'inproc'):
+    def _execute_python_stream(self, code, kwargs=None, mode: str = '', default_mode: str = 'inproc', timeout=None, script_name=None):
         strategy = self._get_python_execution_strategy(mode=mode, default_mode=default_mode)
         return strategy.execute_stream(
             code,
-            kwargs=kwargs,
-            timeout=self.DEFAULT_STREAM_TIMEOUT,
+            kwargs=self._merge_script_kwargs_with_context(kwargs, script_name=script_name),
+            timeout=self.DEFAULT_STREAM_TIMEOUT if timeout is None else timeout,
         )
 
     # ------------------ 进程执行服务 ------------------ #

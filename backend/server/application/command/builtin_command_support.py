@@ -76,10 +76,20 @@ class ScriptBuiltinSupport:
     script builtin: list / view / exec.
     """
 
-    def __init__(self, plan_builder, plan_executor_factory, conn=None):
+    def __init__(self, plan_builder, plan_executor_factory, conn=None, remote_execution_service=None, use_foreground_guard=False):
         self.plan_builder = plan_builder
         self.plan_executor_factory = plan_executor_factory
         self.conn = conn
+        self.remote_execution_service = remote_execution_service
+        self.use_foreground_guard = use_foreground_guard
+
+    def _runtime_config(self):
+        if self.use_foreground_guard:
+            return self.remote_execution_service.run_foreground_json_command(
+                self.conn, 'set --json', task_type='runtime_config', source='script_options', track_execution=False)
+        if self.conn is not None:
+            self.conn.runtime.set_foreground_cancel_policy('none')
+        return self.remote_execution_service.run_json_command(self.conn, 'set --json', track_execution=False)
 
     def _platform(self):
         info = getattr(self.conn, 'session_info', None)
@@ -124,7 +134,7 @@ class ScriptBuiltinSupport:
             return
         if subcommand == 'exec':
             if not str(tail or '').strip():
-                yield 0, 'Usage: script exec <path> [options]'
+                yield 0, 'Usage: script exec [--execution-mode MODE] [--output-mode MODE] <path> [options]'
                 return
             yield from self.execute_script_file(tail)
             return
@@ -172,7 +182,16 @@ class ScriptBuiltinSupport:
         parts = shlex.split(filename)
         if not parts:
             raise ValueError('script_name is required')
-        payload = prepare_script_control(SCRIPT_PATH, parts[0], scan_args(parts[1:]))
+        modes = {}
+        while parts and parts[0] in ('--execution-mode', '--output-mode'):
+            key = parts.pop(0)[2:].replace('-', '_')
+            if not parts or parts[0].startswith('--') or key in modes:
+                raise ValueError(f'Invalid or duplicate Script option: {key}')
+            modes[key] = parts.pop(0)
+        if not parts:
+            raise ValueError('script_name is required')
+        payload = prepare_script_control(SCRIPT_PATH, parts[0], scan_args(parts[1:]),
+                                         config=self._runtime_config(), **modes)
         executor = self.plan_executor_factory()
         for item in executor(self.plan_builder.build_script_plan(payload))():
             yield item

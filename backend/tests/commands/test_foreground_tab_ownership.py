@@ -23,10 +23,12 @@ def test_web_task_context_forwards_existing_tab_id_to_slot():
     forwarded = []
     session = SimpleNamespace(acquire_foreground_task=lambda **kwargs: forwarded.append(kwargs))
     context = SimpleNamespace(session=session, task_type='command', command='shell sleep 5',
-                              source='web', task_id='task-1', history_entry_id='', tab_id='tab-A')
+                              source='web', task_id='task-1', history_entry_id='', tab_id='tab-A',
+                              metadata={'cancel_policy': 'none'})
     WebTaskService._acquire_task(None, context)
     assert forwarded[0]['tab_id'] == 'tab-A'
     assert forwarded[0]['web_task'] is True
+    assert forwarded[0]['cancel_policy'] == 'none'
 
 
 def test_server_cli_foreground_has_no_tab_owner():

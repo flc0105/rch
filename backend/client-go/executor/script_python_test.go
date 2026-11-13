@@ -1,6 +1,7 @@
 package executor
 
 import (
+	"client-go/config"
 	"context"
 	"encoding/json"
 	"os"
@@ -8,6 +9,11 @@ import (
 	"testing"
 	"time"
 )
+
+func runTestScript(ctx context.Context, session *Session, source, extra interface{}, emit func(int, string)) (int, string) {
+	result := runExternalPythonScriptMode(ctx, session, source, extra, emit, config.Runtime(), config.ScriptStream)
+	return result.Status, result.Text
+}
 
 func scriptTestSession(t *testing.T) *Session {
 	t.Helper()
@@ -32,7 +38,7 @@ func TestScriptExecSchemaValuesAndDirectGlobals(t *testing.T) {
 import json
 print(json.dumps({"target": kwargs["target"], "direct": target, "limit": limit, "verbose": verbose, "script": kwargs["__script_name__"]}, sort_keys=True))`
 	var stdout, stderr []string
-	status, final := RunExternalPythonScript(context.Background(), scriptTestSession(t), code, params, func(code int, text string) {
+	status, final := runTestScript(context.Background(), scriptTestSession(t), code, params, func(code int, text string) {
 		if code == 1 {
 			stdout = append(stdout, text)
 		} else {
@@ -62,14 +68,14 @@ func TestScriptErrorAndInvalidPayload(t *testing.T) {
 		{"print('ok')", []int{1}, "extra must be an object"},
 		{"print('ok')", map[string]interface{}{"bad": make(chan int)}, "Invalid script parameters"},
 	} {
-		status, message := RunExternalPythonScript(context.Background(), scriptTestSession(t), input.source, input.extra, nil)
+		status, message := runTestScript(context.Background(), scriptTestSession(t), input.source, input.extra, nil)
 		if status != 0 || !strings.Contains(message, input.needle) {
 			t.Fatalf("%#v: %d %q", input, status, message)
 		}
 	}
 	requirePython(t)
 	var emitted []string
-	status, message := RunExternalPythonScript(context.Background(), scriptTestSession(t), "raise ValueError('bad input')", nil, func(_ int, s string) { emitted = append(emitted, s) })
+	status, message := runTestScript(context.Background(), scriptTestSession(t), "raise ValueError('bad input')", nil, func(_ int, s string) { emitted = append(emitted, s) })
 	if status != 0 || !strings.Contains(message, "code") || !strings.Contains(strings.Join(emitted, " "), "bad input") {
 		t.Fatalf("error lost: %d %q %#v", status, message, emitted)
 	}
@@ -83,7 +89,7 @@ func TestScriptCancellationDoesNotBlock(t *testing.T) {
 	go func() {
 		defer close(finished)
 		time.AfterFunc(100*time.Millisecond, cancel)
-		status, message := RunExternalPythonScript(ctx, session, "import time; time.sleep(30)", nil, nil)
+		status, message := runTestScript(ctx, session, "import time; time.sleep(30)", nil, nil)
 		if status != 0 || message != "Script cancelled" {
 			t.Errorf("cancel failure: %d %q", status, message)
 		}
@@ -97,7 +103,7 @@ func TestScriptCancellationDoesNotBlock(t *testing.T) {
 
 func TestScriptInterpreterMissingReturnsError(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
-	status, message := RunExternalPythonScript(context.Background(), scriptTestSession(t), "print(1)", nil, nil)
+	status, message := runTestScript(context.Background(), scriptTestSession(t), "print(1)", nil, nil)
 	if status != 0 || !strings.Contains(message, "Python interpreter not found") {
 		t.Fatalf("status=%d text=%q", status, message)
 	}
@@ -106,8 +112,34 @@ func TestScriptInterpreterMissingReturnsError(t *testing.T) {
 func TestScriptSystemExitReportsFailure(t *testing.T) {
 	requirePython(t)
 	var output []string
-	status, result := RunExternalPythonScript(context.Background(), scriptTestSession(t), "import sys; sys.exit(0)", nil, func(_ int, line string) { output = append(output, line) })
+	status, result := runTestScript(context.Background(), scriptTestSession(t), "import sys; sys.exit(0)", nil, func(_ int, line string) { output = append(output, line) })
 	if status != 0 || !strings.Contains(result, "code 1") || !strings.Contains(strings.Join(output, "\n"), "SystemExit") {
 		t.Fatalf("SystemExit must fail: %d %q %#v", status, result, output)
+	}
+}
+
+func TestScriptCollectAndStreamParity(t *testing.T) {
+	requirePython(t)
+	code := "import sys; print('first'); print('warning',file=sys.stderr); print(); print('last',end='')"
+	for _, mode := range []string{config.ScriptCollect, config.ScriptStream} {
+		t.Run(mode, func(t *testing.T) {
+			var chunks []string
+			result := runExternalPythonScriptMode(context.Background(), scriptTestSession(t), code, nil, func(status int, text string) {
+				if status != 1 {
+					t.Errorf("stderr marked failure: %d %s", status, text)
+				}
+				chunks = append(chunks, text)
+			}, config.Runtime(), mode)
+			if result.Status != 1 {
+				t.Fatal(result)
+			}
+			if mode == config.ScriptCollect {
+				if len(chunks) != 0 || result.Text != "first\nwarning\n\nlast" {
+					t.Fatalf("collect: %#v %#v", result, chunks)
+				}
+			} else if strings.Join(chunks, "\n") != "first\nwarning\n\nlast" {
+				t.Fatalf("stream: %#v", chunks)
+			}
+		})
 	}
 }

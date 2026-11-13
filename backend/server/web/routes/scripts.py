@@ -113,6 +113,10 @@ def create_script_blueprint(server_instance):
             return script_api.delete_script(name)
         return responder.json_endpoint(_execute, default_error_status=500)
 
+    @blueprint.get('/api/connections/<client_id>/scripts/run-options')
+    def get_script_run_options(client_id):
+        return responder.json_endpoint(lambda: script_api.get_run_options(client_id, request.args.get('name', '')), default_error_status=500)
+
     @blueprint.post('/api/connections/<client_id>/scripts/run')
     def run_script(client_id):
         def _execute():
@@ -131,6 +135,8 @@ def create_script_blueprint(server_instance):
                 presentation=payload.get('presentation'),
                 run_id=payload.get('run_id'),
                 operation_id=get_optional_operation_id(),
+                execution_mode=payload.get("execution_mode"),
+                output_mode=payload.get("output_mode"),
             )
         return responder.json_endpoint(_execute, default_error_status=500)
 

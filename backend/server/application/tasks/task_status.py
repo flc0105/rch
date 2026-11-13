@@ -39,6 +39,7 @@ class TaskStreamSummary:
     has_cancelled_output: bool = False
     has_timeout_output: bool = False
     has_explicit_timeout: bool = False
+    has_explicit_cancelled: bool = False
     has_connection_interruption: bool = False
 
     NON_FATAL_ERROR_TEXTS = {
@@ -63,6 +64,10 @@ class TaskStreamSummary:
             ):
                 self.has_failure = True
 
+    def mark_cancelled(self):
+        self.has_explicit_cancelled = True
+        self.has_failure = True
+
     def mark_exception(self, exc=None):
         self.has_failure = True
         if isinstance(exc, TimeoutError):
@@ -81,7 +86,7 @@ class TaskStreamSummary:
         return not self.has_failure
 
     def resolve_final_status(self, cancel_requested: bool = False) -> str:
-        if cancel_requested and self.has_cancelled_output:
+        if self.has_explicit_cancelled or (cancel_requested and self.has_cancelled_output):
             return WebTaskStatus.CANCELLED
         if self.has_explicit_timeout:
             return WebTaskStatus.TIMED_OUT

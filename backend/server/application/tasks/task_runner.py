@@ -248,6 +248,7 @@ class WebTaskRunner:
 
         if event.event_type == CommandExecutionEvent.CANCELLED:
             self.task_store.request_cancel(context.task_id)
+            summary.mark_cancelled()
             if event.payload.get('terminal'):
                 return
             self._record_stream_chunk(context, 0, event.text or 'cancelled', summary)
@@ -328,11 +329,10 @@ class WebTaskRunner:
             domain=control.domain, action=control.action, payload=control.payload,
             history_entry_id=context.history_entry_id,
         ):
-            if not status:
+            event = CommandExecutionPipeline.build_output_event(status, text)
+            if event.event_type in (CommandExecutionEvent.ERROR, CommandExecutionEvent.CANCELLED):
                 ok = False
-                yield CommandExecutionEvent.error(str(text or ''))
-            else:
-                yield CommandExecutionEvent.chunk(status, str(text or ''))
+            yield event
         yield CommandExecutionEvent.completed(ok)
 
     def _iter_upload_events(self, context: TaskExecutionContext):

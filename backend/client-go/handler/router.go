@@ -79,7 +79,12 @@ func Handle(session *executor.Session, msg map[string]interface{}) {
 			})
 			cancelled, cancelID := session.EndShell(id)
 			if cancelled {
-				status, result = 0, control.CancelledMessage
+				// Preserve explicit structured interruption and partial output,
+				// otherwise keep the existing generic cancellation result.
+				data, structured := result.(map[string]interface{})
+				if !structured || (data["failure_reason"] != "cancelled" && data["failure_reason"] != "timed_out") {
+					status, result = 0, control.CancelledMessage
+				}
 			}
 			response := map[string]interface{}{"type": "result", "id": id, "status": status, "cwd": session.Cwd, "eof": 1}
 			if text, ok := result.(string); ok {

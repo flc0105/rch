@@ -295,7 +295,7 @@ func TestScriptMessageExecutesExternalPythonAndReturnsFinalFrame(t *testing.T) {
 	session, peer := pair(t)
 	Handle(session, map[string]interface{}{
 		"type": "control", "id": float64(90), "domain": "script", "action": "run",
-		"payload": map[string]interface{}{"script_name": "demo", "source": "print('hi:' + kwargs['target'])", "params": map[string]interface{}{"target": "folder one"}},
+		"payload": map[string]interface{}{"script_name": "demo", "execution_mode": "subprocess_pipe", "output_mode": "stream", "source": "print('hi:' + kwargs['target'])", "params": map[string]interface{}{"target": "folder one"}},
 	})
 	var chunks []string
 	for i := 0; i < 12; i++ {

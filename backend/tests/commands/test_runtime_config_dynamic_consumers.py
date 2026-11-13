@@ -62,12 +62,12 @@ def test_set_reset_reset_all_changes_next_transfer_and_python_strategy(isolated_
     independent_owner = _TransferTaskOwner(SimpleNamespace(), ExecutionContext(command_id='test'))
     assert isinstance(HttpFileTransferService(independent_owner).get_transfer_strategy(), LegacyHttpTransferStrategy)
 
-    svc.set_config_value('PYTHON_EXECUTION_MODE', 'subprocess_pipe')
+    svc.set_config_value('SCRIPT_DEFAULT_EXECUTION_MODE', 'subprocess_pipe')
     assert get_python_execution_mode() == 'subprocess_pipe'
     svc.set_config_value('SCREEN_FRAME_STRATEGY', 'full_jpeg')
     saved = json.loads(isolated_config.read_text(encoding='utf-8'))
     assert saved['HTTP_TRANSFER_MODE'] == 'legacy'
-    assert saved['PYTHON_EXECUTION_MODE'] == 'subprocess_pipe'
+    assert saved['SCRIPT_DEFAULT_EXECUTION_MODE'] == 'subprocess_pipe'
     assert saved['SCREEN_FRAME_STRATEGY'] == 'full_jpeg'
 
     svc.reset_config_key('HTTP_TRANSFER_MODE')
@@ -264,11 +264,11 @@ def test_handshake_builder_reports_latest_runtime_values(isolated_config):
     svc = RuntimeConfigService()
     builder = ClientInfoBuilder('test')
     info = builder.build()
-    assert (info['http_transfer_mode'], info['python_execution_mode']) == ('cancelable', 'inproc')
+    assert (info['http_transfer_mode'], info['script_default_execution_mode']) == ('cancelable', 'inproc')
     svc.set_config_value('HTTP_TRANSFER_MODE', 'legacy')
-    svc.set_config_value('PYTHON_EXECUTION_MODE', 'subprocess_pipe')
+    svc.set_config_value('SCRIPT_DEFAULT_EXECUTION_MODE', 'subprocess_pipe')
     info = builder.build()
-    assert (info['http_transfer_mode'], info['python_execution_mode']) == ('legacy', 'subprocess_pipe')
+    assert (info['http_transfer_mode'], info['script_default_execution_mode']) == ('legacy', 'subprocess_pipe')
     svc.reset_all_overrides()
     info = builder.build()
-    assert (info['http_transfer_mode'], info['python_execution_mode']) == ('cancelable', 'inproc')
+    assert (info['http_transfer_mode'], info['script_default_execution_mode']) == ('cancelable', 'inproc')

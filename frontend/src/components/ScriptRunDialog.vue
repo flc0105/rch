@@ -42,11 +42,33 @@
         </div>
       </div>
 
+      <div v-if="modeError" class="script-run-description">{{ modeError }}</div>
+      <div v-else v-loading="modesLoading" class="script-run-modes">
+        <el-form label-position="top">
+          <el-form-item label="Execution Mode">
+            <el-radio-group :model-value="runModes.execution_mode" @update:model-value="$emit('update-mode', 'execution_mode', $event)">
+              <el-radio v-for="mode in modeOptions.execution_mode?.allowed || []" :key="mode" :value="mode">
+                {{ mode === 'inproc' ? 'In-process' : 'Subprocess' }}
+              </el-radio>
+            </el-radio-group>
+            <div class="script-run-mode-help">{{ runModes.execution_mode === 'inproc' ? 'Runs inside the Client process. Cancellation is not supported.' : runModes.execution_mode === 'subprocess_pipe' ? 'Runs in a separate Python process. Supports cancellation.' : 'Select an available execution mode.' }}</div>
+          </el-form-item>
+          <el-form-item label="Output Mode">
+            <el-radio-group :model-value="runModes.output_mode" @update:model-value="$emit('update-mode', 'output_mode', $event)">
+              <el-radio v-for="mode in modeOptions.output_mode?.allowed || []" :key="mode" :value="mode">
+                {{ mode === 'stream' ? 'Stream' : 'Collect' }}
+              </el-radio>
+            </el-radio-group>
+            <div class="script-run-mode-help">{{ runModes.output_mode === 'stream' ? 'Display output as the script runs.' : runModes.output_mode === 'collect' ? 'Return collected output when execution finishes.' : 'Select an available output mode.' }}</div>
+          </el-form-item>
+        </el-form>
+      </div>
+
 <el-form
   v-if="paramSpecs.length"
   label-position="top"
   class="script-run-form"
-  @submit.prevent="$emit('confirm', 'dialog')"
+  @submit.prevent="modesReady && $emit('confirm', 'dialog')"
 >
         <ParamFormField
           v-for="param in paramSpecs"
@@ -77,7 +99,7 @@
         <el-dropdown
           split-button
           type="primary"
-          :disabled="submitting"
+          :disabled="submitting || !modesReady"
           @click="$emit('confirm', 'dialog')"
           @command="command => $emit('confirm', command)"
         >
@@ -150,6 +172,11 @@ export default {
       default: () => ({}),
     },
 
+    modeOptions: { type: Object, default: () => ({}) },
+    runModes: { type: Object, default: () => ({}) },
+    modesLoading: { type: Boolean, default: false },
+    modeError: { type: String, default: '' },
+
     submitting: {
       type: Boolean,
       default: false,
@@ -182,6 +209,7 @@ export default {
 
   emits: [
     'update:visible',
+    'update-mode',
     'update-param',
     'apply-param-values',
     'append-output',
@@ -201,6 +229,11 @@ export default {
   },
 
   computed: {
+    modesReady() {
+      return !this.modesLoading && !this.modeError && ['execution_mode', 'output_mode'].every(key =>
+        this.modeOptions[key]?.allowed?.includes(this.runModes[key]))
+    },
+
     pendingRemoteFileParamMultiple() {
       return isRemoteMultiParam(this.pendingRemoteFileParam || {})
     },
@@ -278,7 +311,7 @@ export default {
   width: 100%;
   min-height: 0;
   max-height: calc(78vh - 150px);
-  overflow: hidden;
+  overflow-y: auto;
   gap: 14px;
 }
 
@@ -300,10 +333,13 @@ export default {
   margin-bottom: 0;
 }
 
+.script-run-mode-help { font-size: 12px; line-height: 1.5; color: var(--muted); }
+.script-run-modes { flex: 0 0 auto; }
+.script-run-modes :deep(.el-form-item) { margin-bottom: 10px; }
+
 .script-run-form {
-  flex: 1 1 auto;
+  flex: 0 0 auto;
   min-height: 0;
-  overflow-y: auto;
   overflow-x: hidden;
   padding-right: 4px;
 }

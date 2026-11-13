@@ -37,6 +37,7 @@ class BuiltinCommandHandler:
         plan_executor_factory,
         command_processor_factory,
         builtin_services,
+        use_foreground_guard=False,
     ):
         self.conn = conn
         self.server = server
@@ -63,6 +64,8 @@ class BuiltinCommandHandler:
             plan_builder=self.plan_builder,
             plan_executor_factory=self.plan_executor_factory,
             conn=self.conn,
+            remote_execution_service=self.remote_execution_service,
+            use_foreground_guard=use_foreground_guard,
         )
         self.command_output_support = CommandOutputBuiltinSupport(
             server=self.server,

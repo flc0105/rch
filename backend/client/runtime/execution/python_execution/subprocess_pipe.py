@@ -1,8 +1,12 @@
 import base64
+import os
 import pickle
 import subprocess
 import sys
-import time
+import threading
+import tempfile
+
+from client.runtime.execution.python_execution.output import StreamOutput
 
 from client.runtime.execution.context import CommandCancelledError, CommandTimeoutError
 from client.runtime.execution.python_execution.base import PythonExecutionStrategy
@@ -68,7 +72,7 @@ except (SystemExit, KeyboardInterrupt):
     raise SystemExit(1)
 except Exception:
     traceback.print_exc()
-    raise
+    raise SystemExit(1)
 """
 
     def _start_python_process(self):
@@ -76,106 +80,130 @@ except Exception:
             [sys.executable, '-u', '-'],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            bufsize=1,
+            stderr=subprocess.STDOUT,
+            text=False,
+            bufsize=0,
+            env={**os.environ, 'PYTHONIOENCODING': 'utf-8'},
             **self.owner._build_process_creation_kwargs()
         )
         self.owner._register_cancel_handler(lambda: self.owner._terminate_process(process))
         return process
 
-    def execute_collect(self, code, kwargs=None, timeout=None):
+    def _execute(self, code, kwargs, timeout, emit=None):
         self.configure_context()
+        bootstrap = self._build_bootstrap_script(code, kwargs=kwargs).encode('utf-8')
+        process = self._start_python_process()
+        # Spool collected output to disk above 1 MiB. The stream reader drains
+        # independently of the process wait/cancel loop, including after kill.
+        with tempfile.SpooledTemporaryFile(max_size=1024 * 1024, mode='w+t', encoding='utf-8', newline='') as collected:
+            output = StreamOutput(emit) if emit is not None else collected
+            errors = []
+            output_lock = threading.Lock()
 
-        process = None
-        try:
-            process = self._start_python_process()
-            bootstrap_code = self._build_bootstrap_script(code, kwargs=kwargs)
+            def write_output(text):
+                with output_lock:
+                    output.write(text)
 
-            stdout, stderr = process.communicate(
-                input=bootstrap_code,
-                timeout=self.owner._resolve_timeout(timeout),
-            )
-            # A process cancel handler may terminate the child while communicate()
-            # is blocked. Distinguish confirmed cancellation from an ordinary exit.
-            self.owner._checkpoint(fallback_timeout=timeout)
+            def read_output():
+                try:
+                    with process.stdout as reader:
+                        # Read raw pipe chunks, not a blocking full-size text read.
+                        import codecs
+                        decoder = codecs.getincrementaldecoder('utf-8')(errors='replace')
+                        while True:
+                            data = reader.read(16384)
+                            if not data:
+                                break
+                            write_output(decoder.decode(data))
+                        write_output(decoder.decode(b'', final=True))
+                    with output_lock:
+                        output.flush()
+                except Exception as exc:
+                    errors.append(exc)
 
-            if process.returncode == 0:
-                return 1, stdout or ''
-            return 0, (stdout or '') + (stderr or '')
-        except CommandCancelledError:
-            if process is not None:
-                self.owner._terminate_process(process)
-            raise
-        except CommandTimeoutError:
-            if process is not None:
-                self.owner._terminate_process(process)
-            raise
-        except subprocess.TimeoutExpired:
-            if process is not None:
-                self.owner._terminate_process(process)
-            raise
-        except Exception:
-            if process is not None:
-                self.owner._terminate_process(process)
-            raise
+            def write_input():
+                try:
+                    with process.stdin as pipe:
+                        # FileIO can perform partial writes.
+                        view = memoryview(bootstrap)
+                        while view:
+                            count = pipe.write(view)
+                            if not count:
+                                break
+                            view = view[count:]
+                except BrokenPipeError:
+                    pass
+                except Exception as exc:
+                    errors.append(exc)
+
+            reader = threading.Thread(target=read_output, daemon=True)
+            writer = threading.Thread(target=write_input, daemon=True)
+            reader.start()
+            writer.start()
+            status, message = 1, ''
+            interruption = None
+            try:
+                self.owner._wait_process_with_cancel_support(process, timeout=timeout)
+                # Waiting for pipe EOF is part of the execution budget (a child
+                # might inherit stdout even after the interpreter exits).
+                while reader.is_alive() or writer.is_alive():
+                    self.owner._checkpoint(fallback_timeout=timeout)
+                    reader.join(0.05)
+                    writer.join(0.05)
+                self.owner._checkpoint(fallback_timeout=timeout)
+                process.wait()
+                if errors:
+                    status, message = 0, f'Failed to read/write Python process: {errors[0]}'
+                elif process.returncode:
+                    status, message = 0, f'Process exited with code {process.returncode}'
+            except CommandCancelledError as exc:
+                interruption = exc
+            except (CommandTimeoutError, subprocess.TimeoutExpired) as exc:
+                interruption = CommandTimeoutError(f'Python execution timed out after {timeout} seconds')
+            except Exception as exc:
+                status, message = 0, f'Failed to execute code: {exc}'
+            finally:
+                if process.poll() is None:
+                    self.owner._terminate_process(process)
+                if interruption is not None:
+                    self.owner._get_process_execution_service().terminate_process_group(process)
+                # Drain all bytes already produced before sending the terminal result.
+                # A descendant retaining the pipe must not keep the request alive.
+                writer.join(2)
+                reader.join(2)
+                if reader.is_alive():
+                    # A detached descendant may keep the descriptor open. Do not
+                    # continue emitting after the terminal result or touch a closed spool.
+                    status, message = 0, message or 'Python output pipe did not close'
+                    # On POSIX kill the remaining execution process group.
+                    self.owner._get_process_execution_service().terminate_process_group(process)
+                    reader.join(2)
+                if reader.is_alive():
+                    # A detached descendant outside the group is not owned by this execution.
+                    # The reader is stopped logically before returning; no later output is sent.
+                    with output_lock:
+                        output.flush()
+                        output = _DiscardOutput()
+            if interruption is not None:
+                collected.seek(0)
+                interruption.output = collected.read() if emit is None else ''
+                raise interruption
+            if emit is not None:
+                return status, message or 'Code execution completed'
+            collected.seek(0)
+            text = collected.read()
+            return status, text + (('\n' if text and not text.endswith('\n') else '') + message if message else '')
+
+    def execute_collect(self, code, kwargs=None, timeout=None):
+        return self._execute(code, kwargs, timeout)
 
     def execute_stream(self, code, kwargs=None, timeout=None):
-        """
-        在子进程中执行 Python 代码，实时流式输出，支持强制取消
-        """
-        self.configure_context()
-
-        process = None
-        try:
-            process = self._start_python_process()
-            bootstrap_code = self._build_bootstrap_script(code, kwargs=kwargs)
-            process.stdin.write(bootstrap_code)
-            process.stdin.close()
-
-            def read_stream(stream, is_stderr=False):
-                for line in iter(stream.readline, ''):
-                    self.owner._checkpoint(fallback_timeout=timeout)
-                    if line:
-                        status = 0 if is_stderr else 1
-                        self.owner._send_interim_result(status, line.rstrip('\n'), 0)
-
-            import threading
-            stdout_thread = threading.Thread(target=read_stream, args=(process.stdout, False))
-            stderr_thread = threading.Thread(target=read_stream, args=(process.stderr, True))
-            stdout_thread.daemon = True
-            stderr_thread.daemon = True
-            stdout_thread.start()
-            stderr_thread.start()
-
-            while True:
-                self.owner._checkpoint(fallback_timeout=timeout)
-                if process.poll() is not None:
-                    break
-                time.sleep(0.1)
-
-            stdout_thread.join(timeout=1)
-            stderr_thread.join(timeout=1)
-
-            if process.returncode == 0:
-                self.owner._send_final_result(1, "Code execution completed")
-            else:
-                self.owner._send_final_result(0, f"Process exited with code {process.returncode}")
-
-        except CommandCancelledError:
-            if process and process.poll() is None:
-                self.owner._terminate_process(process)
-            self.owner._send_final_result(0, 'Command cancelled')
-        except (CommandTimeoutError, subprocess.TimeoutExpired):
-            if process and process.poll() is None:
-                self.owner._terminate_process(process)
-            self.owner._send_final_result(0, 'Command timed out')
-        except Exception as e:
-            if process and process.poll() is None:
-                self.owner._terminate_process(process)
-            self.owner._send_final_result(0, f'Failed to execute code: {e}')
+        return self._execute(code, kwargs, timeout, lambda text: self.owner._send_interim_result(1, text, 0))
 
 
+class _DiscardOutput:
+    def write(self, text):
+        return len(text)
 
-
-
+    def flush(self):
+        pass

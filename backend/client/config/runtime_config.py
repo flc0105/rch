@@ -36,8 +36,9 @@ HTTP_TRANSFER_BUFFER_SIZE = transfer_settings.DEFAULT_HTTP_TRANSFER_BUFFER_SIZE
 PREVIEW_IMAGE_COMPRESS_ENABLED = False
 PREVIEW_IMAGE_COMPRESS_QUALITY = 75
 
-# PYTHON_EXECUTION_MODE = 'subprocess_pipe'
-PYTHON_EXECUTION_MODE = 'inproc'
+# Script defaults; per-run selections do not change these settings.
+SCRIPT_DEFAULT_EXECUTION_MODE = 'inproc'
+SCRIPT_DEFAULT_OUTPUT_MODE = 'collect'
 
 # ------------------ screen view strategy ------------------ #
 SCREEN_FRAME_STRATEGY = 'keyframe_delta'
@@ -83,6 +84,19 @@ _RUNTIME_CONFIG_META = {
         'min': 1,
         'max': 86400,
     },
+
+    'SCRIPT_DEFAULT_EXECUTION_MODE': {
+        'group': 'script',
+        'expose': True,
+        'desc': 'Script default execution mode.',
+        'choices': ['inproc', 'subprocess_pipe'],
+    },
+    'SCRIPT_DEFAULT_OUTPUT_MODE': {
+        'group': 'script',
+        'expose': True,
+        'desc': 'Script default output mode.',
+        'choices': ['collect', 'stream'],
+    },
     'HTTP_TRANSFER_MODE': {
         'group': 'transfer',
         'expose': True,
@@ -106,12 +120,6 @@ _RUNTIME_CONFIG_META = {
         'group': 'preview',
         'expose': True,
         'desc': 'JPEG quality used for compressed preview images.',
-    },
-    'PYTHON_EXECUTION_MODE': {
-        'group': 'strategy',
-        'expose': True,
-        'desc': 'Python script execution mode: inproc or subprocess_pipe.',
-        'choices': ['inproc', 'subprocess_pipe'],
     },
     'SCREEN_FRAME_STRATEGY': {
         'group': 'strategy',

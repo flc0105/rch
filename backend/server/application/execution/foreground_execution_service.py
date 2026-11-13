@@ -30,9 +30,11 @@ class ForegroundExecutionService:
         domain: str = '',
         action: str = '',
         history_entry_id: str = '',
+        track_execution: bool = True,
         task_type: str = TASK_TYPE_COMMAND,
         source: str = 'foreground',
         task_id: str = '',
+        cancel_policy: str = '',
     ):
         """
         统一前台执行入口：
@@ -45,6 +47,7 @@ class ForegroundExecutionService:
             command=command,
             source=source,
             task_id=task_id,
+            **({'cancel_policy': cancel_policy} if cancel_policy else {}),
         )
 
         effective_task_id = acquired_task.get('task_id', '') if isinstance(acquired_task, dict) else ''
@@ -58,6 +61,7 @@ class ForegroundExecutionService:
                 payload=payload,
                 domain=domain, action=action,
                 history_entry_id=history_entry_id,
+                **({'track_execution': False} if not track_execution else {}),
             )
             for item in result_iter:
                 yield item
@@ -78,6 +82,7 @@ class ForegroundExecutionService:
         domain: str = '',
         action: str = '',
         history_entry_id: str = '',
+        track_execution: bool = True,
         task_type: str = TASK_TYPE_COMMAND,
         source: str = 'foreground',
         task_id: str = '',
@@ -91,6 +96,7 @@ class ForegroundExecutionService:
                 payload=payload,
                 domain=domain, action=action,
                 history_entry_id=history_entry_id,
+                **({'track_execution': False} if not track_execution else {}),
                 task_type=task_type,
                 source=source,
                 task_id=task_id,
@@ -113,6 +119,7 @@ class ForegroundExecutionService:
         domain: str = '',
         action: str = '',
         history_entry_id: str = '',
+        track_execution: bool = True,
         task_type: str = 'command',
         source: str = 'foreground',
         task_id: str = '',
@@ -126,6 +133,7 @@ class ForegroundExecutionService:
             domain=domain,
             action=action,
             history_entry_id=history_entry_id,
+            **({'track_execution': False} if not track_execution else {}),
             task_type=task_type,
             source=source,
             task_id=task_id,

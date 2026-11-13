@@ -124,6 +124,7 @@ class WebTaskService:
             history_entry_id=context.history_entry_id,
             web_task=True,
             tab_id=context.tab_id,
+            **({"cancel_policy": context.metadata["cancel_policy"]} if context.metadata.get("cancel_policy") else {}),
         )
 
     def _ensure_active_task(self, conn, task_id: str):
@@ -167,7 +168,9 @@ class WebTaskService:
             raise ValueError('task client_id is missing')
 
         conn = self.server.get_target_connection_by_client_id(client_id)
-        self._ensure_active_task(conn, task_id)
+        foreground = self._ensure_active_task(conn, task_id)
+        if foreground.get("cancel_policy") == "none":
+            raise ValueError("Current execution does not support cancellation")
         return task, conn
 
     def _resolve_runner(self, runner_name: str):

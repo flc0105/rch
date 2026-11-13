@@ -76,6 +76,7 @@ class ClientSessionRuntime:
         history_entry_id: str = '',
         web_task: bool = False,
         tab_id: str = '',
+        cancel_policy: str = '',
     ) -> dict:
         """
         尝试占用当前连接的前台执行槽。
@@ -88,7 +89,11 @@ class ClientSessionRuntime:
             history_entry_id=history_entry_id,
             web_task=web_task,
             tab_id=tab_id,
+            cancel_policy=cancel_policy,
         )
+
+    def set_foreground_cancel_policy(self, policy):
+        self._execution_runtime.set_foreground_cancel_policy(policy)
 
     def bind_foreground_command_id(self, command_id: int):
         """

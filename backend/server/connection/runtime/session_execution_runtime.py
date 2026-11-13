@@ -48,6 +48,7 @@ class SessionExecutionRuntime:
         history_entry_id: str = '',
         web_task: bool = False,
         tab_id: str = '',
+        cancel_policy: str = '',
     ) -> dict:
         task_info = {
             'started_at': datetime.now(timezone.utc).isoformat(),
@@ -61,6 +62,7 @@ class SessionExecutionRuntime:
             'command_id': None,
             'cancel_requested': False,
             'cancel_state': 'running',
+            'cancel_policy': cancel_policy,
         }
 
         with self._lock:
@@ -74,6 +76,12 @@ class SessionExecutionRuntime:
             self._task = task_info
             self._notify_task_changed()
             return dict(task_info)
+
+    def set_foreground_cancel_policy(self, policy):
+        with self._lock:
+            if self._task is not None:
+                self._task['cancel_policy'] = policy
+                self._notify_task_changed()
 
     def bind_foreground_command_id(self, command_id: int):
         with self._lock:

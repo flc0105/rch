@@ -31,6 +31,8 @@ export function getTerminalReplayAction(operation) {
     return { type: 'script', script_name,
       script_path: String(replay.script_path || ''),
       script_display_name: String(replay.script_display_name || ''),
+      ...(replay.execution_mode ? { execution_mode: replay.execution_mode } : {}),
+      ...(replay.output_mode ? { output_mode: replay.output_mode } : {}),
       params: replay.params && typeof replay.params === 'object' && !Array.isArray(replay.params)
         ? { ...replay.params } : {} }
   }

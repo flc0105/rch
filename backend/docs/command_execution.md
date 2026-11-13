@@ -230,7 +230,7 @@ Web 入口需要提供明确的 `client_id`、命令、`tab_id` 和必要的呈�
 
 ## Server Builtin 统一路由
 
-Server 只将 `SERVER_COMMAND_REGISTRY` 显式注册的一级名称作为 Builtin，先用公用子命令解析器识别 `script/job/alias/xt/history` 等命令，再交给原业务 Support。未命中注册表的普通命令继续走 ACMD → Alias → Client 普通执行；Client 未注册的普通命令保留 Shell 后备执行。Server `script exec` 与 Script Library UI 使用同一份 Script Metadata 参数校验和源码准备机制，最后通过 `control(domain=script, action=run)` 直接向 Client 交付结构化请求，不构造伪命令。
+Server 只将 `SERVER_COMMAND_REGISTRY` 显式注册的一级名称作为 Builtin，先用公用子命令解析器识别 `script/job/alias/xt/history` 等命令，再交给原业务 Support。未命中注册表的普通命令继续走 ACMD → Alias → Client 普通执行；Client 未注册的普通命令保留 Shell 后备执行。Server `script exec` 与 Script Library UI 使用同一份 Script Metadata 参数校验、运行模式解析和源码准备机制；实时 Configuration 查询不绑定 Script Activity，最后通过 `control(domain=script, action=run)` 直接向 Client 交付结构化请求，不构造伪命令。
 
 ### Client 返回结果的派发次序（v34.6）
 

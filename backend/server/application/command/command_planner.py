@@ -144,7 +144,9 @@ class CommandPlanner:
         }
 
     def build_script_plan(self, payload: dict) -> dict:
+        from core.protocol.script_execution import ExecutionMode
         return {
+            'cancel_policy': ExecutionMode(payload['execution_mode']).cancel_policy,
             'kind': 'remote_command',
             'command': '',
             'command_type': COMMAND_TYPE_CONTROL,

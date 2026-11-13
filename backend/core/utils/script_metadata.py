@@ -5,6 +5,7 @@ from copy import deepcopy
 from core.metadata.parameters import coerce_param_value, normalize_param_specs, resolve_param_values
 from core.metadata.source import extract_metadata_from_module_ast
 from core.platform.normalization import normalize_platforms
+from core.protocol.script_execution import normalize_execution_schema
 
 _METADATA_KEYS = ('SCRIPT_METADATA', 'script_metadata', 'metadata', 'META', 'meta')
 
@@ -56,6 +57,8 @@ def normalize_script_metadata(metadata: dict | None, fallback_name: str = '') ->
     normalized['tags'] = tags
     normalized['platforms'] = normalize_script_platforms(metadata.get('platforms'))
     normalized['params'] = normalize_param_specs(metadata.get('params'))
+    if 'execution' in metadata:
+        normalized['execution'] = normalize_execution_schema(metadata['execution'])
     return normalized
 
 

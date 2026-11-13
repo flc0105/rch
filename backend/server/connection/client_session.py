@@ -70,7 +70,7 @@ class ClientSession:
     def clear_history_entry(self, command_id: int):
         self.runtime.clear_history_entry(command_id)
 
-    def send_command(self, command: str, type='command', extra=None, history_entry_id: str = '', payload=None, domain='', action=''):
+    def send_command(self, command: str, type='command', extra=None, history_entry_id: str = '', payload=None, domain='', action='', track_execution=True):
         return self.command_channel.send_command(
             command,
             type=type,
@@ -78,6 +78,7 @@ class ClientSession:
             history_entry_id=history_entry_id,
             payload=payload,
             domain=domain, action=action,
+            **({'track_execution': False} if not track_execution else {}),
         )
 
     def send_cancel(self, target_command_id: int):
@@ -105,6 +106,7 @@ class ClientSession:
         history_entry_id: str = '',
         web_task: bool = False,
         tab_id: str = '',
+        cancel_policy: str = '',
     ) -> dict:
         return self.runtime.acquire_foreground_task(
             task_type=task_type,
@@ -114,6 +116,7 @@ class ClientSession:
             history_entry_id=history_entry_id,
             web_task=web_task,
             tab_id=tab_id,
+            cancel_policy=cancel_policy,
         )
 
     def request_foreground_task_cancel(self, task_id: str = ''):

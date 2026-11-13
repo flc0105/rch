@@ -70,6 +70,16 @@ class ProcessExecutionService:
         except Exception:
             pass
 
+    def terminate_process_group(self, process: subprocess.Popen):
+        """Clean up an owned process group even if its group leader has exited."""
+        if os.name == 'nt':
+            self.terminate_process(process)
+        else:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+
     def wait_process_with_cancel_support(self, process: subprocess.Popen, timeout=None):
         effective_timeout = timeout
 

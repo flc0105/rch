@@ -68,9 +68,6 @@ class ClientInboundMessageRouter(BaseMessageRouter):
         accepted = bool(cancel_result.get('accepted'))
         message = str(cancel_result.get('message') or '').strip()
 
-        if not accepted and target_command_id:
-            self.connection.send_result(target_command_id, 0, message or 'Command does not support cancellation', 0)
-
         self.connection.send({
             'type': MSG_TYPE_CANCEL_ACK,
             'id': data.get('id'),

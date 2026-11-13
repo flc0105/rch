@@ -30,7 +30,7 @@ Python Client 的握手不只是操作系统名称。`ClientInfoBuilder.build()`
 | 系统和硬件 | `os_type`、`os_alias`、`os_full`、`os_name`、`os_ver`、`arch`、`manufacturer`、`model`、`chassis_type` | 展示平台、架构和机箱分类等设备资料，供 UI 判断或呈现 |
 | 进程与权限 | `process_id`、`launch_command`、`launch_mode`、`launch_source`、`username`、`process_name`、`integrity`、`cwd`、`python_ver` | 说明 Client 进程当时如何运行、具有何种权限及初始工作目录 |
 | 构建与源码身份 | `build_version`、`client_revision`、`client_revision_files` | 标记构建产物，比较 Client 与 Server 的源码内容 |
-| 运行能力与配置快照 | `http_transfer_mode`、`python_execution_mode` | 表示 Client 握手时采用的传输与执行模式；Watchdog 运行状态通过 `watchdog --json` 实时读取 |
+| 运行能力与配置快照 | `http_transfer_mode`、`script_default_execution_mode`、`script_default_output_mode` | 表示 Client 握手时采用的传输与执行模式；Watchdog 运行状态通过 `watchdog --json` 实时读取 |
 | 提示与路径 | `command_manifest`、`variable_manifest`、`system_paths` | 提供命令候选、变量提示和 Client 端已知路径 |
 
 `id` 是每个 Python `Client` 对象初始化时创建的 UUID v4；它代表 Client 进程实例，不是主机名或 `machine_id`。同一个对象因网络异常重连会继续使用原 `client_id`，进程重新启动则通常产生新值。`machine_id` 来自规范化机器特征的 SHA-256 指纹，特征不变时可以跨进程重启复现；它不会随着 `client_id` 每次重建而重新随机分配。`chassis_type` 按设备固件和系统可提供的机箱信息分类（如 `laptop`、`desktop`、`server`、`phone`、`tablet`）；没有有效类型时使用 `unknown`。Linux 读取 DMI `chassis_type`，其中 `1`（Other）为 `unknown`，不依据发行版或云厂商名称猜测类型。Windows 采用原有脚本验证过的 `Win32_SystemEnclosure` 机箱编码检测，PowerShell 读取限时 3 秒；macOS 优先读取 `hw.model`，无法判定时限时查询 `system_profiler`。结果在 Client 进程内缓存，重连无需重复探测；不参与 `machine_id` 指纹。完整的字段采集、指纹算法与设备库存归属见 [Device Identity & Inventory](./device_identity.md)。
@@ -41,7 +41,7 @@ Client 主进程尝试将 Python Logging 同步镜像到 Client temp root 的 `c
 
 `launch_mode` 描述 Client 的外部运行形态，取值为 `terminal`、`terminal_background`、`ide`、`detached`、`user_service`、`system_service`、`scheduled` 或 `unknown`。`launch_source` 保存该形态下可识别的具体环境，例如 `zsh`、`powershell`、`pycharm`、`launchagent`、`launchdaemon`、`cron` 或 `schtasks`。判定在 Client 进程生命周期内只采集一次，网络重连继续沿用同一结果；由 Client 自身重新创建出的独立后台进程按其实际进程形态记录为 `detached`。macOS 对 LaunchAgent/LaunchDaemon 通过 launchd 的运行作业与当前 PID 双重核对；Detached 则依靠 session/控制终端状态，不依赖启动器环境标记。无法可靠识别的环境使用 `unknown`。完整分类表、判定优先级与跨平台实机测试命令见 [Client Launch Mode](launch_mode.md)。
 
-`integrity` 由 Client 权限探测逻辑计算：Go 与 Python Client 在 Windows 上均从当前进程 Token 的 `TokenIntegrityLevel` SID 读取完整性 RID，映射为 `Untrusted`、`Low`、`Medium`、`Medium High`、`High`、`System`、`Protected` 或 `Unknown`；POSIX 则依据 effective UID 区分 `User`、`Root` 和 `Root (via sudo)`。Go Client 同样在进程启动时采集 `launch_mode` / `launch_source`，重连时保持快照。`python_execution_mode` 和传输模式表示 Client 当前配置，不构成“此 Client 支持所有 Web 功能”的通用能力证明。界面如需展示某个实时可执行状态，应调用相应的运行时 API，而不是反复读取握手快照。
+`integrity` 由 Client 权限探测逻辑计算：Go 与 Python Client 在 Windows 上均从当前进程 Token 的 `TokenIntegrityLevel` SID 读取完整性 RID，映射为 `Untrusted`、`Low`、`Medium`、`Medium High`、`High`、`System`、`Protected` 或 `Unknown`；POSIX 则依据 effective UID 区分 `User`、`Root` 和 `Root (via sudo)`。Go Client 同样在进程启动时采集 `launch_mode` / `launch_source`，重连时保持快照。`script_default_execution_mode`、`script_default_output_mode` 和传输模式表示 Client 当前配置，不构成“此 Client 支持所有 Web 功能”的通用能力证明。界面如需展示某个实时可执行状态，应调用相应的运行时 API，而不是反复读取握手快照。
 
 ### 消息结构示意
 

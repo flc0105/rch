@@ -105,6 +105,7 @@ class WebCommandExecutionApi:
             'set --json',
             task_type='runtime_config',
             source='web_runtime_config',
+            track_execution=False,
         )
 
     def update_runtime_config(self, client_id: str, key: str, value):

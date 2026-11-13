@@ -175,21 +175,17 @@ class CommandDispatchAdapter:
                     and kind != ActivityKind.ALIAS):
                 kind = ActivityKind.SCRIPT
                 pending['action'] = ActivityAction.RUN
-                if not pending['invocation'].get('target'):
-                    original = str(pending['invocation'].get('input') or '').strip()
-                    if original.startswith('script exec '):
-                        try:
-                            parts = shlex.split(original)
-                            pending['invocation']['target'] = parts[2]
-                            pending['invocation']['arguments'] = {'argv': parts[3:]}
-                        except (ValueError, IndexError):
-                            pass
+                request = plan.get('payload') or {}
+                pending['invocation']['target'] = request.get('script_name', '')
+                pending['invocation']['arguments'] = request.get('params', {})
             elif alias_name:
                 kind = ActivityKind.ALIAS
                 pending['invocation'].setdefault('target', alias_name)
             pending['kind'] = kind
             pending['resolved'] = {'command_type': command_type}
-            if command_type != 'script':
+            if command_type == 'control' and plan.get('domain') == 'script':
+                pending['resolved'].update({key: plan['payload'][key] for key in ('execution_mode', 'output_mode') if key in plan['payload']})
+            else:
                 pending['resolved']['command'] = str(command or '')
         self.coordinator.mutate_pending(conn, activity_id, update)
 
@@ -221,6 +217,10 @@ class CommandDispatchAdapter:
                 logger.exception('Unable to track dispatched receive_file transfer')
         if not entry_id:
             return ''
+        if command_type == 'control' and domain == 'script':
+            def record_modes(pending):
+                pending['resolved'].update({key: payload[key] for key in ('execution_mode', 'output_mode') if key in payload})
+            self.coordinator.mutate_pending(conn, entry_id, record_modes)
         if command_type == 'control' and domain == 'job':
             request = payload if isinstance(payload, dict) else {}
             job_action = JOB_ACTIVITY_ACTIONS.get(action)

@@ -43,12 +43,14 @@ class ClientSessionCommandChannel:
             'target_id': target_command_id,
         }
 
-    def send_command(self, command: str, type=MSG_TYPE_COMMAND, extra=None, history_entry_id: str = '', payload=None, domain='', action=''):
+    def send_command(self, command: str, type=MSG_TYPE_COMMAND, extra=None, history_entry_id: str = '', payload=None, domain='', action='', track_execution=True):
         data = self.build_command_payload(command, type, extra, payload, domain, action)
 
         coordinator = getattr(self.session.context, 'activity_coordinator', None)
 
         adapter = getattr(self.session.context, 'command_dispatch_adapter', None)
+        if not track_execution:
+            adapter = None
         if adapter is not None:
             history_entry_id = history_entry_id or adapter.scoped_entry(self.session)
         bound_task = self.session.runtime.bind_command_execution(
@@ -56,7 +58,7 @@ class ClientSessionCommandChannel:
             session=self.session,
             history_entry_id=history_entry_id,
             coordinator=coordinator,
-        )
+        ) if track_execution else None
         # Register before sending: a very fast Client (e.g. invalid download)
         # can reply before the caller starts iterating wait_for_result().
         self.session.runtime.pending_command_ids.put(data['id'])

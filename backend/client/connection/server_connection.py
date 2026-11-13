@@ -62,7 +62,9 @@ class ServerConnection(RCHSocket):
     def reset_runtime_state(self):
         try:
             while True:
-                self.pending_message_queue.get_nowait()
+                pending = self.pending_message_queue.get_nowait()
+                if getattr(self, 'runtime', None) is not None:
+                    self.runtime.execution.context_store.clear(pending.get('id'))
         except queue.Empty:
             pass
         except Exception:

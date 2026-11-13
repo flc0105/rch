@@ -199,7 +199,7 @@ Client 主动结束、重启、更新或暂停连接时，使用统一的 `sessi
 以下操作使用**隔离的桌面测试 Server 和 Python Client**；在 Web 的 RCH Terminal 中执行 `pyexec` 时，先设置：
 
 ```text
-set PYTHON_EXECUTION_MODE inproc
+set SCRIPT_DEFAULT_EXECUTION_MODE inproc
 ```
 
 执行 `os.abort()`、`os._exit()` 会直接结束目标 Client 进程。每组测试后重启 Client，打开 **Toolbox → Connection History**，查找刚退出实例对应的 `client_id`。测试环境关闭会自动重新启动 Client 的 Watchdog，避免新的会话刷新历史记录。

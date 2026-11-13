@@ -2,7 +2,8 @@
 
 子脚本使用当前连接的 Client Session Token。
 """
-import contextlib
+from client.runtime.execution.python_execution.output import capture_output
+from core.protocol.script_execution import ExecutionMode, OutputMode, validate_payload_modes
 import io
 import json
 from contextvars import ContextVar
@@ -75,6 +76,10 @@ def run(name: str, params: dict | None = None, *, timeout: int = 30) -> ScriptRe
     if not code.strip():
         raise ScriptSdkScriptsError(f'Empty script: {script_name}')
     metadata = read_script_metadata_from_source(code, fallback_name=script_name)
+    try:
+        validate_payload_modes(metadata, ExecutionMode.INPROC.value, OutputMode.COLLECT.value)
+    except ValueError as exc:
+        raise ScriptSdkScriptsError(str(exc)) from exc
     args = resolve_script_params(metadata, params or {})
     script_context = context.get_script_context()
     script_context['script_name'] = script_name
@@ -88,7 +93,7 @@ def run(name: str, params: dict | None = None, *, timeout: int = 30) -> ScriptRe
     token = _active_scripts.set((*active, script_name))
     try:
         with use_script_sdk_context(context.get_execution_owner(), args):
-            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            with capture_output(out, err):
                 try:
                     exec(compile(code, f'<script:{script_name}>', 'exec'), namespace)
                 except SystemExit as exc:

@@ -122,10 +122,10 @@ class CommandExecutionMixin(PythonProcessExecutionMixin):
                 mode=get_python_execution_mode(),
                 default_mode='inproc',
             )
-        except CommandCancelledError:
-            return 0, 'Command cancelled'
-        except (CommandTimeoutError, subprocess.TimeoutExpired):
-            return 0, 'Command timed out'
+        except CommandCancelledError as exc:
+            return 0, (getattr(exc, 'output', '') + '\nCommand cancelled').lstrip('\n')
+        except (CommandTimeoutError, subprocess.TimeoutExpired) as exc:
+            return 0, (getattr(exc, 'output', '') + '\nCommand timed out').lstrip('\n')
         except Exception as e:
             return 0, f'Failed to execute code: {e}'
 
@@ -142,9 +142,9 @@ class CommandExecutionMixin(PythonProcessExecutionMixin):
                 mode=get_python_execution_mode(),
                 default_mode='inproc',
             )
-        except CommandCancelledError:
-            return 0, 'Command cancelled'
-        except (CommandTimeoutError, subprocess.TimeoutExpired):
-            return 0, 'Command timed out'
+        except CommandCancelledError as exc:
+            return 0, (getattr(exc, 'output', '') + '\nCommand cancelled').lstrip('\n')
+        except (CommandTimeoutError, subprocess.TimeoutExpired) as exc:
+            return 0, (getattr(exc, 'output', '') + '\nCommand timed out').lstrip('\n')
         except Exception as e:
             return 0, f'Failed to execute code: {e}'

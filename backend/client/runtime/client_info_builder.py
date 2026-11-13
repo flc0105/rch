@@ -88,7 +88,8 @@ class ClientInfoBuilder:
             'python_ver': platform.python_version(),
 
             'http_transfer_mode': runtime_config.HTTP_TRANSFER_MODE,
-            'python_execution_mode': runtime_config.PYTHON_EXECUTION_MODE,
+            'script_default_execution_mode': runtime_config.SCRIPT_DEFAULT_EXECUTION_MODE,
+            'script_default_output_mode': runtime_config.SCRIPT_DEFAULT_OUTPUT_MODE,
 
             'command_manifest': self._build_command_manifest(),
             'feature_manifest': dict(features),

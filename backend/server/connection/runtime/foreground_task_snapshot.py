@@ -6,9 +6,9 @@ def build_foreground_task_snapshot(session):
     if not task:
         return {'state': 'Idle'}
 
-    policy = ''
+    policy = task.get('cancel_policy') or ''
     command = str(task.get('command') or '').strip()
-    if command:
+    if command and not policy:
         manifest = getattr(session.session_info, 'command_manifest', None) or []
         matches = [item for item in manifest if isinstance(item, dict)
                    and isinstance(item.get('name'), str)

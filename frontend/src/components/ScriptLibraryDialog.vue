@@ -252,6 +252,11 @@
     :item="pendingRunScriptItem"
     :param-specs="pendingRunScriptParamSpecs"
     :param-form="scriptParamForm"
+    :mode-options="scriptModeOptions"
+    :run-modes="scriptRunModes"
+    :modes-loading="scriptModesLoading"
+    :mode-error="scriptModesError"
+    @update-mode="updateScriptMode"
     :machine-id="currentConnection?.machine_id || ''"
     :submitting="scriptRunSubmitting"
     :selected-id="selectedId"
@@ -282,6 +287,7 @@
     </div>
     <pre class="script-result-output">{{ activeRun.output || (activeRun.complete ? '(no output)' : 'Running…') }}</pre>
     <template #footer>
+      <el-button v-if="!activeRun.complete && activeRun.cancelSupported" type="danger" :disabled="!activeRun.taskId || activeRun.cancelSending" :loading="activeRun.cancelSending" @click="cancelScriptRun">Cancel</el-button>
       <el-button :disabled="!activeRun.output" @click="copyResult">Copy</el-button>
       <el-button @click="resultVisible = false">Close</el-button>
     </template>
@@ -289,10 +295,11 @@
 </template>
 
 <script>
+import { cancelTask } from '../api/tasksApi.js'
 import { createTerminalOperation, operationHeaders } from '../utils/terminalOperation.js'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  getScriptCatalog, runLibraryScript, createScriptFolder, renameScriptFolder,
+  getScriptCatalog, getScriptRunOptions, runLibraryScript, createScriptFolder, renameScriptFolder,
   deleteScriptFolder, renameLibraryScript, uploadLibraryScript, deleteLibraryScript,
 } from '../api/scriptLibraryApi.js'
 import ScriptRunDialog from './ScriptRunDialog.vue'
@@ -307,9 +314,13 @@ function emptyScriptRun() {
     displayName: '',
     scriptPath: '',
     output: '',
+    outputChunks: 0,
     status: '',
     complete: false,
     success: false,
+    taskId: '',
+    cancelSupported: false,
+    cancelSending: false,
   }
 }
 
@@ -368,6 +379,11 @@ export default {
       scriptDirectorySelectionContextKey: '',
       scriptRunDialogVisible: false,
       scriptRunSubmitting: false,
+      scriptModeOptions: {},
+      scriptRunModes: {},
+      scriptModesLoading: false,
+      scriptModesError: '',
+      scriptModeRequest: 0,
       pendingRunScriptName: '',
       scriptParamForm: {},
       resultVisible: false,
@@ -514,6 +530,7 @@ export default {
   },
 
   watch: {
+    selectedId() { if (this.scriptRunDialogVisible) this.closeScriptRunDialog() },
     scriptRunDialogVisible(value) {
       if (!value) this.closeScriptRunDialog()
     },
@@ -1180,7 +1197,7 @@ getPreferredScriptDirectoryForCurrentConnection() {
       return params
     },
 
-    openScriptRunDialog(item) {
+    async openScriptRunDialog(item) {
       if (!item) return
 
       if (!this.selectedId) {
@@ -1195,7 +1212,42 @@ getPreferredScriptDirectoryForCurrentConnection() {
 
       this.pendingRunScriptName = String(item.script_name || '').trim()
       this.scriptParamForm = this.buildScriptParamDefaults(item)
+      this.scriptModeOptions = {}
+      this.scriptRunModes = {}
+      this.scriptModesError = ''
+      this.scriptModesLoading = true
       this.scriptRunDialogVisible = true
+      const request = ++this.scriptModeRequest
+      const clientId = this.selectedId
+      try {
+        const options = await getScriptRunOptions(clientId, item.script_name)
+        if (request !== this.scriptModeRequest || String(clientId) !== String(this.selectedId)) return
+        this.scriptModeOptions = options
+        this.scriptRunModes = Object.fromEntries(Object.entries(options).map(([key, spec]) => [key, spec.default]))
+        if (Object.values(options).some(spec => !spec.allowed.length)) this.scriptModesError = 'No supported run modes for this Client.'
+      } catch (e) {
+        if (request === this.scriptModeRequest) this.scriptModesError = e.message || 'Unable to load Script run options'
+      } finally {
+        if (request === this.scriptModeRequest) this.scriptModesLoading = false
+      }
+    },
+
+    updateScriptMode(key, value) {
+      if (this.scriptModeOptions[key]?.allowed?.includes(value)) this.scriptRunModes[key] = value
+    },
+
+    async cancelScriptRun() {
+      const run = this.activeRun
+      if (!run.taskId || !run.cancelSupported || run.complete || run.cancelSending) return
+      run.cancelSending = true
+      try {
+        await cancelTask(run.taskId)
+        if (!run.complete) run.status = 'Cancelling'
+      } catch (e) {
+        ElMessage.error(e.message || 'Unable to cancel Script')
+      } finally {
+        run.cancelSending = false
+      }
     },
 
     closeScriptRunDialog() {
@@ -1203,6 +1255,8 @@ getPreferredScriptDirectoryForCurrentConnection() {
       this.scriptRunSubmitting = false
       this.pendingRunScriptName = ''
       this.scriptParamForm = {}
+      this.scriptModeRequest++
+      this.scriptModesLoading = false
     },
 
     createRunId() {
@@ -1220,7 +1274,9 @@ getPreferredScriptDirectoryForCurrentConnection() {
 
       if (!this.resultVisible) this.resultVisible = true
       const chunk = String(payload.text ?? '').replace(/\r\n/g, '\n').replace(/\r/g, '\n')
-      if (chunk) {
+      if (metadata.output_mode === 'stream') {
+        this.activeRun.output += (this.activeRun.outputChunks++ ? '\n' : '') + chunk
+      } else if (chunk) {
         const output = this.activeRun.output
         const separator = output && !output.endsWith('\n') && !chunk.startsWith('\n') ? '\n' : ''
         this.activeRun.output = `${output}${separator}${chunk}`
@@ -1238,7 +1294,7 @@ getPreferredScriptDirectoryForCurrentConnection() {
       this.activeRun.success = payload.success === true
       this.activeRun.status = payload.cancelled || payload.status === 'cancelled'
         ? 'Cancelled'
-        : (payload.success ? 'Success' : 'Failed')
+        : payload.status === 'timed_out' ? 'Timed out' : (payload.success ? 'Success' : 'Failed')
       return true
     },
 
@@ -1266,52 +1322,52 @@ getPreferredScriptDirectoryForCurrentConnection() {
     },
 
     async runScriptFromTerminalBlock(payload = {}) {
-  const scriptName = String(payload.script_name || '').trim()
-  const params = payload.params && typeof payload.params === 'object' && !Array.isArray(payload.params)
-    ? { ...payload.params }
-    : {}
-  const displayName = String(payload.script_display_name || scriptName).trim()
-  const scriptPath = String(payload.script_path || `${scriptName}.py`).trim()
+      const scriptName = String(payload.script_name || '').trim()
+      const params = payload.params && typeof payload.params === 'object' && !Array.isArray(payload.params)
+        ? { ...payload.params }
+        : {}
+      const displayName = String(payload.script_display_name || scriptName).trim()
+      const scriptPath = String(payload.script_path || `${scriptName}.py`).trim()
+      const modes = Object.fromEntries(['execution_mode', 'output_mode'].filter(key => payload[key]).map(key => [key, payload[key]]))
 
-  if (!this.selectedId || (payload.clientId && String(this.selectedId) !== String(payload.clientId))) {
-    ElMessage.warning('The target device has changed')
-    return ''
-  }
-  if (!scriptName) {
-    ElMessage.warning('Missing script name')
-    return ''
-  }
-  try {
-    const operation = payload.operation || createTerminalOperation({ kind: 'script', action: 'run', clientId: this.selectedId,
-      invocation: { script_name: scriptName, params },
-      replay: { type: 'script', script_name: scriptName, script_path: scriptPath,
-        script_display_name: displayName || scriptName, params } })
-    const commandText = `> ${TERMINAL_RUN_SCRIPT_PREFIX} ${displayName || scriptName}`
-    this.$emit('append-output', this.selectedId, commandText, 'command', {
-      operation,
-      script_name: scriptName,
-      script_path: scriptPath,
-      script_display_name: displayName || scriptName,
-      params: { ...params },
-    })
-    const res = await runLibraryScript(this.selectedId,
-      { script_name: scriptName, params, presentation: 'terminal' },
-      operationHeaders(operation, this.buildJsonHeaders({ 'Content-Type': 'application/json' })))
-    const json = await res.json()
-    if (!res.ok || json.code !== 0) throw new Error(json.message || 'Failed to run script')
-    const taskId = String(json.data?.task_id || '')
-    this.$emit('set-active-task', this.selectedId, taskId, '', '', operation.operation_id)
-    ElMessage.success(`Run request submitted: ${displayName || scriptName}`)
-    return taskId
-  } catch (e) {
-    this.$emit('append-output', this.selectedId, `Script failed: ${e.message || 'unknown error'}`, 'error',
-      { operation_id: operation.operation_id, event_type: 'submission_error' })
-    ElMessage.error(e.message || 'Failed to run script')
-    return ''
-  }
-},
-
-
+      if (!this.selectedId || (payload.clientId && String(this.selectedId) !== String(payload.clientId))) {
+        ElMessage.warning('The target device has changed')
+        return ''
+      }
+      if (!scriptName) {
+        ElMessage.warning('Missing script name')
+        return ''
+      }
+      let operation = null
+      try {
+        operation = payload.operation || createTerminalOperation({ kind: 'script', action: 'run', clientId: this.selectedId,
+          invocation: { script_name: scriptName, params, ...modes },
+          replay: { type: 'script', script_name: scriptName, script_path: scriptPath,
+            script_display_name: displayName || scriptName, params, ...modes } })
+        const commandText = `> ${TERMINAL_RUN_SCRIPT_PREFIX} ${displayName || scriptName}`
+        this.$emit('append-output', this.selectedId, commandText, 'command', {
+          operation,
+          script_name: scriptName,
+          script_path: scriptPath,
+          script_display_name: displayName || scriptName,
+          params: { ...params },
+        })
+        const res = await runLibraryScript(this.selectedId,
+          { script_name: scriptName, params, ...modes, presentation: 'terminal' },
+          operationHeaders(operation, this.buildJsonHeaders({ 'Content-Type': 'application/json' })))
+        const json = await res.json()
+        if (!res.ok || json.code !== 0) throw new Error(json.message || 'Failed to run script')
+        const taskId = String(json.data?.task_id || '')
+        this.$emit('set-active-task', this.selectedId, taskId, modes.execution_mode === 'subprocess_pipe' ? 'process' : (modes.execution_mode === 'inproc' ? 'none' : ''), '', operation.operation_id)
+        ElMessage.success(`Run request submitted: ${displayName || scriptName}`)
+        return taskId
+      } catch (e) {
+        this.$emit('append-output', this.selectedId, `Script failed: ${e.message || 'unknown error'}`, 'error',
+          { operation_id: operation?.operation_id, event_type: 'submission_error' })
+        ElMessage.error(e.message || 'Failed to run script')
+        return ''
+      }
+    },
 
     async confirmRunScript(presentation = 'dialog') {
       const item = this.pendingRunScriptItem
@@ -1324,7 +1380,9 @@ getPreferredScriptDirectoryForCurrentConnection() {
         ElMessage.warning('Please select a device')
         return
       }
-      if (this.scriptRunSubmitting) return
+      if (this.scriptRunSubmitting || this.scriptModesLoading || this.scriptModesError) return
+      const modes = { ...this.scriptRunModes }
+      if (!['execution_mode', 'output_mode'].every(key => this.scriptModeOptions[key]?.allowed?.includes(modes[key]))) return
 
       let runId = ''
       let operation = null
@@ -1342,14 +1400,15 @@ getPreferredScriptDirectoryForCurrentConnection() {
             displayName,
             scriptPath: item.path || `${item.script_name}.py`,
             status: 'Running',
+            cancelSupported: modes.execution_mode === 'subprocess_pipe',
           }
           this.resultVisible = true
         } else {
           // Terminal output keeps its original command block and re-run metadata.
           operation = createTerminalOperation({ kind: 'script', action: 'run', clientId: this.selectedId,
-            invocation: { script_name: item.script_name, params },
+            invocation: { script_name: item.script_name, params, ...modes },
             replay: { type: 'script', script_name: item.script_name, script_path: item.path || '',
-              script_display_name: displayName, params } })
+              script_display_name: displayName, params, ...modes } })
           const commandText = `> ${TERMINAL_RUN_SCRIPT_PREFIX} ${displayName}`
           this.$emit('append-output', this.selectedId, commandText, 'command', {
             operation,
@@ -1361,14 +1420,15 @@ getPreferredScriptDirectoryForCurrentConnection() {
         }
 
         const res = await runLibraryScript(this.selectedId,
-          { script_name: item.script_name, params, presentation, run_id: runId },
+          { script_name: item.script_name, params, ...modes, presentation, run_id: runId },
           operation ? operationHeaders(operation, this.buildJsonHeaders({ 'Content-Type': 'application/json' }))
             : this.buildJsonHeaders({ 'Content-Type': 'application/json' }))
         const json = await res.json()
         if (!res.ok || json.code !== 0) throw new Error(json.message || 'Failed to run script')
 
         const taskId = json.data && json.data.task_id
-        this.$emit('set-active-task', this.selectedId, taskId || '', '', '', operation?.operation_id || '')
+        if (runId && this.activeRun.runId === runId) this.activeRun.taskId = taskId || ''
+        this.$emit('set-active-task', this.selectedId, taskId || '', modes.execution_mode === 'subprocess_pipe' ? 'process' : 'none', '', operation?.operation_id || '')
         ElMessage.success(`Run request submitted: ${displayName}`)
         this.closeScriptRunDialog()
       } catch (e) {

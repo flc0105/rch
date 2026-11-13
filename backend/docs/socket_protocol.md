@@ -61,7 +61,7 @@ Python Client 的 `ClientReceiverWorker` 在后台线程持续调用 `ServerConn
 | 分类 | 当前处理方式 | 典型消息 |
 |---|---|---|
 | Immediate | 在接收线程进入 `ClientInboundMessageRouter`；具体管理器可以再启动自己的后台工作线程 | `heartbeat`、`cancel`、PTY 控制、Screen 控制、Clipboard 控制、Monitor 控制、Transfer 控制 |
-| Deferred | 放入 `pending_message_queue`，交由 `Client.wait()` 的主执行循环取出 | `command`、`script`、`acmd` |
+| Deferred | 放入 `pending_message_queue`，交由 `Client.wait()` 的主执行循环取出 | `command`、`control`、`acmd` |
 | 未识别 | 调度器不作处理 | 未注册的 `type` |
 
 Deferred 消息使用 `queue.Queue`。`Client.wait()` 通过 `recv_command(timeout=0.5)` 取出一条，调用命令执行器处理，再以 `send_result()` 回传（或由命令执行中的输出方法陆续回传）。这一路径使常规前台命令按 Client 执行循环串行处理，并与 Server 对同一连接的前台任务占槽机制配合；它**不意味着** PTY、监控和屏幕采集会占用同一个待执行队列。
@@ -104,7 +104,7 @@ Server → Client 示例：
 {"type":"command","id":18,"text":"pwd"}
 ```
 
-`script` 也使用 `id`、`text`，可附带 `extra`（脚本参数与授权上下文）；`acmd` 则由 Client 使用 `extra` 中的结构化参数执行。消息层只负责传递已规划的数据，Script/ACMD 的语义与授权不在 Socket Frame 中自动完成。
+Script 使用 `control(domain=script, action=run)`，payload 包含 `script_name`、`source`、`params`、`execution_mode`、`output_mode`；两个运行模式为必填的已解析值。`acmd` 仍使用 `extra`。执行器可返回结构化终态 `data`，如 `{"event_type":"error","failure_reason":"timed_out","text":"…"}` 或 `{"event_type":"cancelled","failure_reason":"cancelled","text":"…"}`；都由唯一 `result(eof=1)` 终结，之前的 stream 输出使用 `eof=0`。
 
 Client → Server 示例：
 
@@ -210,6 +210,6 @@ Server 接收线程遇到 `socket.error` 后执行连接关闭处理，通知 We
 
 **帧实现。** `backend/client-go/protocol/ratsocket.go` 也使用“4 字节长度头 + JSON 消息体”，但长度头采用 `binary.LittleEndian`、`uint32`，接收通过 `io.ReadFull`。Python 侧使用原生格式有符号整数长度头；两者在常见 little-endian 机器上可以互通，不代表已经实现跨任意字节序的统一封包协议。Go 的 `Send()` 分别用一次 `conn.Write()` 发送头和正文，目前没有 Python 端相应的并发发送锁和短写补发循环；该接收端也未显式规定最大消息长度。
 
-**消息范围。** `backend/client-go/handler/router.go` 支持 `heartbeat`、`command` 与前台取消 `cancel`；可取消命令及 `shell_stream` 能分段返回 `result(eof=0)`，结束时返回 `result(eof=1)`。Remote Files 的目录查询和基础文件操作复用 `command` 消息、`__json__:` 结构化参数及 JSON 文本结果，Server 原有 WebRemoteFileService 可直接调用。`transfer_start` 会明确返回不支持的状态；Script、ACMD、PTY、Screen、Clipboard、Monitor 等消息仍未接入对应 Go 执行器。Heartbeat ACK 包含 `server_ts`、`client_ts` 和当前工作目录，Server 可用原始 `server_ts` 计算 RTT。
+**消息范围。** `backend/client-go/handler/router.go` 支持 `heartbeat`、`command` 与前台取消 `cancel`；可取消命令及 `shell_stream` 能分段返回 `result(eof=0)`，结束时返回 `result(eof=1)`。Remote Files 与 Script 使用各自的 Control Manager；Script 通过外部 Python 执行，支持 subprocess_pipe 的 collect/stream 两种输出。ACMD、PTY、Screen、Clipboard、Monitor 等能力仍按 Client 实际实现和能力声明决定。Heartbeat ACK 包含 `server_ts`、`client_ts` 和当前工作目录，Server 可用原始 `server_ts` 计算 RTT。
 
 如需维护这一独立实现，应分别核对 `backend/client-go/protocol/ratsocket.go`、`connection/client.go` 和 `handler/router.go`，而不把这些实现差异混入 Python Client 功能开发步骤。

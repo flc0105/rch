@@ -1,6 +1,9 @@
 package executor
 
-import "context"
+import (
+	"client-go/config"
+	"context"
+)
 
 type ControlHandler func(context.Context, *Session, int, string, map[string]interface{}, func(int, string)) (int, interface{})
 
@@ -32,7 +35,20 @@ func (ScriptManager) Execute(ctx context.Context, s *Session, id int, action str
 		params[key] = value
 	}
 	params["__script_name__"] = name
-	return RunExternalPythonScript(ctx, s, source, params, emit)
+	executionMode, _ := payload["execution_mode"].(string)
+	outputMode, _ := payload["output_mode"].(string)
+	if executionMode != config.ScriptSubprocessPipe {
+		return 0, "Invalid or unavailable Script execution_mode"
+	}
+	result := runExternalPythonScriptMode(ctx, s, source, params, emit, config.Runtime(), outputMode)
+	if result.Reason != "" {
+		kind := "error"
+		if result.Reason == "cancelled" {
+			kind = "cancelled"
+		}
+		return result.Status, map[string]interface{}{"event_type": kind, "failure_reason": result.Reason, "text": result.Text}
+	}
+	return result.Status, result.Text
 }
 
 func (s *Session) ControlHandler(domain string) (ControlDomain, bool) {

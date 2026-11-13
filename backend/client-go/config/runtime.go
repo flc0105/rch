@@ -18,13 +18,24 @@ type runtimeOption struct {
 	Description string
 	Min         int
 	Max         int
+	Choices     []string
 }
 
+const (
+	ScriptExecutionConfig = "SCRIPT_DEFAULT_EXECUTION_MODE"
+	ScriptOutputConfig    = "SCRIPT_DEFAULT_OUTPUT_MODE"
+	ScriptSubprocessPipe  = "subprocess_pipe"
+	ScriptCollect         = "collect"
+	ScriptStream          = "stream"
+)
+
 var runtimeOptions = map[string]runtimeOption{
-	"COMMAND_DEFAULT_SHELL_TIMEOUT":  {30, "command", "Default timeout for shell command execution (seconds).", 1, 86400},
-	"COMMAND_DEFAULT_STREAM_TIMEOUT": {300, "command", "Default timeout for streamed shell execution (seconds).", 1, 86400},
-	"SCRIPT_DEFAULT_TIMEOUT":         {300, "script", "Default timeout for external Python scripts (seconds).", 1, 86400},
-	"SCRIPT_PYTHON_PATH":             {"", "script", "External Python interpreter path. Empty uses the system PATH.", 0, 0},
+	ScriptExecutionConfig:            {ScriptSubprocessPipe, "script", "Script default execution mode (external Python only).", 0, 0, []string{ScriptSubprocessPipe}},
+	ScriptOutputConfig:               {ScriptCollect, "script", "Script default output mode.", 0, 0, []string{ScriptCollect, ScriptStream}},
+	"COMMAND_DEFAULT_SHELL_TIMEOUT":  {30, "command", "Default timeout for shell command execution (seconds).", 1, 86400, nil},
+	"COMMAND_DEFAULT_STREAM_TIMEOUT": {300, "command", "Default timeout for streamed shell execution (seconds).", 1, 86400, nil},
+	"SCRIPT_DEFAULT_TIMEOUT":         {300, "script", "Default timeout for external Python scripts (seconds).", 1, 86400, nil},
+	"SCRIPT_PYTHON_PATH":             {"", "script", "External Python interpreter path. Empty uses the system PATH.", 0, 0, nil},
 }
 
 type RuntimeStore struct {
@@ -113,7 +124,16 @@ func checkValue(key string, value interface{}, opt runtimeOption) (interface{}, 
 		if !ok {
 			return nil, fmt.Errorf("%s must be a string", key)
 		}
-		return strings.TrimSpace(text), nil
+		text = strings.TrimSpace(text)
+		if len(opt.Choices) > 0 {
+			for _, choice := range opt.Choices {
+				if text == choice {
+					return text, nil
+				}
+			}
+			return nil, fmt.Errorf("%s must be one of %v", key, opt.Choices)
+		}
+		return text, nil
 	}
 	return nil, fmt.Errorf("unsupported option %s", key)
 }
@@ -261,7 +281,7 @@ func (s *RuntimeStore) Payload() map[string]interface{} {
 		items = append(items, map[string]interface{}{
 			"key": key, "value": current, "default_value": opt.Default,
 			"source": source, "group": opt.Group, "desc": opt.Description,
-			"value_type": kind, "choices": []string{}, "min_value": min,
+			"value_type": kind, "choices": append([]string{}, opt.Choices...), "min_value": min,
 			"max_value": max, "step": nil, "editable": true,
 		})
 	}

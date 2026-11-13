@@ -22,7 +22,7 @@ def test_three_domains_do_not_instantiate_commands(tmp_path, monkeypatch):
     def forbidden(*args, **kwargs):
         raise AssertionError('Control must not instantiate Commands')
     monkeypatch.setattr(runtime.command_executor, 'get_commands', forbidden)
-    monkeypatch.setattr(runtime_config, 'PYTHON_EXECUTION_MODE', 'inproc')
+    monkeypatch.setattr(runtime_config, 'SCRIPT_DEFAULT_EXECUTION_MODE', 'inproc')
     dispatch = runtime.control_dispatcher.execute
     assert dispatch(1, 'job', 'ps', {})[0] == 1
     src = tmp_path / 'a.txt'
@@ -37,16 +37,16 @@ def test_three_domains_do_not_instantiate_commands(tmp_path, monkeypatch):
     assert (dest / 'a.txt').read_text() == 'old'
     status, report = dispatch(3, 'remote_files', 'delete_paths', {'paths': [str(src)]})
     assert status == 1 and report['succeeded'] == 1 and not src.exists()
-    assert dispatch(4, 'script', 'run', {'script_name':'demo','source':'print(kwargs["x"])','params':{'x':42}}) == (1, '42\n')
+    assert dispatch(4, 'script', 'run', {'script_name':'demo','source':'print(kwargs["x"])','params':{'x':42},'execution_mode':'inproc','output_mode':'collect'}) == (1, '42\n')
     assert dispatch(5, 'remote_files', 'browse_directory', {'path': str(tmp_path)})[0] == 1
     assert all(runtime.execution.context_store.get_existing(i) is None for i in range(1,6))
 
 
 def test_sdk_explicit_command_access_is_preserved(monkeypatch):
     runtime, _ = make_runtime()
-    monkeypatch.setattr(runtime_config, 'PYTHON_EXECUTION_MODE', 'inproc')
+    monkeypatch.setattr(runtime_config, 'SCRIPT_DEFAULT_EXECUTION_MODE', 'inproc')
     status, output = runtime.control_dispatcher.execute(6, 'script', 'run', {
-        'script_name':'demo', 'source': 'print(command.run_client("cd", "").output)', 'params': {},
+        'script_name':'demo', 'source': 'print(command.run_client("cd", "").output)', 'params': {}, 'execution_mode':'inproc','output_mode':'collect',
     })
     assert status == 1, output
     assert output.strip() == os.getcwd()
@@ -58,10 +58,10 @@ def test_sdk_explicit_command_access_is_preserved(monkeypatch):
 
 def test_shared_execution_cancels_script_subprocess(monkeypatch):
     runtime, _ = make_runtime()
-    monkeypatch.setattr(runtime_config, 'PYTHON_EXECUTION_MODE', 'subprocess_pipe')
+    monkeypatch.setattr(runtime_config, 'SCRIPT_DEFAULT_EXECUTION_MODE', 'subprocess_pipe')
     results = []
     worker = threading.Thread(target=lambda: results.append(runtime.control_dispatcher.execute(7, 'script','run', {
-        'script_name':'demo', 'source':'import time\ntime.sleep(30)', 'params': {},
+        'script_name':'demo', 'source':'import time\ntime.sleep(30)', 'params': {}, 'execution_mode':'subprocess_pipe','output_mode':'collect',
     })), daemon=True)
     worker.start()
     deadline = time.monotonic() + 5
@@ -75,5 +75,5 @@ def test_shared_execution_cancels_script_subprocess(monkeypatch):
     assert runtime.execution.cancel(7)['accepted']
     worker.join(5)
     assert not worker.is_alive()
-    assert results and results[0][0] == 0 and 'cancel' in results[0][1].lower()
+    assert results and results[0][0] == 0 and results[0][1]['event_type'] == 'cancelled'
     assert runtime.execution.context_store.get_existing(7) is None

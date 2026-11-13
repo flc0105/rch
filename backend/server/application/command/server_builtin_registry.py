@@ -45,7 +45,7 @@ SERVER_COMMAND_SPECS = (
     command('script', 'List, inspect and run Server scripts', children=(
         ('list', 'List available scripts (optionally --json)', 'script list [--json]'),
         ('view', 'Read script source on the Server', 'script view <path>'),
-        ('exec', 'Execute a script with CLI arguments', 'script exec <path> [options]'),
+        ('exec', 'Execute a script with CLI arguments', 'script exec [--execution-mode MODE] [--output-mode MODE] <path> [options]'),
     ), default='list', dispatch_subcommand=True),
     command('alias', 'List or manage aliases for this Client platform', children=(
         ('list', 'List current effective aliases (optionally --json)', 'alias list [--json]'),

@@ -46,7 +46,7 @@
 | `alias unset [--platform PLATFORM] name` | 删除指定作用域的 Alias；不会自动删除其他平台同名定义 |
 | `script list` | 查看 Server Script Library；可选 `--json` |
 | `script view <path>` | 查看 Server 脚本内容 |
-| `script exec <path> [options]` | 使用命令行选项执行 Server 脚本 |
+| `script exec [--execution-mode MODE] [--output-mode MODE] <path> [options]` | 使用命令行选项执行 Server 脚本 |
 | `job list` | 查看 Server 已登记的 Job 定义；可选 `--json` |
 | `job start <name> [--mode MODE] [--params JSON]` | 在目标 Client 启动 Job，并可指定运行模式和参数 |
 | `job ps` / `job status <name>` | 查看正在运行的 Job / 单个 Job 状态 |
@@ -97,6 +97,7 @@ Alias 的模板参数、平台覆盖与安全边界见 [Aliases / Quick Actions]
 | `ifconfig` | 查看目标设备网络接口 | 输出格式由 RCH 的平台信息提供者决定 |
 | `set` | 查看及修改 Client Runtime Config | Python / Go 均支持 `set --json`、`set KEY value`、`set --reset KEY`，可通过 Info → Configuration 编辑 |
 | `set KEY value` | 设置允许覆盖的 Runtime Config 项 | 可能影响客户端运行行为，修改前确认范围 |
+| `SCRIPT_DEFAULT_EXECUTION_MODE` / `SCRIPT_DEFAULT_OUTPUT_MODE` | Script 默认执行 / 输出模式 | Python 默认 inproc / collect，Go 默认 subprocess_pipe / collect；受本次选择及 Schema 约束 |
 | `SCRIPT_DEFAULT_TIMEOUT` | Script 默认运行时长，单位为秒 | Python / Go 默认 300 秒；Go 的外部 Python 执行器会按时终止子进程 |
 | `set --reset KEY` / `set --reset-all` | 还原一项 / 全部运行时覆盖值 | `--reset-all` 影响所有已保存的覆盖设置 |
 | `SCRIPT_PYTHON_PATH` | Go Client 外部 Python 解释器路径 | 留空时按 `PATH` 查找；仅 Go Client 配置包含此项 |

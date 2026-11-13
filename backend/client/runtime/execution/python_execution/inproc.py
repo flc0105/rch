@@ -1,8 +1,7 @@
-import contextlib
 import io
 import traceback
 
-from client.runtime.execution.context import CommandCancelledError, CommandTimeoutError
+from client.runtime.execution.python_execution.output import capture_output, StreamOutput
 from client.runtime.sdk.context import build_script_sdk_globals, use_script_sdk_context
 from client.runtime.execution.python_execution.base import PythonExecutionStrategy
 
@@ -52,96 +51,28 @@ class InProcessPythonExecutionStrategy(PythonExecutionStrategy):
         exec_globals['kwargs'] = kwargs
         return exec_globals
 
-    def execute_collect(self, code, kwargs=None, timeout=None):
+    def _execute(self, code, kwargs, output):
         self.configure_context()
-
-        output = io.StringIO()
         try:
             exec_globals = self._build_exec_globals(kwargs)
             with use_script_sdk_context(self.owner, kwargs):
-                with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
+                with capture_output(output, output):
                     exec(code, exec_globals)
-            return 1, output.getvalue()
+            return 1, ''
         # User scripts must not propagate interpreter-exit exceptions into Client.wait().
         except BaseException as exc:
-            if _is_user_facing_script_error(exc):
-                output.write(_format_user_facing_script_error(exc))
-            else:
-                error_msg = traceback.format_exc()
-                output.write(f"\n[ERROR] Script execution failed:\n{error_msg}")
-            return 0, output.getvalue()
+            message = (_format_user_facing_script_error(exc) if _is_user_facing_script_error(exc)
+                       else f"\n[ERROR] Script execution failed:\n{traceback.format_exc()}")
+            return 0, message
+        finally:
+            output.flush()
+
+    def execute_collect(self, code, kwargs=None, timeout=None):
+        output = io.StringIO()
+        status, message = self._execute(code, kwargs, output)
+        return status, output.getvalue() + message
 
     def execute_stream(self, code, kwargs=None, timeout=None):
-        """
-        执行 Python 代码并生成输出流
-        """
-        self.configure_context()
-
-        if kwargs is None:
-            kwargs = {}
-
-        try:
-            import sys
-
-            # 创建自定义的 StringIO 来捕获输出
-            class StreamGenerator:
-                def __init__(self, owner):
-                    self.owner = owner
-                    self.buffer = ''
-
-                def write(self, text):
-                    if text:
-                        self.buffer += text
-                        lines = self.buffer.split('\n')
-                        self.buffer = lines[-1]
-                        for line in lines[:-1]:
-                            if line:
-                                self.owner._send_interim_result(1, line, 0)
-
-                def flush(self):
-                    if self.buffer:
-                        self.owner._send_interim_result(1, self.buffer, 0)
-                        self.buffer = ''
-
-            # 保存原始 stdout/stderr
-            old_stdout = sys.stdout
-            old_stderr = sys.stderr
-
-            # 创建捕获器
-            generator = StreamGenerator(self.owner)
-
-            sys.stdout = generator
-            sys.stderr = generator
-
-            try:
-                exec_globals = self._build_exec_globals(kwargs)
-                with use_script_sdk_context(self.owner, kwargs):
-                    exec(code, exec_globals)
-                generator.flush()
-            except BaseException as e:
-                if _is_user_facing_script_error(e):
-                    message = _format_user_facing_script_error(e).strip()
-                elif isinstance(e, (SystemExit, KeyboardInterrupt)):
-                    message = f'{type(e).__name__}: {e}'
-                else:
-                    message = f'Error: {e}'
-                generator.flush()
-                self.owner._send_interim_result(0, message, 0)
-                return 0, f'Execution failed: {e}'
-            finally:
-                sys.stdout = old_stdout
-                sys.stderr = old_stderr
-
-            self.owner._send_final_result(1, "Code execution completed")
-
-        except CommandCancelledError:
-            return 0, 'Command cancelled'
-        except CommandTimeoutError:
-            return 0, 'Command timed out'
-        except Exception as e:
-            return 0, f'Failed to execute code: {e}'
-
-
-
-
-
+        output = StreamOutput(lambda text: self.owner._send_interim_result(1, text, 0))
+        status, message = self._execute(code, kwargs, output)
+        return status, message or 'Code execution completed'
