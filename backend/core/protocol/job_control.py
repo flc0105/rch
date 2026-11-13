@@ -1,6 +1,7 @@
 """Typed Job Control requests and results shared by Server and Python Client."""
 
 from core.protocol.control import JobAction
+from core.protocol.references import ReferenceType, entity_reference
 
 JOB_ACTIONS = frozenset(JobAction)
 JOB_MUTATING_ACTIONS = frozenset({JobAction.START, JobAction.STOP, JobAction.STOP_ALL})
@@ -40,6 +41,10 @@ def build_job_control_result(action, message, *, job_id='', job_ids=None,
                       total=int(total), succeeded=int(succeeded),
                       failed=len(errors), errors=errors)
     result.update(details)
+    if action in JOB_MUTATING_ACTIONS:
+        ids = dict.fromkeys(([job_id] if job_id else []) + list(job_ids or []))
+        if ids:
+            result['references'] = [entity_reference(ReferenceType.JOB, identifier) for identifier in ids]
     return result
 
 

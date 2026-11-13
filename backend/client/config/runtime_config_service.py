@@ -4,7 +4,7 @@ from threading import RLock
 
 from dataclasses import dataclass
 
-from client.config.runtime_config_utils import format_runtime_config_value
+from core.utils.runtime_config_utils import format_runtime_config_value
 from client.config import runtime_config
 from client.config.runtime_config_store import (
     clear_runtime_overrides,
@@ -81,7 +81,7 @@ class RuntimeConfigService:
 
     @_locked_config
     def build_config_payload(self, include_hidden: bool = False) -> dict:
-        self.prune_redundant_overrides()
+        removed = self.prune_redundant_overrides()
         items = []
 
         for key, value, default_value, source in self.list_config_items(include_hidden=include_hidden):
@@ -107,6 +107,7 @@ class RuntimeConfigService:
         return {
             'store_path': self.get_store_path(),
             'items': items,
+            **({'pruned': removed} if removed else {}),
         }
 
     def get_value_type(self, value, default_value=None) -> str:

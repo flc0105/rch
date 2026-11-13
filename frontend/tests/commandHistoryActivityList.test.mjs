@@ -23,8 +23,8 @@ vm.runInNewContext(
   context,
 )
 const component = context.component
-const item = {activity_id:'a1', kind:'alias', status:'success', invocation:{input:'now',target:'now'},
-  resolved:{command_type:'command',command:'pyexec_collect ...'},result:{output_records:[],truncated:false}}
+const item = {activity_id:'a1', kind:'alias', status:'success', summary:'now', invocation:{command:'now'},
+  resolved:{type:'command',id:1,text:'pyexec_collect ...'},result:{output_records:[]}}
 
 test('Activity list has identity, state icons, Details navigation and no Use/Delete', () => {
   assert.match(activity, /:key="item\.activity_id"/)
@@ -123,18 +123,19 @@ test('Quick command cells show latest status via Lucide icon on desktop and mobi
 test('Remote Files list uses semantic actions and includes the new filter', () => {
   assert.match(activity, /label="Remote Files" value="remote_files"/)
   const entry = {kind:'remote_files', action:'rename_path', status:'success',
-    invocation:{arguments:{old_path:'/tmp/a.txt',new_name:'b.txt',count:1}},
+    summary:'Rename', invocation:{}, resolved:{type:'control',id:2,domain:'remote_files',action:'rename_path',payload:{old_path:'/tmp/a.txt',new_name:'b.txt',count:1}},
     result:{output_records:[{text:'Renamed to: /tmp/b.txt'}]}}
   assert.equal(component.methods.getActivityKindIcon('remote_files'), context.FolderOpen)
   assert.equal(component.methods.buildActivityKindLabel('remote_files'), 'Remote Files')
   assert.equal(component.methods.buildActivityLabel(entry), 'Rename')
   assert.equal(component.methods.buildCommandExecutionSummary.call({},entry), 'Renamed to: /tmp/b.txt')
-  assert.equal(component.methods.buildActivityLabel({kind:'remote_files',action:'delete_paths',invocation:{arguments:{paths:['a','b'],count:2}}}), 'Delete 2 items')
-  assert.equal(component.methods.buildActivityLabel({kind:'remote_files',action:'create_directory',invocation:{arguments:{path:'/tmp/chat_exports'}}}), 'Create directory')
+  assert.equal(component.methods.buildActivityLabel({kind:'remote_files',action:'delete_paths',summary:'Delete 2 items',invocation:{}}), 'Delete 2 items')
+  assert.equal(component.methods.buildActivityLabel({kind:'remote_files',action:'create_directory',summary:'Create directory',invocation:{}}), 'Create directory')
   const detailScript = detail.match(/<script>([\s\S]*?)<\/script>/)?.[1]
   const detailContext = {}
   vm.runInNewContext(detailScript.replace('export default {', 'globalThis.component = {'), detailContext)
-  const contents = detailContext.component.methods.getActivityInvocation(entry)
+  assert.equal(detailContext.component.methods.getActivityInvocation(entry), '-')
+  const contents = detailContext.component.methods.getActivityResolved(entry)
   assert.match(contents, /"old_path": "\/tmp\/a\.txt"/)
   assert.doesNotMatch(contents, /__json__:/)
 })
@@ -153,7 +154,7 @@ test('Activity summary color reflects operation status, without changing list la
 
 test('Transfer kind preserves filtering and uses compact semantic names', () => {
   assert.match(activity, /label="Transfer" value="transfer"/)
-  const transfer = {kind:'transfer', action:'download_files', status:'success', invocation:{arguments:{filename:'archive.zip', count:3}}}
+  const transfer = {kind:'transfer', action:'download_files', status:'success', summary:'Download 3 items',invocation:{}}
   assert.equal(component.methods.buildActivityLabel(transfer), 'Download 3 items')
   assert.equal(component.methods.buildActivityKindLabel('transfer'), 'Transfer')
   assert.equal(component.methods.getActivityKindIcon('transfer', 'download_files'), context.ArrowDownToLine)
@@ -168,26 +169,25 @@ test('External Tool Manager Activity is semantic, searchable and uses a distinct
   assert.equal(component.methods.getActivityKindIcon('external_tool'), context.Wrench)
   assert.equal(component.methods.buildActivityKindLabel('external_tool'), 'External Tool')
   const example = {kind: 'external_tool', action: 'start_instance',
-    invocation: {arguments: {tool_id: 'heartbeat.worker', instance_id: 'alpha'}}}
+    summary:'Start heartbeat.worker (alpha)',invocation:{}}
   assert.equal(component.methods.buildActivityLabel(example), 'Start heartbeat.worker (alpha)')
   assert.equal(component.methods.buildActivityLabel({kind:'external_tool', action:'install_package',
-    invocation:{arguments:{package_id:'heartbeat'}}}), 'Install heartbeat')
-  assert.match(detail, /\['remote_files', 'external_tool', 'job', 'pty', 'screen_view', 'clipboard', 'process', 'configuration', 'watchdog'\]\.includes\(entry\?\.kind\)/)
+    summary:'Install heartbeat',invocation:{}}), 'Install heartbeat')
   assert.match(source, /\['remote_files', 'transfer', 'external_tool', 'job', 'pty', 'screen_view', 'clipboard', 'process', 'configuration', 'watchdog'\]\.includes\(item\.kind\)/)
 })
 
 
 test('xt Exec uses semantic External Tool label and human invocation', () => {
   const entry = {kind:'external_tool', action:'run_exec',
-    invocation:{input:'xt run ffmpeg -- -version', arguments:{exec_name:'ffmpeg', package_id:'ffmpeg'}},
-    resolved:{command_type:'command'}}
+    summary:'Run ffmpeg',invocation:{command:'xt run ffmpeg -- -version'},
+    resolved:{type:'command',id:3,text:'external_tool_exec __json__:encoded'}}
   assert.equal(component.methods.buildActivityLabel(entry), 'Run ffmpeg')
   assert.equal(component.methods.getActivityKindIcon('external_tool'), context.Wrench)
   const detailContext = {}
   const detailScript = detail.match(/<script>([\s\S]*?)<\/script>/)?.[1]
   vm.runInNewContext(detailScript.replace('export default {', 'globalThis.component = {'), detailContext)
   assert.equal(detailContext.component.methods.getActivityInvocation(entry), 'xt run ffmpeg -- -version')
-  assert.doesNotMatch(JSON.stringify(entry), /external_tool_exec|__json__:/)
+  assert.equal(JSON.parse(detailContext.component.methods.getActivityResolved(entry)).text, entry.resolved.text)
 })
 
 test('Background Job actions use one semantic Activity and a distinct icon', () => {
@@ -195,28 +195,24 @@ test('Background Job actions use one semantic Activity and a distinct icon', () 
   assert.equal(component.methods.getActivityKindIcon('job'), context.BriefcaseBusiness)
   assert.equal(component.methods.buildActivityKindLabel('job'), 'Background Job')
   assert.equal(component.methods.buildActivityLabel({kind:'job', action:'start',
-    invocation:{arguments:{job_name:'cleanup'}}}), 'Start cleanup')
+    summary:'Start cleanup',invocation:{}}), 'Start cleanup')
   assert.equal(component.methods.buildActivityLabel({kind:'job', action:'stop',
-    invocation:{arguments:{job_key:'cleanup'}}}), 'Stop cleanup')
-  assert.equal(component.methods.buildActivityLabel({kind:'job', action:'stop_all',
-    invocation:{arguments:{}}}), 'Stop all jobs')
-  assert.match(detail, /'job'/)
+    summary:'Stop cleanup',invocation:{}}), 'Stop cleanup')
+  assert.equal(component.methods.buildActivityLabel({kind:'job', action:'stop_all',summary:'Stop all jobs',
+    invocation:{}}), 'Stop all jobs')
 })
 
 
-test('Background Job detail shows persisted counts without invented zeros or trailing separators', () => {
+test('Job detail preserves exact request and output counts without projecting results into Resolved', () => {
   const detailContext = {}
   const detailScript = detail.match(/<script>([\s\S]*?)<\/script>/)?.[1]
   vm.runInNewContext(detailScript.replace('export default {', 'globalThis.component = {'), detailContext)
-  const resolved = detailContext.component.methods.getActivityResolved
-  const entry = counts => ({kind:'job', action:'stop_all', resolved:counts})
-  assert.equal(resolved(entry({total:2, succeeded:2, failed:0, job_ids:['a','b']})),
-    '2 of 2 stop requested · 0 failed · a, b')
-  assert.equal(resolved(entry({total:0, succeeded:0, failed:0, job_ids:[]})),
-    '0 of 0 stop requested · 0 failed')
-  assert.equal(resolved(entry({total:2, succeeded:1, failed:1, job_ids:[]})),
-    '1 of 2 stop requested · 1 failed')
-  assert.equal(resolved(entry({command_type:'job_control'})), 'Stop all jobs')
+  const request = {type:'control', id:4, domain:'job', action:'stop_all',payload:{}}
+  const counts = {total:2,succeeded:1,failed:1,job_ids:['a']}
+  const entry = {kind:'job',action:'stop_all',invocation:{},resolved:request,result:{output_records:[{text:JSON.stringify(counts)}]}}
+  assert.deepEqual(JSON.parse(detailContext.component.methods.getActivityResolved(entry)),request)
+  assert.deepEqual(JSON.parse(entry.result.output_records[0].text),counts)
+  assert.match(detail,/entry\.result\?\.output_records/)
 })
 
 
@@ -225,10 +221,10 @@ test('PTY, Screen View, Clipboard Set and Process Kill have semantic Activity fi
     assert.match(activity, new RegExp(`label="${title}" value="${kind}"`))
     assert.equal(component.methods.buildActivityKindLabel(kind), title)
   }
-  assert.equal(component.methods.buildActivityLabel({kind:'pty',action:'session'}), 'PTY')
-  assert.equal(component.methods.buildActivityLabel({kind:'screen_view',action:'session'}), 'Screen View')
-  assert.equal(component.methods.buildActivityLabel({kind:'clipboard',action:'set',invocation:{arguments:{format_action:'set_artifact_file'}}}), 'Send Artifact file')
-  assert.equal(component.methods.buildActivityLabel({kind:'process',action:'kill',invocation:{arguments:{pid:42,name:'Safari',target_type:'app'}}}), 'Kill app Safari (PID 42)')
+  assert.equal(component.methods.buildActivityLabel({kind:'pty',action:'session',summary:'PTY'}), 'PTY')
+  assert.equal(component.methods.buildActivityLabel({kind:'screen_view',action:'session',summary:'Screen View'}), 'Screen View')
+  assert.equal(component.methods.buildActivityLabel({kind:'clipboard',action:'set',summary:'Send Artifact file',invocation:{}}), 'Send Artifact file')
+  assert.equal(component.methods.buildActivityLabel({kind:'process',action:'kill',summary:'Kill app Safari (PID 42)',invocation:{}}), 'Kill app Safari (PID 42)')
   assert.equal(component.methods.getActivityKindIcon('screen_view'), context.Monitor)
   assert.equal(component.methods.getActivityKindIcon('clipboard'), context.Clipboard)
   assert.equal(component.methods.getActivityKindIcon('process'), context.Activity)
@@ -237,11 +233,11 @@ test('PTY, Screen View, Clipboard Set and Process Kill have semantic Activity fi
 
 test('Session, clipboard metadata and named process activity labels remain compact', () => {
   const label = component.methods.buildActivityLabel
-  assert.equal(label({kind:'pty', action:'session', invocation:{arguments:{shell:'/bin/zsh'}}}), 'PTY · /bin/zsh')
-  assert.equal(label({kind:'screen_view', action:'session'}), 'Screen View')
-  assert.equal(label({kind:'clipboard', action:'set', invocation:{arguments:{format_action:'set_text',text:'hello\nworld'}}}), 'Set text · hello world')
-  assert.equal(label({kind:'clipboard', action:'set', invocation:{arguments:{format_action:'set_image',filename:'shot.png',size_bytes:123}}}), 'Set image · shot.png')
-  assert.equal(label({kind:'clipboard', action:'set', invocation:{arguments:{format_action:'set_files',names:['report.pdf','pics']}}}), 'Set files · report.pdf, pics')
-  assert.equal(label({kind:'clipboard', action:'set', invocation:{arguments:{format_action:'set_artifact_file',names:['notes.txt']}}}), 'Send Artifact file · notes.txt')
-  assert.equal(label({kind:'process', action:'kill', invocation:{arguments:{name:'chrome.exe',pid:123,target_type:'process'}}}), 'Kill process chrome.exe (PID 123)')
+  assert.equal(label({kind:'pty', action:'session', summary:'PTY · /bin/zsh',invocation:{}}), 'PTY · /bin/zsh')
+  assert.equal(label({kind:'screen_view', action:'session',summary:'Screen View'}), 'Screen View')
+  assert.equal(label({kind:'clipboard', action:'set', summary:'Set text · hello world',invocation:{}}), 'Set text · hello world')
+  assert.equal(label({kind:'clipboard', action:'set', summary:'Set image · shot.png',invocation:{}}), 'Set image · shot.png')
+  assert.equal(label({kind:'clipboard', action:'set', summary:'Set files · report.pdf, pics',invocation:{}}), 'Set files · report.pdf, pics')
+  assert.equal(label({kind:'clipboard', action:'set', summary:'Send Artifact file · notes.txt',invocation:{}}), 'Send Artifact file · notes.txt')
+  assert.equal(label({kind:'process', action:'kill', summary:'Kill process chrome.exe (PID 123)',invocation:{}}), 'Kill process chrome.exe (PID 123)')
 })

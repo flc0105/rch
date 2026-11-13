@@ -111,9 +111,9 @@ Script 使用 `control(domain=script, action=run)`，payload 包含 `script_name
 
 | Domain | Action | Payload / Result.data |
 | --- | --- | --- |
-| configuration | get | `{}` → 当前配置的 `store_path`、`items` |
-| configuration | set | `{"key":"SCRIPT_DEFAULT_OUTPUT_MODE","value":"stream"}` → 更新后的配置 |
-| configuration | reset | `{"key":"SCRIPT_DEFAULT_OUTPUT_MODE"}` → 恢复后的配置 |
+| configuration | get | `{}` 或 `{"include_hidden":true}` → 当前配置的 `store_path`、`items` |
+| configuration | set | `{"key":"SCRIPT_DEFAULT_OUTPUT_MODE","value":"stream"}` → 更新后的配置及 change；CLI 文本值带 `value_format: "text"` |
+| configuration | reset | `{"key":"SCRIPT_DEFAULT_OUTPUT_MODE"}` 或 `{"all":true}` → 恢复后的配置 |
 | watchdog | status | `{}` → 当前 Watchdog 状态对象 |
 | process | kill | `{"pid":1234}` → `{"message":"Process 1234 terminated"}` |
 

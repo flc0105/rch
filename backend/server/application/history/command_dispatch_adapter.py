@@ -8,12 +8,12 @@ import shlex
 import uuid
 
 from core.protocol.control import ControlDomain, ScriptAction
-from server.application.history.control_activity import should_record, describe_control, capture_output, command_control_identity, describe_result
+from server.application.history.control_activity import should_record
 from core.protocol.message_queue import result_terminal_status
 from server.application.command.command_types import COMMAND_TYPE_CONTROL
 from core.protocol.structured_arg_codec import decode_structured_arg
 from server.application.history.activity_definitions import (
-    ActivityAction, ActivityKind, ActivityOperation,
+    ActivityAction, ActivityKind, ActivityOperation, operation_summary,
 )
 from server.application.history.history_record_policy import CommandHistoryRecordPolicy
 from server.application.history.activity_bindings import xt_cli_mutation
@@ -107,8 +107,6 @@ class CommandDispatchAdapter:
         elif entry_id:
             try:
                 status, message, details = evaluate_operation(operation, result)
-                if details:
-                    self.coordinator.details(conn, entry_id, details)
                 if message:
                     self.coordinator.append_output(conn, entry_id, int(status == 'success'), message)
                 self.coordinator.finish(conn, entry_id, status == 'success', status=status)
@@ -130,20 +128,20 @@ class CommandDispatchAdapter:
             command, source=source, task_type=task_type, metadata=metadata)
         if not record_activity and not record_quick:
             return ''
-        text = str(command).strip()
+        text = str(command)
         origin = self._origin_map.get(source, source or 'cli')
         presentation = 'terminal' if origin in {'web_terminal', 'cli', 'rch_cli'} else 'none'
         kind, action, target, arguments = ActivityKind.COMMAND, ActivityAction.INVOKE, '', {}
         if metadata.get('quick_action'):
             kind, origin = ActivityKind.ALIAS, 'web_ui'
             target = str(metadata.get('quick_action_alias') or '').strip()
-            text = str(metadata.get('quick_action_display_command') or text)
+            text = ''
             presentation = str(metadata.get('quick_action_presentation') or 'dialog')
             arguments = {'values': metadata.get('quick_action_arguments') or []}
         elif metadata.get('script_run'):
             kind, action, origin = ControlDomain.SCRIPT, ScriptAction.RUN, 'web_ui'
             target = str(metadata.get('script_run_name') or '')
-            text = target or text
+            text = ''
             arguments = dict(metadata.get('script_run_arguments') or {})
             presentation = 'none'
         if record_activity:
@@ -171,64 +169,56 @@ class CommandDispatchAdapter:
         def update(pending):
             if pending['kind'] == ActivityKind.EXTERNAL_TOOL:
                 return
-            kind = pending['kind']
-            command_type = str(plan.get('command_type') or 'command')
             alias_name = str(plan.get('alias_name') or '').strip()
             if alias_name:
-                kind = ActivityKind.ALIAS
-                pending['invocation'].setdefault('target', alias_name)
-            pending['kind'] = kind
-            pending['resolved'] = {'command_type': command_type}
-            if command_type != COMMAND_TYPE_CONTROL:
-                pending['resolved']['command'] = str(command or '')
+                pending['kind'] = ActivityKind.ALIAS
+                pending['summary'] = alias_name
         self.coordinator.mutate_pending(conn, activity_id, update)
 
     def promote_external_exec(self, conn, activity_id, target):
         def promote(pending):
             pending['kind'] = ActivityKind.EXTERNAL_TOOL
             pending['action'] = 'run_exec'
-            pending['invocation']['arguments'] = {
-                'exec_name': str(target.get('exec_name') or ''),
-                'package_id': str(target.get('package_id') or ''),
-            }
-            pending['resolved'] = {'command_type': 'command'}
+            pending['summary'] = operation_summary(ActivityKind.EXTERNAL_TOOL, 'run_exec', target)
         self.coordinator.mutate_pending(conn, activity_id, promote)
 
     def suppress_query(self, conn, activity_id):
         self.coordinator.drop(activity_id)
 
-    def prepare_dispatch(self, conn, entry_id, command, command_type, *, payload=None, domain='', action=''):
-        identity = command_control_identity(command) if command_type == 'command' else None
-        if identity is not None:
-            domain, action, payload = identity
-        elif command_type != COMMAND_TYPE_CONTROL:
+    def prepare_dispatch(self, conn, entry_id, data):
+        if data['type'] != COMMAND_TYPE_CONTROL:
             return entry_id or self.scoped_entry(conn)
-        if not should_record(domain, action):
-            # Explicit terminal submission is separate from an internal lookup.
-            if entry_id:
-                self.coordinator.drop(entry_id)
-            return ''
+        domain, action = data['domain'], data['action']
         candidate = entry_id or self.scoped_entry(conn)
         previous = self.coordinator.pending(conn, candidate) if candidate else None
-        # A nested lookup must not consume a parent operation's prepared entry.
-        if candidate and (previous is None or previous['kind'] not in (domain, ActivityKind.COMMAND, ActivityKind.ALIAS)):
-            candidate, previous = '', None
-        operation = describe_control(domain, action, payload, previous)
-        if identity is not None:
-            from dataclasses import replace
-            # Preserve CLI presentation without retaining raw configuration values.
-            operation = replace(operation, text='', resolved={**operation.resolved, 'command_type': command_type})
-        return self.coordinator.prepare(conn, operation, entry_id=candidate)
+        # A nested request cannot consume another operation's prepared intent.
+        if previous and not ((entry_id and previous['kind'] in (ActivityKind.COMMAND, ActivityKind.ALIAS))
+                             or (previous['kind'], previous['action']) == (domain, action)):
+            previous, candidate = None, ''
+        if not should_record(domain, action):
+            if entry_id and previous:
+                self.coordinator.drop(candidate)
+            return ''
+        if not previous:
+            candidate = ''
+        operation = ActivityOperation(domain, action, data['payload'],
+                                      previous['origin'] if previous else 'web_ui',
+                                      previous['presentation'] if previous else 'none')
+        prepared = self.coordinator.prepare(conn, operation, entry_id=candidate)
+        if previous and (previous['kind'], previous['action']) == (domain, action):
+            self.coordinator.mutate_pending(conn, prepared, lambda row: row.update(summary=previous['summary']))
+        return prepared
 
-    def dispatch(self, conn, entry_id, command, command_type, *, payload=None, domain='', action=''):
+    def dispatch(self, conn, entry_id, data):
         if not entry_id:
             return ''
+        command = data.get('text', '')
         if CommandHistoryRecordPolicy.is_internal_external_tool_command(command):
             row = self.coordinator.pending(conn, entry_id)
             if row is None:
-                return entry_id
+                return ''
             if (row['kind'] == ActivityKind.EXTERNAL_TOOL
-                    and str(row['invocation'].get('input') or '').lower().startswith('xt ')
+                    and str(row['invocation'].get('command') or '').lower().startswith('xt ')
                     and row['action'] != 'run_exec'):
                 mutation_command = {
                     'install_package': 'external_tool_install',
@@ -239,80 +229,68 @@ class CommandDispatchAdapter:
                     'restart_instance': 'external_tool_stop',
                 }.get(row['action'])
                 if str(command).split(None, 1)[0] != mutation_command:
-                    return entry_id
+                    return ''
             if str(command).startswith('external_tool_exec '):
                 try:
                     target = decode_structured_arg(str(command).split(None, 1)[1], require_prefix=True)
                 except (ValueError, TypeError, IndexError):
-                    return entry_id
+                    return ''
                 if not isinstance(target, dict):
-                    return entry_id
+                    return ''
                 self.promote_external_exec(conn, entry_id, target)
             elif row['kind'] != ActivityKind.EXTERNAL_TOOL:
-                return entry_id
+                return ''
         try:
-            self.coordinator.dispatch(conn, entry_id, command=command, command_type=command_type)
+            pending = self.coordinator.pending(conn, entry_id)
+            if pending and pending['kind'] == ActivityKind.COMMAND:
+                self.coordinator.mutate_pending(conn, entry_id, lambda row: row.update(
+                    summary=operation_summary(ActivityKind.COMMAND, row['action'], {}, command)))
+            if self.coordinator.dispatch(conn, entry_id, data=data):
+                return entry_id
         except Exception:
-            # The command has already reached Client; Activity storage cannot undo it.
             logger.exception('Unable to confirm dispatched command Activity')
-        return entry_id
+        return ''
 
-    def observe_result(self, conn, entry_id, command_type, command, rows, *, payload=None, domain='', action=''):
-        identity = command_control_identity(command) if command_type == 'command' else None
-        if identity is not None:
-            domain, action, payload = identity
-        elif command_type != COMMAND_TYPE_CONTROL:
+    def observe_result(self, conn, entry_id, data, rows):
+        authoritative = data['type'] == COMMAND_TYPE_CONTROL
+        if not entry_id:
+            yield from rows
+            return
+        # External Tool retains its existing lifecycle adapter until its Control migration.
+        if not authoritative and CommandHistoryRecordPolicy.is_internal_external_tool_command(data.get('text')):
             yield from rows
             return
         final = None
+        self.coordinator.own_request_output(conn, entry_id)
         try:
             for item in rows:
                 status, result = item[:2]
-                if hasattr(item, 'eof'):
+                eof = bool(getattr(item, 'eof', False))
+                if authoritative and hasattr(item, 'eof'):
                     item.terminal_authoritative = True
-                if not entry_id:
-                    yield item
-                    continue
-                if getattr(item, 'eof', False):
+                if eof:
                     final = result_terminal_status(status, result)
                 try:
-                    if capture_output(domain, action):
-                        message = (result.get('message') or result.get('text')
-                                   if isinstance(result, dict) else result)
-                        if message is None and isinstance(result, dict):
-                            message = json.dumps(result, ensure_ascii=False)
-                        if message:
-                            self.coordinator.append_request_output(conn, entry_id, status, str(message), getattr(item, 'eof', False))
+                    if result is not None:
+                        message = result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
+                        self.coordinator.append_request_output(conn, entry_id, status, message, eof)
+                    if eof and isinstance(result, dict):
+                        self.coordinator.add_references(conn, entry_id, result.get('references'))
+                    if eof and authoritative:
+                        self.coordinator.finish(conn, entry_id, final == 'success', status=final)
                 except Exception:
-                    logger.exception('Unable to record request output')
-                if final is not None:
-                    try:
-                        self._finish_control(conn, entry_id, domain, action, result, final)
-                    except Exception:
-                        logger.exception('Unable to finish request Activity')
+                    logger.exception('Unable to record request result')
                 yield item
-            if entry_id and final is None:
-                try:
-                    self.coordinator.finish(conn, entry_id, False, status='interrupted')
-                except Exception:
-                    logger.exception("Unable to finalize request Activity")
+            if authoritative and final is None:
+                self.coordinator.finish(conn, entry_id, False, status='interrupted')
         except BaseException as exc:
-            if entry_id and final is None:
+            if authoritative and final is None:
                 final = ('timed_out' if isinstance(exc, TimeoutError) else
                          'interrupted' if isinstance(exc, (ConnectionError, EOFError, GeneratorExit)) else 'error')
-                try:
-                    self.coordinator.finish(conn, entry_id, False, status=final)
-                except Exception:
-                    logger.exception("Unable to finalize request Activity")
+                self.coordinator.finish(conn, entry_id, False, status=final)
             raise
-
-    def _finish_control(self, conn, entry_id, domain, action, result, final):
-        try:
-            details = describe_result(domain, action, result)
-            if details:
-                self.coordinator.details(conn, entry_id, details)
         finally:
-            self.coordinator.finish(conn, entry_id, final == 'success', status=final)
+            self.coordinator.release_request_output(conn, entry_id)
 
 
 def evaluate_operation(operation, result):

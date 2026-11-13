@@ -1,5 +1,7 @@
 """Activity mutations; Quick History has an independent lifecycle and store."""
 from server.models.artifact import ArtifactReference
+from core.protocol.references import ReferenceType, entity_reference
+from core.utils.json_utils import compact_json_dumps
 from server.models.records import OutputRecordBase
 
 
@@ -23,24 +25,14 @@ class HistoryWriteService:
             'origin': activity['origin'], 'presentation': activity['presentation'],
             'status': 'running', 'invocation': dict(activity['invocation']),
             'resolved': dict(activity['resolved']),
-            'result': {'truncated': False, 'output_records': []},
+            'result': {'output_records': []},
+            'summary': activity['summary'],
             'created_at': activity.get('created_at') or when,
-            'started_at': when, 'finished_at': None, 'files': [],
+            'started_at': when, 'finished_at': None, 'references': list(activity.get('references', [])),
         }
         with self.store._lock, self.store.database.transaction():
             self.store._insert_entry(entry)
         return activity_id
-
-    def update_activity_resolved(self, conn, entry_id, details):
-        """Attach bounded session lifecycle details while Activity is in progress."""
-        if conn is None or not entry_id or not isinstance(details, dict):
-            return
-        with self.store._lock, self.store.database.transaction():
-            entry = self.store._get_entry(self.store._get_machine_id_from_conn(conn), entry_id)
-            if entry is None or entry['status'] != 'running':
-                return
-            entry['resolved'].update(details)
-            self.store._update_entry(entry)
 
     def interrupt_orphaned_activities(self):
         """Mark unfinished Activity records from a previous Server process as interrupted."""
@@ -53,20 +45,19 @@ class HistoryWriteService:
                 entry = self.store._get_entry(row['machine_id'], row['activity_id'])
                 if not entry:
                     continue
-                entry['resolved']['end_reason'] = 'server_restarted'
+                records = entry['result'].setdefault('output_records', [])
+                if len(records) < self.store.MAX_OUTPUT_RECORDS and sum(len(r['text']) for r in records) + len('Server restarted') <= self.store.MAX_OUTPUT_RECORD_CHARS:
+                    records.append(OutputRecordBase(seq=len(records)+1, status=0, text='Server restarted', eof=1, created_at=self.store._now_iso()).to_dict())
                 entry['status'] = 'interrupted'
                 entry['finished_at'] = self.store._now_iso()
                 self.store._update_entry(entry)
 
-    def append_output_for_connection(self, conn, entry_id, status, text, eof=0, *, request_owned=False):
+    def append_output_for_connection(self, conn, entry_id, status, text, eof=0, *, active_only=False):
         if conn is None or not entry_id:
             return
         with self.store._lock, self.store.database.transaction():
             entry = self.store._get_entry(self.store._get_machine_id_from_conn(conn), entry_id)
-            if entry is None:
-                return
-            # Request-owned output is captured once, regardless of how many presentation layers render it.
-            if entry['resolved'].get('result_owner') == 'request' and not request_owned:
+            if entry is None or (active_only and entry['status'] not in {'running', 'cancelling'}):
                 return
             result = entry['result']
             records = result.setdefault('output_records', [])
@@ -90,7 +81,38 @@ class HistoryWriteService:
             entry = self.store._get_entry(self.store._get_machine_id_from_conn(conn), entry_id)
             if entry is None:
                 return
-            entry['files'].append(ArtifactReference.from_dict(file_info).to_dict())
+            snapshot = ArtifactReference.from_dict(file_info).to_dict()
+            if not snapshot['artifact_id']:
+                return
+            ref = {**entity_reference(ReferenceType.ARTIFACT, snapshot['artifact_id']), 'snapshot': snapshot}
+            self._add_reference(entry, ref)
+            self.store._update_entry(entry)
+
+    @staticmethod
+    def _add_reference(entry, reference):
+        refs = entry['references']
+        for ref in refs:
+            if ref['type'] == reference['type'] and ref['id'] == reference['id']:
+                if 'snapshot' in reference:
+                    ref['snapshot'] = reference['snapshot']
+                return
+        refs.append(reference)
+
+    def add_references(self, conn, entry_id, references):
+        if not conn or not entry_id or not isinstance(references, list):
+            return
+        with self.store._lock, self.store.database.transaction():
+            entry = self.store._get_entry(self.store._get_machine_id_from_conn(conn), entry_id)
+            if entry is None:
+                return
+            for reference in references:
+                if not isinstance(reference, dict):
+                    continue
+                try:
+                    ref = entity_reference(reference.get('type'), reference.get('id'))
+                except ValueError:
+                    continue
+                self._add_reference(entry, ref)
             self.store._update_entry(entry)
 
     def update_entry_status_for_connection(self, conn, entry_id, status, cwd_end=''):

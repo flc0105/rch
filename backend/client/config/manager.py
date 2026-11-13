@@ -35,18 +35,31 @@ class ConfigurationManager:
     def execute(self, scope, action, payload):
         try:
             if action == ConfigurationAction.GET:
-                return 1, self.service.build_config_payload()
+                return 1, self.service.build_config_payload(include_hidden=payload.get('include_hidden', False) is True)
             if action == ConfigurationAction.SET:
                 if 'value' not in payload or isinstance(payload['value'], (dict, list)):
                     raise ValueError('A scalar config value is required')
-                _, messages = self.update(payload.get('key'), payload['value'], scope._checkpoint, typed=True)
+                value_format = payload.get('value_format', 'typed')
+                if value_format not in ('typed', 'text') or (value_format == 'text' and not isinstance(payload['value'], str)):
+                    raise ValueError('Invalid configuration value format')
+                change, messages = self.update(payload.get('key'), payload['value'], scope._checkpoint, typed=value_format == 'typed')
             elif action == ConfigurationAction.RESET:
-                _, messages = self.reset(payload.get('key'), scope._checkpoint)
+                if payload.get('all') is True:
+                    if payload.get('key'):
+                        raise ValueError('Specify a key or reset all')
+                    _, messages = self.reset_all(scope._checkpoint)
+                    change = None
+                else:
+                    change, messages = self.reset(payload.get('key'), scope._checkpoint)
             else:
                 return 0, 'Unsupported configuration Control action'
             for message in messages:
                 scope._send_interim_result(1, message)
-            return 1, self.service.build_config_payload()
+            result = self.service.build_config_payload()
+            if change is not None:
+                from dataclasses import asdict
+                result['change'] = asdict(change)
+            return 1, result
         except (CommandCancelledError, CommandTimeoutError):
             raise
         except Exception as exc:

@@ -1,4 +1,4 @@
-from client.config.runtime_config_utils import format_runtime_config_value
+from core.utils.runtime_config_utils import format_runtime_config_value
 from client.config import runtime_config
 from client.config.runtime_config_store import get_runtime_config_path
 from core.utils.logger import logger

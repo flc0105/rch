@@ -1,14 +1,12 @@
 """Declarative semantic operation definitions used when assembling application services."""
 import shlex
 from core.protocol.control import ControlDomain, RemoteFilesAction, JobAction, ProcessAction, ClipboardAction
-from server.application.history.activity_definitions import clipboard_arguments
 
 from server.application.history.activity_definitions import ActivityKind, ActivityOperation, process_arguments
 
 
 def _build(kind, action, args, data, *, origin='web_ui'):
-    return ActivityOperation(kind, action, args, data.get('origin') or origin,
-                             resolved={'command_type': 'control' if kind in tuple(ControlDomain) else 'command'})
+    return ActivityOperation(kind, action, args, data.get('origin') or origin)
 
 
 def remote_file_bindings():
@@ -71,8 +69,7 @@ def process_bindings():
     kind = ControlDomain.PROCESS
     return {
         action: (lambda a, action=action: ActivityOperation(kind, ProcessAction.KILL,
-            {**process_arguments(a['pid'], a['name']), 'target_type': 'app' if action == 'kill_app' else 'process'}, a.get('origin') or 'web_ui',
-            resolved={'command_type': 'control'}))
+            {**process_arguments(a['pid'], a['name']), 'target_type': 'app' if action == 'kill_app' else 'process'}, a.get('origin') or 'web_ui'))
         for action in ('kill_process', 'kill_app')
     }
 
@@ -83,9 +80,9 @@ def clipboard_bindings():
         values = a.get('arguments') or {}
         if not values and action == 'set_text':
             text = str(a['payload'].get('text') or '')
-            values = {'text': text, 'length': len(text), 'truncated': len(text) > 2048}
+            values = {'text': text}
         return _build(ControlDomain.CLIPBOARD, ClipboardAction.SET,
-                      {**clipboard_arguments(action, values), 'format_action': action}, a)
+                      {**values, 'format_action': action}, a)
     return {'set_clipboard': describe}
 
 

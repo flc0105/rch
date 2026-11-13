@@ -1,5 +1,5 @@
 """Canonical Activity identities and summaries for UI operations."""
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from core.protocol.control import ControlDomain, JobAction, RemoteFilesAction, ClipboardAction, ConfigurationAction, ProcessAction, WatchdogAction
 
 
@@ -12,16 +12,13 @@ class ActivityOperation:
     presentation: str = 'none'
     text: str = ''
     target: str = ''
-    resolved: dict = field(default_factory=dict)
     reuse_origin: bool = False
 
     def invocation(self):
-        result = {'arguments': dict(self.arguments)}
-        if self.text:
-            result['input'] = self.text
-        if self.target:
-            result['target'] = self.target
-        return result
+        return {'command': self.text} if self.text else {}
+
+    def display_summary(self):
+        return operation_summary(self.kind, self.action, self.arguments, self.text, self.target)
 
 
 class ActivityKind:
@@ -46,27 +43,6 @@ class ActivityAction:
 
 def process_arguments(pid, name):
     return {'pid': int(pid), 'name': ' '.join(str(name or '').split())[:160]}
-
-
-def clipboard_arguments(action, value):
-    """Retain bounded, displayable metadata; never persist transfer URLs or image bytes."""
-    args = value if isinstance(value, dict) else {}
-    if action == ActivityAction.SET_TEXT:
-        text = str(args.get('text') or '')[:2048]
-        return {'text': text, 'length': max(0, int(args.get('length') or 0)),
-                'truncated': bool(args.get('truncated'))}
-    if action == ActivityAction.SET_IMAGE:
-        return {'filename': str(args.get('filename') or '')[:160],
-                'mime_type': str(args.get('mime_type') or '')[:100],
-                'size_bytes': max(0, int(args.get('size_bytes') or 0))}
-    if action in (ActivityAction.SET_FILES, ActivityAction.SET_ARTIFACT_FILE):
-        result = {'count': max(0, int(args.get('count') or 0)),
-                  'names': [str(x)[:160] for x in (args.get('names') or [])[:20]],
-                  'names_truncated': bool(args.get('names_truncated'))}
-        if action == ActivityAction.SET_ARTIFACT_FILE:
-            result['artifact_id'] = str(args.get('artifact_id') or '')[:128]
-        return result
-    raise ValueError('Unsupported clipboard Activity action')
 
 
 def ui_activity_summary(kind, action, args):
@@ -96,33 +72,49 @@ def ui_activity_summary(kind, action, args):
     return None
 
 
-def activity_summary(entry):
-    kind = entry['kind']
-    action = entry['action']
-    invocation = entry['invocation']
+def operation_summary(kind, action, args, command='', target=''):
+    """Display label for the existing Activity list; request facts remain untouched."""
     if kind == ControlDomain.SCRIPT:
-        return str(invocation.get('target') or 'Script')
-    summary = ui_activity_summary(kind, action, invocation.get('arguments') or {})
+        return str(target or args.get('script_name') or command or 'Script')
+    summary = ui_activity_summary(kind, action, args)
     if summary is not None:
         return summary
-    if kind in (ActivityKind.COMMAND, ActivityKind.ALIAS):
-        # Show the user invocation, not an internal resolved command or encoded payload.
-        return str(invocation.get('input') or invocation.get('target') or kind)
-    args = invocation.get('arguments') or {}
+    if kind == ActivityKind.ALIAS:
+        return str(target or command or 'Alias')
+    if kind == ActivityKind.COMMAND:
+        return ' '.join(str(command or '-').split())[:160]
     if kind == ControlDomain.REMOTE_FILES:
+        count = args.get('count') or len(args.get('paths') or []) or 1
+        noun = 'item' if count == 1 else 'items'
         actions = {
-            RemoteFilesAction.CREATE_DIRECTORY: 'Create directory', RemoteFilesAction.DELETE_PATHS: 'Delete files',
-            RemoteFilesAction.RENAME_PATH: 'Rename', RemoteFilesAction.PASTE_PATHS: 'Move files' if args.get('operation') == 'move' else 'Copy files', 'create_archive': 'Create archive',
-            'extract_archive': 'Extract archive', 'save_file': 'Save file',
+            RemoteFilesAction.CREATE_DIRECTORY: 'Create directory',
+            RemoteFilesAction.DELETE_PATHS: f'Delete {count} {noun}',
+            RemoteFilesAction.RENAME_PATH: 'Rename',
+            RemoteFilesAction.PASTE_PATHS: f"{'Move' if args.get('operation') == 'move' else 'Copy'} {count} {noun}",
+            RemoteFilesAction.BROWSE_DIRECTORY: 'Browse directory',
+            RemoteFilesAction.PEEK_ARCHIVE: 'Inspect archive',
+            RemoteFilesAction.READ_ARCHIVE_ENTRY: 'Read archive entry',
+            RemoteFilesAction.INSPECT_UPLOAD: 'Inspect upload',
+            RemoteFilesAction.CREATE_ARCHIVE: f'Create archive from {count} {noun}',
+            RemoteFilesAction.EXTRACT_ARCHIVE: f"Extract archive {args.get('path') or ''}",
+            RemoteFilesAction.SAVE_FILE: f"Save file {args.get('path') or ''}",
         }
-        return ('Inspect · ' if args.get('inspect') else '') + actions.get(action, action.replace('_', ' ').capitalize() or 'Remote Files')
+        return ('Inspect · ' if args.get('inspect') else '') + actions.get(action, action or 'Remote Files')
     if kind == ActivityKind.TRANSFER:
-        return 'Upload files' if action == 'upload_files' else 'Download files' if action == 'download_files' else (action or 'Transfer')
+        name = str(args.get('filename') or args.get('path') or '').replace('\\', '/').split('/')[-1]
+        count = args.get('count') or 1
+        return f"{'Upload' if action == 'upload_files' else 'Download'} {str(count) + ' items' if count > 1 else name or 'file'}"
     if kind == ControlDomain.JOB:
-        labels = {JobAction.START: 'Start', JobAction.STOP: 'Stop', JobAction.STOP_ALL: 'Stop all jobs', JobAction.PS: 'List jobs', JobAction.STATUS: 'Job status'}
-        return f"{labels.get(action, action or 'Background Job')} {args.get('job_name') or args.get('job_key') or ''}".strip()
+        name = args.get('job_name') or args.get('job_key') or 'job'
+        if action == JobAction.STOP_ALL:
+            return 'Stop all jobs'
+        if action == JobAction.PS:
+            return 'List jobs'
+        if action == JobAction.STATUS:
+            return f'Job status · {name}'
+        return f"{'Start' if action == JobAction.START else 'Stop'} {name}"
     if kind == ControlDomain.CONFIGURATION:
-        label = {ConfigurationAction.GET: 'Get configuration', ConfigurationAction.SET: 'Set', ConfigurationAction.RESET: 'Reset'}.get(action, action)
+        label = {ConfigurationAction.GET: 'Get configuration', ConfigurationAction.SET: 'Set', ConfigurationAction.RESET: 'Reset'}.get(action, 'Configuration')
         return f"{label} {args.get('key') or ''}".strip()
     if kind == ControlDomain.WATCHDOG:
         return 'Watchdog status'
@@ -134,7 +126,11 @@ def activity_summary(entry):
             'run_oneshot': 'Run', 'run_exec': 'Run', 'stop_instance': 'Stop',
             'remove_instance': 'Remove', 'clear_instance_logs': 'Clear logs',
         }
-        target = args.get('exec_name') or args.get('instance_id') or args.get('tool_id') or args.get('package_id') or ''
-        return f"{actions.get(action, action or 'External Tool')} {target}".strip()
+        target = args.get('exec_name') or args.get('package_id') or args.get('tool_id') or 'tool'
+        instance = f" ({args['instance_id']})" if args.get('instance_id') else ''
+        return f"{actions.get(action, 'External Tool')} {target}{instance}"
     return action or kind or 'Activity'
 
+
+def activity_summary(entry):
+    return entry.get('summary') or entry['action'] or entry['kind']

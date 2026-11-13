@@ -811,7 +811,7 @@ export default {
       // A displayed Script title is not an executed CLI command. Only use the
       // submitted invocation, or the original text for a historical raw block.
       const replay = block?.operation?.replay
-      return String(block?.operation?.invocation?.input ||
+      return String(block?.operation?.invocation?.command ||
           (replay?.type === 'command' ? replay.command : '') ||
           (!block?.operation ? this.getTerminalBlockCommandText(block) : '')).trim()
     },

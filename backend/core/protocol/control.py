@@ -81,7 +81,6 @@ class ActivityPolicy(ControlValue):
 class ControlActionSpec:
     policy: ExecutionPolicy
     activity: ActivityPolicy = ActivityPolicy.ALWAYS
-    record_output: bool = True
 
 
 # Canonical protocol catalog: the Server and Client share the same action policy.
@@ -93,39 +92,39 @@ _CONTROL_ACTIONS = {
         JobAction.START: ControlActionSpec(ExecutionPolicy.FOREGROUND),
         JobAction.STOP: ControlActionSpec(ExecutionPolicy.FOREGROUND),
         JobAction.STOP_ALL: ControlActionSpec(ExecutionPolicy.FOREGROUND),
-        JobAction.PS: ControlActionSpec(ExecutionPolicy.INDEPENDENT, activity=ActivityPolicy.OPTIONAL, record_output=False),
-        JobAction.STATUS: ControlActionSpec(ExecutionPolicy.INDEPENDENT, activity=ActivityPolicy.OPTIONAL, record_output=False),
+        JobAction.PS: ControlActionSpec(ExecutionPolicy.INDEPENDENT, activity=ActivityPolicy.OPTIONAL),
+        JobAction.STATUS: ControlActionSpec(ExecutionPolicy.INDEPENDENT, activity=ActivityPolicy.OPTIONAL),
     },
     ControlDomain.REMOTE_FILES: {
-        RemoteFilesAction.BROWSE_DIRECTORY: ControlActionSpec(ExecutionPolicy.INDEPENDENT, activity=ActivityPolicy.OPTIONAL, record_output=False),
+        RemoteFilesAction.BROWSE_DIRECTORY: ControlActionSpec(ExecutionPolicy.INDEPENDENT, activity=ActivityPolicy.OPTIONAL),
         RemoteFilesAction.CREATE_DIRECTORY: ControlActionSpec(ExecutionPolicy.INDEPENDENT),
         RemoteFilesAction.RENAME_PATH: ControlActionSpec(ExecutionPolicy.INDEPENDENT),
         RemoteFilesAction.DELETE_PATHS: ControlActionSpec(ExecutionPolicy.INDEPENDENT),
         RemoteFilesAction.PASTE_PATHS: ControlActionSpec(ExecutionPolicy.INDEPENDENT),
         RemoteFilesAction.CREATE_ARCHIVE: ControlActionSpec(ExecutionPolicy.INDEPENDENT),
-        RemoteFilesAction.PEEK_ARCHIVE: ControlActionSpec(ExecutionPolicy.INDEPENDENT, activity=ActivityPolicy.OPTIONAL, record_output=False),
-        RemoteFilesAction.READ_ARCHIVE_ENTRY: ControlActionSpec(ExecutionPolicy.INDEPENDENT, activity=ActivityPolicy.OPTIONAL, record_output=False),
+        RemoteFilesAction.PEEK_ARCHIVE: ControlActionSpec(ExecutionPolicy.INDEPENDENT, activity=ActivityPolicy.OPTIONAL),
+        RemoteFilesAction.READ_ARCHIVE_ENTRY: ControlActionSpec(ExecutionPolicy.INDEPENDENT, activity=ActivityPolicy.OPTIONAL),
         RemoteFilesAction.EXTRACT_ARCHIVE: ControlActionSpec(ExecutionPolicy.INDEPENDENT),
-        RemoteFilesAction.INSPECT_UPLOAD: ControlActionSpec(ExecutionPolicy.INDEPENDENT, activity=ActivityPolicy.OPTIONAL, record_output=False),
+        RemoteFilesAction.INSPECT_UPLOAD: ControlActionSpec(ExecutionPolicy.INDEPENDENT, activity=ActivityPolicy.OPTIONAL),
         RemoteFilesAction.SAVE_FILE: ControlActionSpec(ExecutionPolicy.INDEPENDENT),
     },
     ControlDomain.SCRIPT: {
         ScriptAction.RUN: ControlActionSpec(ExecutionPolicy.FOREGROUND),
     },
     ControlDomain.CLIPBOARD: {
-        ClipboardAction.GET: ControlActionSpec(ExecutionPolicy.INDEPENDENT, activity=ActivityPolicy.OPTIONAL, record_output=False),
-        ClipboardAction.SET: ControlActionSpec(ExecutionPolicy.INDEPENDENT, record_output=False),
+        ClipboardAction.GET: ControlActionSpec(ExecutionPolicy.INDEPENDENT, activity=ActivityPolicy.OPTIONAL),
+        ClipboardAction.SET: ControlActionSpec(ExecutionPolicy.INDEPENDENT),
     },
     ControlDomain.CONFIGURATION: {
-        ConfigurationAction.GET: ControlActionSpec(ExecutionPolicy.INDEPENDENT, activity=ActivityPolicy.OPTIONAL, record_output=False),
-        ConfigurationAction.SET: ControlActionSpec(ExecutionPolicy.FOREGROUND, record_output=False),
-        ConfigurationAction.RESET: ControlActionSpec(ExecutionPolicy.FOREGROUND, record_output=False),
+        ConfigurationAction.GET: ControlActionSpec(ExecutionPolicy.INDEPENDENT, activity=ActivityPolicy.OPTIONAL),
+        ConfigurationAction.SET: ControlActionSpec(ExecutionPolicy.FOREGROUND),
+        ConfigurationAction.RESET: ControlActionSpec(ExecutionPolicy.FOREGROUND),
     },
     ControlDomain.PROCESS: {
         ProcessAction.KILL: ControlActionSpec(ExecutionPolicy.INDEPENDENT),
     },
     ControlDomain.WATCHDOG: {
-        WatchdogAction.STATUS: ControlActionSpec(ExecutionPolicy.INDEPENDENT, activity=ActivityPolicy.OPTIONAL, record_output=False),
+        WatchdogAction.STATUS: ControlActionSpec(ExecutionPolicy.INDEPENDENT, activity=ActivityPolicy.OPTIONAL),
     },
 }
 

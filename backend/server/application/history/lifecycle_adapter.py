@@ -1,8 +1,8 @@
 """One lifecycle adapter for Client sessions, clipboard requests and file transfers."""
 import contextvars
+import json
 import logging
 import threading
-from datetime import datetime
 
 from core.protocol.message_types import (
     MSG_TYPE_PTY_OPEN, MSG_TYPE_PTY_CLOSE, MSG_TYPE_PTY_OPENED, MSG_TYPE_PTY_CLOSED, MSG_TYPE_PTY_ERROR,
@@ -90,7 +90,7 @@ class LifecycleAdapter:
             arguments['shell'] = str(data.get('shell') or '')
         try:
             entry_id = self.coordinator.prepare(conn, ActivityOperation(
-                kind, action, arguments, resolved={'command_type': msg_type}))
+                kind, action, arguments))
         except Exception:
             logger.exception('Unable to prepare lifecycle Activity')
             return send(data)
@@ -111,7 +111,7 @@ class LifecycleAdapter:
             state = self._active.get(key)
             if state is not None:
                 try:
-                    self.coordinator.dispatch(conn, entry_id, command_type=msg_type)
+                    self.coordinator.dispatch(conn, entry_id, data=data)
                     state['confirmed'] = True
                     for event in state['events']:
                         self._apply_event(key, state, event)
@@ -163,27 +163,22 @@ class LifecycleAdapter:
         kind, event = key[1], data.get('type')
         if event in (MSG_TYPE_PTY_OPENED, MSG_TYPE_SCREEN_OPENED):
             state['opened'] = True
-            details = {'opened_at': datetime.now().astimezone().isoformat()}
-            if kind == ActivityKind.PTY:
-                details['shell'] = str(data.get('shell') or '')
-            self.coordinator.details(state['conn'], state['entry_id'], details)
+            self.coordinator.append_output(state['conn'], state['entry_id'], 1, json.dumps(data, ensure_ascii=False))
         elif event in (MSG_TYPE_PTY_CLOSED, MSG_TYPE_SCREEN_CLOSED):
             scoped = self._close_scope.get()
             scoped_reason = scoped[2] if scoped and scoped[:2] == (kind, key[2]) else ''
-            details = {'end_reason': state['end_reason'] or scoped_reason or ('exited' if kind == ActivityKind.PTY else 'ended')}
-            if kind == ActivityKind.PTY:
-                details['exit_code'] = data.get('exit_code')
+            details = {**data, 'end_reason': state['end_reason'] or scoped_reason or ('exited' if kind == ActivityKind.PTY else 'ended')}
             if not state['opened']:
                 details['end_reason'] = 'closed_before_open'
             self._finish(key, state, 'success' if state['opened'] else 'interrupted', details)
         elif event in (MSG_TYPE_PTY_ERROR, MSG_TYPE_SCREEN_ERROR):
             self._finish(key, state, 'error', {
-                'end_reason': 'error', 'error': str(data.get('message') or '')[:256],
+                **data, 'end_reason': 'error',
             })
     def _finish(self, key, state, status, details=None):
         self._active.pop(key, None)
         if details:
-            self.coordinator.details(state['conn'], state['entry_id'], details)
+            self.coordinator.append_output(state['conn'], state['entry_id'], int(status == 'success'), json.dumps(details, ensure_ascii=False), eof=1)
         self.coordinator.finish(state['conn'], state['entry_id'], status == 'success', status=status)
 
     def _transfer_dispatched(self, conn, data):
@@ -204,7 +199,7 @@ class LifecycleAdapter:
         origin = ('cli' if source in {'cli', 'rch_cli'} else 'web_api')
         entry_id = ''
         original_input = ''
-        if source in {'cli', 'rch_cli'}:
+        if source in {'cli', 'rch_cli', 'web'}:
             candidate = str(metadata.get('history_entry_id') or '')
             claimed = self.coordinator.claim_upload(conn, candidate)
             if claimed:
@@ -220,14 +215,14 @@ class LifecycleAdapter:
             arguments['size'] = transfer.get('total_bytes')
         record = ActivityOperation(ActivityKind.TRANSFER, action, arguments,
                                    origin=origin, presentation='terminal' if origin in {'cli', 'web_terminal'} else 'none',
-                                   text=original_input, resolved={'transfer_id': transfer_id, 'direction': direction or ''})
+                                   text=original_input)
         with self._lock:
             if transfer_id in self._transfers:
                 return True
             activity_id = self.coordinator.prepare(conn, record, entry_id=entry_id)
             if not activity_id:
                 return False
-            self.coordinator.dispatch(conn, activity_id, command_type=MSG_TYPE_TRANSFER_START)
+            self.coordinator.dispatch(conn, activity_id, data=data)
             self._transfers[transfer_id] = (conn, activity_id)
         self.transfer_updated(service.get_transfer(transfer_id) or transfer)
         return True

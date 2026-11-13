@@ -105,7 +105,7 @@ export default {
                 }
                 const { formatTerminalCommandFinishedLine } = await import('./terminalMarkers.js');
                 this.appendOutput(clientId, formatTerminalCommandFinishedLine(
-                    entry.invocation?.input || entry.action || '',
+                    entry.invocation?.command || entry.action || '',
                     entry.status === 'success' ? 'Success' : 'Failed',
                 ), entry.status === 'success' ? 'success' : 'error', { task_id: id, recovered: true });
             } catch (error) {

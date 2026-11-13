@@ -41,6 +41,8 @@ def command(name, description, handler=None, children=(), default='', dispatch_s
 
 
 SERVER_COMMAND_SPECS = (
+    command('set', 'Show or update client runtime config', expects_arguments=True, group='runtime'),
+    command('watchdog', 'Show watchdog runtime status', expects_arguments=True, group='runtime'),
     command('upload', 'Upload a local file to the Client', expects_arguments=True),
     command('script', 'List, inspect and run Server scripts', children=(
         ('list', 'List available scripts (optionally --json)', 'script list [--json]'),

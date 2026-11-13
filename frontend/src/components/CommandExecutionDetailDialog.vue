@@ -290,31 +290,11 @@ export default {
 
   methods: {
     getActivityResolved(entry) {
-      if (entry?.kind === 'job') {
-        const result = entry.resolved || {}
-        if (entry.action === 'stop_all') {
-          // Missing counts in earlier records must not be presented as real zeros.
-          if (!['total', 'succeeded', 'failed'].every(key => Number.isInteger(result[key]))) {
-            return 'Stop all jobs'
-          }
-          const parts = [`${result.succeeded} of ${result.total} stop requested`, `${result.failed} failed`]
-          if (Array.isArray(result.job_ids) && result.job_ids.length) {
-            parts.push(result.job_ids.join(', '))
-          }
-          return parts.join(' · ')
-        }
-        return result.job_id ? `Job ${result.job_id}` : (result.command_type || '-')
-      }
-      return entry?.resolved?.command || entry?.resolved?.command_name || entry?.resolved?.transfer_id || entry?.resolved?.command_type || '-'
+      const resolved = entry?.resolved
+      return resolved && Object.keys(resolved).length ? JSON.stringify(resolved, null, 2) : '-'
     },
     getActivityInvocation(entry) {
-      if (entry?.kind === 'external_tool' && entry?.action === 'run_exec') {
-        return entry?.invocation?.input || '-'
-      }
-      if (['remote_files', 'external_tool', 'job', 'pty', 'screen_view', 'clipboard', 'process', 'configuration', 'watchdog'].includes(entry?.kind) || (entry?.kind === 'transfer' && !entry?.invocation?.input)) {
-        return JSON.stringify(entry.invocation?.arguments || {}, null, 2)
-      }
-      return entry?.invocation?.input || '-'
+      return entry?.invocation?.command || '-'
     },
     openFullValue(title, value) {
       this.fullValueTitle = title

@@ -64,8 +64,7 @@ class ClientSessionCommandChannel:
             adapter = None
         if adapter is not None:
             try:
-                history_entry_id = adapter.prepare_dispatch(self.session, history_entry_id, command, type,
-                    payload=payload, domain=domain, action=action)
+                history_entry_id = adapter.prepare_dispatch(self.session, history_entry_id, data)
             except Exception:
                 logger.exception("Unable to prepare request Activity")
                 history_entry_id = ""
@@ -90,7 +89,7 @@ class ClientSessionCommandChannel:
         # Persist only after the transport has accepted an actual Client command.
         # The Activity policy has already been evaluated at the request boundary.
         if adapter is not None:
-            adapter.dispatch(self.session, history_entry_id, command, type, payload=payload, domain=domain, action=action)
+            history_entry_id = adapter.dispatch(self.session, history_entry_id, data)
 
         if bound_task and bound_task.get('cancel_requested'):
             self.send_cancel(data.get('id'))
@@ -98,7 +97,7 @@ class ClientSessionCommandChannel:
         results = self.wait_for_result(data.get('id'), command if type == MSG_TYPE_COMMAND else None,
                                        results=pending, timeout=timeout, terminal_authoritative=type == MSG_TYPE_CONTROL)
         if adapter is not None:
-            return adapter.observe_result(self.session, history_entry_id, type, command, results, payload=payload, domain=domain, action=action)
+            return adapter.observe_result(self.session, history_entry_id, data, results)
         return results
 
     def send_cancel(self, target_command_id: int):

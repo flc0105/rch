@@ -1,5 +1,6 @@
 """Persist one semantic Activity per dispatched UI operation and actual Client result."""
 
+import json
 from types import SimpleNamespace, ModuleType
 from unittest.mock import patch
 import sys
@@ -136,6 +137,22 @@ def entries(server):
     return server.command_history.view_service.get_execution_history_page('machine-1')['items']
 
 
+def output_details(row):
+    details = {}
+    for record in row['result']['output_records']:
+        try:
+            value = json.loads(record['text'])
+        except (ValueError, TypeError):
+            continue
+        if isinstance(value, dict):
+            details.update(value)
+    return details
+
+
+def wire_command(text):
+    return {'type': 'command', 'id': 1, 'text': text}
+
+
 @pytest.mark.parametrize('service_class,open_type,close_type,id_key,open_callback,close_callback', [
     (PtySessionService, MSG_TYPE_PTY_OPEN, MSG_TYPE_PTY_CLOSE, 'pty_session_id',
      'handle_client_opened', 'handle_client_closed'),
@@ -157,7 +174,7 @@ def test_ui_sessions_confirm_client_open_close_and_dedupe(setup_history, service
     created = service.create_session('client-1')
     sid = created[id_key]
     assert [(e['action'], e['status']) for e in entries(server)] == [('session', 'running')]
-    assert entries(server)[0]['resolved'].get('opened_at')
+    assert output_details(entries(server)[0])['type'].endswith('_opened')
     if service_class is PtySessionService:
         api = server.lifecycle_adapter.instrument_closes(WebTerminalApi(service), kind=ActivityKind.PTY,
             method="close_pty_session", identifier="pty_session_id",
@@ -173,7 +190,7 @@ def test_ui_sessions_confirm_client_open_close_and_dedupe(setup_history, service
         api.close_screen_view(sid, user_initiated=True)
         api.close_screen_view(sid, user_initiated=True)
     assert [(e['action'], e['status']) for e in entries(server)] == [('session', 'success')]
-    assert entries(server)[0]['resolved']['end_reason'] == 'user_closed'
+    assert output_details(entries(server)[0])['end_reason'] == 'user_closed'
     assert entries(server)[0]['finished_at']
     assert len([m for m in conn.sent if m['type'] == close_type]) == 1
     assert server.command_history.quick_store.list_recents('machine-1') == []
@@ -237,7 +254,9 @@ def test_process_pre_dispatch_and_dispatched_errors_do_not_duplicate(setup_histo
     with pytest.raises(RuntimeError, match='failed'):
         api.kill_app('client-1', 89, 'Safari')
     assert [(e['kind'], e['action'], e['status']) for e in entries(server)] == [('process', 'kill', 'error')]
-    assert entries(server)[0]['invocation']['arguments'] == {'pid': 89, 'name': 'Safari', 'target_type': 'app'}
+    assert entries(server)[0]['invocation'] == {}
+    assert entries(server)[0]['resolved']['payload'] == {'pid': 89}
+    assert entries(server)[0]['summary'] == 'Kill app Safari (PID 89)'
 
 
 def test_session_error_and_disconnect_finalize_only_dispatched_operations(setup_history):
@@ -254,7 +273,7 @@ def test_session_error_and_disconnect_finalize_only_dispatched_operations(setup_
     assert len(entries(server)) == 1
 
 
-def test_clipboard_set_tracks_results_without_sensitive_payload_and_get_is_read_only(setup_history):
+def test_clipboard_set_records_original_payload_and_get_is_optional(setup_history):
     server, conn = setup_history
     service = make_service(server, conn, ClipboardSessionService)
 
@@ -265,7 +284,8 @@ def test_clipboard_set_tracks_results_without_sensitive_payload_and_get_is_read_
     assert result == {'kind': 'text'}
     entry = entries(server)[0]
     assert (entry['kind'], entry['action'], entry['status']) == ('clipboard', 'set', 'success')
-    assert entry['invocation']['arguments']['text'] == 'SUPER SECRET'
+    assert entry['invocation'] == {}
+    assert entry['resolved']['payload']['text'] == 'SUPER SECRET'
 
     service.get_clipboard('client-1')
     assert len(entries(server)) == 1
@@ -289,11 +309,11 @@ def test_process_kill_emits_semantic_record_only(setup_history):
     api = server.command_adapter.instrument(WebProcessControlApi(server, process_execution(server, conn)), process_bindings())
     assert api.kill_process('client-1', 123, 'chrome.exe')['message'] == 'terminated'
     assert api.kill_app('client-1', 456, 'Safari')['message'] == 'terminated'
-    assert sorted((e['kind'], e['action'], e['status'], e['invocation']['arguments']['pid']) for e in entries(server)) == [
+    assert sorted((e['kind'], e['action'], e['status'], e['resolved']['payload']['pid']) for e in entries(server)) == [
         ('process', 'kill', 'success', 123), ('process', 'kill', 'success', 456),
     ]
-    assert {e['invocation']['arguments']['name'] for e in entries(server)} == {'Safari', 'chrome.exe'}
-    assert all(e['resolved'] == {'command_type': 'control', 'result_owner': 'request'} for e in entries(server))
+    assert {e['summary'] for e in entries(server)} == {'Kill app Safari (PID 456)', 'Kill process chrome.exe (PID 123)'}
+    assert all(e['resolved'] in conn.sent and e['invocation'] == {} for e in entries(server))
 
 
 def test_pty_shell_switch_ends_one_session_without_close_entry(setup_history):
@@ -316,9 +336,9 @@ def test_pty_shell_switch_ends_one_session_without_close_entry(setup_history):
     assert len(rows) == 2
     assert {(e['action'], e['status']) for e in rows} == {('session', 'running'), ('session', 'success')}
     closed = next(e for e in rows if e['status'] == 'success')
-    assert closed['resolved']['end_reason'] == 'shell_switched'
-    assert closed['resolved']['shell'] == '/bin/bash'
-    assert closed['resolved']['exit_code'] == 0
+    assert output_details(closed)['end_reason'] == 'shell_switched'
+    assert output_details(closed)['shell'] == '/bin/bash'
+    assert output_details(closed)['exit_code'] == 0
     assert all(e['finished_at'] is None for e in rows if e['status'] == 'running')
 
 
@@ -330,7 +350,7 @@ def test_pty_natural_exit_and_screen_disconnect_are_single_terminal_updates(setu
     pty.handle_client_closed(pid, exit_code=42)
     pty.handle_client_closed(pid, exit_code=42)
     row = entries(server)[0]
-    assert (row['status'], row['resolved']['end_reason'], row['resolved']['exit_code']) == ('success', 'exited', 42)
+    assert (row['status'], output_details(row)['end_reason'], output_details(row)['exit_code']) == ('success', 'exited', 42)
     assert len(entries(server)) == 1
 
     screen = make_service(server, conn, ScreenViewSessionService)
@@ -341,7 +361,7 @@ def test_pty_natural_exit_and_screen_disconnect_are_single_terminal_updates(setu
     assert len(rows) == 2
     interrupted = next(e for e in rows if e['kind'] == 'screen_view')
     assert interrupted['status'] == 'interrupted'
-    assert interrupted['resolved']['end_reason'] == 'connection_lost'
+    assert output_details(interrupted)['end_reason'] == 'connection_lost'
 
 
 def test_restart_marks_only_orphaned_sessions_interrupted(tmp_path):
@@ -364,34 +384,30 @@ def test_restart_marks_only_orphaned_sessions_interrupted(tmp_path):
     restarted = CommandHistoryStore(restarted_db)
     row = restarted.view_service.get_execution_history_page('machine-1')['items'][0]
     assert row['status'] == 'interrupted'
-    assert row['resolved']['end_reason'] == 'server_restarted'
+    assert row['result']['output_records'][-1]['text'] == 'Server restarted'
     assert row['finished_at']
     restarted_db.close_thread_connection()
 
 
-def test_web_clipboard_set_records_bounded_text_and_safe_files(setup_history):
+def test_web_clipboard_set_records_full_text_and_file_request(setup_history):
     server, conn = setup_history
     service = make_service(server, conn, ClipboardSessionService)
     api = WebClipboardApi(service, None)
     conn.callback = lambda msg: conn.respond(msg, 1, {})
     text = 'Hello\n' + 'A' * 3000
     api.set_text('client-1', text)
-    args = entries(server)[0]['invocation']['arguments']
-    assert args['text'] == text[:2048]
-    assert (args['length'], args['truncated']) == (len(text), True)
-
-    # Server staging URLs may contain authentication tokens; they must not survive in history.
+    entry = entries(server)[0]
+    assert entry['invocation'] == {}
+    assert entry['resolved']['payload'] == {'kind': 'text', 'text': text}
     api._set_files_payload('client-1', [{'type':'file','name':'report.pdf','url':'/secret/token'}],
                            ['report.pdf', r'folder\nested.txt'], action='set_files')
-    files = next(e for e in entries(server) if e['invocation']['arguments'].get('format_action') == 'set_files')
-    assert files['invocation']['arguments'] == {
-        'count': 2, 'names': ['report.pdf', 'nested.txt'], 'names_truncated': False,
-        'kind': 'files', 'format_action': 'set_files',
-    }
-    assert '/secret/token' not in str(files)
+    files = next(e for e in entries(server) if e['resolved']['payload']['kind'] == 'files')
+    assert files['invocation'] == {}
+    assert files['resolved'] == conn.sent[-1]
+    assert '/secret/token' in str(files['resolved'])
 
 
-def test_web_clipboard_image_records_file_metadata_only(setup_history, tmp_path):
+def test_web_clipboard_image_records_actual_transfer_description(setup_history, tmp_path):
     server, conn = setup_history
     service = make_service(server, conn, ClipboardSessionService)
     staged = tmp_path / 'screenshot.png'
@@ -407,11 +423,10 @@ def test_web_clipboard_image_records_file_metadata_only(setup_history, tmp_path)
     conn.callback = lambda msg: conn.respond(msg, 1, {})
     api.set_image('client-1', SimpleNamespace(filename='screenshot.png'))
     entry = entries(server)[0]
-    assert entry['invocation']['arguments'] == {
-        'filename': 'screenshot.png', 'mime_type': 'image/png', 'size_bytes': 10,
-        'kind': 'image', 'format_action': 'set_image',
-    }
-    assert '/secret/signed-download' not in str(entry)
+    assert entry['invocation'] == {}
+    assert entry['resolved'] == conn.sent[-1]
+    assert entry['resolved']['payload']['kind'] == 'image'
+    assert '/secret/signed-download' in str(entry['resolved'])
 
 
 def test_process_business_layer_has_no_history_control_and_normal_execution_unmodified(setup_history):
@@ -419,7 +434,8 @@ def test_process_business_layer_has_no_history_control_and_normal_execution_unmo
     server, conn = setup_history
     api = server.command_adapter.instrument(WebProcessControlApi(server, process_execution(server, conn)), process_bindings())
     assert api.kill_process('client-1', 5, 'A' * 200)['message'] == 'terminated'
-    assert len(entries(server)[0]['invocation']['arguments']['name']) == 160
+    assert entries(server)[0]['summary'] == f"Kill process {'A' * 160} (PID 5)"
+    assert entries(server)[0]['resolved']['payload'] == {'pid': 5}
     source = Path(__file__).parents[2] / 'server/application/web/process_control_api.py'
     assert 'command_history_orchestrator' not in source.read_text()
     execution = process_execution(server, conn)
@@ -468,11 +484,11 @@ def test_client_session_transport_hooks_own_early_ack_and_close(setup_history):
     conn.send({'type': MSG_TYPE_PTY_OPEN, 'pty_session_id': 'early', 'shell': ''})
     row = entries(server)[0]
     assert row['status'] == 'running'
-    assert row['resolved']['shell'] == '/bin/zsh'
+    assert output_details(row)['shell'] == '/bin/zsh'
     server.lifecycle_adapter.close_call(ActivityKind.PTY, 'early', 'shell_switched',
         lambda: conn.send({'type': MSG_TYPE_PTY_CLOSE, 'pty_session_id': 'early'}))
     row = entries(server)[0]
-    assert (row['status'], row['resolved']['end_reason']) == ('success', 'shell_switched')
+    assert (row['status'], output_details(row)['end_reason']) == ('success', 'shell_switched')
     assert len(entries(server)) == 1
 
 
@@ -501,7 +517,7 @@ def test_same_session_identifier_is_scoped_to_original_connection(setup_history)
     rows = entries(server)
     assert len(rows) == 2
     assert sorted(row['status'] for row in rows) == ['interrupted', 'running']
-    assert next(row for row in rows if row['status'] == 'interrupted')['resolved']['end_reason'] == 'connection_lost'
+    assert output_details(next(row for row in rows if row['status'] == 'interrupted'))['end_reason'] == 'connection_lost'
 
 
 def test_activity_storage_error_does_not_cancel_transport(setup_history):
@@ -540,7 +556,7 @@ def test_all_activity_kinds_share_one_dispatch_commit(setup_history, kind):
     server, conn = setup_history
     activity_id = server.activity_coordinator.prepare(conn, ActivityOperation(kind, 'run', {'id': kind}))
     assert entries(server) == []  # The intention alone never creates a database row.
-    assert server.activity_coordinator.dispatch(conn, activity_id)
+    assert server.activity_coordinator.dispatch(conn, activity_id, data=wire_command('probe'))
     assert [(row['kind'], row['status']) for row in entries(server)] == [(kind, 'running')]
     server.activity_coordinator.finish(conn, activity_id, True)
     assert [(row['kind'], row['status']) for row in entries(server)] == [(kind, 'success')]
@@ -587,24 +603,29 @@ def test_external_tool_exec_and_cli_job_result_stay_inside_command_adapter(setup
     adapter = server.command_adapter
     coordinator = server.activity_coordinator
     activity_id = coordinator.prepare(conn, ActivityOperation('command', 'invoke', {}, text='xt exec ffmpeg -version'))
-    adapter.dispatch(conn, activity_id, 'external_tool_exec ' + encode_structured_arg({
+    request = wire_command('external_tool_exec ' + encode_structured_arg({
         'exec_name': 'ffmpeg', 'package_id': 'ffmpeg',
-    }), 'command')
+    }))
+    adapter.dispatch(conn, activity_id, request)
     row = entries(server)[0]
     assert row['kind'] == 'external_tool'
-    assert row['invocation']['arguments'] == {'exec_name': 'ffmpeg', 'package_id': 'ffmpeg'}
+    assert row['invocation'] == {'command': 'xt exec ffmpeg -version'}
+    assert row['resolved'] == request
 
     job_id = coordinator.prepare(conn, ActivityOperation('command', 'invoke', {}, text='job stop check'))
     cmd = {'job_key': 'check'}
-    job_id = adapter.prepare_dispatch(conn, job_id, '', 'control', payload=cmd, domain='job', action='stop')
-    adapter.dispatch(conn, job_id, '', 'control', payload=cmd, domain='job', action='stop')
+    request = {'type': 'control', 'id': 2, 'domain': 'job', 'action': 'stop', 'payload': cmd}
+    job_id = adapter.prepare_dispatch(conn, job_id, request)
+    adapter.dispatch(conn, job_id, request)
     from core.protocol.job_control import build_job_control_result
     result = build_job_control_result('stop', 'stopped', job_id='job-1')
     from core.protocol.message_queue import ResultChunk
-    assert list(adapter.observe_result(conn, job_id, 'control', '', [ResultChunk(1, result, 1)], payload=cmd, domain='job', action='stop')) == [(1, result)]
+    assert list(adapter.observe_result(conn, job_id, request, [ResultChunk(1, result, 1)])) == [(1, result)]
     row = next(row for row in entries(server) if row['kind'] == 'job')
-    assert row['resolved'].get('job_id') == 'job-1'
-    assert row['invocation']['input'] == 'job stop check'
+    assert row['resolved'] == request
+    assert output_details(row)['job_id'] == 'job-1'
+    assert {'type':'job','id':'job-1'} in row['references']
+    assert row['invocation']['command'] == 'job stop check'
 
 
 def test_transfer_adapter_tracks_repeated_transfers_and_not_browser_staging(setup_history):
@@ -661,7 +682,7 @@ def test_artifact_reference_binding_uses_lifecycle_adapter_not_web_api(setup_his
     operation = __import__('server.application.history.activity_definitions', fromlist=['ActivityOperation']).ActivityOperation
     activity_id = server.activity_coordinator.prepare(conn, operation('command', 'invoke', {}, text='saveout shell pwd'))
     captured['entry_id'] = activity_id
-    server.activity_coordinator.dispatch(conn, activity_id)
+    server.activity_coordinator.dispatch(conn, activity_id, data=wire_command('shell pwd'))
     facade = server.lifecycle_adapter.instrument_artifacts(
         Artifacts(), server.get_target_connection_by_client_id,
     )
@@ -690,7 +711,7 @@ def test_terminal_upload_claims_transfer_activity_once(setup_history):
     assert len(rows) == 1
     assert rows[0]['activity_id'] == candidate
     assert (rows[0]['kind'], rows[0]['action'], rows[0]['status']) == ('transfer', 'upload_files', 'running')
-    assert rows[0]['invocation']['input'] == 'upload report.pdf'
+    assert rows[0]['invocation']['command'] == 'upload report.pdf'
 
     server.lifecycle_adapter.transfer_updated({**transfer, 'state': 'completed'})
     rows = entries(server)
@@ -714,19 +735,19 @@ def test_xt_cli_mutations_record_only_after_real_dispatch(setup_history, source,
     assert entries(server) == []
 
     # xt status/install/instance queries are read-only even when they reach Client.
-    adapter.dispatch(conn, activity_id, 'external_tool_status payload', 'command')
-    adapter.dispatch(conn, activity_id, 'external_tool_instance_read payload', 'command')
+    adapter.dispatch(conn, activity_id, wire_command('external_tool_status payload'))
+    adapter.dispatch(conn, activity_id, wire_command('external_tool_instance_read payload'))
     assert entries(server) == []
-    adapter.dispatch(conn, activity_id, wire + ' payload', 'command')
+    adapter.dispatch(conn, activity_id, wire_command(wire + ' payload'))
     rows = entries(server)
     assert len(rows) == 1
     assert (rows[0]['kind'], rows[0]['action'], rows[0]['status']) == (
         'external_tool', expected_action, 'running')
-    assert rows[0]['invocation']['input'] == command
+    assert rows[0]['invocation']['command'] == command
     assert 'payload' not in str(rows[0]['invocation'])
 
     # Restart/create --start may send a second mutating Client command: one activity only.
-    adapter.dispatch(conn, activity_id, 'external_tool_start payload', 'command')
+    adapter.dispatch(conn, activity_id, wire_command('external_tool_start payload'))
     assert len(entries(server)) == 1
     server.activity_coordinator.finish(conn, activity_id, True)
     assert entries(server)[0]['status'] == 'success'
@@ -742,7 +763,7 @@ def test_xt_cli_queries_do_not_create_activity_even_with_client_preflight(setup_
     server, conn = setup_history
     adapter = server.command_adapter
     activity_id = adapter.prepare_command(conn, command, source='cli')
-    adapter.dispatch(conn, activity_id, 'external_tool_status payload', 'command')
+    adapter.dispatch(conn, activity_id, wire_command('external_tool_status payload'))
     server.activity_coordinator.finish(conn, activity_id, True)
     assert entries(server) == []
 
@@ -763,7 +784,7 @@ def test_web_external_tool_mutation_keeps_existing_adapter_dispatch(setup_histor
     activity_id = server.activity_coordinator.prepare(conn, ActivityOperation(
         'external_tool', 'clear_package_cache', {'package_id': 'demo'}, origin='web_api',
     ))
-    server.command_adapter.dispatch(conn, activity_id, 'external_tool_clear_package_cache payload', 'command')
+    server.command_adapter.dispatch(conn, activity_id, wire_command('external_tool_clear_package_cache payload'))
     assert [(row['kind'], row['action']) for row in entries(server)] == [
         ('external_tool', 'clear_package_cache')
     ]
@@ -779,11 +800,11 @@ def test_xt_exec_actual_plan_retains_candidate_until_client_dispatch(setup_histo
     })
     adapter.describe_plan(conn, activity_id, {'command': client_command, 'command_type': 'command'})
     assert entries(server) == []
-    adapter.dispatch(conn, activity_id, client_command, 'command')
+    adapter.dispatch(conn, activity_id, wire_command(client_command))
     assert [(row['kind'], row['action']) for row in entries(server)] == [
         ('external_tool', 'run_exec')
     ]
-    assert entries(server)[0]['invocation']['input'] == 'xt exec ffmpeg -version'
+    assert entries(server)[0]['invocation']['command'] == 'xt exec ffmpeg -version'
 
 
 def test_independent_mutations_keep_existing_activity_without_rebinding_foreground(setup_history):
@@ -837,24 +858,32 @@ def test_control_catalog_records_every_action_by_policy(setup_history, monkeypat
     assert {(r['kind'], r['action']) for r in entries(server)} == set(actions)
 
 
-def test_configuration_cli_and_control_share_policy_and_protect_values(setup_history, monkeypatch):
+def test_configuration_cli_and_control_share_policy_and_preserve_actual_values(setup_history, monkeypatch):
+    from core.utils.configuration_cli import parse_configuration_request
     server, conn = setup_history
     adapter = server.command_adapter
-    conn.callback = lambda req: conn.respond(req, 1, 'SECRET_TOKEN')
-    for command in ('set TOKEN SECRET_TOKEN', 'set --reset TOKEN', 'set --json', 'watchdog --json'):
+    conn.callback = lambda req: conn.respond(req, 1, {'message':'SECRET_TOKEN'})
+    def send_command(command):
         entry = adapter.prepare_command(conn, command, source='web')
-        list(conn.send_command(command, history_entry_id=entry))
+        if command.startswith('set'):
+            action, payload, _ = parse_configuration_request(command[3:].strip())
+            domain = 'configuration'
+        else:
+            domain, action, payload = 'watchdog', 'status', {}
+        list(conn.send_command('', type='control', domain=domain, action=action, payload=payload, history_entry_id=entry))
+        server.activity_coordinator.finish(conn, entry, True)
+    for command in ('set TOKEN SECRET_TOKEN', 'set --reset TOKEN', 'set --json', 'watchdog --json'):
+        send_command(command)
     list(conn.send_command('', type='control', domain='configuration', action='set', payload={'key':'TOKEN','value':'SECRET_TOKEN'}))
     assert len(entries(server)) == 3
     assert {row['kind'] for row in entries(server)} == {'configuration'}
-    assert 'SECRET_TOKEN' not in str(entries(server))
-    assert all(row['invocation']['arguments']['key'] == 'TOKEN' for row in entries(server))
+    assert 'SECRET_TOKEN' in str(entries(server))
+    assert all(row['resolved']['payload']['key'] == 'TOKEN' for row in entries(server))
     monkeypatch.setattr(control_activity.config, 'RECORD_OPTIONAL_ACTIVITY', True, raising=False)
     for command in ('set --json', 'watchdog --json'):
-        entry = adapter.prepare_command(conn, command, source='web')
-        list(conn.send_command(command, history_entry_id=entry))
+        send_command(command)
     assert {(row['kind'],row['action']) for row in entries(server)} == {('configuration','get'),('configuration','set'),('configuration','reset'),('watchdog','status')}
-    assert 'SECRET_TOKEN' not in str(entries(server))
+    assert all(row['resolved'] in conn.sent for row in entries(server))
 
 
 def test_control_terminal_eof_owns_status_and_inspect_uses_action_policy(setup_history):
@@ -871,7 +900,7 @@ def test_control_terminal_eof_owns_status_and_inspect_uses_action_policy(setup_h
     for action in ('paste_paths','extract_archive'):
         list(conn.send_command('', type='control', domain='remote_files', action=action, payload={'inspect':True}))
     assert len(entries(server)) == 3
-    assert {row['action'] for row in entries(server) if row['invocation']['arguments'].get('inspect')} == {'paste_paths','extract_archive'}
+    assert {row['action'] for row in entries(server) if row['resolved']['payload'].get('inspect')} == {'paste_paths','extract_archive'}
     from server.application.command.command_execution_pipeline import CommandExecutionPipeline
     from server.application.tasks.task_status import TaskStreamSummary
     from server.application.tasks.task_runner import WebTaskRunner

@@ -25,7 +25,7 @@ test('actual terminal script exec SSE result retains script path through JSON ac
     selectedId: 'client-a', currentConnection: {machine_id: 'machine-a', hostname: 'mac'},
   })
   const realCommand = 'script exec common/recon/list_disks.py'
-  const operation = {operation_id: 'op-a', kind: 'command', invocation: {input: realCommand}}
+  const operation = {operation_id: 'op-a', kind: 'command', invocation: {command: realCommand}}
   const lines = [
     {kind:'command', text:`> ${realCommand}`, meta:{operation_id:'op-a', operation}},
     {kind:'default', text:'[{"name":"disk"}]', isJsonMessage:true, jsonText:'[{"name":"disk"}]',
@@ -56,7 +56,7 @@ test('Server-originated Script start without UI replay still uses task script id
   const view = bindMethods(loadComponent('TerminalOutput.vue'), {
     selectedId: 'client-a', currentConnection: {machine_id:'machine-a',hostname:'mac'},
   })
-  const operation = {operation_id:'op-b',kind:'script',invocation:{input:'script run __json__:encoded'},replay:null}
+  const operation = {operation_id:'op-b',kind:'script',invocation:{},replay:null}
   const lines = [
     {kind:'command',text:'> [Run Script] list disks',meta:{operation_id:'op-b',operation}},
     {kind:'default',text:'[{"name":"disk"}]',isJsonMessage:true,meta:{operation_id:'op-b',event_type:'output',

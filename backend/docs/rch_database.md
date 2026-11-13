@@ -139,13 +139,14 @@
 | `origin` | 操作来源类别，例如来自哪个命令/界面入口。 |
 | `presentation` | 活动的展示语义，辅助详情组织内容。 |
 | `status` | 当前/最终执行状态，决定成功、失败、取消等状态显示和 Errors 筛选。 |
-| `invocation_json` | 用户发起的可记录调用信息，如输入命令或结构化参数；活动详情和搜索会读取它。 |
-| `resolved_json` | 服务端解析并实际下发操作的可记录描述；活动详情和搜索会读取它。 |
-| `result_json` | 操作结果摘要、受限制保存的输出记录和截断标记等。 |
+| `invocation_json` | 原始入口命令；UI 调用为空对象。 |
+| `resolved_json` | 实际成功下发的完整协议消息。 |
+| `result_json` | 受容量限制的 Output Records，实际截断时才记录标记。 |
 | `created_at` | 业务活动的创建时间。 |
 | `started_at`、`started_at_ms` | 执行开始时间及排序用毫秒值。 |
 | `finished_at` | 已结束操作的完成时间；未结束时可为空。 |
-| `files_json` | 本次操作产生或关联的 Artifact 文件引用；不是文件二进制内容。 |
+| `references_json` | 明确关联的 Artifact、Job 等引用；不是文件二进制内容。 |
+| `summary` | 原有列表标题的展示摘要。 |
 
 `kind` 当前包含 `command`、`alias`、`script`、`remote_files`、`transfer`、`external_tool`、`background_job`。Errors 筛选匹配 `error`、`cancelled`、`interrupted`、`timed_out` 四种状态。搜索同时查动作名以及调用/解析信息的 JSON 文本；分页只是显示方式，按条件 Clear 会删除该机器**所有匹配记录**，不只删除已加载的一页。
 

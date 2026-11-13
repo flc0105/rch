@@ -1,4 +1,5 @@
 """One authoritative Activity lifecycle; adapters provide operation intents and events."""
+from copy import deepcopy
 import threading
 import uuid
 
@@ -10,6 +11,7 @@ class ActivityCoordinator:
         self.history_store = history_store
         self.quick_store = history_store.quick_store
         self._pending = {}
+        self._request_output = set()
         self._lock = threading.RLock()
 
     def prepare(self, conn, operation, *, entry_id='', quick_command=None):
@@ -29,7 +31,10 @@ class ActivityCoordinator:
                 'conn': conn, 'kind': operation.kind, 'action': operation.action,
                 'origin': previous['origin'] if previous and operation.reuse_origin else operation.origin,
                 'presentation': previous['presentation'] if previous and operation.reuse_origin else operation.presentation,
-                'invocation': operation.invocation(), 'resolved': dict(operation.resolved),
+                'invocation': deepcopy(previous['invocation']) if previous else operation.invocation(),
+                'summary': operation.display_summary(),
+                'references': previous['references'] if previous else [],
+                'artifacts': previous['artifacts'] if previous else [],
                 'created_at': previous['created_at'] if previous else self.history_store._now_iso(),
             }
         return activity_id
@@ -45,24 +50,32 @@ class ActivityCoordinator:
             if pending is not None and pending['conn'] is conn:
                 fn(pending)
 
-    def dispatch(self, conn, entry_id, *, command='', command_type='command'):
+    def dispatch(self, conn, entry_id, *, data):
         if not entry_id:
             return False
         with self._lock:
             pending = self._pending.get(entry_id)
             if pending is None or pending['conn'] is not conn:
                 return False
+            # Hold the lock through insertion so an early artifact event cannot
+            # observe a gap between pending intent and the persisted Activity.
+            record = {**pending, 'resolved': deepcopy(data)}
+            self.history_store.write_service.create_activity_for_dispatch(conn, entry_id, record)
             self._pending.pop(entry_id)
-        if command_type == 'script':
-            pending['resolved'].pop('command', None)
-        elif not pending['resolved']:
-            pending['resolved'] = {'command_type': command_type, 'command': command}
-        self.history_store.write_service.create_activity_for_dispatch(conn, entry_id, pending)
-        return True
+            for artifact in pending['artifacts']:
+                self.history_store.append_file_for_connection(conn, entry_id, artifact)
+            return True
 
-    def details(self, conn, entry_id, values):
-        if entry_id and isinstance(values, dict) and values:
-            self.history_store.write_service.update_activity_resolved(conn, entry_id, values)
+    def add_references(self, conn, entry_id, references):
+        self.history_store.write_service.add_references(conn, entry_id, references)
+
+    def own_request_output(self, conn, entry_id):
+        with self._lock:
+            self._request_output.add((id(conn), entry_id))
+
+    def release_request_output(self, conn, entry_id):
+        with self._lock:
+            self._request_output.discard((id(conn), entry_id))
 
     def drop(self, entry_id):
         with self._lock:
@@ -77,7 +90,7 @@ class ActivityCoordinator:
             pending = self._pending.get(entry_id)
             if is_upload(pending):
                 self._pending.pop(entry_id)
-                return pending['origin'], pending['invocation']['input']
+                return pending['origin'], pending['invocation'].get('command', '')
         return None
 
     def discard(self, conn, entry_id):
@@ -86,10 +99,13 @@ class ActivityCoordinator:
             return self._pending.pop(entry_id, None) is not None
 
     def append_output(self, conn, entry_id, status, text, eof=0):
-        self.history_store.append_output_for_connection(conn, entry_id, status, text, eof)
+        with self._lock:
+            if (id(conn), entry_id) in self._request_output:
+                return
+        self.history_store.write_service.append_output_for_connection(conn, entry_id, status, text, eof, active_only=True)
 
     def append_request_output(self, conn, entry_id, status, text, eof=0):
-        self.history_store.write_service.append_output_for_connection(conn, entry_id, status, text, eof, request_owned=True)
+        self.history_store.write_service.append_output_for_connection(conn, entry_id, status, text, eof)
 
     def update_status(self, conn, entry_id, status):
         if entry_id:
@@ -131,5 +147,10 @@ class ActivityCoordinator:
         entry_id = self.get_bound_entry_id(conn, source_command_id)
         if not entry_id:
             return False
-        self.history_store.append_file_for_connection(conn, entry_id, artifact)
+        with self._lock:
+            pending = self._pending.get(entry_id)
+            if pending is not None and pending['conn'] is conn:
+                pending['artifacts'].append(deepcopy(artifact))
+            else:
+                self.history_store.append_file_for_connection(conn, entry_id, artifact)
         return True

@@ -15,6 +15,9 @@ from server.application.command.control_builtin_support import ControlBuiltinSup
 from server.application.command.job_builtin_support import JobBuiltinSupport
 
 
+from server.application.command.configuration_builtin_support import ConfigurationBuiltinSupport
+
+
 class BuiltinCommandHandler:
     """
     内建命令处理器。
@@ -48,6 +51,8 @@ class BuiltinCommandHandler:
         self.command_processor_factory = command_processor_factory
         self.services = builtin_services
 
+        self.configuration_support = ConfigurationBuiltinSupport(
+            conn, remote_execution_service, history_entry_id_provider, use_foreground_guard)
         self.upload_support = UploadBuiltinSupport(
             conn=self.conn,
             remote_execution_service=self.remote_execution_service,
@@ -182,6 +187,12 @@ class BuiltinCommandHandler:
                 continue
             grouped.setdefault(group, []).append((name, str(item.get('help') or '')))
         return render_grouped_client_help(grouped) or 'No Client commands available'
+
+    def set(self, arg=''):
+        yield from self.configuration_support.set(arg)
+
+    def watchdog(self, arg=''):
+        yield from self.configuration_support.watchdog(arg)
 
     def upload(self, filename):
         for item in self.upload_support.upload(filename):

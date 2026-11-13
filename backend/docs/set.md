@@ -1,6 +1,6 @@
 # RCH Client 运行配置指南
 
-Web Configuration 与真实 `set` 命令共享 Client 配置服务、类型/choices 校验、覆盖文件和运行时副作用。Web 使用 `control/configuration/get|set|reset`，返回原生配置对象；`set --json` 仍用于用户诊断。无效枚举值不得写入配置。
+Web Configuration 与真实 `set` 命令共享 Client 配置服务、类型/choices 校验、覆盖文件和运行时副作用。Server 解析终端 `set` 与 `watchdog`，分别使用与 Web 相同的 Configuration、Watchdog Control；配置操作返回原生配置对象；`set --json` 仍用于用户诊断。无效枚举值不得写入配置。
 
 ## `set` 命令与 Configuration
 

@@ -137,7 +137,7 @@ SCRIPT_METADATA = {
 
 ### Script Activity 记录
 
-首批 Activity Center 将 Script Library 的 Run/Run in Terminal 及 Terminal 中的 `script exec <script>` 都归为 `kind=script/action=run`。`invocation.input` 保留真实入口，`invocation.target` 保存 Script 名称或路径，`invocation.arguments` 保存 Script Library 的实际参数对象（Terminal 原始命令保留在 invocation.input，实际参数及运行模式分别记录在 invocation.arguments 与 resolved）。真正的 Client 请求是 `control(domain=script, action=run)`；公共 Activity 不复制 Server 读取的脚本源码，也不伪造 Shell 命令。
+Activity Center 将 Script Library 的 Run/Run in Terminal 及 Terminal 中的 `script exec <script>` 都归为 `kind=script/action=run`。Terminal 原始命令保存在 Invocation，UI 调用为空对象；Resolved 保存实际发送的完整 `control(domain=script, action=run)` 请求，包括源码、参数和运行模式。
 
 Activity 只在 Script 真的被提交给 Client 时创建；单纯列出脚本、查看/编辑元数据或打开目录不会产生记录。Script Cancel 只更新当前 Run Activity 的状态（`cancelling`、`cancelled` 等），不额外制造 `stop` Activity。Details 沿用实际任务结果的输出记录和 Artifact；Quick History 不接收 Script Library 的内部可执行 Payload。
 

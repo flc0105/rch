@@ -1,8 +1,4 @@
-"""Activity Center storage; Quick History uses its own writer and lifecycle.
-
-Activity records start empty. The retired command_executions rows are not read or
-migrated; existing pinned Quick commands remain independent.
-"""
+"""Activity Center storage; Quick History uses its own writer and lifecycle."""
 import threading
 import time
 from datetime import datetime, timezone
@@ -30,8 +26,6 @@ class CommandHistoryStore:
         self.quick_store = QuickHistoryStore(self)
         self.write_service = HistoryWriteService(self)
         self.view_service = HistoryViewService(self)
-        # A new, empty Activity dataset. No old execution import, compatibility
-        # reader, schema-version flag, or alteration of unrelated business tables.
         with self._lock, self.database.transaction() as conn:
             conn.execute('''CREATE TABLE IF NOT EXISTS activity_records (
                 activity_id TEXT PRIMARY KEY,
@@ -49,7 +43,8 @@ class CommandHistoryStore:
                 started_at TEXT,
                 started_at_ms INTEGER NOT NULL,
                 finished_at TEXT,
-                files_json TEXT NOT NULL DEFAULT '[]'
+                references_json TEXT NOT NULL DEFAULT '[]',
+                summary TEXT NOT NULL DEFAULT ''
             )''')
             conn.execute('''CREATE INDEX IF NOT EXISTS idx_activity_machine_time
                 ON activity_records(machine_id, started_at_ms DESC, activity_id DESC)''')
@@ -89,10 +84,11 @@ class CommandHistoryStore:
             'presentation': row['presentation'], 'status': row['status'],
             'invocation': json_loads_typed(row['invocation_json'], {}),
             'resolved': json_loads_typed(row['resolved_json'], {}),
-            'result': json_loads_typed(row['result_json'], {'truncated': False, 'output_records': []}),
+            'result': json_loads_typed(row['result_json'], {'output_records': []}),
             'created_at': row['created_at'], 'started_at': row['started_at'],
             'finished_at': row['finished_at'],
-            'files': json_loads_typed(row['files_json'], []),
+            'references': json_loads_typed(row['references_json'], []),
+            'summary': row['summary'],
         }
 
     def _get_entry(self, machine_id, activity_id):
@@ -108,24 +104,24 @@ class CommandHistoryStore:
             INSERT INTO activity_records (
                 activity_id, machine_id, client_id, kind, action, origin, presentation,
                 status, invocation_json, resolved_json, result_json,
-                created_at, started_at, started_at_ms, finished_at, files_json
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                created_at, started_at, started_at_ms, finished_at, references_json, summary
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         ''', (
             entry['activity_id'], entry['machine_id'], entry['client_id'],
             entry['kind'], entry['action'], entry['origin'], entry['presentation'],
             entry['status'], compact_json_dumps(entry['invocation']),
             compact_json_dumps(entry['resolved']), compact_json_dumps(entry['result']),
             entry['created_at'], entry['started_at'], started_ms, entry['finished_at'],
-            compact_json_dumps(entry['files']),
+            compact_json_dumps(entry['references']), entry['summary'],
         ))
 
     def _update_entry(self, entry):
         self.database.connection().execute('''
-            UPDATE activity_records SET status = ?, resolved_json = ?, result_json = ?, files_json = ?,
+            UPDATE activity_records SET status = ?, result_json = ?, references_json = ?,
             finished_at = ? WHERE machine_id = ? AND activity_id = ?
         ''', (
-            entry['status'], compact_json_dumps(entry['resolved']), compact_json_dumps(entry['result']),
-            compact_json_dumps(entry['files']), entry['finished_at'], entry['machine_id'], entry['activity_id'],
+            entry['status'], compact_json_dumps(entry['result']),
+            compact_json_dumps(entry['references']), entry['finished_at'], entry['machine_id'], entry['activity_id'],
         ))
 
     def _list_execution_rows(self, machine_id, *, limit=None, cursor=None, query='', client_id='', kind='', errors=False):
@@ -153,9 +149,10 @@ class CommandHistoryStore:
             clauses.append("status IN ('error','cancelled','interrupted','timed_out')")
         if query:
             clauses.append('''(instr(LOWER(action), LOWER(?)) > 0
+                              OR instr(LOWER(summary), LOWER(?)) > 0
                               OR instr(LOWER(invocation_json), LOWER(?)) > 0
                               OR instr(LOWER(resolved_json), LOWER(?)) > 0)''')
-            params.extend([query, query, query])
+            params.extend([query, query, query, query])
         return clauses, params
 
     def count_activities(self, machine_id, *, query='', client_id='', kind='', errors=False):

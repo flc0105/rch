@@ -5,12 +5,14 @@ import json
 from server.application.artifact.artifact_reference_view_projector import ArtifactReferenceViewProjector
 from server.config.config import COMMAND_HISTORY_PAGE_SIZE, COMMAND_HISTORY_MAX_PAGE_SIZE
 from server.application.history.activity_definitions import ActivityKind, activity_summary
+from core.protocol.references import ReferenceType
 
 
 class HistoryViewService:
     def get_execution_entry(self, machine_id: str, activity_id: str):
         """Fetch one exact Activity record for reliable terminal output recovery."""
-        return self.store._get_entry(machine_id, activity_id)
+        entry = self.store._get_entry(machine_id, activity_id)
+        return self._project_files(entry) if entry else None
 
     def __init__(self, store):
         self.store = store
@@ -21,6 +23,12 @@ class HistoryViewService:
             file_item, self.store.artifact_service,
             path_key='saved_path', allow_local_path_fallback=True, include_saved_at=True,
         )
+
+    def _project_files(self, entry):
+        # Produced Files is the existing view of Artifact references, not another store.
+        entry['files'] = [self._resolve_artifact(ref.get('snapshot') or {'artifact_id': ref['id']})
+                          for ref in entry['references'] if ref['type'] == ReferenceType.ARTIFACT]
+        return entry
 
     @staticmethod
     def _apply_quick_history_move_flags(pinned, normal):
@@ -106,8 +114,7 @@ class HistoryViewService:
                     'started_at': entry['started_at'], 'finished_at': entry['finished_at'],
                 })
             else:
-                entry['files'] = [self._resolve_artifact(item) for item in entry['files']]
-                items.append(entry)
+                items.append(self._project_files(entry))
         next_cursor = self._encode_cursor(page_rows[-1]['started_at_ms'], page_rows[-1]['activity_id']) if has_more and page_rows else ''
         # Count uses exactly the same filters as data, excluding page cursor.
         count = self.store.count_activities(machine_id, **filters)
