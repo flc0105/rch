@@ -14,6 +14,7 @@ SCRIPT_METADATA = {
             "type": "select",
             "required": True,
             "default": "status",
+            "control": "button_group",
             "options": ["status", "disable", "enable"],
             "description": (
                 "status = show current value; "

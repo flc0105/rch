@@ -1,4 +1,5 @@
 from contextlib import contextmanager
+import json
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any
@@ -16,6 +17,7 @@ class ScriptSdkRuntimeContext:
     """
 
     execution_owner: Any = None
+    emit_event: Any = None
     kwargs: dict = field(default_factory=dict)
     script_context: dict = field(default_factory=dict)
 
@@ -199,6 +201,21 @@ def progress(message: str, status: int = 1) -> None:
         print(text, flush=True)
 
 
+def emit(data: dict | list) -> None:
+    """Emit one structured Script output event in execution order.
+
+    A JSON object or array is an output record, not a Script return value.
+    """
+    if not isinstance(data, (dict, list)):
+        raise TypeError('Structured output requires a JSON object or array')
+    # Validate/freeze now: callers cannot mutate the value after emission.
+    validated = json.loads(json.dumps(data, ensure_ascii=False, allow_nan=False))
+    sender = get_current_context().emit_event
+    if not callable(sender):
+        raise RuntimeError('Structured output requires an active Script output channel')
+    sender(validated)
+
+
 def confirm(message: str, *, title='Confirmation', timeout=90) -> bool:
     """Request opt-in Web approval; rejection or timeout returns False."""
     from client.runtime.sdk.interactions import confirm as request_confirmation
@@ -239,12 +256,15 @@ def get_client_session_token() -> str:
 
 
 @contextmanager
-def use_script_sdk_context(execution_owner=None, kwargs=None):
+def use_script_sdk_context(execution_owner=None, kwargs=None, *, emit_event=None):
     payload = _safe_dict(kwargs)
     script_context = _safe_dict(payload.get('__context__'))
+    if emit_event is None:
+        emit_event = get_current_context().emit_event
     token = _current_context.set(
         ScriptSdkRuntimeContext(
             execution_owner=execution_owner,
+            emit_event=emit_event,
             kwargs=payload,
             script_context=script_context,
         )

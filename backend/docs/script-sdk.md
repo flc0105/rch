@@ -46,6 +46,19 @@ print("system_paths =", context.system_paths())
 | `context.os_ver()` | OS 版本 |
 | `context.system_paths()` | 当前 client 握手上报的系统路径 |
 | `context.progress(message, status=1)` | 将脚本进度实时发到当前执行输出流（无运行上下文时打印） |
+| `context.emit(data)` | 向当前 Script 输出流追加一条 JSON 对象或数组事件，保留执行顺序 |
+
+`context.emit()` 只接受可 JSON 序列化的 `dict` 或 `list`，不能传入任意 Python 对象或纯文本。发送数据时立即校验并冻结值，避免脚本后续修改导致记录内容漂移；需要输出普通文字继续使用 `print()`。结构化输出不是运行终态，也不是 Device Event：不要与 `events.emit()` 混淆。
+
+```python
+from client.runtime.sdk import context
+
+print('Collecting state...')
+context.emit({'job_name': 'demo', 'state': 'running', 'count': 2})
+print('State collected.')
+```
+
+Python Client 的 `inproc/subprocess_pipe` 与 `stream/collect` 组合均支持该 API：前者通过当前执行上下文发送，独立进程通过本地有序输出通道发送，不在 stdout 中插入标记。collect 延迟发布输出但保留每条文本/结构化事件的顺序。未处于 Script 执行上下文时会拒绝 `context.emit()`；Go Client 的 Python 执行环境不提供 Python Client SDK。Library 示例见 `test/misc/structured_output_probe`。
 
 兼容 API：
 

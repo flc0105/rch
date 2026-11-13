@@ -63,7 +63,7 @@ def test_job_control_command_is_identical_and_download_is_client_owned():
     class Remote:
         def stream_command(self, conn, command, **kwargs):
             commands.append((kwargs["payload"], kwargs))
-            yield (1, build_job_control_result('start', 'started'))
+            yield (1, build_job_control_result('start', 'started', data={}))
 
     conn = SimpleNamespace(session_info=SimpleNamespace(client_id='client1'))
     support = JobBuiltinSupport(SimpleNamespace(), conn, Remote(), service, catalog)

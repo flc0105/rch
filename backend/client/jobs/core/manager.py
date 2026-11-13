@@ -148,13 +148,14 @@ class JobManager:
         with self._lock:
             return self._runtimes.get(job_key)
 
-    def list_running_jobs(self) -> List[str]:
+    def list_running_jobs(self) -> list[dict]:
         with self._lock:
-            running = []
-            for runtime in self._runtimes.values():
-                if runtime.is_alive:
-                    running.append(runtime.display_name)
-            return running
+            return [
+                {'job_name': runtime.job_key, 'job_id': runtime.job_id,
+                 'execution_mode': runtime.execution_mode, 'worker_name': runtime.worker_name,
+                 'status': 'running' if runtime.is_running else 'stopping'}
+                for runtime in self._runtimes.values() if runtime.is_alive
+            ]
 
     def cleanup_finished_jobs(self):
         with self._lock:
@@ -498,7 +499,7 @@ class JobManager:
         for runtime in runtimes:
             try:
                 self._request_runtime_stop(runtime, notify=True)
-                stopped.append({'job_id': runtime.job_id, 'display_name': runtime.display_name})
+                stopped.append({'job_id': runtime.job_id, 'job_key': runtime.job_key})
             except Exception as exc:
                 errors.append(f'{runtime.display_name}: {exc}')
         return {'total': len(runtimes), 'stopped': stopped, 'errors': errors}

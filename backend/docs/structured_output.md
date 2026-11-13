@@ -24,6 +24,14 @@ JSON Viewer：Table / Grouped / Flat / Raw
 
 Terminal JSON Rendering 是独立的展示层：浏览器检测输出是否为有效 JSON，提供查看操作，打开后依据 JSON 顶层类型选择适合的展示方式。它不反向改变 Client 命令的执行结果，也不为展示向 Server 请求另一份数据。仅当用户在 Table 中明确确认 Result Action 时，才通过原有命令接口提交该 Action 指定的命令。
 
+## Control Result 的展示意图与同源数据
+
+结构化命令的 `StructuredCommandResult.data` 是业务事实的唯一来源。Control 的最终 Result 可以同时含有简短的 `message` 和完整 `data`，由明确的 `display` 指定默认呈现：`message` 为操作反馈句，`data` 为结构化查询视图。`display` 与是否存在 `data` 无关，也不改变用于表示过程与终态的 `event_type`；`shape` 则只控制结构化数据的文本排版，不负责选择默认展示内容。
+
+支持 `--json` 的 Job Client Action 始终输出 Result 的同一份 `data`，无论默认 `display` 为 `message` 还是 `data`。对采用 `display=data` 的 Job 查询，Terminal 的 text 与 JSON 使用相同业务字段，不维护文本专用字段白名单；text 仅负责布局，JSON 保留原生字段及数据类型。`--json` 不混入过程日志。现有其他命令未声明这个 Result 契约时，仍走既有执行结果路径，不以字符串内容猜测业务类型。
+
+SDK `context.emit(data)` 可以在 Script 的普通文本之间发送一条独立 JSON 对象或数组输出。它保留结构化值，不等同于把 JSON 字符串打印进 stdout，也不代表 Script 已执行完毕。每条显式结构化输出均带有 `event_type=chunk`、`display=data`，与普通 `print()` 输出按执行顺序送出；Activity Output Records 可以保留其完整 Envelope，并使用现有 JSON 查看器显示。该事件适用于 Python Client 的 `inproc` 和 `subprocess_pipe`，两种 Output Mode (`stream` / `collect`) 都支持；collect 等脚本结束后按原顺序回放。
+
 ## 结构化返回对象及形状
 
 当前结果模型的名称为 `StructuredCommandResult`，核心属性如下：

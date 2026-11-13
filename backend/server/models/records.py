@@ -3,7 +3,7 @@
 Output EOF belongs to output chunks; it is not task lifecycle state.
 """
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 
 
 @dataclass
@@ -32,6 +32,7 @@ class OutputRecordBase:
     text: str = ''
     eof: int = 0
     created_at: str = ''
+    envelope: dict = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, payload: dict | None):
@@ -42,7 +43,11 @@ class OutputRecordBase:
             text=str(source.get('text') or ''),
             eof=int(source.get('eof', 0) or 0),
             created_at=str(source.get('created_at') or ''),
+            envelope=dict(source.get('envelope') or {}) if isinstance(source.get('envelope'), dict) else {},
         )
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        result = asdict(self)
+        if not result.get('envelope'):
+            result.pop('envelope', None)
+        return result

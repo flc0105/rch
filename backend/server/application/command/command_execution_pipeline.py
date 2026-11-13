@@ -2,6 +2,7 @@ import logging
 
 from server.application.command.command_execution_event import CommandExecutionEvent
 from core.protocol.message_queue import result_terminal_status
+from core.utils.command_output import ResultDisplay, render_result_payload
 from server.application.execution.execution_context import ExecutionContext
 
 
@@ -51,7 +52,10 @@ class CommandExecutionPipeline:
 
         if isinstance(result, dict):
             event_type = str(result.get('event_type') or '').strip().lower()
-            text = str(result.get('text') or result.get('message') or '')
+            if result.get('display') in (ResultDisplay.MESSAGE, ResultDisplay.DATA):
+                text = render_result_payload(result, 'json' if result['display'] == ResultDisplay.DATA else 'text')
+            else:
+                text = str(result.get('text') or result.get('message') or '')
 
             if event_type == CommandExecutionEvent.CANCELLED:
                 return CommandExecutionEvent.cancelled(text, payload=result)

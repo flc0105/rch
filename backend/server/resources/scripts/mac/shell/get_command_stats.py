@@ -4,7 +4,7 @@ SCRIPT_METADATA = {
     "name": "mac/shell/get_command_stats",
     "display_name": "Command Stats",
     "description": "Show the most frequently used commands in zsh history.",
-    "platforms": ["mac"],
+    "platforms": ["mac", "linux"],
     "category": "Shell",
     "params": [
         {

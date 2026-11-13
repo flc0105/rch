@@ -10,6 +10,7 @@ import uuid
 from core.protocol.control import ControlDomain, ScriptAction
 from server.application.history.control_activity import should_record
 from core.protocol.message_queue import result_terminal_status
+from core.utils.command_output import ResultDisplay, render_result_payload
 from server.application.command.command_types import COMMAND_TYPE_CONTROL
 from core.protocol.structured_arg_codec import decode_structured_arg
 from server.application.history.activity_definitions import (
@@ -272,8 +273,12 @@ class CommandDispatchAdapter:
                     final = result_terminal_status(status, result)
                 try:
                     if result is not None:
-                        message = result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
-                        self.coordinator.append_request_output(conn, entry_id, status, message, eof)
+                        typed = isinstance(result, dict) and result.get('display') in (ResultDisplay.MESSAGE, ResultDisplay.DATA)
+                        message = (render_result_payload(result, 'json' if result['display'] == ResultDisplay.DATA else 'text')
+                                   if typed else result if isinstance(result, str) else json.dumps(result, ensure_ascii=False))
+                        if message or typed:
+                            self.coordinator.append_request_output(conn, entry_id, status, message, eof,
+                                **({'envelope': result} if typed else {}))
                     if eof and isinstance(result, dict):
                         self.coordinator.add_references(conn, entry_id, result.get('references'))
                     if eof and authoritative:

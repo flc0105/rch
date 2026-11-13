@@ -6,7 +6,8 @@ import time
 
 from server.application.command.command_types import COMMAND_TYPE_CONTROL
 from core.platform.catalog_visibility import visible_on_platform
-from core.protocol.job_control import (build_job_control_request, validate_job_control_result, JOB_MUTATING_ACTIONS)
+from core.protocol.job_control import build_job_control_request, validate_job_control_result
+from core.utils.command_output import parse_output_format, strip_output_format_arg, render_result_payload
 
 
 class JobBuiltinSupport:
@@ -27,24 +28,22 @@ class JobBuiltinSupport:
     def client_id(self):
         return str(getattr(getattr(self.conn, 'session_info', None), 'client_id', '') or '').strip()
 
-    def _send(self, action, **payload):
+    def _send(self, action, *, output_format="text", **payload):
         # Already inside the terminal's foreground slot: never acquire it again.
         request = build_job_control_request(action, **payload)
-        actions = JOB_MUTATING_ACTIONS
         entry_id = self.history_entry_id_provider() or ''
         kwargs = {'command_type': COMMAND_TYPE_CONTROL, 'domain': ControlDomain.JOB, 'action': action}
         if entry_id:
             kwargs['history_entry_id'] = entry_id
         pending_result = None
         for item in self.remote_execution_service.stream_command(self.conn, '', payload=request, **kwargs):
-            # Progress packets are readable text. Only the last packet is the
-            # management result, so never display its raw internal JSON.
-            if pending_result is not None:
+            # JSON mode produces a single machine-readable document on stdout;
+            # progress is still recorded by the shared request Activity observer.
+            if pending_result is not None and output_format != 'json':
                 yield pending_result
             pending_result = item
         if pending_result is None:
-            if action in actions:
-                yield 0, 'Job control returned no result'
+            yield 0, 'Job control returned no result'
             return
         status, text, *rest = pending_result
         try:
@@ -56,7 +55,7 @@ class JobBuiltinSupport:
                 yield pending_result  # Preserve structured cancellation/timeout and EOF.
             return
         from core.protocol.message_queue import ResultChunk
-        yield ResultChunk(status, result['message'], getattr(pending_result, 'eof', True), terminal_authoritative=True)
+        yield ResultChunk(status, render_result_payload(result, output_format), getattr(pending_result, 'eof', True), terminal_authoritative=True)
 
     def _job_logs(self, args):
         """Stream persisted reports through the shared Job application service."""
@@ -167,6 +166,10 @@ class JobBuiltinSupport:
             yield from self._job_logs(args)
             return
 
+        output_format = parse_output_format(remaining)
+        remaining = strip_output_format_arg(remaining)
+        args = shlex.split(remaining)
+
         if subcommand == 'start':
             from server.application.command.server_builtin_registry import SERVER_COMMAND_REGISTRY
             try:
@@ -194,21 +197,21 @@ class JobBuiltinSupport:
             except (ValueError, FileNotFoundError) as exc:
                 yield 0, str(exc)
                 return
-            yield from self._send(JobAction.START, job_name=name, params=params, execution_mode=mode)
+            yield from self._send(JobAction.START, output_format=output_format, job_name=name, params=params, execution_mode=mode)
             return
 
         if subcommand in ('ps', 'stop-all'):
             if args:
                 yield 0, self.HELP
                 return
-            yield from self._send(JobAction.PS if subcommand == 'ps' else JobAction.STOP_ALL)
+            yield from self._send(JobAction.PS if subcommand == 'ps' else JobAction.STOP_ALL, output_format=output_format)
             return
 
         if subcommand in ('stop', 'status'):
             if len(args) != 1:
                 yield 0, self.HELP
                 return
-            yield from self._send(JobAction(subcommand), job_key=args[0])
+            yield from self._send(JobAction(subcommand), output_format=output_format, job_key=args[0])
             return
 
         yield 0, self.HELP

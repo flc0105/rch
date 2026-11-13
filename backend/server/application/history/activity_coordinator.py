@@ -104,8 +104,8 @@ class ActivityCoordinator:
                 return
         self.history_store.write_service.append_output_for_connection(conn, entry_id, status, text, eof, active_only=True)
 
-    def append_request_output(self, conn, entry_id, status, text, eof=0):
-        self.history_store.write_service.append_output_for_connection(conn, entry_id, status, text, eof)
+    def append_request_output(self, conn, entry_id, status, text, eof=0, *, envelope=None):
+        self.history_store.write_service.append_output_for_connection(conn, entry_id, status, text, eof, envelope=envelope)
 
     def update_status(self, conn, entry_id, status):
         if entry_id:

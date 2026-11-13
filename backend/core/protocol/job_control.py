@@ -1,7 +1,8 @@
-"""Typed Job Control requests and results shared by Server and Python Client."""
+"""Job Control requests and canonical semantic results shared by Server/Client."""
 
 from core.protocol.control import JobAction
 from core.protocol.references import ReferenceType, entity_reference
+from core.utils.command_output import ResultDisplay, ResultEventType
 
 JOB_ACTIONS = frozenset(JobAction)
 JOB_MUTATING_ACTIONS = frozenset({JobAction.START, JobAction.STOP, JobAction.STOP_ALL})
@@ -17,7 +18,8 @@ def validate_job_control_request(action, payload):
     if action not in JOB_ACTIONS or not isinstance(payload, dict):
         raise ValueError('Invalid Job control request')
     expected = {JobAction.START: {'job_name', 'params', 'execution_mode'},
-                JobAction.STOP: {'job_key'}, JobAction.STATUS: {'job_key'}, JobAction.PS: set(), JobAction.STOP_ALL: set()}[action]
+                JobAction.STOP: {'job_key'}, JobAction.STATUS: {'job_key'},
+                JobAction.PS: set(), JobAction.STOP_ALL: set()}[action]
     if set(payload) - expected:
         raise ValueError('Unsupported Job control parameters')
     if action == JobAction.START:
@@ -32,36 +34,38 @@ def validate_job_control_request(action, payload):
     return payload
 
 
-def build_job_control_result(action, message, *, job_id='', job_ids=None,
-                             total=1, succeeded=1, errors=None, **details):
-    result = {'action': action, 'message': str(message)}
-    if action in JOB_MUTATING_ACTIONS:
-        errors = list(errors or [])
-        result.update(job_id=str(job_id or ''), job_ids=list(job_ids or []),
-                      total=int(total), succeeded=int(succeeded),
-                      failed=len(errors), errors=errors)
-    result.update(details)
-    if action in JOB_MUTATING_ACTIONS:
-        ids = dict.fromkeys(([job_id] if job_id else []) + list(job_ids or []))
-        if ids:
-            result['references'] = [entity_reference(ReferenceType.JOB, identifier) for identifier in ids]
-    return result
+def build_job_control_result(action, message, *, data, status='success', display=ResultDisplay.MESSAGE,
+                             shape=None, width=None, job_ids=()):
+    """One business payload, with explicit presentation intent and optional Job links."""
+    if action not in JOB_ACTIONS:
+        raise ValueError('Unsupported Job control action')
+    result = {'action': action, 'event_type': ResultEventType.COMPLETED,
+              'status': status, 'display': display, 'message': str(message), 'data': data}
+    if display == ResultDisplay.DATA:
+        result['shape'] = shape or ('table' if isinstance(data, list) else 'dict')
+        if isinstance(data, dict):
+            result['width'] = width or 20
+    ids = tuple(dict.fromkeys(str(value) for value in job_ids if value))
+    if ids:
+        result['references'] = [entity_reference(ReferenceType.JOB, item) for item in ids]
+    return validate_job_control_result(result, action)
 
 
 def validate_job_control_result(payload, action):
-    if not isinstance(payload, dict) or payload.get('action') != action or action not in JOB_ACTIONS:
+    if not isinstance(payload, dict) or action not in JOB_ACTIONS or payload.get('action') != action:
         raise ValueError('Invalid Job control response')
-    if not isinstance(payload.get('message'), str):
-        raise ValueError('Invalid Job control response')
-    if action in JOB_MUTATING_ACTIONS:
-        if not isinstance(payload.get('errors'), list) or not all(isinstance(x, str) for x in payload['errors']):
-            raise ValueError('Invalid Job control response')
-        if not isinstance(payload.get('job_id'), str) or not isinstance(payload.get('job_ids'), list):
-            raise ValueError('Invalid Job control response')
-        if any(not isinstance(x, str) for x in payload['job_ids']):
-            raise ValueError('Invalid Job control response')
-        if any(type(payload.get(k)) is not int for k in ('total', 'succeeded', 'failed')):
-            raise ValueError('Invalid Job control counts')
-        if min(payload['total'], payload['succeeded'], payload['failed']) < 0 or payload['succeeded'] + payload['failed'] != payload['total']:
-            raise ValueError('Invalid Job control counts')
+    if payload.get('event_type') != ResultEventType.COMPLETED or payload.get('status') not in ('success', 'error'):
+        raise ValueError('Invalid Job result status')
+    if payload.get('display') not in (ResultDisplay.MESSAGE, ResultDisplay.DATA):
+        raise ValueError('Invalid Job result display')
+    if not isinstance(payload.get('message'), str) or not isinstance(payload.get('data'), (dict, list)):
+        raise ValueError('Invalid Job result content')
+    if payload['display'] == ResultDisplay.DATA:
+        if payload.get('shape') not in ('dict', 'table', 'grouped_dict'):
+            raise ValueError('Invalid Job data shape')
+        if isinstance(payload['data'], dict) and (type(payload.get('width')) is not int or payload['width'] <= 0):
+            raise ValueError('Invalid Job data width')
+    references = payload.get('references', [])
+    if not isinstance(references, list) or any(not isinstance(item, dict) for item in references):
+        raise ValueError('Invalid Job references')
     return payload

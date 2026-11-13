@@ -52,7 +52,7 @@ class HistoryWriteService:
                 entry['finished_at'] = self.store._now_iso()
                 self.store._update_entry(entry)
 
-    def append_output_for_connection(self, conn, entry_id, status, text, eof=0, *, active_only=False):
+    def append_output_for_connection(self, conn, entry_id, status, text, eof=0, *, active_only=False, envelope=None):
         if conn is None or not entry_id:
             return
         with self.store._lock, self.store.database.transaction():
@@ -61,16 +61,24 @@ class HistoryWriteService:
                 return
             result = entry['result']
             records = result.setdefault('output_records', [])
-            total_chars = sum(len(str(record.get('text') or '')) for record in records)
+            total_chars = sum(len(str(record.get('text') or '')) + (len(compact_json_dumps(record['envelope'])) if record.get('envelope') else 0)
+                              for record in records)
             remaining = max(0, self.store.MAX_OUTPUT_RECORD_CHARS - total_chars)
             output = self.store._safe_text(text)
-            if output and remaining and len(records) < self.store.MAX_OUTPUT_RECORDS:
-                saved = output[:remaining]
-                records.append(OutputRecordBase(seq=len(records) + 1, status=int(status or 0), text=saved,
-                                                eof=int(eof or 0), created_at=self.store._now_iso()).to_dict())
-                if len(saved) < len(output):
+            event = envelope if isinstance(envelope, dict) else {}
+            event_size = len(compact_json_dumps(event)) if event else 0
+            if (output or event) and remaining and len(records) < self.store.MAX_OUTPUT_RECORDS:
+                # Never persist a partial JSON envelope; keep the readable text if it fits.
+                saved_event = event if event_size < remaining else {}
+                space = max(0, remaining - (event_size if saved_event else 0))
+                saved = output[:space]
+                if saved or saved_event:
+                    records.append(OutputRecordBase(seq=len(records) + 1, status=int(status or 0), text=saved,
+                                                    eof=int(eof or 0), created_at=self.store._now_iso(),
+                                                    envelope=saved_event).to_dict())
+                if len(saved) < len(output) or (event and not saved_event):
                     result['truncated'] = True
-            elif output:
+            elif output or event:
                 result['truncated'] = True
             self.store._update_entry(entry)
 

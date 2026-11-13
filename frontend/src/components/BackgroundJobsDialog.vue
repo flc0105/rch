@@ -1126,8 +1126,8 @@ export default {
         if (!metadata.allowed.includes(this.backgroundJobExecutionMode)) {
           throw new Error(`Execution mode ${this.backgroundJobExecutionMode} is not supported by this job`)
         }
-        await this.submitBackgroundJobStart(item.job_name, params, this.backgroundJobExecutionMode)
-        ElMessage.success(`Start request submitted: ${item.display_name || item.job_name}`)
+        const result = await this.submitBackgroundJobStart(item.job_name, params, this.backgroundJobExecutionMode)
+        ElMessage.success(result?.message || `Job ${item.job_name} started.`)
         this.activeTab = 'jobs'
         this.closeBackgroundJobStartDialog()
         setTimeout(() => this.loadBackgroundJobs(), 500)
@@ -1249,8 +1249,8 @@ export default {
       }
 
       try {
-        await this.submitBackgroundJobStart(normalized, params, executionMode)
-        ElMessage.success(`Start request submitted: ${normalized}`)
+        const result = await this.submitBackgroundJobStart(normalized, params, executionMode)
+        ElMessage.success(result?.message || `Job ${normalized} started.`)
         this.activeTab = 'jobs'
         setTimeout(() => this.loadBackgroundJobs(), 500)
       } catch (e) {
@@ -1283,7 +1283,7 @@ export default {
           throw new Error(json.message || 'Failed to stop background job')
         }
 
-        ElMessage.success(`Stop request sent: ${jobKey}`)
+        ElMessage.success(json.data?.message || `Stop requested for Job ${jobKey}.`)
         await this.loadBackgroundJobs()
       } catch (e) {
         if (e === 'cancel' || e === 'close' || e?.toString?.().includes('cancel')) return

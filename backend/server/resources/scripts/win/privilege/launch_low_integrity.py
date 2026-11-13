@@ -1,17 +1,12 @@
-"""RCH script: diagnose startup of a restricted Low-integrity *client*.
+"""Launch an RCH Client with Low integrity and restricted privileges.
 
-Uses the user/Low/privilege-only token combination that passed the earlier
-matrix. Never removes Administrators from the token. Does not modify ACLs,
-install persistence, or attach to another process.
-
-In source bundle mode, records a low-token write test and captures RCH's
-stdout/stderr in LocalLow. It retains the child process handle long enough
-to distinguish a successful CreateProcessAsUser from successful startup.
+Uses the interactive user's token when invoked as SYSTEM, or the current
+user's token otherwise. Logs the startup steps and Client output in LocalLow.
 """
 SCRIPT_METADATA = {
-    "name": "win/privilege/launch_low_integrity_diagnostic_v3",
-    "display_name": "Launch Low IL (Startup Diagnostic v3)",
-    "description": "Check writable Low profile directory, capture RCH startup logs and early exit status with Low IL + trimmed privileges.",
+    "name": "win/privilege/launch_low_integrity",
+    "display_name": "Launch Low Integrity Client",
+    "description": "Launch an RCH Client with Low integrity and restricted privileges.",
     "platforms": ["win"],
     "category": "Privilege",
     "params": [],
@@ -38,37 +33,36 @@ DISABLE_MAX_PRIVILEGE = 0x1
 EARLY_EXIT_CHECK_MS = 6000
 PROBE_SUCCESS = 37
 
-# This source-bundle-only wrapper executes *the original RCH entrypoint*.
-# No code is fetched or imported from the network by this wrapper.
+# Execute the original source entrypoint and retain its output in a per-launch log.
 CLIENT_WRAPPER = r'''
 import os
 import runpy
 import sys
 import traceback
 
-path = os.environ["RCH_LOW_DIAG_LOG"]
+path = os.environ["RCH_LOW_LOG"]
 with open(path, "w", encoding="utf-8", buffering=1) as log:
     sys.stdout = log
     sys.stderr = log
-    print("[diag] child PID:", os.getpid(), flush=True)
-    print("[diag] Python:", sys.executable, flush=True)
-    print("[diag] TEMP:", os.environ.get("TEMP"), flush=True)
+    print("Client PID:", os.getpid(), flush=True)
+    print("Python:", sys.executable, flush=True)
+    print("TEMP:", os.environ.get("TEMP"), flush=True)
     if len(sys.argv) < 2:
         raise RuntimeError("Missing original RCH entrypoint")
     entrypoint = os.path.abspath(sys.argv[1])
     entry_args = sys.argv[2:]
-    print("[diag] entrypoint:", entrypoint, flush=True)
-    print("[diag] original args:", repr(entry_args), flush=True)
+    print("Entrypoint:", entrypoint, flush=True)
+    print("Arguments:", repr(entry_args), flush=True)
     sys.argv = [entrypoint] + entry_args
     if os.path.dirname(entrypoint) not in sys.path:
         sys.path.insert(0, os.path.dirname(entrypoint))
     try:
         runpy.run_path(entrypoint, run_name="__main__")
     except BaseException:
-        print("[diag] UNHANDLED EXCEPTION:", flush=True)
+        print("Unhandled Client exception:", flush=True)
         traceback.print_exc()
         raise
-    print("[diag] RCH entrypoint returned (possibly after catching an error)", flush=True)
+    print("RCH entrypoint returned", flush=True)
 '''
 
 
@@ -127,7 +121,6 @@ def _get_user_primary_token():
 
 
 def _create_low_token(primary):
-    # This exactly matches 'low_plus_privileges' from the successful matrix.
     low = win32security.CreateRestrictedToken(
         primary, DISABLE_MAX_PRIVILEGE, [], [], [])
     try:
@@ -168,16 +161,17 @@ def _show_log(path, max_chars=13000):
     try:
         with open(path, "r", encoding="utf-8", errors="replace") as f:
             text = f.read()
-        print("\n----- DIAGNOSTIC LOG (tail) -----")
-        print(text[-max_chars:] or "<empty>")
-        print("----- END LOG -----\n")
+        print("\n----- CLIENT LOG (tail) -----", flush=True)
+        print(text[-max_chars:] or "<empty>", flush=True)
+        print("----- END CLIENT LOG -----\n", flush=True)
     except OSError as e:
-        print("[!] Could not read diagnostic log %s: %s" % (path, e))
+        print("[!] Could not read Client log %s: %s" % (path, e), flush=True)
 
 
 def main():
+    print("[1/5] Validating RCH entrypoint", flush=True)
     if getattr(sys, "frozen", False):
-        raise RuntimeError("This diagnostic wrapper supports RCH Python source bundles only")
+        raise RuntimeError("Low Integrity Client launch supports RCH Python source bundles only")
     executable, _args_text = get_exec_and_args()
     executable = os.path.realpath(executable)
     cwd = os.path.realpath(get_runtime_root())
@@ -187,66 +181,77 @@ def main():
     if os.path.basename(entrypoint).lower() != "rchclient.py":
         raise RuntimeError("Expected to run from rchclient.py: " + entrypoint)
 
+    print("      Python:", executable, flush=True)
+    print("      Entrypoint:", entrypoint, flush=True)
+    print("      Working directory:", cwd, flush=True)
+    print("[2/5] Acquiring user token", flush=True)
     primary = _get_user_primary_token()
     try:
+        print("      User token acquired", flush=True)
+        print("[3/5] Preparing Client environment and logs", flush=True)
         env = dict(win32profile.CreateEnvironmentBlock(primary, False))
         userprofile = env.get("USERPROFILE") or os.path.expanduser("~")
-        diagnostics_dir = os.path.join(
-            userprofile, "AppData", "LocalLow", "RCHLowDiagnostics")
-        temp_dir = os.path.join(diagnostics_dir, "tmp")
+        log_dir = os.path.join(
+            userprofile, "AppData", "LocalLow", "RCHLowClient")
+        temp_dir = os.path.join(log_dir, "tmp")
         # These are created by the parent. The low child must still pass
         # both the MIC check and the DACL check before it can write here.
         os.makedirs(temp_dir, exist_ok=True)
         nonce = uuid.uuid4().hex[:10]
-        probe_log = os.path.join(diagnostics_dir, "write_probe-" + nonce + ".txt")
-        rch_log = os.path.join(diagnostics_dir, "rch_start-" + nonce + ".log")
+        probe_log = os.path.join(log_dir, "write_check-" + nonce + ".txt")
+        rch_log = os.path.join(log_dir, "rch_client-" + nonce + ".log")
         env.update({
             "TEMP": temp_dir,
             "TMP": temp_dir,
             "PYTHONDONTWRITEBYTECODE": "1",
             "PYTHONUNBUFFERED": "1",
-            "RCH_LOW_DIAG_PROBE": probe_log,
-            "RCH_LOW_DIAG_LOG": rch_log,
+            "RCH_LOW_WRITE_CHECK": probe_log,
+            "RCH_LOW_LOG": rch_log,
         })
-        print("[+] Python:", executable)
-        print("[+] Entry:", entrypoint)
-        print("[+] cwd:", cwd)
-        print("[+] Low diagnostics directory:", diagnostics_dir)
+        print("      Client log directory:", log_dir, flush=True)
+        print("      Log file:", rch_log, flush=True)
+        print("[4/5] Creating Low Integrity token and checking log write access", flush=True)
         token = _create_low_token(primary)
         try:
-            # First check whether a Low child can write *any* diagnostic file.
+            print("      Low Integrity token created", flush=True)
+            # Verify the actual Low Integrity child can write to its log directory.
             probe_script = (
                 "import os,sys; "
-                "p=os.environ['RCH_LOW_DIAG_PROBE']; "
+                "p=os.environ['RCH_LOW_WRITE_CHECK']; "
                 "f=open(p,'w',encoding='utf-8'); "
-                "f.write('low child can write here\\n');f.close();"
+                "f.write('Low Integrity write check passed\\n');f.close();"
                 "sys.exit(37)"
             )
             probe_cmd = subprocess.list2cmdline([executable, "-c", probe_script])
             probe_pid, probe_exit, probe_state = _create_process(
                 token, executable, probe_cmd, env, cwd, 4000)
-            print("[+] Write probe PID=%d status=%s exit=%s" % (
-                probe_pid, probe_state, probe_exit))
+            print("      Write check PID=%d status=%s exit=%s" % (
+                probe_pid, probe_state, probe_exit), flush=True)
             if probe_state != "exited" or probe_exit != PROBE_SUCCESS:
-                print("[-] Low-token child cannot finish the LocalLow write probe.")
-                print("[-] Inspect directory integrity/DACL, without modifying system folders:")
-                print('    icacls "%s"' % diagnostics_dir)
+                print("[FAILED] Low Integrity child cannot write to the Client log directory.", flush=True)
+                print("         Inspect directory integrity and access permissions:", flush=True)
+                print('         icacls "%s"' % log_dir, flush=True)
                 return
+            print("      Log write check passed", flush=True)
 
+            print("[5/5] Starting RCH Client and checking early exit", flush=True)
             rch_cmd = subprocess.list2cmdline(
                 [executable, "-u", "-c", CLIENT_WRAPPER,
                  entrypoint] + list(sys.argv[1:]))
             pid, code, state = _create_process(
                 token, executable, rch_cmd, env, cwd, EARLY_EXIT_CHECK_MS)
-            print("[+] RCH child PID=%d status=%s" % (pid, state))
+            print("      Client PID=%d status=%s" % (pid, state), flush=True)
             if state == "exited":
-                print("[-] RCH child exit=%s (0x%08X)" % (code, code & 0xffffffff))
+                print("[FAILED] Client exited during startup: code=%s (0x%08X)" % (
+                    code, code & 0xffffffff), flush=True)
             elif state == "running":
-                print("[+] Child still running after %.1f seconds; check server session" % (
-                    EARLY_EXIT_CHECK_MS / 1000))
-            print("[+] RCH diagnostic log:", rch_log)
+                print("[OK] Client still running after %.1f seconds; check the Server session" % (
+                    EARLY_EXIT_CHECK_MS / 1000), flush=True)
+            else:
+                print("[!] Client wait status: %s" % state, flush=True)
+            print("      Client log:", rch_log, flush=True)
             _show_log(rch_log)
-            print("[!] Log may contain server addresses and task details; redact before sharing.")
+            print("[!] Logs may contain server addresses and task details; review before sharing.", flush=True)
         finally:
             token.Close()
     finally:

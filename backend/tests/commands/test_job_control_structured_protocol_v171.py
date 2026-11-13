@@ -38,23 +38,30 @@ def test_job_request_rejects_malformed_payload(payload):
 
 
 def test_result_contract_and_input_output_separation():
+    from core.utils.command_output import ResultDisplay, render_result_payload
     request = build_job_control_request('stop_all')
     assert validate_job_control_request('stop_all', request) == request
-    result = build_job_control_result('stop_all', 'stopped 2', job_ids=['a', 'b'], total=2, succeeded=2)
+    data = {'total': 2, 'succeeded': 2, 'failed': 0, 'stopped': [], 'errors': []}
+    result = build_job_control_result('stop_all', 'Stop requested for 2 Job(s).', data=data, job_ids=['a','b'])
     assert validate_job_control_result(result, 'stop_all') is result
-    assert result['job_ids'] == ['a', 'b']
-    with pytest.raises(ValueError, match='counts'):
-        validate_job_control_result({**result, 'failed': 1}, 'stop_all')
+    assert result['data'] == data and result['display'] == ResultDisplay.MESSAGE
+    assert result['references'] == [{'type': 'job', 'id': 'a'}, {'type': 'job', 'id': 'b'}]
+    assert render_result_payload(result) == result['message']
+    assert __import__('json').loads(render_result_payload(result, 'json')) == data
+    with pytest.raises(ValueError, match='display'):
+        validate_job_control_result({**result, 'display': 'unknown'}, 'stop_all')
     with pytest.raises(ValueError):
         validate_job_control_result({'action': 'stop', 'message': 'x'}, 'stop')
-    assert validate_job_control_result(build_job_control_result('ps', 'none', jobs=[]), 'ps')['jobs'] == []
+    query = build_job_control_result('ps', 'No jobs', data=[], display=ResultDisplay.DATA)
+    assert query['data'] == []
+    assert render_result_payload(query, 'json') == '[]'
 
 
 def test_client_router_passes_payload_unmodified():
     calls = []
     conn = SimpleNamespace(runtime=SimpleNamespace(control_dispatcher=SimpleNamespace(
         execute=lambda cmd_id, domain, action, payload, options=None:
-            calls.append((cmd_id, domain, action, payload, options)) or (1, build_job_control_result('stop', 'stopped'))
+            calls.append((cmd_id, domain, action, payload, options)) or (1, build_job_control_result('stop', 'stopped', data={}))
     )))
     request = build_job_control_request('stop', job_key='demo')
     result = ClientInboundMessageRouter(conn).handle_control_message(
@@ -66,9 +73,9 @@ def test_client_router_passes_payload_unmodified():
 
 def test_client_operation_returns_structured_result_for_queries_and_mutations():
     class Manager:
-        def list_running_jobs(self): return ['demo']
+        def list_running_jobs(self): return [{'job_name': 'demo', 'status': 'running'}]
         def get_job_status(self, key): return {'job_key': key, 'state': 'running'}
-        def stop_job(self, key): return SimpleNamespace(display_name=key, job_id='job-7')
+        def stop_job(self, key): return SimpleNamespace(display_name=key, job_key=key, job_id='job-7', execution_mode='inproc', worker_name='worker-1')
         def stop_all_jobs(self): return {'stopped': [], 'errors': [], 'total': 0}
     manager = Manager()
     scope = SimpleNamespace()
@@ -87,7 +94,7 @@ def test_server_result_router_preserves_structured_data():
         update_current_workdir=lambda cwd: None,
         services=SimpleNamespace(result_dispatcher=SimpleNamespace(
             dispatch_result=lambda *args, before_enqueue: (before_enqueue(), observed.append(args), False)[-1])))
-    result = build_job_control_result('stop', 'stopped', job_id='job-7')
+    result = build_job_control_result('stop', 'stopped', data={'job_id': 'job-7'}, job_ids=['job-7'])
     ServerInboundMessageRouter(connection).handle_result_message({
         'id': 21, 'type': 'result', 'status': 1, 'data': result, 'eof': 1})
     assert observed == [(21, 1, result, 1)]
@@ -105,11 +112,11 @@ def test_cli_and_web_share_typed_requests_and_metadata_mode():
     class Remote:
         def stream_command(self, conn, command, **kwargs):
             sent.append((command, kwargs))
-            yield (1, build_job_control_result('start', 'started', job_id='id-1'))
+            yield (1, build_job_control_result('start', 'started', data={'job_id': 'id-1'}, job_ids=['id-1']))
         def stream_foreground_command(self, conn, command, **kwargs):
             sent.append((command, kwargs))
             yield (1, 'Downloading job')
-            yield (1, build_job_control_result('start', 'started', job_id='id-2'))
+            yield (1, build_job_control_result('start', 'started', data={'job_id': 'id-2'}, job_ids=['id-2']))
     remote = Remote()
     service = BackgroundJobService(None, None, remote, Catalog())
     service.has_active_job = lambda *_: False
@@ -118,7 +125,7 @@ def test_cli_and_web_share_typed_requests_and_metadata_mode():
     assert list(cli.execute_subcommand('start', 'demo'))[-1] == (1, 'started')
     web = service.start_job('client-1', 'demo')
     assert web['execution_mode'] == 'subprocess'
-    assert web['message'] == 'Downloading job\nstarted'
+    assert web['message'] == 'started'
     assert len(sent) == 2
     for command, kw in sent:
         assert command == ''
@@ -146,7 +153,9 @@ def test_client_start_downloads_job_and_returns_real_id(monkeypatch, tmp_path):
     )
     status, result = JobControl.execute(Manager(), scope, 'start', build_job_control_request(
         'start', job_name='demo', execution_mode='subprocess', params={'x': 12}))
-    assert status == 1 and result['job_id'] == 'job-start-1'
+    assert status == 1 and result['data']['job_id'] == 'job-start-1' and result['message'] == 'Job demo started (subprocess).'
+    assert output[0][1] == 'Downloading Job from Server: demo'
+    assert output[1][1] == f'Job saved locally: {tmp_path / "remote_job.py"}'
     assert len(output) == 2
     assert runtime._remote_script_name == 'demo'
 
@@ -156,7 +165,7 @@ def test_client_result_frame_carries_typed_data_without_encoding():
     sent = []
     conn = ServerConnection.__new__(ServerConnection)
     conn.send = sent.append
-    result = build_job_control_result('stop', 'Stop request sent', job_id='job-1')
+    result = build_job_control_result('stop', 'Stop request sent', data={'job_id': 'job-1'}, job_ids=['job-1'])
     conn.send_result(19, 1, result)
     assert sent[0]['data'] is result
     assert 'text' not in sent[0]

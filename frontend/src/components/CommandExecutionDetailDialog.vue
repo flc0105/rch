@@ -118,7 +118,17 @@
                   'is-success': record.status === 1,
                 }"
               >
-                {{ formatCommandExecutionRecordText(record.text || '') }}
+                {{ formatCommandExecutionRecordText(record.envelope?.display === 'data' ? '' : (record.text || '')) }}
+                <el-button
+                  v-if="record.envelope?.display === 'data'"
+                  size="small" plain
+                  @click="openFullValue('Structured Output', JSON.stringify(record.envelope.data, null, 2))"
+                >View JSON</el-button>
+                <el-button
+                  v-else-if="record.envelope?.data !== undefined"
+                  size="small" text
+                  @click="openFullValue('Result Data', JSON.stringify(record.envelope.data, null, 2))"
+                >Details</el-button>
               </div>
             </div>
 

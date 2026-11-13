@@ -115,7 +115,6 @@ class BackgroundJobService:
         # The Client can emit progress before its final structured result.
         # Decode only the final packet, never a concatenation of progress text.
         status, wire_text = 0, ''
-        visible_parts = []
         independent = execution_policy(ControlDomain.JOB, action) == ExecutionPolicy.INDEPENDENT
         stream = (self.remote_execution_service.stream_command if independent
                   else self.remote_execution_service.stream_foreground_command)
@@ -125,8 +124,6 @@ class BackgroundJobService:
             **options,
         ):
             status, wire_text = item[0], item[1] if len(item) > 1 else ''
-            if isinstance(wire_text, str) and wire_text:
-                visible_parts.append(wire_text)
         try:
             result = validate_job_control_result(wire_text, action)
         except (ValueError, TypeError):
@@ -136,8 +133,7 @@ class BackgroundJobService:
             raise RuntimeError('Invalid Job control response')
         if status != 1:
             raise RuntimeError(message or 'Job control failed')
-        # Keep the Web API's existing combined progress + result message.
-        return '\n'.join(part for part in [*visible_parts, message] if part).strip()
+        return message
 
     def _resolve_client_context(self, client_id: str) -> tuple[str, str, str]:
         client_id_text = str(client_id or '').strip()

@@ -618,12 +618,14 @@ def test_external_tool_exec_and_cli_job_result_stay_inside_command_adapter(setup
     job_id = adapter.prepare_dispatch(conn, job_id, request)
     adapter.dispatch(conn, job_id, request)
     from core.protocol.job_control import build_job_control_result
-    result = build_job_control_result('stop', 'stopped', job_id='job-1')
+    result = build_job_control_result('stop', 'stopped', data={'job_id': 'job-1'}, job_ids=['job-1'])
     from core.protocol.message_queue import ResultChunk
     assert list(adapter.observe_result(conn, job_id, request, [ResultChunk(1, result, 1)])) == [(1, result)]
     row = next(row for row in entries(server) if row['kind'] == 'job')
     assert row['resolved'] == request
-    assert output_details(row)['job_id'] == 'job-1'
+    job_result = row['result']['output_records'][-1]
+    assert job_result['text'] == 'stopped'
+    assert job_result['envelope']['data']['job_id'] == 'job-1'
     assert {'type':'job','id':'job-1'} in row['references']
     assert row['invocation']['command'] == 'job stop check'
 

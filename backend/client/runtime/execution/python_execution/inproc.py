@@ -3,6 +3,7 @@ import traceback
 
 from client.runtime.execution.python_execution.output import capture_output, StreamOutput
 from client.runtime.sdk.context import build_script_sdk_globals, use_script_sdk_context
+from core.utils.command_output import ResultDisplay, ResultEventType
 from client.runtime.execution.python_execution.base import PythonExecutionStrategy
 
 
@@ -51,11 +52,11 @@ class InProcessPythonExecutionStrategy(PythonExecutionStrategy):
         exec_globals['kwargs'] = kwargs
         return exec_globals
 
-    def _execute(self, code, kwargs, output):
+    def _execute(self, code, kwargs, output, emit_event=None):
         self.configure_context()
         try:
             exec_globals = self._build_exec_globals(kwargs)
-            with use_script_sdk_context(self.owner, kwargs):
+            with use_script_sdk_context(self.owner, kwargs, emit_event=emit_event):
                 with capture_output(output, output):
                     exec(code, exec_globals)
             return 1, ''
@@ -67,12 +68,53 @@ class InProcessPythonExecutionStrategy(PythonExecutionStrategy):
         finally:
             output.flush()
 
+    @staticmethod
+    def _data_event(data):
+        return {'event_type': ResultEventType.CHUNK, 'display': ResultDisplay.DATA, 'data': data}
+
     def execute_collect(self, code, kwargs=None, timeout=None):
-        output = io.StringIO()
-        status, message = self._execute(code, kwargs, output)
-        return status, output.getvalue() + message
+        output = _CollectedScriptOutput()
+        status, message = self._execute(code, kwargs, output, emit_event=output.emit_data)
+        if not output.has_data:
+            return status, output.text() + message
+        # Collect defers all output records, preserving order and structure.
+        for item in output.events():
+            self.owner._send_interim_result(1, item, 0)
+        return status, message or 'Code execution completed'
 
     def execute_stream(self, code, kwargs=None, timeout=None):
         output = StreamOutput(lambda text: self.owner._send_interim_result(1, text, 0))
-        status, message = self._execute(code, kwargs, output)
+        def emit_data(data):
+            output.flush()
+            self.owner._send_interim_result(1, self._data_event(data), 0)
+        status, message = self._execute(code, kwargs, output, emit_event=emit_data)
         return status, message or 'Code execution completed'
+
+
+class _CollectedScriptOutput:
+    """Buffer text sections between explicit structured records."""
+    def __init__(self):
+        self._current = io.StringIO()
+        self._events = []
+        self.has_data = False
+
+    def write(self, text):
+        return self._current.write(text)
+
+    def flush(self):
+        self._current.flush()
+
+    def text(self):
+        return self._current.getvalue()
+
+    def emit_data(self, data):
+        current = self._current.getvalue()
+        if current:
+            self._events.append(current)
+        self._current = io.StringIO()
+        self._events.append(InProcessPythonExecutionStrategy._data_event(data))
+        self.has_data = True
+
+    def events(self):
+        remainder = self.text()
+        return [*self._events, *([remainder] if remainder else [])]

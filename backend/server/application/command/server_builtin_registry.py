@@ -56,12 +56,12 @@ SERVER_COMMAND_SPECS = (
     ), default='list', dispatch_subcommand=True),
     command('job', 'Manage Client jobs from the Server', children=(
         ('list', 'List available Server jobs (optionally --json)', 'job list [--json]'),
-        ('start', 'Start a Client job', 'job start <name> [--mode MODE] [--params JSON]', 'public', ('mode','params')),
+        ('start', 'Start a Client job', 'job start <name> [--mode MODE] [--params JSON] [--json]', 'public', ('mode','params')),
         ('logs', 'Read stored Job reports or follow new reports', 'job logs <name> [--follow|-f]'),
-        ('ps', 'Show running jobs', 'job ps'),
-        ('status', 'Query job state', 'job status <name>'),
-        ('stop', 'Stop a running job', 'job stop <name>'),
-        ('stop-all', 'Stop all running jobs', 'job stop-all'),
+        ('ps', 'Show running jobs', 'job ps [--json]'),
+        ('status', 'Query job state', 'job status <name> [--json]'),
+        ('stop', 'Stop a running job', 'job stop <name> [--json]'),
+        ('stop-all', 'Stop all running jobs', 'job stop-all [--json]'),
     ), default='list', dispatch_subcommand=True),
     command('history', 'Show Quick History or replay by index', children=(
         ('list', 'Display Quick History', 'history'),
