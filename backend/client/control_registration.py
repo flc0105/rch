@@ -19,8 +19,8 @@ def register_control_domain(dispatcher, domain, handler, *, prepares=None, cance
 def register_remote_files(dispatcher, manager):
     register_control_domain(
         dispatcher, ControlDomain.REMOTE_FILES, manager.execute,
-        prepares=dict.fromkeys(manager.QUERY_PATH_FIELDS, manager.prepare_query),
-        cancel_policies=dict.fromkeys(manager.QUERY_PATH_FIELDS, 'cooperative'),
+        prepares=dict.fromkeys(manager.actions, manager.prepare_paths),
+        cancel_policies=dict.fromkeys(manager.actions, 'cooperative'),
     )
 
 

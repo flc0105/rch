@@ -222,6 +222,7 @@ def process_execution(server, conn, *, dispatch=True, fail=False):
         else:
             yield 1, 'terminated'
 
+    execution.command_stream_service.stream_command = run
     execution.foreground_execution_service = SimpleNamespace(stream_foreground_command=run, run_foreground_text_command=lambda *a, **kw: 'terminated')
     return execution
 
@@ -780,3 +781,35 @@ def test_xt_exec_actual_plan_retains_candidate_until_client_dispatch(setup_histo
         ('external_tool', 'run_exec')
     ]
     assert entries(server)[0]['invocation']['input'] == 'xt exec ffmpeg -version'
+
+
+def test_independent_mutations_keep_existing_activity_without_rebinding_foreground(setup_history):
+    from server.application.artifact.remote_file_service import WebRemoteFileService
+    from server.application.history.activity_bindings import remote_file_bindings
+    server, conn = setup_history
+    conn.context.command_dispatch_adapter = server.command_adapter
+    conn.context.activity_coordinator = server.activity_coordinator
+    conn.bind_history_entry = conn.runtime.bind_history_entry
+    conn.get_history_entry_id = conn.runtime.get_history_entry_id
+    conn.clear_history_entry = conn.runtime.clear_history_entry
+    conn.runtime.acquire_foreground_task('script', 'probe')
+    conn.runtime.bind_command_execution(999)
+    execution = RemoteExecutionService(server)
+    files = server.command_adapter.instrument(WebRemoteFileService(execution, None), remote_file_bindings())
+    processes = server.command_adapter.instrument(WebProcessControlApi(server, execution), process_bindings())
+    def reply(payload):
+        if payload['action'] == 'create_directory':
+            conn.respond(payload, 1, 'Directory created')
+        elif payload['action'] == 'kill':
+            conn.respond(payload, 1, {'message':'terminated'})
+        else:
+            conn.respond(payload, 1, {'entries':[]})
+    conn.callback = reply
+    files.browse_directory('client-1', '/tmp')
+    assert not entries(server)
+    files.create_directory('client-1', '/tmp/test')
+    processes.kill_process('client-1', 1234)
+    assert {(e['kind'], e['status']) for e in entries(server)} == {('remote_files','success'), ('process','success')}
+    assert conn.runtime.get_foreground_task()['command_id'] == 999
+    assert not conn.runtime.pending_results._items
+    conn.runtime.release_foreground_task(command='probe')

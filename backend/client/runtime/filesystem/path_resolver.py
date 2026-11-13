@@ -29,7 +29,7 @@ class PathResolver:
             raise FileNotFoundError(f'File not found: {file_path}')
         return file_path
 
-    def resolve_target_path(self, path: str) -> str:
+    def resolve_target_path(self, path: str, *, base_dir=None) -> str:
         raw_path = (path or '').strip()
         # 空路径保留“当前工作目录”语义，供浏览等非破坏性命令使用。
         if not raw_path:
@@ -39,7 +39,7 @@ class PathResolver:
         if os.path.isabs(expanded_path):
             return os.path.abspath(expanded_path)
 
-        return os.path.abspath(os.path.join(os.getcwd(), expanded_path))
+        return os.path.abspath(os.path.join(base_dir if base_dir is not None else os.getcwd(), expanded_path))
 
     def build_parent_path(self, path: str):
         current = os.path.abspath(os.path.expanduser(path))

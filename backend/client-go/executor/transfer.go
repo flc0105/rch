@@ -97,6 +97,19 @@ func (s *Session) StartTransfer(id, operation string, payload map[string]interfa
 		s.transferUpdate(id, map[string]interface{}{"state": "failed", "stage": "failed", "cancel_supported": false, "error": "Unsupported transfer operation: " + operation})
 		return
 	}
+	if operation == "server_to_client_file" {
+		prepared := make(map[string]interface{}, len(payload)+1)
+		for key, value := range payload {
+			prepared[key] = value
+		}
+		path, err := remotePath(s, payloadText(payload["save_dir"]))
+		if err != nil {
+			s.transferUpdate(id, map[string]interface{}{"state": "failed", "stage": "failed", "error": err.Error()})
+			return
+		}
+		prepared["save_dir"] = path
+		payload = prepared
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	if !s.transfers.start(id, cancel) {
 		cancel()
@@ -369,6 +382,11 @@ func safeTransferFilename(raw string) (string, error) {
 }
 
 func (s *Session) downloadTransferFile(ctx context.Context, id string, payload map[string]interface{}) error {
+	release, err := acquireFilesystemMutation(ctx)
+	if err != nil {
+		return err
+	}
+	defer release()
 	filename, err := safeTransferFilename(payloadText(payload["filename"]))
 	if err != nil {
 		return err

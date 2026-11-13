@@ -1,4 +1,5 @@
 import os
+from threading import RLock
 
 from client.config import runtime_config
 
@@ -14,6 +15,7 @@ from core.utils.logger import logger
 
 class ClientWatchdogManager:
     def __init__(self, client_id: str):
+        self._lock = RLock()
         self.client_id = str(client_id or '').strip()
         self._watchdog_process = None
         self._local_heartbeat_watchdog_feeder = None
@@ -89,84 +91,88 @@ class ClientWatchdogManager:
 
 
     def start(self):
-        if self._started:
-            return
+        with self._lock:
+            if self._started:
+                return
 
-        # launchd owns restart/stop semantics for LaunchAgent and LaunchDaemon Clients.
-        # Running another recovery layer here can revive a deliberately stopped job.
-        if is_launchd_managed_client():
-            self.stop()
+            # launchd owns restart/stop semantics for LaunchAgent and LaunchDaemon Clients.
+            # Running another recovery layer here can revive a deliberately stopped job.
+            if is_launchd_managed_client():
+                self.stop()
+                self._started = True
+                return
+
+            # self._log_startup_once()
+
+            if self._current_enabled_modes()['local_heartbeat_watchdog']:
+                self._ensure_local_heartbeat_watchdog_feeder()
+                self._local_heartbeat_watchdog_feeder.start()
+
+            if self._current_enabled_modes()['remote_control_watchdog'] or self._current_enabled_modes()['local_heartbeat_watchdog']:
+                self._ensure_watchdog_process()
+                self._watchdog_process.start()
+
             self._started = True
-            return
-
-        # self._log_startup_once()
-
-        if self._current_enabled_modes()['local_heartbeat_watchdog']:
-            self._ensure_local_heartbeat_watchdog_feeder()
-            self._local_heartbeat_watchdog_feeder.start()
-
-        if self._current_enabled_modes()['remote_control_watchdog'] or self._current_enabled_modes()['local_heartbeat_watchdog']:
-            self._ensure_watchdog_process()
-            self._watchdog_process.start()
-
-        self._started = True
 
 
     def stop(self):
-        if self._watchdog_process is not None:
-            self._watchdog_process.stop()
+        with self._lock:
+            if self._watchdog_process is not None:
+                self._watchdog_process.stop()
 
-        if self._local_heartbeat_watchdog_feeder is not None:
-            self._local_heartbeat_watchdog_feeder.stop()
+            if self._local_heartbeat_watchdog_feeder is not None:
+                self._local_heartbeat_watchdog_feeder.stop()
 
-        # 配置热更新后的 restart 必须按最新 runtime_config 重建 watchdog。
-        self._watchdog_process = None
-        self._local_heartbeat_watchdog_feeder = None
-        self._started = False
+            # 配置热更新后的 restart 必须按最新 runtime_config 重建 watchdog。
+            self._watchdog_process = None
+            self._local_heartbeat_watchdog_feeder = None
+            self._started = False
 
 
     def get_watchdog_status_payload(self):
-        suppressed = is_launchd_managed_client()
-        remote_configured = bool(self._current_enabled_modes()['remote_control_watchdog'])
-        local_configured = bool(self._current_enabled_modes()['local_heartbeat_watchdog'])
+        with self._lock:
+            suppressed = is_launchd_managed_client()
+            remote_configured = bool(self._current_enabled_modes()['remote_control_watchdog'])
+            local_configured = bool(self._current_enabled_modes()['local_heartbeat_watchdog'])
 
-        watchdog_worker_pid = None
-        watchdog_worker_alive = False
-        if not suppressed and self._watchdog_process is not None:
-            watchdog_worker_pid = self._watchdog_process.get_pid()
-            watchdog_worker_alive = self._watchdog_process.is_alive()
+            watchdog_worker_pid = None
+            watchdog_worker_alive = False
+            if not suppressed and self._watchdog_process is not None:
+                watchdog_worker_pid = self._watchdog_process.get_pid()
+                watchdog_worker_alive = self._watchdog_process.is_alive()
 
-        heartbeat_file_path = self._build_local_heartbeat_watchdog_heartbeat_file_path()
-        local_feeder_thread_alive = False
-        local_feeder_thread_name = None
-        if not suppressed and self._local_heartbeat_watchdog_feeder is not None:
-            local_feeder_thread_alive = self._local_heartbeat_watchdog_feeder.is_alive()
-            local_feeder_thread_name = self._local_heartbeat_watchdog_feeder.get_thread_name()
+            heartbeat_file_path = self._build_local_heartbeat_watchdog_heartbeat_file_path()
+            local_feeder_thread_alive = False
+            local_feeder_thread_name = None
+            if not suppressed and self._local_heartbeat_watchdog_feeder is not None:
+                local_feeder_thread_alive = self._local_heartbeat_watchdog_feeder.is_alive()
+                local_feeder_thread_name = self._local_heartbeat_watchdog_feeder.get_thread_name()
 
-        return {
-            'client': {
-                'id': self.client_id,
-                'pid': os.getpid(),
-                'suppressed': suppressed,
-            },
-            # Remote and Local share the same worker; both sections expose its actual identity.
-            'remote_control_watchdog': {
-                'enabled': remote_configured,
-                'worker_pid': watchdog_worker_pid,
-                'worker_alive': watchdog_worker_alive,
-                'control_url': self._build_remote_http_control_url(),
-                'interval_seconds': runtime_config.REMOTE_CONTROL_WATCHDOG_INTERVAL_SECONDS,
-                'log_path': get_existing_watchdog_log_path('client_remote_control_watchdog.log'),
-            },
-            'local_heartbeat_watchdog': {
-                'enabled': local_configured,
-                'worker_pid': watchdog_worker_pid,
-                'worker_alive': watchdog_worker_alive,
-                'heartbeat_interval_seconds': runtime_config.LOCAL_HEARTBEAT_WATCHDOG_INTERVAL_SECONDS,
-                'timeout_seconds': runtime_config.LOCAL_HEARTBEAT_WATCHDOG_TIMEOUT_SECONDS,
-                'heartbeat_file_path': heartbeat_file_path if os.path.isfile(heartbeat_file_path) else '',
-                'log_path': get_existing_watchdog_log_path('client_local_heartbeat_watchdog.log'),
-                'feeder_thread_name': local_feeder_thread_name,
-                'feeder_alive': local_feeder_thread_alive,
-            },
-        }
+            return {
+                'client': {
+                    'id': self.client_id,
+                    'pid': os.getpid(),
+                    'suppressed': suppressed,
+                },
+                # Remote and Local share the same worker; both sections expose its actual identity.
+                'remote_control_watchdog': {
+                    'enabled': remote_configured,
+                    'worker_pid': watchdog_worker_pid,
+                    'worker_alive': watchdog_worker_alive,
+                    'control_url': self._build_remote_http_control_url(),
+                    'interval_seconds': runtime_config.REMOTE_CONTROL_WATCHDOG_INTERVAL_SECONDS,
+                    'log_path': get_existing_watchdog_log_path('client_remote_control_watchdog.log'),
+                },
+                'local_heartbeat_watchdog': {
+                    'enabled': local_configured,
+                    'worker_pid': watchdog_worker_pid,
+                    'worker_alive': watchdog_worker_alive,
+                    'heartbeat_interval_seconds': runtime_config.LOCAL_HEARTBEAT_WATCHDOG_INTERVAL_SECONDS,
+                    'timeout_seconds': runtime_config.LOCAL_HEARTBEAT_WATCHDOG_TIMEOUT_SECONDS,
+                    'heartbeat_file_path': heartbeat_file_path if os.path.isfile(heartbeat_file_path) else '',
+                    'log_path': get_existing_watchdog_log_path('client_local_heartbeat_watchdog.log'),
+                    'feeder_thread_name': local_feeder_thread_name,
+                    'feeder_alive': local_feeder_thread_alive,
+                },
+            }
+

@@ -175,6 +175,7 @@ class SessionExecutionRuntime:
         session=None,
         history_entry_id: str = '',
         coordinator=None,
+        bind_foreground=True,
     ):
         """
         命令真正下发时，统一完成：
@@ -190,7 +191,7 @@ class SessionExecutionRuntime:
         with self._lock:
             bound_task = None
 
-            if self._task is not None:
+            if bind_foreground and self._task is not None:
                 if self._task['command_id'] != command_id:
                     self._task['command_id'] = command_id
                     self._notify_task_changed()

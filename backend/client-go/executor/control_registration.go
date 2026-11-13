@@ -9,7 +9,7 @@ func newControlHandlers() map[protocol.ControlDomain]ControlDomainRegistration {
 			protocol.ScriptRun: {Policy: Foreground},
 		}},
 		protocol.ControlConfiguration: {Execute: (ConfigurationManager{}).Execute, NonCancellable: true, Actions: map[protocol.ControlAction]ControlActionSpec{
-			protocol.ConfigurationGet:   {Policy: Foreground},
+			protocol.ConfigurationGet:   {Policy: Independent},
 			protocol.ConfigurationSet:   {Policy: Foreground},
 			protocol.ConfigurationReset: {Policy: Foreground},
 		}},

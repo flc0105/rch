@@ -2,7 +2,9 @@ package handler
 
 import (
 	"net"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -386,6 +388,20 @@ func TestIndependentBrowseWhileScriptRuns(t *testing.T) {
 	result := receive(t, peer)
 	if result["id"] != float64(102) || result["status"] != float64(1) || !session.HasActiveShell() {
 		t.Fatalf("browse lost foreground: %#v", result)
+	}
+	target := filepath.Join(t.TempDir(), "new-directory")
+	Handle(session, map[string]interface{}{"type": "control", "id": float64(104), "domain": "remote_files", "action": "create_directory", "payload": map[string]interface{}{"path": target}})
+	result = receive(t, peer)
+	if result["id"] != float64(104) || result["status"] != float64(1) || !session.HasActiveShell() {
+		t.Fatalf("mkdir lost foreground: %#v", result)
+	}
+	if info, err := os.Stat(target); err != nil || !info.IsDir() {
+		t.Fatalf("mkdir failed: %v", err)
+	}
+	Handle(session, map[string]interface{}{"type": "control", "id": float64(105), "domain": "configuration", "action": "get", "payload": map[string]interface{}{}})
+	result = receive(t, peer)
+	if result["id"] != float64(105) || result["status"] != float64(1) || !session.HasActiveShell() {
+		t.Fatalf("configuration lost foreground: %#v", result)
 	}
 	go Handle(session, map[string]interface{}{"type": "cancel", "id": float64(103), "target_id": float64(101)})
 	for i := 0; i < 5; i++ {

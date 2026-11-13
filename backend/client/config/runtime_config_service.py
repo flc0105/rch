@@ -1,4 +1,7 @@
 import ast
+from functools import wraps
+from threading import RLock
+
 from dataclasses import dataclass
 
 from client.config.runtime_config_utils import format_runtime_config_value
@@ -13,6 +16,16 @@ from client.config.runtime_config_store import (
 )
 from core.utils.output_marker import warning, error
 
+
+_config_lock = RLock()
+
+
+def _locked_config(method):
+    @wraps(method)
+    def locked(*args, **kwargs):
+        with _config_lock:
+            return method(*args, **kwargs)
+    return locked
 
 @dataclass
 class RuntimeConfigUpdateResult:
@@ -49,6 +62,7 @@ class RuntimeConfigService:
         required = self.get_config_meta(key).get('required_feature')
         return not required or self.features is None or self.features.get(required, False)
 
+    @_locked_config
     def list_config_items(self, include_hidden: bool = False) -> list[tuple[str, object, object, str]]:
         overrides = load_runtime_overrides()
         defaults = self.get_default_values()
@@ -65,6 +79,7 @@ class RuntimeConfigService:
             items.append((key, value, default_value, source))
         return items
 
+    @_locked_config
     def build_config_payload(self, include_hidden: bool = False) -> dict:
         self.prune_redundant_overrides()
         items = []
@@ -170,6 +185,7 @@ class RuntimeConfigService:
                 )
         return '\n'.join(lines)
 
+    @_locked_config
     def set_config_value(self, key: str, raw_value, *, typed=False) -> RuntimeConfigUpdateResult:
         normalized_key = self.normalize_key(key)
         if not normalized_key:
@@ -223,6 +239,7 @@ class RuntimeConfigService:
             override_removed=override_removed,
         )
 
+    @_locked_config
     def reset_config_key(self, key: str) -> RuntimeConfigUpdateResult:
         normalized_key = self.normalize_key(key)
         if not normalized_key:
@@ -251,6 +268,7 @@ class RuntimeConfigService:
             override_removed=True,
         )
 
+    @_locked_config
     def reset_all_overrides(self) -> str:
         defaults = self.get_default_values()
         store_path = clear_runtime_overrides()
@@ -263,6 +281,7 @@ class RuntimeConfigService:
 
         return store_path
 
+    @_locked_config
     def prune_redundant_overrides(self) -> list[str]:
         """
         清理 JSON 中和 runtime_config.py 默认值相同的 override。

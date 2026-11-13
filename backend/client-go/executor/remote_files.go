@@ -54,9 +54,13 @@ func payloadPositiveInt(value interface{}, fallback, maximum int) int {
 }
 
 func remotePath(s *Session, raw string) (string, error) {
+	return remotePathFromDirectory(s.CurrentDirectory(), raw)
+}
+
+func remotePathFromDirectory(cwd, raw string) (string, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		raw = s.CurrentDirectory()
+		raw = cwd
 	}
 	if raw == "~" || strings.HasPrefix(raw, "~/") || strings.HasPrefix(raw, `~\`) {
 		home, err := os.UserHomeDir()
@@ -66,7 +70,7 @@ func remotePath(s *Session, raw string) (string, error) {
 		raw = filepath.Join(home, strings.TrimLeft(raw[1:], `/\`))
 	}
 	if !filepath.IsAbs(raw) {
-		raw = filepath.Join(s.CurrentDirectory(), raw)
+		raw = filepath.Join(cwd, raw)
 	}
 	return filepath.Abs(raw)
 }

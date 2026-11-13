@@ -74,22 +74,48 @@ class WatchdogAction(ControlValue):
 
 # Canonical protocol catalog: the Server and Client share the same action policy.
 # This describes the wire contract, not how a Manager executes an action.
+# Edit the policy of each Action here. Keep the Go registration in sync for
+# Actions supported by Go. Independent requests do not occupy the foreground slot.
 _CONTROL_ACTIONS = {
-    ControlDomain.JOB: dict.fromkeys(JobAction, ExecutionPolicy.FOREGROUND),
+    ControlDomain.JOB: {
+        JobAction.START: ExecutionPolicy.FOREGROUND,
+        JobAction.STOP: ExecutionPolicy.FOREGROUND,
+        JobAction.STOP_ALL: ExecutionPolicy.FOREGROUND,
+        JobAction.PS: ExecutionPolicy.INDEPENDENT,
+        JobAction.STATUS: ExecutionPolicy.INDEPENDENT,
+    },
     ControlDomain.REMOTE_FILES: {
-        **dict.fromkeys(RemoteFilesAction, ExecutionPolicy.FOREGROUND),
         RemoteFilesAction.BROWSE_DIRECTORY: ExecutionPolicy.INDEPENDENT,
+        RemoteFilesAction.CREATE_DIRECTORY: ExecutionPolicy.INDEPENDENT,
+        RemoteFilesAction.RENAME_PATH: ExecutionPolicy.INDEPENDENT,
+        RemoteFilesAction.DELETE_PATHS: ExecutionPolicy.INDEPENDENT,
+        RemoteFilesAction.PASTE_PATHS: ExecutionPolicy.INDEPENDENT,
+        RemoteFilesAction.CREATE_ARCHIVE: ExecutionPolicy.INDEPENDENT,
         RemoteFilesAction.PEEK_ARCHIVE: ExecutionPolicy.INDEPENDENT,
         RemoteFilesAction.READ_ARCHIVE_ENTRY: ExecutionPolicy.INDEPENDENT,
+        RemoteFilesAction.EXTRACT_ARCHIVE: ExecutionPolicy.INDEPENDENT,
         RemoteFilesAction.INSPECT_UPLOAD: ExecutionPolicy.INDEPENDENT,
+        RemoteFilesAction.SAVE_FILE: ExecutionPolicy.INDEPENDENT,
     },
-    ControlDomain.SCRIPT: dict.fromkeys(ScriptAction, ExecutionPolicy.FOREGROUND),
-    ControlDomain.CLIPBOARD: dict.fromkeys(ClipboardAction, ExecutionPolicy.INDEPENDENT),
-    ControlDomain.CONFIGURATION: dict.fromkeys(ConfigurationAction, ExecutionPolicy.FOREGROUND),
-    ControlDomain.PROCESS: dict.fromkeys(ProcessAction, ExecutionPolicy.FOREGROUND),
-    ControlDomain.WATCHDOG: dict.fromkeys(WatchdogAction, ExecutionPolicy.FOREGROUND),
+    ControlDomain.SCRIPT: {
+        ScriptAction.RUN: ExecutionPolicy.FOREGROUND,
+    },
+    ControlDomain.CLIPBOARD: {
+        ClipboardAction.GET: ExecutionPolicy.INDEPENDENT,
+        ClipboardAction.SET: ExecutionPolicy.INDEPENDENT,
+    },
+    ControlDomain.CONFIGURATION: {
+        ConfigurationAction.GET: ExecutionPolicy.INDEPENDENT,
+        ConfigurationAction.SET: ExecutionPolicy.FOREGROUND,
+        ConfigurationAction.RESET: ExecutionPolicy.FOREGROUND,
+    },
+    ControlDomain.PROCESS: {
+        ProcessAction.KILL: ExecutionPolicy.INDEPENDENT,
+    },
+    ControlDomain.WATCHDOG: {
+        WatchdogAction.STATUS: ExecutionPolicy.INDEPENDENT,
+    },
 }
-
 
 def control_actions(domain):
     """Return the declared action/policy pairs for a domain."""

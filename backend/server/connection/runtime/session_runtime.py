@@ -37,6 +37,7 @@ class ClientSessionRuntime:
         session=None,
         history_entry_id: str = '',
         coordinator=None,
+        bind_foreground=True,
     ):
         """
         在命令实际下发时，统一绑定：
@@ -48,6 +49,7 @@ class ClientSessionRuntime:
             session=session,
             history_entry_id=history_entry_id,
             coordinator=coordinator,
+            bind_foreground=bind_foreground,
         )
 
     # ------------------ history binding ------------------ #

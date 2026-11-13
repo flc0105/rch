@@ -261,8 +261,11 @@ class JobManager:
 
         with self._lock:
             self._runtimes[job_key] = runtime
-
-        thread.start()
+            try:
+                thread.start()
+            except BaseException:
+                self._runtimes.pop(job_key, None)
+                raise
         return runtime
 
     def _start_subprocess_job(
@@ -365,8 +368,7 @@ class JobManager:
 
         with self._lock:
             self._runtimes[job_key] = runtime
-
-        monitor.start()
+            monitor.start()
         return runtime
 
     def _post_subprocess_terminal_state(self, runtime: JobRuntime, returncode: int):

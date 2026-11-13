@@ -241,10 +241,10 @@ class FileSystemService:
         succeeded, errors = 0, []
         for raw_path in paths:
             try:
-                path = str(raw_path or '').strip()
+                path = raw_path.strip() if isinstance(raw_path, str) else ''
                 if not path:
                     raise ValueError('Path is required')
-                target = self.path_resolver.require_existing_path_from_arg(path)
+                target = self.path_resolver.require_existing_non_empty_path(path)
                 if os.path.isdir(target):
                     self._delete_directory_tree(target)
                 else:
@@ -315,7 +315,7 @@ class FileSystemService:
             conflicts = []
             planned = {}
             for index, source_path in enumerate(source_paths):
-                resolved = self.path_resolver.require_existing_path_from_arg(str(source_path or '').strip())
+                resolved = self.path_resolver.require_existing_non_empty_path(source_path if isinstance(source_path, str) else '')
                 target = os.path.join(destination_dir, os.path.basename(os.path.abspath(resolved)))
                 conflict = describe_conflict(resolved, target, index)
                 if not conflict and os.path.normcase(target) in planned:
@@ -334,10 +334,10 @@ class FileSystemService:
         succeeded, skipped, errors = 0, 0, []
         for index, source_path in enumerate(source_paths):
             try:
-                path = str(source_path or '').strip()
+                path = source_path.strip() if isinstance(source_path, str) else ''
                 if not path:
                     raise ValueError('Path is required')
-                resolved = self.path_resolver.require_existing_path_from_arg(path)
+                resolved = self.path_resolver.require_existing_non_empty_path(path)
                 if policies is None:
                     self.copy_or_move_single_path(resolved, destination_dir, operation)
                 else:
@@ -352,7 +352,7 @@ class FileSystemService:
         return BatchFileResult(operation, len(source_paths), succeeded, tuple(errors), destination_dir, skipped)
 
     def save_file_content(self, file_path: str, content: str, encoding: str = 'utf-8') -> tuple[str, int, str]:
-        target_path = self.path_resolver.require_existing_path_from_arg(file_path)
+        target_path = self.path_resolver.require_existing_non_empty_path(file_path)
         if os.path.isdir(target_path):
             raise IsADirectoryError(f'Cannot write to directory: {target_path}')
 

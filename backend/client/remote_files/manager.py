@@ -1,4 +1,7 @@
 import os
+from contextlib import nullcontext
+from client.runtime.filesystem.mutation_guard import filesystem_mutation
+from client.runtime.filesystem.path_resolver import PathResolver
 
 from core.protocol.control import RemoteFilesAction
 from client.runtime.execution.context import CommandCancelledError, CommandTimeoutError
@@ -7,24 +10,58 @@ from client.runtime.execution.context import CommandCancelledError, CommandTimeo
 class RemoteFilesManager:
     """Structured remote file operations; one scope per request."""
 
-    # Resolve only the actual read-only queries before they leave the caller's cwd.
+    # Path fields are resolved against one cwd snapshot at request admission.
     QUERY_PATH_FIELDS = {
         RemoteFilesAction.BROWSE_DIRECTORY: 'path',
         RemoteFilesAction.PEEK_ARCHIVE: 'path',
         RemoteFilesAction.READ_ARCHIVE_ENTRY: 'path',
         RemoteFilesAction.INSPECT_UPLOAD: 'destination_dir',
     }
+    WRITE_PATH_FIELDS = {
+        RemoteFilesAction.CREATE_DIRECTORY: ('path',),
+        RemoteFilesAction.RENAME_PATH: ('old_path', 'new_path'),
+        RemoteFilesAction.DELETE_PATHS: ('paths',),
+        RemoteFilesAction.PASTE_PATHS: ('paths', 'destination_dir'),
+        RemoteFilesAction.CREATE_ARCHIVE: ('paths', 'destination_dir'),
+        RemoteFilesAction.EXTRACT_ARCHIVE: ('path', 'destination_dir'),
+        RemoteFilesAction.SAVE_FILE: ('path',),
+    }
 
-    def prepare_query(self, action, payload):
-        from client.runtime.filesystem.path_resolver import PathResolver
-        field = self.QUERY_PATH_FIELDS[action]
-        return {**payload, field: PathResolver().resolve_target_path(payload.get(field, ''))}
+    def prepare_paths(self, action, payload):
+        resolver = PathResolver()
+        cwd = resolver.get_current_directory()
+        def resolve(value):
+            return resolver.resolve_target_path(value, base_dir=cwd)
+        result = dict(payload)
+        if action in self.QUERY_PATH_FIELDS:
+            field = self.QUERY_PATH_FIELDS[action]
+            result[field] = resolve(payload.get(field, ''))
+            return result
+        for field in self.WRITE_PATH_FIELDS[action]:
+            value = payload.get(field)
+            if field == 'paths' and isinstance(value, list):
+                paths = []
+                for item in value:
+                    if isinstance(item, dict) and action == RemoteFilesAction.CREATE_ARCHIVE:
+                        raw = item.get('path')
+                        paths.append({**item, 'path': resolve(raw)} if isinstance(raw, str) and raw.strip() else item)
+                    else:
+                        paths.append(resolve(item) if isinstance(item, str) and item.strip() else item)
+                result[field] = paths
+            elif isinstance(value, str) and value.strip():
+                result[field] = resolve(value)
+            elif field == 'path' and action in (RemoteFilesAction.CREATE_DIRECTORY, RemoteFilesAction.EXTRACT_ARCHIVE):
+                # These existing handlers resolve empty paths to cwd before validation.
+                result[field] = resolve(value or '')
+        return result
 
     def execute(self, scope, action, payload):
         handler = self.actions.get(action)
         if handler is None:
             return 0, f'Unsupported remote_files Control action: {action}'
-        result = handler(scope, payload)
+        guard = filesystem_mutation(scope._checkpoint) if action in self.WRITE_PATH_FIELDS else nullcontext()
+        with guard:
+            result = handler(scope, payload)
         if action in self.QUERY_PATH_FIELDS:
             scope._checkpoint()
         return result

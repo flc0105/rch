@@ -14,17 +14,17 @@ func TestControlRegistrationCoversEverySupportedAction(t *testing.T) {
 	if len(remote.Actions) != 11 || len(remote.Actions) != len(remoteFileActions) {
 		t.Fatalf("incomplete Remote Files action registration: %v", remote.Actions)
 	}
-	reads := map[protocol.ControlAction]bool{
-		protocol.RemoteBrowseDirectory: true, protocol.RemotePeekArchive: true,
-		protocol.RemoteReadArchiveEntry: true, protocol.RemoteInspectUpload: true,
-	}
 	for action, spec := range remote.Actions {
-		if (spec.Policy == Independent) != reads[action] || (spec.Prepare != nil) != reads[action] {
+		if spec.Policy != Independent || spec.Prepare == nil {
 			t.Fatalf("unexpected policy or preparer for %s", action)
 		}
 	}
 	for _, action := range []protocol.ControlAction{protocol.ConfigurationGet, protocol.ConfigurationSet, protocol.ConfigurationReset} {
-		if spec, ok := registered[protocol.ControlConfiguration].Action(action); !ok || spec.Policy != Foreground {
+		expected := Foreground
+		if action == protocol.ConfigurationGet {
+			expected = Independent
+		}
+		if spec, ok := registered[protocol.ControlConfiguration].Action(action); !ok || spec.Policy != expected {
 			t.Fatalf("missing Configuration action %s", action)
 		}
 	}

@@ -31,10 +31,10 @@ Client（远程设备）
 | 类型 | 典型操作 | 执行方式 |
 |---|---|---|
 | 只读查询 | 浏览、搜索、ZIP Peek/条目读取、上传冲突预检 | Independent Control，不占前台槽 |
-| 同步文件操作 | 新建目录、重命名、删除、复制、移动、ZIP 创建/解压、保存文本 | Foreground Control，仍使用普通前台命令槽 |
+| 同步文件操作 | 新建目录、重命名、删除、复制、移动、ZIP 创建/解压、保存文本 | Independent Control，文件修改和接收上传串行 |
 | 文件内容传输 | Browser 下载、打包下载、预览文件的数据搬运，以及专门的上传流程 | 使用 Client TransferManager / Server TransferService 或对应上传链路，文件数据不塞入前台命令结果 |
 
-**Remote Files 控制协议。** 浏览、搜索、文件管理、ZIP 管理、文件编辑等一次性请求统一使用 `type=control`，由信封顶层 `domain=remote_files` 与 `action` 路由；业务参数直接放在 JSON 对象 `payload` 内，不再由 Server 拼接 `__json__:` 编码文本命令。Python/Go Client 均使用原有文件系统实现，验证、冲突检测保持不变，写操作继续使用前台任务互斥。只读请求在接收时解析绝对路径；并发读取不提供文件系统事务快照。`paste_paths` 和 `extract_archive` 的冲突预检仍属于对应写入 Action，保留 Foreground。常见请求如下：
+**Remote Files 控制协议。** 浏览、搜索、文件管理、ZIP 管理、文件编辑等一次性请求统一使用 `type=control`，由信封顶层 `domain=remote_files` 与 `action` 路由；业务参数直接放在 JSON 对象 `payload` 内，不再由 Server 拼接 `__json__:` 编码文本命令。Python/Go Client 均使用原有文件系统实现，验证、冲突检测保持不变，读写请求均不占前台槽。请求在提交独立工作池前按同一工作目录快照解析绝对路径；写操作与接收上传共享 Client 级文件系统互斥，预检仍属于对应 Action，实际修改时重新检查冲突。等待互斥的写操作可取消，已提交的文件变更不会自动回滚。并发读取不提供文件系统事务快照，任意用户脚本和系统程序的文件操作不受此互斥约束。常见请求如下：
 
 ```json
 {"type":"control","id":46,"domain":"remote_files","action":"browse_directory","payload":{"path":"/home/demo","page":1,"page_size":50,"show_hidden":false,"search_keyword":"","recursive_search":false}}

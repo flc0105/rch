@@ -5,6 +5,7 @@ import threading
 from client.runtime.execution.scope import ExecutionRuntimeMixin
 from client.runtime.filesystem.archive_service import ArchiveService
 from client.runtime.filesystem.path_resolver import PathResolver
+from client.runtime.filesystem.mutation_guard import filesystem_mutation
 from client.runtime.filesystem.preview_image_service import PreviewImageService
 from client.runtime.http_transfer.http_file_transfer_service import HttpFileTransferService
 from client.runtime.execution.context import CommandCancelledError, ExecutionContext
@@ -107,6 +108,16 @@ class ClientTransferManager:
             if existing and existing.get('worker') and existing['worker'].is_alive():
                 return
 
+            prepared_payload = dict(payload or {})
+            if normalized_operation == self.OP_SERVER_TO_CLIENT_FILE:
+                try:
+                    prepared_payload['save_dir'] = PathResolver().resolve_target_path(
+                        str(prepared_payload.get('save_dir') or '').strip() or '.'
+                    )
+                except Exception as exc:
+                    self._send_update(normalized_id, state='failed', stage='failed', error=str(exc))
+                    return
+
             context = ExecutionContext(command_id=0, timeout=None)
             owner = _TransferTaskOwner(self.connection, context)
             # Configure cancellation before publishing the task to the inbound router.
@@ -118,7 +129,7 @@ class ClientTransferManager:
             item = {
                 'transfer_id': normalized_id,
                 'operation': normalized_operation,
-                'payload': dict(payload or {}),
+                'payload': prepared_payload,
                 'context': context,
                 'owner': owner,
             }
@@ -207,7 +218,8 @@ class ClientTransferManager:
             elif operation == self.OP_CLIENT_TO_SERVER_ZIP_ENTRY:
                 self._run_client_to_server_zip_entry(service, owner, transfer_id, payload)
             elif operation == self.OP_SERVER_TO_CLIENT_FILE:
-                self._run_server_to_client_file(service, owner, transfer_id, payload)
+                with filesystem_mutation(owner._checkpoint):
+                    self._run_server_to_client_file(service, owner, transfer_id, payload)
 
         except CommandCancelledError:
             self._send_update(

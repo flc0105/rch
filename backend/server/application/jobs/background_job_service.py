@@ -1,5 +1,5 @@
 import json
-from core.protocol.control import ControlDomain, JobAction
+from core.protocol.control import ControlDomain, JobAction, ExecutionPolicy, execution_policy
 import threading
 from datetime import datetime
 
@@ -19,7 +19,7 @@ class BackgroundJobService:
     - 对外提供任务监控数据
 
     规则：
-    - 这里触发的前台远程命令统一走 foreground task 槽
+    - 控制请求按 Action 注册策略调度，启停占前台槽，状态查询独立执行
     """
 
     LIFECYCLE_STATES = {'running', 'stopped', 'error'}
@@ -116,9 +116,13 @@ class BackgroundJobService:
         # Decode only the final packet, never a concatenation of progress text.
         status, wire_text = 0, ''
         visible_parts = []
-        for item in self.remote_execution_service.stream_foreground_command(
+        independent = execution_policy(ControlDomain.JOB, action) == ExecutionPolicy.INDEPENDENT
+        stream = (self.remote_execution_service.stream_command if independent
+                  else self.remote_execution_service.stream_foreground_command)
+        options = {} if independent else {'task_type': 'job_control', 'source': 'web_background_job'}
+        for item in stream(
             client_id, '', command_type=COMMAND_TYPE_CONTROL, domain=ControlDomain.JOB, action=action, payload=payload,
-            task_type='job_control', source='web_background_job',
+            **options,
         ):
             status, wire_text = item[0], item[1] if len(item) > 1 else ''
             if isinstance(wire_text, str) and wire_text:

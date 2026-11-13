@@ -57,7 +57,7 @@ class ClientSessionCommandChannel:
         coordinator = getattr(self.session.context, 'activity_coordinator', None)
 
         adapter = getattr(self.session.context, 'command_dispatch_adapter', None)
-        if not track_execution or independent:
+        if not track_execution:
             adapter = None
         if adapter is not None:
             history_entry_id = history_entry_id or adapter.scoped_entry(self.session)
@@ -66,7 +66,8 @@ class ClientSessionCommandChannel:
             session=self.session,
             history_entry_id=history_entry_id,
             coordinator=coordinator,
-        ) if track_execution and not independent else None
+            **({'bind_foreground': False} if independent else {}),
+        ) if track_execution else None
         # Register before sending: a very fast Client (e.g. invalid download)
         # can reply before the caller starts iterating wait_for_result().
         pending = self.session.runtime.pending_results.register(data['id'])

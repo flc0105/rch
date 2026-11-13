@@ -44,7 +44,7 @@ Job Start 请求保留业务参数 `payload.params`，不增加无意义的 `par
 
 Job Control 的最终 `result` 帧使用结构化 `data` 对象，包含 `action`、`message`，启动或停止时还包含 Job ID、批量数量及错误列表。过程中仍可以发送普通文本进度片段。Server 对最终 `data` 执行统一校验：Terminal 显示 `message`，Web 接口返回可阅读的组合进度和结果，Activity 记录实际派发的操作与 Job 身份。结果在协议层不经过文本 JSON 编解码；状态、消息及文件的长期 Job 报告仍按原有 HTTP 通道工作。
 
-启动模式的默认值统一来自 Job Metadata 的 `execution_mode`；显式传入的 `execution_mode` 仍由应用服务按允许模式校验，Client JobManager 会再次验证自身运行限制。Job Control 的派发与完成占用一次前台任务槽；Job Runtime 启动后释放此槽并独立运行。
+启动模式的默认值统一来自 Job Metadata 的 `execution_mode`；显式传入的 `execution_mode` 仍由应用服务按允许模式校验，Client JobManager 会再次验证自身运行限制。Job start/stop/stop_all 占用一次前台任务槽；Job Runtime 启动后释放此槽并独立运行。Job ps/status 使用 Independent Control 查询，不占 Client 前台执行槽；Terminal 提交仍沿用 Terminal 的任务交互规则。
 
 用户主动发起的 Job 管理操作另记录到 Activity Center：`kind=background_job`；`job start` / Web Start 为 `start_job`，`job stop` / Web Stop 为 `stop_job`，`job stop-all` 为一条 `stop_all_jobs`。Activity 在真实派发 Client 后创建，Client 反馈已建立 Job Runtime / 已接受 Stop 请求后终结；不等待 Job 长期运行结束。Stop 不会修改先前成功的 Start Activity。原有 Job History 继续存储运行生命周期、消息和文件，不与 Activity 互相删除。纯查询 `job list/ps/status` 仅按普通终端输入规则保留 Quick，不建立 Activity；来自 Web 的操作不写 Quick。内部 `control(domain=job)` 消息不记录成 Command，也不持久化 Job 参数正文、Python 模块源码或内部结构化 Payload。Start / Stop 的真实 `job_id` 可以在 Activity Details 关联，批量 Stop All 返回成功与失败数量；部分失败沿用 `error`，不新增状态。长时间运行的任务自行上报消息和状态；Server 通过 SQLite 保存执行记录，再发布 SSE 事件供浏览器刷新。
 

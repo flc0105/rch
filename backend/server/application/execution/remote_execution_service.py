@@ -213,7 +213,6 @@ class RemoteExecutionService:
         from core.protocol.control import execution_policy, ExecutionPolicy
         if execution_policy(domain, action) == ExecutionPolicy.INDEPENDENT:
             foreground = False
-            track_execution = False
         status, result = 0, ''
         progress = []
         stream = self.stream_foreground_command if foreground else self.stream_command
