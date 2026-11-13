@@ -60,40 +60,37 @@ def test_client_get_returns_files_to_web(tmp_path):
     file_path = tmp_path / 'note.txt'
     file_path.write_text('hello', encoding='utf-8')
     manager = make_client_manager(snapshot={'kind': 'files', 'paths': [str(file_path)]})
-    results = []
-    manager.connection = SimpleNamespace(send=results.append)
-    manager.handle_get('request-1', 'content')
-    assert results[0]['payload']['kind'] == 'files'
-    assert results[0]['payload']['files'][0]['name'] == 'note.txt'
-    assert results[0]['payload']['capabilities']['files'] is True
+    status, payload = manager.get_clipboard('content')
+    assert status == 1
+    assert payload['kind'] == 'files'
+    assert payload['files'][0]['name'] == 'note.txt'
+    assert payload['capabilities']['files'] is True
 
 
 def test_client_set_files_dispatches_to_native_adapter(tmp_path):
     manager = make_client_manager()
+    manager.staging_dir = str(tmp_path)
     root = tmp_path / 'received'
     root.mkdir()
     native_calls = []
     manager.adapter.set_files = lambda paths: native_calls.append(paths)
-    manager._download_staged_items = lambda request_id, items, *, roots: [str(root)]
-    replies = []
-    manager.connection = SimpleNamespace(send=replies.append)
-    manager.handle_set('request-2', {
+    manager._download_staged_items = lambda request_id, items, *, roots, checkpoint: [str(root)]
+    status, payload = manager.set_clipboard('request-2', {
         'kind': 'files',
         'items': [{'type': 'directory', 'path': 'received'}],
         'roots': ['received'],
     })
     assert native_calls == [[str(root)]]
-    assert replies[0]['ok'] is True
-    assert replies[0]['payload']['kind'] == 'files'
+    assert status == 1
+    assert payload['kind'] == 'files'
 
 
-def test_legacy_saved_clipboard_kind_is_not_accepted():
+def test_legacy_saved_clipboard_kind_is_not_accepted(tmp_path):
     manager = make_client_manager()
-    results = []
-    manager.connection = SimpleNamespace(send=results.append)
-    manager.handle_set('request-old', {'kind': 'saved', 'items': [], 'roots': []})
-    assert results[0]['ok'] is False
-    assert 'Unsupported clipboard payload' in results[0]['error']
+    manager.staging_dir = str(tmp_path)
+    status, result = manager.set_clipboard('request-old', {'kind': 'saved', 'items': [], 'roots': []})
+    assert status == 0
+    assert 'Unsupported clipboard payload' in result
 
 
 class FakeClipboardSession:

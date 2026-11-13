@@ -29,7 +29,7 @@ func cmdShell(ctx context.Context, s *Session, command string, _ func(int, strin
 	}
 	timedCtx, cancel := context.WithTimeout(ctx, time.Duration(config.Runtime().Seconds("COMMAND_DEFAULT_SHELL_TIMEOUT"))*time.Second)
 	defer cancel()
-	cmd := newShellCommand(timedCtx, command, s.Cwd)
+	cmd := newShellCommand(timedCtx, command, s.CurrentDirectory())
 	output, err := cmd.CombinedOutput()
 	if timedCtx.Err() == context.DeadlineExceeded {
 		return 0, "Command timed out"
@@ -57,7 +57,7 @@ func cmdShellStream(ctx context.Context, s *Session, command string, interim fun
 	}
 	timedCtx, cancel := context.WithTimeout(ctx, time.Duration(config.Runtime().Seconds("COMMAND_DEFAULT_STREAM_TIMEOUT"))*time.Second)
 	defer cancel()
-	cmd := newShellCommand(timedCtx, command, s.Cwd)
+	cmd := newShellCommand(timedCtx, command, s.CurrentDirectory())
 	stdout := &streamOutputWriter{status: 1, emit: interim}
 	stderr := &streamOutputWriter{status: 0, emit: interim}
 	cmd.Stdout, cmd.Stderr = stdout, stderr

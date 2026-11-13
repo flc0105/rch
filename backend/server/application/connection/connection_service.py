@@ -519,11 +519,6 @@ class WebConnectionService:
         session.context.on_screen_error = screen_view_service.handle_client_error
         session.context.on_screen_input_error = screen_view_service.handle_client_input_error
 
-        clipboard_service = self.server.web_service.clipboard_api.clipboard_session_service
-        session.context.on_clipboard_result = (
-            lambda data: clipboard_service.handle_client_result(session.session_info.client_id, data)
-        )
-
         monitor_service = self.server.web_service.device_monitor_api.device_monitor_session_service
         session.context.on_monitor_opened = monitor_service.handle_client_opened
         session.context.on_monitor_snapshot = monitor_service.handle_client_snapshot
@@ -550,6 +545,15 @@ class WebConnectionService:
             from core.protocol.message_types import MSG_TYPE_CLIENT_SESSION_TOKEN
             session.send({'type': MSG_TYPE_CLIENT_SESSION_TOKEN, 'token': token})
         self.publish_connection_online(session)
+
+    def handle_replaced_connection_closed(self, session: ClientSession):
+        """Retire only the old session; Client-ID keyed services belong to its replacement."""
+        session.services.heartbeat_service.mark_disconnected()
+        if self.client_session_token_service is not None:
+            self.client_session_token_service.revoke(session)
+        lifecycle = getattr(self.server, 'lifecycle_adapter', None)
+        if lifecycle is not None:
+            lifecycle.disconnected(session)
 
     def handle_connection_closed(self, session: ClientSession):
         session.services.heartbeat_service.mark_disconnected()
@@ -596,12 +600,6 @@ class WebConnectionService:
             pass
         try:
             self.server.web_service.screen_view_api.screen_view_session_service.handle_client_disconnected(
-                session.session_info.client_id
-            )
-        except Exception:
-            pass
-        try:
-            self.server.web_service.clipboard_api.clipboard_session_service.handle_client_disconnected(
                 session.session_info.client_id
             )
         except Exception:

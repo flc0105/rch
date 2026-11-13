@@ -7,10 +7,23 @@ import (
 
 type ControlHandler func(context.Context, *Session, int, string, map[string]interface{}, func(int, string)) (int, interface{})
 
+type ExecutionPolicy string
+
+const (
+	Foreground  ExecutionPolicy = "foreground"
+	Independent ExecutionPolicy = "independent"
+)
+
+type ControlActionSpec struct {
+	Policy  ExecutionPolicy
+	Prepare func(*Session, map[string]interface{}) (map[string]interface{}, error)
+}
+
 type ControlDomain struct {
 	Execute          ControlHandler
 	CancelledMessage string
 	NonCancellable   bool
+	Actions          map[string]ControlActionSpec
 }
 
 type ScriptManager struct{}
@@ -50,6 +63,13 @@ func (ScriptManager) Execute(ctx context.Context, s *Session, id int, action str
 		return result.Status, map[string]interface{}{"event_type": kind, "failure_reason": result.Reason, "text": result.Text}
 	}
 	return result.Status, result.Text
+}
+
+func (d ControlDomain) Action(action string) ControlActionSpec {
+	if spec, ok := d.Actions[action]; ok {
+		return spec
+	}
+	return ControlActionSpec{Policy: Foreground}
 }
 
 func (s *Session) ControlHandler(domain string) (ControlDomain, bool) {

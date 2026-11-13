@@ -13,7 +13,7 @@ class _Session:
         self.context = SimpleNamespace(transport_failure=None)
         self.address = address
         self.runtime = SimpleNamespace(
-            message_queue=SimpleNamespace(put=lambda *args: None),
+            message_queue=SimpleNamespace(put=lambda *args: None), pending_results=SimpleNamespace(close=lambda: None),
         )
 
 

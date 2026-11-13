@@ -24,7 +24,7 @@ func cmdRunDetached(_ context.Context, s *Session, raw string, _ func(int, strin
 	if len(argv) == 0 {
 		return 0, "Usage: run_detached <program> [args...]"
 	}
-	cmd, err := newDetachedProgramCommand(argv, s.Cwd)
+	cmd, err := newDetachedProgramCommand(argv, s.CurrentDirectory())
 	if err != nil {
 		return 0, fmt.Sprintf("Failed to start detached process: %v", err)
 	}

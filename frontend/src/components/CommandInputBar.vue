@@ -540,6 +540,18 @@ export default {
       const rawText = String(queryString || '')
       const cursor = this.getCommandInputCursorPosition(rawText)
       const precedingText = rawText.slice(0, cursor)
+      const uploadMarker = precedingText.match(/^\s*upload\s+@@(.*)$/i)
+      if (uploadMarker && cursor === rawText.length) {
+        const pathPrefix = uploadMarker[1]
+        const markerStart = precedingText.length - pathPrefix.length - 2
+        return {
+          explicitPath: true, serverPath: true, rawText, markerStart,
+          markerEnd: markerStart + 2, replaceEnd: cursor, cursorPosition: cursor,
+          pathPrefix, quote: '', requestInput: `upload ${pathPrefix}`,
+          cacheKey: this.buildCommandCompletionCandidateCacheKey('upload_explicit_path', pathPrefix),
+          requiresRemoteClient: false,
+        }
+      }
       const markerPattern = /@@/g
       let match
       let activeMarker = null
@@ -616,9 +628,10 @@ export default {
         cursorPosition: cursor,
         pathPrefix,
         quote: lastDirectory.quote,
-        requestInput: `download ${pathParts.candidatePrefix}`,
-        cacheKey: this.buildCommandCompletionCandidateCacheKey('explicit_path', pathParts.lookupPath),
-        requiresRemoteClient: true,
+        serverPath: lastDirectory.serverPath === true,
+        requestInput: lastDirectory.serverPath ? `upload ${pathPrefix}` : `download ${pathParts.candidatePrefix}`,
+        cacheKey: this.buildCommandCompletionCandidateCacheKey(lastDirectory.serverPath ? 'upload_explicit_path' : 'explicit_path', lastDirectory.serverPath ? pathPrefix : pathParts.lookupPath),
+        requiresRemoteClient: !lastDirectory.serverPath,
       }
     },
 
@@ -642,7 +655,7 @@ export default {
       const isDirectory = item.isDir === true || item.kind === 'directory'
       // Like the cd provider, selecting a directory inserts the path as-is.
       // A manually typed separator is what opens the next level.
-      const replacement = this.quoteExplicitPathCandidate(candidatePath, completionQuery.quote)
+      const replacement = completionQuery.serverPath ? candidatePath : this.quoteExplicitPathCandidate(candidatePath, completionQuery.quote)
       const name = completionQuery.rawText.slice(0, completionQuery.markerStart)
         + replacement + completionQuery.rawText.slice(completionQuery.replaceEnd)
       const addedQuotes = !completionQuery.quote && replacement.startsWith('"') && replacement.endsWith('"')
@@ -667,6 +680,7 @@ export default {
           after: name.slice(pathEnd),
           encodedPath: name.slice(pathStart, pathEnd),
           quote: completionQuery.quote || (addedQuotes ? '"' : ''),
+          serverPath: completionQuery.serverPath === true,
         } : null,
       }
     },
@@ -859,6 +873,7 @@ export default {
 
     resolveFileSystemCompletionRule(inputText) {
       const rules = [
+        { commandPrefix: 'upload', proxyCommand: 'upload', mode: 'path', requiresRemoteClient: false },
         ...DIRECTORY_ONLY_COMPLETION_COMMANDS.map(commandPrefix => ({
           commandPrefix,
           proxyCommand: 'cd',
@@ -897,14 +912,15 @@ export default {
       const pathParts = this.splitFileSystemCandidatePath(argumentText)
       const proxyCommand = String(rule?.proxyCommand || commandName || '').trim().toLowerCase()
       const commandPrefix = String(rule?.commandPrefix || commandName || '').trim().toLowerCase()
-      const requestInput = `${proxyCommand} ${pathParts.candidatePrefix}`
+      const prefix = rule?.requiresRemoteClient === false ? argumentText : pathParts.candidatePrefix
+      const requestInput = `${proxyCommand} ${prefix}`
 
       return {
         rawText,
         commandName: commandPrefix,
         requestInput,
-        cacheKey: this.buildCommandCompletionCandidateCacheKey(commandPrefix, pathParts.lookupPath),
-        requiresRemoteClient: true,
+        cacheKey: this.buildCommandCompletionCandidateCacheKey(commandPrefix, rule?.requiresRemoteClient === false ? argumentText : pathParts.lookupPath),
+        requiresRemoteClient: rule?.requiresRemoteClient !== false,
         fileSystemProxyCommand: proxyCommand,
         fileSystemTargetCommand: commandPrefix,
         fileSystemCompletionMode: String(rule?.mode || 'path'),

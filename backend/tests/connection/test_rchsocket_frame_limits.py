@@ -92,7 +92,7 @@ def test_connection_handler_closes_session_after_invalid_protocol_frame():
             self.session_info = SimpleNamespace(client_id='client-frame')
             self.context = SimpleNamespace(transport_failure=None)
             self.address = '127.0.0.1:1234'
-            self.runtime = SimpleNamespace(message_queue=SimpleNamespace(put=lambda *args: None))
+            self.runtime = SimpleNamespace(message_queue=SimpleNamespace(put=lambda *args: None), pending_results=SimpleNamespace(close=lambda: None))
 
         def recv_message(self):
             raise ProtocolFrameError('Invalid message frame size: -1 bytes')

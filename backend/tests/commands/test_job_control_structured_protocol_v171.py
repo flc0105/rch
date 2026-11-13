@@ -86,7 +86,7 @@ def test_server_result_router_preserves_structured_data():
     connection = SimpleNamespace(
         update_current_workdir=lambda cwd: None,
         services=SimpleNamespace(result_dispatcher=SimpleNamespace(
-            dispatch_result=lambda *args: observed.append(args))))
+            dispatch_result=lambda *args, before_enqueue: (before_enqueue(), observed.append(args), False)[-1])))
     result = build_job_control_result('stop', 'stopped', job_id='job-7')
     ServerInboundMessageRouter(connection).handle_result_message({
         'id': 21, 'type': 'result', 'status': 1, 'data': result, 'eof': 1})

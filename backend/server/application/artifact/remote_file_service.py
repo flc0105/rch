@@ -13,10 +13,8 @@ class WebRemoteFileService:
     - artifact_id 通过结构化 transfer_update 回传，不依赖人类命令输出文本
 
     规则：
-    - 所有这里发往 client 且同步等待结果流的前台请求
-      统一通过 foreground task 槽保护
-    - Remote File Browser 的 download/download-as-zip 例外：文件搬运由 Client TransferManager
-      独立执行，不占 command foreground slot；其他同步文件操作仍保持原有 foreground 规则
+    - 只读 Control 查询按注册策略独立执行，不占 foreground task 槽。
+    - 文件修改仍受前台槽保护；download/download-as-zip 由 TransferManager 独立执行。
     """
 
     def __init__(self, remote_execution_service, artifact_service, transfer_service=None):

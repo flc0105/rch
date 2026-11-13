@@ -30,6 +30,7 @@ class UploadBuiltinSupport:
         self.history_entry_id_provider = history_entry_id_provider
 
     def upload(self, filename):
+        filename = os.path.expanduser(filename)
         if not os.path.isfile(filename):
             raise FileNotFoundError(f"File does not exist: {filename}")
 

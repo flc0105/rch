@@ -1,6 +1,9 @@
 from typing import Optional
 
-from core.protocol.message_queue import MessageQueue, PendingCommandQueue
+from core.protocol.message_queue import MessageQueue
+from server.connection.runtime.pending_results import PendingResults
+import queue
+import time
 from server.connection.runtime.session_execution_runtime import SessionExecutionRuntime
 
 
@@ -14,13 +17,13 @@ class ClientSessionRuntime:
     - 为 ClientSession / CommandChannel 提供运行态存取能力
 
     当前承载：
-    - pending_command_ids
+    - pending_results
     - message_queue
     - execution_runtime
     """
 
     def __init__(self):
-        self.pending_command_ids = PendingCommandQueue()
+        self.pending_results = PendingResults()
         self.message_queue = MessageQueue()
         self._execution_runtime = SessionExecutionRuntime()
 
@@ -123,22 +126,29 @@ class ClientSessionRuntime:
         return self._execution_runtime.get_foreground_task()
 
     # ------------------ result wait ------------------ #
-    def wait_for_result(self, connection, command_id: int, command: Optional[str], *, already_registered=False):
+    def wait_for_result(self, connection, command_id: int, command: Optional[str], *, results=None, timeout=None):
         """
         主线程等待接收结果，并保存执行记录
         """
-        if not already_registered:
-            self.pending_command_ids.put(command_id)
-
+        if results is None:
+            results = self.pending_results.register(command_id)
+        deadline = time.monotonic() + timeout if timeout is not None else None
         try:
             while 1:
-                status, result, eof = self.message_queue.get()
+                try:
+                    status, result, eof = results.get(timeout=max(0, deadline - time.monotonic()) if deadline is not None else None)
+                except queue.Empty:
+                    self.pending_results.remove(command_id)
+                    try:
+                        connection.send_cancel(command_id)
+                    except OSError:
+                        pass
+                    raise TimeoutError('Control request timed out') from None
                 yield status, result
                 if eof:
                     break
         finally:
-            if self.pending_command_ids.peek_first() == command_id:
-                self.pending_command_ids.get()
+            self.pending_results.remove(command_id)
             try:
                 coordinator = getattr(connection.context, 'activity_coordinator', None)
                 if coordinator is not None:

@@ -643,3 +643,25 @@ test('arrow-preview + typed / refreshes actual next-level remote candidates rath
   assert.equal(returned[0].previewName, 'ls Desktop/notes.txt')
   assert.equal(returned[0].name, 'ls Desktop/notes.txt')
 })
+
+test('upload completion queries the Server with the full typed path, not remote download', () => {
+  const raw = 'upload /tmp/z test'
+  const { ctx } = setup(raw.length)
+  const query = ctx.parseCommandCompletionCandidateQuery(raw)
+  assert.equal(query.requestInput, raw)
+  assert.equal(query.requiresRemoteClient, false)
+  assert.equal(query.fileSystemProxyCommand, 'upload')
+  const candidate = ctx.normalizeCommandCompletionCandidate({name: 'upload /tmp/z test.txt', candidatePath: '/tmp/z test.txt', kind: 'file', source: 'server_upload'}, query)
+  assert.equal(candidate.name, 'upload /tmp/z test.txt')
+})
+
+
+test('upload @@ uses server paths and inserts raw names with spaces', () => {
+  const raw = 'upload @@/tmp/z test'
+  const { ctx } = setup(raw.length)
+  const query = ctx.parseExplicitPathCompletionQuery(raw)
+  assert.equal(query.requestInput, 'upload /tmp/z test')
+  assert.equal(query.requiresRemoteClient, false)
+  const item = normalize(ctx, query, [file('/tmp/z test.txt')])[0]
+  assert.equal(item.name, 'upload /tmp/z test.txt')
+})

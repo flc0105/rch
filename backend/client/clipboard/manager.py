@@ -1,6 +1,7 @@
 from core.utils.artifact_naming import build_artifact_filename
 import json
 import os
+import uuid
 from client.runtime.temp_workspace import make_client_temp_dir, cleanup_temp_path, get_temp_category_dir
 from client.runtime.user_identity import get_macos_console_user_identity
 from pathlib import Path
@@ -14,7 +15,12 @@ from client.clipboard.adapters.unsupported import UnsupportedClipboardAdapter
 from client.clipboard.adapters.windows import WindowsClipboardAdapter
 from client.http.client_api import ClientApiClient
 from core.device.local_identity import get_local_identity
-from core.protocol.message_types import MSG_TYPE_CLIPBOARD_RESULT
+from threading import RLock
+from client.runtime.execution.context import CommandCancelledError, CommandTimeoutError
+
+# Native clipboard is a process-wide resource, including across reconnects.
+_CLIPBOARD_LOCK = RLock()
+from core.protocol.control import ClipboardAction
 
 
 class ClipboardManager:
@@ -23,6 +29,7 @@ class ClipboardManager:
 
     def __init__(self, connection):
         self.connection = connection
+        self._operation_lock = _CLIPBOARD_LOCK
         self.client_api = ClientApiClient()
         self._os_alias = get_local_identity().os_alias
         self._macos_console_identity = self._get_macos_console_identity()
@@ -54,10 +61,28 @@ class ClipboardManager:
             'files': bool(caps.get('files')),
         }
 
-    def handle_get(self, request_id: str, mode: str = 'content'):
-        request_id = str(request_id or '').strip()
-        if not request_id:
-            return
+    def execute(self, scope, action, payload):
+        while not self._operation_lock.acquire(timeout=0.1):
+            scope._checkpoint()
+        try:
+            scope._checkpoint()
+            if action == ClipboardAction.GET:
+                result = self.get_clipboard(payload.get('mode', 'content'), checkpoint=scope._checkpoint)
+                scope._checkpoint()
+                return result
+            if action == ClipboardAction.SET:
+                def before_commit():
+                    # Native write is atomic from the request's perspective. Do
+                    # not accept cancellation after entering the native commit.
+                    scope._set_cancel_policy('none')
+                    scope._checkpoint()
+                return self.set_clipboard(uuid.uuid4().hex, payload, checkpoint=scope._checkpoint,
+                                          before_commit=before_commit)
+            return 0, 'Unsupported Clipboard action'
+        finally:
+            self._operation_lock.release()
+
+    def get_clipboard(self, mode: str = 'content', checkpoint=lambda: None):
         try:
             if str(mode or '').strip().lower() == 'capabilities':
                 payload = {
@@ -65,29 +90,25 @@ class ClipboardManager:
                     'capabilities': self.get_capabilities(),
                 }
             else:
-                payload = self._materialize_snapshot(
-                    self.adapter.get_snapshot()
-                )
+                snapshot = self.adapter.get_snapshot()
+                checkpoint()
+                payload = self._materialize_snapshot(snapshot, checkpoint=checkpoint)
                 payload['capabilities'] = self.get_capabilities()
 
-            self._send_result(
-                request_id,
-                'get',
-                True,
-                payload=payload,
-            )
+            return 1, payload
         except Exception as e:
-            self._send_result(
-                request_id,
-                'get',
-                False,
-                error=str(e),
-            )
+            return 0, str(e)
 
-    def handle_set(self, request_id: str, payload: dict):
+    def set_clipboard(self, request_id: str, payload: dict, checkpoint=lambda: None, before_commit=None):
         request_id = str(request_id or '').strip()
         if not request_id:
             return
+
+        committed = False
+        def commit():
+            nonlocal committed
+            (before_commit or checkpoint)()
+            committed = True
 
         try:
             normalized = payload if isinstance(payload, dict) else {}
@@ -96,6 +117,7 @@ class ClipboardManager:
             ).strip().lower()
 
             if kind == 'text':
+                commit()
                 self.adapter.set_text(
                     str(normalized.get('text') or '')
                 )
@@ -108,12 +130,13 @@ class ClipboardManager:
                 )
                 paths = self._download_staged_items(
                     request_id,
-                    items,
+                    items, checkpoint=checkpoint,
                 )
 
                 if not paths:
                     raise ValueError('Image payload is empty')
 
+                commit()
                 self.adapter.set_image(paths[0])
 
             elif kind == 'files':
@@ -130,12 +153,13 @@ class ClipboardManager:
                 paths = self._download_staged_items(
                     request_id,
                     items,
-                    roots=roots,
+                    roots=roots, checkpoint=checkpoint,
                 )
 
                 if not paths:
                     raise ValueError('File payload is empty')
 
+                commit()
                 self.adapter.set_files(paths)
 
             else:
@@ -144,25 +168,17 @@ class ClipboardManager:
                     f'{kind or "empty"}'
                 )
 
-            self._send_result(
-                request_id,
-                'set',
-                True,
-                payload={
-                    'kind': kind,
-                    'capabilities': self.get_capabilities(),
-                },
-            )
+            return 1, {'kind': kind, 'capabilities': self.get_capabilities()}
 
+        except (CommandCancelledError, CommandTimeoutError):
+            raise
         except Exception as e:
-            self._send_result(
-                request_id,
-                'set',
-                False,
-                error=str(e),
-            )
+            return 0, str(e)
+        finally:
+            if not committed:
+                cleanup_temp_path(os.path.join(self.staging_dir, self._safe_component(request_id)))
 
-    def _materialize_snapshot(self, snapshot: dict) -> dict:
+    def _materialize_snapshot(self, snapshot: dict, checkpoint=lambda: None) -> dict:
         kind = str(
             (snapshot or {}).get('kind') or 'empty'
         ).strip().lower()
@@ -186,6 +202,7 @@ class ClipboardManager:
             if image_format != 'png':
                 raw = self._convert_image_to_png(raw)
 
+            checkpoint()
             artifact = self._upload_bytes_artifact(
                 raw,
                 filename=build_artifact_filename('clipboard', 'png'),
@@ -337,6 +354,7 @@ class ClipboardManager:
         items: list[dict],
         *,
         roots: list[str] | None = None,
+        checkpoint=lambda: None,
     ) -> list[str]:
         request_dir = os.path.join(
             self.staging_dir,
@@ -348,6 +366,7 @@ class ClipboardManager:
 
         if roots is not None:
             for item in items:
+                checkpoint()
                 if not isinstance(item, dict):
                     continue
 
@@ -383,7 +402,7 @@ class ClipboardManager:
                 self.client_api.download_file(
                     url,
                     target_path,
-                    timeout=(15, 60 * 60),
+                    timeout=(15, 60), checkpoint=checkpoint,
                 )
 
                 # Client 可能由 root 启动，文件最终要交给 GUI 用户读取。
@@ -418,6 +437,7 @@ class ClipboardManager:
         used_names = set()
 
         for index, item in enumerate(items):
+            checkpoint()
             if not isinstance(item, dict):
                 continue
 
@@ -448,7 +468,7 @@ class ClipboardManager:
             self.client_api.download_file(
                 url,
                 target_path,
-                timeout=(15, 60 * 60),
+                timeout=(15, 60), checkpoint=checkpoint,
             )
 
             # Client 可能由 root 启动，文件最终要交给 GUI 用户读取。
@@ -631,27 +651,6 @@ class ClipboardManager:
         except Exception:
             pass
 
-    def _send_result(
-        self,
-        request_id: str,
-        operation: str,
-        ok: bool,
-        *,
-        payload=None,
-        error: str = '',
-    ):
-        self.connection.send({
-            'type': MSG_TYPE_CLIPBOARD_RESULT,
-            'clipboard_request_id': request_id,
-            'operation': operation,
-            'ok': bool(ok),
-            'payload': (
-                payload
-                if isinstance(payload, dict)
-                else {}
-            ),
-            'error': str(error or ''),
-        })
 
     @staticmethod
     def _convert_image_to_png(

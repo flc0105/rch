@@ -66,13 +66,26 @@ class ClientRuntime:
         if self.features['clipboard']:
             from client.clipboard.manager import ClipboardManager
             self.clipboard_manager = ClipboardManager(connection)
+        from core.protocol.control import INDEPENDENT_ACTIONS, ClipboardAction
+        for domain, action in INDEPENDENT_ACTIONS:
+            if domain == ControlDomain.REMOTE_FILES:
+                self.control_dispatcher.register(domain, action, self.remote_files_manager.execute,
+                                                 self.remote_files_manager.prepare_query)
+        for action in ClipboardAction:
+            handler = self.clipboard_manager.execute if self.clipboard_manager else self._clipboard_disabled
+            self.control_dispatcher.register(ControlDomain.CLIPBOARD, action, handler)
         self.device_monitor_manager = DeviceMonitorManager(connection)
         self.transfer_manager = ClientTransferManager(connection)
+
+    @staticmethod
+    def _clipboard_disabled(scope, action, payload):
+        return 0, 'Clipboard disabled on Client'
 
     def handle_connection_lost(self) -> list[str]:
         """
         连接断开时清理依赖服务端连接的运行态。
         """
+        self.control_dispatcher.disconnect()
         stopped_jobs = self.job_manager.handle_connection_lost()
         if self.pty_manager is not None:
             self.pty_manager.close_all_sessions(notify=False)

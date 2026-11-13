@@ -58,7 +58,7 @@ func parseCommand(raw string) (string, []string) {
 func (s *Session) runShellContext(ctx context.Context, command string) (int, string) {
 	timedCtx, cancel := context.WithTimeout(ctx, time.Duration(config.Runtime().Seconds("COMMAND_DEFAULT_SHELL_TIMEOUT"))*time.Second)
 	defer cancel()
-	cmd := newShellCommand(timedCtx, command, s.Cwd)
+	cmd := newShellCommand(timedCtx, command, s.CurrentDirectory())
 	out, err := cmd.CombinedOutput()
 	if timedCtx.Err() == context.DeadlineExceeded {
 		return 0, "Command timed out"

@@ -429,6 +429,34 @@ class ExternalToolCommandCompletionProvider(ServerCompletionSessionMixin, Comman
         return 'xt exec '
 
 
+class UploadPathCompletionProvider(CommandCompletionProvider):
+    """Upload reads Server-local files, never the remote Client filesystem."""
+    command_names = ('upload',)
+    source = 'server_upload'
+    group = 'filesystem'
+
+    def complete(self, context):
+        # Upload consumes the raw path tail; spaces are not shell-tokenized.
+        prefix = str(context.argument_text or '')
+        directory, fragment = os.path.split(prefix)
+        lookup = os.path.expanduser(directory or '.')
+        with os.scandir(lookup) as entries:
+            matches = [(entry.name, entry.is_dir()) for entry in entries
+                       if entry.name.startswith(fragment) and (entry.is_dir() or entry.is_file())]
+        result = []
+        matches.sort(key=lambda item: (not item[1], item[0].casefold()))
+        if context.max_results > 0:
+            matches = matches[:context.max_results]
+        for name, is_dir in matches:
+            path = os.path.join(directory, name)
+            value = 'upload ' + path
+            result.append(CompletionCandidate(title=value, insert_text=value,
+                source=self.source, group=self.group, kind='directory' if is_dir else 'file',
+                name=name, priority=10 if is_dir else 20,
+                description=path, metadata={'path': path, 'candidatePath': path, 'isDir': is_dir}))
+        return result
+
+
 class RemoteClientCommandCompletionProvider(CommandCompletionProvider):
     """
     代理 client 侧 CommandCompletionProvider。

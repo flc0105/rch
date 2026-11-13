@@ -20,7 +20,7 @@ func messageID(msg map[string]interface{}, key string) (int, bool) {
 func sendResult(session *executor.Session, id, status int, text string) {
 	_ = session.Sock.Send(map[string]interface{}{
 		"type": "result", "id": id, "status": status,
-		"text": text, "cwd": session.Cwd, "eof": 1,
+		"text": text, "cwd": session.CurrentDirectory(), "eof": 1,
 	})
 }
 
@@ -29,7 +29,7 @@ func Handle(session *executor.Session, msg map[string]interface{}) {
 	case "heartbeat":
 		_ = session.Sock.Send(map[string]interface{}{
 			"type": "heartbeat_ack", "id": msg["id"],
-			"server_ts": msg["ts"], "client_ts": float64(time.Now().UnixNano()) / 1e9, "cwd": session.Cwd,
+			"server_ts": msg["ts"], "client_ts": float64(time.Now().UnixNano()) / 1e9, "cwd": session.CurrentDirectory(),
 		})
 
 	case "transfer_start":
@@ -66,22 +66,48 @@ func Handle(session *executor.Session, msg map[string]interface{}) {
 			sendResult(session, id, 0, "Unsupported Control domain on this Client: "+domain)
 			return
 		}
+		spec := control.Action(action)
+		if spec.Prepare != nil {
+			var err error
+			payload, err = spec.Prepare(session, payload)
+			if err != nil {
+				sendResult(session, id, 0, err.Error())
+				return
+			}
+		}
 		ctx, cancel := context.WithCancel(context.Background())
+		if spec.Policy == executor.Independent {
+			cancel()
+			timeout := 3600.0
+			if extra, ok := msg["extra"].(map[string]interface{}); ok {
+				if value, ok := extra["timeout"].(float64); ok && value > 0 && value <= 86400 {
+					timeout = value
+				}
+			}
+			ctx, cancel = context.WithTimeout(context.Background(), time.Duration(timeout*float64(time.Second)))
+		}
 		var cancelHandler context.CancelFunc = cancel
 		if control.NonCancellable {
 			cancelHandler = nil
 		}
-		if !session.BeginShell(id, cancelHandler) {
+		if !session.BeginExecution(id, cancelHandler, spec.Policy) {
 			cancel()
-			sendResult(session, id, 0, "Client is busy executing a foreground command")
+			if spec.Policy == executor.Independent {
+				sendResult(session, id, 0, "Independent Control capacity exhausted")
+			} else {
+				sendResult(session, id, 0, "Client is busy executing a foreground command")
+			}
 			return
 		}
 		go func() {
 			defer cancel()
 			status, result := control.Execute(ctx, session, id, action, payload, func(streamStatus int, chunk string) {
-				_ = session.Sock.Send(map[string]interface{}{"type": "result", "id": id, "status": streamStatus, "text": chunk, "cwd": session.Cwd, "eof": 0})
+				_ = session.Sock.Send(map[string]interface{}{"type": "result", "id": id, "status": streamStatus, "text": chunk, "cwd": session.CurrentDirectory(), "eof": 0})
 			})
 			cancelled, cancelID := session.EndShell(id)
+			if spec.Policy == executor.Independent && ctx.Err() == context.DeadlineExceeded {
+				status, result = 0, map[string]interface{}{"event_type": "error", "failure_reason": "timed_out", "text": "Control request timed out"}
+			}
 			if cancelled {
 				// Preserve explicit structured interruption and partial output,
 				// otherwise keep the existing generic cancellation result.
@@ -90,7 +116,7 @@ func Handle(session *executor.Session, msg map[string]interface{}) {
 					status, result = 0, control.CancelledMessage
 				}
 			}
-			response := map[string]interface{}{"type": "result", "id": id, "status": status, "cwd": session.Cwd, "eof": 1}
+			response := map[string]interface{}{"type": "result", "id": id, "status": status, "cwd": session.CurrentDirectory(), "eof": 1}
 			if text, ok := result.(string); ok {
 				response["text"] = text
 			} else {
@@ -140,7 +166,7 @@ func Handle(session *executor.Session, msg map[string]interface{}) {
 			status, result := session.DispatchContextOutput(ctx, id, cmd, func(streamStatus int, chunk string) {
 				_ = session.Sock.Send(map[string]interface{}{
 					"type": "result", "id": id, "status": streamStatus,
-					"text": chunk, "cwd": session.Cwd, "eof": 0,
+					"text": chunk, "cwd": session.CurrentDirectory(), "eof": 0,
 				})
 			})
 			cancelled, cancelID := session.EndShell(id)

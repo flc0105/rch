@@ -199,3 +199,6 @@ Server 注册表 `server_builtin_registry.py` 是一级 Builtin 与 `alias/job/s
 ### v34.6 顶层命令与平台筛选边界
 
 Server Registry 的 `script` 是一级命令，来源为 `server`；它不应被当作 `script exec <path>` 的特定平台脚本进行目录筛选。输入 `sc` 应能找到 `script`，选中后再通过上下文 Provider 获取 `list/view/exec/run` 子命令。只有真实 Script 路径候选才进行平台筛选。Job Catalog 的 `job start` 动态候选采用与 CLI `job list` 一致的 Metadata 平台条件。
+
+
+`upload` 的路径候选来自 Server 本机文件系统（与实际上传源一致），直接输入路径或使用 `upload @@` 均不请求 Client 文件补全；`download` 仍从目标 Client 获取路径候选。

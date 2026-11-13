@@ -119,7 +119,7 @@ func cmdCd(s *Session, args []string) (int, string) {
 	}
 
 	if !filepath.IsAbs(target) {
-		target = filepath.Join(s.Cwd, target)
+		target = filepath.Join(s.CurrentDirectory(), target)
 	}
 	target = filepath.Clean(target)
 
@@ -131,10 +131,10 @@ func cmdCd(s *Session, args []string) (int, string) {
 		return 0, fmt.Sprintf("Failed to change directory: not a directory: %s", target)
 	}
 
-	s.Cwd = target
+	s.setCurrentDirectory(target)
 	return 1, ""
 }
 
 func cmdPwd(s *Session, _ []string) (int, string) {
-	return 1, s.Cwd
+	return 1, s.CurrentDirectory()
 }

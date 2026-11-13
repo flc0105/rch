@@ -41,7 +41,6 @@ class ClientSessionContext:
         self.on_screen_closed = None
         self.on_screen_error = None
         self.on_screen_input_error = None
-        self.on_clipboard_result = None
         self.on_client_message_send = None
         self.on_client_message_received = None
         self.on_client_request_failed = None

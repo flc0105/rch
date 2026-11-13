@@ -234,4 +234,4 @@ Server 只将 `SERVER_COMMAND_REGISTRY` 显式注册的一级名称作为 Builti
 
 ### Client 返回结果的派发次序（v34.6）
 
-`ClientSessionCommandChannel.send_command()` 必须在 `session.send()` 前向 `pending_command_ids` 注册新消息 ID。此前极快完成的 Client 结果可能早于 `wait_for_result()` 注册而到达，误入 `background_message`，并导致前台永远等待以及取消时返回 `Command is not running`。现在先注册、后发送，在 EOF 或迭代器结束时统一清理；发送失败时回滚排队 ID。Client 的未知命令 Shell fallback 仍是原有能力，不因 Server Registry 扩展而改变。
+`ClientSessionCommandChannel.send_command()` 必须在 `session.send()` 前向按 ID 分发的 `pending_results` 注册新消息 ID。此前极快完成的 Client 结果可能早于 `wait_for_result()` 注册而到达，误入 `background_message`，并导致前台永远等待以及取消时返回 `Command is not running`。现在先注册、后发送，在 EOF 或迭代器结束时统一清理；发送失败时回滚排队 ID。Client 的未知命令 Shell fallback 仍是原有能力，不因 Server Registry 扩展而改变。

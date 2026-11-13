@@ -60,8 +60,9 @@ Python Client 的 `ClientReceiverWorker` 在后台线程持续调用 `ServerConn
 
 | 分类 | 当前处理方式 | 典型消息 |
 |---|---|---|
-| Immediate | 在接收线程进入 `ClientInboundMessageRouter`；具体管理器可以再启动自己的后台工作线程 | `heartbeat`、`cancel`、PTY 控制、Screen 控制、Clipboard 控制、Monitor 控制、Transfer 控制 |
-| Deferred | 放入 `pending_message_queue`，交由 `Client.wait()` 的主执行循环取出 | `command`、`control`、`acmd` |
+| Immediate | 在接收线程进入 `ClientInboundMessageRouter`；具体管理器可以再启动自己的后台工作线程 | `heartbeat`、`cancel`、PTY 控制、Screen 控制、Monitor 控制、Transfer 控制 |
+| Deferred | 放入 `pending_message_queue`，交由 `Client.wait()` 的主执行循环取出 | `command`、`acmd`、Foreground Control |
+| Independent | 按 Action 注册到独立工作池，接收线程只提交，不等待业务完成 | Clipboard、Remote Files 四种只读查询 |
 | 未识别 | 调度器不作处理 | 未注册的 `type` |
 
 Deferred 消息使用 `queue.Queue`。`Client.wait()` 通过 `recv_command(timeout=0.5)` 取出一条，调用命令执行器处理，再以 `send_result()` 回传（或由命令执行中的输出方法陆续回传）。这一路径使常规前台命令按 Client 执行循环串行处理，并与 Server 对同一连接的前台任务占槽机制配合；它**不意味着** PTY、监控和屏幕采集会占用同一个待执行队列。
@@ -126,9 +127,9 @@ Client → Server 示例：
 
 一个命令可以产生多条 `result`：`eof: 0` 表示本条输出**未终结命令**，`eof: 1` 表示命令输出流结束；`status` 和 `text` 由命令实现提供，不能把 `eof` 理解为“成功标志”。Client 输出方法支持先发中间结果再发最终结果，Server 等待逻辑以 `eof` 判断何时结束等待。正常执行返回的 `cwd` 也会更新 Server Session 中的工作目录快照。
 
-Server 的结果分配并不是“把任何相同类型的消息广播给所有任务”。`ServerResultDispatcher` 将 `id` 与 **`pending_command_ids` 队首**比较：匹配才把 `(status, text, eof)` 放入当前命令的 `message_queue`；不匹配时走 `on_unexpected_message` 回调（Web 通常把它发表为后台消息），没有回调时才依交互状态选择日志或未读消息队列。`wait_for_result()` 对队列逐条 `yield`，直到遇到 `eof` 后退出，并清理历史关联和 Client Session Token。
+Server 按请求 ID 将 `(status, result, eof)` 分发至该请求独立的结果队列，发送前注册，EOF、超时、断线及迭代器结束时清理。未知或已终结的正数 ID 不进入其他任务；无请求 ID 的背景消息仍使用原有回调/未读队列。
 
-这意味着当前 Server 的命令结果等待机制按**单个会话的当前等待命令**设计，并非支持多个命令在同一个结果队列里同时无序交错回包的通用多路复用 RPC。扩展前台命令并发时，必须同步设计更严格的结果归属，而不能只依靠消息 `id` 的存在。
+同一会话的 Foreground 与 Independent 可以无序交错回包；每个 ID 仍只有一个结果通道。Foreground 保持单一执行槽，Independent 不是任意前台命令并发。
 
 ### 取消确认与最终执行结果
 
@@ -151,7 +152,7 @@ PTY、Screen、Monitor 等业务并不借用前台命令的 `command_id` 来标�
 | 心跳 | `heartbeat` | `heartbeat_ack` | `id`、`ts`、`server_ts`、`client_ts` |
 | PTY | `pty_open`、`pty_input`、`pty_resize`、`pty_close` | `pty_opened`、`pty_output`、`pty_closed`、`pty_error` | `pty_session_id` |
 | Screen | `screen_open`、`screen_config`、`screen_close`、`screen_input` | `screen_opened`、`screen_frame`、`screen_closed`、`screen_error`、`screen_input_error` | `screen_session_id` |
-| Clipboard | `clipboard_get`、`clipboard_set` | `clipboard_result` | `clipboard_request_id` |
+| Clipboard | `control/clipboard/get`、`control/clipboard/set` | `result` | `id` |
 | Monitor | `monitor_open`、`monitor_config`、`monitor_close` | `monitor_opened`、`monitor_snapshot`、`monitor_error`、`monitor_closed` | `monitor_session_id` |
 | Transfer | `transfer_start`、`transfer_cancel` | `transfer_update` | `transfer_id` |
 
@@ -169,7 +170,7 @@ PTY 输入和窗口尺寸调整用独立消息控制，其 `pty_output.data` 在
 
 ### Monitor、Clipboard 与 Transfer
 
-Device Monitor 通过 `monitor_open/config/close` 控制订阅，Client 按频道发送 `monitor_snapshot`，随附 `seq`、`channel`、`collected_at`。Clipboard 的显式读写请求由 `clipboard_request_id` 关联返回内容；Transfer 则用 `transfer_start/cancel/update` 维护任务进度、错误和终态。尤其要区分：**文件上传/下载的实际内容传输走独立 HTTP File Transfer 服务**，Socket 主要协调执行和反馈 `transfer_update`，不是在这里追加一个二进制 `file`/`rdy` 流。参见 [Device Monitor](device_monitor.md)、[Clipboard](clipboard.md)、[File Transfer](file_transfer.md)。
+Device Monitor 通过 `monitor_open/config/close` 控制订阅，Client 按频道发送 `monitor_snapshot`，随附 `seq`、`channel`、`collected_at`。Clipboard 的显式读写使用 `control/clipboard/get|set` 和对应请求 ID 的 Result；Transfer 则用 `transfer_start/cancel/update` 维护任务进度、错误和终态。尤其要区分：**文件上传/下载的实际内容传输走独立 HTTP File Transfer 服务**，Socket 主要协调执行和反馈 `transfer_update`，不是在这里追加一个二进制 `file`/`rdy` 流。参见 [Device Monitor](device_monitor.md)、[Clipboard](clipboard.md)、[File Transfer](file_transfer.md)。
 
 ## 5. 消息从业务服务到浏览器的边界
 
@@ -220,8 +221,13 @@ Server 接收线程遇到 `socket.error` 后执行连接关闭处理，通知 We
 
 **连接传输。** Go Client 根据构建时注入的 `SERVER_TRANSPORT` 选择 `tcp`（默认）或 `tls_tcp`；TLS/TCP 使用与 Python Client 相同的 Server 证书 SHA-256 指纹校验，在 TLS 握手成功并验证指纹后发送 RCH 握手。证书指纹由所选 Listener 的构建配置注入。
 
-**帧实现。** `backend/client-go/protocol/ratsocket.go` 也使用“4 字节长度头 + JSON 消息体”，但长度头采用 `binary.LittleEndian`、`uint32`，接收通过 `io.ReadFull`。Python 侧使用原生格式有符号整数长度头；两者在常见 little-endian 机器上可以互通，不代表已经实现跨任意字节序的统一封包协议。Go 的 `Send()` 分别用一次 `conn.Write()` 发送头和正文，目前没有 Python 端相应的并发发送锁和短写补发循环；该接收端也未显式规定最大消息长度。
+**帧实现。** `backend/client-go/protocol/ratsocket.go` 也使用“4 字节长度头 + JSON 消息体”，但长度头采用 `binary.LittleEndian`、`uint32`，接收通过 `io.ReadFull`。Python 侧使用原生格式有符号整数长度头；两者在常见 little-endian 机器上可以互通，不代表已经实现跨任意字节序的统一封包协议。Go 的 `Send()` 分别用一次 `conn.Write()` 发送头和正文，已使用发送互斥锁，尚未实现短写补发循环；该接收端也未显式规定最大消息长度。
 
-**消息范围。** `backend/client-go/handler/router.go` 支持 `heartbeat`、`command` 与前台取消 `cancel`；可取消命令及 `shell_stream` 能分段返回 `result(eof=0)`，结束时返回 `result(eof=1)`。Remote Files、Script 与 Configuration 使用各自的 Control Manager；Script 通过外部 Python 执行，支持 subprocess_pipe 的 collect/stream 两种输出。ACMD、PTY、Screen、Clipboard、Monitor 等能力仍按 Client 实际实现和能力声明决定。Heartbeat ACK 包含 `server_ts`、`client_ts` 和当前工作目录，Server 可用原始 `server_ts` 计算 RTT。
+**消息范围。** `backend/client-go/handler/router.go` 支持 `heartbeat`、`command` 与按请求 ID 的取消 `cancel`；可取消命令及 `shell_stream` 能分段返回 `result(eof=0)`，结束时返回 `result(eof=1)`。Remote Files、Script 与 Configuration 使用各自的 Control Manager；Script 通过外部 Python 执行，支持 subprocess_pipe 的 collect/stream 两种输出。ACMD、PTY、Screen、Clipboard、Monitor 等能力仍按 Client 实际实现和能力声明决定。Heartbeat ACK 包含 `server_ts`、`client_ts` 和当前工作目录，Server 可用原始 `server_ts` 计算 RTT。
 
 如需维护这一独立实现，应分别核对 `backend/client-go/protocol/ratsocket.go`、`connection/client.go` 和 `handler/router.go`，而不把这些实现差异混入 Python Client 功能开发步骤。
+
+
+### Control 执行策略
+
+Control 的 `(domain, action)` 在两端注册调度策略，不允许调用方修改策略。Foreground 继续使用单一前台槽；Independent 请求使用有容量限制的独立工作池，与 Foreground 共用按 ID 关联的 Result 和执行上下文。当前 Clipboard get/set、Remote Files browse_directory、peek_archive、read_archive_entry、inspect_upload 为 Independent，其余操作仍为 Foreground。Server 在发送前登记 ID，按 ID 分发输出与 EOF；超时、断线清理等待者，迟到帧不得串入其他请求。取消沿用 target_id 和 cancel_ack，只有实际停止才是 stopped。

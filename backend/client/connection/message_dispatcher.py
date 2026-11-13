@@ -13,8 +13,6 @@ from core.protocol.message_types import (
     MSG_TYPE_SCREEN_CONFIG,
     MSG_TYPE_SCREEN_CLOSE,
     MSG_TYPE_SCREEN_INPUT,
-    MSG_TYPE_CLIPBOARD_GET,
-    MSG_TYPE_CLIPBOARD_SET,
     MSG_TYPE_MONITOR_OPEN,
     MSG_TYPE_MONITOR_CONFIG,
     MSG_TYPE_MONITOR_CLOSE,
@@ -34,7 +32,7 @@ class ClientInboundMessageDispatcher:
     - 返回接收线程是否需要立即 send_result
     """
 
-    IMMEDIATE_MESSAGE_TYPES = {MSG_TYPE_HEARTBEAT, MSG_TYPE_HEARTBEAT_ACK, MSG_TYPE_CANCEL, MSG_TYPE_PTY_OPEN, MSG_TYPE_PTY_INPUT, MSG_TYPE_PTY_RESIZE, MSG_TYPE_PTY_CLOSE, MSG_TYPE_SCREEN_OPEN, MSG_TYPE_SCREEN_CONFIG, MSG_TYPE_SCREEN_CLOSE, MSG_TYPE_SCREEN_INPUT, MSG_TYPE_CLIPBOARD_GET, MSG_TYPE_CLIPBOARD_SET, MSG_TYPE_MONITOR_OPEN, MSG_TYPE_MONITOR_CONFIG, MSG_TYPE_MONITOR_CLOSE, MSG_TYPE_TRANSFER_START, MSG_TYPE_TRANSFER_CANCEL}
+    IMMEDIATE_MESSAGE_TYPES = {MSG_TYPE_HEARTBEAT, MSG_TYPE_HEARTBEAT_ACK, MSG_TYPE_CANCEL, MSG_TYPE_PTY_OPEN, MSG_TYPE_PTY_INPUT, MSG_TYPE_PTY_RESIZE, MSG_TYPE_PTY_CLOSE, MSG_TYPE_SCREEN_OPEN, MSG_TYPE_SCREEN_CONFIG, MSG_TYPE_SCREEN_CLOSE, MSG_TYPE_SCREEN_INPUT, MSG_TYPE_MONITOR_OPEN, MSG_TYPE_MONITOR_CONFIG, MSG_TYPE_MONITOR_CLOSE, MSG_TYPE_TRANSFER_START, MSG_TYPE_TRANSFER_CANCEL}
     DEFERRED_MESSAGE_TYPES = {MSG_TYPE_COMMAND, MSG_TYPE_ACMD, MSG_TYPE_CONTROL}
 
     def __init__(self, connection):
@@ -66,8 +64,11 @@ class ClientInboundMessageDispatcher:
 
     def _dispatch_deferred_message(self, data: dict):
         if data.get('type') == MSG_TYPE_CONTROL:
-            self.connection.runtime.control_dispatcher.prepare(
-                data.get('id'), data.get('domain'), data.get('action'), data.get('payload'))
+            from core.protocol.control import ExecutionPolicy
+            dispatcher = self.connection.runtime.control_dispatcher
+            if dispatcher.policy(data.get('domain'), data.get('action')) == ExecutionPolicy.INDEPENDENT:
+                return dispatcher.submit(data, self.connection.message_router.dispatch, self.connection.send_result)
+            dispatcher.prepare(data.get('id'), data.get('domain'), data.get('action'), data.get('payload'))
         self.connection.enqueue_pending_message(data)
         return None
 

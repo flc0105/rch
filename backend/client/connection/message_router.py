@@ -6,7 +6,7 @@ from core.protocol.screen import SCREEN_DEFAULT_FPS
 from core.protocol.message_types import (
     MSG_TYPE_CANCEL_ACK, MSG_TYPE_HEARTBEAT_ACK,
     MSG_TYPE_SCREEN_ERROR, MSG_TYPE_SCREEN_INPUT_ERROR,
-    MSG_TYPE_PTY_ERROR, MSG_TYPE_CLIPBOARD_RESULT,
+    MSG_TYPE_PTY_ERROR,
 )
 
 
@@ -135,38 +135,6 @@ class ClientInboundMessageRouter(BaseMessageRouter):
         self.connection.runtime.screen_view_manager.handle_input(
             data.get('screen_session_id') or '',
             data.get('event') if isinstance(data.get('event'), dict) else {},
-        )
-        return None
-
-    def handle_clipboard_get_message(self, data: dict):
-        if self.connection.runtime.clipboard_manager is None:
-            self.connection.send({
-                'type': MSG_TYPE_CLIPBOARD_RESULT,
-                'clipboard_request_id': data.get('clipboard_request_id') or '',
-                'operation': 'get', 'ok': False,
-                'payload': {}, 'error': 'Clipboard disabled on Client',
-            })
-            return None
-        # 显式读取目标机器当前剪贴板，不做自动同步。
-        self.connection.runtime.clipboard_manager.handle_get(
-            data.get('clipboard_request_id') or '',
-            mode=data.get('mode') or 'content',
-        )
-        return None
-
-    def handle_clipboard_set_message(self, data: dict):
-        if self.connection.runtime.clipboard_manager is None:
-            self.connection.send({
-                'type': MSG_TYPE_CLIPBOARD_RESULT,
-                'clipboard_request_id': data.get('clipboard_request_id') or '',
-                'operation': 'set', 'ok': False,
-                'payload': {}, 'error': 'Clipboard disabled on Client',
-            })
-            return None
-        # 文本、图片、文件统一交给 ClipboardManager 落到原生剪贴板。
-        self.connection.runtime.clipboard_manager.handle_set(
-            data.get('clipboard_request_id') or '',
-            data.get('payload') if isinstance(data.get('payload'), dict) else {},
         )
         return None
 

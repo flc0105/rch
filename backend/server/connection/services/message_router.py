@@ -8,13 +8,17 @@ class ServerInboundMessageRouter(BaseMessageRouter):
     """
 
     def handle_result_message(self, data: dict) -> None:
-        self.connection.update_current_workdir(data.get('cwd'))
-        self.connection.services.result_dispatcher.dispatch_result(
+        accepted = self.connection.services.result_dispatcher.dispatch_result(
             data.get('id'),
             data.get('status'),
             data['data'] if isinstance(data.get('data'), dict) else data.get('text'),
-            data.get('eof')
+            data.get('eof'),
+            before_enqueue=lambda: self.connection.update_current_workdir(data.get('cwd')),
         )
+        if accepted:
+            observer = self.connection.context.on_client_message_received
+            if callable(observer):
+                observer(self.connection, data)
 
     def handle_cancel_ack_message(self, data: dict) -> None:
         self.connection.runtime.record_cancel_ack(
@@ -103,11 +107,6 @@ class ServerInboundMessageRouter(BaseMessageRouter):
 
 
 
-
-    def handle_clipboard_result_message(self, data: dict) -> None:
-        callback = self.connection.context.on_clipboard_result
-        if callable(callback):
-            callback(data)
 
     def handle_monitor_opened_message(self, data: dict) -> None:
         callback = self.connection.context.on_monitor_opened

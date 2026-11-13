@@ -4,6 +4,16 @@ from dataclasses import dataclass
 from enum import Enum
 
 
+class ExecutionPolicy(str, Enum):
+    FOREGROUND = "foreground"
+    INDEPENDENT = "independent"
+
+
+class ClipboardAction(str, Enum):
+    GET = "get"
+    SET = "set"
+
+
 class ConfigurationAction(str, Enum):
     GET = "get"
     SET = "set"
@@ -19,9 +29,24 @@ class WatchdogAction(str, Enum):
 
 
 class ControlDomain(str, Enum):
+    CLIPBOARD = "clipboard"
+    REMOTE_FILES = "remote_files"
     CONFIGURATION = "configuration"
     PROCESS = "process"
     WATCHDOG = "watchdog"
+
+
+# Shared action metadata: callers cannot select a different scheduling policy.
+INDEPENDENT_ACTIONS = frozenset({
+    (ControlDomain.CLIPBOARD, ClipboardAction.GET), (ControlDomain.CLIPBOARD, ClipboardAction.SET),
+    *((ControlDomain.REMOTE_FILES, action) for action in (
+        "browse_directory", "peek_archive", "read_archive_entry", "inspect_upload")),
+})
+
+
+def execution_policy(domain, action):
+    return (ExecutionPolicy.INDEPENDENT if (domain, action) in INDEPENDENT_ACTIONS
+            else ExecutionPolicy.FOREGROUND)
 
 
 @dataclass(frozen=True)

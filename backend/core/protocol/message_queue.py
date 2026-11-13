@@ -48,19 +48,3 @@ class MessageQueue(BaseThreadSafeQueue):
     def put(self, status: int, message: Any, end: int = 1) -> None:
         self._queue.put((status, message, end))
 
-
-class PendingCommandQueue(BaseThreadSafeQueue):
-    def get(self, block: bool = True, timeout: Optional[float] = None) -> int:
-        return self._queue.get(block=block, timeout=timeout)
-
-    def peek_first(self) -> Optional[int]:
-        return self._peek()
-
-    def put(self, command_id: int) -> None:
-        self._queue.put(command_id)
-
-
-
-
-
-

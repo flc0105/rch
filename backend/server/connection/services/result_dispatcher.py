@@ -14,28 +14,19 @@ class ServerResultDispatcher:
     def __init__(self, session):
         self.session = session
 
-    def dispatch_result(self, command_id, status, text, end):
+    def dispatch_result(self, command_id, status, text, end, before_enqueue=None):
         """
         分发命令执行结果
         """
-        if self._is_expected_result(command_id):
-            self._enqueue_expected_result(status, text, end)
-            return
-
+        if self.session.runtime.pending_results.deliver(command_id, status, text, end, before_enqueue):
+            return True
+        # A late/duplicate result must never enter another request's stream.
+        if command_id is not None and command_id != 0:
+            return False
+        if before_enqueue is not None:
+            before_enqueue()
         self._handle_unexpected_message(status, text, end)
-
-    def _enqueue_expected_result(self, status, text, end) -> None:
-        """
-        将预期命令结果写入结果队列
-        """
-        self.session.runtime.message_queue.put(status, text, end)
-
-    def _is_expected_result(self, command_id) -> bool:
-        """
-        判断当前结果是否属于队首等待中的命令
-        """
-        pending_id = self.session.runtime.pending_command_ids.peek_first()
-        return command_id == pending_id
+        return True
 
     def _handle_unexpected_message(self, status, text, end):
         """

@@ -52,6 +52,9 @@ class WebConnectionApi:
     def handle_connection_closed(self, session):
         self.connection_service.handle_connection_closed(session)
 
+    def handle_replaced_connection_closed(self, session):
+        self.connection_service.handle_replaced_connection_closed(session)
+
     def remove_connection(self, client_id: str, machine_id: str = ''):
         return self.connection_service.remove_connection(client_id, machine_id=machine_id)
 

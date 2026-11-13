@@ -13,6 +13,7 @@ from client.connection.server_connection import ServerConnection
 from core.protocol.message_types import MSG_TYPE_SESSION_END
 from server.application.connection.connection_history_store import ConnectionHistoryStore
 from server.application.connection.connection_service import WebConnectionService
+from server.connection.runtime.pending_results import PendingResults
 from server.connection.context.session_context import ClientSessionContext
 from server.connection.services.message_dispatcher import ServerInboundMessageDispatcher
 from server.persistence.rch_database import RchDatabase
@@ -294,7 +295,7 @@ def test_receive_error_classification(tmp_path):
     class FakeServer:
         def __init__(self):
             self.recorded = []
-            self.connections = SimpleNamespace(remove=lambda session: None)
+            self.connections = SimpleNamespace(remove=lambda session: None, run_if_current=lambda session, callback, **kw: (callback(), True)[1])
             self.web_service = SimpleNamespace(connection_api=SimpleNamespace(
                 handle_connection_closed=lambda session: self.recorded.append(session.context.transport_failure),
             ))
@@ -310,7 +311,7 @@ def test_receive_error_classification(tmp_path):
         context = ClientSessionContext()
         session = SimpleNamespace(context=context, session_info=SimpleNamespace(client_id='client-X'),
                                   address='127.0.0.1:1234',
-                                  runtime=SimpleNamespace(message_queue=SimpleNamespace(put=lambda *args: None)))
+                                  runtime=SimpleNamespace(message_queue=SimpleNamespace(put=lambda *args: None), pending_results=PendingResults()))
         listener._handle_connection_closed(session, exc)
         assert context.transport_failure['reason'] == expected
         if expected == 'connection_lost':
@@ -335,7 +336,7 @@ def test_generic_command_channel_does_not_infer_disconnect_intent():
     session = SimpleNamespace(
         context=SimpleNamespace(command_history_orchestrator=None),
         runtime=SimpleNamespace(bind_command_execution=lambda *a, **k: None,
-                                pending_command_ids=Queue(),
+                                pending_results=PendingResults(),
                                 wait_for_result=lambda *a, **k: iter(())),
         send=sent.append, note_server_disconnect=noted.append,
     )

@@ -1,4 +1,5 @@
 import time
+from core.protocol.message_types import MSG_TYPE_RESULT
 
 from server.connection.channel.session_command_channel import ClientSessionCommandChannel
 from server.connection.context.session_context import ClientSessionContext
@@ -52,6 +53,7 @@ class ClientSession:
         return self.transport.recv()
 
     def close(self):
+        self.runtime.pending_results.close()
         self.transport.close()
 
     def note_server_disconnect(self, command: str = ''):
@@ -87,7 +89,8 @@ class ClientSession:
     def handle_received_message(self, data: dict):
         result = self.services.message_dispatcher.dispatch(data)
         observer = self.context.on_client_message_received
-        if callable(observer):
+        # Result observers run only after the per-ID dispatcher accepts the frame.
+        if data.get('type') != MSG_TYPE_RESULT and callable(observer):
             observer(self, data)
         return result
 

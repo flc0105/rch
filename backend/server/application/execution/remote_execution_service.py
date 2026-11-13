@@ -208,8 +208,12 @@ class RemoteExecutionService:
     def run_foreground_control(self, target, domain: str, action: str, payload: dict, *,
                                task_type: str = TASK_TYPE_COMMAND, source: str = 'foreground',
                                track_execution: bool = True, foreground: bool = True):
-        """Run a one-shot typed Control while retaining the foreground task lifecycle."""
+        """Run typed Control under its registered scheduling policy."""
         from core.protocol.message_types import MSG_TYPE_CONTROL
+        from core.protocol.control import execution_policy, ExecutionPolicy
+        if execution_policy(domain, action) == ExecutionPolicy.INDEPENDENT:
+            foreground = False
+            track_execution = False
         status, result = 0, ''
         progress = []
         stream = self.stream_foreground_command if foreground else self.stream_command

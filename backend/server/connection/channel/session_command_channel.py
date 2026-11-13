@@ -1,5 +1,7 @@
 from core.protocol.message_types import MSG_TYPE_COMMAND, MSG_TYPE_CANCEL, MSG_TYPE_ACMD, MSG_TYPE_CONTROL
-from core.protocol.control import build_control_message
+from core.protocol.control import build_control_message, execution_policy, ExecutionPolicy
+from threading import Lock
+from core.utils.timeouts import normalize_positive_timeout
 
 
 
@@ -16,10 +18,12 @@ class ClientSessionCommandChannel:
     def __init__(self, session):
         self.session = session
         self._message_id_counter = 0
+        self._id_lock = Lock()
 
     def generate_message_id(self) -> int:
-        self._message_id_counter += 1
-        return self._message_id_counter
+        with self._id_lock:
+            self._message_id_counter += 1
+            return self._message_id_counter
 
     def build_command_payload(self, command: str, command_type: str = MSG_TYPE_COMMAND, extra=None, payload=None, domain='', action='') -> dict:
         command_id = self.generate_message_id()
@@ -46,10 +50,14 @@ class ClientSessionCommandChannel:
     def send_command(self, command: str, type=MSG_TYPE_COMMAND, extra=None, history_entry_id: str = '', payload=None, domain='', action='', track_execution=True):
         data = self.build_command_payload(command, type, extra, payload, domain, action)
 
+        independent = type == MSG_TYPE_CONTROL and execution_policy(domain, action) == ExecutionPolicy.INDEPENDENT
+        timeout = (normalize_positive_timeout((extra or {}).get('timeout')) or 3600) if independent else None
+        if independent:
+            data['extra'] = {**(extra or {}), 'timeout': timeout}
         coordinator = getattr(self.session.context, 'activity_coordinator', None)
 
         adapter = getattr(self.session.context, 'command_dispatch_adapter', None)
-        if not track_execution:
+        if not track_execution or independent:
             adapter = None
         if adapter is not None:
             history_entry_id = history_entry_id or adapter.scoped_entry(self.session)
@@ -58,15 +66,14 @@ class ClientSessionCommandChannel:
             session=self.session,
             history_entry_id=history_entry_id,
             coordinator=coordinator,
-        ) if track_execution else None
+        ) if track_execution and not independent else None
         # Register before sending: a very fast Client (e.g. invalid download)
         # can reply before the caller starts iterating wait_for_result().
-        self.session.runtime.pending_command_ids.put(data['id'])
+        pending = self.session.runtime.pending_results.register(data['id'])
         try:
             self.session.send(data)
         except Exception:
-            if self.session.runtime.pending_command_ids.peek_first() == data['id']:
-                self.session.runtime.pending_command_ids.get()
+            self.session.runtime.pending_results.remove(data['id'])
             raise
         # Persist only after the transport has accepted an actual Client command.
         # This is deliberately restricted to explicitly prepared Activity intents:
@@ -78,7 +85,7 @@ class ClientSessionCommandChannel:
             self.send_cancel(data.get('id'))
 
         results = self.wait_for_result(data.get('id'), command if type == MSG_TYPE_COMMAND else None,
-                                       already_registered=True)
+                                       results=pending, timeout=timeout)
         if adapter is not None:
             return adapter.observe_result(self.session, history_entry_id, type, command, results, payload=payload, domain=domain, action=action)
         return results
@@ -88,10 +95,19 @@ class ClientSessionCommandChannel:
         self.session.send(data)
         return data
 
-    def wait_for_result(self, command_id: int, command: str = '', already_registered=False):
-        yield from self.session.runtime.wait_for_result(
-            self.session, command_id, command, already_registered=already_registered,
-        )
+    def wait_for_result(self, command_id: int, command: str = '', results=None, timeout=None):
+        try:
+            yield from self.session.runtime.wait_for_result(
+                self.session, command_id, command, results=results, timeout=timeout,
+            )
+        except Exception as exc:
+            observer = getattr(self.session.context, 'on_client_request_failed', None)
+            if callable(observer):
+                try:
+                    observer(self.session, MSG_TYPE_CONTROL, command_id, exc)
+                except Exception:
+                    pass
+            raise
 
 
 

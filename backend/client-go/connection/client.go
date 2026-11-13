@@ -31,11 +31,12 @@ func (c *Client) Run() {
 		sock := protocol.NewRATSocket(conn)
 		session := executor.NewSession(sock, c.clientID)
 
-		_ = sock.Send(c.buildHandshake(session.Cwd))
+		_ = sock.Send(c.buildHandshake(session.CurrentDirectory()))
 
 		for {
 			msg, err := sock.Recv()
 			if err != nil {
+				session.CloseExecutions()
 				session.CloseTransfers()
 				_ = conn.Close()
 				break

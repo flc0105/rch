@@ -6,6 +6,28 @@ type remoteFileControlHandler func(context.Context, *Session, map[string]interfa
 
 type RemoteFilesManager struct{}
 
+func prepareRemoteQuery(field string) func(*Session, map[string]interface{}) (map[string]interface{}, error) {
+	return func(s *Session, p map[string]interface{}) (map[string]interface{}, error) {
+		path, err := remotePath(s, payloadText(p[field]))
+		if err != nil {
+			return nil, err
+		}
+		result := make(map[string]interface{}, len(p))
+		for key, value := range p {
+			result[key] = value
+		}
+		result[field] = path
+		return result, nil
+	}
+}
+
+var remoteFileActionPolicies = map[string]ControlActionSpec{
+	"browse_directory":   {Policy: Independent, Prepare: prepareRemoteQuery("path")},
+	"peek_archive":       {Policy: Independent, Prepare: prepareRemoteQuery("path")},
+	"read_archive_entry": {Policy: Independent, Prepare: prepareRemoteQuery("path")},
+	"inspect_upload":     {Policy: Independent, Prepare: prepareRemoteQuery("destination_dir")},
+}
+
 var remoteFileControlActions = map[string]remoteFileControlHandler{
 	"browse_directory": func(ctx context.Context, s *Session, p map[string]interface{}) (int, interface{}) {
 		return browseDirValue(ctx, s, p)

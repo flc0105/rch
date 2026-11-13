@@ -1,16 +1,26 @@
 import os
 
+from core.protocol.control import execution_policy, ExecutionPolicy, ControlDomain
 from client.runtime.execution.context import CommandCancelledError, CommandTimeoutError
 
 
 class RemoteFilesManager:
     """Structured remote file operations; one scope per request."""
 
+    @staticmethod
+    def prepare_query(action, payload):
+        from client.runtime.filesystem.path_resolver import PathResolver
+        field = 'destination_dir' if action == 'inspect_upload' else 'path'
+        return {**payload, field: PathResolver().resolve_target_path(payload.get(field, ''))}
+
     def execute(self, scope, action, payload):
         handler = self.actions.get(action)
         if handler is None:
             return 0, f'Unsupported remote_files Control action: {action}'
-        return handler(scope, payload)
+        result = handler(scope, payload)
+        if execution_policy(ControlDomain.REMOTE_FILES, action) == ExecutionPolicy.INDEPENDENT:
+            scope._checkpoint()
+        return result
 
     @property
     def actions(self):

@@ -369,3 +369,33 @@ func TestRemoteFilesControlTypedDirectoryAndArchive(t *testing.T) {
 		t.Fatalf("delete failed: %#v", removed)
 	}
 }
+
+func TestIndependentBrowseWhileScriptRuns(t *testing.T) {
+	if _, err := exec.LookPath("python3"); err != nil {
+		if _, err := exec.LookPath("python"); err != nil {
+			t.Skip("no Python interpreter")
+		}
+	}
+	session, peer := pair(t)
+	Handle(session, map[string]interface{}{"type": "control", "id": float64(101), "domain": "script", "action": "run", "payload": map[string]interface{}{"script_name": "test/probe", "source": "import time\nprint('ready', flush=True)\ntime.sleep(20)", "params": map[string]interface{}{}, "execution_mode": "subprocess_pipe", "output_mode": "stream"}})
+	ready := receive(t, peer)
+	if ready["id"] != float64(101) || !strings.Contains(ready["text"].(string), "ready") {
+		t.Fatalf("bad start: %#v", ready)
+	}
+	Handle(session, map[string]interface{}{"type": "control", "id": float64(102), "domain": "remote_files", "action": "browse_directory", "payload": map[string]interface{}{"path": t.TempDir()}})
+	result := receive(t, peer)
+	if result["id"] != float64(102) || result["status"] != float64(1) || !session.HasActiveShell() {
+		t.Fatalf("browse lost foreground: %#v", result)
+	}
+	go Handle(session, map[string]interface{}{"type": "cancel", "id": float64(103), "target_id": float64(101)})
+	for i := 0; i < 5; i++ {
+		frame := receive(t, peer)
+		if frame["type"] == "result" && frame["id"] == float64(101) && frame["eof"] == float64(1) {
+			if frame["status"] != float64(0) {
+				t.Fatalf("cancel failed: %#v", frame)
+			}
+			return
+		}
+	}
+	t.Fatal("missing cancelled final result")
+}

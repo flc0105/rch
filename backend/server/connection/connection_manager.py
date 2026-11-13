@@ -16,6 +16,20 @@ class ConnectionManager:
             else:
                 self._anonymous_connections.append(conn)
 
+    def run_if_current(self, conn, callback, *, allow_missing=False):
+        """Serialize Client-ID scoped side effects with replacement registration."""
+        with self._lock:
+            client_id = getattr(getattr(conn, 'session_info', None), 'client_id', '')
+            if client_id:
+                registered = self._connections_by_client_id.get(client_id)
+                current = registered is conn or (allow_missing and registered is None)
+            else:
+                current = conn in self._anonymous_connections or allow_missing
+            if not current:
+                return False
+            callback()
+            return True
+
     def remove(self, conn):
         with self._lock:
             client_id = getattr(getattr(conn, 'session_info', None), 'client_id', '')

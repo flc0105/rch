@@ -17,7 +17,7 @@ Client（远程设备）
   读取或写入系统剪贴板、处理图片、下载暂存文件、恢复目录树
 ```
 
-用户操作触发一次 Clipboard 请求时，Server 生成独立的 `clipboard_request_id`，通过现有连接向目标 Client 发送 `clipboard_get` 或 `clipboard_set`。Client 完成操作后以 `clipboard_result` 返回成功状态、数据或错误；Server 根据请求 ID 匹配等待者，并把结果返回最初的 HTTP 请求。
+用户操作使用 `control/clipboard/get` 或 `control/clipboard/set`，请求由统一的 Control ID 关联，注册为 Independent 执行策略，不占用前台执行槽。Client 通过现有 Result 帧返回状态和结构化数据，`eof=1` 表示操作结束；Server 将结果分发给对应 HTTP 请求。ClipboardManager 对同一剪贴板的操作串行处理，图片和文件仍使用现有 HTTP 搬运能力。
 
 Get 包含查询支持能力与读取当前内容两种请求；Send 则按 `kind` 区分 `text`、`image`、`files`。这些操作不经普通前台命令槽，也不要求建立专用 WebSocket 会话，但**仍依赖目标 Client 在线和现有消息连接可用**。请求默认最长等待 **3600 秒**；若目标 Client 断线，Server 会使相关待处理请求以断线错误结束。
 

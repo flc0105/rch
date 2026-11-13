@@ -6,7 +6,7 @@ import sys
 
 import pytest
 
-from core.protocol.message_types import MSG_TYPE_CLIPBOARD_SET, MSG_TYPE_PTY_OPEN, MSG_TYPE_PTY_CLOSE, MSG_TYPE_SCREEN_OPEN, MSG_TYPE_SCREEN_CLOSE
+from core.protocol.message_types import MSG_TYPE_PTY_OPEN, MSG_TYPE_PTY_CLOSE, MSG_TYPE_SCREEN_OPEN, MSG_TYPE_SCREEN_CLOSE
 from server.application.clipboard.clipboard_session_service import ClipboardSessionService
 _config = ModuleType('server.config.config')
 _config.COMMAND_HISTORY_RECENT_LIMIT = 100
@@ -40,6 +40,20 @@ class Connection:
         self.fail = False
         self.tracker = None
         self.context = SimpleNamespace(on_client_request_failed=None)
+        from server.connection.runtime.session_runtime import ClientSessionRuntime
+        from server.connection.channel.session_command_channel import ClientSessionCommandChannel
+        self.runtime = ClientSessionRuntime()
+        self.channel = ClientSessionCommandChannel(self)
+
+    def send_cancel(self, request_id):
+        return self.channel.send_cancel(request_id)
+
+    def send_command(self, *args, **kwargs):
+        return self.channel.send_command(*args, **kwargs)
+
+    def respond(self, request, status, result):
+        self.runtime.pending_results.deliver(request['id'], status, result, 1)
+        self.tracker.received(self, {'type': 'result', 'id': request['id'], 'status': status, 'eof': 1, 'data': result if isinstance(result, dict) else {}, 'text': result if isinstance(result, str) else ''})
 
     def send(self, payload):
         def transport_send(data):
@@ -57,8 +71,7 @@ def make_service(server, conn, service_class):
     """Test the production dispatch boundary with a synchronous Client ACK."""
     service = service_class(server)
     if service_class is ClipboardSessionService:
-        name_map = {'handle_client_result': 'clipboard_result'}
-        id_key = 'clipboard_request_id'
+        return server.lifecycle_adapter.instrument_clipboard(service)
     else:
         is_pty = service_class is PtySessionService
         prefix = 'pty' if is_pty else 'screen'
@@ -72,16 +85,13 @@ def make_service(server, conn, service_class):
         def observed(*args, _original=original, _event_type=event_type, **kwargs):
             result = _original(*args, **kwargs)
             data = {'type': _event_type}
-            if _event_type == 'clipboard_result':
-                data.update(args[1])
-            else:
-                data[id_key] = args[0]
-                if _event_type == 'pty_opened':
-                    data['shell'] = kwargs.get('shell') or (args[1] if len(args) > 1 else '')
-                if _event_type == 'pty_closed':
-                    data['exit_code'] = kwargs.get('exit_code', args[1] if len(args) > 1 else 0)
-                if _event_type.endswith('_error'):
-                    data['message'] = args[1] if len(args) > 1 else ''
+            data[id_key] = args[0]
+            if _event_type == 'pty_opened':
+                data['shell'] = kwargs.get('shell') or (args[1] if len(args) > 1 else '')
+            if _event_type == 'pty_closed':
+                data['exit_code'] = kwargs.get('exit_code', args[1] if len(args) > 1 else 0)
+            if _event_type.endswith('_error'):
+                data['message'] = args[1] if len(args) > 1 else ''
             conn.tracker.received(conn, data)
             return result
         setattr(service, name, observed)
@@ -189,7 +199,7 @@ def test_automatic_session_cleanup_is_not_an_activity(setup_history, service_cla
 def test_clipboard_timeout_finishes_dispatched_activity(setup_history):
     server, conn = setup_history
     service = make_service(server, conn, ClipboardSessionService)
-    service.REQUEST_TIMEOUT_SECONDS = 0
+    service.REQUEST_TIMEOUT_SECONDS = 0.01
     with pytest.raises(TimeoutError, match='timed out'):
         service.set_clipboard('client-1', {'kind': 'text', 'text': 'never echoed'}, action='set_text')
     assert [(e['kind'], e['status']) for e in entries(server)] == [('clipboard', 'timed_out')]
@@ -248,10 +258,7 @@ def test_clipboard_set_tracks_results_without_sensitive_payload_and_get_is_read_
     service = make_service(server, conn, ClipboardSessionService)
 
     def respond(payload):
-        service.handle_client_result('client-1', {
-            'clipboard_request_id': payload['clipboard_request_id'],
-            'ok': True, 'payload': {'kind': 'text'},
-        })
+        conn.respond(payload, 1, {'kind': 'text'})
     conn.callback = respond
     result = service.set_clipboard('client-1', {'kind': 'text', 'text': 'SUPER SECRET'}, action='set_text')
     assert result == {'kind': 'text'}
@@ -266,9 +273,7 @@ def test_clipboard_set_tracks_results_without_sensitive_payload_and_get_is_read_
 def test_clipboard_error_and_send_failure_are_distinct(setup_history):
     server, conn = setup_history
     service = make_service(server, conn, ClipboardSessionService)
-    conn.callback = lambda payload: service.handle_client_result('client-1', {
-        'clipboard_request_id': payload['clipboard_request_id'], 'ok': False, 'error': 'Denied',
-    })
+    conn.callback = lambda payload: conn.respond(payload, 0, 'Denied')
     with pytest.raises(RuntimeError, match='Denied'):
         service.set_clipboard('client-1', {'kind': 'text', 'text': 'private'}, action='set_text')
     assert entries(server)[0]['status'] == 'error'
@@ -368,9 +373,7 @@ def test_web_clipboard_set_records_bounded_text_and_safe_files(setup_history):
     server, conn = setup_history
     service = make_service(server, conn, ClipboardSessionService)
     api = WebClipboardApi(service, None)
-    conn.callback = lambda msg: service.handle_client_result('client-1', {
-        'clipboard_request_id': msg['clipboard_request_id'], 'ok': True, 'payload': {},
-    })
+    conn.callback = lambda msg: conn.respond(msg, 1, {})
     text = 'Hello\n' + 'A' * 3000
     api.set_text('client-1', text)
     args = entries(server)[0]['invocation']['arguments']
@@ -400,9 +403,7 @@ def test_web_clipboard_image_records_file_metadata_only(setup_history, tmp_path)
         def cleanup_upload_temp_file(self, temp_path):
             pass
     api = WebClipboardApi(service, Artifacts())
-    conn.callback = lambda msg: service.handle_client_result('client-1', {
-        'clipboard_request_id': msg['clipboard_request_id'], 'ok': True, 'payload': {},
-    })
+    conn.callback = lambda msg: conn.respond(msg, 1, {})
     api.set_image('client-1', SimpleNamespace(filename='screenshot.png'))
     entry = entries(server)[0]
     assert entry['invocation']['arguments'] == {
@@ -476,7 +477,7 @@ def test_client_session_transport_hooks_own_early_ack_and_close(setup_history):
 def test_read_only_and_input_messages_skip_activity(setup_history):
     server, conn = setup_history
     for message in (
-        {'type': 'clipboard_get', 'clipboard_request_id': 'get-1', 'mode': 'content'},
+        {'type': 'control', 'domain': 'clipboard', 'action': 'get', 'id': 42, 'payload': {'mode': 'content'}},
         {'type': 'pty_input', 'pty_session_id': 'p1', 'data': 'ls'},
         {'type': 'pty_resize', 'pty_session_id': 'p1', 'cols': 80},
         {'type': 'screen_config', 'screen_session_id': 's1', 'fps': 12},

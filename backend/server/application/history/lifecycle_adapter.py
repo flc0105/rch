@@ -7,8 +7,9 @@ from datetime import datetime
 from core.protocol.message_types import (
     MSG_TYPE_PTY_OPEN, MSG_TYPE_PTY_CLOSE, MSG_TYPE_PTY_OPENED, MSG_TYPE_PTY_CLOSED, MSG_TYPE_PTY_ERROR,
     MSG_TYPE_SCREEN_OPEN, MSG_TYPE_SCREEN_CLOSE, MSG_TYPE_SCREEN_OPENED, MSG_TYPE_SCREEN_CLOSED, MSG_TYPE_SCREEN_ERROR,
-    MSG_TYPE_CLIPBOARD_SET, MSG_TYPE_CLIPBOARD_RESULT, MSG_TYPE_TRANSFER_START,
+    MSG_TYPE_CONTROL, MSG_TYPE_RESULT, MSG_TYPE_TRANSFER_START,
 )
+from core.protocol.control import ControlDomain, ClipboardAction
 from server.application.history.activity_definitions import (
     ActivityAction, ActivityKind, ActivityOperation, clipboard_arguments,
 )
@@ -22,7 +23,6 @@ class LifecycleAdapter:
     _OPEN = {
         MSG_TYPE_PTY_OPEN: (ActivityKind.PTY, 'pty_session_id'),
         MSG_TYPE_SCREEN_OPEN: (ActivityKind.SCREEN_VIEW, 'screen_session_id'),
-        MSG_TYPE_CLIPBOARD_SET: (ActivityKind.CLIPBOARD, 'clipboard_request_id'),
     }
     _CLOSE = {
         MSG_TYPE_PTY_CLOSE: (ActivityKind.PTY, 'pty_session_id'),
@@ -35,7 +35,6 @@ class LifecycleAdapter:
         MSG_TYPE_SCREEN_OPENED: (ActivityKind.SCREEN_VIEW, 'screen_session_id'),
         MSG_TYPE_SCREEN_CLOSED: (ActivityKind.SCREEN_VIEW, 'screen_session_id'),
         MSG_TYPE_SCREEN_ERROR: (ActivityKind.SCREEN_VIEW, 'screen_session_id'),
-        MSG_TYPE_CLIPBOARD_RESULT: (ActivityKind.CLIPBOARD, 'clipboard_request_id'),
     }
     _TRANSFER_TERMINAL = {'completed': 'success', 'failed': 'error', 'cancelled': 'cancelled'}
     _DOWNLOAD_SOURCES = {'remote_file_download', 'remote_zip_entry_download', 'remote_file_download_zip'}
@@ -89,6 +88,8 @@ class LifecycleAdapter:
                 logger.exception('Unable to create transfer Activity')
             return result
         spec = self._OPEN.get(msg_type)
+        if msg_type == MSG_TYPE_CONTROL and data.get('domain') == ControlDomain.CLIPBOARD and data.get('action') == ClipboardAction.SET:
+            spec = (ActivityKind.CLIPBOARD, 'id')
         if spec is None:
             return send(data)
         kind, field = spec
@@ -157,6 +158,8 @@ class LifecycleAdapter:
 
     def received(self, conn, data):
         spec = self._RESULT.get(data.get('type'))
+        if data.get('type') == MSG_TYPE_RESULT and data.get('eof'):
+            spec = (ActivityKind.CLIPBOARD, 'id')
         if spec is None:
             return
         kind, field = spec
@@ -214,13 +217,15 @@ class LifecycleAdapter:
             self._finish(key, state, 'error', {
                 'end_reason': 'error', 'error': str(data.get('message') or '')[:256],
             })
-        elif event == MSG_TYPE_CLIPBOARD_RESULT:
-            ok = bool(data.get('ok'))
-            status = 'success' if ok else ('interrupted' if str(data.get('error') or '') == 'Client disconnected' else 'error')
+        elif kind == ActivityKind.CLIPBOARD and event == MSG_TYPE_RESULT:
+            ok = data.get('status') == 1
+            result = data.get('data') or {}
+            status = ('success' if ok else 'cancelled' if result.get('event_type') == 'cancelled' else
+                      'timed_out' if result.get('failure_reason') == 'timed_out' else 'error')
             self._finish(key, state, status)
 
     def request_failed(self, conn, message_type, request_id, exc):
-        if message_type != MSG_TYPE_CLIPBOARD_SET:
+        if message_type != MSG_TYPE_CONTROL:
             return
         key = self._key(conn, ActivityKind.CLIPBOARD, request_id)
         with self._lock:

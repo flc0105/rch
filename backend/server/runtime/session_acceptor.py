@@ -57,7 +57,10 @@ class SessionAcceptor:
         self.server.connections.add(session)
         logger.info('Connection has been established: {}'.format(addr))
         try:
-            self.server.web_service.connection_api.handle_connection_registered(session)
+            if not self.server.connections.run_if_current(
+                session, lambda: self.server.web_service.connection_api.handle_connection_registered(session)
+            ):
+                raise RuntimeError('Client session replaced before registration')
         except Exception:
             service = getattr(session.context, 'client_session_token_service', None)
             if service is not None:
@@ -80,7 +83,7 @@ class SessionAcceptor:
         """
         通知等待中的主线程：该连接已关闭
         """
-        session.runtime.message_queue.put(0, None, 1)
+        session.runtime.pending_results.close()
 
     def _remove_connection(self, session):
         """
@@ -119,7 +122,13 @@ class SessionAcceptor:
 
         try:
             try:
-                self.server.web_service.connection_api.handle_connection_closed(session)
+                api = self.server.web_service.connection_api
+                current = self.server.connections.run_if_current(session, lambda: api.handle_connection_closed(session), allow_missing=True)
+                if not current:
+                    # Only session-scoped cleanup is safe for a replaced connection.
+                    cleanup = getattr(api, 'handle_replaced_connection_closed', None)
+                    if callable(cleanup):
+                        cleanup(session)
             except Exception:
                 logger.error(
                     'handle_connection_closed failed: addr=%s client_id=%s',
