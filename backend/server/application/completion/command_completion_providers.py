@@ -429,27 +429,40 @@ class ExternalToolCommandCompletionProvider(ServerCompletionSessionMixin, Comman
         return 'xt exec '
 
 
-class UploadPathCompletionProvider(CommandCompletionProvider):
-    """Upload reads Server-local files, never the remote Client filesystem."""
-    command_names = ('upload',)
-    source = 'server_upload'
+class ServerFileSystemCompletionProvider(CommandCompletionProvider):
+    """Complete Server-local paths for registered commands.
+
+    Command names and directory-only restrictions belong to the caller's
+    registration, not the filesystem enumeration implementation.
+    """
+    source = 'server_filesystem'
     group = 'filesystem'
 
+    def __init__(self, command_names=(), *, directory_commands=()):
+        self.command_names = tuple(command_names)
+        self.directory_commands = frozenset(directory_commands)
+        if not self.directory_commands.issubset(self.command_names):
+            raise ValueError('Directory commands must be registered for Server path completion')
+
     def complete(self, context):
-        # Upload consumes the raw path tail; spaces are not shell-tokenized.
+        if not self.supports(context):
+            return []
+        # Local path commands consume the raw path tail; spaces are not shell-tokenized.
         prefix = str(context.argument_text or '')
         directory, fragment = os.path.split(prefix)
         lookup = os.path.expanduser(directory or '.')
+        directories_only = context.command_name in self.directory_commands
         with os.scandir(lookup) as entries:
             matches = [(entry.name, entry.is_dir()) for entry in entries
-                       if entry.name.startswith(fragment) and (entry.is_dir() or entry.is_file())]
+                       if entry.name.startswith(fragment)
+                       and (entry.is_dir() or (not directories_only and entry.is_file()))]
         result = []
         matches.sort(key=lambda item: (not item[1], item[0].casefold()))
         if context.max_results > 0:
             matches = matches[:context.max_results]
         for name, is_dir in matches:
             path = os.path.join(directory, name)
-            value = 'upload ' + path
+            value = f'{context.command_name} {path}'
             result.append(CompletionCandidate(title=value, insert_text=value,
                 source=self.source, group=self.group, kind='directory' if is_dir else 'file',
                 name=name, priority=10 if is_dir else 20,

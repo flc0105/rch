@@ -11,13 +11,13 @@ Terminal 的自动补全将命令发现、当前设备的历史与收藏、Serve
 ```text
 Web Terminal 输入内容
         │
-        ├── 光标所在参数使用 @@ ──→ 目标 Client 文件系统路径候选
+        ├── 光标所在参数使用 @@ ──→ 已登记的本机路径规则或目标 Client 文件系统候选
         │
         ├── 存在尚未闭合的 ${...} ──→ Client Variable Manifest → 变量候选
         │
         ├── 命中已注册的参数上下文 ──→ Server Completion Provider
         │                                      │
-        │                                      ├── Server 数据：历史、Alias 管理、脚本、路径收藏、External Tools
+        │                                      ├── Server 数据：历史、Alias 管理、脚本、路径收藏、External Tools、本机路径
         │                                      └── 需要目标机器时 → Client Completion Provider
         │
         └── 其他输入 ──→ 基础命令候选（Client Manifest + Server Built-ins + Alias）
@@ -56,19 +56,20 @@ Script 的执行候选来自 Server 脚本目录，**只根据 Script Metadata `
 
 这些动态候选的数量与内容取决于当前设备、Server 配置及 Catalog，而不是一套固定的命令总表。详见 [Aliases and Quick Actions](alias_quick_actions.md)、[Remote Files](remote_files.md) 和 [External Tools](external_tools.md)。
 
-## 远程路径补全如何工作
+## 文件系统路径补全如何工作
 
-路径候选读取的是**目标 Client** 的文件系统，而非 Server 文件系统、浏览器文件或用户本地电脑。Server 通过 Client 的补全辅助命令取回目录子项，Client 使用现有路径解析器把输入转换到当前工作目录或明确给出的目标目录，再查询真实目录内容。目录候选优先于文件候选；同一类型内按名称排序。
+远程路径候选读取目标 Client 文件系统；Server 本机路径候选读取 Server 自身的文件系统。远程查询由 Server 通过 Client 的补全辅助命令取回目录子项，Client 使用现有路径解析器把输入转换到当前工作目录或明确给出的目标目录，再查询真实目录内容。目录候选优先于文件候选；同一类型内按名称排序。
 
-当前实现明确区分两类路径候选：
+路径候选按文件系统归属和路径类型注册：
 
 | 接受补全的输入入口 | 当前提供的内容 | 实际 Provider |
 |---|---|---|
 | `cd`、`rmdir` | **仅子目录**，不提供普通文件 | Client 的 `cd` 目录 Provider |
 | `download`、`cat`、`file`、`allow_file`、`python3` | **目录及文件** | Client 的 `download` 路径 Provider |
 | `acmd image_info`、`acmd sqlite_query` | **目录及文件**，由前端借用路径 Provider | Client 的 `download` 路径 Provider |
+| `upload` | Server 本机目录和文件 | Server 本机文件系统 Provider |
 
-这张表列出的是**当前前端显式接入路径补全的入口**，不是项目全部可执行命令清单。Client 真正直接注册了 `cd`（目录）和 `download`（路径）两个文件系统 Provider；其他入口由前端将输入暂时改写成相应 Provider 可接受的查询，再把返回候选的命令前缀换回原来的输入入口。
+Web 远程路径规则复用 Client 的 `cd`（目录）和 `download`（路径）Provider，将查询结果的命令前缀恢复为用户输入的入口。Server 本机文件系统 Provider 使用注册的命令和路径类型生成候选；`upload` 使用其中的目录和文件模式。其他本机路径命令可在同一 Provider 中注册目录或文件规则。
 
 例如输入 `cd /home/al`，前端按最后一个 `/` 将父目录 `/home` 作为查询目录；由 Client 返回该目录下的子目录名称；前端再用正在输入的前缀过滤，并将选中结果回填为完整的 `cd ...` 命令。输入 `download /home/al` 的过程类似，但可选普通文件。Windows 路径分隔符 `\` 与盘符根目录也经过特别处理。输入以目录分隔符结束时，会查询该目录内部的下一层子项。
 
@@ -78,7 +79,7 @@ Script 的执行候选来自 Server 脚本目录，**只根据 Script Metadata `
 
 ## 显式路径占位符 `@@`
 
-在 Terminal Input 中，`@@` 是统一的**远程文件与目录补全入口**。它可放在任意命令、Alias、位置参数或命名参数中，例如 `allow_exec @@`、`myalias @@`、`xxx --path=@@`。输入后，下拉列表显示**当前选中 Client** 的文件系统候选：目录在前、文件在后。无需配置命令白名单，也无需键盘快捷键；点击候选同样适用于触屏设备。
+在 Terminal Input 中，`@@` 是统一的文件与目录补全入口。它可放在任意命令、Alias、位置参数或命名参数中，例如 `allow_exec @@`、`myalias @@`、`xxx --path=@@`。默认查询当前选中 Client；已登记的 Server 本机路径入口使用 Server 文件系统，例如 `upload @@/tmp/`。目录在前、文件在后，触屏设备也可以点击候选。
 
 ### 从相对路径逐层选择文件
 
@@ -121,7 +122,7 @@ myalias --path=@@/Users/f --verbose
 - **Escape**：取消方向键预览并恢复预览前输入。
 - **Run / Enter**：执行输入框当前的命令。目录预览需先按 → 或点击候选移除 `@@`；文件选中后已经是可提交的路径。
 
-`@@` 同时展示目录和文件。Python Client 与 Go Client 都通过当前远程设备的只读 `download` 文件系统补全 Provider 获取候选；普通命令名、已登记路径参数、变量 `${...}` 的原有自动补全保持不变。
+远程 `@@` 同时展示目录和文件，Python Client 与 Go Client 复用当前远程设备的只读路径 Provider。Server 本机规则保留所属命令的路径类型和参数格式，查询、选择及下一层补全均使用同一文件系统归属。
 
 ## 变量占位符补全
 
@@ -154,7 +155,7 @@ Terminal 的下拉候选按标题文字筛选：优先精确匹配，其次前�
 
 自动补全使用 `CommandCompletionParser`、`CompletionContext` 和统一的 `CompletionCandidate`：候选包括标题 `title`、真正写入输入框的 `insert_text`、说明 `description`、`source`、`group`、`kind`、`priority` 和可选的 `metadata`。序列化后的命令候选统一以 `name` 表示插入文本，以 `title` 表示需要单独展示的标题，以 `help` 表示说明。一个 Provider 只需声明支持哪些命令上下文，并返回候选，不应在查询过程中修改文件、启动任务或执行候选命令。
 
-新增 Server 侧补全时，在 Server 的 Completion Service 中注册 Provider；需要目标设备文件系统或 Runtime Config 时，在 Client 的 Completion Service 中注册，并通过 Server 的远程代理读取。**自动参数补全仍须显式注册**：Web 输入框的上下文分流依赖命令级规则。对于未登记的参数位置，可以使用上面的显式路径占位符，无需新增命令专用 Provider。
+新增 Server 本机路径补全时，在现有文件系统 Provider 和 Web 路径规则中注册命令及路径类型；其他 Server 数据补全在 Completion Service 中注册相应 Provider；需要目标设备文件系统或 Runtime Config 时，在 Client 的 Completion Service 中注册，并通过 Server 的远程代理读取。**自动参数补全仍须显式注册**：Web 输入框的上下文分流依赖命令级规则。对于未登记的参数位置，可以使用上面的显式路径占位符，无需新增命令专用 Provider。
 
 相关 HTTP 接口的返回结构如下，候选文本为结构示意：
 
@@ -200,5 +201,3 @@ Server 注册表 `server_builtin_registry.py` 是一级 Builtin 与 `alias/job/s
 
 Server Registry 的 `script` 是一级命令，来源为 `server`；它不应被当作 `script exec <path>` 的特定平台脚本进行目录筛选。输入 `sc` 应能找到 `script`，选中后再通过上下文 Provider 获取 `list/view/exec/run` 子命令。只有真实 Script 路径候选才进行平台筛选。Job Catalog 的 `job start` 动态候选采用与 CLI `job list` 一致的 Metadata 平台条件。
 
-
-`upload` 的路径候选来自 Server 本机文件系统（与实际上传源一致），直接输入路径或使用 `upload @@` 均不请求 Client 文件补全；`download` 仍从目标 Client 获取路径候选。

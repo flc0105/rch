@@ -9,7 +9,7 @@ from server.application.completion.command_completion_providers import (
     HistoryCommandCompletionProvider,
 
     RemoteClientCommandCompletionProvider,
-    UploadPathCompletionProvider,
+    ServerFileSystemCompletionProvider,
 
 )
 
@@ -43,7 +43,7 @@ class ServerCommandCompletionService:
                 server=server,
                 external_tool_catalog_service=external_tool_catalog_service,
             ),
-            UploadPathCompletionProvider(),
+            ServerFileSystemCompletionProvider(command_names=('upload',)),
             RemoteClientCommandCompletionProvider(
                 remote_execution_service=remote_execution_service,
             ),

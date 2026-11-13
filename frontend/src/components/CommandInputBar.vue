@@ -540,15 +540,16 @@ export default {
       const rawText = String(queryString || '')
       const cursor = this.getCommandInputCursorPosition(rawText)
       const precedingText = rawText.slice(0, cursor)
-      const uploadMarker = precedingText.match(/^\s*upload\s+@@(.*)$/i)
-      if (uploadMarker && cursor === rawText.length) {
-        const pathPrefix = uploadMarker[1]
+      const serverRule = this.resolveFileSystemCompletionRule(precedingText.trimStart())
+      if (serverRule?.serverPath === true && serverRule.argumentText.startsWith('@@') && cursor === rawText.length) {
+        const pathPrefix = serverRule.argumentText.slice(2)
         const markerStart = precedingText.length - pathPrefix.length - 2
         return {
           explicitPath: true, serverPath: true, rawText, markerStart,
           markerEnd: markerStart + 2, replaceEnd: cursor, cursorPosition: cursor,
-          pathPrefix, quote: '', requestInput: `upload ${pathPrefix}`,
-          cacheKey: this.buildCommandCompletionCandidateCacheKey('upload_explicit_path', pathPrefix),
+          pathPrefix, quote: '', requestInput: `${serverRule.proxyCommand} ${pathPrefix}`,
+          serverPathCommand: serverRule.proxyCommand,
+          cacheKey: this.buildCommandCompletionCandidateCacheKey(`server_explicit_path:${serverRule.proxyCommand}`, pathPrefix),
           requiresRemoteClient: false,
         }
       }
@@ -629,8 +630,9 @@ export default {
         pathPrefix,
         quote: lastDirectory.quote,
         serverPath: lastDirectory.serverPath === true,
-        requestInput: lastDirectory.serverPath ? `upload ${pathPrefix}` : `download ${pathParts.candidatePrefix}`,
-        cacheKey: this.buildCommandCompletionCandidateCacheKey(lastDirectory.serverPath ? 'upload_explicit_path' : 'explicit_path', lastDirectory.serverPath ? pathPrefix : pathParts.lookupPath),
+        serverPathCommand: lastDirectory.serverPathCommand,
+        requestInput: lastDirectory.serverPath ? `${lastDirectory.serverPathCommand} ${pathPrefix}` : `download ${pathParts.candidatePrefix}`,
+        cacheKey: this.buildCommandCompletionCandidateCacheKey(lastDirectory.serverPath ? `server_explicit_path:${lastDirectory.serverPathCommand}` : 'explicit_path', lastDirectory.serverPath ? pathPrefix : pathParts.lookupPath),
         requiresRemoteClient: !lastDirectory.serverPath,
       }
     },
@@ -681,6 +683,7 @@ export default {
           encodedPath: name.slice(pathStart, pathEnd),
           quote: completionQuery.quote || (addedQuotes ? '"' : ''),
           serverPath: completionQuery.serverPath === true,
+          serverPathCommand: completionQuery.serverPathCommand,
         } : null,
       }
     },
@@ -873,7 +876,7 @@ export default {
 
     resolveFileSystemCompletionRule(inputText) {
       const rules = [
-        { commandPrefix: 'upload', proxyCommand: 'upload', mode: 'path', requiresRemoteClient: false },
+        { commandPrefix: 'upload', proxyCommand: 'upload', mode: 'path', serverPath: true },
         ...DIRECTORY_ONLY_COMPLETION_COMMANDS.map(commandPrefix => ({
           commandPrefix,
           proxyCommand: 'cd',
@@ -912,15 +915,16 @@ export default {
       const pathParts = this.splitFileSystemCandidatePath(argumentText)
       const proxyCommand = String(rule?.proxyCommand || commandName || '').trim().toLowerCase()
       const commandPrefix = String(rule?.commandPrefix || commandName || '').trim().toLowerCase()
-      const prefix = rule?.requiresRemoteClient === false ? argumentText : pathParts.candidatePrefix
+      const serverPath = rule?.serverPath === true
+      const prefix = serverPath ? argumentText : pathParts.candidatePrefix
       const requestInput = `${proxyCommand} ${prefix}`
 
       return {
         rawText,
         commandName: commandPrefix,
         requestInput,
-        cacheKey: this.buildCommandCompletionCandidateCacheKey(commandPrefix, rule?.requiresRemoteClient === false ? argumentText : pathParts.lookupPath),
-        requiresRemoteClient: rule?.requiresRemoteClient !== false,
+        cacheKey: this.buildCommandCompletionCandidateCacheKey(commandPrefix, serverPath ? argumentText : pathParts.lookupPath),
+        requiresRemoteClient: !serverPath,
         fileSystemProxyCommand: proxyCommand,
         fileSystemTargetCommand: commandPrefix,
         fileSystemCompletionMode: String(rule?.mode || 'path'),

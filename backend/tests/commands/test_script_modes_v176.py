@@ -10,6 +10,8 @@ import pytest
 
 from client.config import runtime_config
 from client.runtime.control_dispatcher import ClientControlDispatcher
+from client.control_registration import register_control_domain
+from core.protocol.control import ControlDomain, ScriptAction
 from client.runtime.execution.runtime import ExecutionRuntime
 from client.scripts.manager import ScriptManager
 from core.protocol.script_execution import (
@@ -56,7 +58,8 @@ def harness():
     sock = SimpleNamespace(client_id='mode-test', client_session_token='', send_result=lambda *args: frames.append(args))
     execution = ExecutionRuntime(sock)
     manager = ScriptManager()
-    dispatcher = ClientControlDispatcher(execution, {'script':manager.execute}, {'script':manager.cancel_policy})
+    dispatcher = ClientControlDispatcher(execution)
+    register_control_domain(dispatcher, ControlDomain.SCRIPT, manager.execute, cancel_policies={ScriptAction.RUN: manager.cancel_policy})
     return dispatcher, execution, frames
 
 

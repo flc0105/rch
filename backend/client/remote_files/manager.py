@@ -1,16 +1,23 @@
 import os
 
-from core.protocol.control import execution_policy, ExecutionPolicy, ControlDomain
+from core.protocol.control import RemoteFilesAction
 from client.runtime.execution.context import CommandCancelledError, CommandTimeoutError
 
 
 class RemoteFilesManager:
     """Structured remote file operations; one scope per request."""
 
-    @staticmethod
-    def prepare_query(action, payload):
+    # Resolve only the actual read-only queries before they leave the caller's cwd.
+    QUERY_PATH_FIELDS = {
+        RemoteFilesAction.BROWSE_DIRECTORY: 'path',
+        RemoteFilesAction.PEEK_ARCHIVE: 'path',
+        RemoteFilesAction.READ_ARCHIVE_ENTRY: 'path',
+        RemoteFilesAction.INSPECT_UPLOAD: 'destination_dir',
+    }
+
+    def prepare_query(self, action, payload):
         from client.runtime.filesystem.path_resolver import PathResolver
-        field = 'destination_dir' if action == 'inspect_upload' else 'path'
+        field = self.QUERY_PATH_FIELDS[action]
         return {**payload, field: PathResolver().resolve_target_path(payload.get(field, ''))}
 
     def execute(self, scope, action, payload):
@@ -18,24 +25,24 @@ class RemoteFilesManager:
         if handler is None:
             return 0, f'Unsupported remote_files Control action: {action}'
         result = handler(scope, payload)
-        if execution_policy(ControlDomain.REMOTE_FILES, action) == ExecutionPolicy.INDEPENDENT:
+        if action in self.QUERY_PATH_FIELDS:
             scope._checkpoint()
         return result
 
     @property
     def actions(self):
         return {
-            'browse_directory': self.browse_directory,
-            'create_directory': self.create_directory,
-            'rename_path': self.rename_path,
-            'delete_paths': self.delete_paths,
-            'paste_paths': self.paste_paths,
-            'create_archive': self.create_archive,
-            'peek_archive': self.peek_archive,
-            'read_archive_entry': self.read_archive_entry,
-            'extract_archive': self.extract_archive,
-            'inspect_upload': self.inspect_upload,
-            'save_file': self.save_file,
+            RemoteFilesAction.BROWSE_DIRECTORY: self.browse_directory,
+            RemoteFilesAction.CREATE_DIRECTORY: self.create_directory,
+            RemoteFilesAction.RENAME_PATH: self.rename_path,
+            RemoteFilesAction.DELETE_PATHS: self.delete_paths,
+            RemoteFilesAction.PASTE_PATHS: self.paste_paths,
+            RemoteFilesAction.CREATE_ARCHIVE: self.create_archive,
+            RemoteFilesAction.PEEK_ARCHIVE: self.peek_archive,
+            RemoteFilesAction.READ_ARCHIVE_ENTRY: self.read_archive_entry,
+            RemoteFilesAction.EXTRACT_ARCHIVE: self.extract_archive,
+            RemoteFilesAction.INSPECT_UPLOAD: self.inspect_upload,
+            RemoteFilesAction.SAVE_FILE: self.save_file,
         }
 
     def create_archive(self, scope, payload):

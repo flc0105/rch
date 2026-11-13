@@ -1,4 +1,4 @@
-from core.protocol.control import ControlRequest
+from core.protocol.control import ControlRequest, ControlDomain, ScriptAction
 from server.application.scripts.script_run_service import prepare_script_control, script_run_options
 from core.protocol.script_execution import ExecutionMode
 
@@ -88,7 +88,7 @@ class WebScriptApi:
                                          config=self.command_execution_api.get_runtime_config(client_id),
                                          execution_mode=execution_mode, output_mode=output_mode)
         return self.command_execution_api.submit_web_control(
-            client_id, request['script_name'], ControlRequest('script', 'run', request),
+            client_id, request['script_name'], ControlRequest(ControlDomain.SCRIPT, ScriptAction.RUN, request),
             tab_id=tab_id, metadata={
                 'operation_id': operation_id,
                 'script_run': True,

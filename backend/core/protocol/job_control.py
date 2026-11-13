@@ -1,7 +1,9 @@
 """Typed Job Control requests and results shared by Server and Python Client."""
 
-JOB_ACTIONS = frozenset({'start', 'stop', 'stop_all', 'ps', 'status'})
-JOB_MUTATING_ACTIONS = frozenset({'start', 'stop', 'stop_all'})
+from core.protocol.control import JobAction
+
+JOB_ACTIONS = frozenset(JobAction)
+JOB_MUTATING_ACTIONS = frozenset({JobAction.START, JobAction.STOP, JobAction.STOP_ALL})
 
 
 def build_job_control_request(action, **parameters):
@@ -13,18 +15,18 @@ def build_job_control_request(action, **parameters):
 def validate_job_control_request(action, payload):
     if action not in JOB_ACTIONS or not isinstance(payload, dict):
         raise ValueError('Invalid Job control request')
-    expected = {'start': {'job_name', 'params', 'execution_mode'},
-                'stop': {'job_key'}, 'status': {'job_key'}, 'ps': set(), 'stop_all': set()}[action]
+    expected = {JobAction.START: {'job_name', 'params', 'execution_mode'},
+                JobAction.STOP: {'job_key'}, JobAction.STATUS: {'job_key'}, JobAction.PS: set(), JobAction.STOP_ALL: set()}[action]
     if set(payload) - expected:
         raise ValueError('Unsupported Job control parameters')
-    if action == 'start':
+    if action == JobAction.START:
         if not isinstance(payload.get('job_name'), str) or not payload['job_name'].strip():
             raise ValueError('Job name is required')
         if not isinstance(payload.get('params', {}), dict):
             raise ValueError('Job parameters must be an object')
         if not isinstance(payload.get('execution_mode'), str) or not payload['execution_mode'].strip():
             raise ValueError('Job execution_mode is required')
-    if action in ('stop', 'status') and (not isinstance(payload.get('job_key'), str) or not payload['job_key'].strip()):
+    if action in (JobAction.STOP, JobAction.STATUS) and (not isinstance(payload.get('job_key'), str) or not payload['job_key'].strip()):
         raise ValueError('Job key is required')
     return payload
 

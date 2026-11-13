@@ -16,7 +16,7 @@ type Session struct {
 	Cwd                  string
 	CurrentCommandID     int
 	transfers            transferTracker
-	controlHandlers      map[string]ControlDomain
+	controlHandlers      map[protocol.ControlDomain]ControlDomainRegistration
 	shellMu              sync.Mutex
 	shellCommandID       int
 	shellCancel          context.CancelFunc
@@ -45,7 +45,7 @@ func NewSession(sock *protocol.RATSocket, clientID string) *Session {
 		Cwd:         wd,
 		independent: make(map[int]*independentExecution),
 	}
-	session.controlHandlers = map[string]ControlDomain{"remote_files": {Execute: (RemoteFilesManager{}).Execute, CancelledMessage: "Command cancelled", Actions: remoteFileActionPolicies}, "script": {Execute: (ScriptManager{}).Execute, CancelledMessage: "Script cancelled"}, configurationDomain: {Execute: (ConfigurationManager{}).Execute, NonCancellable: true}}
+	session.controlHandlers = newControlHandlers()
 	return session
 }
 

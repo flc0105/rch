@@ -145,13 +145,14 @@ class CommandPlanner:
 
     def build_script_plan(self, payload: dict) -> dict:
         from core.protocol.script_execution import ExecutionMode
+        from core.protocol.control import ControlDomain, ScriptAction
         return {
             'cancel_policy': ExecutionMode(payload['execution_mode']).cancel_policy,
             'kind': 'remote_command',
             'command': '',
             'command_type': COMMAND_TYPE_CONTROL,
-            'domain': 'script',
-            'action': 'run',
+            'domain': ControlDomain.SCRIPT,
+            'action': ScriptAction.RUN,
             'payload': payload,
         }
 

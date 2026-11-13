@@ -6,6 +6,8 @@ from types import SimpleNamespace
 import pytest
 
 from client.runtime.control_dispatcher import ClientControlDispatcher
+from client.control_registration import register_control_domain
+from core.protocol.control import ControlDomain, ScriptAction
 from client.runtime.execution.runtime import ExecutionRuntime
 from client.scripts.manager import ScriptManager
 from core.protocol.control import ControlRequest
@@ -52,7 +54,8 @@ def test_script_control_client_runs_existing_script_strategy(tmp_path):
     }
     socket = SimpleNamespace()
     manager = ScriptManager()
-    control = ClientControlDispatcher(ExecutionRuntime(socket), {'script': manager.execute})
+    control = ClientControlDispatcher(ExecutionRuntime(socket))
+    register_control_domain(control, ControlDomain.SCRIPT, manager.execute, cancel_policies={ScriptAction.RUN: manager.cancel_policy})
     assert control.execute(1, 'script', 'run', payload) == (1, 'example.com 80\n')
     assert control.execute(2, 'script', 'bad', payload)[0] == 0
     assert control.execute(3, 'script', 'run', {'source': SCRIPT_SOURCE, 'params': {}})[0] == 0

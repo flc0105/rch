@@ -1,4 +1,5 @@
 import json
+from core.protocol.control import ControlDomain, JobAction
 import threading
 from datetime import datetime
 
@@ -84,8 +85,8 @@ class BackgroundJobService:
         normalized_mode = self.prepare_job_start(client_id, job_name, execution_mode)
 
         text = self._execute_job_action(
-            client_id, 'start', build_job_control_request(
-                'start', job_name=job_name, params=normalized_params, execution_mode=normalized_mode,
+            client_id, JobAction.START, build_job_control_request(
+                JobAction.START, job_name=job_name, params=normalized_params, execution_mode=normalized_mode,
             ),
         )
         return {
@@ -102,7 +103,7 @@ class BackgroundJobService:
             raise ValueError('job_key is required')
 
         text = self._execute_job_action(
-            client_id, 'stop', build_job_control_request('stop', job_key=job_key),
+            client_id, JobAction.STOP, build_job_control_request(JobAction.STOP, job_key=job_key),
         )
         return {
             'client_id': client_id,
@@ -116,7 +117,7 @@ class BackgroundJobService:
         status, wire_text = 0, ''
         visible_parts = []
         for item in self.remote_execution_service.stream_foreground_command(
-            client_id, '', command_type=COMMAND_TYPE_CONTROL, domain='job', action=action, payload=payload,
+            client_id, '', command_type=COMMAND_TYPE_CONTROL, domain=ControlDomain.JOB, action=action, payload=payload,
             task_type='job_control', source='web_background_job',
         ):
             status, wire_text = item[0], item[1] if len(item) > 1 else ''

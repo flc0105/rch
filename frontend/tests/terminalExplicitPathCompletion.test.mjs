@@ -651,7 +651,7 @@ test('upload completion queries the Server with the full typed path, not remote 
   assert.equal(query.requestInput, raw)
   assert.equal(query.requiresRemoteClient, false)
   assert.equal(query.fileSystemProxyCommand, 'upload')
-  const candidate = ctx.normalizeCommandCompletionCandidate({name: 'upload /tmp/z test.txt', candidatePath: '/tmp/z test.txt', kind: 'file', source: 'server_upload'}, query)
+  const candidate = ctx.normalizeCommandCompletionCandidate({name: 'upload /tmp/z test.txt', candidatePath: '/tmp/z test.txt', kind: 'file', source: 'server_filesystem'}, query)
   assert.equal(candidate.name, 'upload /tmp/z test.txt')
 })
 
@@ -664,4 +664,24 @@ test('upload @@ uses server paths and inserts raw names with spaces', () => {
   assert.equal(query.requiresRemoteClient, false)
   const item = normalize(ctx, query, [file('/tmp/z test.txt')])[0]
   assert.equal(item.name, 'upload /tmp/z test.txt')
+})
+
+
+test('Server @@ completion uses a registered local command, including directory continuation', () => {
+  const raw = 'local_dir @@/tmp/z test'
+  const { ctx, input } = setup(raw.length)
+  ctx.resolveFileSystemCompletionRule = text => ({
+    commandPrefix: 'local_dir', proxyCommand: 'local_dir',
+    serverPath: true, argumentText: text.slice('local_dir '.length),
+  })
+  const query = ctx.parseExplicitPathCompletionQuery(raw)
+  assert.equal(query.requestInput, 'local_dir /tmp/z test')
+  const item = normalize(ctx, query, [file('/tmp/z test folder', true)])[0]
+  assert.equal(item.name, 'local_dir /tmp/z test folder')
+  ctx.explicitPathContinuation = item.explicitDirectoryContinuation
+  const next = item.name + '/child'
+  input.selectionStart = next.length
+  const follow = ctx.parseExplicitPathCompletionQuery(next)
+  assert.equal(follow.requestInput, 'local_dir /tmp/z test folder/child')
+  assert.equal(follow.requiresRemoteClient, false)
 })

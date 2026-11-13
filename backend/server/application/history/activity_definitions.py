@@ -1,5 +1,6 @@
 """Canonical Activity identities and summaries for UI operations."""
 from dataclasses import dataclass, field
+from core.protocol.control import JobAction
 
 
 @dataclass(frozen=True)
@@ -41,7 +42,7 @@ class ActivityKind:
 
 
 # Map control-plane actions to user-facing Activity operations in the history layer.
-JOB_ACTIVITY_ACTIONS = {'start': 'start_job', 'stop': 'stop_job', 'stop_all': 'stop_all_jobs'}
+JOB_ACTIVITY_ACTIONS = {JobAction.START: 'start_job', JobAction.STOP: 'stop_job', JobAction.STOP_ALL: 'stop_all_jobs'}
 
 
 class ActivityAction:

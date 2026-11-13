@@ -1,5 +1,6 @@
 """Server-owned Job CLI; only internal job_control packets reach the Client."""
 import json
+from core.protocol.control import ControlDomain, JobAction
 import shlex
 import time
 
@@ -31,7 +32,7 @@ class JobBuiltinSupport:
         request = build_job_control_request(action, **payload)
         actions = JOB_MUTATING_ACTIONS
         entry_id = self.history_entry_id_provider() or ''
-        kwargs = {'command_type': COMMAND_TYPE_CONTROL, 'domain': 'job', 'action': action}
+        kwargs = {'command_type': COMMAND_TYPE_CONTROL, 'domain': ControlDomain.JOB, 'action': action}
         if entry_id and action in actions:
             kwargs['history_entry_id'] = entry_id
         pending_result = None
@@ -192,21 +193,21 @@ class JobBuiltinSupport:
             except (ValueError, FileNotFoundError) as exc:
                 yield 0, str(exc)
                 return
-            yield from self._send('start', job_name=name, params=params, execution_mode=mode)
+            yield from self._send(JobAction.START, job_name=name, params=params, execution_mode=mode)
             return
 
         if subcommand in ('ps', 'stop-all'):
             if args:
                 yield 0, self.HELP
                 return
-            yield from self._send('ps' if subcommand == 'ps' else 'stop_all')
+            yield from self._send(JobAction.PS if subcommand == 'ps' else JobAction.STOP_ALL)
             return
 
         if subcommand in ('stop', 'status'):
             if len(args) != 1:
                 yield 0, self.HELP
                 return
-            yield from self._send(subcommand, job_key=args[0])
+            yield from self._send(JobAction(subcommand), job_key=args[0])
             return
 
         yield 0, self.HELP

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"client-go/executor"
+	"client-go/protocol"
 )
 
 func messageID(msg map[string]interface{}, key string) (int, bool) {
@@ -61,12 +62,17 @@ func Handle(session *executor.Session, msg map[string]interface{}) {
 			sendResult(session, id, 0, "Invalid Control request")
 			return
 		}
-		control, supported := session.ControlHandler(domain)
+		control, supported := session.ControlHandler(protocol.ControlDomain(domain))
 		if !supported {
 			sendResult(session, id, 0, "Unsupported Control domain on this Client: "+domain)
 			return
 		}
-		spec := control.Action(action)
+		controlAction := protocol.ControlAction(action)
+		spec, registered := control.Action(controlAction)
+		if !registered {
+			sendResult(session, id, 0, "Unsupported Control action: "+domain+"/"+action)
+			return
+		}
 		if spec.Prepare != nil {
 			var err error
 			payload, err = spec.Prepare(session, payload)
@@ -101,7 +107,7 @@ func Handle(session *executor.Session, msg map[string]interface{}) {
 		}
 		go func() {
 			defer cancel()
-			status, result := control.Execute(ctx, session, id, action, payload, func(streamStatus int, chunk string) {
+			status, result := control.Execute(ctx, session, id, controlAction, payload, func(streamStatus int, chunk string) {
 				_ = session.Sock.Send(map[string]interface{}{"type": "result", "id": id, "status": streamStatus, "text": chunk, "cwd": session.CurrentDirectory(), "eof": 0})
 			})
 			cancelled, cancelID := session.EndShell(id)

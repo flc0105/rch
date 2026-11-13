@@ -6,12 +6,16 @@ from types import SimpleNamespace
 import pytest
 
 from client.runtime.control_dispatcher import ClientControlDispatcher
+from client.control_registration import register_remote_files
 from client.runtime.execution.runtime import ExecutionRuntime
 from client.remote_files.manager import RemoteFilesManager
 
 def dispatcher():
     socket = SimpleNamespace()
-    return ClientControlDispatcher(ExecutionRuntime(socket), {'remote_files': RemoteFilesManager().execute})
+    control = ClientControlDispatcher(ExecutionRuntime(socket))
+    manager = RemoteFilesManager()
+    register_remote_files(control, manager)
+    return control
 from core.protocol.control import build_control_message
 from server.application.artifact.remote_file_service import WebRemoteFileService
 from server.connection.channel.session_command_channel import ClientSessionCommandChannel

@@ -1,24 +1,25 @@
-from core.protocol.control import validate_control_fields, execution_policy, ExecutionPolicy
+from core.protocol.control import validate_control_fields, ExecutionPolicy
 from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor
 from threading import RLock, BoundedSemaphore
+from typing import Callable
 
 
 @dataclass(frozen=True)
 class ControlActionRegistration:
-    handler: object
+    action: str
+    handler: Callable
     policy: ExecutionPolicy
-    prepare: object = None
+    prepare: Callable | None = None
+    cancel_policy: str | Callable | None = None
 
 
 
 class ClientControlDispatcher:
     """Dispatch registered domains without loading a command catalog."""
 
-    def __init__(self, execution, handlers, cancel_policies=None):
+    def __init__(self, execution):
         self.execution = execution
-        self.handlers = dict(handlers)
-        self.cancel_policies = dict(cancel_policies or {})
         self._actions = {}
         self._lock = RLock()
         self._pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix='control')
@@ -27,8 +28,8 @@ class ClientControlDispatcher:
         self._generation = 0
         self._closed = False
 
-    def register(self, domain, action, handler, prepare=None):
-        self._actions[domain, action] = ControlActionRegistration(handler, execution_policy(domain, action), prepare)
+    def register(self, domain, action, handler, *, policy, prepare=None, cancel_policy=None):
+        self._actions[domain, action] = ControlActionRegistration(action, handler, policy, prepare, cancel_policy)
 
     def policy(self, domain, action):
         registration = self._actions.get((domain, action)) if isinstance(domain, str) and isinstance(action, str) else None
@@ -45,7 +46,7 @@ class ClientControlDispatcher:
         registration = self._actions[data['domain'], data['action']]
         if registration.prepare:
             try:
-                data = {**data, 'payload': registration.prepare(data['action'], data['payload'])}
+                data = {**data, 'payload': registration.prepare(registration.action, data['payload'])}
             except Exception as exc:
                 return request_id, 0, str(exc)
         if not self._slots.acquire(blocking=False):
@@ -101,21 +102,19 @@ class ClientControlDispatcher:
             validate_control_fields(domain, action, payload)
         except ValueError:
             return
-        if self.policy(domain, action) == ExecutionPolicy.INDEPENDENT:
-            context = self.execution.context_store.get_or_create(request_id)
-            context.set_cancel_policy('cooperative')
+        registration = self._actions.get((domain, action))
+        if registration is None:
             return
-        policy = self.cancel_policies.get(domain)
-        if policy is not None:
-            mode = policy(action, payload)
-            if mode is not None:
-                context = self.execution.context_store.get_or_create(request_id)
-                context.set_cancel_policy(mode, message='Current execution mode does not support cancellation')
+        policy = registration.cancel_policy
+        mode = policy(registration.action, payload) if callable(policy) else policy
+        if mode is not None:
+            context = self.execution.context_store.get_or_create(request_id)
+            message = 'Current execution mode does not support cancellation' if mode == 'none' else ''
+            context.set_cancel_policy(mode, message=message)
 
     def execute(self, request_id, domain, action, payload, options=None):
         validate_control_fields(domain, action, payload)
         registration = self._actions.get((domain, action))
-        handler = registration.handler if registration else self.handlers.get(domain)
-        if handler is None:
-            return 0, f'Unsupported Control domain: {domain}'
-        return self.execution.run(request_id, lambda scope: handler(scope, action, payload), options)
+        if registration is None:
+            return 0, f'Unsupported Control action: {domain}/{action}'
+        return self.execution.run(request_id, lambda scope: registration.handler(scope, registration.action, payload), options)

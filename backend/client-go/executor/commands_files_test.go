@@ -1,6 +1,7 @@
 package executor
 
 import (
+	"client-go/protocol"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -41,7 +42,7 @@ func executeRemoteContext(ctx context.Context, s *Session, request fileRequest) 
 	raw, _ := json.Marshal(request.payload)
 	var p map[string]interface{}
 	_ = json.Unmarshal(raw, &p)
-	status, result := (RemoteFilesManager{}).Execute(ctx, s, 7, request.action, p, nil)
+	status, result := (RemoteFilesManager{}).Execute(ctx, s, 7, protocol.ControlAction(request.action), p, nil)
 	if text, ok := result.(string); ok {
 		return status, text
 	}

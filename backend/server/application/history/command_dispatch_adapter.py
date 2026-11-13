@@ -7,6 +7,8 @@ import json
 import shlex
 import uuid
 
+from core.protocol.control import ControlDomain
+from server.application.command.command_types import COMMAND_TYPE_CONTROL
 from core.protocol.job_control import validate_job_control_result
 from core.protocol.structured_arg_codec import decode_structured_arg
 from server.application.history.activity_definitions import (
@@ -171,7 +173,7 @@ class CommandDispatchAdapter:
             kind = pending['kind']
             command_type = str(plan.get('command_type') or 'command')
             alias_name = str(plan.get('alias_name') or '').strip()
-            if ((command_type == 'control' and plan.get('domain') == 'script')
+            if ((command_type == COMMAND_TYPE_CONTROL and plan.get('domain') == ControlDomain.SCRIPT)
                     and kind != ActivityKind.ALIAS):
                 kind = ActivityKind.SCRIPT
                 pending['action'] = ActivityAction.RUN
@@ -183,7 +185,7 @@ class CommandDispatchAdapter:
                 pending['invocation'].setdefault('target', alias_name)
             pending['kind'] = kind
             pending['resolved'] = {'command_type': command_type}
-            if command_type == 'control' and plan.get('domain') == 'script':
+            if command_type == COMMAND_TYPE_CONTROL and plan.get('domain') == ControlDomain.SCRIPT:
                 pending['resolved'].update({key: plan['payload'][key] for key in ('execution_mode', 'output_mode') if key in plan['payload']})
             else:
                 pending['resolved']['command'] = str(command or '')
@@ -207,11 +209,11 @@ class CommandDispatchAdapter:
         entry_id = entry_id or self.scoped_entry(conn)
         if not entry_id:
             return ''
-        if command_type == 'control' and domain == 'script':
+        if command_type == COMMAND_TYPE_CONTROL and domain == ControlDomain.SCRIPT:
             def record_modes(pending):
                 pending['resolved'].update({key: payload[key] for key in ('execution_mode', 'output_mode') if key in payload})
             self.coordinator.mutate_pending(conn, entry_id, record_modes)
-        if command_type == 'control' and domain == 'job':
+        if command_type == COMMAND_TYPE_CONTROL and domain == ControlDomain.JOB:
             request = payload if isinstance(payload, dict) else {}
             job_action = JOB_ACTIVITY_ACTIONS.get(action)
             if job_action:
@@ -220,7 +222,7 @@ class CommandDispatchAdapter:
                 def promote(pending):
                     pending['kind'] = ActivityKind.BACKGROUND_JOB
                     pending['action'] = job_action
-                    pending['resolved'] = {'command_type': 'control'}
+                    pending['resolved'] = {'command_type': COMMAND_TYPE_CONTROL}
                     # Terminal input remains the original user command. Web callers
                     # already provided their structured arguments when preparing.
                     if not pending['invocation'].get('input') and not pending['invocation'].get('arguments'):
@@ -264,7 +266,7 @@ class CommandDispatchAdapter:
 
     def observe_result(self, conn, entry_id, command_type, command, rows, *, payload=None, domain='', action=''):
         """Read a completed command result once; preserve the iterator and raw Client output."""
-        if command_type != 'control' or domain != 'job':
+        if command_type != COMMAND_TYPE_CONTROL or domain != ControlDomain.JOB:
             yield from rows
             return
         last = None

@@ -1,4 +1,5 @@
 import json
+from core.protocol.control import ControlDomain, RemoteFilesAction
 from core.protocol.message_types import MSG_TYPE_TRANSFER_START
 
 
@@ -24,7 +25,7 @@ class WebRemoteFileService:
 
     def _run_control(self, client_id, action, payload, *, json_result=False):
         status, result = self.remote_execution_service.run_foreground_control(
-            client_id, 'remote_files', action, payload,
+            client_id, ControlDomain.REMOTE_FILES, action, payload,
             task_type='remote_file', source='web_remote_file',
         )
         if status != 1:
@@ -75,7 +76,7 @@ class WebRemoteFileService:
             'search_keyword': search_keyword,
             'recursive_search': recursive_search,
         }
-        payload = self._run_control(client_id, 'browse_directory', request, json_result=True)
+        payload = self._run_control(client_id, RemoteFilesAction.BROWSE_DIRECTORY, request, json_result=True)
 
         summary = payload.get('summary') or {}
         pagination = payload.get('pagination') or {}
@@ -104,7 +105,7 @@ class WebRemoteFileService:
         if not (path or '').strip():
             raise ValueError('path is required')
 
-        result_text = self._run_mutation(client_id, 'create_directory', {'path': path}, {'path': path}, origin=origin)
+        result_text = self._run_mutation(client_id, RemoteFilesAction.CREATE_DIRECTORY, {'path': path}, {'path': path}, origin=origin)
 
         return {
             'path': path,
@@ -117,7 +118,7 @@ class WebRemoteFileService:
         if not (new_name or '').strip():
             raise ValueError('new_name is required')
 
-        result_text = self._run_mutation(client_id, 'rename_path', {'old_path': old_path, 'new_name': new_name, 'count': 1}, {'old_path': old_path, 'new_name': new_name}, origin=origin)
+        result_text = self._run_mutation(client_id, RemoteFilesAction.RENAME_PATH, {'old_path': old_path, 'new_name': new_name, 'count': 1}, {'old_path': old_path, 'new_name': new_name}, origin=origin)
 
         return {
             'old_path': old_path,
@@ -340,19 +341,19 @@ class WebRemoteFileService:
         if not normalized_paths:
             raise ValueError('paths is required')
 
-        return self._run_mutation(client_id, 'create_archive', {'paths': normalized_paths, 'count': len(normalized_paths), 'destination_dir': destination_dir.strip(), 'archive_name': archive_name}, {'paths': normalized_paths, 'destination_dir': destination_dir.strip(), 'archive_name': str(archive_name or '').strip()}, json_result=True, origin=origin)
+        return self._run_mutation(client_id, RemoteFilesAction.CREATE_ARCHIVE, {'paths': normalized_paths, 'count': len(normalized_paths), 'destination_dir': destination_dir.strip(), 'archive_name': archive_name}, {'paths': normalized_paths, 'destination_dir': destination_dir.strip(), 'archive_name': str(archive_name or '').strip()}, json_result=True, origin=origin)
 
     def peek_zip(self, client_id: str, path: str) -> dict:
         if not (path or '').strip():
             raise ValueError('path is required')
-        return self._run_control(client_id, 'peek_archive', {'path': path.strip()}, json_result=True)
+        return self._run_control(client_id, RemoteFilesAction.PEEK_ARCHIVE, {'path': path.strip()}, json_result=True)
 
     def read_zip_entry(self, client_id: str, path: str, entry_name: str) -> dict:
         if not (path or '').strip():
             raise ValueError('path is required')
         if not (entry_name or '').strip():
             raise ValueError('entry_name is required')
-        return self._run_control(client_id, 'read_archive_entry', {
+        return self._run_control(client_id, RemoteFilesAction.READ_ARCHIVE_ENTRY, {
             'path': path.strip(), 'entry_name': entry_name,
         }, json_result=True)
 
@@ -366,12 +367,12 @@ class WebRemoteFileService:
         if entry_name:
             arguments['entry_name'] = entry_name
         if inspect:
-            return self._run_control(client_id, 'extract_archive', {**arguments, 'inspect': True}, json_result=True)
+            return self._run_control(client_id, RemoteFilesAction.EXTRACT_ARCHIVE, {**arguments, 'inspect': True}, json_result=True)
         policy = 'stop' if conflict_policy is None else conflict_policy
         if policy not in ('stop', 'merge', 'replace', 'keep_both'):
             raise ValueError('Invalid conflict policy')
         arguments['conflict_policy'] = policy
-        return self._run_mutation(client_id, 'extract_archive', arguments, arguments, json_result=True, origin=origin)
+        return self._run_mutation(client_id, RemoteFilesAction.EXTRACT_ARCHIVE, arguments, arguments, json_result=True, origin=origin)
 
     def delete_paths(self, client_id: str, paths: list[str], *, origin: str = 'web_ui') -> dict:
         """
@@ -388,7 +389,7 @@ class WebRemoteFileService:
         if not normalized_paths:
             raise ValueError('paths is required and must contain valid paths')
 
-        result_text = self._run_mutation(client_id, 'delete_paths', {'paths': normalized_paths, 'count': len(normalized_paths)}, {'paths': normalized_paths}, json_result=True, batch=True, origin=origin)
+        result_text = self._run_mutation(client_id, RemoteFilesAction.DELETE_PATHS, {'paths': normalized_paths, 'count': len(normalized_paths)}, {'paths': normalized_paths}, json_result=True, batch=True, origin=origin)
         result_text = result_text['message']
 
         return {
@@ -417,14 +418,14 @@ class WebRemoteFileService:
 
         payload = {'paths': normalized_paths, 'destination_dir': normalized_destination_dir, 'operation': normalized_operation}
         if inspect:
-            return self._run_control(client_id, 'paste_paths', {**payload, 'inspect': True}, json_result=True)
+            return self._run_control(client_id, RemoteFilesAction.PASTE_PATHS, {**payload, 'inspect': True}, json_result=True)
         if conflict_policies is not None:
             if not isinstance(conflict_policies, list) or len(conflict_policies) != len(normalized_paths) or any(
                 item not in ('stop', 'merge', 'replace', 'keep_both') for item in conflict_policies
             ):
                 raise ValueError('Invalid conflict policies')
             payload['conflict_policies'] = conflict_policies
-        result_text = self._run_mutation(client_id, 'paste_paths', {'paths': normalized_paths, 'count': len(normalized_paths), 'destination_dir': normalized_destination_dir}, payload, json_result=True, batch=True, origin=origin)
+        result_text = self._run_mutation(client_id, RemoteFilesAction.PASTE_PATHS, {'paths': normalized_paths, 'count': len(normalized_paths), 'destination_dir': normalized_destination_dir}, payload, json_result=True, batch=True, origin=origin)
         summary = result_text
         result_text = summary['message']
 
@@ -441,7 +442,7 @@ class WebRemoteFileService:
     def inspect_upload(self, client_id: str, destination_dir: str, filename: str) -> dict:
         if not destination_dir or not filename:
             raise ValueError('destination_dir and filename are required')
-        return self._run_control(client_id, 'inspect_upload', {
+        return self._run_control(client_id, RemoteFilesAction.INSPECT_UPLOAD, {
             'destination_dir': destination_dir, 'filename': filename,
         }, json_result=True)
 
@@ -501,7 +502,7 @@ class WebRemoteFileService:
 
         normalized_path = path.strip()
 
-        result_text = self._run_mutation(client_id, 'save_file', {'path': normalized_path, 'encoding': encoding}, {'path': normalized_path, 'content': content, 'encoding': encoding}, origin=origin)
+        result_text = self._run_mutation(client_id, RemoteFilesAction.SAVE_FILE, {'path': normalized_path, 'encoding': encoding}, {'path': normalized_path, 'content': content, 'encoding': encoding}, origin=origin)
 
         return {
             'path': normalized_path,

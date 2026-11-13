@@ -1,4 +1,5 @@
 import subprocess
+from core.protocol.control import ScriptAction
 
 from client.config import runtime_config
 from client.runtime.execution.context import CommandCancelledError, CommandTimeoutError
@@ -17,7 +18,7 @@ class ScriptManager:
 
     @staticmethod
     def cancel_policy(action, payload):
-        if action != 'run' or not isinstance(payload, dict):
+        if action != ScriptAction.RUN or not isinstance(payload, dict):
             return None
         try:
             return ExecutionMode(payload.get('execution_mode')).cancel_policy
@@ -25,7 +26,7 @@ class ScriptManager:
             return None
 
     def execute(self, scope, action, payload):
-        if action != 'run':
+        if action != ScriptAction.RUN:
             return 0, f'Unsupported script Control action: {action}'
         source, params, name = (payload.get(key) for key in ('source', 'params', 'script_name'))
         if not isinstance(source, str) or not source.strip() or not isinstance(params, dict) or not isinstance(name, str) or not name.strip():

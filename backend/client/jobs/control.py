@@ -4,6 +4,7 @@ The public ``job`` command and catalog live on the Server. No Client command
 method is exported for Job operations; this service only invokes JobManager.
 """
 import os
+from core.protocol.control import JobAction
 
 from core.utils.formatting import format_dict
 from core.protocol.job_control import build_job_control_result, validate_job_control_request
@@ -21,7 +22,7 @@ class JobControl:
         try:
             validate_job_control_request(action, payload)
 
-            if action == 'start':
+            if action == JobAction.START:
                 name = cls._name(payload.get('job_name'))
                 params = payload.get('params') or {}
                 if not name or not isinstance(params, dict):
@@ -53,22 +54,22 @@ class JobControl:
                     f'Worker: {getattr(runtime, "worker_name", "unknown")}\n'
                     f'Use "job stop {getattr(runtime, "job_key", name)}" to request stop'
                 )
-                return 1, build_job_control_result('start', message, job_id=runtime.job_id)
-            if action == 'stop':
+                return 1, build_job_control_result(JobAction.START, message, job_id=runtime.job_id)
+            if action == JobAction.STOP:
                 key = cls._name(payload.get('job_key'))
                 if not key:
                     raise ValueError('Job key is required')
                 runtime = manager.stop_job(key)
-                return 1, build_job_control_result('stop', f'Stop request sent: {runtime.display_name}', job_id=runtime.job_id)
-            if action == 'ps':
+                return 1, build_job_control_result(JobAction.STOP, f'Stop request sent: {runtime.display_name}', job_id=runtime.job_id)
+            if action == JobAction.PS:
                 jobs = manager.list_running_jobs()
-                return 1, build_job_control_result('ps', '\n'.join(jobs) if jobs else 'No background jobs are currently running', jobs=jobs)
-            if action == 'status':
+                return 1, build_job_control_result(JobAction.PS, '\n'.join(jobs) if jobs else 'No background jobs are currently running', jobs=jobs)
+            if action == JobAction.STATUS:
                 key = cls._name(payload.get('job_key'))
                 if not key:
                     raise ValueError('Job key is required')
-                return 1, build_job_control_result('status', format_dict(manager.get_job_status(key)))
-            if action == 'stop_all':
+                return 1, build_job_control_result(JobAction.STATUS, format_dict(manager.get_job_status(key)))
+            if action == JobAction.STOP_ALL:
                 report = manager.stop_all_jobs()
                 names = [item['display_name'] for item in report['stopped']]
                 errors = report['errors']
@@ -76,12 +77,12 @@ class JobControl:
                 if errors:
                     message += '\nErrors:\n' + '\n'.join(errors)
                 return (1 if not errors else 0), build_job_control_result(
-                    'stop_all', message, job_ids=[item['job_id'] for item in report['stopped']],
+                    JobAction.STOP_ALL, message, job_ids=[item['job_id'] for item in report['stopped']],
                     total=report['total'], succeeded=len(names), errors=errors,
                 )
             raise ValueError(f'Unsupported job control action: {action}')
         except Exception as exc:
             return 0, (build_job_control_result(action, f'Job control failed: {exc}', succeeded=0, errors=[str(exc)])
-                       if action in ('start', 'stop', 'stop_all') else
+                       if action in (JobAction.START, JobAction.STOP, JobAction.STOP_ALL) else
                        build_job_control_result(action, f'Job control failed: {exc}')
-                       if action in ('ps', 'status') else str(exc))
+                       if action in (JobAction.PS, JobAction.STATUS) else str(exc))

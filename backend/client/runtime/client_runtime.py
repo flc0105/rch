@@ -1,6 +1,6 @@
 from client.runtime.command_variable_resolver import CommandVariableResolver
 from client.runtime.execution.runtime import ExecutionRuntime
-from client.runtime.control_dispatcher import ClientControlDispatcher
+from client.control_registration import build_control_dispatcher
 from client.remote_files.manager import RemoteFilesManager
 from client.scripts.manager import ScriptManager
 from client.runtime.sdk.command import ScriptCommandAccess
@@ -11,8 +11,7 @@ from client.monitor.manager import DeviceMonitorManager
 from client.transfers.manager import ClientTransferManager
 from client.config.manager import ConfigurationManager
 from client.watchdog.control import WatchdogControl
-from client.runtime.execution.process.process_control import ProcessManager
-from core.protocol.control import ControlDomain
+from client.process.manager import ProcessManager
 
 
 class ClientRuntime:
@@ -46,14 +45,6 @@ class ClientRuntime:
         self.configuration_manager = ConfigurationManager(connection, self.features)
         self.process_manager = ProcessManager()
         self.watchdog_control = WatchdogControl(connection)
-        self.control_dispatcher = ClientControlDispatcher(self.execution, {
-            'job': self.job_manager.execute,
-            'remote_files': self.remote_files_manager.execute,
-            'script': self.script_manager.execute,
-            ControlDomain.CONFIGURATION: self.configuration_manager.execute,
-            ControlDomain.PROCESS: self.process_manager.execute,
-            ControlDomain.WATCHDOG: self.watchdog_control.execute,
-        }, cancel_policies={'script': self.script_manager.cancel_policy})
         self.pty_manager = None
         self.screen_view_manager = None
         self.clipboard_manager = None
@@ -66,20 +57,9 @@ class ClientRuntime:
         if self.features['clipboard']:
             from client.clipboard.manager import ClipboardManager
             self.clipboard_manager = ClipboardManager(connection)
-        from core.protocol.control import INDEPENDENT_ACTIONS, ClipboardAction
-        for domain, action in INDEPENDENT_ACTIONS:
-            if domain == ControlDomain.REMOTE_FILES:
-                self.control_dispatcher.register(domain, action, self.remote_files_manager.execute,
-                                                 self.remote_files_manager.prepare_query)
-        for action in ClipboardAction:
-            handler = self.clipboard_manager.execute if self.clipboard_manager else self._clipboard_disabled
-            self.control_dispatcher.register(ControlDomain.CLIPBOARD, action, handler)
+        self.control_dispatcher = build_control_dispatcher(self)
         self.device_monitor_manager = DeviceMonitorManager(connection)
         self.transfer_manager = ClientTransferManager(connection)
-
-    @staticmethod
-    def _clipboard_disabled(scope, action, payload):
-        return 0, 'Clipboard disabled on Client'
 
     def handle_connection_lost(self) -> list[str]:
         """
