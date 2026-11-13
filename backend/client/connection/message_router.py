@@ -26,18 +26,6 @@ class ClientInboundMessageRouter(BaseMessageRouter):
             return command_id, *result
         return None
 
-    def handle_script_message(self, data: dict):
-        command_id = data.get('id')
-        result = self.connection.runtime.command_executor.execute_script_command(
-            command_id,
-            data.get('text') or '',
-            kwargs=data.get('extra'),
-            options=data.get('extra') if isinstance(data.get('extra'), dict) else None,
-        )
-        if result:
-            return command_id, *result
-        return None
-
     def handle_acmd_message(self, data: dict):
         command_id = data.get('id')
         result = self.connection.runtime.command_executor.execute_argument_command(
@@ -49,10 +37,10 @@ class ClientInboundMessageRouter(BaseMessageRouter):
             return command_id, *result
         return None
 
-    def handle_job_control_message(self, data: dict):
+    def handle_control_message(self, data: dict):
         command_id = data.get('id')
-        result = self.connection.runtime.command_executor.execute_job_control_command(
-            command_id, data.get('text') or '',
+        result = self.connection.runtime.command_executor.execute_control_command(
+            command_id, data.get('domain'), data.get('action'), data.get('payload'),
             options=data.get('extra') if isinstance(data.get('extra'), dict) else None,
         )
         if result:

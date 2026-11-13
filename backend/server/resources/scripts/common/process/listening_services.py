@@ -150,20 +150,6 @@ def resolved_command(argv, exe, cwd, os_alias):
     return subprocess.list2cmdline(args) if os_alias == "win" else shlex.join(args)
 
 
-def systemd_unit(pid, os_alias):
-    if os_alias != "linux" or pid is None:
-        return None
-    try:
-        with open("/proc/{}/cgroup".format(pid), encoding="utf-8", errors="replace") as f:
-            for line in f:
-                match = re.search(r"/([^/\n]+\.(?:service|socket))(?=/|\n|$)", line)
-                if match:
-                    return match.group(1)
-    except (OSError, ValueError):
-        pass
-    return None
-
-
 def service_record(listener, os_alias):
     pid = listener["pid"]
     name = listener.get("name")
@@ -186,7 +172,6 @@ def service_record(listener, os_alias):
         "user": user,
         "process_name": name,
         "command": command,
-        "unit": systemd_unit(pid, os_alias),
     }
 
 

@@ -17,9 +17,9 @@ Application 装配层提供语义绑定，API 负责转发业务请求，业务�
 
 Server 接收请求时保留原始调用身份，解析 Server Builtin、Alias、History Replay 或 Script Library，得到真实远程执行计划。纯 Server 查询如 `rtt`、`history` 列表、`alias list`、无参数 `script`（等同 `script list`）、参数校验失败，都**不会**生成 Activity。只有显式可记录的操作已实际交给 Client 命令通道，发送成功后才创建持久记录；发送前允许分配内部关联 ID，以便结果输出、取消和 Artifact 归属，不代表已经执行或持久化。
 
-记录类型包括 `command`、`alias`、`script`、`remote_files`（语义化文件修改）、`transfer`（用户发起的上传/下载）、`external_tool`、`background_job`、`pty`、`screen_view`、`clipboard` 及 `process`。Remote Files 的 Browse、Search、预览、读取、ZIP Peek/Entry 等查询不记录；文件上传/下载记录为 `transfer`，不是 `remote_files`。Transfer Center 仍独立负责实时进度和取消。Job 的用户管理操作以 `kind=background_job` 记录 `start_job`、`stop_job` 和 `stop_all_jobs`；查询命令不进入 Activity。Job 内部 `job_control` 消息、Job 运行消息和状态上报不独立记录。Process Manager 的用户主动 Kill/Kill App 使用独立的语义记录；进程列表、监控采样及其他内部 RPC 不记录。未知普通 Client 命令落到 Shell 是 RCH 原有的**设计特性**，本轮不更改命令分发、解析或 Shell fallback。
+记录类型包括 `command`、`alias`、`script`、`remote_files`（语义化文件修改）、`transfer`（用户发起的上传/下载）、`external_tool`、`background_job`、`pty`、`screen_view`、`clipboard` 及 `process`。Remote Files 的 Browse、Search、预览、读取、ZIP Peek/Entry 等查询不记录；文件上传/下载记录为 `transfer`，不是 `remote_files`。Transfer Center 仍独立负责实时进度和取消。Job 的用户管理操作以 `kind=background_job` 记录 `start_job`、`stop_job` 和 `stop_all_jobs`；查询命令不进入 Activity。Job 内部 `control(domain=job)` 消息、Job 运行消息和状态上报不独立记录。Process Manager 的用户主动 Kill/Kill App 使用独立的语义记录；进程列表、监控采样及其他内部 RPC 不记录。未知普通 Client 命令落到 Shell 是 RCH 原有的**设计特性**，本轮不更改命令分发、解析或 Shell fallback。
 
-同一用户操作至多记一条 Activity：`notify shell pwd`、`saveout shell pwd` 以 `invocation.input` 保留外部调用文本，`resolved.command` 保留真正下发的 Client 命令。`history run N` 和 `!N` 不写入 Quick，但只要回放实际向 Client 派发了命令，就创建一条 Activity：`invocation.input` 保留外层回放写法，`resolved` 保留实际派发的命令类型和内容。未成功派发则不落 Activity。Alias 保留 Alias 名称/参数，而非把展开文本冒充用户输入。Script Library、`script exec <file>` 都是 `kind=script`，实际下发的是脚本协议 `command_type=script`；Activity 不复制整段脚本源码或 Base64 载荷，也不伪造 Shell 命令。
+同一用户操作至多记一条 Activity：`notify shell pwd`、`saveout shell pwd` 以 `invocation.input` 保留外部调用文本，`resolved.command` 保留真正下发的 Client 命令。`history run N` 和 `!N` 不写入 Quick，但只要回放实际向 Client 派发了命令，就创建一条 Activity：`invocation.input` 保留外层回放写法，`resolved` 保留实际派发的命令类型和内容。未成功派发则不落 Activity。Alias 保留 Alias 名称/参数，而非把展开文本冒充用户输入。Script Library、`script exec <file>` 都是 `kind=script`，实际下发 `control(domain=script, action=run)`；Activity 不复制整段脚本源码，也不伪造 Shell 命令。
 
 Remote Files 的修改操作使用 `kind=remote_files`，统一记录为 `create_directory`、`delete_files`、`rename_files`、`copy_files`、`move_files`、`create_archive`、`extract_archive`、`save_file`。每次用户操作（包括批量处理）只创建一条 Activity。`invocation.arguments` 保存路径等结构化参数，`resolved` 保存可记录的实际派发信息；保存文本的正文及编码载荷不持久化。批量任务使用 Client 的结构化报告核对成功数和失败项；部分成功或全部失败为 `error`，并在输出中保留数量和失败原因。
 
@@ -77,7 +77,7 @@ Process Manager 主动终止单个进程或应用时使用 `kind=process, action
 
 Quick Recent 保存手动 **Web Terminal / CLI** 提交的命令，无论最终为 `success`、`error`、`cancelled`、`interrupted` 或 `timed_out`；失败的命令也可以重试。以 `machine_id + command` 去重，保留最近 100 条不同命令。最近一次完成结果的 `status` 与时间独立保存在 `command_recents`，每次完成增加 `use_count`（执行尝试数），**不依赖 Activity 存在，也不持有 Activity ID**。UI 的 Command 列显示最近一次状态图标，Last Used 仍隐藏。用户手动 Pin 的命令不因后续失败而删除。
 
-不记录的操作在 `server/application/history/quick_history.py` 文件顶部统一声明：`history`/`history clear`/`history run N`/`!N`；Quick Action UI、Script Library UI、Web API、上传、Remote Files、Job、Process、External Tool 内部任务及其他内部任务；由 Script Library Metadata 标记的 `script run __json__:` UI 调用（手动终端输入的 `script run` 属于 Quick）。Replay 只从 Quick 解析命令，不更新 Quick；其真实 Client 派发则按正常执行规则生成 Activity。
+不记录的操作在 `server/application/history/quick_history.py` 文件顶部统一声明：`history`/`history clear`/`history run N`/`!N`；Quick Action UI、Script Library UI、Web API、上传、Remote Files、Job、Process、External Tool 内部任务及其他内部任务；Script Library UI 的直接 Script Task（不产生手敲命令）。Replay 只从 Quick 解析命令，不更新 Quick；其真实 Client 派发则按正常执行规则生成 Activity。
 
 Quick History 页面继续支持 Use、双击回填、Pin / Unpin、Pin Up / Down 和动态数字索引。**仅隐藏** Last Used 的 UI；Command 前显示状态图标，底层必要字段不删除。Use 将命令填入 Terminal 输入框，不会直接执行。
 
@@ -87,9 +87,9 @@ Pin 顺序由独立的 `pinned_commands` 表持久管理：Pinned 项优先显�
 
 `history` 和 `history clear` 是只读/清理 Quick 的纯 Server 命令，不记 Activity 或 Quick；`history` 的可回放索引使用 Quick History 快照并跳过 `history run N` / `!N` 元命令，重新从 1 编号；`history run <index>` / `!<index>` 会根据当前机器 Quick History 的动态索引查找真实可执行文本，再按照正常命令解析和 Client 派发链执行。索引随 Pin 排序、Recent 变化而变动，不是稳定 ID，重放前应核对列表。Replay 不产生 Quick；真实派发且符合记录策略的 Client 执行才产生 Activity，所以回放自身不改变 Quick 索引。未派发或纯 Server 回放不生成 Activity。
 
-`xt` 仍由 Server Builtin 解析、Client 负责本地运行 Exec。`xt`、`xt help`、`xt exec list`（包括 JSON 查询）属于查询，不写 Activity；手动终端输入正常进入 Quick，即使 Server 内部向 Client 查询安装状态或可执行文件路径也不会产生 Activity。`xt exec <exec>` 真正派发执行后生成一条 `external_tool · run_exec` Activity；保留终端原始输入、Exec/Package 身份和实际结果，Quick 按普通终端执行规则记录。嵌套的 `external_tool_*` Client RPC 不会独立建 Activity，也不能覆盖外层的语义记录，编码参数不持久化。History 回放查询同样不记录 Activity、且不会重复写 Quick；回放执行仍记一条 `run_exec` Activity 而不重复写 Quick。
+`xt` 仍由 Server Builtin 解析、Client 负责本地运行 Exec。`xt`、`xt help`、`xt exec list`（包括 JSON 查询）属于查询，不写 Activity；手动终端输入正常进入 Quick，即使 Server 内部向 Client 查询安装状态或可执行文件路径也不会产生 Activity。`xt package install/uninstall` 与 `xt instance create/start/stop/restart` 在真正派发相应 Client 修改命令后，分别记录一条 `external_tool` 语义 Activity；预检状态查询、未派发的参数错误和已安装／已运行等无变化的请求不落 Activity。`restart` 和 `create --start` 的内部多条修改命令仍归于同一次外层操作；`xt package/module/instance` 的只读列表、状态及日志查询不落 Activity。`xt exec <exec>` 真正派发执行后生成一条 `external_tool · run_exec` Activity；保留终端原始输入、Exec/Package 身份和实际结果，Quick 按普通终端执行规则记录。嵌套的 `external_tool_*` Client RPC 不会独立建 Activity，也不能覆盖外层的语义记录，编码参数不持久化。History 回放查询同样不记录 Activity、且不会重复写 Quick；回放执行仍记一条 `run_exec` Activity 而不重复写 Quick。
 
-`notify`、`saveout` 等 Server 包装命令如果执行了 Client 子命令，只产生一条 Activity，外层包装文本留在 `invocation.input`，实际命令留在 `resolved.command`。`saveout` 在内层命令完成并成功注册 `command_output` Artifact 后，会沿用原有 History Store 文件关联方法，把 Artifact 引用加到该 Activity 的 `files`；不复制文件内容，也不凭文件存在推断执行成功。`script exec <name>` 由 Server 读取 Script 文件并向 Client 下发 Script 类型，不是普通 `command`。`rtt`、Alias 定义列表、脚本目录浏览等未下发 Client 的 Server 操作不记录。
+`notify`、`saveout` 等 Server 包装命令如果执行了 Client 子命令，只产生一条 Activity，外层包装文本留在 `invocation.input`，实际命令留在 `resolved.command`。`saveout` 在内层命令完成并成功注册 `command_output` Artifact 后，会沿用原有 History Store 文件关联方法，把 Artifact 引用加到该 Activity 的 `files`；不复制文件内容，也不凭文件存在推断执行成功。`script exec <name>` 由 Server 读取 Script 文件并向 Client 下发 `control(domain=script, action=run)`，不是普通 `command`。`rtt`、Alias 定义列表、脚本目录浏览等未下发 Client 的 Server 操作不记录。
 
 ## 查询、删除和界面
 

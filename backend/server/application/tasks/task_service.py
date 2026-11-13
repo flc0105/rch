@@ -226,6 +226,26 @@ class WebTaskService:
             )
         )
 
+    def submit_web_script(self, client_id: str, script_name: str, params: dict, *,
+                          tab_id: str = '', presentation: str = 'dialog',
+                          run_id: str = '', operation_id: str = ''):
+        return self._submit_request(WebExecutionTaskRequest(
+            client_id=client_id,
+            command=script_name,
+            task_type=TASK_TYPE_COMMAND,
+            runner_name='run_script_task',
+            tab_id=(tab_id or '').strip(),
+            source='web',
+            metadata={
+                'operation_id': operation_id,
+                'script_run': True,
+                'script_run_id': run_id,
+                'script_run_name': script_name,
+                'script_run_arguments': dict(params),
+                'script_run_presentation': presentation,
+            },
+        ))
+
     @staticmethod
     def _is_http_control_command(command: str) -> bool:
         try:

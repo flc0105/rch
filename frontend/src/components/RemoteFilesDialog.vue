@@ -842,7 +842,7 @@
 
 <script>
 import { copyTextFallback } from '../utils/clipboard.js'
-import { listRemoteDirectory, getRemoteSystemPaths, pasteRemoteFiles, createRemoteZip, extractRemoteZip, makeRemoteDirectory, renameRemoteFile, downloadRemoteFile, downloadRemoteZip, deleteRemoteFile, deleteRemoteEntries } from '../api/remoteFilesApi.js'
+import { listRemoteDirectory, getRemoteSystemPaths, pasteRemoteFiles, createRemoteZip, extractRemoteZip, makeRemoteDirectory, renameRemoteFile, downloadRemoteFile, downloadRemoteZip, deleteRemoteEntries } from '../api/remoteFilesApi.js'
 import { listRemotePinnedPaths, saveRemotePinnedPath, deleteRemotePinnedPath } from '../api/remotePinsApi.js'
 import {ElMessage, ElMessageBox} from 'element-plus'
 import { createTerminalOperation, operationHeaders } from '../utils/terminalOperation.js'
@@ -1747,8 +1747,8 @@ export default {
 
       const now = new Date()
       const pad = value => String(value).padStart(2, '0')
-      const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`
-      return `archive_${stamp}.zip`
+      const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`
+      return `bundle_${stamp}.zip`
     },
 
     async createSelectedRemoteZip() {
@@ -2074,7 +2074,7 @@ export default {
         )
 
         if (!this.isRemoteFilesContextActive(context)) return
-        const res = await deleteRemoteFile(clientId, row.path)
+        const res = await deleteRemoteEntries(clientId, [row.path])
         const json = await res.json()
 
         if (!this.isRemoteFilesContextActive(context)) return

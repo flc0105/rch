@@ -5,12 +5,15 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 )
+
+var errRemoteSkipped = errors.New("remote file operation skipped")
 
 func remoteKind(path string) (string, error) {
 	info, err := os.Lstat(path)
@@ -33,12 +36,12 @@ func remoteAllowed(src, dest string) []string {
 		return []string{}
 	}
 	if src == "directory" && dest == "directory" {
-		return []string{"stop", "merge", "replace", "keep_both"}
+		return []string{"stop", "skip", "merge", "replace", "keep_both"}
 	}
 	if src == "file" && dest == "file" {
-		return []string{"stop", "replace", "keep_both"}
+		return []string{"stop", "skip", "replace", "keep_both"}
 	}
-	return []string{"stop", "keep_both"}
+	return []string{"stop", "skip", "keep_both"}
 }
 func remoteActionAllowed(src, dest, policy string) bool {
 	for _, v := range remoteAllowed(src, dest) {
@@ -154,12 +157,15 @@ func remoteMerge(ctx context.Context, src, dest string, dry bool) error {
 	})
 }
 func applyRemoteConflict(ctx context.Context, source, target, operation, policy string) error {
-	if policy != "stop" && policy != "replace" && policy != "merge" && policy != "keep_both" {
+	if policy != "stop" && policy != "skip" && policy != "replace" && policy != "merge" && policy != "keep_both" {
 		return fmt.Errorf("invalid conflict policy")
 	}
 	source, _ = filepath.Abs(source)
 	target, _ = filepath.Abs(target)
 	if source == target {
+		if policy == "skip" {
+			return errRemoteSkipped
+		}
 		if policy != "keep_both" {
 			return fmt.Errorf("source and target are the same")
 		}
@@ -193,6 +199,9 @@ func applyRemoteConflict(ctx context.Context, source, target, operation, policy 
 	if destKind != "" {
 		if !remoteActionAllowed(srcKind, destKind, policy) {
 			return fmt.Errorf("target already exists: %s", target)
+		}
+		if policy == "skip" {
+			return errRemoteSkipped
 		}
 		if policy == "stop" {
 			return fmt.Errorf("target already exists: %s", target)
@@ -317,6 +326,10 @@ func inspectRemoteUpload(s *Session, args []string) (int, string) {
 	if err != nil {
 		return 0, err.Error()
 	}
+	return inspectRemoteUploadPayload(s, payload)
+}
+
+func inspectRemoteUploadPayload(s *Session, payload map[string]interface{}) (int, string) {
 	name := payloadText(payload["filename"])
 	if _, err := safeTransferFilename(name); err != nil {
 		return 0, err.Error()

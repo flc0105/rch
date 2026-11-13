@@ -7,12 +7,13 @@ import json
 import shlex
 import uuid
 
-from core.utils.job_control_result import decode_job_control_result
+from core.protocol.job_control import validate_job_control_result
 from core.protocol.structured_arg_codec import decode_structured_arg
 from server.application.history.activity_definitions import (
-    ActivityAction, ActivityKind, ActivityOperation,
+    ActivityAction, ActivityKind, ActivityOperation, JOB_ACTIVITY_ACTIONS,
 )
 from server.application.history.history_record_policy import CommandHistoryRecordPolicy
+from server.application.history.activity_bindings import xt_cli_mutation
 from server.application.history.quick_history import QuickHistoryRecordPolicy
 
 logger = logging.getLogger(__name__)
@@ -55,7 +56,6 @@ class CommandDispatchAdapter:
 
     _origin_map = {'web': 'web_terminal', 'quick_action': 'web_ui', 'cli': 'cli',
                    'web_api': 'web_api', 'rch_cli': 'rch_cli'}
-    _job_actions = {'start': 'start_job', 'stop': 'stop_job', 'stop_all': 'stop_all_jobs'}
 
     def __init__(self, coordinator, connection_lookup):
         self.coordinator = coordinator
@@ -142,9 +142,11 @@ class CommandDispatchAdapter:
             target = str(metadata.get('script_run_name') or '')
             text = target or text
             arguments = dict(metadata.get('script_run_arguments') or {})
-            presentation = str(metadata.get('script_run_presentation') or 'dialog')
+            presentation = 'none'
         if record_activity:
-            operation = ActivityOperation(kind, action, arguments, origin, presentation, text, target)
+            operation = ((xt_cli_mutation(text, origin=origin, presentation=presentation)
+                          if kind == ActivityKind.COMMAND else None)
+                         or ActivityOperation(kind, action, arguments, origin, presentation, text, target))
             entry_id = self.coordinator.prepare(conn, operation)
         else:
             entry_id = uuid.uuid4().hex
@@ -158,7 +160,8 @@ class CommandDispatchAdapter:
         command = plan.get('command')
         if CommandHistoryRecordPolicy.is_internal_external_tool_command(command):
             row = self.coordinator.pending(conn, activity_id)
-            if row and row['kind'] != ActivityKind.EXTERNAL_TOOL:
+            if (row and row['kind'] != ActivityKind.EXTERNAL_TOOL
+                    and not str(command).startswith('external_tool_exec ')):
                 self.coordinator.drop(activity_id)
             return
 
@@ -168,11 +171,12 @@ class CommandDispatchAdapter:
             kind = pending['kind']
             command_type = str(plan.get('command_type') or 'command')
             alias_name = str(plan.get('alias_name') or '').strip()
-            if command_type == 'script' and kind != ActivityKind.ALIAS:
+            if ((command_type == 'control' and plan.get('domain') == 'script')
+                    and kind != ActivityKind.ALIAS):
                 kind = ActivityKind.SCRIPT
                 pending['action'] = ActivityAction.RUN
                 if not pending['invocation'].get('target'):
-                    original = str(pending['invocation']['input']).strip()
+                    original = str(pending['invocation'].get('input') or '').strip()
                     if original.startswith('script exec '):
                         try:
                             parts = shlex.split(original)
@@ -180,8 +184,6 @@ class CommandDispatchAdapter:
                             pending['invocation']['arguments'] = {'argv': parts[3:]}
                         except (ValueError, IndexError):
                             pass
-                    elif original.startswith('script run '):
-                        pending['invocation']['target'] = str((plan.get('extra') or {}).get('__script_name__') or '')
             elif alias_name:
                 kind = ActivityKind.ALIAS
                 pending['invocation'].setdefault('target', alias_name)
@@ -205,39 +207,54 @@ class CommandDispatchAdapter:
     def suppress_query(self, conn, activity_id):
         self.coordinator.drop(activity_id)
 
-    def dispatch(self, conn, entry_id, command, command_type):
+    def dispatch(self, conn, entry_id, command, command_type, *, payload=None, domain='', action=''):
         entry_id = entry_id or self.scoped_entry(conn)
         # Legacy receive_file is a Transfer, not a second Command Activity.
         # Claim the pending Terminal ID before the command candidate can be persisted.
         if self.lifecycle_adapter is not None and str(command).startswith('receive_file '):
             try:
-                payload = decode_structured_arg(str(command).split(None, 1)[1], require_prefix=True)
-                if (isinstance(payload, dict) and payload.get('transfer_id')
-                        and self.lifecycle_adapter.transfer_command_dispatched(conn, payload['transfer_id'])):
+                transfer = decode_structured_arg(str(command).split(None, 1)[1], require_prefix=True)
+                if (isinstance(transfer, dict) and transfer.get('transfer_id')
+                        and self.lifecycle_adapter.transfer_command_dispatched(conn, transfer['transfer_id'])):
                     return entry_id
             except Exception:
                 logger.exception('Unable to track dispatched receive_file transfer')
         if not entry_id:
             return ''
-        if command_type == 'job_control':
-            try:
-                payload = json.loads(command)
-            except (ValueError, TypeError):
-                payload = {}
-            action = self._job_actions.get(payload.get('action'))
-            if action:
-                args = {key: str(payload[key]) for key in ('job_name', 'job_key', 'execution_mode')
-                        if key in payload}
-                self.coordinator.prepare(conn, ActivityOperation(
-                    ActivityKind.BACKGROUND_JOB, action, args,
-                    origin='web_api', resolved={'command_type': 'job_control'}, reuse_origin=True,
-                ), entry_id=entry_id)
+        if command_type == 'control' and domain == 'job':
+            request = payload if isinstance(payload, dict) else {}
+            job_action = JOB_ACTIVITY_ACTIONS.get(action)
+            if job_action:
+                args = {key: str(request[key]) for key in ('job_name', 'job_key', 'execution_mode')
+                        if key in request}
+                def promote(pending):
+                    pending['kind'] = ActivityKind.BACKGROUND_JOB
+                    pending['action'] = job_action
+                    pending['resolved'] = {'command_type': 'control'}
+                    # Terminal input remains the original user command. Web callers
+                    # already provided their structured arguments when preparing.
+                    if not pending['invocation'].get('input') and not pending['invocation'].get('arguments'):
+                        pending['invocation']['arguments'] = args
+                self.coordinator.mutate_pending(conn, entry_id, promote)
             else:
                 return entry_id
         if CommandHistoryRecordPolicy.is_internal_external_tool_command(command):
             row = self.coordinator.pending(conn, entry_id)
             if row is None:
                 return entry_id
+            if (row['kind'] == ActivityKind.EXTERNAL_TOOL
+                    and str(row['invocation'].get('input') or '').lower().startswith('xt ')
+                    and row['action'] != 'run_exec'):
+                mutation_command = {
+                    'install_package': 'external_tool_install',
+                    'uninstall_package': 'external_tool_uninstall',
+                    'create_instance': 'external_tool_instance_create',
+                    'start_instance': 'external_tool_start',
+                    'stop_instance': 'external_tool_stop',
+                    'restart_instance': 'external_tool_stop',
+                }.get(row['action'])
+                if str(command).split(None, 1)[0] != mutation_command:
+                    return entry_id
             if str(command).startswith('external_tool_exec '):
                 try:
                     target = decode_structured_arg(str(command).split(None, 1)[1], require_prefix=True)
@@ -255,9 +272,9 @@ class CommandDispatchAdapter:
             logger.exception('Unable to confirm dispatched command Activity')
         return entry_id
 
-    def observe_result(self, conn, entry_id, command_type, command, rows):
+    def observe_result(self, conn, entry_id, command_type, command, rows, *, payload=None, domain='', action=''):
         """Read a completed command result once; preserve the iterator and raw Client output."""
-        if command_type != 'job_control':
+        if command_type != 'control' or domain != 'job':
             yield from rows
             return
         last = None
@@ -267,10 +284,9 @@ class CommandDispatchAdapter:
         if last is None or not entry_id:
             return
         try:
-            action = json.loads(command).get('action')
-            if action not in self._job_actions:
+            if action not in JOB_ACTIVITY_ACTIONS:
                 return
-            result = decode_job_control_result(last[1], action)
+            result = validate_job_control_result(last[1], action)
             self.coordinator.job_result(conn, entry_id, result)
         except (ValueError, TypeError, KeyError, IndexError):
             return

@@ -12,7 +12,7 @@ class ServerInboundMessageRouter(BaseMessageRouter):
         self.connection.services.result_dispatcher.dispatch_result(
             data.get('id'),
             data.get('status'),
-            data.get('text'),
+            data['data'] if isinstance(data.get('data'), dict) else data.get('text'),
             data.get('eof')
         )
 

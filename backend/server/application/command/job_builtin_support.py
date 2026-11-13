@@ -3,9 +3,9 @@ import json
 import shlex
 import time
 
-from server.application.command.command_types import COMMAND_TYPE_JOB_CONTROL
+from server.application.command.command_types import COMMAND_TYPE_CONTROL
 from core.platform.catalog_visibility import visible_on_platform
-from core.utils.job_control_result import decode_job_control_result
+from core.protocol.job_control import (build_job_control_request, validate_job_control_result, JOB_MUTATING_ACTIONS)
 
 
 class JobBuiltinSupport:
@@ -28,14 +28,14 @@ class JobBuiltinSupport:
 
     def _send(self, action, **payload):
         # Already inside the terminal's foreground slot: never acquire it again.
-        command = self.background_job_service.build_job_control_command(action, **payload)
-        actions = {'start': 'start_job', 'stop': 'stop_job', 'stop_all': 'stop_all_jobs'}
+        request = build_job_control_request(action, **payload)
+        actions = JOB_MUTATING_ACTIONS
         entry_id = self.history_entry_id_provider() or ''
-        kwargs = {'command_type': COMMAND_TYPE_JOB_CONTROL}
+        kwargs = {'command_type': COMMAND_TYPE_CONTROL, 'domain': 'job', 'action': action}
         if entry_id and action in actions:
             kwargs['history_entry_id'] = entry_id
         pending_result = None
-        for item in self.remote_execution_service.stream_command(self.conn, command, **kwargs):
+        for item in self.remote_execution_service.stream_command(self.conn, '', payload=request, **kwargs):
             # Progress packets are readable text. Only the last packet is the
             # management result, so never display its raw internal JSON.
             if pending_result is not None:
@@ -45,17 +45,14 @@ class JobBuiltinSupport:
             if action in actions:
                 yield 0, 'Job control returned no result'
             return
-        if action not in actions:
-            yield pending_result
-            return
         status, text, *rest = pending_result
         try:
-            result = decode_job_control_result(text, action)
+            result = validate_job_control_result(text, action)
         except (ValueError, TypeError):
             if status == 1:
                 yield (0, 'Invalid Job control response', *rest)
             else:
-                yield pending_result  # Transport / Client failure, not structured.
+                yield (status, str(text), *rest)  # Transport / Client failure, not structured.
             return
         yield (status, result['message'], *rest)
 

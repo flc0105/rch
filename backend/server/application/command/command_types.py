@@ -1,4 +1,3 @@
 COMMAND_TYPE_COMMAND = 'command'
 COMMAND_TYPE_ACMD = 'acmd'
-COMMAND_TYPE_SCRIPT = 'script'
-COMMAND_TYPE_JOB_CONTROL = 'job_control'
+COMMAND_TYPE_CONTROL = 'control'

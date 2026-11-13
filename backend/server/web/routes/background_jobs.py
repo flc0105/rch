@@ -115,7 +115,7 @@ def create_background_job_blueprint(server_instance):
             payload = get_json_payload()
             job_name = (payload.get('job_name') or '').strip()
             params = payload.get('params') or {}
-            execution_mode = str(payload.get('execution_mode') or 'inproc').strip() or 'inproc'
+            execution_mode = str(payload.get('execution_mode') or '').strip() or None
             if not job_name:
                 raise ValueError('job_name is required')
             if params is not None and not isinstance(params, dict):

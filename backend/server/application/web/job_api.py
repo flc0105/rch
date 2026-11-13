@@ -59,7 +59,7 @@ class WebJobApi:
     def prepare_background_job_start(self, client_id: str, job_name: str, execution_mode: str | None = None):
         return self.background_job_service.prepare_job_start(client_id, job_name, execution_mode)
 
-    def start_background_job(self, client_id: str, job_name: str, params=None, execution_mode: str = 'inproc', *, origin='web_api'):
+    def start_background_job(self, client_id: str, job_name: str, params=None, execution_mode: str | None = None, *, origin='web_api'):
         normalized_job_name = (job_name or '').strip()
         normalized_mode = self.prepare_background_job_start(client_id, normalized_job_name, execution_mode)
         result = self.background_job_service.start_job(

@@ -3,6 +3,7 @@ package executor
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -135,11 +136,15 @@ func extractRemoteZipPolicy(ctx context.Context, s *Session, payload map[string]
 		}
 		policy = provided
 	}
-	if policy != "stop" && policy != "replace" && policy != "merge" && policy != "keep_both" {
+	if policy != "stop" && policy != "skip" && policy != "replace" && policy != "merge" && policy != "keep_both" {
 		return 0, "invalid conflict policy"
 	}
 	if destKind != "" && !remoteActionAllowed(srcKind, destKind, policy) {
 		return 0, "invalid conflict policy for target"
+	}
+	if destKind != "" && policy == "skip" {
+		return jsonResult(map[string]interface{}{"skipped": true, "destination_dir": destination,
+			"extracted_to": target, "file_count": 0, "dir_count": 0})
 	}
 	stage, err := os.MkdirTemp(destination, ".rch-zip-stage-*")
 	if err != nil {
@@ -168,6 +173,10 @@ func extractRemoteZipPolicy(ctx context.Context, s *Session, payload map[string]
 		policy = "stop"
 	}
 	if err := applyRemoteConflict(ctx, extracted, target, "move", policy); err != nil {
+		if errors.Is(err, errRemoteSkipped) {
+			return jsonResult(map[string]interface{}{"skipped": true, "destination_dir": destination,
+				"extracted_to": target, "file_count": 0, "dir_count": 0})
+		}
 		return 0, err.Error()
 	}
 	if policy == "keep_both" && destKind != "" {

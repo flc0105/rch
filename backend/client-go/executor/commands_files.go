@@ -22,7 +22,6 @@ var (
 	_ = Register("browse_dir", Usage("browse_dir <path>"), Help("Browse a remote directory"), Group("file_path"), CancelPolicy("cooperative"), CommandRunner(browseDir))
 	_ = Register("mkdir_path", Usage("mkdir_path <path>"), Help("Create a directory"), Group("file_path"), CommandRunner(simpleRemoteRunner(mkdirPath)))
 	_ = Register("rename_path", Usage("rename_path <payload>"), Help("Rename a file or directory"), Group("file_path"), CommandRunner(simpleRemoteRunner(renamePath)))
-	_ = Register("delete_path", Usage("delete_path <path>"), Help("Delete a file or directory"), Group("file_path"), CancelPolicy("cooperative"), CommandRunner(deletePath))
 	_ = Register("delete_paths", Usage("delete_paths <payload>"), Help("Delete multiple paths"), Group("file_path"), CancelPolicy("cooperative"), CommandRunner(deletePaths))
 	_ = Register("paste_paths", Usage("paste_paths <payload>"), Help("Copy or move paths"), Group("file_path"), CancelPolicy("cooperative"), CommandRunner(pastePaths))
 	_ = Register("inspect_remote_upload", Usage("inspect_remote_upload <payload>"), Help("Inspect upload destination"), Group("file_path"), CommandRunner(simpleRemoteRunner(inspectRemoteUpload)))
@@ -163,6 +162,10 @@ func browseDir(ctx context.Context, s *Session, raw string, _ func(int, string))
 	if err != nil {
 		return 0, fmt.Sprintf("Failed to browse directory: %v", err)
 	}
+	return browseDirValue(ctx, s, value)
+}
+
+func browseDirValue(ctx context.Context, s *Session, value interface{}) (int, string) {
 	payload, _ := value.(map[string]interface{})
 	path := payloadText(value)
 	page, pageSize := 1, 100
@@ -310,7 +313,14 @@ func listRemoteDirectory(ctx context.Context, directory string, page, pageSize i
 
 func mkdirPath(s *Session, args []string) (int, string) {
 	raw, err := pathArgument(strings.Join(args, " "))
-	if err != nil || raw == "" {
+	if err != nil {
+		return 0, "Failed to create directory: path is required"
+	}
+	return mkdirPathValue(s, raw)
+}
+
+func mkdirPathValue(s *Session, raw string) (int, string) {
+	if raw == "" {
 		return 0, "Failed to create directory: path is required"
 	}
 	path, err := remotePath(s, raw)
@@ -335,6 +345,11 @@ func renamePath(s *Session, args []string) (int, string) {
 	if err != nil {
 		return 0, "Failed to rename path: " + err.Error()
 	}
+	return renamePathPayload(s, payload)
+}
+
+func renamePathPayload(s *Session, payload map[string]interface{}) (int, string) {
+	var err error
 	oldPath := payloadText(payload["old_path"])
 	if oldPath == "" {
 		return 0, "Failed to rename path: old_path is required"
@@ -398,32 +413,11 @@ func deleteRemotePath(ctx context.Context, path string) error {
 	return os.Remove(path)
 }
 
-func deletePath(ctx context.Context, s *Session, raw string, _ func(int, string)) (int, string) {
-	raw, err := pathArgument(raw)
-	if err != nil || raw == "" {
-		return 0, "Failed to delete path: path is required"
-	}
-	path, err := remotePath(s, raw)
-	if err != nil {
-		return 0, "Failed to delete path: " + err.Error()
-	}
-	info, err := os.Lstat(path)
-	if err != nil {
-		return 0, "Failed to delete path: " + err.Error()
-	}
-	if err := deleteRemotePath(ctx, path); err != nil {
-		return 0, "Failed to delete path: " + err.Error()
-	}
-	if info.IsDir() {
-		return 1, "Directory deleted: " + path
-	}
-	return 1, "File deleted: " + path
-}
-
 type batchRemoteResult struct {
 	Status    int      `json:"status"`
 	Total     int      `json:"total"`
 	Succeeded int      `json:"succeeded"`
+	Skipped   int      `json:"skipped"`
 	Failed    int      `json:"failed"`
 	Message   string   `json:"message"`
 	Errors    []string `json:"errors"`
@@ -434,12 +428,15 @@ func (r *batchRemoteResult) appendError(path string, err error) {
 }
 
 func (r *batchRemoteResult) finish(action, destination string) {
-	r.Failed = r.Total - r.Succeeded
-	if r.Succeeded > 0 {
+	r.Failed = r.Total - r.Succeeded - r.Skipped
+	if r.Succeeded > 0 || r.Failed == 0 {
 		r.Status = 1
 	}
 	verb := map[string]string{"delete": "Deleted", "copy": "Copied", "move": "Moved"}[action]
 	r.Message = fmt.Sprintf("%s %d of %d items", verb, r.Succeeded, r.Total)
+	if r.Skipped > 0 {
+		r.Message += fmt.Sprintf(" (%d skipped)", r.Skipped)
+	}
 	if destination != "" {
 		r.Message += " to: " + destination
 	}
@@ -469,6 +466,10 @@ func deletePaths(ctx context.Context, s *Session, raw string, _ func(int, string
 	if err != nil {
 		return 0, "Failed to delete paths: " + err.Error()
 	}
+	return deletePathsPayload(ctx, s, payload)
+}
+
+func deletePathsPayload(ctx context.Context, s *Session, payload map[string]interface{}) (int, string) {
 	paths, err := getBatchPaths(payload)
 	if err != nil {
 		return 0, "Failed to delete paths: " + err.Error()
@@ -497,6 +498,10 @@ func pastePaths(ctx context.Context, s *Session, raw string, _ func(int, string)
 	if err != nil {
 		return 0, "Failed to paste paths: " + err.Error()
 	}
+	return pastePathsPayload(ctx, s, payload)
+}
+
+func pastePathsPayload(ctx context.Context, s *Session, payload map[string]interface{}) (int, string) {
 	paths, err := getBatchPaths(payload)
 	if err != nil {
 		return 0, "Failed to paste paths: " + err.Error()
@@ -577,7 +582,9 @@ func pastePaths(ctx context.Context, s *Session, raw string, _ func(int, string)
 				err = copyOrMovePath(ctx, source, destination, operation)
 			}
 		}
-		if err != nil {
+		if errors.Is(err, errRemoteSkipped) {
+			result.Skipped++
+		} else if err != nil {
 			result.appendError(raw, err)
 		} else {
 			result.Succeeded++

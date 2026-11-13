@@ -13,7 +13,7 @@ Web Background Jobs / Server 命令
     │ 选择 Module、参数、execution_mode
     ▼
 Server · Job Catalog / Background Job Service
-    │ 发送专用 job_control 协议消息（不是 Client 命令文本）
+    │ 发送统一 Control 协议请求（domain=job，不是 Client 命令文本）
     ▼
 Client · 下载 Job Python 内容、写入临时目录
     │ 静态解析 Metadata、规范化参数、检查执行模式
@@ -30,9 +30,23 @@ Server · SQLite Job History + WebEventBus
 Web Jobs / Job Detail · 状态、消息、文件
 ```
 
-启动或停止控制经由独立的 `job_control` 消息类型进入 Client 的受管理执行路径，但 **Job 开始运行后不持续占用前台命令槽**。
+启动或停止控制经由统一的 `control` 消息类型（`domain=job`）进入 Client 的受管理执行路径，但 **Job 开始运行后不持续占用前台命令槽**。
 
-用户主动发起的 Job 管理操作另记录到 Activity Center：`kind=background_job`；`job start` / Web Start 为 `start_job`，`job stop` / Web Stop 为 `stop_job`，`job stop-all` 为一条 `stop_all_jobs`。Activity 在真实派发 Client 后创建，Client 反馈已建立 Job Runtime / 已接受 Stop 请求后终结；不等待 Job 长期运行结束。Stop 不会修改先前成功的 Start Activity。原有 Job History 继续存储运行生命周期、消息和文件，不与 Activity 互相删除。纯查询 `job list/ps/status` 仅按普通终端输入规则保留 Quick，不建立 Activity；来自 Web 的操作不写 Quick。内部 `job_control` 消息不记录成 Command，也不持久化 Job 参数正文、Python 模块源码或内部结构化 Payload。Start / Stop 的真实 `job_id` 可以在 Activity Details 关联，批量 Stop All 返回成功与失败数量；部分失败沿用 `error`，不新增状态。长时间运行的任务自行上报消息和状态；Server 通过 SQLite 保存执行记录，再发布 SSE 事件供浏览器刷新。
+`control` 采用扁平的结构化信封：Socket 消息携带 `type=control`、`id`、`domain=job`、`action` 和 JSON 对象 `payload`。`action` 为 `start`、`stop`、`stop_all`、`ps` 或 `status`，各操作的 `payload` 直接携带相应的 `job_name`、`params`、`execution_mode` 或 `job_key`；无参数操作传 `{}`。不将 JSON 序列化进 `text`，也不将 `action` 再套入 `payload`。终端 `job` 命令先由 Server 解析为这些字段；Web Job Manager 直接提交同一操作定义。Client 由同一 Job Control Handler 校验请求并调用 JobManager。普通文本命令仍使用消息的 `text` 字段。
+
+规范化的 Job Stop 请求示例：
+
+```json
+{"type":"control","id":43,"domain":"job","action":"stop","payload":{"job_key":"demo"}}
+```
+
+Job Start 请求保留业务参数 `payload.params`，不增加无意义的 `params.params` 包装层。Job 的只读查询也使用同一 Control 信封，但不产生 Activity。
+
+Job Control 的最终 `result` 帧使用结构化 `data` 对象，包含 `action`、`message`，启动或停止时还包含 Job ID、批量数量及错误列表。过程中仍可以发送普通文本进度片段。Server 对最终 `data` 执行统一校验：Terminal 显示 `message`，Web 接口返回可阅读的组合进度和结果，Activity 记录实际派发的操作与 Job 身份。结果在协议层不经过文本 JSON 编解码；状态、消息及文件的长期 Job 报告仍按原有 HTTP 通道工作。
+
+启动模式的默认值统一来自 Job Metadata 的 `execution_mode`；显式传入的 `execution_mode` 仍由应用服务按允许模式校验，Client JobManager 会再次验证自身运行限制。Job Control 的派发与完成占用一次前台任务槽；Job Runtime 启动后释放此槽并独立运行。
+
+用户主动发起的 Job 管理操作另记录到 Activity Center：`kind=background_job`；`job start` / Web Start 为 `start_job`，`job stop` / Web Stop 为 `stop_job`，`job stop-all` 为一条 `stop_all_jobs`。Activity 在真实派发 Client 后创建，Client 反馈已建立 Job Runtime / 已接受 Stop 请求后终结；不等待 Job 长期运行结束。Stop 不会修改先前成功的 Start Activity。原有 Job History 继续存储运行生命周期、消息和文件，不与 Activity 互相删除。纯查询 `job list/ps/status` 仅按普通终端输入规则保留 Quick，不建立 Activity；来自 Web 的操作不写 Quick。内部 `control(domain=job)` 消息不记录成 Command，也不持久化 Job 参数正文、Python 模块源码或内部结构化 Payload。Start / Stop 的真实 `job_id` 可以在 Activity Details 关联，批量 Stop All 返回成功与失败数量；部分失败沿用 `error`，不新增状态。长时间运行的任务自行上报消息和状态；Server 通过 SQLite 保存执行记录，再发布 SSE 事件供浏览器刷新。
 
 模块存放在 Server 的 Job 资源目录中。Web 可以创建、编辑、上传或删除 Python 模块；Client 启动任务时从 Server 取得 Job 模块；**目标环境需预先安装该 Job 使用的第三方依赖**。
 
@@ -139,9 +153,9 @@ Server 接收报告后，依据 `job_id` 保存 Job 实例、消息及文件关�
 
 Job 的模块管理、执行查询和运行控制分属不同操作。模块目录与源码下载、保存和删除使用 `/api/jobs/...`；连接下的 Catalog、启动、停止、运行历史和详情通过 `/api/connections/{client_id}/background-jobs/...`；实际运行报告交给 `/api/background-jobs/report`。这些接口的参数分别使用模块名称、连接 ID、`job_key` 或 `job_id`，不能互换。
 
-启动请求的核心字段是 `job_name`、`params` 和 `execution_mode`，停止操作则根据模块运行标识请求目标 Client 停止。在 Web Start API 中，未传 `execution_mode` 时当前路由使用 `inproc`；如果模块只允许 `subprocess`，API 调用方应明确传入该模式。终端启动路径会依据 Job Metadata 解析默认执行模式，因此两种入口的默认行为不可简单视为相同。
+启动请求的核心字段是 `job_name`、`params` 和 `execution_mode`，停止操作则根据模块运行标识请求目标 Client 停止。在 Web Start API 中，未传 `execution_mode` 时由 Job Service 根据 Job Metadata 解析默认执行模式；终端与 Web 使用相同的默认值和允许模式校验。
 
-终端的 Job 用户入口统一由 **Server Builtin `job`** 提供，不再通过 Client 公开的 `start_job`、`stop_job`、`jobs`、`jobs_ps`、`job_status`、`stop_all_jobs` 命令方法执行。这些旧方法已经移除，Client Manifest/Help 不再列出它们；Client 仍使用 `JobManager` 来执行、停止和上报运行状态。Server Web Job API 使用同一个内部 `job_control` 消息类型，而非旧 Client 命令文本。
+终端的 Job 用户入口统一由 **Server Builtin `job`** 提供，不再通过 Client 公开的 `start_job`、`stop_job`、`jobs`、`jobs_ps`、`job_status`、`stop_all_jobs` 命令方法执行。这些旧方法已经移除，Client Manifest/Help 不再列出它们；Client 仍使用 `JobManager` 来执行、停止和上报运行状态。Server Web Job API 使用同一个 `control(domain=job)` 消息类型，而非旧 Client 命令文本。
 
 | 命令 | 执行位置与语义 |
 |---|---|

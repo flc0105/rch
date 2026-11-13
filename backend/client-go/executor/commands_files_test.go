@@ -170,17 +170,18 @@ func TestRemoteDirectoryMutationsAndNoOverwrite(t *testing.T) {
 	if status, _ := executeRemote(t, s, remoteCommand("rename_path", map[string]interface{}{"old_path": "new name.txt", "new_name": "dir one"})); status != 0 {
 		t.Fatal("overwrite rename accepted")
 	}
-	status, _ = executeRemote(t, s, remoteCommand("delete_path", map[string]interface{}{"path": "new name.txt"}))
+	status, _ = executeRemote(t, s, remoteCommand("delete_paths", map[string]interface{}{"paths": []string{"new name.txt"}}))
 	if status != 1 {
 		t.Fatal("delete failed")
 	}
 	if _, err := os.Stat(filepath.Join(s.Cwd, "new name.txt")); !os.IsNotExist(err) {
 		t.Fatal("deleted file still exists")
 	}
-	if status, _ := executeRemote(t, s, remoteCommand("delete_path", map[string]interface{}{"path": string(filepath.Separator)})); status != 0 {
-		t.Fatal("root path deletion must be rejected")
+	status, output = executeRemote(t, s, remoteCommand("delete_paths", map[string]interface{}{"paths": []string{string(filepath.Separator)}}))
+	if status != 1 || !strings.Contains(output, `"failed":1`) {
+		t.Fatalf("root path deletion must be rejected in batch results: %d %s", status, output)
 	}
-	status, _ = executeRemote(t, s, remoteCommand("delete_path", map[string]interface{}{"path": "dir one"}))
+	status, _ = executeRemote(t, s, remoteCommand("delete_paths", map[string]interface{}{"paths": []string{"dir one"}}))
 	if status != 1 {
 		t.Fatal("directory deletion failed")
 	}
@@ -232,7 +233,7 @@ func TestRemoteBatchCopyMoveDeleteKeepsSourceAndDoesNotOverwrite(t *testing.T) {
 }
 
 func TestRemoteCommandsAdvertisedInManifestButNotSuggest(t *testing.T) {
-	want := map[string]bool{"browse_dir": false, "mkdir_path": false, "rename_path": false, "delete_path": false, "delete_paths": false, "paste_paths": false}
+	want := map[string]bool{"browse_dir": false, "mkdir_path": false, "rename_path": false, "delete_paths": false, "paste_paths": false}
 	for _, spec := range AllCommands() {
 		if _, ok := want[spec.Name]; ok {
 			if spec.Suggest || spec.Group != "file_path" {
@@ -259,7 +260,7 @@ func TestRemoteDeleteSymlinkDoesNotFollowOutsideDirectory(t *testing.T) {
 	if err := os.Symlink(outside, filepath.Join(s.Cwd, "shortcut")); err != nil {
 		t.Fatal(err)
 	}
-	status, text := executeRemote(t, s, remoteCommand("delete_path", map[string]interface{}{"path": "shortcut"}))
+	status, text := executeRemote(t, s, remoteCommand("delete_paths", map[string]interface{}{"paths": []string{"shortcut"}}))
 	if status != 1 {
 		t.Fatalf("failed to remove symlink: %s", text)
 	}

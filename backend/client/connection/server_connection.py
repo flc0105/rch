@@ -110,10 +110,13 @@ class ServerConnection(RCHSocket):
             'type': MSG_TYPE_RESULT,
             'id': id,
             'status': status,
-            'text': result,
             'cwd': os.getcwd(),
             'eof': eof,
         }
+        if isinstance(result, dict):
+            data['data'] = result
+        else:
+            data['text'] = result
         logger.debug(data)
         self.send(data)
 

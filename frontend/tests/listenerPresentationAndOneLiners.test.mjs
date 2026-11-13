@@ -45,8 +45,13 @@ test('one-liner default TCP remains unchanged and TLS passes a single listener I
   assert.doesNotMatch(python, /{{/)
   assert.doesNotMatch(ps1, /{{/)
   assert.match(source, /@change="onListenerChange"/)
-  const labels = [...source.matchAll(/<span>(Listener|Server IP|Web port)<\/span>/g)].map(match => match[1])
-  assert.deepEqual(labels, ['Listener', 'Server IP', 'Web port'])
+  const labels = [...source.matchAll(/<span>(Listener|Port|Server IP|Web port)<\/span>/g)].map(match => match[1])
+  assert.deepEqual(labels, ['Listener', 'Server IP', 'Port', 'Web port'])
+  assert.match(source, /v-model="serverForm.serverPort" size="small" placeholder="9999"/)
+  state.serverForm.serverPort = '20000'
+  assert.match(state.renderOneLinerCode(terminalOneLiners[0].code), /20000/)
+  state.onListenerChange('tcp-default')
+  assert.equal(state.serverForm.serverPort, '9999')
 })
 
 test('Listener dialog has visible action buttons and mobile presentation', () => {

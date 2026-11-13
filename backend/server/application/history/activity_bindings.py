@@ -1,4 +1,6 @@
 """Declarative semantic operation definitions used when assembling application services."""
+import shlex
+
 from server.application.history.activity_definitions import ActivityKind, ActivityOperation, process_arguments
 
 
@@ -10,7 +12,6 @@ def _build(kind, action, args, data, *, origin='web_ui'):
 def remote_file_bindings():
     kind = ActivityKind.REMOTE_FILES
     return {
-        'delete_path': lambda a: _build(kind, 'delete_files', {'paths': [a['path']], 'count': 1}, a),
         'create_directory': lambda a: _build(kind, 'create_directory', {'path': a['path']}, a),
         'rename_path': lambda a: _build(kind, 'rename_files', {
             'old_path': a['old_path'], 'new_name': a['new_name'], 'count': 1,
@@ -71,3 +72,39 @@ def process_bindings():
             process_arguments(a['pid'], a['name']), a))
         for action in ('kill_process', 'kill_app')
     }
+
+
+def xt_cli_mutation(command, *, origin='cli', presentation='terminal'):
+    """Describe a mutating xt Builtin without teaching the execution service about xt."""
+    try:
+        tokens = shlex.split(str(command or ''))
+    except ValueError:
+        return None
+    if len(tokens) < 3 or tokens[0].lower() != 'xt':
+        return None
+    group, verb = tokens[1].lower(), tokens[2].lower()
+    if group == 'package' and verb in ('install', 'uninstall'):
+        if len(tokens) < 4:
+            return None
+        action = {'install': 'install_package', 'uninstall': 'uninstall_package'}[verb]
+        args = {'package_id': tokens[3]}
+    elif group == 'instance' and verb in ('create', 'start', 'stop', 'restart'):
+        if len(tokens) < 4:
+            return None
+        action = {'create': 'create_instance', 'start': 'start_instance',
+                  'stop': 'stop_instance', 'restart': 'restart_instance'}[verb]
+        args = {}
+        if verb == 'create':
+            args['tool_id'] = tokens[3]
+            if '--id' in tokens:
+                index = tokens.index('--id') + 1
+                if index < len(tokens):
+                    args['instance_id'] = tokens[index]
+        else:
+            args['instance_id'] = tokens[-1]
+            if len(tokens) >= 5:
+                args['tool_id'] = tokens[3]
+    else:
+        return None
+    return ActivityOperation(ActivityKind.EXTERNAL_TOOL, action, args,
+                             origin=origin, presentation=presentation, text=command)

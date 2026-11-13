@@ -254,18 +254,11 @@ def trash_locations():
 
 
 def delete_action_command(path):
-    """Generate RCH delete_path with a literal path, including unusual filenames."""
-    # RCH built-ins consume the complete argument, and strip one pair of outer quotes.
-    # Use readable quoted commands when possible; use the native structured-arg
-    # format for names that cannot survive its quote handling verbatim.
-    if "${" not in path and not any(c in path for c in ("'", "\\", "\n", "\r", "\t")):
-        return f"delete_path '{path}'"
-    if "${" not in path and not any(c in path for c in ('"', "\\", "\n", "\r", "\t")):
-        return f'delete_path "{path}"'
+    """Generate the one batch deletion command without lossy filename quoting."""
     encoded = base64.urlsafe_b64encode(
-        json.dumps({"path": path}, ensure_ascii=False).encode("utf-8")
+        json.dumps({"paths": [path]}, ensure_ascii=False).encode("utf-8")
     ).decode("ascii")
-    return f"delete_path __json__:{encoded}"
+    return f"delete_paths __json__:{encoded}"
 
 
 def main():

@@ -6,8 +6,7 @@ import { dirname, resolve } from 'node:path'
 import {
   listRemoteDirectory, getRemoteSystemPaths, pasteRemoteFiles, createRemoteZip,
   extractRemoteZip, inspectRemoteZip, readRemoteZipEntry, makeRemoteDirectory,
-  renameRemoteFile, downloadRemoteFile, downloadRemoteZip, downloadRemoteZipEntry, deleteRemoteFile,
-  deleteRemoteEntries,
+  renameRemoteFile, downloadRemoteFile, downloadRemoteZip, downloadRemoteZipEntry, deleteRemoteEntries,
 } from '../src/api/remoteFilesApi.js'
 import {
   listRemotePinnedPaths, saveRemotePinnedPath, deleteRemotePinnedPath,
@@ -78,9 +77,10 @@ test('remote file operations preserve endpoint, method, body and web origin', as
   assert.equal(download.options.headers['X-RCH-Tab-ID'],'one')
   assert.equal(download.options.headers['X-RCH-Origin'],'web_ui')
   assert.equal(new URL(download.url, 'http://localhost').searchParams.get('path'), '/a b')
-  const remove = await capture(() => deleteRemoteFile('c d', '/a b'))
+  const remove = await capture(() => deleteRemoteEntries('c d', ['/a b']))
+  assert.equal(remove.url, base+'/batch')
   assert.equal(remove.options.method,'DELETE')
-  assert.equal(new URL(remove.url, 'http://localhost').searchParams.get('path'), '/a b')
+  assert.deepEqual(JSON.parse(remove.options.body), { paths: ['/a b'] })
   assert.equal(remove.options.headers['X-RCH-Origin'],'web_ui')
 })
 

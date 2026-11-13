@@ -85,24 +85,27 @@ def test_script_api_provenance_is_preserved_without_extra_inferred_fields():
     assert service.submit_web_command.call_args.kwargs['metadata'] == original
 
 
-def test_script_dialog_supplies_identity_through_its_own_api():
+def test_script_dialog_supplies_identity_through_its_own_api(tmp_path):
     from server.application.web.script_api import WebScriptApi
 
+    folder = tmp_path / 'common' / 'recon'
+    folder.mkdir(parents=True)
+    (folder / 'list_disks.py').write_text('print(12)\n', encoding='utf-8')
     task_service = Mock()
-    task_service.submit_web_command.side_effect = lambda _client, command, **kwargs: {
-        'command': command, 'metadata': kwargs['metadata'],
+    task_service.submit_web_script.side_effect = lambda _client, name, params, **kwargs: {
+        'script_name': name, 'params': params, 'options': kwargs,
     }
-    script_catalog = Mock()
-    script_catalog.list_scripts.return_value = []
+    script_catalog = Mock(scripts_root_dir=str(tmp_path))
     api = WebScriptApi(WebCommandExecutionApi(task_service), script_catalog)
     result = api.run_script('client-a', 'common/recon/list_disks.py', params={},
                             presentation='dialog', run_id='run-a', operation_id='op-a')
-    assert result['command'].startswith('script run __json__:')
-    assert result['metadata']['script_run'] is True
-    assert result['metadata']['script_run_name'] == 'common/recon/list_disks.py'
-    assert result['metadata']['script_run_presentation'] == 'dialog'
-    assert result['metadata']['script_run_id'] == 'run-a'
-    assert result['metadata']['operation_id'] == 'op-a'
+    assert result['script_name'] == 'common/recon/list_disks'
+    assert result['params'] == {}
+    assert result['options']['presentation'] == 'dialog'
+    assert result['options']['run_id'] == 'run-a'
+    assert result['options']['operation_id'] == 'op-a'
+    assert 'command' not in result and 'source' not in result
+    task_service.submit_web_command.assert_not_called()
 
 
 def test_terminal_json_viewer_output_uses_script_name_and_text_extension(tmp_path):

@@ -331,7 +331,7 @@ class FileSystemService:
                     conflicts.append(conflict)
                 planned[os.path.normcase(target)] = ('directory' if os.path.isdir(resolved) else 'file')
             return {'conflicts': conflicts}
-        succeeded, errors = 0, []
+        succeeded, skipped, errors = 0, 0, []
         for index, source_path in enumerate(source_paths):
             try:
                 path = str(source_path or '').strip()
@@ -342,11 +342,14 @@ class FileSystemService:
                     self.copy_or_move_single_path(resolved, destination_dir, operation)
                 else:
                     policy = policies[index] if index < len(policies) else 'stop'
-                    apply_path(resolved, os.path.join(destination_dir, os.path.basename(os.path.abspath(resolved))), operation, policy)
+                    output = apply_path(resolved, os.path.join(destination_dir, os.path.basename(os.path.abspath(resolved))), operation, policy)
+                    if output is None:
+                        skipped += 1
+                        continue
                 succeeded += 1
             except Exception as exc:
                 errors.append(f'{source_path}: {exc}')
-        return BatchFileResult(operation, len(source_paths), succeeded, tuple(errors), destination_dir)
+        return BatchFileResult(operation, len(source_paths), succeeded, tuple(errors), destination_dir, skipped)
 
     def save_file_content(self, file_path: str, content: str, encoding: str = 'utf-8') -> tuple[str, int, str]:
         target_path = self.path_resolver.require_existing_path_from_arg(file_path)

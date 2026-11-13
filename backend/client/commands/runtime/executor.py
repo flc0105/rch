@@ -5,8 +5,7 @@ from client.commands.runtime.catalog import CommandCatalog
 from client.commands.runtime.command_variable_resolver import CommandVariableResolver
 from client.commands.runtime.context_store import CommandExecutionContextStore
 from client.commands.runtime.request import CommandExecutionRequest
-from client.commands.runtime.script_runner import ScriptCommandRunner
-from client.jobs.command_control import ClientJobControl
+from client.commands.runtime.control_dispatcher import ClientControlDispatcher
 from client.commands.runtime.shell_command_runner import ShellCommandRunner
 
 
@@ -27,7 +26,6 @@ class CommandExecutor:
         self.command_variable_resolver = CommandVariableResolver(socket)
         self.shell_command_runner = ShellCommandRunner(self)
         self.argument_command_runner = ArgumentCommandRunner(self)
-        self.script_command_runner = ScriptCommandRunner(self)
 
     def get_commands(self):
         """
@@ -140,17 +138,9 @@ class CommandExecutor:
         request = self._build_request(command_id, options=options, payload_options=payload)
         return self.argument_command_runner.execute(request, payload)
 
-    def execute_job_control_command(self, command_id, payload_text: str, options=None):
-        """Handle internal Server-owned Job RPC; never expose a Client CLI job command."""
+    def execute_control_command(self, command_id, domain, action, payload, options=None):
+        """Execute a typed Control request using the registered domain handler."""
         request = self._build_request(command_id, options=options)
         return self.execute_bound_request(
-            request, lambda commands: ClientJobControl.execute(commands, payload_text),
+            request, lambda commands: ClientControlDispatcher.execute(commands, domain, action, payload),
         )
-
-    def execute_script_command(self, command_id, script_text: str, kwargs=None, options=None):
-        """
-        执行 script 消息
-        统一通过 CommandExecutor 入口分发，避免绕过命令执行器
-        """
-        request = self._build_request(command_id, options=options, payload_options=kwargs)
-        return self.script_command_runner.execute(request, script_text, kwargs=kwargs)

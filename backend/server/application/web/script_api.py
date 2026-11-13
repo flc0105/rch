@@ -1,7 +1,4 @@
-import json
-
-from core.protocol.structured_arg_codec import encode_structured_arg
-from core.utils.script_metadata import resolve_script_params
+from server.application.scripts.script_run_service import prepare_script_control
 
 
 class WebScriptApi:
@@ -80,26 +77,9 @@ class WebScriptApi:
         normalized_run_id = str(run_id or '').strip()
         if normalized_presentation == 'dialog' and not normalized_run_id:
             raise ValueError('run_id is required for dialog presentation')
-        metadata = {}
-        for item in self.script_catalog_service.list_scripts() or []:
-            if str(item.get('script_name') or '').strip() == normalized_script_name:
-                metadata = item.get('metadata') or {}
-                break
-        normalized_params = resolve_script_params(metadata, params if isinstance(params, dict) else {})
-        payload = {
-            'script_name': normalized_script_name,
-            'params': normalized_params,
-        }
-        return self.command_execution_api.submit_web_command(
-            client_id,
-            f'script run {encode_structured_arg(payload)}',
-            tab_id=tab_id,
-            metadata={
-                'operation_id': operation_id,
-                'script_run': True,
-                'script_run_id': normalized_run_id,
-                'script_run_name': normalized_script_name,
-                'script_run_arguments': normalized_params,
-                'script_run_presentation': normalized_presentation,
-            },
+        request = prepare_script_control(self.script_catalog_service.scripts_root_dir, normalized_script_name, params if params is not None else {})
+        return self.command_execution_api.submit_web_script(
+            client_id, request['script_name'], request['params'], tab_id=tab_id,
+            presentation=normalized_presentation, run_id=normalized_run_id,
+            operation_id=operation_id,
         )

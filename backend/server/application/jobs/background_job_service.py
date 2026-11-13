@@ -2,9 +2,9 @@ import json
 import threading
 from datetime import datetime
 
-from server.application.command.command_types import COMMAND_TYPE_JOB_CONTROL
+from server.application.command.command_types import COMMAND_TYPE_CONTROL
 from core.utils.job_metadata import normalize_job_key, normalize_job_execution_mode, normalize_job_execution_allowed
-from core.utils.job_control_result import decode_job_control_result
+from core.protocol.job_control import build_job_control_request, validate_job_control_result
 
 
 class BackgroundJobService:
@@ -32,10 +32,6 @@ class BackgroundJobService:
         self._lifecycle_event_keys = set()
         self._lifecycle_lock = threading.RLock()
 
-    @staticmethod
-    def build_job_control_command(action: str, **payload) -> str:
-        return json.dumps({'action': action, **payload}, ensure_ascii=False, separators=(',', ':'))
-
     def prepare_job_start(self, client_id: str, job_name: str, execution_mode: str | None = None):
         normalized_job_name = (job_name or '').strip()
         if not normalized_job_name:
@@ -54,12 +50,6 @@ class BackgroundJobService:
                 f'"{normalized_job_name}"; allowed: {allowed_modes}'
             )
         return normalized_mode
-
-    def _build_start_job_command(self, job_name: str, params=None, execution_mode: str = 'inproc') -> str:
-        return self.build_job_control_command(
-            'start', job_name=str(job_name or '').strip(), params=dict(params or {}),
-            execution_mode=normalize_job_execution_mode(execution_mode, default='inproc'),
-        )
 
     def _serialize_available_job(self, job_item: dict) -> dict:
         job_name = str(job_item.get('job_name') or job_item.get('name') or job_item.get('job_key') or '').strip()
@@ -85,17 +75,18 @@ class BackgroundJobService:
             if isinstance(item, dict)
         ]
 
-    def start_job(self, client_id: str, job_name: str, params=None, execution_mode: str = 'inproc', *, origin='web_api') -> dict:
+    def start_job(self, client_id: str, job_name: str, params=None, execution_mode: str | None = None, *, origin='web_api') -> dict:
         job_name = (job_name or '').strip()
         if not job_name:
             raise ValueError('job_name is required')
 
         normalized_params = dict(params or {}) if isinstance(params, dict) else {}
-        normalized_mode = normalize_job_execution_mode(execution_mode, default='inproc')
+        normalized_mode = self.prepare_job_start(client_id, job_name, execution_mode)
 
         text = self._execute_job_action(
-            client_id, 'start', {'job_name': job_name, 'execution_mode': normalized_mode},
-            self._build_start_job_command(job_name, normalized_params, normalized_mode), origin=origin,
+            client_id, 'start', build_job_control_request(
+                'start', job_name=job_name, params=normalized_params, execution_mode=normalized_mode,
+            ),
         )
         return {
             'client_id': client_id,
@@ -111,8 +102,7 @@ class BackgroundJobService:
             raise ValueError('job_key is required')
 
         text = self._execute_job_action(
-            client_id, 'stop', {'job_key': job_key},
-            self.build_job_control_command('stop', job_key=job_key), origin=origin,
+            client_id, 'stop', build_job_control_request('stop', job_key=job_key),
         )
         return {
             'client_id': client_id,
@@ -120,28 +110,29 @@ class BackgroundJobService:
             'message': text,
         }
 
-    def _execute_job_action(self, client_id, action, arguments, command, *, origin):
+    def _execute_job_action(self, client_id, action, payload):
         # The Client can emit progress before its final structured result.
         # Decode only the final packet, never a concatenation of progress text.
         status, wire_text = 0, ''
         visible_parts = []
         for item in self.remote_execution_service.stream_foreground_command(
-            client_id, command, command_type=COMMAND_TYPE_JOB_CONTROL,
+            client_id, '', command_type=COMMAND_TYPE_CONTROL, domain='job', action=action, payload=payload,
             task_type='job_control', source='web_background_job',
         ):
             status, wire_text = item[0], item[1] if len(item) > 1 else ''
-            visible_parts.append(str(wire_text or ''))
+            if isinstance(wire_text, str) and wire_text:
+                visible_parts.append(wire_text)
         try:
-            result = decode_job_control_result(wire_text, action)
+            result = validate_job_control_result(wire_text, action)
         except (ValueError, TypeError):
             result = None
-        message = result['message'] if result is not None else wire_text
+        message = result['message'] if result is not None else str(wire_text or '')
         if status == 1 and result is None:
             raise RuntimeError('Invalid Job control response')
         if status != 1:
             raise RuntimeError(message or 'Job control failed')
         # Keep the Web API's existing combined progress + result message.
-        return '\n'.join(part for part in [*visible_parts[:-1], message] if part).strip()
+        return '\n'.join(part for part in [*visible_parts, message] if part).strip()
 
     def _resolve_client_context(self, client_id: str) -> tuple[str, str, str]:
         client_id_text = str(client_id or '').strip()

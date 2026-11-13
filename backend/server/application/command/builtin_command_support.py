@@ -4,7 +4,6 @@ import os
 import re
 import shlex
 
-from core.protocol.structured_arg_codec import decode_structured_arg
 from core.utils.command_output import (
     StructuredCommandResult,
     parse_output_format,
@@ -13,6 +12,7 @@ from core.utils.command_output import (
 from core.utils.formatting import format_dict
 from core.utils.parsing import scan_args
 from core.utils.script_metadata import read_script_metadata_from_file
+from server.application.scripts.script_run_service import prepare_script_control
 from core.platform.catalog_visibility import visible_on_platform
 from server.application.command.command_execution_event import CommandExecutionEvent
 from server.application.history.quick_history import QuickHistoryRecordPolicy
@@ -73,7 +73,7 @@ class UploadBuiltinSupport:
 
 class ScriptBuiltinSupport:
     """
-    script builtin: list / view / exec / run.
+    script builtin: list / view / exec.
     """
 
     def __init__(self, plan_builder, plan_executor_factory, conn=None):
@@ -128,12 +128,6 @@ class ScriptBuiltinSupport:
                 return
             yield from self.execute_script_file(tail)
             return
-        if subcommand == 'run':
-            if not str(tail or '').strip():
-                yield 0, 'Usage: script run <__json__:payload>'
-                return
-            yield from self.execute_script_payload(tail)
-            return
         raise ValueError(f'Unsupported script subcommand: {subcommand}')
 
     def _iter_script_files(self):
@@ -174,55 +168,14 @@ class ScriptBuiltinSupport:
 
         raise FileNotFoundError(f"Script not found: {script_path}")
 
-    def _build_script_plan(self, script_text: str, script_args: list):
-        return self.plan_builder.build_script_plan(script_text, scan_args(script_args))
-
-    def _decode_script_payload_arg(self, raw):
-        try:
-            return decode_structured_arg(raw, require_prefix=True)
-        except Exception as e:
-            raise ValueError(f'Invalid script run payload: {e}') from e
-
     def execute_script_file(self, filename: str):
         parts = shlex.split(filename)
-        script_path = self._resolve_script_path(parts[0])
-        plan_executor = self.plan_executor_factory()
-
-        with open(script_path, 'rt', encoding='utf-8') as file_obj:
-            try:
-                plan = self._build_script_plan(file_obj.read(), parts[1:])
-                for item in plan_executor(plan)():
-                    yield item
-            except UnicodeDecodeError:
-                raise RuntimeError(f"Unable to read file: {script_path}")
-
-    def execute_script_payload(self, payload_text: str):
-        payload = self._decode_script_payload_arg(payload_text)
-        if not isinstance(payload, dict):
-            raise ValueError('Invalid script run payload')
-
-        script_name = str(payload.get('script_name') or payload.get('name') or '').strip()
-        if not script_name:
+        if not parts:
             raise ValueError('script_name is required')
-
-        params = payload.get('params') or {}
-        if not isinstance(params, dict):
-            raise ValueError('params must be an object')
-
-        script_extra = dict(params)
-        script_extra['__script_name__'] = script_name
-
-        script_path = self._resolve_script_path(script_name)
-        plan_executor = self.plan_executor_factory()
-
-        with open(script_path, 'rt', encoding='utf-8') as file_obj:
-            try:
-                plan = self.plan_builder.build_script_plan(file_obj.read(), script_extra)
-                for item in plan_executor(plan)():
-                    yield item
-            except UnicodeDecodeError:
-                raise RuntimeError(f"Unable to read file: {script_path}")
-
+        payload = prepare_script_control(SCRIPT_PATH, parts[0], scan_args(parts[1:]))
+        executor = self.plan_executor_factory()
+        for item in executor(self.plan_builder.build_script_plan(payload))():
+            yield item
 
 
 import re

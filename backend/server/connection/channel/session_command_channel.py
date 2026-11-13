@@ -1,4 +1,5 @@
-from core.protocol.message_types import MSG_TYPE_COMMAND, MSG_TYPE_CANCEL, MSG_TYPE_SCRIPT, MSG_TYPE_ACMD
+from core.protocol.message_types import MSG_TYPE_COMMAND, MSG_TYPE_CANCEL, MSG_TYPE_ACMD, MSG_TYPE_CONTROL
+from core.protocol.control import build_control_message
 
 
 
@@ -20,12 +21,17 @@ class ClientSessionCommandChannel:
         self._message_id_counter += 1
         return self._message_id_counter
 
-    def build_command_payload(self, command: str, command_type: str = MSG_TYPE_COMMAND, extra=None) -> dict:
-        data = {
-            'type': command_type,
-            'id': self.generate_message_id(),
-            'text': command,
-        }
+    def build_command_payload(self, command: str, command_type: str = MSG_TYPE_COMMAND, extra=None, payload=None, domain='', action='') -> dict:
+        command_id = self.generate_message_id()
+        if command_type == MSG_TYPE_CONTROL:
+            data = build_control_message(command_id, domain, action, payload)
+        else:
+            if domain or action:
+                raise ValueError('Control domain/action requires a control message')
+            data = {'type': command_type, 'id': command_id}
+            if payload is not None:
+                raise ValueError('Structured payload requires a control message type')
+            data['text'] = command
         if extra:
             data['extra'] = extra
         return data
@@ -37,8 +43,8 @@ class ClientSessionCommandChannel:
             'target_id': target_command_id,
         }
 
-    def send_command(self, command: str, type=MSG_TYPE_COMMAND, extra=None, history_entry_id: str = ''):
-        data = self.build_command_payload(command, type, extra)
+    def send_command(self, command: str, type=MSG_TYPE_COMMAND, extra=None, history_entry_id: str = '', payload=None, domain='', action=''):
+        data = self.build_command_payload(command, type, extra, payload, domain, action)
 
         coordinator = getattr(self.session.context, 'activity_coordinator', None)
 
@@ -64,7 +70,7 @@ class ClientSessionCommandChannel:
         # This is deliberately restricted to explicitly prepared Activity intents:
         # internal requests and pure Server builtins never create Activity.
         if adapter is not None:
-            adapter.dispatch(self.session, history_entry_id, command, type)
+            adapter.dispatch(self.session, history_entry_id, command, type, payload=payload, domain=domain, action=action)
 
         if bound_task and bound_task.get('cancel_requested'):
             self.send_cancel(data.get('id'))
@@ -72,7 +78,7 @@ class ClientSessionCommandChannel:
         results = self.wait_for_result(data.get('id'), command if type == MSG_TYPE_COMMAND else None,
                                        already_registered=True)
         if adapter is not None:
-            return adapter.observe_result(self.session, history_entry_id, type, command, results)
+            return adapter.observe_result(self.session, history_entry_id, type, command, results, payload=payload, domain=domain, action=action)
         return results
 
     def send_cancel(self, target_command_id: int):

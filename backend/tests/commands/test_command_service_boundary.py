@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from core.utils.job_control_result import encode_job_control_result
+from core.protocol.job_control import build_job_control_result
 from server.application.artifact.artifact_events import publish_artifact_created
 from server.application.command.command_builtin_services import CommandBuiltinServices
 from server.application.command.job_builtin_support import JobBuiltinSupport
@@ -62,15 +62,15 @@ def test_job_control_command_is_identical_and_download_is_client_owned():
 
     class Remote:
         def stream_command(self, conn, command, **kwargs):
-            commands.append((json.loads(command), kwargs))
-            yield (1, encode_job_control_result('start', 'started'))
+            commands.append((kwargs["payload"], kwargs))
+            yield (1, build_job_control_result('start', 'started'))
 
     conn = SimpleNamespace(session_info=SimpleNamespace(client_id='client1'))
     support = JobBuiltinSupport(SimpleNamespace(), conn, Remote(), service, catalog)
-    # The Server only sends job_control; Client download/exec remains separate.
+    # The Server only sends typed Control; Client download/exec remains separate.
     events = list(support._send('start', job_name='demo', execution_mode='subprocess'))
-    assert commands[0][0] == {'action': 'start', 'job_name': 'demo', 'execution_mode': 'subprocess'}
-    assert commands[0][1]['command_type'] == 'job_control'
+    assert commands[0][0] == {'job_name': 'demo', 'execution_mode': 'subprocess'}
+    assert commands[0][1]['command_type'] == 'control'
     assert events and events[-1][0] == 1
 
 

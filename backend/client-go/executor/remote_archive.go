@@ -154,6 +154,10 @@ func peekRemoteZip(ctx context.Context, s *Session, raw string, _ func(int, stri
 	if err != nil {
 		return 0, err.Error()
 	}
+	return peekRemoteZipPayload(ctx, s, payload)
+}
+
+func peekRemoteZipPayload(ctx context.Context, s *Session, payload map[string]interface{}) (int, string) {
 	archivePath, err := remoteExisting(s, payloadText(payload["path"]), false)
 	if err != nil {
 		return 0, err.Error()
@@ -198,6 +202,10 @@ func readRemoteZipEntry(ctx context.Context, s *Session, raw string, _ func(int,
 	if err != nil {
 		return 0, err.Error()
 	}
+	return readRemoteZipEntryPayload(ctx, s, payload)
+}
+
+func readRemoteZipEntryPayload(ctx context.Context, s *Session, payload map[string]interface{}) (int, string) {
 	archivePath, err := remoteExisting(s, payloadText(payload["path"]), false)
 	if err != nil {
 		return 0, err.Error()
@@ -264,6 +272,10 @@ func createRemoteZip(ctx context.Context, s *Session, raw string, _ func(int, st
 	if err != nil {
 		return 0, err.Error()
 	}
+	return createRemoteZipPayload(ctx, s, payload)
+}
+
+func createRemoteZipPayload(ctx context.Context, s *Session, payload map[string]interface{}) (int, string) {
 	paths, err := pathsForTransfer(s, payload["paths"])
 	if err != nil {
 		return 0, err.Error()
@@ -442,6 +454,10 @@ func extractRemoteZip(ctx context.Context, s *Session, raw string, _ func(int, s
 	if err != nil {
 		return 0, err.Error()
 	}
+	return extractRemoteZipPayload(ctx, s, payload)
+}
+
+func extractRemoteZipPayload(ctx context.Context, s *Session, payload map[string]interface{}) (int, string) {
 	return extractRemoteZipPolicy(ctx, s, payload)
 }
 

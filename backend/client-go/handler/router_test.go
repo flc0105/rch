@@ -36,7 +36,7 @@ func receive(t *testing.T, peer *protocol.RATSocket) map[string]interface{} {
 }
 
 func TestUnsupportedExecutionMessagesReturnFailure(t *testing.T) {
-	for _, typ := range []string{"acmd", "job_control"} {
+	for _, typ := range []string{"acmd"} {
 		t.Run(typ, func(t *testing.T) {
 			session, peer := pair(t)
 			go Handle(session, map[string]interface{}{"type": typ, "id": float64(27), "text": "script body"})
@@ -48,6 +48,16 @@ func TestUnsupportedExecutionMessagesReturnFailure(t *testing.T) {
 				t.Fatalf("unclear error: %#v", v)
 			}
 		})
+	}
+}
+
+func TestUnsupportedControlJobReturnsFailure(t *testing.T) {
+	session, peer := pair(t)
+	go Handle(session, map[string]interface{}{"type": "control", "id": float64(29),
+		"domain": "job", "action": "ps", "payload": map[string]interface{}{}})
+	result := receive(t, peer)
+	if result["status"] != float64(0) || !strings.Contains(result["text"].(string), "job") {
+		t.Fatalf("unexpected unsupported Control result: %#v", result)
 	}
 }
 
@@ -284,9 +294,8 @@ func TestScriptMessageExecutesExternalPythonAndReturnsFinalFrame(t *testing.T) {
 	}
 	session, peer := pair(t)
 	Handle(session, map[string]interface{}{
-		"type": "script", "id": float64(90),
-		"text":  "print('hi:' + kwargs['target'])",
-		"extra": map[string]interface{}{"target": "folder one"},
+		"type": "control", "id": float64(90), "domain": "script", "action": "run",
+		"payload": map[string]interface{}{"script_name": "demo", "source": "print('hi:' + kwargs['target'])", "params": map[string]interface{}{"target": "folder one"}},
 	})
 	var chunks []string
 	for i := 0; i < 12; i++ {
@@ -310,16 +319,53 @@ func TestScriptMessageExecutesExternalPythonAndReturnsFinalFrame(t *testing.T) {
 
 func TestScriptBadParametersFailWithoutBreakingSession(t *testing.T) {
 	session, peer := pair(t)
-	Handle(session, map[string]interface{}{
-		"type": "script", "id": float64(91), "text": "print('hi')", "extra": []string{"wrong"},
+	go Handle(session, map[string]interface{}{
+		"type": "control", "id": float64(91), "domain": "script", "action": "run",
+		"payload": map[string]interface{}{"script_name": "demo", "source": "print('hi')", "params": []string{"wrong"}},
 	})
 	result := receive(t, peer)
-	if result["eof"] != float64(1) || result["status"] != float64(0) || !strings.Contains(result["text"].(string), "parameters") {
+	if result["eof"] != float64(1) || result["status"] != float64(0) || !strings.Contains(result["text"].(string), "script Control") {
 		t.Fatalf("unexpected script failure: %#v", result)
 	}
 	go Handle(session, map[string]interface{}{"type": "command", "id": float64(92), "text": "pwd"})
 	next := receive(t, peer)
 	if next["eof"] != float64(1) || next["status"] != float64(1) {
 		t.Fatalf("command slot not released: %#v", next)
+	}
+}
+
+func TestRemoteFilesControlTypedDirectoryAndArchive(t *testing.T) {
+	dir := t.TempDir()
+	session, peer := pair(t)
+	makeRequest := func(id int, action string, payload map[string]interface{}) map[string]interface{} {
+		go Handle(session, map[string]interface{}{
+			"type": "control", "id": float64(id), "domain": "remote_files",
+			"action": action, "payload": payload,
+		})
+		result := receive(t, peer)
+		if result["id"] != float64(id) || result["type"] != "result" || result["eof"] != float64(1) {
+			t.Fatalf("bad Control reply: %#v", result)
+		}
+		return result
+	}
+	newFolder := dir + "/control-dir"
+	created := makeRequest(101, "create_directory", map[string]interface{}{"path": newFolder})
+	if created["status"] != float64(1) {
+		t.Fatalf("mkdir failed: %#v", created)
+	}
+	browsed := makeRequest(102, "browse_directory", map[string]interface{}{"path": dir, "page": float64(1), "page_size": float64(10)})
+	if browsed["status"] != float64(1) {
+		t.Fatalf("browse failed: %#v", browsed)
+	}
+	if _, ok := browsed["data"].(map[string]interface{}); !ok {
+		t.Fatalf("browse reply must be structured: %#v", browsed)
+	}
+	invalid := makeRequest(103, "delete_everything", map[string]interface{}{"path": newFolder})
+	if invalid["status"] != float64(0) {
+		t.Fatalf("unknown action succeeded: %#v", invalid)
+	}
+	removed := makeRequest(104, "delete_paths", map[string]interface{}{"paths": []interface{}{newFolder}})
+	if removed["status"] != float64(1) {
+		t.Fatalf("delete failed: %#v", removed)
 	}
 }

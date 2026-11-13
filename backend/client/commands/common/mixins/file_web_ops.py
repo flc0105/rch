@@ -292,18 +292,6 @@ class CommandFileWebMixin:
         except Exception as e:
             return 0, f'Failed to browse directory: {e}'
 
-    @desc('Delete a file or directory', group='file_path', suggest=False)
-    def delete_path(self, path=''):
-        try:
-            target_path = self.path_resolver.require_existing_non_empty_path_from_arg(path)
-            return self.file_system_service.delete_target_path(target_path)
-        except CommandCancelledError:
-            return 0, 'Command cancelled'
-        except CommandTimeoutError:
-            return 0, 'Command timed out and was terminated'
-        except Exception as e:
-            return 0, f'Failed to delete path: {e}'
-
     @desc('Delete multiple files or directories', group='file_path', suggest=False)
     def delete_paths(self, arg=''):
         """

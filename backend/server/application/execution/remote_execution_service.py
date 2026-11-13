@@ -54,6 +54,9 @@ class RemoteExecutionService:
         *,
         command_type: str = COMMAND_TYPE_COMMAND,
         extra=None,
+        payload=None,
+        domain: str = '',
+        action: str = '',
         history_entry_id: str = '',
     ):
         return self.command_stream_service.stream_command(
@@ -61,6 +64,9 @@ class RemoteExecutionService:
             command,
             command_type=command_type,
             extra=extra,
+            payload=payload,
+            domain=domain,
+            action=action,
             history_entry_id=history_entry_id,
         )
 
@@ -71,6 +77,9 @@ class RemoteExecutionService:
         *,
         command_type: str = COMMAND_TYPE_COMMAND,
         extra=None,
+        payload=None,
+        domain: str = '',
+        action: str = '',
         history_entry_id: str = '',
     ) -> str:
         return self.command_stream_service.run_text_command(
@@ -78,6 +87,9 @@ class RemoteExecutionService:
             command,
             command_type=command_type,
             extra=extra,
+            payload=payload,
+            domain=domain,
+            action=action,
             history_entry_id=history_entry_id,
         )
 
@@ -88,6 +100,9 @@ class RemoteExecutionService:
         *,
         command_type: str = COMMAND_TYPE_COMMAND,
         extra=None,
+        payload=None,
+        domain: str = '',
+        action: str = '',
         history_entry_id: str = '',
     ) -> dict:
         return self.command_stream_service.run_json_command(
@@ -95,6 +110,9 @@ class RemoteExecutionService:
             command,
             command_type=command_type,
             extra=extra,
+            payload=payload,
+            domain=domain,
+            action=action,
             history_entry_id=history_entry_id,
         )
 
@@ -108,6 +126,9 @@ class RemoteExecutionService:
         *,
         command_type: str = COMMAND_TYPE_COMMAND,
         extra=None,
+        payload=None,
+        domain: str = '',
+        action: str = '',
         history_entry_id: str = '',
         task_type: str = TASK_TYPE_COMMAND,
         source: str = 'foreground',
@@ -118,6 +139,9 @@ class RemoteExecutionService:
             command,
             command_type=command_type,
             extra=extra,
+            payload=payload,
+            domain=domain,
+            action=action,
             history_entry_id=history_entry_id,
             task_type=task_type,
             source=source,
@@ -131,13 +155,16 @@ class RemoteExecutionService:
         *,
         command_type: str = COMMAND_TYPE_COMMAND,
         extra=None,
+        payload=None,
+        domain: str = '',
+        action: str = '',
         history_entry_id: str = '',
         task_type: str = TASK_TYPE_COMMAND,
         source: str = 'foreground',
         task_id: str = '',
     ) -> str:
         return self.foreground_execution_service.run_foreground_text_command(
-            target, command, command_type=command_type, extra=extra,
+            target, command, command_type=command_type, extra=extra, payload=payload, domain=domain, action=action,
             history_entry_id=history_entry_id, task_type=task_type, source=source, task_id=task_id,
         )
 
@@ -148,6 +175,9 @@ class RemoteExecutionService:
         *,
         command_type: str = COMMAND_TYPE_COMMAND,
         extra=None,
+        payload=None,
+        domain: str = '',
+        action: str = '',
         history_entry_id: str = '',
         task_type: str = TASK_TYPE_COMMAND,
         source: str = 'foreground',
@@ -158,11 +188,32 @@ class RemoteExecutionService:
             command,
             command_type=command_type,
             extra=extra,
+            payload=payload,
+            domain=domain,
+            action=action,
             history_entry_id=history_entry_id,
             task_type=task_type,
             source=source,
             task_id=task_id,
         )
+
+    def run_foreground_control(self, target, domain: str, action: str, payload: dict, *,
+                               task_type: str = TASK_TYPE_COMMAND, source: str = 'foreground'):
+        """Run a one-shot typed Control while retaining the foreground task lifecycle."""
+        from core.protocol.message_types import MSG_TYPE_CONTROL
+        status, result = 0, ''
+        progress = []
+        for item in self.stream_foreground_command(
+            target, '', command_type=MSG_TYPE_CONTROL,
+            domain=domain, action=action, payload=payload,
+            task_type=task_type, source=source,
+        ):
+            status, result = item[0], item[1] if len(item) > 1 else ''
+            if isinstance(result, str) and result:
+                progress.append(result)
+        if isinstance(result, dict):
+            return status, result
+        return status, '\n'.join(progress).strip()
 
     def iter_upload_events(
         self,

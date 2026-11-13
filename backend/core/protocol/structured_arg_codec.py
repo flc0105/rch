@@ -19,6 +19,8 @@ def encode_structured_arg(payload) -> str:
 
 
 def decode_structured_arg(raw, *, require_prefix: bool = False):
+    if isinstance(raw, dict) and not require_prefix:
+        return raw
     text = strip_wrapped_quotes(raw)
     if not text:
         if require_prefix:

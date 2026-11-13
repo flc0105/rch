@@ -47,7 +47,6 @@
 | `script list` | 查看 Server Script Library；可选 `--json` |
 | `script view <path>` | 查看 Server 脚本内容 |
 | `script exec <path> [options]` | 使用命令行选项执行 Server 脚本 |
-| `script run <__json__:payload>` | 使用结构化负载执行脚本，主要供相应界面/流程使用 |
 | `job list` | 查看 Server 已登记的 Job 定义；可选 `--json` |
 | `job start <name> [--mode MODE] [--params JSON]` | 在目标 Client 启动 Job，并可指定运行模式和参数 |
 | `job ps` / `job status <name>` | 查看正在运行的 Job / 单个 Job 状态 |
@@ -114,7 +113,7 @@ Alias 的模板参数、平台覆盖与安全边界见 [Aliases / Quick Actions]
 | `clean --no-confirm` | 跳过交互、直接执行受规则允许的清理范围 | **会真实删除匹配数据**，执行前需确认清理范围 |
 | `update` | 构建、下载并准备新的 Client Bundle | iOS 更新交接与桌面自动启动方式不同 |
 
-Web Remote Files 还会使用 `browse_dir`、`preview_path`、`download_paths`、`delete_path`、`rename_path`、`paste_paths` 等内部可导出命令。它们接受 Web 提交的专用负载，**这些入口由 Web 的 Remote Files 操作发送结构化负载**；对应交互使用 [Remote Files](remote_files.md)。`receive_file` 也是 Server → Client HTTP 传输的内部承载入口，而不是供用户直接填写普通路径的上传命令。清理的具体范围见 [Cleanup](cleanup.md)。
+Web Remote Files 的一次性文件管理 RPC 使用 `control(domain=remote_files)` 结构化请求，其中单项和多项删除都使用 `delete_paths` 加路径数组；浏览、重命名、复制/移动与 ZIP 管理遵守同一协议。对应交互使用 [Remote Files](remote_files.md)。`receive_file` 也是 Server → Client HTTP 传输的内部承载入口，而不是供用户直接填写普通路径的上传命令。清理的具体范围见 [Cleanup](cleanup.md)。
 
 ### 进程、会话和设备控制
 

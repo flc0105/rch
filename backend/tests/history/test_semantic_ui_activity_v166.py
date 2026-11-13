@@ -544,9 +544,9 @@ def test_declarative_bindings_keep_remote_file_and_job_services_history_free(set
     adapter = server.command_adapter
 
     class RemoteFiles:
-        def delete_path(self, client_id, path, origin='web_api'):
+        def delete_paths(self, client_id, paths, origin='web_api'):
             entry_id = adapter.scoped_entry(conn)
-            adapter.dispatch(conn, entry_id, f'delete {path}', 'command')
+            adapter.dispatch(conn, entry_id, f'delete {paths[0]}', 'command')
             return {'message': 'deleted'}
 
         def list_directory(self, client_id):
@@ -555,13 +555,13 @@ def test_declarative_bindings_keep_remote_file_and_job_services_history_free(set
     class Jobs:
         def start_job(self, client_id, job_name, params=None, execution_mode='inproc', origin='web_api'):
             entry_id = adapter.scoped_entry(conn)
-            adapter.dispatch(conn, entry_id, '{"action":"start","job_name":"check"}', 'job_control')
+            adapter.dispatch(conn, entry_id, '', 'control', payload={'job_name':'check'}, domain='job', action='start')
             return {'job_id': 'job-1', 'message': 'started'}
 
     remote = adapter.instrument(RemoteFiles(), remote_file_bindings())
     assert remote.list_directory('client-1') == {'items': []}
     assert not entries(server)
-    assert remote.delete_path('client-1', '/tmp/test')['message'] == 'deleted'
+    assert remote.delete_paths('client-1', ['/tmp/test'])['message'] == 'deleted'
     assert entries(server)[0]['kind'] == 'remote_files'
 
     jobs = adapter.instrument(Jobs(), job_bindings())
@@ -587,13 +587,14 @@ def test_external_tool_exec_and_cli_job_result_stay_inside_command_adapter(setup
     assert row['invocation']['arguments'] == {'exec_name': 'ffmpeg', 'package_id': 'ffmpeg'}
 
     job_id = coordinator.prepare(conn, ActivityOperation('command', 'invoke', {}, text='job stop check'))
-    cmd = json.dumps({'action': 'stop', 'job_key': 'check'})
-    adapter.dispatch(conn, job_id, cmd, 'job_control')
-    from core.utils.job_control_result import encode_job_control_result
-    result = encode_job_control_result('stop', 'stopped', job_id='job-1')
-    assert list(adapter.observe_result(conn, job_id, 'job_control', cmd, [(1, result)])) == [(1, result)]
+    cmd = {'job_key': 'check'}
+    adapter.dispatch(conn, job_id, '', 'control', payload=cmd, domain='job', action='stop')
+    from core.protocol.job_control import build_job_control_result
+    result = build_job_control_result('stop', 'stopped', job_id='job-1')
+    assert list(adapter.observe_result(conn, job_id, 'control', '', [(1, result)], payload=cmd, domain='job', action='stop')) == [(1, result)]
     row = next(row for row in entries(server) if row['kind'] == 'background_job')
     assert row['resolved'].get('job_id') == 'job-1'
+    assert row['invocation']['input'] == 'job stop check'
 
 
 def test_transfer_adapters_track_both_wire_transports_and_not_browser_staging(setup_history):
@@ -686,3 +687,92 @@ def test_legacy_receive_file_claims_terminal_activity_once(setup_history):
     server.lifecycle_adapter.transfer_updated({**transfer, 'state': 'completed'})
     rows = entries(server)
     assert len(rows) == 1 and rows[0]['status'] == 'success'
+
+
+@pytest.mark.parametrize('source', ['cli', 'web'])
+@pytest.mark.parametrize('command,expected_action,wire', [
+    ('xt instance start filebrowser-8080', 'start_instance', 'external_tool_start'),
+    ('xt instance stop filebrowser-8080', 'stop_instance', 'external_tool_stop'),
+    ('xt instance restart filebrowser-8080', 'restart_instance', 'external_tool_stop'),
+    ('xt instance create pkg.module --id my-instance --start', 'create_instance', 'external_tool_instance_create'),
+    ('xt package install package-1', 'install_package', 'external_tool_install'),
+    ('xt package uninstall package-1', 'uninstall_package', 'external_tool_uninstall'),
+])
+def test_xt_cli_mutations_record_only_after_real_dispatch(setup_history, source, command, expected_action, wire):
+    server, conn = setup_history
+    adapter = server.command_adapter
+    activity_id = adapter.prepare_command(conn, command, source=source)
+    assert activity_id
+    assert entries(server) == []
+
+    # xt status/install/instance queries are read-only even when they reach Client.
+    adapter.dispatch(conn, activity_id, 'external_tool_status payload', 'command')
+    adapter.dispatch(conn, activity_id, 'external_tool_instance_read payload', 'command')
+    assert entries(server) == []
+    adapter.dispatch(conn, activity_id, wire + ' payload', 'command')
+    rows = entries(server)
+    assert len(rows) == 1
+    assert (rows[0]['kind'], rows[0]['action'], rows[0]['status']) == (
+        'external_tool', expected_action, 'running')
+    assert rows[0]['invocation']['input'] == command
+    assert 'payload' not in str(rows[0]['invocation'])
+
+    # Restart/create --start may send a second mutating Client command: one activity only.
+    adapter.dispatch(conn, activity_id, 'external_tool_start payload', 'command')
+    assert len(entries(server)) == 1
+    server.activity_coordinator.finish(conn, activity_id, True)
+    assert entries(server)[0]['status'] == 'success'
+
+
+@pytest.mark.parametrize('command', [
+    'xt', 'xt help', 'xt package list', 'xt module list',
+    'xt instance list', 'xt instance status filebrowser-8080',
+    'xt instance logs filebrowser-8080', 'xt exec list', 'xt exec info ffmpeg',
+    'xt exec which ffmpeg',
+])
+def test_xt_cli_queries_do_not_create_activity_even_with_client_preflight(setup_history, command):
+    server, conn = setup_history
+    adapter = server.command_adapter
+    activity_id = adapter.prepare_command(conn, command, source='cli')
+    adapter.dispatch(conn, activity_id, 'external_tool_status payload', 'command')
+    server.activity_coordinator.finish(conn, activity_id, True)
+    assert entries(server) == []
+
+
+def test_xt_invalid_or_undispatched_command_does_not_create_activity(setup_history):
+    server, conn = setup_history
+    adapter = server.command_adapter
+    for command in ('xt instance start missing-instance', 'xt instance create demo', 'xt package install missing'):
+        activity_id = adapter.prepare_command(conn, command, source='cli')
+        assert activity_id
+        server.activity_coordinator.finish(conn, activity_id, False)
+    assert entries(server) == []
+
+
+def test_web_external_tool_mutation_keeps_existing_adapter_dispatch(setup_history):
+    from server.application.history.activity_definitions import ActivityOperation
+    server, conn = setup_history
+    activity_id = server.activity_coordinator.prepare(conn, ActivityOperation(
+        'external_tool', 'clear_package_cache', {'package_id': 'demo'}, origin='web_api',
+    ))
+    server.command_adapter.dispatch(conn, activity_id, 'external_tool_clear_package_cache payload', 'command')
+    assert [(row['kind'], row['action']) for row in entries(server)] == [
+        ('external_tool', 'clear_package_cache')
+    ]
+
+
+def test_xt_exec_actual_plan_retains_candidate_until_client_dispatch(setup_history):
+    from core.protocol.structured_arg_codec import encode_structured_arg
+    server, conn = setup_history
+    adapter = server.command_adapter
+    activity_id = adapter.prepare_command(conn, 'xt exec ffmpeg -version', source='cli')
+    client_command = 'external_tool_exec ' + encode_structured_arg({
+        'exec_name': 'ffmpeg', 'package_id': 'ffmpeg',
+    })
+    adapter.describe_plan(conn, activity_id, {'command': client_command, 'command_type': 'command'})
+    assert entries(server) == []
+    adapter.dispatch(conn, activity_id, client_command, 'command')
+    assert [(row['kind'], row['action']) for row in entries(server)] == [
+        ('external_tool', 'run_exec')
+    ]
+    assert entries(server)[0]['invocation']['input'] == 'xt exec ffmpeg -version'

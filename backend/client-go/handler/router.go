@@ -42,17 +42,46 @@ func Handle(session *executor.Session, msg map[string]interface{}) {
 		id, _ := msg["transfer_id"].(string)
 		session.CancelTransfer(id)
 
-	case "acmd", "job_control":
+	case "acmd":
 		// These are distinct protocol message types, not shell commands.
 		// Every received executable request must produce a terminal result.
 		if id, ok := messageID(msg, "id"); ok {
 			sendResult(session, id, 0, fmt.Sprintf("Unsupported command type on this Client: %s", msg["type"]))
 		}
 
-	case "script":
+	case "control":
 		id, ok := messageID(msg, "id")
 		if !ok {
 			return
+		}
+		domain, _ := msg["domain"].(string)
+		action, _ := msg["action"].(string)
+		payload, valid := msg["payload"].(map[string]interface{})
+		if !valid || action == "" || domain == "" {
+			sendResult(session, id, 0, "Invalid Control request")
+			return
+		}
+		if domain != "remote_files" && domain != "script" {
+			sendResult(session, id, 0, "Unsupported Control domain on this Client: "+domain)
+			return
+		}
+		if domain == "script" {
+			if action != "run" {
+				sendResult(session, id, 0, "Unsupported script Control action: "+action)
+				return
+			}
+			if _, ok := payload["source"].(string); !ok {
+				sendResult(session, id, 0, "Invalid script Control source")
+				return
+			}
+			if _, ok := payload["params"].(map[string]interface{}); !ok {
+				sendResult(session, id, 0, "Invalid script Control parameters")
+				return
+			}
+			if name, ok := payload["script_name"].(string); !ok || name == "" {
+				sendResult(session, id, 0, "Invalid script Control name")
+				return
+			}
 		}
 		ctx, cancel := context.WithCancel(context.Background())
 		if !session.BeginShell(id, cancel) {
@@ -62,21 +91,40 @@ func Handle(session *executor.Session, msg map[string]interface{}) {
 		}
 		go func() {
 			defer cancel()
-			status, result := executor.RunExternalPythonScript(ctx, session, msg["text"], msg["extra"], func(streamStatus int, chunk string) {
-				_ = session.Sock.Send(map[string]interface{}{
-					"type": "result", "id": id, "status": streamStatus,
-					"text": chunk, "cwd": session.Cwd, "eof": 0,
+			var status int
+			var result interface{}
+			if domain == "script" {
+				params := make(map[string]interface{})
+				for key, value := range payload["params"].(map[string]interface{}) {
+					params[key] = value
+				}
+				params["__script_name__"] = payload["script_name"]
+				status, result = executor.RunExternalPythonScript(ctx, session, payload["source"], params, func(streamStatus int, chunk string) {
+					_ = session.Sock.Send(map[string]interface{}{
+						"type": "result", "id": id, "status": streamStatus,
+						"text": chunk, "cwd": session.Cwd, "eof": 0,
+					})
 				})
-			})
+			} else {
+				status, result = executor.RemoteFilesControl(ctx, session, id, action, payload)
+			}
 			cancelled, cancelID := session.EndShell(id)
 			if cancelled {
-				status, result = 0, "Script cancelled"
+				status, result = 0, "Command cancelled"
+				if domain == "script" {
+					result = "Script cancelled"
+				}
 			}
-			sendResult(session, id, status, result)
+			response := map[string]interface{}{"type": "result", "id": id, "status": status, "cwd": session.Cwd, "eof": 1}
+			if data, ok := result.(map[string]interface{}); ok {
+				response["data"] = data
+			} else {
+				response["text"] = result
+			}
+			_ = session.Sock.Send(response)
 			if cancelled {
 				_ = session.Sock.Send(map[string]interface{}{
-					"type": "cancel_ack", "id": cancelID,
-					"target_id": id, "accepted": true, "state": "stopped",
+					"type": "cancel_ack", "id": cancelID, "target_id": id, "accepted": true, "state": "stopped",
 				})
 			}
 		}()

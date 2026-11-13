@@ -141,9 +141,9 @@ Web 首次选中设备、切换设备、WebSocket 重连和设备重新上线时
 
 ## 5. Socket 结果如何抵达 Web 并形成最终状态
 
-远程命令通过 `ClientSessionCommandChannel.send_command()` 构造 `type/id/text` 和必要的 `extra`，将它发送给 Client。Client 连接注册时获得一枚 Client Session Token，普通命令、ACMD、Script 和 Job 统一使用这枚凭证访问中央白名单内的 HTTP API，不按单次执行签发凭证或声明 API Scope。交互请求额外核对当前 Web Task 和命令身份。
+远程请求通过 `ClientSessionCommandChannel.send_command()` 构造协议消息：普通命令使用 `type/id/text` 和必要的 `extra`，Job Control 使用 `type/id/payload` 结构化对象。Client 连接注册时获得一枚 Client Session Token，普通命令、ACMD、Script 和 Job 统一使用这枚凭证访问中央白名单内的 HTTP API，不按单次执行签发凭证或声明 API Scope。交互请求额外核对当前 Web Task 和命令身份。
 
-收到 Client 返回的 `result` 时，Server 先更新相关工作目录，再交给结果分发器。只有 `id` 与当前队首等待的 `command_id` 匹配，才将 `(status, text, eof)` 投入对应的执行结果队列；正常输出因此按照该等待流逐块消费，直到终止标记 `eof`。不匹配的结果会落入独立的未预期消息处理路径，不能简单并入当前 Terminal 命令的输出。
+收到 Client 返回的 `result` 时，Server 先更新相关工作目录，再交给结果分发器。只有 `id` 与当前队首等待的 `command_id` 匹配，才将 `(status, value, eof)` 投入对应的执行结果队列；`value` 通常来自 `text`，结构化 Job Control 的最终结果则来自 JSON 对象 `data`。正常输出按照该等待流逐块消费，直到终止标记 `eof`。Job CLI 与 Web Job Manager 在应用层校验结果并渲染为原有可读反馈；普通命令的文本输出仍保持原样。不匹配的结果进入独立的未预期消息处理路径。
 
 `WebTaskRunner` 消费标准化事件后执行两件相互独立的操作：将每块输出按原始顺序追加到 SQLite 历史，并通过 WebEventBus 发送到执行任务的标签页。零散输出使用 `command_result`；密集输出按时间、条数和字节数合并为 `command_result_batch`，其 `results` 数组逐项保留原有的 `status` 和 `text`，不拼接文本或丢弃空块。批次在短时间内刷新，任务结束前强制发完最后一批，然后才发布 `command_complete`。典型 WebSocket 消息如下：
 
@@ -224,7 +224,7 @@ Web 入口需要提供明确的 `client_id`、命令、`tab_id` 和必要的呈�
 
 ## Server Builtin 统一路由
 
-Server 只将 `SERVER_COMMAND_REGISTRY` 显式注册的一级名称作为 Builtin，先用公用子命令解析器识别 `script/job/alias/xt/history` 等命令，再交给原业务 Support。未命中注册表的普通命令继续走 ACMD → Alias → Client 普通执行；Client 未注册的普通命令保留 Shell 后备执行。`script exec` / `script run` 两种 Server 输入共用原 `COMMAND_TYPE_SCRIPT` 执行协议，不把结构化 Payload 交给 Client 再做 Builtin 解析。
+Server 只将 `SERVER_COMMAND_REGISTRY` 显式注册的一级名称作为 Builtin，先用公用子命令解析器识别 `script/job/alias/xt/history` 等命令，再交给原业务 Support。未命中注册表的普通命令继续走 ACMD → Alias → Client 普通执行；Client 未注册的普通命令保留 Shell 后备执行。Server `script exec` 与 Script Library UI 使用同一份 Script Metadata 参数校验和源码准备机制，最后通过 `control(domain=script, action=run)` 直接向 Client 交付结构化请求，不构造伪命令。
 
 ### Client 返回结果的派发次序（v34.6）
 

@@ -18,7 +18,7 @@ Script 的一次 Web 执行顺序为：
 
 数据与控制经过不同的边界：浏览器负责操作和表单、Server 持有 Library 与授权上下文、Client 使用本机 Python 环境运行代码。执行内容不会因为放在 Server Script Library 而自动拥有 Server 文件系统或管理员权限。
 
-Script 与 Shell-like、ACMD 都可以进入 Client 的命令执行设施，但 Script 使用单独的 `type=script` 消息和 Python 执行策略；它不把整份脚本当成一条 Shell 字符串解析。顶层 Script 仍占用该 Client 的前台任务执行槽，直到本次任务返回。长时间运行的脚本可能妨碍其他前台命令，应根据业务选择超时与执行模式。
+Script 与 Shell-like、ACMD 都可以进入 Client 的命令执行设施，但 Script 使用 `control(domain=script, action=run)` 和现有 Python 执行策略；它不把整份脚本当成一条 Shell 字符串解析。顶层 Script 仍占用该 Client 的前台任务执行槽，直到本次任务返回。长时间运行的脚本可能妨碍其他前台命令，应根据业务选择超时与执行模式。
 
 ## 2. Library 的组织、管理和元数据
 
@@ -81,7 +81,7 @@ Script Run 表单可以选择 **Dialog** 或 **Terminal**：
 - Dialog 先生成 `run_id`，把运行结果显示在独立弹窗，连续追加收到的文本，结束后根据任务完成消息显示成功、失败或取消；支持复制结果。
 - Terminal 在终端插入带 Script 信息的命令块，把普通命令结果、完成状态呈现在终端；该命令块保留 Script Name、路径和提交参数，以便界面后续再次运行。
 
-它们最终都调用 `POST /api/connections/{client_id}/scripts/run`，Server 都会构造同一种 `script run` 结构化 Server Builtin 调用，最后下发 `type=script`。`presentation` 仅改变前端消费本次输出的方式，不会把脚本切换到另一种 Python 执行策略。
+它们最终都调用 `POST /api/connections/{client_id}/scripts/run`，Server 直接创建 Script Web Task；Script Library 与终端 `script exec` 通过相同的 Script Metadata 校验和规范化参数构建 `type=control, domain=script, action=run` 请求。`presentation` 仅决定这次输出送往 Dialog 还是 Terminal，不属于 Client Control Payload，也不作为 Script Activity 的展示字段持久化；它不会切换 Python 执行策略。
 
 请求体形状如下；其中 `run_id` 是 Dialog 必需、Terminal 可不提供的关联标识：
 
@@ -98,9 +98,13 @@ Server 会给命令任务附加 `script_run`、`script_run_name`、`script_run_i
 
 ### 终端轻量入口和结构化入口
 
-Server 另有 `script exec` 入口，它按文件名称读取 Library 脚本，并将随后按命令行扫描解析的参数交给 Script 执行计划。它适合快速发起一次性脚本执行，但不是 Web 的 Metadata 参数表单：不要假设 `script exec` 一定会应用同一套必填表单逻辑 或弹出 Script Run Dialog。
+Server 的 `script exec <path> [options]` 使用 `shlex` 与 `scan_args` 将 CLI 选项解析为参数对象，随后与 Script Library Web 表单使用**相同的 Script Metadata 参数校验、默认值和源码加载入口**。Web 不再生成伪造的 `script run` 命令。两端最终发送相同形状的 Control 请求：
 
-`script run` 则是内部结构化参数入口，Web 正常通过专用 HTTP API 产生对应 Payload；它可以携带用户参数、Script Name 。手动构造 Payload 与直接传原始 Python 文本不是一回事，正式界面操作建议使用 Script Library。
+```json
+{"type":"control","id":49,"domain":"script","action":"run","payload":{"script_name":"ops/health_probe","source":"<Server 提供的脚本源码>","params":{"target":"/tmp","limit":20}}}
+```
+
+只有 Server 从 Script Library 获取和校验源码，Client 继续运行现有 Script 执行器；`execution_mode`、`output_mode` 未作为本轮可选的 Script 请求参数，不改变既有执行默认值或 SDK 能力。
 
 普通 Script 运行的输出经过 Python 执行策略收集后回到既有命令结果链。`print()` 可作为标准结果输出；`context.progress()` 在 In-process 且有命令所有者时可显式推送进度文本。当前 Script 默认采用 **collect** 执行调用，不应把 Script 简单等同为逐行 stdout 的真正 Shell Stream。对于输出较大、持续很久的任务，结果何时送达以及能否及时取消，还与执行策略相关。
 
@@ -108,7 +112,7 @@ Server 另有 `script exec` 入口，它按文件名称读取 Library 脚本，�
 
 ### Script Activity 记录
 
-首批 Activity Center 将 Script Library 的 Run/Run in Terminal 及 Terminal 中的 `script exec <script>` 都归为 `kind=script/action=run`。`invocation.input` 保留真实入口，`invocation.target` 保存 Script 名称或路径，`invocation.arguments` 保存 Script Library 的实际参数对象（Terminal `script exec` 用 `argv` 表示原始命令行参数）。`resolved.command_type=script` 反映真实 Client Script 协议；不把 Server 侧读取的脚本源码或内部 `script run __json__:` Base64 传输参数复制进公共 Activity，也不伪造一条 Shell 命令。
+首批 Activity Center 将 Script Library 的 Run/Run in Terminal 及 Terminal 中的 `script exec <script>` 都归为 `kind=script/action=run`。`invocation.input` 保留真实入口，`invocation.target` 保存 Script 名称或路径，`invocation.arguments` 保存 Script Library 的实际参数对象（Terminal `script exec` 用 `argv` 表示原始命令行参数）。真正的 Client 请求是 `control(domain=script, action=run)`；公共 Activity 不复制 Server 读取的脚本源码，也不伪造 Shell 命令。
 
 Activity 只在 Script 真的被提交给 Client 时创建；单纯列出脚本、查看/编辑元数据或打开目录不会产生记录。Script Cancel 只更新当前 Run Activity 的状态（`cancelling`、`cancelled` 等），不额外制造 `stop` Activity。Details 沿用实际任务结果的输出记录和 Artifact；Quick History 不接收 Script Library 的内部可执行 Payload。
 
@@ -138,7 +142,7 @@ Subprocess 的源码通过 stdin 送入 Python `-u -`，运行上下文与参数
 
 ### Go Client：外部 Python 执行
 
-Go Client 使用可选的本机 Python 解释器运行普通 Python Script。收到 Server 下发的 `type=script` 消息后，依次在系统 `PATH` 查找解释器：Windows 优先 `python`、再找 `python3`；macOS/Linux 优先 `python3`、再找 `python`。没有找到解释器时，本次 Script 返回明确错误，不会安装 Python 或影响 Go Client 连接。
+Go Client 使用可选的本机 Python 解释器运行普通 Python Script。收到 Server 下发的 `control(domain=script, action=run)` 消息后，依次在系统 `PATH` 查找解释器：Windows 优先 `python`、再找 `python3`；macOS/Linux 优先 `python3`、再找 `python`。没有找到解释器时，本次 Script 返回明确错误，不会安装 Python 或影响 Go Client 连接。
 
 Web Script Library 保留现有 `SCRIPT_METADATA.params` 表单和 Server 参数校验：Server 根据 Schema 解析 `required`、`default`、类型和选项，再将参数字典通过 `extra` 交给 Go Client。Go 通过独立 Python 子进程执行收到的源码，提供 `kwargs` 及参数同名全局变量，支持常规 `print()`、标准库和目标机器已安装的 Python 包。脚本在目标 Client 工作目录中运行，stdout/stderr 通过已有命令结果通道回传；执行占用前台任务槽，支持取消，默认超时为 300 秒，可以通过 `SCRIPT_DEFAULT_TIMEOUT` 调整。
 
@@ -300,8 +304,8 @@ Run API 要求 `script_name` 非空、`params` 为对象，并明确提供 `pres
 
 `script` / `script list` 默认沿用原 `exec` 无参数时的 Server Script 相对路径列表。`script list --json` 输出简化的 `name`（相对路径）、`display_name`、`description` 与 `params`（仅参数名数组）；`script view <path>` 返回 Server 上的脚本源码，严格限制在 Script 根目录。
 
-`script exec <path> [options]` 继承原 Terminal `exec` 的 `shlex`、`scan_args` 参数语义；`script run <__json__:payload>` 继承原 `run_script` 的结构化 Metadata 参数、授权信息与 Script Library UI 流程。两者解析后都构造 Script Plan，向 Client 派发 `COMMAND_TYPE_SCRIPT`，不在 Client 新增 `script`/`run_script` 文本命令。旧 `exec`、`run_script` 不作为独立的 Server Builtin 注册。UI 内部 `script run` 保留原有 Base64 JSON 传输，用户手动输入可使用 `script exec`。
+`script exec <path> [options]` 使用 `shlex`、`scan_args` 得到参数对象，Script Library UI 直接提交结构化参数。两端均按同一份 Script Metadata 规范化，再经 `control(domain=script, action=run)` 执行。Server 不注册独立的 `exec`、`run_script` 或 `script run` 入口，Client 不注册 Script 文本命令；脚本运行所需源码作为受控请求的 `payload.source` 提供。
 
 ### 终端列表的平台筛选
 
-`script list` 与 `script list --json` 使用同一份扫描与 Metadata，按连接设备的 `os_alias` 和脚本 `SCRIPT_METADATA.platforms` 过滤；未声明或声明为空时不显示，**不再根据目录名推断平台**。补全 `script exec <path>` 复用这份判断。`script exec` / `script run` 显式指定脚本时依旧能解析完整 Library 路径，不按列表结果限制；Script Library UI 的 Catalog/展示完全不参与这一过滤。
+`script list` 与 `script list --json` 使用同一份扫描与 Metadata，按连接设备的 `os_alias` 和脚本 `SCRIPT_METADATA.platforms` 过滤；未声明或声明为空时不显示，**不再根据目录名推断平台**。补全 `script exec <path>` 复用这份判断。`script exec` 及 Script Library UI 显式指定脚本时依旧能解析完整 Library 路径，不按列表结果限制；Script Library UI 的 Catalog/展示完全不参与这一过滤。

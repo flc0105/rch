@@ -80,6 +80,7 @@ class CommandExecutor:
                 plan.get('command', ''),
                 command_type=plan.get('command_type', COMMAND_TYPE_COMMAND),
                 extra=plan.get('extra'),
+                domain=plan.get('domain', ''), action=plan.get('action', ''), payload=plan.get('payload'),
                 history_entry_id=self.current_history_entry_id,
                 task_type=TASK_TYPE_COMMAND,
                 source=self.foreground_source,
@@ -91,6 +92,7 @@ class CommandExecutor:
             plan.get('command', ''),
             command_type=plan.get('command_type', COMMAND_TYPE_COMMAND),
             extra=plan.get('extra'),
+            domain=plan.get('domain', ''), action=plan.get('action', ''), payload=plan.get('payload'),
             history_entry_id=self.current_history_entry_id
         )
 

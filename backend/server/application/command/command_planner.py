@@ -3,7 +3,7 @@ from functools import partial
 from server.application.command.command_types import (
     COMMAND_TYPE_ACMD,
     COMMAND_TYPE_COMMAND,
-    COMMAND_TYPE_SCRIPT,
+    COMMAND_TYPE_CONTROL,
 )
 
 class CommandPlanner:
@@ -143,12 +143,14 @@ class CommandPlanner:
             'extra': payload,
         }
 
-    def build_script_plan(self, script_text: str, script_args_extra) -> dict:
+    def build_script_plan(self, payload: dict) -> dict:
         return {
             'kind': 'remote_command',
-            'command': script_text,
-            'command_type': COMMAND_TYPE_SCRIPT,
-            'extra': script_args_extra,
+            'command': '',
+            'command_type': COMMAND_TYPE_CONTROL,
+            'domain': 'script',
+            'action': 'run',
+            'payload': payload,
         }
 
 

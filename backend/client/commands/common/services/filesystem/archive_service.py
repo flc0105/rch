@@ -248,6 +248,9 @@ class ArchiveService(ZipPeekService):
         conflict = inspected['conflicts']
         if conflict and policy not in conflict[0]['allowed_actions']:
             raise FileExistsError(f'Invalid conflict policy for {target}')
+        if conflict and policy == 'skip':
+            return {'destination_dir': destination, 'extracted_to': target, 'file_count': 0,
+                    'dir_count': 0, 'skipped': True}
         with tempfile.TemporaryDirectory(prefix='.rch-zip-stage-', dir=destination) as stage:
             result = (self.extract_zip_entry(archive_path, stage, entry_name)
                       if entry_name else self.extract_zip_smart(archive_path, stage))
@@ -257,7 +260,8 @@ class ArchiveService(ZipPeekService):
             if actual_kind != expected_kind:
                 raise ValueError('Extracted entry type changed unexpectedly')
             output = apply_path(source, target, 'move', policy)
-        return {**result, 'destination_dir': destination, 'extracted_to': output}
+        return {**result, 'destination_dir': destination, 'extracted_to': output or target,
+                'skipped': output is None}
 
     def extract_zip_entry(self, archive_path: str, destination_dir: str, entry_name: str) -> dict:
         """Extract exactly one ZIP file or directory subtree without replacing destination files."""

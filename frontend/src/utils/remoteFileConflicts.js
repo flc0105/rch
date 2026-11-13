@@ -3,7 +3,7 @@ import { ElMessageBox, ElOption, ElSelect } from 'element-plus'
 import { loadRemoteFileConflictPreferences } from '../api/remoteFileConflictPreferencesApi.js'
 import { pasteRemoteFiles, extractRemoteZip, inspectRemoteUpload } from '../api/remoteFilesApi.js'
 
-const labels = { stop: 'Stop', replace: 'Replace', merge: 'Merge', keep_both: 'Keep Both' }
+const labels = { stop: 'Stop', skip: 'Skip', replace: 'Replace', merge: 'Merge', keep_both: 'Keep Both' }
 
 async function expectData(response, label) {
   const json = await response.json()
@@ -79,5 +79,5 @@ export async function prepareUploadConflict(clientId, destinationDir, filename) 
   const conflicts = preview.conflicts || []
   if (!conflicts.length) return 'stop'
   const answer = await chooseConflict(conflicts[0])
-  return !answer || answer === 'stop' ? false : answer
+  return !answer || answer === 'stop' || answer === 'skip' ? false : answer
 }

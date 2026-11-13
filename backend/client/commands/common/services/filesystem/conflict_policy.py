@@ -6,7 +6,7 @@ import shutil
 import tempfile
 from datetime import datetime
 
-POLICIES = frozenset({'stop', 'replace', 'merge', 'keep_both'})
+POLICIES = frozenset({'stop', 'skip', 'replace', 'merge', 'keep_both'})
 UPLOAD_FILE_POLICIES = frozenset({'stop', 'replace', 'keep_both'})
 
 
@@ -22,10 +22,10 @@ def allowed_actions(source_kind, target_kind):
     if not target_kind:
         return []
     if source_kind == 'directory' and target_kind == 'directory':
-        return ['stop', 'merge', 'replace', 'keep_both']
+        return ['stop', 'skip', 'merge', 'replace', 'keep_both']
     if source_kind == 'file' and target_kind == 'file':
-        return ['stop', 'replace', 'keep_both']
-    return ['stop', 'keep_both']
+        return ['stop', 'skip', 'replace', 'keep_both']
+    return ['stop', 'skip', 'keep_both']
 
 
 def describe_conflict(source, target, index=None):
@@ -122,6 +122,8 @@ def apply_path(source, target, operation, policy='stop'):
     source = os.path.abspath(source)
     target = os.path.abspath(target)
     if source == target:
+        if policy == 'skip':
+            return None
         if policy == 'keep_both':
             target = unique_destination(target)
         else:
@@ -140,6 +142,8 @@ def apply_path(source, target, operation, policy='stop'):
     if target_kind:
         if policy not in allowed_actions(source_kind, target_kind):
             raise FileExistsError(f'Target already exists ({source_kind} vs {target_kind}): {target}')
+        if policy == 'skip':
+            return None
         if policy == 'keep_both':
             target = unique_destination(target)
             target_kind = ''

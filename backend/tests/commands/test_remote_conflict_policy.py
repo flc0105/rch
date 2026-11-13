@@ -17,7 +17,7 @@ def test_file_conflict_stop_replace_and_keep_both(tmp_path):
     src.parent.mkdir();dest.parent.mkdir()
     src.write_text('new');dest.write_text('old')
     conflict = describe_conflict(str(src), str(dest))
-    assert conflict['allowed_actions'] == ['stop', 'replace', 'keep_both']
+    assert conflict['allowed_actions'] == ['stop', 'skip', 'replace', 'keep_both']
     with pytest.raises(FileExistsError):
         apply_path(str(src), str(dest), 'copy', 'stop')
     assert dest.read_text() == 'old'
@@ -37,7 +37,7 @@ def test_directory_merge_preserves_unrelated_replace_removes(tmp_path):
     (source / 'only-new.txt').write_text('new')
     (target / 'common.txt').write_text('OLD')
     (target / 'only-old.txt').write_text('old')
-    assert describe_conflict(str(source), str(target))['allowed_actions'] == ['stop', 'merge', 'replace', 'keep_both']
+    assert describe_conflict(str(source), str(target))['allowed_actions'] == ['stop', 'skip', 'merge', 'replace', 'keep_both']
     apply_path(str(source), str(target), 'copy', 'merge')
     assert (target / 'common.txt').read_text() == 'NEW'
     assert (target / 'only-old.txt').read_text() == 'old'
@@ -57,7 +57,7 @@ def test_move_directory_merge_removes_source_only_after_success(tmp_path):
 
 def test_type_conflict_only_stop_or_keep_both(tmp_path):
     src=tmp_path/'a';dst=tmp_path/'b';src.write_text('file');dst.mkdir()
-    assert describe_conflict(str(src), str(dst))['allowed_actions'] == ['stop','keep_both']
+    assert describe_conflict(str(src), str(dst))['allowed_actions'] == ['stop', 'skip','keep_both']
     for policy in ('merge','replace'):
         with pytest.raises(FileExistsError):apply_path(str(src),str(dst),'copy',policy)
     kept=apply_path(str(src),str(dst),'copy','keep_both')
@@ -95,7 +95,7 @@ def test_zip_extract_entry_merge_and_full_replace(tmp_path):
     (dest/'root'/'shared.txt').write_text('OLD')
     service=ArchiveService(PathResolver())
     preview=service.inspect_extract_target(str(archive), str(dest))
-    assert preview['conflicts'][0]['allowed_actions']==['stop','merge','replace','keep_both']
+    assert preview['conflicts'][0]['allowed_actions']==['stop','skip','merge','replace','keep_both']
     service.extract_zip_with_policy(str(archive),str(dest),policy='merge')
     assert (dest/'root'/'old.txt').read_text()=='old'
     assert (dest/'root'/'shared.txt').read_text()=='new'
@@ -260,6 +260,43 @@ def test_remote_zip_api_defaults_to_explicit_stop(monkeypatch):
         return {'extracted_to': '/dst/archive'}
     monkeypatch.setattr(svc, '_run_mutation', record)
     svc.extract_zip('client', '/archive.zip', '/dst')
-    assert submissions[-1][0][4]['conflict_policy'] == 'stop'
+    assert submissions[-1][0][3]['conflict_policy'] == 'stop'
     svc.extract_zip('client', '/archive.zip', '/dst', conflict_policy='merge')
-    assert submissions[-1][0][4]['conflict_policy'] == 'merge'
+    assert submissions[-1][0][3]['conflict_policy'] == 'merge'
+
+
+def test_skip_preserves_existing_target_and_source_and_tracks_mixed_batch(tmp_path):
+    source = tmp_path / 'src'
+    destination = tmp_path / 'dst'
+    source.mkdir()
+    destination.mkdir()
+    (source / 'same.txt').write_text('new')
+    (source / 'free.txt').write_text('free')
+    (destination / 'same.txt').write_text('old')
+    svc = FileSystemService(PathResolver())
+    result = svc.paste_paths(
+        [str(source / 'same.txt'), str(source / 'free.txt')],
+        str(destination), 'move', policies=['skip', 'skip'],
+    )
+    assert (result.total, result.succeeded, result.skipped, result.failed, result.status) == (2, 1, 1, 0, 1)
+    assert result.to_dict()['skipped'] == 1
+    assert (source / 'same.txt').read_text() == 'new'
+    assert (destination / 'same.txt').read_text() == 'old'
+    assert (destination / 'free.txt').read_text() == 'free'
+    assert not (source / 'free.txt').exists()
+    repeated = svc.paste_paths([str(source / 'same.txt')], str(destination), 'move', policies=['skip'])
+    assert (repeated.succeeded, repeated.skipped, repeated.failed, repeated.status) == (0, 1, 0, 1)
+
+
+def test_zip_skip_leaves_existing_destination_unchanged(tmp_path):
+    archive = tmp_path / 'bundle.zip'
+    with zipfile.ZipFile(archive, 'w') as output:
+        output.writestr('root/changed.txt', 'incoming')
+    target = tmp_path / 'dest'
+    (target / 'root').mkdir(parents=True)
+    (target / 'root' / 'changed.txt').write_text('existing')
+    result = ArchiveService(PathResolver()).extract_zip_with_policy(str(archive), str(target), policy='skip')
+    assert result['skipped'] is True
+    assert result['file_count'] == 0
+    assert (target / 'root' / 'changed.txt').read_text() == 'existing'
+    assert not list(target.glob('.rch-zip-stage-*'))

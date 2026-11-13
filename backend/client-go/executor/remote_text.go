@@ -105,6 +105,10 @@ func saveRemoteText(ctx context.Context, s *Session, raw string, _ func(int, str
 	if err != nil {
 		return 0, err.Error()
 	}
+	return saveRemoteTextPayload(ctx, s, payload)
+}
+
+func saveRemoteTextPayload(ctx context.Context, s *Session, payload map[string]interface{}) (int, string) {
 	value, ok := payload["content"].(string)
 	if !ok {
 		return 0, "content must be text"

@@ -70,12 +70,14 @@ class ClientSession:
     def clear_history_entry(self, command_id: int):
         self.runtime.clear_history_entry(command_id)
 
-    def send_command(self, command: str, type='command', extra=None, history_entry_id: str = ''):
+    def send_command(self, command: str, type='command', extra=None, history_entry_id: str = '', payload=None, domain='', action=''):
         return self.command_channel.send_command(
             command,
             type=type,
             extra=extra,
-            history_entry_id=history_entry_id
+            history_entry_id=history_entry_id,
+            payload=payload,
+            domain=domain, action=action,
         )
 
     def send_cancel(self, target_command_id: int):

@@ -99,3 +99,22 @@ test('conflict prompt uses a human-readable description, without type arrows', a
   assert.match(source, /Choose how to handle this conflict:/)
   assert.match(source, /A \$\{conflict\.target_kind/)
 })
+
+
+test('skip is a per-item paste or ZIP decision, but upload skip avoids Transfer', async () => {
+  const conflict = [{ index: 0, source_kind: 'file', target_kind: 'file', target: '/target/file',
+    allowed_actions: ['stop', 'skip', 'replace', 'keep_both'] }]
+  const paste = createEnvironment({ conflicts: conflict, action: 'skip' })
+  assert.equal(JSON.stringify(await paste.preparePasteConflicts('c', {
+    paths: ['/source/file'], destination_dir: '/target', operation: 'move',
+  })), JSON.stringify({ conflict_policies: ['skip'] }))
+  const extract = createEnvironment({ conflicts: conflict, action: 'skip' })
+  assert.equal(JSON.stringify(await extract.prepareExtractConflict('c', {
+    path: '/file.zip', destination_dir: '/target',
+  })), JSON.stringify({ conflict_policy: 'skip' }))
+  const upload = createEnvironment({ conflicts: conflict, action: 'skip' })
+  assert.equal(await upload.prepareUploadConflict('c', '/target', 'file'), false)
+  const dialog = readFileSync(new URL('../src/components/RemoteFilesDialog.vue', import.meta.url), 'utf8')
+  assert.match(dialog, /deleteRemoteEntries\(clientId, \[row\.path\]\)/)
+  assert.doesNotMatch(dialog, /\bdeleteRemoteFile\(/)
+})

@@ -76,13 +76,6 @@ export function downloadRemoteZip(clientId, paths, headers = {}) {
     webUiJson('POST', { paths, archive_name: '' }, headers))
 }
 
-export function deleteRemoteFile(clientId, path) {
-  const query = new URLSearchParams({ path })
-  return fetch(`${remoteFilesUrl(clientId)}?${query}`, {
-    method: 'DELETE', headers: { 'X-RCH-Origin': 'web_ui' },
-  })
-}
-
 export function deleteRemoteEntries(clientId, paths) {
   return fetch(remoteFilesUrl(clientId, '/batch'), webUiJson('DELETE', { paths }))
 }

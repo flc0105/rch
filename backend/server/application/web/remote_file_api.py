@@ -42,9 +42,6 @@ class WebRemoteFileApi:
     def rename_remote_path(self, client_id: str, old_path: str, new_name: str, *, origin: str = 'web_ui'):
         return self.remote_file_service.rename_path(client_id, old_path, new_name, origin=origin)
 
-    def delete_remote_path(self, client_id: str, path: str, *, origin: str = 'web_ui'):
-        return self.remote_file_service.delete_path(client_id, path, origin=origin)
-
     def delete_remote_paths(self, client_id: str, paths: list[str], *, origin: str = 'web_ui'):
         return self.remote_file_service.delete_paths(client_id, paths, origin=origin)
 

@@ -286,3 +286,83 @@ func TestZipDefaultRejectsExistingWrapperFolder(t *testing.T) {
 		t.Fatal("default extraction must not silently rename the wrapper folder")
 	}
 }
+
+func TestConflictSkipPreservesTargetAndMoveSource(t *testing.T) {
+	s := testFileSession(t)
+	sourceDir := filepath.Join(s.Cwd, "src")
+	destination := filepath.Join(s.Cwd, "dest")
+	writeConflictTestFile(t, filepath.Join(sourceDir, "existing.txt"), "incoming")
+	writeConflictTestFile(t, filepath.Join(sourceDir, "free.txt"), "free")
+	writeConflictTestFile(t, filepath.Join(destination, "existing.txt"), "original")
+	status, raw := executeRemote(t, s, remoteCommand("paste_paths", map[string]interface{}{
+		"paths":           []string{filepath.Join(sourceDir, "existing.txt"), filepath.Join(sourceDir, "free.txt")},
+		"destination_dir": destination, "operation": "move",
+		"conflict_policies": []string{"skip", "skip"},
+	}))
+	if status != 1 {
+		t.Fatal(raw)
+	}
+	var result struct {
+		Total     int `json:"total"`
+		Succeeded int `json:"succeeded"`
+		Skipped   int `json:"skipped"`
+		Failed    int `json:"failed"`
+	}
+	if err := json.Unmarshal([]byte(raw), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Total != 2 || result.Succeeded != 1 || result.Skipped != 1 || result.Failed != 0 {
+		t.Fatalf("wrong skip accounting: %#v", result)
+	}
+	if readConflictTestFile(t, filepath.Join(destination, "existing.txt")) != "original" ||
+		readConflictTestFile(t, filepath.Join(sourceDir, "existing.txt")) != "incoming" ||
+		readConflictTestFile(t, filepath.Join(destination, "free.txt")) != "free" {
+		t.Fatal("skipping overwrite mutated source or target")
+	}
+	status, raw = executeRemote(t, s, remoteCommand("paste_paths", map[string]interface{}{
+		"paths":           []string{filepath.Join(sourceDir, "existing.txt")},
+		"destination_dir": destination, "operation": "move", "conflict_policies": []string{"skip"},
+	}))
+	if status != 1 || !strings.Contains(raw, `"skipped":1`) || !strings.Contains(raw, `"failed":0`) {
+		t.Fatalf("all skipped should succeed: %d %s", status, raw)
+	}
+}
+
+func TestZipSkipDoesNotExtractExistingTarget(t *testing.T) {
+	s := testFileSession(t)
+	archivePath := filepath.Join(s.Cwd, "skip.zip")
+	file, err := os.Create(archivePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writer := zip.NewWriter(file)
+	entry, err := writer.Create("existing/data.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := entry.Write([]byte("incoming")); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	destination := filepath.Join(s.Cwd, "destination")
+	writeConflictTestFile(t, filepath.Join(destination, "existing", "data.txt"), "original")
+	status, raw := executeRemote(t, s, remoteCommand("extract_zip_path", map[string]interface{}{
+		"path": archivePath, "destination_dir": destination, "conflict_policy": "skip",
+	}))
+	if status != 1 || !strings.Contains(raw, `"skipped":true`) ||
+		readConflictTestFile(t, filepath.Join(destination, "existing", "data.txt")) != "original" {
+		t.Fatalf("ZIP skip incorrectly changed destination: %d %s", status, raw)
+	}
+	entries, err := os.ReadDir(destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("ZIP skip left staging output: %#v", entries)
+	}
+}

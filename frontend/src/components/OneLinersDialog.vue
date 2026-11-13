@@ -16,13 +16,12 @@
       </div>
 
       <div class="one-liners-config-row">
-        <label class="one-liners-config-field">
+        <label v-if="listeners.length" class="one-liners-config-field">
           <span>Listener</span>
-          <el-select v-if="listeners.length" v-model="selectedListenerId" size="small" style="width: 100%" @change="onListenerChange">
+          <el-select v-model="selectedListenerId" size="small" style="width: 100%" @change="onListenerChange">
             <el-option v-for="listener in listeners" :key="listener.id" :value="listener.id"
                        :label="`${listener.name} · ${listener.protocol_label || listener.protocol?.toUpperCase()} :${listener.port}`" />
           </el-select>
-          <el-input v-else v-model="serverForm.serverPort" size="small" placeholder="9999" />
         </label>
 
         <label class="one-liners-config-field">
@@ -32,6 +31,11 @@
             size="small"
             placeholder="Server IP"
           />
+        </label>
+
+        <label class="one-liners-config-field">
+          <span>Port</span>
+          <el-input v-model="serverForm.serverPort" size="small" placeholder="9999" />
         </label>
 
         <label class="one-liners-config-field">
@@ -307,7 +311,7 @@ export default {
 .one-liners-config-row {
   flex: 0 0 auto;
   display: grid;
-  grid-template-columns: minmax(0, 1.25fr) repeat(2, minmax(100px, 0.75fr));
+  grid-template-columns: minmax(0, 1.25fr) repeat(3, minmax(90px, 0.75fr));
   gap: 10px;
   padding: 10px 12px;
   border: 1px solid rgba(148, 163, 184, 0.18);

@@ -47,6 +47,9 @@ class CommandStreamService:
         *,
         command_type: str = COMMAND_TYPE_COMMAND,
         extra=None,
+        payload=None,
+        domain: str = '',
+        action: str = '',
         history_entry_id: str = '',
     ):
         session = self.get_connection(target)
@@ -54,6 +57,9 @@ class CommandStreamService:
             command,
             type=command_type,
             extra=extra,
+            payload=payload,
+            domain=domain,
+            action=action,
             history_entry_id=history_entry_id
         )
 
@@ -65,12 +71,18 @@ class CommandStreamService:
         command_type: str,
         extra,
         history_entry_id: str = '',
+        payload=None,
+        domain: str = '',
+        action: str = '',
     ):
         return self.stream_command(
             target,
             command,
             command_type=command_type,
             extra=extra,
+            payload=payload,
+            domain=domain,
+            action=action,
             history_entry_id=history_entry_id,
         )
 
@@ -81,6 +93,9 @@ class CommandStreamService:
         *,
         command_type: str = COMMAND_TYPE_COMMAND,
         extra=None,
+        payload=None,
+        domain: str = '',
+        action: str = '',
         history_entry_id: str = '',
     ) -> str:
         status, text = self.collect_result(
@@ -89,6 +104,8 @@ class CommandStreamService:
                 command,
                 command_type=command_type,
                 extra=extra,
+                payload=payload,
+                domain=domain, action=action,
                 history_entry_id=history_entry_id,
             )
         )
@@ -105,6 +122,9 @@ class CommandStreamService:
         *,
         command_type: str = COMMAND_TYPE_COMMAND,
         extra=None,
+        payload=None,
+        domain: str = '',
+        action: str = '',
         history_entry_id: str = '',
     ) -> dict:
         text = self.run_text_command(
@@ -112,6 +132,9 @@ class CommandStreamService:
             command,
             command_type=command_type,
             extra=extra,
+            payload=payload,
+            domain=domain,
+            action=action,
             history_entry_id=history_entry_id,
         )
 

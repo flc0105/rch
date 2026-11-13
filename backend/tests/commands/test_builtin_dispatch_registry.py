@@ -20,7 +20,7 @@ def _handler_with_stubs():
 
 @pytest.mark.parametrize('name,arg,expected', [
     ('script', '', ('list', '')),
-    ('script', 'run __json__:{"a": 1}', ('run', '__json__:{"a": 1}')),
+    ('script', 'exec common/demo --name world', ('exec', 'common/demo --name world')),
     ('alias', 'set --platform common x = shell echo  hello', ('set', '--platform common x = shell echo  hello')),
     ('job', 'start demo --mode inproc --params "{}"', ('start', 'demo --mode inproc --params "{}"')),
 ])

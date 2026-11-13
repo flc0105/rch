@@ -24,14 +24,26 @@ Client（远程设备）
 
 浏览器不直接挂载远程磁盘，也不要求远端开放 SMB、SFTP 等文件服务。一次目录浏览由浏览器请求 Server 的目录 API，Server 通过已建立的 Client 连接执行文件系统查询，再将目录条目、统计和分页信息返回前端。与单纯列目录不同，上传、下载与预览会涉及实际文件内容，使用专门的文件传输服务和 Server Artifact 存储。
 
-**Go (Simple) Client 支持范围。** Go Client 复用同一套结构化命令协议，支持目录浏览、分页、隐藏文件过滤、名称搜索与递归搜索，以及新建目录、重命名、单项/批量删除、复制和移动。握手提供 Root、Home、Desktop、Documents、Downloads、Temp 和 Program Directory 路径。另支持 Remote Files 的浏览器上传（Server 暂存 → Client）、下载到 Server Artifact、批量 ZIP 下载、文件预览缓存上传、受限文本保存、ZIP Peek／条目文本预览／创建和安全解压；传输使用独立于前台命令的可取消任务。图片预览上传原始字节，不做图片压缩或格式转换，也不引入图片处理第三方库。Server 仍负责按文件实际内容决定图片、文本、ZIP 等预览类型；Go 不自行渲染预览界面。Go 的批量操作沿用 Python 的成功数、失败数与错误列表结构；路径权限由 Go Client 所在系统账号决定。
+**Go (Simple) Client 支持范围。** Go Client 复用与 Python Client 相同的 `control(domain=remote_files)` 结构化请求协议，支持目录浏览、分页、隐藏文件过滤、名称搜索与递归搜索，以及新建目录、重命名、统一路径数组删除、复制和移动。握手提供 Root、Home、Desktop、Documents、Downloads、Temp 和 Program Directory 路径。另支持 Remote Files 的浏览器上传（Server 暂存 → Client）、下载到 Server Artifact、批量 ZIP 下载、文件预览缓存上传、受限文本保存、ZIP Peek／条目文本预览／创建和安全解压；传输使用独立于前台命令的可取消任务。图片预览上传原始字节，不做图片压缩或格式转换，也不引入图片处理第三方库。Server 仍负责按文件实际内容决定图片、文本、ZIP 等预览类型；Go 不自行渲染预览界面。Go 的批量操作沿用 Python 的成功、跳过、失败数量与错误列表结构；路径权限由 Go Client 所在系统账号决定。
 
 远程操作分成两类，影响它们与普通命令的并发关系：
 
 | 类型 | 典型操作 | 执行方式 |
 |---|---|---|
-| 同步文件操作 | 浏览、搜索、新建目录、重命名、删除、复制、移动、ZIP 管理、保存文本 | 经由 Client 命令执行链，使用普通前台命令槽 |
+| 同步文件操作 | 浏览、搜索、新建目录、重命名、删除、复制、移动、ZIP 管理、保存文本 | 经由 `control(domain=remote_files)` 消息与 Client 文件操作 Handler，仍使用普通前台命令槽 |
 | 文件内容传输 | Browser 下载、打包下载、预览文件的数据搬运，以及专门的上传流程 | 使用 Client TransferManager / Server TransferService 或对应上传链路，文件数据不塞入前台命令结果 |
+
+**Remote Files 控制协议。** 浏览、搜索、文件管理、ZIP 管理、文件编辑等一次性请求统一使用 `type=control`，由信封顶层 `domain=remote_files` 与 `action` 路由；业务参数直接放在 JSON 对象 `payload` 内，不再由 Server 拼接 `__json__:` 编码文本命令。Python/Go Client 均使用原有文件系统实现，验证、冲突检测和前台任务互斥规则保持不变。常见请求如下：
+
+```json
+{"type":"control","id":46,"domain":"remote_files","action":"browse_directory","payload":{"path":"/home/demo","page":1,"page_size":50,"show_hidden":false,"search_keyword":"","recursive_search":false}}
+```
+
+```json
+{"type":"control","id":47,"domain":"remote_files","action":"create_archive","payload":{"paths":["/home/demo/a.txt","/home/demo/b.txt"],"destination_dir":"/home/demo","archive_name":"bundle_20261112_182428.zip"}}
+```
+
+目前 Server 文件浏览器使用的 Action 包括 `browse_directory`、`create_directory`、`rename_path`、`delete_paths`、`paste_paths`（复制/移动及预检）、`create_archive`、`peek_archive`、`read_archive_entry`、`extract_archive`（含预检）、`inspect_upload` 与 `save_file`。JSON 型请求完成时由 Client 返回 `result.data` 对象；文本型请求仍返回 `result.text`。直接在 Terminal 输入的既有普通 Client 文件命令仍按文本命令工作，但不是 Remote File Browser 的控制实现。
 
 **文件搬运使用独立传输链路，不占用普通前台命令槽。** HTTP 请求等待实际上传或下载阶段完成后返回结果。 例如下载接口需要等待传输结果，取得 Artifact 才能返回可用的文件记录；网络中断或远端不可读仍会导致失败。任何实时操作都要求对应 Client 在线、具备文件访问权限。
 
@@ -46,7 +58,7 @@ Client（远程设备）
 | 下载、删除、复制、移动、ZIP、预览编辑 | 支持 | 不提供 |
 | 将选中路径回填到 Script / Job / Tool 参数 | 不作为主要用途 | 核心用途 |
 
-目录删除在目标 Client 上进行。可移除磁盘在枚举期间可能产生或移除 `._` 一类附属文件；如果删除时某个子文件已不存在，清理会继续处理其他内容，但**目标路径不存在、权限拒绝或其他实际删除失败仍应报错**。批量删除的每个目标独立报告成功或失败，不会将出错项整体吞掉。
+目录删除在目标 Client 上进行。可移除磁盘在枚举期间可能产生或移除 `._` 一类附属文件；如果删除时某个子文件已不存在，清理会继续处理其他内容，但**目标路径不存在、权限拒绝或其他实际删除失败仍应报错**。删除统一使用 `delete_paths`，单项操作也提交只包含一项的 `paths` 数组。批量删除的每个目标独立报告成功或失败，不会将出错项整体吞掉。
 
 ## 目录定位和导航状态
 
@@ -171,7 +183,7 @@ Browser 对 ZIP 提供三种实际不同的操作：
 | **Peek ZIP** | 不解压就浏览 ZIP 内目录结构与符合条件的文本条目 |
 | **Extract Here** | 在远端解压 ZIP，结果写入远端文件系统 |
 
-Create ZIP 可以选择多个文件和目录，并指定生成目录和归档名称；名称不含 `.zip` 时会补上扩展名。已存在同名 ZIP 就报冲突，不覆盖。写入异常时会尝试清理尚未完成的输出文件。
+Create ZIP 可以选择多个文件和目录，并指定生成目录和归档名称。多项选择的默认名称为 `bundle_YYYYMMDD_HHMMSS.zip`，与公共 Artifact 自动打包命名一致；单项选择仍使用相应文件或目录名。名称不含 `.zip` 时会补上扩展名。已存在同名 ZIP 就报冲突，不覆盖。写入异常时会尝试清理尚未完成的输出文件。
 
 Peek ZIP 先校验压缩包，再展示树形目录、文件数量、压缩与未压缩体积等信息；可选择文本条目读取内容而不必解压整个归档。在远程 ZIP 预览中，选中单个文件可以通过 **Download** 将原始字节经 Transfer Center 下载为文件 Artifact，二进制或超过文本预览限制的条目同样可下载；目录打包下载不在该入口提供。选中文件或目录后可点 **Extract to...**，用 Remote Folder Picker 选择已有远端目标目录（也可选当前目录），确认后只解压所选文件或目录子树。选中的嵌套文件/目录会以自身名称出现在目标目录，不附带上级 ZIP 路径。默认目标已存在时报冲突；开启冲突询问后，文件可以选择替换或保留两个，目录可以选择合并、替换或保留两个。它有独立的预览限制：
 
@@ -300,7 +312,7 @@ Content-Type: application/json
 }
 ```
 
-`operation` 只接受 `copy` 或 `move`，省略时按 `copy` 处理。该请求不会自动创建 `/tmp/backup`；目标同名时默认拒绝执行，原有文件不被更改。设置 `inspect: true` 可只检查冲突而不提交写入；正式请求可用 `conflict_policies` 为各源项目指定策略。ZIP 解压接口同样接受 `inspect: true` 和 `conflict_policy`。请求返回包含成功/失败数量及错误信息，应逐项核对，特别是同时处理多个路径时。若要移动，则将 `operation` 改为 `move`；无需先向系统 Clipboard 写入路径。
+`operation` 只接受 `copy` 或 `move`，省略时按 `copy` 处理。该请求不会自动创建 `/tmp/backup`；目标同名时默认拒绝执行，原有文件不被更改。设置 `inspect: true` 可只检查冲突而不提交写入；正式请求可用 `conflict_policies` 为各源项目指定策略。ZIP 解压接口同样接受 `inspect: true` 和 `conflict_policy`。当目标已存在时，`skip` 表示跳过该项目且不更改来源或目标；批量复制/移动结果分别包含 `succeeded`、`skipped`、`failed`，跳过不计入失败。上传预检选择 Skip 时不发起文件 Transfer；正式传输仍仅接受上传通道已有的提交策略。请求返回包含数量及错误信息，应逐项核对，特别是同时处理多个路径时。若要移动，则将 `operation` 改为 `move`；无需先向系统 Clipboard 写入路径。
 
 创建目录使用 `mkdir` 接口的 `{"path":"/tmp/backup"}`；重命名使用 `{"old_path":"/tmp/old.txt","new_name":"new.txt"}`。保存文本使用 `{"path":"/tmp/note.txt","content":"...","encoding":"utf-8"}`。这些都是直接改变远程文件系统的请求，应确认目标设备及绝对路径正确后再操作。
 

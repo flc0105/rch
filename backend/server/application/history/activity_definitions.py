@@ -40,6 +40,10 @@ class ActivityKind:
            BACKGROUND_JOB, PTY, SCREEN_VIEW, CLIPBOARD, PROCESS)
 
 
+# Map control-plane actions to user-facing Activity operations in the history layer.
+JOB_ACTIVITY_ACTIONS = {'start': 'start_job', 'stop': 'stop_job', 'stop_all': 'stop_all_jobs'}
+
+
 class ActivityAction:
     INVOKE = 'invoke'
     RUN = 'run'
@@ -131,10 +135,11 @@ def activity_summary(entry):
         actions = {
             'install_package': 'Install', 'uninstall_package': 'Uninstall',
             'clear_package_cache': 'Clear cache', 'start_instance': 'Start',
+            'create_instance': 'Create', 'restart_instance': 'Restart',
             'run_oneshot': 'Run', 'run_exec': 'Run', 'stop_instance': 'Stop',
             'remove_instance': 'Remove', 'clear_instance_logs': 'Clear logs',
         }
-        target = args.get('exec_name') or args.get('tool_id') or args.get('package_id') or ''
+        target = args.get('exec_name') or args.get('instance_id') or args.get('tool_id') or args.get('package_id') or ''
         return f"{actions.get(action, action or 'External Tool')} {target}".strip()
     return action or kind or 'Activity'
 

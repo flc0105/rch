@@ -81,16 +81,6 @@ def create_remote_files_blueprint(server_instance):
 
         return responder.json_endpoint(_execute, default_error_status=500)
 
-    @blueprint.delete('/api/connections/<client_id>/remote-files')
-    def delete_remote_file_or_directory(client_id):
-        def _execute():
-            path = get_optional_remote_path()
-            if not path:
-                raise ValueError('path is required')
-            return remote_file_api.delete_remote_path(client_id, path, origin=activity_origin())
-
-        return responder.json_endpoint(_execute, default_error_status=500)
-
     @blueprint.post('/api/connections/<client_id>/remote-files/download')
     def download_remote_file(client_id):
         def _execute():

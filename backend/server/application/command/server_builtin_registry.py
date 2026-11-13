@@ -46,7 +46,6 @@ SERVER_COMMAND_SPECS = (
         ('list', 'List available scripts (optionally --json)', 'script list [--json]'),
         ('view', 'Read script source on the Server', 'script view <path>'),
         ('exec', 'Execute a script with CLI arguments', 'script exec <path> [options]'),
-        ('run', 'Execute a script with structured JSON payload', 'script run <__json__:payload>'),
     ), default='list', dispatch_subcommand=True),
     command('alias', 'List or manage aliases for this Client platform', children=(
         ('list', 'List current effective aliases (optionally --json)', 'alias list [--json]'),
