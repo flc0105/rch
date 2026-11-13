@@ -80,6 +80,15 @@ def test_script_cli_and_web_use_one_payload_and_web_presentation_stays_runtime_o
         remote_execution_service=SimpleNamespace(run_json_command=lambda *a, **kw: CONFIG),
     )
     assert list(builtin.script('exec', 'folder/ping.py --host example.com --port 80')) == [(1, 'completed')]
+    assert list(builtin.script('exec', '--execution_mode subprocess_pipe --output_mode stream folder/ping.py --host example.com --port 80')) == [(1, 'completed')]
+    assert cli_plans[-1]['payload']['execution_mode'] == 'subprocess_pipe'
+    assert cli_plans[-1]['payload']['output_mode'] == 'stream'
+    assert cli_plans[-1]['payload']['params'] == {'host': 'example.com', 'port': 80}
+    for options in ('--execution-mode inproc', '--output-mode stream', '--execution_mode inproc --execution_mode subprocess_pipe'):
+        with pytest.raises((ValueError, FileNotFoundError)):
+            list(builtin.script('exec', options + ' folder/ping.py --host example.com'))
+    with pytest.raises(ValueError, match='Invalid or duplicate Script option'):
+        list(builtin.script('exec', '--execution_mode'))
     assert cli_plans[0]['command_type'] == 'control'
     assert cli_plans[0]['domain'] == 'script' and cli_plans[0]['action'] == 'run'
 

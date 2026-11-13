@@ -96,13 +96,23 @@ test('Script mode radios remain visible but are disabled outside effective allow
   assert.match(run, /\.script-run-modes :deep\(\.el-form-item__content\)\s*\{\s*display: block;/)
   assert.match(run, /\.script-run-mode-help\s*\{\s*display: block;\s*width: 100%;\s*margin-top: 6px;/)
   assert.match(run, /:disabled="submitting \|\| !modesReady"/)
+  assert.match(run, /\.script-run-mode-toggle\s*\{[^}]*background: var\(--el-fill-color-extra-light\)/)
+  assert.match(run, /modesExpanded: false/)
+  assert.match(run, /v-show="modesExpanded"/)
+  assert.match(run, /:aria-expanded="modesExpanded" @click="modesExpanded = !modesExpanded"/)
+  assert.match(run, /visible\(value\) \{\s*if \(value\) this.modesExpanded = false/)
+
 })
 
-test('Script list title includes the existing Lucide script icon and platform/parameter tags, with full-width mobile actions', () => {
+test('Script list title includes the existing Lucide script icon and platform/parameter tags, with width-dependent mobile actions', () => {
   const heading = scriptLibrary.match(/class="script-library-card-heading"[\s\S]*?class="script-library-card-path mono"/)?.[0] || ''
   assert.match(heading, /<FileCode2[\s\S]*?item\.display_name \|\| item\.script_name[\s\S]*?formatScriptPlatformLabel\(item\)[\s\S]*?Params/)
   assert.match(scriptLibrary, /import \{ FileCode2 \} from '@lucide\/vue'/)
-  assert.match(scriptLibrary, /\.script-library-card-actions\s*\{\s*display: grid;\s*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/)
+  assert.match(scriptLibrary, /@container \(width < 520px\)[\s\S]*?grid-template-columns: repeat\(3, minmax\(0, 1fr\)\)/)
+  assert.match(scriptLibrary, /@container \(width < 420px\)[\s\S]*?grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/)
   assert.match(scriptLibrary, /\.script-library-card-actions :deep\(\.el-dropdown\)\s*\{\s*grid-column: 1 \/ -1;/)
+  assert.match(scriptLibrary, /\.script-library-card-actions :deep\(\.el-button\)\s*\{\s*border-radius: 6px;/)
+  assert.doesNotMatch(scriptLibrary, /min-width: 64px;\s*height: 32px;/)
+  assert.doesNotMatch(scriptLibrary, /@container \(width < 208px\)/)
   assert.match(scriptLibrary, /@command="handleScriptMoreCommand\(item, \$event\)"/)
 })

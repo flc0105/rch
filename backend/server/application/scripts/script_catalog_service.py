@@ -1,11 +1,12 @@
 import glob
 import os
 import shutil
+import tempfile
 from pathlib import Path
 
 from werkzeug.utils import secure_filename
 
-from core.utils.script_metadata import read_script_metadata_from_file
+from core.utils.script_metadata import read_script_metadata_from_file, rewrite_script_metadata_name
 
 
 class ScriptCatalogService:
@@ -238,8 +239,31 @@ class ScriptCatalogService:
         if os.path.exists(target_path):
             raise FileExistsError(f'Target script already exists: {new_name}')
 
+        # Prepare the metadata change before moving the file. Only the existing
+        # name literal changes; all comments, formatting and script code stay intact.
+        with open(source_path, 'r', encoding='utf-8', newline='') as source:
+            original = source.read()
+        updated = rewrite_script_metadata_name(original, safe_target_name[:-3])
         os.makedirs(os.path.dirname(target_path), exist_ok=True)
-        os.rename(source_path, target_path)
+        if updated == original:
+            os.rename(source_path, target_path)
+        else:
+            pending = None
+            try:
+                with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', newline='',
+                                                 dir=os.path.dirname(target_path), delete=False) as staged:
+                    pending = staged.name
+                    staged.write(updated)
+                shutil.copymode(source_path, pending)
+                os.rename(source_path, target_path)
+                try:
+                    os.replace(pending, target_path)
+                except OSError:
+                    os.rename(target_path, source_path)
+                    raise
+            finally:
+                if pending and os.path.exists(pending):
+                    os.unlink(pending)
         return {
             'name': safe_target_name[:-3],
             'path': safe_target_name,

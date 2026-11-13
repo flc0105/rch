@@ -134,7 +134,7 @@ class ScriptBuiltinSupport:
             return
         if subcommand == 'exec':
             if not str(tail or '').strip():
-                yield 0, 'Usage: script exec [--execution-mode MODE] [--output-mode MODE] <path> [options]'
+                yield 0, 'Usage: script exec [--execution_mode MODE] [--output_mode MODE] <path> [options]'
                 return
             yield from self.execute_script_file(tail)
             return
@@ -183,8 +183,8 @@ class ScriptBuiltinSupport:
         if not parts:
             raise ValueError('script_name is required')
         modes = {}
-        while parts and parts[0] in ('--execution-mode', '--output-mode'):
-            key = parts.pop(0)[2:].replace('-', '_')
+        while parts and parts[0] in ('--execution_mode', '--output_mode'):
+            key = parts.pop(0)[2:]
             if not parts or parts[0].startswith('--') or key in modes:
                 raise ValueError(f'Invalid or duplicate Script option: {key}')
             modes[key] = parts.pop(0)

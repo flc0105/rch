@@ -1858,6 +1858,7 @@ getPreferredScriptDirectoryForCurrentConnection() {
 }
 
 .script-library-card {
+  container-type: inline-size;
   min-width: 0;
   padding: 14px 16px;
   border: 1px solid rgba(15, 23, 42, 0.08);
@@ -1994,17 +1995,6 @@ getPreferredScriptDirectoryForCurrentConnection() {
   .script-library-shell {
     grid-template-columns: 220px minmax(0, 1fr);
   }
-
-  .script-library-card {
-    grid-template-columns: 1fr;
-    align-items: flex-start;
-  }
-
-  .script-library-card-actions {
-    justify-content: flex-end;
-    width: 100%;
-    flex-wrap: wrap;
-  }
 }
 
 @media (max-width: 760px) {
@@ -2020,33 +2010,6 @@ getPreferredScriptDirectoryForCurrentConnection() {
 }
 
 @media (max-width: 768px), (max-height: 720px) {
-  .script-library-card {
-    grid-template-columns: 1fr;
-    align-items: flex-start;
-  }
-
-  .script-library-card-actions {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    width: 100%;
-    gap: 8px;
-    align-items: stretch;
-  }
-
-  .script-library-card-actions :deep(.el-button) {
-    width: 100%;
-    min-width: 0;
-    height: 32px;
-    min-height: 32px;
-    justify-content: center;
-  }
-
-  .script-library-card-actions :deep(.el-dropdown) {
-    grid-column: 1 / -1;
-    width: 100%;
-    min-width: 0;
-  }
-
   .script-library-toolbar,
   .script-library-toolbar-left,
   .script-library-toolbar-right {
@@ -2061,6 +2024,33 @@ getPreferredScriptDirectoryForCurrentConnection() {
     width: 100%;
     max-width: none;
   }
+}
+.script-library-card-actions :deep(.el-button) {
+  border-radius: 6px;
+  justify-content: center;
+}
+.script-library-card-actions :deep(.el-dropdown) { flex: 0 0 auto; }
+
+/* Keep the compact desktop actions beside the text until the card needs a second row. */
+@container (width < 520px) {
+  .script-library-card-main { grid-column: 1 / -1; }
+  .script-library-card-actions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-column: 1 / -1;
+    width: 100%;
+    gap: 8px;
+    align-items: stretch;
+  }
+  .script-library-card-actions :deep(.el-button),
+  .script-library-card-actions :deep(.el-dropdown) { width: 100%; min-width: 0; }
+}
+
+/* On narrow cards, use the same two-column/last-full-row pattern as Jobs. */
+@container (width < 420px) {
+  .script-library-card-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .script-library-card-actions :deep(.el-button) { height: 32px; }
+  .script-library-card-actions :deep(.el-dropdown) { grid-column: 1 / -1; }
 }
 </style>
 

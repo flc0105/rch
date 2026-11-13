@@ -46,7 +46,7 @@
 | `alias unset [--platform PLATFORM] name` | 删除指定作用域的 Alias；不会自动删除其他平台同名定义 |
 | `script list` | 查看 Server Script Library；可选 `--json` |
 | `script view <path>` | 查看 Server 脚本内容 |
-| `script exec [--execution-mode MODE] [--output-mode MODE] <path> [options]` | 使用命令行选项执行 Server 脚本 |
+| `script exec [--execution_mode MODE] [--output_mode MODE] <path> [options]` | 使用命令行选项执行 Server 脚本 |
 | `job list` | 查看 Server 已登记的 Job 定义；可选 `--json` |
 | `job start <name> [--mode MODE] [--params JSON]` | 在目标 Client 启动 Job，并可指定运行模式和参数 |
 | `job ps` / `job status <name>` | 查看正在运行的 Job / 单个 Job 状态 |

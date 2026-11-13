@@ -43,8 +43,12 @@ func TestRuntimeSetCommandQuotedWindowsPaths(t *testing.T) {
 		t.Fatal("incorrect payload")
 	}
 	status, msg = runtimeSetCommand("COMMAND_DEFAULT_SHELL_TIMEOUT 12", store)
-	if status != 1 || store.Seconds("COMMAND_DEFAULT_SHELL_TIMEOUT") != 12 {
+	if status != 1 || msg != "[+] COMMAND_DEFAULT_SHELL_TIMEOUT updated, value: 30 → 12" || store.Seconds("COMMAND_DEFAULT_SHELL_TIMEOUT") != 12 {
 		t.Fatalf("set: %d %s", status, msg)
+	}
+	status, msg = runtimeSetCommand("SCRIPT_DEFAULT_OUTPUT_MODE stream", store)
+	if status != 1 || msg != "[+] SCRIPT_DEFAULT_OUTPUT_MODE updated, value: 'collect' → 'stream'" {
+		t.Fatalf("script mode: %d %s", status, msg)
 	}
 	status, msg = runtimeSetCommand("--reset COMMAND_DEFAULT_SHELL_TIMEOUT", store)
 	if status != 1 || store.Seconds("COMMAND_DEFAULT_SHELL_TIMEOUT") != 30 {

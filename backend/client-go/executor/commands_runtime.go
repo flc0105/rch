@@ -88,11 +88,13 @@ func runtimeSetCommand(raw string, store *config.RuntimeStore) (int, string) {
 		if len(parts) > 2 {
 			return 0, "Usage: set KEY value"
 		}
-		source, err := store.Set(parts[0], parts[1])
+		key := strings.ToUpper(strings.TrimSpace(parts[0]))
+		oldValue := store.Get(key)
+		_, err := store.Set(key, parts[1])
 		if err != nil {
 			return 0, fmt.Sprintf("Failed to set runtime config: %v", err)
 		}
-		return 1, fmt.Sprintf("%s updated (%s)", strings.ToUpper(parts[0]), source)
+		return 1, fmt.Sprintf("[+] %s updated, value: %s → %s", key, formatRuntimeValue(oldValue), formatRuntimeValue(store.Get(key)))
 	}
 	if len(parts) == 1 && parts[0] == "--all" {
 		parts = nil
@@ -107,4 +109,12 @@ func runtimeSetCommand(raw string, store *config.RuntimeStore) (int, string) {
 		lines = append(lines, fmt.Sprintf("%s = %v  [%s]", item["key"], item["value"], item["source"]))
 	}
 	return 1, strings.Join(lines, "\n")
+}
+
+func formatRuntimeValue(value interface{}) string {
+	if text, ok := value.(string); ok {
+		quoted := fmt.Sprintf("%q", text)
+		return "'" + strings.ReplaceAll(strings.ReplaceAll(quoted[1:len(quoted)-1], `\"`, `"`), "'", `\'`) + "'"
+	}
+	return fmt.Sprint(value)
 }

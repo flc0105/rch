@@ -42,6 +42,8 @@ set SCRIPT_DEFAULT_EXECUTION_MODE subprocess_pipe
 set --reset SCRIPT_DEFAULT_EXECUTION_MODE
 ```
 
+普通 `set KEY value` 成功后输出一行 `KEY updated, value: 旧值 → 新值`；需要执行额外运行时操作的配置继续返回相应的应用结果或警告。`set --json` 保留完整的配置值、默认值和来源。
+
 配置名不区分输入时的大小写，但文档和界面统一使用大写名称。布尔值可使用 `true` / `false`；数字项按配置自身的单位和范围填写。`set KEY` **不是**单项查询语法：查询请使用 `set` 或 `set --json`。
 
 > **如何理解 `default` 与 `override`**  

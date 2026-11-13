@@ -91,14 +91,9 @@ class CommandRuntimeConfigMixin:
             self._checkpoint()
 
             lines = [
-                success(f'{result.key} updated'),
-                info(
-                    f'Value: {self.runtime_config_service.format_value(result.old_value)}'
+                success(
+                    f'{result.key} updated, value: {self.runtime_config_service.format_value(result.old_value)}'
                     f' → {self.runtime_config_service.format_value(result.new_value)}'
-                ),
-                info(
-                    f'Default: {self.runtime_config_service.format_value(result.default_value)}'
-                    f'  |  Source: {result.source}'
                 ),
             ]
             lines.extend(side_effects)

@@ -76,7 +76,7 @@ Script 使用共享 [Parameter Schema](parameter_schema.md)，而不是 ACMD 的
 
 ### Script Library 的两种展示位置
 
-Script Run 表单的 Execution Mode 和 Output Mode 始终显示各自的全部选项；不符合脚本 Schema 或目标 Client 能力的选项禁用。所选模式的说明显示在对应控件下方。
+Script Run 表单的 Execution Mode 和 Output Mode 默认折叠，标题显示当前选择，点击可展开或收起。展开后各自显示全部选项；不符合脚本 Schema 或目标 Client 能力的选项禁用。所选模式的说明显示在对应控件下方。
 
 Script Run 表单可以选择 **Dialog** 或 **Terminal**：
 
@@ -102,7 +102,7 @@ Server 会给命令任务附加 `script_run`、`script_run_name`、`script_run_i
 
 ### 终端轻量入口和结构化入口
 
-Server 的 `script exec [--execution-mode MODE] [--output-mode MODE] <path> [options]` 使用 `shlex` 与 `scan_args` 将 CLI 选项解析为参数对象，随后与 Script Library Web 表单使用**相同的 Script Metadata 参数校验、默认值和源码加载入口**。Web 不再生成伪造的 `script run` 命令。两端最终发送相同形状的 Control 请求。Web 任务消费提交时已经准备好的源码与参数，不再次加载脚本文件：
+Server 的 `script exec [--execution_mode MODE] [--output_mode MODE] <path> [options]` 使用 `shlex` 与 `scan_args` 将 CLI 选项解析为参数对象，随后与 Script Library Web 表单使用**相同的 Script Metadata 参数校验、默认值和源码加载入口**。Web 不再生成伪造的 `script run` 命令。两端最终发送相同形状的 Control 请求。Web 任务消费提交时已经准备好的源码与参数，不再次加载脚本文件：
 
 ```json
 {"type":"control","id":49,"domain":"script","action":"run","payload":{"script_name":"ops/health_probe","source":"<Server 提供的脚本源码>","params":{"target":"/tmp","limit":20},"execution_mode":"inproc","output_mode":"collect"}}
@@ -111,7 +111,7 @@ Server 的 `script exec [--execution-mode MODE] [--output-mode MODE] <path> [opt
 Server 统一准备 Script Control 的源码、业务参数与已解析的两个运行模式。`execution_mode`、`output_mode` 是独立的 Control 字段，不属于脚本 `params`，Client 不再另选默认值。CLI 模式选项必须位于脚本路径之前，路径之后仍是业务参数，例如：
 
 ```text
-script exec --execution-mode subprocess_pipe --output-mode stream ops/health_probe --limit 20
+script exec --execution_mode subprocess_pipe --output_mode stream ops/health_probe --limit 20
 ```
 
 ### 每脚本运行模式 Schema
@@ -300,7 +300,7 @@ Script Library 的 HTTP 管理入口提供目录、文件的读取及修改。�
 | 读取源码 | `GET /api/scripts/download?name=...` | 获取指定 Script Python 文本 |
 | 保存源码 | `POST /api/scripts/save` | 按相对名称写入源码 |
 | 上传源码文件 | `POST /api/scripts/upload` | 上传 `.py` 到 Server Library |
-| 重命名或删除脚本 | `POST /api/scripts/rename`、`DELETE /api/scripts/delete` | 修改服务器中的文件 |
+| 重命名或删除脚本 | `POST /api/scripts/rename`、`DELETE /api/scripts/delete` | 修改服务器中的文件；重命名时同步更新已有静态 Script Metadata 的 `name`（不含 `.py`） |
 | 管理目录 | `POST /api/scripts/folders`、`POST /api/scripts/folders/rename`、`DELETE /api/scripts/folders` | 创建、重命名或递归删除目录 |
 | 在设备上执行 | `POST /api/connections/{client_id}/scripts/run` | 按 Metadata 绑定参数，提交前台 Script 任务 |
 
@@ -329,7 +329,7 @@ Run API 要求 `script_name` 非空、`params` 为对象，并明确提供 `pres
 
 `script` / `script list` 默认沿用原 `exec` 无参数时的 Server Script 相对路径列表。`script list --json` 输出简化的 `name`（相对路径）、`display_name`、`description` 与 `params`（仅参数名数组）；`script view <path>` 返回 Server 上的脚本源码，严格限制在 Script 根目录。
 
-`script exec [--execution-mode MODE] [--output-mode MODE] <path> [options]` 使用 `shlex`、`scan_args` 得到参数对象，Script Library UI 直接提交结构化参数。两端均按同一份 Script Metadata 规范化，再经 `control(domain=script, action=run)` 执行。Server 不注册独立的 `exec`、`run_script` 或 `script run` 入口，Client 不注册 Script 文本命令；脚本运行所需源码作为受控请求的 `payload.source` 提供。
+`script exec [--execution_mode MODE] [--output_mode MODE] <path> [options]` 使用 `shlex`、`scan_args` 得到参数对象，Script Library UI 直接提交结构化参数。两端均按同一份 Script Metadata 规范化，再经 `control(domain=script, action=run)` 执行。Server 不注册独立的 `exec`、`run_script` 或 `script run` 入口，Client 不注册 Script 文本命令；脚本运行所需源码作为受控请求的 `payload.source` 提供。
 
 ### 终端列表的平台筛选
 

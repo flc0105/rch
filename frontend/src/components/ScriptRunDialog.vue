@@ -44,22 +44,29 @@
 
       <div v-if="modeError" class="script-run-description">{{ modeError }}</div>
       <div v-loading="modesLoading" class="script-run-modes">
-        <el-form label-position="top">
-          <el-form-item label="Execution Mode">
-            <el-radio-group :model-value="runModes.execution_mode" :disabled="modesLoading || !!modeError" @update:model-value="$emit('update-mode', 'execution_mode', $event)">
-              <el-radio value="inproc" :disabled="!modeOptions.execution_mode?.allowed?.includes('inproc')">In-process</el-radio>
-              <el-radio value="subprocess_pipe" :disabled="!modeOptions.execution_mode?.allowed?.includes('subprocess_pipe')">Subprocess</el-radio>
-            </el-radio-group>
-            <div class="script-run-mode-help">{{ runModes.execution_mode === 'inproc' ? 'Runs inside the Client process. Cancellation is not supported.' : runModes.execution_mode === 'subprocess_pipe' ? 'Runs in a separate Python process. Supports cancellation.' : 'Select an available execution mode.' }}</div>
-          </el-form-item>
-          <el-form-item label="Output Mode">
-            <el-radio-group :model-value="runModes.output_mode" :disabled="modesLoading || !!modeError" @update:model-value="$emit('update-mode', 'output_mode', $event)">
-              <el-radio value="collect" :disabled="!modeOptions.output_mode?.allowed?.includes('collect')">Collect</el-radio>
-              <el-radio value="stream" :disabled="!modeOptions.output_mode?.allowed?.includes('stream')">Stream</el-radio>
-            </el-radio-group>
-            <div class="script-run-mode-help">{{ runModes.output_mode === 'stream' ? 'Display output as the script runs.' : runModes.output_mode === 'collect' ? 'Return collected output when execution finishes.' : 'Select an available output mode.' }}</div>
-          </el-form-item>
-        </el-form>
+        <button type="button" class="script-run-mode-toggle" :aria-expanded="modesExpanded" @click="modesExpanded = !modesExpanded">
+          <span>Execution Mode / Output Mode</span>
+          <span class="script-run-mode-summary">{{ runModes.execution_mode === 'inproc' ? 'In-process' : runModes.execution_mode === 'subprocess_pipe' ? 'Subprocess' : '—' }} / {{ runModes.output_mode === 'stream' ? 'Stream' : runModes.output_mode === 'collect' ? 'Collect' : '—' }}</span>
+          <span class="script-run-mode-chevron" :class="{ 'is-expanded': modesExpanded }" aria-hidden="true">›</span>
+        </button>
+        <div v-show="modesExpanded" class="script-run-mode-fields">
+          <el-form label-position="top">
+            <el-form-item label="Execution Mode">
+              <el-radio-group :model-value="runModes.execution_mode" :disabled="modesLoading || !!modeError" @update:model-value="$emit('update-mode', 'execution_mode', $event)">
+                <el-radio value="inproc" :disabled="!modeOptions.execution_mode?.allowed?.includes('inproc')">In-process</el-radio>
+                <el-radio value="subprocess_pipe" :disabled="!modeOptions.execution_mode?.allowed?.includes('subprocess_pipe')">Subprocess</el-radio>
+              </el-radio-group>
+              <div class="script-run-mode-help">{{ runModes.execution_mode === 'inproc' ? 'Runs inside the Client process. Cancellation is not supported.' : runModes.execution_mode === 'subprocess_pipe' ? 'Runs in a separate Python process. Supports cancellation.' : 'Select an available execution mode.' }}</div>
+            </el-form-item>
+            <el-form-item label="Output Mode">
+              <el-radio-group :model-value="runModes.output_mode" :disabled="modesLoading || !!modeError" @update:model-value="$emit('update-mode', 'output_mode', $event)">
+                <el-radio value="collect" :disabled="!modeOptions.output_mode?.allowed?.includes('collect')">Collect</el-radio>
+                <el-radio value="stream" :disabled="!modeOptions.output_mode?.allowed?.includes('stream')">Stream</el-radio>
+              </el-radio-group>
+              <div class="script-run-mode-help">{{ runModes.output_mode === 'stream' ? 'Display output as the script runs.' : runModes.output_mode === 'collect' ? 'Return collected output when execution finishes.' : 'Select an available output mode.' }}</div>
+            </el-form-item>
+          </el-form>
+        </div>
       </div>
 
 <el-form
@@ -219,11 +226,18 @@ export default {
 
   data() {
     return {
+      modesExpanded: false,
       remoteFilePickerVisible: false,
       pendingRemoteFileParam: null,
       keychainPickerVisible: false,
       pendingKeychainParam: null,
     }
+  },
+
+  watch: {
+    visible(value) {
+      if (value) this.modesExpanded = false
+    },
   },
 
   computed: {
@@ -332,6 +346,28 @@ export default {
 }
 
 .script-run-modes { flex: 0 0 auto; padding-right: 4px; }
+.script-run-mode-toggle {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid var(--el-border-color-extra-light);
+  border-radius: 8px;
+  background: var(--el-fill-color-extra-light);
+  color: var(--el-text-color-regular);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.script-run-mode-toggle:hover { background: var(--el-fill-color-lighter); }
+.script-run-mode-toggle:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: 2px; }
+.script-run-mode-summary { margin-left: auto; color: var(--el-text-color-secondary); font-size: 0.9em; }
+.script-run-mode-chevron { font-size: 18px; line-height: 1; transform: rotate(0deg); }
+.script-run-mode-chevron.is-expanded { transform: rotate(90deg); }
+.script-run-mode-fields { padding-top: 12px; }
+
 .script-run-modes :deep(.el-form-item__content) {
   display: block;
 }

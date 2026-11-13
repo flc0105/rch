@@ -8,7 +8,7 @@ def literal_eval_node(node):
         return None
 
 
-def extract_metadata_from_module_ast(tree, metadata_keys) -> dict:
+def find_metadata_dict_node(tree, metadata_keys):
     keys = set(metadata_keys or ())
     for node in getattr(tree, 'body', ()):
         if isinstance(node, ast.Assign):
@@ -16,14 +16,19 @@ def extract_metadata_from_module_ast(tree, metadata_keys) -> dict:
                 if isinstance(target, ast.Name) and target.id in keys:
                     value = literal_eval_node(node.value)
                     if isinstance(value, dict):
-                        return value
+                        return node.value
         elif isinstance(node, ast.AnnAssign):
             target = node.target
             if isinstance(target, ast.Name) and target.id in keys:
                 value = literal_eval_node(node.value)
                 if isinstance(value, dict):
-                    return value
-    return {}
+                    return node.value
+    return None
+
+
+def extract_metadata_from_module_ast(tree, metadata_keys) -> dict:
+    node = find_metadata_dict_node(tree, metadata_keys)
+    return literal_eval_node(node) if node is not None else {}
 
 
 def extract_metadata_from_class_ast(tree, metadata_keys) -> dict:

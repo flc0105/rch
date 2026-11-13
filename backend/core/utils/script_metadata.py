@@ -1,30 +1,56 @@
 import ast
+import json
 import warnings
 from copy import deepcopy
 
 from core.metadata.parameters import coerce_param_value, normalize_param_specs, resolve_param_values
-from core.metadata.source import extract_metadata_from_module_ast
+from core.metadata.source import extract_metadata_from_module_ast, find_metadata_dict_node
 from core.platform.normalization import normalize_platforms
 from core.protocol.script_execution import normalize_execution_schema
 
 _METADATA_KEYS = ('SCRIPT_METADATA', 'script_metadata', 'metadata', 'META', 'meta')
 
 
-def read_script_metadata_from_source(source_text: str, fallback_name: str = '') -> dict:
-    text = str(source_text or '')
-    if not text.strip():
-        return {}
+def _parse_script_ast(text):
     try:
         # Catalog metadata scanning should not emit compile-time escape warnings
         # from user scripts. Python reports those when scripts are executed.
         with warnings.catch_warnings():
             warnings.filterwarnings('ignore', category=SyntaxWarning,
                                     message=r'invalid escape sequence')
-            tree = ast.parse(text)
+            return ast.parse(text)
     except Exception:
+        return None
+
+
+def read_script_metadata_from_source(source_text: str, fallback_name: str = '') -> dict:
+    tree = _parse_script_ast(str(source_text or ''))
+    if tree is None:
         return {}
     metadata = extract_metadata_from_module_ast(tree, _METADATA_KEYS)
     return normalize_script_metadata(metadata, fallback_name=fallback_name) if metadata else {}
+
+
+def rewrite_script_metadata_name(source_text: str, new_name: str) -> str:
+    """Replace only the existing top-level metadata name literal, preserving source."""
+    tree = _parse_script_ast(source_text)
+    metadata = find_metadata_dict_node(tree, _METADATA_KEYS)
+    if not isinstance(metadata, ast.Dict):
+        return source_text
+    # A dict's last repeated key is the effective one; nested parameter names
+    # and other strings are not the script's identity.
+    for key, value in reversed(list(zip(metadata.keys, metadata.values))):
+        if isinstance(key, ast.Constant) and key.value == 'name':
+            if isinstance(value, ast.Constant) and value.value == new_name:
+                return source_text
+            # AST columns are UTF-8 byte offsets, not Unicode character offsets.
+            data = source_text.encode('utf-8')
+            lines = data.splitlines(keepends=True)
+            start = sum(map(len, lines[:value.lineno - 1])) + value.col_offset
+            end = sum(map(len, lines[:value.end_lineno - 1])) + value.end_col_offset
+            replacement = json.dumps(new_name, ensure_ascii=False).encode('utf-8')
+            return (data[:start] + replacement + data[end:]).decode('utf-8')
+    return source_text
 
 
 def read_script_metadata_from_file(file_path: str, fallback_name: str = '') -> dict:
