@@ -51,39 +51,45 @@ class JobControl:
             if action == JobAction.STOP:
                 key = cls._name(payload.get('job_key'))
                 runtime = manager.stop_job(key)
-                data = {'job_name': runtime.job_key, 'job_id': runtime.job_id,
-                        'execution_mode': runtime.execution_mode, 'worker_name': runtime.worker_name,
-                        'stop_requested': True}
+                data = {'job_id': runtime.job_id}
                 return 1, build_job_control_result(action, f'Stop requested for Job {runtime.job_key}.',
                                                    data=data, job_ids=[runtime.job_id])
             if action == JobAction.PS:
                 jobs = manager.list_running_jobs()
                 return 1, build_job_control_result(action,
-                    f'{len(jobs)} running Job(s).' if jobs else 'No background jobs are currently running.',
-                    data=jobs, display=ResultDisplay.DATA if jobs else ResultDisplay.MESSAGE)
+                    '' if jobs else 'No background jobs are currently running.',
+                    data=jobs, display=ResultDisplay.DATA)
             if action == JobAction.STATUS:
                 key = cls._name(payload.get('job_key'))
                 data = manager.get_job_status(key)
-                return 1, build_job_control_result(action, f'Job status retrieved: {key}.',
+                return 1, build_job_control_result(action, '',
                                                    data=data, display=ResultDisplay.DATA)
             if action == JobAction.STOP_ALL:
                 report = manager.stop_all_jobs()
-                stopped = [{'job_name': item.get('job_key') or item.get('display_name', '').split('#')[0],
-                            'job_id': item['job_id']} for item in report['stopped']]
-                errors = list(report['errors'])
-                data = {'total': report['total'], 'succeeded': len(stopped), 'failed': len(errors),
-                        'stopped': stopped, 'errors': errors}
-                if errors:
-                    message = f'Stop requested for {len(stopped)} Job(s); {len(errors)} failed.'
+                stopped = [{'job_name': item['job_key'], 'job_id': item['job_id']}
+                           for item in report['stopped']]
+                errors = [{'job_name': item['job_key'], 'job_id': item['job_id'],
+                           'message': item['message']} for item in report['errors']]
+                if stopped:
+                    message = 'Stop requested for: ' + ', '.join(item['job_name'] for item in stopped) + '.'
                 else:
-                    message = (f'Stop requested for {len(stopped)} Job(s).' if stopped
-                               else 'No background jobs are currently running.')
+                    message = 'No background jobs are currently running.' if not errors else ''
+                if errors:
+                    failures = '; '.join(f"{item['job_name']} ({item['message']})" for item in errors)
+                    message = (message + ' ' if message else '') + f"Failed to stop {'Job' if len(errors) == 1 else 'Jobs'} {failures}."
+                # A no-op is a meaningful message, not an invented batch report.
+                data = {}
+                if stopped:
+                    data['stopped'] = stopped
+                if errors:
+                    data['errors'] = errors
                 return (0 if errors else 1), build_job_control_result(
-                    action, message, data=data, status='error' if errors else 'success',
-                    job_ids=[item['job_id'] for item in stopped])
+                    action, message, data=data or None, status='error' if errors else 'success',
+                    job_ids=[item['job_id'] for item in stopped + errors])
             raise ValueError(f'Unsupported Job control action: {action}')
         except (CommandCancelledError, CommandTimeoutError):
             raise
         except Exception as exc:
-            return 0, build_job_control_result(action, f'Job {getattr(action, "value", action)} failed: {exc}',
-                                               data={'error': str(exc)}, status='error')
+            # The originating operation supplies the reason; do not stack a second error prefix.
+            return 0, build_job_control_result(action, str(exc).strip() or 'Job operation failed.',
+                                               status='error')

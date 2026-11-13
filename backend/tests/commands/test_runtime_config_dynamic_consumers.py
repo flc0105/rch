@@ -141,7 +141,7 @@ def test_set_command_updates_inbound_timeout_on_current_client(isolated_config):
 
     status, message = owner.set('SERVER_INBOUND_TIMEOUT_SECONDS 0')
     assert status == 1, message
-    assert message == '[+] SERVER_INBOUND_TIMEOUT_SECONDS updated, value: 120 → 0'
+    assert message == 'SERVER_INBOUND_TIMEOUT_SECONDS updated: 120 → 0'
     assert runtime_config.SERVER_INBOUND_TIMEOUT_SECONDS == 0
     assert json.loads(isolated_config.read_text(encoding='utf-8'))['SERVER_INBOUND_TIMEOUT_SECONDS'] == 0
 
@@ -159,9 +159,9 @@ def test_set_command_compact_script_mode_output(isolated_config):
     owner._checkpoint = lambda: None
     runtime_config.SCRIPT_DEFAULT_EXECUTION_MODE = 'inproc'
     assert owner.set('SCRIPT_DEFAULT_EXECUTION_MODE subprocess_pipe') == (
-        1, "[+] SCRIPT_DEFAULT_EXECUTION_MODE updated, value: 'inproc' → 'subprocess_pipe'")
+        1, "SCRIPT_DEFAULT_EXECUTION_MODE updated: 'inproc' → 'subprocess_pipe'")
     assert owner.set('SCRIPT_DEFAULT_EXECUTION_MODE inproc') == (
-        1, "[+] SCRIPT_DEFAULT_EXECUTION_MODE updated, value: 'subprocess_pipe' → 'inproc'")
+        1, "SCRIPT_DEFAULT_EXECUTION_MODE updated: 'subprocess_pipe' → 'inproc'")
 
 
 def test_writes_never_reflect_into_unrelated_loaded_modules(isolated_config, monkeypatch):

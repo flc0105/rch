@@ -34,13 +34,15 @@ def validate_job_control_request(action, payload):
     return payload
 
 
-def build_job_control_result(action, message, *, data, status='success', display=ResultDisplay.MESSAGE,
+def build_job_control_result(action, message, *, data=None, status='success', display=ResultDisplay.MESSAGE,
                              shape=None, width=None, job_ids=()):
     """One business payload, with explicit presentation intent and optional Job links."""
     if action not in JOB_ACTIONS:
         raise ValueError('Unsupported Job control action')
     result = {'action': action, 'event_type': ResultEventType.COMPLETED,
-              'status': status, 'display': display, 'message': str(message), 'data': data}
+              'status': status, 'display': display, 'message': str(message)}
+    if data is not None:
+        result['data'] = data
     if display == ResultDisplay.DATA:
         result['shape'] = shape or ('table' if isinstance(data, list) else 'dict')
         if isinstance(data, dict):
@@ -58,9 +60,11 @@ def validate_job_control_result(payload, action):
         raise ValueError('Invalid Job result status')
     if payload.get('display') not in (ResultDisplay.MESSAGE, ResultDisplay.DATA):
         raise ValueError('Invalid Job result display')
-    if not isinstance(payload.get('message'), str) or not isinstance(payload.get('data'), (dict, list)):
+    if not isinstance(payload.get('message'), str) or (payload.get('data') is not None and not isinstance(payload['data'], (dict, list))):
         raise ValueError('Invalid Job result content')
     if payload['display'] == ResultDisplay.DATA:
+        if not isinstance(payload.get('data'), (dict, list)):
+            raise ValueError('Structured Job result requires data')
         if payload.get('shape') not in ('dict', 'table', 'grouped_dict'):
             raise ValueError('Invalid Job data shape')
         if isinstance(payload['data'], dict) and (type(payload.get('width')) is not int or payload['width'] <= 0):

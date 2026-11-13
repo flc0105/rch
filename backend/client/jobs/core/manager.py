@@ -501,8 +501,9 @@ class JobManager:
                 self._request_runtime_stop(runtime, notify=True)
                 stopped.append({'job_id': runtime.job_id, 'job_key': runtime.job_key})
             except Exception as exc:
-                errors.append(f'{runtime.display_name}: {exc}')
-        return {'total': len(runtimes), 'stopped': stopped, 'errors': errors}
+                errors.append({'job_key': runtime.job_key, 'job_id': runtime.job_id,
+                               'message': str(exc)})
+        return {'stopped': stopped, 'errors': errors}
 
     def handle_connection_lost(self) -> list[str]:
         """

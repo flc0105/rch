@@ -70,7 +70,7 @@ class WebScriptApi:
 
     def get_run_options(self, client_id, script_name):
         return script_run_options(self.script_catalog_service.scripts_root_dir, script_name,
-                                  self.command_execution_api.get_runtime_config(client_id))
+                                  self.command_execution_api.get_runtime_config(client_id)['data'])
 
     def run_script(self, client_id: str, script_name: str, params=None, tab_id: str = '',
                    presentation: str = '', run_id: str = '', operation_id: str = '',
@@ -85,7 +85,7 @@ class WebScriptApi:
         if normalized_presentation == 'dialog' and not normalized_run_id:
             raise ValueError('run_id is required for dialog presentation')
         request = prepare_script_control(self.script_catalog_service.scripts_root_dir, normalized_script_name, params if params is not None else {},
-                                         config=self.command_execution_api.get_runtime_config(client_id),
+                                         config=self.command_execution_api.get_runtime_config(client_id)['data'],
                                          execution_mode=execution_mode, output_mode=output_mode)
         return self.command_execution_api.submit_web_control(
             client_id, request['script_name'], ControlRequest(ControlDomain.SCRIPT, ScriptAction.RUN, request),

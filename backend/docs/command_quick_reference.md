@@ -95,7 +95,7 @@ Alias 的模板参数、平台覆盖与安全边界见 [Aliases / Quick Actions]
 | `userenum` | 枚举系统用户账户 | 可见范围受目标系统权限约束 |
 | `is_elevated` | 检查 Client 是否具有提升的系统权限 | 只检查当前进程权限，不自动提权 |
 | `ifconfig` | 查看目标设备网络接口 | 输出格式由 RCH 的平台信息提供者决定 |
-| `set` | 查看及修改 Client Runtime Config | Python / Go 均支持 `set --json`、`set KEY value`、`set --reset KEY`，可通过 Info → Configuration 编辑 |
+| `set` | 查看及修改 Client Runtime Config | 在 RCH Terminal 中，`set` / `set --json` 分别以表格/JSON 展示相同五字段；Info → Configuration 使用完整编辑 Schema |
 | `set KEY value` | 设置允许覆盖的 Runtime Config 项 | 可能影响客户端运行行为，修改前确认范围 |
 | `SCRIPT_DEFAULT_EXECUTION_MODE` / `SCRIPT_DEFAULT_OUTPUT_MODE` | Script 默认执行 / 输出模式 | Python 默认 inproc / collect，Go 默认 subprocess_pipe / collect；受本次选择及 Schema 约束 |
 | `SCRIPT_DEFAULT_TIMEOUT` | Script 默认运行时长，单位为秒 | Python / Go 默认 300 秒；Go 的外部 Python 执行器会按时终止子进程 |

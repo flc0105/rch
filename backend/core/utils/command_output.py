@@ -25,13 +25,22 @@ def render_result_payload(payload: dict, output_format: str = 'text') -> str:
         raise ValueError('Invalid result display')
     if output_format not in ('text', 'json'):
         raise ValueError('Invalid result output format')
+    completed = payload.get('event_type') == ResultEventType.COMPLETED
+    failed = completed and payload.get('status') != 'success'
     if output_format == 'json':
-        return json.dumps(payload.get('data'), ensure_ascii=False, indent=2)
-    if payload['display'] == ResultDisplay.MESSAGE:
+        if payload['display'] == ResultDisplay.DATA and not failed:
+            return json.dumps(payload.get('data'), ensure_ascii=False, indent=2)
+        if not completed:
+            return json.dumps(payload.get('message') or '', ensure_ascii=False, indent=2)
+        return json.dumps({'status': payload['status'], 'message': payload['message']},
+                          ensure_ascii=False, indent=2)
+    if failed or payload['display'] == ResultDisplay.MESSAGE:
         return str(payload.get('message') or '')
     data = payload.get('data')
     if not isinstance(data, (dict, list)):
         raise ValueError('Structured result requires an object or array')
+    if data == []:
+        return str(payload.get('message') or 'No data to display')
     # The existing table renderer assumes every row has exactly the first
     # row's fields. A general JSON array must not silently drop extra data.
     if isinstance(data, list) and data:
@@ -42,8 +51,6 @@ def render_result_payload(payload: dict, output_format: str = 'text') -> str:
         status=1, data=data, shape=payload.get('shape'),
         width=(payload.get('width') or 20) if isinstance(data, dict) else None))
     return text
-
-
 
 
 @dataclass

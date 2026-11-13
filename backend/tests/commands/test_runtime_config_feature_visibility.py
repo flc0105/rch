@@ -35,7 +35,7 @@ def test_client_set_json_uses_runtime_features():
     owner.socket = SimpleNamespace(runtime=SimpleNamespace(features={'screen_view': False}))
     status, payload = owner.set('--json')
     assert status == 1
-    assert 'SCREEN_FRAME_STRATEGY' not in {item['key'] for item in json.loads(payload)['items']}
+    assert 'SCREEN_FRAME_STRATEGY' not in {item['key'] for item in json.loads(payload)}
 
 
 def test_legacy_http_upload_uses_private_fixed_network_timeout(tmp_path, monkeypatch):

@@ -8,6 +8,7 @@ import (
 	"unicode"
 
 	"client-go/config"
+	"client-go/protocol"
 )
 
 var _ = Register("set", Usage("set [--json | --reset KEY | KEY value]"), Help("View or update runtime configuration"), Group("runtime"), Suggest(), CommandRunner(cmdRuntimeSet))
@@ -59,56 +60,88 @@ func runtimeSetCommand(raw string, store *config.RuntimeStore) (int, string) {
 	if err != nil {
 		return 0, fmt.Sprintf("Invalid set arguments: %v", err)
 	}
-	if err := store.LoadError(); err != nil {
-		return 0, fmt.Sprintf("Runtime config error: %v", err)
-	}
-	if len(parts) > 0 && parts[0] == "--json" {
-		if len(parts) != 1 {
-			return 0, "Usage: set --json"
-		}
-		payload, err := json.Marshal(store.Payload())
-		if err != nil {
-			return 0, err.Error()
-		}
-		return 1, string(payload)
-	}
-	if len(parts) == 2 && parts[0] == "--reset" {
-		if err := store.Reset(parts[1]); err != nil {
-			return 0, err.Error()
-		}
-		return 1, fmt.Sprintf("%s reset to default", strings.ToUpper(parts[1]))
-	}
-	if len(parts) == 1 && parts[0] == "--reset-all" {
-		if err := store.ResetAll(); err != nil {
-			return 0, err.Error()
-		}
-		return 1, "All runtime config overrides reset"
-	}
-	if len(parts) >= 2 && !strings.HasPrefix(parts[0], "--") {
-		if len(parts) > 2 {
-			return 0, "Usage: set KEY value"
-		}
-		key := strings.ToUpper(strings.TrimSpace(parts[0]))
-		oldValue := store.Get(key)
-		_, err := store.Set(key, parts[1])
-		if err != nil {
-			return 0, fmt.Sprintf("Failed to set runtime config: %v", err)
-		}
-		return 1, fmt.Sprintf("[+] %s updated, value: %s → %s", key, formatRuntimeValue(oldValue), formatRuntimeValue(store.Get(key)))
-	}
-	if len(parts) == 1 && parts[0] == "--all" {
+	jsonOutput := len(parts) == 1 && parts[0] == "--json"
+	if !jsonOutput && len(parts) > 1 && parts[len(parts)-1] == "--json" &&
+		!(len(parts) == 2 && !strings.HasPrefix(parts[0], "--")) {
+		jsonOutput = true
+		parts = parts[:len(parts)-1]
+	} else if jsonOutput {
 		parts = nil
 	}
-	if len(parts) != 0 {
-		return 0, "Usage: set [--json | --all | --reset KEY | --reset-all | KEY value]"
+	action := protocol.ConfigurationGet
+	payload := map[string]interface{}{}
+	switch {
+	case len(parts) == 0:
+	case len(parts) == 1 && parts[0] == "--all":
+		payload["include_hidden"] = true
+	case len(parts) == 1 && parts[0] == "--reset-all":
+		action = protocol.ConfigurationReset
+		payload["all"] = true
+	case len(parts) == 2 && parts[0] == "--reset":
+		action = protocol.ConfigurationReset
+		payload["key"] = parts[1]
+	case len(parts) == 2 && !strings.HasPrefix(parts[0], "--"):
+		action = protocol.ConfigurationSet
+		payload["key"] = parts[0]
+		payload["value"] = parts[1]
+		payload["value_format"] = "text"
+	default:
+		message := "Usage: set [--json | --all [--json] | --reset KEY [--json] | --reset-all [--json] | KEY value [--json]]"
+		if jsonOutput {
+			raw, _ := json.Marshal(map[string]interface{}{"status": "error", "message": message})
+			return 0, string(raw)
+		}
+		return 0, message
 	}
-	payload := store.Payload()
-	items := payload["items"].([]map[string]interface{})
-	lines := []string{"Runtime config store path: " + payload["store_path"].(string)}
-	for _, item := range items {
-		lines = append(lines, fmt.Sprintf("%s = %v  [%s]", item["key"], item["value"], item["source"]))
+	status, result := executeConfiguration(store, action, payload)
+	return renderRuntimeSetResult(status, result, jsonOutput)
+}
+
+func renderRuntimeSetResult(status int, result interface{}, jsonOutput bool) (int, string) {
+	envelope, ok := result.(map[string]interface{})
+	if !ok {
+		return 0, "Invalid Configuration result"
 	}
-	return 1, strings.Join(lines, "\n")
+	if status == 1 && envelope["display"] == "data" {
+		configPayload, ok := envelope["data"].(map[string]interface{})
+		if !ok {
+			return 0, "Invalid Configuration data"
+		}
+		items, ok := configPayload["items"].([]map[string]interface{})
+		if !ok {
+			return 0, "Invalid Configuration items"
+		}
+		rows := make([]map[string]interface{}, 0, len(items))
+		lines := []string{"key | group | value | override | default_value"}
+		for _, item := range items {
+			row := map[string]interface{}{
+				"key": item["key"], "group": item["group"], "value": item["value"],
+				"override": item["source"] == "override", "default_value": item["default_value"],
+			}
+			rows = append(rows, row)
+			lines = append(lines, fmt.Sprintf("%v | %v | %v | %v | %v", row["key"], row["group"], row["value"], row["override"], row["default_value"]))
+		}
+		if jsonOutput {
+			raw, err := json.Marshal(rows)
+			if err != nil {
+				return 0, err.Error()
+			}
+			return status, string(raw)
+		}
+		if len(rows) == 0 {
+			return status, "No data to display"
+		}
+		return status, strings.Join(lines, "\n")
+	}
+	message := fmt.Sprint(envelope["message"])
+	if jsonOutput {
+		raw, err := json.Marshal(map[string]interface{}{"status": envelope["status"], "message": message})
+		if err != nil {
+			return 0, err.Error()
+		}
+		return status, string(raw)
+	}
+	return status, message
 }
 
 func formatRuntimeValue(value interface{}) string {

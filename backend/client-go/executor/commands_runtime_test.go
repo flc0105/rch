@@ -36,19 +36,19 @@ func TestRuntimeSetCommandQuotedWindowsPaths(t *testing.T) {
 	if status != 1 {
 		t.Fatal(msg)
 	}
-	var doc map[string]interface{}
+	var doc []map[string]interface{}
 	if err := json.Unmarshal([]byte(msg), &doc); err != nil {
 		t.Fatal(err)
 	}
-	if len(doc["items"].([]interface{})) != 6 {
+	if len(doc) != 6 {
 		t.Fatal("incorrect payload")
 	}
 	status, msg = runtimeSetCommand("COMMAND_DEFAULT_SHELL_TIMEOUT 12", store)
-	if status != 1 || msg != "[+] COMMAND_DEFAULT_SHELL_TIMEOUT updated, value: 30 → 12" || store.Seconds("COMMAND_DEFAULT_SHELL_TIMEOUT") != 12 {
+	if status != 1 || msg != "COMMAND_DEFAULT_SHELL_TIMEOUT updated: 30 → 12" || store.Seconds("COMMAND_DEFAULT_SHELL_TIMEOUT") != 12 {
 		t.Fatalf("set: %d %s", status, msg)
 	}
 	status, msg = runtimeSetCommand("SCRIPT_DEFAULT_OUTPUT_MODE stream", store)
-	if status != 1 || msg != "[+] SCRIPT_DEFAULT_OUTPUT_MODE updated, value: 'collect' → 'stream'" {
+	if status != 1 || msg != "SCRIPT_DEFAULT_OUTPUT_MODE updated: 'collect' → 'stream'" {
 		t.Fatalf("script mode: %d %s", status, msg)
 	}
 	status, msg = runtimeSetCommand("--reset COMMAND_DEFAULT_SHELL_TIMEOUT", store)
@@ -88,11 +88,11 @@ func TestRuntimeSetDispatchJsonUsesBuiltin(t *testing.T) {
 	if status != 1 {
 		t.Fatalf("set --json dispatcher: %s", text)
 	}
-	var payload map[string]interface{}
+	var payload []map[string]interface{}
 	if err := json.Unmarshal([]byte(text), &payload); err != nil {
 		t.Fatal(err)
 	}
-	if len(payload["items"].([]interface{})) != 6 {
+	if len(payload) != 6 {
 		t.Fatal("unexpected configuration fields")
 	}
 }
@@ -118,5 +118,45 @@ func TestConfigurationControlSharesRuntimeStore(t *testing.T) {
 	status, _ = executeConfiguration(store, protocol.ConfigurationReset, map[string]interface{}{"key": "COMMAND_DEFAULT_SHELL_TIMEOUT"})
 	if status != 1 || store.Seconds("COMMAND_DEFAULT_SHELL_TIMEOUT") != 30 {
 		t.Fatal("reset failed")
+	}
+}
+
+func TestConfigurationControlResultEnvelopeAndCLIViews(t *testing.T) {
+	store := config.NewRuntimeStore(filepath.Join(t.TempDir(), "settings.json"))
+	status, raw := executeConfiguration(store, protocol.ConfigurationGet, map[string]interface{}{})
+	get := raw.(map[string]interface{})
+	if status != 1 || get["status"] != "success" || get["display"] != "data" || get["message"] != "" {
+		t.Fatalf("GET envelope: %v", raw)
+	}
+	payload := get["data"].(map[string]interface{})
+	if _, found := payload["store_path"]; !found {
+		t.Fatal("GET should retain full UI schema")
+	}
+	if _, found := payload["items"]; !found {
+		t.Fatal("GET missing configuration items")
+	}
+	status, raw = executeConfiguration(store, protocol.ConfigurationSet, map[string]interface{}{
+		"key": config.ScriptOutputConfig, "value": config.ScriptStream,
+	})
+	set := raw.(map[string]interface{})
+	if status != 1 || set["status"] != "success" || set["display"] != "message" || len(set) != 4 {
+		t.Fatalf("SET returned non-message payload: %v", raw)
+	}
+	status, raw = executeConfiguration(store, protocol.ConfigurationReset, map[string]interface{}{
+		"key": config.ScriptOutputConfig,
+	})
+	reset := raw.(map[string]interface{})
+	if status != 1 || reset["display"] != "message" || len(reset) != 4 {
+		t.Fatalf("RESET returned non-message payload: %v", raw)
+	}
+	status, text := runtimeSetCommand("--json", store)
+	var rows []map[string]interface{}
+	if status != 1 || json.Unmarshal([]byte(text), &rows) != nil || len(rows) == 0 || len(rows[0]) != 5 {
+		t.Fatalf("CLI GET must have five columns: %s", text)
+	}
+	status, text = runtimeSetCommand("SCRIPT_DEFAULT_OUTPUT_MODE stream --json", store)
+	var message map[string]interface{}
+	if status != 1 || json.Unmarshal([]byte(text), &message) != nil || len(message) != 2 {
+		t.Fatalf("CLI SET must return only status/message: %s", text)
 	}
 }

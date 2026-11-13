@@ -107,7 +107,7 @@ Server → Client 示例：
 
 Script 使用 `control(domain=script, action=run)`，payload 包含 `script_name`、`source`、`params`、`execution_mode`、`output_mode`；两个运行模式为必填的已解析值。`acmd` 仍使用 `extra`。执行器可返回结构化终态 `data`，如 `{"event_type":"error","failure_reason":"timed_out","text":"…"}` 或 `{"event_type":"cancelled","failure_reason":"cancelled","text":"…"}`；都由唯一 `result(eof=1)` 终结，之前的 stream 输出使用 `eof=0`。
 
-对于显式声明展示方式的 Control Result，Client 最终 `result.data` 保留 `event_type=completed`、`status`、`display=message|data`、`message`、业务 `data` 和可选 References。Terminal 依据该声明渲染默认短消息或结构化表格；`--json` 使用原始业务 `data`。过程输出仍是 `result(eof=0)`，其中显式结构化的 Script 输出事件使用 `event_type=chunk`、`display=data` 与对象/数组 `data`，不会与唯一的终态 `result(eof=1)` 混淆。未声明 `display` 的普通命令继续使用现有文本或结构化终态路径。
+对于显式声明展示方式的 Control Result，Client 最终 `result.data` 保留 `event_type=completed`、执行 `status`、`display=message|data`、`message`、业务 `data` 和可选 References。Terminal 按展示意图处理：`display=message` 的默认输出为短消息，`--json` 输出 `status/message`；成功的 `display=data` 默认以表格/键值呈现 `data`，`--json` 仅序列化 `data`；执行失败时 `--json` 输出 `status=error/message`。内部执行状态始终保留，空查询数组的 JSON 是 `[]`。过程输出仍是 `result(eof=0)`；显式结构化 Script 输出事件使用 `event_type=chunk`、`display=data`，与唯一终态 `result(eof=1)` 分离。未声明 `display` 的普通命令继续使用现有路径。
 
 一次性业务请求统一使用 Control：
 

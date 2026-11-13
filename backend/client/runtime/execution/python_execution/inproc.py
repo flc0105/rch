@@ -117,4 +117,13 @@ class _CollectedScriptOutput:
 
     def events(self):
         remainder = self.text()
-        return [*self._events, *([remainder] if remainder else [])]
+        for item in [*self._events, *([remainder] if remainder else [])]:
+            if not isinstance(item, str):
+                yield item
+                continue
+            # Match stream output's line boundaries without changing plain collect.
+            chunks = []
+            output = StreamOutput(chunks.append)
+            output.write(item)
+            output.flush()
+            yield from chunks

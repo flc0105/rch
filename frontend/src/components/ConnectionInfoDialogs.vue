@@ -1134,11 +1134,11 @@ export default {
         const res = await fetch(`/api/connections/${encodeURIComponent(clientId)}/runtime-config`)
         const json = await res.json()
 
-        if (!res.ok || json.code !== 0) {
-          throw new Error(json.message || 'Failed to load runtime configuration')
+        if (!res.ok || json.code !== 0 || json.data?.status !== 'success' || json.data?.display !== 'data') {
+          throw new Error(json.data?.message || json.message || 'Failed to load runtime configuration')
         }
 
-        this.applyRuntimeConfigPayload(json.data)
+        this.applyRuntimeConfigPayload(json.data.data)
         this.runtimeConfigLoaded = true
       } catch (e) {
         this.runtimeConfigItems = []
@@ -1284,12 +1284,14 @@ export default {
         )
         const json = await res.json()
 
-        if (!res.ok || json.code !== 0) {
-          throw new Error(json.message || 'Failed to update runtime configuration')
+        if (!res.ok || json.code !== 0 || json.data?.status !== 'success') {
+          throw new Error(json.data?.message || json.message || 'Failed to update runtime configuration')
         }
 
-        this.applyRuntimeConfigPayload(json.data)
-        this.runtimeConfigLoaded = true
+        await this.loadRuntimeConfig(this.selectedId)
+        if (!this.runtimeConfigLoaded) {
+          throw new Error(this.runtimeConfigError || 'Failed to reload runtime configuration')
+        }
         this.runtimeConfigEditorVisible = false
         ElMessage.success(`${item.key} updated`)
       } catch (e) {
@@ -1312,12 +1314,14 @@ export default {
         )
         const json = await res.json()
 
-        if (!res.ok || json.code !== 0) {
-          throw new Error(json.message || 'Failed to reset runtime configuration')
+        if (!res.ok || json.code !== 0 || json.data?.status !== 'success') {
+          throw new Error(json.data?.message || json.message || 'Failed to reset runtime configuration')
         }
 
-        this.applyRuntimeConfigPayload(json.data)
-        this.runtimeConfigLoaded = true
+        await this.loadRuntimeConfig(this.selectedId)
+        if (!this.runtimeConfigLoaded) {
+          throw new Error(this.runtimeConfigError || 'Failed to reload runtime configuration')
+        }
         this.runtimeConfigEditorVisible = false
         ElMessage.success(`${item.key} reset to default`)
       } catch (e) {

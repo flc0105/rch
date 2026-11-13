@@ -95,7 +95,8 @@ class WebCommandExecutionApi:
             task_type=task_type, source=source, track_execution=track_execution,
         )
         if status != 1:
-            raise RuntimeError(str(result) or 'Remote control failed')
+            message = result.get('message') if isinstance(result, dict) else result
+            raise RuntimeError(str(message) or 'Remote control failed')
         return result
 
     def get_watchdog_status(self, client_id: str):

@@ -32,10 +32,10 @@ def test_configuration_watchdog_process_use_independent_controls(tmp_path, monke
     assert dispatch(1, 'configuration', 'set', {'key': key, 'value': 'stream'})[0] == 1
     status, result = commands.set('--json')
     assert status == 1
-    assert next(i for i in json.loads(result)['items'] if i['key'] == key)['value'] == 'stream'
+    assert next(i for i in json.loads(result) if i['key'] == key)['value'] == 'stream'
     assert commands.set(f'{key} collect')[0] == 1
     status, result = dispatch(2, 'configuration', 'get', {})
-    assert status == 1 and next(i for i in result['items'] if i['key'] == key)['value'] == 'collect'
+    assert status == 1 and next(i for i in result['data']['items'] if i['key'] == key)['value'] == 'collect'
     assert dispatch(3, 'configuration', 'set', {'key': key, 'value': 'invalid'})[0] == 0
     assert commands.set(f'{key} invalid')[0] == 0
     assert dispatch(4, 'configuration', 'set', {'key': 'SERVER_INBOUND_TIMEOUT_SECONDS', 'value': 0})[0] == 1

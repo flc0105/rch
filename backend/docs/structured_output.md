@@ -28,9 +28,19 @@ Terminal JSON Rendering 是独立的展示层：浏览器检测输出是否为�
 
 结构化命令的 `StructuredCommandResult.data` 是业务事实的唯一来源。Control 的最终 Result 可以同时含有简短的 `message` 和完整 `data`，由明确的 `display` 指定默认呈现：`message` 为操作反馈句，`data` 为结构化查询视图。`display` 与是否存在 `data` 无关，也不改变用于表示过程与终态的 `event_type`；`shape` 则只控制结构化数据的文本排版，不负责选择默认展示内容。
 
-支持 `--json` 的 Job Client Action 始终输出 Result 的同一份 `data`，无论默认 `display` 为 `message` 还是 `data`。对采用 `display=data` 的 Job 查询，Terminal 的 text 与 JSON 使用相同业务字段，不维护文本专用字段白名单；text 仅负责布局，JSON 保留原生字段及数据类型。`--json` 不混入过程日志。现有其他命令未声明这个 Result 契约时，仍走既有执行结果路径，不以字符串内容猜测业务类型。
+Job / Configuration 等带 `display` 的完成结果在 Control 内使用同一语义信封，包含执行 `status`、可选 `message` 与按需使用的 `data`。Terminal 按展示意图输出：
 
-SDK `context.emit(data)` 可以在 Script 的普通文本之间发送一条独立 JSON 对象或数组输出。它保留结构化值，不等同于把 JSON 字符串打印进 stdout，也不代表 Script 已执行完毕。每条显式结构化输出均带有 `event_type=chunk`、`display=data`，与普通 `print()` 输出按执行顺序送出；Activity Output Records 可以保留其完整 Envelope，并使用现有 JSON 查看器显示。该事件适用于 Python Client 的 `inproc` 和 `subprocess_pipe`，两种 Output Mode (`stream` / `collect`) 都支持；collect 等脚本结束后按原顺序回放。
+| 结果类型 | 默认 text | `--json` |
+|---|---|---|
+| `display=message`（操作反馈） | `message` | `{"status": "success/error", "message": "..."}` |
+| `display=data`（成功查询） | 同一份 `data` 排成表格或键值文本 | 直接序列化 `data`，不附加信封字段 |
+| 执行失败 | 具体错误信息 | `{"status": "error", "message": "..."}` |
+
+JSON 中的执行成功与否由内部 Result 的 `status` 决定；成功数据查询的业务字段由 `data` 完整提供，不混入执行级 `status/message`。空数组在 JSON 中仍是 `[]`，文本可使用业务域提供的空列表提示。`--json` 不混入中间进度日志。Job `start/stop/stop_all` 为操作反馈，`ps/status` 为结构化查询；查询成功的 `message` 可为空。SDK 的 `context.emit(data)` 是 `chunk` 事件，直接呈现发出的 JSON 对象/数组。其他未声明此 Result 契约的命令沿用原有输出路径。
+
+Configuration GET 在同一个 Result 的 `data` 中携带完整配置对象，供 Web Configuration 编辑器消费；SET/RESET 返回状态及消息，前端保存后通过 GET 刷新完整编辑 Schema。命令 `set` / `set --json` 从相同的 GET 配置对象提取 `key`、`group`、`value`、`override`、`default_value` 五字段视图。终端两种格式使用这份视图，Web 仍使用完整的配置项 Schema。`set KEY value`、`set --reset KEY`、`set --reset-all` 为操作反馈，支持可选 `--json` 输出状态与消息。
+
+SDK `context.emit(data)` 可以在 Script 的普通文本之间发送一条独立 JSON 对象或数组输出。它保留结构化值，不等同于把 JSON 字符串打印进 stdout，也不代表 Script 已执行完毕。每条显式结构化输出均带有 `event_type=chunk`、`display=data`，与普通 `print()` 输出按执行顺序送出；Activity Output Records 保留其完整 Envelope，结构化内容以格式化 JSON 文本直接显示在输出记录中。该事件适用于 Python Client 的 `inproc` 和 `subprocess_pipe`，两种 Output Mode (`stream` / `collect`) 都支持；collect 等脚本结束后按原顺序回放。
 
 ## 结构化返回对象及形状
 

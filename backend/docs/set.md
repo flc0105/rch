@@ -1,6 +1,6 @@
 # RCH Client 运行配置指南
 
-Web Configuration 与真实 `set` 命令共享 Client 配置服务、类型/choices 校验、覆盖文件和运行时副作用。Server 解析终端 `set` 与 `watchdog`，分别使用与 Web 相同的 Configuration、Watchdog Control；配置操作返回原生配置对象；`set --json` 仍用于用户诊断。无效枚举值不得写入配置。
+Web Configuration 与真实 `set` 命令共享 Client 配置服务、类型/choices 校验、覆盖文件和运行时副作用。Server 解析终端 `set` 与 `watchdog`，分别使用与 Web 相同的 Configuration、Watchdog Control；Configuration GET 返回统一 Result，其中 `data` 是完整配置对象；SET/RESET 仅返回状态和简短消息。`set --json` 返回与命令文本一致的五字段配置视图。无效枚举值不得写入配置。
 
 ## `set` 命令与 Configuration
 
@@ -20,7 +20,7 @@ RCH 为每台 Client 提供一套可以在线查询和调整的运行配置。�
 4. **双击**需要修改的配置项：枚举项使用下拉选择，开关使用切换控件，数字使用数值输入。
 5. 点击 **Save** 保存，或点击 **Reset Default** 清除该项自定义值，恢复默认。
 
-编辑弹窗保留 `override` 来源标记；`Reset Default` 只有当前项目存在 `override` 且可编辑时才可用。前台显示运行配置及其可用状态，不负责展示全部底层配置常量。
+保存或重置成功后，前台使用 GET 重新读取完整配置及编辑 Schema；操作响应本身只包含状态和消息。编辑弹窗保留 `override` 来源标记；`Reset Default` 只有当前项目存在 `override` 且可编辑时才可用。前台显示运行配置及其可用状态，不负责展示全部底层配置常量。
 
 ### 命令终端：`set`
 
@@ -28,12 +28,12 @@ RCH 为每台 Client 提供一套可以在线查询和调整的运行配置。�
 
 | 命令 | 用途 |
 |---|---|
-| `set` | 按分组查看可在线管理的配置、当前值及 `default / override` 来源 |
-| `set --json` | 以 JSON 查看可在线管理的配置，包含类型、说明、允许的选项等信息 |
-| `set --all` | 查看全部基础运行配置，包括不能直接通过 `set` 修改的项目 |
-| `set KEY value` | 修改一个允许在线编辑的配置 |
-| `set --reset KEY` | 移除一个配置项的自定义值，恢复默认 |
-| `set --reset-all` | 清除**所有**运行配置覆盖值，整体恢复默认；请谨慎使用 |
+| `set` | 表格显示 key、group、value、override、default_value 五字段 |
+| `set --json` | 将 `set` 的相同五字段配置视图输出为 JSON 数组 |
+| `set --all` | 查看全部基础运行配置，包括不能直接通过 `set` 修改的项目；也可使用 `set --all --json` |
+| `set KEY value` | 修改一个允许在线编辑的配置；可选 `--json` 输出执行状态与消息 |
+| `set --reset KEY` | 移除一个配置项的自定义值，恢复默认；可选 `--json` |
+| `set --reset-all` | 清除**所有**运行配置覆盖值，整体恢复默认；请谨慎使用；可选 `--json` |
 
 例如：
 
@@ -44,7 +44,7 @@ set SCRIPT_DEFAULT_EXECUTION_MODE subprocess_pipe
 set --reset SCRIPT_DEFAULT_EXECUTION_MODE
 ```
 
-普通 `set KEY value` 成功后输出一行 `KEY updated, value: 旧值 → 新值`；需要执行额外运行时操作的配置继续返回相应的应用结果或警告。`set --json` 保留完整的配置值、默认值和来源。
+普通 `set KEY value` 成功后输出一行 `KEY updated: 旧值 → 新值`；需要执行额外运行时操作的配置继续返回相应的应用结果或警告。`set --json` 与默认表格使用相同五个业务字段，保留值的原始 JSON 类型；Web Configuration 独立使用完整编辑 Schema，包括 `value_type`、`choices`、数值范围与 `editable`。
 
 配置名不区分输入时的大小写，但文档和界面统一使用大写名称。布尔值可使用 `true` / `false`；数字项按配置自身的单位和范围填写。`set KEY` **不是**单项查询语法：查询请使用 `set` 或 `set --json`。
 
@@ -192,7 +192,7 @@ set --reset SCREEN_FRAME_STRATEGY
 
 `set` 和 Configuration 修改**当前选中 Client** 的运行配置；与默认值不同的设置保存在该设备的 `runtime_config.json`，重启后继续生效。其他 Client 的配置独立管理。
 
-配置文件默认随 Client 运行用户和操作系统而定，例如 macOS 位于该运行用户的 `~/Library/Application Support/rchclient/runtime_config.json`。如果 Client 以不同系统用户身份启动，所用配置文件也可能不同；实际路径可在 `set` 输出或配置数据中查看。需要自行指定路径时，可使用启动环境变量 `RUNTIME_CONFIG_PATH`。
+配置文件默认随 Client 运行用户和操作系统而定，例如 macOS 位于该运行用户的 `~/Library/Application Support/rchclient/runtime_config.json`。如果 Client 以不同系统用户身份启动，所用配置文件也可能不同；实际路径可在 Web Configuration 的数据中查看。需要自行指定路径时，可使用启动环境变量 `RUNTIME_CONFIG_PATH`。
 
 恢复设置时，优先只重置具体项目：
 

@@ -7,7 +7,8 @@ import time
 from server.application.command.command_types import COMMAND_TYPE_CONTROL
 from core.platform.catalog_visibility import visible_on_platform
 from core.protocol.job_control import build_job_control_request, validate_job_control_result
-from core.utils.command_output import parse_output_format, strip_output_format_arg, render_result_payload
+from core.utils.command_output import (ResultDisplay, ResultEventType, parse_output_format,
+                                       strip_output_format_arg, render_result_payload)
 
 
 class JobBuiltinSupport:
@@ -28,6 +29,14 @@ class JobBuiltinSupport:
     def client_id(self):
         return str(getattr(getattr(self.conn, 'session_info', None), 'client_id', '') or '').strip()
 
+    @staticmethod
+    def _failure(message, output_format):
+        if output_format != 'json':
+            return message
+        return render_result_payload({'event_type': ResultEventType.COMPLETED,
+                                      'status': 'error', 'display': ResultDisplay.MESSAGE,
+                                      'message': str(message)}, output_format)
+
     def _send(self, action, *, output_format="text", **payload):
         # Already inside the terminal's foreground slot: never acquire it again.
         request = build_job_control_request(action, **payload)
@@ -43,14 +52,14 @@ class JobBuiltinSupport:
                 yield pending_result
             pending_result = item
         if pending_result is None:
-            yield 0, 'Job control returned no result'
+            yield 0, self._failure('Job control returned no result', output_format)
             return
         status, text, *rest = pending_result
         try:
             result = validate_job_control_result(text, action)
         except (ValueError, TypeError):
             if status == 1:
-                yield (0, 'Invalid Job control response', *rest)
+                yield (0, self._failure('Invalid Job control response', output_format), *rest)
             else:
                 yield pending_result  # Preserve structured cancellation/timeout and EOF.
             return
@@ -175,10 +184,10 @@ class JobBuiltinSupport:
             try:
                 positional, flags = SERVER_COMMAND_REGISTRY.parse_arguments('job', 'start', remaining)
             except ValueError as exc:
-                yield 0, str(exc)
+                yield 0, self._failure(str(exc), output_format)
                 return
             if len(positional) != 1:
-                yield 0, self.HELP
+                yield 0, self._failure(self.HELP, output_format)
                 return
             name = positional[0]
             mode = flags.get('mode')
@@ -187,31 +196,31 @@ class JobBuiltinSupport:
                 try:
                     params = json.loads(flags['params'])
                 except ValueError as exc:
-                    yield 0, f'Invalid --params JSON: {exc}'
+                    yield 0, self._failure(f'Invalid --params JSON: {exc}', output_format)
                     return
                 if not isinstance(params, dict):
-                    yield 0, '--params must contain a JSON object'
+                    yield 0, self._failure('--params must contain a JSON object', output_format)
                     return
             try:
                 mode = self.background_job_service.prepare_job_start(self.client_id, name, mode)
             except (ValueError, FileNotFoundError) as exc:
-                yield 0, str(exc)
+                yield 0, self._failure(str(exc), output_format)
                 return
             yield from self._send(JobAction.START, output_format=output_format, job_name=name, params=params, execution_mode=mode)
             return
 
         if subcommand in ('ps', 'stop-all'):
             if args:
-                yield 0, self.HELP
+                yield 0, self._failure(self.HELP, output_format)
                 return
             yield from self._send(JobAction.PS if subcommand == 'ps' else JobAction.STOP_ALL, output_format=output_format)
             return
 
         if subcommand in ('stop', 'status'):
             if len(args) != 1:
-                yield 0, self.HELP
+                yield 0, self._failure(self.HELP, output_format)
                 return
             yield from self._send(JobAction(subcommand), output_format=output_format, job_key=args[0])
             return
 
-        yield 0, self.HELP
+        yield 0, self._failure(self.HELP, output_format)

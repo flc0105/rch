@@ -38,6 +38,12 @@ test('Activity list has identity, state icons, Details navigation and no Use/Del
   assert.match(source, /@delete-activity="deleteCommandExecutionItem"/)
 })
 
+test('Activity Output Records show structured JSON inline instead of replacing it with a button', () => {
+  assert.match(detail, /\{\{ formatCommandExecutionRecordText\(record\.text \|\| ''\) \}\}/)
+  assert.doesNotMatch(detail, /record\.envelope\?\.display === 'data' \? ''/)
+  assert.doesNotMatch(detail, /View JSON|openFullValue\('Structured Output'|openFullValue\('Result Data'/)
+})
+
 test('Only necessary Quick columns are hidden, Use/Pin/ordering remain', () => {
   assert.doesNotMatch(quick, /prop="last_used_at"|prop="status"/)
   assert.match(quick, /@row-dblclick="applyHistoryCommand"/)

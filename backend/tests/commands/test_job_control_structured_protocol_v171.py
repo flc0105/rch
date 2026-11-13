@@ -41,20 +41,21 @@ def test_result_contract_and_input_output_separation():
     from core.utils.command_output import ResultDisplay, render_result_payload
     request = build_job_control_request('stop_all')
     assert validate_job_control_request('stop_all', request) == request
-    data = {'total': 2, 'succeeded': 2, 'failed': 0, 'stopped': [], 'errors': []}
+    data = {'stopped': [{'job_name': 'a', 'job_id': 'a'}, {'job_name': 'b', 'job_id': 'b'}]}
     result = build_job_control_result('stop_all', 'Stop requested for 2 Job(s).', data=data, job_ids=['a','b'])
     assert validate_job_control_result(result, 'stop_all') is result
     assert result['data'] == data and result['display'] == ResultDisplay.MESSAGE
     assert result['references'] == [{'type': 'job', 'id': 'a'}, {'type': 'job', 'id': 'b'}]
     assert render_result_payload(result) == result['message']
-    assert __import__('json').loads(render_result_payload(result, 'json')) == data
+    assert __import__('json').loads(render_result_payload(result, 'json')) == {
+        'status': 'success', 'message': result['message']}
     with pytest.raises(ValueError, match='display'):
         validate_job_control_result({**result, 'display': 'unknown'}, 'stop_all')
     with pytest.raises(ValueError):
         validate_job_control_result({'action': 'stop', 'message': 'x'}, 'stop')
     query = build_job_control_result('ps', 'No jobs', data=[], display=ResultDisplay.DATA)
     assert query['data'] == []
-    assert render_result_payload(query, 'json') == '[]'
+    assert __import__('json').loads(render_result_payload(query, 'json')) == []
 
 
 def test_client_router_passes_payload_unmodified():
@@ -76,7 +77,7 @@ def test_client_operation_returns_structured_result_for_queries_and_mutations():
         def list_running_jobs(self): return [{'job_name': 'demo', 'status': 'running'}]
         def get_job_status(self, key): return {'job_key': key, 'state': 'running'}
         def stop_job(self, key): return SimpleNamespace(display_name=key, job_key=key, job_id='job-7', execution_mode='inproc', worker_name='worker-1')
-        def stop_all_jobs(self): return {'stopped': [], 'errors': [], 'total': 0}
+        def stop_all_jobs(self): return {'stopped': [], 'errors': []}
     manager = Manager()
     scope = SimpleNamespace()
     for action, args in [('ps', {}), ('status', {'job_key': 'demo'}),

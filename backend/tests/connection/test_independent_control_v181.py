@@ -199,7 +199,7 @@ def test_new_independent_actions_during_foreground_script(wire, tmp_path):
     assert 'ready' in str(next(rows)[1])
     command_id = server.get_foreground_task()['command_id']
     try:
-        assert config.get_runtime_config('test')['items']
+        assert config.get_runtime_config('test')['data']['items']
         assert 'client' in config.get_watchdog_status('test')
         assert 'No background jobs' in jobs._execute_job_action('test', JobAction.PS, {})
         assert 'not_running' in jobs._execute_job_action('test', JobAction.STATUS, {'job_key': 'not-running'})
