@@ -52,6 +52,8 @@ def create_agent_blueprint(server_instance):
                 server_port = int(server_port)
             except ValueError:
                 raise ValueError('server_port must be integer')
+            if not 1 <= server_port <= 65535:
+                raise ValueError('server_port must be between 1 and 65535')
 
             try:
                 web_port = int(web_port)
@@ -59,22 +61,21 @@ def create_agent_blueprint(server_instance):
                 raise ValueError('web_port must be integer')
 
             listener_id = str(payload.get('listener_id') or '').strip()
-            if source == 'update':
-                # Always verify the requested transport against the selected
-                # endpoint, including requests that explicitly supply its ID.
-                resolved_id = server_instance.listener_manager.resolve_update_listener(
-                    server_port,
-                    str(payload.get('server_transport') or '').strip(),
-                    str(payload.get('server_tls_fingerprint') or '').strip().lower(),
-                )
-                if listener_id and listener_id != resolved_id:
-                    raise ValueError('Update listener does not match connection settings')
-                listener_id = resolved_id
-
             listener_protocol = 'tcp'
             tls_fingerprint = ''
             listener_name = ''
-            if listener_id:
+            if source == 'update':
+                settings = server_instance.listener_manager.update_build_settings(
+                    str(payload.get('server_transport') or 'tcp').strip(),
+                    str(payload.get('server_tls_fingerprint') or '').strip().lower(),
+                    builder,
+                    listener_id,
+                )
+                listener_id = settings['listener_id']
+                listener_name = settings['listener_name']
+                listener_protocol = settings['listener_protocol']
+                tls_fingerprint = settings['tls_fingerprint']
+            elif listener_id:
                 settings = server_instance.listener_manager.build_settings(listener_id, server_port, builder)
                 listener_name = server_instance.listener_manager.get(listener_id)['name']
                 listener_protocol = settings['listener_protocol']

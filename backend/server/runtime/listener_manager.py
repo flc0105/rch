@@ -90,23 +90,42 @@ class ListenerManager:
             return {'listener_protocol': protocol.name,
                     'tls_fingerprint': protocol.build_fingerprint(listener_id, builder, self.cert_dir)}
 
-    def resolve_update_listener(self, server_port, transport='', fingerprint=''):
-        """Resolve an update listener by configured port and optional transport/pin.
+    def update_build_settings(self, transport, fingerprint, builder, listener_id=''):
+        """Resolve Update transport metadata independently of the Client's dial port.
 
-        Older Clients submit only a port, which must resolve unambiguously.
-        Never inject a client-supplied certificate pin into a generated Bundle.
+        The advertised endpoint can be forwarded through FRP/NAT. Local listener
+        identity is optional metadata; a supplied TLS pin must match a Server
+        certificate, and an explicit listener ID must agree with the transport.
         """
         with self._lock:
+            protocol = get_listener_protocol(transport)
+            protocol.validate_build(builder, fingerprint)
             matches = [item for item in self._configs
-                       if int(item['port']) == int(server_port)
-                       and (not transport or item['protocol'] == transport)
-                       and item.get('enabled', True)]
+                       if item['protocol'] == transport and item.get('enabled', True)]
+            if listener_id:
+                matches = [item for item in matches if item['id'] == listener_id]
+                if not matches:
+                    raise ValueError('Update listener does not match connection settings')
+
+            verified_fingerprint = ''
             if fingerprint:
-                matches = [item for item in matches
-                           if self.certificate_fingerprint(item['id']) == fingerprint]
-            if len(matches) != 1:
-                raise ValueError('Update transport does not match exactly one configured listener')
-            return matches[0]['id']
+                verified = []
+                for item in matches:
+                    server_pin = self.certificate_fingerprint(item['id'])
+                    if server_pin == fingerprint:
+                        verified.append(item)
+                        verified_fingerprint = server_pin
+                if not verified:
+                    raise ValueError('Update certificate fingerprint does not match a configured listener')
+                matches = verified
+
+            # A unique matching listener can annotate the build, but ambiguous
+            # or absent unpinned listeners must not prevent an Update.
+            selected = matches[0] if len(matches) == 1 else {}
+            return {'listener_protocol': protocol.name,
+                    'tls_fingerprint': verified_fingerprint,
+                    'listener_id': selected.get('id', ''),
+                    'listener_name': selected.get('name', '')}
 
     def _make_listener(self, item):
         protocol = get_listener_protocol(item['protocol'])

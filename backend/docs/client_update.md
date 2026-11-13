@@ -195,7 +195,7 @@ Agent Output 或其他构建产物。删除不可恢复，应在批准 Preview �
 
 遇到更新提示没有出现时，先确认目标设备当前是否真正 Online、Client 是否提交了 `client_revision`、是否在源码模式下尚未重启，以及 Server 当前是否运行在预期的源码目录。若整体 Revision 不同却没有逐文件差异，检查握手中是否提供了 `client_revision_files`。这些诊断信息都依赖当前连接快照，而不是历史设备缓存。
 
-更新失败可按请求构建、下载、解压、启动与交接的实际阶段定位：构建依赖 Server 的构建能力与源码文件；下载依赖目标 Client 对 8085 Web 端口的访问；新 Release 启动还依赖目标系统的 Python 解释器、所需第三方依赖及 对应 TCP/TLS Listener 端口可达。安装验证需要同时检查 HTTP 下载端口与 Client 的 TCP Socket 连接端口。连接地址在构建时已注入 Bundle，因此 Server 上生成构建的地址参数必须对目标设备可用。
+更新失败可按请求构建、下载、解压、启动与交接的实际阶段定位：构建依赖 Server 的构建能力与源码文件；下载依赖目标 Client 对其配置的 Web 地址及端口的访问；新 Release 启动还依赖目标系统的 Python 解释器、所需第三方依赖及 TCP/TLS 连接地址可达。安装验证需要同时检查 HTTP 下载端口与 Client 的 TCP Socket 连接端口。Update Bundle 沿用 Client 配置的连接地址、端口和 Web 地址；FRP/NAT 转发后的访问端口不需要与 Server 本地监听端口一致。TCP Update 不要求匹配唯一 Listener；TLS/TCP Update 仍需匹配 Server 的证书指纹。
 
 若新进程没有按时提交就绪标记或在稳定性检查期间退出，旧进程会保留；这属于避免过早关闭旧连接的交接保护，不是原子级自动回滚已解压文件的事务。反之，成功交接后的新进程仍可能在稍后因运行环境或网络问题断开，不能将短暂存活检查解释为长期健康保证。
 

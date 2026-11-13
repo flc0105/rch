@@ -92,7 +92,7 @@ def _payload(**overrides):
 def test_update_build_rejects_tcp_claim_for_explicit_tls_listener(tmp_path, monkeypatch):
     endpoint, builder = _build_endpoint(monkeypatch, _manager(tmp_path, monkeypatch),
                                         tmp_path, _payload(server_transport='tcp', server_tls_fingerprint=''))
-    with pytest.raises(ValueError, match='does not match exactly one configured listener'):
+    with pytest.raises(ValueError, match='Update listener does not match connection settings'):
         endpoint()
     builder.assert_not_called()
 
@@ -136,9 +136,105 @@ def test_manual_bundle_build_without_listener_preserves_default_tcp(tmp_path, mo
 def test_update_build_rejects_wrong_tls_certificate_pin(tmp_path, monkeypatch):
     endpoint, builder = _build_endpoint(monkeypatch, _manager(tmp_path, monkeypatch),
                                         tmp_path, _payload(server_tls_fingerprint='b' * 64))
-    with pytest.raises(ValueError, match='does not match exactly one configured listener'):
+    with pytest.raises(ValueError, match='Update certificate fingerprint does not match a configured listener'):
         endpoint()
     builder.assert_not_called()
+
+
+@pytest.mark.parametrize('listener_id', ['', 'tcp-default'])
+def test_update_tcp_preserves_forwarded_endpoints(tmp_path, monkeypatch, listener_id):
+    manager = _manager(tmp_path, monkeypatch)
+    # The actual update payload does not include a listener ID.
+    endpoint, builder = _build_endpoint(monkeypatch, manager, tmp_path,
+        _payload(server_host='127.0.0.1', server_port=19999, web_port=18085,
+                 server_web_host='127.0.0.1', listener_id=listener_id,
+                 server_transport='tcp', server_tls_fingerprint=''))
+    endpoint()
+    assert builder.call_args.args[:3] == ('127.0.0.1', 19999, 18085)
+    assert builder.call_args.args[7] == '127.0.0.1'
+    assert builder.call_args.kwargs['listener_protocol'] == 'tcp'
+    assert builder.call_args.kwargs['tls_fingerprint'] == ''
+
+
+def test_update_tcp_does_not_require_unique_or_enabled_listener(tmp_path, monkeypatch):
+    manager = _manager(tmp_path, monkeypatch)
+    manager._configs.append({'id': 'tcp-other', 'name': 'Other', 'protocol': 'tcp',
+                             'port': 19999, 'enabled': True})
+    endpoint, builder = _build_endpoint(monkeypatch, manager, tmp_path,
+        _payload(server_port=19999, listener_id='', server_transport='tcp', server_tls_fingerprint=''))
+    endpoint()
+    assert builder.call_args.kwargs['listener_id'] == ''
+    for item in manager._configs:
+        item['enabled'] = False
+    endpoint()
+    assert builder.call_args.kwargs['listener_id'] == ''
+    assert builder.call_args.kwargs['listener_protocol'] == 'tcp'
+
+
+@pytest.mark.parametrize('listener_id', ['', 'tls-local'])
+def test_update_tls_forwarded_port_keeps_server_pin(tmp_path, monkeypatch, listener_id):
+    manager = _manager(tmp_path, monkeypatch)
+    endpoint, builder = _build_endpoint(monkeypatch, manager, tmp_path,
+        _payload(server_port=19443, listener_id=listener_id))
+    endpoint()
+    assert builder.call_args.args[1] == 19443
+    assert builder.call_args.kwargs['tls_fingerprint'] == 'a' * 64
+    assert builder.call_args.kwargs['listener_id'] == 'tls-local'
+
+
+@pytest.mark.parametrize('port', [-1, 65536])
+def test_update_rejects_invalid_dial_port(tmp_path, monkeypatch, port):
+    endpoint, builder = _build_endpoint(monkeypatch, _manager(tmp_path, monkeypatch),
+        tmp_path, _payload(server_port=port, listener_id='', server_transport='tcp', server_tls_fingerprint=''))
+    with pytest.raises(ValueError, match='server_port must be between 1 and 65535'):
+        endpoint()
+    builder.assert_not_called()
+
+
+def test_update_tls_requires_pin(tmp_path, monkeypatch):
+    endpoint, builder = _build_endpoint(monkeypatch, _manager(tmp_path, monkeypatch),
+                                        tmp_path, _payload(server_tls_fingerprint=''))
+    with pytest.raises(ValueError, match='pinned server certificate'):
+        endpoint()
+    builder.assert_not_called()
+
+
+def test_update_build_real_bundle_keeps_forwarded_config(tmp_path, monkeypatch):
+    import shutil
+    import zipfile
+    from server.application.agent.agent_build_bundle import BundleBuilder
+
+    payload = _payload(server_host='127.0.0.1', server_port=19999, web_port=18085,
+                       server_web_host='frp.example.test', listener_id='',
+                       server_transport='tcp', server_tls_fingerprint='')
+    endpoint, builder = _build_endpoint(monkeypatch, _manager(tmp_path, monkeypatch),
+                                        tmp_path, payload)
+
+    def build_real(*args, **kwargs):
+        work = tmp_path / 'build'
+        work.mkdir()
+        result = BundleBuilder(str(Path(__file__).parents[2])).build(
+            work_dir=str(work), server_host=args[0], server_port=args[1], web_port=args[2],
+            target_os=args[3], target_arch=args[5], server_web_scheme=args[6],
+            server_web_host=args[7], listener_protocol=kwargs['listener_protocol'],
+            tls_fingerprint=kwargs['tls_fingerprint'], build_id='test', build_version='test')
+        shutil.copyfile(result['file_path'], tmp_path / 'bundle.zip')
+        return {'file_name': 'bundle.zip'}
+
+    builder.side_effect = build_real
+    endpoint()
+    with zipfile.ZipFile(tmp_path / 'bundle.zip') as archive:
+        assert archive.testzip() is None
+        config = {}
+        exec(compile(archive.read('client/config/config.py'), 'config.py', 'exec'), config)
+        assert config['SERVER_ADDR'] == ('127.0.0.1', 19999)
+        assert config['SERVER_WEB_HOST'] == 'frp.example.test'
+        assert config['SERVER_WEB_PORT'] == 18085
+        assert config['SERVER_TRANSPORT'] == 'tcp'
+        assert 'client/scripts/manager.py' in archive.namelist()
+        assert 'client/remote_files/manager.py' in archive.namelist()
+        assert 'client/jobs/control.py' in archive.namelist()
+        assert 'client/commands/runtime/control_dispatcher.py' not in archive.namelist()
 
 
 def test_abnormal_disconnect_waits_before_first_reconnect():
