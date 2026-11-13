@@ -35,6 +35,10 @@ class JobManager:
     SUBPROCESS_STOP_GRACE_SECONDS = 3.0
     SUBPROCESS_TERMINATE_GRACE_SECONDS = 2.0
 
+    def execute(self, scope, action, payload):
+        from client.jobs.control import JobControl
+        return JobControl.execute(self, scope, action, payload)
+
     def __init__(self, socket):
         self.socket = socket
         self._runtimes: Dict[str, JobRuntime] = {}

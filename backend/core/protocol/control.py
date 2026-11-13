@@ -1,5 +1,17 @@
 """Canonical one-shot Control envelope shared by Server and Clients."""
 
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class ControlRequest:
+    domain: str
+    action: str
+    payload: dict
+
+    def __post_init__(self):
+        validate_control_fields(self.domain, self.action, self.payload)
+
 
 def validate_control_fields(domain, action, payload):
     if not isinstance(domain, str) or not domain or not isinstance(action, str) or not action:

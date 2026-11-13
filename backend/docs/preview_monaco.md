@@ -169,8 +169,8 @@ Server 在预览响应中返回 `content`、`encoding` 和 `editable`；Web 的 
 
 - 统一 Web 编辑窗口：`frontend/src/components/PreviewDialog.vue`；顶层入口与事件：`frontend/src/App.vue`。
 - 文本/图片判定和内容截断：`backend/server/application/artifact/artifact_preview_service.py`、`backend/server/config/config.py`。
-- Remote Files 预览 Transfer 与远端写回：`backend/server/application/artifact/remote_file_service.py`、`backend/client/transfers/manager.py`、`backend/client/commands/common/services/filesystem/file_system_service.py`。
-- Artifact 内容更新：`backend/server/application/web/artifact_api.py`；图片信息弹窗：`frontend/src/components/PreviewImageInfoDialog.vue`；图片上传预处理：`backend/client/commands/common/services/filesystem/preview_image_service.py`。
+- Remote Files 预览 Transfer 与远端写回：`backend/server/application/artifact/remote_file_service.py`、`backend/client/transfers/manager.py`、`backend/client/runtime/filesystem/file_system_service.py`。
+- Artifact 内容更新：`backend/server/application/web/artifact_api.py`；图片信息弹窗：`frontend/src/components/PreviewImageInfoDialog.vue`；图片上传预处理：`backend/client/runtime/filesystem/preview_image_service.py`。
 - Scripts、Jobs、Metadata 编辑：`PreviewDialog.vue` 内对应的 `open...Editor` 与 `saveTo...` 分支，各自的 Server 保存 API。
 
 相关文档：[Remote Files](remote_files.md) · [Artifacts](artifacts.md) · [Scripts](scripts.md) · [Background Jobs](background_jobs.md) · [External Tools](external_tools.md) · [File Transfer](file_transfer.md)。

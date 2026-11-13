@@ -3,7 +3,7 @@ import sys
 import threading
 
 from client.runtime.client_util import reset, spawn_new_instance, reexec_restart
-from client.commands.runtime.command_variable_resolver import CommandVariableResolutionError
+from client.runtime.command_variable_resolver import CommandVariableResolutionError
 from core.utils.decorator import desc, confirm
 
 

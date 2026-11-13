@@ -3,8 +3,8 @@
 import inspect
 from types import SimpleNamespace
 import pytest
-from client.commands.runtime.context import CommandExecutionContext, CommandCancelledError, CommandTimeoutError
-from client.commands.runtime.context_store import CommandExecutionContextStore
+from client.runtime.execution.context import ExecutionContext, CommandCancelledError, CommandTimeoutError
+from client.runtime.execution.context_store import ExecutionContextStore
 from client.commands.runtime.interrupts import timeout, cancel_policy
 from client.commands.runtime.shell_command_runner import ShellCommandRunner
 from server.connection.runtime.session_execution_runtime import SessionExecutionRuntime
@@ -32,7 +32,7 @@ def test_decorators_are_metadata_only_in_either_order(outer):
 
 
 def test_server_timeout_option_and_method_budget_take_stricter_deadline():
-    store = CommandExecutionContextStore()
+    store = ExecutionContextStore()
     assert store.extract_timeout({'timeout': 5}) == 5
     assert store.extract_timeout({'_timeout': 7}) == 7
     ctx = store.get_or_create(1, timeout=5)
@@ -51,13 +51,13 @@ def test_server_timeout_option_and_method_budget_take_stricter_deadline():
 
 
 def test_noncooperative_commands_reject_cancellation():
-    ctx = CommandExecutionContext(2)
+    ctx = ExecutionContext(2)
     assert ctx.request_cancel()['state'] == 'rejected'
     assert not ctx.is_cancel_requested()
 
 
 def test_cancel_ack_is_not_same_as_actual_stopped():
-    ctx = CommandExecutionContext(3)
+    ctx = ExecutionContext(3)
     ctx.set_cancel_policy('cooperative')
     events = []
     ctx.on_completion(events.append)
@@ -71,7 +71,7 @@ def test_cancel_ack_is_not_same_as_actual_stopped():
 
 
 def test_accepted_cancel_but_command_completes_normally():
-    ctx = CommandExecutionContext(4)
+    ctx = ExecutionContext(4)
     ctx.set_cancel_policy('cooperative')
     states = []
     ctx.on_completion(states.append)
@@ -118,7 +118,7 @@ def test_cancel_declaration_is_not_a_forceful_thread_abort():
     @desc('Read only')
     def ordinary(self):
         return 1, 'ok'
-    ctx = CommandExecutionContext(11)
+    ctx = ExecutionContext(11)
     runner = ShellCommandRunner(SimpleNamespace())
     obj = SimpleNamespace(execution_context=ctx, _checkpoint=lambda: None)
     runner._apply_command_policy(obj, ordinary)
@@ -147,8 +147,8 @@ def test_real_shell_process_cancel_distinguishes_ack_from_stop():
             break
         time.sleep(.01)
     assert ctx is not None and ctx._cancel_handlers
-    assert executor.on_command_completion(105, lambda state: outcome.setdefault('state', state))
-    response = executor.cancel_command(105)
+    assert executor.execution.on_completion(105, lambda state: outcome.setdefault('state', state))
+    response = executor.execution.cancel(105)
     worker.join(3)
     assert not worker.is_alive()
     assert response['state'] == 'accepted'
@@ -178,7 +178,7 @@ def test_cancel_mode_is_pure_metadata_and_context_policy(mode):
         return 1, 'ok'
     assert example.command_cancel_mode == mode
     assert not hasattr(example, '__wrapped__')
-    ctx = CommandExecutionContext(44)
+    ctx = ExecutionContext(44)
     ctx.set_cancel_policy(mode)
     assert ctx.get_cancel_policy()['mode'] == mode
     assert ctx.request_cancel()['accepted'] == (mode != 'none')
@@ -188,7 +188,7 @@ def test_invalid_cancel_mode_rejected():
     with pytest.raises(ValueError):
         cancel_policy('force')
     with pytest.raises(ValueError):
-        CommandExecutionContext(45).set_cancel_policy('force')
+        ExecutionContext(45).set_cancel_policy('force')
 
 
 def test_shell_and_stream_declare_process_cancellation():
@@ -202,9 +202,9 @@ def test_shell_and_stream_declare_process_cancellation():
 
 
 def test_runtime_execution_strategies_select_actual_cancel_mode():
-    from client.commands.strategies.python_execution.inproc import InProcessPythonExecutionStrategy
-    from client.commands.strategies.python_execution.subprocess_pipe import SubprocessPipePythonExecutionStrategy
-    from client.commands.strategies.http_transfer.base import HttpTransferStrategy
+    from client.runtime.execution.python_execution.inproc import InProcessPythonExecutionStrategy
+    from client.runtime.execution.python_execution.subprocess_pipe import SubprocessPipePythonExecutionStrategy
+    from client.runtime.http_transfer.strategies.base import HttpTransferStrategy
 
     observed = []
     owner = SimpleNamespace(_set_cancel_policy=lambda **kwargs: observed.append(kwargs))
@@ -238,8 +238,8 @@ def test_read_uses_managed_subprocess_cancel_not_only_checkpoints():
         time.sleep(.01)
     assert ctx is not None and ctx._cancel_handlers
     assert ctx.get_cancel_policy()['mode'] == 'process'
-    assert executor.on_command_completion(204, lambda state: result.setdefault('state', state))
-    answer = executor.cancel_command(204)
+    assert executor.execution.on_completion(204, lambda state: result.setdefault('state', state))
+    answer = executor.execution.cancel(204)
     worker.join(4)
     assert answer['accepted'] and answer['state'] == 'accepted'
     assert not worker.is_alive()
@@ -266,7 +266,7 @@ def _client_cancel_case(mode):
     ctx = executor.context_store.get_or_create(31)
     ctx.set_cancel_policy(mode)
     connection = SimpleNamespace(
-        runtime=SimpleNamespace(command_executor=executor),
+        runtime=SimpleNamespace(command_executor=executor, execution=executor.execution),
         send=sent.append,
         send_result=lambda *args: results.append(args),
     )
@@ -315,7 +315,7 @@ def test_cancel_after_context_finished_rejected_without_callback():
 @pytest.mark.parametrize('binary', [True, False])
 def test_stream_process_output_normalizes_windows_crlf_without_removing_blank_lines(binary):
     import io
-    from client.commands.common.services.process.process_execution_service import ProcessExecutionService
+    from client.runtime.execution.process.process_execution_service import ProcessExecutionService
 
     chunks = []
     owner = SimpleNamespace(

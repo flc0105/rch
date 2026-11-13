@@ -9,7 +9,7 @@ from types import SimpleNamespace
 import pytest
 
 from client.commands.common.mixins.execution_ops import CommandExecutionMixin
-from client.commands.common.services.process.process_execution_service import ProcessExecutionService
+from client.runtime.execution.process.process_execution_service import ProcessExecutionService
 from client.commands.platform.ios import iOSCommands
 
 
@@ -70,7 +70,7 @@ def test_bgrun_shell_pid_is_reaped():
 
 
 def test_windows_process_creation_uses_detached_flags(monkeypatch):
-    import client.commands.common.services.process.process_execution_service as module
+    import client.runtime.execution.process.process_execution_service as module
     from types import SimpleNamespace
 
     creation_flags = 0x8 | 0x200

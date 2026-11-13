@@ -298,7 +298,7 @@ class DeviceMonitorManager:
 
     def _get_process_service(self):
         if self._process_service is None:
-            from client.commands.common.services.process.process_service import ProcessService
+            from client.runtime.execution.process.process_service import ProcessService
             self._process_service = ProcessService(self)
         return self._process_service
 

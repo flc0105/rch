@@ -61,27 +61,10 @@ func Handle(session *executor.Session, msg map[string]interface{}) {
 			sendResult(session, id, 0, "Invalid Control request")
 			return
 		}
-		if domain != "remote_files" && domain != "script" {
+		control, supported := session.ControlHandler(domain)
+		if !supported {
 			sendResult(session, id, 0, "Unsupported Control domain on this Client: "+domain)
 			return
-		}
-		if domain == "script" {
-			if action != "run" {
-				sendResult(session, id, 0, "Unsupported script Control action: "+action)
-				return
-			}
-			if _, ok := payload["source"].(string); !ok {
-				sendResult(session, id, 0, "Invalid script Control source")
-				return
-			}
-			if _, ok := payload["params"].(map[string]interface{}); !ok {
-				sendResult(session, id, 0, "Invalid script Control parameters")
-				return
-			}
-			if name, ok := payload["script_name"].(string); !ok || name == "" {
-				sendResult(session, id, 0, "Invalid script Control name")
-				return
-			}
 		}
 		ctx, cancel := context.WithCancel(context.Background())
 		if !session.BeginShell(id, cancel) {
@@ -91,35 +74,18 @@ func Handle(session *executor.Session, msg map[string]interface{}) {
 		}
 		go func() {
 			defer cancel()
-			var status int
-			var result interface{}
-			if domain == "script" {
-				params := make(map[string]interface{})
-				for key, value := range payload["params"].(map[string]interface{}) {
-					params[key] = value
-				}
-				params["__script_name__"] = payload["script_name"]
-				status, result = executor.RunExternalPythonScript(ctx, session, payload["source"], params, func(streamStatus int, chunk string) {
-					_ = session.Sock.Send(map[string]interface{}{
-						"type": "result", "id": id, "status": streamStatus,
-						"text": chunk, "cwd": session.Cwd, "eof": 0,
-					})
-				})
-			} else {
-				status, result = executor.RemoteFilesControl(ctx, session, id, action, payload)
-			}
+			status, result := control.Execute(ctx, session, id, action, payload, func(streamStatus int, chunk string) {
+				_ = session.Sock.Send(map[string]interface{}{"type": "result", "id": id, "status": streamStatus, "text": chunk, "cwd": session.Cwd, "eof": 0})
+			})
 			cancelled, cancelID := session.EndShell(id)
 			if cancelled {
-				status, result = 0, "Command cancelled"
-				if domain == "script" {
-					result = "Script cancelled"
-				}
+				status, result = 0, control.CancelledMessage
 			}
 			response := map[string]interface{}{"type": "result", "id": id, "status": status, "cwd": session.Cwd, "eof": 1}
-			if data, ok := result.(map[string]interface{}); ok {
-				response["data"] = data
+			if text, ok := result.(string); ok {
+				response["text"] = text
 			} else {
-				response["text"] = result
+				response["data"] = result
 			}
 			_ = session.Sock.Send(response)
 			if cancelled {

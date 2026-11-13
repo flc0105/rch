@@ -9,9 +9,9 @@ import pytest
 from core.utils.artifact_naming import (
     build_artifact_filename, build_command_name,
 )
-from client.commands.strategies.http_transfer.cancelable import CancelableMultipartUploadStream
-from client.commands.strategies.http_transfer.legacy import LegacyHttpTransferStrategy
-from client.commands.common.services.transfer.http_file_transfer_service import CommandHttpFileTransferService
+from client.runtime.http_transfer.strategies.cancelable import CancelableMultipartUploadStream
+from client.runtime.http_transfer.strategies.legacy import LegacyHttpTransferStrategy
+from client.runtime.http_transfer.http_file_transfer_service import HttpFileTransferService
 from server.application.artifact.command_output_artifact_service import CommandOutputArtifactService
 
 
@@ -104,7 +104,7 @@ def test_command_media_upload_passes_wire_name_and_origin(tmp_path):
     client_api = SimpleNamespace(build_file_upload_url=lambda: 'https://example.invalid',
                                  try_parse_json=lambda response: {'data': {'original_name': 'screenshot_20261110_183218.png'}})
     owner = SimpleNamespace(socket=SimpleNamespace(client_id='abc'), command_id=None, _send_info=lambda *args: None)
-    service = CommandHttpFileTransferService(owner, client_api=client_api)
+    service = HttpFileTransferService(owner, client_api=client_api)
     service.get_transfer_strategy = lambda: strategy
     service.upload_single_file_to_server_result(str(local), category='screenshots',
         upload_name='screenshot_20261110_183218.png', extra={'saved_from': 'client_command', 'source_command': 'screenshot'})

@@ -497,7 +497,7 @@ class CommandUpdateMixin:
                 # without additional metadata; require manual Preview for logs.
                 chosen.discard('client_logs')
             else:
-                from client.commands.common.services.interaction_service import CommandInteractions
+                from client.runtime.execution.interaction_service import CommandInteractions
                 rows = []
                 for entry in candidates:
                     paths = [item['path'] for item in entry['paths']]

@@ -6,8 +6,8 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import core.device.chassis_type as chassis
-from client.commands.runtime import command_variable_resolver as variable_module
-from client.commands.runtime.command_variable_resolver import CommandVariableResolver
+from client.runtime import command_variable_resolver as variable_module
+from client.runtime.command_variable_resolver import CommandVariableResolver
 from client.runtime import client_info_builder as builder_module
 from client.runtime.client_info_builder import ClientInfoBuilder
 from server.application.connection.connection_service import WebConnectionService

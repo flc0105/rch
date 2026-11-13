@@ -32,7 +32,7 @@ Web Jobs / Job Detail · 状态、消息、文件
 
 启动或停止控制经由统一的 `control` 消息类型（`domain=job`）进入 Client 的受管理执行路径，但 **Job 开始运行后不持续占用前台命令槽**。
 
-`control` 采用扁平的结构化信封：Socket 消息携带 `type=control`、`id`、`domain=job`、`action` 和 JSON 对象 `payload`。`action` 为 `start`、`stop`、`stop_all`、`ps` 或 `status`，各操作的 `payload` 直接携带相应的 `job_name`、`params`、`execution_mode` 或 `job_key`；无参数操作传 `{}`。不将 JSON 序列化进 `text`，也不将 `action` 再套入 `payload`。终端 `job` 命令先由 Server 解析为这些字段；Web Job Manager 直接提交同一操作定义。Client 由同一 Job Control Handler 校验请求并调用 JobManager。普通文本命令仍使用消息的 `text` 字段。
+`control` 采用扁平的结构化信封：Socket 消息携带 `type=control`、`id`、`domain=job`、`action` 和 JSON 对象 `payload`。`action` 为 `start`、`stop`、`stop_all`、`ps` 或 `status`，各操作的 `payload` 直接携带相应的 `job_name`、`params`、`execution_mode` 或 `job_key`；无参数操作传 `{}`。不将 JSON 序列化进 `text`，也不将 `action` 再套入 `payload`。终端 `job` 命令先由 Server 解析为这些字段；Web Job Manager 直接提交同一操作定义。Client 通过 Control Dispatcher 直接交给 JobManager，使用独立的 Job Control 校验及 Job Runtime。普通文本命令仍使用消息的 `text` 字段。
 
 规范化的 Job Stop 请求示例：
 

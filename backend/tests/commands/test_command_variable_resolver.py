@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from client.commands.runtime.command_variable_resolver import CommandVariableResolver
+from client.runtime.command_variable_resolver import CommandVariableResolver
 from client.runtime.client_info_builder import ClientInfoBuilder
 
 

@@ -2,7 +2,7 @@ import os
 import subprocess
 import shlex
 
-from client.commands.runtime.context import CommandCancelledError, CommandTimeoutError
+from client.runtime.execution.context import CommandCancelledError, CommandTimeoutError
 from core.utils.formatting import get_size
 from core.utils.artifact_naming import build_artifact_filename
 from client.runtime.temp_workspace import make_client_temp_file, cleanup_temp_path

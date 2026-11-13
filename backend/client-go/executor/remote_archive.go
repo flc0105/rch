@@ -20,13 +20,6 @@ const (
 	maxZipExtractBytes   int64 = 20 * 1024 * 1024 * 1024
 )
 
-var (
-	_ = Register("create_zip_paths", Usage("create_zip_paths <payload>"), Help("Create a ZIP archive from selected files"), Group("file_path"), CancelPolicy("cooperative"), CommandRunner(createRemoteZip))
-	_ = Register("peek_zip", Usage("peek_zip <payload>"), Help("Inspect ZIP entries"), Group("file_path"), CancelPolicy("cooperative"), CommandRunner(peekRemoteZip))
-	_ = Register("read_zip_entry", Usage("read_zip_entry <payload>"), Help("Read a small ZIP text entry"), Group("file_path"), CancelPolicy("cooperative"), CommandRunner(readRemoteZipEntry))
-	_ = Register("extract_zip_path", Usage("extract_zip_path <payload>"), Help("Extract ZIP into a directory"), Group("file_path"), CancelPolicy("cooperative"), CommandRunner(extractRemoteZip))
-)
-
 type zipNode struct {
 	Name           string     `json:"name"`
 	Path           string     `json:"path"`
@@ -149,15 +142,7 @@ func zipTree(infos []*zip.File) ([]*zipNode, int, error) {
 	return roots, count, nil
 }
 
-func peekRemoteZip(ctx context.Context, s *Session, raw string, _ func(int, string)) (int, string) {
-	payload, err := payloadMap(raw)
-	if err != nil {
-		return 0, err.Error()
-	}
-	return peekRemoteZipPayload(ctx, s, payload)
-}
-
-func peekRemoteZipPayload(ctx context.Context, s *Session, payload map[string]interface{}) (int, string) {
+func peekRemoteZipPayload(ctx context.Context, s *Session, payload map[string]interface{}) (int, interface{}) {
 	archivePath, err := remoteExisting(s, payloadText(payload["path"]), false)
 	if err != nil {
 		return 0, err.Error()
@@ -190,22 +175,14 @@ func peekRemoteZipPayload(ctx context.Context, s *Session, payload map[string]in
 	if err != nil {
 		return 0, err.Error()
 	}
-	return jsonResult(map[string]interface{}{
+	return 1, map[string]interface{}{
 		"path": archivePath, "name": filepath.Base(archivePath), "archive_size": info.Size(), "entry_count": len(archive.File),
 		"file_count": files, "dir_count": dirs, "compressed_size": compressed, "uncompressed_size": uncompressed, "encrypted_count": encrypted,
 		"tree": tree, "limits": map[string]interface{}{"archive_bytes": maxZipPeekBytes, "entries": maxZipPeekEntries, "entry_preview_bytes": maxZipEntryBytes},
-	})
-}
-
-func readRemoteZipEntry(ctx context.Context, s *Session, raw string, _ func(int, string)) (int, string) {
-	payload, err := payloadMap(raw)
-	if err != nil {
-		return 0, err.Error()
 	}
-	return readRemoteZipEntryPayload(ctx, s, payload)
 }
 
-func readRemoteZipEntryPayload(ctx context.Context, s *Session, payload map[string]interface{}) (int, string) {
+func readRemoteZipEntryPayload(ctx context.Context, s *Session, payload map[string]interface{}) (int, interface{}) {
 	archivePath, err := remoteExisting(s, payloadText(payload["path"]), false)
 	if err != nil {
 		return 0, err.Error()
@@ -262,20 +239,12 @@ func readRemoteZipEntryPayload(ctx context.Context, s *Session, payload map[stri
 			result["content"] = text
 			result["encoding"] = encoding
 		}
-		return jsonResult(result)
+		return 1, result
 	}
 	return 0, "ZIP entry not found"
 }
 
-func createRemoteZip(ctx context.Context, s *Session, raw string, _ func(int, string)) (int, string) {
-	payload, err := payloadMap(raw)
-	if err != nil {
-		return 0, err.Error()
-	}
-	return createRemoteZipPayload(ctx, s, payload)
-}
-
-func createRemoteZipPayload(ctx context.Context, s *Session, payload map[string]interface{}) (int, string) {
+func createRemoteZipPayload(ctx context.Context, s *Session, payload map[string]interface{}) (int, interface{}) {
 	paths, err := pathsForTransfer(s, payload["paths"])
 	if err != nil {
 		return 0, err.Error()
@@ -303,7 +272,7 @@ func createRemoteZipPayload(ctx context.Context, s *Session, payload map[string]
 	if err != nil {
 		return 0, err.Error()
 	}
-	return jsonResult(map[string]interface{}{"archive_path": target, "archive_name": name, "source_count": len(paths), "size": info.Size()})
+	return 1, map[string]interface{}{"archive_path": target, "archive_name": name, "source_count": len(paths), "size": info.Size()}
 }
 
 // extractRemoteZipEntry preserves the selected item's basename and never overwrites
@@ -449,20 +418,12 @@ func extractRemoteZipEntry(ctx context.Context, source, dest, entryName string) 
 	}, nil
 }
 
-func extractRemoteZip(ctx context.Context, s *Session, raw string, _ func(int, string)) (int, string) {
-	payload, err := payloadMap(raw)
-	if err != nil {
-		return 0, err.Error()
-	}
-	return extractRemoteZipPayload(ctx, s, payload)
-}
-
-func extractRemoteZipPayload(ctx context.Context, s *Session, payload map[string]interface{}) (int, string) {
+func extractRemoteZipPayload(ctx context.Context, s *Session, payload map[string]interface{}) (int, interface{}) {
 	return extractRemoteZipPolicy(ctx, s, payload)
 }
 
 // extractRemoteZipStaged is used only inside the private ZIP staging directory.
-func extractRemoteZipStaged(ctx context.Context, s *Session, payload map[string]interface{}) (int, string) {
+func extractRemoteZipStaged(ctx context.Context, s *Session, payload map[string]interface{}) (int, interface{}) {
 	source, err := remoteExisting(s, payloadText(payload["path"]), false)
 	if err != nil {
 		return 0, err.Error()
@@ -476,7 +437,7 @@ func extractRemoteZipStaged(ctx context.Context, s *Session, payload map[string]
 		if err != nil {
 			return 0, err.Error()
 		}
-		return jsonResult(result)
+		return 1, result
 	}
 	archive, err := openZipBounded(source, 1<<63-1, maxZipExtractEntries)
 	if err != nil {
@@ -609,5 +570,5 @@ func extractRemoteZipStaged(ctx context.Context, s *Session, payload map[string]
 		files++
 	}
 	success = true
-	return jsonResult(map[string]interface{}{"archive_path": source, "destination_dir": dest, "extracted_to": finalPath, "mode": mode, "root_name": rootName, "file_count": files, "dir_count": dirs})
+	return 1, map[string]interface{}{"archive_path": source, "destination_dir": dest, "extracted_to": finalPath, "mode": mode, "root_name": rootName, "file_count": files, "dir_count": dirs}
 }

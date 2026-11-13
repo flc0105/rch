@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from client.jobs.command_control import ClientJobControl
+from client.jobs.control import JobControl
 from client.connection.message_router import ClientInboundMessageRouter
 from core.protocol.job_control import (
     build_job_control_request, build_job_control_result,
@@ -52,8 +52,8 @@ def test_result_contract_and_input_output_separation():
 
 def test_client_router_passes_payload_unmodified():
     calls = []
-    conn = SimpleNamespace(runtime=SimpleNamespace(command_executor=SimpleNamespace(
-        execute_control_command=lambda cmd_id, domain, action, payload, options=None:
+    conn = SimpleNamespace(runtime=SimpleNamespace(control_dispatcher=SimpleNamespace(
+        execute=lambda cmd_id, domain, action, payload, options=None:
             calls.append((cmd_id, domain, action, payload, options)) or (1, build_job_control_result('stop', 'stopped'))
     )))
     request = build_job_control_request('stop', job_key='demo')
@@ -70,14 +70,15 @@ def test_client_operation_returns_structured_result_for_queries_and_mutations():
         def get_job_status(self, key): return {'job_key': key, 'state': 'running'}
         def stop_job(self, key): return SimpleNamespace(display_name=key, job_id='job-7')
         def stop_all_jobs(self): return {'stopped': [], 'errors': [], 'total': 0}
-    commands = SimpleNamespace(socket=SimpleNamespace(runtime=SimpleNamespace(job_manager=Manager())))
+    manager = Manager()
+    scope = SimpleNamespace()
     for action, args in [('ps', {}), ('status', {'job_key': 'demo'}),
                          ('stop', {'job_key': 'demo'}), ('stop_all', {})]:
-        status, result = ClientJobControl.execute(commands, action, build_job_control_request(action, **args))
+        status, result = JobControl.execute(manager, scope, action, build_job_control_request(action, **args))
         assert status == 1
         assert isinstance(result, dict)
         validate_job_control_result(result, action)
-    assert ClientJobControl.execute(commands, 'ps', {'extra': 1})[0] == 0
+    assert JobControl.execute(manager, scope, 'ps', {'extra': 1})[0] == 0
 
 
 def test_server_result_router_preserves_structured_data():
@@ -126,7 +127,7 @@ def test_cli_and_web_share_typed_requests_and_metadata_mode():
 
 
 def test_client_start_downloads_job_and_returns_real_id(monkeypatch, tmp_path):
-    import client.jobs.command_control as module
+    import client.jobs.control as module
     monkeypatch.setattr(module, 'make_client_temp_dir', lambda *a, **kw: str(tmp_path))
     output = []
     runtime = SimpleNamespace(job_id='job-start-1', display_name='demo', execution_mode='subprocess',
@@ -138,12 +139,12 @@ def test_client_start_downloads_job_and_returns_real_id(monkeypatch, tmp_path):
             assert cleanup_path == str(tmp_path)
             assert (tmp_path / 'remote_job.py').read_text() == 'print(12)'
             return runtime
-    commands = SimpleNamespace(
-        command_id=39, socket=SimpleNamespace(runtime=SimpleNamespace(job_manager=Manager())),
+    scope = SimpleNamespace(
+        command_id=39,
         client_api=SimpleNamespace(download_job=lambda name, timeout: 'print(12)'),
         _send_interim_result=lambda *args: output.append(args),
     )
-    status, result = ClientJobControl.execute(commands, 'start', build_job_control_request(
+    status, result = JobControl.execute(Manager(), scope, 'start', build_job_control_request(
         'start', job_name='demo', execution_mode='subprocess', params={'x': 12}))
     assert status == 1 and result['job_id'] == 'job-start-1'
     assert len(output) == 2

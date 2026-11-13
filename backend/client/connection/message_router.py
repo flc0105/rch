@@ -39,7 +39,7 @@ class ClientInboundMessageRouter(BaseMessageRouter):
 
     def handle_control_message(self, data: dict):
         command_id = data.get('id')
-        result = self.connection.runtime.command_executor.execute_control_command(
+        result = self.connection.runtime.control_dispatcher.execute(
             command_id, data.get('domain'), data.get('action'), data.get('payload'),
             options=data.get('extra') if isinstance(data.get('extra'), dict) else None,
         )
@@ -62,7 +62,7 @@ class ClientInboundMessageRouter(BaseMessageRouter):
 
         # Completion registration and cancellation must be one atomic operation:
         # a fast exit must not clear the context between those two steps.
-        cancel_result = self.connection.runtime.command_executor.cancel_command(
+        cancel_result = self.connection.runtime.execution.cancel(
             target_command_id, on_completion=_report_terminal_state,
         )
         accepted = bool(cancel_result.get('accepted'))

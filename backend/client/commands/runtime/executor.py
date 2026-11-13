@@ -1,11 +1,10 @@
+from client.runtime.execution.runtime import ExecutionRuntime
 from typing import Any, Callable
 
 from client.commands.runtime.acmd_runner import ArgumentCommandRunner
 from client.commands.runtime.catalog import CommandCatalog
-from client.commands.runtime.command_variable_resolver import CommandVariableResolver
-from client.commands.runtime.context_store import CommandExecutionContextStore
-from client.commands.runtime.request import CommandExecutionRequest
-from client.commands.runtime.control_dispatcher import ClientControlDispatcher
+from client.runtime.command_variable_resolver import CommandVariableResolver
+from client.runtime.execution.request import ExecutionRequest
 from client.commands.runtime.shell_command_runner import ShellCommandRunner
 
 
@@ -15,15 +14,15 @@ class CommandExecutor:
 
     当前职责收口为：
     - 使用 CommandCatalog 获取平台命令对象 / acmd registry
-    - 使用 CommandExecutionContextStore 管理单次命令生命周期
-    - 只负责三类命令执行链的公共上下文绑定和清理
+    - 将 Command / ACMD 绑定到共享 ExecutionRuntime
     """
 
-    def __init__(self, socket):
+    def __init__(self, socket, execution=None, variable_resolver=None):
         self.socket = socket
         self.catalog = CommandCatalog(socket)
-        self.context_store = CommandExecutionContextStore()
-        self.command_variable_resolver = CommandVariableResolver(socket)
+        self.execution = execution or ExecutionRuntime(socket)
+        self.context_store = self.execution.context_store
+        self.command_variable_resolver = variable_resolver or CommandVariableResolver(socket)
         self.shell_command_runner = ShellCommandRunner(self)
         self.argument_command_runner = ArgumentCommandRunner(self)
 
@@ -51,36 +50,17 @@ class CommandExecutor:
     def _extract_timeout(self, options=None):
         return self.context_store.extract_timeout(options)
 
-    def _build_request(self, command_id, options=None, payload_options=None) -> CommandExecutionRequest:
+    def _build_request(self, command_id, options=None, payload_options=None) -> ExecutionRequest:
         timeout = self._extract_timeout(payload_options)
         if timeout is None:
             timeout = self._extract_timeout(options)
-        return CommandExecutionRequest(command_id=command_id, timeout=timeout)
+        return ExecutionRequest(command_id=command_id, timeout=timeout)
 
-    def _get_or_create_execution_context(self, command_id, timeout=None):
-        return self.context_store.get_or_create(command_id, timeout=timeout)
-
-    def _clear_execution_context(self, command_id):
-        self.context_store.clear(command_id)
-
-    def cancel_command(self, command_id: int, on_completion=None) -> dict:
-        """
-        请求取消指定命令；若被接受，原子注册最终完成回调。
-        """
-        return self.context_store.cancel(command_id, on_completion=on_completion)
-
-    def on_command_completion(self, command_id: int, callback):
-        context = self.context_store.get_existing(command_id)
-        if context is None:
-            return False
-        context.on_completion(callback)
-        return True
-
-    def _bind_execution(self, commands, request: CommandExecutionRequest):
+    def _bind_execution(self, commands, request: ExecutionRequest):
         """
         绑定命令实例与当前执行上下文。
         """
-        execution_context = self._get_or_create_execution_context(
+        execution_context = self.context_store.get_or_create(
             request.command_id,
             timeout=request.timeout,
         )
@@ -90,7 +70,7 @@ class CommandExecutor:
             commands.command_id = request.command_id
         return commands
 
-    def _prepare_commands(self, request: CommandExecutionRequest):
+    def _prepare_commands(self, request: ExecutionRequest):
         """
         获取命令实例并绑定当前 command_id
         """
@@ -98,20 +78,12 @@ class CommandExecutor:
         return self._bind_execution(commands, request)
 
     def _execute_with_cleanup(self, command_id, invoke: Callable[[], Any]):
-        try:
-            return invoke()
-        finally:
-            # A cancellation ACK is only a request; execution reaches a terminal
-            # state once the command has actually returned or raised.
-            context = self.context_store.get_existing(command_id)
-            if context is not None:
-                context.finish()
-            self._clear_execution_context(command_id)
+        return self.execution.execute(command_id, invoke)
 
-    def execute_bound_request(self, request: CommandExecutionRequest, invoke: Callable[[Any], Any]):
+    def execute_bound_request(self, request: ExecutionRequest, invoke: Callable[[Any], Any]):
         def _runner():
             commands = self._prepare_commands(request)
-            # Common entry checkpoint for command / acmd / script.
+            # Common entry checkpoint for command / acmd.
             commands._checkpoint()
             return invoke(commands)
         return self._execute_with_cleanup(request.command_id, _runner)
@@ -138,9 +110,14 @@ class CommandExecutor:
         request = self._build_request(command_id, options=options, payload_options=payload)
         return self.argument_command_runner.execute(request, payload)
 
-    def execute_control_command(self, command_id, domain, action, payload, options=None):
-        """Execute a typed Control request using the registered domain handler."""
-        request = self._build_request(command_id, options=options)
-        return self.execute_bound_request(
-            request, lambda commands: ClientControlDispatcher.execute(commands, domain, action, payload),
-        )
+    def sdk_command_names(self):
+        """List exports without constructing or binding a platform command instance."""
+        command_class = self.catalog._load_platform_command_class()
+        return sorted(name for name in dir(command_class)
+                      if not name.startswith('_') and hasattr(getattr(command_class, name, None), 'help'))
+
+    def resolve_sdk_command(self, scope, name):
+        """SDK-only bridge; execute a real exported command within the current context."""
+        commands = self.get_commands()
+        commands.bind_execution(scope.command_id, scope.execution_context)
+        return self.shell_command_runner._resolve_builtin_command(commands, name)

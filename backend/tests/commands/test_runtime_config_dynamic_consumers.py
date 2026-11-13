@@ -43,24 +43,24 @@ def test_new_defaults_and_strategy_enums(isolated_config):
 
 
 def test_set_reset_reset_all_changes_next_transfer_and_python_strategy(isolated_config):
-    from client.commands.common.services.transfer.http_file_transfer_service import CommandHttpFileTransferService
-    from client.commands.strategies.python_execution.factory import get_python_execution_mode
-    from client.commands.strategies.http_transfer.cancelable import CancelableHttpTransferStrategy
-    from client.commands.strategies.http_transfer.legacy import LegacyHttpTransferStrategy
+    from client.runtime.http_transfer.http_file_transfer_service import HttpFileTransferService
+    from client.runtime.execution.python_execution.factory import get_python_execution_mode
+    from client.runtime.http_transfer.strategies.cancelable import CancelableHttpTransferStrategy
+    from client.runtime.http_transfer.strategies.legacy import LegacyHttpTransferStrategy
     from client.transfers.manager import _TransferTaskOwner
-    from client.commands.runtime.context import CommandExecutionContext
+    from client.runtime.execution.context import ExecutionContext
 
     svc = RuntimeConfigService(features={'screen_view': True})
     owner = SimpleNamespace()
-    transfer = CommandHttpFileTransferService(owner)
+    transfer = HttpFileTransferService(owner)
     assert isinstance(transfer.get_transfer_strategy(), CancelableHttpTransferStrategy)
     assert get_python_execution_mode() == 'inproc'
 
     svc.set_config_value('HTTP_TRANSFER_MODE', 'legacy')
     assert isinstance(transfer.get_transfer_strategy(), LegacyHttpTransferStrategy)
     # An independent transfer owner created in the old mode must not carry a snapshot.
-    independent_owner = _TransferTaskOwner(SimpleNamespace(), CommandExecutionContext(command_id='test'))
-    assert isinstance(CommandHttpFileTransferService(independent_owner).get_transfer_strategy(), LegacyHttpTransferStrategy)
+    independent_owner = _TransferTaskOwner(SimpleNamespace(), ExecutionContext(command_id='test'))
+    assert isinstance(HttpFileTransferService(independent_owner).get_transfer_strategy(), LegacyHttpTransferStrategy)
 
     svc.set_config_value('PYTHON_EXECUTION_MODE', 'subprocess_pipe')
     assert get_python_execution_mode() == 'subprocess_pipe'
@@ -80,14 +80,14 @@ def test_set_reset_reset_all_changes_next_transfer_and_python_strategy(isolated_
 
 
 def test_dynamic_timeout_and_reconnect_read_in_same_process(isolated_config):
-    from client.commands.base import CommandRuntimeMixin
+    from client.runtime.execution.scope import ExecutionRuntimeMixin
     from client.commands.common.mixins.execution_ops import CommandExecutionMixin
     from client.bootstrap.client_app import Client
 
     svc = RuntimeConfigService()
     executor = object.__new__(CommandExecutionMixin)
     client = object.__new__(Client)
-    fallback = CommandRuntimeMixin()
+    fallback = ExecutionRuntimeMixin()
     fallback.execution_context = None
     assert executor.DEFAULT_SHELL_TIMEOUT == 30
     assert executor.DEFAULT_STREAM_TIMEOUT == 300
@@ -231,8 +231,8 @@ def test_reset_all_triggers_callbacks_and_restores_defaults(isolated_config, mon
 
 
 def test_buffer_preview_and_new_screen_sessions_use_latest_values(isolated_config):
-    from client.commands.strategies.http_transfer.cancelable import CancelableHttpTransferStrategy
-    from client.commands.common.services.filesystem.preview_image_service import PreviewImageService
+    from client.runtime.http_transfer.strategies.cancelable import CancelableHttpTransferStrategy
+    from client.runtime.filesystem.preview_image_service import PreviewImageService
     from client.screen.frame_strategies.factory import build_screen_frame_strategy
     from client.screen.frame_strategies.full_jpeg import FullJpegFrameStrategy
     from client.screen.frame_strategies.keyframe_delta import KeyframeDeltaFrameStrategy

@@ -122,7 +122,7 @@ func TestConflictPasteInspectDoesNotWriteAndKeepsNames(t *testing.T) {
 	targetDir := filepath.Join(s.Cwd, "target")
 	writeConflictTestFile(t, src, "NEW")
 	writeConflictTestFile(t, filepath.Join(targetDir, "a.txt"), "OLD")
-	status, text := executeRemote(t, s, remoteCommand("paste_paths", map[string]interface{}{"paths": []string{src}, "destination_dir": targetDir, "operation": "copy", "inspect": true}))
+	status, text := executeRemote(t, s, remoteRequest("paste_paths", map[string]interface{}{"paths": []string{src}, "destination_dir": targetDir, "operation": "copy", "inspect": true}))
 	if status != 1 {
 		t.Fatal(text)
 	}
@@ -135,7 +135,7 @@ func TestConflictPasteInspectDoesNotWriteAndKeepsNames(t *testing.T) {
 	if readConflictTestFile(t, filepath.Join(targetDir, "a.txt")) != "OLD" {
 		t.Fatal("inspect mutated target")
 	}
-	status, text = executeRemote(t, s, remoteCommand("paste_paths", map[string]interface{}{"paths": []string{src}, "destination_dir": targetDir, "operation": "copy", "conflict_policies": []string{"keep_both"}}))
+	status, text = executeRemote(t, s, remoteRequest("paste_paths", map[string]interface{}{"paths": []string{src}, "destination_dir": targetDir, "operation": "copy", "conflict_policies": []string{"keep_both"}}))
 	if status != 1 {
 		t.Fatal(text)
 	}
@@ -172,7 +172,7 @@ func TestConflictZipSelectedMergeReplaceAndInspect(t *testing.T) {
 	writeConflictTestFile(t, filepath.Join(destination, "root", "shared"), "OLD")
 	writeConflictTestFile(t, filepath.Join(destination, "root", "left"), "STAY")
 	inspect := map[string]interface{}{"path": archivePath, "destination_dir": destination, "inspect": true}
-	status, text := executeRemote(t, s, remoteCommand("extract_zip_path", inspect))
+	status, text := executeRemote(t, s, remoteRequest("extract_archive", inspect))
 	if status != 1 {
 		t.Fatal(text)
 	}
@@ -186,7 +186,7 @@ func TestConflictZipSelectedMergeReplaceAndInspect(t *testing.T) {
 		t.Fatal("inspect modified target")
 	}
 	// Without a user decision, extracting a colliding folder must fail unchanged.
-	status, text = executeRemote(t, s, remoteCommand("extract_zip_path", map[string]interface{}{"path": archivePath, "destination_dir": destination}))
+	status, text = executeRemote(t, s, remoteRequest("extract_archive", map[string]interface{}{"path": archivePath, "destination_dir": destination}))
 	if status != 0 {
 		t.Fatalf("default ZIP extraction unexpectedly succeeded: %s", text)
 	}
@@ -194,7 +194,7 @@ func TestConflictZipSelectedMergeReplaceAndInspect(t *testing.T) {
 		t.Fatal("default ZIP extraction changed existing content")
 	}
 	for _, policy := range []string{"merge", "replace"} {
-		status, text = executeRemote(t, s, remoteCommand("extract_zip_path", map[string]interface{}{"path": archivePath, "destination_dir": destination, "conflict_policy": policy}))
+		status, text = executeRemote(t, s, remoteRequest("extract_archive", map[string]interface{}{"path": archivePath, "destination_dir": destination, "conflict_policy": policy}))
 		if status != 1 {
 			t.Fatalf("%s: %s", policy, text)
 		}
@@ -273,7 +273,7 @@ func TestZipDefaultRejectsExistingWrapperFolder(t *testing.T) {
 	destination := filepath.Join(s.Cwd, "output")
 	existing := filepath.Join(destination, "bundle", "leave.txt")
 	writeConflictTestFile(t, existing, "original")
-	status, result := executeRemote(t, s, remoteCommand("extract_zip_path", map[string]interface{}{
+	status, result := executeRemote(t, s, remoteRequest("extract_archive", map[string]interface{}{
 		"path": archivePath, "destination_dir": destination,
 	}))
 	if status != 0 {
@@ -294,7 +294,7 @@ func TestConflictSkipPreservesTargetAndMoveSource(t *testing.T) {
 	writeConflictTestFile(t, filepath.Join(sourceDir, "existing.txt"), "incoming")
 	writeConflictTestFile(t, filepath.Join(sourceDir, "free.txt"), "free")
 	writeConflictTestFile(t, filepath.Join(destination, "existing.txt"), "original")
-	status, raw := executeRemote(t, s, remoteCommand("paste_paths", map[string]interface{}{
+	status, raw := executeRemote(t, s, remoteRequest("paste_paths", map[string]interface{}{
 		"paths":           []string{filepath.Join(sourceDir, "existing.txt"), filepath.Join(sourceDir, "free.txt")},
 		"destination_dir": destination, "operation": "move",
 		"conflict_policies": []string{"skip", "skip"},
@@ -319,7 +319,7 @@ func TestConflictSkipPreservesTargetAndMoveSource(t *testing.T) {
 		readConflictTestFile(t, filepath.Join(destination, "free.txt")) != "free" {
 		t.Fatal("skipping overwrite mutated source or target")
 	}
-	status, raw = executeRemote(t, s, remoteCommand("paste_paths", map[string]interface{}{
+	status, raw = executeRemote(t, s, remoteRequest("paste_paths", map[string]interface{}{
 		"paths":           []string{filepath.Join(sourceDir, "existing.txt")},
 		"destination_dir": destination, "operation": "move", "conflict_policies": []string{"skip"},
 	}))
@@ -351,7 +351,7 @@ func TestZipSkipDoesNotExtractExistingTarget(t *testing.T) {
 	}
 	destination := filepath.Join(s.Cwd, "destination")
 	writeConflictTestFile(t, filepath.Join(destination, "existing", "data.txt"), "original")
-	status, raw := executeRemote(t, s, remoteCommand("extract_zip_path", map[string]interface{}{
+	status, raw := executeRemote(t, s, remoteRequest("extract_archive", map[string]interface{}{
 		"path": archivePath, "destination_dir": destination, "conflict_policy": "skip",
 	}))
 	if status != 1 || !strings.Contains(raw, `"skipped":true`) ||

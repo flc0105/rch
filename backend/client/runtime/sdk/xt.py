@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Any
 from core.utils.parsing import split_shell_arguments
 from client.runtime.sdk import context
-from client.runtime.sdk.context import get_command_owner
+from client.runtime.sdk.context import get_execution_owner
 from core.external_tools.paths import EXTERNAL_TOOLS_INSTALL_ROOT, EXTERNAL_TOOLS_RUNTIME_ROOT
 from core.external_tools.payload import client_exec_payload
 from core.platform.normalization import normalize_arch, normalize_platform
@@ -103,7 +103,7 @@ def _target_arch() -> str:
 
 
 def _external_tool_service():
-    owner = get_command_owner()
+    owner = get_execution_owner()
     service = getattr(owner, 'external_tool_service', None) if owner is not None else None
     if service is None:
         raise ScriptSdkExternalToolError('external tool SDK requires inproc Python execution mode')
@@ -343,7 +343,7 @@ def run(exec_name: str, raw_args: Any = '', *, timeout=None, cwd: str = '') -> E
     if not os.path.isdir(run_cwd):
         raise ScriptSdkExternalToolError(f'external tool cwd does not exist: {run_cwd}')
 
-    owner = get_command_owner()
+    owner = get_execution_owner()
     if owner is not None and hasattr(owner, '_checkpoint'):
         owner._checkpoint()
 

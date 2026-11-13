@@ -2,6 +2,7 @@ import threading
 import shlex
 
 from core.protocol.message_types import MSG_TYPE_TRANSFER_CANCEL
+from core.protocol.control import ControlRequest
 from server.application.connection.control_command_store import HTTP_CONTROL_COMMANDS
 from dataclasses import dataclass, field
 
@@ -27,6 +28,7 @@ class WebExecutionTaskRequest:
     source: str = 'web'
     metadata: dict = field(default_factory=dict)
     use_foreground_guard: bool = True
+    control: ControlRequest | None = None
 
 
 class WebTaskService:
@@ -103,6 +105,7 @@ class WebTaskService:
             metadata=request.metadata,
         )
         context.metadata.update(dict(request.metadata or {}))
+        context.control = request.control
         return context
 
     def _start_task_thread(self, target, *args):
@@ -226,24 +229,17 @@ class WebTaskService:
             )
         )
 
-    def submit_web_script(self, client_id: str, script_name: str, params: dict, *,
-                          tab_id: str = '', presentation: str = 'dialog',
-                          run_id: str = '', operation_id: str = ''):
+    def submit_web_control(self, client_id: str, command: str, control: ControlRequest, *,
+                           tab_id: str = '', metadata: dict | None = None):
         return self._submit_request(WebExecutionTaskRequest(
             client_id=client_id,
-            command=script_name,
+            command=command,
             task_type=TASK_TYPE_COMMAND,
-            runner_name='run_script_task',
+            runner_name='run_control_task',
             tab_id=(tab_id or '').strip(),
             source='web',
-            metadata={
-                'operation_id': operation_id,
-                'script_run': True,
-                'script_run_id': run_id,
-                'script_run_name': script_name,
-                'script_run_arguments': dict(params),
-                'script_run_presentation': presentation,
-            },
+            metadata=dict(metadata or {}),
+            control=control,
         ))
 
     @staticmethod

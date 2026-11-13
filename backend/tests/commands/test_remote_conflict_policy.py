@@ -3,12 +3,12 @@ import zipfile
 
 import pytest
 
-from client.commands.common.services.filesystem.archive_service import ArchiveService
-from client.commands.common.services.filesystem.conflict_policy import (
+from client.runtime.filesystem.archive_service import ArchiveService
+from client.runtime.filesystem.conflict_policy import (
     apply_path, commit_download_file, describe_conflict, prepare_upload_file_commit,
 )
-from client.commands.common.services.filesystem.file_system_service import FileSystemService
-from client.commands.common.services.filesystem.path_resolver import PathResolver
+from client.runtime.filesystem.file_system_service import FileSystemService
+from client.runtime.filesystem.path_resolver import PathResolver
 
 
 def test_file_conflict_stop_replace_and_keep_both(tmp_path):
@@ -145,7 +145,7 @@ def test_upload_conflict_policy_is_validated_before_transfer(tmp_path):
 def test_upload_transfer_rejects_invalid_policy_without_creating_folder(tmp_path):
     from types import SimpleNamespace
     from client.transfers.manager import ClientTransferManager
-    from client.commands.common.services.filesystem.path_resolver import PathResolver
+    from client.runtime.filesystem.path_resolver import PathResolver
 
     destination = tmp_path / 'absent'
     called = []

@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from typing import Any
+from core.protocol.control import ControlRequest
 
 
 @dataclass
@@ -54,6 +55,8 @@ class ExecutionContext:
 @dataclass
 class TaskExecutionContext(ExecutionContext):
     """Web task 执行上下文。"""
+
+    control: ControlRequest | None = None
 
     @classmethod
     def from_task(

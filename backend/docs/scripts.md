@@ -18,7 +18,7 @@ Script 的一次 Web 执行顺序为：
 
 数据与控制经过不同的边界：浏览器负责操作和表单、Server 持有 Library 与授权上下文、Client 使用本机 Python 环境运行代码。执行内容不会因为放在 Server Script Library 而自动拥有 Server 文件系统或管理员权限。
 
-Script 与 Shell-like、ACMD 都可以进入 Client 的命令执行设施，但 Script 使用 `control(domain=script, action=run)` 和现有 Python 执行策略；它不把整份脚本当成一条 Shell 字符串解析。顶层 Script 仍占用该 Client 的前台任务执行槽，直到本次任务返回。长时间运行的脚本可能妨碍其他前台命令，应根据业务选择超时与执行模式。
+Script 与 Shell-like、ACMD 共用 Client 前台执行基础设施；ScriptManager 使用 `control(domain=script, action=run)` 和现有 Python 执行策略；ScriptManager 直接调用 Python 执行策略，Command Catalog 只在 SDK 显式调用真实 Client 命令时负责解析与执行。顶层 Script 仍占用该 Client 的前台任务执行槽，直到本次任务返回。长时间运行的脚本可能妨碍其他前台命令，应根据业务选择超时与执行模式。
 
 ## 2. Library 的组织、管理和元数据
 
@@ -98,7 +98,7 @@ Server 会给命令任务附加 `script_run`、`script_run_name`、`script_run_i
 
 ### 终端轻量入口和结构化入口
 
-Server 的 `script exec <path> [options]` 使用 `shlex` 与 `scan_args` 将 CLI 选项解析为参数对象，随后与 Script Library Web 表单使用**相同的 Script Metadata 参数校验、默认值和源码加载入口**。Web 不再生成伪造的 `script run` 命令。两端最终发送相同形状的 Control 请求：
+Server 的 `script exec <path> [options]` 使用 `shlex` 与 `scan_args` 将 CLI 选项解析为参数对象，随后与 Script Library Web 表单使用**相同的 Script Metadata 参数校验、默认值和源码加载入口**。Web 不再生成伪造的 `script run` 命令。两端最终发送相同形状的 Control 请求。Web 任务消费提交时已经准备好的源码与参数，不再次加载脚本文件：
 
 ```json
 {"type":"control","id":49,"domain":"script","action":"run","payload":{"script_name":"ops/health_probe","source":"<Server 提供的脚本源码>","params":{"target":"/tmp","limit":20}}}

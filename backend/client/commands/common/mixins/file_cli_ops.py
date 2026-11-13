@@ -78,7 +78,7 @@ class CommandFileCliMixin:
                 return 0, error(f'Target path is not a directory: {target_dir}')
 
             target_path = os.path.join(target_dir, os.path.basename(filename))
-            from client.commands.common.services.filesystem.conflict_policy import prepare_upload_file_commit
+            from client.runtime.filesystem.conflict_policy import prepare_upload_file_commit
             commit = prepare_upload_file_commit(target_path, payload.get('conflict_policy', 'stop'))
             os.makedirs(target_dir, exist_ok=True)
 

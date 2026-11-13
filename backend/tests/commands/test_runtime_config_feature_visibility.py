@@ -41,7 +41,7 @@ def test_client_set_json_uses_runtime_features():
 def test_legacy_http_upload_uses_private_fixed_network_timeout(tmp_path, monkeypatch):
     from types import SimpleNamespace
     from unittest.mock import Mock
-    from client.commands.strategies.http_transfer.legacy import LegacyHttpTransferStrategy
+    from client.runtime.http_transfer.strategies.legacy import LegacyHttpTransferStrategy
 
     path = tmp_path / 'sample.txt'
     path.write_text('sample', encoding='utf8')

@@ -81,13 +81,13 @@ def run(name: str, params: dict | None = None, *, timeout: int = 30) -> ScriptRe
     args['__context__'] = script_context
     namespace = {'__name__': '__main__', '__file__': f'<script:{script_name}>', 'kwargs': args}
     from client.runtime.sdk.context import build_script_sdk_globals, use_script_sdk_context
-    namespace.update(build_script_sdk_globals(context.get_command_owner(), args))
+    namespace.update(build_script_sdk_globals(context.get_execution_owner(), args))
     out = io.StringIO()
     err = io.StringIO()
     returncode = 0
     token = _active_scripts.set((*active, script_name))
     try:
-        with use_script_sdk_context(context.get_command_owner(), args):
+        with use_script_sdk_context(context.get_execution_owner(), args):
             with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
                 try:
                     exec(compile(code, f'<script:{script_name}>', 'exec'), namespace)

@@ -3,7 +3,7 @@ import json
 import os
 from types import SimpleNamespace
 
-from client.commands.runtime.command_variable_resolver import (
+from client.runtime.command_variable_resolver import (
     CommandVariableResolver, CommandVariableResolutionError,
 )
 from client.commands.runtime.executor import CommandExecutor

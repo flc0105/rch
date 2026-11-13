@@ -9,7 +9,7 @@ from client.commands.arguments.registry import ArgumentCommandRegistry
 from client.commands.platform.mac import MacCommands
 from client.commands.platform.linux import LinuxCommands
 from client.runtime.sdk import launchd
-from client.commands.common.services.interaction_service import CommandInteractions, CommandInteractionError
+from client.runtime.execution.interaction_service import CommandInteractions, CommandInteractionError
 from server.connection.channel.session_command_channel import ClientSessionCommandChannel
 from core.protocol.message_types import MSG_TYPE_ACMD
 from server.application.command.command_planner import CommandPlanner

@@ -2,9 +2,15 @@ import inspect
 import os
 import subprocess
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 
-from client.runtime.sdk.context import get_command_owner
+from client.runtime.sdk.context import get_execution_owner
+
+
+@dataclass(frozen=True)
+class ScriptCommandAccess:
+    names: Callable[[], list[str]]
+    resolve: Callable[[Any, str], Any]
 
 
 class ScriptSdkCommandError(RuntimeError):
@@ -113,7 +119,7 @@ def run_shell(command: str, *, wait: bool = True, background: bool = False,
 
     normalized_mode = _safe_text(mode).lower()
     run_in_background = bool(background) or wait is False or normalized_mode in {'background', 'bg', 'detach'}
-    owner = get_command_owner()
+    owner = get_execution_owner()
 
     if run_in_background:
         if owner is not None and hasattr(owner, '_spawn_background_process'):
@@ -156,6 +162,12 @@ def _resolve_client_command(owner, name: str):
         raise ValueError('client command name is required')
     if owner is None:
         raise ScriptSdkCommandError('client command SDK requires inproc Python execution mode')
+    resolver = getattr(owner, "resolve_sdk_command", None)
+    if callable(resolver):
+        func = resolver(command_name)
+        if func is None:
+            raise ScriptSdkCommandError(f"Client command is not exported: {command_name}")
+        return command_name, func
     if not hasattr(owner, command_name):
         raise ScriptSdkCommandError(f'Client command not found: {command_name}')
 
@@ -191,7 +203,7 @@ def run_client(name: str, *args, **kwargs) -> ClientCommandResult:
         info = command.run_client('getinfo')
         shot = command.screenshot()
     """
-    command_name, func = _resolve_client_command(get_command_owner(), name)
+    command_name, func = _resolve_client_command(get_execution_owner(), name)
     return _normalize_client_result(command_name, _invoke_client_command(func, args, kwargs))
 
 

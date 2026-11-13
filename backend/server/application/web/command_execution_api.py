@@ -80,13 +80,11 @@ class WebCommandExecutionApi:
             source=str(source or 'web').strip() or 'web',
         )
 
-    def submit_web_script(self, client_id: str, script_name: str, params: dict, *,
-                          tab_id: str = '', presentation: str = 'dialog',
-                          run_id: str = '', operation_id: str = ''):
-        return self.task_service.submit_web_script(
-            self._normalize_client_id(client_id), script_name, params,
-            tab_id=tab_id, presentation=presentation, run_id=run_id,
-            operation_id=operation_id,
+    def submit_web_control(self, client_id: str, command: str, control, *,
+                           tab_id: str = '', metadata: dict | None = None):
+        return self.task_service.submit_web_control(
+            self._normalize_client_id(client_id), self._normalize_command(command), control,
+            tab_id=(tab_id or '').strip(), metadata=dict(metadata or {}),
         )
 
     def get_watchdog_status(self, client_id: str):

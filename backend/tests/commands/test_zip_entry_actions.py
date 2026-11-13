@@ -3,8 +3,8 @@ import zipfile
 
 import pytest
 
-from client.commands.common.services.filesystem.archive_service import ArchiveService
-from client.commands.common.services.filesystem.path_resolver import PathResolver
+from client.runtime.filesystem.archive_service import ArchiveService
+from client.runtime.filesystem.path_resolver import PathResolver
 
 
 def build_zip(tmp_path, entries):

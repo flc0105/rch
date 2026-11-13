@@ -5,11 +5,11 @@ from types import SimpleNamespace
 import pytest
 
 from client.commands.arguments.registry import ArgumentCommandRegistry
-from client.commands.common.services.process.process_service import ProcessService
+from client.runtime.execution.process.process_service import ProcessService
 from client.commands.platform.linux import LinuxCommands
 from client.commands.runtime.acmd_runner import ArgumentCommandRunner
-from client.commands.runtime.command_variable_resolver import CommandVariableResolver
-from client.commands.runtime.request import CommandExecutionRequest
+from client.runtime.command_variable_resolver import CommandVariableResolver
+from client.runtime.execution.request import ExecutionRequest
 from server.application.command.command_planner import CommandPlanner
 
 
@@ -38,7 +38,7 @@ def test_acmd_resolves_pid_before_integer_validation(monkeypatch):
     ])
     executor = AcmdExecutor(ArgumentCommandRegistry(LinuxCommands(socket=SimpleNamespace())))
     runner = ArgumentCommandRunner(executor)
-    request = CommandExecutionRequest(command_id=12)
+    request = ExecutionRequest(command_id=12)
 
     for command in ('acmd ps --pid ${rch:pid} --json',
                     'acmd ps --pid=${rch:pid} --json',
@@ -57,7 +57,7 @@ def test_acmd_custom_variables_and_invalid_values(monkeypatch):
     executor = AcmdExecutor(ArgumentCommandRegistry(LinuxCommands(socket=SimpleNamespace())))
     executor.command_variable_resolver.set_var('PID', '43210')
     runner = ArgumentCommandRunner(executor)
-    request = CommandExecutionRequest(command_id=4)
+    request = ExecutionRequest(command_id=4)
     status, result = runner.execute(request, parsed('acmd ps --pid ${var:PID} --json'))
     assert status == 1, result
     assert '43210' in result
@@ -76,6 +76,6 @@ def test_acmd_custom_variables_and_invalid_values(monkeypatch):
 def test_acmd_preserves_non_string_argument_types():
     executor = AcmdExecutor(ArgumentCommandRegistry(LinuxCommands(socket=SimpleNamespace())))
     runner = ArgumentCommandRunner(executor)
-    result = runner.execute(CommandExecutionRequest(command_id=5), {'name': 'ps', 'args': {'json': True, 'pid': '${rch:pid}'}})
+    result = runner.execute(ExecutionRequest(command_id=5), {'name': 'ps', 'args': {'json': True, 'pid': '${rch:pid}'}})
     assert result[0] in (0, 1)
     assert 'Invalid acmd payload' not in str(result)

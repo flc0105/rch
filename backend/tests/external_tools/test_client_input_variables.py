@@ -4,7 +4,7 @@ import unittest
 from types import SimpleNamespace
 
 from client.commands.common.mixins.external_tool_ops import CommandExternalToolMixin
-from client.commands.runtime.command_variable_resolver import (
+from client.runtime.command_variable_resolver import (
     CommandVariableResolutionError,
     CommandVariableResolver,
 )

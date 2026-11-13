@@ -5,7 +5,7 @@ from typing import Any
 
 from core.artifact_contract import ArtifactType
 from client.http.client_api import ClientApiClient, ClientApiError
-from client.runtime.sdk.context import get_client_id, get_command_id, get_command_owner
+from client.runtime.sdk.context import get_client_id, get_command_id, get_execution_owner
 
 
 class ScriptSdkArtifactError(RuntimeError):
@@ -37,7 +37,7 @@ def _unwrap_api_payload(payload: dict) -> Any:
 
 
 def _build_form_data(*, artifact_type: str, category: str, folder: str, extra: dict | None = None) -> dict:
-    owner = get_command_owner()
+    owner = get_execution_owner()
     if owner is not None and hasattr(owner, 'http_file_transfer_service'):
         return owner.http_file_transfer_service.build_http_upload_form_data(
             artifact_type=artifact_type,
@@ -63,7 +63,7 @@ def _resolve_local_file(path: str) -> str:
     if not file_path:
         raise ValueError('path is required')
 
-    owner = get_command_owner()
+    owner = get_execution_owner()
     if owner is not None and hasattr(owner, 'path_resolver'):
         return owner.path_resolver.require_existing_file_from_arg(file_path)
 
@@ -76,7 +76,7 @@ def _resolve_local_file(path: str) -> str:
 def _resolve_target_path(target_path: str, default_name: str) -> str:
     normalized_target = _safe_text(target_path)
     filename = os.path.basename(default_name) or 'artifact.bin'
-    owner = get_command_owner()
+    owner = get_execution_owner()
 
     if not normalized_target:
         return os.path.abspath(filename)
@@ -129,7 +129,7 @@ def save(path: str, *, type: str = 'saved', category: str = '', folder: str = ''
     if artifact_type != ArtifactType.SHARED.value:
         extra = {'saved_from': 'script_sdk', **(extra or {})}
     file_path = _resolve_local_file(path)
-    owner = get_command_owner()
+    owner = get_execution_owner()
 
     if owner is not None and hasattr(owner, 'http_file_transfer_service'):
         response = owner.http_file_transfer_service.upload_file_to_server_via_http(
@@ -246,7 +246,7 @@ def download(ref: str, *, type: str = 'shared', target_path: str = '', timeout=N
     filename = item.get('original_name') or item.get('stored_name') or item.get('artifact_id') or 'artifact.bin'
     local_path = _resolve_target_path(target_path, filename)
     download_url = item.get('download_url') or f'/api/artifacts/{item.get("artifact_id")}/download'
-    owner = get_command_owner()
+    owner = get_execution_owner()
     checkpoint = getattr(owner, '_checkpoint', None) if owner is not None else None
 
     ClientApiClient().download_file(

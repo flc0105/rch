@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from client.commands.arguments.registry import ArgumentCommandRegistry
-from client.commands.common.services.process.process_service import ProcessService
+from client.runtime.execution.process.process_service import ProcessService
 from client.commands.platform.linux import LinuxCommands
 from client.commands.platform.mac import MacCommands
 from client.commands.platform.win import WindowsCommands
@@ -45,7 +45,7 @@ def test_acmd_ps_details_opt_in(monkeypatch, platform):
 
 
 def test_acmd_process_details_multilistening_and_unavailable(monkeypatch):
-    from client.commands.common.services.process import process_service
+    from client.runtime.execution.process import process_service
 
     class Conn:
         def __init__(self, status, port):

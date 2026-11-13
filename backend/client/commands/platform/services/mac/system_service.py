@@ -2,7 +2,7 @@ import os
 import platform
 import time
 
-from client.commands.runtime.context import CommandCancelledError, CommandTimeoutError
+from client.runtime.execution.context import CommandCancelledError, CommandTimeoutError
 from client.runtime.client_util import get_executable_path
 from core.utils.command_output import StructuredCommandResult, render_structured_result
 
@@ -31,7 +31,7 @@ class MacSystemService:
 
         if not no_confirm:
             # This import and every Broker request are bypassed for --no-confirm.
-            from client.commands.common.services.interaction_service import (
+            from client.runtime.execution.interaction_service import (
                 CommandInteractions, CommandInteractionError,
             )
             self.owner._set_timeout(300)

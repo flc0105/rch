@@ -10,8 +10,6 @@ import (
 	"unicode/utf8"
 )
 
-var _ = Register("save_file_content", Usage("save_file_content <payload>"), Help("Save an editable remote text file"), Group("file_path"), CancelPolicy("cooperative"), CommandRunner(saveRemoteText))
-
 const maxEditableRemoteBytes = 2 * 1024 * 1024
 
 func isTextCodepoint(r rune) bool { return r >= 32 || r == '\t' || r == '\n' || r == '\r' || r == '\f' }
@@ -98,14 +96,6 @@ func encodeRemoteText(text, codec string) ([]byte, error) {
 	default:
 		return nil, fmt.Errorf("unsupported text encoding %q", codec)
 	}
-}
-
-func saveRemoteText(ctx context.Context, s *Session, raw string, _ func(int, string)) (int, string) {
-	payload, err := payloadMap(raw)
-	if err != nil {
-		return 0, err.Error()
-	}
-	return saveRemoteTextPayload(ctx, s, payload)
 }
 
 func saveRemoteTextPayload(ctx context.Context, s *Session, payload map[string]interface{}) (int, string) {

@@ -92,8 +92,8 @@ def test_script_dialog_supplies_identity_through_its_own_api(tmp_path):
     folder.mkdir(parents=True)
     (folder / 'list_disks.py').write_text('print(12)\n', encoding='utf-8')
     task_service = Mock()
-    task_service.submit_web_script.side_effect = lambda _client, name, params, **kwargs: {
-        'script_name': name, 'params': params, 'options': kwargs,
+    task_service.submit_web_control.side_effect = lambda _client, name, control, **kwargs: {
+        'script_name': name, 'params': control.payload['params'], 'options': kwargs['metadata'],
     }
     script_catalog = Mock(scripts_root_dir=str(tmp_path))
     api = WebScriptApi(WebCommandExecutionApi(task_service), script_catalog)
@@ -101,8 +101,8 @@ def test_script_dialog_supplies_identity_through_its_own_api(tmp_path):
                             presentation='dialog', run_id='run-a', operation_id='op-a')
     assert result['script_name'] == 'common/recon/list_disks'
     assert result['params'] == {}
-    assert result['options']['presentation'] == 'dialog'
-    assert result['options']['run_id'] == 'run-a'
+    assert result['options']['script_run_presentation'] == 'dialog'
+    assert result['options']['script_run_id'] == 'run-a'
     assert result['options']['operation_id'] == 'op-a'
     assert 'command' not in result and 'source' not in result
     task_service.submit_web_command.assert_not_called()

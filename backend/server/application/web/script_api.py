@@ -1,3 +1,4 @@
+from core.protocol.control import ControlRequest
 from server.application.scripts.script_run_service import prepare_script_control
 
 
@@ -78,8 +79,14 @@ class WebScriptApi:
         if normalized_presentation == 'dialog' and not normalized_run_id:
             raise ValueError('run_id is required for dialog presentation')
         request = prepare_script_control(self.script_catalog_service.scripts_root_dir, normalized_script_name, params if params is not None else {})
-        return self.command_execution_api.submit_web_script(
-            client_id, request['script_name'], request['params'], tab_id=tab_id,
-            presentation=normalized_presentation, run_id=normalized_run_id,
-            operation_id=operation_id,
+        return self.command_execution_api.submit_web_control(
+            client_id, request['script_name'], ControlRequest('script', 'run', request),
+            tab_id=tab_id, metadata={
+                'operation_id': operation_id,
+                'script_run': True,
+                'script_run_id': normalized_run_id,
+                'script_run_name': request['script_name'],
+                'script_run_arguments': request['params'],
+                'script_run_presentation': normalized_presentation,
+            },
         )

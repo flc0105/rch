@@ -3,7 +3,7 @@ import subprocess
 import time
 
 from core.utils.parsing import split_shell_arguments
-from client.commands.runtime.context import CommandCancelledError, CommandTimeoutError
+from client.runtime.execution.context import CommandCancelledError, CommandTimeoutError
 from client.external_tools.common import ExternalToolCommon
 from client.external_tools.launcher import apply_external_tool_launcher
 

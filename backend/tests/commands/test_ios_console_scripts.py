@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import pytest
 
 from client.commands.platform.ios import iOSCommands
-from client.commands.runtime.request import CommandExecutionRequest
+from client.runtime.execution.request import ExecutionRequest
 from client.commands.runtime.shell_command_runner import ShellCommandRunner
 from client.runtime.sdk import artifact
 from core.utils.script_metadata import read_script_metadata_from_file, resolve_script_params
@@ -79,7 +79,7 @@ def test_reminder_command_defaults_to_json_with_details(monkeypatch):
     ))
     commands = iOSCommands(SimpleNamespace())
     runner = _make_ios_shell_runner(commands)
-    status, body = runner.execute(CommandExecutionRequest(command_id=1), 'list_reminders')
+    status, body = runner.execute(ExecutionRequest(command_id=1), 'list_reminders')
     assert status == 1
     assert json.loads(body) == [
         {
@@ -95,7 +95,7 @@ def test_reminder_command_defaults_to_json_with_details(monkeypatch):
             'priority': 0, 'url': '', 'alarms': [],
         },
     ]
-    assert runner.execute(CommandExecutionRequest(command_id=2), 'list_reminders --json') == (
+    assert runner.execute(ExecutionRequest(command_id=2), 'list_reminders --json') == (
         0, 'Usage: list_reminders'
     )
 
@@ -105,7 +105,7 @@ def test_reminder_command_optional_fields_and_empty_json(monkeypatch):
         get_reminders=lambda *, completed: [] if completed else [SimpleNamespace(title='Minimal')]
     ))
     runner = _make_ios_shell_runner(iOSCommands(SimpleNamespace()))
-    status, output = runner.execute(CommandExecutionRequest(command_id=3), 'list_reminders')
+    status, output = runner.execute(ExecutionRequest(command_id=3), 'list_reminders')
     assert status == 1
     assert json.loads(output) == [{
         'status': 'Pending', 'title': 'Minimal', 'notes': '',
@@ -115,7 +115,7 @@ def test_reminder_command_optional_fields_and_empty_json(monkeypatch):
     monkeypatch.setitem(sys.modules, 'reminders', SimpleNamespace(
         get_reminders=lambda *, completed: []
     ))
-    assert runner.execute(CommandExecutionRequest(command_id=4), 'list_reminders') == (1, '[]')
+    assert runner.execute(ExecutionRequest(command_id=4), 'list_reminders') == (1, '[]')
 
 
 def test_contacts_command_json_only(monkeypatch):
@@ -124,9 +124,9 @@ def test_contacts_command_json_only(monkeypatch):
                         lambda: contacts)
     commands = iOSCommands(SimpleNamespace())
     runner = _make_ios_shell_runner(commands)
-    status, output = runner.execute(CommandExecutionRequest(command_id=5), 'list_contacts')
+    status, output = runner.execute(ExecutionRequest(command_id=5), 'list_contacts')
     assert status == 1 and json.loads(output) == contacts
-    assert runner.execute(CommandExecutionRequest(command_id=6), 'list_contacts --json') == (
+    assert runner.execute(ExecutionRequest(command_id=6), 'list_contacts --json') == (
         0, 'Usage: list_contacts'
     )
     assert commands.list_contacts.__func__.help is not None

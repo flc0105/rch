@@ -7,7 +7,7 @@ import os
 import tempfile
 import unittest
 from unittest.mock import patch
-from client.commands.common.services.filesystem.path_resolver import PathResolver
+from client.runtime.filesystem.path_resolver import PathResolver
 from client.external_tools.daemon_instance import ExternalToolDaemonInstance
 
 

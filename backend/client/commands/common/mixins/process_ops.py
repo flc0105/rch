@@ -2,7 +2,7 @@
 
 import json
 
-from client.commands.common.services.process.process_service import ProcessService
+from client.runtime.execution.process.process_service import ProcessService
 from client.commands.arguments.decorators import argument_command
 from client.commands.platform.specs.common import KILL_ARGUMENT_SPEC
 from core.device.local_identity import get_local_identity
@@ -83,7 +83,7 @@ class CommandProcessMixin:
 
     @argument_command('kill', spec=KILL_ARGUMENT_SPEC, interaction=True)
     def _acmd_kill(self, args_dict, payload=None):
-        from client.commands.common.services.process.approved_process_service import (
+        from client.runtime.execution.process.approved_process_service import (
             ClientCommandInteractions, ProcessApprovalError, find_targets,
             build_multi_preview, terminate_verified,
         )
@@ -173,7 +173,7 @@ class CommandProcessMixin:
         rows = self._get_process_service().list_processes()
         rows = self._filter_acmd_ps_rows(rows, pid=pid, name=name)
         if port is not None:
-            from client.commands.common.services.process.approved_process_service import _port_owners
+            from client.runtime.execution.process.approved_process_service import _port_owners
             owners = _port_owners(port)
             rows = [row for row in rows if row['pid'] in owners]
         if include_actions and output_json:

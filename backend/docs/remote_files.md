@@ -43,7 +43,7 @@ Client（远程设备）
 {"type":"control","id":47,"domain":"remote_files","action":"create_archive","payload":{"paths":["/home/demo/a.txt","/home/demo/b.txt"],"destination_dir":"/home/demo","archive_name":"bundle_20261112_182428.zip"}}
 ```
 
-目前 Server 文件浏览器使用的 Action 包括 `browse_directory`、`create_directory`、`rename_path`、`delete_paths`、`paste_paths`（复制/移动及预检）、`create_archive`、`peek_archive`、`read_archive_entry`、`extract_archive`（含预检）、`inspect_upload` 与 `save_file`。JSON 型请求完成时由 Client 返回 `result.data` 对象；文本型请求仍返回 `result.text`。直接在 Terminal 输入的既有普通 Client 文件命令仍按文本命令工作，但不是 Remote File Browser 的控制实现。
+目前 Server 文件浏览器使用的 Action 包括 `browse_directory`、`create_directory`、`rename_path`、`delete_paths`、`paste_paths`（复制/移动及预检）、`create_archive`、`peek_archive`、`read_archive_entry`、`extract_archive`（含预检）、`inspect_upload` 与 `save_file`。Client 的 RemoteFilesManager 直接调用文件系统与归档能力；JSON 型请求完成时由 Client 返回 `result.data` 对象；文本型请求仍返回 `result.text`。直接在 Terminal 输入的既有普通 Client 文件命令仍按文本命令工作，但不是 Remote File Browser 的控制实现。
 
 **文件搬运使用独立传输链路，不占用普通前台命令槽。** HTTP 请求等待实际上传或下载阶段完成后返回结果。 例如下载接口需要等待传输结果，取得 Artifact 才能返回可用的文件记录；网络中断或远端不可读仍会导致失败。任何实时操作都要求对应 Client 在线、具备文件访问权限。
 

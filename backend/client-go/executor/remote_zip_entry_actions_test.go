@@ -41,7 +41,7 @@ func TestRemoteZipSelectedFileAndImplicitDirectory(t *testing.T) {
 	if err := os.Mkdir(dest, 0755); err != nil {
 		t.Fatal(err)
 	}
-	status, text := executeRemote(t, session, remoteCommand("extract_zip_path", map[string]interface{}{
+	status, text := executeRemote(t, session, remoteRequest("extract_archive", map[string]interface{}{
 		"path": archivePath, "destination_dir": dest, "entry_name": "root/a.bin",
 	}))
 	if status != 1 {
@@ -54,12 +54,12 @@ func TestRemoteZipSelectedFileAndImplicitDirectory(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dest, "root")); !os.IsNotExist(err) {
 		t.Fatalf("extracted ancestors: %v", err)
 	}
-	if status, _ := executeRemote(t, session, remoteCommand("extract_zip_path", map[string]interface{}{
+	if status, _ := executeRemote(t, session, remoteRequest("extract_archive", map[string]interface{}{
 		"path": archivePath, "destination_dir": dest, "entry_name": "root/a.bin",
 	})); status != 0 {
 		t.Fatal("overwrote existing selected file")
 	}
-	status, text = executeRemote(t, session, remoteCommand("extract_zip_path", map[string]interface{}{
+	status, text = executeRemote(t, session, remoteRequest("extract_archive", map[string]interface{}{
 		"path": archivePath, "destination_dir": dest, "entry_name": "root/sub",
 	}))
 	if status != 1 {

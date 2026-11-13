@@ -7,8 +7,8 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
-from client.commands.strategies.python_execution.inproc import InProcessPythonExecutionStrategy
-from client.commands.strategies.python_execution.subprocess_pipe import SubprocessPipePythonExecutionStrategy
+from client.runtime.execution.python_execution.inproc import InProcessPythonExecutionStrategy
+from client.runtime.execution.python_execution.subprocess_pipe import SubprocessPipePythonExecutionStrategy
 from client.jobs.core import subprocess_runner
 from client.jobs.core.manager import JobManager
 
@@ -19,8 +19,8 @@ class InprocScriptExitBoundaryTests(unittest.TestCase):
         self.owner._set_cancel_policy = Mock()
         self.strategy = InProcessPythonExecutionStrategy(self.owner)
         self.sdk_patches = [
-            patch('client.commands.strategies.python_execution.inproc.build_script_sdk_globals', return_value={}),
-            patch('client.commands.strategies.python_execution.inproc.use_script_sdk_context', return_value=contextlib.nullcontext()),
+            patch('client.runtime.execution.python_execution.inproc.build_script_sdk_globals', return_value={}),
+            patch('client.runtime.execution.python_execution.inproc.use_script_sdk_context', return_value=contextlib.nullcontext()),
         ]
         for mocker in self.sdk_patches:
             mocker.start()

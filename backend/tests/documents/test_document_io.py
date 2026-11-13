@@ -11,7 +11,7 @@ from types import SimpleNamespace
 from core.utils.text_encoding import decode_text_bytes, encode_for_existing_file
 from server.application.artifact.artifact_preview_service import ArtifactPreviewService
 from server.application.web.artifact_api import WebArtifactApi
-from client.commands.common.services.filesystem.file_system_service import FileSystemService
+from client.runtime.filesystem.file_system_service import FileSystemService
 
 
 @pytest.fixture

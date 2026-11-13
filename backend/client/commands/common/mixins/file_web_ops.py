@@ -3,10 +3,9 @@ import os
 
 import requests
 
-from client.commands.runtime.context import CommandCancelledError, CommandTimeoutError
+from client.runtime.execution.context import CommandCancelledError, CommandTimeoutError
 from client.commands.runtime.interrupts import cancel_policy
-from client.commands.common.services.transfer.http_file_transfer_service import CommandHttpFileTransferService
-from client.commands.common.services.filesystem.preview_image_service import PreviewImageService
+from client.runtime.filesystem.preview_image_service import PreviewImageService
 from client.config import runtime_config
 from core.utils.decorator import desc
 
@@ -28,18 +27,6 @@ class CommandFileWebMixin:
       - legacy：保留原版 requests files=/iter_content 行为，不支持取消
       - cancelable：支持取消和实时进度
     """
-
-    @property
-    def http_file_transfer_service(self):
-        service = getattr(self, '_http_file_transfer_service', None)
-        if service is None:
-            service = CommandHttpFileTransferService(
-                self,
-                archive_service=self.archive_service,
-                client_api=self.client_api,
-            )
-            self._http_file_transfer_service = service
-        return service
 
     @property
     def preview_image_service(self):
@@ -122,113 +109,9 @@ class CommandFileWebMixin:
             return 0, f'Failed to download paths via HTTP: {e}'
 
 
-    @desc('Create a ZIP archive from remote paths', group='file_path', suggest=False)
-    def create_zip_paths(self, arg=''):
-        try:
-            payload = self.structured_arg_codec.decode(arg)
-            if not isinstance(payload, dict):
-                return 0, 'Invalid ZIP payload'
 
-            raw_paths = payload.get('paths') or []
-            destination_dir = str(payload.get('destination_dir') or '').strip()
-            archive_name = str(payload.get('archive_name') or '').strip()
 
-            if not isinstance(raw_paths, list) or not raw_paths:
-                return 0, 'paths is required'
-            if not destination_dir:
-                return 0, 'destination_dir is required'
 
-            resolved_paths = self.path_resolver.require_existing_paths_from_list(raw_paths)
-            resolved_destination = self.path_resolver.require_existing_directory_from_arg(destination_dir)
-            archive_path = self.archive_service.create_zip_in_directory(
-                resolved_paths,
-                resolved_destination,
-                archive_name=archive_name,
-            )
-
-            return 1, json.dumps({
-                'archive_path': archive_path,
-                'archive_name': self.archive_service.normalize_zip_archive_name(
-                    archive_name,
-                    fallback=self.archive_service.build_download_archive_name(resolved_paths),
-                ),
-                'source_count': len(resolved_paths),
-                'size': os.path.getsize(archive_path),
-            }, ensure_ascii=False)
-        except CommandCancelledError:
-            return 0, 'Command cancelled'
-        except CommandTimeoutError:
-            return 0, 'Command timed out and was terminated'
-        except Exception as e:
-            return 0, f'Failed to create ZIP archive: {e}'
-
-    @desc('Inspect a ZIP archive without extracting it', group='file_path', suggest=False)
-    def peek_zip(self, arg=''):
-        try:
-            payload = self.structured_arg_codec.decode(arg)
-            if not isinstance(payload, dict):
-                return 0, 'Invalid ZIP peek payload'
-
-            archive_path = self.path_resolver.require_existing_file_from_arg(payload.get('path', ''))
-            result = self.archive_service.inspect_zip(archive_path)
-            return 1, json.dumps(result, ensure_ascii=False)
-        except CommandCancelledError:
-            return 0, 'Command cancelled'
-        except CommandTimeoutError:
-            return 0, 'Command timed out and was terminated'
-        except Exception as e:
-            return 0, f'Failed to inspect ZIP archive: {e}'
-
-    @desc('Read a text entry from a ZIP archive without extracting it', group='file_path', suggest=False)
-    def read_zip_entry(self, arg=''):
-        try:
-            payload = self.structured_arg_codec.decode(arg)
-            if not isinstance(payload, dict):
-                return 0, 'Invalid ZIP entry payload'
-
-            archive_path = self.path_resolver.require_existing_file_from_arg(payload.get('path', ''))
-            entry_name = str(payload.get('entry_name') or '').strip()
-            if not entry_name:
-                return 0, 'entry_name is required'
-
-            result = self.archive_service.read_zip_text_entry(archive_path, entry_name)
-            return 1, json.dumps(result, ensure_ascii=False)
-        except CommandCancelledError:
-            return 0, 'Command cancelled'
-        except CommandTimeoutError:
-            return 0, 'Command timed out and was terminated'
-        except Exception as e:
-            return 0, f'Failed to read ZIP entry: {e}'
-
-    @desc('Extract a ZIP archive into a remote directory', group='file_path', suggest=False)
-    def extract_zip_path(self, arg=''):
-        try:
-            payload = self.structured_arg_codec.decode(arg)
-            if not isinstance(payload, dict):
-                return 0, 'Invalid ZIP extract payload'
-
-            archive_path = self.path_resolver.require_existing_file_from_arg(payload.get('path', ''))
-            destination_dir = str(payload.get('destination_dir') or '').strip()
-            if not destination_dir:
-                return 0, 'destination_dir is required'
-
-            resolved_destination = self.path_resolver.require_existing_directory_from_arg(destination_dir)
-            entry_name = str(payload.get('entry_name') or '')
-            if payload.get('inspect') is True:
-                result = self.archive_service.inspect_extract_target(archive_path, resolved_destination, entry_name)
-            elif 'conflict_policy' in payload:
-                result = self.archive_service.extract_zip_with_policy(
-                    archive_path, resolved_destination, entry_name, str(payload['conflict_policy']))
-            else:
-                result = self.archive_service.extract_zip_with_policy(
-                    archive_path, resolved_destination, entry_name, 'stop')
-            return 1, json.dumps(result, ensure_ascii=False)
-        except CommandCancelledError:
-            return 0, 'Command cancelled'
-        except CommandTimeoutError:
-            return 0, 'Command timed out and was terminated'
-        except Exception as e:
-            return 0, f'Failed to extract ZIP archive: {e}'
 
     @desc('Preview a file by path', group='file_path', suggest=False, output='stream')
     def preview_path(self, path=''):
@@ -257,190 +140,9 @@ class CommandFileWebMixin:
             if prepared_file is not None:
                 self.preview_image_service.cleanup_upload_file(prepared_file)
 
-    @desc('Browse directory as JSON payload', group='file_path', suggest=False)
-    def browse_dir(self, path=''):
-        try:
-            payload = self.structured_arg_codec.decode(path)
-            if isinstance(payload, dict):
-                directory = self.path_resolver.require_existing_directory_from_arg(payload.get('path', ''))
-                page = payload.get('page', 1)
-                page_size = payload.get('page_size', 100)
-                show_hidden = payload.get('show_hidden', False)
-                search_keyword = payload.get('search_keyword') or payload.get('search') or ''
-                recursive_search = payload.get('recursive_search', False)
-            else:
-                directory = self.path_resolver.require_existing_directory_from_arg(path)
-                page = 1
-                page_size = 100
-                show_hidden = False
-                search_keyword = ''
-                recursive_search = False
 
-            result_payload = self.file_system_service.browse_directory(
-                directory,
-                page=page,
-                page_size=page_size,
-                show_hidden=show_hidden,
-                search_keyword=search_keyword,
-                recursive_search=recursive_search,
-            )
-            return 1, json.dumps(result_payload, ensure_ascii=False)
-        except CommandCancelledError:
-            return 0, 'Command cancelled'
-        except CommandTimeoutError:
-            return 0, 'Command timed out and was terminated'
-        except Exception as e:
-            return 0, f'Failed to browse directory: {e}'
 
-    @desc('Delete multiple files or directories', group='file_path', suggest=False)
-    def delete_paths(self, arg=''):
-        """
-        批量删除多个文件或目录
-        参数格式: __json__:base64编码的JSON {"paths": ["path1", "path2", ...]}
-        """
-        try:
-            payload = self.structured_arg_codec.decode(arg)
-            if not isinstance(payload, dict):
-                return 0, 'Invalid delete payload'
 
-            paths = payload.get('paths')
-            if not isinstance(paths, list) or not paths:
-                return 0, 'paths is required and must be a non-empty list'
 
-            return 1, json.dumps(self.file_system_service.delete_paths(paths).to_dict(), ensure_ascii=False)
-        except CommandCancelledError:
-            return 0, 'Command cancelled'
-        except CommandTimeoutError:
-            return 0, 'Command timed out and was terminated'
-        except Exception as e:
-            return 0, f'Failed to delete paths: {e}'
 
-    @desc('Create a directory', group='file_path', suggest=False)
-    def mkdir_path(self, path=''):
-        try:
-            target_path = self.path_resolver.resolve_target_path(
-                self.structured_arg_codec.extract_path(path)
-            )
-            if not target_path:
-                return 0, 'Path is required'
 
-            self.file_system_service.create_directory(target_path)
-            return 1, f'Directory created: {target_path}'
-        except CommandCancelledError:
-            return 0, 'Command cancelled'
-        except CommandTimeoutError:
-            return 0, 'Command timed out and was terminated'
-        except Exception as e:
-            return 0, f'Failed to create directory: {e}'
-
-    @desc('Rename a file or directory', group='file_path', suggest=False)
-    def rename_path(self, arg=''):
-        try:
-            payload = self.structured_arg_codec.decode(arg)
-            if not isinstance(payload, dict):
-                return 0, 'Invalid rename payload'
-
-            old_path = self.path_resolver.require_existing_non_empty_path_from_arg(payload.get('old_path', ''))
-            new_name = (payload.get('new_name') or '').strip()
-            new_path = (payload.get('new_path') or '').strip()
-
-            renamed_path = self.file_system_service.rename_target_path(
-                old_path=old_path,
-                new_name=new_name,
-                new_path=new_path
-            )
-            return 1, f'Renamed to: {renamed_path}'
-        except CommandCancelledError:
-            return 0, 'Command cancelled'
-        except CommandTimeoutError:
-            return 0, 'Command timed out and was terminated'
-        except Exception as e:
-            return 0, f'Failed to rename path: {e}'
-
-    @desc('Inspect a remote upload destination', group='file_path', suggest=False)
-    def inspect_remote_upload(self, arg=''):
-        try:
-            from client.commands.common.services.filesystem.conflict_policy import path_kind, allowed_actions
-            payload = self.structured_arg_codec.decode(arg)
-            if not isinstance(payload, dict):
-                return 0, 'Invalid inspect upload payload'
-            directory = self.path_resolver.require_existing_directory_from_arg(payload.get('destination_dir', ''))
-            filename = str(payload.get('filename') or '')
-            if not filename or filename in ('.', '..') or os.path.basename(filename) != filename or '\\' in filename or '/' in filename:
-                return 0, 'Invalid upload filename'
-            target = os.path.join(directory, filename)
-            kind = path_kind(target)
-            conflicts = ([{'source': filename, 'target': target, 'source_kind': 'file',
-                           'target_kind': kind, 'allowed_actions': allowed_actions('file', kind)}]
-                         if kind else [])
-            return 1, json.dumps({'conflicts': conflicts}, ensure_ascii=False)
-        except Exception as exc:
-            return 0, f'Failed to inspect upload: {exc}'
-
-    @desc('Paste copied or moved files into a directory', group='file_path', suggest=False)
-    def paste_paths(self, arg=''):
-        try:
-            payload = self.structured_arg_codec.decode(arg)
-            if not isinstance(payload, dict):
-                return 0, 'Invalid paste payload'
-
-            raw_paths = payload.get('paths') or []
-            destination_dir = self.path_resolver.require_existing_directory_from_arg(payload.get('destination_dir', ''))
-            operation = str(payload.get('operation', 'copy') or 'copy').strip().lower()
-
-            if operation not in ('copy', 'move'):
-                return 0, 'operation must be copy or move'
-
-            if not isinstance(raw_paths, list) or not raw_paths:
-                return 0, 'paths is required and must be a non-empty list'
-
-            inspect = payload.get('inspect') is True
-            policies = payload.get('conflict_policies')
-            if policies is not None and (not isinstance(policies, list) or len(policies) != len(raw_paths)):
-                return 0, 'Invalid conflict policies'
-            result = self.file_system_service.paste_paths(raw_paths, destination_dir, operation, policies=policies, inspect=inspect)
-            return 1, json.dumps(result if inspect else result.to_dict(), ensure_ascii=False)
-        except CommandCancelledError:
-            return 0, 'Command cancelled'
-        except CommandTimeoutError:
-            return 0, 'Command timed out and was terminated'
-        except Exception as e:
-            return 0, f'Failed to paste paths: {e}'
-
-    @desc('Save content to a file', group='file_path', suggest=False)
-    def save_file_content(self, arg=''):
-        """
-        保存内容到文件
-        参数格式: __json__:base64编码的JSON
-        {
-            "path": "/path/to/file",
-            "content": "file content",
-            "encoding": "utf-8"  # 可选，默认 utf-8
-        }
-        """
-        try:
-            payload = self.structured_arg_codec.decode(arg)
-            if not isinstance(payload, dict):
-                return 0, 'Invalid save payload'
-
-            file_path = payload.get('path', '').strip()
-            content = payload.get('content', '')
-            encoding = payload.get('encoding', 'utf-8')
-
-            if not file_path:
-                return 0, 'path is required'
-
-            target_path, file_size, encoding = self.file_system_service.save_file_content(
-                file_path,
-                content,
-                encoding,
-            )
-
-            return 1, f'File saved successfully\nPath: {target_path}\nSize: {file_size} bytes\nEncoding: {encoding}'
-
-        except CommandCancelledError:
-            return 0, 'Command cancelled'
-        except CommandTimeoutError:
-            return 0, 'Command timed out and was terminated'
-        except Exception as e:
-            return 0, f'Failed to save file: {e}'

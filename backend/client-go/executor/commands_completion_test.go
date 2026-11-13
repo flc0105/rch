@@ -33,7 +33,7 @@ func TestCommandCompletionsFilesDirectoriesAndPrefixes(t *testing.T) {
 	}
 	for _, tt := range cases {
 		t.Run(tt.input, func(t *testing.T) {
-			status, text := executeRemote(t, s, remoteCommand("command_completions", map[string]interface{}{"raw_input": tt.input, "cursor_position": len(tt.input), "max_results": 0}))
+			status, text := s.Dispatch(7, completionCommand("command_completions", map[string]interface{}{"raw_input": tt.input, "cursor_position": len(tt.input), "max_results": 0}))
 			if status != 1 {
 				t.Fatal(text)
 			}

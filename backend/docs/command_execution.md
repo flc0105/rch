@@ -139,11 +139,17 @@ Web 首次选中设备、切换设备、WebSocket 重连和设备重新上线时
 
 这种例外来自具体执行链的机制要求，不能将它当作开发新命令时默认可绕过前台槽的依据。
 
-## 5. Socket 结果如何抵达 Web 并形成最终状态
+## 5. Client 执行基础设施与 Socket 结果
 
-远程请求通过 `ClientSessionCommandChannel.send_command()` 构造协议消息：普通命令使用 `type/id/text` 和必要的 `extra`，Job Control 使用 `type/id/payload` 结构化对象。Client 连接注册时获得一枚 Client Session Token，普通命令、ACMD、Script 和 Job 统一使用这枚凭证访问中央白名单内的 HTTP API，不按单次执行签发凭证或声明 API Scope。交互请求额外核对当前 Web Task 和命令身份。
+Python Client 的 Command、ACMD 与 Control 共用 Execution Runtime，统一管理一次前台请求的执行上下文、超时、取消和清理。入站 Control 按 domain 注册表分发给 JobManager、RemoteFilesManager 或 ScriptManager；这些 Manager 直接使用所需的文件系统、Python/进程执行及 HTTP 能力。Command Catalog 仅服务真实 Command/ACMD，Script SDK 显式调用已导出的命令时通过专用适配器访问它。后台 Job 启动后由 JobManager 持续管理，不占用前台执行槽。
 
-收到 Client 返回的 `result` 时，Server 先更新相关工作目录，再交给结果分发器。只有 `id` 与当前队首等待的 `command_id` 匹配，才将 `(status, value, eof)` 投入对应的执行结果队列；`value` 通常来自 `text`，结构化 Job Control 的最终结果则来自 JSON 对象 `data`。正常输出按照该等待流逐块消费，直到终止标记 `eof`。Job CLI 与 Web Job Manager 在应用层校验结果并渲染为原有可读反馈；普通命令的文本输出仍保持原样。不匹配的结果进入独立的未预期消息处理路径。
+Go Client 使用相同 Control 信封和会话前台槽，Remote Files 与 Script 通过各自的 Manager 处理；后台 Job 不在 Go Client 支持范围内。业务结果由所属域产生，通用 Router 负责消息分发、结果帧和取消终态。
+
+
+
+远程请求通过 `ClientSessionCommandChannel.send_command()` 构造协议消息：普通命令使用 `type/id/text` 和必要的 `extra`，Control 使用 `type/id/domain/action/payload` 结构化对象。Client 连接注册时获得一枚 Client Session Token，普通命令、ACMD、Script 和 Job 统一使用这枚凭证访问中央白名单内的 HTTP API，不按单次执行签发凭证或声明 API Scope。交互请求额外核对当前 Web Task 和命令身份。
+
+收到 Client 返回的 `result` 时，Server 先更新相关工作目录，再交给结果分发器。只有 `id` 与当前队首等待的 `command_id` 匹配，才将 `(status, value, eof)` 投入对应的执行结果队列；`value` 通常来自 `text`，结构化 Control 的最终结果则来自 JSON 对象 `data`。正常输出按照该等待流逐块消费，直到终止标记 `eof`。Job CLI 与 Web Job Manager 在应用层校验结果并渲染为原有可读反馈；普通命令的文本输出仍保持原样。不匹配的结果进入独立的未预期消息处理路径。
 
 `WebTaskRunner` 消费标准化事件后执行两件相互独立的操作：将每块输出按原始顺序追加到 SQLite 历史，并通过 WebEventBus 发送到执行任务的标签页。零散输出使用 `command_result`；密集输出按时间、条数和字节数合并为 `command_result_batch`，其 `results` 数组逐项保留原有的 `status` 和 `text`，不拼接文本或丢弃空块。批次在短时间内刷新，任务结束前强制发完最后一批，然后才发布 `command_complete`。典型 WebSocket 消息如下：
 

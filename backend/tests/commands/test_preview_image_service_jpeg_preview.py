@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from client.config import runtime_config
-from client.commands.common.services.filesystem.preview_image_service import PreviewImageService
+from client.runtime.filesystem.preview_image_service import PreviewImageService
 
 
 def _save_png(path: Path, image):

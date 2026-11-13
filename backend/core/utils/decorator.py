@@ -63,7 +63,7 @@ def confirm(message=None):
                 elif 'options' in kwargs:
                     kwargs['options'] = cleaned
                 return func(self, *args, **kwargs)
-            from client.commands.common.services.interaction_service import CommandInteractions
+            from client.runtime.execution.interaction_service import CommandInteractions
 
             try:
                 approved = CommandInteractions(self).confirm(

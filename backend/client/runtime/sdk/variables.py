@@ -2,13 +2,14 @@
 
 from types import SimpleNamespace
 
-from client.commands.runtime.command_variable_resolver import CommandVariableResolver
+from client.runtime.command_variable_resolver import CommandVariableResolver
 from client.runtime.sdk import context
 
 
 def _resolver() -> CommandVariableResolver:
-    owner = context.get_command_owner()
-    runtime = getattr(owner, '_command_runtime', None) if owner is not None else None
+    owner = context.get_execution_owner()
+    connection = getattr(owner, 'socket', None)
+    runtime = getattr(connection, 'runtime', None)
     shared = getattr(runtime, 'command_variable_resolver', None)
     if shared is not None:
         return shared

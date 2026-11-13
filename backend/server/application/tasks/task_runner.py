@@ -314,21 +314,18 @@ class WebTaskRunner:
             swallow_exception=True,
         )
 
-    def _iter_script_events(self, context: TaskExecutionContext):
+    def _iter_control_events(self, context: TaskExecutionContext):
         from core.protocol.message_types import MSG_TYPE_CONTROL
-        from server.application.scripts.script_run_service import prepare_script_control
-        from server.config.config import SCRIPT_PATH
 
         context.history_entry_id = self._get_history_entry_id(context)
-        payload = prepare_script_control(
-            SCRIPT_PATH, context.metadata['script_run_name'],
-            context.metadata['script_run_arguments'],
-        )
+        control = context.control
+        if control is None:
+            raise ValueError('Control request is required')
         yield CommandExecutionEvent.started(context.command)
         ok = True
         for status, text in self.remote_execution_service.stream_command(
             context.session, '', command_type=MSG_TYPE_CONTROL,
-            domain='script', action='run', payload=payload,
+            domain=control.domain, action=control.action, payload=control.payload,
             history_entry_id=context.history_entry_id,
         ):
             if not status:
@@ -405,9 +402,9 @@ class WebTaskRunner:
         finally:
             self._release_task(context)
 
-    def run_script_task(self, context: TaskExecutionContext):
+    def run_control_task(self, context: TaskExecutionContext):
         try:
-            self._run_task_events(context, self._iter_script_events(context))
+            self._run_task_events(context, self._iter_control_events(context))
         finally:
             self._release_task(context)
 

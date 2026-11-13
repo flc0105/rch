@@ -37,7 +37,7 @@ def test_confirm_bypass_allows_relaunch_without_requesting_interaction():
     owner = CommandSessionMixin()
     owner.socket = object()
     with patch('client.commands.common.mixins.session_ops.reset') as reset, \
-         patch('client.commands.common.services.interaction_service.CommandInteractions.confirm',
+         patch('client.runtime.execution.interaction_service.CommandInteractions.confirm',
                side_effect=AssertionError('should not request confirmation')):
         owner.relaunch_instance('--no-confirm')
     reset.assert_called_once_with(owner.socket)
@@ -47,16 +47,16 @@ def test_confirm_default_requests_interaction_without_bypass():
     @confirm('Proceed?')
     def command(owner, options=''):
         return 1, options
-    with patch('client.commands.common.services.interaction_service.CommandInteractions.confirm', return_value=True) as ask:
+    with patch('client.runtime.execution.interaction_service.CommandInteractions.confirm', return_value=True) as ask:
         assert command(SimpleNamespace(), 'hello') == (1, 'hello')
         ask.assert_called_once()
-    with patch('client.commands.common.services.interaction_service.CommandInteractions.confirm',
+    with patch('client.runtime.execution.interaction_service.CommandInteractions.confirm',
                side_effect=AssertionError('unexpected dialog')):
         assert command(SimpleNamespace(), '--no-confirm') == (1, '')
 
 
 def test_approved_process_inspection_supports_older_psutil(monkeypatch):
-    from client.commands.common.services.process import approved_process_service as svc
+    from client.runtime.execution.process import approved_process_service as svc
     class DummyProcess:
         pid = 733
         def oneshot(self):

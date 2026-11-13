@@ -5,8 +5,8 @@ from unittest.mock import Mock
 import pytest
 import requests
 
-from client.commands.strategies.http_transfer.legacy import LegacyHttpTransferStrategy
-from client.commands.strategies.http_transfer.cancelable import CancelableHttpTransferStrategy
+from client.runtime.http_transfer.strategies.legacy import LegacyHttpTransferStrategy
+from client.runtime.http_transfer.strategies.cancelable import CancelableHttpTransferStrategy
 
 
 def test_legacy_upload_sets_connect_and_read_timeout(tmp_path, monkeypatch):
@@ -51,7 +51,7 @@ def test_legacy_network_timeout_raises_and_closes_session(tmp_path, monkeypatch)
 
 def test_cancelable_strategy_code_has_no_legacy_timeout(tmp_path):
     from pathlib import Path
-    code = (Path(__file__).resolve().parents[2] / 'client/commands/strategies/http_transfer/cancelable.py').read_text()
+    code = (Path(__file__).resolve().parents[2] / 'client/runtime/http_transfer/strategies/cancelable.py').read_text()
     assert '_NETWORK_TIMEOUT' not in code
     assert 'timeout=self._NETWORK_TIMEOUT' not in code
     assert CancelableHttpTransferStrategy.MODE_NAME == 'cancelable'

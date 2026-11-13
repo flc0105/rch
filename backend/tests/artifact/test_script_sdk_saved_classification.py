@@ -22,7 +22,7 @@ def test_canonical_classification_is_independent_of_command_output_naming():
 def test_script_sdk_uses_saved_category_and_shared_folder(monkeypatch, tmp_path):
     file_path = tmp_path / 'demo.png'
     file_path.write_bytes(b'bytes')
-    monkeypatch.setattr(artifact, 'get_command_owner', lambda: None)
+    monkeypatch.setattr(artifact, 'get_execution_owner', lambda: None)
     monkeypatch.setattr(artifact, 'get_client_id', lambda: 'client-1')
     monkeypatch.setattr(artifact, 'get_command_id', lambda: 24)
     recorded = []
@@ -105,7 +105,7 @@ def test_sdk_owner_upload_forwards_explicit_category(monkeypatch, tmp_path):
 
     owner = SimpleNamespace(http_file_transfer_service=Transfer(),
                             path_resolver=SimpleNamespace(require_existing_file_from_arg=lambda p: p))
-    monkeypatch.setattr(artifact, 'get_command_owner', lambda: owner)
+    monkeypatch.setattr(artifact, 'get_execution_owner', lambda: owner)
     monkeypatch.setattr(artifact, 'ClientApiClient', Api)
     artifact.save(str(source), category='screenshots')
     assert calls == [{'artifact_type': 'saved', 'category': 'screenshots', 'folder': '',

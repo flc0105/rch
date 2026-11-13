@@ -16,7 +16,7 @@ func TestRemoteSaveTextPreservesEncodingAndRejectsBinary(t *testing.T) {
 	if err := os.WriteFile(utf8Path, []byte("hello"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	status, output := executeRemote(t, session, remoteCommand("save_file_content", map[string]interface{}{
+	status, output := executeRemote(t, session, remoteRequest("save_file", map[string]interface{}{
 		"path": utf8Path, "content": "保存中文", "encoding": "utf-8",
 	}))
 	if status != 1 {
@@ -35,7 +35,7 @@ func TestRemoteSaveTextPreservesEncodingAndRejectsBinary(t *testing.T) {
 	if err := os.WriteFile(utf16Path, utf16, 0600); err != nil {
 		t.Fatal(err)
 	}
-	status, output = executeRemote(t, session, remoteCommand("save_file_content", map[string]interface{}{
+	status, output = executeRemote(t, session, remoteRequest("save_file", map[string]interface{}{
 		"path": utf16Path, "content": "新😊行", "encoding": "utf-16-le",
 	}))
 	if status != 1 {
@@ -49,7 +49,7 @@ func TestRemoteSaveTextPreservesEncodingAndRejectsBinary(t *testing.T) {
 	if err != nil || text != "新😊行" || codec != "utf-16-le" || binary.LittleEndian.Uint16(got[:2]) != 0xfeff {
 		t.Fatalf("lost UTF-16 encoding: %q %s %v", text, codec, err)
 	}
-	if status, _ = executeRemote(t, session, remoteCommand("save_file_content", map[string]interface{}{
+	if status, _ = executeRemote(t, session, remoteRequest("save_file", map[string]interface{}{
 		"path": utf16Path, "content": "incorrect", "encoding": "utf-8",
 	})); status != 0 {
 		t.Fatal("mismatched codec was accepted")
@@ -58,7 +58,7 @@ func TestRemoteSaveTextPreservesEncodingAndRejectsBinary(t *testing.T) {
 	if err := os.WriteFile(binaryPath, []byte{0, 1, 2, 3}, 0600); err != nil {
 		t.Fatal(err)
 	}
-	if status, _ = executeRemote(t, session, remoteCommand("save_file_content", map[string]interface{}{
+	if status, _ = executeRemote(t, session, remoteRequest("save_file", map[string]interface{}{
 		"path": binaryPath, "content": "text", "encoding": "utf-8",
 	})); status != 0 {
 		t.Fatal("binary file became editable")
@@ -81,7 +81,7 @@ func TestRemoteZipPreviewEntryCreateAndExtract(t *testing.T) {
 	if err := os.Mkdir(target, 0755); err != nil {
 		t.Fatal(err)
 	}
-	status, out := executeRemote(t, session, remoteCommand("create_zip_paths", map[string]interface{}{
+	status, out := executeRemote(t, session, remoteRequest("create_archive", map[string]interface{}{
 		"paths": []string{from}, "destination_dir": target, "archive_name": "my archive.zip",
 	}))
 	if status != 1 {
@@ -92,12 +92,12 @@ func TestRemoteZipPreviewEntryCreateAndExtract(t *testing.T) {
 	if created["archive_path"] != zipPath {
 		t.Fatalf("unexpected ZIP name: %#v", created)
 	}
-	if status, _ = executeRemote(t, session, remoteCommand("create_zip_paths", map[string]interface{}{
+	if status, _ = executeRemote(t, session, remoteRequest("create_archive", map[string]interface{}{
 		"paths": []string{from}, "destination_dir": target, "archive_name": "my archive.zip",
 	})); status != 0 {
 		t.Fatal("ZIP creation overwrote existing file")
 	}
-	status, out = executeRemote(t, session, remoteCommand("peek_zip", map[string]interface{}{"path": zipPath}))
+	status, out = executeRemote(t, session, remoteRequest("peek_archive", map[string]interface{}{"path": zipPath}))
 	if status != 1 {
 		t.Fatalf("ZIP peek failed: %s", out)
 	}
@@ -109,7 +109,7 @@ func TestRemoteZipPreviewEntryCreateAndExtract(t *testing.T) {
 	if tree[0].(map[string]interface{})["name"] != "folder" {
 		t.Fatalf("wrong root ZIP entry: %#v", tree)
 	}
-	status, out = executeRemote(t, session, remoteCommand("read_zip_entry", map[string]interface{}{
+	status, out = executeRemote(t, session, remoteRequest("read_archive_entry", map[string]interface{}{
 		"path": zipPath, "entry_name": "folder/nested/note.txt",
 	}))
 	if status != 1 {
@@ -123,7 +123,7 @@ func TestRemoteZipPreviewEntryCreateAndExtract(t *testing.T) {
 	if err := os.Mkdir(extracted, 0755); err != nil {
 		t.Fatal(err)
 	}
-	status, out = executeRemote(t, session, remoteCommand("extract_zip_path", map[string]interface{}{
+	status, out = executeRemote(t, session, remoteRequest("extract_archive", map[string]interface{}{
 		"path": zipPath, "destination_dir": extracted,
 	}))
 	if status != 1 {
@@ -162,10 +162,10 @@ func TestZipExtractionRejectsTraversalAndDoesNotWriteOutside(t *testing.T) {
 	if err := os.Mkdir(dest, 0755); err != nil {
 		t.Fatal(err)
 	}
-	if status, _ := executeRemote(t, session, remoteCommand("peek_zip", map[string]interface{}{"path": zipPath})); status != 0 {
+	if status, _ := executeRemote(t, session, remoteRequest("peek_archive", map[string]interface{}{"path": zipPath})); status != 0 {
 		t.Fatal("unsafe ZIP tree was accepted")
 	}
-	if status, _ := executeRemote(t, session, remoteCommand("extract_zip_path", map[string]interface{}{
+	if status, _ := executeRemote(t, session, remoteRequest("extract_archive", map[string]interface{}{
 		"path": zipPath, "destination_dir": dest,
 	})); status != 0 {
 		t.Fatal("ZIP traversal extraction accepted")
@@ -203,7 +203,7 @@ func TestZipBinaryEntryIsNotPresentedAsEditableText(t *testing.T) {
 	if err := f.Close(); err != nil {
 		t.Fatal(err)
 	}
-	status, text := executeRemote(t, session, remoteCommand("read_zip_entry", map[string]interface{}{"path": zipPath, "entry_name": "thing.txt"}))
+	status, text := executeRemote(t, session, remoteRequest("read_archive_entry", map[string]interface{}{"path": zipPath, "entry_name": "thing.txt"}))
 	if status != 1 {
 		t.Fatal(text)
 	}

@@ -5,7 +5,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from client.commands.runtime.control_dispatcher import ClientControlDispatcher
+from client.runtime.control_dispatcher import ClientControlDispatcher
+from client.runtime.execution.runtime import ExecutionRuntime
+from client.scripts.manager import ScriptManager
+from core.protocol.control import ControlRequest
 from server.application.scripts.script_run_service import prepare_script_control
 
 
@@ -41,17 +44,12 @@ def test_script_control_client_runs_existing_script_strategy(tmp_path):
         'script_name': 'folder/ping', 'source': SCRIPT_SOURCE,
         'params': {'host': 'example.com', 'port': 80},
     }
-    calls = []
-
-    class Commands:
-        def execute_script_stream(self, source, kwargs=None):
-            calls.append((source, kwargs))
-            return 1, 'script finished'
-
-    assert ClientControlDispatcher.execute(Commands(), 'script', 'run', payload) == (1, 'script finished')
-    assert calls == [(SCRIPT_SOURCE, {'host': 'example.com', 'port': 80, '__script_name__': 'folder/ping'})]
-    assert ClientControlDispatcher.execute(Commands(), 'script', 'bad', payload)[0] == 0
-    assert ClientControlDispatcher.execute(Commands(), 'script', 'run', {'source': SCRIPT_SOURCE, 'params': {}})[0] == 0
+    socket = SimpleNamespace()
+    manager = ScriptManager()
+    control = ClientControlDispatcher(ExecutionRuntime(socket), {'script': manager.execute})
+    assert control.execute(1, 'script', 'run', payload) == (1, 'example.com 80\n')
+    assert control.execute(2, 'script', 'bad', payload)[0] == 0
+    assert control.execute(3, 'script', 'run', {'source': SCRIPT_SOURCE, 'params': {}})[0] == 0
 
 
 def test_script_cli_and_web_use_one_payload_and_web_presentation_stays_runtime_only(tmp_path, monkeypatch):
@@ -81,15 +79,15 @@ def test_script_cli_and_web_use_one_payload_and_web_presentation_stays_runtime_o
     web_requests = []
 
     class Tasks:
-        def submit_web_script(self, client_id, script_name, params, **kwargs):
-            web_requests.append((client_id, script_name, params, kwargs))
+        def submit_web_control(self, client_id, command, control, **kwargs):
+            web_requests.append((client_id, command, control, kwargs))
             return {'ok': True}
 
     web_api = WebScriptApi(WebCommandExecutionApi(Tasks()), SimpleNamespace(scripts_root_dir=str(tmp_path)))
     assert web_api.run_script('client-a', 'folder/ping.py', {'host': 'example.com', 'port': 80}, presentation='dialog', run_id='r-1') == {'ok': True}
     assert web_requests[0][1] == cli_plans[0]['payload']['script_name']
-    assert web_requests[0][2] == cli_plans[0]['payload']['params']
-    assert web_requests[0][3]['presentation'] == 'dialog'
+    assert web_requests[0][2].payload == cli_plans[0]['payload']
+    assert web_requests[0][3]['metadata']['script_run_presentation'] == 'dialog'
 
 
 def test_script_task_dispatches_control_not_a_fake_command(tmp_path, monkeypatch):
@@ -112,10 +110,11 @@ def test_script_task_dispatches_control_not_a_fake_command(tmp_path, monkeypatch
     runner._get_history_entry_id = lambda context: 'history-1'
     context = SimpleNamespace(
         session=object(), history_entry_id='', command='ping',
-        metadata={'script_run_name': 'ping', 'script_run_arguments': {},
-                  'script_run_presentation': 'dialog'},
+        metadata={'script_run_presentation': 'dialog'},
+        control=ControlRequest('script', 'run', prepare_script_control(str(tmp_path), 'ping', {})),
     )
-    events = list(runner._iter_script_events(context))
+    script.write_text('raise RuntimeError("should not reload")\n', encoding='utf-8')
+    events = list(runner._iter_control_events(context))
     assert calls[0][1] == ''
     assert calls[0][2]['command_type'] == 'control'
     assert calls[0][2]['domain'] == 'script' and calls[0][2]['action'] == 'run'

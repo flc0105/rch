@@ -16,6 +16,7 @@ type Session struct {
 	Cwd                  string
 	CurrentCommandID     int
 	transfers            transferTracker
+	controlHandlers      map[string]ControlDomain
 	shellMu              sync.Mutex
 	shellCommandID       int
 	shellCancel          context.CancelFunc
@@ -34,12 +35,14 @@ func NewSession(sock *protocol.RATSocket, clientID string) *Session {
 		host = clientID
 	}
 
-	return &Session{
+	session := &Session{
 		Sock:     sock,
 		ClientID: strings.TrimSpace(clientID),
 		HostName: host,
 		Cwd:      wd,
 	}
+	session.controlHandlers = map[string]ControlDomain{"remote_files": {Execute: (RemoteFilesManager{}).Execute, CancelledMessage: "Command cancelled"}, "script": {Execute: (ScriptManager{}).Execute, CancelledMessage: "Script cancelled"}}
+	return session
 }
 
 // Shell commands are the only cancellable execution mode in the minimal Go Client.

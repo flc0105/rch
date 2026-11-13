@@ -31,6 +31,7 @@ import time
 
 import psutil
 from client.runtime.sdk import context
+from client.commands.platform.utils.pid_service_util import PidServiceLookup
 
 
 RUNTIME_EXES = {
@@ -182,6 +183,7 @@ def resolved_command(argv, exe, script_path, script_index, os_alias):
 
 def list_runtime_processes(os_alias, runtime):
     now = time.time()
+    service_lookup = PidServiceLookup(os_alias)
     rows = []
     for proc in psutil.process_iter():
         try:
@@ -211,6 +213,7 @@ def list_runtime_processes(os_alias, runtime):
                 "user": user,
                 "command": resolved_command(argv, exe, script_path, script_index, os_alias) or str(name or ""),
                 "listening_ports": listening_ports(proc),
+                "unit": service_lookup.get(pid),
                 "_actions": [
                     {"label": "Kill", "command": f"acmd kill --pid {pid}"},
                     {"label": "Force Kill", "command": f"acmd kill --pid {pid} -9"},

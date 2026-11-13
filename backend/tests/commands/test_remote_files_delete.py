@@ -5,8 +5,8 @@ from unittest.mock import patch
 
 import pytest
 
-from client.commands.common.services.filesystem.file_system_service import FileSystemService
-from client.commands.common.services.filesystem.path_resolver import PathResolver
+from client.runtime.filesystem.file_system_service import FileSystemService
+from client.runtime.filesystem.path_resolver import PathResolver
 
 
 def test_disappearing_appledouble_child_does_not_fail_directory_delete(tmp_path):
@@ -22,7 +22,7 @@ def test_disappearing_appledouble_child_does_not_fail_directory_delete(tmp_path)
         onerror(os.unlink, missing_child, (FileNotFoundError, FileNotFoundError(2, 'No such file', missing_child), None))
         return real_rmtree(path, **kwargs)
 
-    with patch('client.commands.common.services.filesystem.file_system_service.shutil.rmtree', side_effect=removable_drive_rmtree):
+    with patch('client.runtime.filesystem.file_system_service.shutil.rmtree', side_effect=removable_drive_rmtree):
         success, message = service.delete_target_path(str(target))
     assert success == 1 and 'Directory deleted:' in message
     assert not target.exists()
@@ -39,7 +39,7 @@ def test_root_missing_or_permission_error_is_not_silently_accepted(tmp_path):
     def permission_denied(path, *, onerror=None):
         child = os.path.join(str(path), 'protected')
         onerror(os.unlink, child, (PermissionError, PermissionError(13, 'Permission denied', child), None))
-    with patch('client.commands.common.services.filesystem.file_system_service.shutil.rmtree', side_effect=permission_denied):
+    with patch('client.runtime.filesystem.file_system_service.shutil.rmtree', side_effect=permission_denied):
         with pytest.raises(PermissionError):
             service._delete_directory_tree(str(target_dir))
 

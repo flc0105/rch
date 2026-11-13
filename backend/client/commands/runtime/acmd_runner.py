@@ -1,5 +1,5 @@
-from client.commands.runtime.command_variable_resolver import CommandVariableResolutionError
-from client.commands.runtime.request import CommandExecutionRequest
+from client.runtime.command_variable_resolver import CommandVariableResolutionError
+from client.runtime.execution.request import ExecutionRequest
 
 
 class ArgumentCommandRunner:
@@ -8,7 +8,7 @@ class ArgumentCommandRunner:
     def __init__(self, executor):
         self.executor = executor
 
-    def execute(self, request: CommandExecutionRequest, payload: dict):
+    def execute(self, request: ExecutionRequest, payload: dict):
         if not isinstance(payload, dict) or not isinstance(payload.get('args', {}), dict):
             return 0, 'Invalid acmd payload'
 

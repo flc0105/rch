@@ -1,3 +1,9 @@
+from client.runtime.command_variable_resolver import CommandVariableResolver
+from client.runtime.execution.runtime import ExecutionRuntime
+from client.runtime.control_dispatcher import ClientControlDispatcher
+from client.remote_files.manager import RemoteFilesManager
+from client.scripts.manager import ScriptManager
+from client.runtime.sdk.command import ScriptCommandAccess
 from client.commands.runtime.executor import CommandExecutor
 from client.jobs.core.manager import JobManager
 from client.config.feature_config import resolve_features
@@ -10,7 +16,10 @@ class ClientRuntime:
     Client 端运行时能力容器。
 
     只负责持有和协调客户端本地运行能力：
-    - command_executor：shell-like / script / acmd 三类命令入口
+    - command_executor：shell-like / acmd 命令入口
+    - control_dispatcher：结构化业务请求入口
+    - execution：共享前台执行生命周期
+    - remote_files_manager / script_manager：独立业务执行
     - job_manager：后台任务运行态
     - pty_manager：交互式 PTY 会话
     - screen_view_manager：只读屏幕预览会话
@@ -21,8 +30,19 @@ class ClientRuntime:
 
     def __init__(self, connection, features=None):
         self.connection = connection
-        self.command_executor = CommandExecutor(connection)
+        self.execution = ExecutionRuntime(connection)
+        self.command_variable_resolver = CommandVariableResolver(connection)
+        self.command_executor = CommandExecutor(connection, self.execution, self.command_variable_resolver)
         self.job_manager = JobManager(connection)
+        self.remote_files_manager = RemoteFilesManager()
+        self.script_manager = ScriptManager(ScriptCommandAccess(
+            self.command_executor.sdk_command_names, self.command_executor.resolve_sdk_command,
+        ))
+        self.control_dispatcher = ClientControlDispatcher(self.execution, {
+            'job': self.job_manager.execute,
+            'remote_files': self.remote_files_manager.execute,
+            'script': self.script_manager.execute,
+        })
         self.features = dict(features if features is not None else resolve_features())
         self.pty_manager = None
         self.screen_view_manager = None

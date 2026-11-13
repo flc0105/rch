@@ -5,8 +5,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from client.commands.platform.linux import LinuxCommands
-from client.commands.runtime.control_dispatcher import ClientControlDispatcher
+from client.runtime.control_dispatcher import ClientControlDispatcher
+from client.runtime.execution.runtime import ExecutionRuntime
+from client.remote_files.manager import RemoteFilesManager
+
+def dispatcher():
+    socket = SimpleNamespace()
+    return ClientControlDispatcher(ExecutionRuntime(socket), {'remote_files': RemoteFilesManager().execute})
 from core.protocol.control import build_control_message
 from server.application.artifact.remote_file_service import WebRemoteFileService
 from server.connection.channel.session_command_channel import ClientSessionCommandChannel
@@ -36,13 +41,13 @@ def test_control_message_is_flat_and_fails_closed():
 
 
 def test_remote_file_browser_calls_control_with_typed_payload(tmp_path):
-    commands = LinuxCommands(SimpleNamespace())
+    control = dispatcher()
     calls = []
 
     class Remote:
         def run_foreground_control(self, client_id, domain, action, payload, **kwargs):
             calls.append((client_id, domain, action, payload, kwargs))
-            return ClientControlDispatcher.execute(commands, domain, action, payload)
+            return control.execute(1, domain, action, payload)
 
     browser = WebRemoteFileService(Remote(), None)
     folder = tmp_path / 'created'
@@ -97,12 +102,11 @@ def test_remote_file_browser_calls_control_with_typed_payload(tmp_path):
 
 
 def test_invalid_action_does_not_touch_files(tmp_path):
-    commands = LinuxCommands(SimpleNamespace())
+    control = dispatcher()
     path = tmp_path / 'keep.txt'
     path.write_text('keep')
-    status, text = ClientControlDispatcher.execute(
-        commands, 'remote_files', 'delete_everything', {'path': str(path)},
+    status, text = control.execute(1, 'remote_files', 'delete_everything', {'path': str(path)},
     )
     assert status == 0 and 'Unsupported' in text and path.exists()
-    status, text = ClientControlDispatcher.execute(commands, 'unknown', 'stop', {})
+    status, text = control.execute(1, 'unknown', 'stop', {})
     assert status == 0 and 'Unsupported' in text

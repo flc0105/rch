@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from client.commands.common.services.interaction_service import CommandInteractionError, CommandInteractions
+from client.runtime.execution.interaction_service import CommandInteractionError, CommandInteractions
 from client.connection.message_dispatcher import ClientInboundMessageDispatcher
 from client.http.session_auth import clear_token, get_token
 from core.protocol.client_api_auth import CLIENT_SESSION_TOKEN_HEADER

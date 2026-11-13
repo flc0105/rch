@@ -2,25 +2,25 @@ import os
 import tempfile
 import threading
 
-from client.commands.base import CommandRuntimeMixin
-from client.commands.common.services.filesystem.archive_service import ArchiveService
-from client.commands.common.services.filesystem.path_resolver import PathResolver
-from client.commands.common.services.filesystem.preview_image_service import PreviewImageService
-from client.commands.common.services.transfer.http_file_transfer_service import CommandHttpFileTransferService
-from client.commands.runtime.context import CommandCancelledError, CommandExecutionContext
+from client.runtime.execution.scope import ExecutionRuntimeMixin
+from client.runtime.filesystem.archive_service import ArchiveService
+from client.runtime.filesystem.path_resolver import PathResolver
+from client.runtime.filesystem.preview_image_service import PreviewImageService
+from client.runtime.http_transfer.http_file_transfer_service import HttpFileTransferService
+from client.runtime.execution.context import CommandCancelledError, ExecutionContext
 from client.http.client_api import ClientApiClient
 from core.protocol.message_types import MSG_TYPE_TRANSFER_UPDATE
 
 
-class _TransferTaskOwner(CommandRuntimeMixin):
+class _TransferTaskOwner(ExecutionRuntimeMixin):
     """
     为独立 Transfer worker 复用现有 HTTP/Archive 服务提供最小运行上下文。
 
     它不绑定 command_id，也不进入 command foreground slot；取消与 cleanup 由独立
-    CommandExecutionContext 承载，这样现有 cancelable HTTP strategy 可以直接复用。
+    ExecutionContext 承载，这样现有 cancelable HTTP strategy 可以直接复用。
     """
 
-    def __init__(self, connection, execution_context: CommandExecutionContext):
+    def __init__(self, connection, execution_context: ExecutionContext):
         self.socket = connection
         self.command_id = None
         self.execution_context = execution_context
@@ -107,7 +107,7 @@ class ClientTransferManager:
             if existing and existing.get('worker') and existing['worker'].is_alive():
                 return
 
-            context = CommandExecutionContext(command_id=0, timeout=None)
+            context = ExecutionContext(command_id=0, timeout=None)
             owner = _TransferTaskOwner(self.connection, context)
             item = {
                 'transfer_id': normalized_id,
@@ -178,7 +178,7 @@ class ClientTransferManager:
         payload = item['payload']
         owner = item['owner']
         context = item['context']
-        service = CommandHttpFileTransferService(
+        service = HttpFileTransferService(
             owner,
             archive_service=owner.archive_service,
             client_api=owner.client_api,
@@ -304,7 +304,7 @@ class ClientTransferManager:
             raise NotADirectoryError(f'Target path is not a directory: {target_dir}')
 
         target_path = os.path.join(target_dir, os.path.basename(filename))
-        from client.commands.common.services.filesystem.conflict_policy import prepare_upload_file_commit
+        from client.runtime.filesystem.conflict_policy import prepare_upload_file_commit
         commit = prepare_upload_file_commit(target_path, 'stop' if conflict_policy is None else conflict_policy)
 
         os.makedirs(target_dir, exist_ok=True)

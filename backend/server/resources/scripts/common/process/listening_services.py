@@ -31,6 +31,7 @@ import subprocess
 
 import psutil
 from client.runtime.sdk import context
+from client.commands.platform.utils.pid_service_util import PidServiceLookup
 
 
 HTTP_TIMEOUT = 1.5
@@ -150,7 +151,7 @@ def resolved_command(argv, exe, cwd, os_alias):
     return subprocess.list2cmdline(args) if os_alias == "win" else shlex.join(args)
 
 
-def service_record(listener, os_alias):
+def service_record(listener, os_alias, service_lookup):
     pid = listener["pid"]
     name = listener.get("name")
     user = command = None
@@ -172,6 +173,7 @@ def service_record(listener, os_alias):
         "user": user,
         "process_name": name,
         "command": command,
+        "unit": service_lookup.get(pid),
     }
 
 
@@ -256,13 +258,14 @@ def main():
     if mode not in ("TCP", "HTTP"):
         raise ValueError("Mode must be TCP or HTTP")
     listeners = listening_sockets(os_alias)
+    service_lookup = PidServiceLookup(os_alias)
     rows = []
     if mode == "TCP":
-        rows = [service_record(item, os_alias) for item in listeners]
+        rows = [service_record(item, os_alias, service_lookup) for item in listeners]
     else:
         with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
             web = list(pool.map(detect_web, listeners))
-        rows = [dict(service_record(item, os_alias), **details)
+        rows = [dict(service_record(item, os_alias, service_lookup), **details)
                 for item, details in zip(listeners, web) if details is not None]
     rows.sort(key=lambda row: (row["port"], row["pid"] if row["pid"] is not None else -1))
     print(json.dumps(rows, ensure_ascii=False, indent=2))

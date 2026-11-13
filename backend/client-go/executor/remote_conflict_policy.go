@@ -320,16 +320,7 @@ func stageRemoteTransferFile(ctx context.Context, tmp, target, policy string) er
 	}
 }
 
-func inspectRemoteUpload(s *Session, args []string) (int, string) {
-	raw := strings.TrimSpace(strings.Join(args, " "))
-	payload, err := payloadMap(raw)
-	if err != nil {
-		return 0, err.Error()
-	}
-	return inspectRemoteUploadPayload(s, payload)
-}
-
-func inspectRemoteUploadPayload(s *Session, payload map[string]interface{}) (int, string) {
+func inspectRemoteUploadPayload(s *Session, payload map[string]interface{}) (int, interface{}) {
 	name := payloadText(payload["filename"])
 	if _, err := safeTransferFilename(name); err != nil {
 		return 0, err.Error()
@@ -350,5 +341,5 @@ func inspectRemoteUploadPayload(s *Session, payload map[string]interface{}) (int
 			"allowed_actions": remoteAllowed("file", kind),
 		})
 	}
-	return jsonResult(map[string]interface{}{"conflicts": conflicts})
+	return 1, map[string]interface{}{"conflicts": conflicts}
 }

@@ -1,8 +1,8 @@
 import inspect
 from typing import Any
 
-from client.commands.runtime.command_variable_resolver import CommandVariableResolutionError
-from client.commands.runtime.request import CommandExecutionRequest
+from client.runtime.command_variable_resolver import CommandVariableResolutionError
+from client.runtime.execution.request import ExecutionRequest
 from core.utils.command_output import render_structured_result
 from core.utils.parsing import parse
 
@@ -67,7 +67,7 @@ class ShellCommandRunner:
             return func(arg)
         return func()
 
-    def execute(self, request: CommandExecutionRequest, command):
+    def execute(self, request: ExecutionRequest, command):
         try:
             resolved_command = self.executor.command_variable_resolver.resolve(
                 command,

@@ -10,12 +10,12 @@ class ScriptSdkRuntimeContext:
     Script SDK 当前执行上下文。
 
     只保存脚本运行期需要的轻量对象：
-    - command_owner：当前平台命令实例，inproc 模式可复用既有命令能力
+    - execution_owner：单次执行能力对象，inproc 模式可使用 SDK
     - kwargs：server script 参数
-    - script_context：CommandExecutionMixin 注入的 __context__
+    - script_context：执行层注入的 __context__
     """
 
-    command_owner: Any = None
+    execution_owner: Any = None
     kwargs: dict = field(default_factory=dict)
     script_context: dict = field(default_factory=dict)
 
@@ -53,8 +53,8 @@ def get_current_context() -> ScriptSdkRuntimeContext:
     return context
 
 
-def get_command_owner():
-    return get_current_context().command_owner
+def get_execution_owner():
+    return get_current_context().execution_owner
 
 
 def get_script_context() -> dict:
@@ -191,7 +191,7 @@ def system_paths() -> dict:
 def progress(message: str, status: int = 1) -> None:
     """将当前脚本进度实时发到运行结果流；脱离 Client 上下文时退化为 print。"""
     text = str(message)
-    owner = get_command_owner()
+    owner = get_execution_owner()
     sender = getattr(owner, '_send_interim_result', None) if owner is not None else None
     if callable(sender):
         sender(1 if status else 0, text, 0)
@@ -234,17 +234,17 @@ def get_client_session_token() -> str:
     token = _safe_text(get_current_context().get('client_session_token', ''))
     if token:
         return token
-    owner = get_command_owner()
+    owner = get_execution_owner()
     return _safe_text(getattr(getattr(owner, 'socket', None), 'client_session_token', ''))
 
 
 @contextmanager
-def use_script_sdk_context(command_owner=None, kwargs=None):
+def use_script_sdk_context(execution_owner=None, kwargs=None):
     payload = _safe_dict(kwargs)
     script_context = _safe_dict(payload.get('__context__'))
     token = _current_context.set(
         ScriptSdkRuntimeContext(
-            command_owner=command_owner,
+            execution_owner=execution_owner,
             kwargs=payload,
             script_context=script_context,
         )
@@ -255,16 +255,19 @@ def use_script_sdk_context(command_owner=None, kwargs=None):
         _current_context.reset(token)
 
 
-def _iter_exported_command_names(command_owner):
-    if command_owner is None:
+def _iter_exported_command_names(execution_owner):
+    if execution_owner is None:
         return []
 
+    provider = getattr(execution_owner, "sdk_command_names", None)
+    if callable(provider):
+        return provider()
     names = []
-    for name in dir(command_owner):
+    for name in dir(execution_owner):
         if not name or name.startswith('_'):
             continue
         try:
-            func = getattr(command_owner, name)
+            func = getattr(execution_owner, name)
         except Exception:
             continue
         if callable(func) and hasattr(func, 'help'):
@@ -272,7 +275,7 @@ def _iter_exported_command_names(command_owner):
     return sorted(set(names))
 
 
-# def build_script_sdk_globals(command_owner=None, kwargs=None) -> dict:
+# def build_script_sdk_globals(execution_owner=None, kwargs=None) -> dict:
 #     """
 #     构造注入到 server script 的 SDK 全局变量。
 #     """
@@ -289,7 +292,7 @@ def _iter_exported_command_names(command_owner):
 #         'xt': xt,
 #     }
 #
-#     for name in _iter_exported_command_names(command_owner):
+#     for name in _iter_exported_command_names(execution_owner):
 #         if name in sdk_globals or name in {'kwargs', '__context__'}:
 #             continue
 #         sdk_globals[name] = command.build_client_command_function(name)
@@ -297,7 +300,7 @@ def _iter_exported_command_names(command_owner):
 #     return sdk_globals
 
 
-def build_script_sdk_globals(command_owner=None, kwargs=None) -> dict:
+def build_script_sdk_globals(execution_owner=None, kwargs=None) -> dict:
     """
     构造注入到 server script 的 SDK 全局变量。
     """
@@ -320,7 +323,7 @@ def build_script_sdk_globals(command_owner=None, kwargs=None) -> dict:
 
     builtin_names = set(dir(builtins))  # 如果命令名和内置方法冲突则不导入，比如set()
 
-    for name in _iter_exported_command_names(command_owner):
+    for name in _iter_exported_command_names(execution_owner):
         if name in sdk_globals or name in {'kwargs', '__context__'}:
             continue
         if name in builtin_names:

@@ -3,10 +3,10 @@
 import pytest
 
 from client.config import runtime_config
-from client.commands.common.mixins.execution_ops import CommandExecutionMixin
-from client.commands.base import CommandRuntimeMixin
+from client.scripts.manager import ScriptExecution
+from client.runtime.execution.scope import ExecutionRuntimeMixin
 from client.commands.common.services.runtime.runtime_config_service import RuntimeConfigService
-from client.commands.runtime.context import CommandExecutionContext
+from client.runtime.execution.context import ExecutionContext
 
 
 @pytest.fixture
@@ -39,7 +39,7 @@ def test_script_timeout_in_config_payload_and_persistence(script_settings, tmp_p
         service.set_config_value('SCRIPT_DEFAULT_TIMEOUT', '0')
 
 
-class ScriptExecutionHarness(CommandExecutionMixin, CommandRuntimeMixin):
+class ScriptExecutionHarness(ScriptExecution):
     pass
 
 
@@ -48,13 +48,13 @@ def test_script_runtime_uses_independent_timeout(script_settings, monkeypatch):
     service.set_config_value('SCRIPT_DEFAULT_TIMEOUT', '7')
     service.set_config_value('COMMAND_DEFAULT_STREAM_TIMEOUT', '99')
     owner = object.__new__(ScriptExecutionHarness)
-    owner.execution_context = CommandExecutionContext(42)
+    owner.execution_context = ExecutionContext(42)
     captures = []
-    def fake_collect(code, kwargs=None, mode='', default_mode='', timeout=None):
+    def fake_collect(code, kwargs=None, mode='', default_mode='', timeout=None, script_name=None):
         captures.append((code, timeout, owner.execution_context.timeout))
         return 1, 'completed'
     monkeypatch.setattr(owner, '_execute_python_collect', fake_collect)
-    assert owner.execute_script_stream('print(123)') == (1, 'completed')
+    assert owner.run_script('print(123)') == (1, 'completed')
     assert captures == [('print(123)', 7, 7)]
     assert owner.execution_context.resolve_timeout() <= 7
 
@@ -62,10 +62,10 @@ def test_script_runtime_uses_independent_timeout(script_settings, monkeypatch):
 def test_inproc_expired_budget_is_reported(script_settings, monkeypatch):
     script_settings.set_config_value('SCRIPT_DEFAULT_TIMEOUT', '1')
     owner = object.__new__(ScriptExecutionHarness)
-    owner.execution_context = CommandExecutionContext(43)
+    owner.execution_context = ExecutionContext(43)
     monkeypatch.setattr(owner, '_execute_python_collect', lambda *a, **kw: (1, 'printed'))
     monkeypatch.setattr(owner.execution_context, 'is_timeout_expired', lambda fallback_timeout=None: True)
-    status, message = owner.execute_script_stream('print(123)')
+    status, message = owner.run_script('print(123)')
     assert status == 0
     assert 'printed' in message and '1 seconds' in message
 
@@ -73,6 +73,6 @@ def test_inproc_expired_budget_is_reported(script_settings, monkeypatch):
 def test_subprocess_timeout_returns_terminal_error(script_settings, monkeypatch):
     import subprocess
     owner = object.__new__(ScriptExecutionHarness)
-    owner.execution_context = CommandExecutionContext(44)
+    owner.execution_context = ExecutionContext(44)
     monkeypatch.setattr(owner, '_execute_python_collect', lambda *a, **kw: (_ for _ in ()).throw(subprocess.TimeoutExpired('python', 300)))
-    assert owner.execute_script_stream('import time') == (0, 'Script timed out after 300 seconds')
+    assert owner.run_script('import time') == (0, 'Script timed out after 300 seconds')

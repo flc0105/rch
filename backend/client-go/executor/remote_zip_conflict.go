@@ -2,7 +2,6 @@ package executor
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -100,7 +99,7 @@ func remoteZipDestination(ctx context.Context, archivePath, destination, entryNa
 	}
 	return filepath.Join(destination, name), "directory", nil
 }
-func extractRemoteZipPolicy(ctx context.Context, s *Session, payload map[string]interface{}) (int, string) {
+func extractRemoteZipPolicy(ctx context.Context, s *Session, payload map[string]interface{}) (int, interface{}) {
 	archivePath, err := remoteExisting(s, payloadText(payload["path"]), false)
 	if err != nil {
 		return 0, err.Error()
@@ -126,7 +125,7 @@ func extractRemoteZipPolicy(ctx context.Context, s *Session, payload map[string]
 		})
 	}
 	if payloadBool(payload["inspect"]) {
-		return jsonResult(map[string]interface{}{"conflicts": conflict, "target": target})
+		return 1, map[string]interface{}{"conflicts": conflict, "target": target}
 	}
 	policy := "stop"
 	if supplied, exists := payload["conflict_policy"]; exists {
@@ -143,8 +142,8 @@ func extractRemoteZipPolicy(ctx context.Context, s *Session, payload map[string]
 		return 0, "invalid conflict policy for target"
 	}
 	if destKind != "" && policy == "skip" {
-		return jsonResult(map[string]interface{}{"skipped": true, "destination_dir": destination,
-			"extracted_to": target, "file_count": 0, "dir_count": 0})
+		return 1, map[string]interface{}{"skipped": true, "destination_dir": destination,
+			"extracted_to": target, "file_count": 0, "dir_count": 0}
 	}
 	stage, err := os.MkdirTemp(destination, ".rch-zip-stage-*")
 	if err != nil {
@@ -156,9 +155,9 @@ func extractRemoteZipPolicy(ctx context.Context, s *Session, payload map[string]
 	if status != 1 {
 		return status, out
 	}
-	result := map[string]interface{}{}
-	if err := json.Unmarshal([]byte(out), &result); err != nil {
-		return 0, err.Error()
+	result, ok := out.(map[string]interface{})
+	if !ok {
+		return 0, "invalid ZIP extract result"
 	}
 	extracted, ok := result["extracted_to"].(string)
 	if !ok {
@@ -174,8 +173,8 @@ func extractRemoteZipPolicy(ctx context.Context, s *Session, payload map[string]
 	}
 	if err := applyRemoteConflict(ctx, extracted, target, "move", policy); err != nil {
 		if errors.Is(err, errRemoteSkipped) {
-			return jsonResult(map[string]interface{}{"skipped": true, "destination_dir": destination,
-				"extracted_to": target, "file_count": 0, "dir_count": 0})
+			return 1, map[string]interface{}{"skipped": true, "destination_dir": destination,
+				"extracted_to": target, "file_count": 0, "dir_count": 0}
 		}
 		return 0, err.Error()
 	}
@@ -185,5 +184,5 @@ func extractRemoteZipPolicy(ctx context.Context, s *Session, payload map[string]
 	}
 	result["destination_dir"] = destination
 	result["extracted_to"] = target
-	return jsonResult(result)
+	return 1, result
 }
