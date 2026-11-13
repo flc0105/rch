@@ -154,7 +154,7 @@
 
                 <div class="background-job-file-meta">
                   <span>{{ formatBytes(file.size || 0) }}</span>
-                  <span>{{ formatDateTimeStandard(file.created_at) || '-' }}</span>
+                  <span>{{ formatDateTimeStandard(file.saved_at) || '-' }}</span>
                   <span v-if="getCommandExecutionFileStatusText(file)">
                     [{{ getCommandExecutionFileStatusText(file) }}]
                   </span>
