@@ -8,8 +8,8 @@ from types import SimpleNamespace
 import pytest
 
 from client.config import runtime_config
-from client.commands.common.services.runtime.runtime_config_service import RuntimeConfigService
-from client.commands.common.services.runtime.runtime_config_effects import RuntimeConfigEffects
+from client.config.runtime_config_service import RuntimeConfigService
+from client.config.runtime_config_effects import RuntimeConfigEffects
 
 
 @pytest.fixture
@@ -179,7 +179,7 @@ def test_writes_never_reflect_into_unrelated_loaded_modules(isolated_config, mon
 
 
 def test_store_write_error_keeps_in_process_value(isolated_config, monkeypatch):
-    import client.commands.common.services.runtime.runtime_config_service as module
+    import client.config.runtime_config_service as module
     svc = RuntimeConfigService()
     def failure(*_args):
         raise OSError('write denied')
@@ -191,7 +191,7 @@ def test_store_write_error_keeps_in_process_value(isolated_config, monkeypatch):
 
 def test_change_hooks_register_only_active_lifecycle_effects():
     owner = SimpleNamespace(socket=None)
-    hooks = RuntimeConfigEffects(owner, is_launchd_managed_client=lambda: False)
+    hooks = RuntimeConfigEffects(owner.socket, is_launchd_managed_client=lambda: False)
     assert set(hooks._callbacks) == {
         'SCREEN_FRAME_STRATEGY', 'PROCESS_RECOVERY_WATCHDOG_ENABLED',
         *RuntimeConfigEffects.WATCHDOG_CONFIG_KEYS,

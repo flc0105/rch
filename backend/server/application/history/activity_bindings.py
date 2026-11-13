@@ -68,8 +68,9 @@ def external_tool_bindings():
 def process_bindings():
     kind = ActivityKind.PROCESS
     return {
-        action: (lambda a, action=action: _build(kind, action,
-            process_arguments(a['pid'], a['name']), a))
+        action: (lambda a, action=action: ActivityOperation(kind, action,
+            process_arguments(a['pid'], a['name']), a.get('origin') or 'web_ui',
+            resolved={'command_type': 'control'}))
         for action in ('kill_process', 'kill_app')
     }
 

@@ -52,7 +52,7 @@ Server 会生成类似如下的负载：
 
 以下进程管理 ACMD 注册于 Windows、macOS 和 Linux Client；iOS / Pythonista 不注册 `acmd ps` 或 `acmd kill`。
 
-普通 Process Manager UI 仍通过 `kill_process <pid>` 处理按钮操作。
+Process Manager UI 使用 `control/process/kill`，传入结构化 PID；ACMD `kill` 保持交互审批入口。
 Terminal / Server CLI 提供统一的 ACMD 命令：
 
 ```text

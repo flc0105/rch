@@ -271,52 +271,56 @@ func validRemoteUploadPolicy(policy string) bool {
 }
 
 // stageRemoteTransferFile commits completed transfer files without unrequested overwrites.
-func stageRemoteTransferFile(ctx context.Context, tmp, target, policy string) error {
+func stageRemoteTransferFile(ctx context.Context, tmp, target, policy string) (string, error) {
 	if !validRemoteUploadPolicy(policy) {
-		return fmt.Errorf("invalid upload conflict policy")
+		return "", fmt.Errorf("invalid upload conflict policy")
 	}
 	if err := ctx.Err(); err != nil {
-		return err
+		return "", err
 	}
 	kind, err := remoteKind(target)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if kind != "" && !remoteActionAllowed("file", kind, policy) {
-		return fmt.Errorf("target already exists: %s", target)
+		return "", fmt.Errorf("target already exists: %s", target)
 	}
 	switch {
 	case kind != "" && policy == "replace":
 		// A staged swap works on Windows too, where Rename cannot replace an open target.
 		slot, err := os.MkdirTemp(filepath.Dir(target), ".rch-upload-replace-*")
 		if err != nil {
-			return err
+			return "", err
 		}
 		defer os.RemoveAll(slot)
 		backup := filepath.Join(slot, "old")
 		if err := os.Rename(target, backup); err != nil {
-			return err
+			return "", err
 		}
 		if err := os.Rename(tmp, target); err != nil {
 			_ = os.Rename(backup, target)
-			return err
+			return "", err
 		}
-		return nil
+		return target, nil
 	case kind != "" && policy == "keep_both":
 		for i := 0; i < 8; i++ {
 			unique, err := remoteUniqueTarget(target)
 			if err != nil {
-				return err
+				return "", err
 			}
 			if err := os.Link(tmp, unique); os.IsExist(err) {
 				continue
-			} else {
-				return err
+			} else if err != nil {
+				return "", err
 			}
+			return unique, nil
 		}
-		return fmt.Errorf("could not allocate unique name")
+		return "", fmt.Errorf("could not allocate unique name")
 	default:
-		return os.Link(tmp, target)
+		if err := os.Link(tmp, target); err != nil {
+			return "", err
+		}
+		return target, nil
 	}
 }
 

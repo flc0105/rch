@@ -144,7 +144,7 @@ func TestBrowserUploadToClientAndNoOverwrite(t *testing.T) {
 	payload := map[string]interface{}{"relative_url": "/api/upload-tmp/staged/sample", "filename": "上传.txt", "save_dir": dest}
 	Handle(session, map[string]interface{}{"type": "transfer_start", "transfer_id": "upload-one", "operation": "server_to_client_file", "payload": payload})
 	updates := waitTransfer(t, func() map[string]interface{} { return receive(t, peer) })
-	if updates[len(updates)-1]["state"] != "completed" {
+	if updates[len(updates)-1]["state"] != "completed" || updates[len(updates)-1]["destination_path"] != filepath.Join(dest, "上传.txt") {
 		t.Fatalf("download failed: %#v", updates)
 	}
 	data, err := os.ReadFile(filepath.Join(dest, "上传.txt"))

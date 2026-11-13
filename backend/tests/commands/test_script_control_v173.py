@@ -77,7 +77,7 @@ def test_script_cli_and_web_use_one_payload_and_web_presentation_stays_runtime_o
     builtin = ScriptBuiltinSupport(
         SimpleNamespace(build_script_plan=lambda p: {'command_type': 'control', 'domain': 'script', 'action': 'run', 'payload': p}),
         lambda: (lambda plan: (lambda: (cli_plans.append(plan) or iter([(1, 'completed')])))),
-        remote_execution_service=SimpleNamespace(run_json_command=lambda *a, **kw: CONFIG),
+        remote_execution_service=SimpleNamespace(run_foreground_control=lambda *a, **kw: (1, CONFIG)),
     )
     assert list(builtin.script('exec', 'folder/ping.py --host example.com --port 80')) == [(1, 'completed')]
     assert list(builtin.script('exec', '--execution_mode subprocess_pipe --output_mode stream folder/ping.py --host example.com --port 80')) == [(1, 'completed')]

@@ -114,7 +114,7 @@ Alias 的模板参数、平台覆盖与安全边界见 [Aliases / Quick Actions]
 | `clean --no-confirm` | 跳过交互、直接执行受规则允许的清理范围 | **会真实删除匹配数据**，执行前需确认清理范围 |
 | `update` | 构建、下载并准备新的 Client Bundle | iOS 更新交接与桌面自动启动方式不同 |
 
-Web Remote Files 的一次性文件管理 RPC 使用 `control(domain=remote_files)` 结构化请求，其中单项和多项删除都使用 `delete_paths` 加路径数组；浏览、重命名、复制/移动与 ZIP 管理遵守同一协议。对应交互使用 [Remote Files](remote_files.md)。`receive_file` 也是 Server → Client HTTP 传输的内部承载入口，而不是供用户直接填写普通路径的上传命令。清理的具体范围见 [Cleanup](cleanup.md)。
+Web Remote Files 的一次性文件管理 RPC 使用 `control(domain=remote_files)` 结构化请求，其中单项和多项删除都使用 `delete_paths` 加路径数组；浏览、重命名、复制/移动与 ZIP 管理遵守同一协议。对应交互使用 [Remote Files](remote_files.md)。Terminal `upload` 与 Web Upload 统一使用 Transfer 协议，文件内容通过 HTTP 传输。清理的具体范围见 [Cleanup](cleanup.md)。
 
 ### 进程、会话和设备控制
 
@@ -126,7 +126,7 @@ Web Remote Files 的一次性文件管理 RPC 使用 `control(domain=remote_file
 | `spawn_instance` | 启动额外的 Client 实例 | 可能形成多个连接及多实例资源占用 |
 | `keyboard_send` | 向目标设备发送模拟键盘输入 | 依赖系统自动化权限及活动桌面会话 |
 
-`list_processes`、`get_process_detail`、`list_apps`、`kill_process` 等属于供 Process UI 使用的隐藏建议入口，不一定出现在普通命令推荐列表。终端中需要**按条件查看或终止进程**时，优先使用下文 `acmd ps` / `acmd kill`，其中 `acmd kill` 提供目标选择和执行前预览。强制结束进程前应先确认设备、PID 及操作影响。
+Process UI 通过 Device Monitor 查询进程、应用和详情，通过 `control/process/kill` 终止进程。终端中需要**按条件查看或终止进程**时，优先使用下文 `acmd ps` / `acmd kill`，其中 `acmd kill` 提供目标选择和执行前预览。强制结束进程前应先确认设备、PID 及操作影响。
 
 ### External Tool 的 Client 侧入口
 

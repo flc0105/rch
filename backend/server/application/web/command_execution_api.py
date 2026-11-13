@@ -1,4 +1,4 @@
-import shlex
+from core.protocol.control import ControlDomain, ConfigurationAction, WatchdogAction
 
 
 class WebCommandExecutionApi:
@@ -87,66 +87,32 @@ class WebCommandExecutionApi:
             tab_id=(tab_id or '').strip(), metadata=dict(metadata or {}),
         )
 
-    def get_watchdog_status(self, client_id: str):
+    def _control(self, client_id, domain, action, payload, *, task_type, source, track_execution=True):
         if self.remote_execution_service is None:
             raise RuntimeError('remote_execution_service is not available')
-        return self.remote_execution_service.run_foreground_json_command(
-            self._normalize_client_id(client_id),
-            'watchdog --json',
-            task_type='watchdog_status',
-            source='web_watchdog_status',
+        status, result = self.remote_execution_service.run_foreground_control(
+            self._normalize_client_id(client_id), domain, action, payload,
+            task_type=task_type, source=source, track_execution=track_execution,
         )
+        if status != 1:
+            raise RuntimeError(str(result) or 'Remote control failed')
+        return result
+
+    def get_watchdog_status(self, client_id: str):
+        return self._control(client_id, ControlDomain.WATCHDOG, WatchdogAction.STATUS, {},
+                             task_type='watchdog_status', source='web_watchdog_status')
 
     def get_runtime_config(self, client_id: str):
-        if self.remote_execution_service is None:
-            raise RuntimeError('remote_execution_service is not available')
-        return self.remote_execution_service.run_foreground_json_command(
-            self._normalize_client_id(client_id),
-            'set --json',
-            task_type='runtime_config',
-            source='web_runtime_config',
-            track_execution=False,
-        )
+        return self._control(client_id, ControlDomain.CONFIGURATION, ConfigurationAction.GET, {},
+                             task_type='runtime_config', source='web_runtime_config', track_execution=False)
 
     def update_runtime_config(self, client_id: str, key: str, value):
-        if self.remote_execution_service is None:
-            raise RuntimeError('remote_execution_service is not available')
-
-        normalized_key = str(key or '').strip().upper()
-        if not normalized_key:
-            raise ValueError('config key is required')
-
-        value_text = self._format_runtime_config_value(value)
-        self.remote_execution_service.run_foreground_text_command(
-            self._normalize_client_id(client_id),
-            f'set {normalized_key} {shlex.quote(value_text)}',
-            task_type='runtime_config',
-            source='web_runtime_config',
-        )
-        return self.get_runtime_config(client_id)
+        return self._control(client_id, ControlDomain.CONFIGURATION, ConfigurationAction.SET,
+                             {'key': key, 'value': value}, task_type='runtime_config', source='web_runtime_config')
 
     def reset_runtime_config(self, client_id: str, key: str):
-        if self.remote_execution_service is None:
-            raise RuntimeError('remote_execution_service is not available')
-
-        normalized_key = str(key or '').strip().upper()
-        if not normalized_key:
-            raise ValueError('config key is required')
-
-        self.remote_execution_service.run_foreground_text_command(
-            self._normalize_client_id(client_id),
-            f'set --reset {normalized_key}',
-            task_type='runtime_config',
-            source='web_runtime_config',
-        )
-        return self.get_runtime_config(client_id)
-
-    def _format_runtime_config_value(self, value) -> str:
-        if isinstance(value, bool):
-            return 'true' if value else 'false'
-        if value is None:
-            return 'none'
-        return str(value)
+        return self._control(client_id, ControlDomain.CONFIGURATION, ConfigurationAction.RESET,
+                             {'key': key}, task_type='runtime_config', source='web_runtime_config')
 
     def cancel_web_task(self, task_id: str):
         return self.task_service.cancel_web_task(self._normalize_task_id(task_id))

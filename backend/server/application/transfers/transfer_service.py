@@ -255,6 +255,7 @@ class TransferService:
             'progress_supported',
             'cancel_supported',
             'artifact_id',
+            'destination_path',
             'error',
             'metadata',
         }

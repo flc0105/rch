@@ -8,7 +8,7 @@ MODES = ScriptRunModes(ExecutionMode.INPROC, OutputMode.COLLECT)
 from client.config import runtime_config
 from client.scripts.manager import ScriptExecution
 from client.runtime.execution.scope import ExecutionRuntimeMixin
-from client.commands.common.services.runtime.runtime_config_service import RuntimeConfigService
+from client.config.runtime_config_service import RuntimeConfigService
 from client.runtime.execution.context import ExecutionContext
 
 

@@ -35,12 +35,12 @@ def test_unicode_transfer_name_reaches_client_without_temp_ascii_name(tmp_path):
     )
     transfer = SimpleNamespace(
         create_transfer=lambda **kw: created.append(kw) or {'transfer_id':'transfer-1'},
+        get_transfer=lambda tid: {'state': 'running', 'stage': 'transferring'},
         wait_for_terminal=lambda tid: {'state': 'completed'},
     )
     service = UploadExecutionService(None, SimpleNamespace(get_connection=lambda target: session), artifact, transfer)
     filename = 'Oracle 按银行账号 自动挂接回单附件.txt'
-    events = list(service.iter_upload_events('client-1', str(source), display_name=filename,
-                                            use_transfer_manager=True, build_http_receive_command=lambda payload: 'unused'))
+    events = list(service.iter_upload_events('client-1', str(source), display_name=filename))
     assert sent[0]['payload']['filename'] == filename
     assert created[0]['filename'] == filename
     assert sent[0]['payload']['relative_url'].endswith('/temp-safe-name.txt')

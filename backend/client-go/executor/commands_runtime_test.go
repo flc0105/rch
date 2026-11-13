@@ -95,3 +95,27 @@ func TestRuntimeSetDispatchJsonUsesBuiltin(t *testing.T) {
 		t.Fatal("unexpected configuration fields")
 	}
 }
+
+func TestConfigurationControlSharesRuntimeStore(t *testing.T) {
+	store := config.NewRuntimeStore(filepath.Join(t.TempDir(), "settings.json"))
+	status, result := executeConfiguration(store, configSet, map[string]interface{}{"key": config.ScriptOutputConfig, "value": config.ScriptStream})
+	if status != 1 || store.Get(config.ScriptOutputConfig) != config.ScriptStream {
+		t.Fatalf("set: %v %v", status, result)
+	}
+	status, _ = runtimeSetCommand("SCRIPT_DEFAULT_OUTPUT_MODE collect", store)
+	if status != 1 || store.Get(config.ScriptOutputConfig) != config.ScriptCollect {
+		t.Fatal("CLI store mismatch")
+	}
+	status, _ = executeConfiguration(store, configSet, map[string]interface{}{"key": config.ScriptOutputConfig, "value": "invalid"})
+	if status != 0 || store.Get(config.ScriptOutputConfig) != config.ScriptCollect {
+		t.Fatal("invalid value accepted")
+	}
+	status, _ = executeConfiguration(store, configSet, map[string]interface{}{"key": "COMMAND_DEFAULT_SHELL_TIMEOUT", "value": float64(12)})
+	if status != 1 || store.Seconds("COMMAND_DEFAULT_SHELL_TIMEOUT") != 12 {
+		t.Fatal("typed set failed")
+	}
+	status, _ = executeConfiguration(store, configReset, map[string]interface{}{"key": "COMMAND_DEFAULT_SHELL_TIMEOUT"})
+	if status != 1 || store.Seconds("COMMAND_DEFAULT_SHELL_TIMEOUT") != 30 {
+		t.Fatal("reset failed")
+	}
+}

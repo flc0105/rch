@@ -3,7 +3,7 @@ import os
 
 from core.utils.parsing import split_shell_arguments
 
-from client.commands.common.services.runtime.runtime_config_service import RuntimeConfigService
+from client.config.manager import ConfigurationManager
 from core.utils.decorator import desc
 from client.commands.runtime.interrupts import timeout
 from core.utils.output_marker import success, info, error, warning
@@ -16,14 +16,16 @@ class CommandRuntimeConfigMixin:
     """
 
     @property
+    def configuration_manager(self):
+        runtime = getattr(self.socket, 'runtime', None)
+        manager = getattr(runtime, 'configuration_manager', None)
+        if manager is None:
+            manager = ConfigurationManager(self.socket, getattr(runtime, 'features', None))
+        return manager
+
+    @property
     def runtime_config_service(self):
-        service = getattr(self, '_runtime_config_service', None)
-        if service is None:
-            runtime = getattr(self.socket, 'runtime', None)
-            features = getattr(runtime, 'features', None)
-            service = RuntimeConfigService(features=features)
-            self._runtime_config_service = service
-        return service
+        return self.configuration_manager.service
 
     @desc('Show or update client runtime config', group='runtime')
     @timeout(30)
@@ -36,7 +38,7 @@ class CommandRuntimeConfigMixin:
             按分组列出 runtime_config 下所有基础配置项和值
 
         set --json
-            输出 expose=True 配置项的结构化 JSON，供 Web UI 动态渲染
+            输出 expose=True 配置项的结构化 JSON
 
         set KEY value
             修改 runtime_config.KEY。默认只允许修改 expose=True 的配置项。
@@ -85,10 +87,7 @@ class CommandRuntimeConfigMixin:
         value = parts[1] if len(parts) == 2 else ' '.join(parts[1:])
 
         try:
-            result = self.runtime_config_service.set_config_value(key, value)
-            self._checkpoint()
-            side_effects = self._apply_runtime_config_side_effects(result.key, result.new_value)
-            self._checkpoint()
+            result, side_effects = self.configuration_manager.update(key, value, self._checkpoint, is_launchd_managed_client)
 
             lines = [
                 success(
@@ -124,8 +123,7 @@ class CommandRuntimeConfigMixin:
 
     def _reset_runtime_config_key(self, key: str):
         try:
-            result = self.runtime_config_service.reset_config_key(key)
-            side_effects = self._apply_runtime_config_side_effects(result.key, result.new_value)
+            result, side_effects = self.configuration_manager.reset(key, self._checkpoint, is_launchd_managed_client)
 
             message = (
                     success(f'{result.key} reset to default: ') +
@@ -141,11 +139,7 @@ class CommandRuntimeConfigMixin:
 
     def _reset_all_runtime_config_overrides(self):
         try:
-            store_path = self.runtime_config_service.reset_all_overrides()
-            side_effects = []
-
-            for key, value, _, _ in self.runtime_config_service.list_config_items(include_hidden=True):
-                side_effects.extend(self._apply_runtime_config_side_effects(key, value))
+            store_path, side_effects = self.configuration_manager.reset_all(self._checkpoint, is_launchd_managed_client)
 
             message = (
                     success('All runtime config overrides reset to runtime_config.py defaults\n') +
@@ -164,11 +158,4 @@ class CommandRuntimeConfigMixin:
             return 0, error(f'Failed to reset all runtime config overrides: {e}')
 
     def _apply_runtime_config_side_effects(self, key: str, value):
-        # The persistent configuration service changes values; registered effects
-        # handle only settings that also need active lifecycle operations.
-        effects = getattr(self, '_runtime_config_effects', None)
-        if effects is None:
-            from client.commands.common.services.runtime.runtime_config_effects import RuntimeConfigEffects
-            effects = RuntimeConfigEffects(self, is_launchd_managed_client)
-            self._runtime_config_effects = effects
-        return effects.apply(key, value)
+        return self.configuration_manager.effects(key, value, self._checkpoint, is_launchd_managed_client)

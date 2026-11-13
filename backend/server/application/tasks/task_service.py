@@ -263,18 +263,14 @@ class WebTaskService:
                 and parts[-1] in ('--follow', '-f'))
 
     def cancel_web_task(self, task_id: str):
-        try:
-            task, conn = self._resolve_cancellable_task(task_id)
-        except ValueError:
-            task = self.task_store.get_task(task_id)
-            transfer = (
-                self.transfer_service.find_active_transfer_by_task_id(task_id)
-                if self.transfer_service is not None
-                else None
-            )
-            if not task or not transfer:
-                raise
-
+        task = self.task_store.get_task(task_id)
+        transfer = (self.transfer_service.find_active_transfer_by_task_id(task_id)
+                    if self.transfer_service is not None else None)
+        if task and transfer:
+            if task.get('status') not in ('running', 'cancelling'):
+                raise ValueError('task is not cancellable')
+            if task.get('client_id') != transfer.get('client_id'):
+                raise ValueError('transfer does not belong to task client')
             if transfer.get('cancel_supported') is False:
                 raise ValueError('current transfer mode does not support cancellation')
 
@@ -295,6 +291,7 @@ class WebTaskService:
                 'transfer_id': transfer.get('transfer_id') or '',
             }
 
+        task, conn = self._resolve_cancellable_task(task_id)
         client_id = task.get('client_id') or ''
         cancel_info = self._request_task_cancel(conn, task_id)
         self.activity_coordinator.update_status(

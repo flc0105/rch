@@ -32,7 +32,7 @@ HTTP_TRANSFER_MODE = 'cancelable'
 HTTP_TRANSFER_BUFFER_SIZE = transfer_settings.DEFAULT_HTTP_TRANSFER_BUFFER_SIZE
 
 # ------------------ preview image compression ------------------ #
-# 只影响 preview_path 的 web 预览上传，不影响 download_path / 平台命令 / script 上传。
+# 只影响 Web 文件预览上传，不影响普通下载、平台命令或 Script 上传。
 PREVIEW_IMAGE_COMPRESS_ENABLED = False
 PREVIEW_IMAGE_COMPRESS_QUALITY = 75
 

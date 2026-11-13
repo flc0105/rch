@@ -10,6 +10,7 @@ type ControlHandler func(context.Context, *Session, int, string, map[string]inte
 type ControlDomain struct {
 	Execute          ControlHandler
 	CancelledMessage string
+	NonCancellable   bool
 }
 
 type ScriptManager struct{}

@@ -205,16 +205,6 @@ class CommandDispatchAdapter:
 
     def dispatch(self, conn, entry_id, command, command_type, *, payload=None, domain='', action=''):
         entry_id = entry_id or self.scoped_entry(conn)
-        # Legacy receive_file is a Transfer, not a second Command Activity.
-        # Claim the pending Terminal ID before the command candidate can be persisted.
-        if self.lifecycle_adapter is not None and str(command).startswith('receive_file '):
-            try:
-                transfer = decode_structured_arg(str(command).split(None, 1)[1], require_prefix=True)
-                if (isinstance(transfer, dict) and transfer.get('transfer_id')
-                        and self.lifecycle_adapter.transfer_command_dispatched(conn, transfer['transfer_id'])):
-                    return entry_id
-            except Exception:
-                logger.exception('Unable to track dispatched receive_file transfer')
         if not entry_id:
             return ''
         if command_type == 'control' and domain == 'script':

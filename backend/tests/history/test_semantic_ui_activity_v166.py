@@ -202,12 +202,17 @@ def process_execution(server, conn, *, dispatch=True, fail=False):
 
     def run(target, command, **kwargs):
         if dispatch:
-            server.command_adapter.dispatch(conn, kwargs['history_entry_id'], command, 'command')
+            server.command_adapter.dispatch(conn, kwargs.get('history_entry_id', ''), command, kwargs.get('command_type', 'command'),
+                                            payload=kwargs.get('payload'), domain=kwargs.get('domain', ''), action=kwargs.get('action', ''))
         if fail:
             raise RuntimeError('Client command failed')
-        return 'terminated'
+        if kwargs.get('domain') == 'process':
+            assert kwargs['action'] == 'kill' and isinstance(kwargs['payload']['pid'], int)
+            yield 1, {'message': 'terminated'}
+        else:
+            yield 1, 'terminated'
 
-    execution.foreground_execution_service = SimpleNamespace(run_foreground_text_command=run)
+    execution.foreground_execution_service = SimpleNamespace(stream_foreground_command=run, run_foreground_text_command=lambda *a, **kw: 'terminated')
     return execution
 
 
@@ -282,7 +287,7 @@ def test_process_kill_emits_semantic_record_only(setup_history):
         ('process', 'kill_app', 'success', 456), ('process', 'kill_process', 'success', 123),
     ]
     assert {e['invocation']['arguments']['name'] for e in entries(server)} == {'Safari', 'chrome.exe'}
-    assert all(e['resolved'] == {'command_type': 'command'} for e in entries(server))
+    assert all(e['resolved'] == {'command_type': 'control'} for e in entries(server))
 
 
 def test_pty_shell_switch_ends_one_session_without_close_entry(setup_history):
@@ -597,7 +602,7 @@ def test_external_tool_exec_and_cli_job_result_stay_inside_command_adapter(setup
     assert row['invocation']['input'] == 'job stop check'
 
 
-def test_transfer_adapters_track_both_wire_transports_and_not_browser_staging(setup_history):
+def test_transfer_adapter_tracks_repeated_transfers_and_not_browser_staging(setup_history):
     server, conn = setup_history
     transfer = {
         'transfer_id': 'transfer-1', 'client_id': 'client-1',
@@ -617,7 +622,7 @@ def test_transfer_adapters_track_both_wire_transports_and_not_browser_staging(se
     assert entries(server)[0]['status'] == 'success'
 
     transfer.update(transfer_id='transfer-2', state='running')
-    server.lifecycle_adapter.transfer_command_dispatched(conn, 'transfer-2')
+    conn.send({'type': 'transfer_start', 'transfer_id': 'transfer-2'})
     assert len(entries(server)) == 2
     transfer['state'] = 'failed'
     server.lifecycle_adapter.transfer_updated(transfer)
@@ -660,24 +665,22 @@ def test_artifact_reference_binding_uses_lifecycle_adapter_not_web_api(setup_his
     assert entries(server)[0]['files'][0]['artifact_id'] == 'file-1'
 
 
-def test_legacy_receive_file_claims_terminal_activity_once(setup_history):
-    """A receive_file RPC is a Transfer, not a Command plus a second Transfer."""
-    from core.protocol.structured_arg_codec import encode_structured_arg
+def test_terminal_upload_claims_transfer_activity_once(setup_history):
+    """A Transfer start claims the terminal upload ID exactly once."""
 
     server, conn = setup_history
-    command = 'receive_file ' + encode_structured_arg({'transfer_id': 'upload-legacy'})
     candidate = server.command_adapter.prepare_command(conn, 'upload report.pdf', source='cli')
     transfer = {
-        'transfer_id': 'upload-legacy', 'client_id': 'client-1',
+        'transfer_id': 'upload-terminal', 'client_id': 'client-1',
         'direction': 'server_to_client', 'filename': 'report.pdf',
         'destination_path': '/tmp', 'total_bytes': 10, 'state': 'running',
         'metadata': {'source': 'cli', 'history_entry_id': candidate},
     }
     server.lifecycle_adapter.bind_transfer_service(SimpleNamespace(
-        get_transfer=lambda transfer_id: transfer if transfer_id == 'upload-legacy' else None,
+        get_transfer=lambda transfer_id: transfer if transfer_id == 'upload-terminal' else None,
     ))
     server.command_adapter.bind_lifecycle_adapter(server.lifecycle_adapter)
-    server.command_adapter.dispatch(conn, candidate, command, 'command')
+    conn.send({'type': 'transfer_start', 'transfer_id': 'upload-terminal'})
     rows = entries(server)
     assert len(rows) == 1
     assert rows[0]['activity_id'] == candidate

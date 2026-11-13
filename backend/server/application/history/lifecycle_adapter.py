@@ -282,10 +282,6 @@ class LifecycleAdapter:
         self.transfer_updated(service.get_transfer(transfer_id) or transfer)
         return True
 
-    def transfer_command_dispatched(self, conn, transfer_id):
-        """Correlate a command-transport upload after Client accepted its receive_file RPC."""
-        return self._transfer_dispatched(conn, {'transfer_id': str(transfer_id or '')})
-
     def transfer_updated(self, transfer):
         state = str(transfer.get('state') or '')
         status = self._TRANSFER_TERMINAL.get(state)

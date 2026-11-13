@@ -454,15 +454,17 @@ func (s *Session) downloadTransferFile(ctx context.Context, id string, payload m
 	}
 	// Link ensures a concurrent file creation cannot be silently overwritten.
 	if policySpecified {
-		if err := stageRemoteTransferFile(ctx, tmp.Name(), target, policy); err != nil {
+		committed, err := stageRemoteTransferFile(ctx, tmp.Name(), target, policy)
+		if err != nil {
 			return err
 		}
+		target = committed
 	} else {
 		if err := os.Link(tmp.Name(), target); err != nil {
 			return err
 		}
 	}
-	s.transferUpdate(id, map[string]interface{}{"state": "completed", "stage": "completed", "filename": filename, "transferred_bytes": size, "total_bytes": size, "progress_supported": true})
+	s.transferUpdate(id, map[string]interface{}{"state": "completed", "stage": "completed", "filename": filename, "destination_path": target, "transferred_bytes": size, "total_bytes": size, "progress_supported": true})
 	return nil
 }
 

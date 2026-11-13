@@ -100,16 +100,16 @@ func TestConflictMixedTypesAndUploadCommit(t *testing.T) {
 	dst := filepath.Join(root, "upload.txt")
 	writeConflictTestFile(t, incoming, "new")
 	writeConflictTestFile(t, dst, "old")
-	if err := stageRemoteTransferFile(context.Background(), incoming, dst, "stop"); err == nil {
+	if _, err := stageRemoteTransferFile(context.Background(), incoming, dst, "stop"); err == nil {
 		t.Fatal("stop overwrote upload")
 	}
-	if err := stageRemoteTransferFile(context.Background(), incoming, dst, "keep_both"); err != nil {
+	if _, err := stageRemoteTransferFile(context.Background(), incoming, dst, "keep_both"); err != nil {
 		t.Fatal(err)
 	}
 	if readConflictTestFile(t, dst) != "old" {
 		t.Fatal("upload overwritten")
 	}
-	if err := stageRemoteTransferFile(context.Background(), incoming, dst, "replace"); err != nil {
+	if _, err := stageRemoteTransferFile(context.Background(), incoming, dst, "replace"); err != nil {
 		t.Fatal(err)
 	}
 	if readConflictTestFile(t, dst) != "new" {
@@ -233,7 +233,7 @@ func TestUploadConflictPolicyValidation(t *testing.T) {
 		if validRemoteUploadPolicy(policy) {
 			t.Fatalf("unexpected policy accepted: %q", policy)
 		}
-		if err := stageRemoteTransferFile(context.Background(), "unused-staged", target, policy); err == nil {
+		if _, err := stageRemoteTransferFile(context.Background(), "unused-staged", target, policy); err == nil {
 			t.Fatalf("invalid policy should reject: %q", policy)
 		}
 		if _, err := os.Stat(target); !os.IsNotExist(err) {

@@ -106,6 +106,18 @@ Server → Client 示例：
 
 Script 使用 `control(domain=script, action=run)`，payload 包含 `script_name`、`source`、`params`、`execution_mode`、`output_mode`；两个运行模式为必填的已解析值。`acmd` 仍使用 `extra`。执行器可返回结构化终态 `data`，如 `{"event_type":"error","failure_reason":"timed_out","text":"…"}` 或 `{"event_type":"cancelled","failure_reason":"cancelled","text":"…"}`；都由唯一 `result(eof=1)` 终结，之前的 stream 输出使用 `eof=0`。
 
+一次性业务请求统一使用 Control：
+
+| Domain | Action | Payload / Result.data |
+| --- | --- | --- |
+| configuration | get | `{}` → 当前配置的 `store_path`、`items` |
+| configuration | set | `{"key":"SCRIPT_DEFAULT_OUTPUT_MODE","value":"stream"}` → 更新后的配置 |
+| configuration | reset | `{"key":"SCRIPT_DEFAULT_OUTPUT_MODE"}` → 恢复后的配置 |
+| watchdog | status | `{}` → 当前 Watchdog 状态对象 |
+| process | kill | `{"pid":1234}` → `{"message":"Process 1234 terminated"}` |
+
+Configuration 的值使用 JSON 原生标量，CLI `set` 与 Web 共用配置校验、覆盖存储和运行时副作用；查询 Script 默认模式不绑定 Script Activity。Watchdog 查询复用既有状态对象，进程/App 实时列表与详情继续走 Device Monitor。Go 支持 Configuration；Watchdog 和 Process UI 仍按现有能力声明限制。Server → Client 文件传输无论从 Web 还是 Terminal 发起，均走 Transfer 协议，不占用 Client 命令执行槽。
+
 Client → Server 示例：
 
 ```json
@@ -210,6 +222,6 @@ Server 接收线程遇到 `socket.error` 后执行连接关闭处理，通知 We
 
 **帧实现。** `backend/client-go/protocol/ratsocket.go` 也使用“4 字节长度头 + JSON 消息体”，但长度头采用 `binary.LittleEndian`、`uint32`，接收通过 `io.ReadFull`。Python 侧使用原生格式有符号整数长度头；两者在常见 little-endian 机器上可以互通，不代表已经实现跨任意字节序的统一封包协议。Go 的 `Send()` 分别用一次 `conn.Write()` 发送头和正文，目前没有 Python 端相应的并发发送锁和短写补发循环；该接收端也未显式规定最大消息长度。
 
-**消息范围。** `backend/client-go/handler/router.go` 支持 `heartbeat`、`command` 与前台取消 `cancel`；可取消命令及 `shell_stream` 能分段返回 `result(eof=0)`，结束时返回 `result(eof=1)`。Remote Files 与 Script 使用各自的 Control Manager；Script 通过外部 Python 执行，支持 subprocess_pipe 的 collect/stream 两种输出。ACMD、PTY、Screen、Clipboard、Monitor 等能力仍按 Client 实际实现和能力声明决定。Heartbeat ACK 包含 `server_ts`、`client_ts` 和当前工作目录，Server 可用原始 `server_ts` 计算 RTT。
+**消息范围。** `backend/client-go/handler/router.go` 支持 `heartbeat`、`command` 与前台取消 `cancel`；可取消命令及 `shell_stream` 能分段返回 `result(eof=0)`，结束时返回 `result(eof=1)`。Remote Files、Script 与 Configuration 使用各自的 Control Manager；Script 通过外部 Python 执行，支持 subprocess_pipe 的 collect/stream 两种输出。ACMD、PTY、Screen、Clipboard、Monitor 等能力仍按 Client 实际实现和能力声明决定。Heartbeat ACK 包含 `server_ts`、`client_ts` 和当前工作目录，Server 可用原始 `server_ts` 计算 RTT。
 
 如需维护这一独立实现，应分别核对 `backend/client-go/protocol/ratsocket.go`、`connection/client.go` 和 `handler/router.go`，而不把这些实现差异混入 Python Client 功能开发步骤。

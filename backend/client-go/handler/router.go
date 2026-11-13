@@ -67,7 +67,11 @@ func Handle(session *executor.Session, msg map[string]interface{}) {
 			return
 		}
 		ctx, cancel := context.WithCancel(context.Background())
-		if !session.BeginShell(id, cancel) {
+		var cancelHandler context.CancelFunc = cancel
+		if control.NonCancellable {
+			cancelHandler = nil
+		}
+		if !session.BeginShell(id, cancelHandler) {
 			cancel()
 			sendResult(session, id, 0, "Client is busy executing a foreground command")
 			return

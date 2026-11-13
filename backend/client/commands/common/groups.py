@@ -1,7 +1,6 @@
 from client.commands.common.mixins.execution_ops import CommandExecutionMixin
 from client.commands.common.mixins.external_tool_ops import CommandExternalToolMixin
 from client.commands.common.mixins.file_cli_ops import CommandFileCliMixin
-from client.commands.common.mixins.file_web_ops import CommandFileWebMixin
 from client.commands.common.mixins.introspection_ops import CommandIntrospectionMixin
 from client.commands.common.mixins.process_ops import CommandProcessMixin
 from client.commands.common.mixins.runtime_config_ops import CommandRuntimeConfigMixin
@@ -24,7 +23,6 @@ class CommonShellCommands(
 
 class CommonFileCommands(
     CommandFileCliMixin,
-    CommandFileWebMixin,
 ):
     """
     文件传输和远程文件管理命令组。

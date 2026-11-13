@@ -1,5 +1,7 @@
 # RCH Client 运行配置指南
 
+Web Configuration 与真实 `set` 命令共享 Client 配置服务、类型/choices 校验、覆盖文件和运行时副作用。Web 使用 `control/configuration/get|set|reset`，返回原生配置对象；`set --json` 仍用于用户诊断。无效枚举值不得写入配置。
+
 ## `set` 命令与 Configuration
 
 RCH 为每台 Client 提供一套可以在线查询和调整的运行配置。它主要用于选择文件传输、Python 执行和 Screen View 的工作策略，以及调整超时、重连、预览与 Watchdog 等行为。
@@ -219,7 +221,7 @@ set --reset-all
 | `COMMAND_DEFAULT_STREAM_TIMEOUT` | `set COMMAND_DEFAULT_STREAM_TIMEOUT 2`；运行持续输出、超过 2 秒的 `shell_stream` 或流式脚本，确认流被超时终止；重置后同一任务正常结束。 |
 | `HTTP_TRANSFER_MODE` | `set HTTP_TRANSFER_MODE legacy`；启动新的 Remote Files 上传/下载任务，检查传输成功且 Legacy 阶段不支持协作取消。`set --reset HTTP_TRANSFER_MODE` 后新任务应使用默认 `cancelable`，显示进度并允许取消。不要用已开始的传输验证策略切换。 |
 | `HTTP_TRANSFER_BUFFER_SIZE` | `set HTTP_TRANSFER_BUFFER_SIZE 65536`；新建一次数十 MiB 的上传/下载并核对内容完整、进度正常；检查新传输策略的读取块大小为 65536 字节（开发测试或调试日志）。重置后应恢复 1048576 字节。 |
-| `PREVIEW_IMAGE_COMPRESS_ENABLED` | `set PREVIEW_IMAGE_COMPRESS_ENABLED true`；通过 `preview_path` 分别预览一张 JPG 和一张 PNG，核对画面正常、上传的是压缩预览，且 PNG 预览会转换为 JPEG；设为 `false` 后重新预览，比较传输后的文件类型/大小。其他文件下载不应变化。 |
+| `PREVIEW_IMAGE_COMPRESS_ENABLED` | `set PREVIEW_IMAGE_COMPRESS_ENABLED true`；通过 Remote File Browser 分别预览一张 JPG 和一张 PNG，核对画面正常、上传的是压缩预览，且 PNG 预览会转换为 JPEG；设为 `false` 后重新预览，比较传输后的文件类型/大小。其他文件下载不应变化。 |
 | `PREVIEW_IMAGE_COMPRESS_QUALITY` | 先启用图片压缩，再 `set PREVIEW_IMAGE_COMPRESS_QUALITY 40`；对同一张 JPG 或 PNG 新建预览，与改成 `90` 后的预览比较 JPEG 预览文件大小和画质；同一个数值同时控制两种来源图片。最后依次重置这两个设置。图片复杂度会影响差异。 |
 | `SCRIPT_DEFAULT_EXECUTION_MODE` | `set SCRIPT_DEFAULT_EXECUTION_MODE subprocess_pipe`；执行一段输出 PID 的 Python 脚本，核对脚本正常输出；对测试长脚本尝试取消，确认能停止子进程。重置为 `inproc` 后再次执行短脚本。 |
 | `SCREEN_FRAME_STRATEGY` | `set SCREEN_FRAME_STRATEGY full_jpeg`；重新打开 Screen View，检查策略标识和正常显示；重置为默认 `keyframe_delta` 后使用 Restart/新建会话，再确认策略标识、关键帧和变化区域刷新。仅在启用 Screen View 的平台提供该设置。 |

@@ -34,6 +34,9 @@ class UploadBuiltinSupport:
             raise FileNotFoundError(f"File does not exist: {filename}")
 
         history_entry_id = self.history_entry_id_provider()
+        foreground = getattr(self.conn, 'get_foreground_task', lambda: None)() or {}
+        if history_entry_id and foreground.get('history_entry_id') != history_entry_id:
+            foreground = {}
 
         event_iter = self.remote_execution_service.iter_upload_events(
             self.conn,
@@ -41,7 +44,8 @@ class UploadBuiltinSupport:
             remote_path='',
             history_entry_id=history_entry_id,
             source='cli',
-            task_id='',
+            task_id=foreground.get('task_id') or '',
+            tab_id=foreground.get('tab_id') or '',
             command=f'upload {os.path.basename(filename)}',
         )
 
@@ -68,7 +72,8 @@ class UploadBuiltinSupport:
             if event.event_type == CommandExecutionEvent.CANCELLED:
                 if event.payload.get('terminal'):
                     continue
-                yield 0, event.text or 'cancelled'
+                yield 0, {**event.payload, 'event_type': CommandExecutionEvent.CANCELLED,
+                          'text': event.text or 'cancelled', 'failure_reason': 'cancelled'}
 
 
 class ScriptBuiltinSupport:
@@ -84,12 +89,16 @@ class ScriptBuiltinSupport:
         self.use_foreground_guard = use_foreground_guard
 
     def _runtime_config(self):
-        if self.use_foreground_guard:
-            return self.remote_execution_service.run_foreground_json_command(
-                self.conn, 'set --json', task_type='runtime_config', source='script_options', track_execution=False)
-        if self.conn is not None:
+        from core.protocol.control import ControlDomain, ConfigurationAction
+        if not self.use_foreground_guard and self.conn is not None:
             self.conn.runtime.set_foreground_cancel_policy('none')
-        return self.remote_execution_service.run_json_command(self.conn, 'set --json', track_execution=False)
+        status, result = self.remote_execution_service.run_foreground_control(
+            self.conn, ControlDomain.CONFIGURATION, ConfigurationAction.GET, {},
+            task_type='runtime_config', source='script_options', track_execution=False,
+            foreground=self.use_foreground_guard)
+        if status != 1 or not isinstance(result, dict):
+            raise RuntimeError(str(result) or 'Unable to read Configuration')
+        return result
 
     def _platform(self):
         info = getattr(self.conn, 'session_info', None)

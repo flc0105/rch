@@ -152,6 +152,16 @@ func (s *RuntimeStore) Set(key, raw string) (string, error) {
 		}
 		value = n
 	}
+	return s.SetValue(key, value)
+}
+
+// SetValue is the structured configuration boundary, shared with CLI Set.
+func (s *RuntimeStore) SetValue(key string, value interface{}) (string, error) {
+	key = strings.ToUpper(strings.TrimSpace(key))
+	opt, ok := runtimeOptions[key]
+	if !ok {
+		return "", fmt.Errorf("unknown runtime config key: %s", key)
+	}
 	normalized, err := checkValue(key, value, opt)
 	if err != nil {
 		return "", err

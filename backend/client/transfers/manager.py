@@ -63,8 +63,8 @@ class ClientTransferManager:
     """
     Client 端独立文件传输任务管理器。
 
-    只承载由 Server 明确下发的 Web/Transfer Center 文件搬运任务，不替代现有
-    upload/download CLI 命令入口。Web 大文件不占 command foreground slot；
+    承载由 Server 明确下发的 Web/Terminal 文件搬运任务。
+    独立 Transfer worker 不占 Client command foreground slot；
     上传目标的同名校验由共享文件系统策略模块负责。
     """
 
@@ -109,6 +109,12 @@ class ClientTransferManager:
 
             context = ExecutionContext(command_id=0, timeout=None)
             owner = _TransferTaskOwner(self.connection, context)
+            # Configure cancellation before publishing the task to the inbound router.
+            strategy = HttpFileTransferService(owner).get_transfer_strategy()
+            if normalized_operation == self.OP_SERVER_TO_CLIENT_FILE:
+                strategy.configure_context_for_download()
+            else:
+                strategy.configure_context_for_upload()
             item = {
                 'transfer_id': normalized_id,
                 'operation': normalized_operation,

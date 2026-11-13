@@ -29,7 +29,7 @@ Remote Files 的修改操作使用 `kind=remote_files`，统一记录为 `create
 
 终端 `upload` 是 Server Builtin；当真实 Transfer 建立时认领原终端提交的 Activity ID，不额外生成 Command Activity，并保留 Quick 最近命令。终端 `download` 是与 `screenshot` 相同的普通 Client 命令，按 `kind=command`、`action=invoke` 正常记录，保留实际派发、输出及 Artifact 关联；不会为了文件内容经 HTTP 上传而改变 Activity 类型或虚构 Transfer Center `transfer_id`。纯文件预览、内部 Job/Script 上传和浏览器下载已生成 Artifact 的 HTTP 请求不自动产生 Transfer Activity。
 
-Transfer Activity 的 `resolved` 只记录已存在的 `transfer_id`（如有）和真实方向，`invocation` 记录文件名、远程路径等业务字段；不保存浏览器上传令牌、暂存 URL、HTTP Body、内部 `receive_file` 的编码载荷或进度明细。Transfer 的 `files` 只关联真正生成的 Server Artifact。清空 Transfer Center 的 Recent 与删除 Activity 相互独立。
+Transfer Activity 的 `resolved` 只记录已存在的 `transfer_id`（如有）和真实方向，`invocation` 记录文件名、远程路径等业务字段；不保存浏览器上传令牌、暂存 URL、HTTP Body、内部 Transfer 请求载荷或进度明细。Transfer 的 `files` 只关联真正生成的 Server Artifact。清空 Transfer Center 的 Recent 与删除 Activity 相互独立。
 
 ### PTY、Screen View、Clipboard 与 Process 操作
 

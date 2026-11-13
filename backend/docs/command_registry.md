@@ -203,7 +203,7 @@ iOS 的命令可见性由 `iOSCommands` 的实际导出方法和 ACMD Registry �
 `system`（`getinfo`、`idletime`、`getuid`、`getpid`、`uptime`、`userenum`）、
 `python`（`piplist`）。`ip` 已不再注册为 Client 命令。
 
-结构化传输入口现在名为 `receive_file`，其原有参数及 HTTP 流程不变。
+Server → Client 文件传输统一使用 `transfer_start` / `transfer_update`，由 TransferManager 执行，不注册内部传输命令。
 iOS 专属 `clipboard_read` / `clipboard_write` 和其他设备命令统一使用 `device` 分组；
 内部 `acmd` 和 Structured Payload 命令按原有执行流程运行。
 

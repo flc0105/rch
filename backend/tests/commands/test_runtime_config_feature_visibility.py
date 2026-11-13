@@ -1,6 +1,6 @@
 """Feature-controlled runtime configuration visibility."""
 import pytest
-from client.commands.common.services.runtime.runtime_config_service import RuntimeConfigService
+from client.config.runtime_config_service import RuntimeConfigService
 from client.config.feature_config import resolve_features
 
 

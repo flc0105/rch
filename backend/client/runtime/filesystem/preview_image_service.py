@@ -9,7 +9,7 @@ from client.runtime.temp_workspace import make_client_temp_dir, cleanup_temp_pat
 @dataclass
 class PreviewUploadFile:
     """
-    preview_path 上传前的文件准备结果。
+    Web 文件预览上传前的文件准备结果。
     """
 
     upload_path: str
@@ -26,8 +26,8 @@ class PreviewImageService:
     前端文件预览专用图片压缩服务。
 
     注意：
-    - 只给 preview_path 使用
-    - 不影响 download_path / download_paths
+    - 只给 Web 文件预览使用
+    - 不影响普通文件下载
     - 不影响 screenshot / webcam / pickupload 等平台命令
     - 启用压缩时，所有支持的图片预览统一转为 JPEG；透明图片会先铺白底
     - PIL 不存在或图片无法处理时，静默回退为原文件上传，只写本地日志

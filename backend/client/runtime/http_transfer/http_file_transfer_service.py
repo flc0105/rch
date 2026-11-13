@@ -368,6 +368,7 @@ class HttpFileTransferService:
                     state='completed',
                     stage='completed',
                     filename=filename,
+                    destination_path=target_path,
                     transferred_bytes=file_size,
                     total_bytes=file_size,
                     progress_supported=True,

@@ -1,3 +1,6 @@
+from core.protocol.control import ControlDomain, ProcessAction
+
+
 class WebProcessControlApi:
     """
     Web 进程控制子外观。
@@ -14,14 +17,17 @@ class WebProcessControlApi:
         self.server = server
         self.remote_execution_service = remote_execution_service
 
-    def _terminate_process(self, client_id: str, pid: int, action: str, name: str = ''):
-        result_text = self.remote_execution_service.run_foreground_text_command(
-            client_id, f'kill_process {int(pid)}', task_type='process', source='web_process',
+    def _terminate_process(self, client_id: str, pid: int):
+        status, result = self.remote_execution_service.run_foreground_control(
+            client_id, ControlDomain.PROCESS, ProcessAction.KILL, {'pid': int(pid)},
+            task_type='process', source='web_process',
         )
-        return {'message': result_text}
+        if status != 1:
+            raise RuntimeError(str(result))
+        return result
 
     def kill_process(self, client_id: str, pid: int, name: str = ''):
-        return self._terminate_process(client_id, pid, 'kill_process', name)
+        return self._terminate_process(client_id, pid)
 
     def kill_app(self, client_id: str, pid: int, name: str = ''):
-        return self._terminate_process(client_id, pid, 'kill_app', name)
+        return self._terminate_process(client_id, pid)

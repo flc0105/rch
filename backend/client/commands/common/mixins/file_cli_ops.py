@@ -1,10 +1,7 @@
 from client.commands.runtime.interrupts import cancel_policy
-import os
-import tempfile
 
 from client.config import runtime_config
 from core.utils.decorator import desc
-from core.utils.output_marker import error, success, info
 
 
 class CommandFileCliMixin:
@@ -32,77 +29,6 @@ class CommandFileCliMixin:
         except Exception as e:
             return 0, f'Failed to download file: {e}'
 
-
-    @desc('Receive a file from server via HTTP', group='file', suggest=False, output='stream')
-    @cancel_policy('cooperative')
-    def receive_file(self, arg=''):
-        """
-        通过普通命令下发 HTTP 拉取任务，由 client 自己去 server 拉文件并保存到本地。
-
-        结构化参数：
-        - relative_url: server 提供的临时下载相对地址
-        - url: 兼容旧字段，完整下载地址
-        - filename: 保存时使用的文件名
-        - save_dir: 目标目录（可空，空则当前工作目录）
-        """
-        try:
-
-            # 如果传输模式为legacy在正式上传之前设置不可取消
-            if runtime_config.HTTP_TRANSFER_MODE == 'legacy':
-                self._set_cancel_policy(
-                    mode='none',
-                    message='Current HTTP transfer mode is legacy; upload cancellation is not supported')
-
-            payload = self.structured_arg_codec.decode(arg)
-            if not isinstance(payload, dict):
-                return 0, error('Invalid HTTP upload payload')
-
-            relative_url = str(payload.get('relative_url') or '').strip()
-            url = str(payload.get('url') or '').strip()
-            filename = str(payload.get('filename') or '').strip()
-            save_dir = str(payload.get('save_dir') or '').strip()
-            transfer_id = str(payload.get('transfer_id') or '').strip()
-
-            if not url:
-                if not relative_url:
-                    return 0, error('url or relative_url is required')
-                url = self.client_api.normalize_file_transfer_url(relative_url)
-            else:
-                url = self.client_api.normalize_file_transfer_url(url)
-
-            if not filename:
-                return 0, error('filename is required')
-
-            target_dir = self.path_resolver.resolve_target_path(save_dir or '.')
-            if os.path.exists(target_dir) and not os.path.isdir(target_dir):
-                return 0, error(f'Target path is not a directory: {target_dir}')
-
-            target_path = os.path.join(target_dir, os.path.basename(filename))
-            from client.runtime.filesystem.conflict_policy import prepare_upload_file_commit
-            commit = prepare_upload_file_commit(target_path, payload.get('conflict_policy', 'stop'))
-            os.makedirs(target_dir, exist_ok=True)
-
-            self._send_info(f'Preparing HTTP download: {url}', 0)
-            fd, staged = tempfile.mkstemp(prefix='.rch-upload-', dir=target_dir)
-            os.close(fd)
-            try:
-                self.http_file_transfer_service.download_file_from_http(
-                    url, staged, transfer_id=transfer_id, commit=commit, display_filename=os.path.basename(filename),
-                )
-            finally:
-                if os.path.lexists(staged):
-                    os.unlink(staged)
-            file_size = os.path.getsize(target_path)
-
-            lines = [
-                success('File saved successfully via HTTP\n'),
-                info(f'Path: {target_path}\n'),
-                info(f'Size: {file_size} bytes'),
-            ]
-            return 1, ''.join(lines)
-
-        except Exception as e:
-            return 0, error(f'Failed to receive file via HTTP: {e}')
 
     @desc('Create a ZIP archive', group='file')
     @cancel_policy('cooperative')

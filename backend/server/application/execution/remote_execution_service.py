@@ -1,4 +1,3 @@
-from core.protocol.structured_arg_codec import encode_structured_arg
 from server.application.command.command_types import COMMAND_TYPE_COMMAND
 from server.application.execution.command_stream_service import CommandStreamService
 from server.application.execution.foreground_execution_service import ForegroundExecutionService
@@ -23,8 +22,6 @@ class RemoteExecutionService:
       统一走事件流接口 iter_upload_events，不再保留旧 tuple 流兼容层
     """
 
-    HTTP_RECEIVE_COMMAND_NAME = 'receive_file'
-
     def __init__(self, server, artifact_service=None, transfer_service=None):
         self.server = server
         self.artifact_service = artifact_service
@@ -43,9 +40,6 @@ class RemoteExecutionService:
 
     def get_connection(self, target):
         return self.command_stream_service.get_connection(target)
-
-    def _build_http_receive_command(self, payload: dict) -> str:
-        return f'{self.HTTP_RECEIVE_COMMAND_NAME} {encode_structured_arg(payload)}'
 
     def stream_command(
         self,
@@ -212,15 +206,18 @@ class RemoteExecutionService:
         )
 
     def run_foreground_control(self, target, domain: str, action: str, payload: dict, *,
-                               task_type: str = TASK_TYPE_COMMAND, source: str = 'foreground'):
+                               task_type: str = TASK_TYPE_COMMAND, source: str = 'foreground',
+                               track_execution: bool = True, foreground: bool = True):
         """Run a one-shot typed Control while retaining the foreground task lifecycle."""
         from core.protocol.message_types import MSG_TYPE_CONTROL
         status, result = 0, ''
         progress = []
-        for item in self.stream_foreground_command(
+        stream = self.stream_foreground_command if foreground else self.stream_command
+        options = {'task_type': task_type, 'source': source} if foreground else {}
+        for item in stream(
             target, '', command_type=MSG_TYPE_CONTROL,
             domain=domain, action=action, payload=payload,
-            task_type=task_type, source=source,
+            track_execution=track_execution, **options,
         ):
             status, result = item[0], item[1] if len(item) > 1 else ''
             if isinstance(result, str) and result:
@@ -243,7 +240,6 @@ class RemoteExecutionService:
         tab_id: str = '',
         transfer_id: str = '',
         conflict_policy=None,
-        use_transfer_manager: bool = False,
     ):
         return self.upload_execution_service.iter_upload_events(
             target,
@@ -251,12 +247,10 @@ class RemoteExecutionService:
             remote_path=remote_path,
             display_name=display_name,
             history_entry_id=history_entry_id,
-            build_http_receive_command=self._build_http_receive_command,
             source=source,
             task_id=task_id,
             command=command,
             tab_id=tab_id,
             transfer_id=transfer_id,
             conflict_policy=conflict_policy,
-            use_transfer_manager=use_transfer_manager,
         )

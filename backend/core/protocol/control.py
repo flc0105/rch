@@ -1,6 +1,27 @@
 """Canonical one-shot Control envelope shared by Server and Clients."""
 
 from dataclasses import dataclass
+from enum import Enum
+
+
+class ConfigurationAction(str, Enum):
+    GET = "get"
+    SET = "set"
+    RESET = "reset"
+
+
+class ProcessAction(str, Enum):
+    KILL = "kill"
+
+
+class WatchdogAction(str, Enum):
+    STATUS = "status"
+
+
+class ControlDomain(str, Enum):
+    CONFIGURATION = "configuration"
+    PROCESS = "process"
+    WATCHDOG = "watchdog"
 
 
 @dataclass(frozen=True)

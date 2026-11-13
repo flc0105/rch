@@ -41,7 +41,7 @@ func NewSession(sock *protocol.RATSocket, clientID string) *Session {
 		HostName: host,
 		Cwd:      wd,
 	}
-	session.controlHandlers = map[string]ControlDomain{"remote_files": {Execute: (RemoteFilesManager{}).Execute, CancelledMessage: "Command cancelled"}, "script": {Execute: (ScriptManager{}).Execute, CancelledMessage: "Script cancelled"}}
+	session.controlHandlers = map[string]ControlDomain{"remote_files": {Execute: (RemoteFilesManager{}).Execute, CancelledMessage: "Command cancelled"}, "script": {Execute: (ScriptManager{}).Execute, CancelledMessage: "Script cancelled"}, configurationDomain: {Execute: (ConfigurationManager{}).Execute, NonCancellable: true}}
 	return session
 }
 

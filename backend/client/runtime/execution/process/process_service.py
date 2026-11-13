@@ -315,7 +315,9 @@ class ProcessService:
         终止进程
         """
         try:
-            pid = int(pid.strip())
+            pid = int(pid)
+            if pid <= 0:
+                raise ValueError('PID must be positive')
             proc = psutil.Process(pid)
 
             if get_local_identity().os_alias == 'win':

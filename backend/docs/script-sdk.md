@@ -487,7 +487,7 @@ deletions; a caller must separately scan, preview and validate targets before ac
 The Cleanup and Backup scripts do not yet call this helper.
 
 Client process termination is now a single registered **ACMD** `acmd kill` (the
-Process Manager UI keeps its internal `kill_process <pid>` path):
+Process Manager UI uses the structured `control/process/kill` request):
 
 - `acmd kill` asks for `pid` / `name` / `port`, then the matching value, then shows
   one selectable Preview with all matched processes checked initially.
@@ -505,7 +505,7 @@ Process Manager UI keeps its internal `kill_process <pid>` path):
 Client commands use the existing Client Session Token when invoking an interactive Web task. Process identity and
 port ownership are verified again before signalling, including in `--no-confirm`.
 The public `kill_proc`, `kill_port`, `pkill` and `pgrep` commands are removed.
-The Web UI's `kill_process` handler remains unchanged.
+The Web UI uses the shared process service via `control/process/kill`.
 
 For previews requiring optional boolean choices, add `switches: [{"key": "force", "label": "Force termination", "description": "...", "default": false}]` to the Preview schema. When no switches are requested, existing `approve_preview()` behavior and its boolean return remain unchanged; with switches, the Broker validates the explicitly offered boolean keys before returning them to the requesting Client command.
 

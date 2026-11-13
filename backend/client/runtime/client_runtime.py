@@ -9,6 +9,10 @@ from client.jobs.core.manager import JobManager
 from client.config.feature_config import resolve_features
 from client.monitor.manager import DeviceMonitorManager
 from client.transfers.manager import ClientTransferManager
+from client.config.manager import ConfigurationManager
+from client.watchdog.control import WatchdogControl
+from client.runtime.execution.process.process_control import ProcessManager
+from core.protocol.control import ControlDomain
 
 
 class ClientRuntime:
@@ -38,12 +42,18 @@ class ClientRuntime:
         self.script_manager = ScriptManager(ScriptCommandAccess(
             self.command_executor.sdk_command_names, self.command_executor.resolve_sdk_command,
         ))
+        self.features = dict(features if features is not None else resolve_features())
+        self.configuration_manager = ConfigurationManager(connection, self.features)
+        self.process_manager = ProcessManager()
+        self.watchdog_control = WatchdogControl(connection)
         self.control_dispatcher = ClientControlDispatcher(self.execution, {
             'job': self.job_manager.execute,
             'remote_files': self.remote_files_manager.execute,
             'script': self.script_manager.execute,
+            ControlDomain.CONFIGURATION: self.configuration_manager.execute,
+            ControlDomain.PROCESS: self.process_manager.execute,
+            ControlDomain.WATCHDOG: self.watchdog_control.execute,
         }, cancel_policies={'script': self.script_manager.cancel_policy})
-        self.features = dict(features if features is not None else resolve_features())
         self.pty_manager = None
         self.screen_view_manager = None
         self.clipboard_manager = None
