@@ -391,6 +391,9 @@ func deletePathsPayload(ctx context.Context, s *Session, payload map[string]inte
 		}
 	}
 	result.finish("delete", "")
+	if result.Failed > 0 {
+		return 0, result
+	}
 	return 1, result
 }
 
@@ -484,6 +487,9 @@ func pastePathsPayload(ctx context.Context, s *Session, payload map[string]inter
 		}
 	}
 	result.finish(operation, destination)
+	if result.Failed > 0 {
+		return 0, result
+	}
 	return 1, result
 }
 

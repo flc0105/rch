@@ -1,3 +1,4 @@
+from core.protocol.message_queue import ResultChunk
 from typing import Optional
 
 from core.protocol.message_queue import MessageQueue
@@ -128,7 +129,7 @@ class ClientSessionRuntime:
         return self._execution_runtime.get_foreground_task()
 
     # ------------------ result wait ------------------ #
-    def wait_for_result(self, connection, command_id: int, command: Optional[str], *, results=None, timeout=None):
+    def wait_for_result(self, connection, command_id: int, command: Optional[str], *, results=None, timeout=None, terminal_authoritative=False):
         """
         主线程等待接收结果，并保存执行记录
         """
@@ -146,7 +147,7 @@ class ClientSessionRuntime:
                     except OSError:
                         pass
                     raise TimeoutError('Control request timed out') from None
-                yield status, result
+                yield ResultChunk(status, result, eof, terminal_authoritative)
                 if eof:
                     break
         finally:

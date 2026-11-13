@@ -229,6 +229,15 @@ class WebTaskRunner:
     def _record_task_event(self, context: TaskExecutionContext, event: CommandExecutionEvent, summary: TaskStreamSummary):
         if event.event_type == CommandExecutionEvent.STARTED:
             return
+        if event.payload.get('result_terminal'):
+            summary.terminal_status = event.payload['result_terminal']
+            if event.text:
+                self._publish_stream_chunk(context, event.status, event.text)
+            return
+        if event.payload.get('intermediate_result'):
+            if event.text:
+                self._publish_stream_chunk(context, event.status, event.text)
+            return
 
         if event.event_type == CommandExecutionEvent.PROGRESS:
             if event.text:
@@ -324,13 +333,13 @@ class WebTaskRunner:
             raise ValueError('Control request is required')
         yield CommandExecutionEvent.started(context.command)
         ok = True
-        for status, text in self.remote_execution_service.stream_command(
+        for item in self.remote_execution_service.stream_command(
             context.session, '', command_type=MSG_TYPE_CONTROL,
             domain=control.domain, action=control.action, payload=control.payload,
             history_entry_id=context.history_entry_id,
         ):
-            event = CommandExecutionPipeline.build_output_event(status, text)
-            if event.event_type in (CommandExecutionEvent.ERROR, CommandExecutionEvent.CANCELLED):
+            event = CommandExecutionPipeline.build_result_event(item)
+            if not event.payload.get('intermediate_result') and event.event_type in (CommandExecutionEvent.ERROR, CommandExecutionEvent.CANCELLED):
                 ok = False
             yield event
         yield CommandExecutionEvent.completed(ok)

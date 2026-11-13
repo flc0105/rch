@@ -64,10 +64,6 @@ class ActivityCoordinator:
         if entry_id and isinstance(values, dict) and values:
             self.history_store.write_service.update_activity_resolved(conn, entry_id, values)
 
-    def job_result(self, conn, entry_id, result):
-        if entry_id and isinstance(result, dict):
-            self.history_store.write_service.set_background_job_result(conn, entry_id, result)
-
     def drop(self, entry_id):
         with self._lock:
             self._pending.pop(entry_id, None)
@@ -91,6 +87,9 @@ class ActivityCoordinator:
 
     def append_output(self, conn, entry_id, status, text, eof=0):
         self.history_store.append_output_for_connection(conn, entry_id, status, text, eof)
+
+    def append_request_output(self, conn, entry_id, status, text, eof=0):
+        self.history_store.write_service.append_output_for_connection(conn, entry_id, status, text, eof, request_owned=True)
 
     def update_status(self, conn, entry_id, status):
         if entry_id:

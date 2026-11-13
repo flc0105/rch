@@ -2,6 +2,7 @@ import json
 import os
 
 from core.utils.parsing import split_shell_arguments
+from core.utils.configuration_cli import JSON_FLAGS, ALL_FLAGS, RESET_FLAGS, RESET_ALL_FLAGS
 
 from client.config.manager import ConfigurationManager
 from core.utils.decorator import desc
@@ -63,21 +64,21 @@ class CommandRuntimeConfigMixin:
         if not parts:
             return 1, self._format_runtime_config_listing()
 
-        if parts[0] in ('--json', 'json'):
+        if parts[0] in JSON_FLAGS:
             return 1, json.dumps(
                 self.runtime_config_service.build_config_payload(),
                 ensure_ascii=False,
             )
 
-        if parts[0] in ('--all', 'all'):
+        if parts[0] in ALL_FLAGS:
             return 1, self._format_runtime_config_listing(include_hidden=True)
 
-        if parts[0] in ('--reset', 'reset', '--unset', 'unset'):
+        if parts[0] in RESET_FLAGS:
             if len(parts) != 2:
                 return 0, 'Usage: set --reset KEY'
             return self._reset_runtime_config_key(parts[1])
 
-        if parts[0] in ('--reset-all', 'reset-all', '--unset-all', 'unset-all'):
+        if parts[0] in RESET_ALL_FLAGS:
             return self._reset_all_runtime_config_overrides()
 
         if len(parts) < 2:

@@ -1,6 +1,9 @@
 from core.protocol.message_types import MSG_TYPE_COMMAND, MSG_TYPE_CANCEL, MSG_TYPE_ACMD, MSG_TYPE_CONTROL
 from core.protocol.control import build_control_message, execution_policy, ExecutionPolicy
 from threading import Lock
+import logging
+
+logger = logging.getLogger(__name__)
 from core.utils.timeouts import normalize_positive_timeout
 
 
@@ -60,7 +63,12 @@ class ClientSessionCommandChannel:
         if not track_execution:
             adapter = None
         if adapter is not None:
-            history_entry_id = history_entry_id or adapter.scoped_entry(self.session)
+            try:
+                history_entry_id = adapter.prepare_dispatch(self.session, history_entry_id, command, type,
+                    payload=payload, domain=domain, action=action)
+            except Exception:
+                logger.exception("Unable to prepare request Activity")
+                history_entry_id = ""
         bound_task = self.session.runtime.bind_command_execution(
             data.get('id'),
             session=self.session,
@@ -75,10 +83,12 @@ class ClientSessionCommandChannel:
             self.session.send(data)
         except Exception:
             self.session.runtime.pending_results.remove(data['id'])
+            self.session.runtime.clear_history_entry(data['id'])
+            if adapter is not None and history_entry_id:
+                coordinator.drop(history_entry_id)
             raise
         # Persist only after the transport has accepted an actual Client command.
-        # This is deliberately restricted to explicitly prepared Activity intents:
-        # internal requests and pure Server builtins never create Activity.
+        # The Activity policy has already been evaluated at the request boundary.
         if adapter is not None:
             adapter.dispatch(self.session, history_entry_id, command, type, payload=payload, domain=domain, action=action)
 
@@ -86,7 +96,7 @@ class ClientSessionCommandChannel:
             self.send_cancel(data.get('id'))
 
         results = self.wait_for_result(data.get('id'), command if type == MSG_TYPE_COMMAND else None,
-                                       results=pending, timeout=timeout)
+                                       results=pending, timeout=timeout, terminal_authoritative=type == MSG_TYPE_CONTROL)
         if adapter is not None:
             return adapter.observe_result(self.session, history_entry_id, type, command, results, payload=payload, domain=domain, action=action)
         return results
@@ -96,25 +106,7 @@ class ClientSessionCommandChannel:
         self.session.send(data)
         return data
 
-    def wait_for_result(self, command_id: int, command: str = '', results=None, timeout=None):
-        try:
-            yield from self.session.runtime.wait_for_result(
-                self.session, command_id, command, results=results, timeout=timeout,
-            )
-        except Exception as exc:
-            observer = getattr(self.session.context, 'on_client_request_failed', None)
-            if callable(observer):
-                try:
-                    observer(self.session, MSG_TYPE_CONTROL, command_id, exc)
-                except Exception:
-                    pass
-            raise
-
-
-
-
-
-
-
-
-
+    def wait_for_result(self, command_id: int, command: str = '', results=None, timeout=None, terminal_authoritative=False):
+        yield from self.session.runtime.wait_for_result(
+            self.session, command_id, command, results=results, timeout=timeout, terminal_authoritative=terminal_authoritative,
+        )

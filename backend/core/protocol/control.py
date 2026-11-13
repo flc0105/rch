@@ -72,59 +72,75 @@ class WatchdogAction(ControlValue):
     STATUS = "status"
 
 
+class ActivityPolicy(ControlValue):
+    ALWAYS = "always"
+    OPTIONAL = "optional"
+
+
+@dataclass(frozen=True)
+class ControlActionSpec:
+    policy: ExecutionPolicy
+    activity: ActivityPolicy = ActivityPolicy.ALWAYS
+    record_output: bool = True
+
+
 # Canonical protocol catalog: the Server and Client share the same action policy.
 # This describes the wire contract, not how a Manager executes an action.
 # Edit the policy of each Action here. Keep the Go registration in sync for
 # Actions supported by Go. Independent requests do not occupy the foreground slot.
 _CONTROL_ACTIONS = {
     ControlDomain.JOB: {
-        JobAction.START: ExecutionPolicy.FOREGROUND,
-        JobAction.STOP: ExecutionPolicy.FOREGROUND,
-        JobAction.STOP_ALL: ExecutionPolicy.FOREGROUND,
-        JobAction.PS: ExecutionPolicy.INDEPENDENT,
-        JobAction.STATUS: ExecutionPolicy.INDEPENDENT,
+        JobAction.START: ControlActionSpec(ExecutionPolicy.FOREGROUND),
+        JobAction.STOP: ControlActionSpec(ExecutionPolicy.FOREGROUND),
+        JobAction.STOP_ALL: ControlActionSpec(ExecutionPolicy.FOREGROUND),
+        JobAction.PS: ControlActionSpec(ExecutionPolicy.INDEPENDENT, activity=ActivityPolicy.OPTIONAL, record_output=False),
+        JobAction.STATUS: ControlActionSpec(ExecutionPolicy.INDEPENDENT, activity=ActivityPolicy.OPTIONAL, record_output=False),
     },
     ControlDomain.REMOTE_FILES: {
-        RemoteFilesAction.BROWSE_DIRECTORY: ExecutionPolicy.INDEPENDENT,
-        RemoteFilesAction.CREATE_DIRECTORY: ExecutionPolicy.INDEPENDENT,
-        RemoteFilesAction.RENAME_PATH: ExecutionPolicy.INDEPENDENT,
-        RemoteFilesAction.DELETE_PATHS: ExecutionPolicy.INDEPENDENT,
-        RemoteFilesAction.PASTE_PATHS: ExecutionPolicy.INDEPENDENT,
-        RemoteFilesAction.CREATE_ARCHIVE: ExecutionPolicy.INDEPENDENT,
-        RemoteFilesAction.PEEK_ARCHIVE: ExecutionPolicy.INDEPENDENT,
-        RemoteFilesAction.READ_ARCHIVE_ENTRY: ExecutionPolicy.INDEPENDENT,
-        RemoteFilesAction.EXTRACT_ARCHIVE: ExecutionPolicy.INDEPENDENT,
-        RemoteFilesAction.INSPECT_UPLOAD: ExecutionPolicy.INDEPENDENT,
-        RemoteFilesAction.SAVE_FILE: ExecutionPolicy.INDEPENDENT,
+        RemoteFilesAction.BROWSE_DIRECTORY: ControlActionSpec(ExecutionPolicy.INDEPENDENT, activity=ActivityPolicy.OPTIONAL, record_output=False),
+        RemoteFilesAction.CREATE_DIRECTORY: ControlActionSpec(ExecutionPolicy.INDEPENDENT),
+        RemoteFilesAction.RENAME_PATH: ControlActionSpec(ExecutionPolicy.INDEPENDENT),
+        RemoteFilesAction.DELETE_PATHS: ControlActionSpec(ExecutionPolicy.INDEPENDENT),
+        RemoteFilesAction.PASTE_PATHS: ControlActionSpec(ExecutionPolicy.INDEPENDENT),
+        RemoteFilesAction.CREATE_ARCHIVE: ControlActionSpec(ExecutionPolicy.INDEPENDENT),
+        RemoteFilesAction.PEEK_ARCHIVE: ControlActionSpec(ExecutionPolicy.INDEPENDENT, activity=ActivityPolicy.OPTIONAL, record_output=False),
+        RemoteFilesAction.READ_ARCHIVE_ENTRY: ControlActionSpec(ExecutionPolicy.INDEPENDENT, activity=ActivityPolicy.OPTIONAL, record_output=False),
+        RemoteFilesAction.EXTRACT_ARCHIVE: ControlActionSpec(ExecutionPolicy.INDEPENDENT),
+        RemoteFilesAction.INSPECT_UPLOAD: ControlActionSpec(ExecutionPolicy.INDEPENDENT, activity=ActivityPolicy.OPTIONAL, record_output=False),
+        RemoteFilesAction.SAVE_FILE: ControlActionSpec(ExecutionPolicy.INDEPENDENT),
     },
     ControlDomain.SCRIPT: {
-        ScriptAction.RUN: ExecutionPolicy.FOREGROUND,
+        ScriptAction.RUN: ControlActionSpec(ExecutionPolicy.FOREGROUND),
     },
     ControlDomain.CLIPBOARD: {
-        ClipboardAction.GET: ExecutionPolicy.INDEPENDENT,
-        ClipboardAction.SET: ExecutionPolicy.INDEPENDENT,
+        ClipboardAction.GET: ControlActionSpec(ExecutionPolicy.INDEPENDENT, activity=ActivityPolicy.OPTIONAL, record_output=False),
+        ClipboardAction.SET: ControlActionSpec(ExecutionPolicy.INDEPENDENT, record_output=False),
     },
     ControlDomain.CONFIGURATION: {
-        ConfigurationAction.GET: ExecutionPolicy.INDEPENDENT,
-        ConfigurationAction.SET: ExecutionPolicy.FOREGROUND,
-        ConfigurationAction.RESET: ExecutionPolicy.FOREGROUND,
+        ConfigurationAction.GET: ControlActionSpec(ExecutionPolicy.INDEPENDENT, activity=ActivityPolicy.OPTIONAL, record_output=False),
+        ConfigurationAction.SET: ControlActionSpec(ExecutionPolicy.FOREGROUND, record_output=False),
+        ConfigurationAction.RESET: ControlActionSpec(ExecutionPolicy.FOREGROUND, record_output=False),
     },
     ControlDomain.PROCESS: {
-        ProcessAction.KILL: ExecutionPolicy.INDEPENDENT,
+        ProcessAction.KILL: ControlActionSpec(ExecutionPolicy.INDEPENDENT),
     },
     ControlDomain.WATCHDOG: {
-        WatchdogAction.STATUS: ExecutionPolicy.INDEPENDENT,
+        WatchdogAction.STATUS: ControlActionSpec(ExecutionPolicy.INDEPENDENT, activity=ActivityPolicy.OPTIONAL, record_output=False),
     },
 }
 
 def control_actions(domain):
     """Return the declared action/policy pairs for a domain."""
-    return tuple(_CONTROL_ACTIONS[domain].items())
+    return tuple((action, spec.policy) for action, spec in _CONTROL_ACTIONS[domain].items())
 
 
 def execution_policy(domain, action):
     # Unknown requests use the normal lane and receive an unsupported-action result.
-    return _CONTROL_ACTIONS.get(domain, {}).get(action, ExecutionPolicy.FOREGROUND)
+    return action_spec(domain, action).policy
+
+
+def action_spec(domain, action):
+    return _CONTROL_ACTIONS.get(domain, {}).get(action, ControlActionSpec(ExecutionPolicy.FOREGROUND))
 
 
 @dataclass(frozen=True)

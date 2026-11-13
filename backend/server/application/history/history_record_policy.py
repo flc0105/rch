@@ -2,8 +2,8 @@
 
 A non-empty command is only a *candidate*. The coordinator persists an
 Activity only after an explicit candidate has actually been sent to Client.
-Internal module calls (file browsing, jobs, process polling, upload) do not
-create Activity candidates in this first release.
+Control eligibility is evaluated separately from this ordinary command policy
+at the structured request boundary.
 """
 class CommandHistoryRecordPolicy:
     NON_RECORD_TASK_TYPES = frozenset({'upload', 'remote_file', 'process', 'job_control', 'external_tool'})

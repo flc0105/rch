@@ -113,10 +113,8 @@ class RemoteFilesManager:
                 'source_count': len(resolved_paths),
                 'size': os.path.getsize(archive_path),
             }
-        except CommandCancelledError:
-            return 0, 'Command cancelled'
-        except CommandTimeoutError:
-            return 0, 'Command timed out and was terminated'
+        except (CommandCancelledError, CommandTimeoutError):
+            raise
         except Exception as e:
             return 0, f'Failed to create ZIP archive: {e}'
 
@@ -128,10 +126,8 @@ class RemoteFilesManager:
             archive_path = scope.path_resolver.require_existing_file(payload.get('path', ''))
             result = scope.archive_service.inspect_zip(archive_path)
             return 1, result
-        except CommandCancelledError:
-            return 0, 'Command cancelled'
-        except CommandTimeoutError:
-            return 0, 'Command timed out and was terminated'
+        except (CommandCancelledError, CommandTimeoutError):
+            raise
         except Exception as e:
             return 0, f'Failed to inspect ZIP archive: {e}'
 
@@ -147,10 +143,8 @@ class RemoteFilesManager:
 
             result = scope.archive_service.read_zip_text_entry(archive_path, entry_name)
             return 1, result
-        except CommandCancelledError:
-            return 0, 'Command cancelled'
-        except CommandTimeoutError:
-            return 0, 'Command timed out and was terminated'
+        except (CommandCancelledError, CommandTimeoutError):
+            raise
         except Exception as e:
             return 0, f'Failed to read ZIP entry: {e}'
 
@@ -175,10 +169,8 @@ class RemoteFilesManager:
                 result = scope.archive_service.extract_zip_with_policy(
                     archive_path, resolved_destination, entry_name, 'stop')
             return 1, result
-        except CommandCancelledError:
-            return 0, 'Command cancelled'
-        except CommandTimeoutError:
-            return 0, 'Command timed out and was terminated'
+        except (CommandCancelledError, CommandTimeoutError):
+            raise
         except Exception as e:
             return 0, f'Failed to extract ZIP archive: {e}'
 
@@ -200,10 +192,8 @@ class RemoteFilesManager:
                 recursive_search=recursive_search,
             )
             return 1, result_payload
-        except CommandCancelledError:
-            return 0, 'Command cancelled'
-        except CommandTimeoutError:
-            return 0, 'Command timed out and was terminated'
+        except (CommandCancelledError, CommandTimeoutError):
+            raise
         except Exception as e:
             return 0, f'Failed to browse directory: {e}'
 
@@ -220,11 +210,10 @@ class RemoteFilesManager:
             if not isinstance(paths, list) or not paths:
                 return 0, 'paths is required and must be a non-empty list'
 
-            return 1, scope.file_system_service.delete_paths(paths).to_dict()
-        except CommandCancelledError:
-            return 0, 'Command cancelled'
-        except CommandTimeoutError:
-            return 0, 'Command timed out and was terminated'
+            result = scope.file_system_service.delete_paths(paths)
+            return int(result.failed == 0), result.to_dict()
+        except (CommandCancelledError, CommandTimeoutError):
+            raise
         except Exception as e:
             return 0, f'Failed to delete paths: {e}'
 
@@ -238,10 +227,8 @@ class RemoteFilesManager:
 
             scope.file_system_service.create_directory(target_path)
             return 1, f'Directory created: {target_path}'
-        except CommandCancelledError:
-            return 0, 'Command cancelled'
-        except CommandTimeoutError:
-            return 0, 'Command timed out and was terminated'
+        except (CommandCancelledError, CommandTimeoutError):
+            raise
         except Exception as e:
             return 0, f'Failed to create directory: {e}'
 
@@ -260,10 +247,8 @@ class RemoteFilesManager:
                 new_path=new_path
             )
             return 1, f'Renamed to: {renamed_path}'
-        except CommandCancelledError:
-            return 0, 'Command cancelled'
-        except CommandTimeoutError:
-            return 0, 'Command timed out and was terminated'
+        except (CommandCancelledError, CommandTimeoutError):
+            raise
         except Exception as e:
             return 0, f'Failed to rename path: {e}'
 
@@ -305,11 +290,9 @@ class RemoteFilesManager:
             if policies is not None and (not isinstance(policies, list) or len(policies) != len(raw_paths)):
                 return 0, 'Invalid conflict policies'
             result = scope.file_system_service.paste_paths(raw_paths, destination_dir, operation, policies=policies, inspect=inspect)
-            return 1, result if inspect else result.to_dict()
-        except CommandCancelledError:
-            return 0, 'Command cancelled'
-        except CommandTimeoutError:
-            return 0, 'Command timed out and was terminated'
+            return (1, result) if inspect else (int(result.failed == 0), result.to_dict())
+        except (CommandCancelledError, CommandTimeoutError):
+            raise
         except Exception as e:
             return 0, f'Failed to paste paths: {e}'
 
@@ -342,9 +325,7 @@ class RemoteFilesManager:
 
             return 1, f'File saved successfully\nPath: {target_path}\nSize: {file_size} bytes\nEncoding: {encoding}'
 
-        except CommandCancelledError:
-            return 0, 'Command cancelled'
-        except CommandTimeoutError:
-            return 0, 'Command timed out and was terminated'
+        except (CommandCancelledError, CommandTimeoutError):
+            raise
         except Exception as e:
             return 0, f'Failed to save file: {e}'

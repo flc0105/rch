@@ -50,7 +50,7 @@ function queueClientRead(clientId, request) {
       try {
         return await request()
       } catch (error) {
-        const busy = /^Client is busy(?::|$)/i.test(String(error?.message || ''))
+        const busy = /^Another operation is running on this client\./i.test(String(error?.message || ''))
         if (!busy || attempt >= CLIENT_BUSY_RETRY_DELAYS_MS.length) throw error
         await new Promise(resolve => setTimeout(resolve, CLIENT_BUSY_RETRY_DELAYS_MS[attempt]))
       }

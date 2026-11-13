@@ -7,12 +7,13 @@ import json
 import shlex
 import uuid
 
-from core.protocol.control import ControlDomain
+from core.protocol.control import ControlDomain, ScriptAction
+from server.application.history.control_activity import should_record, describe_control, capture_output, command_control_identity, describe_result
+from core.protocol.message_queue import result_terminal_status
 from server.application.command.command_types import COMMAND_TYPE_CONTROL
-from core.protocol.job_control import validate_job_control_result
 from core.protocol.structured_arg_codec import decode_structured_arg
 from server.application.history.activity_definitions import (
-    ActivityAction, ActivityKind, ActivityOperation, JOB_ACTIVITY_ACTIONS,
+    ActivityAction, ActivityKind, ActivityOperation,
 )
 from server.application.history.history_record_policy import CommandHistoryRecordPolicy
 from server.application.history.activity_bindings import xt_cli_mutation
@@ -101,13 +102,13 @@ class CommandDispatchAdapter:
             raise
         finally:
             self._scope.reset(token)
-        if entry_id:
+        if entry_id and operation.kind in tuple(ControlDomain):
+            self.coordinator.drop(entry_id)
+        elif entry_id:
             try:
                 status, message, details = evaluate_operation(operation, result)
                 if details:
                     self.coordinator.details(conn, entry_id, details)
-                    if operation.kind == ActivityKind.BACKGROUND_JOB:
-                        self.coordinator.job_result(conn, entry_id, details)
                 if message:
                     self.coordinator.append_output(conn, entry_id, int(status == 'success'), message)
                 self.coordinator.finish(conn, entry_id, status == 'success', status=status)
@@ -140,7 +141,7 @@ class CommandDispatchAdapter:
             presentation = str(metadata.get('quick_action_presentation') or 'dialog')
             arguments = {'values': metadata.get('quick_action_arguments') or []}
         elif metadata.get('script_run'):
-            kind, action, origin = ActivityKind.SCRIPT, ActivityAction.RUN, 'web_ui'
+            kind, action, origin = ControlDomain.SCRIPT, ScriptAction.RUN, 'web_ui'
             target = str(metadata.get('script_run_name') or '')
             text = target or text
             arguments = dict(metadata.get('script_run_arguments') or {})
@@ -173,21 +174,12 @@ class CommandDispatchAdapter:
             kind = pending['kind']
             command_type = str(plan.get('command_type') or 'command')
             alias_name = str(plan.get('alias_name') or '').strip()
-            if ((command_type == COMMAND_TYPE_CONTROL and plan.get('domain') == ControlDomain.SCRIPT)
-                    and kind != ActivityKind.ALIAS):
-                kind = ActivityKind.SCRIPT
-                pending['action'] = ActivityAction.RUN
-                request = plan.get('payload') or {}
-                pending['invocation']['target'] = request.get('script_name', '')
-                pending['invocation']['arguments'] = request.get('params', {})
-            elif alias_name:
+            if alias_name:
                 kind = ActivityKind.ALIAS
                 pending['invocation'].setdefault('target', alias_name)
             pending['kind'] = kind
             pending['resolved'] = {'command_type': command_type}
-            if command_type == COMMAND_TYPE_CONTROL and plan.get('domain') == ControlDomain.SCRIPT:
-                pending['resolved'].update({key: plan['payload'][key] for key in ('execution_mode', 'output_mode') if key in plan['payload']})
-            else:
+            if command_type != COMMAND_TYPE_CONTROL:
                 pending['resolved']['command'] = str(command or '')
         self.coordinator.mutate_pending(conn, activity_id, update)
 
@@ -205,31 +197,32 @@ class CommandDispatchAdapter:
     def suppress_query(self, conn, activity_id):
         self.coordinator.drop(activity_id)
 
+    def prepare_dispatch(self, conn, entry_id, command, command_type, *, payload=None, domain='', action=''):
+        identity = command_control_identity(command) if command_type == 'command' else None
+        if identity is not None:
+            domain, action, payload = identity
+        elif command_type != COMMAND_TYPE_CONTROL:
+            return entry_id or self.scoped_entry(conn)
+        if not should_record(domain, action):
+            # Explicit terminal submission is separate from an internal lookup.
+            if entry_id:
+                self.coordinator.drop(entry_id)
+            return ''
+        candidate = entry_id or self.scoped_entry(conn)
+        previous = self.coordinator.pending(conn, candidate) if candidate else None
+        # A nested lookup must not consume a parent operation's prepared entry.
+        if candidate and (previous is None or previous['kind'] not in (domain, ActivityKind.COMMAND, ActivityKind.ALIAS)):
+            candidate, previous = '', None
+        operation = describe_control(domain, action, payload, previous)
+        if identity is not None:
+            from dataclasses import replace
+            # Preserve CLI presentation without retaining raw configuration values.
+            operation = replace(operation, text='', resolved={**operation.resolved, 'command_type': command_type})
+        return self.coordinator.prepare(conn, operation, entry_id=candidate)
+
     def dispatch(self, conn, entry_id, command, command_type, *, payload=None, domain='', action=''):
-        entry_id = entry_id or self.scoped_entry(conn)
         if not entry_id:
             return ''
-        if command_type == COMMAND_TYPE_CONTROL and domain == ControlDomain.SCRIPT:
-            def record_modes(pending):
-                pending['resolved'].update({key: payload[key] for key in ('execution_mode', 'output_mode') if key in payload})
-            self.coordinator.mutate_pending(conn, entry_id, record_modes)
-        if command_type == COMMAND_TYPE_CONTROL and domain == ControlDomain.JOB:
-            request = payload if isinstance(payload, dict) else {}
-            job_action = JOB_ACTIVITY_ACTIONS.get(action)
-            if job_action:
-                args = {key: str(request[key]) for key in ('job_name', 'job_key', 'execution_mode')
-                        if key in request}
-                def promote(pending):
-                    pending['kind'] = ActivityKind.BACKGROUND_JOB
-                    pending['action'] = job_action
-                    pending['resolved'] = {'command_type': COMMAND_TYPE_CONTROL}
-                    # Terminal input remains the original user command. Web callers
-                    # already provided their structured arguments when preparing.
-                    if not pending['invocation'].get('input') and not pending['invocation'].get('arguments'):
-                        pending['invocation']['arguments'] = args
-                self.coordinator.mutate_pending(conn, entry_id, promote)
-            else:
-                return entry_id
         if CommandHistoryRecordPolicy.is_internal_external_tool_command(command):
             row = self.coordinator.pending(conn, entry_id)
             if row is None:
@@ -265,23 +258,61 @@ class CommandDispatchAdapter:
         return entry_id
 
     def observe_result(self, conn, entry_id, command_type, command, rows, *, payload=None, domain='', action=''):
-        """Read a completed command result once; preserve the iterator and raw Client output."""
-        if command_type != COMMAND_TYPE_CONTROL or domain != ControlDomain.JOB:
+        identity = command_control_identity(command) if command_type == 'command' else None
+        if identity is not None:
+            domain, action, payload = identity
+        elif command_type != COMMAND_TYPE_CONTROL:
             yield from rows
             return
-        last = None
-        for item in rows:
-            last = item
-            yield item
-        if last is None or not entry_id:
-            return
+        final = None
         try:
-            if action not in JOB_ACTIVITY_ACTIONS:
-                return
-            result = validate_job_control_result(last[1], action)
-            self.coordinator.job_result(conn, entry_id, result)
-        except (ValueError, TypeError, KeyError, IndexError):
-            return
+            for item in rows:
+                status, result = item[:2]
+                if hasattr(item, 'eof'):
+                    item.terminal_authoritative = True
+                if not entry_id:
+                    yield item
+                    continue
+                if getattr(item, 'eof', False):
+                    final = result_terminal_status(status, result)
+                try:
+                    if capture_output(domain, action):
+                        message = (result.get('message') or result.get('text')
+                                   if isinstance(result, dict) else result)
+                        if message is None and isinstance(result, dict):
+                            message = json.dumps(result, ensure_ascii=False)
+                        if message:
+                            self.coordinator.append_request_output(conn, entry_id, status, str(message), getattr(item, 'eof', False))
+                except Exception:
+                    logger.exception('Unable to record request output')
+                if final is not None:
+                    try:
+                        self._finish_control(conn, entry_id, domain, action, result, final)
+                    except Exception:
+                        logger.exception('Unable to finish request Activity')
+                yield item
+            if entry_id and final is None:
+                try:
+                    self.coordinator.finish(conn, entry_id, False, status='interrupted')
+                except Exception:
+                    logger.exception("Unable to finalize request Activity")
+        except BaseException as exc:
+            if entry_id and final is None:
+                final = ('timed_out' if isinstance(exc, TimeoutError) else
+                         'interrupted' if isinstance(exc, (ConnectionError, EOFError, GeneratorExit)) else 'error')
+                try:
+                    self.coordinator.finish(conn, entry_id, False, status=final)
+                except Exception:
+                    logger.exception("Unable to finalize request Activity")
+            raise
+
+    def _finish_control(self, conn, entry_id, domain, action, result, final):
+        try:
+            details = describe_result(domain, action, result)
+            if details:
+                self.coordinator.details(conn, entry_id, details)
+        finally:
+            self.coordinator.finish(conn, entry_id, final == 'success', status=final)
 
 
 def evaluate_operation(operation, result):
@@ -309,14 +340,4 @@ def evaluate_operation(operation, result):
         if instance:
             summary += f' ({instance})'
         return ('success' if ok else 'error', summary + (' completed' if ok else ' failed'), {})
-    if operation.kind == ActivityKind.BACKGROUND_JOB and isinstance(result, dict):
-        return 'success', str(result.get('message') or ''), result
-    if operation.kind == ActivityKind.REMOTE_FILES:
-        if isinstance(result, dict):
-            if 'failed' in result and result.get('failed'):
-                return 'error', str(result.get('message') or 'Remote file operation failed'), {}
-            return 'success', str(result.get('message') or json.dumps(result, ensure_ascii=False)), {}
-        return 'success', str(result), {}
-    if operation.kind == ActivityKind.PROCESS:
-        return 'success', str((result or {}).get('message') or ''), {}
     return 'success', '', {}

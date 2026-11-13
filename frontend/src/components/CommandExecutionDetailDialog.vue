@@ -290,9 +290,9 @@ export default {
 
   methods: {
     getActivityResolved(entry) {
-      if (entry?.kind === 'background_job') {
+      if (entry?.kind === 'job') {
         const result = entry.resolved || {}
-        if (entry.action === 'stop_all_jobs') {
+        if (entry.action === 'stop_all') {
           // Missing counts in earlier records must not be presented as real zeros.
           if (!['total', 'succeeded', 'failed'].every(key => Number.isInteger(result[key]))) {
             return 'Stop all jobs'
@@ -311,7 +311,7 @@ export default {
       if (entry?.kind === 'external_tool' && entry?.action === 'run_exec') {
         return entry?.invocation?.input || '-'
       }
-      if (['remote_files', 'external_tool', 'background_job', 'pty', 'screen_view', 'clipboard', 'process'].includes(entry?.kind) || (entry?.kind === 'transfer' && !entry?.invocation?.input)) {
+      if (['remote_files', 'external_tool', 'job', 'pty', 'screen_view', 'clipboard', 'process', 'configuration', 'watchdog'].includes(entry?.kind) || (entry?.kind === 'transfer' && !entry?.invocation?.input)) {
         return JSON.stringify(entry.invocation?.arguments || {}, null, 2)
       }
       return entry?.invocation?.input || '-'

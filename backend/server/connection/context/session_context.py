@@ -43,7 +43,6 @@ class ClientSessionContext:
         self.on_screen_input_error = None
         self.on_client_message_send = None
         self.on_client_message_received = None
-        self.on_client_request_failed = None
         self.on_monitor_opened = None
         self.on_monitor_snapshot = None
         self.on_monitor_error = None

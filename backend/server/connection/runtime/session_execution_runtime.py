@@ -67,11 +67,7 @@ class SessionExecutionRuntime:
 
         with self._lock:
             if self._task is not None:
-                current = self._task
-                raise RuntimeError(
-                    'Client is busy: '
-                    f'{current.get("command") or current.get("task_type") or "running task"}'
-                )
+                raise RuntimeError('Another operation is running on this client. Please try again when it finishes.')
 
             self._task = task_info
             self._notify_task_changed()

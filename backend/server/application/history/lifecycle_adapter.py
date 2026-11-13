@@ -7,11 +7,10 @@ from datetime import datetime
 from core.protocol.message_types import (
     MSG_TYPE_PTY_OPEN, MSG_TYPE_PTY_CLOSE, MSG_TYPE_PTY_OPENED, MSG_TYPE_PTY_CLOSED, MSG_TYPE_PTY_ERROR,
     MSG_TYPE_SCREEN_OPEN, MSG_TYPE_SCREEN_CLOSE, MSG_TYPE_SCREEN_OPENED, MSG_TYPE_SCREEN_CLOSED, MSG_TYPE_SCREEN_ERROR,
-    MSG_TYPE_CONTROL, MSG_TYPE_RESULT, MSG_TYPE_TRANSFER_START,
+    MSG_TYPE_TRANSFER_START,
 )
-from core.protocol.control import ControlDomain, ClipboardAction
 from server.application.history.activity_definitions import (
-    ActivityAction, ActivityKind, ActivityOperation, clipboard_arguments,
+    ActivityAction, ActivityKind, ActivityOperation,
 )
 
 logger = logging.getLogger(__name__)
@@ -45,7 +44,6 @@ class LifecycleAdapter:
         self._active = {}
         self._transfers = {}
         self._transfer_service = None
-        self._clipboard_scope = contextvars.ContextVar('rch_clipboard_activity', default=None)
         self._close_scope = contextvars.ContextVar('rch_session_activity_close', default=None)
 
     def bind_transfer_service(self, transfer_service):
@@ -54,14 +52,6 @@ class LifecycleAdapter:
     @staticmethod
     def _key(conn, kind, identifier):
         return id(conn), kind, str(identifier)
-
-    def clipboard_call(self, client_id, payload, action, arguments, execute):
-        """Scoped facts from the prepared clipboard operation; no transport API changes."""
-        token = self._clipboard_scope.set((action, arguments or {}))
-        try:
-            return execute()
-        finally:
-            self._clipboard_scope.reset(token)
 
     def close_call(self, kind, identifier, reason, execute):
         token = self._close_scope.set((kind, str(identifier), reason))
@@ -88,41 +78,16 @@ class LifecycleAdapter:
                 logger.exception('Unable to create transfer Activity')
             return result
         spec = self._OPEN.get(msg_type)
-        if msg_type == MSG_TYPE_CONTROL and data.get('domain') == ControlDomain.CLIPBOARD and data.get('action') == ClipboardAction.SET:
-            spec = (ActivityKind.CLIPBOARD, 'id')
         if spec is None:
             return send(data)
         kind, field = spec
         identifier = str(data.get(field) or '')
         if not identifier:
             return send(data)
-        if kind == ActivityKind.CLIPBOARD:
-            scope = self._clipboard_scope.get()
-            if scope is None:
-                payload = data.get('payload') if isinstance(data.get('payload'), dict) else {}
-                format_kind = payload.get('kind')
-                action = {'text': ActivityAction.SET_TEXT, 'image': ActivityAction.SET_IMAGE,
-                          'files': ActivityAction.SET_FILES}.get(format_kind)
-                if action is None:
-                    return send(data)
-                values = {'text': str(payload.get('text') or '')[:2048],
-                          'length': len(str(payload.get('text') or '')),
-                          'truncated': len(str(payload.get('text') or '')) > 2048} if action == ActivityAction.SET_TEXT else {}
-            else:
-                action, values = scope
-                if action == ActivityAction.SET_TEXT and not values and isinstance(data.get('payload'), dict):
-                    text = str(data['payload'].get('text') or '')
-                    values = {'text': text[:2048], 'length': len(text), 'truncated': len(text) > 2048}
-            try:
-                arguments = clipboard_arguments(action, values)
-            except (ValueError, TypeError, KeyError):
-                logger.exception('Invalid Clipboard Activity metadata')
-                return send(data)
-        else:
-            action = ActivityAction.SESSION
-            arguments = {'session_id': identifier}
-            if kind == ActivityKind.PTY:
-                arguments['shell'] = str(data.get('shell') or '')
+        action = ActivityAction.SESSION
+        arguments = {'session_id': identifier}
+        if kind == ActivityKind.PTY:
+            arguments['shell'] = str(data.get('shell') or '')
         try:
             entry_id = self.coordinator.prepare(conn, ActivityOperation(
                 kind, action, arguments, resolved={'command_type': msg_type}))
@@ -158,8 +123,6 @@ class LifecycleAdapter:
 
     def received(self, conn, data):
         spec = self._RESULT.get(data.get('type'))
-        if data.get('type') == MSG_TYPE_RESULT and data.get('eof'):
-            spec = (ActivityKind.CLIPBOARD, 'id')
         if spec is None:
             return
         kind, field = spec
@@ -217,24 +180,6 @@ class LifecycleAdapter:
             self._finish(key, state, 'error', {
                 'end_reason': 'error', 'error': str(data.get('message') or '')[:256],
             })
-        elif kind == ActivityKind.CLIPBOARD and event == MSG_TYPE_RESULT:
-            ok = data.get('status') == 1
-            result = data.get('data') or {}
-            status = ('success' if ok else 'cancelled' if result.get('event_type') == 'cancelled' else
-                      'timed_out' if result.get('failure_reason') == 'timed_out' else 'error')
-            self._finish(key, state, status)
-
-    def request_failed(self, conn, message_type, request_id, exc):
-        if message_type != MSG_TYPE_CONTROL:
-            return
-        key = self._key(conn, ActivityKind.CLIPBOARD, request_id)
-        with self._lock:
-            state = self._active.get(key)
-            if state is not None:
-                status = ('timed_out' if isinstance(exc, TimeoutError) else
-                          'interrupted' if str(exc) == 'Client disconnected' else 'error')
-                self._finish(key, state, status)
-
     def _finish(self, key, state, status, details=None):
         self._active.pop(key, None)
         if details:
@@ -352,32 +297,6 @@ class LifecycleAdapter:
                     return result
                 return invoke
         return ArtifactFacade()
-
-    def instrument_clipboard(self, service):
-        """Scope the existing clipboard operation facts outside the request service."""
-        import functools
-        import inspect
-
-        adapter = self
-        class ClipboardFacade:
-            def __setattr__(self, name, value):
-                setattr(service, name, value)
-
-            def __getattr__(self, name):
-                original = getattr(service, name)
-                if name != 'set_clipboard':
-                    return original
-
-                @functools.wraps(original)
-                def invoke(*args, **kwargs):
-                    bound = inspect.signature(original).bind(*args, **kwargs)
-                    bound.apply_defaults()
-                    data = bound.arguments
-                    return adapter.clipboard_call(data['client_id'], data['payload'],
-                        data.get('action') or '', data.get('arguments') or {},
-                        lambda: original(*args, **kwargs))
-                return invoke
-        return ClipboardFacade()
 
     def instrument_closes(self, api, *, kind, method, identifier, reason):
         """Declare user-close context at composition, leaving Web APIs as forwarders."""

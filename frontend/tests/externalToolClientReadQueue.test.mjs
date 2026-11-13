@@ -80,7 +80,7 @@ test('busy only causes a bounded retry of read-only instance list', async () => 
   await withFetch(async () => {
     calls += 1
     return calls === 1
-      ? response({}, 'Client is busy: external_tool_list_instances __json__:abc', 1, 409)
+      ? response({}, 'Another operation is running on this client. Please try again when it finishes.', 1, 409)
       : response({ items: [{ instance_id: 'default' }] })
   }, async () => {
     const result = await loadClientInstances('busy-client', 'sqlite-web.web')
@@ -93,9 +93,9 @@ test('unrelated errors do not retry and side-effecting start commands remain sin
   const paths = []
   await withFetch(async url => {
     paths.push(url)
-    return response({}, 'Client is busy: external_tool_list_instances', 1, 409)
+    return response({}, 'Another operation is running on this client. Please try again when it finishes.', 1, 409)
   }, async () => {
-    await assert.rejects(startClientInstance('writes-client', 'sqlite-web.web'), /Client is busy/)
+    await assert.rejects(startClientInstance('writes-client', 'sqlite-web.web'), /Another operation is running/)
     assert.equal(paths.length, 1, 'start must never be automatically retried')
   })
   let calls = 0

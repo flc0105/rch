@@ -495,7 +495,6 @@ class WebConnectionService:
         if lifecycle is not None:
             session.context.on_client_message_send = lifecycle.dispatch
             session.context.on_client_message_received = lifecycle.received
-            session.context.on_client_request_failed = lifecycle.request_failed
         session.context.command_dispatch_adapter = getattr(self.server, 'command_adapter', None)
         session.context.artifact_service = self.artifact_service
         session.context.client_session_token_service = self.client_session_token_service

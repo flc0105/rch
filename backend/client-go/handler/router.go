@@ -101,7 +101,7 @@ func Handle(session *executor.Session, msg map[string]interface{}) {
 			if spec.Policy == executor.Independent {
 				sendResult(session, id, 0, "Independent Control capacity exhausted")
 			} else {
-				sendResult(session, id, 0, "Client is busy executing a foreground command")
+				sendResult(session, id, 0, "Another operation is running on this client. Please try again when it finishes.")
 			}
 			return
 		}
@@ -119,7 +119,7 @@ func Handle(session *executor.Session, msg map[string]interface{}) {
 				// otherwise keep the existing generic cancellation result.
 				data, structured := result.(map[string]interface{})
 				if !structured || (data["failure_reason"] != "cancelled" && data["failure_reason"] != "timed_out") {
-					status, result = 0, control.CancelledMessage
+					status, result = 0, map[string]interface{}{"event_type": "cancelled", "failure_reason": "cancelled", "text": control.CancelledMessage}
 				}
 			}
 			response := map[string]interface{}{"type": "result", "id": id, "status": status, "cwd": session.CurrentDirectory(), "eof": 1}
@@ -154,7 +154,7 @@ func Handle(session *executor.Session, msg map[string]interface{}) {
 		name := strings.ToLower(parts[0])
 		if spec, registered := executor.LookupCommand(name); registered && spec.Runner == nil {
 			if session.HasActiveShell() {
-				sendResult(session, id, 0, "Client is busy executing a shell command")
+				sendResult(session, id, 0, "Another operation is running on this client. Please try again when it finishes.")
 				return
 			}
 			status, result := session.Dispatch(id, cmd)
@@ -164,7 +164,7 @@ func Handle(session *executor.Session, msg map[string]interface{}) {
 		ctx, cancel := context.WithCancel(context.Background())
 		if !session.BeginShell(id, cancel) {
 			cancel()
-			sendResult(session, id, 0, "Client is busy executing a shell command")
+			sendResult(session, id, 0, "Another operation is running on this client. Please try again when it finishes.")
 			return
 		}
 		go func() {

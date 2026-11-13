@@ -196,7 +196,7 @@ func TestRemoteDirectoryMutationsAndNoOverwrite(t *testing.T) {
 		t.Fatal("deleted file still exists")
 	}
 	status, output = executeRemote(t, s, remoteRequest("delete_paths", map[string]interface{}{"paths": []string{string(filepath.Separator)}}))
-	if status != 1 || !strings.Contains(output, `"failed":1`) {
+	if status != 0 || !strings.Contains(output, `"failed":1`) {
 		t.Fatalf("root path deletion must be rejected in batch results: %d %s", status, output)
 	}
 	status, _ = executeRemote(t, s, remoteRequest("delete_paths", map[string]interface{}{"paths": []string{"dir one"}}))
@@ -220,7 +220,7 @@ func TestRemoteBatchCopyMoveDeleteKeepsSourceAndDoesNotOverwrite(t *testing.T) {
 	}
 	cmd := remoteRequest("paste_paths", map[string]interface{}{"paths": []string{"a/file.txt", "b/file.txt"}, "destination_dir": "copy-dest", "operation": "copy"})
 	status, text := executeRemote(t, s, cmd)
-	if status != 1 {
+	if status != 0 {
 		t.Fatal(text)
 	}
 	result := decodeRemoteResult(t, text)
@@ -241,11 +241,11 @@ func TestRemoteBatchCopyMoveDeleteKeepsSourceAndDoesNotOverwrite(t *testing.T) {
 		t.Fatal("move kept source")
 	}
 	status, text = executeRemote(t, s, remoteRequest("paste_paths", map[string]interface{}{"paths": []string{"move-dest"}, "destination_dir": "move-dest", "operation": "copy"}))
-	if status != 1 || decodeRemoteResult(t, text)["failed"] != float64(1) {
+	if status != 0 || decodeRemoteResult(t, text)["failed"] != float64(1) {
 		t.Fatalf("expected batch rejection of directory into itself: %d %s", status, text)
 	}
 	status, text = executeRemote(t, s, remoteRequest("delete_paths", map[string]interface{}{"paths": []string{"move-dest/file.txt", "missing"}}))
-	if status != 1 || decodeRemoteResult(t, text)["failed"] != float64(1) {
+	if status != 0 || decodeRemoteResult(t, text)["failed"] != float64(1) {
 		t.Fatalf("expected partial deletion: %d %s", status, text)
 	}
 }

@@ -95,7 +95,7 @@ class ScriptBuiltinSupport:
             self.conn.runtime.set_foreground_cancel_policy('none')
         status, result = self.remote_execution_service.run_foreground_control(
             self.conn, ControlDomain.CONFIGURATION, ConfigurationAction.GET, {},
-            task_type='runtime_config', source='script_options', track_execution=False,
+            task_type='runtime_config', source='script_options',
             foreground=self.use_foreground_guard)
         if status != 1 or not isinstance(result, dict):
             raise RuntimeError(str(result) or 'Unable to read Configuration')

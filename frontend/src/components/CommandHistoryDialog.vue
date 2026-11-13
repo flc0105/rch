@@ -312,7 +312,9 @@
                 <el-option label="Remote Files" value="remote_files" />
                 <el-option label="Transfer" value="transfer" />
                 <el-option label="External Tool" value="external_tool" />
-                <el-option label="Background Job" value="background_job" />
+                <el-option label="Background Job" value="job" />
+                <el-option label="Configuration" value="configuration" />
+                <el-option label="Watchdog" value="watchdog" />
                 <el-option label="PTY" value="pty" />
                 <el-option label="Screen View" value="screen_view" />
                 <el-option label="Clipboard" value="clipboard" />
@@ -354,7 +356,7 @@
                     </div>
                     <div class="activity-entry-subtitle">
                       <span>{{ formatDateTimeStandard(item.started_at || item.created_at) || '-' }}</span>
-                      <span v-if="['remote_files', 'transfer', 'external_tool', 'background_job', 'pty', 'screen_view', 'clipboard', 'process'].includes(item.kind) || isActivityProblem(item.status)" class="activity-summary-preview" :class="{ 'activity-error-preview': isActivityProblem(item.status) }">{{ buildCommandExecutionSingleLineSummary(item) }}</span>
+                      <span v-if="['remote_files', 'transfer', 'external_tool', 'job', 'pty', 'screen_view', 'clipboard', 'process', 'configuration', 'watchdog'].includes(item.kind) || isActivityProblem(item.status)" class="activity-summary-preview" :class="{ 'activity-error-preview': isActivityProblem(item.status) }">{{ buildCommandExecutionSingleLineSummary(item) }}</span>
                       <span v-if="item.files?.length">{{ item.files.length }} file(s)</span>
                       <span v-if="item.result?.truncated">Truncated</span>
                     </div>
@@ -560,7 +562,7 @@ Star,
   methods: {
     getActivityKindIcon(kind, action) {
       if (kind === 'transfer') return action === 'upload_files' ? ArrowUpToLine : ArrowDownToLine
-      return ({ command: Terminal, alias: Zap, script: FileCode2, remote_files: FolderOpen, external_tool: Wrench, background_job: BriefcaseBusiness,
+      return ({ command: Terminal, alias: Zap, script: FileCode2, remote_files: FolderOpen, external_tool: Wrench, job: BriefcaseBusiness,
         pty: Terminal, screen_view: Monitor, clipboard: Clipboard, process: Activity })[kind] || Terminal
     },
     getActivityStatusIcon(status) {
@@ -571,7 +573,7 @@ Star,
       return Clock3
     },
     buildActivityKindLabel(kind) {
-      return ({ command: 'Command', alias: 'Alias', script: 'Script', remote_files: 'Remote Files', transfer: 'Transfer', external_tool: 'External Tool', background_job: 'Background Job', pty: 'PTY', screen_view: 'Screen View', clipboard: 'Clipboard', process: 'Process' })[kind] || 'Activity'
+      return ({ command: 'Command', alias: 'Alias', script: 'Script', remote_files: 'Remote Files', transfer: 'Transfer', external_tool: 'External Tool', job: 'Background Job', pty: 'PTY', screen_view: 'Screen View', clipboard: 'Clipboard', process: 'Process', configuration: 'Configuration', watchdog: 'Watchdog' })[kind] || 'Activity'
     },
     buildActivityLabel(item) {
       const invocation = item?.invocation || {}
@@ -582,18 +584,20 @@ Star,
       }
       if (item?.kind === 'clipboard') {
         const args = invocation.arguments || {}
+        if (item.action === 'get') return 'Get clipboard'
+        const formatAction = args.format_action
         const label = ({ set_text: 'Set text', set_image: 'Set image', set_files: 'Set files',
-          set_artifact_file: 'Send Artifact file' })[item.action] || 'Set clipboard'
-        if (item.action === 'set_text') {
+          set_artifact_file: 'Send Artifact file' })[formatAction] || 'Set clipboard'
+        if (formatAction === 'set_text') {
           const preview = String(args.text || '').replace(/[\r\n]+/g, ' ').slice(0, 64)
           return preview ? `${label} · ${preview}` : label
         }
-        if (item.action === 'set_image') return args.filename ? `${label} · ${args.filename}` : label
+        if (formatAction === 'set_image') return args.filename ? `${label} · ${args.filename}` : label
         return Array.isArray(args.names) && args.names.length ? `${label} · ${args.names.slice(0, 2).join(', ')}` : label
       }
       if (item?.kind === 'process') {
         const args = invocation.arguments || {}
-        return `${item.action === 'kill_app' ? 'Kill app' : 'Kill process'} ${args.name ? `${args.name} ` : ''}(PID ${args.pid ?? '?'})`
+        return `${args.target_type === 'app' ? 'Kill app' : 'Kill process'} ${args.name ? `${args.name} ` : ''}(PID ${args.pid ?? '?'})`
       }
       if (item?.kind === 'transfer') {
         const args = invocation.arguments || {}
@@ -601,11 +605,13 @@ Star,
         const count = Number(args.count || 1)
         return `${item.action === 'upload_files' ? 'Upload' : 'Download'} ${count > 1 ? `${count} items` : (name || 'file')}`
       }
-      if (item?.kind === 'background_job') {
+      if (item?.kind === 'job') {
         const args = invocation.arguments || {}
-        if (item.action === 'stop_all_jobs') return 'Stop all jobs'
+        if (item.action === 'stop_all') return 'Stop all jobs'
         const name = args.job_name || args.job_key || 'job'
-        return `${item.action === 'start_job' ? 'Start' : 'Stop'} ${name}`
+        if (item.action === 'ps') return 'List jobs'
+        if (item.action === 'status') return `Job status · ${name}`
+        return `${item.action === 'start' ? 'Start' : 'Stop'} ${name}`
       }
       if (item?.kind === 'external_tool') {
         const args = invocation.arguments || {}
@@ -624,17 +630,25 @@ Star,
         const count = Number(args.count || (Array.isArray(args.paths) ? args.paths.length : 1))
         const noun = count === 1 ? 'item' : 'items'
         const actions = {
-          delete_files: `Delete ${count} ${noun}`,
-          rename_files: 'Rename',
-          copy_files: `Copy ${count} ${noun}`,
-          move_files: `Move ${count} ${noun}`,
+          delete_paths: `Delete ${count} ${noun}`,
+          rename_path: 'Rename',
+          paste_paths: `${args.operation === 'move' ? 'Move' : 'Copy'} ${count} ${noun}`,
+          browse_directory: 'Browse directory',
+          peek_archive: 'Inspect archive',
+          read_archive_entry: 'Read archive entry',
+          inspect_upload: 'Inspect upload',
           create_directory: 'Create directory',
           create_archive: `Create archive from ${count} ${noun}`,
           extract_archive: `Extract archive ${args.path || ''}`,
           save_file: `Save file ${args.path || ''}`,
         }
-        return actions[item.action] || item.action || 'Remote Files'
+        return `${args.inspect ? 'Inspect · ' : ''}${actions[item.action] || item.action || 'Remote Files'}`
       }
+      if (item?.kind === 'configuration') {
+        const label = ({ get: 'Get configuration', set: 'Set', reset: 'Reset' })[item.action] || 'Configuration'
+        return `${label} ${invocation.arguments?.key || ''}`.trim()
+      }
+      if (item?.kind === 'watchdog') return 'Watchdog status'
       const fallback = item?.resolved?.command || invocation.input || '-'
       if (item?.kind === 'script') return String(invocation.target || invocation.input || 'Script')
       if (item?.kind === 'alias') return String(invocation.target || invocation.input || 'Alias')
@@ -1173,7 +1187,7 @@ Star,
 
     buildCommandExecutionSummary(item) {
       const status = String(item?.status || '').toLowerCase()
-      if (['remote_files', 'transfer', 'external_tool', 'background_job', 'pty', 'screen_view', 'clipboard', 'process'].includes(item?.kind)) {
+      if (['remote_files', 'transfer', 'external_tool', 'job', 'pty', 'screen_view', 'clipboard', 'process', 'configuration', 'watchdog'].includes(item?.kind)) {
         const firstLine = String(item?.result?.output_records?.[0]?.text || '').split(/\r?\n/)[0].trim()
         if (firstLine && firstLine.length <= 128) return firstLine
       }

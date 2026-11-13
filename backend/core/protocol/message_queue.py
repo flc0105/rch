@@ -48,3 +48,24 @@ class MessageQueue(BaseThreadSafeQueue):
     def put(self, status: int, message: Any, end: int = 1) -> None:
         self._queue.put((status, message, end))
 
+
+
+class ResultChunk(tuple):
+    """A two-value result with its wire EOF retained for stream observers."""
+    def __new__(cls, status, result, eof, terminal_authoritative=False):
+        item = super().__new__(cls, (status, result))
+        item.eof = bool(eof)
+        item.terminal_authoritative = terminal_authoritative
+        return item
+
+
+def result_terminal_status(status, result):
+    """Interpret terminal Result facts; intermediate messages never call this."""
+    if status == 0 and result is None:
+        return 'interrupted'
+    if isinstance(result, dict):
+        if result.get('event_type') == 'cancelled' or result.get('failure_reason') == 'cancelled':
+            return 'cancelled'
+        if result.get('failure_reason') in ('timed_out', 'interrupted'):
+            return result['failure_reason']
+    return 'success' if status == 1 else 'error'

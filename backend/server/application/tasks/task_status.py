@@ -35,6 +35,7 @@ class TaskStreamSummary:
     - 统一推导 success / error / cancelled
     """
 
+    terminal_status: str = ""
     has_failure: bool = False
     has_cancelled_output: bool = False
     has_timeout_output: bool = False
@@ -83,9 +84,11 @@ class TaskStreamSummary:
             self.has_connection_interruption = True
 
     def is_success(self) -> bool:
-        return not self.has_failure
+        return self.terminal_status == WebTaskStatus.SUCCESS if self.terminal_status else not self.has_failure
 
     def resolve_final_status(self, cancel_requested: bool = False) -> str:
+        if self.terminal_status:
+            return self.terminal_status
         if self.has_explicit_cancelled or (cancel_requested and self.has_cancelled_output):
             return WebTaskStatus.CANCELLED
         if self.has_explicit_timeout:

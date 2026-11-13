@@ -231,3 +231,5 @@ Server 接收线程遇到 `socket.error` 后执行连接关闭处理，通知 We
 ### Control 执行策略
 
 Control 的 Domain、Action 和调度策略采用统一的协议定义。Client 在组装业务 Manager 时绑定各 Action 的处理器、必要的请求准备及取消能力。通用调度层只消费注册结果，不解释业务 Payload；Server 依据同一 Action 契约确定调度策略，不允许调用方修改策略。Foreground 继续使用单一前台槽；Independent 请求使用有容量限制的独立工作池，与 Foreground 共用按 ID 关联的 Result 和执行上下文。Clipboard get/set、Remote Files 全部 Action、Configuration get、Watchdog status、Job ps/status、Process kill 为 Independent；Job start/stop/stop_all、Configuration set/reset、Script run 为 Foreground。调度表按 Domain 与 Action 显式声明；Go 的支持范围内使用相同策略。Independent 不改变已登记的 Activity 记录策略。Server 在发送前登记 ID，按 ID 分发输出与 EOF；超时、断线清理等待者，迟到帧不得串入其他请求。取消沿用 target_id 和 cancel_ack，只有实际停止才是 stopped。
+
+Control Action 目录的 `ActivityPolicy` 与 `ExecutionPolicy` 独立。最终 `Result` 的 `eof=1` 和 status/结构化终止原因决定 Activity 终态；`eof=0` 仅为输出，不能累计为最终失败。Remote Files 批量执行任一项失败时外层终态 status=0，原有批量结果（成功、失败、跳过计数及消息）保留供业务界面展示。

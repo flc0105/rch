@@ -4,12 +4,12 @@ Activity Center 与 Quick History 服务不同目的：前者保留**实际向 C
 
 ## Activity 的统一协调边界
 
-Activity 只有一个生命周期所有者：`ActivityCoordinator`，负责操作意图、Client 实际派发确认、持久化、结果写入及最终状态。唯一的持久化实现仍为 `HistoryWriteService`，Quick History 与 Pin 保持独立。所有受支持的 `kind`、`action` 和可保存的展示摘要由 `activity_definitions` 定义，不再由各业务服务拼接历史记录。
+Activity 只有一个生命周期所有者：`ActivityCoordinator`，负责操作意图、Client 实际派发确认、持久化、结果写入及最终状态。唯一的持久化实现仍为 `HistoryWriteService`，Quick History 与 Pin 保持独立。Control 的 `kind` 直接使用协议 Domain，`action` 使用协议 Action；其他生命周期保留各自操作类型。展示摘要由 Activity 投影统一构建。
 
 系统只通过**两种事件适配方式**接入：
 
-- `CommandDispatchAdapter`：普通命令、Alias、Script、Remote Files 修改、External Tool、Job 控制和 Process Kill。显式操作身份在 Application 装配处声明，通用命令通道在消息成功交付传输层后确认派发，Client 结果或同步操作结果结束记录。CLI 的只读 Builtin 以及内部 RPC 不单独产生活动。
-- `LifecycleAdapter`：PTY、Screen View、Clipboard 写入、Transfer，以及已登记 Artifact 对当前命令的关联。监听明确的 Session/Request/Transfer ID 和 Client 回执；早到回执、重复 Close、断线和超时仅更新原有 Activity。文件上传在 Browser→Server 暂存阶段不记 Activity，Client 转交确认后才创建。
+- `CommandDispatchAdapter`：普通命令、Alias、全部 Control Domain 及尚未迁移的 External Tool。Control 记录资格来自 Action 的 ActivityPolicy，业务入口只提供必要展示元数据，通用命令通道在消息成功交付传输层后确认派发；最终 Result/EOF 结束记录。
+- `LifecycleAdapter`：PTY、Screen View、Transfer，以及已登记 Artifact 对当前命令的关联。监听明确的 Session/Request/Transfer ID 和 Client 回执；早到回执、重复 Close、断线和超时仅更新原有 Activity。文件上传在 Browser→Server 暂存阶段不记 Activity，Client 转交确认后才创建。
 
 Application 装配层提供语义绑定，API 负责转发业务请求，业务会话服务负责运行状态，Client 传输层只负责发送和接收。**这些层不负责创建或结束 Activity，也不持有历史 ID 状态机**。Activity 记录失败不可反向阻断已经有效的业务操作；未发生 Client 派发的操作不得生成持久记录。Server 重启后遗留的 `running` Activity 统一结束为 `interrupted`，不建立额外表或协议兼容层。
 
@@ -17,11 +17,11 @@ Application 装配层提供语义绑定，API 负责转发业务请求，业务�
 
 Server 接收请求时保留原始调用身份，解析 Server Builtin、Alias、History Replay 或 Script Library，得到真实远程执行计划。纯 Server 查询如 `rtt`、`history` 列表、`alias list`、无参数 `script`（等同 `script list`）、参数校验失败，都**不会**生成 Activity。只有显式可记录的操作已实际交给 Client 命令通道，发送成功后才创建持久记录；发送前允许分配内部关联 ID，以便结果输出、取消和 Artifact 归属，不代表已经执行或持久化。
 
-记录类型包括 `command`、`alias`、`script`、`remote_files`（语义化文件修改）、`transfer`（用户发起的上传/下载）、`external_tool`、`background_job`、`pty`、`screen_view`、`clipboard` 及 `process`。Remote Files 的 Browse、Search、预览、读取、ZIP Peek/Entry 等查询不记录；文件上传/下载记录为 `transfer`，不是 `remote_files`。Transfer Center 仍独立负责实时进度和取消。Job 的用户管理操作以 `kind=background_job` 记录 `start_job`、`stop_job` 和 `stop_all_jobs`；查询命令不进入 Activity。Job 内部 `control(domain=job)` 消息、Job 运行消息和状态上报不独立记录。Process Manager 的用户主动 Kill/Kill App 使用独立的语义记录；进程列表、监控采样及其他内部 RPC 不记录。未知普通 Client 命令落到 Shell 是 RCH 原有的**设计特性**，本轮不更改命令分发、解析或 Shell fallback。
+记录类型包括 `command`、`alias`、`transfer`、`external_tool`、`pty`、`screen_view` 与所有 Control Domain（`script`、`remote_files`、`job`、`clipboard`、`configuration`、`process`、`watchdog`）。Control Action 默认 ALWAYS 记录；OPTIONAL 由 Server 设置决定（默认关闭）。文件传输仍归 `transfer`，Job 运行事件及监控采样不是独立 Control 请求。未知普通 Client 命令落到 Shell 的原有设计保持不变。
 
 同一用户操作至多记一条 Activity：`notify shell pwd`、`saveout shell pwd` 以 `invocation.input` 保留外部调用文本，`resolved.command` 保留真正下发的 Client 命令。`history run N` 和 `!N` 不写入 Quick，但只要回放实际向 Client 派发了命令，就创建一条 Activity：`invocation.input` 保留外层回放写法，`resolved` 保留实际派发的命令类型和内容。未成功派发则不落 Activity。Alias 保留 Alias 名称/参数，而非把展开文本冒充用户输入。Script Library、`script exec <file>` 都是 `kind=script`，实际下发 `control(domain=script, action=run)`；Activity 不复制整段脚本源码，也不伪造 Shell 命令。
 
-Remote Files 的修改操作使用 `kind=remote_files`，统一记录为 `create_directory`、`delete_files`、`rename_files`、`copy_files`、`move_files`、`create_archive`、`extract_archive`、`save_file`。每次用户操作（包括批量处理）只创建一条 Activity。`invocation.arguments` 保存路径等结构化参数，`resolved` 保存可记录的实际派发信息；保存文本的正文及编码载荷不持久化。批量任务使用 Client 的结构化报告核对成功数和失败项；部分成功或全部失败为 `error`，并在输出中保留数量和失败原因。
+Remote Files 的修改操作使用 `kind=remote_files`，统一记录为 `create_directory`、`delete_paths`、`rename_path`、`paste_paths`、`create_archive`、`extract_archive`、`save_file`。每次用户操作（包括批量处理）只创建一条 Activity。`invocation.arguments` 保存路径等结构化参数，`resolved` 保存可记录的实际派发信息；保存文本的正文及编码载荷不持久化。批量任务的 Client 终态明确表达失败事实，结构化报告保留成功数与失败项；部分成功或全部失败为 `error`，并在输出中保留数量和失败原因。 `inspect` 是调用参数，遵循所属 Action 的记录策略，不在记录层特判。
 
 ### Transfer 操作记录
 
@@ -33,13 +33,13 @@ Transfer Activity 的 `resolved` 只记录已存在的 `transfer_id`（如有）
 
 ### PTY、Screen View、Clipboard 与 Process 操作
 
-这四类操作的 Activity 统一由 Server 的执行／消息派发协调层管理。PTY、Screen View 的 Open 和 Clipboard Set 在 Client 消息发送成功后才持久化，按各自 Session ID 或 Request ID 关联 Client 回执；结束和断线更新原 Activity。Process Kill 通过前台执行协调器记录实际派发和最终结果。业务会话管理负责真实执行状态，不直接维护 Activity ID、History 写入或持久化事务。
+PTY 和 Screen View 使用生命周期适配器；Clipboard 和 Process 使用 Control 请求适配器。均在真实派发后开始记录，业务服务不持有 Activity ID 或持久化事务。
 
 PTY 与 Screen View 每个远端会话只记录一条 `kind=pty|screen_view, action=session` Activity。真正派发 Open 后创建记录，Client 的 `opened` 回执写入 `resolved.opened_at`（PTY 还写入实际 Shell），记录在会话期间保持 `running`；终止后在同一条记录写入 `finished_at`、`resolved.end_reason` 和最终状态。主动 Close、自动关闭与 PTY 切换 Shell 都结束原会话；切换 Shell 会为新会话建立新 Activity，旧会话的结束原因是 `shell_switched`。进程自然退出、网络断开、服务端重启、启动失败分别依实际结果写入结束原因及 `success/interrupted/error`。WebSocket 自动清理、重复 Close 不增加第二条 Activity。键盘输入、Resize、帧、FPS/Quality、Screen Control 输入不产生独立记录。
 
-Clipboard 的用户写入操作使用 `kind=clipboard` 与 `set_text|set_image|set_files|set_artifact_file`。Server 确认已派发 Client 后开始记录，收到对应 Control 请求的终态 Result 成功才完成；失败和超时保留对应状态。Text 保存最多 2,048 个字符的正文、原始字符数与截断标记；Image 保存文件名、MIME 类型和字节数，不额外持久化图片；Files 保存根项数量和最多 20 个根名称；Artifact File 保存原始文件名快照与 Artifact ID。文件字节、机器绝对源路径和临时下载 URL 不写入 Activity。Capabilities、Get 属于只读请求，不产生 Clipboard Activity；Get 文件的实际传输仍使用既有 Transfer Activity。
+Clipboard 的用户写入操作使用 `kind=clipboard` 与 `action=set`，具体格式保存在 `invocation.arguments.format_action`。Server 确认已派发 Client 后开始记录，收到对应 Control 请求的终态 Result 成功才完成；失败和超时保留对应状态。Text 保存最多 2,048 个字符的正文、原始字符数与截断标记；Image 保存文件名、MIME 类型和字节数，不额外持久化图片；Files 保存根项数量和最多 20 个根名称；Artifact File 保存原始文件名快照与 Artifact ID。文件字节、机器绝对源路径和临时下载 URL 不写入 Activity。Capabilities、Get 使用 OPTIONAL 策略，默认不记录；Get 文件的实际传输仍使用既有 Transfer Activity。
 
-Process Manager 主动终止单个进程或应用时使用 `kind=process, action=kill_process|kill_app`，保存 PID 及操作时界面提供的进程／应用名称快照（最多 160 字符）。PID 仍是实际执行目标；名称仅用于历史显示。远端前台命令的执行结果决定 `success/error`；执行协调层统一负责 Activity 的创建和收尾，Process 业务入口只下发 Kill。内部进程查询及普通 Terminal 命令仍按原记录规则执行，不额外生成 Process Activity。
+Process Manager 主动终止单个进程或应用时使用 `kind=process, action=kill`，`target_type` 区分 Process/App，保存 PID 及操作时界面提供的进程／应用名称快照（最多 160 字符）。PID 仍是实际执行目标；名称仅用于历史显示。独立 Control 请求的执行结果决定 `success/error`；执行协调层统一负责 Activity 的创建和收尾，Process 业务入口只下发 Kill。内部进程查询及普通 Terminal 命令仍按原记录规则执行，不额外生成 Process Activity。
 
 ### Activity Record 公共结构
 
@@ -63,7 +63,7 @@ Process Manager 主动终止单个进程或应用时使用 `kind=process, action
 }
 ```
 
-字段与含义：`activity_id` 为对外唯一身份；`machine_id` 按设备聚合，`client_id` 区分连接实例；`kind` 为 `command|alias|script|remote_files|transfer|external_tool|background_job|pty|screen_view|clipboard|process`；`action` 为 `command/alias:invoke`、`script:run`；`origin` 为 `web_terminal|web_ui|web_api|cli`；`presentation` 为 `dialog|terminal|inline|none`。实际 Web Terminal HTTP 请求按 `web_terminal` 标记，Web API 只有明确提供程序调用身份时才能标为 `web_api`，不能单凭 HTTP 传输认定。
+字段与含义：`activity_id` 为对外唯一身份；`machine_id` 按设备聚合，`client_id` 区分连接实例；`kind` 为 `command|alias|script|remote_files|transfer|external_tool|job|pty|screen_view|clipboard|process|configuration|watchdog`；`action` 为 `command/alias:invoke`、`script:run`；`origin` 为 `web_terminal|web_ui|web_api|cli`；`presentation` 为 `dialog|terminal|inline|none`。实际 Web Terminal HTTP 请求按 `web_terminal` 标记，Web API 只有明确提供程序调用身份时才能标为 `web_api`，不能单凭 HTTP 传输认定。
 
 `invocation.input` 是用户真实调用形式，`target` 是可选的 Alias 或 Script 业务身份，`arguments` 是结构化参数（普通 Shell 命令不做强行解析）；`resolved.command_type` 是实际派发类型；只在适合保存真实命令文本时提供 `resolved.command`。Script 实际源码属于执行传输，不复制到持久 Activity。`result` 只存 `truncated` 和原有 `output_records`，输出摘要从记录即时计算而非新增持久字段。`files` 仍是独立的 Artifact 引用数组。`task_id` 只用于内部运行时，不是 Activity 公共字段。
 
@@ -93,7 +93,7 @@ Pin 顺序由独立的 `pinned_commands` 表持久管理：Pinned 项优先显�
 
 ## 查询、删除和界面
 
-Activity Center 保留原有两行式列表，第一行 Lucide 类型图标、`Kind · 实际操作摘要`、状态图标（长命令单行省略），第二行日期时间与必要的计算摘要（只对非空、单行且长度不超过 128 字符的输出展示原文；多行、截断或超过 128 字符时根据状态显示 `Completed`（成功）、`Failed`（失败）或对应的取消/超时/中断文案，完整内容仍在 Output Records）；右侧箭头或整行打开原 Details。列表不提供 Use 或 Delete；Delete 按钮在 Details 中。History 对话框标题仍为 `History`，第二个页签命名 `Activity Center`。Details 标题固定为 `Activity Detail`，不在标题右侧附加命令名字。Details 将 Kind 与 Action 合为单张 `Action` 卡片，内容为 `kind · action`；Invocation、Resolved 卡片单行省略，点击后弹窗查看完整值，原始命令文本不截断；Activity 过滤栏固定、列表独立滚动。原有输出记录排序、文件预览/下载和删除确认保留。类型筛选为 All / Command / Alias / Script / Remote Files / Transfer / External Tool；Errors 筛选使用 Server 端过滤，并和 `limit/cursor/query` 一起作用于分页与 `total_count`。默认 50 条，最大 200 条；同一时间按 `activity_id` 继续稳定排序。
+Activity Center 保留原有两行式列表，第一行 Lucide 类型图标、`Kind · 实际操作摘要`、状态图标（长命令单行省略），第二行日期时间与必要的计算摘要（只对非空、单行且长度不超过 128 字符的输出展示原文；多行、截断或超过 128 字符时根据状态显示 `Completed`（成功）、`Failed`（失败）或对应的取消/超时/中断文案，完整内容仍在 Output Records）；右侧箭头或整行打开原 Details。列表不提供 Use 或 Delete；Delete 按钮在 Details 中。History 对话框标题仍为 `History`，第二个页签命名 `Activity Center`。Details 标题固定为 `Activity Detail`，不在标题右侧附加命令名字。Details 将 Kind 与 Action 合为单张 `Action` 卡片，内容为 `kind · action`；Invocation、Resolved 卡片单行省略，点击后弹窗查看完整值，原始命令文本不截断；Activity 过滤栏固定、列表独立滚动。原有输出记录排序、文件预览/下载和删除确认保留。类型筛选包括所有 Control Domain 及 Command / Alias / Transfer / External Tool / PTY / Screen View；Errors 筛选使用 Server 端过滤，并和 `limit/cursor/query` 一起作用于分页与 `total_count`。默认 50 条，最大 200 条；同一时间按 `activity_id` 继续稳定排序。
 
 查询 API 沿用现有机器作用域路径，Activity 项目通过新 Schema 返回，不再返回旧 `entry_id`、`source`、`raw_command`、顶层 `output_records/output_summary/output_truncated`。客户端关联执行所需的临时 ID 不属于公开记录。
 
@@ -101,7 +101,7 @@ Activity Center 保留原有两行式列表，第一行 Lucide 类型图标、`K
 
 ### 记录策略所覆盖的执行
 
-统一 Activity 写入依据是显式受支持的用户操作上下文 + 真实向 Client 派发；内部 `external_tool_*` 属于专用传输协议而非用户命令，不得产生普通 Command Activity。纯 Server 管理、远程文件浏览、Remote Files 的查询操作、Job 的内部 Control／状态上报、Process 只读查询及内部监控不进入 Activity；只有明确列出的 Remote Files 文件修改、用户传输、External Tool Manager 生命周期、PTY / Screen View 主动会话操作、Clipboard Set 和 Process Kill 才记录为语义 Activity。External Tool Manager 的 Package 安装、卸载、清缓存和 Module/Instance 的启动、Oneshot、停止、移除、清日志使用 `kind=external_tool`，分别记录 `install_package`、`uninstall_package`、`clear_package_cache`、`start_instance`、`run_oneshot`、`stop_instance`、`remove_instance`、`clear_instance_logs`。一次用户操作只记一条，发送前失败不落库，Oneshot 非零退出或超时按实际结果终结。记录只存 Package/Tool/Instance 身份和安全摘要，不持久化参数、原始运行配置、编码命令或 stdout/stderr 原文；查询、状态刷新、命令预览、Preset/Metadata 编辑均不记此类 Activity。终端 `xt` 的只读查询仅写 Quick、不写 Activity；实际 `xt exec <exec>` 则记一条 `external_tool · run_exec`，不写内部 RPC 文本。Script SDK 的内部调用归属于 Script，不另记 External Tool Activity。Job 的 Server CLI `job start/stop/stop-all` 与 Web Manager 的 Start/Stop 各以一次真实用户操作写一条 `background_job` Activity；Stop All 是单条批量记录，部分失败用 `error` 并保留结构化计数。Start Activity 在 Client 创建 Runtime 后完成；后续运行及自然退出由原 Job History 负责，Stop 是独立操作，不取消已完成的 Start。Job CLI 的 Quick 只保留真实用户输入，回放不再次写 Quick；`job list/ps/status` 不写 Activity。不是所有业务请求都会有 Activity，因此缺少 Activity 不代表客户端从未接受某次内部请求。
+Control 的记录依据为 Action 目录的 ActivityPolicy 与实际派发事实。未迁移的 External Tool 继续沿用原有语义适配器、预检及查询规则（见上文 xt 章节）；Job CLI 和 Web Manager 使用 `kind=job`、实际协议 Action。Stop All 保留批量计数；Start 完成后，Job 自身的运行和退出仍由 Job History 负责。Script SDK 的内部调用归属于外层 Script。
 
 ### 命令收藏与路径收藏
 
@@ -166,7 +166,7 @@ Content-Type: application/json
 
 | 现象 | 原因或处理方式 |
 |---|---|
-| 执行过命令，却没有 Activity | 先确认是否实际派发 Client，且属于首批三类可记录操作 |
+| 执行过命令，却没有 Activity | 先确认是否实际派发 Client，且属于当前 ActivityPolicy 启用的操作 |
 | Quick 里没有旧命令 | 非终端或明确排除的操作不写 Recent，或已超过最近 100 条不同命令上限 |
 | Quick 出现 Pin 但看不到之前输出 | Pin 只保存轻量快照，不复制完整 `output_records` |
 | Clear 后仍看到部分命令 | Pinned Commands 独立保留 |
@@ -179,3 +179,10 @@ Content-Type: application/json
 Activity Center 会保存调用文本、可记录的实际命令及部分执行输出，当前没有针对密码、Token 或其他敏感字符串的通用自动脱敏功能。避免直接把凭据拼进命令行；否则它们可能出现在历史、执行详情和其他可访问的命令记录中。
 
 历史保留策略分别作用于 Quick Recent、Activity 输出和 Artifact：Recent 有数量上限，Activity 输出有大小限制，Artifact 文件按独立的文件生命周期管理。排障时分别检查相应记录与文件。
+
+
+### Control Activity 记录策略
+
+Control Action 定义同时声明 `ExecutionPolicy` 与 `ActivityPolicy`。`ALWAYS` 为默认，`OPTIONAL` 默认关闭；Server 配置 `RECORD_OPTIONAL_ACTIVITY = True` 开启所有可选查询的记录。配置查询、Job 状态、Watchdog 状态、Clipboard get 与 Remote Files 查询属于 OPTIONAL。混合 Action 的预检与实际执行沿用同一记录策略，`inspect` 仅作为操作参数展示。CLI set/watchdog 与对应 Control 操作使用相同身份和策略（set 的原始命令文本仍保存在独立 Quick History），Quick History 仍独立保存真实终端提交。
+
+每次符合记录策略的实际派发 Control 请求使用自己的 Activity ID，`resolved.result_owner=request` 表示请求观察器负责输出写入，避免 Terminal 重复保存。最终 Result 的 EOF、状态及结构化取消/超时原因决定最终状态。中间输出只影响展示。`record_output` 独立配置输出是否保存；配置值、剪贴板读回内容及可选查询结果默认不进入 Activity 的输出记录，文件正文及临时传输 URL 不作为请求参数保存；Clipboard 写入保留原有有限展示元数据。Job 结果中的 ID 与计数作为结构化详情。External Tool 仍使用自身业务适配器。

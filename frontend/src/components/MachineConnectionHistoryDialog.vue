@@ -647,8 +647,8 @@ export default {
     activityKindLabel(kind) {
       return ({
         command: 'Command', alias: 'Alias', script: 'Script',
-        remote_files: 'Remote Files', transfer: 'Transfer', external_tool: 'External Tool', background_job: 'Background Job',
-        pty: 'PTY', screen_view: 'Screen View', clipboard: 'Clipboard', process: 'Process',
+        remote_files: 'Remote Files', transfer: 'Transfer', external_tool: 'External Tool', job: 'Background Job',
+        pty: 'PTY', screen_view: 'Screen View', clipboard: 'Clipboard', process: 'Process', configuration: 'Configuration', watchdog: 'Watchdog',
       })[kind] || 'Activity'
     },
 

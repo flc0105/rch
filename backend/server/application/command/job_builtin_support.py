@@ -33,7 +33,7 @@ class JobBuiltinSupport:
         actions = JOB_MUTATING_ACTIONS
         entry_id = self.history_entry_id_provider() or ''
         kwargs = {'command_type': COMMAND_TYPE_CONTROL, 'domain': ControlDomain.JOB, 'action': action}
-        if entry_id and action in actions:
+        if entry_id:
             kwargs['history_entry_id'] = entry_id
         pending_result = None
         for item in self.remote_execution_service.stream_command(self.conn, '', payload=request, **kwargs):
@@ -53,9 +53,10 @@ class JobBuiltinSupport:
             if status == 1:
                 yield (0, 'Invalid Job control response', *rest)
             else:
-                yield (status, str(text), *rest)  # Transport / Client failure, not structured.
+                yield pending_result  # Preserve structured cancellation/timeout and EOF.
             return
-        yield (status, result['message'], *rest)
+        from core.protocol.message_queue import ResultChunk
+        yield ResultChunk(status, result['message'], getattr(pending_result, 'eof', True), terminal_authoritative=True)
 
     def _job_logs(self, args):
         """Stream persisted reports through the shared Job application service."""

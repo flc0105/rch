@@ -1,6 +1,7 @@
 import logging
 
 from server.application.command.command_execution_event import CommandExecutionEvent
+from core.protocol.message_queue import result_terminal_status
 from server.application.execution.execution_context import ExecutionContext
 
 
@@ -71,6 +72,22 @@ class CommandExecutionPipeline:
 
         return CommandExecutionEvent.chunk(status, text)
 
+    @classmethod
+    def build_result_event(cls, item):
+        status, result = item[:2]
+        event = cls.build_output_event(status, result)
+        if getattr(item, 'terminal_authoritative', False):
+            if item.eof:
+                terminal = result_terminal_status(status, result)
+                event.payload = {**event.payload, 'result_terminal': terminal}
+                if terminal == 'cancelled':
+                    event = CommandExecutionEvent.cancelled(event.text, payload=event.payload)
+                elif terminal != 'success':
+                    event = CommandExecutionEvent.error(event.text, payload={**event.payload, 'failure_reason': terminal})
+            else:
+                event.payload = {**event.payload, 'intermediate_result': True}
+        return event
+
     def iter_events(
         self,
         context: ExecutionContext,
@@ -102,8 +119,17 @@ class CommandExecutionPipeline:
                 for item in func():
                     status = item[0]
                     result = item[1] if len(item) > 1 else ''
-                    event = self.build_output_event(status, result)
+                    event = self.build_result_event(item)
 
+                    if event.payload.get('intermediate_result'):
+                        yield event
+                        continue
+                    if event.payload.get('result_terminal'):
+                        final_status = event.payload['result_terminal']
+                        final_ok = final_status == 'success'
+                        cancelled = final_status == 'cancelled'
+                        yield event
+                        continue
                     if event.event_type == CommandExecutionEvent.ERROR:
                         final_ok = False
                         reason = event.payload.get('failure_reason')
@@ -118,6 +144,8 @@ class CommandExecutionPipeline:
 
         except Exception as exc:
             final_ok = False
+            final_status = ('timed_out' if isinstance(exc, TimeoutError) else
+                            'interrupted' if isinstance(exc, (ConnectionError, EOFError)) else 'error')
             self.error_logger.exception(
                 'CommandExecutionPipeline failed: command=%r source=%s task_id=%s history_entry_id=%s',
                 context.command,

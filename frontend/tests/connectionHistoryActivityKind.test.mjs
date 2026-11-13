@@ -29,13 +29,13 @@ const center = loadComponent('../src/components/CommandHistoryDialog.vue')
 
 test('Connection History and Activity Center label every persisted activity kind identically', () => {
   for (const kind of [
-    'command', 'alias', 'script', 'remote_files', 'transfer', 'external_tool', 'background_job',
-    'pty', 'screen_view', 'clipboard', 'process',
+    'command', 'alias', 'script', 'remote_files', 'transfer', 'external_tool', 'job',
+    'pty', 'screen_view', 'clipboard', 'process', 'configuration', 'watchdog',
   ]) {
     assert.equal(history.component.methods.activityKindLabel(kind),
       center.component.methods.buildActivityKindLabel(kind), `Unexpected label for ${kind}`)
   }
-  assert.equal(history.component.methods.activityKindLabel('background_job'), 'Background Job')
+  assert.equal(history.component.methods.activityKindLabel('job'), 'Background Job')
   assert.equal(history.component.methods.activityKindLabel('unrecognized_kind'), 'Activity')
 })
 

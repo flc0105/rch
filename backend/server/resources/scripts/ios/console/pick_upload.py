@@ -46,10 +46,6 @@ def main():
         print('No photo selected')
         return
 
-    # Keep the simple PIL-based JPEG upload path.
-    if image.mode not in ('RGB', 'L'):
-        image = image.convert('RGB')
-
     # The photo picker supplies a PIL image. Preserve the JPEG upload format.
     if image.mode not in ('RGB', 'L'):
         image = image.convert('RGB')

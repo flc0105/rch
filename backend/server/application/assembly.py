@@ -5,7 +5,7 @@ from server.application.auth.client_session_token_service import ClientSessionTo
 from server.application.artifact.artifact_service import WebArtifactService
 from server.application.artifact.remote_file_service import WebRemoteFileService
 from server.application.history.activity_bindings import (
-    remote_file_bindings, job_bindings, external_tool_bindings, process_bindings,
+    remote_file_bindings, job_bindings, external_tool_bindings, process_bindings, clipboard_bindings,
 )
 from server.application.history.activity_definitions import ActivityKind
 from server.application.command.command_executor_factory import CommandExecutorFactory
@@ -201,8 +201,8 @@ class ServerApplicationAssembly:
         self.agent_bootstrap_script_service = AgentBootstrapScriptService()
         self.pty_session_service = PtySessionService(self.server, event_bus=self.event_bus)
         self.screen_view_session_service = ScreenViewSessionService(self.server, event_bus=self.event_bus)
-        self.clipboard_session_service = self.server.lifecycle_adapter.instrument_clipboard(
-            ClipboardSessionService(self.server))
+        self.clipboard_session_service = self.server.command_adapter.instrument(
+            ClipboardSessionService(self.server), clipboard_bindings())
         self.device_monitor_session_service = DeviceMonitorSessionService(self.server, event_bus=self.event_bus)
 
         self.command_completion_service = ServerCommandCompletionService(

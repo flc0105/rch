@@ -120,7 +120,7 @@ Connection Info 的 **Task** 字段显示 `Idle`、`Running` 或 `Cancelling`；
 
 ## 4. 前台串行约束与执行并发
 
-RCH 在单个 `ClientSession` 上保留一份当前前台 Task 运行态，不是所有浏览器标签页各自拥有一个互不影响的前台槽。普通 Web 命令提交时，在启动 Runner 之前调用 `acquire_foreground_task()`；如果该会话已经被另一前台任务占用，就抛出 `Client is busy: ...`，而不是把新命令悄悄排入一个没有界面的队列。
+RCH 在单个 `ClientSession` 上保留一份当前前台 Task 运行态，不是所有浏览器标签页各自拥有一个互不影响的前台槽。普通 Web 命令提交时，在启动 Runner 之前调用 `acquire_foreground_task()`；如果该会话已经被另一前台任务占用，就抛出 `Another operation is running on this client. Please try again when it finishes.`，而不是把新命令悄悄排入一个没有界面的队列。
 
 占槽记录包括 `task_type`、`command`、`source`、`task_id`、`tab_id`（Web 来源）、可选 `history_entry_id`、稍后绑定的 `command_id`、`cancel_requested` 和 `cancel_state`。失败的提交会释放可能占到的槽、撤销本次创建的 Task，并清理尚未真正执行的历史条目；不会将这些失败准备步骤当作一次成功执行。
 
@@ -235,3 +235,5 @@ Server 只将 `SERVER_COMMAND_REGISTRY` 显式注册的一级名称作为 Builti
 ### Client 返回结果的派发次序（v34.6）
 
 `ClientSessionCommandChannel.send_command()` 必须在 `session.send()` 前向按 ID 分发的 `pending_results` 注册新消息 ID。此前极快完成的 Client 结果可能早于 `wait_for_result()` 注册而到达，误入 `background_message`，并导致前台永远等待以及取消时返回 `Command is not running`。现在先注册、后发送，在 EOF 或迭代器结束时统一清理；发送失败时回滚排队 ID。Client 的未知命令 Shell fallback 仍是原有能力，不因 Server Registry 扩展而改变。
+
+Control 的 Activity 终态来自最终 Result；中间输出保留原始级别，Warning 不累计为失败。

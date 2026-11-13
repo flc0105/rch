@@ -104,7 +104,7 @@ class WebCommandExecutionApi:
 
     def get_runtime_config(self, client_id: str):
         return self._control(client_id, ControlDomain.CONFIGURATION, ConfigurationAction.GET, {},
-                             task_type='runtime_config', source='web_runtime_config', track_execution=False)
+                             task_type='runtime_config', source='web_runtime_config')
 
     def update_runtime_config(self, client_id: str, key: str, value):
         return self._control(client_id, ControlDomain.CONFIGURATION, ConfigurationAction.SET,

@@ -1,6 +1,6 @@
 """Canonical Activity identities and summaries for UI operations."""
 from dataclasses import dataclass, field
-from core.protocol.control import JobAction
+from core.protocol.control import ControlDomain, JobAction, RemoteFilesAction, ClipboardAction, ConfigurationAction, ProcessAction, WatchdogAction
 
 
 @dataclass(frozen=True)
@@ -27,30 +27,17 @@ class ActivityOperation:
 class ActivityKind:
     COMMAND = 'command'
     ALIAS = 'alias'
-    SCRIPT = 'script'
-    REMOTE_FILES = 'remote_files'
     TRANSFER = 'transfer'
     EXTERNAL_TOOL = 'external_tool'
-    BACKGROUND_JOB = 'background_job'
     PTY = 'pty'
     SCREEN_VIEW = 'screen_view'
-    CLIPBOARD = 'clipboard'
-    PROCESS = 'process'
     SESSION_KINDS = (PTY, SCREEN_VIEW)
-    ALL = (COMMAND, ALIAS, SCRIPT, REMOTE_FILES, TRANSFER, EXTERNAL_TOOL,
-           BACKGROUND_JOB, PTY, SCREEN_VIEW, CLIPBOARD, PROCESS)
-
-
-# Map control-plane actions to user-facing Activity operations in the history layer.
-JOB_ACTIVITY_ACTIONS = {JobAction.START: 'start_job', JobAction.STOP: 'stop_job', JobAction.STOP_ALL: 'stop_all_jobs'}
+    ALL = (COMMAND, ALIAS, TRANSFER, EXTERNAL_TOOL, PTY, SCREEN_VIEW, *ControlDomain)
 
 
 class ActivityAction:
     INVOKE = 'invoke'
-    RUN = 'run'
     SESSION = 'session'
-    KILL_PROCESS = 'kill_process'
-    KILL_APP = 'kill_app'
     SET_TEXT = 'set_text'
     SET_IMAGE = 'set_image'
     SET_FILES = 'set_files'
@@ -87,7 +74,10 @@ def ui_activity_summary(kind, action, args):
     if kind in ActivityKind.SESSION_KINDS:
         return ('PTY' if kind == ActivityKind.PTY else 'Screen View') + (
             ' · ' + str(args['shell']) if kind == ActivityKind.PTY and args.get('shell') else '')
-    if kind == ActivityKind.CLIPBOARD:
+    if kind == ControlDomain.CLIPBOARD:
+        if action == ClipboardAction.GET:
+            return 'Get clipboard'
+        action = args.get('format_action') or action
         label = {ActivityAction.SET_TEXT: 'Set text', ActivityAction.SET_IMAGE: 'Set image',
                  ActivityAction.SET_FILES: 'Set files',
                  ActivityAction.SET_ARTIFACT_FILE: 'Send Artifact file'}.get(action, 'Set clipboard')
@@ -99,9 +89,9 @@ def ui_activity_summary(kind, action, args):
         if args.get('names'):
             return f"{label} · {', '.join(args['names'][:2])}"
         return label
-    if kind == ActivityKind.PROCESS:
+    if kind == ControlDomain.PROCESS:
         name = str(args.get('name') or '').strip()
-        return ('Kill app ' if action == ActivityAction.KILL_APP else 'Kill process ') + (
+        return ('Kill app ' if args.get('target_type') == 'app' else 'Kill process ') + (
             name + ' ' if name else '') + f"(PID {args.get('pid') or '?'})"
     return None
 
@@ -110,7 +100,7 @@ def activity_summary(entry):
     kind = entry['kind']
     action = entry['action']
     invocation = entry['invocation']
-    if kind == ActivityKind.SCRIPT:
+    if kind == ControlDomain.SCRIPT:
         return str(invocation.get('target') or 'Script')
     summary = ui_activity_summary(kind, action, invocation.get('arguments') or {})
     if summary is not None:
@@ -119,19 +109,23 @@ def activity_summary(entry):
         # Show the user invocation, not an internal resolved command or encoded payload.
         return str(invocation.get('input') or invocation.get('target') or kind)
     args = invocation.get('arguments') or {}
-    if kind == ActivityKind.REMOTE_FILES:
+    if kind == ControlDomain.REMOTE_FILES:
         actions = {
-            'create_directory': 'Create directory', 'delete_files': 'Delete files',
-            'rename_files': 'Rename', 'copy_files': 'Copy files',
-            'move_files': 'Move files', 'create_archive': 'Create archive',
+            RemoteFilesAction.CREATE_DIRECTORY: 'Create directory', RemoteFilesAction.DELETE_PATHS: 'Delete files',
+            RemoteFilesAction.RENAME_PATH: 'Rename', RemoteFilesAction.PASTE_PATHS: 'Move files' if args.get('operation') == 'move' else 'Copy files', 'create_archive': 'Create archive',
             'extract_archive': 'Extract archive', 'save_file': 'Save file',
         }
-        return actions.get(action, action or 'Remote Files')
+        return ('Inspect · ' if args.get('inspect') else '') + actions.get(action, action.replace('_', ' ').capitalize() or 'Remote Files')
     if kind == ActivityKind.TRANSFER:
         return 'Upload files' if action == 'upload_files' else 'Download files' if action == 'download_files' else (action or 'Transfer')
-    if kind == ActivityKind.BACKGROUND_JOB:
-        labels = {'start_job': 'Start', 'stop_job': 'Stop', 'stop_all_jobs': 'Stop all jobs'}
+    if kind == ControlDomain.JOB:
+        labels = {JobAction.START: 'Start', JobAction.STOP: 'Stop', JobAction.STOP_ALL: 'Stop all jobs', JobAction.PS: 'List jobs', JobAction.STATUS: 'Job status'}
         return f"{labels.get(action, action or 'Background Job')} {args.get('job_name') or args.get('job_key') or ''}".strip()
+    if kind == ControlDomain.CONFIGURATION:
+        label = {ConfigurationAction.GET: 'Get configuration', ConfigurationAction.SET: 'Set', ConfigurationAction.RESET: 'Reset'}.get(action, action)
+        return f"{label} {args.get('key') or ''}".strip()
+    if kind == ControlDomain.WATCHDOG:
+        return 'Watchdog status'
     if kind == ActivityKind.EXTERNAL_TOOL:
         actions = {
             'install_package': 'Install', 'uninstall_package': 'Uninstall',

@@ -26,7 +26,7 @@ class ClipboardSessionService:
         session = self.server.get_target_connection_by_client_id(client_id)
         rows = session.send_command('', type=MSG_TYPE_CONTROL, domain=ControlDomain.CLIPBOARD,
                                     action=action, payload=payload,
-                                    extra={'timeout': self.REQUEST_TIMEOUT_SECONDS}, track_execution=False)
+                                    extra={'timeout': self.REQUEST_TIMEOUT_SECONDS})
         status, result = 0, None
         for status, result in rows:
             pass

@@ -3,6 +3,7 @@ from client.config.runtime_config_service import RuntimeConfigService
 from client.config.runtime_config_effects import RuntimeConfigEffects
 from client.runtime.launch_context import is_launchd_managed_client
 from core.protocol.control import ConfigurationAction
+from client.runtime.execution.context import CommandCancelledError, CommandTimeoutError
 
 
 class ConfigurationManager:
@@ -46,5 +47,7 @@ class ConfigurationManager:
             for message in messages:
                 scope._send_interim_result(1, message)
             return 1, self.service.build_config_payload()
+        except (CommandCancelledError, CommandTimeoutError):
+            raise
         except Exception as exc:
             return 0, str(exc)

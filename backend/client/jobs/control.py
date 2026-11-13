@@ -5,6 +5,7 @@ method is exported for Job operations; this service only invokes JobManager.
 """
 import os
 from core.protocol.control import JobAction
+from client.runtime.execution.context import CommandCancelledError, CommandTimeoutError
 
 from core.utils.formatting import format_dict
 from core.protocol.job_control import build_job_control_result, validate_job_control_request
@@ -81,6 +82,8 @@ class JobControl:
                     total=report['total'], succeeded=len(names), errors=errors,
                 )
             raise ValueError(f'Unsupported job control action: {action}')
+        except (CommandCancelledError, CommandTimeoutError):
+            raise
         except Exception as exc:
             return 0, (build_job_control_result(action, f'Job control failed: {exc}', succeeded=0, errors=[str(exc)])
                        if action in (JobAction.START, JobAction.STOP, JobAction.STOP_ALL) else

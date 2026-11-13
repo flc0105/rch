@@ -23,12 +23,12 @@ class WebRemoteFileService:
         self.artifact_service = artifact_service
         self.transfer_service = transfer_service
 
-    def _run_control(self, client_id, action, payload, *, json_result=False):
+    def _run_control(self, client_id, action, payload, *, json_result=False, batch=False):
         status, result = self.remote_execution_service.run_foreground_control(
             client_id, ControlDomain.REMOTE_FILES, action, payload,
             task_type='remote_file', source='web_remote_file',
         )
-        if status != 1:
+        if status != 1 and not (batch and isinstance(result, dict) and "total" in result):
             raise RuntimeError(str(result or 'Remote file operation failed'))
         if json_result and not isinstance(result, dict):
             raise RuntimeError('Invalid remote JSON payload: expected object')
@@ -39,7 +39,7 @@ class WebRemoteFileService:
     def _run_mutation(self, client_id, action, arguments, payload, *, json_result=False, batch=False, origin='web_ui'):
         """Execute a remote file mutation; the dispatch adapter records its result."""
         if json_result:
-            result = self._run_control(client_id, action, payload, json_result=True)
+            result = self._run_control(client_id, action, payload, json_result=True, batch=batch)
             if batch:
                 # Client reports counts explicitly: the transport success code
                 # alone cannot distinguish all-success from partial-success.
@@ -48,7 +48,8 @@ class WebRemoteFileService:
                 if (not all(isinstance(result[k], int) and not isinstance(result[k], bool)
                             for k in ('status', 'total', 'succeeded', 'failed'))
                     or result['status'] not in (0, 1)
-                    or result['total'] != result['succeeded'] + result['failed']
+                    or type(result.get('skipped', 0)) is not int or result.get('skipped', 0) < 0
+                    or result['total'] != result['succeeded'] + result['failed'] + result.get('skipped', 0)
                     or result['total'] != len(arguments['paths'])
                     or result['succeeded'] < 0 or result['failed'] < 0):
                     raise RuntimeError('Invalid remote batch counts')
