@@ -10,7 +10,7 @@ const readComponent = name => fs.readFileSync(path.join(here, '../src/components
 const loadComponent = name => {
   const script = readComponent(name).match(/<script>([\s\S]*?)<\/script>/)?.[1] || ''
   const source = script.replace(/import\s+[\s\S]*?\s+from\s+['"][^'"]+['"]\s*;?/g, '')
-  const sandbox = {setTimeout, clearTimeout, TerminalLinkedText: {}, ScriptRunDialog: {}, ElMessage: {warn() {}, error() {}, warning() {}}}
+  const sandbox = {setTimeout, clearTimeout, TerminalLinkedText: {}, ScriptRunDialog: {}, FileCode2: {}, ElMessage: {warn() {}, error() {}, warning() {}}}
   vm.runInNewContext(source.replace('export default {', 'globalThis.component = {'), sandbox)
   return sandbox.component
 }

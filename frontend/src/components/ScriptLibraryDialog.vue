@@ -149,11 +149,30 @@
                 class="script-library-card"
               >
                 <div class="script-library-card-main">
-                  <div
-                    class="script-library-card-title"
-                    :title="item.display_name || item.script_name"
-                  >
-                    {{ item.display_name || item.script_name }}
+                  <div class="script-library-card-heading">
+                    <FileCode2 class="script-library-card-icon" :size="16" aria-hidden="true" />
+                    <div
+                      class="script-library-card-title"
+                      :title="item.display_name || item.script_name"
+                    >
+                      {{ item.display_name || item.script_name }}
+                    </div>
+                    <div class="script-tags script-library-card-tags">
+                      <el-tag
+                        size="small"
+                        :type="isScriptSupportedForCurrentConnection(item) ? 'info' : 'danger'"
+                      >
+                        {{ formatScriptPlatformLabel(item) }}
+                      </el-tag>
+
+                      <el-tag
+                        v-if="scriptHasParams(item)"
+                        size="small"
+                        type="warning"
+                      >
+                        Params
+                      </el-tag>
+                    </div>
                   </div>
 
                   <div
@@ -168,23 +187,6 @@
                     :title="item.description || ''"
                   >
                     {{ item.description || 'No description' }}
-                  </div>
-
-                  <div class="script-tags script-library-card-tags">
-                    <el-tag
-                      size="small"
-                      :type="isScriptSupportedForCurrentConnection(item) ? 'info' : 'danger'"
-                    >
-                      {{ formatScriptPlatformLabel(item) }}
-                    </el-tag>
-
-                    <el-tag
-                      v-if="scriptHasParams(item)"
-                      size="small"
-                      type="warning"
-                    >
-                      Params
-                    </el-tag>
                   </div>
                 </div>
 
@@ -298,6 +300,7 @@
 import { cancelTask } from '../api/tasksApi.js'
 import { createTerminalOperation, operationHeaders } from '../utils/terminalOperation.js'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { FileCode2 } from '@lucide/vue'
 import {
   getScriptCatalog, getScriptRunOptions, runLibraryScript, createScriptFolder, renameScriptFolder,
   deleteScriptFolder, renameLibraryScript, uploadLibraryScript, deleteLibraryScript,
@@ -328,6 +331,7 @@ export default {
   name: 'ScriptLibraryDialog',
 
   components: {
+    FileCode2,
     ScriptRunDialog,
   },
 
@@ -1873,6 +1877,19 @@ getPreferredScriptDirectoryForCurrentConnection() {
   gap: 6px;
 }
 
+.script-library-card-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.script-library-card-icon {
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+
 .script-library-card-title {
   min-width: 0;
   margin: 0;
@@ -1920,7 +1937,9 @@ getPreferredScriptDirectoryForCurrentConnection() {
 }
 
 .script-library-card-tags {
-  margin-top: 2px;
+  margin: 0;
+  align-items: center;
+  gap: 6px;
 }
 
 .script-library-card-actions {
@@ -2001,6 +2020,33 @@ getPreferredScriptDirectoryForCurrentConnection() {
 }
 
 @media (max-width: 768px), (max-height: 720px) {
+  .script-library-card {
+    grid-template-columns: 1fr;
+    align-items: flex-start;
+  }
+
+  .script-library-card-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+    gap: 8px;
+    align-items: stretch;
+  }
+
+  .script-library-card-actions :deep(.el-button) {
+    width: 100%;
+    min-width: 0;
+    height: 32px;
+    min-height: 32px;
+    justify-content: center;
+  }
+
+  .script-library-card-actions :deep(.el-dropdown) {
+    grid-column: 1 / -1;
+    width: 100%;
+    min-width: 0;
+  }
+
   .script-library-toolbar,
   .script-library-toolbar-left,
   .script-library-toolbar-right {

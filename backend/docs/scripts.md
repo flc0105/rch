@@ -76,6 +76,8 @@ Script 使用共享 [Parameter Schema](parameter_schema.md)，而不是 ACMD 的
 
 ### Script Library 的两种展示位置
 
+Script Run 表单的 Execution Mode 和 Output Mode 始终显示各自的全部选项；不符合脚本 Schema 或目标 Client 能力的选项禁用。所选模式的说明显示在对应控件下方。
+
 Script Run 表单可以选择 **Dialog** 或 **Terminal**：
 
 - Dialog 先生成 `run_id`，把运行结果显示在独立弹窗，连续追加收到的文本，结束后根据任务完成消息显示成功、失败或取消；支持复制结果。

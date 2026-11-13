@@ -43,21 +43,19 @@
       </div>
 
       <div v-if="modeError" class="script-run-description">{{ modeError }}</div>
-      <div v-else v-loading="modesLoading" class="script-run-modes">
+      <div v-loading="modesLoading" class="script-run-modes">
         <el-form label-position="top">
           <el-form-item label="Execution Mode">
-            <el-radio-group :model-value="runModes.execution_mode" @update:model-value="$emit('update-mode', 'execution_mode', $event)">
-              <el-radio v-for="mode in modeOptions.execution_mode?.allowed || []" :key="mode" :value="mode">
-                {{ mode === 'inproc' ? 'In-process' : 'Subprocess' }}
-              </el-radio>
+            <el-radio-group :model-value="runModes.execution_mode" :disabled="modesLoading || !!modeError" @update:model-value="$emit('update-mode', 'execution_mode', $event)">
+              <el-radio value="inproc" :disabled="!modeOptions.execution_mode?.allowed?.includes('inproc')">In-process</el-radio>
+              <el-radio value="subprocess_pipe" :disabled="!modeOptions.execution_mode?.allowed?.includes('subprocess_pipe')">Subprocess</el-radio>
             </el-radio-group>
             <div class="script-run-mode-help">{{ runModes.execution_mode === 'inproc' ? 'Runs inside the Client process. Cancellation is not supported.' : runModes.execution_mode === 'subprocess_pipe' ? 'Runs in a separate Python process. Supports cancellation.' : 'Select an available execution mode.' }}</div>
           </el-form-item>
           <el-form-item label="Output Mode">
-            <el-radio-group :model-value="runModes.output_mode" @update:model-value="$emit('update-mode', 'output_mode', $event)">
-              <el-radio v-for="mode in modeOptions.output_mode?.allowed || []" :key="mode" :value="mode">
-                {{ mode === 'stream' ? 'Stream' : 'Collect' }}
-              </el-radio>
+            <el-radio-group :model-value="runModes.output_mode" :disabled="modesLoading || !!modeError" @update:model-value="$emit('update-mode', 'output_mode', $event)">
+              <el-radio value="collect" :disabled="!modeOptions.output_mode?.allowed?.includes('collect')">Collect</el-radio>
+              <el-radio value="stream" :disabled="!modeOptions.output_mode?.allowed?.includes('stream')">Stream</el-radio>
             </el-radio-group>
             <div class="script-run-mode-help">{{ runModes.output_mode === 'stream' ? 'Display output as the script runs.' : runModes.output_mode === 'collect' ? 'Return collected output when execution finishes.' : 'Select an available output mode.' }}</div>
           </el-form-item>
@@ -333,9 +331,18 @@ export default {
   margin-bottom: 0;
 }
 
-.script-run-mode-help { font-size: 12px; line-height: 1.5; color: var(--muted); }
-.script-run-modes { flex: 0 0 auto; }
-.script-run-modes :deep(.el-form-item) { margin-bottom: 10px; }
+.script-run-modes { flex: 0 0 auto; padding-right: 4px; }
+.script-run-modes :deep(.el-form-item__content) {
+  display: block;
+}
+.script-run-mode-help {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  color: var(--el-text-color-secondary);
+  font-size: 0.9em;
+  line-height: 1.5;
+}
 
 .script-run-form {
   flex: 0 0 auto;

@@ -341,21 +341,19 @@
                 v-for="item in runtimeConfigItems"
                 :key="item.key"
                 class="connection-info-stat connection-config-stat"
-                :class="{ 'connection-config-stat-editable': item.editable !== false }"
-                :title="item.editable !== false ? 'Double-click to edit' : ''"
+                :class="{
+                  'connection-config-stat-editable': item.editable !== false,
+                  'connection-config-stat-override': item.editable !== false && item.source === 'override',
+                  'connection-config-stat-unavailable': item.editable === false,
+                }"
+                :aria-disabled="item.editable === false"
+                :title="item.editable === false ? 'Unavailable' : 'Double-click to edit'"
                 @dblclick="openRuntimeConfigEditor(item)"
               >
                 <div class="connection-config-stat-head">
                   <div class="connection-info-stat-label">
                     {{ item.key }}
-                    <span v-if="item.editable === false && currentConnection?.feature_manifest?.watchdog === false && ['REMOTE_CONTROL_WATCHDOG_ENABLED', 'LOCAL_HEARTBEAT_WATCHDOG_ENABLED', 'PROCESS_RECOVERY_WATCHDOG_ENABLED'].includes(item.key)" class="connection-config-override-badge">Unavailable on this Client</span>
                   </div>
-                  <span
-                    v-if="item.source === 'override'"
-                    class="connection-config-override-badge"
-                  >
-                    override
-                  </span>
                 </div>
 
                 <div class="connection-info-stat-value">
@@ -446,6 +444,12 @@
         >
           override
         </span>
+        <span
+          v-if="runtimeConfigEditorItem.editable === false"
+          class="connection-config-override-badge connection-config-unavailable-badge"
+        >
+          Unavailable
+        </span>
       </div>
 
       <div
@@ -470,6 +474,7 @@
         <el-select
           v-if="runtimeConfigEditorChoices.length"
           v-model="runtimeConfigEditorValue"
+          :disabled="runtimeConfigEditorItem.editable === false"
           style="width: 100%"
         >
           <el-option
@@ -483,11 +488,13 @@
         <el-switch
           v-else-if="runtimeConfigEditorItem.value_type === 'boolean'"
           v-model="runtimeConfigEditorValue"
+          :disabled="runtimeConfigEditorItem.editable === false"
         />
 
         <el-input-number
           v-else-if="runtimeConfigEditorItem.value_type === 'integer'"
           v-model="runtimeConfigEditorValue"
+          :disabled="runtimeConfigEditorItem.editable === false"
           :min="runtimeConfigEditorNumberMin"
           :max="runtimeConfigEditorNumberMax"
           :step="runtimeConfigEditorNumberStep ?? 1"
@@ -498,6 +505,7 @@
         <el-input-number
           v-else-if="runtimeConfigEditorItem.value_type === 'float'"
           v-model="runtimeConfigEditorValue"
+          :disabled="runtimeConfigEditorItem.editable === false"
           :min="runtimeConfigEditorNumberMin"
           :max="runtimeConfigEditorNumberMax"
           :step="runtimeConfigEditorNumberStep"
@@ -508,6 +516,7 @@
         <el-input
           v-else
           v-model="runtimeConfigEditorValue"
+          :disabled="runtimeConfigEditorItem.editable === false"
         />
       </div>
     </div>
@@ -515,7 +524,7 @@
     <template #footer>
       <div class="connection-config-editor-footer">
         <el-button
-          :disabled="runtimeConfigSaving || runtimeConfigEditorItem?.source !== 'override'"
+          :disabled="runtimeConfigSaving || runtimeConfigEditorItem?.editable === false || runtimeConfigEditorItem?.source !== 'override'"
           @click="resetRuntimeConfigEditorItem"
         >
           Reset Default
@@ -531,6 +540,7 @@
           <el-button
             type="primary"
             :loading="runtimeConfigSaving"
+            :disabled="runtimeConfigEditorItem?.editable === false"
             @click="saveRuntimeConfigEditorItem"
           >
             Save
@@ -1259,7 +1269,7 @@ export default {
 
     async saveRuntimeConfigEditorItem() {
       const item = this.runtimeConfigEditorItem
-      if (!item || !this.selectedId || this.runtimeConfigSaving) return
+      if (!item || item.editable === false || !this.selectedId || this.runtimeConfigSaving) return
 
       this.runtimeConfigSaving = true
 
@@ -1291,7 +1301,7 @@ export default {
 
     async resetRuntimeConfigEditorItem() {
       const item = this.runtimeConfigEditorItem
-      if (!item || !this.selectedId || item.source !== 'override' || this.runtimeConfigSaving) return
+      if (!item || item.editable === false || !this.selectedId || item.source !== 'override' || this.runtimeConfigSaving) return
 
       this.runtimeConfigSaving = true
 
@@ -1445,6 +1455,23 @@ export default {
   transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
 }
 
+.connection-config-stat-override {
+  background: var(--el-color-warning-light-9);
+  border-color: var(--el-color-warning-light-7);
+}
+
+.connection-config-stat-override:hover {
+  background: var(--el-color-warning-light-8);
+  border-color: var(--el-color-warning-light-5);
+  box-shadow: none;
+}
+
+.connection-config-stat-unavailable {
+  background: var(--el-color-danger-light-9);
+  border-color: var(--el-color-danger-light-7);
+  cursor: not-allowed;
+}
+
 .connection-config-stat-head {
   display: flex;
   align-items: flex-start;
@@ -1469,6 +1496,12 @@ export default {
   font-weight: 400;
   text-transform: none;
   letter-spacing: 0;
+}
+
+.connection-config-unavailable-badge {
+  background: var(--el-color-danger-light-9);
+  border-color: var(--el-color-danger-light-7);
+  color: var(--el-color-danger);
 }
 
 .connection-info-command-tab {

@@ -59,7 +59,7 @@ test('Script and Quick Action Result Dialog actions pass recognized JSON and cur
   const { default: vm } = await import('node:vm')
   for (const path of ['../src/components/ScriptLibraryDialog.vue','../src/components/QuickActionsDialog.vue']) {
     const script = source(path).match(/<script>([\s\S]*?)<\/script>/)?.[1] || ''
-    const sandbox = { findJsonOutput, ScriptRunDialog: {} }
+    const sandbox = { findJsonOutput, ScriptRunDialog: {}, FileCode2: {} }
     // Imports are removed only for this isolated component method test.
     const code = script.replace(/^import\s+[\s\S]*?\s+from\s+['"][^'"]+['"]\s*;?\s*$/gm, '')
       .replace('export default {', 'globalThis.component = {')

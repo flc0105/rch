@@ -84,3 +84,25 @@ test('Script Library returns to existing mobile styles and card sizing', () => {
   assert.match(scriptLibrary, /@click="openScriptRunDialog\(item\)"/)
   assert.match(scriptLibrary, /@click="openRemoteScriptEditor\(item.script_name\)"/)
 })
+
+
+test('Script mode radios remain visible but are disabled outside effective allowed values', () => {
+  const run = read('../src/components/ScriptRunDialog.vue')
+  for (const [key, values] of Object.entries({execution_mode: ['inproc', 'subprocess_pipe'], output_mode: ['collect', 'stream']})) {
+    for (const value of values) {
+      assert.ok(run.includes(`value="${value}" :disabled="!modeOptions.${key}?.allowed?.includes('${value}')"`))
+    }
+  }
+  assert.match(run, /\.script-run-modes :deep\(\.el-form-item__content\)\s*\{\s*display: block;/)
+  assert.match(run, /\.script-run-mode-help\s*\{\s*display: block;\s*width: 100%;\s*margin-top: 6px;/)
+  assert.match(run, /:disabled="submitting \|\| !modesReady"/)
+})
+
+test('Script list title includes the existing Lucide script icon and platform/parameter tags, with full-width mobile actions', () => {
+  const heading = scriptLibrary.match(/class="script-library-card-heading"[\s\S]*?class="script-library-card-path mono"/)?.[0] || ''
+  assert.match(heading, /<FileCode2[\s\S]*?item\.display_name \|\| item\.script_name[\s\S]*?formatScriptPlatformLabel\(item\)[\s\S]*?Params/)
+  assert.match(scriptLibrary, /import \{ FileCode2 \} from '@lucide\/vue'/)
+  assert.match(scriptLibrary, /\.script-library-card-actions\s*\{\s*display: grid;\s*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/)
+  assert.match(scriptLibrary, /\.script-library-card-actions :deep\(\.el-dropdown\)\s*\{\s*grid-column: 1 \/ -1;/)
+  assert.match(scriptLibrary, /@command="handleScriptMoreCommand\(item, \$event\)"/)
+})
