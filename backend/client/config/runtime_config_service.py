@@ -81,7 +81,7 @@ class RuntimeConfigService:
 
     @_locked_config
     def build_config_payload(self, include_hidden: bool = False) -> dict:
-        removed = self.prune_redundant_overrides()
+        self.prune_redundant_overrides()
         items = []
 
         for key, value, default_value, source in self.list_config_items(include_hidden=include_hidden):
@@ -107,7 +107,6 @@ class RuntimeConfigService:
         return {
             'store_path': self.get_store_path(),
             'items': items,
-            **({'pruned': removed} if removed else {}),
         }
 
     def get_value_type(self, value, default_value=None) -> str:

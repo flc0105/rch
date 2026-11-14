@@ -102,7 +102,7 @@ func renderRuntimeSetResult(status int, result interface{}, jsonOutput bool) (in
 	if !ok {
 		return 0, "Invalid Configuration result"
 	}
-	if status == 1 && envelope["display"] == "data" {
+	if status == 1 && envelope["data"] != nil {
 		configPayload, ok := envelope["data"].(map[string]interface{})
 		if !ok {
 			return 0, "Invalid Configuration data"
@@ -142,12 +142,4 @@ func renderRuntimeSetResult(status int, result interface{}, jsonOutput bool) (in
 		return status, string(raw)
 	}
 	return status, message
-}
-
-func formatRuntimeValue(value interface{}) string {
-	if text, ok := value.(string); ok {
-		quoted := fmt.Sprintf("%q", text)
-		return "'" + strings.ReplaceAll(strings.ReplaceAll(quoted[1:len(quoted)-1], `\"`, `"`), "'", `\'`) + "'"
-	}
-	return fmt.Sprint(value)
 }

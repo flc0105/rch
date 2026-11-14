@@ -3,7 +3,6 @@ import os
 
 from core.protocol.control import JobAction
 from core.protocol.job_control import build_job_control_result, validate_job_control_request
-from core.utils.command_output import ResultDisplay
 from client.runtime.execution.context import CommandCancelledError, CommandTimeoutError
 from client.runtime.temp_workspace import make_client_temp_dir, cleanup_temp_path
 
@@ -58,12 +57,12 @@ class JobControl:
                 jobs = manager.list_running_jobs()
                 return 1, build_job_control_result(action,
                     '' if jobs else 'No background jobs are currently running.',
-                    data=jobs, display=ResultDisplay.DATA)
+                    data=jobs)
             if action == JobAction.STATUS:
                 key = cls._name(payload.get('job_key'))
                 data = manager.get_job_status(key)
                 return 1, build_job_control_result(action, '',
-                                                   data=data, display=ResultDisplay.DATA)
+                                                   data=data)
             if action == JobAction.STOP_ALL:
                 report = manager.stop_all_jobs()
                 stopped = [{'job_name': item['job_key'], 'job_id': item['job_id']}

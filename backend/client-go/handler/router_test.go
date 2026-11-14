@@ -43,10 +43,10 @@ func TestUnsupportedExecutionMessagesReturnFailure(t *testing.T) {
 			session, peer := pair(t)
 			go Handle(session, map[string]interface{}{"type": typ, "id": float64(27), "text": "script body"})
 			v := receive(t, peer)
-			if v["type"] != "result" || v["status"] != float64(0) || v["eof"] != float64(1) || v["id"] != float64(27) {
+			if v["type"] != "result" || v["status"] != "error" || v["event_type"] != "completed" || v["id"] != float64(27) {
 				t.Fatalf("bad failed result: %#v", v)
 			}
-			if !strings.Contains(v["text"].(string), typ) {
+			if !strings.Contains(v["message"].(string), typ) {
 				t.Fatalf("unclear error: %#v", v)
 			}
 		})
@@ -58,7 +58,7 @@ func TestUnsupportedControlJobReturnsFailure(t *testing.T) {
 	go Handle(session, map[string]interface{}{"type": "control", "id": float64(29),
 		"domain": "job", "action": "ps", "payload": map[string]interface{}{}})
 	result := receive(t, peer)
-	if result["status"] != float64(0) || !strings.Contains(result["text"].(string), "job") {
+	if result["status"] != "error" || !strings.Contains(result["message"].(string), "job") {
 		t.Fatalf("unexpected unsupported Control result: %#v", result)
 	}
 }
@@ -87,7 +87,7 @@ func TestShellCancelReleasesCommandAndKeepsSocketUsable(t *testing.T) {
 		if v["type"] == "cancel_ack" && v["state"] == "stopped" {
 			stopped = true
 		}
-		if v["type"] == "result" && v["id"] == float64(7) && v["eof"] == float64(1) && v["status"] == float64(0) {
+		if v["type"] == "result" && v["id"] == float64(7) && v["event_type"] == "completed" && v["status"] == "cancelled" {
 			ended = true
 		}
 	}
@@ -99,7 +99,7 @@ func TestShellCancelReleasesCommandAndKeepsSocketUsable(t *testing.T) {
 	}
 	go Handle(session, map[string]interface{}{"type": "command", "id": float64(9), "text": "pwd"})
 	next := receive(t, peer)
-	if next["id"] != float64(9) || next["status"] != float64(1) {
+	if next["id"] != float64(9) || next["status"] != "success" {
 		t.Fatalf("subsequent command failed: %#v", next)
 	}
 }
@@ -156,12 +156,12 @@ func TestExplicitShellCommandsAvailableAndPreserveQuotedArguments(t *testing.T) 
 				if msg["type"] != "result" {
 					t.Fatalf("wrong frame: %#v", msg)
 				}
-				if strings.Contains(msg["text"].(string), "a b") {
+				if strings.Contains(msg["message"].(string), "a b") {
 					seen = true
 				}
-				if msg["eof"] == float64(1) {
+				if msg["event_type"] == "completed" {
 					final = true
-					if msg["status"] != float64(1) {
+					if msg["status"] != "success" {
 						t.Fatalf("command failed: %#v", msg)
 					}
 					break
@@ -182,12 +182,12 @@ func TestShellStreamEmitsBeforeCommandFinishes(t *testing.T) {
 	Handle(session, map[string]interface{}{"type": "command", "id": float64(62), "text": `shell_stream printf 'first\n'; sleep 1; printf 'second\n'`})
 	start := time.Now()
 	first := receive(t, peer)
-	if first["eof"] != float64(0) || first["text"] != "first" || time.Since(start) >= 800*time.Millisecond {
+	if first["event_type"] != "chunk" || first["message"] != "first" || time.Since(start) >= 800*time.Millisecond {
 		t.Fatalf("first output not streamed before completion: %#v elapsed %v", first, time.Since(start))
 	}
 	second := receive(t, peer)
 	final := receive(t, peer)
-	if second["eof"] != float64(0) || second["text"] != "second" || final["eof"] != float64(1) || final["status"] != float64(1) {
+	if second["event_type"] != "chunk" || second["message"] != "second" || final["event_type"] != "completed" || final["status"] != "success" {
 		t.Fatalf("wrong stream completion: %#v %#v", second, final)
 	}
 }
@@ -209,7 +209,7 @@ func TestExplicitShellStreamCancellation(t *testing.T) {
 		if msg["type"] == "cancel_ack" && msg["state"] == "stopped" {
 			stopped = true
 		}
-		if msg["type"] == "result" && msg["eof"] == float64(1) && msg["status"] == float64(0) {
+		if msg["type"] == "result" && msg["event_type"] == "completed" && msg["status"] == "cancelled" {
 			finished = true
 		}
 	}
@@ -225,8 +225,8 @@ func TestShellStreamStderrAndFailureCompletion(t *testing.T) {
 	session, peer := pair(t)
 	Handle(session, map[string]interface{}{"type": "command", "id": float64(80), "text": "shell_stream printf 'bad\\n' >&2; exit 7"})
 	first, final := receive(t, peer), receive(t, peer)
-	if first["text"] != "bad" || first["status"] != float64(0) || first["eof"] != float64(0) ||
-		final["eof"] != float64(1) || final["status"] != float64(0) || !strings.Contains(final["text"].(string), "code 7") {
+	if first["message"] != "bad" || first["event_type"] != "chunk" ||
+		final["event_type"] != "completed" || final["status"] != "error" || !strings.Contains(final["message"].(string), "code 7") {
 		t.Fatalf("stderr stream or final status wrong: %#v %#v", first, final)
 	}
 }
@@ -236,7 +236,7 @@ func TestShellMissingArgsReturnsTerminalResult(t *testing.T) {
 		session, peer := pair(t)
 		Handle(session, map[string]interface{}{"type": "command", "id": float64(91), "text": name})
 		result := receive(t, peer)
-		if result["status"] != float64(0) || result["eof"] != float64(1) || !strings.Contains(result["text"].(string), "Usage") {
+		if result["status"] != "error" || result["event_type"] != "completed" || !strings.Contains(result["message"].(string), "Usage") {
 			t.Fatalf("unexpected missing args result: %#v", result)
 		}
 	}
@@ -249,7 +249,7 @@ func TestExplicitShellReportsExitCode(t *testing.T) {
 	session, peer := pair(t)
 	Handle(session, map[string]interface{}{"type": "command", "id": float64(93), "text": "shell printf 'oops\\n'; exit 8"})
 	result := receive(t, peer)
-	if result["status"] != float64(0) || !strings.Contains(result["text"].(string), "oops") || !strings.Contains(result["text"].(string), "code 8") {
+	if result["status"] != "error" || !strings.Contains(result["message"].(string), "oops") || !strings.Contains(result["message"].(string), "code 8") {
 		t.Fatalf("shell did not report error details: %#v", result)
 	}
 }
@@ -261,7 +261,7 @@ func TestShellStreamCancelledAfterRealOutputAndSubsequentCommand(t *testing.T) {
 	session, peer := pair(t)
 	Handle(session, map[string]interface{}{"type": "command", "id": float64(201), "text": "shell_stream echo ready; sleep 30"})
 	first := receive(t, peer)
-	if first["type"] != "result" || first["eof"] != float64(0) || first["text"] != "ready" {
+	if first["type"] != "result" || first["event_type"] != "chunk" || first["message"] != "ready" {
 		t.Fatalf("expected live output before cancel: %#v", first)
 	}
 	go Handle(session, map[string]interface{}{"type": "cancel", "id": float64(202), "target_id": float64(201)})
@@ -274,7 +274,7 @@ func TestShellStreamCancelledAfterRealOutputAndSubsequentCommand(t *testing.T) {
 		if msg["type"] == "cancel_ack" && msg["state"] == "stopped" {
 			stopped = true
 		}
-		if msg["type"] == "result" && msg["eof"] == float64(1) && msg["status"] == float64(0) {
+		if msg["type"] == "result" && msg["event_type"] == "completed" && msg["status"] == "cancelled" {
 			final = true
 		}
 	}
@@ -283,7 +283,7 @@ func TestShellStreamCancelledAfterRealOutputAndSubsequentCommand(t *testing.T) {
 	}
 	go Handle(session, map[string]interface{}{"type": "command", "id": float64(203), "text": "pwd"})
 	next := receive(t, peer)
-	if next["id"] != float64(203) || next["status"] != float64(1) {
+	if next["id"] != float64(203) || next["status"] != "success" {
 		t.Fatalf("command after cancel failed: %#v", next)
 	}
 }
@@ -305,8 +305,8 @@ func TestScriptMessageExecutesExternalPythonAndReturnsFinalFrame(t *testing.T) {
 		if result["id"] != float64(90) || result["type"] != "result" {
 			t.Fatalf("invalid script frame: %#v", result)
 		}
-		if result["eof"] == float64(1) {
-			if result["status"] != float64(1) {
+		if result["event_type"] == "completed" {
+			if result["status"] != "success" {
 				t.Fatalf("script failed: %#v", result)
 			}
 			if !strings.Contains(strings.Join(chunks, "\n"), "hi:folder one") {
@@ -314,7 +314,7 @@ func TestScriptMessageExecutesExternalPythonAndReturnsFinalFrame(t *testing.T) {
 			}
 			return
 		}
-		chunks = append(chunks, result["text"].(string))
+		chunks = append(chunks, result["message"].(string))
 	}
 	t.Fatal("script missing EOF frame")
 }
@@ -326,12 +326,12 @@ func TestScriptBadParametersFailWithoutBreakingSession(t *testing.T) {
 		"payload": map[string]interface{}{"script_name": "demo", "source": "print('hi')", "params": []string{"wrong"}},
 	})
 	result := receive(t, peer)
-	if result["eof"] != float64(1) || result["status"] != float64(0) || !strings.Contains(result["text"].(string), "script Control") {
+	if result["event_type"] != "completed" || result["status"] != "error" || !strings.Contains(result["message"].(string), "script Control") {
 		t.Fatalf("unexpected script failure: %#v", result)
 	}
 	go Handle(session, map[string]interface{}{"type": "command", "id": float64(92), "text": "pwd"})
 	next := receive(t, peer)
-	if next["eof"] != float64(1) || next["status"] != float64(1) {
+	if next["event_type"] != "completed" || next["status"] != "success" {
 		t.Fatalf("command slot not released: %#v", next)
 	}
 }
@@ -345,29 +345,29 @@ func TestRemoteFilesControlTypedDirectoryAndArchive(t *testing.T) {
 			"action": action, "payload": payload,
 		})
 		result := receive(t, peer)
-		if result["id"] != float64(id) || result["type"] != "result" || result["eof"] != float64(1) {
+		if result["id"] != float64(id) || result["type"] != "result" || result["event_type"] != "completed" {
 			t.Fatalf("bad Control reply: %#v", result)
 		}
 		return result
 	}
 	newFolder := dir + "/control-dir"
 	created := makeRequest(101, "create_directory", map[string]interface{}{"path": newFolder})
-	if created["status"] != float64(1) {
+	if created["status"] != "success" {
 		t.Fatalf("mkdir failed: %#v", created)
 	}
 	browsed := makeRequest(102, "browse_directory", map[string]interface{}{"path": dir, "page": float64(1), "page_size": float64(10)})
-	if browsed["status"] != float64(1) {
+	if browsed["status"] != "success" {
 		t.Fatalf("browse failed: %#v", browsed)
 	}
 	if _, ok := browsed["data"].(map[string]interface{}); !ok {
 		t.Fatalf("browse reply must be structured: %#v", browsed)
 	}
 	invalid := makeRequest(103, "delete_everything", map[string]interface{}{"path": newFolder})
-	if invalid["status"] != float64(0) {
+	if invalid["status"] != "error" {
 		t.Fatalf("unknown action succeeded: %#v", invalid)
 	}
 	removed := makeRequest(104, "delete_paths", map[string]interface{}{"paths": []interface{}{newFolder}})
-	if removed["status"] != float64(1) {
+	if removed["status"] != "success" {
 		t.Fatalf("delete failed: %#v", removed)
 	}
 }
@@ -381,18 +381,18 @@ func TestIndependentBrowseWhileScriptRuns(t *testing.T) {
 	session, peer := pair(t)
 	Handle(session, map[string]interface{}{"type": "control", "id": float64(101), "domain": "script", "action": "run", "payload": map[string]interface{}{"script_name": "test/probe", "source": "import time\nprint('ready', flush=True)\ntime.sleep(20)", "params": map[string]interface{}{}, "execution_mode": "subprocess_pipe", "output_mode": "stream"}})
 	ready := receive(t, peer)
-	if ready["id"] != float64(101) || !strings.Contains(ready["text"].(string), "ready") {
+	if ready["id"] != float64(101) || !strings.Contains(ready["message"].(string), "ready") {
 		t.Fatalf("bad start: %#v", ready)
 	}
 	Handle(session, map[string]interface{}{"type": "control", "id": float64(102), "domain": "remote_files", "action": "browse_directory", "payload": map[string]interface{}{"path": t.TempDir()}})
 	result := receive(t, peer)
-	if result["id"] != float64(102) || result["status"] != float64(1) || !session.HasActiveShell() {
+	if result["id"] != float64(102) || result["status"] != "success" || !session.HasActiveShell() {
 		t.Fatalf("browse lost foreground: %#v", result)
 	}
 	target := filepath.Join(t.TempDir(), "new-directory")
 	Handle(session, map[string]interface{}{"type": "control", "id": float64(104), "domain": "remote_files", "action": "create_directory", "payload": map[string]interface{}{"path": target}})
 	result = receive(t, peer)
-	if result["id"] != float64(104) || result["status"] != float64(1) || !session.HasActiveShell() {
+	if result["id"] != float64(104) || result["status"] != "success" || !session.HasActiveShell() {
 		t.Fatalf("mkdir lost foreground: %#v", result)
 	}
 	if info, err := os.Stat(target); err != nil || !info.IsDir() {
@@ -400,14 +400,14 @@ func TestIndependentBrowseWhileScriptRuns(t *testing.T) {
 	}
 	Handle(session, map[string]interface{}{"type": "control", "id": float64(105), "domain": "configuration", "action": "get", "payload": map[string]interface{}{}})
 	result = receive(t, peer)
-	if result["id"] != float64(105) || result["status"] != float64(1) || !session.HasActiveShell() {
+	if result["id"] != float64(105) || result["status"] != "success" || !session.HasActiveShell() {
 		t.Fatalf("configuration lost foreground: %#v", result)
 	}
 	go Handle(session, map[string]interface{}{"type": "cancel", "id": float64(103), "target_id": float64(101)})
 	for i := 0; i < 5; i++ {
 		frame := receive(t, peer)
-		if frame["type"] == "result" && frame["id"] == float64(101) && frame["eof"] == float64(1) {
-			if frame["status"] != float64(0) {
+		if frame["type"] == "result" && frame["id"] == float64(101) && frame["event_type"] == "completed" {
+			if frame["status"] != "cancelled" {
 				t.Fatalf("cancel failed: %#v", frame)
 			}
 			return

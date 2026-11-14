@@ -5,6 +5,7 @@ class WebTaskStatus:
     RUNNING = 'running'
     CANCELLING = 'cancelling'
     SUCCESS = 'success'
+    PARTIAL = 'partial'
     ERROR = 'error'
     CANCELLED = 'cancelled'
     TIMED_OUT = 'timed_out'
@@ -17,6 +18,7 @@ class WebTaskStatus:
 
     TERMINAL_STATUSES = {
         SUCCESS,
+        PARTIAL,
         ERROR,
         CANCELLED,
         TIMED_OUT,

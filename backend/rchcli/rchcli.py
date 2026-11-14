@@ -716,6 +716,12 @@ class RemoteConsole:
                     if not degraded:
                         self.result_record(payload.get('text'), payload.get('status', 1))
                         seen += 1
+                elif event_type == 'command_result_batch' and payload.get('task_id') == task_id:
+                    has_activity = True
+                    if not degraded:
+                        for item in payload.get('results') or []:
+                            self.result_record(item.get('text'), item.get('status', 1))
+                            seen += 1
                 elif event_type == 'command_complete' and payload.get('task_id') == task_id:
                     if degraded:
                         recovered = self._recover(client_id, machine_id, history_id, seen)

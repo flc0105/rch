@@ -11,7 +11,7 @@ import tempfile
 
 from client.runtime.execution.python_execution.output import StreamOutput
 from client.runtime.execution.python_execution.event_channel import read_event_stream
-from core.utils.command_output import ResultDisplay, ResultEventType
+from core.utils.command_output import ResultEventType
 
 from client.runtime.execution.context import CommandCancelledError, CommandTimeoutError
 from client.runtime.execution.python_execution.base import PythonExecutionStrategy
@@ -136,7 +136,7 @@ except Exception:
                             output.flush()
                             has_structured[0] = True
                             payload = {'event_type': ResultEventType.CHUNK,
-                                       'display': ResultDisplay.DATA, 'data': event['data']}
+                                       'data': event['data']}
                             if emit is None:
                                 events.write(json.dumps({'kind': 'data', 'data': payload}, ensure_ascii=False) + '\n')
                             else:

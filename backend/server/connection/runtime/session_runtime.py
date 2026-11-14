@@ -147,7 +147,8 @@ class ClientSessionRuntime:
                     except OSError:
                         pass
                     raise TimeoutError('Control request timed out') from None
-                yield ResultChunk(status, result, eof, terminal_authoritative)
+                yield ResultChunk(status, result, eof, terminal_authoritative,
+                                  event=result if isinstance(result, dict) and result.get('type') == 'result' else None)
                 if eof:
                     break
         finally:

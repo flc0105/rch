@@ -166,6 +166,8 @@ data: {"task_id":"<task-id>","client_id":"<client-id>","command":"pwd","command_
 
 Web 在 `ws://<host>:8086/ws/events?tab_id=<browser-tab-id>` 订阅事件。提交时将同一 `tab_id` 通过 `X-Tab-Id` 传给 Server，Server 才能把该 Task 的输出和完成事件送到相应标签页，而不是传播给所有打开的终端。若提交时没有提供有效 `tab_id`，事件总线不会具有这个定向范围，因此前端应保持两端使用同一标签页标识。
 
+Socket `result` 帧使用 `event_type=started/progress/chunk/completed`，仅 `completed` 携带执行终态 `status`。Web 的 `command_result`/批量事件在原有 `status/text` 文本投影之外保留各条原始 `result` Envelope 供结构化消费者与调试使用；`command_complete` 仍负责一次 Web Task 的状态收尾。
+
 普通 Terminal 将 `command_result.text` 或 `command_result_batch.results` 中的每条文本按序写入完整输出历史，并按浏览器绘制帧合并可见窗口更新，接到 `command_complete` 后显示成功、失败或取消提示，并清除活动 Task。对于 Script、Quick Action 的 Dialog 展示，前端根据请求 Metadata 把这一 Task 的事件交给相应对话框处理，而不是另建执行引擎。前端还维护少量“已完成 Task ID”标记，处理**完成 WebSocket 比提交 HTTP 返回更早到达**的竞态，避免短命任务被迟到的 `setActiveTask` 重新显示成 Busy。
 
 最终状态由结果流汇总得到。`status=0` 的失败块通常使 Task 进入 `error`；可以被明确识别的非致命取消能力提示不会被误当成致命执行失败。若已发出取消请求且实际收到取消或超时类结果，则可判为 `cancelled`。单纯调用取消 API，或者 Client 给出“接受取消”的 ACK，均不等于已经进入取消终态。

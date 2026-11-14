@@ -7,7 +7,7 @@ import pytest
 from core.commands.argument_models import ArgumentCommandSpec, ArgumentOptionSpec
 from core.commands.argument_parser import parse_argument_text
 from core.protocol.result_envelope import ResultEnvelope
-from core.utils.command_output import ResultDisplay, ResultDataShape, render_result_payload
+from core.utils.command_output import ResultDataShape, render_result_payload
 from server.application.command.server_builtin_registry import SERVER_COMMAND_REGISTRY
 
 
@@ -215,15 +215,15 @@ def test_job_start_delimited_params_are_forwarded_to_control():
 
 
 def test_result_envelope_has_one_source_but_two_presentation_formats():
-    payload = ResultEnvelope(data={'a': 1, 'b': 2}, display=ResultDisplay.DATA,
-                             shape=ResultDataShape.FLAT).as_payload()
+    payload = ResultEnvelope(data={'a': 1, 'b': 2}, 
+                             ).as_payload()
     assert payload['status'] == 'success'
-    assert json.loads(render_result_payload(payload, 'json')) == {'a': 1, 'b': 2}
-    assert render_result_payload(payload).splitlines() == ['a                   1', 'b                   2']
-    table = ResultEnvelope(data=[{'a': 1, 'b': 2}], display=ResultDisplay.DATA,
-                           shape=ResultDataShape.TABLE).as_payload()
-    assert json.loads(render_result_payload(table, 'json')) == [{'a': 1, 'b': 2}]
-    assert 'a' in render_result_payload(table) and 'b' in render_result_payload(table)
+    assert json.loads(render_result_payload(payload, 'json', view='data', shape='flat')) == {'a': 1, 'b': 2}
+    assert render_result_payload(payload, view='data', shape='flat').splitlines() == ['a                   1', 'b                   2']
+    table = ResultEnvelope(data=[{'a': 1, 'b': 2}], 
+                           ).as_payload()
+    assert json.loads(render_result_payload(table, 'json', view='data', shape='table')) == [{'a': 1, 'b': 2}]
+    assert 'a' in render_result_payload(table, view='data', shape='table') and 'b' in render_result_payload(table, view='data', shape='table')
     message = ResultEnvelope(message='Updated.').as_payload()
     assert render_result_payload(message) == 'Updated.'
     assert json.loads(render_result_payload(message, 'json')) == {'status': 'success', 'message': 'Updated.'}

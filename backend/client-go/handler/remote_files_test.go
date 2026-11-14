@@ -16,7 +16,7 @@ func TestRemoteBrowseEndToEndControlFrame(t *testing.T) {
 	}
 	go Handle(session, map[string]interface{}{"type": "control", "id": float64(123), "domain": "remote_files", "action": "browse_directory", "payload": map[string]interface{}{"path": root, "page": float64(1), "page_size": float64(20)}})
 	result := receive(t, peer)
-	if result["type"] != "result" || result["id"] != float64(123) || result["status"] != float64(1) || result["eof"] != float64(1) {
+	if result["type"] != "result" || result["id"] != float64(123) || result["status"] != "success" || result["event_type"] != "completed" {
 		t.Fatalf("incorrect terminal response: %#v", result)
 	}
 	content := result["data"].(map[string]interface{})
@@ -31,7 +31,7 @@ func TestRemoteBrowseCancellationReleasesForegroundSlot(t *testing.T) {
 	// A completed browse releases the same foreground slot as cancellable shell.
 	go Handle(session, map[string]interface{}{"type": "control", "id": float64(57), "domain": "remote_files", "action": "browse_directory", "payload": map[string]interface{}{}})
 	result := receive(t, peer)
-	if result["eof"] != float64(1) || result["status"] != float64(1) {
+	if result["event_type"] != "completed" || result["status"] != "success" {
 		t.Fatalf("browse did not finish: %#v", result)
 	}
 	if session.HasActiveShell() {

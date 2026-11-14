@@ -34,7 +34,12 @@ class CommandStreamService:
             status = item[0]
             text = item[1] if len(item) > 1 else ''
             final_status = status
-            if text is not None:
+            if isinstance(text, dict) and text.get('event_type') in ('chunk', 'progress', 'completed'):
+                if text.get('message'):
+                    parts.append(str(text['message']))
+                elif 'data' in text:
+                    parts.append(json.dumps(text['data'], ensure_ascii=False))
+            elif text is not None:
                 parts.append(str(text))
 
         return final_status, '\n'.join(part for part in parts if part).strip()

@@ -28,7 +28,14 @@ class WebRemoteFileService:
             client_id, ControlDomain.REMOTE_FILES, action, payload,
             task_type='remote_file', source='web_remote_file',
         )
-        if status != 1 and not (batch and isinstance(result, dict) and "total" in result):
+        # The transport returns the complete Result Envelope; this domain uses
+        # the underlying Remote Files data/text according to the requested action.
+        if isinstance(result, dict) and result.get('event_type') == 'completed':
+            envelope = result
+            result = envelope.get('data') if json_result else envelope.get('message', '')
+            if status != 1 and not (batch and isinstance(result, dict) and 'total' in result):
+                raise RuntimeError(str(envelope.get('message') or 'Remote file operation failed'))
+        elif status != 1 and not (batch and isinstance(result, dict) and 'total' in result):
             raise RuntimeError(str(result or 'Remote file operation failed'))
         if json_result and not isinstance(result, dict):
             raise RuntimeError('Invalid remote JSON payload: expected object')

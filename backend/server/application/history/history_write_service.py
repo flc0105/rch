@@ -25,7 +25,7 @@ class HistoryWriteService:
             'origin': activity['origin'], 'presentation': activity['presentation'],
             'status': 'running', 'invocation': dict(activity['invocation']),
             'resolved': dict(activity['resolved']),
-            'result': {'output_records': []},
+            'result': {'output_records': [], 'result_events': []},
             'summary': activity['summary'],
             'created_at': activity.get('created_at') or when,
             'started_at': when, 'finished_at': None, 'references': list(activity.get('references', [])),
@@ -61,25 +61,40 @@ class HistoryWriteService:
                 return
             result = entry['result']
             records = result.setdefault('output_records', [])
-            total_chars = sum(len(str(record.get('text') or '')) + (len(compact_json_dumps(record['envelope'])) if record.get('envelope') else 0)
-                              for record in records)
+            total_chars = sum(len(str(record.get('text') or '')) for record in records)
             remaining = max(0, self.store.MAX_OUTPUT_RECORD_CHARS - total_chars)
             output = self.store._safe_text(text)
-            event = envelope if isinstance(envelope, dict) else {}
-            event_size = len(compact_json_dumps(event)) if event else 0
-            if (output or event) and remaining and len(records) < self.store.MAX_OUTPUT_RECORDS:
-                # Never persist a partial JSON envelope; keep the readable text if it fits.
-                saved_event = event if event_size < remaining else {}
-                space = max(0, remaining - (event_size if saved_event else 0))
-                saved = output[:space]
-                if saved or saved_event:
-                    records.append(OutputRecordBase(seq=len(records) + 1, status=int(status or 0), text=saved,
-                                                    eof=int(eof or 0), created_at=self.store._now_iso(),
-                                                    envelope=saved_event).to_dict())
-                if len(saved) < len(output) or (event and not saved_event):
+            if not output:
+                return
+            if remaining and len(records) < self.store.MAX_OUTPUT_RECORDS:
+                saved = output[:remaining]
+                records.append(OutputRecordBase(seq=len(records) + 1, status=int(status or 0),
+                                                text=saved, eof=int(eof or 0),
+                                                created_at=self.store._now_iso()).to_dict())
+                if len(saved) < len(output):
                     result['truncated'] = True
-            elif output or event:
+            else:
                 result['truncated'] = True
+            self.store._update_entry(entry)
+
+    def append_result_event_for_connection(self, conn, entry_id, event):
+        """Temporary raw Result inspection, isolated from user-visible Output Records."""
+        if conn is None or not entry_id or not isinstance(event, dict):
+            return
+        if event.get('event_type') not in ('started', 'progress', 'chunk', 'completed'):
+            return
+        with self.store._lock, self.store.database.transaction():
+            entry = self.store._get_entry(self.store._get_machine_id_from_conn(conn), entry_id)
+            if entry is None:
+                return
+            result = entry['result']
+            events = result.setdefault('result_events', [])
+            size = len(compact_json_dumps(event))
+            used = sum(len(compact_json_dumps(item)) for item in events)
+            if len(events) < self.store.MAX_OUTPUT_RECORDS and used + size <= self.store.MAX_OUTPUT_RECORD_CHARS:
+                events.append(dict(event))
+            else:
+                result['result_events_truncated'] = True
             self.store._update_entry(entry)
 
     def append_file_for_connection(self, conn, entry_id, file_info):
@@ -130,10 +145,10 @@ class HistoryWriteService:
             entry = self.store._get_entry(self.store._get_machine_id_from_conn(conn), entry_id)
             if entry is None:
                 return
-            if entry['status'] in {'success', 'error', 'cancelled', 'interrupted', 'timed_out', 'stopped'}:
+            if entry['status'] in {'success', 'partial', 'error', 'cancelled', 'interrupted', 'timed_out', 'stopped'}:
                 return
             entry['status'] = status
-            if status in {'success', 'error', 'cancelled', 'interrupted', 'timed_out', 'stopped'}:
+            if status in {'success', 'partial', 'error', 'cancelled', 'interrupted', 'timed_out', 'stopped'}:
                 entry['finished_at'] = self.store._now_iso()
             self.store._update_entry(entry)
 

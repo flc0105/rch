@@ -5,7 +5,7 @@ import time
 from server.application.command.command_types import COMMAND_TYPE_CONTROL
 from core.platform.catalog_visibility import visible_on_platform
 from core.protocol.job_control import build_job_control_request, validate_job_control_result
-from core.utils.command_output import ResultDisplay, render_result_payload
+from core.utils.command_output import ResultDataShape, render_result_payload
 from core.protocol.result_envelope import ResultEnvelope
 
 
@@ -55,7 +55,11 @@ class JobBuiltinSupport:
                 yield pending_result  # Preserve structured cancellation/timeout and EOF.
             return
         from core.protocol.message_queue import ResultChunk
-        yield ResultChunk(status, render_result_payload(result, output_format), getattr(pending_result, 'eof', True), terminal_authoritative=True)
+        view = 'data' if action in (JobAction.PS, JobAction.STATUS) and status == 1 else 'message'
+        shape = ResultDataShape.TABLE if action == JobAction.PS else ResultDataShape.FLAT
+        yield ResultChunk(status, render_result_payload(result, output_format, view=view, shape=shape),
+                          getattr(pending_result, 'eof', True), terminal_authoritative=True,
+                          event=getattr(pending_result, 'event', None))
 
     def _job_logs(self, name, follow=False):
         """Stream reports for a single fully parsed Job key."""
@@ -128,8 +132,8 @@ class JobBuiltinSupport:
                      'description': str(item.get('description') or '')}
                     for item in jobs if item.get('job_name')]
             result = ResultEnvelope(message='No background jobs available' if not rows else '',
-                                    data=rows, display=ResultDisplay.DATA).as_payload()
-            yield 1, render_result_payload(result, output_format)
+                                    data=rows).as_payload()
+            yield 1, render_result_payload(result, output_format, view='data', shape=ResultDataShape.TABLE)
             return
 
         if subcommand == 'logs':

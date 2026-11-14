@@ -38,13 +38,13 @@ def test_job_request_rejects_malformed_payload(payload):
 
 
 def test_result_contract_and_input_output_separation():
-    from core.utils.command_output import ResultDisplay, render_result_payload
+    from core.utils.command_output import render_result_payload
     request = build_job_control_request('stop_all')
     assert validate_job_control_request('stop_all', request) == request
     data = {'stopped': [{'job_name': 'a', 'job_id': 'a'}, {'job_name': 'b', 'job_id': 'b'}]}
     result = build_job_control_result('stop_all', 'Stop requested for 2 Job(s).', data=data, job_ids=['a','b'])
     assert validate_job_control_result(result, 'stop_all') is result
-    assert result['data'] == data and result['display'] == ResultDisplay.MESSAGE
+    assert result['data'] == data and 'display' not in result
     assert result['references'] == [{'type': 'job', 'id': 'a'}, {'type': 'job', 'id': 'b'}]
     assert render_result_payload(result) == result['message']
     assert __import__('json').loads(render_result_payload(result, 'json')) == {
@@ -53,9 +53,9 @@ def test_result_contract_and_input_output_separation():
         validate_job_control_result({**result, 'display': 'unknown'}, 'stop_all')
     with pytest.raises(ValueError):
         validate_job_control_result({'action': 'stop', 'message': 'x'}, 'stop')
-    query = build_job_control_result('ps', 'No jobs', data=[], display=ResultDisplay.DATA)
+    query = build_job_control_result('ps', 'No jobs', data=[])
     assert query['data'] == []
-    assert __import__('json').loads(render_result_payload(query, 'json')) == []
+    assert __import__('json').loads(render_result_payload(query, 'json', view='data', shape='table')) == []
 
 
 def test_client_router_passes_payload_unmodified():
@@ -96,12 +96,12 @@ def test_server_result_router_preserves_structured_data():
         services=SimpleNamespace(result_dispatcher=SimpleNamespace(
             dispatch_result=lambda *args, before_enqueue: (before_enqueue(), observed.append(args), False)[-1])))
     result = build_job_control_result('stop', 'stopped', data={'job_id': 'job-7'}, job_ids=['job-7'])
-    ServerInboundMessageRouter(connection).handle_result_message({
-        'id': 21, 'type': 'result', 'status': 1, 'data': result, 'eof': 1})
-    assert observed == [(21, 1, result, 1)]
-    ServerInboundMessageRouter(connection).handle_result_message({
-        'id': 22, 'type': 'result', 'status': 1, 'text': 'regular text', 'eof': 1})
-    assert observed[-1] == (22, 1, 'regular text', 1)
+    packet = {'id': 21, 'type': 'result', **result}
+    ServerInboundMessageRouter(connection).handle_result_message(packet)
+    assert observed == [(21, 1, packet, True)]
+    text_packet = {'id': 22, 'type': 'result', 'event_type':'completed', 'status':'success', 'message':'regular text'}
+    ServerInboundMessageRouter(connection).handle_result_message(text_packet)
+    assert observed[-1] == (22, 1, text_packet, True)
 
 
 def test_cli_and_web_share_typed_requests_and_metadata_mode():
@@ -169,7 +169,8 @@ def test_client_result_frame_carries_typed_data_without_encoding():
     conn.send = sent.append
     result = build_job_control_result('stop', 'Stop request sent', data={'job_id': 'job-1'}, job_ids=['job-1'])
     conn.send_result(19, 1, result)
-    assert sent[0]['data'] is result
-    assert 'text' not in sent[0]
+    assert sent[0]['data'] is result['data']
+    assert sent[0]['status'] == 'success' and sent[0]['event_type'] == 'completed'
+    assert 'eof' not in sent[0] and 'display' not in sent[0]
     conn.send_result(20, 1, 'plain text')
-    assert sent[1]['text'] == 'plain text' and 'data' not in sent[1]
+    assert sent[1]['message'] == 'plain text' and 'data' not in sent[1]

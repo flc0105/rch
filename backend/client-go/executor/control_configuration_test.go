@@ -37,7 +37,7 @@ func TestConfigurationControlResultEnvelopeAndCLIViews(t *testing.T) {
 	store := config.NewRuntimeStore(filepath.Join(t.TempDir(), "settings.json"))
 	status, raw := executeConfiguration(store, protocol.ConfigurationGet, map[string]interface{}{})
 	get := raw.(map[string]interface{})
-	if status != 1 || get["status"] != "success" || get["display"] != "data" || get["message"] != "" {
+	if status != 1 || get["status"] != "success" || get["message"] != "" {
 		t.Fatalf("GET envelope: %v", raw)
 	}
 	payload := get["data"].(map[string]interface{})
@@ -51,14 +51,14 @@ func TestConfigurationControlResultEnvelopeAndCLIViews(t *testing.T) {
 		"key": config.ScriptOutputConfig, "value": config.ScriptStream,
 	})
 	set := raw.(map[string]interface{})
-	if status != 1 || set["status"] != "success" || set["display"] != "message" || len(set) != 4 {
+	if status != 1 || set["status"] != "success" || len(set) != 3 {
 		t.Fatalf("SET returned non-message payload: %v", raw)
 	}
 	status, raw = executeConfiguration(store, protocol.ConfigurationReset, map[string]interface{}{
 		"key": config.ScriptOutputConfig,
 	})
 	reset := raw.(map[string]interface{})
-	if status != 1 || reset["display"] != "message" || len(reset) != 4 {
+	if status != 1 || len(reset) != 3 {
 		t.Fatalf("RESET returned non-message payload: %v", raw)
 	}
 }

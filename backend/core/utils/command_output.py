@@ -17,56 +17,72 @@ class OutputFormat(str, Enum):
 class ResultDataShape(str, Enum):
     FLAT = 'flat'
     TABLE = 'table'
-
-
-class ResultDisplay(str, Enum):
-    MESSAGE = 'message'
-    DATA = 'data'
+    GROUPED = 'grouped'
+    NUMBERED_LIST = 'numbered_list'
 
 
 class ResultEventType(str, Enum):
+    STARTED = 'started'
+    PROGRESS = 'progress'
     CHUNK = 'chunk'
     COMPLETED = 'completed'
 
 
-def render_result_payload(payload: dict, output_format: str = 'text') -> str:
-    """Present a declared result, never infer its intent from data presence."""
-    if payload.get('display') not in (ResultDisplay.MESSAGE, ResultDisplay.DATA):
-        raise ValueError('Invalid result display')
-    if output_format not in ('text', 'json'):
-        raise ValueError('Invalid result output format')
+class ResultStatus(str, Enum):
+    SUCCESS = 'success'
+    PARTIAL = 'partial'
+    ERROR = 'error'
+    CANCELLED = 'cancelled'
+    TIMED_OUT = 'timed_out'
+    INTERRUPTED = 'interrupted'
+
+
+def render_result_payload(payload: dict, output_format: str = 'text', *,
+                          view: str = 'message', shape: str | None = None,
+                          width: int = 20) -> str:
+    """Render a caller-selected view; the transport carries no UI instructions.
+
+    For a selected data view, text and --json use precisely the same data.
+    A caller may project fields *before* invoking this shared renderer.
+    """
+    if output_format not in ('text', 'json') or view not in ('message', 'data'):
+        raise ValueError('Invalid result presentation')
+    if not isinstance(payload, dict):
+        raise ValueError('Invalid result payload')
     completed = payload.get('event_type') == ResultEventType.COMPLETED
-    failed = completed and payload.get('status') != 'success'
-    if output_format == 'json':
-        if payload['display'] == ResultDisplay.DATA and not failed:
-            return json.dumps(payload.get('data'), ensure_ascii=False, indent=2)
-        if not completed:
-            return json.dumps(payload.get('message') or '', ensure_ascii=False, indent=2)
-        return json.dumps({'status': payload['status'], 'message': payload['message']},
-                          ensure_ascii=False, indent=2)
-    if failed or payload['display'] == ResultDisplay.MESSAGE:
-        return str(payload.get('message') or '')
+    failed = completed and payload.get('status') not in (ResultStatus.SUCCESS, ResultStatus.PARTIAL)
+    message = str(payload.get('message') or '')
+    if failed or view == 'message':
+        if output_format == 'json':
+            return json.dumps({'status': payload.get('status'), 'message': message},
+                              ensure_ascii=False, indent=2) if completed else json.dumps(message, ensure_ascii=False)
+        return message
     data = payload.get('data')
     if not isinstance(data, (dict, list)):
         raise ValueError('Structured result requires an object or array')
-    shape = payload.get('shape')
-    if shape not in (ResultDataShape.FLAT, ResultDataShape.TABLE, 'dict', 'grouped_dict', None):
-        raise ValueError('Invalid structured result shape')
-    if shape == ResultDataShape.TABLE and not isinstance(data, list):
-        raise ValueError('Table result requires an array')
-    if shape == ResultDataShape.FLAT and not isinstance(data, dict):
-        raise ValueError('Flat result requires an object')
+    if output_format == 'json':
+        return json.dumps(data, ensure_ascii=False, indent=2)
+    shape = shape or (ResultDataShape.TABLE if isinstance(data, list) else ResultDataShape.FLAT)
+    if shape in (ResultDataShape.FLAT, 'dict') and not isinstance(data, dict):
+        raise ValueError('Flat view requires an object')
+    if shape in (ResultDataShape.TABLE, ResultDataShape.NUMBERED_LIST) and not isinstance(data, list):
+        raise ValueError('List view requires an array')
+    if shape in (ResultDataShape.GROUPED, 'grouped_dict') and not isinstance(data, dict):
+        raise ValueError('Grouped view requires an object')
+    if shape == ResultDataShape.NUMBERED_LIST:
+        lines = [f'{row["index"]:>3}  {row["command"]}' for row in data]
+        return '\n'.join(lines) if lines else message or 'No data to display'
     if data == []:
-        return str(payload.get('message') or 'No data to display')
-    # The existing table renderer assumes every row has exactly the first
-    # row's fields. A general JSON array must not silently drop extra data.
-    if isinstance(data, list) and data:
+        return message or 'No data to display'
+    if shape == ResultDataShape.TABLE and isinstance(data, list) and data:
         if not isinstance(data[0], dict) or any(
                 not isinstance(row, dict) or set(row) != set(data[0]) for row in data):
             return json.dumps(data, ensure_ascii=False, indent=2)
+    internal_shape = ('grouped_dict' if shape == ResultDataShape.GROUPED else
+                      'dict' if shape == ResultDataShape.FLAT else shape)
     _, text = render_structured_result(StructuredCommandResult(
-        status=1, data=data, shape='dict' if shape == ResultDataShape.FLAT else shape,
-        width=(payload.get('width') or 20) if isinstance(data, dict) else None))
+        status=1, data=data, shape=internal_shape,
+        width=width if isinstance(data, dict) else None))
     return text
 
 

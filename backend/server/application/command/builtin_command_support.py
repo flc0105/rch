@@ -111,7 +111,7 @@ class ScriptBuiltinSupport:
         subcommand = invocation.action
         args = invocation.arguments
         from core.protocol.result_envelope import ResultEnvelope
-        from core.utils.command_output import ResultDisplay, ResultDataShape, render_result_payload
+        from core.utils.command_output import ResultDataShape, render_result_payload
         if subcommand == 'list':
             rows = []
             for item in self.list_script_catalog():
@@ -124,9 +124,8 @@ class ScriptBuiltinSupport:
                     param_names = []
                 rows.append({'name': item['path'], 'display_name': item['display_name'],
                              'description': item['description'], 'params': param_names})
-            envelope = ResultEnvelope(data=rows, display=ResultDisplay.DATA,
-                                      shape=ResultDataShape.TABLE).as_payload()
-            yield 1, render_result_payload(envelope, invocation.output_format)
+            envelope = ResultEnvelope(data=rows).as_payload()
+            yield 1, render_result_payload(envelope, invocation.output_format, view='data', shape=ResultDataShape.TABLE)
             return
         if subcommand == 'view':
             with open(self._resolve_script_path(args['name']), 'rt', encoding='utf-8') as source:
@@ -388,17 +387,16 @@ class PinnedPathBuiltinSupport:
 
     def gopin(self, invocation):
         from core.protocol.result_envelope import ResultEnvelope
-        from core.utils.command_output import ResultDisplay, ResultDataShape, render_result_payload
+        from core.utils.command_output import ResultDataShape, render_result_payload
 
         name = str(invocation.arguments.get('command') or '').strip()
         items = self.list_pinned_paths()
         if invocation.action == 'list':
             rows = [{'name': item.get('display_name', ''), 'path': item.get('path', '')}
                     for item in items]
-            envelope = ResultEnvelope(data=rows, display=ResultDisplay.DATA,
-                                      shape=ResultDataShape.TABLE,
+            envelope = ResultEnvelope(data=rows,
                                       message='No saved pinned paths for current host').as_payload()
-            yield 1, render_result_payload(envelope, invocation.output_format)
+            yield 1, render_result_payload(envelope, invocation.output_format, view='data', shape=ResultDataShape.TABLE)
             return
 
         if not name:
@@ -498,7 +496,7 @@ class HistoryBuiltinSupport:
     def history(self, invocation):
         """History forms are fully parsed by the registry; !N is rewritten upstream."""
         from core.protocol.result_envelope import ResultEnvelope
-        from core.utils.command_output import ResultDisplay, ResultDataShape, render_result_payload
+        from core.utils.command_output import ResultDataShape, render_result_payload
 
         action = invocation.action
         args = invocation.arguments
@@ -520,8 +518,10 @@ class HistoryBuiltinSupport:
             else:
                 envelope = ResultEnvelope(
                     message=('No command history available' if not rows else ''),
-                    data=rows, display=ResultDisplay.DATA, shape=ResultDataShape.TABLE).as_payload()
-            yield 1, render_result_payload(envelope, output_format)
+                    data=rows).as_payload()
+            yield 1, render_result_payload(envelope, output_format,
+                                           view='data' if output_format == 'json' else 'message',
+                                           shape=ResultDataShape.TABLE)
             return
 
         if action == 'clear':
@@ -564,7 +564,7 @@ class RttBuiltinSupport:
         }
 
         from core.protocol.result_envelope import ResultEnvelope
-        from core.utils.command_output import ResultDisplay, ResultDataShape, render_result_payload
-        envelope = ResultEnvelope(data=payload, display=ResultDisplay.DATA,
-                                  shape=ResultDataShape.FLAT).as_payload()
-        yield 1, render_result_payload({**envelope, 'width': 24}, invocation.output_format)
+        from core.utils.command_output import ResultDataShape, render_result_payload
+        envelope = ResultEnvelope(data=payload).as_payload()
+        yield 1, render_result_payload(envelope, invocation.output_format,
+                                       view='data', shape=ResultDataShape.FLAT, width=24)

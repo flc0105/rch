@@ -97,7 +97,7 @@ func TestRuntimeSetDispatchJsonUsesBuiltin(t *testing.T) {
 	}
 }
 
-func TestConfigurationControlSharesRuntimeStore(t *testing.T) {
+func TestLegacySetSharesRuntimeStore(t *testing.T) {
 	store := config.NewRuntimeStore(filepath.Join(t.TempDir(), "settings.json"))
 	status, result := executeConfiguration(store, protocol.ConfigurationSet, map[string]interface{}{"key": config.ScriptOutputConfig, "value": config.ScriptStream})
 	if status != 1 || store.Get(config.ScriptOutputConfig) != config.ScriptStream {
@@ -121,11 +121,11 @@ func TestConfigurationControlSharesRuntimeStore(t *testing.T) {
 	}
 }
 
-func TestConfigurationControlResultEnvelopeAndCLIViews(t *testing.T) {
+func TestLegacySetEnvelopeAndCLIViews(t *testing.T) {
 	store := config.NewRuntimeStore(filepath.Join(t.TempDir(), "settings.json"))
 	status, raw := executeConfiguration(store, protocol.ConfigurationGet, map[string]interface{}{})
 	get := raw.(map[string]interface{})
-	if status != 1 || get["status"] != "success" || get["display"] != "data" || get["message"] != "" {
+	if status != 1 || get["status"] != "success" || get["message"] != "" {
 		t.Fatalf("GET envelope: %v", raw)
 	}
 	payload := get["data"].(map[string]interface{})
@@ -139,14 +139,14 @@ func TestConfigurationControlResultEnvelopeAndCLIViews(t *testing.T) {
 		"key": config.ScriptOutputConfig, "value": config.ScriptStream,
 	})
 	set := raw.(map[string]interface{})
-	if status != 1 || set["status"] != "success" || set["display"] != "message" || len(set) != 4 {
+	if status != 1 || set["status"] != "success" || len(set) != 3 {
 		t.Fatalf("SET returned non-message payload: %v", raw)
 	}
 	status, raw = executeConfiguration(store, protocol.ConfigurationReset, map[string]interface{}{
 		"key": config.ScriptOutputConfig,
 	})
 	reset := raw.(map[string]interface{})
-	if status != 1 || reset["display"] != "message" || len(reset) != 4 {
+	if status != 1 || len(reset) != 3 {
 		t.Fatalf("RESET returned non-message payload: %v", raw)
 	}
 	status, text := runtimeSetCommand("--json", store)

@@ -25,8 +25,8 @@ def test_client_control_query_and_mutations_are_consistent(isolated_runtime_conf
 
     status, get = manager.execute(scope, ConfigurationAction.GET, {})
     assert status == 1
-    assert {k: get[k] for k in ('status', 'message', 'display')} == {
-        'status': 'success', 'message': '', 'display': 'data'}
+    assert {k: get[k] for k in ('status', 'message')} == {
+        'status': 'success', 'message': ''}
     assert get['data']['items'][0]['choices'] == []
     assert 'store_path' in get['data']
     assert list(configuration_cli_items(get['data'])[0]) == [
@@ -35,8 +35,8 @@ def test_client_control_query_and_mutations_are_consistent(isolated_runtime_conf
     status, set_result = manager.execute(scope, ConfigurationAction.SET, {
         'key': 'SCRIPT_DEFAULT_TIMEOUT', 'value': 78})
     assert status == 1
-    assert set(set_result) == {'event_type', 'status', 'display', 'message'}
-    assert set_result['status'] == 'success' and set_result['display'] == 'message'
+    assert set(set_result) == {'event_type', 'status', 'message'}
+    assert set_result['status'] == 'success'
     assert 'SCRIPT_DEFAULT_TIMEOUT updated:' in set_result['message']
     assert 'items' not in set_result and 'data' not in set_result
 
@@ -46,12 +46,12 @@ def test_client_control_query_and_mutations_are_consistent(isolated_runtime_conf
 
     status, reset_result = manager.execute(scope, ConfigurationAction.RESET, {'key': 'SCRIPT_DEFAULT_TIMEOUT'})
     assert status == 1
-    assert set(reset_result) == {'event_type', 'status', 'display', 'message'}
+    assert set(reset_result) == {'event_type', 'status', 'message'}
     assert 'reset to default' in reset_result['message']
 
     status, failure = manager.execute(scope, ConfigurationAction.SET, {'key': 'SCRIPT_DEFAULT_TIMEOUT', 'value': 'nonsense'})
     assert status == 0
-    assert set(failure) == {'event_type', 'status', 'display', 'message'}
+    assert set(failure) == {'event_type', 'status', 'message'}
     assert failure['status'] == 'error'
 
 
@@ -67,17 +67,17 @@ class InMemoryRemote:
 def test_web_uses_same_control_envelope_and_refetches_get(isolated_runtime_config):
     api = WebCommandExecutionApi(None, remote_execution_service=InMemoryRemote())
     get = api.get_runtime_config('test-client')
-    assert get['status'] == 'success' and get['display'] == 'data'
+    assert get['status'] == 'success'
     assert get['data']['items'] and 'value_type' in get['data']['items'][0]
 
     changed = api.update_runtime_config('test-client', 'SCRIPT_DEFAULT_TIMEOUT', 78)
-    assert changed['status'] == 'success' and changed['display'] == 'message'
-    assert set(changed) == {'event_type', 'status', 'display', 'message'}
+    assert changed['status'] == 'success'
+    assert set(changed) == {'event_type', 'status', 'message'}
     after_set = api.get_runtime_config('test-client')['data']
     assert next(row for row in after_set['items'] if row['key'] == 'SCRIPT_DEFAULT_TIMEOUT')['value'] == 78
 
     reset = api.reset_runtime_config('test-client', 'SCRIPT_DEFAULT_TIMEOUT')
-    assert reset['status'] == 'success' and reset['display'] == 'message'
+    assert reset['status'] == 'success'
     assert 'items' not in reset and 'data' not in reset
 
     with pytest.raises(RuntimeError, match='Invalid'):

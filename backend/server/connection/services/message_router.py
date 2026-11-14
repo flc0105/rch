@@ -8,11 +8,27 @@ class ServerInboundMessageRouter(BaseMessageRouter):
     """
 
     def handle_result_message(self, data: dict) -> None:
+        from core.utils.command_output import ResultEventType, ResultStatus
+        phase = data.get('event_type')
+        if phase not in ResultEventType._value2member_map_:
+            return
+        if phase == ResultEventType.COMPLETED and data.get('status') not in ResultStatus._value2member_map_:
+            return
+        if any(key in data for key in ('display', 'shape', 'eof')):
+            return
+        if phase != ResultEventType.COMPLETED and 'status' in data:
+            return
+        if 'message' in data and not isinstance(data['message'], str):
+            return
+        if 'references' in data and (not isinstance(data['references'], list) or
+                                     any(not isinstance(ref, dict) for ref in data['references'])):
+            return
+        if 'data' in data and not isinstance(data['data'], (dict, list)):
+            return
         accepted = self.connection.services.result_dispatcher.dispatch_result(
             data.get('id'),
-            data.get('status'),
-            data['data'] if isinstance(data.get('data'), dict) else data.get('text'),
-            data.get('eof'),
+            1 if phase != ResultEventType.COMPLETED or data['status'] == 'success' else 0,
+            data, phase == ResultEventType.COMPLETED,
             before_enqueue=lambda: self.connection.update_current_workdir(data.get('cwd')),
         )
         if accepted:

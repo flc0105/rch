@@ -30,11 +30,13 @@ class _TaskResultBatch:
         self.timer = None
         self.closed = False
 
-    def add(self, status, text):
+    def add(self, status, text, result=None):
         with self.lock:
             if self.closed:
                 raise RuntimeError('Task result batch already closed')
             item = {'status': status, 'text': text}
+            if isinstance(result, dict):
+                item['result'] = result
             self.items.append(item)
             self.bytes += len(text.encode('utf-8'))
             if len(self.items) >= self.MAX_ITEMS or self.bytes >= self.MAX_BYTES:
@@ -151,7 +153,7 @@ class WebTaskRunner:
             status=final_status,
         )
 
-    def _publish_task_result(self, context: TaskExecutionContext, status: int, text: str):
+    def _publish_task_result(self, context: TaskExecutionContext, status: int, text: str, result=None):
         target_tab_id = self._get_task_tab_id(context)
 
         self.event_bus.publish(
@@ -164,6 +166,7 @@ class WebTaskRunner:
                 'command_id': self._get_runtime_command_id(context),
                 'status': status,
                 'text': text,
+                **({'result': result} if isinstance(result, dict) else {}),
                 'metadata': dict(context.metadata or {}),
                 'time': datetime.now().isoformat(),
             },
@@ -173,7 +176,7 @@ class WebTaskRunner:
     def _publish_task_result_batch(self, context: TaskExecutionContext, results):
         if len(results) == 1:
             item = results[0]
-            self._publish_task_result(context, item['status'], item['text'])
+            self._publish_task_result(context, item['status'], item['text'], item.get('result'))
             return
         self.event_bus.publish(
             'command_result_batch',
@@ -213,17 +216,17 @@ class WebTaskRunner:
             target_tab_id=target_tab_id,
         )
 
-    def _publish_stream_chunk(self, context: TaskExecutionContext, status: int, text: str):
+    def _publish_stream_chunk(self, context: TaskExecutionContext, status: int, text: str, result=None):
         batch = getattr(context, '_result_batch', None)
         if batch is None:
-            self._publish_task_result(context, status, text)
+            self._publish_task_result(context, status, text, result)
         else:
-            batch.add(status, text)
+            batch.add(status, text, result)
         self._append_history_output(context, status, text)
 
-    def _record_stream_chunk(self, context: TaskExecutionContext, status: int, result, summary: TaskStreamSummary):
+    def _record_stream_chunk(self, context: TaskExecutionContext, status: int, result, summary: TaskStreamSummary, envelope=None):
         text = '' if result is None else str(result)
-        self._publish_stream_chunk(context, status, text)
+        self._publish_stream_chunk(context, status, text, envelope)
         summary.record_chunk(status, text)
 
     def _record_task_event(self, context: TaskExecutionContext, event: CommandExecutionEvent, summary: TaskStreamSummary):
@@ -232,27 +235,27 @@ class WebTaskRunner:
         if event.payload.get('result_terminal'):
             summary.terminal_status = event.payload['result_terminal']
             if event.text:
-                self._publish_stream_chunk(context, event.status, event.text)
+                self._publish_stream_chunk(context, event.status, event.text, event.payload.get('result_envelope'))
             return
         if event.payload.get('intermediate_result'):
             if event.text:
-                self._publish_stream_chunk(context, event.status, event.text)
+                self._publish_stream_chunk(context, event.status, event.text, event.payload.get('result_envelope'))
             return
 
         if event.event_type == CommandExecutionEvent.PROGRESS:
             if event.text:
-                self._record_stream_chunk(context, 1, event.text, summary)
+                self._record_stream_chunk(context, 1, event.text, summary, event.payload.get('result_envelope'))
             return
 
         if event.event_type == CommandExecutionEvent.CHUNK:
-            self._record_stream_chunk(context, event.status, event.text, summary)
+            self._record_stream_chunk(context, event.status, event.text, summary, event.payload.get('result_envelope'))
             return
 
         if event.event_type == CommandExecutionEvent.ERROR:
             reason = str(event.payload.get('failure_reason') or '')
             if reason:
                 summary.mark_dispatch_failure(reason)
-            self._record_stream_chunk(context, 0, event.text, summary)
+            self._record_stream_chunk(context, 0, event.text, summary, event.payload.get('result_envelope'))
             return
 
         if event.event_type == CommandExecutionEvent.CANCELLED:
@@ -260,7 +263,7 @@ class WebTaskRunner:
             summary.mark_cancelled()
             if event.payload.get('terminal'):
                 return
-            self._record_stream_chunk(context, 0, event.text or 'cancelled', summary)
+            self._record_stream_chunk(context, 0, event.text or 'cancelled', summary, event.payload.get('result_envelope'))
             return
 
         if event.event_type == CommandExecutionEvent.COMPLETED:

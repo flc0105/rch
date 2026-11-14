@@ -46,8 +46,10 @@ class CommandRuntimeConfigMixin:
                                 _send_interim_result=lambda status, text: messages.append(str(text)))
         status, result = self.configuration_manager.execute(scope, action, payload)
         if status == 1 and action == ConfigurationAction.GET:
-            result = {**result, 'data': configuration_cli_items(result['data']), 'shape': 'table'}
-        text = render_result_payload(result, output_format)
+            result = {**result, 'data': configuration_cli_items(result['data'])}
+        text = render_result_payload(result, output_format,
+                                     view='data' if status == 1 and action == ConfigurationAction.GET else 'message',
+                                     shape='table')
         if messages and output_format != 'json':
             text = '\n'.join([*messages, text])
         return status, text

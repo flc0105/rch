@@ -3,7 +3,7 @@ import traceback
 
 from client.runtime.execution.python_execution.output import capture_output, StreamOutput
 from client.runtime.sdk.context import build_script_sdk_globals, use_script_sdk_context
-from core.utils.command_output import ResultDisplay, ResultEventType
+from core.utils.command_output import ResultEventType
 from client.runtime.execution.python_execution.base import PythonExecutionStrategy
 
 
@@ -70,7 +70,7 @@ class InProcessPythonExecutionStrategy(PythonExecutionStrategy):
 
     @staticmethod
     def _data_event(data):
-        return {'event_type': ResultEventType.CHUNK, 'display': ResultDisplay.DATA, 'data': data}
+        return {'event_type': ResultEventType.CHUNK, 'data': data}
 
     def execute_collect(self, code, kwargs=None, timeout=None):
         output = _CollectedScriptOutput()

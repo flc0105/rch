@@ -18,11 +18,61 @@ func messageID(msg map[string]interface{}, key string) (int, bool) {
 	return int(value), true
 }
 
+// sendResultEvent is the single executable-result wire encoder. Existing
+// execution handlers still return (status, result); no EOF crosses the socket.
+func sendResultEvent(session *executor.Session, id, status int, result interface{}, phase string) {
+	packet := map[string]interface{}{
+		"type": "result", "id": id, "event_type": phase,
+		"cwd": session.CurrentDirectory(),
+	}
+	if value, ok := result.(map[string]interface{}); ok {
+		if _, typed := value["event_type"]; typed {
+			for _, field := range []string{"message", "data", "references", "action"} {
+				if item, present := value[field]; present {
+					packet[field] = item
+				}
+			}
+			if _, present := packet["message"]; !present {
+				if text, ok := value["text"].(string); ok {
+					packet["message"] = text
+				}
+			}
+			if phase == "completed" {
+				if statusName, ok := value["status"].(string); ok {
+					packet["status"] = statusName
+				}
+				if reason, ok := value["failure_reason"].(string); ok &&
+					(reason == "cancelled" || reason == "timed_out" || reason == "interrupted") {
+					packet["status"] = reason
+				} else if value["event_type"] == "cancelled" {
+					packet["status"] = "cancelled"
+				}
+			}
+		} else {
+			packet["data"] = value
+		}
+	} else if text, ok := result.(string); ok {
+		packet["message"] = text
+	} else if result != nil {
+		packet["data"] = result
+	}
+	if phase == "completed" {
+		if _, ok := packet["status"]; !ok {
+			if status == 1 {
+				packet["status"] = "success"
+			} else {
+				packet["status"] = "error"
+			}
+		}
+		if status != 1 && packet["status"] == "success" {
+			packet["status"] = "error"
+		}
+	}
+	_ = session.Sock.Send(packet)
+}
+
 func sendResult(session *executor.Session, id, status int, text string) {
-	_ = session.Sock.Send(map[string]interface{}{
-		"type": "result", "id": id, "status": status,
-		"text": text, "cwd": session.CurrentDirectory(), "eof": 1,
-	})
+	sendResultEvent(session, id, status, text, "completed")
 }
 
 func Handle(session *executor.Session, msg map[string]interface{}) {
@@ -108,7 +158,7 @@ func Handle(session *executor.Session, msg map[string]interface{}) {
 		go func() {
 			defer cancel()
 			status, result := control.Execute(ctx, session, id, controlAction, payload, func(streamStatus int, chunk string) {
-				_ = session.Sock.Send(map[string]interface{}{"type": "result", "id": id, "status": streamStatus, "text": chunk, "cwd": session.CurrentDirectory(), "eof": 0})
+				sendResultEvent(session, id, streamStatus, chunk, "chunk")
 			})
 			cancelled, cancelID := session.EndShell(id)
 			if spec.Policy == executor.Independent && ctx.Err() == context.DeadlineExceeded {
@@ -122,13 +172,7 @@ func Handle(session *executor.Session, msg map[string]interface{}) {
 					status, result = 0, map[string]interface{}{"event_type": "cancelled", "failure_reason": "cancelled", "text": control.CancelledMessage}
 				}
 			}
-			response := map[string]interface{}{"type": "result", "id": id, "status": status, "cwd": session.CurrentDirectory(), "eof": 1}
-			if text, ok := result.(string); ok {
-				response["text"] = text
-			} else {
-				response["data"] = result
-			}
-			_ = session.Sock.Send(response)
+			sendResultEvent(session, id, status, result, "completed")
 			if cancelled {
 				_ = session.Sock.Send(map[string]interface{}{
 					"type": "cancel_ack", "id": cancelID, "target_id": id, "accepted": true, "state": "stopped",
@@ -170,16 +214,15 @@ func Handle(session *executor.Session, msg map[string]interface{}) {
 		go func() {
 			defer cancel()
 			status, result := session.DispatchContextOutput(ctx, id, cmd, func(streamStatus int, chunk string) {
-				_ = session.Sock.Send(map[string]interface{}{
-					"type": "result", "id": id, "status": streamStatus,
-					"text": chunk, "cwd": session.CurrentDirectory(), "eof": 0,
-				})
+				sendResultEvent(session, id, streamStatus, chunk, "chunk")
 			})
 			cancelled, cancelID := session.EndShell(id)
 			if cancelled {
 				status, result = 0, "Command cancelled"
+				sendResultEvent(session, id, status, map[string]interface{}{"event_type": "cancelled", "message": result, "status": "cancelled"}, "completed")
+			} else {
+				sendResult(session, id, status, result)
 			}
-			sendResult(session, id, status, result)
 			if cancelled {
 				_ = session.Sock.Send(map[string]interface{}{
 					"type": "cancel_ack", "id": cancelID,

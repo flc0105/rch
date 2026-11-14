@@ -2,7 +2,7 @@ import logging
 
 from server.application.command.command_execution_event import CommandExecutionEvent
 from core.protocol.message_queue import result_terminal_status
-from core.utils.command_output import ResultDisplay, render_result_payload
+from core.utils.command_output import ResultEventType
 from server.application.execution.execution_context import ExecutionContext
 
 
@@ -40,54 +40,59 @@ class CommandExecutionPipeline:
 
     @staticmethod
     def build_output_event(status: int, result) -> CommandExecutionEvent:
-        """
-        结果转标准事件。
-
-        约定：
-        - 优先支持结构化事件 payload
-        - 不再依赖纯文本字符串推断 cancelled
-        - 旧的 (status, text) 输出仍兼容
-        """
+        """Only event_type controls stream lifecycle; data is never decoded from text."""
+        from core.utils.command_output import ResultEventType
+        import json
         status = int(status or 0)
-
+        if isinstance(result, dict) and result.get('event_type') in ResultEventType._value2member_map_:
+            phase = result['event_type']
+            message = str(result.get('message') or result.get('text') or '')
+            if not message and 'data' in result:
+                message = json.dumps(result['data'], ensure_ascii=False, indent=2)
+            if phase == ResultEventType.PROGRESS:
+                return CommandExecutionEvent.progress(message, payload=result)
+            if phase == ResultEventType.STARTED:
+                return CommandExecutionEvent.started('', payload=result)
+            if phase == ResultEventType.CHUNK:
+                return CommandExecutionEvent.chunk(status or 1, message, payload=result)
+            # The wire's completed event is terminal. Keep a single final
+            # user-facing output, while the Task pipeline owns its own finish.
+            return CommandExecutionEvent.chunk(status, message, payload=result)
         if isinstance(result, dict):
-            event_type = str(result.get('event_type') or '').strip().lower()
-            if result.get('display') in (ResultDisplay.MESSAGE, ResultDisplay.DATA):
-                text = render_result_payload(result, 'json' if result['display'] == ResultDisplay.DATA else 'text')
-            else:
-                text = str(result.get('text') or result.get('message') or '')
-
-            if event_type == CommandExecutionEvent.CANCELLED:
+            text = str(result.get('text') or result.get('message') or '')
+            if result.get('event_type') == CommandExecutionEvent.CANCELLED:
                 return CommandExecutionEvent.cancelled(text, payload=result)
-
-            if event_type == CommandExecutionEvent.PROGRESS:
+            if result.get('event_type') == CommandExecutionEvent.PROGRESS:
                 return CommandExecutionEvent.progress(text, payload=result)
-
-            if event_type == CommandExecutionEvent.ERROR:
+            if result.get('event_type') == CommandExecutionEvent.ERROR:
                 return CommandExecutionEvent.error(text, payload=result)
-
-            if event_type == CommandExecutionEvent.CHUNK:
-                return CommandExecutionEvent.chunk(status or 1, text, payload=result)
-
+            return CommandExecutionEvent.chunk(status, text, payload=result)
         text = '' if result is None else str(result)
-
-        if status == 0:
-            return CommandExecutionEvent.error(text)
-
-        return CommandExecutionEvent.chunk(status, text)
+        return CommandExecutionEvent.error(text) if status == 0 else CommandExecutionEvent.chunk(status, text)
 
     @classmethod
     def build_result_event(cls, item):
         status, result = item[:2]
         event = cls.build_output_event(status, result)
-        if getattr(item, 'terminal_authoritative', False):
-            if item.eof:
-                terminal = result_terminal_status(status, result)
-                event.payload = {**event.payload, 'result_terminal': terminal}
-                if terminal == 'cancelled':
+        wire = getattr(item, 'event', None)
+        if wire is not None:
+            event.payload = {**event.payload, 'result_envelope': wire}
+        terminal = isinstance(result, dict) and result.get('event_type') == ResultEventType.COMPLETED
+        if terminal:
+            outcome = result.get('status', 'error')
+            event.payload = {**event.payload, 'result_terminal': outcome}
+            if outcome == 'cancelled':
+                event = CommandExecutionEvent.cancelled(event.text, payload=event.payload)
+            elif outcome not in ('success', 'partial'):
+                event = CommandExecutionEvent.error(event.text, payload={**event.payload, 'failure_reason': outcome})
+        elif getattr(item, 'terminal_authoritative', False):
+            if getattr(item, 'eof', False):
+                outcome = result_terminal_status(status, result)
+                event.payload = {**event.payload, 'result_terminal': outcome}
+                if outcome == 'cancelled':
                     event = CommandExecutionEvent.cancelled(event.text, payload=event.payload)
-                elif terminal != 'success':
-                    event = CommandExecutionEvent.error(event.text, payload={**event.payload, 'failure_reason': terminal})
+                elif outcome != 'success':
+                    event = CommandExecutionEvent.error(event.text, payload={**event.payload, 'failure_reason': outcome})
             else:
                 event.payload = {**event.payload, 'intermediate_result': True}
         return event
@@ -130,7 +135,7 @@ class CommandExecutionPipeline:
                         continue
                     if event.payload.get('result_terminal'):
                         final_status = event.payload['result_terminal']
-                        final_ok = final_status == 'success'
+                        final_ok = final_status in ('success', 'partial')
                         cancelled = final_status == 'cancelled'
                         yield event
                         continue

@@ -24,23 +24,23 @@ JSON Viewer：Table / Grouped / Flat / Raw
 
 Terminal JSON Rendering 是独立的展示层：浏览器检测输出是否为有效 JSON，提供查看操作，打开后依据 JSON 顶层类型选择适合的展示方式。它不反向改变 Client 命令的执行结果，也不为展示向 Server 请求另一份数据。仅当用户在 Table 中明确确认 Result Action 时，才通过原有命令接口提交该 Action 指定的命令。
 
-## Control Result 的展示意图与同源数据
+## Control Result 的数据与调用方视图
 
-结构化命令的 `StructuredCommandResult.data` 是业务事实的唯一来源。Control 的最终 Result 可以同时含有简短的 `message` 和完整 `data`，由明确的 `display` 指定默认呈现：`message` 为操作反馈句，`data` 为结构化查询视图。`display` 与是否存在 `data` 无关，也不改变用于表示过程与终态的 `event_type`；`shape` 则只控制结构化数据的文本排版，不负责选择默认展示内容。
+Result Envelope 只描述执行事实，不包含 `display` 或 `shape`。Client/业务层的一份结构化 `data` 可以包含 Web 所需的完整业务字段；**终端调用方**明确选择 Message 或 Data，以及 Flat、Table、Grouped、Numbered List 等文本投影，公共 Renderer 负责排版。Terminal Text 与 `--json` 使用同一份终端投影；不会因为 Web 需要某些表单字段就强迫终端也显示它们。
 
-Job / Configuration 等带 `display` 的完成结果在 Control 内使用同一语义信封，包含执行 `status`、可选 `message` 与按需使用的 `data`。Terminal 按展示意图输出：
-
-| 结果类型 | 默认 text | `--json` |
+| 终端调用方选择 | 默认 Text | `--json` |
 |---|---|---|
-| `display=message`（操作反馈） | `message` | `{"status": "success/error", "message": "..."}` |
-| `display=data`（成功查询） | 同一份 `data` 排成表格或键值文本 | 直接序列化 `data`，不附加信封字段 |
-| 执行失败 | 具体错误信息 | `{"status": "error", "message": "..."}` |
+| Message（操作反馈） | `message` | `{"status":"success/error","message":"..."}` |
+| Data / Table（成功查询） | 同一份终端投影绘制表格 | 序列化该投影数组 |
+| Data / Flat（成功查询） | Key / Value | 序列化该投影对象 |
+| Data / Grouped（成功查询） | 分组标题和组内 Key / Value | 序列化该投影对象 |
+| 失败 | 实际错误 `message` | `status` 与 `message` |
 
-JSON 中的执行成功与否由内部 Result 的 `status` 决定；成功数据查询的业务字段由 `data` 完整提供，不混入执行级 `status/message`。空数组在 JSON 中仍是 `[]`，文本可使用业务域提供的空列表提示。`--json` 不混入中间进度日志。Job `start/stop/stop_all` 为操作反馈，`ps/status` 为结构化查询；查询成功的 `message` 可为空。SDK 的 `context.emit(data)` 是 `chunk` 事件，直接呈现发出的 JSON 对象/数组。其他未声明此 Result 契约的命令沿用原有输出路径。
+`job start/stop/stop_all` 默认选择 Message，`job ps/status` 分别选择 Table/Flat，`watchdog status` 选择 Grouped。空列表是否代表业务失败，由业务状态决定，公共 Renderer 不擅自把 `[]` 判错。
 
-Configuration GET 在同一个 Result 的 `data` 中携带完整配置对象，供 Web Configuration 编辑器消费；SET/RESET 返回状态及消息，前端保存后通过 GET 刷新完整编辑 Schema。命令 `config list` / `config list --json` 从相同的 GET 配置对象提取 `group`、`key`、`value`、`default` 四字段视图。终端两种格式使用这份视图，Web 仍使用完整的配置项 Schema。`config set KEY VALUE`、`config reset KEY`、`config reset-all` 为操作反馈，支持可选 `--json` 输出状态与消息。
+Configuration GET 的 `data` 包含完整配置项（含 Web 编辑需要的描述、选项、类型、可编辑属性等）；Terminal 的 `config list` 和 `config list --json` 都只投影 `group/key/value/default` 四列。Web 直接消费 GET 结果而不用从 Terminal 文本中逆向解析字段；Client GET 不输出不再使用的附加字段。
 
-SDK `context.emit(data)` 可以在 Script 的普通文本之间发送一条独立 JSON 对象或数组输出。它保留结构化值，不等同于把 JSON 字符串打印进 stdout，也不代表 Script 已执行完毕。每条显式结构化输出均带有 `event_type=chunk`、`display=data`，与普通 `print()` 输出按执行顺序送出；Activity Output Records 保留其完整 Envelope，结构化内容以格式化 JSON 文本直接显示在输出记录中。该事件适用于 Python Client 的 `inproc` 和 `subprocess_pipe`，两种 Output Mode (`stream` / `collect`) 都支持；collect 等脚本结束后按原顺序回放。
+普通 Shell-like 命令和 Script 的 `print()`、stdout/stderr 继续作为 `message` 的文本流，不依据文字是否恰似 JSON 进行协议层推断。Script SDK 的 `context.emit(data)` 是明确的结构化 `chunk`，可在文本 `chunk` 之间按原序穿插；这不意味着脚本结束。Activity Output Records 只保留实际可见的文本或显式结构化事件的 JSON 展示，每个逻辑输出仍为独立记录。Activity Details 的临时 Result Viewer 独立保存收到的原始事件，包括请求 ID、阶段与终态，用于检查协议输出而不污染 Output Records。
 
 ## 结构化返回对象及形状
 

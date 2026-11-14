@@ -23,8 +23,8 @@ class WebProcessControlApi:
             task_type='process', source='web_process',
         )
         if status != 1:
-            raise RuntimeError(str(result))
-        return result
+            raise RuntimeError(str(result.get('message') if isinstance(result, dict) else result))
+        return result.get('message', '') if isinstance(result, dict) else result
 
     def kill_process(self, client_id: str, pid: int, name: str = ''):
         return self._terminate_process(client_id, pid)

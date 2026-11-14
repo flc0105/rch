@@ -10,7 +10,7 @@ from client.runtime.execution.runtime import ExecutionRuntime
 from client.scripts.manager import ScriptManager
 from core.protocol.control import ControlDomain, JobAction, ScriptAction
 from core.protocol.job_control import build_job_control_result, validate_job_control_result
-from core.utils.command_output import ResultDisplay, render_result_payload
+from core.utils.command_output import render_result_payload
 from server.application.command.command_execution_pipeline import CommandExecutionPipeline
 from server.application.command.job_builtin_support import JobBuiltinSupport
 
@@ -18,22 +18,20 @@ from server.application.command.job_builtin_support import JobBuiltinSupport
 def test_structured_status_text_and_json_share_identical_fields():
     data = {'job_name': 'test/probe', 'status': 'running', 'job_id': 'abc-123',
             'worker_name': 'worker', 'execution_mode': 'inproc', 'is_alive': True}
-    result = build_job_control_result(JobAction.STATUS, 'Job status retrieved.', data=data,
-                                      display=ResultDisplay.DATA)
+    result = build_job_control_result(JobAction.STATUS, 'Job status retrieved.', data=data)
     validate_job_control_result(result, JobAction.STATUS)
-    text = render_result_payload(result)
+    text = render_result_payload(result, view='data' if isinstance(result.get('data'), (dict, list)) and result.get('action') in (JobAction.PS, JobAction.STATUS) else 'message')
     assert all(str(field) in text for field in data)
-    assert json.loads(render_result_payload(result, 'json')) == data
+    assert json.loads(render_result_payload(result, 'json', view='data' if isinstance(result.get('data'), (dict, list)) and result.get('action') in (JobAction.PS, JobAction.STATUS) else 'message')) == data
     assert 'job_id' not in result['message']
 
 
 def test_job_table_has_same_columns_in_text_and_json():
     rows = [{'job_name': 'demo', 'job_id': 'id-1', 'execution_mode': 'inproc',
              'worker_name': 'thread-1', 'status': 'running'}]
-    result = build_job_control_result(JobAction.PS, '1 running Job.', data=rows,
-                                      display=ResultDisplay.DATA)
-    assert all(key in render_result_payload(result) for key in rows[0])
-    assert json.loads(render_result_payload(result, 'json')) == rows
+    result = build_job_control_result(JobAction.PS, '1 running Job.', data=rows)
+    assert all(key in render_result_payload(result, view='data' if isinstance(result.get('data'), (dict, list)) and result.get('action') in (JobAction.PS, JobAction.STATUS) else 'message') for key in rows[0])
+    assert json.loads(render_result_payload(result, 'json', view='data' if isinstance(result.get('data'), (dict, list)) and result.get('action') in (JobAction.PS, JobAction.STATUS) else 'message')) == rows
 
 
 def test_cli_json_is_single_document_even_when_client_emits_progress():
@@ -67,9 +65,9 @@ def test_live_job_queries_keep_status_internal_and_message_empty(action, payload
     manager = SimpleNamespace(**{method: lambda *_args: data})
     status, result = JobControl.execute(manager, SimpleNamespace(), action, payload)
     assert status == 1 and result['status'] == 'success'
-    assert result['message'] == '' and result['display'] == ResultDisplay.DATA
-    assert json.loads(render_result_payload(result, 'json')) == data
-    assert 'demo' in render_result_payload(result)
+    assert result['message'] == '' and 'display' not in result
+    assert json.loads(render_result_payload(result, 'json', view='data' if isinstance(result.get('data'), (dict, list)) and result.get('action') in (JobAction.PS, JobAction.STATUS) else 'message')) == data
+    assert 'demo' in render_result_payload(result, view='data' if isinstance(result.get('data'), (dict, list)) and result.get('action') in (JobAction.PS, JobAction.STATUS) else 'message')
 
 
 def test_empty_job_ps_is_data_result_with_json_empty_array():
@@ -78,18 +76,17 @@ def test_empty_job_ps_is_data_result_with_json_empty_array():
     status, result = JobControl.execute(manager, SimpleNamespace(), JobAction.PS, {})
     assert status == 1
     assert result['status'] == 'success'
-    assert result['display'] == ResultDisplay.DATA
+    assert 'display' not in result
     assert result['data'] == []
-    assert render_result_payload(result) == 'No background jobs are currently running.'
-    assert json.loads(render_result_payload(result, 'json')) == []
+    assert render_result_payload(result, view='data' if isinstance(result.get('data'), (dict, list)) and result.get('action') in (JobAction.PS, JobAction.STATUS) else 'message') == 'No background jobs are currently running.'
+    assert json.loads(render_result_payload(result, 'json', view='data' if isinstance(result.get('data'), (dict, list)) and result.get('action') in (JobAction.PS, JobAction.STATUS) else 'message')) == []
 
 
 def test_failed_data_result_uses_failure_message_not_success_table():
     failed = build_job_control_result(JobAction.STATUS, 'Job not found: missing',
-                                      status='error', data={'status': 'missing'},
-                                      display=ResultDisplay.DATA)
-    assert render_result_payload(failed) == 'Job not found: missing'
-    assert json.loads(render_result_payload(failed, 'json')) == {
+                                      status='error', data={'status': 'missing'})
+    assert render_result_payload(failed, view='data') == 'Job not found: missing'
+    assert json.loads(render_result_payload(failed, 'json', view='data')) == {
         'status': 'error', 'message': 'Job not found: missing'}
 
 
@@ -98,10 +95,10 @@ def test_empty_stop_all_json_has_no_batch_counters_or_placeholder_data():
     manager = SimpleNamespace(stop_all_jobs=lambda: {'stopped': [], 'errors': []})
     status, result = JobControl.execute(manager, SimpleNamespace(), JobAction.STOP_ALL, {})
     assert status == 1
-    assert result['display'] == ResultDisplay.MESSAGE
+    assert 'display' not in result
     assert 'data' not in result
-    assert render_result_payload(result) == 'No background jobs are currently running.'
-    assert json.loads(render_result_payload(result, 'json')) == {
+    assert render_result_payload(result, view='data' if isinstance(result.get('data'), (dict, list)) and result.get('action') in (JobAction.PS, JobAction.STATUS) else 'message') == 'No background jobs are currently running.'
+    assert json.loads(render_result_payload(result, 'json', view='data' if isinstance(result.get('data'), (dict, list)) and result.get('action') in (JobAction.PS, JobAction.STATUS) else 'message')) == {
         'status': 'success', 'message': 'No background jobs are currently running.'}
 
 
@@ -113,8 +110,8 @@ def test_job_failure_json_keeps_status_and_message_without_duplicate_error():
     status, result = JobControl.execute(None, scope, JobAction.START, {
         'job_name': 'xxxx', 'execution_mode': 'subprocess', 'params': {}})
     assert status == 0
-    assert render_result_payload(result) == 'Job not found: xxxx'
-    assert json.loads(render_result_payload(result, 'json')) == {
+    assert render_result_payload(result, view='data' if isinstance(result.get('data'), (dict, list)) and result.get('action') in (JobAction.PS, JobAction.STATUS) else 'message') == 'Job not found: xxxx'
+    assert json.loads(render_result_payload(result, 'json', view='data' if isinstance(result.get('data'), (dict, list)) and result.get('action') in (JobAction.PS, JobAction.STATUS) else 'message')) == {
         'status': 'error', 'message': 'Job not found: xxxx'}
 
 
@@ -134,8 +131,8 @@ def test_job_action_errors_do_not_stack_failure_prefixes(action, payload):
                               get_job_status=fail, stop_all_jobs=fail)
     status, result = JobControl.execute(manager, SimpleNamespace(), action, payload)
     assert status == 0
-    assert render_result_payload(result) == 'Job not found: xxxx'
-    assert json.loads(render_result_payload(result, 'json')) == {
+    assert render_result_payload(result, view='data' if isinstance(result.get('data'), (dict, list)) and result.get('action') in (JobAction.PS, JobAction.STATUS) else 'message') == 'Job not found: xxxx'
+    assert json.loads(render_result_payload(result, 'json', view='data' if isinstance(result.get('data'), (dict, list)) and result.get('action') in (JobAction.PS, JobAction.STATUS) else 'message')) == {
         'status': 'error', 'message': 'Job not found: xxxx'}
 
 
@@ -148,7 +145,7 @@ def test_job_error_without_exception_message_has_readable_fallback():
     status, result = JobControl.execute(SimpleNamespace(list_running_jobs=fail),
                                         SimpleNamespace(), JobAction.PS, {})
     assert status == 0
-    assert render_result_payload(result) == 'Job operation failed.'
+    assert render_result_payload(result, view='data' if isinstance(result.get('data'), (dict, list)) and result.get('action') in (JobAction.PS, JobAction.STATUS) else 'message') == 'Job operation failed.'
 
 
 def test_stop_all_has_only_actual_targets_and_failures():
@@ -165,16 +162,16 @@ def test_stop_all_has_only_actual_targets_and_failures():
     assert result['data']['stopped'] == [{'job_name': 'example_monitor', 'job_id': 'id-1'}]
     assert result['data']['errors'] == [{'job_name': 'other', 'job_id': 'id-2',
                                          'message': 'permission denied'}]
-    assert json.loads(render_result_payload(result, 'json')) == {
+    assert json.loads(render_result_payload(result, 'json', view='data' if isinstance(result.get('data'), (dict, list)) and result.get('action') in (JobAction.PS, JobAction.STATUS) else 'message')) == {
         'status': 'error', 'message': result['message']}
     assert result['references'] == [{'type': 'job', 'id': 'id-1'},
                                     {'type': 'job', 'id': 'id-2'}]
 
 
 def test_sdk_data_chunk_stays_unwrapped_when_completed_results_use_envelope():
-    payload = {'event_type': 'chunk', 'display': ResultDisplay.DATA,
+    payload = {'event_type': 'chunk',
                'data': {'count': 2}}
-    assert json.loads(render_result_payload(payload, 'json')) == {'count': 2}
+    assert json.loads(render_result_payload(payload, 'json', view='data')) == {'count': 2}
 
 
 @pytest.mark.parametrize('action,data,message', [
@@ -189,8 +186,8 @@ def test_sdk_data_chunk_stays_unwrapped_when_completed_results_use_envelope():
      'Job status retrieved: demo.'),
 ])
 def test_all_five_job_actions_json_use_same_completed_result_fields(action, data, message):
-    display = ResultDisplay.DATA if action in (JobAction.PS, JobAction.STATUS) else ResultDisplay.MESSAGE
-    result = build_job_control_result(action, message, data=data, display=display)
+    view = 'data' if action in (JobAction.PS, JobAction.STATUS) else 'message'
+    result = build_job_control_result(action, message, data=data)
     class Remote:
         def stream_command(self, conn, command, **kwargs):
             yield (1, result)
@@ -201,11 +198,11 @@ def test_all_five_job_actions_json_use_same_completed_result_fields(action, data
     output = list(support._send(action, output_format='json', **payload))
     assert len(output) == 1
     assert json.loads(output[0][1]) == (
-        data if display == ResultDisplay.DATA else {'status': 'success', 'message': message})
-    if display == ResultDisplay.MESSAGE:
-        assert render_result_payload(result) == message
+        data if view == 'data' else {'status': 'success', 'message': message})
+    if view == 'message':
+        assert render_result_payload(result, view='data' if isinstance(result.get('data'), (dict, list)) and result.get('action') in (JobAction.PS, JobAction.STATUS) else 'message') == message
     else:
-        assert all(key in render_result_payload(result) for key in
+        assert all(key in render_result_payload(result, view='data' if isinstance(result.get('data'), (dict, list)) and result.get('action') in (JobAction.PS, JobAction.STATUS) else 'message') for key in
                    (data[0] if isinstance(data, list) else data))
 
 
@@ -223,11 +220,11 @@ def test_server_job_validation_failure_json_is_same_contract():
 
 def test_completed_query_uses_same_renderer_in_common_pipeline():
     data = {'job_name': 'demo', 'status': 'running', 'job_id': 'id-1'}
-    chunk = {'event_type': 'chunk', 'display': 'data', 'data': data, 'shape': 'dict', 'width': 20}
+    chunk = {'event_type': 'chunk', 'data': data, 'shape': 'dict', 'width': 20}
     event = CommandExecutionPipeline.build_output_event(1, chunk)
     assert json.loads(event.text) == data
     old = CommandExecutionPipeline.build_output_event(1, {'text': 'unchanged'})
-    assert old.text == "{'text': 'unchanged'}"
+    assert old.text == 'unchanged'
     # Old non-typed dictionary events retain their existing text fallback.
     other = CommandExecutionPipeline.build_output_event(1, {'event_type': 'chunk', 'text': 'legacy'})
     assert other.text == 'legacy'
@@ -261,7 +258,7 @@ def test_sdk_emits_ordered_text_json_text(execution_mode, output_mode):
     events = [frame[2] for frame in frames]
     assert len(events) == 3, events
     assert events[0] == 'before'
-    assert events[1] == {'event_type': 'chunk', 'display': 'data',
+    assert events[1] == {'event_type': 'chunk', 
                          'data': {'number': 2, 'enabled': True}}
     assert events[2] == 'after'
     assert all(frame[3] == 0 for frame in frames)
@@ -281,7 +278,7 @@ def test_inproc_collect_mixed_output_uses_stream_line_boundaries():
     assert status == 1, result
     assert [frame[2] for frame in frames] == [
         'first', 'second',
-        {'event_type': 'chunk', 'display': 'data', 'data': {'key': 'value'}},
+        {'event_type': 'chunk', 'data': {'key': 'value'}},
         'last',
     ]
 
@@ -319,9 +316,9 @@ def test_script_emit_requires_context_and_structured_input():
 
 def test_general_structured_json_arrays_do_not_lose_fields():
     data = [{'name': 'a'}, {'name': 'b', 'extra': 2}]
-    payload = {'event_type': 'chunk', 'display': ResultDisplay.DATA, 'data': data}
-    assert json.loads(render_result_payload(payload, 'text')) == data
+    payload = {'event_type': 'chunk', 'data': data}
+    assert json.loads(render_result_payload(payload, 'text', view='data', shape='table')) == data
     for values in ([1, 2], [True, 'hello'], [None], [[1, 2]]):
-        item = {'event_type': 'chunk', 'display': ResultDisplay.DATA, 'data': values}
-        assert json.loads(render_result_payload(item, 'text')) == values
-    assert json.loads(render_result_payload(payload, 'json')) == data
+        item = {'event_type': 'chunk', 'data': values}
+        assert json.loads(render_result_payload(item, 'text', view='data', shape='table')) == values
+    assert json.loads(render_result_payload(payload, 'json', view='data')) == data

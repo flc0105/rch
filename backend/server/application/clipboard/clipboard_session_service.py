@@ -33,10 +33,11 @@ class ClipboardSessionService:
         if status != 1:
             if result is None:
                 raise ConnectionError('Client disconnected')
-            message = result.get('text') if isinstance(result, dict) else result
-            if isinstance(result, dict) and result.get('failure_reason') == 'timed_out':
+            message = result.get('message') if isinstance(result, dict) else result
+            if isinstance(result, dict) and result.get('status') == 'timed_out':
                 raise TimeoutError(message or 'Clipboard operation timed out')
             raise RuntimeError(str(message or 'Clipboard operation failed'))
-        if not isinstance(result, dict):
+        data = result.get('data') if isinstance(result, dict) else None
+        if not isinstance(data, dict):
             raise RuntimeError('Invalid Clipboard result')
-        return result
+        return data

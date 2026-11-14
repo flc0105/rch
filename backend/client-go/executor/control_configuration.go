@@ -11,12 +11,10 @@ import (
 type ConfigurationManager struct{}
 
 func configurationResult(status int, action protocol.ControlAction, message string, data map[string]interface{}) (int, interface{}) {
-	result := map[string]interface{}{"event_type": "completed", "status": "success", "display": "message", "message": message}
+	result := map[string]interface{}{"event_type": "completed", "status": "success", "message": message}
 	if status != 1 {
 		result["status"] = "error"
 	} else if action == protocol.ConfigurationGet {
-		result["display"] = "data"
-		result["shape"] = "flat"
 		result["data"] = data
 	}
 	return status, result

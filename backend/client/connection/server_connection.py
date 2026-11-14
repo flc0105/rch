@@ -107,20 +107,12 @@ class ServerConnection(RCHSocket):
             finally:
                 self._pending_session_end_id = ''
 
-    def send_result(self, id: int, status: int, result: str, eof: int = 1):
-        data = {
-            'type': MSG_TYPE_RESULT,
-            'id': id,
-            'status': status,
-            'cwd': os.getcwd(),
-            'eof': eof,
-        }
-        if isinstance(result, dict):
-            data['data'] = result
-        else:
-            data['text'] = result
-        logger.debug(data)
-        self.send(data)
+    def send_result(self, id: int, status: int, result, eof: int = 1, *, event_type=None):
+        from core.protocol.result_envelope import result_wire_event
+        packet = result_wire_event(id, status, result, final=bool(eof),
+                                   cwd=os.getcwd(), event_type=event_type)
+        logger.debug(packet)
+        self.send(packet)
 
     def enqueue_pending_message(self, data: dict):
         self.pending_message_queue.put(data)

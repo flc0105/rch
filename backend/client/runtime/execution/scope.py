@@ -33,13 +33,13 @@ class ExecutionResultMixin:
         self._send_result(status, result, eof)
 
     def _send_info(self, result, eof=0):
-        self._send_interim_result(1, info(result), eof)
+        self.socket.send_result(self.command_id, 1, info(result), eof, event_type='progress')
 
     def _send_success(self, result, eof=0):
-        self._send_interim_result(1, success(result), eof)
+        self.socket.send_result(self.command_id, 1, success(result), eof, event_type='progress')
 
     def _send_warning(self, result, eof=0):
-        self._send_interim_result(1, warning(result), eof)
+        self.socket.send_result(self.command_id, 1, warning(result), eof, event_type='progress')
 
     def _send_error(self, result, eof=0):
         self._send_interim_result(0, error(result), eof)

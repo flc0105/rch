@@ -3,8 +3,7 @@ from core.protocol.control import ControlDomain, ConfigurationAction, WatchdogAc
 from core.protocol.message_queue import ResultChunk
 from core.protocol.result_envelope import ResultEnvelope
 from core.utils.configuration_cli import configuration_cli_items
-from core.utils.command_output import (ResultDisplay, OutputFormat, StructuredCommandResult,
-                                       render_result_payload, render_structured_result)
+from core.utils.command_output import (OutputFormat, ResultDataShape, render_result_payload)
 from server.application.command.command_types import COMMAND_TYPE_CONTROL
 
 
@@ -39,39 +38,39 @@ class ConfigurationBuiltinSupport:
         output_format = invocation.output_format
         for item in self._send(ControlDomain.CONFIGURATION, action, payload):
             status, result = item[:2]
-            if not getattr(item, 'eof', True):
+            final = getattr(item, 'eof', True)
+            if not final:
                 if output_format != 'json':
-                    yield item
+                    yield ResultChunk(status, str(result.get('message') or '') if isinstance(result, dict) else str(result), False,
+                                      terminal_authoritative=True, event=getattr(item, 'event', None))
                 continue
-            if not isinstance(result, dict) or result.get('display') not in (ResultDisplay.MESSAGE, ResultDisplay.DATA):
+            if not isinstance(result, dict) or result.get('event_type') != 'completed':
                 result = ResultEnvelope(status='error', message=(
                     str(result) if status != 1 else 'Invalid Configuration response')).as_payload()
                 status = 0
             if status == 1 and action == ConfigurationAction.GET:
-                result = {**result, 'data': configuration_cli_items(result['data']), 'shape': 'table'}
-            yield ResultChunk(status, render_result_payload(result, output_format),
-                              getattr(item, 'eof', True), terminal_authoritative=True)
+                result = {**result, 'data': configuration_cli_items(result['data'])}
+            text = render_result_payload(result, output_format,
+                                         view='data' if action == ConfigurationAction.GET and status == 1 else 'message',
+                                         shape=ResultDataShape.TABLE)
+            yield ResultChunk(status, text, True, terminal_authoritative=True,
+                              event=getattr(item, 'event', None))
 
     def watchdog(self, invocation):
         for item in self._send(ControlDomain.WATCHDOG, WatchdogAction.STATUS, {}):
             status, result = item[:2]
-            eof = getattr(item, 'eof', True)
-            if not eof:
-                if invocation.output_format == OutputFormat.TEXT:
-                    yield item
+            final = getattr(item, 'eof', True)
+            if not final:
+                if invocation.output_format != OutputFormat.JSON:
+                    yield ResultChunk(status, str(result.get('message') or '') if isinstance(result, dict) else str(result), False,
+                                      terminal_authoritative=True, event=getattr(item, 'event', None))
                 continue
-            if status != 1 or not isinstance(result, dict):
+            if status != 1 or not isinstance(result, dict) or not isinstance(result.get('data'), dict):
                 message = (result.get('message') if isinstance(result, dict) else str(result))
                 envelope = ResultEnvelope(status='error', message=message or 'Watchdog status unavailable').as_payload()
-                yield ResultChunk(0, render_result_payload(envelope, invocation.output_format),
-                                  eof, terminal_authoritative=True)
-                continue
-            from core.utils.command_output import ResultDataShape
-            envelope = ResultEnvelope(data=result, display=ResultDisplay.DATA,
-                                      shape=ResultDataShape.FLAT).as_payload()
-            if invocation.output_format == OutputFormat.TEXT:
-                # Preserve the established grouped Watchdog text format.
-                _, text = render_structured_result(StructuredCommandResult(1, result, shape='grouped_dict'))
-            else:
                 text = render_result_payload(envelope, invocation.output_format)
-            yield ResultChunk(status, text, getattr(item, 'eof', True), terminal_authoritative=True)
+                yield ResultChunk(0, text, True, terminal_authoritative=True, event=getattr(item, 'event', None))
+                continue
+            text = render_result_payload(result, invocation.output_format,
+                                         view='data', shape=ResultDataShape.GROUPED)
+            yield ResultChunk(status, text, True, terminal_authoritative=True, event=getattr(item, 'event', None))

@@ -42,9 +42,9 @@ Web Jobs / Job Detail · 状态、消息、文件
 
 Job Start 请求保留业务参数 `payload.params`，不增加无意义的 `params.params` 包装层。Job 的只读查询也使用同一 Control 信封，但不产生 Activity。
 
-Job Control 的最终 `result` 帧使用一份结构化对象，包含 `action`、`event_type=completed`、执行 `status`、展示意图 `display`、可选 `message` 和业务 `data`。`start`、`stop`、`stop_all` 默认 `display=message`：Terminal 文本显示一句状态，`--json` 显示 `status/message`，Job ID、worker 和实际批量处理明细保存在内部 `data` 供 UI 与 Activity 使用。`ps`、`status` 使用 `display=data`：成功时 Terminal 默认显示 `data` 的表格或键值，`--json` 直接输出同一份 `data`，无执行状态外壳；失败时统一显示具体错误，JSON 返回 `status=error` 和 `message`。空 `ps` 的 JSON 是 `[]`，文本提示当前无运行 Job。空 `stop_all` 只报告没有运行中 Job，不构造无意义计数。过程日志不混入 `--json`。通用层依据 `display` 处理呈现，不根据业务 Action 名称推断类型。
+Job Control 最终使用统一 `result(event_type=completed)`，包含 `status`、可选 `message/data/references`；中间进度发送 `progress/chunk`，Socket 不再发送 `display/eof`。**调用方**根据动作选择终端视图：`start/stop/stop_all` 显示简短 Message，JSON 为 `status/message`；`ps` 使用 Table、`status` 使用 Flat，成功查询的 Text 与 JSON 使用相同业务数据，不添加执行外壳。失败显示具体错误；空 `ps` 的 JSON 为 `[]`，Text 提示当前无运行 Job。Web 直接消费完整 Control `data`，与终端呈现互不强制；Job ID 和 worker 仍保留在业务数据中。过程日志不混入终端的单份 `--json` 结果，业务状态与唯一终态由公共 Result 管线传递。
 
-Job Start 的过程消息分别说明从 Server 下载模块和已保存到 Client 临时路径；这些进度不是最终 `message` 的组成部分。Web Start/Stop API 返回简短的最终 `message`，Job Manager 的成功提示不额外拼接细节。Activity 仍使用现有 Output Records：每条逻辑输出一条记录，显式结构化 Result 的完整 Envelope 可供 Details 查阅，Job 引用仍关联真实 ID。Job 长期运行状态、消息和文件的持久化上报继续使用原有 HTTP 通道。
+Job Start 的过程消息分别说明从 Server 下载模块和已保存到 Client 临时路径；这些进度不是最终 `message` 的组成部分。Web Start/Stop API 返回简短的最终 `message`，Job Manager 的成功提示不额外拼接细节。Activity 的 Output Records 每条可见内容一条记录；完整原始 Result 事件暂存在独立 `result_events` 并可由 Details 的 Result 按钮查看，Job 引用仍关联真实 ID。Job 长期运行状态、消息和文件的持久化上报继续使用原有 HTTP 通道。
 
 启动模式的默认值统一来自 Job Metadata 的 `execution_mode`；显式传入的 `execution_mode` 仍由应用服务按允许模式校验，Client JobManager 会再次验证自身运行限制。Job start/stop/stop_all 占用一次前台任务槽；Job Runtime 启动后释放此槽并独立运行。Job ps/status 使用 Independent Control 查询，不占 Client 前台执行槽；Terminal 提交仍沿用 Terminal 的任务交互规则。
 

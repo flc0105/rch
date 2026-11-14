@@ -13,9 +13,9 @@ Browser                         Server                              Client
    |                              |                                   |
    |-- HTTP: submit command ----->|                                   |
    |                              |-- TCP: command(id, text) -------->|
-   |                              |<-- TCP: result(id, eof=0) --------|
+   |                              |<-- TCP: result(id, chunk) --------|
    |<-- SSE: command_result ------|                                   |
-   |                              |<-- TCP: result(id, eof=1) --------|
+   |                              |<-- TCP: result(id, completed) --------|
    |<-- SSE: command_complete ----|                                   |
    |                              |                                   |
    |-- HTTP: open monitor ------->|-- TCP: monitor_open(session_id) -->|
@@ -105,9 +105,11 @@ Server → Client 示例：
 {"type":"command","id":18,"text":"pwd"}
 ```
 
-Script 使用 `control(domain=script, action=run)`，payload 包含 `script_name`、`source`、`params`、`execution_mode`、`output_mode`；两个运行模式为必填的已解析值。`acmd` 仍使用 `extra`。执行器可返回结构化终态 `data`，如 `{"event_type":"error","failure_reason":"timed_out","text":"…"}` 或 `{"event_type":"cancelled","failure_reason":"cancelled","text":"…"}`；都由唯一 `result(eof=1)` 终结，之前的 stream 输出使用 `eof=0`。
+Script 使用 `control(domain=script, action=run)`，payload 包含 `script_name`、`source`、`params`、`execution_mode`、`output_mode`；`acmd` 仍使用 `extra`。普通命令和 Script 的自由文本输出仍作为 `message` 传递，不解析其中看似 JSON 的内容；显式 `context.emit(data)` 独立产生结构化 `chunk`。Client 返回的取消/超时原因统一归入最终 `completed.status`。
 
-对于显式声明展示方式的 Control Result，Client 最终 `result.data` 保留 `event_type=completed`、执行 `status`、`display=message|data`、`message`、业务 `data` 和可选 References。Terminal 按展示意图处理：`display=message` 的默认输出为短消息，`--json` 输出 `status/message`；成功的 `display=data` 默认以表格/键值呈现 `data`，`--json` 仅序列化 `data`；执行失败时 `--json` 输出 `status=error/message`。内部执行状态始终保留，空查询数组的 JSON 是 `[]`。过程输出仍是 `result(eof=0)`；显式结构化 Script 输出事件使用 `event_type=chunk`、`display=data`，与唯一终态 `result(eof=1)` 分离。未声明 `display` 的普通命令继续使用现有路径。
+Result Envelope 是同一个按请求 ID 关联的事件流：`started`（可由 Server 发起）、`progress`（进度更新）、`chunk`（实际输出）、`completed`（唯一终态）。所有消息都使用 `type=result`、`id` 与 `event_type`；`message` 为可读文本，`data` 可为 JSON 对象或数组，`references` 可选。**只有 `completed` 才携带最终字符串 `status`**：`success/partial/error/cancelled/timed_out/interrupted`。Socket Result 不含 `display`、`shape` 或 `eof`；终端如何呈现由业务调用位置和公共 Renderer 决定。
+
+Control 可以在 `completed` 中同时携带 `message` 与原始业务 `data`。Terminal 的操作反馈选择 `message`；查询由调用方选 Table、Flat 或 Grouped，Text/`--json` 使用同一份终端字段投影；Web 可以直接消费完整业务 `data`。例如 `config list` 的 Text/JSON 均只含 `group/key/value/default` 四列，Web GET 仍使用编辑控件所需的配置元数据。普通命令与 Script 的文本输出不强制结构化；这两类只统一 Result 事件外壳和生命周期。
 
 一次性业务请求统一使用 Control：
 
@@ -121,15 +123,13 @@ Script 使用 `control(domain=script, action=run)`，payload 包含 `script_name
 
 Configuration 的值使用 JSON 原生标量，CLI `set` 与 Web 共用配置校验、覆盖存储和运行时副作用；查询 Script 默认模式不绑定 Script Activity。Watchdog 查询复用既有状态对象，进程/App 实时列表与详情继续走 Device Monitor。Go 支持 Configuration；Watchdog 和 Process UI 仍按现有能力声明限制。Server → Client 文件传输无论从 Web 还是 Terminal 发起，均走 Transfer 协议，不占用 Client 命令执行槽。
 
-Client → Server 示例：
+Client → Server 单次完成示例：
 
 ```json
-{"type":"result","id":18,"status":1,"text":"/home/user\n","cwd":"/home/user","eof":1}
+{"type":"result","id":18,"event_type":"completed","status":"success","message":"/home/user\n","cwd":"/home/user"}
 ```
 
-一个命令可以产生多条 `result`：`eof: 0` 表示本条输出**未终结命令**，`eof: 1` 表示命令输出流结束；`status` 和 `text` 由命令实现提供，不能把 `eof` 理解为“成功标志”。Client 输出方法支持先发中间结果再发最终结果，Server 等待逻辑以 `eof` 判断何时结束等待。正常执行返回的 `cwd` 也会更新 Server Session 中的工作目录快照。
-
-Server 按请求 ID 将 `(status, result, eof)` 分发至该请求独立的结果队列，发送前注册，EOF、超时、断线及迭代器结束时清理。未知或已终结的正数 ID 不进入其他任务；无请求 ID 的背景消息仍使用原有回调/未读队列。
+流式执行可先返回 `result(event_type=progress/chunk)`，最后恰好一条 `result(event_type=completed, status=...)`。Server 以请求 ID 分发完整 JSON 事件；**仅 `completed` 结束该请求**。后续重复终态、迟到帧不得进入其他请求；断线或超时需要由 Server 的执行边界标记终态。内部旧执行器的 `(status, result)` 与队列结束标记只是应用层适配，不代表 Socket 上仍有第二种 `eof` 终态。`cwd` 可同步 Server Session 当前目录。
 
 同一会话的 Foreground 与 Independent 可以无序交错回包；每个 ID 仍只有一个结果通道。Foreground 保持单一执行槽，Independent 不是任意前台命令并发。
 
@@ -225,13 +225,13 @@ Server 接收线程遇到 `socket.error` 后执行连接关闭处理，通知 We
 
 **帧实现。** `backend/client-go/protocol/ratsocket.go` 也使用“4 字节长度头 + JSON 消息体”，但长度头采用 `binary.LittleEndian`、`uint32`，接收通过 `io.ReadFull`。Python 侧使用原生格式有符号整数长度头；两者在常见 little-endian 机器上可以互通，不代表已经实现跨任意字节序的统一封包协议。Go 的 `Send()` 分别用一次 `conn.Write()` 发送头和正文，已使用发送互斥锁，尚未实现短写补发循环；该接收端也未显式规定最大消息长度。
 
-**消息范围。** `backend/client-go/handler/router.go` 支持 `heartbeat`、`command` 与按请求 ID 的取消 `cancel`；可取消命令及 `shell_stream` 能分段返回 `result(eof=0)`，结束时返回 `result(eof=1)`。Remote Files、Script 与 Configuration 使用各自的 Control Manager；Script 通过外部 Python 执行，支持 subprocess_pipe 的 collect/stream 两种输出。ACMD、PTY、Screen、Clipboard、Monitor 等能力仍按 Client 实际实现和能力声明决定。Heartbeat ACK 包含 `server_ts`、`client_ts` 和当前工作目录，Server 可用原始 `server_ts` 计算 RTT。
+**消息范围。** `backend/client-go/handler/router.go` 支持 `heartbeat`、`command` 与按请求 ID 的取消 `cancel`；可取消命令及 `shell_stream` 能分段返回 `result(event_type=chunk)`，结束时返回 `result(event_type=completed)`。Remote Files、Script 与 Configuration 使用各自的 Control Manager；Script 通过外部 Python 执行，支持 subprocess_pipe 的 collect/stream 两种输出。ACMD、PTY、Screen、Clipboard、Monitor 等能力仍按 Client 实际实现和能力声明决定。Heartbeat ACK 包含 `server_ts`、`client_ts` 和当前工作目录，Server 可用原始 `server_ts` 计算 RTT。
 
 如需维护这一独立实现，应分别核对 `backend/client-go/protocol/ratsocket.go`、`connection/client.go` 和 `handler/router.go`，而不把这些实现差异混入 Python Client 功能开发步骤。
 
 
 ### Control 执行策略
 
-Control 的 Domain、Action 和调度策略采用统一的协议定义。Client 在组装业务 Manager 时绑定各 Action 的处理器、必要的请求准备及取消能力。通用调度层只消费注册结果，不解释业务 Payload；Server 依据同一 Action 契约确定调度策略，不允许调用方修改策略。Foreground 继续使用单一前台槽；Independent 请求使用有容量限制的独立工作池，与 Foreground 共用按 ID 关联的 Result 和执行上下文。Clipboard get/set、Remote Files 全部 Action、Configuration get、Watchdog status、Job ps/status、Process kill 为 Independent；Job start/stop/stop_all、Configuration set/reset、Script run 为 Foreground。调度表按 Domain 与 Action 显式声明；Go 的支持范围内使用相同策略。Independent 不改变已登记的 Activity 记录策略。Server 在发送前登记 ID，按 ID 分发输出与 EOF；超时、断线清理等待者，迟到帧不得串入其他请求。取消沿用 target_id 和 cancel_ack，只有实际停止才是 stopped。
+Control 的 Domain、Action 和调度策略采用统一的协议定义。Client 在组装业务 Manager 时绑定各 Action 的处理器、必要的请求准备及取消能力。通用调度层只消费注册结果，不解释业务 Payload；Server 依据同一 Action 契约确定调度策略，不允许调用方修改策略。Foreground 继续使用单一前台槽；Independent 请求使用有容量限制的独立工作池，与 Foreground 共用按 ID 关联的 Result 和执行上下文。Clipboard get/set、Remote Files 全部 Action、Configuration get、Watchdog status、Job ps/status、Process kill 为 Independent；Job start/stop/stop_all、Configuration set/reset、Script run 为 Foreground。调度表按 Domain 与 Action 显式声明；Go 的支持范围内使用相同策略。Independent 不改变已登记的 Activity 记录策略。Server 在发送前登记 ID，按 ID 分发输出与唯一 `completed`；超时、断线清理等待者，迟到帧不得串入其他请求。取消沿用 target_id 和 cancel_ack，只有实际停止才是 stopped。
 
-Control Action 目录的 `ActivityPolicy` 与 `ExecutionPolicy` 独立。最终 `Result` 的 `eof=1` 和 status/结构化终止原因决定 Activity 终态；`eof=0` 仅为输出，不能累计为最终失败。Remote Files 批量执行任一项失败时外层终态 status=0，原有批量结果（成功、失败、跳过计数及消息）保留供业务界面展示。
+Control Action 目录的 `ActivityPolicy` 与 `ExecutionPolicy` 独立。最终 `Result(event_type=completed)` 的 `status` 决定 Activity 终态；`progress/chunk` 不会因其文字或中间整数状态被当作最终失败。Remote Files 批量执行任一项失败时外层终态 status=0，原有批量结果（成功、失败、跳过计数及消息）保留供业务界面展示。

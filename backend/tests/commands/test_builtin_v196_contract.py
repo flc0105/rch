@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from core.protocol.result_envelope import ResultEnvelope
-from core.utils.command_output import ResultDataShape, ResultDisplay, OutputFormat, render_result_payload
+from core.utils.command_output import ResultDataShape, OutputFormat, render_result_payload
 from server.application.command.server_builtin_registry import SERVER_COMMAND_REGISTRY as REGISTRY
 
 
@@ -61,13 +61,13 @@ def test_raw_tail_does_not_reinterpret_json_and_keeps_whitespace():
 
 def test_data_json_and_flat_table_are_same_underlying_data():
     data = {'state': 'running', 'count': 2}
-    flat = ResultEnvelope(data=data, display=ResultDisplay.DATA, shape=ResultDataShape.FLAT).as_payload()
-    assert json.loads(render_result_payload(flat, OutputFormat.JSON)) == data
-    assert 'state' in render_result_payload(flat, OutputFormat.TEXT)
+    flat = ResultEnvelope(data=data, ).as_payload()
+    assert json.loads(render_result_payload(flat, OutputFormat.JSON, view='data', shape='flat')) == data
+    assert 'state' in render_result_payload(flat, OutputFormat.TEXT, view='data', shape='flat')
     rows = [{'index': 1, 'command': 'whoami', 'pinned': False}]
-    table = ResultEnvelope(data=rows, display=ResultDisplay.DATA, shape=ResultDataShape.TABLE).as_payload()
-    assert json.loads(render_result_payload(table, OutputFormat.JSON)) == rows
-    assert 'whoami' in render_result_payload(table, OutputFormat.TEXT)
+    table = ResultEnvelope(data=rows, ).as_payload()
+    assert json.loads(render_result_payload(table, OutputFormat.JSON, view='data', shape='table')) == rows
+    assert 'whoami' in render_result_payload(table, OutputFormat.TEXT, view='data', shape='table')
     assert json.loads(render_result_payload(ResultEnvelope(message='done').as_payload(), OutputFormat.JSON)) == {
         'status': 'success', 'message': 'done'}
 
