@@ -23,7 +23,6 @@ def make_client_manager(platform='win', *, files=True, snapshot=None):
 def test_desktop_client_reports_file_capability(platform):
     manager = make_client_manager(platform)
     assert manager.get_capabilities() == {
-        'platform': platform,
         'text': True,
         'image': True,
         'files': True,

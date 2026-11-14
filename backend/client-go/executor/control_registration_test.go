@@ -7,8 +7,11 @@ import (
 
 func TestControlRegistrationCoversEverySupportedAction(t *testing.T) {
 	registered := newControlHandlers()
-	if len(registered) != 3 {
+	if len(registered) != 4 {
 		t.Fatalf("unexpected supported domains: %v", registered)
+	}
+	if spec, ok := registered[protocol.ControlSession].Action(protocol.SessionDisconnect); !ok || spec.Policy != Independent {
+		t.Fatal("Session disconnect must use an independent control action")
 	}
 	remote := registered[protocol.ControlRemoteFiles]
 	if len(remote.Actions) != 11 || len(remote.Actions) != len(remoteFileActions) {

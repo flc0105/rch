@@ -89,7 +89,7 @@ func TestRemoteZipPreviewEntryCreateAndExtract(t *testing.T) {
 	}
 	created := decodeRemoteResult(t, out)
 	zipPath := filepath.Join(target, "my archive.zip")
-	if created["archive_path"] != zipPath {
+	if created["archive_name"] != "my archive.zip" {
 		t.Fatalf("unexpected ZIP name: %#v", created)
 	}
 	if status, _ = executeRemote(t, session, remoteRequest("create_archive", map[string]interface{}{
@@ -130,7 +130,7 @@ func TestRemoteZipPreviewEntryCreateAndExtract(t *testing.T) {
 		t.Fatalf("ZIP extraction failed: %s", out)
 	}
 	result := decodeRemoteResult(t, out)
-	if result["mode"] != "single_root" {
+	if result["extracted_to"] != filepath.Join(extracted, "folder") {
 		t.Fatalf("unexpected ZIP extract mode: %#v", result)
 	}
 	data, err := os.ReadFile(filepath.Join(extracted, "folder", "nested", "note.txt"))

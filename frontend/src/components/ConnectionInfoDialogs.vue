@@ -411,6 +411,7 @@
   <el-dialog
     v-model="valueVisible"
     :title="valueTitle || 'Details'"
+    fullscreen
     width="760px"
     top="12vh"
     class="fixed-dialog connection-info-value-dialog"
@@ -1134,7 +1135,7 @@ export default {
         const res = await fetch(`/api/connections/${encodeURIComponent(clientId)}/runtime-config`)
         const json = await res.json()
 
-        if (!res.ok || json.code !== 0 || json.data?.status !== 'success' || json.data?.display !== 'data') {
+        if (!res.ok || json.code !== 0 || json.data?.status !== 'success' || !json.data?.data) {
           throw new Error(json.data?.message || json.message || 'Failed to load runtime configuration')
         }
 

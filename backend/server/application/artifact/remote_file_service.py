@@ -33,9 +33,11 @@ class WebRemoteFileService:
         if isinstance(result, dict) and result.get('event_type') == 'completed':
             envelope = result
             result = envelope.get('data') if json_result else envelope.get('message', '')
-            if status != 1 and not (batch and isinstance(result, dict) and 'total' in result):
+            if batch and isinstance(result, dict):
+                result = {**result, 'message': envelope.get('message') or ''}
+            elif status != 1:
                 raise RuntimeError(str(envelope.get('message') or 'Remote file operation failed'))
-        elif status != 1 and not (batch and isinstance(result, dict) and 'total' in result):
+        elif status != 1:
             raise RuntimeError(str(result or 'Remote file operation failed'))
         if json_result and not isinstance(result, dict):
             raise RuntimeError('Invalid remote JSON payload: expected object')
@@ -50,17 +52,13 @@ class WebRemoteFileService:
             if batch:
                 # Client reports counts explicitly: the transport success code
                 # alone cannot distinguish all-success from partial-success.
-                if not isinstance(result, dict) or not all(k in result for k in ('status', 'total', 'succeeded', 'failed', 'message')):
+                if (not isinstance(result, dict)
+                    or not all(k in result for k in ('succeeded', 'failed', 'message'))
+                    or type(result['succeeded']) is not int or type(result['failed']) is not int
+                    or result['succeeded'] < 0 or result['failed'] < 0
+                    or result['succeeded'] + result['failed'] > len(arguments['paths'])):
                     raise RuntimeError('Invalid remote batch result')
-                if (not all(isinstance(result[k], int) and not isinstance(result[k], bool)
-                            for k in ('status', 'total', 'succeeded', 'failed'))
-                    or result['status'] not in (0, 1)
-                    or type(result.get('skipped', 0)) is not int or result.get('skipped', 0) < 0
-                    or result['total'] != result['succeeded'] + result['failed'] + result.get('skipped', 0)
-                    or result['total'] != len(arguments['paths'])
-                    or result['succeeded'] < 0 or result['failed'] < 0):
-                    raise RuntimeError('Invalid remote batch counts')
-                if result['status'] != 1:
+                if result['failed']:
                     raise RuntimeError(str(result['message']) or 'Remote file operation failed')
         else:
             result = self._run_control(client_id, action, payload)
@@ -397,8 +395,7 @@ class WebRemoteFileService:
         if not normalized_paths:
             raise ValueError('paths is required and must contain valid paths')
 
-        result_text = self._run_mutation(client_id, RemoteFilesAction.DELETE_PATHS, {'paths': normalized_paths, 'count': len(normalized_paths)}, {'paths': normalized_paths}, json_result=True, batch=True, origin=origin)
-        result_text = result_text['message']
+        result_text = self._run_mutation(client_id, RemoteFilesAction.DELETE_PATHS, {'paths': normalized_paths, 'count': len(normalized_paths)}, {'paths': normalized_paths}, origin=origin)
 
         return {
             'paths': normalized_paths,
@@ -441,7 +438,6 @@ class WebRemoteFileService:
             'paths': normalized_paths,
             'succeeded': summary['succeeded'],
             'failed': summary['failed'],
-            'errors': summary.get('errors') or [],
             'destination_dir': normalized_destination_dir,
             'operation': normalized_operation,
             'message': result_text,

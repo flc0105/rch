@@ -350,7 +350,7 @@ export default {
                 const terminalItems = [];
                 let operationId = '';
                 for (const item of items) {
-                    const result = { ...payload, status: item.status, text: item.text, metadata };
+                    const result = { ...payload, status: item.status, text: item.text, result: item.result || payload.result, metadata };
                     const handledByQuickActionDialog = isQuickActionDialog
                         ? this.handleQuickActionCommandResult?.(result) === true : false;
                     const handledByTerminalCapture = this.routeTerminalTaskCapture?.('result', result) === true;
@@ -372,7 +372,7 @@ export default {
 
             es.addEventListener('command_result', (event) => {
                 const payload = JSON.parse(event.data);
-                handleCommandResults(payload, [{ status: payload.status, text: payload.text }]);
+                handleCommandResults(payload, [{ status: payload.status, text: payload.text, result: payload.result }]);
             });
 
             es.addEventListener('command_result_batch', (event) => {

@@ -1111,15 +1111,26 @@ Star,
 
     buildCommandExecutionSummary(item) {
       const status = String(item?.status || '').toLowerCase()
-      if (['command', 'script', 'remote_files', 'transfer', 'external_tool', 'job', 'pty', 'screen_view', 'clipboard', 'process', 'configuration', 'watchdog'].includes(item?.kind)) {
-        const records = Array.isArray(item?.result?.output_records) ? item.result.output_records : []
+      const records = Array.isArray(item?.result?.output_records) ? item.result.output_records : []
+      const events = Array.isArray(item?.result?.result_events) ? item.result.result_events : []
+      const completed = events.slice().reverse().find(event => event?.event_type === 'completed')
+      if (status === 'success' && completed) {
+        // Only the completed Result itself can supply the success summary.
+        // The last output record may contain just the last line of streamed JSON.
+        const text = String(completed.message || '').trim()
+        if (text && text.length <= 256 && !/[\r\n]/.test(text)) return text
+        const files = Array.isArray(item?.files) ? item.files : []
+        return files.length && !text ? `Produced ${files.length} file(s)` : 'Completed'
+      } else if (status === 'interrupted' && events.length && !completed) {
+        return 'Interrupted'
+      } else if ((status !== 'success' || !events.length) && ['command', 'script', 'remote_files', 'transfer', 'external_tool', 'job', 'pty', 'screen_view', 'clipboard', 'process', 'configuration', 'watchdog'].includes(item?.kind)) {
+        // Server-local and other activities may have no wire Result events.
         const lastLine = records.slice().reverse()
           .flatMap(record => String(record?.text || '').split(/\r?\n/).reverse())
           .map(line => line.trim()).find(Boolean) || ''
-        if (lastLine && lastLine.length <= 128) return lastLine
+        if (lastLine && lastLine.length <= 256) return lastLine
       }
-      const isLong = text => /[\r\n]/.test(text) || text.length > 128
-      const records = Array.isArray(item?.result?.output_records) ? item.result.output_records : []
+      const isLong = text => /[\r\n]/.test(text) || text.length > 256
       const parts = records.map(record => String(record?.text || '').trim()).filter(Boolean)
       const truncated = Boolean(item?.result?.truncated)
       // A large failure must never be presented as a successful "Completed" event.

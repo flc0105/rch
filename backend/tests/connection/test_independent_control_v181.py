@@ -96,7 +96,7 @@ def test_script_clipboard_and_files_real_wire(wire, tmp_path, mode):
     command_id = server.get_foreground_task()['command_id']
     assert command_id == 1
     assert clipboard.get_clipboard('test')['text'] == 'initial'
-    assert clipboard.set_clipboard('test', {'kind':'text','text':'updated'}, action='set_text')['kind'] == 'text'
+    assert clipboard.set_clipboard('test', {'kind':'text','text':'updated'}, action='set_text')['message'] == 'Target clipboard updated'
     assert clipboard.get_clipboard('test')['text'] == 'updated'
     listing = files.browse_directory('test', str(tmp_path))
     assert 'needle.txt' in str(listing['entries'])

@@ -311,7 +311,7 @@ func TestConflictSkipPreservesTargetAndMoveSource(t *testing.T) {
 	if err := json.Unmarshal([]byte(raw), &result); err != nil {
 		t.Fatal(err)
 	}
-	if result.Total != 2 || result.Succeeded != 1 || result.Skipped != 1 || result.Failed != 0 {
+	if result.Succeeded != 1 || result.Failed != 0 {
 		t.Fatalf("wrong skip accounting: %#v", result)
 	}
 	if readConflictTestFile(t, filepath.Join(destination, "existing.txt")) != "original" ||
@@ -323,7 +323,7 @@ func TestConflictSkipPreservesTargetAndMoveSource(t *testing.T) {
 		"paths":           []string{filepath.Join(sourceDir, "existing.txt")},
 		"destination_dir": destination, "operation": "move", "conflict_policies": []string{"skip"},
 	}))
-	if status != 1 || !strings.Contains(raw, `"skipped":1`) || !strings.Contains(raw, `"failed":0`) {
+	if status != 1 || !strings.Contains(raw, `"succeeded":0`) || !strings.Contains(raw, `"failed":0`) {
 		t.Fatalf("all skipped should succeed: %d %s", status, raw)
 	}
 }
@@ -354,7 +354,7 @@ func TestZipSkipDoesNotExtractExistingTarget(t *testing.T) {
 	status, raw := executeRemote(t, s, remoteRequest("extract_archive", map[string]interface{}{
 		"path": archivePath, "destination_dir": destination, "conflict_policy": "skip",
 	}))
-	if status != 1 || !strings.Contains(raw, `"skipped":true`) ||
+	if status != 1 || !strings.Contains(raw, `"extracted_to"`) ||
 		readConflictTestFile(t, filepath.Join(destination, "existing", "data.txt")) != "original" {
 		t.Fatalf("ZIP skip incorrectly changed destination: %d %s", status, raw)
 	}

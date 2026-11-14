@@ -21,6 +21,7 @@ from client.runtime.execution.context import CommandCancelledError, CommandTimeo
 # Native clipboard is a process-wide resource, including across reconnects.
 _CLIPBOARD_LOCK = RLock()
 from core.protocol.control import ClipboardAction
+from core.protocol.result_envelope import ResultEnvelope
 
 
 class ClipboardManager:
@@ -55,7 +56,6 @@ class ClipboardManager:
     def get_capabilities(self) -> dict:
         caps = self.adapter.get_capabilities()
         return {
-            'platform': self._os_alias,
             'text': bool(caps.get('text')),
             'image': bool(caps.get('image')),
             'files': bool(caps.get('files')),
@@ -67,17 +67,25 @@ class ClipboardManager:
         try:
             scope._checkpoint()
             if action == ClipboardAction.GET:
-                result = self.get_clipboard(payload.get('mode', 'content'), checkpoint=scope._checkpoint)
+                status, content = self.get_clipboard(payload.get('mode', 'content'), checkpoint=scope._checkpoint)
                 scope._checkpoint()
-                return result
+                return (status, ResultEnvelope(
+                    status='success' if status == 1 else 'error',
+                    message='' if status == 1 else str(content),
+                    data=content if status == 1 else None,
+                ).as_payload())
             if action == ClipboardAction.SET:
                 def before_commit():
                     # Native write is atomic from the request's perspective. Do
                     # not accept cancellation after entering the native commit.
                     scope._set_cancel_policy('none')
                     scope._checkpoint()
-                return self.set_clipboard(uuid.uuid4().hex, payload, checkpoint=scope._checkpoint,
-                                          before_commit=before_commit)
+                status, content = self.set_clipboard(uuid.uuid4().hex, payload, checkpoint=scope._checkpoint,
+                                                      before_commit=before_commit)
+                return status, ResultEnvelope(
+                    status='success' if status == 1 else 'error',
+                    message='Target clipboard updated' if status == 1 else str(content),
+                ).as_payload()
             return 0, 'Unsupported Clipboard action'
         finally:
             self._operation_lock.release()
@@ -85,10 +93,7 @@ class ClipboardManager:
     def get_clipboard(self, mode: str = 'content', checkpoint=lambda: None):
         try:
             if str(mode or '').strip().lower() == 'capabilities':
-                payload = {
-                    'kind': 'capabilities',
-                    'capabilities': self.get_capabilities(),
-                }
+                payload = {'capabilities': self.get_capabilities()}
             else:
                 snapshot = self.adapter.get_snapshot()
                 checkpoint()

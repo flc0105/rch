@@ -246,6 +246,7 @@
   <el-dialog
     v-model="resultVisible"
     :title="resultTitle"
+    fullscreen
     width="760px"
     class="quick-actions-result-dialog"
     append-to-body
@@ -1011,7 +1012,7 @@ export default {
 
 .quick-action-result-output {
   min-height: 220px;
-  max-height: 52vh;
+  max-height: calc(100dvh - 190px);
   overflow: auto;
   margin: 0;
   padding: 14px;

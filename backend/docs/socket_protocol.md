@@ -119,7 +119,8 @@ Control 可以在 `completed` 中同时携带 `message` 与原始业务 `data`�
 | configuration | set | `{"key":"SCRIPT_DEFAULT_OUTPUT_MODE","value":"stream"}` → 更新后的配置及 change；CLI 文本值带 `value_format: "text"` |
 | configuration | reset | `{"key":"SCRIPT_DEFAULT_OUTPUT_MODE"}` 或 `{"all":true}` → 恢复后的配置 |
 | watchdog | status | `{}` → 当前 Watchdog 状态对象 |
-| process | kill | `{"pid":1234}` → `{"message":"Process 1234 terminated"}` |
+| process | kill | `{"pid":1234}` → `completed.message`（不另存重复的业务 data） |
+| session | disconnect | `{}` → Client 立即关闭自己的连接；该控制动作独立执行，连接关闭可先于 Result 终态 |
 
 Configuration 的值使用 JSON 原生标量，CLI `set` 与 Web 共用配置校验、覆盖存储和运行时副作用；查询 Script 默认模式不绑定 Script Activity。Watchdog 查询复用既有状态对象，进程/App 实时列表与详情继续走 Device Monitor。Go 支持 Configuration；Watchdog 和 Process UI 仍按现有能力声明限制。Server → Client 文件传输无论从 Web 还是 Terminal 发起，均走 Transfer 协议，不占用 Client 命令执行槽。
 
@@ -232,6 +233,6 @@ Server 接收线程遇到 `socket.error` 后执行连接关闭处理，通知 We
 
 ### Control 执行策略
 
-Control 的 Domain、Action 和调度策略采用统一的协议定义。Client 在组装业务 Manager 时绑定各 Action 的处理器、必要的请求准备及取消能力。通用调度层只消费注册结果，不解释业务 Payload；Server 依据同一 Action 契约确定调度策略，不允许调用方修改策略。Foreground 继续使用单一前台槽；Independent 请求使用有容量限制的独立工作池，与 Foreground 共用按 ID 关联的 Result 和执行上下文。Clipboard get/set、Remote Files 全部 Action、Configuration get、Watchdog status、Job ps/status、Process kill 为 Independent；Job start/stop/stop_all、Configuration set/reset、Script run 为 Foreground。调度表按 Domain 与 Action 显式声明；Go 的支持范围内使用相同策略。Independent 不改变已登记的 Activity 记录策略。Server 在发送前登记 ID，按 ID 分发输出与唯一 `completed`；超时、断线清理等待者，迟到帧不得串入其他请求。取消沿用 target_id 和 cancel_ack，只有实际停止才是 stopped。
+Control 的 Domain、Action 和调度策略采用统一的协议定义。Client 在组装业务 Manager 时绑定各 Action 的处理器、必要的请求准备及取消能力。通用调度层只消费注册结果，不解释业务 Payload；Server 依据同一 Action 契约确定调度策略，不允许调用方修改策略。Foreground 继续使用单一前台槽；Independent 请求使用有容量限制的独立工作池，与 Foreground 共用按 ID 关联的 Result 和执行上下文。Clipboard get/set、Remote Files 全部 Action、Configuration get、Watchdog status、Job ps/status、Process kill、Session disconnect 为 Independent；Job start/stop/stop_all、Configuration set/reset、Script run 为 Foreground。调度表按 Domain 与 Action 显式声明；Go 的支持范围内使用相同策略。Independent 不改变已登记的 Activity 记录策略。Server 在发送前登记 ID，按 ID 分发输出与唯一 `completed`；超时、断线清理等待者，迟到帧不得串入其他请求。取消沿用 target_id 和 cancel_ack，只有实际停止才是 stopped。
 
-Control Action 目录的 `ActivityPolicy` 与 `ExecutionPolicy` 独立。最终 `Result(event_type=completed)` 的 `status` 决定 Activity 终态；`progress/chunk` 不会因其文字或中间整数状态被当作最终失败。Remote Files 批量执行任一项失败时外层终态 status=0，原有批量结果（成功、失败、跳过计数及消息）保留供业务界面展示。
+Control Action 目录的 `ActivityPolicy` 与 `ExecutionPolicy` 独立。最终 `Result(event_type=completed)` 的 `status` 决定 Activity 终态；`progress/chunk` 不会因其文字或中间整数状态被当作最终失败。Remote Files 批量执行任一项失败时 `completed.status` 为 `partial`（已有项目成功）或 `error`（无项目成功），成功时为 `success`；复制/移动结果才保留 Web 实际读取的 `succeeded/failed`；删除只返回完整可见 `message`，不重复上传 `total/skipped/errors` 统计字段。

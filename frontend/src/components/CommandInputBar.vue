@@ -834,7 +834,9 @@ export default {
 
       const commandMatch = leftTrimmedText.match(/^([^\s]+)(?:\s+(.*))?$/)
 
-      if (!commandMatch) {
+      if (!commandMatch || !/\s/.test(rawText)) {
+        // A bare command prefix uses the catalog (e.g. p -> pwd).
+        // Context providers only complete arguments after a command separator.
         return null
       }
 

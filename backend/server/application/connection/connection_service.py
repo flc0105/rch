@@ -425,8 +425,7 @@ class WebConnectionService:
 
         if session is not None:
             try:
-                session.note_server_disconnect('disconnect')
-                session.send_command('kill_instance')
+                session.request_disconnect()
             except Exception:
                 pass
 

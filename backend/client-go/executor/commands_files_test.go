@@ -43,6 +43,13 @@ func executeRemoteContext(ctx context.Context, s *Session, request fileRequest) 
 	var p map[string]interface{}
 	_ = json.Unmarshal(raw, &p)
 	status, result := (RemoteFilesManager{}).Execute(ctx, s, 7, protocol.ControlAction(request.action), p, nil)
+	if packet, ok := result.(map[string]interface{}); ok && packet["event_type"] == "completed" {
+		if data, present := packet["data"]; present {
+			result = data
+		} else {
+			result = packet["message"]
+		}
+	}
 	if text, ok := result.(string); ok {
 		return status, text
 	}
@@ -196,7 +203,7 @@ func TestRemoteDirectoryMutationsAndNoOverwrite(t *testing.T) {
 		t.Fatal("deleted file still exists")
 	}
 	status, output = executeRemote(t, s, remoteRequest("delete_paths", map[string]interface{}{"paths": []string{string(filepath.Separator)}}))
-	if status != 0 || !strings.Contains(output, `"failed":1`) {
+	if status != 0 || !strings.Contains(output, "cannot delete filesystem root") {
 		t.Fatalf("root path deletion must be rejected in batch results: %d %s", status, output)
 	}
 	status, _ = executeRemote(t, s, remoteRequest("delete_paths", map[string]interface{}{"paths": []string{"dir one"}}))
@@ -224,7 +231,7 @@ func TestRemoteBatchCopyMoveDeleteKeepsSourceAndDoesNotOverwrite(t *testing.T) {
 		t.Fatal(text)
 	}
 	result := decodeRemoteResult(t, text)
-	if result["status"] != float64(1) || result["total"] != float64(2) || result["succeeded"] != float64(1) || result["failed"] != float64(1) || len(result["errors"].([]interface{})) != 1 {
+	if result["succeeded"] != float64(1) || result["failed"] != float64(1) {
 		t.Fatalf("wrong partial result: %#v", result)
 	}
 	if data, err := os.ReadFile(filepath.Join(s.Cwd, "copy-dest", "file.txt")); err != nil || !reflect.DeepEqual(data, []byte("content")) {
@@ -245,7 +252,7 @@ func TestRemoteBatchCopyMoveDeleteKeepsSourceAndDoesNotOverwrite(t *testing.T) {
 		t.Fatalf("expected batch rejection of directory into itself: %d %s", status, text)
 	}
 	status, text = executeRemote(t, s, remoteRequest("delete_paths", map[string]interface{}{"paths": []string{"move-dest/file.txt", "missing"}}))
-	if status != 0 || decodeRemoteResult(t, text)["failed"] != float64(1) {
+	if status != 0 || !strings.Contains(text, "Deleted 1 of 2 items") || !strings.Contains(text, "missing") {
 		t.Fatalf("expected partial deletion: %d %s", status, text)
 	}
 }
@@ -289,7 +296,7 @@ func TestRemotePasteRejectsDirectoryIntoItsSubdirectory(t *testing.T) {
 		"paths": []string{"source"}, "destination_dir": "source/child", "operation": "copy",
 	}))
 	result := decodeRemoteResult(t, text)
-	if result["failed"] != float64(1) || result["succeeded"] != float64(0) || result["status"] != float64(0) {
+	if result["failed"] != float64(1) || result["succeeded"] != float64(0) {
 		t.Fatalf("nested copy should be rejected: %#v", result)
 	}
 	if _, err := os.Stat(filepath.Join(s.Cwd, "source", "child", "source")); !os.IsNotExist(err) {

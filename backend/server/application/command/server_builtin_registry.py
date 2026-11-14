@@ -24,6 +24,7 @@ class SubcommandSpec:
     argument_spec: ArgumentCommandSpec | None = None
     aliases: tuple[str, ...] = ()
     raw_tail: bool = False
+    independent: bool = False
 
 
 @dataclass(frozen=True)
@@ -41,17 +42,18 @@ class CommandSpec:
     argument_spec: ArgumentCommandSpec | None = None
     raw_tail: bool = False
     fallback_subcommand: str = ''
+    independent: bool = False
 
     def child(self, name):
         return next((item for item in self.subcommands if name == item.name or name in item.aliases), None)
 
 
-def command(name, description, handler=None, children=(), default='', dispatch_subcommand=False, group='server', expects_arguments=False, structured=False, argument_spec=None, raw_tail=False, fallback_subcommand=''):
+def command(name, description, handler=None, children=(), default='', dispatch_subcommand=False, group='server', expects_arguments=False, structured=False, argument_spec=None, raw_tail=False, fallback_subcommand='', independent=False):
     return CommandSpec(name, description, handler or name,
                        tuple(item if isinstance(item, SubcommandSpec) else SubcommandSpec(*item)
                              for item in children),
                        default, dispatch_subcommand, True, group, expects_arguments, structured,
-                       argument_spec, raw_tail, fallback_subcommand)
+                       argument_spec, raw_tail, fallback_subcommand, independent)
 
 
 
@@ -70,14 +72,14 @@ def _arguments(name, *options, json=True, trailing_named_arguments=None):
 
 
 def _structured_child(command_name, action, description, usage, *options,
-                      json=True, trailing_named_arguments=None, aliases=()):
+                      json=True, trailing_named_arguments=None, aliases=(), independent=False):
     return SubcommandSpec(action, description, usage, argument_spec=_arguments(
         f'{command_name} {action}', *options, json=json,
-        trailing_named_arguments=trailing_named_arguments), aliases=tuple(aliases))
+        trailing_named_arguments=trailing_named_arguments), aliases=tuple(aliases), independent=independent)
 
 SERVER_COMMAND_SPECS = (
     command('config', 'Show or update client runtime config', children=(
-        _structured_child('config', 'list', 'List runtime config', 'config [list] [--json]'),
+        _structured_child('config', 'list', 'List runtime config', 'config [list] [--json]', independent=True),
         _structured_child('config', 'set', 'Set one runtime config value',
                           'config set <key> <value> [--json]',
                           _option('key', positional=0, required=True),
@@ -87,14 +89,14 @@ SERVER_COMMAND_SPECS = (
         _structured_child('config', 'reset-all', 'Reset all config overrides', 'config reset-all [--json]'),
     ), default='list', dispatch_subcommand=True, group='runtime', structured=True),
     command('watchdog', 'Show watchdog runtime status', expects_arguments=True, group='runtime',
-            structured=True, argument_spec=_arguments('watchdog')),
+            structured=True, argument_spec=_arguments('watchdog'), independent=True),
     command('upload', 'Upload a local file to the Client', expects_arguments=True,
             structured=True, raw_tail=True),
     command('script', 'List, inspect and run Server scripts', children=(
-        _structured_child('script', 'list', 'List available scripts', 'script list [--json]'),
+        _structured_child('script', 'list', 'List available scripts', 'script list [--json]', independent=True),
         _structured_child('script', 'view', 'Read script source on the Server',
                           'script view <name>|--name NAME',
-                          _option('name', positional=0, required=True), json=False),
+                          _option('name', positional=0, required=True), json=False, independent=True),
         _structured_child('script', 'exec', 'Execute a script with CLI arguments',
                           'script exec <name>|--name NAME [--execution_mode MODE] [--output_mode MODE] [-- --key VALUE]...',
                           _option('name', positional=0, required=True),
@@ -107,7 +109,7 @@ SERVER_COMMAND_SPECS = (
         ('unset', 'Remove an alias', 'alias unset [--platform PLATFORM] name'),
     ), default='list', dispatch_subcommand=True),
     command('job', 'Manage Client jobs from the Server', children=(
-        _structured_child('job', 'list', 'List available Server jobs', 'job list [--json]'),
+        _structured_child('job', 'list', 'List available Server jobs', 'job list [--json]', independent=True),
         _structured_child('job', 'start', 'Start a Client job',
                           'job start <name>|--name NAME [--mode MODE] [--json] [-- --key VALUE]...',
                           _option('name', positional=0, required=True), _option('mode'),
@@ -116,26 +118,26 @@ SERVER_COMMAND_SPECS = (
                           'job logs <name> [--follow|-f]',
                           _option('name', positional=0, required=True),
                           _option('follow', flag=True, alias='f'), json=False),
-        _structured_child('job', 'ps', 'Show running jobs', 'job ps [--json]'),
+        _structured_child('job', 'ps', 'Show running jobs', 'job ps [--json]', independent=True),
         _structured_child('job', 'status', 'Query job state', 'job status <name> [--json]',
-                          _option('name', positional=0, required=True)),
+                          _option('name', positional=0, required=True), independent=True),
         _structured_child('job', 'stop', 'Stop a running job', 'job stop <name> [--json]',
                           _option('name', positional=0, required=True)),
         _structured_child('job', 'stop-all', 'Stop all running jobs', 'job stop-all [--json]'),
     ), default='list', dispatch_subcommand=True, structured=True),
     command('history', 'Show Quick History or replay by index', children=(
         _structured_child('history', 'list', 'Display Quick History', 'history [list] [-p|--pinned] [--json]',
-                          _option('pinned', flag=True, alias='p')),
+                          _option('pinned', flag=True, alias='p'), independent=True),
         _structured_child('history', 'clear', 'Clear Quick Recent (keep pins)', 'history clear [--json]'),
         _structured_child('history', 'run', 'Replay a Quick command by index', 'history run <index>|--index INDEX',
                           _option('index', positional=0, required=True, value_type='int'), json=False),
     ), default='list', dispatch_subcommand=True, structured=True),
     command('gopin', 'List or jump to a saved path', children=(
-        _structured_child('gopin', 'list', 'List saved paths', 'gopin [list] [--json]'),
+        _structured_child('gopin', 'list', 'List saved paths', 'gopin [list] [--json]', independent=True),
         SubcommandSpec('go', 'Jump to a saved path', 'gopin [go] <saved path name>', raw_tail=True),
     ), default='list', fallback_subcommand='go', expects_arguments=True,
             structured=True),
-    command('rtt', 'Show current heartbeat RTT', structured=True, argument_spec=_arguments('rtt')),
+    command('rtt', 'Show current heartbeat RTT', structured=True, argument_spec=_arguments('rtt'), independent=True),
     command('httpctl', 'Client HTTP control channel', children=(
         _structured_child('httpctl', 'kill', 'Terminate current Agent', 'httpctl kill [--json]'),
         _structured_child('httpctl', 'relaunch', 'Relaunch Agent', 'httpctl relaunch [--json]'),
@@ -158,7 +160,7 @@ SERVER_COMMAND_SPECS = (
     ), default='help'),
     command('help', 'Show Server builtin commands and subcommands', handler='server_help',
             structured=True, argument_spec=_arguments('help',
-                _option('target', positional=0), _option('subcommand', positional=1), json=False)),
+                _option('target', positional=0), _option('subcommand', positional=1), json=False), independent=True),
 )
 
 
@@ -255,6 +257,18 @@ class ServerCommandRegistry:
         if sub is None or len(words) != 2:
             raise ValueError(f'Unknown subcommand: {target}')
         return f'{sub.usage} — {sub.description}'
+
+    def is_independent_input(self, raw_command: str) -> bool:
+        from core.utils.parsing import parse
+        try:
+            name, tail = parse(str(raw_command or '').strip())
+            spec, action, _ = self.parse(name, tail)
+            if not spec.structured:
+                return False
+            child = spec.child(action) if action else None
+            return bool(child.independent if child else spec.independent)
+        except (ValueError, TypeError, AttributeError):
+            return False
 
     def candidates(self):
         return [dict(name=spec.name + (' ' if spec.subcommands or spec.expects_arguments else ''),

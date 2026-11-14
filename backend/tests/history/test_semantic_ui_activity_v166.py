@@ -846,7 +846,7 @@ def test_control_catalog_records_every_action_by_policy(setup_history, monkeypat
     server, conn = setup_history
     conn.callback = lambda req: conn.respond(req, 1, {'message':'ok'})
     actions = [(domain, action) for domain in ControlDomain for action, _ in control_actions(domain)]
-    assert len(actions) == 24
+    assert len(actions) == 25
     monkeypatch.setattr(control_activity.config, 'RECORD_OPTIONAL_ACTIVITY', False, raising=False)
     for domain, action in actions:
         list(conn.send_command('', type='control', domain=domain, action=action, payload={}))
@@ -856,7 +856,7 @@ def test_control_catalog_records_every_action_by_policy(setup_history, monkeypat
     monkeypatch.setattr(control_activity.config, 'RECORD_OPTIONAL_ACTIVITY', True)
     for domain, action in actions:
         list(conn.send_command('', type='control', domain=domain, action=action, payload={}))
-    assert len(entries(server)) == 39
+    assert len(entries(server)) == 40
     assert {(r['kind'], r['action']) for r in entries(server)} == set(actions)
 
 

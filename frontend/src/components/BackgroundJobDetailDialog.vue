@@ -2,6 +2,7 @@
   <el-dialog
     :model-value="visible"
     :title="item ? (item.display_name || item.job_name || 'Background Job') : 'Background Job Detail'"
+    fullscreen
     width="1080px"
     top="5vh"
     class="fixed-dialog background-job-detail-dialog"

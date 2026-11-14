@@ -25,6 +25,7 @@ class ControlDomain(ControlValue):
     CONFIGURATION = "configuration"
     PROCESS = "process"
     WATCHDOG = "watchdog"
+    SESSION = "session"
 
 
 class JobAction(ControlValue):
@@ -70,6 +71,10 @@ class ProcessAction(ControlValue):
 
 class WatchdogAction(ControlValue):
     STATUS = "status"
+
+
+class SessionAction(ControlValue):
+    DISCONNECT = "disconnect"
 
 
 class ActivityPolicy(ControlValue):
@@ -125,6 +130,9 @@ _CONTROL_ACTIONS = {
     },
     ControlDomain.WATCHDOG: {
         WatchdogAction.STATUS: ControlActionSpec(ExecutionPolicy.INDEPENDENT, activity=ActivityPolicy.OPTIONAL),
+    },
+    ControlDomain.SESSION: {
+        SessionAction.DISCONNECT: ControlActionSpec(ExecutionPolicy.INDEPENDENT, activity=ActivityPolicy.OPTIONAL),
     },
 }
 

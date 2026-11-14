@@ -37,6 +37,8 @@ def build_control_dispatcher(runtime):
     register_control_domain(dispatcher, ControlDomain.CONFIGURATION, runtime.configuration_manager.execute)
     register_control_domain(dispatcher, ControlDomain.PROCESS, runtime.process_manager.execute)
     register_control_domain(dispatcher, ControlDomain.WATCHDOG, runtime.watchdog_control.execute)
+    register_control_domain(dispatcher, ControlDomain.SESSION, runtime.session_control.execute,
+                            cancel_policies={'disconnect': 'none'})
     clipboard = runtime.clipboard_manager
     register_control_domain(dispatcher, ControlDomain.CLIPBOARD,
                             clipboard.execute if clipboard is not None else _clipboard_disabled,

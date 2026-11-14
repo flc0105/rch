@@ -27,10 +27,10 @@ def test_every_domain_has_typed_actions_and_matching_client_registration():
     runtime = SimpleNamespace(execution=ExecutionRuntime(SimpleNamespace()),
         job_manager=manager, remote_files_manager=files, script_manager=manager,
         configuration_manager=manager, process_manager=manager,
-        watchdog_control=manager, clipboard_manager=None)
+        watchdog_control=manager, clipboard_manager=None, session_control=manager)
     dispatch = build_control_dispatcher(runtime)
     try:
-        assert {x.value for x in ControlDomain} == {'job','remote_files','script','clipboard','configuration','process','watchdog'}
+        assert {x.value for x in ControlDomain} == {'job','remote_files','script','clipboard','configuration','process','watchdog','session'}
         expected = {(domain, action): policy for domain in ControlDomain for action, policy in control_actions(domain)}
         assert set(dispatch._actions) == set(expected)
         for key, policy in expected.items():

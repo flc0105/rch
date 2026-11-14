@@ -51,9 +51,7 @@ class Server:
 
     def kill_connection_by_client_id(self, client_id):
         session = self.get_target_connection_by_client_id(client_id)
-        result = session.send_command('kill_instance')
-        session.note_server_disconnect('kill_instance')
-        return result
+        return session.request_disconnect()
 
     # ------------------ runtime delegates ------------------ #
     def serve(self):

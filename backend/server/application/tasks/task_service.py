@@ -228,7 +228,8 @@ class WebTaskService:
                 # HTTP recovery commands are server-side builtins delivered via a
                 # separate HTTP control queue; they never occupy the stuck agent's
                 # foreground execution slot.
-                use_foreground_guard=not self._is_http_control_command(command),
+                use_foreground_guard=not (self._is_http_control_command(command)
+                    or self._is_independent_builtin_command(command)),
             )
         )
 
@@ -244,6 +245,11 @@ class WebTaskService:
             metadata=dict(metadata or {}),
             control=control,
         ))
+
+    @staticmethod
+    def _is_independent_builtin_command(command: str) -> bool:
+        from server.application.command.server_builtin_registry import SERVER_COMMAND_REGISTRY
+        return SERVER_COMMAND_REGISTRY.is_independent_input(command)
 
     @staticmethod
     def _is_http_control_command(command: str) -> bool:

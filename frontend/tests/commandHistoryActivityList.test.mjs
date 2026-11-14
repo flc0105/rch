@@ -106,16 +106,46 @@ test('Summary distinguishes success and failure for long output', () => {
   }, {status:'success', files:[], result:{output_records:[{text}]}})
   assert.equal(build('test'), 'test')
   assert.equal(build('a'.repeat(128)), 'a'.repeat(128))
-  assert.equal(build('a'.repeat(129)), 'Completed')
+  assert.equal(build('a'.repeat(256)), 'a'.repeat(256))
+  assert.equal(build('a'.repeat(257)), 'Completed')
   assert.equal(build('line1\nline2'), 'Completed')
   const failed = text => component.methods.buildCommandExecutionSummary.call({isActivityProblem: () => true}, {status:'error', files:[], result:{output_records:[{text}]}})
   assert.equal(failed('Traceback\nNameError'), 'Failed')
-  assert.equal(failed('a'.repeat(129)), 'Failed')
+  assert.equal(failed('a'.repeat(257)), 'Failed')
   assert.equal(component.methods.buildCommandExecutionSummary.call({isActivityProblem: () => false}, {
     status:'success', result:{output_records:[{text:'first'}, {text:'second'}]}, files:[],
   }), 'Completed')
 })
 
+
+test('Activity summary uses only the completed event output, with a 256-char limit', () => {
+  const build = entry => component.methods.buildCommandExecutionSummary.call({isActivityProblem: () => false}, entry)
+  const result = (terminalText, eof = 1) => ({
+    result_events: [
+      {event_type: 'progress', message: 'Downloading...'},
+      {event_type: 'chunk', message: 'Interim line'},
+      {event_type: 'completed', status: 'success', message: terminalText},
+    ],
+    output_records: [
+      {text: 'Downloading...', eof: 0}, {text: 'Interim line', eof: 0},
+      ...(terminalText ? [{text: terminalText, eof}] : []),
+    ],
+  })
+  assert.equal(build({kind: 'job', status: 'success', files: [], result: result('Job started.')}), 'Job started.')
+  assert.equal(build({kind: 'script', status: 'success', files: [], result: result('x'.repeat(256))}), 'x'.repeat(256))
+  assert.equal(build({kind: 'script', status: 'success', files: [], result: result('x'.repeat(257))}), 'Completed')
+  assert.equal(build({kind: 'script', status: 'success', files: [], result: result('one\ntwo')}), 'Completed')
+  assert.equal(build({kind: 'command', status: 'success', files: [], result: result('')}), 'Completed')
+  assert.equal(build({kind: 'command', status: 'interrupted', files: [], result: {
+    output_records: [{text: 'partial', eof: 0}],
+    result_events: [{event_type: 'chunk', message: 'partial'}],
+  }}), 'Interrupted')
+  assert.equal(build({kind: 'remote_files', status: 'success', files: [{id: 'file-1'}], result: {
+    result_events: [{event_type: 'completed', status: 'success', message: ''}], output_records: [],
+  }}), 'Produced 1 file(s)')
+  assert.equal(build({kind: 'command', status: 'success', files: [], result: {output_records: []}}), 'Completed')
+  assert.equal(build({kind: 'command', status: 'success', files: [], result: {output_records: [], result_events: [{event_type: 'completed', status: 'success'}]}}), 'Completed')
+})
 
 test('Quick command cells show latest status via Lucide icon on desktop and mobile', () => {
   assert.match(quick, /getActivityStatusIcon\(row\.status\)/)

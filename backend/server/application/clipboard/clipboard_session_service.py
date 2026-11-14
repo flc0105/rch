@@ -37,6 +37,8 @@ class ClipboardSessionService:
             if isinstance(result, dict) and result.get('status') == 'timed_out':
                 raise TimeoutError(message or 'Clipboard operation timed out')
             raise RuntimeError(str(message or 'Clipboard operation failed'))
+        if action == ClipboardAction.SET:
+            return {'message': str(result.get('message') or '')} if isinstance(result, dict) else {}
         data = result.get('data') if isinstance(result, dict) else None
         if not isinstance(data, dict):
             raise RuntimeError('Invalid Clipboard result')

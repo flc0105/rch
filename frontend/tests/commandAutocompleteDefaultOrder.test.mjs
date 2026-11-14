@@ -74,3 +74,25 @@ test('common_ops remains the canonical group name, with no command_ops alias', (
     candidate('common_ops', 'hostname'), candidate('acmd', 'acmd'),
   ]), item => item.group), ['acmd', 'common_ops', 'frontend', 'server'])
 })
+
+
+test('typing a top-level prefix still offers matching commands before any argument', async () => {
+  const items = [candidate('shell', 'pwd'), candidate('python', 'piplist'), candidate('shell', 'cd')]
+  const calls = []
+  const context = {
+    commandCandidates: items,
+    commandText: 'p',
+    getAutocompleteCandidateQueryString: q => q,
+    setAutocompleteCandidateItems: () => {},
+    parseExplicitPathCompletionQuery: () => null,
+    parseVariableCompletionQuery: () => null,
+    parseCommandCompletionCandidateQuery: methods.parseCommandCompletionCandidateQuery,
+    resolveFileSystemCompletionRule: () => null,
+    ensureCommandCandidatesLoaded: async () => {},
+    sortDefaultCommandCandidates: methods.sortDefaultCommandCandidates,
+    filterCandidatesByTitle: (entries, keyword) => entries.filter(item => item.name.startsWith(keyword)),
+  }
+  assert.equal(methods.parseCommandCompletionCandidateQuery.call(context, 'p'), null)
+  await methods.queryCommandCandidates.call(context, 'p', list => calls.push(list.map(item => item.name)))
+  assert.deepEqual(calls, [['pwd', 'piplist']])
+})

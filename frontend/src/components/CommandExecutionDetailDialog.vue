@@ -2,6 +2,7 @@
   <el-dialog
     :model-value="visible"
     :title="detailTitle"
+    fullscreen
     width="1000px"
     top="5vh"
     class="fixed-dialog command-execution-detail-dialog"
@@ -91,6 +92,14 @@
         <div class="background-job-panel">
           <div class="background-job-panel-title command-output-panel-title">
             <span>Output Records</span>
+
+            <el-button
+              size="small"
+              plain
+              @click="openFullValue('Result', JSON.stringify(entry.result?.result_events || [], null, 2))"
+            >
+              Result
+            </el-button>
 
             <el-button
               size="small"
@@ -196,7 +205,7 @@
       </div>
     </div>
   </el-dialog>
-  <el-dialog v-model="fullValueVisible" :title="fullValueTitle" width="760px" top="12vh"
+  <el-dialog v-model="fullValueVisible" :title="fullValueTitle" fullscreen
              append-to-body class="fixed-dialog activity-full-value-dialog">
     <div class="activity-full-value-body">
       <pre class="activity-full-value-text">{{ fullValueText }}</pre>

@@ -2,7 +2,7 @@
 
 from client.config import runtime_config
 from core.utils.logger import logger
-from core.utils.output_marker import success, warning
+from core.utils.output_marker import warning
 
 
 class RuntimeConfigEffects:
@@ -60,8 +60,6 @@ class RuntimeConfigEffects:
                 else:
                     if launchd_managed:
                         effects.append(warning('Saved: launchd manages this Client; Process Recovery Watchdog remains disabled'))
-                    else:
-                        effects.append(success('Applied: Process Recovery Watchdog runtime updated'))
                     # Remote Control Watchdog / Local Heartbeat Watchdog workers inherit the supervisor environment at launch.
                     if (runtime_config.REMOTE_CONTROL_WATCHDOG_ENABLED
                             or runtime_config.LOCAL_HEARTBEAT_WATCHDOG_ENABLED):
@@ -75,8 +73,6 @@ class RuntimeConfigEffects:
             elif self._restart_watchdog_manager():
                 if launchd_managed:
                     effects.append(warning('Saved: launchd manages this Client; Client watchdogs remain disabled'))
-                else:
-                    effects.append(success('Applied: watchdog runtime restarted'))
             else:
                 effects.append(warning('Saved: watchdog worker did not restart; check Client logs'))
 

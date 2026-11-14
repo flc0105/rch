@@ -2,6 +2,7 @@
   <el-dialog
     :model-value="visible"
     title="Message"
+    fullscreen
     width="760px"
     top="8vh"
     class="fixed-dialog background-job-message-dialog"

@@ -33,10 +33,10 @@ def test_three_domains_do_not_instantiate_commands(tmp_path, monkeypatch):
     status, report = dispatch(2, 'remote_files', 'paste_paths', {
         'paths': [str(src)], 'destination_dir': str(dest), 'operation': 'move', 'conflict_policies': ['skip'],
     })
-    assert status == 1 and report['skipped'] == 1 and src.read_text() == 'data'
+    assert status == 1 and report['data']['succeeded'] == 0 and report['data']['failed'] == 0 and src.read_text() == 'data'
     assert (dest / 'a.txt').read_text() == 'old'
     status, report = dispatch(3, 'remote_files', 'delete_paths', {'paths': [str(src)]})
-    assert status == 1 and report['succeeded'] == 1 and not src.exists()
+    assert status == 1 and 'Deleted 1 of 1' in report['message'] and 'data' not in report and not src.exists()
     assert dispatch(4, 'script', 'run', {'script_name':'demo','source':'print(kwargs["x"])','params':{'x':42},'execution_mode':'inproc','output_mode':'collect'}) == (1, '42\n')
     assert dispatch(5, 'remote_files', 'browse_directory', {'path': str(tmp_path)})[0] == 1
     assert all(runtime.execution.context_store.get_existing(i) is None for i in range(1,6))

@@ -1,5 +1,6 @@
 import time
-from core.protocol.message_types import MSG_TYPE_RESULT
+from core.protocol.message_types import MSG_TYPE_RESULT, MSG_TYPE_CONTROL
+from core.protocol.control import ControlDomain, SessionAction
 
 from server.connection.channel.session_command_channel import ClientSessionCommandChannel
 from server.connection.context.session_context import ClientSessionContext
@@ -82,6 +83,12 @@ class ClientSession:
             domain=domain, action=action,
             **({'track_execution': False} if not track_execution else {}),
         )
+
+    def request_disconnect(self):
+        self.note_server_disconnect('kill_instance')
+        return self.send_command('', type=MSG_TYPE_CONTROL,
+                                 domain=ControlDomain.SESSION, action=SessionAction.DISCONNECT,
+                                 payload={}, track_execution=False)
 
     def send_cancel(self, target_command_id: int):
         return self.command_channel.send_cancel(target_command_id)

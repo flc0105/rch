@@ -12,6 +12,7 @@ from client.transfers.manager import ClientTransferManager
 from client.config.manager import ConfigurationManager
 from client.watchdog.control import WatchdogControl
 from client.process.manager import ProcessManager
+from client.session.control import SessionControl
 
 
 class ClientRuntime:
@@ -44,6 +45,7 @@ class ClientRuntime:
         self.features = dict(features if features is not None else resolve_features())
         self.configuration_manager = ConfigurationManager(connection, self.features)
         self.process_manager = ProcessManager()
+        self.session_control = SessionControl(connection)
         self.watchdog_control = WatchdogControl(connection)
         self.pty_manager = None
         self.screen_view_manager = None

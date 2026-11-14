@@ -13,6 +13,7 @@ const (
 	ControlConfiguration ControlDomain = "configuration"
 	ControlProcess       ControlDomain = "process"
 	ControlWatchdog      ControlDomain = "watchdog"
+	ControlSession       ControlDomain = "session"
 )
 
 const (
@@ -40,4 +41,5 @@ const (
 	ConfigurationReset     ControlAction = "reset"
 	ProcessKill            ControlAction = "kill"
 	WatchdogStatus         ControlAction = "status"
+	SessionDisconnect      ControlAction = "disconnect"
 )

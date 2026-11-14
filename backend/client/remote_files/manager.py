@@ -4,6 +4,7 @@ from client.runtime.filesystem.mutation_guard import filesystem_mutation
 from client.runtime.filesystem.path_resolver import PathResolver
 
 from core.protocol.control import RemoteFilesAction
+from core.protocol.result_envelope import ResultEnvelope
 from client.runtime.execution.context import CommandCancelledError, CommandTimeoutError
 
 
@@ -66,6 +67,18 @@ class RemoteFilesManager:
             scope._checkpoint()
         return result
 
+    @staticmethod
+    def _batch_result(result):
+        summary = result.to_dict()
+        state = ('success' if result.failed == 0 else
+                 'partial' if result.succeeded > 0 else 'error')
+        # Only the message and two figures used by the paste UI are returned.
+        return int(result.failed == 0), ResultEnvelope(
+            status=state, message=summary['message'],
+            data=({'succeeded': result.succeeded, 'failed': result.failed}
+                  if result.action != 'delete' else None),
+        ).as_payload()
+
     @property
     def actions(self):
         return {
@@ -104,15 +117,12 @@ class RemoteFilesManager:
                 archive_name=archive_name,
             )
 
-            return 1, {
-                'archive_path': archive_path,
+            return 1, ResultEnvelope(data={
                 'archive_name': scope.archive_service.normalize_zip_archive_name(
                     archive_name,
                     fallback=scope.archive_service.build_download_archive_name(resolved_paths),
                 ),
-                'source_count': len(resolved_paths),
-                'size': os.path.getsize(archive_path),
-            }
+            }).as_payload()
         except (CommandCancelledError, CommandTimeoutError):
             raise
         except Exception as e:
@@ -125,7 +135,9 @@ class RemoteFilesManager:
 
             archive_path = scope.path_resolver.require_existing_file(payload.get('path', ''))
             result = scope.archive_service.inspect_zip(archive_path)
-            return 1, result
+            fields = ('path', 'name', 'archive_size', 'file_count', 'dir_count',
+                      'entry_count', 'uncompressed_size', 'tree')
+            return 1, {name: result[name] for name in fields if name in result}
         except (CommandCancelledError, CommandTimeoutError):
             raise
         except Exception as e:
@@ -142,7 +154,8 @@ class RemoteFilesManager:
                 return 0, 'entry_name is required'
 
             result = scope.archive_service.read_zip_text_entry(archive_path, entry_name)
-            return 1, result
+            fields = ('type', 'content', 'message')
+            return 1, {name: result[name] for name in fields if name in result}
         except (CommandCancelledError, CommandTimeoutError):
             raise
         except Exception as e:
@@ -168,7 +181,9 @@ class RemoteFilesManager:
             else:
                 result = scope.archive_service.extract_zip_with_policy(
                     archive_path, resolved_destination, entry_name, 'stop')
-            return 1, result
+            if payload.get('inspect') is True:
+                return 1, result
+            return 1, ResultEnvelope(data={'extracted_to': result.get('extracted_to', resolved_destination)}).as_payload()
         except (CommandCancelledError, CommandTimeoutError):
             raise
         except Exception as e:
@@ -211,7 +226,7 @@ class RemoteFilesManager:
                 return 0, 'paths is required and must be a non-empty list'
 
             result = scope.file_system_service.delete_paths(paths)
-            return int(result.failed == 0), result.to_dict()
+            return self._batch_result(result)
         except (CommandCancelledError, CommandTimeoutError):
             raise
         except Exception as e:
@@ -226,7 +241,7 @@ class RemoteFilesManager:
                 return 0, 'Path is required'
 
             scope.file_system_service.create_directory(target_path)
-            return 1, f'Directory created: {target_path}'
+            return 1, ResultEnvelope(message=f'Directory created: {target_path}').as_payload()
         except (CommandCancelledError, CommandTimeoutError):
             raise
         except Exception as e:
@@ -246,7 +261,7 @@ class RemoteFilesManager:
                 new_name=new_name,
                 new_path=new_path
             )
-            return 1, f'Renamed to: {renamed_path}'
+            return 1, ResultEnvelope(message=f'Renamed to: {renamed_path}').as_payload()
         except (CommandCancelledError, CommandTimeoutError):
             raise
         except Exception as e:
@@ -290,7 +305,7 @@ class RemoteFilesManager:
             if policies is not None and (not isinstance(policies, list) or len(policies) != len(raw_paths)):
                 return 0, 'Invalid conflict policies'
             result = scope.file_system_service.paste_paths(raw_paths, destination_dir, operation, policies=policies, inspect=inspect)
-            return (1, result) if inspect else (int(result.failed == 0), result.to_dict())
+            return (1, result) if inspect else self._batch_result(result)
         except (CommandCancelledError, CommandTimeoutError):
             raise
         except Exception as e:
@@ -323,7 +338,8 @@ class RemoteFilesManager:
                 encoding,
             )
 
-            return 1, f'File saved successfully\nPath: {target_path}\nSize: {file_size} bytes\nEncoding: {encoding}'
+            return 1, ResultEnvelope(message=(f'File saved successfully\nPath: {target_path}\n'
+                                              f'Size: {file_size} bytes\nEncoding: {encoding}')).as_payload()
 
         except (CommandCancelledError, CommandTimeoutError):
             raise

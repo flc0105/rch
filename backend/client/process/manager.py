@@ -1,6 +1,7 @@
 """One-shot process control using the existing process service."""
 from client.runtime.execution.process.process_service import ProcessService
 from core.protocol.control import ProcessAction
+from core.protocol.result_envelope import ResultEnvelope
 
 
 class ProcessManager:
@@ -15,6 +16,6 @@ class ProcessManager:
             return 0, 'PID must be a positive integer'
         try:
             self.service.kill_process(pid)
-            return 1, {'message': f'Process {pid} terminated'}
+            return 1, ResultEnvelope(message=f'Process {pid} terminated').as_payload()
         except Exception as exc:
             return 0, str(exc)

@@ -3,6 +3,7 @@ package executor
 import (
 	"client-go/protocol"
 	"context"
+	"fmt"
 )
 
 type remoteFileControlHandler func(context.Context, *Session, map[string]interface{}) (int, interface{})
@@ -108,5 +109,62 @@ func (RemoteFilesManager) Execute(ctx context.Context, s *Session, id int, actio
 		}
 		defer release()
 	}
-	return registration.Handler(ctx, s, payload)
+	status, result := registration.Handler(ctx, s, payload)
+	if batch, ok := result.(batchRemoteResult); ok {
+		state := "success"
+		if batch.Failed > 0 {
+			state = "error"
+			if batch.Succeeded > 0 {
+				state = "partial"
+			}
+		}
+		packet := map[string]interface{}{"event_type": "completed", "status": state, "message": batch.Message}
+		if action != protocol.RemoteDeletePaths {
+			packet["data"] = map[string]interface{}{"succeeded": batch.Succeeded, "failed": batch.Failed}
+		}
+		return status, packet
+	}
+	if status != 1 {
+		return status, map[string]interface{}{"event_type": "completed", "status": "error", "message": fmt.Sprint(result)}
+	}
+	packet := map[string]interface{}{"event_type": "completed", "status": "success", "message": ""}
+	switch action {
+	case protocol.RemoteCreateDirectory, protocol.RemoteRenamePath, protocol.RemoteSaveFile:
+		packet["message"] = fmt.Sprint(result)
+	case protocol.RemoteCreateArchive:
+		archive, ok := result.(map[string]interface{})
+		if !ok {
+			return 0, map[string]interface{}{"event_type": "completed", "status": "error", "message": "Invalid archive result"}
+		}
+		packet["data"] = map[string]interface{}{"archive_name": archive["archive_name"]}
+	case protocol.RemotePeekArchive, protocol.RemoteReadArchiveEntry:
+		object, ok := result.(map[string]interface{})
+		if !ok {
+			return 0, map[string]interface{}{"event_type": "completed", "status": "error", "message": "Invalid archive result"}
+		}
+		fields := []string{"path", "name", "archive_size", "file_count", "dir_count", "entry_count", "uncompressed_size", "tree"}
+		if action == protocol.RemoteReadArchiveEntry {
+			fields = []string{"type", "content", "message"}
+		}
+		view := make(map[string]interface{}, len(fields))
+		for _, key := range fields {
+			if value, exists := object[key]; exists {
+				view[key] = value
+			}
+		}
+		packet["data"] = view
+	case protocol.RemoteExtractArchive:
+		if payloadBool(payload["inspect"]) {
+			packet["data"] = result
+		} else {
+			archive, ok := result.(map[string]interface{})
+			if !ok {
+				return 0, map[string]interface{}{"event_type": "completed", "status": "error", "message": "Invalid extract result"}
+			}
+			packet["data"] = map[string]interface{}{"extracted_to": archive["extracted_to"]}
+		}
+	default:
+		packet["data"] = result
+	}
+	return status, packet
 }

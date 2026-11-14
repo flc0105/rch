@@ -24,7 +24,7 @@ Client（远程设备）
 
 浏览器不直接挂载远程磁盘，也不要求远端开放 SMB、SFTP 等文件服务。一次目录浏览由浏览器请求 Server 的目录 API，Server 通过已建立的 Client 连接执行文件系统查询，再将目录条目、统计和分页信息返回前端。与单纯列目录不同，上传、下载与预览会涉及实际文件内容，使用专门的文件传输服务和 Server Artifact 存储。
 
-**Go (Simple) Client 支持范围。** Go Client 复用与 Python Client 相同的 `control(domain=remote_files)` 结构化请求协议，支持目录浏览、分页、隐藏文件过滤、名称搜索与递归搜索，以及新建目录、重命名、统一路径数组删除、复制和移动。握手提供 Root、Home、Desktop、Documents、Downloads、Temp 和 Program Directory 路径。另支持 Remote Files 的浏览器上传（Server 暂存 → Client）、下载到 Server Artifact、批量 ZIP 下载、文件预览缓存上传、受限文本保存、ZIP Peek／条目文本预览／创建和安全解压；传输使用独立于前台命令的可取消任务。图片预览上传原始字节，不做图片压缩或格式转换，也不引入图片处理第三方库。Server 仍负责按文件实际内容决定图片、文本、ZIP 等预览类型；Go 不自行渲染预览界面。Go 的批量操作沿用 Python 的成功、跳过、失败数量与错误列表结构；路径权限由 Go Client 所在系统账号决定。
+**Go (Simple) Client 支持范围。** Go Client 复用与 Python Client 相同的 `control(domain=remote_files)` 结构化请求协议，支持目录浏览、分页、隐藏文件过滤、名称搜索与递归搜索，以及新建目录、重命名、统一路径数组删除、复制和移动。握手提供 Root、Home、Desktop、Documents、Downloads、Temp 和 Program Directory 路径。另支持 Remote Files 的浏览器上传（Server 暂存 → Client）、下载到 Server Artifact、批量 ZIP 下载、文件预览缓存上传、受限文本保存、ZIP Peek／条目文本预览／创建和安全解压；传输使用独立于前台命令的可取消任务。图片预览上传原始字节，不做图片压缩或格式转换，也不引入图片处理第三方库。Server 仍负责按文件实际内容决定图片、文本、ZIP 等预览类型；Go 不自行渲染预览界面。Go 的批量操作与 Python 统一在 Result `message` 里保留可读结果和错误详情，复制/移动的 `data` 仅携带界面读取的成功数与失败数，删除只有结果文字；路径权限由 Go Client 所在系统账号决定。
 
 远程操作分成两类，影响它们与普通命令的并发关系：
 
@@ -44,7 +44,7 @@ Client（远程设备）
 {"type":"control","id":47,"domain":"remote_files","action":"create_archive","payload":{"paths":["/home/demo/a.txt","/home/demo/b.txt"],"destination_dir":"/home/demo","archive_name":"bundle_20261112_182428.zip"}}
 ```
 
-目前 Server 文件浏览器使用的 Action 包括 `browse_directory`、`create_directory`、`rename_path`、`delete_paths`、`paste_paths`（复制/移动及预检）、`create_archive`、`peek_archive`、`read_archive_entry`、`extract_archive`（含预检）、`inspect_upload` 与 `save_file`。Client 的 RemoteFilesManager 直接调用文件系统与归档能力；Client 完成执行时统一回传 `result(event_type=completed)`；对象查询在 `data` 中提供真实 JSON 对象，文本操作在 `message` 中提供反馈。Server 文件服务只在业务调用边界读取所需字段，不再读取旧 Socket `result.text/eof`。直接在 Terminal 输入的既有普通 Client 文件命令仍按文本命令工作，但不是 Remote File Browser 的控制实现。
+目前 Server 文件浏览器使用的 Action 包括 `browse_directory`、`create_directory`、`rename_path`、`delete_paths`、`paste_paths`（复制/移动及预检）、`create_archive`、`peek_archive`、`read_archive_entry`、`extract_archive`（含预检）、`inspect_upload` 与 `save_file`。Client 的 RemoteFilesManager 直接调用文件系统与归档能力；Client 完成执行时统一回传 `result(event_type=completed)`；对象查询在 `data` 中提供真实 JSON 对象，文本操作在 `message` 中提供反馈；ZIP 创建的 `data` 只提供前台使用的 `archive_name`，解压只提供 `extracted_to`，批量复制/移动只提供 `succeeded/failed` 和完整结果文字，批量删除仅提供完整结果文字，目录浏览、冲突预检和 ZIP 预览仍保留前台所需的结构化对象。Server 文件服务只在业务调用边界读取所需字段，不再读取旧 Socket `result.text/eof`。直接在 Terminal 输入的既有普通 Client 文件命令仍按文本命令工作，但不是 Remote File Browser 的控制实现。
 
 **文件搬运使用独立传输链路，不占用普通前台命令槽。** HTTP 请求等待实际上传或下载阶段完成后返回结果。 例如下载接口需要等待传输结果，取得 Artifact 才能返回可用的文件记录；网络中断或远端不可读仍会导致失败。任何实时操作都要求对应 Client 在线、具备文件访问权限。
 
