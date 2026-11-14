@@ -6,7 +6,17 @@ from typing import Literal
 from core.utils.formatting import format_dict, format_grouped_dict, format_table
 
 
-OutputShape = Literal['dict', 'grouped_dict', 'table']
+OutputShape = Literal['flat', 'table', 'dict', 'grouped_dict']
+
+
+class OutputFormat(str, Enum):
+    TEXT = 'text'
+    JSON = 'json'
+
+
+class ResultDataShape(str, Enum):
+    FLAT = 'flat'
+    TABLE = 'table'
 
 
 class ResultDisplay(str, Enum):
@@ -39,6 +49,13 @@ def render_result_payload(payload: dict, output_format: str = 'text') -> str:
     data = payload.get('data')
     if not isinstance(data, (dict, list)):
         raise ValueError('Structured result requires an object or array')
+    shape = payload.get('shape')
+    if shape not in (ResultDataShape.FLAT, ResultDataShape.TABLE, 'dict', 'grouped_dict', None):
+        raise ValueError('Invalid structured result shape')
+    if shape == ResultDataShape.TABLE and not isinstance(data, list):
+        raise ValueError('Table result requires an array')
+    if shape == ResultDataShape.FLAT and not isinstance(data, dict):
+        raise ValueError('Flat result requires an object')
     if data == []:
         return str(payload.get('message') or 'No data to display')
     # The existing table renderer assumes every row has exactly the first
@@ -48,7 +65,7 @@ def render_result_payload(payload: dict, output_format: str = 'text') -> str:
                 not isinstance(row, dict) or set(row) != set(data[0]) for row in data):
             return json.dumps(data, ensure_ascii=False, indent=2)
     _, text = render_structured_result(StructuredCommandResult(
-        status=1, data=data, shape=payload.get('shape'),
+        status=1, data=data, shape='dict' if shape == ResultDataShape.FLAT else shape,
         width=(payload.get('width') or 20) if isinstance(data, dict) else None))
     return text
 

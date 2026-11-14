@@ -10,9 +10,9 @@ Watchdog Worker 是独立于 Client 主执行流程的进程控制组件。Remot
 
 `client/config/feature_config.py` 的 `watchdog` 是启动能力总开关，默认在 macOS、Windows、Linux 为 `true`，iOS 固定为 `false`。LaunchAgent / LaunchDaemon 也会加载 Watchdog 子系统，仍由 launchd 负责实际进程生命周期管理。配置 `watchdog=false` 后重启 Client，Watchdog Manager、Monitor 和 Supervisor 实现不再导入；命令 `watchdog --json` 可查看未启用状态。
 
-当 `watchdog=true` 时，Watchdog 实现会在 Client 启动时加载，即使三个运行模式全部关闭。运行中通过 `set REMOTE_CONTROL_WATCHDOG_ENABLED`、`set LOCAL_HEARTBEAT_WATCHDOG_ENABLED` 和 `set PROCESS_RECOVERY_WATCHDOG_ENABLED` 独立启停对应功能，不需重启 Client。Web 的 Watchdog 详情在 Feature 支持时显示三个开关；不支持时显示能力提示。底部 HTTP Control 的 Kill、Relaunch、Clone 按钮始终显示，操作能否执行由运行状态决定。
+当 `watchdog=true` 时，Watchdog 实现会在 Client 启动时加载，即使三个运行模式全部关闭。运行中通过 `config set REMOTE_CONTROL_WATCHDOG_ENABLED`、`config set LOCAL_HEARTBEAT_WATCHDOG_ENABLED` 和 `config set PROCESS_RECOVERY_WATCHDOG_ENABLED` 独立启停对应功能，不需重启 Client。Web 的 Watchdog 详情在 Feature 支持时显示三个开关；不支持时显示能力提示。底部 HTTP Control 的 Kill、Relaunch、Clone 按钮始终显示，操作能否执行由运行状态决定。
 
-热切换失败时，`set` 会提示配置已保存但实际进程未能启动或停止；运行状态以 `watchdog --json` 返回的 Worker、Supervisor 存活信息为准。Windows 的 Worker 停止操作最多等待系统 `taskkill` 5 秒，超时后尝试直接结束对应进程。
+热切换失败时，`config set` 会提示配置已保存但实际进程未能启动或停止；运行状态以 `watchdog --json` 返回的 Worker、Supervisor 存活信息为准。Windows 的 Worker 停止操作最多等待系统 `taskkill` 5 秒，超时后尝试直接结束对应进程。
 
 ## 守护进程与 Client 的运行关系
 
@@ -233,7 +233,7 @@ Web 的 **info → Watchdog** 在这种情况下显示 **Lifecycle managed by la
 | `LOCAL_HEARTBEAT_WATCHDOG_INTERVAL_SECONDS` | `5` | Client 写入心跳文件的周期，单位秒 | 不支持 |
 | `LOCAL_HEARTBEAT_WATCHDOG_TIMEOUT_SECONDS` | `15` | 心跳超过多少秒未更新时触发恢复 | 不支持 |
 
-两个模式的开关可以从 Client 命令通道用 `set` 在线修改。三个时间参数能够在配置查询中查看，但不对普通的 `set KEY value` 开放；**能被 `set --all` 列出，并不意味着能够直接在线修改**。
+两个模式的开关可以从 Server `config set` 在线修改。三个时间参数能够在配置查询中查看，但不对普通的 `config set KEY VALUE` 开放；**能被 `config list` 列出，并不意味着能够直接在线修改**。
 
 运行时配置的差异项保存在外部 `runtime_config.json`。通过 `RUNTIME_CONFIG_PATH` 可以指定文件位置；未指定时使用操作系统对应的默认位置：
 
@@ -251,8 +251,8 @@ Remote HTTP Control 通过原 Client 的 `client_id` 投递 `kill`、`relaunch`�
 要**启用 Watchdog**，按需要执行其中一行或两行：
 
 ```text
-set REMOTE_CONTROL_WATCHDOG_ENABLED true
-set LOCAL_HEARTBEAT_WATCHDOG_ENABLED true
+config set REMOTE_CONTROL_WATCHDOG_ENABLED true
+config set LOCAL_HEARTBEAT_WATCHDOG_ENABLED true
 ```
 
 第一行开启独立 Worker 的 Remote Control Watchdog HTTP 轮询；第二行开启 Client 心跳线程和 Worker 的 Local 超时检查。只需远程控制时执行第一行，只需本地恢复时执行第二行。更改开关后，Client 会停止原来的 Watchdog 组件，并按新配置重新启动，无需重启整个 Client。Remote 和 Local 同时启用时也只需要一个 Worker。
@@ -260,8 +260,8 @@ set LOCAL_HEARTBEAT_WATCHDOG_ENABLED true
 关闭 Watchdog 时使用相同的配置项，将值设为 `false`：
 
 ```text
-set REMOTE_CONTROL_WATCHDOG_ENABLED false
-set LOCAL_HEARTBEAT_WATCHDOG_ENABLED false
+config set REMOTE_CONTROL_WATCHDOG_ENABLED false
+config set LOCAL_HEARTBEAT_WATCHDOG_ENABLED false
 ```
 
 仅关闭一个模式时，另一个模式仍继续运行；两个模式都关闭后则不再需要独立 Worker。关闭 Local 会停止心跳线程，但已经生成的心跳文件和日志不会自动删除。
@@ -271,10 +271,10 @@ set LOCAL_HEARTBEAT_WATCHDOG_ENABLED false
 ```text
 watchdog
 watchdog --json
-set --all
+config list
 ```
 
-`watchdog` 返回便于阅读的当前状态；`watchdog --json` 返回同样的结构化状态。顶层按 `client`、`remote_control_watchdog`、`local_heartbeat_watchdog`、`process_recovery_watchdog` 分组，第二层才是各项具体信息，字段不再重复所属 Watchdog 前缀；秒数统一使用 `_seconds`。`set --all` 仍可查看运行时配置，包括不支持普通 `set` 修改的三个 Remote Control Watchdog / Local Heartbeat Watchdog 时间参数；这些查询都不改变配置。
+`watchdog` 返回便于阅读的当前状态；`watchdog --json` 返回同样的结构化状态。顶层按 `client`、`remote_control_watchdog`、`local_heartbeat_watchdog`、`process_recovery_watchdog` 分组，第二层才是各项具体信息，字段不再重复所属 Watchdog 前缀；秒数统一使用 `_seconds`。`config list` 仍可查看运行时配置，包括不支持普通 `set` 修改的三个 Remote Control Watchdog / Local Heartbeat Watchdog 时间参数；这些查询都不改变配置。
 
 `watchdog` 的**普通文本输出**与 `set` 分组列表一致：每个对象显示为 `[client]`、`[remote_control_watchdog]`、`[local_heartbeat_watchdog]`、`[process_recovery_watchdog]` 标题，下面逐行输出 `字段 = 值`，组之间留空行；不会把第二层对象直接打印成 Python 字典。比如：
 
@@ -308,8 +308,8 @@ Remote 启用后应检查 `remote_control_watchdog.worker_alive`、`remote_contr
 需要恢复两个开关的默认值时使用：
 
 ```text
-set --reset REMOTE_CONTROL_WATCHDOG_ENABLED
-set --reset LOCAL_HEARTBEAT_WATCHDOG_ENABLED
+config reset REMOTE_CONTROL_WATCHDOG_ENABLED
+config reset LOCAL_HEARTBEAT_WATCHDOG_ENABLED
 ```
 
 每一行只清除对应开关的运行时覆盖值；当前默认值均为关闭。只需重置一个模式时执行对应一行即可，新的值会立即应用到 Watchdog 组件。
@@ -503,8 +503,8 @@ curl -sS -i -X POST \
 先在 **Client 命令通道**执行：
 
 ```text
-set LOCAL_HEARTBEAT_WATCHDOG_ENABLED false
-set REMOTE_CONTROL_WATCHDOG_ENABLED true
+config set LOCAL_HEARTBEAT_WATCHDOG_ENABLED false
+config set REMOTE_CONTROL_WATCHDOG_ENABLED true
 watchdog --json
 ```
 
@@ -548,8 +548,8 @@ kill -CONT "$CLIENT_PID"
 先在 **Client 命令通道**执行：
 
 ```text
-set REMOTE_CONTROL_WATCHDOG_ENABLED false
-set LOCAL_HEARTBEAT_WATCHDOG_ENABLED true
+config set REMOTE_CONTROL_WATCHDOG_ENABLED false
+config set LOCAL_HEARTBEAT_WATCHDOG_ENABLED true
 watchdog --json
 ```
 
@@ -578,8 +578,8 @@ kill -CONT "$CLIENT_PID"
 实验结束后，如不再需要 Watchdog，在**当前仍在运行的 Client 实例**的命令通道执行：
 
 ```text
-set REMOTE_CONTROL_WATCHDOG_ENABLED false
-set LOCAL_HEARTBEAT_WATCHDOG_ENABLED false
+config set REMOTE_CONTROL_WATCHDOG_ENABLED false
+config set LOCAL_HEARTBEAT_WATCHDOG_ENABLED false
 watchdog
 ```
 

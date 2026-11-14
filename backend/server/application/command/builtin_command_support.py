@@ -2,7 +2,6 @@ import glob
 import json
 import os
 import re
-import shlex
 
 from core.utils.command_output import (
     StructuredCommandResult,
@@ -10,7 +9,6 @@ from core.utils.command_output import (
     render_structured_result, strip_output_format_arg,
 )
 from core.utils.formatting import format_dict
-from core.utils.parsing import scan_args
 from core.utils.script_metadata import read_script_metadata_from_file
 from server.application.scripts.script_run_service import prepare_script_control
 from core.platform.catalog_visibility import visible_on_platform
@@ -99,21 +97,21 @@ class ScriptBuiltinSupport:
             foreground=self.use_foreground_guard)
         if status != 1 or not isinstance(result, dict):
             raise RuntimeError(str(result) or 'Unable to read Configuration')
-        return result
+        config = result.get('data')
+        if not isinstance(config, dict) or not isinstance(config.get('items'), list):
+            raise RuntimeError('Invalid Configuration GET result')
+        return config
 
     def _platform(self):
         info = getattr(self.conn, 'session_info', None)
         return str(getattr(info, 'os_alias', '') or '')
 
-    def script(self, subcommand, tail=''):
-        """Execute a validated registry subcommand without leaking transport detail."""
+    def script(self, invocation):
+        """Use the Server's parsed invocation; business code never reparses CLI text."""
+        subcommand = invocation.action
+        args = invocation.arguments
         if subcommand == 'list':
-            from core.utils.command_output import parse_output_format, render_structured_result, StructuredCommandResult
-            text = str(tail or '').strip()
-            if text not in ('', '--json'):
-                yield 0, 'Usage: script list [--json]'
-                return
-            if text == '--json':
+            if invocation.output_format == 'json':
                 rows = []
                 for item in self.list_script_catalog():
                     parameters = (item['metadata'] or {}).get('params') or []
@@ -131,22 +129,11 @@ class ScriptBuiltinSupport:
             yield 1, '\n'.join(self.list_scripts())
             return
         if subcommand == 'view':
-            try:
-                args = shlex.split(tail)
-            except ValueError as exc:
-                yield 0, str(exc)
-                return
-            if len(args) != 1:
-                yield 0, 'Usage: script view <path>'
-                return
-            with open(self._resolve_script_path(args[0]), 'rt', encoding='utf-8') as source:
+            with open(self._resolve_script_path(args['name']), 'rt', encoding='utf-8') as source:
                 yield 1, source.read()
             return
         if subcommand == 'exec':
-            if not str(tail or '').strip():
-                yield 0, 'Usage: script exec [--execution_mode MODE] [--output_mode MODE] <path> [options]'
-                return
-            yield from self.execute_script_file(tail)
+            yield from self.execute_script_file(args)
             return
         raise ValueError(f'Unsupported script subcommand: {subcommand}')
 
@@ -188,19 +175,10 @@ class ScriptBuiltinSupport:
 
         raise FileNotFoundError(f"Script not found: {script_path}")
 
-    def execute_script_file(self, filename: str):
-        parts = shlex.split(filename)
-        if not parts:
-            raise ValueError('script_name is required')
-        modes = {}
-        while parts and parts[0] in ('--execution_mode', '--output_mode'):
-            key = parts.pop(0)[2:]
-            if not parts or parts[0].startswith('--') or key in modes:
-                raise ValueError(f'Invalid or duplicate Script option: {key}')
-            modes[key] = parts.pop(0)
-        if not parts:
-            raise ValueError('script_name is required')
-        payload = prepare_script_control(SCRIPT_PATH, parts[0], scan_args(parts[1:]),
+    def execute_script_file(self, args: dict):
+        modes = {key: args[key] for key in ('execution_mode', 'output_mode')
+                 if args[key] is not None}
+        payload = prepare_script_control(SCRIPT_PATH, args['name'], args['params'],
                                          config=self._runtime_config(), **modes)
         executor = self.plan_executor_factory()
         for item in executor(self.plan_builder.build_script_plan(payload))():

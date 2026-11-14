@@ -1,8 +1,9 @@
-"""Server command entry points for runtime configuration and Watchdog."""
+"""Server-only Configuration CLI, sharing the Web Configuration Control."""
 from core.protocol.control import ControlDomain, ConfigurationAction, WatchdogAction, execution_policy, ExecutionPolicy
 from core.protocol.message_queue import ResultChunk
-from core.utils.configuration_cli import parse_configuration_request, configuration_cli_items
-from core.utils.command_output import (ResultDisplay, ResultEventType, StructuredCommandResult,
+from core.protocol.result_envelope import ResultEnvelope
+from core.utils.configuration_cli import configuration_cli_items
+from core.utils.command_output import (ResultDisplay, StructuredCommandResult,
                                        parse_output_format, render_result_payload, render_structured_result)
 from server.application.command.command_types import COMMAND_TYPE_CONTROL
 
@@ -19,19 +20,23 @@ class ConfigurationBuiltinSupport:
         stream = (self.remote_execution_service.stream_foreground_command if foreground
                   else self.remote_execution_service.stream_command)
         yield from stream(self.conn, '', command_type=COMMAND_TYPE_CONTROL, domain=domain, action=action,
-                          payload=payload, extra={'timeout': 30} if domain == ControlDomain.CONFIGURATION else None, history_entry_id=self.history_entry_id_provider() or '')
+                          payload=payload, extra={'timeout': 30} if domain == ControlDomain.CONFIGURATION else None,
+                          history_entry_id=self.history_entry_id_provider() or '')
 
-    def set(self, arg=''):
-        platform = getattr(self.conn.session_info, 'os_alias', '')
-        try:
-            action, payload, output_format = parse_configuration_request(
-                arg, literal_backslashes=platform in ('windows', 'win'))
-        except ValueError as exc:
-            output_format = parse_output_format(arg)
-            yield 0, render_result_payload(configuration_message_result(str(exc), ok=False), output_format)
-            return
-        # All consumers receive the same Configuration Result from Client.
-        # Only the CLI GET view narrows full editor data to five useful columns.
+    def config(self, invocation):
+        action = {
+            'list': ConfigurationAction.GET, 'set': ConfigurationAction.SET,
+            'reset': ConfigurationAction.RESET, 'reset-all': ConfigurationAction.RESET,
+        }[invocation.action]
+        args = invocation.arguments
+        payload = {}
+        if action == ConfigurationAction.SET:
+            payload = {'key': args['key'], 'value': args['value'], 'value_format': 'text'}
+        elif invocation.action == 'reset':
+            payload = {'key': args['key']}
+        elif invocation.action == 'reset-all':
+            payload = {'all': True}
+        output_format = invocation.output_format
         for item in self._send(ControlDomain.CONFIGURATION, action, payload):
             status, result = item[:2]
             if not getattr(item, 'eof', True):
@@ -39,10 +44,9 @@ class ConfigurationBuiltinSupport:
                     yield item
                 continue
             if not isinstance(result, dict) or result.get('display') not in (ResultDisplay.MESSAGE, ResultDisplay.DATA):
-                yield ResultChunk(0, render_result_payload(configuration_message_result(
-                    str(result) if status != 1 else 'Invalid Configuration response', ok=False), output_format),
-                    True, terminal_authoritative=True)
-                continue
+                result = ResultEnvelope(status='error', message=(
+                    str(result) if status != 1 else 'Invalid Configuration response')).as_payload()
+                status = 0
             if status == 1 and action == ConfigurationAction.GET:
                 result = {**result, 'data': configuration_cli_items(result['data']), 'shape': 'table'}
             yield ResultChunk(status, render_result_payload(result, output_format),
@@ -56,9 +60,3 @@ class ConfigurationBuiltinSupport:
                 continue
             _, text = render_structured_result(StructuredCommandResult(1, result, shape='grouped_dict'), parse_output_format(arg))
             yield ResultChunk(status, text, getattr(item, 'eof', True), terminal_authoritative=True)
-
-
-def configuration_message_result(message, *, ok=True):
-    """Operation feedback shares the Job completion envelope and renderer."""
-    return {'event_type': ResultEventType.COMPLETED, 'status': 'success' if ok else 'error',
-            'display': ResultDisplay.MESSAGE, 'message': str(message)}

@@ -162,7 +162,7 @@ Job 的模块管理、执行查询和运行控制分属不同操作。模块目�
 | 命令 | 执行位置与语义 |
 |---|---|
 | `job` / `job list` | Server 查询 Job Catalog，不联系 Client |
-| `job start <name> [--mode inproc\|subprocess] [--params '{"key":"value"}']` | Server 验证名称、Metadata 模式限制；Client 下载 Job 并启动运行 |
+| `job start <name> [--mode inproc\|subprocess] -- --key VALUE ...` | Server 验证名称、Metadata 模式限制；Client 下载 Job 并启动运行 |
 | `job ps` | Server 向 Client 询问当前运行实例 |
 | `job status <name>` | Client 查询 `JobManager` 当前状态 |
 | `job stop <name>` | Client 发送停止请求，最终状态仍依赖 Job 本身上报 |

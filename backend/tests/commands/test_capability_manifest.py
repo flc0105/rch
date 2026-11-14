@@ -201,7 +201,7 @@ def test_supported_watchdog_imports_implementation_with_all_modes_off():
 
 def test_set_watchdog_modes_hot_start_and_stop_without_changing_capability(monkeypatch):
     from client.config import runtime_config
-    from client.commands.common.mixins.runtime_config_ops import CommandRuntimeConfigMixin
+    from client.config.manager import ConfigurationManager
 
     class Guard:
         def __init__(self):
@@ -215,28 +215,27 @@ def test_set_watchdog_modes_hot_start_and_stop_without_changing_capability(monke
         def stop(self): self.calls.append('stop')
 
     guard, process = Guard(), Process()
-    owner = CommandRuntimeConfigMixin()
-    owner._checkpoint = lambda: None
-    owner.socket = SimpleNamespace(
+    connection = SimpleNamespace(
         runtime=SimpleNamespace(features={'watchdog': True}),
         watchdog_manager=guard, process_recovery_watchdog_manager=process,
     )
-    monkeypatch.setattr('client.commands.common.mixins.runtime_config_ops.is_launchd_managed_client', lambda: False)
+    manager = ConfigurationManager(connection, connection.runtime.features)
     monkeypatch.setattr(runtime_config, 'REMOTE_CONTROL_WATCHDOG_ENABLED', True)
-    result = owner._apply_runtime_config_side_effects('REMOTE_CONTROL_WATCHDOG_ENABLED', True)
+    result = manager.effects('REMOTE_CONTROL_WATCHDOG_ENABLED', True, launch_check=lambda: False)
     assert guard.calls == ['stop', 'start']
     assert result and 'Applied' in ''.join(result)
     monkeypatch.setattr(runtime_config, 'PROCESS_RECOVERY_WATCHDOG_ENABLED', True)
-    owner._apply_runtime_config_side_effects('PROCESS_RECOVERY_WATCHDOG_ENABLED', True)
+    manager.effects('PROCESS_RECOVERY_WATCHDOG_ENABLED', True, launch_check=lambda: False)
     assert process.calls == ['start']
-    owner._apply_runtime_config_side_effects('PROCESS_RECOVERY_WATCHDOG_ENABLED', False)
+    manager.effects('PROCESS_RECOVERY_WATCHDOG_ENABLED', False, launch_check=lambda: False)
     assert process.calls[-1] == 'stop'
-    assert owner.socket.runtime.features['watchdog'] is True
+    assert connection.runtime.features['watchdog'] is True
 
     # A disabled capability can retain user preferences without creating managers.
-    owner.socket = SimpleNamespace(runtime=SimpleNamespace(features={'watchdog': False}),
+    connection = SimpleNamespace(runtime=SimpleNamespace(features={'watchdog': False}),
                                    watchdog_manager=None, process_recovery_watchdog_manager=None)
-    result = owner._apply_runtime_config_side_effects('PROCESS_RECOVERY_WATCHDOG_ENABLED', True)
+    manager = ConfigurationManager(connection, connection.runtime.features)
+    result = manager.effects('PROCESS_RECOVERY_WATCHDOG_ENABLED', True, launch_check=lambda: False)
     assert 'unavailable' in ''.join(result)
-    result = owner._apply_runtime_config_side_effects('LOCAL_HEARTBEAT_WATCHDOG_ENABLED', True)
+    result = manager.effects('LOCAL_HEARTBEAT_WATCHDOG_ENABLED', True, launch_check=lambda: False)
     assert 'unavailable' in ''.join(result)

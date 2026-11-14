@@ -1,5 +1,4 @@
 import asyncio
-import os
 import json
 from typing import Optional
 
@@ -11,6 +10,7 @@ from websockets.exceptions import ConnectionClosed
 
 from server.config.config import WEB_PORT, WEB_WS_PORT
 from server.web.auth_guard import WebAuthGuard
+from server.web.ws_origin import websocket_origin_allowed
 
 class WebSocketAdapter:
     """Transport wrapper for the existing PTY/Screen WS handlers."""
@@ -289,14 +289,7 @@ def create_ws_handler(server_instance, flask_app):
         origin = headers.get('Origin', '')
         # Browser connections may only originate from RCH's HTTP Web UI.
         if origin:
-            url = urlsplit(origin)
-            request_host = urlsplit('http://' + headers.get('Host', ''))
-            same_host = (url.hostname or '').lower() == (request_host.hostname or '').lower()
-            dev_port = int(os.environ.get('RCH_VITE_PORT', '5173'))
-            # Vite forwards /ws with the original Host header; require the
-            # browser origin and forwarded Host to match that configured port.
-            dev_proxy = same_host and url.port == dev_port and request_host.port == dev_port
-            if (not same_host) or (url.port not in (WEB_PORT, None) and not dev_proxy) or url.scheme not in ('http', 'https'):
+            if not websocket_origin_allowed(origin, headers.get('Host', ''), WEB_PORT):
                 return False
         elif require_origin:
             # Non-browser notification clients may authenticate with a Bearer token.

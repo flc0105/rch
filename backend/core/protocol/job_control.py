@@ -2,7 +2,8 @@
 
 from core.protocol.control import JobAction
 from core.protocol.references import ReferenceType, entity_reference
-from core.utils.command_output import ResultDisplay, ResultEventType
+from core.utils.command_output import ResultDisplay, ResultDataShape, ResultEventType
+from core.protocol.result_envelope import ResultEnvelope
 
 JOB_ACTIONS = frozenset(JobAction)
 JOB_MUTATING_ACTIONS = frozenset({JobAction.START, JobAction.STOP, JobAction.STOP_ALL})
@@ -39,14 +40,11 @@ def build_job_control_result(action, message, *, data=None, status='success', di
     """One business payload, with explicit presentation intent and optional Job links."""
     if action not in JOB_ACTIONS:
         raise ValueError('Unsupported Job control action')
-    result = {'action': action, 'event_type': ResultEventType.COMPLETED,
-              'status': status, 'display': display, 'message': str(message)}
-    if data is not None:
-        result['data'] = data
-    if display == ResultDisplay.DATA:
-        result['shape'] = shape or ('table' if isinstance(data, list) else 'dict')
-        if isinstance(data, dict):
-            result['width'] = width or 20
+    result = ResultEnvelope(status=status, message=str(message), data=data, display=display,
+                            shape=ResultDataShape(shape) if shape else None).as_payload()
+    result['action'] = action
+    if display == ResultDisplay.DATA and isinstance(data, dict):
+        result['width'] = width or 20
     ids = tuple(dict.fromkeys(str(value) for value in job_ids if value))
     if ids:
         result['references'] = [entity_reference(ReferenceType.JOB, item) for item in ids]
@@ -62,10 +60,10 @@ def validate_job_control_result(payload, action):
         raise ValueError('Invalid Job result display')
     if not isinstance(payload.get('message'), str) or (payload.get('data') is not None and not isinstance(payload['data'], (dict, list))):
         raise ValueError('Invalid Job result content')
-    if payload['display'] == ResultDisplay.DATA:
+    if payload['display'] == ResultDisplay.DATA and payload['status'] == 'success':
         if not isinstance(payload.get('data'), (dict, list)):
             raise ValueError('Structured Job result requires data')
-        if payload.get('shape') not in ('dict', 'table', 'grouped_dict'):
+        if payload.get('shape') not in (ResultDataShape.FLAT, ResultDataShape.TABLE):
             raise ValueError('Invalid Job data shape')
         if isinstance(payload['data'], dict) and (type(payload.get('width')) is not int or payload['width'] <= 0):
             raise ValueError('Invalid Job data width')

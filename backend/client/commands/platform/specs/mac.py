@@ -1,4 +1,4 @@
-from client.commands.arguments.models import ArgumentCommandSpec, ArgumentOptionSpec
+from core.commands.argument_models import ArgumentCommandSpec, ArgumentOptionSpec
 
 MSGBOX_ARGUMENT_SPEC = ArgumentCommandSpec(
     name='msgbox',

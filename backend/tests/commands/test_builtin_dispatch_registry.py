@@ -9,6 +9,8 @@ from server.application.command.server_builtin_registry import SERVER_COMMAND_RE
 def _handler_with_stubs():
     from server.application.command.builtin_command_handler import BuiltinCommandHandler
     handler = BuiltinCommandHandler.__new__(BuiltinCommandHandler)
+    from types import SimpleNamespace
+    handler.conn = SimpleNamespace(session_info=SimpleNamespace(os_alias="mac"))
     calls = []
     for spec in SERVER_COMMAND_REGISTRY._commands.values():
         def record(self, *args, command_name=spec.name):
@@ -19,10 +21,7 @@ def _handler_with_stubs():
 
 
 @pytest.mark.parametrize('name,arg,expected', [
-    ('script', '', ('list', '')),
-    ('script', 'exec common/demo --name world', ('exec', 'common/demo --name world')),
     ('alias', 'set --platform common x = shell echo  hello', ('set', '--platform common x = shell echo  hello')),
-    ('job', 'start demo --mode inproc --params "{}"', ('start', 'demo --mode inproc --params "{}"')),
 ])
 def test_split_subcommands_use_registered_call_shape(name, arg, expected):
     handler, calls = _handler_with_stubs()
@@ -63,8 +62,24 @@ def test_history_explicit_list_matches_no_argument_form():
 
 def test_registry_declares_split_invocation_and_reachable_xt_help():
     assert {spec.name for spec in SERVER_COMMAND_REGISTRY._commands.values()
-            if spec.dispatch_subcommand} == {'script', 'alias', 'job'}
+            if spec.dispatch_subcommand} == {'script', 'alias', 'job', 'config'}
     assert SERVER_COMMAND_REGISTRY.parse('xt', '')[1:] == ('help', '')
     assert SERVER_COMMAND_REGISTRY.parse('xt', 'help')[1:] == ('help', '')
     with pytest.raises(ValueError, match='Unsupported xt subcommand'):
         SERVER_COMMAND_REGISTRY.parse('xt', 'unregistered')
+
+
+@pytest.mark.parametrize('name,arg,action,expected', [
+    ('job', 'start demo --mode inproc --json -- --interval_seconds 2', 'start',
+     {'name': 'demo', 'mode': 'inproc', 'params': {'interval_seconds': '2'}, 'json': True}),
+    ('job', 'ps --json', 'ps', {'json': True}),
+    ('config', 'set --key SCRIPT_DEFAULT_TIMEOUT --value 60 --json', 'set',
+     {'key': 'SCRIPT_DEFAULT_TIMEOUT', 'value': '60', 'json': True}),
+    ('config', '', 'list', {'json': False}),
+])
+def test_structured_builtin_handlers_receive_typed_invocation(name, arg, action, expected):
+    invocation = SERVER_COMMAND_REGISTRY.parse_invocation(name, arg)
+    assert invocation.command == name
+    assert invocation.action == action
+    for key, value in expected.items():
+        assert invocation.arguments[key] == value

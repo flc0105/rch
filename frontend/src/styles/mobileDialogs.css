@@ -36,6 +36,21 @@
     flex: 1 1 auto !important; min-height: 0 !important;
     overflow: auto;
   }
+  /* The job detail has tall metadata and two output panels. On a phone the
+     body, not the fixed-height inner panel, must own vertical scrolling. */
+  .background-job-detail-dialog.el-dialog > .el-dialog__body {
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    touch-action: pan-y;
+    -webkit-overflow-scrolling: touch;
+  }
+  .background-job-detail-dialog .fixed-dialog-body {
+    height: auto !important;
+    max-height: none !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    display: block !important;
+  }
   .command-execution-detail-dialog.el-dialog > .el-dialog__body {
     overflow-y: auto !important;
     overflow-x: hidden !important;

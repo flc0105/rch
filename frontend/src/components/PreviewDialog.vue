@@ -2023,6 +2023,7 @@ print(value)
 /* ========== 文件预览 ========== */
 .preview-dialog-header {
   width: 100%;
+  min-width: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -2030,6 +2031,11 @@ print(value)
 }
 
 .preview-dialog-title {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--el-text-color-primary);
   font-size: var(--el-dialog-title-font-size);
   line-height: var(--el-dialog-font-line-height);
@@ -2039,6 +2045,7 @@ print(value)
   flex: 0 0 auto;
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 10px;
 }
 
@@ -2284,6 +2291,7 @@ print(value)
 
   .preview-dialog .el-dialog__header {
     flex: 0 0 auto;
+    min-width: 0;
     padding: 12px 14px 8px;
   }
 

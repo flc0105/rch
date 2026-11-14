@@ -8,6 +8,11 @@ from dataclasses import dataclass
 import re
 import shlex
 
+from core.commands.argument_models import ArgumentCommandSpec, ArgumentOptionSpec
+from core.commands.argument_parser import parse_argument_text
+from core.commands.argument_errors import ArgumentCommandValidationError
+from core.utils.command_output import OutputFormat
+
 
 @dataclass(frozen=True)
 class SubcommandSpec:
@@ -16,6 +21,7 @@ class SubcommandSpec:
     usage: str = ''
     visibility: str = 'public'
     options: tuple[str, ...] = ()
+    argument_spec: ArgumentCommandSpec | None = None
 
 
 @dataclass(frozen=True)
@@ -29,40 +35,86 @@ class CommandSpec:
     suggest: bool = True
     group: str = 'server'
     expects_arguments: bool = False
+    structured: bool = False
 
     def child(self, name):
         return next((item for item in self.subcommands if item.name == name), None)
 
 
-def command(name, description, handler=None, children=(), default='', dispatch_subcommand=False, group='server', expects_arguments=False):
+def command(name, description, handler=None, children=(), default='', dispatch_subcommand=False, group='server', expects_arguments=False, structured=False):
     return CommandSpec(name, description, handler or name,
-                       tuple(SubcommandSpec(*item) for item in children),
-                       default, dispatch_subcommand, True, group, expects_arguments)
+                       tuple(item if isinstance(item, SubcommandSpec) else SubcommandSpec(*item)
+                             for item in children),
+                       default, dispatch_subcommand, True, group, expects_arguments, structured)
 
+
+
+def _option(name, *, positional=None, required=False, flag=False, alias='', arity=1, repeatable=False):
+    return ArgumentOptionSpec(name=name, option_type='flag' if flag else 'str',
+                              default=False if flag else ([] if repeatable else None),
+                              required=required, positional_index=positional,
+                              allow_empty=False, alias=alias, arity=arity,
+                              repeatable=repeatable)
+
+
+def _arguments(name, *options, json=True, trailing_named_arguments=None):
+    return ArgumentCommandSpec(
+        name, options=[*options, *([_option('json', flag=True)] if json else [])],
+        trailing_named_arguments=trailing_named_arguments)
+
+
+def _structured_child(command_name, action, description, usage, *options,
+                      json=True, trailing_named_arguments=None):
+    return SubcommandSpec(action, description, usage, argument_spec=_arguments(
+        f'{command_name} {action}', *options, json=json,
+        trailing_named_arguments=trailing_named_arguments))
 
 SERVER_COMMAND_SPECS = (
-    command('set', 'Show or update client runtime config', expects_arguments=True, group='runtime'),
+    command('config', 'Show or update client runtime config', children=(
+        _structured_child('config', 'list', 'List runtime config', 'config [list] [--json]'),
+        _structured_child('config', 'set', 'Set one runtime config value',
+                          'config set <key> <value> [--json]',
+                          _option('key', positional=0, required=True),
+                          _option('value', positional=1, required=True)),
+        _structured_child('config', 'reset', 'Reset one runtime config value',
+                          'config reset <key> [--json]', _option('key', positional=0, required=True)),
+        _structured_child('config', 'reset-all', 'Reset all config overrides', 'config reset-all [--json]'),
+    ), default='list', dispatch_subcommand=True, group='runtime', structured=True),
     command('watchdog', 'Show watchdog runtime status', expects_arguments=True, group='runtime'),
     command('upload', 'Upload a local file to the Client', expects_arguments=True),
     command('script', 'List, inspect and run Server scripts', children=(
-        ('list', 'List available scripts (optionally --json)', 'script list [--json]'),
-        ('view', 'Read script source on the Server', 'script view <path>'),
-        ('exec', 'Execute a script with CLI arguments', 'script exec [--execution_mode MODE] [--output_mode MODE] <path> [options]'),
-    ), default='list', dispatch_subcommand=True),
+        _structured_child('script', 'list', 'List available scripts', 'script list [--json]'),
+        _structured_child('script', 'view', 'Read script source on the Server',
+                          'script view <name>|--name NAME',
+                          _option('name', positional=0, required=True), json=False),
+        _structured_child('script', 'exec', 'Execute a script with CLI arguments',
+                          'script exec <name>|--name NAME [--execution_mode MODE] [--output_mode MODE] [-- --key VALUE]...',
+                          _option('name', positional=0, required=True),
+                          _option('execution_mode'), _option('output_mode'),
+                          json=False, trailing_named_arguments='params'),
+    ), default='list', dispatch_subcommand=True, structured=True),
     command('alias', 'List or manage aliases for this Client platform', children=(
         ('list', 'List current effective aliases (optionally --json)', 'alias list [--json]'),
         ('set', 'Save an alias', 'alias set [--platform PLATFORM] name = command'),
         ('unset', 'Remove an alias', 'alias unset [--platform PLATFORM] name'),
     ), default='list', dispatch_subcommand=True),
     command('job', 'Manage Client jobs from the Server', children=(
-        ('list', 'List available Server jobs (optionally --json)', 'job list [--json]'),
-        ('start', 'Start a Client job', 'job start <name> [--mode MODE] [--params JSON] [--json]', 'public', ('mode','params')),
-        ('logs', 'Read stored Job reports or follow new reports', 'job logs <name> [--follow|-f]'),
-        ('ps', 'Show running jobs', 'job ps [--json]'),
-        ('status', 'Query job state', 'job status <name> [--json]'),
-        ('stop', 'Stop a running job', 'job stop <name> [--json]'),
-        ('stop-all', 'Stop all running jobs', 'job stop-all [--json]'),
-    ), default='list', dispatch_subcommand=True),
+        _structured_child('job', 'list', 'List available Server jobs', 'job list [--json]'),
+        _structured_child('job', 'start', 'Start a Client job',
+                          'job start <name>|--name NAME [--mode MODE] [--json] [-- --key VALUE]...',
+                          _option('name', positional=0, required=True), _option('mode'),
+                          trailing_named_arguments='params'),
+        _structured_child('job', 'logs', 'Read stored Job reports or follow new reports',
+                          'job logs <name> [--follow|-f]',
+                          _option('name', positional=0, required=True),
+                          _option('follow', flag=True, alias='f'), json=False),
+        _structured_child('job', 'ps', 'Show running jobs', 'job ps [--json]'),
+        _structured_child('job', 'status', 'Query job state', 'job status <name> [--json]',
+                          _option('name', positional=0, required=True)),
+        _structured_child('job', 'stop', 'Stop a running job', 'job stop <name> [--json]',
+                          _option('name', positional=0, required=True)),
+        _structured_child('job', 'stop-all', 'Stop all running jobs', 'job stop-all [--json]'),
+    ), default='list', dispatch_subcommand=True, structured=True),
     command('history', 'Show Quick History or replay by index', children=(
         ('list', 'Display Quick History', 'history'),
         ('clear', 'Clear Quick Recent', 'history clear'),
@@ -88,6 +140,15 @@ SERVER_COMMAND_SPECS = (
     ), default='help'),
     command('help', 'Show Server builtin commands and subcommands', handler='server_help'),
 )
+
+
+@dataclass(frozen=True)
+class BuiltinInvocation:
+    command: str
+    action: str
+    arguments: dict
+    output_format: OutputFormat
+
 
 
 class ServerCommandRegistry:
@@ -122,46 +183,25 @@ class ServerCommandRegistry:
             return spec, 'list', text
         raise ValueError(f'Unsupported {spec.name} subcommand: {token}. Use: {self.usage(spec.name)}')
 
-    def parse_arguments(self, name, subcommand, raw_tail):
-        """Shared shlex option parser for explicitly declared value-taking flags.
+    def parse_invocation(self, name, raw_arg, *, literal_backslashes=False):
+        """Parse declared structured builtins once; other handlers stay RAW."""
+        return self.parse_leaf(*self.parse(name, raw_arg),
+                               literal_backslashes=literal_backslashes)
 
-        Preserve the original tail for subcommands marked raw in their business
-        support; no automatic re-serialization of shell templates or Base64 JSON.
-        """
-        spec = self.get(name)
-        child = spec.child(subcommand) if spec else None
-        if child is None:
-            raise ValueError(f'Unknown subcommand: {name} {subcommand}')
+    def parse_leaf(self, spec, subcommand, tail, *, literal_backslashes=False):
+        """Use the already resolved leaf: no second command-name parse."""
+        child = spec.child(subcommand)
+        schema = child.argument_spec if child is not None else None
+        if schema is None:
+            raise ValueError(f'No structured argument schema for: {spec.name} {subcommand}')
         try:
-            tokens = shlex.split(str(raw_tail or ''))
-        except ValueError as exc:
-            raise ValueError(f'Invalid {name} arguments: {exc}') from exc
-        positionals, options = [], {}
-        idx = 0
-        while idx < len(tokens):
-            token = tokens[idx]
-            if token == '--':
-                positionals.extend(tokens[idx + 1:])
-                break
-            if token.startswith('--'):
-                key_value = token[2:].split('=', 1)
-                key = key_value[0]
-                if key not in child.options:
-                    raise ValueError(f'Unknown option: --{key}')
-                if key in options:
-                    raise ValueError(f'Duplicate --{key}')
-                if len(key_value) == 2:
-                    value = key_value[1]
-                else:
-                    idx += 1
-                    if idx >= len(tokens):
-                        raise ValueError(f'Missing value for --{key}')
-                    value = tokens[idx]
-                options[key] = value
-            else:
-                positionals.append(token)
-            idx += 1
-        return positionals, options
+            args = parse_argument_text(schema, tail, literal_backslashes=literal_backslashes)
+        except ArgumentCommandValidationError as exc:
+            exc.output_format = (OutputFormat.JSON if 'json' in getattr(exc, 'seen_flags', ())
+                                 else OutputFormat.TEXT)
+            raise
+        return BuiltinInvocation(spec.name, subcommand, args,
+                                 OutputFormat.JSON if args.get('json') else OutputFormat.TEXT)
 
     def usage(self, name):
         spec = self.get(name)

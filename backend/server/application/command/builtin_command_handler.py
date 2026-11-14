@@ -1,4 +1,6 @@
 from server.application.command.server_builtin_registry import SERVER_COMMAND_REGISTRY
+from core.protocol.result_envelope import ResultEnvelope
+from core.utils.command_output import OutputFormat, render_result_payload
 from core.utils.command_help import render_grouped_client_help
 from server.application.command.builtin_command_support import (
     AliasBuiltinSupport,
@@ -146,8 +148,18 @@ class BuiltinCommandHandler:
             return None
         try:
             spec, subcommand, remaining = self.REGISTRY.parse(name, arg)
+            if spec.structured:
+                # Only the Server registry parses structured builtin arguments.
+                # All other builtins retain their original raw-tail contracts.
+                platform = getattr(getattr(self.conn, 'session_info', None), 'os_alias', '')
+                invocation = self.REGISTRY.parse_leaf(
+                    spec, subcommand, remaining,
+                    literal_backslashes=platform in ('windows', 'win'))
+                return getattr(self, spec.handler)(invocation)
         except ValueError as exc:
-            return iter(((0, str(exc)),))
+            format = getattr(exc, 'output_format', OutputFormat.TEXT)
+            return iter(((0, render_result_payload(ResultEnvelope(
+                status='error', message=str(exc)).as_payload(), format)),))
         handler = getattr(self, spec.handler)
         if spec.dispatch_subcommand:
             return handler(subcommand, remaining)
@@ -188,8 +200,8 @@ class BuiltinCommandHandler:
             grouped.setdefault(group, []).append((name, str(item.get('help') or '')))
         return render_grouped_client_help(grouped) or 'No Client commands available'
 
-    def set(self, arg=''):
-        yield from self.configuration_support.set(arg)
+    def config(self, invocation):
+        yield from self.configuration_support.config(invocation)
 
     def watchdog(self, arg=''):
         yield from self.configuration_support.watchdog(arg)
@@ -211,15 +223,15 @@ class BuiltinCommandHandler:
             yield item
 
 
-    def script(self, subcommand, remaining=''):
-        yield from self.script_support.script(subcommand, remaining)
+    def script(self, invocation):
+        yield from self.script_support.script(invocation)
 
     def alias(self, subcommand, remaining=''):
         yield from self.alias_support.execute_subcommand(subcommand, remaining)
 
 
-    def job(self, subcommand, remaining=''):
-        yield from self.job_support.execute_subcommand(subcommand, remaining)
+    def job(self, invocation):
+        yield from self.job_support.execute_subcommand(invocation)
 
     def history(self, arg):
         for item in self.history_support.history(arg):

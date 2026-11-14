@@ -4,6 +4,7 @@ import (
 	"client-go/config"
 	"client-go/protocol"
 	"context"
+	"fmt"
 	"strings"
 )
 
@@ -15,6 +16,7 @@ func configurationResult(status int, action protocol.ControlAction, message stri
 		result["status"] = "error"
 	} else if action == protocol.ConfigurationGet {
 		result["display"] = "data"
+		result["shape"] = "flat"
 		result["data"] = data
 	}
 	return status, result
@@ -86,4 +88,13 @@ func executeConfiguration(store *config.RuntimeStore, action protocol.ControlAct
 		return configurationResult(1, action, key+" updated: "+old+" → "+newValue, nil)
 	}
 	return configurationResult(1, action, key+" reset to default: "+newValue, nil)
+}
+
+// formatRuntimeValue formats Configuration Control notices, not a Client CLI command.
+func formatRuntimeValue(value interface{}) string {
+	if text, ok := value.(string); ok {
+		quoted := fmt.Sprintf("%q", text)
+		return "'" + strings.ReplaceAll(strings.ReplaceAll(quoted[1:len(quoted)-1], `\"`, `"`), "'", `\'`) + "'"
+	}
+	return fmt.Sprint(value)
 }

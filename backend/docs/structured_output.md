@@ -38,7 +38,7 @@ Job / Configuration 等带 `display` 的完成结果在 Control 内使用同一�
 
 JSON 中的执行成功与否由内部 Result 的 `status` 决定；成功数据查询的业务字段由 `data` 完整提供，不混入执行级 `status/message`。空数组在 JSON 中仍是 `[]`，文本可使用业务域提供的空列表提示。`--json` 不混入中间进度日志。Job `start/stop/stop_all` 为操作反馈，`ps/status` 为结构化查询；查询成功的 `message` 可为空。SDK 的 `context.emit(data)` 是 `chunk` 事件，直接呈现发出的 JSON 对象/数组。其他未声明此 Result 契约的命令沿用原有输出路径。
 
-Configuration GET 在同一个 Result 的 `data` 中携带完整配置对象，供 Web Configuration 编辑器消费；SET/RESET 返回状态及消息，前端保存后通过 GET 刷新完整编辑 Schema。命令 `set` / `set --json` 从相同的 GET 配置对象提取 `key`、`group`、`value`、`override`、`default_value` 五字段视图。终端两种格式使用这份视图，Web 仍使用完整的配置项 Schema。`set KEY value`、`set --reset KEY`、`set --reset-all` 为操作反馈，支持可选 `--json` 输出状态与消息。
+Configuration GET 在同一个 Result 的 `data` 中携带完整配置对象，供 Web Configuration 编辑器消费；SET/RESET 返回状态及消息，前端保存后通过 GET 刷新完整编辑 Schema。命令 `config list` / `config list --json` 从相同的 GET 配置对象提取 `group`、`key`、`value`、`default` 四字段视图。终端两种格式使用这份视图，Web 仍使用完整的配置项 Schema。`config set KEY VALUE`、`config reset KEY`、`config reset-all` 为操作反馈，支持可选 `--json` 输出状态与消息。
 
 SDK `context.emit(data)` 可以在 Script 的普通文本之间发送一条独立 JSON 对象或数组输出。它保留结构化值，不等同于把 JSON 字符串打印进 stdout，也不代表 Script 已执行完毕。每条显式结构化输出均带有 `event_type=chunk`、`display=data`，与普通 `print()` 输出按执行顺序送出；Activity Output Records 保留其完整 Envelope，结构化内容以格式化 JSON 文本直接显示在输出记录中。该事件适用于 Python Client 的 `inproc` 和 `subprocess_pipe`，两种 Output Mode (`stream` / `collect`) 都支持；collect 等脚本结束后按原顺序回放。
 

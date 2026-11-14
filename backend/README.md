@@ -1737,11 +1737,11 @@ Current exposed configuration areas include:
 The terminal supports:
 
 ```text
-set
-set KEY value
-set --reset KEY
-set --reset-all
-set --all
+config
+config set KEY value
+config reset KEY
+config reset-all
+config list
 ```
 
 The Connection Info **Configuration** tab reads the Client-provided runtime-config metadata dynamically; the Frontend does not hard-code the config catalog.

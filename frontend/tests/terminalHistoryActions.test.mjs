@@ -6,7 +6,7 @@ import { buildTerminalOutputJson, buildTerminalOutputText } from '../src/utils/t
 import { canRerunTerminalSource } from '../src/utils/terminalRerun.js'
 import { getTerminalReplayAction } from '../src/utils/terminalOperation.js'
 
-function makeView(full, visible) {
+function makeView(full, visible, runtime = {}) {
   const source = readFileSync(new URL('../src/components/TerminalOutput.vue', import.meta.url), 'utf8')
   const script = source.match(/<script>([\s\S]*?)<\/script>/)?.[1]
   assert.ok(script)
@@ -15,6 +15,8 @@ function makeView(full, visible) {
     isTerminalCommandFinishedText: text => String(text).startsWith('[Command finished]'),
     saveCommandOutputArtifact: async () => ({ ok:true }),
     ElMessage: { warning:()=>{}, success:()=>{}, error:error=>{throw new Error(error)} },
+    ...(runtime.window ? { window: runtime.window } : {}),
+    copyTextFallback: runtime.copyTextFallback || (() => {}),
   }
   vm.runInNewContext(script.replace(/^import\s+[\s\S]*?\s+from\s+['"][^'"]+['"]\s*;?\s*$/gm, '')
     .replace('export default {', 'globalThis.component = {'), mocks)
@@ -80,4 +82,39 @@ test('toolbar Save as Text and JSON Artifact uses complete history', async () =>
   assert.equal(saved[0].output_format, 'text')
   assert.equal(saved[1].output_format, 'json')
   assert.match(JSON.parse(saved[1].content)[0].result, /output-0/)
+})
+
+
+test('toolbar JSON includes output rows without the command operation ID', async () => {
+  const source = [
+    { text: '> job ps', kind: 'command', meta: { operation }, __terminalSeq: 0 },
+    { text: 'job_name example_monitor', kind: 'default', meta: { operation_id: 'legacy-output' }, __terminalSeq: 1 },
+    { text: '[Command finished] job ps (Success)', kind: 'success', meta: { operation_id: 'legacy-output', event_type: 'completed' }, __terminalSeq: 2 },
+  ]
+  const view = makeView(source, source)
+  const exported = JSON.parse((await view.getCompleteTerminalToolbarOutput('json')).content)
+  assert.equal(exported.length, 1)
+  assert.equal(exported[0].command, 'job ps')
+  assert.equal(exported[0].result, 'job_name example_monitor')
+  const saved = []
+  view.saveTerminalOutputArtifactBody = async body => saved.push(body)
+  await view.saveAllTerminalOutputArtifact('json')
+  assert.equal(JSON.parse(saved[0].content)[0].result, 'job_name example_monitor')
+})
+
+test('non-secure mobile toolbar Copy reads visible content within the tap', async () => {
+  const copied = []
+  const view = makeView(rows, rows, {
+    window: { isSecureContext: false },
+    copyTextFallback: text => copied.push(text),
+  })
+  view.getCompleteTerminalToolbarOutput = async () => {
+    throw new Error('History must not be read before mobile clipboard fallback')
+  }
+  await view.copyAllTerminalOutput('text')
+  await view.copyAllTerminalOutput('json')
+  assert.match(copied[0], /output-1199/)
+  const entries = JSON.parse(copied[1])
+  assert.equal(entries[0].command, 'echo full')
+  assert.match(entries[0].result, /output-1199/)
 })

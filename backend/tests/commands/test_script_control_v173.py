@@ -80,18 +80,21 @@ def test_script_cli_and_web_use_one_payload_and_web_presentation_stays_runtime_o
     builtin = ScriptBuiltinSupport(
         SimpleNamespace(build_script_plan=lambda p: {'command_type': 'control', 'domain': 'script', 'action': 'run', 'payload': p}),
         lambda: (lambda plan: (lambda: (cli_plans.append(plan) or iter([(1, 'completed')])))),
-        remote_execution_service=SimpleNamespace(run_foreground_control=lambda *a, **kw: (1, CONFIG)),
+        remote_execution_service=SimpleNamespace(run_foreground_control=lambda *a, **kw: (1, {'data': CONFIG})),
     )
-    assert list(builtin.script('exec', 'folder/ping.py --host example.com --port 80')) == [(1, 'completed')]
-    assert list(builtin.script('exec', '--execution_mode subprocess_pipe --output_mode stream folder/ping.py --host example.com --port 80')) == [(1, 'completed')]
+    from server.application.command.server_builtin_registry import SERVER_COMMAND_REGISTRY
+    invoke = lambda arg: SERVER_COMMAND_REGISTRY.parse_invocation('script', arg)
+    assert list(builtin.script(invoke('exec folder/ping.py -- --host example.com --port 80'))) == [(1, 'completed')]
+    assert list(builtin.script(invoke('exec --name folder/ping.py --execution_mode subprocess_pipe --output_mode stream -- --host example.com --port 80'))) == [(1, 'completed')]
     assert cli_plans[-1]['payload']['execution_mode'] == 'subprocess_pipe'
     assert cli_plans[-1]['payload']['output_mode'] == 'stream'
     assert cli_plans[-1]['payload']['params'] == {'host': 'example.com', 'port': 80}
-    for options in ('--execution-mode inproc', '--output-mode stream', '--execution_mode inproc --execution_mode subprocess_pipe'):
+    for options in ('--invalid_option inproc', '--execution_mode bad_mode', '--execution_mode inproc --execution_mode subprocess_pipe'):
         with pytest.raises((ValueError, FileNotFoundError)):
-            list(builtin.script('exec', options + ' folder/ping.py --host example.com'))
-    with pytest.raises(ValueError, match='Invalid or duplicate Script option'):
-        list(builtin.script('exec', '--execution_mode'))
+            list(builtin.script(invoke('exec ' + options + ' folder/ping.py -- --host example.com')))
+    with pytest.raises(ValueError, match='requires 1 value'):
+        invoke('exec --name folder/ping.py --execution_mode')
+    assert list(builtin.script(invoke('view --name folder/ping.py')))[0][1] == SCRIPT_SOURCE
     assert cli_plans[0]['command_type'] == 'control'
     assert cli_plans[0]['domain'] == 'script' and cli_plans[0]['action'] == 'run'
 
@@ -103,7 +106,7 @@ def test_script_cli_and_web_use_one_payload_and_web_presentation_stays_runtime_o
             return {'ok': True}
 
     web_api = WebScriptApi(WebCommandExecutionApi(Tasks()), SimpleNamespace(scripts_root_dir=str(tmp_path)))
-    web_api.command_execution_api.get_runtime_config = lambda client_id: CONFIG
+    web_api.command_execution_api.get_runtime_config = lambda client_id: {'data': CONFIG}
     assert web_api.run_script('client-a', 'folder/ping.py', {'host': 'example.com', 'port': 80}, presentation='dialog', run_id='r-1') == {'ok': True}
     assert web_requests[0][1] == cli_plans[0]['payload']['script_name']
     assert web_requests[0][2].payload == cli_plans[0]['payload']

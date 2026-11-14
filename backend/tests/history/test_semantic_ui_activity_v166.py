@@ -861,30 +861,46 @@ def test_control_catalog_records_every_action_by_policy(setup_history, monkeypat
 
 
 def test_configuration_cli_and_control_share_policy_and_preserve_actual_values(setup_history, monkeypatch):
-    from core.utils.configuration_cli import parse_configuration_request
+    from core.protocol.control import ConfigurationAction
+    from server.application.command.server_builtin_registry import SERVER_COMMAND_REGISTRY
     server, conn = setup_history
     adapter = server.command_adapter
-    conn.callback = lambda req: conn.respond(req, 1, {'message':'SECRET_TOKEN'})
+    conn.callback = lambda req: conn.respond(req, 1, {'message': 'SECRET_TOKEN'})
+
     def send_command(command):
         entry = adapter.prepare_command(conn, command, source='web')
-        if command.startswith('set'):
-            action, payload, _ = parse_configuration_request(command[3:].strip())
+        if command.startswith('config'):
+            invocation = SERVER_COMMAND_REGISTRY.parse_invocation('config', command[6:].strip())
+            action = {
+                'list': ConfigurationAction.GET,
+                'set': ConfigurationAction.SET,
+                'reset': ConfigurationAction.RESET,
+            }[invocation.action]
+            args = invocation.arguments
+            payload = ({'key': args['key'], 'value': args['value'], 'value_format': 'text'}
+                       if action == ConfigurationAction.SET else
+                       {'key': args['key']} if action == ConfigurationAction.RESET else {})
             domain = 'configuration'
         else:
             domain, action, payload = 'watchdog', 'status', {}
-        list(conn.send_command('', type='control', domain=domain, action=action, payload=payload, history_entry_id=entry))
+        list(conn.send_command('', type='control', domain=domain, action=action,
+                               payload=payload, history_entry_id=entry))
         server.activity_coordinator.finish(conn, entry, True)
-    for command in ('set TOKEN SECRET_TOKEN', 'set --reset TOKEN', 'set --json', 'watchdog --json'):
+
+    for command in ('config set TOKEN SECRET_TOKEN', 'config reset TOKEN',
+                    'config list --json', 'watchdog --json'):
         send_command(command)
-    list(conn.send_command('', type='control', domain='configuration', action='set', payload={'key':'TOKEN','value':'SECRET_TOKEN'}))
+    list(conn.send_command('', type='control', domain='configuration', action='set',
+                           payload={'key': 'TOKEN', 'value': 'SECRET_TOKEN'}))
     assert len(entries(server)) == 3
     assert {row['kind'] for row in entries(server)} == {'configuration'}
     assert 'SECRET_TOKEN' in str(entries(server))
     assert all(row['resolved']['payload']['key'] == 'TOKEN' for row in entries(server))
     monkeypatch.setattr(control_activity.config, 'RECORD_OPTIONAL_ACTIVITY', True, raising=False)
-    for command in ('set --json', 'watchdog --json'):
+    for command in ('config list --json', 'watchdog --json'):
         send_command(command)
-    assert {(row['kind'],row['action']) for row in entries(server)} == {('configuration','get'),('configuration','set'),('configuration','reset'),('watchdog','status')}
+    assert {(row['kind'], row['action']) for row in entries(server)} == {
+        ('configuration', 'get'), ('configuration', 'set'), ('configuration', 'reset'), ('watchdog', 'status')}
     assert all(row['resolved'] in conn.sent for row in entries(server))
 
 

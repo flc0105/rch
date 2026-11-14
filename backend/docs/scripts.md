@@ -102,7 +102,7 @@ Server 会给命令任务附加 `script_run`、`script_run_name`、`script_run_i
 
 ### 终端轻量入口和结构化入口
 
-Server 的 `script exec [--execution_mode MODE] [--output_mode MODE] <path> [options]` 使用 `shlex` 与 `scan_args` 将 CLI 选项解析为参数对象，随后与 Script Library Web 表单使用**相同的 Script Metadata 参数校验、默认值和源码加载入口**。Web 不再生成伪造的 `script run` 命令。两端最终发送相同形状的 Control 请求。Web 任务消费提交时已经准备好的源码与参数，不再次加载脚本文件：
+Server 的 `script exec <name> [--execution_mode MODE] [--output_mode MODE] -- --key VALUE ...` 使用 Server 共用参数解析器把运行选项和 `--` 之后的脚本参数分开，随后与 Script Library Web 表单使用**相同的 Script Metadata 参数校验、默认值和源码加载入口**。Web 不再生成伪造的 `script run` 命令。两端最终发送相同形状的 Control 请求。Web 任务消费提交时已经准备好的源码与参数，不再次加载脚本文件：
 
 ```json
 {"type":"control","id":49,"domain":"script","action":"run","payload":{"script_name":"ops/health_probe","source":"<Server 提供的脚本源码>","params":{"target":"/tmp","limit":20},"execution_mode":"inproc","output_mode":"collect"}}
@@ -111,7 +111,7 @@ Server 的 `script exec [--execution_mode MODE] [--output_mode MODE] <path> [opt
 Server 统一准备 Script Control 的源码、业务参数与已解析的两个运行模式。`execution_mode`、`output_mode` 是独立的 Control 字段，不属于脚本 `params`，Client 不再另选默认值。CLI 模式选项必须位于脚本路径之前，路径之后仍是业务参数，例如：
 
 ```text
-script exec --execution_mode subprocess_pipe --output_mode stream ops/health_probe --limit 20
+script exec --name ops/health_probe --execution_mode subprocess_pipe --output_mode stream -- --limit 20
 ```
 
 ### 每脚本运行模式 Schema
@@ -149,7 +149,7 @@ macOS Script 可以通过 `client.runtime.sdk.launchd` 统一管理 LaunchAgent 
 
 ### In-process 与独立子进程
 
-`SCRIPT_DEFAULT_EXECUTION_MODE` 是 Script 未明确指定执行模式时的 Client 配置默认值（Python 默认 `inproc`），`SCRIPT_DEFAULT_OUTPUT_MODE` 的默认值为 `collect`。Script 使用本次已解析的模式；普通 `pyexec` / `pyexec_stream` 继续复用默认执行策略，分别收集或流式输出。Script 使用独立的 `SCRIPT_DEFAULT_TIMEOUT`（默认 300 秒），通过 `set SCRIPT_DEFAULT_TIMEOUT <秒数>` 或 Info → Configuration 设置。`subprocess_pipe` 按该限制等待并终止超时子进程；`inproc` 会在脚本返回后检查是否超时，进程内的 Python `exec()` 无法安全地在执行途中强制中断。这与 Job 的 `inproc/subprocess` 模式是不同的配置和执行管理器。
+`SCRIPT_DEFAULT_EXECUTION_MODE` 是 Script 未明确指定执行模式时的 Client 配置默认值（Python 默认 `inproc`），`SCRIPT_DEFAULT_OUTPUT_MODE` 的默认值为 `collect`。Script 使用本次已解析的模式；普通 `pyexec` / `pyexec_stream` 继续复用默认执行策略，分别收集或流式输出。Script 使用独立的 `SCRIPT_DEFAULT_TIMEOUT`（默认 300 秒），通过 `config set SCRIPT_DEFAULT_TIMEOUT <秒数>` 或 Info → Configuration 设置。`subprocess_pipe` 按该限制等待并终止超时子进程；`inproc` 会在脚本返回后检查是否超时，进程内的 Python `exec()` 无法安全地在执行途中强制中断。这与 Job 的 `inproc/subprocess` 模式是不同的配置和执行管理器。
 
 | 特性 | `inproc` | `subprocess_pipe` |
 |---|---|---|
@@ -327,9 +327,9 @@ Run API 要求 `script_name` 非空、`params` 为对象，并明确提供 `pres
 
 ## Server `script` 一级命令（统一入口）
 
-`script` / `script list` 默认沿用原 `exec` 无参数时的 Server Script 相对路径列表。`script list --json` 输出简化的 `name`（相对路径）、`display_name`、`description` 与 `params`（仅参数名数组）；`script view <path>` 返回 Server 上的脚本源码，严格限制在 Script 根目录。
+`script` / `script list` 默认沿用原 `exec` 无参数时的 Server Script 相对路径列表。`script list --json` 输出简化的 `name`（相对路径）、`display_name`、`description` 与 `params`（仅参数名数组）；`script view <name>` 和 `script view --name NAME` 返回 Server 上的脚本源码，严格限制在 Script 根目录。
 
-`script exec [--execution_mode MODE] [--output_mode MODE] <path> [options]` 使用 `shlex`、`scan_args` 得到参数对象，Script Library UI 直接提交结构化参数。两端均按同一份 Script Metadata 规范化，再经 `control(domain=script, action=run)` 执行。Server 不注册独立的 `exec`、`run_script` 或 `script run` 入口，Client 不注册 Script 文本命令；脚本运行所需源码作为受控请求的 `payload.source` 提供。
+`script exec <name> [--execution_mode MODE] [--output_mode MODE] -- --key VALUE ...` 使用与 Job 共用的 Server Schema Parser 得到参数对象，Script Library UI 直接提交结构化参数。两端均按同一份 Script Metadata 规范化，再经 `control(domain=script, action=run)` 执行。Server 不注册独立的 `exec`、`run_script` 或 `script run` 入口，Client 不注册 Script 文本命令；脚本运行所需源码作为受控请求的 `payload.source` 提供。
 
 ### 终端列表的平台筛选
 

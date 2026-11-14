@@ -214,7 +214,9 @@ def test_server_job_validation_failure_json_is_same_contract():
         def prepare_job_start(self, *_args):
             raise FileNotFoundError('Job not found: xxxx')
     support = JobBuiltinSupport(None, SimpleNamespace(), None, Service(), None)
-    output = list(support.execute_subcommand('start', 'xxxx --json'))
+    from server.application.command.server_builtin_registry import SERVER_COMMAND_REGISTRY
+    invocation = SERVER_COMMAND_REGISTRY.parse_invocation('job', 'start xxxx --json')
+    output = list(support.execute_subcommand(invocation))
     assert len(output) == 1 and output[0][0] == 0
     assert json.loads(output[0][1]) == {'status': 'error', 'message': 'Job not found: xxxx'}
 

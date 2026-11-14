@@ -199,7 +199,7 @@ Client 主动结束、重启、更新或暂停连接时，使用统一的 `sessi
 以下操作使用**隔离的桌面测试 Server 和 Python Client**；在 Web 的 RCH Terminal 中执行 `pyexec` 时，先设置：
 
 ```text
-set SCRIPT_DEFAULT_EXECUTION_MODE inproc
+config set SCRIPT_DEFAULT_EXECUTION_MODE inproc
 ```
 
 执行 `os.abort()`、`os._exit()` 会直接结束目标 Client 进程。每组测试后重启 Client，打开 **Toolbox → Connection History**，查找刚退出实例对应的 `client_id`。测试环境关闭会自动重新启动 Client 的 Watchdog，避免新的会话刷新历史记录。
@@ -300,12 +300,12 @@ ORDER BY connected_at_ms DESC LIMIT 12;
 例如，在目标 Python Client 的命令上下文中运行：
 
 ```text
-set RECONNECT_INTERVAL_SECONDS 8
+config set RECONNECT_INTERVAL_SECONDS 8
 ```
 
-会通过 Runtime Config 保存覆盖值，并尝试同步更新正在运行的 `Client.RECONNECT_INTERVAL`。查询 `set` 可以看到配置来源；`set --reset RECONNECT_INTERVAL_SECONDS` 恢复默认值。这一 Client 设置**不是 Server 心跳发送周期**，也不会更改 Server 的 45 秒 Stale 阈值。
+会通过 Runtime Config 保存覆盖值，并尝试同步更新正在运行的 `Client.RECONNECT_INTERVAL`。查询 `set` 可以看到配置来源；`config reset RECONNECT_INTERVAL_SECONDS` 恢复默认值。这一 Client 设置**不是 Server 心跳发送周期**，也不会更改 Server 的 45 秒 Stale 阈值。
 
-对于进入后台后可能长时间挂起的 iOS Client，可以在该 Client 上执行 `set SERVER_INBOUND_TIMEOUT_SECONDS 0`，避免仅因挂起期间未处理 Server 消息而主动重连。此配置会写入该设备的 `runtime_config.json`；需要恢复默认检测时运行 `set --reset SERVER_INBOUND_TIMEOUT_SECONDS`。Socket 断开和接收异常仍沿用原有重连逻辑。
+对于进入后台后可能长时间挂起的 iOS Client，可以在该 Client 上执行 `config set SERVER_INBOUND_TIMEOUT_SECONDS 0`，避免仅因挂起期间未处理 Server 消息而主动重连。此配置会写入该设备的 `runtime_config.json`；需要恢复默认检测时运行 `config reset SERVER_INBOUND_TIMEOUT_SECONDS`。Socket 断开和接收异常仍沿用原有重连逻辑。
 
 服务器的 Heartbeat Interval 和 Stale Threshold 当前是代码常量，并没有对应的可直接修改的 Server 环境变量。不能假设设置一个同名环境变量就会生效。调整它们时宜保持一致的时间预算：如果心跳间隔远大于 Stale 阈值，即使正常设备也可能周期性出现 Stale。
 

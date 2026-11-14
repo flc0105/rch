@@ -278,6 +278,7 @@ import {
   isTerminalCommandFinishedText,
 } from '../composables/terminalMarkers.js'
 import { buildTerminalOutputJson, buildTerminalOutputText } from '../utils/terminalOutputExport.js'
+import { copyTextFallback } from '../utils/clipboard.js'
 import { TERMINAL_HISTORY } from '../data/terminalHistoryConfig.js'
 import { canRerunTerminalSource } from '../utils/terminalRerun.js'
 import { getTerminalReplayAction } from '../utils/terminalOperation.js'
@@ -1113,42 +1114,42 @@ export default {
     },
 
     async copyTextToClipboard(text) {
-      if (
-          typeof navigator !== 'undefined' &&
-          navigator.clipboard &&
-          typeof navigator.clipboard.writeText === 'function'
-      ) {
-        await navigator.clipboard.writeText(text)
-        return
+      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        try {
+          await navigator.clipboard.writeText(text)
+          return
+        } catch {
+          // Browser permission can be unavailable even in a secure context.
+        }
       }
-
-      const textarea = document.createElement('textarea')
-      textarea.value = text
-      textarea.setAttribute('readonly', 'readonly')
-      textarea.style.position = 'fixed'
-      textarea.style.left = '-9999px'
-      textarea.style.top = '-9999px'
-      document.body.appendChild(textarea)
-      textarea.select()
-
-      const ok = document.execCommand('copy')
-      document.body.removeChild(textarea)
-
-      if (!ok) {
-        throw new Error('Copy failed')
-      }
+      copyTextFallback(text)
     },
 
     buildTerminalToolbarJsonEntries(blocks = this.terminalBlocks) {
-      return buildTerminalOutputJson(blocks.map(block => ({
-        hasCommand: Boolean(block.commandLine),
-        command: this.getTerminalBlockCommandText(block),
-        result: this.getTerminalBlockOutputText(block),
-        time: this.findTerminalBlockMetaValue(block, ['started_at', 'created_at', 'timestamp', 'finished_at']),
-        duration_ms: this.normalizeNullableInt(
-          this.findTerminalBlockMetaValue(block, ['duration_ms', 'elapsed_ms', 'execution_duration_ms']),
-        ),
-      })))
+      const entries = []
+      let current = null
+      // Terminal history may contain output rows without the submitted command's
+      // operation_id (e.g. older history/imported rows). The text transcript
+      // still displays these rows; include them in JSON exports as well.
+      for (const block of [...blocks].sort((a, b) => a.startIndex - b.startIndex)) {
+        const output = this.getTerminalBlockOutputText(block)
+        if (block.commandLine) {
+          current = {
+            hasCommand: true,
+            command: this.getTerminalBlockCommandText(block),
+            result: output,
+            time: this.findTerminalBlockMetaValue(block, ['started_at', 'created_at', 'timestamp', 'finished_at']),
+            duration_ms: this.normalizeNullableInt(
+              this.findTerminalBlockMetaValue(block, ['duration_ms', 'elapsed_ms', 'execution_duration_ms']),
+            ),
+          }
+          entries.push(current)
+        } else if (current && output) {
+          current.result += `${current.result ? '\n' : ''}${output}`
+        }
+        if (block.lines?.some(entry => this.isCommandFinishedLine(entry.line))) current = null
+      }
+      return buildTerminalOutputJson(entries)
     },
 
     getTerminalToolbarOutput(format = 'text') {
@@ -1179,6 +1180,23 @@ export default {
     },
 
     async copyAllTerminalOutput(format = 'text') {
+      // On plain HTTP Safari there is no async Clipboard API. The fallback must
+      // run during the tap, before IndexedDB/History awaits lose user activation.
+      if (typeof window !== 'undefined' && window.isSecureContext === false) {
+        const output = this.getTerminalToolbarOutput(format)
+        if (!output.content.trim() || (output.format === 'json' && output.commandCount === 0)) {
+          ElMessage.warning(output.format === 'json' ? 'No command output to copy' : 'No terminal output to copy')
+          return
+        }
+        try {
+          copyTextFallback(output.content)
+          ElMessage.success('Visible terminal output copied')
+        } catch (error) {
+          ElMessage.error(error.message || 'Copy failed')
+        }
+        return
+      }
+
       try {
         const output = await this.getCompleteTerminalToolbarOutput(format)
         if (!output.content.trim() || (output.format === 'json' && output.commandCount === 0)) {

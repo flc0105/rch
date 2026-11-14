@@ -5,7 +5,6 @@ from client.commands.common.services.completion.command_completion_providers imp
     CdDirectoryCommandCompletionProvider,
     DownloadPathCommandCompletionProvider,
     EditPathCommandCompletionProvider,
-    RuntimeConfigSetCommandCompletionProvider,
 )
 
 
@@ -47,8 +46,5 @@ class ClientCommandCompletionService:
         registry.register(EditPathCommandCompletionProvider(
             path_resolver=self.command_host.path_resolver,
             file_system_service=self.command_host.file_system_service,
-        ))
-        registry.register(RuntimeConfigSetCommandCompletionProvider(
-            runtime_config_service=self.command_host.runtime_config_service,
         ))
         return registry

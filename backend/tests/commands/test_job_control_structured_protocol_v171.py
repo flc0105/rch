@@ -123,7 +123,8 @@ def test_cli_and_web_share_typed_requests_and_metadata_mode():
     service.has_active_job = lambda *_: False
     conn = SimpleNamespace(session_info=SimpleNamespace(client_id='client-1'))
     cli = JobBuiltinSupport(SimpleNamespace(), conn, remote, service, Catalog())
-    assert list(cli.execute_subcommand('start', 'demo'))[-1] == (1, 'started')
+    from server.application.command.server_builtin_registry import SERVER_COMMAND_REGISTRY
+    assert list(cli.execute_subcommand(SERVER_COMMAND_REGISTRY.parse_invocation('job', 'start demo')))[-1] == (1, 'started')
     web = service.start_job('client-1', 'demo')
     assert web['execution_mode'] == 'subprocess'
     assert web['message'] == 'started'

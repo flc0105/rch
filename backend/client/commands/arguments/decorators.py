@@ -1,4 +1,4 @@
-from client.commands.arguments.models import ArgumentCommandSpec
+from core.commands.argument_models import ArgumentCommandSpec
 
 
 def argument_command(name: str, spec: ArgumentCommandSpec | None = None, *, interaction=False, output='collect'):

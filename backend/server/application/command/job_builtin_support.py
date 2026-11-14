@@ -1,21 +1,16 @@
 """Server-owned Job CLI; only internal job_control packets reach the Client."""
-import json
 from core.protocol.control import ControlDomain, JobAction
-import shlex
 import time
 
 from server.application.command.command_types import COMMAND_TYPE_CONTROL
 from core.platform.catalog_visibility import visible_on_platform
 from core.protocol.job_control import build_job_control_request, validate_job_control_result
-from core.utils.command_output import (ResultDisplay, ResultEventType, parse_output_format,
-                                       strip_output_format_arg, render_result_payload)
+from core.utils.command_output import ResultDisplay, render_result_payload
+from core.protocol.result_envelope import ResultEnvelope
 
 
 class JobBuiltinSupport:
-    HELP = (
-        'job [list|start <name> [--mode inproc|subprocess] [--params JSON]|'
-        'stop <name>|ps|status <name>|stop-all|logs <name> [--follow|-f]]'
-    )
+    HELP = 'job list|ps|start|stop|status|stop-all|logs [--name NAME] [--json]'
 
     def __init__(self, server, conn, remote_execution_service, background_job_service, job_catalog_service, history_entry_id_provider=None):
         self.server = server
@@ -31,11 +26,7 @@ class JobBuiltinSupport:
 
     @staticmethod
     def _failure(message, output_format):
-        if output_format != 'json':
-            return message
-        return render_result_payload({'event_type': ResultEventType.COMPLETED,
-                                      'status': 'error', 'display': ResultDisplay.MESSAGE,
-                                      'message': str(message)}, output_format)
+        return render_result_payload(ResultEnvelope(status='error', message=str(message)).as_payload(), output_format)
 
     def _send(self, action, *, output_format="text", **payload):
         # Already inside the terminal's foreground slot: never acquire it again.
@@ -66,26 +57,8 @@ class JobBuiltinSupport:
         from core.protocol.message_queue import ResultChunk
         yield ResultChunk(status, render_result_payload(result, output_format), getattr(pending_result, 'eof', True), terminal_authoritative=True)
 
-    def _job_logs(self, args):
-        """Stream persisted reports through the shared Job application service."""
-        follow = False
-        names = []
-        for token in args:
-            if token in ('--follow', '-f'):
-                if follow:
-                    yield 0, 'Specify --follow only once'
-                    return
-                follow = True
-            elif token.startswith('-'):
-                yield 0, f'Unknown job logs option: {token}'
-                return
-            else:
-                names.append(token)
-        if len(names) != 1:
-            yield 0, 'Usage: job logs <name> [--follow|-f]'
-            return
-
-        name = names[0]
+    def _job_logs(self, name, follow=False):
+        """Stream reports for a single fully parsed Job key."""
         try:
             # The list is newest first. Keep following this exact job_id rather
             # than switching silently when a new instance with the same name runs.
@@ -139,88 +112,48 @@ class JobBuiltinSupport:
         except (ValueError, FileNotFoundError, LookupError) as exc:
             yield 0, str(exc)
 
-    def job(self, arg=''):
-        from server.application.command.server_builtin_registry import SERVER_COMMAND_REGISTRY
-        try:
-            _, subcommand, remaining = SERVER_COMMAND_REGISTRY.parse('job', arg)
-        except ValueError as exc:
-            yield 0, str(exc)
-            return
-        yield from self.execute_subcommand(subcommand, remaining)
+    def execute_subcommand(self, invocation):
+        """Consume one typed Server invocation; no CLI string parsing here."""
+        from core.protocol.result_envelope import ResultEnvelope
+        subcommand = invocation.action
+        args = invocation.arguments
+        output_format = invocation.output_format
 
-    def execute_subcommand(self, subcommand, remaining=''):
-        try:
-            args = shlex.split(str(remaining or ''))
-        except ValueError as exc:
-            yield 0, f'Invalid job arguments: {exc}'
-            return
         if subcommand == 'list':
-            if args not in ([], ['--json']):
-                yield 0, self.HELP
-                return
             platform = str(getattr(getattr(self.conn, 'session_info', None), 'os_alias', '') or '')
             jobs = [item for item in self.job_catalog_service.list_background_job_catalog()
                     if visible_on_platform(item, platform)]
-            if args == ['--json']:
-                yield 1, json.dumps([{'name': str(item.get('job_name') or ''),
-                                      'display_name': str(item.get('display_name') or ''),
-                                      'description': str(item.get('description') or '')}
-                                     for item in jobs if item.get('job_name')], ensure_ascii=False, indent=2)
-                return
-            names = [str(item.get('job_name') or '') for item in jobs if item.get('job_name')]
-            yield 1, '\n'.join(names) if names else 'No background jobs available'
+            rows = [{'name': str(item.get('job_name') or ''),
+                     'display_name': str(item.get('display_name') or ''),
+                     'description': str(item.get('description') or '')}
+                    for item in jobs if item.get('job_name')]
+            result = ResultEnvelope(message='No background jobs available' if not rows else '',
+                                    data=rows, display=ResultDisplay.DATA).as_payload()
+            yield 1, render_result_payload(result, output_format)
             return
 
         if subcommand == 'logs':
-            yield from self._job_logs(args)
+            yield from self._job_logs(args['name'], args['follow'])
             return
 
-        output_format = parse_output_format(remaining)
-        remaining = strip_output_format_arg(remaining)
-        args = shlex.split(remaining)
-
         if subcommand == 'start':
-            from server.application.command.server_builtin_registry import SERVER_COMMAND_REGISTRY
+            params = args['params']
             try:
-                positional, flags = SERVER_COMMAND_REGISTRY.parse_arguments('job', 'start', remaining)
-            except ValueError as exc:
-                yield 0, self._failure(str(exc), output_format)
-                return
-            if len(positional) != 1:
-                yield 0, self._failure(self.HELP, output_format)
-                return
-            name = positional[0]
-            mode = flags.get('mode')
-            params = {}
-            if 'params' in flags:
-                try:
-                    params = json.loads(flags['params'])
-                except ValueError as exc:
-                    yield 0, self._failure(f'Invalid --params JSON: {exc}', output_format)
-                    return
-                if not isinstance(params, dict):
-                    yield 0, self._failure('--params must contain a JSON object', output_format)
-                    return
-            try:
-                mode = self.background_job_service.prepare_job_start(self.client_id, name, mode)
+                mode = self.background_job_service.prepare_job_start(self.client_id, args['name'], args['mode'])
             except (ValueError, FileNotFoundError) as exc:
                 yield 0, self._failure(str(exc), output_format)
                 return
-            yield from self._send(JobAction.START, output_format=output_format, job_name=name, params=params, execution_mode=mode)
+            yield from self._send(JobAction.START, output_format=output_format,
+                                  job_name=args['name'], params=params, execution_mode=mode)
             return
 
-        if subcommand in ('ps', 'stop-all'):
-            if args:
-                yield 0, self._failure(self.HELP, output_format)
-                return
-            yield from self._send(JobAction.PS if subcommand == 'ps' else JobAction.STOP_ALL, output_format=output_format)
+        if subcommand == 'ps':
+            yield from self._send(JobAction.PS, output_format=output_format)
             return
-
+        if subcommand == 'stop-all':
+            yield from self._send(JobAction.STOP_ALL, output_format=output_format)
+            return
         if subcommand in ('stop', 'status'):
-            if len(args) != 1:
-                yield 0, self._failure(self.HELP, output_format)
-                return
-            yield from self._send(JobAction(subcommand), output_format=output_format, job_key=args[0])
+            yield from self._send(JobAction(subcommand), output_format=output_format, job_key=args['name'])
             return
-
-        yield 0, self._failure(self.HELP, output_format)
+        raise ValueError(f'Unsupported Job subcommand: {subcommand}')

@@ -10,7 +10,7 @@
 |---|---|---|---|
 | **Server Builtin** | `alias list`、`script list`、`job ps` | Server 先处理，再按需要访问 Client | 用于服务端目录、别名、历史、任务与连接控制；同名时优先于 Client 普通命令 |
 | **Web Terminal 本地操作** | `clear`、`cls`、`edit <path>` | 浏览器前端 | `edit` 复用 Remote Files 的预览/保存链路直接打开 Monaco 编辑器；不转发到 Client 命令执行器 |
-| **Client 普通内置命令** | `pwd`、`set`、`clean` | 目标 Client | 已导出的 RCH 操作；通常接收一段原始参数文本 |
+| **Client 普通内置命令** | `pwd`、`clean`、`getpid` | 目标 Client | 已导出的 RCH 操作；通常接收一段原始参数文本 |
 | **Client Shell** | `shell <命令>`、系统可执行程序名称 | 目标 Client 的操作系统 | `shell` 明确启动系统子进程；未匹配 RCH 内置方法的普通输入也可能回退到系统 Shell |
 | **ACMD** | `acmd ps --name python` | Server 解析入口、Client 校验并执行 | 使用独立注册表及结构化参数校验；**不会**在不支持时回退到系统 Shell |
 | **Alias / Quick Actions** | 自定义别名名称 | Server 展开，Client 执行对应普通命令 | 命令模板的快捷入口；优先按目标平台选择对应定义 |
@@ -28,6 +28,7 @@
 | `alias` | 查看、建立、删除适用于目标平台的快捷别名 | 默认列出当前生效的别名；定义保存在 Server 上 |
 | `script` | 列出、查看及执行 Server Script Library 中的脚本 | 脚本由 Server 提供，再交给目标 Client 按 Python 策略执行 |
 | `job` | 列出可用 Job，并启动、查询或停止目标 Client 的 Job | 启动响应确认 Job 已提交；最终结果查看 Job 状态 |
+| `config` | 查询、设置、重置选中 Client 的 Runtime Config | CLI 四字段查询；Web 保留完整编辑 Schema |
 | `history` | 查看当前设备的 Quick History，并按序号重放或清理 Recent | Activity Center 的完整活动记录使用独立的 History 入口 |
 | `gopin` | 查看或跳转到当前设备保存的远程路径 | 使用 Remote Files 保存的路径记录；需要关注当前目标设备 |
 | `rtt` | 查看当前连接心跳的往返延迟 | 反映连接心跳 RTT，不等同于网络测速 |
@@ -45,10 +46,12 @@
 | `alias set [--platform PLATFORM] name = command` | 创建或替换 Alias；默认作用域为 `common`，也可指定 `win`、`mac`、`linux`、`ios` |
 | `alias unset [--platform PLATFORM] name` | 删除指定作用域的 Alias；不会自动删除其他平台同名定义 |
 | `script list` | 查看 Server Script Library；可选 `--json` |
-| `script view <path>` | 查看 Server 脚本内容 |
-| `script exec [--execution_mode MODE] [--output_mode MODE] <path> [options]` | 使用命令行选项执行 Server 脚本 |
+| `script view <name>` / `script view --name NAME` | 查看 Server 脚本内容 |
+| `script exec <name> [--execution_mode MODE] [--output_mode MODE] -- --key VALUE ...` | 使用命令行选项执行 Server 脚本 |
+| `config` / `config list` / `config list --json` | 查询配置；文本表格与 JSON 均包含 group、key、value、default 四字段 |
+| `config set KEY VALUE` / `config reset KEY` / `config reset-all` | 修改、重置或全部重置 Client 配置，操作反馈可加 `--json` |
 | `job list` | 查看 Server 已登记的 Job 定义；可选 `--json` |
-| `job start <name> [--mode MODE] [--params JSON] [--json]` | 在目标 Client 启动 Job，并可指定运行模式和参数 |
+| `job start <name> [--mode MODE] [--json] -- --key VALUE ...` | 在目标 Client 启动 Job，并可指定运行模式和参数 |
 | `job ps [--json]` / `job status <name> [--json]` | 查看正在运行的 Job / 单个 Job 状态 |
 | `job logs <name> [--follow\|-f]` | 查看该设备最新一次 Job 实例的上报内容；可持续追踪并取消查看任务 |
 | `job stop <name> [--json]` / `job stop-all [--json]` | 停止指定 Job / 所有正在运行的 Job |
@@ -95,11 +98,8 @@ Alias 的模板参数、平台覆盖与安全边界见 [Aliases / Quick Actions]
 | `userenum` | 枚举系统用户账户 | 可见范围受目标系统权限约束 |
 | `is_elevated` | 检查 Client 是否具有提升的系统权限 | 只检查当前进程权限，不自动提权 |
 | `ifconfig` | 查看目标设备网络接口 | 输出格式由 RCH 的平台信息提供者决定 |
-| `set` | 查看及修改 Client Runtime Config | 在 RCH Terminal 中，`set` / `set --json` 分别以表格/JSON 展示相同五字段；Info → Configuration 使用完整编辑 Schema |
-| `set KEY value` | 设置允许覆盖的 Runtime Config 项 | 可能影响客户端运行行为，修改前确认范围 |
 | `SCRIPT_DEFAULT_EXECUTION_MODE` / `SCRIPT_DEFAULT_OUTPUT_MODE` | Script 默认执行 / 输出模式 | Python 默认 inproc / collect，Go 默认 subprocess_pipe / collect；受本次选择及 Schema 约束 |
 | `SCRIPT_DEFAULT_TIMEOUT` | Script 默认运行时长，单位为秒 | Python / Go 默认 300 秒；Go 的外部 Python 执行器会按时终止子进程 |
-| `set --reset KEY` / `set --reset-all` | 还原一项 / 全部运行时覆盖值 | `--reset-all` 影响所有已保存的覆盖设置 |
 | `SCRIPT_PYTHON_PATH` | Go Client 外部 Python 解释器路径 | 留空时按 `PATH` 查找；仅 Go Client 配置包含此项 |
 | `watchdog` | 查看 Client Watchdog 的当前状态 | 用于判断 Local Heartbeat Watchdog / Remote Control Watchdog / Process Recovery Watchdog 配置与运行状态 |
 
@@ -173,7 +173,7 @@ Server 的 `xt ...` 是面向用户的统一目录与运行入口；Client 另�
 
 ### Linux
 
-Linux 平台额外提供 `getinfo [--json]`，采集发行版、内核、主机、CPU、内存、GPU、网络、Python、Shell、桌面、用户及当前 Client 进程信息。输出为平铺字段，使用 `distro`、`pid`、`ppid`、`has_desktop`、`resolution` 等简明字段名；需要区分含义时使用 `cpu_model`、`memory_total_gb`、`python_version` 等限定名称。默认文本列表，`--json` 输出扁平 JSON。其余如 `pwd`、`shell`、`set`、`clean` 仍按公共 Client 命令执行。
+Linux 平台额外提供 `getinfo [--json]`，采集发行版、内核、主机、CPU、内存、GPU、网络、Python、Shell、桌面、用户及当前 Client 进程信息。输出为平铺字段，使用 `distro`、`pid`、`ppid`、`has_desktop`、`resolution` 等简明字段名；需要区分含义时使用 `cpu_model`、`memory_total_gb`、`python_version` 等限定名称。默认文本列表，`--json` 输出扁平 JSON。其余如 `pwd`、`shell`、`config`、`clean` 仍按公共 Client 命令执行。
 
 ### iOS / Pythonista
 
@@ -255,7 +255,7 @@ ACMD 的参数解析规则、输出与交互风险见 [ACMD](acmd.md)；进程�
 | 管理已有 Python Job | `job …` | Job 目录和控制在 Server Builtin 中统一管理 |
 | 上传、领取文件 | Server `upload`、Client `download` | 文件来源和目标由 Server 与所选 Client 决定 |
 | 操作文件夹和批量文件 | Remote Files UI | 比手工构造 Web 专用命令负载更合适 |
-| 调整 Client 运行时设置 | `set` | 直接针对目标 Client 的 Runtime Config |
+| 调整 Client 运行时设置 | `config` | 直接针对目标 Client 的 Runtime Config |
 | 清理临时残留 | `clean` | 先看预览，不将 `--no-confirm` 当成模拟 |
 | 运行外部工具 | `xt …` | Server 端统一目录与运行入口 |
 

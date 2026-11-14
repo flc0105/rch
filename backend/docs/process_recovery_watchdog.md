@@ -4,7 +4,7 @@
 
 ## 启用与控制
 
-Client 启动时由单一 `watchdog` Feature 决定是否导入监督实现（macOS、Windows、Linux 默认支持，iOS 不支持）。默认 `PROCESS_RECOVERY_WATCHDOG_ENABLED = False`，在 `client/config/runtime_config.py` 声明。运行中的 Client 可通过 `set PROCESS_RECOVERY_WATCHDOG_ENABLED true` 启用、`set PROCESS_RECOVERY_WATCHDOG_ENABLED false` 关闭；设置按项目现有 runtime_config 覆盖文件持久化。建议先在非关键设备验证，再远程开启。运行时切换本开关会刷新现有 Remote Control Watchdog / Local Heartbeat Watchdog 共用 Worker 的启动环境，以便它正确区分主动退出；监控逻辑和检测依据仍然完全独立。
+Client 启动时由单一 `watchdog` Feature 决定是否导入监督实现（macOS、Windows、Linux 默认支持，iOS 不支持）。默认 `PROCESS_RECOVERY_WATCHDOG_ENABLED = False`，在 `client/config/runtime_config.py` 声明。运行中的 Client 可通过 `config set PROCESS_RECOVERY_WATCHDOG_ENABLED true` 启用、`config set PROCESS_RECOVERY_WATCHDOG_ENABLED false` 关闭；设置按项目现有 runtime_config 覆盖文件持久化。建议先在非关键设备验证，再远程开启。运行时切换本开关会刷新现有 Remote Control Watchdog / Local Heartbeat Watchdog 共用 Worker 的启动环境，以便它正确区分主动退出；监控逻辑和检测依据仍然完全独立。
 
 开启后，Client 在建立连接之前启动单独的 `--process-recovery-watchdog-worker` 进程。Worker 使用 `psutil` 对 PID 和创建时间进行联合检查，区分 PID 复用及僵尸进程。正常情况下只保留一条监督链：Client 死亡后，原 Worker 按 3、10、30、60、120、最高 300 秒的退避间隔重启 Client；运行至少 300 秒视为恢复稳定，重置连续失败计数。Worker 持续重试，不因达到失败次数而永久放弃。
 
@@ -55,7 +55,7 @@ Process Supervisor **不遍历系统全部进程**，也不读取 Local 心跳�
 | `_STABLE_SECONDS` | **300 秒** | 上一代 Client 若连续存活至少 300 秒，下一次异常死亡重新按第 1 次失败计算退避 |
 | `_STOP_TIMEOUT` | **3 秒** | 主动停止时等待 Supervisor 停止确认的最长时间；不是扫描周期 |
 
-更改 PID 扫描周期的方式：编辑 `backend/client/watchdog/process_recovery_watchdog.py` 的 `_POLL_INTERVAL = 0.5`，例如更改为 `1.0` 表示约每 1 秒探测一次。然后重新部署修改后的 Client 源码（打包运行时需要重新构建程序），**重新启动 Client 及其独立 Supervisor** 才会载入新常量。这个设置目前没有独立的 runtime_config 配置项，不能通过 `set PROCESS_RECOVERY_WATCHDOG_...` 在线修改扫描周期；`set PROCESS_RECOVERY_WATCHDOG_ENABLED true/false` 只能启停功能，不能更改常量。
+更改 PID 扫描周期的方式：编辑 `backend/client/watchdog/process_recovery_watchdog.py` 的 `_POLL_INTERVAL = 0.5`，例如更改为 `1.0` 表示约每 1 秒探测一次。然后重新部署修改后的 Client 源码（打包运行时需要重新构建程序），**重新启动 Client 及其独立 Supervisor** 才会载入新常量。这个设置目前没有独立的 runtime_config 配置项，不能通过 `config set PROCESS_RECOVERY_WATCHDOG_...` 在线修改扫描周期；`config set PROCESS_RECOVERY_WATCHDOG_ENABLED true/false` 只能启停功能，不能更改常量。
 
 改变 `_POLL_INTERVAL` 影响的是故障被发现的速度与轮询开销，而非重启退避时间。实际检测可能因操作系统调度等稍有延迟；探测到死亡后仍需经过 `_RETRY_DELAYS` 的等待。使用 `watchdog --json` 可以通过 `process_recovery_watchdog.poll_interval_seconds` 查看**运行中 Client 所加载代码里的配置值**，它不是某个 PID 的实时测量结果。若已部署不同代码版本，必须以实际运行实例与其日志为准。
 

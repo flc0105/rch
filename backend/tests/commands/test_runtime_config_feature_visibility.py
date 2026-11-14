@@ -27,15 +27,15 @@ def test_removed_idle_timeout_options_are_not_registered():
         assert key not in {item['key'] for item in service.build_config_payload()['items']}
 
 
-def test_client_set_json_uses_runtime_features():
-    import json
+def test_configuration_control_get_uses_runtime_features():
+    from client.config.manager import ConfigurationManager
+    from core.protocol.control import ConfigurationAction
     from types import SimpleNamespace
-    from client.commands.common.mixins.runtime_config_ops import CommandRuntimeConfigMixin
-    owner = CommandRuntimeConfigMixin()
-    owner.socket = SimpleNamespace(runtime=SimpleNamespace(features={'screen_view': False}))
-    status, payload = owner.set('--json')
+    manager = ConfigurationManager(None, features={'screen_view': False})
+    scope = SimpleNamespace(_checkpoint=lambda: None, _send_interim_result=lambda *_: None)
+    status, payload = manager.execute(scope, ConfigurationAction.GET, {})
     assert status == 1
-    assert 'SCREEN_FRAME_STRATEGY' not in {item['key'] for item in json.loads(payload)}
+    assert 'SCREEN_FRAME_STRATEGY' not in {item['key'] for item in payload['data']['items']}
 
 
 def test_legacy_http_upload_uses_private_fixed_network_timeout(tmp_path, monkeypatch):

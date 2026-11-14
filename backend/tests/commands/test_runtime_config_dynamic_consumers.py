@@ -132,35 +132,40 @@ def test_inbound_timeout_runtime_config_is_persisted_and_reset(isolated_config):
     assert not isolated_config.exists()
 
 
+
+def config_control_result(connection, action, key='', value=''):
+    from client.config.manager import ConfigurationManager
+    from core.protocol.control import ConfigurationAction
+    manager = ConfigurationManager(connection, getattr(connection.runtime, 'features', None))
+    scope = SimpleNamespace(_checkpoint=lambda: None, _send_interim_result=lambda *_: None)
+    payload = ({'key': key, 'value': value, 'value_format': 'text'} if action == 'set' else
+               {'key': key} if action == 'reset' else {'all': True})
+    status, result = manager.execute(scope, ConfigurationAction(action if action != 'reset-all' else 'reset'), payload)
+    return status, result['message']
+
 def test_set_command_updates_inbound_timeout_on_current_client(isolated_config):
-    from client.commands.common.mixins.runtime_config_ops import CommandRuntimeConfigMixin
 
-    owner = CommandRuntimeConfigMixin()
-    owner.socket = SimpleNamespace(runtime=SimpleNamespace(features={'watchdog': False}))
-    owner._checkpoint = lambda: None
+    owner = SimpleNamespace(runtime=SimpleNamespace(features={'watchdog': False}))
 
-    status, message = owner.set('SERVER_INBOUND_TIMEOUT_SECONDS 0')
+    status, message = config_control_result(owner, 'set', 'SERVER_INBOUND_TIMEOUT_SECONDS', '0')
     assert status == 1, message
     assert message == 'SERVER_INBOUND_TIMEOUT_SECONDS updated: 120 → 0'
     assert runtime_config.SERVER_INBOUND_TIMEOUT_SECONDS == 0
     assert json.loads(isolated_config.read_text(encoding='utf-8'))['SERVER_INBOUND_TIMEOUT_SECONDS'] == 0
 
-    status, message = owner.set('--reset SERVER_INBOUND_TIMEOUT_SECONDS')
+    status, message = config_control_result(owner, 'reset', 'SERVER_INBOUND_TIMEOUT_SECONDS')
     assert status == 1, message
     assert runtime_config.SERVER_INBOUND_TIMEOUT_SECONDS == 120
     assert not isolated_config.exists()
 
 
 def test_set_command_compact_script_mode_output(isolated_config):
-    from client.commands.common.mixins.runtime_config_ops import CommandRuntimeConfigMixin
 
-    owner = CommandRuntimeConfigMixin()
-    owner.socket = SimpleNamespace(runtime=SimpleNamespace(features={}))
-    owner._checkpoint = lambda: None
+    owner = SimpleNamespace(runtime=SimpleNamespace(features={}))
     runtime_config.SCRIPT_DEFAULT_EXECUTION_MODE = 'inproc'
-    assert owner.set('SCRIPT_DEFAULT_EXECUTION_MODE subprocess_pipe') == (
+    assert config_control_result(owner, 'set', 'SCRIPT_DEFAULT_EXECUTION_MODE', 'subprocess_pipe') == (
         1, "SCRIPT_DEFAULT_EXECUTION_MODE updated: 'inproc' → 'subprocess_pipe'")
-    assert owner.set('SCRIPT_DEFAULT_EXECUTION_MODE inproc') == (
+    assert config_control_result(owner, 'set', 'SCRIPT_DEFAULT_EXECUTION_MODE', 'inproc') == (
         1, "SCRIPT_DEFAULT_EXECUTION_MODE updated: 'subprocess_pipe' → 'inproc'")
 
 
@@ -201,42 +206,32 @@ def test_change_hooks_register_only_active_lifecycle_effects():
 
 
 def test_set_command_watchdog_callback_immediate_and_reset(isolated_config, monkeypatch):
-    import client.commands.common.mixins.runtime_config_ops as ops
-    from client.commands.common.mixins.runtime_config_ops import CommandRuntimeConfigMixin
 
     events = []
     watcher = SimpleNamespace(start=lambda: events.append('start'), stop=lambda: events.append('stop'))
-    owner = CommandRuntimeConfigMixin()
-    owner._checkpoint = lambda: None
-    owner.socket = SimpleNamespace(runtime=SimpleNamespace(features={'watchdog': True, 'screen_view': True}),
+    owner = SimpleNamespace(runtime=SimpleNamespace(features={'watchdog': True, 'screen_view': True}),
                                    watchdog_manager=watcher, process_recovery_watchdog_manager=None)
-    monkeypatch.setattr(ops, 'is_launchd_managed_client', lambda: False)
-    status, message = owner.set('REMOTE_CONTROL_WATCHDOG_ENABLED true')
+    status, message = config_control_result(owner, 'set', 'REMOTE_CONTROL_WATCHDOG_ENABLED', 'true')
     assert status == 1, message
     assert events == ['stop', 'start']
     assert runtime_config.REMOTE_CONTROL_WATCHDOG_ENABLED is True
     assert json.loads(isolated_config.read_text(encoding='utf-8'))['REMOTE_CONTROL_WATCHDOG_ENABLED'] is True
-    status, message = owner.set('--reset REMOTE_CONTROL_WATCHDOG_ENABLED')
+    status, message = config_control_result(owner, 'reset', 'REMOTE_CONTROL_WATCHDOG_ENABLED')
     assert status == 1, message
     assert events == ['stop', 'start', 'stop', 'start']
     assert runtime_config.REMOTE_CONTROL_WATCHDOG_ENABLED is False
 
 
 def test_reset_all_triggers_callbacks_and_restores_defaults(isolated_config, monkeypatch):
-    import client.commands.common.mixins.runtime_config_ops as ops
-    from client.commands.common.mixins.runtime_config_ops import CommandRuntimeConfigMixin
 
     events = []
     watcher = SimpleNamespace(start=lambda: events.append('start'), stop=lambda: events.append('stop'))
-    owner = CommandRuntimeConfigMixin()
-    owner._checkpoint = lambda: None
-    owner.socket = SimpleNamespace(runtime=SimpleNamespace(features={'watchdog': True, 'screen_view': True}),
+    owner = SimpleNamespace(runtime=SimpleNamespace(features={'watchdog': True, 'screen_view': True}),
                                    watchdog_manager=watcher, process_recovery_watchdog_manager=None)
-    monkeypatch.setattr(ops, 'is_launchd_managed_client', lambda: False)
-    assert owner.set('HTTP_TRANSFER_MODE legacy')[0] == 1
-    assert owner.set('SCREEN_FRAME_STRATEGY full_jpeg')[0] == 1
-    assert owner.set('REMOTE_CONTROL_WATCHDOG_ENABLED true')[0] == 1
-    assert owner.set('--reset-all')[0] == 1
+    assert config_control_result(owner, 'set', 'HTTP_TRANSFER_MODE', 'legacy')[0] == 1
+    assert config_control_result(owner, 'set', 'SCREEN_FRAME_STRATEGY', 'full_jpeg')[0] == 1
+    assert config_control_result(owner, 'set', 'REMOTE_CONTROL_WATCHDOG_ENABLED', 'true')[0] == 1
+    assert config_control_result(owner, 'reset-all')[0] == 1
     assert not isolated_config.exists()
     assert runtime_config.HTTP_TRANSFER_MODE == 'cancelable'
     assert runtime_config.SCREEN_FRAME_STRATEGY == 'keyframe_delta'

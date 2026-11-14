@@ -133,16 +133,16 @@ Control 开关关闭时，Server 会阻止后续正常输入消息，并通知 C
 **切换帧策略**需要在 Client 命令通道使用 `set`。例如，希望在屏幕内容变化较小时减少发送的数据，可以设置：
 
 ```text
-set SCREEN_FRAME_STRATEGY keyframe_delta
+config set SCREEN_FRAME_STRATEGY keyframe_delta
 ```
 
 此设置写入 Client 的运行时配置。当前已经运行的 Screen View 会话继续使用打开时的策略，关闭并重新打开后，新的会话才使用 Delta。需要恢复默认的整屏 JPEG 编码时执行：
 
 ```text
-set SCREEN_FRAME_STRATEGY full_jpeg
+config set SCREEN_FRAME_STRATEGY full_jpeg
 ```
 
-Client 的有效 `screen_view` Feature 启用时，`set` 和 `set --json` 会提供 `SCREEN_FRAME_STRATEGY`；关闭该 Feature 后配置入口隐藏，已保存的策略值不丢失，重新启用后恢复显示。该值反映的是新会话将采用的策略，不能替代正在运行的会话实际策略，后者以 Screen View 窗口的策略标签和状态数据为准。
+Client 的有效 `screen_view` Feature 启用时，`config list` 和 `config list --json` 会提供 `SCREEN_FRAME_STRATEGY`；关闭该 Feature 后配置入口隐藏，已保存的策略值不丢失，重新启用后恢复显示。该值反映的是新会话将采用的策略，不能替代正在运行的会话实际策略，后者以 Screen View 窗口的策略标签和状态数据为准。
 
 **调整帧率和质量**不需要重建会话。在窗口工具栏的 FPS 和 Quality 下拉菜单选择新值后，Server 更新会话参数并把新配置通知 Client，采集线程随后使用新的 FPS 和 JPEG 质量。
 

@@ -118,20 +118,18 @@ def test_server_candidates_use_single_name_contract():
 
 
 def test_watchdog_start_failure_reports_saved_but_not_running(monkeypatch):
-    from client.commands.common.mixins.runtime_config_ops import CommandRuntimeConfigMixin
+    from client.config.manager import ConfigurationManager
     from client.config import runtime_config
-    owner = CommandRuntimeConfigMixin()
-    owner._checkpoint = lambda: None
     supervisor = Mock()
     supervisor.start.side_effect = RuntimeError('access denied')
-    owner.socket = SimpleNamespace(runtime=SimpleNamespace(features={'watchdog': True}),
+    connection = SimpleNamespace(runtime=SimpleNamespace(features={'watchdog': True}),
                                    process_recovery_watchdog_manager=supervisor, watchdog_manager=Mock())
+    manager = ConfigurationManager(connection, connection.runtime.features)
     monkeypatch.setattr(runtime_config, 'REMOTE_CONTROL_WATCHDOG_ENABLED', False)
     monkeypatch.setattr(runtime_config, 'LOCAL_HEARTBEAT_WATCHDOG_ENABLED', False)
-    monkeypatch.setattr('client.commands.common.mixins.runtime_config_ops.is_launchd_managed_client', lambda: False)
-    messages = owner._apply_runtime_config_side_effects('PROCESS_RECOVERY_WATCHDOG_ENABLED', True)
+    messages = manager.effects('PROCESS_RECOVERY_WATCHDOG_ENABLED', True, launch_check=lambda: False)
     assert any('Saved' in message and 'access denied' in message for message in messages)
-    owner.socket.watchdog_manager.stop.assert_not_called()
+    connection.watchdog_manager.stop.assert_not_called()
 
 
 def test_agent_bundle_injection_without_revision_parts(tmp_path):

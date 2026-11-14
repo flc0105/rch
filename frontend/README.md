@@ -116,11 +116,21 @@ Vite forwards `/api` to the configured HTTP port and `/ws` to HTTP port + 1.
 Browser uploads use `/api/...` URLs on the current page origin, so the dev
 server proxy is applied without browser CORS changes. The PTY, Screen and
 notification WebSocket paths all use the same browser URL helper.
-The Vite listening port can be overridden with `RCH_VITE_PORT` (default `5173`);
-provide the same value to the Server when using a nondefault development port
-so its WebSocket Origin check accepts the development page.
+The Vite listening port can be overridden with `RCH_VITE_PORT` (default `5173`).
+When Vite is published through a same-origin TCP/HTTP reverse proxy (for example
+FRP forwarding external `15173` to local `5173`), expose only the frontend
+port: Vite forwards `/api` and `/ws` internally. The proxy must preserve the
+browser-facing `Host` and support WebSocket Upgrade. WebSocket authorization
+checks the browser's Origin against the forwarded Host and the authenticated
+session, not against the private Vite port number. A direct built frontend still
+requires access to the Server WebSocket port as described below.
 
 In production, RCH serves the built frontend on its HTTP port; the browser
 connects WebSocket directly to that HTTP port + 1.
+
+On browsers that restrict clipboard access over non-HTTPS origins (notably
+mobile Safari), Terminal Copy uses a synchronous selection fallback for the
+currently loaded Terminal window. Saving Terminal output to Artifact continues
+to use the full local History, including rows not currently loaded onscreen.
 
 Agent Outputs 以 `python`、`go`、`go_loader` 为正式 Builder ID，显示为 Python Bundle、Go、Go Loader；输出文件名固定以 `rchclient` 为前缀，Build Version 使用 Builder 名；两者共用构建时间与八位哈希后缀。列表支持 Builder、Listener 和搜索过滤，Utilities 中可直接进入。

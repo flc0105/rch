@@ -1,9 +1,9 @@
 import inspect
 from typing import Any, Callable
 
-from client.commands.arguments.errors import ArgumentCommandValidationError
+from core.commands.argument_errors import ArgumentCommandValidationError
 from client.commands.arguments.help_builder import ArgumentCommandHelpBuilder
-from client.commands.arguments.validator import ArgumentCommandValidator
+from core.commands.argument_validator import ArgumentCommandValidator
 
 
 class ArgumentCommandRegistry:

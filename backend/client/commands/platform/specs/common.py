@@ -1,4 +1,4 @@
-from client.commands.arguments.models import (
+from core.commands.argument_models import (
     ArgumentCommandSpec,
     ArgumentOptionSpec,
 )

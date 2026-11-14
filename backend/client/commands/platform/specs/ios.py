@@ -1,4 +1,4 @@
-from client.commands.arguments.models import ArgumentOptionSpec, ArgumentCommandSpec
+from core.commands.argument_models import ArgumentOptionSpec, ArgumentCommandSpec
 
 ALERT_ARGUMENT_SPEC = ArgumentCommandSpec(
     name='alert',

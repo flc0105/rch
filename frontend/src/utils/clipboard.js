@@ -4,9 +4,12 @@ export function copyTextFallback(text) {
   textarea.value = String(text || '')
   textarea.setAttribute('readonly', '')
   textarea.style.position = 'fixed'
-  textarea.style.left = '-9999px'
+  textarea.style.left = '0'
   textarea.style.top = '0'
   textarea.style.opacity = '0'
+  textarea.style.fontSize = '16px'
+  textarea.style.width = '1px'
+  textarea.style.height = '1px'
   document.body.appendChild(textarea)
   try {
     textarea.focus()
