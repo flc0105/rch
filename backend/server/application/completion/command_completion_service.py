@@ -5,6 +5,7 @@ from server.application.completion.command_completion_providers import (
     JobCommandCompletionProvider,
     ConfigCommandCompletionProvider,
     RegisteredServerSubcommandCompletionProvider,
+    HelpCommandCompletionProvider,
     ExternalToolCommandCompletionProvider,
     GopinCommandCompletionProvider,
     HistoryCommandCompletionProvider,
@@ -33,6 +34,7 @@ class ServerCommandCompletionService:
                 command_history=server.command_history,
             ),
             RegisteredServerSubcommandCompletionProvider(),
+            HelpCommandCompletionProvider(),
             ConfigCommandCompletionProvider(
                 server=server, remote_execution_service=remote_execution_service,
             ),

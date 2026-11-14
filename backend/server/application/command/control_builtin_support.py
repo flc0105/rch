@@ -1,5 +1,3 @@
-import shlex
-
 from server.application.connection.control_command_store import (
     HTTP_CONTROL_COMMANDS,
     get_control_command_store,
@@ -62,35 +60,32 @@ class ControlBuiltinSupport:
         }
 
 
-    def httpctl(self, arg=''):
-        parts = shlex.split(str(arg or '').strip())
+    def httpctl(self, invocation):
+        from core.protocol.result_envelope import ResultEnvelope
+        from core.utils.command_output import render_result_payload
 
-        if not parts or parts[0].lower() in ('help', '-h', '--help'):
-            yield 1, self._format_httpctl_usage()
+        action_name = invocation.action
+        if action_name == 'help':
+            yield 1, render_result_payload(
+                ResultEnvelope(message=self._format_httpctl_usage()).as_payload(),
+                invocation.output_format)
             return
 
         try:
-            action = self._resolve_http_control_action(parts[0])
-            # A paused instance has no selectable online session. Explicitly target its
-            # original client_id instead of guessing a different Client on the machine.
-            if len(parts) == 3 and parts[1] == '--client-id' and action['action'] == 'resume':
-                client_id = parts[2].strip()
-            elif len(parts) == 1:
-                client_id = self._get_client_id()
-            else:
-                raise ValueError(self._format_httpctl_usage())
+            action = self._resolve_http_control_action(action_name)
+            # Only the resume schema permits an explicit offline Client ID.
+            client_id = str(invocation.arguments.get('client-id') or '').strip() or self._get_client_id()
             if not client_id:
                 raise ValueError('Missing client_id: select a connection or use resume --client-id CLIENT_ID')
-
-            payload = self.control_command_store.set_pending_command(
-                client_id,
-                action['action'],
+            payload = self.control_command_store.set_pending_command(client_id, action['action'])
+            message = (
+                f'httpctl {action["action"]} queued via HTTP control channel '
+                f'-> client_id={payload.get("client_id", client_id)}, action={action["action"]}'
             )
-        except Exception as e:
-            yield 0, str(e)
-            return
-
-        yield 1, (
-            f'httpctl {action["action"]} queued via HTTP control channel '
-            f'-> client_id={payload.get("client_id", client_id)}, action={action["action"]}'
-        )
+            status = 1
+        except Exception as exc:
+            message = str(exc)
+            status = 0
+        yield status, render_result_payload(ResultEnvelope(
+            status='success' if status == 1 else 'error', message=message).as_payload(),
+            invocation.output_format)

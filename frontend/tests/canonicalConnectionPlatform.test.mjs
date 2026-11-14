@@ -29,10 +29,17 @@ for (const [component, getter] of [
   })
 }
 
-test('script directory preference follows canonical connection platform', () => {
-  const resolve = componentMethod('ScriptLibraryDialog', 'resolvePreferredScriptDirectoryPlatform')
-  assert.equal(resolve.call({ currentConnectionPlatform: 'ios', currentConnection: { os_type: 'Windows' } }), 'ios')
-  assert.equal(resolve.call({ currentConnectionPlatform: '', currentConnection: { os_name: 'macOS' } }), '')
+test('script folder defaults to common or root regardless of connection platform', () => {
+  const resolve = componentMethod('ScriptLibraryDialog', 'getDefaultScriptDirectory')
+  const dirs = paths => paths.map(path => ({ path }))
+  assert.equal(resolve.call({ scriptCatalogDirectories: dirs(['ios', 'mac', 'common', '']),
+    normalizeScriptDirectoryPath: value => value, getFirstAvailableScriptDirectory: () => 'ios',
+    currentConnectionPlatform: 'mac' }), 'common')
+  assert.equal(resolve.call({ scriptCatalogDirectories: dirs(['ios', 'mac', '']),
+    normalizeScriptDirectoryPath: value => value, getFirstAvailableScriptDirectory: () => 'ios',
+    currentConnectionPlatform: 'mac' }), '')
+  const library = readComponent('ScriptLibraryDialog')
+  assert.ok(!library.includes('getPreferredScriptDirectoryForCurrentConnection()'))
 })
 
 for (const [methodName, argName] of [

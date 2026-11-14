@@ -1890,3 +1890,47 @@ export default {
   }
 }
 </style>
+
+<style>
+@media (max-width: 640px) {
+  .artifact-overlay .el-dialog__body {
+    overflow-y: auto !important;
+    overscroll-behavior: contain;
+  }
+  .artifact-overlay .fixed-dialog-body,
+  .artifact-overlay .artifact-library-body {
+    height: auto !important;
+    overflow: visible !important;
+    min-width: 0;
+  }
+  .artifact-overlay .artifact-library-body {
+    flex: 0 0 auto !important;
+  }
+  .artifact-overlay .artifact-folder-sidebar {
+    flex: 0 0 auto !important;
+    height: 226px !important;
+    min-height: 0 !important;
+    max-height: 226px !important;
+    overflow: hidden !important;
+  }
+  .artifact-overlay .artifact-main-panel {
+    max-width: 100%;
+    /* Preserve the panel and list's original flex and horizontal constraints. */
+    flex: 0 1 auto !important;
+    min-width: 0;
+    height: auto !important;
+    overflow: visible !important;
+  }
+  .artifact-overlay .mobile-file-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .artifact-overlay .mobile-file-list-shell,
+  .artifact-overlay .mobile-file-list,
+  .artifact-overlay .mobile-file-grid {
+    min-width: 0;
+    max-width: 100%;
+    height: auto !important;
+    overflow-y: visible !important;
+  }
+}
+</style>

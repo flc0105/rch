@@ -243,6 +243,25 @@ class RegisteredServerSubcommandCompletionProvider(CommandCompletionProvider):
         ) for i, sub in enumerate(spec.subcommands) if sub.visibility == 'public']
 
 
+class HelpCommandCompletionProvider(CommandCompletionProvider):
+    """Discoverable help targets are generated from the Server registry."""
+    command_names = ('help',)
+    source = 'server'
+    group = 'server'
+
+    def complete(self, context: CompletionContext) -> list[CompletionCandidate]:
+        targets = [('server', 'Show Server commands'), ('client', 'Show Client commands')]
+        for spec in SERVER_COMMAND_REGISTRY._commands.values():
+            targets.append((spec.name, spec.description))
+            targets.extend((f'{spec.name} {child.name}', child.description)
+                           for child in spec.subcommands if child.visibility == 'public')
+        return [CompletionCandidate(
+            title=f'help {name}', insert_text=f'help {name}', description=description,
+            source=self.source, group=self.group, kind='server_help',
+            name=name, priority=18 + index,
+        ) for index, (name, description) in enumerate(targets)]
+
+
 class ScriptCommandCompletionProvider(ServerCompletionSessionMixin, CommandCompletionProvider):
     """
     server script exec 脚本补全。

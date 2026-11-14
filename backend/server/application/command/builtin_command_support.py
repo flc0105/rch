@@ -27,8 +27,12 @@ class UploadBuiltinSupport:
         self.remote_execution_service = remote_execution_service
         self.history_entry_id_provider = history_entry_id_provider
 
-    def upload(self, filename):
-        filename = os.path.expanduser(filename)
+    def upload(self, invocation):
+        """Project transfer progress and one authoritative terminal Result."""
+        from core.protocol.result_envelope import ResultEnvelope
+        from core.utils.command_output import render_result_payload
+
+        filename = os.path.expanduser(invocation.arguments['command'])
         if not os.path.isfile(filename):
             raise FileNotFoundError(f"File does not exist: {filename}")
 
@@ -37,42 +41,38 @@ class UploadBuiltinSupport:
         if history_entry_id and foreground.get('history_entry_id') != history_entry_id:
             foreground = {}
 
-        event_iter = self.remote_execution_service.iter_upload_events(
-            self.conn,
-            filename,
-            remote_path='',
-            history_entry_id=history_entry_id,
-            source='cli',
-            task_id=foreground.get('task_id') or '',
+        events = self.remote_execution_service.iter_upload_events(
+            self.conn, filename, remote_path='', history_entry_id=history_entry_id,
+            source='cli', task_id=foreground.get('task_id') or '',
             tab_id=foreground.get('tab_id') or '',
             command=f'upload {os.path.basename(filename)}',
         )
-
-        for event in event_iter:
-            if event.event_type == CommandExecutionEvent.STARTED:
-                continue
-
-            if event.event_type == CommandExecutionEvent.COMPLETED:
-                continue
-
+        failure_message = ''
+        cancelled = False
+        for event in events:
             if event.event_type == CommandExecutionEvent.PROGRESS:
+                # Progress is a distinct protocol event, not a completed Result.
                 if event.text:
-                    yield 1, event.text
-                continue
-
-            if event.event_type == CommandExecutionEvent.CHUNK:
-                yield event.status, event.text
-                continue
-
-            if event.event_type == CommandExecutionEvent.ERROR:
-                yield 0, event.text
-                continue
-
-            if event.event_type == CommandExecutionEvent.CANCELLED:
-                if event.payload.get('terminal'):
-                    continue
-                yield 0, {**event.payload, 'event_type': CommandExecutionEvent.CANCELLED,
-                          'text': event.text or 'cancelled', 'failure_reason': 'cancelled'}
+                    progress_text = (f'Uploading {os.path.basename(filename)}...'
+                                     if event.payload.get('stage') == 'staged' else event.text)
+                    yield 1, {'event_type': CommandExecutionEvent.PROGRESS,
+                              'text': progress_text, **event.payload}
+            elif event.event_type == CommandExecutionEvent.ERROR:
+                failure_message = event.text or 'Upload failed'
+            elif event.event_type == CommandExecutionEvent.CANCELLED:
+                cancelled = True
+                if not event.payload.get('terminal'):
+                    yield 0, {**event.payload, 'event_type': CommandExecutionEvent.CANCELLED,
+                              'text': event.text or 'cancelled', 'failure_reason': 'cancelled'}
+            elif event.event_type == CommandExecutionEvent.COMPLETED:
+                if cancelled:
+                    continue  # The cancellation event already owns the terminal state.
+                ok = event.ok is True
+                message = (f'File transferred successfully: {os.path.basename(filename)}'
+                           if ok else failure_message or 'Upload failed')
+                envelope = ResultEnvelope(status='success' if ok else 'error',
+                                          message=message).as_payload()
+                yield (1 if ok else 0), render_result_payload(envelope, invocation.output_format)
 
 
 class ScriptBuiltinSupport:
@@ -386,30 +386,40 @@ class PinnedPathBuiltinSupport:
         return f'cd {path}'
 
 
-    def gopin(self, arg=''):
-        name = str(arg or '').strip()
+    def gopin(self, invocation):
+        from core.protocol.result_envelope import ResultEnvelope
+        from core.utils.command_output import ResultDisplay, ResultDataShape, render_result_payload
+
+        name = str(invocation.arguments.get('command') or '').strip()
         items = self.list_pinned_paths()
+        if invocation.action == 'list':
+            rows = [{'name': item.get('display_name', ''), 'path': item.get('path', '')}
+                    for item in items]
+            envelope = ResultEnvelope(data=rows, display=ResultDisplay.DATA,
+                                      shape=ResultDataShape.TABLE,
+                                      message='No saved pinned paths for current host').as_payload()
+            yield 1, render_result_payload(envelope, invocation.output_format)
+            return
 
         if not name:
-            if not items:
-                yield 1, 'No saved pinned paths for current host'
-                return
-
-            lines = []
-            for item in items:
-                lines.append(f'{item.get("display_name", "")} -> {item.get("path", "")}')
-            yield 1, '\n'.join(lines)
+            yield 0, render_result_payload(ResultEnvelope(
+                status='error', message='Pinned path name is required').as_payload(),
+                invocation.output_format)
             return
 
         matched_item = self.pinned_path_store.get_item_by_name(self._get_machine_id(), name)
         if matched_item is None:
-            raise ValueError(f'Pinned path not found: {name}')
+            yield 0, render_result_payload(ResultEnvelope(
+                status='error', message=f'Pinned path not found: {name}').as_payload(),
+                invocation.output_format)
+            return
 
         target_path = str(matched_item.get('path') or '').strip()
         resolved_command = self._build_cd_command(target_path)
-
-        # gopin 作为快捷命令，history 保留原始 gopin 输入，不再改写成 cd 结果。
-        yield 1, f'gopin {name} -> {resolved_command}'
+        # History retains the original gopin command; downstream cd keeps its stream.
+        message = f'gopin {name} -> {resolved_command}'
+        yield 1, render_result_payload(ResultEnvelope(message=message).as_payload(),
+                                       invocation.output_format)
 
         command_processor = self.command_processor_factory()
         executor = command_processor(resolved_command)

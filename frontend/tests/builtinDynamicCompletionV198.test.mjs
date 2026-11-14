@@ -14,9 +14,9 @@ const host = { selectedId: 'client-1', currentConnection: { machine_id: 'machine
 for (const [name, method] of Object.entries(sandbox.options.methods)) host[name] = method.bind(host)
 
 for (const [typed, expected, remote] of [
-  ['config set ', 'config set ', true],
-  ['config set --key ', 'config set --key ', true],
-  ['config reset SCRIPT_', 'config reset ', true],
+  ['config set ', 'config set ', false],
+  ['config set --key ', 'config set --key ', false],
+  ['config reset SCRIPT_', 'config reset ', false],
   ['script view ', 'script view ', false],
   ['script view --name ', 'script view --name ', false],
   ['script exec test/misc', 'script exec ', false],
@@ -56,4 +56,15 @@ test('config and script completion candidates match typed values', () => {
     )
     assert.equal(result.length, 1, query)
   }
+})
+
+test('no frontend builtin whitelist; any future provider can supply completions', () => {
+  for (const input of ['help job ', 'httpctl resume --client-id ', 'gopin work', 'new-builtin action ']) {
+    const query = host.parseCommandCompletionCandidateQuery(input)
+    assert.ok(query, input)
+    assert.equal(query.commandName, input.split(' ', 1)[0])
+    assert.equal(query.requestInput, input.endsWith(' ') ? input : input.slice(0, input.lastIndexOf(' ') + 1))
+  }
+  assert.ok(!source.includes('const dynamicCommands ='))
+  assert.ok(!source.includes('buildNamedBuiltinCommandCompletionQuery('))
 })

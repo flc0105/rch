@@ -232,7 +232,7 @@ def test_result_envelope_has_one_source_but_two_presentation_formats():
 def test_every_structured_builtin_leaf_owns_its_argument_schema():
     for spec in SERVER_COMMAND_REGISTRY._commands.values():
         if spec.structured and spec.subcommands:
-            assert all(child.argument_spec is not None for child in spec.subcommands)
+            assert all(child.argument_spec is not None or child.raw_tail for child in spec.subcommands)
         elif spec.structured:
             assert spec.argument_spec is not None or spec.raw_tail
         else:

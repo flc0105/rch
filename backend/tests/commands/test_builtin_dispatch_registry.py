@@ -30,12 +30,9 @@ def test_split_subcommands_use_registered_call_shape(name, arg, expected):
 
 
 @pytest.mark.parametrize('name,arg,expected', [
-    ('httpctl', '', 'help'),
-    ('httpctl', 'resume --client-id offline-1', 'resume --client-id offline-1'),
     ('xt', '', 'help'),
     ('xt', 'help', 'help'),
     ('xt', 'exec ffmpeg -i "a b.mp4"', 'exec ffmpeg -i "a b.mp4"'),
-    ('gopin', 'work', 'work'),
 ])
 def test_raw_text_handlers_receive_registry_subcommand_and_unchanged_tail(name, arg, expected):
     handler, calls = _handler_with_stubs()
@@ -82,3 +79,13 @@ def test_structured_builtin_handlers_receive_typed_invocation(name, arg, action,
     assert invocation.action == action
     for key, value in expected.items():
         assert invocation.arguments[key] == value
+
+
+def test_new_simple_builtins_all_dispatch_typed_invocation():
+    handler, calls = _handler_with_stubs()
+    for name, tail in [('help', 'job start'), ('httpctl', 'resume --client-id offline-1'),
+                       ('gopin', 'work'), ('upload', '/tmp/a name.txt')]:
+        assert list(handler.resolve_builtin_command(name, tail)) == [(1, 'ok')]
+    assert len(calls) == 4
+    for _, (invocation,) in calls:
+        assert hasattr(invocation, 'arguments') and hasattr(invocation, 'output_format')

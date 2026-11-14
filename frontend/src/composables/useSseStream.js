@@ -20,6 +20,7 @@ export default {
             tabId: '',
             eventSource: null,
             sseReady: false,
+            sseDisconnected: false,
             sseNotificationPreferences: cloneSseNotificationPreferences(DEFAULT_SSE_NOTIFICATION_PREFERENCES),
             sseNotificationHistory: [],
             transferItems: [],
@@ -220,7 +221,10 @@ export default {
             this.eventSource = es;
 
             es.addEventListener('open', () => {
-                const reconnecting = this.sseReady;
+                if (this.sseDisconnected) {
+                    ElNotification({ title: 'Realtime connected', type: 'success', duration: 2500 });
+                }
+                this.sseDisconnected = false;
                 this.sseReady = true;
                 void this.$refs.executionInteractionDialogRef?.reloadPending(tabId);
                 // Server replays bounded per-tab terminal events after a short
@@ -510,7 +514,14 @@ this.appendOutput(payload.client_id, `${TERMINAL_BACKGROUND_PREFIX} ${payload.te
             });
 
             es.onerror = () => {
-                // WebSocket transport reconnects and the next open resyncs authoritative task state
+                if (this.sseDisconnected) return;
+                this.sseDisconnected = true;
+                ElNotification({
+                    title: 'Realtime connection interrupted',
+                    message: 'Live command results are temporarily unavailable.',
+                    type: 'warning',
+                    duration: 5000,
+                });
             };
         },
 

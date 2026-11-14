@@ -167,21 +167,29 @@ class BuiltinCommandHandler:
             return handler(subcommand + ((' ' + remaining) if remaining else ''))
         return handler(remaining)
 
-    def server_help(self, target=''):
-        target = str(target or '').strip()
-        if target in ('', 'server'):
-            lines = ['Server Commands:', self.REGISTRY.help()]
-            if target == '':
-                lines.extend(['', 'Client Commands:', self._client_help()])
-            yield 1, '\n'.join(lines)
-            return
-        if target == 'client':
-            yield 1, self._client_help()
-            return
+    def server_help(self, invocation):
+        target = str(invocation.arguments.get('target') or '').strip()
+        subcommand = str(invocation.arguments.get('subcommand') or '').strip()
         try:
-            yield 1, self.REGISTRY.help(target)
+            if target in ('', 'server'):
+                if subcommand:
+                    raise ValueError('help target takes no subcommand')
+                lines = ['Server Commands:', self.REGISTRY.help()]
+                if target == '':
+                    lines.extend(['', 'Client Commands:', self._client_help()])
+                result = '\n'.join(lines)
+            elif target == 'client':
+                if subcommand:
+                    raise ValueError('help client takes no subcommand')
+                result = self._client_help()
+            else:
+                result = self.REGISTRY.help(' '.join(part for part in (target, subcommand) if part))
+            status = 1
         except ValueError as exc:
-            yield 0, str(exc)
+            status, result = 0, str(exc)
+        yield status, render_result_payload(ResultEnvelope(
+            status='success' if status == 1 else 'error', message=result).as_payload(),
+            invocation.output_format)
 
     def _client_help(self):
         """Recreate the Client's native help groups from the handshake manifest."""
@@ -206,9 +214,12 @@ class BuiltinCommandHandler:
     def watchdog(self, invocation):
         yield from self.configuration_support.watchdog(invocation)
 
-    def upload(self, filename):
-        for item in self.upload_support.upload(filename):
-            yield item
+    def upload(self, invocation):
+        try:
+            yield from self.upload_support.upload(invocation)
+        except (FileNotFoundError, ValueError) as exc:
+            yield 0, render_result_payload(ResultEnvelope(
+                status='error', message=str(exc)).as_payload(), invocation.output_format)
 
     def saveout(self, invocation):
         for item in self.command_output_support.saveout(invocation.arguments['command']):
@@ -240,15 +251,12 @@ class BuiltinCommandHandler:
         for item in self.history_support.history(invocation):
             yield item
 
-    def gopin(self, arg=''):
-        for item in self.pinned_path_support.gopin(arg):
-            yield item
+    def gopin(self, invocation):
+        yield from self.pinned_path_support.gopin(invocation)
 
     def rtt(self, invocation):
         for item in self.rtt_support.rtt(invocation):
             yield item
 
-    def httpctl(self, arg=''):
-        for item in self.control_support.httpctl(arg):
-            yield item
-
+    def httpctl(self, invocation):
+        yield from self.control_support.httpctl(invocation)

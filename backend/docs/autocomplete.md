@@ -15,7 +15,7 @@ Web Terminal 输入内容
         │
         ├── 存在尚未闭合的 ${...} ──→ Client Variable Manifest → 变量候选
         │
-        ├── 命中已注册的参数上下文 ──→ Server Completion Provider
+        ├── 任何命令的参数上下文 ──→ Server Completion Provider（无提供器则返回空候选）
         │                                      │
         │                                      ├── Server 数据：历史、Alias 管理、脚本、路径收藏、External Tools、本机路径
         │                                      └── 需要目标机器时 → Client Completion Provider
@@ -30,7 +30,7 @@ Web Terminal 输入内容
 
 **上下文补全**使用 `POST /api/connections/{client_id}/command-completions`。Server 根据原始输入解析命令名、参数文本和当前位置，交给注册的 Provider；其中需要目标 Client 的部分，会通过只读 `command_completions` 辅助入口在 Client 上生成候选并返回。它们采用统一的 Candidate 结构，所以同一个下拉菜单可以展示名称、用途、分组和插入内容。
 
-Server/Client 的 Provider 负责候选生成，浏览器负责缓存、过滤、选择与回填。补全查询不是执行 `cd`、`download`、`history run` 或其他候选业务操作本身。
+Server/Client 的 Provider 负责候选生成，浏览器负责缓存、过滤、选择与回填。前端不维护 Builtin 名单；新 Builtin 只需在 Server 注册对应的 Completion Provider 即可被查询。文件/目录补全使用单独的本地路径分派规则。补全查询不是执行 `cd`、`download`、`history run` 或其他候选业务操作本身。
 
 ## 历史、收藏和动态资源
 
@@ -52,7 +52,7 @@ Server/Client 的 Provider 负责候选生成，浏览器负责缓存、过滤�
 
 Script 的执行候选来自 Server 脚本目录，**只根据 Script Metadata `platforms` 声明**筛选当前设备；没有该声明的脚本不参与 CLI 列表与补全，路径名不作为平台依据。候选在 Server 过滤后直接提供给 Terminal，前端不再根据目录名过滤。此规则不限制显式执行。External Tool 的候选由 Server 的 Exec Catalog 按目标平台和架构筛选，除入口操作外，也可以补充符合目标设备条件的 Exec 名称。运行时配置 `config set/reset` 的参数候选从目标 Client 的 Configuration GET 查询真实配置键。支持位置参数及 `--key` 两种补全写法。`script view/exec` 同样支持名称位置参数和 `--name` 补全。
 
-`job start <name>` 使用符合当前平台的 Job Catalog；`job stop <name>`、`job status <name>` 使用当前设备活跃 Job 实例的 `job_key`；`job logs <name>` 使用当前设备已持久化 Job 历史中的名称，均通过 Web 与 RCH CLI 共用的 Server Completion Provider。
+`job start <name>` 使用符合当前平台的 Job Catalog；`job stop <name>`、`job status <name>` 使用当前设备活跃 Job 实例的 `job_key`；`job logs <name>` 使用当前设备正在运行的 Job 名称，均通过 Web 与 RCH CLI 共用的 Server Completion Provider。
 
 这些动态候选的数量与内容取决于当前设备、Server 配置及 Catalog，而不是一套固定的命令总表。详见 [Aliases and Quick Actions](alias_quick_actions.md)、[Remote Files](remote_files.md) 和 [External Tools](external_tools.md)。
 
@@ -195,7 +195,7 @@ Provider 内部按 `priority` 与标题排序、按插入文本去重；某个 P
 
 对于 `xt exec`，输入 `xt exec ` 可补全 `list`、`info`、`which` 与当前目标平台 Catalog 提供的公开 Exec 名称；输入 `xt exec info ` 或 `xt exec which ` 可补全对应的 Exec 名称。`xt package` 提供 list/install/uninstall 与 Package 名称候选，`xt module list` 提供 Package 候选，`xt instance` 提供 create/list/start/stop/restart/status/logs 与 Daemon Module 候选。已输入 Exec 名称后，后续原生参数不由 XT 补全器接管。
 
-Server 注册表 `server_builtin_registry.py` 是一级 Builtin 与 `alias/job/script/xt/history/httpctl` 子命令唯一的静态定义来源。`RegisteredServerSubcommandCompletionProvider` 从该表生成 `script list/view/exec/run`、`job list/start/logs/ps/status/stop/stop-all` 等结构；动态 `script exec <path>`、`job start <name>` 仍由专门 Provider 查询当前 Server Catalog。前端 `CommandInputBar` 对 `script`、`job` 进入既有按上下文缓存的 Server 补全流程，不再识别旧 `exec`。
+Server 注册表 `server_builtin_registry.py` 是一级 Builtin 与 `alias/job/script/xt/history/httpctl` 子命令唯一的静态定义来源。`RegisteredServerSubcommandCompletionProvider` 从该表生成 `script list/view/exec/run`、`job list/start/logs/ps/status/stop/stop-all` 等结构；动态 `script exec <path>`、`job start <name>` 仍由专门 Provider 查询当前 Server Catalog。前端 `CommandInputBar` 对任何命令都可查询统一 Server 补全服务；服务端按 Provider 选择是否生成候选，脚本仍由 Metadata 平台信息过滤。`help` 的目标名称与子命令由同一 Server Builtin Registry 生成。
 
 ### v34.6 顶层命令与平台筛选边界
 

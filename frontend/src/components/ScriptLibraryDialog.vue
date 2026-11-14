@@ -624,18 +624,9 @@ export default {
     },
 
     getScriptDirectorySelectionContextKey() {
-  const connection = this.currentConnection || {}
-  const machineId = String(
-    connection.machine_id
-    || connection.client_id
-    || this.selectedId
-    || ''
-  ).trim()
-
-  const platform = String(this.resolvePreferredScriptDirectoryPlatform() || '').trim()
-
-  return `${machineId}::${platform}`
-},
+      const connection = this.currentConnection || {}
+      return String(connection.machine_id || connection.client_id || this.selectedId || '').trim()
+    },
 
     getScriptDirectoryPathFromTreeKey(key) {
       const value = String(key || '').trim()
@@ -795,76 +786,23 @@ export default {
         this.scriptCatalogItems = Array.isArray(catalog.items) ? catalog.items : []
         this.scriptCatalogDirectories = Array.isArray(catalog.directories) ? catalog.directories : [{ key: 'dir:.', label: 'root', path: '' }]
 
-        // if (!this.selectedDirectory) {
-        //   this.selectedDirectory = this.getFirstAvailableScriptDirectory()
-        // } else {
-        //   const hasCurrentDir = this.scriptCatalogDirectories.some(item => this.normalizeScriptDirectoryPath(item?.path || '') === this.selectedDirectory)
-        //   if (!hasCurrentDir) this.selectedDirectory = this.getFirstAvailableScriptDirectory()
-        // }
-
-//         if (options?.selectForConnection) {
-//   const preferredDirectory = this.getPreferredScriptDirectoryForCurrentConnection()
-//   this.selectedDirectory = preferredDirectory || this.getFirstAvailableScriptDirectory()
-//
-//   if (this.selectedDirectory) {
-//     this.scriptTreeExpandedKeys = this.includeScriptTreeAncestorKeys([
-//       ...this.scriptTreeExpandedKeys,
-//       this.getScriptDirectoryTreeKey(this.selectedDirectory),
-//     ])
-//   }
-// } else if (!this.selectedDirectory) {
-
-//         if (options?.selectForConnection) {
-//   const preferredDirectory = this.getPreferredScriptDirectoryForCurrentConnection()
-//   this.selectedDirectory = preferredDirectory || this.getFirstAvailableScriptDirectory()
-//
-//   // 打开弹窗时只展开当前设备对应目录路径，不沿用上次手动展开状态。
-//   this.scriptTreeExpandedKeys = this.selectedDirectory
-//     ? this.includeScriptTreeAncestorKeys([
-//       this.getScriptDirectoryTreeKey(this.selectedDirectory),
-//     ])
-//     : []
-// } else if (!this.selectedDirectory) {
-//   this.selectedDirectory = this.getFirstAvailableScriptDirectory()
-// } else {
-//   const hasCurrentDir = this.scriptCatalogDirectories.some(item => this.normalizeScriptDirectoryPath(item?.path || '') === this.selectedDirectory)
-//   if (!hasCurrentDir) this.selectedDirectory = this.getFirstAvailableScriptDirectory()
-// }
-
         if (options?.selectForConnection) {
-  const selectionContextKey = this.getScriptDirectorySelectionContextKey()
-  const currentDirectory = this.normalizeScriptDirectoryPath(this.selectedDirectory)
-
-  const hasCurrentDir = this.scriptCatalogDirectories.some(item => {
-    return this.normalizeScriptDirectoryPath(item?.path || '') === currentDirectory
-  })
-
-  if (
-    selectionContextKey
-    && selectionContextKey === this.scriptDirectorySelectionContextKey
-    && hasCurrentDir
-  ) {
-    // 同一台机器 + 同一 platform：保留上次操作目录。
-    this.selectedDirectory = currentDirectory
-  } else {
-    // 切换机器或 platform：回到当前 platform 的目录。
-    const preferredDirectory = this.getPreferredScriptDirectoryForCurrentConnection()
-    this.selectedDirectory = preferredDirectory || this.getFirstAvailableScriptDirectory()
-  }
-
-  this.scriptDirectorySelectionContextKey = selectionContextKey
-
-  this.scriptTreeExpandedKeys = this.selectedDirectory
-    ? this.includeScriptTreeAncestorKeys([
-      this.getScriptDirectoryTreeKey(this.selectedDirectory),
-    ])
-    : []
-} else if (!this.selectedDirectory) {
-  this.selectedDirectory = this.getFirstAvailableScriptDirectory()
-} else {
-  const hasCurrentDir = this.scriptCatalogDirectories.some(item => this.normalizeScriptDirectoryPath(item?.path || '') === this.selectedDirectory)
-  if (!hasCurrentDir) this.selectedDirectory = this.getFirstAvailableScriptDirectory()
-}
+          const contextKey = this.getScriptDirectorySelectionContextKey()
+          const currentDirectory = this.normalizeScriptDirectoryPath(this.selectedDirectory)
+          const directoryExists = this.scriptCatalogDirectories.some(item =>
+            this.normalizeScriptDirectoryPath(item?.path || '') === currentDirectory)
+          if (contextKey !== this.scriptDirectorySelectionContextKey || !directoryExists) {
+            this.selectedDirectory = this.getDefaultScriptDirectory()
+          }
+          this.scriptDirectorySelectionContextKey = contextKey
+          this.scriptTreeExpandedKeys = this.selectedDirectory
+            ? this.includeScriptTreeAncestorKeys([
+              this.getScriptDirectoryTreeKey(this.selectedDirectory),
+            ]) : []
+        } else if (!this.scriptCatalogDirectories.some(item =>
+          this.normalizeScriptDirectoryPath(item?.path || '') === this.selectedDirectory)) {
+          this.selectedDirectory = this.getDefaultScriptDirectory()
+        }
 
         this.scriptTreeExpandedKeys = this.filterExistingScriptTreeExpandedKeys(this.scriptTreeExpandedKeys)
         this.scriptTreeRenderKey += 1
@@ -880,83 +818,11 @@ export default {
       return dirs.length ? dirs.sort()[0] : ''
     },
 
-    resolvePreferredScriptDirectoryPlatform() {
-      return this.currentConnectionPlatform
+    getDefaultScriptDirectory() {
+      const dirs = new Set((this.scriptCatalogDirectories || [])
+        .map(item => this.normalizeScriptDirectoryPath(item?.path || '')))
+      return dirs.has('common') ? 'common' : dirs.has('') ? '' : this.getFirstAvailableScriptDirectory()
     },
-//
-// getPreferredScriptDirectoryForCurrentConnection() {
-//   const platform = this.resolvePreferredScriptDirectoryPlatform()
-//   const platformAliases = {
-//     mac: ['mac', 'macos', 'darwin', 'osx'],
-//     win: ['win', 'windows', 'win32', 'nt'],
-//     linux: ['linux', 'ubuntu', 'debian', 'centos', 'fedora', 'redhat', 'rhel', 'alpine', 'arch'],
-//     ios: ['ios', 'iphone', 'ipad', 'iphoneos', 'ipados'],
-//   }
-//
-//   const aliases = platformAliases[platform] || (platform ? [platform] : [])
-//   const aliasSet = new Set(aliases.map(item => String(item || '').toLowerCase()))
-//
-//   if (!aliasSet.size) return ''
-//
-//   const directories = (this.scriptCatalogDirectories || [])
-//     .map(item => this.normalizeScriptDirectoryPath(item?.path || ''))
-//     .filter(Boolean)
-//     .sort((a, b) => a.localeCompare(b))
-//
-//   const matchesPlatformRoot = (directory) => {
-//     const root = String(directory || '').split('/').filter(Boolean)[0]?.toLowerCase() || ''
-//     return aliasSet.has(root)
-//   }
-//
-//   const hasDirectScripts = (directory) => {
-//     return (this.scriptCatalogItems || []).some(item => this.getScriptItemDirectory(item) === directory)
-//   }
-//
-//   const exactDirectory = directories.find(directory => aliasSet.has(directory.toLowerCase()))
-//
-//   if (exactDirectory && hasDirectScripts(exactDirectory)) {
-//     return exactDirectory
-//   }
-//
-//   const scriptDirectory = directories.find(directory => matchesPlatformRoot(directory) && hasDirectScripts(directory))
-//   if (scriptDirectory) return scriptDirectory
-//
-//   return exactDirectory || directories.find(matchesPlatformRoot) || ''
-// },
-
-
-
-getPreferredScriptDirectoryForCurrentConnection() {
-  const platform = this.resolvePreferredScriptDirectoryPlatform()
-  const platformAliases = {
-    mac: ['mac', 'macos', 'darwin', 'osx'],
-    win: ['win', 'windows', 'win32', 'nt'],
-    linux: ['linux', 'ubuntu', 'debian', 'centos', 'fedora', 'redhat', 'rhel', 'alpine', 'arch'],
-    ios: ['ios', 'iphone', 'ipad', 'iphoneos', 'ipados'],
-  }
-
-  const aliases = platformAliases[platform] || (platform ? [platform] : [])
-  const aliasSet = new Set(aliases.map(item => String(item || '').toLowerCase()))
-
-  if (!aliasSet.size) return ''
-
-  const directories = (this.scriptCatalogDirectories || [])
-    .map(item => this.normalizeScriptDirectoryPath(item?.path || ''))
-    .filter(Boolean)
-    .sort((a, b) => a.localeCompare(b))
-
-  const matchesPlatformRoot = (directory) => {
-    const root = String(directory || '').split('/').filter(Boolean)[0]?.toLowerCase() || ''
-    return aliasSet.has(root)
-  }
-
-  // 只选 platform 当前目录，不再找“第一个有脚本内容的目录”。
-  const exactDirectory = directories.find(directory => aliasSet.has(directory.toLowerCase()))
-  if (exactDirectory) return exactDirectory
-
-  return directories.find(matchesPlatformRoot) || ''
-},
-
 
     getParentScriptDirectory(directory) {
       const normalized = this.normalizeScriptDirectoryPath(directory)
@@ -2106,6 +1972,45 @@ getPreferredScriptDirectoryForCurrentConnection() {
 
   .script-library-overlay .el-dialog__body {
     padding: 10px 12px 12px !important;
+  }
+}
+</style>
+<style>
+@media (max-width: 640px) {
+  .script-library-overlay .el-dialog__body {
+    overflow-y: auto !important;
+    overscroll-behavior: contain;
+  }
+  .script-library-overlay .script-library-body {
+    height: auto !important;
+    flex: 1 1 auto !important;
+    overflow: visible !important;
+    min-width: 0;
+  }
+  .script-library-overlay .script-library-shell {
+    max-width: 100%;
+    /* Retain the original single-column grid and its width constraints. */
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 226px auto;
+    height: auto !important;
+    flex: 0 0 auto !important;
+    overflow: visible !important;
+    min-width: 0;
+  }
+  .script-library-overlay .script-library-tree {
+    height: 226px !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+    min-width: 0;
+  }
+  .script-library-overlay .script-library-directory {
+    max-width: 100%;
+    height: auto !important;
+    min-width: 0;
+    overflow: visible !important;
+  }
+  .script-library-overlay .script-library-directory .script-library-pane-scroll {
+    overflow: visible !important;
   }
 }
 </style>

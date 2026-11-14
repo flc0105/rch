@@ -334,3 +334,5 @@ Run API 要求 `script_name` 非空、`params` 为对象，并明确提供 `pres
 ### 终端列表的平台筛选
 
 `script list` 与 `script list --json` 使用同一份扫描与 Metadata，按连接设备的 `os_alias` 和脚本 `SCRIPT_METADATA.platforms` 过滤；未声明或声明为空时不显示，**不再根据目录名推断平台**。补全 `script exec <path>` 复用这份判断。`script exec` 及 Script Library UI 显式指定脚本时依旧能解析完整 Library 路径，不按列表结果限制；Script Library UI 的 Catalog/展示完全不参与这一过滤。
+
+Web Script Library 的目录导航不承担平台筛选职责。首次打开默认选中 `common` 目录（如存在），否则选中 `root`；关闭后重新打开同一设备时保留用户上次选择的目录，切换目标设备时回到默认目录。目录中的脚本平台适用性始终取决于各脚本的 `SCRIPT_METADATA.platforms`，与目录名无关。

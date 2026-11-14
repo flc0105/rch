@@ -22,6 +22,8 @@ class SubcommandSpec:
     visibility: str = 'public'
     options: tuple[str, ...] = ()
     argument_spec: ArgumentCommandSpec | None = None
+    aliases: tuple[str, ...] = ()
+    raw_tail: bool = False
 
 
 @dataclass(frozen=True)
@@ -38,17 +40,18 @@ class CommandSpec:
     structured: bool = False
     argument_spec: ArgumentCommandSpec | None = None
     raw_tail: bool = False
+    fallback_subcommand: str = ''
 
     def child(self, name):
-        return next((item for item in self.subcommands if item.name == name), None)
+        return next((item for item in self.subcommands if name == item.name or name in item.aliases), None)
 
 
-def command(name, description, handler=None, children=(), default='', dispatch_subcommand=False, group='server', expects_arguments=False, structured=False, argument_spec=None, raw_tail=False):
+def command(name, description, handler=None, children=(), default='', dispatch_subcommand=False, group='server', expects_arguments=False, structured=False, argument_spec=None, raw_tail=False, fallback_subcommand=''):
     return CommandSpec(name, description, handler or name,
                        tuple(item if isinstance(item, SubcommandSpec) else SubcommandSpec(*item)
                              for item in children),
                        default, dispatch_subcommand, True, group, expects_arguments, structured,
-                       argument_spec, raw_tail)
+                       argument_spec, raw_tail, fallback_subcommand)
 
 
 
@@ -67,10 +70,10 @@ def _arguments(name, *options, json=True, trailing_named_arguments=None):
 
 
 def _structured_child(command_name, action, description, usage, *options,
-                      json=True, trailing_named_arguments=None):
+                      json=True, trailing_named_arguments=None, aliases=()):
     return SubcommandSpec(action, description, usage, argument_spec=_arguments(
         f'{command_name} {action}', *options, json=json,
-        trailing_named_arguments=trailing_named_arguments))
+        trailing_named_arguments=trailing_named_arguments), aliases=tuple(aliases))
 
 SERVER_COMMAND_SPECS = (
     command('config', 'Show or update client runtime config', children=(
@@ -85,7 +88,8 @@ SERVER_COMMAND_SPECS = (
     ), default='list', dispatch_subcommand=True, group='runtime', structured=True),
     command('watchdog', 'Show watchdog runtime status', expects_arguments=True, group='runtime',
             structured=True, argument_spec=_arguments('watchdog')),
-    command('upload', 'Upload a local file to the Client', expects_arguments=True),
+    command('upload', 'Upload a local file to the Client', expects_arguments=True,
+            structured=True, raw_tail=True),
     command('script', 'List, inspect and run Server scripts', children=(
         _structured_child('script', 'list', 'List available scripts', 'script list [--json]'),
         _structured_child('script', 'view', 'Read script source on the Server',
@@ -126,15 +130,21 @@ SERVER_COMMAND_SPECS = (
         _structured_child('history', 'run', 'Replay a Quick command by index', 'history run <index>|--index INDEX',
                           _option('index', positional=0, required=True, value_type='int'), json=False),
     ), default='list', dispatch_subcommand=True, structured=True),
-    command('gopin', 'Jump to saved path', expects_arguments=True),
+    command('gopin', 'List or jump to a saved path', children=(
+        _structured_child('gopin', 'list', 'List saved paths', 'gopin [list] [--json]'),
+        SubcommandSpec('go', 'Jump to a saved path', 'gopin [go] <saved path name>', raw_tail=True),
+    ), default='list', fallback_subcommand='go', expects_arguments=True,
+            structured=True),
     command('rtt', 'Show current heartbeat RTT', structured=True, argument_spec=_arguments('rtt')),
     command('httpctl', 'Client HTTP control channel', children=(
-        ('kill', 'Terminate current Agent', 'httpctl kill'),
-        ('relaunch', 'Relaunch Agent', 'httpctl relaunch'),
-        ('clone', 'Clone Agent', 'httpctl clone'),
-        ('resume', 'Resume original paused Client', 'httpctl resume [--client-id CLIENT_ID]'),
-        ('help', 'Show HTTP control usage', 'httpctl help'),
-    ), default='help'),
+        _structured_child('httpctl', 'kill', 'Terminate current Agent', 'httpctl kill [--json]'),
+        _structured_child('httpctl', 'relaunch', 'Relaunch Agent', 'httpctl relaunch [--json]'),
+        _structured_child('httpctl', 'clone', 'Clone Agent', 'httpctl clone [--json]'),
+        _structured_child('httpctl', 'resume', 'Resume original paused Client',
+                          'httpctl resume [--client-id CLIENT_ID] [--json]', _option('client-id')),
+        _structured_child('httpctl', 'help', 'Show HTTP control usage', 'httpctl help [--json]',
+                          aliases=('-h', '--help')),
+    ), default='help', structured=True),
     command('saveout', 'Save Client command output as Artifact', expects_arguments=True,
             structured=True, raw_tail=True),
     command('notify', 'Run a Client command and notify when finished', expects_arguments=True,
@@ -146,7 +156,9 @@ SERVER_COMMAND_SPECS = (
         ('instance', 'Manage persistent daemon instances', 'xt instance create|list|start|stop|restart|status|logs ...'),
         ('help', 'Show external tool usage', 'xt help'),
     ), default='help'),
-    command('help', 'Show Server builtin commands and subcommands', handler='server_help'),
+    command('help', 'Show Server builtin commands and subcommands', handler='server_help',
+            structured=True, argument_spec=_arguments('help',
+                _option('target', positional=0), _option('subcommand', positional=1), json=False)),
 )
 
 
@@ -184,12 +196,15 @@ class ServerCommandRegistry:
             return spec, spec.default, ''
         match = re.match(r'^(\S+)(?:\s+(.*))?$', text, re.DOTALL)
         token, tail = match.group(1).lower(), match.group(2) or ''
-        if spec.child(token):
-            return spec, token, tail
+        child = spec.child(token)
+        if child is not None:
+            return spec, child.name, tail
         # Registered default leaves accept their own options without `list`.
         default_child = spec.child(spec.default) if spec.default else None
         if token.startswith('-') and default_child and default_child.argument_spec is not None:
             return spec, spec.default, text
+        if spec.fallback_subcommand:
+            return spec, spec.fallback_subcommand, text
         raise ValueError(f'Unsupported {spec.name} subcommand: {token}. Use: {self.usage(spec.name)}')
 
     def parse_invocation(self, name, raw_arg, *, literal_backslashes=False):
@@ -199,11 +214,11 @@ class ServerCommandRegistry:
 
     def parse_leaf(self, spec, subcommand, tail, *, literal_backslashes=False):
         """Use the already resolved leaf: no second command-name parse."""
-        if spec.raw_tail:
-            # The inner command owns every byte of the tail, including --json.
+        child = spec.child(subcommand)
+        if spec.raw_tail or (child is not None and child.raw_tail):
+            # A declared raw-tail leaf owns every byte of its payload.
             return BuiltinInvocation(spec.name, subcommand or spec.name,
                                      {'command': tail}, OutputFormat.TEXT)
-        child = spec.child(subcommand)
         schema = child.argument_spec if child is not None else spec.argument_spec
         if schema is None:
             raise ValueError(f'No structured argument schema for: {spec.name} {subcommand}')

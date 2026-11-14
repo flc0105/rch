@@ -849,31 +849,17 @@ export default {
         )
       }
 
+      // Every command can ask the Server completion registry. An unregistered
+      // command simply returns no candidates; only filesystem proxy rules are local.
       const commandName = String(commandMatch[1] || '').trim().toLowerCase()
-      const argumentText = String(commandMatch[2] || '')
-      const dynamicCommands = ['gopin', 'config', 'history', 'alias', 'httpctl', 'script', 'job', 'xt']
-
-      if (!dynamicCommands.includes(commandName)) {
-        return null
-      }
-
-      if (commandName === 'xt') {
-        return this.buildXtCommandCompletionQuery(rawText, argumentText)
-      }
-
-      if (commandName === 'job') {
-        return this.buildJobCommandCompletionQuery(rawText, argumentText)
-      }
-
-      if (commandName === 'config' || commandName === 'script') {
-        return this.buildNamedBuiltinCommandCompletionQuery(commandName, rawText, argumentText)
-      }
-
+      const tokenBoundary = rawText.search(/\s[^\s]*$/)
+      const context = /\s$/.test(rawText)
+        ? rawText : tokenBoundary < 0 ? `${commandName} ` : rawText.slice(0, tokenBoundary + 1)
       return {
         rawText,
         commandName,
-        requestInput: `${commandName} `,
-        cacheKey: this.buildCommandCompletionCandidateCacheKey(commandName, commandName),
+        requestInput: context,
+        cacheKey: this.buildCommandCompletionCandidateCacheKey(commandName, context),
         requiresRemoteClient: false,
       }
     },
@@ -932,63 +918,6 @@ export default {
         fileSystemProxyCommand: proxyCommand,
         fileSystemTargetCommand: commandPrefix,
         fileSystemCompletionMode: String(rule?.mode || 'path'),
-      }
-    },
-
-    buildNamedBuiltinCommandCompletionQuery(commandName, rawText, argumentText) {
-      const subcommand = String(argumentText || '').trim().split(/\s+/, 1)[0].toLowerCase()
-      const nameActions = commandName === 'config' ? ['set', 'reset'] : ['view', 'exec']
-      const action = nameActions.includes(subcommand) ? subcommand : 'root'
-      const namedOption = commandName === 'config' ? '--key' : '--name'
-      const named = action !== 'root' && new RegExp(`^${action}\\s+${namedOption}(?:\\s|$)`, 'i').test(String(argumentText || '').trimStart())
-      const contextKey = `${action}:${named ? 'named' : 'positional'}`
-      // Ask for the selected argument form, not only the root command; the
-      // Server supplies names with the matching --key/--name insertion prefix.
-      const requestInput = action === 'root' ? `${commandName} `
-        : `${commandName} ${action} ${named ? namedOption + ' ' : ''}`
-      return {
-        rawText,
-        commandName,
-        requestInput,
-        cacheKey: this.buildCommandCompletionCandidateCacheKey(commandName, contextKey),
-        requiresRemoteClient: commandName === 'config',
-      }
-    },
-
-    buildJobCommandCompletionQuery(rawText, argumentText) {
-      const subcommand = String(argumentText || '').trim().split(/\s+/, 1)[0].toLowerCase()
-      const action = ['start', 'stop', 'status', 'logs'].includes(subcommand) ? subcommand : 'root'
-      const named = action !== 'root' && new RegExp(`^${action}\\s+--name(?:\\s|$)`, 'i').test(String(argumentText || '').trimStart())
-      const contextKey = named ? `${action}:named` : action
-      const requestInput = action === 'root' ? 'job '
-        : `job ${action} ${named ? '--name ' : ''}`
-
-      return {
-        rawText,
-        commandName: 'job',
-        requestInput,
-        cacheKey: this.buildCommandCompletionCandidateCacheKey('job', contextKey),
-        requiresRemoteClient: false,
-      }
-    },
-
-    buildXtCommandCompletionQuery(rawText, argumentText) {
-      const parts = String(argumentText || '').trim().toLowerCase().split(/\s+/)
-      const group = ['exec', 'package', 'module', 'instance'].includes(parts[0]) ? parts[0] : ''
-      const action = group === 'exec' && ['info', 'which'].includes(parts[1]) ? parts[1]
-        : group === 'package' && ['install', 'uninstall'].includes(parts[1]) ? parts[1]
-        : group === 'module' && parts[1] === 'list' ? 'list'
-        : group === 'instance' && ['create', 'list', 'start', 'stop', 'restart', 'status', 'logs'].includes(parts[1]) ? parts[1]
-        : ''
-      const contextKey = [group || 'root', action].filter(Boolean).join(':')
-      const requestInput = group ? `xt ${group} ${action ? action + ' ' : ''}` : 'xt '
-
-      return {
-        rawText,
-        commandName: 'xt',
-        requestInput,
-        cacheKey: this.buildCommandCompletionCandidateCacheKey('xt', contextKey),
-        requiresRemoteClient: false,
       }
     },
 

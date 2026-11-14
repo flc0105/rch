@@ -85,7 +85,9 @@ def test_terminal_upload_uses_transfer_and_preserves_cancellation(tmp_path, monk
     artifact = SimpleNamespace(stage_local_file=lambda *a, **kw: (str(src), src.name), build_upload_temp_download_relative_url=lambda p: '/temp/file', cleanup_upload_temp_file=lambda p: None)
     transfer = SimpleNamespace(create_transfer=lambda **kw: created.append(kw) or {'transfer_id':'transfer'}, get_transfer=lambda tid: {'state':'running','stage':'transferring'}, wait_for_terminal=lambda tid: {'state':'cancelled'})
     service = UploadExecutionService(None, SimpleNamespace(get_connection=lambda target: session), artifact, transfer)
-    result = list(UploadBuiltinSupport(session, service, lambda: 'h').upload(str(src)))
+    from server.application.command.server_builtin_registry import SERVER_COMMAND_REGISTRY
+    result = list(UploadBuiltinSupport(session, service, lambda: 'h').upload(
+        SERVER_COMMAND_REGISTRY.parse_invocation('upload', str(src))))
     assert sent == [{'type':'transfer_start','transfer_id':'transfer','operation':'server_to_client_file','payload':{'relative_url':'/temp/file','filename':'sample.txt','save_dir':''}}]
     assert created[0]['metadata']['history_entry_id'] == 'h' and created[0]['metadata']['task_id'] == 't'
     assert result[-1][0] == 0 and result[-1][1]['event_type'] == CommandExecutionEvent.CANCELLED

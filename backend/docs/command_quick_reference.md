@@ -24,13 +24,13 @@
 
 | 命令 | 作用 | 使用提示 |
 |---|---|---|
-| `help` | 查看 Server Builtin 与当前 Client 的命令说明 | `help server`、`help client` 或 `help <builtin>` 缩小范围 |
+| `help` | 查看 Server Builtin 与当前 Client 的命令说明 | `help server`、`help client` 或 `help <builtin> [subcommand]` 缩小范围 |
 | `alias` | 查看、建立、删除适用于目标平台的快捷别名 | 默认列出当前生效的别名；定义保存在 Server 上 |
 | `script` | 列出、查看及执行 Server Script Library 中的脚本 | 脚本由 Server 提供，再交给目标 Client 按 Python 策略执行 |
 | `job` | 列出可用 Job，并启动、查询或停止目标 Client 的 Job | 启动响应确认 Job 已提交；最终结果查看 Job 状态 |
 | `config` | 查询、设置、重置选中 Client 的 Runtime Config | CLI 四字段查询；Web 保留完整编辑 Schema |
 | `history` | 查看当前设备的 Quick History，并按序号重放或清理 Recent | Activity Center 的完整活动记录使用独立的 History 入口 |
-| `gopin` | 查看或跳转到当前设备保存的远程路径 | 使用 Remote Files 保存的路径记录；需要关注当前目标设备 |
+| `gopin` | 查看或跳转到当前设备保存的远程路径 | `gopin` / `gopin list` 查看，`gopin list --json` 返回数据数组，`gopin <名称>` 跳转 |
 | `rtt` | 查看当前连接心跳的往返延迟 | 反映连接心跳 RTT，不等同于网络测速 |
 | `upload` | 将 Server 端可用的文件上传到目标 Client | 文件来源是 **Server 文件系统** |
 | `saveout` | 执行一个 Client 命令，并将其输出保存为 Artifact | 适合留存输出或下载结果，而不只是看终端文字 |
@@ -61,8 +61,8 @@
 | `xt exec list [--json]` | 列出当前 Client 已安装并公开的 Exec 命令 |
 | `xt exec info <name>` / `xt exec which <name>` | 查看 Exec 元信息 / 客户端安装路径 |
 | `xt exec <name> [--] <args...>` | 将原生命令行参数传给所选 Client 上已安装的 Exec |
-| `httpctl help` | 显示 HTTP 控制通道支持的操作 |
-| `httpctl kill` / `httpctl relaunch` / `httpctl clone` / `httpctl resume --client-id ID` | 终止、重新启动、克隆或通过 HTTP Control 唤醒指定原 Client 实例 |
+| `httpctl help` / `httpctl -h` / `httpctl --help` | 显示 HTTP 控制通道支持的操作 |
+| `httpctl kill` / `httpctl relaunch` / `httpctl clone` / `httpctl resume --client-id ID` | 将终止、重新启动、克隆或唤醒操作排入 HTTP Control 队列；可选 `--json` 返回操作状态与消息 |
 
 Alias 的模板参数、平台覆盖与安全边界见 [Aliases / Quick Actions](alias_quick_actions.md)；Script 的参数与授权见 [Scripts](scripts.md)；Job 运行状态见 [Background Jobs](background_jobs.md)；External Tool 见 [External Tools](external_tools.md)。
 
