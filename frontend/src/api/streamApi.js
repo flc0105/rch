@@ -15,8 +15,17 @@ export function openWebEventStream(tabId) {
   let socket = null
   let retry = null
   let stopped = false
-  let cursor = null
-  let epoch = ''
+  const resumeKey = `rch_command_stream_cursor:${tabId}`
+  let resume = null
+  try {
+    resume = JSON.parse(sessionStorage.getItem(resumeKey) || 'null')
+  } catch { /* Storage can be disabled; live events still work. */ }
+  let cursor = Number.isSafeInteger(resume?.cursor) && resume.cursor >= 0 ? resume.cursor : null
+  let epoch = typeof resume?.epoch === 'string' ? resume.epoch : ''
+  const saveCursor = () => {
+    if (cursor === null || !epoch) return
+    try { sessionStorage.setItem(resumeKey, JSON.stringify({ cursor, epoch })) } catch {}
+  }
   const stream = {
     onerror: null,
     readyState: WebSocket.CONNECTING,
@@ -57,13 +66,19 @@ export function openWebEventStream(tabId) {
         if (item.event === 'stream_cursor') {
           cursor = Number(item.cursor) || 0
           epoch = String(item.epoch || '')
+          saveCursor()
           return
         }
-        if (item.cursor != null) cursor = Number(item.cursor)
         if (item.event) dispatch(item.event, {
           data: JSON.stringify(item.data ?? {}),
           lastEventId: String(item.id || ''),
         })
+        // Persist after delivery so a reload resumes from the last handled
+        // command event, not from the moment the socket was opened.
+        if (item.cursor != null) {
+          cursor = Number(item.cursor)
+          saveCursor()
+        }
       } catch (error) {
         console.warn('Invalid WebSocket event', error)
       }

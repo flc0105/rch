@@ -248,7 +248,7 @@
     :title="resultTitle"
     fullscreen
     width="760px"
-    class="quick-actions-result-dialog"
+    class="quick-actions-result-dialog rch-result-detail-fullscreen"
     append-to-body
   >
     <div class="quick-action-result-meta">

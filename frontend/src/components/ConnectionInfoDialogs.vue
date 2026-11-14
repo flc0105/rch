@@ -414,7 +414,8 @@
     fullscreen
     width="760px"
     top="12vh"
-    class="fixed-dialog connection-info-value-dialog"
+    class="fixed-dialog connection-info-value-dialog rch-result-detail-fullscreen"
+    append-to-body
     modal-class="connection-info-value-overlay"
   >
     <div class="fixed-dialog-body connection-info-value-body">

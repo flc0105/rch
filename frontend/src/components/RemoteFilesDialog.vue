@@ -737,8 +737,8 @@
                   <div class="remote-mobile-file-row-name">
                     {{ row.is_parent_entry ? '..' : row.name }}
                   </div>
-                  <div class="remote-mobile-file-row-meta">
-                    {{ row.is_dir ? '-' : formatBytes(row.size) }} · {{ row.is_parent_entry ? 'Parent directory' : (row.modified_at || '-') }}
+                  <div v-if="row.is_parent_entry || row.modified_at || !row.is_dir" class="remote-mobile-file-row-meta">
+                    <template v-if="!row.is_dir">{{ formatBytes(row.size) }} · </template>{{ row.is_parent_entry ? 'Parent directory' : (row.modified_at || '-') }}
                   </div>
                 </div>
                 <div class="remote-mobile-file-row-actions" @click.stop>

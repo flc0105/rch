@@ -2,9 +2,11 @@
   <el-dialog
     :model-value="visible"
     :title="item ? `Run ${item.display_name || item.script_name}` : 'Run Script'"
+    fullscreen
     width="680px"
     top="10vh"
-    class="fixed-dialog script-run-dialog"
+    class="fixed-dialog script-run-dialog rch-result-detail-fullscreen"
+    append-to-body
     modal-class="script-run-overlay"
     @update:model-value="$emit('update:visible', $event)"
   >

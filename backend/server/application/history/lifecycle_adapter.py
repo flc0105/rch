@@ -43,6 +43,7 @@ class LifecycleAdapter:
         self._lock = threading.RLock()
         self._active = {}
         self._transfers = {}
+        self._transfer_progress = {}
         self._transfer_service = None
         self._close_scope = contextvars.ContextVar('rch_session_activity_close', default=None)
 
@@ -224,17 +225,33 @@ class LifecycleAdapter:
                 return False
             self.coordinator.dispatch(conn, activity_id, data=data)
             self._transfers[transfer_id] = (conn, activity_id)
+            self.coordinator.append_result_event(conn, activity_id, {
+                'type': 'result', 'id': transfer_id, 'event_type': 'started',
+            })
         self.transfer_updated(service.get_transfer(transfer_id) or transfer)
         return True
 
     def transfer_updated(self, transfer):
         state = str(transfer.get('state') or '')
         status = self._TRANSFER_TERMINAL.get(state)
-        if not status:
-            return
         transfer_id = str(transfer.get('transfer_id') or '')
         with self._lock:
             if transfer_id not in self._transfers:
+                return
+            if not status:
+                # Progress is a Result event, not a new transfer wire protocol.
+                # Store changes in 10% steps to avoid overwhelming Activity.
+                total = transfer.get('total_bytes')
+                done = transfer.get('transferred_bytes')
+                if isinstance(total, int) and total > 0 and isinstance(done, int):
+                    milestone = min(10, max(0, done * 10 // total))
+                    if milestone > self._transfer_progress.get(transfer_id, 0):
+                        self._transfer_progress[transfer_id] = milestone
+                        conn, entry_id = self._transfers[transfer_id]
+                        self.coordinator.append_result_event(conn, entry_id, {
+                            'type': 'result', 'id': transfer_id, 'event_type': 'progress',
+                            'data': {'transferred_bytes': done, 'total_bytes': total},
+                        })
                 return
             name = str(transfer.get('filename') or 'file')
             count = int((transfer.get('metadata') or {}).get('source_count') or 1)
@@ -249,6 +266,12 @@ class LifecycleAdapter:
 
     def _finish_transfer(self, transfer_id, status, message, transfer=None):
         conn, entry_id = self._transfers.pop(transfer_id)
+        self._transfer_progress.pop(transfer_id, None)
+        event = {'type': 'result', 'id': transfer_id, 'event_type': 'completed',
+                 'status': status, 'message': message}
+        if transfer is not None and transfer.get('artifact_id'):
+            event['references'] = [{'type': 'artifact', 'id': str(transfer['artifact_id'])}]
+        self.coordinator.append_result_event(conn, entry_id, event)
         self.coordinator.append_output(conn, entry_id, int(status == 'success'), message)
         if transfer is not None:
             artifact_id = str(transfer.get('artifact_id') or '')

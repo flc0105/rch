@@ -2,9 +2,11 @@
   <el-dialog
     v-model="visible"
     :title="title"
+    fullscreen
+    append-to-body
     width="980px"
     top="8vh"
-    class="fixed-dialog terminal-json-dialog"
+    class="fixed-dialog terminal-json-dialog rch-result-detail-fullscreen"
   >
     <div class="terminal-json-wrap">
       <div class="terminal-json-toolbar">

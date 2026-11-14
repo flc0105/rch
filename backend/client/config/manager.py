@@ -57,8 +57,15 @@ class ConfigurationManager:
                     change, messages = self.reset(payload.get('key'), scope._checkpoint)
             else:
                 return 0, 'Unsupported configuration Control action'
-            for message in messages:
-                scope._send_interim_result(1, message)
+            # Warnings remain visible interim messages; successfully applied
+            # callbacks describe their effect in the final result only.
+            from core.utils.output_marker import warning
+            effect_notes = []
+            for effect in messages:
+                if str(effect).startswith(warning('')):
+                    scope._send_interim_result(1, effect)
+                else:
+                    effect_notes.append(str(effect))
             if change is None:
                 message = 'All runtime config overrides reset to defaults.'
             elif action == ConfigurationAction.SET:
@@ -66,6 +73,8 @@ class ConfigurationManager:
                            f'→ {value_text(change.new_value)}')
             else:
                 message = f'{change.key} reset to default: {value_text(change.new_value)}'
+            if effect_notes:
+                message += '\n' + ' '.join(dict.fromkeys(effect_notes))
             return 1, build_configuration_result(action, message=message)
         except (CommandCancelledError, CommandTimeoutError):
             raise

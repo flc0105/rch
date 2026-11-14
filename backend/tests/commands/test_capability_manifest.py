@@ -223,7 +223,7 @@ def test_set_watchdog_modes_hot_start_and_stop_without_changing_capability(monke
     monkeypatch.setattr(runtime_config, 'REMOTE_CONTROL_WATCHDOG_ENABLED', True)
     result = manager.effects('REMOTE_CONTROL_WATCHDOG_ENABLED', True, launch_check=lambda: False)
     assert guard.calls == ['stop', 'start']
-    assert result and 'Applied' in ''.join(result)
+    assert result and 'Watchdog worker restarted.' in ''.join(result)
     monkeypatch.setattr(runtime_config, 'PROCESS_RECOVERY_WATCHDOG_ENABLED', True)
     manager.effects('PROCESS_RECOVERY_WATCHDOG_ENABLED', True, launch_check=lambda: False)
     assert process.calls == ['start']

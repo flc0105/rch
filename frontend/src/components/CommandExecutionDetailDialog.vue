@@ -3,9 +3,10 @@
     :model-value="visible"
     :title="detailTitle"
     fullscreen
+    append-to-body
     width="1000px"
     top="5vh"
-    class="fixed-dialog command-execution-detail-dialog"
+    class="fixed-dialog command-execution-detail-dialog rch-result-detail-fullscreen"
     @update:model-value="$emit('update:visible', $event)"
   >
     <div
@@ -206,7 +207,7 @@
     </div>
   </el-dialog>
   <el-dialog v-model="fullValueVisible" :title="fullValueTitle" fullscreen
-             append-to-body class="fixed-dialog activity-full-value-dialog">
+             append-to-body class="fixed-dialog activity-full-value-dialog rch-result-detail-fullscreen">
     <div class="activity-full-value-body">
       <pre class="activity-full-value-text">{{ fullValueText }}</pre>
     </div>

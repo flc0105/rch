@@ -58,12 +58,15 @@ class RuntimeConfigEffects:
                     logger.warning('Process Recovery Watchdog runtime update failed: %s', exc)
                     effects.append(warning(f'Saved: Process Recovery Watchdog could not start/stop: {exc}'))
                 else:
+                    effects.append('Process Recovery Watchdog ' + ('started.' if value and not launchd_managed else 'stopped.'))
                     if launchd_managed:
                         effects.append(warning('Saved: launchd manages this Client; Process Recovery Watchdog remains disabled'))
                     # Remote Control Watchdog / Local Heartbeat Watchdog workers inherit the supervisor environment at launch.
                     if (runtime_config.REMOTE_CONTROL_WATCHDOG_ENABLED
                             or runtime_config.LOCAL_HEARTBEAT_WATCHDOG_ENABLED):
-                        if not self._restart_watchdog_manager():
+                        if self._restart_watchdog_manager():
+                            effects.append('Watchdog worker restarted.')
+                        else:
                             effects.append(warning('Saved: Remote Control Watchdog / Local Heartbeat Watchdog worker could not restart'))
                 self.checkpoint()
 
@@ -71,6 +74,7 @@ class RuntimeConfigEffects:
             if not watchdog_supported:
                 effects.append(warning('Saved: watchdog is unavailable on this Client; restart with watchdog support to apply'))
             elif self._restart_watchdog_manager():
+                effects.append('Watchdog worker restarted.')
                 if launchd_managed:
                     effects.append(warning('Saved: launchd manages this Client; Client watchdogs remain disabled'))
             else:

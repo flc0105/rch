@@ -240,3 +240,5 @@ config reset-all
 ---
 
 **快速记忆**：`config` 是命令入口，**Info → Configuration** 是可视化入口；`default / override` 是配置来源；三个常用策略分别解决**文件怎么传、Python 怎么运行、屏幕画面怎么编码**。
+配置写入或重置若触发已登记的运行时 effect callback，成功执行的启停/重启说明追加到最终 `completed.message`；异常或需要后续操作的警告仍单独显示。没有副作用的配置保持原始简洁提示，CLI/Web 均复用这份完成消息。
+

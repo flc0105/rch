@@ -3,9 +3,10 @@
     :model-value="visible"
     title="Message"
     fullscreen
+    append-to-body
     width="760px"
     top="8vh"
-    class="fixed-dialog background-job-message-dialog"
+    class="fixed-dialog background-job-message-dialog rch-result-detail-fullscreen"
     @update:model-value="$emit('update:visible', $event)"
   >
     <div class="fixed-dialog-body">

@@ -279,6 +279,7 @@
     :title="activeRun.displayName || 'Script Result'"
     fullscreen
     width="760px"
+    class="rch-result-detail-fullscreen"
     append-to-body
   >
     <div class="script-result-meta">
