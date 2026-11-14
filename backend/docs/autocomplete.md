@@ -50,7 +50,7 @@ Server/Client 的 Provider 负责候选生成，浏览器负责缓存、过滤�
 
 部分补全读取的并不是目标设备的文件系统，而是 Server 当前管理的数据。例如，保存过的远程路径 Quick Jump 名称由当前机器的 Pinned Paths 提供；Alias 管理入口会补全管理动作，但具体 Alias **名称**作为顶层候选由 AliasManager 的有效定义提供，管理动作 Provider 本身不会逐个读取 `aliases.json` 生成名称候选。
 
-Script 的执行候选来自 Server 脚本目录，**只根据 Script Metadata `platforms` 声明**筛选当前设备；没有该声明的脚本不参与 CLI 列表与补全，路径名不作为平台依据。候选在 Server 过滤后直接提供给 Terminal，前端不再根据目录名过滤。此规则不限制显式执行。External Tool 的候选由 Server 的 Exec Catalog 按目标平台和架构筛选，除入口操作外，也可以补充符合目标设备条件的 Exec 名称。运行时配置 `set` 的参数候选则必须询问目标 Client，展示真实配置键、当前值、默认值和是否覆盖的信息。
+Script 的执行候选来自 Server 脚本目录，**只根据 Script Metadata `platforms` 声明**筛选当前设备；没有该声明的脚本不参与 CLI 列表与补全，路径名不作为平台依据。候选在 Server 过滤后直接提供给 Terminal，前端不再根据目录名过滤。此规则不限制显式执行。External Tool 的候选由 Server 的 Exec Catalog 按目标平台和架构筛选，除入口操作外，也可以补充符合目标设备条件的 Exec 名称。运行时配置 `config set/reset` 的参数候选从目标 Client 的 Configuration GET 查询真实配置键。支持位置参数及 `--key` 两种补全写法。`script view/exec` 同样支持名称位置参数和 `--name` 补全。
 
 `job start <name>` 使用符合当前平台的 Job Catalog；`job stop <name>`、`job status <name>` 使用当前设备活跃 Job 实例的 `job_key`；`job logs <name>` 使用当前设备已持久化 Job 历史中的名称，均通过 Web 与 RCH CLI 共用的 Server Completion Provider。
 

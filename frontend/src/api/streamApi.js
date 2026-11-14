@@ -15,6 +15,8 @@ export function openWebEventStream(tabId) {
   let socket = null
   let retry = null
   let stopped = false
+  let cursor = null
+  let epoch = ''
   const stream = {
     onerror: null,
     readyState: WebSocket.CONNECTING,
@@ -35,7 +37,9 @@ export function openWebEventStream(tabId) {
   }
   function connect() {
     if (stopped) return
-    const url = webSocketUrl(`/ws/events?tab_id=${encodeURIComponent(tabId)}`)
+    const resume = cursor !== null
+      ? `&after=${encodeURIComponent(cursor)}&epoch=${encodeURIComponent(epoch)}` : ''
+    const url = webSocketUrl(`/ws/events?tab_id=${encodeURIComponent(tabId)}${resume}`)
     stream.readyState = WebSocket.CONNECTING
     const ws = new WebSocket(url)
     socket = ws
@@ -48,6 +52,14 @@ export function openWebEventStream(tabId) {
       if (stopped || ws !== socket) return
       try {
         const item = JSON.parse(message.data || '{}')
+        // The cursor follows delivery, not the socket open; failed WS sessions
+        // can replay command output without a second HTTP transport.
+        if (item.event === 'stream_cursor') {
+          cursor = Number(item.cursor) || 0
+          epoch = String(item.epoch || '')
+          return
+        }
+        if (item.cursor != null) cursor = Number(item.cursor)
         if (item.event) dispatch(item.event, {
           data: JSON.stringify(item.data ?? {}),
           lastEventId: String(item.id || ''),

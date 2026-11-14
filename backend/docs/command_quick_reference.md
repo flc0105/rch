@@ -262,3 +262,17 @@ ACMD 的参数解析规则、输出与交互风险见 [ACMD](acmd.md)；进程�
 **命令是否成功取决于目标 Client 的真实状态。** RCH 可能先由 Server 处理输入，再经网络转发；有些 Client 命令执行后会改变工作目录、进程或磁盘文件；Shell 回退不能提供 RCH 专用命令的所有确认与结构化参数保障。遇到命令异常时，先确认目标设备、执行类别（Server / Client / ACMD / Shell）、平台和权限，再核对该入口自己的帮助。
 
 进一步阅读：[Command Registry](command_registry.md) · [Command Execution](command_execution.md) · [Shell-like Commands](shell_like_commands.md) · [ACMD](acmd.md) · [Autocomplete](autocomplete.md)。
+
+### Quick History and runtime status
+
+- `history` / `history list` — show recent and pinned commands.
+- `history list --pinned` / `history -p` — show pinned commands only.
+- `history clear` — clear only recent commands, keeping pinned commands.
+- `history run INDEX` / `history run --index INDEX` / `!INDEX` — replay the indexed command.
+- `watchdog` / `watchdog --json` — show Watchdog status.
+- `rtt` / `rtt --json` — show connection RTT.
+- `notify <client-command>` / `saveout <client-command>` — forward the original client command text unmodified.
+
+`config set` and `config reset` offer configuration-key completion from the selected Client.
+`job start` suggests non-running catalog Jobs; `job stop/status/logs` suggest active Jobs.
+`script view/exec` suggest Server script names.

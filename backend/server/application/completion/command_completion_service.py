@@ -3,6 +3,7 @@ from core.command_completion.registry import CommandCompletionRegistry
 from server.application.completion.command_completion_providers import (
     ScriptCommandCompletionProvider,
     JobCommandCompletionProvider,
+    ConfigCommandCompletionProvider,
     RegisteredServerSubcommandCompletionProvider,
     ExternalToolCommandCompletionProvider,
     GopinCommandCompletionProvider,
@@ -32,6 +33,9 @@ class ServerCommandCompletionService:
                 command_history=server.command_history,
             ),
             RegisteredServerSubcommandCompletionProvider(),
+            ConfigCommandCompletionProvider(
+                server=server, remote_execution_service=remote_execution_service,
+            ),
             JobCommandCompletionProvider(
                 server=server, job_catalog_service=job_catalog_service,
                 background_job_service=background_job_service,

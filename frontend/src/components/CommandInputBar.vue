@@ -851,7 +851,7 @@ export default {
 
       const commandName = String(commandMatch[1] || '').trim().toLowerCase()
       const argumentText = String(commandMatch[2] || '')
-      const dynamicCommands = ['gopin', 'set', 'history', 'alias', 'httpctl', 'script', 'job', 'xt']
+      const dynamicCommands = ['gopin', 'config', 'history', 'alias', 'httpctl', 'script', 'job', 'xt']
 
       if (!dynamicCommands.includes(commandName)) {
         return null
@@ -865,12 +865,16 @@ export default {
         return this.buildJobCommandCompletionQuery(rawText, argumentText)
       }
 
+      if (commandName === 'config' || commandName === 'script') {
+        return this.buildNamedBuiltinCommandCompletionQuery(commandName, rawText, argumentText)
+      }
+
       return {
         rawText,
         commandName,
         requestInput: `${commandName} `,
         cacheKey: this.buildCommandCompletionCandidateCacheKey(commandName, commandName),
-        requiresRemoteClient: commandName === 'set',
+        requiresRemoteClient: false,
       }
     },
 
@@ -931,10 +935,33 @@ export default {
       }
     },
 
+    buildNamedBuiltinCommandCompletionQuery(commandName, rawText, argumentText) {
+      const subcommand = String(argumentText || '').trim().split(/\s+/, 1)[0].toLowerCase()
+      const nameActions = commandName === 'config' ? ['set', 'reset'] : ['view', 'exec']
+      const action = nameActions.includes(subcommand) ? subcommand : 'root'
+      const namedOption = commandName === 'config' ? '--key' : '--name'
+      const named = action !== 'root' && new RegExp(`^${action}\\s+${namedOption}(?:\\s|$)`, 'i').test(String(argumentText || '').trimStart())
+      const contextKey = `${action}:${named ? 'named' : 'positional'}`
+      // Ask for the selected argument form, not only the root command; the
+      // Server supplies names with the matching --key/--name insertion prefix.
+      const requestInput = action === 'root' ? `${commandName} `
+        : `${commandName} ${action} ${named ? namedOption + ' ' : ''}`
+      return {
+        rawText,
+        commandName,
+        requestInput,
+        cacheKey: this.buildCommandCompletionCandidateCacheKey(commandName, contextKey),
+        requiresRemoteClient: commandName === 'config',
+      }
+    },
+
     buildJobCommandCompletionQuery(rawText, argumentText) {
       const subcommand = String(argumentText || '').trim().split(/\s+/, 1)[0].toLowerCase()
-      const contextKey = ['start', 'stop', 'status', 'logs'].includes(subcommand) ? subcommand : 'root'
-      const requestInput = contextKey === 'root' ? 'job ' : `job ${contextKey} `
+      const action = ['start', 'stop', 'status', 'logs'].includes(subcommand) ? subcommand : 'root'
+      const named = action !== 'root' && new RegExp(`^${action}\\s+--name(?:\\s|$)`, 'i').test(String(argumentText || '').trimStart())
+      const contextKey = named ? `${action}:named` : action
+      const requestInput = action === 'root' ? 'job '
+        : `job ${action} ${named ? '--name ' : ''}`
 
       return {
         rawText,

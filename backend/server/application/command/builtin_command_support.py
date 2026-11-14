@@ -5,8 +5,8 @@ import re
 
 from core.utils.command_output import (
     StructuredCommandResult,
-    parse_output_format,
-    render_structured_result, strip_output_format_arg,
+    render_structured_result,
+    strip_output_format_arg,
 )
 from core.utils.formatting import format_dict
 from core.utils.script_metadata import read_script_metadata_from_file
@@ -110,27 +110,28 @@ class ScriptBuiltinSupport:
         """Use the Server's parsed invocation; business code never reparses CLI text."""
         subcommand = invocation.action
         args = invocation.arguments
+        from core.protocol.result_envelope import ResultEnvelope
+        from core.utils.command_output import ResultDisplay, ResultDataShape, render_result_payload
         if subcommand == 'list':
-            if invocation.output_format == 'json':
-                rows = []
-                for item in self.list_script_catalog():
-                    parameters = (item['metadata'] or {}).get('params') or []
-                    if isinstance(parameters, dict):
-                        param_names = list(parameters.keys())
-                    elif isinstance(parameters, list):
-                        param_names = [p.get('name', '') for p in parameters if isinstance(p, dict)]
-                    else:
-                        param_names = []
-                    rows.append({'name': item['path'], 'display_name': item['display_name'],
-                                 'description': item['description'], 'params': param_names})
-                yield render_structured_result(
-                    StructuredCommandResult(status=1, data=rows, shape='table'), output_format='json')
-                return
-            yield 1, '\n'.join(self.list_scripts())
+            rows = []
+            for item in self.list_script_catalog():
+                parameters = (item['metadata'] or {}).get('params') or []
+                if isinstance(parameters, dict):
+                    param_names = list(parameters.keys())
+                elif isinstance(parameters, list):
+                    param_names = [p.get('name', '') for p in parameters if isinstance(p, dict)]
+                else:
+                    param_names = []
+                rows.append({'name': item['path'], 'display_name': item['display_name'],
+                             'description': item['description'], 'params': param_names})
+            envelope = ResultEnvelope(data=rows, display=ResultDisplay.DATA,
+                                      shape=ResultDataShape.TABLE).as_payload()
+            yield 1, render_result_payload(envelope, invocation.output_format)
             return
         if subcommand == 'view':
             with open(self._resolve_script_path(args['name']), 'rt', encoding='utf-8') as source:
-                yield 1, source.read()
+                envelope = ResultEnvelope(message=source.read()).as_payload()
+            yield 1, render_result_payload(envelope, invocation.output_format)
             return
         if subcommand == 'exec':
             yield from self.execute_script_file(args)
@@ -183,26 +184,6 @@ class ScriptBuiltinSupport:
         executor = self.plan_executor_factory()
         for item in executor(self.plan_builder.build_script_plan(payload))():
             yield item
-
-
-import re
-
-from core.utils.command_output import (
-    StructuredCommandResult,
-    parse_output_format,
-    render_structured_result,
-    strip_output_format_arg,
-)
-
-
-import re
-
-from core.utils.command_output import (
-    StructuredCommandResult,
-    parse_output_format,
-    render_structured_result,
-    strip_output_format_arg,
-)
 
 
 class AliasBuiltinSupport:
@@ -441,9 +422,6 @@ class HistoryBuiltinSupport:
     history 相关内建命令支持。
     """
 
-    HISTORY_RUN_PATTERN = re.compile(r'^run\s+(\d+)$', re.IGNORECASE)
-    HISTORY_SHORTCUT_PATTERN = re.compile(r'^!(\d+)$')
-
     def __init__(self, command_history, conn, history_entry_id_provider, command_processor_factory):
         self.command_history = command_history
         self.conn = conn
@@ -497,46 +475,61 @@ class HistoryBuiltinSupport:
         resolved_command = self._resolve_history_command_by_index(history_index)
         # Keep the outer invocation (`history run N` or `!N`); the nested
         # execution plan supplies the actual resolved Client command.
-        yield 1, f'sending command: {resolved_command}'
+        from core.protocol.result_envelope import ResultEnvelope
+        from core.utils.command_output import render_result_payload
+        yield 1, render_result_payload(ResultEnvelope(
+            message=f'sending command: {resolved_command}').as_payload())
 
         command_processor = self.command_processor_factory()
         executor = command_processor(resolved_command)
         for item in executor():
             yield item
 
-    def history(self, arg):
-        arg_text = (arg or '').strip()
+    def history(self, invocation):
+        """History forms are fully parsed by the registry; !N is rewritten upstream."""
+        from core.protocol.result_envelope import ResultEnvelope
+        from core.utils.command_output import ResultDisplay, ResultDataShape, render_result_payload
 
-        if arg_text in ('', 'list'):
+        action = invocation.action
+        args = invocation.arguments
+        output_format = invocation.output_format
+        if action == 'list':
             entries = self._get_resolvable_quick_history()
-            if not entries:
-                yield 1, 'No command history available\n\nTip: use history run <index> or !<index> to run a history item quickly'
-                return
-
-            lines = []
-            for item in entries:
-                lines.append(
-                    f'{item.get("index", 0):>3}  '
-                    f'{item.get("command", "")}'
-                )
-
-            yield 1, '\n'.join(lines)
-            yield 1, '\nTip: use history run <index> or !<index> to run a history item quickly'
+            if args['pinned']:
+                entries = [entry for entry in entries if entry.get('is_pinned')]
+            rows = [{'index': int(entry['index']), 'command': entry.get('command', ''),
+                     'pinned': bool(entry.get('is_pinned'))} for entry in entries]
+            if output_format == 'text':
+                # Preserve the original compact Quick History presentation. A
+                # wide command string must never be forced into a table column.
+                lines = [f'{item["index"]:>3}  {item["command"]}' for item in rows]
+                if not lines:
+                    lines.append('No command history available')
+                lines.extend(['', 'Tip: use history run <index> or !<index> to run a history item quickly'])
+                envelope = ResultEnvelope(message='\n'.join(lines)).as_payload()
+            else:
+                envelope = ResultEnvelope(
+                    message=('No command history available' if not rows else ''),
+                    data=rows, display=ResultDisplay.DATA, shape=ResultDataShape.TABLE).as_payload()
+            yield 1, render_result_payload(envelope, output_format)
             return
 
-        if arg_text == 'clear':
+        if action == 'clear':
+            # Quick Recent is cleared; the independent Pinned store is untouched.
             self.command_history.clear_history_for_connection(self.conn)
-            yield 1, 'Command history cleared'
+            envelope = ResultEnvelope(message='Command history cleared').as_payload()
+            yield 1, render_result_payload(envelope, output_format)
             return
 
-        matched = self.HISTORY_RUN_PATTERN.fullmatch(arg_text)
-        if matched:
-            history_index = int(matched.group(1))
+        if action == 'run':
+            history_index = args['index']
+            if history_index <= 0:
+                raise ValueError('History index must be positive')
+            # The nested Client command can stream; preserve its own result chunks.
             for item in self._run_history_item(history_index):
                 yield item
             return
-
-        raise ValueError('Unsupported history command. Use: history | history run <index> | history clear')
+        raise ValueError(f'Unsupported history command: {action}')
 
 
 class RttBuiltinSupport:
@@ -547,7 +540,7 @@ class RttBuiltinSupport:
     def __init__(self, conn):
         self.conn = conn
 
-    def rtt(self, arg=''):
+    def rtt(self, invocation):
         payload = {
             'connection_state': self.conn.context.connected_at and (
                 'offline' if self.conn.context.disconnected_at else 'online'
@@ -560,15 +553,8 @@ class RttBuiltinSupport:
             'last_heartbeat_id': self.conn.context.last_heartbeat_id if self.conn.context.last_heartbeat_id is not None else '',
         }
 
-        output_format = parse_output_format(arg)
-        arg = strip_output_format_arg(arg)
-
-        yield render_structured_result(
-            StructuredCommandResult(
-                status=1,
-                data=payload,
-                shape='dict',
-                width=24,
-            ),
-            output_format=output_format,
-        )
+        from core.protocol.result_envelope import ResultEnvelope
+        from core.utils.command_output import ResultDisplay, ResultDataShape, render_result_payload
+        envelope = ResultEnvelope(data=payload, display=ResultDisplay.DATA,
+                                  shape=ResultDataShape.FLAT).as_payload()
+        yield 1, render_result_payload({**envelope, 'width': 24}, invocation.output_format)

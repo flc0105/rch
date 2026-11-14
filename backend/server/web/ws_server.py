@@ -303,9 +303,10 @@ def create_ws_handler(server_instance, flask_app):
             guard = WebAuthGuard(client_session_token_service=getattr(server_instance.web_service, 'client_session_token_service', None))
             return guard.has_valid_static_token() or guard.has_valid_session()
 
-    async def stream_events(connection, tab_id):
+    async def stream_events(connection, tab_id, replay_after=None, replay_epoch=''):
         bus = server_instance.web_service.event_bus
-        q = bus.subscribe_async(tab_id=tab_id)
+        q = bus.subscribe_async(tab_id=tab_id, replay_after=replay_after,
+                                replay_epoch=replay_epoch, with_cursor=True)
         try:
             while True:
                 try:
@@ -380,7 +381,16 @@ def create_ws_handler(server_instance, flask_app):
                 await connection.close(code=4403)
                 return
             params = parse_qs(urlsplit(connection.request.path).query)
-            await stream_events(connection, params.get('tab_id', [''])[-1])
+            last_cursor = params.get('after', [''])[-1]
+            try:
+                replay_after = int(last_cursor) if last_cursor else None
+                if replay_after is not None and replay_after < 0:
+                    replay_after = None
+            except (TypeError, ValueError):
+                replay_after = None
+            await stream_events(connection, params.get('tab_id', [''])[-1],
+                                replay_after=replay_after,
+                                replay_epoch=params.get('epoch', [''])[-1])
         elif path == '/ws/notifications':
             if not authorized(connection):
                 await connection.close(code=4403)

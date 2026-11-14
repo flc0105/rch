@@ -5,6 +5,7 @@
     :close-on-click-modal="false"
     :close-on-press-escape="false"
     :show-close="false"
+    :class="{ 'interaction-preview-dialog': current?.kind === 'preview' }"
     :width="current?.kind === 'preview' ? 'min(820px, 96vw)' : 'min(520px, 94vw)'"
     append-to-body
   >

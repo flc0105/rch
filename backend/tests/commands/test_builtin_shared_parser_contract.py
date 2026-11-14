@@ -120,7 +120,7 @@ def test_other_server_builtins_are_not_reinterpreted():
     ]:
         spec, sub, tail = SERVER_COMMAND_REGISTRY.parse(root, raw)
         assert (sub, tail) == (expected_sub, expected_tail)
-        if root != 'script':
+        if root in ('alias', 'xt'):
             assert not spec.structured
 
 
@@ -231,8 +231,9 @@ def test_result_envelope_has_one_source_but_two_presentation_formats():
 
 def test_every_structured_builtin_leaf_owns_its_argument_schema():
     for spec in SERVER_COMMAND_REGISTRY._commands.values():
-        if spec.structured:
-            assert spec.subcommands
+        if spec.structured and spec.subcommands:
             assert all(child.argument_spec is not None for child in spec.subcommands)
+        elif spec.structured:
+            assert spec.argument_spec is not None or spec.raw_tail
         else:
             assert all(child.argument_spec is None for child in spec.subcommands)

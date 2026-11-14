@@ -122,7 +122,7 @@ The CLI calls `GET /api/connections` to locate online instances. For selected co
 
 If the event socket disconnects, it automatically reconnects and uses the existing `GET /api/connections/<client_id>/task` and exact `GET /api/machines/<machine_id>/command-history/full/<history_entry_id>` APIs to reconcile completed tasks. While a stream is interrupted, the CLI suppresses later partial chunks and restores the remaining saved output from that exact History entry to avoid duplicate segments. History limits output to **64 KiB / 256 records per execution**. A command for which no execution history is stored cannot have dropped output reliably replayed without new Server support; the CLI does not guess the result from an unrelated entry.
 
-`/ws/events` currently has no positive subscription ACK and does not replay missed events. The CLI allows its subscription to initialize before submitting and reconciles state after quiet periods/reconnections. If the output cannot be recovered, the running command can be interrupted with Ctrl+C. WS reconnection is event-driven; the CLI does not repeatedly query history when it is not executing a command.
+`/ws/events` now provides a stream cursor and short-lived, bounded replay for tab-scoped command events on reconnect. The CLI still initializes its subscription before submitting and reconciles state after quiet periods/reconnections. If the output cannot be recovered, the running command can be interrupted with Ctrl+C. WS reconnection is event-driven; the CLI does not repeatedly query history when it is not executing a command.
 
 ## Local verification
 

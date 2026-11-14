@@ -1,6 +1,8 @@
 import asyncio
+from collections import OrderedDict, deque
 import queue
 import threading
+import time
 import uuid
 from typing import Dict, List
 
@@ -26,6 +28,13 @@ class WebEventBus:
         self._subscribers: List[dict] = []
         self._lock = threading.RLock()
         self._notification_recorder = None
+        # Bounded per-tab replay for short WS outages. Only terminal task events
+        # belong here; notification/history/PTY streams have separate semantics.
+        self._command_sequence = 0
+        self._replay_epoch = uuid.uuid4().hex
+        self._command_events = OrderedDict()
+        self._command_replay_types = frozenset({
+            'command_result', 'command_result_batch', 'command_complete'})
 
     def set_notification_recorder(self, recorder):
         self._notification_recorder = recorder
@@ -51,14 +60,30 @@ class WebEventBus:
             self._subscribers.append(subscriber)
         return q
 
-    def subscribe_async(self, tab_id='', event_types=None, max_pending=512):
-        """Register an asyncio consumer without a dedicated waiting worker thread."""
+    def subscribe_async(self, tab_id='', event_types=None, max_pending=512, *,
+                        replay_after=None, replay_epoch='', with_cursor=False):
+        """Register an asyncio consumer; optionally resume tab command events."""
         loop = asyncio.get_running_loop()
         q = asyncio.Queue(maxsize=max_pending)
         filtered = {str(value).strip() for value in event_types} if event_types else None
+        tab = str(tab_id or '').strip()
         with self._lock:
+            if replay_after is not None and tab and replay_epoch == self._replay_epoch:
+                for seq, timestamp, event, _size in self._command_events.get(tab, ()):
+                    if seq > replay_after and time.monotonic() - timestamp <= 90:
+                        if q.full():
+                            # Do not deliver a misleading partial replay.
+                            while not q.empty():
+                                q.get_nowait()
+                            q.put_nowait(None)
+                            break
+                        q.put_nowait(event)
+            if with_cursor:
+                if not q.full():
+                    q.put_nowait({'event': 'stream_cursor', 'data': {},
+                                  'cursor': self._command_sequence, 'epoch': self._replay_epoch})
             self._subscribers.append({
-                'queue': q, 'loop': loop, 'tab_id': str(tab_id or '').strip(),
+                'queue': q, 'loop': loop, 'tab_id': tab,
                 'event_types': filtered, 'overflowed': False,
             })
         return q
@@ -84,32 +109,49 @@ class WebEventBus:
 
     def publish(self, event_type: str, data: Dict, target_tab_id: str = ''):
         event_id = uuid.uuid4().hex
-        event_item = {
-            'id': event_id,
-            'event': event_type,
-            'data': data,
-        }
+        event_item = {'id': event_id, 'event': event_type, 'data': data}
 
         notification = self._record_notification(
-            event_type=event_type,
-            data=data,
-            event_id=event_id,
+            event_type=event_type, data=data, event_id=event_id,
             target_tab_id=target_tab_id,
         )
 
-        self._deliver(event_item, target_tab_id=target_tab_id)
+        # Registration, retention and delivery must be atomic: otherwise a
+        # reconnect between storing and broadcasting could receive a duplicate.
+        with self._lock:
+            if target_tab_id and event_type in self._command_replay_types:
+                self._command_sequence += 1
+                event_item['cursor'] = self._command_sequence
+                self._remember_command_event(str(target_tab_id).strip(), event_item)
+            self._deliver(event_item, target_tab_id=target_tab_id)
 
         if notification:
             self._deliver({
                 'id': uuid.uuid4().hex,
                 'event': 'notification_center_updated',
-                'data': {
-                    'action': 'added',
-                    'notification': notification,
-                },
+                'data': {'action': 'added', 'notification': notification},
             })
-
         return event_id
+
+    def _remember_command_event(self, tab, event):
+        if not tab:
+            return
+        from json import dumps
+        size = len(dumps(event, ensure_ascii=False).encode('utf-8'))
+        # Larger results remain live-only; retaining unbounded command output
+        # would make a disconnected tab consume unbounded Server memory.
+        if size > 1024 * 1024:
+            return
+        now = time.monotonic()
+        history = self._command_events.setdefault(tab, deque())
+        self._command_events.move_to_end(tab)
+        history.append((event['cursor'], now, event, size))
+        used = sum(item[3] for item in history)
+        while history and (len(history) > 128 or used > 1024 * 1024 or
+                           now - history[0][1] > 90):
+            used -= history.popleft()[3]
+        while len(self._command_events) > 32:
+            self._command_events.popitem(last=False)
 
     def _record_notification(self, *, event_type: str, data: Dict, event_id: str, target_tab_id: str):
         recorder = self._notification_recorder

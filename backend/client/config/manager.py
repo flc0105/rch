@@ -70,4 +70,4 @@ class ConfigurationManager:
         except (CommandCancelledError, CommandTimeoutError):
             raise
         except Exception as exc:
-            return 0, build_configuration_result(action, status='error', message=str(exc))
+            return 0, build_configuration_result(action, status='error', message=(str(exc.args[0]) if isinstance(exc, KeyError) and exc.args else str(exc)))

@@ -166,7 +166,7 @@ test('Transfer kind preserves filtering and uses compact semantic names', () => 
   assert.equal(component.methods.getActivityKindIcon('transfer', 'download_files'), context.ArrowDownToLine)
   assert.equal(component.methods.getActivityKindIcon('transfer', 'upload_files'), context.ArrowUpToLine)
   assert.match(activity, /getActivityKindIcon\(item\.kind, item\.action\)/)
-  assert.match(activity, /\['remote_files', 'transfer', 'external_tool', 'job', 'pty', 'screen_view', 'clipboard', 'process', 'configuration', 'watchdog'\]/)
+  assert.match(source, /\['command', 'script', 'remote_files', 'transfer', 'external_tool', 'job', 'pty', 'screen_view', 'clipboard', 'process', 'configuration', 'watchdog'\]/)
 })
 
 test('External Tool Manager Activity is semantic, searchable and uses a distinct icon', () => {
@@ -179,7 +179,7 @@ test('External Tool Manager Activity is semantic, searchable and uses a distinct
   assert.equal(component.methods.buildActivityLabel(example), 'Start heartbeat.worker (alpha)')
   assert.equal(component.methods.buildActivityLabel({kind:'external_tool', action:'install_package',
     summary:'Install heartbeat',invocation:{}}), 'Install heartbeat')
-  assert.match(source, /\['remote_files', 'transfer', 'external_tool', 'job', 'pty', 'screen_view', 'clipboard', 'process', 'configuration', 'watchdog'\]\.includes\(item\.kind\)/)
+  assert.match(source, /\['command', 'script', 'remote_files', 'transfer', 'external_tool', 'job', 'pty', 'screen_view', 'clipboard', 'process', 'configuration', 'watchdog'\]\.includes\(item\?\.kind\)/)
 })
 
 

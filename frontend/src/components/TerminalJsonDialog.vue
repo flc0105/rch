@@ -4,7 +4,7 @@
     :title="title"
     width="980px"
     top="8vh"
-    class="fixed-dialog"
+    class="fixed-dialog terminal-json-dialog"
   >
     <div class="terminal-json-wrap">
       <div class="terminal-json-toolbar">

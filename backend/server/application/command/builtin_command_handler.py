@@ -203,19 +203,22 @@ class BuiltinCommandHandler:
     def config(self, invocation):
         yield from self.configuration_support.config(invocation)
 
-    def watchdog(self, arg=''):
-        yield from self.configuration_support.watchdog(arg)
+    def watchdog(self, invocation):
+        yield from self.configuration_support.watchdog(invocation)
 
     def upload(self, filename):
         for item in self.upload_support.upload(filename):
             yield item
 
-    def saveout(self, command):
-        for item in self.command_output_support.saveout(command):
-            yield item
+    def saveout(self, invocation):
+        for item in self.command_output_support.saveout(invocation.arguments['command']):
+            status, message = item[:2]
+            envelope = ResultEnvelope(status='success' if status == 1 else 'error',
+                                      message=str(message)).as_payload()
+            yield status, render_result_payload(envelope, invocation.output_format)
 
-    def notify(self, command):
-        for item in self.command_notify_support.notify(command):
+    def notify(self, invocation):
+        for item in self.command_notify_support.notify(invocation.arguments['command']):
             yield item
 
     def xt(self, arg=''):
@@ -233,16 +236,16 @@ class BuiltinCommandHandler:
     def job(self, invocation):
         yield from self.job_support.execute_subcommand(invocation)
 
-    def history(self, arg):
-        for item in self.history_support.history(arg):
+    def history(self, invocation):
+        for item in self.history_support.history(invocation):
             yield item
 
     def gopin(self, arg=''):
         for item in self.pinned_path_support.gopin(arg):
             yield item
 
-    def rtt(self, arg=''):
-        for item in self.rtt_support.rtt(arg):
+    def rtt(self, invocation):
+        for item in self.rtt_support.rtt(invocation):
             yield item
 
     def httpctl(self, arg=''):

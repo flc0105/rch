@@ -7,7 +7,7 @@ export function isJsonContainerText(text) {
   if (!raw || !((raw[0] === '{' && raw.at(-1) === '}') || (raw[0] === '[' && raw.at(-1) === ']'))) return false
   try {
     const value = JSON.parse(raw)
-    return value !== null && typeof value === 'object'
+    return value !== null && typeof value === 'object' && !(Array.isArray(value) && value.length === 0)
   } catch (_) {
     return false
   }

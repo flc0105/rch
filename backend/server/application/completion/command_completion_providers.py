@@ -132,6 +132,13 @@ class HistoryCommandCompletionProvider(ServerCompletionSessionMixin, CommandComp
                 priority=20,
             ),
             CompletionCandidate(
+                title='history list --pinned',
+                insert_text='history list --pinned',
+                description='Show pinned Quick History only',
+                source=self.source, group=self.group, kind='history',
+                name='list', priority=21,
+            ),
+            CompletionCandidate(
                 title='history clear',
                 insert_text='history clear',
                 description='Clear command history for current host',
@@ -250,29 +257,25 @@ class ScriptCommandCompletionProvider(ServerCompletionSessionMixin, CommandCompl
         self.script_root = script_root
 
     def complete(self, context: CompletionContext) -> list[CompletionCandidate]:
-        tail = str(context.argument_text or '').strip().lower()
-        if tail and tail != 'exec' and not tail.startswith('exec '):
+        tokens = str(context.argument_text or '').strip().split()
+        if not tokens or tokens[0].lower() not in ('view', 'exec'):
             return []
+        action = tokens[0].lower()
+        # Suggest script names at the name slot, whether positional or --name.
+        if len(tokens) > 1 and tokens[1].startswith('--') and tokens[1] != '--name':
+            return []
+        if len(tokens) > 2 and tokens[1] != '--name':
+            return []
+        if len(tokens) > 3:
+            return []
+        prefix = f'script {action} ' + ('--name ' if len(tokens) > 1 and tokens[1] == '--name' else '')
         current_os_alias = self.get_client_platform(context)
-        result = []
-
-        for script in self._list_scripts(current_os_alias):
-            insert_text = f'script exec {script}'
-            result.append(CompletionCandidate(
-                title=insert_text,
-                insert_text=insert_text,
-                description=f'Execute script: {script}',
-                source=self.source,
-                group=self.group,
-                kind='script',
-                name=script,
-                priority=20,
-                metadata={
-                    'script': script,
-                },
-            ))
-
-        return result
+        return [CompletionCandidate(
+            title=f'{prefix}{script}', insert_text=f'{prefix}{script}',
+            description=f'{action.capitalize()} script: {script}',
+            source=self.source, group=self.group, kind='script',
+            name=script, priority=20, metadata={'script': script},
+        ) for script in self._list_scripts(current_os_alias)]
 
     def _list_scripts(self, current_os_alias: str) -> list[str]:
         pattern = os.path.join(self.script_root, '**/*.py')
@@ -475,7 +478,7 @@ class RemoteClientCommandCompletionProvider(CommandCompletionProvider):
     代理 client 侧 CommandCompletionProvider。
     """
 
-    command_names = ('cd', 'set', 'download', 'edit')
+    command_names = ('cd', 'download', 'edit')
     source = 'client'
     group = 'client'
 
@@ -532,6 +535,56 @@ class RemoteClientCommandCompletionProvider(CommandCompletionProvider):
         )
 
 
+class ConfigCommandCompletionProvider(ServerCompletionSessionMixin, CommandCompletionProvider):
+    """Complete configuration keys from the selected Client's real GET schema."""
+    command_names = ('config',)
+    source = 'server_config'
+    group = 'runtime'
+
+    def __init__(self, server, remote_execution_service):
+        ServerCompletionSessionMixin.__init__(self, server)
+        self.remote_execution_service = remote_execution_service
+        self._cached = {}
+
+    def complete(self, context: CompletionContext) -> list[CompletionCandidate]:
+        import time
+        from core.protocol.control import ControlDomain, ConfigurationAction
+        tokens = str(context.argument_text or '').strip().split()
+        if not tokens or tokens[0].lower() not in ('set', 'reset'):
+            return []
+        action = tokens[0].lower()
+        if len(tokens) > 3 or (len(tokens) == 3 and tokens[1] != '--key'):
+            return []
+        if len(tokens) > 1 and tokens[1].startswith('-') and tokens[1] != '--key':
+            return []
+        client_id = self.get_client_id(context)
+        if not client_id:
+            return []
+        cached = self._cached.get(client_id)
+        if cached and time.monotonic() - cached[0] < 20:
+            items = cached[1]
+        else:
+            try:
+                status, result = self.remote_execution_service.run_foreground_control(
+                    client_id, ControlDomain.CONFIGURATION, ConfigurationAction.GET, {},
+                    task_type='runtime_config', source='completion', track_execution=False)
+                if status != 1 or not isinstance(result, dict):
+                    return []
+                data = result.get('data') or {}
+                items = data.get('items', []) if isinstance(data, dict) else []
+                if not isinstance(items, list):
+                    return []
+            except (AttributeError, ValueError, RuntimeError, LookupError, TimeoutError):
+                return []
+            self._cached[client_id] = (time.monotonic(), items)
+        prefix = f'config {action} ' + ('--key ' if len(tokens) > 1 and tokens[1] == '--key' else '')
+        return [CompletionCandidate(
+            title=f'{prefix}{item["key"]}', insert_text=f'{prefix}{item["key"]}',
+            description=str(item.get('desc') or ''), source=self.source,
+            group=self.group, kind='configuration', name=item['key'], priority=25 + i,
+        ) for i, item in enumerate(items) if isinstance(item, dict) and item.get('key')]
+
+
 class JobCommandCompletionProvider(ServerCompletionSessionMixin, CommandCompletionProvider):
     """Job names for lifecycle commands and stored reports via shared Web/CLI completion."""
     command_names = ('job',)
@@ -544,47 +597,49 @@ class JobCommandCompletionProvider(ServerCompletionSessionMixin, CommandCompleti
         self.background_job_service = background_job_service
 
     def complete(self, context: CompletionContext) -> list[CompletionCandidate]:
-        parts = str(context.argument_text or '').lstrip().split(None, 1)
+        parts = str(context.argument_text or '').lstrip().split()
         if not parts or parts[0].lower() not in ('start', 'stop', 'status', 'logs'):
             return []
         action = parts[0].lower()
-        # Names are the second argument only. Do not suggest replacements after
-        # a complete name when editing options such as --mode / --params.
-        if len(parts) > 1 and len(parts[1].split()) > 1:
+        if len(parts) > 3 or (len(parts) == 3 and parts[1] != '--name'):
+            return []
+        if len(parts) > 1 and parts[1].startswith('-') and parts[1] != '--name':
             return []
         client_id = self.get_client_id(context)
         if not client_id:
             return []
-        names = []
-        # Status may also report not_running for catalog Jobs. Stop should only
-        # suggest Job keys that are actually active on the selected device.
-        if action in ('stop', 'status', 'logs'):
+        try:
+            jobs = self.background_job_service.list_jobs(client_id) or []
+        except (AttributeError, ValueError, LookupError):
+            jobs = []
+        active = {str(item.get('job_key') or item.get('job_name') or '').strip().casefold()
+                  for item in jobs if isinstance(item, dict)
+                  and str(item.get('state') or '').lower() in ('running', 'stopping')}
+        if action == 'start':
             try:
-                jobs = self.background_job_service.list_jobs(client_id)
+                catalog = self.job_catalog_service.list_background_job_catalog()
             except (AttributeError, ValueError, LookupError):
-                jobs = []
-            names.extend(str(item.get('job_key') or item.get('job_name') or '').strip()
-                         for item in (jobs or []) if isinstance(item, dict)
-                         and (action == 'logs' or str(item.get('state') or '').lower() in ('running', 'stopping')))
-        if action in ('start', 'status'):
-            try:
-                items = self.job_catalog_service.list_background_job_catalog()
-            except (AttributeError, ValueError, LookupError):
-                items = []
+                catalog = []
             platform = self.get_client_platform(context)
-            names.extend(str(item.get('job_name') or '').strip() for item in (items or [])
-                         if isinstance(item, dict) and visible_on_platform(item, platform))
+            names = [str(item.get('job_name') or '').strip() for item in (catalog or [])
+                     if isinstance(item, dict) and visible_on_platform(item, platform)
+                     and str(item.get('job_name') or '').strip().casefold() not in active]
+        else:
+            names = [str(item.get('job_key') or item.get('job_name') or '').strip()
+                     for item in jobs if isinstance(item, dict)
+                     and str(item.get('state') or '').lower() in ('running', 'stopping')]
+        prefix = f'job {action} ' + ('--name ' if len(parts) > 1 and parts[1] == '--name' else '')
         seen = set()
         result = []
         for name in names:
-            if not name or name.lower() in seen:
+            if not name or name.casefold() in seen:
                 continue
-            seen.add(name.lower())
+            seen.add(name.casefold())
             result.append(CompletionCandidate(
-                title=f'job {action} {name}', insert_text=f'job {action} {name}',
+                title=f'{prefix}{name}', insert_text=f'{prefix}{name}',
                 description={'start': 'Start this Job', 'stop': 'Stop this running Job',
-                             'status': 'Show this Job status',
-                             'logs': 'View stored Job reports'}[action],
+                             'status': 'Show running Job status',
+                             'logs': 'View active Job reports'}[action],
                 source=self.source, group=self.group, kind='job', name=name,
                 priority=31 + len(result),
             ))

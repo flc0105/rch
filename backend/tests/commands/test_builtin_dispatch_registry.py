@@ -30,9 +30,6 @@ def test_split_subcommands_use_registered_call_shape(name, arg, expected):
 
 
 @pytest.mark.parametrize('name,arg,expected', [
-    ('history', '', 'list'),
-    ('history', 'list', 'list'),
-    ('history', 'run 12', 'run 12'),
     ('httpctl', '', 'help'),
     ('httpctl', 'resume --client-id offline-1', 'resume --client-id offline-1'),
     ('xt', '', 'help'),
@@ -57,12 +54,14 @@ def test_history_explicit_list_matches_no_argument_form():
     from server.application.command.builtin_command_support import HistoryBuiltinSupport
     support = HistoryBuiltinSupport.__new__(HistoryBuiltinSupport)
     support._get_resolvable_quick_history = lambda: []
-    assert list(support.history('')) == list(support.history('list'))
+    from server.application.command.server_builtin_registry import SERVER_COMMAND_REGISTRY
+    assert list(support.history(SERVER_COMMAND_REGISTRY.parse_invocation('history', ''))) == (
+        list(support.history(SERVER_COMMAND_REGISTRY.parse_invocation('history', 'list'))))
 
 
 def test_registry_declares_split_invocation_and_reachable_xt_help():
     assert {spec.name for spec in SERVER_COMMAND_REGISTRY._commands.values()
-            if spec.dispatch_subcommand} == {'script', 'alias', 'job', 'config'}
+            if spec.dispatch_subcommand} == {'script', 'alias', 'job', 'config', 'history'}
     assert SERVER_COMMAND_REGISTRY.parse('xt', '')[1:] == ('help', '')
     assert SERVER_COMMAND_REGISTRY.parse('xt', 'help')[1:] == ('help', '')
     with pytest.raises(ValueError, match='Unsupported xt subcommand'):

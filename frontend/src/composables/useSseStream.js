@@ -223,9 +223,8 @@ export default {
                 const reconnecting = this.sseReady;
                 this.sseReady = true;
                 void this.$refs.executionInteractionDialogRef?.reloadPending(tabId);
-                // The initial selection already fetches a snapshot. Reconnects
-                // must resync because the transient SSE bus has no replay.
-                // The server does not replay transient command events; reconcile after every open.
+                // Server replays bounded per-tab terminal events after a short
+                // disconnect; the foreground snapshot still reconciles task state.
                 void this.refreshForegroundTask?.();
             });
 

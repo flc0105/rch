@@ -96,3 +96,24 @@
     -webkit-overflow-scrolling: touch;
   }
 }
+
+/* Preview approval and Terminal JSON Viewer fill a phone viewport.
+   Desktop and non-preview interaction dialogs retain their existing layout. */
+@media (max-width: 768px) {
+  :is(.interaction-preview-dialog, .terminal-json-dialog).el-dialog {
+    width: 100vw !important; max-width: 100vw !important;
+    height: 100dvh !important; max-height: 100dvh !important;
+    margin: 0 !important; border-radius: 0 !important;
+    display: flex !important; flex-direction: column !important; overflow: hidden !important;
+  }
+  :is(.interaction-preview-dialog, .terminal-json-dialog).el-dialog > .el-dialog__header,
+  :is(.interaction-preview-dialog, .terminal-json-dialog).el-dialog > .el-dialog__footer {
+    flex: 0 0 auto;
+  }
+  :is(.interaction-preview-dialog, .terminal-json-dialog).el-dialog > .el-dialog__body {
+    flex: 1 1 auto !important; min-height: 0 !important; overflow: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+  .interaction-preview-dialog .execution-plan { max-height: none; overflow: visible; }
+  .terminal-json-dialog .terminal-json-scroll { max-height: none; min-height: 0; }
+}

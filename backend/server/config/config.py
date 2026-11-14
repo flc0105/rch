@@ -1,5 +1,6 @@
 import os
 import json
+import hashlib
 
 from server.config.admin_auth import load_admin_auth
 
@@ -24,7 +25,9 @@ HIDDEN_DEVICES_REQUIRE_PASSWORD = os.getenv('RCH_HIDDEN_DEVICES_REQUIRE_PASSWORD
 }
 HIDDEN_DEVICES_PASSWORD = os.getenv('RCH_HIDDEN_DEVICES_PASSWORD', '1')
 WEB_AUTH_SESSION_DAYS = int(os.getenv('RCH_WEB_AUTH_SESSION_DAYS', '7'))
-SESSION_COOKIE_NAME = os.getenv('RCH_WEB_SESSION_COOKIE_NAME', 'rch_admin_session')
+# Cookie storage is scoped by host/path, not TCP port. Derive an independent
+# name for each deployment so two RCH sites on one hostname cannot log out each other.
+SESSION_COOKIE_NAME_OVERRIDE = os.getenv('RCH_WEB_SESSION_COOKIE_NAME', '').strip()
 
 # ------------------resources ------------------ #
 ALIAS_PATH = os.path.join(SERVER_DIR, 'resources/aliases.json')
@@ -49,6 +52,11 @@ ADMIN_USERNAME = _AUTH['username']
 ADMIN_PASSWORD_HASH = _AUTH['password']
 ADMIN_API_TOKEN = _AUTH['api_token']
 WEB_SESSION_SECRET = _AUTH['session_secret']
+SESSION_COOKIE_NAME = SESSION_COOKIE_NAME_OVERRIDE or (
+    'rch_admin_session_' + hashlib.sha256(
+        f'{SERVER_RUNTIME_DIR}:{WEB_PORT}:{WEB_SESSION_SECRET}'.encode('utf-8')
+    ).hexdigest()[:16]
+)
 
 
 def reload_admin_auth():
