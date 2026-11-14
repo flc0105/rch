@@ -1,5 +1,6 @@
 from server.application.command.server_builtin_registry import SERVER_COMMAND_REGISTRY
 from core.protocol.result_envelope import ResultEnvelope
+from core.protocol.message_queue import ResultChunk
 from core.utils.command_output import OutputFormat, render_result_payload
 from core.utils.command_help import render_grouped_client_help
 from server.application.command.builtin_command_support import (
@@ -187,9 +188,9 @@ class BuiltinCommandHandler:
             status = 1
         except ValueError as exc:
             status, result = 0, str(exc)
-        yield status, render_result_payload(ResultEnvelope(
-            status='success' if status == 1 else 'error', message=result).as_payload(),
-            invocation.output_format)
+        envelope = ResultEnvelope(status='success' if status == 1 else 'error', message=result).as_payload()
+        yield ResultChunk(status, render_result_payload(envelope, invocation.output_format), True,
+                          terminal_authoritative=True, event=envelope)
 
     def _client_help(self):
         """Recreate the Client's native help groups from the handshake manifest."""
@@ -226,7 +227,8 @@ class BuiltinCommandHandler:
             status, message = item[:2]
             envelope = ResultEnvelope(status='success' if status == 1 else 'error',
                                       message=str(message)).as_payload()
-            yield status, render_result_payload(envelope, invocation.output_format)
+            yield ResultChunk(status, render_result_payload(envelope, invocation.output_format), True,
+                              terminal_authoritative=True, event=envelope)
 
     def notify(self, invocation):
         for item in self.command_notify_support.notify(invocation.arguments['command']):

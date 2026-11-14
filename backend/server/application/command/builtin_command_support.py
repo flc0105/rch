@@ -13,6 +13,7 @@ from core.utils.script_metadata import read_script_metadata_from_file
 from server.application.scripts.script_run_service import prepare_script_control
 from core.platform.catalog_visibility import visible_on_platform
 from server.application.command.command_execution_event import CommandExecutionEvent
+from core.protocol.message_queue import ResultChunk
 from server.application.history.quick_history import QuickHistoryRecordPolicy
 from server.config.config import SCRIPT_PATH
 
@@ -72,7 +73,9 @@ class UploadBuiltinSupport:
                            if ok else failure_message or 'Upload failed')
                 envelope = ResultEnvelope(status='success' if ok else 'error',
                                           message=message).as_payload()
-                yield (1 if ok else 0), render_result_payload(envelope, invocation.output_format)
+                yield ResultChunk(1 if ok else 0,
+                                  render_result_payload(envelope, invocation.output_format), True,
+                                  terminal_authoritative=True, event=envelope)
 
 
 class ScriptBuiltinSupport:
@@ -125,12 +128,15 @@ class ScriptBuiltinSupport:
                 rows.append({'name': item['path'], 'display_name': item['display_name'],
                              'description': item['description'], 'params': param_names})
             envelope = ResultEnvelope(data=rows).as_payload()
-            yield 1, render_result_payload(envelope, invocation.output_format, view='data', shape=ResultDataShape.TABLE)
+            yield ResultChunk(1, render_result_payload(envelope, invocation.output_format,
+                              view='data', shape=ResultDataShape.TABLE), True,
+                              terminal_authoritative=True, event=envelope)
             return
         if subcommand == 'view':
             with open(self._resolve_script_path(args['name']), 'rt', encoding='utf-8') as source:
                 envelope = ResultEnvelope(message=source.read()).as_payload()
-            yield 1, render_result_payload(envelope, invocation.output_format)
+            yield ResultChunk(1, render_result_payload(envelope, invocation.output_format), True,
+                              terminal_authoritative=True, event=envelope)
             return
         if subcommand == 'exec':
             yield from self.execute_script_file(args)
@@ -396,7 +402,9 @@ class PinnedPathBuiltinSupport:
                     for item in items]
             envelope = ResultEnvelope(data=rows,
                                       message='No saved pinned paths for current host').as_payload()
-            yield 1, render_result_payload(envelope, invocation.output_format, view='data', shape=ResultDataShape.TABLE)
+            yield ResultChunk(1, render_result_payload(envelope, invocation.output_format,
+                              view='data', shape=ResultDataShape.TABLE), True,
+                              terminal_authoritative=True, event=envelope)
             return
 
         if not name:
@@ -514,21 +522,23 @@ class HistoryBuiltinSupport:
                 if not lines:
                     lines.append('No command history available')
                 lines.extend(['', 'Tip: use history run <index> or !<index> to run a history item quickly'])
-                envelope = ResultEnvelope(message='\n'.join(lines)).as_payload()
+                envelope = ResultEnvelope(message='\n'.join(lines), data=rows).as_payload()
             else:
                 envelope = ResultEnvelope(
                     message=('No command history available' if not rows else ''),
                     data=rows).as_payload()
-            yield 1, render_result_payload(envelope, output_format,
-                                           view='data' if output_format == 'json' else 'message',
-                                           shape=ResultDataShape.TABLE)
+            yield ResultChunk(1, render_result_payload(envelope, output_format,
+                              view='data' if output_format == 'json' else 'message',
+                              shape=ResultDataShape.TABLE), True,
+                              terminal_authoritative=True, event=envelope)
             return
 
         if action == 'clear':
             # Quick Recent is cleared; the independent Pinned store is untouched.
             self.command_history.clear_history_for_connection(self.conn)
             envelope = ResultEnvelope(message='Command history cleared').as_payload()
-            yield 1, render_result_payload(envelope, output_format)
+            yield ResultChunk(1, render_result_payload(envelope, output_format), True,
+                              terminal_authoritative=True, event=envelope)
             return
 
         if action == 'run':
@@ -566,5 +576,6 @@ class RttBuiltinSupport:
         from core.protocol.result_envelope import ResultEnvelope
         from core.utils.command_output import ResultDataShape, render_result_payload
         envelope = ResultEnvelope(data=payload).as_payload()
-        yield 1, render_result_payload(envelope, invocation.output_format,
-                                       view='data', shape=ResultDataShape.FLAT, width=24)
+        yield ResultChunk(1, render_result_payload(envelope, invocation.output_format,
+                          view='data', shape=ResultDataShape.FLAT, width=24), True,
+                          terminal_authoritative=True, event=envelope)

@@ -288,7 +288,6 @@ export default {
       this.resetRemotePayload()
       try {
         const payload = await getRemoteClipboard(this.selectedId)
-        this.capabilities = payload.capabilities || this.capabilities || {}
         this.remoteKind = String(payload.kind || 'empty')
         if (this.remoteKind === 'text') {
           this.remoteText = String(payload.text || '')

@@ -40,6 +40,8 @@ Result Envelope 只描述执行事实，不包含 `display` 或 `shape`。Client
 
 Configuration GET 的 `data` 包含完整配置项（含 Web 编辑需要的描述、选项、类型、可编辑属性等）；Terminal 的 `config list` 和 `config list --json` 都只投影 `group/key/value/default` 四列。Web 直接消费 GET 结果而不用从 Terminal 文本中逆向解析字段；Client GET 不输出不再使用的附加字段。
 
+Server 本地 Builtin 的单次查询/反馈（例如 Job 列表、Script 列表、History、Gopin、RTT、Help、HTTP Control、Saveout）保留 Result Envelope 作为原始事件，命令行同时得到相同的现有文本投影。组合执行和日志流（`history run`、`notify`、`script exec`、`job logs`）透传内部执行事件，由外层执行生命周期负责终态，不额外创建第二个业务完成结果。
+
 普通 Shell-like 命令和 Script 的 `print()`、stdout/stderr 继续作为 `message` 的文本流，不依据文字是否恰似 JSON 进行协议层推断。Script SDK 的 `context.emit(data)` 是明确的结构化 `chunk`，可在文本 `chunk` 之间按原序穿插；这不意味着脚本结束。Activity Output Records 只保留实际可见的文本或显式结构化事件的 JSON 展示，每个逻辑输出仍为独立记录。Activity Details 的临时 Result Viewer 独立保存收到的原始事件，包括请求 ID、阶段与终态，用于检查协议输出而不污染 Output Records。
 
 ## 结构化返回对象及形状

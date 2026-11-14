@@ -1,7 +1,6 @@
 import os
 
 from core.protocol.message_types import MSG_TYPE_TRANSFER_START, MSG_TYPE_TRANSFER_CANCEL
-from core.utils.output_marker import success, info
 from server.application.command.command_execution_event import CommandExecutionEvent
 
 
@@ -145,7 +144,7 @@ class UploadExecutionService:
             }
             yield CommandExecutionEvent.started(effective_command, payload=payload)
             yield CommandExecutionEvent.progress(
-                success(f'Staged upload file: {safe_name}'),
+                '',
                 payload={**payload, 'stage': 'staged'},
             )
 
@@ -177,15 +176,9 @@ class UploadExecutionService:
 
             state = str(terminal.get('state') or '').strip().lower()
             if state == 'completed':
-                yield CommandExecutionEvent.chunk(
-                    1,
-                    success(f'File transferred successfully: {safe_name}'),
-                    payload=payload,
-                )
-                if terminal.get('destination_path'):
-                    yield CommandExecutionEvent.chunk(1, info(f"Path: {terminal['destination_path']}"), payload=payload)
-                if terminal.get('total_bytes') is not None:
-                    yield CommandExecutionEvent.chunk(1, info(f"Size: {terminal['total_bytes']} bytes"), payload=payload)
+                # Transfer progress belongs to the Transfer UI; the command
+                # result has one authoritative terminal event (no duplicate
+                # success/path/size text in Web Terminal).
                 yield CommandExecutionEvent.completed(True, payload=payload)
                 return
 

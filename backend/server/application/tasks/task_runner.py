@@ -217,6 +217,18 @@ class WebTaskRunner:
         )
 
     def _publish_stream_chunk(self, context: TaskExecutionContext, status: int, text: str, result=None):
+        # Server-owned Builtins do not have a Client Socket packet. Associate
+        # their already constructed Result facts with this task at the common
+        # output boundary; Client packets arrive with their own type/id and
+        # are recorded by the existing request observer.
+        if (isinstance(result, dict) and result.get('event_type') in
+                ('started', 'progress', 'chunk', 'completed') and 'type' not in result):
+            command_id = self._get_runtime_command_id(context)
+            result = {'type': 'result',
+                      **({'id': command_id} if command_id is not None else {}),
+                      **result}
+            self.activity_coordinator.append_result_event(
+                context.session, self._get_history_entry_id(context), result)
         batch = getattr(context, '_result_batch', None)
         if batch is None:
             self._publish_task_result(context, status, text, result)

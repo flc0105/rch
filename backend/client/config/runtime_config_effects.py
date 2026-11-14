@@ -47,6 +47,8 @@ class RuntimeConfigEffects:
             if not watchdog_supported:
                 effects.append(warning('Saved: watchdog is unavailable on this Client; restart with watchdog support to apply'))
             manager = getattr(self.connection, 'process_recovery_watchdog_manager', None) if watchdog_supported else None
+            if watchdog_supported and manager is None:
+                effects.append(warning('Saved: Process Recovery Watchdog manager unavailable; runtime change not applied'))
             if manager is not None:
                 self.checkpoint()
                 try:

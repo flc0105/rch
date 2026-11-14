@@ -133,7 +133,10 @@ class JobBuiltinSupport:
                     for item in jobs if item.get('job_name')]
             result = ResultEnvelope(message='No background jobs available' if not rows else '',
                                     data=rows).as_payload()
-            yield 1, render_result_payload(result, output_format, view='data', shape=ResultDataShape.TABLE)
+            from core.protocol.message_queue import ResultChunk
+            yield ResultChunk(1, render_result_payload(result, output_format,
+                              view='data', shape=ResultDataShape.TABLE), True,
+                              terminal_authoritative=True, event=result)
             return
 
         if subcommand == 'logs':

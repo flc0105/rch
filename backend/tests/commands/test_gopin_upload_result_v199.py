@@ -84,21 +84,18 @@ def upload_support(tmp_path, events):
     return support, invocation('upload', str(source))
 
 
-def test_upload_progress_and_single_success_result(tmp_path):
+def test_upload_single_success_result_without_duplicate_progress(tmp_path):
     events = [
         CommandExecutionEvent.started('upload example.txt'),
-        CommandExecutionEvent.progress('[+] Staged upload file: example.txt', payload={'stage': 'staged'}),
-        CommandExecutionEvent.chunk(1, '[+] File transferred successfully: example.txt'),
-        CommandExecutionEvent.chunk(1, '[*] Path: /remote/example.txt'),
-        CommandExecutionEvent.chunk(1, '[*] Size: 5 bytes'),
+        CommandExecutionEvent.progress('', payload={'stage': 'staged'}),
         CommandExecutionEvent.completed(True),
     ]
     support, inv = upload_support(tmp_path, events)
     rows = list(support.upload(inv))
-    assert len(rows) == 2
-    assert rows[0][1]['event_type'] == 'progress'
-    assert rows[0][1]['text'] == 'Uploading example.txt...'
-    assert rows[1] == (1, 'File transferred successfully: example.txt')
+    assert len(rows) == 1
+    assert rows[0] == (1, 'File transferred successfully: example.txt')
+    assert rows[0].event['event_type'] == 'completed'
+    assert rows[0].event['status'] == 'success'
     assert 'Path:' not in str(rows) and 'Size:' not in str(rows)
 
 

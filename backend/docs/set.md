@@ -51,7 +51,7 @@ set --reset SCRIPT_DEFAULT_EXECUTION_MODE
 > **如何理解 `default` 与 `override`**  
 > `default` 表示正在使用内置默认值；`override` 表示保存了与默认值不同的自定义值。把某项设回它的默认值，也会清除对应覆盖记录。修改不会直接改写程序源码。
 
-`set` 命令声明了 30 秒执行预算。修改 Watchdog 时会在子进程启动、停止和 Worker 切换的边界检查超时；Windows 对停止 Worker 所用的 `taskkill` 额外设置 5 秒上限。配置保存成功但 Watchdog 启动失败时，命令返回已保存配置和对应的运行警告，当前状态可通过 `watchdog --json` 查询。
+`set` 命令声明了 30 秒执行预算。修改 Watchdog 时会在子进程启动、停止和 Worker 切换的边界检查超时；Windows 对停止 Worker 所用的 `taskkill` 额外设置 5 秒上限。配置保存成功并执行了 Watchdog 启停/Worker 重启时，完成结果在配置更新说明后追加实际执行的 effect。配置保存成功但 Watchdog 启动失败，或缺少运行时管理器时，返回已保存配置及具体运行警告；当前状态可通过 `watchdog --json` 查询。
 
 ## 2. 三种最重要的 Strategy
 

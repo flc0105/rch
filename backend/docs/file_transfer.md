@@ -179,6 +179,8 @@ Transfer 是由 Server `TransferService` 管理的一份状态记录，不是新
 
 `state` 主要区别 `running`、`completed`、`failed`、`cancelled`；`stage` 进一步说明是正在浏览器上传、准备、上送 Server、下载至设备、完成确认还是取消中。实际显示可以保留 Stage 的原义，而不能把 `running` 直接翻译成“正在上传”：它也可能在压缩、暂存或等待其他阶段。
 
+Web Remote Upload 的终端块由前台显示 `[Remote Upload]` 起始标题和执行结束状态；上传字节数、路径、传输阶段及实时进度在 Transfer 记录中查看。成功传输只产生执行终态，不再将暂存成功、完成提示、路径与大小额外写成终端输出行。CLI `upload` 仍通过同一传输终态生成一条简短的操作反馈；失败和取消保留各自的终态及错误说明。
+
 ### 从 HTTP / Socket 到 WebSocket 的进度传播
 
 Python Client 的受管理任务在 HTTP Worker 内调用进度回调，并通过**Socket 的 `transfer_update` 消息**回报 Server；状态信息不混在命令 stdout/stderr 中。对于 Browser → Server 第一段，进度由 8085 的文件接收循环直接更新 Server 的 `TransferService`，不经过 Client Socket。

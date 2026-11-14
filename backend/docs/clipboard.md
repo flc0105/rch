@@ -230,7 +230,7 @@ curl -sS -X POST -H "Authorization: Bearer $TOKEN" \
   "$SERVER/api/connections/$CLIENT_ID/clipboard/get"
 ```
 
-第一条读取目标能力，返回类似 `{"platform":"mac","text":true,"image":true,"files":true}` 的数据字段；第二条获取此刻剪贴板的内容。示例中的 `SERVER`、`CLIENT_ID`、`TOKEN` 都必须替换为实际值；Server 地址和端口以真实部署为准。完整响应由 API 统一格式封装，实际内容位于响应的 `data` 字段内。
+第一条读取目标能力，返回类似 `{"text":true,"image":true,"files":true}` 的数据字段；第二条只返回此刻剪贴板的内容（例如 `kind/text`、`kind/artifact` 或 `kind/files`），不再重复附带能力字段。示例中的 `SERVER`、`CLIENT_ID`、`TOKEN` 都必须替换为实际值；Server 地址和端口以真实部署为准。完整响应由 API 统一格式封装，实际内容位于响应的 `data` 字段内。
 
 写入文本使用 JSON 请求：
 

@@ -1,3 +1,5 @@
+from core.protocol.message_queue import ResultChunk
+
 from server.application.connection.control_command_store import (
     HTTP_CONTROL_COMMANDS,
     get_control_command_store,
@@ -66,9 +68,9 @@ class ControlBuiltinSupport:
 
         action_name = invocation.action
         if action_name == 'help':
-            yield 1, render_result_payload(
-                ResultEnvelope(message=self._format_httpctl_usage()).as_payload(),
-                invocation.output_format)
+            envelope = ResultEnvelope(message=self._format_httpctl_usage()).as_payload()
+            yield ResultChunk(1, render_result_payload(envelope, invocation.output_format), True,
+                              terminal_authoritative=True, event=envelope)
             return
 
         try:
@@ -86,6 +88,6 @@ class ControlBuiltinSupport:
         except Exception as exc:
             message = str(exc)
             status = 0
-        yield status, render_result_payload(ResultEnvelope(
-            status='success' if status == 1 else 'error', message=message).as_payload(),
-            invocation.output_format)
+        envelope = ResultEnvelope(status='success' if status == 1 else 'error', message=message).as_payload()
+        yield ResultChunk(status, render_result_payload(envelope, invocation.output_format), True,
+                          terminal_authoritative=True, event=envelope)

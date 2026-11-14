@@ -98,7 +98,6 @@ class ClipboardManager:
                 snapshot = self.adapter.get_snapshot()
                 checkpoint()
                 payload = self._materialize_snapshot(snapshot, checkpoint=checkpoint)
-                payload['capabilities'] = self.get_capabilities()
 
             return 1, payload
         except Exception as e:
@@ -173,7 +172,7 @@ class ClipboardManager:
                     f'{kind or "empty"}'
                 )
 
-            return 1, {'kind': kind, 'capabilities': self.get_capabilities()}
+            return 1, {'kind': kind}
 
         except (CommandCancelledError, CommandTimeoutError):
             raise

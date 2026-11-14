@@ -63,7 +63,9 @@ def test_client_get_returns_files_to_web(tmp_path):
     assert status == 1
     assert payload['kind'] == 'files'
     assert payload['files'][0]['name'] == 'note.txt'
-    assert payload['capabilities']['files'] is True
+    assert 'capabilities' not in payload
+    capabilities_status, capabilities = manager.get_clipboard('capabilities')
+    assert capabilities_status == 1 and capabilities['capabilities']['files'] is True
 
 
 def test_client_set_files_dispatches_to_native_adapter(tmp_path):
@@ -81,7 +83,7 @@ def test_client_set_files_dispatches_to_native_adapter(tmp_path):
     })
     assert native_calls == [[str(root)]]
     assert status == 1
-    assert payload['kind'] == 'files'
+    assert payload == {'kind': 'files'}
 
 
 def test_legacy_saved_clipboard_kind_is_not_accepted(tmp_path):
