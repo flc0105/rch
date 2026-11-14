@@ -59,11 +59,13 @@ def test_web_controls_never_construct_command_strings():
     calls = []
     def control(target, domain, action, payload, **kwargs):
         calls.append((target, domain, action, payload))
-        return 1, {'message': 'ok', 'items': [], 'store_path': ''}
+        data = ({'client': {}, 'remote_control_watchdog': {}, 'local_heartbeat_watchdog': {},
+                 'process_recovery_watchdog': {}} if domain == 'watchdog' else {})
+        return 1, {'event_type': 'completed', 'status': 'success', 'message': 'ok', 'data': data}
     service = SimpleNamespace(run_foreground_control=control)
     api = WebCommandExecutionApi(None, remote_execution_service=service)
     api.get_runtime_config('client')
-    api.get_watchdog_status('client')
+    assert 'client' in api.get_watchdog_status('client')
     process = WebProcessControlApi(None, service)
     process.kill_process('client', 321)
     process.kill_app('client', 322)

@@ -100,8 +100,12 @@ class WebCommandExecutionApi:
         return result
 
     def get_watchdog_status(self, client_id: str):
-        return self._control(client_id, ControlDomain.WATCHDOG, WatchdogAction.STATUS, {},
-                             task_type='watchdog_status', source='web_watchdog_status')
+        result = self._control(client_id, ControlDomain.WATCHDOG, WatchdogAction.STATUS, {},
+                               task_type='watchdog_status', source='web_watchdog_status')
+        data = result.get('data') if isinstance(result, dict) else None
+        if not isinstance(data, dict):
+            raise RuntimeError('Invalid watchdog status response')
+        return data
 
     def get_runtime_config(self, client_id: str):
         return self._control(client_id, ControlDomain.CONFIGURATION, ConfigurationAction.GET, {},

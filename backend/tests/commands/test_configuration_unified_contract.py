@@ -82,3 +82,29 @@ def test_web_uses_same_control_envelope_and_refetches_get(isolated_runtime_confi
 
     with pytest.raises(RuntimeError, match='Invalid'):
         api.update_runtime_config('test-client', 'SCRIPT_DEFAULT_TIMEOUT', 'invalid')
+
+
+def test_web_watchdog_returns_status_payload_without_envelope():
+    class Remote:
+        def run_foreground_control(self, target, domain, action, payload, **kwargs):
+            assert (domain, action) == ('watchdog', 'status')
+            return 1, {'event_type': 'completed', 'status': 'success',
+                       'data': {'client': {'client_id': 'test-client'},
+                                'remote_control_watchdog': {'worker_alive': False},
+                                'local_heartbeat_watchdog': {},
+                                'process_recovery_watchdog': {'supervisor_alive': False}}}
+
+    api = WebCommandExecutionApi(None, remote_execution_service=Remote())
+    response = api.get_watchdog_status('test-client')
+    assert response['client']['client_id'] == 'test-client'
+    assert 'event_type' not in response and 'data' not in response
+
+
+def test_web_watchdog_rejects_missing_business_payload():
+    class Remote:
+        def run_foreground_control(self, *args, **kwargs):
+            return 1, {'event_type': 'completed', 'status': 'success', 'message': 'ok'}
+
+    api = WebCommandExecutionApi(None, remote_execution_service=Remote())
+    with pytest.raises(RuntimeError, match='Invalid watchdog status response'):
+        api.get_watchdog_status('test-client')
