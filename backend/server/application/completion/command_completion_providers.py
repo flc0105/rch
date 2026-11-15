@@ -3,6 +3,7 @@ import os
 import re
 
 from core.protocol.structured_arg_codec import encode_structured_arg
+from core.external_tools.install_status import INSTALL_STATUS_NOT_INSTALLED, is_installed_status, normalize_install_status
 from core.command_completion.models import CompletionCandidate, CompletionContext
 from core.platform.normalization import normalize_platform_alias
 from core.platform.catalog_visibility import visible_on_platform
@@ -312,17 +313,16 @@ class ScriptCommandCompletionProvider(ServerCompletionSessionMixin, CommandCompl
 
 
 class ExternalToolCommandCompletionProvider(ServerCompletionSessionMixin, CommandCompletionProvider):
-    """
-    server xt 外部工具命令补全。
-    """
+    """XT: static command paths from Registry, dynamic targets from the selected Client."""
 
     command_names = ('xt',)
     source = 'server_xt'
     group = 'external_tool'
 
-    def __init__(self, server, external_tool_catalog_service):
+    def __init__(self, server, external_tool_catalog_service, client_lifecycle_runtime):
         ServerCompletionSessionMixin.__init__(self, server)
         self.external_tool_catalog_service = external_tool_catalog_service
+        self.client_lifecycle_runtime = client_lifecycle_runtime
 
     def complete(self, context: CompletionContext) -> list[CompletionCandidate]:
         words = str(context.argument_text or '').strip().lower().split()
@@ -332,105 +332,200 @@ class ExternalToolCommandCompletionProvider(ServerCompletionSessionMixin, Comman
             if len(words) == 1:
                 return [c for c in self._build_subcommand_candidates()
                         if c.insert_text.startswith('xt exec ')] + self._build_exec_candidates(context)
-            if words[1] in {'info', 'which'}:
-                return self._build_exec_candidates(context) if len(words) <= 3 else []
-            if words[1] == 'list':
+            if words[1] in ('list', 'help'):
                 return []
+            if words[1] in ('info', 'which', 'run'):
+                return self._build_exec_candidates(context) if len(words) <= 3 else []
             return self._build_exec_candidates(context) if len(words) == 2 else []
         if words[0] not in ('package', 'module', 'instance'):
             return []
-        # All suggestions replace the entire input; native arguments never enter this parser.
         if len(words) == 1:
-            return [c for c in self._build_subcommand_candidates() if c.insert_text.startswith('xt ' + words[0])]
-        if words[0] == 'package' and words[1] in ('install', 'uninstall') and len(words) <= 3:
-            return self._build_package_candidates(context, f'xt package {words[1]} ')
+            return [c for c in self._build_subcommand_candidates()
+                    if c.insert_text.startswith('xt ' + words[0])]
+        if words[0] == 'package' and words[1] in ('install', 'uninstall') and len(words) <= 4:
+            return self._build_package_candidates(context, f'xt package {words[1]} ', action=words[1])
         if words[0] == 'module' and words[1] == 'list' and len(words) <= 3:
             return self._build_package_candidates(context, 'xt module list ')
         instance_actions = {path.split()[2] for path, _ in SERVER_COMMAND_REGISTRY.completion_paths('xt')
                             if path.startswith('xt instance ') and len(path.split()) == 3}
-        if words[0] == 'instance' and words[1] in (instance_actions - {'list'}) and len(words) <= 3:
-            return self._build_module_candidates(context, f'xt instance {words[1]} ')
-        if words[0] == 'instance' and words[1] == 'list' and len(words) <= 3:
-            return self._build_package_candidates(context, 'xt instance list ')
+        if words[0] == 'instance' and words[1] in instance_actions:
+            if words[1] == 'create' and len(words) <= 4:
+                return self._build_module_candidates(context, 'xt instance create ')
+            if words[1] == 'list' and len(words) <= 3:
+                return self._build_package_candidates(context, 'xt instance list ')
+            if words[1] in ('start', 'stop', 'restart', 'status', 'logs'):
+                return self._build_instance_candidates(context, words[1])
         return []
 
-    def _build_package_candidates(self, context: CompletionContext, prefix: str):
-        try:
-            packages = self.external_tool_catalog_service.list_packages()
-        except Exception:
+    def _packages_for_client(self, context: CompletionContext) -> list[dict]:
+        platform = self.get_client_platform(context)
+        arch = self.get_client_arch(context)
+        if not platform or not arch:
             return []
-        return [CompletionCandidate(title=prefix + package['id'], insert_text=prefix + package['id'],
-                description=package.get('display_name') or '', source=self.source, group=self.group,
-                kind='external_tool_package', name=package['id'], priority=30)
-                for package in packages if package.get('id') and not package.get('error')
-                and self.external_tool_catalog_service._platform_matches(package, self.get_client_platform(context))
-                and self.external_tool_catalog_service._arch_matches(package, self.get_client_arch(context))]
+        return [p for p in self.external_tool_catalog_service.list_packages()
+                if p.get('id') and not p.get('error')
+                and self.external_tool_catalog_service._platform_matches(p, platform)
+                and self.external_tool_catalog_service._arch_matches(p, arch)]
+
+    def _install_statuses(self, context: CompletionContext, packages: list[dict]) -> dict[str, str]:
+        """Use the same batched Client Control as Web/XT; unknown is not uninstalled."""
+        client_id = self.get_client_id(context)
+        if not client_id or not packages:
+            return {}
+        try:
+            result = self.client_lifecycle_runtime.client_install_statuses(
+                client_id, packages, platform_alias=self.get_client_platform(context),
+                arch=self.get_client_arch(context))
+            items = result.get('items') if isinstance(result, dict) else None
+            if not isinstance(items, list) or len(items) != len(packages):
+                return {}
+            return {str(package['id']): normalize_install_status(item)
+                    for package, item in zip(packages, items)
+                    if isinstance(item, dict)}
+        except (AttributeError, ValueError, RuntimeError, LookupError, TimeoutError):
+            return {}
+
+    def _client_daemon_modules(self, context: CompletionContext) -> list[dict]:
+        packages = {p['id'] for p in self._packages_for_client(context)}
+        return [module for module in self.external_tool_catalog_service.list_tools()
+                if module.get('tool_id') and module.get('execution') == 'daemon'
+                and module.get('package_id') in packages]
+
+    def _candidate(self, prefix: str, name: str, description: str, kind: str) -> CompletionCandidate:
+        value = prefix + name
+        return CompletionCandidate(title=value, insert_text=value, description=description,
+                                   source=self.source, group=self.group, kind=kind,
+                                   name=name, priority=30)
+
+    def _build_package_candidates(self, context: CompletionContext, prefix: str, action: str = ''):
+        try:
+            packages = self._packages_for_client(context)
+            statuses = self._install_statuses(context, packages) if action else {}
+        except (AttributeError, ValueError, RuntimeError, LookupError):
+            return []
+        option = '--package' if str(context.argument_text or '').strip().split()[-1:] == ['--package'] else ''
+        if option:
+            prefix += option + ' '
+        return [self._candidate(prefix, package['id'], package.get('display_name') or '',
+                                'external_tool_package')
+                for package in packages
+                if not action or (is_installed_status(statuses.get(package['id'])) if action == 'uninstall'
+                                  else statuses.get(package['id']) == INSTALL_STATUS_NOT_INSTALLED)]
 
     def _build_module_candidates(self, context: CompletionContext, prefix: str):
         try:
-            modules = self.external_tool_catalog_service.list_tools()
-        except Exception:
+            modules = self._client_daemon_modules(context)
+            packages = self._packages_for_client(context)
+            statuses = self._install_statuses(context, packages)
+        except (AttributeError, ValueError, RuntimeError, LookupError):
             return []
-        return [CompletionCandidate(title=prefix + module['tool_id'], insert_text=prefix + module['tool_id'],
-                description=module.get('display_name') or '', source=self.source, group=self.group,
-                kind='external_tool_module', name=module['tool_id'], priority=30)
-                for module in modules if module.get('tool_id') and module.get('execution') == 'daemon'
-                and self.external_tool_catalog_service._platform_matches(module['package_meta'], self.get_client_platform(context))
-                and self.external_tool_catalog_service._arch_matches(module['package_meta'], self.get_client_arch(context))]
+        if str(context.argument_text or '').strip().split()[-1:] == ['--module']:
+            prefix += '--module '
+        return [self._candidate(prefix, module['tool_id'], module.get('display_name') or '',
+                                'external_tool_module')
+                for module in modules if is_installed_status(statuses.get(module['package_id']))]
+
+    def _build_instance_candidates(self, context: CompletionContext, action: str):
+        # The Registry handles syntax; completion only selects candidates with real Client state.
+        client_id = self.get_client_id(context)
+        if not client_id:
+            return []
+        try:
+            modules = self._client_daemon_modules(context)
+            if not modules:
+                return []
+            response = self.client_lifecycle_runtime.list_all_client_instances(client_id, modules)
+            rows = response.get('items') if isinstance(response, dict) else None
+            if not isinstance(rows, list):
+                return []
+            installed = {}
+            if action == 'start':
+                packages = self._packages_for_client(context)
+                installed = self._install_statuses(context, packages)
+        except (AttributeError, ValueError, RuntimeError, LookupError, TimeoutError):
+            return []
+        module_by_id = {m['tool_id']: m for m in modules}
+        parts = str(context.argument_text or '').strip().split()
+        target_module = ''
+        if '--module' in parts:
+            index = parts.index('--module')
+            if len(parts) > index + 1:
+                target_module = parts[index + 1]
+        elif len(parts) >= 3 and not parts[2].startswith('-'):
+            target_module = parts[2]
+        named = '--name' in parts or '--module' in parts
+        prefix = f'xt instance {action} '
+        if named:
+            # Preserve named targeting and disambiguate identical IDs across modules.
+            if target_module:
+                prefix += f'--module {target_module} '
+            if target_module:
+                prefix += '--name '
+        result, seen = [], set()
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            tool = str(row.get('tool_id') or '').strip()
+            instance_id = str(row.get('instance_id') or '').strip()
+            meta = module_by_id.get(tool)
+            if not meta or not instance_id or (target_module and tool != target_module):
+                continue
+            status = str(row.get('status') or '').lower()
+            running = row.get('running') is True or status == 'running'
+            stopping = status == 'stopping'
+            if action == 'start' and (running or stopping or not is_installed_status(installed.get(meta['package_id']))):
+                continue
+            if action == 'stop' and not (running or stopping):
+                continue
+            if action == 'restart' and not running:
+                continue
+            name = instance_id if (named and target_module) else (f'--module {tool} --name {instance_id}' if named else f'{tool} {instance_id}')
+            if name in seen:
+                continue
+            seen.add(name)
+            result.append(self._candidate(prefix, name,
+                f'{meta.get("display_name") or tool} — {row.get("status") or ("running" if running else "stopped")}',
+                'external_tool_instance'))
+        return result
 
     def _build_subcommand_candidates(self) -> list[CompletionCandidate]:
-        return [
-            CompletionCandidate(
-                title=insert_text,
-                insert_text=insert_text,
-                description=description,
-                source=self.source,
-                group=self.group,
-                kind='external_tool',
-                name=insert_text.replace('xt ', '').strip() or 'xt',
-                priority=20,
-            )
-            for insert_text, description in SERVER_COMMAND_REGISTRY.completion_paths('xt')
-        ]
+        return [CompletionCandidate(
+            title=insert_text, insert_text=insert_text, description=description,
+            source=self.source, group=self.group, kind='external_tool',
+            name=insert_text.replace('xt ', '').strip() or 'xt', priority=20,
+        ) for insert_text, description in SERVER_COMMAND_REGISTRY.completion_paths('xt')]
 
     def _build_exec_candidates(self, context: CompletionContext) -> list[CompletionCandidate]:
-        result = []
         try:
-            exec_targets = self.external_tool_catalog_service.list_exec_targets(
-                platform_alias=self.get_client_platform(context),
-                arch=self.get_client_arch(context),
-            )
-        except Exception:
+            targets = self.external_tool_catalog_service.list_exec_targets(
+                platform_alias=self.get_client_platform(context), arch=self.get_client_arch(context))
+            parts = str(context.argument_text or '').strip().split()
+            require_installed = len(parts) == 1 or parts[1] not in ('info',)
+            statuses = {}
+            if require_installed:
+                packages = self._packages_for_client(context)
+                statuses = self._install_statuses(context, packages)
+        except (AttributeError, ValueError, RuntimeError, LookupError):
             return []
-
         prefix = self._resolve_exec_insert_prefix(context.argument_text)
-        for item in exec_targets:
+        result = []
+        for item in targets:
             exec_name = str(item.get('exec_name') or '').strip()
-            if not exec_name:
+            if not exec_name or (require_installed and not is_installed_status(statuses.get(item.get('package_id')))):
                 continue
-
-            insert_text = f'{prefix}{exec_name}'.strip()
-
             result.append(CompletionCandidate(
-                title=insert_text,
-                insert_text=insert_text,
+                title=prefix + exec_name, insert_text=prefix + exec_name,
                 description=str(item.get('description') or item.get('display_name') or item.get('package_id') or '').strip(),
-                source=self.source,
-                group=self.group,
-                kind='external_tool_exec',
-                name=exec_name,
-                priority=30,
-                metadata={
-                    'execName': exec_name,
-                    'packageId': item.get('package_id') or '',
-                    'packageKey': item.get('package_key') or '',
-                },
+                source=self.source, group=self.group, kind='external_tool_exec',
+                name=exec_name, priority=30,
+                metadata={'execName': exec_name, 'packageId': item.get('package_id') or '',
+                          'packageKey': item.get('package_key') or ''},
             ))
         return result
 
     def _resolve_exec_insert_prefix(self, argument_text: str) -> str:
         parts = str(argument_text or '').strip().split()
-        if len(parts) >= 2 and parts[0] == 'exec' and parts[1] in {'info', 'which'}:
+        if len(parts) >= 2 and parts[0] == 'exec' and parts[1] in {'info', 'which', 'run'}:
             return f'xt exec {parts[1]} '
         return 'xt exec '
 

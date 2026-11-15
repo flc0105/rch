@@ -205,15 +205,6 @@ class ServerApplicationAssembly:
             ClipboardSessionService(self.server), clipboard_bindings())
         self.device_monitor_session_service = DeviceMonitorSessionService(self.server, event_bus=self.event_bus)
 
-        self.command_completion_service = ServerCommandCompletionService(
-            server=self.server,
-            remote_execution_service=self.remote_execution_service,
-            pinned_path_store=self.pinned_path_store,
-            job_catalog_service=self.job_catalog_service,
-            background_job_service=self.background_job_service,
-            external_tool_catalog_service=self.external_tool_catalog_service,
-        )
-
         # ------------------ web sub facades / apis ------------------ #
         self.connection_api = WebConnectionApi(
             connection_service=self.connection_service,
@@ -249,12 +240,6 @@ class ServerApplicationAssembly:
         )
         self.server_cleanup_api = WebServerCleanupApi(self.server_cleanup_service)
 
-        self.command_catalog_api = WebCommandCatalogApi(
-            server=self.server,
-            command_executor_factory=self.command_executor_factory,
-            command_completion_service=self.command_completion_service,
-        )
-
         self.command_execution_api = WebCommandExecutionApi(
             task_service=self.task_service,
             command_executor_factory=self.command_executor_factory,
@@ -272,6 +257,22 @@ class ServerApplicationAssembly:
             command_execution_api=self.command_execution_api,
             remote_execution_service=self.remote_execution_service,
             event_bus=self.event_bus,
+        )
+
+        self.command_completion_service = ServerCommandCompletionService(
+            server=self.server,
+            remote_execution_service=self.remote_execution_service,
+            pinned_path_store=self.pinned_path_store,
+            job_catalog_service=self.job_catalog_service,
+            background_job_service=self.background_job_service,
+            external_tool_catalog_service=self.external_tool_catalog_service,
+            external_tool_client_runtime=self.external_tool_runtime_service.client_lifecycle_runtime,
+        )
+
+        self.command_catalog_api = WebCommandCatalogApi(
+            server=self.server,
+            command_executor_factory=self.command_executor_factory,
+            command_completion_service=self.command_completion_service,
         )
 
         self.external_tool_api = WebExternalToolApi(

@@ -21,7 +21,7 @@ class ServerCommandCompletionService:
     server 侧 command bar 补全服务。
     """
 
-    def __init__(self, server, remote_execution_service, pinned_path_store, job_catalog_service, background_job_service, external_tool_catalog_service=None):
+    def __init__(self, server, remote_execution_service, pinned_path_store, job_catalog_service, background_job_service, external_tool_catalog_service, external_tool_client_runtime):
         self.server = server
         self.parser = CommandCompletionParser()
         self.registry = CommandCompletionRegistry([
@@ -48,6 +48,7 @@ class ServerCommandCompletionService:
             ExternalToolCommandCompletionProvider(
                 server=server,
                 external_tool_catalog_service=external_tool_catalog_service,
+                client_lifecycle_runtime=external_tool_client_runtime,
             ),
             ServerFileSystemCompletionProvider(command_names=('upload',)),
             RemoteClientCommandCompletionProvider(

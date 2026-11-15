@@ -230,14 +230,24 @@ def test_xt_management_completion_package_and_daemon_names():
     server = SimpleNamespace(get_target_connection_by_client_id=lambda _: SimpleNamespace(session_info=info))
     with patch.dict(sys.modules, {'server.config.config': SimpleNamespace(SCRIPT_PATH='', COMMAND_HISTORY_RECENT_LIMIT=30)}):
         from server.application.completion.command_completion_providers import ExternalToolCommandCompletionProvider
-    provider = ExternalToolCommandCompletionProvider(server, Cli().catalog)
+    class FakeClientRuntime:
+        def client_install_statuses(self, _client_id, packages, **_kwargs):
+            return {'items': [{'installed': p['id'] == 'frp'} for p in packages]}
+
+        def list_all_client_instances(self, _client_id, metas):
+            return {'items': [{'tool_id': 'frp.frpc', 'instance_id': 'smoke',
+                               'status': 'stopped', 'running': False}]}
+
+    provider = ExternalToolCommandCompletionProvider(server, Cli().catalog, FakeClientRuntime())
     parser = CommandCompletionParser()
     def texts(prefix):
         return [item.insert_text for item in provider.complete(parser.parse(prefix, metadata={'client_id': 'c'}))]
-    assert 'xt package install frp' in texts('xt package install ')
+    assert 'xt package install frp' not in texts('xt package install ')
+    assert 'xt package install gost' in texts('xt package install ')
     assert 'xt package uninstall frp' in texts('xt package uninstall ')
     assert 'xt module list frp' in texts('xt module list ')
-    assert 'xt instance start frp.frpc' in texts('xt instance start ')
+    assert 'xt instance start frp.frpc smoke' in texts('xt instance start ')
+    assert 'xt instance stop frp.frpc smoke' not in texts('xt instance stop ')
     assert 'xt instance create frp.frpc' in texts('xt instance create ')
     assert 'xt instance create python-embed.test' not in texts('xt instance create ')
 

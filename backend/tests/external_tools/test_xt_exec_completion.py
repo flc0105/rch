@@ -8,6 +8,15 @@ from server.application.command.server_builtin_registry import SERVER_COMMAND_RE
 
 
 class FakeCatalog:
+    def list_packages(self):
+        return [{'id': 'ffmpeg'}, {'id': 'python-embed'}]
+
+    def _platform_matches(self, package, platform):
+        return platform == 'win'
+
+    def _arch_matches(self, package, arch):
+        return arch == 'amd64'
+
     def list_exec_targets(self, platform_alias, arch):
         assert platform_alias == 'win'
         assert arch == 'amd64'
@@ -15,6 +24,11 @@ class FakeCatalog:
             {'exec_name': 'ffmpeg', 'package_id': 'ffmpeg'},
             {'exec_name': 'python', 'package_id': 'python-embed'},
         ]
+
+
+class FakeClientRuntime:
+    def client_install_statuses(self, _client_id, packages, **_kwargs):
+        return {'items': [{'installed': p['id'] == 'ffmpeg'} for p in packages]}
 
 
 def test_xt_exec_nested_subcommands_and_exec_names():
@@ -25,7 +39,7 @@ def test_xt_exec_nested_subcommands_and_exec_names():
         SCRIPT_PATH='', COMMAND_HISTORY_RECENT_LIMIT=30,
     )}):
         from server.application.completion.command_completion_providers import ExternalToolCommandCompletionProvider
-    provider = ExternalToolCommandCompletionProvider(server, FakeCatalog())
+    provider = ExternalToolCommandCompletionProvider(server, FakeCatalog(), FakeClientRuntime())
     parser = CommandCompletionParser()
 
     def names(text):
@@ -37,11 +51,12 @@ def test_xt_exec_nested_subcommands_and_exec_names():
     ]
     assert names('xt exec ') == [
         'xt exec list', 'xt exec info', 'xt exec which', 'xt exec run', 'xt exec',
-        'xt exec ffmpeg', 'xt exec python',
+        'xt exec ffmpeg',
     ]
     assert names('xt exec info ') == ['xt exec info ffmpeg', 'xt exec info python']
-    assert names('xt exec which p') == ['xt exec which ffmpeg', 'xt exec which python']
-    assert names('xt exec f')[-2:] == ['xt exec ffmpeg', 'xt exec python']
+    assert names('xt exec which p') == ['xt exec which ffmpeg']
+    assert names('xt exec f')[-1:] == ['xt exec ffmpeg']
+    assert names('xt exec run ') == ['xt exec run ffmpeg']
     assert names('xt exec ffmpeg -version') == []
     assert names('xt run ') == []
     assert names('xt exec list --json') == []
