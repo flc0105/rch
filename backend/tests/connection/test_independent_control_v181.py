@@ -261,7 +261,7 @@ def test_script_warning_activity_uses_terminal_result(wire, tmp_path, mode, outp
     coordinator = ActivityCoordinator(store)
     server.context.activity_coordinator = coordinator
     server.context.command_dispatch_adapter = CommandDispatchAdapter(coordinator, lambda _:server)
-    source = 'from client.runtime.sdk import context\ncontext.progress("[WARNING] optional file missing", status=0)\nprint("Not approved")'
+    source = 'from client.runtime.sdk import context\ncontext.progress("[WARNING] optional file missing", level="warning")\nprint("Not approved")'
     rows = list(server.send_command('', type='control', domain='script', action='run', payload={
         'script_name':'test/warning', 'source':source, 'params':{}, 'execution_mode':mode, 'output_mode':output}))
     assert rows[-1][0] == 1 and rows[-1].eof

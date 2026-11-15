@@ -58,7 +58,10 @@ class CommandStreamService:
                     continue
                 # A command may be rendered by the calling domain already;
                 # the original data stays separate for machine consumers.
-                if isinstance(value, str):
+                from core.utils.output_marker import render_result_message
+                if phase == 'progress':
+                    displayed = render_result_message(event)
+                elif isinstance(value, str):
                     displayed = value
                 else:
                     displayed = str(event.get('message') or '')

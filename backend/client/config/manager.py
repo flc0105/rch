@@ -57,13 +57,12 @@ class ConfigurationManager:
                     change, messages = self.reset(payload.get('key'), scope._checkpoint)
             else:
                 return 0, 'Unsupported configuration Control action'
-            # Warnings remain visible interim messages; successfully applied
-            # callbacks describe their effect in the final result only.
-            from core.utils.output_marker import warning
+            # Warnings are typed progress. Successfully applied callbacks
+            # describe the actual runtime effect in the final result only.
             effect_notes = []
             for effect in messages:
-                if str(effect).startswith(warning('')):
-                    scope._send_interim_result(1, effect)
+                if getattr(effect, 'level', None) == 'warning':
+                    scope.emit_progress(str(effect), level='warning')
                 else:
                     effect_notes.append(str(effect))
             if change is None:

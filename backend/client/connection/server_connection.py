@@ -107,6 +107,11 @@ class ServerConnection(RCHSocket):
             finally:
                 self._pending_session_end_id = ''
 
+    def send_event(self, request_id: int, event: dict):
+        """Send a typed Result event without legacy numeric status or EOF."""
+        from core.protocol.result_envelope import build_result_wire_event
+        self.send(build_result_wire_event(request_id, event, cwd=os.getcwd()))
+
     def send_result(self, id: int, status: int, result, eof: int = 1, *, event_type=None):
         from core.protocol.result_envelope import result_wire_event
         packet = result_wire_event(id, status, result, final=bool(eof),

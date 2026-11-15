@@ -182,7 +182,7 @@ class ProcessExecutionService:
             else:
                 text = str(line).rstrip('\r\n')
 
-            self.owner._send_interim_result(status, text)
+            self.owner.emit_chunk(text)
 
     def _start_output_thread(self, stream, status, timeout=None):
         thread = threading.Thread(

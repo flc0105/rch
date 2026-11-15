@@ -224,7 +224,7 @@ def test_read_uses_managed_subprocess_cancel_not_only_checkpoints():
         pytest.skip('POSIX subprocess cancellation smoke test')
     from client.commands.runtime.executor import CommandExecutor
 
-    socket = SimpleNamespace(send_result=lambda *args: None)
+    socket = SimpleNamespace(send_result=lambda *args: None, send_event=lambda *args: None)
     executor = CommandExecutor(socket)
     result = {}
     command = 'shell_stream ' + shlex.quote(sys.executable) + " -c 'import time; time.sleep(9)'"
@@ -321,7 +321,7 @@ def test_stream_process_output_normalizes_windows_crlf_without_removing_blank_li
     chunks = []
     owner = SimpleNamespace(
         _checkpoint=lambda **kwargs: None,
-        _send_interim_result=lambda status, text: chunks.append((status, text)),
+        emit_chunk=lambda text: chunks.append((1, text)),
     )
     raw = 'first\r\n\r\nsecond\nthird\r\n'
     source = io.BytesIO(raw.encode('utf-8')) if binary else io.StringIO(raw)

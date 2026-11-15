@@ -277,7 +277,8 @@ class CommandDispatchAdapter:
                     if isinstance(result, dict) and result.get('event_type') in ResultEventType._value2member_map_:
                         # Data is machine-readable; Output Records keep only
                         # the visible projection, not a second Envelope copy.
-                        message = str(result.get('message') or result.get('text') or '')
+                        from core.utils.output_marker import render_result_message
+                        message = render_result_message(result)
                         if not message and 'data' in result:
                             message = json.dumps(result['data'], ensure_ascii=False)
                     elif isinstance(result, str):

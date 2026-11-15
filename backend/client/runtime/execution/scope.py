@@ -5,44 +5,33 @@ from client.runtime.filesystem.path_resolver import PathResolver
 from core.protocol.structured_arg_codec import StructuredArgCodec
 from client.http.client_api import ClientApiClient
 from client.config import runtime_config
-from core.utils.output_marker import info, success, warning, error
 
 class ExecutionResultMixin:
-    """
-    执行结果发送能力：
-    - 负责协议层结果回传
-    - 不负责执行时机/业务逻辑
-    """
+    """Typed execution events shared by shell, Control and Script producers."""
 
-    def _send_result(self, status, result, eof=1):
-        """
-        发送当前请求的执行结果
-        """
-        self.socket.send_result(self.command_id, status, result, eof)
+    def emit_progress(self, message: str, *, level: str | None = None):
+        event = {'event_type': 'progress', 'message': str(message)}
+        if level is not None:
+            event['level'] = level
+        self.socket.send_event(self.command_id, event)
 
-    def _send_final_result(self, status, result, eof=1):
-        """
-        发送最终结果
-        """
-        self._send_result(status, result, eof)
+    def emit_chunk(self, message: str = '', *, data=None):
+        event = {'event_type': 'chunk'}
+        if data is not None:
+            event['data'] = data
+            if message:
+                event['message'] = str(message)
+        else:
+            event['message'] = str(message)
+        self.socket.send_event(self.command_id, event)
 
-    def _send_interim_result(self, status, result, eof=0):
-        """
-        发送中间结果
-        """
-        self._send_result(status, result, eof)
-
-    def _send_info(self, result, eof=0):
-        self.socket.send_result(self.command_id, 1, info(result), eof, event_type='progress')
-
-    def _send_success(self, result, eof=0):
-        self.socket.send_result(self.command_id, 1, success(result), eof, event_type='progress')
-
-    def _send_warning(self, result, eof=0):
-        self.socket.send_result(self.command_id, 1, warning(result), eof, event_type='progress')
-
-    def _send_error(self, result, eof=0):
-        self._send_interim_result(0, error(result), eof)
+    def emit_completed(self, *, status: str = 'success', message: str = '',
+                       data=None, references=None):
+        from core.protocol.result_envelope import ResultEnvelope
+        self.socket.send_event(self.command_id, ResultEnvelope(
+            status=status, message=str(message), data=data,
+            references=references,
+        ).as_payload())
 
 
 class ExecutionRuntimeMixin:

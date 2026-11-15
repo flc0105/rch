@@ -31,7 +31,6 @@ from client.runtime.client_util import (
 )
 from core.utils.decorator import desc
 from core.utils.formatting import get_size
-from core.utils.output_marker import success, info, warning, error
 
 
 class CommandUpdateMixin:
@@ -349,37 +348,36 @@ class CommandUpdateMixin:
         try:
             options = self._parse_update_options(arg)
 
-            self._send_info('Bundle building requested', 0)
+            self.emit_progress('Bundle building requested', level='info')
             bundle_meta = self._request_update_bundle()
-            self._send_success('Bundle building completed', 0)
+            self.emit_progress('Bundle building completed', level='success')
 
             release_dir = get_client_bundle_release_dir()
             archive_dir = get_client_bundle_download_dir()
             archive_path = os.path.join(archive_dir, bundle_meta['file_name'])
             extract_dir = build_bundle_extract_dir(release_dir, bundle_meta['file_name'])
 
-            self._send_info(f'Bundle downloading: {bundle_meta["file_name"]}', 0)
+            self.emit_progress(f'Bundle downloading: {bundle_meta["file_name"]}', level='info')
             self._download_bundle_archive(bundle_meta['download_url'], archive_path)
-            self._send_success(f'Bundled downloaded successfully: {archive_path}', 0)
+            self.emit_progress(f'Bundled downloaded successfully: {archive_path}', level='success')
 
             current_bundle_dir = self._get_current_bundle_release_dir(release_dir)
 
-            self._send_info('Bundle extracting...', 0)
+            self.emit_progress('Bundle extracting...', level='info')
             extract_dir = self._extract_update_bundle_safely(
                 archive_path,
                 extract_dir,
                 current_bundle_dir,
             )
-            self._send_success(f'Bundle ready at {extract_dir}')
+            self.emit_progress(f'Bundle ready at {extract_dir}', level='success')
 
             rchclient_path = os.path.join(extract_dir, 'rchclient.py')
-            self._send_info(f'Preparing to launch script: {rchclient_path}', 0)
+            self.emit_progress(f'Preparing to launch script: {rchclient_path}', level='info')
 
             if get_local_identity().os_alias == 'ios':
-                self._send_success(
-                    f'iOS detected, please restart Pythonista app and manually run script: {rchclient_path}',
-                    eof=1,
-                )
+                self.emit_completed(status='success', message=(
+                    f'iOS detected, please restart Pythonista app and manually run script: {rchclient_path}'
+                ))
                 return
 
             ready_path, error_path = self._build_update_ready_paths(release_dir)
@@ -402,15 +400,15 @@ class CommandUpdateMixin:
                 result_text = f'{result_text}, Revision: {new_revision}'
 
             if options.get('keep_old'):
-                self._send_success(f'{result_text}. Current client kept alive by --keep-old.', eof=1)
+                self.emit_completed(status='success', message=f'{result_text}. Current client kept alive by --keep-old.')
                 return
 
-            self._send_success(f'{result_text}. Current client will exit.', eof=1)
+            self.emit_completed(status='success', message=f'{result_text}. Current client will exit.')
             self._schedule_exit_after_update()
         except Exception as e:
             if process is not None and process.poll() is None and not update_ready:
                 self._stop_failed_update_process(process)
-            self._send_error(f'Failed to update client bundle: {e}', eof=1)
+            self.emit_completed(status='error', message=f'Failed to update client bundle: {e}')
         finally:
             self._cleanup_update_probe_files(ready_path, error_path)
             self._cleanup_update_probe_files(
@@ -418,54 +416,48 @@ class CommandUpdateMixin:
                 f'{ready_path}.adopted' if ready_path else '',
             )
 
-    def _format_client_cleanup_result(self, result: dict) -> str:
-        lines = [
-            success('Client residue cleanup completed'),
-            success(f'Deleted Files: {int(result.get("removed_files") or 0)}'),
-            success(f'Deleted Directories: {int(result.get("removed_dirs") or 0)}'),
-            success(f'Freed Size: {get_size(float(result.get("bytes_freed") or 0))}'),
-        ]
-
-        for item in result.get('items') or []:
-            item_name = str(item.get('name') or '').strip()
-            lines.append(info(
-                f'[{item_name}] files={int(item.get("removed_files") or 0)} '
-                f'dirs={int(item.get("removed_dirs") or 0)} '
-                f'freed={get_size(float(item.get("bytes_freed") or 0))}'
-            ))
-
-            if item.get('skipped'):
-                lines.append(warning(f'  Skipped: {item.get("skip_reason", "")}'))
-
-            for path in item.get('paths') or []:
-                lines.append(f'  deleted: {path}')
-
-            for path in item.get('skipped_paths') or []:
-                lines.append(f'  kept: {path}')
-
-            for message in item.get('errors') or []:
-                lines.append(error(f'  {message}'))
-
-        return '\n'.join(lines)
-
     @staticmethod
-    def _format_client_cleanup_scan(plan: dict) -> str:
-        """Retain scan visibility across all cleanup categories, including empty ones."""
-        lines = []
+    def _cleanup_scan_records(plan: dict):
+        """Produce stage records without embedding terminal marker glyphs."""
         for item in plan.get('items') or []:
             name = str(item.get('name') or '')
             paths = item.get('paths') or []
-            lines.append(info(f'[{name}] targets={len(paths)}'
-                              + (' (empty)' if not paths else '')))
+            yield 'info', f'[{name}] targets={len(paths)}' + (' (empty)' if not paths else '')
             for directory in item.get('scanned_paths') or []:
-                lines.append(f'  scanned: {directory}')
+                yield None, f'  scanned: {directory}'
             for entry in paths:
-                lines.append(f'  candidate: {entry["path"]}')
+                yield None, f'  candidate: {entry["path"]}'
             for path in item.get('skipped_paths') or []:
-                lines.append(f'  kept: {path}')
+                yield None, f'  kept: {path}'
             for message in item.get('errors') or []:
-                lines.append(error(f'  {message}'))
-        return '\n'.join(lines)
+                yield 'error', f'  {message}'
+
+    @staticmethod
+    def _cleanup_result_records(result: dict):
+        yield 'success', 'Client residue cleanup completed'
+        yield 'success', f'Deleted Files: {int(result.get("removed_files") or 0)}'
+        yield 'success', f'Deleted Directories: {int(result.get("removed_dirs") or 0)}'
+        yield 'success', f'Freed Size: {get_size(float(result.get("bytes_freed") or 0))}'
+        for item in result.get('items') or []:
+            name = str(item.get('name') or '').strip()
+            yield 'info', (f'[{name}] files={int(item.get("removed_files") or 0)} '
+                           f'dirs={int(item.get("removed_dirs") or 0)} '
+                           f'freed={get_size(float(item.get("bytes_freed") or 0))}')
+            if item.get('skipped'):
+                yield 'warning', f'  Skipped: {item.get("skip_reason", "")}'
+            for path in item.get('paths') or []:
+                yield None, f'  deleted: {path}'
+            for path in item.get('skipped_paths') or []:
+                yield None, f'  kept: {path}'
+            for message in item.get('errors') or []:
+                yield 'error', f'  {message}'
+
+    def _emit_cleanup_records(self, records):
+        for level, message in records:
+            if level is None:
+                self.emit_chunk(message)
+            else:
+                self.emit_progress(message, level=level)
 
     @desc('Clean Client residue and obsolete bundle releases', group='maintenance', interaction=True)
     @cancel_policy('cooperative')
@@ -473,7 +465,7 @@ class CommandUpdateMixin:
         """Preview selectable cleanup categories; --no-confirm executes without Broker."""
         options = str(arg or '').strip()
         if options not in ('', '--no-confirm'):
-            return 0, error('Usage: clean [--no-confirm]')
+            return 0, 'Usage: clean [--no-confirm]'
         try:
             service = ClientCleanupService(
                 checkpoint=self._checkpoint,
@@ -481,7 +473,7 @@ class CommandUpdateMixin:
             )
             self._set_timeout(240)
             plan = service.plan()
-            scan_text = CommandUpdateMixin._format_client_cleanup_scan(plan)
+            self._emit_cleanup_records(CommandUpdateMixin._cleanup_scan_records(plan))
             candidates = [
                 entry for entry in plan['items']
                 if entry['paths'] or any(
@@ -490,7 +482,8 @@ class CommandUpdateMixin:
                 )
             ]
             if not candidates:
-                return 1, scan_text + '\n' + info('Nothing to clean')
+                self.emit_progress('Nothing to clean', level='info')
+                return 1, ''
             chosen = {entry['name'] for entry in candidates}
             if options == '--no-confirm':
                 # An idle but live *other* Client cannot be proven inactive
@@ -531,9 +524,11 @@ class CommandUpdateMixin:
                     'Delete selected Client residue?', preview,
                     title='Client Cleanup — Delete Plan'))
                 if not chosen:
-                    return 1, scan_text + '\n' + info('No cleanup categories selected; nothing deleted')
+                    self.emit_progress('No cleanup categories selected; nothing deleted', level='info')
+                    return 1, ''
             result = service.execute_plan(plan, chosen)
             status = 0 if int(result.get('error_count') or 0) else 1
-            return status, scan_text + '\n' + self._format_client_cleanup_result(result)
+            self._emit_cleanup_records(CommandUpdateMixin._cleanup_result_records(result))
+            return status, ''
         except Exception as exc:
-            return 0, error(f'Failed to clean Client residue: {exc}')
+            return 0, f'Failed to clean Client residue: {exc}'

@@ -75,7 +75,7 @@ def excluded_entry(name, *, directory, project):
 
 
 def emit(message, *, warning=False):
-    context.progress(("[WARNING] " if warning else "[BACKUP] ") + message, status=0 if warning else 1)
+    context.progress(("[WARNING] " if warning else "[BACKUP] ") + message, level='warning' if warning else None)
 
 
 def formatted_size(size):

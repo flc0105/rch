@@ -137,7 +137,7 @@ def config_control_result(connection, action, key='', value=''):
     from client.config.manager import ConfigurationManager
     from core.protocol.control import ConfigurationAction
     manager = ConfigurationManager(connection, getattr(connection.runtime, 'features', None))
-    scope = SimpleNamespace(_checkpoint=lambda: None, _send_interim_result=lambda *_: None)
+    scope = SimpleNamespace(_checkpoint=lambda: None, emit_progress=lambda *_args, **_kwargs: None)
     payload = ({'key': key, 'value': value, 'value_format': 'text'} if action == 'set' else
                {'key': key} if action == 'reset' else {'all': True})
     status, result = manager.execute(scope, ConfigurationAction(action if action != 'reset-all' else 'reset'), payload)

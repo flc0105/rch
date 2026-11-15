@@ -76,7 +76,7 @@ def test_configuration_missing_key_error_is_not_wrapped_in_python_repr_quotes():
     from client.config.manager import ConfigurationManager
     from core.protocol.control import ConfigurationAction
     manager = ConfigurationManager(SimpleNamespace())
-    scope = SimpleNamespace(_checkpoint=lambda: None, _send_interim_result=lambda *args: None)
+    scope = SimpleNamespace(_checkpoint=lambda: None, emit_progress=lambda *_args, **_kwargs: None)
     status, result = manager.execute(scope, ConfigurationAction.SET, {
         'key': 'NON_EXISTENT_RCH_TEST_KEY', 'value': '1', 'value_format': 'text'})
     assert status == 0

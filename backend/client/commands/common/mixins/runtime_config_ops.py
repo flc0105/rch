@@ -33,6 +33,7 @@ class CommandRuntimeConfigMixin:
         from core.protocol.configuration_result import build_configuration_result
         from core.utils.configuration_cli import parse_configuration_request, configuration_cli_items
         from core.utils.command_output import parse_output_format, render_result_payload
+        from core.utils.output_marker import render_result_message
 
         try:
             action, payload, output_format = parse_configuration_request(
@@ -42,8 +43,13 @@ class CommandRuntimeConfigMixin:
                 ConfigurationAction.GET, status='error', message=str(exc)), parse_output_format(arg))
 
         messages = []
-        scope = SimpleNamespace(_checkpoint=getattr(self, '_checkpoint', lambda: None),
-                                _send_interim_result=lambda status, text: messages.append(str(text)))
+        scope = SimpleNamespace(
+            _checkpoint=getattr(self, '_checkpoint', lambda: None),
+            emit_progress=lambda text, level=None: messages.append(render_result_message({
+                'event_type': 'progress', 'message': text,
+                **({'level': level} if level is not None else {}),
+            })),
+        )
         status, result = self.configuration_manager.execute(scope, action, payload)
         if status == 1 and action == ConfigurationAction.GET:
             result = {**result, 'data': configuration_cli_items(result['data'])}

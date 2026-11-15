@@ -21,7 +21,7 @@ def isolated_runtime_config(tmp_path, monkeypatch):
 
 def test_client_control_query_and_mutations_are_consistent(isolated_runtime_config):
     manager = ConfigurationManager(None, features={'watchdog': False})
-    scope = SimpleNamespace(_checkpoint=lambda: None, _send_interim_result=lambda *_: None)
+    scope = SimpleNamespace(_checkpoint=lambda: None, emit_progress=lambda *_args, **_kwargs: None)
 
     status, get = manager.execute(scope, ConfigurationAction.GET, {})
     assert status == 1
@@ -58,7 +58,7 @@ def test_client_control_query_and_mutations_are_consistent(isolated_runtime_conf
 class InMemoryRemote:
     def __init__(self):
         self.manager = ConfigurationManager(None, features={'watchdog': False})
-        self.scope = SimpleNamespace(_checkpoint=lambda: None, _send_interim_result=lambda *_: None)
+        self.scope = SimpleNamespace(_checkpoint=lambda: None, emit_progress=lambda *_args, **_kwargs: None)
 
     def run_foreground_control(self, target, domain, action, payload, **kwargs):
         return self.manager.execute(self.scope, action, payload)

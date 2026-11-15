@@ -2,7 +2,19 @@
 
 from client.config import runtime_config
 from core.utils.logger import logger
-from core.utils.output_marker import warning
+
+
+class ConfigEffectMessage(str):
+    """Text from an applied configuration effect with an optional progress level."""
+
+    def __new__(cls, message, *, level=None):
+        obj = str.__new__(cls, message)
+        obj.level = level
+        return obj
+
+
+def warning(message):
+    return ConfigEffectMessage(message, level='warning')
 
 
 class RuntimeConfigEffects:

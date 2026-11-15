@@ -9,7 +9,6 @@ from client.runtime.http_transfer.strategies.factory import build_http_transfer_
 from client.http.client_api import ClientApiClient
 from core.protocol.message_types import MSG_TYPE_TRANSFER_UPDATE
 from core.utils.formatting import format_bytes
-from core.utils.output_marker import success
 
 
 class HttpFileTransferService:
@@ -73,7 +72,7 @@ class HttpFileTransferService:
         data = payload.get('data') if isinstance(payload, dict) and isinstance(payload.get('data'), dict) else {}
         original_name = str(data.get('original_name') or os.path.basename(file_path)).strip()
         display_name = original_name or os.path.basename(file_path)
-        return success(f'Upload completed: {display_name}')
+        return f'Upload completed: {display_name}'
 
     def _send_transfer_update(self, transfer_id: str, **payload):
         normalized_transfer_id = str(transfer_id or '').strip()
@@ -191,7 +190,8 @@ class HttpFileTransferService:
         strategy = self.get_transfer_strategy()
         progress_supported = strategy.get_mode_name() != 'legacy'
 
-        self.owner._send_info(self.build_http_upload_start_message(filename, file_size), 0)
+        if not transfer_id:
+            self.owner.emit_progress(self.build_http_upload_start_message(filename, file_size), level='info')
 
         if transfer_id and send_preparing:
             self._send_transfer_update(
@@ -267,6 +267,11 @@ class HttpFileTransferService:
                 file_path=file_path,
                 fallback_message='HTTP upload completed',
             )
+            if not transfer_id:
+                # A Client command sees one success progress record. Independent
+                # Transfer tasks already use transfer_update for this milestone.
+                self.owner.emit_progress(message, level='success')
+                return 1, ''
             return 1, message
         except Exception as exc:
             if transfer_id:
@@ -342,7 +347,9 @@ class HttpFileTransferService:
             filename,
         ) if transfer_id else None
 
-        if transfer_id:
+        if not transfer_id:
+            self.owner.emit_progress(f'Downloading: {filename}', level='info')
+        else:
             self._send_transfer_update(
                 transfer_id,
                 state='running',
@@ -361,7 +368,9 @@ class HttpFileTransferService:
             )
             if commit is not None:
                 target_path = commit(target_path)
-            if transfer_id:
+            if not transfer_id:
+                self.owner.emit_progress(f'Download completed: {filename}', level='success')
+            else:
                 file_size = os.path.getsize(target_path)
                 self._send_transfer_update(
                     transfer_id,

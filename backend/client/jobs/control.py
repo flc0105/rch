@@ -23,14 +23,14 @@ class JobControl:
                 if not name or not isinstance(params, dict):
                     raise ValueError('A Job name and object parameters are required')
                 mode = payload['execution_mode']
-                scope._send_interim_result(1, f'Downloading Job from Server: {name}')
+                scope.emit_progress(f'Downloading Job from Server: {name}', level='info')
                 content = scope.client_api.download_job(name, timeout=30)
                 temp_dir = make_client_temp_dir('remote_job_temp', prefix='job_')
                 try:
                     temp_path = os.path.join(temp_dir, 'remote_job.py')
                     with open(temp_path, 'w', encoding='utf-8') as stream:
                         stream.write(content)
-                    scope._send_interim_result(1, f'Job saved locally: {temp_path}')
+                    scope.emit_progress(f'Job saved locally: {temp_path}', level='success')
                     runtime = manager.start_job(
                         temp_path, name, scope.command_id,
                         job_params=params, cleanup_path=temp_dir, execution_mode=mode,

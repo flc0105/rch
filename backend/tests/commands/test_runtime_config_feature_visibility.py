@@ -32,7 +32,7 @@ def test_configuration_control_get_uses_runtime_features():
     from core.protocol.control import ConfigurationAction
     from types import SimpleNamespace
     manager = ConfigurationManager(None, features={'screen_view': False})
-    scope = SimpleNamespace(_checkpoint=lambda: None, _send_interim_result=lambda *_: None)
+    scope = SimpleNamespace(_checkpoint=lambda: None, emit_progress=lambda *_args, **_kwargs: None)
     status, payload = manager.execute(scope, ConfigurationAction.GET, {})
     assert status == 1
     assert 'SCREEN_FRAME_STRATEGY' not in {item['key'] for item in payload['data']['items']}

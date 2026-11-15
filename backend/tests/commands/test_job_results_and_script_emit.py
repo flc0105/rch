@@ -104,7 +104,7 @@ def test_empty_stop_all_json_has_no_batch_counters_or_placeholder_data():
 
 def test_job_failure_json_keeps_status_and_message_without_duplicate_error():
     from client.jobs.control import JobControl
-    scope = SimpleNamespace(_send_interim_result=lambda *_: None,
+    scope = SimpleNamespace(emit_progress=lambda *_args, **_kwargs: None,
                             client_api=SimpleNamespace(download_job=lambda *_args, **_kwargs:
                                                        (_ for _ in ()).throw(FileNotFoundError('Job not found: xxxx'))))
     status, result = JobControl.execute(None, scope, JobAction.START, {
@@ -233,7 +233,7 @@ def test_completed_query_uses_same_renderer_in_common_pipeline():
 def _script_harness():
     frames = []
     sock = SimpleNamespace(client_id='emit-test', client_session_token='',
-                           send_result=lambda *args: frames.append(args))
+                           send_event=lambda _id, event: frames.append(event))
     runtime = ExecutionRuntime(sock)
     dispatcher = ClientControlDispatcher(runtime)
     manager = ScriptManager()
@@ -255,13 +255,12 @@ def test_sdk_emits_ordered_text_json_text(execution_mode, output_mode):
     status, result = dispatcher.execute(8, 'script', 'run', request)
     assert status == 1, result
     assert result == 'Code execution completed'
-    events = [frame[2] for frame in frames]
+    events = frames
     assert len(events) == 3, events
-    assert events[0] == 'before'
+    assert events[0] == {'event_type': 'chunk', 'message': 'before'}
     assert events[1] == {'event_type': 'chunk', 
                          'data': {'number': 2, 'enabled': True}}
-    assert events[2] == 'after'
-    assert all(frame[3] == 0 for frame in frames)
+    assert events[2] == {'event_type': 'chunk', 'message': 'after'}
     assert runtime.context_store.get_existing(8) is None
 
 
@@ -276,10 +275,10 @@ def test_inproc_collect_mixed_output_uses_stream_line_boundaries():
         'script_name': 'test/misc/structured_output_probe', 'source': source,
         'params': {}, 'execution_mode': 'inproc', 'output_mode': 'collect'})
     assert status == 1, result
-    assert [frame[2] for frame in frames] == [
-        'first', 'second',
+    assert frames == [
+        {'event_type': 'chunk', 'message': 'first'}, {'event_type': 'chunk', 'message': 'second'},
         {'event_type': 'chunk', 'data': {'key': 'value'}},
-        'last',
+        {'event_type': 'chunk', 'message': 'last'},
     ]
 
 

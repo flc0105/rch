@@ -79,14 +79,14 @@ class InProcessPythonExecutionStrategy(PythonExecutionStrategy):
             return status, output.text() + message
         # Collect defers all output records, preserving order and structure.
         for item in output.events():
-            self.owner._send_interim_result(1, item, 0)
+            self.owner.emit_chunk(data=item['data']) if isinstance(item, dict) else self.owner.emit_chunk(item)
         return status, message or 'Code execution completed'
 
     def execute_stream(self, code, kwargs=None, timeout=None):
-        output = StreamOutput(lambda text: self.owner._send_interim_result(1, text, 0))
+        output = StreamOutput(lambda text: self.owner.emit_chunk(text))
         def emit_data(data):
             output.flush()
-            self.owner._send_interim_result(1, self._data_event(data), 0)
+            self.owner.emit_chunk(data=data)
         status, message = self._execute(code, kwargs, output, emit_event=emit_data)
         return status, message or 'Code execution completed'
 

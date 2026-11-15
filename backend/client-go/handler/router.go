@@ -32,6 +32,14 @@ func sendResultEvent(session *executor.Session, id, status int, result interface
 					packet[field] = item
 				}
 			}
+			if phase == "progress" {
+				if level, ok := value["level"].(string); ok {
+					switch level {
+					case "info", "success", "warning", "error":
+						packet["level"] = level
+					}
+				}
+			}
 			if _, present := packet["message"]; !present {
 				if text, ok := value["text"].(string); ok {
 					packet["message"] = text

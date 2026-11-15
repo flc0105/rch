@@ -99,15 +99,15 @@ class CommandExecutionMixin(PythonProcessExecutionMixin):
             time.sleep(0.1)
 
             if process.returncode == 0:
-                self._send_final_result(1, "Command completed")
+                self.emit_completed(status='success', message="Command completed")
             else:
-                self._send_final_result(0, f'Command exited with code {process.returncode}')
+                self.emit_completed(status='error', message=f'Command exited with code {process.returncode}')
         except CommandCancelledError:
-            self._send_final_result(0, 'Command cancelled')
+            self.emit_completed(status='cancelled', message='Command cancelled')
         except (CommandTimeoutError, subprocess.TimeoutExpired):
-            self._send_final_result(0, 'Command timed out and was terminated')
+            self.emit_completed(status='timed_out', message='Command timed out and was terminated')
         except Exception as e:
-            self._send_final_result(0, f'Failed to execute command: {e}')
+            self.emit_completed(status='error', message=f'Failed to execute command: {e}')
 
     @desc('Execute Python code and collect output', group='execution')
     @cancel_policy('cooperative')

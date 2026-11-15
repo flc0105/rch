@@ -103,7 +103,7 @@ def test_command_media_upload_passes_wire_name_and_origin(tmp_path):
     strategy.upload_file.return_value = SimpleNamespace(raise_for_status=lambda: None)
     client_api = SimpleNamespace(build_file_upload_url=lambda: 'https://example.invalid',
                                  try_parse_json=lambda response: {'data': {'original_name': 'screenshot_20261110_183218.png'}})
-    owner = SimpleNamespace(socket=SimpleNamespace(client_id='abc'), command_id=None, _send_info=lambda *args: None)
+    owner = SimpleNamespace(socket=SimpleNamespace(client_id='abc'), command_id=None, emit_progress=lambda *_args, **_kwargs: None)
     service = HttpFileTransferService(owner, client_api=client_api)
     service.get_transfer_strategy = lambda: strategy
     service.upload_single_file_to_server_result(str(local), category='screenshots',
@@ -122,8 +122,7 @@ def test_macos_screenshot_sends_generated_artifact_name(monkeypatch, tmp_path):
     transfer.upload_single_file_to_server_result.return_value = (1, 'OK')
     owner = SimpleNamespace(
         http_file_transfer_service=transfer,
-        _send_info=lambda *args: None,
-        _send_success=lambda *args: None,
+        emit_progress=lambda *_args, **_kwargs: None,
         _run_shell_command=lambda *args, **kwargs: SimpleNamespace(returncode=0),
     )
     monkeypatch.setattr(media_service, 'make_client_temp_file',
@@ -145,10 +144,12 @@ def test_windows_screenshot_uses_wire_name_not_local_temp(monkeypatch, tmp_path)
 
     local = tmp_path / 'private_random.png'
     transfer = Mock()
+    transfer.upload_single_file_to_server_result.return_value = (1, "OK")
     owner = SimpleNamespace(
         http_file_transfer_service=transfer,
-        _send_interim_result=lambda *args: None,
-        _send_final_result=lambda *args: None,
+        emit_progress=lambda *_args, **_kwargs: None,
+        emit_chunk=lambda *_args, **_kwargs: None,
+        emit_completed=lambda *_args, **_kwargs: None,
     )
     class Image:
         def save(self, path):

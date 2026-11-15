@@ -69,7 +69,7 @@ class CommandDiagnosticsMixin:
 - `suggest`：控制是否出现在默认帮助/候选展示中。`suggest=False` 不会禁止执行，Manifest 中仍可能包含该项，由展示层过滤。
 - `interaction`：标记通常可能请求 Web 交互，用于 Manifest 提示，不控制命令执行权限。
 
-普通 Runner 的调用约定是：先通过项目解析器分离首个命令名称及其余文本；然后以方法签名决定调用 `handler()` 还是 `handler(arg)`。因此普通命令更适合无参或**单段原始参数文本**；多值、可验证的选项建议使用 ACMD。命令返回一般为 `(status, result)`，其中 `1` 表示成功、`0` 表示失败；其他输出约定需与执行链保持一致。中间流式结果应复用 `CommandBase` 的 `_send_interim_result()` / `_send_info()` 等方法，并遵守 `command_id` 绑定，而不是自己创建 Web SSE 事件。
+普通 Runner 的调用约定是：先通过项目解析器分离首个命令名称及其余文本；然后以方法签名决定调用 `handler()` 还是 `handler(arg)`。因此普通命令更适合无参或**单段原始参数文本**；多值、可验证的选项建议使用 ACMD。命令返回一般为 `(status, result)`，其中 `1` 表示成功、`0` 表示失败；其他输出约定需与执行链保持一致。中间流式结果应复用执行 Scope 的 `emit_chunk(message)`、`emit_progress(message, level=None)`；仅在直接管理终态的流式方法中调用 `emit_completed(status="success"|"error"|...)`。一次性函数继续返回 `(status, result)`，由执行入口生成唯一 completed；禁止主动发完 completed 又返回新的结果导致重复终态。显式 progress.level 支持 info/success/warning/error，由 Server 公共 Renderer 投影标记；不得在 Client 字符串里预先拼 Marker，也不得自行创建 Web SSE 事件。
 
 ### 运行上下文与能力约束
 

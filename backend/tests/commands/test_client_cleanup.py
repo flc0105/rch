@@ -199,7 +199,8 @@ def test_no_confirm_skips_unverifiable_other_client_logs(monkeypatch):
     host = SimpleNamespace(_set_timeout=lambda *a: None,
                            _checkpoint=lambda *a: None,
                            _get_current_bundle_release_dir=lambda *a: '',
-                           _format_client_cleanup_result=lambda result: 'ok')
+                           _emit_cleanup_records=lambda records: None,
+                           emit_progress=lambda *args, **kwargs: None)
     code, output = CommandUpdateMixin.clean(host, '--no-confirm')
     assert code == 1 and chosen == [{'preview_temp'}]
 

@@ -60,7 +60,7 @@ def readable_size(count):
 
 def emit(message, *, warning=False):
     context.progress(('[WARNING] ' if warning else '[CLEANUP] ') + message,
-                     status=0 if warning else 1)
+                     level='warning' if warning else None)
 
 
 def identity(info, *, directory=False):

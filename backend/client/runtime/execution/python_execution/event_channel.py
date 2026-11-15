@@ -35,8 +35,19 @@ def connect_event_stream(endpoint):
                 conn.sendall(packet)
         send({'kind': 'auth', 'token': endpoint['token']})
         output = _EventTextStream(send)
+        def emit_data(data):
+            send({'kind': 'data', 'data': data})
+
+        def emit_progress(message, *, level=None):
+            event = {'kind': 'progress', 'message': message}
+            if level is not None:
+                event['level'] = level
+            send(event)
+
+        # Keep one authenticated ordered channel for stdout, data and progress.
+        emit_data.progress = emit_progress
         with redirect_stdout(output), redirect_stderr(output):
-            yield lambda data: send({'kind': 'data', 'data': data})
+            yield emit_data
 
 
 def read_event_stream(listener, process, token, consume):
@@ -57,6 +68,6 @@ def read_event_stream(listener, process, token, consume):
                 raise ValueError('Invalid Python output channel token')
             for raw in input_stream:
                 event = json.loads(raw)
-                if not isinstance(event, dict) or event.get('kind') not in ('text', 'data'):
+                if not isinstance(event, dict) or event.get('kind') not in ('text', 'data', 'progress'):
                     raise ValueError('Invalid Python output event')
                 consume(event)

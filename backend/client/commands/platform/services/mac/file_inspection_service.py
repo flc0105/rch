@@ -27,7 +27,7 @@ class MacFileInspectionService:
             # 获取文件大小
             size = os.path.getsize(target)
 
-            self.owner._send_interim_result(1, f'Shredding {target} ({size} bytes)', 0)
+            self.owner.emit_chunk(f'Shredding {target} ({size} bytes)')
 
             # 多次覆写
             with open(target, 'r+b') as f:

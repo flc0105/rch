@@ -45,7 +45,7 @@ print("system_paths =", context.system_paths())
 | `context.os_alias()` | OS alias |
 | `context.os_ver()` | OS 版本 |
 | `context.system_paths()` | 当前 client 握手上报的系统路径 |
-| `context.progress(message, status=1)` | 将脚本进度实时发到当前执行输出流（无运行上下文时打印） |
+| `context.progress(message, level=None)` | 发送真正的 `progress` Result 事件；可选 `level="info"/"success"/"warning"/"error"`，省略时不附加 Marker。inproc/subprocess_pipe 都使用事件通道，普通 `print()` 与 `context.emit(data)` 仍是 chunk。 |
 | `context.emit(data)` | 向当前 Script 输出流追加一条 JSON 对象或数组事件，保留执行顺序 |
 
 `context.emit()` 只接受可 JSON 序列化的 `dict` 或 `list`，不能传入任意 Python 对象或纯文本。发送数据时立即校验并冻结值，避免脚本后续修改导致记录内容漂移；需要输出普通文字继续使用 `print()`。结构化输出不是运行终态，也不是 Device Event：不要与 `events.emit()` 混淆。

@@ -123,7 +123,17 @@ except Exception:
 
                 def consume(event):
                     with output_lock:
-                        if event['kind'] == 'text':
+                        if event['kind'] == 'progress':
+                            # Explicit progress is immediate even in collect mode.
+                            # It is not stdout and must never change final status.
+                            from core.utils.output_marker import OUTPUT_MARKERS
+                            message = event.get('message')
+                            level = event.get('level')
+                            if not isinstance(message, str) or (level is not None and level not in OUTPUT_MARKERS):
+                                raise ValueError('Invalid Python progress event')
+                            output.flush()
+                            self.owner.emit_progress(message, level=level)
+                        elif event['kind'] == 'text':
                             value = event['text']
                             if not isinstance(value, str):
                                 raise ValueError('Invalid Python text event')
@@ -140,7 +150,7 @@ except Exception:
                             if emit is None:
                                 events.write(json.dumps({'kind': 'data', 'data': payload}, ensure_ascii=False) + '\n')
                             else:
-                                self.owner._send_interim_result(1, payload, 0)
+                                self.owner.emit_chunk(data=payload['data'])
 
                 def read_events():
                     try:
@@ -228,8 +238,10 @@ except Exception:
                     events.seek(0)
                     for line in events:
                         item = json.loads(line)
-                        result = item['data'] if item['kind'] == 'data' else item['text']
-                        self.owner._send_interim_result(1, result, 0)
+                        if item['kind'] == 'data':
+                            self.owner.emit_chunk(data=item['data']['data'])
+                        else:
+                            self.owner.emit_chunk(item['text'])
                     return status, message or 'Code execution completed'
                 collected.seek(0)
                 text = collected.read()
@@ -239,5 +251,5 @@ except Exception:
         return self._execute(code, kwargs, timeout)
 
     def execute_stream(self, code, kwargs=None, timeout=None):
-        return self._execute(code, kwargs, timeout, lambda text: self.owner._send_interim_result(1, text, 0))
+        return self._execute(code, kwargs, timeout, lambda text: self.owner.emit_chunk(text))
 

@@ -151,7 +151,7 @@ def test_client_start_downloads_job_and_returns_real_id(monkeypatch, tmp_path):
     scope = SimpleNamespace(
         command_id=39,
         client_api=SimpleNamespace(download_job=lambda name, timeout: 'print(12)'),
-        _send_interim_result=lambda *args: output.append(args),
+        emit_progress=lambda message, *, level=None: output.append((level, message)),
     )
     status, result = JobControl.execute(Manager(), scope, 'start', build_job_control_request(
         'start', job_name='demo', execution_mode='subprocess', params={'x': 12}))

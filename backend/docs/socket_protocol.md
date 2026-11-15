@@ -107,7 +107,7 @@ Server → Client 示例：
 
 Script 使用 `control(domain=script, action=run)`，payload 包含 `script_name`、`source`、`params`、`execution_mode`、`output_mode`；`acmd` 仍使用 `extra`。普通命令和 Script 的自由文本输出仍作为 `message` 传递，不解析其中看似 JSON 的内容；显式 `context.emit(data)` 独立产生结构化 `chunk`。Client 返回的取消/超时原因统一归入最终 `completed.status`。
 
-Result Envelope 是同一个按请求 ID 关联的事件流：`started`（可由 Server 发起）、`progress`（进度更新）、`chunk`（实际输出）、`completed`（唯一终态）。所有消息都使用 `type=result`、`id` 与 `event_type`；`message` 为可读文本，`data` 可为 JSON 对象或数组，`references` 可选。**只有 `completed` 才携带最终字符串 `status`**：`success/partial/error/cancelled/timed_out/interrupted`。Socket Result 不含 `display`、`shape` 或 `eof`；终端如何呈现由业务调用位置和公共 Renderer 决定。
+Result Envelope 是同一个按请求 ID 关联的事件流：`started`（可由 Server 发起）、`progress`（进度更新）、`chunk`（实际输出）、`completed`（唯一终态）。所有消息都使用 `type=result`、`id` 与 `event_type`；`message` 为可读文本，`data` 可为 JSON 对象或数组，`references` 可选。`progress` 可以携带可选 `level`，只支持 `info/success/warning/error`；不填就不追加任何 Output Marker。Server 统一投影 `[*]/[+]/[!]/[-]` 可见文字，原始 `message` 无标记。`chunk` 不允许 `level`。**只有 `completed` 才携带最终字符串 `status`**：`success/partial/error/cancelled/timed_out/interrupted`。Socket Result 不含 `display`、`shape` 或 `eof`；终端如何呈现由业务调用位置和公共 Renderer 决定。
 
 Control 可以在 `completed` 中同时携带 `message` 与原始业务 `data`。Terminal 的操作反馈选择 `message`；查询由调用方选 Table、Flat 或 Grouped，Text/`--json` 使用同一份终端字段投影；Web 可以直接消费完整业务 `data`。例如 `config list` 的 Text/JSON 均只含 `group/key/value/default` 四列，Web GET 仍使用编辑控件所需的配置元数据。普通命令与 Script 的文本输出不强制结构化；这两类只统一 Result 事件外壳和生命周期。
 

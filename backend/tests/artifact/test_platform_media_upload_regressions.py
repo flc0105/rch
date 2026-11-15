@@ -20,7 +20,7 @@ def _mac_webcam(monkeypatch, tmp_path, *, capture_status=0, upload_status=1):
     transfer.upload_single_file_to_server_result.return_value = (upload_status, 'Upload rejected')
     owner = SimpleNamespace(
         http_file_transfer_service=transfer,
-        _send_info=lambda *args: None,
+        emit_progress=lambda *_args, **_kwargs: None,
     )
 
     def make_temp(*args, **kwargs):

@@ -17,7 +17,7 @@ class WinMediaService:
         try:
             import pyautogui
 
-            self.owner._send_interim_result(1, 'Capturing screenshot...', 0)
+            self.owner.emit_progress('Capturing screenshot...', level='info')
 
             # 创建临时文件
             temp_fd, temp_path = make_client_temp_file(
@@ -27,28 +27,31 @@ class WinMediaService:
             )
             os.close(temp_fd)
             temp_file = temp_path
-            self.owner._send_interim_result(1, f'Client Temp Path: {temp_file}', 0)
+            self.owner.emit_progress(f'Client Temp Path: {temp_file}', level='info')
 
             # 截图
             screenshot = pyautogui.screenshot()
             screenshot.save(temp_file)
 
             file_size = os.path.getsize(temp_file)
-            self.owner._send_interim_result(1, f'Screenshot captured ({file_size} bytes)', 0)
+            self.owner.emit_progress(f'Screenshot captured ({file_size} bytes)', level='success')
 
             # 上传文件
             filename = build_artifact_filename('screenshot', 'png')
-            self.owner.http_file_transfer_service.upload_single_file_to_server_result(
+            upload_status, upload_message = self.owner.http_file_transfer_service.upload_single_file_to_server_result(
                 temp_file,
                 category='screenshots',
                 upload_name=filename,
                 extra={'saved_from': 'client_command', 'source_command': 'screenshot'},
             )
 
-            self.owner._send_final_result(1, f'Screenshot uploaded: {filename}')
+            if not upload_status:
+                self.owner.emit_completed(status='error', message=str(upload_message))
+                return
+            self.owner.emit_completed(status='success', message=f'Screenshot uploaded: {filename}')
 
         except Exception as e:
-            self.owner._send_final_result(0, f'Screenshot failed: {e}')
+            self.owner.emit_completed(status='error', message=f'Screenshot failed: {e}')
         finally:
             if temp_file:
                 cleanup_temp_path(temp_file)

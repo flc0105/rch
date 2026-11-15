@@ -102,7 +102,7 @@ def should_ignore(path: Path) -> bool:
 
 def zip_project():
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    zip_name = f"project_backend_frontend_{timestamp}.zip"
+    zip_name = f"rch_project_{timestamp}.zip"
     zip_path = BASE_DIR / zip_name
 
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:

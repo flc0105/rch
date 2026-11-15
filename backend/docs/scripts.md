@@ -131,7 +131,7 @@ SCRIPT_METADATA = {
 
 优先级为：**本次显式选择 → 对应 Schema default → 目标 Client 当前 Configuration/set 值**。允许范围为 Schema allowed 与 Client 实际支持模式的交集。allowed 缺省表示该维度的全部有效枚举；default 必须属于 allowed。若默认值不在交集内，Dialog 不代选，用户须选有效模式；CLI 需显式指定。没有可用值、未知值或非法 Schema 时拒绝运行。`execution` 完全省略时，两个维度直接使用 Client 配置默认值（Python: inproc + collect；Go: subprocess_pipe + collect）。Dialog 打开与提交时读取实时配置，不依赖握手快照；本次选择不修改 Configuration/set。
 
-`collect`：普通 stdout/stderr 在执行结束时汇总返回，取消/超时仍返回已捕获的文本。`stream`：按行、显式 flush 或长行片段即时输出，末尾无换行的片段也保留；stderr 本身不表示失败，最终退出状态才决定成功与否。现有 `context.progress()` 是独立 SDK 进度接口。`context.emit(data)` 发送显式结构化 JSON 输出事件，并且可与 `print()` 文本按顺序混排。Python Client 的 inproc 使用本次执行上下文，subprocess_pipe 使用本地专用的有序输出通道，而不是在 stdout 插入标记；collect 会缓冲到执行结束再逐条发送，stream 实时发送。两个 Strategy 只返回执行结果，统一执行入口发送唯一终态；超时/取消采用明确的结构化事件。
+`collect`：普通 stdout/stderr 在执行结束时汇总返回，取消/超时仍返回已捕获的文本。`stream`：按行、显式 flush 或长行片段即时输出，末尾无换行的片段也保留；stderr 本身不表示失败，最终退出状态才决定成功与否。现有 `context.progress()` 是独立 SDK 进度接口。`context.emit(data)` 发送显式结构化 JSON 输出事件，并且可与 `print()` 文本按顺序混排。Python Client 的 inproc 使用本次执行上下文，subprocess_pipe 使用本地专用的有序输出通道，而不是在 stdout 插入标记；collect 仅缓冲普通 stdout/stderr，显式 `context.progress(message, level=...)` 仍即时发真正的 progress 事件；stream 的普通输出实时发送。progress 的 level 可选（info/success/warning/error），省略不加任何 Marker；公共 Server 渲染器负责给有 level 的 progress 添加标记，永远不修改 print 文本。两个 Strategy 只返回执行结果，统一执行入口发送唯一终态；超时/取消采用明确的结构化事件。
 
 执行记录属于命令任务生命周期，可与 Command History 的来源、状态、输出限制和 Artifact 关联协作，但 Script Library 本身不自动在数据库中保存每次运行的全部独立 Script Session 对象。
 

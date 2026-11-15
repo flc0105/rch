@@ -28,14 +28,47 @@ class ResultEnvelope:
         return payload
 
 
+
+def build_result_wire_event(request_id, event: dict, *, cwd=None) -> dict:
+    """Validate and attach request identity to a typed Result event."""
+    from core.protocol.message_types import MSG_TYPE_RESULT
+    from core.utils.output_marker import OUTPUT_MARKERS
+
+    if not isinstance(event, dict):
+        raise TypeError('Result event must be an object')
+    phase = event.get('event_type')
+    if phase not in ResultEventType._value2member_map_:
+        raise ValueError('Invalid Result event_type')
+    if phase == ResultEventType.COMPLETED:
+        if event.get('status') not in ResultStatus._value2member_map_:
+            raise ValueError('Invalid final Result status')
+    elif 'status' in event:
+        raise ValueError('Only completed Result may carry status')
+    if 'level' in event and (phase != ResultEventType.PROGRESS or
+                             event['level'] not in OUTPUT_MARKERS):
+        raise ValueError('Only progress accepts an info/success/warning/error level')
+    if 'message' in event and not isinstance(event['message'], str):
+        raise ValueError('Result message must be text')
+    if 'data' in event and not isinstance(event['data'], (dict, list)):
+        raise ValueError('Result data must be an object or array')
+    if 'references' in event and (not isinstance(event['references'], list) or
+                                  any(not isinstance(item, dict) for item in event['references'])):
+        raise ValueError('Invalid Result references')
+    packet = {'type': MSG_TYPE_RESULT, 'id': request_id, 'event_type': phase}
+    if cwd is not None:
+        packet['cwd'] = cwd
+    for key in ('status', 'message', 'level', 'data', 'references', 'action'):
+        if key in event:
+            packet[key] = event[key]
+    return packet
+
+
 def result_wire_event(request_id, status, result, *, final=True, cwd=None, event_type=None):
     """Normalize an execution result to the single Client/Server wire shape.
 
     Ordinary commands remain message-only; explicitly structured Control/SDK
     results retain data and references. The wire contains no eof or display.
     """
-    from core.protocol.message_types import MSG_TYPE_RESULT
-
     explicit = result if isinstance(result, dict) and result.get('event_type') in (
         ResultEventType.CHUNK, ResultEventType.PROGRESS, ResultEventType.COMPLETED,
         'error', 'cancelled') else None
@@ -47,11 +80,9 @@ def result_wire_event(request_id, status, result, *, final=True, cwd=None, event
         phase = ResultEventType.CHUNK
     if phase not in (ResultEventType.STARTED, ResultEventType.CHUNK, ResultEventType.PROGRESS, ResultEventType.COMPLETED):
         phase = ResultEventType.COMPLETED if final else ResultEventType.CHUNK
-    packet = {'type': MSG_TYPE_RESULT, 'id': request_id, 'event_type': phase}
-    if cwd is not None:
-        packet['cwd'] = cwd
+    packet = {'event_type': phase}
     if explicit:
-        for key in ('message', 'data', 'references', 'action'):
+        for key in ('message', 'level', 'data', 'references', 'action'):
             if key in explicit:
                 packet[key] = explicit[key]
         if 'message' not in packet and isinstance(explicit.get('text'), str):
@@ -72,4 +103,4 @@ def result_wire_event(request_id, status, result, *, final=True, cwd=None, event
         if status != 1 and target_status == 'success':
             target_status = 'error'
         packet['status'] = target_status
-    return packet
+    return build_result_wire_event(request_id, packet, cwd=cwd)

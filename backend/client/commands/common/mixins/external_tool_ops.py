@@ -211,7 +211,7 @@ class CommandExternalToolMixin:
         try:
             payload = self._decode_external_tool_payload(arg)
         except Exception:
-            self._send_final_result(0, 'Invalid external tool payload')
+            self.emit_completed(status='error', message='Invalid external tool payload')
             return
 
         self.external_tool_service.execute_cli_payload(payload)

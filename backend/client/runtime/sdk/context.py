@@ -190,15 +190,25 @@ def system_paths() -> dict:
     return get_system_paths()
 
 
-def progress(message: str, status: int = 1) -> None:
-    """将当前脚本进度实时发到运行结果流；脱离 Client 上下文时退化为 print。"""
+def progress(message: str, *, level: str | None = None) -> None:
+    """Emit a live Script progress event in either Python execution mode.
+
+    Only explicitly levelled progress receives a terminal Output Marker.
+    Ordinary print() and context.emit() remain text/structured chunks.
+    """
+    from core.utils.output_marker import OUTPUT_MARKERS
+    if level is not None and level not in OUTPUT_MARKERS:
+        raise ValueError('Invalid Script progress level')
     text = str(message)
     owner = get_execution_owner()
-    sender = getattr(owner, '_send_interim_result', None) if owner is not None else None
-    if callable(sender):
-        sender(1 if status else 0, text, 0)
-    else:
-        print(text, flush=True)
+    if owner is not None and callable(getattr(owner, 'emit_progress', None)):
+        owner.emit_progress(text, level=level)
+        return
+    channel = getattr(get_current_context().emit_event, 'progress', None)
+    if callable(channel):
+        channel(text, level=level)
+        return
+    print(text, flush=True)
 
 
 def emit(data: dict | list) -> None:

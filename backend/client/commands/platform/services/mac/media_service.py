@@ -26,14 +26,14 @@ class MacMediaService:
                 suffix='.png',
             )
             os.close(temp_fd)
-            self.owner._send_info(f'Client Temp Path: {screenshot_path}', 0)
+            self.owner.emit_progress(f'Client Temp Path: {screenshot_path}', level='info')
             capture_command = f'screencapture -x {shlex.quote(screenshot_path)}'
-            self.owner._send_info(f'Capturing screen: {capture_command}', 0)
+            self.owner.emit_progress(f'Capturing screen: {capture_command}', level='info')
             result = self.owner._run_shell_command(capture_command, timeout=15)
             if result.returncode != 0:
-                self.owner._send_error(result.stderr or 'Failed to capture screenshot', eof=1)
+                self.owner.emit_completed(status='error', message=result.stderr or 'Failed to capture screenshot')
                 return
-            self.owner._send_success('Screenshot captured successfully', 0)
+            self.owner.emit_progress('Screenshot captured successfully', level='success')
             return self.owner.http_file_transfer_service.upload_single_file_to_server_result(
                 screenshot_path,
                 category='screenshots',
@@ -66,7 +66,7 @@ class MacMediaService:
             )
             os.close(temp_fd)
             temp_file = temp_path
-            self.owner._send_info(f'Client Temp Path: {temp_file}', 0)
+            self.owner.emit_progress(f'Client Temp Path: {temp_file}', level='info')
 
             capture = subprocess.run(
                 ['imagesnap', '-w', '1', temp_file],

@@ -18,6 +18,10 @@ class ServerInboundMessageRouter(BaseMessageRouter):
             return
         if phase != ResultEventType.COMPLETED and 'status' in data:
             return
+        from core.utils.output_marker import OUTPUT_MARKERS
+        if 'level' in data and (phase != ResultEventType.PROGRESS or
+                                data['level'] not in OUTPUT_MARKERS):
+            return
         if 'message' in data and not isinstance(data['message'], str):
             return
         if 'references' in data and (not isinstance(data['references'], list) or

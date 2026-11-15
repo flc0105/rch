@@ -55,7 +55,8 @@ def test_invalid_schema_rejected(schema):
 
 def harness():
     frames = []
-    sock = SimpleNamespace(client_id='mode-test', client_session_token='', send_result=lambda *args: frames.append(args))
+    sock = SimpleNamespace(client_id='mode-test', client_session_token='', send_result=lambda *args: frames.append(args),
+                           send_event=lambda request_id, event: frames.append(event))
     execution = ExecutionRuntime(sock)
     manager = ScriptManager()
     dispatcher = ClientControlDispatcher(execution)
@@ -79,8 +80,8 @@ def test_four_modes_actual_python(mode,output):
         lines = result.splitlines()
     else:
         assert result == 'Code execution completed'
-        assert all(frame[1]==1 and frame[3]==0 for frame in frames)
-        lines = [frame[2] for frame in frames]
+        assert all(frame['event_type']=='chunk' for frame in frames)
+        lines = [frame['message'] for frame in frames]
     assert (int(lines[0]) == os.getpid()) == (mode=='inproc')
     assert lines[1:] == ['中文','','warning','tail']
     assert runtime.context_store.get_existing(1) is None
@@ -96,13 +97,13 @@ def test_real_time_vs_collect(mode,output):
     deadline=time.monotonic()+4
     if output=='stream':
         while not frames and worker.is_alive() and time.monotonic()<deadline: time.sleep(.01)
-        assert frames and frames[0][2]=='first' and worker.is_alive()
+        assert frames and frames[0]['message']=='first' and worker.is_alive()
     else:
         time.sleep(.2)
         assert not frames and worker.is_alive()
     worker.join(5)
     assert not worker.is_alive() and result[0][0]==1
-    assert ('last' in result[0][1]) if output=='collect' else any(f[2]=='last' for f in frames)
+    assert ('last' in result[0][1]) if output=='collect' else any(f['message']=='last' for f in frames)
 
 
 @pytest.mark.parametrize('output',['collect','stream'])
@@ -113,7 +114,7 @@ def test_subprocess_timeout_preserves_output(monkeypatch,output):
     status, result=dispatch.execute(1,'script','run',payload('import time\nprint("before",flush=True)\ntime.sleep(30)','subprocess_pipe',output))
     assert time.monotonic()-started<8
     assert status==0 and result['failure_reason']=='timed_out'
-    assert 'before' in result['text'] if output=='collect' else any(f[2]=='before' for f in frames)
+    assert 'before' in result['text'] if output=='collect' else any(f['message']=='before' for f in frames)
     assert runtime.context_store.get_existing(1) is None
 
 
@@ -141,7 +142,7 @@ def test_subprocess_cancel_preserves_output(output,tmp_path):
     assert not worker.is_alive()
     status,data=result[0]
     assert status==0 and data['event_type']=='cancelled'
-    assert 'before' in data['text'] if output=='collect' else any(f[2]=='before' for f in frames)
+    assert 'before' in data['text'] if output=='collect' else any(f['message']=='before' for f in frames)
     assert runtime.context_store.get_existing(1) is None
 
 

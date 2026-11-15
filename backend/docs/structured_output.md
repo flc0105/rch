@@ -48,6 +48,8 @@ Server 本地 Builtin 的单次查询/反馈（例如 Job 列表、Script 列表
 
 ## Result 收集与终态
 
+只有 `progress` 支持**可选**的 `level=info/success/warning/error`；不传则消息完全不加标记。公共 Server 文本投影对显式 level 的 progress 依次生成 `[*]/[+]/[!]/[-]`，并把相同的可见文本提供给 Terminal/RCH CLI/Activity Output Records。Result 原始事件的 `message` 不带生成的 Marker，`chunk`（Shell stdout/stderr、Script print、SDK emit）永远不进行 Marker 自动识别或插入；`completed.status` 是唯一执行终态，不由中间 progress 错误级别推断。
+
 Client/Server Result 的 `event_type` 为 `started / progress / chunk / completed`。仅 `completed` 包含最终 `status`，取值为 `success / partial / error / cancelled / timed_out / interrupted`。Server 的按请求 ID 等待队列保存原始 Result 事件；收到 `completed` 后结束该请求，断线时由 Server 生成 `completed(status=interrupted)`。业务执行器若仍使用整数状态与文本视图，则在消费边界投影，不从中间输出决定最终状态。
 
 同步收集器分别保留最终状态、可见文本和结构化 `data`。`chunk`、`progress`（包括 stderr 警告）可产生可见文字，但不能覆盖最终 `completed.status`。JSON 消费先读取最终事件的原始对象 `data`；普通文本命令可显式输出 JSON 文本（包括暂缓重构的 XT Client 命令），此类文本消费才进行 JSON 解析。结构化 Control 缺少 `data` 时不从格式化文本反推业务对象。

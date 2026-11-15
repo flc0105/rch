@@ -51,7 +51,7 @@ class _TransferTaskOwner(ExecutionRuntimeMixin):
     def preview_image_service(self):
         return self._preview_image_service
 
-    def _send_info(self, _result, _eof=0):
+    def emit_progress(self, _message, *, level=None):
         # 独立 Transfer 没有 command result stream；实时状态统一走 transfer_update。
         return None
 
