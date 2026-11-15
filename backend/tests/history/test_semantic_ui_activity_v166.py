@@ -56,8 +56,14 @@ class Connection:
         return self.channel.send_command(*args, **kwargs)
 
     def respond(self, request, status, result):
-        self.runtime.pending_results.deliver(request['id'], status, result, 1)
-        self.tracker.received(self, {'type': 'result', 'id': request['id'], 'status': status, 'eof': 1, 'data': result if isinstance(result, dict) else {}, 'text': result if isinstance(result, str) else ''})
+        event = {'type': 'result', 'id': request['id'], 'event_type': 'completed',
+                 'status': 'success' if status == 1 else 'error'}
+        if isinstance(result, (dict, list)):
+            event['data'] = result
+        else:
+            event['message'] = str(result or '')
+        self.runtime.pending_results.deliver(request['id'], event)
+        self.tracker.received(self, event)
 
     def send(self, payload):
         def transport_send(data):
@@ -907,7 +913,7 @@ def test_configuration_cli_and_control_share_policy_and_preserve_actual_values(s
 def test_control_terminal_eof_owns_status_and_inspect_uses_action_policy(setup_history):
     server, conn = setup_history
     def reply(req):
-        conn.runtime.pending_results.deliver(req['id'], 0, '[WARNING] missing optional item', 0)
+        conn.runtime.pending_results.deliver(req['id'], {'type':'result','id':req['id'],'event_type':'chunk','message':'[WARNING] missing optional item'})
         conn.respond(req, 1, {'message':'Not approved'})
     conn.callback = reply
     rows = list(conn.send_command('', type='control', domain='script', action='run', payload={'script_name':'probe','params':{}}))

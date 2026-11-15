@@ -104,10 +104,20 @@ export default {
                     });
                 }
                 const { formatTerminalCommandFinishedLine } = await import('./terminalMarkers.js');
+                // Recovery must use the persisted terminal status, just like
+                // the live command_complete event; false success != error.
+                const terminalStates = {
+                    success: ['Success', 'success'],
+                    partial: ['Partial', 'warning'],
+                    error: ['Failed', 'error'],
+                    cancelled: ['Cancelled', 'info'],
+                    timed_out: ['Timed out', 'error'],
+                    interrupted: ['Interrupted', 'error'],
+                };
+                const [finishText, finishKind] = terminalStates[entry.status] || terminalStates.error;
                 this.appendOutput(clientId, formatTerminalCommandFinishedLine(
-                    entry.invocation?.command || entry.action || '',
-                    entry.status === 'success' ? 'Success' : 'Failed',
-                ), entry.status === 'success' ? 'success' : 'error', { task_id: id, recovered: true });
+                    entry.invocation?.command || entry.action || '', finishText,
+                ), finishKind, { task_id: id, recovered: true, execution_status: entry.status });
             } catch (error) {
                 console.warn('Unable to recover finished task output', error);
             }

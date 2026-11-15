@@ -277,7 +277,7 @@ export default {
 
     resultStatusType() {
       if (!this.activeResult.complete) return 'info'
-      return this.activeResult.success ? 'success' : 'danger'
+      return this.activeResult.status === 'Partial' ? 'warning' : (this.activeResult.success ? 'success' : 'danger')
     },
 
     tableHasActions() {
@@ -530,10 +530,13 @@ export default {
           || String(payload.client_id || '') !== this.activeResult.clientId) return true
 
       this.activeResult.complete = true
-      this.activeResult.success = payload.success === true
-      this.activeResult.status = payload.cancelled || payload.status === 'cancelled'
-        ? 'Cancelled'
-        : (payload.success ? 'Success' : 'Failed')
+      const status = String(payload.status || '').trim()
+      this.activeResult.success = status ? status === 'success' : payload.success === true
+      this.activeResult.status = status === 'cancelled' || (!status && payload.cancelled) ? 'Cancelled'
+        : status === 'partial' ? 'Partial'
+        : status === 'timed_out' ? 'Timed out'
+        : status === 'interrupted' ? 'Interrupted'
+        : this.activeResult.success ? 'Success' : 'Failed' 
       return true
     },
 

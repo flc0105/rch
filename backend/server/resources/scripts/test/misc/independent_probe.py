@@ -1,6 +1,6 @@
 SCRIPT_METADATA = {
-    "name": "test/v181_independent_probe",
-    "display_name": "V181 Independent Probe",
+    "name": "test/misc/independent_probe",
+    "display_name": "Independent Probe",
     "platforms": ["*"],
     "execution": {
         "modes": {"allowed": ["inproc", "subprocess_pipe"], "default": "inproc"},

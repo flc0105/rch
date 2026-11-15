@@ -98,10 +98,10 @@ def test_server_result_router_preserves_structured_data():
     result = build_job_control_result('stop', 'stopped', data={'job_id': 'job-7'}, job_ids=['job-7'])
     packet = {'id': 21, 'type': 'result', **result}
     ServerInboundMessageRouter(connection).handle_result_message(packet)
-    assert observed == [(21, 1, packet, True)]
+    assert observed == [(21, packet)]
     text_packet = {'id': 22, 'type': 'result', 'event_type':'completed', 'status':'success', 'message':'regular text'}
     ServerInboundMessageRouter(connection).handle_result_message(text_packet)
-    assert observed[-1] == (22, 1, text_packet, True)
+    assert observed[-1] == (22, text_packet)
 
 
 def test_cli_and_web_share_typed_requests_and_metadata_mode():

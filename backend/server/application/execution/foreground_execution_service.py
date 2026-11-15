@@ -1,4 +1,3 @@
-import json
 from server.application.command.command_types import COMMAND_TYPE_COMMAND
 from server.application.tasks.task_types import TASK_TYPE_COMMAND
 
@@ -124,35 +123,13 @@ class ForegroundExecutionService:
         source: str = 'foreground',
         task_id: str = '',
     ) -> dict:
-        text = self.run_foreground_text_command(
-            target,
-            command,
-            command_type=command_type,
-            extra=extra,
-            payload=payload,
-            domain=domain,
-            action=action,
-            history_entry_id=history_entry_id,
-            **({'track_execution': False} if not track_execution else {}),
-            task_type=task_type,
-            source=source,
-            task_id=task_id,
+        collected = self.command_stream_service.collect_envelope(
+            self.stream_foreground_command(
+                target, command, command_type=command_type, extra=extra,
+                payload=payload, domain=domain, action=action,
+                history_entry_id=history_entry_id,
+                **({'track_execution': False} if not track_execution else {}),
+                task_type=task_type, source=source, task_id=task_id,
+            )
         )
-
-        try:
-            payload = json.loads(text or '{}')
-        except Exception as e:
-            raise RuntimeError(f'Invalid remote JSON payload: {e}')
-
-        if not isinstance(payload, dict):
-            raise RuntimeError('Invalid remote JSON payload: expected object')
-
-        return payload
-
-
-
-
-
-
-
-
+        return self.command_stream_service.json_payload(collected, command_type=command_type)

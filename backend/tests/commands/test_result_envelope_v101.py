@@ -43,8 +43,8 @@ def test_inbound_delivers_full_array_and_only_first_completed_finishes():
     pending = PendingResults()
     q = pending.register(77)
     class Dispatcher:
-        def dispatch_result(self, id, status, event, terminal, before_enqueue):
-            return pending.deliver(id, status, event, terminal, before_enqueue)
+        def dispatch_result(self, id, event, before_enqueue):
+            return pending.deliver(id, event, before_enqueue)
     sent=[]
     conn=SimpleNamespace(update_current_workdir=lambda cwd: sent.append(cwd),
                          services=SimpleNamespace(result_dispatcher=Dispatcher()),
@@ -56,8 +56,8 @@ def test_inbound_delivers_full_array_and_only_first_completed_finishes():
     router.handle_result_message(completed)
     router.handle_result_message({**completed,'data':[]})
     rows=[q.get(False),q.get(False)]
-    assert rows[0][2] is False and rows[1][2] is True
-    assert rows[1][1]['data']==[{'pid':5}]
+    assert rows[0]['event_type'] == 'progress' and rows[1]['event_type'] == 'completed'
+    assert rows[1]['data']==[{'pid':5}]
     assert q.empty() and sent==['/tmp',None]
 
 

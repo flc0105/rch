@@ -2,6 +2,9 @@ import time
 
 from core.utils.logger import logger
 from core.utils.parsing import parse
+from core.protocol.result_envelope import ResultEnvelope
+from core.protocol.message_queue import ResultChunk
+from .wrapped_result import inner_result_event, inner_terminal_status
 
 
 class CommandNotifyBuiltinSupport:
@@ -74,38 +77,47 @@ class CommandNotifyBuiltinSupport:
     def notify(self, command: str):
         inner_command = str(command or '').strip()
         if not inner_command:
-            yield 0, 'Usage: notify <client-command>'
+            message = 'Usage: notify <client-command>'
+            envelope = ResultEnvelope(status='error', message=message).as_payload()
+            yield ResultChunk(0, message, True, terminal_authoritative=True, event=envelope)
             return
 
         started_at = time.monotonic()
-        final_ok = True
+        final_outcome = 'interrupted'
         terminal = False
+        saw_protocol_events = False
+        fallback_status = None
 
         try:
             executor = self._build_inner_executor(inner_command)
             if executor is None:
-                final_ok = False
+                final_outcome = 'error'
                 terminal = True
-                yield 0, f'Unable to execute client command: {inner_command}'
+                message = f'Unable to execute client command: {inner_command}'
+                envelope = ResultEnvelope(status='error', message=message).as_payload()
+                yield ResultChunk(0, message, True, terminal_authoritative=True, event=envelope)
                 return
 
             for item in executor():
-                status = item[0] if item else 0
-                # 远程结果流的 status 表示当前结果块状态；read 等流式命令可能先
-                # 产生 stderr(status=0)，随后以最终 EOF 结果(status=1)正常完成。
-                # 与 CommandStreamService.collect_result 保持一致，以最后一个状态
-                # 作为整个被包装命令的最终状态，避免中间 stderr 永久判失败。
-                final_ok = int(status or 0) != 0
+                event = inner_result_event(item)
+                saw_protocol_events |= event is not None
+                outcome = inner_terminal_status(item)
+                if outcome is not None:
+                    final_outcome = outcome
+                    terminal = True
+                elif event is None and not hasattr(item, 'eof'):
+                    fallback_status = int(item[0] or 0)
                 yield item
-
+            if not terminal and not saw_protocol_events and fallback_status is not None:
+                final_outcome = 'success' if fallback_status == 1 else 'error'
             terminal = True
         except Exception:
-            final_ok = False
+            final_outcome = 'error'
             terminal = True
             raise
         finally:
             if terminal:
                 self._emit_completion_event(
-                    status='success' if final_ok else 'failed',
+                    status='success' if final_outcome in ('success', 'partial') else 'failed',
                     duration_ms=self._duration_ms(started_at),
                 )

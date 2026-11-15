@@ -26,9 +26,7 @@ class ServerInboundMessageRouter(BaseMessageRouter):
         if 'data' in data and not isinstance(data['data'], (dict, list)):
             return
         accepted = self.connection.services.result_dispatcher.dispatch_result(
-            data.get('id'),
-            1 if phase != ResultEventType.COMPLETED or data['status'] == 'success' else 0,
-            data, phase == ResultEventType.COMPLETED,
+            data.get('id'), data,
             before_enqueue=lambda: self.connection.update_current_workdir(data.get('cwd')),
         )
         if accepted:

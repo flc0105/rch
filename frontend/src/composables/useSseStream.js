@@ -388,10 +388,17 @@ export default {
                 let finishText = 'Failed';
                 let finishKind = 'error';
 
-                if (statusText === 'cancelled' || payload.cancelled) {
+                if (statusText === 'cancelled' || (!statusText && payload.cancelled)) {
                     finishText = 'Cancelled';
                     finishKind = 'info';
-                } else if (payload.success) {
+                } else if (statusText === 'partial') {
+                    finishText = 'Partial';
+                    finishKind = 'warning';
+                } else if (statusText === 'timed_out') {
+                    finishText = 'Timed out';
+                } else if (statusText === 'interrupted') {
+                    finishText = 'Interrupted';
+                } else if (statusText === 'success' || (!statusText && payload.success)) {
                     finishText = 'Success';
                     finishKind = 'success';
                 }
@@ -422,7 +429,7 @@ export default {
                             operation_id: operationId || '',
                             event_type: 'completed',
                             execution_status: statusText,
-                            execution_success: Boolean(payload.success),
+                            execution_success: statusText ? statusText === 'success' : Boolean(payload.success),
                             command: payload.command || '',
                             command_id: payload.command_id ?? payload.source_command_id ?? null,
                             metadata,
@@ -444,7 +451,7 @@ export default {
 
                     this.pendingRemoteUploadRefresh = null;
 
-                    if (payload.success && this.selectedId === refreshClientId) {
+                    if ((statusText === 'success' || statusText === 'partial' || (!statusText && payload.success)) && this.selectedId === refreshClientId) {
                         try {
                             if (pendingRefresh.source === 'script_remote_file_picker') {
                                 await this.$refs.scriptLibraryDialogRef?.refreshRemoteFilePickerDirectory(refreshPath);

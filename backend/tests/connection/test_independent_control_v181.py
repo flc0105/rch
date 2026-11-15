@@ -135,7 +135,7 @@ def test_out_of_order_cancel_timeout_disconnect(wire, tmp_path):
     with pytest.raises(TimeoutError):
         list(request(.1))
     # An abandoned request cannot deliver into another pending stream.
-    assert not server.runtime.pending_results.deliver(1,1,'late',1)
+    assert not server.runtime.pending_results.deliver(1, {'type':'result','id':1,'event_type':'completed','status':'success','message':'late'})
     entered.clear()
     waiting = request()
     assert entered.wait(2)
@@ -169,10 +169,10 @@ def test_replaced_connection_pending_results_are_session_scoped():
     acceptor = SessionAcceptor(SimpleNamespace(connections=manager, web_service=SimpleNamespace(connection_api=api)))
     acceptor._handle_connection_closed(old)
     assert closed == [] and replaced == [old]
-    assert first.get(timeout=.1) == (0, None, 1)
+    assert first.get(timeout=.1)['status'] == 'interrupted'
     assert manager.get_by_client_id('same') is new
-    assert new.runtime.pending_results.deliver(1, 1, 'new', 1)
-    assert second.get(timeout=.1) == (1, 'new', 1)
+    assert new.runtime.pending_results.deliver(1, {'type':'result','id':1,'event_type':'completed','status':'success','message':'new'})
+    assert second.get(timeout=.1)['message'] == 'new'
 
 
 def test_new_independent_actions_during_foreground_script(wire, tmp_path):

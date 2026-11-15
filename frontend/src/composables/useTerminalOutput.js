@@ -296,8 +296,8 @@ export default {
                 ? this.terminalOperationRegistry[operationId] : null;
             if (associated && inputMeta.event_type === 'output') associated.status = 'running';
             if (associated && inputMeta.event_type === 'completed') {
-                associated.status = inputMeta.execution_status === 'cancelled' ? 'cancelled'
-                    : inputMeta.execution_status === 'timed_out' ? 'timed_out'
+                associated.status = ['success', 'partial', 'error', 'cancelled', 'timed_out', 'interrupted'].includes(inputMeta.execution_status)
+                    ? inputMeta.execution_status
                     : inputMeta.execution_success ? 'success' : 'error';
             }
             if (associated && inputMeta.event_type === 'submission_error') associated.status = 'error';

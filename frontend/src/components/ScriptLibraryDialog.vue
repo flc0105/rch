@@ -531,7 +531,7 @@ export default {
     resultJsonText() { return findJsonOutput(this.activeRun.output) },
     resultStatusType() {
       if (!this.activeRun.complete) return 'info'
-      return this.activeRun.success ? 'success' : 'danger'
+      return this.activeRun.status === 'Partial' ? 'warning' : (this.activeRun.success ? 'success' : 'danger')
     },
   },
 
@@ -1163,10 +1163,13 @@ export default {
           String(payload.client_id || '') !== this.activeRun.clientId) return true
 
       this.activeRun.complete = true
-      this.activeRun.success = payload.success === true
-      this.activeRun.status = payload.cancelled || payload.status === 'cancelled'
-        ? 'Cancelled'
-        : payload.status === 'timed_out' ? 'Timed out' : (payload.success ? 'Success' : 'Failed')
+      const status = String(payload.status || '').trim()
+      this.activeRun.success = status ? status === 'success' : payload.success === true
+      this.activeRun.status = status === 'cancelled' || (!status && payload.cancelled) ? 'Cancelled'
+        : status === 'partial' ? 'Partial'
+        : status === 'timed_out' ? 'Timed out'
+        : status === 'interrupted' ? 'Interrupted'
+        : this.activeRun.success ? 'Success' : 'Failed' 
       return true
     },
 

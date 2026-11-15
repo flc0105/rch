@@ -408,24 +408,25 @@ class PinnedPathBuiltinSupport:
             return
 
         if not name:
-            yield 0, render_result_payload(ResultEnvelope(
-                status='error', message='Pinned path name is required').as_payload(),
-                invocation.output_format)
+            envelope = ResultEnvelope(status='error', message='Pinned path name is required').as_payload()
+            yield ResultChunk(0, render_result_payload(envelope, invocation.output_format), True,
+                              terminal_authoritative=True, event=envelope)
             return
 
         matched_item = self.pinned_path_store.get_item_by_name(self._get_machine_id(), name)
         if matched_item is None:
-            yield 0, render_result_payload(ResultEnvelope(
-                status='error', message=f'Pinned path not found: {name}').as_payload(),
-                invocation.output_format)
+            envelope = ResultEnvelope(status='error', message=f'Pinned path not found: {name}').as_payload()
+            yield ResultChunk(0, render_result_payload(envelope, invocation.output_format), True,
+                              terminal_authoritative=True, event=envelope)
             return
 
         target_path = str(matched_item.get('path') or '').strip()
         resolved_command = self._build_cd_command(target_path)
         # History retains the original gopin command; downstream cd keeps its stream.
         message = f'gopin {name} -> {resolved_command}'
-        yield 1, render_result_payload(ResultEnvelope(message=message).as_payload(),
-                                       invocation.output_format)
+        yield ResultChunk(1, render_result_payload(ResultEnvelope(message=message).as_payload(),
+                                       invocation.output_format), False, terminal_authoritative=True,
+                          event={'event_type': 'chunk', 'message': message})
 
         command_processor = self.command_processor_factory()
         executor = command_processor(resolved_command)
@@ -487,14 +488,15 @@ class HistoryBuiltinSupport:
 
         raise ValueError(f'History index not found: {history_index}')
 
-    def _run_history_item(self, history_index: int):
-        resolved_command = self._resolve_history_command_by_index(history_index)
+    def _run_history_item(self, resolved_command: str):
         # Keep the outer invocation (`history run N` or `!N`); the nested
         # execution plan supplies the actual resolved Client command.
         from core.protocol.result_envelope import ResultEnvelope
         from core.utils.command_output import render_result_payload
-        yield 1, render_result_payload(ResultEnvelope(
-            message=f'sending command: {resolved_command}').as_payload())
+        message = f'sending command: {resolved_command}'
+        yield ResultChunk(1, render_result_payload(ResultEnvelope(message=message).as_payload()),
+                          False, terminal_authoritative=True,
+                          event={'event_type': 'chunk', 'message': message})
 
         command_processor = self.command_processor_factory()
         executor = command_processor(resolved_command)
@@ -543,10 +545,17 @@ class HistoryBuiltinSupport:
 
         if action == 'run':
             history_index = args['index']
-            if history_index <= 0:
-                raise ValueError('History index must be positive')
+            try:
+                if history_index <= 0:
+                    raise ValueError('History index must be positive')
+                resolved_command = self._resolve_history_command_by_index(history_index)
+            except ValueError as exc:
+                envelope = ResultEnvelope(status='error', message=str(exc)).as_payload()
+                yield ResultChunk(0, render_result_payload(envelope, output_format), True,
+                                  terminal_authoritative=True, event=envelope)
+                return
             # The nested Client command can stream; preserve its own result chunks.
-            for item in self._run_history_item(history_index):
+            for item in self._run_history_item(resolved_command):
                 yield item
             return
         raise ValueError(f'Unsupported history command: {action}')

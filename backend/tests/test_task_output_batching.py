@@ -28,14 +28,14 @@ class TestTaskOutputBatching(unittest.TestCase):
             delete_task=lambda task_id: None,
         )
         history = []
-        runner.history_orchestrator = SimpleNamespace(
+        runner.activity_coordinator = SimpleNamespace(
             append_output=lambda session, entry, status, text, eof: history.append((status, text)),
-            finalize_execution=lambda *args, **kwargs: None,
+            finish=lambda *args, **kwargs: None,
         )
         runner.logger = SimpleNamespace(exception=lambda *args, **kwargs: None)
         context = SimpleNamespace(task_id='task-1', client_id='client-1', tab_id='tab-1',
             history_entry_id='history-1', metadata={'operation_id': 'op-1'},
-            command='pyexec_stream test', command_id=123, session=SimpleNamespace(
+            command='pyexec_stream test', command_id=123, task_type='command', session=SimpleNamespace(
                 get_foreground_task=lambda: {}, session_info=SimpleNamespace(cwd='/tmp')))
         return runner, context, history
 

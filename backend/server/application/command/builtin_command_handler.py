@@ -225,8 +225,7 @@ class BuiltinCommandHandler:
     def saveout(self, invocation):
         for item in self.command_output_support.saveout(invocation.arguments['command']):
             status, message = item[:2]
-            envelope = ResultEnvelope(status='success' if status == 1 else 'error',
-                                      message=str(message)).as_payload()
+            envelope = item.event
             yield ResultChunk(status, render_result_payload(envelope, invocation.output_format), True,
                               terminal_authoritative=True, event=envelope)
 

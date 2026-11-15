@@ -139,7 +139,7 @@ class ClientSessionRuntime:
         try:
             while 1:
                 try:
-                    status, result, eof = results.get(timeout=max(0, deadline - time.monotonic()) if deadline is not None else None)
+                    event = results.get(timeout=max(0, deadline - time.monotonic()) if deadline is not None else None)
                 except queue.Empty:
                     self.pending_results.remove(command_id)
                     try:
@@ -147,9 +147,12 @@ class ClientSessionRuntime:
                     except OSError:
                         pass
                     raise TimeoutError('Control request timed out') from None
-                yield ResultChunk(status, result, eof, terminal_authoritative,
-                                  event=result if isinstance(result, dict) and result.get('type') == 'result' else None)
-                if eof:
+                # Business executors still consume ResultChunk's text/tuple view;
+                # the pending queue and request lifecycle use the original event.
+                final = event['event_type'] == 'completed'
+                status = (1 if not final or event['status'] in ('success', 'partial') else 0)
+                yield ResultChunk(status, event, final, terminal_authoritative, event=event)
+                if final:
                     break
         finally:
             self.pending_results.remove(command_id)

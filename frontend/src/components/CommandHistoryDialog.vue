@@ -1078,7 +1078,7 @@ Star,
 
       if (value === 'success') return 'success'
       if (['error', 'timed_out', 'interrupted'].includes(value)) return 'danger'
-      if (value === 'cancelled') return 'warning'
+      if (['partial', 'cancelled'].includes(value)) return 'warning'
       if (value === 'running') return 'warning'
 
       return 'info'
@@ -1114,13 +1114,13 @@ Star,
       const records = Array.isArray(item?.result?.output_records) ? item.result.output_records : []
       const events = Array.isArray(item?.result?.result_events) ? item.result.result_events : []
       const completed = events.slice().reverse().find(event => event?.event_type === 'completed')
-      if (status === 'success' && completed) {
+      if (['success', 'partial'].includes(status) && completed) {
         // Only the completed Result itself can supply the success summary.
         // The last output record may contain just the last line of streamed JSON.
         const text = String(completed.message || '').trim()
         if (text && text.length <= 256 && !/[\r\n]/.test(text)) return text
         const files = Array.isArray(item?.files) ? item.files : []
-        return files.length && !text ? `Produced ${files.length} file(s)` : 'Completed'
+        return files.length && !text && status === 'success' ? `Produced ${files.length} file(s)` : status === 'partial' ? 'Partial' : 'Completed'
       } else if (status === 'interrupted' && events.length && !completed) {
         return 'Interrupted'
       } else if ((status !== 'success' || !events.length) && ['command', 'script', 'remote_files', 'transfer', 'external_tool', 'job', 'pty', 'screen_view', 'clipboard', 'process', 'configuration', 'watchdog'].includes(item?.kind)) {
@@ -1136,6 +1136,7 @@ Star,
       // A large failure must never be presented as a successful "Completed" event.
       if (truncated || parts.length > 1 || (parts.length === 1 && isLong(parts[0]))) {
         if (status === 'success') return 'Completed'
+        if (status === 'partial') return 'Partial'
         if (status === 'error') return 'Failed'
         if (status === 'timed_out') return 'Timed out'
         if (status === 'cancelled') return 'Cancelled'
@@ -1148,6 +1149,7 @@ Star,
       if (files.length && status === 'success') return `Produced ${files.length} file(s)`
       if (parts.length) return parts[0]
       if (status === 'success') return 'Completed'
+      if (status === 'partial') return 'Partial'
       return 'No output'
     },
 

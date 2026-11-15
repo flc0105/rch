@@ -77,9 +77,15 @@ class CommandExecutionPipeline:
         wire = getattr(item, 'event', None)
         if wire is not None:
             event.payload = {**event.payload, 'result_envelope': wire}
-        terminal = isinstance(result, dict) and result.get('event_type') == ResultEventType.COMPLETED
-        if terminal:
-            outcome = result.get('status', 'error')
+        # A wrapped builtin may render its message for the CLI while keeping
+        # the complete Result event in item.event. Use that event for terminal
+        # status; never infer cancelled/timed_out/partial from the text view.
+        terminal_event = (wire if isinstance(wire, dict) and
+                          wire.get('event_type') == ResultEventType.COMPLETED else
+                          result if isinstance(result, dict) and
+                          result.get('event_type') == ResultEventType.COMPLETED else None)
+        if terminal_event is not None:
+            outcome = terminal_event.get('status', 'error')
             event.payload = {**event.payload, 'result_terminal': outcome}
             if outcome == 'cancelled':
                 event = CommandExecutionEvent.cancelled(event.text, payload=event.payload)
@@ -91,7 +97,7 @@ class CommandExecutionPipeline:
                 event.payload = {**event.payload, 'result_terminal': outcome}
                 if outcome == 'cancelled':
                     event = CommandExecutionEvent.cancelled(event.text, payload=event.payload)
-                elif outcome != 'success':
+                elif outcome not in ('success', 'partial'):
                     event = CommandExecutionEvent.error(event.text, payload={**event.payload, 'failure_reason': outcome})
             else:
                 event.payload = {**event.payload, 'intermediate_result': True}

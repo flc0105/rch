@@ -42,7 +42,17 @@ Configuration GET 的 `data` 包含完整配置项（含 Web 编辑需要的描�
 
 Server 本地 Builtin 的单次查询/反馈（例如 Job 列表、Script 列表、History、Gopin、RTT、Help、HTTP Control、Saveout）保留 Result Envelope 作为原始事件，命令行同时得到相同的现有文本投影。组合执行和日志流（`history run`、`notify`、`script exec`、`job logs`）透传内部执行事件，由外层执行生命周期负责终态，不额外创建第二个业务完成结果。
 
+`saveout`、`notify`、`history run`、`gopin go` 属于执行包装入口。`history run` 和 `gopin go` 的执行提示是 `chunk`，然后原样转发内层命令输出，内层唯一的 `completed` 决定结果。`notify` 以内层 `completed.status` 形成 Device Event（该通知与命令结果是不同通道），并原样转发命令事件。`saveout` 把内层可见文字保存为 `command_output` Artifact；显式结构化 `data` 且没有现成文字投影时按 JSON 保存。内层执行的最终结果决定 Artifact 元数据中的 `final_status` 和外层保存反馈的完成状态，中间 stderr 或进度不决定最终成功与否。未收到内层终态即结束的协议流标记为 `interrupted`。
+
 普通 Shell-like 命令和 Script 的 `print()`、stdout/stderr 继续作为 `message` 的文本流，不依据文字是否恰似 JSON 进行协议层推断。Script SDK 的 `context.emit(data)` 是明确的结构化 `chunk`，可在文本 `chunk` 之间按原序穿插；这不意味着脚本结束。Activity Output Records 只保留实际可见的文本或显式结构化事件的 JSON 展示，每个逻辑输出仍为独立记录。Activity Details 的临时 Result Viewer 独立保存收到的原始事件，包括请求 ID、阶段与终态，用于检查协议输出而不污染 Output Records。
+
+## Result 收集与终态
+
+Client/Server Result 的 `event_type` 为 `started / progress / chunk / completed`。仅 `completed` 包含最终 `status`，取值为 `success / partial / error / cancelled / timed_out / interrupted`。Server 的按请求 ID 等待队列保存原始 Result 事件；收到 `completed` 后结束该请求，断线时由 Server 生成 `completed(status=interrupted)`。业务执行器若仍使用整数状态与文本视图，则在消费边界投影，不从中间输出决定最终状态。
+
+同步收集器分别保留最终状态、可见文本和结构化 `data`。`chunk`、`progress`（包括 stderr 警告）可产生可见文字，但不能覆盖最终 `completed.status`。JSON 消费先读取最终事件的原始对象 `data`；普通文本命令可显式输出 JSON 文本（包括暂缓重构的 XT Client 命令），此类文本消费才进行 JSON 解析。结构化 Control 缺少 `data` 时不从格式化文本反推业务对象。
+
+Web Terminal、独立 Result Dialog、Activity 与 RCH CLI 都采用明确的终态。`partial` 单独显示为 Partial；取消、超时和中断分别显示 Cancelled、Timed out、Interrupted。`success` 布尔值只表示完全成功，不能用它反推其他终态。CLI 对完全成功返回退出码 0、部分成功返回 2、取消返回 130，其余失败状态返回 1。
 
 ## 结构化返回对象及形状
 

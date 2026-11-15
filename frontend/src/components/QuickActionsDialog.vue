@@ -452,7 +452,7 @@ export default {
     },
     resultStatusType() {
       if (!this.activeRun.complete) return 'info'
-      return this.activeRun.success ? 'success' : 'danger'
+      return this.activeRun.status === 'Partial' ? 'warning' : (this.activeRun.success ? 'success' : 'danger')
     },
   },
 
@@ -852,11 +852,13 @@ export default {
       if (String(metadata.quick_action_run_id || '') !== String(this.activeRun.runId || '')) return true
 
       this.activeRun.complete = true
-      this.activeRun.success = payload.success === true
       const status = String(payload.status || '').trim()
-      this.activeRun.status = status === 'cancelled'
-        ? 'Cancelled'
-        : (payload.success ? 'Success' : 'Failed')
+      this.activeRun.success = status ? status === 'success' : payload.success === true
+      this.activeRun.status = status === 'cancelled' ? 'Cancelled'
+        : status === 'partial' ? 'Partial'
+        : status === 'timed_out' ? 'Timed out'
+        : status === 'interrupted' ? 'Interrupted'
+        : this.activeRun.success ? 'Success' : 'Failed' 
       return true
     },
     async copyResult() {

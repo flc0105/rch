@@ -360,9 +360,14 @@ class RemoteConsole:
         self.selected = selected
         self.line('Opened ' + self.display_name(selected) + ' [' + selected['client_id'] + ']')
 
+    @staticmethod
+    def _result_exit_code(status):
+        return 0 if status == 'success' else 2 if status == 'partial' else 130 if status == 'cancelled' else 1
+
     def finish_line(self, status):
-        name = str(status or 'completed').capitalize()
-        color = self.GREEN if name == 'Success' else self.YELLOW if name in ('Cancelled', 'Cancelling') else self.RED
+        names = {'partial': 'Partial', 'timed_out': 'Timed out', 'interrupted': 'Interrupted'}
+        name = names.get(str(status or ''), str(status or 'completed').capitalize())
+        color = self.GREEN if name == 'Success' else self.YELLOW if name in ('Partial', 'Cancelled', 'Cancelling') else self.RED
         self.line('[' + name + ']', color=color)
 
     def _recover(self, client_id, machine_id, entry_id, seen, *, print_result=True):
@@ -381,7 +386,7 @@ class RemoteConsole:
             if (entry.get('result') or {}).get('truncated'):
                 self.line('[History output truncated; earlier live output may be incomplete]')
             self.finish_line(entry.get('status') or 'completed')
-        return 0 if entry.get('status') == 'success' else (130 if entry.get('status') == 'cancelled' else 1)
+        return self._result_exit_code(entry.get('status'))
 
     def _check_completed(self, client_id, machine_id, task_id, entry_id, seen):
         try:
@@ -731,7 +736,9 @@ class RemoteConsole:
                     else:
                         self.finish_line(payload.get('status') or ('success' if payload.get('success') else 'error'))
                     self.unfinished_cancel = None
-                    return 0 if payload.get('success') else (130 if payload.get('cancelled') else 1)
+                    return self._result_exit_code(payload.get('status') or (
+                        'cancelled' if payload.get('cancelled') else
+                        'success' if payload.get('success') else 'error'))
                 if time.monotonic() - last_interaction_check >= 3:
                     last_interaction_check = time.monotonic()
                     try:
