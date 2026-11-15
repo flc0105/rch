@@ -417,52 +417,107 @@ class CommandUpdateMixin:
             )
 
     @staticmethod
-    def _cleanup_scan_records(plan: dict):
-        """Produce stage records without embedding terminal marker glyphs."""
-        for item in plan.get('items') or []:
-            name = str(item.get('name') or '')
-            paths = item.get('paths') or []
-            yield 'info', f'[{name}] targets={len(paths)}' + (' (empty)' if not paths else '')
-            for directory in item.get('scanned_paths') or []:
-                yield None, f'  scanned: {directory}'
-            for entry in paths:
-                yield None, f'  candidate: {entry["path"]}'
-            for path in item.get('skipped_paths') or []:
-                yield None, f'  kept: {path}'
-            for message in item.get('errors') or []:
-                yield 'error', f'  {message}'
+    def _cleanup_directory_label(item: dict) -> str:
+        directories = [str(path) for path in (item.get('scanned_paths') or []) if str(path)]
+        return ' | '.join(directories) if directories else 'managed cleanup directory'
+
+    def _on_cleanup_progress(self, phase: str, item: dict):
+        name = str(item.get('name') or 'cleanup').strip()
+        files = int(item.get('removed_files') or 0)
+        directories = int(item.get('removed_dirs') or 0)
+        size = get_size(float(item.get('bytes_freed') or 0))
+        errors = item.get('errors') or []
+
+        if phase == 'scan_completed':
+            if errors:
+                self.emit_progress(f'Unable to scan {name} ({len(errors):,} errors)', level='error')
+            elif item.get('skipped'):
+                reason = str(item.get('skip_reason') or '').strip()
+                suffix = f': {reason}' if reason else ''
+                self.emit_progress(f'Skipped {name}{suffix}', level='warning')
+            elif files or directories:
+                self.emit_progress(
+                    f'Scanned {name} — {CommandUpdateMixin._cleanup_directory_label(item)}: '
+                    f'{files:,} files, {directories:,} directories, {size}',
+                    level='info',
+                )
+            else:
+                self.emit_progress(
+                    f'Scanned {name} — {CommandUpdateMixin._cleanup_directory_label(item)}: nothing to clean',
+                    level='info',
+                )
+            return
+
+        if phase == 'clean_started':
+            self.emit_progress(
+                f'Cleaning {name} — {CommandUpdateMixin._cleanup_directory_label(item)}...',
+                level='info',
+            )
+            return
+
+        if phase == 'clean_completed':
+            if errors:
+                level = 'warning' if files or directories else 'error'
+                self.emit_progress(
+                    f'{name}: partially cleaned — {files:,} files, {directories:,} directories deleted; '
+                    f'{size} freed; {len(errors):,} failed',
+                    level=level,
+                )
+                for error in errors:
+                    self.emit_progress(f'Failed to delete: {error}', level='error')
+            elif files or directories:
+                self.emit_progress(
+                    f'Cleaned {name} — {files:,} files, {directories:,} directories deleted; {size} freed',
+                    level='success',
+                )
+            else:
+                self.emit_progress(f'{name}: nothing to delete', level='info')
 
     @staticmethod
-    def _cleanup_result_records(result: dict):
-        yield 'success', 'Client residue cleanup completed'
-        yield 'success', f'Deleted Files: {int(result.get("removed_files") or 0)}'
-        yield 'success', f'Deleted Directories: {int(result.get("removed_dirs") or 0)}'
-        yield 'success', f'Freed Size: {get_size(float(result.get("bytes_freed") or 0))}'
-        for item in result.get('items') or []:
-            name = str(item.get('name') or '').strip()
-            yield 'info', (f'[{name}] files={int(item.get("removed_files") or 0)} '
-                           f'dirs={int(item.get("removed_dirs") or 0)} '
-                           f'freed={get_size(float(item.get("bytes_freed") or 0))}')
-            if item.get('skipped'):
-                yield 'warning', f'  Skipped: {item.get("skip_reason", "")}'
-            for path in item.get('paths') or []:
-                yield None, f'  deleted: {path}'
-            for path in item.get('skipped_paths') or []:
-                yield None, f'  kept: {path}'
-            for message in item.get('errors') or []:
-                yield 'error', f'  {message}'
+    def _cleanup_completion(result: dict) -> tuple[str, str]:
+        files = int(result.get('removed_files') or 0)
+        directories = int(result.get('removed_dirs') or 0)
+        freed = get_size(float(result.get('bytes_freed') or 0))
+        errors = int(result.get('error_count') or 0)
+        removed_any = files > 0 or directories > 0
 
-    def _emit_cleanup_records(self, records):
-        for level, message in records:
-            if level is None:
-                self.emit_chunk(message)
-            else:
-                self.emit_progress(message, level=level)
+        if errors and removed_any:
+            status = 'partial'
+            message = (
+                f'Cleanup partially completed: {files:,} files and {directories:,} directories deleted; '
+                f'{freed} freed; {errors:,} failed.'
+            )
+        elif errors:
+            status = 'error'
+            message = f'Cleanup failed: {errors:,} item(s) could not be deleted; nothing was removed.'
+        elif removed_any:
+            status = 'success'
+            message = f'Cleanup completed: {files:,} files and {directories:,} directories deleted; {freed} freed.'
+        else:
+            status = 'success'
+            message = 'Nothing to clean.'
+        return status, message
+
+    @staticmethod
+    def _cleanup_scan_failure(plan: dict) -> tuple[int, dict]:
+        from core.protocol.result_envelope import ResultEnvelope
+
+        failed_items = [item for item in (plan.get('items') or []) if item.get('errors')]
+        error_count = sum(len(item.get('errors') or []) for item in failed_items)
+        names = ', '.join(str(item.get('name') or 'unknown') for item in failed_items)
+        locations = f' ({names})' if names else ''
+        message = (
+            f'Cleanup scan failed{locations}: {error_count} error(s); '
+            'nothing was deleted.'
+        )
+        return 0, ResultEnvelope(status='error', message=message).as_payload()
 
     @desc('Clean Client residue and obsolete bundle releases', group='maintenance', interaction=True)
     @cancel_policy('cooperative')
     def clean(self, arg=''):
         """Preview selectable cleanup categories; --no-confirm executes without Broker."""
+        from core.protocol.result_envelope import ResultEnvelope
+
         options = str(arg or '').strip()
         if options not in ('', '--no-confirm'):
             return 0, 'Usage: clean [--no-confirm]'
@@ -470,10 +525,14 @@ class CommandUpdateMixin:
             service = ClientCleanupService(
                 checkpoint=self._checkpoint,
                 current_bundle_resolver=self._get_current_bundle_release_dir,
+                progress_callback=lambda phase, item: CommandUpdateMixin._on_cleanup_progress(self, phase, item),
             )
             self._set_timeout(240)
+            self.emit_progress('Scanning cleanup directories...', level='info')
             plan = service.plan()
-            self._emit_cleanup_records(CommandUpdateMixin._cleanup_scan_records(plan))
+            if any(item.get('errors') for item in plan.get('items') or []):
+                return CommandUpdateMixin._cleanup_scan_failure(plan)
+
             candidates = [
                 entry for entry in plan['items']
                 if entry['paths'] or any(
@@ -482,8 +541,8 @@ class CommandUpdateMixin:
                 )
             ]
             if not candidates:
-                self.emit_progress('Nothing to clean', level='info')
-                return 1, ''
+                return 1, ResultEnvelope(status='success', message='Nothing to clean.').as_payload()
+
             chosen = {entry['name'] for entry in candidates}
             if options == '--no-confirm':
                 # An idle but live *other* Client cannot be proven inactive
@@ -493,42 +552,50 @@ class CommandUpdateMixin:
                 from client.runtime.execution.interaction_service import CommandInteractions
                 rows = []
                 for entry in candidates:
-                    paths = [item['path'] for item in entry['paths']]
-                    empty_dirs = [path for path in entry.get('prune_dirs') or []
-                                  if os.path.isdir(path) and not os.listdir(path)]
+                    scanned_paths = [str(path) for path in (entry.get('scanned_paths') or [])]
                     rows.append({
-                        'category': entry['name'], 'targets': str(len(paths) + len(empty_dirs)),
+                        'category': entry['name'],
+                        'directory': ' | '.join(scanned_paths) if scanned_paths else 'managed cleanup directory',
+                        'files': f"{int(entry.get('removed_files') or 0):,}",
+                        'directories': f"{int(entry.get('removed_dirs') or 0):,}",
                         'size': get_size(float(entry.get('bytes_freed') or 0)),
                     })
                 preview = {
                     'summary': [
-                        {'label': 'Categories', 'value': str(len(rows))},
-                        {'label': 'Files', 'value': str(sum(i['removed_files'] for i in candidates))},
-                        {'label': 'Directories', 'value': str(sum(i['removed_dirs'] for i in candidates))},
+                        {'label': 'Locations', 'value': str(len(rows))},
+                        {'label': 'Files', 'value': f"{sum(i['removed_files'] for i in candidates):,}"},
+                        {'label': 'Directories', 'value': f"{sum(i['removed_dirs'] for i in candidates):,}"},
+                        {'label': 'Size', 'value': get_size(sum(float(i['bytes_freed'] or 0) for i in candidates))},
                     ],
-                    'columns': [{'key':'category','label':'Category'},
-                                {'key':'targets','label':'Targets'},
-                                {'key':'size','label':'Size'}],
+                    'columns': [
+                        {'key': 'category', 'label': 'Cleanup item'},
+                        {'key': 'directory', 'label': 'Directory'},
+                        {'key': 'files', 'label': 'Files'},
+                        {'key': 'directories', 'label': 'Directories'},
+                        {'key': 'size', 'label': 'Size'},
+                    ],
                     'rows': rows,
                     'row_ids': [entry['name'] for entry in candidates],
-                    'row_details': [
-                        {'row_id': entry['name'],
-                         'content': '\n'.join([item['path'] for item in entry['paths']]
-                                              + [path + ' (empty directory)'
-                                                 for path in entry.get('prune_dirs') or []
-                                                 if os.path.isdir(path) and not os.listdir(path)])[:3900]}
-                        for entry in candidates],
-                    'notice': 'Selected paths will be permanently deleted. Current running release is protected.',
+                    'notice': 'The selected cleanup directories will be permanently cleaned. The current running release is protected.',
                 }
+                self.emit_progress('Waiting for cleanup approval...', level='info')
                 chosen = set(CommandInteractions(self).select_preview_rows(
                     'Delete selected Client residue?', preview,
                     title='Client Cleanup — Delete Plan'))
                 if not chosen:
-                    self.emit_progress('No cleanup categories selected; nothing deleted', level='info')
-                    return 1, ''
+                    return 1, ResultEnvelope(
+                        status='success', message='No cleanup categories selected; nothing was deleted.'
+                    ).as_payload()
+
+            if not chosen:
+                return 1, ResultEnvelope(
+                    status='success', message='No safe cleanup targets selected; nothing was deleted.'
+                ).as_payload()
+
             result = service.execute_plan(plan, chosen)
-            status = 0 if int(result.get('error_count') or 0) else 1
-            self._emit_cleanup_records(CommandUpdateMixin._cleanup_result_records(result))
-            return status, ''
+            final_status, final_message = CommandUpdateMixin._cleanup_completion(result)
+            return (1 if final_status in ('success', 'partial') else 0), ResultEnvelope(
+                status=final_status, message=final_message,
+            ).as_payload()
         except Exception as exc:
             return 0, f'Failed to clean Client residue: {exc}'

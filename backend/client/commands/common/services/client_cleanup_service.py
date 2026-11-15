@@ -45,9 +45,10 @@ class ClientCleanupService:
     ARCHIVE_GRACE_SECONDS = 300
     CLIPBOARD_STAGING_GRACE_SECONDS = 3600
 
-    def __init__(self, *, checkpoint=None, current_bundle_resolver=None):
+    def __init__(self, *, checkpoint=None, current_bundle_resolver=None, progress_callback=None):
         self.checkpoint = checkpoint
         self.current_bundle_resolver = current_bundle_resolver
+        self.progress_callback = progress_callback
         self._planning = False
         self._planned_paths = []
         self._planned_prune_dirs = []
@@ -84,6 +85,7 @@ class ClientCleanupService:
         for item in plan.get('items', []):
             if item['name'] not in selected:
                 continue
+            self._notify_progress('clean_started', item)
             result = self._new_result(item['name'])
             result['skipped_paths'].extend(item.get('skipped_paths') or [])
             result['errors'].extend(item.get('errors') or [])
@@ -125,6 +127,7 @@ class ClientCleanupService:
                 if os.path.abspath(directory) in (category_dir, managed_root):
                     self._prune_empty_directory(directory)
             items.append(result)
+            self._notify_progress('clean_completed', result)
         return {
             'items': items,
             'removed_files': sum(i['removed_files'] for i in items),
@@ -225,6 +228,7 @@ class ClientCleanupService:
                 result = self._new_result(name)
                 result['errors'].append(str(exc))
             item_results.append(result)
+            self._notify_progress('scan_completed', result)
         self._active_category = ''
 
         return {
@@ -235,6 +239,11 @@ class ClientCleanupService:
             'error_count': sum(len(item['errors']) for item in item_results),
             'skipped_count': sum(1 for item in item_results if item.get('skipped')),
         }
+
+    def _notify_progress(self, phase: str, item: dict):
+        callback = self.progress_callback
+        if callable(callback):
+            callback(phase, item)
 
     def _clean_remote_job_temp(self):
         return self._clean_temp_item('remote_job_temp')
@@ -557,26 +566,41 @@ class ClientCleanupService:
         if not os.path.isdir(path):
             return
 
-        file_count = 0
-        dir_count = 1
-        total_size = 0
-        for current_root, dir_names, file_names in os.walk(path):
-            dir_count += len(dir_names)
-            for file_name in file_names:
-                file_count += 1
-                total_size += safe_file_size(os.path.join(current_root, file_name))
+        tree_entries = [(path, 'directory', 0)]
+        for current_root, dir_names, file_names in os.walk(path, followlinks=False):
+            tree_entries.extend((os.path.join(current_root, name), 'directory', 0)
+                                for name in dir_names)
+            tree_entries.extend((os.path.join(current_root, name), 'file',
+                                 safe_file_size(os.path.join(current_root, name)))
+                                for name in file_names)
 
         try:
             shutil.rmtree(path)
         except FileNotFoundError:
             return
         except Exception as exc:
+            # shutil.rmtree may remove part of a tree before hitting a protected
+            # entry. Count the entries that are actually gone so the final
+            # Result can distinguish a partial cleanup from a total failure.
+            for entry_path, entry_type, entry_size in tree_entries:
+                if os.path.lexists(entry_path):
+                    continue
+                if entry_type == 'file':
+                    result['removed_files'] += 1
+                    result['bytes_freed'] += entry_size
+                else:
+                    result['removed_dirs'] += 1
             result['errors'].append(f'{path}: {exc}')
+            if result['removed_files'] or result['removed_dirs']:
+                result['paths'].append(path)
             return
 
-        result['removed_files'] += file_count
-        result['removed_dirs'] += dir_count
-        result['bytes_freed'] += total_size
+        for _, entry_type, entry_size in tree_entries:
+            if entry_type == 'file':
+                result['removed_files'] += 1
+                result['bytes_freed'] += entry_size
+            else:
+                result['removed_dirs'] += 1
         result['paths'].append(path)
 
     def _checkpoint(self):
