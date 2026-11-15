@@ -7,7 +7,7 @@ import pytest
 
 from core.external_tools.meta import normalize_meta
 from core.external_tools.selector import resolve_binary_rel_path
-from core.protocol.structured_arg_codec import decode_structured_arg
+from core.protocol.control import ExternalToolAction as A
 from server.application.command.external_tool_cli_builtin_support import ExternalToolCliBuiltinSupport
 from server.application.command.server_builtin_registry import SERVER_COMMAND_REGISTRY
 from server.application.external_tools.external_tool_catalog_service import ExternalToolCatalogService
@@ -23,7 +23,7 @@ def catalog():
 
 def test_all_meta_use_only_canonical_binary_mapping():
     packages = [normalize_meta(json.loads(p.read_text(encoding='utf-8'))) for p in METAS.glob('*.json')]
-    assert len(packages) == 16
+    assert len(packages) == 14
     for pkg in packages:
         assert pkg['binaries']
         assert 'exec' not in pkg
@@ -101,27 +101,32 @@ class CliProbe(ExternalToolCliBuiltinSupport):
         self.command_processor_factory = None
         self.history_entry_id_provider = lambda: ''
 
-    def _collect_nested_command_text(self, command_text):
-        self.captured.append(command_text)
-        return 1, json.dumps({'items': [{'installed': True, 'install_status': 'installed'}]})
+    def run(self, command):
+        return self.xt(SERVER_COMMAND_REGISTRY.parse_invocation("xt", command))
 
-    def _iter_nested_command(self, command_text):
-        self.captured.append(command_text)
+    def _nested_json(self, action, payload):
+        self.captured.append((action, payload))
+        assert action == A.GET_INSTALL_STATUSES
+        return {'items': [{'installed': True, 'install_status': 'installed',
+                           'executable_path': '/mock/executable'} for _ in payload['tools']]}
+
+    def _run_exec(self, exec_name, raw_args):
+        self.captured.append((A.EXEC, self._build_client_payload(self._resolve_exec_target(exec_name), raw_args)))
         yield 1, 'mock command succeeded'
 
 
 def test_xt_exec_routes_and_raw_argument_tail():
     cli = CliProbe()
-    assert list(cli.xt('exec list'))[0][0] == 1
-    status, data = next(cli.xt('exec list --json'))
+    assert list(cli.run('exec list'))[0][0] == 1
+    status, data = next(cli.run('exec list --json'))
     assert status == 1
     assert json.loads(data) == [{'exec_name': 'ffmpeg', 'package_id': 'ffmpeg'}]
-    status, table = next(cli.xt('exec list'))
+    status, table = next(cli.run('exec list'))
     assert status == 1
     assert table.splitlines()[0].rstrip() == 'EXEC   | PACKAGE'
     assert 'ffmpeg | ffmpeg' in table
-    assert next(cli.xt('exec info ffmpeg'))[0] == 1
-    assert next(cli.xt('exec which ffmpeg')) == (1, 'mock command succeeded')
+    assert next(cli.run('exec info ffmpeg'))[0] == 1
+    assert next(cli.run('exec which ffmpeg')) == (1, '/mock/executable')
 
     for args, expected in [
         ('-- -i "Some Clip.mp4" -f null -', '-i "Some Clip.mp4" -f null -'),
@@ -129,46 +134,42 @@ def test_xt_exec_routes_and_raw_argument_tail():
         ('-version', '-version'),
         ('-- --json', '--json'),
     ]:
-        assert next(cli.xt('exec ffmpeg ' + args)) == (1, 'mock command succeeded')
-        command, encoded_payload = cli.captured[-1].split(' ', 1)
-        assert command == 'external_tool_exec'
-        assert decode_structured_arg(encoded_payload)['raw_args'] == expected
+        assert next(cli.run('exec ffmpeg ' + args)) == (1, 'mock command succeeded')
+        command, payload = cli.captured[-1]
+        assert command == A.EXEC
+        assert payload['raw_args'] == expected
     for invalid in ['run ffmpeg -version', 'ffmpeg -version', 'which ffmpeg', 'list', 'info ffmpeg']:
         with pytest.raises(ValueError):
             SERVER_COMMAND_REGISTRY.parse('xt', invalid)
     for valid in ['exec ffmpeg --json', 'exec list --json', 'exec info ffmpeg', 'exec which ffmpeg']:
-        assert SERVER_COMMAND_REGISTRY.parse('xt', valid)[1] == 'exec'
+        assert SERVER_COMMAND_REGISTRY.parse('xt', valid)[1].startswith('exec.')
 
 
 def test_python_embed_cli_exec_is_windows_only_and_passes_native_arguments():
     cli = CliProbe()
     cli.conn.session_info.os_alias = 'win'
     cli.conn.session_info.cwd = r'C:\Work Folder'
-    cli._collect_nested_command_text = lambda _: (1, json.dumps({'items': [
-        {'installed': True, 'install_status': 'installed'},
-        {'installed': True, 'install_status': 'installed'},
-    ]}))
-    status, data = next(cli.xt('exec list --json'))
+    
+    status, data = next(cli.run('exec list --json'))
     assert status == 1
     assert json.loads(data) == [
         {'exec_name': 'ffmpeg', 'package_id': 'ffmpeg'},
         {'exec_name': 'python', 'package_id': 'python-embed'},
     ]
-    status, table = next(cli.xt('exec list'))
+    status, table = next(cli.run('exec list'))
     assert status == 1
     assert table.splitlines()[0].rstrip() == 'EXEC   | PACKAGE'
     assert 'python | python-embed' in table
-    assert next(cli.xt('exec info python --json'))[0] == 1
-    assert next(cli.xt('exec which python')) == (1, 'mock command succeeded')
+    assert next(cli.run('exec info python --json'))[0] == 1
+    assert next(cli.run('exec which python')) == (1, '/mock/executable')
     for args, raw_args in [
         ('-V', '-V'),
         ('-- -c "print(1 + 1)"', '-c "print(1 + 1)"'),
         ('--json', '--json'),
     ]:
-        assert next(cli.xt('exec python ' + args)) == (1, 'mock command succeeded')
-        command, encoded_payload = cli.captured[-1].split(' ', 1)
-        assert command == 'external_tool_exec'
-        payload = decode_structured_arg(encoded_payload)
+        assert next(cli.run('exec python ' + args)) == (1, 'mock command succeeded')
+        command, payload = cli.captured[-1]
+        assert command == A.EXEC
         assert payload['package_id'] == 'python-embed'
         assert payload['exec_name'] == 'python'
         assert payload['package']['executable_rel_path'] == 'python.exe'
@@ -177,10 +178,10 @@ def test_python_embed_cli_exec_is_windows_only_and_passes_native_arguments():
 
 def test_xt_exec_list_only_installed():
     cli = CliProbe()
-    cli._collect_nested_command_text = lambda _: (1, json.dumps({'items': [{'installed': False, 'install_status': 'not_installed'}]}))
-    status, text = next(cli.xt('exec list --json'))
+    cli._nested_json = lambda action, payload: {'items': [{'installed': False, 'install_status': 'not_installed'} for _ in payload['tools']]}
+    status, text = next(cli.run('exec list --json'))
     assert status == 1 and json.loads(text) == []
-    status, text = next(cli.xt('exec list'))
+    status, text = next(cli.run('exec list'))
     assert status == 1 and 'No installed external tool' in text
 
 

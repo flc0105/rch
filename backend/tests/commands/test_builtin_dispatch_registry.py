@@ -29,15 +29,21 @@ def test_split_subcommands_use_registered_call_shape(name, arg, expected):
     assert calls == [(name, expected)]
 
 
-@pytest.mark.parametrize('name,arg,expected', [
-    ('xt', '', 'help'),
-    ('xt', 'help', 'help'),
-    ('xt', 'exec ffmpeg -i "a b.mp4"', 'exec ffmpeg -i "a b.mp4"'),
+@pytest.mark.parametrize('arg,action,values', [
+    ('', 'help', {}),
+    ('help', 'help', {}),
+    ('exec ffmpeg -i "a b.mp4"', 'exec.run', {'command': 'ffmpeg -i "a b.mp4"'}),
+    ('instance create --module gost.socks5 --id test -- --listen_port 49173',
+     'instance.create', {'module': 'gost.socks5', 'id': 'test', 'params': {'listen_port': '49173'}}),
 ])
-def test_raw_text_handlers_receive_registry_subcommand_and_unchanged_tail(name, arg, expected):
+def test_xt_handlers_receive_registry_leaf_only(arg, action, values):
     handler, calls = _handler_with_stubs()
-    assert list(handler.resolve_builtin_command(name, arg)) == [(1, 'ok')]
-    assert calls == [(name, (expected,))]
+    assert list(handler.resolve_builtin_command('xt', arg)) == [(1, 'ok')]
+    assert len(calls) == 1
+    name, (invocation,) = calls[0]
+    assert name == 'xt' and invocation.action == action
+    for key, value in values.items():
+        assert invocation.arguments[key] == value
 
 
 def test_unknown_builtin_is_not_claimed_and_unknown_subcommand_is_error():

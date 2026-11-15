@@ -33,10 +33,10 @@ def test_xt_exec_nested_subcommands_and_exec_names():
         return [item.to_dict()['name'] for item in provider.complete(context)]
 
     assert names('xt ')[:4] == [
-        'xt exec list', 'xt exec info', 'xt exec which', 'xt exec',
+        'xt exec list', 'xt exec info', 'xt exec which', 'xt exec run',
     ]
     assert names('xt exec ') == [
-        'xt exec list', 'xt exec info', 'xt exec which', 'xt exec',
+        'xt exec list', 'xt exec info', 'xt exec which', 'xt exec run', 'xt exec',
         'xt exec ffmpeg', 'xt exec python',
     ]
     assert names('xt exec info ') == ['xt exec info ffmpeg', 'xt exec info python']
@@ -45,4 +45,4 @@ def test_xt_exec_nested_subcommands_and_exec_names():
     assert names('xt exec ffmpeg -version') == []
     assert names('xt run ') == []
     assert names('xt exec list --json') == []
-    assert [item.name for item in SERVER_COMMAND_REGISTRY.get('xt').subcommands] == ['exec', 'package', 'module', 'instance']
+    assert [item.name for item in SERVER_COMMAND_REGISTRY.get('xt').subcommands] == ['exec', 'package', 'module', 'instance', 'help']

@@ -3,17 +3,19 @@ import os
 import unittest
 from types import SimpleNamespace
 
-from client.commands.common.mixins.external_tool_ops import CommandExternalToolMixin
+from client.external_tools.control import ExternalToolControl
 from client.runtime.command_variable_resolver import (
     CommandVariableResolutionError,
     CommandVariableResolver,
 )
 
 
-class _PayloadHost(CommandExternalToolMixin):
+class _PayloadHost:
     def __init__(self, resolver):
-        self._command_runtime = SimpleNamespace(command_variable_resolver=resolver)
-        self.structured_arg_codec = SimpleNamespace(decode=lambda value: value)
+        self._control = ExternalToolControl(SimpleNamespace(command_variable_resolver=resolver))
+
+    def _decode_external_tool_payload(self, payload):
+        return self._control._resolve_input_variables(payload)
 
 
 class ExternalToolClientInputVariablesTests(unittest.TestCase):

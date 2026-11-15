@@ -123,12 +123,20 @@ def operation_summary(kind, action, args, command='', target=''):
             'install_package': 'Install', 'uninstall_package': 'Uninstall',
             'clear_package_cache': 'Clear cache', 'start_instance': 'Start',
             'create_instance': 'Create', 'restart_instance': 'Restart',
-            'run_oneshot': 'Run', 'run_exec': 'Run', 'stop_instance': 'Stop',
+            'run_oneshot': 'Run', 'exec': 'Run', 'stop_instance': 'Stop',
             'remove_instance': 'Remove', 'clear_instance_logs': 'Clear logs',
+            'get_install_statuses': 'Check installation', 'resolve_launcher': 'Resolve launcher',
+            'read_instance': 'Read instance', 'read_instance_logs': 'Read logs',
+            'list_instances': 'List instances', 'preview_instance': 'Preview',
         }
-        target = args.get('exec_name') or args.get('package_id') or args.get('tool_id') or 'tool'
+        tools = args.get('tools') if isinstance(args.get('tools'), list) else []
+        first = tools[0] if len(tools) == 1 and isinstance(tools[0], dict) else {}
+        target = (args.get('exec_name') or args.get('tool_id') or args.get('package_id') or
+                  first.get('tool_id') or first.get('package_id') or '')
+        if not target and len(tools) > 1:
+            target = f'{len(tools)} tools'
         instance = f" ({args['instance_id']})" if args.get('instance_id') else ''
-        return f"{actions.get(action, 'External Tool')} {target}{instance}"
+        return f"{actions.get(action, 'External Tool')}{' ' + str(target) if target else ''}{instance}"
     return action or kind or 'Activity'
 
 

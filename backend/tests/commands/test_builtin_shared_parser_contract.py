@@ -115,13 +115,12 @@ def test_other_server_builtins_are_not_reinterpreted():
     for root, raw, expected_sub, expected_tail in [
         ('alias', 'set a = shell echo --json', 'set', 'a = shell echo --json'),
         ('script', 'exec common/demo -- --name world', 'exec', 'common/demo -- --name world'),
-        ('xt', 'exec ffmpeg -i "a b.mp4"', 'exec', 'ffmpeg -i "a b.mp4"'),
+        ('xt', 'exec ffmpeg -i "a b.mp4"', 'exec.run', 'ffmpeg -i "a b.mp4"'),
         ('history', 'run 12', 'run', '12'),
     ]:
         spec, sub, tail = SERVER_COMMAND_REGISTRY.parse(root, raw)
         assert (sub, tail) == (expected_sub, expected_tail)
-        if root in ('alias', 'xt'):
-            assert not spec.structured
+        assert spec.structured == (root != 'alias')
 
 
 @pytest.mark.parametrize('text', [
@@ -230,10 +229,13 @@ def test_result_envelope_has_one_source_but_two_presentation_formats():
 
 
 def test_every_structured_builtin_leaf_owns_its_argument_schema():
+    def leaves(node):
+        if not node.subcommands:
+            yield node
+        for child in node.subcommands:
+            yield from leaves(child)
     for spec in SERVER_COMMAND_REGISTRY._commands.values():
-        if spec.structured and spec.subcommands:
-            assert all(child.argument_spec is not None or child.raw_tail for child in spec.subcommands)
-        elif spec.structured:
-            assert spec.argument_spec is not None or spec.raw_tail
+        if spec.structured:
+            assert all(leaf.argument_spec is not None or leaf.raw_tail for leaf in leaves(spec))
         else:
-            assert all(child.argument_spec is None for child in spec.subcommands)
+            assert all(leaf.argument_spec is None for leaf in leaves(spec))

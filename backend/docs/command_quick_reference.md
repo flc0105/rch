@@ -60,7 +60,13 @@
 | `history clear` | 清理当前设备 Quick Recent，保留 Activity Center 及 Pin |
 | `xt exec list [--json]` | 列出当前 Client 已安装并公开的 Exec 命令 |
 | `xt exec info <name>` / `xt exec which <name>` | 查看 Exec 元信息 / 客户端安装路径 |
-| `xt exec <name> [--] <args...>` | 将原生命令行参数传给所选 Client 上已安装的 Exec |
+| `xt exec [run] <name> [--] <args...>` | 将原生命令行参数传给所选 Client 上已安装的 Exec |
+| `xt package list [--installed|-i] [--json]` / `xt package install <package-id>` | 查询或安装当前平台支持的 Package；包名也可使用 `--package` |
+| `xt module list <package-id> [--json]` | 查询指定 Package 的 Module |
+| `xt instance create <module> --id ID [--preset PRESET] [--start] -- --key VALUE ...` | 创建实例；`<module>` 可改写为 `--module MODULE`，运行参数在 `--` 后输入 |
+| `xt instance start <instance-id> [--module MODULE] -- --key VALUE ...` | 按已保存的参数启动；`--` 后参数覆盖本次启动的值 |
+| `xt instance restart <instance-id> [--module MODULE] -- --key VALUE ...` | 按当前参数重启；指定时覆盖本次启动参数 |
+| `xt instance stop/status/logs <instance-id> [--module MODULE]` | 停止、查询或读取日志；实例名也可通过 `--name` 指定 |
 | `httpctl help` / `httpctl -h` / `httpctl --help` | 显示 HTTP 控制通道支持的操作 |
 | `httpctl kill` / `httpctl relaunch` / `httpctl clone` / `httpctl resume --client-id ID` | 将终止、重新启动、克隆或唤醒操作排入 HTTP Control 队列；可选 `--json` 返回操作状态与消息 |
 

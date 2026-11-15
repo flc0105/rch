@@ -143,7 +143,7 @@ def test_server_disconnect_uses_session_control_without_borrowing_foreground_slo
     assert keywords['type'] == 'control'
     assert keywords['domain'] is ControlDomain.SESSION
     assert keywords['action'] is SessionAction.DISCONNECT
-    assert keywords['track_execution'] is False
+    assert 'track_execution' not in keywords
 
 
 def test_config_success_does_not_emit_redundant_applied_progress():

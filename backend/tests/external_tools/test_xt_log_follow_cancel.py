@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 from server.application.tasks.task_service import WebTaskService
 from test_xt_management_cli import Cli
+from core.protocol.control import ExternalToolAction as A, ControlDomain, ExecutionPolicy, execution_policy
 
 
 def setup_follow():
@@ -25,10 +26,12 @@ def setup_follow():
     before = cli._nested_json
 
     def read(command, payload):
-        if command == 'external_tool_instance_logs':
+        if command == A.READ_INSTANCE_LOGS:
             runtime.bind_foreground_command_id(len(client_reads) + 5)
             client_reads.append(payload)
             first.set()
+            # Simulate the Control channel unbinding its completed snapshot.
+            runtime.unbind_foreground_command_id(len(client_reads) + 4)
             return {'running': True, 'content': 'FRP running\n' if len(client_reads) == 1 else '',
                     'cursor': f'cursor-{len(client_reads)}', 'reset': False}
         return before(command, payload)
@@ -44,7 +47,7 @@ def test_server_follow_cancel_releases_foreground_slot_and_keeps_instance_runnin
 
     def run():
         try:
-            result.extend(cli.xt('instance logs frp.frps demo --follow'))
+            result.extend(cli.run('instance logs frp.frps demo --follow'))
         finally:
             runtime.release_foreground_task(task_id=task_id)
             done.set()
@@ -73,7 +76,7 @@ def test_server_follow_does_not_repeat_text_without_new_cursor():
     cli, runtime, task_id, first, reads, cancels = setup_follow()
     output = []
     def run():
-        output.extend(cli.xt('instance logs frp.frps demo -f'))
+        output.extend(cli.run('instance logs frp.frps demo -f'))
     thread = threading.Thread(target=run, daemon=True)
     thread.start()
     assert first.wait(2)
@@ -94,7 +97,7 @@ def test_follow_cancel_during_log_rpc_is_terminal_and_slot_can_be_reused():
     entered = threading.Event()
     proceed = threading.Event()
     def slow_read(command, payload):
-        if command == 'external_tool_instance_logs':
+        if command == A.READ_INSTANCE_LOGS:
             runtime.bind_foreground_command_id(8)
             entered.set()
             assert proceed.wait(2)
@@ -104,7 +107,7 @@ def test_follow_cancel_during_log_rpc_is_terminal_and_slot_can_be_reused():
     output = []
     def run():
         try:
-            output.extend(cli.xt('instance logs frp.frps demo -f'))
+            output.extend(cli.run('instance logs frp.frps demo -f'))
         finally:
             runtime.release_foreground_task(task_id=task_id)
     t = threading.Thread(target=run, daemon=True)
@@ -127,7 +130,7 @@ def test_actual_web_task_runner_finalizer_releases_slot_after_follow_cancel():
     output = []
     runner = object.__new__(WebTaskRunner)
     # Keep the actual production run_command_task/finally, substitute only event plumbing.
-    runner._iter_command_events = lambda _: cli.xt('instance logs frp.frps demo -f')
+    runner._iter_command_events = lambda _: cli.run('instance logs frp.frps demo -f')
     runner._run_task_events = lambda _, events: output.extend(events)
     context = SimpleNamespace(task_id=task_id, command='xt instance logs frp.frps demo --follow',
         session=SimpleNamespace(release_foreground_task=runtime.release_foreground_task))
@@ -144,25 +147,5 @@ def test_actual_web_task_runner_finalizer_releases_slot_after_follow_cancel():
 
 
 def test_client_snapshot_reader_has_no_follow_cancellation_policy():
-    """Client performs only one bounded log read; the Server owns Follow cancellation."""
-    import json
-    from client.commands.common.mixins.external_tool_ops import CommandExternalToolMixin
-
-    assert getattr(CommandExternalToolMixin.external_tool_instance_logs, 'command_cancel_mode', 'none') == 'none'
-
-    class SnapshotHost(CommandExternalToolMixin):
-        @property
-        def external_tool_service(self):
-            return SimpleNamespace(instance_log_chunk_payload=lambda payload: {
-                'running': True, 'cursor': 'next', 'content': 'hello\n', 'reset': False,
-            })
-
-        def _decode_external_tool_payload(self, arg):
-            return {'cursor': arg}
-
-        def _ensure_not_cancelled(self):
-            raise AssertionError('one-shot log snapshot must not depend on Client cancellation')
-
-    status, output = SnapshotHost().external_tool_instance_logs('old')
-    assert status == 1
-    assert json.loads(output)['content'] == 'hello\n'
+    """A snapshot is one independent Control; Server owns the Follow loop."""
+    assert execution_policy(ControlDomain.EXTERNAL_TOOL, A.READ_INSTANCE_LOGS) == ExecutionPolicy.INDEPENDENT

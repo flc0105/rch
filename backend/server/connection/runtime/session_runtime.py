@@ -107,6 +107,9 @@ class ClientSessionRuntime:
         """
         return self._execution_runtime.bind_foreground_command_id(command_id)
 
+    def unbind_foreground_command_id(self, command_id: int):
+        return self._execution_runtime.unbind_foreground_command_id(command_id)
+
     def request_foreground_task_cancel(self, task_id: str = ''):
         """
         请求取消当前前台任务

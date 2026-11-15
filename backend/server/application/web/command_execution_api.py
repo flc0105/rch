@@ -87,12 +87,12 @@ class WebCommandExecutionApi:
             tab_id=(tab_id or '').strip(), metadata=dict(metadata or {}),
         )
 
-    def _control(self, client_id, domain, action, payload, *, task_type, source, track_execution=True):
+    def _control(self, client_id, domain, action, payload, *, task_type, source):
         if self.remote_execution_service is None:
             raise RuntimeError('remote_execution_service is not available')
         status, result = self.remote_execution_service.run_foreground_control(
             self._normalize_client_id(client_id), domain, action, payload,
-            task_type=task_type, source=source, track_execution=track_execution,
+            task_type=task_type, source=source,
         )
         if status != 1:
             message = result.get('message') if isinstance(result, dict) else result

@@ -143,10 +143,9 @@ class WebTaskService:
             raise RuntimeError('failed to request task cancellation')
 
         command_id = cancel_info.get('command_id')
-        # xt logs --follow is a Server-side polling generator. The cancellation
-        # flag stops it; cancelling the short nested Client read instead would be
-        # rejected as non-cancellable and pollute its JSON response.
-        if command_id and not self._is_server_owned_xt_log_follow((conn.get_foreground_task() or {}).get('command') or ''):
+        # During a nested log snapshot this ID targets only that cancellable
+        # Control; between snapshots the Server-owned follow stops by flag.
+        if command_id:
             conn.send_cancel(command_id)
 
         result = dict(cancel_info)

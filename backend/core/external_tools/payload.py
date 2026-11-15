@@ -30,7 +30,6 @@ def package_identity_payload(
     source_context = context if isinstance(context, dict) else {}
     package_id = str(source_package.get('id') or source_context.get('package_id') or '').strip()
     return {
-        'action': action,
         'tool_id': tool_id or package_id,
         'package_id': package_id,
         'display_name': source_package.get('display_name') or package_id,
@@ -54,7 +53,6 @@ def module_identity_payload(
     source_module = module if isinstance(module, dict) else {}
     source_context = context if isinstance(context, dict) else {}
     return {
-        'action': action,
         'tool_id': source_module.get('tool_id') or source_context.get('tool_id') or '',
         'package_id': source_module.get('package_id') or source_context.get('package_id') or '',
         'module_id': source_module.get('id') or source_module.get('module_id') or source_context.get('module_id') or '',
@@ -185,31 +183,26 @@ def client_action_payload(
     *,
     action: str,
     instance_id: str,
-    params: dict | None,
-    runtime: dict,
     max_bytes: int,
     cursor: str | None = None,
 ) -> dict:
+    """Only transmit fields consumed by this instance action.
+
+    Client resolves its own managed runtime paths from the validated identity.
+    """
     source_module = module if isinstance(module, dict) else {}
-    package_id = str(source_module.get('package_id') or '').strip()
-    module_id = str(source_module.get('id') or source_module.get('module_id') or '').strip()
     result = {
-        'action': action,
         'tool_id': source_module.get('tool_id') or '',
-        'package_id': package_id,
-        'module_id': module_id,
-        'display_name': source_module.get('display_name') or source_module.get('tool_id') or '',
-        'version': source_module.get('version') or '',
-        'side': 'client',
+        'package_id': source_module.get('package_id') or '',
+        'module_id': source_module.get('id') or source_module.get('module_id') or '',
         'instance_id': instance_id,
-        'instance_name': instance_id,
-        'params': dict(params or {}),
-        'runtime': dict(runtime or {}),
-        'lifecycle': dict(source_module.get('lifecycle') or {}),
-        'max_bytes': int(max_bytes),
     }
-    if cursor is not None:
-        result['cursor'] = str(cursor)
+    if action == 'stop':
+        result['lifecycle'] = dict(source_module.get('lifecycle') or {})
+    if action == 'logs':
+        result['max_bytes'] = int(max_bytes)
+        if cursor is not None:
+            result['cursor'] = str(cursor)
     return result
 
 
@@ -311,3 +304,88 @@ def client_install_status_error_payload(tool_payload: dict, error: Exception | s
         'error': message,
         'message': message,
     }
+
+
+# The External Tool action decides its wire payload. Domain builders may carry
+# richer Server-side metadata, but the Client receives only consumed fields.
+def client_control_request(action, source: dict) -> dict:
+    from core.protocol.control import ExternalToolAction as A
+
+    action = A(action)
+    value = source or {}
+
+    def fields(item, names):
+        return {key: item[key] for key in names if key in item and item[key] is not None}
+
+    identity = ('tool_id', 'package_id', 'module_id', 'instance_id')
+    target = ('package_id', 'platform', 'arch', 'package_key')
+    package_install = ('filename', 'download_url', 'executable_rel_path', 'exec_paths')
+    package_status = ('filename', 'executable_rel_path', 'exec_paths')
+    install_fields = ('install_dir', 'skip_if_exists')
+
+    def package_request(*, download=False):
+        result = fields(value, target)
+        package = fields(value.get('package') or {}, package_install if download else package_status)
+        install = fields(value.get('install') or {}, install_fields)
+        if package:
+            result['package'] = package
+        if install:
+            result['install'] = install
+        return result
+
+    if action == A.GET_INSTALL_STATUSES:
+        return {'tools': [({**fields(tool, target),
+                            'package': fields(tool.get('package') or {}, package_status),
+                            'install': fields(tool.get('install') or {}, install_fields)})
+                          if not tool.get('error') else fields(tool, ('package_id', 'error'))
+                          for tool in value.get('tools') or []]}
+    if action == A.LIST_INSTANCES:
+        return {'tools': [fields(tool, (*identity, 'instance_ids')) for tool in value.get('tools') or []]}
+    if action == A.RESOLVE_LAUNCHER:
+        return fields(value, ('launcher',))
+    if action == A.UNINSTALL_PACKAGE:
+        return {**fields(value, target), **({'install': fields(value['install'], ('install_dir',))} if value.get('install') else {})}
+    if action == A.CLEAR_PACKAGE_CACHE:
+        return {**fields(value, target), 'package': fields(value.get('package') or {}, ('filename',))}
+    if action == A.INSTALL_PACKAGE:
+        return package_request(download=True)
+    if action in (A.READ_INSTANCE, A.READ_INSTANCE_LOGS, A.STOP_INSTANCE,
+                  A.REMOVE_INSTANCE, A.CLEAR_INSTANCE_LOGS):
+        result = fields(value, identity)
+        if action == A.READ_INSTANCE_LOGS:
+            result.update(fields(value, ('max_bytes', 'cursor')))
+        if action == A.STOP_INSTANCE:
+            result.update(fields(value, ('lifecycle',)))
+        return result
+    if action == A.CREATE_INSTANCE:
+        return {**fields(value, (*identity, 'platform', 'arch', 'package_key', 'params'))}
+    if action == A.PREVIEW_INSTANCE:
+        return {**fields(value, (*identity, 'platform', 'arch', 'package_key', 'launcher', 'launcher_override')),
+                'runtime': fields(value.get('runtime') or {}, ('argv', 'cwd'))}
+    if action in (A.START_INSTANCE, A.RESTART_INSTANCE, A.RUN_ONESHOT, A.EXEC):
+        result = package_request()
+        result.update(fields(value, (*identity, 'display_name', 'params', 'config',
+                                    'launcher', 'launcher_override')))
+        if action == A.EXEC:
+            result.update(fields(value, ('exec_name', 'raw_args')))
+            result['exec_options'] = fields(value.get('exec_options') or {}, ('cwd', 'timeout_sec', 'launcher'))
+            for key in ('tool_id', 'module_id', 'instance_id', 'params', 'config',
+                        'launcher', 'launcher_override', 'display_name'):
+                result.pop(key, None)
+        else:
+            result['install_if_needed'] = False
+            runtime = fields(value.get('runtime') or {},
+                ('argv', 'cwd', 'stdout') if action == A.RUN_ONESHOT else
+                ('argv', 'cwd', 'stdout', 'stderr', 'pid_file', 'state_file'))
+            if runtime:
+                result['runtime'] = runtime
+            if action == A.RUN_ONESHOT:
+                result.update(fields(value, ('run_id', 'timeout_sec')))
+                result['execution'] = 'oneshot'
+                for key in ('params', 'instance_id', 'module_id'):
+                    result.pop(key, None)
+            elif action == A.RESTART_INSTANCE:
+                result.update(fields(value, ('lifecycle',)))
+            # Only the daemon's persisted state consumes params and display_name.
+        return result
+    raise ValueError(f'Unsupported external tool Control action: {action}')

@@ -198,22 +198,22 @@ class ExternalToolInstaller(ExternalToolCommon):
         if self.has_running_instances_for_package(package_id):
             raise ValueError('This package has running instances on this machine. Stop them before uninstalling.')
 
-        status = self.install_status_payload(payload)
-        install_dir = status.get('install_dir') or ''
-
-        removed = False
-        if install_dir and os.path.isdir(install_dir):
+        self.validate_package_payload(payload, 'uninstall')
+        install_dir = self.expand_path((payload.get('install') or {}).get('install_dir') or '')
+        managed_root = self.expand_path(EXTERNAL_TOOLS_INSTALL_ROOT)
+        # The server supplies the selected version's directory. Only that exact
+        # managed package/version/platform subtree may be removed.
+        try:
+            relative = os.path.relpath(os.path.realpath(install_dir), os.path.realpath(managed_root))
+        except ValueError as exc:
+            raise ValueError('Invalid managed package install directory') from exc
+        parts = relative.split(os.sep)
+        if (len(parts) != 3 or parts[0] != package_id or not parts[1] or
+                parts[2] != str(payload.get('package_key') or '') or
+                relative.startswith('..')):
+            raise ValueError('Invalid managed package install directory')
+        removed = os.path.isdir(install_dir)
+        if removed:
             shutil.rmtree(install_dir)
-            removed = True
+        return {'installed': False, 'removed': removed}
 
-        status.update({
-            'installed': False,
-            'removed': removed,
-            'message': (
-                f'{payload.get("display_name") or tool_id} uninstalled from {install_dir}'
-                if removed
-                else f'{payload.get("display_name") or tool_id} was not installed at {install_dir}'
-            ),
-        })
-
-        return status

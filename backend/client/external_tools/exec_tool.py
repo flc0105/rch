@@ -29,12 +29,10 @@ class ExternalToolCliExec(ExternalToolCommon):
             executable_path = status.get('executable_path') or ''
 
             if not status.get('installed'):
-                self.command_host.emit_completed(status='error', message=status.get('message') or 'External tool is not installed')
-                return
+                return 0, status.get('message') or 'External tool is not installed'
 
             if not executable_path or not os.path.exists(executable_path):
-                self.command_host.emit_completed(status='error', message=f'External tool executable not found: {executable_path}')
-                return
+                return 0, f'External tool executable not found: {executable_path}'
 
             self.chmod(executable_path)
 
@@ -76,13 +74,13 @@ class ExternalToolCliExec(ExternalToolCommon):
             time.sleep(0.1)
 
             if process.returncode == 0:
-                self.command_host.emit_completed(status='success', message='Command completed')
+                return 1, 'Command completed'
             else:
-                self.command_host.emit_completed(status='error', message=f'Command exited with code {process.returncode}')
+                return 0, f'Command exited with code {process.returncode}'
 
         except CommandCancelledError:
-            self.command_host.emit_completed(status='error', message='Command cancelled')
+            return 0, {'status': 'cancelled', 'message': 'Command cancelled'}
         except (CommandTimeoutError, subprocess.TimeoutExpired):
-            self.command_host.emit_completed(status='error', message='Command timed out and was terminated')
+            return 0, {'status': 'timed_out', 'message': 'Command timed out and was terminated'}
         except Exception as e:
-            self.command_host.emit_completed(status='error', message=f'Failed to execute external tool: {e}')
+            return 0, f'Failed to execute external tool: {e}'

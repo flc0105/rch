@@ -73,7 +73,7 @@ class ClientSession:
     def clear_history_entry(self, command_id: int):
         self.runtime.clear_history_entry(command_id)
 
-    def send_command(self, command: str, type='command', extra=None, history_entry_id: str = '', payload=None, domain='', action='', track_execution=True):
+    def send_command(self, command: str, type='command', extra=None, history_entry_id: str = '', payload=None, domain='', action='', link_foreground_cancel=False):
         return self.command_channel.send_command(
             command,
             type=type,
@@ -81,14 +81,14 @@ class ClientSession:
             history_entry_id=history_entry_id,
             payload=payload,
             domain=domain, action=action,
-            **({'track_execution': False} if not track_execution else {}),
+            **({'link_foreground_cancel': True} if link_foreground_cancel else {}),
         )
 
     def request_disconnect(self):
         self.note_server_disconnect('kill_instance')
         return self.send_command('', type=MSG_TYPE_CONTROL,
                                  domain=ControlDomain.SESSION, action=SessionAction.DISCONNECT,
-                                 payload={}, track_execution=False)
+                                 payload={})
 
     def send_cancel(self, target_command_id: int):
         return self.command_channel.send_cancel(target_command_id)

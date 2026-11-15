@@ -52,7 +52,7 @@ class RemoteExecutionService:
         domain: str = '',
         action: str = '',
         history_entry_id: str = '',
-        track_execution: bool = True,
+        link_foreground_cancel: bool = False,
     ):
         return self.command_stream_service.stream_command(
             target,
@@ -63,7 +63,7 @@ class RemoteExecutionService:
             domain=domain,
             action=action,
             history_entry_id=history_entry_id,
-            **({'track_execution': False} if not track_execution else {}),
+            **({'link_foreground_cancel': True} if link_foreground_cancel else {}),
         )
 
     def run_text_command(
@@ -77,7 +77,6 @@ class RemoteExecutionService:
         domain: str = '',
         action: str = '',
         history_entry_id: str = '',
-        track_execution: bool = True,
     ) -> str:
         return self.command_stream_service.run_text_command(
             target,
@@ -88,7 +87,6 @@ class RemoteExecutionService:
             domain=domain,
             action=action,
             history_entry_id=history_entry_id,
-            **({'track_execution': False} if not track_execution else {}),
         )
 
     def run_json_command(
@@ -102,7 +100,6 @@ class RemoteExecutionService:
         domain: str = '',
         action: str = '',
         history_entry_id: str = '',
-        track_execution: bool = True,
     ) -> dict:
         return self.command_stream_service.run_json_command(
             target,
@@ -113,7 +110,6 @@ class RemoteExecutionService:
             domain=domain,
             action=action,
             history_entry_id=history_entry_id,
-            **({'track_execution': False} if not track_execution else {}),
         )
 
     def collect_result(self, result_iter):
@@ -130,7 +126,6 @@ class RemoteExecutionService:
         domain: str = '',
         action: str = '',
         history_entry_id: str = '',
-        track_execution: bool = True,
         task_type: str = TASK_TYPE_COMMAND,
         source: str = 'foreground',
         task_id: str = '',
@@ -145,7 +140,6 @@ class RemoteExecutionService:
             domain=domain,
             action=action,
             history_entry_id=history_entry_id,
-            **({'track_execution': False} if not track_execution else {}),
             task_type=task_type,
             source=source,
             task_id=task_id,
@@ -163,7 +157,6 @@ class RemoteExecutionService:
         domain: str = '',
         action: str = '',
         history_entry_id: str = '',
-        track_execution: bool = True,
         task_type: str = TASK_TYPE_COMMAND,
         source: str = 'foreground',
         task_id: str = '',
@@ -171,7 +164,6 @@ class RemoteExecutionService:
         return self.foreground_execution_service.run_foreground_text_command(
             target, command, command_type=command_type, extra=extra, payload=payload, domain=domain, action=action,
             history_entry_id=history_entry_id, task_type=task_type, source=source, task_id=task_id,
-            **({'track_execution': False} if not track_execution else {}),
         )
 
     def run_foreground_json_command(
@@ -185,7 +177,6 @@ class RemoteExecutionService:
         domain: str = '',
         action: str = '',
         history_entry_id: str = '',
-        track_execution: bool = True,
         task_type: str = TASK_TYPE_COMMAND,
         source: str = 'foreground',
         task_id: str = '',
@@ -199,7 +190,6 @@ class RemoteExecutionService:
             domain=domain,
             action=action,
             history_entry_id=history_entry_id,
-            **({'track_execution': False} if not track_execution else {}),
             task_type=task_type,
             source=source,
             task_id=task_id,
@@ -207,7 +197,8 @@ class RemoteExecutionService:
 
     def run_foreground_control(self, target, domain: str, action: str, payload: dict, *,
                                task_type: str = TASK_TYPE_COMMAND, source: str = 'foreground',
-                               track_execution: bool = True, foreground: bool = True):
+                               foreground: bool = True,
+                               history_entry_id: str = ''):
         """Run typed Control under its registered scheduling policy."""
         from core.protocol.message_types import MSG_TYPE_CONTROL
         from core.protocol.control import execution_policy, ExecutionPolicy
@@ -220,7 +211,8 @@ class RemoteExecutionService:
         for item in stream(
             target, '', command_type=MSG_TYPE_CONTROL,
             domain=domain, action=action, payload=payload,
-            track_execution=track_execution, **options,
+            history_entry_id=history_entry_id,
+            **options,
         ):
             status, result = item[0], item[1] if len(item) > 1 else ''
             if isinstance(result, str) and result:

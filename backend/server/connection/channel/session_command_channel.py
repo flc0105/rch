@@ -50,7 +50,7 @@ class ClientSessionCommandChannel:
             'target_id': target_command_id,
         }
 
-    def send_command(self, command: str, type=MSG_TYPE_COMMAND, extra=None, history_entry_id: str = '', payload=None, domain='', action='', track_execution=True):
+    def send_command(self, command: str, type=MSG_TYPE_COMMAND, extra=None, history_entry_id: str = '', payload=None, domain='', action='', link_foreground_cancel=False):
         data = self.build_command_payload(command, type, extra, payload, domain, action)
 
         independent = type == MSG_TYPE_CONTROL and execution_policy(domain, action) == ExecutionPolicy.INDEPENDENT
@@ -59,9 +59,9 @@ class ClientSessionCommandChannel:
             data['extra'] = {**(extra or {}), 'timeout': timeout}
         coordinator = getattr(self.session.context, 'activity_coordinator', None)
 
+        # Control Activity eligibility is decided only by the registered Action policy.
+        # Command/cancellation binding must not depend on whether Activity is recorded.
         adapter = getattr(self.session.context, 'command_dispatch_adapter', None)
-        if not track_execution:
-            adapter = None
         if adapter is not None:
             try:
                 history_entry_id = adapter.prepare_dispatch(self.session, history_entry_id, data)
@@ -74,13 +74,18 @@ class ClientSessionCommandChannel:
             history_entry_id=history_entry_id,
             coordinator=coordinator,
             **({'bind_foreground': False} if independent else {}),
-        ) if track_execution else None
+        )
         # Register before sending: a very fast Client (e.g. invalid download)
         # can reply before the caller starts iterating wait_for_result().
         pending = self.session.runtime.pending_results.register(data['id'])
+        if link_foreground_cancel:
+            # This nested Control belongs to a Server-owned foreground generator.
+            self.session.runtime.bind_foreground_command_id(data['id'])
         try:
             self.session.send(data)
         except Exception:
+            if link_foreground_cancel:
+                self.session.runtime.unbind_foreground_command_id(data['id'])
             self.session.runtime.pending_results.remove(data['id'])
             self.session.runtime.clear_history_entry(data['id'])
             if adapter is not None and history_entry_id:
@@ -97,7 +102,14 @@ class ClientSessionCommandChannel:
         results = self.wait_for_result(data.get('id'), command if type == MSG_TYPE_COMMAND else None,
                                        results=pending, timeout=timeout, terminal_authoritative=type == MSG_TYPE_CONTROL)
         if adapter is not None:
-            return adapter.observe_result(self.session, history_entry_id, data, results)
+            results = adapter.observe_result(self.session, history_entry_id, data, results)
+        if link_foreground_cancel:
+            def linked_results():
+                try:
+                    yield from results
+                finally:
+                    self.session.runtime.unbind_foreground_command_id(data['id'])
+            return linked_results()
         return results
 
     def send_cancel(self, target_command_id: int):

@@ -26,6 +26,7 @@ class ControlDomain(ControlValue):
     PROCESS = "process"
     WATCHDOG = "watchdog"
     SESSION = "session"
+    EXTERNAL_TOOL = "external_tool"
 
 
 class JobAction(ControlValue):
@@ -75,6 +76,26 @@ class WatchdogAction(ControlValue):
 
 class SessionAction(ControlValue):
     DISCONNECT = "disconnect"
+
+
+class ExternalToolAction(ControlValue):
+    INSTALL_PACKAGE = "install_package"
+    UNINSTALL_PACKAGE = "uninstall_package"
+    GET_INSTALL_STATUSES = "get_install_statuses"
+    CLEAR_PACKAGE_CACHE = "clear_package_cache"
+    RESOLVE_LAUNCHER = "resolve_launcher"
+    CREATE_INSTANCE = "create_instance"
+    READ_INSTANCE = "read_instance"
+    READ_INSTANCE_LOGS = "read_instance_logs"
+    START_INSTANCE = "start_instance"
+    STOP_INSTANCE = "stop_instance"
+    RESTART_INSTANCE = "restart_instance"
+    LIST_INSTANCES = "list_instances"
+    REMOVE_INSTANCE = "remove_instance"
+    CLEAR_INSTANCE_LOGS = "clear_instance_logs"
+    PREVIEW_INSTANCE = "preview_instance"
+    RUN_ONESHOT = "run_oneshot"
+    EXEC = "exec"
 
 
 class ActivityPolicy(ControlValue):
@@ -133,6 +154,25 @@ _CONTROL_ACTIONS = {
     },
     ControlDomain.SESSION: {
         SessionAction.DISCONNECT: ControlActionSpec(ExecutionPolicy.INDEPENDENT, activity=ActivityPolicy.OPTIONAL),
+    },
+    ControlDomain.EXTERNAL_TOOL: {
+        ExternalToolAction.INSTALL_PACKAGE: ControlActionSpec(ExecutionPolicy.FOREGROUND),
+        ExternalToolAction.UNINSTALL_PACKAGE: ControlActionSpec(ExecutionPolicy.FOREGROUND),
+        ExternalToolAction.GET_INSTALL_STATUSES: ControlActionSpec(ExecutionPolicy.INDEPENDENT, activity=ActivityPolicy.OPTIONAL),
+        ExternalToolAction.CLEAR_PACKAGE_CACHE: ControlActionSpec(ExecutionPolicy.FOREGROUND),
+        ExternalToolAction.RESOLVE_LAUNCHER: ControlActionSpec(ExecutionPolicy.INDEPENDENT, activity=ActivityPolicy.OPTIONAL),
+        ExternalToolAction.CREATE_INSTANCE: ControlActionSpec(ExecutionPolicy.FOREGROUND),
+        ExternalToolAction.READ_INSTANCE: ControlActionSpec(ExecutionPolicy.INDEPENDENT, activity=ActivityPolicy.OPTIONAL),
+        ExternalToolAction.READ_INSTANCE_LOGS: ControlActionSpec(ExecutionPolicy.INDEPENDENT, activity=ActivityPolicy.OPTIONAL),
+        ExternalToolAction.START_INSTANCE: ControlActionSpec(ExecutionPolicy.FOREGROUND),
+        ExternalToolAction.STOP_INSTANCE: ControlActionSpec(ExecutionPolicy.INDEPENDENT),
+        ExternalToolAction.RESTART_INSTANCE: ControlActionSpec(ExecutionPolicy.FOREGROUND),
+        ExternalToolAction.LIST_INSTANCES: ControlActionSpec(ExecutionPolicy.INDEPENDENT, activity=ActivityPolicy.OPTIONAL),
+        ExternalToolAction.REMOVE_INSTANCE: ControlActionSpec(ExecutionPolicy.FOREGROUND),
+        ExternalToolAction.CLEAR_INSTANCE_LOGS: ControlActionSpec(ExecutionPolicy.FOREGROUND),
+        ExternalToolAction.PREVIEW_INSTANCE: ControlActionSpec(ExecutionPolicy.INDEPENDENT, activity=ActivityPolicy.OPTIONAL),
+        ExternalToolAction.RUN_ONESHOT: ControlActionSpec(ExecutionPolicy.FOREGROUND),
+        ExternalToolAction.EXEC: ControlActionSpec(ExecutionPolicy.FOREGROUND),
     },
 }
 

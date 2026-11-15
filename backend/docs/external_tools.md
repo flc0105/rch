@@ -324,7 +324,7 @@ External Tool Manager 的主要视图是 **Packages** 和 **Instances**。
 
 **Packages** 展示 Server Catalog，并按当前目标 Client 过滤适用 Package。用户可以选择设备，查看 Package 安装状态、下载 Package、Install、Uninstall、Clear Package Cache、查看状态及编辑 Metadata。Package 下再展开可执行的 Module，按 Daemon/Oneshot 显示对应 Run 操作。
 
-External Tool Manager 中实际派发到 Client 的 Install、Uninstall、Clear Package Cache、Start、Oneshot Run、Stop、Remove Instance、Clear Logs 会在 Activity Center 留下各自的一条 `External Tool` 语义记录。记录按所选机器归属，执行成功、失败和超时由真实结果确定，不复制运行配置、敏感参数或程序输出；安装状态、日志查看、Launcher 预览等只读操作不记 Activity。终端 `xt` 的 `exec list` 和 `help` 等查询保留用户实际输入的 Quick History，但不生成 Activity；真实 `xt exec <exec>` 形成一条 `external_tool · run_exec` Activity，保留真实输入与 Exec 身份，不记录内部 `external_tool_*` 结构化派发命令。Script SDK 仍归属于 Script 本身，不另外生成 External Tool Activity。
+External Tool Manager 中实际派发到 Client 的 Install、Uninstall、Clear Package Cache、Start、Oneshot Run、Stop、Remove Instance、Clear Logs 会在 Activity Center 留下各自的一条 `External Tool` 语义记录。记录按所选机器归属，执行成功、失败和超时由真实结果确定，不复制运行配置、敏感参数或程序输出；安装状态、日志查看、Launcher 预览等只读操作不记 Activity。终端 `xt` 的 `exec list` 和 `help` 等查询保留用户实际输入的 Quick History，但不生成 Activity；真实 `xt exec <exec>` 形成一条 `external_tool · exec` Activity，保留真实输入与 Exec 身份，记录真实 Control Action 和原始终端命令。Script SDK 仍归属于 Script 本身，不另外生成 External Tool Activity。
 
 **Instances** 展示当前设备已有 Daemon 实例，包含实例标识、状态、PID、端口/参数相关信息和开始时间等。对于具体实例，可查看日志、请求停止、查看详细信息、重启、清理日志或移除实例；运行中的实例不可直接执行清理文件的操作。
 
@@ -358,11 +358,12 @@ xt exec list --json
 xt exec info ffmpeg
 xt exec which ffmpeg
 xt exec ffmpeg -- -version
+xt exec run ffmpeg -- -version
 xt exec python -V
 xt exec python -- -c "print(1 + 1)"
 ```
 
-`xt exec list` 列出当前 Client 平台支持、已安装且在 Metadata 的 `execs` 中明确公开的命令；`xt exec ffmpeg -- -version` 把 `-version` 作为原始命令行参数传给 FFmpeg。`--` 可明确区分 `xt` 自身语法和目标程序参数。
+`xt exec list` 列出当前 Client 平台支持、已安装且在 Metadata 的 `execs` 中明确公开的命令；`xt exec ffmpeg -- -version` 是 `xt exec run ffmpeg -- -version` 的正式简写，两种形式都将 `-version` 作为原始命令行参数传给 FFmpeg。`--` 可明确区分 `xt` 自身语法和目标程序参数。
 
 `python` Exec 由 `python-embed` Package 公开，当前只支持 Windows amd64；需先在目标 Client 安装该 Package。`xt exec python -c ...` 使用已安装的 `python.exe`，不影响该 Package 现有的 Oneshot Module。
 
@@ -380,22 +381,22 @@ xt package install <package-id>
 xt package uninstall <package-id>
 xt module list <package-id> [--json]
 
-xt instance create <package.module> --id <instance-id> [--preset <name>] [--params '<JSON对象>'] [--start]
+xt instance create <package.module>|--module MODULE --id <instance-id> [--preset NAME] [--start] [-- --key VALUE ...]
 xt instance list [<package-id>|<package.module>] [--json]
-xt instance start [<package.module>] <instance-id>
-xt instance stop [<package.module>] <instance-id>
-xt instance restart [<package.module>] <instance-id>
-xt instance status [<package.module>] <instance-id> [--json]
-xt instance logs [<package.module>] <instance-id> [--follow|-f]
+xt instance start [<package.module>] <instance-id>|--name ID [--module MODULE] [-- --key VALUE ...]
+xt instance stop [<package.module>] <instance-id>|--name ID [--module MODULE]
+xt instance restart [<package.module>] <instance-id>|--name ID [--module MODULE] [-- --key VALUE ...]
+xt instance status [<package.module>] <instance-id>|--name ID [--module MODULE] [--json]
+xt instance logs [<package.module>] <instance-id>|--name ID [--module MODULE] [--follow|-f]
 ```
 
 `xt package list` 查询 Server Catalog 并针对当前 Client 检查安装状态；`--installed` 或 `-i` 仅返回已安装的 Package。安装与卸载沿用现有 Client Package Installer；有运行中的实例时，卸载操作遵循原有安全检查。`xt module list` 返回 Package 在当前平台上的 Module ID、执行模式和内部 Binary。
 
-`xt instance create` 仅适用于 `execution=daemon` Module：通过 `--id` 指定实例身份，可通过 `--preset` 选择已经在 Server 保存的 Module Preset，`--params` 用 JSON 对象覆盖参数；同名业务参数 `instance_name` 没有显式提供时，使用 `--id`。创建将参数保存在 Client 的 `~/.ops/external_tools/runtime/<package>/<module>/instances/<id>/instance.json`，不启动进程；添加 `--start` 会在创建后立即启动。**Instance ID** 以字母、数字或 `_` 开头，可包含字母、数字、`_ . -`，最多 96 个字符；同一 Module 下不可重名；重复创建会提示已有实例及可用的 `xt instance start` 命令。若运行目录已存在（包括未登记的旧目录），创建会提示目录冲突并保留原内容。
+`xt instance create` 仅适用于 `execution=daemon` Module：通过 `--id` 指定实例身份，可通过 `--preset` 选择已经在 Server 保存的 Module Preset，在 `--` 后使用 `--key value` 提供覆盖参数，语法与 Job/Script 一致；同名业务参数 `instance_name` 没有显式提供时，使用 `--id`。创建将参数保存在 Client 的 `~/.ops/external_tools/runtime/<package>/<module>/instances/<id>/instance.json`，不启动进程；添加 `--start` 会在创建后立即启动。**Instance ID** 以字母、数字或 `_` 开头，可包含字母、数字、`_ . -`，最多 96 个字符；同一 Module 下不可重名；重复创建会提示已有实例及可用的 `xt instance start` 命令。若运行目录已存在（包括未登记的旧目录），创建会提示目录冲突并保留原内容。
 
 `start/stop/restart/status/logs` 可直接使用实例 ID；Server 会在当前选中的 Client 上查找所有 Daemon Module，仅唯一匹配时执行。如果多个 Module 下存在同名实例，则提示候选并要求使用 `<package.module> <instance-id>` 指定目标。
 
-之后 `start/restart` 使用保存的参数与当前 Server Module 定义重建启动 Payload；已有的 Web Manager 启动实例也可从其 `state.json` 参数读取。`stop/status` 复用原有 Client 进程状态；`logs` 默认读取该实例 stdout 最近最多 64 KiB；`--follow` 由 Server 按照 Job Logs 的前台取消流程增量读取 Client 日志；每次 Client 读取都是短命令，Follow 在前台任务收到取消请求后结束并释放任务槽。实例停止时也结束跟随。取消 Follow 不会停止实例。`status --json` 只提供进程状态摘要，避免输出配置参数。所有管理操作通过当前 Client 的前台命令执行。
+之后 `start/restart` 使用保存的参数与当前 Server Module 定义重建启动 Payload，`--` 后的参数只覆盖本次启动值；已有的 Web Manager 启动实例也可从其 `state.json` 参数读取。`stop/status` 复用原有 Client 进程状态；`logs` 默认读取该实例 stdout 最近最多 64 KiB；`--follow` 由 Server 按照 Job Logs 的前台取消流程增量读取 Client 日志；每次 Client 读取都是短命令，Follow 在前台任务收到取消请求后结束并释放任务槽。实例停止时也结束跟随。取消 Follow 不会停止实例。`status --json` 只提供进程状态摘要，避免输出配置参数。所有管理操作通过当前 Client 的前台命令执行。
 
 例如：
 
@@ -403,7 +404,7 @@ xt instance logs [<package.module>] <instance-id> [--follow|-f]
 xt package list --installed
 xt module list frp
 xt package install frp
-xt instance create frp.frpc --id office-frpc --params '{"server_addr":"127.0.0.1","server_port":7001}' --start
+xt instance create frp.frpc --id office-frpc --start -- --server_addr 127.0.0.1 --server_port 7001
 xt instance status office-frpc --json
 xt instance logs office-frpc --follow
 xt instance stop office-frpc

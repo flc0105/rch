@@ -49,7 +49,7 @@ class ExternalToolOneshot(ExternalToolCommon):
         return result
 
     def oneshot_payload(self, payload: dict) -> dict:
-        if str(payload.get('execution') or payload.get('action') or '').strip().lower() not in ('oneshot',):
+        if str(payload.get('execution') or '').strip().lower() not in ('oneshot',):
             raise ValueError('external tool payload execution must be oneshot')
 
         self.validate_package_payload(payload, 'oneshot')

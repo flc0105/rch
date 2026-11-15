@@ -2361,12 +2361,9 @@ async uninstallPackage(item) {
       request_platform: this.getPlatformForConnectionId(deviceId),
       request_arch: this.getArchForConnectionId(deviceId),
     })
-    const data = await this.uninstallClientTool(item, deviceId)
-    this.setInstallStatus(item, deviceId, {
-      ...(data || {}), installed: false, loading: false, error: '',
-    })
+    await this.uninstallClientTool(item, deviceId)
     await this.loadClientCatalogStatuses(deviceId, false)
-    ElMessage.success(data?.message || `Uninstalled: ${item.display_name || item.id}`)
+    ElMessage.success(`Uninstalled: ${item.display_name || item.id}`)
   } catch (e) {
     ElMessage.error(e.message || 'Failed to uninstall package')
   } finally {
@@ -2419,9 +2416,9 @@ async uninstallClientTool(item, deviceId) {
         this.installLoading = true
         const deviceId = this.getActionDeviceId(item)
         if (!deviceId) throw new Error('Please select a device')
-        const data = await this.clearClientPackageCache(item, deviceId)
+        await this.clearClientPackageCache(item, deviceId)
         await this.loadClientCatalogStatuses(deviceId, false)
-        ElMessage.success(data?.message || 'Package cache cleared')
+        ElMessage.success('Package cache cleared')
       } catch (e) {
         ElMessage.error(e.message || 'Failed to clear package cache')
       } finally {
@@ -2473,24 +2470,14 @@ async uninstallClientTool(item, deviceId) {
         })
         if (!requestPlatform || !requestArch) throw new Error(`Unable to resolve target platform/arch for client ${deviceId}`)
 
-        const data = await externalToolsApi.installClientTool(
+        await externalToolsApi.installClientTool(
           deviceId,
           item.id,
           { params: {}, platform: requestPlatform, arch: requestArch },
           this.buildJsonHeaders(),
         )
-        this.setInstallStatus(item, deviceId, { ...data, loading: false, error: data.error || '' })
-        const sourceLabel = data.used_cache
-          ? 'Installed from cached package'
-          : data.downloaded
-            ? 'Downloaded and installed'
-            : data.package_source === 'local'
-              ? 'Installed from local package file'
-              : 'Installed successfully'
-        const message = data.already_installed
-          ? `Already installed: ${data.executable_path || data.install_dir || item.id}`
-          : `${sourceLabel}: ${data.executable_path || data.install_dir || item.id}`
-        ElMessage.success(message)
+        await this.loadClientCatalogStatuses(deviceId, false)
+        ElMessage.success('Installed successfully')
       } catch (e) {
         ElMessage.error(e.message || 'Failed to install package')
       } finally {
@@ -2806,7 +2793,7 @@ async uninstallClientTool(item, deviceId) {
         requestPayload,
         this.buildJsonHeaders(),
       )
-      if (data?.install) this.setInstallStatus(this.getPackageForModule(item), targetDeviceId, data.install)
+      await this.loadClientCatalogStatuses(targetDeviceId, false)
       return data || {}
     },
 

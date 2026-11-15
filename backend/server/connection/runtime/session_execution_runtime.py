@@ -89,6 +89,12 @@ class SessionExecutionRuntime:
                 self._notify_task_changed()
             return dict(self._task)
 
+    def unbind_foreground_command_id(self, command_id: int):
+        with self._lock:
+            if self._task is not None and self._task.get('command_id') == command_id:
+                self._task['command_id'] = None
+                self._notify_task_changed()
+
     def request_foreground_task_cancel(self, task_id: str = ''):
         task_id = (task_id or '').strip()
 

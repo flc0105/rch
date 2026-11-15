@@ -4,7 +4,6 @@ import functools
 import inspect
 import logging
 import json
-import shlex
 import uuid
 
 from core.protocol.control import ControlDomain, ScriptAction
@@ -12,12 +11,10 @@ from server.application.history.control_activity import should_record
 from core.protocol.message_queue import result_terminal_status
 from core.utils.command_output import ResultEventType
 from server.application.command.command_types import COMMAND_TYPE_CONTROL
-from core.protocol.structured_arg_codec import decode_structured_arg
 from server.application.history.activity_definitions import (
     ActivityAction, ActivityKind, ActivityOperation, operation_summary,
 )
 from server.application.history.history_record_policy import CommandHistoryRecordPolicy
-from server.application.history.activity_bindings import xt_cli_mutation
 from server.application.history.quick_history import QuickHistoryRecordPolicy
 
 logger = logging.getLogger(__name__)
@@ -146,9 +143,7 @@ class CommandDispatchAdapter:
             arguments = dict(metadata.get('script_run_arguments') or {})
             presentation = 'none'
         if record_activity:
-            operation = ((xt_cli_mutation(text, origin=origin, presentation=presentation)
-                          if kind == ActivityKind.COMMAND else None)
-                         or ActivityOperation(kind, action, arguments, origin, presentation, text, target))
+            operation = ActivityOperation(kind, action, arguments, origin, presentation, text, target)
             entry_id = self.coordinator.prepare(conn, operation)
         else:
             entry_id = uuid.uuid4().hex
@@ -159,14 +154,6 @@ class CommandDispatchAdapter:
     def describe_plan(self, conn, activity_id, plan):
         if not activity_id or not isinstance(plan, dict):
             return
-        command = plan.get('command')
-        if CommandHistoryRecordPolicy.is_internal_external_tool_command(command):
-            row = self.coordinator.pending(conn, activity_id)
-            if (row and row['kind'] != ActivityKind.EXTERNAL_TOOL
-                    and not str(command).startswith('external_tool_exec ')):
-                self.coordinator.drop(activity_id)
-            return
-
         def update(pending):
             if pending['kind'] == ActivityKind.EXTERNAL_TOOL:
                 return
@@ -175,13 +162,6 @@ class CommandDispatchAdapter:
                 pending['kind'] = ActivityKind.ALIAS
                 pending['summary'] = alias_name
         self.coordinator.mutate_pending(conn, activity_id, update)
-
-    def promote_external_exec(self, conn, activity_id, target):
-        def promote(pending):
-            pending['kind'] = ActivityKind.EXTERNAL_TOOL
-            pending['action'] = 'run_exec'
-            pending['summary'] = operation_summary(ActivityKind.EXTERNAL_TOOL, 'run_exec', target)
-        self.coordinator.mutate_pending(conn, activity_id, promote)
 
     def suppress_query(self, conn, activity_id):
         self.coordinator.drop(activity_id)
@@ -197,7 +177,7 @@ class CommandDispatchAdapter:
                              or (previous['kind'], previous['action']) == (domain, action)):
             previous, candidate = None, ''
         if not should_record(domain, action):
-            if entry_id and previous:
+            if entry_id and previous and (previous['kind'], previous['action']) == (domain, action):
                 self.coordinator.drop(candidate)
             return ''
         if not previous:
@@ -214,33 +194,6 @@ class CommandDispatchAdapter:
         if not entry_id:
             return ''
         command = data.get('text', '')
-        if CommandHistoryRecordPolicy.is_internal_external_tool_command(command):
-            row = self.coordinator.pending(conn, entry_id)
-            if row is None:
-                return ''
-            if (row['kind'] == ActivityKind.EXTERNAL_TOOL
-                    and str(row['invocation'].get('command') or '').lower().startswith('xt ')
-                    and row['action'] != 'run_exec'):
-                mutation_command = {
-                    'install_package': 'external_tool_install',
-                    'uninstall_package': 'external_tool_uninstall',
-                    'create_instance': 'external_tool_instance_create',
-                    'start_instance': 'external_tool_start',
-                    'stop_instance': 'external_tool_stop',
-                    'restart_instance': 'external_tool_stop',
-                }.get(row['action'])
-                if str(command).split(None, 1)[0] != mutation_command:
-                    return ''
-            if str(command).startswith('external_tool_exec '):
-                try:
-                    target = decode_structured_arg(str(command).split(None, 1)[1], require_prefix=True)
-                except (ValueError, TypeError, IndexError):
-                    return ''
-                if not isinstance(target, dict):
-                    return ''
-                self.promote_external_exec(conn, entry_id, target)
-            elif row['kind'] != ActivityKind.EXTERNAL_TOOL:
-                return ''
         try:
             pending = self.coordinator.pending(conn, entry_id)
             if pending and pending['kind'] == ActivityKind.COMMAND:
@@ -255,9 +208,6 @@ class CommandDispatchAdapter:
     def observe_result(self, conn, entry_id, data, rows):
         authoritative = data['type'] == COMMAND_TYPE_CONTROL
         if not entry_id:
-            yield from rows
-            return
-        if not authoritative and CommandHistoryRecordPolicy.is_internal_external_tool_command(data.get('text')):
             yield from rows
             return
         final = None

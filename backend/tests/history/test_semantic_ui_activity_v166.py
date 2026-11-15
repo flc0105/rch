@@ -602,19 +602,19 @@ def test_declarative_bindings_keep_remote_file_and_job_services_history_free(set
 
 
 def test_external_tool_exec_and_cli_job_result_stay_inside_command_adapter(setup_history):
-    from core.protocol.structured_arg_codec import encode_structured_arg
     from server.application.history.activity_definitions import ActivityOperation
     import json
     server, conn = setup_history
     adapter = server.command_adapter
     coordinator = server.activity_coordinator
     activity_id = coordinator.prepare(conn, ActivityOperation('command', 'invoke', {}, text='xt exec ffmpeg -version'))
-    request = wire_command('external_tool_exec ' + encode_structured_arg({
-        'exec_name': 'ffmpeg', 'package_id': 'ffmpeg',
-    }))
-    adapter.dispatch(conn, activity_id, request)
+    request = {'type': 'control', 'id': 1, 'domain': 'external_tool', 'action': 'exec',
+               'payload': {'package_id': 'ffmpeg', 'exec_name': 'ffmpeg', 'raw_args': '-version'}}
+    prepared = adapter.prepare_dispatch(conn, activity_id, request)
+    adapter.dispatch(conn, prepared, request)
     row = entries(server)[0]
     assert row['kind'] == 'external_tool'
+    assert row['summary'] == 'Run ffmpeg'
     assert row['invocation'] == {'command': 'xt exec ffmpeg -version'}
     assert row['resolved'] == request
 
@@ -626,12 +626,12 @@ def test_external_tool_exec_and_cli_job_result_stay_inside_command_adapter(setup
     from core.protocol.job_control import build_job_control_result
     result = build_job_control_result('stop', 'stopped', data={'job_id': 'job-1'}, job_ids=['job-1'])
     from core.protocol.message_queue import ResultChunk
-    assert list(adapter.observe_result(conn, job_id, request, [ResultChunk(1, result, 1)])) == [(1, result)]
+    assert list(adapter.observe_result(conn, job_id, request, [ResultChunk(1, result, 1, event=result)])) == [(1, result)]
     row = next(row for row in entries(server) if row['kind'] == 'job')
     assert row['resolved'] == request
     job_result = row['result']['output_records'][-1]
     assert job_result['text'] == 'stopped'
-    assert job_result['envelope']['data']['job_id'] == 'job-1'
+    assert row['result']['result_events'][-1]['data']['job_id'] == 'job-1'
     assert {'type':'job','id':'job-1'} in row['references']
     assert row['invocation']['command'] == 'job stop check'
 
@@ -727,38 +727,42 @@ def test_terminal_upload_claims_transfer_activity_once(setup_history):
 
 
 @pytest.mark.parametrize('source', ['cli', 'web'])
-@pytest.mark.parametrize('command,expected_action,wire', [
-    ('xt instance start filebrowser-8080', 'start_instance', 'external_tool_start'),
-    ('xt instance stop filebrowser-8080', 'stop_instance', 'external_tool_stop'),
-    ('xt instance restart filebrowser-8080', 'restart_instance', 'external_tool_stop'),
-    ('xt instance create pkg.module --id my-instance --start', 'create_instance', 'external_tool_instance_create'),
-    ('xt package install package-1', 'install_package', 'external_tool_install'),
-    ('xt package uninstall package-1', 'uninstall_package', 'external_tool_uninstall'),
+@pytest.mark.parametrize('command,action,payload,title', [
+    ('xt instance start filebrowser-8080', 'start_instance',
+     {'tool_id': 'filebrowser', 'instance_id': 'filebrowser-8080'}, 'Start filebrowser (filebrowser-8080)'),
+    ('xt instance stop filebrowser-8080', 'stop_instance',
+     {'tool_id': 'filebrowser', 'instance_id': 'filebrowser-8080'}, 'Stop filebrowser (filebrowser-8080)'),
+    ('xt instance restart filebrowser-8080', 'restart_instance',
+     {'tool_id': 'filebrowser', 'instance_id': 'filebrowser-8080'}, 'Restart filebrowser (filebrowser-8080)'),
+    ('xt instance create pkg.module --id my-instance', 'create_instance',
+     {'tool_id': 'pkg.module', 'instance_id': 'my-instance'}, 'Create pkg.module (my-instance)'),
+    ('xt package install package-1', 'install_package',
+     {'package_id': 'package-1'}, 'Install package-1'),
+    ('xt package uninstall package-1', 'uninstall_package',
+     {'package_id': 'package-1'}, 'Uninstall package-1'),
 ])
-def test_xt_cli_mutations_record_only_after_real_dispatch(setup_history, source, command, expected_action, wire):
+def test_xt_cli_mutations_record_only_after_real_dispatch(setup_history, source, command, action, payload, title):
+    from server.application.command.external_tool_cli_builtin_support import ExternalToolCliBuiltinSupport
+    from core.protocol.control import ExternalToolAction as A
     server, conn = setup_history
     adapter = server.command_adapter
     activity_id = adapter.prepare_command(conn, command, source=source)
     assert activity_id
     assert entries(server) == []
-
-    # xt status/install/instance queries are read-only even when they reach Client.
-    adapter.dispatch(conn, activity_id, wire_command('external_tool_status payload'))
-    adapter.dispatch(conn, activity_id, wire_command('external_tool_instance_read payload'))
+    cli = ExternalToolCliBuiltinSupport(server, conn, None, lambda: activity_id, None,
+        SimpleNamespace(remote_execution_service=RemoteExecutionService(server)), None)
+    conn.callback = lambda msg: conn.respond(msg, 1, 'Completed')
+    list(cli._control_events(A.GET_INSTALL_STATUSES, {'tools': []}))
     assert entries(server) == []
-    adapter.dispatch(conn, activity_id, wire_command(wire + ' payload'))
+    list(cli._control_events(action, payload))
     rows = entries(server)
     assert len(rows) == 1
     assert (rows[0]['kind'], rows[0]['action'], rows[0]['status']) == (
-        'external_tool', expected_action, 'running')
+        'external_tool', action, 'success')
+    assert rows[0]['summary'] == title
     assert rows[0]['invocation']['command'] == command
-    assert 'payload' not in str(rows[0]['invocation'])
-
-    # Restart/create --start may send a second mutating Client command: one activity only.
-    adapter.dispatch(conn, activity_id, wire_command('external_tool_start payload'))
-    assert len(entries(server)) == 1
-    server.activity_coordinator.finish(conn, activity_id, True)
-    assert entries(server)[0]['status'] == 'success'
+    assert rows[0]['resolved']['type'] == 'control'
+    assert rows[0]['activity_id'] == activity_id
 
 
 @pytest.mark.parametrize('command', [
@@ -798,20 +802,21 @@ def test_web_external_tool_mutation_keeps_existing_adapter_dispatch(setup_histor
     ]
 
 
-def test_xt_exec_actual_plan_retains_candidate_until_client_dispatch(setup_history):
-    from core.protocol.structured_arg_codec import encode_structured_arg
+def test_xt_exec_actual_control_uses_action_title_and_preserves_original_command(setup_history):
+    from server.application.command.external_tool_cli_builtin_support import ExternalToolCliBuiltinSupport
+    from core.protocol.control import ExternalToolAction as A
     server, conn = setup_history
     adapter = server.command_adapter
     activity_id = adapter.prepare_command(conn, 'xt exec ffmpeg -version', source='cli')
-    client_command = 'external_tool_exec ' + encode_structured_arg({
-        'exec_name': 'ffmpeg', 'package_id': 'ffmpeg',
-    })
-    adapter.describe_plan(conn, activity_id, {'command': client_command, 'command_type': 'command'})
-    assert entries(server) == []
-    adapter.dispatch(conn, activity_id, wire_command(client_command))
-    assert [(row['kind'], row['action']) for row in entries(server)] == [
-        ('external_tool', 'run_exec')
-    ]
+    cli = ExternalToolCliBuiltinSupport(
+        server, conn, None, lambda: activity_id, None,
+        SimpleNamespace(remote_execution_service=RemoteExecutionService(server)), None,
+    )
+    conn.callback = lambda msg: conn.respond(msg, 1, 'Command completed')
+    list(cli._control_events(A.EXEC, {'exec_name': 'ffmpeg', 'package_id': 'ffmpeg',
+                                      'raw_args': '-version'}))
+    assert [(row['kind'], row['action'], row['summary']) for row in entries(server)] == [
+        ('external_tool', 'exec', 'Run ffmpeg')]
     assert entries(server)[0]['invocation']['command'] == 'xt exec ffmpeg -version'
 
 
@@ -852,18 +857,56 @@ def test_control_catalog_records_every_action_by_policy(setup_history, monkeypat
     server, conn = setup_history
     conn.callback = lambda req: conn.respond(req, 1, {'message':'ok'})
     actions = [(domain, action) for domain in ControlDomain for action, _ in control_actions(domain)]
-    assert len(actions) == 25
+    assert len(actions) == 42  # Existing 25 Controls + 17 External Tool Actions.
     monkeypatch.setattr(control_activity.config, 'RECORD_OPTIONAL_ACTIVITY', False, raising=False)
     for domain, action in actions:
         list(conn.send_command('', type='control', domain=domain, action=action, payload={}))
     assert {(r['kind'], r['action']) for r in entries(server)} == {
         (domain, action) for domain, action in actions if action_spec(domain, action).activity == ActivityPolicy.ALWAYS}
-    assert len(entries(server)) == 15
+    assert len(entries(server)) == sum(
+        action_spec(domain, action).activity == ActivityPolicy.ALWAYS for domain, action in actions)
     monkeypatch.setattr(control_activity.config, 'RECORD_OPTIONAL_ACTIVITY', True)
     for domain, action in actions:
         list(conn.send_command('', type='control', domain=domain, action=action, payload={}))
-    assert len(entries(server)) == 40
+    assert server.command_history.view_service.get_execution_history_page('machine-1')['total_count'] == (
+        len(actions) + sum(
+            action_spec(domain, action).activity == ActivityPolicy.ALWAYS for domain, action in actions))
     assert {(r['kind'], r['action']) for r in entries(server)} == set(actions)
+
+
+def test_control_activity_policy_is_only_recording_switch_and_execution_stays_bound(setup_history, monkeypatch):
+    from core.protocol.control import ControlDomain, ExternalToolAction
+    server, conn = setup_history
+    monkeypatch.setattr(control_activity.config, 'RECORD_OPTIONAL_ACTIVITY', False, raising=False)
+    conn.callback = lambda req: conn.respond(req, 1, {'message': 'ok'})
+    bound_ids = []
+    original_bind = conn.runtime.bind_command_execution
+
+    def observe_binding(command_id, **kwargs):
+        bound_ids.append(command_id)
+        return original_bind(command_id, **kwargs)
+
+    conn.runtime.bind_command_execution = observe_binding
+    for action in (ExternalToolAction.GET_INSTALL_STATUSES,
+                   ExternalToolAction.INSTALL_PACKAGE):
+        list(conn.send_command('', type='control', domain=ControlDomain.EXTERNAL_TOOL,
+                               action=action, payload={}))
+    assert len(bound_ids) == 2  # Activity is not a prerequisite for execution/cancellation.
+    assert [(row['kind'], row['action']) for row in entries(server)] == [
+        ('external_tool', 'install_package')]
+
+    # Callers cannot override an ALWAYS action with the removed switch.
+    with pytest.raises(TypeError, match='track_execution'):
+        list(conn.send_command('', type='control', domain=ControlDomain.EXTERNAL_TOOL,
+                               action=ExternalToolAction.INSTALL_PACKAGE, payload={},
+                               track_execution=False))
+
+    monkeypatch.setattr(control_activity.config, 'RECORD_OPTIONAL_ACTIVITY', True)
+    list(conn.send_command('', type='control', domain=ControlDomain.EXTERNAL_TOOL,
+                           action=ExternalToolAction.GET_INSTALL_STATUSES, payload={}))
+    assert len(bound_ids) == 3
+    assert {(row['kind'], row['action']) for row in entries(server)} == {
+        ('external_tool', 'install_package'), ('external_tool', 'get_install_statuses')}
 
 
 def test_configuration_cli_and_control_share_policy_and_preserve_actual_values(setup_history, monkeypatch):
@@ -943,3 +986,183 @@ def test_control_terminal_failure_reasons(setup_history, terminal, expected):
     conn.callback = lambda req: conn.respond(req, 0, terminal)
     list(conn.send_command('', type='control', domain='process', action='kill', payload={'pid':42}))
     assert entries(server)[0]['status'] == expected
+
+@pytest.mark.parametrize('action,command,payload', [
+    ('install_package', 'xt package install gost', {'package_id': 'gost'}),
+    ('create_instance', 'xt instance create gost.socks5 --id smoke', {'tool_id': 'gost.socks5', 'instance_id': 'smoke'}),
+    ('start_instance', 'xt instance start gost.socks5 smoke', {'tool_id': 'gost.socks5', 'instance_id': 'smoke'}),
+    ('stop_instance', 'xt instance stop gost.socks5 smoke', {'tool_id': 'gost.socks5', 'instance_id': 'smoke'}),
+    ('restart_instance', 'xt instance restart gost.socks5 smoke', {'tool_id': 'gost.socks5', 'instance_id': 'smoke'}),
+    ('uninstall_package', 'xt package uninstall gost', {'package_id': 'gost'}),
+])
+def test_xt_nested_mutation_control_persists_original_activity(setup_history, action, command, payload):
+    """A Server-owned XT builtin must still commit its actual Client Control."""
+    from core.protocol.control import ExternalToolAction as A, ControlDomain
+    from server.application.command.external_tool_cli_builtin_support import ExternalToolCliBuiltinSupport
+    server, conn = setup_history
+    activity_id = server.command_adapter.prepare_command(conn, command, source='web')
+    assert activity_id and not entries(server)
+    remote = RemoteExecutionService(server)
+    cli = ExternalToolCliBuiltinSupport(
+        server, conn, None, lambda: activity_id, None,
+        SimpleNamespace(remote_execution_service=remote), None,
+    )
+    conn.callback = lambda msg: conn.respond(msg, 1, {'running': True})
+    # Optional preflight must preserve the original prepared mutation.
+    list(cli._control_events(A.GET_INSTALL_STATUSES, {'tools': []}))
+    assert not entries(server)
+    list(cli._control_events(action, payload))
+    rows = entries(server)
+    assert len(rows) == 1
+    row = rows[0]
+    assert (row['kind'], row['action'], row['status']) == (ControlDomain.EXTERNAL_TOOL, action, 'success')
+    assert row['activity_id'] == activity_id
+    assert row['invocation'] == {'command': command}
+    assert row['resolved']['type'] == 'control'
+    assert row['resolved']['action'] == action
+    from core.external_tools.payload import client_control_request
+    assert row['resolved']['payload'] == client_control_request(action, payload)
+    assert [event['event_type'] for event in row['result']['result_events']] == ['completed']
+
+
+def test_xt_nested_control_uses_actual_error_terminal_status_and_no_duplicate(setup_history):
+    from core.protocol.control import ExternalToolAction as A
+    from server.application.command.external_tool_cli_builtin_support import ExternalToolCliBuiltinSupport
+    server, conn = setup_history
+    original = 'xt instance stop gost.socks5 smoke'
+    activity_id = server.command_adapter.prepare_command(conn, original, source='web')
+    cli = ExternalToolCliBuiltinSupport(server, conn, None, lambda: activity_id,
+        None, SimpleNamespace(remote_execution_service=RemoteExecutionService(server)), None)
+    conn.callback = lambda msg: conn.respond(msg, 0, 'Instance did not stop')
+    list(cli._control_events(A.STOP_INSTANCE, {'tool_id': 'gost.socks5', 'instance_id': 'smoke'}))
+    assert len(entries(server)) == 1
+    row = entries(server)[0]
+    assert row['status'] == 'error'
+    assert row['result']['result_events'][-1]['status'] == 'error'
+    assert row['invocation']['command'] == original
+
+
+def test_web_external_tool_control_mutation_keeps_one_activity(setup_history):
+    from core.protocol.control import ExternalToolAction as A
+    from server.application.history.activity_bindings import external_tool_bindings
+    server, conn = setup_history
+    class Lifecycle:
+        def install_client_tool(self, client_id, package_id, **kwargs):
+            return next(iter(conn.send_command('', type='control', domain='external_tool',
+                action=A.INSTALL_PACKAGE, payload={'package_id': package_id})))[1]
+    conn.callback = lambda msg: conn.respond(msg, 1, {'installed': True})
+    lifecycle = server.command_adapter.instrument(Lifecycle(), external_tool_bindings())
+    result = lifecycle.install_client_tool('client-1', 'gost')
+    assert result['data']['installed'] is True
+    rows = entries(server)
+    assert len(rows) == 1
+    assert (rows[0]['kind'], rows[0]['action'], rows[0]['status']) == ('external_tool', A.INSTALL_PACKAGE, 'success')
+    assert rows[0]['origin'] == 'web_api'
+
+
+def test_xt_create_and_start_use_distinct_dispatched_control_actions(setup_history):
+    """A compound CLI command records its two actual Client mutations, never a phantom command."""
+    from core.protocol.control import ExternalToolAction as A
+    from server.application.command.external_tool_cli_builtin_support import ExternalToolCliBuiltinSupport
+    server, conn = setup_history
+    raw = 'xt instance create gost.socks5 --id smoke --start'
+    parent_id = server.command_adapter.prepare_command(conn, raw, source='web')
+    cli = ExternalToolCliBuiltinSupport(server, conn, None, lambda: parent_id, None,
+        SimpleNamespace(remote_execution_service=RemoteExecutionService(server)), None)
+    conn.callback = lambda msg: conn.respond(msg, 1, {'instance_id': 'smoke', 'running': msg['action'] == A.START_INSTANCE})
+    payload = {'tool_id': 'gost.socks5', 'instance_id': 'smoke'}
+    list(cli._control_events(A.CREATE_INSTANCE, payload))
+    list(cli._control_events(A.START_INSTANCE, payload))
+    rows = entries(server)
+    assert len(rows) == 2
+    assert {(row['action'], row['status']) for row in rows} == {
+        (A.CREATE_INSTANCE, 'success'), (A.START_INSTANCE, 'success'),
+    }
+    created = next(row for row in rows if row['action'] == A.CREATE_INSTANCE)
+    started = next(row for row in rows if row['action'] == A.START_INSTANCE)
+    assert created['activity_id'] == parent_id
+    assert created['invocation'] == {'command': raw}
+    assert started['activity_id'] != parent_id
+    assert started['resolved']['action'] == A.START_INSTANCE
+    assert all(len(row['result']['result_events']) == 1 for row in rows)
+
+
+@pytest.mark.parametrize('action', [
+    'install_package', 'uninstall_package', 'clear_package_cache',
+    'create_instance', 'start_instance', 'stop_instance', 'restart_instance',
+    'remove_instance', 'clear_instance_logs', 'run_oneshot', 'exec',
+])
+def test_external_tool_every_mutating_action_commits_activity(setup_history, action):
+    from core.protocol.control import ControlDomain
+    server, conn = setup_history
+    conn.callback = lambda msg: conn.respond(msg, 1, {'running': True})
+    list(conn.send_command('', type='control', domain=ControlDomain.EXTERNAL_TOOL,
+        action=action, payload={'tool_id': 'gost.socks5', 'instance_id': 'smoke'}))
+    rows = entries(server)
+    assert len(rows) == 1
+    assert (rows[0]['kind'], rows[0]['action'], rows[0]['status']) == (
+        ControlDomain.EXTERNAL_TOOL, action, 'success')
+    assert rows[0]['resolved']['action'] == action
+    assert [e['status'] for e in rows[0]['result']['result_events'] if e['event_type'] == 'completed'] == ['success']
+
+
+@pytest.mark.parametrize('action', [
+    'get_install_statuses', 'resolve_launcher', 'read_instance',
+    'read_instance_logs', 'list_instances', 'preview_instance',
+])
+def test_external_tool_read_only_control_does_not_create_activity_by_default(setup_history, action):
+    from core.protocol.control import ControlDomain
+    server, conn = setup_history
+    conn.callback = lambda msg: conn.respond(msg, 1, {'items': []})
+    list(conn.send_command('', type='control', domain=ControlDomain.EXTERNAL_TOOL,
+        action=action, payload={'tools': []}))
+    assert entries(server) == []
+
+
+def test_xt_exec_promotes_original_terminal_command_into_control_activity(setup_history):
+    from core.protocol.control import ExternalToolAction as A
+    from server.application.command.external_tool_cli_builtin_support import ExternalToolCliBuiltinSupport
+    server, conn = setup_history
+    raw = 'xt exec gost --version'
+    parent = server.command_adapter.prepare_command(conn, raw, source='web')
+    cli = ExternalToolCliBuiltinSupport(server, conn, None, lambda: parent, None,
+        SimpleNamespace(remote_execution_service=RemoteExecutionService(server)), None)
+    conn.callback = lambda msg: conn.respond(msg, 1, 'gost version')
+    list(cli._control_events(A.EXEC, {'package_id': 'gost', 'exec_name': 'gost', 'raw_args': '--version'}))
+    row, = entries(server)
+    assert row['activity_id'] == parent
+    assert (row['kind'], row['action'], row['status']) == ('external_tool', A.EXEC, 'success')
+    assert row['invocation'] == {'command': raw}
+    assert row['result']['result_events'][-1]['message'] == 'gost version'
+
+
+def test_xt_cli_read_only_query_keeps_optional_policy(setup_history):
+    from core.protocol.control import ExternalToolAction as A
+    from server.application.command.external_tool_cli_builtin_support import ExternalToolCliBuiltinSupport
+    server, conn = setup_history
+    raw = 'xt package list --json'
+    parent = server.command_adapter.prepare_command(conn, raw, source='web')
+    cli = ExternalToolCliBuiltinSupport(server, conn, None, lambda: parent, None,
+        SimpleNamespace(remote_execution_service=RemoteExecutionService(server)), None)
+    conn.callback = lambda msg: conn.respond(msg, 1, {'items': []})
+    list(cli._control_events(A.GET_INSTALL_STATUSES, {'tools': []}))
+    assert entries(server) == []
+
+
+def test_web_external_tool_failed_oneshot_persists_error_and_result_facts(setup_history):
+    from core.protocol.control import ExternalToolAction as A
+    from server.application.history.activity_bindings import external_tool_bindings
+    server, conn = setup_history
+    class Lifecycle:
+        def run_client_oneshot(self, client_id, tool_id, **kwargs):
+            return list(conn.send_command('', type='control', domain='external_tool',
+                action=A.RUN_ONESHOT, payload={'tool_id': tool_id}))[-1][1]
+    conn.callback = lambda msg: conn.respond(msg, 0, {'success': False, 'returncode': 1,
+                                                     'stderr': 'invalid input'})
+    lifecycle = server.command_adapter.instrument(Lifecycle(), external_tool_bindings())
+    result = lifecycle.run_client_oneshot('client-1', 'ffmpeg.version')
+    assert result['status'] == 'error'
+    row, = entries(server)
+    assert (row['kind'], row['action'], row['status']) == ('external_tool', A.RUN_ONESHOT, 'error')
+    assert row['origin'] == 'web_api'
+    assert row['result']['result_events'][-1]['data']['stderr'] == 'invalid input'

@@ -1,5 +1,4 @@
 """Declarative semantic operation definitions used when assembling application services."""
-import shlex
 from core.protocol.control import ControlDomain, RemoteFilesAction, JobAction, ProcessAction, ClipboardAction
 
 from server.application.history.activity_definitions import ActivityKind, ActivityOperation, process_arguments
@@ -86,37 +85,3 @@ def clipboard_bindings():
     return {'set_clipboard': describe}
 
 
-def xt_cli_mutation(command, *, origin='cli', presentation='terminal'):
-    """Describe a mutating xt Builtin without teaching the execution service about xt."""
-    try:
-        tokens = shlex.split(str(command or ''))
-    except ValueError:
-        return None
-    if len(tokens) < 3 or tokens[0].lower() != 'xt':
-        return None
-    group, verb = tokens[1].lower(), tokens[2].lower()
-    if group == 'package' and verb in ('install', 'uninstall'):
-        if len(tokens) < 4:
-            return None
-        action = {'install': 'install_package', 'uninstall': 'uninstall_package'}[verb]
-        args = {'package_id': tokens[3]}
-    elif group == 'instance' and verb in ('create', 'start', 'stop', 'restart'):
-        if len(tokens) < 4:
-            return None
-        action = {'create': 'create_instance', 'start': 'start_instance',
-                  'stop': 'stop_instance', 'restart': 'restart_instance'}[verb]
-        args = {}
-        if verb == 'create':
-            args['tool_id'] = tokens[3]
-            if '--id' in tokens:
-                index = tokens.index('--id') + 1
-                if index < len(tokens):
-                    args['instance_id'] = tokens[index]
-        else:
-            args['instance_id'] = tokens[-1]
-            if len(tokens) >= 5:
-                args['tool_id'] = tokens[3]
-    else:
-        return None
-    return ActivityOperation(ActivityKind.EXTERNAL_TOOL, action, args,
-                             origin=origin, presentation=presentation, text=command)

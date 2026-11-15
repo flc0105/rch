@@ -43,4 +43,12 @@ def build_control_dispatcher(runtime):
     register_control_domain(dispatcher, ControlDomain.CLIPBOARD,
                             clipboard.execute if clipboard is not None else _clipboard_disabled,
                             cancel_policies=dict.fromkeys(ClipboardAction, 'cooperative'))
+    from client.external_tools.control import ExternalToolControl
+    from core.protocol.control import ExternalToolAction
+    runtime.external_tool_control = ExternalToolControl(runtime)
+    register_control_domain(dispatcher, ControlDomain.EXTERNAL_TOOL, runtime.external_tool_control.execute,
+                            cancel_policies={ExternalToolAction.READ_INSTANCE_LOGS: 'cooperative',
+                                             ExternalToolAction.INSTALL_PACKAGE: 'cooperative',
+                                             ExternalToolAction.RUN_ONESHOT: 'cooperative',
+                                             ExternalToolAction.EXEC: 'cooperative'})
     return dispatcher

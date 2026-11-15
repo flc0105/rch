@@ -98,8 +98,8 @@ class CommandStreamService:
             if not isinstance(result.data, dict):
                 raise RuntimeError('Invalid remote JSON payload: expected object')
             return result.data
-        # Text commands deliberately permit JSON text (including XT's deferred
-        # pseudo commands). Only that explicit command family uses text JSON.
+        # Ordinary text commands may deliberately return JSON text. Typed
+        # Control results must provide structured data instead.
         if command_type != COMMAND_TYPE_COMMAND:
             raise RuntimeError('Remote structured command did not return data')
         try:
@@ -122,7 +122,7 @@ class CommandStreamService:
         domain: str = '',
         action: str = '',
         history_entry_id: str = '',
-        track_execution: bool = True,
+        link_foreground_cancel: bool = False,
     ):
         session = self.get_connection(target)
         return session.send_command(
@@ -133,7 +133,7 @@ class CommandStreamService:
             domain=domain,
             action=action,
             history_entry_id=history_entry_id,
-            **({'track_execution': False} if not track_execution else {}),
+            **({'link_foreground_cancel': True} if link_foreground_cancel else {}),
         )
 
     def stream_structured_command(
@@ -144,7 +144,6 @@ class CommandStreamService:
         command_type: str,
         extra,
         history_entry_id: str = '',
-        track_execution: bool = True,
         payload=None,
         domain: str = '',
         action: str = '',
@@ -158,7 +157,6 @@ class CommandStreamService:
             domain=domain,
             action=action,
             history_entry_id=history_entry_id,
-            **({'track_execution': False} if not track_execution else {}),
         )
 
     def run_text_command(
@@ -172,7 +170,6 @@ class CommandStreamService:
         domain: str = '',
         action: str = '',
         history_entry_id: str = '',
-        track_execution: bool = True,
     ) -> str:
         status, text = self.collect_result(
             self.stream_command(
@@ -183,7 +180,6 @@ class CommandStreamService:
                 payload=payload,
                 domain=domain, action=action,
                 history_entry_id=history_entry_id,
-                **({'track_execution': False} if not track_execution else {}),
             )
         )
 
@@ -203,14 +199,12 @@ class CommandStreamService:
         domain: str = '',
         action: str = '',
         history_entry_id: str = '',
-        track_execution: bool = True,
     ) -> dict:
         collected = self.collect_envelope(
             self.stream_command(
                 target, command, command_type=command_type, extra=extra,
                 payload=payload, domain=domain, action=action,
                 history_entry_id=history_entry_id,
-                **({'track_execution': False} if not track_execution else {}),
             )
         )
         return self.json_payload(collected, command_type=command_type)

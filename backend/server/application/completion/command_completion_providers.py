@@ -320,25 +320,6 @@ class ExternalToolCommandCompletionProvider(ServerCompletionSessionMixin, Comman
     source = 'server_xt'
     group = 'external_tool'
 
-    SUBCOMMANDS = (
-        ('xt exec list', 'List available external tool execs'),
-        ('xt exec info ', 'Show Exec details'),
-        ('xt exec which ', 'Show installed executable path'),
-        ('xt exec ', 'Run an installed external tool exec'),
-        ('xt package list', 'List available packages'),
-        ('xt package list --installed', 'List installed packages'),
-        ('xt package install ', 'Install a package'),
-        ('xt package uninstall ', 'Uninstall a package'),
-        ('xt module list ', 'List package modules'),
-        ('xt instance create ', 'Create an instance'),
-        ('xt instance list', 'List persistent instances'),
-        ('xt instance start ', 'Start an instance'),
-        ('xt instance stop ', 'Stop an instance'),
-        ('xt instance restart ', 'Restart an instance'),
-        ('xt instance status ', 'Read instance status'),
-        ('xt instance logs ', 'Read or follow instance logs'),
-    )
-
     def __init__(self, server, external_tool_catalog_service):
         ServerCompletionSessionMixin.__init__(self, server)
         self.external_tool_catalog_service = external_tool_catalog_service
@@ -349,7 +330,8 @@ class ExternalToolCommandCompletionProvider(ServerCompletionSessionMixin, Comman
             return self._build_subcommand_candidates()
         if words[0] == 'exec':
             if len(words) == 1:
-                return self._build_subcommand_candidates()[:4] + self._build_exec_candidates(context)
+                return [c for c in self._build_subcommand_candidates()
+                        if c.insert_text.startswith('xt exec ')] + self._build_exec_candidates(context)
             if words[1] in {'info', 'which'}:
                 return self._build_exec_candidates(context) if len(words) <= 3 else []
             if words[1] == 'list':
@@ -364,7 +346,9 @@ class ExternalToolCommandCompletionProvider(ServerCompletionSessionMixin, Comman
             return self._build_package_candidates(context, f'xt package {words[1]} ')
         if words[0] == 'module' and words[1] == 'list' and len(words) <= 3:
             return self._build_package_candidates(context, 'xt module list ')
-        if words[0] == 'instance' and words[1] in ('create', 'start', 'stop', 'restart', 'status', 'logs') and len(words) <= 3:
+        instance_actions = {path.split()[2] for path, _ in SERVER_COMMAND_REGISTRY.completion_paths('xt')
+                            if path.startswith('xt instance ') and len(path.split()) == 3}
+        if words[0] == 'instance' and words[1] in (instance_actions - {'list'}) and len(words) <= 3:
             return self._build_module_candidates(context, f'xt instance {words[1]} ')
         if words[0] == 'instance' and words[1] == 'list' and len(words) <= 3:
             return self._build_package_candidates(context, 'xt instance list ')
@@ -406,7 +390,7 @@ class ExternalToolCommandCompletionProvider(ServerCompletionSessionMixin, Comman
                 name=insert_text.replace('xt ', '').strip() or 'xt',
                 priority=20,
             )
-            for insert_text, description in self.SUBCOMMANDS
+            for insert_text, description in SERVER_COMMAND_REGISTRY.completion_paths('xt')
         ]
 
     def _build_exec_candidates(self, context: CompletionContext) -> list[CompletionCandidate]:
@@ -586,7 +570,7 @@ class ConfigCommandCompletionProvider(ServerCompletionSessionMixin, CommandCompl
             try:
                 status, result = self.remote_execution_service.run_foreground_control(
                     client_id, ControlDomain.CONFIGURATION, ConfigurationAction.GET, {},
-                    task_type='runtime_config', source='completion', track_execution=False)
+                    task_type='runtime_config', source='completion')
                 if status != 1 or not isinstance(result, dict):
                     return []
                 data = result.get('data') or {}

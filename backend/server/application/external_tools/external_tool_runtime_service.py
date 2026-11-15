@@ -35,3 +35,7 @@ class ExternalToolRuntimeService:
             payload_builder=self.payload_builder,
             event_bus=event_bus,
         )
+
+    @property
+    def remote_execution_service(self):
+        return self.core.remote_execution_service

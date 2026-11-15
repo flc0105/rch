@@ -25,6 +25,12 @@ class SubcommandSpec:
     aliases: tuple[str, ...] = ()
     raw_tail: bool = False
     independent: bool = False
+    subcommands: tuple['SubcommandSpec', ...] = ()
+    default: str = ''
+    fallback_subcommand: str = ''
+
+    def child(self, name):
+        return next((item for item in self.subcommands if name == item.name or name in item.aliases), None)
 
 
 @dataclass(frozen=True)
@@ -76,6 +82,31 @@ def _structured_child(command_name, action, description, usage, *options,
     return SubcommandSpec(action, description, usage, argument_spec=_arguments(
         f'{command_name} {action}', *options, json=json,
         trailing_named_arguments=trailing_named_arguments), aliases=tuple(aliases), independent=independent)
+
+def _xt_group(name, description, *children, default='', fallback_subcommand=''):
+    return SubcommandSpec(name, description, subcommands=tuple(children),
+                          default=default, fallback_subcommand=fallback_subcommand)
+
+
+def _xt_leaf(path, action, description, usage, *options, json=True,
+             trailing_named_arguments=None, independent=False):
+    return _structured_child(f'xt {path}', action, description, usage, *options,
+                             json=json, trailing_named_arguments=trailing_named_arguments,
+                             independent=independent)
+
+
+def _xt_instance_target(action, description, *, json=False, follow=False, params=False):
+    opts = [_option('name', positional=0), _option('instance', positional=1), _option('module')]
+    if follow:
+        opts.append(_option('follow', flag=True, alias='f'))
+    return _xt_leaf('instance', action, description,
+                    f'xt instance {action} [<module>] <instance-id>|--name ID [--module MODULE]'
+                    + (' [--follow|-f]' if follow else '')
+                    + (' [-- --key VALUE ...]' if params else '')
+                    + (' [--json]' if json else ''),
+                    *opts, json=json, trailing_named_arguments='params' if params else None,
+                    independent=action in ('status', 'logs'))
+
 
 SERVER_COMMAND_SPECS = (
     command('config', 'Show or update client runtime config', children=(
@@ -152,15 +183,50 @@ SERVER_COMMAND_SPECS = (
     command('notify', 'Run a Client command and notify when finished', expects_arguments=True,
             structured=True, raw_tail=True),
     command('xt', 'External tool catalog and execution', children=(
-        ('exec', 'List or execute installed external tool commands', 'xt exec list|info|which|<exec-name> ...'),
-        ('package', 'List, install or uninstall external tool packages', 'xt package list [--installed|-i] [--json] | install|uninstall <package-id>'),
-        ('module', 'List package modules', 'xt module list <package-id> [--json]'),
-        ('instance', 'Manage persistent daemon instances', 'xt instance create|list|start|stop|restart|status|logs ...'),
-        ('help', 'Show external tool usage', 'xt help'),
-    ), default='help'),
+        _xt_group('exec', 'List or run installed external commands',
+            _xt_leaf('exec', 'list', 'List installed exec commands', 'xt exec list [--json]', independent=True),
+            _xt_leaf('exec', 'info', 'Read exec metadata', 'xt exec info <name>|--name NAME [--json]',
+                     _option('name', positional=0, required=True), independent=True),
+            _xt_leaf('exec', 'which', 'Locate an installed executable', 'xt exec which <name>|--name NAME',
+                     _option('name', positional=0, required=True), json=False, independent=True),
+            SubcommandSpec('run', 'Run an installed external command with native arguments',
+                           'xt exec run <exec-name> [--] <native args...> (short: xt exec <exec-name> ...)', raw_tail=True),
+            _xt_leaf('exec', 'help', 'Show exec command usage', 'xt exec help', json=False),
+            default='help', fallback_subcommand='run'),
+        _xt_group('package', 'Manage external tool packages',
+            _xt_leaf('package', 'list', 'List available packages',
+                     'xt package list [--installed|-i] [--json]',
+                     _option('installed', flag=True, alias='i'), independent=True),
+            _xt_leaf('package', 'install', 'Install a package',
+                     'xt package install <package-id>|--package PACKAGE',
+                     _option('package', positional=0, required=True), json=False),
+            _xt_leaf('package', 'uninstall', 'Uninstall a package',
+                     'xt package uninstall <package-id>|--package PACKAGE',
+                     _option('package', positional=0, required=True), json=False)),
+        _xt_group('module', 'Inspect external tool modules',
+            _xt_leaf('module', 'list', 'List package modules',
+                     'xt module list <package-id>|--package PACKAGE [--json]',
+                     _option('package', positional=0, required=True), independent=True)),
+        _xt_group('instance', 'Manage persistent daemon instances',
+            _xt_leaf('instance', 'create', 'Create an instance',
+                     'xt instance create <module>|--module MODULE --id ID [--preset PRESET] [--start] [-- --key VALUE ...]',
+                     _option('module', positional=0, required=True), _option('id', required=True),
+                     _option('preset'), _option('start', flag=True), json=False,
+                     trailing_named_arguments='params'),
+            _xt_leaf('instance', 'list', 'List persistent instances',
+                     'xt instance list [<name>|--name NAME] [--json]',
+                     _option('name', positional=0), independent=True),
+            _xt_instance_target('start', 'Start an existing instance', params=True),
+            _xt_instance_target('stop', 'Stop a running instance'),
+            _xt_instance_target('restart', 'Restart an instance', params=True),
+            _xt_instance_target('status', 'Show instance status', json=True),
+            _xt_instance_target('logs', 'Read or follow instance logs', follow=True)),
+        _xt_leaf('', 'help', 'Show external tool usage', 'xt help', json=False),
+    ), default='help', structured=True),
     command('help', 'Show Server builtin commands and subcommands', handler='server_help',
             structured=True, argument_spec=_arguments('help',
-                _option('target', positional=0), _option('subcommand', positional=1), json=False), independent=True),
+                _option('target', positional=0), _option('subcommand', positional=1),
+                _option('action', positional=2), json=False), independent=True),
 )
 
 
@@ -183,45 +249,60 @@ class ServerCommandRegistry:
         return self._commands.get(str(name or '').lower())
 
     def parse(self, name, raw_arg):
-        """Parse subcommand once while keeping its raw argument tail unmodified.
-
-        Returns (spec, subcommand, tail), where subcommand is None for
-        non-hierarchical commands. No unknown name is swallowed by the Server.
-        """
+        """Walk declared command paths before parsing arguments at the final leaf."""
         spec = self.get(name)
         if spec is None:
             return None
         if not spec.subcommands:
+            # Non-hierarchical raw-tail commands must retain every byte,
+            # including leading whitespace inside shell-like arguments.
             return spec, None, str(raw_arg or '')
-        text = str(raw_arg or '').strip()
-        if not text:
-            return spec, spec.default, ''
-        match = re.match(r'^(\S+)(?:\s+(.*))?$', text, re.DOTALL)
-        token, tail = match.group(1).lower(), match.group(2) or ''
-        child = spec.child(token)
-        if child is not None:
-            return spec, child.name, tail
-        # Registered default leaves accept their own options without `list`.
-        default_child = spec.child(spec.default) if spec.default else None
-        if token.startswith('-') and default_child and default_child.argument_spec is not None:
-            return spec, spec.default, text
-        if spec.fallback_subcommand:
-            return spec, spec.fallback_subcommand, text
-        raise ValueError(f'Unsupported {spec.name} subcommand: {token}. Use: {self.usage(spec.name)}')
+        node = spec
+        text = str(raw_arg or '').lstrip()
+        path = []
+        while node.subcommands:
+            token_match = re.match(r'^(\S+)(?:\s(.*))?$', text.lstrip(), re.DOTALL) if text else None
+            token = token_match.group(1).lower() if token_match else ''
+            tail = token_match.group(2) or '' if token_match else ''
+            child = node.child(token) if token else None
+            if child is not None:
+                text = tail
+            else:
+                default = node.child(node.default) if node.default else None
+                if not token and default is not None:
+                    child = default
+                elif token.startswith('-') and default is not None and default.argument_spec is not None:
+                    child = default
+                elif node.fallback_subcommand:
+                    child = node.child(node.fallback_subcommand)
+                if child is None:
+                    prefix = ' '.join((spec.name, *path))
+                    raise ValueError(f'Unsupported {prefix} subcommand: {token or "(none)"}. Use: {self.usage(spec.name)}')
+                # Fallback/default receives the unconsumed argument verbatim.
+            path.append(child.name)
+            node = child
+        return spec, '.'.join(path) if path else None, text
 
     def parse_invocation(self, name, raw_arg, *, literal_backslashes=False):
-        """Parse declared structured builtins once; other handlers stay RAW."""
         return self.parse_leaf(*self.parse(name, raw_arg),
                                literal_backslashes=literal_backslashes)
 
+    @staticmethod
+    def _leaf(spec, action):
+        node = spec
+        for part in str(action or '').split('.') if action else ():
+            node = node.child(part)
+            if node is None:
+                raise ValueError(f'Unknown command path: {spec.name} {action}')
+        return node
+
     def parse_leaf(self, spec, subcommand, tail, *, literal_backslashes=False):
-        """Use the already resolved leaf: no second command-name parse."""
-        child = spec.child(subcommand)
-        if spec.raw_tail or (child is not None and child.raw_tail):
-            # A declared raw-tail leaf owns every byte of its payload.
+        """Parse the final leaf only, never dispatch XT-specific command strings."""
+        leaf = self._leaf(spec, subcommand)
+        if leaf.raw_tail:
             return BuiltinInvocation(spec.name, subcommand or spec.name,
                                      {'command': tail}, OutputFormat.TEXT)
-        schema = child.argument_spec if child is not None else spec.argument_spec
+        schema = leaf.argument_spec
         if schema is None:
             raise ValueError(f'No structured argument schema for: {spec.name} {subcommand}')
         try:
@@ -233,6 +314,40 @@ class ServerCommandRegistry:
         return BuiltinInvocation(spec.name, subcommand or spec.name, args,
                                  OutputFormat.JSON if args.get('json') else OutputFormat.TEXT)
 
+    def _public_paths(self, node, prefix=()):
+        for child in node.subcommands:
+            if child.visibility != 'public':
+                continue
+            path = (*prefix, child.name)
+            if child.subcommands:
+                yield from self._public_paths(child, path)
+            else:
+                yield path, child
+
+    def completion_paths(self, name):
+        """The one source of static command completion, including nested leaves."""
+        spec = self.get(name)
+        if spec is None:
+            return []
+        def walk(node, prefix):
+            for child in node.subcommands:
+                if child.subcommands:
+                    yield from walk(child, (*prefix, child.name))
+                elif child.visibility == 'public' and child.name != 'help':
+                    suffix = ' ' if (child.argument_spec and child.name != 'list' and any(
+                            opt.is_positional for opt in child.argument_spec.options)) else ''
+                    full = ' '.join((name, *prefix, child.name))
+                    yield full + suffix, child.description
+                    if child.name == 'list' and child.argument_spec:
+                        for opt in child.argument_spec.options:
+                            if opt.is_flag and opt.name != 'json':
+                                yield f'{full} --{opt.name}', child.description
+            if node.fallback_subcommand:
+                leaf = node.child(node.fallback_subcommand)
+                if leaf is not None:
+                    yield ' '.join((name, *prefix)) + ' ', leaf.description
+        return list(walk(spec, ()))
+
     def usage(self, name):
         spec = self.get(name)
         if spec is None:
@@ -240,8 +355,8 @@ class ServerCommandRegistry:
         if not spec.subcommands:
             return f'{spec.name} — {spec.description}'
         return '\n'.join([f'{spec.name} — {spec.description}'] +
-                         [f'  {item.usage or spec.name + " " + item.name} — {item.description}'
-                          for item in spec.subcommands if item.visibility == 'public'])
+                         [f'  {leaf.usage or " ".join((spec.name, *path))} — {leaf.description}'
+                          for path, leaf in self._public_paths(spec)])
 
     def help(self, target=''):
         target = str(target or '').strip().lower()
@@ -251,12 +366,17 @@ class ServerCommandRegistry:
         spec = self.get(words[0])
         if spec is None:
             raise ValueError(f'Unknown Server command: {words[0]}')
-        if len(words) == 1:
-            return self.usage(spec.name)
-        sub = spec.child(words[1])
-        if sub is None or len(words) != 2:
-            raise ValueError(f'Unknown subcommand: {target}')
-        return f'{sub.usage} — {sub.description}'
+        node = spec
+        for word in words[1:]:
+            node = node.child(word)
+            if node is None or node.visibility != 'public':
+                raise ValueError(f'Unknown subcommand: {target}')
+        if node.subcommands:
+            lines = [f'{target} — {node.description}']
+            return '\n'.join(lines +
+                [f'  {leaf.usage or " ".join((target, *path))} — {leaf.description}'
+                 for path, leaf in self._public_paths(node)])
+        return f'{node.usage} — {node.description}' if node is not spec else self.usage(spec.name)
 
     def is_independent_input(self, raw_command: str) -> bool:
         from core.utils.parsing import parse
@@ -265,8 +385,8 @@ class ServerCommandRegistry:
             spec, action, _ = self.parse(name, tail)
             if not spec.structured:
                 return False
-            child = spec.child(action) if action else None
-            return bool(child.independent if child else spec.independent)
+            leaf = self._leaf(spec, action)
+            return bool(leaf.independent)
         except (ValueError, TypeError, AttributeError):
             return False
 

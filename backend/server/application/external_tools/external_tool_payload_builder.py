@@ -1,11 +1,7 @@
-from core.protocol.structured_arg_codec import encode_structured_arg
-
 import json
 import logging
-import os
 
 from core.utils.parsing import split_shell_arguments
-from core.external_tools.paths import EXTERNAL_TOOLS_RUNTIME_ROOT, external_tool_instance_runtime_parts
 from core.external_tools.payload import (
     client_action_payload,
     client_exec_payload as build_shared_client_exec_payload,
@@ -27,9 +23,6 @@ class ExternalToolClientPayloadBuilder(ExternalToolRuntimeComponent):
         self.context_runtime = context_runtime
         self.install_support = install_support
         self.process_state = process_state
-
-    def encode_payload_arg(self, payload: dict) -> str:
-        return encode_structured_arg(payload)
 
     def _client_download_url(self, filename: str, package_file: dict) -> str:
         download_url = str(package_file.get('download_url') or '').strip()
@@ -62,7 +55,6 @@ class ExternalToolClientPayloadBuilder(ExternalToolRuntimeComponent):
         if not launcher or str(launcher.get('type') or 'direct').strip().lower() in ('', 'direct'):
             raise ValueError('external tool module does not use a configurable launcher')
         return {
-            'action': 'resolve_launcher',
             'tool_id': meta.get('tool_id') or '',
             'package_id': meta.get('package_id') or package.get('id') or '',
             'module_id': meta.get('id') or '',
@@ -206,24 +198,11 @@ class ExternalToolClientPayloadBuilder(ExternalToolRuntimeComponent):
         return self.build_client_start_payload(meta, params=params)
 
     def build_client_action_payload(self, meta: dict, action: str, instance_id: str = '', params: dict | None = None, max_bytes: int | None = None, cursor: str | None = None) -> dict:
-        resolved_params = self.resolve_params(meta, params or {}, require_required=False) if params else {}
-        # Action payloads only need deterministic runtime path from package/module/instance.
-        package_id = meta.get('package_id') or ''
-        module_id = meta.get('id') or ''
-        sanitized = self._sanitize_instance_id(instance_id)
-        runtime_dir = os.path.join(
-            EXTERNAL_TOOLS_RUNTIME_ROOT,
-            *external_tool_instance_runtime_parts(package_id, module_id, sanitized),
-        ).replace('\\', '/')
-        runtime = {'pid_file': os.path.join(runtime_dir, 'tool.pid'), 'stdout': os.path.join(runtime_dir, 'stdout.log'), 'stderr': 'stdout', 'state_file': os.path.join(runtime_dir, 'state.json')}
+        # Action-specific data remains on the Server; Client derives managed paths.
+        del params
         return client_action_payload(
-            meta,
-            action=action,
-            instance_id=sanitized,
-            params=resolved_params,
-            runtime=runtime,
-            max_bytes=int(max_bytes or self.DEFAULT_LOG_TAIL_BYTES),
-            cursor=cursor,
+            meta, action=action, instance_id=self._sanitize_instance_id(instance_id),
+            max_bytes=int(max_bytes or self.DEFAULT_LOG_TAIL_BYTES), cursor=cursor,
         )
 
     def build_client_install_status_payloads(self, packages: list[dict], platform_alias: str = '', arch: str = '') -> list[dict]:
@@ -231,10 +210,9 @@ class ExternalToolClientPayloadBuilder(ExternalToolRuntimeComponent):
         for package in packages or []:
             try:
                 payload = self.build_client_install_payload(package, platform_alias=platform_alias, arch=arch)
-                payload['action'] = 'install_status'
                 payloads.append(payload)
             except Exception as e:
-                payloads.append({'action': 'install_status', 'tool_id': package.get('id') or '', 'package_id': package.get('id') or '', 'display_name': package.get('display_name') or package.get('id') or '', 'side': 'client', 'error': str(e)})
+                payloads.append({'tool_id': package.get('id') or '', 'package_id': package.get('id') or '', 'display_name': package.get('display_name') or package.get('id') or '', 'side': 'client', 'error': str(e)})
         return payloads
 
     def build_client_exec_payload(self, target: dict, raw_args: str = '', platform_alias: str = '', arch: str = '', cwd: str = '') -> dict:

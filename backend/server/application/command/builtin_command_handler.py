@@ -171,9 +171,10 @@ class BuiltinCommandHandler:
     def server_help(self, invocation):
         target = str(invocation.arguments.get('target') or '').strip()
         subcommand = str(invocation.arguments.get('subcommand') or '').strip()
+        action = str(invocation.arguments.get('action') or '').strip()
         try:
             if target in ('', 'server'):
-                if subcommand:
+                if subcommand or action:
                     raise ValueError('help target takes no subcommand')
                 lines = ['Server Commands:', self.REGISTRY.help()]
                 if target == '':
@@ -184,7 +185,7 @@ class BuiltinCommandHandler:
                     raise ValueError('help client takes no subcommand')
                 result = self._client_help()
             else:
-                result = self.REGISTRY.help(' '.join(part for part in (target, subcommand) if part))
+                result = self.REGISTRY.help(' '.join(part for part in (target, subcommand, action) if part))
             status = 1
         except ValueError as exc:
             status, result = 0, str(exc)
@@ -233,8 +234,8 @@ class BuiltinCommandHandler:
         for item in self.command_notify_support.notify(invocation.arguments['command']):
             yield item
 
-    def xt(self, arg=''):
-        for item in self.external_tool_cli_support.xt(arg):
+    def xt(self, invocation):
+        for item in self.external_tool_cli_support.xt(invocation):
             yield item
 
 

@@ -29,7 +29,6 @@ class ForegroundExecutionService:
         domain: str = '',
         action: str = '',
         history_entry_id: str = '',
-        track_execution: bool = True,
         task_type: str = TASK_TYPE_COMMAND,
         source: str = 'foreground',
         task_id: str = '',
@@ -60,7 +59,6 @@ class ForegroundExecutionService:
                 payload=payload,
                 domain=domain, action=action,
                 history_entry_id=history_entry_id,
-                **({'track_execution': False} if not track_execution else {}),
             )
             for item in result_iter:
                 yield item
@@ -81,7 +79,6 @@ class ForegroundExecutionService:
         domain: str = '',
         action: str = '',
         history_entry_id: str = '',
-        track_execution: bool = True,
         task_type: str = TASK_TYPE_COMMAND,
         source: str = 'foreground',
         task_id: str = '',
@@ -95,7 +92,6 @@ class ForegroundExecutionService:
                 payload=payload,
                 domain=domain, action=action,
                 history_entry_id=history_entry_id,
-                **({'track_execution': False} if not track_execution else {}),
                 task_type=task_type,
                 source=source,
                 task_id=task_id,
@@ -118,7 +114,6 @@ class ForegroundExecutionService:
         domain: str = '',
         action: str = '',
         history_entry_id: str = '',
-        track_execution: bool = True,
         task_type: str = 'command',
         source: str = 'foreground',
         task_id: str = '',
@@ -128,7 +123,6 @@ class ForegroundExecutionService:
                 target, command, command_type=command_type, extra=extra,
                 payload=payload, domain=domain, action=action,
                 history_entry_id=history_entry_id,
-                **({'track_execution': False} if not track_execution else {}),
                 task_type=task_type, source=source, task_id=task_id,
             )
         )
