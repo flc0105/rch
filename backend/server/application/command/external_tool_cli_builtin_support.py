@@ -414,7 +414,7 @@ class ExternalToolCliBuiltinSupport:
                 f'Use "xt instance start {instance_id}" to start it, or choose a different --id.'
             )
         try:
-            created = self._nested_json(A.CREATE_INSTANCE, start_payload)
+            self._nested_message(A.CREATE_INSTANCE, start_payload)
         except Exception as exc:
             self._publish_xt_lifecycle('instance', 'create', target, 'error', error=str(exc))
             raise
@@ -422,17 +422,17 @@ class ExternalToolCliBuiltinSupport:
         self._publish_xt_lifecycle('instance', 'create', target, 'created')
         if args['start']:
             try:
-                started = self._nested_json(A.START_INSTANCE, start_payload)
-                if started.get('running') is not True or 'already running' in str(started.get('message') or '').lower():
-                    raise RuntimeError('Instance created, but start failed: ' + str(started.get('message') or 'unknown error'))
-                confirmed = self._instance_status( self._instance_action_payload(meta, instance_id))
+                started = self._nested_message(A.START_INSTANCE, start_payload)
+                if 'already running' in started.lower():
+                    raise RuntimeError('Instance created, but start found an existing running process')
+                confirmed = self._instance_status(self._instance_action_payload(meta, instance_id))
                 if confirmed.get('running') is not True:
                     raise RuntimeError('Instance created, but exited immediately after start; see instance logs')
             except Exception as exc:
                 self._publish_xt_lifecycle('instance', 'start', target, 'error', error=str(exc))
                 raise
             self._publish_xt_lifecycle('instance', 'create', target, 'started')
-            return 1, f'Created and started {meta["tool_id"]}/{instance_id} (pid {started.get("pid")})'
+            return 1, f'Created and started {meta["tool_id"]}/{instance_id} (pid {confirmed.get("pid")})'
         return 1, f'Created {meta["tool_id"]}/{instance_id}'
 
     def _instance_list(self, args: dict):
@@ -553,26 +553,19 @@ class ExternalToolCliBuiltinSupport:
                         meta, params={**definition['params'], **args.get('params', {})}, instance_id=instance_id,
                         platform_alias=self._client_platform(), arch=self._client_arch())
                     dispatched = True
-                    result = self._nested_json(
+                    message = self._nested_message(
                         A.RESTART_INSTANCE if operation == 'restart' else A.START_INSTANCE,
                         start_payload)
-                    if 'already running' in str(result.get('message') or '').lower():
+                    if 'already running' in message.lower():
                         dispatched = False
                         raise ValueError('Instance was already running; start did not occur')
-                    if result.get('running') is not True:
-                        raise RuntimeError(result.get('message') or 'Instance did not start')
                     confirmed = self._instance_status(payload)
                     if confirmed.get('running') is not True:
                         raise RuntimeError('Instance exited immediately after start; see instance logs')
-                    yield 1, f'{"Restarted" if operation == "restart" else "Started"} {meta["tool_id"]}/{instance_id} (pid {result.get("pid")})'
+                    yield 1, f'{"Restarted" if operation == "restart" else "Started"} {meta["tool_id"]}/{instance_id} (pid {confirmed.get("pid")})'
                 if operation == 'stop':
                     dispatched = True
-                    result = self._nested_json(A.STOP_INSTANCE, payload)
-                    if isinstance(result.get('stop_result'), dict) and result['stop_result'].get('already_stopped'):
-                        dispatched = False
-                        raise ValueError('Instance was already stopped; stop did not occur')
-                    if result.get('running') or not isinstance(result.get('stop_result'), dict):
-                        raise RuntimeError('Instance is still running; stop failed')
+                    self._nested_message(A.STOP_INSTANCE, payload)
                     yield 1, f'Stopped {meta["tool_id"]}/{instance_id}'
             except Exception as exc:
                 if dispatched:

@@ -11,7 +11,8 @@
     "pyver": "pyexec import sys;print(sys.version)",
     "git_export": "git archive --format=zip -o source.zip <commit>",
     "git_history": "git log --date=format:'%Y-%m-%d %H:%M:%S' --pretty=format:\"%h %cd %s\"",
-    "sleep_py": "pyexec_stream import time; time.sleep(<sec>)"
+    "sleep_py": "pyexec_stream import time; time.sleep(<sec>)",
+    "commit": "git add . && git commit -m '<message>'"
   },
   "win": {
     "list_av": "powershell Get-CimInstance -Namespace root/SecurityCenter2 -ClassName AntivirusProduct ^| Select-Object displayName",

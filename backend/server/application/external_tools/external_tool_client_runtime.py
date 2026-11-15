@@ -80,8 +80,6 @@ class ExternalToolClientLifecycleRuntime(ExternalToolRuntimeComponent):
         action = A.LIST_INSTANCES
         result = self._run_client_control(client_id, action, payload, tab_id=tab_id)
         if isinstance(result, dict):
-            result.setdefault('side', 'client')
-            result.setdefault('errors', [])
             return result
         return result
 
@@ -147,7 +145,8 @@ class ExternalToolClientLifecycleRuntime(ExternalToolRuntimeComponent):
         action = A.START_INSTANCE
 
         try:
-            result = self._run_client_control(client_id, action, payload, tab_id=tab_id, history_entry_id=history_entry_id)
+            result = self._run_client_control(client_id, action, payload, tab_id=tab_id,
+                                              history_entry_id=history_entry_id, message_only=True)
         except Exception as exc:
             self._publish_lifecycle(
                 client_id=client_id,
@@ -161,7 +160,7 @@ class ExternalToolClientLifecycleRuntime(ExternalToolRuntimeComponent):
             raise
 
         message = str(result.get('message') or '').strip().lower() if isinstance(result, dict) else ''
-        if isinstance(result, dict) and result.get('running') is True and 'already running' not in message:
+        if 'already running' not in message:
             self._publish_lifecycle(
                 client_id=client_id,
                 action='daemon',
@@ -171,18 +170,6 @@ class ExternalToolClientLifecycleRuntime(ExternalToolRuntimeComponent):
                 instance_id=resolved_instance_id,
                 result=result,
             )
-        elif isinstance(result, dict) and result.get('running') is not True:
-            self._publish_lifecycle(
-                client_id=client_id,
-                action='daemon',
-                state='error',
-                operation='start',
-                meta=meta,
-                instance_id=resolved_instance_id,
-                result=result,
-                error=result.get('message') or 'Daemon did not enter running state',
-            )
-
         return result
 
     def preview_client_instance_command(self, client_id: str, tool_id: str, params: dict | None = None, tab_id: str = '', instance_id: str = '', platform_alias: str = '', arch: str = '', launcher_override: dict | None = None) -> dict:
@@ -249,7 +236,7 @@ class ExternalToolClientLifecycleRuntime(ExternalToolRuntimeComponent):
         package = self.catalog_service.get_package(package_id)
         payload = self.payload_builder.build_client_install_payload(package, platform_alias=platform_alias, arch=arch)
         return self._single_item(self._run_client_control(
-            client_id, A.GET_INSTALL_STATUSES, {'tools': [payload]}, tab_id=tab_id,
+            client_id, A.GET_INSTALL_STATUSES, {'tools': [payload], 'include_details': True}, tab_id=tab_id,
         ), 'get_install_statuses')
 
     def uninstall_client_tool(self, client_id: str, package_id: str, params: dict | None = None, tab_id: str = '', instance_id: str = '', platform_alias: str = '', arch: str = '', history_entry_id: str = '') -> dict:
@@ -302,7 +289,8 @@ class ExternalToolClientLifecycleRuntime(ExternalToolRuntimeComponent):
         action = A.STOP_INSTANCE
 
         try:
-            result = self._run_client_control(client_id, action, payload, tab_id=tab_id, history_entry_id=history_entry_id)
+            result = self._run_client_control(client_id, action, payload, tab_id=tab_id,
+                                              history_entry_id=history_entry_id, message_only=True)
         except Exception as exc:
             self._publish_lifecycle(
                 client_id=client_id,
@@ -315,8 +303,7 @@ class ExternalToolClientLifecycleRuntime(ExternalToolRuntimeComponent):
             )
             raise
 
-        stop_result = result.get('stop_result') if isinstance(result, dict) and isinstance(result.get('stop_result'), dict) else {}
-        if isinstance(result, dict) and result.get('running') is False and not stop_result.get('already_stopped'):
+        if isinstance(result, dict):
             self._publish_lifecycle(
                 client_id=client_id,
                 action='daemon',
@@ -326,18 +313,6 @@ class ExternalToolClientLifecycleRuntime(ExternalToolRuntimeComponent):
                 instance_id=resolved_instance_id,
                 result=result,
             )
-        elif isinstance(result, dict) and result.get('running') is True:
-            self._publish_lifecycle(
-                client_id=client_id,
-                action='daemon',
-                state='error',
-                operation='stop',
-                meta=meta,
-                instance_id=resolved_instance_id,
-                result=result,
-                error='Daemon stop completed but the process is still running',
-            )
-
         return result
 
     def status_client_instance(self, client_id: str, tool_id: str, instance_id: str, tab_id: str = '') -> dict:
@@ -360,10 +335,10 @@ class ExternalToolClientLifecycleRuntime(ExternalToolRuntimeComponent):
         meta = self.catalog_service.get_tool(tool_id)
         payload = self.payload_builder.build_client_action_payload(meta, 'remove', instance_id=instance_id)
         action = A.REMOVE_INSTANCE
-        return self._run_client_control(client_id, action, payload, tab_id=tab_id, history_entry_id=history_entry_id)
+        return self._run_client_control(client_id, action, payload, tab_id=tab_id, history_entry_id=history_entry_id, message_only=True)
 
     def clear_client_logs(self, client_id: str, tool_id: str, instance_id: str, tab_id: str = '', history_entry_id: str = '') -> dict:
         meta = self.catalog_service.get_tool(tool_id)
         payload = self.payload_builder.build_client_action_payload(meta, 'clear_logs', instance_id=instance_id)
         action = A.CLEAR_INSTANCE_LOGS
-        return self._run_client_control(client_id, action, payload, tab_id=tab_id, history_entry_id=history_entry_id)
+        return self._run_client_control(client_id, action, payload, tab_id=tab_id, history_entry_id=history_entry_id, message_only=True)

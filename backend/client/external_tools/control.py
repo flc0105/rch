@@ -70,6 +70,40 @@ class ExternalToolControl:
         return {key: expand(value) if key in ('params', 'runtime', 'config') else value
                 for key, value in payload.items()}
 
+    @staticmethod
+    def _install_status_item(row, *, details=False):
+        # Bulk catalog/XT status checks need facts, not install logs. The
+        # explicit Web detail request is the only consumer of paths/logs/cache.
+        item = {key: row[key] for key in (
+            'package_id', 'installed', 'install_status', 'executable_path', 'error',
+        ) if key in row}
+        if details:
+            for key in ('package_key', 'install_dir', 'exec_paths', 'commands',
+                        'install_log', 'install_log_path'):
+                if key in row:
+                    item[key] = row[key]
+            cache = row.get('cache') or {}
+            item['cache'] = {key: cache[key] for key in (
+                'exists', 'cache_path', 'cache_dir', 'size', 'mtime',
+            ) if key in cache}
+        return item
+
+    @staticmethod
+    def _instance_status_item(row):
+        # The Web Instance Info dialog uses flat runtime paths and argv; the
+        # persisted state (including full install/cache data) stays Client-local.
+        item = {key: row[key] for key in (
+            'tool_id', 'package_id', 'module_id', 'instance_id', 'status',
+            'running', 'pid', 'params', 'started_at', 'stopped_at',
+            'stdout', 'stderr', 'pid_file', 'state_file', 'argv', 'cwd',
+        ) if key in row}
+        config = row.get('config') or {}
+        if config.get('target'):
+            item['config'] = {'target': config['target']}
+        if row.get('message'):
+            item['message'] = row['message']
+        return item
+
     def execute(self, scope, action, payload):
         try:
             payload = self._resolve_input_variables(payload)
@@ -85,6 +119,8 @@ class ExternalToolControl:
                     data = service.uninstall_payload(payload)
             elif action == A.GET_INSTALL_STATUSES:
                 data = service.install_statuses_payload(payload)
+                data = {'items': [self._install_status_item(row, details=bool(payload.get('include_details')))
+                                  for row in data['items']]}
                 items = data['items']
                 failures = [item for item in items if item.get('error')]
                 if failures:
@@ -96,12 +132,14 @@ class ExternalToolControl:
                 with self._exclusive(payload):
                     data = service.clear_cache_payload(payload)
             elif action == A.RESOLVE_LAUNCHER:
-                data = resolve_external_tool_launcher(payload.get('launcher') or {})
+                resolved = resolve_external_tool_launcher(payload.get('launcher') or {})
+                data = {'executable': resolved['executable']}
             elif action == A.CREATE_INSTANCE:
                 with self._exclusive(payload):
                     data = service.create_instance_payload(payload)
             elif action == A.READ_INSTANCE:
-                data = service.read_instance_definition_payload(payload)
+                definition = service.read_instance_definition_payload(payload)
+                data = {'params': definition['params']}
             elif action == A.READ_INSTANCE_LOGS:
                 data = service.instance_log_chunk_payload(self._instance_payload(service, payload))
             elif action == A.START_INSTANCE:
@@ -110,6 +148,8 @@ class ExternalToolControl:
                     data = service.start_payload(payload)
                     if not data.get('running'):
                         raise RuntimeError(data.get('message') or 'Instance did not start')
+                    if not service.status_from_payload(self._instance_payload(service, payload)).get('running'):
+                        raise RuntimeError('Instance exited immediately after start')
             elif action == A.STOP_INSTANCE:
                 with self._exclusive(payload):
                     target = self._instance_payload(service, payload)
@@ -117,6 +157,8 @@ class ExternalToolControl:
                     data = service.stop_payload(target)
                     if data.get('running'):
                         raise RuntimeError('Instance is still running after stop')
+                    if (data.get('stop_result') or {}).get('already_stopped'):
+                        raise ValueError('Instance was already stopped')
             elif action == A.RESTART_INSTANCE:
                 with self._exclusive(payload):
                     self._check_start_paths(service, payload)
@@ -130,11 +172,13 @@ class ExternalToolControl:
                     data = service.start_payload(payload)
                     if not data.get('running'):
                         raise RuntimeError('Restart failed: instance did not start')
+                    if not service.status_from_payload(target).get('running'):
+                        raise RuntimeError('Restart failed: instance exited immediately')
             elif action == A.LIST_INSTANCES:
                 tools = payload.get('tools')
                 if not isinstance(tools, list):
                     raise ValueError('list_instances requires tools array')
-                data = service.list_instances_all_payload({'tools': tools}) if tools else {'items': [], 'by_tool': {}}
+                data = service.list_instances_all_payload({'tools': tools}) if tools else {'items': []}
                 requested = {
                     str(tool.get('tool_id') or ''): set(tool['instance_ids'])
                     for tool in tools if isinstance(tool, dict) and 'instance_ids' in tool
@@ -147,9 +191,7 @@ class ExternalToolControl:
                                 raise FileNotFoundError(f'Instance not found: {tool_id}/{instance_id}')
                     data['items'] = [item for item in data['items'] if
                                      item.get('tool_id') not in requested or item.get('instance_id') in requested[item.get('tool_id')]]
-                    data['by_tool'] = {tool_id: [item for item in rows if
-                                      tool_id not in requested or item.get('instance_id') in requested[tool_id]]
-                                       for tool_id, rows in data['by_tool'].items()}
+                data = {'items': [self._instance_status_item(row) for row in data['items']]}
             elif action == A.REMOVE_INSTANCE:
                 with self._exclusive(payload):
                     target = self._instance_payload(service, payload)
@@ -161,13 +203,15 @@ class ExternalToolControl:
                     service.read_instance_definition_payload(target)
                     data = service.clear_logs_payload(target)
             elif action == A.PREVIEW_INSTANCE:
-                data = service.preview_payload(payload)
+                preview = service.preview_payload(payload)
+                data = {key: preview[key] for key in ('instance_id', 'shell', 'cwd', 'shell_command')
+                        if key in preview}
             elif action == A.RUN_ONESHOT:
                 outcome = service.oneshot_payload(payload)
                 # The result dialog consumes these fields; install/config/runtime
                 # details belong to their dedicated read actions.
                 data = {key: outcome[key] for key in (
-                    'success', 'side', 'status', 'returncode',
+                    'success', 'status', 'returncode',
                     'stdout', 'stderr', 'duration_sec', 'run_id',
                 ) if key in outcome}
                 if not outcome.get('success'):
@@ -200,7 +244,26 @@ class ExternalToolControl:
             if action == A.CLEAR_PACKAGE_CACHE:
                 message = 'Package cache cleared' if data.get('cache_removed') else 'No cached package found'
                 return 1, ResultEnvelope(message=message).as_payload()
-            message = str(data.get('message') or f'External Tool {action} completed')
+            # Mutations have a verified completion, not a serialized state
+            # snapshot. Query/preview/log actions return only consumed data.
+            if action in (A.CREATE_INSTANCE, A.START_INSTANCE, A.STOP_INSTANCE,
+                          A.RESTART_INSTANCE, A.REMOVE_INSTANCE, A.CLEAR_INSTANCE_LOGS):
+                if action == A.CREATE_INSTANCE and (data.get('status') != 'created' or data.get('running')):
+                    raise RuntimeError('Instance was not created')
+                if action == A.REMOVE_INSTANCE and data.get('removed') is not True:
+                    raise RuntimeError('Instance was not removed')
+                if action == A.CLEAR_INSTANCE_LOGS and data.get('cleared') is not True:
+                    raise RuntimeError('Instance logs were not cleared')
+                names = {
+                    A.CREATE_INSTANCE: 'Instance created', A.START_INSTANCE: 'Instance started',
+                    A.STOP_INSTANCE: 'Instance stopped', A.RESTART_INSTANCE: 'Instance restarted',
+                    A.REMOVE_INSTANCE: 'Instance removed', A.CLEAR_INSTANCE_LOGS: 'Instance logs cleared',
+                }
+                message = names[action]
+                if action == A.START_INSTANCE and 'already running' in str(data.get('message') or '').lower():
+                    message = 'Instance already running'
+                return 1, ResultEnvelope(message=message).as_payload()
+            message = str(data.get('message') or '') if action == A.RUN_ONESHOT else ''
             return 1, ResultEnvelope(message=message, data=data).as_payload()
         except (CommandCancelledError, CommandTimeoutError):
             raise

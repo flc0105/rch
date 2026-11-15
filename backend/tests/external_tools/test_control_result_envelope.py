@@ -123,7 +123,7 @@ def test_instance_single_filter_uses_plural_action_without_other_instance_data(a
          'instance_ids': ['worker1']} ]})
     assert code == 1 and result['status'] == 'success'
     assert [item['instance_id'] for item in result['data']['items']] == ['worker1']
-    assert [item['instance_id'] for item in result['data']['by_tool']['frp.frps']] == ['worker1']
+    assert set(result['data']) == {'items'}  # no duplicate by_tool copy
     code, missing = executor.execute(object(), A.LIST_INSTANCES, {'tools': [
         {'tool_id': 'frp.frps', 'package_id': 'frp', 'module_id': 'frps',
          'instance_ids': ['absent']} ]})

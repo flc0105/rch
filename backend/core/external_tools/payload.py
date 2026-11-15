@@ -334,7 +334,7 @@ def client_control_request(action, source: dict) -> dict:
         return result
 
     if action == A.GET_INSTALL_STATUSES:
-        return {'tools': [({**fields(tool, target),
+        return {**({'include_details': True} if value.get('include_details') is True else {}), 'tools': [({**fields(tool, target),
                             'package': fields(tool.get('package') or {}, package_status),
                             'install': fields(tool.get('install') or {}, install_fields)})
                           if not tool.get('error') else fields(tool, ('package_id', 'error'))

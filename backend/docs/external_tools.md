@@ -215,7 +215,7 @@ External Tool 使用 Package ZIP 分发。Server 根据 Metadata 指定的 `file
 3. 确定安装目录并检查实际文件是否已存在、是否具备该 Package 声明的全部 Exec 路径。
 4. 若未安装，将 ZIP 解压到对应安装目录；解压前检查 ZIP 条目是否越过目标路径。
 5. 重新核对安装目录和 Exec 文件，成功后设置必要的可执行权限并写安装日志。
-6. 将安装结果、安装目录、Exec 路径、缓存状态和错误信息返回 Web。
+6. 安装操作仅返回成功或失败的完成消息；Web 按需调用独立的安装状态查询获取安装目录、Exec 路径、缓存状态和安装日志。
 
 默认路径由 Client 用户 Home 解析：
 
@@ -232,6 +232,8 @@ External Tool 使用 Package ZIP 分发。Server 根据 Metadata 指定的 `file
 缓存命中仅依据文件存在且大小非零；这条安装链没有进行独立的包内容 SHA-256 校验。路径安全检查防止普通 ZIP 路径穿越，但并不能把来源未知的 ZIP 视为可信程序。建议只使用可控的 Package 源。
 
 ### 已安装状态的判定
+
+External Tool Control 的 `completed` 以 `status/message` 表达安装、卸载、创建、启动、停止、重启、删除实例和清日志的执行结果，不返回运行状态快照。`get_install_statuses` 在批量 Catalog 查询中提供简要安装状态，仅按需单项详情查询附加安装日志、Exec 路径与缓存信息。`list_instances` 提供 Web 实例列表及详情实际使用的参数、进程状态与运行路径；不会将持久化状态里的安装记录、缓存和冗余嵌套 Runtime 回传。Oneshot 执行结果保留结果弹窗使用的退出码、stdout/stderr 和耗时。
 
 **Install 只负责准备 Package，不会因为安装完成就自动创建 Daemon Instance。** 管理界面的运行操作也不默认悄悄安装缺失的 Package：如果尚未安装，需先执行 Install，再 Run。
 

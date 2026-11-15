@@ -2762,7 +2762,6 @@ async uninstallClientTool(item, deviceId) {
         this.buildJsonHeaders(),
       )
       ElMessage.success(data?.message || 'Client instance started')
-      if (data?.install) this.setInstallStatus(this.getPackageForModule(item), targetDeviceId, data.install)
       await this.loadClientInstances(item.id, targetDeviceId, false)
     },
 
@@ -2857,7 +2856,7 @@ async uninstallClientTool(item, deviceId) {
         status: instance.status || 'unknown',
         running: !!instance.running,
         pid: instance.pid || '',
-        exec_path: instance.exec_path || instance.executable_path || runtime.argv?.[0] || '',
+        exec_path: instance.exec_path || instance.executable_path || instance.argv?.[0] || runtime.argv?.[0] || '',
         config_path: configPath,
         stdout: instance.stdout || runtime.stdout || '',
         stderr: instance.stderr || runtime.stderr || '',
