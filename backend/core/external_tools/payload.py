@@ -344,11 +344,12 @@ def client_control_request(action, source: dict) -> dict:
     if action == A.RESOLVE_LAUNCHER:
         return fields(value, ('launcher',))
     if action == A.UNINSTALL_PACKAGE:
-        return {**fields(value, target), **({'install': fields(value['install'], ('install_dir',))} if value.get('install') else {})}
+        return {**fields(value, (*target, 'version')),
+                **({'install': fields(value['install'], ('install_dir',))} if value.get('install') else {})}
     if action == A.CLEAR_PACKAGE_CACHE:
         return {**fields(value, target), 'package': fields(value.get('package') or {}, ('filename',))}
     if action == A.INSTALL_PACKAGE:
-        return package_request(download=True)
+        return {**package_request(download=True), **fields(value, ('version',))}
     if action in (A.READ_INSTANCE, A.READ_INSTANCE_LOGS, A.STOP_INSTANCE,
                   A.REMOVE_INSTANCE, A.CLEAR_INSTANCE_LOGS):
         result = fields(value, identity)

@@ -1,13 +1,7 @@
 import glob
 import json
 import os
-import re
 
-from core.utils.command_output import (
-    StructuredCommandResult,
-    render_structured_result,
-    strip_output_format_arg,
-)
 from core.utils.formatting import format_dict
 from core.utils.script_metadata import read_script_metadata_from_file
 from server.application.scripts.script_run_service import prepare_script_control
@@ -192,177 +186,77 @@ class ScriptBuiltinSupport:
 
 
 class AliasBuiltinSupport:
-    """
-    alias 子命令支持：
-
-    - alias / alias list [--json]
-    - alias set [--platform <supported>] name = command
-    - alias unset [--platform <supported>] name
-    """
-
-    ANY_PLATFORM_OPTION_PATTERN = re.compile(
-        r'^(?:--platform|-p)\s+(\S+)\b',
-        re.IGNORECASE,
-    )
+    """Alias list/set/unset consume only typed Server Registry invocations."""
 
     def __init__(self, alias_manager, conn):
         self.alias_manager = alias_manager
         self.conn = conn
 
-    def _parse_platform_option(self, arg_text: str) -> tuple[str, str]:
-        text = str(arg_text or '').strip()
-        matched = self.ANY_PLATFORM_OPTION_PATTERN.match(text)
-        if matched is None:
-            return '', text
-
-        raw_platform = matched.group(1)
-        try:
-            platform_name = self.alias_manager.normalize_platform(raw_platform)
-        except ValueError:
-            raise ValueError(
-                f"Unsupported platform: {raw_platform}. "
-                f"Supported platforms: {', '.join(self.alias_manager.get_supported_platforms())}"
-            )
-
-        remaining = text[matched.end():].strip()
-        return platform_name, remaining
-
-    def _resolve_target_platform(self, platform_name: str) -> str:
-        return platform_name or 'common'
-
     def _get_runtime_platform(self) -> str:
-        """
-        直接复用 AliasManager 的连接平台识别逻辑。
-        未映射到受支持平台时返回空串，resolve 时只显示 common。
-        """
+        """Use the AliasManager's canonical Client platform resolution."""
         platform_name = self.alias_manager.get_platform_for_connection(self.conn)
-        if platform_name in self.alias_manager.get_supported_platforms():
-            return platform_name
-        return ''
-
-    def _normalize_alias_rows(self, alias_map: dict, platform_name: str) -> list[dict]:
-        rows = []
-        for alias_name in sorted((alias_map or {}).keys()):
-            rows.append({
-                'platform': platform_name,
-                'alias': alias_name or '',
-                'command': alias_map.get(alias_name) or '',
-            })
-        return rows
+        return platform_name if platform_name in self.alias_manager.get_supported_platforms() else ''
 
     def _build_resolved_alias_payload(self) -> list[dict]:
-        """
-        alias resolve:
-        - 显示 common + 当前平台
-        - 当前平台无法识别时，只显示 common
-        - platform 字段表示“该 alias 最终来自哪一层”
-        """
+        """Effective common definitions plus this Client's platform overrides."""
         runtime_platform = self._get_runtime_platform()
-
-        common_aliases = self.alias_manager.list_aliases_for_platform('common', conn=self.conn) or {}
-        platform_aliases = {}
-
-        if runtime_platform and runtime_platform != 'common':
-            platform_aliases = self.alias_manager.list_aliases_for_platform(runtime_platform, conn=self.conn) or {}
-
-        merged = dict(common_aliases)
-        merged.update(platform_aliases)
-
-        rows = []
-        for alias_name, command_text in merged.items():
-            source_platform = runtime_platform if runtime_platform and alias_name in platform_aliases else 'common'
-            rows.append({
-                'platform': source_platform,
-                'alias': alias_name or '',
-                'command': command_text or '',
-            })
-
-        rows.sort(key=lambda item: (
-            str(item.get('platform') or ''),
-            str(item.get('alias') or ''),
-        ))
-        return rows
+        common = self.alias_manager.list_aliases_for_platform('common', conn=self.conn) or {}
+        local = (self.alias_manager.list_aliases_for_platform(runtime_platform, conn=self.conn) or {}
+                 if runtime_platform and runtime_platform != 'common' else {})
+        merged = {**common, **local}
+        return sorted(({
+            'platform': runtime_platform if name in local else 'common',
+            'alias': name, 'command': command,
+        } for name, command in merged.items()),
+            key=lambda row: (row['platform'], row['alias']))
 
     def list_aliases(self):
-        """
-        给自动补全/旧逻辑使用：返回当前连接可用 alias（dict）
-        """
+        """Used by completion; returns current effective names, not a second parser."""
         return self.alias_manager.list_aliases(conn=self.conn)
 
     def list_resolved_aliases(self) -> list[dict]:
-        """
-        给自动补全/展示使用：返回 common + 当前平台 合并后的结构化结果
-        """
         return self._build_resolved_alias_payload()
 
-    def _render_table_result(self, payload: list[dict], output_format: str):
-        return render_structured_result(
-            StructuredCommandResult(
-                status=1,
-                data=payload,
-                shape='table',
-            ),
-            output_format=output_format,
-        )
+    def alias(self, invocation):
+        from core.protocol.result_envelope import ResultEnvelope
+        from core.utils.command_output import ResultDataShape, render_result_payload
 
-    def _alias_set(self, arg=''):
-        text = str(arg or '').strip()
-        platform_name, remaining_text = self._parse_platform_option(text)
-        target_platform = self._resolve_target_platform(platform_name)
-
-        if not remaining_text or '=' not in remaining_text:
-            raise ValueError(
-                f"Expected format: alias set [--platform {'|'.join(self.alias_manager.get_supported_platforms())}] name = command"
-            )
-
+        action = invocation.action
+        args = invocation.arguments
         try:
-            alias_name, command_text = [part.strip() for part in remaining_text.split('=', 1)]
+            if action == 'list':
+                rows = self._build_resolved_alias_payload()
+                envelope = ResultEnvelope(message='No aliases configured' if not rows else 'Aliases listed',
+                                          data=rows).as_payload()
+                view, shape = 'data', ResultDataShape.TABLE
+            elif action in ('set', 'unset'):
+                raw_platform = args.get('platform') or 'common'
+                platform = self.alias_manager.normalize_platform(raw_platform)
+                name = args['name']
+                if action == 'set':
+                    # `=` is the only Alias-specific grammar. Its RHS is opaque:
+                    # preserve nested spaces, quotes, flags and further equals.
+                    assignment = args.get('definition') or ''
+                    if not assignment.startswith('=') or not assignment[1:].strip():
+                        raise ValueError('Expected format: alias set [--platform PLATFORM] name = command')
+                    self.alias_manager.add_alias(name, assignment[1:].strip(), platform=platform)
+                    message = f'Alias saved [{platform}]: {name}'
+                else:
+                    self.alias_manager.remove_alias(name, platform=platform)
+                    message = f'Alias removed [{platform}]: {name}'
+                envelope = ResultEnvelope(message=message).as_payload()
+                view, shape = 'message', None
+            else:
+                raise ValueError(f'Unsupported alias subcommand: {action}')
+        except (ValueError, KeyError) as exc:
+            envelope = ResultEnvelope(status='error', message=str(exc)).as_payload()
+            view, shape = 'message', None
 
-            if not alias_name:
-                raise ValueError("Missing alias name")
-            if not command_text:
-                raise ValueError("Missing alias command")
-
-            self.alias_manager.add_alias(alias_name, command_text, platform=target_platform)
-            yield 1, f'Alias saved [{target_platform}]: {alias_name} -> {command_text}'
-        except Exception as e:
-            raise ValueError(f'Failed to save alias: {e}')
-
-    def _alias_unset(self, arg=''):
-        text = str(arg or '').strip()
-        platform_name, remaining_text = self._parse_platform_option(text)
-        target_platform = self._resolve_target_platform(platform_name)
-
-        alias_name = remaining_text.strip()
-        if not alias_name:
-            raise ValueError("Missing alias name")
-
-        try:
-            self.alias_manager.remove_alias(alias_name, platform=target_platform)
-            yield 1, f"Alias removed [{target_platform}]: {alias_name}"
-        except KeyError:
-            raise ValueError(f"Alias not found: {alias_name}")
-
-    def _alias_list(self, arg=''):
-        output_format = parse_output_format(arg)
-        remaining = strip_output_format_arg(arg)
-        if str(remaining or '').strip():
-            raise ValueError('Usage: alias [list] [--json]')
-        yield self._render_table_result(self._build_resolved_alias_payload(), output_format)
-
-    def execute_subcommand(self, subcommand, remaining=''):
-        if subcommand == 'list':
-            yield from self._alias_list(remaining)
-        elif subcommand == 'set':
-            yield from self._alias_set(remaining)
-        elif subcommand == 'unset':
-            yield from self._alias_unset(remaining)
-        else:
-            raise ValueError(f'Unsupported alias subcommand: {subcommand}')
-    def alias(self, arg=''):
-        from server.application.command.server_builtin_registry import SERVER_COMMAND_REGISTRY
-        _, subcommand, remaining = SERVER_COMMAND_REGISTRY.parse('alias', arg)
-        yield from self.execute_subcommand(subcommand, remaining)
+        success = envelope['status'] == 'success'
+        yield ResultChunk(1 if success else 0,
+                          render_result_payload(envelope, invocation.output_format,
+                                                view=view, shape=shape),
+                          True, terminal_authoritative=True, event=envelope)
 
 
 class PinnedPathBuiltinSupport:

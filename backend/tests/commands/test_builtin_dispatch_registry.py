@@ -20,13 +20,21 @@ def _handler_with_stubs():
     return handler, calls
 
 
-@pytest.mark.parametrize('name,arg,expected', [
-    ('alias', 'set --platform common x = shell echo  hello', ('set', '--platform common x = shell echo  hello')),
+@pytest.mark.parametrize('tail,action,expected', [
+    ('', 'list', {'json': False}),
+    ('--json', 'list', {'json': True}),
+    ('set --platform common x = shell echo  hello', 'set',
+     {'name': 'x', 'platform': 'common', 'definition': '= shell echo  hello'}),
+    ('unset -p mac x', 'unset', {'name': 'x', 'platform': 'mac'}),
 ])
-def test_split_subcommands_use_registered_call_shape(name, arg, expected):
+def test_alias_uses_registered_typed_invocation(tail, action, expected):
     handler, calls = _handler_with_stubs()
-    assert list(handler.resolve_builtin_command(name, arg)) == [(1, 'ok')]
-    assert calls == [(name, expected)]
+    assert list(handler.resolve_builtin_command('alias', tail)) == [(1, 'ok')]
+    assert len(calls) == 1
+    name, (invocation,) = calls[0]
+    assert name == 'alias' and invocation.action == action
+    for key, value in expected.items():
+        assert invocation.arguments[key] == value
 
 
 @pytest.mark.parametrize('arg,action,values', [
@@ -62,9 +70,9 @@ def test_history_explicit_list_matches_no_argument_form():
         list(support.history(SERVER_COMMAND_REGISTRY.parse_invocation('history', 'list'))))
 
 
-def test_registry_declares_split_invocation_and_reachable_xt_help():
-    assert {spec.name for spec in SERVER_COMMAND_REGISTRY._commands.values()
-            if spec.dispatch_subcommand} == {'script', 'alias', 'job', 'config', 'history'}
+def test_registry_has_no_second_string_dispatch_and_xt_help_is_reachable():
+    assert all(not hasattr(spec, 'dispatch_subcommand') and not hasattr(spec, 'structured')
+               for spec in SERVER_COMMAND_REGISTRY._commands.values())
     assert SERVER_COMMAND_REGISTRY.parse('xt', '')[1:] == ('help', '')
     assert SERVER_COMMAND_REGISTRY.parse('xt', 'help')[1:] == ('help', '')
     with pytest.raises(ValueError, match='Unsupported xt subcommand'):

@@ -94,10 +94,23 @@ def test_all_actions_wire_result_has_no_internal_execution_state(fake, action):
     assert code == 1, (action, event)
     assert event['event_type'] == 'completed' and event['status'] == 'success'
     assert set(event) in ({'event_type', 'status', 'message'}, {'event_type', 'status', 'message', 'data'})
-    if action in (A.INSTALL_PACKAGE, A.UNINSTALL_PACKAGE, A.CLEAR_PACKAGE_CACHE, A.CREATE_INSTANCE,
-                  A.START_INSTANCE, A.STOP_INSTANCE, A.RESTART_INSTANCE, A.REMOVE_INSTANCE,
-                  A.CLEAR_INSTANCE_LOGS, A.EXEC):
-        assert 'data' not in event, (action, event)
+    if action in (A.INSTALL_PACKAGE, A.UNINSTALL_PACKAGE):
+        assert set(event['data']) == {'package_id', 'version', 'installed'}
+    elif action == A.CLEAR_PACKAGE_CACHE:
+        assert event['data'] == {'package_id': 'gost', 'cache_removed': True}
+    elif action in (A.CREATE_INSTANCE, A.START_INSTANCE, A.STOP_INSTANCE, A.RESTART_INSTANCE,
+                    A.REMOVE_INSTANCE, A.CLEAR_INSTANCE_LOGS):
+        summary = event['data']
+        assert summary['tool_id'] == 'gost.socks5' and summary['instance_id'] == 'rch-wire-116'
+        assert 'install' not in summary and 'runtime' not in summary
+        if action == A.CREATE_INSTANCE:
+            assert summary['status'] == 'created' and summary['running'] is False
+        if action in (A.START_INSTANCE, A.RESTART_INSTANCE):
+            assert summary['status'] == 'running' and 'pid' not in summary  # fixture PID is None
+        if action == A.STOP_INSTANCE:
+            assert summary['status'] == 'stopped' and summary['running'] is False
+    elif action == A.EXEC:
+        assert 'data' not in event  # Unknown exec_name does not create an empty field.
     else:
         data = event['data']
         assert 'install' not in data and 'runtime' not in data and 'package' not in data
@@ -110,13 +123,13 @@ def test_all_actions_wire_result_has_no_internal_execution_state(fake, action):
             assert set(data) == {'items'}
             assert set(data['items'][0]) == {'package_id', 'installed', 'executable_path', 'install_status'}
         if action == A.READ_INSTANCE:
-            assert data == {'params': {'listen_port': 49178}}
+            assert data == {'tool_id': 'gost.socks5', 'instance_id': 'rch-wire-116', 'params': {'listen_port': 49178}}
         if action == A.RESOLVE_LAUNCHER:
             assert data == {'executable': '/usr/bin/python3'}
         if action == A.PREVIEW_INSTANCE:
-            assert set(data) == {'instance_id', 'shell', 'cwd', 'shell_command'}
+            assert set(data) == {'tool_id', 'instance_id', 'shell', 'cwd', 'shell_command'}
         if action == A.RUN_ONESHOT:
-            assert set(data) == {'success', 'status', 'returncode', 'stdout', 'stderr', 'duration_sec', 'run_id'}
+            assert set(data) == {'tool_id', 'success', 'status', 'returncode', 'stdout', 'stderr', 'duration_sec', 'run_id'}
 
 
 def test_explicit_single_package_details_preserve_visible_web_fields(fake):
@@ -132,7 +145,7 @@ def test_explicit_single_package_details_preserve_visible_web_fields(fake):
     assert 'install' not in detail and 'runtime' not in detail
 
 
-def test_web_lifecycle_and_terminal_both_consume_message_only_success(monkeypatch):
+def test_web_lifecycle_and_terminal_consume_balanced_operation_results(monkeypatch):
     from server.application.external_tools.external_tool_runtime_service import ExternalToolRuntimeService
     from server.application.external_tools.external_tool_catalog_service import ExternalToolCatalogService
     from pathlib import Path
@@ -144,10 +157,57 @@ def test_web_lifecycle_and_terminal_both_consume_message_only_success(monkeypatc
     lifecycle = runtime.client_lifecycle_runtime
     monkeypatch.setattr(lifecycle.payload_builder, 'build_client_start_payload', lambda *args, **kwargs: dict(RICH))
     monkeypatch.setattr(lifecycle.payload_builder, 'build_client_action_payload', lambda *args, **kwargs: dict(RICH))
-    monkeypatch.setattr(lifecycle, '_run_client_control', lambda *args, **kwargs: {'message': 'Instance started' if args[1] == A.START_INSTANCE else 'Instance stopped'})
+    def control_result(*args, **kwargs):
+        if args[1] == A.START_INSTANCE:
+            return {'message': 'Started gost.socks5/rch-wire-116 (PID 43210)',
+                    'tool_id': 'gost.socks5', 'instance_id': 'rch-wire-116',
+                    'status': 'running', 'running': True, 'pid': 43210}
+        return {'message': 'Stopped gost.socks5/rch-wire-116',
+                'tool_id': 'gost.socks5', 'instance_id': 'rch-wire-116',
+                'status': 'stopped', 'running': False}
+
+    monkeypatch.setattr(lifecycle, '_run_client_control', control_result)
     started = lifecycle.start_client_instance('client', 'gost.socks5', instance_id='rch-wire-116')
     stopped = lifecycle.stop_client_instance('client', 'gost.socks5', 'rch-wire-116')
-    assert started == {'message': 'Instance started'}
-    assert stopped == {'message': 'Instance stopped'}
+    assert started['pid'] == 43210 and started['running'] is True
+    assert stopped['running'] is False and 'pid' not in stopped
     assert [e[1]['state'] for e in events] == ['started', 'stopped']
     assert [e[1]['operation'] for e in events] == ['start', 'stop']
+    assert events[0][1]['pid'] == 43210
+    assert events[0][1]['status'] == 'running' and events[1][1]['status'] == 'stopped'
+
+
+def test_instance_start_includes_real_pid_without_internal_state(fake, monkeypatch):
+    original = client_control.ExternalToolClientService
+
+    class WithPid(original):
+        def start_payload(self, payload):
+            return {**RICH, 'running': True, 'status': 'running', 'pid': 43210}
+
+    monkeypatch.setattr(client_control, 'ExternalToolClientService', WithPid)
+    payload = {'tool_id': 'gost.socks5', 'package_id': 'gost', 'module_id': 'socks5', 'instance_id': 'rch-wire-116'}
+    code, event = fake.execute(SimpleNamespace(command_id=1, execution_context=None), A.START_INSTANCE, payload)
+    assert code == 1 and event['message'] == 'Started gost.socks5/rch-wire-116 (PID 43210)'
+    assert event['data'] == {'tool_id': 'gost.socks5', 'instance_id': 'rch-wire-116',
+                             'status': 'running', 'running': True, 'pid': 43210}
+
+
+def test_actual_gost_metadata_carries_version_only_for_package_mutations():
+    from pathlib import Path
+    from core.external_tools.payload import client_install_payload
+    from core.protocol.control import ExternalToolAction as A
+    import json
+    meta = json.loads((Path(__file__).resolve().parents[2] /
+                       'server/resources/external_tools/metas/gost.json').read_text())
+    pkg = meta['platform_packages']['darwin-arm64']
+    source = client_install_payload(meta, {'platform': 'mac', 'arch': 'arm64', 'package_key': 'darwin-arm64',
+                                          'install_dir': '/managed/gost/3.2.6/darwin-arm64'},
+                                    source='', filename=pkg['filename'], download_url=pkg['download_url'],
+                                    executable_rel_path='gost', skip_if_exists='/managed/gost/3.2.6/darwin-arm64')
+    assert source['version'] == '3.2.6'
+    for action in (A.INSTALL_PACKAGE, A.UNINSTALL_PACKAGE):
+        assert client_control_request(action, source)['version'] == '3.2.6'
+    for action in (A.CLEAR_PACKAGE_CACHE, A.GET_INSTALL_STATUSES):
+        request = (client_control_request(action, source) if action == A.CLEAR_PACKAGE_CACHE
+                   else client_control_request(action, {'tools': [source]})['tools'][0])
+        assert 'version' not in request

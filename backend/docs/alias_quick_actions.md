@@ -70,7 +70,7 @@ Alias 本体由 Server 全局管理，持久化在 `backend/server/resources/ali
 
 直接输入 `alias` 等价于 `alias list`，只显示 common 与目标 Client 平台覆盖后的**生效** Alias 列表；`alias list --json`、`alias --json` 输出相同结果的结构化数组。已删除公开 `resolve`、`reload` 和原 `alias list --platform` 跨平台清单入口；平台原始定义仍在 JSON 与 Web Quick Actions 管理接口中保存、编辑，绝不删除其他平台配置。
 
-创建或覆盖某个平台上的定义，使用 `alias set [--platform 平台] 名称 = 模板文本`；删除用 `alias unset [--platform 平台] 名称`。未写 `--platform` 时，这两个操作都只作用于 `common`，**不会自动删除/修改同名的平台专用定义**。`set` 在所选作用域内同名时是替换；终端写法按第一个 `=` 分隔名称与模板，其后作为模板正文保存，不需要把命令整段重新按 Shell 参数解析。AliasManager 在读取与修改时自动检查磁盘文件是否变化；无需手动 Reload。
+创建或覆盖某个平台上的定义，使用 `alias set [--platform 平台] 名称 = 模板文本`；删除用 `alias unset [--platform 平台] 名称`。未写 `--platform` 时，这两个操作都只作用于 `common`，**不会自动删除/修改同名的平台专用定义**。`set` 在所选作用域内同名时是替换；终端 `list/set/unset`、名称与 `--platform/-p` 由 Server Builtin Registry 统一校验；`set` 支持 `名称=模板` 或 `名称 = 模板`，业务层只解析等号后的原始模板，保留其中的空格、引号、选项和后续等号。AliasManager 在读取与修改时自动检查磁盘文件是否变化；无需手动 Reload。
 
 下面用一个临时自定义名称说明完整管理操作，而不是列举项目现有 Alias：
 
@@ -82,9 +82,9 @@ alias set now = pyexec print(1)
 alias unset now
 ```
 
-其中保存后的 `sample` 调用按模板绑定 `message`，在 Client 侧运行展开的普通命令；`alias list --json` 是**查询结果**，不是用 `--json` 改变被保存的模板。管理命令的输出使用 Structured Command Output 的文本表格或 JSON 渲染。
+其中保存后的 `sample` 调用按模板绑定 `message`，在 Client 侧运行展开的普通命令；`alias list --json` 是**查询结果**，不是用 `--json` 改变被保存的模板。管理命令的输出使用 Result Envelope：`list` 的 `data` 渲染成文本表格或 JSON，`set/unset` 使用操作完成消息。
 
-参数位置存在实际限制：`--platform` / `-p` 只在子命令后、被解析文本的开头识别；`list` 只接受可选的 `--json` 输出标志，不能假定所有选项任意换序都等价。原 `resolve/reload` 已移除。删除定义使用 `alias unset`。
+`--platform/-p` 可放在名称前或后，名称可以使用首个位置参数或 `--name NAME`；`list` 只接受可选的 `--json`，`set/unset` 不接受管理层的 `--json`。Alias 列表和操作结果使用统一 Result Envelope；操作的完成消息不重复返回模板正文。
 
 Server 内建命令会先于 Alias 名称进行识别；顶层 `acmd` 也优先于 Alias 名称。因此应避免使用和已有 Server Built-in 或保留入口冲突的 Alias 名称，否则可能无法从普通终端按 Alias 调用。Alias 新建与改名都经 `AliasManager.MAX_ALIAS_NAME_LENGTH = 32` 统一校验名称长度，超过 32 个字符会拒绝保存，已存在的定义不因校验失败而被覆写；通过 CLI 设置 Alias 时检查名称、模板非空及长度；Web 编辑器还禁止名称含空白字符，建议始终使用无空格名称。
 

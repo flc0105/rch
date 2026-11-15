@@ -39,6 +39,7 @@ class ArgumentCommandSpec:
     options: list[ArgumentOptionSpec] = field(default_factory=list)
     examples: list[str] = field(default_factory=list)
     trailing_named_arguments: str | None = None
+    assignment_tail: str | None = None
 
     def get_option_map(self) -> dict[str, ArgumentOptionSpec]:
         return {item.name: item for item in self.options}

@@ -8,14 +8,47 @@ from core.commands.argument_validator import ArgumentCommandValidator
 from core.utils.parsing import split_shell_arguments
 
 
+def _assignment_boundary(text: str) -> tuple[str, str]:
+    """Keep an opaque assignment RHS; inline `--option=value` is not its delimiter."""
+    quote = ''
+    escaped = False
+    for index, char in enumerate(text):
+        if escaped:
+            escaped = False
+            continue
+        if char == "\\" and quote != "'":
+            escaped = True
+            continue
+        if quote:
+            if char == quote:
+                quote = ''
+            continue
+        if char in ("'", '"'):
+            quote = char
+            continue
+        if char != '=':
+            continue
+        token_start = index
+        while token_start and not text[token_start - 1].isspace():
+            token_start -= 1
+        if text[token_start:index].startswith('-'):
+            continue  # --platform=mac and -p=mac are ordinary registered options.
+        return text[:index], text[index:]
+    return text, ''
+
+
 def parse_argument_text(spec, text, *, literal_backslashes=False):
     """Return normalized option values; positional aliases share one spec.
 
     Flags have arity zero; other options take `arity` values. Repeated options
     preserve occurrence order. `--` stops option parsing for every schema.
     """
+    raw_text = str(text or '')
+    assignment = ''
+    if spec.assignment_tail is not None:
+        raw_text, assignment = _assignment_boundary(raw_text)
     try:
-        tokens = split_shell_arguments(str(text or ''), literal_backslashes=literal_backslashes)
+        tokens = split_shell_arguments(raw_text, literal_backslashes=literal_backslashes)
     except ValueError as exc:
         raise ArgumentCommandValidationError(f'Invalid arguments: {exc}') from exc
 
@@ -31,7 +64,10 @@ def parse_argument_text(spec, text, *, literal_backslashes=False):
             parsed = _parse_tokens(spec, head)
             parsed[spec.trailing_named_arguments] = _parse_named_tail(tail)
             return parsed
-        return _parse_tokens(spec, tokens)
+        parsed = _parse_tokens(spec, tokens)
+        if spec.assignment_tail is not None:
+            parsed[spec.assignment_tail] = assignment
+        return parsed
     except ArgumentCommandValidationError as exc:
         # Error presentation is selected from declared flags by the caller,
         # not by retrying raw string parsing in every business handler.

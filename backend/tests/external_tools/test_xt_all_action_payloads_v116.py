@@ -38,8 +38,8 @@ def rich():
 
 
 @pytest.mark.parametrize('action,expected', [
-    (A.INSTALL_PACKAGE, {'package_id', 'platform', 'arch', 'package_key', 'package', 'install'}),
-    (A.UNINSTALL_PACKAGE, {'package_id', 'platform', 'arch', 'package_key', 'install'}),
+    (A.INSTALL_PACKAGE, {'package_id', 'platform', 'arch', 'package_key', 'package', 'install', 'version'}),
+    (A.UNINSTALL_PACKAGE, {'package_id', 'platform', 'arch', 'package_key', 'install', 'version'}),
     (A.GET_INSTALL_STATUSES, {'tools'}),
     (A.CLEAR_PACKAGE_CACHE, {'package_id', 'platform', 'arch', 'package_key', 'package'}),
     (A.RESOLVE_LAUNCHER, {'launcher'}),
@@ -70,7 +70,8 @@ def test_every_action_has_only_consumer_fields(rich, action, expected):
         data['tools'] = [deepcopy(rich)]
     result = client_control_request(action, data)
     assert set(result) == expected
-    assert 'version' not in result and 'source' not in result and 'side' not in result
+    assert ('version' in result) == (action in (A.INSTALL_PACKAGE, A.UNINSTALL_PACKAGE))
+    assert 'source' not in result and 'side' not in result
     assert 'bogus' not in str(result)
     if action in (A.INSTALL_PACKAGE, A.GET_INSTALL_STATUSES, A.START_INSTANCE, A.RESTART_INSTANCE, A.RUN_ONESHOT, A.EXEC):
         package = result['tools'][0]['package'] if action == A.GET_INSTALL_STATUSES else result['package']

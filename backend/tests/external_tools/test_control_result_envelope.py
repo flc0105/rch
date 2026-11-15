@@ -144,19 +144,19 @@ def test_oneshot_timeout_is_not_falsely_reported_as_success(adapter):
     assert 'message' not in result['data']  # already in the Result Envelope
 
 
-def test_package_mutations_return_only_terminal_message(adapter):
+def test_package_mutations_return_small_identified_business_data(adapter):
     executor, _ = adapter
-    for action, message in (
-        (A.INSTALL_PACKAGE, 'Package installed successfully'),
-        (A.UNINSTALL_PACKAGE, 'Package uninstalled'),
-        (A.CLEAR_PACKAGE_CACHE, 'Package cache cleared'),
+    for action, message, data in (
+        (A.INSTALL_PACKAGE, 'Installed frp v1.4.5', {'package_id': 'frp', 'version': '1.4.5', 'installed': True}),
+        (A.UNINSTALL_PACKAGE, 'Uninstalled frp v1.4.5', {'package_id': 'frp', 'version': '1.4.5', 'installed': False}),
+        (A.CLEAR_PACKAGE_CACHE, 'Cleared package cache for frp', {'package_id': 'frp', 'cache_removed': True}),
     ):
-        code, event = executor.execute(object(), action, {'package_id': 'frp'})
+        code, event = executor.execute(object(), action, {'package_id': 'frp', 'version': '1.4.5'})
         assert code == 1
-        assert event == {'event_type': 'completed', 'status': 'success', 'message': message}
+        assert event == {'event_type': 'completed', 'status': 'success', 'message': message, 'data': data}
 
 
-def test_server_consumes_message_only_and_preserves_oneshot_failure_output():
+def test_server_retains_operational_data_and_oneshot_failure_output():
     from server.application.external_tools.external_tool_runtime_service import ExternalToolRuntimeService
     from server.application.external_tools.external_tool_catalog_service import ExternalToolCatalogService
 
@@ -169,14 +169,15 @@ def test_server_consumes_message_only_and_preserves_oneshot_failure_output():
                 return 0, {'event_type': 'completed', 'status': 'error',
                            'message': 'FFmpeg execution failed',
                            'data': {'success': False, 'returncode': 2, 'stdout': 'start', 'stderr': 'bad arg'}}
-            return 1, {'event_type': 'completed', 'status': 'success', 'message': 'Installed successfully'}
+            return 1, {'event_type': 'completed', 'status': 'success', 'message': 'Installed frp',
+                       'data': {'package_id': 'frp', 'installed': True}}
 
     runtime = ExternalToolRuntimeService(catalog, command_execution_api=None,
                                          remote_execution_service=FakeRemote())
     assert runtime.remote_execution_service is runtime.core.remote_execution_service
     client = runtime.client_lifecycle_runtime
-    installed = client._run_client_control('target', A.INSTALL_PACKAGE, {'package_id': 'frp'}, message_only=True)
-    assert installed == {'message': 'Installed successfully'}
+    installed = client._run_client_control('target', A.INSTALL_PACKAGE, {'package_id': 'frp'}, include_message=True)
+    assert installed == {'message': 'Installed frp', 'package_id': 'frp', 'installed': True}
     details = client._run_client_control('target', A.RUN_ONESHOT, {'tool_id': 'ffmpeg.version'},
                                          return_failed_data=True)
     assert details == {'success': False, 'returncode': 2, 'stdout': 'start', 'stderr': 'bad arg'}

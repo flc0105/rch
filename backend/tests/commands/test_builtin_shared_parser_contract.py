@@ -120,7 +120,7 @@ def test_other_server_builtins_are_not_reinterpreted():
     ]:
         spec, sub, tail = SERVER_COMMAND_REGISTRY.parse(root, raw)
         assert (sub, tail) == (expected_sub, expected_tail)
-        assert spec.structured == (root != 'alias')
+        assert spec.argument_spec is not None or spec.subcommands or spec.raw_tail
 
 
 @pytest.mark.parametrize('text', [
@@ -228,14 +228,11 @@ def test_result_envelope_has_one_source_but_two_presentation_formats():
     assert json.loads(render_result_payload(message, 'json')) == {'status': 'success', 'message': 'Updated.'}
 
 
-def test_every_structured_builtin_leaf_owns_its_argument_schema():
+def test_every_builtin_leaf_owns_its_argument_schema_or_raw_tail():
     def leaves(node):
         if not node.subcommands:
             yield node
         for child in node.subcommands:
             yield from leaves(child)
     for spec in SERVER_COMMAND_REGISTRY._commands.values():
-        if spec.structured:
-            assert all(leaf.argument_spec is not None or leaf.raw_tail for leaf in leaves(spec))
-        else:
-            assert all(leaf.argument_spec is None for leaf in leaves(spec))
+        assert all(leaf.argument_spec is not None or leaf.raw_tail for leaf in leaves(spec))

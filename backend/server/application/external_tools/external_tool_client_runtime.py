@@ -85,7 +85,7 @@ class ExternalToolClientLifecycleRuntime(ExternalToolRuntimeComponent):
 
     def _run_client_control(self, client_id: str, action, payload: dict, *,
                             tab_id: str = '', history_entry_id: str = '',
-                            message_only: bool = False, return_failed_data: bool = False,
+                            return_failed_data: bool = False,
                             include_message: bool = False) -> dict:
         # Metadata is resolved on the Server; the action belongs to the Control
         # envelope, not another "action" field inside its business payload.
@@ -105,8 +105,6 @@ class ExternalToolClientLifecycleRuntime(ExternalToolRuntimeComponent):
             if return_failed_data and isinstance(data, dict) and data.get('success') is False:
                 return {'message': str(result.get('message') or ''), **data} if include_message else data
             raise RuntimeError(str(result.get('message') or f'External Tool {action} failed'))
-        if message_only:
-            return {'message': str(result.get('message') or '')}
         if not isinstance(data, dict):
             raise RuntimeError(f'Invalid External Tool {action} data')
         return {'message': str(result.get('message') or ''), **data} if include_message else data
@@ -146,7 +144,7 @@ class ExternalToolClientLifecycleRuntime(ExternalToolRuntimeComponent):
 
         try:
             result = self._run_client_control(client_id, action, payload, tab_id=tab_id,
-                                              history_entry_id=history_entry_id, message_only=True)
+                                              history_entry_id=history_entry_id, include_message=True)
         except Exception as exc:
             self._publish_lifecycle(
                 client_id=client_id,
@@ -209,7 +207,7 @@ class ExternalToolClientLifecycleRuntime(ExternalToolRuntimeComponent):
 
         try:
             result = self._run_client_control(client_id, action, payload, tab_id=tab_id,
-                                              history_entry_id=history_entry_id, message_only=True)
+                                              history_entry_id=history_entry_id, include_message=True)
         except Exception as exc:
             self._publish_lifecycle(
                 client_id=client_id,
@@ -247,7 +245,7 @@ class ExternalToolClientLifecycleRuntime(ExternalToolRuntimeComponent):
 
         try:
             result = self._run_client_control(client_id, action, payload, tab_id=tab_id,
-                                              history_entry_id=history_entry_id, message_only=True)
+                                              history_entry_id=history_entry_id, include_message=True)
         except Exception as exc:
             self._publish_lifecycle(
                 client_id=client_id,
@@ -280,7 +278,7 @@ class ExternalToolClientLifecycleRuntime(ExternalToolRuntimeComponent):
         payload = self.payload_builder.build_client_install_payload(package, platform_alias=platform_alias, arch=arch)
         action = A.CLEAR_PACKAGE_CACHE
         return self._run_client_control(client_id, action, payload, tab_id=tab_id,
-                                        history_entry_id=history_entry_id, message_only=True)
+                                        history_entry_id=history_entry_id, include_message=True)
 
     def stop_client_instance(self, client_id: str, tool_id: str, instance_id: str, params: dict | None = None, tab_id: str = '', history_entry_id: str = '') -> dict:
         meta = self.catalog_service.get_tool(tool_id)
@@ -290,7 +288,7 @@ class ExternalToolClientLifecycleRuntime(ExternalToolRuntimeComponent):
 
         try:
             result = self._run_client_control(client_id, action, payload, tab_id=tab_id,
-                                              history_entry_id=history_entry_id, message_only=True)
+                                              history_entry_id=history_entry_id, include_message=True)
         except Exception as exc:
             self._publish_lifecycle(
                 client_id=client_id,
@@ -335,10 +333,10 @@ class ExternalToolClientLifecycleRuntime(ExternalToolRuntimeComponent):
         meta = self.catalog_service.get_tool(tool_id)
         payload = self.payload_builder.build_client_action_payload(meta, 'remove', instance_id=instance_id)
         action = A.REMOVE_INSTANCE
-        return self._run_client_control(client_id, action, payload, tab_id=tab_id, history_entry_id=history_entry_id, message_only=True)
+        return self._run_client_control(client_id, action, payload, tab_id=tab_id, history_entry_id=history_entry_id, include_message=True)
 
     def clear_client_logs(self, client_id: str, tool_id: str, instance_id: str, tab_id: str = '', history_entry_id: str = '') -> dict:
         meta = self.catalog_service.get_tool(tool_id)
         payload = self.payload_builder.build_client_action_payload(meta, 'clear_logs', instance_id=instance_id)
         action = A.CLEAR_INSTANCE_LOGS
-        return self._run_client_control(client_id, action, payload, tab_id=tab_id, history_entry_id=history_entry_id, message_only=True)
+        return self._run_client_control(client_id, action, payload, tab_id=tab_id, history_entry_id=history_entry_id, include_message=True)

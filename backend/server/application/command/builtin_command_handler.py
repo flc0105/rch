@@ -148,25 +148,15 @@ class BuiltinCommandHandler:
         if self.REGISTRY.get(name) is None:
             return None
         try:
-            spec, subcommand, remaining = self.REGISTRY.parse(name, arg)
-            if spec.structured:
-                # Only the Server registry parses structured builtin arguments.
-                # All other builtins retain their original raw-tail contracts.
-                platform = getattr(getattr(self.conn, 'session_info', None), 'os_alias', '')
-                invocation = self.REGISTRY.parse_leaf(
-                    spec, subcommand, remaining,
-                    literal_backslashes=platform in ('windows', 'win'))
-                return getattr(self, spec.handler)(invocation)
+            platform = getattr(getattr(self.conn, 'session_info', None), 'os_alias', '')
+            invocation = self.REGISTRY.parse_invocation(
+                name, arg, literal_backslashes=platform in ('windows', 'win'))
+            return getattr(self, self.REGISTRY.get(name).handler)(invocation)
         except ValueError as exc:
-            format = getattr(exc, 'output_format', OutputFormat.TEXT)
-            return iter(((0, render_result_payload(ResultEnvelope(
-                status='error', message=str(exc)).as_payload(), format)),))
-        handler = getattr(self, spec.handler)
-        if spec.dispatch_subcommand:
-            return handler(subcommand, remaining)
-        if subcommand is not None:
-            return handler(subcommand + ((' ' + remaining) if remaining else ''))
-        return handler(remaining)
+            output_format = getattr(exc, 'output_format', OutputFormat.TEXT)
+            envelope = ResultEnvelope(status='error', message=str(exc)).as_payload()
+            return iter((ResultChunk(0, render_result_payload(envelope, output_format), True,
+                                     terminal_authoritative=True, event=envelope),))
 
     def server_help(self, invocation):
         target = str(invocation.arguments.get('target') or '').strip()
@@ -242,8 +232,8 @@ class BuiltinCommandHandler:
     def script(self, invocation):
         yield from self.script_support.script(invocation)
 
-    def alias(self, subcommand, remaining=''):
-        yield from self.alias_support.execute_subcommand(subcommand, remaining)
+    def alias(self, invocation):
+        yield from self.alias_support.alias(invocation)
 
 
     def job(self, invocation):

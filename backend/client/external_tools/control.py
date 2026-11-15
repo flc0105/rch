@@ -214,6 +214,8 @@ class ExternalToolControl:
                     'success', 'status', 'returncode',
                     'stdout', 'stderr', 'duration_sec', 'run_id',
                 ) if key in outcome}
+                if payload.get('tool_id'):
+                    data['tool_id'] = payload['tool_id']
                 if not outcome.get('success'):
                     status = 'timed_out' if outcome.get('timed_out') else 'error'
                     return 0, ResultEnvelope(status=status, message=outcome.get('message') or 'One-shot failed', data=data).as_payload()
@@ -224,8 +226,12 @@ class ExternalToolControl:
                 commands.bind_execution(scope.command_id, scope.execution_context)
                 code, result = ExternalToolClientService(commands).execute_cli_payload(payload)
                 if isinstance(result, dict):
-                    return code, ResultEnvelope(status=result['status'], message=result['message']).as_payload()
-                return code, ResultEnvelope(status='success' if code else 'error', message=str(result)).as_payload()
+                    name = payload.get('exec_name')
+                    return code, ResultEnvelope(status=result['status'], message=result['message'],
+                                                data={'exec_name': name} if name else None).as_payload()
+                name = payload.get('exec_name')
+                return code, ResultEnvelope(status='success' if code else 'error', message=str(result),
+                                            data={'exec_name': name} if name else None).as_payload()
             else:
                 raise ValueError(f'Unsupported External Tool action: {action}')
 
@@ -237,15 +243,25 @@ class ExternalToolControl:
                 raise RuntimeError(data.get('message') or 'Package is not installed')
             if action == A.UNINSTALL_PACKAGE and data.get('installed') is not False:
                 raise RuntimeError(data.get('message') or 'Package is still installed')
-            if action == A.INSTALL_PACKAGE:
-                return 1, ResultEnvelope(message='Package installed successfully').as_payload()
-            if action == A.UNINSTALL_PACKAGE:
-                return 1, ResultEnvelope(message='Package uninstalled').as_payload()
+            if action in (A.INSTALL_PACKAGE, A.UNINSTALL_PACKAGE):
+                package_id = str(payload.get('package_id') or '').strip()
+                version = str(payload.get('version') or '').strip()
+                label = (f'{package_id} v{version}' if version and not version.lower().startswith('v')
+                         else f'{package_id} {version}'.strip())
+                installed = action == A.INSTALL_PACKAGE
+                message = f'{"Installed" if installed else "Uninstalled"} {label}'
+                facts = {'package_id': package_id, 'installed': installed}
+                if version:
+                    facts['version'] = version
+                return 1, ResultEnvelope(message=message, data=facts).as_payload()
             if action == A.CLEAR_PACKAGE_CACHE:
-                message = 'Package cache cleared' if data.get('cache_removed') else 'No cached package found'
-                return 1, ResultEnvelope(message=message).as_payload()
-            # Mutations have a verified completion, not a serialized state
-            # snapshot. Query/preview/log actions return only consumed data.
+                package_id = str(payload.get('package_id') or '').strip()
+                removed = bool(data.get('cache_removed'))
+                message = (f'Cleared package cache for {package_id}' if removed
+                           else f'No cached package for {package_id}')
+                return 1, ResultEnvelope(message=message, data={
+                    'package_id': package_id, 'cache_removed': removed,
+                }).as_payload()
             if action in (A.CREATE_INSTANCE, A.START_INSTANCE, A.STOP_INSTANCE,
                           A.RESTART_INSTANCE, A.REMOVE_INSTANCE, A.CLEAR_INSTANCE_LOGS):
                 if action == A.CREATE_INSTANCE and (data.get('status') != 'created' or data.get('running')):
@@ -254,16 +270,38 @@ class ExternalToolControl:
                     raise RuntimeError('Instance was not removed')
                 if action == A.CLEAR_INSTANCE_LOGS and data.get('cleared') is not True:
                     raise RuntimeError('Instance logs were not cleared')
-                names = {
-                    A.CREATE_INSTANCE: 'Instance created', A.START_INSTANCE: 'Instance started',
-                    A.STOP_INSTANCE: 'Instance stopped', A.RESTART_INSTANCE: 'Instance restarted',
-                    A.REMOVE_INSTANCE: 'Instance removed', A.CLEAR_INSTANCE_LOGS: 'Instance logs cleared',
-                }
-                message = names[action]
+                tool_id = str(payload.get('tool_id') or '').strip()
+                instance_id = str(payload.get('instance_id') or '').strip()
+                target = f'{tool_id}/{instance_id}'
+                label = {
+                    A.CREATE_INSTANCE: 'Created', A.START_INSTANCE: 'Started',
+                    A.STOP_INSTANCE: 'Stopped', A.RESTART_INSTANCE: 'Restarted',
+                    A.REMOVE_INSTANCE: 'Removed', A.CLEAR_INSTANCE_LOGS: 'Cleared logs for',
+                }[action]
+                details = {'tool_id': tool_id, 'instance_id': instance_id}
+                if action == A.CREATE_INSTANCE:
+                    details.update({'status': 'created', 'running': False})
+                elif action in (A.START_INSTANCE, A.RESTART_INSTANCE):
+                    details.update({'status': 'running', 'running': True})
+                    if data.get('pid') is not None:
+                        details['pid'] = data['pid']
+                elif action == A.STOP_INSTANCE:
+                    details.update({'status': 'stopped', 'running': False})
+                elif action == A.REMOVE_INSTANCE:
+                    details['removed'] = True
+                elif action == A.CLEAR_INSTANCE_LOGS:
+                    details['cleared'] = True
+                message = f'{label} {target}'
+                if action in (A.START_INSTANCE, A.RESTART_INSTANCE) and details.get('pid') is not None:
+                    message += f' (PID {details["pid"]})'
                 if action == A.START_INSTANCE and 'already running' in str(data.get('message') or '').lower():
-                    message = 'Instance already running'
-                return 1, ResultEnvelope(message=message).as_payload()
-            message = str(data.get('message') or '') if action == A.RUN_ONESHOT else ''
+                    message = f'{target} is already running'
+                return 1, ResultEnvelope(message=message, data=details).as_payload()
+            if action == A.READ_INSTANCE:
+                data = {'tool_id': payload.get('tool_id'), 'instance_id': payload.get('instance_id'), **data}
+            elif action == A.PREVIEW_INSTANCE:
+                data = {'tool_id': payload.get('tool_id'), **data}
+            message = f'Completed {payload.get("tool_id") or "external tool"}' if action == A.RUN_ONESHOT else ''
             return 1, ResultEnvelope(message=message, data=data).as_payload()
         except (CommandCancelledError, CommandTimeoutError):
             raise

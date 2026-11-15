@@ -43,8 +43,8 @@
 | 写法 | 作用 |
 |---|---|
 | `alias` / `alias list` | 显示针对当前 Client 平台已生效的 Alias；`--json` 返回结构化列表 |
-| `alias set [--platform PLATFORM] name = command` | 创建或替换 Alias；默认作用域为 `common`，也可指定 `win`、`mac`、`linux`、`ios` |
-| `alias unset [--platform PLATFORM] name` | 删除指定作用域的 Alias；不会自动删除其他平台同名定义 |
+| `alias set <name>|--name NAME [-p|--platform PLATFORM] = command` | 创建或替换 Alias；默认作用域为 `common`，也可指定 `win`、`mac`、`linux`、`ios` |
+| `alias unset <name>|--name NAME [-p|--platform PLATFORM]` | 删除指定作用域的 Alias；不会自动删除其他平台同名定义 |
 | `script list` | 查看 Server Script Library；可选 `--json` |
 | `script view <name>` / `script view --name NAME` | 查看 Server 脚本内容 |
 | `script exec <name> [--execution_mode MODE] [--output_mode MODE] -- --key VALUE ...` | 使用命令行选项执行 Server 脚本 |
