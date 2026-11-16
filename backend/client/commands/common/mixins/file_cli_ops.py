@@ -2,10 +2,11 @@ from client.commands.runtime.interrupts import cancel_policy
 
 from client.config import runtime_config
 from core.utils.decorator import desc
+from core.command_completion.models import CompletionSpec
 
 
 class CommandFileCliMixin:
-    @desc('Download a file from the client', group='transfer', output='stream')
+    @desc('Download a file from the client', group='transfer', output='stream', completion=CompletionSpec('filesystem', ('file', 'directory')))
     @cancel_policy('cooperative')
     def download(self, filename=''):
         """
