@@ -8,10 +8,10 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from client.bootstrap.client_app import Client
+from client.app.client import Client
 from client.config import runtime_config
-from client.bootstrap.connection_lifecycle import ClientConnectionLifecycle
-from client.bootstrap.receiver_worker import ClientReceiverWorker
+from client.connection.lifecycle import ClientConnectionLifecycle
+from client.connection.receiver_worker import ClientReceiverWorker
 from core.protocol.rchsocket import RCHSocket
 
 

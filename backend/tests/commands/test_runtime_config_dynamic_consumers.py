@@ -82,7 +82,7 @@ def test_set_reset_reset_all_changes_next_transfer_and_python_strategy(isolated_
 def test_dynamic_timeout_and_reconnect_read_in_same_process(isolated_config):
     from client.runtime.execution.scope import ExecutionRuntimeMixin
     from client.commands.common.mixins.execution_ops import CommandExecutionMixin
-    from client.bootstrap.client_app import Client
+    from client.app.client import Client
 
     svc = RuntimeConfigService()
     executor = object.__new__(CommandExecutionMixin)

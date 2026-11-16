@@ -2,7 +2,7 @@
 import pytest
 from types import SimpleNamespace
 
-from client.control_registration import register_control_domain
+from client.controls.registration import register_control_domain
 from client.runtime.control_dispatcher import ClientControlDispatcher
 from client.runtime.execution.runtime import ExecutionRuntime
 from client.runtime.execution.scope import ExecutionResultMixin

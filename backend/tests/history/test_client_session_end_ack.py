@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from client.bootstrap.receiver_worker import ClientReceiverWorker
+from client.connection.receiver_worker import ClientReceiverWorker
 from client.commands.common.mixins.session_ops import CommandSessionMixin
 from client.connection.server_connection import ServerConnection
 from client.runtime import client_util

@@ -8,7 +8,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from client.bootstrap.client_app import Client
+from client.app.client import Client
 
 
 def _manager(tmp_path, monkeypatch):

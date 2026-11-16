@@ -4,7 +4,7 @@ import json
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from client.bootstrap.connection_lifecycle import ClientConnectionLifecycle
+from client.connection.lifecycle import ClientConnectionLifecycle
 
 
 def test_handshake_logs_full_payload_via_existing_logger_once(capsys):

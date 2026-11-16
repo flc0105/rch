@@ -3,8 +3,8 @@ import socket
 import time
 import uuid
 
-from client.bootstrap.connection_lifecycle import ClientConnectionLifecycle
-from client.bootstrap.receiver_worker import ClientReceiverWorker
+from client.connection.lifecycle import ClientConnectionLifecycle
+from client.connection.receiver_worker import ClientReceiverWorker
 from client.config import runtime_config
 from client.config.runtime_config_reporter import log_runtime_config_overrides_if_any
 from client.config.feature_config import resolve_features

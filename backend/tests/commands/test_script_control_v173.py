@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from client.runtime.control_dispatcher import ClientControlDispatcher
-from client.control_registration import register_control_domain
+from client.controls.registration import register_control_domain
 from core.protocol.control import ControlDomain, ScriptAction
 from client.runtime.execution.runtime import ExecutionRuntime
 from client.scripts.manager import ScriptManager
@@ -72,7 +72,6 @@ def test_script_cli_and_web_use_one_payload_and_web_presentation_stays_runtime_o
     from server.application.command import builtin_command_support
     monkeypatch.setattr(builtin_command_support, 'SCRIPT_PATH', str(tmp_path))
     from server.application.command.builtin_command_support import ScriptBuiltinSupport
-    from server.application.web import script_api
     from server.application.web.script_api import WebScriptApi
     from server.application.web.command_execution_api import WebCommandExecutionApi
 

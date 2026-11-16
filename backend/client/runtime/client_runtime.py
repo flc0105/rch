@@ -1,6 +1,6 @@
 from client.runtime.command_variable_resolver import CommandVariableResolver
 from client.runtime.execution.runtime import ExecutionRuntime
-from client.control_registration import build_control_dispatcher
+from client.controls.registration import build_control_dispatcher
 from client.remote_files.manager import RemoteFilesManager
 from client.scripts.manager import ScriptManager
 from client.runtime.sdk.command import ScriptCommandAccess

@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from client.control_registration import build_control_dispatcher
+from client.controls.registration import build_control_dispatcher
 from client.runtime.control_dispatcher import ClientControlDispatcher
 from client.runtime.execution.runtime import ExecutionRuntime
 from client.remote_files.manager import RemoteFilesManager
@@ -97,7 +97,6 @@ def test_runtime_modules_do_not_import_concrete_control_actions():
 
 def test_remote_write_path_snapshot_and_cancelled_lock_wait(tmp_path, monkeypatch):
     import threading
-    import time
     from client.runtime.filesystem.mutation_guard import filesystem_mutation
     from client.runtime.execution.context import ExecutionContext, CommandCancelledError
     from client.runtime.execution.scope import ExecutionScope
@@ -137,7 +136,7 @@ def test_remote_write_path_snapshot_and_cancelled_lock_wait(tmp_path, monkeypatc
 
 
 def test_all_requested_policy_changes():
-    from core.protocol.control import ConfigurationAction, ProcessAction, WatchdogAction, execution_policy
+    from core.protocol.control import ConfigurationAction, ProcessAction, WatchdogAction
     expected = {
         ControlDomain.JOB: {JobAction.PS, JobAction.STATUS},
         ControlDomain.REMOTE_FILES: set(RemoteFilesAction),

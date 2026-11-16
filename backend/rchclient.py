@@ -5,7 +5,7 @@ import threading
 import time
 import traceback
 
-from client.bootstrap.client_app import Client
+from client.app.client import Client
 from client.config.config import SERVER_ADDR
 from client.config.feature_config import resolve_features
 from client.config import runtime_config

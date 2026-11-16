@@ -1,12 +1,11 @@
 """Control envelope and Remote File Browser use typed parameters end to end."""
-import json
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
 from client.runtime.control_dispatcher import ClientControlDispatcher
-from client.control_registration import register_remote_files
+from client.controls.registration import register_remote_files
 from client.runtime.execution.runtime import ExecutionRuntime
 from client.remote_files.manager import RemoteFilesManager
 

@@ -10,7 +10,7 @@ from client.watchdog.recovery_source import (
 from client.watchdog.remote_control_watchdog import WatchdogActionExecutor
 from client.watchdog.watchdog_process import ClientWatchdogWorker
 from client.watchdog.process_recovery_watchdog import without_process_recovery_watchdog_environment
-from client.bootstrap.connection_lifecycle import ClientConnectionLifecycle
+from client.connection.lifecycle import ClientConnectionLifecycle
 from server.application.connection.connection_service import WebConnectionService
 from server.application.preferences.notification_event_projector import NotificationEventProjector
 import json
