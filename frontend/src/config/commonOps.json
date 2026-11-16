@@ -1,0 +1,54 @@
+{
+  "whoami": {
+    "suggest": true,
+    "help": "Show the current user"
+  },
+  "hostname": {
+    "suggest": true,
+    "help": "Show the host name"
+  },
+  "mkdir": {
+    "suggest": true,
+    "trailingSpace": true,
+    "help": "Create a directory"
+  },
+  "rmdir": {
+    "suggest": true,
+    "trailingSpace": true,
+    "help": "Remove an empty directory",
+    "completion": {
+      "provider": "filesystem",
+      "kinds": ["directory"]
+    }
+  },
+  "cat": {
+    "completion": {
+      "provider": "filesystem",
+      "kinds": ["file", "directory"]
+    }
+  },
+  "file": {
+    "completion": {
+      "provider": "filesystem",
+      "kinds": ["file", "directory"]
+    }
+  },
+  "allow_file": {
+    "completion": {
+      "provider": "filesystem",
+      "kinds": ["file", "directory"]
+    }
+  },
+  "python3": {
+    "completion": {
+      "provider": "filesystem",
+      "kinds": ["file", "directory"]
+    }
+  },
+  "type": {
+    "completion": {
+      "provider": "filesystem",
+      "kinds": ["file", "directory"]
+    }
+  }
+}
