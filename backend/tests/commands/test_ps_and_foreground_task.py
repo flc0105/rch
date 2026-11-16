@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from client.commands.arguments.registry import ArgumentCommandRegistry
+from client.commands.acmd.registry import ArgumentCommandRegistry
 from client.runtime.execution.process.process_service import ProcessService
 from client.commands.platform.linux import LinuxCommands
 from client.commands.platform.mac import MacCommands

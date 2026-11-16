@@ -1,4 +1,4 @@
-from client.commands.arguments.decorators import argument_command
+from client.commands.acmd.decorators import argument_command
 from client.commands.runtime.interrupts import timeout
 from client.commands.common.commands import CommonCommands
 from client.commands.platform.services.mac.automation_service import MacAutomationService

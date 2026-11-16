@@ -1,4 +1,4 @@
-from client.commands.arguments.decorators import argument_command
+from client.commands.acmd.decorators import argument_command
 from client.commands.common.commands import CommonCommands
 from client.commands.platform.specs.common import NETSTAT_ARGUMENT_SPEC, PS_ARGUMENT_SPEC
 from client.commands.platform.services.linux.system_service import LinuxSystemService

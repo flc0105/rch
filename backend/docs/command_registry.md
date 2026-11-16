@@ -85,7 +85,7 @@ class CommandDiagnosticsMixin:
 例如定义一个只回显参数、便于验证接入的扩展示意：
 
 ```python
-from client.commands.arguments.decorators import argument_command
+from client.commands.acmd.decorators import argument_command
 from core.commands.argument_models import ArgumentCommandSpec, ArgumentOptionSpec
 
 DIAG_ARGUMENT_SPEC = ArgumentCommandSpec(
@@ -104,6 +104,7 @@ DIAG_ARGUMENT_SPEC = ArgumentCommandSpec(
     ],
     examples=['acmd diag_example my-service'],
 )
+
 
 # 定义在真正由当前平台命令类继承的方法集合中：
 @argument_command('diag_example', spec=DIAG_ARGUMENT_SPEC)

@@ -1,4 +1,4 @@
-from client.commands.arguments.registry import ArgumentCommandRegistry
+from client.commands.acmd.registry import ArgumentCommandRegistry
 from core.device.local_identity import get_local_identity
 
 

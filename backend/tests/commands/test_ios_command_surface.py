@@ -1,7 +1,7 @@
 """iOS Command/ACMD registration follows the Pythonista capability boundary."""
 
 from client.commands.platform.ios import iOSCommands
-from client.commands.arguments.registry import ArgumentCommandRegistry
+from client.commands.acmd.registry import ArgumentCommandRegistry
 
 
 class DummyConnection:

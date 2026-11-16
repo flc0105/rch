@@ -2,7 +2,7 @@ import inspect
 from typing import Any, Callable
 
 from core.commands.argument_errors import ArgumentCommandValidationError
-from client.commands.arguments.help_builder import ArgumentCommandHelpBuilder
+from client.commands.acmd.help import ArgumentCommandHelpBuilder
 from core.commands.argument_validator import ArgumentCommandValidator
 
 

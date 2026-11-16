@@ -29,7 +29,7 @@ class CommandIntrospectionMixin:
             if registry is not None:
                 return registry
 
-        from client.commands.arguments.registry import ArgumentCommandRegistry
+        from client.commands.acmd.registry import ArgumentCommandRegistry
         return ArgumentCommandRegistry(self)
 
     def _get_argument_command_manifest_payload(self):

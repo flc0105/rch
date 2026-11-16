@@ -1,7 +1,7 @@
 # client/commands/mixins/process_ops.py
 
 from client.runtime.execution.process.process_service import ProcessService
-from client.commands.arguments.decorators import argument_command
+from client.commands.acmd.decorators import argument_command
 from client.commands.platform.specs.common import KILL_ARGUMENT_SPEC
 from core.utils.command_output import StructuredCommandResult, render_structured_result
 

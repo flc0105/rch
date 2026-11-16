@@ -5,7 +5,7 @@ import json
 
 import pytest
 
-from client.commands.arguments.registry import ArgumentCommandRegistry
+from client.commands.acmd.registry import ArgumentCommandRegistry
 from client.commands.platform.mac import MacCommands
 from client.commands.platform.linux import LinuxCommands
 from client.runtime.sdk import launchd

@@ -28,7 +28,7 @@ def test_completion_spec_is_serialized_once_for_shell_and_acmd_arguments():
     }
 
     from core.commands.argument_models import ArgumentCommandSpec, ArgumentOptionSpec
-    from client.commands.arguments.registry import ArgumentCommandRegistry
+    from client.commands.acmd.registry import ArgumentCommandRegistry
 
     class Commands:
         def image_info(self, args, payload=None):
