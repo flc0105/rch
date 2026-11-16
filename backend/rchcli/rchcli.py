@@ -108,7 +108,10 @@ class RchApi:
         data = self.request('POST', path, {
             'raw_input': raw_input,
             'cursor_position': sum(2 if ord(char) > 0xFFFF else 1 for char in raw_input) if cursor_position is None else cursor_position,
-            'max_results': 30,
+            # The CLI filters full insert_text after receiving candidates.
+            # Request the complete set so a busy directory cannot page out
+            # matches before the typed path fragment is applied.
+            'max_results': 0,
             **({'completion': completion} if isinstance(completion, dict) else {}),
         })
         return data.get('items', []) if isinstance(data, dict) else []
@@ -416,7 +419,7 @@ class RemoteConsole:
         seen = set()
 
         def add(candidate):
-            value = str(candidate.get('insert_text') or candidate.get('name') or '').strip()
+            value = str(candidate.get('insert_text') or candidate.get('name') or '').lstrip()
             metadata = candidate.get('metadata') or {}
             is_path = (
                 candidate.get('kind') in ('directory', 'file', 'path')
@@ -534,20 +537,15 @@ class RemoteConsole:
                 end = readline.get_endidx()
                 if end != len(raw):
                     return None
-                # Server insert_text contains the whole command. Readline/libedit
-                # replaces only its active span, which may begin after `download `.
-                # Return that span's replacement, not the command prefix twice.
-                try:
-                    begin = readline.get_begidx()
-                except AttributeError:
-                    begin = 0
-                if not isinstance(begin, int) or begin < 0 or begin > end:
-                    begin = 0
-                if text and raw[begin:end] != text and raw.endswith(text):
-                    # Some libedit builds report different word boundaries.
+                # Completion candidates hold the full command; readline replaces
+                # only the active word. Keep the actual replacement span in sync
+                # with the fragment reported by libedit (which may have stale indices).
+                if text and raw.endswith(text):
                     begin = end - len(text)
-                elif not text and begin == 0 and raw.endswith((' ', '\t')):
-                    begin = end  # Empty active word after an argument separator.
+                elif not text and not raw.endswith((' ', '\t')):
+                    begin = 0
+                else:
+                    begin = max(raw.rfind(' ', 0, end), raw.rfind('\t', 0, end)) + 1
                 prefix = raw[:begin]
                 try:
                     for item in self.completion_candidates(raw):
@@ -555,10 +553,15 @@ class RemoteConsole:
                         if full.startswith(prefix):
                             cache.append(full[begin:])
                 except RchCliError:
-                    return None
+                    pass
+                if not cache:
+                    # In libedit an empty generator may trigger local filename
+                    # completion; return an empty replacement instead.
+                    cache.append('')
             return cache[state] if state < len(cache) else None
 
-        readline.set_completer_delims('')
+        # Slash and dot remain part of a remote path, not word boundaries.
+        readline.set_completer_delims(' \t\n')
         readline.set_completer(complete)
         backend = str(getattr(readline, 'backend', '') or '').lower()
         if backend in ('editline', 'libedit') or (not backend and 'libedit' in (readline.__doc__ or '').lower()):

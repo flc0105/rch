@@ -202,7 +202,7 @@ Client 与 Server 共用 `CommandLineResolver` 处理 Shell-like Token、原文 
 
 对于 `xt exec`，输入 `xt exec ` 可补全 `list`、`info`、`which` 与当前目标平台 Catalog 提供的公开 Exec 名称；输入 `xt exec info ` 或 `xt exec which ` 可补全对应的 Exec 名称。`xt package` 提供 list/install/uninstall 与 Package 名称候选，`xt module list` 提供 Package 候选，`xt instance` 提供 create/list/start/stop/restart/status/logs 与 Daemon Module 候选。已输入 Exec 名称后，后续原生参数不由 XT 补全器接管。
 
-Server 注册表 `server_builtin_registry.py` 是一级 Builtin 与 `alias/job/script/xt/history/httpctl` 子命令唯一的静态定义来源。`RegisteredServerSubcommandCompletionProvider` 从该表生成 `script list/view/exec/run`、`job list/start/logs/ps/status/stop/stop-all` 等结构；动态 `script exec <path>`、`job start <name>` 仍由专门 Provider 查询当前 Server Catalog。前端 `CommandInputBar` 对任何命令都可查询统一 Server 补全服务；服务端按 Provider 选择是否生成候选，脚本仍由 Metadata 平台信息过滤。`help` 的目标名称与子命令由同一 Server Builtin Registry 生成。
+Server 注册表 `server_builtin_registry.py` 是一级 Builtin 与 `alias/job/script/xt/history/httpctl` 子命令唯一的静态定义来源。统一的递归遍历向普通 Builtin、XT 和 Help 提供静态路径，XT Provider 仅处理 Client 运行时安装、模块、实例及 Exec 等动态候选。Server 本机路径补全依命令节点上的 `CompletionSpec` 选择文件或目录候选；`upload` 的 RawTail 声明两种类型。`RegisteredServerSubcommandCompletionProvider` 从该表生成 `script list/view/exec`、`job list/start/logs/ps/status/stop/stop-all` 等结构；动态 `script exec <path>`、`job start <name>` 仍由专门 Provider 查询当前 Server Catalog。前端 `CommandInputBar` 对任何命令都可查询统一 Server 补全服务；服务端按 Provider 选择是否生成候选，脚本仍由 Metadata 平台信息过滤。`help` 的目标名称与子命令由同一 Server Builtin Registry 生成。
 
 ### v34.6 顶层命令与平台筛选边界
 

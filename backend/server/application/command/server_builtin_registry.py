@@ -5,6 +5,7 @@ preserves raw tails for alias templates, shell-like arguments and structured JSO
 Unknown commands are deliberately *not* claimed: they can reach the Client Shell.
 """
 from dataclasses import dataclass
+from core.command_completion.models import CompletionSpec
 from core.commands.argument_errors import ArgumentCommandValidationError
 from core.commands.argument_models import ArgumentCommandSpec, ArgumentOptionSpec
 from core.commands.argument_parser import parse_argument_text
@@ -26,6 +27,7 @@ class SubcommandSpec:
     subcommands: tuple['SubcommandSpec', ...] = ()
     default: str = ''
     fallback_subcommand: str = ''
+    completion: CompletionSpec | None = None
 
     def child(self, name):
         return next((item for item in self.subcommands if name == item.name or name in item.aliases), None)
@@ -45,26 +47,27 @@ class CommandSpec:
     raw_tail: bool = False
     fallback_subcommand: str = ''
     independent: bool = False
+    completion: CompletionSpec | None = None
 
     def child(self, name):
         return next((item for item in self.subcommands if name == item.name or name in item.aliases), None)
 
 
-def command(name, description, handler=None, children=(), default='', group='server', expects_arguments=False, argument_spec=None, raw_tail=False, fallback_subcommand='', independent=False):
+def command(name, description, handler=None, children=(), default='', group='server', expects_arguments=False, argument_spec=None, raw_tail=False, fallback_subcommand='', independent=False, completion=None):
     return CommandSpec(name, description, handler or name,
                        tuple(item if isinstance(item, SubcommandSpec) else SubcommandSpec(*item)
                              for item in children),
                        default, True, group, expects_arguments,
-                       argument_spec, raw_tail, fallback_subcommand, independent)
+                       argument_spec, raw_tail, fallback_subcommand, independent, completion)
 
 
 
-def _option(name, *, positional=None, required=False, flag=False, alias='', arity=1, repeatable=False, value_type='str'):
+def _option(name, *, positional=None, required=False, flag=False, alias='', arity=1, repeatable=False, value_type='str', completion=None):
     return ArgumentOptionSpec(name=name, option_type='flag' if flag else value_type,
                               default=False if flag else ([] if repeatable else None),
                               required=required, positional_index=positional,
                               allow_empty=False, alias=alias, arity=arity,
-                              repeatable=repeatable)
+                              repeatable=repeatable, completion=completion)
 
 
 def _arguments(name, *options, json=True, trailing_named_arguments=None, assignment_tail=None):
@@ -74,10 +77,10 @@ def _arguments(name, *options, json=True, trailing_named_arguments=None, assignm
 
 
 def _structured_child(command_name, action, description, usage, *options,
-                      json=True, trailing_named_arguments=None, assignment_tail=None, aliases=(), independent=False):
+                      json=True, trailing_named_arguments=None, assignment_tail=None, aliases=(), independent=False, completion=None):
     return SubcommandSpec(action, description, usage, argument_spec=_arguments(
         f'{command_name} {action}', *options, json=json,
-        trailing_named_arguments=trailing_named_arguments, assignment_tail=assignment_tail), aliases=tuple(aliases), independent=independent)
+        trailing_named_arguments=trailing_named_arguments, assignment_tail=assignment_tail), aliases=tuple(aliases), independent=independent, completion=completion)
 
 def _xt_group(name, description, *children, default='', fallback_subcommand=''):
     return SubcommandSpec(name, description, subcommands=tuple(children),
@@ -85,10 +88,10 @@ def _xt_group(name, description, *children, default='', fallback_subcommand=''):
 
 
 def _xt_leaf(path, action, description, usage, *options, json=True,
-             trailing_named_arguments=None, independent=False):
+             trailing_named_arguments=None, independent=False, completion=None):
     return _structured_child(f'xt {path}', action, description, usage, *options,
                              json=json, trailing_named_arguments=trailing_named_arguments,
-                             independent=independent)
+                             independent=independent, completion=completion)
 
 
 def _xt_instance_target(action, description, *, json=False, follow=False, params=False):
@@ -118,7 +121,7 @@ SERVER_COMMAND_SPECS = (
     command('watchdog', 'Show watchdog runtime status', expects_arguments=True, group='runtime',
              argument_spec=_arguments('watchdog'), independent=True),
     command('upload', 'Upload a local file to the Client', expects_arguments=True,
-             raw_tail=True),
+             raw_tail=True, completion=CompletionSpec('filesystem', ('file', 'directory'))),
     command('script', 'List, inspect and run Server scripts', children=(
         _structured_child('script', 'list', 'List available scripts', 'script list [--json]', independent=True),
         _structured_child('script', 'view', 'Read script source on the Server',
@@ -168,7 +171,8 @@ SERVER_COMMAND_SPECS = (
     ), default='list'),
     command('gopin', 'List or jump to a saved path', children=(
         _structured_child('gopin', 'list', 'List saved paths', 'gopin [list] [--json]', independent=True),
-        SubcommandSpec('go', 'Jump to a saved path', 'gopin [go] <saved path name>', raw_tail=True),
+        SubcommandSpec('go', 'Jump to a saved path', 'gopin [go] <saved path name>', raw_tail=True,
+                       completion=CompletionSpec('gopin', ('quick_jump',))),
     ), default='list', fallback_subcommand='go', expects_arguments=True,
             ),
     command('rtt', 'Show current heartbeat RTT', argument_spec=_arguments('rtt'), independent=True),
@@ -193,7 +197,8 @@ SERVER_COMMAND_SPECS = (
             _xt_leaf('exec', 'which', 'Locate an installed executable', 'xt exec which <name>|--name NAME',
                      _option('name', positional=0, required=True), json=False, independent=True),
             SubcommandSpec('run', 'Run an installed external command with native arguments',
-                           'xt exec run <exec-name> [--] <native args...> (short: xt exec <exec-name> ...)', raw_tail=True),
+                           'xt exec run <exec-name> [--] <native args...> (short: xt exec <exec-name> ...)',
+                           raw_tail=True, completion=CompletionSpec('xt', ('exec',))),
             _xt_leaf('exec', 'help', 'Show exec command usage', 'xt exec help', json=False),
             default='help', fallback_subcommand='run'),
         _xt_group('package', 'Manage external tool packages',
@@ -322,39 +327,56 @@ class ServerCommandRegistry:
         return BuiltinInvocation(spec.name, subcommand or spec.name, args,
                                  OutputFormat.JSON if args.get('json') else OutputFormat.TEXT)
 
-    def _public_paths(self, node, prefix=()):
+    def _iter_public_nodes(self, node, prefix=()):
+        """Walk public command nodes once, including nested groups and leaves."""
         for child in node.subcommands:
             if child.visibility != 'public':
                 continue
             path = (*prefix, child.name)
-            if child.subcommands:
-                yield from self._public_paths(child, path)
-            else:
-                yield path, child
+            yield path, child
+            yield from self._iter_public_nodes(child, path)
 
-    def completion_paths(self, name):
-        """The one source of static command completion, including nested leaves."""
+    def iter_public_nodes(self, name):
+        spec = self.get(name)
+        return self._iter_public_nodes(spec) if spec else iter(())
+
+    def _public_paths(self, node, prefix=()):
+        return ((path, child) for path, child in self._iter_public_nodes(node, prefix)
+                if not child.subcommands)
+
+    def child_names(self, command_path):
+        parts = str(command_path or '').strip().split()
+        node = self.get(parts[0]) if parts else None
+        for part in parts[1:]:
+            node = node.child(part) if node else None
+        return tuple(child.name for child in node.subcommands if child.visibility == 'public') if node else ()
+
+    def static_completion_candidates(self, name):
+        """Return complete insertion values and their declaring Registry nodes."""
         spec = self.get(name)
         if spec is None:
             return []
-        def walk(node, prefix):
-            for child in node.subcommands:
-                if child.subcommands:
-                    yield from walk(child, (*prefix, child.name))
-                elif child.visibility == 'public' and child.name != 'help':
-                    suffix = ' ' if (child.argument_spec and child.name != 'list' and any(
-                            opt.is_positional for opt in child.argument_spec.options)) else ''
-                    full = ' '.join((name, *prefix, child.name))
-                    yield full + suffix, child.description
-                    if child.name == 'list' and child.argument_spec:
-                        for opt in child.argument_spec.options:
-                            if opt.is_flag and opt.name != 'json':
-                                yield f'{full} --{opt.name}', child.description
-            if node.fallback_subcommand:
-                leaf = node.child(node.fallback_subcommand)
-                if leaf is not None:
-                    yield ' '.join((name, *prefix)) + ' ', leaf.description
-        return list(walk(spec, ()))
+        result = []
+        for path, node in self.iter_public_nodes(name):
+            full = ' '.join((name, *path))
+            takes_value = (node.raw_tail or bool(node.completion)
+                           or bool(node.argument_spec and any(
+                               option.is_positional for option in node.argument_spec.options)))
+            result.append((full + (' ' if node.subcommands or takes_value else ''), node))
+            if node.name == 'list' and node.argument_spec:
+                for option in node.argument_spec.options:
+                    if option.is_flag and option.name != 'json':
+                        result.append((f'{full} --{option.name}', node))
+        if spec.fallback_subcommand:
+            leaf = spec.child(spec.fallback_subcommand)
+            if leaf:
+                result.append((name + ' ', leaf))
+        return result
+
+    def completion_paths(self, name):
+        """Public leaf insertions, used by command/help catalogs."""
+        return [(text, node.description) for text, node in self.static_completion_candidates(name)
+                if not node.subcommands or node.fallback_subcommand or text == name + ' ']
 
     def usage(self, name):
         spec = self.get(name)

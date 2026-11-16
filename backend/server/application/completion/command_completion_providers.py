@@ -235,13 +235,11 @@ class RegisteredServerSubcommandCompletionProvider(CommandCompletionProvider):
         if not spec or not spec.subcommands:
             return []
         return [CompletionCandidate(
-            title=f'{spec.name} {sub.name}',
-            insert_text=f'{spec.name} {sub.name}' + (' ' if sub.name in
-                {'exec', 'run', 'view', 'start', 'status', 'stop', 'set', 'unset', 'info', 'which'} else ''),
-            description=sub.description,
+            title=value, insert_text=value, description=node.description,
             source=self.source, group=spec.group, kind='server_subcommand',
-            name=sub.name, priority=18 + i,
-        ) for i, sub in enumerate(spec.subcommands) if sub.visibility == 'public']
+            name=node.name, priority=18 + i,
+        ) for i, (value, node) in enumerate(
+            SERVER_COMMAND_REGISTRY.static_completion_candidates(spec.name))]
 
 
 class HelpCommandCompletionProvider(CommandCompletionProvider):
@@ -254,8 +252,8 @@ class HelpCommandCompletionProvider(CommandCompletionProvider):
         targets = [('server', 'Show Server commands'), ('client', 'Show Client commands')]
         for spec in SERVER_COMMAND_REGISTRY._commands.values():
             targets.append((spec.name, spec.description))
-            targets.extend((f'{spec.name} {child.name}', child.description)
-                           for child in spec.subcommands if child.visibility == 'public')
+            targets.extend((' '.join((spec.name, *path)), child.description)
+                           for path, child in SERVER_COMMAND_REGISTRY.iter_public_nodes(spec.name))
         return [CompletionCandidate(
             title=f'help {name}', insert_text=f'help {name}', description=description,
             source=self.source, group=self.group, kind='server_help',
@@ -327,11 +325,10 @@ class ExternalToolCommandCompletionProvider(ServerCompletionSessionMixin, Comman
     def complete(self, context: CompletionContext) -> list[CompletionCandidate]:
         words = str(context.argument_text or '').strip().lower().split()
         if not words:
-            return self._build_subcommand_candidates()
+            return []
         if words[0] == 'exec':
             if len(words) == 1:
-                return [c for c in self._build_subcommand_candidates()
-                        if c.insert_text.startswith('xt exec ')] + self._build_exec_candidates(context)
+                return self._build_exec_candidates(context)
             if words[1] in ('list', 'help'):
                 return []
             if words[1] in ('info', 'which', 'run'):
@@ -340,14 +337,12 @@ class ExternalToolCommandCompletionProvider(ServerCompletionSessionMixin, Comman
         if words[0] not in ('package', 'module', 'instance'):
             return []
         if len(words) == 1:
-            return [c for c in self._build_subcommand_candidates()
-                    if c.insert_text.startswith('xt ' + words[0])]
+            return []
         if words[0] == 'package' and words[1] in ('install', 'uninstall') and len(words) <= 4:
             return self._build_package_candidates(context, f'xt package {words[1]} ', action=words[1])
         if words[0] == 'module' and words[1] == 'list' and len(words) <= 3:
             return self._build_package_candidates(context, 'xt module list ')
-        instance_actions = {path.split()[2] for path, _ in SERVER_COMMAND_REGISTRY.completion_paths('xt')
-                            if path.startswith('xt instance ') and len(path.split()) == 3}
+        instance_actions = SERVER_COMMAND_REGISTRY.child_names('xt instance')
         if words[0] == 'instance' and words[1] in instance_actions:
             if words[1] == 'create' and len(words) <= 4:
                 return self._build_module_candidates(context, 'xt instance create ')
@@ -488,13 +483,6 @@ class ExternalToolCommandCompletionProvider(ServerCompletionSessionMixin, Comman
                 'external_tool_instance'))
         return result
 
-    def _build_subcommand_candidates(self) -> list[CompletionCandidate]:
-        return [CompletionCandidate(
-            title=insert_text, insert_text=insert_text, description=description,
-            source=self.source, group=self.group, kind='external_tool',
-            name=insert_text.replace('xt ', '').strip() or 'xt', priority=20,
-        ) for insert_text, description in SERVER_COMMAND_REGISTRY.completion_paths('xt')]
-
     def _build_exec_candidates(self, context: CompletionContext) -> list[CompletionCandidate]:
         try:
             targets = self.external_tool_catalog_service.list_exec_targets(
@@ -531,39 +519,55 @@ class ExternalToolCommandCompletionProvider(ServerCompletionSessionMixin, Comman
 
 
 class ServerFileSystemCompletionProvider(CommandCompletionProvider):
-    """Complete Server-local paths for registered commands.
+    """Resolve Server-local path candidates from declared command CompletionSpec."""
 
-    Command names and directory-only restrictions belong to the caller's
-    registration, not the filesystem enumeration implementation.
-    """
     source = 'server_filesystem'
     group = 'filesystem'
 
-    def __init__(self, command_names=(), *, directory_commands=()):
-        self.command_names = tuple(command_names)
-        self.directory_commands = frozenset(directory_commands)
-        if not self.directory_commands.issubset(self.command_names):
-            raise ValueError('Directory commands must be registered for Server path completion')
+    def __init__(self, registry=SERVER_COMMAND_REGISTRY):
+        self.command_registry = registry
+
+    def _path_query(self, context):
+        spec = self.command_registry.get(context.command_name)
+        if spec is None:
+            return None
+        try:
+            _, action, tail = self.command_registry.parse(context.command_name, context.argument_text)
+            node = self.command_registry._leaf(spec, action)
+        except (ValueError, TypeError, AttributeError):
+            return None
+        completion = node.completion
+        if completion is None or completion.provider != 'filesystem' or not node.raw_tail:
+            return None
+        return tail, completion.kinds
+
+    def supports(self, context: CompletionContext) -> bool:
+        return self._path_query(context) is not None
 
     def complete(self, context):
-        if not self.supports(context):
+        query = self._path_query(context)
+        if query is None:
             return []
-        # Local path commands consume the raw path tail; spaces are not shell-tokenized.
-        prefix = str(context.argument_text or '')
+        prefix, kinds = query
         directory, fragment = os.path.split(prefix)
         lookup = os.path.expanduser(directory or '.')
-        directories_only = context.command_name in self.directory_commands
+        allow_files = 'file' in kinds
+        allow_directories = 'directory' in kinds
         with os.scandir(lookup) as entries:
             matches = [(entry.name, entry.is_dir()) for entry in entries
                        if entry.name.startswith(fragment)
-                       and (entry.is_dir() or (not directories_only and entry.is_file()))]
+                       and ((entry.is_dir() and allow_directories) or
+                            (entry.is_file() and allow_files))]
         result = []
         matches.sort(key=lambda item: (not item[1], item[0].casefold()))
         if context.max_results > 0:
             matches = matches[:context.max_results]
+        # The insert text remains a complete command for both Web and RCHCLI.
+        prefix_command = (context.raw_input[:len(context.raw_input) - len(prefix)]
+                          if context.raw_input else f'{context.command_name} ')
         for name, is_dir in matches:
             path = os.path.join(directory, name)
-            value = f'{context.command_name} {path}'
+            value = prefix_command + path
             result.append(CompletionCandidate(title=value, insert_text=value,
                 source=self.source, group=self.group, kind='directory' if is_dir else 'file',
                 name=name, priority=10 if is_dir else 20,

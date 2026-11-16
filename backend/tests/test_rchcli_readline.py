@@ -222,6 +222,125 @@ class ReadlineSetupTests(unittest.TestCase):
         self.assertEqual(rd.completer('', 0), 'clipboard_monitor')
         restore()
 
+    def test_mac_directory_fragment_with_stale_word_boundary(self):
+        rc, rd, restore = self._setup('editline')
+        rc.completion_candidates = lambda raw: [
+            {'insert_text': 'cd /Users/flc/Desktop', 'kind': 'directory'}]
+        rd.buffer = 'cd /Users/flc/De'
+        rd.begin_index = 0  # libedit sometimes reports the whole line.
+        self.assertEqual(rd.completer('De', 0), 'Desktop/')
+        self.assertEqual(rd.buffer[:-2] + rd.completer('De', 0),
+                         'cd /Users/flc/Desktop/')
+        self.assertEqual(rd.delims, ' \t\n')
+        restore()
+
+    def test_mac_tab_finishes_desktop_after_more_than_thirty_hidden_dirs(self):
+        # Exercise the RCHCLI Tab callback against the actual Client completion
+        # service rather than a pre-filtered fake response.
+        from types import SimpleNamespace
+        from client.commands.common.services.completion.command_completion_service import (
+            ClientCommandCompletionService,
+        )
+        from core.command_completion.models import CompletionSpec
+        from core.utils.decorator import desc
+
+        class Commands:
+            path_resolver = SimpleNamespace(require_existing_directory_from_arg=lambda path: path)
+            file_system_service = SimpleNamespace(list_child_paths=lambda path: {
+                'entries': [
+                    {'name': name, 'path': path + '/' + name, 'is_dir': True}
+                    for name in [*(f'.hidden-{i:02}' for i in range(45)), 'Desktop']
+                ]
+            })
+
+            @desc('Change directory', completion=CompletionSpec('filesystem', ('directory',)))
+            def cd(self, path=''):
+                return path
+
+        rc, rd, restore = self._setup('editline')
+        service = ClientCommandCompletionService(Commands())
+        rc.api.completions = lambda client_id, raw: service.complete({
+            'raw_input': raw, 'cursor_position': len(raw), 'max_results': 30,
+        })['items']
+        rd.buffer = 'cd /Users/flc/Des'
+        rd.begin_index = len('cd /Users/flc/')
+        self.assertEqual(rd.completer('Des', 0), 'Desktop/')
+        self.assertIsNone(rd.completer('Des', 1))
+        restore()
+
+    def test_mac_path_completion_is_not_truncated_before_cli_prefix_filter(self):
+        # Reproduce the real paged HTTP completion API used by RCHCLI:
+        # an old Client enumerates hidden folders before Desktop, and its
+        # positive max_results limit discards Desktop before CLI sees it.
+        rc, rd, restore = self._setup('editline')
+        api = cli.RchApi('http://localhost:8085', 'test-token')
+        paths = [f'cd /Users/flc/.hidden-{number:02}' for number in range(45)]
+        paths += ['cd /Users/flc/Desktop', 'cd /Users/flc/Developer']
+        calls = []
+
+        def request(method, path, payload=None, extra_headers=None, **kwargs):
+            if path.endswith('/command-candidates'):
+                return [{'insert_text': 'cd', 'kind': 'client_command'}]
+            if path.endswith('/command-completions'):
+                calls.append(payload)
+                limit = payload['max_results']
+                page = paths[:limit] if limit > 0 else paths
+                return {'items': [{'insert_text': item, 'kind': 'directory'} for item in page]}
+            self.fail(f'Unexpected API path {path}')
+
+        api.request = request
+        rc.api = api
+        try:
+            for fragment in ('De', 'Des', 'Deskto'):
+                rd.buffer = 'cd /Users/flc/' + fragment
+                rd.begin_index = len('cd ')
+                self.assertEqual(rd.completer('/Users/flc/' + fragment, 0),
+                                 '/Users/flc/Desktop/')
+                self.assertIsNone(rd.completer('/Users/flc/' + fragment, 2))
+            # Directory browsing still supplies the hidden folders.
+            rd.buffer = 'cd /Users/flc/.'
+            self.assertEqual(rd.completer('/Users/flc/.', 0),
+                             '/Users/flc/.hidden-00/')
+            self.assertTrue(calls)
+            self.assertTrue(all(call['max_results'] == 0 for call in calls))
+        finally:
+            restore()
+
+    def test_mac_directory_slash_does_not_insert_dot(self):
+        rc, rd, restore = self._setup('editline')
+        rc.completion_candidates = lambda raw: [
+            {'insert_text': 'cd /Users/flc/Desktop', 'kind': 'directory'},
+            {'insert_text': 'cd /Users/flc/.config', 'kind': 'directory'}]
+        rd.buffer = 'cd /Users/flc/'
+        self.assertEqual(rd.completer('', 0), 'cd /Users/flc/Desktop/')
+        self.assertEqual(rd.completer('', 1), 'cd /Users/flc/.config/')
+        restore()
+
+    def test_mac_xt_prefix_recovers_subcommand_not_runtime_value(self):
+        rc, rd, restore = self._setup('editline')
+        rc.completion_candidates = lambda raw: [
+            {'insert_text': 'xt instance create', 'kind': 'server_subcommand'}]
+        rd.buffer = 'xt instance cre'
+        rd.begin_index = 0
+        self.assertEqual(rd.completer('cre', 0), 'create')
+        self.assertIsNone(rd.completer('cre', 1))
+        restore()
+
+    def test_empty_remote_completion_does_not_offer_local_path(self):
+        rc, rd, restore = self._setup('editline')
+        rc.completion_candidates = lambda raw: []
+        rd.buffer = 'cd /no-such-remote-entry'
+        self.assertEqual(rd.completer('entry', 0), '')
+        self.assertIsNone(rd.completer('entry', 1))
+        restore()
+
+    def test_remote_completion_error_cannot_offer_local_path(self):
+        rc, rd, restore = self._setup('editline')
+        rc.completion_candidates = lambda raw: (_ for _ in ()).throw(cli.RchCliError('offline'))
+        rd.buffer = 'cd /does-not-exist'
+        self.assertEqual(rd.completer('exist', 0), '')
+        restore()
+
     def test_mid_line_completion_does_not_modify_buffer(self):
         rc, rd, restore = self._setup('editline')
         rd.buffer = 'download /Use --json'

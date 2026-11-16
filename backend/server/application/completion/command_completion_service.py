@@ -50,7 +50,7 @@ class ServerCommandCompletionService:
                 external_tool_catalog_service=external_tool_catalog_service,
                 client_lifecycle_runtime=external_tool_client_runtime,
             ),
-            ServerFileSystemCompletionProvider(command_names=('upload',)),
+            ServerFileSystemCompletionProvider(),
             RemoteClientCommandCompletionProvider(
                 server=server, remote_execution_service=remote_execution_service,
             ),

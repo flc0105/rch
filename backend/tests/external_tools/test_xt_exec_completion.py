@@ -46,13 +46,14 @@ def test_xt_exec_nested_subcommands_and_exec_names():
         context = parser.parse(text, metadata={'client_id': 'client1'})
         return [item.to_dict()['name'] for item in provider.complete(context)]
 
-    assert names('xt ')[:4] == [
-        'xt exec list', 'xt exec info', 'xt exec which', 'xt exec run',
-    ]
-    assert names('xt exec ') == [
-        'xt exec list', 'xt exec info', 'xt exec which', 'xt exec run', 'xt exec',
-        'xt exec ffmpeg',
-    ]
+    # XT itself supplies only runtime targets; static paths belong to the Registry.
+    assert names('xt ') == []
+    assert names('xt instance cre') == []
+    static = [name for name, _ in SERVER_COMMAND_REGISTRY.completion_paths('xt')]
+    assert 'xt instance create ' in static
+    assert 'xt exec info ' in static
+    assert 'xt exec run ' in static
+    assert names('xt exec ') == ['xt exec ffmpeg']
     assert names('xt exec info ') == ['xt exec info ffmpeg', 'xt exec info python']
     assert names('xt exec which p') == ['xt exec which ffmpeg']
     assert names('xt exec f')[-1:] == ['xt exec ffmpeg']
