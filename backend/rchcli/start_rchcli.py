@@ -3,7 +3,7 @@ import sys
 import runpy
 
 RCH_HTTP_URL = 'http://127.0.0.1:8085'
-RCH_ADMIN_TOKEN = 'yO6Fd83abNKbKWj8vVLZkz8Vm2hpkYWD0bwoQyKnY18'
+RCH_ADMIN_TOKEN = '0efZ-upjfrDPQlAsf-ILSOKqp4KfCQKSQquccKWVzrY'
 
 os.environ['RCH_SERVER_URL'] = RCH_HTTP_URL
 os.environ['RCH_API_TOKEN'] = RCH_ADMIN_TOKEN

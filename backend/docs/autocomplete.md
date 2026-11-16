@@ -195,7 +195,7 @@ Terminal 的下拉候选按标题文字筛选：优先精确匹配，其次前�
 
 Provider 内部按 `priority` 与标题排序、按插入文本去重；某个 Provider 出错时，注册表会跳过它的异常而不让整个候选链崩溃。这保证自动补全保持辅助性：没有候选、远程目录不可访问或完成查询失败，都不应被解释为业务命令一定不可执行。
 
-自动参数补全的命令解析器根据输入位置之前的内容提取首个命令词和当前参数片段；Client Shell-like 命令由命令注解声明，ACMD 由对应 `ArgumentOptionSpec` 声明。它不进行完整 Shell 语法树解析。需要在任意位置选择远程文件或目录时使用 `@@`。真正执行命令时的权限、类型与路径解析规则仍由各自的执行模块决定。
+Client 与 Server 共用 `CommandLineResolver` 处理 Shell-like Token、原文 Span 和 Cursor 位置。Client 使用它按 ACMD 的 `ArgumentOptionSpec` 定位当前参数对应的 CompletionSpec；Server Registry 使用同一 Token 边界逐层匹配已声明的子命令，并将叶子参数原文交给既有参数解析器。候选 Provider 的筛选与业务查询保持各自职责。Resolver 只提供 Shell-like Token 与原文 Span，不解析完整 Shell AST，也不替代执行阶段的参数校验。需要在任意位置选择远程文件或目录时使用 `@@`；真正执行命令时的权限、类型与路径解析规则仍由各自的执行模块决定。
 
 
 ## Server Registry 静态子命令补全

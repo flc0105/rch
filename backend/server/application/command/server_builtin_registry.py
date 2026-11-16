@@ -5,12 +5,10 @@ preserves raw tails for alias templates, shell-like arguments and structured JSO
 Unknown commands are deliberately *not* claimed: they can reach the Client Shell.
 """
 from dataclasses import dataclass
-import re
-import shlex
-
+from core.commands.argument_errors import ArgumentCommandValidationError
 from core.commands.argument_models import ArgumentCommandSpec, ArgumentOptionSpec
 from core.commands.argument_parser import parse_argument_text
-from core.commands.argument_errors import ArgumentCommandValidationError
+from core.commands.command_line_resolver import CommandLineResolver
 from core.utils.command_output import OutputFormat
 
 
@@ -247,6 +245,7 @@ class BuiltinInvocation:
 class ServerCommandRegistry:
     def __init__(self, definitions=SERVER_COMMAND_SPECS):
         self._commands = {spec.name: spec for spec in definitions}
+        self._resolver = CommandLineResolver()
         if len(self._commands) != len(definitions):
             raise ValueError('Duplicate server builtin command name')
 
@@ -264,29 +263,33 @@ class ServerCommandRegistry:
             return spec, None, str(raw_arg or '')
         node = spec
         text = str(raw_arg or '').lstrip()
+        offset = 0
         path = []
         while node.subcommands:
-            token_match = re.match(r'^(\S+)(?:\s(.*))?$', text.lstrip(), re.DOTALL) if text else None
-            token = token_match.group(1).lower() if token_match else ''
-            tail = token_match.group(2) or '' if token_match else ''
-            child = node.child(token) if token else None
+            remaining = text[offset:]
+            tokens = self._resolver.scan_tokens(remaining, max_tokens=1)
+            token = tokens[0] if tokens else None
+            token_text = token.raw.lower() if token is not None else ''
+            child = node.child(token_text) if token_text else None
             if child is not None:
-                text = tail
+                offset += token.end
+                if offset < len(text) and text[offset].isspace():
+                    offset += 1
             else:
                 default = node.child(node.default) if node.default else None
-                if not token and default is not None:
+                if not token_text and default is not None:
                     child = default
-                elif token.startswith('-') and default is not None and default.argument_spec is not None:
+                elif token_text.startswith('-') and default is not None and default.argument_spec is not None:
                     child = default
                 elif node.fallback_subcommand:
                     child = node.child(node.fallback_subcommand)
                 if child is None:
                     prefix = ' '.join((spec.name, *path))
-                    raise ValueError(f'Unsupported {prefix} subcommand: {token or "(none)"}. Use: {self.usage(spec.name)}')
-                # Fallback/default receives the unconsumed argument verbatim.
+                    raise ValueError(f'Unsupported {prefix} subcommand: {token_text or "(none)"}. Use: {self.usage(spec.name)}')
+                # Default/fallback leaves receive the unconsumed tail verbatim.
             path.append(child.name)
             node = child
-        return spec, '.'.join(path) if path else None, text
+        return spec, '.'.join(path) if path else None, text[offset:]
 
     def parse_invocation(self, name, raw_arg, *, literal_backslashes=False):
         return self.parse_leaf(*self.parse(name, raw_arg),

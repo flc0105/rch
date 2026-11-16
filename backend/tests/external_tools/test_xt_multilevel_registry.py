@@ -95,3 +95,17 @@ def test_help_independence_and_completion_share_nested_specs():
     assert REGISTRY.is_independent_input('xt instance status local --json') is True
     assert REGISTRY.is_independent_input('xt package list --json') is True
     assert REGISTRY.is_independent_input('xt instance create gost.socks5 --id local') is False
+
+
+def test_multilevel_registry_uses_shared_token_spans_and_preserves_raw_tail():
+    spec, action, tail = REGISTRY.parse('xt', 'instance   status worker1 --json')
+    assert action == 'instance.status'
+    assert tail == 'worker1 --json'
+
+    spec, action, tail = REGISTRY.parse('xt', 'instance\tstatus\tworker1 --json')
+    assert action == 'instance.status'
+    assert tail == 'worker1 --json'
+
+    spec, action, tail = REGISTRY.parse('xt', 'exec  ffmpeg  -i "a  b.mp4"  ')
+    assert action == 'exec.run'
+    assert tail == ' ffmpeg  -i "a  b.mp4"  '
