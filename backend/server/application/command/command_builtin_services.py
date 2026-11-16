@@ -16,3 +16,4 @@ class CommandBuiltinServices:
     external_tool_param_preset_store: object
     interaction_broker: object
     task_store: object
+    script_catalog_service: object = None

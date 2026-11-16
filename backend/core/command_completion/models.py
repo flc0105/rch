@@ -21,6 +21,7 @@ class CompletionContext:
     cursor_position: int = 0
     max_results: int = 50
     metadata: dict[str, Any] = field(default_factory=dict)
+    resolved_target: Any = field(default=None, repr=False, compare=False)
 
     def to_dict(self) -> dict:
         return {

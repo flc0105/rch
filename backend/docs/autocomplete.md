@@ -30,9 +30,19 @@ Web Terminal 输入内容
 
 **上下文补全**使用 `POST /api/connections/{client_id}/command-completions`。Server 根据原始输入和当前 Client 的握手 Manifest 决定是否存在 Client 补全声明；需要 Client 动态数据时，通过独立 `type: completion` 消息传递原始输入、光标位置和可选的 CompletionSpec override。Client 返回标准 Result Envelope，`data.items` 使用统一 Candidate 结构。该请求不经过 `command` / `control` 执行路径。
 
-`CompletionSpec` 只有 `provider` 与 `kinds` 两个字段。Shell-like 命令在 `@desc(..., completion=...)` 声明；ACMD 在对应 `ArgumentOptionSpec.completion` 声明，参数名/位置沿用已有参数 Schema，不重复放进 CompletionSpec。当前实现的 Provider 是 `filesystem`，同时查询文件和目录，再由 `kinds` 过滤。Provider Registry 留有后续扩展入口；未来可增加 `shelllike` 等 Provider，但本轮不引入子命令或选项补全。
+`CompletionSpec` 只有 `provider` 与 `kinds` 两个字段。Shell-like 命令在 `@desc(..., completion=...)` 声明；ACMD 在对应 `ArgumentOptionSpec.completion` 声明，参数名/位置沿用已有参数 Schema，不重复放进 CompletionSpec。当前实现的 Provider 是 `filesystem`，同时查询文件和目录，再由 `kinds` 过滤。Client 的 `filesystem` Provider 支持文件与目录；Server 使用同一两字段 Schema 声明 `filesystem`、`configuration`、`jobs`、`scripts` 和 `xt`，Provider 之间不复制命令或参数规则。未来 Client 如需新增 Provider，可在现有注册入口扩展，Shell-like 子命令与选项仍按其所属命令系统另行定义。
 
-Server/Client 的 Provider 负责候选生成，浏览器负责缓存、过滤、选择与回填。前端不维护 Client 命令名单；新增 Client 命令的参数补全只需在命令声明处添加 CompletionSpec。非 Client Common Ops 的少量路径规则集中在 `frontend/src/config/commonOps.json`。Server Builtin 的静态子命令仍由 Server Registry 提供，不受本轮 Client CompletionSpec 改造影响。补全查询不是执行 `cd`、`download`、`history run` 或其他候选业务操作本身。
+Client 文件系统 Provider 先按当前输入的路径名称前缀匹配，再应用候选数量限制，避免大目录中排序靠后的有效路径被提前截断；无名称前缀时仍可列出当前目录的下一层条目。Server/Client 的 Provider 负责候选生成，浏览器负责缓存、过滤、选择与回填。前端不维护 Client 命令名单；新增 Client 命令的参数补全只需在命令声明处添加 CompletionSpec。非 Client Common Ops 的少量路径规则集中在 `frontend/src/config/commonOps.json`。Server Builtin 的静态子命令由 Server Registry 唯一生成；结构化参数则在同一命令树的 `ArgumentOptionSpec.completion` 选择 Server Provider。补全查询不是执行 `cd`、`download`、`history run` 或其他候选业务操作本身。
+
+## 补全声明、解析与分派
+
+**Server 静态命令树只有一个来源**：`server_builtin_registry.py` 定义 Builtin、嵌套子命令及参数 Schema，Help 与静态命令候选读取同一树。动态参数在 `ArgumentOptionSpec.completion` 声明；RawTail 使用所在命令节点的 `completion`。两处均复用最小的 `CompletionSpec(provider, kinds)`，不再用 Provider 内的命令文本拆分判断参数位置。
+
+`CommandLineResolver` 保留当前光标之前的 Token、引号/转义语义和参数 Span；Server Registry 沿已声明的子命令节点查找当前参数与 CompletionSpec，产生只在本次请求内部使用的解析目标（完整命令路径、参数名称、回填前缀）。`ServerCommandCompletionService` 据此用公共命名 Registry 精确调用所声明的 Provider。候选经统一去重、排序后由同一 API 送给 Web Terminal 和 RCHCLI；`--name value`、`--name=value`、位置参数与 `--` 后的原生尾部由解析器区分。命名选项填写完成后，该值占用对应的位置参数槽；后续空格进入下一个参数，不会把已填写的 `--key` 或 `--name` 再补一次。Provider 异常保留日志，失败不会阻断输入。
+
+Server 侧动态 Provider 分工：`filesystem` 读取 Server 本机文件目录；`configuration` 读取所选 Client 的 Configuration GET 并复用短时缓存；`jobs` 读取 Job Catalog 及当前 Client 的 Job 实例，使用 Job Store 的活跃状态；`scripts` 通过唯一的 `ScriptCatalogService` 扫描 Script 和 Metadata，再按现有平台可见性判断；`xt` 复用 External Tool Catalog 的公开平台/架构筛选及当前 Client 的安装/实例状态。Job、Script、XT 的实时状态仍属于各自业务，不变成握手快照。命令执行阶段继续使用原有校验、权限和路由，不受补全候选出现与否影响。
+
+**上下文 Provider 同样注册在 `CommandCompletionRegistry`**：其中 `gopin` 以名称 `gopin` 注册，读取当前设备的 Pinned Paths，并支持包含空格的收藏名称；History `!N`/`history run`、Help、静态命令树与 Client Manifest 路由也使用对应的上下文入口。Client 侧仍独立注册自己的 Provider、由握手发布静态声明，通过 `type: completion` 返回实时文件候选；两端共用 Core 的 CompletionSpec、Token Resolver、Registry 接口及 Candidate 规范，而不共享文件系统或业务状态。
 
 ## 历史、收藏和动态资源
 
@@ -192,6 +202,8 @@ Terminal 的下拉候选按标题文字筛选：优先精确匹配，其次前�
   ]
 }
 ```
+
+Server 与 Python Client 使用同一个命名 `CommandCompletionRegistry` 注册接口：`register(name, provider)`，并可按 `name` 查找 Provider。Server 按既有注册次序遍历支持当前命令的 Provider、汇总候选并去重；Client 按 `CompletionSpec.provider` 直接选择对应的本地 Provider。两端保留各自的查询实现和文件系统归属；命名注册不改变候选来源、运行时状态筛选或前端输入交互。
 
 Provider 内部按 `priority` 与标题排序、按插入文本去重；某个 Provider 出错时，注册表会跳过它的异常而不让整个候选链崩溃。这保证自动补全保持辅助性：没有候选、远程目录不可访问或完成查询失败，都不应被解释为业务命令一定不可执行。
 

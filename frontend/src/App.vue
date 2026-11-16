@@ -253,7 +253,7 @@
     ref="remoteFilesDialogRef"
     :selected-id="selectedId"
     :get-tab-scoped-headers="getTabScopedHeaders"
-    @append-output="appendOutput"
+    @append-output="appendTerminalActionOutput"
     @set-active-task="setActiveTask"
     @preview="previewRemoteEntry"
     @request-upload="triggerRemoteUploadInput"
@@ -269,7 +269,7 @@
     :machine-alias-map="machineAliasMap"
     :get-tab-scoped-headers="getTabScopedHeaders"
     @preview="previewArtifact"
-    @append-output="appendOutput"
+    @append-output="appendTerminalActionOutput"
     @set-active-task="setActiveTask"
     @open-new-shared-file-editor="openNewSharedFileEditor"
   />
@@ -283,7 +283,7 @@
     :connections="connections"
     :machine-alias-map="machineAliasMap"
     :get-tab-scoped-headers="getTabScopedHeaders"
-    @append-output="appendOutput"
+    @append-output="appendTerminalActionOutput"
     @set-active-task="setActiveTask"
     @upload-started="pendingRemoteUploadRefresh = $event"
     @open-tool-meta-editor="openExternalToolMetaEditor"
@@ -316,7 +316,7 @@
     :get-tab-scoped-headers="getTabScopedHeaders"
     :open-script-editor="openRemoteScriptEditorInternal"
     :open-new-script-editor="openNewRemoteScriptEditor"
-    @append-output="appendOutput"
+    @append-output="appendTerminalActionOutput"
     @set-active-task="setActiveTask"
     @upload-started="pendingRemoteUploadRefresh = $event"
     @open-json="openResultJson"
@@ -331,7 +331,7 @@
     :get-tab-scoped-headers="getTabScopedHeaders"
     :format-date-time-standard="formatDateTimeStandard"
     :format-bytes="formatBytes"
-    @append-output="appendOutput"
+    @append-output="appendTerminalActionOutput"
     @set-active-task="setActiveTask"
     @upload-started="pendingRemoteUploadRefresh = $event"
     @preview-file="previewBackgroundJobFile"
@@ -455,7 +455,7 @@
     :selected-id="selectedId"
     :current-connection="currentConnection"
     :get-tab-scoped-headers="getTabScopedHeaders"
-    @append-output="appendOutput"
+    @append-output="appendTerminalActionOutput"
     @set-active-task="setActiveTask"
     @toolbar-pins-updated="refreshToolbarPreferences"
     @open-json="openResultJson"
@@ -840,6 +840,15 @@ export default {
       this.foregroundNoticeEntries = {
         ...this.foregroundNoticeEntries, [id]: { status: 'closed', taskKey: '' },
       }
+    },
+
+    appendTerminalActionOutput(clientId, text, kind = '', meta = null) {
+      // All UI-initiated Terminal commands should resume tail follow, not only
+      // commands entered in the input bar. SSE/History bypass this UI event.
+      if (kind === 'command' && meta?.operation?.operation_id) {
+        this.startTerminalSubmission(clientId, text)
+      }
+      this.appendOutput(clientId, text, kind, meta)
     },
 
     startTerminalSubmission(clientId, _command, echoToTerminal = true) {

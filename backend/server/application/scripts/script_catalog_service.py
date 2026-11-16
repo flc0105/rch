@@ -4,7 +4,6 @@ import shutil
 import tempfile
 from pathlib import Path
 
-from werkzeug.utils import secure_filename
 
 from core.utils.script_metadata import read_script_metadata_from_file, rewrite_script_metadata_name
 
@@ -148,6 +147,7 @@ class ScriptCatalogService:
         if not original_name:
             raise ValueError('filename is required')
 
+        from werkzeug.utils import secure_filename
         safe_filename = secure_filename(Path(original_name).name)
         if not safe_filename:
             raise ValueError('Invalid filename')

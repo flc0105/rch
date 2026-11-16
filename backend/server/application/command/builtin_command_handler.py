@@ -74,6 +74,7 @@ class BuiltinCommandHandler:
             conn=self.conn,
             remote_execution_service=self.remote_execution_service,
             use_foreground_guard=use_foreground_guard,
+            script_catalog_service=getattr(self.services, "script_catalog_service", None),
         )
         self.command_output_support = CommandOutputBuiltinSupport(
             server=self.server,

@@ -8,6 +8,9 @@ from server.application.command.server_builtin_registry import SERVER_COMMAND_RE
 
 
 class FakeCatalog:
+    def list_packages_for_target(self, platform, arch):
+        return [p for p in self.list_packages() if self._platform_matches(p, platform) and self._arch_matches(p, arch)]
+
     def list_packages(self):
         return [{'id': 'ffmpeg'}, {'id': 'python-embed'}]
 

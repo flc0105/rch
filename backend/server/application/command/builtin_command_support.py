@@ -1,9 +1,7 @@
-import glob
 import json
 import os
 
 from core.utils.formatting import format_dict
-from core.utils.script_metadata import read_script_metadata_from_file
 from server.application.scripts.script_run_service import prepare_script_control
 from core.platform.catalog_visibility import visible_on_platform
 from server.application.command.command_execution_event import CommandExecutionEvent
@@ -77,12 +75,13 @@ class ScriptBuiltinSupport:
     script builtin: list / view / exec.
     """
 
-    def __init__(self, plan_builder, plan_executor_factory, conn=None, remote_execution_service=None, use_foreground_guard=False):
+    def __init__(self, plan_builder, plan_executor_factory, conn=None, remote_execution_service=None, use_foreground_guard=False, script_catalog_service=None):
         self.plan_builder = plan_builder
         self.plan_executor_factory = plan_executor_factory
         self.conn = conn
         self.remote_execution_service = remote_execution_service
         self.use_foreground_guard = use_foreground_guard
+        self.script_catalog_service = script_catalog_service
 
     def _runtime_config(self):
         from core.protocol.control import ControlDomain, ConfigurationAction
@@ -137,29 +136,16 @@ class ScriptBuiltinSupport:
             return
         raise ValueError(f'Unsupported script subcommand: {subcommand}')
 
-    def _iter_script_files(self):
-        return glob.iglob(os.path.join(SCRIPT_PATH, '**/*.py'), recursive=True)
-
     def list_scripts(self):
         return [item['path'] for item in self.list_script_catalog()]
 
     def list_script_catalog(self):
-        items = []
-        for file_path in self._iter_script_files():
-            rel_path = os.path.relpath(file_path, SCRIPT_PATH).replace('\\', '/')
-            script_name = rel_path[:-3] if rel_path.endswith('.py') else rel_path
-            metadata = read_script_metadata_from_file(file_path, fallback_name=script_name)
-            items.append({
-                'script_name': script_name,
-                'path': rel_path,
-                'display_name': str(metadata.get('display_name') or script_name.split('/')[-1]).strip() or script_name,
-                'description': str(metadata.get('description') or '').strip(),
-                'metadata': metadata,
-            })
-        return sorted(
-            (item for item in items if visible_on_platform(item, self._platform())),
-            key=lambda item: item.get('path', '').lower(),
-        )
+        if self.script_catalog_service is None:
+            from server.application.scripts.script_catalog_service import ScriptCatalogService
+            self.script_catalog_service = ScriptCatalogService(SCRIPT_PATH)
+        return sorted((item for item in self.script_catalog_service.list_scripts()
+                       if visible_on_platform(item, self._platform())),
+                      key=lambda item: item.get('path', '').lower())
 
     def _resolve_script_path(self, script_name: str) -> str:
         script_path = os.path.realpath(os.path.join(SCRIPT_PATH, script_name))

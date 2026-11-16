@@ -68,3 +68,18 @@ test('no frontend builtin whitelist; any future provider can supply completions'
   assert.ok(!source.includes('const dynamicCommands ='))
   assert.ok(!source.includes('buildNamedBuiltinCommandCompletionQuery('))
 })
+
+
+test('completed named option is sent as a new argument context after its separator', () => {
+  for (const input of [
+    'config set --key HTTP_TRANSFER_BUFFER_SIZE ',
+    'job start --name app_launch_monitor ',
+    'script exec --name mac/tool.py ',
+  ]) {
+    const before = host.parseCommandCompletionCandidateQuery(input.trimEnd())
+    const after = host.parseCommandCompletionCandidateQuery(input)
+    assert.ok(before && after)
+    assert.equal(after.requestInput, input)
+    assert.notEqual(after.cacheKey, before.cacheKey)
+  }
+})

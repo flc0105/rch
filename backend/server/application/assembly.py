@@ -267,6 +267,7 @@ class ServerApplicationAssembly:
             background_job_service=self.background_job_service,
             external_tool_catalog_service=self.external_tool_catalog_service,
             external_tool_client_runtime=self.external_tool_runtime_service.client_lifecycle_runtime,
+            script_catalog_service=self.script_catalog_service,
         )
 
         self.command_catalog_api = WebCommandCatalogApi(
@@ -384,6 +385,7 @@ class ServerApplicationAssembly:
             external_tool_param_preset_store=self.external_tool_param_preset_store,
             interaction_broker=self.interaction_broker,
             task_store=self.task_store,
+            script_catalog_service=self.script_catalog_service,
         ))
 
     def _wire_cross_dependencies(self):

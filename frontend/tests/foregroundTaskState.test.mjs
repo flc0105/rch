@@ -56,7 +56,9 @@ test('task notice uses existing Terminal warning line and inline Details, never 
   assert.doesNotMatch(app, /class="task-running-notice"/)
   assert.doesNotMatch(app, /\.task-running-notice\s*\{/)
   assert.match(app, /this\.setTerminalNotice\(clientId, 'foreground', this\.buildTerminalOutputLine\(/)
-  assert.doesNotMatch(app, /this\.appendOutput\(clientId,[\s\S]*?foregroundTaskNotice: true/)
+  const noticeMethod = app.match(/    syncForegroundTaskNotice\([^]*?\n    \},/)?.[0] || ''
+  assert.ok(noticeMethod, 'notice lifecycle method is present')
+  assert.doesNotMatch(noticeMethod, /this\.appendOutput\(/)
   assert.match(app, /this\.outputs\[clientId\] = lines\.filter\(line => line\?\.meta\?\.foregroundTaskNotice !== true\)/)
   assert.match(app, /@open-task-details="openForegroundTaskDetails"/)
   assert.match(terminal, /entry\.line\?\.meta\?\.foregroundTaskNotice/)

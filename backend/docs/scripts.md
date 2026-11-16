@@ -24,7 +24,7 @@ Script 与 Shell-like、ACMD 共用 Client 前台执行基础设施；ScriptMana
 
 ### 源码文件与 Catalog
 
-Server 递归搜索 Script 根目录中的 `.py` 文件，并根据文件本身和源码里的 `SCRIPT_METADATA` 构造 Catalog；目录列表另外由文件系统遍历得到。读取元数据使用 Python AST 的静态字面量提取，而不是为显示列表执行脚本代码。Metadata 应写成源码里可静态解析的字典，供 UI 构建参数表单。
+Server 的 `ScriptCatalogService` 是 Script Library、终端 `script list` 和 `script view/exec` 参数补全共享的目录扫描与 Metadata 来源：递归搜索 Script 根目录中的 `.py` 文件，并根据文件本身和源码里的 `SCRIPT_METADATA` 构造 Catalog；目录列表另外由文件系统遍历得到。读取元数据使用 Python AST 的静态字面量提取，而不是为显示列表执行脚本代码。Metadata 应写成源码里可静态解析的字典，供 UI 构建参数表单。
 
 Web Script Library 提供文件夹树、脚本搜索与选择、源码编辑入口，以及创建、上传、重命名、删除 Script 和目录。上传接口只接受 `.py`；重命名和删除会实际修改 Server 文件系统，删除整个文件夹时也会递归删除内容。Catalog 根据磁盘中的 Script 源文件实时扫描生成。修改文件内容后重新请求 Catalog，即按磁盘中当前源码重新读入元数据；已经提交的执行任务不会因后续编辑而中途替换运行代码。
 
@@ -134,6 +134,8 @@ SCRIPT_METADATA = {
 `collect`：普通 stdout/stderr 在执行结束时汇总返回，取消/超时仍返回已捕获的文本。`stream`：按行、显式 flush 或长行片段即时输出，末尾无换行的片段也保留；stderr 本身不表示失败，最终退出状态才决定成功与否。现有 `context.progress()` 是独立 SDK 进度接口。`context.emit(data)` 发送显式结构化 JSON 输出事件，并且可与 `print()` 文本按顺序混排。Python Client 的 inproc 使用本次执行上下文，subprocess_pipe 使用本地专用的有序输出通道，而不是在 stdout 插入标记；collect 仅缓冲普通 stdout/stderr，显式 `context.progress(message, level=...)` 仍即时发真正的 progress 事件；stream 的普通输出实时发送。progress 的 level 可选（info/success/warning/error），省略不加任何 Marker；公共 Server 渲染器负责给有 level 的 progress 添加标记，永远不修改 print 文本。两个 Strategy 只返回执行结果，统一执行入口发送唯一终态；超时/取消采用明确的结构化事件。
 
 执行记录属于命令任务生命周期，可与 Command History 的来源、状态、输出限制和 Artifact 关联协作，但 Script Library 本身不自动在数据库中保存每次运行的全部独立 Script Session 对象。
+
+在 Web Terminal 中，从 Script Library 选择 **Run in Terminal** 或重跑终端 Script 区块，会像输入栏提交新命令一样恢复终端尾部跟随；`stream` 模式后续逐行输出沿用现有 Terminal 流与历史存储。选择 **Run** 的独立结果 Dialog 不改变 Terminal 当前滚动位置；用户在运行中主动上翻历史后，仍可暂停自动跟随。
 
 ### Script Activity 记录
 

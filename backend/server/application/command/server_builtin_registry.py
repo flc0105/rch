@@ -14,6 +14,16 @@ from core.utils.command_output import OutputFormat
 
 
 @dataclass(frozen=True)
+class ServerCompletionTarget:
+    """Resolved parameter at the cursor; not part of the wire CompletionSpec."""
+    completion: CompletionSpec
+    path: tuple[str, ...]
+    argument: str
+    prefix: str
+    tokens: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class SubcommandSpec:
     name: str
     description: str
@@ -104,7 +114,7 @@ def _xt_instance_target(action, description, *, json=False, follow=False, params
                     + (' [-- --key VALUE ...]' if params else '')
                     + (' [--json]' if json else ''),
                     *opts, json=json, trailing_named_arguments='params' if params else None,
-                    independent=action in ('status', 'logs'))
+                    independent=action in ('status', 'logs'), completion=CompletionSpec('xt', ('instance',)))
 
 
 SERVER_COMMAND_SPECS = (
@@ -112,10 +122,10 @@ SERVER_COMMAND_SPECS = (
         _structured_child('config', 'list', 'List runtime config', 'config [list] [--json]', independent=True),
         _structured_child('config', 'set', 'Set one runtime config value',
                           'config set <key> <value> [--json]',
-                          _option('key', positional=0, required=True),
+                          _option('key', positional=0, required=True, completion=CompletionSpec('configuration', ('key',))),
                           _option('value', positional=1, required=True)),
         _structured_child('config', 'reset', 'Reset one runtime config value',
-                          'config reset <key> [--json]', _option('key', positional=0, required=True)),
+                          'config reset <key> [--json]', _option('key', positional=0, required=True, completion=CompletionSpec('configuration', ('key',)))),
         _structured_child('config', 'reset-all', 'Reset all config overrides', 'config reset-all [--json]'),
     ), default='list', group='runtime'),
     command('watchdog', 'Show watchdog runtime status', expects_arguments=True, group='runtime',
@@ -126,10 +136,10 @@ SERVER_COMMAND_SPECS = (
         _structured_child('script', 'list', 'List available scripts', 'script list [--json]', independent=True),
         _structured_child('script', 'view', 'Read script source on the Server',
                           'script view <name>|--name NAME',
-                          _option('name', positional=0, required=True), json=False, independent=True),
+                          _option('name', positional=0, required=True, completion=CompletionSpec('scripts', ('script',))), json=False, independent=True),
         _structured_child('script', 'exec', 'Execute a script with CLI arguments',
                           'script exec <name>|--name NAME [--execution_mode MODE] [--output_mode MODE] [-- --key VALUE]...',
-                          _option('name', positional=0, required=True),
+                          _option('name', positional=0, required=True, completion=CompletionSpec('scripts', ('script',))),
                           _option('execution_mode'), _option('output_mode'),
                           json=False, trailing_named_arguments='params'),
     ), default='list'),
@@ -149,17 +159,17 @@ SERVER_COMMAND_SPECS = (
         _structured_child('job', 'list', 'List available Server jobs', 'job list [--json]', independent=True),
         _structured_child('job', 'start', 'Start a Client job',
                           'job start <name>|--name NAME [--mode MODE] [--json] [-- --key VALUE]...',
-                          _option('name', positional=0, required=True), _option('mode'),
+                          _option('name', positional=0, required=True, completion=CompletionSpec('jobs', ('job',))), _option('mode'),
                           trailing_named_arguments='params'),
         _structured_child('job', 'logs', 'Read stored Job reports or follow new reports',
                           'job logs <name> [--follow|-f]',
-                          _option('name', positional=0, required=True),
+                          _option('name', positional=0, required=True, completion=CompletionSpec('jobs', ('job',))),
                           _option('follow', flag=True, alias='f'), json=False),
         _structured_child('job', 'ps', 'Show running jobs', 'job ps [--json]', independent=True),
         _structured_child('job', 'status', 'Query job state', 'job status <name> [--json]',
-                          _option('name', positional=0, required=True), independent=True),
+                          _option('name', positional=0, required=True, completion=CompletionSpec('jobs', ('job',))), independent=True),
         _structured_child('job', 'stop', 'Stop a running job', 'job stop <name> [--json]',
-                          _option('name', positional=0, required=True)),
+                          _option('name', positional=0, required=True, completion=CompletionSpec('jobs', ('job',)))),
         _structured_child('job', 'stop-all', 'Stop all running jobs', 'job stop-all [--json]'),
     ), default='list'),
     command('history', 'Show Quick History or replay by index', children=(
@@ -193,9 +203,9 @@ SERVER_COMMAND_SPECS = (
         _xt_group('exec', 'List or run installed external commands',
             _xt_leaf('exec', 'list', 'List installed exec commands', 'xt exec list [--json]', independent=True),
             _xt_leaf('exec', 'info', 'Read exec metadata', 'xt exec info <name>|--name NAME [--json]',
-                     _option('name', positional=0, required=True), independent=True),
+                     _option('name', positional=0, required=True, completion=CompletionSpec('xt', ('exec',))), independent=True),
             _xt_leaf('exec', 'which', 'Locate an installed executable', 'xt exec which <name>|--name NAME',
-                     _option('name', positional=0, required=True), json=False, independent=True),
+                     _option('name', positional=0, required=True, completion=CompletionSpec('xt', ('exec',))), json=False, independent=True),
             SubcommandSpec('run', 'Run an installed external command with native arguments',
                            'xt exec run <exec-name> [--] <native args...> (short: xt exec <exec-name> ...)',
                            raw_tail=True, completion=CompletionSpec('xt', ('exec',))),
@@ -207,23 +217,23 @@ SERVER_COMMAND_SPECS = (
                      _option('installed', flag=True, alias='i'), independent=True),
             _xt_leaf('package', 'install', 'Install a package',
                      'xt package install <package-id>|--package PACKAGE',
-                     _option('package', positional=0, required=True), json=False),
+                     _option('package', positional=0, required=True, completion=CompletionSpec('xt', ('package',))), json=False),
             _xt_leaf('package', 'uninstall', 'Uninstall a package',
                      'xt package uninstall <package-id>|--package PACKAGE',
-                     _option('package', positional=0, required=True), json=False)),
+                     _option('package', positional=0, required=True, completion=CompletionSpec('xt', ('package',))), json=False)),
         _xt_group('module', 'Inspect external tool modules',
             _xt_leaf('module', 'list', 'List package modules',
                      'xt module list <package-id>|--package PACKAGE [--json]',
-                     _option('package', positional=0, required=True), independent=True)),
+                     _option('package', positional=0, required=True, completion=CompletionSpec('xt', ('package',))), independent=True)),
         _xt_group('instance', 'Manage persistent daemon instances',
             _xt_leaf('instance', 'create', 'Create an instance',
                      'xt instance create <module>|--module MODULE --id ID [--preset PRESET] [--start] [-- --key VALUE ...]',
-                     _option('module', positional=0, required=True), _option('id', required=True),
+                     _option('module', positional=0, required=True, completion=CompletionSpec('xt', ('module',))), _option('id', required=True),
                      _option('preset'), _option('start', flag=True), json=False,
                      trailing_named_arguments='params'),
             _xt_leaf('instance', 'list', 'List persistent instances',
                      'xt instance list [<name>|--name NAME] [--json]',
-                     _option('name', positional=0), independent=True),
+                     _option('name', positional=0, completion=CompletionSpec('xt', ('package',))), independent=True),
             _xt_instance_target('start', 'Start an existing instance', params=True),
             _xt_instance_target('stop', 'Stop a running instance'),
             _xt_instance_target('restart', 'Restart an instance', params=True),
@@ -326,6 +336,54 @@ class ServerCommandRegistry:
             raise
         return BuiltinInvocation(spec.name, subcommand or spec.name, args,
                                  OutputFormat.JSON if args.get('json') else OutputFormat.TEXT)
+
+    def resolve_completion_target(self, context):
+        """Find a registered dynamic argument without executing or validating a command."""
+        source = context.raw_input or f'{context.command_name} {context.argument_text}'
+        cursor = context.cursor_position if context.raw_input else len(source)
+        source = source[:cursor]
+        tokens = self._resolver.scan_tokens(source)
+        if not tokens:
+            return None
+        node = self.get(tokens[0].value.lower())
+        if node is None:
+            return None
+        path = [node.name]
+        index = 1
+        while node.subcommands:
+            child = node.child(tokens[index].value.lower()) if index < len(tokens) else None
+            if child is not None:
+                path.append(child.name)
+                node = child
+                index += 1
+                continue
+            fallback = node.child(node.fallback_subcommand) if node.fallback_subcommand else None
+            if fallback is None:
+                return None
+            path.append(fallback.name)
+            node = fallback
+        # `--` belongs to the executed command's native parameter tail.
+        values = tuple(token.value for token in tokens[index:])
+        if '--' in values:
+            return None
+        if node.argument_spec is not None:
+            resolved = self._resolver.resolve_completion_argument(
+                source, len(source), tokens, node.argument_spec, command_token_count=index)
+            if resolved is not None:
+                completion, span = resolved
+                option = next((item for item in node.argument_spec.options
+                               if item.completion is completion), None)
+                if option is not None:
+                    return ServerCompletionTarget(completion, tuple(path), option.name,
+                                                  source[:span[0]], values)
+        if node.completion is None:
+            return None
+        # Complex targets and raw tails use their owning node's declaration.
+        if node.raw_tail and len(values) > 1:
+            return None
+        return ServerCompletionTarget(node.completion, tuple(path), '',
+                                      source[:tokens[index].start] if index < len(tokens)
+                                      else source + ('' if source.endswith(' ') else ' '), values)
 
     def _iter_public_nodes(self, node, prefix=()):
         """Walk public command nodes once, including nested groups and leaves."""

@@ -1,5 +1,8 @@
+import logging
+
 from core.command_completion.models import CompletionCandidate, CompletionContext
-from core.command_completion.provider import CommandCompletionProvider
+
+logger = logging.getLogger(__name__)
 
 
 class CommandCompletionRegistry:
@@ -7,26 +10,44 @@ class CommandCompletionRegistry:
     CommandCompletionProvider 注册表。
     """
 
-    def __init__(self, providers: list[CommandCompletionProvider] | None = None):
-        self._providers: list[CommandCompletionProvider] = []
-        for provider in providers or []:
-            self.register(provider)
+    def __init__(self, providers: dict | None = None):
+        self._providers = {}
+        for name, provider in (providers or {}).items():
+            self.register(name, provider)
 
-    def register(self, provider: CommandCompletionProvider):
-        if not isinstance(provider, CommandCompletionProvider):
-            raise TypeError('provider must be CommandCompletionProvider')
-        self._providers.append(provider)
+    def register(self, name: str, provider):
+        key = str(name or '').strip().lower()
+        if not key:
+            raise ValueError('completion provider name is required')
+        if key in self._providers:
+            raise ValueError(f'completion provider already registered: {key}')
+        if not callable(getattr(provider, 'complete', None)):
+            raise TypeError('completion provider must implement complete')
+        self._providers[key] = provider
         return provider
+
+    def get(self, name: str):
+        return self._providers.get(str(name or '').strip().lower())
 
     def complete(self, context: CompletionContext) -> list[CompletionCandidate]:
         result: list[CompletionCandidate] = []
-        for provider in self._providers:
+        target = context.resolved_target
+        providers = []
+        if target is not None:
+            selected = self.get(target.completion.provider)
+            if selected is not None and getattr(selected, 'provider_key', '') == target.completion.provider:
+                providers.append(selected)
+        # Non-schema syntaxes (history / !N / help / manifest) remain contextual.
+        providers.extend(provider for provider in self._providers.values()
+                         if not getattr(provider, 'provider_key', ''))
+        for provider in providers:
             try:
                 if not provider.supports(context):
                     continue
                 result.extend(provider.complete(context))
             except Exception:
-                # autocomplete 不能因为单个 provider 失败影响整条命令输入链路。
+                # Provider failures must not block typing, but should be observable.
+                logger.exception("Completion provider failed: %s", type(provider).__name__)
                 continue
 
         return self._dedupe(result)

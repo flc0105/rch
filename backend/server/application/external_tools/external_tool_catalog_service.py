@@ -211,6 +211,13 @@ class ExternalToolCatalogService:
     def _arch_matches(self, package: dict, arch: str = '') -> bool:
         return package_arch_matches(package, arch)
 
+    def list_packages_for_target(self, platform_alias: str, arch: str) -> list[dict]:
+        """Packages available for a connected target, shared by XT and completion."""
+        return [package for package in self.list_packages()
+                if package.get('id') and not package.get('error')
+                and self._platform_matches(package, platform_alias)
+                and self._arch_matches(package, arch)]
+
     def list_exec_targets(self, platform_alias: str = '', arch: str = '') -> list[dict]:
         target_platform = self._normalize_platform(platform_alias or '')
         target_arch = self._normalize_arch(arch or '')
@@ -218,13 +225,7 @@ class ExternalToolCatalogService:
             raise ValueError(f'target platform and arch are required for external tool execs, got {target_platform or "unknown"}/{target_arch or "unknown"}')
 
         items = []
-        for package in self.list_packages():
-            if package.get('error'):
-                continue
-            if not self._platform_matches(package, platform_alias):
-                continue
-            if not self._arch_matches(package, arch):
-                continue
+        for package in self.list_packages_for_target(platform_alias, arch):
             try:
                 package_key = self.select_package_key(package, platform_alias=platform_alias, arch=arch)
             except Exception as e:

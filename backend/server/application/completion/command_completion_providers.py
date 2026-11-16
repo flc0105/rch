@@ -1,4 +1,3 @@
-import glob
 import os
 import re
 
@@ -7,7 +6,6 @@ from core.external_tools.install_status import INSTALL_STATUS_NOT_INSTALLED, is_
 from core.command_completion.models import CompletionCandidate, CompletionContext
 from core.platform.normalization import normalize_platform_alias
 from core.platform.catalog_visibility import visible_on_platform
-from core.utils.script_metadata import read_script_metadata_from_file
 from core.command_completion.provider import CommandCompletionProvider
 from server.application.history.quick_history import QuickHistoryRecordPolicy
 from server.config.config import SCRIPT_PATH
@@ -51,6 +49,21 @@ class ServerCompletionSessionMixin:
 
     def _normalize_platform_alias(self, value) -> str:
         return normalize_platform_alias(value, infer=True)
+
+
+class DeclaredServerCompletionProvider(CommandCompletionProvider):
+    """Schema-selected dynamic providers, independent from command-text parsing."""
+
+    provider_key = ''
+
+    def target(self, context):
+        if context.resolved_target is None:
+            context.resolved_target = SERVER_COMMAND_REGISTRY.resolve_completion_target(context)
+        target = context.resolved_target
+        return target if target and target.completion.provider == self.provider_key else None
+
+    def supports(self, context: CompletionContext) -> bool:
+        return self.target(context) is not None
 
 
 class GopinCommandCompletionProvider(ServerCompletionSessionMixin, CommandCompletionProvider):
@@ -261,59 +274,43 @@ class HelpCommandCompletionProvider(CommandCompletionProvider):
         ) for index, (name, description) in enumerate(targets)]
 
 
-class ScriptCommandCompletionProvider(ServerCompletionSessionMixin, CommandCompletionProvider):
-    """
-    server script exec 脚本补全。
-    """
+class ScriptCommandCompletionProvider(ServerCompletionSessionMixin, DeclaredServerCompletionProvider):
+    """Script candidates come from the same Catalog as Web and Server CLI."""
 
-    command_names = ('script',)
+    provider_key = 'scripts'
     source = 'script'
     group = 'script'
 
-    def __init__(self, server, script_root: str = SCRIPT_PATH):
+    def __init__(self, server, script_root: str = SCRIPT_PATH, script_catalog_service=None):
         ServerCompletionSessionMixin.__init__(self, server)
         self.script_root = script_root
+        self.script_catalog_service = script_catalog_service
 
     def complete(self, context: CompletionContext) -> list[CompletionCandidate]:
-        tokens = str(context.argument_text or '').strip().split()
-        if not tokens or tokens[0].lower() not in ('view', 'exec'):
+        target = self.target(context)
+        if target is None:
             return []
-        action = tokens[0].lower()
-        # Suggest script names at the name slot, whether positional or --name.
-        if len(tokens) > 1 and tokens[1].startswith('--') and tokens[1] != '--name':
-            return []
-        if len(tokens) > 2 and tokens[1] != '--name':
-            return []
-        if len(tokens) > 3:
-            return []
-        prefix = f'script {action} ' + ('--name ' if len(tokens) > 1 and tokens[1] == '--name' else '')
-        current_os_alias = self.get_client_platform(context)
+        action = target.path[-1]
+        platform = self.get_client_platform(context)
         return [CompletionCandidate(
-            title=f'{prefix}{script}', insert_text=f'{prefix}{script}',
-            description=f'{action.capitalize()} script: {script}',
+            title=target.prefix + name, insert_text=target.prefix + name,
+            description=f'{action.capitalize()} script: {name}',
             source=self.source, group=self.group, kind='script',
-            name=script, priority=20, metadata={'script': script},
-        ) for script in self._list_scripts(current_os_alias)]
+            name=name, priority=20, metadata={'script': name},
+        ) for name in self._list_scripts(platform)]
 
-    def _list_scripts(self, current_os_alias: str) -> list[str]:
-        pattern = os.path.join(self.script_root, '**/*.py')
-        result = []
-        for file_path in glob.iglob(pattern, recursive=True):
-            if not os.path.isfile(file_path):
-                continue
-            script = os.path.relpath(file_path, self.script_root).replace('\\', '/')
-            script_name = script[:-3] if script.endswith('.py') else script
-            metadata = read_script_metadata_from_file(file_path, fallback_name=script_name)
-            if visible_on_platform({'path': script, 'metadata': metadata}, current_os_alias):
-                result.append(script)
-        return sorted(result, key=str.lower)
+    def _list_scripts(self, platform: str) -> list[str]:
+        if self.script_catalog_service is None:
+            from server.application.scripts.script_catalog_service import ScriptCatalogService
+            self.script_catalog_service = ScriptCatalogService(self.script_root)
+        return sorted((str(item['path']) for item in self.script_catalog_service.list_scripts()
+                       if visible_on_platform(item, platform)), key=str.lower)
 
 
-
-class ExternalToolCommandCompletionProvider(ServerCompletionSessionMixin, CommandCompletionProvider):
+class ExternalToolCommandCompletionProvider(ServerCompletionSessionMixin, DeclaredServerCompletionProvider):
     """XT: static command paths from Registry, dynamic targets from the selected Client."""
 
-    command_names = ('xt',)
+    provider_key = 'xt'
     source = 'server_xt'
     group = 'external_tool'
 
@@ -323,33 +320,25 @@ class ExternalToolCommandCompletionProvider(ServerCompletionSessionMixin, Comman
         self.client_lifecycle_runtime = client_lifecycle_runtime
 
     def complete(self, context: CompletionContext) -> list[CompletionCandidate]:
-        words = str(context.argument_text or '').strip().lower().split()
-        if not words:
+        target = self.target(context)
+        if target is None:
             return []
-        if words[0] == 'exec':
-            if len(words) == 1:
-                return self._build_exec_candidates(context)
-            if words[1] in ('list', 'help'):
+        path = target.path
+        kinds = target.completion.kinds
+        if 'exec' in kinds:
+            # Once the executable name is complete, its native arguments belong
+            # to the target executable, not to XT completion.
+            source = context.raw_input or f'{context.command_name} {context.argument_text}'
+            if target.tokens and source[-1:].isspace():
                 return []
-            if words[1] in ('info', 'which', 'run'):
-                return self._build_exec_candidates(context) if len(words) <= 3 else []
-            return self._build_exec_candidates(context) if len(words) == 2 else []
-        if words[0] not in ('package', 'module', 'instance'):
-            return []
-        if len(words) == 1:
-            return []
-        if words[0] == 'package' and words[1] in ('install', 'uninstall') and len(words) <= 4:
-            return self._build_package_candidates(context, f'xt package {words[1]} ', action=words[1])
-        if words[0] == 'module' and words[1] == 'list' and len(words) <= 3:
-            return self._build_package_candidates(context, 'xt module list ')
-        instance_actions = SERVER_COMMAND_REGISTRY.child_names('xt instance')
-        if words[0] == 'instance' and words[1] in instance_actions:
-            if words[1] == 'create' and len(words) <= 4:
-                return self._build_module_candidates(context, 'xt instance create ')
-            if words[1] == 'list' and len(words) <= 3:
-                return self._build_package_candidates(context, 'xt instance list ')
-            if words[1] in ('start', 'stop', 'restart', 'status', 'logs'):
-                return self._build_instance_candidates(context, words[1])
+            return self._build_exec_candidates(context, target)
+        if 'package' in kinds:
+            action = path[-1] if path[1] == 'package' else ''
+            return self._build_package_candidates(context, target.prefix, action=action)
+        if 'module' in kinds:
+            return self._build_module_candidates(context, target.prefix)
+        if 'instance' in kinds:
+            return self._build_instance_candidates(context, target)
         return []
 
     def _packages_for_client(self, context: CompletionContext) -> list[dict]:
@@ -357,10 +346,7 @@ class ExternalToolCommandCompletionProvider(ServerCompletionSessionMixin, Comman
         arch = self.get_client_arch(context)
         if not platform or not arch:
             return []
-        return [p for p in self.external_tool_catalog_service.list_packages()
-                if p.get('id') and not p.get('error')
-                and self.external_tool_catalog_service._platform_matches(p, platform)
-                and self.external_tool_catalog_service._arch_matches(p, arch)]
+        return self.external_tool_catalog_service.list_packages_for_target(platform, arch)
 
     def _install_statuses(self, context: CompletionContext, packages: list[dict]) -> dict[str, str]:
         """Use the same batched Client Control as Web/XT; unknown is not uninstalled."""
@@ -398,9 +384,6 @@ class ExternalToolCommandCompletionProvider(ServerCompletionSessionMixin, Comman
             statuses = self._install_statuses(context, packages) if action else {}
         except (AttributeError, ValueError, RuntimeError, LookupError):
             return []
-        option = '--package' if str(context.argument_text or '').strip().split()[-1:] == ['--package'] else ''
-        if option:
-            prefix += option + ' '
         return [self._candidate(prefix, package['id'], package.get('display_name') or '',
                                 'external_tool_package')
                 for package in packages
@@ -414,13 +397,12 @@ class ExternalToolCommandCompletionProvider(ServerCompletionSessionMixin, Comman
             statuses = self._install_statuses(context, packages)
         except (AttributeError, ValueError, RuntimeError, LookupError):
             return []
-        if str(context.argument_text or '').strip().split()[-1:] == ['--module']:
-            prefix += '--module '
         return [self._candidate(prefix, module['tool_id'], module.get('display_name') or '',
                                 'external_tool_module')
                 for module in modules if is_installed_status(statuses.get(module['package_id']))]
 
-    def _build_instance_candidates(self, context: CompletionContext, action: str):
+    def _build_instance_candidates(self, context: CompletionContext, target):
+        action = target.path[-1]
         # The Registry handles syntax; completion only selects candidates with real Client state.
         client_id = self.get_client_id(context)
         if not client_id:
@@ -440,22 +422,20 @@ class ExternalToolCommandCompletionProvider(ServerCompletionSessionMixin, Comman
         except (AttributeError, ValueError, RuntimeError, LookupError, TimeoutError):
             return []
         module_by_id = {m['tool_id']: m for m in modules}
-        parts = str(context.argument_text or '').strip().split()
+        parts = target.tokens
         target_module = ''
-        if '--module' in parts:
-            index = parts.index('--module')
-            if len(parts) > index + 1:
+        for index, token in enumerate(parts):
+            if token == '--module' and index + 1 < len(parts):
                 target_module = parts[index + 1]
-        elif len(parts) >= 3 and not parts[2].startswith('-'):
-            target_module = parts[2]
-        named = '--name' in parts or '--module' in parts
+            elif token.startswith('--module='):
+                target_module = token.partition('=')[2]
+        if not target_module and parts and not parts[0].startswith('-'):
+            target_module = parts[0]
+        named = any(token in ('--name', '--module') or
+                    token.startswith(('--name=', '--module=')) for token in parts)
         prefix = f'xt instance {action} '
-        if named:
-            # Preserve named targeting and disambiguate identical IDs across modules.
-            if target_module:
-                prefix += f'--module {target_module} '
-            if target_module:
-                prefix += '--name '
+        if named and target_module:
+            prefix += f'--module {target_module} --name '
         result, seen = [], set()
         for row in rows:
             if not isinstance(row, dict):
@@ -483,19 +463,18 @@ class ExternalToolCommandCompletionProvider(ServerCompletionSessionMixin, Comman
                 'external_tool_instance'))
         return result
 
-    def _build_exec_candidates(self, context: CompletionContext) -> list[CompletionCandidate]:
+    def _build_exec_candidates(self, context: CompletionContext, target) -> list[CompletionCandidate]:
         try:
             targets = self.external_tool_catalog_service.list_exec_targets(
                 platform_alias=self.get_client_platform(context), arch=self.get_client_arch(context))
-            parts = str(context.argument_text or '').strip().split()
-            require_installed = len(parts) == 1 or parts[1] not in ('info',)
+            require_installed = target.path[-1] != 'info'
             statuses = {}
             if require_installed:
                 packages = self._packages_for_client(context)
                 statuses = self._install_statuses(context, packages)
         except (AttributeError, ValueError, RuntimeError, LookupError):
             return []
-        prefix = self._resolve_exec_insert_prefix(context.argument_text)
+        prefix = target.prefix
         result = []
         for item in targets:
             exec_name = str(item.get('exec_name') or '').strip()
@@ -511,16 +490,12 @@ class ExternalToolCommandCompletionProvider(ServerCompletionSessionMixin, Comman
             ))
         return result
 
-    def _resolve_exec_insert_prefix(self, argument_text: str) -> str:
-        parts = str(argument_text or '').strip().split()
-        if len(parts) >= 2 and parts[0] == 'exec' and parts[1] in {'info', 'which', 'run'}:
-            return f'xt exec {parts[1]} '
-        return 'xt exec '
 
 
 class ServerFileSystemCompletionProvider(CommandCompletionProvider):
     """Resolve Server-local path candidates from declared command CompletionSpec."""
 
+    provider_key = 'filesystem'
     source = 'server_filesystem'
     group = 'filesystem'
 
@@ -528,18 +503,11 @@ class ServerFileSystemCompletionProvider(CommandCompletionProvider):
         self.command_registry = registry
 
     def _path_query(self, context):
-        spec = self.command_registry.get(context.command_name)
-        if spec is None:
+        target = self.command_registry.resolve_completion_target(context)
+        if not target or target.completion.provider != 'filesystem':
             return None
-        try:
-            _, action, tail = self.command_registry.parse(context.command_name, context.argument_text)
-            node = self.command_registry._leaf(spec, action)
-        except (ValueError, TypeError, AttributeError):
-            return None
-        completion = node.completion
-        if completion is None or completion.provider != 'filesystem' or not node.raw_tail:
-            return None
-        return tail, completion.kinds
+        source = context.raw_input or f'{context.command_name} {context.argument_text}'
+        return source[len(target.prefix):], target.completion.kinds
 
     def supports(self, context: CompletionContext) -> bool:
         return self._path_query(context) is not None
@@ -648,9 +616,9 @@ class RemoteClientCommandCompletionProvider(ServerCompletionSessionMixin, Comman
         )
 
 
-class ConfigCommandCompletionProvider(ServerCompletionSessionMixin, CommandCompletionProvider):
+class ConfigCommandCompletionProvider(ServerCompletionSessionMixin, DeclaredServerCompletionProvider):
     """Complete configuration keys from the selected Client's real GET schema."""
-    command_names = ('config',)
+    provider_key = 'configuration'
     source = 'server_config'
     group = 'runtime'
 
@@ -662,13 +630,8 @@ class ConfigCommandCompletionProvider(ServerCompletionSessionMixin, CommandCompl
     def complete(self, context: CompletionContext) -> list[CompletionCandidate]:
         import time
         from core.protocol.control import ControlDomain, ConfigurationAction
-        tokens = str(context.argument_text or '').strip().split()
-        if not tokens or tokens[0].lower() not in ('set', 'reset'):
-            return []
-        action = tokens[0].lower()
-        if len(tokens) > 3 or (len(tokens) == 3 and tokens[1] != '--key'):
-            return []
-        if len(tokens) > 1 and tokens[1].startswith('-') and tokens[1] != '--key':
+        target = self.target(context)
+        if target is None:
             return []
         client_id = self.get_client_id(context)
         if not client_id:
@@ -690,7 +653,7 @@ class ConfigCommandCompletionProvider(ServerCompletionSessionMixin, CommandCompl
             except (AttributeError, ValueError, RuntimeError, LookupError, TimeoutError):
                 return []
             self._cached[client_id] = (time.monotonic(), items)
-        prefix = f'config {action} ' + ('--key ' if len(tokens) > 1 and tokens[1] == '--key' else '')
+        prefix = target.prefix
         return [CompletionCandidate(
             title=f'{prefix}{item["key"]}', insert_text=f'{prefix}{item["key"]}',
             description=str(item.get('desc') or ''), source=self.source,
@@ -698,9 +661,9 @@ class ConfigCommandCompletionProvider(ServerCompletionSessionMixin, CommandCompl
         ) for i, item in enumerate(items) if isinstance(item, dict) and item.get('key')]
 
 
-class JobCommandCompletionProvider(ServerCompletionSessionMixin, CommandCompletionProvider):
+class JobCommandCompletionProvider(ServerCompletionSessionMixin, DeclaredServerCompletionProvider):
     """Job names for lifecycle commands and stored reports via shared Web/CLI completion."""
-    command_names = ('job',)
+    provider_key = 'jobs'
     source = 'server_job'
     group = 'job'
 
@@ -710,14 +673,10 @@ class JobCommandCompletionProvider(ServerCompletionSessionMixin, CommandCompleti
         self.background_job_service = background_job_service
 
     def complete(self, context: CompletionContext) -> list[CompletionCandidate]:
-        parts = str(context.argument_text or '').lstrip().split()
-        if not parts or parts[0].lower() not in ('start', 'stop', 'status', 'logs'):
+        target = self.target(context)
+        if target is None:
             return []
-        action = parts[0].lower()
-        if len(parts) > 3 or (len(parts) == 3 and parts[1] != '--name'):
-            return []
-        if len(parts) > 1 and parts[1].startswith('-') and parts[1] != '--name':
-            return []
+        action = target.path[-1]
         client_id = self.get_client_id(context)
         if not client_id:
             return []
@@ -725,9 +684,11 @@ class JobCommandCompletionProvider(ServerCompletionSessionMixin, CommandCompleti
             jobs = self.background_job_service.list_jobs(client_id) or []
         except (AttributeError, ValueError, LookupError):
             jobs = []
+        from server.application.jobs.background_job_store import BackgroundJobStore
+        active_states = BackgroundJobStore.ACTIVE_STATES
         active = {str(item.get('job_key') or item.get('job_name') or '').strip().casefold()
                   for item in jobs if isinstance(item, dict)
-                  and str(item.get('state') or '').lower() in ('running', 'stopping')}
+                  and str(item.get('state') or '').lower() in active_states}
         if action == 'start':
             try:
                 catalog = self.job_catalog_service.list_background_job_catalog()
@@ -740,8 +701,8 @@ class JobCommandCompletionProvider(ServerCompletionSessionMixin, CommandCompleti
         else:
             names = [str(item.get('job_key') or item.get('job_name') or '').strip()
                      for item in jobs if isinstance(item, dict)
-                     and str(item.get('state') or '').lower() in ('running', 'stopping')]
-        prefix = f'job {action} ' + ('--name ' if len(parts) > 1 and parts[1] == '--name' else '')
+                     and str(item.get('state') or '').lower() in active_states]
+        prefix = target.prefix
         seen = set()
         result = []
         for name in names:

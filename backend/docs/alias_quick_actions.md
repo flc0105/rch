@@ -141,7 +141,7 @@ Web Quick Actions 的定义列表基于 Alias JSON，并非单独的 Quick Actio
 
 在手机浏览器中，Quick Actions 使用卡片展示每条定义，仍提供 Run、Run in Terminal、Edit、Delete；Platform 选择、搜索和 New Action 保留在顶部，编辑及运行输入可在全屏工作区完成。
 
-编辑时填写 Platform、Action name、Command，可顺便启用工具栏 Pin。执行时，如果模板带占位符，先打开按唯一参数生成的文本表单；没有占位符就直接提交。**Run** 会打开独立结果弹窗，**Run in Terminal** 把输入和后续结果放到正常终端显示链。二者都通过常规 Web Command Task 提交，仍受目标连接、前台任务占用、权限与取消约束。
+编辑时填写 Platform、Action name、Command，可顺便启用工具栏 Pin。执行时，如果模板带占位符，先打开按唯一参数生成的文本表单；没有占位符就直接提交。**Run** 会打开独立结果弹窗，**Run in Terminal** 把输入和后续结果放到正常终端显示链，并在提交新命令时恢复尾部自动跟随；用户主动上翻后仍可暂停跟随。二者都通过常规 Web Command Task 提交，仍受目标连接、前台任务占用、权限与取消约束。
 
 真正需要注意的是这三种**命令提交模式**：
 

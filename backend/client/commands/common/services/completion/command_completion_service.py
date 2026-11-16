@@ -2,6 +2,7 @@ import re
 
 from core.command_completion.models import CompletionCandidate, CompletionContext, CompletionSpec
 from core.command_completion.parser import CommandCompletionParser
+from core.command_completion.registry import CommandCompletionRegistry
 from core.commands.command_line_resolver import CommandLineResolver
 
 
@@ -21,6 +22,9 @@ class FileSystemCompletionProvider:
         start, end, raw_path = argument_span or CommandLineResolver.last_argument_span(text, cursor)
         path_value = _unquote_path(raw_path)
         lookup_path, candidate_prefix = _split_path(path_value)
+        # Match the typed name before the caller caps results; otherwise a
+        # large directory can hide every matching entry past the first page.
+        name_prefix = path_value[len(candidate_prefix):]
         directory = self.path_resolver.require_existing_directory_from_arg(lookup_path)
         payload = self.file_system_service.list_child_paths(directory)
         entries = payload.get('entries') if isinstance(payload, dict) else []
@@ -34,7 +38,7 @@ class FileSystemCompletionProvider:
             if allowed and kind not in allowed:
                 continue
             name = str(item.get('name') or '').strip()
-            if not name:
+            if not name or not name.startswith(name_prefix):
                 continue
             candidate_path = f'{candidate_prefix}{name}'
             replacement = _quote_replacement(candidate_path, raw_path)
@@ -111,12 +115,12 @@ class ClientCommandCompletionService:
         self.command_host = command_host
         self.parser = CommandCompletionParser()
         self.resolver = CommandLineResolver()
-        self.providers = {
+        self.providers = CommandCompletionRegistry({
             'filesystem': FileSystemCompletionProvider(
                 path_resolver=command_host.path_resolver,
                 file_system_service=command_host.file_system_service,
             ),
-        }
+        })
 
     def complete(self, payload: dict) -> dict:
         data = payload if isinstance(payload, dict) else {}
