@@ -234,7 +234,7 @@ def test_update_build_real_bundle_keeps_forwarded_config(tmp_path, monkeypatch):
         assert 'client/scripts/manager.py' in archive.namelist()
         assert 'client/remote_files/manager.py' in archive.namelist()
         assert 'client/jobs/control.py' in archive.namelist()
-        assert 'client/commands/runtime/control_dispatcher.py' not in archive.namelist()
+        assert 'client/commands/runtime/dispatcher.py' not in archive.namelist()
 
 
 def test_abnormal_disconnect_waits_before_first_reconnect():

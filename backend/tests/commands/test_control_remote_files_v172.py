@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from client.runtime.control_dispatcher import ClientControlDispatcher
+from client.controls.dispatcher import ClientControlDispatcher
 from client.controls.registration import register_remote_files
 from client.runtime.execution.runtime import ExecutionRuntime
 from client.remote_files.manager import RemoteFilesManager

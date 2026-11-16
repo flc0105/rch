@@ -4,7 +4,7 @@ The dispatcher consumes registrations; it never resolves a domain or action
 into a concrete manager, path preparer or cancellation implementation itself.
 """
 from core.protocol.control import ControlDomain, ClipboardAction, ScriptAction, control_actions
-from client.runtime.control_dispatcher import ClientControlDispatcher
+from client.controls.dispatcher import ClientControlDispatcher
 
 
 def register_control_domain(dispatcher, domain, handler, *, prepares=None, cancel_policies=None):

@@ -9,7 +9,7 @@ from types import SimpleNamespace
 import pytest
 
 from client.config import runtime_config
-from client.runtime.control_dispatcher import ClientControlDispatcher
+from client.controls.dispatcher import ClientControlDispatcher
 from client.controls.registration import register_control_domain
 from core.protocol.control import ControlDomain, ScriptAction
 from client.runtime.execution.runtime import ExecutionRuntime

@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from client.controls.registration import build_control_dispatcher
-from client.runtime.control_dispatcher import ClientControlDispatcher
+from client.controls.dispatcher import ClientControlDispatcher
 from client.runtime.execution.runtime import ExecutionRuntime
 from client.remote_files.manager import RemoteFilesManager
 from core.protocol.control import (ControlDomain, ControlRequest, ControlValue, JobAction,
