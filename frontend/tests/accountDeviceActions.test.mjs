@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import vm from 'node:vm'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const app = readFileSync(resolve(root, 'src/App.vue'), 'utf8')
@@ -50,3 +51,26 @@ assert.match(app, /copyAuthorizationToken/)
 assert.doesNotMatch(app, /session_secret|password_hash/)
 
 console.log('Account menu and Device List connection action tests passed')
+
+// Hidden devices visibility is a plain UI preference toggle; password management remains separate.
+const connectionsSource = readFileSync(resolve(root, 'src/composables/useConnections.js'), 'utf8')
+const connectionsApi = readFileSync(resolve(root, 'src/api/connectionsApi.js'), 'utf8')
+const backendConnections = readFileSync(resolve(root, '../backend/server/web/routes/connections.py'), 'utf8')
+const backendConfig = readFileSync(resolve(root, '../backend/server/config/config.py'), 'utf8')
+const authDocs = readFileSync(resolve(root, '../backend/docs/admin_auth.md'), 'utf8')
+for (const [source, label] of [[connectionsSource,'composable'], [connectionsApi,'API'],
+  [backendConnections,'backend'], [backendConfig,'configuration'], [authDocs,'docs']]) {
+  assert.doesNotMatch(source, /verifyHiddenDevicesPassword|hidden-devices\/verify|HIDDEN_DEVICES_(?:PASSWORD|REQUIRE_PASSWORD)|rch-hidden-devices-password/, label)
+}
+const sandbox = { ElMessage: {}, ElMessageBox: {} }
+vm.runInNewContext(connectionsSource.replace(/^import[^\n]*\n/gm, '').replace('export default {', 'globalThis.connections = {'), sandbox)
+const toggle = sandbox.connections.methods.toggleShowHiddenDevices
+const state = { showHiddenDevices: false, selectionRefreshes: 0,
+  ensureSelectedConnectionVisible() { this.selectionRefreshes++ } }
+toggle.call(state)
+assert.equal(state.showHiddenDevices, true)
+assert.equal(state.selectionRefreshes, 1)
+toggle.call(state)
+assert.equal(state.showHiddenDevices, false)
+assert.equal(state.selectionRefreshes, 2)
+console.log('Hidden-device visibility toggle works without password verification')

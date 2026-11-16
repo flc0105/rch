@@ -238,7 +238,7 @@ Picker 面向**需要远程路径作为输入的其他功能**，主要集成在
 
 **多选值是路径数组，不应转换成逗号分隔字符串。** 这影响参数校验、任务启动与运行时拿到的真实数据类型。`selection_mode` 可以显式使用 `file` 或 `folder`；常规参数表单也会依据 `remote_file` / `remote_folder` 等参数类型决定可选内容。`initial_path` 用于指定打开 Picker 时首先浏览的位置。
 
-File 模式允许进入目录浏览，但只有文件可以被选中；Folder 模式主要显示目录并允许选择目录条目。常规路径参数的 Picker 通过目录列表选择目标目录；ZIP 的解压目的地 Picker 额外提供 **Select Current Folder**，允许直接选择当前浏览的目录。单选点击 Select 后返回字符串，多选可以先勾选多项，再统一确认返回数组。
+File 模式允许进入目录浏览，但只有文件可以被选中；Folder 模式主要显示目录并允许选择目录条目。**单选 Folder Picker** 提供 **Select Current Folder**，可以直接选择当前浏览的目录并返回路径字符串。**多选 Folder Picker** 通过列表勾选目录，再使用 **Select (N)** 确认，返回路径数组；此模式不显示 Select Current Folder。File 模式只允许选择文件。
 
 ### Picker 的导航和调用集成
 

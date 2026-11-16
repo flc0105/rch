@@ -4,7 +4,6 @@
     :selected-id="selectedId"
     :initial-path="pickerInitialPath"
     selection-mode="folder"
-    :allow-current-folder="true"
     :append-to-body="true"
     @select="extractToFolder"
   />

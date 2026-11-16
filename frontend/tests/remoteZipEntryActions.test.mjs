@@ -87,7 +87,8 @@ test('closing selection clears pending directory without dispatching extraction'
   actor.cancelSelection()
   assert.equal(actor.folderPickerVisible, false)
   assert.equal(actor.pendingEntry, null)
-  assert.match(source, /:allow-current-folder="true"/)
+  assert.match(source, /selection-mode="folder"/)
+  assert.doesNotMatch(source, /allow-current-folder/)
   assert.match(source, /:append-to-body="true"/)
 })
 

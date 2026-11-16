@@ -192,10 +192,14 @@ class CommandLineResolver:
         alias_map = {'-' + item.alias: item for item in options if item.alias}
         active = tokens[-1] if tokens else None
         prefix = str(raw_input or '')[:cursor]
+        if len(tokens) <= command_token_count and not prefix.endswith((' ', '\t')):
+            return None
 
-        if active is not None and not prefix.endswith((' ', '\t')) and active.value.startswith('--') and '=' in active.value:
+        if active is not None and not prefix.endswith((' ', '\t')) and active.value.startswith('-') and '=' in active.value:
             option_name, _ = active.value.split('=', 1)
-            option = option_map.get(option_name)
+            option = option_map.get(option_name) or alias_map.get(option_name)
+            if option is None and option_name.startswith('--'):
+                option = option_map.get('--' + option_name[2:].replace('-', '_'))
             if option and option.completion:
                 _, active_end, _ = cls.last_argument_span(raw_input, cursor)
                 value_start = active.start + len(option_name) + 1
@@ -206,12 +210,14 @@ class CommandLineResolver:
 
         if active is not None and len(tokens) >= 2 and not prefix.endswith((' ', '\t')):
             previous = tokens[-2].value
-            option = option_map.get(previous) or alias_map.get(previous)
+            option = (option_map.get(previous) or alias_map.get(previous) or
+                      (option_map.get('--' + previous[2:].replace('-', '_')) if previous.startswith('--') else None))
             if option and not option.is_flag:
                 return (option.completion, cls.last_argument_span(raw_input, cursor)) if option.completion else None
 
         if prefix.endswith((' ', '\t')) and active is not None:
-            option = option_map.get(active.value) or alias_map.get(active.value)
+            option = (option_map.get(active.value) or alias_map.get(active.value) or
+                      (option_map.get('--' + active.value[2:].replace('-', '_')) if active.value.startswith('--') else None))
             if option:
                 return (option.completion, (cursor, cursor, '')) if not option.is_flag and option.completion else None
             if active.value.startswith('-'):
@@ -221,49 +227,20 @@ class CommandLineResolver:
                 and active.value.startswith('-')):
             return None
 
-        positional = []
-        filled_positions = set()
-        index = command_token_count
-        while index < len(tokens):
-            token = tokens[index].value
-            option = None
-            has_inline_value = False
-            if token.startswith('--'):
-                option_name, separator, _ = token.partition('=')
-                option = option_map.get(option_name)
-                has_inline_value = bool(separator)
-            elif token.startswith('-') and len(token) == 2:
-                option = alias_map.get(token)
-
-            if option is not None:
-                if not option.is_flag:
-                    if has_inline_value:
-                        if option.positional_index is not None:
-                            filled_positions.add(option.positional_index)
-                    elif index + 1 < len(tokens):
-                        if option.positional_index is not None:
-                            filled_positions.add(option.positional_index)
-                        index += 2
-                        continue
-                index += 1
-                continue
-            if token.startswith('-'):
-                index += 1
-                continue
-            positional.append(tokens[index])
-            index += 1
-
-        # Named options can satisfy positional arguments as well. Once --name
-        # has a value, subsequent words must not request that name again.
-        available_positions = sorted(item.positional_index for item in options
-                                     if item.positional_index is not None
-                                     and item.positional_index not in filled_positions)
-        active_positional = len(positional) if prefix.endswith((' ', '\t')) else max(0, len(positional) - 1)
-        if active_positional >= len(available_positions):
+        # Use the execution argument grammar for the completed tokens. The
+        # current unfinished token is excluded so it does not consume its slot.
+        from core.commands.argument_parser import parse_partial_argument_tokens
+        from core.commands.argument_errors import ArgumentCommandValidationError
+        completed = tokens[command_token_count:] if prefix.endswith((' ', '\t')) else tokens[command_token_count:-1]
+        try:
+            filled, _ = parse_partial_argument_tokens(argument_spec, [token.value for token in completed])
+        except ArgumentCommandValidationError:
             return None
-        current_index = available_positions[active_positional]
-        current_span = (cursor, cursor, '') if prefix.endswith((' ', '\t')) else cls.last_argument_span(raw_input, cursor)
-        for option in options:
-            if option.positional_index == current_index and option.completion:
-                return option.completion, current_span
-        return None
+        available = sorted((item for item in options
+                            if item.is_positional and item.name not in filled),
+                           key=lambda item: item.positional_index)
+        if not available or not available[0].completion:
+            return None
+        span = ((cursor, cursor, '') if prefix.endswith((' ', '\t'))
+                else cls.last_argument_span(raw_input, cursor))
+        return available[0].completion, span

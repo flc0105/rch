@@ -4,6 +4,7 @@ import re
 from core.protocol.structured_arg_codec import encode_structured_arg
 from core.external_tools.install_status import INSTALL_STATUS_NOT_INSTALLED, is_installed_status, normalize_install_status
 from core.command_completion.models import CompletionCandidate, CompletionContext
+from core.commands.command_line_resolver import CommandLineResolver
 from core.platform.normalization import normalize_platform_alias
 from core.platform.catalog_visibility import visible_on_platform
 from core.command_completion.provider import CommandCompletionProvider
@@ -421,21 +422,15 @@ class ExternalToolCommandCompletionProvider(ServerCompletionSessionMixin, Declar
                 installed = self._install_statuses(context, packages)
         except (AttributeError, ValueError, RuntimeError, LookupError, TimeoutError):
             return []
-        module_by_id = {m['tool_id']: m for m in modules}
-        parts = target.tokens
-        target_module = ''
-        for index, token in enumerate(parts):
-            if token == '--module' and index + 1 < len(parts):
-                target_module = parts[index + 1]
-            elif token.startswith('--module='):
-                target_module = token.partition('=')[2]
-        if not target_module and parts and not parts[0].startswith('-'):
-            target_module = parts[0]
-        named = any(token in ('--name', '--module') or
-                    token.startswith(('--name=', '--module=')) for token in parts)
-        prefix = f'xt instance {action} '
-        if named and target_module:
-            prefix += f'--module {target_module} --name '
+        # The Registry supplies the partially parsed argument values and the
+        # exact prefix to replace. Instance state is the XT provider's concern.
+        args = target.arguments
+        named = target.named_options
+        if target.argument == 'instance' and ('module' in args or 'name' in named):
+            return []  # These spellings accept one instance ID, not two.
+        target_module = str(args.get('module') or
+                            (args.get('name') if target.argument == 'instance' else '') or '')
+        module_by_id = {module['tool_id']: module for module in modules}
         result, seen = [], set()
         for row in rows:
             if not isinstance(row, dict):
@@ -454,13 +449,30 @@ class ExternalToolCommandCompletionProvider(ServerCompletionSessionMixin, Declar
                 continue
             if action == 'restart' and not running:
                 continue
-            name = instance_id if (named and target_module) else (f'--module {tool} --name {instance_id}' if named else f'{tool} {instance_id}')
-            if name in seen:
+
+            if target.argument == 'instance' or target_module:
+                name = instance_id
+            elif 'name' in named:
+                name = f'{instance_id} --module {tool}'
+            else:
+                name = f'{tool} {instance_id}'
+            value = target.prefix + name
+            if value in seen:
                 continue
-            seen.add(name)
-            result.append(self._candidate(prefix, name,
-                f'{meta.get("display_name") or tool} — {row.get("status") or ("running" if running else "stopped")}',
-                'external_tool_instance'))
+            seen.add(value)
+            description = (f'{meta.get("display_name") or tool} — '
+                           f'{row.get("status") or ("running" if running else "stopped")}')
+            result.append(self._candidate(target.prefix, name, description, 'external_tool_instance'))
+            # The execution grammar accepts a single, unambiguous instance ID.
+            # Offer this spelling when the user has started typing that ID.
+            fragment = str(args.get('name') or '')
+            if (target.argument == 'name' and 'name' not in named and not target_module
+                    and fragment and instance_id.startswith(fragment)):
+                shortcut = f'{instance_id} --module {tool}'
+                value = target.prefix + shortcut
+                if value not in seen:
+                    seen.add(value)
+                    result.append(self._candidate(target.prefix, shortcut, description, 'external_tool_instance'))
         return result
 
     def _build_exec_candidates(self, context: CompletionContext, target) -> list[CompletionCandidate]:
@@ -558,10 +570,10 @@ class RemoteClientCommandCompletionProvider(ServerCompletionSessionMixin, Comman
         manifest = getattr(getattr(session, 'session_info', None), 'command_manifest', None) or []
         command_name = str(context.command_name or '').strip().lower()
         if command_name == 'acmd':
-            subcommand = str(context.argument_text or '').strip().split(maxsplit=1)
+            subcommand = CommandLineResolver.scan_tokens(context.argument_text or '', max_tokens=1)
             if not subcommand:
                 return None
-            target_name = f'acmd {subcommand[0].lower()}'
+            target_name = f'acmd {subcommand[0].value.lower()}'
         else:
             target_name = command_name
         return next((item for item in manifest

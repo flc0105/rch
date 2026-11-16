@@ -81,15 +81,40 @@ test('file transfer opens downloaded artifact and folder extraction sends the se
   assert.equal(action.pendingEntry, null)
 })
 
-test('folder picker adds optional current folder selection without changing ordinary callers', () => {
+test('single folder picker selects current directory; multi folder picker uses checked rows', () => {
   const component = evaluate('RemoteFilePicker.vue', {listRemoteDirectory(){}, getRemoteSystemPaths(){}, ElMessage:{}, ElMessageBox:{},formatBytesValue(){},uploadRemoteFileToClient(){}})
-  assert.equal(component.props.allowCurrentFolder.default, false)
+  assert.equal(component.props.allowCurrentFolder, undefined)
+  assert.match(source('RemoteFilePicker.vue'), /v-if="selectionMode === 'folder' && !multiple"[\s\S]*?@click="selectCurrentFolder"/)
   assert.equal(component.props.appendToBody.default, false)
   const selections=[]
-  const picker=instance(component, {allowCurrentFolder:true, selectionMode:'folder', multiple:false,
+  const picker=instance(component, {selectionMode:'folder', multiple:false,
     remoteFilesCurrentPath:'/target', remoteFilesLoading:false, $emit:(...a)=>selections.push(a)})
   picker.selectCurrentFolder()
   assert.deepEqual(selections, [['select','/target'], ['update:visible',false]])
+  const multiEvents = []
+  const multiplePicker = instance(component, {selectionMode:'folder', multiple:true,
+    remoteFilesCurrentPath:'/target', remoteSelectedPaths:['/target/child', '/target'],
+    remoteFilesLoading:false, $emit:(...a)=>multiEvents.push(a)})
+  multiplePicker.selectCurrentFolder()
+  assert.deepEqual(multiEvents, [])
+  multiplePicker.confirmMultipleSelection()
+  assert.deepEqual(JSON.parse(JSON.stringify(multiEvents)), [
+    ['select', ['/target/child', '/target']], ['update:visible', false],
+  ])
+  const fileEvents = []
+  const filePicker = instance(component, {selectionMode:'file', multiple:false,
+    remoteFilesCurrentPath:'/target', remoteFilesLoading:false, $emit:(...a)=>fileEvents.push(a)})
+  filePicker.selectCurrentFolder()
+  assert.deepEqual(fileEvents, [])
+  const loadingEvents = []
+  instance(component, {selectionMode:'folder', multiple:false,
+    remoteFilesCurrentPath:'/target', remoteFilesLoading:true,
+    $emit:(...a)=>loadingEvents.push(a)}).selectCurrentFolder()
+  assert.deepEqual(loadingEvents, [])
+  assert.match(source('RemotePinsDialog.vue'), /selection-mode="folder"/)
+  for (const name of ['ScriptRunDialog.vue','BackgroundJobStartDialog.vue','ExternalToolManagerDialog.vue']) {
+    assert.match(source(name), /:selection-mode="pendingRemoteFileParamSelectionMode"/)
+  }
 })
 
 test('both remote ZIP preview entry points wire actions; artifact archive preview stays read-only', () => {

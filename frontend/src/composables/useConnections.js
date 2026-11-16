@@ -1,6 +1,5 @@
-import { h } from 'vue'
-import { ElInput, ElMessage, ElMessageBox } from 'element-plus'
-import { getConnectionRevisionStatus, listConnections, updateConnectionDeviceViewPrefs, verifyHiddenDevicesPassword } from '../api/connectionsApi.js'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { getConnectionRevisionStatus, listConnections, updateConnectionDeviceViewPrefs } from '../api/connectionsApi.js'
 import { assignMachineDeviceGroup, listDeviceGroups } from '../api/deviceGroupsApi.js'
 
 const LAST_SELECTED_MACHINE_STORAGE_KEY = 'rch:last_selected_machine_id'
@@ -476,108 +475,10 @@ export default {
             }
         },
 
-        // toggleShowHiddenDevices() {
-        //     this.showHiddenDevices = !this.showHiddenDevices
-        //     this.ensureSelectedConnectionVisible()
-        // },
-
-        async toggleShowHiddenDevices() {
-    if (this.showHiddenDevices) {
-        this.showHiddenDevices = false
-        this.ensureSelectedConnectionVisible()
-        return
-    }
-
-    try {
-        // 先询问服务端是否启用验证；关闭时保持原来的无缝 toggle 行为。
-        let verification = await verifyHiddenDevicesPassword()
-        if (verification?.required) {
-            let password = ''
-
-            // 不使用 ElMessageBox.prompt 的裸 password input。
-            // 独立 form + 明确的 autocomplete 语义，避免浏览器把页面里的 Command Input 误判成 username。
-const passwordInput = h({
-    name: 'HiddenDevicesPasswordInput',
-    data() {
-        return { value: '' }
-    },
-    render() {
-        return h(ElInput, {
-            type: 'password',
-            name: 'rch-hidden-devices-password',
-            autocomplete: 'new-password',
-            placeholder: 'Password',
-            modelValue: this.value,
-            'onUpdate:modelValue': value => {
-                this.value = String(value || '')
-                password = this.value
-            },
-        })
-    },
-})
-
-            const credentialForm = h(
-                'form',
-                {
-                    autocomplete: 'off',
-                    onSubmit: event => event.preventDefault(),
-                },
-                [
-                    h('p', { style: 'margin:0 0 18px;' }, 'Enter the password to show hidden devices.'),
-                    h('input', {
-                        type: 'text',
-                        name: 'rch-hidden-devices-username',
-                        autocomplete: 'username',
-                        tabindex: '-1',
-                        'aria-hidden': 'true',
-                        style: 'position:absolute;left:-10000px;width:1px;height:1px;opacity:0;pointer-events:none;',
-                    }),
-                    passwordInput,
-                ],
-            )
-
-            const passwordDialog = ElMessageBox({
-                title: 'Show Hidden Devices',
-                message: credentialForm,
-                customClass: 'hidden-devices-password-message-box',
-                showCancelButton: true,
-                confirmButtonText: 'Show',
-                cancelButtonText: 'Cancel',
-                autofocus: false,
-                beforeClose: (action, _instance, done) => {
-                    if (action === 'confirm' && !password) {
-                        ElMessage.warning('Password is required')
-                        return
-                    }
-                    done()
-                },
-            })
-
-            // MessageBox 的 FocusTrap 会在打开时设置一次初始焦点；
-            // 等它完成后，再聚焦密码框里的真实 input。
-            setTimeout(() => {
-                const input = document.querySelector(
-                    '.hidden-devices-password-message-box input[name="rch-hidden-devices-password"]',
-                )
-                input?.focus({ preventScroll: true })
-            }, 0)
-
-            await passwordDialog
-
-            verification = await verifyHiddenDevicesPassword(password)
-            if (!verification?.verified) {
-                ElMessage.error('Invalid password')
-                return
-            }
-        }
-
-        this.showHiddenDevices = true
-        this.ensureSelectedConnectionVisible()
-    } catch (e) {
-        if (e === 'cancel' || e === 'close' || e?.toString?.().includes('cancel')) return
-        ElMessage.error(e.message || 'Failed to verify hidden devices password')
-    }
-},
+        toggleShowHiddenDevices() {
+            this.showHiddenDevices = !this.showHiddenDevices
+            this.ensureSelectedConnectionVisible()
+        },
 
         ensureSelectedConnectionVisible() {
             const sidebarConnections = Array.isArray(this.deviceSidebarConnections)

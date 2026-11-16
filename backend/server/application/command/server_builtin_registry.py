@@ -4,11 +4,11 @@ Business implementations stay in their existing support classes.  The parser
 preserves raw tails for alias templates, shell-like arguments and structured JSON.
 Unknown commands are deliberately *not* claimed: they can reach the Client Shell.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from core.command_completion.models import CompletionSpec
 from core.commands.argument_errors import ArgumentCommandValidationError
 from core.commands.argument_models import ArgumentCommandSpec, ArgumentOptionSpec
-from core.commands.argument_parser import parse_argument_text
+from core.commands.argument_parser import parse_argument_text, parse_partial_argument_tokens
 from core.commands.command_line_resolver import CommandLineResolver
 from core.utils.command_output import OutputFormat
 
@@ -21,6 +21,8 @@ class ServerCompletionTarget:
     argument: str
     prefix: str
     tokens: tuple[str, ...]
+    arguments: dict = field(default_factory=dict)
+    named_options: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -105,7 +107,9 @@ def _xt_leaf(path, action, description, usage, *options, json=True,
 
 
 def _xt_instance_target(action, description, *, json=False, follow=False, params=False):
-    opts = [_option('name', positional=0), _option('instance', positional=1), _option('module')]
+    opts = [_option('name', positional=0, completion=CompletionSpec('xt', ('instance',))),
+            _option('instance', positional=1, completion=CompletionSpec('xt', ('instance',))),
+            _option('module', completion=CompletionSpec('xt', ('module',)))]
     if follow:
         opts.append(_option('follow', flag=True, alias='f'))
     return _xt_leaf('instance', action, description,
@@ -114,7 +118,7 @@ def _xt_instance_target(action, description, *, json=False, follow=False, params
                     + (' [-- --key VALUE ...]' if params else '')
                     + (' [--json]' if json else ''),
                     *opts, json=json, trailing_named_arguments='params' if params else None,
-                    independent=action in ('status', 'logs'), completion=CompletionSpec('xt', ('instance',)))
+                    independent=action in ('status', 'logs'))
 
 
 SERVER_COMMAND_SPECS = (
@@ -366,7 +370,13 @@ class ServerCommandRegistry:
         values = tuple(token.value for token in tokens[index:])
         if '--' in values:
             return None
+        arguments, named_options = {}, frozenset()
         if node.argument_spec is not None:
+            try:
+                arguments, named_options = parse_partial_argument_tokens(
+                    node.argument_spec, values)
+            except ArgumentCommandValidationError:
+                return None
             resolved = self._resolver.resolve_completion_argument(
                 source, len(source), tokens, node.argument_spec, command_token_count=index)
             if resolved is not None:
@@ -375,7 +385,7 @@ class ServerCommandRegistry:
                                if item.completion is completion), None)
                 if option is not None:
                     return ServerCompletionTarget(completion, tuple(path), option.name,
-                                                  source[:span[0]], values)
+                                                  source[:span[0]], values, arguments, named_options)
         if node.completion is None:
             return None
         # Complex targets and raw tails use their owning node's declaration.
@@ -383,7 +393,8 @@ class ServerCommandRegistry:
             return None
         return ServerCompletionTarget(node.completion, tuple(path), '',
                                       source[:tokens[index].start] if index < len(tokens)
-                                      else source + ('' if source.endswith(' ') else ' '), values)
+                                      else source + ('' if source.endswith(' ') else ' '), values,
+                                      arguments, named_options)
 
     def _iter_public_nodes(self, node, prefix=()):
         """Walk public command nodes once, including nested groups and leaves."""

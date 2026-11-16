@@ -38,7 +38,7 @@ Client 文件系统 Provider 先按当前输入的路径名称前缀匹配，再
 
 **Server 静态命令树只有一个来源**：`server_builtin_registry.py` 定义 Builtin、嵌套子命令及参数 Schema，Help 与静态命令候选读取同一树。动态参数在 `ArgumentOptionSpec.completion` 声明；RawTail 使用所在命令节点的 `completion`。两处均复用最小的 `CompletionSpec(provider, kinds)`，不再用 Provider 内的命令文本拆分判断参数位置。
 
-`CommandLineResolver` 保留当前光标之前的 Token、引号/转义语义和参数 Span；Server Registry 沿已声明的子命令节点查找当前参数与 CompletionSpec，产生只在本次请求内部使用的解析目标（完整命令路径、参数名称、回填前缀）。`ServerCommandCompletionService` 据此用公共命名 Registry 精确调用所声明的 Provider。候选经统一去重、排序后由同一 API 送给 Web Terminal 和 RCHCLI；`--name value`、`--name=value`、位置参数与 `--` 后的原生尾部由解析器区分。命名选项填写完成后，该值占用对应的位置参数槽；后续空格进入下一个参数，不会把已填写的 `--key` 或 `--name` 再补一次。Provider 异常保留日志，失败不会阻断输入。
+`CommandLineResolver` 保留当前光标之前的 Token、引号/转义语义和参数 Span；Server Registry 沿已声明的子命令节点查找当前参数与 CompletionSpec，并复用执行端的参数解析规则读取已填写的命名及位置参数，形成请求内的解析目标（完整命令路径、当前参数、已填参数、回填前缀）。`ServerCommandCompletionService` 据此用公共命名 Registry 精确调用所声明的 Provider。候选经统一去重、排序后由同一 API 送给 Web Terminal 和 RCHCLI；`--name value`、`--name=value`、位置参数与 `--` 后的原生尾部由解析器区分。命名选项填写完成后，该值占用对应的位置参数槽；后续空格进入下一个参数，不会把已填写的 `--key` 或 `--name` 再补一次。Provider 异常保留日志，失败不会阻断输入。
 
 Server 侧动态 Provider 分工：`filesystem` 读取 Server 本机文件目录；`configuration` 读取所选 Client 的 Configuration GET 并复用短时缓存；`jobs` 读取 Job Catalog 及当前 Client 的 Job 实例，使用 Job Store 的活跃状态；`scripts` 通过唯一的 `ScriptCatalogService` 扫描 Script 和 Metadata，再按现有平台可见性判断；`xt` 复用 External Tool Catalog 的公开平台/架构筛选及当前 Client 的安装/实例状态。Job、Script、XT 的实时状态仍属于各自业务，不变成握手快照。命令执行阶段继续使用原有校验、权限和路由，不受补全候选出现与否影响。
 
@@ -212,7 +212,7 @@ Client 与 Server 共用 `CommandLineResolver` 处理 Shell-like Token、原文 
 
 ## Server Registry 静态子命令补全
 
-对于 `xt exec`，输入 `xt exec ` 可补全 `list`、`info`、`which` 与当前目标平台 Catalog 提供的公开 Exec 名称；输入 `xt exec info ` 或 `xt exec which ` 可补全对应的 Exec 名称。`xt package` 提供 list/install/uninstall 与 Package 名称候选，`xt module list` 提供 Package 候选，`xt instance` 提供 create/list/start/stop/restart/status/logs 与 Daemon Module 候选。已输入 Exec 名称后，后续原生参数不由 XT 补全器接管。
+对于 `xt exec`，输入 `xt exec ` 可补全 `list`、`info`、`which` 与当前目标平台 Catalog 提供的公开 Exec 名称；输入 `xt exec info ` 或 `xt exec which ` 可补全对应的 Exec 名称。`xt package` 提供 list/install/uninstall 与 Package 名称候选，`xt module list` 提供 Package 候选，`xt instance` 提供 create/list/start/stop/restart/status/logs 与 Daemon Module 候选。实例补全按当前 Client 的真实安装和运行状态筛选，识别位置参数及 `--module`、`--name`（包含 `--option=value`）；候选仅替换当前值并保留已输入的命令及选项。单独填写实例 ID 与填写 Module + 实例 ID 都使用 XT 原有的实例定位语义。已输入 Exec 名称后，后续原生参数不由 XT 补全器接管。
 
 Server 注册表 `server_builtin_registry.py` 是一级 Builtin 与 `alias/job/script/xt/history/httpctl` 子命令唯一的静态定义来源。统一的递归遍历向普通 Builtin、XT 和 Help 提供静态路径，XT Provider 仅处理 Client 运行时安装、模块、实例及 Exec 等动态候选。Server 本机路径补全依命令节点上的 `CompletionSpec` 选择文件或目录候选；`upload` 的 RawTail 声明两种类型。`RegisteredServerSubcommandCompletionProvider` 从该表生成 `script list/view/exec`、`job list/start/logs/ps/status/stop/stop-all` 等结构；动态 `script exec <path>`、`job start <name>` 仍由专门 Provider 查询当前 Server Catalog。前端 `CommandInputBar` 对任何命令都可查询统一 Server 补全服务；服务端按 Provider 选择是否生成候选，脚本仍由 Metadata 平台信息过滤。`help` 的目标名称与子命令由同一 Server Builtin Registry 生成。
 

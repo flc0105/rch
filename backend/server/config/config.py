@@ -20,10 +20,6 @@ if not (1 <= SOCKET_PORT <= 65535 and 1 <= WEB_PORT <= 65534) or SOCKET_PORT in 
     raise ValueError('Invalid or overlapping RCH socket/web/ws ports')
 
 # ------------------ auth ------------------ #
-HIDDEN_DEVICES_REQUIRE_PASSWORD = os.getenv('RCH_HIDDEN_DEVICES_REQUIRE_PASSWORD', 'true').strip().lower() in {
-    '1', 'true', 'yes', 'on',
-}
-HIDDEN_DEVICES_PASSWORD = os.getenv('RCH_HIDDEN_DEVICES_PASSWORD', '1')
 WEB_AUTH_SESSION_DAYS = int(os.getenv('RCH_WEB_AUTH_SESSION_DAYS', '7'))
 # Cookie storage is scoped by host/path, not TCP port. Derive an independent
 # name for each deployment so two RCH sites on one hostname cannot log out each other.

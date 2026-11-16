@@ -4,14 +4,6 @@ export function listConnections() {
   return apiData('/api/connections', {}, [])
 }
 
-export function verifyHiddenDevicesPassword(password = '') {
-  return apiData(
-    '/api/connections/hidden-devices/verify',
-    jsonRequestOptions('POST', { password }),
-    { required: false, verified: false },
-  )
-}
-
 export function getConnectionRevisionStatus(clientId) {
   return apiData(`/api/connections/${encodeURIComponent(clientId)}/revision-status`, {}, {})
 }

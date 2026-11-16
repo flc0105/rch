@@ -75,10 +75,20 @@ def parse_argument_text(spec, text, *, literal_backslashes=False):
         raise
 
 
-def _parse_tokens(spec, tokens):
+def parse_partial_argument_tokens(spec, tokens):
+    """Read completed and in-progress CLI arguments without required-value validation.
+
+    Shares the execution parser's option names, aliases, and positional binding.
+    The second result identifies options explicitly written with --name/-n.
+    """
+    return _parse_tokens(spec, tokens, partial=True)
+
+
+def _parse_tokens(spec, tokens, *, partial=False):
     options = spec.get_option_map()
     aliases = spec.get_option_alias_map()
     raw = {}
+    named = set()
     positionals = []
     idx = 0
     literal = False
@@ -96,6 +106,7 @@ def _parse_tokens(spec, tokens):
             if opt is None:
                 raise ArgumentCommandValidationError(f'Unknown option: {token}')
             canonical = opt.name
+            named.add(canonical)
             if canonical in raw and not opt.repeatable:
                 raise ArgumentCommandValidationError(f'Duplicate option: --{canonical}')
             if opt.option_type == 'flag':
@@ -109,6 +120,8 @@ def _parse_tokens(spec, tokens):
                     raise ArgumentCommandValidationError(f'Invalid option arity: --{canonical}')
                 values = ([inline] if separator else [])
                 need = count - len(values)
+                if len(tokens) - idx - 1 < need and partial:
+                    break
                 if len(tokens) - idx - 1 < need:
                     raise ArgumentCommandValidationError(f'Option --{canonical} requires {count} value(s)')
                 values.extend(tokens[idx + 1:idx + 1 + need])
@@ -129,7 +142,7 @@ def _parse_tokens(spec, tokens):
         raise ArgumentCommandValidationError(f'Too many positional arguments for {spec.name}')
     for opt, value in zip(available, positionals):
         raw[opt.name] = value
-    return ArgumentCommandValidator().normalize(spec, raw)
+    return (raw, frozenset(named)) if partial else ArgumentCommandValidator().normalize(spec, raw)
 
 
 def _negative_number(value):

@@ -184,4 +184,4 @@ Command、Script 和 Job 使用同一连接期凭证。Web Browser Interaction �
 
 安全上还需区分三种轮换：改密码会影响 Web 登录及旧 Session；改 `api_token` 会影响 curl、Notifier 和其他外部 API 客户端；改 `session_secret` 会使现有签名 Cookie 失效。删除整个文件会同时重置全部三种凭据。上述操作均应在受控停机、备份和重启过程中完成，避免多实例使用不同的凭据文件。
 
-`RCH_HIDDEN_DEVICES_REQUIRE_PASSWORD` 和 `RCH_HIDDEN_DEVICES_PASSWORD` 是隐藏设备访问相关的独立配置，**不是 Web 管理员用户名/密码**。也不要把网络端口可访问、上传接口未设相同守卫，或 Client Session Token 能访问某条路由，等同于整个 Server 已实施统一的细粒度访问控制。公网部署前，应结合代理、TLS、网络隔离及独立通道的访问控制一起审查。
+Show Hidden Devices 是 Web 端设备列表的可见性开关，遵循当前设备隐藏偏好，不额外请求密码验证。公网部署仍应使用现有的 Web 管理员认证，并结合代理、TLS 和网络隔离控制访问。

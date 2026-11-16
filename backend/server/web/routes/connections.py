@@ -1,8 +1,5 @@
-import hmac
-
 from flask import Blueprint, request
 
-from server.config.config import HIDDEN_DEVICES_PASSWORD, HIDDEN_DEVICES_REQUIRE_PASSWORD
 from server.web.api_response import WebApiResponder
 from server.connection.runtime.foreground_task_snapshot import build_foreground_task_snapshot
 
@@ -24,21 +21,6 @@ def create_connections_blueprint(server_instance):
             ),
             default_error_status=404,
         )
-
-    @blueprint.post('/api/connections/hidden-devices/verify')
-    def verify_hidden_devices_password():
-        if not HIDDEN_DEVICES_REQUIRE_PASSWORD:
-            return responder.ok({'required': False, 'verified': True})
-
-        if not HIDDEN_DEVICES_PASSWORD:
-            return responder.fail('Hidden devices password is not configured', 500)
-
-        body = request.get_json(silent=True) or {}
-        password = str(body.get('password') or '')
-        return responder.ok({
-            'required': True,
-            'verified': hmac.compare_digest(password, HIDDEN_DEVICES_PASSWORD),
-        })
 
     @blueprint.get('/api/connections/<client_id>/revision-status')
     def get_client_revision_status(client_id):

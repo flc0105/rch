@@ -188,7 +188,7 @@
         </el-button>
 
         <el-button
-          v-if="selectionMode === 'folder' && !multiple && allowCurrentFolder"
+          v-if="selectionMode === 'folder' && !multiple"
           type="primary"
           :disabled="!remoteFilesCurrentPath || remoteFilesLoading"
           @click="selectCurrentFolder"
@@ -251,7 +251,6 @@ export default {
       validator: value => ['file', 'folder'].includes(value),
     },
 
-    allowCurrentFolder: { type: Boolean, default: false },
     appendToBody: { type: Boolean, default: false },
 
     getTabScopedHeaders: {
@@ -479,8 +478,7 @@ export default {
     },
 
     selectCurrentFolder() {
-      if (this.selectionMode !== 'folder' || this.multiple || !this.allowCurrentFolder ||
-          !this.remoteFilesCurrentPath || this.remoteFilesLoading) return
+      if (this.selectionMode !== 'folder' || this.multiple || !this.remoteFilesCurrentPath || this.remoteFilesLoading) return
       this.$emit('select', this.remoteFilesCurrentPath)
       this.closePicker()
     },

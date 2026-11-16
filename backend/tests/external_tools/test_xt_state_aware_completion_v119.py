@@ -107,7 +107,7 @@ def test_stop_restart_status_logs_have_distinct_lifecycle_filters():
     assert 'xt instance restart frp.frpc paused-c' not in restart
     assert 'xt instance status gost.socks5 stopped-b' in status
     assert 'xt instance logs gost.socks5 stopped-b' in logs
-    assert 'xt instance stop --module gost.socks5 --name running-a' in _names(provider, 'xt instance stop --name ')
+    assert 'xt instance stop --name running-a --module gost.socks5' in _names(provider, 'xt instance stop --name ')
     assert 'xt instance stop --module gost.socks5 --name running-a' in _names(
         provider, 'xt instance stop --module gost.socks5 --name ')
     assert 'xt instance stop frp.frps running-d' in stop
