@@ -168,7 +168,7 @@ def test_windows_screenshot_uses_wire_name_not_local_temp(monkeypatch, tmp_path)
 
 
 def test_job_upload_can_send_short_artifact_name_and_preserve_local_photo_temp(tmp_path):
-    from client.jobs.core.job import Job
+    from client.jobs.job import Job
 
     local = tmp_path / 'photo_random_dimension_temp.jpg'
     local.write_bytes(b'jpg')

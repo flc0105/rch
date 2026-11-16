@@ -1,7 +1,6 @@
 """Focused behavior tests for project module: jobs."""
 
 import contextlib
-import io
 import tempfile
 import unittest
 from pathlib import Path
@@ -9,8 +8,8 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 from client.runtime.execution.python_execution.inproc import InProcessPythonExecutionStrategy
 from client.runtime.execution.python_execution.subprocess_pipe import SubprocessPipePythonExecutionStrategy
-from client.jobs.core import subprocess_runner
-from client.jobs.core.manager import JobManager
+from client.jobs import subprocess_runner
+from client.jobs.manager import JobManager
 
 
 class InprocScriptExitBoundaryTests(unittest.TestCase):

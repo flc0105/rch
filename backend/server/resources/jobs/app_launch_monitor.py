@@ -26,7 +26,7 @@ import os
 import threading
 import time
 
-from client.jobs.core.job import Job
+from client.jobs.job import Job
 from core.utils.logger import logger
 
 

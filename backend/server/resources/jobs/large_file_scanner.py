@@ -22,7 +22,7 @@ import json
 import os
 import time
 
-from client.jobs.core.job import Job
+from client.jobs.job import Job
 
 
 class LargeFileScanner(Job):

@@ -23,7 +23,7 @@ import os
 import time
 from collections import defaultdict
 
-from client.jobs.core.job import Job
+from client.jobs.job import Job
 
 
 class DuplicateFileFinder(Job):

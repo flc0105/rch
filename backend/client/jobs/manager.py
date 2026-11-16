@@ -7,11 +7,11 @@ import sys
 import threading
 import uuid
 from datetime import datetime
-from typing import Dict, List
+from typing import Dict
 
 from client.config.config import RUNTIME_CONFIG
 from client.http.client_api import ClientApiClient
-from client.jobs.core.runtime import JobRuntime
+from client.jobs.runtime import JobRuntime
 from client.runtime.sdk.context import use_script_sdk_context
 from client.runtime.temp_workspace import cleanup_temp_path
 from core.utils.job_metadata import (
@@ -310,7 +310,7 @@ class JobManager:
         if profile_name:
             args.extend(['--profile', profile_name])
 
-        backend_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+        backend_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '', '..', '..'))
         env = os.environ.copy()
         existing_pythonpath = str(env.get('PYTHONPATH') or '').strip()
         env['PYTHONPATH'] = backend_root + (os.pathsep + existing_pythonpath if existing_pythonpath else '')

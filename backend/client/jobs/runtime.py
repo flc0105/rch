@@ -3,7 +3,7 @@ from datetime import datetime
 from threading import Thread
 from typing import Any, Optional
 
-from client.jobs.core.job import Job
+from client.jobs.job import Job
 
 
 @dataclass

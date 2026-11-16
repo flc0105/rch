@@ -1,11 +1,10 @@
 """Background Jobs share the active Client connection's HTTP API identity."""
 import json
 from types import SimpleNamespace
-from unittest.mock import Mock
 
 from client.http.session_auth import clear_token, get_token
-from client.jobs.core.manager import JobManager
-from client.jobs.core import subprocess_runner
+from client.jobs.manager import JobManager
+from client.jobs import subprocess_runner
 from client.runtime.sdk.context import get_current_context
 
 
@@ -22,7 +21,7 @@ def test_inproc_job_context_inherits_connection_credential():
 
 
 def test_subprocess_job_receives_token_through_environment_not_context_file(tmp_path, monkeypatch):
-    import client.jobs.core.manager as module
+    import client.jobs.manager as module
 
     socket = SimpleNamespace(client_id='client-1', info={'hostname': 'host'},
                              client_session_token='connected-token')

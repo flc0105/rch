@@ -78,7 +78,7 @@ def test_script_and_job_examples_expose_keychain_picker_metadata():
     assert 'Password length: 13' in output.getvalue()
     assert 'demo-password' not in output.getvalue()
 
-    from client.jobs.core.job import Job
+    from client.jobs.job import Job
 
     job_path = RESOURCES / 'jobs' / 'examples' / 'keychain_secret_picker.py'
     job_namespace = {'__name__': 'keychain_secret_picker_test'}

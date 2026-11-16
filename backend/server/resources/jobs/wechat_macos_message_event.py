@@ -2,7 +2,7 @@ import re
 import sys
 import time
 
-from client.jobs.core.job import Job
+from client.jobs.job import Job
 from client.runtime.sdk import events
 
 

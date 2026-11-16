@@ -19,7 +19,7 @@ import threading
 import time
 from ctypes import c_void_p
 
-from client.jobs.core.job import Job
+from client.jobs.job import Job
 from core.utils.logger import logger
 
 

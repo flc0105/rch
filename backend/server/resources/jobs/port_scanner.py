@@ -56,7 +56,7 @@ import time
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
-from client.jobs.core.job import Job
+from client.jobs.job import Job
 
 
 class PortScanner(Job):

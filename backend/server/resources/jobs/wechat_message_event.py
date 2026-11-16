@@ -6,7 +6,7 @@ import time
 
 import psutil
 
-from client.jobs.core.job import Job
+from client.jobs.job import Job
 from client.runtime.sdk import events
 
 
@@ -394,7 +394,6 @@ class WechatMessageEvent(Job):
         import ctypes
         import pythoncom
         import win32api
-        import win32con
         import win32gui
 
         self.mark_running()

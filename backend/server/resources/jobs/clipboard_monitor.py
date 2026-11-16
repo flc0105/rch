@@ -33,7 +33,7 @@ import sys
 import threading
 import time
 
-from client.jobs.core.job import Job
+from client.jobs.job import Job
 from core.utils.formatting import get_size
 from core.utils.artifact_naming import build_artifact_filename
 from core.utils.logger import logger

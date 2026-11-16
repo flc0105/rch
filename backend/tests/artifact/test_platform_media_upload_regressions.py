@@ -1,7 +1,6 @@
 """Media producers must use Saved category and name uploads after actual bytes."""
 
 import os
-import sys
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -10,7 +9,7 @@ import requests
 
 from client.commands.platform.services.mac import media_service as mac_media
 from client.http.client_api import ClientApiClient, ClientApiError
-from client.jobs.core.job import Job
+from client.jobs.job import Job
 
 
 def _mac_webcam(monkeypatch, tmp_path, *, capture_status=0, upload_status=1):

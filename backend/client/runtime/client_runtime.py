@@ -5,7 +5,7 @@ from client.remote_files.manager import RemoteFilesManager
 from client.scripts.manager import ScriptManager
 from client.runtime.sdk.command import ScriptCommandAccess
 from client.commands.runtime.executor import CommandExecutor
-from client.jobs.core.manager import JobManager
+from client.jobs.manager import JobManager
 from client.config.feature_config import resolve_features
 from client.monitor.manager import DeviceMonitorManager
 from client.transfers.manager import ClientTransferManager
