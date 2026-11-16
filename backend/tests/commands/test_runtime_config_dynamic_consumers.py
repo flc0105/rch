@@ -269,7 +269,7 @@ def test_buffer_preview_and_new_screen_sessions_use_latest_values(isolated_confi
 
 
 def test_handshake_builder_reports_latest_runtime_values(isolated_config):
-    from client.runtime.client_info_builder import ClientInfoBuilder
+    from client.connection.handshake import ClientInfoBuilder
     svc = RuntimeConfigService()
     builder = ClientInfoBuilder('test')
     info = builder.build()

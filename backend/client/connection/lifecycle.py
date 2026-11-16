@@ -5,7 +5,7 @@ import time
 from client.connection.server_connection import ServerConnection
 from client.connection.transport_connectors import get_connector
 from client.config.config import RUNTIME_CONFIG
-from client.runtime.client_info_builder import ClientInfoBuilder
+from client.connection.handshake import ClientInfoBuilder
 from core.utils.logger import logger
 
 

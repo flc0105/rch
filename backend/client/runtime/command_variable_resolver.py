@@ -7,7 +7,7 @@ import sys
 import threading
 
 from client.config.config import CLIENT_BUILD_VERSION
-from client.runtime.client_info_builder import ClientInfoBuilder
+from client.connection.handshake import ClientInfoBuilder
 from client.runtime.client_util import (
     get_executable_path,
     get_runtime_root,

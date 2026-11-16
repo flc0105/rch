@@ -164,7 +164,7 @@ def test_stale_watchdog_artifacts_removed_when_owner_exited(managed, monkeypatch
 
 def test_client_file_log_creates_no_owner_metadata(monkeypatch, tmp_path):
     import logging
-    from client.runtime import client_logging
+    from client.app import logging
     folder = tmp_path / 'client_logs'; folder.mkdir()
     monkeypatch.setattr(client_logging, 'get_temp_category_dir', lambda *a, **k: str(folder))
     root = logging.getLogger()

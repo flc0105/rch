@@ -5,8 +5,7 @@ import time
 from types import SimpleNamespace
 
 from client.config import runtime_config
-from client.runtime.client_runtime import ClientRuntime
-from client.runtime.execution.runtime import ExecutionRuntime
+from client.app.runtime import ClientRuntime
 
 
 def make_runtime():

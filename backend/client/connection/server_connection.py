@@ -5,8 +5,8 @@ import uuid
 
 from client.connection.message_dispatcher import ClientInboundMessageDispatcher
 from client.connection.message_router import ClientInboundMessageRouter
-from client.runtime.client_runtime import ClientRuntime
-from core.protocol.message_types import MSG_TYPE_RESULT, MSG_TYPE_SESSION_END
+from client.app.runtime import ClientRuntime
+from core.protocol.message_types import MSG_TYPE_SESSION_END
 from core.protocol.rchsocket import RCHSocket
 from core.utils.logger import logger
 

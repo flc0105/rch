@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 
 from client.runtime.command_variable_resolver import CommandVariableResolver
-from client.runtime.client_info_builder import ClientInfoBuilder
+from client.connection.handshake import ClientInfoBuilder
 
 
 def test_launch_mode_and_detail_variables_share_the_client_launch_snapshot(monkeypatch):

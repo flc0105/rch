@@ -9,7 +9,7 @@ from client.app.client import Client
 from client.config.config import SERVER_ADDR
 from client.config.feature_config import resolve_features
 from client.config import runtime_config
-from client.runtime.client_logging import install_client_file_logging
+from client.app.logging import install_client_file_logging
 from core.utils.logger import logger
 
 

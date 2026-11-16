@@ -1,11 +1,10 @@
 """Verify migrated controls share their services without internal CLI dispatch."""
-import json
 import subprocess
 import sys
 from types import SimpleNamespace
 
 from client.config import runtime_config
-from client.runtime.client_runtime import ClientRuntime
+from client.app.runtime import ClientRuntime
 from server.application.command.command_execution_event import CommandExecutionEvent
 from server.application.execution.upload_execution_service import UploadExecutionService
 from server.application.web.command_execution_api import WebCommandExecutionApi

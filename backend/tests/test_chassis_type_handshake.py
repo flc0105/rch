@@ -8,8 +8,8 @@ from types import SimpleNamespace
 import core.device.chassis_type as chassis
 from client.runtime import command_variable_resolver as variable_module
 from client.runtime.command_variable_resolver import CommandVariableResolver
-from client.runtime import client_info_builder as builder_module
-from client.runtime.client_info_builder import ClientInfoBuilder
+from client.connection import handshake as builder_module
+from client.connection.handshake import ClientInfoBuilder
 from server.application.connection.connection_service import WebConnectionService
 from server.models.session_info import SessionInfo
 from server.application.connection.recent_device_store import RecentDeviceStore

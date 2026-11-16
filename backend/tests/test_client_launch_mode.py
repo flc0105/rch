@@ -4,10 +4,10 @@ from types import SimpleNamespace
 import psutil
 import pytest
 
-import client.runtime.client_info_builder as client_info_builder
+import client.connection.handshake as client_info_builder
 import client.runtime.client_util as client_util
 import client.runtime.launch_context as launch_context
-from client.runtime.client_info_builder import ClientInfoBuilder
+from client.connection.handshake import ClientInfoBuilder
 from server.application.connection.connection_service import WebConnectionService
 from server.application.connection.recent_device_store import RecentDeviceStore
 from server.persistence.rch_database import RchDatabase
