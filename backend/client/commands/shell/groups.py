@@ -1,12 +1,11 @@
 from client.commands.common.mixins.execution_ops import CommandExecutionMixin
 from client.commands.common.mixins.external_tool_ops import CommandExternalToolMixin
-from client.commands.common.mixins.file_cli_ops import CommandFileCliMixin
+from client.commands.common.mixins.file_ops import CommandFileMixin
 from client.commands.common.mixins.introspection_ops import CommandIntrospectionMixin
 from client.commands.common.mixins.process_ops import CommandProcessMixin
 from client.commands.common.mixins.session_ops import CommandSessionMixin
 from client.commands.common.mixins.system_ops import CommandSystemMixin
 from client.commands.common.mixins.update_ops import CommandUpdateMixin
-from client.commands.common.mixins.watchdog_ops import CommandWatchdogMixin
 
 
 class CommonShellCommands(
@@ -21,7 +20,7 @@ class CommonShellCommands(
 
 
 class CommonFileCommands(
-    CommandFileCliMixin,
+    CommandFileMixin,
 ):
     """
     文件传输和远程文件管理命令组。
@@ -33,7 +32,6 @@ class CommonRuntimeCommands(
     CommandExternalToolMixin,
     CommandIntrospectionMixin,
     CommandProcessMixin,
-    CommandWatchdogMixin,
     CommandUpdateMixin,
 ):
     """

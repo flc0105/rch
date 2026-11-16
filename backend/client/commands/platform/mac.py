@@ -1,6 +1,6 @@
 from client.commands.acmd.decorators import argument_command
 from client.commands.runtime.interrupts import timeout
-from client.commands.common.commands import CommonCommands
+from client.commands.shell.commands import CommonCommands
 from client.commands.platform.services.mac.automation_service import MacAutomationService
 from client.commands.platform.services.mac.file_inspection_service import MacFileInspectionService
 from client.commands.platform.services.mac.media_service import MacMediaService

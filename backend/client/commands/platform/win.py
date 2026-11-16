@@ -1,5 +1,5 @@
 from client.commands.acmd.decorators import argument_command
-from client.commands.common.commands import CommonCommands
+from client.commands.shell.commands import CommonCommands
 from client.commands.runtime.interrupts import timeout
 from client.commands.platform.services.win.media_service import WinMediaService
 from client.commands.platform.services.win.privilege_service import WinPrivilegeService

@@ -3,7 +3,7 @@
 import inspect
 from types import SimpleNamespace
 import pytest
-from client.runtime.execution.context import ExecutionContext, CommandCancelledError, CommandTimeoutError
+from client.runtime.execution.context import ExecutionContext, CommandCancelledError
 from client.runtime.execution.context_store import ExecutionContextStore
 from client.commands.runtime.interrupts import timeout, cancel_policy
 from client.commands.runtime.shell_command_runner import ShellCommandRunner
@@ -192,7 +192,7 @@ def test_invalid_cancel_mode_rejected():
 
 
 def test_shell_and_stream_declare_process_cancellation():
-    from client.commands.common.commands import CommonCommands
+    from client.commands.shell.commands import CommonCommands
     assert CommonCommands.shell.command_cancel_mode == 'process'
     assert CommonCommands.shell_stream.command_cancel_mode == 'process'
     # A file operation with checkpoints is cooperative, not a managed subprocess.

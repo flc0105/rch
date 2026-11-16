@@ -1,5 +1,5 @@
-from client.commands.base import CommandBase
-from client.commands.common.groups import (
+from client.commands.shell.base import CommandBase
+from client.commands.shell.groups import (
     CommonFileCommands,
     CommonRuntimeCommands,
     CommonShellCommands,
