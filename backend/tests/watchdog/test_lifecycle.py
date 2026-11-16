@@ -20,7 +20,7 @@ from client.watchdog.process_recovery_watchdog import (
     _POLL_INTERVAL, ProcessRecoveryWatchdogManager, get_process_recovery_watchdog_status_payload,
 )
 from core.utils.command_output import StructuredCommandResult, render_structured_result
-from client.commands.runtime.shell_command_runner import ShellCommandRunner
+from client.commands.shell.runner import ShellCommandRunner
 from client.runtime.launch_context import is_launchd_managed_client
 
 

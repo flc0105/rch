@@ -6,7 +6,7 @@ import pytest
 from client.runtime.execution.context import ExecutionContext, CommandCancelledError
 from client.runtime.execution.context_store import ExecutionContextStore
 from client.commands.runtime.interrupts import timeout, cancel_policy
-from client.commands.runtime.shell_command_runner import ShellCommandRunner
+from client.commands.shell.runner import ShellCommandRunner
 from server.connection.runtime.session_execution_runtime import SessionExecutionRuntime
 from core.utils.decorator import desc
 from client.commands.runtime.executor import CommandExecutor

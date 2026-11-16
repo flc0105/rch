@@ -1,11 +1,11 @@
 from client.runtime.execution.runtime import ExecutionRuntime
 from typing import Any, Callable
 
-from client.commands.runtime.acmd_runner import ArgumentCommandRunner
+from client.commands.acmd.runner import ArgumentCommandRunner
 from client.commands.runtime.catalog import CommandCatalog
 from client.runtime.command_variable_resolver import CommandVariableResolver
 from client.runtime.execution.request import ExecutionRequest
-from client.commands.runtime.shell_command_runner import ShellCommandRunner
+from client.commands.shell.runner import ShellCommandRunner
 
 
 class CommandExecutor:

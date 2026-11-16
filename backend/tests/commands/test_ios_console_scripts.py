@@ -11,7 +11,7 @@ import pytest
 
 from client.commands.platform.ios import iOSCommands
 from client.runtime.execution.request import ExecutionRequest
-from client.commands.runtime.shell_command_runner import ShellCommandRunner
+from client.commands.shell.runner import ShellCommandRunner
 from client.runtime.sdk import artifact
 from core.utils.script_metadata import read_script_metadata_from_file, resolve_script_params
 

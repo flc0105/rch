@@ -3,7 +3,7 @@
 from client.commands.platform.win import WindowsCommands
 from client.commands.platform.mac import MacCommands
 from client.commands.platform.linux import LinuxCommands
-from client.commands.runtime.shell_command_runner import ShellCommandRunner
+from client.commands.shell.runner import ShellCommandRunner
 
 
 class DummyConnection:
