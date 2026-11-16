@@ -87,6 +87,34 @@ class CompletionCandidate:
         return payload
 
 
+@dataclass(frozen=True)
+class CompletionSpec:
+    """Minimal declaration selecting a completion provider and candidate kinds."""
+
+    provider: str
+    kinds: tuple[str, ...] = ()
+
+    def __post_init__(self):
+        provider = str(self.provider or '').strip().lower()
+        kinds = tuple(dict.fromkeys(str(item or '').strip().lower() for item in (self.kinds or ()) if str(item or '').strip()))
+        if not provider:
+            raise ValueError('Completion provider is required')
+        object.__setattr__(self, 'provider', provider)
+        object.__setattr__(self, 'kinds', kinds)
+
+    def to_dict(self) -> dict:
+        return {'provider': self.provider, 'kinds': list(self.kinds)}
+
+    @classmethod
+    def from_dict(cls, payload):
+        if isinstance(payload, cls):
+            return payload
+        if not isinstance(payload, dict):
+            raise ValueError('Invalid completion spec')
+        kinds = payload.get('kinds') if isinstance(payload.get('kinds'), (list, tuple)) else ()
+        return cls(provider=payload.get('provider') or '', kinds=tuple(kinds))
+
+
 def _coerce_int(value, fallback: int) -> int:
     try:
         return int(value)

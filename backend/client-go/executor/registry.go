@@ -14,6 +14,11 @@ type CommandHandler func(*Session, []string) (int, string)
 // CommandRunner handles cancellable commands and optional interim output.
 type CommandRunner func(context.Context, *Session, string, func(int, string)) (int, string)
 
+type CompletionSpec struct {
+	Provider string   `json:"provider"`
+	Kinds    []string `json:"kinds"`
+}
+
 type CommandSpec struct {
 	Name         string
 	Usage        string
@@ -22,6 +27,7 @@ type CommandSpec struct {
 	Suggest      bool
 	CancelPolicy string
 	Output       string
+	Completion   *CompletionSpec
 	Handler      CommandHandler
 	Runner       CommandRunner
 }
@@ -160,6 +166,25 @@ func Group(value string) CommandOption {
 	}
 }
 
+func CompletionProvider(provider string, kinds ...string) CommandOption {
+	return func(spec *CommandSpec) {
+		provider = strings.ToLower(strings.TrimSpace(provider))
+		if provider == "" {
+			panic("completion provider is required")
+		}
+		cleanKinds := make([]string, 0, len(kinds))
+		seen := map[string]bool{}
+		for _, kind := range kinds {
+			kind = strings.ToLower(strings.TrimSpace(kind))
+			if kind != "" && !seen[kind] {
+				seen[kind] = true
+				cleanKinds = append(cleanKinds, kind)
+			}
+		}
+		spec.Completion = &CompletionSpec{Provider: provider, Kinds: cleanKinds}
+	}
+}
+
 func Output(value string) CommandOption {
 	return func(spec *CommandSpec) {
 		spec.Output = value
@@ -209,7 +234,7 @@ func CommandManifest() []interface{} {
 	commands := AllCommands()
 	result := make([]interface{}, 0, len(commands))
 	for _, cmd := range commands {
-		result = append(result, map[string]interface{}{
+		entry := map[string]interface{}{
 			"name":          cmd.Name,
 			"usage":         defaultUsage(cmd),
 			"help":          cmd.Help,
@@ -217,7 +242,14 @@ func CommandManifest() []interface{} {
 			"suggest":       cmd.Suggest,
 			"cancel_policy": cmd.CancelPolicy,
 			"output":        cmd.Output,
-		})
+		}
+		if cmd.Completion != nil {
+			entry["completion"] = map[string]interface{}{
+				"provider": cmd.Completion.Provider,
+				"kinds":    append([]string(nil), cmd.Completion.Kinds...),
+			}
+		}
+		result = append(result, entry)
 	}
 	return result
 }

@@ -3321,7 +3321,7 @@ export default {
 }
 
 /* 移动端：恢复卡片列表，不显示表格 */
-@media (max-width: 768px), (max-height: 720px) {
+@media (max-width: 768px) {
   .remote-files-overlay .el-dialog {
     width: 100vw !important;
     max-width: 100vw !important;

@@ -14,11 +14,21 @@ spec.loader.exec_module(cli)
 
 
 class FakeApi:
+    def __init__(self):
+        self.completion_calls = []
+
     def command_candidates(self, client_id):
         return [{'insert_text': 'getinfo', 'title': 'getinfo'}]
 
-    def completions(self, client_id, text):
-        return [{'insert_text': 'download /bin', 'kind': 'directory'}]
+    def completions(self, client_id, text, completion=None):
+        self.completion_calls.append((client_id, text, completion))
+        if text.startswith('edit '):
+            value, kind = 'edit /tmp/readme.txt', 'file'
+        elif text.startswith('download '):
+            value, kind = 'download /bin', 'directory'
+        else:
+            value, kind = 'cd /bin', 'directory'
+        return [{'insert_text': value, 'kind': kind}]
 
 
 class FakeReadline:
@@ -136,7 +146,7 @@ class ReadlineSetupTests(unittest.TestCase):
 
     def test_path_filter_keeps_case_sensitive_match_and_prevents_libedit_common_prefix_regression(self):
         rc, rd, restore = self._setup('editline')
-        rc.api.completions = lambda client_id, raw: [
+        rc.api.completions = lambda client_id, raw, completion=None: [
             {'insert_text': 'cd /Users', 'kind': 'directory'},
             {'insert_text': 'cd /usr', 'kind': 'directory'},
         ]
@@ -151,7 +161,7 @@ class ReadlineSetupTests(unittest.TestCase):
 
     def test_path_filter_remains_case_sensitive_for_lowercase_prefix(self):
         rc = make_console()
-        rc.api.completions = lambda client_id, raw: [
+        rc.api.completions = lambda client_id, raw, completion=None: [
             {'insert_text': 'cd /Users', 'kind': 'directory'},
             {'insert_text': 'cd /usr', 'kind': 'directory'},
         ]
@@ -163,7 +173,7 @@ class ReadlineSetupTests(unittest.TestCase):
         local = rc.completion_candidates('edi')
         self.assertIn('edit', [item['insert_text'] for item in local])
 
-        rc.api.completions = lambda client_id, raw: [
+        rc.api.completions = lambda client_id, raw, completion=None: [
             {'insert_text': 'edit /Users/flc/Desktop', 'kind': 'directory'},
             {'insert_text': 'edit /Users/flc/notes.txt', 'kind': 'file'},
         ]
@@ -264,3 +274,22 @@ class ReadlineSetupTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class CompletionSpecOverrideTests(unittest.TestCase):
+    def test_rchcli_local_edit_uses_shared_client_filesystem_completion(self):
+        api = FakeApi()
+        rc = cli.RemoteConsole(api, None, 'tab', reader=lambda _: '', output=io.StringIO(), color='never')
+        rc.selected = {'client_id': 'device-1', 'name': 'mac'}
+        candidates = rc.completion_candidates('edit /tmp/')
+        self.assertTrue(any(item.get('insert_text') == 'edit /tmp/readme.txt' for item in candidates))
+        self.assertEqual(api.completion_calls[-1], (
+            'device-1', 'edit /tmp/', {'provider': 'filesystem', 'kinds': ['file', 'directory']},
+        ))
+
+    def test_client_command_completion_uses_manifest_without_frontend_override(self):
+        api = FakeApi()
+        rc = cli.RemoteConsole(api, None, 'tab', reader=lambda _: '', output=io.StringIO(), color='never')
+        rc.selected = {'client_id': 'device-1', 'name': 'mac'}
+        rc.completion_candidates('cd ')
+        self.assertEqual(api.completion_calls[-1], ('device-1', 'cd ', None))

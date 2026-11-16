@@ -4367,7 +4367,7 @@ formatVersionLabel(version) {
   padding-top: 12px !important;
 }
 
-@media (max-width: 768px), (max-height: 720px) {
+@media (max-width: 768px) {
   .external-tool-overlay .el-dialog {
     width: 100vw !important;
     max-width: 100vw !important;

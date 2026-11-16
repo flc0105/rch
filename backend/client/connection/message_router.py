@@ -47,6 +47,24 @@ class ClientInboundMessageRouter(BaseMessageRouter):
             return command_id, *result
         return None
 
+    def handle_completion_message(self, data: dict):
+        request_id = data.get('id')
+        try:
+            result = self.connection.runtime.command_executor.complete_command_completion(data)
+            self.connection.send_event(request_id, {
+                'event_type': 'completed',
+                'status': 'success',
+                'message': '',
+                'data': result,
+            })
+        except Exception as exc:
+            self.connection.send_event(request_id, {
+                'event_type': 'completed',
+                'status': 'error',
+                'message': str(exc) or 'Completion failed',
+            })
+        return None
+
     def handle_cancel_message(self, data: dict):
         target_command_id = data.get('target_id')
         def _report_terminal_state(state):

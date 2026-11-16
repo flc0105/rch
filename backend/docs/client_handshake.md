@@ -137,7 +137,7 @@ Server 监听线程把初始 JSON 与接受连接时得到的来源地址结合�
 | Web 入口 | 读到的握手数据及用途 |
 | --- | --- |
 | `GET /api/connections` | 活跃连接和最近离线设备；展示身份、平台、运行模式、Build/Revision、变量 Manifest 及在线状态等序列化摘要 |
-| `GET /api/connections/{client_id}/command-candidates` | 从活动 Session 的 `command_manifest` 获取 Client 候选，再与 Server 命令候选合并、按模板去重、排序 |
+| `GET /api/connections/{client_id}/command-candidates` | 从活动 Session 的 `command_manifest` 获取 Client 候选（保留可选 `completion` 声明），再与 Server 命令候选合并、按模板去重、排序 |
 | `GET /api/connections/{client_id}/system-paths` | 直接返回活动 Session 在握手时保存的 `system_paths` 字典 |
 | `GET /api/connections/{client_id}/revision-status` | 读取 Client 所报 Revision，并与 Server 当前计算的源码 Manifest 比较，按需计算文件差异 |
 
@@ -200,7 +200,7 @@ Go Client 支持 TCP 和 TLS/TCP 监听器。Go (Simple) 构建时注入 Listene
 
 - 基础字段包括 `id`、`os_type`、`os_ver`、`hostname`、`cwd`、`integrity`、`go_version` 和 `build_version`；其中 Windows `integrity` 读取当前进程 Token 的完整性 RID。
 - `launch_mode` / `launch_source` 支持 `terminal`、`terminal_background`、`detached`、`user_service`、`system_service`、`scheduled`、`unknown` 七类外部运行形态，不使用 Python Client 的 `ide` 分类；启动时采集一次并在重连时复用，服务类型由实际管理器与当前进程 PID 核对。
-- `command_manifest` 来自 Go 自身的命令执行器，涵盖基本文件操作；`variable_manifest` 仍为空列表。
+- `command_manifest` 来自 Go 自身的命令执行器，涵盖基本文件操作；`cd` 与 `download` 声明 `filesystem` CompletionSpec，Server 据此通过独立 `completion` 消息请求路径候选；`variable_manifest` 仍为空列表。
 - `system_paths` 提供 Root、Home、Desktop、Documents、Downloads、Temp 和可执行文件目录，用于 Remote Files Quick Jump。
 - `machine_id` 和 `machine_fingerprint_basis` 使用 Go 的机器身份实现；`client_revision` 及 Python 源码指纹明细没有上报。
 - `feature_manifest.remote_files=true` 表示 Go 可使用目录导航及基本文件管理命令；文件传输、Preview 和 ZIP 功能尚需对应执行模块。
@@ -209,7 +209,7 @@ Go Client 的连接、身份、目录管理、Remote Files HTTP 上传／下载�
 
 ## Capability Metadata 与启动 Feature
 
-Client 在原有 `info.command_manifest` 每个条目中上报完整的命令描述：`name`（命令/候选唯一名）、`kind`（`command` / `acmd`）、`source`、`help`、`group`、`suggest`、`cancel_policy`、`timeout`（秒或 `null`）、`confirmation`（仅 `@confirm` 命令出现，值为 `true`）、`interaction`（`may_request`）、`output`（`collect` / `stream`）。普通命令的声明来自 Python 装饰器；ACMD 的声明来自注册 Handler。带 `@confirm` 的命令默认请求执行确认，显式 `--no-confirm` 跳过确认。`interaction.may_request=true` 表示命令可能调用 Interaction Broker。
+Client 在原有 `info.command_manifest` 每个条目中上报命令描述：`name`、`kind`、`source`、`help`、`group`、`suggest`、`cancel_policy`、`timeout`、`confirmation`、`interaction`、`output`，以及可选的 `completion`。`completion` 是最小 CompletionSpec：只有 `provider` 和 `kinds`。Shell-like 命令由 `@desc(..., completion=CompletionSpec(...))` 声明；ACMD 在对应参数的 `ArgumentOptionSpec.completion` 声明，握手条目只携带去重后的 `{provider,kinds}` 列表，不重复传参数名/位置，具体参数绑定继续由 Client 本地 ACMD Schema 解析。当前实现 `filesystem` Provider，`kinds` 为 `file` 和/或 `directory`。带 `@confirm` 的命令默认请求执行确认，显式 `--no-confirm` 跳过确认。`interaction.may_request=true` 表示命令可能调用 Interaction Broker。
 
 这些描述属于**静态声明**；取消策略、执行超时及交互状态在运行过程中仍由执行器/任务上下文决定。`output=stream` 表示命令可能在最终结果前发送中间命令结果；`collect` 表示该命令只返回最终命令结果。
 

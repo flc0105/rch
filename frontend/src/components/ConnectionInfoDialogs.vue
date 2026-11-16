@@ -411,7 +411,6 @@
   <el-dialog
     v-model="valueVisible"
     :title="valueTitle || 'Details'"
-    fullscreen
     width="760px"
     top="12vh"
     class="fixed-dialog connection-info-value-dialog rch-result-detail-fullscreen"

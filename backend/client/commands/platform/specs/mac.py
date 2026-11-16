@@ -1,4 +1,5 @@
 from core.commands.argument_models import ArgumentCommandSpec, ArgumentOptionSpec
+from core.command_completion.models import CompletionSpec
 
 MSGBOX_ARGUMENT_SPEC = ArgumentCommandSpec(
     name='msgbox',
@@ -34,7 +35,8 @@ SQLITE_QUERY_SPEC = ArgumentCommandSpec(
     name='sqlite_query',
     description='Read-only SQLite query',
     options=[
-        ArgumentOptionSpec(name='db', option_type='str', required=True, help_text='Database file path'),
+        ArgumentOptionSpec(name='db', option_type='str', required=True, help_text='Database file path',
+                           completion=CompletionSpec('filesystem', ('file', 'directory'))),
         ArgumentOptionSpec(name='query', option_type='str', required=True, help_text='SQL query'),
         ArgumentOptionSpec(name='json', option_type='flag', required=False, default=False,
                            help_text='Output as JSON'),
@@ -53,7 +55,7 @@ IMAGE_INFO_SPEC = ArgumentCommandSpec(
     description='Show image metadata',
     options=[
         ArgumentOptionSpec(name='path', option_type='str', required=True, help_text='Image file path',
-                           positional_index=0),
+                           positional_index=0, completion=CompletionSpec('filesystem', ('file', 'directory'))),
         ArgumentOptionSpec(name='json', option_type='flag', required=False, default=False,
                            help_text='Output as JSON'),
         ArgumentOptionSpec(name='help', option_type='flag', required=False, default=False,

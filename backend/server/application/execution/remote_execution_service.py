@@ -112,6 +112,9 @@ class RemoteExecutionService:
             history_entry_id=history_entry_id,
         )
 
+    def run_completion(self, target, payload: dict, *, timeout: float = 5.0) -> dict:
+        return self.command_stream_service.run_completion(target, payload, timeout=timeout)
+
     def collect_result(self, result_iter):
         return self.command_stream_service.collect_result(result_iter)
 

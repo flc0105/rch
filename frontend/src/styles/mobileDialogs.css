@@ -118,24 +118,25 @@
   .terminal-json-dialog .terminal-json-scroll { max-height: none; min-height: 0; }
 }
 
-/* Result/detail dialogs are fullscreen on desktop too. An Element Plus
-   `fullscreen` prop alone can be overridden by older fixed-size dialog styles.
-   This class intentionally does not affect workspace/confirmation dialogs. */
-body .el-dialog.rch-result-detail-fullscreen {
-  width: 100vw !important;
-  max-width: 100vw !important;
-  height: 100dvh !important;
-  max-height: 100dvh !important;
-  margin: 0 !important;
-  border-radius: 0 !important;
-  display: flex !important;
-  flex-direction: column !important;
-  overflow: hidden !important;
-}
-body .el-dialog.rch-result-detail-fullscreen > .el-dialog__header,
-body .el-dialog.rch-result-detail-fullscreen > .el-dialog__footer { flex: 0 0 auto; }
-body .el-dialog.rch-result-detail-fullscreen > .el-dialog__body {
-  flex: 1 1 auto !important;
-  min-height: 0 !important;
-  overflow-y: auto !important;
+/* Result/detail dialogs fill phone viewports; desktop keeps each dialog's declared width. */
+@media (max-width: 768px) {
+  body .el-dialog.rch-result-detail-fullscreen {
+    width: 100vw !important;
+    max-width: 100vw !important;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+  }
+  body .el-dialog.rch-result-detail-fullscreen > .el-dialog__header,
+  body .el-dialog.rch-result-detail-fullscreen > .el-dialog__footer { flex: 0 0 auto; }
+  body .el-dialog.rch-result-detail-fullscreen > .el-dialog__body {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    overflow-y: auto !important;
+  }
+  .script-run-dialog.el-dialog > .el-dialog__body { max-height: none !important; }
 }

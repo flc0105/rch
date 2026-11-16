@@ -36,8 +36,15 @@ class CommandCompletionParser:
         try:
             cursor = int(cursor_position)
         except Exception:
-            cursor = len(text)
-        return max(0, min(cursor, len(text)))
+            cursor = sum(2 if ord(char) > 0xFFFF else 1 for char in text)
+        cursor = max(0, cursor)
+        used = 0
+        for index, char in enumerate(text):
+            width = 2 if ord(char) > 0xFFFF else 1
+            if used + width > cursor:
+                return index
+            used += width
+        return len(text)
 
     def _split_command(self, text: str) -> tuple[str, str]:
         command_chars = []

@@ -845,7 +845,7 @@ export default {
   overflow-x: auto !important;
 }
 
-@media (max-width: 768px), (max-height: 720px) {
+@media (max-width: 768px) {
   .remote-file-picker-overlay .el-dialog {
     width: 100vw !important;
     max-width: 100vw !important;

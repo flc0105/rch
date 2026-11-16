@@ -52,17 +52,19 @@ class ServerCommandCompletionService:
             ),
             ServerFileSystemCompletionProvider(command_names=('upload',)),
             RemoteClientCommandCompletionProvider(
-                remote_execution_service=remote_execution_service,
+                server=server, remote_execution_service=remote_execution_service,
             ),
         ])
 
-    def complete(self, client_id: str, raw_input: str = '', cursor_position: int | None = None, max_results: int = 50) -> dict:
+    def complete(self, client_id: str, raw_input: str = '', cursor_position: int | None = None, max_results: int = 50, completion_spec: dict | None = None) -> dict:
         context = self.parser.parse(
             raw_input=raw_input,
             cursor_position=cursor_position,
             max_results=max_results,
             metadata={
                 'client_id': client_id,
+                'raw_cursor_position': sum(2 if ord(char) > 0xFFFF else 1 for char in str(raw_input or '')) if cursor_position is None else cursor_position,
+                **({'completion_spec': completion_spec} if isinstance(completion_spec, dict) else {}),
             },
         )
         candidates = self.registry.complete(context)

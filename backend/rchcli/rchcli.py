@@ -103,12 +103,13 @@ class RchApi:
         data = self.request('GET', path)
         return data if isinstance(data, list) else []
 
-    def completions(self, client_id, raw_input, cursor_position=None):
+    def completions(self, client_id, raw_input, cursor_position=None, completion=None):
         path = '/api/connections/' + quote(client_id, safe='') + '/command-completions'
         data = self.request('POST', path, {
             'raw_input': raw_input,
-            'cursor_position': len(raw_input) if cursor_position is None else cursor_position,
+            'cursor_position': sum(2 if ord(char) > 0xFFFF else 1 for char in raw_input) if cursor_position is None else cursor_position,
             'max_results': 30,
+            **({'completion': completion} if isinstance(completion, dict) else {}),
         })
         return data.get('items', []) if isinstance(data, dict) else []
 
@@ -452,7 +453,14 @@ class RemoteConsole:
             if isinstance(item, dict):
                 add(item)
         if ' ' in text or text.lstrip().startswith('!'):
-            for item in self.api.completions(client_id, text):
+            # `edit` is an RCHCLI-local command, not part of the Client manifest.
+            # Its path lookup explicitly selects the same Client filesystem provider.
+            edit_completion = None
+            if text.lower().startswith('edit '):
+                edit_completion = {'provider': 'filesystem', 'kinds': ['file', 'directory']}
+            completion_items = (self.api.completions(client_id, text, completion=edit_completion)
+                                if edit_completion else self.api.completions(client_id, text))
+            for item in completion_items:
                 if isinstance(item, dict):
                     add(item)
         return result[:50]

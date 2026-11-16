@@ -50,6 +50,7 @@ var (
 		Help("Change current working directory"),
 		Group("session"),
 		Suggest(),
+		CompletionProvider("filesystem", "directory"),
 		cmdCd,
 	)
 

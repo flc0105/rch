@@ -2276,7 +2276,7 @@ print(value)
   min-height: 0 !important;
 }
 
-@media (max-width: 768px), (max-height: 720px) {
+@media (max-width: 768px) {
   .preview-dialog.el-dialog {
     width: 100vw !important;
     max-width: 100vw !important;

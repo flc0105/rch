@@ -2,7 +2,6 @@
   <el-dialog
     v-model="visible"
     :title="title"
-    fullscreen
     append-to-body
     width="980px"
     top="8vh"

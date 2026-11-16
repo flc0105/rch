@@ -6,6 +6,7 @@ MSG_TYPE_CLIENT_SESSION_TOKEN = 'client_session_token'
 MSG_TYPE_COMMAND = 'command'
 MSG_TYPE_ACMD = 'acmd'
 MSG_TYPE_CONTROL = 'control'
+MSG_TYPE_COMPLETION = 'completion'
 
 MSG_TYPE_CANCEL = 'cancel'
 MSG_TYPE_CANCEL_ACK = 'cancel_ack'

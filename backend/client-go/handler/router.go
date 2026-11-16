@@ -85,6 +85,22 @@ func sendResult(session *executor.Session, id, status int, text string) {
 
 func Handle(session *executor.Session, msg map[string]interface{}) {
 	switch msg["type"] {
+	case "completion":
+		id, ok := messageID(msg, "id")
+		if !ok {
+			return
+		}
+		result, err := executor.CompleteCommandCompletion(session, msg)
+		if err != nil {
+			sendResultEvent(session, id, 0, map[string]interface{}{
+				"event_type": "completed", "status": "error", "message": err.Error(),
+			}, "completed")
+			return
+		}
+		sendResultEvent(session, id, 1, map[string]interface{}{
+			"event_type": "completed", "status": "success", "message": "", "data": result,
+		}, "completed")
+
 	case "heartbeat":
 		_ = session.Sock.Send(map[string]interface{}{
 			"type": "heartbeat_ack", "id": msg["id"],

@@ -92,12 +92,26 @@ class ArgumentCommandRegistry:
                 continue
             handler = self._entries[command_name]['handler']
             metadata = command_metadata(handler, kind='acmd')
+            completion_specs = []
+            seen_completion_specs = set()
+            argument_spec = self._entries[command_name].get('spec')
+            if argument_spec is not None:
+                for option in argument_spec.options:
+                    completion = getattr(option, 'completion', None)
+                    if completion is None:
+                        continue
+                    key = (completion.provider, completion.kinds)
+                    if key in seen_completion_specs:
+                        continue
+                    seen_completion_specs.add(key)
+                    completion_specs.append(completion.to_dict())
             payload.append({
                 'name': f'acmd {command_name}',
                 'help': item['description'],
                 'group': 'acmd',
                 'suggest': True,
                 **metadata,
+                **({'completion': completion_specs} if completion_specs else {}),
             })
         return payload
 

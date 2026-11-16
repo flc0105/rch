@@ -3,6 +3,7 @@ package executor
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -33,12 +34,16 @@ func TestCommandCompletionsFilesDirectoriesAndPrefixes(t *testing.T) {
 	}
 	for _, tt := range cases {
 		t.Run(tt.input, func(t *testing.T) {
-			status, text := s.Dispatch(7, completionCommand("command_completions", map[string]interface{}{"raw_input": tt.input, "cursor_position": len(tt.input), "max_results": 0}))
-			if status != 1 {
-				t.Fatal(text)
+			command := strings.Fields(tt.input)
+			payload := map[string]interface{}{"raw_input": tt.input, "cursor_position": len(tt.input), "max_results": 0}
+			if len(command) > 0 && command[0] == "edit" {
+				payload["completion"] = map[string]interface{}{"provider": "filesystem", "kinds": []interface{}{"file", "directory"}}
 			}
-			payload := decodeRemoteResult(t, text)
-			items := payload["items"].([]interface{})
+			result, err := CompleteCommandCompletion(s, payload)
+			if err != nil {
+				t.Fatal(err)
+			}
+			items := result["items"].([]interface{})
 			if len(items) != len(tt.names) {
 				t.Fatalf("items: %#v expected: %#v", items, tt.names)
 			}
@@ -71,5 +76,28 @@ func TestCompletionCursorByteOffsetPreservesUnicode(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("%q, units=%d: got %q want %q", tt.text, tt.units, got, tt.want)
 		}
+	}
+}
+
+func TestCommandManifestCarriesMinimalCompletionSpec(t *testing.T) {
+	manifest := CommandManifest()
+	byName := map[string]map[string]interface{}{}
+	for _, raw := range manifest {
+		item := raw.(map[string]interface{})
+		byName[item["name"].(string)] = item
+	}
+	cd := byName["cd"]["completion"].(map[string]interface{})
+	if cd["provider"] != "filesystem" {
+		t.Fatalf("cd provider: %#v", cd)
+	}
+	if got := cd["kinds"].([]string); len(got) != 1 || got[0] != "directory" {
+		t.Fatalf("cd kinds: %#v", got)
+	}
+	download := byName["download"]["completion"].(map[string]interface{})
+	if got := download["kinds"].([]string); len(got) != 2 || got[0] != "file" || got[1] != "directory" {
+		t.Fatalf("download kinds: %#v", got)
+	}
+	if _, exists := byName["command_completions"]; exists {
+		t.Fatal("legacy command_completions pseudo command remains in manifest")
 	}
 }

@@ -89,12 +89,14 @@ def create_command_execution_blueprint(server_instance):
             payload = get_json_payload()
             raw_input = str(payload.get('raw_input') or '')
             cursor_position = payload.get('cursor_position')
-            max_results = payload.get('max_results') or 50
+            max_results = payload.get('max_results', 50)
+            completion_spec = payload.get('completion') if isinstance(payload.get('completion'), dict) else None
             return command_catalog_api.get_command_completions(
                 client_id,
                 raw_input=raw_input,
                 cursor_position=cursor_position,
                 max_results=max_results,
+                completion_spec=completion_spec,
             )
 
         return responder.json_endpoint(_execute, default_error_status=500)

@@ -7,6 +7,7 @@ from core.protocol.message_types import (
     MSG_TYPE_HEARTBEAT_ACK,
     MSG_TYPE_RESULT,
     MSG_TYPE_CONTROL,
+    MSG_TYPE_COMPLETION,
     MSG_TYPE_PTY_OPEN,
     MSG_TYPE_PTY_INPUT,
     MSG_TYPE_PTY_RESIZE,
@@ -59,6 +60,9 @@ class BaseMessageRouter:
 
         if message_type == MSG_TYPE_CONTROL:
             return self.handle_control_message(data)
+
+        if message_type == MSG_TYPE_COMPLETION:
+            return self.handle_completion_message(data)
 
         if message_type == MSG_TYPE_CANCEL:
             return self.handle_cancel_message(data)
@@ -165,6 +169,9 @@ class BaseMessageRouter:
         return None
 
     def handle_control_message(self, data: dict):
+        return None
+
+    def handle_completion_message(self, data: dict):
         return None
 
     def handle_cancel_message(self, data: dict):

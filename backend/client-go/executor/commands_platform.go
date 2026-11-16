@@ -36,6 +36,7 @@ var (
 		Help("Upload a local file to server"),
 		Group("file"),
 		Suggest(),
+		CompletionProvider("filesystem", "file", "directory"),
 		cmdDownload,
 	)
 )

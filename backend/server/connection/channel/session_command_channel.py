@@ -1,6 +1,10 @@
-from core.protocol.message_types import MSG_TYPE_COMMAND, MSG_TYPE_CANCEL, MSG_TYPE_ACMD, MSG_TYPE_CONTROL
+from core.protocol.message_types import MSG_TYPE_COMMAND, MSG_TYPE_CANCEL, MSG_TYPE_ACMD, MSG_TYPE_CONTROL, MSG_TYPE_COMPLETION
 from core.protocol.control import build_control_message, execution_policy, ExecutionPolicy
 from threading import Lock
+import queue
+import time
+
+from core.protocol.message_queue import ResultChunk
 import logging
 
 logger = logging.getLogger(__name__)
@@ -111,6 +115,41 @@ class ClientSessionCommandChannel:
                     self.session.runtime.unbind_foreground_command_id(data['id'])
             return linked_results()
         return results
+
+    def send_completion(self, payload: dict, *, timeout: float = 5.0):
+        """Send a read-only completion request without Foreground or Activity binding."""
+        request_id = self.generate_message_id()
+        data = {'type': MSG_TYPE_COMPLETION, 'id': request_id}
+        data.update(payload if isinstance(payload, dict) else {})
+        data['type'] = MSG_TYPE_COMPLETION
+        data['id'] = request_id
+        pending = self.session.runtime.pending_results.register(request_id)
+        try:
+            self.session.send(data)
+        except Exception:
+            self.session.runtime.pending_results.remove(request_id)
+            raise
+
+        def _results():
+            deadline = time.monotonic() + max(0.1, float(timeout))
+            try:
+                while True:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise TimeoutError('Completion request timed out')
+                    try:
+                        event = pending.get(timeout=remaining)
+                    except queue.Empty:
+                        raise TimeoutError('Completion request timed out') from None
+                    final = event.get('event_type') == 'completed'
+                    status = 1 if not final or event.get('status') in ('success', 'partial') else 0
+                    yield ResultChunk(status, event, final, True, event=event)
+                    if final:
+                        break
+            finally:
+                self.session.runtime.pending_results.remove(request_id)
+
+        return _results()
 
     def send_cancel(self, target_command_id: int):
         data = self.build_cancel_payload(target_command_id)

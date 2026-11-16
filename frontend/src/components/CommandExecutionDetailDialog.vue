@@ -2,7 +2,6 @@
   <el-dialog
     :model-value="visible"
     :title="detailTitle"
-    fullscreen
     append-to-body
     width="1000px"
     top="5vh"
@@ -206,7 +205,7 @@
       </div>
     </div>
   </el-dialog>
-  <el-dialog v-model="fullValueVisible" :title="fullValueTitle" fullscreen
+  <el-dialog v-model="fullValueVisible" :title="fullValueTitle"
              append-to-body class="fixed-dialog activity-full-value-dialog rch-result-detail-fullscreen">
     <div class="activity-full-value-body">
       <pre class="activity-full-value-text">{{ fullValueText }}</pre>

@@ -11,8 +11,41 @@ import pytest
 from client.config import feature_config
 from client.commands.runtime.catalog import CommandCatalog
 from core.utils.decorator import desc, confirm
+from core.command_completion.models import CompletionSpec
 from client.commands.runtime.interrupts import timeout, cancel_policy
 from client.commands.runtime.manifest_metadata import command_metadata
+
+
+
+
+def test_completion_spec_is_serialized_once_for_shell_and_acmd_arguments():
+    @desc('Change directory', group='shell', completion=CompletionSpec('filesystem', ('directory',)))
+    def cd(_owner, path=''):
+        return 1, path
+
+    assert command_metadata(cd)['completion'] == {
+        'provider': 'filesystem', 'kinds': ['directory'],
+    }
+
+    from core.commands.argument_models import ArgumentCommandSpec, ArgumentOptionSpec
+    from client.commands.arguments.registry import ArgumentCommandRegistry
+
+    class Commands:
+        def image_info(self, args, payload=None):
+            return 1, args
+
+    Commands.image_info.argument_command_name = 'image_info'
+    Commands.image_info.argument_command_spec = ArgumentCommandSpec(
+        name='image_info', options=[ArgumentOptionSpec(
+            name='path', positional_index=0,
+            completion=CompletionSpec('filesystem', ('file', 'directory')),
+        )],
+    )
+    entry = next(item for item in ArgumentCommandRegistry(Commands()).get_manifest_payload()
+                 if item['name'] == 'acmd image_info')
+    assert entry['completion'] == [{
+        'provider': 'filesystem', 'kinds': ['file', 'directory'],
+    }]
 
 
 @pytest.mark.parametrize('os_alias,screen_view,pty,clipboard', [
@@ -119,6 +152,9 @@ def test_linux_command_manifest_is_unique_and_complete():
     for name in ('pyexec', 'pyexec_stream', 'download'):
         assert policies[name] == 'cooperative'
     assert all(item['suggest'] is True for item in entries)
+    by_name = {item['name']: item for item in entries}
+    assert by_name['cd']['completion'] == {'provider': 'filesystem', 'kinds': ['directory']}
+    assert by_name['download']['completion'] == {'provider': 'filesystem', 'kinds': ['file', 'directory']}
     assert not any('template' in item or 'streaming' in item for item in entries)
     assert any(item.get('confirmation') is True for item in entries)
     assert not any(item.get('confirmation') is False for item in entries)

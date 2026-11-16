@@ -2075,7 +2075,7 @@ export default {
   overflow-y: auto !important;
 }
 
-@media (max-width: 768px), (max-height: 720px) {
+@media (max-width: 768px) {
   .background-jobs-overlay .el-dialog {
     position: fixed !important;
     inset: 0 !important;

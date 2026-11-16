@@ -5,9 +5,11 @@ import vm from 'node:vm'
 
 const source = readFileSync(new URL('../src/components/CommandInputBar.vue', import.meta.url), 'utf8')
 const script = source.match(/<script>([\s\S]*?)<\/script>/)?.[1]
+const commonOps = JSON.parse(readFileSync(new URL('../src/config/commonOps.json', import.meta.url), 'utf8'))
 assert.ok(script)
 const sandbox = {
   TerminalConnectionContext: {}, ElMessage: {}, setTimeout,
+  commonOps,
   formatTerminalCancelRequestedLine() {}, formatTerminalCommandFailedLine() {},
 }
 vm.runInNewContext(script.replace(/^import\s+[\s\S]*?\s+from\s+['"][^'"]+['"]\s*;?\s*$/gm, '')
@@ -19,7 +21,12 @@ const setup = (cursor) => {
   const ctx = {
     ...m,
     $refs: { commandInputRef: { $el: { querySelector: () => input }, focus() {} } },
-    selectedId: 'device-1', currentConnection: { machine_id: 'machine', cwd: '/tmp' },
+    selectedId: 'device-1', currentConnection: { machine_id: 'machine', cwd: '/tmp', command_manifest: [
+      { name: 'cd', completion: { provider: 'filesystem', kinds: ['directory'] } },
+      { name: 'download', completion: { provider: 'filesystem', kinds: ['file', 'directory'] } },
+      { name: 'acmd image_info', completion: [{ provider: 'filesystem', kinds: ['file', 'directory'] }] },
+      { name: 'acmd sqlite_query', completion: [{ provider: 'filesystem', kinds: ['file', 'directory'] }] },
+    ] },
     autocompleteNavigationPreviewActive: false,
     $nextTick: fn => fn(),
   }
@@ -444,13 +451,11 @@ test('an unrelated direct directory argument is not silently treated as explicit
   assert.equal(build(ctx, ctx.commandText).requestInput, 'download directory/')
 })
 
-test('standard cd directory selection still returns the directory without a trailing slash', () => {
+test('Client command completion is inserted as returned without frontend prefix rewriting', () => {
   const { ctx } = setup(0)
-  const query = {
-    fileSystemProxyCommand: 'cd',
-    fileSystemTargetCommand: 'cd',
-  }
-  const selected = ctx.normalizeFileSystemCompletionCandidate(file('docs', true), query)
+  const selected = ctx.normalizeCommandCompletionCandidate({
+    name: 'cd docs', title: 'cd docs', insert_text: 'cd docs', kind: 'directory',
+  }, {})
   assert.equal(selected.name, 'cd docs')
 })
 
@@ -650,7 +655,7 @@ test('upload completion queries the Server with the full typed path, not remote 
   const query = ctx.parseCommandCompletionCandidateQuery(raw)
   assert.equal(query.requestInput, raw)
   assert.equal(query.requiresRemoteClient, false)
-  assert.equal(query.fileSystemProxyCommand, 'upload')
+  assert.equal(query.completionSpec, undefined)
   const candidate = ctx.normalizeCommandCompletionCandidate({name: 'upload /tmp/z test.txt', candidatePath: '/tmp/z test.txt', kind: 'file', source: 'server_filesystem'}, query)
   assert.equal(candidate.name, 'upload /tmp/z test.txt')
 })
@@ -661,7 +666,7 @@ test('upload @@ uses server paths and inserts raw names with spaces', () => {
   const { ctx } = setup(raw.length)
   const query = ctx.parseExplicitPathCompletionQuery(raw)
   assert.equal(query.requestInput, 'upload /tmp/z test')
-  assert.equal(query.requiresRemoteClient, false)
+  assert.equal(query.requiresRemoteClient, undefined)
   const item = normalize(ctx, query, [file('/tmp/z test.txt')])[0]
   assert.equal(item.name, 'upload /tmp/z test.txt')
 })
@@ -685,3 +690,162 @@ test('Server @@ completion uses a registered local command, including directory 
   assert.equal(follow.requestInput, 'local_dir /tmp/z test folder/child')
   assert.equal(follow.requiresRemoteClient, false)
 })
+
+test('Client commands use handshake metadata; only Common Ops remain in frontend config', () => {
+  for (const raw of ['cd /tmp/', 'download /tmp/', 'acmd image_info /tmp/', 'acmd sqlite_query --db /tmp/']) {
+    const { ctx } = setup(raw.length)
+    const query = ctx.parseCommandCompletionCandidateQuery(raw)
+    assert.equal(query.requestInput, raw, raw)
+    assert.equal(query.completionSpec, undefined, raw)
+    assert.equal(query.cursorPosition, raw.length, raw)
+  }
+
+  const { ctx: cat } = setup('cat /tmp/'.length)
+  const catQuery = cat.parseCommandCompletionCandidateQuery('cat /tmp/')
+  assert.equal(JSON.stringify(catQuery.completionSpec), JSON.stringify({ provider: 'filesystem', kinds: ['file', 'directory'] }))
+
+  const { ctx: rmdir } = setup('rmdir '.length)
+  const rmdirQuery = rmdir.parseCommandCompletionCandidateQuery('rmdir ')
+  assert.equal(JSON.stringify(rmdirQuery.completionSpec), JSON.stringify({ provider: 'filesystem', kinds: ['directory'] }))
+})
+
+
+test('Common Ops suggestions and path rules share one editable config', () => {
+  const { ctx } = setup(0)
+  const candidates = ctx.buildCommonOpsCandidates().map(item => item.name.trim())
+  assert.equal(JSON.stringify(candidates), JSON.stringify(['whoami', 'hostname', 'mkdir', 'rmdir']))
+  assert.equal(commonOps.cat.completion.provider, 'filesystem')
+  assert.deepEqual(commonOps.rmdir.completion.kinds, ['directory'])
+  assert.deepEqual(commonOps.type.completion.kinds, ['file', 'directory'])
+})
+
+test('Client filesystem candidates regenerate insertion from cached directory results', () => {
+  const { ctx } = setup('cd /tmp/a'.length)
+  const first = ctx.parseCommandCompletionCandidateQuery('cd /tmp/a')
+  const second = ctx.parseCommandCompletionCandidateQuery('cd /tmp/al')
+  assert.equal(first.cacheKey, second.cacheKey)
+
+  const cached = [{
+    name: 'cd /tmp/alpha', value: 'cd /tmp/alpha', title: 'cd /tmp/alpha',
+    insert_text: 'cd /tmp/alpha', source: 'client_filesystem', group: 'filesystem',
+    kind: 'directory', candidatePath: '/tmp/alpha',
+  }]
+  const refreshed = ctx.filterCommandCompletionCandidates(cached, second)
+  assert.equal(refreshed[0].name, 'cd /tmp/alpha')
+  assert.equal(refreshed[0].insert_text, 'cd /tmp/alpha')
+})
+
+test('ACMD named path option cache and insertion preserve --option=value', () => {
+  const raw = 'acmd sqlite_query --db=/tmp/fi'
+  const { ctx } = setup(raw.length)
+  const query = ctx.parseCommandCompletionCandidateQuery(raw)
+  assert.equal(query.cacheKey.endsWith('/tmp'), true)
+  const item = ctx.normalizeCommandCompletionCandidate({
+    name: raw, value: raw, title: raw, insert_text: raw,
+    source: 'client_filesystem', group: 'filesystem', kind: 'file',
+    candidatePath: '/tmp/file.db',
+  }, query)
+  assert.equal(item.name, 'acmd sqlite_query --db=/tmp/file.db')
+})
+
+
+test('ACMD subcommand prefixes use Handshake candidates before parameter completion', () => {
+  const raw = 'acmd im'
+  const { ctx } = setup(raw.length)
+  ctx.commandCandidates = [
+    { name: 'acmd image_info', source: 'client', group: 'acmd' },
+    { name: 'acmd sqlite_query', source: 'client', group: 'acmd' },
+  ]
+  ctx.commandCandidatesLoadedFor = 'device-1'
+
+  assert.equal(ctx.parseCommandCompletionCandidateQuery(raw), null)
+  assert.equal(ctx.parseCommandCompletionCandidateQuery('acmd im '), null)
+  assert.deepEqual(
+    Array.from(ctx.filterCandidatesByTitle(ctx.commandCandidates, 'acmd im'), item => item.name),
+    ['acmd image_info'],
+  )
+
+  const exactCommand = 'acmd image_info'
+  const exactContext = setup(exactCommand.length).ctx
+  exactContext.commandCandidatesLoadedFor = 'device-1'
+  assert.equal(exactContext.parseCommandCompletionCandidateQuery(exactCommand), null)
+})
+
+test('ACMD command-name prefix query returns Manifest candidates instead of calling Server completion', async () => {
+  const raw = 'acmd im'
+  const { ctx } = setup(raw.length)
+  ctx.commandCandidates = [{ name: 'acmd image_info', source: 'client', group: 'acmd' }]
+  ctx.commandCandidatesLoadedFor = 'device-1'
+  ctx.ensureCommandCandidatesLoaded = async () => {}
+  ctx.parseExplicitPathCompletionQuery = () => null
+  ctx.parseVariableCompletionQuery = () => null
+  ctx.setAutocompleteCandidateItems = () => {}
+  ctx.buildCommandCompletionCandidates = async () => {
+    throw new Error('partial ACMD command names must not enter argument completion')
+  }
+
+  let received = null
+  await ctx.queryCommandCandidates(raw, items => { received = items })
+  assert.deepEqual(Array.from(received, item => item.name), ['acmd image_info'])
+})
+
+test('ACMD exact command plus argument separator still routes to Client filesystem completion', () => {
+  const raw = 'acmd image_info '
+  const { ctx } = setup(raw.length)
+  ctx.commandCandidatesLoadedFor = 'device-1'
+  const query = ctx.parseCommandCompletionCandidateQuery(raw)
+  assert.equal(query.requestInput, raw)
+  assert.equal(query.requiresRemoteClient, true)
+  assert.equal(query.argumentMode, 'token')
+})
+
+test('ACMD prefix completion uses dynamic Manifest names such as image_check', () => {
+  const { ctx } = setup('acmd im'.length)
+  ctx.currentConnection.command_manifest = [{ name: 'acmd image_check', source: 'client', group: 'acmd' }]
+  ctx.commandCandidates = [{ name: 'acmd image_check', source: 'client', group: 'acmd' }]
+  ctx.commandCandidatesLoadedFor = 'device-1'
+  assert.equal(ctx.parseCommandCompletionCandidateQuery('acmd im'), null)
+  assert.deepEqual(
+    Array.from(ctx.filterCandidatesByTitle(ctx.commandCandidates, 'acmd im'), item => item.name),
+    ['acmd image_check'],
+  )
+})
+
+
+test('Server-local upload candidates also regenerate from cached path metadata', () => {
+  const raw = 'upload /tmp/z'
+  const { ctx } = setup(raw.length)
+  const query = ctx.parseCommandCompletionCandidateQuery(raw)
+  const item = ctx.normalizeCommandCompletionCandidate({
+    name: 'upload /tmp/zebra', value: 'upload /tmp/zebra', title: 'upload /tmp/zebra',
+    insert_text: 'upload /tmp/zebra', source: 'server_filesystem', group: 'filesystem',
+    kind: 'file', candidatePath: '/tmp/zebra',
+  }, query)
+  assert.equal(item.name, 'upload /tmp/zebra')
+})
+
+
+test('Client completion routing can read the handshake declaration through command candidates API', () => {
+  const { ctx } = setup('cd /tmp/'.length)
+  ctx.currentConnection = { machine_id: 'machine', cwd: '/tmp' }
+  ctx.commandCandidates = [{
+    name: 'cd', source: 'client', completion: { provider: 'filesystem', kinds: ['directory'] },
+  }]
+  ctx.commandCandidatesLoadedFor = 'device-1'
+  assert.equal(ctx.hasClientCompletionDeclaration('cd', 'cd /tmp/'), true)
+  assert.equal(ctx.hasClientCompletionDeclaration('download', 'download /tmp/'), false)
+})
+
+test('Client completion declarations remain available even when command suggestion is hidden', () => {
+  const { ctx } = setup('cd /tmp/'.length)
+  ctx.currentConnection = { machine_id: 'machine', cwd: '/tmp' }
+  ctx.commandCandidates = []
+  ctx.clientCompletionDeclarations = [{
+    name: 'cd', source: 'client', suggest: false,
+    completion: { provider: 'filesystem', kinds: ['directory'] },
+  }]
+  ctx.commandCandidatesLoadedFor = 'device-1'
+  assert.equal(ctx.hasClientCompletionDeclaration('cd', 'cd /tmp/'), true)
+})
+
+

@@ -2,7 +2,7 @@
 
 Terminal 的自动补全将命令发现、当前设备的历史与收藏、Server 管理的数据，以及目标 Client 的运行时上下文汇集到同一个输入框。它不仅补全命令名，还能按正在输入的命令提供脚本、路径、配置项和动态变量等候选。**候选的生成不执行候选所代表的业务命令；只有用户提交输入后才进入正常的命令执行链。**
 
-自动补全并非操作系统 Shell 的通用 Tab Completion。当前 Web Terminal 由前端识别输入上下文、向 Server 查询候选，必要时由 Server 向所选 Client 请求远程文件系统或配置数据。因此，同一段输入在不同设备、不同平台、不同工作目录和不同时间可能获得不同候选；普通 Shell 命令的参数可以使用显式路径占位符获取远程目录与文件候选；自动参数补全仍由命令专用 Provider 提供。
+自动补全并非操作系统 Shell 的通用 Tab Completion。Web Terminal 与 RCHCLI 都向 Server 查询上下文候选；需要目标 Client 文件系统时，Server 通过独立的 `type: completion` 消息请求 Client，不执行隐藏命令，也不占用命令 Foreground、Activity 或 History。Client 命令的路径补全规则来自握手 `command_manifest` 中的命令注解；Web 前端只为非 Client 的 Common Ops 保留一份集中配置。
 
 ## 候选从哪里来
 
@@ -26,11 +26,13 @@ Web Terminal 输入内容
 
 **基础命令候选**来自 `GET /api/connections/{client_id}/command-candidates`。Client 在建立连接时通过 `command_manifest` 上报导出的 Shell-like 命令和结构化 `acmd` 命令；Server 再合并 Built-in 和当前生效的 Alias。前端只显示允许建议的条目（`suggest !== false`），另外加入少量常用操作和当前设备已经 Pin 的命令历史。Web Terminal 另外加入 **Frontend** 类别的本地 `edit`（用 Monaco 编辑远程文本）和 `clear`（清空终端输出）；这两个操作直接在浏览器处理，候选不会发往 Client。若远端清单恰好有相同名称，本地入口优先。按候选模板文本去重后，**空输入**时按固定分组顺序、组内按命令名称字母顺序展示：`shell → execution → session → system → network → privilege → media → file → automation → transfer → runtime → maintenance → python → acmd → common_ops → frontend → server → alias → Pin Command`。`common_ops` 使用现有命令分组名称，已 Pin 的 History 位于末尾。已输入文字后的匹配及上下文补全仍沿用各自的排序逻辑。
 
-命令 Manifest 由 Client 当前平台支持的命令注册信息生成。`@desc(..., suggest=False)` 可以让内部命令保持可执行、却不进入普通命令发现列表；`acmd` 项来自结构化命令注册表。Manifest 属于**握手快照**：Client 本地命令注册内容变化后，不能假定已连接浏览器会自动看到更新的 Manifest。顶层列表的别名则来源于 Server 内存中的当前生效定义，而不是一个永久写死在前端的名称列表。
+命令 Manifest 由 Client 当前平台支持的命令注册信息生成。`@desc(..., suggest=False)` 可以让内部命令保持可执行、却不进入普通命令发现列表；`acmd` 项来自结构化命令注册表。输入 `acmd` 或尚未完成的子命令前缀（例如 `acmd im`）时，候选直接匹配握手 Manifest 中的完整 ACMD 名称；完整子命令名后输入空格，才进入该命令的参数级补全。Manifest 属于**握手快照**：Client 本地命令注册内容变化后，不能假定已连接浏览器会自动看到更新的 Manifest。顶层列表的别名则来源于 Server 内存中的当前生效定义，而不是一个永久写死在前端的名称列表。
 
-**上下文补全**使用 `POST /api/connections/{client_id}/command-completions`。Server 根据原始输入解析命令名、参数文本和当前位置，交给注册的 Provider；其中需要目标 Client 的部分，会通过只读 `command_completions` 辅助入口在 Client 上生成候选并返回。它们采用统一的 Candidate 结构，所以同一个下拉菜单可以展示名称、用途、分组和插入内容。
+**上下文补全**使用 `POST /api/connections/{client_id}/command-completions`。Server 根据原始输入和当前 Client 的握手 Manifest 决定是否存在 Client 补全声明；需要 Client 动态数据时，通过独立 `type: completion` 消息传递原始输入、光标位置和可选的 CompletionSpec override。Client 返回标准 Result Envelope，`data.items` 使用统一 Candidate 结构。该请求不经过 `command` / `control` 执行路径。
 
-Server/Client 的 Provider 负责候选生成，浏览器负责缓存、过滤、选择与回填。前端不维护 Builtin 名单；新 Builtin 只需在 Server 注册对应的 Completion Provider 即可被查询。文件/目录补全使用单独的本地路径分派规则。补全查询不是执行 `cd`、`download`、`history run` 或其他候选业务操作本身。
+`CompletionSpec` 只有 `provider` 与 `kinds` 两个字段。Shell-like 命令在 `@desc(..., completion=...)` 声明；ACMD 在对应 `ArgumentOptionSpec.completion` 声明，参数名/位置沿用已有参数 Schema，不重复放进 CompletionSpec。当前实现的 Provider 是 `filesystem`，同时查询文件和目录，再由 `kinds` 过滤。Provider Registry 留有后续扩展入口；未来可增加 `shelllike` 等 Provider，但本轮不引入子命令或选项补全。
+
+Server/Client 的 Provider 负责候选生成，浏览器负责缓存、过滤、选择与回填。前端不维护 Client 命令名单；新增 Client 命令的参数补全只需在命令声明处添加 CompletionSpec。非 Client Common Ops 的少量路径规则集中在 `frontend/src/config/commonOps.json`。Server Builtin 的静态子命令仍由 Server Registry 提供，不受本轮 Client CompletionSpec 改造影响。补全查询不是执行 `cd`、`download`、`history run` 或其他候选业务操作本身。
 
 ## 历史、收藏和动态资源
 
@@ -58,20 +60,22 @@ Script 的执行候选来自 Server 脚本目录，**只根据 Script Metadata `
 
 ## 文件系统路径补全如何工作
 
-远程路径候选读取目标 Client 文件系统；Server 本机路径候选读取 Server 自身的文件系统。远程查询由 Server 通过 Client 的补全辅助命令取回目录子项，Client 使用现有路径解析器把输入转换到当前工作目录或明确给出的目标目录，再查询真实目录内容。目录候选优先于文件候选；同一类型内按名称排序。
+远程路径候选读取目标 Client 文件系统；Server 本机路径候选读取 Server 自身的文件系统。Client filesystem Provider 使用现有路径解析器把输入转换到当前工作目录或明确给出的目标目录，再查询真实目录内容。文件与目录由同一个 Provider 返回，`CompletionSpec.kinds` 决定允许的候选类别；目录候选优先于文件候选，同一类型内按名称排序。
 
-路径候选按文件系统归属和路径类型注册：
+当前路径补全声明：
 
-| 接受补全的输入入口 | 当前提供的内容 | 实际 Provider |
+| 声明位置 / 输入入口 | `kinds` | 归属 |
 |---|---|---|
-| `cd`、`rmdir` | **仅子目录**，不提供普通文件 | Client 的 `cd` 目录 Provider |
-| `download`、`cat`、`file`、`allow_file`、`python3` | **目录及文件** | Client 的 `download` 路径 Provider |
-| `acmd image_info`、`acmd sqlite_query` | **目录及文件**，由前端借用路径 Provider | Client 的 `download` 路径 Provider |
-| `upload` | Server 本机目录和文件 | Server 本机文件系统 Provider |
+| Client Shell-like `cd` | `directory` | Client 命令注解 |
+| Client Shell-like `download` | `file`, `directory` | Client 命令注解 |
+| ACMD `image_info.path`、`sqlite_query.db` | `file`, `directory` | ACMD 参数 Schema 注解 |
+| Common Ops `rmdir` | `directory` | `commonOps.json` |
+| Common Ops `cat`、`file`、`allow_file`、`python3`、`type` | `file`, `directory` | `commonOps.json` |
+| `upload` | Server 本机目录和文件 | Server 本机文件系统 Provider（保持原实现） |
 
-Web 远程路径规则复用 Client 的 `cd`（目录）和 `download`（路径）Provider，将查询结果的命令前缀恢复为用户输入的入口。Server 本机文件系统 Provider 使用注册的命令和路径类型生成候选；`upload` 使用其中的目录和文件模式。其他本机路径命令可在同一 Provider 中注册目录或文件规则。
+Client Shell-like 命令的 `completion` 注解直接进入现有 `command_manifest`；ACMD 只在对应参数上附带补全声明。Server 读取握手快照决定是否发送 completion 请求，Client 再用本地注解确定 Shell-like 命令或 ACMD 当前参数，并调用 `filesystem` Provider。Common Ops 不是 RCH Client 命令，因此 Web 在请求中附带同样的两字段 CompletionSpec override；RCHCLI 的本地 `edit` 也使用相同 override。Server `upload` 仍由 Server 本机文件系统 Provider 处理，不通过 Client Completion 消息。
 
-例如输入 `cd /home/al`，前端按最后一个 `/` 将父目录 `/home` 作为查询目录；由 Client 返回该目录下的子目录名称；前端再用正在输入的前缀过滤，并将选中结果回填为完整的 `cd ...` 命令。输入 `download /home/al` 的过程类似，但可选普通文件。Windows 路径分隔符 `\` 与盘符根目录也经过特别处理。输入以目录分隔符结束时，会查询该目录内部的下一层子项。
+例如输入 `cd /home/al`，浏览器将完整输入和光标位置发给 Server；Server 根据当前 Client Manifest 确认 `cd` 声明了 filesystem completion，再发送 `completion` 消息。Client 返回 `/home` 下符合 `directory` 的子项；浏览器按现有输入前缀过滤并回填完整命令。`download` 同理，但可选普通文件。ACMD 的命名参数和位置参数由 Client 侧原有参数 Schema 定位，不在前端复制命令名白名单。Windows 路径分隔符 `\` 与盘符根目录继续由现有路径解析处理。输入以目录分隔符结束时，会查询该目录内部的下一层子项。
 
 **路径补全只完成候选路径查找与插入。** 命令选项、参数类型和必填项由对应命令的 Schema 在执行时校验。因此，尤其是结构化 ACMD（例如要求 `--db`、`--query` 等命名参数的命令），路径候选出现并不保证整行命令已经符合其参数要求。用户仍须遵守该命令的实际参数定义。`acmd` 并没有因此获得通用的所有选项、类型或位置参数自动补全；参见 [ACMD](acmd.md)。
 
@@ -122,7 +126,7 @@ myalias --path=@@/Users/f --verbose
 - **Escape**：取消方向键预览并恢复预览前输入。
 - **Run / Enter**：执行输入框当前的命令。目录预览需先按 → 或点击候选移除 `@@`；文件选中后已经是可提交的路径。
 
-远程 `@@` 同时展示目录和文件，Python Client 与 Go Client 复用当前远程设备的只读路径 Provider。Server 本机规则保留所属命令的路径类型和参数格式，查询、选择及下一层补全均使用同一文件系统归属。
+远程 `@@` 通过 `completion` 消息显式选择 `filesystem` Provider，并同时请求文件和目录；Python Client 与 Go Client 复用当前远程设备的只读路径 Provider。Server 本机 `upload @@` 仍走 Server 本机文件系统 Provider。查询、选择及下一层补全均保持各自文件系统归属。
 
 ## 变量占位符补全
 
@@ -147,7 +151,7 @@ Terminal 的下拉候选按标题文字筛选：优先精确匹配，其次前�
 
 交互上，**上下方向键**可以轮流预览候选内容，预览阶段保留原始输入供继续筛选；按**右方向键**提交当前预览文本而不执行，按 **Escape** 恢复进入预览前的输入。点击下拉候选或使用组件选择交互会将文本回填输入框；通过 Run 或 Enter 提交命令才真正发起执行。选择变量命名空间之后，可以继续刷新候选列表以补全下一段。
 
-动态 Provider 的查询经过约 **260 毫秒**防抖，并按目标 Client、机器、当前工作目录、命令及目录上下文缓存；同一上下文下的已缓存结果由前端本地过滤，最多展示 **50 条**动态候选。正在执行占用 Web 前台任务槽的命令时，需到 Client 查询的动态补全会暂时返回空列表，避免补全请求和正在执行的命令争抢前台槽；纯 Server 数据的 Provider 不受这一项远程限制。
+动态 Provider 的查询经过约 **260 毫秒**防抖，并按目标 Client、机器、当前工作目录、命令及目录上下文缓存；同一上下文下的已缓存结果由前端本地过滤，最多展示 **50 条**动态候选。Client filesystem completion 使用独立消息与 PendingResults 请求关联，不占用 Foreground，因此即使普通命令正在执行，也可以独立查询路径候选。
 
 切换设备、机器身份或工作目录会重置相应缓存。成功提交命令后，输入框关闭补全列表、清空动态缓存并重新加载基础命令及 Pin 历史；这使新执行的历史索引与已更新的 Alias 等信息有机会在下一轮候选中生效。**Server 上的数据变化并不一定主动推动已打开的浏览器补全缓存失效**：例如外部编辑了 Alias 文件、添加脚本、变更配置，可能要重新加载候选、运行相应命令或重新选择设备才能看到变化。
 
@@ -155,7 +159,7 @@ Terminal 的下拉候选按标题文字筛选：优先精确匹配，其次前�
 
 自动补全使用 `CommandCompletionParser`、`CompletionContext` 和统一的 `CompletionCandidate`：候选包括标题 `title`、真正写入输入框的 `insert_text`、说明 `description`、`source`、`group`、`kind`、`priority` 和可选的 `metadata`。序列化后的命令候选统一以 `name` 表示插入文本，以 `title` 表示需要单独展示的标题，以 `help` 表示说明。一个 Provider 只需声明支持哪些命令上下文，并返回候选，不应在查询过程中修改文件、启动任务或执行候选命令。
 
-新增 Server 本机路径补全时，在现有文件系统 Provider 和 Web 路径规则中注册命令及路径类型；其他 Server 数据补全在 Completion Service 中注册相应 Provider；需要目标设备文件系统或 Runtime Config 时，在 Client 的 Completion Service 中注册，并通过 Server 的远程代理读取。**自动参数补全仍须显式注册**：Web 输入框的上下文分流依赖命令级规则。对于未登记的参数位置，可以使用上面的显式路径占位符，无需新增命令专用 Provider。
+新增 Client 路径补全时，在 `@desc` 或 ACMD 参数 Schema 上声明最小 CompletionSpec；Server 通过握手 Manifest 识别该声明，Client Completion Service 按 `provider` 选择实现。Common Ops 规则集中维护在 `frontend/src/config/commonOps.json`。新增 Server 本机路径补全仍使用 Server 文件系统 Provider。未来新增 Provider 只需注册实现并使用同一 CompletionSpec 入口；本轮只实现 `filesystem`，不提前引入 Shell-like 子命令/选项 Provider。
 
 相关 HTTP 接口的返回结构如下，候选文本为结构示意：
 
@@ -176,11 +180,14 @@ Terminal 的下拉候选按标题文字筛选：优先精确匹配，其次前�
       "title": "cd /tmp/logs",
       "value": "cd /tmp/logs",
       "insert_text": "cd /tmp/logs",
-      "help": "Change directory -> /tmp/logs",
+      "help": "/tmp/logs",
       "group": "filesystem",
-      "source": "client_cd",
+      "source": "client_filesystem",
       "kind": "directory",
-      "priority": 10
+      "priority": 10,
+      "candidatePath": "/tmp/logs",
+      "lookupPath": "/tmp",
+      "isDir": true
     }
   ]
 }
@@ -188,7 +195,7 @@ Terminal 的下拉候选按标题文字筛选：优先精确匹配，其次前�
 
 Provider 内部按 `priority` 与标题排序、按插入文本去重；某个 Provider 出错时，注册表会跳过它的异常而不让整个候选链崩溃。这保证自动补全保持辅助性：没有候选、远程目录不可访问或完成查询失败，都不应被解释为业务命令一定不可执行。
 
-自动参数补全的命令解析器根据输入位置之前的内容提取首个命令词和当前参数片段，再由已登记的 Provider 返回候选；它不进行通用参数 Schema 推导或完整 Shell 语法树解析。需要在任意位置选择远程文件或目录时使用 `@@`。真正执行命令时的权限、类型与路径解析规则仍由各自的执行模块决定。
+自动参数补全的命令解析器根据输入位置之前的内容提取首个命令词和当前参数片段；Client Shell-like 命令由命令注解声明，ACMD 由对应 `ArgumentOptionSpec` 声明。它不进行完整 Shell 语法树解析。需要在任意位置选择远程文件或目录时使用 `@@`。真正执行命令时的权限、类型与路径解析规则仍由各自的执行模块决定。
 
 
 ## Server Registry 静态子命令补全

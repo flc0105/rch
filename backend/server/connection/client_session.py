@@ -90,6 +90,9 @@ class ClientSession:
                                  domain=ControlDomain.SESSION, action=SessionAction.DISCONNECT,
                                  payload={})
 
+    def send_completion(self, payload: dict, *, timeout: float = 5.0):
+        return self.command_channel.send_completion(payload, timeout=timeout)
+
     def send_cancel(self, target_command_id: int):
         return self.command_channel.send_cancel(target_command_id)
 

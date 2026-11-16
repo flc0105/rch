@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from core.commands.argument_errors import ArgumentCommandValidationError
+from core.command_completion.models import CompletionSpec
 
 
 @dataclass
@@ -19,6 +20,7 @@ class ArgumentOptionSpec:
     positional_index: int | None = None
     arity: int = 1
     repeatable: bool = False
+    completion: CompletionSpec | None = None
 
     @property
     def is_flag(self) -> bool:

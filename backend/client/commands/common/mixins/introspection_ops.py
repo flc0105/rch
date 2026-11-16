@@ -1,21 +1,10 @@
 import inspect
-import json
-
-from client.commands.common.services.completion.command_completion_service import ClientCommandCompletionService
 from core.utils.decorator import desc
 from client.commands.runtime.manifest_metadata import command_metadata
 from core.utils.command_help import render_grouped_client_help
 
 
 class CommandIntrospectionMixin:
-
-    @property
-    def command_completion_service(self):
-        service = getattr(self, '_command_completion_service', None)
-        if service is None:
-            service = ClientCommandCompletionService(self)
-            self._command_completion_service = service
-        return service
 
     def _get_exported_command_methods(self):
         """
@@ -112,20 +101,6 @@ class CommandIntrospectionMixin:
 
         return grouped
 
-
-    @desc('Resolve command autocomplete candidates', group='session', suggest=False)
-    def command_completions(self, arg=''):
-        """
-        command bar 只读补全入口。
-        """
-        try:
-            payload = self.structured_arg_codec.decode(arg)
-            if not isinstance(payload, dict):
-                payload = {}
-            result_payload = self.command_completion_service.complete(payload)
-            return 1, json.dumps(result_payload, ensure_ascii=False)
-        except Exception as e:
-            return 0, f'Failed to resolve command completions: {e}'
 
     @desc('Show available commands', group='session')
     def help(self):

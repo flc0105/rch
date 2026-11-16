@@ -41,6 +41,15 @@ class CommandExecutor:
         """
         return self.command_variable_resolver.get_manifest_payload()
 
+    def complete_command_completion(self, payload: dict):
+        from client.commands.common.services.completion.command_completion_service import ClientCommandCompletionService
+        commands = self.get_commands()
+        service = getattr(self, '_completion_service', None)
+        if service is None:
+            service = ClientCommandCompletionService(commands)
+            self._completion_service = service
+        return service.complete(payload)
+
     def get_argument_command_registry(self):
         """
         获取当前平台对应的 acmd 注册表（懒加载）

@@ -20,12 +20,18 @@ from server.application.completion.command_completion_providers import (
 from core.command_completion.models import CompletionContext
 class Server:
     def get_target_connection_by_client_id(self, client_id):
-        return SN(session_info=SN(os_alias='mac'))
+        return SN(session_info=SN(os_alias='mac', command_manifest=[
+            {'name':'cd','completion':{'provider':'filesystem','kinds':['directory']}},
+            {'name':'acmd image_info','completion':[{'provider':'filesystem','kinds':['file','directory']}]} ,
+        ]))
 class Remote:
-    def __init__(self): self.calls=0
+    def __init__(self): self.calls=0; self.payloads=[]
     def run_foreground_control(self, *args, **kwargs):
         self.calls+=1
         return 1,{'data':{'items':[{'key':'SCRIPT_DEFAULT_TIMEOUT','desc':'Seconds'}]}}
+    def run_completion(self, client_id, payload):
+        self.calls+=1; self.payloads.append((client_id,payload))
+        return {'items':[{'name':'cd /tmp/logs','title':'cd /tmp/logs','insert_text':'cd /tmp/logs','kind':'directory'}]}
 class BgJobs:
     def list_jobs(self, _):
         return [{'job_key':'active','state':'running'},{'job_key':'stopped','state':'stopped'}]
@@ -63,7 +69,17 @@ sub=RegisteredServerSubcommandCompletionProvider()
 for root, cmd in (('config','config set'),('job','job status'),('script','script exec'),
                   ('history','history run')):
     assert any(item.startswith(cmd) for item in complete(sub,root,''))
-assert RemoteClientCommandCompletionProvider.command_names==('cd','download','edit')
+remote_provider=RemoteClientCommandCompletionProvider(srv, remote)
+ctx=CompletionContext(command_name='cd', raw_input='cd /tmp/', argument_text='/tmp/', metadata={'client_id':'c','raw_cursor_position':8})
+assert remote_provider.supports(ctx)
+assert {item.insert_text for item in remote_provider.complete(ctx)} == {'cd /tmp/logs'}
+assert remote.payloads[-1][1]['raw_input'] == 'cd /tmp/'
+ctx=CompletionContext(command_name='acmd', raw_input='acmd image_info ', argument_text='image_info ', metadata={'client_id':'c'})
+assert remote_provider.supports(ctx)
+ctx=CompletionContext(command_name='acmd', raw_input='acmd unknown ', argument_text='unknown ', metadata={'client_id':'c'})
+assert not remote_provider.supports(ctx)
+ctx=CompletionContext(command_name='cat', raw_input='cat ', argument_text='', metadata={'client_id':'c','completion_spec':{'provider':'filesystem','kinds':['file','directory']}})
+assert remote_provider.supports(ctx)
 print('COMPLETION_OK')
 '''
     root = Path(__file__).resolve().parents[3]

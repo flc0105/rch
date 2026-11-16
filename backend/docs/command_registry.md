@@ -62,12 +62,13 @@ class CommandDiagnosticsMixin:
 
 这是**新增扩展的示意代码**，并非项目已注册的现成命令。接入方式是在适当的 `Common*Commands` 继承列表加入 `CommandDiagnosticsMixin`，或者将方法放入已被继承的现有 Mixin，然后启动加载该命令类的 Client。
 
-`@desc(text, group='general', suggest=True, interaction=False)` 将元数据挂在方法上：
+`@desc(text, group='general', suggest=True, *, output='collect', interaction=False, completion=None)` 将元数据挂在方法上：
 
 - `help`：导出识别和帮助描述。**缺少 `@desc` 的普通方法不会作为普通 Client 命令被 ShellCommandRunner 分派**，哪怕它恰好是 public method。
 - `group`：`help` 分组及 Command Manifest 的分类；不会单独决定权限或平台。
 - `suggest`：控制是否出现在默认帮助/候选展示中。`suggest=False` 不会禁止执行，Manifest 中仍可能包含该项，由展示层过滤。
 - `interaction`：标记通常可能请求 Web 交互，用于 Manifest 提示，不控制命令执行权限。
+- `completion`：可选的最小 `CompletionSpec(provider, kinds)`，声明命令参数由哪个 Client Completion Provider 处理及允许的候选类别；不复制命令名、参数位置或运行时路径。
 
 普通 Runner 的调用约定是：先通过项目解析器分离首个命令名称及其余文本；然后以方法签名决定调用 `handler()` 还是 `handler(arg)`。因此普通命令更适合无参或**单段原始参数文本**；多值、可验证的选项建议使用 ACMD。命令返回一般为 `(status, result)`，其中 `1` 表示成功、`0` 表示失败；其他输出约定需与执行链保持一致。中间流式结果应复用执行 Scope 的 `emit_chunk(message)`、`emit_progress(message, level=None)`；仅在直接管理终态的流式方法中调用 `emit_completed(status="success"|"error"|...)`。一次性函数继续返回 `(status, result)`，由执行入口生成唯一 completed；禁止主动发完 completed 又返回新的结果导致重复终态。显式 progress.level 支持 info/success/warning/error，由 Server 公共 Renderer 投影标记；不得在 Client 字符串里预先拼 Marker，也不得自行创建 Web SSE 事件。
 
@@ -138,7 +139,7 @@ Client 的 `CommandIntrospectionMixin` 通过 `inspect.getmembers()` 收集当�
 
 Web 通过 `GET /api/connections/{client_id}/command-candidates` 获取候选，`WebCommandCatalogApi` 汇合当前 Client 的 Manifest 与 Server Builtin/Alias 命令，按候选插入文本 `name` 去重，再进行排序。用户能在候选列表里看见一个名称，只能说明它出现在此清单，不能替代执行权限、平台可用性或参数合法性的验证；反过来，`suggest=False` 的命令可以执行但不作为普通提示展示。
 
-上下文自动补全又是独立机制：`POST /api/connections/{client_id}/command-completions` 由 Server `ServerCommandCompletionService` 的 Provider Registry 响应；需要远程文件等数据时，再通过 Client 的 `command_completions` 入口，由 `ClientCommandCompletionService` 注册的相应 Provider 收集候选。**新增普通命令不等于自动获得参数补全**：静态 Server 子命令直接来自 Registry，动态参数仍需分别考虑 Server Provider、Client Provider 与前端解析上下文。输入框选中候选后只是填充命令，不代表执行。详细规则请参阅 [Autocomplete](autocomplete.md)。
+上下文自动补全又是独立机制：`POST /api/connections/{client_id}/command-completions` 由 Server `ServerCommandCompletionService` 的 Provider Registry 响应；需要 Client 文件系统等数据时，Server 通过独立 `type: completion` 消息请求 Client，并使用现有 PendingResults 按 request ID 关联 Result Envelope。该请求不走命令执行、Control、Foreground、Activity 或 History 路径。Client 命令的 CompletionSpec 通过 `command_manifest` 握手传递；Shell-like 使用 `@desc(..., completion=...)`，ACMD 在 `ArgumentOptionSpec.completion` 声明。**新增普通命令不等于自动获得参数补全**：静态 Server 子命令仍来自 Registry，动态参数需要显式 CompletionSpec 或相应 Server Provider。输入框选中候选后只是填充命令，不代表执行。详细规则请参阅 [Autocomplete](autocomplete.md)。
 
 开发者可依次检查三个现象：
 

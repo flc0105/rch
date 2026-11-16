@@ -110,6 +110,19 @@ class CommandStreamService:
             raise RuntimeError('Invalid remote JSON payload: expected object')
         return payload
 
+    # ------------------ read-only completion api ------------------ #
+    def stream_completion(self, target, payload: dict, *, timeout: float = 5.0):
+        session = self.get_connection(target)
+        return session.send_completion(payload, timeout=timeout)
+
+    def run_completion(self, target, payload: dict, *, timeout: float = 5.0) -> dict:
+        result = self.collect_envelope(self.stream_completion(target, payload, timeout=timeout))
+        if result.status not in ('success', 'partial'):
+            raise RuntimeError(result.text or f'Remote completion {result.status}')
+        if not isinstance(result.data, dict):
+            raise RuntimeError('Invalid completion response: expected data object')
+        return result.data
+
     # ------------------ raw stream api ------------------ #
     def stream_command(
         self,

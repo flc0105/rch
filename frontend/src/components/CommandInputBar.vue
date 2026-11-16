@@ -81,6 +81,7 @@
 
 <script>
 import { ElMessage } from 'element-plus'
+import commonOps from '../config/commonOps.json'
 import { createTerminalOperation, operationHeaders } from '../utils/terminalOperation.js'
 import TerminalConnectionContext from './TerminalConnectionContext.vue'
 import {
@@ -95,20 +96,7 @@ import {
   formatTerminalCommandFailedLine,
 } from '../composables/terminalMarkers.js'
 
-const DIRECTORY_ONLY_COMPLETION_COMMANDS = [
-  'cd',
-  'rmdir',
-]
 
-const PATH_COMPLETION_COMMANDS = [
-  'download',
-  'cat',
-  'file',
-  'allow_file',
-  'acmd image_info',
-  'acmd sqlite_query',
-  'python3'
-]
 
 export default {
   name: 'CommandInputBar',
@@ -163,6 +151,7 @@ export default {
       sending: false,
       cancelSending: false,
       commandCandidates: [],
+      clientCompletionDeclarations: [],
       commandCandidatesLoadedFor: '',
       commandCandidatesLoadPromise: null,
       commandCompletionCandidatesByContext: {},
@@ -196,6 +185,7 @@ export default {
         if (value !== oldValue) {
           this.cancelSending = false
           this.commandCandidates = []
+          this.clientCompletionDeclarations = []
           this.commandCandidatesLoadedFor = ''
           this.clearCommandCompletionCandidateCache()
           this.explicitPathContinuation = null
@@ -504,6 +494,7 @@ export default {
         return
       }
 
+      await this.ensureCommandCandidatesLoaded()
       const completionQuery = this.parseCommandCompletionCandidateQuery(effectiveQueryString)
 
       if (completionQuery) {
@@ -550,7 +541,6 @@ export default {
           pathPrefix, quote: '', requestInput: `${serverRule.proxyCommand} ${pathPrefix}`,
           serverPathCommand: serverRule.proxyCommand,
           cacheKey: this.buildCommandCompletionCandidateCacheKey(`server_explicit_path:${serverRule.proxyCommand}`, pathPrefix),
-          requiresRemoteClient: false,
         }
       }
       const markerPattern = /@@/g
@@ -593,12 +583,13 @@ export default {
         markerStart: activeMarker.start,
         markerEnd: activeMarker.end,
         replaceEnd,
-        cursorPosition: cursor,
         pathPrefix,
         quote: activeMarker.quote,
         requestInput: `download ${pathParts.candidatePrefix}`,
-        cacheKey: this.buildCommandCompletionCandidateCacheKey('explicit_path', pathParts.lookupPath),
+        cursorPosition: `download ${pathParts.candidatePrefix}`.length,
+        completionSpec: { provider: 'filesystem', kinds: ['file', 'directory'] },
         requiresRemoteClient: true,
+        cacheKey: this.buildCommandCompletionCandidateCacheKey('explicit_path', pathParts.lookupPath),
       }
     },
 
@@ -626,14 +617,15 @@ export default {
         markerStart: pathStart,
         markerEnd: pathStart,
         replaceEnd: pathEnd,
-        cursorPosition: cursor,
         pathPrefix,
         quote: lastDirectory.quote,
         serverPath: lastDirectory.serverPath === true,
         serverPathCommand: lastDirectory.serverPathCommand,
         requestInput: lastDirectory.serverPath ? `${lastDirectory.serverPathCommand} ${pathPrefix}` : `download ${pathParts.candidatePrefix}`,
-        cacheKey: this.buildCommandCompletionCandidateCacheKey(lastDirectory.serverPath ? `server_explicit_path:${lastDirectory.serverPathCommand}` : 'explicit_path', lastDirectory.serverPath ? pathPrefix : pathParts.lookupPath),
+        cursorPosition: lastDirectory.serverPath ? `${lastDirectory.serverPathCommand} ${pathPrefix}`.length : `download ${pathParts.candidatePrefix}`.length,
+        completionSpec: lastDirectory.serverPath ? null : { provider: 'filesystem', kinds: ['file', 'directory'] },
         requiresRemoteClient: !lastDirectory.serverPath,
+        cacheKey: this.buildCommandCompletionCandidateCacheKey(lastDirectory.serverPath ? `server_explicit_path:${lastDirectory.serverPathCommand}` : 'explicit_path', lastDirectory.serverPath ? pathPrefix : pathParts.lookupPath),
       }
     },
 
@@ -827,57 +819,114 @@ export default {
           rawText,
           commandName: '!',
           requestInput: '!',
+          cursorPosition: 1,
           cacheKey: this.buildCommandCompletionCandidateCacheKey('history_shortcut', 'quick'),
-          requiresRemoteClient: false,
         }
       }
 
       const commandMatch = leftTrimmedText.match(/^([^\s]+)(?:\s+(.*))?$/)
-
       if (!commandMatch || !/\s/.test(rawText)) {
-        // A bare command prefix uses the catalog (e.g. p -> pwd).
-        // Context providers only complete arguments after a command separator.
         return null
+      }
+
+      const commandName = String(commandMatch[1] || '').trim().toLowerCase()
+      const cursorPosition = typeof this.getCommandInputCursorPosition === 'function'
+        ? this.getCommandInputCursorPosition(rawText) : rawText.length
+
+      if (commandName === 'acmd') {
+        const inputBeforeCursor = rawText.slice(0, cursorPosition)
+        const acmdMatch = inputBeforeCursor.match(/^\s*acmd\s+(\S+)([\s\S]*)$/i)
+        if (!acmdMatch || !/\s/.test(acmdMatch[2])) return null
+        if (!this.getClientCommandDeclaration('acmd', `acmd ${acmdMatch[1]}`)) return null
       }
 
       const fileSystemRule = this.resolveFileSystemCompletionRule(leftTrimmedText)
 
-      if (fileSystemRule) {
+      if (fileSystemRule?.serverPath === true) {
         return this.buildFileSystemCommandCompletionQuery(
-          fileSystemRule.commandPrefix,
-          rawText,
-          fileSystemRule.argumentText,
-          fileSystemRule,
+          fileSystemRule.commandPrefix, rawText, fileSystemRule.argumentText, fileSystemRule,
         )
       }
 
-      // Every command can ask the Server completion registry. An unregistered
-      // command simply returns no candidates; only filesystem proxy rules are local.
-      const commandName = String(commandMatch[1] || '').trim().toLowerCase()
-      const tokenBoundary = rawText.search(/\s[^\s]*$/)
-      const context = /\s$/.test(rawText)
-        ? rawText : tokenBoundary < 0 ? `${commandName} ` : rawText.slice(0, tokenBoundary + 1)
+      if (fileSystemRule?.completion) {
+        const pathParts = this.splitFileSystemCandidatePath(fileSystemRule.argumentText)
+        return {
+          rawText,
+          commandName,
+          requestInput: rawText,
+          cursorPosition,
+          completionSpec: fileSystemRule.completion,
+          argumentMode: 'token',
+          requiresRemoteClient: true,
+          cacheKey: this.buildCommandCompletionCandidateCacheKey(commandName, pathParts.lookupPath),
+        }
+      }
+
+      // Client command/ACMD path completion is identified only from the
+      // selected Client's handshake manifest. Server-owned commands retain
+      // their existing context-prefix behavior.
+      const hasClientCompletion = typeof this.hasClientCompletionDeclaration === 'function'
+        ? this.hasClientCompletionDeclaration(commandName, rawText) : false
+      if (hasClientCompletion) {
+        return {
+          rawText,
+          commandName,
+          requestInput: rawText,
+          cursorPosition,
+          argumentMode: commandName === 'acmd' ? 'token' : 'tail',
+          requiresRemoteClient: true,
+          cacheKey: this.buildCommandCompletionCandidateCacheKey(commandName, this.getClientCompletionPathContext(rawText, cursorPosition, commandName === 'acmd' ? 'token' : 'tail')),
+        }
+      }
+
+      const lastSpace = leftTrimmedText.lastIndexOf(' ')
+      const context = lastSpace >= 0 ? leftTrimmedText.slice(0, lastSpace + 1) : leftTrimmedText
+      if (!context) return null
       return {
         rawText,
         commandName,
         requestInput: context,
-        cacheKey: this.buildCommandCompletionCandidateCacheKey(commandName, context),
+        cursorPosition: context.length,
         requiresRemoteClient: false,
+        cacheKey: this.buildCommandCompletionCandidateCacheKey(commandName, context),
       }
+    },
+
+    getClientCommandDeclaration(commandName, rawText) {
+      const manifest = Array.isArray(this.currentConnection?.command_manifest)
+        ? this.currentConnection.command_manifest : []
+      const candidates = this.commandCandidatesLoadedFor === this.selectedId && Array.isArray(this.commandCandidates)
+        ? this.commandCandidates : []
+      const completionDeclarations = this.commandCandidatesLoadedFor === this.selectedId && Array.isArray(this.clientCompletionDeclarations)
+        ? this.clientCompletionDeclarations : []
+      const declarations = [...manifest, ...completionDeclarations, ...candidates.filter(item => item?.source === 'client')]
+      const words = String(rawText || '').trimStart().split(/\s+/).filter(Boolean)
+      const targetName = String(commandName || '').toLowerCase() === 'acmd'
+        ? (words[1] ? `acmd ${words[1]}` : '')
+        : String(commandName || '')
+      if (!targetName) return null
+      return declarations.find(item => String(item?.name || '').trim().toLowerCase() === targetName.toLowerCase()) || null
+    },
+
+    hasClientCompletionDeclaration(commandName, rawText) {
+      const entry = this.getClientCommandDeclaration(commandName, rawText)
+      return !!entry?.completion && (
+        (typeof entry.completion === 'object' && !Array.isArray(entry.completion)) ||
+        (Array.isArray(entry.completion) && entry.completion.length > 0)
+      )
+    },
+
+    getCommonOpsConfig() {
+      return typeof commonOps === 'object' && commonOps ? commonOps : {}
     },
 
     resolveFileSystemCompletionRule(inputText) {
       const rules = [
+        // Server-local upload completion remains on its existing provider.
         { commandPrefix: 'upload', proxyCommand: 'upload', mode: 'path', serverPath: true },
-        ...DIRECTORY_ONLY_COMPLETION_COMMANDS.map(commandPrefix => ({
+        ...Object.entries(this.getCommonOpsConfig()).filter(([, definition]) => definition?.completion).map(([commandPrefix, definition]) => ({
           commandPrefix,
-          proxyCommand: 'cd',
-          mode: 'directory',
-        })),
-        ...PATH_COMPLETION_COMMANDS.map(commandPrefix => ({
-          commandPrefix,
-          proxyCommand: 'download',
-          mode: 'path',
+          completion: definition.completion,
         })),
       ].sort((left, right) => right.commandPrefix.length - left.commandPrefix.length)
       const text = String(inputText || '')
@@ -885,21 +934,11 @@ export default {
 
       for (const rule of rules) {
         const normalizedCommandPrefix = String(rule.commandPrefix || '').toLowerCase()
-        if (!normalizedCommandPrefix || !normalizedText.startsWith(normalizedCommandPrefix)) {
-          continue
-        }
-
+        if (!normalizedCommandPrefix || !normalizedText.startsWith(normalizedCommandPrefix)) continue
         const restText = text.slice(normalizedCommandPrefix.length)
-        if (restText && !/^\s/.test(restText)) {
-          continue
-        }
-
-        return {
-          ...rule,
-          argumentText: restText.replace(/^\s+/, ''),
-        }
+        if (restText && !/^\s/.test(restText)) continue
+        return { ...rule, argumentText: restText.replace(/^\s+/, '') }
       }
-
       return null
     },
 
@@ -915,11 +954,10 @@ export default {
         rawText,
         commandName: commandPrefix,
         requestInput,
+        cursorPosition: requestInput.length,
+        argumentMode: 'tail',
+        requiresRemoteClient: false,
         cacheKey: this.buildCommandCompletionCandidateCacheKey(commandPrefix, serverPath ? argumentText : pathParts.lookupPath),
-        requiresRemoteClient: !serverPath,
-        fileSystemProxyCommand: proxyCommand,
-        fileSystemTargetCommand: commandPrefix,
-        fileSystemCompletionMode: String(rule?.mode || 'path'),
       }
     },
 
@@ -980,10 +1018,6 @@ export default {
 
       if (Array.isArray(cachedCandidates)) {
         return this.filterCommandCompletionCandidates(cachedCandidates, completionQuery)
-      }
-
-      if (completionQuery.requiresRemoteClient && this.hasRunningWebTask) {
-        return []
       }
 
       const shouldLoad = await this.waitForCommandCompletionDebounce()
@@ -1058,7 +1092,7 @@ export default {
     async loadCommandCompletionCandidatesForContext(completionQuery) {
       const cacheKey = completionQuery.cacheKey
 
-      if (!this.selectedId || (completionQuery.requiresRemoteClient && this.hasRunningWebTask)) {
+      if (!this.selectedId) {
         return []
       }
 
@@ -1073,8 +1107,9 @@ export default {
       // 动态补全按 provider 上下文懒加载，前端只做标题过滤和最多 50 项展示。
       this.commandCompletionCandidatesLoadPromises[cacheKey] = getCommandCompletions(this.selectedId, {
         raw_input: completionQuery.requestInput,
-        cursor_position: completionQuery.requestInput.length,
-        max_results: 0,
+        cursor_position: Number.isInteger(completionQuery.cursorPosition) ? completionQuery.cursorPosition : completionQuery.requestInput.length,
+        max_results: 50,
+        ...(completionQuery.completionSpec ? { completion: completionQuery.completionSpec } : {}),
       })
         .then((payload) => {
           const items = Array.isArray(payload?.items) ? payload.items : []
@@ -1104,40 +1139,93 @@ export default {
       if (completionQuery?.explicitPath) {
         return this.normalizeExplicitPathCompletionCandidate(normalized, completionQuery)
       }
-      if (!completionQuery?.fileSystemProxyCommand || !completionQuery?.fileSystemTargetCommand) {
-        return normalized
+      if (normalized?.candidatePath) {
+        return this.normalizeFilesystemCompletionCandidate(normalized, completionQuery)
       }
-
-      return this.normalizeFileSystemCompletionCandidate(normalized, completionQuery)
+      return normalized
     },
 
-    normalizeFileSystemCompletionCandidate(item, completionQuery) {
-      const sourcePrefix = `${completionQuery.fileSystemProxyCommand} `
-      const targetPrefix = `${completionQuery.fileSystemTargetCommand} `
-      const candidatePath = String(item?.candidatePath || '').trim()
-      const name = candidatePath
-        ? `${targetPrefix}${candidatePath}`.trim()
-        : this.replaceCompletionCommandPrefix(item.name, sourcePrefix, targetPrefix)
-      const value = name
-
-      return {
+    normalizeFilesystemCompletionCandidate(item, completionQuery) {
+      const rawText = String(completionQuery?.rawText || '')
+      const cursorPosition = Number.isInteger(completionQuery?.cursorPosition)
+        ? completionQuery.cursorPosition : rawText.length
+      const mode = String(completionQuery?.argumentMode || 'token')
+      const [start, end, rawArgument] = this.getClientFilesystemArgumentSpan(rawText, cursorPosition, mode)
+      const candidatePath = String(item.candidatePath || '')
+      const replacement = this.quoteClientFilesystemCandidate(candidatePath, rawArgument)
+      const insertText = rawText.slice(0, start) + replacement + rawText.slice(end)
+      return this.normalizeCandidateItem({
         ...item,
-        value,
-        name,
-        groupLabel: this.buildCandidateGroupLabel({ ...item, group: item.group, source: item.source }),
-        searchText: this.getCandidateTitleText({ value, name }).toLowerCase(),
-      }
+        name: insertText,
+        value: insertText,
+        title: insertText,
+        insert_text: insertText,
+      })
     },
 
-    replaceCompletionCommandPrefix(value, sourcePrefix, targetPrefix) {
-      const text = String(value || '').trim()
-      if (!text) return ''
-
-      if (text.toLowerCase().startsWith(String(sourcePrefix || '').toLowerCase())) {
-        return `${targetPrefix}${text.slice(String(sourcePrefix || '').length)}`.trim()
+    getClientFilesystemArgumentSpan(text, cursor, mode = 'token') {
+      const value = String(text || '')
+      const position = Math.max(0, Math.min(Number(cursor) || 0, value.length))
+      if (mode === 'tail') {
+        const prefix = value.slice(0, position)
+        const match = prefix.match(/^\s*\S+\s+/)
+        if (!match) return [position, position, '']
+        let start = match[0].length
+        while (start < position && /\s/.test(value[start])) start += 1
+        return [start, value.length, value.slice(start)]
       }
 
-      return text
+      const prefix = value.slice(0, position)
+      let start = prefix.length
+      let quote = ''
+      let escaped = false
+      for (let index = prefix.length - 1; index >= 0; index -= 1) {
+        const char = prefix[index]
+        if (escaped) { escaped = false; continue }
+        if (char === '\\' && quote !== "'") { escaped = true; continue }
+        if (quote) { if (char === quote) quote = ''; continue }
+        if (char === '"' || char === "'") { quote = char; continue }
+        if (/\s/.test(char)) { start = index + 1; break }
+        start = index
+      }
+      if (prefix && /\s/.test(prefix[prefix.length - 1])) start = position
+      let end = position
+      quote = ''
+      escaped = false
+      for (let index = position; index < value.length; index += 1) {
+        const char = value[index]
+        if (escaped) { escaped = false; end = index + 1; continue }
+        if (char === '\\' && quote !== "'") { escaped = true; end = index + 1; continue }
+        if (quote) { if (char === quote) quote = ''; end = index + 1; continue }
+        if (char === '"' || char === "'") { quote = char; end = index + 1; continue }
+        if (/\s/.test(char)) break
+        end = index + 1
+      }
+      const token = value.slice(start, end)
+      if (token.startsWith('--') && token.includes('=')) start += token.indexOf('=') + 1
+      return [start, end, value.slice(start, end)]
+    },
+
+    quoteClientFilesystemCandidate(candidatePath, originalArgument) {
+      const original = String(originalArgument || '')
+      if (original.startsWith('"')) {
+        const escaped = candidatePath.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+        return `"${escaped}${original.endsWith('"') && original.length > 1 ? '"' : ''}`
+      }
+      if (original.startsWith("'")) {
+        const escaped = candidatePath.replace(/'/g, "'\\''")
+        return `'${escaped}${original.endsWith("'") && original.length > 1 ? "'" : ''}`
+      }
+      return candidatePath
+    },
+
+    getClientCompletionPathContext(text, cursor, mode = 'token') {
+      const [, , argument] = this.getClientFilesystemArgumentSpan(text, cursor, mode)
+      let value = String(argument || '').trim()
+      if (value.startsWith('"') || value.startsWith("'")) value = value.slice(1)
+      const equals = value.startsWith('--') ? value.indexOf('=') : -1
+      if (equals >= 0) value = value.slice(equals + 1)
+      return this.splitFileSystemCandidatePath(value).lookupPath
     },
 
     filterCommandCompletionCandidates(candidates, completionQuery) {
@@ -1156,7 +1244,12 @@ export default {
         return list.slice(0, 50)
       }
 
-      return this.filterCandidatesByTitle(list, keyword).slice(0, 50)
+      const refreshed = list.map(item => (
+        (item?.source === 'client_filesystem' || item?.source === 'server_filesystem') && item?.candidatePath
+          ? this.normalizeFilesystemCompletionCandidate(item, completionQuery)
+          : item
+      )).filter(Boolean)
+      return this.filterCandidatesByTitle(refreshed, keyword).slice(0, 50)
     },
 
     clearCommandCompletionCandidateCache() {
@@ -1578,6 +1671,7 @@ export default {
         ])
 
         const systemCandidates = Array.isArray(candidateData) ? candidateData : []
+        this.clientCompletionDeclarations = systemCandidates.filter(item => item?.source === 'client' && item?.completion)
 const historyItems = Array.isArray(historyData) ? historyData : []
 const pinnedHistoryItems = historyItems.filter(item => item && item.is_pinned)
 
@@ -1649,6 +1743,7 @@ const pinnedHistoryItems = historyItems.filter(item => item && item.is_pinned)
         this.commandCandidatesLoadedFor = clientId
       } catch (_error) {
         this.commandCandidates = []
+        this.clientCompletionDeclarations = []
         this.commandCandidatesLoadedFor = ''
       }
     },
@@ -1669,32 +1764,17 @@ const pinnedHistoryItems = historyItems.filter(item => item && item.is_pinned)
     },
 
     buildCommonOpsCandidates() {
-      return [
-        {
-          name: 'whoami',
-          help: 'Show current user',
-          source: 'common_ops',
-          group: 'common_ops',
-        },
-        {
-          name: 'hostname',
-          help: 'Show host name',
-          source: 'common_ops',
-          group: 'common_ops',
-        },
-        {
-          name: 'mkdir ',
-          help: 'Create a directory',
-          source: 'common_ops',
-          group: 'common_ops',
-        },
-        {
-          name: 'rmdir ',
-          help: 'Remove an empty directory',
-          source: 'common_ops',
-          group: 'common_ops',
-        },
-      ]
+      return Object.entries(this.getCommonOpsConfig())
+        .filter(([, definition]) => definition?.suggest === true)
+        .map(([name, definition]) => {
+          const insertText = `${name}${definition.trailingSpace ? ' ' : ''}`
+          return {
+            name: insertText,
+            help: String(definition.help || '').trim(),
+            source: 'common_ops',
+            group: 'common_ops',
+          }
+        })
     },
 
     sortDefaultCommandCandidates(candidates) {

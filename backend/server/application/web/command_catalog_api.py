@@ -40,6 +40,7 @@ class WebCommandCatalogApi:
                 **({'confirmation': True} if item.get('confirmation') else {}),
                 'interaction': item.get('interaction') or {'may_request': False},
                 'output': item.get('output', 'collect'),
+                **({'completion': item.get('completion')} if item.get('completion') else {}),
             })
 
         return result
@@ -67,7 +68,7 @@ class WebCommandCatalogApi:
         merged.sort(key=lambda item: (item.get('source', ''), item.get('name', '').lower()))
         return merged
 
-    def get_command_completions(self, client_id: str, raw_input: str = '', cursor_position=None, max_results: int = 50):
+    def get_command_completions(self, client_id: str, raw_input: str = '', cursor_position=None, max_results: int = 50, completion_spec=None):
         if self.command_completion_service is None:
             return {
                 'context': {},
@@ -79,4 +80,5 @@ class WebCommandCatalogApi:
             raw_input=raw_input,
             cursor_position=cursor_position,
             max_results=max_results,
+            completion_spec=completion_spec,
         )

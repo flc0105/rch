@@ -2,7 +2,6 @@
   <el-dialog
     :model-value="visible"
     title="Message"
-    fullscreen
     append-to-body
     width="760px"
     top="8vh"

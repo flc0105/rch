@@ -8,6 +8,7 @@ const script = source.match(/<script>([\s\S]*?)<\/script>/)?.[1]
 assert.ok(script)
 const sandbox = {
   ElMessage: { success() {}, warning() {} }, TerminalConnectionContext: {},
+  commonOps: JSON.parse(readFileSync(new URL('../src/config/commonOps.json', import.meta.url), 'utf8')),
   getCommandCandidates: async () => [
     { name: 'edit', help: 'Remote command', source: 'client', group: 'file' },
     { name: 'shell', source: 'client', group: 'execution' },

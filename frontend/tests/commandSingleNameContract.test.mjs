@@ -27,17 +27,18 @@ test('single name is the inserted text for ACMD, builtins and parameters', () =>
   }
 })
 
-test('file-system completion rewriting targets name, no legacy template field', () => {
+test('Client completion candidates already contain the full inserted command', () => {
   const context = {
+    normalizeCandidateItem: methods.normalizeCandidateItem,
     buildCandidateGroupLabel: methods.buildCandidateGroupLabel,
     getCandidateTitleText: methods.getCandidateTitleText,
-    replaceCompletionCommandPrefix: methods.replaceCompletionCommandPrefix,
   }
-  const item = methods.normalizeFileSystemCompletionCandidate.call(context, {
-    name: 'cd /tmp/example', value: 'cd /tmp/example', group: 'file', source: 'client_cd',
-  }, {fileSystemProxyCommand:'cd', fileSystemTargetCommand:'ls'})
-  assert.equal(item.name, 'ls /tmp/example')
-  assert.equal(methods.getCandidateInsertText(item), 'ls /tmp/example')
+  const item = methods.normalizeCommandCompletionCandidate.call(context, {
+    name: 'cd /tmp/example', value: 'cd /tmp/example',
+    title: 'cd /tmp/example', group: 'filesystem', source: 'client_filesystem',
+  }, {})
+  assert.equal(item.name, 'cd /tmp/example')
+  assert.equal(methods.getCandidateInsertText(item), 'cd /tmp/example')
   assert.equal(item.value, item.name)
   assert.ok(!('template' in item))
 })

@@ -11,6 +11,7 @@ from client.runtime.execution.python_execution.factory import (
 from client.runtime.execution.process.process_execution_service import ProcessExecutionService
 from client.config import runtime_config
 from core.utils.decorator import desc
+from core.command_completion.models import CompletionSpec
 
 
 from client.runtime.execution.python_process import PythonProcessExecutionMixin
@@ -19,7 +20,7 @@ from client.runtime.execution.python_process import PythonProcessExecutionMixin
 class CommandExecutionMixin(PythonProcessExecutionMixin):
     """User-facing shell and Python commands."""
     # ------------------ 基础执行命令 ------------------ #
-    @desc('Change working directory', group='shell')
+    @desc('Change working directory', group='shell', completion=CompletionSpec('filesystem', ('directory',)))
     def cd(self, path):
         try:
             if not path.strip():

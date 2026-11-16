@@ -277,7 +277,6 @@
   <el-dialog
     v-model="resultVisible"
     :title="activeRun.displayName || 'Script Result'"
-    fullscreen
     width="760px"
     class="rch-result-detail-fullscreen"
     append-to-body
@@ -1961,7 +1960,7 @@ export default {
   overflow: hidden !important;
 }
 
-@media (max-width: 768px), (max-height: 720px) {
+@media (max-width: 768px) {
   .script-library-overlay .el-dialog {
     width: 100vw !important;
     max-width: 100vw !important;

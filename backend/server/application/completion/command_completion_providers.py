@@ -571,43 +571,54 @@ class ServerFileSystemCompletionProvider(CommandCompletionProvider):
         return result
 
 
-class RemoteClientCommandCompletionProvider(CommandCompletionProvider):
-    """
-    代理 client 侧 CommandCompletionProvider。
-    """
+class RemoteClientCommandCompletionProvider(ServerCompletionSessionMixin, CommandCompletionProvider):
+    """Request Client-declared completion through the dedicated read-only protocol."""
 
-    command_names = ('cd', 'download', 'edit')
     source = 'client'
     group = 'client'
 
-    def __init__(self, remote_execution_service):
+    def __init__(self, server, remote_execution_service):
+        ServerCompletionSessionMixin.__init__(self, server)
         self.remote_execution_service = remote_execution_service
 
+    def _manifest_entry(self, context):
+        session = self.get_session(context)
+        manifest = getattr(getattr(session, 'session_info', None), 'command_manifest', None) or []
+        command_name = str(context.command_name or '').strip().lower()
+        if command_name == 'acmd':
+            subcommand = str(context.argument_text or '').strip().split(maxsplit=1)
+            if not subcommand:
+                return None
+            target_name = f'acmd {subcommand[0].lower()}'
+        else:
+            target_name = command_name
+        return next((item for item in manifest
+                     if isinstance(item, dict)
+                     and str(item.get('name') or '').strip().lower() == target_name), None)
+
+    def supports(self, context: CompletionContext) -> bool:
+        metadata = context.metadata or {}
+        if isinstance(metadata.get('completion_spec'), dict):
+            return True
+        entry = self._manifest_entry(context)
+        completion = entry.get('completion') if isinstance(entry, dict) else None
+        return bool(completion)
+
     def complete(self, context: CompletionContext) -> list[CompletionCandidate]:
-        client_id = str((context.metadata or {}).get('client_id') or '').strip()
+        client_id = self.get_client_id(context)
         if not client_id:
             return []
-
-        payload = self._build_client_payload(context)
-        result_payload = self.remote_execution_service.run_foreground_json_command(
-            client_id,
-            self._build_command(payload),
-            task_type='command_candidate',
-            source='web_command_autocomplete',
-        )
+        payload = {
+            'raw_input': context.raw_input,
+            'cursor_position': (context.metadata or {}).get('raw_cursor_position', len(context.raw_input)),
+            'max_results': context.max_results,
+        }
+        override = (context.metadata or {}).get('completion_spec')
+        if isinstance(override, dict):
+            payload['completion'] = override
+        result_payload = self.remote_execution_service.run_completion(client_id, payload)
         items = result_payload.get('items') if isinstance(result_payload, dict) else []
         return [self._candidate_from_payload(item) for item in items if isinstance(item, dict)]
-
-    def _build_client_payload(self, context: CompletionContext) -> dict:
-        payload = context.to_dict()
-        metadata = dict(payload.get('metadata') or {})
-        # client 侧只需要纯补全上下文，不需要 server-only 信息。
-        metadata.pop('client_id', None)
-        payload['metadata'] = metadata
-        return payload
-
-    def _build_command(self, payload: dict) -> str:
-        return f'command_completions {encode_structured_arg(payload)}'
 
     def _candidate_from_payload(self, item: dict) -> CompletionCandidate:
         title = str(item.get('title') or item.get('name') or item.get('value') or '').strip()

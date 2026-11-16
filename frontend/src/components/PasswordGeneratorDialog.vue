@@ -493,7 +493,7 @@ generateAppleStylePassword() {
   margin-top: 8vh !important;
 }
 
-@media (max-width: 768px), (max-height: 720px) {
+@media (max-width: 768px) {
   .password-generator-overlay .el-dialog {
     width: 100vw !important;
     max-width: 100vw !important;

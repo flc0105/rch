@@ -1389,7 +1389,7 @@ export default {
   margin-top: 6vh !important;
 }
 
-@media (max-width: 768px), (max-height: 720px) {
+@media (max-width: 768px) {
   .keychain-overlay .el-dialog,
   .keychain-editor-overlay .el-dialog,
   .keychain-detail-overlay .el-dialog {

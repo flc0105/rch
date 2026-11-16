@@ -13,5 +13,7 @@ def command_metadata(handler, *, kind='command'):
                                 or getattr(handler, 'requires_confirmation', False)),
         },
         'output': output,
+        **({'completion': getattr(handler, 'command_completion').to_dict()}
+           if getattr(handler, 'command_completion', None) is not None else {}),
         **({'confirmation': True} if getattr(handler, 'requires_confirmation', False) else {}),
     }

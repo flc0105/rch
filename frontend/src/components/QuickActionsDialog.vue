@@ -246,7 +246,6 @@
   <el-dialog
     v-model="resultVisible"
     :title="resultTitle"
-    fullscreen
     width="760px"
     class="quick-actions-result-dialog rch-result-detail-fullscreen"
     append-to-body
@@ -1085,7 +1084,7 @@ export default {
   font-family: var(--el-font-family-monospace, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
 }
 
-@media (max-width: 768px), (max-height: 720px) {
+@media (max-width: 768px) {
   .quick-actions-overlay .el-dialog {
     width: 100vw !important;
     max-width: 100vw !important;

@@ -1,13 +1,7 @@
-"""Client and Server registration for RCHCLI remote edit path completion."""
+"""Client filesystem completion can be selected by the shared CompletionSpec."""
 
 import unittest
-import ast
-from pathlib import Path
 
-from core.command_completion.models import CompletionContext
-from client.commands.common.services.completion.command_completion_providers import (
-    EditPathCommandCompletionProvider,
-)
 from client.commands.common.services.completion.command_completion_service import (
     ClientCommandCompletionService,
 )
@@ -32,69 +26,53 @@ class FileSystemService:
         }
 
 
-class RuntimeConfigService:
-    def list_config_items(self):
-        return []
-
-
 class CommandHost:
     def __init__(self):
         self.path_resolver = PathResolver()
         self.file_system_service = FileSystemService()
-        self.runtime_config_service = RuntimeConfigService()
 
 
 class EditCompletionTests(unittest.TestCase):
-    def test_server_remote_client_completion_allowlist_includes_edit(self):
-        source = (
-            Path(__file__).resolve().parents[1]
-            / 'server/application/completion/command_completion_providers.py'
-        ).read_text(encoding='utf-8')
-        module = ast.parse(source)
-        provider = next(
-            node for node in module.body
-            if isinstance(node, ast.ClassDef) and node.name == 'RemoteClientCommandCompletionProvider'
-        )
-        assignment = next(
-            node for node in provider.body
-            if isinstance(node, ast.Assign)
-            and any(isinstance(target, ast.Name) and target.id == 'command_names' for target in node.targets)
-        )
-        self.assertIn('edit', ast.literal_eval(assignment.value))
-
-    def test_client_edit_provider_completes_directories_and_files(self):
+    def test_client_completion_service_accepts_common_ops_override(self):
         host = CommandHost()
-        provider = EditPathCommandCompletionProvider(
-            path_resolver=host.path_resolver,
-            file_system_service=host.file_system_service,
-        )
-        context = CompletionContext(
-            command_name='edit',
-            argument_text='/Users/flc/',
-            current_token='',
-        )
-
-        items = provider.complete(context)
-
+        result = ClientCommandCompletionService(host).complete({
+            'raw_input': 'edit /Users/flc/',
+            'cursor_position': len('edit /Users/flc/'),
+            'completion': {'provider': 'filesystem', 'kinds': ['file', 'directory']},
+        })
         self.assertEqual(host.path_resolver.lookups, ['/Users/flc/'])
         self.assertEqual(
-            [(item.insert_text, item.kind) for item in items],
+            [(item['insert_text'], item['kind']) for item in result['items']],
             [
                 ('edit /Users/flc/Desktop', 'directory'),
                 ('edit /Users/flc/notes.txt', 'file'),
             ],
         )
 
-    def test_client_completion_service_registers_edit_provider(self):
+    def test_completion_spec_filters_file_or_directory(self):
         host = CommandHost()
-        result = ClientCommandCompletionService(host).complete({
-            'raw_input': 'edit /Users/flc/',
-            'cursor_position': len('edit /Users/flc/'),
+        service = ClientCommandCompletionService(host)
+        directory_only = service.complete({
+            'raw_input': 'rmdir ', 'cursor_position': 6,
+            'completion': {'provider': 'filesystem', 'kinds': ['directory']},
         })
-        self.assertEqual(
-            [item['insert_text'] for item in result['items']],
-            ['edit /Users/flc/Desktop', 'edit /Users/flc/notes.txt'],
-        )
+        self.assertEqual([item['kind'] for item in directory_only['items']], ['directory'])
+        file_only = service.complete({
+            'raw_input': 'cat ', 'cursor_position': 4,
+            'completion': {'provider': 'filesystem', 'kinds': ['file']},
+        })
+        self.assertEqual([item['kind'] for item in file_only['items']], ['file'])
+
+    def test_browser_utf16_cursor_is_converted_once_before_filesystem_slicing(self):
+        host = CommandHost()
+        raw_input = 'cat 😀/'
+        result = ClientCommandCompletionService(host).complete({
+            'raw_input': raw_input,
+            'cursor_position': 7,  # c a t space = 4 units, emoji = 2, slash = 1
+            'completion': {'provider': 'filesystem', 'kinds': ['file', 'directory']},
+        })
+        self.assertEqual(host.path_resolver.lookups, ['😀/'])
+        self.assertTrue(all(item['insert_text'].startswith('cat 😀/') for item in result['items']))
 
 
 if __name__ == '__main__':

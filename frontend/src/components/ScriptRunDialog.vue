@@ -2,7 +2,6 @@
   <el-dialog
     :model-value="visible"
     :title="item ? `Run ${item.display_name || item.script_name}` : 'Run Script'"
-    fullscreen
     width="680px"
     top="10vh"
     class="fixed-dialog script-run-dialog rch-result-detail-fullscreen"
@@ -434,7 +433,7 @@ export default {
   flex: 0 0 auto !important;
 }
 
-@media (max-width: 768px), (max-height: 720px) {
+@media (max-width: 768px) {
   .script-run-overlay .el-dialog {
     width: 100vw !important;
     max-width: 100vw !important;
