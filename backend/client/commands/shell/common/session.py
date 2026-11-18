@@ -1,0 +1,74 @@
+import os
+import sys
+import threading
+
+from client.runtime.client_util import reset, spawn_new_instance, reexec_restart
+from client.runtime.command_variable_resolver import CommandVariableResolutionError
+from core.utils.decorator import confirm
+from client.commands.shell.decorators import shell_command
+
+
+class ShellSessionCommands:
+    """
+    会话生命周期命令。
+    """
+
+    @shell_command('Manage variables for this Client connection', group='session')
+    def var(self, arg=''):
+        resolver = self._command_runtime.command_variable_resolver
+        text = str(arg or '').strip()
+        if not text:
+            variables = resolver.list_vars()
+            return 1, '\n'.join(f'{name}={value}' for name, value in variables.items()) or 'No user variables'
+        if text.startswith('--unset '):
+            name = text[len('--unset '):].strip()
+            if not resolver.USER_NAME_PATTERN.fullmatch(name):
+                return 0, 'Usage: var --unset NAME'
+            return (1, f'{name} removed') if resolver.unset_var(name) else (0, f'User variable is not set: {name}')
+        if '=' not in text:
+            return 0, 'Usage: var NAME=VALUE | var --unset NAME | var'
+        name, value = text.split('=', 1)
+        if name != name.strip() or (value and value[0].isspace()):
+            return 0, 'Usage: var NAME=VALUE (no spaces around =)'
+        try:
+            resolver.set_var(name, value)
+        except CommandVariableResolutionError as exc:
+            return 0, str(exc)
+        return 1, f'{name} set'
+
+    @shell_command('Pause this Client connection without terminating its process', group='session')
+    def pause_connection(self):
+        self.socket.request_pause()
+        return 1, 'Client connection will pause after this result is sent'
+
+    @shell_command('Terminate current session', group='session')
+    # @confirm('Terminate this Client session and close its connection?')
+    def kill_instance(self):
+        self.socket.report_session_end('server_requested_disconnect', command='kill_instance')
+        watchdog_manager = getattr(self.socket, 'watchdog_manager', None)
+        if watchdog_manager is not None:
+            watchdog_manager.stop()
+        manager = getattr(self.socket, 'process_recovery_watchdog_manager', None)
+        if manager is not None:
+            manager.stop()
+        self.socket.close()
+        sys.exit(0)
+
+    @shell_command('Restart client process and reconnect', group='session')
+    @confirm('Restart this Client process and reconnect to the Server?')
+    def relaunch_instance(self, options=''):
+        if str(options or '').strip():
+            return 0, 'Usage: relaunch_instance [--no-confirm]'
+        reset(self.socket)
+
+    @shell_command('Restart current process by exec replacement', group='session')
+    def reexec_instance(self):
+        reexec_restart(self.socket)
+
+    @shell_command('Start a new client instance without exiting current process', group='session')
+    def spawn_instance(self):
+        process = spawn_new_instance()
+        # Duplicate 已是独立 session；父进程只负责异步回收退出状态，避免 zombie。
+        if os.name == 'posix' and callable(getattr(process, 'wait', None)):
+            threading.Thread(target=process.wait, name='rch-duplicate-reaper', daemon=True).start()
+        return 1, f'New client instance started, pid={process.pid}'

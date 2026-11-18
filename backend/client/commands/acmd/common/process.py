@@ -1,0 +1,257 @@
+from client.runtime.execution.process.process_service import ProcessService
+from client.commands.acmd.decorators import argument_command
+from core.commands.argument_models import ArgumentCommandSpec, ArgumentOptionSpec
+from core.utils.command_output import StructuredCommandResult, render_structured_result
+
+
+PS_ARGUMENT_SPEC = ArgumentCommandSpec(
+    name='ps',
+    description='Show running processes',
+    options=[
+        ArgumentOptionSpec(
+            name='pid',
+            option_type='int',
+            required=False,
+            default=None,
+            alias='p',
+            positional_index=0,
+            help_text='Filter by process id',
+        ),
+        ArgumentOptionSpec(
+            name='name',
+            option_type='str',
+            required=False,
+            default='',
+            alias='n',
+            help_text='Filter by process name or executable path',
+        ),
+        ArgumentOptionSpec(
+            name='port', option_type='int', required=False, default=None,
+            help_text='Filter by listening port',
+        ),
+        ArgumentOptionSpec(
+            name='with-actions', option_type='flag', required=False, default=False,
+            help_text='Include available row actions in JSON output',
+        ),
+        ArgumentOptionSpec(
+            name='json',
+            option_type='flag',
+            required=False,
+            default=False,
+            help_text='Output as JSON',
+        ),
+        ArgumentOptionSpec(
+            name='help',
+            option_type='flag',
+            required=False,
+            default=False,
+            alias='h',
+            help_text='Show this help message',
+        ),
+    ],
+    examples=[
+        'acmd ps',
+        'acmd ps 1234',
+        'acmd ps --pid 1234',
+        'acmd ps --name python',
+        'acmd ps --name python --json',
+        'acmd ps --port 8080 --json --with-actions',
+    ],
+)
+
+
+KILL_ARGUMENT_SPEC = ArgumentCommandSpec(
+    name='kill', description='Kill processes',
+    options=[
+        ArgumentOptionSpec(name='pid', option_type='int', default=None, help_text='Process ID'),
+        ArgumentOptionSpec(name='name', option_type='str', default='', help_text='Exact process name'),
+        ArgumentOptionSpec(name='port', option_type='int', default=None, help_text='Listening port'),
+        ArgumentOptionSpec(name='force', option_type='flag', default=False, alias='f', help_text='Use SIGKILL'),
+        ArgumentOptionSpec(name='no-confirm', option_type='flag', default=False, help_text='Skip interaction and execute'),
+        ArgumentOptionSpec(name='help', option_type='flag', default=False, alias='h', help_text='Show help'),
+    ],
+    examples=['acmd kill', 'acmd kill --pid 1234', 'acmd kill --name python -9',
+              'acmd kill --port 8080 --force', 'acmd kill --pid 1234 --no-confirm'],
+)
+
+
+class ACMDProcessCommands:
+
+    def __init__(self, *args, **kwargs):
+        self._process_service = None
+        super().__init__(*args, **kwargs)
+
+    def _get_process_service(self):
+        if self._process_service is None:
+            self._process_service = ProcessService(self)
+        return self._process_service
+
+    @argument_command('kill', spec=KILL_ARGUMENT_SPEC, interaction=True)
+    def _acmd_kill(self, args_dict, payload=None):
+        from client.runtime.execution.process.approved_process_service import (
+            ClientCommandInteractions, ProcessApprovalError, find_targets,
+            build_multi_preview, terminate_verified,
+        )
+
+        self._set_timeout(240)
+        try:
+            extra = args_dict.get('_args') or []
+            if extra and any(token != '-9' for token in extra):
+                raise ValueError('Unknown kill argument; use --pid, --name, --port, -9, --force or --no-confirm')
+            force = bool(args_dict.get('force') or '-9' in extra)
+            no_confirm = bool(args_dict.get('no-confirm'))
+            criteria = {key: args_dict[key] for key in ('pid', 'name', 'port')
+                        if args_dict.get(key) not in (None, '')}
+            if len(criteria) > 1:
+                raise ValueError('Specify exactly one of --pid, --name or --port')
+            if not criteria and no_confirm:
+                raise ValueError('--no-confirm requires --pid, --name or --port')
+            if not criteria:
+                ui = ClientCommandInteractions(self)
+                choice = ui.select('Find a process by:', ['pid', 'name', 'port'],
+                                   title='Process lookup')
+                target = ui.ask(f'Enter {choice}:', title='Process lookup')
+                criteria[choice] = target
+            if 'pid' in criteria:
+                criteria['pid'] = int(criteria['pid'])
+            if 'port' in criteria:
+                criteria['port'] = int(criteria['port'])
+                if not 1 <= criteria['port'] <= 65535:
+                    raise ProcessApprovalError('Port must be 1..65535')
+            if 'name' in criteria:
+                criteria['name'] = str(criteria['name']).strip()
+                if not criteria['name']:
+                    raise ValueError('Name must not be empty')
+            rows = (find_targets(criteria) if no_confirm
+                    else find_targets(criteria, preview_limit=100))
+            if not rows:
+                return 0, 'No matching Client processes'
+            if not no_confirm:
+                selected_ids, force = ClientCommandInteractions(self).approve_processes(
+                    'Approve termination of selected Client processes?',
+                    build_multi_preview(rows, criteria=criteria, force_default=force))
+                rows = [row for row in rows if str(row['pid']) in selected_ids]
+                if not rows:
+                    return 1, 'No processes selected; no signal sent.'
+            self._checkpoint(fallback_timeout=240)
+            outcomes = []
+            for row in rows:
+                self._checkpoint(fallback_timeout=240)
+                try:
+                    signal_name = terminate_verified(row, force=force, port=criteria.get('port'))
+                    outcomes.append(f'{signal_name} sent to PID {row["pid"]} ({row["name"]})')
+                except (OSError, ProcessApprovalError) as exc:
+                    outcomes.append(f'PID {row["pid"]} failed: {exc}')
+            failures = [line for line in outcomes if ' failed:' in line]
+            return (0 if failures else 1), '\n'.join(outcomes)
+        except (ValueError, ProcessApprovalError, OSError) as exc:
+            return 0, f'Process termination failed: {exc}'
+        except Exception as exc:
+            return 0, f'Process termination unavailable: {exc}'
+
+    @argument_command('ps', spec=PS_ARGUMENT_SPEC)
+    def _acmd_ps(self, args_dict, payload=None):
+        return self._acmd_ps_common(args_dict, payload)
+
+    def _acmd_ps_common(self, args_dict, payload=None):
+        """
+        acmd ps 公共实现。
+
+        只做：
+        - 调用 ProcessService.list_processes()
+        - 根据 pid / name / port 筛选
+        - 返回 StructuredCommandResult 渲染结果
+
+        不在这里写任何 psutil 枚举逻辑。
+        """
+        pid = args_dict.get('pid')
+        name = str(args_dict.get('name') or '').strip()
+        output_json = bool(args_dict.get('json', False))
+        include_actions = bool(args_dict.get('with-actions', False))
+        port = args_dict.get('port')
+        if port is not None:
+            port = int(port)
+            if not 1 <= port <= 65535:
+                raise ValueError('Port must be 1..65535')
+
+        if pid is not None:
+            pid = int(pid)
+            if pid < 0:
+                raise ValueError('PID must not be negative: {}'.format(pid))
+
+        rows = self._get_process_service().list_processes()
+        rows = self._filter_acmd_ps_rows(rows, pid=pid, name=name)
+        if port is not None:
+            from client.runtime.execution.process.approved_process_service import _port_owners
+            owners = _port_owners(port)
+            rows = [row for row in rows if row['pid'] in owners]
+        if include_actions and output_json:
+            for row in rows:
+                row['_actions'] = [{'label': 'Kill',
+                                    'command': f'acmd kill --pid {row["pid"]}'}]
+
+        if not rows:
+            if pid is not None and name:
+                raise RuntimeError(
+                    'No process found for pid {} and name {}'.format(pid, name)
+                )
+
+            if pid is not None:
+                raise RuntimeError(
+                    'No process found for pid {}'.format(pid)
+                )
+
+            if name:
+                raise RuntimeError(
+                    'No process found for name {}'.format(name)
+                )
+            if port is not None:
+                raise RuntimeError('No process found for port {}'.format(port))
+
+            raise RuntimeError('No processes found')
+
+        result = StructuredCommandResult(
+            status=1,
+            data=rows,
+            shape='table',
+        )
+
+        return render_structured_result(
+            result,
+            output_format='json' if output_json else 'text',
+        )
+
+    def _filter_acmd_ps_rows(self, rows, pid=None, name=''):
+        name = str(name or '').strip().lower()
+        result = []
+
+        for row in rows or []:
+            row_pid = self._normalize_process_int(row.get('pid'))
+
+            if pid is not None and row_pid != pid:
+                continue
+
+            row_name = str(row.get('name') or '')
+
+            if name and name not in row_name.lower():
+                continue
+
+            result.append({
+                'pid': row_pid,
+                'ppid': self._normalize_process_int(row.get('ppid')),
+                'name': row_name,
+                'username': row.get('username') or '',
+                'status': row.get('status') or '',
+            })
+
+        result.sort(key=lambda item: self._normalize_process_int(item.get('pid')))
+        return result
+
+    def _normalize_process_int(self, value):
+        if value in (None, ''):
+            return 0
+
+        try:
+            return int(value)
+        except Exception:
+            return 0
