@@ -16,11 +16,11 @@ SCRIPT_METADATA = {
     ]
 }
 
-import json
 import os
 import re
-import sys
 from datetime import datetime
+
+from client.runtime.sdk import context
 
 
 
@@ -59,15 +59,15 @@ def _parse_zsh(path):
         if m:
             if buf:
                 entries.append({"timestamp": ts, "command": "\n".join(buf)})
-                buf = []
             ts = int(m.group(1))
-            buf.append(line[m.end():])
+            buf = [line[m.end():]]
+        elif buf and buf[-1].endswith("\\"):
+            buf.append(line)
         else:
             if buf:
-                buf.append(line)
-            else:
-                if line.strip():
-                    entries.append({"timestamp": None, "command": line})
+                entries.append({"timestamp": ts, "command": "\n".join(buf)})
+            ts = None
+            buf = [line] if line.strip() else []
 
     if buf:
         entries.append({"timestamp": ts, "command": "\n".join(buf)})
@@ -105,16 +105,26 @@ def _format_timestamp(timestamp):
         return None
 
 
-def _rows(parsed, shell, limit):
-    rows = []
-    for entry in parsed["entries"][-limit:] if limit > 0 else parsed["entries"]:
-        rows.append({
+def _rows(parsed, shell):
+    # Entries without timestamps use their position in the history file (last first).
+    ordered = sorted(
+        enumerate(parsed["entries"]),
+        key=lambda item: (
+            item[1]["timestamp"] is not None,
+            item[1]["timestamp"] or 0,
+            item[0],
+        ),
+        reverse=True,
+    )
+    return [
+        {
             "shell": shell,
             "timestamp": _format_timestamp(entry.get("timestamp")),
             "command": entry["command"],
             "path": parsed["path"],
-        })
-    return rows
+        }
+        for _, entry in ordered
+    ]
 
 
 def main():
@@ -125,11 +135,13 @@ def main():
     bash = os.path.join(HOME, ".bash_history")
 
     if os.path.isfile(zsh):
-        rows.extend(_rows(_parse_zsh(zsh), "zsh", limit))
+        rows.extend(_rows(_parse_zsh(zsh), "zsh"))
     if os.path.isfile(bash):
-        rows.extend(_rows(_parse_bash(bash), "bash", limit))
+        rows.extend(_rows(_parse_bash(bash), "bash"))
 
-    print(json.dumps(rows, ensure_ascii=False, indent=2))
+    if limit > 0:
+        rows = rows[:limit]
+    context.emit(rows)
 
 
 if __name__ == "__main__":
