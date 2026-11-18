@@ -1,6 +1,10 @@
 """iOS Command/ACMD registration follows the Pythonista capability boundary."""
 
 from client.commands.runtime.hosts import iOSCommands
+from client.commands.shell.decorators import supports_shell_platform
+from client.commands.shell.platform.ios import iOSShellCommands
+from client.commands.shell.runner import ShellCommandRunner
+from client.commands.runtime.executor import CommandExecutor
 from client.commands.runtime.catalog import CommandCatalog
 from client.commands.acmd.registry import ArgumentCommandRegistry
 
@@ -49,11 +53,39 @@ def test_ios_acmd_registry_and_help_do_not_expose_process_commands():
 
 def test_ios_unknown_shell_fallback_is_bounded_to_error():
     commands = iOSCommands(DummyConnection())
-    assert commands.shell('echo hi')[0] == 0
-    assert 'unavailable on iOS' in commands.shell('echo hi')[1]
-    for name in ('shell', 'shell_stream', 'shell_bg', 'run_bg', 'is_elevated', 'piplist',
-                 'spawn_instance', 'relaunch_instance', 'reexec_instance'):
+    # OS Shell methods no longer have iOS overrides; the metadata owns eligibility.
+    for name in ('shell', 'shell_stream', 'shell_bg', 'run_bg'):
+        assert name not in iOSShellCommands.__dict__
+        assert not supports_shell_platform(getattr(commands, name), 'ios')
+        rejected = ShellCommandRunner(None)._resolve_builtin_command(commands, name)
+        assert rejected is not None
+        assert rejected()[0] == 0
+
+    fallback = ShellCommandRunner(None)._resolve_default_command(commands, 'echo hi')
+    assert fallback() == (0, 'OS shell execution is unavailable on this platform')
+    for name in ('is_elevated', 'piplist', 'spawn_instance', 'relaunch_instance', 'reexec_instance'):
         assert not hasattr(getattr(commands, name), 'help')
+
+
+
+def test_ios_shell_platform_gate_blocks_dispatch_and_os_fallback():
+    executor = CommandExecutor(DummyConnection())
+    executor.catalog._get_platform_name = lambda: 'ios'
+    for command_name, argument in (
+        ('shell', 'echo not-executed'),
+        ('shell_stream', 'echo not-executed'),
+        ('shell_bg', 'echo not-executed'),
+        ('run_bg', '/usr/bin/true'),
+    ):
+        status, output = executor.execute_command(
+            f'guard_{command_name}', f'{command_name} {argument}'
+        )
+        assert status == 0
+        assert output == f'Command not supported on this platform: {command_name}'
+    assert executor.execute_command('guard_unknown', 'rch_nonexistent_cli_987654') == (
+        0, 'OS shell execution is unavailable on this platform'
+    )
+    assert executor.execute_command('guard_ios_builtin', 'echo hello') == (1, 'hello')
 
 
 def test_ios_uptime_uses_native_process_info_and_desktop_output_shape(monkeypatch):

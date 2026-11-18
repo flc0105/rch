@@ -45,10 +45,12 @@ class ShellCommandRunner:
         return func
 
     def _resolve_default_command(self, commands, raw_command):
-        """
-        默认回退到 shell 执行
-        """
-        return lambda: commands.shell(raw_command)
+        """Fallback to the OS shell only when its platform capability is enabled."""
+        handler = commands.shell
+        platform = getattr(commands, 'command_platform', None) or get_local_identity().os_alias
+        if not supports_shell_platform(handler, platform):
+            return lambda: (0, 'OS shell execution is unavailable on this platform')
+        return lambda: handler(raw_command)
 
     def _apply_command_policy(self, commands, func):
         context = getattr(commands, 'execution_context', None)

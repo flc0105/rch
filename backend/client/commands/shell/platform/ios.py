@@ -7,26 +7,13 @@ from client.commands.shell.decorators import shell_command
 
 class iOSShellCommands:
     """iOS / Pythonista Shell commands."""
-    # Unsupported desktop commands remain unregistered on iOS.
-    # Their local overrides retain explicit unavailable errors and prevent Shell export.
+    # Desktop-only Shell commands are filtered by their @shell_command platforms.
 
     def __init__(self, socket):
         super().__init__(socket)
         self.ios_file_system = iOSFileSystemService(self)
         self.ios_system = iOSSystemService(self)
         self.ios_console = iOSConsoleService(self)
-
-    def shell(self, command=''):
-        return 0, 'OS shell execution is unavailable on iOS'
-
-    def shell_stream(self, command=''):
-        return self.shell(command)
-
-    def shell_bg(self, command=''):
-        return self.shell(command)
-
-    def run_bg(self, command=''):
-        return self.shell(command)
 
     def is_elevated(self):
         return 0, 'Privilege elevation is unavailable on iOS'

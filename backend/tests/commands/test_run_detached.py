@@ -12,18 +12,21 @@ from client.commands.shell.common.execution import ShellExecutionCommands
 from client.commands.runtime.executor import CommandExecutor
 from client.runtime.execution.process.process_execution_service import ProcessExecutionService
 from client.commands.runtime.hosts import iOSCommands
+from client.commands.shell.decorators import supports_shell_platform
+from client.commands.shell.platform.ios import iOSShellCommands
 
 
 def test_detached_command_registered_and_ios_hidden():
     assert getattr(ShellExecutionCommands.run_bg, 'help', '')
-    assert not hasattr(iOSCommands.run_bg, 'help')
+    assert not supports_shell_platform(iOSCommands.run_bg, 'ios')
+    assert 'run_bg' not in iOSShellCommands.__dict__
 
 
 def test_usage_and_failed_start():
     obj = CommandExecutor(SimpleNamespace()).get_commands()
     assert obj.run_bg('') == (0, 'Usage: run_bg <program> [args...]')
     status, result = obj.run_bg('not-a-real-rch-executable-name-9999')
-    assert status == 0 and 'Failed to start detached process:' in result
+    assert status == 0 and 'Failed to start background program:' in result
 
 
 @pytest.mark.skipif(os.name == 'nt', reason='POSIX session test')
@@ -32,7 +35,7 @@ def test_spawn_direct_program_pid_and_new_session(tmp_path):
     pid_file = tmp_path / 'actual_pid.txt'
     snippet = 'import os,sys,time; open(sys.argv[1],"w").write(str(os.getpid())); time.sleep(1)'
     command = f'{shlex.quote(sys.executable)} -c {shlex.quote(snippet)} {shlex.quote(str(pid_file))}'
-    child = process_service.spawn_detached_program(command)
+    child = process_service.spawn_background_program(command)
     try:
         for _ in range(500):
             if pid_file.exists():
@@ -54,7 +57,7 @@ def test_bare_filename_runs_directly_and_argument_is_literal(tmp_path, monkeypat
     script.chmod(0o755)
     monkeypatch.chdir(tmp_path)
     cmd = f'"my program" "literal;&&" {shlex.quote(str(marker))}'
-    child = ProcessExecutionService(SimpleNamespace()).spawn_detached_program(cmd)
+    child = ProcessExecutionService(SimpleNamespace()).spawn_background_program(cmd)
     child.wait(timeout=3)
     assert child.returncode == 0
     assert marker.read_text() == 'literal;&&'
@@ -62,7 +65,7 @@ def test_bare_filename_runs_directly_and_argument_is_literal(tmp_path, monkeypat
 
 @pytest.mark.skipif(os.name == 'nt', reason='POSIX background shell reaping test')
 def test_shell_bg_shell_pid_is_reaped():
-    proc = ProcessExecutionService(SimpleNamespace()).spawn_background_process('exit 0')
+    proc = ProcessExecutionService(SimpleNamespace()).spawn_background_shell('exit 0')
     for _ in range(300):
         if proc.returncode is not None:
             break
@@ -89,9 +92,32 @@ def test_windows_process_creation_uses_detached_flags(monkeypatch):
     monkeypatch.setattr(module.subprocess, 'Popen', fake_popen)
     monkeypatch.setattr(module.ProcessExecutionService, '_reap_independent_process', staticmethod(lambda process: None))
     service = module.ProcessExecutionService(SimpleNamespace())
-    process = service.spawn_detached_program(r'"C:\Program Files\tool.exe" --path "C:\data\a b.txt"')
+    process = service.spawn_background_program(r'"C:\Program Files\tool.exe" --path "C:\data\a b.txt"')
     assert process.pid == 5555
     assert captured['argv'] == [r'C:\Program Files\tool.exe', '--path', r'C:\data\a b.txt']
     assert captured['kwargs']['creationflags'] == creation_flags
     assert captured['kwargs']['close_fds'] is True
     assert captured['kwargs']['stdin'] == module.subprocess.DEVNULL
+
+
+def test_legacy_process_service_entry_names_removed():
+    assert not hasattr(ProcessExecutionService, 'spawn_detached_program')
+    assert not hasattr(ProcessExecutionService, 'spawn_background_process')
+    assert callable(ProcessExecutionService.spawn_background_program)
+    assert callable(ProcessExecutionService.spawn_background_shell)
+
+
+def test_sdk_background_uses_shared_shell_service(monkeypatch):
+    from client.runtime.sdk import command as sdk_command
+    calls = []
+    fake_process = SimpleNamespace(pid=24680)
+
+    def launch(self, text):
+        calls.append(text)
+        return fake_process
+
+    monkeypatch.setattr(sdk_command, 'get_execution_owner', lambda: None)
+    monkeypatch.setattr(ProcessExecutionService, 'spawn_background_shell', launch)
+    result = sdk_command.run_background('echo RCH_BG_TEST')
+    assert result.pid == 24680
+    assert calls == ['echo RCH_BG_TEST']

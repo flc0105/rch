@@ -26,7 +26,7 @@ class ShellExecutionCommands:
         except OSError as exc:
             return 0, f'Failed to change directory: {exc}'
 
-    @shell_command('Run a shell command', group='execution')
+    @shell_command('Run a shell command', group='execution', platforms=('mac', 'win', 'linux'))
     @cancel_policy('process')
     def shell(self, command):
         try:
@@ -43,7 +43,7 @@ class ShellExecutionCommands:
         except Exception as e:
             return 0, f'Failed to execute command: {e}'
 
-    @shell_command('Run a program in background', group='execution')
+    @shell_command('Run a program in background', group='execution', platforms=('mac', 'win', 'linux'))
     def shell_bg(self, command):
         command_text = (command or '').strip()
         if not command_text:
@@ -51,7 +51,7 @@ class ShellExecutionCommands:
 
         try:
             self._checkpoint()
-            process = self.process_execution_service.spawn_background_process(command_text)
+            process = self.process_execution_service.spawn_background_shell(command_text)
             return 1, (
                 f'Background process started\n'
                 f'PID: {process.pid}\n'
@@ -64,7 +64,7 @@ class ShellExecutionCommands:
         except Exception as e:
             return 0, f'Failed to start background process: {e}'
 
-    @shell_command('Start an independent program in a new session', group='execution')
+    @shell_command('Start an independent program in a new session', group='execution', platforms=('mac', 'win', 'linux'))
     def run_bg(self, command):
         command_text = (command or '').strip()
         if not command_text:
@@ -72,9 +72,9 @@ class ShellExecutionCommands:
 
         try:
             self._checkpoint()
-            process = self.process_execution_service.spawn_detached_program(command_text)
+            process = self.process_execution_service.spawn_background_program(command_text)
             return 1, (
-                f'Detached process started\n'
+                f'Background program started\n'
                 f'PID: {process.pid}\n'
                 f'Command: {command_text}'
             )
@@ -83,9 +83,9 @@ class ShellExecutionCommands:
         except CommandTimeoutError:
             return 0, 'Command timed out'
         except Exception as e:
-            return 0, f'Failed to start detached process: {e}'
+            return 0, f'Failed to start background program: {e}'
 
-    @shell_command('Run a command with live output', group='execution', output='stream')
+    @shell_command('Run a command with live output', group='execution', output='stream', platforms=('mac', 'win', 'linux'))
     @cancel_policy('process')
     def shell_stream(self, command):
         try:

@@ -98,12 +98,12 @@ def run_shell(command: str, *, wait: bool = True, background: bool = False,
 
     if run_in_background:
         if owner is not None:
-            process = owner.process_execution_service.spawn_background_process(command_text)
+            process = owner.process_execution_service.spawn_background_shell(command_text)
         else:
             # SDK without an active execution still uses the shared detached
             # shell launcher; it does not require cancellation context.
             from client.runtime.execution.process.process_execution_service import ProcessExecutionService
-            process = ProcessExecutionService(None).spawn_background_process(command_text)
+            process = ProcessExecutionService(None).spawn_background_shell(command_text)
         return BackgroundProcess(command=command_text, pid=int(getattr(process, 'pid', 0) or 0))
 
     if stream and owner is not None:

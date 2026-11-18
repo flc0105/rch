@@ -220,11 +220,11 @@ class ProcessExecutionService:
             daemon=True,
         ).start()
 
-    def spawn_detached_program(self, command: str):
-        """Launch one executable directly; caller: ShellExecutionCommands.run_bg.
+    def spawn_background_program(self, command: str):
+        """Launch a background executable (run_bg) without a shell interpreter.
 
-        Shares the background process reaper, but intentionally has no shell
-        expansion or shell PID indirection (unlike shell_bg and SDK background).
+        Uses the same background reaper as spawn_background_shell; argv are
+        passed literally rather than interpreted by an intermediate shell.
         """
         argv = split_shell_arguments(command, literal_backslashes=(os.name == 'nt'))
         if not argv:
@@ -254,8 +254,8 @@ class ProcessExecutionService:
         self._reap_independent_process(process)
         return process
 
-    def spawn_background_process(self, command: str):
-        """Run a shell expression detached; callers: Shell shell_bg and SDK background."""
+    def spawn_background_shell(self, command: str):
+        """Run a background shell expression; used by shell_bg and Script SDK."""
         if os.name == 'nt':
             creation_flags = 0
             for attr_name in ('DETACHED_PROCESS', 'CREATE_NEW_PROCESS_GROUP'):
