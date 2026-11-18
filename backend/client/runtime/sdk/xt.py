@@ -104,9 +104,13 @@ def _target_arch() -> str:
 
 def _external_tool_service():
     owner = get_execution_owner()
-    service = getattr(owner, 'external_tool_service', None) if owner is not None else None
-    if service is None:
+    if owner is None:
         raise ScriptSdkExternalToolError('external tool SDK requires inproc Python execution mode')
+    from client.external_tools.service import ExternalToolClientService
+    service = getattr(owner, '_client_external_tool_service', None)
+    if service is None:
+        service = ExternalToolClientService(owner)
+        owner._client_external_tool_service = service
     return service
 
 

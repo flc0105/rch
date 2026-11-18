@@ -1,4 +1,8 @@
+import inspect
+
 from client.commands.acmd.registry import ArgumentCommandRegistry
+from client.commands.runtime.manifest_metadata import command_metadata
+from client.commands.shell.decorators import supports_shell_platform
 from core.device.local_identity import get_local_identity
 
 
@@ -13,16 +17,16 @@ class CommandCatalog:
     """
 
     # PLATFORM_COMMAND_MODULES = {
-    #     'windows': ('client.commands.platform.win', 'WindowsCommands'),
-    #     'darwin': ('client.commands.platform.mac', 'MacCommands'),
-    #     'linux': ('client.commands.platform.linux', 'LinuxCommands'),
-    #     'ios': ('client.commands.platform.ios', 'iOSCommands')
+    #     'windows': ('client.commands.runtime.hosts', 'WindowsCommands'),
+    #     'darwin': ('client.commands.runtime.hosts', 'MacCommands'),
+    #     'linux': ('client.commands.runtime.hosts', 'LinuxCommands'),
+    #     'ios': ('client.commands.runtime.hosts', 'iOSCommands')
     # }
     PLATFORM_COMMAND_MODULES = {
-        'win': ('client.commands.platform.win', 'WindowsCommands'),
-        'mac': ('client.commands.platform.mac', 'MacCommands'),
-        'linux': ('client.commands.platform.linux', 'LinuxCommands'),
-        'ios': ('client.commands.platform.ios', 'iOSCommands')
+        'win': ('client.commands.runtime.hosts', 'WindowsCommands'),
+        'mac': ('client.commands.runtime.hosts', 'MacCommands'),
+        'linux': ('client.commands.runtime.hosts', 'LinuxCommands'),
+        'ios': ('client.commands.runtime.hosts', 'iOSCommands')
     }
 
     def __init__(self, socket):
@@ -75,3 +79,32 @@ class CommandCatalog:
 
 
 
+
+    def get_exported_shell_commands(self):
+        """Collect Shell handlers for the current Client platform."""
+        instance = self.get_commands()
+        platform = self._get_platform_name()
+        return {
+            name: method
+            for name, method in inspect.getmembers(
+                instance, lambda value: inspect.ismethod(value) or inspect.isfunction(value)
+            )
+            if hasattr(method, 'help') and supports_shell_platform(method, platform)
+        }
+
+    def get_command_manifest_payload(self):
+        """Provide the handshake manifest for Shell and ACMD commands."""
+        payload = [
+            {
+                'name': name,
+                'help': method.help,
+                'group': getattr(method, 'group', 'general'),
+                'suggest': getattr(method, 'suggest', True),
+                **command_metadata(method),
+            }
+            for name, method in self.get_exported_shell_commands().items()
+            if getattr(method, 'suggest', True)
+        ]
+        payload.extend(self.get_argument_command_registry().get_manifest_payload())
+        payload.sort(key=lambda item: (item.get('group', 'general'), item.get('name', '').lower()))
+        return payload

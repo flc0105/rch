@@ -3,8 +3,8 @@
 import json
 from types import SimpleNamespace
 
-from client.commands.common.mixins import update_ops
-from client.commands.common.mixins.update_ops import CommandUpdateMixin
+from client.commands.shell.common import maintenance as update_ops
+from client.commands.shell.common.maintenance import ShellMaintenanceCommands
 
 
 def test_update_allows_ready_marker_after_12_seconds_without_server_changes(monkeypatch, tmp_path):
@@ -19,12 +19,12 @@ def test_update_allows_ready_marker_after_12_seconds_without_server_changes(monk
 
     monkeypatch.setattr(update_ops.time, 'monotonic', lambda: now[0])
     monkeypatch.setattr(update_ops.time, 'sleep', sleep)
-    updater = CommandUpdateMixin()
+    updater = ShellMaintenanceCommands()
     updater._checkpoint = lambda: None
     updater.UPDATE_READY_STABILIZE_SECONDS = 0.5
     updater.UPDATE_READY_POLL_INTERVAL_SECONDS = 0.25
 
-    assert CommandUpdateMixin.UPDATE_READY_TIMEOUT_SECONDS == 30
+    assert ShellMaintenanceCommands.UPDATE_READY_TIMEOUT_SECONDS == 30
     result = updater._wait_for_updated_client_ready(process, str(ready_path), '')
     assert result['client_id'] == 'updated'
     assert now[0] >= 12.5
@@ -43,7 +43,7 @@ def test_update_ready_wait_uses_monotonic_clock(monkeypatch, tmp_path):
     monkeypatch.setattr(update_ops.time, 'monotonic', lambda: now[0])
     monkeypatch.setattr(update_ops.time, 'time', lambda: -1000000.0 if now[0] >= 1 else 1000000.0)
     monkeypatch.setattr(update_ops.time, 'sleep', sleep)
-    updater = CommandUpdateMixin()
+    updater = ShellMaintenanceCommands()
     updater._checkpoint = lambda: None
     updater.UPDATE_READY_STABILIZE_SECONDS = 0.25
     updater.UPDATE_READY_POLL_INTERVAL_SECONDS = 0.25

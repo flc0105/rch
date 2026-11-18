@@ -209,7 +209,7 @@ Go Client 的连接、身份、目录管理、Remote Files HTTP 上传／下载�
 
 ## Capability Metadata 与启动 Feature
 
-Client 在原有 `info.command_manifest` 每个条目中上报命令描述：`name`、`kind`、`source`、`help`、`group`、`suggest`、`cancel_policy`、`timeout`、`confirmation`、`interaction`、`output`，以及可选的 `completion`。`completion` 是最小 CompletionSpec：只有 `provider` 和 `kinds`。Shell-like 命令由 `@desc(..., completion=CompletionSpec(...))` 声明；ACMD 在对应参数的 `ArgumentOptionSpec.completion` 声明，握手条目只携带去重后的 `{provider,kinds}` 列表，不重复传参数名/位置，具体参数绑定继续由 Client 本地 ACMD Schema 解析。当前实现 `filesystem` Provider，`kinds` 为 `file` 和/或 `directory`。带 `@confirm` 的命令默认请求执行确认，显式 `--no-confirm` 跳过确认。`interaction.may_request=true` 表示命令可能调用 Interaction Broker。
+Client 在原有 `info.command_manifest` 每个条目中上报命令描述：`name`、`kind`、`source`、`help`、`group`、`suggest`、`cancel_policy`、`timeout`、`confirmation`、`interaction`、`output`，以及可选的 `completion`。`completion` 是最小 CompletionSpec：只有 `provider` 和 `kinds`。Shell-like 命令由 `@shell_command(..., completion=CompletionSpec(...))` 声明；ACMD 在对应参数的 `ArgumentOptionSpec.completion` 声明，握手条目只携带去重后的 `{provider,kinds}` 列表，不重复传参数名/位置，具体参数绑定继续由 Client 本地 ACMD Schema 解析。当前实现 `filesystem` Provider，`kinds` 为 `file` 和/或 `directory`。带 `@confirm` 的命令默认请求执行确认，显式 `--no-confirm` 跳过确认。`interaction.may_request=true` 表示命令可能调用 Interaction Broker。
 
 这些描述属于**静态声明**；取消策略、执行超时及交互状态在运行过程中仍由执行器/任务上下文决定。`output=stream` 表示命令可能在最终结果前发送中间命令结果；`collect` 表示该命令只返回最终命令结果。
 

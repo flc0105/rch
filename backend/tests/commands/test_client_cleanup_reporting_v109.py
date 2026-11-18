@@ -6,8 +6,8 @@ from types import SimpleNamespace
 import pytest
 
 from client.commands.common.services import client_cleanup_service as cleanup
-from client.commands.common.mixins import update_ops
-from client.commands.common.mixins.update_ops import CommandUpdateMixin
+from client.commands.shell.common import maintenance as update_ops
+from client.commands.shell.common.maintenance import ShellMaintenanceCommands
 
 
 @pytest.fixture
@@ -77,7 +77,7 @@ def test_cleanup_service_continues_after_one_delete_fails_and_counts_partial(man
     assert denied.exists()
     assert result['removed_files'] == 1
     assert result['error_count'] == 1
-    status, message = CommandUpdateMixin._cleanup_completion(result)
+    status, message = ShellMaintenanceCommands._cleanup_completion(result)
     assert status == 'partial'
     assert '1 files' in message and '1 failed' in message
 
@@ -140,7 +140,7 @@ def test_clean_returns_partial_completed_and_waits_before_preview(monkeypatch):
             return ['bundle_old_releases']
 
     monkeypatch.setattr('client.runtime.execution.interaction_service.CommandInteractions', Interactions)
-    code, payload = CommandUpdateMixin.clean(host, '')
+    code, payload = ShellMaintenanceCommands.clean(host, '')
 
     assert code == 1
     assert payload['event_type'] == 'completed' and payload['status'] == 'partial'
@@ -176,7 +176,7 @@ def test_clean_scan_error_fails_without_opening_preview_or_deleting(monkeypatch)
         return service
     monkeypatch.setattr(update_ops, 'ClientCleanupService', make_service)
 
-    code, payload = CommandUpdateMixin.clean(host, '')
+    code, payload = ShellMaintenanceCommands.clean(host, '')
 
     assert code == 0
     assert payload['event_type'] == 'completed' and payload['status'] == 'error'
@@ -193,7 +193,7 @@ def test_clean_scan_error_fails_without_opening_preview_or_deleting(monkeypatch)
     (0, 0, 2, 'error'),
 ])
 def test_cleanup_completion_status_matrix(removed_files, removed_dirs, error_count, expected):
-    status, message = CommandUpdateMixin._cleanup_completion({
+    status, message = ShellMaintenanceCommands._cleanup_completion({
         'removed_files': removed_files, 'removed_dirs': removed_dirs,
         'bytes_freed': 1024, 'error_count': error_count,
     })
@@ -224,7 +224,7 @@ def test_clean_rejection_remains_failure_and_does_not_execute(monkeypatch):
             raise CommandInteractionError('Preview selection rejected, expired, or cancelled')
 
     monkeypatch.setattr('client.runtime.execution.interaction_service.CommandInteractions', Rejected)
-    code, message = CommandUpdateMixin.clean(host, '')
+    code, message = ShellMaintenanceCommands.clean(host, '')
     assert code == 0
     assert 'rejected' in message
     assert not service.executed
@@ -261,7 +261,7 @@ def test_clean_real_partial_delete_emits_grouped_progress_and_partial_wire_statu
             return ['preview_temp']
     monkeypatch.setattr('client.runtime.execution.interaction_service.CommandInteractions', Approve)
 
-    code, payload = CommandUpdateMixin.clean(host, '')
+    code, payload = ShellMaintenanceCommands.clean(host, '')
 
     assert code == 1
     assert payload['event_type'] == 'completed' and payload['status'] == 'partial'
@@ -294,7 +294,7 @@ def test_directory_delete_failure_counts_entries_removed_before_permission_error
     progress = []
     host = make_host(progress)
     service = cleanup.ClientCleanupService(
-        progress_callback=lambda phase, item: CommandUpdateMixin._on_cleanup_progress(host, phase, item),
+        progress_callback=lambda phase, item: ShellMaintenanceCommands._on_cleanup_progress(host, phase, item),
     )
     service.ITEMS = ('preview_temp',)
     plan = service.plan()
@@ -313,7 +313,7 @@ def test_directory_delete_failure_counts_entries_removed_before_permission_error
     assert result['removed_dirs'] == 0
     assert result['bytes_freed'] == 4
     assert result['error_count'] == 1
-    assert CommandUpdateMixin._cleanup_completion(result)[0] == 'partial'
+    assert ShellMaintenanceCommands._cleanup_completion(result)[0] == 'partial'
     error_lines = [message for level, message in progress if level == 'error']
     assert len(error_lines) == 1 and str(protected) in error_lines[0]
     assert str(removed) not in '\n'.join(error_lines)

@@ -20,10 +20,10 @@ from client.watchdog.remote_control_watchdog import RemoteControlWatchdogMonitor
 
 
 def test_pause_is_a_normal_client_command_and_does_not_require_watchdog():
-    from client.commands.common.mixins.session_ops import CommandSessionMixin
+    from client.commands.shell.common.session import ShellSessionCommands
 
     fake_socket = Mock()
-    command = CommandSessionMixin()
+    command = ShellSessionCommands()
     command.socket = fake_socket
     assert command.pause_connection()[0] == 1
     fake_socket.request_pause.assert_called_once()

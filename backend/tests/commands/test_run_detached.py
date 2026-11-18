@@ -8,18 +8,18 @@ from types import SimpleNamespace
 
 import pytest
 
-from client.commands.common.mixins.execution_ops import CommandExecutionMixin
+from client.commands.shell.common.execution import ShellExecutionCommands
 from client.runtime.execution.process.process_execution_service import ProcessExecutionService
-from client.commands.platform.ios import iOSCommands
+from client.commands.runtime.hosts import iOSCommands
 
 
 def test_detached_command_registered_and_ios_hidden():
-    assert getattr(CommandExecutionMixin.run_detached, 'help', '')
+    assert getattr(ShellExecutionCommands.run_detached, 'help', '')
     assert not hasattr(iOSCommands.run_detached, 'help')
 
 
 def test_usage_and_failed_start():
-    obj = CommandExecutionMixin()
+    obj = ShellExecutionCommands()
     assert obj.run_detached('') == (0, 'Usage: run_detached <program> [args...]')
     status, result = obj.run_detached('not-a-real-rch-executable-name-9999')
     assert status == 0 and 'Failed to start detached process:' in result

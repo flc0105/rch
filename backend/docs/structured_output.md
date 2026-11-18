@@ -163,10 +163,10 @@ acmd ps --name python --json
 
 ```python
 from core.utils.command_output import StructuredCommandResult
-from core.utils.decorator import desc
+from client.commands.shell.decorators import shell_command
 
-class ExampleCommandMixin:
-    @desc('Show example service state', group='system')
+class ShellExampleCommands:
+    @shell_command('Show example service state', group='system')
     def service_state(self, arg=''):
         return StructuredCommandResult(
             status=1,

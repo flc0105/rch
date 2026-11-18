@@ -114,9 +114,7 @@ class ClientInfoBuilder:
         command_manifest = []
         try:
             if self.command_executor is not None:
-                commands = self.command_executor.get_commands()
-                if hasattr(commands, 'get_command_manifest_payload'):
-                    command_manifest = commands.get_command_manifest_payload()
+                command_manifest = self.command_executor.get_command_manifest_payload()
         except Exception:
             command_manifest = []
         return command_manifest

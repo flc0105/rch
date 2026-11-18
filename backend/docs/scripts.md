@@ -177,7 +177,7 @@ Web Script Library 保留现有 `SCRIPT_METADATA.params` 表单和 Server 参数
 
 ### 注入的名称与身份
 
-在 In-process Script 内，执行环境包含 `__name__ = '__main__'`、`kwargs`、参数对应的全局名称和 Script SDK 的模块入口。SDK 模块包括 `context`、`command`、`artifact`、`events`、`scripts`、`keychains`、`workspace`、`xt`。部分有 `@desc` 标记的 Client 导出命令还可作为便捷函数被注入；与 Python 内建函数、SDK 名称或保留上下文名称冲突的命令不会覆盖那些名称。
+在 In-process Script 内，执行环境包含 `__name__ = '__main__'`、`kwargs`、参数对应的全局名称和 Script SDK 的模块入口。SDK 模块包括 `context`、`command`、`artifact`、`events`、`scripts`、`keychains`、`workspace`、`xt`。部分有 `@shell_command` 标记的 Client 导出命令还可作为便捷函数被注入；与 Python 内建函数、SDK 名称或保留上下文名称冲突的命令不会覆盖那些名称。
 
 `context` 可读取 `client_id`、`command_id`、`hostname`、`machine_id`、`os_alias`、`os_ver`、`arch`、`system_paths`、`script_name`，也可以 `context.progress(text)` 上报人类可读的执行进度。它们属于本次执行上下文，不应由脚本自行构造虚假的 `client_id` 代替。变量辅助模块 `variables` 当前需要显式导入（如下例）；不要假定它会自动作为未定义的 Python 全局名注入。
 

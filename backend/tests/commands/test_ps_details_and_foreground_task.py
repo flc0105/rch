@@ -6,9 +6,9 @@ import pytest
 
 from client.commands.acmd.registry import ArgumentCommandRegistry
 from client.runtime.execution.process.process_service import ProcessService
-from client.commands.platform.linux import LinuxCommands
-from client.commands.platform.mac import MacCommands
-from client.commands.platform.win import WindowsCommands
+from client.commands.runtime.hosts import LinuxCommands
+from client.commands.runtime.hosts import MacCommands
+from client.commands.runtime.hosts import WindowsCommands
 from server.application.command.command_planner import CommandPlanner
 from server.connection.runtime.session_execution_runtime import SessionExecutionRuntime
 

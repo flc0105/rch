@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from client.commands.platform.ios import iOSCommands
+from client.commands.runtime.hosts import iOSCommands
 from client.runtime.execution.request import ExecutionRequest
 from client.commands.shell.runner import ShellCommandRunner
 from client.runtime.sdk import artifact

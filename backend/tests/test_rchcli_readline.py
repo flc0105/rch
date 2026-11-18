@@ -242,7 +242,7 @@ class ReadlineSetupTests(unittest.TestCase):
             ClientCommandCompletionService,
         )
         from core.command_completion.models import CompletionSpec
-        from core.utils.decorator import desc
+        from client.commands.shell.decorators import shell_command
 
         class Commands:
             path_resolver = SimpleNamespace(require_existing_directory_from_arg=lambda path: path)
@@ -253,7 +253,7 @@ class ReadlineSetupTests(unittest.TestCase):
                 ]
             })
 
-            @desc('Change directory', completion=CompletionSpec('filesystem', ('directory',)))
+            @shell_command('Change directory', completion=CompletionSpec('filesystem', ('directory',)))
             def cd(self, path=''):
                 return path
 

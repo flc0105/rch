@@ -1,42 +1,7 @@
 from functools import wraps
 import re
 
-from core.command_completion.models import CompletionSpec
 
-
-
-def desc(text, group='general', suggest=True, *, output='collect', interaction=False, completion=None):
-    """
-    装饰器函数，用于为函数或方法添加命令元信息。
-
-    Args:
-        text (str): 帮助文案
-        group (str): 命令分组
-        suggest (bool): 是否默认出现在自动补全候选中
-        output (str): collect (final result) or stream (progressive output)
-        interaction (bool): 命令可能在执行中请求 Interaction Broker
-        completion (CompletionSpec | dict | None): optional Client completion declaration
-
-    Returns:
-        function: 装饰后的函数或方法对象
-    """
-
-    if output not in ('collect', 'stream'):
-        raise ValueError('Command output must be collect or stream')
-    if completion is not None and not isinstance(completion, CompletionSpec):
-        completion = CompletionSpec.from_dict(completion)
-
-    def attr_decorator(func):
-        setattr(func, 'command_output', output)
-        setattr(func, 'command_interaction', bool(interaction))
-        if completion is not None:
-            setattr(func, 'command_completion', completion)
-        setattr(func, 'help', text)
-        setattr(func, 'group', group)
-        setattr(func, 'suggest', suggest)
-        return func
-
-    return attr_decorator
 
 
 def _strip_confirm_bypass(arg):
@@ -53,7 +18,7 @@ def _strip_confirm_bypass(arg):
 def confirm(message=None):
     """Require a Client Interaction Broker confirmation before calling a command.
 
-    Works with @desc in either order; no changes to the command body are needed.
+    Works with @shell_command in either order; no changes to the command body are needed.
     """
     def decorator(func):
         prompt = message if message is not None else f"Execute command '{func.__name__}'?"

@@ -1,6 +1,7 @@
 """iOS Command/ACMD registration follows the Pythonista capability boundary."""
 
-from client.commands.platform.ios import iOSCommands
+from client.commands.runtime.hosts import iOSCommands
+from client.commands.runtime.catalog import CommandCatalog
 from client.commands.acmd.registry import ArgumentCommandRegistry
 
 
@@ -10,7 +11,10 @@ class DummyConnection:
 
 def test_ios_manifest_exposes_new_names_only():
     commands = iOSCommands(DummyConnection())
-    names = {item['name'] for item in commands.get_command_manifest_payload()}
+    catalog = CommandCatalog(DummyConnection())
+    catalog._get_platform_name = lambda: 'ios'
+    manifest = catalog.get_command_manifest_payload()
+    names = {item['name'] for item in manifest}
     renamed = {
         'clear_console', 'keep_awake', 'get_location', 'list_contacts',
         'list_reminders',
@@ -28,9 +32,9 @@ def test_ios_manifest_exposes_new_names_only():
     assert not (removed & names)
     assert {'getinfo', 'uptime', 'acmd help'} <= names
     device = {'clipboard_read', 'clipboard_write', 'get_location', 'speak', 'list_contacts', 'list_reminders'}
-    assert {entry['group'] for entry in commands.get_command_manifest_payload() if entry['name'] in device} == {'device'}
-    assert {entry['group'] for entry in commands.get_command_manifest_payload() if entry['name'] in ('getinfo', 'uptime')} == {'system'}
-    assert len(names) == len(commands.get_command_manifest_payload())
+    assert {entry['group'] for entry in manifest if entry['name'] in device} == {'device'}
+    assert {entry['group'] for entry in manifest if entry['name'] in ('getinfo', 'uptime')} == {'system'}
+    assert len(names) == len(manifest)
 
 
 def test_ios_acmd_registry_and_help_do_not_expose_process_commands():

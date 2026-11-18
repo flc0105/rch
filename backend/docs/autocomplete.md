@@ -26,11 +26,11 @@ Web Terminal 输入内容
 
 **基础命令候选**来自 `GET /api/connections/{client_id}/command-candidates`。Client 在建立连接时通过 `command_manifest` 上报导出的 Shell-like 命令和结构化 `acmd` 命令；Server 再合并 Built-in 和当前生效的 Alias。前端只显示允许建议的条目（`suggest !== false`），另外加入少量常用操作和当前设备已经 Pin 的命令历史。Web Terminal 另外加入 **Frontend** 类别的本地 `edit`（用 Monaco 编辑远程文本）和 `clear`（清空终端输出）；这两个操作直接在浏览器处理，候选不会发往 Client。若远端清单恰好有相同名称，本地入口优先。按候选模板文本去重后，**空输入**时按固定分组顺序、组内按命令名称字母顺序展示：`shell → execution → session → system → network → privilege → media → file → automation → transfer → runtime → maintenance → python → acmd → common_ops → frontend → server → alias → Pin Command`。`common_ops` 使用现有命令分组名称，已 Pin 的 History 位于末尾。已输入文字后的匹配及上下文补全仍沿用各自的排序逻辑。
 
-命令 Manifest 由 Client 当前平台支持的命令注册信息生成。`@desc(..., suggest=False)` 可以让内部命令保持可执行、却不进入普通命令发现列表；`acmd` 项来自结构化命令注册表。输入 `acmd` 或尚未完成的子命令前缀（例如 `acmd im`）时，候选直接匹配握手 Manifest 中的完整 ACMD 名称；完整子命令名后输入空格，才进入该命令的参数级补全。Manifest 属于**握手快照**：Client 本地命令注册内容变化后，不能假定已连接浏览器会自动看到更新的 Manifest。顶层列表的别名则来源于 Server 内存中的当前生效定义，而不是一个永久写死在前端的名称列表。
+命令 Manifest 由 Client 当前平台支持的命令注册信息生成。`@shell_command(..., suggest=False)` 可以让内部命令保持可执行、却不进入普通命令发现列表；`acmd` 项来自结构化命令注册表。输入 `acmd` 或尚未完成的子命令前缀（例如 `acmd im`）时，候选直接匹配握手 Manifest 中的完整 ACMD 名称；完整子命令名后输入空格，才进入该命令的参数级补全。Manifest 属于**握手快照**：Client 本地命令注册内容变化后，不能假定已连接浏览器会自动看到更新的 Manifest。顶层列表的别名则来源于 Server 内存中的当前生效定义，而不是一个永久写死在前端的名称列表。
 
 **上下文补全**使用 `POST /api/connections/{client_id}/command-completions`。Server 根据原始输入和当前 Client 的握手 Manifest 决定是否存在 Client 补全声明；需要 Client 动态数据时，通过独立 `type: completion` 消息传递原始输入、光标位置和可选的 CompletionSpec override。Client 返回标准 Result Envelope，`data.items` 使用统一 Candidate 结构。该请求不经过 `command` / `control` 执行路径。
 
-`CompletionSpec` 只有 `provider` 与 `kinds` 两个字段。Shell-like 命令在 `@desc(..., completion=...)` 声明；ACMD 在对应 `ArgumentOptionSpec.completion` 声明，参数名/位置沿用已有参数 Schema，不重复放进 CompletionSpec。当前实现的 Provider 是 `filesystem`，同时查询文件和目录，再由 `kinds` 过滤。Client 的 `filesystem` Provider 支持文件与目录；Server 使用同一两字段 Schema 声明 `filesystem`、`configuration`、`jobs`、`scripts` 和 `xt`，Provider 之间不复制命令或参数规则。未来 Client 如需新增 Provider，可在现有注册入口扩展，Shell-like 子命令与选项仍按其所属命令系统另行定义。
+`CompletionSpec` 只有 `provider` 与 `kinds` 两个字段。Shell-like 命令在 `@shell_command(..., completion=...)` 声明；ACMD 在对应 `ArgumentOptionSpec.completion` 声明，参数名/位置沿用已有参数 Schema，不重复放进 CompletionSpec。当前实现的 Provider 是 `filesystem`，同时查询文件和目录，再由 `kinds` 过滤。Client 的 `filesystem` Provider 支持文件与目录；Server 使用同一两字段 Schema 声明 `filesystem`、`configuration`、`jobs`、`scripts` 和 `xt`，Provider 之间不复制命令或参数规则。未来 Client 如需新增 Provider，可在现有注册入口扩展，Shell-like 子命令与选项仍按其所属命令系统另行定义。
 
 Client 文件系统 Provider 先按当前输入的路径名称前缀匹配，再应用候选数量限制，避免大目录中排序靠后的有效路径被提前截断；无名称前缀时仍可列出当前目录的下一层条目。Server/Client 的 Provider 负责候选生成，浏览器负责缓存、过滤、选择与回填。前端不维护 Client 命令名单；新增 Client 命令的参数补全只需在命令声明处添加 CompletionSpec。非 Client Common Ops 的少量路径规则集中在 `frontend/src/config/commonOps.json`。Server Builtin 的静态子命令由 Server Registry 唯一生成；结构化参数则在同一命令树的 `ArgumentOptionSpec.completion` 选择 Server Provider。补全查询不是执行 `cd`、`download`、`history run` 或其他候选业务操作本身。
 
@@ -169,7 +169,7 @@ Terminal 的下拉候选按标题文字筛选：优先精确匹配，其次前�
 
 自动补全使用 `CommandCompletionParser`、`CompletionContext` 和统一的 `CompletionCandidate`：候选包括标题 `title`、真正写入输入框的 `insert_text`、说明 `description`、`source`、`group`、`kind`、`priority` 和可选的 `metadata`。序列化后的命令候选统一以 `name` 表示插入文本，以 `title` 表示需要单独展示的标题，以 `help` 表示说明。一个 Provider 只需声明支持哪些命令上下文，并返回候选，不应在查询过程中修改文件、启动任务或执行候选命令。
 
-新增 Client 路径补全时，在 `@desc` 或 ACMD 参数 Schema 上声明最小 CompletionSpec；Server 通过握手 Manifest 识别该声明，Client Completion Service 按 `provider` 选择实现。Common Ops 规则集中维护在 `frontend/src/config/commonOps.json`。新增 Server 本机路径补全仍使用 Server 文件系统 Provider。未来新增 Provider 只需注册实现并使用同一 CompletionSpec 入口；本轮只实现 `filesystem`，不提前引入 Shell-like 子命令/选项 Provider。
+新增 Client 路径补全时，在 `@shell_command` 或 ACMD 参数 Schema 上声明最小 CompletionSpec；Server 通过握手 Manifest 识别该声明，Client Completion Service 按 `provider` 选择实现。Common Ops 规则集中维护在 `frontend/src/config/commonOps.json`。新增 Server 本机路径补全仍使用 Server 文件系统 Provider。未来新增 Provider 只需注册实现并使用同一 CompletionSpec 入口；本轮只实现 `filesystem`，不提前引入 Shell-like 子命令/选项 Provider。
 
 相关 HTTP 接口的返回结构如下，候选文本为结构示意：
 

@@ -10,7 +10,8 @@ import pytest
 
 from client.config import feature_config
 from client.commands.runtime.catalog import CommandCatalog
-from core.utils.decorator import desc, confirm
+from client.commands.shell.decorators import shell_command
+from core.utils.decorator import confirm
 from core.command_completion.models import CompletionSpec
 from client.commands.runtime.interrupts import timeout, cancel_policy
 from client.commands.runtime.manifest_metadata import command_metadata
@@ -19,7 +20,7 @@ from client.commands.runtime.manifest_metadata import command_metadata
 
 
 def test_completion_spec_is_serialized_once_for_shell_and_acmd_arguments():
-    @desc('Change directory', group='shell', completion=CompletionSpec('filesystem', ('directory',)))
+    @shell_command('Change directory', group='shell', completion=CompletionSpec('filesystem', ('directory',)))
     def cd(_owner, path=''):
         return 1, path
 
@@ -113,7 +114,7 @@ def test_launchd_capability_is_loaded(monkeypatch):
 
 
 def test_command_declared_metadata_and_confirm_semantics():
-    @desc('A command', group='example', output='stream')
+    @shell_command('A command', group='example', output='stream')
     @timeout(11)
     @cancel_policy('cooperative')
     @confirm('Approve?')
@@ -133,7 +134,7 @@ def test_command_declared_metadata_and_confirm_semantics():
 def test_linux_command_manifest_is_unique_and_complete():
     catalog = CommandCatalog(SimpleNamespace())
     catalog._get_platform_name = lambda: 'linux'
-    entries = catalog.get_commands().get_command_manifest_payload()
+    entries = catalog.get_command_manifest_payload()
     names = [item['name'] for item in entries]
     assert len(names) == len(set(names))
     required = {
@@ -183,7 +184,7 @@ def test_no_disabled_manager_imports_in_fresh_client():
             'client.watchdog.local_heartbeat_watchdog', 'client.watchdog.remote_control_watchdog',
         ]
         assert not [name for name in optional if name in sys.modules]
-        manifest = runtime.command_executor.get_commands().get_command_manifest_payload()
+        manifest = runtime.command_executor.get_command_manifest_payload()
         assert manifest and not [name for name in optional if name in sys.modules]
     ''')
     result = subprocess.run(

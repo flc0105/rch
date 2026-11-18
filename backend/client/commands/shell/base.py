@@ -30,15 +30,6 @@ class CommandBindingMixin:
         """
         self._command_runtime = runtime
 
-    def get_argument_command_registry(self):
-        """
-        统一 acmd registry 归属，避免 introspection 每次自行 new 一份。
-        """
-        if self._command_runtime is not None:
-            getter = getattr(self._command_runtime, 'get_argument_command_registry', None)
-            if callable(getter):
-                return getter()
-        return None
 
 
 class CommandBase(CommandBindingMixin, ExecutionResultMixin, ExecutionRuntimeMixin, ExecutionResources, ABC):

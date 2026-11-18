@@ -7,7 +7,7 @@ from client.runtime.command_variable_resolver import (
     CommandVariableResolver, CommandVariableResolutionError,
 )
 from client.commands.runtime.executor import CommandExecutor
-from client.commands.platform.linux import LinuxCommands
+from client.commands.runtime.hosts import LinuxCommands
 from client.commands.platform.services.linux.system_service import LinuxSystemService
 from core.utils.command_output import render_structured_result
 import pytest
@@ -110,7 +110,7 @@ def test_linux_getinfo_command_dispatch_json(monkeypatch):
                         .StructuredCommandResult(status=1, data={'hostname': 'alpha', 'cpu_cores': 2}, shape='dict', width=24))
     executor = CommandExecutor(SimpleNamespace(client_id='one'))
     assert ('getinfo', 'system') in {
-        (x['name'], x['group']) for x in executor.get_commands().get_command_manifest_payload()
+        (x['name'], x['group']) for x in executor.get_command_manifest_payload()
     }
     assert json.loads(executor.execute_command(201, 'getinfo --json')[1]) == {'hostname': 'alpha', 'cpu_cores': 2}
     assert 'hostname' in executor.execute_command(202, 'getinfo')[1]

@@ -152,16 +152,16 @@ Interaction 仍需要当前 Client Session Token、有效 `command_id`、前台 
 
 ## Client 命令的交互接口
 
-普通 Client 命令可以使用 `@confirm` 完成最简确认，或使用 `CommandInteractions` 进行输入、选择和 Preview。详细的命令注册、`@desc` / `@confirm` 注解以及可复制的代码样例见 [Shell-like Commands](shell_like_commands.md)，这里重点说明如何进入 Broker。
+普通 Client 命令可以使用 `@confirm` 完成最简确认，或使用 `CommandInteractions` 进行输入、选择和 Preview。详细的命令注册、`@shell_command` / `@confirm` 注解以及可复制的代码样例见 [Shell-like Commands](shell_like_commands.md)，这里重点说明如何进入 Broker。
 
 ```python
-from core.utils.decorator import desc
+from client.commands.shell.decorators import shell_command
 from client.commands.common.services.interaction_service import (
     CommandInteractions, CommandInteractionError,
 )
 
-class CommandExampleMixin:
-    @desc('Ask for an operation label', group='general', interaction=True)
+class ShellExampleCommands:
+    @shell_command('Ask for an operation label', group='general', interaction=True)
     def ask_label(self, arg=''):
         try:
             label = CommandInteractions(self).ask(

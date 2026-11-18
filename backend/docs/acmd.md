@@ -48,6 +48,8 @@ Server 会生成类似如下的负载：
 
 `acmd` 走独立的 `acmd` 协议消息类型，不使用普通 `command` 的字符串分派，也不会在找不到处理器时交给系统 Shell。命令是否可执行，取决于目标 Client 的操作系统平台和当前注册内容。
 
+ACMD 的命令注册入口统一放在 `client/commands/acmd/common/` 或 `client/commands/acmd/platform/`，参数 `ArgumentCommandSpec` 定义在对应注册方法所在文件的顶部。复杂命令也可使用 `acmd/standalone/` 独立文件，并通过分组命令类显式挂载。运行时宿主负责合并当前平台的 Shell 与 ACMD 声明；两条命令线仍分别路由。
+
 ## Process ACMD：Kill 与 PS
 
 以下进程管理 ACMD 注册于 Windows、macOS 和 Linux Client；iOS / Pythonista 不注册 `acmd ps` 或 `acmd kill`。

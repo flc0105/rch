@@ -8,7 +8,7 @@ from client.runtime.execution.context_store import ExecutionContextStore
 from client.commands.runtime.interrupts import timeout, cancel_policy
 from client.commands.shell.runner import ShellCommandRunner
 from server.connection.runtime.session_execution_runtime import SessionExecutionRuntime
-from core.utils.decorator import desc
+from client.commands.shell.decorators import shell_command
 from client.commands.runtime.executor import CommandExecutor
 from client.connection.message_router import ClientInboundMessageRouter
 
@@ -18,9 +18,9 @@ def test_decorators_are_metadata_only_in_either_order(outer):
     def operation(self, arg):
         return 1, arg
     if outer:
-        operation = desc('Example')(cancel_policy('cooperative')(timeout(30)(operation)))
+        operation = shell_command('Example')(cancel_policy('cooperative')(timeout(30)(operation)))
     else:
-        operation = cancel_policy('cooperative')(timeout(30)(desc('Example')(operation)))
+        operation = cancel_policy('cooperative')(timeout(30)(shell_command('Example')(operation)))
     assert operation.__name__ == 'operation'
     assert operation.command_cancel_mode == 'cooperative'
     assert operation.command_timeout == 30
@@ -37,7 +37,7 @@ def test_server_timeout_option_and_method_budget_take_stricter_deadline():
     assert store.extract_timeout({'_timeout': 7}) == 7
     ctx = store.get_or_create(1, timeout=5)
     command = SimpleNamespace(execution_context=ctx, _checkpoint=lambda: None)
-    @desc('Limited')
+    @shell_command('Limited')
     @timeout(30)
     def limited(self):
         return 1, 'ran'
@@ -115,7 +115,7 @@ def test_foreground_listener_emits_only_actual_transitions_in_order():
 
 
 def test_cancel_declaration_is_not_a_forceful_thread_abort():
-    @desc('Read only')
+    @shell_command('Read only')
     def ordinary(self):
         return 1, 'ok'
     ctx = ExecutionContext(11)
@@ -192,13 +192,13 @@ def test_invalid_cancel_mode_rejected():
 
 
 def test_shell_and_stream_declare_process_cancellation():
-    from client.commands.shell.commands import CommonCommands
-    assert CommonCommands.shell.command_cancel_mode == 'process'
-    assert CommonCommands.shell_stream.command_cancel_mode == 'process'
+    from client.commands.shell.commands import ShellCommands
+    assert ShellCommands.shell.command_cancel_mode == 'process'
+    assert ShellCommands.shell_stream.command_cancel_mode == 'process'
     # A file operation with checkpoints is cooperative, not a managed subprocess.
-    assert CommonCommands.zip_dir.command_cancel_mode == 'cooperative'
+    assert ShellCommands.zip_dir.command_cancel_mode == 'cooperative'
     # Detached spawn cannot be cancelled after the command returns.
-    assert getattr(CommonCommands.bgrun, 'command_cancel_mode', 'none') == 'none'
+    assert getattr(ShellCommands.bgrun, 'command_cancel_mode', 'none') == 'none'
 
 
 def test_runtime_execution_strategies_select_actual_cancel_mode():

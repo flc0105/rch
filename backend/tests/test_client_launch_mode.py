@@ -574,7 +574,7 @@ def test_recent_device_uses_latest_launch_snapshot_without_old_source_leak(tmp_p
 
 
 def test_windows_elevated_detached_and_cli_options():
-    from client.commands.platform.win import WindowsCommands
+    from client.commands.runtime.hosts import WindowsCommands
 
     seen = []
     command = SimpleNamespace(win_privilege=SimpleNamespace(
@@ -635,7 +635,7 @@ def test_windows_detached_elevation_uses_python_helper_and_reports_child_pid(mon
 
 
 def test_macos_elevated_command_keeps_default_and_adds_detached_option():
-    from client.commands.platform.mac import MacCommands
+    from client.commands.runtime.hosts import MacCommands
 
     calls = []
     command = SimpleNamespace(

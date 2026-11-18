@@ -2,6 +2,8 @@ import inspect
 from typing import Any
 
 from client.runtime.command_variable_resolver import CommandVariableResolutionError
+from client.commands.shell.decorators import supports_shell_platform
+from core.device.local_identity import get_local_identity
 from client.runtime.execution.request import ExecutionRequest
 from core.utils.command_output import render_structured_result
 from core.utils.parsing import parse
@@ -36,6 +38,10 @@ class ShellCommandRunner:
         if not hasattr(func, 'help'):
             return None
 
+        platform = getattr(commands, 'command_platform', None) or get_local_identity().os_alias
+        if not supports_shell_platform(func, platform):
+            # A known, unavailable builtin must not be forwarded to the OS shell.
+            return lambda: (0, f'Command not supported on this platform: {name}')
         return func
 
     def _resolve_default_command(self, commands, raw_command):

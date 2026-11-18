@@ -35,6 +35,9 @@ class CommandExecutor:
             commands.set_command_runtime(self)
         return commands
 
+    def get_command_manifest_payload(self):
+        return self.catalog.get_command_manifest_payload()
+
     def get_command_variable_manifest(self):
         """
         获取普通 command 支持的 Client 动态变量清单。
@@ -122,8 +125,12 @@ class CommandExecutor:
     def sdk_command_names(self):
         """List exports without constructing or binding a platform command instance."""
         command_class = self.catalog._load_platform_command_class()
+        from client.commands.shell.decorators import supports_shell_platform
+        platform = self.catalog._get_platform_name()
         return sorted(name for name in dir(command_class)
-                      if not name.startswith('_') and hasattr(getattr(command_class, name, None), 'help'))
+                      if not name.startswith('_')
+                      and hasattr(getattr(command_class, name, None), 'help')
+                      and supports_shell_platform(getattr(command_class, name), platform))
 
     def resolve_sdk_command(self, scope, name):
         """SDK-only bridge; execute a real exported command within the current context."""

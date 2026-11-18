@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from client.connection.receiver_worker import ClientReceiverWorker
-from client.commands.common.mixins.session_ops import CommandSessionMixin
+from client.commands.shell.common.session import ShellSessionCommands
 from client.connection.server_connection import ServerConnection
 from client.runtime import client_util
 from core.protocol.message_types import MSG_TYPE_SESSION_END, MSG_TYPE_SESSION_END_ACK
@@ -102,7 +102,7 @@ def test_kill_reports_canonical_reason_before_closing():
         close=lambda: actions.append(('close',)),
     )
     with pytest.raises(SystemExit) as exc:
-        CommandSessionMixin.kill_instance(SimpleNamespace(socket=connection))
+        ShellSessionCommands.kill_instance(SimpleNamespace(socket=connection))
     assert exc.value.code == 0
     assert actions == [
         ('report', 'server_requested_disconnect', {'command': 'kill_instance'}),
@@ -138,7 +138,7 @@ def test_relaunch_reports_restart_before_exit(monkeypatch):
 
 def test_duplicate_reaps_exited_detached_child_without_waiting_for_client_exit(monkeypatch):
     """Duplicate's parent can keep serving while the independent child is reaped."""
-    from client.commands.common.mixins import session_ops
+    from client.commands.shell.common import session as session_ops
     import threading
 
     waited = threading.Event()
@@ -152,7 +152,7 @@ def test_duplicate_reaps_exited_detached_child_without_waiting_for_client_exit(m
 
     monkeypatch.setattr(session_ops, 'spawn_new_instance', DetachedChild)
     try:
-        result = CommandSessionMixin.spawn_instance(SimpleNamespace())
+        result = ShellSessionCommands.spawn_instance(SimpleNamespace())
         assert result == (1, 'New client instance started, pid=24680')
         assert waited.wait(timeout=2)
     finally:
@@ -166,7 +166,7 @@ def test_kill_without_enabled_watchdog_still_closes(monkeypatch):
         close=lambda: calls.append('close'),
     )
     with pytest.raises(SystemExit) as exc:
-        CommandSessionMixin.kill_instance(SimpleNamespace(socket=connection))
+        ShellSessionCommands.kill_instance(SimpleNamespace(socket=connection))
     assert exc.value.code == 0
     assert calls == ['report', 'close']
 
@@ -176,7 +176,7 @@ def test_duplicate_detached_child_is_reaped_after_exiting(monkeypatch):
     import subprocess
     import sys
     import time
-    from client.commands.common.mixins import session_ops
+    from client.commands.shell.common import session as session_ops
 
     started = []
     def launch():
@@ -189,7 +189,7 @@ def test_duplicate_detached_child_is_reaped_after_exiting(monkeypatch):
         return child
 
     monkeypatch.setattr(session_ops, 'spawn_new_instance', launch)
-    assert CommandSessionMixin.spawn_instance(SimpleNamespace())[0] == 1
+    assert ShellSessionCommands.spawn_instance(SimpleNamespace())[0] == 1
     child = started[0]
     deadline = time.monotonic() + 3
     while child.returncode is None and time.monotonic() < deadline:

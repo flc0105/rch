@@ -1,21 +1,17 @@
-from client.commands.shell.base import CommandBase
-from client.commands.shell.groups import (
-    CommonFileCommands,
-    CommonRuntimeCommands,
-    CommonShellCommands,
-)
+"""Common Shell command registrations, grouped by responsibility."""
+
+from client.commands.shell.common.execution import ShellExecutionCommands
+from client.commands.shell.common.files import ShellFileCommands
+from client.commands.shell.common.maintenance import ShellMaintenanceCommands
+from client.commands.shell.common.session import ShellSessionCommands
+from client.commands.shell.common.system import ShellSystemCommands
 
 
-class CommonCommands(
-    CommonShellCommands,
-    CommonFileCommands,
-    CommonRuntimeCommands,
-    CommandBase,
+class ShellCommands(
+    ShellExecutionCommands,
+    ShellSessionCommands,
+    ShellSystemCommands,
+    ShellFileCommands,
+    ShellMaintenanceCommands,
 ):
-    """
-    跨平台通用命令集合。
-
-    这里不直接堆一长串零散 mixin。
-    通用命令先按领域归组，再由平台命令类继承。
-    """
-    pass
+    """Shell command groups. Methods are registered on the platform host."""

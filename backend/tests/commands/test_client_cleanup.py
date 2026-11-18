@@ -182,7 +182,7 @@ def test_client_file_log_creates_no_owner_metadata(monkeypatch, tmp_path):
 
 def test_no_confirm_skips_unverifiable_other_client_logs(monkeypatch):
     from types import SimpleNamespace
-    from client.commands.common.mixins.update_ops import CommandUpdateMixin
+    from client.commands.shell.common.maintenance import ShellMaintenanceCommands
 
     plan = {'items': [
         {'name': 'client_logs', 'paths': [{'path': '/tmp/stale-client'}],
@@ -201,7 +201,7 @@ def test_no_confirm_skips_unverifiable_other_client_logs(monkeypatch):
                            _get_current_bundle_release_dir=lambda *a: '',
                            _emit_cleanup_records=lambda records: None,
                            emit_progress=lambda *args, **kwargs: None)
-    code, output = CommandUpdateMixin.clean(host, '--no-confirm')
+    code, output = ShellMaintenanceCommands.clean(host, '--no-confirm')
     assert code == 1 and chosen == [{'preview_temp'}]
 
 

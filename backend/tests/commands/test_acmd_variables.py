@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 from client.commands.acmd.registry import ArgumentCommandRegistry
 from client.runtime.execution.process.process_service import ProcessService
-from client.commands.platform.linux import LinuxCommands
+from client.commands.runtime.hosts import LinuxCommands
 from client.commands.acmd.runner import ArgumentCommandRunner
 from client.runtime.command_variable_resolver import CommandVariableResolver
 from client.runtime.execution.request import ExecutionRequest

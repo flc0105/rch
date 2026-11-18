@@ -120,19 +120,19 @@ Python 执行也有收集输出与流式输出两种入口，其运行模式由 
 
 ### 导出命令方法
 
-普通命令使用 **Client 命令类的公开方法 + `@desc` 导出**，无需定义 ACMD 的参数 Schema。最简单的形式如下：
+普通命令使用 **Client 命令类的公开方法 + `@shell_command` 导出**，无需定义 ACMD 的参数 Schema。最简单的形式如下：
 
 ```python
-from core.utils.decorator import desc
+from client.commands.shell.decorators import shell_command
 
-class CommandExampleMixin:
-    @desc('Show a short greeting', group='general')
+class ShellExampleCommands:
+    @shell_command('Show a short greeting', group='general')
     def greet(self, arg=''):
         name = str(arg or '').strip() or 'world'
         return 1, f'Hello, {name}'
 ```
 
-将方法放到当前 Client 对应的命令类或现有 Mixin 后，即可被普通命令派发查找。如果新建 Mixin，需要把它加入 `client/commands/common/groups.py` 中的相应公共命令组，让当前平台命令类实际继承该 Mixin。对于只适用于某一平台的功能，应放入该平台命令类。方法名就是命令名，`@desc` 是可导出标记；只有定义了 `help` 元信息的方法才被普通命令派发器视为内置命令。
+将方法写入 `client/commands/shell/common/` 的分组命令类，或相应的 `shell/platform/` 平台类。完整的独立命令也可以放入 `shell/standalone/`，再通过 `getinfo = getinfo_command` 这样的直接属性赋值显式挂载到分组类；无需增加转发函数。`client/commands/runtime/hosts.py` 将 Shell 与 ACMD 声明组合为当前平台的命令宿主。方法名就是命令名，`@shell_command` 是可导出标记，`platforms` 缺省支持全部平台；仅支持指定系统时设置 `platforms=('mac', 'win')` 等。
 
 例如上例可以执行：
 
@@ -142,7 +142,7 @@ greet Alice
 
 Client 将剩余的 `Alice` 作为完整字符串 `arg` 传入方法，方法返回 `(1, 'Hello, Alice')`。与 ACMD 不同，这里没有自动解析 `--key value`、默认值或数字类型。使用原始参数的命令应自行检查语法、缺失参数以及业务边界。零参数方法可以写成 `def greet(self)`；分发器会根据方法签名决定是否传入原始参数。
 
-**扩展命令时应优先复用已有公共能力**，需要返回失败时使用 `(0, error_message)`；业务内部异常要按需要处理，不应把参数校验失败默认为成功。新增命令后以连接到目标 Client 的 `help` 或 Web Terminal 实际运行结果检查导出和平台可用性；是否出现在推荐补全还取决于 `suggest`。
+**扩展命令时应优先复用已有公共能力**，需要返回失败时使用 `(0, error_message)`；业务内部异常要按需要处理，不应把参数校验失败默认为成功。新增命令后以 Server `help client` 或 Web Terminal 实际运行结果检查导出和平台可用性；是否出现在推荐补全还取决于 `suggest`。
 
 ### 装饰器与运行控制声明
 
@@ -150,21 +150,21 @@ Client 将剩余的 `Alice` 作为完整字符串 `arg` 传入方法，方法返
 
 | 注解 | 用途 | 关键参数与行为 |
 |---|---|---|
-| `@desc(text, group='general', suggest=True, interaction=False)` | **导出命令**，描述帮助文本和补全分类 | `text` 是帮助说明；`group` 用于 Help 分组；`suggest=False` 不进入推荐列表但仍可以执行；`interaction` 表示命令通常会请求 Web 交互 |
+| `@shell_command(description, group='general', suggest=True, interaction=False, platforms=None)` | **导出命令**，描述帮助文本和补全分类 | `description` 是帮助说明；`group` 用于 Help 分组；`suggest=False` 不进入推荐列表但仍可以执行；`interaction` 表示命令通常会请求 Web 交互；`platforms` 约束支持的 mac/win/linux/ios 平台 |
 | `@confirm(message=None)` | 执行方法体**之前**请求 Web 确认 | 不传参数时生成默认提示；同意才进入原函数，拒绝、超时或没有可用交互时返回失败；在命令参数中显式传入 `--no-confirm` 时直接调用原方法 |
 | `@timeout(seconds)` | 声明命令默认的正数超时预算 | 请求方指定的有效超时只可缩短预算；这是执行上下文的期限，不保证强制终止任意 Python 代码 |
 | `@cancel_policy(mode='none', message='')` | 声明命令可以采用的取消机制 | `none` 不接受取消；`cooperative` 在检查点响应；`process` 用于实际由命令管理的子进程；`message` 是取消不可用等情况的解释文本 |
 
-`@desc` 可以和其他注解组合使用，且 `@confirm` 会保留原方法的帮助及授权元数据，**`@desc` 和 `@confirm` 的上下顺序均可工作**。`@timeout` 与 `@cancel_policy` 只设置方法元信息，由统一执行器在调用前应用；它们不会在函数外包一层自动杀停线程的逻辑。`@confirm` 则是执行前的实际包装，会在未批准时直接阻止方法体执行。
+`@shell_command` 可以和其他注解组合使用，且 `@confirm` 会保留原方法的帮助及授权元数据，**`@shell_command` 和 `@confirm` 的上下顺序均可工作**。`@timeout` 与 `@cancel_policy` 只设置方法元信息，由统一执行器在调用前应用；它们不会在函数外包一层自动杀停线程的逻辑。`@confirm` 则是执行前的实际包装，会在未批准时直接阻止方法体执行。
 
 例如，为一个会短暂执行的普通命令指定默认预算和协作取消：
 
 ```python
-from core.utils.decorator import desc
+from client.commands.shell.decorators import shell_command
 from client.commands.runtime.interrupts import timeout, cancel_policy
 
-class CommandExampleMixin:
-    @desc('Perform a bounded demonstration', group='general')
+class ShellExampleCommands:
+    @shell_command('Perform a bounded demonstration', group='general')
     @timeout(60)
     @cancel_policy('cooperative', message='The operation must reach a checkpoint')
     def bounded_demo(self, arg=''):
@@ -182,29 +182,30 @@ class CommandExampleMixin:
 如果只需要“批准后才运行方法体”，直接叠加 `@confirm` 最简洁：
 
 ```python
-from core.utils.decorator import desc, confirm
+from client.commands.shell.decorators import shell_command
+from core.utils.decorator import confirm
 
-class CommandExampleMixin:
-    @desc('Show an approved demonstration', group='general')
+class ShellExampleCommands:
+    @shell_command('Show an approved demonstration', group='general')
     @confirm('Continue this harmless demonstration?')
     def approved_demo(self):
         return 1, 'Approved and executed'
 ```
 
-运行 `approved_demo` 时，系统先通过当前 Web Task 发出确认，只有用户明确批准才调用方法。`@confirm` 复用连接的 Client Session Token；单独写一个没有 `@desc` 的私有方法不会变成可远程执行的命令。
+运行 `approved_demo` 时，系统先通过当前 Web Task 发出确认，只有用户明确批准才调用方法。`@confirm` 复用连接的 Client Session Token；单独写一个没有 `@shell_command` 的私有方法不会变成可远程执行的命令。
 
 所有 `@confirm` 命令都支持显式 `--no-confirm`：命令输入参数开头或末尾的该标记会在进入方法体前移除，此次执行无需请求 Interaction Broker。该标记由命令装饰器解析，不请求 Interaction Broker。未提供标记时照常请求确认。操作系统自身的 UAC / sudo 授权按平台机制执行。
 
-如果需要自定义文本输入、选择或先展示计划再批准，则在命令内部显式使用 `CommandInteractions`，并可在 `@desc` 中设置 `interaction=True` 以提示界面：
+如果需要自定义文本输入、选择或先展示计划再批准，则在命令内部显式使用 `CommandInteractions`，并可在 `@shell_command` 中设置 `interaction=True` 以提示界面：
 
 ```python
-from core.utils.decorator import desc
+from client.commands.shell.decorators import shell_command
 from client.commands.common.services.interaction_service import (
     CommandInteractions, CommandInteractionError,
 )
 
-class CommandExampleMixin:
-    @desc('Choose a demonstration label', group='general', interaction=True)
+class ShellExampleCommands:
+    @shell_command('Choose a demonstration label', group='general', interaction=True)
     def choose_label(self, arg=''):
         ui = CommandInteractions(self)
         try:

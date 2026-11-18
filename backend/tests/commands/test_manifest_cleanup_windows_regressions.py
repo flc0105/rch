@@ -11,7 +11,7 @@ from core.utils.decorator import confirm
 def test_manifest_keeps_only_suggested_names_and_output_contract():
     catalog = CommandCatalog(SimpleNamespace())
     catalog._get_platform_name = lambda: 'win'
-    entries = catalog.get_commands().get_command_manifest_payload()
+    entries = catalog.get_command_manifest_payload()
     by_name = {item['name']: item for item in entries}
     assert all(item['suggest'] for item in entries)
     assert 'browse_dir' not in by_name
@@ -26,17 +26,17 @@ def test_manifest_keeps_only_suggested_names_and_output_contract():
 def test_mac_progressive_command_contract():
     catalog = CommandCatalog(SimpleNamespace())
     catalog._get_platform_name = lambda: 'mac'
-    by_name = {item['name']: item for item in catalog.get_commands().get_command_manifest_payload()}
+    by_name = {item['name']: item for item in catalog.get_command_manifest_payload()}
     for name in ('screenshot', 'webcam_snap', 'file_shred', 'update'):
         assert by_name[name]['output'] == 'stream'
     assert by_name['relaunch_instance']['confirmation'] is True
 
 
 def test_confirm_bypass_allows_relaunch_without_requesting_interaction():
-    from client.commands.common.mixins.session_ops import CommandSessionMixin
-    owner = CommandSessionMixin()
+    from client.commands.shell.common.session import ShellSessionCommands
+    owner = ShellSessionCommands()
     owner.socket = object()
-    with patch('client.commands.common.mixins.session_ops.reset') as reset, \
+    with patch('client.commands.shell.common.session.reset') as reset, \
          patch('client.runtime.execution.interaction_service.CommandInteractions.confirm',
                side_effect=AssertionError('should not request confirmation')):
         owner.relaunch_instance('--no-confirm')
@@ -81,8 +81,8 @@ def test_approved_process_inspection_supports_older_psutil(monkeypatch):
 
 
 def test_shell_failure_preserves_stdout_and_exit_status():
-    from client.commands.common.mixins.execution_ops import CommandExecutionMixin
-    owner = CommandExecutionMixin()
+    from client.commands.shell.common.execution import ShellExecutionCommands
+    owner = ShellExecutionCommands()
     owner._run_shell_command = lambda _command: SimpleNamespace(returncode=1, stdout='WRITE DENIED: temp\n', stderr='PowerShell error\n')
     result = owner.shell('test')
     assert result[0] == 0

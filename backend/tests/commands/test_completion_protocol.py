@@ -6,7 +6,7 @@ from client.connection.message_router import ClientInboundMessageRouter
 from core.command_completion.models import CompletionSpec
 from core.commands.argument_models import ArgumentCommandSpec, ArgumentOptionSpec
 from core.protocol.message_types import MSG_TYPE_COMPLETION
-from core.utils.decorator import desc
+from client.commands.shell.decorators import shell_command
 from server.connection.client_session import ClientSession
 from server.application.web.command_catalog_api import WebCommandCatalogApi
 from core.command_completion.parser import CommandCompletionParser
@@ -47,7 +47,7 @@ class Commands:
     def get_argument_command_registry(self):
         return self._registry
 
-    @desc('Change working directory', completion=CompletionSpec('filesystem', ('directory',)))
+    @shell_command('Change working directory', completion=CompletionSpec('filesystem', ('directory',)))
     def cd(self, path=''):
         return 1, path
 
