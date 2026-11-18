@@ -93,9 +93,9 @@ except Exception:
             text=False,
             bufsize=0,
             env={**os.environ, 'PYTHONIOENCODING': 'utf-8'},
-            **self.owner._build_process_creation_kwargs()
+            **self.owner.process_execution_service.build_process_creation_kwargs()
         )
-        self.owner._register_cancel_handler(lambda: self.owner._terminate_process(process))
+        self.owner._register_cancel_handler(lambda: self.owner.process_execution_service.terminate_process(process))
         return process
 
     def _execute(self, code, kwargs, timeout, emit=None):
@@ -197,7 +197,7 @@ except Exception:
                 status, message = 1, ''
                 interruption = None
                 try:
-                    self.owner._wait_process_with_cancel_support(process, timeout=timeout)
+                    self.owner.process_execution_service.wait_process_with_cancel_support(process, timeout=timeout)
                     while reader.is_alive() or writer.is_alive() or channel.is_alive():
                         self.owner._checkpoint(fallback_timeout=timeout)
                         reader.join(0.05)
@@ -217,16 +217,16 @@ except Exception:
                     status, message = 0, f'Failed to execute code: {exc}'
                 finally:
                     if process.poll() is None:
-                        self.owner._terminate_process(process)
+                        self.owner.process_execution_service.terminate_process(process)
                     if interruption is not None:
-                        self.owner._get_process_execution_service().terminate_process_group(process)
+                        self.owner.process_execution_service.terminate_process_group(process)
                     writer.join(2)
                     reader.join(2)
                     channel.join(2)
                     with output_lock:
                         output.flush()
                     if reader.is_alive() or channel.is_alive():
-                        self.owner._get_process_execution_service().terminate_process_group(process)
+                        self.owner.process_execution_service.terminate_process_group(process)
                         status, message = 0, message or 'Python output channel did not close'
                 if interruption is not None:
                     collected.seek(0)

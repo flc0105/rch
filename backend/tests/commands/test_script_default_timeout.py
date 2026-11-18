@@ -7,6 +7,7 @@ MODES = ScriptRunModes(ExecutionMode.INPROC, OutputMode.COLLECT)
 
 from client.config import runtime_config
 from client.scripts.manager import ScriptExecution
+from client.runtime.execution.python_execution.service import PythonExecutionService
 from client.runtime.execution.scope import ExecutionRuntimeMixin
 from client.config.runtime_config_service import RuntimeConfigService
 from client.runtime.execution.context import ExecutionContext
@@ -53,12 +54,12 @@ def test_script_runtime_uses_independent_timeout(script_settings, monkeypatch):
     owner = object.__new__(ScriptExecutionHarness)
     owner.execution_context = ExecutionContext(42)
     captures = []
-    def fake_collect(code, kwargs=None, mode='', default_mode='', timeout=None, script_name=None):
-        captures.append((code, timeout, owner.execution_context.timeout))
+    def fake_execute(self, code, kwargs=None, mode='', default_mode='', timeout=None, script_name=None, stream=False):
+        captures.append((code, timeout, owner.execution_context.timeout, stream))
         return 1, 'completed'
-    monkeypatch.setattr(owner, '_execute_python_collect', fake_collect)
+    monkeypatch.setattr(PythonExecutionService, 'execute', fake_execute)
     assert owner.run_script('print(123)', modes=MODES) == (1, 'completed')
-    assert captures == [('print(123)', 7, 7)]
+    assert captures == [('print(123)', 7, 7, False)]
     assert owner.execution_context.resolve_timeout() <= 7
 
 
@@ -66,7 +67,7 @@ def test_inproc_expired_budget_is_reported(script_settings, monkeypatch):
     script_settings.set_config_value('SCRIPT_DEFAULT_TIMEOUT', '1')
     owner = object.__new__(ScriptExecutionHarness)
     owner.execution_context = ExecutionContext(43)
-    monkeypatch.setattr(owner, '_execute_python_collect', lambda *a, **kw: (1, 'printed'))
+    monkeypatch.setattr(PythonExecutionService, 'execute', lambda *a, **kw: (1, 'printed'))
     monkeypatch.setattr(owner.execution_context, 'is_timeout_expired', lambda fallback_timeout=None: True)
     status, message = owner.run_script('print(123)', modes=MODES)
     assert status == 0
@@ -77,7 +78,7 @@ def test_subprocess_timeout_returns_terminal_error(script_settings, monkeypatch)
     import subprocess
     owner = object.__new__(ScriptExecutionHarness)
     owner.execution_context = ExecutionContext(44)
-    monkeypatch.setattr(owner, '_execute_python_collect', lambda *a, **kw: (_ for _ in ()).throw(subprocess.TimeoutExpired('python', 300)))
+    monkeypatch.setattr(PythonExecutionService, 'execute', lambda *a, **kw: (_ for _ in ()).throw(subprocess.TimeoutExpired('python', 300)))
     status, result = owner.run_script('import time', modes=ScriptRunModes(ExecutionMode.SUBPROCESS_PIPE, OutputMode.COLLECT))
     assert status == 0 and result['failure_reason'] == 'timed_out'
     assert result['text'] == 'Script timed out after 300 seconds'

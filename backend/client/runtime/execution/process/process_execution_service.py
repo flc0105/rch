@@ -19,6 +19,9 @@ class ProcessExecutionService:
     - 从命令层抽离通用子进程基础设施，减少 mixin 内部的基础设施代码量
     """
 
+    PROCESS_KILL_GRACE_SECONDS = 2
+    PROCESS_WAIT_POLL_INTERVAL = 0.2
+
     def __init__(self, owner):
         self.owner = owner
 
@@ -66,7 +69,7 @@ class ProcessExecutionService:
                 pass
 
         try:
-            process.wait(timeout=getattr(self.owner, 'PROCESS_KILL_GRACE_SECONDS', 2))
+            process.wait(timeout=self.PROCESS_KILL_GRACE_SECONDS)
         except Exception:
             pass
 
@@ -90,7 +93,7 @@ class ProcessExecutionService:
                 if return_code is not None:
                     self.owner._checkpoint(fallback_timeout=effective_timeout)
                     return return_code
-                time.sleep(getattr(self.owner, 'PROCESS_WAIT_POLL_INTERVAL', 0.2))
+                time.sleep(self.PROCESS_WAIT_POLL_INTERVAL)
             except CommandCancelledError:
                 self.terminate_process(process)
                 raise
@@ -123,7 +126,7 @@ class ProcessExecutionService:
                 self.owner._checkpoint(fallback_timeout=effective_timeout)
                 try:
                     stdout, stderr = process.communicate(
-                        timeout=getattr(self.owner, 'PROCESS_WAIT_POLL_INTERVAL', 0.2)
+                        timeout=self.PROCESS_WAIT_POLL_INTERVAL
                     )
                     # A cancel handler can terminate the subprocess between our
                     # polling checkpoint and communicate() returning.
@@ -218,7 +221,11 @@ class ProcessExecutionService:
         ).start()
 
     def spawn_detached_program(self, command: str):
-        """Exec the specified program in a new session without a shell intermediary."""
+        """Launch one executable directly; caller: ShellExecutionCommands.run_detached.
+
+        Shares the background process reaper, but intentionally has no shell
+        expansion or shell PID indirection (unlike bgrun and SDK background).
+        """
         argv = split_shell_arguments(command, literal_backslashes=(os.name == 'nt'))
         if not argv:
             raise ValueError('Program is required')
@@ -248,7 +255,7 @@ class ProcessExecutionService:
         return process
 
     def spawn_background_process(self, command: str):
-        """Launch a shell command in background; its PID belongs to the shell."""
+        """Run a shell expression detached; callers: Shell bgrun and SDK background."""
         if os.name == 'nt':
             creation_flags = 0
             for attr_name in ('DETACHED_PROCESS', 'CREATE_NEW_PROCESS_GROUP'):

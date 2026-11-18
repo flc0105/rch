@@ -13,7 +13,7 @@ from core.utils.artifact_naming import build_artifact_filename
 def _capture_mac(owner, path):
     """Capture using the managed subprocess for cancellation and cleanup."""
     command = f'screencapture -x {shlex.quote(path)}'
-    result = owner._run_shell_command(command)
+    result = owner.process_execution_service.run_shell_command(command)
     if result.returncode != 0:
         raise RuntimeError(result.stderr or 'Failed to capture screenshot')
 

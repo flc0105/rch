@@ -83,7 +83,11 @@ def test_approved_process_inspection_supports_older_psutil(monkeypatch):
 def test_shell_failure_preserves_stdout_and_exit_status():
     from client.commands.shell.common.execution import ShellExecutionCommands
     owner = ShellExecutionCommands()
-    owner._run_shell_command = lambda _command: SimpleNamespace(returncode=1, stdout='WRITE DENIED: temp\n', stderr='PowerShell error\n')
+    owner.process_execution_service = SimpleNamespace(
+        run_shell_command=lambda _command: SimpleNamespace(
+            returncode=1, stdout='WRITE DENIED: temp\n', stderr='PowerShell error\n'
+        )
+    )
     result = owner.shell('test')
     assert result[0] == 0
     assert 'WRITE DENIED' in result[1]

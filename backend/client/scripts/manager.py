@@ -5,7 +5,6 @@ from client.config import runtime_config
 from client.runtime.execution.context import CommandCancelledError, CommandTimeoutError
 from core.protocol.script_execution import validate_payload_modes, ExecutionMode, OutputMode
 from core.utils.script_metadata import read_script_metadata_from_source
-from client.runtime.execution.python_process import PythonProcessExecutionMixin
 from client.runtime.execution.scope import ExecutionScope
 from client.runtime.sdk.command import ScriptCommandAccess
 
@@ -40,7 +39,7 @@ class ScriptManager:
         return execution.run_script(source, params, name, modes=modes)
 
 
-class ScriptExecution(PythonProcessExecutionMixin, ExecutionScope):
+class ScriptExecution(ExecutionScope):
     def __init__(self, socket, context, command_access=None):
         super().__init__(socket, context)
         self.command_access = command_access
@@ -59,14 +58,14 @@ class ScriptExecution(PythonProcessExecutionMixin, ExecutionScope):
         self._set_timeout(script_timeout)
         self._set_cancel_policy(modes.execution_mode.cancel_policy, 'Current Python execution mode does not support cancellation')
         try:
-            execute = self._execute_python_stream if modes.output_mode is OutputMode.STREAM else self._execute_python_collect
-            result = execute(
+            result = self.python_execution_service.execute(
                 code,
                 kwargs=kwargs,
                 script_name=script_name,
                 mode=modes.execution_mode.value,
                 default_mode='inproc',
                 timeout=script_timeout,
+                stream=modes.output_mode is OutputMode.STREAM,
             )
         except (subprocess.TimeoutExpired, CommandTimeoutError) as exc:
             return self._interrupted('timed_out', getattr(exc, 'output', ''), f'Script timed out after {script_timeout} seconds')

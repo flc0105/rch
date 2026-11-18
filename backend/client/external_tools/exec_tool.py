@@ -64,13 +64,14 @@ class ExternalToolCliExec(ExternalToolCommon):
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                **self.command_host._build_process_creation_kwargs()
+                **self.command_host.process_execution_service.build_process_creation_kwargs()
             )
-            self.command_host._register_cancel_handler(lambda: self.command_host._terminate_process(process))
+            self.command_host._register_cancel_handler(lambda: self.command_host.process_execution_service.terminate_process(process))
 
-            # _start_output_threads 当前签名是 _start_output_threads(process)，超时只交给 wait 层。
-            self.command_host._start_output_threads(process)
-            self.command_host._wait_process_with_cancel_support(process, timeout=timeout_sec)
+            self.command_host.process_execution_service.start_output_threads(
+                process, timeout=self.command_host.DEFAULT_STREAM_TIMEOUT,
+            )
+            self.command_host.process_execution_service.wait_process_with_cancel_support(process, timeout=timeout_sec)
             time.sleep(0.1)
 
             if process.returncode == 0:

@@ -124,7 +124,7 @@ def test_macos_screenshot_sends_generated_artifact_name(monkeypatch, tmp_path):
         command_platform='mac',
         http_file_transfer_service=transfer,
         emit_progress=lambda *_args, **_kwargs: None,
-        _run_shell_command=lambda *args, **kwargs: SimpleNamespace(returncode=0),
+        process_execution_service=SimpleNamespace(run_shell_command=lambda *args, **kwargs: SimpleNamespace(returncode=0)),
     )
     monkeypatch.setattr(screenshot_module, 'make_client_temp_file',
                         lambda *args, **kwargs: (os.open(local, os.O_CREAT | os.O_RDWR), str(local)))

@@ -1,44 +1,36 @@
-from client.commands.runtime.interrupts import cancel_policy
 import os
 import subprocess
 import time
 
-from client.runtime.execution.context import CommandCancelledError, CommandTimeoutError
-from client.runtime.execution.python_execution.factory import (
-    build_python_execution_strategy,
-    get_python_execution_mode
-)
-from client.runtime.execution.process.process_execution_service import ProcessExecutionService
-from client.config import runtime_config
+from client.commands.runtime.interrupts import cancel_policy
 from client.commands.shell.decorators import shell_command
+from client.runtime.execution.context import CommandCancelledError, CommandTimeoutError
+from client.runtime.execution.python_execution.factory import get_python_execution_mode
 from core.command_completion.models import CompletionSpec
 
 
-from client.runtime.execution.python_process import PythonProcessExecutionMixin
-
-
-class ShellExecutionCommands(PythonProcessExecutionMixin):
-    """User-facing shell and Python commands."""
-    # ------------------ 基础执行命令 ------------------ #
+class ShellExecutionCommands:
+    """Shell and Python commands; shared runtimes own subprocess lifecycles."""
     @shell_command('Change working directory', group='shell', completion=CompletionSpec('filesystem', ('directory',)))
     def cd(self, path):
         try:
+            self._checkpoint()
             if not path.strip():
                 return 1, os.getcwd()
             os.chdir(path)
-            return 1, ""
+            return 1, ''
         except CommandCancelledError:
             return 0, 'Command cancelled'
         except CommandTimeoutError:
-            return 0, 'Command timed out and was terminated'
-        except Exception as e:
-            return 0, f'Failed to change directory: {e}'
+            return 0, 'Command timed out'
+        except OSError as exc:
+            return 0, f'Failed to change directory: {exc}'
 
     @shell_command('Run a shell command', group='execution')
     @cancel_policy('process')
     def shell(self, command):
         try:
-            result = self._run_shell_command(command)
+            result = self.process_execution_service.run_shell_command(command)
             if result.returncode == 0:
                 return 1, result.stdout
             details = [part.strip() for part in (result.stdout, result.stderr) if part and part.strip()]
@@ -47,21 +39,19 @@ class ShellExecutionCommands(PythonProcessExecutionMixin):
         except CommandCancelledError:
             return 0, 'Command cancelled'
         except (CommandTimeoutError, subprocess.TimeoutExpired):
-            return 0, 'Command timed out and was terminated'
+            return 0, 'Command timed out'
         except Exception as e:
             return 0, f'Failed to execute command: {e}'
 
     @shell_command('Run a program in background', group='execution')
     def bgrun(self, command):
-        """
-        后台启动指定程序/命令，不等待其执行结束。
-        """
         command_text = (command or '').strip()
         if not command_text:
             return 0, 'Usage: bgrun <program ...>'
 
         try:
-            process = self._spawn_background_process(command_text)
+            self._checkpoint()
+            process = self.process_execution_service.spawn_background_process(command_text)
             return 1, (
                 f'Background process started\n'
                 f'PID: {process.pid}\n'
@@ -70,7 +60,7 @@ class ShellExecutionCommands(PythonProcessExecutionMixin):
         except CommandCancelledError:
             return 0, 'Command cancelled'
         except CommandTimeoutError:
-            return 0, 'Command timed out and was terminated'
+            return 0, 'Command timed out'
         except Exception as e:
             return 0, f'Failed to start background process: {e}'
 
@@ -81,12 +71,17 @@ class ShellExecutionCommands(PythonProcessExecutionMixin):
             return 0, 'Usage: run_detached <program> [args...]'
 
         try:
-            process = self._spawn_detached_program(command_text)
+            self._checkpoint()
+            process = self.process_execution_service.spawn_detached_program(command_text)
             return 1, (
                 f'Detached process started\n'
                 f'PID: {process.pid}\n'
                 f'Command: {command_text}'
             )
+        except CommandCancelledError:
+            return 0, 'Command cancelled'
+        except CommandTimeoutError:
+            return 0, 'Command timed out'
         except Exception as e:
             return 0, f'Failed to start detached process: {e}'
 
@@ -94,9 +89,10 @@ class ShellExecutionCommands(PythonProcessExecutionMixin):
     @cancel_policy('process')
     def shell_stream(self, command):
         try:
-            process = self._start_stream_process(command)
-            self._start_output_threads(process)
-            self._wait_stream_process(process)
+            service = self.process_execution_service
+            process = service.start_stream_process(command)
+            service.start_output_threads(process, timeout=self.DEFAULT_STREAM_TIMEOUT)
+            service.wait_stream_process(process)
             time.sleep(0.1)
 
             if process.returncode == 0:
@@ -106,18 +102,15 @@ class ShellExecutionCommands(PythonProcessExecutionMixin):
         except CommandCancelledError:
             self.emit_completed(status='cancelled', message='Command cancelled')
         except (CommandTimeoutError, subprocess.TimeoutExpired):
-            self.emit_completed(status='timed_out', message='Command timed out and was terminated')
+            self.emit_completed(status='timed_out', message='Command timed out')
         except Exception as e:
             self.emit_completed(status='error', message=f'Failed to execute command: {e}')
 
     @shell_command('Execute Python code and collect output', group='execution')
     @cancel_policy('cooperative')
     def pyexec(self, code, kwargs=None):
-        """
-        一次性返回版本。
-        """
         try:
-            return self._execute_python_collect(
+            return self.python_execution_service.execute(
                 code,
                 kwargs=kwargs,
                 mode=get_python_execution_mode(),
@@ -133,15 +126,13 @@ class ShellExecutionCommands(PythonProcessExecutionMixin):
     @shell_command('Execute Python code with streaming output', group='execution', output='stream')
     @cancel_policy('cooperative')
     def pyexec_stream(self, code, kwargs=None):
-        """
-        流式返回版本。
-        """
         try:
-            return self._execute_python_stream(
+            return self.python_execution_service.execute(
                 code,
                 kwargs=kwargs,
                 mode=get_python_execution_mode(),
                 default_mode='inproc',
+                stream=True,
             )
         except CommandCancelledError as exc:
             return 0, (getattr(exc, 'output', '') + '\nCommand cancelled').lstrip('\n')

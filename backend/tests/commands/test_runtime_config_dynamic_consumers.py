@@ -81,11 +81,11 @@ def test_set_reset_reset_all_changes_next_transfer_and_python_strategy(isolated_
 
 def test_dynamic_timeout_and_reconnect_read_in_same_process(isolated_config):
     from client.runtime.execution.scope import ExecutionRuntimeMixin
-    from client.commands.shell.common.execution import ShellExecutionCommands
+    from client.commands.shell.base import CommandBase
     from client.app.client import Client
 
     svc = RuntimeConfigService()
-    executor = object.__new__(ShellExecutionCommands)
+    executor = object.__new__(CommandBase)
     client = object.__new__(Client)
     fallback = ExecutionRuntimeMixin()
     fallback.execution_context = None

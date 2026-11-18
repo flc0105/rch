@@ -139,6 +139,33 @@ class ExecutionRuntimeMixin:
 
 
 class ExecutionResources:
+    """Lazy per-execution runtime capabilities used by Commands and Scripts."""
+
+    @property
+    def DEFAULT_SHELL_TIMEOUT(self):
+        return runtime_config.COMMAND_DEFAULT_SHELL_TIMEOUT
+
+    @property
+    def DEFAULT_STREAM_TIMEOUT(self):
+        return runtime_config.COMMAND_DEFAULT_STREAM_TIMEOUT
+
+    @property
+    def process_execution_service(self):
+        from client.runtime.execution.process.process_execution_service import ProcessExecutionService
+        service = getattr(self, '_process_execution_service', None)
+        if service is None:
+            service = ProcessExecutionService(self)
+            self._process_execution_service = service
+        return service
+
+    @property
+    def python_execution_service(self):
+        from client.runtime.execution.python_execution.service import PythonExecutionService
+        service = getattr(self, '_python_execution_service', None)
+        if service is None:
+            service = PythonExecutionService(self)
+            self._python_execution_service = service
+        return service
     @property
     def http_file_transfer_service(self):
         service = getattr(self, '_http_file_transfer_service', None)

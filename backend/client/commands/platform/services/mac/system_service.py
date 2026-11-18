@@ -93,7 +93,7 @@ class MacSystemService:
 
     def run_command_text(self, command: str, timeout: int = 15) -> str:
         try:
-            result = self.owner._run_shell_command(command, timeout=timeout)
+            result = self.owner.process_execution_service.run_shell_command(command, timeout=timeout)
             if result.returncode != 0:
                 return ''
             return (result.stdout or '').strip()

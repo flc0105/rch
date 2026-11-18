@@ -1,5 +1,6 @@
 import time
 from datetime import datetime, timezone
+import unicodedata
 from typing import Any, Iterable, Mapping
 
 
@@ -142,16 +143,42 @@ def print_table(headers: Iterable[Any], data: Iterable[Iterable[Any]]) -> None:
     print()
 
 
-def format_table(headers: Iterable[Any], data: Iterable[Iterable[Any]]) -> str:
-    """
-    将表格数据格式化为字符串并返回，而不是直接打印
-    """
-    headers = list(headers)
+def _cell_display_width(text: str) -> int:
+    """Measure terminal columns, including common full-width and combining characters."""
+    return sum(
+        0 if unicodedata.combining(char) or unicodedata.category(char) in ('Cc', 'Cf')
+        else 2 if unicodedata.east_asian_width(char) in ('W', 'F') else 1
+        for char in text
+    )
+
+
+def _wrap_table_cell(text: str, width: int) -> list[str]:
+    """Wrap without dropping characters, preserving explicit line breaks."""
+    result = []
+    for source_line in text.split('\n'):
+        segment = ''
+        used = 0
+        for char in source_line:
+            size = _cell_display_width(char)
+            if segment and used + size > width:
+                result.append(segment)
+                segment = ''
+                used = 0
+            segment += char
+            used += size
+        result.append(segment)
+    return result
+
+
+def format_table(
+    headers: Iterable[Any], data: Iterable[Iterable[Any]], *, max_cell_width: int = 72,
+) -> str:
+    """Render aligned text columns, wrapping overlong cells without truncation."""
+    headers = [str(value) for value in headers]
     rows = [list(row) for row in data]
 
     if not headers:
         return "No headers to display"
-
     if not rows:
         return "No data to display"
 
@@ -160,21 +187,36 @@ def format_table(headers: Iterable[Any], data: Iterable[Iterable[Any]]) -> str:
     if not rows:
         return "Table rows do not match header count"
 
+    if max_cell_width < 1:
+        raise ValueError('max_cell_width must be positive')
+
+    string_rows = [[str(value) for value in row] for row in rows]
     column_widths = [
-        max(len(str(headers[i])), *(len(str(row[i])) for row in rows))
+        min(max_cell_width, max(
+            _cell_display_width(line)
+            for cell in [headers[i], *(row[i] for row in string_rows)]
+            for line in cell.split('\n')
+        ))
         for i in range(column_count)
     ]
 
-    row_format = " | ".join(f"{{:<{width}}}" for width in column_widths)
+    def render_row(cells: list[str]) -> list[str]:
+        wrapped = [_wrap_table_cell(value, column_widths[i]) for i, value in enumerate(cells)]
+        height = max(len(parts) for parts in wrapped)
+        output = []
+        for line_no in range(height):
+            parts = []
+            for i, cell_lines in enumerate(wrapped):
+                text = cell_lines[line_no] if line_no < len(cell_lines) else ''
+                parts.append(text + ' ' * (column_widths[i] - _cell_display_width(text)))
+            output.append(' | '.join(parts))
+        return output
 
-    lines = []
-    lines.append(row_format.format(*headers))
-    lines.append("-" * (sum(column_widths) + 3 * (column_count - 1)))
-
-    for row in rows:
-        lines.append(row_format.format(*row))
-
-    return "\n".join(lines)
+    lines = render_row(headers)
+    lines.append('-' * (sum(column_widths) + 3 * (column_count - 1)))
+    for row in string_rows:
+        lines.extend(render_row(row))
+    return '\n'.join(lines)
 
 
 def seconds_to_readable_text(seconds):

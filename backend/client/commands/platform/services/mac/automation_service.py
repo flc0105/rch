@@ -29,7 +29,7 @@ class MacAutomationService:
             stderr=subprocess.DEVNULL,
             start_new_session=True
         )
-        self.owner._register_cancel_handler(lambda: self.owner._terminate_process(process))
+        self.owner._register_cancel_handler(lambda: self.owner.process_execution_service.terminate_process(process))
         return process
 
     def sudo_self(self, *, detached=False):

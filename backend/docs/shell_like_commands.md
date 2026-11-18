@@ -116,6 +116,8 @@ run_detached ./my-program --config "settings with spaces.json"
 
 `bgrun` 仍提供 Shell 命令执行方式，并在 Shell 退出后回收进程状态；返回的 PID 可能属于 Shell 中间进程。两种命令都只确认启动成功，不等待程序最终完成。
 
+Shell 的七个执行入口保留在 `client/commands/shell/common/execution.py` 类内：它们直接使用 `process_execution_service` 执行托管进程操作，以及 `python_execution_service` 执行 Python 策略。两个服务由既有 `ExecutionResources` 按需创建；Script 复用相同的 Python 服务，SDK、External Tool 和平台服务直接复用进程服务，不再经由 `PythonProcessExecutionMixin` 的转发方法。
+
 Python 执行也有收集输出与流式输出两种入口，其运行模式由 Client 的 Python Runtime Configuration 决定。`inproc` 在当前解释器中执行，不可强制杀停；`subprocess_pipe` 在受管理子进程中运行，支持取消与进程终止。执行策略会在运行时设置相应的取消能力，而不是仅靠命令名称判断。这些入口仍属于普通命令体系，但和 `script` 协议的完整脚本运行流程不是同一件事。
 
 ### 导出命令方法

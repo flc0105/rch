@@ -361,7 +361,7 @@ def run(exec_name: str, raw_args: Any = '', *, timeout=None, cwd: str = '') -> E
             capture_output=True,
             text=True,
             timeout=_resolve_timeout(payload, timeout),
-            **(owner._build_process_creation_kwargs() if owner is not None and hasattr(owner, '_build_process_creation_kwargs') else {}),
+            **(owner.process_execution_service.build_process_creation_kwargs() if owner is not None else {}),
         )
     except subprocess.TimeoutExpired as exc:
         raise ScriptSdkExternalToolError(f'External tool command timed out: {normalized_exec_name}') from exc

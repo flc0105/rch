@@ -113,6 +113,8 @@ result = StructuredCommandResult(
 
 空列表在默认文本模式下显示 `No data to display`；如果选择 JSON，则输出 `[]`。JSON 保留列表的原始对象字段，而不是受到文本表格列头的限制。
 
+文本表格的单元格默认最多占 24 个终端显示列；超出长度时在同一列内续行，其他列补齐空白，不省略内容。短单元格维持原有单行布局。这个固定上限不依赖 Web Terminal 窗口宽度，也不影响 `--json` 的完整数据。
+
 ## 序列化与文本呈现策略
 
 统一渲染入口为 `render_structured_result(result, output_format='text')`。当传入 `StructuredCommandResult` 时，它将结果转换为通常的 `(status, text)`；如果传入的原本就不是这种结果对象，则直接原样返回。

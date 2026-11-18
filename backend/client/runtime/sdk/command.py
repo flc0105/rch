@@ -1,5 +1,4 @@
 import inspect
-import os
 import subprocess
 from dataclasses import dataclass
 from typing import Any, Callable
@@ -79,30 +78,6 @@ def _normalize_shell_completed(command: str, completed) -> ShellResult:
     )
 
 
-def _spawn_background_with_subprocess(command_text: str) -> subprocess.Popen:
-    if os.name == 'nt':
-        creation_flags = 0
-        for attr_name in ('DETACHED_PROCESS', 'CREATE_NEW_PROCESS_GROUP'):
-            creation_flags |= getattr(subprocess, attr_name, 0)
-        return subprocess.Popen(
-            command_text,
-            shell=True,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            creationflags=creation_flags,
-        )
-
-    return subprocess.Popen(
-        command_text,
-        shell=True,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        start_new_session=True,
-    )
-
-
 def run_shell(command: str, *, wait: bool = True, background: bool = False,
               mode: str = '', stream: bool = False, timeout=None):
     """
@@ -122,20 +97,23 @@ def run_shell(command: str, *, wait: bool = True, background: bool = False,
     owner = get_execution_owner()
 
     if run_in_background:
-        if owner is not None and hasattr(owner, '_spawn_background_process'):
-            process = owner._spawn_background_process(command_text)
+        if owner is not None:
+            process = owner.process_execution_service.spawn_background_process(command_text)
         else:
-            process = _spawn_background_with_subprocess(command_text)
+            # SDK without an active execution still uses the shared detached
+            # shell launcher; it does not require cancellation context.
+            from client.runtime.execution.process.process_execution_service import ProcessExecutionService
+            process = ProcessExecutionService(None).spawn_background_process(command_text)
         return BackgroundProcess(command=command_text, pid=int(getattr(process, 'pid', 0) or 0))
 
-    if stream and owner is not None and hasattr(owner, '_start_stream_process'):
-        process = owner._start_stream_process(command_text)
-        owner._start_output_threads(process)
-        owner._wait_stream_process(process, timeout=timeout)
+    if stream and owner is not None:
+        process = owner.process_execution_service.start_stream_process(command_text)
+        owner.process_execution_service.start_output_threads(process, timeout=owner.DEFAULT_STREAM_TIMEOUT)
+        owner.process_execution_service.wait_stream_process(process, timeout=timeout)
         return ShellResult(command=command_text, returncode=int(process.returncode or 0))
 
-    if owner is not None and hasattr(owner, '_run_shell_command'):
-        completed = owner._run_shell_command(command_text, timeout=timeout)
+    if owner is not None:
+        completed = owner.process_execution_service.run_shell_command(command_text, timeout=timeout)
         return _normalize_shell_completed(command_text, completed)
 
     completed = subprocess.run(
