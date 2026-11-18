@@ -206,7 +206,7 @@ iOS 的命令可见性由 `iOSCommands` 的实际导出方法和 ACMD Registry �
 `runtime`（`watchdog`、`set`）、`maintenance`（`clean`、`update`）、
 `transfer`（`download`）、`automation`（`keyboard_send`）、
 `media`（`screenshot`、`webcam_snap`）、`privilege`（`run_elevated`、
-`spawn_elevated_instance`、`is_elevated`）、`network`（`ifconfig`）、
+`spawn_elevated_instance`、`is_elevated`）、
 `system`（`getinfo`、`idletime`、`getuid`、`getpid`、`uptime`、`userenum`）、
 `python`（`piplist`）。`ip` 已不再注册为 Client 命令。
 

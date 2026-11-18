@@ -1,7 +1,6 @@
 import os
 import subprocess
 
-from client.commands.common.services.network.network_interface_service import NetworkInterfaceService
 from client.commands.shell.decorators import shell_command
 
 
@@ -118,28 +117,3 @@ class ShellSystemCommands:
 
         except Exception as e:
             return 0, f'Failed to list Python packages: {e}'
-
-    def _get_network_interface_service(self):
-        service = getattr(self, '_network_interface_service', None)
-
-        if service is None:
-            service = NetworkInterfaceService(self)
-            self._network_interface_service = service
-
-        return service
-
-    @shell_command('Show network interfaces', group='network')
-    def ifconfig(self, arg=''):
-        """
-        shell-like ifconfig.
-
-        用法：
-        - ifconfig
-        - ifconfig json
-
-        参数保持简单，不做端口、过滤等复杂解析。
-        """
-        try:
-            return self._get_network_interface_service().build_ifconfig_result()
-        except Exception as e:
-            return 0, 'Failed to get network interfaces: {}'.format(e)

@@ -103,7 +103,6 @@ Alias 的模板参数、平台覆盖与安全边界见 [Aliases / Quick Actions]
 | `uptime` | 查看系统运行时间 | 返回目标设备信息 |
 | `userenum` | 枚举系统用户账户 | 可见范围受目标系统权限约束 |
 | `is_elevated` | 检查 Client 是否具有提升的系统权限 | 只检查当前进程权限，不自动提权 |
-| `ifconfig` | 查看目标设备网络接口 | 输出格式由 RCH 的平台信息提供者决定 |
 | `SCRIPT_DEFAULT_EXECUTION_MODE` / `SCRIPT_DEFAULT_OUTPUT_MODE` | Script 默认执行 / 输出模式 | Python 默认 inproc / collect，Go 默认 subprocess_pipe / collect；受本次选择及 Schema 约束 |
 | `SCRIPT_DEFAULT_TIMEOUT` | Script 默认运行时长，单位为秒 | Python / Go 默认 300 秒；Go 的外部 Python 执行器会按时终止子进程 |
 | `SCRIPT_PYTHON_PATH` | Go Client 外部 Python 解释器路径 | 留空时按 `PATH` 查找；仅 Go Client 配置包含此项 |
@@ -213,6 +212,7 @@ ACMD 统一使用 `acmd <name> ...` 前缀，使用独立的命令注册表、�
 
 | 平台 | 当前已注册的 ACMD | 作用概述 |
 |---|---|---|
+| **Windows / macOS / Linux / iOS** | `acmd ifconfig` | 查看网卡；`-a` 展示全部网卡及虚拟/启用状态，`-i` 指定网卡，支持 `--json` |
 | **Windows / macOS / Linux** | `acmd ps` | 按 PID、名称、端口查看进程，部分形式支持 JSON 结果 |
 | **Windows / macOS / Linux** | `acmd netstat` | 查看 TCP / UDP 连接，可按端口、监听状态和协议筛选 |
 | **Windows / macOS / Linux** | `acmd kill` | 按 PID、名称或端口选择并终止进程；可先显示预览和确认，具体能力受权限限制 |
@@ -234,6 +234,8 @@ acmd help
 acmd help ps
 acmd ps --name python --json
 acmd ps --pid ${rch:pid} --json
+acmd ifconfig --all --json
+acmd ifconfig --interface en0
 acmd netstat --port 443
 acmd netstat --status LISTENING
 acmd netstat -l -t --port 443 --json
