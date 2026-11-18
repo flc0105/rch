@@ -102,7 +102,6 @@ WGET_ARGUMENT_SPEC = ArgumentCommandSpec(
 
 
 class iOSACMDCommands:
-
     @argument_command('alert', spec=ALERT_ARGUMENT_SPEC)
     def alert(self, args_dict, payload=None):
         return self.ios_console.acmd_alert(args_dict)

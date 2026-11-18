@@ -3,6 +3,7 @@
 from core.commands.argument_models import ArgumentCommandSpec, ArgumentOptionSpec
 from client.commands.acmd.decorators import argument_command
 from client.commands.common.services.network.netstat_service import NetstatService
+from client.commands.acmd.standalone.ifconfig import ifconfig as ifconfig_command
 
 NETSTAT_ARGUMENT_SPEC = ArgumentCommandSpec(
     name='netstat',
@@ -66,7 +67,10 @@ NETSTAT_ARGUMENT_SPEC = ArgumentCommandSpec(
 
 
 class ACMDNetworkCommands:
-    @argument_command('netstat', spec=NETSTAT_ARGUMENT_SPEC)
+    ifconfig = ifconfig_command
+
+    @argument_command('netstat', spec=NETSTAT_ARGUMENT_SPEC,
+                      platforms=('mac', 'win', 'linux'))
     def _acmd_netstat(self, args_dict, payload=None):
         return self._acmd_netstat_common(args_dict, payload)
 

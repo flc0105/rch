@@ -4,6 +4,7 @@ from typing import Any, Callable
 from core.commands.argument_errors import ArgumentCommandValidationError
 from client.commands.acmd.help import ArgumentCommandHelpBuilder
 from core.commands.argument_validator import ArgumentCommandValidator
+from core.platform.normalization import normalize_platform_alias
 
 
 class ArgumentCommandRegistry:
@@ -31,6 +32,7 @@ class ArgumentCommandRegistry:
         扫描并收集所有已注册的实验命令处理器
         """
         entries = {}
+        platform = normalize_platform_alias(getattr(self.commands, 'command_platform', ''))
 
         for _, method in inspect.getmembers(
             self.commands,
@@ -38,6 +40,9 @@ class ArgumentCommandRegistry:
         ):
             command_name = getattr(method, 'argument_command_name', '')
             if not command_name:
+                continue
+            supported = getattr(method, 'argument_command_platforms', None)
+            if supported is not None and platform not in supported:
                 continue
 
             spec = getattr(method, 'argument_command_spec', None)

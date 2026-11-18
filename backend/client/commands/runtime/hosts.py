@@ -5,7 +5,7 @@ remain independent in client.commands.shell and client.commands.acmd.
 """
 
 from client.commands.acmd.commands import DesktopACMDCommands
-from client.commands.acmd.common.interfaces import ACMDIfconfigCommands
+from client.commands.acmd.common.network import ACMDNetworkCommands
 from client.commands.acmd.platform.ios import iOSACMDCommands
 from client.commands.acmd.platform.mac import MacACMDCommands
 from client.commands.shell.base import CommandBase
@@ -17,20 +17,20 @@ from client.commands.shell.platform.win import WindowsShellCommands
 
 
 class MacCommands(MacShellCommands, MacACMDCommands, ShellCommands,
-                  DesktopACMDCommands, ACMDIfconfigCommands, CommandBase):
+                  DesktopACMDCommands, CommandBase):
     command_platform = 'mac'
 
 
 class WindowsCommands(WindowsShellCommands, ShellCommands,
-                      DesktopACMDCommands, ACMDIfconfigCommands, CommandBase):
+                      DesktopACMDCommands, CommandBase):
     command_platform = 'win'
 
 
 class LinuxCommands(LinuxShellCommands, ShellCommands,
-                    DesktopACMDCommands, ACMDIfconfigCommands, CommandBase):
+                    DesktopACMDCommands, CommandBase):
     command_platform = 'linux'
 
 
 class iOSCommands(iOSShellCommands, iOSACMDCommands, ShellCommands,
-                  ACMDIfconfigCommands, CommandBase):
+                  ACMDNetworkCommands, CommandBase):
     command_platform = 'ios'
