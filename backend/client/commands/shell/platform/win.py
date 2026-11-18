@@ -1,5 +1,4 @@
 from client.commands.runtime.interrupts import timeout
-from client.commands.platform.services.win.media_service import WinMediaService
 from client.commands.platform.services.win.privilege_service import WinPrivilegeService
 from client.commands.platform.services.win.process_service import WinProcessService
 from client.commands.platform.services.win.system_service import WinSystemService
@@ -14,7 +13,6 @@ class WindowsShellCommands:
         super().__init__(socket)
         self.win_process = WinProcessService(self)
         self.win_system = WinSystemService(self)
-        self.win_media = WinMediaService(self)
         self.win_privilege = WinPrivilegeService(self)
 
     # On Windows os.execv() creates a new PID; this override stays unregistered.
@@ -28,14 +26,6 @@ class WindowsShellCommands:
         """
         return self.win_process.run(command)
 
-    @shell_command('Capture screenshot', group='media', output='stream')
-
-    @timeout(30)
-    def screenshot(self):
-        """
-        截图并上传到服务器
-        """
-        return self.win_media.capture_screenshot()
 
     @shell_command('Get system information', group='system')
 

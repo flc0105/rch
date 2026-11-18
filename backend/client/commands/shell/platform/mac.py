@@ -18,10 +18,6 @@ class MacShellCommands:
         self.mac_automation = MacAutomationService(self)
         self.mac_file_inspection = MacFileInspectionService(self)
 
-    @shell_command("Capture a screenshot", group='media', output='stream')
-    def screenshot(self):
-        return self.mac_media.capture_screenshot()
-
     @shell_command('Show system information', group='system')
     def getinfo(self, arg=''):
         try:

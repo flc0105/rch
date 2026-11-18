@@ -1,8 +1,6 @@
 import os
 import subprocess
-import shlex
 
-from client.runtime.execution.context import CommandCancelledError, CommandTimeoutError
 from core.utils.formatting import get_size
 from core.utils.artifact_naming import build_artifact_filename
 from client.runtime.temp_workspace import make_client_temp_file, cleanup_temp_path
@@ -10,45 +8,11 @@ from client.runtime.temp_workspace import make_client_temp_file, cleanup_temp_pa
 
 class MacMediaService:
     """
-    macOS 截图 / 摄像头相关能力。
+    macOS 摄像头拍照能力。
     """
 
     def __init__(self, owner):
         self.owner = owner
-
-    def capture_screenshot(self):
-        screenshot_path = ''
-
-        try:
-            temp_fd, screenshot_path = make_client_temp_file(
-                'media_temp',
-                prefix='screenshot_',
-                suffix='.png',
-            )
-            os.close(temp_fd)
-            self.owner.emit_progress(f'Client Temp Path: {screenshot_path}', level='info')
-            capture_command = f'screencapture -x {shlex.quote(screenshot_path)}'
-            self.owner.emit_progress(f'Capturing screen: {capture_command}', level='info')
-            result = self.owner._run_shell_command(capture_command, timeout=15)
-            if result.returncode != 0:
-                self.owner.emit_completed(status='error', message=result.stderr or 'Failed to capture screenshot')
-                return
-            self.owner.emit_progress('Screenshot captured successfully', level='success')
-            return self.owner.http_file_transfer_service.upload_single_file_to_server_result(
-                screenshot_path,
-                category='screenshots',
-                upload_name=build_artifact_filename('screenshot', 'png'),
-                extra={'saved_from': 'client_command', 'source_command': 'screenshot'},
-            )
-        except CommandCancelledError:
-            return 0, 'Screenshot command cancelled'
-        except (CommandTimeoutError, subprocess.TimeoutExpired):
-            return 0, 'Screenshot capture timed out and was terminated'
-        except Exception as e:
-            return 0, f'Failed to capture screenshot: {e}'
-        finally:
-            if screenshot_path:
-                cleanup_temp_path(screenshot_path)
 
     def capture_webcam_photo(self):
         """拍照并上传到服务器"""

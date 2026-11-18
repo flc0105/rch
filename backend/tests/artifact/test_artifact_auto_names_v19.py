@@ -115,20 +115,21 @@ def test_command_media_upload_passes_wire_name_and_origin(tmp_path):
 
 def test_macos_screenshot_sends_generated_artifact_name(monkeypatch, tmp_path):
     import os
-    from client.commands.platform.services.mac import media_service
+    from client.commands.shell.standalone import screenshot as screenshot_module
 
     local = tmp_path / 'private_random.png'
     transfer = Mock()
     transfer.upload_single_file_to_server_result.return_value = (1, 'OK')
     owner = SimpleNamespace(
+        command_platform='mac',
         http_file_transfer_service=transfer,
         emit_progress=lambda *_args, **_kwargs: None,
         _run_shell_command=lambda *args, **kwargs: SimpleNamespace(returncode=0),
     )
-    monkeypatch.setattr(media_service, 'make_client_temp_file',
+    monkeypatch.setattr(screenshot_module, 'make_client_temp_file',
                         lambda *args, **kwargs: (os.open(local, os.O_CREAT | os.O_RDWR), str(local)))
-    monkeypatch.setattr(media_service, 'cleanup_temp_path', lambda path: None)
-    media_service.MacMediaService(owner).capture_screenshot()
+    monkeypatch.setattr(screenshot_module, 'cleanup_temp_path', lambda path: None)
+    screenshot_module.screenshot(owner)
     options = transfer.upload_single_file_to_server_result.call_args.kwargs
     assert options['category'] == 'screenshots'
     assert options['upload_name'].startswith('screenshot_')
@@ -140,25 +141,24 @@ def test_macos_screenshot_sends_generated_artifact_name(monkeypatch, tmp_path):
 def test_windows_screenshot_uses_wire_name_not_local_temp(monkeypatch, tmp_path):
     import os
     import sys
-    from client.commands.platform.services.win import media_service
+    from client.commands.shell.standalone import screenshot as screenshot_module
 
     local = tmp_path / 'private_random.png'
     transfer = Mock()
     transfer.upload_single_file_to_server_result.return_value = (1, "OK")
     owner = SimpleNamespace(
+        command_platform='win',
         http_file_transfer_service=transfer,
         emit_progress=lambda *_args, **_kwargs: None,
-        emit_chunk=lambda *_args, **_kwargs: None,
-        emit_completed=lambda *_args, **_kwargs: None,
     )
     class Image:
         def save(self, path):
             Path(path).write_bytes(b'PNG')
     monkeypatch.setitem(sys.modules, 'pyautogui', SimpleNamespace(screenshot=lambda: Image()))
-    monkeypatch.setattr(media_service, 'make_client_temp_file',
+    monkeypatch.setattr(screenshot_module, 'make_client_temp_file',
                         lambda *args, **kwargs: (os.open(local, os.O_CREAT | os.O_RDWR), str(local)))
-    monkeypatch.setattr(media_service, 'cleanup_temp_path', lambda path: None)
-    media_service.WinMediaService(owner).capture_screenshot()
+    monkeypatch.setattr(screenshot_module, 'cleanup_temp_path', lambda path: None)
+    screenshot_module.screenshot(owner)
     options = transfer.upload_single_file_to_server_result.call_args.kwargs
     assert options['category'] == 'screenshots'
     assert options['upload_name'].startswith('screenshot_')
