@@ -64,11 +64,6 @@ class iOSShellCommands:
     def echo(self, text=''):
         return self.ios_file_system.echo(text)
 
-    @shell_command('Get system information', group='system')
-    @timeout(20)
-    def getinfo(self):
-        return self.ios_system.collect_info()
-
     @shell_command('Show system uptime', group='system')
     def uptime(self):
         return self.ios_system.get_uptime()

@@ -27,15 +27,6 @@ class WindowsShellCommands:
         return self.win_process.run(command)
 
 
-    @shell_command('Get system information', group='system')
-
-    @timeout(30)
-    def getinfo(self):
-        """
-        获取 Windows 系统信息
-        """
-        return self.win_system.collect_system_info()
-
     @shell_command('Get user idle time', group='system')
 
     @timeout(10)

@@ -106,11 +106,17 @@ def test_windows_elevation_detached_uses_same_argv(monkeypatch):
 
 
 def test_macos_getinfo_uses_canonical_launch_command(monkeypatch):
-    monkeypatch.setattr('client.commands.platform.services.mac.system_service.get_executable_path', lambda: 'python client.py --profile tls-local')
-    svc = MacSystemService(None)
-    monkeypatch.setattr(svc, 'run_command_text', lambda cmd, timeout=15: '')
-    details = svc.build_process_info()
-    assert details['launch_command'] == 'python client.py --profile tls-local'
+    from client.commands.shell.standalone import getinfo as info
+    identity = SimpleNamespace(os_alias='mac', os_name='macOS', os_version='15.1',
+                               arch='arm64', manufacturer='Apple', model='MacBook Pro',
+                               hostname='test-host')
+    monkeypatch.setattr(info, 'get_local_identity', lambda: identity)
+    monkeypatch.setattr(info, 'get_executable_path', lambda: 'python client.py --profile tls-local')
+    monkeypatch.setitem(info.COLLECTORS, 'mac', lambda owner: {'kernel': 'Darwin'})
+    owner = SimpleNamespace(_checkpoint=lambda: None)
+    result = info.getinfo(owner)
+    assert result.data['launch_command'] == 'python client.py --profile tls-local'
+    assert result.data['os_name'] == 'macOS'
 
 
 def test_windows_shell_command_is_rendered_from_the_shared_argv(monkeypatch):

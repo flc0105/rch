@@ -5,7 +5,6 @@ from client.commands.platform.services.mac.media_service import MacMediaService
 from client.commands.platform.services.mac.system_service import MacSystemService
 from client.commands.shell.decorators import shell_command
 from core.utils.decorator import confirm
-from core.utils.logger import logger
 
 
 class MacShellCommands:
@@ -17,14 +16,6 @@ class MacShellCommands:
         self.mac_media = MacMediaService(self)
         self.mac_automation = MacAutomationService(self)
         self.mac_file_inspection = MacFileInspectionService(self)
-
-    @shell_command('Show system information', group='system')
-    def getinfo(self, arg=''):
-        try:
-            return self.mac_system.collect_system_info(arg)
-        except Exception as e:
-            logger.error(e, exc_info=True)
-            return 0, f'Failed to collect system information: {e}'
 
     @shell_command('Show user idle time', group='system')
     def idletime(self):

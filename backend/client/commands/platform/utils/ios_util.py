@@ -31,8 +31,10 @@ def get_ios_process_info():
         'arguments': None,
         'processor_count': None,
         'physical_memory': None,
+        'physical_memory_bytes': None,
         'system_boot_time': None,
         'system_uptime': None,
+        'system_uptime_seconds': None,
         'operating_system_version_string': None,
         'low_power_mode_enabled': None,
     }
@@ -46,8 +48,10 @@ def get_ios_process_info():
         info['arguments'] = _safe_call(lambda: [str(x) for x in list(proc.arguments())])
         info['processor_count'] = _safe_call(lambda: int(proc.processorCount()))
         physical_memory = _safe_call(lambda: int(proc.physicalMemory()))
+        info['physical_memory_bytes'] = physical_memory
         info['physical_memory'] = get_size(physical_memory) if physical_memory is not None else None
         system_uptime = _safe_call(lambda: int(proc.systemUptime()))
+        info['system_uptime_seconds'] = system_uptime
         info['system_uptime'] = seconds_to_readable_text(system_uptime) if system_uptime is not None else None
         info['system_boot_time'] = timestamp_to_readable_time(
             int(time.time() - system_uptime)) if system_uptime is not None else None

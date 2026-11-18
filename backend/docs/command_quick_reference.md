@@ -92,12 +92,15 @@ Alias 的模板参数、平台覆盖与安全边界见 [Aliases / Quick Actions]
 | `pyexec_stream <code>` | 执行 Python 代码并推送中间输出 | 按当前 Python 执行模式流式输出 |
 | `piplist` | 列出当前 Client Python 环境中的第三方包 | 查询**目标 Client**的解释器环境 |
 
+`getinfo` 公共字段按以下顺序输出：`os_name`、`os_version`、`os_build`、`arch`、`manufacturer`、`model`、`cpu_model`、`cpu_count`、`mem_total`、`mem_avail`、`pid`、`ppid`、`username`、`hostname`、`launch_command`、`python_version`、`system_boot_time`、`system_uptime`、`process_start_time`、`process_uptime`。内存为两位小数的可读容量；时间为 Client 本地 `YYYY-MM-DD HH:mm:ss`，时长为省略前导零的 `d h m s`；Python 版本使用短版本号。缺少可靠来源时 JSON 为 `null`，其余平台特有字段按平台追加。静态设备身份来自 Client 的本地身份缓存，实时内存与进程数据在每次执行时采集。
+
 **`shell`、`shell_stream`、`shell_bg`、`run_bg` 依赖目标平台可创建系统子进程。** 在普通 iOS / Pythonista 中，这类操作通常受限；`pyexec`、进程内 Script 和进程内 Job 使用 Python 执行路径，按其自身依赖与权限运行。详见 [iOS / Pythonista](ios_pythonista.md) 与 [Shell-like Commands](shell_like_commands.md)。
 
 ### 系统信息、网络和运行环境
 
 | 命令 | 作用 | 注意 |
 |---|---|---|
+| `getinfo [--json]` | 查看目标 Client 的系统、硬件和进程信息 | 四平台共用字段顺序；动态数据实时采集，平台独有信息追加显示；`--json` 返回平铺对象 |
 | `getuid` | 查看 Client 当前用户身份 | 依目标系统提供的身份信息展示 |
 | `getpid` | 查看 Client 自身进程 PID | 返回目标 Client 进程 PID |
 | `uptime` | 查看系统运行时间 | 返回目标设备信息 |
@@ -157,7 +160,6 @@ Server 的 `xt ...` 是面向用户的统一目录与运行入口；Client 另�
 
 | 命令 | 作用 |
 |---|---|
-| `getinfo` | 采集 Windows 系统信息 |
 | `screenshot` | 截屏并上传结果 |
 | `idletime` | 查看用户空闲时间 |
 | `run <command>` | 启动程序而不等待完成；不等于收集输出的 `shell` |
@@ -168,7 +170,6 @@ Server 的 `xt ...` 是面向用户的统一目录与运行入口；Client 另�
 
 | 命令 | 作用 |
 |---|---|
-| `getinfo` | 采集 macOS 系统信息 |
 | `screenshot` | 截屏并上传结果 |
 | `webcam_snap` | 使用摄像头拍照并上传结果，受摄像头权限限制 |
 | `idletime` | 查看用户空闲时间 |
@@ -178,7 +179,7 @@ Server 的 `xt ...` 是面向用户的统一目录与运行入口；Client 另�
 
 ### Linux
 
-Linux 平台额外提供 `getinfo [--json]`，采集发行版、内核、主机、CPU、内存、GPU、网络、Python、Shell、桌面、用户及当前 Client 进程信息。输出为平铺字段，使用 `distro`、`pid`、`ppid`、`has_desktop`、`resolution` 等简明字段名；需要区分含义时使用 `cpu_model`、`memory_total_gb`、`python_version` 等限定名称。默认文本列表，`--json` 输出扁平 JSON。其余如 `pwd`、`shell`、`config`、`clean` 仍按公共 Client 命令执行。
+Linux 的 `getinfo` 在公共字段后追加 `default_shell`、`current_shell`、`kernel`、`distro_pretty_name`、`package_manager`、`has_desktop` 等平台信息，保留 GPU、出站路由 IP、分辨率与进程诊断。默认文本列表，`--json` 输出同一数据的扁平 JSON。
 
 ### iOS / Pythonista
 

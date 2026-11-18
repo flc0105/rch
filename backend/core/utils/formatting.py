@@ -171,7 +171,7 @@ def _wrap_table_cell(text: str, width: int) -> list[str]:
 
 
 def format_table(
-    headers: Iterable[Any], data: Iterable[Iterable[Any]], *, max_cell_width: int = 72,
+    headers: Iterable[Any], data: Iterable[Iterable[Any]], *, max_cell_width: int = 24,
 ) -> str:
     """Render aligned text columns, wrapping overlong cells without truncation."""
     headers = [str(value) for value in headers]
@@ -219,15 +219,19 @@ def format_table(
     return '\n'.join(lines)
 
 
-def seconds_to_readable_text(seconds):
+def seconds_to_readable_text(seconds, *, compact=False):
     try:
         seconds = int(seconds)
-    except Exception:
+    except (TypeError, ValueError, OverflowError):
         return None
 
-    days, rem = divmod(seconds, 86400)
+    days, rem = divmod(max(seconds, 0), 86400)
     hours, rem = divmod(rem, 3600)
     minutes, seconds = divmod(rem, 60)
+    if compact:
+        parts = ((days, 'd'), (hours, 'h'), (minutes, 'm'), (seconds, 's'))
+        first = next((i for i, (value, _) in enumerate(parts) if value), 3)
+        return ' '.join(f'{value}{unit}' for value, unit in parts[first:])
     return f"{days}d {hours}h {minutes}m {seconds}s"
 
 

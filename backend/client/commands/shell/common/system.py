@@ -2,12 +2,13 @@ import os
 import subprocess
 
 from client.commands.shell.decorators import shell_command
+from client.commands.shell.standalone.getinfo import getinfo as getinfo_command
 
 
 class ShellSystemCommands:
-    """
-    通用系统信息/系统操作命令。
-    """
+    """通用系统信息/系统操作命令。"""
+
+    getinfo = getinfo_command
 
 
     @shell_command('Get current user ID/name', group='system')

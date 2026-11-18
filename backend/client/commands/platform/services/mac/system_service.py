@@ -1,9 +1,4 @@
-import os
-import platform
-import time
-
 from client.runtime.execution.context import CommandCancelledError, CommandTimeoutError
-from client.runtime.client_util import get_executable_path
 from core.utils.command_output import StructuredCommandResult, render_structured_result
 
 
@@ -90,52 +85,6 @@ class MacSystemService:
             return status, launchd.format_result(result)
         except (ValueError, OSError, RuntimeError) as exc:
             return 0, f'launchd {action or "operation"} failed: {exc}'
-
-    def run_command_text(self, command: str, timeout: int = 15) -> str:
-        try:
-            result = self.owner.process_execution_service.run_shell_command(command, timeout=timeout)
-            if result.returncode != 0:
-                return ''
-            return (result.stdout or '').strip()
-        except Exception:
-            return ''
-
-    def build_process_info(self):
-        import psutil
-        process = psutil.Process()
-
-        return {
-            'hostname': platform.node(),
-            'macos_version': platform.mac_ver()[0],
-            'build_version': self.run_command_text('sw_vers -buildVersion'),
-            'architecture': platform.machine(),
-            'hardware_model': self.run_command_text('sysctl -n hw.model'),
-            'cpu_brand': self.run_command_text('sysctl -n machdep.cpu.brand_string'),
-            'cpu_cores': os.cpu_count(),
-            'memory': f'{round(psutil.virtual_memory().total / (1024 ** 3), 2)} GB',
-            'python_version': platform.python_version(),
-            'process_id': os.getpid(),
-            'current_user': process.username(),
-            'launch_command': get_executable_path(),
-            'process_uptime': f'{round(time.time() - process.create_time(), 2)}s',
-            'cwd': os.getcwd()
-        }
-
-    def collect_system_info(self, arg=''):
-        try:
-            payload = self.owner._run_checked(self.build_process_info)
-            return StructuredCommandResult(
-                status=1,
-                data=payload,
-                shape='dict',
-                width=20,
-            )
-        except CommandCancelledError:
-            return 0, 'Command cancelled'
-        except CommandTimeoutError:
-            return 0, 'Command timed out and was terminated'
-        except Exception as e:
-            return 0, f'Failed to collect system information: {e}'
 
     def get_idle_time(self):
         try:

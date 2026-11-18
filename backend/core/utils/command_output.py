@@ -92,6 +92,7 @@ class StructuredCommandResult:
     data: dict | list[dict]
     shape: OutputShape | None = None
     width: int | None = None
+    null_text: str | None = None
 
 
 def parse_output_format(arg: str = '', default: str = 'text') -> str:
@@ -135,7 +136,9 @@ def render_structured_result(result, output_format: str = 'text'):
     if isinstance(data, dict):
         if result.width is None:
             raise ValueError('width is required for dict output')
-        return result.status, format_dict(data, width=result.width)
+        text_data = ({key: result.null_text if value is None else value
+                      for key, value in data.items()} if result.null_text is not None else data)
+        return result.status, format_dict(text_data, width=result.width)
 
     if isinstance(data, list):
         if not data:

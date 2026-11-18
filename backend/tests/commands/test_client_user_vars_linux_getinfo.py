@@ -8,7 +8,7 @@ from client.runtime.command_variable_resolver import (
 )
 from client.commands.runtime.executor import CommandExecutor
 from client.commands.runtime.hosts import LinuxCommands
-from client.commands.platform.services.linux.system_service import LinuxSystemService
+from client.commands.shell.standalone import getinfo as info_module
 from core.utils.command_output import render_structured_result
 import pytest
 
@@ -71,53 +71,45 @@ def test_var_command_across_separate_commands_and_client_isolation(monkeypatch):
 
 
 def test_linux_getinfo_structured_flat_and_json(monkeypatch):
-    service = LinuxSystemService(None)
-    monkeypatch.setattr(service, '_os_release', lambda: {
-        'NAME': 'Ubuntu', 'VERSION': '22.04', 'PRETTY_NAME': 'Ubuntu 22.04 LTS'
-    })
-    monkeypatch.setattr(service, '_memory', lambda: (2.0, 1.5, .5))
-    monkeypatch.setattr(service, '_gpu', lambda: 'Sample GPU')
-    monkeypatch.setattr(service, '_route_ip', lambda: '10.1.2.3')
-    monkeypatch.setattr(service, '_read', lambda _: '')
-    result = service.collect_system_info()
-    assert result.status == 1 and result.shape == 'dict'
-    assert result.data['memory_total_gb'] == 2.0
-    assert result.data['distro'] == 'Ubuntu'
-    assert result.data['ip'] == '10.1.2.3'
-    expected_fields = {
-        'distro', 'os_version', 'pretty_name', 'kernel', 'arch', 'hostname', 'host',
-        'cpu_model', 'cpu_cores', 'memory_total_gb', 'memory_used_gb',
-        'memory_available_gb', 'gpu', 'ip', 'python_version', 'python_executable',
-        'package_manager', 'default_shell', 'current_shell', 'has_desktop',
-        'resolution', 'user', 'is_root', 'cwd', 'pid', 'ppid', 'process_name',
-        'cmdline', 'exe',
-    }
-    assert set(result.data) == expected_fields
-    assert result.data['pid'] == os.getpid()
-    assert result.data['ppid'] == os.getppid()
-    assert all(not isinstance(value, (dict, list)) for value in result.data.values())
-    status, raw = render_structured_result(result, output_format='json')
-    assert status == 1 and json.loads(raw) == result.data
-    status, text = render_structured_result(result)
-    assert status == 1 and 'distro' in text and '[os]' not in text
+    from client.commands.runtime.catalog import CommandCatalog
+    monkeypatch.setattr(CommandCatalog, '_get_platform_name', lambda _: 'linux')
+    executor = CommandExecutor(SimpleNamespace(client_id='one'))
+    result = executor.execute_command(201, 'getinfo --json')
+    assert result[0] == 1
+    data = json.loads(result[1])
+    assert tuple(data)[:len(info_module.CORE_FIELDS)] == info_module.CORE_FIELDS
+    assert data['pid'] == os.getpid()
+    assert data['ppid'] == os.getppid()
+    assert data['mem_total'].endswith((' GB', ' MB', ' TB'))
+    assert data['mem_avail'].endswith((' GB', ' MB', ' TB'))
+    assert 'distro_pretty_name' in data
+    assert 'package_manager' in data and 'package_manger' not in data
+    assert 'default_shell' in data and 'kernel' in data
+    assert not any(field in data for field in ('memory_total_gb', 'cpu_cores', 'pretty_name'))
+    assert all(not isinstance(value, (dict, list)) for value in data.values())
+    status, text = executor.execute_command(202, 'getinfo')
+    assert status == 1 and 'os_name' in text and '[os]' not in text
 
 
 def test_linux_getinfo_command_dispatch_json(monkeypatch):
     from client.commands.runtime.catalog import CommandCatalog
     monkeypatch.setattr(CommandCatalog, '_get_platform_name', lambda _: 'linux')
-    monkeypatch.setattr(LinuxSystemService, 'collect_system_info', lambda _: 
-                        __import__('core.utils.command_output', fromlist=['StructuredCommandResult'])
-                        .StructuredCommandResult(status=1, data={'hostname': 'alpha', 'cpu_cores': 2}, shape='dict', width=24))
+    monkeypatch.setattr(info_module, 'collect_linux', lambda _: {'kernel': 'test-kernel'})
+    monkeypatch.setitem(info_module.COLLECTORS, 'linux', info_module.collect_linux)
     executor = CommandExecutor(SimpleNamespace(client_id='one'))
     assert ('getinfo', 'system') in {
         (x['name'], x['group']) for x in executor.get_command_manifest_payload()
     }
-    assert json.loads(executor.execute_command(201, 'getinfo --json')[1]) == {'hostname': 'alpha', 'cpu_cores': 2}
+    data = json.loads(executor.execute_command(201, 'getinfo --json')[1])
+    assert data['kernel'] == 'test-kernel'
     assert 'hostname' in executor.execute_command(202, 'getinfo')[1]
     assert executor.execute_command(203, 'getinfo --bad')[0] == 0
 
 
-def test_memory_when_linux_meminfo_missing(monkeypatch):
-    service = LinuxSystemService(None)
-    monkeypatch.setattr(service, '_read', lambda _: '')
-    assert service._memory() == (None, None, None)
+def test_missing_linux_files_do_not_break_getinfo(monkeypatch):
+    monkeypatch.setattr(info_module, '_read', lambda _: '')
+    monkeypatch.setattr(info_module, '_run', lambda _: '')
+    data = info_module.collect_linux(None)
+    assert data['cpu_model'] is None
+    assert data['distro_pretty_name'] is None
+    assert data['has_desktop'] in (True, False)

@@ -11,7 +11,6 @@ from client.commands.acmd.platform.mac import MacACMDCommands
 from client.commands.shell.base import CommandBase
 from client.commands.shell.commands import ShellCommands
 from client.commands.shell.platform.ios import iOSShellCommands
-from client.commands.shell.platform.linux import LinuxShellCommands
 from client.commands.shell.platform.mac import MacShellCommands
 from client.commands.shell.platform.win import WindowsShellCommands
 
@@ -26,8 +25,7 @@ class WindowsCommands(WindowsShellCommands, ShellCommands,
     command_platform = 'win'
 
 
-class LinuxCommands(LinuxShellCommands, ShellCommands,
-                    DesktopACMDCommands, CommandBase):
+class LinuxCommands(ShellCommands, DesktopACMDCommands, CommandBase):
     command_platform = 'linux'
 
 
