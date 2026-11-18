@@ -36,11 +36,11 @@ def test_confirm_bypass_allows_relaunch_without_requesting_interaction():
     from client.commands.shell.common.session import ShellSessionCommands
     owner = ShellSessionCommands()
     owner.socket = object()
-    with patch('client.commands.shell.common.session.reset') as reset, \
+    with patch('client.commands.shell.common.session._relaunch_instance') as relaunch_fn, \
          patch('client.runtime.execution.interaction_service.CommandInteractions.confirm',
                side_effect=AssertionError('should not request confirmation')):
         owner.relaunch_instance('--no-confirm')
-    reset.assert_called_once_with(owner.socket)
+    relaunch_fn.assert_called_once_with(owner.socket)
 
 
 def test_confirm_default_requests_interaction_without_bypass():

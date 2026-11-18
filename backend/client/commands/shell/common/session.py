@@ -1,8 +1,9 @@
 import os
+import subprocess
 import sys
 import threading
 
-from client.runtime.client_util import reset, spawn_new_instance, reexec_restart
+from client.runtime.client_util import get_executable_argv, get_runtime_root
 from client.runtime.command_variable_resolver import CommandVariableResolutionError
 from core.utils.decorator import confirm
 from client.commands.shell.decorators import shell_command
@@ -59,16 +60,84 @@ class ShellSessionCommands:
     def relaunch_instance(self, options=''):
         if str(options or '').strip():
             return 0, 'Usage: relaunch_instance [--no-confirm]'
-        reset(self.socket)
+        _relaunch_instance(self.socket)
 
     @shell_command('Restart current process by exec replacement', group='session')
     def reexec_instance(self):
-        reexec_restart(self.socket)
+        _reexec_instance(self.socket)
 
     @shell_command('Start a new client instance without exiting current process', group='session')
     def spawn_instance(self):
-        process = spawn_new_instance()
+        process = _spawn_instance()
         # Duplicate 已是独立 session；父进程只负责异步回收退出状态，避免 zombie。
         if os.name == 'posix' and callable(getattr(process, 'wait', None)):
             threading.Thread(target=process.wait, name='rch-duplicate-reaper', daemon=True).start()
         return 1, f'New client instance started, pid={process.pid}'
+
+
+def _relaunch_instance(socket):
+    """Start a replacement Client, then end the current session."""
+    _spawn_instance()
+    socket.report_session_end('client_restart', command='relaunch_instance')
+
+    manager = getattr(socket, 'process_recovery_watchdog_manager', None)
+    if manager is not None:
+        manager.stop()
+
+    try:
+        socket.close()
+    except Exception:
+        pass
+
+    os._exit(0)
+
+
+def _reexec_instance(socket):
+    """Replace the current Client process while preserving its PID."""
+    socket.report_session_end('client_restart', command='reexec_instance')
+
+    try:
+        socket.close()
+    except Exception:
+        pass
+
+    launch_cwd = get_runtime_root()
+    try:
+        os.chdir(launch_cwd)
+    except Exception:
+        pass
+
+    # Use argv directly: shell-formatted commands cannot be split safely.
+    argv = get_executable_argv()
+    os.execv(argv[0], argv)
+
+
+def _spawn_instance(*, start_new_session=True, stderr_path=''):
+    """Start a separate Client instance; relaunch and duplicate both use this."""
+    restart_argv = get_executable_argv()
+    launch_cwd = get_runtime_root()
+
+    from client.watchdog.watchdog_environment import without_process_recovery_watchdog_environment
+
+    stderr_file = open(stderr_path, 'ab') if stderr_path else None
+    popen_kwargs = {
+        'cwd': launch_cwd,
+        'env': without_process_recovery_watchdog_environment(),
+        'stdin': subprocess.DEVNULL,
+        'stdout': subprocess.DEVNULL,
+        'stderr': stderr_file or subprocess.DEVNULL,
+        'close_fds': True,
+    }
+
+    try:
+        if os.name == 'nt':
+            flags = (getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0)
+                     | getattr(subprocess, 'DETACHED_PROCESS', 0))
+            return subprocess.Popen(restart_argv, shell=False, creationflags=flags, **popen_kwargs)
+        if os.name == 'posix':
+            return subprocess.Popen(restart_argv, shell=False,
+                                    start_new_session=start_new_session, **popen_kwargs)
+        raise RuntimeError(f'Unsupported os.name: {os.name}')
+    finally:
+        if stderr_file is not None:
+            stderr_file.close()

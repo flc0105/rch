@@ -6,6 +6,7 @@ import pytest
 
 import client.connection.handshake as client_info_builder
 import client.runtime.client_util as client_util
+from client.commands.shell.common import session as session_ops
 import client.runtime.launch_context as launch_context
 from client.connection.handshake import ClientInfoBuilder
 from server.application.connection.connection_service import WebConnectionService
@@ -117,16 +118,16 @@ def test_launchd_management_requires_live_job_not_environment(monkeypatch):
     })
     assert launch_context.is_launchd_managed_client() is True
 
-def test_spawn_new_instance_marks_the_new_client_as_detached(monkeypatch):
+def test_spawn_instance_marks_the_new_client_as_detached(monkeypatch):
     captured = {}
     monkeypatch.setattr(client_util.os, 'name', 'posix')
-    monkeypatch.setattr(client_util, 'get_executable_argv', lambda: ['python3', '/tmp/rchclient.py'])
+    monkeypatch.setattr(session_ops, 'get_executable_argv', lambda: ['python3', '/tmp/rchclient.py'])
     monkeypatch.setattr(client_util.sys, 'argv', ['/tmp/rchclient.py'])
     monkeypatch.setattr(client_util.subprocess, 'Popen', lambda *args, **kwargs: captured.update({
         'args': args, 'kwargs': kwargs,
     }) or SimpleNamespace(pid=1234))
 
-    client_util.spawn_new_instance()
+    session_ops._spawn_instance()
 
     env = captured['kwargs']['env']
     assert 'RCH_CLIENT_LAUNCH_MODE' not in env
@@ -1109,7 +1110,7 @@ def test_windows_duplicate_and_update_use_detached_process_flags(monkeypatch):
     monkeypatch.setattr(subprocess, 'DETACHED_PROCESS', 0x8, raising=False)
     monkeypatch.setattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0x200, raising=False)
     monkeypatch.setattr(client_util.subprocess, 'Popen', lambda *a, **kw: captured.append((a, kw)) or SimpleNamespace(pid=12))
-    client_util._spawn_new_instance_process(['python.exe', 'rchclient.py'], {}, True)
+    session_ops._spawn_instance()
     monkeypatch.setattr(client_util, '_resolve_python_command_for_source_bundle', lambda: ['python.exe'])
     client_util.spawn_detached_python_script('rchclient.py')
     assert len(captured) == 2

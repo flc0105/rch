@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import pytest
 
 from client.runtime import client_util
+from client.commands.shell.common import session as session_ops
 from client.watchdog import process_recovery_watchdog
 from client.watchdog.watchdog_process import ClientWatchdogProcess
 from client.commands.platform.services.win.privilege_service import WinPrivilegeService
@@ -58,7 +59,7 @@ def test_argv_source_and_shell_command_preserve_runtime_profile(monkeypatch, fro
 
 
 @pytest.mark.parametrize('frozen', [False, True])
-def test_spawn_new_instance_uses_shared_argv_and_keeps_detached(monkeypatch, frozen):
+def test_spawn_instance_uses_shared_argv_and_keeps_detached(monkeypatch, frozen):
     monkeypatch.setattr(client_util.sys, 'executable', '/tmp/py binary')
     monkeypatch.setattr(client_util.sys, 'argv', ['/tmp/rchclient.py', '--profile', 'tls-local'])
     if frozen:
@@ -68,7 +69,7 @@ def test_spawn_new_instance_uses_shared_argv_and_keeps_detached(monkeypatch, fro
 
     captured = {}
     monkeypatch.setattr(client_util.subprocess, 'Popen', lambda command, **kw: captured.update(command=command, kw=kw) or SimpleNamespace(pid=321))
-    process = client_util.spawn_new_instance()
+    process = session_ops._spawn_instance()
     assert process.pid == 321
     assert captured['command'] == client_util.get_executable_argv()
     if client_util.os.name == 'posix':
@@ -77,14 +78,14 @@ def test_spawn_new_instance_uses_shared_argv_and_keeps_detached(monkeypatch, fro
     assert 'RCH_CLIENT_LAUNCH_MODE' not in captured['kw']['env']
 
 
-def test_reexec_restart_uses_shared_argv_without_string_reparse(monkeypatch):
-    monkeypatch.setattr(client_util, 'get_executable_argv', lambda: ['/tmp/python with spaces', '/tmp/client.py', '--profile', 'tls-local'])
-    monkeypatch.setattr(client_util, 'get_runtime_root', lambda: '/tmp')
+def test_reexec_instance_uses_shared_argv_without_string_reparse(monkeypatch):
+    monkeypatch.setattr(session_ops, 'get_executable_argv', lambda: ['/tmp/python with spaces', '/tmp/client.py', '--profile', 'tls-local'])
+    monkeypatch.setattr(session_ops, 'get_runtime_root', lambda: '/tmp')
     seen = {}
     monkeypatch.setattr(client_util.os, 'execv', lambda executable, argv: seen.update(executable=executable, argv=argv))
     monkeypatch.setattr(client_util.os, 'chdir', lambda _: None)
     socket = SimpleNamespace(report_session_end=lambda *a, **kw: None, close=lambda: None)
-    client_util.reexec_restart(socket)
+    session_ops._reexec_instance(socket)
     assert seen == {
         'executable': '/tmp/python with spaces',
         'argv': ['/tmp/python with spaces', '/tmp/client.py', '--profile', 'tls-local'],
@@ -117,3 +118,28 @@ def test_windows_shell_command_is_rendered_from_the_shared_argv(monkeypatch):
     monkeypatch.setattr(client_util, 'get_executable_argv', lambda **kw: list(argv))
     monkeypatch.setattr(client_util, 'os', SimpleNamespace(name='nt'))
     assert client_util.get_executable_path() == subprocess.list2cmdline(argv)
+
+
+def test_session_commands_delegate_to_matching_module_functions(monkeypatch):
+    from client.commands.shell.common.session import ShellSessionCommands
+
+    socket = object()
+    owner = ShellSessionCommands()
+    owner.socket = socket
+    calls = []
+    monkeypatch.setattr(session_ops, '_relaunch_instance',
+                        lambda connection: calls.append(('relaunch', connection)))
+    monkeypatch.setattr(session_ops, '_reexec_instance',
+                        lambda connection: calls.append(('reexec', connection)))
+    monkeypatch.setattr(session_ops, '_spawn_instance',
+                        lambda: calls.append(('spawn', None)) or SimpleNamespace(pid=2468))
+
+    assert owner.relaunch_instance('--no-confirm') is None
+    assert owner.reexec_instance() is None
+    assert owner.spawn_instance() == (1, 'New client instance started, pid=2468')
+    assert calls == [('relaunch', socket), ('reexec', socket), ('spawn', None)]
+
+
+def test_obsolete_client_util_lifecycle_entrypoints_are_removed():
+    for name in ('reset', 'reexec_restart', 'spawn_new_instance', '_spawn_new_instance_process'):
+        assert not hasattr(client_util, name)

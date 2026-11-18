@@ -9,7 +9,7 @@ import pytest
 from client.connection.receiver_worker import ClientReceiverWorker
 from client.commands.shell.common.session import ShellSessionCommands
 from client.connection.server_connection import ServerConnection
-from client.runtime import client_util
+from client.commands.shell.common import session as session_ops
 from core.protocol.message_types import MSG_TYPE_SESSION_END, MSG_TYPE_SESSION_END_ACK
 from server.connection.client_session import ClientSession
 from server.connection.transport.client_transport import ClientTransport
@@ -119,13 +119,13 @@ def test_relaunch_reports_restart_before_exit(monkeypatch):
         process_recovery_watchdog_manager=SimpleNamespace(stop=lambda: actions.append(('watchdog',))),
         close=lambda: actions.append(('close',)),
     )
-    monkeypatch.setattr(client_util, 'spawn_new_instance', lambda: actions.append(('spawn',)))
+    monkeypatch.setattr(session_ops, '_spawn_instance', lambda: actions.append(('spawn',)))
     def fake_exit(code):
         actions.append(('exit', code))
         raise SystemExit(code)
-    monkeypatch.setattr(client_util.os, '_exit', fake_exit)
+    monkeypatch.setattr(session_ops.os, '_exit', fake_exit)
     with pytest.raises(SystemExit) as exc:
-        client_util.reset(connection)
+        session_ops._relaunch_instance(connection)
     assert exc.value.code == 0
     assert actions == [
         ('spawn',),
@@ -150,7 +150,7 @@ def test_duplicate_reaps_exited_detached_child_without_waiting_for_client_exit(m
             assert release.wait(timeout=3)
             return 0
 
-    monkeypatch.setattr(session_ops, 'spawn_new_instance', DetachedChild)
+    monkeypatch.setattr(session_ops, '_spawn_instance', DetachedChild)
     try:
         result = ShellSessionCommands.spawn_instance(SimpleNamespace())
         assert result == (1, 'New client instance started, pid=24680')
@@ -188,7 +188,7 @@ def test_duplicate_detached_child_is_reaped_after_exiting(monkeypatch):
         started.append(child)
         return child
 
-    monkeypatch.setattr(session_ops, 'spawn_new_instance', launch)
+    monkeypatch.setattr(session_ops, '_spawn_instance', launch)
     assert ShellSessionCommands.spawn_instance(SimpleNamespace())[0] == 1
     child = started[0]
     deadline = time.monotonic() + 3

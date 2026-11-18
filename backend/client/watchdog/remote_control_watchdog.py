@@ -8,7 +8,6 @@ import time
 import urllib.error
 import urllib.request
 
-from client.runtime.client_util import spawn_new_instance, is_process_alive
 from client.runtime.local_ipc import send_local_command
 from client.watchdog.watchdog_environment import without_process_recovery_watchdog_environment
 from client.watchdog.recovery_source import RECOVERY_SOURCE_ENV

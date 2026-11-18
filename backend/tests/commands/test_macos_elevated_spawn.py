@@ -8,6 +8,7 @@ import pytest
 
 from client.commands.platform.services.mac.automation_service import MacAutomationService
 from client.runtime import client_util
+from client.commands.shell.common import session as session_ops
 
 
 def _service():
@@ -110,7 +111,7 @@ def test_elevated_shell_launch_execs_same_pid_and_preserves_args(monkeypatch, tm
                 pass
 
 
-def test_spawn_new_instance_preserves_argv_and_new_session(monkeypatch, tmp_path):
+def test_spawn_instance_preserves_argv_and_new_session(monkeypatch, tmp_path):
     seen = {}
 
     def fake_popen(command, **kwargs):
@@ -122,7 +123,7 @@ def test_spawn_new_instance_preserves_argv_and_new_session(monkeypatch, tmp_path
     monkeypatch.setattr(client_util.subprocess, 'Popen', fake_popen)
     monkeypatch.setattr(sys, 'argv', ['/tmp/RCH folder/rchclient.py', '--profile', 'tls-local'])
     stderr_file = tmp_path / 'spawn-error.log'
-    child = client_util.spawn_new_instance(start_new_session=False, stderr_path=str(stderr_file))
+    child = session_ops._spawn_instance(start_new_session=False, stderr_path=str(stderr_file))
     assert child.pid == 2468
     assert seen['command'] == [os.path.realpath(sys.executable), os.path.realpath(sys.argv[0]),
                                '--profile', 'tls-local']
@@ -132,7 +133,7 @@ def test_spawn_new_instance_preserves_argv_and_new_session(monkeypatch, tmp_path
     assert stderr_file.is_file()
 
 
-def test_spawn_new_instance_default_retains_detached_behavior(monkeypatch):
+def test_spawn_instance_default_retains_detached_behavior(monkeypatch):
     seen = {}
 
     def fake_popen(command, **kwargs):
@@ -143,7 +144,7 @@ def test_spawn_new_instance_default_retains_detached_behavior(monkeypatch):
     import sys
     monkeypatch.setattr(client_util.subprocess, 'Popen', fake_popen)
     monkeypatch.setattr(sys, 'argv', ['rchclient.py', '--profile', 'tls-local'])
-    child = client_util.spawn_new_instance()
+    child = session_ops._spawn_instance()
     assert child.pid == 6543
     assert seen['kwargs']['start_new_session'] is True
     assert seen['command'][-2:] == ['--profile', 'tls-local']
