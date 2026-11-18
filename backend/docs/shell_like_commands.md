@@ -80,8 +80,8 @@ Server 的命令层同样拥有自己的快捷入口和历史重放。例如 `!<
 |---|---|---|
 | `shell <command>` | 启动一次性 Shell 子进程，收集最终输出 | 使用受管理子进程，可请求取消 |
 | `shell_stream <command>` | 启动 Shell 子进程，持续推送 stdout/stderr | 使用受管理子进程，可请求取消 |
-| `bgrun <command>` | 启动后台进程并立即返回 PID | 不等待执行完成，也不提供本次命令的持续取消能力 |
-| `run_detached <program> [args...]` | 直接执行程序并启动独立后台进程 | PID 属于目标程序；不经过 Shell；退出后由 Client 回收进程状态 |
+| `shell_bg <command>` | 启动后台进程并立即返回 PID | 不等待执行完成，也不提供本次命令的持续取消能力 |
+| `run_bg <program> [args...]` | 直接执行程序并启动独立后台进程 | PID 属于目标程序；不经过 Shell；退出后由 Client 回收进程状态 |
 | `cd <path>` | 修改 Client 自己的当前工作目录 | 后续命令可观察到目录变化 |
 
 例如：
@@ -101,7 +101,7 @@ shell_stream ping 127.0.0.1
 另外：
 
 ```text
-bgrun echo hello
+shell_bg echo hello
 ```
 
 会尝试在后台启动命令并报告进程 PID，不代表该命令最终成功完成。后台进程的标准输入、输出和错误输出不会继续由当前命令收集。
@@ -109,12 +109,12 @@ bgrun echo hello
 如果需要真正独立的程序进程，而不是由 Shell 启动命令，使用：
 
 ```text
-run_detached ./my-program --config "settings with spaces.json"
+run_bg ./my-program --config "settings with spaces.json"
 ```
 
-`run_detached` 使用目标 Client 当前工作目录，支持带引号的路径和参数。当前目录里的可执行文件可直接写文件名（不要求把 `.` 加入 `PATH`）。macOS/Linux 创建新 Session；Windows 使用独立后台进程标志。标准输入、输出、错误均重定向到空设备，Client 在子进程退出后回收其状态；命令返回后不持续控制子进程。如果需要 Shell 的管道、环境变量展开或重定向，显式传入对应 Shell 作为程序，例如 `run_detached sh -c "..."`，这时 PID 属于所启动的 Shell。启动前应确保文件已具备执行权限。
+`run_bg` 使用目标 Client 当前工作目录，支持带引号的路径和参数。当前目录里的可执行文件可直接写文件名（不要求把 `.` 加入 `PATH`）。macOS/Linux 创建新 Session；Windows 使用独立后台进程标志。标准输入、输出、错误均重定向到空设备，Client 在子进程退出后回收其状态；命令返回后不持续控制子进程。如果需要 Shell 的管道、环境变量展开或重定向，显式传入对应 Shell 作为程序，例如 `run_bg sh -c "..."`，这时 PID 属于所启动的 Shell。启动前应确保文件已具备执行权限。
 
-`bgrun` 仍提供 Shell 命令执行方式，并在 Shell 退出后回收进程状态；返回的 PID 可能属于 Shell 中间进程。两种命令都只确认启动成功，不等待程序最终完成。
+`shell_bg` 仍提供 Shell 命令执行方式，并在 Shell 退出后回收进程状态；返回的 PID 可能属于 Shell 中间进程。两种命令都只确认启动成功，不等待程序最终完成。
 
 Shell 的七个执行入口保留在 `client/commands/shell/common/execution.py` 类内：它们直接使用 `process_execution_service` 执行托管进程操作，以及 `python_execution_service` 执行 Python 策略。两个服务由既有 `ExecutionResources` 按需创建；Script 复用相同的 Python 服务，SDK、External Tool 和平台服务直接复用进程服务，不再经由 `PythonProcessExecutionMixin` 的转发方法。
 
@@ -267,7 +267,7 @@ Client 为每次命令建立带 `command_id` 的独立执行上下文。上下�
 
 ### 超时预算与输出流
 
-普通结果通常包含成功/失败状态与文本。流式命令持续发送 `event_type=chunk` 的原始文本或 `event_type=progress` 的阶段消息，结束时发送唯一的 `event_type=completed/status`，网络上没有 `eof`。只有明确指定 `progress.level` 时，Server 才在可见文字前添加 Output Marker；普通 Shell 输出不做自动加工。因此已经收到输出，不代表任务已经完成。`bgrun` 返回 PID 也仅代表后台进程已启动，不是执行成功的最终证明。
+普通结果通常包含成功/失败状态与文本。流式命令持续发送 `event_type=chunk` 的原始文本或 `event_type=progress` 的阶段消息，结束时发送唯一的 `event_type=completed/status`，网络上没有 `eof`。只有明确指定 `progress.level` 时，Server 才在可见文字前添加 Output Marker；普通 Shell 输出不做自动加工。因此已经收到输出，不代表任务已经完成。`shell_bg` 返回 PID 也仅代表后台进程已启动，不是执行成功的最终证明。
 
 一次性 Shell 的默认超时为 30 秒，流式 Shell 的默认超时为 300 秒；这些默认值来自当前运行配置，也可能被具体命令的默认预算取代。通用 `COMMAND_DEFAULT_TIMEOUT` 是**没有专用预算时的兜底**，默认不设置，并不会覆盖 Shell 自己的 30/300 秒。
 
@@ -291,7 +291,7 @@ Client 为每次命令建立带 `command_id` 的独立执行上下文。上下�
 2. Client 判断当前操作允许取消后，才通过 `cancel_ack` 确认 `accepted`；不支持的操作会拒绝请求。
 3. 命令实际观察到取消并返回后，终态才能成为 `stopped`。如果它没有响应取消却正常执行完毕，终态是 `completed`。
 
-请求被接受不会立刻证明命令已停。受管理 Shell 子进程会在取消或超时时尝试终止；Unix 通常优先处理整个新建进程组，Windows 对所管理的进程执行终止。对于没有检查点的长时间 Python 循环、阻塞调用或已经脱离本次命令的后台 `bgrun`，不能承诺立即停止或递归终止所有后代。取消终态与 Watchdog 的强制控制也没有等价关系。
+请求被接受不会立刻证明命令已停。受管理 Shell 子进程会在取消或超时时尝试终止；Unix 通常优先处理整个新建进程组，Windows 对所管理的进程执行终止。对于没有检查点的长时间 Python 循环、阻塞调用或已经脱离本次命令的后台 `shell_bg`，不能承诺立即停止或递归终止所有后代。取消终态与 Watchdog 的强制控制也没有等价关系。
 
 `@confirm` 对应的交互确认是独立机制，用于在执行特定敏感操作前得到操作者许可；确认是否通过和命令是否支持取消、超时预算是多少，是三项不同的问题。命令中的声明式注解和授权接入方式见第三节；Broker 的审批与输入机制见 [Interaction Broker](interaction_broker.md)。
 
@@ -323,7 +323,7 @@ Web Terminal 可以保存命令历史、展示流式输出，并在收到完整 
 | `${rch:*}` 展开失败 | 查看变量名称与命名空间；展开失败时命令在派发前中止 |
 | 路径带空格报错 | 内置方法收到原始参数，Shell 另行解析引号；不要把两类命令的引号规则混用 |
 | `shell_stream` 已输出，但任务仍运行 | 中间结果不是最终退出状态；等待最终结果或按当前策略请求取消 |
-| `bgrun` 返回 PID 后看不到后续输出 | 后台进程脱离本次输出采集，返回 PID 不是完成证明 |
+| `shell_bg` 返回 PID 后看不到后续输出 | 后台进程脱离本次输出采集，返回 PID 不是完成证明 |
 | 取消显示 accepted，但命令仍在运行 | ACK 只表示取消被接受；等待 stopped 或 completed 的真正终态 |
 | 超时后命令仍未停止 | 检查是否进入过取消/超时检查点以及是否使用受管理子进程 |
 | 终端提示 Busy | 前台命令槽被占用，不是 Shell-like 另有一条绕过主通道的路径 |

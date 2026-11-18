@@ -22,10 +22,10 @@ class iOSShellCommands:
     def shell_stream(self, command=''):
         return self.shell(command)
 
-    def bgrun(self, command=''):
+    def shell_bg(self, command=''):
         return self.shell(command)
 
-    def run_detached(self, command=''):
+    def run_bg(self, command=''):
         return self.shell(command)
 
     def is_elevated(self):

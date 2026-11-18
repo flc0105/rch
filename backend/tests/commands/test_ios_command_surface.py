@@ -23,7 +23,7 @@ def test_ios_manifest_exposes_new_names_only():
         'openurl', 'open_in', 'quick_look', 'pick_upload', 'kill_app',
         'clearconsole', 'keepawake', 'killapp', 'openin', 'quicklook',
         'pickupload', 'getlocation', 'listcontacts', 'mkdir', 'rm', 'rmdir',
-        'shell', 'shell_stream', 'bgrun', 'run_detached', 'is_elevated', 'piplist',
+        'shell', 'shell_stream', 'shell_bg', 'run_bg', 'is_elevated', 'piplist',
         'keyboard_send', 'userenum', 'spawn_instance',
         'relaunch_instance', 'reexec_instance', 'acmd ps', 'acmd kill',
         'acmd ping', 'acmd tcp_ping',
@@ -51,7 +51,7 @@ def test_ios_unknown_shell_fallback_is_bounded_to_error():
     commands = iOSCommands(DummyConnection())
     assert commands.shell('echo hi')[0] == 0
     assert 'unavailable on iOS' in commands.shell('echo hi')[1]
-    for name in ('shell', 'shell_stream', 'bgrun', 'run_detached', 'is_elevated', 'piplist',
+    for name in ('shell', 'shell_stream', 'shell_bg', 'run_bg', 'is_elevated', 'piplist',
                  'spawn_instance', 'relaunch_instance', 'reexec_instance'):
         assert not hasattr(getattr(commands, name), 'help')
 

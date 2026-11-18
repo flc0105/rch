@@ -323,7 +323,7 @@ Shell-like commands are lightweight and intentionally simple:
 This is the familiar path for commands such as:
 
 - `cd ...`
-- `bgrun ...`
+- `shell_bg ...`
 - `shell_stream ...`
 - `pyexec ...`
 - `pyexec_stream ...`
@@ -1009,7 +1009,7 @@ Below is a reorganized roadmap based on current priorities and project direction
 ### Shell, execution, and terminal improvements
 
 - [x] Add **xterm.js + PTY** support
-- [ ] Support client-side variables in commands, for example `bgrun ${exec_path}`
+- [ ] Support client-side variables in commands, for example `shell_bg ${exec_path}`
 - [ ] Support inline helper expressions such as `kill ${getpid}`
 - [ ] Add reverse shell support
 - [ ] Add multi-device batch execution
@@ -1295,8 +1295,8 @@ The Client command manifest contains the common execution primitives that are ea
 ```text
 cd
 shell
-bgrun
-run_detached
+shell_bg
+run_bg
 shell_stream
 pyexec
 pyexec_stream
@@ -1308,8 +1308,8 @@ Their roles are intentionally different:
 | --- | --- |
 | `cd <path>` | Changes the Client process working directory; without an argument, reports current CWD |
 | `shell <command>` | Runs a shell command and waits for the final result |
-| `bgrun <command>` | Starts a background process and returns immediately with the PID |
-| `run_detached <program> [args...]` | Starts the executable directly in an independent background session and returns its PID; no shell is involved |
+| `shell_bg <command>` | Starts a background process and returns immediately with the PID |
+| `run_bg <program> [args...]` | Starts the executable directly in an independent background session and returns its PID; no shell is involved |
 | `shell_stream <command>` | Runs a subprocess while streaming output live to the terminal |
 | `pyexec <code>` | Executes Python and returns collected output |
 | `pyexec_stream <code>` | Executes Python with streaming output |
@@ -1425,7 +1425,7 @@ The following tables are generated from current `@desc(...)` declarations with `
 | `pyexec_stream` | `execution` | Execute Python code with streaming output |
 | `shell_stream` | `execution` | Run a command with live output |
 | `shell` | `execution` | Run a shell command |
-| `bgrun` | `execution` | Run a program in background |
+| `shell_bg` | `execution` | Run a program in background |
 | `getpid` | `system` | Get current process ID |
 | `getuid` | `system` | Get current user ID/name |
 | `is_elevated` | `privilege` | Check whether the current process has elevated privileges |
@@ -1561,7 +1561,7 @@ ${rch:datetime}
 Examples:
 
 ```text
-bgrun ${rch:exec_path}
+shell_bg ${rch:exec_path}
 shell echo ${rch:uid}@${rch:hostname}
 shell mkdir ${rch:timestamp}
 kill ${rch:pid}
@@ -2914,7 +2914,7 @@ For future README updates, distinguish four layers:
    - Remote Files, Artifact, Monitor, Clipboard, External Tools, etc.
 
 2. **Actual command entrypoints**
-   - `shell`, `shell_stream`, `bgrun`, `httpctl`, `gopin`, `saveout`, `xt`, etc.
+   - `shell`, `shell_stream`, `shell_bg`, `httpctl`, `gopin`, `saveout`, `xt`, etc.
 
 3. **Reusable Script SDK**
    - `context`, `command`, `artifact`, `keychains`, `workspace`, `xt`.

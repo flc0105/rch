@@ -15,14 +15,14 @@ from client.commands.runtime.hosts import iOSCommands
 
 
 def test_detached_command_registered_and_ios_hidden():
-    assert getattr(ShellExecutionCommands.run_detached, 'help', '')
-    assert not hasattr(iOSCommands.run_detached, 'help')
+    assert getattr(ShellExecutionCommands.run_bg, 'help', '')
+    assert not hasattr(iOSCommands.run_bg, 'help')
 
 
 def test_usage_and_failed_start():
     obj = CommandExecutor(SimpleNamespace()).get_commands()
-    assert obj.run_detached('') == (0, 'Usage: run_detached <program> [args...]')
-    status, result = obj.run_detached('not-a-real-rch-executable-name-9999')
+    assert obj.run_bg('') == (0, 'Usage: run_bg <program> [args...]')
+    status, result = obj.run_bg('not-a-real-rch-executable-name-9999')
     assert status == 0 and 'Failed to start detached process:' in result
 
 
@@ -61,7 +61,7 @@ def test_bare_filename_runs_directly_and_argument_is_literal(tmp_path, monkeypat
 
 
 @pytest.mark.skipif(os.name == 'nt', reason='POSIX background shell reaping test')
-def test_bgrun_shell_pid_is_reaped():
+def test_shell_bg_shell_pid_is_reaped():
     proc = ProcessExecutionService(SimpleNamespace()).spawn_background_process('exit 0')
     for _ in range(300):
         if proc.returncode is not None:

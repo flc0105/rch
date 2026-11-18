@@ -11,18 +11,18 @@ import (
 )
 
 var _ = Register(
-	"run_detached", Usage("run_detached <program> [args...]"),
+	"run_bg", Usage("run_bg <program> [args...]"),
 	Help("Start an independent program in a new session"),
-	Group("execution"), Suggest(), CancelPolicy("none"), CommandRunner(cmdRunDetached),
+	Group("execution"), Suggest(), CancelPolicy("none"), CommandRunner(cmdRunBg),
 )
 
-func cmdRunDetached(_ context.Context, s *Session, raw string, _ func(int, string)) (int, string) {
+func cmdRunBg(_ context.Context, s *Session, raw string, _ func(int, string)) (int, string) {
 	argv, err := parseDetachedArguments(raw, runtime.GOOS == "windows")
 	if err != nil {
 		return 0, fmt.Sprintf("Invalid arguments: %v", err)
 	}
 	if len(argv) == 0 {
-		return 0, "Usage: run_detached <program> [args...]"
+		return 0, "Usage: run_bg <program> [args...]"
 	}
 	cmd, err := newDetachedProgramCommand(argv, s.CurrentDirectory())
 	if err != nil {

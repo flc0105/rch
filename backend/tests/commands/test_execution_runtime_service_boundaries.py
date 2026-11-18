@@ -80,8 +80,8 @@ def test_spawn_short_commands_check_before_side_effect(monkeypatch):
     executor = CommandExecutor(SimpleNamespace())
     host = executor.get_commands()
     monkeypatch.setattr(host, '_checkpoint', lambda **kw: (_ for _ in ()).throw(CommandCancelledError('stop')))
-    assert host.bgrun('echo never') == (0, 'Command cancelled')
-    assert host.run_detached('not-a-real-executable') == (0, 'Command cancelled')
+    assert host.shell_bg('echo never') == (0, 'Command cancelled')
+    assert host.run_bg('not-a-real-executable') == (0, 'Command cancelled')
     assert host.cd('.') == (0, 'Command cancelled')
 
 
@@ -92,8 +92,8 @@ def test_timeout_text_consistent_across_command_boundaries(monkeypatch):
         raise CommandTimeoutError('expired')
     monkeypatch.setattr(host, '_checkpoint', timeout)
     assert host.cd('.') == (0, 'Command timed out')
-    assert host.bgrun('echo never') == (0, 'Command timed out')
-    assert host.run_detached('never') == (0, 'Command timed out')
+    assert host.shell_bg('echo never') == (0, 'Command timed out')
+    assert host.run_bg('never') == (0, 'Command timed out')
 
 
 def test_python_interruption_preserves_partial_output(monkeypatch):

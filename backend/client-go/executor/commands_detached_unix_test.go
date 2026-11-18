@@ -20,7 +20,7 @@ func TestRunDetachedReturnsActualProgramPIDAndSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	sess := &Session{Cwd: dir}
-	status, response := sess.Dispatch(10, `run_detached "my executable" pid.txt`)
+	status, response := sess.Dispatch(10, `run_bg "my executable" pid.txt`)
 	if status != 1 {
 		t.Fatalf("%s", response)
 	}

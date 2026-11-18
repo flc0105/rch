@@ -48,7 +48,7 @@ def test_existing_shell_and_acmd_names_survive(platform):
     expected_shell = {
         'mac': ('getinfo', 'screenshot', 'run_elevated'),
         'win': ('getinfo', 'screenshot', 'run_elevated'),
-        'linux': ('getinfo', 'run_detached'),
+        'linux': ('getinfo', 'run_bg'),
         'ios': ('getinfo', 'ls', 'cat', 'list_contacts'),
     }
     ctx = CommandContext(SimpleNamespace(), platform)

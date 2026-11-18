@@ -44,10 +44,10 @@ class ShellExecutionCommands:
             return 0, f'Failed to execute command: {e}'
 
     @shell_command('Run a program in background', group='execution')
-    def bgrun(self, command):
+    def shell_bg(self, command):
         command_text = (command or '').strip()
         if not command_text:
-            return 0, 'Usage: bgrun <program ...>'
+            return 0, 'Usage: shell_bg <command ...>'
 
         try:
             self._checkpoint()
@@ -65,10 +65,10 @@ class ShellExecutionCommands:
             return 0, f'Failed to start background process: {e}'
 
     @shell_command('Start an independent program in a new session', group='execution')
-    def run_detached(self, command):
+    def run_bg(self, command):
         command_text = (command or '').strip()
         if not command_text:
-            return 0, 'Usage: run_detached <program> [args...]'
+            return 0, 'Usage: run_bg <program> [args...]'
 
         try:
             self._checkpoint()

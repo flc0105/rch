@@ -60,7 +60,7 @@ def _port_owners_via_lsof(port):
     return pids
 
 
-def _port_owners(port):
+def port_owners(port):
     import psutil
     native = _port_owners_via_lsof(port)
     if native is not None:
@@ -110,7 +110,7 @@ def inspect_process(pid, *, known_port=None):
 def find_targets(criteria, *, preview_limit=None):
     import psutil
     if 'port' in criteria:
-        ids = sorted(_port_owners(criteria['port']))
+        ids = sorted(port_owners(criteria['port']))
     elif 'pid' in criteria:
         ids = [criteria['pid']]
     else:
@@ -159,7 +159,7 @@ def terminate_verified(row, *, force, port=None):
         if (abs(proc.create_time() - row['created_at']) > 0.00001
                 or proc.name() != row['name'] or proc.exe() != row['exec_path']):
             raise ProcessApprovalError('Process identity changed since preview')
-        if port is not None and pid not in _port_owners(port):
+        if port is not None and pid not in port_owners(port):
             raise ProcessApprovalError('The process no longer owns the previewed port')
         # Verify the same PID identity once more immediately before signalling.
         if abs(proc.create_time() - row['created_at']) > 0.00001:

@@ -11,7 +11,10 @@ import (
 )
 
 func TestDetachedCommandManifest(t *testing.T) {
-	spec, ok := LookupCommand("run_detached")
+	spec, ok := LookupCommand("run_bg")
+	if _, legacy := LookupCommand("run_detached"); legacy {
+		t.Fatal("legacy run_detached command must not be registered")
+	}
 	if !ok || !spec.Suggest || spec.Group != "execution" || spec.CancelPolicy != "none" || spec.Runner == nil {
 		t.Fatalf("unexpected detached command registration: %#v, %v", spec, ok)
 	}
@@ -52,7 +55,7 @@ func TestDetachedCommandDoesNotInterpretShellSyntax(t *testing.T) {
 		t.Fatal(err)
 	}
 	sess := &Session{Cwd: dir}
-	input := `run_detached "command tool" 'literal;touch-not-run' marker.txt`
+	input := `run_bg "command tool" 'literal;touch-not-run' marker.txt`
 	// The executable is found in the session directory; shell tokens are literal.
 	status, response := sess.Dispatch(1, input)
 	if status != 1 || !strings.Contains(response, "PID: ") {
@@ -72,7 +75,7 @@ func TestDetachedCommandDoesNotInterpretShellSyntax(t *testing.T) {
 }
 
 func TestDetachedStartFailure(t *testing.T) {
-	status, response := cmdRunDetached(nil, &Session{Cwd: t.TempDir()}, "not-a-real-rch-executable-name-9999", nil)
+	status, response := cmdRunBg(nil, &Session{Cwd: t.TempDir()}, "not-a-real-rch-executable-name-9999", nil)
 	if status != 0 || !strings.Contains(response, "Failed to start detached process") {
 		t.Fatalf("status=%d response=%q", status, response)
 	}

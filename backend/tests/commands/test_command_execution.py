@@ -198,7 +198,7 @@ def test_shell_and_stream_declare_process_cancellation():
     # A file operation with checkpoints is cooperative, not a managed subprocess.
     assert ShellCommands.zip_dir.command_cancel_mode == 'cooperative'
     # Detached spawn cannot be cancelled after the command returns.
-    assert getattr(ShellCommands.bgrun, 'command_cancel_mode', 'none') == 'none'
+    assert getattr(ShellCommands.shell_bg, 'command_cancel_mode', 'none') == 'none'
 
 
 def test_runtime_execution_strategies_select_actual_cancel_mode():
