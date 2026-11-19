@@ -198,7 +198,7 @@ Terminal 的 `script exec` 路径候选和 `job start` Job 名称候选复用相
 iOS 的命令可见性由 `iOSCommands` 的实际导出方法和 ACMD Registry 决定。平台类会屏蔽不适用于 Pythonista 的继承命令，并将设备命令归入 `device` 分组（`clipboard_read`、`clipboard_write`、`get_location`、`speak`、`list_contacts`、`list_reminders`），将 `clear_console`、`keep_awake` 归入 `console`；`acmd ps/kill` 不在 iOS 注册。iOS 的 `getinfo` 和基于 Pythonista 系统接口的 `uptime` 均归入 `system` 命令组。`list_reminders` 和 `list_contacts` 无需参数，直接输出 JSON。原先的文件预览、分享、上传、打开链接和退出 App 入口归入 Script Library 的 `ios/console`。
 
 
-ZIP 创建与解压使用四平台 Common ACMD 的 `acmd zip`、`acmd unzip` Standalone 注册，复用 Remote Files 的 `ArchiveService`；两者接受位置路径或 `--path`。ZIP 默认显示汇总进度、`-v/--verbose` 列文件，权限拒绝时默认停止，显式 `--skip-unreadable` 才生成带跳过清单的部分归档；UNZIP 保留 `--conflict` 并增加 `--merge`／`--skip` 简写。仅 ACMD 传入可选归档进度回调，Remote Files Browser 原有调用行为不变。Shell-like 不再导出 `zip_dir` / `unzip`。
+ZIP 创建与解压使用四平台 Common ACMD 的 `acmd zip`、`acmd unzip` Standalone 注册，复用 Remote Files 的 `ArchiveService`；两者接受位置路径或 `--path`。ZIP/UNZIP 默认返回一条包含文件数、可读大小、耗时及目标路径的简洁文本，仅 `-v/--verbose` 输出逐文件进度。ZIP 权限拒绝时默认停止，显式 `--skip-unreadable` 才允许跳过并显示警告和部分归档提示；UNZIP 保留 `--conflict` 及 `--merge`／`--skip` 简写。两条命令不提供 `--json`；Remote Files Browser 原有调用行为不变。Shell-like 不再导出 `zip_dir` / `unzip`。
 
 普通 Client 命令的可见名称直接来自 `@shell_command` 修饰的方法名，`group`
 决定 Manifest、Client Help 和 Info → Commands 的分类。重命名后不保留旧名称兼容入口。

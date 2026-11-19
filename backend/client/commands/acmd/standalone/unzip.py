@@ -3,7 +3,7 @@
 from client.commands.acmd.decorators import argument_command
 from client.commands.runtime.interrupts import cancel_policy
 from core.commands.argument_models import ArgumentCommandSpec, ArgumentOptionSpec
-from core.utils.command_output import StructuredCommandResult, render_structured_result
+from core.utils.formatting import format_bytes
 from client.runtime.filesystem.conflict_policy import POLICIES
 from client.commands.acmd.standalone.archive_progress import ArchiveProgress
 
@@ -24,8 +24,6 @@ UNZIP_ARGUMENT_SPEC = ArgumentCommandSpec(
                            help_text='Shortcut for --conflict skip'),
         ArgumentOptionSpec(name='verbose', option_type='flag', alias='v', default=False,
                            help_text='Show every extracted filename'),
-        ArgumentOptionSpec(name='json', option_type='flag', default=False,
-                           help_text='Output result as JSON'),
         ArgumentOptionSpec(name='help', option_type='flag', default=False, alias='h',
                            help_text='Show this help message'),
     ],
@@ -35,7 +33,6 @@ UNZIP_ARGUMENT_SPEC = ArgumentCommandSpec(
         'acmd unzip myfolder.zip --conflict keep_both',
         'acmd unzip --path myfolder.zip -d ./restore --merge',
         'acmd unzip myfolder.zip --skip',
-        'acmd unzip myfolder.zip --json',
     ],
 )
 
@@ -59,16 +56,7 @@ def unzip(self, args_dict, payload=None):
         archive_path, destination, policy=policy, on_event=progress,
     )
     if result.get('skipped'):
-        self.emit_progress(f'UNZIP skipped existing target: {result["extracted_to"]}', level='warning')
-    else:
-        progress.finish()
-    data = {
-        'extracted_to': result['extracted_to'],
-        'file_count': result['file_count'],
-        'dir_count': result['dir_count'],
-        'skipped': bool(result.get('skipped')),
-    }
-    return render_structured_result(
-        StructuredCommandResult(status=1, data=data, shape='dict', width=14),
-        output_format='json' if args_dict.get('json') else 'text',
-    )
+        return 1, f'[!] UNZIP skipped: target already exists\n{result["extracted_to"]}'
+    return (1,
+            f'[+] UNZIP complete: {progress.files} files, {format_bytes(progress.bytes)}, '
+            f'{progress.elapsed:.1f}s\n{result["extracted_to"]}')

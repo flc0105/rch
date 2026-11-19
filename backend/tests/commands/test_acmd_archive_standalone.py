@@ -1,8 +1,8 @@
 """Archive commands reuse Remote File Browser operations and retain safe defaults."""
-import json
 import os
 import zipfile
 from types import SimpleNamespace
+from pathlib import Path
 
 import pytest
 
@@ -42,19 +42,20 @@ def test_zip_default_saves_next_to_source_and_unzip_safely(tmp_path, monkeypatch
     source = tmp_path / 'work'
     source.mkdir()
     (source / 'hello.txt').write_text('hello world', encoding='utf8')
-    status, output = run('acmd zip work --json')
+    status, output = run('acmd zip work')
     assert status == 1
-    archive_path = json.loads(output)['archive_path']
-    assert archive_path == str(tmp_path / 'work.zip')
+    archive_path = tmp_path / 'work.zip'
+    assert output.startswith('[+] ZIP complete: 1 files, 11 B, ')
+    assert output.endswith(str(archive_path))
+    assert 'archive_path ' not in output and 'partial ' not in output
     with zipfile.ZipFile(archive_path) as archive:
         assert archive.namelist() == ['work/hello.txt']
 
     out = tmp_path / 'restore'; out.mkdir()
-    status, output = run('acmd unzip work.zip --dest restore --json')
+    status, output = run('acmd unzip work.zip --dest restore')
     assert status == 1
-    data = json.loads(output)
-    assert data['extracted_to'] == str(out / 'work')
-    assert data['file_count'] == 1 and not data['skipped']
+    assert output.startswith('[+] UNZIP complete: 1 files, 11 B, ')
+    assert output.endswith(str(out / 'work'))
     assert (out / 'work' / 'hello.txt').read_text() == 'hello world'
 
 
@@ -63,10 +64,10 @@ def test_zip_dot_writes_to_parent_not_inside_own_source(tmp_path, monkeypatch):
     work.mkdir()
     (work / 'a.txt').write_text('a')
     monkeypatch.chdir(work)
-    status, output = run('acmd zip . --json')
+    status, output = run('acmd zip .')
     assert status == 1
-    archive_path = json.loads(output)['archive_path']
-    assert archive_path == str(tmp_path / 'client-data.zip')
+    archive_path = tmp_path / 'client-data.zip'
+    assert output.endswith(str(archive_path))
     with zipfile.ZipFile(archive_path) as archive:
         assert archive.namelist() == ['client-data/a.txt']
 
@@ -75,11 +76,11 @@ def test_custom_destination_and_name_and_txt_file(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / 'hello.txt').write_text('hello')
     (tmp_path / 'output').mkdir()
-    status, output = run('acmd zip hello.txt -d output -n report --json')
+    status, output = run('acmd zip hello.txt -d output -n report')
     assert status == 1
-    archive_path = json.loads(output)['archive_path']
-    assert archive_path == str(tmp_path / 'output' / 'report.zip')
-    assert (tmp_path / 'output' / 'report.zip').is_file()
+    archive_path = tmp_path / 'output' / 'report.zip'
+    assert output.endswith(str(archive_path))
+    assert archive_path.is_file()
     status, _ = run('acmd zip hello.txt -d output -n report')
     assert status == 0
 
@@ -89,21 +90,22 @@ def test_unzip_conflicts_keep_both_skip_and_replace(tmp_path, monkeypatch):
     source = tmp_path / 'source'; source.mkdir()
     (source / 'x.txt').write_text('new')
     assert run('acmd zip source')[0] == 1
-    (tmp_path / 'target').mkdir()
-    output = tmp_path / 'target'
+    output = tmp_path / 'target'; output.mkdir()
     (output / 'source').mkdir()
     (output / 'source' / 'x.txt').write_text('old')
     status, body = run('acmd unzip source.zip --dest target')
     assert status == 0 and 'already exists' in body.lower()
     assert (output / 'source' / 'x.txt').read_text() == 'old'
-    status, body = run('acmd unzip source.zip --dest target --conflict skip --json')
-    assert status == 1 and json.loads(body)['skipped'] is True
-    status, body = run('acmd unzip source.zip --dest target --conflict keep_both --json')
-    assert status == 1
-    preserved = json.loads(body)['extracted_to']
-    assert preserved != str(output / 'source')
+    status, body = run('acmd unzip source.zip --dest target --conflict skip')
+    assert status == 1 and body.startswith('[!] UNZIP skipped:')
+    assert body.endswith(str(output / 'source'))
+    status, body = run('acmd unzip source.zip --dest target --conflict keep_both')
+    assert status == 1 and body.startswith('[+] UNZIP complete:')
+    preserved = Path(body.splitlines()[-1])
+    assert preserved.parent == output and preserved.name != 'source'
+    assert (preserved / 'x.txt').read_text() == 'new'
     assert (output / 'source' / 'x.txt').read_text() == 'old'
-    status, body = run('acmd unzip source.zip --dest target --conflict replace --json')
+    status, body = run('acmd unzip source.zip --dest target --conflict replace')
     assert status == 1 and (output / 'source' / 'x.txt').read_text() == 'new'
 
 
@@ -168,26 +170,26 @@ def test_named_path_zip_and_unzip_shortcut_flags(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     source = tmp_path / 'source'; source.mkdir()
     (source / 'new.txt').write_text('updated')
-    status, body = run('acmd zip --path source -n snapshot.zip -v --json')
-    assert status == 1 and json.loads(body)['file_count'] == 1
+    status, body = run('acmd zip --path source -n snapshot.zip -v')
+    assert status == 1 and body.startswith('[+] ZIP complete: 1 files, ')
     (tmp_path / 'restore').mkdir()
-    status, body = run('acmd unzip --path snapshot.zip -d restore -v --json')
-    assert status == 1 and json.loads(body)['file_count'] == 1
+    status, body = run('acmd unzip --path snapshot.zip -d restore -v')
+    assert status == 1 and body.startswith('[+] UNZIP complete: 1 files, ')
     existing = tmp_path / 'restore' / 'source' / 'new.txt'
     existing.write_text('old')
-    status, body = run('acmd unzip snapshot.zip -d restore --skip --json')
-    assert status == 1 and json.loads(body)['skipped'] is True
+    status, body = run('acmd unzip snapshot.zip -d restore --skip')
+    assert status == 1 and body.startswith('[!] UNZIP skipped:')
     assert existing.read_text() == 'old'
-    status, body = run('acmd unzip snapshot.zip -d restore --merge --json')
-    assert status == 1 and json.loads(body)['skipped'] is False
+    status, body = run('acmd unzip snapshot.zip -d restore --merge')
+    assert status == 1 and body.startswith('[+] UNZIP complete:')
     assert existing.read_text() == 'updated'
     for cli in ('acmd unzip snapshot.zip --merge --skip',
                 'acmd unzip snapshot.zip --merge --conflict stop',
                 'acmd unzip snapshot.zip --skip --conflict merge'):
         status, body = run(cli)
         assert status == 0 and 'Choose one conflict strategy' in body
-    status, body = run('acmd unzip --conflict replace --path snapshot.zip -d restore --json')
-    assert status == 1
+    status, body = run('acmd unzip --conflict replace --path snapshot.zip -d restore')
+    assert status == 1 and body.startswith('[+] UNZIP complete:')
 
 
 def test_missing_path_and_help_spellings():
@@ -214,19 +216,25 @@ def test_zip_progress_default_and_verbose(tmp_path, monkeypatch):
         status, body = registry.execute(CommandPlanner.__new__(CommandPlanner).parse_argument_command(text))
         return status, body, [event['message'] for event in events if event['event_type'] == 'progress']
 
-    status, body, events = invoke('acmd zip source -n simple.zip --json')
-    assert status == 1 and json.loads(body)['file_count'] == 2
-    assert any('ZIP:' in event and 'source' in event for event in events)
-    assert any('ZIP complete: 2 files' in event for event in events)
-    assert not any('ZIP file:' in event for event in events)
-    status, body, events = invoke('acmd zip source -n verbose.zip -v --json')
-    assert status == 1
+    status, body, events = invoke('acmd zip source -n simple.zip')
+    assert status == 1 and body.startswith('[+] ZIP complete: 2 files, 6 B, ')
+    assert body.endswith(str(tmp_path / 'simple.zip'))
+    assert events == []
+
+    status, body, events = invoke('acmd zip source -n verbose.zip -v')
+    assert status == 1 and body.startswith('[+] ZIP complete: 2 files, ')
     assert sum('ZIP file:' in event for event in events) == 2
+    assert any('ZIP: ' in event for event in events)
+    assert not any('ZIP complete:' in event for event in events)
+
     (tmp_path / 'restore').mkdir()
-    status, body, events = invoke('acmd unzip verbose.zip -d restore -v')
-    assert status == 1
-    assert sum('UNZIP file:' in event for event in events) == 2
-    assert any('UNZIP complete:' in event for event in events)
+    status, body, events = invoke('acmd unzip verbose.zip -d restore')
+    assert status == 1 and body.startswith('[+] UNZIP complete: 2 files, ')
+    assert events == []
+    (tmp_path / 'restore2').mkdir()
+    status, body, events = invoke('acmd unzip verbose.zip -d restore2 -v')
+    assert status == 1 and sum('UNZIP file:' in event for event in events) == 2
+    assert not any('UNZIP complete:' in event for event in events)
 
 
 def test_zip_unreadable_strict_and_explicit_partial(tmp_path, monkeypatch):
@@ -246,11 +254,16 @@ def test_zip_unreadable_strict_and_explicit_partial(tmp_path, monkeypatch):
     assert status == 0 and 'blocked.txt' in body and 'skip-unreadable' in body
     assert not (tmp_path / 'strict.zip').exists()
 
-    status, body = run('acmd zip source -n partial.zip --skip-unreadable --json')
-    assert status == 1
-    result = json.loads(body)
-    assert result['partial'] is True and result['skipped_count'] == 1
-    assert 'blocked.txt' in result['skipped_paths'][0]['path']
+    events = []
+    socket = SimpleNamespace(send_event=lambda cid, event: events.append(event))
+    status, body = ArgumentCommandRegistry(LinuxCommands(socket=socket)).execute(
+        CommandPlanner.__new__(CommandPlanner).parse_argument_command(
+            'acmd zip source -n partial.zip --skip-unreadable'))
+    assert status == 1 and body.startswith('[+] ZIP partial: 1 files, 3 B, ')
+    assert '(skipped 1 unreadable)' in body
+    assert body.endswith(str(tmp_path / 'partial.zip'))
+    assert any('blocked.txt' in event['message'] and event['event_type'] == 'progress'
+               for event in events)
     with zipfile.ZipFile(tmp_path / 'partial.zip') as archive:
         assert archive.namelist() == ['source/readable.txt']
 
@@ -279,9 +292,26 @@ def test_zip_directory_scan_error_is_not_silent(tmp_path, monkeypatch):
     status, body = run('acmd zip source -n strict.zip')
     assert status == 0 and 'private' in body
     assert not (tmp_path / 'strict.zip').exists()
-    status, body = run('acmd zip source -n partial.zip --skip-unreadable --json')
-    assert status == 1
-    assert json.loads(body)['skipped_count'] == 1
+    status, body = run('acmd zip source -n partial.zip --skip-unreadable')
+    assert status == 1 and '(skipped 1 unreadable)' in body
+
+
+def test_archive_json_is_not_supported_and_help_only_advertises_verbose():
+    zip_help = run('acmd zip --help')[1]
+    unzip_help = run('acmd unzip --help')[1]
+    assert '--verbose' in zip_help and '--verbose' in unzip_help
+    assert '--json' not in zip_help and '--json' not in unzip_help
+    assert run('acmd zip --path . --json')[0] == 0
+    assert run('acmd unzip --path file.zip --json')[0] == 0
+
+
+def test_zip_uses_existing_human_readable_size_formatter(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / 'large.bin').write_bytes(b'x' * 2048)
+    status, output = run('acmd zip large.bin')
+    assert status == 1 and '2 KB' in output
+    assert '2048' not in output
+    assert output.splitlines()[-1] == str(tmp_path / 'large.bin.zip')
 
 
 def test_remote_archive_service_default_call_is_unchanged(tmp_path, monkeypatch):

@@ -5,7 +5,7 @@ import os
 from client.commands.acmd.decorators import argument_command
 from client.commands.runtime.interrupts import cancel_policy
 from core.commands.argument_models import ArgumentCommandSpec, ArgumentOptionSpec
-from core.utils.command_output import StructuredCommandResult, render_structured_result
+from core.utils.formatting import format_bytes
 from client.commands.acmd.standalone.archive_progress import ArchiveProgress
 
 
@@ -23,8 +23,6 @@ ZIP_ARGUMENT_SPEC = ArgumentCommandSpec(
                            help_text='Explicitly omit unreadable files/directories (partial ZIP)'),
         ArgumentOptionSpec(name='verbose', option_type='flag', alias='v', default=False,
                            help_text='Show every archived filename'),
-        ArgumentOptionSpec(name='json', option_type='flag', default=False,
-                           help_text='Output result as JSON'),
         ArgumentOptionSpec(name='help', option_type='flag', default=False, alias='h',
                            help_text='Show this help message'),
     ],
@@ -35,7 +33,6 @@ ZIP_ARGUMENT_SPEC = ArgumentCommandSpec(
         'acmd zip myfolder --dest ./backups --name snapshot.zip',
         'acmd zip --path myfolder --name snapshot.zip -d ./backups',
         'acmd zip . --skip-unreadable -v',
-        'acmd zip myfolder --json',
     ],
 )
 
@@ -58,20 +55,12 @@ def zip(self, args_dict, payload=None):
         [source], destination, archive_name=name,
         on_event=progress, skip_unreadable=bool(args_dict.get('skip-unreadable')),
     )
-    if progress.skipped and not progress.files:
+    if progress.skipped_count and not progress.files:
         # A zero-file archive with skipped sources is not a valid backup.
         os.remove(archive_path)
         raise ValueError('ZIP contains no readable files; all inputs were skipped')
-    progress.finish()
-    data = {
-        'archive_path': archive_path,
-        'file_count': progress.files,
-        'input_bytes': progress.bytes,
-        'partial': bool(progress.skipped),
-        'skipped_count': len(progress.skipped),
-        'skipped_paths': progress.skipped,
-    }
-    return render_structured_result(
-        StructuredCommandResult(status=1, data=data, shape='dict', width=14),
-        output_format='json' if args_dict.get('json') else 'text',
-    )
+    outcome = 'partial' if progress.skipped_count else 'complete'
+    skipped = f' (skipped {progress.skipped_count} unreadable)' if progress.skipped_count else ''
+    return (1,
+            f'[+] ZIP {outcome}: {progress.files} files, {format_bytes(progress.bytes)}, '
+            f'{progress.elapsed:.1f}s{skipped}\n{archive_path}')
