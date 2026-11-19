@@ -19,37 +19,6 @@ from core.utils.command_output import StructuredCommandResult
 from core.utils.formatting import timestamp_to_readable_time
 
 
-# Selection belongs here, not in shared collectors or formatting infrastructure.
-CORE_FIELDS = (
-    'os_name', 'os_version', 'arch', 'manufacturer', 'model', 'hostname',
-    'cpu_model', 'cpu_count', 'mem_total', 'mem_avail',
-    'pid', 'ppid', 'process_name', 'username', 'python_version',
-    'system_uptime', 'process_uptime', 'kernel',
-    'rch_build_ver', 'rch_build_revision',
-)
-CORE_DETAIL_FIELDS = (
-    'os_product', 'os_build', 'gpu_models', 'launch_command',
-    'system_boot_time', 'process_start_time',
-)
-PLATFORM_FIELDS = {
-    'mac': ('default_shell', 'default_shell_version'),
-    'win': ('integrity',),
-    'linux': ('default_shell', 'default_shell_version'),
-    'ios': ('device_name', 'device_model', 'device_type', 'app_name', 'bundle_identifier'),
-}
-PLATFORM_DETAIL_FIELDS = {
-    'mac': (),
-    'win': ('locale', 'user_sid', 'group_sid'),
-    'linux': (),
-    'ios': (
-        'machine_name', 'identifier_for_vendor', 'bundle_path',
-        'bundle_executable_path', 'bundle_name', 'bundle_version',
-        'bundle_short_version', 'low_power_mode_enabled',
-        'home', 'documents', 'temp', 'icloud',
-    ),
-}
-
-
 
 def _process_launch_command(process):
     args = process.cmdline()
@@ -127,13 +96,61 @@ def _core_snapshot(identity, *, detailed):
 
 
 
-def _selected_fields(alias, *, detailed):
-    fields = CORE_FIELDS + (CORE_DETAIL_FIELDS if detailed else ())
-    fields += PLATFORM_FIELDS[alias]
-    if detailed:
-        fields += PLATFORM_DETAIL_FIELDS[alias]
-    return fields
+def _output_data(snapshot, alias, *, detailed):
+    """Compose the output in reading order; each field is declared only here.
 
+    The same insertion order is used for terminal text and JSON. Optional
+    fields are inserted at their natural position only in detailed mode.
+    """
+    data = {}
+
+    def include(*names):
+        data.update((name, snapshot.get(name)) for name in names)
+
+    # Operating system and hardware.
+    include('os_name', 'os_version')
+    if detailed:
+        include('os_build', 'os_product')
+    include('kernel', 'arch', 'manufacturer', 'model', 'hostname',
+            'cpu_model', 'cpu_count', 'mem_total', 'mem_avail')
+    if detailed:
+        include('gpu_models')
+
+    # User and process lifecycle.
+    include('username')
+    if alias == 'win':
+        include('integrity')
+    include('pid', 'ppid', 'process_name')
+    if detailed:
+        include('launch_command', 'system_boot_time')
+    include('system_uptime')
+    if detailed:
+        include('process_start_time')
+    include('process_uptime')
+
+    # Platform-specific session/account details.
+    if alias in ('mac', 'linux'):
+        include('default_shell', 'default_shell_ver')
+    if alias == 'win' and detailed:
+        include('locale', 'user_sid', 'group_sid')
+    include('python_version')
+
+    # iOS device, host application, and optional storage details.
+    if alias == 'ios':
+        include('device_name', 'device_model', 'device_type')
+        if detailed:
+            include('machine_name', 'identifier_for_vendor')
+        include('app_name')
+        if detailed:
+            include('bundle_name')
+        include('bundle_identifier')
+        if detailed:
+            include('bundle_path', 'bundle_executable_path',
+                    'bundle_version', 'bundle_short_version',
+                    'low_power_mode_enabled', 'home', 'documents', 'temp', 'icloud')
+
+    include('rch_build_ver', 'rch_build_revision')
+    return data
 
 
 @shell_command('Get system information', group='system')
@@ -149,10 +166,9 @@ def getinfo(self, arg=''):
         self._checkpoint()
         snapshot = _core_snapshot(identity, detailed=detailed)
         snapshot.update(COLLECTORS[identity.os_alias](self, detailed=detailed))
-        # Exactly one field policy controls text and JSON output; expensive probes
-        # are guarded inside their platform collectors, not merely hidden here.
-        fields = _selected_fields(identity.os_alias, detailed=detailed)
-        data = {key: snapshot.get(key) for key in fields}
+        # Collectors skip expensive probes in the default mode; both renderers
+        # consume the same ordered projection.
+        data = _output_data(snapshot, identity.os_alias, detailed=detailed)
         return StructuredCommandResult(status=1, data=data, shape='dict', width=24, null_text='N/A')
     except (CommandCancelledError, CommandTimeoutError):
         raise

@@ -78,7 +78,7 @@ def test_linux_getinfo_structured_flat_and_json(monkeypatch):
     result = executor.execute_command(201, 'getinfo --json')
     assert result[0] == 1
     data = json.loads(result[1])
-    assert tuple(data)[:len(info_module.CORE_FIELDS)] == info_module.CORE_FIELDS
+    assert list(data) == list(info_module._output_data(data, 'linux', detailed=False))
     assert data['pid'] == os.getpid()
     assert data['ppid'] == os.getppid()
     assert data['mem_total'].endswith((' GB', ' MB', ' TB'))
@@ -86,7 +86,7 @@ def test_linux_getinfo_structured_flat_and_json(monkeypatch):
     assert 'os_product' not in data
     assert 'distro_pretty_name' not in data
     assert 'package_manager' not in data and 'has_desktop' not in data
-    assert 'default_shell' in data and 'default_shell_version' in data and 'kernel' in data
+    assert 'default_shell' in data and 'default_shell_ver' in data and 'kernel' in data
     assert 'rch_build_ver' in data and 'rch_build_revision' in data
     assert not any(field in data for field in ('memory_total_gb', 'cpu_cores', 'pretty_name'))
     assert 'gpu_models' not in data

@@ -315,7 +315,7 @@ def collect_mac(owner, *, detailed=False):
     result = {
         'cpu_model': _optional(lambda: command_text('sysctl -n machdep.cpu.brand_string')),
         'default_shell': shell,
-        'default_shell_version': _optional(lambda: _default_shell_version(shell)),
+        'default_shell_ver': _optional(lambda: _default_shell_version(shell)),
     }
     if detailed:
         result.update({
@@ -374,7 +374,7 @@ def collect_linux(owner, *, detailed=False):
     result = {
         'cpu_model': _linux_cpu_model(),
         'default_shell': shell,
-        'default_shell_version': _optional(lambda: _default_shell_version(shell)),
+        'default_shell_ver': _optional(lambda: _default_shell_version(shell)),
     }
     if detailed:
         release = _linux_release()

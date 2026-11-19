@@ -92,13 +92,13 @@ Alias 的模板参数、平台覆盖与安全边界见 [Aliases / Quick Actions]
 | `pyexec_stream <code>` | 执行 Python 代码并推送中间输出 | 按当前 Python 执行模式流式输出 |
 | `piplist` | 列出当前 Client Python 环境中的第三方包 | 查询**目标 Client**的解释器环境 |
 
-`getinfo` 默认显示轻量概览，公共字段顺序为：`os_name`、`os_version`、`arch`、`manufacturer`、`model`、`hostname`、`cpu_model`、`cpu_count`、`mem_total`、`mem_avail`、`pid`、`ppid`、`process_name`、`username`、`python_version`、`system_uptime`、`process_uptime`、`kernel`、`rch_build_ver`、`rch_build_revision`。`kernel` 表示目标平台的内核版本，Windows 展示 `Windows NT` 及其版本号；RCH Build 字段复用 Client 握手的 Build Version／Source Revision。
+`getinfo` 输出按系统、硬件、用户、进程、账户／设备信息和 RCH Build 顺序排列。默认模式显示轻量字段；`getinfo --all` 或 `getinfo -a` 在相应位置插入 `os_build`、`os_product`、`gpu_models`、`launch_command`、`system_boot_time`、`process_start_time` 等诊断字段，其他字段相对顺序不变。`--json` 可与 `--all` / `-a` 组合，返回与文本相同的字段次序；没有选中的字段不采集、不返回。公共字段包括 `kernel`（Windows 展示 `Windows NT` 及其版本号）、`rch_build_ver`、`rch_build_revision`（复用 Client 握手值）。
 
-`getinfo --all` 或 `getinfo -a` 在上述字段之外追加公共诊断字段：`os_product`、`os_build`、`gpu_models`、`launch_command`、`system_boot_time`、`process_start_time`。`--json` 可与 `--all` / `-a` 组合，返回相同字段的平铺 JSON；未选择的字段不采集、不返回。`cpu_model` 在两种模式都展示：Windows 从本机处理器注册表读取商品名称，macOS 从 `sysctl` 获取，Linux 读取 `/proc/cpuinfo`，iOS 根据设备硬件标识从本地 Apple 芯片映射表取得。映射未覆盖时保留 `null`。
+`cpu_model` 在两种模式都展示：Windows 从本机处理器注册表读取商品名称，macOS 从 `sysctl` 获取，Linux 读取 `/proc/cpuinfo`，iOS 根据设备硬件标识从本地 Apple 芯片映射表获取商品名称，未知芯片保留 `null`。
 
 `os_product` 使用各平台的可读系统名称：Windows 原生 `winbrand.dll` 品牌名称加 `DisplayVersion`，macOS 使用本地版本名称表（如 `macOS Ventura 13.5`），Linux 使用发行版 `PRETTY_NAME`，iOS／iPadOS 使用系统名称与版本。Apple 的 `model` 用本地产品名称表解析，底层机器身份继续使用原始设备标识。`gpu_models` 在 Windows `--all` 中仅收集正常运行的 PCI 显卡（排除远控虚拟显示驱动）；macOS 通过 `system_profiler`，Linux 通过 `lspci` 采集；文本以逗号分隔名称，JSON 为名称数组。`launch_command` 包含当前进程启动参数；内存展示两位小数的可读容量；绝对时间采用 Client 本地 `YYYY-MM-DD HH:mm:ss`，时长为省略前导零的 `d h m s`。未获取到的已选字段在 JSON 中为 `null`。
 
-平台专属字段：Windows 默认输出 `integrity`，`--all` 增加 `locale`、`user_sid`、`group_sid`；macOS／Linux 默认展示账户配置的 `default_shell` 及 `default_shell_version`（不是当前 PTY Shell），Linux 不再输出 `has_desktop` 和 `package_manager`；iOS 默认输出 `device_name`、`device_model`、`device_type`、`app_name`、`bundle_identifier`，其他设备、Bundle、路径、iCloud 等诊断字段在 `--all` 下采集。静态身份通过 Client 身份缓存复用，动态进程及内存信息按次更新。
+平台专属字段：Windows 默认输出 `integrity`，`--all` 增加 `locale`、`user_sid`、`group_sid`；macOS／Linux 默认展示账户配置的 `default_shell` 及 `default_shell_ver`（不是当前 PTY Shell），Linux 不再输出 `has_desktop` 和 `package_manager`；iOS 默认输出 `device_name`、`device_model`、`device_type`、`app_name`、`bundle_identifier`，其他设备、Bundle、路径、iCloud 等诊断字段在 `--all` 下采集。静态身份通过 Client 身份缓存复用，动态进程及内存信息按次更新。
 
 **`shell`、`shell_stream`、`shell_bg`、`run_bg` 依赖目标平台可创建系统子进程。** 在普通 iOS / Pythonista 中，这类操作通常受限；`pyexec`、进程内 Script 和进程内 Job 使用 Python 执行路径，按其自身依赖与权限运行。详见 [iOS / Pythonista](ios_pythonista.md) 与 [Shell-like Commands](shell_like_commands.md)。
 
