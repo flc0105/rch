@@ -121,7 +121,7 @@ result = StructuredCommandResult(
 
 | 输出模式 | Dict 数据 | List 数据 |
 |---|---|---|
-| `text`（默认） | 以 `width` 对齐的键值文本 | 根据首行字段生成文本表格 |
+| `text`（默认） | 以 `width` 对齐的键值文本；字符串列表以逗号连接 | 根据首行字段生成文本表格 |
 | `json` | JSON 对象 | JSON 数组 |
 
 JSON 模式使用 `json.dumps(..., ensure_ascii=False, indent=2)`，因此中文等非 ASCII 字符保留原样，并使用两空格缩进。`status` 仍然作为命令结果状态返回，**不会自动嵌套进 `data` 的 JSON 文本中**。

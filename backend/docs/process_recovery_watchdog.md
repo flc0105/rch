@@ -14,7 +14,7 @@ Client 启动时由单一 `watchdog` Feature 决定是否导入监督实现（ma
 
 ## 有意关闭、重启和更新
 
-- `kill_instance`、本机 `KeyboardInterrupt` 以及 Remote Control Watchdog 的 `kill` 在退出前明确停止 Process Recovery Watchdog，不会因为主动关闭而自动复活。
+- `kill_instance`、Server 发起的 Session Disconnect、本机 `KeyboardInterrupt` 以及 Remote Control Watchdog 的 `kill` 在退出前明确停止 Process Recovery Watchdog，不会因为主动关闭而自动复活。
 - `relaunch_instance` 与 Remote Control Watchdog 的 `relaunch` 先建立独立新 Client，再停止旧实例的监督链；新实例自己负责保护。
 - macOS/Linux 的 `reexec_instance` 沿用原 PID 与监督关系；意外失败则由 Supervisor 尝试恢复。Windows 使用 `relaunch_instance`。
 - `update` 下载并启动的新 Client 在 **PID/握手就绪验证完成前不启用** Process Recovery Watchdog。旧 Client 确认验收后通过临时 `.accepted` 标记激活新 Client，再等待 `.adopted` 确认。只有验收通过才能交接。`--keep-old` 保留旧监督链；普通更新退出旧 Client 前停止旧监督链。

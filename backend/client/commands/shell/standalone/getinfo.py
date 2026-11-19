@@ -1,6 +1,8 @@
 """Common system information command, with platform-local collectors."""
 
+import json
 import os
+import re
 from functools import lru_cache
 import platform
 import shlex
@@ -22,7 +24,7 @@ from core.utils.formatting import format_bytes, seconds_to_readable_text, timest
 
 CORE_FIELDS = (
     'os_name', 'os_product', 'os_version', 'os_build', 'arch', 'manufacturer', 'model',
-    'cpu_model', 'cpu_count', 'mem_total', 'mem_avail', 'pid', 'ppid',
+    'cpu_model', 'cpu_count', 'gpu_models', 'mem_total', 'mem_avail', 'pid', 'ppid',
     'process_name', 'username', 'hostname', 'launch_command', 'python_version',
     'system_boot_time', 'system_uptime', 'process_start_time', 'process_uptime',
 )
@@ -162,6 +164,89 @@ def _windows_os_product(registry, caption):
     return f'{caption} {display_version}' if display_version else caption
 
 
+@lru_cache(maxsize=1)
+def _read_windows_hardware():
+    """Read CPU names and enabled PCI graphics adapters from native Windows CIM."""
+    command = (
+        '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; '
+        '$cpu = @(Get-CimInstance Win32_Processor -ErrorAction SilentlyContinue | '
+        'ForEach-Object { $_.Name }); '
+        '$gpu = @(Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue | '
+        r"Where-Object { $_.PNPDeviceID -match '^PCI\\VEN_' -and "
+        '$_.ConfigManagerErrorCode -eq 0 } | '
+        'ForEach-Object { $_.Name }); '
+        '[pscustomobject]@{cpu_models=$cpu; gpu_models=$gpu} | '
+        'ConvertTo-Json -Compress -Depth 3'
+    )
+    result = subprocess.run(
+        ['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', command],
+        capture_output=True, text=True, encoding='utf-8', errors='replace',
+        timeout=12, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+        check=False,
+    )
+    if result.returncode:
+        return {}
+    data = json.loads(result.stdout)
+    return data if isinstance(data, dict) else {}
+
+
+def _name_list(values):
+    """Keep a stable list of nonempty distinct adapter names."""
+    if isinstance(values, str):
+        values = [values]
+    if not isinstance(values, (list, tuple)):
+        return None
+    names = list(dict.fromkeys(
+        name for value in values if (name := str(value or '').strip())
+    ))
+    return names or None
+
+
+def _windows_processor_name_from_registry():
+    """Fallback to the local processor marketing name when CIM is unavailable."""
+    import winreg
+
+    with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
+                        r'HARDWARE\DESCRIPTION\System\CentralProcessor\0') as key:
+        return _text(str(winreg.QueryValueEx(key, 'ProcessorNameString')[0]).strip())
+
+
+def _mac_gpu_models(owner):
+    result = owner.process_execution_service.run_shell_command(
+        'system_profiler SPDisplaysDataType -json', timeout=8)
+    if result.returncode:
+        return None
+    records = json.loads(result.stdout).get('SPDisplaysDataType') or []
+    if not isinstance(records, list):
+        return None
+    return _name_list([
+        record.get('spdisplays_chipset-model') or record.get('sppci_model')
+        for record in records if isinstance(record, dict)
+    ])
+
+
+def _linux_gpu_models():
+    if not shutil.which('lspci'):
+        return None
+    result = subprocess.run(
+        ['lspci', '-nn'], capture_output=True, text=True, timeout=5,
+        encoding='utf-8', errors='replace', check=False)
+    if result.returncode:
+        return None
+    names = []
+    for line in result.stdout.splitlines():
+        match = re.search(
+            r'\b(?:VGA compatible controller|3D controller|Display controller)'
+            r'(?: \[[0-9a-fA-F]{4}\])?:\s*(.*)', line, re.IGNORECASE)
+        if match:
+            # Remove trailing vendor:device PCI identifier while retaining model names.
+            name = re.sub(r'\s+\[[0-9a-fA-F]{4}:[0-9a-fA-F]{4}\](?=\s|$)',
+                          '', match.group(1)).strip()
+            if name:
+                names.append(name)
+    return _name_list(names)
+
+
 def collect_mac(owner):
     def command_text(command):
         result = owner.process_execution_service.run_shell_command(command, timeout=10)
@@ -170,6 +255,7 @@ def collect_mac(owner):
     return {
         'os_build': _optional(lambda: command_text('sw_vers -buildVersion')),
         'cpu_model': _optional(lambda: command_text('sysctl -n machdep.cpu.brand_string')),
+        'gpu_models': _optional(lambda: _mac_gpu_models(owner)),
         'default_shell': _optional(_default_shell),
         'kernel': _text(platform.release()),
     }
@@ -181,10 +267,14 @@ def collect_windows(owner):
     registry = _optional(_read_windows_current_version) or {}
     build = _windows_build_number(registry)
     sid = _optional(win_util.get_windows_uid_gid_sid) or {}
+    hardware = _optional(_read_windows_hardware) or {}
+    processors = _name_list(hardware.get('cpu_models')) or []
     return {
         'os_product': _windows_os_product(registry, _read_windows_os_caption()),
         'os_build': build,
-        'cpu_model': _text(platform.processor()),
+        'cpu_model': (processors[0] if processors else
+                      _optional(_windows_processor_name_from_registry)),
+        'gpu_models': _name_list(hardware.get('gpu_models')),
         'locale': _optional(win_util.get_locale_tag),
         'user_sid': _text(sid.get('uid')),
         'group_sid': _text(sid.get('gid')),
@@ -215,6 +305,7 @@ def collect_linux(owner):
         'os_product': product,
         'os_build': _text(release.get('BUILD_ID')),
         'cpu_model': cpu_model,
+        'gpu_models': _optional(_linux_gpu_models),
         'default_shell': _optional(_default_shell),
         'kernel': _text(platform.release()),
         'package_manager': next((name for name in (

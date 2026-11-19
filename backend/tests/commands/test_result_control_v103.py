@@ -96,16 +96,40 @@ def test_web_remote_batch_unwraps_partial_failure_without_losing_message():
 def test_session_disconnect_independent_and_exits_after_report(monkeypatch):
     assert execution_policy(ControlDomain.SESSION, SessionAction.DISCONNECT) is ExecutionPolicy.INDEPENDENT
     events = []
+    guard = SimpleNamespace(stop=lambda: events.append(('stop_watchdog',)))
+    recovery = SimpleNamespace(stop=lambda: events.append(('stop_recovery',)))
     conn = SimpleNamespace(report_session_end=lambda *args, **kwargs: events.append(('report', args, kwargs)),
-                           close=lambda: events.append(('close',)))
+                           close=lambda: events.append(('close',)),
+                           watchdog_manager=guard, process_recovery_watchdog_manager=recovery)
     def quit_now(code):
         events.append(('exit', code))
         raise SystemExit(code)
     monkeypatch.setattr('client.session.control.os._exit', quit_now)
     with pytest.raises(SystemExit):
         SessionControl(conn).execute(Scope(), SessionAction.DISCONNECT, {})
-    assert [entry[0] for entry in events] == ['report', 'close', 'exit']
+    assert [entry[0] for entry in events] == ['report', 'stop_recovery', 'stop_watchdog', 'close', 'exit']
     assert events[0][1] == ('server_requested_disconnect',)
+
+
+def test_session_disconnect_cleans_up_recovery_even_on_report_error(monkeypatch):
+    events = []
+    def report(*args, **kwargs):
+        events.append('report')
+        raise OSError('socket already closed')
+    conn = SimpleNamespace(
+        report_session_end=report,
+        watchdog_manager=SimpleNamespace(stop=lambda: events.append('stop_worker')),
+        process_recovery_watchdog_manager=SimpleNamespace(stop=lambda: events.append('stop_recovery')),
+        close=lambda: events.append('close'),
+    )
+    def fake_exit(code):
+        events.append('exit')
+        raise SystemExit(code)
+    monkeypatch.setattr('client.session.control.os._exit', fake_exit)
+    with pytest.raises(SystemExit):
+        SessionControl(conn).execute(Scope(), SessionAction.DISCONNECT, {})
+    assert events == ['report', 'stop_recovery', 'stop_worker', 'close', 'exit']
+
 
 
 @pytest.mark.parametrize('command,independent', [
@@ -165,3 +189,23 @@ def test_config_success_does_not_emit_redundant_applied_progress():
     finally:
         (runtime_config.REMOTE_CONTROL_WATCHDOG_ENABLED,
          runtime_config.LOCAL_HEARTBEAT_WATCHDOG_ENABLED) = saved
+
+
+def test_session_disconnect_stops_recovery_if_worker_stop_raises(monkeypatch):
+    events = []
+    def worker_stop():
+        events.append('worker_stop')
+        raise RuntimeError('worker already gone')
+    conn = SimpleNamespace(
+        report_session_end=lambda *args, **kwargs: events.append('report'),
+        watchdog_manager=SimpleNamespace(stop=worker_stop),
+        process_recovery_watchdog_manager=SimpleNamespace(stop=lambda: events.append('recovery_stop')),
+        close=lambda: events.append('close'),
+    )
+    def fake_exit(code):
+        events.append('exit')
+        raise SystemExit(code)
+    monkeypatch.setattr('client.session.control.os._exit', fake_exit)
+    with pytest.raises(SystemExit):
+        SessionControl(conn).execute(Scope(), SessionAction.DISCONNECT, {})
+    assert events == ['report', 'recovery_stop', 'worker_stop', 'close', 'exit']

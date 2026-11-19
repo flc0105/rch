@@ -87,7 +87,9 @@ def test_linux_getinfo_structured_flat_and_json(monkeypatch):
     assert 'package_manager' in data and 'package_manger' not in data
     assert 'default_shell' in data and 'kernel' in data
     assert not any(field in data for field in ('memory_total_gb', 'cpu_cores', 'pretty_name'))
-    assert all(not isinstance(value, (dict, list)) for value in data.values())
+    assert data['gpu_models'] is None or isinstance(data['gpu_models'], list)
+    assert all(not isinstance(value, (dict, list)) for key, value in data.items()
+               if key != 'gpu_models')
     status, text = executor.execute_command(202, 'getinfo')
     assert status == 1 and 'os_name' in text and '[os]' not in text
 

@@ -45,7 +45,9 @@ def test_order_and_exact_common_field_types(monkeypatch, platform):
     assert isinstance(result, StructuredCommandResult)
     assert tuple(result.data)[:len(info.CORE_FIELDS)] == info.CORE_FIELDS
     assert info.CORE_FIELDS.index('process_name') == info.CORE_FIELDS.index('ppid') + 1
+    assert info.CORE_FIELDS.index('gpu_models') == info.CORE_FIELDS.index('cpu_count') + 1
     assert result.data['os_name'] == 'Test OS'
+    assert result.data['gpu_models'] is None
     assert result.data['model'] == 'Box'
     assert result.data['os_product'] == {'mac': 'macOS 1.0', 'ios': 'iOS 1.0'}.get(platform)
     assert result.data['python_version'].count('.') >= 1
@@ -117,6 +119,7 @@ def test_mac_collector_reuses_process_service_and_fails_soft(monkeypatch):
     data = info.collect_mac(owner)
     assert data['os_build'] == '24A123'
     assert data['cpu_model'] is None
+    assert data['gpu_models'] is None  # The test does not return JSON from system_profiler.
     assert ('sw_vers -buildVersion', 10) in calls
 
 
@@ -124,6 +127,7 @@ def test_linux_missing_optional_files_and_metrics(monkeypatch):
     monkeypatch.setattr(info, '_read', lambda path: '')
     fields = info.collect_linux(None)
     assert fields['cpu_model'] is None
+    assert 'gpu_models' in fields
     assert fields['os_product'] is None
     assert fields['os_build'] is None
     assert 'distro_pretty_name' not in fields
@@ -148,6 +152,10 @@ def test_windows_sid_fields_and_build(monkeypatch):
     })
     monkeypatch.setattr(info.platform, 'version', lambda: '10.0.26200')
     monkeypatch.setattr(info.platform, 'processor', lambda: 'AMD64 Family 25 Model 1')
+    monkeypatch.setattr(info, '_read_windows_hardware', lambda: {
+        'cpu_models': ['AMD Ryzen 9 9950X 16-Core Processor'],
+        'gpu_models': ['AMD Radeon(TM) Graphics', 'NVIDIA GeForce RTX 5080'],
+    })
     monkeypatch.setattr(info, '_read_windows_os_caption', lambda: 'Microsoft Windows 11 Pro')
     fields = info.collect_windows(None)
     assert fields['os_build'] == '26200'
@@ -156,7 +164,8 @@ def test_windows_sid_fields_and_build(monkeypatch):
     assert fields['group_sid'] == 'S-1-5-group'
     assert fields['locale'] == 'en-US'
     assert fields['integrity'] == 'High'
-    assert fields['cpu_model'] == 'AMD64 Family 25 Model 1'
+    assert fields['cpu_model'] == 'AMD Ryzen 9 9950X 16-Core Processor'
+    assert fields['gpu_models'] == ['AMD Radeon(TM) Graphics', 'NVIDIA GeForce RTX 5080']
     assert not any(field in fields for field in ('uid', 'gid', 'processor',
                                                   'python_version_full', 'reconnect_interval', 'cwd'))
 
@@ -448,3 +457,122 @@ def test_ipad_getinfo_product_uses_ipados_name(monkeypatch):
     monkeypatch.setattr(ios_util, 'read_info_plist', dict)
     monkeypatch.setattr(ios_util, 'get_icloud_path', lambda _: None)
     assert info.collect_ios(None)['os_product'] == 'iPadOS 18.1.1'
+
+
+def test_windows_hardware_native_cim_json_and_unavailable_fallback(monkeypatch):
+    info._read_windows_hardware.cache_clear()
+    calls = []
+    def run(argv, **kwargs):
+        calls.append((argv, kwargs))
+        return SimpleNamespace(returncode=0, stdout=json.dumps({
+            'cpu_models': ['Intel(R) Core(TM) i5-8250U CPU @ 1.60GHz'],
+            'gpu_models': ['Intel(R) UHD Graphics 620'],
+        }))
+    monkeypatch.setattr(info.subprocess, 'run', run)
+    try:
+        hardware = info._read_windows_hardware()
+        assert hardware['cpu_models'] == ['Intel(R) Core(TM) i5-8250U CPU @ 1.60GHz']
+        assert hardware['gpu_models'] == ['Intel(R) UHD Graphics 620']
+        assert len(calls) == 1
+        assert 'Win32_Processor' in calls[0][0][-1]
+        script = calls[0][0][-1]
+        assert 'Win32_VideoController' in script
+        # This is the tested Windows PowerShell hardware filter, not a name blacklist.
+        assert r"$_.PNPDeviceID -match '^PCI\\VEN_' -and $_.ConfigManagerErrorCode -eq 0" in script
+        assert calls[0][1]['timeout'] == 12
+        assert info._read_windows_hardware() is hardware  # Cached static model names.
+    finally:
+        info._read_windows_hardware.cache_clear()
+
+
+
+def test_windows_cpu_registry_fallback_uses_marketing_name(monkeypatch):
+    from client.commands.platform import utils as platform_utils
+    from types import SimpleNamespace
+    monkeypatch.setattr(platform_utils, 'win_util', SimpleNamespace(
+        get_windows_uid_gid_sid=lambda: {}, get_locale_tag=lambda: 'en-US',
+        get_integrity_level=lambda: 'Medium'), raising=False)
+    monkeypatch.setattr(info, '_read_windows_current_version', lambda: {})
+    monkeypatch.setattr(info, '_read_windows_os_caption', lambda: 'Windows 11 Pro')
+    monkeypatch.setattr(info, '_read_windows_hardware', lambda: {})
+    monkeypatch.setattr(info, '_windows_processor_name_from_registry', lambda: 'Intel(R) Core(TM) i5-8250U CPU @ 1.60GHz')
+    fields = info.collect_windows(None)
+    assert fields['cpu_model'] == 'Intel(R) Core(TM) i5-8250U CPU @ 1.60GHz'
+    assert fields['gpu_models'] is None
+
+
+def test_mac_gpu_profiler_json_and_missing_gpu(monkeypatch):
+    reports = [json.dumps({'SPDisplaysDataType': [
+        {'spdisplays_chipset-model': 'Apple M2'},
+        {'sppci_model': 'AMD Radeon Pro 5500M'},
+        {'spdisplays_chipset-model': 'Apple M2'},
+    ]}), json.dumps({'SPDisplaysDataType': []})]
+    called = []
+    def fake_shell(command, timeout):
+        called.append((command, timeout))
+        return SimpleNamespace(returncode=0, stdout=reports.pop(0))
+    owner = SimpleNamespace(process_execution_service=SimpleNamespace(run_shell_command=fake_shell))
+    assert info._mac_gpu_models(owner) == ['Apple M2', 'AMD Radeon Pro 5500M']
+    assert info._mac_gpu_models(owner) is None
+    assert called == [('system_profiler SPDisplaysDataType -json', 8)] * 2
+
+
+def test_linux_gpu_lspci_uses_real_device_names_and_no_lspci(monkeypatch):
+    sample = ("00:02.0 VGA compatible controller [0300]: Cirrus Logic GD 5446 [1013:00b8]\n"
+              "01:00.0 3D controller [0302]: NVIDIA Corporation GA102 [GeForce RTX 3090] [10de:2204] (rev a1)\n"
+              "00:03.0 Ethernet controller [0200]: Intel Ethernet Controller [8086:1234]\n")
+    monkeypatch.setattr(info.shutil, 'which', lambda name: '/usr/bin/lspci' if name == 'lspci' else None)
+    monkeypatch.setattr(info.subprocess, 'run', lambda args, **kwargs:
+                        SimpleNamespace(returncode=0, stdout=sample))
+    assert info._linux_gpu_models() == ['Cirrus Logic GD 5446',
+                                        'NVIDIA Corporation GA102 [GeForce RTX 3090] (rev a1)']
+    monkeypatch.setattr(info.shutil, 'which', lambda name: None)
+    assert info._linux_gpu_models() is None
+
+
+def test_gpu_models_json_remains_list_with_all_adapters(monkeypatch):
+    identity = SimpleNamespace(os_alias='linux', os_name='Linux', os_version='1',
+                               arch='amd64', manufacturer='Maker', model='Model', hostname='host')
+    monkeypatch.setattr(info, 'get_local_identity', lambda: identity)
+    monkeypatch.setitem(info.COLLECTORS, 'linux', lambda owner: {
+        'gpu_models': ['Integrated GPU', 'Dedicated GPU'],
+    })
+    monkeypatch.setattr(info, 'get_executable_path', lambda: '/usr/bin/python client.py')
+    result = info.getinfo(SimpleNamespace(_checkpoint=lambda: None))
+    status, output = render_structured_result(result, output_format='json')
+    assert status == 1
+    assert json.loads(output)['gpu_models'] == ['Integrated GPU', 'Dedicated GPU']
+    status, text_output = render_structured_result(result)
+    assert status == 1
+    assert 'gpu_models              Integrated GPU, Dedicated GPU' in text_output
+    assert "['Integrated GPU', 'Dedicated GPU']" not in text_output
+
+
+def test_gpu_models_text_handles_empty_and_non_string_lists():
+    result = StructuredCommandResult(status=1, data={
+        'gpu_models': [], 'other': [2, 3], 'no_gpu': None,
+    }, shape='dict', width=24, null_text='N/A')
+    text_output = render_structured_result(result)[1]
+    assert 'gpu_models              ' in text_output
+    assert 'other                   [2, 3]' in text_output
+    assert 'no_gpu                  N/A' in text_output
+    assert json.loads(render_structured_result(result, output_format='json')[1]) == {
+        'gpu_models': [], 'other': [2, 3], 'no_gpu': None,
+    }
+
+
+def test_windows_cim_no_enabled_pci_gpu_retains_cpu(monkeypatch):
+    from client.commands.platform import utils as platform_utils
+    monkeypatch.setattr(platform_utils, 'win_util', SimpleNamespace(
+        get_windows_uid_gid_sid=lambda: {},
+        get_locale_tag=lambda: None,
+        get_integrity_level=lambda: None,
+    ), raising=False)
+    monkeypatch.setattr(info, '_read_windows_current_version', lambda: {})
+    monkeypatch.setattr(info, '_read_windows_os_caption', lambda: 'Windows 11 Pro')
+    monkeypatch.setattr(info, '_read_windows_hardware', lambda: {
+        'cpu_models': ['AMD Ryzen 9 9950X 16-Core Processor'], 'gpu_models': [],
+    })
+    result = info.collect_windows(None)
+    assert result['cpu_model'] == 'AMD Ryzen 9 9950X 16-Core Processor'
+    assert result['gpu_models'] is None

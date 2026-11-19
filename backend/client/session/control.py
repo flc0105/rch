@@ -17,5 +17,19 @@ class SessionControl:
         try:
             self.connection.report_session_end('server_requested_disconnect', command='kill_instance')
         finally:
-            self.connection.close()
-            os._exit(0)
+            try:
+                # An intentional Server disconnect must stop the process-death
+                # supervisor before os._exit; otherwise it respawns this Client.
+                recovery_manager = getattr(self.connection, 'process_recovery_watchdog_manager', None)
+                try:
+                    if recovery_manager is not None:
+                        recovery_manager.stop()
+                finally:
+                    worker_manager = getattr(self.connection, 'watchdog_manager', None)
+                    if worker_manager is not None:
+                        worker_manager.stop()
+            finally:
+                try:
+                    self.connection.close()
+                finally:
+                    os._exit(0)

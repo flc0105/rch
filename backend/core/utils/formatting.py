@@ -26,11 +26,16 @@ def format_dict(data: Mapping[str, Any], width: int = 15, index: bool = False) -
     if not data:
         return ''
 
+    def display(value):
+        if isinstance(value, list) and all(isinstance(item, str) for item in value):
+            return ', '.join(value)
+        return str(value)
+
     if not index:
-        return '\n'.join(f'{key:{width}}{value}' for key, value in data.items())
+        return '\n'.join(f'{key:{width}}{display(value)}' for key, value in data.items())
 
     return '\n'.join(
-        f'{i:<5}{key:{width}}{value}'
+        f'{i:<5}{key:{width}}{display(value)}'
         for i, (key, value) in enumerate(data.items())
     )
 
