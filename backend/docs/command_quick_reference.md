@@ -92,7 +92,13 @@ Alias 的模板参数、平台覆盖与安全边界见 [Aliases / Quick Actions]
 | `pyexec_stream <code>` | 执行 Python 代码并推送中间输出 | 按当前 Python 执行模式流式输出 |
 | `piplist` | 列出当前 Client Python 环境中的第三方包 | 查询**目标 Client**的解释器环境 |
 
-`getinfo` 公共字段按以下顺序输出：`os_name`、`os_product`、`os_version`、`os_build`、`arch`、`manufacturer`、`model`、`cpu_model`、`cpu_count`、`gpu_models`、`mem_total`、`mem_avail`、`pid`、`ppid`、`process_name`、`username`、`hostname`、`launch_command`、`python_version`、`system_boot_time`、`system_uptime`、`process_start_time`、`process_uptime`。`os_product` 是面向用户的产品版本名称：Windows 客户端与 Server 优先使用本机 WMI/CIM 的系统产品名称，客户端追加注册表 `DisplayVersion`，WMI 不可用时读取注册表并降级显示；macOS 使用系统名称与数值版本，Linux 使用发行版 `PRETTY_NAME`，并在 `/etc/os-release` 提供 `BUILD_ID` 时填入 `os_build`，iPhone 使用 iOS 名称与版本，iPad 使用 iPadOS 名称与版本。Apple 的 `model` 在本地型号表命中时显示产品名称，未命中时保留系统型号标识；底层机器身份仍使用原始型号。启动命令包含当前进程的实际启动参数；Windows 处理器型号从系统 CIM 读取商品名称，`gpu_models` 在 Windows 仅列出 PnP 标识为 PCI、设备状态正常的显卡（排除远控虚拟显示驱动），macOS 与 Linux 保留各自系统 GPU 探测结果；文本展示用逗号分隔名称，JSON 仍为名称数组；iOS 无可靠来源时为 `null`；内存为两位小数的可读容量；时间为 Client 本地 `YYYY-MM-DD HH:mm:ss`，时长为省略前导零的 `d h m s`；Python 版本使用短版本号。缺少可靠来源时 JSON 为 `null`，其余平台特有字段按平台追加。静态设备身份来自 Client 的本地身份缓存，实时内存与进程数据在每次执行时采集。
+`getinfo` 默认显示轻量概览，公共字段顺序为：`os_name`、`os_version`、`arch`、`manufacturer`、`model`、`hostname`、`cpu_model`、`cpu_count`、`mem_total`、`mem_avail`、`pid`、`ppid`、`process_name`、`username`、`python_version`、`system_uptime`、`process_uptime`、`kernel`、`rch_build_ver`、`rch_build_revision`。`kernel` 表示目标平台的内核版本，Windows 展示 `Windows NT` 及其版本号；RCH Build 字段复用 Client 握手的 Build Version／Source Revision。
+
+`getinfo --all` 或 `getinfo -a` 在上述字段之外追加公共诊断字段：`os_product`、`os_build`、`gpu_models`、`launch_command`、`system_boot_time`、`process_start_time`。`--json` 可与 `--all` / `-a` 组合，返回相同字段的平铺 JSON；未选择的字段不采集、不返回。`cpu_model` 在两种模式都展示：Windows 从本机处理器注册表读取商品名称，macOS 从 `sysctl` 获取，Linux 读取 `/proc/cpuinfo`，iOS 根据设备硬件标识从本地 Apple 芯片映射表取得。映射未覆盖时保留 `null`。
+
+`os_product` 使用各平台的可读系统名称：Windows 原生 `winbrand.dll` 品牌名称加 `DisplayVersion`，macOS 使用本地版本名称表（如 `macOS Ventura 13.5`），Linux 使用发行版 `PRETTY_NAME`，iOS／iPadOS 使用系统名称与版本。Apple 的 `model` 用本地产品名称表解析，底层机器身份继续使用原始设备标识。`gpu_models` 在 Windows `--all` 中仅收集正常运行的 PCI 显卡（排除远控虚拟显示驱动）；macOS 通过 `system_profiler`，Linux 通过 `lspci` 采集；文本以逗号分隔名称，JSON 为名称数组。`launch_command` 包含当前进程启动参数；内存展示两位小数的可读容量；绝对时间采用 Client 本地 `YYYY-MM-DD HH:mm:ss`，时长为省略前导零的 `d h m s`。未获取到的已选字段在 JSON 中为 `null`。
+
+平台专属字段：Windows 默认输出 `integrity`，`--all` 增加 `locale`、`user_sid`、`group_sid`；macOS／Linux 默认展示账户配置的 `default_shell` 及 `default_shell_version`（不是当前 PTY Shell），Linux 不再输出 `has_desktop` 和 `package_manager`；iOS 默认输出 `device_name`、`device_model`、`device_type`、`app_name`、`bundle_identifier`，其他设备、Bundle、路径、iCloud 等诊断字段在 `--all` 下采集。静态身份通过 Client 身份缓存复用，动态进程及内存信息按次更新。
 
 **`shell`、`shell_stream`、`shell_bg`、`run_bg` 依赖目标平台可创建系统子进程。** 在普通 iOS / Pythonista 中，这类操作通常受限；`pyexec`、进程内 Script 和进程内 Job 使用 Python 执行路径，按其自身依赖与权限运行。详见 [iOS / Pythonista](ios_pythonista.md) 与 [Shell-like Commands](shell_like_commands.md)。
 
@@ -100,7 +106,7 @@ Alias 的模板参数、平台覆盖与安全边界见 [Aliases / Quick Actions]
 
 | 命令 | 作用 | 注意 |
 |---|---|---|
-| `getinfo [--json]` | 查看目标 Client 的系统、硬件和进程信息 | 四平台共用字段顺序；动态数据实时采集，平台独有信息追加显示；`--json` 返回平铺对象 |
+| `getinfo [-a/--all] [--json]` | 查看目标 Client 的系统、硬件和进程信息 | 默认轻量概览；`--all`/`-a` 增加详细诊断；`--json` 返回所选字段的平铺对象 |
 | `getuid` | 查看 Client 当前用户身份 | 依目标系统提供的身份信息展示 |
 | `getpid` | 查看 Client 自身进程 PID | 返回目标 Client 进程 PID |
 | `uptime` | 查看系统运行时间 | 返回目标设备信息 |
@@ -177,7 +183,7 @@ Server 的 `xt ...` 是面向用户的统一目录与运行入口；Client 另�
 
 ### Linux
 
-Linux 的 `getinfo` 将 `/etc/os-release` 的 `PRETTY_NAME` 放入公共字段 `os_product`，并在其后追加 `default_shell`、`kernel`、`package_manager`、`has_desktop` 等平台信息。默认文本列表，`--json` 输出同一数据的扁平 JSON。
+Linux 的 `getinfo` 默认提供进程、内存、内核及账户登录 Shell（含版本）。`--all` 增加 `/etc/os-release` 的发行版 `PRETTY_NAME`、可选 `BUILD_ID` 与 GPU 列表；不再展示 `package_manager` 和 `has_desktop`。`--json` 输出对应模式的扁平 JSON。
 
 ### iOS / Pythonista
 

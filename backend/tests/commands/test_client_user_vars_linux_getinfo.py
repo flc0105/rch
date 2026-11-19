@@ -9,6 +9,7 @@ from client.runtime.command_variable_resolver import (
 from client.commands.runtime.executor import CommandExecutor
 from client.commands.runtime.hosts import LinuxCommands
 from client.commands.shell.standalone import getinfo as info_module
+from client.commands.shell.standalone import getinfo_collectors as probe_module
 from core.utils.command_output import render_structured_result
 import pytest
 
@@ -82,14 +83,17 @@ def test_linux_getinfo_structured_flat_and_json(monkeypatch):
     assert data['ppid'] == os.getppid()
     assert data['mem_total'].endswith((' GB', ' MB', ' TB'))
     assert data['mem_avail'].endswith((' GB', ' MB', ' TB'))
-    assert data['os_product']
+    assert 'os_product' not in data
     assert 'distro_pretty_name' not in data
-    assert 'package_manager' in data and 'package_manger' not in data
-    assert 'default_shell' in data and 'kernel' in data
+    assert 'package_manager' not in data and 'has_desktop' not in data
+    assert 'default_shell' in data and 'default_shell_version' in data and 'kernel' in data
+    assert 'rch_build_ver' in data and 'rch_build_revision' in data
     assert not any(field in data for field in ('memory_total_gb', 'cpu_cores', 'pretty_name'))
-    assert data['gpu_models'] is None or isinstance(data['gpu_models'], list)
-    assert all(not isinstance(value, (dict, list)) for key, value in data.items()
-               if key != 'gpu_models')
+    assert 'gpu_models' not in data
+    assert all(not isinstance(value, (dict, list)) for value in data.values())
+    full_data = json.loads(executor.execute_command(203, 'getinfo -a --json')[1])
+    assert full_data['os_product']
+    assert full_data['gpu_models'] is None or isinstance(full_data['gpu_models'], list)
     status, text = executor.execute_command(202, 'getinfo')
     assert status == 1 and 'os_name' in text and '[os]' not in text
 
@@ -97,8 +101,8 @@ def test_linux_getinfo_structured_flat_and_json(monkeypatch):
 def test_linux_getinfo_command_dispatch_json(monkeypatch):
     from client.commands.runtime.catalog import CommandCatalog
     monkeypatch.setattr(CommandCatalog, '_get_platform_name', lambda _: 'linux')
-    monkeypatch.setattr(info_module, 'collect_linux', lambda _: {'kernel': 'test-kernel'})
-    monkeypatch.setitem(info_module.COLLECTORS, 'linux', info_module.collect_linux)
+    monkeypatch.setattr(probe_module, 'collect_linux', lambda _, *, detailed: {'kernel': 'test-kernel'})
+    monkeypatch.setitem(info_module.COLLECTORS, 'linux', probe_module.collect_linux)
     executor = CommandExecutor(SimpleNamespace(client_id='one'))
     assert ('getinfo', 'system') in {
         (x['name'], x['group']) for x in executor.get_command_manifest_payload()
@@ -110,9 +114,10 @@ def test_linux_getinfo_command_dispatch_json(monkeypatch):
 
 
 def test_missing_linux_files_do_not_break_getinfo(monkeypatch):
-    monkeypatch.setattr(info_module, '_read', lambda _: '')
-    data = info_module.collect_linux(None)
+    monkeypatch.setattr(probe_module, '_read', lambda _: '')
+    data = probe_module.collect_linux(None)
     assert data['cpu_model'] is None
-    assert data['os_product'] is None
+    assert 'os_product' not in data
     assert 'distro_pretty_name' not in data
-    assert data['has_desktop'] in (True, False)
+    assert 'has_desktop' not in data and 'package_manager' not in data
+    assert probe_module.collect_linux(None, detailed=True)['os_product'] is None

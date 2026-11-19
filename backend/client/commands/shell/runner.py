@@ -25,7 +25,7 @@ class ShellCommandRunner:
         return render_structured_result(result, output_format=output_format)
 
     def _resolve_builtin_output_format(self, arg: Any) -> str:
-        return 'json' if str(arg or '').strip().lower() in ('json', '--json') else 'text'
+        return 'json' if '--json' in str(arg or '').split() or str(arg or '').strip().lower() == 'json' else 'text'
 
     def _resolve_builtin_command(self, commands, name):
         """

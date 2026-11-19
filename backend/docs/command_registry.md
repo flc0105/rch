@@ -193,7 +193,7 @@ Terminal 的 `script exec` 路径候选和 `job start` Job 名称候选复用相
 
 ## 当前 Client 可见命令命名与分组
 
-四平台 `getinfo [--json]` 经 Shell Common 显式挂载同一个 Standalone 命令，返回按公共字段顺序排列的平铺 `StructuredCommandResult`；`os_product` 提供平台产品版本展示，Apple `model` 使用本地型号映射表解析；各平台采集函数追加平台专有信息。
+四平台 `getinfo [-a|--all] [--json]` 经 Shell Common 显式挂载同一个 Standalone 命令，返回有序平铺 `StructuredCommandResult`。默认只采集公共轻量字段与少量平台字段；`--all` 才触发系统产品信息、显卡及其他详细诊断采集。公共字段包括 `kernel`、`rch_build_ver`、`rch_build_revision`，Apple 系统代号／设备型号／iOS 芯片名称使用 `core/device/apple_model_names.json` 的本地映射。平台独有字段与默认／详细字段分别维护。
 
 iOS 的命令可见性由 `iOSCommands` 的实际导出方法和 ACMD Registry 决定。平台类会屏蔽不适用于 Pythonista 的继承命令，并将设备命令归入 `device` 分组（`clipboard_read`、`clipboard_write`、`get_location`、`speak`、`list_contacts`、`list_reminders`），将 `clear_console`、`keep_awake` 归入 `console`；`acmd ps/kill` 不在 iOS 注册。iOS 的 `getinfo` 和基于 Pythonista 系统接口的 `uptime` 均归入 `system` 命令组。`list_reminders` 和 `list_contacts` 无需参数，直接输出 JSON。原先的文件预览、分享、上传、打开链接和退出 App 入口归入 Script Library 的 `ios/console`。
 
