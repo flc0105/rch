@@ -28,7 +28,7 @@ class ArchiveService(ZipPeekService):
         if not 1 <= entry_limit <= self.PEEK_MAX_ENTRIES:
             raise ValueError(f'Archive preview limit must be between 1 and {self.PEEK_MAX_ENTRIES}')
         if zipfile.is_zipfile(archive_path):
-            return {'format': 'zip', **self.inspect_zip(archive_path, entry_limit=entry_limit)}
+            return self.inspect_zip(archive_path, entry_limit=entry_limit)
 
         archive_size = os.path.getsize(archive_path)
         if archive_size > self.PEEK_MAX_ARCHIVE_BYTES:
@@ -46,12 +46,8 @@ class ArchiveService(ZipPeekService):
             format_name='TAR',
         )
         return {
-            'format': 'tar',
-            'path': archive_path,
             'name': os.path.basename(archive_path),
             'archive_size': archive_size,
-            'entry_count': None if truncated else len(entries),
-            'previewed_entries': len(entries),
             'truncated': truncated,
             'tree': tree,
         }

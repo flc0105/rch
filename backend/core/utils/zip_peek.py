@@ -143,11 +143,23 @@ class ZipPeekService:
                     f'(limit {self.PEEK_MAX_ENTRIES})'
                 )
 
+            entries = infos if entry_limit is None else infos[:entry_limit]
+            tree = self._build_archive_tree(
+                (info.filename, self._zip_info_is_dir(info), info.file_size, info.compress_size)
+                for info in entries
+            )
+            if entry_limit is not None:
+                return {
+                    'name': os.path.basename(path),
+                    'archive_size': archive_size,
+                    'truncated': len(entries) < len(infos),
+                    'tree': tree,
+                }
+
             file_count = 0
             uncompressed_size = 0
             compressed_size = 0
             encrypted_count = 0
-
             for info in self._iter(infos, check_interval=64):
                 if not self._zip_info_is_dir(info):
                     file_count += 1
@@ -155,12 +167,6 @@ class ZipPeekService:
                     compressed_size += int(info.compress_size or 0)
                 if int(info.flag_bits or 0) & 0x1:
                     encrypted_count += 1
-
-            entries = infos if entry_limit is None else infos[:entry_limit]
-            tree = self._build_archive_tree(
-                (info.filename, self._zip_info_is_dir(info), info.file_size, info.compress_size)
-                for info in entries
-            )
 
             def count_directories(nodes: list[dict]) -> int:
                 total = 0
@@ -177,8 +183,6 @@ class ZipPeekService:
             'name': os.path.basename(path),
             'archive_size': archive_size,
             'entry_count': len(infos),
-            **({'previewed_entries': len(entries), 'truncated': len(entries) < len(infos)}
-               if entry_limit is not None else {}),
             'file_count': file_count,
             'dir_count': dir_count,
             'compressed_size': compressed_size,

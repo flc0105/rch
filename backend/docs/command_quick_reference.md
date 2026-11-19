@@ -90,7 +90,6 @@ Alias 的模板参数、平台覆盖与安全边界见 [Aliases / Quick Actions]
 | `run_bg <program> [args...]` | 直接启动程序并创建独立后台进程，返回程序 PID | 无 Shell 中间进程；不解释管道或重定向；标准流关闭 |
 | `pyexec <code>` | 在 Client Python 环境执行代码并汇总输出 | 执行模式依赖 Python Runtime 配置 |
 | `pyexec_stream <code>` | 执行 Python 代码并推送中间输出 | 按当前 Python 执行模式流式输出 |
-| `piplist` | 列出当前 Client Python 环境中的第三方包 | 查询**目标 Client**的解释器环境 |
 
 `getinfo` 输出按系统、硬件、用户、进程、账户／设备信息和 RCH Build 顺序排列。默认模式显示轻量字段；`getinfo --all` 或 `getinfo -a` 在相应位置插入 `os_build`、`os_product`、`gpu_models`、`launch_command`、`system_boot_time`、`process_start_time` 等诊断字段，其他字段相对顺序不变。`--json` 可与 `--all` / `-a` 组合，返回与文本相同的字段次序；没有选中的字段不采集、不返回。公共字段包括 `kernel`（Windows 展示 `Windows NT` 及其版本号）、`rch_build_ver`、`rch_build_revision`（复用 Client 握手值）。
 
@@ -225,7 +224,8 @@ ACMD 统一使用 `acmd <name> ...` 前缀，使用独立的命令注册表、�
 | **Windows / macOS / iOS** | `acmd msgbox` / `acmd notify` | 本机提示框／通知，填写 `--message`，可选 `--title` |
 | **macOS** | `acmd launchd` | 管理 LaunchAgent / LaunchDaemon；未填 action/kind 时交互选择，执行前预览审批；支持 `--json` 结构化结果与 `--no-confirm` 直接执行；详见 [launchd](launchd.md) |
 | **Windows / macOS / Linux / iOS** | `acmd sqlite_query` / `acmd image_info` | 只读 SQLite 查询／图片元数据 |
-| **Windows / macOS / Linux / iOS** | `acmd import_check` / `acmd archive_peek` | 检查 Python 模块／查看 ZIP、TAR 目录树，均支持 `--json` |
+| **Windows / macOS / Linux / iOS** | `acmd python_packages` | 查询已安装发行包、已加载模块或单个模块的导入信息，支持 `--json` |
+| **Windows / macOS / Linux / iOS** | `acmd archive_peek` | 以目录树或 JSON 查看 ZIP、TAR，大小使用可读单位 |
 | **Windows / macOS / Linux / iOS** | `acmd find` | 从指定目录或当前目录递归匹配名称，支持关键词和通配符 |
 | **Windows / macOS / Linux / iOS** | `acmd wget` | 下载 URL 到目标 Client，`-o` 指定文件或目录 |
 | **iOS** | `acmd alert` / `acmd tree` / `acmd head` / `acmd tail` | Pythonista 提示框、目录树和文本文件读取 |

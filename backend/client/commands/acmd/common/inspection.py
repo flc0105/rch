@@ -1,6 +1,4 @@
 """Portable ACMD inspection commands."""
-import importlib
-import importlib.metadata
 import json
 import os
 import tarfile
@@ -9,6 +7,7 @@ from contextlib import closing
 from pathlib import Path
 
 from client.commands.acmd.decorators import argument_command
+from client.commands.acmd.standalone.python_packages import python_packages as python_packages_command
 from core.command_completion.models import CompletionSpec
 from core.commands.argument_models import ArgumentCommandSpec, ArgumentOptionSpec
 from core.utils.command_output import StructuredCommandResult, render_structured_result
@@ -34,16 +33,6 @@ IMAGE_INFO_SPEC = ArgumentCommandSpec(
     options=[
         ArgumentOptionSpec('path', 'str', required=True, allow_empty=False, positional_index=0, help_text='Image file path',
                            completion=CompletionSpec('filesystem', ('file', 'directory'))),
-        ArgumentOptionSpec('json', 'flag', default=False, help_text='Output as JSON'),
-        ArgumentOptionSpec('help', 'flag', default=False, help_text='Show this help message'),
-    ],
-)
-
-IMPORT_CHECK_SPEC = ArgumentCommandSpec(
-    name='import_check',
-    description='Check Python package/module status',
-    options=[
-        ArgumentOptionSpec('module', 'str', required=True, allow_empty=False, positional_index=0, help_text='Module name'),
         ArgumentOptionSpec('json', 'flag', default=False, help_text='Output as JSON'),
         ArgumentOptionSpec('help', 'flag', default=False, help_text='Show this help message'),
     ],
@@ -139,40 +128,7 @@ class ACMDInspectionCommands:
         except (OSError, ValueError) as exc:
             return 0, f'Failed to get image info: {exc}'
 
-    @argument_command('import_check', spec=IMPORT_CHECK_SPEC)
-    def import_check(self, args_dict):
-        name = args_dict['module'].strip()
-        result = {
-            'module': name,
-            'importable': False,
-            'module_path': None,
-            'module_version': None,
-            'package_name': None,
-            'package_version': None,
-            'package_dependencies': [],
-        }
-        try:
-            module = importlib.import_module(name)
-        except ImportError as exc:
-            result['error'] = str(exc)
-        else:
-            result['importable'] = True
-            result['module_path'] = getattr(module, '__file__', None)
-            for attr in ('__version__', 'version', 'VERSION'):
-                if hasattr(module, attr):
-                    result['module_version'] = str(getattr(module, attr))
-                    break
-
-            # Pythonista/system modules may have no distribution metadata.
-            candidates = importlib.metadata.packages_distributions().get(name.split('.', 1)[0], [])
-            if len(candidates) == 1:
-                dist = importlib.metadata.distribution(candidates[0])
-                result.update(package_name=dist.metadata['Name'], package_version=dist.version,
-                              package_dependencies=list(dist.requires or ()))
-        return render_structured_result(
-            StructuredCommandResult(status=1, data=result, shape='dict', width=24),
-            output_format='json' if args_dict['json'] else 'text',
-        )
+    python_packages = python_packages_command
 
     @argument_command('archive_peek', spec=ARCHIVE_PEEK_SPEC)
     def archive_peek(self, args_dict):
@@ -183,11 +139,31 @@ class ACMDInspectionCommands:
         except (OSError, ValueError, tarfile.TarError, zipfile.BadZipFile) as exc:
             return 0, f'Failed to peek archive: {exc}'
         if args_dict['json']:
-            return render_structured_result(StructuredCommandResult(status=1, data=preview), output_format='json')
+            # Build the CLI tree from shared preview nodes without exposing Browser fields.
+            tree = []
+            pending = [(preview['tree'], tree)]
+            while pending:
+                source, target = pending.pop()
+                for node in source:
+                    item = {'name': node['name']}
+                    if node['is_dir']:
+                        item['children'] = []
+                        pending.append((node['children'], item['children']))
+                    else:
+                        item['size'] = format_bytes(node['size'])
+                    target.append(item)
+            data = {
+                'name': preview['name'],
+                'archive_size': format_bytes(preview['archive_size']),
+                'tree': tree,
+            }
+            if preview['truncated']:
+                data['truncated'] = True
+            return render_structured_result(StructuredCommandResult(status=1, data=data), output_format='json')
 
         if not preview['tree']:
             return 1, 'Archive is empty' if not preview['truncated'] else f'No files in first {limit} entries'
-        lines = [preview['name']]
+        lines = [f"{preview['name']} ({format_bytes(preview['archive_size'])})"]
         pending = [(iter(enumerate(preview['tree'])), len(preview['tree']), '')]
         while pending:
             siblings, count, prefix = pending[-1]

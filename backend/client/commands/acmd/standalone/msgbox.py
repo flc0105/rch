@@ -4,6 +4,7 @@ import subprocess
 
 from client.commands.acmd.decorators import argument_command
 from client.commands.platform.utils.ios_util import show_ios_alert
+from client.commands.platform.utils.mac_util import escape_osascript_text
 from core.commands.argument_models import ArgumentCommandSpec, ArgumentOptionSpec
 
 
@@ -30,10 +31,14 @@ def msgbox(self, args_dict):
 
 
 def _show_mac_message_box(owner, title, message):
-    automation = owner.mac_automation
-    title = automation.escape_osascript_text(title)
-    message = automation.escape_osascript_text(message)
-    automation.spawn_osascript(f'display dialog "{message}" with title "{title}" buttons {{"OK"}}')
+    title = escape_osascript_text(title)
+    message = escape_osascript_text(message)
+    process = subprocess.Popen(
+        ['osascript', '-e', f'display dialog "{message}" with title "{title}" buttons {{"OK"}}'],
+        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    owner._register_cancel_handler(lambda: owner.process_execution_service.terminate_process(process))
 
 
 def _show_windows_message_box(owner, title, message):

@@ -12,8 +12,7 @@ from client.runtime import client_util
 from client.commands.shell.common import session as session_ops
 from client.watchdog import process_recovery_watchdog
 from client.watchdog.watchdog_process import ClientWatchdogProcess
-from client.commands.platform.services.win.privilege_service import WinPrivilegeService
-from client.commands.platform.services.mac.system_service import MacSystemService
+from client.commands.shell.standalone.spawn_elevated_instance import _detached_launch_arguments
 
 
 @pytest.mark.parametrize('frozen', [False, True])
@@ -95,14 +94,13 @@ def test_reexec_instance_uses_shared_argv_without_string_reparse(monkeypatch):
 def test_windows_elevation_detached_uses_same_argv(monkeypatch):
     target = ['C:\\Program Files\\Python\\python.exe', 'C:\\RCH Directory\\rchclient.py', '--profile', 'tls-local']
     monkeypatch.setattr(client_util, 'get_executable_argv', lambda **kw: list(target))
-    exe, ps_args = WinPrivilegeService._detached_launch_arguments()
-    assert exe.lower().endswith('powershell.exe')
-    encoded = ps_args.rsplit(' ', 1)[-1]
-    script = base64.b64decode(encoded).decode('utf-16-le')
-    assert 'CreateProcessW' in script
-    assert '0x208' in script
-    assert '--profile tls-local' in script
-    assert 'C:\\RCH Directory\\rchclient.py' in script
+    monkeypatch.setattr(client_util, '_resolve_python_command_for_source_bundle', lambda: [target[0]])
+    exe, parameters = _detached_launch_arguments('launch-status.json', 'spawn.log')
+    assert exe == target[0] and 'DETACHED_PROCESS' in parameters
+    payload = json.loads(base64.b64decode(parameters.rsplit(' ', 1)[-1]).decode('utf-8'))
+    assert payload['argv'] == target
+    assert payload['status_path'] == 'launch-status.json'
+    assert payload['log_path'] == 'spawn.log'
 
 
 def test_macos_getinfo_uses_canonical_launch_command(monkeypatch):

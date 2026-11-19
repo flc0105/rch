@@ -57,8 +57,8 @@ Python Client 的 Windows、macOS、Linux、iOS 都注册以下命令：
 - `acmd find [path] --keyword <value>` 从当前目录或指定目录递归搜索文件和目录名。普通关键词按子串匹配，`*.jpg`、`img_*.png` 等通配符按完整名称匹配，两种模式均忽略大小写。终端里给通配符加引号。
 - `acmd wget <url> [-o <path>]` 下载 HTTP、HTTPS 或 FTP URL。默认保存到 Client 当前目录，可指定输出文件或目录。未指定文件名时优先采用响应给出的文件名，再取最终 URL 路径，最后使用 `download.bin`。下载期间显示简短进度，成功后显示可读大小和实际路径。只有完整下载才会替换目标文件。
 - `acmd sqlite_query --db <path> --query <sql>` 只读查询 SQLite，支持 `--json`。`acmd image_info <path>` 读取图片元数据，使用 Client 内的 Pillow，也支持 `--json`。
-- `acmd import_check <module> [--json]` 检查 Client 的 Python 模块。终端文本和 JSON 使用相同字段。模块无法导入时结果含 `importable=false` 和错误信息。
-- `acmd archive_peek <path> [--limit <count>] [--json]` 只读显示 ZIP/TAR 的目录树。ZIP 使用与 Remote Files 相同的预览和条目结构。默认预览 50 个归档条目，`--limit` 可指定 1–5000。JSON 包含嵌套 `tree` 和 `truncated`。TAR 提前截断时，完整条目数为 `null`。
+- `acmd python_packages [--loaded/-l | --name/-n <name>] [--filter <keyword>] [--json]` 查询当前 Client 的 Python 环境。默认列出可发现的第三方发行包和版本，`--loaded` 只读 Client 主解释器里已加载的第三方顶层模块。`--filter` 按名称筛选两种列表。`--name` 执行实际导入检查，返回模块、发行包和依赖信息。只有发行包能唯一映射到模块时才使用映射。
+- `acmd archive_peek <path> [--limit <count>] [--json]` 只读显示 ZIP/TAR 的目录树。ZIP 与 Remote Files 复用预览读取和树构造。默认预览 50 个归档条目，`--limit` 可指定 1–5000。JSON 给出归档名称、格式化大小和目录树，只有截断时输出 `truncated: true`。
 
 ## 本机提示框与通知
 

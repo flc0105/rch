@@ -6,13 +6,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from client.commands.platform.services.mac.automation_service import MacAutomationService
+from client.commands.shell.standalone.spawn_elevated_instance import _spawn_elevated_mac
 from client.runtime import client_util
 from client.commands.shell.common import session as session_ops
-
-
-def _service():
-    return MacAutomationService(owner=None)
 
 
 @pytest.mark.parametrize('detached', [False, True])
@@ -28,10 +24,10 @@ def test_sudo_self_returns_client_pid_and_preserves_tls_profile(monkeypatch, det
             stderr='',
         )
 
-    monkeypatch.setattr('client.commands.platform.services.mac.automation_service.subprocess.run', fake_run)
-    monkeypatch.setattr('client.commands.platform.services.mac.automation_service.get_executable_path',
+    monkeypatch.setattr('client.commands.shell.standalone.spawn_elevated_instance.subprocess.run', fake_run)
+    monkeypatch.setattr('client.commands.shell.standalone.spawn_elevated_instance.get_executable_path',
                         lambda: '"/tmp/python with spaces" /tmp/rchclient.py --profile tls-local')
-    status, message = _service().sudo_self(detached=detached)
+    status, message = _spawn_elevated_mac(detached=detached)
     assert status == 1
     assert 'PID: 37124' in message
     assert 'connection not yet verified' in message
@@ -51,9 +47,9 @@ def test_sudo_self_returns_client_pid_and_preserves_tls_profile(monkeypatch, det
     (SimpleNamespace(returncode=0, stderr='', stdout='some other output'), 'no Client PID'),
 ])
 def test_sudo_self_reports_authorization_and_missing_pid(monkeypatch, result, expected):
-    monkeypatch.setattr('client.commands.platform.services.mac.automation_service.subprocess.run',
+    monkeypatch.setattr('client.commands.shell.standalone.spawn_elevated_instance.subprocess.run',
                         lambda *_a, **_kw: result)
-    code, detail = _service().sudo_self()
+    code, detail = _spawn_elevated_mac()
     assert code == 0
     assert expected in detail
 
@@ -61,8 +57,8 @@ def test_sudo_self_reports_authorization_and_missing_pid(monkeypatch, result, ex
 def test_sudo_self_reports_applescript_timeout(monkeypatch):
     def timeout(*_args, **_kwargs):
         raise subprocess.TimeoutExpired(['osascript'], 120)
-    monkeypatch.setattr('client.commands.platform.services.mac.automation_service.subprocess.run', timeout)
-    code, detail = _service().sudo_self()
+    monkeypatch.setattr('client.commands.shell.standalone.spawn_elevated_instance.subprocess.run', timeout)
+    code, detail = _spawn_elevated_mac()
     assert code == 0
     assert 'failed' in detail.lower()
 
@@ -71,7 +67,7 @@ def test_sudo_self_reports_applescript_timeout(monkeypatch):
 def test_elevated_shell_launch_execs_same_pid_and_preserves_args(monkeypatch, tmp_path, detached):
     """Exercise generated shell script without requesting OS elevation."""
     import shlex
-    import client.commands.platform.services.mac.automation_service as automation_service
+    import client.commands.shell.standalone.spawn_elevated_instance as automation_service
 
     # This small script stays alive long enough for the shell health check.
     script = tmp_path / 'agent demo.py'
@@ -95,7 +91,7 @@ def test_elevated_shell_launch_execs_same_pid_and_preserves_args(monkeypatch, tm
 
     monkeypatch.setattr(automation_service.subprocess, 'run', fake_run)
     try:
-        result, message = _service().sudo_self(detached=detached)
+        result, message = _spawn_elevated_mac(detached=detached)
         assert result == 1, message
         pid = int(re.search(r'PID: (\d+)', message).group(1))
         recorded = output.read_text().splitlines()
@@ -155,7 +151,7 @@ def test_elevated_shell_early_exit_is_reported_as_failure(monkeypatch, tmp_path)
     import re
     import shlex
     import sys
-    import client.commands.platform.services.mac.automation_service as automation_service
+    import client.commands.shell.standalone.spawn_elevated_instance as automation_service
 
     command = shlex.join([sys.executable, '-c',
                           'import sys; sys.stderr.write("TLS profile failed\\n"); sys.exit(23)'])
@@ -171,7 +167,7 @@ def test_elevated_shell_early_exit_is_reported_as_failure(monkeypatch, tmp_path)
         return real_run(['/bin/sh', '-c', shell_script], capture_output=True, text=True, timeout=8)
 
     monkeypatch.setattr(automation_service.subprocess, 'run', fake_run)
-    code, message = _service().sudo_self(detached=False)
+    code, message = _spawn_elevated_mac(detached=False)
     assert code == 0
     assert 'TLS profile failed' in message
     assert 'RCH_ELEVATED_CLIENT_PID=' not in message

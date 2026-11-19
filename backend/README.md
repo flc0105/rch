@@ -1430,7 +1430,6 @@ The following tables are generated from current `@desc(...)` declarations with `
 | `getuid` | `system` | Get current user ID/name |
 | `is_elevated` | `privilege` | Check whether the current process has elevated privileges |
 | `keyboard_send` | `automation` | Simulate keyboard input |
-| `piplist` | `python` | List installed third-party Python packages |
 | `pwd` | `shell` | Print working directory |
 | `uptime` | `system` | Show system uptime |
 | `userenum` | `system` | List system user accounts |
@@ -1490,7 +1489,8 @@ Current specs:
 | Windows / macOS / Linux / iOS | `find` | Search file and directory names recursively |
 | Windows / macOS / Linux / iOS | `wget` | Download a URL to a local file |
 | Windows / macOS / Linux / iOS | `sqlite_query` / `image_info` | Query SQLite read-only or show image metadata |
-| Windows / macOS / Linux / iOS | `import_check` / `archive_peek` | Inspect an import or show a ZIP/TAR tree; both support JSON |
+| Windows / macOS / Linux / iOS | `python_packages` | Inspect installed packages, loaded modules or a single import |
+| Windows / macOS / Linux / iOS | `archive_peek` | Show the ZIP/TAR tree in text or JSON |
 | Windows / macOS / iOS | `msgbox` / `notify` | Show a native Client dialog or notification |
 | iOS | `alert` / `tree` / `head` / `tail` | Pythonista alert and file commands |
 

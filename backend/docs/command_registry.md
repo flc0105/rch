@@ -209,8 +209,7 @@ ZIP 创建与解压使用四平台 Common ACMD 的 `acmd zip`、`acmd unzip` Sta
 `transfer`（`download`）、`automation`（`keyboard_send`）、
 `media`（`screenshot`、`webcam_snap`）、`privilege`（`run_elevated`、
 `spawn_elevated_instance`、`is_elevated`）、
-`system`（`getinfo`、`idletime`、`getuid`、`getpid`、`uptime`、`userenum`）、
-`python`（`piplist`）。`ip` 已不再注册为 Client 命令。
+`system`（`getinfo`、`idletime`、`getuid`、`getpid`、`uptime`、`userenum`）。`ip` 已不再注册为 Client 命令。
 
 Server → Client 文件传输统一使用 `transfer_start` / `transfer_update`，由 TransferManager 执行，不注册内部传输命令。
 iOS 专属 `clipboard_read` / `clipboard_write` 和其他设备命令统一使用 `device` 分组；

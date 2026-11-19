@@ -2,6 +2,7 @@ import inspect
 from typing import Any
 
 from client.runtime.command_variable_resolver import CommandVariableResolutionError
+from client.commands.runtime.interrupts import get_command_timeout
 from client.commands.shell.decorators import supports_shell_platform
 from core.device.local_identity import get_local_identity
 from client.runtime.execution.request import ExecutionRequest
@@ -56,7 +57,7 @@ class ShellCommandRunner:
         context = getattr(commands, 'execution_context', None)
         if context is None:
             return
-        budget = getattr(func, 'command_timeout', None)
+        budget = get_command_timeout(func, getattr(commands, 'command_platform', None))
         if budget is not None:
             context.set_timeout(budget)
         mode = getattr(func, 'command_cancel_mode', 'none')

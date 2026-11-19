@@ -574,13 +574,13 @@ def test_recent_device_uses_latest_launch_snapshot_without_old_source_leak(tmp_p
 
 
 
-def test_windows_elevated_detached_and_cli_options():
+def test_windows_elevated_detached_and_cli_options(monkeypatch):
     from client.commands.runtime.hosts import WindowsCommands
 
     seen = []
-    command = SimpleNamespace(win_privilege=SimpleNamespace(
-        spawn_elevated_instance=lambda *, detached=False: seen.append(detached) or (1, 'ok'),
-    ))
+    command = SimpleNamespace(command_platform='win')
+    monkeypatch.setattr('client.commands.shell.standalone.spawn_elevated_instance._spawn_elevated_win',
+                        lambda *, detached=False: seen.append(detached) or (1, 'ok'))
     assert WindowsCommands.spawn_elevated_instance(command, '--no-confirm') == (1, 'ok')
     assert seen.pop() is False
     assert WindowsCommands.spawn_elevated_instance(command, '--detached --no-confirm') == (1, 'ok')
@@ -599,7 +599,7 @@ def test_windows_detached_elevation_uses_python_helper_and_reports_child_pid(mon
     import ctypes
     import json
     import sys
-    from client.commands.platform.services.win.privilege_service import WinPrivilegeService
+    from client.commands.shell.standalone.spawn_elevated_instance import _spawn_elevated_win
 
     calls = []
 
@@ -617,7 +617,7 @@ def test_windows_detached_elevation_uses_python_helper_and_reports_child_pid(mon
     monkeypatch.setattr('os.getcwd', lambda: r'C:\RCH Files')
     monkeypatch.setattr('client.runtime.temp_workspace.get_temp_category_dir', lambda *a, **k: str(tmp_path))
 
-    ok, message = WinPrivilegeService(None).spawn_elevated_instance(detached=True)
+    ok, message = _spawn_elevated_win(detached=True)
     assert ok == 1
     assert 'PID: 32123' in message
     _handle, verb, path, arguments, cwd, show = calls[0]
@@ -635,15 +635,13 @@ def test_windows_detached_elevation_uses_python_helper_and_reports_child_pid(mon
     assert 'RCH_CLIENT_LAUNCH_MODE' not in request['clear_env']
 
 
-def test_macos_elevated_command_keeps_default_and_adds_detached_option():
+def test_macos_elevated_command_keeps_default_and_adds_detached_option(monkeypatch):
     from client.commands.runtime.hosts import MacCommands
 
     calls = []
-    command = SimpleNamespace(
-        mac_automation=SimpleNamespace(
-            sudo_self=lambda *, detached=False: calls.append(detached) or (1, 'ok')
-        )
-    )
+    command = SimpleNamespace(command_platform='mac')
+    monkeypatch.setattr('client.commands.shell.standalone.spawn_elevated_instance._spawn_elevated_mac',
+                        lambda *, detached=False: calls.append(detached) or (1, 'ok'))
 
     assert MacCommands.spawn_elevated_instance(command, '--no-confirm') == (1, 'ok')
     assert calls.pop() is False
@@ -656,7 +654,7 @@ def test_macos_elevated_command_keeps_default_and_adds_detached_option():
 
 
 def test_macos_elevation_uses_original_launch_command_without_client_bootstrap_flags(monkeypatch):
-    import client.commands.platform.services.mac.automation_service as automation_service
+    import client.commands.shell.standalone.spawn_elevated_instance as automation_service
     captured = []
     monkeypatch.setattr(
         automation_service, 'get_executable_path',
@@ -668,9 +666,8 @@ def test_macos_elevation_uses_original_launch_command_without_client_bootstrap_f
             returncode=0, stderr='', stdout='RCH_ELEVATED_CLIENT_PID=4321\n',
         ),
     )
-    service = automation_service.MacAutomationService(SimpleNamespace())
     for detached in (False, True):
-        status, message = service.sudo_self(detached=detached)
+        status, message = automation_service._spawn_elevated_mac(detached=detached)
         assert status == 1
         assert 'PID: 4321' in message
         args, kwargs = captured.pop()

@@ -3,13 +3,18 @@ import subprocess
 
 from client.commands.shell.decorators import shell_command
 from client.commands.shell.standalone.getinfo import getinfo as getinfo_command
+from client.commands.shell.standalone.idletime import idletime as idletime_command
+from client.commands.shell.standalone.run_elevated import run_elevated as run_elevated_command
+from client.commands.shell.standalone.spawn_elevated_instance import spawn_elevated_instance as spawn_elevated_instance_command
 
 
 class ShellSystemCommands:
     """通用系统信息/系统操作命令。"""
 
     getinfo = getinfo_command
-
+    idletime = idletime_command
+    run_elevated = run_elevated_command
+    spawn_elevated_instance = spawn_elevated_instance_command
 
     @shell_command('Get current user ID/name', group='system')
     def getuid(self):
@@ -85,36 +90,3 @@ class ShellSystemCommands:
         minutes = int((uptime_seconds % 3600) // 60)
 
         return 1, f"Boot time: {boot_dt.strftime('%Y-%m-%d %H:%M:%S')}\nUptime: {days}d {hours}h {minutes}m"
-
-    @shell_command('List installed third-party Python packages', group='python', platforms=('mac', 'win', 'linux'))
-    def piplist(self, arg=''):
-        """列出当前 Python 环境已安装的第三方包和版本"""
-        try:
-            from importlib import metadata
-            from core.utils.command_output import StructuredCommandResult
-
-            packages = {}
-
-            for distribution in metadata.distributions():
-                name = str(distribution.metadata.get('Name') or '').strip()
-                if not name:
-                    continue
-
-                packages[name.casefold()] = {
-                    'Package': name,
-                    'Version': str(distribution.version or 'unknown'),
-                }
-
-            rows = sorted(
-                packages.values(),
-                key=lambda item: item['Package'].casefold(),
-            )
-
-            return StructuredCommandResult(
-                status=1,
-                data=rows,
-                shape='table',
-            )
-
-        except Exception as e:
-            return 0, f'Failed to list Python packages: {e}'

@@ -7,9 +7,8 @@ import subprocess
 import sys
 from types import SimpleNamespace
 
-from client.commands.platform.services.win.privilege_service import (
-    _ELEVATED_DETACHED_HELPER, WinPrivilegeService,
-)
+from client.commands.shell.standalone import spawn_elevated_instance as elevated
+from client.commands.shell.standalone.spawn_elevated_instance import _ELEVATED_DETACHED_HELPER
 
 
 def _execute_helper(monkeypatch, tmp_path, popen):
@@ -66,7 +65,7 @@ def test_windows_detached_elevation_returns_failure_on_helper_error(monkeypatch,
     monkeypatch.setattr(ctypes, 'windll', SimpleNamespace(
         shell32=SimpleNamespace(ShellExecuteW=shell_execute)), raising=False)
     monkeypatch.setattr('client.runtime.temp_workspace.get_temp_category_dir', lambda *a, **k: str(tmp_path))
-    status, message = WinPrivilegeService(None).spawn_elevated_instance(detached=True)
+    status, message = elevated._spawn_elevated_win(detached=True)
     assert status == 0
     assert 'CreateProcess failed: 5' in message
     assert 'Startup log:' in message
@@ -76,7 +75,7 @@ def test_windows_detached_elevation_rejected_uac_cleans_request_dir(monkeypatch,
     monkeypatch.setattr(ctypes, 'windll', SimpleNamespace(
         shell32=SimpleNamespace(ShellExecuteW=lambda *args: 5)), raising=False)
     monkeypatch.setattr('client.runtime.temp_workspace.get_temp_category_dir', lambda *a, **k: str(tmp_path))
-    status, message = WinPrivilegeService(None).spawn_elevated_instance(detached=True)
+    status, message = elevated._spawn_elevated_win(detached=True)
     assert status == 0
     assert 'ShellExecuteW: 5' in message
     assert list(tmp_path.iterdir()) == []
@@ -86,8 +85,8 @@ def test_windows_detached_elevation_timeout_reports_missing_helper_status(monkey
     monkeypatch.setattr(ctypes, 'windll', SimpleNamespace(
         shell32=SimpleNamespace(ShellExecuteW=lambda *args: 42)), raising=False)
     monkeypatch.setattr('client.runtime.temp_workspace.get_temp_category_dir', lambda *a, **k: str(tmp_path))
-    monkeypatch.setattr(WinPrivilegeService, 'DETACHED_RESULT_TIMEOUT_SECONDS', 0.001)
-    status, message = WinPrivilegeService(None).spawn_elevated_instance(detached=True)
+    monkeypatch.setattr(elevated, '_DETACHED_RESULT_TIMEOUT_SECONDS', 0.001)
+    status, message = elevated._spawn_elevated_win(detached=True)
     assert status == 0
     assert 'did not return a launch result' in message
 
@@ -106,7 +105,7 @@ def test_windows_non_detached_elevation_retains_original_command(monkeypatch):
     monkeypatch.setattr(ctypes, 'windll', SimpleNamespace(
         shell32=SimpleNamespace(ShellExecuteW=lambda *args: calls.append(args) or 42)), raising=False)
     monkeypatch.setattr('client.runtime.client_util.get_exec_and_args', lambda: ('python.exe', '"rchclient.py" --profile tls-local'))
-    result = WinPrivilegeService(None).spawn_elevated_instance(detached=False)
+    result = elevated._spawn_elevated_win(detached=False)
     assert result == (1, 'Elevated Client launch requested')
     assert len(calls) == 1
     assert calls[0][:4] == (None, 'runas', 'python.exe', '"rchclient.py" --profile tls-local')

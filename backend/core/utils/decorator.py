@@ -15,11 +15,15 @@ def _strip_confirm_bypass(arg):
     return False, arg
 
 
-def confirm(message=None):
+def confirm(message=None, *, platform_messages=None):
     """Require a Client Interaction Broker confirmation before calling a command.
 
     Works with @shell_command in either order; no changes to the command body are needed.
     """
+    platform_messages = dict(platform_messages or {})
+    if any(not isinstance(value, str) or not value.strip() for value in platform_messages.values()):
+        raise ValueError('Confirmation message must be a nonempty string')
+
     def decorator(func):
         prompt = message if message is not None else f"Execute command '{func.__name__}'?"
         if not isinstance(prompt, str) or not prompt.strip():
@@ -39,7 +43,8 @@ def confirm(message=None):
 
             try:
                 approved = CommandInteractions(self).confirm(
-                    prompt, title='Confirm command execution',
+                    platform_messages.get(getattr(self, 'command_platform', None), prompt),
+                    title='Confirm command execution',
                 )
             except Exception as exc:
                 return 0, f'Command confirmation unavailable: {exc}'

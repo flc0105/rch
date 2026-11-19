@@ -30,12 +30,12 @@ def test_ios_many_ipv6_addresses_wrap_without_loss_and_keep_columns_aligned():
     text = format_table(list(rows[0]), [list(item.values()) for item in rows])
     lines = text.splitlines()
     assert len({_cell_display_width(line) for line in lines}) == 1
-    assert _cell_display_width(lines[0]) <= 80
+    assert _cell_display_width(lines[0].split(" | ")[2]) == 72
     assert lines[1].count('-') == len(lines[1])
     first = next(i for i, line in enumerate(lines) if line.startswith('pdp_ip0'))
     last = next(i for i, line in enumerate(lines) if line.startswith('pdp_ip1'))
     cells = [line.split(' | ') for line in lines[first:last]]
-    assert len(cells) >= 4
+    assert len(cells) == 2
     assert ''.join(parts[2].rstrip() for parts in cells) == ipv6
     assert all(parts[0].strip() == '' for parts in cells[1:])
     assert 'pdp_ip1' in lines[last]
@@ -60,9 +60,9 @@ def test_invalid_width_and_invalid_rows_keep_expected_behavior():
 
 
 def test_structured_json_unaffected_by_table_wrap():
-    payload = [{'name': 'pdp_ip0', 'ipv6': '2001:db8::1, 2001:db8::2, 2001:db8::3'}]
+    payload = [{'name': 'pdp_ip0', 'ipv6': ', '.join(f'2001:db8::{i}' for i in range(12))}]
     result = StructuredCommandResult(status=1, data=payload, shape='table')
     assert json.loads(render_structured_result(result, output_format='json')[1]) == payload
     text = render_structured_result(result)[1]
-    assert _cell_display_width(text.splitlines()[0]) <= 34
+    assert _cell_display_width(text.splitlines()[0].split(" | ")[1]) == 72
     assert len(text.splitlines()) > 3

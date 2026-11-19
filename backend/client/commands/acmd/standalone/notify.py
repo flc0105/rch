@@ -6,6 +6,7 @@ from queue import Full, Queue
 from threading import Lock, Thread
 
 from client.commands.acmd.decorators import argument_command
+from client.commands.platform.utils.mac_util import escape_osascript_text
 from core.commands.argument_models import ArgumentCommandSpec, ArgumentOptionSpec
 
 
@@ -37,10 +38,9 @@ def notify(self, args_dict):
         return 0, f'Could not send the notification: {exc}'
 
 
-def _notify_mac(owner, title, message):
-    automation = owner.mac_automation
-    title = automation.escape_osascript_text(title)
-    message = automation.escape_osascript_text(message)
+def _notify_mac(_owner, title, message):
+    title = escape_osascript_text(title)
+    message = escape_osascript_text(message)
     result = subprocess.run(
         ['osascript', '-e', f'display notification "{message}" with title "{title}"'],
         capture_output=True, text=True, timeout=15,

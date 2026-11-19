@@ -94,13 +94,14 @@ class CommandCatalog:
 
     def get_command_manifest_payload(self):
         """Provide the handshake manifest for Shell and ACMD commands."""
+        platform = self._get_platform_name()
         payload = [
             {
                 'name': name,
                 'help': method.help,
                 'group': getattr(method, 'group', 'general'),
                 'suggest': getattr(method, 'suggest', True),
-                **command_metadata(method),
+                **command_metadata(method, platform=platform),
             }
             for name, method in self.get_exported_shell_commands().items()
             if getattr(method, 'suggest', True)

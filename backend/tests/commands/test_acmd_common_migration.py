@@ -22,7 +22,7 @@ from server.application.command.command_planner import CommandPlanner
 
 
 HOSTS = [MacCommands, WindowsCommands, LinuxCommands, iOSCommands]
-COMMON = {'sqlite_query', 'image_info', 'import_check', 'archive_peek', 'find', 'wget'}
+COMMON = {'sqlite_query', 'image_info', 'python_packages', 'archive_peek', 'find', 'wget'}
 IOS_ONLY = {'alert', 'tree', 'head', 'tail'}
 LOCAL_UI = {'msgbox', 'notify'}
 
@@ -76,8 +76,8 @@ def test_portable_inspection_and_search(host_type, tmp_path, monkeypatch):
     (tmp_path / 'article.txt').write_text('line1\nline2\nline3\n', encoding='utf-8')
     status, output = execute(host, 'acmd image_info sub/img_sample.png --json')
     assert status == 1 and (json.loads(output)['width'], json.loads(output)['height']) == (2, 3)
-    assert 'True' in execute(host, 'acmd import_check json')[1]
-    assert 'False' in execute(host, 'acmd import_check rch_nonexistent_sample_x83')[1]
+    assert 'True' in execute(host, 'acmd python_packages -n json')[1]
+    assert 'False' in execute(host, 'acmd python_packages --name rch_nonexistent_sample_x83')[1]
 
     with zipfile.ZipFile('sample.zip', 'w') as archive:
         archive.write('article.txt', 'article.txt')
@@ -196,12 +196,12 @@ def test_native_ui_adapters_receive_arguments_as_data(monkeypatch):
 
     mac = make_host(MacCommands)
     spawn = Mock()
-    monkeypatch.setattr(mac.mac_automation, 'spawn_osascript', spawn)
+    monkeypatch.setattr(subprocess, 'Popen', spawn)
     run = Mock(return_value=SimpleNamespace(returncode=0, stderr=''))
     monkeypatch.setattr(subprocess, 'run', run)
     for command in ('msgbox', 'notify'):
         assert execute(mac, f'acmd {command} --title Hello --message \'quote " example\'')[0] == 1
-    assert '\\"' in spawn.call_args.args[0]
+    assert '\\"' in spawn.call_args.args[0][-1]
     assert '\\"' in run.call_args.args[0][-1]
 
     win = make_host(WindowsCommands)
