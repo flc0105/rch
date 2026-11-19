@@ -92,7 +92,7 @@ Alias 的模板参数、平台覆盖与安全边界见 [Aliases / Quick Actions]
 | `pyexec_stream <code>` | 执行 Python 代码并推送中间输出 | 按当前 Python 执行模式流式输出 |
 | `piplist` | 列出当前 Client Python 环境中的第三方包 | 查询**目标 Client**的解释器环境 |
 
-`getinfo` 公共字段按以下顺序输出：`os_name`、`os_version`、`os_build`、`arch`、`manufacturer`、`model`、`cpu_model`、`cpu_count`、`mem_total`、`mem_avail`、`pid`、`ppid`、`username`、`hostname`、`launch_command`、`python_version`、`system_boot_time`、`system_uptime`、`process_start_time`、`process_uptime`。内存为两位小数的可读容量；时间为 Client 本地 `YYYY-MM-DD HH:mm:ss`，时长为省略前导零的 `d h m s`；Python 版本使用短版本号。缺少可靠来源时 JSON 为 `null`，其余平台特有字段按平台追加。静态设备身份来自 Client 的本地身份缓存，实时内存与进程数据在每次执行时采集。
+`getinfo` 公共字段按以下顺序输出：`os_name`、`os_version`、`os_build`、`arch`、`manufacturer`、`model`、`cpu_model`、`cpu_count`、`mem_total`、`mem_avail`、`pid`、`ppid`、`process_name`、`username`、`hostname`、`launch_command`、`python_version`、`system_boot_time`、`system_uptime`、`process_start_time`、`process_uptime`。启动命令包含当前进程的实际启动参数；内存为两位小数的可读容量；时间为 Client 本地 `YYYY-MM-DD HH:mm:ss`，时长为省略前导零的 `d h m s`；Python 版本使用短版本号。缺少可靠来源时 JSON 为 `null`，其余平台特有字段按平台追加。静态设备身份来自 Client 的本地身份缓存，实时内存与进程数据在每次执行时采集。
 
 **`shell`、`shell_stream`、`shell_bg`、`run_bg` 依赖目标平台可创建系统子进程。** 在普通 iOS / Pythonista 中，这类操作通常受限；`pyexec`、进程内 Script 和进程内 Job 使用 Python 执行路径，按其自身依赖与权限运行。详见 [iOS / Pythonista](ios_pythonista.md) 与 [Shell-like Commands](shell_like_commands.md)。
 
@@ -179,7 +179,7 @@ Server 的 `xt ...` 是面向用户的统一目录与运行入口；Client 另�
 
 ### Linux
 
-Linux 的 `getinfo` 在公共字段后追加 `default_shell`、`current_shell`、`kernel`、`distro_pretty_name`、`package_manager`、`has_desktop` 等平台信息，保留 GPU、出站路由 IP、分辨率与进程诊断。默认文本列表，`--json` 输出同一数据的扁平 JSON。
+Linux 的 `getinfo` 在公共字段后追加 `default_shell`、`kernel`、`distro_pretty_name`、`package_manager`、`has_desktop` 等平台信息。默认文本列表，`--json` 输出同一数据的扁平 JSON。
 
 ### iOS / Pythonista
 

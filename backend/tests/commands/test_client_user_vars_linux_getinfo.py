@@ -108,7 +108,6 @@ def test_linux_getinfo_command_dispatch_json(monkeypatch):
 
 def test_missing_linux_files_do_not_break_getinfo(monkeypatch):
     monkeypatch.setattr(info_module, '_read', lambda _: '')
-    monkeypatch.setattr(info_module, '_run', lambda _: '')
     data = info_module.collect_linux(None)
     assert data['cpu_model'] is None
     assert data['distro_pretty_name'] is None

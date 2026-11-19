@@ -14,38 +14,27 @@ import subprocess
 
 AIRPORT = "/System/Library/PrivateFrameworks/Apple80211.framework/Versions/Current/Resources/airport"
 
-BSSID_PATTERN = re.compile(
-    r"(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}"
+BSSID_PATTERN = re.compile(r"(?:^|\s+)(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$")
+SCAN_ROW = re.compile(
+    r"^\s*(?P<identity>.*?)\s+"
+    r"(?P<rssi>-?\d{1,3})\s+"
+    r"\d+(?:,[+-]?\d+)?\s+[YN]\s+(?:--|[A-Za-z]{2})\s+"
+    r"(?P<security>.*?)\s*$"
 )
 
 
 def parse_networks(output):
     networks = []
 
-    for line in output.splitlines()[1:]:
-        parts = line.split()
-
-        bssid_index = next(
-            (
-                index
-                for index, part in enumerate(parts)
-                if BSSID_PATTERN.fullmatch(part)
-            ),
-            None
-        )
-
-        if bssid_index is None or len(parts) <= bssid_index + 1:
-            continue
-
-        try:
-            rssi = int(parts[bssid_index + 1])
-        except ValueError:
+    for line in output.splitlines():
+        match = SCAN_ROW.match(line)
+        if not match:
             continue
 
         networks.append({
-            "ssid": " ".join(parts[:bssid_index]) or "(hidden)",
-            "signal": max(0, min(100, 2 * (rssi + 100))),
-            "security": " ".join(parts[bssid_index + 5:]),
+            "ssid": BSSID_PATTERN.sub("", match.group("identity").strip()).strip() or "(hidden)",
+            "rssi": int(match.group("rssi")),
+            "security": match.group("security").strip(),
         })
 
     return networks
@@ -67,15 +56,22 @@ def main():
 
             if (
                 ssid not in strongest
-                or network["signal"] > strongest[ssid]["signal"]
+                or network["rssi"] > strongest[ssid]["rssi"]
             ):
                 strongest[ssid] = network
 
-        output = sorted(
-            strongest.values(),
-            key=lambda item: item["signal"],
-            reverse=True
-        )
+        output = [
+            {
+                "ssid": network["ssid"],
+                "signal": max(0, min(100, 2 * (network["rssi"] + 100))),
+                "security": network["security"],
+            }
+            for network in sorted(
+                strongest.values(),
+                key=lambda item: item["rssi"],
+                reverse=True
+            )
+        ]
 
     except (OSError, subprocess.CalledProcessError) as exc:
         output = {"error": f"Failed to scan Wi-Fi networks: {exc}"}

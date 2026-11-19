@@ -111,11 +111,16 @@ def test_macos_getinfo_uses_canonical_launch_command(monkeypatch):
                                arch='arm64', manufacturer='Apple', model='MacBook Pro',
                                hostname='test-host')
     monkeypatch.setattr(info, 'get_local_identity', lambda: identity)
+    # The current process's OS argv includes startup flags that may have been
+    # consumed/removed from sys.argv after the Client started.
     monkeypatch.setattr(info, 'get_executable_path', lambda: 'python client.py --profile tls-local')
+    monkeypatch.setattr(info, '_process_launch_command', lambda process:
+                        'python client.py --profile tls-local --update-ready-file /tmp/ready.json')
     monkeypatch.setitem(info.COLLECTORS, 'mac', lambda owner: {'kernel': 'Darwin'})
     owner = SimpleNamespace(_checkpoint=lambda: None)
     result = info.getinfo(owner)
-    assert result.data['launch_command'] == 'python client.py --profile tls-local'
+    assert result.data['launch_command'] == ('python client.py --profile tls-local '
+                                             '--update-ready-file /tmp/ready.json')
     assert result.data['os_name'] == 'macOS'
 
 
