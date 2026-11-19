@@ -18,7 +18,7 @@ from server.application.command.command_planner import CommandPlanner
 
 def run(text, host=LinuxCommands):
     payload = CommandPlanner.__new__(CommandPlanner).parse_argument_command(text)
-    return ArgumentCommandRegistry(host(socket=SimpleNamespace())).execute(payload)
+    return ArgumentCommandRegistry(host(socket=SimpleNamespace(send_event=lambda *_args, **_kwargs: None))).execute(payload)
 
 
 def test_common_only_mounts_standalone_functions():
@@ -162,3 +162,136 @@ def test_interruption_is_not_hidden_by_generic_registry_error(monkeypatch):
     reg._entries['zip']['handler'] = timeout.__get__(LinuxCommands(socket=SimpleNamespace()))
     with pytest.raises(CommandTimeoutError):
         reg.execute({'name': 'zip', 'args': {'path': 'ignored'}})
+
+
+def test_named_path_zip_and_unzip_shortcut_flags(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    source = tmp_path / 'source'; source.mkdir()
+    (source / 'new.txt').write_text('updated')
+    status, body = run('acmd zip --path source -n snapshot.zip -v --json')
+    assert status == 1 and json.loads(body)['file_count'] == 1
+    (tmp_path / 'restore').mkdir()
+    status, body = run('acmd unzip --path snapshot.zip -d restore -v --json')
+    assert status == 1 and json.loads(body)['file_count'] == 1
+    existing = tmp_path / 'restore' / 'source' / 'new.txt'
+    existing.write_text('old')
+    status, body = run('acmd unzip snapshot.zip -d restore --skip --json')
+    assert status == 1 and json.loads(body)['skipped'] is True
+    assert existing.read_text() == 'old'
+    status, body = run('acmd unzip snapshot.zip -d restore --merge --json')
+    assert status == 1 and json.loads(body)['skipped'] is False
+    assert existing.read_text() == 'updated'
+    for cli in ('acmd unzip snapshot.zip --merge --skip',
+                'acmd unzip snapshot.zip --merge --conflict stop',
+                'acmd unzip snapshot.zip --skip --conflict merge'):
+        status, body = run(cli)
+        assert status == 0 and 'Choose one conflict strategy' in body
+    status, body = run('acmd unzip --conflict replace --path snapshot.zip -d restore --json')
+    assert status == 1
+
+
+def test_missing_path_and_help_spellings():
+    assert 'Missing required argument: <path>' in run('acmd zip')[1]
+    assert 'Missing required argument: <path>' in run('acmd unzip')[1]
+    assert 'acmd zip <path>' in run('acmd zip --help')[1]
+    assert '--skip-unreadable' in run('acmd zip --help')[1]
+    assert '--merge' in run('acmd unzip --help')[1]
+    assert '--skip' in run('acmd unzip --help')[1]
+    assert 'acmd unzip <path>' in run('acmd unzip --help')[1]
+    assert run('acmd zip --path --name file.zip')[0] == 0
+
+
+def test_zip_progress_default_and_verbose(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    source = tmp_path / 'source'; source.mkdir()
+    (source / 'one.txt').write_text('one')
+    (source / 'two.txt').write_text('two')
+
+    def invoke(text):
+        events = []
+        socket = SimpleNamespace(send_event=lambda cid, event: events.append(event))
+        registry = ArgumentCommandRegistry(LinuxCommands(socket=socket))
+        status, body = registry.execute(CommandPlanner.__new__(CommandPlanner).parse_argument_command(text))
+        return status, body, [event['message'] for event in events if event['event_type'] == 'progress']
+
+    status, body, events = invoke('acmd zip source -n simple.zip --json')
+    assert status == 1 and json.loads(body)['file_count'] == 2
+    assert any('ZIP:' in event and 'source' in event for event in events)
+    assert any('ZIP complete: 2 files' in event for event in events)
+    assert not any('ZIP file:' in event for event in events)
+    status, body, events = invoke('acmd zip source -n verbose.zip -v --json')
+    assert status == 1
+    assert sum('ZIP file:' in event for event in events) == 2
+    (tmp_path / 'restore').mkdir()
+    status, body, events = invoke('acmd unzip verbose.zip -d restore -v')
+    assert status == 1
+    assert sum('UNZIP file:' in event for event in events) == 2
+    assert any('UNZIP complete:' in event for event in events)
+
+
+def test_zip_unreadable_strict_and_explicit_partial(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    source = tmp_path / 'source'; source.mkdir()
+    (source / 'readable.txt').write_text('yes')
+    (source / 'blocked.txt').write_text('secret')
+    original_write = zipfile.ZipFile.write
+
+    def reject_blocked(self, filename, *args, **kwargs):
+        if str(filename).endswith('blocked.txt'):
+            raise PermissionError(13, 'Permission denied', str(filename))
+        return original_write(self, filename, *args, **kwargs)
+
+    monkeypatch.setattr(zipfile.ZipFile, 'write', reject_blocked)
+    status, body = run('acmd zip source -n strict.zip')
+    assert status == 0 and 'blocked.txt' in body and 'skip-unreadable' in body
+    assert not (tmp_path / 'strict.zip').exists()
+
+    status, body = run('acmd zip source -n partial.zip --skip-unreadable --json')
+    assert status == 1
+    result = json.loads(body)
+    assert result['partial'] is True and result['skipped_count'] == 1
+    assert 'blocked.txt' in result['skipped_paths'][0]['path']
+    with zipfile.ZipFile(tmp_path / 'partial.zip') as archive:
+        assert archive.namelist() == ['source/readable.txt']
+
+    status, body = run('acmd zip --path source/blocked.txt -n empty.zip --skip-unreadable')
+    assert status == 0 and 'no readable files' in body
+    assert not (tmp_path / 'empty.zip').exists()
+
+
+def test_zip_directory_scan_error_is_not_silent(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    source = tmp_path / 'source'; source.mkdir()
+    (source / 'good.txt').write_text('good')
+    (source / 'private').mkdir()
+    original_walk = os.walk
+
+    def simulate_walk(top, *args, **kwargs):
+        if str(top) != str(source):
+            yield from original_walk(top, *args, **kwargs)
+            return
+        yield str(source), ['private'], ['good.txt']
+        callback = kwargs.get('onerror')
+        if callback:
+            callback(PermissionError(13, 'Permission denied', str(source / 'private')))
+
+    monkeypatch.setattr(os, 'walk', simulate_walk)
+    status, body = run('acmd zip source -n strict.zip')
+    assert status == 0 and 'private' in body
+    assert not (tmp_path / 'strict.zip').exists()
+    status, body = run('acmd zip source -n partial.zip --skip-unreadable --json')
+    assert status == 1
+    assert json.loads(body)['skipped_count'] == 1
+
+
+def test_remote_archive_service_default_call_is_unchanged(tmp_path, monkeypatch):
+    from client.runtime.filesystem.path_resolver import PathResolver
+    monkeypatch.chdir(tmp_path)
+    source = tmp_path / 'source'; source.mkdir()
+    (source / 'item.txt').write_text('payload')
+    service = ArchiveService(PathResolver())
+    archive_path = service.create_zip_in_directory([str(source)], str(tmp_path))
+    with zipfile.ZipFile(archive_path) as archive:
+        assert archive.namelist() == ['source/item.txt']
+    assert service.extract_zip_with_policy(archive_path, str(tmp_path / 'output')
+        if (tmp_path / 'output').exists() else str(tmp_path), policy='keep_both')['file_count'] == 1

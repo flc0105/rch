@@ -70,7 +70,9 @@ acmd ps --port 8080 --json
 acmd ps --port 8080 --json --with-actions
 ```
 
-`acmd zip` 与 `acmd unzip` 是 macOS、Windows、Linux、iOS 共用的 Standalone 文件命令，使用 Remote File Browser 相同的 `ArchiveService`。`acmd zip <path>` 支持文件或目录，默认在源路径的父目录创建 `<源名称>.zip`（`acmd zip .` 在当前目录的上一级输出），也可通过 `--dest/-d` 指定已存在的目标目录、`--name/-n` 指定 ZIP 文件名；同名 ZIP 已存在时拒绝覆盖。压缩输出不得位于被压缩目录内部，避免递归包含自身。`acmd unzip <archive>` 默认解压到当前工作目录；`--dest/-d` 指定已有目标目录，`--conflict` 指定同名处理策略（默认 `stop`，可选 `skip`、`keep_both`、`merge`、`replace`），`--json` 返回结构化结果。解压采用先校验再隔离暂存的路径，包含 ZIP 路径安全、条目数和解压总量限制；涉及替换／合并数据时，必须显式选择对应冲突策略。两条命令均可使用 `acmd help zip` 或 `acmd help unzip` 查看完整用法。
+`acmd zip` 与 `acmd unzip` 是四平台共用的 Standalone 文件命令，只在 ACMD Common 注册。两者接受必填路径位置参数 `<path>`，也接受等价的 `--path <value>`，缺失时明确提示。`acmd zip <path>` 默认将 ZIP 输出到源路径的父目录，`--dest/-d` 指定已存在的目标目录，`--name/-n` 指定文件名（未带 `.zip` 时补齐）；ZIP 已存在则拒绝覆盖，禁止将 ZIP 写到被压缩目录内部。默认显示开始、阶段汇总与结束统计；`--verbose/-v` 列出每个处理的文件。不可读文件或目录默认报出具体路径并终止，不留下半成品 ZIP；只有显式 `--skip-unreadable` 才允许忽略权限拒绝的项目，返回 `partial`、`skipped_count` 和跳过路径／原因，全部不可读时仍失败。
+
+`acmd unzip <path>` 默认解压到当前工作目录，可通过 `--dest/-d` 指定现有目录。原有 `--conflict` 策略 `stop`（默认）、`skip`、`keep_both`、`merge`、`replace` 均不变；`--merge` 与 `--skip` 分别是对应策略的快捷参数，不得与彼此或显式 `--conflict` 同用。解压同样支持默认阶段进度和 `--verbose/-v` 逐文件输出，`--json` 返回结构化结果；继续保留安全路径、条目与解压大小限制、先验证并暂存再提交的流程。进度和跳过策略只由 ACMD 显式传入，Remote Files Browser 原调用与语义保持不变。两条命令的参数详情可用 `acmd zip --help`／`acmd unzip --help` 查看。
 
 `acmd netstat` 在 Windows、macOS、Linux 上查看 TCP/UDP 连接，默认显示全部可读取的连接。可用 `--port 443`（或位置参数 `443`）按本地／远端端口过滤，`--status LISTENING`（或 `-l`）仅看监听状态，`--protocol tcp`（或 `-t`）、`--protocol udp`（或 `-u`）按协议过滤。支持组合条件，如 `acmd netstat -l -t --port 443 --json`；监听状态同时识别系统返回的 `LISTEN` 与 `LISTENING`。`-t` 和 `-u` 不能同时指定，`--json` 保持原有结构化表格输出。
 

@@ -34,12 +34,14 @@ class ArchiveService(ZipPeekService):
 
         return build_artifact_filename('bundle', 'zip')
 
-    def iter_directory_files(self, directory: str):
-        for root, _, files in self._iter(os.walk(directory), check_interval=64):
+    def iter_directory_files(self, directory: str, on_error=None):
+        for root, _, files in self._iter(os.walk(directory, onerror=on_error), check_interval=64):
             for filename in self._iter(files, check_interval=64):
                 yield os.path.join(root, filename)
 
-    def write_path_to_zip(self, archive: zipfile.ZipFile, path: str, used_names: set[str]):
+    def write_path_to_zip(self, archive: zipfile.ZipFile, path: str, used_names: set[str],
+                          *, on_event=None, skip_unreadable: bool = False):
+        """Write a source; optional ACMD observers leave existing callers unchanged."""
         normalized_path = os.path.abspath(path)
         top_name = os.path.basename(normalized_path.rstrip('/\\')) or 'item'
         archive_root = top_name
@@ -49,24 +51,56 @@ class ArchiveService(ZipPeekService):
             self._checkpoint()
             archive_root = f'{top_name}_{suffix_index}'
             suffix_index += 1
-
         used_names.add(archive_root)
 
+        def write_file(file_path, arcname):
+            # Only access-denied inputs can be skipped; never conceal other I/O errors.
+            # A failed write that has already created a ZIP member is not safely skippable.
+            previous_entries = len(archive.filelist)
+            try:
+                archive.write(file_path, arcname=arcname)
+            except PermissionError as exc:
+                if skip_unreadable and len(archive.filelist) == previous_entries:
+                    on_event('skipped', file_path, str(exc))
+                    return
+                raise PermissionError(
+                    f'Cannot read file while creating ZIP: {file_path} ({exc}). '
+                    'Use --skip-unreadable to explicitly omit unreadable inputs.'
+                ) from exc
+            if on_event is not None:
+                on_event('file', file_path, archive.filelist[-1].file_size)
+
         if os.path.isfile(normalized_path):
-            archive.write(normalized_path, arcname=archive_root)
+            write_file(normalized_path, archive_root)
             return
 
         if os.path.isdir(normalized_path):
             has_content = False
+            walk_errors = 0
 
-            for file_path in self.iter_directory_files(normalized_path):
+            def on_walk_error(exc):
+                nonlocal walk_errors
+                if skip_unreadable and isinstance(exc, PermissionError):
+                    walk_errors += 1
+                    on_event('skipped', exc.filename or normalized_path, str(exc))
+                    return
+                if isinstance(exc, PermissionError):
+                    raise PermissionError(
+                        f'Cannot list directory while creating ZIP: {exc.filename or normalized_path} ({exc}). '
+                        'Use --skip-unreadable to explicitly omit unreadable inputs.'
+                    ) from exc
+                raise exc
+
+            # os.walk silently suppresses errors by default. ACMD explicitly opts
+            # into complete traversal checking; Remote Files keeps its old behavior.
+            on_error = on_walk_error if on_event is not None else None
+            for file_path in self.iter_directory_files(normalized_path, on_error=on_error):
                 has_content = True
                 relative_path = os.path.relpath(file_path, normalized_path)
-                archive.write(file_path, arcname=os.path.join(archive_root, relative_path))
+                write_file(file_path, os.path.join(archive_root, relative_path))
 
-            if not has_content:
-                directory_entry = archive_root.rstrip('/\\') + '/'
-                archive.writestr(directory_entry, '')
+            if not has_content and not walk_errors:
+                archive.writestr(archive_root.rstrip('/\\') + '/', '')
             return
 
         raise FileNotFoundError(f'Path not found: {normalized_path}')
@@ -99,7 +133,8 @@ class ArchiveService(ZipPeekService):
             raise ValueError('Invalid ZIP archive name')
         return name
 
-    def create_zip_in_directory(self, paths: list[str], destination_dir: str, archive_name: str = '') -> str:
+    def create_zip_in_directory(self, paths: list[str], destination_dir: str, archive_name: str = '',
+                                *, on_event=None, skip_unreadable: bool = False) -> str:
         destination = self.path_resolver.validate_directory_exists(destination_dir)
         fallback = self.build_download_archive_name(paths)
         final_name = self.normalize_zip_archive_name(archive_name, fallback=fallback)
@@ -125,7 +160,8 @@ class ArchiveService(ZipPeekService):
         try:
             with zipfile.ZipFile(archive_path, mode='w', compression=zipfile.ZIP_DEFLATED, allowZip64=True) as archive:
                 for path in self._iter(paths, check_interval=64):
-                    self.write_path_to_zip(archive, path, used_names)
+                    self.write_path_to_zip(archive, path, used_names,
+                                           on_event=on_event, skip_unreadable=skip_unreadable)
             return archive_path
         except Exception:
             try:
@@ -234,7 +270,7 @@ class ArchiveService(ZipPeekService):
         return {'conflicts': [existing] if existing else [], 'target': target}
 
     def extract_zip_with_policy(self, archive_path: str, destination_dir: str,
-                                entry_name: str = '', policy: str = 'stop') -> dict:
+                                entry_name: str = '', policy: str = 'stop', *, on_event=None) -> dict:
         """Use existing bounded safe extractor into a private stage, then commit by policy."""
         destination = self.path_resolver.validate_directory_exists(destination_dir)
         inspected = self.inspect_extract_target(archive_path, destination, entry_name)
@@ -247,8 +283,8 @@ class ArchiveService(ZipPeekService):
             return {'destination_dir': destination, 'extracted_to': target, 'file_count': 0,
                     'dir_count': 0, 'skipped': True}
         with tempfile.TemporaryDirectory(prefix='.rch-zip-stage-', dir=destination) as stage:
-            result = (self.extract_zip_entry(archive_path, stage, entry_name)
-                      if entry_name else self.extract_zip_smart(archive_path, stage))
+            result = (self.extract_zip_entry(archive_path, stage, entry_name, on_event=on_event)
+                      if entry_name else self.extract_zip_smart(archive_path, stage, on_event=on_event))
             source = result['extracted_to']
             actual_kind = path_kind(source)
             expected_kind = 'file' if entry_name and not os.path.isdir(source) else 'directory'
@@ -258,7 +294,7 @@ class ArchiveService(ZipPeekService):
         return {**result, 'destination_dir': destination, 'extracted_to': output or target,
                 'skipped': output is None}
 
-    def extract_zip_entry(self, archive_path: str, destination_dir: str, entry_name: str) -> dict:
+    def extract_zip_entry(self, archive_path: str, destination_dir: str, entry_name: str, *, on_event=None) -> dict:
         """Extract exactly one ZIP file or directory subtree without replacing destination files."""
         path = self._require_zip_file(archive_path)
         destination = self.path_resolver.validate_directory_exists(destination_dir)
@@ -318,6 +354,8 @@ class ArchiveService(ZipPeekService):
                                 break
                             sink.write(chunk)
                     file_count += 1
+                    if on_event is not None:
+                        on_event('file', name, info.file_size)
             except Exception:
                 if created:
                     if is_dir:
@@ -334,7 +372,7 @@ class ArchiveService(ZipPeekService):
             'file_count': file_count, 'dir_count': dir_count,
         }
 
-    def extract_zip_smart(self, archive_path: str, destination_dir: str) -> dict:
+    def extract_zip_smart(self, archive_path: str, destination_dir: str, *, on_event=None) -> dict:
         path = self._require_zip_file(archive_path)
         destination = self.path_resolver.validate_directory_exists(destination_dir)
 
@@ -379,6 +417,8 @@ class ArchiveService(ZipPeekService):
                     with archive.open(info, 'r') as source, open(target_path, 'wb') as target:
                         shutil.copyfileobj(source, target, length=1024 * 1024)
                     extracted_files += 1
+                    if on_event is not None:
+                        on_event('file', normalized, info.file_size)
             except Exception:
                 try:
                     if os.path.isdir(cleanup_path):

@@ -38,6 +38,11 @@ class ArgumentCommandValidator:
 
             if not has_value:
                 if option_spec.required and option_spec.default is None:
+                    if option_spec.is_positional:
+                        raise ArgumentCommandValidationError(
+                            f'Missing required argument: <{option_name}> '
+                            f'(or --{option_name} <value>); usage: acmd {spec.name} <{option_name}>'
+                        )
                     raise ArgumentCommandValidationError(
                         f'Missing required option: --{option_name}'
                     )
