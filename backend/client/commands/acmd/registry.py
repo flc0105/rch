@@ -128,7 +128,7 @@ class ArgumentCommandRegistry:
         {
             'name': 'msgbox',
             'args': {'title': 'aaa', 'text': 'bbb'},
-            'raw': 'acmd msgbox --title aaa --text bbb'
+            'raw': 'acmd msgbox --title aaa --message bbb'
         }
         """
         if not isinstance(payload, dict):

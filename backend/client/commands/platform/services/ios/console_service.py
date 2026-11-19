@@ -82,28 +82,7 @@ class iOSConsoleService:
             return 1, 'Screen sleep restored'
         return 0, 'keep_awake [on/off]'
 
-    def acmd_alert(self, args_dict):
-        try:
-            title = args_dict.get('title', '')
-            message = args_dict['message']
-            import console
-            button = console.alert(title or 'Alert', message or '', 'OK', hide_cancel_button=True)
-            return 1, f'Alert closed: {button}'
-        except Exception as e:
-            return 0, f'Failed to show alert: {e}'
+    def show_alert(self, title, message):
+        import console
 
-    def acmd_notify(self, args_dict):
-        try:
-            title = args_dict.get('title', '')
-            message = args_dict['message']
-            import notification
-            notification.schedule(
-                message or '',
-                delay=0,
-                sound_name=None,
-                action_url=None,
-                title=title or 'Notice'
-            )
-            return 1, 'Notification scheduled'
-        except Exception as e:
-            return 0, f'Failed to send notification: {e}'
+        return console.alert(title, message, 'OK', hide_cancel_button=True)

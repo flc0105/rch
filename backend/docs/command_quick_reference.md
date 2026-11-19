@@ -222,16 +222,13 @@ ACMD 统一使用 `acmd <name> ...` 前缀，使用独立的命令注册表、�
 | **Windows / macOS / Linux** | `acmd ps` | 按 PID、名称、端口查看进程，部分形式支持 JSON 结果 |
 | **Windows / macOS / Linux** | `acmd netstat` | 查看 TCP / UDP 连接，可按端口、监听状态和协议筛选 |
 | **Windows / macOS / Linux** | `acmd kill` | 按 PID、名称或端口选择并终止进程；可先显示预览和确认，具体能力受权限限制 |
-| **macOS** | `acmd msgbox` / `acmd notify` | 显示本机提示框 / 发送本地通知 |
+| **Windows / macOS / iOS** | `acmd msgbox` / `acmd notify` | 本机提示框／通知，填写 `--message`，可选 `--title` |
 | **macOS** | `acmd launchd` | 管理 LaunchAgent / LaunchDaemon；未填 action/kind 时交互选择，执行前预览审批；支持 `--json` 结构化结果与 `--no-confirm` 直接执行；详见 [launchd](launchd.md) |
-| **macOS** | `acmd sqlite_query` | 对指定 SQLite 数据库做只读查询 |
-| **macOS** | `acmd image_info` | 查询图片文件信息 |
-| **macOS** | `acmd import_check` | 检查当前 Python 解释器是否能导入指定模块 |
-| **macOS** | `acmd archive_peek` | 查看压缩包内容，不直接解压 |
-| **iOS** | `acmd alert` / `acmd notify` | 显示 Pythonista 提示 / 发出本地通知 |
-| **iOS** | `acmd find` / `acmd tree` | 按关键字查找文件或展示目录树 |
-| **iOS** | `acmd head` / `acmd tail` | 阅读文本文件开头 / 末尾若干行 |
-| **iOS** | `acmd wget` | 从 URL 下载文件 |
+| **Windows / macOS / Linux / iOS** | `acmd sqlite_query` / `acmd image_info` | 只读 SQLite 查询／图片元数据 |
+| **Windows / macOS / Linux / iOS** | `acmd import_check` / `acmd archive_peek` | 检查 Python 模块／查看 ZIP、TAR 条目 |
+| **Windows / macOS / Linux / iOS** | `acmd find` | 从指定目录或当前目录递归匹配名称，支持关键词和通配符 |
+| **Windows / macOS / Linux / iOS** | `acmd wget` | 下载 URL 到目标 Client，`-o` 指定文件或目录 |
+| **iOS** | `acmd alert` / `acmd tree` / `acmd head` / `acmd tail` | Pythonista 提示框、目录树和文本文件读取 |
 
 示例（只展示语法，不表示允许随意操作目标设备）：
 
@@ -252,7 +249,7 @@ acmd tree . --max_depth 2
 
 - `acmd ps`：查看进程；终止操作是 **`acmd kill`**，进程结束操作需显式调用 `acmd kill`。
 - `acmd kill`：指定目标后仍应核对预览；`--no-confirm` 会跳过交互确认，只在明确知道对象和影响时使用。
-- `acmd notify`：作用于 **macOS/iOS Client 本地通知**；Server Builtin `notify <command>` 则是**运行远程命令后发送完成通知**，不能混为一谈。
+- `acmd notify`：作用于 **Windows、macOS、iOS Client 本地通知**；Server Builtin `notify <command>` 则是**运行远程命令后发送完成通知**，不能混为一谈。
 - 平台间同名 `acmd` 不保证完全相同的选项或系统能力，应以 `acmd help <name>` 为准。
 
 ACMD 的参数解析规则、输出与交互风险见 [ACMD](acmd.md)；进程信息和结构化输出见 [Structured Output](structured_output.md)。

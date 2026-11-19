@@ -4,9 +4,7 @@ The runtime binds one execution context to the host. Command registrations
 remain independent in client.commands.shell and client.commands.acmd.
 """
 
-from client.commands.acmd.commands import DesktopACMDCommands
-from client.commands.acmd.common.network import ACMDNetworkCommands
-from client.commands.acmd.common.files import ACMDArchiveCommands
+from client.commands.acmd.commands import CommonACMDCommands, DesktopACMDCommands
 from client.commands.acmd.platform.ios import iOSACMDCommands
 from client.commands.acmd.platform.mac import MacACMDCommands
 from client.commands.shell.base import CommandBase
@@ -30,6 +28,5 @@ class LinuxCommands(ShellCommands, DesktopACMDCommands, CommandBase):
     command_platform = 'linux'
 
 
-class iOSCommands(iOSShellCommands, iOSACMDCommands, ShellCommands,
-                  ACMDNetworkCommands, ACMDArchiveCommands, CommandBase):
+class iOSCommands(iOSShellCommands, iOSACMDCommands, ShellCommands, CommonACMDCommands, CommandBase):
     command_platform = 'ios'

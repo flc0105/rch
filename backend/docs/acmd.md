@@ -50,6 +50,19 @@ Server 会生成类似如下的负载：
 
 ACMD 的命令注册入口统一放在 `client/commands/acmd/common/` 或 `client/commands/acmd/platform/`，参数 `ArgumentCommandSpec` 定义在对应注册方法所在文件的顶部。复杂命令也可使用 `acmd/standalone/` 独立文件，并通过分组命令类显式挂载。运行时宿主负责合并当前平台的 Shell 与 ACMD 声明；两条命令线仍分别路由。
 
+## 文件查找、下载和检查
+
+Python Client 的 Windows、macOS、Linux、iOS 都注册以下命令：
+
+- `acmd find [path] --keyword <value>` 从当前目录或指定目录递归搜索文件和目录名。普通关键词按子串匹配，`*.jpg`、`img_*.png` 等通配符按完整名称匹配，两种模式均忽略大小写。终端里给通配符加引号。
+- `acmd wget <url> [-o <path>]` 下载 HTTP、HTTPS 或 FTP URL。默认保存到 Client 当前目录，可指定输出文件或目录。未指定文件名时优先采用响应给出的文件名，再取最终 URL 路径，最后使用 `download.bin`。下载期间显示简短进度，成功后显示可读大小和实际路径。只有完整下载才会替换目标文件。
+- `acmd sqlite_query --db <path> --query <sql>` 只读查询 SQLite，支持 `--json`。`acmd image_info <path>` 读取图片元数据，使用 Client 内的 Pillow，也支持 `--json`。
+- `acmd import_check <module>` 检查 Client 的 Python 模块。`acmd archive_peek <path> [--limit <count>]` 只列出 ZIP/TAR 的条目，不执行解压。
+
+## 本机提示框与通知
+
+Windows、macOS 和 iOS 的 `acmd msgbox` 和 `acmd notify` 共用 `--message <text>` 和可选的 `--title <text>`。消息显示在目标 Client 的本机图形会话或 Pythonista 中。系统通知权限与专注模式影响通知的可见性。`alert`、`tree`、`head`、`tail` 仍由 iOS 入口注册。
+
 ## Process ACMD：Kill 与 PS
 
 以下进程管理 ACMD 注册于 Windows、macOS 和 Linux Client；iOS / Pythonista 不注册 `acmd ps` 或 `acmd kill`。

@@ -1487,19 +1487,12 @@ Current specs:
 | --- | --- | --- |
 | Common | `netstat` | Show TCP/UDP network connections |
 | Common | `ps` | Show running processes |
-| iOS | `alert` | Show alert dialog |
-| iOS | `notify` | Send local notification |
-| iOS | `find` | Find files by keyword |
-| iOS | `tree` | Show directory tree |
-| iOS | `head` | Show first N lines of a text file |
-| iOS | `tail` | Show last N lines of a text file |
-| iOS | `wget` | Download file from URL |
-| macOS | `msgbox` | Show a native macOS dialog |
-| macOS | `notify` | Show a native macOS notification |
-| macOS | `sqlite_query` | Read-only SQLite query |
-| macOS | `image_info` | Show image metadata |
-| macOS | `import_check` | Check Python package/module status |
-| macOS | `archive_peek` | List archive contents without extracting |
+| Windows / macOS / Linux / iOS | `find` | Search file and directory names recursively |
+| Windows / macOS / Linux / iOS | `wget` | Download a URL to a local file |
+| Windows / macOS / Linux / iOS | `sqlite_query` / `image_info` | Query SQLite read-only or show image metadata |
+| Windows / macOS / Linux / iOS | `import_check` / `archive_peek` | Inspect an import or list ZIP/TAR entries |
+| Windows / macOS / iOS | `msgbox` / `notify` | Show a native Client dialog or notification |
+| iOS | `alert` / `tree` / `head` / `tail` | Pythonista alert and file commands |
 
 Common examples:
 
