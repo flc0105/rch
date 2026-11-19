@@ -7,7 +7,9 @@ import pytest
 
 from client.commands.acmd.registry import ArgumentCommandRegistry
 from client.commands.runtime.hosts import MacCommands
-from client.commands.runtime.hosts import LinuxCommands
+from client.commands.runtime.hosts import LinuxCommands, WindowsCommands, iOSCommands
+from client.commands.acmd.platform.mac import MacACMDCommands
+from client.commands.acmd.standalone.launchd import launchd as launchd_command, LAUNCHD_ARGUMENT_SPEC
 from client.runtime.sdk import launchd
 from client.runtime.execution.interaction_service import CommandInteractions, CommandInteractionError
 from server.connection.channel.session_command_channel import ClientSessionCommandChannel
@@ -27,7 +29,18 @@ def _execute(registry, command):
 def test_launchd_is_registered_only_on_macos():
     mac = _registry()
     assert mac.has_command('launchd')
-    assert not ArgumentCommandRegistry(LinuxCommands(socket=SimpleNamespace())).has_command('launchd')
+    for host in (LinuxCommands, WindowsCommands, iOSCommands):
+        registry = ArgumentCommandRegistry(host(socket=SimpleNamespace()))
+        assert not registry.has_command('launchd')
+        assert 'acmd launchd' not in [item['name'] for item in registry.get_manifest_payload()]
+        assert registry.execute({'name': 'launchd', 'args': {}})[0] == 0
+        assert registry.execute({'name': 'help', 'args': {'_args': ['launchd']}})[0] == 0
+    assert MacACMDCommands.launchd is launchd_command
+    assert mac._entries['launchd']['handler'].__func__ is launchd_command
+    assert launchd_command.argument_command_spec is LAUNCHD_ARGUMENT_SPEC
+    assert launchd_command.argument_command_platforms == ('mac',)
+    assert 'acmd launchd' in [item['name'] for item in mac.get_manifest_payload()]
+    assert not hasattr(MacACMDCommands, '_acmd_launchd')
     assert 'launchd' in _execute(mac, 'acmd help')[1]
     status, help_text = _execute(mac, 'acmd help launchd')
     assert status == 1

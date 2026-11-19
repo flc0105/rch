@@ -71,7 +71,7 @@ status
 
 ### macOS ACMD 命令
 
-macOS Client 在终端中提供 `acmd launchd`，调用与 Script 相同的 `client.runtime.sdk.launchd`。`action` 和 `kind` 是执行时必须确定的参数：可用前两个位置参数或 `--action`、`--kind` 指定；未填写时由 Interaction Broker 的选择框依次收集。确定后会显示操作预览并要求批准，预览包括服务标签及 `KeepAlive`、`RunAtLoad` 的默认或自定义值，Agent 还会展示 `scope` 与目标用户。可选参数保持脚本相同的默认值，不额外弹出选项表单：
+macOS Client 在终端中提供 `acmd launchd`，通过 macOS Platform 唯一注册并由独立命令实现交互和输出；其他平台不注册该命令。底层调用与 Script 相同的 `client.runtime.sdk.launchd`。`action` 和 `kind` 是执行时必须确定的参数：可用前两个位置参数或 `--action`、`--kind` 指定；未填写时由 Interaction Broker 的选择框依次收集。确定后会显示操作预览并要求批准，预览包括服务标签及 `KeepAlive`、`RunAtLoad` 的默认或自定义值，Agent 还会展示 `scope` 与目标用户。可选参数保持脚本相同的默认值，不额外弹出选项表单：
 
 ```text
 acmd launchd install agent --scope user --keep-alive true

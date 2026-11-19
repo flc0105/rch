@@ -1,11 +1,12 @@
 """Extract a ZIP safely through the shared Remote Files archive service."""
 
+import time
+
 from client.commands.acmd.decorators import argument_command
 from client.commands.runtime.interrupts import cancel_policy
 from core.commands.argument_models import ArgumentCommandSpec, ArgumentOptionSpec
 from core.utils.formatting import format_bytes
 from client.runtime.filesystem.conflict_policy import POLICIES
-from client.commands.acmd.standalone.archive_progress import ArchiveProgress
 
 
 UNZIP_ARGUMENT_SPEC = ArgumentCommandSpec(
@@ -50,13 +51,24 @@ def unzip(self, args_dict, payload=None):
 
     archive_path = self.path_resolver.require_existing_file(args_dict['path'])
     destination = self.path_resolver.require_existing_directory(args_dict.get('dest') or '.')
-    progress = ArchiveProgress(self, 'UNZIP', verbose=bool(args_dict.get('verbose')))
-    progress.begin(archive_path, destination)
+    verbose = bool(args_dict.get('verbose'))
+    started = time.monotonic()
+    files = byte_count = 0
+    if verbose:
+        self.emit_progress(f'UNZIP: {archive_path} -> {destination}')
+
+    def on_event(kind, path, value=0):
+        nonlocal files, byte_count
+        files += 1
+        byte_count += int(value)
+        if verbose:
+            self.emit_progress(f'UNZIP file: {path}')
+
     result = self.archive_service.extract_zip_with_policy(
-        archive_path, destination, policy=policy, on_event=progress,
+        archive_path, destination, policy=policy, on_event=on_event,
     )
     if result.get('skipped'):
         return 1, f'[!] UNZIP skipped: target already exists\n{result["extracted_to"]}'
     return (1,
-            f'[+] UNZIP complete: {progress.files} files, {format_bytes(progress.bytes)}, '
-            f'{progress.elapsed:.1f}s\n{result["extracted_to"]}')
+            f'[+] UNZIP complete: {files} files, {format_bytes(byte_count)}, '
+            f'{time.monotonic() - started:.1f}s\n{result["extracted_to"]}')
