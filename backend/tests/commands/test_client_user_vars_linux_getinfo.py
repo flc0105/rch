@@ -82,7 +82,8 @@ def test_linux_getinfo_structured_flat_and_json(monkeypatch):
     assert data['ppid'] == os.getppid()
     assert data['mem_total'].endswith((' GB', ' MB', ' TB'))
     assert data['mem_avail'].endswith((' GB', ' MB', ' TB'))
-    assert 'distro_pretty_name' in data
+    assert data['os_product']
+    assert 'distro_pretty_name' not in data
     assert 'package_manager' in data and 'package_manger' not in data
     assert 'default_shell' in data and 'kernel' in data
     assert not any(field in data for field in ('memory_total_gb', 'cpu_cores', 'pretty_name'))
@@ -110,5 +111,6 @@ def test_missing_linux_files_do_not_break_getinfo(monkeypatch):
     monkeypatch.setattr(info_module, '_read', lambda _: '')
     data = info_module.collect_linux(None)
     assert data['cpu_model'] is None
-    assert data['distro_pretty_name'] is None
+    assert data['os_product'] is None
+    assert 'distro_pretty_name' not in data
     assert data['has_desktop'] in (True, False)

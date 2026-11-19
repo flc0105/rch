@@ -1,8 +1,9 @@
 """Common system information command, with platform-local collectors."""
 
 import os
-import shlex
+from functools import lru_cache
 import platform
+import shlex
 import shutil
 import subprocess
 import sys
@@ -13,13 +14,14 @@ from client.commands.runtime.interrupts import timeout
 from client.runtime.client_util import get_executable_path
 from client.runtime.execution.context import CommandCancelledError, CommandTimeoutError
 from client.commands.shell.decorators import shell_command
+from core.device.apple_models import resolve_apple_model_name
 from core.device.local_identity import get_local_identity
 from core.utils.command_output import StructuredCommandResult
 from core.utils.formatting import format_bytes, seconds_to_readable_text, timestamp_to_readable_time
 
 
 CORE_FIELDS = (
-    'os_name', 'os_version', 'os_build', 'arch', 'manufacturer', 'model',
+    'os_name', 'os_product', 'os_version', 'os_build', 'arch', 'manufacturer', 'model',
     'cpu_model', 'cpu_count', 'mem_total', 'mem_avail', 'pid', 'ppid',
     'process_name', 'username', 'hostname', 'launch_command', 'python_version',
     'system_boot_time', 'system_uptime', 'process_start_time', 'process_uptime',
@@ -68,6 +70,98 @@ def _default_shell():
     return _text(pwd.getpwuid(os.getuid()).pw_shell)
 
 
+
+def _base_os_product(identity):
+    version = _text(identity.os_version)
+    if identity.os_alias == 'mac':
+        return f'macOS {version}' if version else 'macOS'
+    if identity.os_alias == 'ios':
+        return f'iOS {version}' if version else 'iOS'
+    return None
+
+
+@lru_cache(maxsize=1)
+def _read_windows_os_caption():
+    """Read the local Windows product caption from WMI; cache across getinfo calls."""
+    command = (
+        '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; '
+        '(Get-CimInstance -ClassName Win32_OperatingSystem).Caption'
+    )
+    try:
+        result = subprocess.run(
+            ['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', command],
+            capture_output=True, text=True, encoding='utf-8', errors='replace',
+            timeout=8, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+            check=False,
+        )
+        return _text(result.stdout.strip()) if result.returncode == 0 else None
+    except (OSError, subprocess.TimeoutExpired, ValueError):
+        return None
+
+
+def _read_windows_current_version():
+    """Read native Windows release metadata from the CurrentVersion registry key."""
+    try:
+        import winreg
+
+        path = r'SOFTWARE\Microsoft\Windows NT\CurrentVersion'
+        access = getattr(winreg, 'KEY_READ', 0) | getattr(winreg, 'KEY_WOW64_64KEY', 0)
+        key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, path, 0, access)
+        try:
+            values = {}
+            for name in (
+                'ProductName', 'DisplayVersion', 'CurrentBuildNumber',
+                'InstallationType', 'EditionID',
+            ):
+                try:
+                    values[name] = winreg.QueryValueEx(key, name)[0]
+                except OSError:
+                    continue
+            return values
+        finally:
+            winreg.CloseKey(key)
+    except (ImportError, OSError, AttributeError):
+        return {}
+
+
+def _windows_build_number(registry):
+    value = str(_text(registry.get('CurrentBuildNumber')) or '').strip()
+    if value.isdigit():
+        return value
+    version = platform.version()
+    candidate = version.rsplit('.', 1)[-1] if version else ''
+    return candidate if candidate.isdigit() else None
+
+
+def _windows_os_product(registry, caption):
+    """Use the Windows-supplied product name; append client release metadata."""
+    caption = str(_text(caption) or '').strip()
+    if caption.casefold().startswith('microsoft '):
+        caption = caption[len('Microsoft '):].strip()
+    product_name = str(_text(registry.get('ProductName')) or '').strip()
+    if product_name.casefold().startswith('microsoft '):
+        product_name = product_name[len('Microsoft '):].strip()
+    installation_type = str(registry.get('InstallationType') or '').casefold()
+    is_server = installation_type.startswith('server') or 'windows server' in caption.casefold()
+    if is_server:
+        if 'windows server' in caption.casefold():
+            return caption
+        if 'windows server' in product_name.casefold():
+            return product_name
+        return 'Windows Server'
+
+    # A Windows 11 registry may retain an older Windows 10 ProductName.
+    if not caption or 'windows' not in caption.casefold():
+        caption = product_name if 'windows' in product_name.casefold() else ''
+        if 'windows 10' in caption.casefold():
+            # Without a working system Caption this registry value is not reliable.
+            caption = 'Windows'
+        if not caption:
+            caption = 'Windows'
+    display_version = _text(registry.get('DisplayVersion'))
+    return f'{caption} {display_version}' if display_version else caption
+
+
 def collect_mac(owner):
     def command_text(command):
         result = owner.process_execution_service.run_shell_command(command, timeout=10)
@@ -84,10 +178,12 @@ def collect_mac(owner):
 def collect_windows(owner):
     from client.commands.platform.utils import win_util
 
-    version = platform.version()
+    registry = _optional(_read_windows_current_version) or {}
+    build = _windows_build_number(registry)
     sid = _optional(win_util.get_windows_uid_gid_sid) or {}
     return {
-        'os_build': version.rsplit('.', 1)[-1] if version and version.rsplit('.', 1)[-1].isdigit() else None,
+        'os_product': _windows_os_product(registry, _read_windows_os_caption()),
+        'os_build': build,
         'cpu_model': _text(platform.processor()),
         'locale': _optional(win_util.get_locale_tag),
         'user_sid': _text(sid.get('uid')),
@@ -109,11 +205,18 @@ def collect_linux(owner):
             cpu_model = _text(line.split(':', 1)[1].strip())
             break
 
+    product = _text(release.get('PRETTY_NAME'))
+    if product is None:
+        name = _text(release.get('NAME'))
+        version = _text(release.get('VERSION')) or _text(release.get('VERSION_ID'))
+        product = f'{name} {version}'.strip() if name and version else name or version
+
     return {
+        'os_product': product,
+        'os_build': _text(release.get('BUILD_ID')),
         'cpu_model': cpu_model,
         'default_shell': _optional(_default_shell),
         'kernel': _text(platform.release()),
-        'distro_pretty_name': _text(release.get('PRETTY_NAME')),
         'package_manager': next((name for name in (
             'apt', 'dnf', 'yum', 'pacman', 'zypper', 'apk', 'emerge', 'xbps-install'
         ) if shutil.which(name)), None),
@@ -209,7 +312,7 @@ def collect_ios(owner):
     if memory is not None and memory > 0 and vm is not None:
         if all(vm.get(key, -1) >= 0 for key in ('free', 'inactive')):
             available = min(memory, vm['free'] + vm['inactive'])
-    return {
+    result = {
         'cpu_count': process.get('processor_count'),
         'mem_total': _size(memory),
         'mem_avail': _size(available),
@@ -240,6 +343,12 @@ def collect_ios(owner):
         'temp': os.path.abspath(os.getenv('TMPDIR', '/tmp')),
         'icloud': _optional(lambda: get_icloud_path(read_info_plist())),
     }
+    machine_name = str(device.get('machine_name') or '')
+    if (device.get('device_type') == 'Pad' or machine_name.startswith('iPad')):
+        version = _text(device.get('system_version'))
+        if version:
+            result['os_product'] = f'iPadOS {version}'
+    return result
 
 
 COLLECTORS = {
@@ -263,10 +372,12 @@ def getinfo(self, arg=''):
         data = dict.fromkeys(CORE_FIELDS)
         data.update({
             'os_name': _text(identity.os_name),
+            'os_product': _base_os_product(identity),
             'os_version': _text(identity.os_version),
             'arch': _text(identity.arch),
             'manufacturer': _text(identity.manufacturer),
-            'model': _text(identity.model),
+            'model': (resolve_apple_model_name(identity.model)
+                      if identity.os_alias in ('mac', 'ios') else _text(identity.model)),
             'cpu_count': _optional(os.cpu_count),
             'pid': os.getpid(),
             'ppid': _optional(os.getppid),

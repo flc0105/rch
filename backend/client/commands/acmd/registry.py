@@ -2,6 +2,7 @@ import inspect
 from typing import Any, Callable
 
 from core.commands.argument_errors import ArgumentCommandValidationError
+from client.runtime.execution.context import CommandCancelledError, CommandTimeoutError
 from client.commands.acmd.help import ArgumentCommandHelpBuilder
 from core.commands.argument_validator import ArgumentCommandValidator
 from core.platform.normalization import normalize_platform_alias
@@ -168,6 +169,8 @@ class ArgumentCommandRegistry:
             return self._invoke_handler(handler, normalized_args, payload)
         except ArgumentCommandValidationError as e:
             return 0, str(e)
+        except (CommandCancelledError, CommandTimeoutError):
+            raise
         except Exception as e:
             return 0, f'acmd execution failed: {e}'
 

@@ -6,6 +6,7 @@ remain independent in client.commands.shell and client.commands.acmd.
 
 from client.commands.acmd.commands import DesktopACMDCommands
 from client.commands.acmd.common.network import ACMDNetworkCommands
+from client.commands.acmd.common.files import ACMDArchiveCommands
 from client.commands.acmd.platform.ios import iOSACMDCommands
 from client.commands.acmd.platform.mac import MacACMDCommands
 from client.commands.shell.base import CommandBase
@@ -30,5 +31,5 @@ class LinuxCommands(ShellCommands, DesktopACMDCommands, CommandBase):
 
 
 class iOSCommands(iOSShellCommands, iOSACMDCommands, ShellCommands,
-                  ACMDNetworkCommands, CommandBase):
+                  ACMDNetworkCommands, ACMDArchiveCommands, CommandBase):
     command_platform = 'ios'

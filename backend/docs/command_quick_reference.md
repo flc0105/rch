@@ -92,7 +92,7 @@ Alias 的模板参数、平台覆盖与安全边界见 [Aliases / Quick Actions]
 | `pyexec_stream <code>` | 执行 Python 代码并推送中间输出 | 按当前 Python 执行模式流式输出 |
 | `piplist` | 列出当前 Client Python 环境中的第三方包 | 查询**目标 Client**的解释器环境 |
 
-`getinfo` 公共字段按以下顺序输出：`os_name`、`os_version`、`os_build`、`arch`、`manufacturer`、`model`、`cpu_model`、`cpu_count`、`mem_total`、`mem_avail`、`pid`、`ppid`、`process_name`、`username`、`hostname`、`launch_command`、`python_version`、`system_boot_time`、`system_uptime`、`process_start_time`、`process_uptime`。启动命令包含当前进程的实际启动参数；内存为两位小数的可读容量；时间为 Client 本地 `YYYY-MM-DD HH:mm:ss`，时长为省略前导零的 `d h m s`；Python 版本使用短版本号。缺少可靠来源时 JSON 为 `null`，其余平台特有字段按平台追加。静态设备身份来自 Client 的本地身份缓存，实时内存与进程数据在每次执行时采集。
+`getinfo` 公共字段按以下顺序输出：`os_name`、`os_product`、`os_version`、`os_build`、`arch`、`manufacturer`、`model`、`cpu_model`、`cpu_count`、`mem_total`、`mem_avail`、`pid`、`ppid`、`process_name`、`username`、`hostname`、`launch_command`、`python_version`、`system_boot_time`、`system_uptime`、`process_start_time`、`process_uptime`。`os_product` 是面向用户的产品版本名称：Windows 客户端与 Server 优先使用本机 WMI/CIM 的系统产品名称，客户端追加注册表 `DisplayVersion`，WMI 不可用时读取注册表并降级显示；macOS 使用系统名称与数值版本，Linux 使用发行版 `PRETTY_NAME`，并在 `/etc/os-release` 提供 `BUILD_ID` 时填入 `os_build`，iPhone 使用 iOS 名称与版本，iPad 使用 iPadOS 名称与版本。Apple 的 `model` 在本地型号表命中时显示产品名称，未命中时保留系统型号标识；底层机器身份仍使用原始型号。启动命令包含当前进程的实际启动参数；内存为两位小数的可读容量；时间为 Client 本地 `YYYY-MM-DD HH:mm:ss`，时长为省略前导零的 `d h m s`；Python 版本使用短版本号。缺少可靠来源时 JSON 为 `null`，其余平台特有字段按平台追加。静态设备身份来自 Client 的本地身份缓存，实时内存与进程数据在每次执行时采集。
 
 **`shell`、`shell_stream`、`shell_bg`、`run_bg` 依赖目标平台可创建系统子进程。** 在普通 iOS / Pythonista 中，这类操作通常受限；`pyexec`、进程内 Script 和进程内 Job 使用 Python 执行路径，按其自身依赖与权限运行。详见 [iOS / Pythonista](ios_pythonista.md) 与 [Shell-like Commands](shell_like_commands.md)。
 
@@ -116,8 +116,6 @@ Alias 的模板参数、平台覆盖与安全边界见 [Aliases / Quick Actions]
 | 命令 | 作用 | 注意 |
 |---|---|---|
 | `download <path>` | 从目标 Client 把一个文件上传给 Server，以便下载/领取 | 方向与 Server 的 `upload` **相反** |
-| `zip_dir <directory>` | 在 Client 上把目录打包为 ZIP | 生成的压缩文件位于 Client 侧 |
-| `unzip <archive>` | 在 Client 当前工作目录解压 ZIP | 应先确认归档来源、内容和目标目录 |
 | `clean` | 扫描 Client 可清理项目，显示带类别选择的确认预览 | 默认预览时可能已勾选候选项；确认才执行删除 |
 | `clean --no-confirm` | 跳过交互、直接执行受规则允许的清理范围 | **会真实删除匹配数据**，执行前需确认清理范围 |
 | `update` | 构建、下载并准备新的 Client Bundle | iOS 更新交接与桌面自动启动方式不同 |
@@ -179,7 +177,7 @@ Server 的 `xt ...` 是面向用户的统一目录与运行入口；Client 另�
 
 ### Linux
 
-Linux 的 `getinfo` 在公共字段后追加 `default_shell`、`kernel`、`distro_pretty_name`、`package_manager`、`has_desktop` 等平台信息。默认文本列表，`--json` 输出同一数据的扁平 JSON。
+Linux 的 `getinfo` 将 `/etc/os-release` 的 `PRETTY_NAME` 放入公共字段 `os_product`，并在其后追加 `default_shell`、`kernel`、`package_manager`、`has_desktop` 等平台信息。默认文本列表，`--json` 输出同一数据的扁平 JSON。
 
 ### iOS / Pythonista
 
@@ -213,6 +211,7 @@ ACMD 统一使用 `acmd <name> ...` 前缀，使用独立的命令注册表、�
 
 | 平台 | 当前已注册的 ACMD | 作用概述 |
 |---|---|---|
+| **Windows / macOS / Linux / iOS** | `acmd zip` / `acmd unzip` | 打包文件或目录、按需指定目标目录；安全解压，默认不覆盖同名目标，支持 `--json` |
 | **Windows / macOS / Linux / iOS** | `acmd ifconfig` | 查看网卡；默认显示名称、IPv4 和 MAC；`-a` 显示全部接口及 IPv6、up 状态（yes/no/?），`--json` 的 up 为 true/false/null；`-i` 指定网卡 |
 | **Windows / macOS / Linux** | `acmd ps` | 按 PID、名称、端口查看进程，部分形式支持 JSON 结果 |
 | **Windows / macOS / Linux** | `acmd netstat` | 查看 TCP / UDP 连接，可按端口、监听状态和协议筛选 |

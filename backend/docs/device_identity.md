@@ -38,6 +38,8 @@ Python 侧的权威计算入口是 `core.device.machine_identity.build_machine_i
 | Linux | DMI 的 `sys_vendor` 与 `product_name` | `/etc/machine-id`，不存在时读取 `/var/lib/dbus/machine-id` |
 | iOS | `Apple` 与设备 API / `platform.machine()` | `UIDevice.identifierForVendor().UUIDString()` |
 
+`LocalIdentity.model` 始终保存系统采集到的原始硬件型号标识，并参与机器指纹。`getinfo` 展示 Apple 设备时，会通过随 Client 发布的型号名称表将 `Mac14,2`、`iPhone17,3`、`iPad17,1` 等标识解析为商品名称；未收录的型号继续显示原始标识。这项展示解析不改变 Handshake、`machine_id` 或设备缓存。型号名称表按 Apple 新设备发布情况更新，运行时不访问外部服务。
+
 Linux 发行版名称/版本取自 `/etc/os-release`，其次尝试 `/usr/lib/os-release`；macOS 版本取自 `platform.mac_ver()`；Windows 版本使用 Python 平台信息的版本字段；iOS 版本由 `UIDevice.systemVersion()` 提供。查询失败时不会抛出必须停止启动的指纹异常：采集函数返回空字符串，规范化阶段用 `na` 表示缺失值。Windows 硬件字段先读取 SMBIOS 注册表值，缺失或属于固件占位文本时再查询 CIM；macOS 型号直接调用系统 API，不依赖进程的 `PATH`，绝对路径命令作为后备。这里的 iOS `identifierForVendor` 具有厂商作用域，不能当作永久且不变的硬件序列号。
 
 ### 规范化、拼接与散列

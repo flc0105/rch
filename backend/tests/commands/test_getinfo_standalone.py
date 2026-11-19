@@ -46,6 +46,8 @@ def test_order_and_exact_common_field_types(monkeypatch, platform):
     assert tuple(result.data)[:len(info.CORE_FIELDS)] == info.CORE_FIELDS
     assert info.CORE_FIELDS.index('process_name') == info.CORE_FIELDS.index('ppid') + 1
     assert result.data['os_name'] == 'Test OS'
+    assert result.data['model'] == 'Box'
+    assert result.data['os_product'] == {'mac': 'macOS 1.0', 'ios': 'iOS 1.0'}.get(platform)
     assert result.data['python_version'].count('.') >= 1
     assert result.data['launch_command'] == 'python rchclient.py'
     assert result.data['kernel'] == ('Darwin' if platform == 'ios' else 'Test Kernel')
@@ -122,12 +124,14 @@ def test_linux_missing_optional_files_and_metrics(monkeypatch):
     monkeypatch.setattr(info, '_read', lambda path: '')
     fields = info.collect_linux(None)
     assert fields['cpu_model'] is None
-    assert fields['distro_pretty_name'] is None
+    assert fields['os_product'] is None
+    assert fields['os_build'] is None
+    assert 'distro_pretty_name' not in fields
     assert fields['has_desktop'] in (False, True)
     assert 'package_manager' in fields and 'package_manger' not in fields
     assert not set(fields) & {'current_shell', 'python_executable', 'gpu', 'ip', 'resolution',
                                'is_root', 'cmdline', 'exe', 'cwd'}
-    assert list(fields).index('distro_pretty_name') < list(fields).index('package_manager') < list(fields).index('has_desktop')
+    assert list(fields).index('os_product') < list(fields).index('package_manager') < list(fields).index('has_desktop')
 
 
 def test_windows_sid_fields_and_build(monkeypatch):
@@ -138,10 +142,16 @@ def test_windows_sid_fields_and_build(monkeypatch):
         get_integrity_level=lambda: 'High',
     )
     monkeypatch.setattr(platform_utils, 'win_util', fake_win_util, raising=False)
-    monkeypatch.setattr(info.platform, 'version', lambda: '10.0.26100')
+    monkeypatch.setattr(info, '_read_windows_current_version', lambda: {
+        'ProductName': 'Windows 10 Pro', 'DisplayVersion': '25H2',
+        'CurrentBuildNumber': '26200', 'InstallationType': 'Client',
+    })
+    monkeypatch.setattr(info.platform, 'version', lambda: '10.0.26200')
     monkeypatch.setattr(info.platform, 'processor', lambda: 'AMD64 Family 25 Model 1')
+    monkeypatch.setattr(info, '_read_windows_os_caption', lambda: 'Microsoft Windows 11 Pro')
     fields = info.collect_windows(None)
-    assert fields['os_build'] == '26100'
+    assert fields['os_build'] == '26200'
+    assert fields['os_product'] == 'Windows 11 Pro 25H2'
     assert fields['user_sid'] == 'S-1-5-user'
     assert fields['group_sid'] == 'S-1-5-group'
     assert fields['locale'] == 'en-US'
@@ -242,3 +252,199 @@ def test_windows_process_launch_command_preserves_quoted_arguments(monkeypatch):
             '--update-ready-file', r'C:\RCH Data\ready file.json']
     monkeypatch.setattr(info, 'os', SimpleNamespace(name='nt'))
     assert info._process_launch_command(SimpleNamespace(cmdline=lambda: argv)) == subprocess.list2cmdline(argv)
+
+
+
+def test_os_product_names_for_macos_release_without_marketing_lookup():
+    for version in ('13.5', '14.7.2', '15.1', '26.1', '28.0', '10.11.6'):
+        identity = SimpleNamespace(os_alias='mac', os_version=version)
+        assert info._base_os_product(identity) == f'macOS {version}'
+    assert info._base_os_product(SimpleNamespace(os_alias='mac', os_version='')) == 'macOS'
+
+
+def test_windows_local_caption_and_display_version(monkeypatch):
+    # Windows 11 registry ProductName commonly remains Windows 10.
+    assert info._windows_os_product({
+        'ProductName': 'Windows 10 Pro', 'DisplayVersion': '25H2',
+        'InstallationType': 'Client',
+    }, 'Microsoft Windows 11 Pro') == 'Windows 11 Pro 25H2'
+    assert info._windows_os_product({
+        'ProductName': 'Windows 10 Pro', 'DisplayVersion': '25H2',
+        'InstallationType': 'Client',
+    }, None) == 'Windows 25H2'
+    assert info._windows_os_product({'DisplayVersion': '27H2'},
+                                    'Microsoft Windows 11 Enterprise') == 'Windows 11 Enterprise 27H2'
+
+
+def test_read_windows_caption_uses_local_cim_with_timeout(monkeypatch):
+    calls = []
+
+    def run(argv, **kwargs):
+        calls.append((argv, kwargs))
+        return SimpleNamespace(returncode=0, stdout='Microsoft Windows 11 Pro\n')
+
+    monkeypatch.setattr(info.subprocess, 'run', run)
+    info._read_windows_os_caption.cache_clear()
+    try:
+        assert info._read_windows_os_caption() == 'Microsoft Windows 11 Pro'
+        assert info._read_windows_os_caption() == 'Microsoft Windows 11 Pro'
+        assert len(calls) == 1  # Static OS caption is cached per Client process.
+        assert calls[0][0][0] == 'powershell.exe'
+        assert 'Get-CimInstance' in calls[0][0][-1]
+        assert calls[0][1]['timeout'] == 8
+        assert calls[0][1]['check'] is False
+    finally:
+        info._read_windows_os_caption.cache_clear()
+
+
+def test_read_windows_caption_fails_soft(monkeypatch):
+    import subprocess
+    info._read_windows_os_caption.cache_clear()
+    monkeypatch.setattr(info.subprocess, 'run', lambda *a, **k: (_ for _ in ()).throw(
+        subprocess.TimeoutExpired('powershell', 8)))
+    try:
+        assert info._read_windows_os_caption() is None
+    finally:
+        info._read_windows_os_caption.cache_clear()
+
+
+def test_windows_server_product_detection_and_fallback(monkeypatch):
+    from client.commands.platform import utils as platform_utils
+    fake_win_util = SimpleNamespace(
+        get_windows_uid_gid_sid=lambda: {},
+        get_locale_tag=lambda: 'en-US',
+        get_integrity_level=lambda: 'High',
+    )
+    monkeypatch.setattr(platform_utils, 'win_util', fake_win_util, raising=False)
+    monkeypatch.setattr(info.platform, 'processor', lambda: 'Intel64')
+    monkeypatch.setattr(info, '_read_windows_current_version', lambda: {
+        'ProductName': 'Windows Server 2025 Datacenter',
+        'DisplayVersion': '24H2',
+        'CurrentBuildNumber': '26100',
+        'InstallationType': 'Server',
+        'EditionID': 'ServerDatacenter',
+    })
+    monkeypatch.setattr(info, '_read_windows_os_caption',
+                        lambda: 'Microsoft Windows Server 2025 Datacenter')
+    fields = info.collect_windows(None)
+    assert fields['os_product'] == 'Windows Server 2025 Datacenter'
+    assert fields['os_build'] == '26100'
+
+    monkeypatch.setattr(info, '_read_windows_current_version', lambda: {
+        'ProductName': 'Windows 10 Enterprise',
+        'CurrentBuildNumber': '26100',
+        'InstallationType': 'Server Core',
+        'EditionID': 'ServerStandard',
+    })
+    monkeypatch.setattr(info, '_read_windows_os_caption', lambda: None)
+    fields = info.collect_windows(None)
+    assert fields['os_product'] == 'Windows Server'
+
+
+def test_windows_registry_reader_uses_native_64_bit_view(monkeypatch):
+    import sys
+    calls = []
+    values = {
+        'ProductName': 'Windows 10 Pro',
+        'DisplayVersion': '25H2',
+        'CurrentBuildNumber': '26200',
+        'InstallationType': 'Client',
+        'EditionID': 'Professional',
+    }
+
+    class WinReg:
+        HKEY_LOCAL_MACHINE = object()
+        KEY_READ = 0x20019
+        KEY_WOW64_64KEY = 0x0100
+
+        @staticmethod
+        def OpenKey(root, path, reserved, access):
+            calls.append(('open', root, path, reserved, access))
+            return 'key'
+
+        @staticmethod
+        def QueryValueEx(key, name):
+            calls.append(('query', key, name))
+            if name not in values:
+                raise OSError(name)
+            return values[name], 1
+
+        @staticmethod
+        def CloseKey(key):
+            calls.append(('close', key))
+
+    monkeypatch.setitem(sys.modules, 'winreg', WinReg)
+    result = info._read_windows_current_version()
+    assert result == values
+    assert calls[0][2] == r'SOFTWARE\Microsoft\Windows NT\CurrentVersion'
+    assert calls[0][4] == WinReg.KEY_READ | WinReg.KEY_WOW64_64KEY
+    assert calls[-1] == ('close', 'key')
+
+
+def test_apple_model_mapping_is_display_only_and_unknown_falls_back():
+    from core.device.apple_models import resolve_apple_model_name
+    assert resolve_apple_model_name('Mac14,2') == 'MacBook Air (M2, 2022)'
+    assert resolve_apple_model_name('iPhone17,3') == 'iPhone 16'
+    assert resolve_apple_model_name('iPad17,1') == 'iPad Pro 11-inch (M5)'
+    assert resolve_apple_model_name('iPhone19,2') == 'iPhone 18 Pro'
+    assert resolve_apple_model_name('iPhone19,4') == 'iPhone Duo'
+    assert resolve_apple_model_name('Mac99,1') == 'Mac99,1'
+    assert resolve_apple_model_name(None) is None
+
+
+def test_getinfo_maps_apple_model_without_mutating_identity(monkeypatch):
+    identity = SimpleNamespace(os_alias='ios', os_name='iOS', os_version='18.1.1',
+                               arch='arm64', manufacturer='Apple', model='iPhone17,3',
+                               hostname='localhost')
+    monkeypatch.setattr(info, 'get_local_identity', lambda: identity)
+    monkeypatch.setitem(info.COLLECTORS, 'ios', lambda owner: {})
+    monkeypatch.setattr(info, 'get_executable_path', lambda: '/python app.py')
+    result = info.getinfo(SimpleNamespace(_checkpoint=lambda: None))
+    assert result.data['os_product'] == 'iOS 18.1.1'
+    assert result.data['model'] == 'iPhone 16'
+    assert identity.model == 'iPhone17,3'
+
+
+
+def test_linux_pretty_name_becomes_common_os_product(monkeypatch):
+    def read(path):
+        if path == '/etc/os-release':
+            return 'NAME="Ubuntu"\nVERSION_ID="22.04"\nPRETTY_NAME="Ubuntu 22.04.3 LTS"\nBUILD_ID="2026.11.18"'
+        return ''
+    monkeypatch.setattr(info, '_read', read)
+    fields = info.collect_linux(None)
+    assert fields['os_product'] == 'Ubuntu 22.04.3 LTS'
+    assert fields['os_build'] == '2026.11.18'
+    assert 'distro_pretty_name' not in fields
+
+
+def test_getinfo_maps_macos_model_name(monkeypatch):
+    identity = SimpleNamespace(os_alias='mac', os_name='macOS', os_version='13.5',
+                               arch='arm64', manufacturer='Apple', model='Mac14,2',
+                               hostname='mac-host')
+    monkeypatch.setattr(info, 'get_local_identity', lambda: identity)
+    monkeypatch.setitem(info.COLLECTORS, 'mac', lambda owner: {})
+    monkeypatch.setattr(info, 'get_executable_path', lambda: '/python client.py')
+    result = info.getinfo(SimpleNamespace(_checkpoint=lambda: None))
+    assert result.data['os_product'] == 'macOS 13.5'
+    assert result.data['model'] == 'MacBook Air (M2, 2022)'
+    assert identity.model == 'Mac14,2'
+
+
+
+def test_ipad_getinfo_product_uses_ipados_name(monkeypatch):
+    from client.commands.platform.utils import ios_util
+    from client.monitor import ios_dashboard
+    monkeypatch.setattr(info, '_ios_process_start', lambda: None)
+    monkeypatch.setattr(ios_dashboard, '_system_memory', lambda: {'free': 0, 'inactive': 0})
+    monkeypatch.setattr(ios_util, 'get_ios_process_info', lambda: {
+        'physical_memory_bytes': 8_000_000_000, 'system_uptime_seconds': 100,
+        'operating_system_version_string': 'Version 18.1.1 (Build 22B91)',
+    })
+    monkeypatch.setattr(ios_util, 'get_ios_device_info', lambda: {
+        'device_type': 'Pad', 'system_version': '18.1.1', 'machine_name': 'iPad17,1',
+    })
+    monkeypatch.setattr(ios_util, 'get_ios_bundle_info', dict)
+    monkeypatch.setattr(ios_util, 'read_info_plist', dict)
+    monkeypatch.setattr(ios_util, 'get_icloud_path', lambda _: None)
+    assert info.collect_ios(None)['os_product'] == 'iPadOS 18.1.1'

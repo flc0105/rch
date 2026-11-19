@@ -70,6 +70,8 @@ acmd ps --port 8080 --json
 acmd ps --port 8080 --json --with-actions
 ```
 
+`acmd zip` 与 `acmd unzip` 是 macOS、Windows、Linux、iOS 共用的 Standalone 文件命令，使用 Remote File Browser 相同的 `ArchiveService`。`acmd zip <path>` 支持文件或目录，默认在源路径的父目录创建 `<源名称>.zip`（`acmd zip .` 在当前目录的上一级输出），也可通过 `--dest/-d` 指定已存在的目标目录、`--name/-n` 指定 ZIP 文件名；同名 ZIP 已存在时拒绝覆盖。压缩输出不得位于被压缩目录内部，避免递归包含自身。`acmd unzip <archive>` 默认解压到当前工作目录；`--dest/-d` 指定已有目标目录，`--conflict` 指定同名处理策略（默认 `stop`，可选 `skip`、`keep_both`、`merge`、`replace`），`--json` 返回结构化结果。解压采用先校验再隔离暂存的路径，包含 ZIP 路径安全、条目数和解压总量限制；涉及替换／合并数据时，必须显式选择对应冲突策略。两条命令均可使用 `acmd help zip` 或 `acmd help unzip` 查看完整用法。
+
 `acmd netstat` 在 Windows、macOS、Linux 上查看 TCP/UDP 连接，默认显示全部可读取的连接。可用 `--port 443`（或位置参数 `443`）按本地／远端端口过滤，`--status LISTENING`（或 `-l`）仅看监听状态，`--protocol tcp`（或 `-t`）、`--protocol udp`（或 `-u`）按协议过滤。支持组合条件，如 `acmd netstat -l -t --port 443 --json`；监听状态同时识别系统返回的 `LISTEN` 与 `LISTENING`。`-t` 和 `-u` 不能同时指定，`--json` 保持原有结构化表格输出。
 
 `acmd ifconfig` 在 Windows、macOS、Linux、iOS 上提供相同的 `name/ip/mac` 默认表格，

@@ -21,21 +21,6 @@ class ArchiveService(ZipPeekService):
         self.path_resolver = path_resolver
         super().__init__(checkpoint=checkpoint, iter_checked=iter_checked)
 
-    def create_zip_archive(self, dir_name: str) -> str:
-        import pathlib
-
-        temp_dir = tempfile.mkdtemp(dir=get_temp_category_dir('archive_temp', private=True))
-        directory = self.path_resolver.validate_directory_exists(dir_name)
-        archive_name = os.path.basename(directory)
-        parent_dir = pathlib.Path(directory).resolve().parent
-
-        return shutil.make_archive(
-            os.path.join(temp_dir, archive_name),
-            format='zip',
-            root_dir=parent_dir,
-            base_dir=os.path.basename(directory)
-        )
-
     def build_download_archive_name(self, paths: list[str], archive_name: str = '') -> str:
         custom_name = (archive_name or '').strip()
         if custom_name:
@@ -101,9 +86,6 @@ class ArchiveService(ZipPeekService):
             shutil.rmtree(temp_dir, ignore_errors=True)
             raise
 
-    def extract_archive_to_cwd(self, archive_path: str):
-        shutil.unpack_archive(archive_path, os.getcwd())
-
     EXTRACT_MAX_ENTRIES = 50000
     EXTRACT_MAX_UNCOMPRESSED_BYTES = 20 * 1024 * 1024 * 1024
 
@@ -122,6 +104,19 @@ class ArchiveService(ZipPeekService):
         fallback = self.build_download_archive_name(paths)
         final_name = self.normalize_zip_archive_name(archive_name, fallback=fallback)
         archive_path = os.path.join(destination, final_name)
+
+        # A ZIP cannot safely contain its own output file. Applies equally to
+        # ACMD and the Remote File Browser using this shared method.
+        output_real = os.path.realpath(archive_path)
+        for source in paths:
+            if os.path.isdir(source):
+                source_real = os.path.realpath(source)
+                try:
+                    inside_source = os.path.commonpath((source_real, output_real)) == source_real
+                except ValueError:
+                    inside_source = False  # Different Windows volumes cannot contain one another.
+                if inside_source:
+                    raise ValueError('ZIP output cannot be inside an archived directory')
 
         if os.path.exists(archive_path):
             raise FileExistsError(f'Target ZIP already exists: {archive_path}')
