@@ -15,6 +15,12 @@ def _safe_call(fn, default=None):
         return default
 
 
+def show_ios_alert(title, message):
+    import console
+
+    return console.alert(title, message, 'OK', hide_cancel_button=True)
+
+
 def get_ios_username():
     for key in ('USER', 'LOGNAME', 'USERNAME'):
         value = os.environ.get(key)

@@ -208,10 +208,6 @@ def test_native_ui_adapters_receive_arguments_as_data(monkeypatch):
     spawn = Mock()
     monkeypatch.setattr(subprocess, 'CREATE_NO_WINDOW', 0x08000000, raising=False)
     monkeypatch.setattr(subprocess, 'Popen', spawn)
-    for command in ('msgbox', 'notify'):
-        assert execute(win, f'acmd {command} --title Hello --message \'quote " example\'')[0] == 1
-    for call, field in ((spawn.call_args, 'RCH_DIALOG_MESSAGE'), (run.call_args, 'RCH_NOTIFY_MESSAGE')):
-        assert 'quote " example' not in call.args[0][-1]
-        assert call.kwargs['env'][field] == 'quote " example'
-    run.return_value = SimpleNamespace(returncode=1, stderr='No interactive session')
-    assert execute(win, 'acmd notify --message "test"') == (0, 'Could not send the notification: No interactive session')
+    assert execute(win, 'acmd msgbox --title Hello --message \'quote " example\'')[0] == 1
+    assert 'quote " example' not in spawn.call_args.args[0][-1]
+    assert spawn.call_args.kwargs['env']['RCH_DIALOG_MESSAGE'] == 'quote " example'

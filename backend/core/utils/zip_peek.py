@@ -31,21 +31,21 @@ class ZipPeekService:
             raise ValueError(f'Not a valid ZIP archive: {path}')
         return path
 
-    def _normalize_zip_member_name(self, name: str) -> str:
+    def _normalize_archive_member_name(self, name: str, *, format_name: str = 'ZIP') -> str:
         raw = str(name or '').replace('\\', '/')
         if not raw:
             return ''
         if raw.startswith('/') or raw.startswith('//'):
-            raise ValueError(f'Unsafe absolute ZIP entry: {name}')
+            raise ValueError(f'Unsafe absolute {format_name} entry: {name}')
         if len(raw) >= 2 and raw[1] == ':' and raw[0].isalpha():
-            raise ValueError(f'Unsafe drive-qualified ZIP entry: {name}')
+            raise ValueError(f'Unsafe drive-qualified {format_name} entry: {name}')
 
         normalized = posixpath.normpath(raw).lstrip('/')
         if normalized in ('', '.'):
             return ''
         parts = [part for part in normalized.split('/') if part not in ('', '.')]
         if any(part == '..' for part in parts):
-            raise ValueError(f'Unsafe parent traversal ZIP entry: {name}')
+            raise ValueError(f'Unsafe parent traversal {format_name} entry: {name}')
         return '/'.join(parts)
 
     def _is_zip_symlink(self, info: zipfile.ZipInfo) -> bool:
@@ -55,7 +55,7 @@ class ZipPeekService:
     def _zip_info_is_dir(self, info: zipfile.ZipInfo) -> bool:
         return bool(info.is_dir() or str(info.filename or '').endswith(('/', '\\')))
 
-    def _build_zip_tree(self, infos: list[zipfile.ZipInfo]) -> list[dict]:
+    def _build_archive_tree(self, entries, *, format_name: str = 'ZIP') -> list[dict]:
         roots = []
         nodes = {}
 
@@ -84,18 +84,17 @@ class ZipPeekService:
                 parent = node
             return parent
 
-        for info in infos:
+        for name, is_dir, size, compressed_size in entries:
             self._checkpoint()
-            normalized = self._normalize_zip_member_name(info.filename)
+            normalized = self._normalize_archive_member_name(name, format_name=format_name)
             if not normalized:
                 continue
 
             parts = normalized.split('/')
-            is_dir = self._zip_info_is_dir(info)
             if is_dir:
                 node = ensure_directory(parts)
                 if node is not None:
-                    node['entry_name'] = info.filename
+                    node['entry_name'] = name
                 continue
 
             parent = ensure_directory(parts[:-1])
@@ -105,10 +104,10 @@ class ZipPeekService:
                 node = {
                     'name': parts[-1],
                     'path': path,
-                    'entry_name': info.filename,
+                    'entry_name': name,
                     'is_dir': False,
-                    'size': int(info.file_size or 0),
-                    'compressed_size': int(info.compress_size or 0),
+                    'size': size,
+                    'compressed_size': compressed_size,
                     'children': [],
                 }
                 nodes[path] = node
@@ -127,7 +126,7 @@ class ZipPeekService:
         sort_nodes(roots)
         return roots
 
-    def inspect_zip(self, archive_path: str) -> dict:
+    def inspect_zip(self, archive_path: str, *, entry_limit: int | None = None) -> dict:
         path = self._require_zip_file(archive_path)
         archive_size = os.path.getsize(path)
         if archive_size > self.PEEK_MAX_ARCHIVE_BYTES:
@@ -157,7 +156,11 @@ class ZipPeekService:
                 if int(info.flag_bits or 0) & 0x1:
                     encrypted_count += 1
 
-            tree = self._build_zip_tree(infos)
+            entries = infos if entry_limit is None else infos[:entry_limit]
+            tree = self._build_archive_tree(
+                (info.filename, self._zip_info_is_dir(info), info.file_size, info.compress_size)
+                for info in entries
+            )
 
             def count_directories(nodes: list[dict]) -> int:
                 total = 0
@@ -174,6 +177,8 @@ class ZipPeekService:
             'name': os.path.basename(path),
             'archive_size': archive_size,
             'entry_count': len(infos),
+            **({'previewed_entries': len(entries), 'truncated': len(entries) < len(infos)}
+               if entry_limit is not None else {}),
             'file_count': file_count,
             'dir_count': dir_count,
             'compressed_size': compressed_size,
@@ -220,9 +225,9 @@ class ZipPeekService:
             decoded, encoding = decode_text_bytes(data)
         except (UnicodeError, ValueError):
             return {
-                'path': self._normalize_zip_member_name(info.filename),
+                'path': self._normalize_archive_member_name(info.filename),
                 'entry_name': info.filename,
-                'name': os.path.basename(self._normalize_zip_member_name(info.filename)),
+                'name': os.path.basename(self._normalize_archive_member_name(info.filename)),
                 'size': int(info.file_size or 0),
                 'type': 'binary',
                 'content': '',
@@ -230,9 +235,9 @@ class ZipPeekService:
             }
 
         return {
-            'path': self._normalize_zip_member_name(info.filename),
+            'path': self._normalize_archive_member_name(info.filename),
             'entry_name': info.filename,
-            'name': os.path.basename(self._normalize_zip_member_name(info.filename)),
+            'name': os.path.basename(self._normalize_archive_member_name(info.filename)),
             'size': int(info.file_size or 0),
             'type': 'text',
             'encoding': encoding,

@@ -63,8 +63,11 @@ def test_ios_unknown_shell_fallback_is_bounded_to_error():
 
     fallback = ShellCommandRunner(None)._resolve_default_command(commands, 'echo hi')
     assert fallback() == (0, 'OS shell execution is unavailable on this platform')
-    for name in ('is_elevated', 'piplist', 'spawn_instance', 'relaunch_instance', 'reexec_instance'):
-        assert not hasattr(getattr(commands, name), 'help')
+    for name in ('is_elevated', 'piplist', 'keyboard_send', 'userenum',
+                 'spawn_instance', 'relaunch_instance', 'reexec_instance'):
+        assert name not in iOSShellCommands.__dict__
+        assert not supports_shell_platform(getattr(commands, name), 'ios')
+        assert ShellCommandRunner(None)._resolve_builtin_command(commands, name)()[0] == 0
 
 
 

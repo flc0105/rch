@@ -2,8 +2,10 @@ import os
 import posixpath
 import shutil
 import stat
+import tarfile
 import tempfile
 import zipfile
+from itertools import islice
 
 from core.utils.zip_peek import ZipPeekService
 from core.utils.artifact_naming import build_artifact_filename
@@ -20,6 +22,39 @@ class ArchiveService(ZipPeekService):
     def __init__(self, path_resolver: PathResolver, checkpoint=None, iter_checked=None):
         self.path_resolver = path_resolver
         super().__init__(checkpoint=checkpoint, iter_checked=iter_checked)
+
+    def inspect_archive(self, archive_path: str, *, entry_limit: int) -> dict:
+        """Read ZIP or TAR metadata without extracting archive members."""
+        if not 1 <= entry_limit <= self.PEEK_MAX_ENTRIES:
+            raise ValueError(f'Archive preview limit must be between 1 and {self.PEEK_MAX_ENTRIES}')
+        if zipfile.is_zipfile(archive_path):
+            return {'format': 'zip', **self.inspect_zip(archive_path, entry_limit=entry_limit)}
+
+        archive_size = os.path.getsize(archive_path)
+        if archive_size > self.PEEK_MAX_ARCHIVE_BYTES:
+            raise ValueError(f'Archive exceeds preview limit of {self.PEEK_MAX_ARCHIVE_BYTES} bytes')
+        try:
+            with tarfile.open(archive_path, 'r:*') as archive:
+                members = list(self._iter(islice(archive, entry_limit + 1), check_interval=1))
+        except tarfile.ReadError as exc:
+            raise ValueError('Unsupported or invalid archive (expected ZIP or TAR)') from exc
+
+        truncated = len(members) > entry_limit
+        entries = members[:entry_limit]
+        tree = self._build_archive_tree(
+            ((item.name, item.isdir(), item.size, None) for item in entries),
+            format_name='TAR',
+        )
+        return {
+            'format': 'tar',
+            'path': archive_path,
+            'name': os.path.basename(archive_path),
+            'archive_size': archive_size,
+            'entry_count': None if truncated else len(entries),
+            'previewed_entries': len(entries),
+            'truncated': truncated,
+            'tree': tree,
+        }
 
     def build_download_archive_name(self, paths: list[str], archive_name: str = '') -> str:
         custom_name = (archive_name or '').strip()
@@ -193,7 +228,7 @@ class ArchiveService(ZipPeekService):
 
         validated = []
         for info in self._iter(infos, check_interval=64):
-            normalized = self._normalize_zip_member_name(info.filename)
+            normalized = self._normalize_archive_member_name(info.filename)
             if not normalized:
                 continue
             if self._is_zip_symlink(info):
@@ -246,7 +281,7 @@ class ArchiveService(ZipPeekService):
                 requested = str(entry_name).replace('\\', '/')
                 if '..' in requested.split('/'):
                     raise ValueError('Unsafe ZIP entry selection')
-                requested = self._normalize_zip_member_name(requested)
+                requested = self._normalize_archive_member_name(requested)
                 files = [info for info, name in validated if name == requested and not self._zip_info_is_dir(info)]
                 descendants = [name for _, name in validated if name.startswith(requested + '/')]
                 if len(files) > 1 or (files and descendants):
@@ -301,7 +336,7 @@ class ArchiveService(ZipPeekService):
         requested = str(entry_name or '').replace('\\', '/')
         if '..' in requested.split('/'):
             raise ValueError('Unsafe ZIP entry selection')
-        requested = self._normalize_zip_member_name(requested)
+        requested = self._normalize_archive_member_name(requested)
         if not requested:
             raise ValueError('ZIP entry is required')
 

@@ -1490,7 +1490,7 @@ Current specs:
 | Windows / macOS / Linux / iOS | `find` | Search file and directory names recursively |
 | Windows / macOS / Linux / iOS | `wget` | Download a URL to a local file |
 | Windows / macOS / Linux / iOS | `sqlite_query` / `image_info` | Query SQLite read-only or show image metadata |
-| Windows / macOS / Linux / iOS | `import_check` / `archive_peek` | Inspect an import or list ZIP/TAR entries |
+| Windows / macOS / Linux / iOS | `import_check` / `archive_peek` | Inspect an import or show a ZIP/TAR tree; both support JSON |
 | Windows / macOS / iOS | `msgbox` / `notify` | Show a native Client dialog or notification |
 | iOS | `alert` / `tree` / `head` / `tail` | Pythonista alert and file commands |
 

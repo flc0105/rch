@@ -225,7 +225,7 @@ ACMD 统一使用 `acmd <name> ...` 前缀，使用独立的命令注册表、�
 | **Windows / macOS / iOS** | `acmd msgbox` / `acmd notify` | 本机提示框／通知，填写 `--message`，可选 `--title` |
 | **macOS** | `acmd launchd` | 管理 LaunchAgent / LaunchDaemon；未填 action/kind 时交互选择，执行前预览审批；支持 `--json` 结构化结果与 `--no-confirm` 直接执行；详见 [launchd](launchd.md) |
 | **Windows / macOS / Linux / iOS** | `acmd sqlite_query` / `acmd image_info` | 只读 SQLite 查询／图片元数据 |
-| **Windows / macOS / Linux / iOS** | `acmd import_check` / `acmd archive_peek` | 检查 Python 模块／查看 ZIP、TAR 条目 |
+| **Windows / macOS / Linux / iOS** | `acmd import_check` / `acmd archive_peek` | 检查 Python 模块／查看 ZIP、TAR 目录树，均支持 `--json` |
 | **Windows / macOS / Linux / iOS** | `acmd find` | 从指定目录或当前目录递归匹配名称，支持关键词和通配符 |
 | **Windows / macOS / Linux / iOS** | `acmd wget` | 下载 URL 到目标 Client，`-o` 指定文件或目录 |
 | **iOS** | `acmd alert` / `acmd tree` / `acmd head` / `acmd tail` | Pythonista 提示框、目录树和文本文件读取 |

@@ -3,6 +3,7 @@ import os
 import subprocess
 
 from client.commands.acmd.decorators import argument_command
+from client.commands.platform.utils.ios_util import show_ios_alert
 from core.commands.argument_models import ArgumentCommandSpec, ArgumentOptionSpec
 
 
@@ -51,4 +52,4 @@ Add-Type -AssemblyName System.Windows.Forms
 
 
 def _show_ios_message_box(owner, title, message):
-    owner.ios_console.show_alert(title, message)
+    show_ios_alert(title, message)

@@ -4,6 +4,7 @@ from collections import deque
 from itertools import islice
 
 from client.commands.acmd.decorators import argument_command
+from client.commands.platform.utils.ios_util import show_ios_alert
 from core.command_completion.models import CompletionSpec
 from core.commands.argument_models import ArgumentCommandSpec, ArgumentOptionSpec
 
@@ -56,7 +57,7 @@ class iOSACMDCommands:
     @argument_command('alert', spec=ALERT_ARGUMENT_SPEC)
     def alert(self, args_dict):
         try:
-            button = self.ios_console.show_alert(args_dict['title'] or 'Alert', args_dict['message'])
+            button = show_ios_alert(args_dict['title'] or 'Alert', args_dict['message'])
             return 1, f'Alert closed: {button}'
         except (ImportError, OSError, RuntimeError, ValueError) as exc:
             return 0, f'Failed to show alert: {exc}'

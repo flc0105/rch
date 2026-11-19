@@ -57,11 +57,12 @@ Python Client 的 Windows、macOS、Linux、iOS 都注册以下命令：
 - `acmd find [path] --keyword <value>` 从当前目录或指定目录递归搜索文件和目录名。普通关键词按子串匹配，`*.jpg`、`img_*.png` 等通配符按完整名称匹配，两种模式均忽略大小写。终端里给通配符加引号。
 - `acmd wget <url> [-o <path>]` 下载 HTTP、HTTPS 或 FTP URL。默认保存到 Client 当前目录，可指定输出文件或目录。未指定文件名时优先采用响应给出的文件名，再取最终 URL 路径，最后使用 `download.bin`。下载期间显示简短进度，成功后显示可读大小和实际路径。只有完整下载才会替换目标文件。
 - `acmd sqlite_query --db <path> --query <sql>` 只读查询 SQLite，支持 `--json`。`acmd image_info <path>` 读取图片元数据，使用 Client 内的 Pillow，也支持 `--json`。
-- `acmd import_check <module>` 检查 Client 的 Python 模块。`acmd archive_peek <path> [--limit <count>]` 只列出 ZIP/TAR 的条目，不执行解压。
+- `acmd import_check <module> [--json]` 检查 Client 的 Python 模块。终端文本和 JSON 使用相同字段。模块无法导入时结果含 `importable=false` 和错误信息。
+- `acmd archive_peek <path> [--limit <count>] [--json]` 只读显示 ZIP/TAR 的目录树。ZIP 使用与 Remote Files 相同的预览和条目结构。默认预览 50 个归档条目，`--limit` 可指定 1–5000。JSON 包含嵌套 `tree` 和 `truncated`。TAR 提前截断时，完整条目数为 `null`。
 
 ## 本机提示框与通知
 
-Windows、macOS 和 iOS 的 `acmd msgbox` 和 `acmd notify` 共用 `--message <text>` 和可选的 `--title <text>`。消息显示在目标 Client 的本机图形会话或 Pythonista 中。系统通知权限与专注模式影响通知的可见性。`alert`、`tree`、`head`、`tail` 仍由 iOS 入口注册。
+Windows、macOS 和 iOS 的 `acmd msgbox` 和 `acmd notify` 共用 `--message <text>` 和可选的 `--title <text>`。消息显示在目标 Client 的本机图形会话或 Pythonista 中。系统通知权限与专注模式影响通知的可见性。Windows 在将请求交给本机通知队列后即完成命令，终端可继续执行下一条。`alert`、`tree`、`head`、`tail` 仍由 iOS 入口注册。
 
 ## Process ACMD：Kill 与 PS
 

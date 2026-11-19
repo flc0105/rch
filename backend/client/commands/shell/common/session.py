@@ -55,18 +55,18 @@ class ShellSessionCommands:
         self.socket.close()
         sys.exit(0)
 
-    @shell_command('Restart client process and reconnect', group='session')
+    @shell_command('Restart client process and reconnect', group='session', platforms=('mac', 'win', 'linux'))
     @confirm('Restart this Client process and reconnect to the Server?')
     def relaunch_instance(self, options=''):
         if str(options or '').strip():
             return 0, 'Usage: relaunch_instance [--no-confirm]'
         _relaunch_instance(self.socket)
 
-    @shell_command('Restart current process by exec replacement', group='session')
+    @shell_command('Restart current process by exec replacement', group='session', platforms=('mac', 'linux'))
     def reexec_instance(self):
         _reexec_instance(self.socket)
 
-    @shell_command('Start a new client instance without exiting current process', group='session')
+    @shell_command('Start a new client instance without exiting current process', group='session', platforms=('mac', 'win', 'linux'))
     def spawn_instance(self):
         process = _spawn_instance()
         # Duplicate 已是独立 session；父进程只负责异步回收退出状态，避免 zombie。

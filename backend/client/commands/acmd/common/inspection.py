@@ -4,16 +4,15 @@ import importlib.metadata
 import json
 import os
 import tarfile
-import time
 import zipfile
 from contextlib import closing
-from itertools import islice
 from pathlib import Path
 
 from client.commands.acmd.decorators import argument_command
 from core.command_completion.models import CompletionSpec
 from core.commands.argument_models import ArgumentCommandSpec, ArgumentOptionSpec
-from core.utils.formatting import format_dict, format_table, get_size
+from core.utils.command_output import StructuredCommandResult, render_structured_result
+from core.utils.formatting import format_bytes, format_dict, format_table, get_size
 
 
 SQLITE_QUERY_SPEC = ArgumentCommandSpec(
@@ -45,6 +44,7 @@ IMPORT_CHECK_SPEC = ArgumentCommandSpec(
     description='Check Python package/module status',
     options=[
         ArgumentOptionSpec('module', 'str', required=True, allow_empty=False, positional_index=0, help_text='Module name'),
+        ArgumentOptionSpec('json', 'flag', default=False, help_text='Output as JSON'),
         ArgumentOptionSpec('help', 'flag', default=False, help_text='Show this help message'),
     ],
 )
@@ -55,7 +55,8 @@ ARCHIVE_PEEK_SPEC = ArgumentCommandSpec(
     options=[
         ArgumentOptionSpec('path', 'str', required=True, allow_empty=False, positional_index=0, help_text='ZIP or TAR archive path',
                            completion=CompletionSpec('filesystem', ('file', 'directory'))),
-        ArgumentOptionSpec('limit', 'int', default=50, help_text='Limit number of entries'),
+        ArgumentOptionSpec('limit', 'int', default=50, help_text='Limit the number of archive entries previewed'),
+        ArgumentOptionSpec('json', 'flag', default=False, help_text='Output as JSON'),
         ArgumentOptionSpec('help', 'flag', default=False, help_text='Show this help message'),
     ],
 )
@@ -154,47 +155,55 @@ class ACMDInspectionCommands:
             module = importlib.import_module(name)
         except ImportError as exc:
             result['error'] = str(exc)
-            return 1, format_dict(result, width=24)
+        else:
+            result['importable'] = True
+            result['module_path'] = getattr(module, '__file__', None)
+            for attr in ('__version__', 'version', 'VERSION'):
+                if hasattr(module, attr):
+                    result['module_version'] = str(getattr(module, attr))
+                    break
 
-        result['importable'] = True
-        result['module_path'] = getattr(module, '__file__', None)
-        for attr in ('__version__', 'version', 'VERSION'):
-            if hasattr(module, attr):
-                result['module_version'] = str(getattr(module, attr))
-                break
-
-        # Pythonista/system modules may have no distribution metadata.
-        candidates = importlib.metadata.packages_distributions().get(name.split('.', 1)[0], [])
-        if len(candidates) == 1:
-            dist = importlib.metadata.distribution(candidates[0])
-            result.update(package_name=dist.metadata['Name'], package_version=dist.version,
-                          package_dependencies=list(dist.requires or ()))
-        return 1, format_dict(result, width=24)
+            # Pythonista/system modules may have no distribution metadata.
+            candidates = importlib.metadata.packages_distributions().get(name.split('.', 1)[0], [])
+            if len(candidates) == 1:
+                dist = importlib.metadata.distribution(candidates[0])
+                result.update(package_name=dist.metadata['Name'], package_version=dist.version,
+                              package_dependencies=list(dist.requires or ()))
+        return render_structured_result(
+            StructuredCommandResult(status=1, data=result, shape='dict', width=24),
+            output_format='json' if args_dict['json'] else 'text',
+        )
 
     @argument_command('archive_peek', spec=ARCHIVE_PEEK_SPEC)
     def archive_peek(self, args_dict):
         limit = args_dict['limit']
-        if limit < 1:
-            return 0, 'Option "--limit" must be greater than zero'
         try:
             path = self.path_resolver.require_existing_file(args_dict['path'])
-            if zipfile.is_zipfile(path):
-                with zipfile.ZipFile(path) as archive:
-                    rows = [(item.filename, get_size(item.file_size),
-                             '%04d-%02d-%02d' % item.date_time[:3])
-                            for item in archive.infolist()[:limit + 1]]
-            elif tarfile.is_tarfile(path):
-                with tarfile.open(path, 'r:*') as archive:
-                    rows = [(item.name, get_size(item.size),
-                             time.strftime('%Y-%m-%d', time.localtime(item.mtime)))
-                            for item in islice(archive, limit + 1)]
-            else:
-                return 0, 'Unsupported archive format (expected ZIP or TAR)'
-            if not rows:
-                return 1, 'Archive is empty'
-            result = format_table(['Name', 'Size', 'Date'], rows[:limit])
-            if len(rows) > limit:
-                result += f'\n... and more (limited to {limit})'
-            return 1, result
+            preview = self.archive_service.inspect_archive(path, entry_limit=limit)
         except (OSError, ValueError, tarfile.TarError, zipfile.BadZipFile) as exc:
             return 0, f'Failed to peek archive: {exc}'
+        if args_dict['json']:
+            return render_structured_result(StructuredCommandResult(status=1, data=preview), output_format='json')
+
+        if not preview['tree']:
+            return 1, 'Archive is empty' if not preview['truncated'] else f'No files in first {limit} entries'
+        lines = [preview['name']]
+        pending = [(iter(enumerate(preview['tree'])), len(preview['tree']), '')]
+        while pending:
+            siblings, count, prefix = pending[-1]
+            entry = next(siblings, None)
+            if entry is None:
+                pending.pop()
+                continue
+            index, node = entry
+            last = index == count - 1
+            branch = '└── ' if last else '├── '
+            name = node['name']
+            detail = '/' if node['is_dir'] else f" ({format_bytes(node['size'])})"
+            lines.append(f'{prefix}{branch}{name}{detail}')
+            children = node['children']
+            if children:
+                pending.append((iter(enumerate(children)), len(children), prefix + ('    ' if last else '│   ')))
+        if preview['truncated']:
+            lines.append(f'... and more (limited to {limit})')
+        return 1, '\n'.join(lines)

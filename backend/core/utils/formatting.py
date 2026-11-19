@@ -176,7 +176,7 @@ def _wrap_table_cell(text: str, width: int) -> list[str]:
 
 
 def format_table(
-    headers: Iterable[Any], data: Iterable[Iterable[Any]], *, max_cell_width: int = 24,
+    headers: Iterable[Any], data: Iterable[Iterable[Any]], *, max_cell_width: int = 72,
 ) -> str:
     """Render aligned text columns, wrapping overlong cells without truncation."""
     headers = [str(value) for value in headers]
