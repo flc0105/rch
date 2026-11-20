@@ -425,6 +425,21 @@ class RecentDeviceStore:
 
         return prefs
 
+    def reorder_devices(self, machine_keys: list[str]):
+        with self._lock, self.database.transaction() as conn:
+            requested = set(machine_keys)
+            slots = [row['machine_order'] for row in conn.execute(
+                'SELECT machine_key, machine_order FROM recent_devices ORDER BY machine_order, machine_key'
+            ) if row['machine_key'] in requested]
+            if len(slots) != len(machine_keys):
+                raise ValueError('Device list changed. Reopen Reorder devices and try again.')
+
+            # Reuse the selected machines' slots so other devices keep their order.
+            conn.executemany(
+                'UPDATE recent_devices SET machine_order = ? WHERE machine_key = ?',
+                zip(slots, machine_keys),
+            )
+
     def list_recent_devices(self) -> list[dict]:
         with self._lock:
             current = self._read_all_unlocked()

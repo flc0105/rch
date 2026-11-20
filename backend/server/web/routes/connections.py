@@ -80,6 +80,14 @@ def create_connections_blueprint(server_instance):
             default_error_status=400,
         )
 
+    @blueprint.patch('/api/machines/order')
+    def reorder_online_devices():
+        def _execute():
+            body = request.get_json(silent=True)
+            return connection_api.reorder_online_devices(body.get('machine_ids') if isinstance(body, dict) else None)
+
+        return responder.json_endpoint(_execute, default_error_status=500)
+
     @blueprint.patch('/api/machines/<machine_id>/device-group')
     def assign_machine_device_group(machine_id):
         def _execute():

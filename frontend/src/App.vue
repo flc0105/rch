@@ -102,6 +102,7 @@
         @toggle-machine-hidden="toggleMachineHiddenFromSidebar"
         @group-filter-change="setSelectedDeviceGroup"
         @manage-groups="openDeviceGroupManagerDialog"
+        @reorder-devices="$refs.deviceOrderDialogRef?.open()"
         @assign-machine-group="assignMachineGroupFromSidebar"
         @rename-machine="renameMachineFromSidebar"
         @open-connection-history="openMachineConnectionHistory"
@@ -468,6 +469,8 @@
     @groups-changed="handleDeviceGroupsChanged"
   />
 
+  <DeviceOrderDialog ref="deviceOrderDialogRef" @order-saved="loadConnections" />
+
   <SettingsDialog
     ref="settingsDialogRef"
     @toolbar-saved="refreshToolbarPreferences"
@@ -607,6 +610,7 @@ import ClipboardDialog from './components/ClipboardDialog.vue'
 import OneLinersDialog from './components/OneLinersDialog.vue'
 import QuickActionsDialog from './components/QuickActionsDialog.vue'
 import DeviceGroupManagerDialog from './components/DeviceGroupManagerDialog.vue'
+import DeviceOrderDialog from './components/DeviceOrderDialog.vue'
 import SettingsDialog from './components/SettingsDialog.vue'
 import NotificationCenterDrawer from './components/NotificationCenterDrawer.vue'
 import TransferCenterDrawer from './components/TransferCenterDrawer.vue'
@@ -671,6 +675,7 @@ export default {
     TransferCenterDrawer,
     NotificationCenterDrawer,
     DeviceGroupManagerDialog,
+    DeviceOrderDialog,
     SettingsDialog,
     ClipboardDialog,
     ScreenViewDialog,

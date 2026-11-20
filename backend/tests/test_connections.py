@@ -4,6 +4,7 @@ import hashlib
 import socket
 import ssl
 import time
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -12,7 +13,11 @@ import pytest
 from client.connection.receiver_worker import ClientReceiverWorker
 from client.connection.transport_connectors import PinnedTlsConnector
 from core.protocol.rchsocket import RCHSocket
+from server.application.connection.connection_service import WebConnectionService
+from server.application.connection.recent_device_store import RecentDeviceStore
+from server.application.web.connection_api import WebConnectionApi
 from server.connection.connection_manager import ConnectionManager
+from server.persistence.rch_database import RchDatabase
 from server.runtime.session_acceptor import SessionAcceptor
 
 
@@ -174,3 +179,34 @@ def test_replaced_connection_pending_results_are_session_scoped():
     assert manager.get_by_client_id('same') is new
     assert new.runtime.pending_results.deliver(1, {'type':'result','id':1,'event_type':'completed','status':'success','message':'new'})
     assert second.get(timeout=.1)['message'] == 'new'
+
+
+def test_reorder_preserves_other_device_slots_and_rejects_offline_machines(tmp_path):
+    database = RchDatabase(str(tmp_path / 'rch.db'))
+    store = RecentDeviceStore(database)
+    try:
+        for machine_id, state in [('a', 'online'), ('offline', 'offline'), ('b', 'online'), ('stale', 'stale')]:
+            store.upsert_from_connection({'machine_id': machine_id, 'connection_state': state})
+
+        old = (datetime.now() - timedelta(minutes=2)).isoformat()
+        sessions = [
+            SimpleNamespace(session_info=SimpleNamespace(machine_id=key),
+                            context=SimpleNamespace(disconnected_at='', last_seen_at=seen))
+            for key, seen in [('a', ''), ('A', ''), ('b', ''), ('stale', old)]
+        ]
+        server = SimpleNamespace(connections=SimpleNamespace(all=lambda: sessions))
+        api = WebConnectionApi(WebConnectionService(server, None, None, recent_device_store=store))
+        api.reorder_online_devices([' B ', 'A'])
+        store.upsert_from_connection({'machine_id': 'b', 'connection_state': 'online'})
+
+        for invalid in (['a', 'offline'], ['b', 'stale']):
+            with pytest.raises(ValueError, match='no longer online'):
+                api.reorder_online_devices(invalid)
+        with pytest.raises(ValueError, match='distinct machine IDs'):
+            api.reorder_online_devices(['a', 'A'])
+
+        assert {row['machine_id']: row['machine_order'] for row in store.list_recent_devices()} == {
+            'b': 0, 'offline': 1, 'a': 2, 'stale': 3,
+        }
+    finally:
+        database.close_thread_connection()

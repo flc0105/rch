@@ -87,6 +87,9 @@
             <el-dropdown-item divided command="manage-groups">
               Manage groups
             </el-dropdown-item>
+            <el-dropdown-item command="reorder-devices">
+              Reorder devices
+            </el-dropdown-item>
           </el-dropdown-menu>
         </template>
       </el-dropdown>
@@ -364,6 +367,7 @@ export default {
     'toggle-machine-hidden',
     'group-filter-change',
     'manage-groups',
+    'reorder-devices',
     'assign-machine-group',
     'rename-machine',
     'open-connection-history',
@@ -466,8 +470,8 @@ computed: {
         return
       }
 
-      if (command === 'manage-groups') {
-        this.$emit('manage-groups')
+      if (command === 'manage-groups' || command === 'reorder-devices') {
+        this.$emit(command)
       }
     },
 

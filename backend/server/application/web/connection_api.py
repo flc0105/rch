@@ -65,6 +65,9 @@ class WebConnectionApi:
             patch=patch or {},
         )
 
+    def reorder_online_devices(self, machine_ids):
+        return self.connection_service.reorder_online_devices(machine_ids)
+
     def _require_device_group_store(self):
         if self.device_group_store is None:
             raise ValueError('Device group store is unavailable')

@@ -4,6 +4,10 @@ export function listConnections() {
   return apiData('/api/connections', {}, [])
 }
 
+export function reorderOnlineDevices(machineIds) {
+  return apiFetch('/api/machines/order', jsonRequestOptions('PATCH', { machine_ids: machineIds }))
+}
+
 export function getConnectionRevisionStatus(clientId) {
   return apiData(`/api/connections/${encodeURIComponent(clientId)}/revision-status`, {}, {})
 }

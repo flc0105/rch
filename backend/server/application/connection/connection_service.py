@@ -479,6 +479,26 @@ class WebConnectionService:
 
         return prefs
 
+    def reorder_online_devices(self, machine_ids):
+        if not self.recent_device_store:
+            raise ValueError('Recent device store is unavailable')
+        if not isinstance(machine_ids, list) or not all(isinstance(value, str) for value in machine_ids):
+            raise ValueError('Expected a list of machine IDs')
+
+        machine_keys = [self._machine_key(value) for value in machine_ids]
+        if len(machine_keys) < 2 or '' in machine_keys or len(set(machine_keys)) != len(machine_keys):
+            raise ValueError('Expected at least two distinct machine IDs')
+
+        online_keys = {
+            self._machine_key(session.session_info.machine_id)
+            for session in self.server.connections.all()
+            if self._build_connection_state(session) == 'online'
+        }
+        if not online_keys.issuperset(machine_keys):
+            raise ValueError('A device is no longer online. Reopen Reorder devices and try again.')
+
+        self.recent_device_store.reorder_devices(machine_keys)
+
     # ------------------ connection lifecycle ------------------ #
     def create_web_connection(self, transport: ClientTransport, addr, info: dict) -> ClientSession:
         session = ClientSession(transport, info)

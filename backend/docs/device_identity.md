@@ -150,6 +150,8 @@ Server 收到连接注册时，先记录最近设备并登记连接历史，然�
 
 设备别名 `machine_alias`、整机隐藏 `device_hidden_by_machine`、设备排序 `machine_order` 都归属机器身份；`hidden_client_ids` 则在该机器记录中保存按 `client_id` 隐藏的连接集合。前端最终显示的 `device_hidden` 是整机隐藏与对应 Client 隐藏的合并结果。
 
+设备侧边栏右上角的 **Reorder devices** 列出所有在线机器，每台机器显示一行。使用上移和下移调整顺序，再保存。所有设备组使用同一份机器顺序，保存只更新参与排序的在线机器。侧边栏先按连接状态排列，同一状态内再使用机器顺序。
+
 因此，**隐藏某个 Client** 只影响那个 Client ID，Client 进程重新创建后得到新的 ID，不会天然继承该连接级隐藏状态；**隐藏整台机器** 则跟着同一个 `machine_id` 保留。清空机器别名会恢复使用其他展示信息，而不是改变机器指纹。
 
 前端设备侧边栏按客户端条目选择连接，`selectedId` 实际保存 `client_id`，并通过 `sessionStorage` 记住最后选中的 `machine_id` 和 `client_id`。刷新后尝试优先恢复对应 Client；它不存在时再按机器 ID 选取可见连接。过滤、设备组及隐藏规则仍会影响最终候选。此项浏览器选中状态不是 Server 的设备主身份数据库。
