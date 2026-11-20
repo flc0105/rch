@@ -1,7 +1,7 @@
 """Windows UAC launch modes and their isolated Python worker."""
 
 import base64
-from contextlib import contextmanager, nullcontext
+from contextlib import contextmanager
 import ctypes
 from ctypes import wintypes
 import json
@@ -10,7 +10,6 @@ import socket
 import struct
 import subprocess
 import sys
-import time
 
 if __package__:
     from client.commands.shell.standalone._elevated_process import ElevationCancelled, run_tracked
@@ -61,21 +60,11 @@ def run_windows_helper(payload):
             if request['mode'] == 'detached':
                 if os.path.splitext(request['command'][0])[1].lower() in ('.bat', '.cmd'):
                     raise OSError('Use --shell to run a Windows batch file')
-                log_path = request.get('startup_log')
-                env = os.environ.copy()
-                for key in request.get('clear_env', ()):
-                    env.pop(key, None)
-                with open(log_path, 'ab') if log_path else nullcontext(subprocess.DEVNULL) as errors:
-                    child = subprocess.Popen(
-                        request['command'], cwd=request['cwd'], env=env,
-                        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=errors,
-                        creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
-                    )
-                if log_path:
-                    time.sleep(0.4)
-                    exit_code = child.poll()
-                    if exit_code is not None:
-                        raise OSError(f'Client exited immediately with code {exit_code}')
+                child = subprocess.Popen(
+                    request['command'], cwd=request['cwd'], env=os.environ.copy(),
+                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
+                )
                 send(b'P', str(child.pid).encode('ascii'))
             else:
                 import msvcrt
@@ -188,9 +177,8 @@ class WindowsElevation:
         encoding = f'cp{ctypes.windll.kernel32.GetOEMCP()}' if os.name == 'nt' else 'utf-8'
         return run_tracked(self.owner, _launch_helper, 'shell', command, encoding=encoding, collect=collect)
 
-    def detached(self, argv, *, startup_log=None, clear_env=()):
-        return run_tracked(self.owner, _launch_helper, 'detached', argv,
-                           startup_log=startup_log, clear_env=clear_env)
+    def detached(self, argv):
+        return run_tracked(self.owner, _launch_helper, 'detached', argv)
 
     def open(self, argv):
         executable, *args = argv

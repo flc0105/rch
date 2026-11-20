@@ -44,7 +44,7 @@ def test_common_desktop_commands_preserve_platform_registration_and_budgets():
     from client.commands.runtime.hosts import iOSCommands
     from client.commands.shell.common.system import ShellSystemCommands
 
-    expected = {'win': (10, 150, 150), 'mac': (None, 150, 150), 'linux': None, 'ios': None}
+    expected = {'win': (10, 150, None), 'mac': (None, 150, 150), 'linux': None, 'ios': None}
     names = ('idletime', 'run_elevated', 'spawn_elevated_instance')
     for command_type in (WindowsCommands, MacCommands, LinuxCommands, iOSCommands):
         host = command_type(DummyConnection())

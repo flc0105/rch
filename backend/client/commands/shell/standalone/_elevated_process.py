@@ -17,17 +17,7 @@ class ElevationCancelled(OSError):
     """The OS authorization prompt was cancelled."""
 
 
-def run_authorized_process(owner, platform, mode, command, *, startup_log=None, clear_env=()):
-    """Launch the detached Windows Client for spawn_elevated_instance."""
-    from client.commands.shell.standalone._elevated_win import WindowsElevation
-
-    if (platform, mode) != ('win', 'detached'):
-        raise ValueError('The elevated Client launcher requires Windows detached mode')
-    return WindowsElevation(owner).detached(command, startup_log=startup_log, clear_env=clear_env)
-
-
-def run_tracked(owner, launch, mode, command, *, encoding='utf-8', collect=False,
-                startup_log=None, clear_env=()):
+def run_tracked(owner, launch, mode, command, *, encoding='utf-8', collect=False):
     deadline = time.monotonic() + ELEVATED_COMMAND_TIMEOUT
 
     def checkpoint():
@@ -39,8 +29,6 @@ def run_tracked(owner, launch, mode, command, *, encoding='utf-8', collect=False
     emit = owner.emit_chunk if mode == 'shell' and not collect else None
     with open_listener() as (listener, endpoint):
         request = {**endpoint, 'mode': mode, 'command': command, 'cwd': cwd}
-        if startup_log is not None:
-            request.update(startup_log=startup_log, clear_env=clear_env)
         payload = base64.b64encode(json.dumps(request, ensure_ascii=False).encode('utf-8')).decode('ascii')
         with launch(payload, cwd) as error_if_exited:
             with accept_peer(listener, endpoint, checkpoint, error_if_exited) as peer:

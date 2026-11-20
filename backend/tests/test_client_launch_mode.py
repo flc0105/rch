@@ -589,15 +589,14 @@ def test_elevated_client_confirmation_and_unsupported_launch_options(monkeypatch
 
     assert module.spawn_elevated_instance(command, '') == (1, 'ok')
     confirm.assert_called_once()
-    expected_args = () if platform == 'mac' else (command,)
-    launch.assert_called_once_with(*expected_args)
+    launch.assert_called_once_with()
 
     confirm.reset_mock()
     confirm.return_value = False
     launch.reset_mock()
     assert module.spawn_elevated_instance(command, '--no-confirm') == (1, 'ok')
     confirm.assert_not_called()
-    launch.assert_called_once_with(*expected_args)
+    launch.assert_called_once_with()
 
     launch.reset_mock()
     for arg in ('--detached', '--detach', '--detached --no-confirm', '--no-confirm --detached', '--bad'):

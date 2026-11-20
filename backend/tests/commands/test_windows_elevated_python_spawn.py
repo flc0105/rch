@@ -4,6 +4,7 @@ from contextlib import contextmanager
 import base64
 import ctypes
 import json
+import os
 from pathlib import Path
 import socket
 import subprocess
@@ -15,13 +16,12 @@ from unittest.mock import Mock
 import pytest
 
 from client.commands.shell.standalone import _elevated_win as elevated
-from client.commands.shell.standalone._elevated_process import ElevationCancelled, run_authorized_process
+from client.commands.shell.standalone._elevated_process import ElevationCancelled
 from client.commands.shell.standalone import spawn_elevated_instance as instance
 from core.utils.local_process_channel import read_frame
 
 
-@pytest.mark.parametrize('startup_check', [False, True])
-def test_windows_worker_reports_direct_child_pid(monkeypatch, tmp_path, startup_check):
+def test_windows_worker_reports_direct_child_pid(monkeypatch):
     spawn = Mock(return_value=SimpleNamespace(pid=12345, poll=lambda: None))
     monkeypatch.setattr(subprocess, 'Popen', spawn)
     monkeypatch.setattr(subprocess, 'DETACHED_PROCESS', 8, raising=False)
@@ -40,12 +40,8 @@ def test_windows_worker_reports_direct_child_pid(monkeypatch, tmp_path, startup_
     monkeypatch.setattr(elevated, '_launch_helper', launch)
     owner = SimpleNamespace(_checkpoint=lambda: None)
     arguments = [r'C:\Program Files\Python\python.exe', 'with spaces', '--profile', 'tls-local']
-    log = str(tmp_path / 'start.log') if startup_check else None
     try:
-        result = run_authorized_process(
-            owner, 'win', 'detached', arguments, startup_log=log,
-            clear_env=['RCH_PROCESS_RECOVERY_WATCHDOG_SESSION'],
-        )
+        result = elevated.WindowsElevation(owner).detached(arguments)
     finally:
         for thread in threads:
             thread.join(timeout=2)
@@ -53,11 +49,9 @@ def test_windows_worker_reports_direct_child_pid(monkeypatch, tmp_path, startup_
     assert spawn.call_args.args == (arguments,)
     assert spawn.call_args.kwargs['creationflags'] == 0x208
     assert spawn.call_args.kwargs['stdin'] == subprocess.DEVNULL
-    if startup_check:
-        assert Path(log).is_file()
-        assert 'RCH_PROCESS_RECOVERY_WATCHDOG_SESSION' not in spawn.call_args.kwargs['env']
-    else:
-        assert spawn.call_args.kwargs['stderr'] == subprocess.DEVNULL
+    assert spawn.call_args.kwargs['stdout'] == subprocess.DEVNULL
+    assert spawn.call_args.kwargs['stderr'] == subprocess.DEVNULL
+    assert spawn.call_args.kwargs['env']['RCH_PROCESS_RECOVERY_WATCHDOG_SESSION'] == 'stale'
 
 
 def test_windows_launch_runs_the_command_script_in_isolated_python(monkeypatch, tmp_path):
@@ -118,14 +112,84 @@ def test_windows_open_uses_runas_real_handle_and_closes_it(monkeypatch):
     native['kernel32'].CloseHandle.assert_called_once_with(123)
 
 
-def test_spawn_windows_cancellation_removes_unused_log(monkeypatch, tmp_path):
-    def cancelled(*args, **kwargs):
-        raise ElevationCancelled('UAC cancelled')
+@pytest.mark.parametrize(('exit_code', 'create_error'), [
+    (None, None),
+    (7, None),
+    (None, 'CreateProcess failed'),
+])
+def test_spawn_windows_reports_status_from_detached_helper(monkeypatch, tmp_path, exit_code, create_error):
+    status_path = tmp_path / 'launch-status.json'
+    log_path = tmp_path / 'spawn.log'
+    argv = [r'C:\Program Files\Python\python.exe', r'C:\RCH Directory\rchclient.py', '--profile', 'tls-local']
+    request = {
+        'argv': argv, 'cwd': str(tmp_path), 'status_path': str(status_path), 'log_path': str(log_path),
+        'clear_env': ['RCH_PROCESS_RECOVERY_WATCHDOG_SESSION'],
+    }
+    payload = base64.b64encode(json.dumps(request).encode('utf-8')).decode('ascii')
+    spawn = Mock(
+        return_value=SimpleNamespace(pid=12346, poll=lambda: exit_code),
+        side_effect=OSError(create_error) if create_error else None,
+    )
+    monkeypatch.setattr(subprocess, 'Popen', spawn)
+    monkeypatch.setattr(subprocess, 'DETACHED_PROCESS', 8, raising=False)
+    monkeypatch.setattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 512, raising=False)
+    monkeypatch.setenv('RCH_PROCESS_RECOVERY_WATCHDOG_SESSION', 'stale')
 
-    monkeypatch.setattr(instance, 'run_authorized_process', cancelled)
+    with monkeypatch.context() as process:
+        process.setattr(sys, 'argv', ['-c', payload])
+        process.setattr('time.sleep', lambda _: None)
+        exec(instance._ELEVATED_DETACHED_HELPER, {'__name__': '__main__'})
+
+    report = json.loads(status_path.read_text(encoding='utf-8'))
+    assert not status_path.with_suffix('.json.tmp').exists()
+    assert spawn.call_args.args == (argv,)
+    assert spawn.call_args.kwargs['cwd'] == str(tmp_path)
+    assert spawn.call_args.kwargs['creationflags'] == 0x208
+    assert spawn.call_args.kwargs['shell'] is False
+    assert spawn.call_args.kwargs['stdin'] == subprocess.DEVNULL
+    assert spawn.call_args.kwargs['stdout'] == subprocess.DEVNULL
+    assert 'RCH_PROCESS_RECOVERY_WATCHDOG_SESSION' not in spawn.call_args.kwargs['env']
+    if create_error or exit_code is not None:
+        error = create_error or f'Client exited immediately with code: {exit_code}'
+        assert report == {'ok': False, 'error': error}
+        assert error in log_path.read_text(encoding='utf-8')
+    else:
+        assert report == {'ok': True, 'pid': 12346}
+
+
+@pytest.mark.parametrize(('shell_status', 'report', 'expected_status', 'text'), [
+    (42, {'ok': True, 'pid': 12345}, 1, 'PID: 12345'),
+    (42, {'ok': False, 'error': 'Client failed to launch'}, 0, 'Client failed to launch'),
+    (42, None, 0, 'did not return a launch result'),
+    (5, None, 0, 'ShellExecuteW: 5'),
+])
+def test_spawn_windows_waits_for_original_status_file(monkeypatch, tmp_path, shell_status, report,
+                                                      expected_status, text):
+    def shell_execute(hwnd, verb, executable, parameters, cwd, show):
+        assert hwnd is None and verb == 'runas' and show == 0
+        assert cwd == os.getcwd()
+        assert executable
+        request = json.loads(base64.b64decode(parameters.rsplit(' ', 1)[-1]))
+        status_path = Path(request['status_path'])
+        assert status_path.parent.parent == tmp_path
+        assert status_path.name == 'launch-status.json'
+        assert request['log_path'] == str(status_path.with_name('spawn.log'))
+        if report is not None:
+            status_path.write_text(json.dumps(report), encoding='utf-8')
+        return shell_status
+
+    monkeypatch.setattr(ctypes, 'windll', SimpleNamespace(
+        shell32=SimpleNamespace(ShellExecuteW=shell_execute)), raising=False)
     monkeypatch.setattr('client.runtime.temp_workspace.get_temp_category_dir', lambda *a, **k: str(tmp_path))
-    assert instance._spawn_elevated_win(object()) == (0, 'UAC cancelled')
-    assert list(tmp_path.iterdir()) == []
+    if shell_status > 32 and report is None:
+        monkeypatch.setattr(instance, '_DETACHED_RESULT_TIMEOUT_SECONDS', 0)
+
+    result, message = instance._spawn_elevated_win()
+    assert result == expected_status and text in message
+    if shell_status <= 32:
+        assert list(tmp_path.iterdir()) == []
+    else:
+        assert 'Startup log:' in message
 
 
 @pytest.mark.parametrize('mode', ['shell', 'collect'])
