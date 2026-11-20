@@ -1466,7 +1466,7 @@ The following tables are generated from current `@desc(...)` declarations with `
 | `get_location` | `device` | Device location (with permission) |
 | `list_contacts` | `device` | Contacts in JSON format (with permission) |
 | `list_reminders` | `device` | Reminders with notes, dates and alerts in JSON format |
-| `clipboard_read` / `clipboard_write` | `device` | Read or write clipboard text |
+| `acmd clipboard_read` / `acmd clipboard_write` | `acmd` | Read or write clipboard text. Use `--download` to save a clipboard image. |
 | `speak` | `device` | Speak text aloud |
 | `ls` / `cat` / `touch` / `md5sum` | `shell` | File utilities |
 

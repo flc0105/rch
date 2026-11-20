@@ -7,7 +7,7 @@ from unittest.mock import Mock
 import pytest
 import requests
 
-from client.commands.platform.services.mac import media_service as mac_media
+from client.commands.shell.platform import mac as mac_commands
 from client.http.client_api import ClientApiClient, ClientApiError
 from client.jobs.job import Job
 
@@ -35,16 +35,16 @@ def _mac_webcam(monkeypatch, tmp_path, *, capture_status=0, upload_status=1):
             temp_path.write_bytes(b'\xff\xd8\xff\xdbmockjpeg')
         return SimpleNamespace(returncode=capture_status)
 
-    monkeypatch.setattr(mac_media, 'make_client_temp_file', make_temp)
-    monkeypatch.setattr(mac_media, 'cleanup_temp_path', lambda path: cleaned.append(path))
-    monkeypatch.setattr(mac_media.subprocess, 'run', fake_run)
+    monkeypatch.setattr(mac_commands, 'make_client_temp_file', make_temp)
+    monkeypatch.setattr(mac_commands, 'cleanup_temp_path', lambda path: cleaned.append(path))
+    monkeypatch.setattr(mac_commands.subprocess, 'run', fake_run)
 
-    return mac_media.MacMediaService(owner), transfer, cleaned, str(temp_path)
+    return owner, transfer, cleaned, str(temp_path)
 
 
 def test_macos_webcam_upload_uses_canonical_category_and_jpeg_name(monkeypatch, tmp_path):
     service, transfer, cleaned, temp_path = _mac_webcam(monkeypatch, tmp_path)
-    status, message = service.capture_webcam_photo()
+    status, message = mac_commands.MacShellCommands.webcam_snap(service)
     assert status == 1 and 'Webcam photo captured' in message
     call = transfer.upload_single_file_to_server_result.call_args
     assert call.args == (temp_path,)
@@ -66,7 +66,7 @@ def test_macos_webcam_failed_capture_or_upload_is_failure(
     service, transfer, cleaned, temp_path = _mac_webcam(
         monkeypatch, tmp_path, capture_status=capture_status, upload_status=upload_status
     )
-    status, message = service.capture_webcam_photo()
+    status, message = mac_commands.MacShellCommands.webcam_snap(service)
     assert status == 0 and expected_message in message
     assert transfer.upload_single_file_to_server_result.called == (capture_status == 0)
     assert cleaned == [temp_path]

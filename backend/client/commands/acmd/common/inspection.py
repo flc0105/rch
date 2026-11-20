@@ -21,6 +21,7 @@ SQLITE_QUERY_SPEC = ArgumentCommandSpec(
         ArgumentOptionSpec('db', 'str', required=True, allow_empty=False, help_text='Database file path',
                            completion=CompletionSpec('filesystem', ('file', 'directory'))),
         ArgumentOptionSpec('query', 'str', required=True, allow_empty=False, help_text='SQL query'),
+        ArgumentOptionSpec('limit', 'int', help_text='Maximum result rows (default: unlimited)'),
         ArgumentOptionSpec('json', 'flag', default=False, help_text='Output as JSON'),
         ArgumentOptionSpec('help', 'flag', default=False, help_text='Show this help message'),
     ],
@@ -54,6 +55,9 @@ ARCHIVE_PEEK_SPEC = ArgumentCommandSpec(
 class ACMDInspectionCommands:
     @argument_command('sqlite_query', spec=SQLITE_QUERY_SPEC)
     def sqlite_query(self, args_dict):
+        limit = args_dict.get('limit')
+        if limit is not None and limit < 1:
+            return 0, '--limit must be positive'
         try:
             import sqlite3
         except ImportError:
@@ -73,14 +77,13 @@ class ACMDInspectionCommands:
                     ) else sqlite3.SQLITE_OK
                 )
                 cursor = conn.execute(args_dict['query'])
+                rows = cursor.fetchall() if limit is None else cursor.fetchmany(limit)
                 if args_dict['json']:
-                    rows = [dict(row) for row in cursor]
-                    return 1, json.dumps(rows, ensure_ascii=False, indent=2, default=str)
-                rows = cursor.fetchmany(100)
+                    return 1, json.dumps([dict(row) for row in rows], ensure_ascii=False, indent=2, default=str)
                 if not rows:
                     return 1, 'No results'
                 return 1, format_table(rows[0].keys(), rows)
-        except (OSError, sqlite3.Error, ValueError) as exc:
+        except (OSError, sqlite3.Error, ValueError, OverflowError) as exc:
             return 0, f'Query failed: {exc}'
 
     @argument_command('image_info', spec=IMAGE_INFO_SPEC)

@@ -3,7 +3,6 @@ import json
 import os
 import re
 import time
-from datetime import datetime
 
 from client.commands.platform.utils.ios_util import get_ios_contacts, get_ios_username
 from client.commands.runtime.interrupts import timeout
@@ -125,37 +124,6 @@ class iOSShellCommands:
             return 1, rendered
         except Exception as e:
             return 0, f'echo failed: {e}'
-
-    @shell_command('Show system uptime', group='system')
-    def uptime(self):
-        try:
-            from objc_util import ObjCClass
-
-            seconds = max(0, float(ObjCClass('NSProcessInfo').processInfo().systemUptime()))
-            boot_time = datetime.fromtimestamp(time.time() - seconds)
-            days = int(seconds // 86400)
-            hours = int((seconds % 86400) // 3600)
-            minutes = int((seconds % 3600) // 60)
-            return 1, f"Boot time: {boot_time:%Y-%m-%d %H:%M:%S}\nUptime: {days}d {hours}h {minutes}m"
-        except Exception as e:
-            return 0, f'Failed to get system uptime: {e}'
-
-    @shell_command('Read clipboard text', group='device')
-    def clipboard_read(self):
-        try:
-            import clipboard
-            return 1, clipboard.get() or ''
-        except Exception as e:
-            return 0, f'Failed to read clipboard: {e}'
-
-    @shell_command('Write clipboard text', group='device')
-    def clipboard_write(self, text=''):
-        try:
-            import clipboard
-            clipboard.set(text or '')
-            return 1, 'Clipboard updated'
-        except Exception as e:
-            return 0, f'Failed to write clipboard: {e}'
 
     @shell_command('Clear console output', group='console')
     def clear_console(self):

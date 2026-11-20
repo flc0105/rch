@@ -1,7 +1,6 @@
 """Common Shell command registrations, grouped by responsibility."""
 
 from client.commands.shell.common.execution import ShellExecutionCommands
-from client.commands.shell.common.files import ShellFileCommands
 from client.commands.shell.common.maintenance import ShellMaintenanceCommands
 from client.commands.shell.common.media import ShellMediaCommands
 from client.commands.shell.common.session import ShellSessionCommands
@@ -12,7 +11,6 @@ class ShellCommands(
     ShellExecutionCommands,
     ShellSessionCommands,
     ShellSystemCommands,
-    ShellFileCommands,
     ShellMaintenanceCommands,
     ShellMediaCommands,
 ):

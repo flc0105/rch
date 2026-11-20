@@ -25,7 +25,7 @@ def run(command, platform=LinuxCommands):
 def test_common_class_only_mounts_standalone_functions():
     assert ACMDProcessCommands.ps is ps
     assert ACMDProcessCommands.kill is kill
-    assert set(key for key in ACMDProcessCommands.__dict__ if not key.startswith('__')) == {'ps', 'kill'}
+    assert set(key for key in ACMDProcessCommands.__dict__ if not key.startswith('__')) == {'ps', 'kill', 'wait_pid'}
     assert ps.argument_command_spec is PS_ARGUMENT_SPEC
     assert kill.argument_command_spec is KILL_ARGUMENT_SPEC
     assert kill.command_interaction is True

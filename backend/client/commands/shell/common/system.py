@@ -1,11 +1,26 @@
 import os
 import subprocess
+import time
+from datetime import datetime
 
 from client.commands.shell.decorators import shell_command
 from client.commands.shell.standalone.getinfo import getinfo as getinfo_command
 from client.commands.shell.standalone.idletime import idletime as idletime_command
 from client.commands.shell.standalone.run_elevated import run_elevated as run_elevated_command
 from client.commands.shell.standalone.spawn_elevated_instance import spawn_elevated_instance as spawn_elevated_instance_command
+
+
+def _desktop_boot_time():
+    import psutil
+
+    return psutil.boot_time()
+
+
+def _ios_boot_time():
+    from objc_util import ObjCClass
+
+    seconds = max(0, float(ObjCClass('NSProcessInfo').processInfo().systemUptime()))
+    return time.time() - seconds
 
 
 class ShellSystemCommands:
@@ -76,17 +91,16 @@ class ShellSystemCommands:
 
     @shell_command('Show system uptime', group='system')
     def uptime(self):
-        """显示系统运行时间"""
-        import psutil
-        from datetime import datetime
-
-        boot_time = psutil.boot_time()
-        boot_dt = datetime.fromtimestamp(boot_time)
-        now = datetime.now()
-        uptime_seconds = (now - boot_dt).total_seconds()
-
-        days = int(uptime_seconds // 86400)
-        hours = int((uptime_seconds % 86400) // 3600)
-        minutes = int((uptime_seconds % 3600) // 60)
-
-        return 1, f"Boot time: {boot_dt.strftime('%Y-%m-%d %H:%M:%S')}\nUptime: {days}d {hours}h {minutes}m"
+        boot_time_for = {
+            'mac': _desktop_boot_time, 'win': _desktop_boot_time,
+            'linux': _desktop_boot_time, 'ios': _ios_boot_time,
+        }
+        try:
+            started = boot_time_for[self.command_platform]()
+            boot_time = datetime.fromtimestamp(started)
+            minutes = int(max(0, time.time() - started)) // 60
+            days, minutes = divmod(minutes, 24 * 60)
+            hours, minutes = divmod(minutes, 60)
+            return 1, f"Boot time: {boot_time:%Y-%m-%d %H:%M:%S}\nUptime: {days}d {hours}h {minutes}m"
+        except Exception as exc:
+            return 0, f'Failed to get system uptime: {exc}'

@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 from core.utils.artifact_naming import build_artifact_filename
 import json
 import os
@@ -61,11 +62,18 @@ class ClipboardManager:
             'files': bool(caps.get('files')),
         }
 
-    def execute(self, scope, action, payload):
+    @contextmanager
+    def operation(self, checkpoint):
         while not self._operation_lock.acquire(timeout=0.1):
-            scope._checkpoint()
+            checkpoint()
         try:
-            scope._checkpoint()
+            checkpoint()
+            yield
+        finally:
+            self._operation_lock.release()
+
+    def execute(self, scope, action, payload):
+        with self.operation(scope._checkpoint):
             if action == ClipboardAction.GET:
                 status, content = self.get_clipboard(payload.get('mode', 'content'), checkpoint=scope._checkpoint)
                 scope._checkpoint()
@@ -87,15 +95,14 @@ class ClipboardManager:
                     message='Target clipboard updated' if status == 1 else str(content),
                 ).as_payload()
             return 0, 'Unsupported Clipboard action'
-        finally:
-            self._operation_lock.release()
 
-    def get_clipboard(self, mode: str = 'content', checkpoint=lambda: None):
+    def get_clipboard(self, mode: str = 'content', checkpoint=lambda: None, *, snapshot=None):
         try:
             if str(mode or '').strip().lower() == 'capabilities':
                 payload = {'capabilities': self.get_capabilities()}
             else:
-                snapshot = self.adapter.get_snapshot()
+                if snapshot is None:
+                    snapshot = self.adapter.get_snapshot()
                 checkpoint()
                 payload = self._materialize_snapshot(snapshot, checkpoint=checkpoint)
 

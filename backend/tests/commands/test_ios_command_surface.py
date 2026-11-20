@@ -30,12 +30,13 @@ def test_ios_manifest_exposes_new_names_only():
         'shell', 'shell_stream', 'shell_bg', 'run_bg', 'is_elevated', 'piplist',
         'keyboard_send', 'userenum', 'spawn_instance',
         'relaunch_instance', 'reexec_instance', 'acmd ps', 'acmd kill',
-        'acmd ping', 'acmd tcp_ping',
+        'acmd ping', 'acmd tcp_ping', 'clipboard_read', 'clipboard_write',
     }
     assert renamed <= names
     assert not (removed & names)
     assert {'getinfo', 'uptime', 'acmd help'} <= names
-    device = {'clipboard_read', 'clipboard_write', 'get_location', 'speak', 'list_contacts', 'list_reminders'}
+    assert {'acmd clipboard_read', 'acmd clipboard_write', 'acmd wait_pid', 'acmd tcp_check'} <= names
+    device = {'get_location', 'speak', 'list_contacts', 'list_reminders'}
     assert {entry['group'] for entry in manifest if entry['name'] in device} == {'device'}
     assert {entry['group'] for entry in manifest if entry['name'] in ('getinfo', 'uptime')} == {'system'}
     assert len(names) == len(manifest)

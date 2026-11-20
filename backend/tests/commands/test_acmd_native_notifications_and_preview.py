@@ -173,7 +173,6 @@ def test_ios_shell_runs_moved_file_console_and_device_commands(tmp_path, monkeyp
     assert execute('printenv RCH_IOS_QA') == (1, 'expanded')
     assert execute('echo $RCH_IOS_QA') == (1, 'expanded')
 
-    clipboard = SimpleNamespace(get=lambda: 'saved', set=Mock())
     console = SimpleNamespace(clear=Mock(), set_idle_timer_disabled=Mock())
     speech = SimpleNamespace(say=Mock())
     location = SimpleNamespace(start_updates=Mock(), stop_updates=Mock(), get_location=lambda: {'status': 'mock'})
@@ -181,15 +180,12 @@ def test_ios_shell_runs_moved_file_console_and_device_commands(tmp_path, monkeyp
     item = SimpleNamespace(title='Test', due_date=due,
                            alarms=[SimpleNamespace(date=due, location=None, proximity=None)])
     reminders = SimpleNamespace(get_reminders=lambda *, completed: [] if completed else [item])
-    for name, module in [('clipboard', clipboard), ('console', console), ('speech', speech),
+    for name, module in [('console', console), ('speech', speech),
                          ('location', location), ('reminders', reminders)]:
         monkeypatch.setitem(sys.modules, name, module)
     ios_module = importlib.import_module('client.commands.shell.platform.ios')
     monkeypatch.setattr(ios_module.time, 'sleep', lambda _: None)
     monkeypatch.setattr(ios_module, 'get_ios_contacts', lambda: [{'name': 'Sample'}])
-    assert execute('clipboard_read') == (1, 'saved')
-    assert execute('clipboard_write demo')[0] == 1
-    clipboard.set.assert_called_once_with('demo')
     assert execute('clear_console')[0] == 1
     console.clear.assert_called_once()
     assert execute('speak demo')[0] == 1

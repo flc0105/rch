@@ -6,9 +6,6 @@ from client.commands.acmd.common.network import ACMDNetworkCommands
 from client.commands.acmd.common.process import ACMDProcessCommands
 
 
-class CommonACMDCommands(ACMDNetworkCommands, ACMDFileCommands, ACMDInspectionCommands, ACMDInteractionCommands):
+class CommonACMDCommands(ACMDNetworkCommands, ACMDFileCommands, ACMDInspectionCommands,
+                         ACMDInteractionCommands, ACMDProcessCommands):
     """Shared registrations, filtered by the Registry for each platform."""
-
-
-class DesktopACMDCommands(ACMDProcessCommands, CommonACMDCommands):
-    """Compose desktop process commands with the shared registrations."""

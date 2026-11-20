@@ -236,6 +236,6 @@ Web 端的 `tab_id` 用于把 Transfer 关联到发起的浏览器标签，并�
 
 远程文件浏览、编辑和路径管理的业务细节见 `remote_files.md`；Artifact 的生成与展示则遵循各自功能模块的文档。这里专注文件字节传输、进度及取消，不把每个历史命令或已有模块列成清单。
 
-### 普通 `download` 命令的参数与输出边界
+### `acmd download`
 
 `download <file>` 是 Client 的终端文件上传（设备到 Server Artifact），不是 Remote Files 的文件浏览命令。无参数立即返回 `Usage: download <file>`，不会把空路径解析成当前工作目录；目录输入仍返回明确的 `Not a file` 错误。该命令执行过程中发送的正常 Socket 结果应与已登记的命令 ID 关联，不得因为极快返回而意外显示成 `[Background]`。是否能取消正在进行的 HTTP 字节传输仍取决于 `HTTP_TRANSFER_MODE`；不能将普通任务的取消能力等同于传输取消。

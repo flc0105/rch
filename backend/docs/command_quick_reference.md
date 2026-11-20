@@ -108,7 +108,7 @@ Alias 的模板参数、平台覆盖与安全边界见 [Aliases / Quick Actions]
 | `getinfo [-a/--all] [--json]` | 查看目标 Client 的系统、硬件和进程信息 | 默认轻量概览；`--all`/`-a` 增加详细诊断；`--json` 返回所选字段的平铺对象 |
 | `getuid` | 查看 Client 当前用户身份 | 依目标系统提供的身份信息展示 |
 | `getpid` | 查看 Client 自身进程 PID | 返回目标 Client 进程 PID |
-| `uptime` | 查看系统运行时间 | 返回目标设备信息 |
+| `uptime` | 查看系统启动时间及已运行时长 | 支持四个平台 |
 | `userenum` | 枚举系统用户账户 | 可见范围受目标系统权限约束 |
 | `is_elevated` | 检查 Client 是否具有提升的系统权限 | 只检查当前进程权限，不自动提权 |
 | `SCRIPT_DEFAULT_EXECUTION_MODE` / `SCRIPT_DEFAULT_OUTPUT_MODE` | Script 默认执行 / 输出模式 | Python 默认 inproc / collect，Go 默认 subprocess_pipe / collect；受本次选择及 Schema 约束 |
@@ -120,7 +120,6 @@ Alias 的模板参数、平台覆盖与安全边界见 [Aliases / Quick Actions]
 
 | 命令 | 作用 | 注意 |
 |---|---|---|
-| `download <path>` | 从目标 Client 把一个文件上传给 Server，以便下载/领取 | 方向与 Server 的 `upload` **相反** |
 | `clean` | 扫描 Client 可清理项目，显示带类别选择的确认预览 | 默认预览时可能已勾选候选项；确认才执行删除 |
 | `clean --no-confirm` | 跳过交互、直接执行受规则允许的清理范围 | **会真实删除匹配数据**，执行前需确认清理范围 |
 | `update` | 构建、下载并准备新的 Client Bundle | iOS 更新交接与桌面自动启动方式不同 |
@@ -201,7 +200,6 @@ iOS 的 RCH Client 专门实现了一组可在 Pythonista 中通过 Python / iOS
 | `echo` / `printenv` | 输出文本或环境变量 / 查看环境变量 |
 | `whoami` / `getinfo` / `uptime` | 查看当前身份 / iOS 设备信息 / 系统运行时间 |
 | `md5sum` | 计算文件 MD5（用于文件比对，不适合作为安全校验） |
-| `clipboard_read` / `clipboard_write` | 读取 / 写入文本剪贴板 |
 | `get_location` | 读取获授权的定位信息 |
 | `list_contacts` | 以 JSON 读取获授权的联系人信息 |
 | `list_reminders` | 以 JSON 列出提醒事项及其备注、日期、优先级、链接和通知信息 |
@@ -229,11 +227,14 @@ ACMD 统一使用 `acmd <name> ...` 前缀，使用独立的命令注册表、�
 | **Windows / macOS / Linux** | `acmd kill` | 按 PID、名称或端口选择并终止进程；可先显示预览和确认，具体能力受权限限制 |
 | **Windows / macOS / iOS** | `acmd msgbox` / `acmd notify` | 本机提示框／通知，填写 `--message`，可选 `--title` |
 | **macOS** | `acmd launchd` | 管理 LaunchAgent / LaunchDaemon；未填 action/kind 时交互选择，执行前预览审批；支持 `--json` 结构化结果与 `--no-confirm` 直接执行；详见 [launchd](launchd.md) |
-| **Windows / macOS / Linux / iOS** | `acmd sqlite_query` / `acmd image_info` | 只读 SQLite 查询／图片元数据 |
+| **Windows / macOS / Linux / iOS** | `acmd sqlite_query` / `acmd image_info` | 只读 SQLite 查询／图片元数据。SQLite 可用 `--limit` 限制结果行数 |
 | **Windows / macOS / Linux / iOS** | `acmd python_packages` | 查询已安装发行包、已加载模块或单个模块的导入信息，支持 `--json` |
 | **Windows / macOS / Linux / iOS** | `acmd archive_peek` | 以目录树或 JSON 查看 ZIP、TAR，大小使用可读单位 |
-| **Windows / macOS / Linux / iOS** | `acmd find` | 从指定目录或当前目录递归匹配名称，支持关键词和通配符 |
-| **Windows / macOS / Linux / iOS** | `acmd wget` | 下载 URL 到目标 Client，`-o` 指定文件或目录 |
+| **Windows / macOS / Linux / iOS** | `acmd find` | 从指定目录或当前目录递归匹配名称，支持关键词、通配符和 `--type file\|dir` |
+| **Windows / macOS / Linux / iOS** | `acmd wget` | 下载 URL 到目标 Client，`-o` 指定文件或目录，`--conflict` 选择 stop、replace（默认）或 keep_both |
+| **Windows / macOS / Linux / iOS** | `acmd download` | 上传单个 Client 文件到 Artifacts。接受位置路径或 `--path`，可用 `--name` 指定保存名 |
+| **Windows / macOS / Linux / iOS** | `acmd wait_pid` / `acmd tcp_check` | 等待指定 PID 退出／从目标 Client 检查指定 TCP 端口，主机默认 localhost |
+| **Windows / macOS / iOS** | `acmd clipboard_read` / `acmd clipboard_write` | 读写文本。读取时可用 `--download` 将图片或文件保存到 Artifacts，文件剪贴板在 Windows 和 macOS 可用 |
 | **iOS** | `acmd alert` / `acmd tree` / `acmd head` / `acmd tail` | Pythonista 提示框、目录树和文本文件读取 |
 
 示例（只展示语法，不表示允许随意操作目标设备）：

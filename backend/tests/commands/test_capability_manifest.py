@@ -150,12 +150,13 @@ def test_linux_command_manifest_is_unique_and_complete():
     assert modes['pyexec'] == 'collect'
     policies = {item['name']: item['cancel_policy'] for item in entries}
     assert set(policies.values()) <= {'none', 'cooperative', 'process'}
-    for name in ('pyexec', 'pyexec_stream', 'download'):
+    for name in ('pyexec', 'pyexec_stream', 'acmd download'):
         assert policies[name] == 'cooperative'
     assert all(item['suggest'] is True for item in entries)
     by_name = {item['name']: item for item in entries}
     assert by_name['cd']['completion'] == {'provider': 'filesystem', 'kinds': ['directory']}
-    assert by_name['download']['completion'] == {'provider': 'filesystem', 'kinds': ['file', 'directory']}
+    assert by_name['acmd download']['completion'] == [{'provider': 'filesystem', 'kinds': ['file', 'directory']}]
+    assert 'download' not in by_name
     assert not any('template' in item or 'streaming' in item for item in entries)
     assert any(item.get('confirmation') is True for item in entries)
     assert not any(item.get('confirmation') is False for item in entries)

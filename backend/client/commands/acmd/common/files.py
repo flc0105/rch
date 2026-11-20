@@ -10,15 +10,30 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import unquote, urlsplit
 from urllib.request import Request, urlopen
 
+from client.config import runtime_config
 from client.commands.acmd.decorators import argument_command
 from client.commands.acmd.standalone.zip import zip as zip_command
 from client.commands.acmd.standalone.unzip import unzip as unzip_command
 from client.commands.runtime.interrupts import cancel_policy
-from client.runtime.execution.context import CommandTimeoutError
+from client.runtime.execution.context import CommandCancelledError, CommandTimeoutError
+from client.runtime.filesystem.conflict_policy import UPLOAD_FILE_POLICIES, commit_download_file
 from core.command_completion.models import CompletionSpec
 from core.commands.argument_models import ArgumentCommandSpec, ArgumentOptionSpec
 from core.utils.formatting import format_bytes
 
+
+DOWNLOAD_SPEC = ArgumentCommandSpec(
+    name='download',
+    description='Download a file from the client',
+    options=[
+        ArgumentOptionSpec('path', 'str', default='', positional_index=0,
+                           completion=CompletionSpec('filesystem', ('file', 'directory')),
+                           help_text='File to download'),
+        ArgumentOptionSpec('name', 'str', default='', allow_empty=False, help_text='Saved filename'),
+        ArgumentOptionSpec('help', 'flag', default=False, help_text='Show this help message'),
+    ],
+    examples=['acmd download file.zip --name new.zip'],
+)
 
 FIND_SPEC = ArgumentCommandSpec(
     name='find',
@@ -29,6 +44,7 @@ FIND_SPEC = ArgumentCommandSpec(
                            help_text='Search directory (default: current directory)'),
         ArgumentOptionSpec('keyword', 'str', required=True, allow_empty=False,
                            help_text='Case-insensitive name substring or wildcard (e.g. *.jpg)'),
+        ArgumentOptionSpec('type', 'str', default='', help_text='Match only file or dir'),
         ArgumentOptionSpec('help', 'flag', default=False, help_text='Show this help message'),
     ],
     examples=['acmd find --keyword article', 'acmd find ./photos --keyword "img_*.png"'],
@@ -42,6 +58,8 @@ WGET_SPEC = ArgumentCommandSpec(
         ArgumentOptionSpec('output', 'str', default='', allow_empty=True, alias='o',
                            completion=CompletionSpec('filesystem', ('file', 'directory')),
                            help_text='Output file path or existing directory'),
+        ArgumentOptionSpec('conflict', 'str', default='replace',
+                           help_text='If the destination exists: stop, replace or keep_both'),
         ArgumentOptionSpec('help', 'flag', default=False, help_text='Show this help message'),
     ],
     examples=['acmd wget https://example.com/report.pdf -o ./report.pdf'],
@@ -54,10 +72,42 @@ class ACMDArchiveCommands:
 
 
 class ACMDFileCommands(ACMDArchiveCommands):
+    @argument_command('download', spec=DOWNLOAD_SPEC, output='stream')
+    @cancel_policy('cooperative')
+    def download(self, args_dict, payload=None):
+        filename = args_dict['path']
+        if not filename.strip():
+            return 0, 'Usage: acmd download <file> [--name <filename>]'
+        name = args_dict['name']
+        if name and (name in ('.', '..') or any(char in name for char in '/\\\x00')):
+            return 0, '--name must be a filename'
+        try:
+            self._set_cancel_policy('cooperative')
+            self._checkpoint()
+            if runtime_config.HTTP_TRANSFER_MODE == 'legacy':
+                self._set_cancel_policy(
+                    mode='none',
+                    message='Current HTTP transfer mode is legacy; download cancellation is not supported')
+            file_path = self.path_resolver.require_existing_file(filename)
+            source_command = (payload or {}).get('raw') or f'acmd download {filename}'
+            return self.http_file_transfer_service.upload_single_file_to_server_result(
+                file_path,
+                category='downloads',
+                upload_name=name,
+                extra={'saved_from': 'client_command', 'source_command': source_command},
+            )
+        except (CommandCancelledError, CommandTimeoutError):
+            raise
+        except Exception as exc:
+            return 0, f'Failed to download file: {exc}'
+
     @argument_command('find', spec=FIND_SPEC)
     @cancel_policy('cooperative')
     def find(self, args_dict):
         self._set_cancel_policy('cooperative')
+        match_type = args_dict.get('type') or ''
+        if match_type and match_type not in ('file', 'dir'):
+            return 0, '--type must be file or dir'
         root = self.path_resolver.require_existing_directory(args_dict['path'])
         keyword = args_dict['keyword'].strip().casefold()
         glob = any(char in keyword for char in '*?[')
@@ -65,11 +115,14 @@ class ACMDFileCommands(ACMDArchiveCommands):
 
         for directory, dirs, files in self._iter_checked(os.walk(root)):
             dirs.sort(key=str.casefold)
-            for name in self._iter_checked(sorted(dirs + files, key=str.casefold), check_interval=64):
+            names = {'file': files, 'dir': dirs}[match_type] if match_type else dirs + files
+            for name in self._iter_checked(sorted(names, key=str.casefold), check_interval=64):
                 normalized = name.casefold()
                 matched = fnmatch.fnmatchcase(normalized, keyword) if glob else keyword in normalized
                 if matched:
-                    matches.append(os.path.join(directory, name))
+                    path = os.path.join(directory, name)
+                    if match_type != 'file' or os.path.isfile(path):
+                        matches.append(path)
 
         return 1, '\n'.join(matches) if matches else 'No matches found.'
 
@@ -79,7 +132,11 @@ class ACMDFileCommands(ACMDArchiveCommands):
         self._set_cancel_policy('cooperative')
         url = args_dict['url'].strip()
         output = args_dict['output'].strip()
+        conflict = args_dict.get('conflict', 'replace')
+        if conflict not in UPLOAD_FILE_POLICIES:
+            return 0, '--conflict must be stop, replace or keep_both'
         staged_path = None
+        target = ''
         try:
             parts = urlsplit(url)
             if parts.scheme not in ('http', 'https', 'ftp') or not parts.hostname:
@@ -102,6 +159,8 @@ class ACMDFileCommands(ACMDArchiveCommands):
                         filename = 'download.bin'
                     target = os.path.join(target, filename)
 
+                if conflict == 'stop' and os.path.lexists(target):
+                    return 0, f'Download target already exists: {target}'
                 directory = os.path.dirname(target)
                 os.makedirs(directory, exist_ok=True)
                 headers = response.headers
@@ -135,7 +194,10 @@ class ACMDFileCommands(ACMDArchiveCommands):
             if total is not None and received != total:
                 return 0, f'Download incomplete: received {format_bytes(received)} of {format_bytes(total)}.'
             self._checkpoint()
-            os.replace(staged_path, target)
+            if conflict == 'replace':
+                os.replace(staged_path, target)
+            else:
+                target = commit_download_file(staged_path, target, conflict)
             staged_path = None
             return 1, f'Downloaded {format_bytes(received)}\n{target}'
         except HTTPError as exc:
@@ -149,6 +211,8 @@ class ACMDFileCommands(ACMDArchiveCommands):
             return 0, f'Unable to reach the download server: {exc.reason}'
         except http.client.HTTPException:
             return 0, 'Download interrupted: the remote server closed the connection unexpectedly.'
+        except FileExistsError:
+            return 0, f'Download target already exists: {target}'
         except OSError as exc:
             return 0, f'Could not complete the download: {exc.strerror or exc}'
         except ValueError as exc:

@@ -1,4 +1,6 @@
 import json
+import os
+import socket
 import sqlite3
 import subprocess
 import sys
@@ -14,6 +16,8 @@ from unittest.mock import Mock
 import pytest
 from PIL import Image
 
+from client.clipboard.adapters.ios import iOSClipboardAdapter
+from client.clipboard.manager import ClipboardManager
 from client.commands.acmd.registry import ArgumentCommandRegistry
 from client.commands.runtime.catalog import CommandCatalog
 from client.commands.runtime.hosts import LinuxCommands, MacCommands, WindowsCommands, iOSCommands
@@ -22,9 +26,9 @@ from server.application.command.command_planner import CommandPlanner
 
 
 HOSTS = [MacCommands, WindowsCommands, LinuxCommands, iOSCommands]
-COMMON = {'sqlite_query', 'image_info', 'python_packages', 'archive_peek', 'find', 'wget'}
+COMMON = {'sqlite_query', 'image_info', 'python_packages', 'archive_peek', 'find', 'wget', 'download', 'wait_pid', 'tcp_check'}
 IOS_ONLY = {'alert', 'tree', 'head', 'tail'}
-LOCAL_UI = {'msgbox', 'notify'}
+LOCAL_UI = {'msgbox', 'notify', 'clipboard_read', 'clipboard_write'}
 
 
 def make_host(host_type=LinuxCommands):
@@ -49,6 +53,8 @@ def test_capabilities(host_type, monkeypatch):
     monkeypatch.setattr(catalog, '_get_platform_name', lambda: host.command_platform)
     names = [item['name'] for item in catalog.get_command_manifest_payload()]
     assert len(names) == len(set(names))
+    assert not {'download', 'clipboard_read', 'clipboard_write'} & set(names)
+    assert 'uptime' in names
     for command in COMMON | IOS_ONLY | LOCAL_UI:
         assert (f'acmd {command}' in names) == (command in entries)
         assert (execute(host, f'acmd {command} --help')[0] == 1) == (command in entries)
@@ -99,6 +105,10 @@ def test_portable_inspection_and_search(host_type, tmp_path, monkeypatch):
     ):
         status, output = execute(host, line)
         assert status == 1 and Path(output).name == expected
+    (tmp_path / 'sub' / 'article-directory').mkdir()
+    assert Path(execute(host, 'acmd find . --keyword article --type dir')[1]).name == 'article-directory'
+    assert Path(execute(host, 'acmd find . --keyword article --type file')[1]).name == 'article.txt'
+    assert execute(host, 'acmd find --keyword article --type link')[0] == 0
     assert execute(host, 'acmd find --keyword unmatched') == (1, 'No matches found.')
     assert execute(host, 'acmd find bad-directory --keyword miss')[0] == 0
     assert execute(host, 'acmd find --keyword "  "')[0] == 0
@@ -211,3 +221,148 @@ def test_native_ui_adapters_receive_arguments_as_data(monkeypatch):
     assert execute(win, 'acmd msgbox --title Hello --message \'quote " example\'')[0] == 1
     assert 'quote " example' not in spawn.call_args.args[0][-1]
     assert spawn.call_args.kwargs['env']['RCH_DIALOG_MESSAGE'] == 'quote " example'
+
+
+@pytest.mark.parametrize('host_type', HOSTS)
+def test_download_uses_existing_upload_and_optional_artifact_name(host_type, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    path = tmp_path / 'report #1.zip'
+    path.write_bytes(b'payload')
+    host = make_host(host_type)
+    transfer = Mock()
+    transfer.upload_single_file_to_server_result.return_value = (1, '')
+    host._http_file_transfer_service = transfer
+
+    assert execute(host, 'acmd download "report #1.zip" --name "renamed file.zip"') == (1, '')
+    transfer.upload_single_file_to_server_result.assert_called_once_with(
+        str(path), category='downloads', upload_name='renamed file.zip',
+        extra={'saved_from': 'client_command', 'source_command': 'acmd download "report #1.zip" --name "renamed file.zip"'},
+    )
+    assert execute(host, 'acmd download --path "report #1.zip"')[0] == 1
+    assert transfer.upload_single_file_to_server_result.call_args.kwargs['upload_name'] == ''
+    assert execute(host, 'acmd download')[0] == 0
+    assert execute(host, 'acmd download .')[0] == 0
+    assert execute(host, 'acmd download "report #1.zip" --name ../other.zip')[0] == 0
+    assert path.read_bytes() == b'payload'
+
+
+def test_sqlite_limit_applies_to_both_outputs_without_a_default_cap(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    with closing(sqlite3.connect('sample.db')) as conn:
+        conn.execute('CREATE TABLE items (name)')
+        conn.executemany('INSERT INTO items VALUES (?)', [(f'ROW_{idx:03d}',) for idx in range(120)])
+        conn.commit()
+    host = make_host()
+    query = 'acmd sqlite_query --db sample.db --query "SELECT name FROM items ORDER BY name"'
+    assert 'ROW_119' in execute(host, query)[1]
+    assert 'ROW_002' not in execute(host, query + ' --limit 2')[1]
+    status, output = execute(host, query + ' --json --limit 2')
+    assert status == 1 and json.loads(output) == [{'name': 'ROW_000'}, {'name': 'ROW_001'}]
+    assert execute(host, query + ' --limit 0')[0] == 0
+
+
+def test_wget_conflict_modes(tmp_path, monkeypatch, endpoint):
+    monkeypatch.chdir(tmp_path)
+    host = make_host()
+    target = tmp_path / 'existing.bin'
+    target.write_bytes(b'old')
+    command = f'acmd wget {endpoint}/unknown.bin -o existing.bin'
+    assert execute(host, command + ' --conflict stop')[0] == 0
+    assert target.read_bytes() == b'old'
+    status, output = execute(host, command + ' --conflict keep_both')
+    renamed = Path(output.splitlines()[-1])
+    assert status == 1 and renamed != target and renamed.read_bytes() == b'a' * 1024
+    assert target.read_bytes() == b'old'
+    assert execute(host, command + ' --conflict replace')[0] == 1
+    assert target.read_bytes() == b'a' * 1024
+    assert execute(host, command + ' --conflict unknown')[0] == 0
+    assert not list(tmp_path.glob('.rch-wget-*.part'))
+
+
+@pytest.mark.parametrize('host_type', HOSTS)
+def test_wait_pid_and_tcp_check_are_usable_on_each_host(host_type):
+    host = make_host(host_type)
+    assert execute(host, f'acmd wait_pid --pid {os.getpid()} --timeout 0.01')[0] == 0
+    assert execute(host, 'acmd wait_pid 0')[0] == 0
+    with socket.socket() as listener:
+        listener.bind(('127.0.0.1', 0))
+        listener.listen()
+        port = listener.getsockname()[1]
+        assert execute(host, f'acmd tcp_check {port} --host 127.0.0.1')[0] == 1
+        assert execute(host, f'acmd tcp_check --port {port} --host 127.0.0.1')[0] == 1
+    assert execute(host, 'acmd tcp_check --port 65536')[0] == 0
+
+
+def test_wait_pid_reports_exit_from_real_process():
+    host = make_host()
+    with subprocess.Popen([sys.executable, '-c', 'pass']) as process:
+        assert execute(host, f'acmd wait_pid {process.pid} --timeout 3') == (
+            1, f'PID {process.pid} is no longer running.',
+        )
+
+
+def clipboard_manager(host, tmp_path, adapter):
+    manager = ClipboardManager.__new__(ClipboardManager)
+    manager._operation_lock = threading.RLock()
+    manager.staging_dir = str(tmp_path)
+    manager.adapter = adapter
+    host.socket.runtime = SimpleNamespace(clipboard_manager=manager)
+    return manager
+
+
+@pytest.mark.parametrize('host_type', [MacCommands, WindowsCommands])
+def test_clipboard_acmd_reuses_desktop_snapshot_and_artifact_flows(host_type, tmp_path):
+    host = make_host(host_type)
+    adapter = Mock()
+    manager = clipboard_manager(host, tmp_path, adapter)
+    transfer = Mock()
+    transfer.upload_single_file_to_server_result.return_value = (1, '')
+    transfer.upload_paths_as_zip_to_server_result.return_value = (1, '')
+    host._http_file_transfer_service = transfer
+    manager._upload_bytes_artifact = Mock(return_value={'original_name': 'clipboard_sample.png'})
+
+    adapter.get_snapshot.return_value = {'kind': 'text', 'text': 'read me'}
+    assert execute(host, 'acmd clipboard_read') == (1, 'read me')
+    assert execute(host, 'acmd clipboard_write --text "hello world"') == (1, 'Clipboard updated')
+    adapter.set_text.assert_called_once_with('hello world')
+
+    adapter.get_snapshot.return_value = {'kind': 'image', 'data': b'png', 'format': 'png'}
+    assert execute(host, 'acmd clipboard_read') == (1, 'Clipboard contains an image')
+    manager._upload_bytes_artifact.assert_not_called()
+    assert 'clipboard_sample.png' in execute(host, 'acmd clipboard_read --download')[1]
+    assert manager._upload_bytes_artifact.call_args.kwargs['category'] == 'clipboard'
+
+    item = tmp_path / 'single.txt'
+    item.touch()
+    folder = tmp_path / 'folder'
+    folder.mkdir()
+    adapter.get_snapshot.return_value = {'kind': 'files', 'paths': [str(item)]}
+    assert 'file or folder' in execute(host, 'acmd clipboard_read')[1]
+    transfer.upload_single_file_to_server_result.assert_not_called()
+    assert execute(host, 'acmd clipboard_read --download') == (1, '')
+    transfer.upload_single_file_to_server_result.assert_called_once_with(
+        str(item), category='clipboard', extra={'saved_from': 'clipboard'},
+    )
+    for paths in ([str(folder)], [str(item), str(folder)]):
+        adapter.get_snapshot.return_value['paths'] = paths
+        assert execute(host, 'acmd clipboard_read --download') == (1, '')
+        transfer.upload_paths_as_zip_to_server_result.assert_called_with(
+            paths, category='clipboard', extra={'saved_from': 'clipboard'},
+        )
+
+
+def test_ios_clipboard_keeps_pythonista_text_calls_and_can_export_images(monkeypatch, tmp_path):
+    host = make_host(iOSCommands)
+    clipboard = SimpleNamespace(get=Mock(return_value='saved'), set=Mock(), get_image=Mock())
+    monkeypatch.setitem(sys.modules, 'clipboard', clipboard)
+    manager = clipboard_manager(host, tmp_path, iOSClipboardAdapter())
+    assert execute(host, 'acmd clipboard_read') == (1, 'saved')
+    clipboard.get_image.assert_not_called()
+    assert execute(host, 'acmd clipboard_write "new text"') == (1, 'Clipboard updated')
+    clipboard.set.assert_called_once_with('new text')
+    clipboard.get.return_value = ''
+    clipboard.get_image.return_value = Image.new('RGB', (1, 1))
+    manager._upload_bytes_artifact = Mock(return_value={'original_name': 'clipboard_sample.png'})
+    assert execute(host, 'acmd clipboard_read') == (1, 'Clipboard contains an image')
+    manager._upload_bytes_artifact.assert_not_called()
+    assert 'clipboard_sample.png' in execute(host, 'acmd clipboard_read --download')[1]

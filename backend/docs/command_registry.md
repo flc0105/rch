@@ -195,7 +195,7 @@ Terminal 的 `script exec` 路径候选和 `job start` Job 名称候选复用相
 
 四平台 `getinfo [-a|--all] [--json]` 经 Shell Common 显式挂载同一个 Standalone 命令，返回有序平铺 `StructuredCommandResult`。命令入口按系统、硬件、进程及平台信息顺序组合字段；默认只采集轻量字段，`--all` 将详细诊断信息插入对应位置。公共字段包括 `kernel`、`rch_build_ver`、`rch_build_revision`，Apple 系统代号／设备型号／iOS 芯片名称使用 `core/device/apple_model_names.json` 的本地映射。平台独有字段与默认／详细字段分别维护。
 
-iOS 的命令可见性由 `iOSCommands` 的实际导出方法和 ACMD Registry 决定。平台类会屏蔽不适用于 Pythonista 的继承命令，并将设备命令归入 `device` 分组（`clipboard_read`、`clipboard_write`、`get_location`、`speak`、`list_contacts`、`list_reminders`），将 `clear_console`、`keep_awake` 归入 `console`；`acmd ps/kill` 不在 iOS 注册。iOS 的 `getinfo` 和基于 Pythonista 系统接口的 `uptime` 均归入 `system` 命令组。`list_reminders` 和 `list_contacts` 无需参数，直接输出 JSON。原先的文件预览、分享、上传、打开链接和退出 App 入口归入 Script Library 的 `ios/console`。
+iOS 的命令可见性由 `iOSCommands` 的实际导出方法和 ACMD Registry 决定。平台类会屏蔽不适用于 Pythonista 的继承命令，并将设备命令归入 `device` 分组（`get_location`、`speak`、`list_contacts`、`list_reminders`），将 `clear_console`、`keep_awake` 归入 `console`；`acmd ps/kill` 不在 iOS 注册。四平台的 `getinfo` 和 `uptime` 归入 Shell Common 的 `system` 命令组。`list_reminders` 和 `list_contacts` 无需参数，直接输出 JSON。原先的文件预览、分享、上传、打开链接和退出 App 入口归入 Script Library 的 `ios/console`。
 
 
 ZIP 创建与解压使用四平台 Common ACMD 的 `acmd zip`、`acmd unzip` Standalone 注册，复用 Remote Files 的 `ArchiveService`；两者接受位置路径或 `--path`。ZIP/UNZIP 默认返回一条包含文件数、可读大小、耗时及目标路径的简洁文本，仅 `-v/--verbose` 输出逐文件进度。ZIP 权限拒绝时默认停止，显式 `--skip-unreadable` 才允许跳过并显示警告和部分归档提示；UNZIP 保留 `--conflict` 及 `--merge`／`--skip` 简写。两条命令不提供 `--json`；Remote Files Browser 原有调用行为不变。Shell-like 不再导出 `zip_dir` / `unzip`。
@@ -206,14 +206,14 @@ ZIP 创建与解压使用四平台 Common ACMD 的 `acmd zip`、`acmd unzip` Sta
 `shell_bg`、`run_bg`、`pyexec`、`pyexec_stream`）、`file`（`file_shred`）、
 `session`（`var`、`kill_instance`、`reexec_instance`、`relaunch_instance`、`spawn_instance`）、
 `runtime`（`watchdog`、`set`）、`maintenance`（`clean`、`update`）、
-`transfer`（`download`）、`automation`（`keyboard_send`）、
+`automation`（`keyboard_send`）、
 `media`（`screenshot`、`webcam_snap`）、`privilege`（`run_elevated`、
 `spawn_elevated_instance`、`is_elevated`）、
 `system`（`getinfo`、`idletime`、`getuid`、`getpid`、`uptime`、`userenum`）。`ip` 已不再注册为 Client 命令。
 
 Server → Client 文件传输统一使用 `transfer_start` / `transfer_update`，由 TransferManager 执行，不注册内部传输命令。
-iOS 专属 `clipboard_read` / `clipboard_write` 和其他设备命令统一使用 `device` 分组；
-内部 `acmd` 和 Structured Payload 命令按原有执行流程运行。
+剪贴板读写在 Common Interaction 注册为 `acmd clipboard_read` / `acmd clipboard_write`，由注册表向 macOS、Windows 和 iOS 导出。默认读取文本并报告非文本类型，`--download` 将图片或文件保存到 Artifacts。
+`acmd download` 在 Common Files 上传单个 Client 文件到 Artifacts。跨平台 `acmd wait_pid` 与 `acmd tcp_check` 分别在 Common Process 与 Common Network 注册。
 
 Client 生命周期的 `relaunch_instance` 仍调用原有新建进程再退出逻辑；
 `reexec_instance` 仅在 macOS/Linux 注册，使用 `os.execv()` 替换当前进程。
