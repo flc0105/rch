@@ -8,7 +8,7 @@ SCRIPT_METADATA = {
 }
 
 import subprocess
-from client.commands.platform.utils.win_util import logon_user
+from client.runtime.win_util import logon_user
 
 print("Waiting for valid credentials...")
 

@@ -4,7 +4,7 @@ import os
 import re
 import time
 
-from client.commands.platform.utils.ios_util import get_ios_contacts, get_ios_username
+from client.runtime.ios_util import get_ios_contacts, get_ios_username
 from client.commands.runtime.interrupts import timeout
 from client.commands.shell.decorators import shell_command
 from client.runtime.execution.context import CommandCancelledError, CommandTimeoutError

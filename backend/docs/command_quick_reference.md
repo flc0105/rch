@@ -183,7 +183,6 @@ Server 的 `xt ...` 是面向用户的统一目录与运行入口；Client 另�
 | `run_elevated --collect <command>` | 用系统 AppleScript 授权运行 Shell 命令，结束后一次性返回输出或错误 |
 | `run_elevated --detached <program> [args...]` | 在独立会话内直接后台启动程序并返回 PID |
 | `spawn_elevated_instance [--no-confirm]` | 经系统授权在独立后台会话启动新 Client 并返回 PID |
-| `file_shred <path>` | 对文件执行覆盖式删除，属于不可逆高风险操作；闪存等设备不保证物理不可恢复 |
 
 ### Linux
 
@@ -232,10 +231,11 @@ ACMD 统一使用 `acmd <name> ...` 前缀，使用独立的命令注册表、�
 | **Windows / macOS / Linux / iOS** | `acmd archive_peek` | 以目录树或 JSON 查看 ZIP、TAR，大小使用可读单位 |
 | **Windows / macOS / Linux / iOS** | `acmd find` | 从指定目录或当前目录递归匹配名称，支持关键词、通配符和 `--type file\|dir` |
 | **Windows / macOS / Linux / iOS** | `acmd wget` | 下载 URL 到目标 Client，`-o` 指定文件或目录，`--conflict` 选择 stop、replace（默认）或 keep_both |
+| **Windows / macOS / Linux / iOS** | `acmd file_shred` | 覆写并删除普通文件，`--passes` 默认 3，闪存等设备仍可能保留旧数据 |
 | **Windows / macOS / Linux / iOS** | `acmd download` | 上传单个 Client 文件到 Artifacts。接受位置路径或 `--path`，可用 `--name` 指定保存名 |
 | **Windows / macOS / Linux / iOS** | `acmd wait_pid` / `acmd tcp_check` | 等待指定 PID 退出／从目标 Client 检查指定 TCP 端口，主机默认 localhost |
 | **Windows / macOS / iOS** | `acmd clipboard_read` / `acmd clipboard_write` | 读写文本。读取时可用 `--download` 将图片或文件保存到 Artifacts，文件剪贴板在 Windows 和 macOS 可用 |
-| **iOS** | `acmd alert` / `acmd tree` / `acmd head` / `acmd tail` | Pythonista 提示框、目录树和文本文件读取 |
+| **iOS** | `acmd alert` / `acmd tree` / `acmd head` / `acmd tail` | Pythonista 提示框、目录树和文本文件读取。目录树可用 `--dirs-only` / `-d` 只显示目录 |
 
 示例（只展示语法，不表示允许随意操作目标设备）：
 
@@ -251,7 +251,7 @@ acmd netstat --status LISTENING
 acmd netstat -l -t --port 443 --json
 acmd netstat -u
 acmd kill --pid 1234
-acmd tree . --max_depth 2
+acmd tree . --max_depth 2 --dirs-only
 ```
 
 - `acmd ps`：查看进程；终止操作是 **`acmd kill`**，进程结束操作需显式调用 `acmd kill`。

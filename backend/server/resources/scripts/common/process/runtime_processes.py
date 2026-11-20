@@ -31,7 +31,7 @@ import time
 
 import psutil
 from client.runtime.sdk import context
-from client.commands.platform.utils.pid_service_util import PidServiceLookup
+from client.process.service_lookup import PidServiceLookup
 
 
 RUNTIME_EXES = {

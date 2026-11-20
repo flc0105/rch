@@ -1,17 +1,22 @@
 """File safety, conflict handling, clipboard and transfers."""
 
+import os
+import ssl
+import sys
 import threading
 import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, call
+from urllib.error import URLError
 
 import pytest
 
 from client.clipboard.manager import ClipboardManager
+from client.commands.acmd.common import files as file_commands
 from client.commands.acmd.registry import ArgumentCommandRegistry
-from client.commands.common.services import client_cleanup_service as cleanup
+from client.runtime import client_cleanup_service as cleanup
 from client.commands.runtime.hosts import LinuxCommands, MacCommands, WindowsCommands
 from client.runtime.execution.context import CommandCancelledError
 from client.runtime.filesystem.conflict_policy import apply_path, commit_download_file
@@ -194,8 +199,10 @@ def test_clipboard_acmd_reuses_desktop_snapshot_and_artifact_flows(host_type, tm
 
     adapter.get_snapshot.return_value = {'kind': 'text', 'text': 'read me'}
     assert execute(host, 'acmd clipboard_read') == (1, 'read me')
-    assert execute(host, 'acmd clipboard_write --text "hello world"') == (1, 'Clipboard updated')
-    adapter.set_text.assert_called_once_with('hello world')
+    assert execute(host, 'acmd clipboard_write hello world')[0] == 1
+    assert execute(host, 'acmd clipboard_write --text "hello   world"')[0] == 1
+    assert execute(host, 'acmd clipboard_write --text hello world')[0] == 0
+    assert adapter.set_text.call_args_list == [call('hello world'), call('hello   world')]
 
     adapter.get_snapshot.return_value = {'kind': 'image', 'data': b'png', 'format': 'png'}
     assert execute(host, 'acmd clipboard_read') == (1, 'Clipboard contains an image')
@@ -208,7 +215,8 @@ def test_clipboard_acmd_reuses_desktop_snapshot_and_artifact_flows(host_type, tm
     folder = tmp_path / 'folder'
     folder.mkdir()
     adapter.get_snapshot.return_value = {'kind': 'files', 'paths': [str(item)]}
-    assert execute(host, 'acmd clipboard_read')[0] == 1
+    status, listing = execute(host, 'acmd clipboard_read')
+    assert status == 1 and listing.splitlines()[1:] == ['single.txt']
     transfer.upload_single_file_to_server_result.assert_not_called()
     assert execute(host, 'acmd clipboard_read --download') == (1, '')
     transfer.upload_single_file_to_server_result.assert_called_once_with(
@@ -247,3 +255,53 @@ def test_cleanup_rejects_modified_plan_with_unowned_path(managed):
     assert result['removed_files'] == 0
     assert outsider.read_text() == 'must stay'
     assert result['items'][0]['skipped_paths']
+
+
+def test_wget_combines_ca_sources_and_preserves_target_if_verify_fails(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    target = tmp_path / 'report.txt'
+    target.write_bytes(b'previous')
+    bundle = tmp_path / 'public.pem'
+    bundle.touch()
+    local_bundle = tmp_path / 'private.pem'
+    monkeypatch.setitem(sys.modules, 'certifi', SimpleNamespace(where=lambda: str(bundle)))
+    monkeypatch.setenv('REQUESTS_CA_BUNDLE', str(local_bundle))
+    context = Mock()
+    create_context = Mock(return_value=context)
+    monkeypatch.setattr(ssl, 'create_default_context', create_context)
+    failure = ssl.SSLCertVerificationError('could not get local issuer')
+    failure.verify_message = 'could not get local issuer'
+    connect = Mock(side_effect=URLError(failure))
+    monkeypatch.setattr(file_commands, 'urlopen', connect)
+
+    status, _ = execute(make_host(), 'acmd wget https://example.invalid -o report.txt')
+    assert status == 0
+    create_context.assert_called_once_with()
+    assert context.load_verify_locations.call_args_list == [
+        call(cafile=str(bundle)), call(cafile=str(local_bundle)),
+    ]
+    assert context.method_calls == [call.load_verify_locations(cafile=str(bundle)),
+                                    call.load_verify_locations(cafile=str(local_bundle))]
+    assert connect.call_args.kwargs['context'] is context
+    assert target.read_bytes() == b'previous'
+
+
+def test_file_shred_overwrites_exact_requested_passes_and_removes_only_target(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    sample = tmp_path / 'sample.txt'
+    sample.write_bytes(b'abc')
+    recorded = []
+
+    def fsync(fd):
+        os.lseek(fd, 0, os.SEEK_SET)
+        recorded.append(os.read(fd, 3))
+
+    monkeypatch.setattr(file_commands.os, 'fsync', fsync)
+    host = make_host()
+    assert execute(host, 'acmd file_shred sample.txt --passes 0')[0] == 0
+    assert sample.read_bytes() == b'abc'
+    assert execute(host, 'acmd file_shred .')[0] == 0
+
+    assert execute(host, 'acmd file_shred sample.txt --passes 2')[0] == 1
+    assert recorded == [bytes(3), bytes([255]) * 3]
+    assert not sample.exists()

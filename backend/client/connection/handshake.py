@@ -133,7 +133,7 @@ class ClientInfoBuilder:
     def _build_process_info(self, os_alias: str):
         try:
             if os_alias == 'ios':
-                from client.commands.platform.utils.ios_util import get_ios_process_info
+                from client.runtime.ios_util import get_ios_process_info
 
                 ios_process_info = get_ios_process_info()
                 username = ios_process_info.get('username')

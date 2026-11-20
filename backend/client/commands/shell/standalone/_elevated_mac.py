@@ -6,7 +6,7 @@ import shlex
 import subprocess
 import tempfile
 
-from client.commands.platform.utils.mac_util import escape_osascript_text
+from client.runtime.mac_util import escape_osascript_text
 from client.commands.shell.standalone._elevated_process import ElevationCancelled, run_tracked
 
 

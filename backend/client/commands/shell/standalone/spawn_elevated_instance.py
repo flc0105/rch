@@ -10,7 +10,7 @@ import subprocess
 import tempfile
 import time
 
-from client.commands.platform.utils.mac_util import escape_osascript_text
+from client.runtime.mac_util import escape_osascript_text
 from client.commands.runtime.interrupts import timeout
 from client.commands.shell.decorators import shell_command
 from client.runtime.client_util import get_executable_path, get_runtime_root

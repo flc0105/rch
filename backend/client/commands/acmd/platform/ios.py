@@ -4,7 +4,7 @@ from collections import deque
 from itertools import islice
 
 from client.commands.acmd.decorators import argument_command
-from client.commands.platform.utils.ios_util import show_ios_alert
+from client.runtime.ios_util import show_ios_alert
 from core.command_completion.models import CompletionSpec
 from core.commands.argument_models import ArgumentCommandSpec, ArgumentOptionSpec
 
@@ -26,6 +26,7 @@ TREE_ARGUMENT_SPEC = ArgumentCommandSpec(
         ArgumentOptionSpec('path', 'str', default='.', positional_index=0, help_text='Target directory',
                            completion=CompletionSpec('filesystem', ('directory',))),
         ArgumentOptionSpec('max_depth', 'int', default=3, alias='L', help_text='Maximum recursion depth'),
+        ArgumentOptionSpec('dirs_only', 'flag', default=False, alias='d', help_text='Show only directories'),
         ArgumentOptionSpec('help', 'flag', default=False, help_text='Show this help message'),
     ],
 )
@@ -79,12 +80,15 @@ class iOSACMDCommands:
                 if depth >= depth_limit or (depth and os.path.islink(path)) or not os.path.isdir(path):
                     continue
                 with os.scandir(path) as scan:
-                    entries = sorted(scan, key=lambda entry: (not entry.is_dir(), entry.name.casefold()))
+                    entries = [(entry, entry.is_dir()) for entry in scan]
+                if args_dict['dirs_only']:
+                    entries = [(entry, is_dir) for entry, is_dir in entries if is_dir]
+                entries.sort(key=lambda item: (not item[1], item[0].name.casefold()))
                 for index in range(len(entries) - 1, -1, -1):
-                    entry = entries[index]
+                    entry, is_dir = entries[index]
                     last = index == len(entries) - 1
                     branch = '└── ' if last else '├── '
-                    suffix = '/' if entry.is_dir() else ''
+                    suffix = '/' if is_dir else ''
                     pending.append((entry.path, prefix + ('    ' if last else '│   '),
                                     f'{prefix}{branch}{entry.name}{suffix}', depth + 1))
             return 1, '\n'.join(lines)

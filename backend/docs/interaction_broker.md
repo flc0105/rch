@@ -156,7 +156,7 @@ Interaction 仍需要当前 Client Session Token、有效 `command_id`、前台 
 
 ```python
 from client.commands.shell.decorators import shell_command
-from client.commands.common.services.interaction_service import (
+from client.runtime.execution.interaction_service import (
     CommandInteractions, CommandInteractionError,
 )
 

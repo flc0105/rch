@@ -3,8 +3,8 @@ import os
 import subprocess
 
 from client.commands.acmd.decorators import argument_command
-from client.commands.platform.utils.ios_util import show_ios_alert
-from client.commands.platform.utils.mac_util import escape_osascript_text
+from client.runtime.ios_util import show_ios_alert
+from client.runtime.mac_util import escape_osascript_text
 from core.commands.argument_models import ArgumentCommandSpec, ArgumentOptionSpec
 
 

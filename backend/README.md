@@ -1449,7 +1449,6 @@ The following tables are generated from current `@desc(...)` declarations with `
 
 | Command | Group | What it does |
 | --- | --- | --- |
-| `file_shred` | `file` | Securely delete file (overwrite) |
 | `getinfo` | `system` | Show system information |
 | `idletime` | `system` | Show user idle time |
 | `screenshot` | `media` | Capture a screenshot |

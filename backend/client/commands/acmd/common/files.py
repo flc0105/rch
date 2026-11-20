@@ -3,6 +3,8 @@ import fnmatch
 import http.client
 import os
 import re
+import ssl
+import stat
 import tempfile
 import time
 from pathlib import PureWindowsPath
@@ -66,6 +68,39 @@ WGET_SPEC = ArgumentCommandSpec(
 )
 
 
+FILE_SHRED_SPEC = ArgumentCommandSpec(
+    name='file_shred',
+    description='Overwrite and delete a file',
+    options=[
+        ArgumentOptionSpec('path', 'str', required=True, allow_empty=False, positional_index=0,
+                           completion=CompletionSpec('filesystem', ('file',)), help_text='File to overwrite'),
+        ArgumentOptionSpec('passes', 'int', default=3, help_text='Number of overwrite passes (default: 3)'),
+        ArgumentOptionSpec('help', 'flag', default=False, help_text='Show this help message'),
+    ],
+    examples=['acmd file_shred ./sample.txt --passes 1'],
+)
+
+
+def _wget_tls_context():
+    context = ssl.create_default_context()
+    try:
+        import certifi
+    except ImportError:
+        pass
+    else:
+        bundle = certifi.where()
+        if os.path.isfile(bundle):
+            context.load_verify_locations(cafile=bundle)
+
+    configured = os.environ.get('REQUESTS_CA_BUNDLE') or os.environ.get('CURL_CA_BUNDLE')
+    if configured:
+        if os.path.isdir(configured):
+            context.load_verify_locations(capath=configured)
+        else:
+            context.load_verify_locations(cafile=configured)
+    return context
+
+
 class ACMDArchiveCommands:
     zip = zip_command
     unzip = unzip_command
@@ -100,6 +135,56 @@ class ACMDFileCommands(ACMDArchiveCommands):
             raise
         except Exception as exc:
             return 0, f'Failed to download file: {exc}'
+
+    @argument_command('file_shred', spec=FILE_SHRED_SPEC, output='stream')
+    @cancel_policy('cooperative')
+    def file_shred(self, args_dict):
+        passes = args_dict['passes']
+        if passes < 1:
+            return 0, '--passes must be a positive integer'
+
+        self._set_cancel_policy('cooperative')
+        try:
+            self._checkpoint()
+            target = self.path_resolver.resolve_target_path(args_dict['path'])
+            before = os.lstat(target)
+            if not stat.S_ISREG(before.st_mode) or before.st_nlink > 1:
+                return 0, 'Select a regular file without symbolic links or additional hard links.'
+
+            open_flags = getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_NONBLOCK', 0)
+            with open(target, 'r+b', opener=lambda path, flags: os.open(path, flags | open_flags)) as stream:
+                original = os.fstat(stream.fileno())
+                if (not stat.S_ISREG(original.st_mode) or original.st_nlink > 1
+                        or not os.path.samestat(before, original)):
+                    return 0, 'File changed before it could be overwritten.'
+                size = original.st_size
+                self.emit_chunk(f'Shredding {target} ({format_bytes(size)})')
+                chunk_size = 1024 * 1024
+                for index in range(passes):
+                    self._checkpoint()
+                    pattern = index % 3
+                    stream.seek(0)
+                    remaining = size
+                    while remaining:
+                        self._checkpoint()
+                        count = min(remaining, chunk_size)
+                        data = os.urandom(count) if pattern == 2 else bytes([255 * pattern]) * count
+                        stream.write(data)
+                        remaining -= count
+                    stream.flush()
+                    os.fsync(stream.fileno())
+
+            self._checkpoint()
+            current = os.lstat(target)
+            if (not os.path.samestat(original, current) or not stat.S_ISREG(current.st_mode)
+                    or current.st_nlink > 1 or current.st_size != size):
+                return 0, 'File changed during overwrite and was not deleted.'
+            os.unlink(target)
+            return 1, f'File overwritten and deleted: {target}'
+        except (CommandCancelledError, CommandTimeoutError):
+            raise
+        except OSError as exc:
+            return 0, f'Failed to shred file: {exc}'
 
     @argument_command('find', spec=FIND_SPEC)
     @cancel_policy('cooperative')
@@ -143,7 +228,8 @@ class ACMDFileCommands(ACMDArchiveCommands):
                 return 0, 'Enter a valid HTTP, HTTPS or FTP URL.'
             self._checkpoint()
             request = Request(url, headers={'Accept-Encoding': 'identity'})
-            with urlopen(request, timeout=15) as response:
+            context = _wget_tls_context() if parts.scheme in ('http', 'https') else None
+            with urlopen(request, timeout=15, context=context) as response:
                 if output:
                     target = self.path_resolver.resolve_target_path(output)
                 else:
@@ -207,8 +293,11 @@ class ACMDFileCommands(ACMDArchiveCommands):
             raise
         except TimeoutError:
             return 0, 'Download timed out waiting for the remote server.'
-        except URLError as exc:
-            return 0, f'Unable to reach the download server: {exc.reason}'
+        except (URLError, ssl.SSLCertVerificationError) as exc:
+            reason = exc.reason if isinstance(exc, URLError) else exc
+            if isinstance(reason, ssl.SSLCertVerificationError):
+                return 0, f'HTTPS certificate verification failed on this Client: {reason.verify_message}'
+            return 0, f'Unable to reach the download server: {reason}'
         except http.client.HTTPException:
             return 0, 'Download interrupted: the remote server closed the connection unexpectedly.'
         except FileExistsError:

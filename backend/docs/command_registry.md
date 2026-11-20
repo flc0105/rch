@@ -203,7 +203,7 @@ ZIP 创建与解压使用四平台 Common ACMD 的 `acmd zip`、`acmd unzip` Sta
 普通 Client 命令的可见名称直接来自 `@shell_command` 修饰的方法名，`group`
 决定 Manifest、Client Help 和 Info → Commands 的分类。重命名后不保留旧名称兼容入口。
 本次分组使用 `shell`（`cd`、`pwd`）、`execution`（`shell`、`shell_stream`、
-`shell_bg`、`run_bg`、`pyexec`、`pyexec_stream`）、`file`（`file_shred`）、
+`shell_bg`、`run_bg`、`pyexec`、`pyexec_stream`）、
 `session`（`var`、`kill_instance`、`reexec_instance`、`relaunch_instance`、`spawn_instance`）、
 `runtime`（`watchdog`、`set`）、`maintenance`（`clean`、`update`）、
 `automation`（`keyboard_send`）、
@@ -213,7 +213,7 @@ ZIP 创建与解压使用四平台 Common ACMD 的 `acmd zip`、`acmd unzip` Sta
 
 Server → Client 文件传输统一使用 `transfer_start` / `transfer_update`，由 TransferManager 执行，不注册内部传输命令。
 剪贴板读写在 Common Interaction 注册为 `acmd clipboard_read` / `acmd clipboard_write`，由注册表向 macOS、Windows 和 iOS 导出。默认读取文本并报告非文本类型，`--download` 将图片或文件保存到 Artifacts。
-`acmd download` 在 Common Files 上传单个 Client 文件到 Artifacts。跨平台 `acmd wait_pid` 与 `acmd tcp_check` 分别在 Common Process 与 Common Network 注册。
+`acmd download` 和 `acmd file_shred` 均在 Common Files 注册，分别上传文件到 Artifacts 和执行文件级覆写后删除。跨平台 `acmd wait_pid` 与 `acmd tcp_check` 分别在 Common Process 与 Common Network 注册。
 
 Client 生命周期的 `relaunch_instance` 仍调用原有新建进程再退出逻辑；
 `reexec_instance` 仅在 macOS/Linux 注册，使用 `os.execv()` 替换当前进程。

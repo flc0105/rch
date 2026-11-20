@@ -9,8 +9,8 @@ import threading
 import time
 from uuid import uuid4
 
-from client.commands.platform.utils.ios_util import spawn
-from client.commands.common.services.client_cleanup_service import ClientCleanupService
+from client.runtime.ios_util import spawn
+from client.runtime.client_cleanup_service import ClientCleanupService
 from client.config.config import (
     SERVER_HOST,
     SERVER_PORT,

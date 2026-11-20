@@ -202,7 +202,7 @@ class ShellExampleCommands:
 
 ```python
 from client.commands.shell.decorators import shell_command
-from client.commands.common.services.interaction_service import (
+from client.runtime.execution.interaction_service import (
     CommandInteractions, CommandInteractionError,
 )
 

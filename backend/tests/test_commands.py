@@ -101,7 +101,7 @@ def test_acmd_resolves_pid_before_integer_validation(monkeypatch):
 HOSTS = [MacCommands, WindowsCommands, LinuxCommands, iOSCommands]
 
 
-COMMON = {'sqlite_query', 'image_info', 'python_packages', 'archive_peek', 'find', 'wget', 'download', 'wait_pid', 'tcp_check'}
+COMMON = {'sqlite_query', 'image_info', 'python_packages', 'archive_peek', 'find', 'wget', 'download', 'file_shred', 'wait_pid', 'tcp_check'}
 
 
 IOS_ONLY = {'alert', 'tree', 'head', 'tail'}
@@ -132,7 +132,7 @@ def test_capabilities(host_type, monkeypatch):
     monkeypatch.setattr(catalog, '_get_platform_name', lambda: host.command_platform)
     names = [item['name'] for item in catalog.get_command_manifest_payload()]
     assert len(names) == len(set(names))
-    assert not {'download', 'clipboard_read', 'clipboard_write'} & set(names)
+    assert not {'download', 'clipboard_read', 'clipboard_write', 'file_shred'} & set(names)
     assert 'uptime' in names
     for command in COMMON | IOS_ONLY | LOCAL_UI:
         assert (f'acmd {command}' in names) == (command in entries)
@@ -170,3 +170,18 @@ def test_windows_alias_preserves_quoted_paths(tmp_path, monkeypatch):
         resolved = manager.resolve_alias('open', args=args, conn=conn)
         assert resolved['platform'] == 'win'
         assert resolved['command'] == f'read-file "{path}"'
+
+
+def test_ios_tree_filters_files_and_keeps_nested_directories(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / 'docs' / 'archive').mkdir(parents=True)
+    (tmp_path / 'docs' / 'notes.txt').touch()
+    (tmp_path / 'top.txt').touch()
+    host = make_host(iOSCommands)
+
+    status, normal = execute(host, 'acmd tree .')
+    assert status == 1 and 'notes.txt' in normal and 'top.txt' in normal
+    for flag in ('--dirs-only', '-d'):
+        status, output = execute(host, f'acmd tree . {flag}')
+        assert status == 1 and 'docs/' in output and 'archive/' in output
+        assert 'notes.txt' not in output and 'top.txt' not in output

@@ -16,7 +16,7 @@ def check_privilege():
             return 'Root'
         return 'User'
     if os.name == 'nt':
-        from client.commands.platform.utils.win_util import get_integrity_level
+        from client.runtime.win_util import get_integrity_level
         return get_integrity_level()
 
     return 'N/A'
@@ -99,7 +99,7 @@ def get_system_paths():
     system_paths['temp'] = str(tempfile.gettempdir())
 
     if platform_alias == 'ios':
-        from client.commands.platform.utils.ios_util import get_icloud_path, read_info_plist
+        from client.runtime.ios_util import get_icloud_path, read_info_plist
         system_paths['icloud'] = get_icloud_path(read_info_plist())
 
     if getattr(sys, 'frozen', False):

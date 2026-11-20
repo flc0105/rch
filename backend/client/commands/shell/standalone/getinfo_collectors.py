@@ -328,7 +328,7 @@ def collect_mac(owner, *, detailed=False):
 
 def collect_windows(owner, *, detailed=False):
     """Native registry/token fields first; PowerShell GPU query only for --all."""
-    from client.commands.platform.utils import win_util
+    from client.runtime import win_util
 
     registry = _optional(_read_windows_current_version) or {}
     result = {
@@ -393,7 +393,7 @@ def collect_linux(owner, *, detailed=False):
 
 
 def collect_ios(owner, *, detailed=False):
-    from client.commands.platform.utils.ios_util import (
+    from client.runtime.ios_util import (
         get_ios_process_info, get_ios_device_info, get_ios_bundle_info,
         get_icloud_path, read_info_plist,
     )

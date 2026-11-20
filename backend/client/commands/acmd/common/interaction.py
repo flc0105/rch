@@ -1,5 +1,7 @@
 """Native Client interaction registrations."""
 
+import os
+
 from client.commands.acmd.decorators import argument_command
 from client.commands.acmd.standalone.msgbox import msgbox as msgbox_command
 from client.commands.acmd.standalone.notify import notify as notify_command
@@ -23,9 +25,10 @@ CLIPBOARD_WRITE_SPEC = ArgumentCommandSpec(
     name='clipboard_write',
     description='Write clipboard text',
     options=[
-        ArgumentOptionSpec('text', 'str', default='', positional_index=0, help_text='Text to write'),
+        ArgumentOptionSpec('text', 'str', help_text='Text to write. Quote multi-word values after --text.'),
         ArgumentOptionSpec('help', 'flag', default=False, help_text='Show this help message'),
     ],
+    examples=['acmd clipboard_write hello world', 'acmd clipboard_write --text "hello world"'],
 )
 
 
@@ -69,7 +72,9 @@ class ACMDInteractionCommands:
             if not args_dict['download']:
                 if kind == 'image':
                     return 1, 'Clipboard contains an image'
-                return 1, f"Clipboard contains {len(snapshot['paths'])} file or folder item(s)"
+                names = [os.path.basename(path.rstrip('/\\')) or path for path in snapshot['paths']]
+                heading = f'Clipboard contains {len(names)} file or folder item(s)'
+                return 1, '\n'.join([heading, *names])
 
             status, content = manager.get_clipboard(snapshot=snapshot, checkpoint=self._checkpoint)
             self._checkpoint()
@@ -104,12 +109,19 @@ class ACMDInteractionCommands:
     @argument_command('clipboard_write', spec=CLIPBOARD_WRITE_SPEC, platforms=('ios', 'win', 'mac'))
     @cancel_policy('cooperative')
     def clipboard_write(self, args_dict):
+        text = args_dict['text']
+        words = args_dict.get('_args') or []
+        if text is not None and words:
+            return 0, 'Quote the complete value after --text, or use only positional text.'
+        if text is None:
+            text = ' '.join(words)
+
         self._set_cancel_policy('cooperative')
         manager = self.socket.runtime.clipboard_manager
         if manager is None:
             return 0, 'Clipboard disabled on Client'
         try:
-            status, result = manager.execute(self, ClipboardAction.SET, {'kind': 'text', 'text': args_dict['text']})
+            status, result = manager.execute(self, ClipboardAction.SET, {'kind': 'text', 'text': text})
             if status:
                 return 1, 'Clipboard updated'
             return 0, f"Failed to write clipboard: {result['message']}"
