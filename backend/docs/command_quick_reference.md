@@ -203,7 +203,7 @@ iOS 的 RCH Client 专门实现了一组可在 Pythonista 中通过 Python / iOS
 | `list_contacts` | 以 JSON 读取获授权的联系人信息 |
 | `list_reminders` | 以 JSON 列出提醒事项及其备注、日期、优先级、链接和通知信息 |
 | `speak` | 使用设备语音合成朗读文本 |
-| `keep_awake` | 请求保持屏幕唤醒；不保证 App 长期后台运行 |
+| `keep_awake [on/off]` | 默认开启屏幕常亮，`off` 恢复自动休眠。屏幕常亮不保证 App 长期后台运行 |
 | `clear_console` | 清理 Pythonista 控制台输出 |
 
 

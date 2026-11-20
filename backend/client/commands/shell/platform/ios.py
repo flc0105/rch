@@ -214,6 +214,7 @@ class iOSShellCommands:
     @shell_command('Keep screen awake', group='console')
     def keep_awake(self, arg):
         import console
+        arg = arg.strip().lower() or 'on'
         if arg == 'on':
             console.set_idle_timer_disabled(True)
             return 1, 'Screen will stay awake'
