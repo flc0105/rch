@@ -48,7 +48,7 @@ Server 会生成类似如下的负载：
 
 `acmd` 走独立的 `acmd` 协议消息类型，不使用普通 `command` 的字符串分派，也不会在找不到处理器时交给系统 Shell。命令是否可执行，取决于目标 Client 的操作系统平台和当前注册内容。
 
-ACMD 的命令注册入口统一放在 `client/commands/acmd/common/` 或 `client/commands/acmd/platform/`，参数 `ArgumentCommandSpec` 定义在对应注册方法所在文件的顶部。复杂命令也可使用 `acmd/standalone/` 独立文件，并通过分组命令类显式挂载。运行时宿主负责合并当前平台的 Shell 与 ACMD 声明；两条命令线仍分别路由。
+ACMD 的正式命令注册入口放在 `client/commands/acmd/common/` 或 `client/commands/acmd/platform/`。每条命令只定义一份 `ArgumentCommandSpec` 和一份带 `@argument_command` 的模块函数。复杂命令可将 Spec 和实现一起放在 `acmd/standalone/` 独立文件，再由所属 Common / Platform 模块的 `register_commands(registry)` 显式注册；仅导入 Standalone 不会增加命令。Catalog 只加载当前平台对应的归属模块并调用其注册入口。`platforms` 控制 Common 命令的支持范围，Platform 模块负责专属归属。
 
 ## 文件查找、下载和检查
 
@@ -228,19 +228,22 @@ acmd ps --pid not-a-number
 
 ## 注册表及平台可用性
 
-ACMD 不是由 Server 维护固定命令清单。目标 Client 加载当前平台的命令对象后，收集显式注册的命令名称、参数规格及 Handler，生成本机的 Command Registry。
+ACMD 的正式命令表由目标 Client 当前平台的 Common / Platform 模块显式注册，Server 不维护固定 Client 命令清单。注册时直接从装饰函数读取名称、唯一 Spec 和 Handler，Registry 负责平台筛选、参数验证、Help 与执行分派。
 
 注册关系的典型形式是：
 
 ```python
 @argument_command('example', spec=EXAMPLE_SPEC)
-def _acmd_example(self, args_dict, payload=None):
+def example(context, args_dict, payload=None):
     ...
+
+def register_commands(registry):
+    registry.register(example)
 ```
 
 这段只是演示处理器与 Schema 如何绑定，并不表示系统当前有 `example` 这个命令。Handler 收到的是已归一化的参数字典，并可根据签名接收完整 Payload；它通常返回 `(status, result)`，其中 `1` 代表成功，`0` 代表失败。
 
-不同平台加载不同注册对象，因此 Windows、macOS、Linux、iOS 的可用 ACMD 可以不同；公共处理能力也要由具体平台注册后才会出现在对应 Client 中。未注册名称不会退回 Shell，通常会返回：
+不同平台加载各自的归属模块，因此 Windows、macOS、Linux、iOS 的可用 ACMD 可以不同；Common 中声明的平台范围同样参与筛选。未注册名称不会退回 Shell，通常会返回：
 
 ```text
 acmd command not supported on this platform: <name>

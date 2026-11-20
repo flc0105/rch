@@ -1,99 +1,103 @@
+"""Platform command ownership, Shell reflection, and explicit ACMD registration."""
+
 import inspect
+from importlib import import_module
+from types import MethodType
 
 from client.commands.acmd.registry import ArgumentCommandRegistry
+from client.commands.runtime.context import ClientCommandContext
 from client.commands.runtime.manifest_metadata import command_metadata
 from client.commands.shell.decorators import supports_shell_platform
 from core.device.local_identity import get_local_identity
 
 
 class CommandCatalog:
-    """
-    命令目录。
+    """Resolve owner modules for the local Client, without composing command classes."""
 
-    职责：
-    - 根据平台加载命令类
-    - 缓存平台命令实例
-    - 提供唯一的 acmd registry 归属点
-    """
-
-    # PLATFORM_COMMAND_MODULES = {
-    #     'windows': ('client.commands.runtime.hosts', 'WindowsCommands'),
-    #     'darwin': ('client.commands.runtime.hosts', 'MacCommands'),
-    #     'linux': ('client.commands.runtime.hosts', 'LinuxCommands'),
-    #     'ios': ('client.commands.runtime.hosts', 'iOSCommands')
-    # }
-    PLATFORM_COMMAND_MODULES = {
-        'win': ('client.commands.runtime.hosts', 'WindowsCommands'),
-        'mac': ('client.commands.runtime.hosts', 'MacCommands'),
-        'linux': ('client.commands.runtime.hosts', 'LinuxCommands'),
-        'ios': ('client.commands.runtime.hosts', 'iOSCommands')
+    SHELL_COMMON_MODULES = (
+        'client.commands.shell.common.execution',
+        'client.commands.shell.common.session',
+        'client.commands.shell.common.system',
+        'client.commands.shell.common.maintenance',
+        'client.commands.shell.common.media',
+    )
+    SHELL_PLATFORM_MODULES = {
+        'mac': 'client.commands.shell.platform.mac',
+        'win': 'client.commands.shell.platform.win',
+        'ios': 'client.commands.shell.platform.ios',
+        'linux': None,
+    }
+    ACMD_COMMON_MODULES = (
+        'client.commands.acmd.common.network',
+        'client.commands.acmd.common.files',
+        'client.commands.acmd.common.inspection',
+        'client.commands.acmd.common.interaction',
+        'client.commands.acmd.common.process',
+    )
+    ACMD_PLATFORM_MODULES = {
+        'mac': 'client.commands.acmd.platform.mac',
+        'win': None,
+        'ios': 'client.commands.acmd.platform.ios',
+        'linux': None,
     }
 
     def __init__(self, socket):
         self.socket = socket
-        self.platform_commands = None
+        self.command_context = None
         self.argument_command_registry = None
+        self._shell_commands = None
 
-    def _get_platform_name(self) -> str:
-        """
-        获取当前系统平台名称
-        """
-        # return platform.system().lower()
-        # return detect_platform_name().lower()
+    def _get_platform_name(self):
         return get_local_identity().os_alias
 
-    def _load_platform_command_class(self):
-        """
-        根据当前平台动态加载命令类
-        """
-        system = self._get_platform_name()
-        platform_info = self.PLATFORM_COMMAND_MODULES.get(system)
-        if not platform_info:
-            raise NotImplementedError(f"Unsupported OS: {system}")
-
-        module_name, class_name = platform_info
-        module = __import__(module_name, fromlist=[class_name])
-        return getattr(module, class_name)
+    def _owner_modules(self, common, platform_modules):
+        platform = self._get_platform_name()
+        if platform not in platform_modules:
+            raise NotImplementedError(f'Unsupported OS: {platform}')
+        names = (*common, *((platform_modules[platform],) if platform_modules[platform] else ()))
+        return (import_module(name) for name in names)
 
     def get_commands(self):
-        """
-        获取当前平台对应的命令实例（懒加载）
-        """
-        if self.platform_commands is None:
-            command_class = self._load_platform_command_class()
-            self.platform_commands = command_class(self.socket)
-        return self.platform_commands
+        """Return runtime capabilities, not a dynamically assembled command host."""
+        if self.command_context is None:
+            self.command_context = ClientCommandContext(self.socket, self._get_platform_name())
+        return self.command_context
 
-    def get_argument_command_registry(self):
-        """
-        获取当前平台对应的 acmd 注册表（懒加载）
-        """
-        if self.argument_command_registry is None:
-            self.argument_command_registry = ArgumentCommandRegistry(self.get_commands())
-        return self.argument_command_registry
+    def _collect_shell_commands(self):
+        """Discover exports on Common/Platform modules; Standalone is not scanned."""
+        result = {}
+        context = self.get_commands()
+        for module in self._owner_modules(self.SHELL_COMMON_MODULES, self.SHELL_PLATFORM_MODULES):
+            for name, func in inspect.getmembers(module, inspect.isfunction):
+                if not hasattr(func, 'help') or name != func.__name__:
+                    continue
+                if name in result:
+                    raise ValueError(f'Duplicate Shell command: {name}')
+                result[name] = MethodType(func, context)
+        return result
 
-
-
-
-
-
-
-
+    def get_shell_command(self, name):
+        if self._shell_commands is None:
+            self._shell_commands = self._collect_shell_commands()
+        return self._shell_commands.get(name)
 
     def get_exported_shell_commands(self):
-        """Collect Shell handlers for the current Client platform."""
-        instance = self.get_commands()
+        if self._shell_commands is None:
+            self._shell_commands = self._collect_shell_commands()
         platform = self._get_platform_name()
-        return {
-            name: method
-            for name, method in inspect.getmembers(
-                instance, lambda value: inspect.ismethod(value) or inspect.isfunction(value)
-            )
-            if hasattr(method, 'help') and supports_shell_platform(method, platform)
-        }
+        return {name: handler for name, handler in self._shell_commands.items()
+                if supports_shell_platform(handler, platform)}
+
+    def get_argument_command_registry(self):
+        if self.argument_command_registry is None:
+            context = self.get_commands()
+            registry = ArgumentCommandRegistry(context)
+            for module in self._owner_modules(self.ACMD_COMMON_MODULES, self.ACMD_PLATFORM_MODULES):
+                module.register_commands(registry)
+            self.argument_command_registry = registry
+        return self.argument_command_registry
 
     def get_command_manifest_payload(self):
-        """Provide the handshake manifest for Shell and ACMD commands."""
         platform = self._get_platform_name()
         payload = [
             {

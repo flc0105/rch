@@ -46,10 +46,9 @@ class CommandExecutor:
 
     def complete_command_completion(self, payload: dict):
         from client.commands.runtime.completion import ClientCommandCompletionService
-        commands = self.get_commands()
         service = getattr(self, '_completion_service', None)
         if service is None:
-            service = ClientCommandCompletionService(commands)
+            service = ClientCommandCompletionService(self.catalog)
             self._completion_service = service
         return service.complete(payload)
 
@@ -123,17 +122,11 @@ class CommandExecutor:
         return self.argument_command_runner.execute(request, payload)
 
     def sdk_command_names(self):
-        """List exports without constructing or binding a platform command instance."""
-        command_class = self.catalog._load_platform_command_class()
-        from client.commands.shell.decorators import supports_shell_platform
-        platform = self.catalog._get_platform_name()
-        return sorted(name for name in dir(command_class)
-                      if not name.startswith('_')
-                      and hasattr(getattr(command_class, name, None), 'help')
-                      and supports_shell_platform(getattr(command_class, name), platform))
+        """List Shell exports without creating command groups."""
+        return sorted(self.catalog.get_exported_shell_commands())
 
     def resolve_sdk_command(self, scope, name):
-        """SDK-only bridge; execute a real exported command within the current context."""
+        """SDK-only bridge to the current command function."""
         commands = self.get_commands()
         commands.bind_execution(scope.command_id, scope.execution_context)
         return self.shell_command_runner._resolve_builtin_command(commands, name)

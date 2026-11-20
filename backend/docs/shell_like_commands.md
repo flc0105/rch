@@ -17,8 +17,8 @@ Client 连接：command 消息（命令文本、command_id、执行选项）
           ↓
 Client：运行时变量展开 → 解析命令名称和剩余参数
           ↓
-     已导出的 Client 方法？
-        ├─ 是 → 调用对应内置方法
+     已导出的 Client 命令？
+        ├─ 是 → 调用对应模块函数
         └─ 否 → 将完整命令交给系统 Shell
           ↓
 Client：结果 / 中间输出 → Server → Terminal
@@ -26,7 +26,7 @@ Client：结果 / 中间输出 → Server → Terminal
 
 Server 与 Client 的职责要分开理解。Server 的 `alias`、`history`、`upload`、`httpctl` 等入口属于 **Server Built-ins**，会先在 Server 层处理；不是所有看起来像命令的文本都会直接发往 Client。Alias 解析后产生的远程命令仍使用普通 `command` 消息。没有命中 Server Built-in 或 Alias 时，才走默认远程计划。Server 还会优先识别 `acmd` 并改用专门的结构化消息，详见另一篇文档。
 
-Client 的普通执行路径不需要为每一个系统命令预先注册处理器。例如目标机上的 Shell 可以执行 `echo`、`ls`、`dir` 或其他已安装程序；相反，`cd` 这类需要影响 Client 工作目录的功能可以由内置方法直接处理。
+Client 的普通执行路径不需要为每一个系统命令预先注册处理器。例如目标机上的 Shell 可以执行 `echo`、`ls`、`dir` 或其他已安装程序；相反，`cd` 这类需要影响 Client 工作目录的功能可以由内置函数直接处理。
 
 普通命令与 ACMD 都使用 Client 的主要命令处理链，和 Script 一样属于延迟执行的消息；它们不等于另一个独立的后台控制通道。同一 Client 上多个前台 Web 操作还会受到 Server 前台任务忙碌控制的影响。每次执行都拥有独立的命令上下文，记录超时预算、取消策略以及命令结束状态。
 
@@ -116,7 +116,7 @@ run_bg ./my-program --config "settings with spaces.json"
 
 `shell_bg` 仍提供 Shell 命令执行方式，并在 Shell 退出后回收进程状态；返回的 PID 可能属于 Shell 中间进程。两种命令都只确认启动成功，不等待程序最终完成。
 
-Shell 的七个执行入口保留在 `client/commands/shell/common/execution.py` 类内：它们直接使用 `process_execution_service` 执行托管进程操作，以及 `python_execution_service` 执行 Python 策略。两个服务由既有 `ExecutionResources` 按需创建；Script 复用相同的 Python 服务，SDK、External Tool 和平台服务直接复用进程服务，不再经由 `PythonProcessExecutionMixin` 的转发方法。
+Shell 的七个执行入口定义为 `client/commands/shell/common/execution.py` 的模块函数：它们直接使用 `process_execution_service` 执行托管进程操作，以及 `python_execution_service` 执行 Python 策略。两个服务由既有 `ExecutionResources` 按需创建；Script 复用相同的 Python 服务，SDK、External Tool 和平台服务直接复用进程服务，不再经由 `PythonProcessExecutionMixin` 的转发方法。
 
 Python 执行也有收集输出与流式输出两种入口，其运行模式由 Client 的 Python Runtime Configuration 决定。`inproc` 在当前解释器中执行，不可强制杀停；`subprocess_pipe` 在受管理子进程中运行，支持取消与进程终止。执行策略会在运行时设置相应的取消能力，而不是仅靠命令名称判断。这些入口仍属于普通命令体系，但和 `script` 协议的完整脚本运行流程不是同一件事。
 
@@ -127,14 +127,13 @@ Python 执行也有收集输出与流式输出两种入口，其运行模式由 
 ```python
 from client.commands.shell.decorators import shell_command
 
-class ShellExampleCommands:
-    @shell_command('Show a short greeting', group='general')
-    def greet(self, arg=''):
-        name = str(arg or '').strip() or 'world'
-        return 1, f'Hello, {name}'
+@shell_command('Show a short greeting', group='general')
+def greet(context, arg=''):
+    name = str(arg or '').strip() or 'world'
+    return 1, f'Hello, {name}'
 ```
 
-将方法写入 `client/commands/shell/common/` 的分组命令类，或相应的 `shell/platform/` 平台类。完整的独立命令也可以放入 `shell/standalone/`，再通过 `getinfo = getinfo_command` 这样的直接属性赋值显式挂载到分组类；无需增加转发函数。`client/commands/runtime/hosts.py` 将 Shell 与 ACMD 声明组合为当前平台的命令宿主。方法名就是命令名，`@shell_command` 是可导出标记，`platforms` 缺省支持全部平台；仅支持指定系统时设置 `platforms=('mac', 'win')` 等。
+将函数定义在 `client/commands/shell/common/` 的所属模块，或相应的 `shell/platform/` 平台模块。完整的独立命令也可放入 `shell/standalone/`，由所属模块通过同名导入挂载，例如 `from client.commands.shell.standalone.getinfo import getinfo`，无需额外转发。Catalog 仅反射当前平台 Common / Platform 模块导出的装饰函数；Standalone 本身不参加扫描。函数名就是命令名，`@shell_command` 是可导出标记，`platforms` 缺省支持全部平台；仅支持指定系统时设置 `platforms=('mac', 'win')` 等。Platform 模块由 Catalog 选择，无需重复声明相同的平台限制。
 
 例如上例可以执行：
 
@@ -142,7 +141,7 @@ class ShellExampleCommands:
 greet Alice
 ```
 
-Client 将剩余的 `Alice` 作为完整字符串 `arg` 传入方法，方法返回 `(1, 'Hello, Alice')`。与 ACMD 不同，这里没有自动解析 `--key value`、默认值或数字类型。使用原始参数的命令应自行检查语法、缺失参数以及业务边界。零参数方法可以写成 `def greet(self)`；分发器会根据方法签名决定是否传入原始参数。
+Client 将剩余的 `Alice` 作为完整字符串 `arg` 传入函数，函数返回 `(1, 'Hello, Alice')`。与 ACMD 不同，这里没有自动解析 `--key value`、默认值或数字类型。使用原始参数的命令应自行检查语法、缺失参数以及业务边界。不接收原始参数的函数可以写成 `def greet(context)`；分发器会根据绑定后的函数签名决定是否传入原始参数。
 
 **扩展命令时应优先复用已有公共能力**，需要返回失败时使用 `(0, error_message)`；业务内部异常要按需要处理，不应把参数校验失败默认为成功。新增命令后以 Server `help client` 或 Web Terminal 实际运行结果检查导出和平台可用性；是否出现在推荐补全还取决于 `suggest`。
 
@@ -165,17 +164,16 @@ Client 将剩余的 `Alice` 作为完整字符串 `arg` 传入方法，方法返
 from client.commands.shell.decorators import shell_command
 from client.commands.runtime.interrupts import timeout, cancel_policy
 
-class ShellExampleCommands:
-    @shell_command('Perform a bounded demonstration', group='general')
-    @timeout(60)
-    @cancel_policy('cooperative', message='The operation must reach a checkpoint')
-    def bounded_demo(self, arg=''):
-        self._checkpoint()       # 进入可协作取消的检查点
-        # 在实际的耗时循环、文件 I/O 阶段也需要继续设置检查点。
-        return 1, 'Done'
+@shell_command('Perform a bounded demonstration', group='general')
+@timeout(60)
+@cancel_policy('cooperative', message='The operation must reach a checkpoint')
+def bounded_demo(context, arg=''):
+    context._checkpoint()       # 进入可协作取消的检查点
+    # 在实际的耗时循环、文件 I/O 阶段也需要继续设置检查点。
+    return 1, 'Done'
 ```
 
-这里的 `60` 秒是命令自身的默认预算。`cooperative` 只是允许取消和检查点生效；如果在耗时循环中从不再次检查，命令仍可能无法及时停止。`process` 也**不是**把任意 Python 方法自动移到新进程执行；只有实际使用受管理子进程及其终止清理机制，才具备对应能力。没有声明时，普通内置方法的取消模式默认为 `none`。
+这里的 `60` 秒是命令自身的默认预算。`cooperative` 只是允许取消和检查点生效；如果在耗时循环中从不再次检查，命令仍可能无法及时停止。`process` 也**不是**把任意 Python 方法自动移到新进程执行；只有实际使用受管理子进程及其终止清理机制，才具备对应能力。没有声明时，普通内置函数的取消模式默认为 `none`。
 
 `@argument_command(...)` 属于另一个体系：它注册的是带参数规格的 [ACMD](acmd.md)，不会把该 Handler 自动作为 Shell-like 命令导出。普通命令不需要它。
 
@@ -187,14 +185,13 @@ class ShellExampleCommands:
 from client.commands.shell.decorators import shell_command
 from core.utils.decorator import confirm
 
-class ShellExampleCommands:
-    @shell_command('Show an approved demonstration', group='general')
-    @confirm('Continue this harmless demonstration?')
-    def approved_demo(self):
-        return 1, 'Approved and executed'
+@shell_command('Show an approved demonstration', group='general')
+@confirm('Continue this harmless demonstration?')
+def approved_demo(context):
+    return 1, 'Approved and executed'
 ```
 
-运行 `approved_demo` 时，系统先通过当前 Web Task 发出确认，只有用户明确批准才调用方法。`@confirm` 复用连接的 Client Session Token；单独写一个没有 `@shell_command` 的私有方法不会变成可远程执行的命令。
+运行 `approved_demo` 时，系统先通过当前 Web Task 发出确认，只有用户明确批准才调用函数。`@confirm` 复用连接的 Client Session Token；单独写一个没有 `@shell_command` 的私有函数不会变成可远程执行的命令。
 
 所有 `@confirm` 命令都支持显式 `--no-confirm`：命令输入参数开头或末尾的该标记会在进入方法体前移除，此次执行无需请求 Interaction Broker。该标记由命令装饰器解析，不请求 Interaction Broker。未提供标记时照常请求确认。操作系统自身的 UAC / sudo 授权按平台机制执行。
 
@@ -206,17 +203,16 @@ from client.runtime.execution.interaction_service import (
     CommandInteractions, CommandInteractionError,
 )
 
-class ShellExampleCommands:
-    @shell_command('Choose a demonstration label', group='general', interaction=True)
-    def choose_label(self, arg=''):
-        ui = CommandInteractions(self)
-        try:
-            label = ui.select('Choose a label:', ['Alpha', 'Beta'], title='Choose')
-            if not ui.confirm(f'Use {label}?', title='Confirm label'):
-                return 0, 'Not approved'
-        except CommandInteractionError as exc:
-            return 0, f'Interaction unavailable: {exc}'
-        return 1, f'Selected {label}'
+@shell_command('Choose a demonstration label', group='general', interaction=True)
+def choose_label(context, arg=''):
+    ui = CommandInteractions(context)
+    try:
+        label = ui.select('Choose a label:', ['Alpha', 'Beta'], title='Choose')
+        if not ui.confirm(f'Use {label}?', title='Confirm label'):
+            return 0, 'Not approved'
+    except CommandInteractionError as exc:
+        return 0, f'Interaction unavailable: {exc}'
+    return 1, f'Selected {label}'
 ```
 
 所有正常下发的 Client 普通命令和 ACMD 都可使用 Interaction Broker，无需逐命令声明 Scope。Server 只验证连接级凭证及当前 Web Task/命令身份。交互必须绑定正在运行的 Web Task；Server CLI 或脱离 Web 前台任务的调用未必有可回应的页面。输入与 Preview 请求在原命令中等待，不会嵌套执行另一条命令。更完整的 `confirm`、`input`、`secret`、`select`、Preview（含勾选行和开关）、Script 使用方法见 [Interaction Broker](interaction_broker.md)。

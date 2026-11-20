@@ -111,8 +111,9 @@ def _quote_replacement(candidate: str, original: str) -> str:
 class ClientCommandCompletionService:
     """Resolve the local command/ACMD declaration and run its registered provider."""
 
-    def __init__(self, command_host):
-        self.command_host = command_host
+    def __init__(self, catalog):
+        self.catalog = catalog
+        command_host = catalog.get_commands()
         self.parser = CommandCompletionParser()
         self.resolver = CommandLineResolver()
         self.providers = CommandCompletionRegistry({
@@ -166,7 +167,7 @@ class ClientCommandCompletionService:
             if len(tokens) < 2:
                 return None
             command_name = tokens[1].value.lower()
-            registry = self.command_host.get_argument_command_registry()
+            registry = self.catalog.get_argument_command_registry()
             entry = getattr(registry, '_entries', {}).get(command_name) if registry else None
             spec = entry.get('spec') if isinstance(entry, dict) else None
             if spec is None:
@@ -175,8 +176,7 @@ class ClientCommandCompletionService:
                 raw_input, cursor, tokens, spec, command_token_count=2,
             )
 
-        commands = self.command_host
-        method = getattr(commands, command, None)
+        method = self.catalog.get_shell_command(command)
         completion = getattr(method, 'command_completion', None)
         if completion is None:
             return None

@@ -1,4 +1,5 @@
 import inspect
+from types import MethodType
 from typing import Any, Callable
 
 from core.commands.argument_errors import ArgumentCommandValidationError
@@ -10,10 +11,10 @@ from core.platform.normalization import normalize_platform_alias
 
 class ArgumentCommandRegistry:
     """
-    acmd 实验命令注册表。
+    ACMD 显式命令注册表。
 
     职责：
-    - 扫描命令对象上的实验命令处理器
+    - 由 Common / Platform 模块显式注册处理器
     - 管理 handler + spec
     - 统一 help / 参数校验 / 执行分发
     - 输出 acmd 自动补全候选
@@ -23,36 +24,24 @@ class ArgumentCommandRegistry:
     HELP_COMMAND_NAME = 'help'
 
     def __init__(self, commands):
-        self.commands = commands
+        self.context = commands
         self.help_builder = ArgumentCommandHelpBuilder()
         self.validator = ArgumentCommandValidator()
-        self._entries = self._collect_entries()
+        self._entries = {}
 
-    def _collect_entries(self) -> dict:
-        """
-        扫描并收集所有已注册的实验命令处理器
-        """
-        entries = {}
-        platform = normalize_platform_alias(getattr(self.commands, 'command_platform', ''))
-
-        for _, method in inspect.getmembers(
-            self.commands,
-            lambda x: inspect.ismethod(x) or inspect.isfunction(x)
-        ):
-            command_name = getattr(method, 'argument_command_name', '')
-            if not command_name:
-                continue
-            supported = getattr(method, 'argument_command_platforms', None)
-            if supported is not None and platform not in supported:
-                continue
-
-            spec = getattr(method, 'argument_command_spec', None)
-            entries[command_name] = {
-                'handler': method,
-                'spec': spec,
-            }
-
-        return entries
+    def register(self, handler):
+        """Register exactly one decorated command from its owner module."""
+        name = getattr(handler, 'argument_command_name', None)
+        spec = getattr(handler, 'argument_command_spec', None)
+        if not name or spec is None or spec.name != name:
+            raise ValueError('ACMD requires matching command name and ArgumentCommandSpec')
+        supported = getattr(handler, 'argument_command_platforms', None)
+        platform = normalize_platform_alias(self.context.command_platform)
+        if supported is not None and platform not in supported:
+            return
+        if name in self._entries:
+            raise ValueError(f'Duplicate ACMD registration: {name}')
+        self._entries[name] = {'handler': MethodType(handler, self.context), 'spec': spec}
 
     def has_command(self, name: str) -> bool:
         """

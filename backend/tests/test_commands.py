@@ -12,7 +12,6 @@ import pytest
 from client.commands.acmd.registry import ArgumentCommandRegistry
 from client.commands.acmd.runner import ArgumentCommandRunner
 from client.commands.runtime.catalog import CommandCatalog
-from client.commands.runtime.hosts import iOSCommands, LinuxCommands, MacCommands, WindowsCommands
 from client.runtime.command_variable_resolver import CommandVariableResolver
 from client.runtime.execution.process.process_service import ProcessService
 from client.runtime.execution.request import ExecutionRequest
@@ -112,7 +111,7 @@ def test_acmd_resolves_pid_before_integer_validation(monkeypatch):
     monkeypatch.setattr(ProcessService, 'list_processes', lambda self: [
         {'pid': pid, 'ppid': 1, 'name': 'python', 'username': 'demo', 'status': 'running'},
     ])
-    executor = AcmdExecutor(ArgumentCommandRegistry(LinuxCommands(socket=SimpleNamespace())))
+    executor = AcmdExecutor(make_host()._test_catalog.get_argument_command_registry())
     runner = ArgumentCommandRunner(executor)
     request = ExecutionRequest(command_id=12)
 
@@ -126,7 +125,7 @@ def test_acmd_resolves_pid_before_integer_validation(monkeypatch):
         assert '${rch:pid}' in str(payload), 'ACMD input payload must not be mutated'
 
 
-HOSTS = [MacCommands, WindowsCommands, LinuxCommands, iOSCommands]
+HOSTS = ['mac', 'win', 'linux', 'ios']
 
 
 COMMON = {'sqlite_query', 'image_info', 'python_packages', 'archive_peek', 'find', 'wget', 'download', 'file_shred', 'wait_pid', 'tcp_check'}
@@ -138,25 +137,29 @@ IOS_ONLY = {'alert', 'tree', 'head', 'tail'}
 LOCAL_UI = {'msgbox', 'notify', 'clipboard_read', 'clipboard_write'}
 
 
-def make_host(host_type=LinuxCommands):
-    return host_type(socket=SimpleNamespace(send_event=Mock()))
+def make_host(host_type='linux'):
+    catalog = CommandCatalog(SimpleNamespace(send_event=Mock()))
+    catalog._get_platform_name = lambda: host_type
+    context = catalog.get_commands()
+    context._test_catalog = catalog
+    return context
 
 
 def execute(host, text):
     payload = CommandPlanner.__new__(CommandPlanner).parse_argument_command(text)
-    return ArgumentCommandRegistry(host).execute(payload)
+    return host._test_catalog.get_argument_command_registry().execute(payload)
 
 
 @pytest.mark.parametrize('host_type', HOSTS)
 def test_capabilities(host_type, monkeypatch):
     host = make_host(host_type)
-    registry = ArgumentCommandRegistry(host)
+    registry = host._test_catalog.get_argument_command_registry()
     entries = {item['name'] for item in registry.list_command_entries()}
     assert COMMON <= entries
     assert IOS_ONLY & entries == (IOS_ONLY if host.command_platform == 'ios' else set())
     assert LOCAL_UI & entries == (LOCAL_UI if host.command_platform != 'linux' else set())
     catalog = CommandCatalog(host.socket)
-    catalog.platform_commands = host
+    catalog.command_context = host
     monkeypatch.setattr(catalog, '_get_platform_name', lambda: host.command_platform)
     names = [item['name'] for item in catalog.get_command_manifest_payload()]
     assert len(names) == len(set(names))
@@ -171,9 +174,9 @@ def test_capabilities(host_type, monkeypatch):
 
 
 @pytest.mark.parametrize('host_type,mountpoint,fstype,kind,used', [
-    (MacCommands, '/', 'apfs', 'system', '6 GB'),
-    (WindowsCommands, 'C:\\', 'NTFS', 'local', '1 GB'),
-    (LinuxCommands, '/', 'ext4', 'local', '1 GB'),
+    ('mac', '/', 'apfs', 'system', '6 GB'),
+    ('win', 'C:\\', 'NTFS', 'local', '1 GB'),
+    ('linux', '/', 'ext4', 'local', '1 GB'),
 ])
 def test_drives_uses_dashboard_volumes(host_type, mountpoint, fstype, kind, used, monkeypatch):
     import sys
@@ -243,7 +246,7 @@ def test_ios_tree_filters_files_and_keeps_nested_directories(tmp_path, monkeypat
     (tmp_path / 'docs' / 'archive').mkdir(parents=True)
     (tmp_path / 'docs' / 'notes.txt').touch()
     (tmp_path / 'top.txt').touch()
-    host = make_host(iOSCommands)
+    host = make_host('ios')
 
     status, normal = execute(host, 'acmd tree .')
     assert status == 1 and 'notes.txt' in normal and 'top.txt' in normal

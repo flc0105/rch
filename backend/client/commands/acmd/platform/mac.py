@@ -1,6 +1,9 @@
 """macOS-only structured command registrations."""
-from client.commands.acmd.standalone.launchd import launchd as launchd_command
+from client.commands.acmd.standalone.launchd import launchd
 
 
-class MacACMDCommands:
-    launchd = launchd_command
+
+
+def register_commands(registry):
+    """Register declarations owned by this Common / Platform module."""
+    registry.register(launchd)

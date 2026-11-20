@@ -30,13 +30,10 @@ class ShellCommandRunner:
 
     def _resolve_builtin_command(self, commands, name):
         """
-        解析平台内置命令方法；如果不存在或不是导出命令，则返回 None
+        解析平台内置命令函数；如果不存在或不是导出命令，则返回 None
         """
-        if not hasattr(commands, name):
-            return None
-
-        func = getattr(commands, name)
-        if not hasattr(func, 'help'):
+        func = self.executor.catalog.get_shell_command(name)
+        if func is None:
             return None
 
         platform = getattr(commands, 'command_platform', None) or get_local_identity().os_alias
@@ -47,7 +44,7 @@ class ShellCommandRunner:
 
     def _resolve_default_command(self, commands, raw_command):
         """Fallback to the OS shell only when its platform capability is enabled."""
-        handler = commands.shell
+        handler = self.executor.catalog.get_shell_command('shell')
         platform = getattr(commands, 'command_platform', None) or get_local_identity().os_alias
         if not supports_shell_platform(handler, platform):
             return lambda: (0, 'OS shell execution is unavailable on this platform')
@@ -70,7 +67,7 @@ class ShellCommandRunner:
 
     def _invoke_command_method(self, func, arg):
         """
-        调用命令方法
+        调用命令函数
         """
         if len(inspect.signature(func).parameters):
             return func(arg)
@@ -98,7 +95,7 @@ class ShellCommandRunner:
                 )
 
             # Shell fallback uses the same managed subprocess as the registered shell command.
-            self._apply_command_policy(commands, getattr(commands, 'shell'))
+            self._apply_command_policy(commands, self.executor.catalog.get_shell_command('shell'))
             default_command = self._resolve_default_command(commands, resolved_command)
             return default_command()
 

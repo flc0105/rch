@@ -62,7 +62,7 @@ class PyInstallerBuilder:
 
     def _build_macos(self, client_dir: str, build_id: str = '', build_version: str = 'dev') -> dict:
         cmd = ['pyinstaller', '-F', '-w', 'rchclient.py',
-               '--hidden-import', 'client.commands.runtime.hosts']
+               '--collect-submodules', 'client.commands']
         result = subprocess.run(cmd, cwd=client_dir, capture_output=True, text=True)
         if result.returncode != 0:
             raise RuntimeError(f'PyInstaller failed: {result.stderr}')
@@ -74,7 +74,7 @@ class PyInstallerBuilder:
 
     def _build_windows(self, client_dir: str, build_id: str = '', build_version: str = 'dev') -> dict:
         cmd = ['pyinstaller', '-F', '-w', 'rchclient.py',
-               '--hidden-import', 'client.commands.runtime.hosts']
+               '--collect-submodules', 'client.commands']
         result = subprocess.run(cmd, cwd=client_dir, capture_output=True, text=True, shell=True)
         if result.returncode != 0:
             raise RuntimeError(f'PyInstaller failed: {result.stderr}')
@@ -85,7 +85,7 @@ class PyInstallerBuilder:
 
     def _build_linux(self, client_dir: str, build_id: str = '', build_version: str = 'dev') -> dict:
         cmd = ['pyinstaller', '-F', '-w', 'rchclient.py',
-               '--hidden-import', 'client.commands.runtime.hosts']
+               '--collect-submodules', 'client.commands']
         result = subprocess.run(cmd, cwd=client_dir, capture_output=True, text=True)
         if result.returncode != 0:
             raise RuntimeError(f'PyInstaller failed: {result.stderr}')

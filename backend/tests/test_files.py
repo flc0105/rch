@@ -18,16 +18,16 @@ from client.commands.acmd.common import files as file_commands
 from client.commands.acmd.registry import ArgumentCommandRegistry
 from client.commands.shell.standalone import _cleanup_plan as cleanup
 from client.commands.runtime.executor import CommandExecutor
-from client.commands.runtime.hosts import LinuxCommands, MacCommands, WindowsCommands
+from client.commands.runtime.catalog import CommandCatalog
 from client.runtime.execution.context import CommandCancelledError
 from client.runtime.execution.interaction_service import CommandInteractions
 from client.runtime.filesystem.conflict_policy import apply_path, commit_download_file
 from server.application.command.command_planner import CommandPlanner
 
 
-def run(text, host=LinuxCommands):
+def run(text, host='linux'):
     payload = CommandPlanner.__new__(CommandPlanner).parse_argument_command(text)
-    return ArgumentCommandRegistry(host(socket=SimpleNamespace(send_event=lambda *_args, **_kwargs: None))).execute(payload)
+    return make_host(host)._test_catalog.get_argument_command_registry().execute(payload)
 
 
 def test_unzip_blocks_zip_slip(tmp_path, monkeypatch):
@@ -76,13 +76,17 @@ def test_upload_commit_existing_file_and_directory(tmp_path):
     assert folder.is_dir() and incoming.exists()
 
 
-def make_host(host_type=LinuxCommands):
-    return host_type(socket=SimpleNamespace(send_event=Mock()))
+def make_host(host_type='linux'):
+    catalog = CommandCatalog(SimpleNamespace(send_event=Mock()))
+    catalog._get_platform_name = lambda: host_type
+    context = catalog.get_commands()
+    context._test_catalog = catalog
+    return context
 
 
 def execute(host, text):
     payload = CommandPlanner.__new__(CommandPlanner).parse_argument_command(text)
-    return ArgumentCommandRegistry(host).execute(payload)
+    return host._test_catalog.get_argument_command_registry().execute(payload)
 
 
 @pytest.fixture
@@ -188,7 +192,7 @@ def clipboard_manager(host, tmp_path, adapter):
     return manager
 
 
-@pytest.mark.parametrize('host_type', [MacCommands, WindowsCommands])
+@pytest.mark.parametrize('host_type', ['mac', 'win'])
 def test_clipboard_acmd_reuses_desktop_snapshot_and_artifact_flows(host_type, tmp_path):
     host = make_host(host_type)
     adapter = Mock()
