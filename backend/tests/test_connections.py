@@ -1,0 +1,176 @@
+"""Connection recovery, TLS handshake and session isolation."""
+
+import hashlib
+import socket
+import ssl
+import time
+from types import SimpleNamespace
+from unittest.mock import Mock
+
+import pytest
+
+from client.connection.receiver_worker import ClientReceiverWorker
+from client.connection.transport_connectors import PinnedTlsConnector
+from core.protocol.rchsocket import RCHSocket
+from server.connection.connection_manager import ConnectionManager
+from server.runtime.session_acceptor import SessionAcceptor
+
+
+class _Session:
+    def __init__(self, client_id, address):
+        self.session_info = SimpleNamespace(client_id=client_id)
+        self.context = SimpleNamespace(transport_failure=None)
+        self.address = address
+        self.runtime = SimpleNamespace(
+            message_queue=SimpleNamespace(put=lambda *args: None), pending_results=SimpleNamespace(close=lambda: None),
+        )
+
+
+class _ConnectionApi:
+    def __init__(self):
+        self.closed = []
+
+    def handle_connection_closed(self, session):
+        self.closed.append(session)
+
+
+def _acceptor(manager, api):
+    server = SimpleNamespace(
+        connections=manager,
+        web_service=SimpleNamespace(connection_api=api),
+    )
+    return SessionAcceptor(server)
+
+
+def test_old_session_close_cannot_cleanup_replacement_session():
+    manager = ConnectionManager()
+    api = _ConnectionApi()
+    acceptor = _acceptor(manager, api)
+    old_session = _Session('client-A', '127.0.0.1:1001')
+    new_session = _Session('client-A', '127.0.0.1:1002')
+    manager.add(old_session)
+    manager.add(new_session)
+
+    acceptor._handle_connection_closed(old_session)
+
+    assert api.closed == []
+    assert manager.get_by_client_id('client-A') is new_session
+
+
+class _ReceiveConnection(RCHSocket):
+    def __init__(self, sock):
+        super().__init__()
+        self.socket.close()
+        self.socket = sock
+        self.received = []
+
+    def recv_message(self):
+        self.received.append(self.recv())
+
+
+def _open_tcp_pair():
+    """A real loopback TCP session, whose server stays connected but can be silent."""
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listener.bind(('127.0.0.1', 0))
+    listener.listen(1)
+    client = socket.create_connection(listener.getsockname(), timeout=2)
+    server, _ = listener.accept()
+    listener.close()
+    client.settimeout(None)
+    server.settimeout(None)
+    return client, server
+
+
+def _send(server, data):
+    transport = RCHSocket()
+    transport.socket.close()
+    transport.socket = server
+    transport.send(data)
+
+
+def test_real_heartbeat_resets_receive_idle_deadline():
+    client_sock, server_sock = _open_tcp_pair()
+    connection = _ReceiveConnection(client_sock)
+    worker = ClientReceiverWorker()
+    worker.start(connection)
+    try:
+        time.sleep(0.06)
+        initial_idle = worker.receive_idle_seconds()
+        assert initial_idle > 0.04
+        _send(server_sock, {'type': 'heartbeat', 'id': 1})
+        deadline = time.monotonic() + 2
+        while not connection.received and time.monotonic() < deadline:
+            time.sleep(0.005)
+        assert connection.received == [{'type': 'heartbeat', 'id': 1}]
+        assert worker.receive_idle_seconds() < initial_idle
+    finally:
+        worker.stop()
+        connection.shutdown()
+        connection.close()
+        assert worker.join(timeout=2)
+        server_sock.close()
+
+
+@pytest.mark.parametrize('trusted', [True, False])
+def test_tls_connector_checks_peer_pin_before_replacing_socket(monkeypatch, trusted):
+    certificate = b'test certificate bytes'
+    socket_under_test = object()
+    wrapped = Mock()
+    wrapped.getpeercert.return_value = certificate
+    context = Mock()
+    context.wrap_socket.return_value = wrapped
+    monkeypatch.setattr(ssl, 'SSLContext', lambda *_: context)
+    connection = SimpleNamespace(socket=socket_under_test, connect=Mock(return_value=True))
+    fingerprint = hashlib.sha256(certificate if trusted else b'different certificate').hexdigest()
+    config = {'server_tls_fingerprint': fingerprint}
+    connector = PinnedTlsConnector()
+
+    if trusted:
+        assert connector.connect(connection, ('rch.example', 9999), config)
+        assert connection.socket is wrapped
+        wrapped.close.assert_not_called()
+    else:
+        with pytest.raises(ssl.SSLError):
+            connector.connect(connection, ('rch.example', 9999), config)
+        assert connection.socket is socket_under_test
+        wrapped.close.assert_called_once_with()
+    context.wrap_socket.assert_called_once_with(socket_under_test, server_hostname='rch.example')
+
+
+def test_handshake_frame_rejects_oversized_length():
+    import struct
+    left, right = socket.socketpair()
+    try:
+        receiver = RCHSocket()
+        receiver.socket.close()
+        receiver.socket = left
+        right.sendall(struct.pack(RCHSocket.HEADER_FORMAT, 9 * 1024 * 1024))
+        with pytest.raises(ValueError, match='frame size'):
+            receiver.recv(max_bytes=8 * 1024 * 1024)
+    finally:
+        left.close()
+        right.close()
+
+
+def test_replaced_connection_pending_results_are_session_scoped():
+    from server.connection.connection_manager import ConnectionManager
+    from server.runtime.session_acceptor import SessionAcceptor
+    from server.connection.runtime.session_runtime import ClientSessionRuntime
+    manager = ConnectionManager()
+    def session():
+        return SimpleNamespace(session_info=SimpleNamespace(client_id='same'), context=SimpleNamespace(),
+                               runtime=ClientSessionRuntime(), address='test')
+    old, new = session(), session()
+    first = old.runtime.pending_results.register(1)
+    second = new.runtime.pending_results.register(1)
+    manager.add(old)
+    manager.add(new)
+    closed, replaced = [], []
+    api = SimpleNamespace(handle_connection_closed=closed.append, handle_replaced_connection_closed=replaced.append)
+    acceptor = SessionAcceptor(SimpleNamespace(connections=manager, web_service=SimpleNamespace(connection_api=api)))
+    acceptor._handle_connection_closed(old)
+    assert closed == [] and replaced == [old]
+    assert first.get(timeout=.1)['status'] == 'interrupted'
+    assert manager.get_by_client_id('same') is new
+    assert new.runtime.pending_results.deliver(1, {'type':'result','id':1,'event_type':'completed','status':'success','message':'new'})
+    assert second.get(timeout=.1)['message'] == 'new'
