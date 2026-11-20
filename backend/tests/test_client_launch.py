@@ -15,8 +15,7 @@ from unittest.mock import Mock
 import pytest
 
 from client.app.client import Client
-from client.commands.shell.common import maintenance as update_ops
-from client.commands.shell.common.maintenance import ShellMaintenanceCommands
+from client.commands.shell.standalone import update as update_ops
 from client.commands.shell.standalone import _elevated_win as elevated
 from client.commands.shell.standalone import run_elevated
 from client.commands.shell.standalone import spawn_elevated_instance as instance
@@ -176,7 +175,7 @@ def test_update_close_waits_for_protocol_reporting_before_closing(monkeypatch, p
     host = SimpleNamespace(socket=_Connection(events))
     monkeypatch.setattr(update_ops.os, 'name', platform)
 
-    ShellMaintenanceCommands._close_update_connection(host)
+    update_ops._close_update_connection(host.socket)
 
     assert events == [
         ('report', 'client_update', 'update'),

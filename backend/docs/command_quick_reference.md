@@ -229,6 +229,7 @@ ACMD 统一使用 `acmd <name> ...` 前缀，使用独立的命令注册表、�
 | **Windows / macOS / Linux / iOS** | `acmd sqlite_query` / `acmd image_info` | 只读 SQLite 查询／图片元数据。SQLite 可用 `--limit` 限制结果行数 |
 | **Windows / macOS / Linux / iOS** | `acmd python_packages` | 查询已安装发行包、已加载模块或单个模块的导入信息，支持 `--json` |
 | **Windows / macOS / Linux / iOS** | `acmd archive_peek` | 以目录树或 JSON 查看 ZIP、TAR，大小使用可读单位 |
+| **Windows / macOS / Linux** | `acmd drives [--json]` | 查看与 Dashboard 一致的挂载点、卷名、文件系统、总大小、已用空间、系统盘标记和卷类型 |
 | **Windows / macOS / Linux / iOS** | `acmd find` | 从指定目录或当前目录递归匹配名称，支持关键词、通配符和 `--type file\|dir` |
 | **Windows / macOS / Linux / iOS** | `acmd wget` | 下载 URL 到目标 Client，`-o` 指定文件或目录，`--conflict` 选择 stop、replace（默认）或 keep_both |
 | **Windows / macOS / Linux / iOS** | `acmd file_shred` | 覆写并删除普通文件，`--passes` 默认 3，闪存等设备仍可能保留旧数据 |

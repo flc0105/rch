@@ -7,6 +7,7 @@ from contextlib import closing
 from pathlib import Path
 
 from client.commands.acmd.decorators import argument_command
+from client.commands.acmd.standalone.drives import drives as drives_command
 from client.commands.acmd.standalone.python_packages import python_packages as python_packages_command
 from core.command_completion.models import CompletionSpec
 from core.commands.argument_models import ArgumentCommandSpec, ArgumentOptionSpec
@@ -53,6 +54,8 @@ ARCHIVE_PEEK_SPEC = ArgumentCommandSpec(
 
 
 class ACMDInspectionCommands:
+    drives = drives_command
+
     @argument_command('sqlite_query', spec=SQLITE_QUERY_SPEC)
     def sqlite_query(self, args_dict):
         limit = args_dict.get('limit')

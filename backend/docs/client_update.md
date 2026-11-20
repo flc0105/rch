@@ -117,7 +117,7 @@ Web Terminal 提交 update
 update --keep-old
 ```
 
-整个下载使用 HTTP 流式读取，先落到 `downloads/<bundle-name>.zip.part`，成功后再替换成 ZIP。下载异常时会移除 `.part`。归档解压会检查路径安全，并先解到独立临时目录；确认其中有 `rchclient.py` 后才发布为最终 Release。对于已经存在且具有入口脚本的同名目录，当前逻辑会直接复用，不会删除可能正在运行的目录。
+整个下载使用 HTTP 流式读取，先落到 `downloads/<bundle-name>.zip.part`，成功后再替换成 ZIP。下载异常时会移除 `.part`。归档解压会检查路径安全，并先解到独立临时目录，确认其中有 `rchclient.py` 后才发布为最终 Release。已有同名目录包含入口脚本时直接复用。遇到同名残缺目录时报告冲突并保留该目录。更新会回收本次创建但未发布的解压临时目录。
 
 ### 新旧进程的切换条件
 

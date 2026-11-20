@@ -61,6 +61,34 @@ def test_unknown_builtin_is_not_claimed_and_unknown_subcommand_is_error():
     assert not calls
 
 
+def test_acmd_download_completes_the_declared_path_at_the_cursor(tmp_path, monkeypatch):
+    from client.commands.runtime.executor import CommandExecutor
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(CommandCatalog, '_get_platform_name', lambda self: 'linux')
+    for name in ('rchclient.py', 'rch client.txt', 'report.txt'):
+        (tmp_path / name).touch()
+    executor = CommandExecutor(SimpleNamespace())
+
+    def suggestions(text, cursor=None):
+        response = executor.complete_command_completion({
+            'raw_input': text, 'cursor_position': len(text) if cursor is None else cursor,
+        })
+        return [item['insert_text'] for item in response['items']]
+
+    assert suggestions('acmd download rchcl') == ['acmd download rchclient.py']
+    assert suggestions('acmd download rep') == ['acmd download report.txt']
+    quoted = suggestions('acmd download "rch c"')[0]
+    assert parsed(quoted)['args']['_args'] == ['rch client.txt']
+    unquoted = suggestions('acmd download rch')[0]
+    assert parsed(unquoted)['args']['_args'] == ['rch client.txt']
+    prefix = 'acmd download --path=rchcl'
+    assert suggestions(prefix + 'obsolete --name renamed.py', len(prefix)) == [
+        'acmd download --path=rchclient.py --name renamed.py',
+    ]
+    assert suggestions('acmd download rchclient.py --name r') == []
+
+
 class AcmdExecutor:
     def __init__(self, registry):
         self.command_variable_resolver = CommandVariableResolver(SimpleNamespace())
@@ -134,10 +162,48 @@ def test_capabilities(host_type, monkeypatch):
     assert len(names) == len(set(names))
     assert not {'download', 'clipboard_read', 'clipboard_write', 'file_shred'} & set(names)
     assert 'uptime' in names
+    assert {'clean', 'update'} <= set(names)
+    assert ('acmd drives' in names) == (host.command_platform != 'ios')
     for command in COMMON | IOS_ONLY | LOCAL_UI:
         assert (f'acmd {command}' in names) == (command in entries)
 
     assert ('launchd' in entries) == (host.command_platform == 'mac')
+
+
+@pytest.mark.parametrize('host_type,mountpoint,fstype,kind,used', [
+    (MacCommands, '/', 'apfs', 'system', '6 GB'),
+    (WindowsCommands, 'C:\\', 'NTFS', 'local', '1 GB'),
+    (LinuxCommands, '/', 'ext4', 'local', '1 GB'),
+])
+def test_drives_uses_dashboard_volumes(host_type, mountpoint, fstype, kind, used, monkeypatch):
+    import sys
+
+    from client.monitor.manager import DeviceMonitorManager
+    from client.runtime.filesystem import storage_volumes
+
+    host = make_host(host_type)
+    gib = 1024 ** 3
+    partition = SimpleNamespace(mountpoint=mountpoint, fstype=fstype, device='device')
+    psutil = SimpleNamespace(
+        disk_partitions=lambda **_kwargs: [partition, partition],
+        disk_usage=lambda _mountpoint: SimpleNamespace(total=8 * gib, used=gib, free=2 * gib, percent=12.5),
+    )
+    monkeypatch.setitem(sys.modules, 'psutil', psutil)
+    monkeypatch.setenv('SystemDrive', 'C:')
+    monkeypatch.setattr(storage_volumes, '_windows_drive_type', lambda _: 3)
+    monkeypatch.setattr(storage_volumes, '_windows_volume_label', lambda _: 'Windows Volume')
+    monitor = DeviceMonitorManager(None)
+    monitor._os_alias = host.command_platform
+    dashboard, = monitor._collect_channel('storage', psutil, {})['volumes']
+
+    status, result = execute(host, 'acmd drives --json')
+    assert status == 1
+    assert json.loads(result) == [{
+        'mountpoint': mountpoint, 'name': dashboard['name'], 'fstype': fstype,
+        'total': '8 GB', 'used': used, 'system': True, 'kind': kind,
+    }]
+    status, table = execute(host, 'acmd drives')
+    assert status == 1 and dashboard['name'] in table and used in table
 
 
 def test_sqlite_limit_applies_to_both_outputs_without_a_default_cap(tmp_path, monkeypatch):

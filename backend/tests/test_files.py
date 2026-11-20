@@ -16,9 +16,11 @@ import pytest
 from client.clipboard.manager import ClipboardManager
 from client.commands.acmd.common import files as file_commands
 from client.commands.acmd.registry import ArgumentCommandRegistry
-from client.runtime import client_cleanup_service as cleanup
+from client.commands.shell.standalone import _cleanup_plan as cleanup
+from client.commands.runtime.executor import CommandExecutor
 from client.commands.runtime.hosts import LinuxCommands, MacCommands, WindowsCommands
 from client.runtime.execution.context import CommandCancelledError
+from client.runtime.execution.interaction_service import CommandInteractions
 from client.runtime.filesystem.conflict_policy import apply_path, commit_download_file
 from server.application.command.command_planner import CommandPlanner
 
@@ -248,13 +250,90 @@ def test_cleanup_rejects_modified_plan_with_unowned_path(managed):
     plan = service.plan()
     plan['items'][0]['paths'] = [{
         'path': str(outsider),
-        'identity': service._candidate_identity(str(outsider)),
-        'tree_signature': service._tree_signature(str(outsider)),
+        'tree_signature': service._snapshot(str(outsider))[0],
     }]
     result = service.execute_plan(plan, {'preview_temp'})
     assert result['removed_files'] == 0
     assert outsider.read_text() == 'must stay'
     assert result['items'][0]['skipped_paths']
+
+
+def test_cleanup_counts_each_release_once_and_reports_partial_deletion(tmp_path, monkeypatch):
+    current, old, staging = [tmp_path / path for path in ('current', 'old', 'new.extracting.123')]
+    for directory in (current, old, staging):
+        directory.mkdir()
+        (directory / 'rchclient.py').write_text('entry')
+    (old / 'locked.txt').write_text('keep on simulated failure')
+
+    monkeypatch.setattr(cleanup, 'get_client_bundle_release_dir', lambda: str(tmp_path))
+    monkeypatch.setattr(cleanup.sys, 'argv', [str(current / 'rchclient.py')])
+    service = cleanup.ClientCleanupService()
+    service.ITEMS = ('bundle_old_releases', 'bundle_extracting_residue')
+    plan = service.plan()
+    old_item, staging_item = plan['items']
+    assert [entry['path'] for entry in old_item['paths']] == [str(old)]
+    assert [entry['path'] for entry in staging_item['paths']] == [str(staging)]
+    assert current.exists() and old.exists() and staging.exists()
+
+    def partial_delete(path):
+        (Path(path) / 'rchclient.py').unlink()
+        raise PermissionError('simulated busy file')
+
+    with monkeypatch.context() as context:
+        context.setattr(cleanup.shutil, 'rmtree', partial_delete)
+        result = service.execute_plan(plan, {'bundle_old_releases'})
+    assert result['error_count'] == 1 and result['removed_files'] == 1 and result['removed_dirs'] == 0
+    assert current.exists() and staging.exists() and (old / 'locked.txt').exists()
+
+    (staging / 'rchclient.py').write_text('changed after preview')
+    result = service.execute_plan(plan, {'bundle_extracting_residue'})
+    assert result['removed_dirs'] == 0 and staging.exists()
+    assert 'changed after preview' in result['items'][0]['skipped_paths'][0]
+
+
+@pytest.mark.parametrize('option', ['', ' --no-confirm'])
+def test_clean_continues_after_an_unreadable_release(tmp_path, monkeypatch, option):
+    releases = tmp_path / 'releases'
+    downloads = tmp_path / 'downloads'
+    blocked = releases / 'a-blocked' / 'private'
+    removable = releases / 'z-old'
+    for directory in (blocked, removable, downloads):
+        directory.mkdir(parents=True)
+    archive = downloads / 'rchclient_python_clean_test.zip'
+    archive.write_bytes(b'old download')
+    monkeypatch.setattr(cleanup.ClientCleanupService, 'ITEMS', ('bundle_old_releases', 'bundle_archive_residue'))
+    monkeypatch.setattr(cleanup, 'get_client_bundle_release_dir', lambda: str(releases))
+    monkeypatch.setattr(cleanup, 'get_client_bundle_download_dir', lambda: str(downloads))
+    scandir = os.scandir
+
+    def scan_directory(path):
+        if str(path) == str(blocked):
+            raise PermissionError(13, 'Permission denied', str(path))
+        return scandir(path)
+
+    monkeypatch.setattr(os, 'scandir', scan_directory)
+    previews = []
+
+    def preview(_self, _message, plan, **_kwargs):
+        previews.append(plan)
+        assert blocked.exists() and removable.exists() and archive.exists()
+        return plan['row_ids']
+
+    monkeypatch.setattr(CommandInteractions, 'select_preview_rows', preview)
+    events = Mock()
+    command = CommandExecutor(SimpleNamespace(send_event=events))
+    status, result = command.execute_command(1, 'clean' + option)
+
+    assert (status, result['status']) == (1, 'partial')
+    assert '1 scan error(s)' in result['message']
+    assert blocked.exists() and not removable.exists() and not archive.exists()
+    assert len(previews) == (1 if not option else 0)
+    if previews:
+        release_row = previews[0]['rows'][0]
+        assert release_row['category'] == 'bundle_old_releases' and release_row['directories'] == '1'
+    messages = [call.args[1]['message'] for call in events.call_args_list]
+    assert f'Failed to scan bundle_old_releases: {blocked}: Permission denied' in messages
+    assert not any(text.startswith('Failed to delete:') for text in messages)
 
 
 def test_wget_combines_ca_sources_and_preserves_target_if_verify_fails(tmp_path, monkeypatch):

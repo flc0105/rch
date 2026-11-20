@@ -1,8 +1,9 @@
 import psutil
 
 from client.jobs.job import Job
-from client.monitor.manager import DeviceMonitorManager
+from client.runtime.filesystem.storage_volumes import collect_storage_volumes
 from client.runtime.sdk import events
+from core.device.local_identity import get_local_identity
 
 
 JOB_METADATA = {
@@ -37,10 +38,8 @@ class ExternalStorageEvent(Job):
     def _snapshot(self, include_network: bool) -> dict[str, dict]:
         # Reuse the same storage normalization used by Device Monitor so Windows
         # drive type/labels and macOS /Volumes handling stay consistent.
-        monitor = DeviceMonitorManager(None)
-        payload = monitor._collect_storage(psutil)
         result = {}
-        for item in payload.get('volumes') or []:
+        for item in collect_storage_volumes(psutil, get_local_identity().os_alias):
             if item.get('system'):
                 continue
             if not include_network and item.get('kind') == 'network':
