@@ -541,3 +541,8 @@ Instance creation adds the `external_tool_daemon_created` preference; queries
 `xt instance logs [<module>] <id> --follow` keeps the follow loop on the Server,
 checking the foreground task cancellation flag between bounded Client log reads;
 the log reader exits and the daemon instance continues running.
+
+
+## XT 列表的终端布局
+
+`xt exec list`、`xt package list`、`xt module list` 和 `xt instance list` 默认每行输出一个标识。Instance 使用 `module_id/instance_id` 区分不同模块的同名实例。`--format table` 显示原完整表格，`--format records` 显示纵向记录，`--format table` 显示横向表格，`--format json` / `--json` 输出原有结构化字段与布尔值。所有列表共用现有 Server Builtin Spec 和 Core Renderer，平台过滤、安装状态与生命周期不改变。

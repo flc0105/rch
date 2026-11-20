@@ -5,12 +5,12 @@ import time
 from server.application.command.command_types import COMMAND_TYPE_CONTROL
 from core.platform.catalog_visibility import visible_on_platform
 from core.protocol.job_control import build_job_control_request, validate_job_control_result
-from core.utils.command_output import ResultDataShape, render_result_payload
+from core.utils.command_output import ResultDataShape, render_result_payload, resolve_presentation
 from core.protocol.result_envelope import ResultEnvelope
 
 
 class JobBuiltinSupport:
-    HELP = 'job list|ps|start|stop|status|stop-all|logs [--name NAME] [--json]'
+    HELP = 'job list [--format|-f LAYOUT] [--json] | ps|start|stop|status|stop-all|logs'
 
     def __init__(self, server, conn, remote_execution_service, background_job_service, job_catalog_service, history_entry_id_provider=None):
         self.server = server
@@ -28,7 +28,7 @@ class JobBuiltinSupport:
     def _failure(message, output_format):
         return render_result_payload(ResultEnvelope(status='error', message=str(message)).as_payload(), output_format)
 
-    def _send(self, action, *, output_format="text", **payload):
+    def _send(self, action, *, output_format="text", layout=None, **payload):
         # Already inside the terminal's foreground slot: never acquire it again.
         request = build_job_control_request(action, **payload)
         entry_id = self.history_entry_id_provider() or ''
@@ -57,7 +57,7 @@ class JobBuiltinSupport:
         from core.protocol.message_queue import ResultChunk
         view = 'data' if action in (JobAction.PS, JobAction.STATUS) and status == 1 else 'message'
         shape = ResultDataShape.TABLE if action == JobAction.PS else ResultDataShape.FLAT
-        yield ResultChunk(status, render_result_payload(result, output_format, view=view, shape=shape),
+        yield ResultChunk(status, render_result_payload(result, output_format, view=view, shape=layout or shape),
                           getattr(pending_result, 'eof', True), terminal_authoritative=True,
                           event=getattr(pending_result, 'event', None))
 
@@ -134,9 +134,10 @@ class JobBuiltinSupport:
             result = ResultEnvelope(message='No background jobs available' if not rows else '',
                                     data=rows).as_payload()
             from core.protocol.message_queue import ResultChunk
-            yield ResultChunk(1, render_result_payload(result, output_format,
-                              view='data', shape=ResultDataShape.TABLE), True,
-                              terminal_authoritative=True, event=result)
+            output_format, layout = resolve_presentation(args, ResultDataShape.LINES)
+            text = render_result_payload(result, output_format, view='data',
+                                         shape=layout, line_field='name')
+            yield ResultChunk(1, text, True, terminal_authoritative=True, event=result)
             return
 
         if subcommand == 'logs':
@@ -155,12 +156,15 @@ class JobBuiltinSupport:
             return
 
         if subcommand == 'ps':
-            yield from self._send(JobAction.PS, output_format=output_format)
+            fmt, layout = resolve_presentation(args, ResultDataShape.TABLE)
+            yield from self._send(JobAction.PS, output_format=fmt, layout=layout)
             return
         if subcommand == 'stop-all':
             yield from self._send(JobAction.STOP_ALL, output_format=output_format)
             return
         if subcommand in ('stop', 'status'):
-            yield from self._send(JobAction(subcommand), output_format=output_format, job_key=args['name'])
+            fmt, layout = (resolve_presentation(args, ResultDataShape.FLAT)
+                           if subcommand == 'status' else (output_format, None))
+            yield from self._send(JobAction(subcommand), output_format=fmt, layout=layout, job_key=args['name'])
             return
         raise ValueError(f'Unsupported Job subcommand: {subcommand}')

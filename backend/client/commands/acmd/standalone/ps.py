@@ -3,7 +3,7 @@
 from client.runtime.execution.process.process_service import ProcessService
 from client.commands.acmd.decorators import argument_command
 from core.commands.argument_models import ArgumentCommandSpec, ArgumentOptionSpec
-from core.utils.command_output import StructuredCommandResult, render_structured_result
+from core.utils.command_output import StructuredCommandResult, ResultDataShape, resolve_presentation, render_structured_result
 
 
 PS_ARGUMENT_SPEC = ArgumentCommandSpec(
@@ -35,6 +35,8 @@ PS_ARGUMENT_SPEC = ArgumentCommandSpec(
             name='with-actions', option_type='flag', required=False, default=False,
             help_text='Include available row actions in JSON output',
         ),
+        ArgumentOptionSpec('format', 'str', default='', alias='f',
+                           choices=('table', 'records', 'json'), help_text='Supported output: table, records, json'),
         ArgumentOptionSpec(
             name='json',
             option_type='flag',
@@ -76,7 +78,8 @@ def ps(self, args_dict, payload=None):
     """List Client processes and apply ACMD filters before rendering."""
     pid = args_dict.get('pid')
     name = str(args_dict.get('name') or '').strip()
-    output_json = bool(args_dict.get('json', False))
+    output, layout = resolve_presentation(args_dict, ResultDataShape.TABLE)
+    output_json = output == 'json'
     include_actions = bool(args_dict.get('with-actions', False))
     port = args_dict.get('port')
     if port is not None:
@@ -139,11 +142,11 @@ def ps(self, args_dict, payload=None):
     result = StructuredCommandResult(
         status=1,
         data=rows,
-        shape='table',
+        shape=layout,
     )
 
     return render_structured_result(
         result,
-        output_format='json' if output_json else 'text',
+        output_format=output,
     )
 

@@ -5,7 +5,7 @@ import socket
 
 from client.commands.acmd.decorators import argument_command
 from core.commands.argument_models import ArgumentCommandSpec, ArgumentOptionSpec
-from core.utils.command_output import StructuredCommandResult, render_structured_result
+from core.utils.command_output import StructuredCommandResult, ResultDataShape, resolve_presentation, render_structured_result
 from core.utils.network import normalize_mac_address
 
 
@@ -21,6 +21,8 @@ IFCONFIG_ARGUMENT_SPEC = ArgumentCommandSpec(
             name='interface', option_type='str', default='', alias='i',
             allow_empty=False, help_text='Match an interface name exactly',
         ),
+        ArgumentOptionSpec('format', 'str', default='', alias='f',
+                           choices=('table', 'records', 'json'), help_text='Supported output: table, records, json'),
         ArgumentOptionSpec(
             name='json', option_type='flag', default=False,
             help_text='Output as JSON',
@@ -281,14 +283,15 @@ def ifconfig(self, args_dict, payload=None):
                 'No network interfaces found' if all_interfaces else
                 'No useful network interfaces found'
             )
-        json_output = bool(args_dict.get('json'))
+        output, layout = resolve_presentation(args_dict, ResultDataShape.TABLE)
+        json_output = output == 'json'
         if all_interfaces and not json_output:
             for row in rows:
                 up = row['up']
                 row['up'] = '?' if up is None else 'yes' if up else 'no'
         return render_structured_result(
-            StructuredCommandResult(status=1, data=rows, shape='table'),
-            output_format='json' if json_output else 'text',
+            StructuredCommandResult(status=1, data=rows, shape=layout),
+            output_format=output,
         )
     except Exception as exc:
         return 0, f'Failed to get network interfaces: {exc}'

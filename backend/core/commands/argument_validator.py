@@ -62,6 +62,11 @@ class ArgumentCommandValidator:
                         f'Option "--{option_name}" cannot be empty'
                     )
 
+            if option_spec.choices is not None and normalized_value not in option_spec.choices:
+                raise ArgumentCommandValidationError(
+                    f'Unsupported --{option_name} value: {normalized_value}; '
+                    f'supported: {", ".join(option_spec.choices)}'
+                )
             normalized[option_name] = normalized_value
 
         if '_args' in raw_args:

@@ -322,3 +322,8 @@ acmd kill --pid ${rch:pid}
 | 自动补全没有新命令 | Manifest 来源于 Client 当前连接提供的注册信息 |
 
 ACMD 的长期使用方式是先通过 `acmd help` 了解当前平台的命令，再通过 `acmd help <command>` 查阅具体参数，并使用少量有代表性的示例理解语法。文档不把当前 Registry 的内容冻结成产品契约，以免未来增删命令时出现过期说明。
+
+
+## 结构化查询格式
+
+`ps`、`netstat`、`ifconfig`、`drives`、`python_packages` 和 `launchd` 的 Spec 声明 `--format` / `-f` 及实际支持的布局。进程、网络与磁盘记录支持 `table`、`records`、`json`；`python_packages` 根据查询方式使用记录数组或对象（安装列表支持 `table/records`，加载模块支持 `lines/table/records`，单模块详情支持 `flat/kv`）；`launchd` 的结构化结果支持 `flat/kv`。各查询均支持 `json`。如 `acmd ps --format records` 纵向展示进程，`acmd ps --format json --with-actions` 仍返回原 `_actions` 和其他 JSON 字段。不兼容的布局由参数 Spec 或按查询模式的校验明确拒绝。`--json` 与 `--format json` 等价，文本布局不会修改原始 JSON 字段。

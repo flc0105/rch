@@ -68,7 +68,7 @@ Alias 本体由 Server 全局管理，持久化在 `backend/server/resources/ali
 
 终端中的 `alias` 由 **Server Built-in** 处理，用于查询和维护 Server 上保存的 JSON 定义。当前仅支持 `list`、`set`、`unset` 三种管理动作；不必先进入客户端 Shell。
 
-直接输入 `alias` 等价于 `alias list`，只显示 common 与目标 Client 平台覆盖后的**生效** Alias 列表；`alias list --json`、`alias --json` 输出相同结果的结构化数组。已删除公开 `resolve`、`reload` 和原 `alias list --platform` 跨平台清单入口；平台原始定义仍在 JSON 与 Web Quick Actions 管理接口中保存、编辑，绝不删除其他平台配置。
+直接输入 `alias` 等价于 `alias list`，默认每行输出一个 `别名 = 完整命令`，只包含 common 与目标 Client 平台覆盖后的**生效** Alias；`alias list --format lines` / `alias -f lines` 每行只显示一个 Alias 名称；`alias --format table` / `alias list -f table` 显示带 platform、alias、command 的详细表格；`alias list --json`、`alias --json` 输出相同结果的结构化数组。已删除公开 `resolve`、`reload` 和原 `alias list --platform` 跨平台清单入口；平台原始定义仍在 JSON 与 Web Quick Actions 管理接口中保存、编辑，绝不删除其他平台配置。
 
 创建或覆盖某个平台上的定义，使用 `alias set [--platform 平台] 名称 = 模板文本`；删除用 `alias unset [--platform 平台] 名称`。未写 `--platform` 时，这两个操作都只作用于 `common`，**不会自动删除/修改同名的平台专用定义**。`set` 在所选作用域内同名时是替换；终端 `list/set/unset`、名称与 `--platform/-p` 由 Server Builtin Registry 统一校验；`set` 支持 `名称=模板` 或 `名称 = 模板`，业务层只解析等号后的原始模板，保留其中的空格、引号、选项和后续等号。AliasManager 在读取与修改时自动检查磁盘文件是否变化；无需手动 Reload。
 
@@ -82,9 +82,9 @@ alias set now = pyexec print(1)
 alias unset now
 ```
 
-其中保存后的 `sample` 调用按模板绑定 `message`，在 Client 侧运行展开的普通命令；`alias list --json` 是**查询结果**，不是用 `--json` 改变被保存的模板。管理命令的输出使用 Result Envelope：`list` 的 `data` 渲染成文本表格或 JSON，`set/unset` 使用操作完成消息。
+其中保存后的 `sample` 调用按模板绑定 `message`，在 Client 侧运行展开的普通命令；`alias list --json` 是**查询结果**，不是用 `--json` 改变被保存的模板。管理命令的输出使用 Result Envelope：`list` 的 `data` 保留完整结构；普通文本默认按单行映射显示，`--format table` 显示表格，`--json` 返回相同结构化数组；`set/unset` 使用操作完成消息。
 
-`--platform/-p` 可放在名称前或后，名称可以使用首个位置参数或 `--name NAME`；`list` 只接受可选的 `--json`，`set/unset` 不接受管理层的 `--json`。Alias 列表和操作结果使用统一 Result Envelope；操作的完成消息不重复返回模板正文。
+`--platform/-p` 可放在名称前或后，名称可以使用首个位置参数或 `--name NAME`；`list` 可使用 `--format/-f` 或 `--json`，`set/unset` 不接受管理层的 `--json`。Alias 列表和操作结果使用统一 Result Envelope；操作的完成消息不重复返回模板正文。
 
 Server 内建命令会先于 Alias 名称进行识别；顶层 `acmd` 也优先于 Alias 名称。因此应避免使用和已有 Server Built-in 或保留入口冲突的 Alias 名称，否则可能无法从普通终端按 Alias 调用。Alias 新建与改名都经 `AliasManager.MAX_ALIAS_NAME_LENGTH = 32` 统一校验名称长度，超过 32 个字符会拒绝保存，已存在的定义不因校验失败而被覆写；通过 CLI 设置 Alias 时检查名称、模板非空及长度；Web 编辑器还禁止名称含空白字符，建议始终使用无空格名称。
 
@@ -176,3 +176,6 @@ Terminal 的命令候选包含当前有效 Alias 名称，帮助信息标示它�
 Web 接口以目标 Client 为上下文，基础路径为 `/api/connections/{client_id}/quick-actions`。GET 读取平台和定义列表；POST 新增；PUT 更新（需要原 `original_platform` 和 `original_alias`）；DELETE 删除。执行为 `POST /api/connections/{client_id}/quick-actions/execute`，请求以 `platform`、`alias` 定位原始定义，`arguments` 是**按占位符首次出现顺序排列的数组**，`presentation` 为 `dialog` 或 `terminal`，还可携带 `run_id`。服务端重新验证目标连接、平台、定义、参数数量及展示方式，并返回 `task_id`、运行 ID、显示命令、展开命令与提交命令等信息。终端 Alias 的命名参数文本格式**不适用于这里的 `arguments` 字段**。
 
 排错时先确认当前目标平台及 `common` 覆盖、所选定义来源，然后区分终端 Alias 还是 Quick Actions 的哪种提交路径。找不到新定义要检查磁盘与内存刷新；参数错误要检查唯一占位符、参数顺序和是否意外进入 `--name` 模式；模板运行异常要检查真实的 Client Shell-like 方法或系统 Shell，以及引号和变量展开。命令执行不成功、前台任务被占用或设备离线，都遵循正常命令链的错误和状态机制，而不是 Quick Actions 提供另一种执行沙箱。
+
+
+终端 `alias list` 默认使用 Core `kv` 布局，每行 `别名 = 命令`；`alias list --format lines` 只显示别名；`alias list --format records` 可纵向展示平台、别名及完整命令，`alias list -f table` 使用原表格。`--json` 和 `--format json` 均保留平台及完整命令字段。所有这些视图使用同一份按目标平台解析的 Alias 数据。

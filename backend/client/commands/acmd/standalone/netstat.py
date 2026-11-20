@@ -1,7 +1,7 @@
 import socket
 
 from core.commands.argument_models import ArgumentCommandSpec, ArgumentOptionSpec
-from core.utils.command_output import StructuredCommandResult, render_structured_result
+from core.utils.command_output import StructuredCommandResult, ResultDataShape, resolve_presentation, render_structured_result
 from client.commands.acmd.decorators import argument_command
 
 
@@ -40,6 +40,8 @@ NETSTAT_ARGUMENT_SPEC = ArgumentCommandSpec(
             name='udp', option_type='flag', default=False, alias='u',
             help_text='Show UDP connections (-u = --protocol udp)',
         ),
+        ArgumentOptionSpec('format', 'str', default='', alias='f',
+                           choices=('table', 'records', 'json'), help_text='Supported output: table, records, json'),
         ArgumentOptionSpec(
             name='json',
             option_type='flag',
@@ -228,7 +230,8 @@ def normalize_pid(value):
 )
 def netstat(self, args_dict, payload=None):
     port = args_dict.get('port')
-    output_json = bool(args_dict.get('json', False))
+    output, layout = resolve_presentation(args_dict, ResultDataShape.TABLE)
+    output_json = output == 'json'
     status = str(args_dict.get('status') or '').strip().upper()
     protocol = str(args_dict.get('protocol') or '').strip().lower()
     listening = bool(args_dict.get('listening'))
@@ -291,6 +294,6 @@ def netstat(self, args_dict, payload=None):
     ))
 
     return render_structured_result(
-        StructuredCommandResult(status=1, data=output_rows, shape='table'),
-        output_format='json' if output_json else 'text',
+        StructuredCommandResult(status=1, data=output_rows, shape=layout),
+        output_format=output,
     )

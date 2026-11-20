@@ -329,7 +329,7 @@ Run API 要求 `script_name` 非空、`params` 为对象，并明确提供 `pres
 
 ## Server `script` 一级命令（统一入口）
 
-`script` / `script list` 默认沿用原 `exec` 无参数时的 Server Script 相对路径列表。`script list --json` 输出简化的 `name`（相对路径）、`display_name`、`description` 与 `params`（仅参数名数组）；`script view <name>` 和 `script view --name NAME` 返回 Server 上的脚本源码，严格限制在 Script 根目录。
+`script` / `script list` 默认每行输出一个 Server Script 相对路径；`script list --format table` 输出包含 `name`、`display_name`、`description` 和 `params`（仅参数名数组）的表格。`script list --json`、`script list --format json` 返回相同字段的完整结构化数组；可用 `--format records` 纵向查看长说明；`script view <name>` 和 `script view --name NAME` 返回 Server 上的脚本源码，严格限制在 Script 根目录。
 
 `script exec <name> [--execution_mode MODE] [--output_mode MODE] -- --key VALUE ...` 使用与 Job 共用的 Server Schema Parser 得到参数对象，Script Library UI 直接提交结构化参数。两端均按同一份 Script Metadata 规范化，再经 `control(domain=script, action=run)` 执行。Server 不注册独立的 `exec`、`run_script` 或 `script run` 入口，Client 不注册 Script 文本命令；脚本运行所需源码作为受控请求的 `payload.source` 提供。
 

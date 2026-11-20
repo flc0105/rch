@@ -42,33 +42,35 @@
 
 | 写法 | 作用 |
 |---|---|
-| `alias` / `alias list` | 显示针对当前 Client 平台已生效的 Alias；`--json` 返回结构化列表 |
+| `alias` / `alias list` | 默认每行显示 `别名 = 命令`；`--format lines` 仅显示别名；`--format table` 显示原完整表格；`--json` 返回完整结构化列表 |
 | `alias set <name>|--name NAME [-p|--platform PLATFORM] = command` | 创建或替换 Alias；默认作用域为 `common`，也可指定 `win`、`mac`、`linux`、`ios` |
 | `alias unset <name>|--name NAME [-p|--platform PLATFORM]` | 删除指定作用域的 Alias；不会自动删除其他平台同名定义 |
-| `script list` | 查看 Server Script Library；可选 `--json` |
+| `script` / `script list` | 默认每行一个脚本相对路径；`--format table` 显示完整表格；`--json` 保留元数据数组 |
 | `script view <name>` / `script view --name NAME` | 查看 Server 脚本内容 |
 | `script exec <name> [--execution_mode MODE] [--output_mode MODE] -- --key VALUE ...` | 使用命令行选项执行 Server 脚本 |
-| `config` / `config list` / `config list --json` | 查询配置；文本表格与 JSON 均包含 group、key、value、default 四字段 |
+| `config` / `config list` / `config list --json` | 默认按组输出 `key = value`；`--format kv` 输出 `key = value`（不带分组名前缀）；`--format table` 为原四列表格，JSON 保留 group、key、value、default 字段 |
 | `config set KEY VALUE` / `config reset KEY` / `config reset-all` | 修改、重置或全部重置 Client 配置，操作反馈可加 `--json` |
-| `job list` | 查看 Server 已登记的 Job 定义；可选 `--json` |
+| `job` / `job list` | 默认每行一个 Job 名称；`--format table` 显示完整表格；`--json` 保留元数据数组 |
 | `job start <name> [--mode MODE] [--json] -- --key VALUE ...` | 在目标 Client 启动 Job，并可指定运行模式和参数 |
 | `job ps [--json]` / `job status <name> [--json]` | 查看正在运行的 Job / 单个 Job 状态 |
 | `job logs <name> [--follow\|-f]` | 查看该设备最新一次 Job 实例的上报内容；可持续追踪并取消查看任务 |
 | `job stop <name> [--json]` / `job stop-all [--json]` | 停止指定 Job / 所有正在运行的 Job |
-| `history` / `history list` | 查看 Quick History 的 Recent 列表 |
+| `history` / `history list` | 查看 Quick History 的 Recent 编号列表，支持 `-f table` / `-f records` |
 | `history run <index>` | 按 Quick History 序号重放命令，**可能再次执行原来的危险操作** |
 | `history clear` | 清理当前设备 Quick Recent，保留 Activity Center 及 Pin |
-| `xt exec list [--json]` | 列出当前 Client 已安装并公开的 Exec 命令 |
+| `xt exec list [--json]` | 默认每行一个已安装的 Exec 名；`-f table` 查看完整表格 |
 | `xt exec info <name>` / `xt exec which <name>` | 查看 Exec 元信息 / 客户端安装路径 |
 | `xt exec [run] <name> [--] <args...>` | 将原生命令行参数传给所选 Client 上已安装的 Exec |
-| `xt package list [--installed|-i] [--json]` / `xt package install <package-id>` | 查询或安装当前平台支持的 Package；包名也可使用 `--package` |
-| `xt module list <package-id> [--json]` | 查询指定 Package 的 Module |
+| `xt package list [--installed|-i] [--json]` / `xt package install <package-id>` | 默认每行一个 Package ID；`-f table` 恢复表格；查询或安装当前平台支持的 Package；包名也可使用 `--package` |
+| `xt module list <package-id> [--json]` | 默认每行一个 Module ID；`-f table` 恢复表格 |
 | `xt instance create <module> --id ID [--preset PRESET] [--start] -- --key VALUE ...` | 创建实例；`<module>` 可改写为 `--module MODULE`，运行参数在 `--` 后输入 |
 | `xt instance start <instance-id> [--module MODULE] -- --key VALUE ...` | 按已保存的参数启动；`--` 后参数覆盖本次启动的值 |
 | `xt instance restart <instance-id> [--module MODULE] -- --key VALUE ...` | 按当前参数重启；指定时覆盖本次启动参数 |
 | `xt instance stop/status/logs <instance-id> [--module MODULE]` | 停止、查询或读取日志；实例名也可通过 `--name` 指定 |
 | `httpctl help` / `httpctl -h` / `httpctl --help` | 显示 HTTP 控制通道支持的操作 |
 | `httpctl kill` / `httpctl relaunch` / `httpctl clone` / `httpctl resume --client-id ID` | 将终止、重新启动、克隆或唤醒操作排入 HTTP Control 队列；可选 `--json` 返回操作状态与消息 |
+
+结构化查询使用 `--format LAYOUT` / `-f LAYOUT` 选择该命令实际支持的文本布局，或选择 `json`；`--json` 等价于 `--format json`，始终保留原有 JSON 字段。文本布局需符合该命令的数据契约；例如 `job --format kv` 与 `job --format numbered` 会在参数校验阶段拒绝。具体支持矩阵见 [Structured Command Output](structured_output.md)。
 
 Alias 的模板参数、平台覆盖与安全边界见 [Aliases / Quick Actions](alias_quick_actions.md)；Script 的参数与授权见 [Scripts](scripts.md)；Job 运行状态见 [Background Jobs](background_jobs.md)；External Tool 见 [External Tools](external_tools.md)。
 

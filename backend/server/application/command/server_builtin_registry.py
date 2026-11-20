@@ -10,7 +10,7 @@ from core.commands.argument_errors import ArgumentCommandValidationError
 from core.commands.argument_models import ArgumentCommandSpec, ArgumentOptionSpec
 from core.commands.argument_parser import parse_argument_text, parse_partial_argument_tokens
 from core.commands.command_line_resolver import CommandLineResolver
-from core.utils.command_output import OutputFormat
+from core.utils.command_output import OutputFormat, resolve_presentation
 
 
 @dataclass(frozen=True)
@@ -74,12 +74,12 @@ def command(name, description, handler=None, children=(), default='', group='ser
 
 
 
-def _option(name, *, positional=None, required=False, flag=False, alias='', arity=1, repeatable=False, value_type='str', completion=None):
+def _option(name, *, positional=None, required=False, flag=False, alias='', arity=1, repeatable=False, value_type='str', completion=None, choices=None):
     return ArgumentOptionSpec(name=name, option_type='flag' if flag else value_type,
                               default=False if flag else ([] if repeatable else None),
                               required=required, positional_index=positional,
                               allow_empty=False, alias=alias, arity=arity,
-                              repeatable=repeatable, completion=completion)
+                              repeatable=repeatable, completion=completion, choices=choices)
 
 
 def _arguments(name, *options, json=True, trailing_named_arguments=None, assignment_tail=None):
@@ -93,6 +93,11 @@ def _structured_child(command_name, action, description, usage, *options,
     return SubcommandSpec(action, description, usage, argument_spec=_arguments(
         f'{command_name} {action}', *options, json=json,
         trailing_named_arguments=trailing_named_arguments, assignment_tail=assignment_tail), aliases=tuple(aliases), independent=independent, completion=completion)
+
+def _format_options(*layouts):
+    # The owning command declares permitted layouts once in its argument Spec.
+    return (_option('format', alias='f', choices=(*layouts, 'json')),)
+
 
 def _xt_group(name, description, *children, default='', fallback_subcommand=''):
     return SubcommandSpec(name, description, subcommands=tuple(children),
@@ -123,7 +128,7 @@ def _xt_instance_target(action, description, *, json=False, follow=False, params
 
 SERVER_COMMAND_SPECS = (
     command('config', 'Show or update client runtime config', children=(
-        _structured_child('config', 'list', 'List runtime config', 'config [list] [--json]', independent=True),
+        _structured_child('config', 'list', 'List runtime config', 'config [list] [--format|-f LAYOUT] [--json]', *_format_options('grouped', 'kv', 'table', 'records'), independent=True),
         _structured_child('config', 'set', 'Set one runtime config value',
                           'config set <key> <value> [--json]',
                           _option('key', positional=0, required=True, completion=CompletionSpec('configuration', ('key',))),
@@ -133,11 +138,13 @@ SERVER_COMMAND_SPECS = (
         _structured_child('config', 'reset-all', 'Reset all config overrides', 'config reset-all [--json]'),
     ), default='list', group='runtime'),
     command('watchdog', 'Show watchdog runtime status', expects_arguments=True, group='runtime',
-             argument_spec=_arguments('watchdog'), independent=True),
+             argument_spec=_arguments('watchdog', *_format_options('grouped')), independent=True),
     command('upload', 'Upload a local file to the Client', expects_arguments=True,
              raw_tail=True, completion=CompletionSpec('filesystem', ('file', 'directory'))),
     command('script', 'List, inspect and run Server scripts', children=(
-        _structured_child('script', 'list', 'List available scripts', 'script list [--json]', independent=True),
+        _structured_child('script', 'list', 'List available scripts',
+                          'script [list] [--format|-f LAYOUT] [--json]',
+                          *_format_options('lines', 'table', 'records'), independent=True),
         _structured_child('script', 'view', 'Read script source on the Server',
                           'script view <name>|--name NAME',
                           _option('name', positional=0, required=True, completion=CompletionSpec('scripts', ('script',))), json=False, independent=True),
@@ -149,7 +156,8 @@ SERVER_COMMAND_SPECS = (
     ), default='list'),
     command('alias', 'List or manage aliases for this Client platform', children=(
         _structured_child('alias', 'list', 'List current effective aliases',
-                          'alias [list] [--json]', independent=True),
+                          'alias [list] [--format|-f LAYOUT] [--json]',
+                          *_format_options('lines', 'kv', 'table', 'records', 'grouped'), independent=True),
         _structured_child('alias', 'set', 'Save an alias',
                           'alias set <name>|--name NAME [--platform PLATFORM|-p PLATFORM] = command',
                           _option('name', positional=0, required=True), _option('platform', alias='p'),
@@ -160,7 +168,9 @@ SERVER_COMMAND_SPECS = (
                           json=False),
     ), default='list'),
     command('job', 'Manage Client jobs from the Server', children=(
-        _structured_child('job', 'list', 'List available Server jobs', 'job list [--json]', independent=True),
+        _structured_child('job', 'list', 'List available Server jobs',
+                          'job [list] [--format|-f LAYOUT] [--json]',
+                          *_format_options('lines', 'table', 'records'), independent=True),
         _structured_child('job', 'start', 'Start a Client job',
                           'job start <name>|--name NAME [--mode MODE] [--json] [-- --key VALUE]...',
                           _option('name', positional=0, required=True, completion=CompletionSpec('jobs', ('job',))), _option('mode'),
@@ -169,27 +179,27 @@ SERVER_COMMAND_SPECS = (
                           'job logs <name> [--follow|-f]',
                           _option('name', positional=0, required=True, completion=CompletionSpec('jobs', ('job',))),
                           _option('follow', flag=True, alias='f'), json=False),
-        _structured_child('job', 'ps', 'Show running jobs', 'job ps [--json]', independent=True),
-        _structured_child('job', 'status', 'Query job state', 'job status <name> [--json]',
-                          _option('name', positional=0, required=True, completion=CompletionSpec('jobs', ('job',))), independent=True),
+        _structured_child('job', 'ps', 'Show running jobs', 'job ps [--format|-f LAYOUT] [--json]', *_format_options('table', 'records'), independent=True),
+        _structured_child('job', 'status', 'Query job state', 'job status <name> [--format|-f LAYOUT] [--json]',
+                          _option('name', positional=0, required=True, completion=CompletionSpec('jobs', ('job',))), *_format_options('flat', 'kv'), independent=True),
         _structured_child('job', 'stop', 'Stop a running job', 'job stop <name> [--json]',
                           _option('name', positional=0, required=True, completion=CompletionSpec('jobs', ('job',)))),
         _structured_child('job', 'stop-all', 'Stop all running jobs', 'job stop-all [--json]'),
     ), default='list'),
     command('history', 'Show Quick History or replay by index', children=(
-        _structured_child('history', 'list', 'Display Quick History', 'history [list] [-p|--pinned] [--json]',
-                          _option('pinned', flag=True, alias='p'), independent=True),
+        _structured_child('history', 'list', 'Display Quick History', 'history [list] [-p|--pinned] [--format|-f LAYOUT] [--json]',
+                          _option('pinned', flag=True, alias='p'), *_format_options('numbered', 'table', 'records'), independent=True),
         _structured_child('history', 'clear', 'Clear Quick Recent (keep pins)', 'history clear [--json]'),
         _structured_child('history', 'run', 'Replay a Quick command by index', 'history run <index>|--index INDEX',
                           _option('index', positional=0, required=True, value_type='int'), json=False),
     ), default='list'),
     command('gopin', 'List or jump to a saved path', children=(
-        _structured_child('gopin', 'list', 'List saved paths', 'gopin [list] [--json]', independent=True),
+        _structured_child('gopin', 'list', 'List saved paths', 'gopin [list] [--format|-f LAYOUT] [--json]', *_format_options('table', 'records'), independent=True),
         SubcommandSpec('go', 'Jump to a saved path', 'gopin [go] <saved path name>', raw_tail=True,
                        completion=CompletionSpec('gopin', ('quick_jump',))),
     ), default='list', fallback_subcommand='go', expects_arguments=True,
             ),
-    command('rtt', 'Show current heartbeat RTT', argument_spec=_arguments('rtt'), independent=True),
+    command('rtt', 'Show current heartbeat RTT', argument_spec=_arguments('rtt', *_format_options('flat', 'kv')), independent=True),
     command('httpctl', 'Client HTTP control channel', children=(
         _structured_child('httpctl', 'kill', 'Terminate current Agent', 'httpctl kill [--json]'),
         _structured_child('httpctl', 'relaunch', 'Relaunch Agent', 'httpctl relaunch [--json]'),
@@ -205,9 +215,9 @@ SERVER_COMMAND_SPECS = (
              raw_tail=True),
     command('xt', 'External tool catalog and execution', children=(
         _xt_group('exec', 'List or run installed external commands',
-            _xt_leaf('exec', 'list', 'List installed exec commands', 'xt exec list [--json]', independent=True),
-            _xt_leaf('exec', 'info', 'Read exec metadata', 'xt exec info <name>|--name NAME [--json]',
-                     _option('name', positional=0, required=True, completion=CompletionSpec('xt', ('exec',))), independent=True),
+            _xt_leaf('exec', 'list', 'List installed exec commands', 'xt exec list [--format|-f LAYOUT] [--json]', *_format_options('lines', 'table', 'records'), independent=True),
+            _xt_leaf('exec', 'info', 'Read exec metadata', 'xt exec info <name>|--name NAME [--format|-f LAYOUT] [--json]',
+                     _option('name', positional=0, required=True, completion=CompletionSpec('xt', ('exec',))), *_format_options('flat', 'kv'), independent=True),
             _xt_leaf('exec', 'which', 'Locate an installed executable', 'xt exec which <name>|--name NAME',
                      _option('name', positional=0, required=True, completion=CompletionSpec('xt', ('exec',))), json=False, independent=True),
             SubcommandSpec('run', 'Run an installed external command with native arguments',
@@ -217,8 +227,8 @@ SERVER_COMMAND_SPECS = (
             default='help', fallback_subcommand='run'),
         _xt_group('package', 'Manage external tool packages',
             _xt_leaf('package', 'list', 'List available packages',
-                     'xt package list [--installed|-i] [--json]',
-                     _option('installed', flag=True, alias='i'), independent=True),
+                     'xt package list [--installed|-i] [--format|-f LAYOUT] [--json]',
+                     _option('installed', flag=True, alias='i'), *_format_options('lines', 'table', 'records'), independent=True),
             _xt_leaf('package', 'install', 'Install a package',
                      'xt package install <package-id>|--package PACKAGE',
                      _option('package', positional=0, required=True, completion=CompletionSpec('xt', ('package',))), json=False),
@@ -227,8 +237,8 @@ SERVER_COMMAND_SPECS = (
                      _option('package', positional=0, required=True, completion=CompletionSpec('xt', ('package',))), json=False)),
         _xt_group('module', 'Inspect external tool modules',
             _xt_leaf('module', 'list', 'List package modules',
-                     'xt module list <package-id>|--package PACKAGE [--json]',
-                     _option('package', positional=0, required=True, completion=CompletionSpec('xt', ('package',))), independent=True)),
+                     'xt module list <package-id>|--package PACKAGE [--format|-f LAYOUT] [--json]',
+                     _option('package', positional=0, required=True, completion=CompletionSpec('xt', ('package',))), *_format_options('lines', 'table', 'records'), independent=True)),
         _xt_group('instance', 'Manage persistent daemon instances',
             _xt_leaf('instance', 'create', 'Create an instance',
                      'xt instance create <module>|--module MODULE --id ID [--preset PRESET] [--start] [-- --key VALUE ...]',
@@ -236,8 +246,8 @@ SERVER_COMMAND_SPECS = (
                      _option('preset'), _option('start', flag=True), json=False,
                      trailing_named_arguments='params'),
             _xt_leaf('instance', 'list', 'List persistent instances',
-                     'xt instance list [<name>|--name NAME] [--json]',
-                     _option('name', positional=0, completion=CompletionSpec('xt', ('package',))), independent=True),
+                     'xt instance list [<name>|--name NAME] [--format|-f LAYOUT] [--json]',
+                     _option('name', positional=0, completion=CompletionSpec('xt', ('package',))), *_format_options('lines', 'table', 'records'), independent=True),
             _xt_instance_target('start', 'Start an existing instance', params=True),
             _xt_instance_target('stop', 'Stop a running instance'),
             _xt_instance_target('restart', 'Restart an instance', params=True),
@@ -338,8 +348,10 @@ class ServerCommandRegistry:
             exc.output_format = (OutputFormat.JSON if 'json' in getattr(exc, 'seen_flags', ())
                                  else OutputFormat.TEXT)
             raise
-        return BuiltinInvocation(spec.name, subcommand or spec.name, args,
-                                 OutputFormat.JSON if args.get('json') else OutputFormat.TEXT)
+        # All declared --format flags are interpreted at this one registry boundary.
+        # Per-command permitted layouts are checked by the shared option validator.
+        output, _ = resolve_presentation(args)
+        return BuiltinInvocation(spec.name, subcommand or spec.name, args, output)
 
     def resolve_completion_target(self, context):
         """Find a registered dynamic argument without executing or validating a command."""
@@ -434,7 +446,9 @@ class ServerCommandRegistry:
             result.append((full + (' ' if node.subcommands or takes_value else ''), node))
             if node.name == 'list' and node.argument_spec:
                 for option in node.argument_spec.options:
-                    if option.is_flag and option.name != 'json':
+                    if option.name == 'format':
+                        result.append((f'{full} --format ', node))
+                    elif option.is_flag and option.name != 'json':
                         result.append((f'{full} --{option.name}', node))
         if spec.fallback_subcommand:
             leaf = spec.child(spec.fallback_subcommand)

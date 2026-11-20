@@ -5,7 +5,7 @@ from importlib import metadata
 
 from client.commands.acmd.decorators import argument_command
 from core.commands.argument_models import ArgumentCommandSpec, ArgumentOptionSpec
-from core.utils.command_output import StructuredCommandResult, render_structured_result
+from core.utils.command_output import StructuredCommandResult, ResultDataShape, resolve_presentation, render_structured_result
 
 
 PYTHON_PACKAGES_SPEC = ArgumentCommandSpec(
@@ -18,6 +18,8 @@ PYTHON_PACKAGES_SPEC = ArgumentCommandSpec(
                            help_text='Import and inspect an exact module or distribution name'),
         ArgumentOptionSpec('filter', 'str', default='', allow_empty=False,
                            help_text='Filter installed packages or loaded modules by name'),
+        ArgumentOptionSpec('format', 'str', default='', alias='f',
+                           choices=('lines', 'table', 'records', 'flat', 'kv', 'json'), help_text='Supported output: lines, table, records, flat, kv, json'),
         ArgumentOptionSpec('json', 'flag', default=False, help_text='Output as JSON'),
         ArgumentOptionSpec('help', 'flag', default=False, help_text='Show this help message'),
     ],
@@ -38,19 +40,26 @@ def python_packages(self, args_dict):
         return 0, 'Use --name or -n to inspect a Python module'
     if name and (loaded or keyword):
         return 0, '--name cannot be combined with --loaded or --filter'
-    output = 'json' if args_dict['json'] else 'text'
+    default_layout = (ResultDataShape.FLAT if name else
+                      ResultDataShape.LINES if loaded else ResultDataShape.TABLE)
+    # This command has three distinct result shapes; validate after mode selection.
+    allowed = (('flat', 'kv') if name else
+               ('lines', 'table', 'records') if loaded else ('table', 'records'))
+    try:
+        output, layout = resolve_presentation(args_dict, default_layout, allowed_layouts=allowed)
+    except ValueError as exc:
+        return 0, str(exc)
 
     if name:
-        result = StructuredCommandResult(status=1, data=_inspect_module(name), shape='dict', width=24)
+        result = StructuredCommandResult(status=1, data=_inspect_module(name), shape=layout, width=24)
     elif loaded:
         snapshot = sys.modules.copy()
         known = metadata.packages_distributions()
         names = {key.partition('.')[0] for key, module in snapshot.items() if module is not None}
         names = sorted((name for name in names if name in known and keyword in name.casefold()),
                        key=lambda name: (name.casefold(), name))
-        if output == 'text':
-            return 1, '\n'.join(names) or 'No matching loaded third-party modules'
-        result = StructuredCommandResult(status=1, data=[{'module': name} for name in names], shape='table')
+        result = StructuredCommandResult(status=1, data=[{'module': item} for item in names],
+                                         shape=layout, line_field='module')
     else:
         packages = {}
         for dist in metadata.distributions():
@@ -58,8 +67,11 @@ def python_packages(self, args_dict):
             if name and keyword in name.casefold():
                 packages[name.casefold()] = {'package': name, 'version': str(dist.version or 'unknown')}
         rows = [packages[key] for key in sorted(packages)]
-        result = StructuredCommandResult(status=1, data=rows, shape='table')
-    return render_structured_result(result, output_format=output)
+        result = StructuredCommandResult(status=1, data=rows, shape=layout)
+    status, rendered = render_structured_result(result, output_format=output)
+    if loaded and not names and output == 'text':
+        rendered = 'No matching loaded third-party modules'
+    return status, rendered
 
 
 def _inspect_module(name):

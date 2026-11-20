@@ -21,6 +21,7 @@ class ArgumentOptionSpec:
     arity: int = 1
     repeatable: bool = False
     completion: CompletionSpec | None = None
+    choices: tuple[str, ...] | None = None
 
     @property
     def is_flag(self) -> bool:

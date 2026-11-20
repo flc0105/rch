@@ -317,6 +317,7 @@ function emptyScriptRun() {
     clientId: '',
     displayName: '',
     scriptPath: '',
+    operation: null,
     output: '',
     outputChunks: 0,
     status: '',
@@ -552,6 +553,7 @@ export default {
           is_script: true,
           script_path: this.activeRun.scriptPath,
           script_name: this.activeRun.scriptPath,
+          operation: this.activeRun.operation,
         },
       })
     },
@@ -1264,6 +1266,8 @@ export default {
         const params = this.buildScriptRunParams(item)
         this.scriptRunSubmitting = true
         const displayName = item.display_name || item.script_name
+        const replay = { type: 'script', script_name: item.script_name,
+          script_path: item.path || '', script_display_name: displayName, params, ...modes }
 
         if (presentation === 'dialog') {
           runId = this.createRunId()
@@ -1273,6 +1277,8 @@ export default {
             clientId: String(this.selectedId),
             displayName,
             scriptPath: item.path || `${item.script_name}.py`,
+            operation: createTerminalOperation({ kind: 'script', action: 'run', clientId: this.selectedId,
+              invocation: { script_name: item.script_name, params, ...modes }, replay, presentation: 'dialog' }),
             status: 'Running',
             cancelSupported: modes.execution_mode === 'subprocess_pipe',
           }
@@ -1281,8 +1287,7 @@ export default {
           // Terminal output keeps its original command block and re-run metadata.
           operation = createTerminalOperation({ kind: 'script', action: 'run', clientId: this.selectedId,
             invocation: { script_name: item.script_name, params, ...modes },
-            replay: { type: 'script', script_name: item.script_name, script_path: item.path || '',
-              script_display_name: displayName, params, ...modes } })
+            replay })
           const commandText = `> ${TERMINAL_RUN_SCRIPT_PREFIX} ${displayName}`
           this.$emit('append-output', this.selectedId, commandText, 'command', {
             operation,

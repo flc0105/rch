@@ -8,7 +8,8 @@ from core.external_tools.install_status import is_installed_status, normalize_in
 from core.protocol.control import ControlDomain, ExternalToolAction as A
 from core.external_tools.payload import client_control_request
 from server.application.command.command_types import COMMAND_TYPE_CONTROL
-from core.utils.command_output import StructuredCommandResult, render_structured_result
+from core.utils.command_output import (StructuredCommandResult, ResultDataShape,
+                                       resolve_presentation, render_structured_result)
 
 
 class ExternalToolCliBuiltinSupport:
@@ -159,24 +160,17 @@ class ExternalToolCliBuiltinSupport:
         rows.sort(key=lambda item: str(item.get('exec_name') or '').lower())
         return rows
 
-    def _render_cli_list(self, output_format: str):
+    def _render_cli_list(self, args: dict):
         rows = self._build_cli_list_payload()
-        if not rows and output_format != 'json':
+        output, layout = resolve_presentation(args, ResultDataShape.LINES)
+        if not rows and output != 'json':
             return 1, 'No installed external tool Exec commands for this Client.'
+        result = StructuredCommandResult(status=1, data=rows, shape=layout,
+                                         line_field='exec_name',
+                                         columns=(('exec_name', 'EXEC'), ('package_id', 'PACKAGE')))
+        return render_structured_result(result, output_format=output)
 
-        display_rows = rows if output_format == 'json' else [
-            {'EXEC': row['exec_name'], 'PACKAGE': row['package_id']} for row in rows
-        ]
-        return render_structured_result(
-            StructuredCommandResult(
-                status=1,
-                data=display_rows,
-                shape='table',
-            ),
-            output_format=output_format,
-        )
-
-    def _format_info(self, exec_name: str, output_format: str = 'json'):
+    def _format_info(self, exec_name: str, args: dict):
         target = self._resolve_exec_target(exec_name)
         payload = self._build_client_payload(target, raw_args='')
         install = payload.get('install') or {}
@@ -186,6 +180,7 @@ class ExternalToolCliBuiltinSupport:
         status_map = self._load_cli_install_status_map([target])
         install_status = self._install_status_text(status_map.get((package_id, package_key)))
 
+        output, layout = resolve_presentation(args, ResultDataShape.FLAT)
         return render_structured_result(
             StructuredCommandResult(
                 status=1,
@@ -200,10 +195,10 @@ class ExternalToolCliBuiltinSupport:
                     'install_dir': install.get('install_dir') or '',
                     'usage': f'xt exec {target.get("exec_name") or exec_name} <raw args>',
                 },
-                shape='dict',
+                shape=layout,
                 width=20,
             ),
-            output_format=output_format,
+            output_format=output,
         )
 
     def _which(self, exec_name: str):
@@ -267,8 +262,13 @@ class ExternalToolCliBuiltinSupport:
         return items[0]
 
     @staticmethod
-    def _render_rows(rows: list[dict], output_format: str = 'table'):
-        return render_structured_result(StructuredCommandResult(status=1, data=rows, shape='table'), output_format=output_format)
+    def _render_rows(rows: list[dict], args: dict, *, line_field,
+                     columns=(), line_separator='/', text_values=None):
+        output, layout = resolve_presentation(args, ResultDataShape.LINES)
+        result = StructuredCommandResult(status=1, data=rows, shape=layout,
+                                         line_field=line_field, columns=columns,
+                                         line_separator=line_separator, text_values=text_values)
+        return render_structured_result(result, output_format=output)
 
     def _installed_packages(self, packages: list[dict]) -> dict[tuple[str, str], dict]:
         builder = self.runtime_service.payload_builder
@@ -306,9 +306,11 @@ class ExternalToolCliBuiltinSupport:
             rows.append({'package_id': package_id, 'display_name': package.get('display_name') or package_id,
                          'installed': installed})
         rows.sort(key=lambda row: row['package_id'])
-        return self._render_rows(rows if args['json'] else [
-            {'PACKAGE': row['package_id'], 'NAME': row['display_name'], 'INSTALLED': 'yes' if row['installed'] else 'no'} for row in rows
-        ], 'json' if args['json'] else 'table')
+        return self._render_rows(rows, args, line_field='package_id',
+                                 columns=(('package_id', 'PACKAGE'),
+                                          ('display_name', 'NAME'), ('installed', 'INSTALLED')),
+                                 text_values={'installed': {True: 'yes', False: 'no'}})
+
 
     def _publish_xt_lifecycle(self, group: str, operation: str, target: str, state: str, *,
                               result: dict | None = None, error: str = ''):
@@ -364,9 +366,10 @@ class ExternalToolCliBuiltinSupport:
                 continue
             rows.append({'module_id': f'{package["id"]}.{module["id"]}',
                          'execution': module.get('execution') or '', 'binary': module.get('binary') or ''})
-        return self._render_rows(rows if args['json'] else [
-            {'MODULE': row['module_id'], 'EXECUTION': row['execution'], 'BINARY': row['binary']} for row in rows
-        ], 'json' if args['json'] else 'table')
+        return self._render_rows(rows, args, line_field='module_id',
+                                 columns=(('module_id', 'MODULE'),
+                                          ('execution', 'EXECUTION'), ('binary', 'BINARY')))
+
 
     def _instance_meta(self, tool_id: str) -> dict:
         meta = self.catalog_service.get_tool(tool_id)
@@ -437,7 +440,6 @@ class ExternalToolCliBuiltinSupport:
 
     def _instance_list(self, args: dict):
         target = args['name'] or ''
-        json_output = args['json']
         metas = [m for m in self.catalog_service.list_tools() if str(m.get('execution') or '') == 'daemon'
                  and (not target or m.get('package_id') == target or m.get('tool_id') == target)]
         if target and not metas:
@@ -446,11 +448,12 @@ class ExternalToolCliBuiltinSupport:
             else:
                 self.catalog_service.get_package(target)
         if not metas:
-            return self._render_rows([], 'json' if json_output else 'table')
+            return self._render_rows([], args, line_field=('module_id', 'instance_id'))
         rows = self._load_instance_rows(metas)
-        return self._render_rows(rows if json_output else [
-            {'MODULE': r['module_id'], 'INSTANCE': r['instance_id'], 'STATUS': r['status'], 'PID': r['pid']} for r in rows
-        ], 'json' if json_output else 'table')
+        return self._render_rows(rows, args, line_field=('module_id', 'instance_id'),
+                                 columns=(('module_id', 'MODULE'), ('instance_id', 'INSTANCE'),
+                                          ('status', 'STATUS'), ('pid', 'PID')))
+
 
     def _load_instance_rows(self, metas: list[dict]) -> list[dict]:
         if not metas:
@@ -599,9 +602,9 @@ class ExternalToolCliBuiltinSupport:
             from server.application.command.server_builtin_registry import SERVER_COMMAND_REGISTRY
             yield 1, SERVER_COMMAND_REGISTRY.help('xt exec' if action == 'exec.help' else 'xt')
         elif action == 'exec.list':
-            yield self._render_cli_list('json' if args['json'] else 'table')
+            yield self._render_cli_list(args)
         elif action == 'exec.info':
-            yield self._format_info(args['name'], 'json' if args['json'] else 'table')
+            yield self._format_info(args['name'], args)
         elif action == 'exec.which':
             yield from self._which(args['name'])
         elif action == 'exec.run':

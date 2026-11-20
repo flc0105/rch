@@ -107,7 +107,7 @@ class ScriptBuiltinSupport:
         subcommand = invocation.action
         args = invocation.arguments
         from core.protocol.result_envelope import ResultEnvelope
-        from core.utils.command_output import ResultDataShape, render_result_payload
+        from core.utils.command_output import ResultDataShape, render_result_payload, resolve_presentation
         if subcommand == 'list':
             rows = []
             for item in self.list_script_catalog():
@@ -121,9 +121,10 @@ class ScriptBuiltinSupport:
                 rows.append({'name': item['path'], 'display_name': item['display_name'],
                              'description': item['description'], 'params': param_names})
             envelope = ResultEnvelope(data=rows).as_payload()
-            yield ResultChunk(1, render_result_payload(envelope, invocation.output_format,
-                              view='data', shape=ResultDataShape.TABLE), True,
-                              terminal_authoritative=True, event=envelope)
+            output_format, layout = resolve_presentation(args, ResultDataShape.LINES)
+            text = render_result_payload(envelope, output_format,
+                                         view='data', shape=layout, line_field='name')
+            yield ResultChunk(1, text, True, terminal_authoritative=True, event=envelope)
             return
         if subcommand == 'view':
             with open(self._resolve_script_path(args['name']), 'rt', encoding='utf-8') as source:
@@ -205,7 +206,7 @@ class AliasBuiltinSupport:
 
     def alias(self, invocation):
         from core.protocol.result_envelope import ResultEnvelope
-        from core.utils.command_output import ResultDataShape, render_result_payload
+        from core.utils.command_output import ResultDataShape, render_result_payload, resolve_presentation
 
         action = invocation.action
         args = invocation.arguments
@@ -214,7 +215,7 @@ class AliasBuiltinSupport:
                 rows = self._build_resolved_alias_payload()
                 envelope = ResultEnvelope(message='No aliases configured' if not rows else 'Aliases listed',
                                           data=rows).as_payload()
-                view, shape = 'data', ResultDataShape.TABLE
+                view, shape = 'data', ResultDataShape.KEY_VALUE
             elif action in ('set', 'unset'):
                 raw_platform = args.get('platform') or 'common'
                 platform = self.alias_manager.normalize_platform(raw_platform)
@@ -239,9 +240,15 @@ class AliasBuiltinSupport:
             view, shape = 'message', None
 
         success = envelope['status'] == 'success'
-        yield ResultChunk(1 if success else 0,
-                          render_result_payload(envelope, invocation.output_format,
-                                                view=view, shape=shape),
+        if action == 'list' and success:
+            output_format, shape = resolve_presentation(args, ResultDataShape.KEY_VALUE)
+            output = render_result_payload(envelope, output_format, view='data', shape=shape,
+                                           line_field='alias', key_field='alias',
+                                           value_field='command', group_field='platform')
+        else:
+            output = render_result_payload(envelope, invocation.output_format,
+                                           view=view, shape=shape)
+        yield ResultChunk(1 if success else 0, output,
                           True, terminal_authoritative=True, event=envelope)
 
 
@@ -273,7 +280,7 @@ class PinnedPathBuiltinSupport:
 
     def gopin(self, invocation):
         from core.protocol.result_envelope import ResultEnvelope
-        from core.utils.command_output import ResultDataShape, render_result_payload
+        from core.utils.command_output import ResultDataShape, render_result_payload, resolve_presentation
 
         name = str(invocation.arguments.get('command') or '').strip()
         items = self.list_pinned_paths()
@@ -282,8 +289,9 @@ class PinnedPathBuiltinSupport:
                     for item in items]
             envelope = ResultEnvelope(data=rows,
                                       message='No saved pinned paths for current host').as_payload()
-            yield ResultChunk(1, render_result_payload(envelope, invocation.output_format,
-                              view='data', shape=ResultDataShape.TABLE), True,
+            fmt, layout = resolve_presentation(invocation.arguments, ResultDataShape.TABLE)
+            yield ResultChunk(1, render_result_payload(envelope, fmt,
+                              view='data', shape=layout, line_field='name'), True,
                               terminal_authoritative=True, event=envelope)
             return
 
@@ -386,7 +394,7 @@ class HistoryBuiltinSupport:
     def history(self, invocation):
         """History forms are fully parsed by the registry; !N is rewritten upstream."""
         from core.protocol.result_envelope import ResultEnvelope
-        from core.utils.command_output import ResultDataShape, render_result_payload
+        from core.utils.command_output import ResultDataShape, render_result_payload, resolve_presentation
 
         action = invocation.action
         args = invocation.arguments
@@ -397,22 +405,14 @@ class HistoryBuiltinSupport:
                 entries = [entry for entry in entries if entry.get('is_pinned')]
             rows = [{'index': int(entry['index']), 'command': entry.get('command', ''),
                      'pinned': bool(entry.get('is_pinned'))} for entry in entries]
-            if output_format == 'text':
-                # Preserve the original compact Quick History presentation. A
-                # wide command string must never be forced into a table column.
-                lines = [f'{item["index"]:>3}  {item["command"]}' for item in rows]
-                if not lines:
-                    lines.append('No command history available')
-                lines.extend(['', 'Tip: use history run <index> or !<index> to run a history item quickly'])
-                envelope = ResultEnvelope(message='\n'.join(lines), data=rows).as_payload()
-            else:
-                envelope = ResultEnvelope(
-                    message=('No command history available' if not rows else ''),
-                    data=rows).as_payload()
-            yield ResultChunk(1, render_result_payload(envelope, output_format,
-                              view='data' if output_format == 'json' else 'message',
-                              shape=ResultDataShape.TABLE), True,
-                              terminal_authoritative=True, event=envelope)
+            envelope = ResultEnvelope(
+                message=('No command history available' if not rows else ''),
+                data=rows).as_payload()
+            output_format, layout = resolve_presentation(args, ResultDataShape.NUMBERED_LIST)
+            text = render_result_payload(envelope, output_format, view='data', shape=layout,
+                                         line_field='command', footer=('Tip: use history run <index> or !<index> to run a history item quickly'
+                                                 if output_format == 'text' else ''))
+            yield ResultChunk(1, text, True, terminal_authoritative=True, event=envelope)
             return
 
         if action == 'clear':
@@ -463,8 +463,9 @@ class RttBuiltinSupport:
         }
 
         from core.protocol.result_envelope import ResultEnvelope
-        from core.utils.command_output import ResultDataShape, render_result_payload
+        from core.utils.command_output import ResultDataShape, render_result_payload, resolve_presentation
         envelope = ResultEnvelope(data=payload).as_payload()
-        yield ResultChunk(1, render_result_payload(envelope, invocation.output_format,
-                          view='data', shape=ResultDataShape.FLAT, width=24), True,
+        output, layout = resolve_presentation(invocation.arguments, ResultDataShape.FLAT)
+        yield ResultChunk(1, render_result_payload(envelope, output,
+                          view='data', shape=layout, width=24), True,
                           terminal_authoritative=True, event=envelope)

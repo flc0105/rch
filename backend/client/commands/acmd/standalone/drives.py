@@ -3,7 +3,7 @@
 from client.commands.acmd.decorators import argument_command
 from client.runtime.filesystem.storage_volumes import collect_storage_volumes
 from core.commands.argument_models import ArgumentCommandSpec, ArgumentOptionSpec
-from core.utils.command_output import StructuredCommandResult, render_structured_result
+from core.utils.command_output import StructuredCommandResult, ResultDataShape, resolve_presentation, render_structured_result
 from core.utils.formatting import format_bytes
 
 
@@ -11,6 +11,8 @@ DRIVES_SPEC = ArgumentCommandSpec(
     name='drives',
     description='List mounted drives',
     options=[
+        ArgumentOptionSpec('format', 'str', default='', alias='f',
+                           choices=('table', 'records', 'json'), help_text='Supported output: table, records, json'),
         ArgumentOptionSpec('json', 'flag', default=False, help_text='Output as JSON'),
         ArgumentOptionSpec('help', 'flag', default=False, help_text='Show this help message'),
     ],
@@ -38,5 +40,6 @@ def drives(self, args_dict):
         }
         for volume in volumes
     ]
-    result = StructuredCommandResult(status=1, data=rows, shape='table')
-    return render_structured_result(result, output_format='json' if args_dict['json'] else 'text')
+    output, layout = resolve_presentation(args_dict, ResultDataShape.TABLE)
+    result = StructuredCommandResult(status=1, data=rows, shape=layout)
+    return render_structured_result(result, output_format=output)

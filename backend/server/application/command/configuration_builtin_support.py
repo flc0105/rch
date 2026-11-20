@@ -3,7 +3,7 @@ from core.protocol.control import ControlDomain, ConfigurationAction, WatchdogAc
 from core.protocol.message_queue import ResultChunk
 from core.protocol.result_envelope import ResultEnvelope
 from core.utils.configuration_cli import configuration_cli_items
-from core.utils.command_output import (OutputFormat, ResultDataShape, render_result_payload)
+from core.utils.command_output import (OutputFormat, ResultDataShape, render_result_payload, resolve_presentation)
 from server.application.command.command_types import COMMAND_TYPE_CONTROL
 
 
@@ -35,7 +35,8 @@ class ConfigurationBuiltinSupport:
             payload = {'key': args['key']}
         elif invocation.action == 'reset-all':
             payload = {'all': True}
-        output_format = invocation.output_format
+        output_format, layout = (resolve_presentation(args, ResultDataShape.GROUPED)
+                                 if invocation.action == 'list' else (invocation.output_format, None))
         for item in self._send(ControlDomain.CONFIGURATION, action, payload):
             status, result = item[:2]
             final = getattr(item, 'eof', True)
@@ -52,7 +53,10 @@ class ConfigurationBuiltinSupport:
                 result = {**result, 'data': configuration_cli_items(result['data'])}
             text = render_result_payload(result, output_format,
                                          view='data' if action == ConfigurationAction.GET and status == 1 else 'message',
-                                         shape=ResultDataShape.TABLE)
+                                         shape=layout or ResultDataShape.TABLE, line_field=('group', 'key'),
+                                         line_separator='.', group_field='group',
+                                         key_field='key',
+                                         value_field='value')
             yield ResultChunk(status, text, True, terminal_authoritative=True,
                               event=getattr(item, 'event', None))
 
@@ -71,6 +75,6 @@ class ConfigurationBuiltinSupport:
                 text = render_result_payload(envelope, invocation.output_format)
                 yield ResultChunk(0, text, True, terminal_authoritative=True, event=getattr(item, 'event', None))
                 continue
-            text = render_result_payload(result, invocation.output_format,
-                                         view='data', shape=ResultDataShape.GROUPED)
+            output, layout = resolve_presentation(invocation.arguments, ResultDataShape.GROUPED)
+            text = render_result_payload(result, output, view='data', shape=layout)
             yield ResultChunk(status, text, True, terminal_authoritative=True, event=getattr(item, 'event', None))
