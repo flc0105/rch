@@ -1,4 +1,4 @@
-"""Isolated Windows ConPTY process. Standard input/output carry newline-delimited JSON.
+"""Isolated Windows PTY process. Standard input/output carry newline-delimited JSON.
 
 Keep the pywinpty native calls outside the network Client process: some
 ConPTY bindings execute while holding the Python GIL.
@@ -14,6 +14,8 @@ from importlib import metadata
 
 
 _output_lock = threading.Lock()
+_MIN_CONPTY_BUILD = 17763
+_WINPTY_BACKEND = 1  # pywinpty's WinPTY backend identifier, verified on build 14393.
 
 
 def _send(event, **fields):
@@ -84,7 +86,10 @@ def _read_output(pty, stopping):
 def run():
     pty = None
     stopping = threading.Event()
+    backend_name = 'Windows PTY'
     try:
+        use_winpty = sys.getwindowsversion().platform_version[2] < _MIN_CONPTY_BUILD
+        backend_name = 'WinPTY' if use_winpty else 'ConPTY'
         try:
             version = metadata.version('pywinpty')
             if _version_tuple(version) < (3, 0, 5):
@@ -96,8 +101,9 @@ def run():
         request = json.loads(sys.stdin.buffer.readline())
         if request.get('op') != 'open':
             raise ValueError('Missing PTY open request')
-        _send('stage', value='ConPTY initialization')
-        pty = PTY(int(request['cols']), int(request['rows']), backend=Backend.ConPTY)
+        _send('stage', value=f'{backend_name} initialization')
+        backend = _WINPTY_BACKEND if use_winpty else Backend.ConPTY
+        pty = PTY(int(request['cols']), int(request['rows']), backend=backend)
         _send('stage', value='shell spawn')
 
         # The Ctrl+C inheritance workaround is limited to this disposable helper
@@ -118,8 +124,8 @@ def run():
         finally:
             handler(None, True)
         if ok is False:
-            raise RuntimeError('ConPTY spawn failed')
-        _send('opened', pid=int(pty.pid or 0))
+            raise RuntimeError('Shell spawn failed')
+        _send('opened', pid=int(pty.pid or 0), backend=backend_name)
 
         reader = threading.Thread(target=_read_output, args=(pty, stopping), daemon=True)
         reader.start()
@@ -137,7 +143,7 @@ def run():
         stopping.set()
     except Exception as error:
         try:
-            _send('error', message=f'{type(error).__name__}: {error}')
+            _send('error', message=f'{backend_name}: {type(error).__name__}: {error}')
         except (BrokenPipeError, OSError):
             pass
     finally:

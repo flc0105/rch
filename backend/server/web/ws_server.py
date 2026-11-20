@@ -60,6 +60,7 @@ def create_ws_handler(server_instance, flask_app):
                 status = payload.get('status') or ''
                 error = payload.get('error') or ''
                 shell = payload.get('shell') or ''
+                backend = payload.get('backend') or ''
                 seq = int(payload.get('seq') or after_seq or 0)
                 if seq > after_seq:
                     after_seq = seq
@@ -74,6 +75,7 @@ def create_ws_handler(server_instance, flask_app):
                         'status': status,
                         'error': error,
                         'shell': shell,
+                        'backend': backend,
                         'seq': seq,
                     }, ensure_ascii=False))
                 elif status_changed:
@@ -82,6 +84,7 @@ def create_ws_handler(server_instance, flask_app):
                         'status': status,
                         'error': error,
                         'shell': shell,
+                        'backend': backend,
                         'seq': seq,
                     }, ensure_ascii=False))
 

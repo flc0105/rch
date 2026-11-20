@@ -147,7 +147,7 @@ class PtyManager:
         self.windows_backend.cancel_pending(token)
         return True
 
-    def finish_windows_open(self, session, token, shell):
+    def finish_windows_open(self, session, token, shell, *, backend):
         with self._lock:
             if not self.is_windows_opening(session.pty_session_id, token):
                 return False
@@ -155,7 +155,7 @@ class PtyManager:
             timer.cancel()
             self._sessions[session.pty_session_id] = session
             try:
-                self.send_opened(session.pty_session_id, shell=shell)
+                self.send_opened(session.pty_session_id, shell=shell, backend=backend)
             except Exception:
                 self._sessions.pop(session.pty_session_id, None)
                 raise
@@ -253,12 +253,15 @@ class PtyManager:
 
         return None
 
-    def send_opened(self, pty_session_id: str, shell: str = ''):
-        self.connection.send({
+    def send_opened(self, pty_session_id: str, shell: str = '', *, backend: str = ''):
+        payload = {
             'type': MSG_TYPE_PTY_OPENED,
             'pty_session_id': pty_session_id,
             'shell': str(shell or ''),
-        })
+        }
+        if backend:
+            payload['backend'] = backend
+        self.connection.send(payload)
 
     def send_output(self, pty_session_id: str, data: bytes):
         self.connection.send({

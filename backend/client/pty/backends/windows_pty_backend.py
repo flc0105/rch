@@ -1,4 +1,4 @@
-"""Windows ConPTY orchestration; native PTY calls run in a helper process."""
+"""Windows PTY orchestration; native calls run in a helper process."""
 import json
 import os
 import queue
@@ -12,7 +12,7 @@ from core.utils.logger import logger
 
 
 class _Worker:
-    """Nonblocking control channel to a single ConPTY helper process."""
+    """Nonblocking control channel to a single Windows PTY helper process."""
 
     def __init__(self, process):
         self.process = process
@@ -83,7 +83,7 @@ class _Worker:
 
 
 class WindowsPtyBackend:
-    """One helper process per Windows PTY session isolates native ConPTY hangs."""
+    """One helper process per Windows PTY session isolates native calls."""
 
     def __init__(self, manager):
         self.manager = manager
@@ -143,7 +143,7 @@ class WindowsPtyBackend:
                     'cwd': cwd if cwd and os.path.isdir(cwd) else '',
                     'cols': max(20, int(cols or 120)), 'rows': max(5, int(rows or 32)),
                 }):
-                    raise RuntimeError('Cannot send ConPTY request to helper process')
+                    raise RuntimeError('Cannot send Windows PTY request to helper process')
 
                 timed_out = threading.Event()
                 stage = 'starting helper'
@@ -173,7 +173,7 @@ class WindowsPtyBackend:
                             logger.info('Windows PTY startup: session=%s attempt=%s stage=%s',
                                         pty_session_id, attempt, stage)
                         elif event == 'error':
-                            last_failure = message.get('message') or 'ConPTY startup failed'
+                            last_failure = message.get('message') or 'Windows PTY startup failed'
                             break
                         elif event == 'opened':
                             break
@@ -181,6 +181,7 @@ class WindowsPtyBackend:
                     timer.cancel()
 
                 if message is not None and message.get('event') == 'opened' and not timed_out.is_set():
+                    backend_name = message['backend']
                     session = PtySession(
                         pty_session_id=pty_session_id, backend=self, cols=cols, rows=rows,
                         pty=worker, pid=int(message.get('pid') or 0), command=command,
@@ -188,17 +189,17 @@ class WindowsPtyBackend:
                     self._take_pending(opening)
                     if opening is None:
                         self.manager.register_session(session)
-                        self.manager.send_opened(pty_session_id, shell=command)
-                    elif not self.manager.finish_windows_open(session, opening, command):
+                        self.manager.send_opened(pty_session_id, shell=command, backend=backend_name)
+                    elif not self.manager.finish_windows_open(session, opening, command, backend=backend_name):
                         worker.close()
                         return None
                     threading.Thread(target=self.reader_loop, args=(session, worker), daemon=True).start()
                     return True
 
                 if timed_out.is_set():
-                    last_failure = f'ConPTY startup stuck at {stage} (attempt {attempt}/{self.NATIVE_START_ATTEMPTS})'
+                    last_failure = f'Windows PTY startup stuck at {stage} (attempt {attempt}/{self.NATIVE_START_ATTEMPTS})'
                 elif not last_failure:
-                    last_failure = f'ConPTY helper exited before opening (code {process.poll()})'
+                    last_failure = f'Windows PTY helper exited before opening (code {process.poll()})'
                 worker.terminate()
                 worker._close_streams()
                 self._take_pending(opening)

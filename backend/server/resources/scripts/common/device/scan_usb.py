@@ -64,12 +64,28 @@ $devices = @(Get-PnpDevice -PresentOnly -ErrorAction Stop |
     ForEach-Object {
         $device = $_
         $reported = Get-PnpDeviceProperty -InstanceId $device.InstanceId -KeyName 'DEVPKEY_Device_BusReportedDeviceDesc' -ErrorAction SilentlyContinue
+        $location = Get-PnpDeviceProperty -InstanceId $device.InstanceId -KeyName 'DEVPKEY_Device_LocationPaths' -ErrorAction SilentlyContinue
+        $locationPath = $null
+        if ($location) {
+            foreach ($candidate in @($location.Data)) {
+                if ($candidate -is [string] -and $candidate.Trim()) {
+                    $locationPath = $candidate
+                    break
+                }
+            }
+        }
         $name = if ($reported -and $reported.Data -is [string] -and $reported.Data.Trim()) {
             $reported.Data.Trim()
         } else {
             [string]$device.FriendlyName
         }
-        [PSCustomObject]@{ FriendlyName = $name; InstanceId = [string]$device.InstanceId }
+        [PSCustomObject]@{
+            FriendlyName = $name
+            InstanceId = [string]$device.InstanceId
+            Status = [string]$device.Status
+            DeviceClass = [string]$device.Class
+            LocationPath = $locationPath
+        }
     })
 ConvertTo-Json -InputObject $devices -Depth 3 -Compress
 '''
@@ -89,14 +105,20 @@ ConvertTo-Json -InputObject $devices -Depth 3 -Compress
         match = USB_INSTANCE.match(instance_id)
         if not match or "&MI_" in instance_id.split("\\", 2)[1].upper():
             continue
-        devices.append({
-            "name": str(entry.get("FriendlyName") or "Unknown"),
-            "vendor": "",
+        device = {
+            "name": str(entry.get("FriendlyName") or "Unknown").strip() or "Unknown",
             "vendor_id": match.group(1).upper(),
             "product_id": match.group(2).upper(),
-            "serial": "",
             "path": instance_id,
-        })
+        }
+        for field, value in (
+            ("status", entry.get("Status")),
+            ("device_class", entry.get("DeviceClass")),
+            ("location_path", entry.get("LocationPath")),
+        ):
+            if isinstance(value, str) and value.strip():
+                device[field] = value.strip()
+        devices.append(device)
     return devices
 
 

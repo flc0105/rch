@@ -269,17 +269,26 @@ class NotificationEventProjector:
             'pty_session_id': payload.get('pty_session_id') or '',
             'state': state,
         }
+        backend = payload.get('backend')
+        if backend:
+            context['backend'] = backend
+        session_label = f'PTY ({backend})' if backend else 'PTY'
         if state == 'opened':
-            return self._notification('pty_opened', 'PTY Started', f'PTY session started on {device}', 'success', context)
+            return self._notification(
+                'pty_opened', 'PTY Started', f'{session_label} session started on {device}', 'success', context,
+            )
         if state == 'closed':
             exit_code = payload.get('exit_code')
             context['exit_code'] = exit_code
             suffix = '' if exit_code is None else f', exit={exit_code}'
-            return self._notification('pty_closed', 'PTY Stopped', f'PTY session stopped on {device}{suffix}', 'warning', context)
+            return self._notification(
+                'pty_closed', 'PTY Stopped', f'{session_label} session stopped on {device}{suffix}', 'warning', context,
+            )
         if state == 'error':
             error_text = str(payload.get('error') or '').strip()
             context['error'] = error_text
-            message = f'PTY session ended on {device}: {error_text}' if error_text else f'PTY session ended with an error on {device}'
+            message = (f'{session_label} session ended on {device}: {error_text}' if error_text
+                       else f'{session_label} session ended with an error on {device}')
             return self._notification('pty_error', 'PTY Error', message, 'error', context)
         return None
 

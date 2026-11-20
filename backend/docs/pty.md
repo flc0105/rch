@@ -2,7 +2,7 @@
 
 PTY 把远程 Shell 作为持续存在的伪终端会话运行。Client 持有真实终端进程与双向字节流，Server 维护会话路由和客户端连接，浏览器以 xterm.js 展示终端并发送键盘输入与 Resize。其输出不是一次普通 Command 结束后返回的字符串，而是伴随会话持续流动的数据。
 
-交互程序依赖终端尺寸和控制字符，因此输入、输出、关闭和断线恢复必须与普通 Shell-like 执行分开处理。Unix PTY 与 Windows ConPTY 在系统 API 上不同，却服从统一的会话控制契约。
+交互程序依赖终端尺寸和控制字符，因此输入、输出、关闭和断线恢复必须与普通 Shell-like 执行分开处理。Unix PTY 和 Windows PTY 后端使用各自的系统接口，服从同一套会话控制契约。
 
 ## 持久终端会话的端到端链路
 
@@ -16,7 +16,7 @@ Server（PTY 会话中转）
   会话创建、状态维护、输出缓存、输入与尺寸转发
                    ↕ Client 已建立的消息连接
 Client（远程设备）
-  Unix PTY / Windows ConPTY、交互式 Shell、输入输出读写
+  Unix PTY / Windows ConPTY 或 WinPTY、交互式 Shell、输入输出读写
 ```
 
 用户在设备工具栏打开 **PTY** 后，会依次发生以下操作：
@@ -37,10 +37,10 @@ Server 使用会话 ID 分别管理不同的 PTY，并没有对每个 Client 强
 
 | | Unix（Linux / macOS 等） | Windows |
 |---|---|---|
-| 终端机制 | 系统 PTY、`forkpty()` | Windows ConPTY |
-| 运行依赖 | 系统 PTY 与 Python 标准库 | `pywinpty >= 3.0.5`，使用 ConPTY |
+| 终端机制 | 系统 PTY、`forkpty()` | build 17763 及以上用 ConPTY，较早的 build 用 WinPTY |
+| 运行依赖 | 系统 PTY 与 Python 标准库 | `pywinpty >= 3.0.5`，WinPTY 路径需要随包的原生组件 |
 | 默认 Shell | `$SHELL` → `/bin/zsh` → `/bin/bash` | `cmd.exe` → `pwsh.exe` → `powershell.exe` |
-| 输入输出 | PTY Master 文件描述符 | ConPTY 的读写接口 |
+| 输入输出 | PTY Master 文件描述符 | pywinpty 读写接口 |
 | 尺寸更新 | `TIOCSWINSZ` | `set_size()` |
 
 ### Unix 伪终端分配
@@ -53,15 +53,15 @@ Shell 输出由独立读取线程从 PTY Master 获取；线程使用 `select()`
 
 可指定 `cwd` 作为启动目录，但 Unix 侧对目录切换异常采取忽略处理：指定目录无效时，Shell 可能仍在继承的工作目录启动，而不是直接报错。
 
-### Windows ConPTY 会话
+### Windows PTY 会话
 
-Windows 统一使用 ConPTY，不保留 WinPTY 备用实现。需要安装支持 ConPTY 的 `pywinpty`，版本不得低于 **3.0.5**；缺少依赖或版本不符时，Client 会报告启动错误。
+Windows 辅助进程根据目标 Client 的系统 build 选择后端。**17763 及以上**使用 ConPTY，**低于 17763** 使用 WinPTY。需要 `pywinpty >= 3.0.5`。WinPTY 路径需要匹配 Python 架构的 `winpty.dll` 和 `winpty-agent.exe`。后端初始化失败时的错误包含尝试的后端名称。
 
-默认优先使用 `cmd.exe`，然后才考虑 `pwsh.exe` 和 `powershell.exe`；自定义 Shell 可以包含可执行程序及参数。创建时会解析可执行文件，使用 ConPTY 启动进程。如果指定的 `cwd` 不是有效目录，会忽略该目录并采用默认工作目录。
+默认优先使用 `cmd.exe`，然后才考虑 `pwsh.exe` 和 `powershell.exe`；自定义 Shell 可以包含可执行程序及参数。创建时会解析可执行文件，用选定的后端启动进程。如果指定的 `cwd` 不是有效目录，会忽略该目录并采用默认工作目录。
 
-Windows PTY 由独立的本地辅助进程持有 ConPTY 原生对象。原因是 pywinpty 的部分原生启动调用可能长时间占用 Python GIL；在 Client 线程里直接启动（即使用后台线程）都可能阻塞心跳和其他命令。Client 通过私有标准输入／输出通道与辅助进程交换数据，**不改变**既有 PTY 网络协议，也不开放新端口。创建过程只在辅助进程内临时调整 Ctrl+C 处理状态，避免修改 Client 全局状态。运行期间使用 ConPTY 接口收发数据，Shell 退出后尝试读取剩余输出。
+Windows PTY 由独立的本地辅助进程持有所选后端的原生对象。原因是 pywinpty 的部分原生启动调用可能长时间占用 Python GIL；在 Client 线程里直接启动（即使用后台线程）都可能阻塞心跳和其他命令。Client 通过私有标准输入／输出通道与辅助进程交换数据。创建过程只在辅助进程内临时调整 Ctrl+C 处理状态，避免修改 Client 全局状态。运行期间使用 pywinpty 接口收发数据，Shell 退出后尝试读取剩余输出。
 
-辅助进程首次 ConPTY 初始化／Shell 启动超时后会被终止，并在新的辅助进程内**自动重试一次**。两次均失败时明确返回失败阶段，Client 的接收与心跳线程继续工作。关闭窗口、取消请求或连接中断时会终止对应辅助进程，不允许迟到的打开响应复活已关闭会话。同一时刻最多允许两个正在初始化的 Windows PTY；已经打开的终端不占此限额。原生启动依赖仍为 `pywinpty >= 3.0.5`，更新代码本身不会执行 pip 安装或升级第三方依赖。
+辅助进程首次后端初始化／Shell 启动超时后会被终止，并在新的辅助进程内用同一后端**自动重试一次**。两次均失败时明确返回失败阶段，Client 的接收与心跳线程继续工作。关闭窗口、取消请求或连接中断时会终止对应辅助进程，不允许迟到的打开响应复活已关闭会话。同一时刻最多允许两个正在初始化的 Windows PTY；已经打开的终端不占此限额。原生启动依赖仍为 `pywinpty >= 3.0.5`，更新代码本身不会执行 pip 安装或升级第三方依赖。
 
 当前 iOS 不支持 PTY，创建请求会返回对应错误。
 
@@ -75,7 +75,7 @@ PTY 是连续双向数据流，输入不是“提交一条完整命令后等待�
 {"type":"input","data":"bHMNCg=="}
 ```
 
-例子中的 `data` 表示 `ls\r\n` 的 Base64 编码。Server 不解释用户输入的 Shell 命令内容，而是将数据转发给对应 Client；Client 解码后写入 PTY。Unix 侧写入原始字节，Windows ConPTY 侧把 UTF-8 数据转换为文本后写入终端。
+例子中的 `data` 表示 `ls\r\n` 的 Base64 编码。Server 不解释用户输入的 Shell 命令内容，而是将数据转发给对应 Client；Client 解码后写入 PTY。Unix 侧写入原始字节，Windows 侧把 UTF-8 数据转换为文本后写入终端。
 
 远程 Shell 产生输出时，Client 从 PTY 读取数据，以 Base64 形式送至 Server。Server 将内容解码成 UTF-8 文本，给每个输出片段分配递增的 `seq`，再通过 WebSocket 推送到浏览器。例如：
 
@@ -182,20 +182,20 @@ PTY 的会话状态如下：
 | `closed` | Client 已报告关闭，或 Server 已确认 Client 断开 |
 | `error` | Shell 创建或运行出错，错误信息可供界面显示 |
 
-远端 Shell 正常退出后，Client 发送 `pty_closed`，并尽可能携带退出码。Unix 的自然退出通常能取得真实退出状态；若由用户主动关闭，Unix 路径返回的可能只是默认值 `0`，不能据此推断原程序正常完成。Windows 会尝试取得 ConPTY 提供的进程退出状态。
+远端 Shell 正常退出后，Client 发送 `pty_closed`，并尽可能携带退出码。Unix 的自然退出通常能取得真实退出状态；若由用户主动关闭，Unix 路径返回的可能只是默认值 `0`，不能据此推断原程序正常完成。Windows 会尝试通过 pywinpty 取得进程退出状态。
 
 关闭窗口或切换 Shell 时，会发送关闭请求，Client 释放会话和终端句柄。**浏览器 WebSocket 意外断开后，Server 也会请求关闭该 PTY**，所以不能把它当作 `tmux` / `screen` 那样可断线保留并重连的持久终端。若需要长期执行、并在断线后继续工作的交互任务，应由远程 Shell 内的专门会话管理工具自行承担。
 
 当 Client 与 Server 的连接断开，Server 会将相关活动 PTY 会话标记为关闭并安排清理；Client 在连接运行态结束时也会关闭其管理的 PTY。已关闭、错误或进入关闭流程的会话由延迟清理机制处理，保留时间为 **300 秒**；这用于短时间内读取最后的状态，不代表 Shell 仍在运行。
 
-PTY 生命周期还会产生通知事件，界面可收到 `pty_opened`、`pty_closed` 和 `pty_error` 对应的启动、停止和错误提示。
+Windows Client 在 `pty_opened` 中附上实际成功打开会话的 `backend`（`WinPTY` 或 `ConPTY`）。Server 将其带入轮询和 WebSocket 状态，窗口状态及连接成功提示显示这个名字。PTY 生命周期通知也沿用该字段；Client 尚未报告后端时，界面显示通用 PTY 文案。
 
 ## 交互式远程执行的运行边界
 
 | 现象 | 可能原因与处理方式 |
 |---|---|
-| 长时间停留在 `opening` | 连接请求已创建，但远端尚未确认 Shell 启动。Windows 单次 ConPTY 启动超过 12 秒会终止当前辅助进程并自动重试一次；两次均失败时报告错误与启动阶段，可结合 Client 日志定位。 |
-| Windows 提示 ConPTY 不可用 | 确认系统支持 ConPTY、`pywinpty` 已安装且版本至少为 3.0.5。当前没有 WinPTY 回退。 |
+| 长时间停留在 `opening` | 连接请求已创建，但远端尚未确认 Shell 启动。Windows 单次 PTY 启动超过 12 秒会终止当前辅助进程并自动重试一次；两次均失败时报告错误与启动阶段，可结合 Client 日志定位。 |
+| Windows PTY 后端启动失败 | 按错误中的后端名称核对系统 build 和 `pywinpty` 版本。较早的 Windows 还需检查 WinPTY 原生组件是否随 Client 一起打包。 |
 | 切换 Shell 后终端为空或报错 | 检查 Shell 名称与可执行路径。Switch 会先结束旧会话再创建新会话；若旧会话超过关闭等待时间，切换可能失败。 |
 | 命令能执行，但个别字符显示异常 | 检查远端程序输出编码和终端环境；Server 按输出片段分别进行 UTF-8 解码，跨片段的多字节字符可能被替换。 |
 | 调整窗口后全屏程序排版异常 | 确认 WebSocket 仍连接、尺寸更新能够传到 Client，并检查终端行列数是否达到最小限制。 |

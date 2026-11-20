@@ -164,6 +164,7 @@ export default {
       ptySessionId: '',
       ptySeq: 0,
       ptyStatus: '',
+      ptyBackend: '',
       ptyError: '',
       ptyTerm: null,
       ptyFitAddon: null,
@@ -186,7 +187,8 @@ export default {
     },
 
     statusText() {
-      return this.ptyStatus || 'idle'
+      const status = this.ptyStatus || 'idle'
+      return this.ptyBackend ? `${status} · ${this.ptyBackend}` : status
     },
   },
 
@@ -237,6 +239,7 @@ export default {
       this.ptySessionId = ''
       this.ptySeq = 0
       this.ptyStatus = 'opening'
+      this.ptyBackend = ''
       this.ptyError = ''
       this.ptyUserClosing = false
       this.closePtySocket()
@@ -263,6 +266,7 @@ export default {
 
         this.ptySessionId = json.data?.pty_session_id || ''
         this.ptyStatus = json.data?.status || 'opening'
+        this.ptyBackend = json.data?.backend || ''
         this.ptyLastCols = dims.cols
         this.ptyLastRows = dims.rows
         this.ptyWsPath = json.data?.ws_path || ''
@@ -412,6 +416,7 @@ export default {
       this.clearPtyResizeTimer()
       this.closePtySocket()
       this.ptySessionId = ''
+      this.ptyBackend = ''
       this.disposePtyTerminal()
     },
 
@@ -708,6 +713,7 @@ export default {
         const shell = String(payload.shell || '').trim()
 
         if (shell) this.shellPath = shell
+        if (payload.backend) this.ptyBackend = payload.backend
         if (!status) return
 
         this.ptyStatus = status
@@ -720,7 +726,7 @@ export default {
             openedNotified = true
             ElMessage({
               type: 'success',
-              message: 'PTY connected',
+              message: this.ptyBackend ? `PTY connected (${this.ptyBackend})` : 'PTY connected',
               duration: 1200,
             })
           }

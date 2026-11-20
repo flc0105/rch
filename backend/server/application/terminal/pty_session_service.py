@@ -36,6 +36,7 @@ class PtySessionService:
             'opened_at': 0,
             'closed_at': 0,
             'shell': shell or '',
+            'backend': '',
             'cwd': cwd or '',
             'cols': max(20, int(cols or 120)),
             'rows': max(5, int(rows or 32)),
@@ -74,13 +75,15 @@ class PtySessionService:
             self._schedule_terminal_session_cleanup(pty_id)
             raise
 
-        return {
-            'pty_session_id': pty_id,
-            'status': item['status'],
-            'cols': item['cols'],
-            'rows': item['rows'],
-            'ws_token': item['ws_token'],
-        }
+        with self._lock:
+            return {
+                'pty_session_id': pty_id,
+                'status': item['status'],
+                'backend': item['backend'],
+                'cols': item['cols'],
+                'rows': item['rows'],
+                'ws_token': item['ws_token'],
+            }
 
     def write_input(self, pty_session_id: str, data: str):
         item = self._get_required(pty_session_id)
@@ -141,9 +144,10 @@ class PtySessionService:
                 'cols': item.get('cols') or 120,
                 'rows': item.get('rows') or 32,
                 'shell': item.get('shell') or '',
+                'backend': item['backend'],
             }
 
-    def handle_client_opened(self, pty_session_id: str, shell: str = ''):
+    def handle_client_opened(self, pty_session_id: str, shell: str = '', backend: str = ''):
         event_item = None
         with self._lock:
             item = self._sessions.get(pty_session_id)
@@ -156,6 +160,8 @@ class PtySessionService:
             item['opened_at'] = time.time()
             if shell:
                 item['shell'] = str(shell)
+            if backend:
+                item['backend'] = str(backend)
 
             if not item.get('open_notified'):
                 item['open_notified'] = True
@@ -269,6 +275,7 @@ class PtySessionService:
                 'state': state,
                 'status': item.get('status', ''),
                 'shell': item.get('shell', ''),
+                'backend': item['backend'],
                 'cwd': item.get('cwd', ''),
                 'exit_code': item.get('exit_code'),
                 'error': item.get('error', ''),

@@ -54,6 +54,7 @@ class ServerInboundMessageRouter(BaseMessageRouter):
             callback(
                 data.get('pty_session_id') or '',
                 data.get('shell') or '',
+                data.get('backend') or '',
             )
 
     def handle_pty_output_message(self, data: dict) -> None:
