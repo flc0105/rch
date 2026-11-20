@@ -44,7 +44,7 @@ Server 本地 Builtin 的单次查询/反馈（例如 Job 列表、Script 列表
 
 `saveout`、`notify`、`history run`、`gopin go` 属于执行包装入口。`history run` 和 `gopin go` 的执行提示是 `chunk`，然后原样转发内层命令输出，内层唯一的 `completed` 决定结果。`notify` 以内层 `completed.status` 形成 Device Event（该通知与命令结果是不同通道），并原样转发命令事件。`saveout` 把内层可见文字保存为 `command_output` Artifact；显式结构化 `data` 且没有现成文字投影时按 JSON 保存。内层执行的最终结果决定 Artifact 元数据中的 `final_status` 和外层保存反馈的完成状态，中间 stderr 或进度不决定最终成功与否。未收到内层终态即结束的协议流标记为 `interrupted`。
 
-普通 Shell-like 命令和 Script 的 `print()`、stdout/stderr 继续作为 `message` 的文本流，不依据文字是否恰似 JSON 进行协议层推断。Script SDK 的 `context.emit(data)` 是明确的结构化 `chunk`，可在文本 `chunk` 之间按原序穿插；这不意味着脚本结束。Activity Output Records 只保留实际可见的文本或显式结构化事件的 JSON 展示，每个逻辑输出仍为独立记录。Activity Details 的临时 Result Viewer 独立保存收到的原始事件，包括请求 ID、阶段与终态，用于检查协议输出而不污染 Output Records。
+普通 Shell-like 命令和 Script 的 `print()`、stdout/stderr 继续作为 `message` 的文本流，不依据文字是否恰似 JSON 进行协议层推断。Script SDK 的 `context.emit(data)` 是明确的结构化 `chunk`，可在文本 `chunk` 之间按原序穿插；这不意味着脚本结束。Activity Detail 的 Result 卡片展示实际收到的 Client Result 对象。Output Records 从该数组生成可见文本；活动状态和正文省略提示保存在 Activity 元信息中。
 
 ## Result 收集与终态
 

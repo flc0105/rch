@@ -59,3 +59,21 @@ test('late submit or completion from a finished task cannot release the current 
   page.markTaskCompleted('client', 'new')
   assert.equal(page.activeTaskIds.client, undefined)
 })
+
+
+test('Activity output matches Server timestamps by the original Result index', async () => {
+  const { activityOutputRecords } = await import('../src/utils/activityOutput.js')
+  const result = [
+    { type: 'result', id: 1, event_type: 'progress', level: 'warning', message: 'Waiting' },
+    { type: 'result', id: 1, event_type: 'chunk' },
+    { type: 'result', id: 1, event_type: 'chunk', data: { value: 7 } },
+    { type: 'result', id: 1, event_type: 'completed', status: 'success', message: 'Done' },
+  ]
+  const recordedAt = result.map((_, index) => `2026-11-20T12:00:0${index}+00:00`)
+  assert.deepEqual(activityOutputRecords(result, { recordedAt }), [
+    { seq: 1, status: 1, text: '[!] Waiting', created_at: recordedAt[0] },
+    { seq: 3, status: 1, text: '{"value":7}', created_at: recordedAt[2] },
+    { seq: 4, status: 1, text: 'Done', created_at: recordedAt[3] },
+  ])
+  assert.equal(activityOutputRecords(result, { terminal: true })[1].text, '{\n  "value": 7\n}')
+})

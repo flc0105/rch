@@ -1,9 +1,12 @@
 """Activity mutations; Quick History has an independent lifecycle and store."""
-from server.models.artifact import ArtifactReference
-from core.protocol.references import ReferenceType, entity_reference
-from core.utils.json_utils import compact_json_dumps
-from server.models.records import OutputRecordBase
+import json
 
+from server.models.artifact import ArtifactReference
+from core.protocol.message_types import MSG_TYPE_RESULT
+from core.protocol.references import ReferenceType, entity_reference
+from core.utils.command_output import ResultEventType
+from core.utils.json_utils import compact_json_dumps
+from server.config.config import COMMAND_HISTORY_MAX_RESULT_FIELD_BYTES
 
 
 class HistoryWriteService:
@@ -25,7 +28,6 @@ class HistoryWriteService:
             'origin': activity['origin'], 'presentation': activity['presentation'],
             'status': 'running', 'invocation': dict(activity['invocation']),
             'resolved': dict(activity['resolved']),
-            'result': {'output_records': [], 'result_events': []},
             'summary': activity['summary'],
             'created_at': activity.get('created_at') or when,
             'started_at': when, 'finished_at': None, 'references': list(activity.get('references', [])),
@@ -35,67 +37,75 @@ class HistoryWriteService:
         return activity_id
 
     def interrupt_orphaned_activities(self):
-        """Mark unfinished Activity records from a previous Server process as interrupted."""
-        with self.store._lock, self.store.database.transaction():
-            rows = self.store.database.connection().execute(
-                "SELECT machine_id, activity_id FROM activity_records "
-                "WHERE status = 'running'"
-            ).fetchall()
-            for row in rows:
-                entry = self.store._get_entry(row['machine_id'], row['activity_id'])
-                if not entry:
-                    continue
-                records = entry['result'].setdefault('output_records', [])
-                if len(records) < self.store.MAX_OUTPUT_RECORDS and sum(len(r['text']) for r in records) + len('Server restarted') <= self.store.MAX_OUTPUT_RECORD_CHARS:
-                    records.append(OutputRecordBase(seq=len(records)+1, status=0, text='Server restarted', eof=1, created_at=self.store._now_iso()).to_dict())
-                entry['status'] = 'interrupted'
-                entry['finished_at'] = self.store._now_iso()
-                self.store._update_entry(entry)
+        """Finish Activity records left active by a previous Server process."""
+        with self.store._lock, self.store.database.transaction() as database:
+            database.execute(
+                "UPDATE activity_records SET status = 'interrupted', finished_at = ? "
+                "WHERE status IN ('running', 'cancelling')",
+                (self.store._now_iso(),),
+            )
 
-    def append_output_for_connection(self, conn, entry_id, status, text, eof=0, *, active_only=False, envelope=None):
-        if conn is None or not entry_id:
-            return
-        with self.store._lock, self.store.database.transaction():
-            entry = self.store._get_entry(self.store._get_machine_id_from_conn(conn), entry_id)
-            if entry is None or (active_only and entry['status'] not in {'running', 'cancelling'}):
-                return
-            result = entry['result']
-            records = result.setdefault('output_records', [])
-            total_chars = sum(len(str(record.get('text') or '')) for record in records)
-            remaining = max(0, self.store.MAX_OUTPUT_RECORD_CHARS - total_chars)
-            output = self.store._safe_text(text)
-            if not output:
-                return
-            if remaining and len(records) < self.store.MAX_OUTPUT_RECORDS:
-                saved = output[:remaining]
-                records.append(OutputRecordBase(seq=len(records) + 1, status=int(status or 0),
-                                                text=saved, eof=int(eof or 0),
-                                                created_at=self.store._now_iso()).to_dict())
-                if len(saved) < len(output):
-                    result['truncated'] = True
-            else:
-                result['truncated'] = True
-            self.store._update_entry(entry)
+    @staticmethod
+    def _size_within(parts, remaining):
+        size = 0
+        for part in parts:
+            if len(part) > remaining - size:
+                return None
+            size += len(part.encode('utf-8'))
+            if size > remaining:
+                return None
+        return size
 
-    def append_result_event_for_connection(self, conn, entry_id, event):
-        """Temporary raw Result inspection, isolated from user-visible Output Records."""
-        if conn is None or not entry_id or not isinstance(event, dict):
+    def append_client_result(self, conn, entry_id, event):
+        if (conn is None or not entry_id or event.get('type') != MSG_TYPE_RESULT
+                or event.get('event_type') not in ResultEventType._value2member_map_):
             return
-        if event.get('event_type') not in ('started', 'progress', 'chunk', 'completed'):
-            return
-        with self.store._lock, self.store.database.transaction():
-            entry = self.store._get_entry(self.store._get_machine_id_from_conn(conn), entry_id)
-            if entry is None:
+        machine_id = self.store._get_machine_id_from_conn(conn)
+        with self.store._lock, self.store.database.transaction() as database:
+            row = database.execute(
+                "SELECT result_message_bytes, result_data_bytes, result_omitted, result_summary "
+                "FROM activity_records WHERE machine_id = ? AND activity_id = ? "
+                "AND status IN ('running', 'cancelling')",
+                (machine_id, entry_id),
+            ).fetchone()
+            if row is None:
                 return
-            result = entry['result']
-            events = result.setdefault('result_events', [])
-            size = len(compact_json_dumps(event))
-            used = sum(len(compact_json_dumps(item)) for item in events)
-            if len(events) < self.store.MAX_OUTPUT_RECORDS and used + size <= self.store.MAX_OUTPUT_RECORD_CHARS:
-                events.append(dict(event))
-            else:
-                result['result_events_truncated'] = True
-            self.store._update_entry(entry)
+
+            result = dict(event)
+            omitted = bool(row['result_omitted'])
+            message_bytes = row['result_message_bytes']
+            data_bytes = row['result_data_bytes']
+            limit = COMMAND_HISTORY_MAX_RESULT_FIELD_BYTES
+            # Omit an oversized field without changing the wire packet or other retained fields.
+            if 'message' in result:
+                size = self._size_within((result['message'],), max(0, limit - message_bytes))
+                if size is None:
+                    del result['message']
+                    omitted = True
+                else:
+                    message_bytes += size
+            if 'data' in result:
+                encoder = json.JSONEncoder(ensure_ascii=False, separators=(',', ':'))
+                size = self._size_within(encoder.iterencode(result['data']), max(0, limit - data_bytes))
+                if size is None:
+                    del result['data']
+                    omitted = True
+                else:
+                    data_bytes += size
+
+            summary = row['result_summary']
+            if result['event_type'] == 'completed':
+                text = result.get('message', '').strip()
+                summary = text if text and len(text) <= 256 and '\n' not in text and '\r' not in text else ''
+            # Append the packet and its Server history time at the same array index.
+            database.execute(
+                "UPDATE activity_records SET result_json = "
+                "json_insert(result_json, '$.result[#]', json(?), '$.recorded_at[#]', ?), "
+                "result_message_bytes = ?, result_data_bytes = ?, result_omitted = ?, result_summary = ? "
+                "WHERE machine_id = ? AND activity_id = ?",
+                (compact_json_dumps(result), self.store._now_iso(), message_bytes, data_bytes,
+                 int(omitted), summary, machine_id, entry_id),
+            )
 
     def append_file_for_connection(self, conn, entry_id, file_info):
         if conn is None or not entry_id or not isinstance(file_info, dict):

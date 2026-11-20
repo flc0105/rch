@@ -27,7 +27,6 @@ class PinnedCommandStore:
         copied['status'] = str(copied.get('status') or '').strip()
         copied['created_at'] = str(copied.get('created_at') or '').strip()
         copied['files'] = list(copied.get('files') or [])
-        copied.pop('output_records', None)
         return copied
 
     def get_items(self, machine_id: str) -> list:

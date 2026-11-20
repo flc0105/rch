@@ -1,5 +1,6 @@
 """Persistent data, artifact identity and document revisions."""
 
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -103,3 +104,139 @@ def test_document_write_cannot_escape_its_root(library, tmp_path):
     with pytest.raises(ValueError):
         library.create_document('notes', '../outside.md')
     assert external.read_bytes() == b'outside data'
+
+
+def test_activity_records_each_result_and_server_time_together(tmp_path, monkeypatch):
+    from core.protocol.message_queue import ResultChunk
+    from core.protocol.result_envelope import build_result_wire_event, result_wire_event
+    from server.application.history.activity_coordinator import ActivityCoordinator
+    from server.application.history.activity_definitions import ActivityOperation
+    from server.application.history.command_dispatch_adapter import CommandDispatchAdapter
+    from server.application.history.history_store import CommandHistoryStore
+
+    db = RchDatabase(str(tmp_path / 'rch.db'))
+    store = CommandHistoryStore(db)
+    coordinator = ActivityCoordinator(store)
+    conn = SimpleNamespace(session_info=SimpleNamespace(machine_id='m', client_id='c'))
+    request = {'type': 'control', 'domain': 'script', 'action': 'run',
+               'payload': {'script_name': 'demo', 'source': 'print("demo")', 'params': {'source': 'argument'}}}
+    entry_id = coordinator.prepare(conn, ActivityOperation('script', 'run', request['payload']))
+    assert coordinator.dispatch(conn, entry_id, data=request)
+    first = build_result_wire_event(1, {'event_type': 'chunk', 'message': 'First'})
+    assert set(first) == {'type', 'id', 'event_type', 'message'}
+    final = result_wire_event(1, 1, {'event_type': 'completed', 'status': 'success',
+                                    'message': 'Finished', 'data': {'answer': 42}})
+    assert set(final) == {'type', 'id', 'event_type', 'status', 'message', 'data'}
+    adapter = CommandDispatchAdapter(coordinator, lambda _: conn)
+    chunks = adapter.observe_result(conn, entry_id, request, [
+        ResultChunk(1, first, 0, event=first),
+        ResultChunk(1, final, 1, event=final),
+    ])
+    first_time = '2026-11-20T01:02:01.123+00:00'
+    final_time = '2026-11-20T01:02:03.456+00:00'
+    monkeypatch.setattr(store, '_now_iso', lambda: first_time)
+    assert next(chunks).event is first
+    running = store.view_service.get_execution_entry('m', entry_id)
+    assert running['status'] == 'running'
+    assert running['result'] == [first]
+    assert running['recorded_at'] == [first_time]
+
+    monkeypatch.setattr(store, '_now_iso', lambda: final_time)
+    assert next(chunks).event is final
+    assert list(chunks) == []
+    assert request['payload']['source'] == 'print("demo")'
+
+    entry = store.view_service.get_execution_entry('m', entry_id)
+    assert entry['resolved']['payload'] == {'script_name': 'demo', 'params': {'source': 'argument'}}
+    assert entry['result'] == [first, final]
+    assert entry['recorded_at'] == [first_time, final_time]
+    assert entry['status'] == 'success'
+    stored, = db.connection().execute('SELECT result_json FROM activity_records WHERE activity_id = ?', (entry_id,)).fetchone()
+    assert json.loads(stored) == {'result': [first, final], 'recorded_at': [first_time, final_time]}
+    public_row = store.view_service.get_execution_history_page('m')['items'][0]
+    assert public_row['activity_id'] == entry_id
+    assert public_row['result_summary'] == 'Finished'
+    assert not {'result', 'recorded_at', 'invocation', 'resolved'} & public_row.keys()
+    assert not store.view_service.get_execution_entry('wrong-machine', entry_id)
+    db.close_thread_connection()
+
+
+def test_activity_result_budgets_preserve_packets_after_field_omission(tmp_path):
+    from server.application.history.activity_coordinator import ActivityCoordinator
+    from server.application.history.activity_definitions import ActivityOperation
+    from server.application.history.history_store import CommandHistoryStore
+
+    db = RchDatabase(str(tmp_path / 'rch.db'))
+    store = CommandHistoryStore(db)
+    coordinator = ActivityCoordinator(store)
+    conn = SimpleNamespace(session_info=SimpleNamespace(machine_id='m', client_id='c'))
+    request = {'type': 'control', 'domain': 'remote_files', 'action': 'save_file',
+               'payload': {'path': 'notes.txt', 'encoding': 'utf-8', 'content': 'new text'}}
+    entry_id = coordinator.prepare(conn, ActivityOperation('remote_files', 'save_file', request['payload']))
+    assert coordinator.dispatch(conn, entry_id, data=request)
+    assert request['payload']['content'] == 'new text'
+
+    chunk = {'type': 'result', 'id': 1, 'event_type': 'chunk'}
+    for _ in range(257):
+        coordinator.append_client_result(conn, entry_id, {**chunk, 'message': 'x'})
+    exact = {**chunk, 'message': 'é' * 130943 + 'x', 'data': {'small': True}}
+    coordinator.append_client_result(conn, entry_id, exact)
+    entry = store.view_service.get_execution_entry('m', entry_id)
+    assert len(entry['result']) == 258
+    assert entry['result'][-1] == exact
+    assert not entry['result_omitted']
+    assert 'content' not in entry['resolved']['payload']
+
+    coordinator.append_client_result(conn, entry_id, {**chunk, 'message': 'x', 'data': [1, 2]})
+    final = {'type': 'result', 'id': 1, 'event_type': 'completed', 'status': 'success',
+             'message': 'Done', 'data': {'large': 'x' * 262145},
+             'references': [{'type': 'artifact', 'id': 'file'}]}
+    coordinator.append_client_result(conn, entry_id, final)
+    coordinator.finish(conn, entry_id, True)
+    entry = store.view_service.get_execution_entry('m', entry_id)
+    assert entry['result'][-3:] == [
+        exact,
+        {**chunk, 'data': [1, 2]},
+        {key: value for key, value in final.items() if key not in ('message', 'data')},
+    ]
+    assert entry['result_omitted']
+    assert entry['result_field_limit_bytes'] == 256 * 1024
+    assert len(entry['recorded_at']) == len(entry['result'])
+    assert entry['status'] == 'success'
+    assert final['message'] == 'Done'
+    db.close_thread_connection()
+
+
+def test_activity_only_omits_large_data_and_does_not_persist_disconnect(tmp_path):
+    from server.application.history.activity_coordinator import ActivityCoordinator
+    from server.application.history.activity_definitions import ActivityOperation
+    from server.application.history.command_dispatch_adapter import CommandDispatchAdapter
+    from server.application.history.history_store import CommandHistoryStore
+    from server.connection.runtime.session_runtime import ClientSessionRuntime
+
+    db = RchDatabase(str(tmp_path / 'rch.db'))
+    store = CommandHistoryStore(db)
+    coordinator = ActivityCoordinator(store)
+    conn = SimpleNamespace(session_info=SimpleNamespace(machine_id='m', client_id='c'),
+                           context=SimpleNamespace(), send_cancel=lambda *_: None)
+    request = {'type': 'control', 'id': 42, 'domain': 'script', 'action': 'run', 'payload': {}}
+    entry_id = coordinator.prepare(conn, ActivityOperation('script', 'run', {}))
+    assert coordinator.dispatch(conn, entry_id, data=request)
+
+    runtime = ClientSessionRuntime()
+    queue = runtime.pending_results.register(42)
+    packet = {'type': 'result', 'id': 42, 'event_type': 'chunk',
+              'message': 'Small message', 'data': ['x' * 262145]}
+    assert runtime.pending_results.deliver(42, packet)
+    runtime.pending_results.close()
+    chunks = runtime.wait_for_result(conn, 42, 'test', results=queue)
+    adapter = CommandDispatchAdapter(coordinator, lambda _: conn)
+    delivered = list(adapter.observe_result(conn, entry_id, request, chunks))
+    assert delivered[0].event is packet
+    assert delivered[-1].event is None
+
+    entry = store.view_service.get_execution_entry('m', entry_id)
+    assert entry['result'] == [{key: value for key, value in packet.items() if key != 'data'}]
+    assert entry['result_omitted']
+    assert entry['status'] == 'interrupted'
+    db.close_thread_connection()

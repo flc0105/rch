@@ -170,7 +170,7 @@ def test_replaced_connection_pending_results_are_session_scoped():
     acceptor = SessionAcceptor(SimpleNamespace(connections=manager, web_service=SimpleNamespace(connection_api=api)))
     acceptor._handle_connection_closed(old)
     assert closed == [] and replaced == [old]
-    assert first.get(timeout=.1)['status'] == 'interrupted'
+    assert first.get(timeout=.1) is None
     assert manager.get_by_client_id('same') is new
     assert new.runtime.pending_results.deliver(1, {'type':'result','id':1,'event_type':'completed','status':'success','message':'new'})
     assert second.get(timeout=.1)['message'] == 'new'

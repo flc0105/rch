@@ -41,11 +41,8 @@ class PendingResults:
     def close(self):
         with self._lock:
             self._closed = True
-            for request_id, (result_queue, finished) in self._items.items():
+            for result_queue, finished in self._items.values():
                 if not finished:
-                    result_queue.put({
-                        'type': 'result', 'id': request_id,
-                        'event_type': 'completed', 'status': 'interrupted',
-                        'message': 'Client disconnected',
-                    })
+                    # Wake local waiters without adding a fabricated Client packet.
+                    result_queue.put(None)
             self._items.clear()

@@ -117,7 +117,7 @@ def test_pending_queue_is_event_native_and_rejects_duplicate_terminal():
     assert result_queue.empty()
 
 
-def test_pending_disconnect_inserts_authoritative_interrupted_completion():
+def test_pending_disconnect_finishes_locally_without_a_wire_result():
     runtime = ClientSessionRuntime()
     events = runtime.pending_results.register(99)
     runtime.pending_results.deliver(99, packet(99, 'chunk', message='half'))
@@ -126,8 +126,9 @@ def test_pending_disconnect_inserts_authoritative_interrupted_completion():
     result = list(runtime.wait_for_result(conn, 99, 'test', results=events))
     assert len(result) == 2
     assert result[0].event['event_type'] == 'chunk'
-    assert result[-1].event['event_type'] == 'completed'
-    assert result[-1].event['status'] == 'interrupted'
+    assert result[-1].event is None
+    assert result[-1][1]['event_type'] == 'completed'
+    assert result[-1][1]['status'] == 'interrupted'
     assert result[-1][0] == 0 and result[-1].eof
 
 

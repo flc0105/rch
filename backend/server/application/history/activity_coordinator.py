@@ -4,6 +4,7 @@ import threading
 import uuid
 
 from server.application.history.activity_definitions import ActivityKind
+from server.application.history.control_activity import resolved_snapshot
 
 
 class ActivityCoordinator:
@@ -11,7 +12,6 @@ class ActivityCoordinator:
         self.history_store = history_store
         self.quick_store = history_store.quick_store
         self._pending = {}
-        self._request_output = set()
         self._lock = threading.RLock()
 
     def prepare(self, conn, operation, *, entry_id='', quick_command=None):
@@ -59,7 +59,7 @@ class ActivityCoordinator:
                 return False
             # Hold the lock through insertion so an early artifact event cannot
             # observe a gap between pending intent and the persisted Activity.
-            record = {**pending, 'resolved': deepcopy(data)}
+            record = {**pending, 'resolved': resolved_snapshot(data)}
             self.history_store.write_service.create_activity_for_dispatch(conn, entry_id, record)
             self._pending.pop(entry_id)
             for artifact in pending['artifacts']:
@@ -68,14 +68,6 @@ class ActivityCoordinator:
 
     def add_references(self, conn, entry_id, references):
         self.history_store.write_service.add_references(conn, entry_id, references)
-
-    def own_request_output(self, conn, entry_id):
-        with self._lock:
-            self._request_output.add((id(conn), entry_id))
-
-    def release_request_output(self, conn, entry_id):
-        with self._lock:
-            self._request_output.discard((id(conn), entry_id))
 
     def drop(self, entry_id):
         with self._lock:
@@ -98,17 +90,8 @@ class ActivityCoordinator:
         with self._lock:
             return self._pending.pop(entry_id, None) is not None
 
-    def append_output(self, conn, entry_id, status, text, eof=0):
-        with self._lock:
-            if (id(conn), entry_id) in self._request_output:
-                return
-        self.history_store.write_service.append_output_for_connection(conn, entry_id, status, text, eof, active_only=True)
-
-    def append_result_event(self, conn, entry_id, event):
-        self.history_store.write_service.append_result_event_for_connection(conn, entry_id, event)
-
-    def append_request_output(self, conn, entry_id, status, text, eof=0, *, envelope=None):
-        self.history_store.write_service.append_output_for_connection(conn, entry_id, status, text, eof, envelope=envelope)
+    def append_client_result(self, conn, entry_id, event):
+        self.history_store.write_service.append_client_result(conn, entry_id, event)
 
     def update_status(self, conn, entry_id, status):
         if entry_id:

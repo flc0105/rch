@@ -150,6 +150,12 @@ class ClientSessionRuntime:
                     except OSError:
                         pass
                     raise TimeoutError('Control request timed out') from None
+                if event is None:
+                    interrupted = {
+                        'event_type': 'completed', 'status': 'interrupted', 'message': 'Client disconnected',
+                    }
+                    yield ResultChunk(0, interrupted, True, terminal_authoritative)
+                    break
                 # Business executors still consume ResultChunk's text/tuple view;
                 # the pending queue and request lifecycle use the original event.
                 final = event['event_type'] == 'completed'

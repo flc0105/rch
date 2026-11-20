@@ -140,8 +140,11 @@
 | `presentation` | 活动的展示语义，辅助详情组织内容。 |
 | `status` | 当前/最终执行状态，决定成功、失败、取消等状态显示和 Errors 筛选。 |
 | `invocation_json` | 原始入口命令；UI 调用为空对象。 |
-| `resolved_json` | 实际成功下发的完整协议消息。 |
-| `result_json` | 受容量限制的 Output Records，实际截断时才记录标记。 |
+| `resolved_json` | 实际下发的请求快照。按 Control 动作省略保存文件的正文与脚本源码。 |
+| `result_json` | JSON 对象。包含按接收顺序的 `result` 和同序的 Server 历史写入时间 `recorded_at`。超预算的 Result 正文字段省略。 |
+| `result_message_bytes`、`result_data_bytes` | 分别累计已保存的 `message` 文本与紧凑 JSON `data` 的 UTF-8 字节。 |
+| `result_omitted` | 是否有正文字段因超预算而省略。 |
+| `result_summary` | Activity 列表使用的简短结束说明。 |
 | `created_at` | 业务活动的创建时间。 |
 | `started_at`、`started_at_ms` | 执行开始时间及排序用毫秒值。 |
 | `finished_at` | 已结束操作的完成时间；未结束时可为空。 |

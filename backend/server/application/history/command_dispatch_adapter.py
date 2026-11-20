@@ -3,13 +3,11 @@ import contextvars
 import functools
 import inspect
 import logging
-import json
 import uuid
 
 from core.protocol.control import ControlDomain, ScriptAction
 from server.application.history.control_activity import should_record
 from core.protocol.message_queue import result_terminal_status
-from core.utils.command_output import ResultEventType
 from server.application.command.command_types import COMMAND_TYPE_CONTROL
 from server.application.history.activity_definitions import (
     ActivityAction, ActivityKind, ActivityOperation, operation_summary,
@@ -104,9 +102,7 @@ class CommandDispatchAdapter:
             self.coordinator.drop(entry_id)
         elif entry_id:
             try:
-                status, message, details = evaluate_operation(operation, result)
-                if message:
-                    self.coordinator.append_output(conn, entry_id, int(status == 'success'), message)
+                status = operation_status(operation, result)
                 self.coordinator.finish(conn, entry_id, status == 'success', status=status)
             except Exception:
                 logger.exception('Unable to finalize command Activity')
@@ -211,34 +207,18 @@ class CommandDispatchAdapter:
             yield from rows
             return
         final = None
-        self.coordinator.own_request_output(conn, entry_id)
         try:
             for item in rows:
                 status, result = item[:2]
                 eof = bool(getattr(item, 'eof', False))
                 if authoritative and hasattr(item, 'eof'):
                     item.terminal_authoritative = True
-                wire = getattr(item, 'event', None)
-                if isinstance(wire, dict):
-                    self.coordinator.append_result_event(conn, entry_id, wire)
                 if eof:
                     final = result_terminal_status(status, result)
                 try:
-                    if isinstance(result, dict) and result.get('event_type') in ResultEventType._value2member_map_:
-                        # Data is machine-readable; Output Records keep only
-                        # the visible projection, not a second Envelope copy.
-                        from core.utils.output_marker import render_result_message
-                        message = render_result_message(result)
-                        if not message and 'data' in result:
-                            message = json.dumps(result['data'], ensure_ascii=False)
-                    elif isinstance(result, str):
-                        message = result
-                    elif result is None:
-                        message = ''
-                    else:
-                        message = json.dumps(result, ensure_ascii=False)
-                    if message:
-                        self.coordinator.append_request_output(conn, entry_id, status, message, eof)
+                    wire = getattr(item, 'event', None)
+                    if isinstance(wire, dict):
+                        self.coordinator.append_client_result(conn, entry_id, wire)
                     if eof and isinstance(result, dict):
                         self.coordinator.add_references(conn, entry_id, result.get('references'))
                     if eof and authoritative:
@@ -247,25 +227,29 @@ class CommandDispatchAdapter:
                     logger.exception('Unable to record request result')
                 yield item
             if authoritative and final is None:
-                self.coordinator.finish(conn, entry_id, False, status='interrupted')
+                self._interrupt_request(conn, entry_id, 'interrupted')
         except BaseException as exc:
             if authoritative and final is None:
                 final = ('timed_out' if isinstance(exc, TimeoutError) else
                          'interrupted' if isinstance(exc, (ConnectionError, EOFError, GeneratorExit)) else 'error')
-                self.coordinator.finish(conn, entry_id, False, status=final)
+                self._interrupt_request(conn, entry_id, final)
             raise
-        finally:
-            self.coordinator.release_request_output(conn, entry_id)
+
+    def _interrupt_request(self, conn, entry_id, status):
+        try:
+            self.coordinator.finish(conn, entry_id, False, status=status)
+        except Exception:
+            logger.exception('Unable to finalize interrupted request Activity')
 
 
-def evaluate_operation(operation, result):
+def operation_status(operation, result):
     """Evaluate only the safe returned operation result, never encoded Client command payloads."""
     if operation.kind == ActivityKind.EXTERNAL_TOOL:
         if not isinstance(result, dict):
-            return 'error', 'External tool operation failed', {}
+            return 'error'
         action = operation.action
         if action == 'run_oneshot' and result.get('timed_out') is True:
-            return 'timed_out', 'External tool operation timed out', {}
+            return 'timed_out'
         checks = {
             'install_package': result.get('installed') is True,
             'uninstall_package': result.get('installed') is False,
@@ -276,11 +260,5 @@ def evaluate_operation(operation, result):
             'remove_instance': result.get('removed') is True,
             'clear_instance_logs': result.get('cleared') is True,
         }
-        ok = checks.get(action, False)
-        noun = operation.arguments.get('package_id') or operation.arguments.get('tool_id') or 'External tool'
-        instance = operation.arguments.get('instance_id') or result.get('instance_id')
-        summary = f'{action.replace("_", " ").capitalize()}: {noun}'
-        if instance:
-            summary += f' ({instance})'
-        return ('success' if ok else 'error', summary + (' completed' if ok else ' failed'), {})
-    return 'success', '', {}
+        return 'success' if checks.get(action, False) else 'error'
+    return 'success'

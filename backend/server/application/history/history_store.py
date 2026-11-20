@@ -8,16 +8,9 @@ from server.application.history.history_view_service import HistoryViewService
 from server.application.history.history_write_service import HistoryWriteService
 from server.application.history.pinned_command_store import PinnedCommandStore
 from server.application.history.quick_history import QuickHistoryStore
-from server.config.config import (
-    COMMAND_HISTORY_MAX_OUTPUT_RECORD_CHARS,
-    COMMAND_HISTORY_MAX_OUTPUT_RECORDS,
-)
 
 
 class CommandHistoryStore:
-    MAX_OUTPUT_RECORD_CHARS = COMMAND_HISTORY_MAX_OUTPUT_RECORD_CHARS
-    MAX_OUTPUT_RECORDS = COMMAND_HISTORY_MAX_OUTPUT_RECORDS
-
     def __init__(self, database):
         self.database = database
         self._lock = threading.RLock()
@@ -44,8 +37,15 @@ class CommandHistoryStore:
                 started_at_ms INTEGER NOT NULL,
                 finished_at TEXT,
                 references_json TEXT NOT NULL DEFAULT '[]',
-                summary TEXT NOT NULL DEFAULT ''
+                summary TEXT NOT NULL DEFAULT '',
+                result_message_bytes INTEGER NOT NULL DEFAULT 0,
+                result_data_bytes INTEGER NOT NULL DEFAULT 0,
+                result_omitted INTEGER NOT NULL DEFAULT 0,
+                result_summary TEXT NOT NULL DEFAULT ''
             )''')
+            columns = {row[1] for row in conn.execute('PRAGMA table_info(activity_records)')}
+            if not {'result_message_bytes', 'result_data_bytes', 'result_omitted', 'result_summary'} <= columns:
+                raise RuntimeError('rch.db requires the one-time Client Result migration before starting Server')
             conn.execute('''CREATE INDEX IF NOT EXISTS idx_activity_machine_time
                 ON activity_records(machine_id, started_at_ms DESC, activity_id DESC)''')
             conn.execute('''CREATE INDEX IF NOT EXISTS idx_activity_machine_status
@@ -70,13 +70,10 @@ class CommandHistoryStore:
         return getattr(info, 'machine_id', '') or 'unknown_machine'
 
     @staticmethod
-    def _safe_text(value):
-        return '' if value is None else str(value)
-
-    @staticmethod
     def _row_to_entry(row):
         if row is None:
             return None
+        stored_result = json_loads_typed(row['result_json'], {})
         return {
             'activity_id': row['activity_id'], 'machine_id': row['machine_id'],
             'client_id': row['client_id'], 'kind': row['kind'],
@@ -84,7 +81,10 @@ class CommandHistoryStore:
             'presentation': row['presentation'], 'status': row['status'],
             'invocation': json_loads_typed(row['invocation_json'], {}),
             'resolved': json_loads_typed(row['resolved_json'], {}),
-            'result': json_loads_typed(row['result_json'], {'output_records': []}),
+            'result': stored_result.get('result', []),
+            'recorded_at': stored_result.get('recorded_at', []),
+            'result_omitted': bool(row['result_omitted']),
+            'result_summary': row['result_summary'],
             'created_at': row['created_at'], 'started_at': row['started_at'],
             'finished_at': row['finished_at'],
             'references': json_loads_typed(row['references_json'], []),
@@ -110,17 +110,17 @@ class CommandHistoryStore:
             entry['activity_id'], entry['machine_id'], entry['client_id'],
             entry['kind'], entry['action'], entry['origin'], entry['presentation'],
             entry['status'], compact_json_dumps(entry['invocation']),
-            compact_json_dumps(entry['resolved']), compact_json_dumps(entry['result']),
+            compact_json_dumps(entry['resolved']), compact_json_dumps({'result': [], 'recorded_at': []}),
             entry['created_at'], entry['started_at'], started_ms, entry['finished_at'],
             compact_json_dumps(entry['references']), entry['summary'],
         ))
 
     def _update_entry(self, entry):
         self.database.connection().execute('''
-            UPDATE activity_records SET status = ?, result_json = ?, references_json = ?,
+            UPDATE activity_records SET status = ?, references_json = ?,
             finished_at = ? WHERE machine_id = ? AND activity_id = ?
         ''', (
-            entry['status'], compact_json_dumps(entry['result']),
+            entry['status'],
             compact_json_dumps(entry['references']), entry['finished_at'], entry['machine_id'], entry['activity_id'],
         ))
 
@@ -130,7 +130,14 @@ class CommandHistoryStore:
             cursor_ms, cursor_id = cursor
             clauses.append('(started_at_ms < ? OR (started_at_ms = ? AND activity_id < ?))')
             params.extend([cursor_ms, cursor_ms, cursor_id])
-        sql = f"SELECT * FROM activity_records WHERE {' AND '.join(clauses)} ORDER BY started_at_ms DESC, activity_id DESC"
+        sql = f"""
+            SELECT activity_id, machine_id, client_id, kind, action, origin, presentation, status,
+                   created_at, started_at, started_at_ms, finished_at, summary, result_summary,
+                   result_omitted, (SELECT COUNT(*) FROM json_each(references_json)
+                                    WHERE json_extract(value, '$.type') = 'artifact') AS file_count
+            FROM activity_records WHERE {' AND '.join(clauses)}
+            ORDER BY started_at_ms DESC, activity_id DESC
+        """
         if limit is not None:
             sql += ' LIMIT ?'
             params.append(int(limit))
@@ -160,9 +167,6 @@ class CommandHistoryStore:
         row = self.database.connection().execute(
             f"SELECT COUNT(*) FROM activity_records WHERE {' AND '.join(clauses)}", tuple(params)).fetchone()
         return int(row[0] if row else 0)
-
-    def append_output_for_connection(self, conn, entry_id, status, text, eof=0):
-        return self.write_service.append_output_for_connection(conn, entry_id, status, text, eof=eof)
 
     def append_file_for_connection(self, conn, entry_id, artifact):
         return self.write_service.append_file_for_connection(conn, entry_id, artifact)

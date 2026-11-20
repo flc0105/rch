@@ -3,7 +3,6 @@ import os
 import subprocess
 
 from client.commands.acmd.decorators import argument_command
-from client.runtime.ios_util import show_ios_alert
 from client.runtime.mac_util import escape_osascript_text
 from core.commands.argument_models import ArgumentCommandSpec, ArgumentOptionSpec
 
@@ -57,4 +56,6 @@ Add-Type -AssemblyName System.Windows.Forms
 
 
 def _show_ios_message_box(owner, title, message):
-    show_ios_alert(title, message)
+    import console
+
+    console.alert(title, message, 'OK', hide_cancel_button=True)

@@ -12,7 +12,12 @@
     "git_export": "git archive --format=zip -o source.zip <commit>",
     "git_history": "git log --date=format:'%Y-%m-%d %H:%M:%S' --pretty=format:\"%h %cd %s\"",
     "sleep_py": "pyexec_stream import time; time.sleep(<sec>)",
-    "commit": "git add . && git commit -m '<message>'"
+    "commit": "git add . && git commit -m '<message>'",
+    "clip_clear": "pyexec import sys,subprocess,ctypes; subprocess.run(['pbcopy'],input=b'',check=True) if sys.platform=='darwin' else (ctypes.windll.user32.OpenClipboard(0) and (ctypes.windll.user32.EmptyClipboard(),ctypes.windll.user32.CloseClipboard()))",
+    "open_here": "pyexec import os,sys,subprocess; subprocess.Popen(['open' if sys.platform=='darwin' else 'explorer.exe',os.getcwd()])",
+    "lockscr": "pyexec import sys,subprocess,ctypes; subprocess.run(['/System/Library/CoreServices/Menu Extras/User.menu/Contents/Resources/CGSession','-suspend']) if sys.platform=='darwin' else ctypes.windll.user32.LockWorkStation()",
+    "dir_size": "pyexec import pathlib,sys,math; p=pathlib.Path(\"<path>\"); b=sum(x.stat().st_size for x in p.rglob('*') if x.is_file()); u=('B','KiB','MiB','GiB','TiB'); i=min(int(math.log(max(b,1),1024)),4); print(f'{b/1024**i:.1f} {u[i]}')",
+    "list_sizes": "pyexec from pathlib import Path; z=lambda p:sum(f.stat().st_size for f in p.rglob('*') if f.is_file()) if p.is_dir() else p.stat().st_size; u='B KiB MiB GiB TiB'.split(); a=sorted(((p,z(p)) for p in Path('.').iterdir()),key=lambda t:-t[1]); [print(f'{n/1024**(i:=min((max(n,1).bit_length()-1)//10,4)):>7.1f} {u[i]:<3} {p.name}{\"/\" if p.is_dir() else \"\"}') for p,n in a]"
   },
   "win": {
     "list_av": "powershell Get-CimInstance -Namespace root/SecurityCenter2 -ClassName AntivirusProduct ^| Select-Object displayName",

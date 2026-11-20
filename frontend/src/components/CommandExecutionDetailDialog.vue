@@ -8,10 +8,9 @@
     class="fixed-dialog command-execution-detail-dialog rch-result-detail-fullscreen"
     @update:model-value="$emit('update:visible', $event)"
   >
-    <div
-      v-if="entry"
-      class="fixed-dialog-body"
-    >
+    <div v-if="loading" class="fixed-dialog-body empty-state">Loading Activity Detail…</div>
+    <div v-else-if="entry" class="fixed-dialog-body">
+
       <div class="background-job-stats">
         <div class="background-job-stat">
           <div class="background-job-stat-label">Status</div>
@@ -52,6 +51,14 @@
           <div class="background-job-stat-label">Resolved</div>
           <div class="background-job-stat-value activity-single-line-value">{{ getActivityResolved(entry) || '-' }}</div>
         </div>
+        <div class="background-job-stat activity-value-card"
+             role="button" tabindex="0" title="View full result JSON"
+             @click="openResult"
+             @keydown.enter.prevent="openResult"
+             @keydown.space.prevent="openResult">
+          <div class="background-job-stat-label">Result</div>
+          <div class="background-job-stat-value activity-single-line-value">{{ resultPreview }}</div>
+        </div>
         <div class="background-job-stat">
           <div class="background-job-stat-label">Duration</div>
           <div class="background-job-stat-value">
@@ -62,14 +69,14 @@
         <div class="background-job-stat">
           <div class="background-job-stat-label">Started</div>
           <div class="background-job-stat-value">
-            {{ formatDateTimeStandard(entry.started_at) || '-' }}
+            {{ formatDateTimeLocal(entry.started_at) }}
           </div>
         </div>
 
         <div class="background-job-stat">
           <div class="background-job-stat-label">Finished</div>
           <div class="background-job-stat-value">
-            {{ formatDateTimeStandard(entry.finished_at) || '-' }}
+            {{ formatDateTimeLocal(entry.finished_at) }}
           </div>
         </div>
 
@@ -96,14 +103,6 @@
             <el-button
               size="small"
               plain
-              @click="openFullValue('Result', JSON.stringify(entry.result?.result_events || [], null, 2))"
-            >
-              Result
-            </el-button>
-
-            <el-button
-              size="small"
-              plain
               @click="$emit('toggle-output-sort')"
             >
               {{ outputSortOrder === 'desc' ? 'Oldest first' : 'Newest first' }}
@@ -112,12 +111,12 @@
 
           <div class="background-job-message-list">
             <div
-              v-for="(record, index) in outputRecords"
-              :key="`${entry.activity_id}-output-${index}`"
+              v-for="record in outputPage.records"
+              :key="record.seq"
               class="background-job-message-item"
             >
-              <div class="background-job-message-time">
-                {{ formatDateTimeStandard(record.created_at) || '-' }}
+              <div v-if="record.created_at" class="background-job-message-time">
+                {{ formatDateTimeLocal(record.created_at) }}
               </div>
 
               <div
@@ -127,23 +126,31 @@
                   'is-success': record.status === 1,
                 }"
               >
-                {{ formatCommandExecutionRecordText(record.text || '') }}
+                {{ record.text }}
               </div>
             </div>
 
             <div
-              v-if="entry.result?.truncated"
+              v-if="entry.result_omitted"
               class="empty-state compact"
             >
-              Output was truncated for storage safety
+              Output exceeded {{ resultFieldLimit }} and was not saved
             </div>
 
             <div
-              v-if="!entry.result?.output_records || !entry.result?.output_records.length"
+              v-else-if="!outputPage.records.length"
               class="empty-state compact"
             >
               No output records
             </div>
+            <el-button
+              v-if="outputPage.hasMore"
+              size="small"
+              plain
+              @click="loadMoreOutputRecords"
+            >
+              Load More
+            </el-button>
           </div>
         </div>
 
@@ -163,7 +170,7 @@
 
                 <div class="background-job-file-meta">
                   <span>{{ formatBytes(file.size || 0) }}</span>
-                  <span>{{ formatDateTimeStandard(file.saved_at) || '-' }}</span>
+                  <span>{{ formatDateTimeLocal(file.saved_at) }}</span>
                   <span v-if="getCommandExecutionFileStatusText(file)">
                     [{{ getCommandExecutionFileStatusText(file) }}]
                   </span>
@@ -214,6 +221,11 @@
 </template>
 
 <script>
+import { formatBytesHuman, formatDateTimeLocal } from '../utils/formatters.js'
+import { activityOutputRecords } from '../utils/activityOutput.js'
+
+const OUTPUT_PAGE_SIZE = 64
+
 export default {
   name: 'CommandExecutionDetailDialog',
 
@@ -223,14 +235,14 @@ export default {
       default: false,
     },
 
+    loading: {
+      type: Boolean,
+      default: false,
+    },
+
     entry: {
       type: Object,
       default: null,
-    },
-
-    outputRecords: {
-      type: Array,
-      default: () => [],
     },
 
     outputSortOrder: {
@@ -248,17 +260,7 @@ export default {
       required: true,
     },
 
-    formatDateTimeStandard: {
-      type: Function,
-      required: true,
-    },
-
     buildCommandExecutionSummary: {
-      type: Function,
-      required: true,
-    },
-
-    formatCommandExecutionRecordText: {
       type: Function,
       required: true,
     },
@@ -282,22 +284,61 @@ export default {
   ],
 
   data() {
-    return { fullValueVisible: false, fullValueTitle: '', fullValueText: '' }
+    return {
+      fullValueVisible: false,
+      fullValueTitle: '',
+      fullValueText: '',
+      outputRecordLimit: OUTPUT_PAGE_SIZE,
+    }
   },
 
   computed: {
+    resultPreview() {
+      const result = this.entry?.result
+      if (!result?.length) return '[]'
+      const first = JSON.stringify(result[0])
+      if (first.length > 512) return `[${first.slice(0, 512)}…`
+      return `[${first}${result.length > 1 ? ', …' : ''}]`
+    },
+    resultFieldLimit() {
+      return formatBytesHuman(this.entry.result_field_limit_bytes, { binaryUnits: true })
+    },
+    outputPage() {
+      const records = activityOutputRecords(this.entry?.result, {
+        recordedAt: this.entry?.recorded_at,
+        newestFirst: this.outputSortOrder === 'desc',
+        limit: this.outputRecordLimit + 1,
+      })
+      return {
+        records: records.slice(0, this.outputRecordLimit),
+        hasMore: records.length > this.outputRecordLimit,
+      }
+    },
     detailTitle() {
       return 'Activity Detail'
     },
   },
 
   watch: {
+    entry() {
+      this.outputRecordLimit = OUTPUT_PAGE_SIZE
+    },
+    outputSortOrder() {
+      this.outputRecordLimit = OUTPUT_PAGE_SIZE
+    },
     visible(nextVisible) {
       if (!nextVisible) this.fullValueVisible = false
     },
   },
 
   methods: {
+    formatDateTimeLocal,
+    loadMoreOutputRecords() {
+      this.outputRecordLimit += OUTPUT_PAGE_SIZE
+    },
+    openResult() {
+      this.openFullValue('Result', JSON.stringify(this.entry?.result || [], null, 2))
+    },
     getActivityResolved(entry) {
       const resolved = entry?.resolved
       return resolved && Object.keys(resolved).length ? JSON.stringify(resolved, null, 2) : '-'

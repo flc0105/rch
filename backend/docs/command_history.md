@@ -19,13 +19,13 @@ Server 接收请求时保留原始调用身份，解析 Server Builtin、Alias�
 
 记录类型包括 `command`、`alias`、`transfer`、`external_tool`、`pty`、`screen_view` 与所有 Control Domain（`script`、`remote_files`、`job`、`clipboard`、`configuration`、`process`、`watchdog`）。Control Action 默认 ALWAYS 记录；OPTIONAL 由 Server 设置决定（默认关闭）。文件传输仍归 `transfer`，Job 运行事件及监控采样不是独立 Control 请求。未知普通 Client 命令落到 Shell 的原有设计保持不变。
 
-同一用户操作至多记一条 Activity：`notify shell pwd`、`saveout shell pwd` 以 `invocation.command` 保留外部调用文本，`resolved` 保留真正下发的 Client 命令。`history run N` 和 `!N` 不写入 Quick，但只要回放实际向 Client 派发了命令，就创建一条 Activity：`invocation.command` 保留外层回放写法，`resolved` 保留实际派发的命令类型和内容。未成功派发则不落 Activity。Alias 保留原始命令（UI 调用不填写 Invocation），原有 Alias 名称保留在展示摘要。Script Library、`script exec <file>` 都是 `kind=script`，实际下发 `control(domain=script, action=run)`；Resolved 保存完整实际下发请求，包括脚本源码。
+同一用户操作至多记一条 Activity：`notify shell pwd`、`saveout shell pwd` 以 `invocation.command` 保留外部调用文本，`resolved` 保留真正下发的 Client 命令。`history run N` 和 `!N` 不写入 Quick，但只要回放实际向 Client 派发了命令，就创建一条 Activity：`invocation.command` 保留外层回放写法，`resolved` 保留实际派发的命令类型和内容。未成功派发则不落 Activity。Alias 保留原始命令（UI 调用不填写 Invocation），原有 Alias 名称保留在展示摘要。Script Library、`script exec <file>` 都是 `kind=script`，实际下发 `control(domain=script, action=run)`；Resolved 保留脚本名、参数和执行方式，省略脚本源码。
 
-Remote Files 的修改操作使用 `kind=remote_files`，统一记录为 `create_directory`、`delete_paths`、`rename_path`、`paste_paths`、`create_archive`、`extract_archive`、`save_file`。每次用户操作（包括批量处理）只创建一条 Activity。UI 调用的 Invocation 为空；Resolved 保存实际下发的完整请求，包括路径及保存正文。批量任务的 Client 终态明确表达失败事实，结构化报告保留成功数与失败项；部分成功或全部失败为 `error`，并在输出中保留数量和失败原因。 `inspect` 是调用参数，遵循所属 Action 的记录策略，不在记录层特判。
+Remote Files 的修改操作使用 `kind=remote_files`，统一记录为 `create_directory`、`delete_paths`、`rename_path`、`paste_paths`、`create_archive`、`extract_archive`、`save_file`。每次用户操作（包括批量处理）只创建一条 Activity。UI 调用的 Invocation 为空；Resolved 保留实际下发的路径、编码等参数，保存文件的正文省略。批量任务的 Client 终态明确表达失败事实，结构化报告保留成功数与失败项；部分成功或全部失败为 `error`，并在输出中保留数量和失败原因。 `inspect` 是调用参数，遵循所属 Action 的记录策略，不在记录层特判。
 
 ### Transfer 操作记录
 
-用户主动发起的 Remote Files Upload、Remote File Picker Upload、Remote Files 文件/ZIP Download、Clipboard 远程文件/目录 Download 及终端 Server Builtin `upload`，使用 `kind=transfer`、`action=upload_files|download_files`；入口身份保存在 `origin`。单个受管理 `transfer_id` 只创建一条 Activity；Output Records 只存可见完成说明，临时调试用的 `result_events` 保留 `started`、按十个百分点节流的 `progress` 和唯一 `completed`，并受现有记录大小上限约束。文件字节仍经专用 Transfer/HTTP 通道，`result_events` 只是 Activity 投影而非另一份文件传输。终态 `completed/failed/cancelled` 对应 `success/error/cancelled`。Browser 上传有 Browser→Server 和 Server→Client 两阶段，必须在 Client 完成写盘后才是 `success`。Server 重新启动时，旧的未完成 Transfer Activity 变为 `interrupted`，不假定传输成功。
+用户主动发起的 Remote Files Upload、Remote File Picker Upload、Remote Files 文件/ZIP Download、Clipboard 远程文件/目录 Download 及终端 Server Builtin `upload`，使用 `kind=transfer`、`action=upload_files|download_files`；入口身份保存在 `origin`。单个受管理 `transfer_id` 只创建一条 Activity；传输状态使用专用 Transfer 信号，文件字节经 Transfer/HTTP 通道发送。当前 Transfer 使用空 Result 数组；状态和 Artifact 引用记录在对应的 Activity 字段。终态 `completed/failed/cancelled` 对应 `success/error/cancelled`。Browser 上传有 Browser→Server 和 Server→Client 两阶段，必须在 Client 完成写盘后才是 `success`。Server 重新启动时，旧的未完成 Transfer Activity 变为 `interrupted`，不假定传输成功。
 
 终端 `upload` 是 Server Builtin；当真实 Transfer 建立时认领原终端提交的 Activity ID，不额外生成 Command Activity，并保留 Quick 最近命令。终端 `download` 是与 `screenshot` 相同的普通 Client 命令，按 `kind=command`、`action=invoke` 正常记录，保留实际派发、输出及 Artifact 关联；不会为了文件内容经 HTTP 上传而改变 Activity 类型或虚构 Transfer Center `transfer_id`。纯文件预览、内部 Job/Script 上传和浏览器下载已生成 Artifact 的 HTTP 请求不自动产生 Transfer Activity。
 
@@ -35,7 +35,7 @@ Transfer Activity 的 Resolved 保存实际下发的传输启动请求，Invocat
 
 PTY 和 Screen View 使用生命周期适配器；Clipboard 和 Process 使用 Control 请求适配器。均在真实派发后开始记录，业务服务不持有 Activity ID 或持久化事务。
 
-PTY 与 Screen View 每个远端会话只记录一条 `kind=pty|screen_view, action=session` Activity。真正派发 Open 后创建记录，Client 的 `opened` 回执进入 Output Records，记录在会话期间保持 `running`；终止后的结果进入 Output Records，同一条记录写入 `finished_at` 和最终状态。主动 Close、自动关闭与 PTY 切换 Shell 都结束原会话；切换 Shell 会为新会话建立新 Activity，旧会话的结束原因是 `shell_switched`。进程自然退出、网络断开、服务端重启、启动失败分别依实际结果写入结束原因及 `success/interrupted/error`。WebSocket 自动清理、重复 Close 不增加第二条 Activity。键盘输入、Resize、帧、FPS/Quality、Screen Control 输入不产生独立记录。
+PTY 与 Screen View 每个远端会话只记录一条 `kind=pty|screen_view, action=session` Activity。真正派发 Open 后创建记录，Client 的 `opened` 回执使活动会话保持 `running`；关闭或错误后，同一条 Activity 写入 `finished_at` 和最终状态。PTY 与 Screen View 的 Result 当前为空。主动 Close、自动关闭与 PTY 切换 Shell 都结束原会话；切换 Shell 会为新会话建立新 Activity。进程自然退出、网络断开、服务端重启、启动失败分别依实际情况记录 `success/interrupted/error`。WebSocket 自动清理、重复 Close 不增加第二条 Activity。键盘输入、Resize、帧、FPS/Quality、Screen Control 输入不产生独立记录。
 
 Clipboard 的用户写入操作使用 `kind=clipboard` 与 `action=set`。实际格式、文本、文件信息等保存在完整的 Control 请求 Resolved 中。Server 确认已派发 Client 后开始记录，收到对应终态 Result 才完成；失败和超时保留对应状态。Capabilities、Get 使用 OPTIONAL 策略，默认不记录；Get 文件的实际传输仍使用既有 Transfer Activity。
 
@@ -56,7 +56,12 @@ Process Manager 主动终止单个进程或应用时使用 `kind=process, action
   "invocation": {"command": "now"},
   "resolved": {"type": "command", "id": 1, "text": "pyexec import datetime;..."},
   "summary": "now",
-  "result": {"output_records": []},
+  "result": [
+    {"type": "result", "id": 1, "event_type": "completed", "status": "success", "message": "Done"}
+  ],
+  "recorded_at": ["2026-10-20T10:10:10.123+08:00"],
+  "result_omitted": false,
+  "result_summary": "Done",
   "created_at": "2026-10-20T10:10:09+08:00",
   "started_at": "2026-10-20T10:10:09+08:00",
   "finished_at": "2026-10-20T10:10:10+08:00",
@@ -67,13 +72,13 @@ Process Manager 主动终止单个进程或应用时使用 `kind=process, action
 
 字段与含义：`activity_id` 为对外唯一身份；`machine_id` 按设备聚合，`client_id` 区分连接实例；`kind` 为 `command|alias|script|remote_files|transfer|external_tool|job|pty|screen_view|clipboard|process|configuration|watchdog`；`action` 为 `command/alias:invoke`、`script:run`；`origin` 为 `web_terminal|web_ui|web_api|cli`；`presentation` 为 `dialog|terminal|inline|none`。实际 Web Terminal HTTP 请求按 `web_terminal` 标记，Web API 只有明确提供程序调用身份时才能标为 `web_api`，不能单凭 HTTP 传输认定。
 
-`invocation.command` 是入口的原始命令；UI 直接操作的 Invocation 为 `{}`。`resolved` 保存实际发送的完整逻辑消息，发送成功后确认，不对字段进行业务裁剪或改写。`summary` 仅用于原有列表标题。`result.output_records` 保存过程输出及实际返回值，只有超过容量时才写入 `truncated=true`。`references` 保存明确的 Artifact、Job 关联；API 的 `files` 是从 Artifact References 得到的展示视图，供原有 Produced Files 使用。`task_id` 与输出所有权只用于内部运行时。
+`invocation.command` 是入口的原始命令，UI 直接操作的 Invocation 为 `{}`。`resolved` 在实际请求派发后生成，按 Control 动作省略文件保存正文及脚本源码。`summary` 是操作标题，`result_summary` 是简短的结束说明。`result` 按接收顺序保存实际收到的 Client Result 对象，超预算的正文字段省略。断线和重启更新 Activity 状态。`references` 保存 Artifact、Job 关联；详情中的 `files` 由 Artifact References 得到。
 
 状态：`running`、`cancelling`、`success`、`error`、`cancelled`、`interrupted`、`timed_out`。运行中的任务收到 Cancel 请求后进入 `cancelling`，最终状态由执行结果决定；明确超时或连接中断可单独归类，不能把所有无法证明成功的情况都写成成功。将来 Job 可能使用 `stopping/stopped`，本版不接入。Script Cancel 只更新原 `run` Activity，不单独新增 Stop 记录。Errors 筛选匹配 `error/cancelled/interrupted/timed_out`。没有明确执行证据的 `pending` 只表示内部提交准备，不在“已派发后才持久化”的第一版中制造额外记录。
 
 ### 输出与 Artifact
 
-单次 Activity 存储最多 **256 条**输出记录、**65,536 字符**。超额文本不继续保存，`result.truncated=true`；详情仍显示已保存的序号、状态、文本和时间。文件由 Client 命令 ID 回挂到对应 Activity；输出和 Artifact 的生命周期相互独立，因此历史中有文件引用不保证文件永久可下载。系统不会把命令输出和执行内容当作没有存储上限的审计日志。
+每个 Activity 分别累计 `message` 的 UTF-8 字节和紧凑 JSON `data` 的 UTF-8 字节，两个字段各默认 **256 KiB**，可在 Server 配置的 `COMMAND_HISTORY_MAX_RESULT_FIELD_BYTES` 调整。放不进剩余额度的字段整项省略并在 Activity 标记 `result_omitted`，其余字段继续保留。Server 逐包追加时同时写入 Result 和该包的历史记录时间，两组数据存于同一个 `result_json` 对象。详情返回同序的 `result` 和 `recorded_at`，Output Records 按原包下标取时间，并按浏览器本地时区显示。每次打开详情先显示最多 64 条可见记录，Load More 每次增加 64 条。文件由 Client 命令 ID 回挂到 Activity，Artifact 有自己的生命周期。
 
 ## Quick History 与 Pin
 
@@ -95,9 +100,9 @@ Pin 顺序由独立的 `pinned_commands` 表持久管理：Pinned 项优先显�
 
 ## 查询、删除和界面
 
-Activity Center 保留原有两行式列表，第一行 Lucide 类型图标、`Kind · 实际操作摘要`、状态图标（长命令单行省略），第二行日期时间与必要的计算摘要（成功执行优先使用 `completed` 事件对应的可见输出：非空、单行且不超过 256 字符时展示原文；多行或超过 256 字符时显示 `Completed`；没有原始 Result 事件的活动沿用 Output Records 的摘要回退。失败、取消、超时和中断继续按原有状态与摘要规则显示 `Failed` 或对应的取消/超时/中断文案，完整内容仍在 Output Records）；右侧箭头或整行打开原 Details。列表不提供 Use 或 Delete；Delete 按钮在 Details 中。History 对话框标题仍为 `History`，第二个页签命名 `Activity Center`。Details 标题固定为 `Activity Detail`，不在标题右侧附加命令名字。Details 将 Kind 与 Action 合为单张 `Action` 卡片，内容为 `kind · action`；Invocation、Resolved 卡片单行省略，点击后弹窗查看完整值，原始命令文本不截断；Activity 过滤栏固定、列表独立滚动。原有输出记录排序、文件预览/下载和删除确认保留。类型筛选包括所有 Control Domain 及 Command / Alias / Transfer / External Tool / PTY / Screen View；Errors 筛选使用 Server 端过滤，并和 `limit/cursor/query` 一起作用于分页与 `total_count`。默认 50 条，最大 200 条；同一时间按 `activity_id` 继续稳定排序。
+Activity 列表展示类型、操作摘要、状态、时间、简短结果和文件数量。列表响应只带这些元信息；点击一条记录时，详情请求读取完整的 Invocation、Resolved、Result 和文件引用。Resolved 旁的 **Result** 卡片可以打开完整 Result JSON。Output Records 按当前排序显示结果的可见文本，支持正反序和分批显示。Delete 位于 Activity Detail，文件预览和下载通过 Produced Files。
 
-查询 API 沿用现有机器作用域路径，Activity 项目通过新 Schema 返回，不再返回旧 `entry_id`、`source`、`raw_command`、顶层 `output_records/output_summary/output_truncated`。客户端关联执行所需的临时 ID 不属于公开记录。
+类型与 Errors 筛选在 Server 上生效，并与 `limit/cursor/query` 共同应用。列表默认 50 条，最多 200 条，同一时间按 `activity_id` 继续稳定排序。
 
 ## 归档范围和其他收藏数据
 
@@ -133,7 +138,8 @@ Activity Center / Quick History 的 Web API 以机器 ID 为范围，并使用 W
 | 方法 | 接口 | 行为 |
 |---|---|---|
 | GET | `/api/machines/{machine_id}/command-history` | 读取合并 Pin 和 Recent 的 Quick History |
-| GET | `/api/machines/{machine_id}/command-history/full` | 查询 Activity，支持 `limit`、`cursor`、`query`、`kind`、`errors` |
+| GET | `/api/machines/{machine_id}/command-history/full` | 查询 Activity 列表元信息，支持 `limit`、`cursor`、`query`、`kind`、`errors` |
+| GET | `/api/machines/{machine_id}/command-history/full/{activity_id}` | 读取单条 Activity 及完整请求、结果和文件列表 |
 | POST | `/api/machines/{machine_id}/command-history/pin` | Pin / Unpin 命令 |
 | POST | `/api/machines/{machine_id}/command-history/pin/move` | 按 `up` / `down` 调整 Pin 顺序 |
 | DELETE | `/api/machines/{machine_id}/command-history/full/{activity_id}` | 删除指定 Activity |
@@ -170,10 +176,10 @@ Content-Type: application/json
 |---|---|
 | 执行过命令，却没有 Activity | 先确认是否实际派发 Client，且属于当前 ActivityPolicy 启用的操作 |
 | Quick 里没有旧命令 | 非终端或明确排除的操作不写 Recent，或已超过最近 100 条不同命令上限 |
-| Quick 出现 Pin 但看不到之前输出 | Pin 只保存轻量快照，不复制完整 `output_records` |
+| Quick 出现 Pin 但看不到之前输出 | Pin 保存命令及轻量快照，运行结果在 Activity 中查看 |
 | Clear 后仍看到部分命令 | Pinned Commands 独立保留 |
 | `!2` 执行了意料之外的命令 | 动态索引因新执行或 Pin 排序发生变化 |
-| 执行详情输出不完整 | 超出 256 段或 65,536 字符存储上限 |
+| 执行详情输出不完整 | Result 的 `message` 或 `data` 超过其剩余额度时，省略该字段 |
 | 详情中的文件不能下载 | 关联 Artifact 已不可用；历史只保存引用 |
 | 切换 Client 后仍能看到历史 | 历史主要按 `machine_id` 归属 |
 | 只能看到某台机器的历史 | Web History 查询按机器身份，而不是跨所有设备的全局列表 |

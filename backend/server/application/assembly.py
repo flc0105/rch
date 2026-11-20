@@ -7,7 +7,6 @@ from server.application.artifact.remote_file_service import WebRemoteFileService
 from server.application.history.activity_bindings import (
     remote_file_bindings, job_bindings, external_tool_bindings, process_bindings, clipboard_bindings,
 )
-from server.application.history.activity_definitions import ActivityKind
 from server.application.command.command_executor_factory import CommandExecutorFactory
 from server.application.command.command_builtin_services import CommandBuiltinServices
 from server.application.completion.command_completion_service import ServerCommandCompletionService
@@ -344,19 +343,10 @@ class ServerApplicationAssembly:
         self.terminal_api = WebTerminalApi(
             pty_session_service=self.pty_session_service,
         )
-        self.terminal_api = self.server.lifecycle_adapter.instrument_closes(
-            self.terminal_api, kind=ActivityKind.PTY, method='close_pty_session',
-            identifier='pty_session_id',
-            reason=lambda a: 'shell_switched' if a['reason'] == 'switch_shell'
-                else 'user_closed' if a['user_initiated'] else 'viewer_disconnected')
 
         self.screen_view_api = WebScreenViewApi(
             screen_view_session_service=self.screen_view_session_service,
         )
-        self.screen_view_api = self.server.lifecycle_adapter.instrument_closes(
-            self.screen_view_api, kind=ActivityKind.SCREEN_VIEW, method='close_screen_view',
-            identifier='screen_session_id',
-            reason=lambda a: 'user_closed' if a['user_initiated'] else 'viewer_disconnected')
 
         self.clipboard_api = WebClipboardApi(
             clipboard_session_service=self.clipboard_session_service,

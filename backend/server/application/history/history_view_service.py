@@ -28,6 +28,7 @@ class HistoryViewService:
         # Produced Files is the existing view of Artifact references, not another store.
         entry['files'] = [self._resolve_artifact(ref.get('snapshot') or {'artifact_id': ref['id']})
                           for ref in entry['references'] if ref['type'] == ReferenceType.ARTIFACT]
+        entry['file_count'] = len(entry['files'])
         return entry
 
     @staticmethod
@@ -103,7 +104,7 @@ class HistoryViewService:
         page_rows = rows[:size]
         items = []
         for row in page_rows:
-            entry = self.store._row_to_entry(row)
+            entry = dict(row)
             if connection_summary:
                 # Session timeline needs identity, status and a readable label only.
                 # Avoid resolving artifacts or sending full command output to this list.
@@ -114,7 +115,9 @@ class HistoryViewService:
                     'started_at': entry['started_at'], 'finished_at': entry['finished_at'],
                 })
             else:
-                items.append(self._project_files(entry))
+                entry.pop('started_at_ms')
+                entry['result_omitted'] = bool(entry['result_omitted'])
+                items.append(entry)
         next_cursor = self._encode_cursor(page_rows[-1]['started_at_ms'], page_rows[-1]['activity_id']) if has_more and page_rows else ''
         # Count uses exactly the same filters as data, excluding page cursor.
         count = self.store.count_activities(machine_id, **filters)

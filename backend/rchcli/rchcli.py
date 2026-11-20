@@ -374,6 +374,22 @@ class RemoteConsole:
         color = self.GREEN if name == 'Success' else self.YELLOW if name in ('Partial', 'Cancelled', 'Cancelling') else self.RED
         self.line('[' + name + ']', color=color)
 
+    @staticmethod
+    def _activity_output(results):
+        markers = {'info': '[*]', 'success': '[+]', 'warning': '[!]', 'error': '[-]'}
+        for event in results:
+            phase = event['event_type']
+            text = event.get('message') or ''
+            if not text and 'data' in event and phase != 'started':
+                text = json.dumps(event['data'], ensure_ascii=False, indent=2)
+            if not text:
+                continue
+            marker = markers.get(event.get('level')) if phase == 'progress' and event.get('message') else None
+            if marker and not text.lstrip().startswith(tuple(markers.values())):
+                text = f'{marker} {text}'
+            failed = phase == 'completed' and event.get('status') not in ('success', 'partial')
+            yield text, int(not failed)
+
     def _recover(self, client_id, machine_id, entry_id, seen, *, print_result=True):
         if not entry_id or not machine_id:
             return None
@@ -384,11 +400,10 @@ class RemoteConsole:
         if not isinstance(entry, dict) or entry.get('client_id') != client_id or not entry.get('finished_at'):
             return None
         if print_result:
-            records = (entry.get('result') or {}).get('output_records') or []
-            for record in records[seen:]:
-                self.result_record(record.get('text'), record.get('status', 1))
-            if (entry.get('result') or {}).get('truncated'):
-                self.line('[History output truncated; earlier live output may be incomplete]')
+            for text, status in list(self._activity_output(entry.get('result') or []))[seen:]:
+                self.result_record(text, status)
+            if entry.get('result_omitted'):
+                self.line('[Some history output was not saved]')
             self.finish_line(entry.get('status') or 'completed')
         return self._result_exit_code(entry.get('status'))
 
@@ -731,13 +746,13 @@ class RemoteConsole:
                     has_activity = True
                     if not degraded:
                         self.result_record(payload.get('text'), payload.get('status', 1))
-                        seen += 1
+                        seen += bool(payload.get('text'))
                 elif event_type == 'command_result_batch' and payload.get('task_id') == task_id:
                     has_activity = True
                     if not degraded:
                         for item in payload.get('results') or []:
                             self.result_record(item.get('text'), item.get('status', 1))
-                            seen += 1
+                            seen += bool(item.get('text'))
                 elif event_type == 'command_complete' and payload.get('task_id') == task_id:
                     if degraded:
                         recovered = self._recover(client_id, machine_id, history_id, seen)

@@ -343,7 +343,7 @@ export default {
             const handleCommandResults = (payload, results) => {
                 const items = Array.isArray(results) ? results : [];
                 if (!items.length) return;
-                this.noteTaskOutput?.(payload.task_id, items.length);
+                this.noteTaskOutput?.(payload.task_id, items.filter(item => item.text).length);
                 const metadata = payload.metadata && typeof payload.metadata === 'object' ? payload.metadata : {};
                 const isQuickActionDialog = metadata.quick_action === true && metadata.quick_action_presentation === 'dialog';
                 const isScriptDialog = metadata.script_run === true && metadata.script_run_presentation === 'dialog';

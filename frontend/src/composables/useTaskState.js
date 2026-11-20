@@ -1,3 +1,5 @@
+import { activityOutputRecords } from '../utils/activityOutput.js'
+
 export default {
     data() {
         return {
@@ -97,9 +99,14 @@ export default {
                 if (entry.client_id !== clientId || !entry.finished_at) return;
                 // Dialog presentations own their output; do not echo them into Terminal.
                 if (entry.presentation && entry.presentation !== 'terminal') return;
-                const records = entry.result?.output_records || [];
+                const records = activityOutputRecords(entry.result, { terminal: true });
                 for (const record of records.slice(alreadyDelivered)) {
                     this.appendOutput(clientId, record.text || '', '', {
+                        task_id: id, history_entry_id: entryId, recovered: true,
+                    });
+                }
+                if (entry.result_omitted) {
+                    this.appendOutput(clientId, '[Some history output was not saved]', 'warning', {
                         task_id: id, history_entry_id: entryId, recovered: true,
                     });
                 }

@@ -357,8 +357,8 @@
                     <div class="activity-entry-subtitle">
                       <span>{{ formatDateTimeStandard(item.started_at || item.created_at) || '-' }}</span>
                       <span v-if="['remote_files', 'transfer', 'external_tool', 'job', 'pty', 'screen_view', 'clipboard', 'process', 'configuration', 'watchdog', 'command', 'script'].includes(item.kind) || isActivityProblem(item.status)" class="activity-summary-preview" :class="{ 'activity-error-preview': isActivityProblem(item.status) }">{{ buildCommandExecutionSingleLineSummary(item) }}</span>
-                      <span v-if="item.files?.length">{{ item.files.length }} file(s)</span>
-                      <span v-if="item.result?.truncated">Truncated</span>
+                      <span v-if="item.file_count">{{ item.file_count }} file(s)</span>
+                      <span v-if="item.result_omitted">Output not saved</span>
                     </div>
                   </div>
                   <ChevronRight class="activity-detail-chevron" :size="18" aria-label="Open details" />
@@ -386,13 +386,11 @@
   <CommandExecutionDetailDialog
     v-model:visible="commandExecutionDetailDialogVisible"
     :entry="selectedCommandExecutionEntry"
-    :output-records="selectedCommandExecutionOutputRecordsDesc"
+    :loading="commandExecutionDetailLoading"
     :output-sort-order="commandExecutionOutputSortOrder"
     :build-command-execution-status-tag-type="buildCommandExecutionStatusTagType"
     :format-command-execution-duration="formatCommandExecutionDuration"
-    :format-date-time-standard="formatDateTimeStandard"
     :build-command-execution-summary="buildCommandExecutionSummary"
-    :format-command-execution-record-text="formatCommandExecutionRecordText"
     :get-command-execution-file-status-text="getCommandExecutionFileStatusText"
     :format-bytes="formatBytes"
     @toggle-output-sort="toggleCommandExecutionOutputSort"
@@ -404,7 +402,7 @@
 <script>
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  fetchQuickCommandHistory, fetchCommandActivities, pinHistoryCommand,
+  fetchQuickCommandHistory, fetchCommandActivities, getCommandExecutionEntry, pinHistoryCommand,
   movePinnedHistoryCommand, deleteCommandActivity, clearQuickHistory, clearCommandActivities,
 } from '../api/commandHistoryApi.js'
 import CommandExecutionDetailDialog from './CommandExecutionDetailDialog.vue'
@@ -477,6 +475,9 @@ Star,
       commandHistorySearchText: '',
       commandExecutionDetailDialogVisible: false,
       selectedCommandExecutionEntryId: '',
+      selectedCommandExecutionEntry: null,
+      commandExecutionDetailLoading: false,
+      commandExecutionDetailRequest: null,
       commandExecutionOutputSortOrder: 'desc',
       commandExecutionRequestGeneration: 0,
       commandHistorySearchTimer: null,
@@ -510,30 +511,16 @@ Star,
         fullTotal: Number(this.commandExecutionTotalCount || 0),
       }
     },
-
-    selectedCommandExecutionEntry() {
-      return this.commandExecutionItems.find(item => item.activity_id === this.selectedCommandExecutionEntryId) || null
-    },
-
-    selectedCommandExecutionOutputRecordsDesc() {
-      const records = this.selectedCommandExecutionEntry && Array.isArray(this.selectedCommandExecutionEntry.result?.output_records)
-        ? this.selectedCommandExecutionEntry.result?.output_records
-        : []
-
-      const sorted = [...records].sort((a, b) => Number(b.seq || 0) - Number(a.seq || 0))
-
-      if (this.commandExecutionOutputSortOrder === 'asc') {
-        sorted.reverse()
-      }
-
-      return sorted
-    },
   },
 
   watch: {
     commandExecutionDetailDialogVisible(value) {
       if (!value) {
+        this.commandExecutionDetailRequest?.abort()
+        this.commandExecutionDetailRequest = null
         this.selectedCommandExecutionEntryId = ''
+        this.selectedCommandExecutionEntry = null
+        this.commandExecutionDetailLoading = false
       }
     },
 
@@ -557,6 +544,11 @@ Star,
         this.reloadCommandExecutionHistory({ silent: true })
       }, 250)
     },
+  },
+
+  beforeUnmount() {
+    this.commandExecutionDetailRequest?.abort()
+    this.commandExecutionDetailRequest = null
   },
 
   methods: {
@@ -806,11 +798,34 @@ Star,
       this.$emit('apply-command', row)
     },
 
-    openCommandExecutionDetail(row) {
-      if (!row || !row.activity_id) return
+    async openCommandExecutionDetail(row) {
+      const machineId = this.getSelectedHistoryMachineId()
+      const activityId = row?.activity_id
+      if (!machineId || !activityId) return
 
-      this.selectedCommandExecutionEntryId = row.activity_id
+      this.commandExecutionDetailRequest?.abort()
+      const request = new AbortController()
+      this.commandExecutionDetailRequest = request
+      this.selectedCommandExecutionEntryId = activityId
+      this.selectedCommandExecutionEntry = null
+      this.commandExecutionDetailLoading = true
       this.commandExecutionDetailDialogVisible = true
+      const timeout = setTimeout(() => request.abort(new Error('Activity Detail request timed out')), 15000)
+      try {
+        const entry = await getCommandExecutionEntry(machineId, activityId, { signal: request.signal })
+        if (request !== this.commandExecutionDetailRequest || !this.commandExecutionDetailDialogVisible) return
+        this.selectedCommandExecutionEntry = entry
+      } catch (error) {
+        if (request !== this.commandExecutionDetailRequest || !this.commandExecutionDetailDialogVisible) return
+        this.commandExecutionDetailDialogVisible = false
+        ElMessage.error(error.message || 'Failed to load Activity Detail')
+      } finally {
+        clearTimeout(timeout)
+        if (request === this.commandExecutionDetailRequest) {
+          this.commandExecutionDetailRequest = null
+          this.commandExecutionDetailLoading = false
+        }
+      }
     },
 
     async toggleCommandHistoryPinned(row) {
@@ -1110,51 +1125,19 @@ Star,
     },
 
     buildCommandExecutionSummary(item) {
+      if (item?.result_summary) return item.result_summary
       const status = String(item?.status || '').toLowerCase()
-      const records = Array.isArray(item?.result?.output_records) ? item.result.output_records : []
-      const events = Array.isArray(item?.result?.result_events) ? item.result.result_events : []
-      const completed = events.slice().reverse().find(event => event?.event_type === 'completed')
-      if (['success', 'partial'].includes(status) && completed) {
-        // Only the completed Result itself can supply the success summary.
-        // The last output record may contain just the last line of streamed JSON.
-        const text = String(completed.message || '').trim()
-        if (text && text.length <= 256 && !/[\r\n]/.test(text)) return text
-        const files = Array.isArray(item?.files) ? item.files : []
-        return files.length && !text && status === 'success' ? `Produced ${files.length} file(s)` : status === 'partial' ? 'Partial' : 'Completed'
-      } else if (status === 'interrupted' && events.length && !completed) {
-        return 'Interrupted'
-      } else if ((status !== 'success' || !events.length) && ['command', 'script', 'remote_files', 'transfer', 'external_tool', 'job', 'pty', 'screen_view', 'clipboard', 'process', 'configuration', 'watchdog'].includes(item?.kind)) {
-        // Server-local and other activities may have no wire Result events.
-        const lastLine = records.slice().reverse()
-          .flatMap(record => String(record?.text || '').split(/\r?\n/).reverse())
-          .map(line => line.trim()).find(Boolean) || ''
-        if (lastLine && lastLine.length <= 256) return lastLine
-      }
-      const isLong = text => /[\r\n]/.test(text) || text.length > 256
-      const parts = records.map(record => String(record?.text || '').trim()).filter(Boolean)
-      const truncated = Boolean(item?.result?.truncated)
-      // A large failure must never be presented as a successful "Completed" event.
-      if (truncated || parts.length > 1 || (parts.length === 1 && isLong(parts[0]))) {
-        if (status === 'success') return 'Completed'
-        if (status === 'partial') return 'Partial'
-        if (status === 'error') return 'Failed'
-        if (status === 'timed_out') return 'Timed out'
-        if (status === 'cancelled') return 'Cancelled'
-        if (status === 'interrupted') return 'Interrupted'
-        return status === 'running' ? 'Running' : 'No output'
-      }
-      if (status === 'error' && !parts.length) return 'Failed'
-      if (this.isActivityProblem(status) && !parts.length) return `Activity ${status}`
-      const files = Array.isArray(item?.files) ? item.files : []
-      if (files.length && status === 'success') return `Produced ${files.length} file(s)`
-      if (parts.length) return parts[0]
-      if (status === 'success') return 'Completed'
-      if (status === 'partial') return 'Partial'
-      return 'No output'
-    },
-
-    formatCommandExecutionRecordText(text) {
-      return String(text || '')
+      if (status === 'success' && item?.file_count) return `Produced ${item.file_count} file(s)`
+      return ({
+        success: 'Completed',
+        partial: 'Partial',
+        error: 'Failed',
+        timed_out: 'Timed out',
+        cancelled: 'Cancelled',
+        interrupted: 'Interrupted',
+        running: 'Running',
+        cancelling: 'Cancelling',
+      })[status] || 'No output'
     },
 
     getCommandExecutionFileStatusText(file) {

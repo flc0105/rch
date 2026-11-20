@@ -9,8 +9,13 @@ export function getCommandHistory(machineId) {
   return apiData(historyUrl(machineId), {}, [])
 }
 
-export function getCommandExecutionEntry(machineId, entryId) {
-  return apiData(historyUrl(machineId, `/full/${encodeURIComponent(entryId)}`), {}, {})
+export async function getCommandExecutionEntry(machineId, entryId, { signal } = {}) {
+  const entry = await apiData(historyUrl(machineId, `/full/${encodeURIComponent(entryId)}`), { signal })
+  if (signal?.aborted) throw signal.reason
+  if (entry?.activity_id !== entryId || !Array.isArray(entry.result)) {
+    throw new Error('Invalid Activity Detail response')
+  }
+  return entry
 }
 
 // Dialog callers retain their response/error handling and request-generation guards.

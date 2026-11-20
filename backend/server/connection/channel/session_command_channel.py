@@ -141,6 +141,8 @@ class ClientSessionCommandChannel:
                         event = pending.get(timeout=remaining)
                     except queue.Empty:
                         raise TimeoutError('Completion request timed out') from None
+                    if event is None:
+                        raise ConnectionError('Client disconnected')
                     final = event.get('event_type') == 'completed'
                     status = 1 if not final or event.get('status') in ('success', 'partial') else 0
                     yield ResultChunk(status, event, final, True, event=event)

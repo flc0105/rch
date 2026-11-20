@@ -133,16 +133,6 @@ class WebTaskRunner:
             return context.command_id
         return None
 
-    def _append_history_output(self, context: TaskExecutionContext, status: int, text: str):
-        history_entry_id = self._get_history_entry_id(context)
-        self.activity_coordinator.append_output(
-            context.session,
-            history_entry_id,
-            status,
-            text,
-            0,
-        )
-
     def _finalize_history(self, context: TaskExecutionContext, final_status: str):
         history_entry_id = self._get_history_entry_id(context)
         self.activity_coordinator.finish(
@@ -217,37 +207,29 @@ class WebTaskRunner:
         )
 
     def _publish_stream_chunk(self, context: TaskExecutionContext, status: int, text: str, result=None):
-        # Server-owned Builtins do not have a Client Socket packet. Associate
-        # their already constructed Result facts with this task at the common
-        # output boundary; Client packets arrive with their own type/id and
-        # are recorded by the existing request observer.
-        if (isinstance(result, dict) and result.get('event_type') in
-                ('started', 'progress', 'chunk', 'completed') and 'type' not in result):
-            command_id = self._get_runtime_command_id(context)
-            result = {'type': 'result',
-                      **({'id': command_id} if command_id is not None else {}),
-                      **result}
-            self.activity_coordinator.append_result_event(
-                context.session, self._get_history_entry_id(context), result)
         batch = getattr(context, '_result_batch', None)
         if batch is None:
             self._publish_task_result(context, status, text, result)
         else:
             batch.add(status, text, result)
-        self._append_history_output(context, status, text)
 
-    def _record_stream_chunk(self, context: TaskExecutionContext, status: int, result, summary: TaskStreamSummary, envelope=None):
+    def _record_stream_chunk(self, context: TaskExecutionContext, status: int, result, summary: TaskStreamSummary,
+                             envelope=None):
         text = '' if result is None else str(result)
         self._publish_stream_chunk(context, status, text, envelope)
         summary.record_chunk(status, text)
 
     def _record_task_event(self, context: TaskExecutionContext, event: CommandExecutionEvent, summary: TaskStreamSummary):
         if event.event_type == CommandExecutionEvent.STARTED:
+            envelope = event.payload.get('result_envelope')
+            if envelope and envelope.get('type') != 'result':
+                self._publish_stream_chunk(context, 1, '', envelope)
             return
         if event.payload.get('result_terminal'):
             summary.terminal_status = event.payload['result_terminal']
-            if event.text:
-                self._publish_stream_chunk(context, event.status, event.text, event.payload.get('result_envelope'))
+            envelope = event.payload.get('result_envelope')
+            if event.text or (envelope and envelope.get('type') != 'result'):
+                self._publish_stream_chunk(context, event.status, event.text, envelope)
             return
         if event.payload.get('intermediate_result'):
             if event.text:

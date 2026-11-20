@@ -76,8 +76,11 @@ class CommandExecutionPipeline:
         status, result = item[:2]
         event = cls.build_output_event(status, result)
         wire = getattr(item, 'event', None)
-        if wire is not None:
-            event.payload = {**event.payload, 'result_envelope': wire}
+        envelope = wire
+        if envelope is None and isinstance(result, dict) and result.get('event_type') in ResultEventType._value2member_map_:
+            envelope = result
+        if envelope is not None:
+            event.payload = {**event.payload, 'result_envelope': envelope}
         # A wrapped builtin may render its message for the CLI while keeping
         # the complete Result event in item.event. Use that event for terminal
         # status; never infer cancelled/timed_out/partial from the text view.

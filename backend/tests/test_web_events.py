@@ -88,7 +88,7 @@ class TestTaskOutputBatching(unittest.TestCase):
         )
         history = []
         runner.activity_coordinator = SimpleNamespace(
-            append_output=lambda session, entry, status, text, eof: history.append((status, text)),
+            append_client_result=lambda session, entry, result: history.append(result),
             finish=lambda *args, **kwargs: None,
         )
         runner.logger = SimpleNamespace(exception=lambda *args, **kwargs: None)
@@ -115,7 +115,7 @@ class TestTaskOutputBatching(unittest.TestCase):
             else:
                 values.extend((item['status'], item['text']) for item in payload['results'])
         self.assertEqual(values, [(1, text) for text in source])
-        self.assertEqual(history, values)
+        self.assertEqual(history, [])
         self.assertEqual(published[-1][1]['status'], 'success')
 
 

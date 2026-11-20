@@ -83,9 +83,8 @@ RECORD_OPTIONAL_ACTIVITY = False
 COMMAND_HISTORY_RECENT_LIMIT = 100
 COMMAND_HISTORY_PAGE_SIZE = 50
 COMMAND_HISTORY_MAX_PAGE_SIZE = 200
-COMMAND_HISTORY_MAX_OUTPUT_RECORD_CHARS = 64 * 1024
-COMMAND_HISTORY_MAX_OUTPUT_SUMMARY_CHARS = 512
-COMMAND_HISTORY_MAX_OUTPUT_RECORDS = 256
+# Separate UTF-8 byte budgets per Activity for Result message and JSON data.
+COMMAND_HISTORY_MAX_RESULT_FIELD_BYTES = 256 * 1024
 # Execution history 不做条数 / 时间裁剪。
 # Quick History 仅保留最近 100 个 unique command；Pinned 独立永久保存。
 # 单条 execution 最多保存 64KiB 输出文本和 256 段记录，避免极碎 chunk 的 metadata 膨胀。
