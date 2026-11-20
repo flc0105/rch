@@ -11,8 +11,7 @@ from client.runtime import client_util
 from client.commands.shell.common import session as session_ops
 
 
-@pytest.mark.parametrize('detached', [False, True])
-def test_sudo_self_returns_client_pid_and_preserves_tls_profile(monkeypatch, detached):
+def test_sudo_self_returns_client_pid_and_preserves_tls_profile(monkeypatch):
     seen = {}
 
     def fake_run(cmd, **kwargs):
@@ -27,7 +26,7 @@ def test_sudo_self_returns_client_pid_and_preserves_tls_profile(monkeypatch, det
     monkeypatch.setattr('client.commands.shell.standalone.spawn_elevated_instance.subprocess.run', fake_run)
     monkeypatch.setattr('client.commands.shell.standalone.spawn_elevated_instance.get_executable_path',
                         lambda: '"/tmp/python with spaces" /tmp/rchclient.py --profile tls-local')
-    status, message = _spawn_elevated_mac(detached=detached)
+    status, message = _spawn_elevated_mac()
     assert status == 1
     assert 'PID: 37124' in message
     assert 'connection not yet verified' in message
@@ -38,7 +37,7 @@ def test_sudo_self_returns_client_pid_and_preserves_tls_profile(monkeypatch, det
     assert '--profile tls-local' in script
     assert '--elevated-bootstrap' not in script
     assert '--elevated-detached-bootstrap' not in script
-    assert ('/usr/bin/perl -MPOSIX=setsid' in script) == detached
+    assert '/usr/bin/perl -MPOSIX=setsid' in script
     assert seen['kwargs']['capture_output'] is True
 
 
@@ -63,8 +62,7 @@ def test_sudo_self_reports_applescript_timeout(monkeypatch):
     assert 'failed' in detail.lower()
 
 
-@pytest.mark.parametrize('detached', [False, True])
-def test_elevated_shell_launch_execs_same_pid_and_preserves_args(monkeypatch, tmp_path, detached):
+def test_elevated_shell_launch_execs_same_pid_and_preserves_args(monkeypatch, tmp_path):
     """Exercise generated shell script without requesting OS elevation."""
     import shlex
     import client.commands.shell.standalone.spawn_elevated_instance as automation_service
@@ -91,14 +89,13 @@ def test_elevated_shell_launch_execs_same_pid_and_preserves_args(monkeypatch, tm
 
     monkeypatch.setattr(automation_service.subprocess, 'run', fake_run)
     try:
-        result, message = _spawn_elevated_mac(detached=detached)
+        result, message = _spawn_elevated_mac()
         assert result == 1, message
         pid = int(re.search(r'PID: (\d+)', message).group(1))
         recorded = output.read_text().splitlines()
         assert int(recorded[0]) == pid
         assert recorded[1] == '--profile tls-local'
-        if detached:
-            assert os.getsid(pid) == pid
+        assert os.getsid(pid) == pid
     finally:
         if output.exists():
             try:
@@ -167,7 +164,7 @@ def test_elevated_shell_early_exit_is_reported_as_failure(monkeypatch, tmp_path)
         return real_run(['/bin/sh', '-c', shell_script], capture_output=True, text=True, timeout=8)
 
     monkeypatch.setattr(automation_service.subprocess, 'run', fake_run)
-    code, message = _spawn_elevated_mac(detached=False)
+    code, message = _spawn_elevated_mac()
     assert code == 0
     assert 'TLS profile failed' in message
     assert 'RCH_ELEVATED_CLIENT_PID=' not in message

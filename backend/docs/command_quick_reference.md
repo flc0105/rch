@@ -166,8 +166,12 @@ Server 的 `xt ...` 是面向用户的统一目录与运行入口；Client 另�
 | `screenshot` | 截屏并上传结果 |
 | `idletime` | 查看用户空闲时间 |
 | `run <command>` | 启动程序而不等待完成；不等于收集输出的 `shell` |
-| `run_elevated <command>` | 请求以管理员权限执行命令，可能弹出 UAC 授权 |
-| `spawn_elevated_instance [--detached]` | 请求以提升权限启动新 Client 实例；Windows 的 `--detached` 使用后台无控制台的 detached 方式（仍可能弹出 UAC） |
+| `run_elevated [--shell] <command>` | 经 UAC 授权运行 CMD 命令，实时回传输出和最终退出码 |
+| `run_elevated --collect <command>` | 经 UAC 授权运行 CMD 命令，结束后一次性返回输出和退出码 |
+| `run_elevated --detached <program> [args...]` | 直接后台启动程序并返回 PID |
+| `run_elevated --open <program> [args...]` | 经 UAC 授权打开可见程序 |
+| `run_elevated --show-console <command>` | 经 UAC 授权在目标 Windows 的可见 CMD 窗口启动命令，RCH 返回启动结果 |
+| `spawn_elevated_instance [--no-confirm]` | 经 UAC 授权启动无控制台的新 Client 实例并返回 PID |
 
 ### macOS
 
@@ -176,8 +180,10 @@ Server 的 `xt ...` 是面向用户的统一目录与运行入口；Client 另�
 | `screenshot` | 截屏并上传结果 |
 | `webcam_snap` | 使用摄像头拍照并上传结果，受摄像头权限限制 |
 | `idletime` | 查看用户空闲时间 |
-| `run_elevated <command>` | 请求以提升权限执行命令，可能弹出系统授权 |
-| `spawn_elevated_instance [--detached]` | 请求启动提升权限的 Client 实例；macOS 使用 `--detached` 时新实例以独立后台 session 运行 |
+| `run_elevated [--shell] <command>` | 经系统授权运行 Shell 命令，实时回传输出和最终退出码 |
+| `run_elevated --collect <command>` | 用系统 AppleScript 授权运行 Shell 命令，结束后一次性返回输出或错误 |
+| `run_elevated --detached <program> [args...]` | 在独立会话内直接后台启动程序并返回 PID |
+| `spawn_elevated_instance [--no-confirm]` | 经系统授权在独立后台会话启动新 Client 并返回 PID |
 | `file_shred <path>` | 对文件执行覆盖式删除，属于不可逆高风险操作；闪存等设备不保证物理不可恢复 |
 
 ### Linux

@@ -4,10 +4,19 @@ import re
 
 
 
-def _strip_confirm_bypass(arg):
+def _strip_confirm_bypass(arg, *, separator_options=None):
     """Extract an explicit leading/trailing --no-confirm from a Client command argument."""
     if not isinstance(arg, str):
         return False, arg
+    if separator_options is not None:
+        options = '|'.join(re.escape(option) for option in ('--no-confirm', *separator_options))
+        separator = re.match(rf'^\s*(?:(?:{options})\s+)*--(?=\s|$)', arg)
+        if separator:
+            start = separator.end() - 2
+            bypass, prefix = _strip_confirm_bypass(arg[:start])
+            if bypass:
+                return True, (prefix.strip() + ' ' + arg[start:]).lstrip()
+            return False, arg
     if re.match(r'^\s*--no-confirm(?=\s|$)', arg):
         return True, re.sub(r'^\s*--no-confirm(?=\s|$)\s*', '', arg, count=1)
     if re.search(r'(?<=\s)--no-confirm\s*$', arg):
@@ -15,7 +24,7 @@ def _strip_confirm_bypass(arg):
     return False, arg
 
 
-def confirm(message=None, *, platform_messages=None):
+def confirm(message=None, *, platform_messages=None, no_arguments=False, separator_options=None):
     """Require a Client Interaction Broker confirmation before calling a command.
 
     Works with @shell_command in either order; no changes to the command body are needed.
@@ -32,7 +41,9 @@ def confirm(message=None, *, platform_messages=None):
         @wraps(func)
         def wrapper(self, *args, **kwargs):
             raw_arg = args[0] if args else kwargs.get('options', '')
-            bypass, cleaned = _strip_confirm_bypass(raw_arg)
+            bypass, cleaned = _strip_confirm_bypass(raw_arg, separator_options=separator_options)
+            if no_arguments and cleaned.strip():
+                return 0, f'Usage: {func.__name__} [--no-confirm]'
             if bypass:
                 if args:
                     args = (cleaned, *args[1:])

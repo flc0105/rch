@@ -1,6 +1,5 @@
 """Self-launch commands have one canonical argv source across Client paths."""
 
-import base64
 import json
 import os
 import subprocess
@@ -12,7 +11,7 @@ from client.runtime import client_util
 from client.commands.shell.common import session as session_ops
 from client.watchdog import process_recovery_watchdog
 from client.watchdog.watchdog_process import ClientWatchdogProcess
-from client.commands.shell.standalone.spawn_elevated_instance import _detached_launch_arguments
+from client.commands.shell.standalone import spawn_elevated_instance as elevated
 
 
 @pytest.mark.parametrize('frozen', [False, True])
@@ -91,16 +90,23 @@ def test_reexec_instance_uses_shared_argv_without_string_reparse(monkeypatch):
     }
 
 
-def test_windows_elevation_detached_uses_same_argv(monkeypatch):
-    target = ['C:\\Program Files\\Python\\python.exe', 'C:\\RCH Directory\\rchclient.py', '--profile', 'tls-local']
-    monkeypatch.setattr(client_util, 'get_executable_argv', lambda **kw: list(target))
-    monkeypatch.setattr(client_util, '_resolve_python_command_for_source_bundle', lambda: [target[0]])
-    exe, parameters = _detached_launch_arguments('launch-status.json', 'spawn.log')
-    assert exe == target[0] and 'DETACHED_PROCESS' in parameters
-    payload = json.loads(base64.b64decode(parameters.rsplit(' ', 1)[-1]).decode('utf-8'))
-    assert payload['argv'] == target
-    assert payload['status_path'] == 'launch-status.json'
-    assert payload['log_path'] == 'spawn.log'
+def test_windows_elevation_detached_uses_same_argv(monkeypatch, tmp_path):
+    target = [r'C:\Program Files\Python\python.exe', r'C:\RCH Directory\rchclient.py', '--profile', 'tls-local']
+    used = {}
+    monkeypatch.setattr(elevated, 'get_executable_argv', lambda: target)
+    monkeypatch.setattr('client.runtime.temp_workspace.get_temp_category_dir', lambda *a, **k: str(tmp_path))
+
+    def launch(_owner, platform, mode, argv, **options):
+        used.update(platform=platform, mode=mode, argv=argv, **options)
+        return 1, 'PID: 42'
+
+    monkeypatch.setattr(elevated, 'run_authorized_process', launch)
+    status, message = elevated._spawn_elevated_win(object())
+    assert status == 1 and 'PID: 42' in message and 'Startup log:' in message
+    assert used['argv'] == target
+    assert used['platform'] == 'win' and used['mode'] == 'detached'
+    assert 'RCH_PROCESS_RECOVERY_WATCHDOG_SESSION' in used['clear_env']
+    assert 'RCH_CLIENT_LAUNCH_MODE' not in used['clear_env']
 
 
 def test_macos_getinfo_uses_canonical_launch_command(monkeypatch):

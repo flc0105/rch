@@ -1,5 +1,10 @@
-"""The Windows command surface omits the POSIX process-replacement command."""
+"""Platform registration and execution of desktop Shell commands."""
 
+from unittest.mock import Mock
+
+import pytest
+
+from client.commands.runtime.executor import CommandExecutor
 from client.commands.runtime.hosts import WindowsCommands
 from client.commands.runtime.hosts import MacCommands
 from client.commands.runtime.hosts import LinuxCommands
@@ -39,7 +44,7 @@ def test_common_desktop_commands_preserve_platform_registration_and_budgets():
     from client.commands.runtime.hosts import iOSCommands
     from client.commands.shell.common.system import ShellSystemCommands
 
-    expected = {'win': (10, None), 'mac': (None, 150), 'linux': None, 'ios': None}
+    expected = {'win': (10, 150, 150), 'mac': (None, 150, 150), 'linux': None, 'ios': None}
     names = ('idletime', 'run_elevated', 'spawn_elevated_instance')
     for command_type in (WindowsCommands, MacCommands, LinuxCommands, iOSCommands):
         host = command_type(DummyConnection())
@@ -52,35 +57,66 @@ def test_common_desktop_commands_preserve_platform_registration_and_budgets():
             assert getattr(host, name).__func__ is ShellSystemCommands.__dict__[name]
             assert (name in entries) == (timeouts is not None)
         if timeouts is not None:
-            assert tuple(entries[item]['timeout'] for item in (names[0], names[2])) == timeouts
+            assert tuple(entries[item]['timeout'] for item in names) == timeouts
             for name in names[1:]:
                 assert entries[name]['confirmation'] is True
 
 
-def test_common_elevated_command_keeps_each_confirmation_and_escapes_macos_input(monkeypatch):
+def test_common_elevated_command_confirms_native_platform_and_protects_payload(monkeypatch):
     from types import SimpleNamespace
     from unittest.mock import Mock
     from client.commands.shell.standalone import run_elevated
     from client.runtime.execution import interaction_service
-    import ctypes
 
     approve = Mock(return_value=False)
-    request = Mock(return_value=42)
-    run = Mock(return_value=SimpleNamespace(returncode=0, stdout='ok', stderr=''))
+    launch = Mock(return_value=(1, 'ok'))
     monkeypatch.setattr(interaction_service, 'CommandInteractions', lambda _: SimpleNamespace(confirm=approve))
-    monkeypatch.setattr(ctypes, 'windll', SimpleNamespace(
-        shell32=SimpleNamespace(ShellExecuteW=request)), raising=False)
-    monkeypatch.setattr(run_elevated.subprocess, 'run', run)
+    monkeypatch.setattr(run_elevated.WindowsElevation, 'shell', launch)
+    monkeypatch.setattr(run_elevated.MacElevation, 'shell', launch)
     assert WindowsCommands(None).run_elevated('echo check')[0] == 0
     assert 'Windows UAC' in approve.call_args.args[0]
     assert MacCommands(None).run_elevated('echo check')[0] == 0
     assert 'operating system permission prompt' in approve.call_args.args[0]
-    request.assert_not_called()
-    run.assert_not_called()
-    assert WindowsCommands(None).run_elevated('echo check --no-confirm')[0] == 1
-    assert request.call_args.args[3] == '/c echo check'
-    assert MacCommands(None).run_elevated('echo "a b" --no-confirm') == (1, 'ok')
-    assert r'\"a b\"' in run.call_args.args[0][-1]
+    launch.assert_not_called()
+
+    assert WindowsCommands(None).run_elevated('echo check --no-confirm') == (1, 'ok')
+    launch.assert_called_once_with('echo check')
+    assert MacCommands(None).run_elevated('--shell -- echo keep --no-confirm')[0] == 0
+    assert MacCommands(None).run_elevated('--no-confirm --shell -- echo keep --no-confirm') == (1, 'ok')
+    launch.assert_called_with('echo keep --no-confirm')
+
+
+@pytest.mark.parametrize('platform', ['win', 'mac'])
+def test_spawn_no_confirm_works_from_terminal_and_is_listed_in_help(monkeypatch, platform):
+    from client.commands.shell.standalone import spawn_elevated_instance as module
+    from client.runtime.execution.interaction_service import CommandInteractions
+
+    runner = CommandExecutor(DummyConnection())
+    monkeypatch.setattr(runner.catalog, '_get_platform_name', lambda: platform)
+    launch = Mock(return_value=(1, 'Elevated Client started'))
+    confirm = Mock(return_value=False)
+    monkeypatch.setattr(module, '_spawn_elevated_' + platform, launch)
+    monkeypatch.setattr(CommandInteractions, 'confirm', confirm)
+
+    entry = next(item for item in runner.get_command_manifest_payload()
+                 if item['name'] == 'spawn_elevated_instance')
+    assert '--no-confirm' in entry['help']
+    assert entry['confirmation'] is True
+
+    assert runner.execute_command(1, 'spawn_elevated_instance --no-confirm') == (1, 'Elevated Client started')
+    launch.assert_called_once()
+    confirm.assert_not_called()
+
+    launch.reset_mock()
+    assert runner.execute_command(2, 'spawn_elevated_instance --detached --no-confirm') == (
+        0, 'Usage: spawn_elevated_instance [--no-confirm]',
+    )
+    launch.assert_not_called()
+    confirm.assert_not_called()
+
+    assert runner.execute_command(3, 'spawn_elevated_instance')[0] == 0
+    confirm.assert_called_once()
+    launch.assert_not_called()
 
 
 def test_windows_run_uses_detached_console_from_platform_entry(monkeypatch):

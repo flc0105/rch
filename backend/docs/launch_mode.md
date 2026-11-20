@@ -102,7 +102,7 @@ Service/Scheduler 检测会查看进程祖先链，因此 `cron → sh -c → py
 
 各平台均根据进程与服务管理器的实际状态确认 Launch Mode。macOS 的短生命周期 Bootstrap 退出、Client 被 `launchd` 收养后，仍按它自己的 session/控制终端状态归类。原 Client 即使来自 `IDE (PyCharm)`，采用 `start_new_session=True` 启动的新 Client 也按实际新会话显示 `Detached`。
 
-macOS `spawn_elevated_instance` 经系统管理员授权后，由 root shell 执行 `get_executable_path()` 提供的原始 Client 启动命令；不会向 Client 追加内部 bootstrap 参数。命令返回**新 Client 的实际 PID**；如果管理员取消授权、启动失败或 Client 立即退出，则返回错误详情。启动时保留原有命令行参数，包括 `--profile tls-local` 等连接配置，TLS 校验沿用对应 profile。`--detached` 使用新 Session，预期显示 `Detached (new session)`；默认模式不强制新建 Session，Launch Mode 按实际进程状态判定。返回 PID 表示已启动 Client 进程；Server 上线状态仍需单独核实。
+macOS `spawn_elevated_instance` 经系统管理员授权后，由 root shell 执行 `get_executable_path()` 提供的原始 Client 启动命令；不会向 Client 追加内部 bootstrap 参数。命令返回**新 Client 的实际 PID**；如果管理员取消授权、启动失败或 Client 立即退出，则返回错误详情。启动时保留原有命令行参数，包括 `--profile tls-local` 等连接配置，TLS 校验沿用对应 profile。命令始终使用新 Session，预期显示 `Detached (new session)`。`--no-confirm` 仅跳过 RCH 确认。返回 PID 表示已启动 Client 进程，Server 上线状态仍需单独核实。
 
 在 macOS 实机测试时，先运行 `spawn_elevated_instance`，再用 `ps -o pid,ppid,user,command -p <PID>` 验证返回的 PID 确实属于 root Python Client（不是 `osascript`）。可进一步用 `acmd ps --pid <PID>` 检查进程，并在 Server 设备列表中确认新实例使用目标 Listener 上线。如果命令报告启动失败，查看其错误输出；若新进程启动后没有上线，查看回执中给出的 root Client 启动 stderr 日志路径。
 
@@ -186,7 +186,7 @@ Detached (new session)
 Elevated 独立实例可以执行：
 
 ```text
-spawn_elevated_instance --detached
+spawn_elevated_instance
 ```
 
 预期 root Client 同样为 `Detached (new session)`；关闭原 IDE/Terminal 后，新 PID 应继续存在。
@@ -381,7 +381,7 @@ Detached (detached process)
 
 ### 9.5.1 Windows elevated background launch
 
-`spawn_elevated_instance --detached` 经 Windows UAC 授权后，由短生命周期 Python 启动器以 `DETACHED_PROCESS` 创建无控制台的 elevated Client，复用原 Client 启动参数并返回新进程的 PID；启动失败时返回错误及日志路径。新 Client 在握手时报告 `Detached (detached process)`。不带参数的 `spawn_elevated_instance` 仍按原行为启动可见控制台。此方式需要本机可用的 Python 解释器；`--no-confirm` 仅跳过 RCH 的交互确认，仍需 Windows UAC 授权。在 Session 0 或无可交互桌面的环境中应使用适当的系统服务启动方式。
+`spawn_elevated_instance` 经 Windows UAC 授权后，由提权命令的辅助脚本以 `DETACHED_PROCESS` 创建无控制台的 elevated Client，复用原 Client 启动参数并返回新进程的 PID；启动失败时返回错误及日志路径。新 Client 在握手时报告 `Detached (detached process)`。默认先经过 RCH 交互确认，再请求 Windows UAC 授权。`--no-confirm` 仅跳过 RCH 确认。在 Session 0 或无可交互桌面的环境中应使用适当的系统服务启动方式。
 
 ### 9.6 Task Scheduler
 

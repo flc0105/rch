@@ -574,83 +574,42 @@ def test_recent_device_uses_latest_launch_snapshot_without_old_source_leak(tmp_p
 
 
 
-def test_windows_elevated_detached_and_cli_options(monkeypatch):
-    from client.commands.runtime.hosts import WindowsCommands
+@pytest.mark.parametrize('platform', ['mac', 'win'])
+def test_elevated_client_confirmation_and_unsupported_launch_options(monkeypatch, platform):
+    from unittest.mock import Mock
 
-    seen = []
-    command = SimpleNamespace(command_platform='win')
-    monkeypatch.setattr('client.commands.shell.standalone.spawn_elevated_instance._spawn_elevated_win',
-                        lambda *, detached=False: seen.append(detached) or (1, 'ok'))
-    assert WindowsCommands.spawn_elevated_instance(command, '--no-confirm') == (1, 'ok')
-    assert seen.pop() is False
-    assert WindowsCommands.spawn_elevated_instance(command, '--detached --no-confirm') == (1, 'ok')
-    assert seen.pop() is True
-    assert WindowsCommands.spawn_elevated_instance(command, '--bgrun --no-confirm') == (
-        0, 'Usage: spawn_elevated_instance [--detached] [--no-confirm]',
-    )
-    assert WindowsCommands.spawn_elevated_instance(command, '--bad --no-confirm') == (
-        0, 'Usage: spawn_elevated_instance [--detached] [--no-confirm]',
-    )
-    assert seen == []
+    from client.commands.shell.standalone import spawn_elevated_instance as module
+    from client.runtime.execution.interaction_service import CommandInteractions
 
+    confirm = Mock(return_value=True)
+    launch = Mock(return_value=(1, 'ok'))
+    command = SimpleNamespace(command_platform=platform)
+    monkeypatch.setattr(CommandInteractions, 'confirm', confirm)
+    monkeypatch.setattr(module, '_spawn_elevated_' + platform, launch)
 
-def test_windows_detached_elevation_uses_python_helper_and_reports_child_pid(monkeypatch, tmp_path):
-    import base64
-    import ctypes
-    import json
-    import sys
-    from client.commands.shell.standalone.spawn_elevated_instance import _spawn_elevated_win
+    assert module.spawn_elevated_instance(command, '') == (1, 'ok')
+    confirm.assert_called_once()
+    expected_args = () if platform == 'mac' else (command,)
+    launch.assert_called_once_with(*expected_args)
 
-    calls = []
+    confirm.reset_mock()
+    confirm.return_value = False
+    launch.reset_mock()
+    assert module.spawn_elevated_instance(command, '--no-confirm') == (1, 'ok')
+    confirm.assert_not_called()
+    launch.assert_called_once_with(*expected_args)
 
-    def shell_execute(*args):
-        calls.append(args)
-        status_path = next(tmp_path.glob('client_elevation_*')) / 'launch-status.json'
-        status_path.write_text(json.dumps({'ok': True, 'pid': 32123}), encoding='utf-8')
-        return 42
+    launch.reset_mock()
+    for arg in ('--detached', '--detach', '--detached --no-confirm', '--no-confirm --detached', '--bad'):
+        assert module.spawn_elevated_instance(command, arg) == (
+            0, 'Usage: spawn_elevated_instance [--no-confirm]',
+        )
+    confirm.assert_not_called()
+    launch.assert_not_called()
 
-    monkeypatch.setattr(ctypes, 'windll', SimpleNamespace(
-        shell32=SimpleNamespace(ShellExecuteW=shell_execute)), raising=False)
-    monkeypatch.setattr(sys, 'executable', r'C:\Tools\Python 3.13\python.exe')
-    monkeypatch.setattr(sys, 'argv', [r'C:\Program Files\RCH\rchclient.py', '--flag', "O'Brian value"])
-    monkeypatch.setattr(sys, 'frozen', False, raising=False)
-    monkeypatch.setattr('os.getcwd', lambda: r'C:\RCH Files')
-    monkeypatch.setattr('client.runtime.temp_workspace.get_temp_category_dir', lambda *a, **k: str(tmp_path))
-
-    ok, message = _spawn_elevated_win(detached=True)
-    assert ok == 1
-    assert 'PID: 32123' in message
-    _handle, verb, path, arguments, cwd, show = calls[0]
-    assert verb == 'runas'
-    assert path.endswith(r'C:\Tools\Python 3.13\python.exe')
-    assert cwd == r'C:\RCH Files'
-    assert show == 0
-    assert '-c' in arguments
-    assert 'DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP' in arguments
-    request = json.loads(base64.b64decode(arguments.rsplit(' ', 1)[-1]))
-    assert request['argv'][0].endswith(r'C:\Tools\Python 3.13\python.exe')
-    assert request['argv'][1].endswith(r'C:\Program Files\RCH\rchclient.py')
-    assert request['argv'][2:] == ['--flag', "O'Brian value"]
-    assert 'RCH_PROCESS_RECOVERY_WATCHDOG_SESSION' in request['clear_env']
-    assert 'RCH_CLIENT_LAUNCH_MODE' not in request['clear_env']
-
-
-def test_macos_elevated_command_keeps_default_and_adds_detached_option(monkeypatch):
-    from client.commands.runtime.hosts import MacCommands
-
-    calls = []
-    command = SimpleNamespace(command_platform='mac')
-    monkeypatch.setattr('client.commands.shell.standalone.spawn_elevated_instance._spawn_elevated_mac',
-                        lambda *, detached=False: calls.append(detached) or (1, 'ok'))
-
-    assert MacCommands.spawn_elevated_instance(command, '--no-confirm') == (1, 'ok')
-    assert calls.pop() is False
-    assert MacCommands.spawn_elevated_instance(command, '--detached --no-confirm') == (1, 'ok')
-    assert calls.pop() is True
-    assert MacCommands.spawn_elevated_instance(command, '--bad --no-confirm') == (
-        0,
-        'Usage: spawn_elevated_instance [--detached] [--no-confirm]',
-    )
+    assert module.spawn_elevated_instance(command, '')[0] == 0
+    confirm.assert_called_once()
+    launch.assert_not_called()
 
 
 def test_macos_elevation_uses_original_launch_command_without_client_bootstrap_flags(monkeypatch):
@@ -666,18 +625,17 @@ def test_macos_elevation_uses_original_launch_command_without_client_bootstrap_f
             returncode=0, stderr='', stdout='RCH_ELEVATED_CLIENT_PID=4321\n',
         ),
     )
-    for detached in (False, True):
-        status, message = automation_service._spawn_elevated_mac(detached=detached)
-        assert status == 1
-        assert 'PID: 4321' in message
-        args, kwargs = captured.pop()
-        assert args[:2] == ['osascript', '-e']
-        assert chr(92) + '"/tmp/python with spaces' in args[2]
-        assert '--profile tls-local' in args[2]
-        assert '--elevated-bootstrap' not in args[2]
-        assert '--elevated-detached-bootstrap' not in args[2]
-        assert ('/usr/bin/perl -MPOSIX=setsid' in args[2]) is detached
-        assert kwargs['capture_output'] is True
+    status, message = automation_service._spawn_elevated_mac()
+    assert status == 1
+    assert 'PID: 4321' in message
+    args, kwargs = captured.pop()
+    assert args[:2] == ['osascript', '-e']
+    assert chr(92) + '"/tmp/python with spaces' in args[2]
+    assert '--profile tls-local' in args[2]
+    assert '--elevated-bootstrap' not in args[2]
+    assert '--elevated-detached-bootstrap' not in args[2]
+    assert '/usr/bin/perl -MPOSIX=setsid' in args[2]
+    assert kwargs['capture_output'] is True
 
 
 def _make_launchd_manager(monkeypatch, tmp_path, *, kind='agent', scope='user'):

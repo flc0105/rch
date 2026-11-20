@@ -218,7 +218,9 @@ iOS 专属 `clipboard_read` / `clipboard_write` 和其他设备命令统一使�
 Client 生命周期的 `relaunch_instance` 仍调用原有新建进程再退出逻辑；
 `reexec_instance` 仅在 macOS/Linux 注册，使用 `os.execv()` 替换当前进程。
 Windows 不注册 `reexec_instance`，重启使用 `relaunch_instance`。macOS 和 Windows 的
-`run_elevated` 保留各自平台原有执行策略；macOS 与 Windows 均提供 `spawn_elevated_instance`，由系统权限确认后启动一个额外的高权限 Client 实例。Windows 可使用 `spawn_elevated_instance --detached` 经 UAC 由 Python 启动器创建无控制台的 detached elevated Client；macOS 可使用 `spawn_elevated_instance --detached`，由提权 bootstrap 创建独立 session 的后台 root Client 后退出；不带该参数时保留原有启动生命周期。这两个平台的提权命令默认通过 `@confirm` 请求交互；显式 `--no-confirm` 仅跳过 RCH Interaction Broker，不会绕过操作系统授权弹窗。
+`run_elevated` 默认使用 `--shell`，按平台的 Shell 执行，实时回传 stdout 和 stderr，最后报告退出码。`--collect` 在结束时一次性返回结果，Windows 同时返回退出码，macOS 直接返回 AppleScript 的输出或错误。`--detached` 直接后台启动目标程序并返回 PID。Windows 还支持 `--open` 直接打开可见程序，以及 `--show-console` 在目标桌面打开可见的提权 CMD 窗口并执行命令，RCH 只返回启动结果。一次只能选择一种模式。可用 `--` 分隔 RCH 参数与目标命令。 `--no-confirm` 仅跳过 RCH 确认，操作系统仍按自身策略授权。
+
+`spawn_elevated_instance [--no-confirm]` 始终后台启动。macOS 在独立 session 中、Windows 通过无控制台启动器创建额外的提权 Client，回报新 Client 的实际 PID。`--no-confirm` 仅跳过 RCH 确认，操作系统仍按自身策略授权。
 
 
 ## Log Viewer (Client file tail)
