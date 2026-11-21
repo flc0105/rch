@@ -67,6 +67,15 @@ export function findJsonOutput(text) {
 
 const isPlainObject = value => !!value && typeof value === 'object' && !Array.isArray(value)
 
+// Script and command output may contain several structured records. Select the
+// latest view-bearing record; never attach its actions to another record's data.
+export function selectJsonViewResult(previous, result) {
+  if (!result || result.data === undefined) return previous
+  const candidate = { jsonText: JSON.stringify(result.data), view: result.view ?? null }
+  if (previous?.view && !candidate.view) return previous
+  return candidate
+}
+
 export function normalizeJsonViewActions(actions) {
   if (!Array.isArray(actions)) return []
   return actions.flatMap(action => {
@@ -173,13 +182,15 @@ export function resolveJsonViewRowActions(view, rawRow) {
   const templates = Array.isArray(view?.actions) ? view.actions : []
   return templates.flatMap(action => {
     let missing = false
-    const command = action.command.replace(/\{([a-zA-Z_][a-zA-Z0-9_]*)\}/g, (_, field) => {
+    const placeholder = /\{([a-zA-Z_][a-zA-Z0-9_]*)\}/g
+    if (/\{[^{}]*\}/.test(action.command.replace(placeholder, ''))) return []
+    const command = action.command.replace(placeholder, (_, field) => {
       if (!Object.prototype.hasOwnProperty.call(rawRow, field)) { missing = true; return '' }
       const value = quoteJsonActionValue(rawRow[field])
       if (value === null) { missing = true; return '' }
       return value
     })
-    if (missing || /\{[^{}]*\}/.test(command)) return []
+    if (missing) return []
     return [{ ...action, command }]
   })
 }

@@ -15,7 +15,10 @@ from core.utils.script_metadata import read_script_metadata_from_source, resolve
 from client.runtime.sdk import context
 
 
-class ScriptSdkScriptsError(RuntimeError):
+from client.runtime.script_errors import ScriptUserError
+
+
+class ScriptSdkScriptsError(ScriptUserError):
     pass
 
 

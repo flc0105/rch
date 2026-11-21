@@ -70,7 +70,7 @@ context.emit_view([
 print('State collected.')
 ```
 
-Python Client 的 `inproc/subprocess_pipe` 与 `stream/collect` 组合均支持这两个 API：前者通过当前执行上下文发送，独立进程通过本地有序输出通道发送，不在 stdout 中插入标记。collect 延迟发布输出但保留文本/结构化事件的顺序。`emit_view` 使用 Result 本身的 `view` 契约进行校验；动作以结果级模板声明，在 Viewer 逐行替换 `{field}` 后作为真实 RCH 命令执行。调用另一个 Script 时使用已经注册的 `script exec`；`refresh: true` 则在动作成功后重新运行产生当前 Viewer 的原 Script。未处于 Script 执行上下文时会拒绝输出；Go Client 的 Python 执行环境不提供 Python Client SDK。示例见 `test/misc/structured_output_probe` 和 `test/misc/json_result_actions_probe`（后者执行 `test/misc/json_result_actions_update`）。
+Python Client 的 `inproc/subprocess_pipe` 与 `stream/collect` 组合均支持这两个 API：前者通过当前执行上下文发送，独立进程通过本地有序输出通道发送，不在 stdout 中插入标记。collect 延迟发布输出但保留文本/结构化事件的顺序。`emit_view` 使用 Result 本身的 `view` 契约进行校验；动作以结果级模板声明，在 Viewer 逐行替换 `{field}` 后作为真实 RCH 命令执行。一个 Script 可以输出多条结构化记录；Viewer 选取最后一条带 `view` 的记录及其对应数据，只有完全没有 `view` 时才显示最后一条普通结构化记录。调用另一个 Script 时使用已经注册的 `script exec`；`refresh: true` 则在动作成功后重新运行产生当前 Viewer 的原 Script。未处于 Script 执行上下文时会拒绝输出；Go Client 的 Python 执行环境不提供 Python Client SDK。示例见 `test/misc/structured_output_probe` 和 `test/misc/json_result_actions_probe`（后者执行 `test/misc/json_result_actions_update`）。
 
 兼容 API：
 

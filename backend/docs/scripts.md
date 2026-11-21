@@ -284,7 +284,7 @@ Preview 只返回确认结果或被勾选的行 ID，并不会由 Server 自动�
 
 Script 的任务状态和文本结果属于命令执行通道，Output 可以在 Terminal 或 Script Result Dialog 中消费；它们不等同于脚本上传的 Artifact。需要保存报告、截图或其他二进制文件时，应显式调用 Artifact 上传接口。调用 `events.emit()` 发出业务通知也不会自动将 `stdout` 保存在通知历史。
 
-Script 输出可以是人类可读文本，也可以显式打印 JSON。需要独立的结构化记录时，Python Client Script 使用 `context.emit(data)`；需要可操作的 Viewer 时使用 `context.emit_view(data, view=...)`。两者都经原有 Result 通道发送可序列化的 JSON 对象/数组，无须把文本与数据拼成一段 JSON；普通 `print()` 与结构化事件可连续出现。Script Result Dialog 的 View JSON 与 Terminal JSON Viewer 均使用这条数据对应的结果级 `view`。再次执行 Script 后，Viewer 优先使用返回的原生 JSON 数据与关联的 `view`，因此普通日志不会破坏刷新。手动打印 JSON 时仍应保证 JSON 块合法。`scripts.run(...).json()` 只解析子脚本 stdout，与 Viewer 的结构化事件相互独立。更多规则见 [Structured Command Output](structured_output.md)。
+Script 输出可以是人类可读文本，也可以显式打印 JSON。需要独立的结构化记录时，Python Client Script 使用 `context.emit(data)`；需要可操作的 Viewer 时使用 `context.emit_view(data, view=...)`。两者都经原有 Result 通道发送可序列化的 JSON 对象/数组，无须把文本与数据拼成一段 JSON；普通 `print()` 与结构化事件可连续出现。Script Result Dialog 的 View JSON 与 Terminal JSON Viewer 均使用这条数据对应的结果级 `view`。一次执行可以发送多条结构化记录：Viewer 优先展示最后一条携带 `view` 的记录及其配对数据；如果没有记录携带 `view`，展示最后一条结构化记录。再次执行 Script 时采用同一规则，普通日志及后续独立 `emit()` 不会覆盖已展示的 Actions。手动打印 JSON 时仍应保证 JSON 块合法。`scripts.run(...).json()` 只解析子脚本 stdout，与 Viewer 的结构化事件相互独立。更多规则见 [Structured Command Output](structured_output.md)。
 
 一个 Script 执行完毕后，可通过命令任务关联对应的 Command History Entry；相关历史的具体保留数量、输出截断、删除规则由 Command History 管理。脚本源码本身在 Library 文件系统中持久保存，但 `inproc` 中的 Python 全局执行状态、浏览器当前弹窗、连接期 Token 和等待中的 Interaction 都不是可在 Server 重启后恢复的持久脚本会话。
 
@@ -331,7 +331,7 @@ Run API 要求 `script_name` 非空、`params` 为对象，并明确提供 `pres
 
 `script` / `script list` 默认每行输出一个 Server Script 相对路径；`script list --format table` 输出包含 `name`、`display_name`、`description` 和 `params`（仅参数名数组）的表格。`script list --json`、`script list --format json` 返回相同字段的完整结构化数组；可用 `--format records` 纵向查看长说明；`script view <name>` 和 `script view --name NAME` 返回 Server 上的脚本源码，严格限制在 Script 根目录。
 
-`script exec <name> [--execution_mode MODE] [--output_mode MODE] -- --key VALUE ...` 使用与 Job 共用的 Server Schema Parser 得到参数对象，Script Library UI 直接提交结构化参数。两端均按同一份 Script Metadata 规范化，再经 `control(domain=script, action=run)` 执行。Server 不注册独立的 `exec`、`run_script` 或 `script run` 入口，Client 不注册 Script 文本命令；脚本运行所需源码作为受控请求的 `payload.source` 提供。
+`script exec <name> [--execution_mode MODE] [--output_mode MODE] -- --key VALUE ...` 使用与 Job 共用的 Server Schema Parser 得到参数对象，Script Library UI 直接提交结构化参数。动态参数值可以以 `--` 开头；也可以使用 `--key=--value` 明确表达该值。两端均按同一份 Script Metadata 规范化，再经 `control(domain=script, action=run)` 执行。Server 不注册独立的 `exec`、`run_script` 或 `script run` 入口，Client 不注册 Script 文本命令；脚本运行所需源码作为受控请求的 `payload.source` 提供。
 
 ### 终端列表的平台筛选
 

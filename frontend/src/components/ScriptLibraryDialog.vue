@@ -307,7 +307,7 @@ import {
   deleteScriptFolder, renameLibraryScript, uploadLibraryScript, deleteLibraryScript,
 } from '../api/scriptLibraryApi.js'
 import ScriptRunDialog from './ScriptRunDialog.vue'
-import { findJsonOutput } from '../utils/terminalJson.js'
+import { findJsonOutput, selectJsonViewResult } from '../utils/terminalJson.js'
 import { TERMINAL_RUN_SCRIPT_PREFIX } from '../composables/terminalMarkers.js'
 import { cloneParamValue, normalizeParamSpecs, normalizeParamType } from '../utils/parameterSchema.js'
 
@@ -1150,8 +1150,10 @@ export default {
 
       if (!this.resultVisible) this.resultVisible = true
       if (payload.result?.data !== undefined) {
-        this.activeRun.jsonText = JSON.stringify(payload.result.data)
-        this.activeRun.view = payload.result.view || null
+        const selected = selectJsonViewResult(this.activeRun.jsonText
+          ? { jsonText: this.activeRun.jsonText, view: this.activeRun.view } : null, payload.result)
+        this.activeRun.jsonText = selected.jsonText
+        this.activeRun.view = selected.view
       }
       const chunk = String(payload.text ?? '').replace(/\r\n/g, '\n').replace(/\r/g, '\n')
       if (metadata.output_mode === 'stream') {

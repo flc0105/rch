@@ -63,7 +63,7 @@ test('raw Result view travels through the existing SSE line metadata, and replay
   assert.match(sse, /item\.result\?\.view/)
   assert.match(dialog, /line\.meta\?\.resultView/)
   assert.match(dialog, /payload\.result\?\.data/)
-  assert.match(dialog, /payload\.result\.view \|\| null/)
+  assert.match(dialog, /selectJsonViewResult\(this\.refreshRun\.selected, payload\.result\)/)
   assert.match(dialog, /this\.viewMetadata = updatedView \|\| \{\}/)
 })
 

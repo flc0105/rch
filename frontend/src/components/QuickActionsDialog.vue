@@ -282,7 +282,7 @@
 <script>
 import { createTerminalOperation, operationHeaders } from '../utils/terminalOperation.js'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { findJsonOutput } from '../utils/terminalJson.js'
+import { findJsonOutput, selectJsonViewResult } from '../utils/terminalJson.js'
 import {
   loadToolbarPreferences,
   saveToolbarPreferences,
@@ -833,8 +833,10 @@ export default {
         this.activeRun.resolvedCommand = String(metadata.quick_action_resolved_command || '')
       }
       if (payload.result?.data !== undefined) {
-        this.activeRun.jsonText = JSON.stringify(payload.result.data)
-        this.activeRun.view = payload.result.view || null
+        const selected = selectJsonViewResult(this.activeRun.jsonText
+          ? { jsonText: this.activeRun.jsonText, view: this.activeRun.view } : null, payload.result)
+        this.activeRun.jsonText = selected.jsonText
+        this.activeRun.view = selected.view
       }
       this.appendResultChunk(payload.text)
       return true

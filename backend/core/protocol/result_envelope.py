@@ -30,6 +30,39 @@ class ResultEnvelope:
 
 
 
+def validate_result_view(view: dict) -> None:
+    """Validate result-level Viewer metadata independently of transport identity."""
+    if not isinstance(view, dict) or set(view) - {'titleField', 'columns', 'details', 'actions'}:
+        raise ValueError('Invalid Result view')
+    if len(json.dumps(view, ensure_ascii=False)) > 16384:
+        raise ValueError('Result view is too large')
+    field = view.get('titleField')
+    if field is not None and (not isinstance(field, str) or not field or len(field) > 128):
+        raise ValueError('Invalid Result view titleField')
+    columns = view.get('columns', [])
+    details = view.get('details', [])
+    actions = view.get('actions', [])
+    if not isinstance(columns, list) or len(columns) > 80 or not isinstance(details, list) or len(details) > 80 or not isinstance(actions, list) or len(actions) > 16:
+        raise ValueError('Invalid Result view collections')
+    for name in details:
+        if not isinstance(name, str) or not name or len(name) > 128:
+            raise ValueError('Invalid Result view details')
+    for column in columns:
+        if not isinstance(column, dict) or set(column) - {'field', 'width', 'minWidth'} or not isinstance(column.get('field'), str) or not column['field']:
+            raise ValueError('Invalid Result view column')
+        for size in ('width', 'minWidth'):
+            if size in column and (type(column[size]) is not int or not 40 <= column[size] <= 1600):
+                raise ValueError('Invalid Result view column size')
+    for action in actions:
+        if not isinstance(action, dict) or set(action) - {'label', 'command', 'confirm', 'refresh'}:
+            raise ValueError('Invalid Result view action')
+        if not isinstance(action.get('label'), str) or not 1 <= len(action['label']) <= 80 or not isinstance(action.get('command'), str) or not 1 <= len(action['command']) <= 2048:
+            raise ValueError('Invalid Result view action text')
+        if any(key in action and type(action[key]) is not bool for key in ('confirm', 'refresh')):
+            raise ValueError('Invalid Result view action flag')
+
+
+
 def build_result_wire_event(request_id, event: dict, *, cwd=None) -> dict:
     """Validate and attach request identity to a typed Result event."""
     from core.protocol.message_types import MSG_TYPE_RESULT
@@ -68,35 +101,7 @@ def build_result_wire_event(request_id, event: dict, *, cwd=None) -> dict:
         if p['source'] == 'data' and 'data' not in event:
             raise ValueError('Data presentation requires Result data')
     if 'view' in event:
-        view = event['view']
-        if not isinstance(view, dict) or set(view) - {'titleField', 'columns', 'details', 'actions'}:
-            raise ValueError('Invalid Result view')
-        if len(json.dumps(view, ensure_ascii=False)) > 16384:
-            raise ValueError('Result view is too large')
-        field = view.get('titleField')
-        if field is not None and (not isinstance(field, str) or not field or len(field) > 128):
-            raise ValueError('Invalid Result view titleField')
-        columns = view.get('columns', [])
-        details = view.get('details', [])
-        actions = view.get('actions', [])
-        if not isinstance(columns, list) or len(columns) > 80 or not isinstance(details, list) or len(details) > 80 or not isinstance(actions, list) or len(actions) > 16:
-            raise ValueError('Invalid Result view collections')
-        for name in details:
-            if not isinstance(name, str) or not name or len(name) > 128:
-                raise ValueError('Invalid Result view details')
-        for column in columns:
-            if not isinstance(column, dict) or set(column) - {'field', 'width', 'minWidth'} or not isinstance(column.get('field'), str) or not column['field']:
-                raise ValueError('Invalid Result view column')
-            for size in ('width', 'minWidth'):
-                if size in column and (type(column[size]) is not int or not 40 <= column[size] <= 1600):
-                    raise ValueError('Invalid Result view column size')
-        for action in actions:
-            if not isinstance(action, dict) or set(action) - {'label', 'command', 'confirm', 'refresh'}:
-                raise ValueError('Invalid Result view action')
-            if not isinstance(action.get('label'), str) or not 1 <= len(action['label']) <= 80 or not isinstance(action.get('command'), str) or not 1 <= len(action['command']) <= 2048:
-                raise ValueError('Invalid Result view action text')
-            if any(key in action and type(action[key]) is not bool for key in ('confirm', 'refresh')):
-                raise ValueError('Invalid Result view action flag')
+        validate_result_view(event['view'])
     packet = {'type': MSG_TYPE_RESULT, 'id': request_id, 'event_type': phase}
     if cwd is not None:
         packet['cwd'] = cwd

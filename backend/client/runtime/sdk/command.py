@@ -12,7 +12,10 @@ class ScriptCommandAccess:
     resolve: Callable[[Any, str], Any]
 
 
-class ScriptSdkCommandError(RuntimeError):
+from client.runtime.script_errors import ScriptUserError
+
+
+class ScriptSdkCommandError(ScriptUserError):
     """Script SDK command 统一异常。"""
     pass
 

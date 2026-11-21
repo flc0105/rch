@@ -3,7 +3,10 @@ from client.http.client_api import ClientApiClient
 from client.runtime.sdk import context
 
 
-class ScriptSdkInteractionError(RuntimeError):
+from client.runtime.script_errors import ScriptUserError
+
+
+class ScriptSdkInteractionError(ScriptUserError):
     pass
 
 

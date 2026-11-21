@@ -261,12 +261,12 @@ JSON Viewer 支持对有效来源的 Command、Script 或 Quick Action 使用 **
 
 Result 的 `view.actions` 统一描述操作模板；`confirm` 控制二次确认，`refresh` 控制成功后使用原操作重放来源刷新 Viewer。无重放来源时可以执行动作，但不会刷新。Terminal 与 New Dialog 都保持 JSON Viewer 打开，使用既有 `/api/connections/{client_id}/command` 请求和任务结果 SSE。
 
-Run Again 与模板操作均执行新的任务；仅当前任务的结果用于刷新对应窗口，其他任务的输出不会混入。
+Run Again 与模板操作均执行新的任务；仅当前任务的结果用于刷新对应窗口，其他任务的输出不会混入。一次执行发送多条结构化记录时，优先选择最后一条携带 `view` 的记录和其原始 `data`，否则选择最后一条结构化记录；不跨事件拼接数据与 Actions。动作成功后若配置 `refresh: true`，在刷新期间旧按钮暂停；刷新失败时保留原始结果并提示已过期，直到成功重跑后恢复操作。
 
 ## Process Result Actions
 
-`acmd ps` 返回原生进程记录数组，字段与此前相同：`pid / ppid / name / username / status`。不指定 `--with-actions` 时不附加 `view`；指定时只给 `view.actions` 声明一次 Kill 模板，不修改原有主表列、标题和详情布局。Terminal 文本展示遵循 `presentation`；JSON Viewer 按需展示 Kill 操作。`--port` 按当前监听端口筛选进程；无匹配时保留原查询失败行为。
+`acmd ps` 返回原生进程记录数组，字段与此前相同：`pid / ppid / name / username / status`。不指定 `--with-actions` 时不附加 `view`；指定时在结果级 `view` 声明 Kill 模板与五个原有主表字段，不改动 `data` 的列。Terminal 文本展示遵循 `presentation`；JSON Viewer 按需展示 Kill 操作。`--port` 按当前监听端口筛选进程；使用 `--with-actions` 时若筛选无结果，返回空数组及相同列声明，使刷新后的空表格清楚显示。未带 `--with-actions` 的查询继续采用原有无匹配错误。
 
 ### Result JSON 的可选 View 元数据
 
-`view` 是与 `presentation` 并列的可选 Result 字段，仅影响 JSON Viewer：`titleField`、`columns`（`field` 与可选像素 `width/minWidth`）、`details`（展开字段名）、`actions`（整张表共享的操作模板列表）。模板命令中的 `{field}` 由当前行原始数据绑定为单个安全参数值；缺失或无法作为参数表示的值使该操作不可用。`confirm` 缺省 `true`，`refresh` 缺省 `false`。原始 `data` 不变；History 仍只保存 Result JSON，Output Records 由 `presentation` 派生文字。JSON Viewer 默认在桌面显示 Table、手机显示 Card；可切换 Table/Card 和 Raw。前两个 Action 直接显示，其余归入 More。脚本 SDK `emit()` 的结构化输出契约不受 `view` 改动影响，Script JSON 文本不携带 `view` 时不提供操作按钮。
+`view` 是与 `presentation` 并列的可选 Result 字段，仅影响 JSON Viewer：`titleField`、`columns`（`field` 与可选像素 `width/minWidth`）、`details`（展开字段名）、`actions`（整张表共享的操作模板列表）。模板命令中的 `{field}` 由当前行原始数据绑定为单个安全参数值；缺失或无法作为参数表示的值使该操作不可用。字段值中允许普通花括号；仅模板里未解析的占位符会使操作不可用。`confirm` 缺省 `true`，`refresh` 缺省 `false`。原始 `data` 不变；History 仍只保存 Result JSON，Output Records 由 `presentation` 派生文字。JSON Viewer 默认在桌面显示 Table、手机显示 Card；可切换 Table/Card 和 Raw。前两个 Action 直接显示，其余归入 More。脚本 SDK `emit()` 的结构化输出契约不受 `view` 改动影响，Script JSON 文本不携带 `view` 时不提供操作按钮。

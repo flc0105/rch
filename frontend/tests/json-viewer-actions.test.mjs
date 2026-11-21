@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import vm from 'node:vm'
 import { getJsonRenderModel } from '../src/utils/terminalJson.js'
-import { JSON_ROW_SOURCE, normalizeJsonViewActions, normalizeJsonView, resolveJsonViewRowActions, findJsonOutput } from '../src/utils/terminalJson.js'
+import { JSON_ROW_SOURCE, normalizeJsonViewActions, normalizeJsonView, resolveJsonViewRowActions, findJsonOutput, selectJsonViewResult } from '../src/utils/terminalJson.js'
 import { createTerminalOperation, getTerminalReplayAction } from '../src/utils/terminalOperation.js'
 import { canRerunTerminalSource } from '../src/utils/terminalRerun.js'
 import { createTerminalTaskCapture } from '../src/composables/terminalTaskCapture.js'
@@ -25,7 +25,7 @@ const context = { ref: value => ({ value }), h: (tag, props, children) => {
 },
   ElMessage, ElMessageBox: { confirm: (...args) => askConfirmation(...args) },
   ElRadioGroup: radioGroup, ElRadioButton: {}, JSON_ROW_SOURCE, getJsonRenderModel, normalizeJsonView, resolveJsonViewRowActions, findJsonOutput,
-  getTerminalReplayAction, canRerunTerminalSource }
+  getTerminalReplayAction, canRerunTerminalSource, selectJsonViewResult }
 const component = vm.runInNewContext(`(${script.replace(/^import .*$/gm, '').replace('export default', '')})`, context)
 
 function dialog(replay = { type: 'command', command: 'acmd ps --json' }) {
@@ -224,4 +224,51 @@ test('Script emit_view refresh prefers typed data and view even with mixed stdou
   instance.handleJsonRefreshComplete({ client_id: 'client-A', status: 'success' }, runId)
   assert.equal(instance.tableRows[0].checked_at, '2026-11-21T23:12:00')
   assert.equal(instance.getTerminalJsonRowActions(instance.tableRows[0])[0].label, 'Run Child')
+})
+
+
+test('view action parameters containing literal braces remain valid and quoted', () => {
+  const view = normalizeJsonView({ actions: [{ label: 'Use', command: 'script exec common/child -- --name {name}' }] }, [{ prop: 'name' }])
+  const actions = resolveJsonViewRowActions(view, { name: 'a{b}' })
+  assert.equal(actions.length, 1)
+  assert.equal(actions[0].command, "script exec common/child -- --name 'a{b}'")
+  assert.deepEqual(resolveJsonViewRowActions(view, {}).length, 0)
+  assert.equal(resolveJsonViewRowActions({ actions: [{ command: 'echo {unknown-field}', label: 'Wrong' }] }, { name: 'safe' }).length, 0)
+})
+
+test('Action success followed by failed rerun marks old actions stale until successful refresh', async () => {
+  askConfirmation = () => { throw new Error('unexpected confirm') }
+  const { instance, events, nextTicks } = dialog()
+  instance.viewMetadata = { actions: [{ label: 'Kill', command: 'getpid', confirm: false }] }
+  instance.setTerminalJsonContent('[{"counter":0}]')
+  assert.equal(instance.getTerminalJsonRowActions(instance.tableRows[0]).length, 1)
+  await instance.confirmTableAction({ label: 'Update', command: 'getpid', confirm: false, refresh: true })
+  complete(instance)
+  assert.equal(instance.actionsStale, true)
+  assert.equal(instance.getTerminalJsonRowActions(instance.tableRows[0]).length, 0)
+  nextTicks.shift()()
+  const run = events.find(e => e.event === 'rerun-json')
+  instance.handleJsonRefreshResult({ client_id: 'client-A', result: { data: [{ counter: 99 }] } }, run.data.runId)
+  instance.handleJsonRefreshComplete({ client_id: 'client-A', status: 'failed' }, run.data.runId)
+  assert.equal(instance.actionsStale, true)
+  assert.equal(instance.tableRows[0].counter, '0')
+  await instance.runAgain()
+  const retry = events.filter(e => e.event === 'rerun-json').at(-1)
+  instance.handleJsonRefreshResult({ client_id: 'client-A', result: { data: [{ counter: 2 }], view: instance.viewMetadata } }, retry.data.runId)
+  instance.handleJsonRefreshComplete({ client_id: 'client-A', status: 'success' }, retry.data.runId)
+  assert.equal(instance.actionsStale, false)
+  assert.equal(instance.tableRows[0].counter, '2')
+  assert.equal(instance.getTerminalJsonRowActions(instance.tableRows[0]).length, 1)
+})
+
+test('Rerun chooses a data/view pair from the same view-bearing result', async () => {
+  const { instance, events } = dialog()
+  await instance.runAgain()
+  const run = events.find(e => e.event === 'rerun-json')
+  const view = { actions: [{ label: 'Inspect', command: 'getpid' }] }
+  instance.handleJsonRefreshResult({ client_id: 'client-A', result: { data: [{ pid: 17 }], view } }, run.data.runId)
+  instance.handleJsonRefreshResult({ client_id: 'client-A', result: { data: { finished: true } } }, run.data.runId)
+  instance.handleJsonRefreshComplete({ client_id: 'client-A', status: 'success' }, run.data.runId)
+  assert.equal(instance.tableRows[0].pid, '17')
+  assert.equal(instance.getTerminalJsonRowActions(instance.tableRows[0])[0].label, 'Inspect')
 })

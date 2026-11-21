@@ -6,7 +6,7 @@ import vm from 'node:vm'
 import { getTerminalReplayAction } from '../src/utils/terminalOperation.js'
 import { canRerunTerminalSource } from '../src/utils/terminalRerun.js'
 import { JSON_ROW_SOURCE, findJsonOutput, getJsonRenderModel, normalizeJsonView,
-  resolveJsonViewRowActions } from '../src/utils/terminalJson.js'
+  resolveJsonViewRowActions, selectJsonViewResult } from '../src/utils/terminalJson.js'
 
 const read = relative => readFileSync(new URL(relative, import.meta.url), 'utf8')
 const appSource = read('../src/App.vue')
@@ -28,7 +28,7 @@ const emitScriptJson = method(scriptSource, '    viewResultJson() {',
 const emitQuickJson = method(quickSource, '    viewResultJson() {',
   '    platformLabel(', 'viewResultJson')
 const handleQuickResult = method(quickSource, '    handleCommandResult(payload = {}) {',
-  '    appendResultChunk(', 'handleCommandResult')
+  '    appendResultChunk(', 'handleCommandResult', { selectJsonViewResult })
 const resultJsonText = method(quickSource, '    resultJsonText() {',
   '    resultTitle() {', 'resultJsonText', { findJsonOutput })
 
@@ -36,7 +36,7 @@ const viewerScript = viewerSource.match(/<script>([\s\S]*?)<\/script>/)?.[1]
 assert.ok(viewerScript, 'Viewer component script exists')
 const viewerComponent = vm.runInNewContext(`(${viewerScript.replace(/^import .*$/gm, '').replace('export default', '')})`, {
   JSON_ROW_SOURCE, findJsonOutput, getJsonRenderModel, normalizeJsonView,
-  resolveJsonViewRowActions, getTerminalReplayAction, canRerunTerminalSource,
+  resolveJsonViewRowActions, selectJsonViewResult, getTerminalReplayAction, canRerunTerminalSource,
 })
 
 const DATA = [{ name: 'demo', pid: 42, checked_at: '2026-11-21T23:30:00' }]
@@ -152,4 +152,15 @@ test('Quick Action no-structure output continues to use plain JSON text and no a
   emitQuickJson.call(quick)
   assert.equal(dialog.displayMode, 'table')
   assert.equal(dialog.getTerminalJsonRowActions(dialog.tableRows[0]).length, 0)
+})
+
+
+test('Quick Action result keeps the view-bearing record and never mixes later JSON with its buttons', () => {
+  const run = { runId: 'r2', clientId: 'client-A', output: '', view: null, jsonText: '' }
+  const instance = { activeRun: run, resultVisible: true, appendResultChunk: () => {} }
+  const metadata = { quick_action: true, quick_action_presentation: 'dialog', quick_action_run_id: 'r2' }
+  handleQuickResult.call(instance, { metadata, result: { data: DATA, view: VIEW } })
+  handleQuickResult.call(instance, { metadata, result: { data: { done: true } } })
+  assert.equal(run.jsonText, JSON.stringify(DATA))
+  assert.equal(run.view.actions[0].label, 'Run Child')
 })

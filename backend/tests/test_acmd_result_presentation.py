@@ -263,7 +263,9 @@ def test_ps_actions_are_raw_json_metadata_not_extra_declared_table_columns(monke
     registry = ArgumentCommandRegistry(SimpleNamespace(command_platform='mac'))
     registry.register(ps)
     status, event = registry.execute({'name': 'ps', 'args': {'with-actions': True}})
-    assert status == 1 and event['view'] == {'actions': [{'label': 'Kill', 'command': 'acmd kill --pid {pid}', 'refresh': True}]}
+    assert status == 1
+    assert event['view']['actions'] == [{'label': 'Kill', 'command': 'acmd kill --pid {pid}', 'refresh': True}]
+    assert [c['field'] for c in event['view']['columns']] == ['pid', 'ppid', 'name', 'username', 'status']
     assert list(event['data'][0]) == ['pid', 'ppid', 'name', 'username', 'status']
     assert 'columns' not in event['presentation']
     wire = result_wire_event(88, status, event)
@@ -482,3 +484,15 @@ def test_negative_pid_is_positional_value_and_numeric_force_remains_declared_ali
     args = planner.build_argument_command_plan('acmd kill --pid 1234 -9')['extra']['args']
     assert validator.normalize(KILL_ARGUMENT_SPEC, args)['force'] is True
 
+
+
+def test_ps_with_actions_empty_filtered_snapshot_preserves_table(monkeypatch):
+    monkeypatch.setattr(ProcessService, 'list_processes', lambda *_: [])
+    registry = ArgumentCommandRegistry(SimpleNamespace(command_platform='mac'))
+    registry.register(ps)
+    ok, event = registry.execute({'name': 'ps', 'args': {'pid': 99999, 'with-actions': True}})
+    assert ok == 1 and event['data'] == []
+    assert [col['field'] for col in event['view']['columns']] == ['pid', 'ppid', 'name', 'username', 'status']
+    assert event['view']['actions'][0]['label'] == 'Kill'
+    status, result = registry.execute({'name': 'ps', 'args': {'pid': 99999}})
+    assert status == 0 and 'No process found' in str(result)

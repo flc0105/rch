@@ -4,6 +4,7 @@ import test from 'node:test'
 import vm from 'node:vm'
 
 import { createTerminalOperation, getTerminalReplayAction } from '../src/utils/terminalOperation.js'
+import { selectJsonViewResult } from '../src/utils/terminalJson.js'
 
 // Exercise the Script Library JSON entry point without mounting a browser dialog.
 const source = readFileSync(new URL('../src/components/ScriptLibraryDialog.vue', import.meta.url), 'utf8')
@@ -44,7 +45,7 @@ test('Script Dialog records exact structured data and view from results', () => 
   const start = source.indexOf('    handleCommandResult(payload = {}) {')
   const end = source.indexOf('    handleCommandComplete(payload = {}) {', start)
   assert.ok(start > 0 && end > start)
-  const method = vm.runInNewContext(`({${source.slice(start, end)}}).handleCommandResult`)
+  const method = vm.runInNewContext(`({${source.slice(start, end)}}).handleCommandResult`, { selectJsonViewResult })
   const run = { runId: 'r1', clientId: 'c1', output: '', outputChunks: 0, view: null, jsonText: '' }
   const instance = { activeRun: run, resultVisible: true }
   method.call(instance, { client_id: 'c1', text: 'a text projection', metadata: {
@@ -53,4 +54,17 @@ test('Script Dialog records exact structured data and view from results', () => 
   })
   assert.equal(run.jsonText, '[{"pid":7}]')
   assert.equal(run.view.actions[0].label, 'Kill')
+})
+
+
+test('Script dialog keeps a data/view record when later emit writes ordinary data', () => {
+  const start = source.indexOf('    handleCommandResult(payload = {}) {')
+  const end = source.indexOf('    handleCommandComplete(payload = {}) {', start)
+  const method = vm.runInNewContext(`({${source.slice(start, end)}}).handleCommandResult`, { selectJsonViewResult })
+  const instance = { activeRun: { runId: 'r1', clientId: 'c1', output: '', outputChunks: 0, view: null, jsonText: '' }, resultVisible: true }
+  const metadata = { script_run: true, script_run_presentation: 'dialog', script_run_id: 'r1', output_mode: 'collect' }
+  method.call(instance, { client_id: 'c1', metadata, result: { data: [{ pid: 4 }], view: { actions: [{ label: 'Inspect', command: 'getpid' }] } } })
+  method.call(instance, { client_id: 'c1', metadata, result: { data: { finished: true } } })
+  assert.equal(instance.activeRun.jsonText, '[{"pid":4}]')
+  assert.equal(instance.activeRun.view.actions[0].label, 'Inspect')
 })

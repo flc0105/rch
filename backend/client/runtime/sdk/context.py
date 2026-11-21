@@ -237,8 +237,8 @@ def emit_view(data: dict | list, *, view: dict) -> None:
     # Freeze data and view before passing them to the current output channel.
     frozen_data = json.loads(json.dumps(data, ensure_ascii=False, allow_nan=False))
     frozen_view = json.loads(json.dumps(view, ensure_ascii=False, allow_nan=False))
-    from core.protocol.result_envelope import build_result_wire_event
-    build_result_wire_event('script', {'event_type': 'chunk', 'data': frozen_data, 'view': frozen_view})
+    from core.protocol.result_envelope import validate_result_view
+    validate_result_view(frozen_view)
     sender = get_current_context().emit_event
     if not callable(sender):
         raise RuntimeError('Structured output requires an active Script output channel')

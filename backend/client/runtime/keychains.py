@@ -26,7 +26,10 @@ MACHINE_SCOPE = 'machine'
 SHARED_MACHINE_ID = '__shared__'
 
 
-class KeychainError(RuntimeError):
+from client.runtime.script_errors import ScriptUserError
+
+
+class KeychainError(ScriptUserError):
     """Keychains helper 统一异常。"""
     pass
 

@@ -8,7 +8,10 @@ from client.http.client_api import ClientApiClient, ClientApiError
 from client.runtime.sdk.context import get_client_id, get_command_id, get_execution_owner
 
 
-class ScriptSdkArtifactError(RuntimeError):
+from client.runtime.script_errors import ScriptUserError
+
+
+class ScriptSdkArtifactError(ScriptUserError):
     """Script SDK artifact 统一异常。"""
     pass
 

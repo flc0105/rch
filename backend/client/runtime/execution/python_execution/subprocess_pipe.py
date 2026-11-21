@@ -148,8 +148,8 @@ except Exception:
                             payload = {'event_type': ResultEventType.CHUNK,
                                        'data': event['data']}
                             if 'view' in event:
-                                from core.protocol.result_envelope import build_result_wire_event
-                                build_result_wire_event('script', {**payload, 'view': event['view']})
+                                from core.protocol.result_envelope import validate_result_view
+                                validate_result_view(event['view'])
                                 payload['view'] = event['view']
                             if emit is None:
                                 events.write(json.dumps({'kind': 'data', 'data': payload}, ensure_ascii=False) + '\n')

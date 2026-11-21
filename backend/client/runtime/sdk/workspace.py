@@ -5,7 +5,10 @@ from client.runtime.sdk import context
 
 
 
-class ScriptSdkWorkspaceError(RuntimeError):
+from client.runtime.script_errors import ScriptUserError
+
+
+class ScriptSdkWorkspaceError(ScriptUserError):
     """Script SDK workspace 统一异常。"""
     pass
 

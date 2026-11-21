@@ -87,3 +87,24 @@ def test_emit_view_frozen_and_requires_live_channel():
     assert sent[0][1]['actions'][0]['command'] == 'getpid'
     with pytest.raises(RuntimeError, match='active Script output channel'):
         context.emit_view([{}], view={})
+
+
+def test_validate_view_contract_without_fake_transport_identity():
+    from core.protocol.result_envelope import validate_result_view
+    validate_result_view({'titleField': 'pid', 'actions': [{'label': 'Inspect', 'command': 'getpid'}]})
+    with pytest.raises(ValueError, match='Invalid Result view action'):
+        validate_result_view({'actions': [{'label': 'Bad', 'command': 'getpid', 'refresh': 'yes'}]})
+
+
+def test_typed_script_error_display_without_exception_name_whitelist():
+    from client.runtime.script_errors import ScriptUserError
+    from client.runtime.execution.python_execution.inproc import InProcessPythonExecutionStrategy
+    from client.runtime.sdk.command import ScriptSdkCommandError
+    owner = _Owner()
+    code = 'from client.runtime.sdk.command import ScriptSdkCommandError; raise ScriptSdkCommandError("bad command")'
+    status, message = InProcessPythonExecutionStrategy(owner).execute_collect(code, {})
+    assert status == 0 and 'ScriptSdkCommandError: bad command' in message
+    assert 'Traceback (most recent call last)' not in message
+    assert issubclass(ScriptSdkCommandError, ScriptUserError)
+    status, message = InProcessPythonExecutionStrategy(owner).execute_collect('class ScriptSdkCommandError(RuntimeError): pass\nraise ScriptSdkCommandError("forged")', {})
+    assert status == 0 and 'Traceback (most recent call last)' in message

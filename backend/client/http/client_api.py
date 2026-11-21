@@ -20,7 +20,10 @@ def _get_client_session_token():
     return get_token()
 
 
-class ClientApiError(RuntimeError):
+from client.runtime.script_errors import ScriptUserError
+
+
+class ClientApiError(ScriptUserError):
     """
     Client 访问 Server Web API 时的统一异常。
     """

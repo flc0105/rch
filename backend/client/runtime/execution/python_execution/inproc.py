@@ -5,25 +5,9 @@ from client.runtime.execution.python_execution.output import capture_output, Str
 from client.runtime.sdk.context import build_script_sdk_globals, use_script_sdk_context
 from core.utils.command_output import ResultEventType
 from client.runtime.execution.python_execution.base import PythonExecutionStrategy
+from client.runtime.script_errors import ScriptUserError
 
 
-USER_FACING_SCRIPT_ERRORS = {
-    'KeychainError',
-    'ScriptSdkArtifactError',
-    'ScriptSdkScriptsError',
-    'ScriptSdkCommandError',
-    'ScriptSdkExternalToolError',
-    'ScriptSdkWorkspaceError',
-    'ClientApiError',
-    'ScriptSdkInteractionError',
-}
-
-
-def _is_user_facing_script_error(exc: BaseException) -> bool:
-    module_name = str(exc.__class__.__module__ or '')
-    if exc.__class__.__name__ not in USER_FACING_SCRIPT_ERRORS:
-        return False
-    return module_name.startswith(('client.runtime', 'client.http'))
 
 
 def _format_user_facing_script_error(exc: Exception) -> str:
@@ -62,7 +46,7 @@ class InProcessPythonExecutionStrategy(PythonExecutionStrategy):
             return 1, ''
         # User scripts must not propagate interpreter-exit exceptions into Client.wait().
         except BaseException as exc:
-            message = (_format_user_facing_script_error(exc) if _is_user_facing_script_error(exc)
+            message = (_format_user_facing_script_error(exc) if isinstance(exc, ScriptUserError)
                        else f"\n[ERROR] Script execution failed:\n{traceback.format_exc()}")
             return 0, message
         finally:

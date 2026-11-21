@@ -19,7 +19,10 @@ from core.external_tools.template import render_value
 
 
 
-class ScriptSdkExternalToolError(RuntimeError):
+from client.runtime.script_errors import ScriptUserError
+
+
+class ScriptSdkExternalToolError(ScriptUserError):
     """Script SDK external tool 统一异常。"""
     pass
 

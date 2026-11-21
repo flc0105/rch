@@ -75,6 +75,8 @@
         </div>
       </div>
 
+      <el-alert v-if="actionsStale" title="Result is out of date. Run Again to refresh it." type="warning" :closable="false" show-icon />
+
       <template v-if="displayMode === 'table' && !isTerminalJsonRawView && tableViewMode === 'card'">
         <div class="terminal-json-scroll terminal-json-cards">
           <el-card v-for="(row, index) in visibleTableRows" :key="index" class="terminal-json-card" shadow="never">
@@ -255,7 +257,7 @@ import { canRerunTerminalSource } from '../utils/terminalRerun.js'
 import { getTerminalReplayAction } from '../utils/terminalOperation.js'
 import { h, ref } from 'vue'
 import { ElMessage, ElMessageBox, ElRadioGroup, ElRadioButton } from 'element-plus'
-import { JSON_ROW_SOURCE, getJsonRenderModel, findJsonOutput, normalizeJsonView, resolveJsonViewRowActions } from '../utils/terminalJson.js'
+import { JSON_ROW_SOURCE, getJsonRenderModel, findJsonOutput, normalizeJsonView, resolveJsonViewRowActions, selectJsonViewResult } from '../utils/terminalJson.js'
 
 
 export default {
@@ -303,6 +305,7 @@ export default {
       commandInfo: {},
       refreshRunning: false,
       refreshRun: null,
+      actionsStale: false,
       actionRun: null,
       tableSort: {
         prop: '',
@@ -384,6 +387,7 @@ export default {
       this.actionConfirming = false
       this.refreshRunning = false
       this.refreshRun = null
+      this.actionsStale = false
       this.actionRun = null
       this.viewMetadata = line.meta?.resultView || line.jsonView || {}
       this.tableViewMode = typeof window !== 'undefined' && window.matchMedia?.('(max-width: 768px)').matches ? 'card' : 'table'
@@ -429,6 +433,7 @@ export default {
       this.actionConfirming = false
       this.refreshRunning = false
       this.refreshRun = null
+      this.actionsStale = false
       this.actionRun = null
       this.tableSort = {
         prop: '',
@@ -448,7 +453,7 @@ export default {
       const replay = getTerminalReplayAction(info.operation)
       if (!replay) return
       const runId = this.createResultActionRunId()
-      this.refreshRun = { runId, clientId, chunks: [], view: null, jsonText: '' }
+      this.refreshRun = { runId, clientId, chunks: [], selected: null }
       this.refreshRunning = true
       this.$emit('rerun-json', {
         runId, clientId,
@@ -468,8 +473,7 @@ export default {
           || String(payload.client_id || '') !== this.refreshRun.clientId) return
       this.refreshRun.chunks.push(String(payload.text ?? ''))
       if (payload.result?.data !== undefined) {
-        this.refreshRun.jsonText = JSON.stringify(payload.result.data)
-        this.refreshRun.view = payload.result.view || null
+        this.refreshRun.selected = selectJsonViewResult(this.refreshRun.selected, payload.result)
       }
     },
 
@@ -477,8 +481,8 @@ export default {
       if (!this.refreshRun || !this.visible || this.refreshRun.runId !== runId
           || String(payload.client_id || '') !== this.refreshRun.clientId) return
       const chunks = this.refreshRun.chunks
-      const updatedView = this.refreshRun.view
-      const structuredJson = this.refreshRun.jsonText
+      const updatedView = this.refreshRun.selected?.view
+      const structuredJson = this.refreshRun.selected?.jsonText || ''
       this.refreshRun = null
       this.refreshRunning = false
       const status = String(payload.status || '').trim()
@@ -495,9 +499,11 @@ export default {
       }
       this.viewMetadata = updatedView || {}
       this.setTerminalJsonContent(validText.trim(), { preserveTableState: true })
+      this.actionsStale = false
     },
 
     getTerminalJsonRowActions(row) {
+      if (this.actionsStale) return []
       return resolveJsonViewRowActions(this.resultView, row?.[JSON_ROW_SOURCE])
     },
 
@@ -524,7 +530,7 @@ export default {
     },
 
     async confirmTableAction(action) {
-      if (this.actionConfirming || this.actionRun || this.refreshRunning || !action?.command) return
+      if (this.actionConfirming || this.actionRun || this.refreshRunning || this.actionsStale || !action?.command) return
       const clientId = this.actionConnectionId
       if (!clientId || String(this.selectedId || '') !== clientId) {
         ElMessage.warning('The target device has changed')
@@ -632,6 +638,7 @@ export default {
       this.actionRun = null
       if (success && actionRun.refresh && this.visible
           && String(this.selectedId || '') === actionRun.clientId) {
+        this.actionsStale = true
         if (!this.canRunAgain) {
           ElMessage.warning('This JSON result has no replayable source')
         } else {

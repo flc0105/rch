@@ -202,7 +202,7 @@ def _parse_named_tail(tokens):
             value = inline
             index += 1
         else:
-            if index + 1 >= len(tokens) or tokens[index + 1].startswith('--'):
+            if index + 1 >= len(tokens):
                 raise ArgumentCommandValidationError(f'Named argument --{key} requires a value')
             value = tokens[index + 1]
             index += 2
