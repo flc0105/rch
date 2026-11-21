@@ -41,6 +41,12 @@ class ServerConnection(RCHSocket):
         self.message_router = ClientInboundMessageRouter(self)
         self.message_dispatcher = ClientInboundMessageDispatcher(self)
 
+    def adopt_socket(self, connected_socket):
+        """Install an accepted TCP socket; close RCHSocket's unused fresh socket."""
+        previous = self.socket
+        self.socket = connected_socket
+        previous.close()
+
     def request_pause(self):
         # Applied by Client.wait only after the final result frame is sent.
         self._pause_requested = True

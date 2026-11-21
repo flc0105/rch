@@ -72,13 +72,16 @@ class Client:
         连接异常后的恢复逻辑
         """
         logger.error(error, exc_info=True)
+        first_attempt = True
         while True:
             if self.connection_lifecycle.is_paused is True:
                 return
-            # A completed TCP connect can still fail immediately at the protocol
-            # layer (for example, plaintext sent to a TLS endpoint). Throttle
-            # every recovery attempt, not just failed socket connections.
-            time.sleep(self.RECONNECT_INTERVAL)
+            # Bind waits for a Server dial; release the old session immediately
+            # so an operator can reconnect without the reverse-mode backoff.
+            # Subsequent failed attempts remain throttled.
+            if not (first_attempt and self.connection_lifecycle.is_bind_mode):
+                time.sleep(self.RECONNECT_INTERVAL)
+            first_attempt = False
             if self.connection_lifecycle.is_paused is True:
                 return
             try:
@@ -94,6 +97,7 @@ class Client:
         finally:
             if getattr(self, 'local_ipc', None) is not None:
                 self.local_ipc.stop()
+            self.connection_lifecycle.close_bind_listener()
 
     def _wait_for_commands(self):
         while True:

@@ -14,6 +14,7 @@ from server.connection.connection_manager import ConnectionManager
 from server.runtime.command_shell import ServerCommandShell
 from server.runtime.server_heartbeat_runner import ServerHeartbeatRunner
 from server.runtime.listener_manager import ListenerManager
+from server.runtime.bind_connector import BindConnector
 
 
 class Server:
@@ -33,6 +34,8 @@ class Server:
         self.command_adapter = CommandDispatchAdapter(self.activity_coordinator, self.get_target_connection_by_client_id)
         self.lifecycle_adapter = LifecycleAdapter(self.activity_coordinator)
         self.command_adapter.bind_lifecycle_adapter(self.lifecycle_adapter)
+
+        self.bind_connector = BindConnector(self)
 
         # composition root:
         # 由 Server 负责触发应用层装配，再拿到 Facade。

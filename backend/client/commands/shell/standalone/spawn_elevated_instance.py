@@ -75,6 +75,9 @@ _DETACHED_RESULT_TIMEOUT_SECONDS = 12
          platform_messages={'win': 'This may show a Windows UAC permission prompt and wait for authorization. Continue?'},
          no_arguments=True)
 def spawn_elevated_instance(self, options=''):
+    from client.config.config import RUNTIME_CONFIG
+    if RUNTIME_CONFIG.get('connection_mode') == 'bind':
+        return 0, 'Bind TCP fixed port: use a different profile/port for an elevated instance'
     if self.command_platform == 'win':
         return _spawn_elevated_win()
     return _spawn_elevated_mac()

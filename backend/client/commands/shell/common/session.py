@@ -6,6 +6,7 @@ import threading
 from client.runtime.client_util import get_executable_argv, get_runtime_root
 from client.runtime.command_variable_resolver import CommandVariableResolutionError
 from core.utils.decorator import confirm
+from client.config.config import RUNTIME_CONFIG
 from client.commands.shell.decorators import shell_command
 
 
@@ -52,12 +53,16 @@ def kill_instance(self):
 def relaunch_instance(self, options=''):
     if str(options or '').strip():
         return 0, 'Usage: relaunch_instance [--no-confirm]'
+    if RUNTIME_CONFIG.get('connection_mode') == 'bind':
+        return 0, 'Bind TCP fixed port: stop this Client before starting its replacement'
     _relaunch_instance(self.socket)
 @shell_command('Restart current process by exec replacement', group='session', platforms=('mac', 'linux'))
 def reexec_instance(self):
     _reexec_instance(self.socket)
 @shell_command('Start a new client instance without exiting current process', group='session', platforms=('mac', 'win', 'linux'))
 def spawn_instance(self):
+    if RUNTIME_CONFIG.get('connection_mode') == 'bind':
+        return 0, 'Bind TCP fixed port: use a different profile/port for a second instance'
     process = _spawn_instance()
     # Duplicate 已是独立 session；父进程只负责异步回收退出状态，避免 zombie。
     if os.name == 'posix' and callable(getattr(process, 'wait', None)):

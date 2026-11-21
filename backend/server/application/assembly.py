@@ -208,6 +208,7 @@ class ServerApplicationAssembly:
         self.connection_api = WebConnectionApi(
             connection_service=self.connection_service,
             device_group_store=self.device_group_store,
+            bind_connector=self.server.bind_connector,
         )
 
         self.toolbar_preferences_api = WebToolbarPreferencesApi(

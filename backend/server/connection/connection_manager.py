@@ -12,9 +12,21 @@ class ConnectionManager:
         with self._lock:
             client_id = getattr(getattr(conn, 'session_info', None), 'client_id', '')
             if client_id:
+                current = self._connections_by_client_id.get(client_id)
+                if current is not None and getattr(current, 'exclusive_registration', False):
+                    raise ValueError('Active session does not allow replacement')
                 self._connections_by_client_id[client_id] = conn
             else:
                 self._anonymous_connections.append(conn)
+
+    def add_if_absent(self, conn):
+        """Atomically refuse a new session that would replace an active Client ID."""
+        with self._lock:
+            client_id = getattr(getattr(conn, 'session_info', None), 'client_id', '')
+            if not client_id or client_id in self._connections_by_client_id:
+                return False
+            self._connections_by_client_id[client_id] = conn
+            return True
 
     def run_if_current(self, conn, callback, *, allow_missing=False):
         """Serialize Client-ID scoped side effects with replacement registration."""

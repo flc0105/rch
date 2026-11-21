@@ -1,6 +1,7 @@
 """Common post-accept lifecycle for all RCH TCP listeners."""
 import errno
 import json
+import uuid
 import socket
 import threading
 import time
@@ -14,21 +15,30 @@ class SessionAcceptor:
     def __init__(self, server):
         self.server = server
 
-    def accept_session(self, raw_sock, addr, *, listener_id='', listener_name='', listener_port=None, protocol='tcp'):
+    def accept_session(self, raw_sock, addr, *, listener_id='', listener_name='', listener_port=None, protocol='tcp', strict_registration=False, raise_on_error=False):
         try:
             info, transport = self._receive_client_info(raw_sock, addr)
             if not isinstance(info, dict) or info.get('type') != 'info':
                 raise ValueError('Invalid client info')
+            if strict_registration:
+                client_id = info.get('id')
+                try:
+                    if not isinstance(client_id, str) or str(uuid.UUID(client_id)) != client_id:
+                        raise ValueError('Invalid Client ID')
+                except (ValueError, TypeError, AttributeError):
+                    raise ValueError('Invalid Client ID') from None
             info = self._build_connection_info(addr, info)
             session = self._register_connection(transport, addr, info,
                                                 listener_id=listener_id,
                                                 listener_name=listener_name, listener_port=listener_port,
-                                                protocol=protocol)
+                                                protocol=protocol, strict_registration=strict_registration)
             self._start_connection_handler(session)
             return session
         except Exception as exc:
             raw_sock.close()
             logger.error('Failed client handshake from %s: %s', addr, exc)
+            if raise_on_error:
+                raise
             return None
 
     def _receive_client_info(self, raw_sock, addr):
@@ -48,13 +58,18 @@ class SessionAcceptor:
         """
         return {**{'addr': f'{addr[0]}:{addr[1]}'}, **info}
 
-    def _register_connection(self, transport: ClientTransport, addr, info: dict, *, listener_id='', listener_name='', listener_port=None, protocol='tcp'):
+    def _register_connection(self, transport: ClientTransport, addr, info: dict, *, listener_id='', listener_name='', listener_port=None, protocol='tcp', strict_registration=False):
         session = self.server.web_service.connection_api.create_web_connection(transport, addr, info)
         session.listener_id = listener_id
         session.listener_name = listener_name
         session.listener_port = listener_port
         session.listener_protocol = protocol
-        self.server.connections.add(session)
+        session.exclusive_registration = strict_registration
+        if strict_registration:
+            if not self.server.connections.add_if_absent(session):
+                raise ValueError('Client ID already has an active session')
+        else:
+            self.server.connections.add(session)
         logger.info('Connection has been established: {}'.format(addr))
         try:
             if not self.server.connections.run_if_current(

@@ -101,6 +101,7 @@
         @toggle-client-hidden="toggleClientHiddenFromSidebar"
         @toggle-machine-hidden="toggleMachineHiddenFromSidebar"
         @group-filter-change="setSelectedDeviceGroup"
+        @connect-to-client="$refs.connectToClientDialogRef?.open()"
         @manage-groups="openDeviceGroupManagerDialog"
         @reorder-devices="$refs.deviceOrderDialogRef?.open()"
         @assign-machine-group="assignMachineGroupFromSidebar"
@@ -395,6 +396,7 @@
   />
 
   <ListenerManagerDialog ref="listenerManagerDialogRef" />
+  <ConnectToClientDialog ref="connectToClientDialogRef" @connected="handleBindClientConnected" />
 
   <AgentBuilderDialog
     ref="agentBuilderDialogRef"
@@ -598,6 +600,7 @@ import TerminalOutput from './components/TerminalOutput.vue'
 import ConnectionInfoDialogs from './components/ConnectionInfoDialogs.vue'
 import AgentBuilderDialog from './components/AgentBuilderDialog.vue'
 import ListenerManagerDialog from './components/ListenerManagerDialog.vue'
+import ConnectToClientDialog from './components/ConnectToClientDialog.vue'
 import AgentOutputsDialog from './components/AgentOutputsDialog.vue'
 import MachineConnectionHistoryDialog from './components/MachineConnectionHistoryDialog.vue'
 import RemoteFilesDialog from './components/RemoteFilesDialog.vue'
@@ -699,6 +702,7 @@ export default {
     AgentOutputsDialog,
     AgentBuilderDialog,
     ListenerManagerDialog,
+    ConnectToClientDialog,
     ConnectionInfoDialogs,
     TerminalOutput,
     CommandInputBar,
@@ -1218,6 +1222,11 @@ export default {
 
     handleScriptCommandComplete(payload = {}) {
       return this.$refs.scriptLibraryDialogRef?.handleCommandComplete(payload) === true
+    },
+
+    async handleBindClientConnected(clientId) {
+      await this.loadConnections()
+      if (clientId) this.selectConnection(clientId)
     },
 
     openDeviceGroupManagerDialog() {

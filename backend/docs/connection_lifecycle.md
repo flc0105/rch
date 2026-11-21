@@ -4,6 +4,14 @@ RCH 使用持续存在的 TCP Client Session 承载命令与运行时消息，�
 
 Server 负责建立和移除会话、发送心跳、计算 RTT、维护设备快照与连接历史；Python / Go Client 负责连接、回复和重新拨号；Web 通过 API 与 WebSocket 接收会话信息，再根据当前时间更新设备展示状态。下面按照这一条链路说明各部分怎样协作，以及需要调整时应修改什么。
 
+## Python Client Bind TCP
+
+Python Client 默认 `connection_mode=reverse`，向 Server 的 TCP/TLS Listener 拨号。选择 `--profile bind` 时改用 `connection_mode=bind`：Client 在配置的 `bind_host:bind_port` 监听，Server 从设备栏 **More → Connect to Client** 填写目标地址和端口主动连接。默认 profile 监听 `0.0.0.0:9443`，本轮使用普通 TCP。
+
+TCP 接通后由 Client 发出第一条 `info`，复用原 RCH 帧、会话、心跳、命令、PTY 和 Transfer 控制。Client 监听 Socket 属于进程；每次接入 Socket 属于一个会话。单实例同时保留一条会话，断线后释放占用并继续监听，Server 通过设备栏再次连接即可使用同一个 Client PID 和 ID。设备菜单的 Bind **Disconnect** 关闭会话，不结束 Client 进程。`pause_connection` 暂停接入，本地 Resume 恢复监听。
+
+固定监听端口的更新、克隆和重启实例命令暂时采用手工交接，防止新旧进程同时监听同一地址。部署与操作见 [Server Runtime — Bind TCP](server_runtime.md#bind-tcp-主动连接)。
+
 ## Python Client 的主动连接暂停
 
 `pause_connection` 是 Python Client 的普通 Session 命令。Client 完整发送该命令的结果后，通过现有 `session_end` 消息上报 `client_paused`（Connection History 和离线通知显示 `Client paused`），然后关闭当前主 TCP Socket，执行原有断线运行态清理，并将连接门控从 `active` 切为 `paused`。Client 进程继续运行，暂停期间不进行自动拨号，也不触发 120 秒入站超时自愈。Server 仍按正常断线处理 Session，并在连接历史中记录 Offline；真正的意外断线仍使用 `connection_lost`。不额外保存 Server Pause 状态。

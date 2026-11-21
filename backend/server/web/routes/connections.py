@@ -13,6 +13,21 @@ def create_connections_blueprint(server_instance):
     def get_connections():
         return responder.ok(connection_api.get_connections_payload())
 
+    @blueprint.post('/api/connections/bind/connect')
+    def connect_bind_client():
+        def _execute():
+            body = request.get_json(silent=True) or {}
+            return connection_api.connect_bind_client(body.get('host'), body.get('port'))
+
+        return responder.json_endpoint(_execute, default_error_status=400)
+
+    @blueprint.post('/api/connections/<client_id>/disconnect')
+    def disconnect_bind_client(client_id):
+        return responder.json_endpoint(
+            lambda: connection_api.disconnect_bind_client(client_id),
+            default_error_status=400,
+        )
+
     @blueprint.get('/api/connections/<client_id>/task')
     def get_connection_task(client_id):
         return responder.json_endpoint(

@@ -24,6 +24,11 @@ class ClientConnectionLifecycle:
         self.client = client
         self._active = threading.Event()
         self._active.set()
+        self._bind_listener = None
+
+    @property
+    def is_bind_mode(self):
+        return str(RUNTIME_CONFIG.get('connection_mode') or 'reverse').strip() == 'bind'
 
     @property
     def is_paused(self):
@@ -32,12 +37,16 @@ class ClientConnectionLifecycle:
     def pause(self):
         """Disconnect this instance and inhibit automatic reconnect attempts."""
         self._active.clear()
+        if self._bind_listener is not None:
+            self._bind_listener.set_accepting(False)
         self.reset_connection()
         logger.info('Client main connection paused')
 
     def resume(self):
         """Re-enable the existing connection loop without replacing this process."""
         self._active.set()
+        if self._bind_listener is not None:
+            self._bind_listener.set_accepting(True)
 
     def wait_until_active(self):
         self._active.wait()
@@ -76,9 +85,26 @@ class ClientConnectionLifecycle:
         self.handle_connection_lost()
         self.client.receiver_worker.reset_runtime()
         self.client.server = self.create_connection()
+        if self._bind_listener is not None:
+            self._bind_listener.release_session()
+
+    def close_bind_listener(self):
+        if self._bind_listener is not None:
+            self._bind_listener.close()
+            self._bind_listener = None
 
     def connect_socket(self):
-        """Connect and optionally verify the server's pinned TLS certificate."""
+        """Connect reverse mode or accept one Bind TCP session."""
+        mode = str(RUNTIME_CONFIG.get('connection_mode') or 'reverse').strip()
+        if mode == 'bind':
+            if self._bind_listener is None:
+                from client.connection.bind_listener import BindListener
+                self._bind_listener = BindListener(RUNTIME_CONFIG)
+                self._bind_listener.start()
+            self.client.server.adopt_socket(self._bind_listener.accept())
+            return
+        if mode != 'reverse':
+            raise ValueError('connection_mode must be reverse or bind')
         protocol = str(RUNTIME_CONFIG.get('server_transport') or 'tcp').strip()
         connector = get_connector(protocol)
         connector.validate(RUNTIME_CONFIG)

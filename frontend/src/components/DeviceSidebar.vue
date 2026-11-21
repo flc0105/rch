@@ -76,7 +76,8 @@
 
         <template #dropdown>
           <el-dropdown-menu>
-            <el-dropdown-item command="refresh">
+            <el-dropdown-item command="connect-to-client">Connect to Client</el-dropdown-item>
+            <el-dropdown-item divided command="refresh">
               Refresh
             </el-dropdown-item>
 
@@ -300,6 +301,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { ClockAlert, ShieldPlus } from '@lucide/vue'
 import {
   killConnection as killConnectionApi,
+  disconnectBindClient,
   removeConnection as removeConnectionApi,
   sendCommand as sendCommandApi,
 } from '../api/connectionsApi.js'
@@ -361,6 +363,7 @@ export default {
 
   emits: [
     'refresh',
+    'connect-to-client',
     'select',
     'toggle-hidden-devices',
     'toggle-client-hidden',
@@ -460,6 +463,11 @@ computed: {
 
   methods: {
     handleToolbarCommand(command) {
+      if (command === 'connect-to-client') {
+        this.$emit('connect-to-client')
+        return
+      }
+
       if (command === 'refresh') {
         this.$emit('refresh')
         return
@@ -762,8 +770,13 @@ async disconnectConnection(item) {
       },
     )
 
-    await killConnectionApi(clientId)
-    ElMessage.success('Disconnect request sent')
+    if (item.listener_protocol === 'bind_tcp') {
+      await disconnectBindClient(clientId)
+      ElMessage.success('Disconnected')
+    } else {
+      await killConnectionApi(clientId)
+      ElMessage.success('Disconnect request sent')
+    }
   } catch (e) {
     if (e === 'cancel' || e === 'close' || e?.message === 'cancel') {
       return

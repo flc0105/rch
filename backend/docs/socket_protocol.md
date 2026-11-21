@@ -4,6 +4,8 @@ RCH 的 Client 与 Server 通过一条持续存在的 TCP 连接交换控制消�
 
 **Socket 消息、Web Task、SSE 事件是三层不同概念。** Socket 协议解决 Server 与 Client 之间如何封包、收发和识别消息；Web Task 管理由浏览器发起的一次执行；SSE 把结果推送给浏览器。文件传输的实际字节内容还有独立的 HTTP 传输路径，不经这条 JSON Socket 连续搬运。
 
+Bind TCP 改变拨号方向：Python Client 在配置的地址监听，Server 通过设备栏 More 的主动连接操作向目标 IP 和端口建立 TCP 连接，首条应用消息仍是 **Client 发出的 `info`**。Server 调用现有 `SessionAcceptor.accept_session()`，继续使用原帧格式与结果事件。当前 Bind 使用普通 TCP。
+
 ## 1. 一条 TCP 连接中的消息
 
 Python Client 建立连接后立即发送一次 `info`。Server 读取第一条消息并登记 `ClientSession`，然后为该 Session 启动接收线程。双方后续在同一条 TCP 流上连续传输完整的消息帧，不需要为每条命令重新建立 TCP 连接。

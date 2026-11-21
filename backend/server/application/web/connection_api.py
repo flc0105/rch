@@ -9,9 +9,17 @@ class WebConnectionApi:
     - 暴露 machine 级设备分组管理能力
     """
 
-    def __init__(self, connection_service, device_group_store=None):
+    def __init__(self, connection_service, device_group_store=None, bind_connector=None):
         self.connection_service = connection_service
         self.device_group_store = device_group_store
+        self.bind_connector = bind_connector
+
+    def connect_bind_client(self, host: str, port: int):
+        session = self.bind_connector.connect(host, port)
+        return {'client_id': session.session_info.client_id}
+
+    def disconnect_bind_client(self, client_id: str):
+        return {'client_id': self.bind_connector.disconnect(client_id)}
 
     def get_connections_payload(self):
         return self.connection_service.get_connections_payload()

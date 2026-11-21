@@ -4,6 +4,14 @@ export function listConnections() {
   return apiData('/api/connections', {}, [])
 }
 
+export function connectToClient(host, port) {
+  return apiData('/api/connections/bind/connect', jsonRequestOptions('POST', { host, port }), {})
+}
+
+export function disconnectBindClient(clientId) {
+  return apiData(`/api/connections/${encodeURIComponent(clientId)}/disconnect`, jsonRequestOptions('POST'), {})
+}
+
 export function reorderOnlineDevices(machineIds) {
   return apiFetch('/api/machines/order', jsonRequestOptions('PATCH', { machine_ids: machineIds }))
 }

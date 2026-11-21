@@ -26,6 +26,8 @@ Revision 对指定的 Client 源码文件计算指纹，覆盖范围见上文；
 
 在源码/IDE 环境中直接运行 Client，配置 Profile 通常给出 `build_version=dev`，没有预先注入的 `CLIENT_SOURCE_REVISION`。这种情况下 Client 首次构造握手信息时在本地计算源码指纹，并在当前进程内缓存。**编辑本地源码后，已经运行的进程不会自动重新计算指纹或热加载代码**；应重新启动对应源码进程以重新生成握手信息。
 
+Bind TCP 模式的固定端口尚不支持本页所述新旧进程并行交接：`update`、`spawn_instance`、`spawn_elevated_instance` 和 `relaunch_instance` 会直接拒绝同配置启动。应先手工停掉旧实例，再启动新源码 Client 并由 Server 重新拨号；此限制不影响默认 Reverse 模式。具体参见 [Connection Lifecycle](connection_lifecycle.md)。
+
 ## Server 如何生成和保存可部署 Client
 
 Server 的 Agent Builder 是统一构建入口。Web Agent Builder、Bootstrap / Go Loader 的部署流程以及已连接 Python Client 的 `update`，都通过构建服务生成产物；本篇涉及的运行中更新**固定请求 `builder: "python"`**，与用户此前在构建界面选择过哪一种输出无关。

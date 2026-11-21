@@ -47,6 +47,11 @@ def update(self, arg=''):
     update_ready = False
 
     try:
+        if RUNTIME_CONFIG.get('connection_mode') == 'bind':
+            self.emit_completed(status='error', message=(
+                'Bind TCP fixed-port update requires manual process handoff; '
+                'stop the old Client before starting the replacement'))
+            return
         options = _parse_update_options(arg)
 
         self.emit_progress('Bundle building requested', level='info')

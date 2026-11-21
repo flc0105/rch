@@ -82,3 +82,27 @@ curl -fsS -X POST 'http://127.0.0.1:8085/api/server/restart' \
 将 `RCH_ADMIN_API_TOKEN` 设置为当前管理员 API Token；Shutdown 把 URL 末尾改为 `/api/server/shutdown`。
 
 如果 Restart 后出现 Python 启动错误，新进程可能无法启动；可从 Server 终端日志或 `SERVER_RUNTIME_DIR/server.log` 查看原因并手动运行 `run_web.py`。
+
+## Bind TCP 主动连接
+
+Python Client 采用 Bind TCP 时在本机监听，Server 从设备栏主动发起连接，使用普通 TCP。连接后仍由 Client 首先发送 `info`，其余命令、PTY、心跳和文件控制沿用原有 Socket Session。
+
+在 **Client 的 `backend/` 目录**启动：
+
+```bash
+python rchclient.py --profile bind
+```
+
+`backend/client/config/profiles/bind.json` 默认监听 `0.0.0.0:9443`。可在此文件调整 `bind_host` 与 `bind_port`；`bind_host` 是 Client 监听的本地接口，Server 对应填写 Client 的可访问 IP/主机名和端口。跨设备使用文件、Artifact、Script SDK HTTP 功能时，把同一份 profile 的 `server_web_host` 设置为 Server 在局域网中的地址。
+
+在 **Server 的 `backend/` 目录**正常启动：
+
+```bash
+python run_web.py
+```
+
+浏览器打开 RCH → 左侧设备栏右上角 **More → Connect to Client** → 填写 Client IP 和端口 → **Connect**。连接成功后自动显示并选中该 Client；重复连接同一地址会复用仍然在线的会话。设备菜单 **Disconnect** 会关闭当前 Bind Session，Client 进程保留监听，可重新从 More 连接。
+
+同一个 Client 实例最多保持一条活动 Server Session。`pause_connection` 暂停接入，恢复后可重新主动连接。固定端口的 `update`、`spawn_instance`、`spawn_elevated_instance`、`relaunch_instance` 继续采用手工进程交接，避免同一端口冲突。Reverse TCP/TLS 仍是默认启动模式。
+
+Bind TCP 当前使用明文 TCP，不执行 TLS 握手。
