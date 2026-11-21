@@ -103,12 +103,6 @@ def ps(self, args_dict, payload=None):
         from client.runtime.execution.process.approved_process_service import port_owners
         owners = port_owners(port)
         rows = [row for row in rows if row['pid'] in owners]
-    if include_actions:
-        for row in rows:
-            row['_actions'] = [{'label': 'Kill',
-                                'command': f'acmd kill --pid {row["pid"]}',
-                                'refresh': True}]
-
     if not rows:
         if pid is not None and name:
             raise RuntimeError(
@@ -129,7 +123,10 @@ def ps(self, args_dict, payload=None):
 
         raise RuntimeError('No processes found')
 
+    # PS retains all its existing columns; only the optional Kill action adds view metadata.
+    view = ({'actions': [{'label': 'Kill', 'command': 'acmd kill --pid {pid}', 'refresh': True}]}
+            if include_actions else None)
     return StructuredCommandResult(
         status=1, data=rows, shape=ResultDataShape.TABLE,
-        formats=('table', 'records', 'json'),
+        formats=('table', 'records', 'json'), view=view,
     )

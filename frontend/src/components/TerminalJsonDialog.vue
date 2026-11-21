@@ -38,6 +38,14 @@
           </el-button>
 
                   <el-button
+            v-if="displayMode === 'table' && !isTerminalJsonRawView"
+            size="small"
+            @click="tableViewMode = tableViewMode === 'card' ? 'table' : 'card'"
+          >
+            {{ tableViewMode === 'card' ? 'Table View' : 'Card View' }}
+          </el-button>
+
+          <el-button
             size="small"
             type="primary"
             :loading="savingJsonArtifact"
@@ -67,7 +75,40 @@
         </div>
       </div>
 
-      <template v-if="displayMode === 'table' && !isTerminalJsonRawView">
+      <template v-if="displayMode === 'table' && !isTerminalJsonRawView && tableViewMode === 'card'">
+        <div class="terminal-json-scroll terminal-json-cards">
+          <el-card v-for="(row, index) in visibleTableRows" :key="index" class="terminal-json-card" shadow="never">
+            <template #header>
+              <strong>{{ cardTitle(row, index) }}</strong>
+            </template>
+            <div v-for="column in tableColumns.filter(column => column.prop !== resultView.titleField)"
+                 :key="column.prop" class="terminal-json-card-field">
+              <span>{{ column.label }}</span><span>{{ row[column.prop] }}</span>
+            </div>
+            <details v-if="resultView.details.length" class="terminal-json-details">
+              <summary>Details</summary>
+              <div v-for="field in resultView.details" :key="field" class="terminal-json-card-field">
+                <span>{{ field }}</span><span>{{ row[field] }}</span>
+              </div>
+            </details>
+            <div v-if="getTerminalJsonRowActions(row).length" class="terminal-json-row-actions">
+              <el-button v-for="(action, actionIndex) in getTerminalJsonRowActions(row).slice(0, 2)"
+                         :key="actionIndex" size="small" @click.stop="confirmTableAction(action)">
+                {{ action.label }}
+              </el-button>
+              <el-dropdown v-if="getTerminalJsonRowActions(row).length > 2" trigger="click" @command="actionIndex => confirmTableAction(getTerminalJsonRowActions(row)[actionIndex])">
+                <el-button size="small" @click.stop>More</el-button>
+                <template #dropdown><el-dropdown-menu>
+                  <el-dropdown-item v-for="(action, actionIndex) in getTerminalJsonRowActions(row).slice(2)"
+                                    :key="actionIndex + 2" :command="actionIndex + 2">{{ action.label }}</el-dropdown-item>
+                </el-dropdown-menu></template>
+              </el-dropdown>
+            </div>
+          </el-card>
+        </div>
+      </template>
+
+      <template v-else-if="displayMode === 'table' && !isTerminalJsonRawView">
         <div class="terminal-json-scroll terminal-json-table-scroll">
           <el-table
             :data="visibleTableRows"
@@ -76,12 +117,22 @@
             style="width: 100%;"
             @sort-change="handleTableSortChange"
           >
+            <el-table-column v-if="resultView.details.length" type="expand" width="48">
+              <template #default="{ row }">
+                <div class="terminal-json-expanded">
+                  <div v-for="field in resultView.details" :key="field" class="terminal-json-card-field">
+                    <span>{{ field }}</span><span>{{ row[field] }}</span>
+                  </div>
+                </div>
+              </template>
+            </el-table-column>
             <el-table-column
               v-for="column in tableColumns"
               :key="column.prop"
               :prop="column.prop"
               :label="column.label"
-              min-width="140"
+              :width="column.width || undefined"
+              :min-width="column.minWidth || (column.width ? undefined : 140)"
               show-overflow-tooltip
               sortable="custom"
               :sort-orders="['descending', 'ascending', null]"
@@ -89,8 +140,7 @@
             <el-table-column
               v-if="tableHasActions"
               label="Actions"
-              min-width="200"
-              fixed="right"
+              :min-width="actionColumnWidth"
             >
               <template #default="{ row }">
                 <div class="terminal-json-row-actions terminal-json-row-actions-inline">
@@ -122,29 +172,6 @@
                     </template>
                   </el-dropdown>
                 </div>
-                <el-dropdown
-                  v-if="getTerminalJsonRowActions(row).length"
-                  class="terminal-json-row-actions-mobile"
-                  trigger="click"
-                  placement="bottom-end"
-                  popper-class="terminal-json-actions-popper"
-                  @command="index => confirmTableAction(getTerminalJsonRowActions(row)[index])"
-                >
-                  <el-button size="small" @click.stop>
-                    Actions ({{ getTerminalJsonRowActions(row).length }})
-                  </el-button>
-                  <template #dropdown>
-                    <el-dropdown-menu>
-                      <el-dropdown-item
-                        v-for="(action, index) in getTerminalJsonRowActions(row)"
-                        :key="index"
-                        :command="index"
-                      >
-                        {{ action.label }}
-                      </el-dropdown-item>
-                    </el-dropdown-menu>
-                  </template>
-                </el-dropdown>
               </template>
             </el-table-column>
           </el-table>
@@ -228,7 +255,7 @@ import { canRerunTerminalSource } from '../utils/terminalRerun.js'
 import { getTerminalReplayAction } from '../utils/terminalOperation.js'
 import { h, ref } from 'vue'
 import { ElMessage, ElMessageBox, ElRadioGroup, ElRadioButton } from 'element-plus'
-import { JSON_ROW_ACTIONS, getJsonRenderModel } from '../utils/terminalJson.js'
+import { JSON_ROW_SOURCE, getJsonRenderModel, normalizeJsonView, resolveJsonViewRowActions } from '../utils/terminalJson.js'
 
 
 export default {
@@ -261,6 +288,8 @@ export default {
       displayMode: 'raw',
       tableColumns: [],
       tableRows: [],
+      resultView: { titleField: '', columns: [], details: [], actions: [] },
+      tableViewMode: 'table',
       actionConnectionId: '',
       actionTargetName: '',
       actionConfirming: false,
@@ -309,6 +338,11 @@ export default {
       return this.tableRows.some(row => this.getTerminalJsonRowActions(row).length > 0)
     },
 
+    actionColumnWidth() {
+      const count = Math.min(3, Math.max(0, ...this.tableRows.map(row => this.getTerminalJsonRowActions(row).length)))
+      return count === 1 ? 108 : count === 2 ? 176 : 248
+    },
+
     filteredTableRows() {
       const rows = Array.isArray(this.tableRows) ? this.tableRows : []
       const keyword = String(this.tableSearchText || '').trim().toLowerCase()
@@ -319,7 +353,7 @@ export default {
 
       // table 搜索只做前端行筛选，不改原始 JSON。
       return rows.filter((row) => {
-        return this.tableColumns.some((column) => {
+        return [...this.tableColumns, ...this.resultView.details.map(prop => ({ prop }))].some((column) => {
           return String(row[column.prop] ?? '').toLowerCase().includes(keyword)
         })
       })
@@ -351,12 +385,14 @@ export default {
       this.refreshRunning = false
       this.refreshRun = null
       this.actionRun = null
+      this.viewMetadata = line.meta?.resultView || line.jsonView || {}
+      this.tableViewMode = typeof window !== 'undefined' && window.matchMedia?.('(max-width: 768px)').matches ? 'card' : 'table'
       this.setTerminalJsonContent(jsonText)
       this.visible = true
     },
 
     setTerminalJsonContent(jsonText, { preserveTableState = false } = {}) {
-      const model = getJsonRenderModel(jsonText)
+      const model = getJsonRenderModel(jsonText, this.viewMetadata)
       this.text = jsonText
       if (!preserveTableState || model.mode !== 'table') {
         this.tableSearchText = ''
@@ -365,7 +401,8 @@ export default {
       this.isRawViewVisible = false
 
       this.displayMode = model.mode
-      this.tableColumns = model.columns
+      this.resultView = normalizeJsonView(this.viewMetadata, model.columns)
+      this.tableColumns = model.mode === 'table' ? this.resultView.columns : model.columns
       this.tableRows = model.rows
       this.flatRows = model.flatRows
       this.groupedSections = model.groups
@@ -378,6 +415,9 @@ export default {
       this.displayMode = 'raw'
       this.tableColumns = []
       this.tableRows = []
+      this.viewMetadata = {}
+      this.resultView = { titleField: '', columns: [], details: [], actions: [] }
+      this.tableViewMode = 'table'
       this.flatRows = []
       this.groupedSections = []
       this.tableSearchText = ''
@@ -408,7 +448,7 @@ export default {
       const replay = getTerminalReplayAction(info.operation)
       if (!replay) return
       const runId = this.createResultActionRunId()
-      this.refreshRun = { runId, clientId, chunks: [] }
+      this.refreshRun = { runId, clientId, chunks: [], view: null }
       this.refreshRunning = true
       this.$emit('rerun-json', {
         runId, clientId,
@@ -427,12 +467,14 @@ export default {
       if (!this.refreshRun || !this.visible || this.refreshRun.runId !== runId
           || String(payload.client_id || '') !== this.refreshRun.clientId) return
       this.refreshRun.chunks.push(String(payload.text ?? ''))
+      if (payload.result?.view) this.refreshRun.view = payload.result.view
     },
 
     handleJsonRefreshComplete(payload = {}, runId = '') {
       if (!this.refreshRun || !this.visible || this.refreshRun.runId !== runId
           || String(payload.client_id || '') !== this.refreshRun.clientId) return
       const chunks = this.refreshRun.chunks
+      const updatedView = this.refreshRun.view
       this.refreshRun = null
       this.refreshRunning = false
       const status = String(payload.status || '').trim()
@@ -454,10 +496,17 @@ export default {
         ElMessage.error('Run Again did not return valid JSON; previous result kept')
         return
       }
+      this.viewMetadata = updatedView || {}
       this.setTerminalJsonContent(validText.trim(), { preserveTableState: true })
     },
 
-    getTerminalJsonRowActions(row) { return row?.[JSON_ROW_ACTIONS] || [] },
+    getTerminalJsonRowActions(row) {
+      return resolveJsonViewRowActions(this.resultView, row?.[JSON_ROW_SOURCE])
+    },
+
+    cardTitle(row, index) {
+      return (this.resultView.titleField && row?.[this.resultView.titleField]) || `Record ${index + 1}`
+    },
 
     createResultActionRunId() {
       if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -870,9 +919,6 @@ export default {
   overflow-wrap: anywhere;
 }
 
-.terminal-json-row-actions-mobile {
-  display: none;
-}
 
 .terminal-json-action-result-meta {
   display: flex;
@@ -914,16 +960,6 @@ export default {
 .terminal-json-table-scroll :deep(.el-scrollbar__wrap) {
   -webkit-overflow-scrolling: touch;
   touch-action: pan-x pan-y;
-}
-
-/* Dropdown overlays are teleported outside the dialog and must wrap long labels. */
-:global(.terminal-json-actions-popper .el-dropdown-menu__item) {
-  max-width: calc(100vw - 32px);
-  min-height: 32px;
-  height: auto;
-  line-height: 1.4;
-  white-space: normal;
-  overflow-wrap: anywhere;
 }
 
 /* 与 Artifact Info / Image Info 一致的 section + 双列键值布局。 */
@@ -999,17 +1035,17 @@ export default {
   font-family: inherit;
 }
 
-@media (max-width: 768px) {
-  /* A single compact menu exposes every action without clipping on phones. */
-  .terminal-json-row-actions-inline {
-    display: none;
-  }
 
-  .terminal-json-row-actions-mobile {
-    display: inline-flex;
-    max-width: 100%;
-  }
-}
+/* Cards and expanded rows display detail fields from the same raw JSON. */
+.terminal-json-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 270px), 1fr)); gap: 12px; }
+.terminal-json-card { min-width: 0; }
+.terminal-json-card-field { display: grid; grid-template-columns: minmax(85px, 34%) minmax(0, 1fr); gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line, #ebeef5); }
+.terminal-json-card-field > span { min-width: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.terminal-json-card-field > span:first-child { color: var(--el-text-color-secondary, #606266); }
+.terminal-json-details { margin: 10px 0; }
+.terminal-json-details summary { cursor: pointer; }
+.terminal-json-expanded { padding: 8px 20px; }
+.terminal-json-card .terminal-json-row-actions { margin-top: 12px; }
 
 @media (max-width: 768px), (max-height: 720px) {
   .terminal-json-toolbar {

@@ -365,6 +365,7 @@ export default {
                         command: payload.command || '',
                         command_id: payload.command_id ?? null,
                         metadata,
+                        ...(item.result?.view ? { resultView: item.result.view } : {}),
                     } });
                 }
                 if (terminalItems.length) this.appendOutputBatch(payload.client_id, terminalItems);

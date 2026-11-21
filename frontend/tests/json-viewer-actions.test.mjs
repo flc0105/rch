@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import vm from 'node:vm'
 import { getJsonRenderModel } from '../src/utils/terminalJson.js'
-import { JSON_ROW_ACTIONS, normalizeJsonRowActions } from '../src/utils/terminalJson.js'
+import { JSON_ROW_SOURCE, normalizeJsonViewActions, normalizeJsonView, resolveJsonViewRowActions } from '../src/utils/terminalJson.js'
 import { createTerminalOperation, getTerminalReplayAction } from '../src/utils/terminalOperation.js'
 import { canRerunTerminalSource } from '../src/utils/terminalRerun.js'
 import { createTerminalTaskCapture } from '../src/composables/terminalTaskCapture.js'
@@ -24,7 +24,7 @@ const context = { ref: value => ({ value }), h: (tag, props, children) => {
   return children
 },
   ElMessage, ElMessageBox: { confirm: (...args) => askConfirmation(...args) },
-  ElRadioGroup: radioGroup, ElRadioButton: {}, JSON_ROW_ACTIONS, getJsonRenderModel,
+  ElRadioGroup: radioGroup, ElRadioButton: {}, JSON_ROW_SOURCE, getJsonRenderModel, normalizeJsonView, resolveJsonViewRowActions,
   getTerminalReplayAction, canRerunTerminalSource }
 const component = vm.runInNewContext(`(${script.replace(/^import .*$/gm, '').replace('export default', '')})`, context)
 
@@ -46,8 +46,8 @@ function complete(instance, status = 'success') {
   return instance.handleResultActionCommandComplete({ client_id: 'client-A', status }, instance.actionRun.runId)
 }
 
-test('row actions honor literal booleans and keep raw JSON unmodified', () => {
-  assert.deepEqual(normalizeJsonRowActions([
+test('view actions honor literal booleans; legacy row metadata is ordinary data', () => {
+  assert.deepEqual(normalizeJsonViewActions([
     { label: 'A', command: 'echo a', confirm: false, refresh: true },
     { label: 'B', command: 'echo b', confirm: 'false', refresh: 'true' },
     { label: 'C', command: 'echo c' },
@@ -59,8 +59,10 @@ test('row actions honor literal booleans and keep raw JSON unmodified', () => {
   const raw = '[{"counter":0,"_actions":[{"label":"A","command":"getpid","confirm":false,"refresh":true}]}]'
   const model = getJsonRenderModel(raw)
   assert.equal(model.mode, 'table')
-  assert.deepEqual(model.columns.map(c => c.prop), ['counter'])
-  assert.equal(model.rows[0][JSON_ROW_ACTIONS][0].refresh, true)
+  assert.deepEqual(model.columns.map(c => c.prop), ['counter', '_actions'])
+  const instance = dialog().instance
+  instance.setTerminalJsonContent(raw)
+  assert.equal(instance.getTerminalJsonRowActions(instance.tableRows[0]).length, 0)
   assert.deepEqual(JSON.parse(raw)[0]._actions[0], { label: 'A', command: 'getpid', confirm: false, refresh: true })
 })
 

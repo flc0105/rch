@@ -58,7 +58,7 @@ Web Terminal、独立 Result Dialog、Activity 与 RCH CLI 都采用明确的终
 
 ## 统一的文本布局与 JSON 输出
 
-Server Builtin 的 `render_result_payload()` 和 ACMD 在 Server 端的结果呈现适配器共用 Core 布局引擎。ACMD 的 `StructuredCommandResult` 在 Client 端保留原生 `data` 及本次结果级 `presentation`；Shell-like 的既有文本投影仍由 Client 的 Runner 完成。原始数据字段、顺序与类型不会随文字布局变化。`_actions` 等以下划线开头的行级展示元数据保留于 JSON，但不自动成为文本 Table/Records 列；需要自定义列名时才声明 `columns`。
+Server Builtin 的 `render_result_payload()` 和 ACMD 在 Server 端的结果呈现适配器共用 Core 布局引擎。ACMD 的 `StructuredCommandResult` 在 Client 端保留原生 `data` 及本次结果级 `presentation`；Shell-like 的既有文本投影仍由 Client 的 Runner 完成。原始数据字段、顺序与类型不会随文字布局变化。文本 Table/Records 默认展示原始业务字段（包括 `_id` 等下划线字段）；需要自定义列名时才声明 `columns`。Viewer 操作只由结果级 `view.actions` 定义。
 
 Server Builtin 的允许格式由 Server Registry 声明；ACMD 的 `--format/-f/--json` 由 Client Registry 统一解析，再根据本次结构化结果内部的 `formats` 检查是否适用。Result Wire 不携带 `formats`，Server 根据 `presentation.requested/default` 渲染。Core Renderer 提供七种文本布局和一种 JSON 序列化格式：
 
@@ -90,7 +90,7 @@ Server Builtin 在参数解析阶段拒绝未声明的布局，例如 `job --for
 | `gopin list`、`job ps` | `table` | `table`、`records`、`json` |
 | `rtt`、`job status`、`xt exec info` | `flat` | `flat`、`kv`、`json` |
 | `acmd ps`、`netstat`、`ifconfig`、`drives` | `table` | `table`、`records`、`json` |
-| `acmd python_packages` | 安装包 `table`、已加载模块 `lines`、单模块详情 `flat` | 安装包 `table/records`；已加载 `lines/table/records`；详情 `flat/kv`；全部可用 `json` |
+| `acmd python_packages` | 已安装发行包和已加载发行包均为 `lines`；导入详情为 `flat` | 列表可选 `table/records/json`（记录保留版本）；详情可选 `flat/kv/json` |
 | `acmd launchd` | 原有命令反馈文本 | `flat`、`kv`、`json` |
 
 表格/纵向记录可以声明展示名称（例如 XT 的大写列名），但 JSON 始终使用原始字段名。Server Builtin 的参数由自身 Registry 定义，ACMD 的业务参数由 `ArgumentCommandSpec` 定义，呈现选项在 Client ACMD Registry 统一处理。
@@ -127,7 +127,7 @@ Script 和 Quick Action 的 **Result Dialog** 与 Terminal 使用相同的 JSON 
 
 | View | 触发条件 | 展示方式 |
 |---|---|---|
-| **Table** | 非空 JSON 数组，元素全部是对象，且各行除可选 `_actions` 外的普通字段集合完全相同，至少存在一个普通字段 | 一行一个对象、一列一个普通字段；可选行级 Actions |
+| **Table** | 非空 JSON 数组，元素全部是对象，且各行字段集合完全相同，至少存在一个字段 | 一行一个对象、一列一个字段；结果级 `view.actions` 可提供操作按钮 |
 | **Grouped** | 顶层是至少包含 **2 个分组键**的 JSON 对象；**每个**分组值都必须是非空 JSON 对象（不能是数组、`null` 或标量） | 按外层键分组；组名作为标题，每组内部一层 Key / Value 双列展示 |
 | **Flat** | JSON 顶层是对象（包括空对象），且未匹配 Grouped | 顶层 Key / Value 列表 |
 | **Raw** | 有效 JSON，但不适合 Table、Grouped 或 Flat | 格式化后的完整 JSON 文本 |
@@ -153,33 +153,16 @@ Viewer 将它显示为 Name、PID、Active 三列（实际表头使用原始字�
 - 点击列头可以排序。排序会优先识别数字和日期形式的字符串，其余按不区分大小写的文本比较；空值排在非空值后，同值保持原有相对顺序。
 - JSON 中的数字和布尔值在表格单元格内转换成展示用字符串；嵌套对象或数组会转换成 JSON 字符串，`null` 显示为空。
 
-如果数组为空、元素不是对象、普通字段集合不同，或首个对象没有普通字段，**不会勉强补列或自动合并不同 Schema**，而是进入 Raw View。`_actions` 是唯一不参与普通字段一致性比较的可选元数据。即使后台文本表格可以按首项字段显示，前端 Table View 仍要求全部记录结构一致，两者规则不同。
+数组为空且没有显式 `view.columns`、元素不是对象、字段集合不同，或首个对象没有字段时，进入 Raw View。若空结果提供 `view.columns`，Viewer 可展示带列标题的空表格。前端 Table 要求各行字段集合一致。
 
-### 行级 Result Actions（仅 Table）
+### 结果级 View Actions（Table / Card）
 
-Table 中每个对象**可以选择性**提供 `_actions` 数组；没有该字段的行完全不需要添加它，也不需要填 `[]`。这不会修改现有普通字段 Schema：除了 `_actions` 以外，各行普通字段集合仍必须一致。普通 Table 继续保持原样；只有至少一行包含有效 Action 时才显示右侧 `Actions` 列，没有 Action 的行不显示按钮。
+结构化 Result 的可选 `view.actions` 为整张表声明行操作模板，按钮按当前行的原始字段绑定 `{field}`，不会往每个 `data` 对象重复写动作。`_actions` 不再有按钮含义；若它存在于普通 JSON 中，按普通数据字段展示。
 
-```json
-[
-  {"pid": 123, "name": "python3", "_actions": [{"label": "Inspect", "command": "echo inspecting-123"}]},
-  {"pid": 456, "name": "node"},
-  {"pid": 789, "name": "other", "_actions": [
-    {"label": "One", "command": "echo one"},
-    {"label": "Two", "command": "echo two"},
-    {"label": "Three", "command": "echo three"}
-  ]}
-]
-```
-
-- `_actions` 仅是可选的行级展示元数据，不是可见数据列、不参与搜索或排序；每条有效 Action 必须有非空字符串 `label`（按钮名）和 `command`（完整的待发送命令），可选布尔字段 `confirm`、`refresh`。未提供 `confirm` 时默认 `true`，未提供 `refresh` 时默认 `false`；只有 JSON 布尔值 `false` 会跳过确认，只有 JSON 布尔值 `true` 会启用自动刷新。无效字段项不会变成可执行按钮。
-- 桌面端每行前两个有效操作直接显示为小按钮，第三个及其后的操作进入 `More` 菜单，长按钮名在单元格内换行。手机窄屏使用 `Actions (N)` 菜单列出**全部**有效操作，防止按钮被表格裁切。表格横向滚动由表格组件处理；搜索、排序后，操作仍绑定原始数据行，不依赖行序号。
-- `confirm: true`（默认）：点击后展示目标 Client 和完整命令，并选择 **Terminal** 或 **New Dialog**（默认 Terminal），点击 `Run` 才提交。`confirm: false`：点击即提交到 Terminal，不弹出二次确认；仍受当前 Client 和任务忙碌检查约束。
-- `refresh: true`：**动作任务成功完成**后，使用 JSON Viewer 顶部 **Run Again** 对应的原始 Command、Script 或 Quick Action 来源重新执行查询，将返回的完整合法 JSON 更新到当前 Viewer。`refresh: false`（默认）保留静态结果。失败、取消、部分成功、目标 Client 变化、Viewer 已关闭时不刷新；没有可重放来源时提示原因并保留结果。刷新请求会成为一个独立任务，保留原有 History/Activity 语义。
-- **Terminal**：普通命令和结果写入 Terminal，**JSON Viewer 保持打开**。**New Dialog**：JSON Viewer 保持打开，独立结果窗口展示执行输出；结果从同一任务的 SSE 捕获，不再重复写入 Terminal。两种模式都可启用 `refresh`。
-- 两种模式都不会覆盖命令输入框中尚未提交的草稿，也继续更新原有任务状态。若用户已切换目标 Client 或当前任务繁忙，不发送到其他设备。
-- Viewer 只负责提交 Action 中的**原始命令**，不根据 PID/路径自行添加重新核验、重写命令或其他业务判断。具体命令本身的权限和行为仍由正常 Client 命令执行链负责。
-- `_actions` 不依赖内置命令名称、`--json` 标志或 Script 名称；普通 Shell `echo`、Script 输出的完整合法 JSON 数组均由同一 Table 识别逻辑处理。其前提仍是终端成功识别到完整 JSON（不要和非 JSON 的日志混输出）。
-- **Copy Raw、Raw View、Save to Artifact** 均保留原始 `_actions` 内容，不因界面隐藏操作列而删改 JSON。
+- 前两项操作直接显示为按钮，第三项及后续操作进入 `More`。桌面 Table 的 Actions 列跟随整张表横向滚动，Card 在卡片内直接排布操作。
+- `confirm` 默认 `true`，执行时展示目标 Client 和完整命令，可选择 Terminal 或 New Dialog；显式 `false` 则直接提交。`refresh` 默认 `false`；显式 `true` 仅在操作成功后使用原 Command/Script/Quick Action 重放来源刷新当前 Viewer。
+- 操作继续使用原有任务、确认、取消、目标 Client、SSE 以及 Run Again 逻辑；刷新不会覆盖历史 Result，也不会修改原始业务数据。
+- Shell `echo`、Script `print` 等普通 JSON 文本仍能被识别并查看；它们不具备结果级 `view` 时不生成操作按钮。
 
 ### 多组键值展示（Grouped）
 
@@ -250,7 +233,7 @@ Viewer 的操作包括：
 | 输入 `--json` 仍显示普通文本 | 对应命令可能没有支持这个选项，或参数位置不符合其解析规则；先查看该命令的 Help |
 | Dict 的文本结果抛出 `width is required for dict output` | `StructuredCommandResult` 的字典文本渲染必须提供 `width` |
 | `--format table` 报布局错误 | 需要记录对象数组 `list[dict]`；单个对象可用 `flat` / `kv` |
-| JSON 数组只能显示 Raw | 数组为空、元素不是对象、首项没有普通字段，或各对象的普通字段集合不一致（可选 `_actions` 不参与比较） |
+| JSON 数组只能显示 Raw | 数组为空且没有 `view.columns`、元素不是对象、首项没有字段，或各对象字段集合不一致 |
 | Flat 中的子对象没有展开成多层字段 | Flat 仅展现顶层 Key / Value，嵌套值转成 JSON 字符串 |
 | Grouped 没有出现 | 必须至少两个外层键，且所有组值都是非空对象；任一组不符合即不选用 Grouped |
 | Grouped 组内的 JSON 对象没有展开 | 组内嵌套对象或数组只作为 JSON 字符串显示，不会递归渲染第三层 |
@@ -270,22 +253,20 @@ Web Terminal 将一次用户发起的 Command、Script、Quick Action 或上传�
 
 执行期间由 Command、Script 或 Quick Action 产生的 Artifact 在带有相同设备和命令 ID 的终端块中显示 `[Preview] 文件名`，位置在 `[Command finished]` 前；每个 Artifact 单独显示一行，单文件同样显示文件名。Artifact 创建事件使用 `source_command_id` 与命令结果中的 `command_id` 关联；即使文件晚于完成事件到达，仍可更新对应块。终端不再写入 `[File Ready]` 行，通知中心与 Artifacts 保持原有访问入口。Remote Files 等独立操作不产生此类终端预览链接。
 
-## JSON Viewer 的 Run Again 与行级操作输出
+## JSON Viewer 的 Run Again 与结果级操作输出
 
 Terminal 输出块菜单的 **Run again** 适用于真实 Command、携带可重跑脚本身份的 Script，以及保存了别名、平台和参数的 Quick Action。Quick Action 必须通过专用 API 执行，不将可见标题或展开后的命令传给 Shell。Remote Upload 和 Artifact Send 没有通用重放所需的文件上下文，菜单项保持禁用；JSON Viewer 使用同一资格规则。
 
 JSON Viewer 支持对有效来源的 Command、Script 或 Quick Action 使用 **Run Again**，包括 Quick Action Result Dialog 打开的 JSON。发起一次新的执行并在 Terminal 中留下新执行记录。当前 Viewer 不关闭；新任务完成后仅在输出能解析为完整合法 JSON 时替换 Viewer 中展示的数据，否则提示错误并保留原数据显示。此前的 Terminal 历史内容始终不变。
 
-Table 的 `_actions` 继续是可选的行级元数据。`confirm` 控制是否出现确认框，`refresh` 控制成功后是否使用原操作的重放信息刷新当前 Viewer，二者均为布尔值；没有重放来源时仍可运行行按钮，但不能刷新数据。Terminal 与 New Dialog 均不关闭 JSON Viewer，均复用既有 `/api/connections/{client_id}/command` 请求及任务结果 SSE。测试 Script `test/misc/json_result_actions_probe` 展示这两种控制的组合及 Script Run Again。
+Result 的 `view.actions` 统一描述操作模板；`confirm` 控制二次确认，`refresh` 控制成功后使用原操作重放来源刷新 Viewer。无重放来源时可以执行动作，但不会刷新。Terminal 与 New Dialog 都保持 JSON Viewer 打开，使用既有 `/api/connections/{client_id}/command` 请求和任务结果 SSE。
 
-Run Again 与行级操作均执行新的任务；仅当前任务的结果用于刷新对应窗口，其他任务的输出不会混入。
+Run Again 与模板操作均执行新的任务；仅当前任务的结果用于刷新对应窗口，其他任务的输出不会混入。
 
 ## Process Result Actions
 
-`acmd ps` 通过 `StructuredCommandResult` 返回原生进程数组及结果级
-`presentation`；Server 根据结果中的 `presentation.requested/default` 选择表格、纵向记录或 JSON。默认不含 `_actions`，只有显式添加 `--with-actions`
-（例如 `acmd ps --port 8080 --json --with-actions`）才为每行生成
-`[{"label":"Kill","command":"acmd kill --pid 1234"}]`，交由现有
-Terminal JSON Table 操作列显示。文本模式不输出 `_actions` 元数据。
-`acmd ps` 的 `--port` 过滤当前监听/占用该端口的进程。无匹配进程沿用
-`ps` 原有查询失败结果。
+`acmd ps` 返回原生进程记录数组，字段与此前相同：`pid / ppid / name / username / status`。不指定 `--with-actions` 时不附加 `view`；指定时只给 `view.actions` 声明一次 Kill 模板，不修改原有主表列、标题和详情布局。Terminal 文本展示遵循 `presentation`；JSON Viewer 按需展示 Kill 操作。`--port` 按当前监听端口筛选进程；无匹配时保留原查询失败行为。
+
+### Result JSON 的可选 View 元数据
+
+`view` 是与 `presentation` 并列的可选 Result 字段，仅影响 JSON Viewer：`titleField`、`columns`（`field` 与可选像素 `width/minWidth`）、`details`（展开字段名）、`actions`（整张表共享的操作模板列表）。模板命令中的 `{field}` 由当前行原始数据绑定为单个安全参数值；缺失或无法作为参数表示的值使该操作不可用。`confirm` 缺省 `true`，`refresh` 缺省 `false`。原始 `data` 不变；History 仍只保存 Result JSON，Output Records 由 `presentation` 派生文字。JSON Viewer 默认在桌面显示 Table、手机显示 Card；可切换 Table/Card 和 Raw。前两个 Action 直接显示，其余归入 More。脚本 SDK `emit()` 的结构化输出契约不受 `view` 改动影响，Script JSON 文本不携带 `view` 时不提供操作按钮。

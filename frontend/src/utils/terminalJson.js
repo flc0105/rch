@@ -1,13 +1,13 @@
 // Shared JSON recognition and render model for Terminal and execution result dialogs.
 // Only standalone JSON objects/arrays are actionable; ordinary log text is not JSON.
-export const JSON_ROW_ACTIONS = Symbol('terminalJsonRowActions')
+export const JSON_ROW_SOURCE = Symbol('terminalJsonRowSource')
 
 export function isJsonContainerText(text) {
   const raw = String(text ?? '').trim()
   if (!raw || !((raw[0] === '{' && raw.at(-1) === '}') || (raw[0] === '[' && raw.at(-1) === ']'))) return false
   try {
     const value = JSON.parse(raw)
-    return value !== null && typeof value === 'object' && !(Array.isArray(value) && value.length === 0)
+    return value !== null && typeof value === 'object'
   } catch (_) {
     return false
   }
@@ -67,7 +67,7 @@ export function findJsonOutput(text) {
 
 const isPlainObject = value => !!value && typeof value === 'object' && !Array.isArray(value)
 
-export function normalizeJsonRowActions(actions) {
+export function normalizeJsonViewActions(actions) {
   if (!Array.isArray(actions)) return []
   return actions.flatMap(action => {
     if (!isPlainObject(action)) return []
@@ -84,11 +84,11 @@ export function formatJsonFlatValue(value) {
 
 export function buildJsonTableModel(parsed) {
   if (!Array.isArray(parsed) || !parsed.length || !parsed.every(isPlainObject)) return null
-  const firstKeys = Object.keys(parsed[0]).filter(key => key !== '_actions')
+  const firstKeys = Object.keys(parsed[0])
   if (!firstKeys.length) return null
   const sortedKeys = [...firstKeys].sort()
   if (!parsed.every(item => {
-    const keys = Object.keys(item).filter(key => key !== '_actions').sort()
+    const keys = Object.keys(item).sort()
     return keys.length === sortedKeys.length && keys.every((key, i) => key === sortedKeys[i])
   })) return null
 
@@ -97,7 +97,7 @@ export function buildJsonTableModel(parsed) {
     rows: parsed.map(item => {
       const row = {}
       for (const key of firstKeys) row[key] = formatJsonFlatValue(item[key])
-      Object.defineProperty(row, JSON_ROW_ACTIONS, { value: normalizeJsonRowActions(item._actions), configurable: true })
+      Object.defineProperty(row, JSON_ROW_SOURCE, { value: item, configurable: true })
       return row
     }),
   }
@@ -118,9 +118,14 @@ export function buildJsonFlatModel(parsed) {
   return Object.keys(parsed).map(key => ({ key, label: key, value: formatJsonFlatValue(parsed[key]) }))
 }
 
-export function getJsonRenderModel(jsonText) {
+export function getJsonRenderModel(jsonText, view = null) {
   let parsed
   try { parsed = JSON.parse(String(jsonText ?? '').trim()) } catch (_) { return { mode: 'raw', columns: [], rows: [], groups: [], flatRows: [] } }
+  // An empty typed result can still show its declared columns after the final row is deleted.
+  if (Array.isArray(parsed) && parsed.length === 0 && Array.isArray(view?.columns) && view.columns.length) {
+    return { mode: 'table', columns: view.columns.filter(col => typeof col?.field === 'string').map(col => ({ prop: col.field, label: col.field })),
+      rows: [], groups: [], flatRows: [] }
+  }
   const table = buildJsonTableModel(parsed)
   const groups = table ? null : buildJsonGroupedModel(parsed)
   const flat = table || groups ? null : buildJsonFlatModel(parsed)
@@ -129,4 +134,52 @@ export function getJsonRenderModel(jsonText) {
     columns: table?.columns || [], rows: table?.rows || [],
     groups: groups || [], flatRows: flat || [],
   }
+}
+
+
+// The view is optional, result-level metadata. Raw JSON fields never get rewritten.
+export function normalizeJsonView(view, availableColumns = []) {
+  const source = isPlainObject(view) ? view : {}
+  const known = new Set(availableColumns.map(item => item.prop))
+  const columns = Array.isArray(source.columns) ? source.columns.flatMap(item => {
+    if (!isPlainObject(item) || typeof item.field !== 'string' || !known.has(item.field)) return []
+    const entry = { prop: item.field, label: item.field }
+    if (Number.isInteger(item.width) && item.width >= 40 && item.width <= 1600) entry.width = item.width
+    if (Number.isInteger(item.minWidth) && item.minWidth >= 40 && item.minWidth <= 1600) entry.minWidth = item.minWidth
+    return [entry]
+  }) : []
+  const details = Array.isArray(source.details)
+    ? [...new Set(source.details.filter(field => typeof field === 'string' && known.has(field)))]: []
+  const actions = Array.isArray(source.actions) ? normalizeJsonViewActions(source.actions) : []
+  return {
+    titleField: known.has(source.titleField) ? source.titleField : '',
+    columns: columns.length ? columns : availableColumns.filter(col => !details.includes(col.prop)),
+    details,
+    actions,
+  }
+}
+
+// Quote substitutions as a single token according to the Server ACMD shlex parser.
+// A missing/complex field suppresses the action rather than sending a guessed command.
+function quoteJsonActionValue(value) {
+  if (value === null || value === undefined || typeof value === 'object') return null
+  const text = String(value)
+  if (/[\u0000-\u001f]/.test(text)) return null
+  return /^[a-zA-Z0-9_@%+=:,./-]+$/.test(text) ? text : "'" + text.replaceAll("'", "'\\''") + "'"
+}
+
+export function resolveJsonViewRowActions(view, rawRow) {
+  if (!isPlainObject(rawRow)) return []
+  const templates = Array.isArray(view?.actions) ? view.actions : []
+  return templates.flatMap(action => {
+    let missing = false
+    const command = action.command.replace(/\{([a-zA-Z_][a-zA-Z0-9_]*)\}/g, (_, field) => {
+      if (!Object.prototype.hasOwnProperty.call(rawRow, field)) { missing = true; return '' }
+      const value = quoteJsonActionValue(rawRow[field])
+      if (value === null) { missing = true; return '' }
+      return value
+    })
+    if (missing || /\{[^{}]*\}/.test(command)) return []
+    return [{ ...action, command }]
+  })
 }

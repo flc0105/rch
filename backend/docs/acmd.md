@@ -59,7 +59,7 @@ Python Client 的 Windows、macOS、Linux、iOS 都注册以下命令：
 - `acmd find [path] --keyword <value>` 从当前目录或指定目录递归搜索文件和目录名。普通关键词按子串匹配，`*.jpg`、`img_*.png` 等通配符按完整名称匹配，两种模式均忽略大小写。终端里给通配符加引号。
 - `acmd wget <url> [-o <path>]` 下载 HTTP、HTTPS 或 FTP URL。默认保存到 Client 当前目录，可指定输出文件或目录。未指定文件名时优先采用响应给出的文件名，再取最终 URL 路径，最后使用 `download.bin`。下载期间显示简短进度，成功后显示可读大小和实际路径。只有完整下载才会替换目标文件。
 - `acmd sqlite_query --db <path> --query <sql>` 只读查询 SQLite，支持 `--json`。`acmd image_info <path>` 读取图片元数据，使用 Client 内的 Pillow，也支持 `--json`。
-- `acmd python_packages [--loaded/-l | --name/-n <name>] [--filter <keyword>] [--json]` 查询当前 Client 的 Python 环境。默认列出可发现的第三方发行包和版本，`--loaded` 只读 Client 主解释器里已加载的第三方顶层模块。`--filter` 按名称筛选两种列表。`--name` 执行实际导入检查，返回模块、发行包和依赖信息。只有发行包能唯一映射到模块时才使用映射。
+- `acmd python_packages [--loaded/-l | --import <module-or-distribution>] [--filter <keyword>] [--format/-f <layout>]` 查询当前 Client 的 Python 环境。默认显示已安装发行包名（Lines）；`-l` 显示当前解释器已加载模块所对应的发行包名（Lines），`--filter` 按发行包名匹配。Table、Records 和 JSON 使用同一份含版本号的发行包记录；Lines 仅显示发行包名。`--import` 保持原模块/发行包导入检查行为，会执行 Python 模块顶层代码，详情支持 Flat/KV/JSON。
 - `acmd archive_peek <path> [--limit <count>] [--json]` 只读显示 ZIP/TAR 的目录树。ZIP 与 Remote Files 复用预览读取和树构造。默认预览 50 个归档条目，`--limit` 可指定 1–5000。JSON 给出归档名称、格式化大小和目录树，只有截断时输出 `truncated: true`。
 
 ## 本机提示框与通知
@@ -105,10 +105,7 @@ acmd ps --port 8080 --json --with-actions
   可取消单条勾选；Force 初始状态由 `-9/--force` 决定。
 - `--no-confirm` 必须指定目标，不发起任何交互。`--force` 仅决定使用
   `SIGKILL`，未指定时使用 `SIGTERM`。不从未确认的自由文本猜目标。
-- `acmd ps` 支持 `--pid/--name/--port`；普通输出及 `--json` 默认只含
-  进程信息。仅指定 `--json --with-actions` 才在每行添加 `_actions`，例如
-  `[{"label":"Kill","command":"acmd kill --pid 1234"}]`。
-  `--with-actions` 是通用的可选行操作开关名，文本输出不渲染 Actions。
+- `acmd ps` 支持 `--pid/--name/--port`；进程数据始终保留 `pid / ppid / name / username / status` 五个字段。指定 `--with-actions` 时，在结果级 `view.actions` 中声明一次 Kill 模板；默认不附加 `view`。操作按钮由 JSON Viewer 展示，Terminal 表格和数据字段不变。
 - `kill_proc / kill_port / pkill / pgrep` 不再是注册的 Client 命令。
 - 进程选择和发信号都在 Client 执行。不预设 PID 白名单或进程保护名单；
   操作系统权限仍决定实际信号是否成功。对 PID 创建时间、名称、可执行
@@ -328,6 +325,11 @@ ACMD 的长期使用方式是先通过 `acmd help` 了解当前平台的命令�
 
 ## 结构化查询格式
 
-Client ACMD Registry 统一接受 `--format/-f/--json`，每条命令的 `ArgumentCommandSpec` 只描述业务参数。`ps/netstat/ifconfig/drives` 的结果声明支持 `table/records/json`；`python_packages` 根据实际查询结果分别支持安装列表 `table/records/json`、已加载模块 `lines/table/records/json`、模块详情 `flat/kv/json`。`launchd` 的默认反馈是 `message`，同时可显式请求 `flat/kv/json`；`archive_peek` 默认树状消息，可选 JSON 归档数据。这些是每一次 Result 的能力声明，而非固定命令级白名单。Client 在生成结构化结果后检查选定布局；不适用时以英文 `message` 报错，Result 仍保留这次查询得到的 `data` 和 `presentation` 供 History 记录及 Result JSON 查看。格式名称本身不合法时，仍由通用 Validator 在执行前拒绝。没有选择时使用本次结果的默认呈现。`acmd ps --json --with-actions` 保留 `_actions` 与原有业务字段。
+Client ACMD Registry 统一接受 `--format/-f/--json`，每条命令的 `ArgumentCommandSpec` 只描述业务参数。`ps/netstat/ifconfig/drives` 的结果声明支持 `table/records/json`；`python_packages` 根据实际查询结果分别支持安装列表 `lines/table/records/json`、已加载发行包 `lines/table/records/json`、模块详情 `flat/kv/json`。`launchd` 的默认反馈是 `message`，同时可显式请求 `flat/kv/json`；`archive_peek` 默认树状消息，可选 JSON 归档数据。这些是每一次 Result 的能力声明，而非固定命令级白名单。Client 在生成结构化结果后检查选定布局；不适用时以英文 `message` 报错，Result 仍保留这次查询得到的 `data` 和 `presentation` 供 History 记录及 Result JSON 查看。格式名称本身不合法时，仍由通用 Validator 在执行前拒绝。没有选择时使用本次结果的默认呈现。`acmd ps --json --with-actions` 将 Kill 声明为表级 `view.actions` 模板，业务数据仍为原生进程记录；Raw JSON 与终端文本格式不依赖动作元数据。
 
-`acmd ps --json --with-actions` 的 Kill 行操作使用可选 `_actions.refresh: true`：用户确认 Kill 并执行成功后，JSON Viewer 使用原 `ps` 查询操作重新获取进程列表。`_actions.confirm` 未声明，沿用默认确认。刷新只改变当前 Viewer，不改动历史结果。
+`acmd ps --json --with-actions` 的 Kill 模板设置 `refresh: true`：确认 Kill 并执行成功后，JSON Viewer 使用原 `ps` 查询重取进程列表。`confirm` 未声明时默认要求确认。刷新只改变当前 Viewer，不修改历史 Result。
+
+### JSON Viewer 的结果级 View
+
+ACMD 的结构化 Result 可以附带 `view`。它与负责终端文字布局的 `presentation` 并列：`titleField` 指定 Card 标题字段，`columns` 可为主表字段配置 `width` 或 `minWidth`（像素），`details` 将字段显示在可展开详情中；`actions` 是整张表共用的行操作模板，命令中的 `{field}` 引用当前行的原始字段值。Viewer 复用现有的执行确认、Terminal/New Dialog 和成功刷新功能；确认缺省开启，刷新缺省关闭。桌面默认 Table、可切换 Card；移动端默认 Card，前两项操作直接显示，余下操作进入 More。原生业务 `data` 不承载重复的逐行动作定义。
+

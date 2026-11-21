@@ -68,15 +68,10 @@ def _display(value):
     return ', '.join(str(item) for item in value) if isinstance(value, list) else str(value)
 
 
-def _visible_fields(row):
-    # Reserved row metadata (_actions, etc.) belongs to raw JSON, not table columns.
-    return (key for key in row if not str(key).startswith('_'))
-
-
 def _selected_columns(rows, columns):
     if columns:
         return tuple((str(name), str(header)) for name, header in columns)
-    return tuple((str(name), str(name)) for name in _visible_fields(rows[0])) if rows else ()
+    return tuple((str(name), str(name)) for name in rows[0]) if rows else ()
 
 
 def _present_data(data, shape, *, width=20, null_text=None, columns=(),
@@ -126,7 +121,7 @@ def _present_data(data, shape, *, width=20, null_text=None, columns=(),
         return _display(value)
 
     if shape == ResultDataShape.TABLE:
-        if not columns and any(set(_visible_fields(item)) != set(_visible_fields(data[0])) for item in data):
+        if not columns and any(set(item) != set(data[0]) for item in data):
             raise ValueError('Table view requires consistent record fields')
         if selected:
             require_fields(*(field for field, _ in selected))
@@ -302,6 +297,7 @@ class StructuredCommandResult:
     message: str = ''
     source: str = 'data'
     formats: tuple[str, ...] = ()
+    view: dict | None = None
 
     def as_event(self, *, requested=None):
         """Keep native ACMD facts and the Client-parsed display selection."""
@@ -331,6 +327,8 @@ class StructuredCommandResult:
             if value is not None and value != field.default:
                 hints[field.name] = value
         event['presentation'] = hints
+        if self.view is not None:
+            event['view'] = self.view
         return event
 
 

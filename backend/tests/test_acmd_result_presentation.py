@@ -263,14 +263,19 @@ def test_ps_actions_are_raw_json_metadata_not_extra_declared_table_columns(monke
     registry = ArgumentCommandRegistry(SimpleNamespace(command_platform='mac'))
     registry.register(ps)
     status, event = registry.execute({'name': 'ps', 'args': {'with-actions': True}})
-    assert status == 1 and event['data'][0]['_actions'][0]['label'] == 'Kill'
+    assert status == 1 and event['view'] == {'actions': [{'label': 'Kill', 'command': 'acmd kill --pid {pid}', 'refresh': True}]}
+    assert list(event['data'][0]) == ['pid', 'ppid', 'name', 'username', 'status']
     assert 'columns' not in event['presentation']
     wire = result_wire_event(88, status, event)
     text = _show(ResultChunk(status, wire, True, terminal_authoritative=True, event=wire))[1]
-    assert 'pid' in text and 'demo' in text and '_actions' not in text and 'Kill' not in text
+    assert all(field in text for field in ('pid', 'ppid', 'name', 'username', 'status'))
+    assert '_actions' not in text and 'Kill' not in text
     records = _show(_result(event['data'], requested='records'))[1]
     assert 'name: demo' in records and '_actions' not in records
-    assert wire['data'][0]['_actions'][0]['refresh'] is True
+    assert wire['view']['actions'][0]['refresh'] is True
+    status, default_event = registry.execute({'name': 'ps', 'args': {}})
+    assert status == 1 and 'view' not in default_event
+    assert list(default_event['data'][0]) == ['pid', 'ppid', 'name', 'username', 'status']
 
 
 def test_activity_detail_reuses_live_projection_and_keeps_raw_result_unchanged():
@@ -284,7 +289,7 @@ def test_activity_detail_reuses_live_projection_and_keeps_raw_result_unchanged()
     text = project_result_output_texts(events)
     assert text[:2] == [None, None]
     assert text[2] == _show(entry)[1]
-    assert 'pid: 42' in text[2] and '_actions' not in text[2]
+    assert 'pid: 42' in text[2] and '_actions:' in text[2]
     assert events == before
     # Invocation text cannot change the recorded presentation selection.
     assert project_result_output_texts(events) == text
@@ -385,12 +390,12 @@ def test_python_packages_modes_use_result_local_format_capabilities():
     registry = ArgumentCommandRegistry(SimpleNamespace(command_platform='mac'))
     registry.register(python_packages)
     status, event = registry.execute({'name': 'python_packages',
-                                      'args': {'name': 'json', 'format': 'flat'}})
+                                      'args': {'import': 'json', 'format': 'flat'}})
     assert status == 1 and event['presentation']['default'] == 'flat'
     assert event['presentation']['requested'] == 'flat'
     assert 'formats' not in event['presentation']
     status, event = registry.execute({'name': 'python_packages',
-                                      'args': {'name': 'json', 'f': 'records'}})
+                                      'args': {'import': 'json', 'f': 'records'}})
     assert status == 0 and event['status'] == 'error'
     assert event['message'] == 'Unsupported format for this result: records. Available: flat, kv, json.'
     assert event['data']['module'] == 'json'
@@ -398,7 +403,7 @@ def test_python_packages_modes_use_result_local_format_capabilities():
                                      'requested': 'records', 'width': 24}
     # A format-name error is still a plain parameter-validation error, before execution.
     status, text = registry.execute({'name': 'python_packages',
-                                     'args': {'name': 'json', 'f': 'ddfdd'}})
+                                     'args': {'import': 'json', 'f': 'ddfdd'}})
     assert status == 0 and isinstance(text, str)
     assert text.startswith('Unsupported --format value: ddfdd; supported: ')
 
@@ -417,7 +422,7 @@ def test_history_write_keeps_data_on_result_scoped_format_error(tmp_path):
     registry = ArgumentCommandRegistry(SimpleNamespace(command_platform='mac'))
     registry.register(python_packages)
     status, result = registry.execute({'name': 'python_packages',
-                                       'args': {'name': 'json', 'f': 'table'}})
+                                       'args': {'import': 'json', 'f': 'table'}})
     wire = result_wire_event(102, status, result)
 
     # Load the real history writer without the optional Flask/Werkzeug Server bootstrap.

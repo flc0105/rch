@@ -187,6 +187,8 @@ def archive_peek(self, args_dict):
 
 def register_commands(registry):
     """Register declarations owned by this Common / Platform module."""
+    from client.commands.acmd.standalone.view_probe import view_probe
+    registry.register(view_probe)
     registry.register(drives)
     registry.register(python_packages)
     registry.register(sqlite_query)

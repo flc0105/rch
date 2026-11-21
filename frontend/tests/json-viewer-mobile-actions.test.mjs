@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
-import { JSON_ROW_ACTIONS, getJsonRenderModel } from '../src/utils/terminalJson.js'
+import { JSON_ROW_SOURCE, getJsonRenderModel, normalizeJsonView, resolveJsonViewRowActions } from '../src/utils/terminalJson.js'
 
 const source = readFileSync(new URL('../src/components/TerminalJsonDialog.vue', import.meta.url), 'utf8')
 const template = source.match(/<template>([\s\S]*?)<\/template>\s*<script>/)?.[1]
@@ -11,19 +11,16 @@ assert.ok(template && style)
 
 const column = template.match(/<el-table-column\s+v-if="tableHasActions"([\s\S]*?)<\/el-table-column>/)?.[0]
 assert.ok(column, 'Actions table column exists')
-const mobile = column.match(/<el-dropdown\s+v-if="getTerminalJsonRowActions\(row\)\.length"([\s\S]*?)<\/el-dropdown>/)?.[0]
-assert.ok(mobile, 'a mobile dropdown is available for every actionable row')
-
-test('narrow Actions column exposes every action via one reachable menu', () => {
-  assert.match(column, /fixed="right"/)
-  assert.match(mobile, /class="terminal-json-row-actions-mobile"/)
-  assert.match(mobile, /trigger="click"/)
-  assert.match(mobile, /Actions \(\{\{ getTerminalJsonRowActions\(row\)\.length \}\}\)/)
-  assert.match(mobile, /v-for="\(action, index\) in getTerminalJsonRowActions\(row\)"/)
-  assert.match(mobile, /@command="index => confirmTableAction\(getTerminalJsonRowActions\(row\)\[index\]\)"/)
-  assert.doesNotMatch(mobile, /\.slice\(/, 'mobile menu must not hide any actions')
-  assert.match(style, /@media \(max-width: 768px\) \{[\s\S]*?\.terminal-json-row-actions-inline\s*\{\s*display:\s*none;/)
-  assert.match(style, /@media \(max-width: 768px\) \{[\s\S]*?\.terminal-json-row-actions-mobile\s*\{\s*display:\s*inline-flex;/)
+test('small screens default to cards and preserve direct actions', () => {
+  assert.match(template, /tableViewMode === 'card'/)
+  assert.match(template, /terminal-json-cards/)
+  assert.match(template, /cardTitle\(row, index\)/)
+  assert.match(template, /resultView\.details/)
+  assert.match(template, /getTerminalJsonRowActions\(row\)\.slice\(0, 2\)/)
+  assert.match(template, /getTerminalJsonRowActions\(row\)\.slice\(2\)/)
+  assert.doesNotMatch(template, /Actions \(\{\{/)
+  assert.match(source, /matchMedia\?\.\('\(max-width: 768px\)'\)/)
+  assert.doesNotMatch(column, /min-width="200"/)
 })
 
 test('desktop retains direct actions and More; long labels can wrap', () => {
@@ -39,7 +36,7 @@ test('table horizontal overflow is left to Element Plus and touch scrolling is e
   assert.match(style, /\.terminal-json-scroll\s*\{[^}]*overflow:\s*auto;/)
   assert.match(style, /\.terminal-json-table-scroll\s*\{[^}]*touch-action:\s*pan-x pan-y;/)
   assert.match(style, /\.terminal-json-table-scroll :deep\(\.el-scrollbar__wrap\)\s*\{[^}]*-webkit-overflow-scrolling:\s*touch;/)
-  assert.match(style, /:global\(\.terminal-json-actions-popper \.el-dropdown-menu__item\)\s*\{[^}]*overflow-wrap:\s*anywhere;/)
+  assert.doesNotMatch(column, /fixed="right"/)
 })
 
 test('all four probe actions remain available and retain confirm/refresh when chosen', () => {
@@ -49,9 +46,10 @@ test('all four probe actions remain available and retain confirm/refresh when ch
     { label: 'Reset + Confirm', command: 'pyexec 3', confirm: true, refresh: true },
     { label: 'Inspect PID', command: 'getpid', confirm: true, refresh: false },
   ]
-  const model = getJsonRenderModel(JSON.stringify([{ counter: 0, _actions: actions }]))
+  const model = getJsonRenderModel(JSON.stringify([{ counter: 0 }]))
   assert.equal(model.mode, 'table')
-  const available = model.rows[0][JSON_ROW_ACTIONS]
+  const view = normalizeJsonView({ actions }, model.columns)
+  const available = resolveJsonViewRowActions(view, model.rows[0][JSON_ROW_SOURCE])
   assert.equal(available.length, 4)
   for (let index = 0; index < actions.length; index++) {
     assert.equal(available[index].label, actions[index].label)

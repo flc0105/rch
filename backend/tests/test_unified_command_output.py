@@ -271,7 +271,7 @@ def test_acmd_ps_native_json_preserves_action_payload(monkeypatch):
     result = command.ps(object(), args)
     assert isinstance(result, StructuredCommandResult)
     assert result.formats == ('table', 'records', 'json')
-    assert result.data[0]['_actions'][0]['refresh'] is True
+    assert result.view['actions'][0]['refresh'] is True and '_actions' not in result.data[0]
     def show(fmt):
         wire = result_wire_event(100, result.status, result.as_event(requested=fmt))
         entry = ResultChunk(1, wire, True, event=wire)
@@ -285,7 +285,10 @@ def test_acmd_python_packages_loaded_is_same_data_all_layouts(monkeypatch):
     from core.commands.argument_validator import ArgumentCommandValidator
     from core.utils.command_output import project_result_chunks
     from core.protocol.result_envelope import result_wire_event
-    monkeypatch.setattr(command.metadata, 'packages_distributions', lambda: {'json': ['stdlib'], 'fakepkg': ['fake']})
+    from types import SimpleNamespace
+    monkeypatch.setattr(command.metadata, 'packages_distributions', lambda: {'fakepkg': ['FakeDist']})
+    monkeypatch.setattr(command.metadata, 'distribution', lambda name: SimpleNamespace(
+        metadata={'Name': name}, version='1.2.3'))
     args = ArgumentCommandValidator().normalize(command.PYTHON_PACKAGES_SPEC, {'loaded': True})
     from unittest.mock import patch
     with patch.dict(command.sys.modules, {'fakepkg': object()}):
@@ -295,9 +298,9 @@ def test_acmd_python_packages_loaded_is_same_data_all_layouts(monkeypatch):
         wire = result_wire_event(100, result.status, result.as_event(requested=fmt))
         entry = ResultChunk(1, wire, True, event=wire)
         return next(project_result_chunks([entry]))[1]
-    assert show(None) == 'fakepkg\njson'
-    assert 'module' in show('table')
-    assert 'module: fakepkg' in show('records')
+    assert show(None) == 'FakeDist'
+    assert 'version' in show('table')
+    assert 'package: FakeDist' in show('records')
     assert json.loads(show('json')) == result.data 
 
 def test_format_declared_in_help_and_static_completion():
@@ -376,6 +379,15 @@ def test_table_requires_same_record_columns():
     assert json.loads(render_result_payload(_payload(rows), 'json', view='data')) == rows
 
 
+def test_core_renderer_keeps_business_fields_with_leading_underscores():
+    rows = [{'_id': 11, 'name': 'alpha'}, {'_id': 12, 'name': 'beta'}]
+    table = render_result_payload(_payload(rows), view='data', shape='table')
+    records = render_result_payload(_payload(rows), view='data', shape='records')
+    assert '_id' in table and '11' in table
+    assert '_id: 11' in records
+    assert json.loads(render_result_payload(_payload(rows), 'json', view='data')) == rows
+
+
 def test_client_presentation_contract_is_local_and_wire_is_compact():
     from core.protocol.result_envelope import result_wire_event
     response = StructuredCommandResult(1, [{'name': 'demo'}], shape=ResultDataShape.TABLE,
@@ -392,10 +404,10 @@ def test_python_packages_modes_have_distinct_layout_contracts():
     spec = command.PYTHON_PACKAGES_SPEC
     assert command.python_packages(object(), validate(spec, {'loaded': True})).formats == (
         'lines', 'table', 'records', 'json')
-    assert command.python_packages(object(), validate(spec, {'name': 'json'})).formats == (
+    assert command.python_packages(object(), validate(spec, {'import': 'json'})).formats == (
         'flat', 'kv', 'json')
     assert command.python_packages(object(), validate(spec, {})).formats == (
-        'table', 'records', 'json')
+        'lines', 'table', 'records', 'json')
 
 
 def test_server_rejects_detail_and_ambiguous_job_layouts_before_execution():
