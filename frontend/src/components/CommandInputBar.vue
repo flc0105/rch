@@ -143,6 +143,7 @@ export default {
     'terminal-submission-start',
     'clear-output',
     'edit-remote-file',
+    'open-pty',
   ],
 
   data() {
@@ -344,6 +345,10 @@ export default {
   const normalizedCommand = rawCommand.toLowerCase()
 
   const localCommandHandlers = {
+    pty: () => {
+      this.$emit('open-pty')
+      this.commandText = ''
+    },
     clear: () => {
       this.$emit('clear-output')
       this.commandText = ''

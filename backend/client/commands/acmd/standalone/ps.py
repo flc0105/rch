@@ -3,7 +3,7 @@
 from client.runtime.execution.process.process_service import ProcessService
 from client.commands.acmd.decorators import argument_command
 from core.commands.argument_models import ArgumentCommandSpec, ArgumentOptionSpec
-from core.utils.command_output import StructuredCommandResult, ResultDataShape, resolve_presentation, render_structured_result
+from core.utils.command_output import StructuredCommandResult, ResultDataShape
 
 
 PS_ARGUMENT_SPEC = ArgumentCommandSpec(
@@ -34,15 +34,6 @@ PS_ARGUMENT_SPEC = ArgumentCommandSpec(
         ArgumentOptionSpec(
             name='with-actions', option_type='flag', required=False, default=False,
             help_text='Include available row actions in JSON output',
-        ),
-        ArgumentOptionSpec('format', 'str', default='', alias='f',
-                           choices=('table', 'records', 'json'), help_text='Supported output: table, records, json'),
-        ArgumentOptionSpec(
-            name='json',
-            option_type='flag',
-            required=False,
-            default=False,
-            help_text='Output as JSON',
         ),
         ArgumentOptionSpec(
             name='help',
@@ -78,8 +69,6 @@ def ps(self, args_dict, payload=None):
     """List Client processes and apply ACMD filters before rendering."""
     pid = args_dict.get('pid')
     name = str(args_dict.get('name') or '').strip()
-    output, layout = resolve_presentation(args_dict, ResultDataShape.TABLE)
-    output_json = output == 'json'
     include_actions = bool(args_dict.get('with-actions', False))
     port = args_dict.get('port')
     if port is not None:
@@ -114,7 +103,7 @@ def ps(self, args_dict, payload=None):
         from client.runtime.execution.process.approved_process_service import port_owners
         owners = port_owners(port)
         rows = [row for row in rows if row['pid'] in owners]
-    if include_actions and output_json:
+    if include_actions:
         for row in rows:
             row['_actions'] = [{'label': 'Kill',
                                 'command': f'acmd kill --pid {row["pid"]}',
@@ -140,14 +129,7 @@ def ps(self, args_dict, payload=None):
 
         raise RuntimeError('No processes found')
 
-    result = StructuredCommandResult(
-        status=1,
-        data=rows,
-        shape=layout,
+    return StructuredCommandResult(
+        status=1, data=rows, shape=ResultDataShape.TABLE,
+        formats=('table', 'records', 'json'),
     )
-
-    return render_structured_result(
-        result,
-        output_format=output,
-    )
-

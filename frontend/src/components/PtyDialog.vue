@@ -158,6 +158,7 @@ export default {
       ptyPasteVisible: false,
       ptyPasteText: '',
       shellPath: '',
+      ptyInitialCwd: '',
       ptyLoading: false,
       ptyClosing: false,
       ptySaving: false,
@@ -201,7 +202,7 @@ export default {
   },
 
   methods: {
-    async open() {
+    async open(path = '') {
       if (!this.selectedId) {
         ElMessage.warning('Please select a device')
         return
@@ -215,6 +216,7 @@ export default {
       this.ptyPasteText = ''
       this.ptyUserClosing = false
       this.shellPath = ''
+      this.ptyInitialCwd = String(path || this.currentConnection?.cwd || '').trim()
 
       try {
         await this.$nextTick()
@@ -257,6 +259,7 @@ export default {
             cols: dims.cols,
             rows: dims.rows,
             shell,
+            cwd: this.ptyInitialCwd,
           }),
         })
         const json = await res.json()

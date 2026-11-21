@@ -190,20 +190,25 @@ def test_config_kv_never_rewrites_real_config_keys():
                        'value': 60, 'default': 30}
 
 
-def test_acmd_specs_declare_format_in_their_own_single_spec():
+def test_acmd_display_options_are_parsed_by_client_and_forwarded_verbatim():
     from client.commands.acmd.standalone import ps, netstat, ifconfig, python_packages, drives, launchd
+    from server.application.command.command_planner import CommandPlanner
     for module, spec_name in [
         (ps, 'PS_ARGUMENT_SPEC'), (netstat, 'NETSTAT_ARGUMENT_SPEC'),
         (ifconfig, 'IFCONFIG_ARGUMENT_SPEC'), (python_packages, 'PYTHON_PACKAGES_SPEC'),
         (drives, 'DRIVES_SPEC'), (launchd, 'LAUNCHD_ARGUMENT_SPEC'),
     ]:
         spec = getattr(module, spec_name)
-        formats = [option for option in spec.options if option.name == 'format']
-        assert len(formats) == 1 and formats[0].alias == 'f'
-        from core.commands.argument_validator import ArgumentCommandValidator
-        from_format = 'flat' if spec_name == 'LAUNCHD_ARGUMENT_SPEC' else 'records'
-        assert ArgumentCommandValidator().normalize(spec, {'format': from_format})['format'] == from_format
-
+        assert 'format' not in {option.name for option in spec.options}
+        assert 'json' not in {option.name for option in spec.options}
+    planner = CommandPlanner(alias_manager=None, plan_executor=lambda plan: plan, error_executor=None)
+    for spelling in ('--format records', '-f records', '--format=records'):
+        command = 'acmd ps ' + spelling
+        plan = planner.build_argument_command_plan(command)
+        assert plan['command'] == plan['extra']['raw'] == command
+        assert 'presentation_format' not in plan
+        assert ('format' in plan['extra']['args'] or 'f' in plan['extra']['args'])
+    assert planner.build_argument_command_plan('acmd ps --json')['extra']['args']['json'] is True
 
 def test_watchdog_default_grouped_flat_rejected_and_json_untouched():
     support = ConfigurationBuiltinSupport.__new__(ConfigurationBuiltinSupport)
@@ -254,38 +259,46 @@ def test_history_numbered_and_detail_json_keep_stored_indices():
         sys.modules.pop(name, None)
 
 
-def test_acmd_ps_format_json_preserves_action_payload(monkeypatch):
+def test_acmd_ps_native_json_preserves_action_payload(monkeypatch):
     from client.commands.acmd.standalone import ps as command
     from core.commands.argument_validator import ArgumentCommandValidator
     from client.runtime.execution.process.process_service import ProcessService
+    from core.utils.command_output import project_result_chunks
+    from core.protocol.result_envelope import result_wire_event
     monkeypatch.setattr(ProcessService, 'list_processes', lambda *_: [
         {'pid': 98, 'ppid': 1, 'name': 'python', 'username': 'a', 'status': 'running'}])
-    spec = command.PS_ARGUMENT_SPEC
-    validator = ArgumentCommandValidator()
-    query = lambda data: command.ps(object(), validator.normalize(spec, data))
-    text = query({'format': 'records'})
-    assert 'pid: 98' in text[1]
-    original = json.loads(query({'json': True, 'with-actions': True})[1])
-    via_format = json.loads(query({'format': 'json', 'with-actions': True})[1])
-    assert via_format == original
-    assert original[0]['_actions'][0]['label'] == 'Kill'
-    assert original[0]['_actions'][0]['refresh'] is True
-
+    args = ArgumentCommandValidator().normalize(command.PS_ARGUMENT_SPEC, {'with-actions': True})
+    result = command.ps(object(), args)
+    assert isinstance(result, StructuredCommandResult)
+    assert result.formats == ('table', 'records', 'json')
+    assert result.data[0]['_actions'][0]['refresh'] is True
+    def show(fmt):
+        wire = result_wire_event(100, result.status, result.as_event(requested=fmt))
+        entry = ResultChunk(1, wire, True, event=wire)
+        return next(project_result_chunks([entry]))[1]
+    assert json.loads(show('json')) == result.data
+    assert 'pid: 98' in show('records')
+    assert '_actions' not in show('table')
 
 def test_acmd_python_packages_loaded_is_same_data_all_layouts(monkeypatch):
     from client.commands.acmd.standalone import python_packages as command
     from core.commands.argument_validator import ArgumentCommandValidator
+    from core.utils.command_output import project_result_chunks
+    from core.protocol.result_envelope import result_wire_event
     monkeypatch.setattr(command.metadata, 'packages_distributions', lambda: {'json': ['stdlib'], 'fakepkg': ['fake']})
-    monkeypatch.setattr(command.sys, 'modules', {'json': object(), 'fakepkg': object()})
-    spec = command.PYTHON_PACKAGES_SPEC
-    validator = ArgumentCommandValidator()
-    run = lambda arg: command.python_packages(object(), validator.normalize(spec, arg))
-    assert run({'loaded': True}) == (1, 'fakepkg\njson')
-    assert 'module' in run({'loaded': True, 'format': 'table'})[1]
-    assert 'module: fakepkg' in run({'loaded': True, 'format': 'records'})[1]
-    assert json.loads(run({'loaded': True, 'json': True})[1]) == json.loads(
-        run({'loaded': True, 'format': 'json'})[1])
-
+    args = ArgumentCommandValidator().normalize(command.PYTHON_PACKAGES_SPEC, {'loaded': True})
+    from unittest.mock import patch
+    with patch.dict(command.sys.modules, {'fakepkg': object()}):
+        result = command.python_packages(object(), args)
+    assert result.formats == ('lines', 'table', 'records', 'json')
+    def show(fmt):
+        wire = result_wire_event(100, result.status, result.as_event(requested=fmt))
+        entry = ResultChunk(1, wire, True, event=wire)
+        return next(project_result_chunks([entry]))[1]
+    assert show(None) == 'fakepkg\njson'
+    assert 'module' in show('table')
+    assert 'module: fakepkg' in show('records')
+    assert json.loads(show('json')) == result.data 
 
 def test_format_declared_in_help_and_static_completion():
     assert 'format' in registry.help('script list')
@@ -363,20 +376,13 @@ def test_table_requires_same_record_columns():
     assert json.loads(render_result_payload(_payload(rows), 'json', view='data')) == rows
 
 
-@pytest.mark.parametrize('name,argument,expected', [
-    ('ps', 'numbered', 'table, records, json'),
-    ('netstat', 'kv', 'table, records, json'),
-    ('launchd', 'records', 'flat, kv, json'),
-    ('drives', 'flat', 'table, records, json'),
-])
-def test_acmd_spec_rejects_unsupported_layouts(name, argument, expected):
-    from core.commands.argument_validator import ArgumentCommandValidator
-    from client.commands.acmd.standalone import ps, netstat, launchd, drives
-    specs = {'ps': ps.PS_ARGUMENT_SPEC, 'netstat': netstat.NETSTAT_ARGUMENT_SPEC,
-             'launchd': launchd.LAUNCHD_ARGUMENT_SPEC, 'drives': drives.DRIVES_SPEC}
-    with pytest.raises(ValueError, match='Unsupported --format value: ' + argument) as exc:
-        ArgumentCommandValidator().normalize(specs[name], {'format': argument})
-    assert expected in str(exc.value)
+def test_client_presentation_contract_is_local_and_wire_is_compact():
+    from core.protocol.result_envelope import result_wire_event
+    response = StructuredCommandResult(1, [{'name': 'demo'}], shape=ResultDataShape.TABLE,
+                                       formats=('table', 'records', 'json'))
+    wire = result_wire_event(101, 1, response.as_event(requested='records'))
+    assert wire['presentation'] == {'source': 'data', 'default': 'table', 'requested': 'records'}
+    assert 'formats' not in wire['presentation']
 
 
 def test_python_packages_modes_have_distinct_layout_contracts():
@@ -384,12 +390,12 @@ def test_python_packages_modes_have_distinct_layout_contracts():
     from core.commands.argument_validator import ArgumentCommandValidator
     validate = ArgumentCommandValidator().normalize
     spec = command.PYTHON_PACKAGES_SPEC
-    assert command.python_packages(object(), validate(spec, {'loaded': True, 'format': 'flat'})) == (
-        0, 'Unsupported --format: flat; supported: lines, table, records, json')
-    assert command.python_packages(object(), validate(spec, {'name': 'json', 'format': 'records'})) == (
-        0, 'Unsupported --format: records; supported: flat, kv, json')
-    assert command.python_packages(object(), validate(spec, {'format': 'lines'})) == (
-        0, 'Unsupported --format: lines; supported: table, records, json')
+    assert command.python_packages(object(), validate(spec, {'loaded': True})).formats == (
+        'lines', 'table', 'records', 'json')
+    assert command.python_packages(object(), validate(spec, {'name': 'json'})).formats == (
+        'flat', 'kv', 'json')
+    assert command.python_packages(object(), validate(spec, {})).formats == (
+        'table', 'records', 'json')
 
 
 def test_server_rejects_detail_and_ambiguous_job_layouts_before_execution():

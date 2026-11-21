@@ -48,6 +48,7 @@
                   <el-dropdown-item command="new_folder">New Folder</el-dropdown-item>
                   <el-dropdown-item command="upload" :disabled="remoteUploadLoading">Upload</el-dropdown-item>
                   <el-dropdown-item command="set_cwd" :disabled="!remoteFilesCurrentPath">Set as CWD</el-dropdown-item>
+                  <el-dropdown-item command="open_pty" :disabled="!remoteFilesCurrentPath">Open PTY Here</el-dropdown-item>
                   <el-dropdown-item command="toggle_pin">{{ remotePinButtonText }}</el-dropdown-item>
 
                   <el-dropdown-item divided disabled>Quick Jump</el-dropdown-item>
@@ -225,6 +226,7 @@
                 <template #dropdown>
                   <el-dropdown-menu>
                     <el-dropdown-item command="set_cwd" :disabled="!remoteFilesCurrentPath">Set as CWD</el-dropdown-item>
+                  <el-dropdown-item command="open_pty" :disabled="!remoteFilesCurrentPath">Open PTY Here</el-dropdown-item>
                     <el-dropdown-item command="toggle_pin">
                       {{ remotePinButtonText }}
                     </el-dropdown-item>
@@ -487,6 +489,7 @@
                         <el-dropdown-item command="cut">Cut</el-dropdown-item>
                         <el-dropdown-item command="copy_path">Copy Path</el-dropdown-item>
                         <el-dropdown-item v-if="row.is_dir" command="set_cwd">Set as CWD</el-dropdown-item>
+                        <el-dropdown-item v-if="row.is_dir" command="open_pty">Open PTY Here</el-dropdown-item>
                         <el-dropdown-item v-if="isZipEntry(row)" command="extract" divided :disabled="remoteZipExtracting">Extract Here</el-dropdown-item>
                         <el-dropdown-item command="delete">Delete</el-dropdown-item>
                       </el-dropdown-menu>
@@ -700,6 +703,7 @@
                               <el-dropdown-item command="cut">Cut</el-dropdown-item>
                               <el-dropdown-item command="copy_path">Copy Path</el-dropdown-item>
                               <el-dropdown-item v-if="row.is_dir" command="set_cwd">Set as CWD</el-dropdown-item>
+                        <el-dropdown-item v-if="row.is_dir" command="open_pty">Open PTY Here</el-dropdown-item>
                               <el-dropdown-item v-if="isZipEntry(row)" command="extract" divided :disabled="remoteZipExtracting">Extract Here</el-dropdown-item>
                               <el-dropdown-item command="delete">Delete</el-dropdown-item>
                             </el-dropdown-menu>
@@ -766,6 +770,7 @@
                         <el-dropdown-item v-if="!row.is_parent_entry" command="cut">Cut</el-dropdown-item>
                         <el-dropdown-item v-if="!row.is_parent_entry" command="copy_path">Copy Path</el-dropdown-item>
                         <el-dropdown-item v-if="row.is_dir && !row.is_parent_entry" command="set_cwd">Set as CWD</el-dropdown-item>
+                        <el-dropdown-item v-if="row.is_dir && !row.is_parent_entry" command="open_pty">Open PTY Here</el-dropdown-item>
                         <el-dropdown-item v-if="isZipEntry(row)" command="extract" :disabled="remoteZipExtracting">Extract Here</el-dropdown-item>
                         <el-dropdown-item v-if="!row.is_parent_entry" command="delete">Delete</el-dropdown-item>
                       </el-dropdown-menu>
@@ -837,6 +842,9 @@
       :selected-id="remoteFilesClientId"
       :items="remotePinnedJumpItems"
       @updated="handlePinnedQuickJumpsUpdated"
+      @copy-path="path => copyRemotePath({ path })"
+      @set-cwd="setRemoteDirectoryAsCwd"
+      @open-pty="openRemotePtyHere"
   />
 </template>
 
@@ -877,6 +885,7 @@ export default {
     'upload-started',
     'visible-change',
     'artifacts-maybe-changed',
+    'open-pty',
   ],
 
   data() {
@@ -1612,6 +1621,13 @@ export default {
       }
     },
 
+    openRemotePtyHere(path) {
+      const directory = String(path || '').trim()
+      if (directory && this.remoteFilesClientId === String(this.selectedId || '')) {
+        this.$emit('open-pty', directory)
+      }
+    },
+
     handleRemoteMobileToolsCommand(command) {
       if (command && typeof command === 'object') {
         return this.jumpToPath(command)
@@ -1622,6 +1638,7 @@ export default {
       }
 
       if (command === 'set_cwd') return this.setRemoteDirectoryAsCwd(this.remoteFilesCurrentPath)
+      if (command === 'open_pty') return this.openRemotePtyHere(this.remoteFilesCurrentPath)
       if (command === 'refresh') return this.refreshRemoteDirectory()
       if (command === 'up') return this.goToRemoteParent()
       if (command === 'new_folder') return this.createRemoteDirectory()
@@ -1646,6 +1663,7 @@ export default {
 
     handleRemoteToolbarMoreCommand(command) {
       if (command === 'set_cwd') return this.setRemoteDirectoryAsCwd(this.remoteFilesCurrentPath)
+      if (command === 'open_pty') return this.openRemotePtyHere(this.remoteFilesCurrentPath)
       if (command === 'toggle_pin') {
         this.toggleCurrentPinnedQuickJump()
         return
@@ -1694,6 +1712,7 @@ export default {
     handleRemoteMoreAction(command, row) {
       if (!row || row.is_parent_entry) return
       if (command === 'set_cwd' && row.is_dir) return this.setRemoteDirectoryAsCwd(row.path)
+      if (command === 'open_pty' && row.is_dir) return this.openRemotePtyHere(row.path)
 
       if (command === 'rename') {
         this.renameRemoteEntry(row)

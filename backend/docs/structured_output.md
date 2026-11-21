@@ -2,18 +2,18 @@
 
 Server Builtin 与 Client ACMD 共享 Core 结构化结果渲染器：命令产生一次数据，终端按选定布局生成文本，或序列化完整 JSON。Web Terminal 接收到结果后，还可能从完整 JSON 中识别适合 Table、Flat 或 Raw 的查看方式。因此命令产出格式与浏览器显示模式处于不同层级。
 
-支持结构化布局的查询命令在自身 Registry / ArgumentCommandSpec 中声明 `--format` / `-f`；`--json` 是 JSON 的快捷选项。命令参数和结构化数据彼此独立，Web JSON Viewer 再决定自己的交互视图。
+Server Builtin 的展示格式由自身 Registry 声明。ACMD 的 `--format/-f/--json` 由 Client Registry 统一解析，实际结果的可用布局在 Client 内部校验。Client 返回本次结果的默认布局、可选的已选格式及必要字段映射，Server 统一渲染。Web JSON Viewer 独立选择交互视图。
 
 ## 命令返回值和终端展示的边界
 
 ```text
-命令处理器（Client 内置 / ACMD / Server 内置）
+命令处理器（Client ACMD / Server Builtin）
           ↓
-组织数据：dict 或 list[dict]
+组织原生 data；ACMD 额外声明本次 Result 的 presentation
           ↓
-Core 公共布局（LINES / TABLE / RECORDS / KEY_VALUE / GROUPED / NUMBERED_LIST / FLAT）或 JSON 序列化
+Server 按 Result.presentation 调用 Core 布局或 JSON 序列化
           ↓
-执行状态 + 结果文本 → 正常命令输出通道
+原始 Result 事件 + 本次可见文本 → 正常命令输出通道
           ↓
 Web Terminal：显示输出、识别完整 JSON
           ↓
@@ -44,7 +44,7 @@ Server 本地 Builtin 的单次查询/反馈（例如 Job 列表、Script 列表
 
 `saveout`、`notify`、`history run`、`gopin go` 属于执行包装入口。`history run` 和 `gopin go` 的执行提示是 `chunk`，然后原样转发内层命令输出，内层唯一的 `completed` 决定结果。`notify` 以内层 `completed.status` 形成 Device Event（该通知与命令结果是不同通道），并原样转发命令事件。`saveout` 把内层可见文字保存为 `command_output` Artifact；显式结构化 `data` 且没有现成文字投影时按 JSON 保存。内层执行的最终结果决定 Artifact 元数据中的 `final_status` 和外层保存反馈的完成状态，中间 stderr 或进度不决定最终成功与否。未收到内层终态即结束的协议流标记为 `interrupted`。
 
-普通 Shell-like 命令和 Script 的 `print()`、stdout/stderr 继续作为 `message` 的文本流，不依据文字是否恰似 JSON 进行协议层推断。Script SDK 的 `context.emit(data)` 是明确的结构化 `chunk`，可在文本 `chunk` 之间按原序穿插；这不意味着脚本结束。Activity Detail 的 Result 卡片展示实际收到的 Client Result 对象。Output Records 从该数组生成可见文本；活动状态和正文省略提示保存在 Activity 元信息中。
+普通 Shell-like 命令和 Script 的 `print()`、stdout/stderr 继续作为 `message` 的文本流，不依据文字是否恰似 JSON 进行协议层推断。Script SDK 的 `context.emit(data)` 是明确的结构化 `chunk`，可在文本 `chunk` 之间按原序穿插；这不意味着脚本结束。Activity Detail 的 Result 卡片展示实际收到的 Client Result 对象。Output Records 使用 Server 公共投影生成的可见文本；Activity Detail 额外提供与 Result 记录序号对齐的 `output_texts`，Result JSON 仍是原始 Client Result 事件，不因展示格式改变。活动状态和正文省略提示保存在 Activity 元信息中。
 
 ## Result 收集与终态
 
@@ -58,9 +58,9 @@ Web Terminal、独立 Result Dialog、Activity 与 RCH CLI 都采用明确的终
 
 ## 统一的文本布局与 JSON 输出
 
-Server Builtin 的 `render_result_payload()` 和 ACMD / Client Shell 的 `render_structured_result()` 最终使用同一个 Core 布局引擎。两种适配入口分别负责已有的 Result Envelope 和 `(status, text)` 返回值，原始 `data` 保持原有 `dict` 或 `list[dict]` 内容、字段顺序和类型。
+Server Builtin 的 `render_result_payload()` 和 ACMD 在 Server 端的结果呈现适配器共用 Core 布局引擎。ACMD 的 `StructuredCommandResult` 在 Client 端保留原生 `data` 及本次结果级 `presentation`；Shell-like 的既有文本投影仍由 Client 的 Runner 完成。原始数据字段、顺序与类型不会随文字布局变化。`_actions` 等以下划线开头的行级展示元数据保留于 JSON，但不自动成为文本 Table/Records 列；需要自定义列名时才声明 `columns`。
 
-`--format` / `-f` 由每条命令自己的 Server Registry 或 ACMD Argument Spec 声明允许值。共用 Core Renderer 提供七种文本布局和一种 JSON 序列化格式，**仅有符合数据契约的布局可选**：
+Server Builtin 的允许格式由 Server Registry 声明；ACMD 的 `--format/-f/--json` 由 Client Registry 统一解析，再根据本次结构化结果内部的 `formats` 检查是否适用。Result Wire 不携带 `formats`，Server 根据 `presentation.requested/default` 渲染。Core Renderer 提供七种文本布局和一种 JSON 序列化格式：
 
 | 布局/格式 | 必需数据和语义 | 不适用情况 |
 |---|---|---|
@@ -73,7 +73,7 @@ Server Builtin 的 `render_result_payload()` 和 ACMD / Client Shell 的 `render
 | `flat` | 单个对象，以原固定列宽展示字段和值 | 记录数组；与 `kv` 平级 |
 | `json` | 可序列化的完整原始数据 | 始终保留原字段、字段值和数据类型 |
 
-命令在参数解析阶段拒绝自身未声明的布局，例如 `job --format numbered` 和 `job --format kv`。Core Renderer 还会校验必要字段、编号及分组键，返回明确错误而不猜测列含义。`--format table` / `-f table` 用于查看完整表格。`--json` 与 `--format json` 等价，不受文本布局或默认展示字段影响。
+Server Builtin 在参数解析阶段拒绝未声明的布局，例如 `job --format numbered` 和 `job --format kv`。ACMD 在 Client 端对成功生成的结构化结果检查所选布局，不适用则返回英文错误 `message`，同时在同一份失败 Result 中保留已取得的 `data` 和 `presentation`；Terminal 与 Output Records 显示错误消息，Result JSON 和 History 保留数据。格式名称错误仍在执行前由通用 Validator 拒绝。纯消息和业务失败结果直接显示消息。Core Renderer 还会校验必要字段、编号及分组键，不猜测列含义。`--format table` / `-f table` 用于查看完整表格。`--json` 与 `--format json` 等价，不受文本布局或默认展示字段影响。
 
 `FLAT` 是正式的同级布局，旧调用方的 `shape='dict'` 仍由现有渲染器映射到它；`GROUPED` 也继续接受原来的 `grouped_dict` 形状。内置的 `ResultDataShape.NUMBERED_LIST` 保持原有枚举值，命令行参数使用更短的 `numbered`。这些仅是同一布局的内部名称，没有额外协议版本。
 
@@ -93,7 +93,7 @@ Server Builtin 的 `render_result_payload()` 和 ACMD / Client Shell 的 `render
 | `acmd python_packages` | 安装包 `table`、已加载模块 `lines`、单模块详情 `flat` | 安装包 `table/records`；已加载 `lines/table/records`；详情 `flat/kv`；全部可用 `json` |
 | `acmd launchd` | 原有命令反馈文本 | `flat`、`kv`、`json` |
 
-表格/纵向记录模式可以为字段声明展示名称（例如 XT 现有大写列名），但 JSON 始终使用原始字段名。每条命令的参数由已有 Server Registry 或 ACMD `ArgumentCommandSpec` 定义；没有结构化查询语义的普通命令无需接受 `--format`。
+表格/纵向记录可以声明展示名称（例如 XT 的大写列名），但 JSON 始终使用原始字段名。Server Builtin 的参数由自身 Registry 定义，ACMD 的业务参数由 `ArgumentCommandSpec` 定义，呈现选项在 Client ACMD Registry 统一处理。
 
 ### Core 调用方式
 
@@ -113,7 +113,7 @@ result = StructuredCommandResult(
 return render_structured_result(result, output_format=output)
 ```
 
-`ResultEnvelope` 仍只承载事实：事件、状态、消息、完整业务数据及引用；格式字段不写入 Socket / Control 协议。对 Server Builtin，执行器将相同的 `data` 传给 `render_result_payload(..., view='data', shape=layout)`。状态、消息、Control 生命周期、Task / Activity 与 Web JSON Viewer 的行为不随文本布局发生变化。
+`ResultEnvelope` 保留事件、状态、消息、完整业务数据及引用。ACMD 的 Result Wire 可选附带 `presentation`，说明本次结果来源、默认格式、可选的 `requested` 和必要字段选择；所选格式由 Client 解析后带回，允许格式清单保留在 Client 本地。Server 渲染文字供 Terminal/CLI 使用，Activity 的 Output Records 从相同 Result 重新投影，History 只保存原始 Result JSON。Server Builtin 继续通过 `render_result_payload(..., view='data', shape=layout)` 呈现。
 
 默认文本表格保留原有列宽与续行规则；`records` 更适合手机上阅读长说明。空数组输出原有空列表提示，JSON 输出 `[]`。失败状态继续输出原有错误消息，不受布局选择影响。
 
@@ -238,7 +238,7 @@ Viewer 的操作包括：
 
 - 后端的 `StructuredCommandResult.shape` 不直接控制前端使用 Table、Grouped 还是 Flat；前端会重新解析收到的 JSON 文本。
 - 默认的对齐键值文本或文本表格**不是 JSON**，不会仅因来自结构化结果而触发 JSON Viewer。
-- `--json` 不是服务器自动为任何普通 Shell 输出附加的格式选项；由各命令自己决定是否支持。
+- 普通 Shell 输出不由 Server 自动附加 `--json`；ACMD 将 `--format/-f/--json` 原样交给 Client 解析，Server 仅根据 Result 中的选定布局渲染。
 - 有效 JSON 标量（如单独的字符串或数字）不一定被终端自动识别为 JSON 操作，因为当前识别入口主要匹配对象和数组。
 - 表格搜索、列排序和视图切换均在浏览器完成，没有服务端分页、筛选或重新请求格式化的机制。
 - 结构化输出与 JSON Viewer 不提供数据真实性保证；实际字段、敏感信息与错误内容仍由执行的命令决定。
@@ -282,8 +282,8 @@ Run Again 与行级操作均执行新的任务；仅当前任务的结果用于�
 
 ## Process Result Actions
 
-`acmd ps --json` 使用 `StructuredCommandResult(status=1, shape='table')`
-生成 JSON 进程数组；默认不含 `_actions`。只有显式添加 `--with-actions`
+`acmd ps` 通过 `StructuredCommandResult` 返回原生进程数组及结果级
+`presentation`；Server 根据结果中的 `presentation.requested/default` 选择表格、纵向记录或 JSON。默认不含 `_actions`，只有显式添加 `--with-actions`
 （例如 `acmd ps --port 8080 --json --with-actions`）才为每行生成
 `[{"label":"Kill","command":"acmd kill --pid 1234"}]`，交由现有
 Terminal JSON Table 操作列显示。文本模式不输出 `_actions` 元数据。

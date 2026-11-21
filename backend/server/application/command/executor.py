@@ -6,6 +6,7 @@ from server.application.command.builtin_command_handler import BuiltinCommandHan
 from server.application.command.command_planner import CommandPlanner
 from server.application.execution.remote_execution_service import RemoteExecutionService
 from server.application.command.command_types import COMMAND_TYPE_COMMAND
+from core.utils.command_output import project_result_chunks
 from server.application.tasks.task_types import TASK_TYPE_COMMAND
 
 class CommandExecutor:
@@ -77,28 +78,26 @@ class CommandExecutor:
         if plan.get("cancel_policy") and not self.use_foreground_guard:
             self.conn.runtime.set_foreground_cancel_policy(plan["cancel_policy"])
         if self.use_foreground_guard:
-            return partial(
+            execute = partial(
                 self.remote_execution_service.stream_foreground_command,
-                self.conn,
-                plan.get('command', ''),
+                self.conn, plan.get('command', ''),
                 command_type=plan.get('command_type', COMMAND_TYPE_COMMAND),
                 extra=plan.get('extra'),
                 domain=plan.get('domain', ''), action=plan.get('action', ''), payload=plan.get('payload'),
                 history_entry_id=self.current_history_entry_id,
-                task_type=TASK_TYPE_COMMAND,
-                source=self.foreground_source,
+                task_type=TASK_TYPE_COMMAND, source=self.foreground_source,
                 cancel_policy=plan.get('cancel_policy', ''),
             )
-
-        return partial(
-            self.remote_execution_service.stream_command,
-            self.conn,
-            plan.get('command', ''),
-            command_type=plan.get('command_type', COMMAND_TYPE_COMMAND),
-            extra=plan.get('extra'),
-            domain=plan.get('domain', ''), action=plan.get('action', ''), payload=plan.get('payload'),
-            history_entry_id=self.current_history_entry_id
-        )
+        else:
+            execute = partial(
+                self.remote_execution_service.stream_command,
+                self.conn, plan.get('command', ''),
+                command_type=plan.get('command_type', COMMAND_TYPE_COMMAND),
+                extra=plan.get('extra'),
+                domain=plan.get('domain', ''), action=plan.get('action', ''), payload=plan.get('payload'),
+                history_entry_id=self.current_history_entry_id,
+            )
+        return lambda: project_result_chunks(execute())
 
     def get_command_candidates(self):
         return self.builtin_handler.get_command_candidates()

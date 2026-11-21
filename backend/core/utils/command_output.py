@@ -1,5 +1,6 @@
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
+import inspect
 from enum import Enum
 from typing import Literal, Mapping
 
@@ -67,10 +68,15 @@ def _display(value):
     return ', '.join(str(item) for item in value) if isinstance(value, list) else str(value)
 
 
+def _visible_fields(row):
+    # Reserved row metadata (_actions, etc.) belongs to raw JSON, not table columns.
+    return (key for key in row if not str(key).startswith('_'))
+
+
 def _selected_columns(rows, columns):
     if columns:
         return tuple((str(name), str(header)) for name, header in columns)
-    return tuple((str(name), str(name)) for name in rows[0]) if rows else ()
+    return tuple((str(name), str(name)) for name in _visible_fields(rows[0])) if rows else ()
 
 
 def _present_data(data, shape, *, width=20, null_text=None, columns=(),
@@ -116,11 +122,11 @@ def _present_data(data, shape, *, width=20, null_text=None, columns=(),
         value = item.get(field, '')
         mapped = (text_values or {}).get(field)
         if mapped is not None:
-            value = mapped.get(value, value)
+            value = mapped.get(value, mapped.get(str(value), value))
         return _display(value)
 
     if shape == ResultDataShape.TABLE:
-        if not columns and any(set(item) != set(data[0]) for item in data):
+        if not columns and any(set(_visible_fields(item)) != set(_visible_fields(data[0])) for item in data):
             raise ValueError('Table view requires consistent record fields')
         if selected:
             require_fields(*(field for field, _ in selected))
@@ -171,6 +177,74 @@ def _present_data(data, shape, *, width=20, null_text=None, columns=(),
         return '\n'.join(f'{item[number_field]:>3}  {_display(item[number_value_field])}'
                          for item in data)
     raise ValueError(f'Unknown result layout: {shape}')
+
+
+# _present_data's keyword-only signature is the single source of rendering options.
+# Both Client presentation declarations and Server projection reuse it.
+_LAYOUT_OPTION_NAMES = frozenset(
+    name for name, param in inspect.signature(_present_data).parameters.items()
+    if param.kind is inspect.Parameter.KEYWORD_ONLY
+)
+
+
+def layout_options(source):
+    if isinstance(source, dict):
+        return {key: value for key, value in source.items() if key in _LAYOUT_OPTION_NAMES}
+    return {key: getattr(source, key) for key in _LAYOUT_OPTION_NAMES}
+
+
+
+def render_presented_result(wire):
+    """Render an explicit Result presentation without changing the wire event."""
+    p = wire['presentation']
+    if wire.get('status') not in ('success', 'partial'):
+        return wire.get('message') or ''
+    selected = p.get('requested') or p['default']
+    try:
+        if selected == 'message':
+            return wire.get('message') or ''
+        if selected == 'json':
+            return json.dumps(wire['data'], ensure_ascii=False, indent=2)
+        visible = _present_data(wire['data'], selected, **layout_options(p))
+        if wire['data'] == [] and wire.get('message'):
+            return wire['message']
+        return visible
+    except (ValueError, TypeError, KeyError) as exc:
+        return f'[!] Result display failed: {exc}'
+
+
+def result_visible_text(event):
+    """Return Result-defined display text, or None if no complete presentation exists."""
+    if not isinstance(event, dict) or event.get('event_type') != 'completed':
+        return None
+    p = event.get('presentation')
+    if not isinstance(p, dict):
+        return None
+    if p.get('source') == 'data' and 'data' not in event:
+        return None
+    return render_presented_result(event)
+
+
+def project_result_output_texts(results):
+    """History view of the single saved Result JSON; never saves duplicated text."""
+    if not any(isinstance(item, dict) and isinstance(item.get('presentation'), dict)
+               for item in results):
+        return None
+    return [result_visible_text(item) for item in results]
+
+
+def project_result_chunks(items):
+    """Present remote structured Results while preserving their raw events for History."""
+    from core.protocol.message_queue import ResultChunk
+
+    for item in items:
+        wire = getattr(item, 'event', None)
+        visible = result_visible_text(wire)
+        if visible is None:
+            yield item
+        else:
+            yield ResultChunk(item[0], visible, item.eof,
+                              item.terminal_authoritative, event=wire)
 
 
 def render_result_payload(payload: dict, output_format: str = 'text', *,
@@ -225,6 +299,39 @@ class StructuredCommandResult:
     number_field: str = 'index'
     number_value_field: str = 'command'
     text_values: dict | None = None
+    message: str = ''
+    source: str = 'data'
+    formats: tuple[str, ...] = ()
+
+    def as_event(self, *, requested=None):
+        """Keep native ACMD facts and the Client-parsed display selection."""
+        from core.protocol.result_envelope import ResultEnvelope
+
+        event = ResultEnvelope(
+            status=ResultStatus.SUCCESS if self.status == 1 else ResultStatus.ERROR,
+            message=self.message, data=self.data,
+        ).as_payload()
+        if self.source not in ('message', 'data'):
+            raise ValueError('Invalid result presentation source')
+        default = ('message' if self.source == 'message' else
+                   str(self.shape.value if isinstance(self.shape, Enum) else
+                       (self.shape or (ResultDataShape.FLAT if isinstance(self.data, dict) else ResultDataShape.TABLE))))
+        if default in ('dict', 'key_value', 'numbered_list'):
+            default = {'dict': 'flat', 'key_value': 'kv', 'numbered_list': 'numbered'}[default]
+        allowed = tuple(self.formats or (default, 'json'))
+        if default not in allowed:
+            raise ValueError('Result default presentation is not among supported formats')
+        hints = {'source': self.source, 'default': default}
+        if requested is not None:
+            hints['requested'] = requested
+        for field in fields(self):
+            if field.name not in _LAYOUT_OPTION_NAMES:
+                continue
+            value = getattr(self, field.name)
+            if value is not None and value != field.default:
+                hints[field.name] = value
+        event['presentation'] = hints
+        return event
 
 
 def parse_output_format(arg: str = '', default: str = 'text') -> str:
@@ -265,11 +372,4 @@ def render_structured_result(result, output_format: str = 'text', *, shape: str 
     if not isinstance(data, (dict, list)):
         return result.status, str(data)
     layout = shape or result.shape or (ResultDataShape.FLAT if isinstance(data, dict) else ResultDataShape.TABLE)
-    return result.status, _present_data(
-        data, layout, width=result.width, null_text=result.null_text,
-        columns=result.columns, line_field=result.line_field,
-        line_separator=result.line_separator, key_field=result.key_field,
-        value_field=result.value_field, key_separator=result.key_separator, group_field=result.group_field,
-        number_field=result.number_field, number_value_field=result.number_value_field,
-        text_values=result.text_values,
-    )
+    return result.status, _present_data(data, layout, **layout_options(result))

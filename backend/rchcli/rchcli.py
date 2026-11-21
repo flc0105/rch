@@ -19,6 +19,7 @@ from urllib.parse import quote, urlsplit, urlunsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 
+
 class RchCliError(Exception):
     pass
 
@@ -375,13 +376,21 @@ class RemoteConsole:
         self.line('[' + name + ']', color=color)
 
     @staticmethod
-    def _activity_output(results):
+    def _activity_output(results, output_texts=None):
         markers = {'info': '[*]', 'success': '[+]', 'warning': '[!]', 'error': '[-]'}
-        for event in results:
+        for index, event in enumerate(results):
             phase = event['event_type']
-            text = event.get('message') or ''
-            if not text and 'data' in event and phase != 'started':
-                text = json.dumps(event['data'], ensure_ascii=False, indent=2)
+            # The Server projects these texts from the same saved Result JSON as Activity.
+            projected = (output_texts[index] if isinstance(output_texts, list) and index < len(output_texts)
+                         else None)
+            if projected is not None:
+                text = projected
+            elif isinstance(event.get('presentation'), dict) and phase == 'completed':
+                text = event.get('message') or '[Result presentation unavailable]'
+            else:
+                text = event.get('message') or ''
+                if not text and 'data' in event and phase != 'started':
+                    text = json.dumps(event['data'], ensure_ascii=False, indent=2)
             if not text:
                 continue
             marker = markers.get(event.get('level')) if phase == 'progress' and event.get('message') else None
@@ -400,7 +409,7 @@ class RemoteConsole:
         if not isinstance(entry, dict) or entry.get('client_id') != client_id or not entry.get('finished_at'):
             return None
         if print_result:
-            for text, status in list(self._activity_output(entry.get('result') or []))[seen:]:
+            for text, status in list(self._activity_output(entry.get('result') or [], entry.get('output_texts')))[seen:]:
                 self.result_record(text, status)
             if entry.get('result_omitted'):
                 self.line('[Some history output was not saved]')

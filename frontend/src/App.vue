@@ -201,6 +201,7 @@
   @terminal-submission-start="startTerminalSubmission"
   @clear-output="clearOutput"
   @edit-remote-file="editRemoteFile"
+  @open-pty="openPtyDialog"
 />
 
                 <!--                <TerminalOutput-->
@@ -261,6 +262,7 @@
     @upload-started="pendingRemoteUploadRefresh = $event"
     @visible-change="remoteFilesDialogVisible = $event"
     @artifacts-maybe-changed="refreshArtifactsIfOpen"
+    @open-pty="openPtyDialog"
   />
 
   <ArtifactDialog
@@ -1172,8 +1174,8 @@ export default {
       return this.$refs.scriptLibraryDialogRef?.refreshIfOpen()
     },
 
-    openPtyDialog() {
-      return this.callOptionalDialog('pty', 'open')
+    openPtyDialog(path = '') {
+      return this.callOptionalDialog('pty', 'open', typeof path === 'string' ? path : '')
     },
 
     openOneLinersDialog() {

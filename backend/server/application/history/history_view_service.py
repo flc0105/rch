@@ -6,6 +6,7 @@ from server.application.artifact.artifact_reference_view_projector import Artifa
 from server.config.config import COMMAND_HISTORY_PAGE_SIZE, COMMAND_HISTORY_MAX_PAGE_SIZE
 from server.application.history.activity_definitions import ActivityKind, activity_summary
 from core.protocol.references import ReferenceType
+from core.utils.command_output import project_result_output_texts
 
 
 class HistoryViewService:
@@ -25,6 +26,9 @@ class HistoryViewService:
         )
 
     def _project_files(self, entry):
+        texts = project_result_output_texts(entry.get('result') or [])
+        if texts is not None:
+            entry['output_texts'] = texts
         # Produced Files is the existing view of Artifact references, not another store.
         entry['files'] = [self._resolve_artifact(ref.get('snapshot') or {'artifact_id': ref['id']})
                           for ref in entry['references'] if ref['type'] == ReferenceType.ARTIFACT]

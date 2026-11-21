@@ -13,7 +13,7 @@
         <el-button size="small" type="primary" :disabled="!selectedId || createSaving" @click="openCreatePicker">Create</el-button>
         <el-button size="small" :disabled="!selectedId || refreshing" :loading="refreshing" @click="refreshPinnedPaths">Refresh</el-button>
       </div>
-      <div class="dialog-table-shell remote-pins-table-shell">
+      <div class="dialog-table-shell remote-pins-table-shell remote-pins-desktop-table">
         <el-table
           :data="items"
           stripe
@@ -38,7 +38,7 @@
 
           <el-table-column
             label="Actions"
-            width="160"
+            width="206"
             align="center"
             fixed="right"
           >
@@ -61,10 +61,41 @@
                 >
                   Delete
                 </el-button>
+                <el-dropdown trigger="click" @command="command => handlePinnedMore(command, row)">
+                  <el-button size="small" link type="primary">More</el-button>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item command="copy_path">Copy Path</el-dropdown-item>
+                      <el-dropdown-item command="set_cwd">Set as CWD</el-dropdown-item>
+                      <el-dropdown-item command="open_pty">Open PTY Here</el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
               </div>
             </template>
           </el-table-column>
         </el-table>
+      </div>
+      <div class="remote-pins-mobile-cards">
+        <div v-if="!items.length" class="remote-pins-empty">No pinned paths</div>
+        <div v-for="row in items" :key="row.display_name" class="remote-pins-card">
+          <div class="remote-pins-card-name">{{ row.display_name }}</div>
+          <div class="remote-pins-card-path">{{ row.path }}</div>
+          <div class="remote-pins-card-actions">
+            <el-button size="small" link type="primary" @click="promptEditPinnedQuickJump(row)">Edit</el-button>
+            <el-button size="small" link type="danger" @click="deletePinnedQuickJump(row)">Delete</el-button>
+            <el-dropdown trigger="click" @command="command => handlePinnedMore(command, row)">
+              <el-button size="small" link type="primary">More</el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="copy_path">Copy Path</el-dropdown-item>
+                  <el-dropdown-item command="set_cwd">Set as CWD</el-dropdown-item>
+                  <el-dropdown-item command="open_pty">Open PTY Here</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+          </div>
+        </div>
       </div>
     </div>
   </el-dialog>
@@ -107,6 +138,9 @@ export default {
   emits: [
     'update:modelValue',
     'updated',
+    'copy-path',
+    'set-cwd',
+    'open-pty',
   ],
 
   data() {
@@ -120,6 +154,14 @@ export default {
   },
 
   methods: {
+    handlePinnedMore(command, item) {
+      const path = String(item?.path || '').trim()
+      if (!path) return
+      if (command === 'copy_path') this.$emit('copy-path', path)
+      if (command === 'set_cwd') this.$emit('set-cwd', path)
+      if (command === 'open_pty') this.$emit('open-pty', path)
+    },
+
     async refreshPinnedPaths() {
       const clientId = String(this.selectedId || '').trim()
       if (!clientId || this.refreshing || !this.modelValue) return
@@ -332,6 +374,7 @@ export default {
 </style>
 
 <style>
+.remote-pins-mobile-cards { display: none; }
 .remote-pins-overlay .el-overlay-dialog {
   overflow: hidden !important;
 }
@@ -388,6 +431,30 @@ export default {
 }
 
 @media (max-width: 768px) {
+  .remote-pins-overlay .remote-pins-desktop-table { display: none; }
+  .remote-pins-overlay .remote-pins-mobile-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+  }
+  .remote-pins-overlay .remote-pins-card {
+    padding: 12px;
+    border: 1px solid var(--border-color, #ddd);
+    border-radius: 10px;
+  }
+  .remote-pins-overlay .remote-pins-card-name { font-weight: 600; overflow-wrap: anywhere; }
+  .remote-pins-overlay .remote-pins-card-path {
+    margin: 6px 0 12px;
+    color: var(--muted);
+    overflow-wrap: anywhere;
+    font-family: monospace;
+    font-size: 12px;
+  }
+  .remote-pins-overlay .remote-pins-card-actions { display: flex; gap: 14px; align-items: center; }
+  .remote-pins-overlay .remote-pins-empty { padding: 20px; text-align: center; }
   .remote-pins-overlay .el-dialog {
     width: 100vw !important;
     max-width: 100vw !important;

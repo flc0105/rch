@@ -6,7 +6,19 @@ from core.commands.argument_errors import ArgumentCommandValidationError
 from client.runtime.execution.context import CommandCancelledError, CommandTimeoutError
 from client.commands.acmd.help import ArgumentCommandHelpBuilder
 from core.commands.argument_validator import ArgumentCommandValidator
+from core.commands.argument_models import ArgumentCommandSpec, ArgumentOptionSpec
 from core.platform.normalization import normalize_platform_alias
+from core.utils.command_output import StructuredCommandResult, PRESENTATION_FORMATS
+
+
+_DISPLAY_SPEC = ArgumentCommandSpec(
+    name='acmd_display', options=[
+        ArgumentOptionSpec('format', 'str', default='', allow_empty=False, alias='f',
+                           choices=tuple(sorted(PRESENTATION_FORMATS))),
+        ArgumentOptionSpec('json', 'flag', default=False),
+    ],
+)
+_DISPLAY_KEYS = frozenset(('format', 'f', 'json'))
 
 
 class ArgumentCommandRegistry:
@@ -144,18 +156,39 @@ class ArgumentCommandRegistry:
 
         try:
             if spec is not None:
-                raw_args_for_help = self.validator.normalize_arg_keys(spec, raw_args)
+                business_args = {key: value for key, value in raw_args.items() if key not in _DISPLAY_KEYS}
+                raw_args_for_help = self.validator.normalize_arg_keys(spec, business_args)
                 normalized_help_flag = self._normalize_help_flag(
                     raw_args_for_help.get(self.HELP_OPTION_NAME, False)
                 )
                 if normalized_help_flag:
                     return 1, self.help_builder.build(spec)
 
-                normalized_args = self.validator.normalize(spec, raw_args)
+                display_args = {key: value for key, value in raw_args.items() if key in _DISPLAY_KEYS}
+                display = self.validator.normalize(_DISPLAY_SPEC, display_args)
+                requested = 'json' if display['json'] else (display['format'] or None)
+                normalized_args = self.validator.normalize(spec, business_args)
             else:
                 normalized_args = raw_args
+                requested = None
 
-            return self._invoke_handler(handler, normalized_args, payload)
+            result = self._invoke_handler(handler, normalized_args, payload)
+            if isinstance(result, StructuredCommandResult):
+                # Display compatibility is scoped to the actual successful result.
+                # Message-only outcomes keep their ordinary feedback.
+                if requested and result.status == 1 and requested not in result.formats:
+                    if result.source == 'message':
+                        requested = None
+                    else:
+                        # The handler has already produced data. Retain it in the
+                        # Result event for History, but report the display error.
+                        event = result.as_event(requested=requested)
+                        event['status'] = 'error'
+                        event['message'] = (f'Unsupported format for this result: {requested}. '
+                                            f'Available: {", ".join(result.formats)}.')
+                        return 0, event
+                return result.status, result.as_event(requested=requested)
+            return result
         except ArgumentCommandValidationError as e:
             return 0, str(e)
         except (CommandCancelledError, CommandTimeoutError):

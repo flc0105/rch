@@ -37,7 +37,8 @@ class CommandPlanner:
         parts = shlex.split(cmd or '')
         return bool(parts) and parts[0] == self.ACMD_PREFIX
 
-    def parse_argument_command(self, cmd: str) -> dict:
+    @staticmethod
+    def parse_argument_command(cmd: str) -> dict:
         """
         解析 acmd 命令格式
         格式：
@@ -54,7 +55,7 @@ class CommandPlanner:
         if len(parts) < 2:
             raise ValueError('Usage: acmd <command> [--key value] [--flag]')
 
-        if parts[0] != self.ACMD_PREFIX:
+        if parts[0] != CommandPlanner.ACMD_PREFIX:
             raise ValueError('Invalid acmd format')
 
         command_name = (parts[1] or '').strip()
@@ -64,19 +65,15 @@ class CommandPlanner:
         args_dict = {}
         positional_args = []
         index = 2
-
         while index < len(parts):
             token = parts[index]
-
             if token == '--':
                 positional_args.extend(parts[index + 1:])
                 break
-
-            if token.startswith('--'):
-                option_text = token[2:]
+            if token.startswith('-') and len(token) > 1 and not token[1].isdigit():
+                option_text = token[2:] if token.startswith('--') else token[1:]
                 if not option_text:
                     raise ValueError('Empty option name is not allowed')
-
                 if '=' in option_text:
                     key, value = option_text.split('=', 1)
                     key = key.strip()
@@ -85,31 +82,23 @@ class CommandPlanner:
                     args_dict[key] = value
                     index += 1
                     continue
-
                 key = option_text.strip()
                 if not key:
                     raise ValueError('Empty option name is not allowed')
-
-                if index + 1 < len(parts) and not parts[index + 1].startswith('-'):
+                if index + 1 < len(parts) and (not parts[index + 1].startswith('-') or
+                                                parts[index + 1][1:].isdigit()):
                     args_dict[key] = parts[index + 1]
                     index += 2
                     continue
-
                 args_dict[key] = True
                 index += 1
                 continue
-
             positional_args.append(token)
             index += 1
-
         if positional_args:
             args_dict['_args'] = positional_args
+        return {'name': command_name, 'args': args_dict, 'raw': cmd}
 
-        return {
-            'name': command_name,
-            'args': args_dict,
-            'raw': cmd,
-        }
 
     def build_alias_plan(self, name: str, arg: str) -> dict | None:
         try:

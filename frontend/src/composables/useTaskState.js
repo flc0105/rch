@@ -99,7 +99,7 @@ export default {
                 if (entry.client_id !== clientId || !entry.finished_at) return;
                 // Dialog presentations own their output; do not echo them into Terminal.
                 if (entry.presentation && entry.presentation !== 'terminal') return;
-                const records = activityOutputRecords(entry.result, { terminal: true });
+                const records = activityOutputRecords(entry.result, { terminal: true, outputTexts: entry.output_texts });
                 for (const record of records.slice(alreadyDelivered)) {
                     this.appendOutput(clientId, record.text || '', '', {
                         task_id: id, history_entry_id: entryId, recovered: true,

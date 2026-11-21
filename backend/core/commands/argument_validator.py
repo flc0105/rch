@@ -200,7 +200,8 @@ class ArgumentCommandValidator:
     ) -> tuple[str | None, Any, bool]:
         if token == '--':
             return None, None, False
-        if not token.startswith('-') or self._looks_like_negative_number(token):
+        if not token.startswith('-') or (self._looks_like_negative_number(token) and
+                                             not (len(token) == 2 and token[1] in alias_map)):
             return None, None, False
 
         if token.startswith('--'):

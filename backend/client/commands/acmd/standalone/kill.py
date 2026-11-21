@@ -10,7 +10,7 @@ KILL_ARGUMENT_SPEC = ArgumentCommandSpec(
         ArgumentOptionSpec(name='pid', option_type='int', default=None, help_text='Process ID'),
         ArgumentOptionSpec(name='name', option_type='str', default='', help_text='Exact process name'),
         ArgumentOptionSpec(name='port', option_type='int', default=None, help_text='Listening port'),
-        ArgumentOptionSpec(name='force', option_type='flag', default=False, alias='f', help_text='Use SIGKILL'),
+        ArgumentOptionSpec(name='force', option_type='flag', default=False, alias='9', help_text='Use SIGKILL'),
         ArgumentOptionSpec(name='no-confirm', option_type='flag', default=False, help_text='Skip interaction and execute'),
         ArgumentOptionSpec(name='help', option_type='flag', default=False, alias='h', help_text='Show help'),
     ],
@@ -30,9 +30,9 @@ def kill(self, args_dict, payload=None):
     self._set_timeout(240)
     try:
         extra = args_dict.get('_args') or []
-        if extra and any(token != '-9' for token in extra):
+        if extra:
             raise ValueError('Unknown kill argument; use --pid, --name, --port, -9, --force or --no-confirm')
-        force = bool(args_dict.get('force') or '-9' in extra)
+        force = bool(args_dict.get('force'))
         no_confirm = bool(args_dict.get('no-confirm'))
         criteria = {key: args_dict[key] for key in ('pid', 'name', 'port')
                     if args_dict.get(key) not in (None, '')}

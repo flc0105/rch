@@ -306,6 +306,7 @@ export default {
     outputPage() {
       const records = activityOutputRecords(this.entry?.result, {
         recordedAt: this.entry?.recorded_at,
+        outputTexts: this.entry?.output_texts,
         newestFirst: this.outputSortOrder === 'desc',
         limit: this.outputRecordLimit + 1,
       })

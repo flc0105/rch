@@ -11,8 +11,8 @@ from client.commands.acmd.standalone.drives import drives
 from client.commands.acmd.standalone.python_packages import python_packages
 from core.command_completion.models import CompletionSpec
 from core.commands.argument_models import ArgumentCommandSpec, ArgumentOptionSpec
-from core.utils.command_output import StructuredCommandResult, render_structured_result
-from core.utils.formatting import format_bytes, format_dict, format_table, get_size
+from core.utils.command_output import StructuredCommandResult, ResultDataShape
+from core.utils.formatting import format_bytes, get_size
 
 
 SQLITE_QUERY_SPEC = ArgumentCommandSpec(
@@ -23,7 +23,6 @@ SQLITE_QUERY_SPEC = ArgumentCommandSpec(
                            completion=CompletionSpec('filesystem', ('file', 'directory'))),
         ArgumentOptionSpec('query', 'str', required=True, allow_empty=False, help_text='SQL query'),
         ArgumentOptionSpec('limit', 'int', help_text='Maximum result rows (default: unlimited)'),
-        ArgumentOptionSpec('json', 'flag', default=False, help_text='Output as JSON'),
         ArgumentOptionSpec('help', 'flag', default=False, help_text='Show this help message'),
     ],
     examples=['acmd sqlite_query --db ./data.db --query "PRAGMA table_list;"'],
@@ -35,7 +34,6 @@ IMAGE_INFO_SPEC = ArgumentCommandSpec(
     options=[
         ArgumentOptionSpec('path', 'str', required=True, allow_empty=False, positional_index=0, help_text='Image file path',
                            completion=CompletionSpec('filesystem', ('file', 'directory'))),
-        ArgumentOptionSpec('json', 'flag', default=False, help_text='Output as JSON'),
         ArgumentOptionSpec('help', 'flag', default=False, help_text='Show this help message'),
     ],
 )
@@ -47,7 +45,6 @@ ARCHIVE_PEEK_SPEC = ArgumentCommandSpec(
         ArgumentOptionSpec('path', 'str', required=True, allow_empty=False, positional_index=0, help_text='ZIP or TAR archive path',
                            completion=CompletionSpec('filesystem', ('file', 'directory'))),
         ArgumentOptionSpec('limit', 'int', default=50, help_text='Limit the number of archive entries previewed'),
-        ArgumentOptionSpec('json', 'flag', default=False, help_text='Output as JSON'),
         ArgumentOptionSpec('help', 'flag', default=False, help_text='Show this help message'),
     ],
 )
@@ -78,11 +75,12 @@ def sqlite_query(self, args_dict):
             )
             cursor = conn.execute(args_dict['query'])
             rows = cursor.fetchall() if limit is None else cursor.fetchmany(limit)
-            if args_dict['json']:
-                return 1, json.dumps([dict(row) for row in rows], ensure_ascii=False, indent=2, default=str)
-            if not rows:
-                return 1, 'No results'
-            return 1, format_table(rows[0].keys(), rows)
+            data = json.loads(json.dumps([dict(row) for row in rows], ensure_ascii=False, default=str))
+            return StructuredCommandResult(
+                status=1, data=data, shape=ResultDataShape.TABLE,
+                formats=('table', 'records', 'json'),
+                message='No results' if not data else '',
+            )
     except (OSError, sqlite3.Error, ValueError, OverflowError) as exc:
         return 0, f'Query failed: {exc}'
 @argument_command('image_info', spec=IMAGE_INFO_SPEC)
@@ -124,9 +122,11 @@ def image_info(self, args_dict):
                     value = (int(value.numerator) if value.denominator == 1 else
                              float(value) if value.denominator else str(value))
                 info[key] = value
-        if args_dict['json']:
-            return 1, json.dumps(info, ensure_ascii=False, indent=2, default=str)
-        return 1, format_dict(info, width=30)
+        return StructuredCommandResult(
+            status=1, data=json.loads(json.dumps(info, ensure_ascii=False, default=str)),
+            shape=ResultDataShape.FLAT, width=30,
+            formats=('flat', 'kv', 'json'),
+        )
     except (OSError, ValueError) as exc:
         return 0, f'Failed to get image info: {exc}'
 @argument_command('archive_peek', spec=ARCHIVE_PEEK_SPEC)
@@ -137,31 +137,31 @@ def archive_peek(self, args_dict):
         preview = self.archive_service.inspect_archive(path, entry_limit=limit)
     except (OSError, ValueError, tarfile.TarError, zipfile.BadZipFile) as exc:
         return 0, f'Failed to peek archive: {exc}'
-    if args_dict['json']:
-        # Build the CLI tree from shared preview nodes without exposing Browser fields.
-        tree = []
-        pending = [(preview['tree'], tree)]
-        while pending:
-            source, target = pending.pop()
-            for node in source:
-                item = {'name': node['name']}
-                if node['is_dir']:
-                    item['children'] = []
-                    pending.append((node['children'], item['children']))
-                else:
-                    item['size'] = format_bytes(node['size'])
-                target.append(item)
-        data = {
-            'name': preview['name'],
-            'archive_size': format_bytes(preview['archive_size']),
-            'tree': tree,
-        }
-        if preview['truncated']:
-            data['truncated'] = True
-        return render_structured_result(StructuredCommandResult(status=1, data=data), output_format='json')
+    # A single snapshot serves the original tree message and JSON data.
+    tree = []
+    pending = [(preview['tree'], tree)]
+    while pending:
+        source, target = pending.pop()
+        for node in source:
+            item = {'name': node['name']}
+            if node['is_dir']:
+                item['children'] = []
+                pending.append((node['children'], item['children']))
+            else:
+                item['size'] = format_bytes(node['size'])
+            target.append(item)
+    data = {
+        'name': preview['name'],
+        'archive_size': format_bytes(preview['archive_size']),
+        'tree': tree,
+    }
+    if preview['truncated']:
+        data['truncated'] = True
 
     if not preview['tree']:
-        return 1, 'Archive is empty' if not preview['truncated'] else f'No files in first {limit} entries'
+        text = 'Archive is empty' if not preview['truncated'] else f'No files in first {limit} entries'
+        return StructuredCommandResult(1, data, source='message', message=text,
+                                       formats=('message', 'json'))
     lines = [f"{preview['name']} ({format_bytes(preview['archive_size'])})"]
     pending = [(iter(enumerate(preview['tree'])), len(preview['tree']), '')]
     while pending:
@@ -181,7 +181,8 @@ def archive_peek(self, args_dict):
             pending.append((iter(enumerate(children)), len(children), prefix + ('    ' if last else '│   ')))
     if preview['truncated']:
         lines.append(f'... and more (limited to {limit})')
-    return 1, '\n'.join(lines)
+    return StructuredCommandResult(1, data, source='message', message='\n'.join(lines),
+                                   formats=('message', 'json'))
 
 
 def register_commands(registry):

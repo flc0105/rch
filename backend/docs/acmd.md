@@ -1,6 +1,6 @@
 # ACMD — Argument Commands
 
-ACMD 将终端输入解析为可验证的参数对象，再交给目标 Client 已注册的 Argument Command Handler。命令名称、参数类型、短别名、位置索引和帮助文本都来自客户端注册契约；Server 只负责识别入口并建立参数负载，不代替客户端做最终类型校验。
+ACMD 将终端输入解析为可验证的参数对象，再交给目标 Client 已注册的 Argument Command Handler。命令名称、参数类型、短别名、位置索引和帮助文本都来自客户端注册契约；Server 负责 ACMD 路由与参数传输；Client 统一解析 `--format/-f/--json`，按现有 Spec 校验业务参数，并返回本次结果的原始数据与所选展示方式。
 
 这种机制与普通 Shell-like Command 共享 Client 的执行通道，却使用独立的命令注册、验证和 Help 体系。理解其运行过程，应沿着输入解析、Schema 约束、注册查找和结果返回的顺序阅读，而不是记住一份随平台变化的命令总表。
 
@@ -11,7 +11,7 @@ ACMD 将终端输入解析为可验证的参数对象，再交给目标 Client �
 ```text
 Web Terminal / Server CLI：acmd <name> ...
                  ↓
-Server：识别 acmd 前缀、命令分词与初步参数提取
+Server：识别 acmd 并将完整命令和参数交给目标 Client
                  ↓
 Client 连接：acmd 消息 + 结构化 Payload
                  ↓
@@ -19,9 +19,11 @@ Client：按当前平台查 Command Registry
                  ↓
 Client：对参数中的 RCH Variables 展开（目标 Client 的当前值）
                  ↓
-有注册及参数定义 → 别名/位置参数处理 → 校验与类型转换
+有注册及参数定义 → 别名/位置参数处理 → 业务参数及展示选项校验与类型转换
                  ↓
-调用命令 Handler → 返回状态与结果
+调用命令 Handler → 返回原生 data 或 message，按本次结果声明 presentation
+                 ↓
+Server：按 Result.presentation 渲染终端文字并保留原始结果
 ```
 
 例如：
@@ -44,7 +46,7 @@ Server 会生成类似如下的负载：
 }
 ```
 
-这里的 `args` 只是 Server 完成文本解析后的参数，不能视为已通过类型验证的最终值。Client 收到后才读取 `ps` 所定义的参数规则；例如布尔 Flag 转换、整数转换等均在 Client 侧完成。
+Server 保留输入命令原文，`extra.args` 也包含 `--json` 或 `--format/-f` 对应的参数。Client 在注册表中统一解析展示选项；Handler 继续只接收业务参数。业务参数仍按原有 Spec 完成别名、布尔值和整数转换。
 
 `acmd` 走独立的 `acmd` 协议消息类型，不使用普通 `command` 的字符串分派，也不会在找不到处理器时交给系统 Shell。命令是否可执行，取决于目标 Client 的操作系统平台和当前注册内容。
 
@@ -88,7 +90,7 @@ acmd ps --port 8080 --json --with-actions
 
 不可读的 ZIP 输入默认报出具体路径并终止，不保留半成品。显式 `--skip-unreadable` 才允许跳过权限拒绝的文件或目录，终端会提示每一项跳过原因，结果会标记为部分归档并显示跳过数；所有文件均不可读时仍失败。
 
-`acmd unzip` 默认解压到当前工作目录，可用 `--dest/-d` 指定现有目录。原有冲突策略 `--conflict stop/skip/keep_both/merge/replace` 保持不变；`--merge` 和 `--skip` 是对应策略的快捷参数，且不能同时使用多个冲突选项。成功时只显示文件数、可读大小、耗时和解压路径；目标已存在且选择跳过时显示简短跳过提示；`--verbose/-v` 才显示逐文件进度。解压继续执行安全路径、条目与大小检查，并通过暂存区提交。归档命令只输出简洁文本，不提供 `--json`。Remote Files Browser 仍使用共享归档服务的原有调用方式。两条命令的参数详情见 `acmd zip --help`／`acmd unzip --help`。
+`acmd unzip` 默认解压到当前工作目录，可用 `--dest/-d` 指定现有目录。原有冲突策略 `--conflict stop/skip/keep_both/merge/replace` 保持不变；`--merge` 和 `--skip` 是对应策略的快捷参数，且不能同时使用多个冲突选项。成功时只显示文件数、可读大小、耗时和解压路径；目标已存在且选择跳过时显示简短跳过提示；`--verbose/-v` 才显示逐文件进度。解压继续执行安全路径、条目与大小检查，并通过暂存区提交。归档命令默认只输出简洁文本；它们的纯消息结果不因展示选项变成结构化数据。Remote Files Browser 仍使用共享归档服务的原有调用方式。两条命令的参数详情见 `acmd zip --help`／`acmd unzip --help`。
 
 `acmd netstat` 在 Windows、macOS、Linux 上查看 TCP/UDP 连接，默认显示全部可读取的连接。可用 `--port 443`（或位置参数 `443`）按本地／远端端口过滤，`--status LISTENING`（或 `-l`）仅看监听状态，`--protocol tcp`（或 `-t`）、`--protocol udp`（或 `-u`）按协议过滤。支持组合条件，如 `acmd netstat -l -t --port 443 --json`；监听状态同时识别系统返回的 `LISTEN` 与 `LISTENING`。`-t` 和 `-u` 不能同时指定，`--json` 保持原有结构化表格输出。
 
@@ -100,7 +102,7 @@ acmd ps --port 8080 --json --with-actions
 
 - `acmd kill` 无目标时先通过 Interaction Broker 询问 `pid/name/port`
   和目标值，再 Preview。指定目标时直接 Preview 所有匹配 PID，
-  可取消单条勾选；Force 初始状态由 `-9/-f/--force` 决定。
+  可取消单条勾选；Force 初始状态由 `-9/--force` 决定。
 - `--no-confirm` 必须指定目标，不发起任何交互。`--force` 仅决定使用
   `SIGKILL`，未指定时使用 `SIGTERM`。不从未确认的自由文本猜目标。
 - `acmd ps` 支持 `--pid/--name/--port`；普通输出及 `--json` 默认只含
@@ -160,7 +162,7 @@ acmd ps --json
 acmd ps --json=false
 ```
 
-当前 `ps` 声明了名为 `json` 的 Flag，因此省略值表示 `true`；显式传值则进行布尔转换。Flag 接受 `true/false`、`yes/no`、`on/off`、`1/0` 等形式。`--json` 不是 ACMD 的全局能力，只有具体命令声明后才可用。
+`--json` 与 `--format json` 等价，`--json=false` 使用本次结果默认方式。`--format/-f/--json` 在 Client ACMD Registry 中统一解析；`-f` 始终表示 `--format`，`acmd kill` 使用 `-9/--force`。Client 按本次结构化结果支持的布局校验选择，不兼容时返回英文错误。业务 Flag 保持 `true/false`、`yes/no`、`on/off`、`1/0` 转换。
 
 普通布尔选项（`bool`）与 Flag（`flag`）不同：`bool` 需要提供可转换的值，`flag` 才允许只写选项名称。对于短别名或不以 `--` 开头的 Token，Server 可能先将其放入位置参数列表，Client 再按当前命令的 Schema 识别，因此最终以 Client 校验结果为准。
 
@@ -249,7 +251,7 @@ def register_commands(registry):
 acmd command not supported on this platform: <name>
 ```
 
-注册表负责参数验证、帮助和分派；Handler 则负责真正的操作、业务规则和结果呈现。结构化输入**不等于**结构化输出：处理器可以返回文本、表格或其自行支持的 JSON 格式，没有统一要求所有 ACMD 的结果都是 JSON。
+注册表负责业务参数验证、帮助和分派；Handler 负责实际操作和本次结果的数据语义。普通反馈仍返回状态与 `message`；结构化查询返回原生 `data` 及结果级 `presentation`（`source/default`、可选 `requested` 和必要字段映射）。`formats` 仅用于 Client 本地检查本次结构化结果，不经 Result Wire 发送。Server 和 Activity 都从 Result 的 `presentation` 渲染，History 只保存原始 Result。
 
 ## 可发现性与自描述接口
 
@@ -291,7 +293,7 @@ Manifest 提供的是**当前连接的建议入口**，不是一整套动态参�
 
 ## 执行环境和控制边界
 
-Server 在收到 `acmd` 前缀后先生成结构化 Payload，再通过现有 Client 消息连接发送 `acmd` 消息；Client 由独立 Runner 调用 Registry。其执行仍绑定本次 `command_id`、取消与超时上下文，结果沿普通远程命令结果通道回传，Web 可以通过任务事件和 SSE 展示。
+Server 在识别 `acmd` 后发送原始命令文本及结构化参数，包含 `--format/-f/--json`；Client 由独立 Runner 调用 Registry，统一识别格式并校验业务参数，仍绑定本次 `command_id`、取消与超时上下文。结构化结果成功产生后，Registry 检查本次格式是否适用；不适用则返回英文错误，不自动改用其他格式。失败或纯消息结果直接显示 `message`。Result 的 `presentation.requested/default` 供 Server 和 Activity 通过同一个 Core Renderer 生成文字，Web 由现有任务事件与 SSE 展示。
 
 在 Web Terminal 发起的前台 ACMD 仍会受到 Client 前台任务占用约束。它不是能够绕过主执行槽的独立控制通道，也不提供 PTY 那样的持续交互输入会话。
 
@@ -326,6 +328,6 @@ ACMD 的长期使用方式是先通过 `acmd help` 了解当前平台的命令�
 
 ## 结构化查询格式
 
-`ps`、`netstat`、`ifconfig`、`drives`、`python_packages` 和 `launchd` 的 Spec 声明 `--format` / `-f` 及实际支持的布局。进程、网络与磁盘记录支持 `table`、`records`、`json`；`python_packages` 根据查询方式使用记录数组或对象（安装列表支持 `table/records`，加载模块支持 `lines/table/records`，单模块详情支持 `flat/kv`）；`launchd` 的结构化结果支持 `flat/kv`。各查询均支持 `json`。如 `acmd ps --format records` 纵向展示进程，`acmd ps --format json --with-actions` 仍返回原 `_actions` 和其他 JSON 字段。不兼容的布局由参数 Spec 或按查询模式的校验明确拒绝。`--json` 与 `--format json` 等价，文本布局不会修改原始 JSON 字段。
+Client ACMD Registry 统一接受 `--format/-f/--json`，每条命令的 `ArgumentCommandSpec` 只描述业务参数。`ps/netstat/ifconfig/drives` 的结果声明支持 `table/records/json`；`python_packages` 根据实际查询结果分别支持安装列表 `table/records/json`、已加载模块 `lines/table/records/json`、模块详情 `flat/kv/json`。`launchd` 的默认反馈是 `message`，同时可显式请求 `flat/kv/json`；`archive_peek` 默认树状消息，可选 JSON 归档数据。这些是每一次 Result 的能力声明，而非固定命令级白名单。Client 在生成结构化结果后检查选定布局；不适用时以英文 `message` 报错，Result 仍保留这次查询得到的 `data` 和 `presentation` 供 History 记录及 Result JSON 查看。格式名称本身不合法时，仍由通用 Validator 在执行前拒绝。没有选择时使用本次结果的默认呈现。`acmd ps --json --with-actions` 保留 `_actions` 与原有业务字段。
 
 `acmd ps --json --with-actions` 的 Kill 行操作使用可选 `_actions.refresh: true`：用户确认 Kill 并执行成功后，JSON Viewer 使用原 `ps` 查询操作重新获取进程列表。`_actions.confirm` 未声明，沿用默认确认。刷新只改变当前 Viewer，不改动历史结果。

@@ -21,7 +21,7 @@ Client（远程设备）
 
 用户在设备工具栏打开 **PTY** 后，会依次发生以下操作：
 
-1. 浏览器向 Server 提交创建请求，包含目标 `client_id`、终端行列数和可选 Shell。
+1. 浏览器向 Server 提交创建请求，包含目标 `client_id`、终端行列数、可选 Shell 和起始工作目录 `cwd`。
 2. Server 生成独立的 `pty_session_id` 和 WebSocket 令牌，记录 `opening` 状态，向对应 Client 发送 `pty_open`。
 3. Client 根据操作系统创建 PTY，启动交互式 Shell。启动成功后返回 `pty_opened`；失败则返回 `pty_error`。
 4. Server 将会话更新为 `open`，浏览器通过 WebSocket 接收状态和终端输出。键盘输入沿相反方向转发到 Client。
@@ -111,7 +111,7 @@ Client 收到后调用对应平台的 PTY 尺寸调整接口，使远端的行�
 
 ## 浏览器终端状态管理
 
-从已选中设备的工具栏打开 **PTY**，会出现 **Remote PTY** 窗口。窗口包含设备标识、会话状态、错误提示、Shell 输入框、Switch、More 菜单，以及 xterm.js 终端显示区域。标题栏有全屏切换和关闭按钮；全屏切换时自动重算远端终端行列数。终端支持 ANSI 控制序列、可滚动输出和自动适配尺寸。
+从已选中设备的工具栏打开 **PTY**，或在 Web Terminal 输入前端命令 `pty`，会在当前 Client CWD 启动会话。Remote File Browser 和 Pinned Paths 的 **Open PTY Here** 可从指定目录启动。打开后会出现 **Remote PTY** 窗口。窗口包含设备标识、会话状态、错误提示、Shell 输入框、Switch、More 菜单，以及 xterm.js 终端显示区域。标题栏有全屏切换和关闭按钮；全屏切换时自动重算远端终端行列数。终端支持 ANSI 控制序列、可滚动输出和自动适配尺寸。
 
 默认情况下无需填写 Shell，系统会根据远端操作系统自动选择。需要指定时，可以在 Shell 输入框填写 `zsh`、`bash`、`/bin/bash`、`cmd.exe` 或 `powershell.exe` 等；输入 `default` 与留空等价，表示使用平台默认 Shell。
 

@@ -2,7 +2,7 @@
 
 from client.commands.acmd.decorators import argument_command
 from core.commands.argument_models import ArgumentCommandSpec, ArgumentOptionSpec
-from core.utils.command_output import StructuredCommandResult, ResultDataShape, resolve_presentation, render_structured_result
+from core.utils.command_output import StructuredCommandResult, ResultDataShape
 
 
 LAUNCHD_ARGUMENT_SPEC = ArgumentCommandSpec(
@@ -26,10 +26,6 @@ LAUNCHD_ARGUMENT_SPEC = ArgumentCommandSpec(
                            help_text='LaunchAgent target username or UID; blank selects current GUI user'),
         ArgumentOptionSpec(name='no-confirm', option_type='flag', default=False,
                            help_text='Execute directly; requires action and kind'),
-        ArgumentOptionSpec('format', 'str', default='', alias='f',
-                           choices=('flat', 'kv', 'json'), help_text='Supported output: flat, kv, json'),
-        ArgumentOptionSpec(name='json', option_type='flag', default=False,
-                           help_text='Output the launchd service result as JSON'),
         ArgumentOptionSpec(name='help', option_type='flag', default=False,
                            help_text='Show this help message'),
     ],
@@ -50,8 +46,6 @@ def launchd(self, args_dict, payload=None):
     action = str(args_dict.get('action') or '').strip().lower()
     kind = str(args_dict.get('kind') or '').strip().lower()
     no_confirm = bool(args_dict.get('no-confirm'))
-    output, layout = resolve_presentation(args_dict, ResultDataShape.FLAT)
-    output_json = output == 'json'
     if action and action not in launchd.VALID_LAUNCHD_ACTIONS:
         return 0, f'Invalid launchd action: {action} (install, start, stop, restart, uninstall, status)'
     if kind and kind not in ('agent', 'daemon'):
@@ -109,14 +103,10 @@ def launchd(self, args_dict, payload=None):
             run_at_load=args_dict['run_at_load'],
         )
         status = 1 if result.get('ok') else 0
-        structured = StructuredCommandResult(
-            status=status,
-            data=result,
-            shape=layout,
-            width=20,
+        return StructuredCommandResult(
+            status=status, data=result, shape=ResultDataShape.FLAT,
+            source='message', message=launchd.format_result(result),
+            formats=('message', 'flat', 'kv', 'json'), width=20,
         )
-        if output_json or args_dict.get('format'):
-            return render_structured_result(structured, output_format=output)
-        return status, launchd.format_result(result)
     except (ValueError, OSError, RuntimeError) as exc:
         return 0, f'launchd {action or "operation"} failed: {exc}'

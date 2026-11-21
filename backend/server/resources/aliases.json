@@ -12,7 +12,7 @@
     "git_export": "git archive --format=zip -o source.zip <commit>",
     "git_history": "git log --date=format:'%Y-%m-%d %H:%M:%S' --pretty=format:\"%h %cd %s\"",
     "sleep_py": "pyexec_stream import time; time.sleep(<sec>)",
-    "commit": "git add . && git commit -m '<message>'",
+    "commit": "shell cd /Users/flc/PycharmProjects/rch && git add . && git commit -m '<message>'",
     "clip_clear": "pyexec import sys,subprocess,ctypes; subprocess.run(['pbcopy'],input=b'',check=True) if sys.platform=='darwin' else (ctypes.windll.user32.OpenClipboard(0) and (ctypes.windll.user32.EmptyClipboard(),ctypes.windll.user32.CloseClipboard()))",
     "open_here": "pyexec import os,sys,subprocess; subprocess.Popen(['open' if sys.platform=='darwin' else 'explorer.exe',os.getcwd()])",
     "lockscr": "pyexec import sys,subprocess,ctypes; subprocess.run(['/System/Library/CoreServices/Menu Extras/User.menu/Contents/Resources/CGSession','-suspend']) if sys.platform=='darwin' else ctypes.windll.user32.LockWorkStation()",

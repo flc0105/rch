@@ -2,7 +2,7 @@
 from dataclasses import dataclass
 from typing import Any
 
-from core.utils.command_output import ResultEventType, ResultStatus
+from core.utils.command_output import ResultEventType, ResultStatus, PRESENTATION_FORMATS
 
 
 @dataclass(frozen=True)
@@ -51,13 +51,25 @@ def build_result_wire_event(request_id, event: dict, *, cwd=None) -> dict:
         raise ValueError('Result message must be text')
     if 'data' in event and not isinstance(event['data'], (dict, list)):
         raise ValueError('Result data must be an object or array')
+    if 'presentation' in event and not isinstance(event['presentation'], dict):
+        raise ValueError('Result presentation hints must be an object')
     if 'references' in event and (not isinstance(event['references'], list) or
                                   any(not isinstance(item, dict) for item in event['references'])):
         raise ValueError('Invalid Result references')
+    if 'presentation' in event:
+        p = event['presentation']
+        if not isinstance(p, dict) or p.get('source') not in ('message', 'data'):
+            raise ValueError('Invalid Result presentation source')
+        if p.get('default') not in (PRESENTATION_FORMATS | {'message'}):
+            raise ValueError('Invalid Result default presentation')
+        if 'requested' in p and p['requested'] not in PRESENTATION_FORMATS:
+            raise ValueError('Invalid Result requested presentation')
+        if p['source'] == 'data' and 'data' not in event:
+            raise ValueError('Data presentation requires Result data')
     packet = {'type': MSG_TYPE_RESULT, 'id': request_id, 'event_type': phase}
     if cwd is not None:
         packet['cwd'] = cwd
-    for key in ('status', 'message', 'level', 'data', 'references', 'action'):
+    for key in ('status', 'message', 'level', 'data', 'references', 'action', 'presentation'):
         if key in event:
             packet[key] = event[key]
     return packet
@@ -66,8 +78,9 @@ def build_result_wire_event(request_id, event: dict, *, cwd=None) -> dict:
 def result_wire_event(request_id, status, result, *, final=True, cwd=None, event_type=None):
     """Normalize an execution result to the single Client/Server wire shape.
 
-    Ordinary commands remain message-only; explicitly structured Control/SDK
-    results retain data and references. The wire contains no eof or display.
+    Ordinary commands remain message-only. ACMD/Control/SDK explicitly
+    structured results retain native data and references. The wire carries no
+    eof or Server-selected output format.
     """
     explicit = result if isinstance(result, dict) and result.get('event_type') in (
         ResultEventType.CHUNK, ResultEventType.PROGRESS, ResultEventType.COMPLETED,
@@ -82,7 +95,7 @@ def result_wire_event(request_id, status, result, *, final=True, cwd=None, event
         phase = ResultEventType.COMPLETED if final else ResultEventType.CHUNK
     packet = {'event_type': phase}
     if explicit:
-        for key in ('message', 'level', 'data', 'references', 'action'):
+        for key in ('message', 'level', 'data', 'references', 'action', 'presentation'):
             if key in explicit:
                 packet[key] = explicit[key]
         if 'message' not in packet and isinstance(explicit.get('text'), str):

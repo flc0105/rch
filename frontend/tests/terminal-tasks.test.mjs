@@ -77,3 +77,22 @@ test('Activity output matches Server timestamps by the original Result index', a
   ])
   assert.equal(activityOutputRecords(result, { terminal: true })[1].text, '{\n  "value": 7\n}')
 })
+
+test('Activity Output Records use Server-rendered text while Result JSON remains raw', async () => {
+  const { activityOutputRecords } = await import('../src/utils/activityOutput.js')
+  const result = [
+    { event_type: 'started' },
+    { event_type: 'progress', message: 'Running' },
+    { event_type: 'completed', status: 'success', message: '', data: [{ pid: 7 }],
+      presentation: { source: 'data', default: 'table', formats: ['table', 'records', 'json'] } },
+  ]
+  const snapshot = JSON.stringify(result)
+  const records = activityOutputRecords(result, {
+    outputTexts: [null, null, 'pid\n7'], recordedAt: ['time0', 'time1', 'time2'],
+  })
+  assert.equal(records[1].text, 'pid\n7')
+  assert.equal(records[1].created_at, 'time2')
+  assert.equal(activityOutputRecords(result, { terminal: true, outputTexts: [null, null, 'pid\n7'] })[1].text, 'pid\n7')
+  assert.equal(JSON.stringify(result), snapshot)
+  assert.equal(activityOutputRecords(result)[1].text, '[{"pid":7}]')
+})

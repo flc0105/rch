@@ -44,6 +44,8 @@ class ArgumentCommandHelpBuilder:
                     f'{option.help_text}{default_label}{positional_label}'
                 )
 
+        lines.extend(('', 'Display: --format/-f <format> or --json (available formats depend on the result)'))
+
         if spec.examples:
             lines.append('')
             lines.append('Examples:')
