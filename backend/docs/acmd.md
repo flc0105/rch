@@ -327,3 +327,5 @@ ACMD 的长期使用方式是先通过 `acmd help` 了解当前平台的命令�
 ## 结构化查询格式
 
 `ps`、`netstat`、`ifconfig`、`drives`、`python_packages` 和 `launchd` 的 Spec 声明 `--format` / `-f` 及实际支持的布局。进程、网络与磁盘记录支持 `table`、`records`、`json`；`python_packages` 根据查询方式使用记录数组或对象（安装列表支持 `table/records`，加载模块支持 `lines/table/records`，单模块详情支持 `flat/kv`）；`launchd` 的结构化结果支持 `flat/kv`。各查询均支持 `json`。如 `acmd ps --format records` 纵向展示进程，`acmd ps --format json --with-actions` 仍返回原 `_actions` 和其他 JSON 字段。不兼容的布局由参数 Spec 或按查询模式的校验明确拒绝。`--json` 与 `--format json` 等价，文本布局不会修改原始 JSON 字段。
+
+`acmd ps --json --with-actions` 的 Kill 行操作使用可选 `_actions.refresh: true`：用户确认 Kill 并执行成功后，JSON Viewer 使用原 `ps` 查询操作重新获取进程列表。`_actions.confirm` 未声明，沿用默认确认。刷新只改变当前 Viewer，不改动历史结果。

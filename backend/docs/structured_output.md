@@ -171,10 +171,11 @@ Table 中每个对象**可以选择性**提供 `_actions` 数组；没有该字�
 ]
 ```
 
-- `_actions` 仅是可选的行级展示元数据，不是可见数据列、不参与搜索或排序；每条有效 Action 只有 `label`（按钮名）与 `command`（完整的待发送命令）两个必需的非空字符串字段。无效字段项不会变成可执行按钮。
-- 每行**前两个**有效操作始终直接显示为小按钮；只有第三个及其后的操作才进入 `More` 下拉菜单。只有 1–2 个操作时不显示 `More`。搜索、排序后，操作始终绑定原始数据行，不依赖行序号。
-- 每次点击都**必须先确认**；确认框展示目标 Client 和即将执行的完整命令，并让用户选择 **Terminal** 或 **New Dialog** 输出（默认 Terminal）。只有用户选择 `Run` 才提交，取消不执行。没有可选 `confirm` 开关，也没有自动执行。
-- **Terminal**：沿用现有行为，关闭 JSON Viewer，使用普通命令通道提交，命令及后续结果回到 Terminal。**New Dialog**：保持原 JSON Viewer 打开，另外弹出独立结果窗口，显示命令、运行状态、输出和复制操作；输出经同一命令通道执行，再由运行 ID 对应的 SSE 结果写入该窗口，不额外在 Terminal 输出同一条结果。关闭结果窗口不会关闭 JSON Viewer。
+- `_actions` 仅是可选的行级展示元数据，不是可见数据列、不参与搜索或排序；每条有效 Action 必须有非空字符串 `label`（按钮名）和 `command`（完整的待发送命令），可选布尔字段 `confirm`、`refresh`。未提供 `confirm` 时默认 `true`，未提供 `refresh` 时默认 `false`；只有 JSON 布尔值 `false` 会跳过确认，只有 JSON 布尔值 `true` 会启用自动刷新。无效字段项不会变成可执行按钮。
+- 桌面端每行前两个有效操作直接显示为小按钮，第三个及其后的操作进入 `More` 菜单，长按钮名在单元格内换行。手机窄屏使用 `Actions (N)` 菜单列出**全部**有效操作，防止按钮被表格裁切。表格横向滚动由表格组件处理；搜索、排序后，操作仍绑定原始数据行，不依赖行序号。
+- `confirm: true`（默认）：点击后展示目标 Client 和完整命令，并选择 **Terminal** 或 **New Dialog**（默认 Terminal），点击 `Run` 才提交。`confirm: false`：点击即提交到 Terminal，不弹出二次确认；仍受当前 Client 和任务忙碌检查约束。
+- `refresh: true`：**动作任务成功完成**后，使用 JSON Viewer 顶部 **Run Again** 对应的原始 Command、Script 或 Quick Action 来源重新执行查询，将返回的完整合法 JSON 更新到当前 Viewer。`refresh: false`（默认）保留静态结果。失败、取消、部分成功、目标 Client 变化、Viewer 已关闭时不刷新；没有可重放来源时提示原因并保留结果。刷新请求会成为一个独立任务，保留原有 History/Activity 语义。
+- **Terminal**：普通命令和结果写入 Terminal，**JSON Viewer 保持打开**。**New Dialog**：JSON Viewer 保持打开，独立结果窗口展示执行输出；结果从同一任务的 SSE 捕获，不再重复写入 Terminal。两种模式都可启用 `refresh`。
 - 两种模式都不会覆盖命令输入框中尚未提交的草稿，也继续更新原有任务状态。若用户已切换目标 Client 或当前任务繁忙，不发送到其他设备。
 - Viewer 只负责提交 Action 中的**原始命令**，不根据 PID/路径自行添加重新核验、重写命令或其他业务判断。具体命令本身的权限和行为仍由正常 Client 命令执行链负责。
 - `_actions` 不依赖内置命令名称、`--json` 标志或 Script 名称；普通 Shell `echo`、Script 输出的完整合法 JSON 数组均由同一 Table 识别逻辑处理。其前提仍是终端成功识别到完整 JSON（不要和非 JSON 的日志混输出）。
@@ -275,7 +276,7 @@ Terminal 输出块菜单的 **Run again** 适用于真实 Command、携带可重
 
 JSON Viewer 支持对有效来源的 Command、Script 或 Quick Action 使用 **Run Again**，包括 Quick Action Result Dialog 打开的 JSON。发起一次新的执行并在 Terminal 中留下新执行记录。当前 Viewer 不关闭；新任务完成后仅在输出能解析为完整合法 JSON 时替换 Viewer 中展示的数据，否则提示错误并保留原数据显示。此前的 Terminal 历史内容始终不变。
 
-Table 的 `_actions` 继续是可选的行级元数据。用户确认执行命令后，可以选择 Terminal 或 New Dialog：前者使用原终端输出，后者仅在当前前端的结果弹窗显示执行输出，不关闭原 JSON Viewer。两种动作均复用既有 `/api/connections/{client_id}/command` 请求及任务结果 SSE。
+Table 的 `_actions` 继续是可选的行级元数据。`confirm` 控制是否出现确认框，`refresh` 控制成功后是否使用原操作的重放信息刷新当前 Viewer，二者均为布尔值；没有重放来源时仍可运行行按钮，但不能刷新数据。Terminal 与 New Dialog 均不关闭 JSON Viewer，均复用既有 `/api/connections/{client_id}/command` 请求及任务结果 SSE。测试 Script `test/misc/json_result_actions_probe` 展示这两种控制的组合及 Script Run Again。
 
 Run Again 与行级操作均执行新的任务；仅当前任务的结果用于刷新对应窗口，其他任务的输出不会混入。
 

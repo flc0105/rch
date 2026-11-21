@@ -552,7 +552,7 @@ export default {
           blockType: 'script',
           is_script: true,
           script_path: this.activeRun.scriptPath,
-          script_name: this.activeRun.scriptPath,
+          script_name: this.activeRun.operation?.replay?.script_name || '',
           operation: this.activeRun.operation,
         },
       })

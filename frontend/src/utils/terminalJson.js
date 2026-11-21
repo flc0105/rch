@@ -73,7 +73,7 @@ export function normalizeJsonRowActions(actions) {
     if (!isPlainObject(action)) return []
     const label = typeof action.label === 'string' ? action.label.trim() : ''
     const command = typeof action.command === 'string' ? action.command.trim() : ''
-    return label && command ? [{ label, command }] : []
+    return label && command ? [{ label, command, confirm: action.confirm !== false, refresh: action.refresh === true }] : []
   })
 }
 

@@ -27,6 +27,7 @@ test('Script Library JSON result retains exact typed replay from its original ru
   })
   assert.equal(emitted.jsonText, '[{"pid":17}]')
   assert.equal(emitted.clientId, 'client')
+  assert.equal(emitted.jsonCommandInfo.script_name, 'common/a')
   assert.deepEqual(getTerminalReplayAction(emitted.jsonCommandInfo.operation), replay)
 })
 

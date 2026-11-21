@@ -117,7 +117,8 @@ def ps(self, args_dict, payload=None):
     if include_actions and output_json:
         for row in rows:
             row['_actions'] = [{'label': 'Kill',
-                                'command': f'acmd kill --pid {row["pid"]}'}]
+                                'command': f'acmd kill --pid {row["pid"]}',
+                                'refresh': True}]
 
     if not rows:
         if pid is not None and name:

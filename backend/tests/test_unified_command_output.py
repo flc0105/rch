@@ -269,6 +269,7 @@ def test_acmd_ps_format_json_preserves_action_payload(monkeypatch):
     via_format = json.loads(query({'format': 'json', 'with-actions': True})[1])
     assert via_format == original
     assert original[0]['_actions'][0]['label'] == 'Kill'
+    assert original[0]['_actions'][0]['refresh'] is True
 
 
 def test_acmd_python_packages_loaded_is_same_data_all_layouts(monkeypatch):

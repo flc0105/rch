@@ -23,6 +23,7 @@
             v-if="canRunAgain"
             size="small"
             :loading="refreshRunning"
+            :disabled="!!actionRun"
             @click="runAgain"
           >
             Run Again
@@ -88,10 +89,11 @@
             <el-table-column
               v-if="tableHasActions"
               label="Actions"
-              min-width="180"
+              min-width="200"
+              fixed="right"
             >
               <template #default="{ row }">
-                <div class="terminal-json-row-actions">
+                <div class="terminal-json-row-actions terminal-json-row-actions-inline">
                   <el-button
                     v-for="(action, index) in getTerminalJsonRowActions(row).slice(0, 2)"
                     :key="index"
@@ -120,6 +122,29 @@
                     </template>
                   </el-dropdown>
                 </div>
+                <el-dropdown
+                  v-if="getTerminalJsonRowActions(row).length"
+                  class="terminal-json-row-actions-mobile"
+                  trigger="click"
+                  placement="bottom-end"
+                  popper-class="terminal-json-actions-popper"
+                  @command="index => confirmTableAction(getTerminalJsonRowActions(row)[index])"
+                >
+                  <el-button size="small" @click.stop>
+                    Actions ({{ getTerminalJsonRowActions(row).length }})
+                  </el-button>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item
+                        v-for="(action, index) in getTerminalJsonRowActions(row)"
+                        :key="index"
+                        :command="index"
+                      >
+                        {{ action.label }}
+                      </el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
               </template>
             </el-table-column>
           </el-table>
@@ -249,6 +274,7 @@ export default {
       commandInfo: {},
       refreshRunning: false,
       refreshRun: null,
+      actionRun: null,
       tableSort: {
         prop: '',
         order: '',
@@ -324,16 +350,19 @@ export default {
       this.actionConfirming = false
       this.refreshRunning = false
       this.refreshRun = null
+      this.actionRun = null
       this.setTerminalJsonContent(jsonText)
       this.visible = true
     },
 
-    setTerminalJsonContent(jsonText) {
+    setTerminalJsonContent(jsonText, { preserveTableState = false } = {}) {
       const model = getJsonRenderModel(jsonText)
       this.text = jsonText
-      this.tableSearchText = ''
+      if (!preserveTableState || model.mode !== 'table') {
+        this.tableSearchText = ''
+        this.tableSort = { prop: '', order: '' }
+      }
       this.isRawViewVisible = false
-      this.tableSort = { prop: '', order: '' }
 
       this.displayMode = model.mode
       this.tableColumns = model.columns
@@ -360,6 +389,7 @@ export default {
       this.actionConfirming = false
       this.refreshRunning = false
       this.refreshRun = null
+      this.actionRun = null
       this.tableSort = {
         prop: '',
         order: '',
@@ -367,7 +397,7 @@ export default {
     },
 
     async runAgain() {
-      if (!this.visible || this.refreshRunning || !this.canRunAgain) return
+      if (!this.visible || this.refreshRunning || this.actionRun || !this.canRunAgain) return
       const clientId = this.actionConnectionId
       if (!clientId || String(this.selectedId || '') !== clientId) {
         ElMessage.warning('The target device has changed')
@@ -405,6 +435,11 @@ export default {
       const chunks = this.refreshRun.chunks
       this.refreshRun = null
       this.refreshRunning = false
+      const status = String(payload.status || '').trim()
+      if (status ? status !== 'success' : payload.success !== true) {
+        ElMessage.error('Run Again failed; previous result kept')
+        return
+      }
       // A rerun is a new Terminal event, not a mutation of the historical output.
       const candidates = [chunks.join(''), chunks.join('\n')]
       const validText = candidates.find(text => {
@@ -419,7 +454,7 @@ export default {
         ElMessage.error('Run Again did not return valid JSON; previous result kept')
         return
       }
-      this.setTerminalJsonContent(validText.trim())
+      this.setTerminalJsonContent(validText.trim(), { preserveTableState: true })
     },
 
     getTerminalJsonRowActions(row) { return row?.[JSON_ROW_ACTIONS] || [] },
@@ -443,66 +478,74 @@ export default {
     },
 
     async confirmTableAction(action) {
-      if (this.actionConfirming || !action?.command) return
-      if (this.activeResult.runId && !this.activeResult.complete) {
-        ElMessage.warning('A command is already running')
+      if (this.actionConfirming || this.actionRun || this.refreshRunning || !action?.command) return
+      const clientId = this.actionConnectionId
+      if (!clientId || String(this.selectedId || '') !== clientId) {
+        ElMessage.warning('The target device has changed')
         return
       }
       this.actionConfirming = true
-      const clientId = this.actionConnectionId
       const presentation = ref('terminal')
       try {
-        await ElMessageBox.confirm(
-          h('div', null, [
+        // Omitted/invalid confirm values remain safe: only literal false skips the prompt.
+        if (action.confirm !== false) {
+          await ElMessageBox.confirm(
             h('div', null, [
-              'Run the following command on ',
-              h('strong', null, this.actionTargetName),
-              '?',
+              h('div', null, [
+                'Run the following command on ',
+                h('strong', null, this.actionTargetName),
+                '?',
+              ]),
+              h('pre', { style: {
+                margin: '8px 0 0', padding: '6px 12px',
+                background: '#f5f7fa', border: '1px solid #dcdfe6',
+                borderRadius: '6px', color: '#303133',
+                fontFamily: 'Monaco, Menlo, Consolas, monospace',
+                fontSize: '13px', lineHeight: '1.35',
+                whiteSpace: 'pre-wrap', overflowWrap: 'anywhere',
+                maxHeight: '45vh', overflowY: 'auto',
+              } }, [h('code', null, action.command)]),
+              h('div', { style: { marginTop: '12px', marginBottom: '6px' } }, 'Output to'),
+              h(() => h(ElRadioGroup, {
+                modelValue: presentation.value,
+                'onUpdate:modelValue': value => { presentation.value = value },
+                size: 'small',
+              }, () => [
+                h(ElRadioButton, { value: 'terminal', label: 'terminal' }, () => 'Terminal'),
+                h(ElRadioButton, { value: 'dialog', label: 'dialog' }, () => 'New Dialog'),
+              ])),
             ]),
-            h('pre', { style: {
-              margin: '8px 0 0', padding: '6px 12px',
-              background: '#f5f7fa', border: '1px solid #dcdfe6',
-              borderRadius: '6px', color: '#303133',
-              fontFamily: 'Monaco, Menlo, Consolas, monospace',
-              fontSize: '13px', lineHeight: '1.35',
-              whiteSpace: 'pre-wrap', overflowWrap: 'anywhere',
-              maxHeight: '45vh', overflowY: 'auto',
-            } }, [h('code', null, action.command)]),
-            h('div', { style: { marginTop: '12px', marginBottom: '6px' } }, 'Output to'),
-            // Render inside a reactive component so the selection updates in the message box.
-            h(() => h(ElRadioGroup, {
-              modelValue: presentation.value,
-              'onUpdate:modelValue': value => { presentation.value = value },
-              size: 'small',
-            }, () => [
-              h(ElRadioButton, { value: 'terminal', label: 'terminal' }, () => 'Terminal'),
-              h(ElRadioButton, { value: 'dialog', label: 'dialog' }, () => 'New Dialog'),
-            ])),
-          ]),
-          'Execute Command',
-          { type: 'warning', confirmButtonText: 'Run', cancelButtonText: 'Cancel' },
-        )
+            'Execute Command',
+            { type: 'warning', confirmButtonText: 'Run', cancelButtonText: 'Cancel' },
+          )
+        }
       } catch (_error) {
         return
       } finally {
         this.actionConfirming = false
       }
 
+      if (!this.visible || String(this.selectedId || '') !== clientId) {
+        ElMessage.warning('The target device has changed')
+        return
+      }
       const outputMode = presentation.value
-      const runId = outputMode === 'dialog' ? this.createResultActionRunId() : ''
+      const runId = this.createResultActionRunId()
+      this.actionRun = { runId, clientId, refresh: action.refresh === true }
       if (outputMode === 'dialog') {
         this.activeResult = {
           runId, clientId, command: action.command,
           output: '', status: 'Running', complete: false, success: false,
         }
         this.resultVisible = true
-      } else {
-        this.visible = false
       }
+      // Terminal actions leave the JSON Viewer open, including when refresh is false.
       this.$emit('run-result-action', {
         command: action.command, clientId, presentation: outputMode, runId,
         onDone: (ok) => {
-          if (outputMode === 'dialog' && !ok && this.activeResult.runId === runId && !this.activeResult.complete) {
+          if (ok || this.actionRun?.runId !== runId) return
+          this.actionRun = null
+          if (outputMode === 'dialog' && this.activeResult.runId === runId && !this.activeResult.complete) {
             this.activeResult.complete = true
             this.activeResult.status = 'Failed'
             this.activeResult.output = 'Command submission failed'
@@ -525,17 +568,36 @@ export default {
     },
 
     handleResultActionCommandComplete(payload = {}, runId = '') {
-      if (runId !== this.activeResult.runId
-          || String(payload.client_id || '') !== this.activeResult.clientId) return true
+      const actionRun = this.actionRun
+      if (!actionRun || actionRun.runId !== runId
+          || String(payload.client_id || '') !== actionRun.clientId) return true
 
-      this.activeResult.complete = true
       const status = String(payload.status || '').trim()
-      this.activeResult.success = status ? status === 'success' : payload.success === true
-      this.activeResult.status = status === 'cancelled' || (!status && payload.cancelled) ? 'Cancelled'
-        : status === 'partial' ? 'Partial'
-        : status === 'timed_out' ? 'Timed out'
-        : status === 'interrupted' ? 'Interrupted'
-        : this.activeResult.success ? 'Success' : 'Failed' 
+      const success = status ? status === 'success' : payload.success === true
+      if (this.activeResult.runId === runId) {
+        this.activeResult.complete = true
+        this.activeResult.success = success
+        this.activeResult.status = status === 'cancelled' || (!status && payload.cancelled) ? 'Cancelled'
+          : status === 'partial' ? 'Partial'
+          : status === 'timed_out' ? 'Timed out'
+          : status === 'interrupted' ? 'Interrupted'
+          : success ? 'Success' : 'Failed'
+      }
+      this.actionRun = null
+      if (success && actionRun.refresh && this.visible
+          && String(this.selectedId || '') === actionRun.clientId) {
+        if (!this.canRunAgain) {
+          ElMessage.warning('This JSON result has no replayable source')
+        } else {
+          // SSE clears the completed task after notifying subscribers. Wait for
+          // that state update before submitting the original query again.
+          this.$nextTick(() => {
+            if (this.visible && String(this.selectedId || '') === actionRun.clientId) {
+              void this.runAgain()
+            }
+          })
+        }
+      }
       return true
     },
 
@@ -789,16 +851,27 @@ export default {
   width: 240px;
 }
 
-/* 行操作含普通按钮和 dropdown，使用统一间距而非 Element Plus 默认按钮 margin。 */
+/* Desktop keeps direct actions; allow long labels to wrap inside their cell. */
 .terminal-json-row-actions {
-  display: inline-flex;
+  display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
-  white-space: nowrap;
+  min-width: 0;
+  white-space: normal;
 }
 
 .terminal-json-row-actions :deep(.el-button) {
   margin-left: 0;
+  max-width: 100%;
+  height: auto;
+  min-height: 24px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.terminal-json-row-actions-mobile {
+  display: none;
 }
 
 .terminal-json-action-result-meta {
@@ -826,18 +899,31 @@ export default {
 
 .terminal-json-scroll {
   max-height: 65vh;
+  min-width: 0;
+  max-width: 100%;
   overflow: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
-/* JSON table 横向内容超出时才显示滚动条。 */
-.terminal-json-table-scroll :deep(.el-table) {
-  min-width: max-content;
+/* Leave the table at container width so Element Plus owns horizontal scrolling. */
+.terminal-json-table-scroll {
+  width: 100%;
+  touch-action: pan-x pan-y;
 }
 
-.terminal-json-table-scroll :deep(.el-table__inner-wrapper),
-.terminal-json-table-scroll :deep(.el-table__header-wrapper),
-.terminal-json-table-scroll :deep(.el-table__body-wrapper) {
-  min-width: max-content;
+.terminal-json-table-scroll :deep(.el-scrollbar__wrap) {
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x pan-y;
+}
+
+/* Dropdown overlays are teleported outside the dialog and must wrap long labels. */
+:global(.terminal-json-actions-popper .el-dropdown-menu__item) {
+  max-width: calc(100vw - 32px);
+  min-height: 32px;
+  height: auto;
+  line-height: 1.4;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 /* 与 Artifact Info / Image Info 一致的 section + 双列键值布局。 */
@@ -911,6 +997,18 @@ export default {
 
 .terminal-json-raw code {
   font-family: inherit;
+}
+
+@media (max-width: 768px) {
+  /* A single compact menu exposes every action without clipping on phones. */
+  .terminal-json-row-actions-inline {
+    display: none;
+  }
+
+  .terminal-json-row-actions-mobile {
+    display: inline-flex;
+    max-width: 100%;
+  }
 }
 
 @media (max-width: 768px), (max-height: 720px) {

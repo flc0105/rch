@@ -1482,13 +1482,14 @@ export default {
       const operation = createTerminalOperation({ kind: 'command', action: 'invoke', clientId: payload.clientId,
         invocation: { input: payload.command }, replay: { type: 'command', command: payload.command },
         presentation: inDialog ? 'dialog' : 'terminal' })
-      const capture = inDialog ? this.terminalTaskCapture.begin({
+      // Observe completion in both output modes; only Dialog suppresses Terminal SSE.
+      const capture = this.terminalTaskCapture.begin({
         clientId: payload.clientId,
         operationId: operation.operation_id,
-        suppress: true,
-        onResult: event => viewer?.handleResultActionCommandResult(event, payload.runId),
+        suppress: inDialog,
+        onResult: inDialog ? event => viewer?.handleResultActionCommandResult(event, payload.runId) : null,
         onComplete: event => viewer?.handleResultActionCommandComplete(event, payload.runId),
-      }) : null
+      })
       const taskId = await this.$refs.commandInputBarRef?.runResultActionCommand(
         payload.command, payload.clientId, payload.presentation, operation,
       ) || ''
@@ -1505,10 +1506,17 @@ export default {
       const operation = createTerminalOperation({ kind: isScript ? 'script' : isAlias ? 'alias' : 'command',
         action: isScript ? 'run' : 'invoke', clientId: payload.clientId,
         invocation: isScript
-          ? { script_name: payload.script_name, params: payload.params || {} }
+          ? { script_name: payload.script_name, params: payload.params || {},
+              execution_mode: payload.execution_mode, output_mode: payload.output_mode }
           : isAlias ? { alias: payload.alias, platform: payload.platform, arguments: payload.arguments }
             : { input: payload.command },
-        replay: isScript ? { ...payload } : isAlias
+        replay: isScript ? {
+          type: 'script', script_name: payload.script_name,
+          script_path: payload.script_path || '', script_display_name: payload.script_display_name || '',
+          params: { ...(payload.params || {}) },
+          ...(payload.execution_mode ? { execution_mode: payload.execution_mode } : {}),
+          ...(payload.output_mode ? { output_mode: payload.output_mode } : {}),
+        } : isAlias
           ? { type: 'alias', alias: payload.alias, platform: payload.platform, arguments: [...payload.arguments] }
           : { type: 'command', command: payload.command },
       })
