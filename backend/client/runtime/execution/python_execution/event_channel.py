@@ -35,8 +35,11 @@ def connect_event_stream(endpoint):
                 conn.sendall(packet)
         send({'kind': 'auth', 'token': endpoint['token']})
         output = _EventTextStream(send)
-        def emit_data(data):
-            send({'kind': 'data', 'data': data})
+        def emit_data(data, *, view=None):
+            event = {'kind': 'data', 'data': data}
+            if view is not None:
+                event['view'] = view
+            send(event)
 
         def emit_progress(message, *, level=None):
             event = {'kind': 'progress', 'message': message}

@@ -47,6 +47,7 @@ print("system_paths =", context.system_paths())
 | `context.system_paths()` | 当前 client 握手上报的系统路径 |
 | `context.progress(message, level=None)` | 发送真正的 `progress` Result 事件；可选 `level="info"/"success"/"warning"/"error"`，省略时不附加 Marker。inproc/subprocess_pipe 都使用事件通道，普通 `print()` 与 `context.emit(data)` 仍是 chunk。 |
 | `context.emit(data)` | 向当前 Script 输出流追加一条 JSON 对象或数组事件，保留执行顺序 |
+| `context.emit_view(data, *, view)` | 输出原生结构化数据，并为本次 Result 声明 JSON Viewer 的 `titleField / columns / details / actions`；支持两种 Python 执行模式与 collect/stream |
 
 `context.emit()` 只接受可 JSON 序列化的 `dict` 或 `list`，不能传入任意 Python 对象或纯文本。发送数据时立即校验并冻结值，避免脚本后续修改导致记录内容漂移；需要输出普通文字继续使用 `print()`。结构化输出不是运行终态，也不是 Device Event：不要与 `events.emit()` 混淆。
 
@@ -55,10 +56,21 @@ from client.runtime.sdk import context
 
 print('Collecting state...')
 context.emit({'job_name': 'demo', 'state': 'running', 'count': 2})
+context.emit_view([
+    {'name': 'Example row', 'status': 'ready'},
+], view={
+    'titleField': 'name',
+    'actions': [{
+        'label': 'Run another Script',
+        'command': 'script exec test/misc/json_result_actions_update',
+        'confirm': False,
+        'refresh': True,
+    }],
+})
 print('State collected.')
 ```
 
-Python Client 的 `inproc/subprocess_pipe` 与 `stream/collect` 组合均支持该 API：前者通过当前执行上下文发送，独立进程通过本地有序输出通道发送，不在 stdout 中插入标记。collect 延迟发布输出但保留每条文本/结构化事件的顺序。未处于 Script 执行上下文时会拒绝 `context.emit()`；Go Client 的 Python 执行环境不提供 Python Client SDK。Library 示例见 `test/misc/structured_output_probe`。
+Python Client 的 `inproc/subprocess_pipe` 与 `stream/collect` 组合均支持这两个 API：前者通过当前执行上下文发送，独立进程通过本地有序输出通道发送，不在 stdout 中插入标记。collect 延迟发布输出但保留文本/结构化事件的顺序。`emit_view` 使用 Result 本身的 `view` 契约进行校验；动作以结果级模板声明，在 Viewer 逐行替换 `{field}` 后作为真实 RCH 命令执行。调用另一个 Script 时使用已经注册的 `script exec`；`refresh: true` 则在动作成功后重新运行产生当前 Viewer 的原 Script。未处于 Script 执行上下文时会拒绝输出；Go Client 的 Python 执行环境不提供 Python Client SDK。示例见 `test/misc/structured_output_probe` 和 `test/misc/json_result_actions_probe`（后者执行 `test/misc/json_result_actions_update`）。
 
 兼容 API：
 
@@ -513,7 +525,7 @@ Process Manager UI uses the structured `control/process/kill` request):
   Server CLI without a Web interaction task.
 - `acmd ps` lists Client processes; `--pid`, `--name`, `--port` filter it.
   `--json` returns structured rows without actions. Add `--with-actions`
-  to include optional `_actions` entries for `acmd kill` in JSON output.
+  to attach result-level `view.actions` for `acmd kill` in JSON Viewer.
 
 Client commands use the existing Client Session Token when invoking an interactive Web task. Process identity and
 port ownership are verified again before signalling, including in `--no-confirm`.

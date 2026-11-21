@@ -21,7 +21,6 @@ SCRIPT_METADATA = {
     ],
 }
 
-import json
 import ntpath
 import os
 import re
@@ -214,10 +213,6 @@ def list_runtime_processes(os_alias, runtime):
                 "command": resolved_command(argv, exe, script_path, script_index, os_alias) or str(name or ""),
                 "listening_ports": listening_ports(proc),
                 "unit": service_lookup.get(pid),
-                "_actions": [
-                    {"label": "Kill", "command": f"acmd kill --pid {pid}"},
-                    {"label": "Force Kill", "command": f"acmd kill --pid {pid} -9"},
-                ],
             })
         except (psutil.Error, OSError):
             continue
@@ -232,7 +227,12 @@ def main():
     runtime = str((globals().get("kwargs") or {}).get("runtime", "python") or "python").lower()
     if runtime not in RUNTIME_EXES:
         raise ValueError("Runtime must be python, node or java")
-    print(json.dumps(list_runtime_processes(os_alias, runtime), ensure_ascii=False, indent=2))
+    context.emit_view(list_runtime_processes(os_alias, runtime), view={
+        'actions': [
+            {'label': 'Kill', 'command': 'acmd kill --pid {pid}'},
+            {'label': 'Force Kill', 'command': 'acmd kill --pid {pid} -9'},
+        ],
+    })
 
 
 if __name__ == "__main__":

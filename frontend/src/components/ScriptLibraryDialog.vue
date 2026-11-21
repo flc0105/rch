@@ -319,6 +319,8 @@ function emptyScriptRun() {
     scriptPath: '',
     operation: null,
     output: '',
+    jsonText: '',
+    view: null,
     outputChunks: 0,
     status: '',
     complete: false,
@@ -528,7 +530,7 @@ export default {
       return Array.isArray(this.pendingRunScriptMetadata.params) ? this.pendingRunScriptMetadata.params : []
     },
 
-    resultJsonText() { return findJsonOutput(this.activeRun.output) },
+    resultJsonText() { return this.activeRun.jsonText || findJsonOutput(this.activeRun.output) },
     resultStatusType() {
       if (!this.activeRun.complete) return 'info'
       return this.activeRun.status === 'Partial' ? 'warning' : (this.activeRun.success ? 'success' : 'danger')
@@ -547,6 +549,7 @@ export default {
       if (!this.resultJsonText) return
       this.$emit('open-json', {
         jsonText: this.resultJsonText,
+        jsonView: this.activeRun.view || {},
         clientId: this.activeRun.clientId,
         jsonCommandInfo: {
           blockType: 'script',
@@ -1146,6 +1149,10 @@ export default {
           String(payload.client_id || '') !== this.activeRun.clientId) return true
 
       if (!this.resultVisible) this.resultVisible = true
+      if (payload.result?.data !== undefined) {
+        this.activeRun.jsonText = JSON.stringify(payload.result.data)
+        this.activeRun.view = payload.result.view || null
+      }
       const chunk = String(payload.text ?? '').replace(/\r\n/g, '\n').replace(/\r/g, '\n')
       if (metadata.output_mode === 'stream') {
         this.activeRun.output += (this.activeRun.outputChunks++ ? '\n' : '') + chunk

@@ -131,7 +131,7 @@ SCRIPT_METADATA = {
 
 优先级为：**本次显式选择 → 对应 Schema default → 目标 Client 当前 Configuration/set 值**。允许范围为 Schema allowed 与 Client 实际支持模式的交集。allowed 缺省表示该维度的全部有效枚举；default 必须属于 allowed。若默认值不在交集内，Dialog 不代选，用户须选有效模式；CLI 需显式指定。没有可用值、未知值或非法 Schema 时拒绝运行。`execution` 完全省略时，两个维度直接使用 Client 配置默认值（Python: inproc + collect；Go: subprocess_pipe + collect）。Dialog 打开与提交时读取实时配置，不依赖握手快照；本次选择不修改 Configuration/set。
 
-`collect`：普通 stdout/stderr 在执行结束时汇总返回，取消/超时仍返回已捕获的文本。`stream`：按行、显式 flush 或长行片段即时输出，末尾无换行的片段也保留；stderr 本身不表示失败，最终退出状态才决定成功与否。现有 `context.progress()` 是独立 SDK 进度接口。`context.emit(data)` 发送显式结构化 JSON 输出事件，并且可与 `print()` 文本按顺序混排。Python Client 的 inproc 使用本次执行上下文，subprocess_pipe 使用本地专用的有序输出通道，而不是在 stdout 插入标记；collect 仅缓冲普通 stdout/stderr，显式 `context.progress(message, level=...)` 仍即时发真正的 progress 事件；stream 的普通输出实时发送。progress 的 level 可选（info/success/warning/error），省略不加任何 Marker；公共 Server 渲染器负责给有 level 的 progress 添加标记，永远不修改 print 文本。两个 Strategy 只返回执行结果，统一执行入口发送唯一终态；超时/取消采用明确的结构化事件。
+`collect`：普通 stdout/stderr 在执行结束时汇总返回，取消/超时仍返回已捕获的文本。`stream`：按行、显式 flush 或长行片段即时输出，末尾无换行的片段也保留；stderr 本身不表示失败，最终退出状态才决定成功与否。现有 `context.progress()` 是独立 SDK 进度接口。`context.emit(data)` 发送显式结构化 JSON 输出事件；`context.emit_view(data, view=...)` 还可为同一条数据附带结果级 JSON Viewer 标题、列、详情和 Actions。两者均可与 `print()` 文本按顺序混排。Python Client 的 inproc 使用本次执行上下文，subprocess_pipe 使用本地专用的有序输出通道，而不是在 stdout 插入标记；collect 仅缓冲普通 stdout/stderr，显式 `context.progress(message, level=...)` 仍即时发真正的 progress 事件；stream 的普通输出实时发送。progress 的 level 可选（info/success/warning/error），省略不加任何 Marker；公共 Server 渲染器负责给有 level 的 progress 添加标记，永远不修改 print 文本。两个 Strategy 只返回执行结果，统一执行入口发送唯一终态；超时/取消采用明确的结构化事件。
 
 执行记录属于命令任务生命周期，可与 Command History 的来源、状态、输出限制和 Artifact 关联协作，但 Script Library 本身不自动在数据库中保存每次运行的全部独立 Script Session 对象。
 
@@ -284,7 +284,7 @@ Preview 只返回确认结果或被勾选的行 ID，并不会由 Server 自动�
 
 Script 的任务状态和文本结果属于命令执行通道，Output 可以在 Terminal 或 Script Result Dialog 中消费；它们不等同于脚本上传的 Artifact。需要保存报告、截图或其他二进制文件时，应显式调用 Artifact 上传接口。调用 `events.emit()` 发出业务通知也不会自动将 `stdout` 保存在通知历史。
 
-Script 输出可以是人类可读文本，也可以显式打印 JSON。需要独立的结构化记录时，Python Client Script 使用 `context.emit(data)`，由执行结果通路发送可序列化的 JSON 对象/数组，不必再将混合文本拼成一段 JSON；普通 `print()` 与结构化事件可以连续出现。手动打印 JSON 后让 Terminal JSON Viewer 识别一段结构化结果时，仍应保证输出为完整、合法的 JSON；混入调试信息、多行日志或 Python `dict` 的 `repr` 不等于 JSON。`scripts.run(...).json()` 则仅解析子脚本的 stdout，并与浏览器端的 Table/Flat/Raw 展示相互独立。更多规则见 [Structured Command Output](structured_output.md)。
+Script 输出可以是人类可读文本，也可以显式打印 JSON。需要独立的结构化记录时，Python Client Script 使用 `context.emit(data)`；需要可操作的 Viewer 时使用 `context.emit_view(data, view=...)`。两者都经原有 Result 通道发送可序列化的 JSON 对象/数组，无须把文本与数据拼成一段 JSON；普通 `print()` 与结构化事件可连续出现。Script Result Dialog 的 View JSON 与 Terminal JSON Viewer 均使用这条数据对应的结果级 `view`。再次执行 Script 后，Viewer 优先使用返回的原生 JSON 数据与关联的 `view`，因此普通日志不会破坏刷新。手动打印 JSON 时仍应保证 JSON 块合法。`scripts.run(...).json()` 只解析子脚本 stdout，与 Viewer 的结构化事件相互独立。更多规则见 [Structured Command Output](structured_output.md)。
 
 一个 Script 执行完毕后，可通过命令任务关联对应的 Command History Entry；相关历史的具体保留数量、输出截断、删除规则由 Command History 管理。脚本源码本身在 Library 文件系统中持久保存，但 `inproc` 中的 Python 全局执行状态、浏览器当前弹窗、连接期 Token 和等待中的 Interaction 都不是可在 Server 重启后恢复的持久脚本会话。
 
@@ -341,4 +341,4 @@ Web Script Library 的目录导航不承担平台筛选职责。首次打开默�
 
 ## JSON Viewer 行操作回归脚本
 
-Script Library 的 `test/misc/json_result_actions_probe` 在 Client 上输出单个 JSON 记录及可选 `_actions`。首次执行只读当前临时计数；`Increment + Refresh` 无须确认，在动作成功后重跑原 Script 并更新 Viewer；`Increment (No Refresh)` 不更新当前数据，可用 Viewer 顶部 `Run Again` 手动读取新值；`Reset + Confirm` 展示确认与输出位置选择，成功后自动刷新；`Inspect PID` 展示有确认、无刷新的只读动作。测试脚本仅使用目标 Client 的系统临时目录下 `rch_json_result_actions_probe_counter.txt`。测试结束可通过 `Reset + Confirm` 删除该文件。使用 Collect 输出可确保一次运行生成完整 JSON 供 Viewer 解析。
+Script Library 的 `test/misc/json_result_actions_probe` 无须准备数据或传入参数，执行后输出当前 Python Client 的 PID、检查时间与四个结果级 `view.actions`。**Run Child + Refresh** 通过正式命令 `script exec test/misc/json_result_actions_update` 运行第二份脚本，成功后重新运行原脚本并更新检查时间；**Run Child (No Refresh)** 执行第二份脚本但保留当前 Viewer，使用 Run Again 可主动刷新；**Run Child + Confirm** 在执行前确认，成功后刷新；**Inspect PID** 展示普通命令 Action。第二份 Script 直接输出成功信息、进程 PID 和执行时间，不需要参数，也不读写测试文件。两个 Script 均可直接从 Script Library 或 Terminal 启动；原 Script 的 JSON Viewer 适用于 inproc/subprocess_pipe 及 collect/stream。

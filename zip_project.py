@@ -22,7 +22,7 @@ IGNORE_PATHS = {
     "frontend/.vite",
     "frontend/.vscode",
     "backend/runtime",
-    #"backend/static", # 生产环境解除
+    "backend/static", # 生产环境解除
     "backend/venv",
     "backend/.pytest_cache",
     #"backend/server/resources/jobs",

@@ -11,7 +11,6 @@ SCRIPT_METADATA = {
     "params": [],
 }
 
-import base64
 import ctypes
 import datetime as dt
 import json
@@ -253,14 +252,6 @@ def trash_locations():
                 yield location
 
 
-def delete_action_command(path):
-    """Generate the one batch deletion command without lossy filename quoting."""
-    encoded = base64.urlsafe_b64encode(
-        json.dumps({"paths": [path]}, ensure_ascii=False).encode("utf-8")
-    ).decode("ascii")
-    return f"delete_paths __json__:{encoded}"
-
-
 def main():
     rows = []
     for trash in trash_locations():
@@ -282,10 +273,6 @@ def main():
                             "trash_path": trash_path,
                             "deleted_at": trash_time(entry.path, st),
                             "size": human_readable_size(file_bytes(entry.path) if is_dir else st.st_size),
-                            "_actions": [{
-                                "label": "Delete",
-                                "command": delete_action_command(trash_path),
-                            }],
                         })
                     except OSError as exc:
                         print(f"读取失败 {entry.path}: {exc}", file=sys.stderr)

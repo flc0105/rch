@@ -255,7 +255,7 @@ import { canRerunTerminalSource } from '../utils/terminalRerun.js'
 import { getTerminalReplayAction } from '../utils/terminalOperation.js'
 import { h, ref } from 'vue'
 import { ElMessage, ElMessageBox, ElRadioGroup, ElRadioButton } from 'element-plus'
-import { JSON_ROW_SOURCE, getJsonRenderModel, normalizeJsonView, resolveJsonViewRowActions } from '../utils/terminalJson.js'
+import { JSON_ROW_SOURCE, getJsonRenderModel, findJsonOutput, normalizeJsonView, resolveJsonViewRowActions } from '../utils/terminalJson.js'
 
 
 export default {
@@ -448,7 +448,7 @@ export default {
       const replay = getTerminalReplayAction(info.operation)
       if (!replay) return
       const runId = this.createResultActionRunId()
-      this.refreshRun = { runId, clientId, chunks: [], view: null }
+      this.refreshRun = { runId, clientId, chunks: [], view: null, jsonText: '' }
       this.refreshRunning = true
       this.$emit('rerun-json', {
         runId, clientId,
@@ -467,7 +467,10 @@ export default {
       if (!this.refreshRun || !this.visible || this.refreshRun.runId !== runId
           || String(payload.client_id || '') !== this.refreshRun.clientId) return
       this.refreshRun.chunks.push(String(payload.text ?? ''))
-      if (payload.result?.view) this.refreshRun.view = payload.result.view
+      if (payload.result?.data !== undefined) {
+        this.refreshRun.jsonText = JSON.stringify(payload.result.data)
+        this.refreshRun.view = payload.result.view || null
+      }
     },
 
     handleJsonRefreshComplete(payload = {}, runId = '') {
@@ -475,6 +478,7 @@ export default {
           || String(payload.client_id || '') !== this.refreshRun.clientId) return
       const chunks = this.refreshRun.chunks
       const updatedView = this.refreshRun.view
+      const structuredJson = this.refreshRun.jsonText
       this.refreshRun = null
       this.refreshRunning = false
       const status = String(payload.status || '').trim()
@@ -483,15 +487,8 @@ export default {
         return
       }
       // A rerun is a new Terminal event, not a mutation of the historical output.
-      const candidates = [chunks.join(''), chunks.join('\n')]
-      const validText = candidates.find(text => {
-        try {
-          JSON.parse(text.trim())
-          return true
-        } catch (_) {
-          return false
-        }
-      })
+      const candidates = [structuredJson, chunks.join(''), chunks.join('\n')]
+      const validText = candidates.map(text => findJsonOutput(text)).find(Boolean)
       if (validText === undefined) {
         ElMessage.error('Run Again did not return valid JSON; previous result kept')
         return

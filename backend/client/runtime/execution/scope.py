@@ -15,7 +15,7 @@ class ExecutionResultMixin:
             event['level'] = level
         self.socket.send_event(self.command_id, event)
 
-    def emit_chunk(self, message: str = '', *, data=None):
+    def emit_chunk(self, message: str = '', *, data=None, view=None):
         event = {'event_type': 'chunk'}
         if data is not None:
             event['data'] = data
@@ -23,6 +23,8 @@ class ExecutionResultMixin:
                 event['message'] = str(message)
         else:
             event['message'] = str(message)
+        if view is not None:
+            event['view'] = view
         self.socket.send_event(self.command_id, event)
 
     def emit_completed(self, *, status: str = 'success', message: str = '',

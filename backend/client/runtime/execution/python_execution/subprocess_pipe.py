@@ -147,10 +147,14 @@ except Exception:
                             has_structured[0] = True
                             payload = {'event_type': ResultEventType.CHUNK,
                                        'data': event['data']}
+                            if 'view' in event:
+                                from core.protocol.result_envelope import build_result_wire_event
+                                build_result_wire_event('script', {**payload, 'view': event['view']})
+                                payload['view'] = event['view']
                             if emit is None:
                                 events.write(json.dumps({'kind': 'data', 'data': payload}, ensure_ascii=False) + '\n')
                             else:
-                                self.owner.emit_chunk(data=payload['data'])
+                                self.owner.emit_chunk(data=payload['data'], view=payload.get('view'))
 
                 def read_events():
                     try:
@@ -239,7 +243,7 @@ except Exception:
                     for line in events:
                         item = json.loads(line)
                         if item['kind'] == 'data':
-                            self.owner.emit_chunk(data=item['data']['data'])
+                            self.owner.emit_chunk(data=item['data']['data'], view=item['data'].get('view'))
                         else:
                             self.owner.emit_chunk(item['text'])
                     return status, message or 'Code execution completed'

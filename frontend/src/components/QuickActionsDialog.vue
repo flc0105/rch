@@ -356,6 +356,8 @@ function emptyRun() {
     displayCommand: '',
     resolvedCommand: '',
     output: '',
+    jsonText: '',
+    view: null,
     status: '',
     complete: false,
     success: false,
@@ -443,7 +445,7 @@ export default {
     pendingRunParameters() {
       return Array.isArray(this.pendingRunItem?.parameters) ? this.pendingRunItem.parameters : []
     },
-    resultJsonText() { return findJsonOutput(this.activeRun.output) },
+    resultJsonText() { return this.activeRun.jsonText || findJsonOutput(this.activeRun.output) },
     resultTitle() {
       const alias = this.activeRun.alias || 'Quick Action'
       const platform = this.activeRun.platform ? ` · ${this.platformLabel(this.activeRun.platform)}` : ''
@@ -460,6 +462,7 @@ export default {
       if (!this.resultJsonText) return
       this.$emit('open-json', {
         jsonText: this.resultJsonText,
+        jsonView: this.activeRun.view || {},
         clientId: this.activeRun.clientId,
         jsonCommandInfo: { operation: {
           kind: 'alias',
@@ -828,6 +831,10 @@ export default {
       if (!this.resultVisible) this.resultVisible = true
       if (!this.activeRun.resolvedCommand) {
         this.activeRun.resolvedCommand = String(metadata.quick_action_resolved_command || '')
+      }
+      if (payload.result?.data !== undefined) {
+        this.activeRun.jsonText = JSON.stringify(payload.result.data)
+        this.activeRun.view = payload.result.view || null
       }
       this.appendResultChunk(payload.text)
       return true

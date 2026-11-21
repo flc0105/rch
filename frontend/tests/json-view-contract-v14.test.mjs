@@ -62,7 +62,8 @@ test('desktop table/card, mobile default card, compact row actions and Details a
 test('raw Result view travels through the existing SSE line metadata, and replay replaces it', () => {
   assert.match(sse, /item\.result\?\.view/)
   assert.match(dialog, /line\.meta\?\.resultView/)
-  assert.match(dialog, /payload\.result\?\.view/)
+  assert.match(dialog, /payload\.result\?\.data/)
+  assert.match(dialog, /payload\.result\.view \|\| null/)
   assert.match(dialog, /this\.viewMetadata = updatedView \|\| \{\}/)
 })
 

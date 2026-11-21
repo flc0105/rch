@@ -1162,6 +1162,7 @@ export default {
       this.$refs.terminalJsonDialogRef?.open({
         isJsonMessage: true,
         jsonText: payload.jsonText,
+        jsonView: payload.jsonView || {},
         jsonCommandInfo: payload.jsonCommandInfo || {},
       })
     },

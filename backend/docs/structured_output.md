@@ -123,7 +123,7 @@ Web Terminal 将命令输出当作文本接收，并尝试识别其中**完整�
 
 JSON Viewer 按 Table → Grouped → Flat → Raw 的顺序选择显示方式。Grouped 仅用于外层多个对象分组均符合条件的 JSON，不递归展开第三层数据。
 
-Script 和 Quick Action 的 **Result Dialog** 与 Terminal 使用相同的 JSON 识别与渲染模型。当输出包含一份完整、合法的 JSON 对象或数组（包括独立的多行 JSON 块）时，Result Dialog 状态与命令行的右侧才显示 **View JSON** 按钮，点击使用同一个 JSON Viewer；普通文本或不完整 JSON 不显示入口。原 Result Dialog 的输出、复制和关闭操作不变。
+Script 和 Quick Action 的 **Result Dialog** 与 Terminal 使用相同的 JSON Viewer。Result 携带原生结构化 `data` 时优先使用该数据，并在首次打开、Run Again 刷新时保留同一条 Result 的 `view`（含 Actions、列、标题与详情）；文本结果则识别完整合法的 JSON 对象或数组（包括独立的多行 JSON 块）。有效 JSON 才提供 **View JSON** 入口；普通文本与不完整 JSON 不提供。Result Dialog 原有输出、复制和关闭操作不变。
 
 | View | 触发条件 | 展示方式 |
 |---|---|---|
@@ -162,7 +162,7 @@ Viewer 将它显示为 Name、PID、Active 三列（实际表头使用原始字�
 - 前两项操作直接显示为按钮，第三项及后续操作进入 `More`。桌面 Table 的 Actions 列跟随整张表横向滚动，Card 在卡片内直接排布操作。
 - `confirm` 默认 `true`，执行时展示目标 Client 和完整命令，可选择 Terminal 或 New Dialog；显式 `false` 则直接提交。`refresh` 默认 `false`；显式 `true` 仅在操作成功后使用原 Command/Script/Quick Action 重放来源刷新当前 Viewer。
 - 操作继续使用原有任务、确认、取消、目标 Client、SSE 以及 Run Again 逻辑；刷新不会覆盖历史 Result，也不会修改原始业务数据。
-- Shell `echo`、Script `print` 等普通 JSON 文本仍能被识别并查看；它们不具备结果级 `view` 时不生成操作按钮。
+- Shell `echo`、Script `print` 等普通 JSON 文本仍能被识别并查看；它们不具备结果级 `view` 时不生成操作按钮。Script 使用 `context.emit_view(data, view=...)` 一次发出原始数据和结果级 View；Command Action 可填写正式的 `script exec <name> -- --key value` 命令执行另一条 Script。
 
 ### 多组键值展示（Grouped）
 
@@ -257,7 +257,7 @@ Web Terminal 将一次用户发起的 Command、Script、Quick Action 或上传�
 
 Terminal 输出块菜单的 **Run again** 适用于真实 Command、携带可重跑脚本身份的 Script，以及保存了别名、平台和参数的 Quick Action。Quick Action 必须通过专用 API 执行，不将可见标题或展开后的命令传给 Shell。Remote Upload 和 Artifact Send 没有通用重放所需的文件上下文，菜单项保持禁用；JSON Viewer 使用同一资格规则。
 
-JSON Viewer 支持对有效来源的 Command、Script 或 Quick Action 使用 **Run Again**，包括 Quick Action Result Dialog 打开的 JSON。发起一次新的执行并在 Terminal 中留下新执行记录。当前 Viewer 不关闭；新任务完成后仅在输出能解析为完整合法 JSON 时替换 Viewer 中展示的数据，否则提示错误并保留原数据显示。此前的 Terminal 历史内容始终不变。
+JSON Viewer 支持对有效来源的 Command、Script 或 Quick Action 使用 **Run Again**，包括 Quick Action Result Dialog 打开的 JSON。发起一次新的执行并在 Terminal 中留下新执行记录。当前 Viewer 不关闭；新任务完成后优先使用原生 Result 数据和关联的 `view` 更新 Viewer；未提供结构化数据时尝试识别完整合法 JSON 块，解析失败则保留原数据显示。此前的 Terminal 历史内容始终不变。
 
 Result 的 `view.actions` 统一描述操作模板；`confirm` 控制二次确认，`refresh` 控制成功后使用原操作重放来源刷新 Viewer。无重放来源时可以执行动作，但不会刷新。Terminal 与 New Dialog 都保持 JSON Viewer 打开，使用既有 `/api/connections/{client_id}/command` 请求和任务结果 SSE。
 

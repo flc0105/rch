@@ -69,8 +69,11 @@ class InProcessPythonExecutionStrategy(PythonExecutionStrategy):
             output.flush()
 
     @staticmethod
-    def _data_event(data):
-        return {'event_type': ResultEventType.CHUNK, 'data': data}
+    def _data_event(data, *, view=None):
+        event = {'event_type': ResultEventType.CHUNK, 'data': data}
+        if view is not None:
+            event['view'] = view
+        return event
 
     def execute_collect(self, code, kwargs=None, timeout=None):
         output = _CollectedScriptOutput()
@@ -79,14 +82,14 @@ class InProcessPythonExecutionStrategy(PythonExecutionStrategy):
             return status, output.text() + message
         # Collect defers all output records, preserving order and structure.
         for item in output.events():
-            self.owner.emit_chunk(data=item['data']) if isinstance(item, dict) else self.owner.emit_chunk(item)
+            self.owner.emit_chunk(data=item['data'], view=item.get('view')) if isinstance(item, dict) else self.owner.emit_chunk(item)
         return status, message or 'Code execution completed'
 
     def execute_stream(self, code, kwargs=None, timeout=None):
         output = StreamOutput(lambda text: self.owner.emit_chunk(text))
-        def emit_data(data):
+        def emit_data(data, *, view=None):
             output.flush()
-            self.owner.emit_chunk(data=data)
+            self.owner.emit_chunk(data=data, view=view)
         status, message = self._execute(code, kwargs, output, emit_event=emit_data)
         return status, message or 'Code execution completed'
 
@@ -107,12 +110,12 @@ class _CollectedScriptOutput:
     def text(self):
         return self._current.getvalue()
 
-    def emit_data(self, data):
+    def emit_data(self, data, *, view=None):
         current = self._current.getvalue()
         if current:
             self._events.append(current)
         self._current = io.StringIO()
-        self._events.append(InProcessPythonExecutionStrategy._data_event(data))
+        self._events.append(InProcessPythonExecutionStrategy._data_event(data, view=view))
         self.has_data = True
 
     def events(self):

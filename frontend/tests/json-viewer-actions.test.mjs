@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import vm from 'node:vm'
 import { getJsonRenderModel } from '../src/utils/terminalJson.js'
-import { JSON_ROW_SOURCE, normalizeJsonViewActions, normalizeJsonView, resolveJsonViewRowActions } from '../src/utils/terminalJson.js'
+import { JSON_ROW_SOURCE, normalizeJsonViewActions, normalizeJsonView, resolveJsonViewRowActions, findJsonOutput } from '../src/utils/terminalJson.js'
 import { createTerminalOperation, getTerminalReplayAction } from '../src/utils/terminalOperation.js'
 import { canRerunTerminalSource } from '../src/utils/terminalRerun.js'
 import { createTerminalTaskCapture } from '../src/composables/terminalTaskCapture.js'
@@ -24,7 +24,7 @@ const context = { ref: value => ({ value }), h: (tag, props, children) => {
   return children
 },
   ElMessage, ElMessageBox: { confirm: (...args) => askConfirmation(...args) },
-  ElRadioGroup: radioGroup, ElRadioButton: {}, JSON_ROW_SOURCE, getJsonRenderModel, normalizeJsonView, resolveJsonViewRowActions,
+  ElRadioGroup: radioGroup, ElRadioButton: {}, JSON_ROW_SOURCE, getJsonRenderModel, normalizeJsonView, resolveJsonViewRowActions, findJsonOutput,
   getTerminalReplayAction, canRerunTerminalSource }
 const component = vm.runInNewContext(`(${script.replace(/^import .*$/gm, '').replace('export default', '')})`, context)
 
@@ -209,4 +209,19 @@ test('failed Run Again preserves current JSON even if its output contains valid 
   instance.handleJsonRefreshComplete({ client_id: 'client-A', status: 'failed' }, run.data.runId)
   assert.equal(instance.tableRows[0].counter, '0')
   assert.equal(instance.refreshRunning, false)
+})
+
+
+test('Script emit_view refresh prefers typed data and view even with mixed stdout', async () => {
+  const { instance, events } = dialog({ type: 'script', script_name: 'test/misc/json_result_actions_probe', params: {} })
+  await instance.runAgain()
+  const runId = events.find(item => item.event === 'rerun-json').data.runId
+  instance.handleJsonRefreshResult({ client_id: 'client-A', text: 'diagnostics\n' }, runId)
+  instance.handleJsonRefreshResult({ client_id: 'client-A', text: '[{"counter":5}]', result: {
+    data: [{ name: 'Current Python Client', checked_at: '2026-11-21T23:12:00' }], view: { actions: [{ label: 'Run Child', command: 'script exec test/misc/json_result_actions_update' }] },
+  } }, runId)
+  instance.handleJsonRefreshResult({ client_id: 'client-A', text: 'done\n' }, runId)
+  instance.handleJsonRefreshComplete({ client_id: 'client-A', status: 'success' }, runId)
+  assert.equal(instance.tableRows[0].checked_at, '2026-11-21T23:12:00')
+  assert.equal(instance.getTerminalJsonRowActions(instance.tableRows[0])[0].label, 'Run Child')
 })

@@ -226,6 +226,25 @@ def emit(data: dict | list) -> None:
     sender(validated)
 
 
+def emit_view(data: dict | list, *, view: dict) -> None:
+    """Emit structured Script data with result-level JSON Viewer hints.
+
+    The view uses the same Result contract as ACMD; Actions are command
+    templates and may invoke another Library script through `script exec`.
+    """
+    if not isinstance(data, (dict, list)):
+        raise TypeError('Structured output requires a JSON object or array')
+    # Freeze data and view before passing them to the current output channel.
+    frozen_data = json.loads(json.dumps(data, ensure_ascii=False, allow_nan=False))
+    frozen_view = json.loads(json.dumps(view, ensure_ascii=False, allow_nan=False))
+    from core.protocol.result_envelope import build_result_wire_event
+    build_result_wire_event('script', {'event_type': 'chunk', 'data': frozen_data, 'view': frozen_view})
+    sender = get_current_context().emit_event
+    if not callable(sender):
+        raise RuntimeError('Structured output requires an active Script output channel')
+    sender(frozen_data, view=frozen_view)
+
+
 def confirm(message: str, *, title='Confirmation', timeout=90) -> bool:
     """Request opt-in Web approval; rejection or timeout returns False."""
     from client.runtime.sdk.interactions import confirm as request_confirmation
