@@ -310,6 +310,7 @@ export default {
     'open-connection-history',
     'open-artifacts',
     'open-external-tools',
+    'open-tunnels',
     'open-log-viewer',
     'open-keychains',
     'open-documents',
@@ -582,6 +583,7 @@ export default {
       if (!this.isActionAvailable(normalizedAction)) return
       const resourceActions = [
         'external-tools',
+        'tunnels',
         'log-viewer',
         'keychains',
         'documents',
@@ -762,6 +764,7 @@ export default {
       const normalizedCommand = String(command || '').trim().toLowerCase()
       const eventMap = {
         'external-tools': 'open-external-tools',
+        tunnels: 'open-tunnels',
         'log-viewer': 'open-log-viewer',
         keychains: 'open-keychains',
         documents: 'open-documents',

@@ -15,9 +15,10 @@ class SessionAcceptor:
     def __init__(self, server):
         self.server = server
 
-    def accept_session(self, raw_sock, addr, *, listener_id='', listener_name='', listener_port=None, protocol='tcp', strict_registration=False, raise_on_error=False, initialize_session=None):
+    def accept_session(self, raw_sock, addr, *, listener_id='', listener_name='', listener_port=None, protocol='tcp', strict_registration=False, raise_on_error=False, initialize_session=None, initial_handshake=None):
         try:
-            info, transport = self._receive_client_info(raw_sock, addr)
+            info, transport = (initial_handshake if initial_handshake is not None
+                               else self._receive_client_info(raw_sock, addr))
             if not isinstance(info, dict) or info.get('type') != 'info':
                 raise ValueError('Invalid client info')
             if strict_registration:

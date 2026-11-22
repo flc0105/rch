@@ -45,6 +45,7 @@ from server.web.routes.clipboard import create_clipboard_blueprint
 from server.web.routes.device_monitor import create_device_monitor_blueprint
 from server.web.routes.device_events import create_device_events_blueprint
 from server.web.routes.transfers import create_transfers_blueprint
+from server.web.routes.tunnels import create_tunnel_blueprint
 
 
 # Only content-hashed Vite assets are immutable; HTML and API responses are not.
@@ -89,6 +90,7 @@ def create_app(server_instance, lifecycle):
 
     app.register_blueprint(create_auth_blueprint())
     app.register_blueprint(create_connections_blueprint(server_instance))
+    app.register_blueprint(create_tunnel_blueprint(server_instance))
     app.register_blueprint(create_toolbar_preferences_blueprint(server_instance))
     app.register_blueprint(create_notification_preferences_blueprint(server_instance))
     app.register_blueprint(create_terminal_context_preferences_blueprint(server_instance))

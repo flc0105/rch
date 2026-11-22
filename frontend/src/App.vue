@@ -160,6 +160,7 @@
                   @open-connection-history="openSelectedMachineConnectionHistory"
                   @open-artifacts="openArtifactDialog"
                   @open-external-tools="openExternalToolManagerDialog"
+                  @open-tunnels="openTunnelManagerDialog"
                   @open-log-viewer="openLogViewerDialog"
                   @open-keychains="openKeychainManagerDialog"
                   @open-documents="openDocumentsDialog"
@@ -278,6 +279,14 @@
     @append-output="appendTerminalActionOutput"
     @set-active-task="setActiveTask"
     @open-new-shared-file-editor="openNewSharedFileEditor"
+  />
+
+  <component
+    :is="dialogComponents.tunnels"
+    v-if="dialogComponents.tunnels"
+    ref="tunnelManagerDialogRef"
+    :selected-id="selectedId"
+    :connections="connections"
   />
 
   <component
@@ -633,6 +642,7 @@ import { ArrowDown, ArrowUp, Bell, Grid, Sort, User } from '@element-plus/icons-
 // Keep a single in-flight module per dialog, shared by idle warmup, hover and click.
 const optionalDialogLoaders = {
   externalTools: () => import('./components/ExternalToolManagerDialog.vue'),
+  tunnels: () => import('./components/TunnelManagerDialog.vue'),
   commandHistory: () => import('./components/CommandHistoryDialog.vue'),
   backgroundJobs: () => import('./components/BackgroundJobsDialog.vue'),
   preview: () => import('./components/PreviewDialog.vue'),
@@ -656,6 +666,7 @@ function loadOptionalDialog(name) {
 }
 const optionalDialogRefs = {
   externalTools: 'externalToolManagerDialogRef',
+  tunnels: 'tunnelManagerDialogRef',
   commandHistory: 'commandHistoryDialogRef',
   backgroundJobs: 'backgroundJobsDialogRef',
   preview: 'previewDialogRef',
@@ -666,6 +677,7 @@ const optionalDialogRefs = {
 }
 const hoverWarmupTargets = {
   'external-tools': 'externalTools',
+  tunnels: 'tunnels',
   history: 'commandHistory',
   jobs: 'backgroundJobs',
   documents: 'documents',
@@ -730,7 +742,7 @@ export default {
       remoteFilesDialogVisible: false,
       pendingRemoteUploadRefresh: null,
       dialogComponents: {
-        externalTools: null, commandHistory: null, pty: null, backgroundJobs: null,
+        externalTools: null, tunnels: null, commandHistory: null, pty: null, backgroundJobs: null,
         processes: null, keychains: null, preview: null, documents: null,
       },
       cancelIdleWarmup: null,
@@ -1066,6 +1078,11 @@ export default {
         && !this.isCurrentConnectionOffline
       const logPath = useDefaultLog ? String(this.currentConnection?.client_log_path || '').trim() : ''
       this.$refs.logViewerDialogRef?.open(logPath ? { ...requested, path: logPath } : requested)
+    },
+
+    openTunnelManagerDialog() {
+      if (this.$refs.tunnelManagerDialogRef?.isOpen?.()) return
+      return this.callOptionalDialog('tunnels', 'open')
     },
 
     openExternalToolManagerDialog() {

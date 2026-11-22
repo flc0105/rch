@@ -1,77 +1,99 @@
-# Optional Bind TCP Tunnel
+# Optional TCP Tunnel
 
-The Tunnel is a manually controlled, in-process TCP forwarder for **Python Bind
-Clients**. It maps a TCP listener on the public/listening Client to a TCP service
-reachable from the RCH Server machine. It works for the RCH Web API and also for
-other local or LAN TCP services. The Tunnel is inactive until started from the
-RCH Web Terminal.
+The Tunnel is a manually controlled, in-process TCP port forwarder for Python
+Clients. Each saved instance chooses where the forwarded port is exposed with
+`expose_on`. The RCH Client's Bind or Reverse connection mode does not select
+the mapping direction. The Tunnel is inactive until manually started from the
+RCH Web Terminal or **Toolbox → Tunnel**.
 
-## Commands
+| Expose on | Listen address | Target address | TCP channel establishment |
+| --- | --- | --- | --- |
+| `client` | RCH Client | RCH Server | Uses established RCH listener direction |
+| `server` | RCH Server | RCH Client | Uses established RCH listener direction |
 
-Select an online Python Bind Client and run the Server builtin commands:
+For either direction, `listen_host` and `listen_port` belong to the exposed
+machine. `target_host` and `target_port` are resolved on the opposite machine.
+The same raw TCP forwarding engine carries HTTP, HTTPS, WebSocket, binary
+protocols, and streaming file transfers. The tunnel does not inspect the HTTP
+API or translate protocol contents. New Tunnel TCP connections follow the
+same outbound direction and listener endpoint already proven by the running
+RCH session; the exposure choice never changes this direction.
+
+## Instances and commands
+
+Each named Tunnel is a saved instance in the Server's `rch.db` settings store,
+scoped to the selected Client. Create only saves the definition; Start, Stop,
+and Restart manage its TCP connections. Edit and Remove require the instance
+to be stopped. Saved instances persist across Server restarts, but the tunnel
+is not auto-started.
+
+Expose the RCH Server Web API on a public Bind Client:
 
 ```text
-tunnel start --name rch-web --listen-host 127.0.0.1 --listen-port 18085 --target-host 127.0.0.1 --target-port 8085 --channel-port 9444
-tunnel list
-tunnel status --name rch-web
-tunnel stop --name rch-web
+tunnel create --name rch-web --expose-on client --listen-host 127.0.0.1 --listen-port 18085 --target-host 127.0.0.1 --target-port 8085
+tunnel start --name rch-web
 ```
 
-`--listen-host` defaults to `127.0.0.1`, `--target-host` defaults to
-`127.0.0.1`, and `--channel-port` defaults to `9444`. `--name`,
-`--listen-port`, and `--target-port` are required for `start`. Separate service
-mappings may reuse the same channel port, but each must have a different
-Client-facing listen port. To stop every active mapping for the selected Client,
-use `tunnel stop --all`.
+Expose a private Client's web service on the RCH Server (the Client normally
+connects using Reverse):
 
-**Address perspectives:** `--listen-host` is an interface on the Client,
-`--target-host` is resolved by the Server. Setting `--listen-host 0.0.0.0`
-exposes the forwarded service to other hosts that can reach the Client. The
-Server must be able to connect to the Client's Tunnel channel port as well as
-to its existing Bind session port. The Client's Tunnel channel listener accepts
-connections on all interfaces; a per-Tunnel token authenticates its setup
-connections.
+```text
+tunnel create --name mac-web --expose-on server --listen-host 127.0.0.1 --listen-port 18086 --target-host 127.0.0.1 --target-port 3000
+tunnel start --name mac-web
+```
+
+Run `curl http://127.0.0.1:18086/` on the RCH Server to reach the Client's
+port `3000`. Setting `listen_host` to `0.0.0.0` makes the exposed port
+accessible from other machines that can reach that device.
+
+```text
+tunnel list
+tunnel status --name mac-web
+tunnel restart --name mac-web
+tunnel stop --name mac-web
+tunnel edit --name mac-web --target-port 3001
+tunnel remove --name mac-web
+```
+
+`tunnel start` may also accept a complete configuration to save and start
+an instance. `tunnel stop --all` stops all running mappings on the selected
+Client without deleting their definitions. CLI and Toolbox use the same
+instance lifecycle service.
+
+There is no extra Tunnel TCP listening port. Each independent Tunnel control
+connection and forwarded TCP data connection uses the **existing RCH TCP/TLS
+listener address and port**. An optional, detachable listener adapter is
+installed only while a Tunnel mapping is running. The main RCH session socket
+never carries Tunnel file or application bytes. Firewall and NAT rules that
+allow the original RCH connection generally allow the extra connections too;
+proxies that limit new connections can still prevent Tunnel operation.
 
 ## Using the RCH Server Web API
 
-Create the mapping above, then use the existing **Connect to Client** dialog to
-set **Server Web URL** to `http://127.0.0.1:18085` for that Client. Disconnect
-and reconnect the normal Bind session to apply it. The Client's existing HTTP
-API caller uses the newly announced URL for the next session. The Tunnel stays
-running during the Bind session reconnect, and all existing API routes, HTTP
-uploads/downloads and SDK operations continue through the unchanged Server Web
-application.
+Start `rch-web` as shown above and verify the Client can reach
+`http://127.0.0.1:18085`. To make the Client's own RCH HTTP API requests use
+the Tunnel, set **Connect to Client → Server Web URL** to that URL and
+reconnect the Bind Session. The existing Job, Script, Artifact, and Files
+HTTP calls continue through their unchanged Web API. A Bind Session disconnect
+does not automatically interrupt an already running Tunnel channel, but new
+Tunnel activation requires a connected RCH Client.
 
-The Server does not rewrite response links, Host headers, cookies or TLS
-certificates. A target web service that emits absolute addresses must be
-configured for the desired public origin if needed.
+## Transport and lifetime
 
-## Other services
+The normal RCH Control action starts or stops the optional Tunnel. The Tunnel
+establishes its own authenticated control TCP connection and an independent
+data TCP connection per accepted user TCP connection. `stream_id` pairs each
+connection, after which the same bidirectional byte bridge is used for both
+exposure directions. TCP half-close is propagated. No additional daemon or
+HTTP business routing is required.
 
-For a separate HTTP service bound on the Server at `127.0.0.1:3000`, start:
-
-```text
-tunnel start --name mini-web --listen-host 0.0.0.0 --listen-port 18086 --target-host 127.0.0.1 --target-port 3000 --channel-port 9444
-```
-
-A browser able to reach the Client can open `http://CLIENT_IP:18086`. Replace
-`CLIENT_IP` with the actual Client address. Raw TCP connections, including
-HTTP upgrades and binary streams, use one independent data connection per
-accepted incoming TCP connection. Multiple named mappings share a Tunnel control
-connection and channel port. Large transfers use streaming reads/writes rather
-than full-file buffers.
-
-## Runtime and lifetime
-
-The Tunnel modules are imported when first used. `tunnel start` creates Client
-TCP listeners and a Server-initiated control connection. Each incoming Client
-connection signals its mapping over the Tunnel control connection; the Server
-then opens an authenticated data connection back to the Client, connects to the
-configured target, and copies bytes in both directions. After all mappings are
-stopped, the Tunnel listeners and control/data sockets close. Restarting a
-Client or Server process also closes that process's Tunnel connections.
-
-The Tunnel belongs to the processes, not a particular RCH Session. Disconnecting
-and reconnecting the existing Bind session does not change or stop an active
-Tunnel. Mapping state is not persisted across process restarts. Reverse mode
-retains its existing direct HTTP configuration and does not use this module.
+The Tunnel belongs to the Client and Server processes, not a specific RCH
+Session. Each process exit closes its tunnel connections. The stored instance
+definitions remain available for manual reactivation. The data control
+connection is not automatically re-established after a network failure.
+The Tunnel channel uses a random token for setup authentication. When the
+existing RCH listener is TLS-enabled, independent Tunnel sockets use the same
+TLS listener and the Client verifies its configured certificate fingerprint.
+Plain TCP transports remain unencrypted. The Tunnel forwards TCP, not UDP, and
+does not rewrite HTTP Host, redirects or TLS
+certificate names.

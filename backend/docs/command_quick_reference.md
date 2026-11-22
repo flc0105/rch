@@ -37,7 +37,7 @@
 | `notify` | 执行一个 Client 命令，在完成时发送通知 | **不同于** `acmd notify` 的设备本地通知 |
 | `xt` | 查询、定位和调用 External Tool | 由 Server 的 External Tool 目录解析后在目标 Client 侧使用 |
 | `httpctl` | 通过 HTTP 控制通道管理当前 Agent | 含终止、重启、克隆等高影响操作，先确认目标 Client |
-| `tunnel` | 手动管理 Bind Client 的 TCP 端口转发 | `tunnel start`、`tunnel list`、`tunnel status`、`tunnel stop`；详见 `tunnel.md` |
+| `tunnel` | 手动管理 TCP 端口映射（Expose on Server / Client） | `tunnel start`、`tunnel list`、`tunnel status`、`tunnel stop`；详见 `tunnel.md` |
 
 ### 常用子命令
 

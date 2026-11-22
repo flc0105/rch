@@ -8,6 +8,7 @@ export const TOOLBAR_ACTION_CATALOG = [
   { id: 'screen-view', label: 'Screen View', icon: 'monitor-play' },
   { id: 'clipboard', label: 'Clipboard', icon: 'clipboard' },
   { id: 'external-tools', label: 'External Tools', icon: 'wrench' },
+  { id: 'tunnels', label: 'Tunnel', icon: 'network' },
   { id: 'log-viewer', label: 'Log Viewer', icon: 'scroll-text' },
   { id: 'jobs', label: 'Jobs', icon: 'calendar-clock' },
   { id: 'agents', label: 'Agents', icon: 'bot' },
@@ -42,6 +43,7 @@ export const DEFAULT_TOOLBAR_PREFERENCES = {
   ],
   more: [
     'external-tools',
+    'tunnels',
     'log-viewer',
     'jobs',
     'agents',

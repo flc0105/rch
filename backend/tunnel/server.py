@@ -1,194 +1,216 @@
-"""Server-side process-scoped forwarding peers; independent of RCH session lifetime."""
+"""Active Tunnel channel: independent outbound TCP sockets to the RCH listener.
+
+Which process owns this side depends only on which end actually dialled the
+successful RCH session, never on where the forwarded port is exposed.
+"""
 import secrets
 import socket
 import threading
 
-from tunnel.transport import bridge, close_socket, recv_frame, send_frame
+from tunnel.client import _Front
+from tunnel.ingress import send_hello
+from tunnel.transport import bridge, close_socket, listen, recv_frame, send_frame
 
 
-class ServerPeer:
-    def __init__(self, client_id, host, channel_port, token):
-        self.client_id = client_id
-        self.host = host
-        self.channel_port = channel_port
+class ActiveTunnel:
+    def __init__(self, token, dial, client_id):
+        if not isinstance(token, str) or len(token) != 64:
+            raise ValueError('Invalid Tunnel token')
         self.token = token
-        self.mappings = {}
+        self._dial = dial
+        self.client_id = client_id
         self._lock = threading.RLock()
         self._send_lock = threading.Lock()
         self._control = None
+        self._fronts = {}
+        self._targets = {}
+        self._waiting = {}
         self._streams = set()
         self._closed = False
         self.last_error = ''
-
-    def attach(self):
-        sock = socket.create_connection((self.host, self.channel_port), timeout=5)
-        try:
-            send_frame(sock, {'role': 'control', 'token': self.token})
-            reply = recv_frame(sock)
-            if reply.get('ok') is not True:
-                raise ConnectionError('Tunnel control registration refused')
-            sock.settimeout(None)
-            with self._lock:
-                if self._closed:
-                    raise ConnectionError('Tunnel stopped')
-                self._control = sock
-            threading.Thread(target=self._read_control, args=(sock,), daemon=True,
-                             name='TunnelServerControl').start()
-        except Exception:
-            close_socket(sock)
-            raise
 
     @property
     def connected(self):
         with self._lock:
             return self._control is not None and not self._closed
 
-    def _read_control(self, sock):
+    @property
+    def empty(self):
+        with self._lock:
+            return not self._fronts and not self._targets
+
+    def _connect(self, role, stream_id=None):
+        sock = self._dial()
+        try:
+            sock.settimeout(8)
+            send_hello(sock, client_id=self.client_id, role=role, token=self.token, stream_id=stream_id)
+            if recv_frame(sock).get('ok') is not True:
+                raise ConnectionError('Tunnel registration rejected')
+            sock.settimeout(None)
+            return sock
+        except Exception:
+            close_socket(sock)
+            raise
+
+    def attach(self):
+        sock = self._connect('control')
+        with self._lock:
+            if self._closed:
+                close_socket(sock)
+                raise ConnectionError('Tunnel stopped')
+            if self._control is not None:
+                close_socket(sock)
+                return
+            self._control = sock
+        threading.Thread(target=self._control_reader, args=(sock,), daemon=True,
+                         name='TunnelActiveControl').start()
+
+    def add(self, name, *, exposed, listen_host, listen_port, target_host, target_port):
+        with self._lock:
+            if self._closed or name in self._fronts or name in self._targets:
+                raise ValueError('Duplicate or closed Tunnel mapping')
+            if exposed:
+                front = _Front(name, listen(listen_host, listen_port))
+                self._fronts[name] = front
+                threading.Thread(target=self._accept_front, args=(front,), daemon=True,
+                                 name=f'TunnelActiveFront-{name}').start()
+            else:
+                self._targets[name] = (target_host, target_port)
+
+    def remove(self, name):
+        with self._lock:
+            front = self._fronts.pop(name, None)
+            if front is None and name not in self._targets:
+                raise ValueError('Unknown Tunnel mapping')
+            self._targets.pop(name, None)
+            if front is not None:
+                front.active = False
+                close_socket(front.listener)
+                for sock in tuple(front.streams):
+                    close_socket(sock)
+                for stream_id, (event, _slot, owner) in tuple(self._waiting.items()):
+                    if owner is front:
+                        self._waiting.pop(stream_id, None)
+                        event.set()
+
+    def _send(self, packet):
+        with self._lock:
+            sock = self._control
+        if sock is None:
+            raise ConnectionError('Tunnel control disconnected')
+        send_frame(sock, packet, self._send_lock)
+
+    def _control_reader(self, sock):
         try:
             while True:
-                message = recv_frame(sock)
-                if message.get('op') != 'open':
-                    raise ValueError('Unknown tunnel control message')
-                stream_id = message.get('id')
-                name = message.get('name')
-                with self._lock:
-                    target = self.mappings.get(name)
-                if (not isinstance(stream_id, str) or len(stream_id) != 32
-                        or target is None):
-                    self._reject(stream_id)
-                    continue
-                threading.Thread(target=self._open_stream, args=(stream_id, target[0]), daemon=True,
-                                 name='TunnelServerStream').start()
-        except (OSError, ConnectionError, ValueError) as exc:
-            with self._lock:
-                self.last_error = str(exc)
+                packet = recv_frame(sock)
+                op, stream_id = packet.get('op'), packet.get('id')
+                if op in ('ready', 'reject'):
+                    with self._lock:
+                        pending = self._waiting.get(stream_id)
+                    if pending:
+                        pending[1].append(op == 'ready')
+                        pending[0].set()
+                elif op == 'open':
+                    name = packet.get('name')
+                    if not isinstance(stream_id, str) or len(stream_id) != 32:
+                        raise ValueError('Invalid Tunnel stream ID')
+                    with self._lock:
+                        target = self._targets.get(name)
+                    if target is None:
+                        self._send({'op': 'reject', 'id': stream_id})
+                    else:
+                        threading.Thread(target=self._open_target, args=(stream_id, name, target),
+                                         daemon=True, name='TunnelActiveTarget').start()
+                else:
+                    raise ValueError('Unknown Tunnel control message')
+        except (OSError, ValueError, ConnectionError) as exc:
+            self.last_error = str(exc)
         finally:
             with self._lock:
                 if self._control is sock:
                     self._control = None
+                for event, _slot, _front in self._waiting.values():
+                    event.set()
             close_socket(sock)
 
-    def _reject(self, stream_id):
-        with self._lock:
-            sock = self._control
-        if sock is not None:
-            try:
-                send_frame(sock, {'op': 'reject', 'id': stream_id}, self._send_lock)
-            except OSError:
-                pass
-
-    def _open_stream(self, stream_id, target):
-        remote = data = None
+    def _open_target(self, stream_id, name, address):
+        target = data = None
         try:
-            remote = socket.create_connection(target, timeout=8)
-            data = socket.create_connection((self.host, self.channel_port), timeout=8)
-            send_frame(data, {'role': 'data', 'token': self.token, 'id': stream_id})
-            if recv_frame(data).get('ok') is not True:
-                raise ConnectionError('Tunnel data registration failed')
-            remote.settimeout(None)
-            data.settimeout(None)
+            target = socket.create_connection(address, timeout=8)
+            data = self._connect('data', stream_id)
             with self._lock:
-                if self._closed:
+                if self._closed or name not in self._targets:
                     return
-                self._streams.update((remote, data))
-            bridge(remote, data)
+                self._streams.update((target, data))
+            target.settimeout(None)
+            bridge(target, data)
         except (OSError, ValueError, ConnectionError) as exc:
-            with self._lock:
-                self.last_error = str(exc)
-            self._reject(stream_id)
+            self.last_error = str(exc)
+            try:
+                self._send({'op': 'reject', 'id': stream_id})
+            except (OSError, ConnectionError):
+                pass
         finally:
             with self._lock:
-                self._streams.discard(remote)
+                self._streams.discard(target)
                 self._streams.discard(data)
-            close_socket(remote)
+            close_socket(target)
             close_socket(data)
+
+    def _accept_front(self, front):
+        while front.active:
+            try:
+                sock, _ = front.listener.accept()
+            except socket.timeout:
+                continue
+            except OSError:
+                break
+            threading.Thread(target=self._handle_front, args=(front, sock), daemon=True,
+                             name='TunnelActiveStream').start()
+
+    def _handle_front(self, front, sock):
+        stream_id = secrets.token_hex(16)
+        event, ready = threading.Event(), []
+        data = None
+        with self._lock:
+            if (not front.active or self._control is None or len(self._waiting) >= 128
+                    or len(front.streams) >= 256):
+                close_socket(sock)
+                return
+            front.streams.add(sock)
+            self._waiting[stream_id] = (event, ready, front)
+        try:
+            self._send({'op': 'open', 'id': stream_id, 'name': front.name})
+            if not event.wait(10) or not ready or not ready[0]:
+                return
+            data = self._connect('data', stream_id)
+            with self._lock:
+                if not front.active:
+                    return
+                front.streams.add(data)
+            bridge(sock, data)
+        except (OSError, ValueError, ConnectionError) as exc:
+            self.last_error = str(exc)
+        finally:
+            with self._lock:
+                self._waiting.pop(stream_id, None)
+                front.streams.discard(sock)
+                if data is not None:
+                    front.streams.discard(data)
+            close_socket(sock)
+            close_socket(data)
+
+    def stream_count(self):
+        with self._lock:
+            return (sum(len(front.streams) for front in self._fronts.values()) + len(self._streams)) // 2
 
     def close(self):
         with self._lock:
             self._closed = True
-            sock, self._control = self._control, None
-            connections = tuple(self._streams)
-            self.mappings.clear()
-        close_socket(sock)
-        for stream in connections:
-            close_socket(stream)
-
-    def snapshot(self):
-        with self._lock:
-            return {
-                'client_id': self.client_id,
-                'host': self.host,
-                'channel_port': self.channel_port,
-                'connected': self._control is not None and not self._closed,
-                'streams': len(self._streams) // 2,
-                'last_error': self.last_error,
-                'mappings': [dict(name=name, target_host=target[0], target_port=target[1],
-                                  **frontend) for name, (target, frontend) in self.mappings.items()],
-            }
-
-
-class ServerTunnels:
-    def __init__(self):
-        self._lock = threading.RLock()
-        self._peers = {}
-
-    def prepare(self, client_id, host, channel_port, name):
-        with self._lock:
-            peer = self._peers.get(client_id)
-            if peer is not None:
-                if not peer.connected or peer.host != host or peer.channel_port != channel_port:
-                    raise ValueError('Tunnel peer unavailable or configured differently; stop existing mappings first')
-                if name in peer.mappings:
-                    raise ValueError(f'Tunnel mapping already exists: {name}')
-                return peer, False
-            peer = ServerPeer(client_id, host, channel_port, secrets.token_hex(32))
-            self._peers[client_id] = peer
-            return peer, True
-
-    def ready(self, client_id, peer, name, target_host, target_port, listen_host, listen_port, *, first):
-        try:
-            if first:
-                peer.attach()
-            with peer._lock:
-                if not peer.connected:
-                    raise ConnectionError('Tunnel control channel closed')
-                peer.mappings[name] = ((target_host, target_port), {
-                    'listen_host': listen_host, 'listen_port': listen_port,
-                })
-        except Exception:
-            self.discard_if_empty(client_id, peer)
-            raise
-
-    def discard_if_empty(self, client_id, peer):
-        with self._lock:
-            if self._peers.get(client_id) is peer and not peer.mappings:
-                del self._peers[client_id]
-                peer.close()
-
-    def stopped(self, client_id, name):
-        with self._lock:
-            peer = self._peers.get(client_id)
-            if peer is None or name not in peer.mappings:
-                raise ValueError(f'No tunnel mapping named {name}')
-            del peer.mappings[name]
-            self.discard_if_empty(client_id, peer)
-
-    def peer(self, client_id):
-        with self._lock:
-            return self._peers.get(client_id)
-
-    def list(self, client_id):
-        peer = self.peer(client_id)
-        return peer.snapshot() if peer is not None else {
-            'client_id': client_id, 'connected': False, 'streams': 0, 'mappings': [],
-        }
-
-
-_manager_lock = threading.Lock()
-
-def manager_for(server):
-    """Lazy server-owned instance: no dedicated process or background task until start."""
-    with _manager_lock:
-        if not hasattr(server, '_tcp_tunnels'):
-            server._tcp_tunnels = ServerTunnels()
-        return server._tcp_tunnels
+            for name in (*tuple(self._fronts), *tuple(self._targets)):
+                self.remove(name)
+            control, self._control = self._control, None
+            for sock in tuple(self._streams):
+                close_socket(sock)
+        close_socket(control)

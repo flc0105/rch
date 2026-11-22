@@ -287,24 +287,26 @@ Control 的 Domain、Action 和调度策略采用统一的协议定义。Client 
 
 Control Action 目录的 `ActivityPolicy` 与 `ExecutionPolicy` 独立。最终 `Result(event_type=completed)` 的 `status` 决定 Activity 终态；`progress/chunk` 不会因其文字或中间整数状态被当作最终失败。Remote Files 批量执行任一项失败时 `completed.status` 为 `partial`（已有项目成功）或 `error`（无项目成功），成功时为 `success`；复制/移动结果才保留 Web 实际读取的 `succeeded/failed`；删除只返回完整可见 `message`，不重复上传 `total/skipped/errors` 统计字段。
 
-## Optional Bind TCP forwarding
+## Optional TCP forwarding
 
-A Python Bind Client can expose one or more locally listening TCP ports that forward
-bytes to services reachable from the RCH Server machine. Forwarding is started
-manually with the Server builtin `tunnel` command; it is not enabled during the
-Client handshake. The existing RCH Socket carries only the initial Tunnel
-Control request (`start` or `stop`). After setup, the Tunnel runs on separate
-Server-initiated TCP control/data connections and does not share the RCH JSON
-frame transport. A normal Bind session disconnect/reconnect leaves active Tunnel
-mappings in their respective Client/Server processes; `tunnel stop` closes them.
+The optional TCP Tunnel maps a listening port on one RCH device to a TCP
+service accessible from the other device. Each instance selects `expose_on`
+as `client` or `server` independently of the main RCH Bind/Reverse connection
+mode. A standard Tunnel Control request starts or stops the mapping; actual
+byte traffic is carried by separate TCP control/data connections, not the RCH
+JSON frame transport.
 
-The Tunnel is a byte-stream mapping, so Server-local HTTP APIs, arbitrary TCP
-services, WebSocket upgrades, HTTP streaming and file transfers require no
-special API handlers. A short-lived per-Tunnel random token authorizes control
-and data connection registration. The token is sent once over the existing RCH
-Control link, then checked on each new Tunnel ingress connection.
+The `expose_on` setting selects only the local listening socket. Extra Tunnel
+TCP connections are dialled in the same direction as the already established
+RCH session and reach the same TCP/TLS listener address and port, regardless of
+where a mapping listens. A removable listener handler is registered on demand
+and de-registered after the last mapping stops. No Tunnel parsing or bridging
+runs in the normal RCH handshake while Tunnel is idle. A separately authenticated
+TCP data connection is paired with each accepted forwarded TCP stream by
+`stream_id`. Tunnel bytes never enter the established RCH session socket.
 
-The Client must be reachable from the Server at both its normal Bind port and
-the configured Tunnel channel port. Each published service needs an additional
-Client listener port. Source code and port usage are documented in
-[tunnel.md](tunnel.md).
+Tunnel managers are process-scoped: disconnecting and reconnecting an RCH
+session leaves existing Tunnel connections intact. Saved instances retain
+configuration in the Server database and can be restarted manually. Token
+registration, network reachability and operating instructions
+are documented in [tunnel.md](tunnel.md).

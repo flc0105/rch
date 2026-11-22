@@ -155,6 +155,10 @@ class ListenerManager:
             self._running.clear()
             self._started = False
 
+    def running_listener(self, listener_id):
+        with self._lock:
+            return self._running.get(listener_id)
+
     def get(self, listener_id):
         with self._lock:
             for item in self._configs:

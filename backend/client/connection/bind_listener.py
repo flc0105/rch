@@ -9,6 +9,12 @@ import threading
 
 from core.utils.logger import logger
 
+_active_listener = None
+
+
+def current_bind_listener():
+    return _active_listener
+
 
 class BindListener:
     def __init__(self, config):
@@ -28,6 +34,7 @@ class BindListener:
         self._socket = None
         self._thread = None
         self._stop = threading.Event()
+        self._tunnel_handler = None
 
     def start(self):
         with self._lock:
@@ -44,6 +51,8 @@ class BindListener:
             except Exception:
                 sock.close()
                 raise
+            global _active_listener
+            _active_listener = self
             self._socket = sock
             self._thread = threading.Thread(target=self._accept_loop, args=(sock,), daemon=True,
                                             name='RCHBindTcpListener')
@@ -60,14 +69,27 @@ class BindListener:
                 if not self._stop.is_set():
                     logger.exception('Bind TCP listener stopped unexpectedly')
                 break
-            with self._lock:
-                allowed = (self._accepting and not self._occupied
-                           and not self._stop.is_set())
-                if allowed:
-                    self._occupied = True
-                    self._pending.put_nowait(conn)
-            if not allowed:
-                conn.close()
+            handler = self._tunnel_handler
+            if handler is not None:
+                handler.dispatch_bind(self, conn)
+                continue
+            self._offer_session(conn)
+
+    def _offer_session(self, conn):
+        with self._lock:
+            allowed = (self._accepting and not self._occupied
+                       and not self._stop.is_set())
+            if allowed:
+                self._occupied = True
+                self._pending.put_nowait(conn)
+        if not allowed:
+            conn.close()
+
+    def set_tunnel_handler(self, handler):
+        """No Tunnel handler or socket classification before first mapping starts."""
+        if self._socket is not None:
+            self._socket.listen(64 if handler is not None else 1)
+        self._tunnel_handler = handler
 
     def accept(self):
         while not self._stop.is_set():
@@ -103,6 +125,10 @@ class BindListener:
             self._occupied = False
 
     def close(self):
+        global _active_listener
+        if _active_listener is self:
+            _active_listener = None
+        self._tunnel_handler = None
         self._stop.set()
         self.set_accepting(False)
         with self._lock:

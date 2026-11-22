@@ -24,8 +24,13 @@ class ServerListener(SessionAcceptor):
         self.address = (self.config['host'], int(self.config['port']))
         self.socket = RCHSocket()
         self.ssl_context = ssl_context
+        self._tunnel_handler = None
         self._stop_event = threading.Event()
         self._thread = None
+
+    def set_tunnel_handler(self, handler):
+        """Opt-in accept hook. None restores the original handshake verbatim."""
+        self._tunnel_handler = handler
 
     def stop(self):
         """Stop accepting new sessions; existing sessions remain active."""
@@ -65,6 +70,10 @@ class ServerListener(SessionAcceptor):
                 logger.warning('TLS handshake failed on %s from %s: %s', self.listener_id, addr, exc)
                 raw_sock.close()
                 return None
+        handler = self._tunnel_handler
+        if handler is not None:
+            handler.dispatch_server(self, raw_sock, addr)
+            return None
         return self.accept_session(raw_sock, addr, listener_id=self.listener_id,
                                    listener_name=self.name, listener_port=self.address[1],
                                    protocol=self.protocol)
