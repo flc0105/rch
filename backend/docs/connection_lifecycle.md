@@ -16,7 +16,7 @@ Client 的 Server Web API 统一由 `client/http/client_api.py` 提供方法，`
 
 源码 Client 默认 `connection_mode=reverse`；构建后的 Bundle 无参数启动使用构建时选定的 Reverse 或 Bind 默认配置。也可在启动时使用 `--connection-mode bind` / `--connection-mode reverse` 覆盖默认模式，或用 `--profile bind` 选择源码 Profile。Bind 模式：Client 在配置的 `bind_host:bind_port` 监听，Server 从设备栏 **More → Connect to Client** 填写目标地址和端口主动连接。默认 profile 监听 `0.0.0.0:9443`，本轮使用普通 TCP。
 
-TCP 接通后由 Client 发出第一条 `info`，复用原 RCH 帧、会话、心跳、命令、PTY 和 Transfer 控制。Client 监听 Socket 属于进程；每次接入 Socket 属于一个会话。单实例同时保留一条会话，断线后释放占用并继续监听，Server 通过设备栏再次连接即可使用同一个 Client PID 和 ID。Server 主动断开后立即再次连接同一目标时，会短暂重试以等待旧会话释放。设备菜单和 Terminal Toolbar 的 **Disconnect** 使用同一连接管理 API；Server 根据当前活动 Session 选择处理方式：Bind 关闭会话并保留监听进程，Reverse 沿用原有的 Session 结束控制。`pause_connection` 暂停接入，本地 Resume 恢复监听。
+TCP 接通后由 Client 发出第一条 `info`，复用原 RCH 帧、会话、心跳、命令、PTY 和 Transfer 控制。Client 监听 Socket 属于进程；每次接入 Socket 属于一个会话。单实例同时保留一条会话，断线后释放占用并继续监听，Server 通过设备栏再次连接即可使用同一个 Client PID 和 ID。Server 主动断开前为当前 Session 记录 `server_requested_disconnect`，随后关闭会话 Socket；Connection History 将本次主动断开归类为 Server requested disconnect。Server 主动断开后立即再次连接同一目标时，会短暂重试以等待旧会话释放。设备菜单和 Terminal Toolbar 的 **Disconnect** 使用同一连接管理 API；Server 根据当前活动 Session 选择处理方式：Bind 关闭会话并保留监听进程，Reverse 沿用原有的 Session 结束控制。`pause_connection` 暂停接入，本地 Resume 恢复监听。
 
 固定监听端口的更新、克隆和重启实例命令暂时采用手工交接，防止新旧进程同时监听同一地址。部署与操作见 [Server Runtime — Bind TCP](server_runtime.md#bind-tcp-主动连接)。
 
@@ -187,9 +187,11 @@ RCH 将当前 Session、最近设备和历史会话分别管理：
 - **最近设备** 保留 `machine_id` 关联的机器快照、别名等信息。没有活动 Session 的设备仍可以作为 Offline 条目出现在设备列表；有当前会话的机器不会再额外叠加同一机器的离线快照。
 - **连接历史** 持久化在 `runtime/rch.db` 的 `connection_sessions` 中，记录各 `machine_id` / `client_id` 会话的连接、断开、最后响应时间和持续时间，并可关联对应的 Activity 数量与执行摘要。
 
+设备栏 More 提供 **Show/Hide hidden devices** 与 **Show/Hide offline devices** 两项独立筛选。离线设备默认显示；隐藏离线设备只影响当前浏览器设备列表，不删除历史和最近设备记录。Stale 会话仍保留在列表中。
+
 Connection History 首次只加载 **20 条**连接会话，点击底部 **Load More** 再向 Server 请求下一页 20 条；Server 使用 SQLite `LIMIT 21 OFFSET` 仅读取本页记录并多取 1 条判断是否有下一页，不提前拉取未加载会话的快照。页首总数与时长使用 SQL 聚合保留统计，不读取全部历史行后在内存切片。每条会话展开后的 Activity **每页最多 10 条**，继续点击 Load More 获取后续 10 条。
 
-Connection History 在桌面端以表格展示会话，手机端改为卡片。卡片保留在线/离线状态、Client ID、上线/离线时间、持续时间和 Activity 数量；在线记录的 Offline 时间显示为 `-`。展开 Details 可查看地址、系统名称与版本、Listener 名称、用户、Integrity、进程、启动模式、结束原因及 Activity 记录，并可继续加载后续 Activity。两种布局使用同一会话数据和活动查询。展开详情按需加载 Activity；历史顶部 Refresh 会重新读取会话并保留已展开的 Activity。顶部 Client ID 搜索与 Integrity、Launch Mode、Termination 三种 Filter 共同在 Server 的 SQLite 查询中匹配完整历史，再按每页 20 条分页；Load More 仅在当前查询确实还有匹配记录时显示。筛选选项从该设备完整历史中生成，不受已加载页限制。Launch Mode 只比较类型，不比较 `launch_source`（如 PyCharm）；Termination 只列出并筛选实际存在的有效、非空结束原因，不把在线连接的空原因或非法 `unknown` 当作一种结束原因，也不比较 `termination_detail`。顶部统计始终是整台设备的统计，不受搜索和筛选影响。HTTP Control 入队成功时立即显示操作反馈；交付超时、失败以及可选的领取调试信息通过 Notification Center 的 WebSocket 事件显示通知弹窗，统一受 Notification Preferences 的 Watchdog 开关控制。
+Connection History 在桌面端以表格展示会话，手机端改为卡片。卡片保留在线/离线状态、Client ID、上线/离线时间、持续时间和 Activity 数量；在线记录的 Offline 时间显示为 `-`。展开 Details 可查看地址、系统名称与版本、Listener 名称、Connection Direction、用户、Integrity、进程、启动模式、结束原因及 Activity 记录，并可继续加载后续 Activity。两种布局使用同一会话数据和活动查询。展开详情按需加载 Activity；历史顶部 Refresh 会重新读取会话并保留已展开的 Activity。顶部 Client ID 搜索与 Integrity、Launch Mode、Termination 三种 Filter 共同在 Server 的 SQLite 查询中匹配完整历史，再按每页 20 条分页；Load More 仅在当前查询确实还有匹配记录时显示。筛选选项从该设备完整历史中生成，不受已加载页限制。Launch Mode 只比较类型，不比较 `launch_source`（如 PyCharm）；Termination 只列出并筛选实际存在的有效、非空结束原因，不把在线连接的空原因或非法 `unknown` 当作一种结束原因，也不比较 `termination_detail`。顶部统计始终是整台设备的统计，不受搜索和筛选影响。HTTP Control 入队成功时立即显示操作反馈；交付超时、失败以及可选的领取调试信息通过 Notification Center 的 WebSocket 事件显示通知弹窗，统一受 Notification Preferences 的 Watchdog 开关控制。
 
 ### Connection History 的结束原因
 

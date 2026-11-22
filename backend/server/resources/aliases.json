@@ -78,7 +78,8 @@
     "clean_sidecars": "find . -name \"._*\" -type f -delete && find . -name \".DS_Store\" -type f -delete",
     "current_launchd": "launchctl list | awk -v p=\"$PPID\" '$1==p{print $3}'",
     "count_in": "grep -RoiFI \"<keyword>\" \"<path>\" | wc -l",
-    "allow_exec": "chmod u+x <path> && xattr -d com.apple.quarantine <path>"
+    "allow_exec": "chmod u+x <path> && xattr -d com.apple.quarantine <path>",
+    "api_url": "pyexec from client.http.client_api import ClientApiClient; print(ClientApiClient().base_url)"
   },
   "linux": {},
   "ios": {}

@@ -53,7 +53,8 @@ class BindConnector:
                     session = self._acceptor.accept_session(
                         sock, sock.getpeername(), protocol='bind_tcp',
                         strict_registration=True, raise_on_error=True,
-                        initialize_session=lambda session: setattr(session, 'server_web_base_url', announced_url),
+                        initialize_session=lambda session: (setattr(session, 'server_web_base_url', announced_url),
+                                                            setattr(session, 'bind_dial_endpoint', (host, port))),
                     )
                     with self._lock:
                         self._sessions[endpoint] = session
@@ -84,6 +85,9 @@ class BindConnector:
             for endpoint in removed:
                 del self._sessions[endpoint]
                 self._reconnect_until[endpoint] = time.monotonic() + 2.0
+        # Record an intentional Server disconnect before shutting down the
+        # socket: SessionAcceptor observes the close on another thread.
+        session.note_server_disconnect('disconnect')
         # Close the session socket, not the listener or Client process.
         try:
             session.transport.socket.shutdown(socket.SHUT_RDWR)

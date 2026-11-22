@@ -51,4 +51,10 @@ def build_control_dispatcher(runtime):
                                              ExternalToolAction.INSTALL_PACKAGE: 'cooperative',
                                              ExternalToolAction.RUN_ONESHOT: 'cooperative',
                                              ExternalToolAction.EXEC: 'cooperative'})
+    # The tunnel action is a lazy plugin boundary; ordinary Client startup
+    # never imports the forwarding engine or opens another socket.
+    def tunnel_control(scope, action, payload):
+        from tunnel.client import execute
+        return execute(scope, action, payload)
+    register_control_domain(dispatcher, ControlDomain.TUNNEL, tunnel_control)
     return dispatcher

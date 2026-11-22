@@ -1,4 +1,4 @@
-import { formatConnectionDateTime, formatConnectionLastSeen, formatConnectionRtt, formatConnectionStatus } from '../utils/connectionInfoFormatting.js'
+import { formatConnectionDateTime, formatConnectionDirection, formatConnectionLastSeen, formatConnectionRtt, formatConnectionStatus } from '../utils/connectionInfoFormatting.js'
 import { formatLaunchMode } from '../utils/formatters.js'
 
 export const CONNECTION_CONTEXT_FIELD_CATALOG = Object.freeze([
@@ -76,7 +76,7 @@ export function resolveConnectionContextValue(fieldId, connection, nowTick = Dat
   const rawValues = {
     hostname: conn.hostname,
     address: conn.addr,
-    connection_direction: conn.connection_direction === 'bind' ? 'Bind' : 'Reverse',
+    connection_direction: formatConnectionDirection(conn.connection_direction),
     client_id: conn.client_id,
     os_type: conn.os_type,
     platform: conn.os_full,

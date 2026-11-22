@@ -46,3 +46,9 @@ export function formatConnectionRtt(conn) {
   if (value === null || value === undefined || value === '') return '-'
   return `${value} ms`
 }
+
+export function formatConnectionDirection(value) {
+  if (value === 'bind') return 'Bind'
+  if (value === 'reverse') return 'Reverse'
+  return '-'
+}

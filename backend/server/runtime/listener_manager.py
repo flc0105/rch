@@ -171,7 +171,15 @@ class ListenerManager:
             for item in self._configs:
                 protocol = get_listener_protocol(item['protocol'])
                 metadata = protocol.describe()
+                try:
+                    fingerprint = protocol.certificate_fingerprint(item['id'], self.cert_dir)
+                    fingerprint_error = ''
+                except Exception as exc:
+                    fingerprint = ''
+                    fingerprint_error = str(exc)
                 rows.append({**item,
+                             'tls_fingerprint': fingerprint,
+                             'fingerprint_error': fingerprint_error,
                              'status': 'listening' if item['id'] in self._running else ('error' if item['id'] in self._errors else 'stopped'),
                              'last_error': self._errors.get(item['id'], ''),
                              'connections': counts.get(item['id'], 0),

@@ -88,9 +88,12 @@ class _Session:
         self.transport = transport
         self.session_info = SimpleNamespace(client_id=info['id'])
         self.address = transport.address
-        self.context = SimpleNamespace(transport_failure=None, client_session_token_service=None)
+        self.context = SimpleNamespace(transport_failure=None, client_session_token_service=None, server_disconnect_request=None)
         self.runtime = SimpleNamespace(pending_results=SimpleNamespace(close=lambda: None))
         self.received = []
+
+    def note_server_disconnect(self, command=''):
+        self.context.server_disconnect_request = {'at': time.monotonic(), 'command': command}
 
     def recv_message(self):
         self.received.append(self.transport.recv())
@@ -154,6 +157,7 @@ def test_bind_outbound_dial_uses_existing_info_registration_and_can_reconnect(bi
         assert connector.connect('127.0.0.1', port) is session
         client_id = session.session_info.client_id
         assert connector.disconnect(client_id) == client_id
+        assert session.context.server_disconnect_request['command'] == 'disconnect'
         assert _wait_for(lambda: session not in server.connections)
         listener.release_session()
         accepted[0].close()

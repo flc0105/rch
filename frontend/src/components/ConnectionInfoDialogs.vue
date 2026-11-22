@@ -555,7 +555,7 @@
 <script>
 import { getBackgroundJobs } from '../api/backgroundJobsApi.js'
 import { formatBytesHuman, formatDateTimeStandard as formatDateTimeStandardValue, formatLaunchMode } from '../utils/formatters.js'
-import { formatConnectionLastSeen as formatConnectionLastSeenValue, formatConnectionRtt as formatConnectionRttValue, formatConnectionStatus as formatConnectionStatusValue, getConnectionDisplayState as getConnectionDisplayStateValue } from '../utils/connectionInfoFormatting.js'
+import { formatConnectionDirection, formatConnectionLastSeen as formatConnectionLastSeenValue, formatConnectionRtt as formatConnectionRttValue, formatConnectionStatus as formatConnectionStatusValue, getConnectionDisplayState as getConnectionDisplayStateValue } from '../utils/connectionInfoFormatting.js'
 import { ElMessage } from 'element-plus'
 import WatchdogInfoPanel from './WatchdogInfoPanel.vue'
 import IosDashboardPanel from './IosDashboardPanel.vue'
@@ -658,7 +658,7 @@ export default {
         { label: 'Task', value: this.foregroundTask?.state || 'Idle' },
         { label: 'Hostname', value: conn.hostname || '-' },
         { label: 'Address', value: conn.addr || '-', mono: true },
-        { label: 'Connection Direction', value: conn.connection_direction === 'bind' ? 'Bind' : 'Reverse' },
+        { label: 'Connection Direction', value: this.formatConnectionDirection(conn.connection_direction) },
         { label: 'Client ID', value: conn.client_id || '-', mono: true },
         { label: 'OS Type', value: conn.os_type },
         { label: 'Platform', value: conn.os_full || '-' },
@@ -841,6 +841,7 @@ export default {
   },
 
   methods: {
+    formatConnectionDirection,
     // Close the Dashboard overlay before opening Process Manager: the two modal
     // layers must never compete for focus or cover the target dialog.
     openProcessesFromDashboard(sortBy) {

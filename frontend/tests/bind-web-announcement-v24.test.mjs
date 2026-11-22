@@ -49,8 +49,8 @@ test('Bind Agent Builder hides Web inputs, Reverse keeps them', () => {
 
 test('Connection Direction is available in Base Info and selectable Connection Context', () => {
   assert.match(card, /Connection Direction/)
-  assert.match(card, /connection\.connection_direction === 'bind'/)
+  assert.match(card, /formatConnectionDirection\(connection\.connection_direction\)/)
   assert.match(info, /label: 'Connection Direction'/)
   assert.match(catalogue, /id: 'connection_direction', label: 'Connection Direction'/)
-  assert.match(catalogue, /connection_direction: conn\.connection_direction === 'bind'/)
+  assert.match(catalogue, /connection_direction: formatConnectionDirection\(conn\.connection_direction\)/)
 })

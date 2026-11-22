@@ -4,6 +4,16 @@ Server Alias 把一个名称映射为可展开的命令模板，并依目标 Cli
 
 Quick Actions 基于同一份 Alias 定义提供可编辑的 Web 动作、参数输入和工具栏入口；它不保存第二套执行模板。终端调用与 Web 任务提交可能经过不同的重新解析路径，因此应先理解 Alias 在服务端的查找及展开语义，再使用 Quick Actions 的结果弹窗和终端模式。
 
+## 查询 Client 当前 Server Web API 地址
+
+在 RCH Terminal 选中已上线的 Python Client，运行：
+
+```text
+pyexec from client.http.client_api import ClientApiClient; print(ClientApiClient().base_url)
+```
+
+该值是本次请求实际使用的 Server Web API origin：Reverse 从 Profile 读取，Bind 从已接收的会话公告读取。需要快捷调用时，可用现有 `alias set` 将这一条命令保存为自定义 Alias，无需新增 Client 命令或 Web 管理接口。
+
 ## 名称解析在命令链中的位置
 
 Server 启动时建立 AliasManager，读取持久化的 Alias 定义。正常终端命令进入 Server 后，先识别 **Server Built-in**（例如 Alias 管理入口本身）；没有命中时，CommandPlanner 优先识别输入是否以 `acmd` 开头，再尝试将第一个命令词作为 Alias 名称解析；如果也没有命中，就按原始普通命令向 Client 下发。名称命中但参数错误时会返回错误，而不是静默退回 Shell。

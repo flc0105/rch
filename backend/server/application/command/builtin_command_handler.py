@@ -251,5 +251,11 @@ class BuiltinCommandHandler:
         for item in self.rtt_support.rtt(invocation):
             yield item
 
+    def tunnel(self, invocation):
+        from server.application.command.tunnel_builtin_support import TunnelBuiltinSupport
+        yield TunnelBuiltinSupport(
+            self.server, self.conn, self.remote_execution_service,
+            self.history_entry_id_provider).execute(invocation)
+
     def httpctl(self, invocation):
         yield from self.control_support.httpctl(invocation)

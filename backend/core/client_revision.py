@@ -6,6 +6,7 @@ from core.agent_build_contract import AGENT_FILENAME_STEM, AgentBuilderKind, age
 CLIENT_BUNDLE_SOURCE_PATHS = (
     'client',
     'core',
+    'tunnel',
     'rchclient.py',
 )
 CLIENT_REVISION_EXCLUDE_PATHS = {

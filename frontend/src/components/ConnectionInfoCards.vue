@@ -19,7 +19,7 @@
 
     <div class="info-card">
       <div class="info-label">Connection Direction</div>
-      <div class="info-value">{{ connection.connection_direction === 'bind' ? 'Bind' : 'Reverse' }}</div>
+      <div class="info-value">{{ formatConnectionDirection(connection.connection_direction) }}</div>
     </div>
 
     <div class="info-card">
@@ -50,7 +50,7 @@
 </template>
 
 <script>
-import { formatConnectionRtt as formatConnectionRttValue, formatConnectionStatus as formatConnectionStatusValue, getConnectionDisplayState as getConnectionDisplayStateValue } from '../utils/connectionInfoFormatting.js'
+import { formatConnectionDirection, formatConnectionRtt as formatConnectionRttValue, formatConnectionStatus as formatConnectionStatusValue, getConnectionDisplayState as getConnectionDisplayStateValue } from '../utils/connectionInfoFormatting.js'
 
 export default {
   name: 'ConnectionInfoCards',
@@ -68,6 +68,7 @@ export default {
   },
 
   methods: {
+    formatConnectionDirection,
     // Keep the connection card and Terminal Context on the same status rules.
     getConnectionDisplayState(conn) {
       return getConnectionDisplayStateValue(conn, this.statusNowTick)

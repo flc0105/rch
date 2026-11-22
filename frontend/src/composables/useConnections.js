@@ -23,6 +23,7 @@ export default {
             connections: [],
             selectedId: '',
             showHiddenDevices: false,
+            showOfflineDevices: true,
             deviceGroups: [],
             machineGroupAssignments: {},
             selectedDeviceGroupId: '',
@@ -477,6 +478,11 @@ export default {
 
         toggleShowHiddenDevices() {
             this.showHiddenDevices = !this.showHiddenDevices
+            this.ensureSelectedConnectionVisible()
+        },
+
+        toggleShowOfflineDevices() {
+            this.showOfflineDevices = !this.showOfflineDevices
             this.ensureSelectedConnectionVisible()
         },
 
@@ -1141,9 +1147,10 @@ export default {
         deviceSidebarConnections() {
             const decorated = (this.connections || []).map(item => this.decorateConnectionForDeviceView(item))
             const grouped = decorated.filter(item => this.isConnectionInSelectedDeviceGroup(item))
-            const visible = this.showHiddenDevices
-                ? grouped
-                : grouped.filter(item => !item.device_hidden)
+            const visible = grouped.filter(item =>
+                (this.showHiddenDevices || !item.device_hidden)
+                && (this.showOfflineDevices || this.getConnectionDisplayState(item) !== 'offline')
+            )
             return visible.slice().sort(this.compareSidebarConnectionOrder)
         },
 

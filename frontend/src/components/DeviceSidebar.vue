@@ -84,6 +84,9 @@
             <el-dropdown-item command="toggle-hidden">
               {{ showHiddenDevices ? 'Hide hidden devices' : 'Show hidden devices' }}
             </el-dropdown-item>
+            <el-dropdown-item command="toggle-offline">
+              {{ showOfflineDevices ? 'Hide offline devices' : 'Show offline devices' }}
+            </el-dropdown-item>
 
             <el-dropdown-item divided command="manage-groups">
               Manage groups
@@ -353,6 +356,10 @@ export default {
       type: Boolean,
       default: false,
     },
+    showOfflineDevices: {
+      type: Boolean,
+      default: true,
+    },
 
     getTabScopedHeaders: {
       type: Function,
@@ -365,6 +372,7 @@ export default {
     'connect-to-client',
     'select',
     'toggle-hidden-devices',
+    'toggle-offline-devices',
     'toggle-client-hidden',
     'toggle-machine-hidden',
     'group-filter-change',
@@ -474,6 +482,11 @@ computed: {
 
       if (command === 'toggle-hidden') {
         this.$emit('toggle-hidden-devices')
+        return
+      }
+
+      if (command === 'toggle-offline') {
+        this.$emit('toggle-offline-devices')
         return
       }
 

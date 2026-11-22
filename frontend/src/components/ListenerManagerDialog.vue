@@ -15,6 +15,16 @@
             <el-table-column label="Bind" min-width="165" show-overflow-tooltip>
               <template #default="{ row }"><span class="listener-bind">{{ row.host || '0.0.0.0' }}:{{ row.port }}</span></template>
             </el-table-column>
+            <el-table-column label="TLS Fingerprint" min-width="240">
+              <template #default="{ row }">
+                <div v-if="row.tls_fingerprint" class="listener-fingerprint">
+                  <code class="listener-fingerprint-value" :title="row.tls_fingerprint">{{ row.tls_fingerprint }}</code>
+                  <el-button size="small" text @click="copyFingerprint(row.tls_fingerprint)">Copy</el-button>
+                </div>
+                <span v-else-if="row.fingerprint_error" :title="row.fingerprint_error">Unavailable</span>
+                <span v-else>—</span>
+              </template>
+            </el-table-column>
             <el-table-column label="Status" width="120">
               <template #default="{ row }"><el-tag :type="row.status === 'listening' ? 'success' : (row.status === 'error' ? 'danger' : 'info')" size="small" :title="row.last_error || ''">{{ row.status }}</el-tag></template>
             </el-table-column>
@@ -37,6 +47,12 @@
               <el-tag :type="row.status === 'listening' ? 'success' : (row.status === 'error' ? 'danger' : 'info')" size="small" :title="row.last_error || ''">{{ row.status }}</el-tag>
             </div>
             <div class="listener-manager-mobile-meta">{{ row.protocol_label }} · {{ row.host || '0.0.0.0' }}:{{ row.port }} · {{ row.connections }} devices</div>
+            <div v-if="row.tls_fingerprint" class="listener-fingerprint listener-fingerprint-mobile">
+              <span>TLS Fingerprint</span>
+              <code class="listener-fingerprint-value" :title="row.tls_fingerprint">{{ row.tls_fingerprint }}</code>
+              <el-button size="small" text @click="copyFingerprint(row.tls_fingerprint)">Copy</el-button>
+            </div>
+            <div v-else-if="row.fingerprint_error" class="listener-manager-mobile-meta" :title="row.fingerprint_error">TLS Fingerprint unavailable</div>
             <div class="listener-actions">
               <el-button size="small" plain @click="toggle(row)">{{ row.status === 'listening' ? 'Stop' : 'Start' }}</el-button>
               <el-button size="small" type="danger" plain :disabled="row.id === 'tcp-default'" @click="remove(row)">Delete</el-button>
@@ -59,6 +75,14 @@ export default {
   data() { return { visible: false, loading: false, listeners: [], protocols: [] } },
   methods: {
     async open() { this.visible = true; await this.load() },
+    async copyFingerprint(value) {
+      try {
+        await navigator.clipboard.writeText(value)
+        ElMessage.success('Fingerprint copied')
+      } catch {
+        ElMessage.warning('Select the fingerprint to copy')
+      }
+    },
     openAdd() { this.$refs.addDialog.open() },
     async requestResponse(request) {
       const response = await request
@@ -105,6 +129,11 @@ export default {
 .listener-manager-dialog .el-table { width: 100%; }
 .listener-manager-dialog .el-table .cell { padding: 0 8px; }
 .listener-bind { white-space: nowrap; }
+.listener-fingerprint { display: flex; align-items: center; min-width: 0; gap: 6px; }
+.listener-fingerprint-value { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; user-select: text; font-size: 11px; }
+.listener-fingerprint-mobile { flex-wrap: wrap; margin: 9px 0; }
+.listener-fingerprint-mobile span { width: 100%; font-size: 12px; color: var(--el-text-color-secondary); }
+.listener-fingerprint-mobile .listener-fingerprint-value { flex: 1 1 100%; overflow-wrap: anywhere; white-space: normal; }
 .listener-actions { display: flex; justify-content: center; align-items: center; gap: 7px; white-space: nowrap; }
 .listener-actions .el-button + .el-button { margin-left: 0; }
 .listener-actions .el-button { width: 58px; min-width: 58px; padding-left: 6px; padding-right: 6px; }

@@ -27,6 +27,7 @@ class ControlDomain(ControlValue):
     WATCHDOG = "watchdog"
     SESSION = "session"
     EXTERNAL_TOOL = "external_tool"
+    TUNNEL = "tunnel"
 
 
 class JobAction(ControlValue):
@@ -98,6 +99,11 @@ class ExternalToolAction(ControlValue):
     EXEC = "exec"
 
 
+class TunnelAction(ControlValue):
+    START = "start"
+    STOP = "stop"
+
+
 class ActivityPolicy(ControlValue):
     ALWAYS = "always"
     OPTIONAL = "optional"
@@ -154,6 +160,10 @@ _CONTROL_ACTIONS = {
     },
     ControlDomain.SESSION: {
         SessionAction.DISCONNECT: ControlActionSpec(ExecutionPolicy.INDEPENDENT, activity=ActivityPolicy.OPTIONAL),
+    },
+    ControlDomain.TUNNEL: {
+        TunnelAction.START: ControlActionSpec(ExecutionPolicy.INDEPENDENT, activity=ActivityPolicy.OPTIONAL),
+        TunnelAction.STOP: ControlActionSpec(ExecutionPolicy.INDEPENDENT, activity=ActivityPolicy.OPTIONAL),
     },
     ControlDomain.EXTERNAL_TOOL: {
         ExternalToolAction.INSTALL_PACKAGE: ControlActionSpec(ExecutionPolicy.FOREGROUND),

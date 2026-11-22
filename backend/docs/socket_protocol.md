@@ -286,3 +286,25 @@ Server 接收线程遇到 `socket.error` 后执行连接关闭处理，通知 We
 Control 的 Domain、Action 和调度策略采用统一的协议定义。Client 在组装业务 Manager 时绑定各 Action 的处理器、必要的请求准备及取消能力。通用调度层只消费注册结果，不解释业务 Payload；Server 依据同一 Action 契约确定调度策略，不允许调用方修改策略。Foreground 继续使用单一前台槽；Independent 请求使用有容量限制的独立工作池，与 Foreground 共用按 ID 关联的 Result 和执行上下文。Clipboard get/set、Remote Files 全部 Action、Configuration get、Watchdog status、Job ps/status、Process kill、Session disconnect 为 Independent；Job start/stop/stop_all、Configuration set/reset、Script run 为 Foreground。调度表按 Domain 与 Action 显式声明；Go 的支持范围内使用相同策略。Independent 不改变已登记的 Activity 记录策略。Server 在发送前登记 ID，按 ID 分发输出与唯一 `completed`；超时、断线清理等待者，迟到帧不得串入其他请求。取消沿用 target_id 和 cancel_ack，只有实际停止才是 stopped。
 
 Control Action 目录的 `ActivityPolicy` 与 `ExecutionPolicy` 独立。最终 `Result(event_type=completed)` 的 `status` 决定 Activity 终态；`progress/chunk` 不会因其文字或中间整数状态被当作最终失败。Remote Files 批量执行任一项失败时 `completed.status` 为 `partial`（已有项目成功）或 `error`（无项目成功），成功时为 `success`；复制/移动结果才保留 Web 实际读取的 `succeeded/failed`；删除只返回完整可见 `message`，不重复上传 `total/skipped/errors` 统计字段。
+
+## Optional Bind TCP forwarding
+
+A Python Bind Client can expose one or more locally listening TCP ports that forward
+bytes to services reachable from the RCH Server machine. Forwarding is started
+manually with the Server builtin `tunnel` command; it is not enabled during the
+Client handshake. The existing RCH Socket carries only the initial Tunnel
+Control request (`start` or `stop`). After setup, the Tunnel runs on separate
+Server-initiated TCP control/data connections and does not share the RCH JSON
+frame transport. A normal Bind session disconnect/reconnect leaves active Tunnel
+mappings in their respective Client/Server processes; `tunnel stop` closes them.
+
+The Tunnel is a byte-stream mapping, so Server-local HTTP APIs, arbitrary TCP
+services, WebSocket upgrades, HTTP streaming and file transfers require no
+special API handlers. A short-lived per-Tunnel random token authorizes control
+and data connection registration. The token is sent once over the existing RCH
+Control link, then checked on each new Tunnel ingress connection.
+
+The Client must be reachable from the Server at both its normal Bind port and
+the configured Tunnel channel port. Each published service needs an additional
+Client listener port. Source code and port usage are documented in
+[tunnel.md](tunnel.md).

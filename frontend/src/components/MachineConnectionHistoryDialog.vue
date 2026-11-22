@@ -136,6 +136,10 @@
                 <span class="value">{{ formatListener(row) }}</span>
               </div>
               <div class="machine-session-meta-item">
+                <span class="label">Connection Direction</span>
+                <span class="value">{{ formatConnectionDirection(row.connection_direction) }}</span>
+              </div>
+              <div class="machine-session-meta-item">
                 <span class="label">User</span>
                 <span class="value">{{ row.username || '-' }}</span>
               </div>
@@ -236,6 +240,10 @@
                 <div class="machine-session-meta-item">
                   <span class="label">Listener</span>
                   <span class="value">{{ formatListener(scope.row) }}</span>
+                </div>
+                <div class="machine-session-meta-item">
+                  <span class="label">Connection Direction</span>
+                  <span class="value">{{ formatConnectionDirection(scope.row.connection_direction) }}</span>
                 </div>
                 <div class="machine-session-meta-item">
                   <span class="label">OS</span>
@@ -408,6 +416,7 @@
 
 <script>
 import { diffDateTimeMs, formatDateTimeStandard, formatLaunchMode } from '../utils/formatters.js'
+import { formatConnectionDirection } from '../utils/connectionInfoFormatting.js'
 import { ElMessage } from 'element-plus'
 import { getMachineConnectionCommands, getMachineConnectionHistory } from '../api/connectionsApi.js'
 
@@ -478,6 +487,7 @@ export default {
   },
 
   methods: {
+    formatConnectionDirection,
     formatListener(row) {
       return String(row?.listener_name || '').trim() || '-'
     },
