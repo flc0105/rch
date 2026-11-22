@@ -141,19 +141,19 @@ SCRIPT_METADATA = {
 
 from client.runtime.sdk import artifact
 
-saved = artifact.save("/tmp/a.txt", type="shared_files", folder="Team")  # Shared Files 中需先创建 Team
+saved = artifact.save("/tmp/a.txt", type="shared", folder="Team")  # Shared Files 中需先创建 Team
 print("saved =", saved)
 
-items = artifact.list(type="shared_files")
+items = artifact.list(type="shared")
 print("items =", items)
 
-matched = artifact.find_by_file_name("a.txt", type="shared_files")
+matched = artifact.find_by_file_name("a.txt", type="shared")
 print("matched =", matched)
 
-meta = artifact.get(saved["artifact_id"], type="shared_files")
+meta = artifact.get(saved["artifact_id"], type="shared")
 print("meta =", meta)
 
-path = artifact.download(saved["artifact_id"], type="shared_files", target_path="/tmp")
+path = artifact.download(saved["artifact_id"], type="shared", target_path="/tmp")
 print("downloaded_path =", path)
 ```
 
@@ -161,20 +161,19 @@ print("downloaded_path =", path)
 
 | API | API access | 说明                |
 |---|---|-------------------|
-| `artifact.save(path, type='files', category='', folder='', extra=None, timeout=None)` | 独立上传入口 | 上传本地文件            |
+| `artifact.save(path, type='saved', category='', folder='', extra=None, timeout=None)` | 独立上传入口 | 上传本地文件            |
 | `artifact.upload(path, category='', folder='', ...)` | 独立上传入口 | 与 `artifact.save` 一致，未传 category 进入 Saved Files / Inbox；显式传 script_files 进入 Script Files |
 | `artifact.list(type='', machine_id='')` | Client Session Token | 查询 artifacts      |
-| `artifact.get(ref, type='shared_files')` | Client Session Token | 解析 artifact 元数据   |
-| `artifact.download(ref, type='shared_files', target_path='', timeout=None)` | `artifacts:list` + `artifacts:download` | 下载 artifact       |
+| `artifact.get(ref, type='shared')` | Client Session Token | 解析 artifact 元数据   |
+| `artifact.download(ref, type='shared', target_path='', timeout=None)` | `artifacts:list` + `artifacts:download` | 下载 artifact       |
 | `artifact.find_by_file_name(file_name, type='', machine_id='', exact=True)` | Client Session Token | 按文件名查找 artifacts  |
 
 支持的 `type`：
 
 ```python
-"files"
-"previews"
-"shared_files"
-"command_output"
+"saved"
+"shared"
+"preview"
 ```
 
 ## `scripts` — 复用 Script Library 脚本

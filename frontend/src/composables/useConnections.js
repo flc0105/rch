@@ -484,6 +484,7 @@ export default {
         toggleShowOfflineDevices() {
             this.showOfflineDevices = !this.showOfflineDevices
             this.ensureSelectedConnectionVisible()
+            this.persistLayoutPreferences?.()
         },
 
         ensureSelectedConnectionVisible() {

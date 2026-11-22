@@ -17,10 +17,10 @@ with tempfile.TemporaryDirectory(prefix='rch_sdk_artifact_') as directory:
     source = os.path.join(directory, name)
     with open(source, 'w', encoding='utf-8') as stream:
         stream.write('RCH Script SDK artifact test\n')
-    item = artifact.save(source, type='files', category='script_files')
+    item = artifact.save(source, type='saved', category='script_files')
     artifact_id = item.get('artifact_id') or item.get('id')
     assert artifact_id, 'No artifact ID was returned.'
-    matches = artifact.find_by_file_name(name, type='files')
+    matches = artifact.find_by_file_name(name, type='saved')
     assert any(row.get('artifact_id') == artifact_id for row in matches), matches
     print('Found:', len(matches))
     print('PASS')

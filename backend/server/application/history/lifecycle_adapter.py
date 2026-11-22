@@ -206,9 +206,16 @@ class LifecycleAdapter:
             artifact_id = str(transfer.get('artifact_id') or '')
             artifact_service = self.coordinator.history_store.artifact_service
             if artifact_id and artifact_service is not None:
-                artifact = artifact_service.get_artifact_by_id(artifact_id)
-                if isinstance(artifact, dict) and artifact.get('artifact_id'):
-                    self.coordinator.history_store.append_file_for_connection(conn, entry_id, artifact)
+                try:
+                    artifact = artifact_service.get_artifact_by_id(artifact_id)
+                except FileNotFoundError:
+                    # An HTTP upload may reach a different Server than the RCH
+                    # session. Its Artifact ID is absent from this catalog.
+                    logger.warning('Transfer %s references an unknown Artifact %s', transfer_id, artifact_id)
+                    status = 'error'
+                else:
+                    if isinstance(artifact, dict) and artifact.get('artifact_id'):
+                        self.coordinator.history_store.append_file_for_connection(conn, entry_id, artifact)
         self.coordinator.finish(conn, entry_id, status == 'success', status=status)
 
     def instrument_artifacts(self, service, connection_lookup):

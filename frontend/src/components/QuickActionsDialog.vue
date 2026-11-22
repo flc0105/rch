@@ -24,16 +24,7 @@
           <el-input
             v-model="searchText"
             clearable
-            class="quick-actions-search quick-actions-desktop-search"
-            placeholder="Filter alias or command"
-          />
-          <input
-            v-model="searchText"
-            class="quick-actions-mobile-search"
-            type="search"
-            inputmode="search"
-            enterkeyhint="search"
-            autocomplete="off"
+            class="quick-actions-search"
             aria-label="Filter alias or command"
             placeholder="Filter alias or command"
           />
@@ -906,7 +897,6 @@ export default {
 </script>
 
 <style scoped>
-.quick-actions-mobile-search { display: none; }
 .quick-actions-body {
   height: 100%;
   min-height: 0;
@@ -1120,27 +1110,10 @@ export default {
 .quick-actions-mobile-list { display: none; }
 @media (max-width: 768px) {
   .quick-actions-toolbar { align-items: stretch; flex-wrap: wrap; gap: 8px; }
-  .quick-actions-toolbar-left { width: 100%; flex: 1 1 100%; min-width: 0; flex-wrap: wrap; }
-  .platform-filter { flex: 0 0 100%; width: 100%; }
-  .quick-actions-desktop-search { display: none; }
-  .quick-actions-mobile-search {
-    display: block;
-    flex: 1 1 100%;
-    width: 100%;
-    min-width: 0;
-    box-sizing: border-box;
-    border: 1px solid var(--el-border-color);
-    border-radius: var(--el-border-radius-base);
-    background: var(--el-fill-color-blank);
-    color: var(--el-text-color-primary);
-    font: inherit;
-    font-size: 16px;
-    padding: 9px 12px;
-    outline-offset: 1px;
-    -webkit-appearance: none;
-    appearance: none;
-  }
-  .quick-actions-mobile-search:focus { border-color: var(--el-color-primary); outline: 1px solid var(--el-color-primary); }
+  .quick-actions-toolbar-left { width: 100%; flex: 1 1 100%; min-width: 0; flex-direction: column; align-items: stretch; gap: 8px; }
+  .platform-filter { flex: 0 0 auto; width: 100%; }
+  .quick-actions-search { flex: 0 0 auto; width: 100%; min-width: 0; }
+  .quick-actions-search :deep(.el-input__inner) { font-size: 16px; }
   .quick-actions-toolbar > .el-button { margin-left: auto; }
   .quick-actions-table-shell { display: none; }
   .quick-actions-mobile-list { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; padding: 2px 3px 12px; }

@@ -1,4 +1,5 @@
 import time
+from core.utils.logger import logger
 from core.protocol.message_types import MSG_TYPE_RESULT, MSG_TYPE_CONTROL
 from core.protocol.control import ControlDomain, SessionAction
 
@@ -106,7 +107,13 @@ class ClientSession:
 
     def recv_message(self):
         data = self.transport.recv()
-        result = self.handle_received_message(data)
+        try:
+            result = self.handle_received_message(data)
+        except Exception:
+            # Only transport.recv() errors denote an inbound TCP failure.
+            # A failed transfer/Activity handler must not close the session.
+            logger.error('Failed to handle Client message from %s', self.address, exc_info=True)
+            return
         if result:
             raise RuntimeError(f'Unexpected recv_message result: {result}')
 

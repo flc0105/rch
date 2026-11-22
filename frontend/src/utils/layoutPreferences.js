@@ -3,6 +3,7 @@ export const LAYOUT_PREFERENCES_STORAGE_KEY = 'rch:layout-preferences'
 const DEFAULT_LAYOUT_PREFERENCES = Object.freeze({
   deviceSidebarCollapsed: false,
   connectionInfoCollapsed: false,
+  showOfflineDevices: true,
 })
 
 function resolveStorage(storage) {
@@ -26,6 +27,7 @@ export function loadLayoutPreferences(storage) {
     return {
       deviceSidebarCollapsed: saved?.deviceSidebarCollapsed === true,
       connectionInfoCollapsed: saved?.connectionInfoCollapsed === true,
+      showOfflineDevices: saved?.showOfflineDevices !== false,
     }
   } catch (error) {
     return { ...DEFAULT_LAYOUT_PREFERENCES }
@@ -39,6 +41,7 @@ export function saveLayoutPreferences(preferences, storage) {
   const saved = {
     deviceSidebarCollapsed: preferences?.deviceSidebarCollapsed === true,
     connectionInfoCollapsed: preferences?.connectionInfoCollapsed === true,
+    showOfflineDevices: preferences?.showOfflineDevices !== false,
   }
 
   try {

@@ -749,6 +749,7 @@ export default {
 
       connectionInfoCollapsed: layoutPreferences.connectionInfoCollapsed,
       deviceSidebarCollapsed: layoutPreferences.deviceSidebarCollapsed,
+      showOfflineDevices: layoutPreferences.showOfflineDevices,
 
       currentAuthUsername: '',
       changePasswordDialogVisible: false,
@@ -1028,6 +1029,7 @@ export default {
       saveLayoutPreferences({
         deviceSidebarCollapsed: this.deviceSidebarCollapsed,
         connectionInfoCollapsed: this.connectionInfoCollapsed,
+        showOfflineDevices: this.showOfflineDevices,
       })
     },
 

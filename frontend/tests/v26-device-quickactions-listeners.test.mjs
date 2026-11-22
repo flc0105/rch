@@ -50,11 +50,10 @@ test('show offline devices defaults on; hiding offline preserves stale/online an
   assert.match(app, /@toggle-offline-devices="toggleShowOfflineDevices"/)
 })
 
-test('mobile Quick Actions uses native search input sharing the desktop filter model', () => {
-  assert.match(actions, /<input\s+v-model="searchText"\s+class="quick-actions-mobile-search"\s+type="search"/)
-  assert.match(actions, /<el-input\s+v-model="searchText"\s+clearable\s+class="quick-actions-search quick-actions-desktop-search"/)
-  assert.match(actions, /\.quick-actions-desktop-search \{ display: none; \}/)
-  assert.match(actions, /font-size: 16px;/)
+test('mobile Quick Actions uses the same Element Plus search input as desktop', () => {
+  assert.match(actions, /<el-input\s+v-model="searchText"\s+clearable\s+class="quick-actions-search"/)
+  assert.doesNotMatch(actions, /<input\s+v-model="searchText"/)
+  assert.match(actions, /\.quick-actions-search \{ flex: 0 0 auto; width: 100%; min-width: 0; \}/)
   assert.match(actions, /const keyword = String\(this\.searchText \|\| ''\)/)
   assert.match(actions, /v-for="row in filteredItems"/)
 })

@@ -136,7 +136,12 @@ class ServerConnection(RCHSocket):
 
     def recv_message(self):
         data = self.recv()
-        result = self.handle_received_message(data)
+        try:
+            result = self.handle_received_message(data)
+        except Exception:
+            # A failing operation is not an inbound TCP failure; keep receiving.
+            logger.error('Failed to handle Server message', exc_info=True)
+            return
         if result:
             self.send_result(*result)
 

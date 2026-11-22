@@ -8,7 +8,7 @@ SCRIPT_METADATA = {'name': 'test/sdk/artifact/test_list',
  }
 
 from client.runtime.sdk import artifact
-items = artifact.list(type='files')
+items = artifact.list(type='saved')
 assert isinstance(items, list)
 print('File artifacts:', len(items))
 print('PASS')
