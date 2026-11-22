@@ -143,6 +143,7 @@ class WebConnectionService:
             'listener_name': getattr(session, 'listener_name', ''),
             'listener_port': getattr(session, 'listener_port', None),
             'listener_protocol': getattr(session, 'listener_protocol', 'tcp'),
+            'connection_direction': 'bind' if getattr(session, 'listener_protocol', '') == 'bind_tcp' else 'reverse',
             'hostname': info.hostname,
             'machine_id': info.machine_id,
             # 'machine_id_version': info.machine_id_version,
@@ -217,6 +218,7 @@ class WebConnectionService:
                 'listener_id': item.get('listener_id') or '',
                 'listener_name': item.get('listener_name') or '',
                 'listener_protocol': item.get('listener_protocol') or 'tcp',
+                'connection_direction': item.get('connection_direction') or ('bind' if item.get('listener_protocol') == 'bind_tcp' else 'reverse'),
                 'hostname': item.get('hostname') or 'Unknown',
                 'machine_id': item.get('machine_id') or '',
                 # 'machine_id_version': item.get('machine_id_version') or '',
@@ -259,6 +261,15 @@ class WebConnectionService:
             results.append(self._decorate_connection_with_device_view_prefs(offline_item))
 
         return results
+
+    def disconnect_connection(self, client_id: str, bind_connector):
+        """Disconnect the current session using its Server-owned connection mode."""
+        session = self.server.get_target_connection_by_client_id(client_id)
+        if getattr(session, 'listener_protocol', '') == 'bind_tcp':
+            bind_connector.disconnect(client_id)
+            return {'client_id': client_id, 'mode': 'bind'}
+        session.request_disconnect()
+        return {'client_id': client_id, 'mode': 'reverse'}
 
     def get_system_paths(self, client_id: str):
         session = self.server.get_target_connection_by_client_id(str(client_id or '').strip())
@@ -562,6 +573,13 @@ class WebConnectionService:
             token = self.client_session_token_service.issue(session)
             from core.protocol.message_types import MSG_TYPE_CLIENT_SESSION_TOKEN
             session.send({'type': MSG_TYPE_CLIENT_SESSION_TOKEN, 'token': token})
+        if (getattr(session, 'listener_protocol', '') == 'bind_tcp'
+                and getattr(session, 'server_web_base_url', '')):
+            from core.protocol.message_types import MSG_TYPE_SESSION_CONFIG
+            session.send({
+                'type': MSG_TYPE_SESSION_CONFIG,
+                'server_web_base_url': session.server_web_base_url,
+            })
         self.publish_connection_online(session)
 
     def handle_replaced_connection_closed(self, session: ClientSession):

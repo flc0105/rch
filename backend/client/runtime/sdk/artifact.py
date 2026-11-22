@@ -166,7 +166,7 @@ def list(type: str = '', machine_id: str = '') -> list[dict]:
     if _safe_text(machine_id):
         params['machine_id'] = _safe_text(machine_id)
 
-    data = ClientApiClient().get_data('/api/artifacts', params=params, timeout=15)
+    data = ClientApiClient().list_artifacts(params, timeout=15)
     if isinstance(data, dict):
         items = data.get('items') or []
         return items if isinstance(items, builtins.list) else []

@@ -29,6 +29,8 @@ class Client:
         self.process_recovery_watchdog_manager = process_recovery_watchdog_manager
         self.recovery_source = consume_recovery_source()
 
+        from client.http.server_endpoint import prepare_session_endpoint
+        prepare_session_endpoint()
         self.receiver_worker = ClientReceiverWorker()
         self.features = resolve_features()
         self.watchdog_manager = None
@@ -66,6 +68,15 @@ class Client:
         self.connection_lifecycle.connect_socket()
         self.connection_lifecycle.handshake()
         self.receiver_worker.start(self.server)
+
+    def connect_initial(self):
+        """Keep a listening Bind process alive through an initial TCP handshake loss."""
+        try:
+            self.connect()
+        except OSError as error:
+            if not self.connection_lifecycle.is_bind_mode:
+                raise
+            self._recover_from_connection_error(error)
 
     def _recover_from_connection_error(self, error):
         """

@@ -4,11 +4,17 @@ export function listConnections() {
   return apiData('/api/connections', {}, [])
 }
 
-export function connectToClient(host, port) {
-  return apiData('/api/connections/bind/connect', jsonRequestOptions('POST', { host, port }), {})
+export function getBindConnectionSettings() {
+  return apiData('/api/connections/bind/settings', {}, {})
 }
 
-export function disconnectBindClient(clientId) {
+export function connectToClient(host, port, serverWebBaseUrl) {
+  return apiData('/api/connections/bind/connect', jsonRequestOptions('POST', {
+    host, port, server_web_base_url: serverWebBaseUrl,
+  }), {})
+}
+
+export function disconnectConnection(clientId) {
   return apiData(`/api/connections/${encodeURIComponent(clientId)}/disconnect`, jsonRequestOptions('POST'), {})
 }
 
@@ -18,12 +24,6 @@ export function reorderOnlineDevices(machineIds) {
 
 export function getConnectionRevisionStatus(clientId) {
   return apiData(`/api/connections/${encodeURIComponent(clientId)}/revision-status`, {}, {})
-}
-
-export function killConnection(clientId) {
-  return apiFetch(`/api/connections/${encodeURIComponent(clientId)}/kill`, {
-    method: 'POST',
-  })
 }
 
 export function removeConnection(clientId, payload = {}) {

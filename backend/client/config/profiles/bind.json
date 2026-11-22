@@ -1,8 +1,5 @@
 {
   "connection_mode": "bind",
   "bind_host": "0.0.0.0",
-  "bind_port": 9443,
-  "server_web_scheme": "http",
-  "server_web_host": "127.0.0.1",
-  "server_web_port": 8085
+  "bind_port": 9443
 }

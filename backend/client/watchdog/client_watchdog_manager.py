@@ -3,7 +3,8 @@ from threading import RLock
 
 from client.config import runtime_config
 
-from client.config.config import UPLOAD_BASE_URL
+from client.http.client_api import ClientApiClient
+from client.http.server_endpoint import is_bind_endpoint_mode, get_server_base_url
 from client.watchdog.watchdog_paths import get_watchdog_log_path, get_existing_watchdog_log_path
 from client.watchdog.local_heartbeat_watchdog import LocalHeartbeatWatchdogFeeder
 from client.watchdog.remote_control_watchdog import RemoteControlWatchdogMonitor
@@ -42,7 +43,11 @@ class ClientWatchdogManager:
 
 
     def _build_remote_http_control_url(self):
-        return f'{UPLOAD_BASE_URL}/api/connections/{self.client_id}/control'
+        try:
+            return ClientApiClient().control_url(self.client_id)
+        except RuntimeError:
+            # Bind has no Web endpoint before the first Server registration.
+            return '' 
 
 
     def _ensure_local_heartbeat_watchdog_feeder(self):
@@ -61,7 +66,7 @@ class ClientWatchdogManager:
                 client_id=self.client_id,
                 local_ipc_environment=self.local_ipc_environment,
                 remote_control_watchdog_enabled=self._current_enabled_modes()['remote_control_watchdog'],
-                remote_control_watchdog_base_url=UPLOAD_BASE_URL,
+                remote_control_watchdog_base_url='' if is_bind_endpoint_mode() else get_server_base_url(),
                 remote_control_watchdog_interval_seconds=runtime_config.REMOTE_CONTROL_WATCHDOG_INTERVAL_SECONDS,
                 remote_control_watchdog_log_file_path=self._build_remote_control_watchdog_log_file_path(),
                 local_heartbeat_watchdog_enabled=self._current_enabled_modes()['local_heartbeat_watchdog'],

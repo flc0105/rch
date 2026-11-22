@@ -14,12 +14,12 @@ class WebConnectionApi:
         self.device_group_store = device_group_store
         self.bind_connector = bind_connector
 
-    def connect_bind_client(self, host: str, port: int):
-        session = self.bind_connector.connect(host, port)
+    def connect_bind_client(self, host: str, port: int, server_web_base_url: str = ''):
+        session = self.bind_connector.connect(host, port, server_web_base_url=server_web_base_url)
         return {'client_id': session.session_info.client_id}
 
-    def disconnect_bind_client(self, client_id: str):
-        return {'client_id': self.bind_connector.disconnect(client_id)}
+    def disconnect_connection(self, client_id: str):
+        return self.connection_service.disconnect_connection(client_id, self.bind_connector)
 
     def get_connections_payload(self):
         return self.connection_service.get_connections_payload()

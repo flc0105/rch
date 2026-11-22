@@ -18,6 +18,11 @@
     </div>
 
     <div class="info-card">
+      <div class="info-label">Connection Direction</div>
+      <div class="info-value">{{ connection.connection_direction === 'bind' ? 'Bind' : 'Reverse' }}</div>
+    </div>
+
+    <div class="info-card">
       <div class="info-label">Status</div>
       <div class="info-value">{{ getConnectionStatusText(connection) }}</div>
     </div>

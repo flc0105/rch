@@ -21,6 +21,7 @@ from core.protocol.message_types import (
     MSG_TYPE_TRANSFER_CANCEL,
     MSG_TYPE_SESSION_END_ACK,
     MSG_TYPE_CLIENT_SESSION_TOKEN,
+    MSG_TYPE_SESSION_CONFIG,
 )
 
 class ClientInboundMessageDispatcher:
@@ -46,6 +47,15 @@ class ClientInboundMessageDispatcher:
             self.connection.client_session_token = str(data.get('token') or '')
             from client.http.session_auth import set_token
             set_token(self.connection.client_session_token)
+            return None
+
+        if message_type == MSG_TYPE_SESSION_CONFIG:
+            # The URL belongs to this session. Reconnection installs a fresh
+            # ServerConnection; live changes are intentionally not supported.
+            if not getattr(self.connection, 'server_web_config_received', False):
+                from client.http.server_endpoint import set_session_base_url
+                set_session_base_url(data.get('server_web_base_url'))
+                self.connection.server_web_config_received = True
             return None
 
         if message_type == MSG_TYPE_SESSION_END_ACK:

@@ -42,6 +42,9 @@ class WebAgentApi:
         tls_fingerprint: str = '',
         listener_id: str = '',
         listener_name: str = '',
+        connection_mode: str = 'reverse',
+        bind_host: str = '0.0.0.0',
+        bind_port: int = 9443,
     ):
         lifecycle_context = {
             'builder': str(builder or '').strip(),
@@ -62,6 +65,7 @@ class WebAgentApi:
                 listener_protocol=listener_protocol,
                 tls_fingerprint=tls_fingerprint,
                 listener_id=listener_id,
+                connection_mode=connection_mode, bind_host=bind_host, bind_port=bind_port,
             )
             record = self.agent_output_registry.register_output(
                 build_result,
@@ -78,6 +82,9 @@ class WebAgentApi:
                     'source': source,
                     'listener_id': listener_id,
                     'listener_name': listener_name,
+                    'connection_mode': connection_mode,
+                    'bind_host': bind_host if connection_mode == 'bind' else '',
+                    'bind_port': bind_port if connection_mode == 'bind' else None,
                 },
             )
         except Exception as exc:

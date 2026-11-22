@@ -73,9 +73,7 @@ def run(name: str, params: dict | None = None, *, timeout: int = 30) -> ScriptRe
         raise ScriptSdkScriptsError(f'Recursive script invocation: {script_name}')
     if len(active) >= 8:
         raise ScriptSdkScriptsError('Nested script invocation limit exceeded')
-    code = ClientApiClient().download_text(
-        '/api/scripts/download', params={'name': script_name}, timeout=timeout,
-    )
+    code = ClientApiClient().download_script(script_name, timeout=timeout)
     if not code.strip():
         raise ScriptSdkScriptsError(f'Empty script: {script_name}')
     metadata = read_script_metadata_from_source(code, fallback_name=script_name)

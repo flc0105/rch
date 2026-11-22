@@ -29,7 +29,7 @@ def _get_profile_name():
             return argv[index + 1].strip()
         if arg.startswith('--profile='):
             return arg.split('=', 1)[1].strip()
-    return 'dev'
+    return 'agent' if os.path.isfile(os.path.join(PROFILE_DIR, 'agent.json')) else 'dev'
 
 
 def _load_profile_overrides(profile_name: str) -> dict:
@@ -46,10 +46,31 @@ def _load_profile_overrides(profile_name: str) -> dict:
     return data
 
 
+def _get_connection_mode_override():
+    argv = sys.argv[1:]
+    for index, arg in enumerate(argv):
+        if arg == '--connection-mode':
+            if index + 1 >= len(argv):
+                raise ValueError('--connection-mode requires bind or reverse')
+            mode = argv[index + 1].strip().lower()
+            break
+        if arg.startswith('--connection-mode='):
+            mode = arg.split('=', 1)[1].strip().lower()
+            break
+    else:
+        return None
+    if mode not in ('bind', 'reverse'):
+        raise ValueError('--connection-mode must be bind or reverse')
+    return mode
+
+
 def _build_runtime_config() -> dict:
     profile_name = _get_profile_name()
     config = dict(DEFAULT_CONFIG)
     config.update(_load_profile_overrides(profile_name))
+    override = _get_connection_mode_override()
+    if override is not None:
+        config['connection_mode'] = override
     config['profile_name'] = profile_name
     return config
 
@@ -63,9 +84,7 @@ SERVER_ADDR = (SERVER_HOST, SERVER_PORT)
 SERVER_WEB_SCHEME = RUNTIME_CONFIG['server_web_scheme']
 SERVER_WEB_HOST = RUNTIME_CONFIG['server_web_host']
 SERVER_WEB_PORT = RUNTIME_CONFIG['server_web_port']
-UPLOAD_BASE_URL = f'{SERVER_WEB_SCHEME}://{SERVER_WEB_HOST}:{SERVER_WEB_PORT}'
-FILE_TRANSFER_BASE_URL = UPLOAD_BASE_URL
 
 CLIENT_BUILD_VERSION = str(RUNTIME_CONFIG.get('client_build_version') or 'dev').strip() or 'dev'
-CLIENT_SOURCE_REVISION = ''
-CLIENT_SOURCE_REVISION_FILES = {}
+CLIENT_SOURCE_REVISION = str(RUNTIME_CONFIG.get('client_source_revision') or '')
+CLIENT_SOURCE_REVISION_FILES = RUNTIME_CONFIG.get('client_source_revision_files') or {}

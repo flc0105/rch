@@ -27,7 +27,7 @@
 </template>
 
 <script>
-import { loadTerminalContextPreferences } from '../api/terminalContextPreferencesApi.js'
+import { loadTerminalContextPreferences, subscribeTerminalContextPreferences } from '../api/terminalContextPreferencesApi.js'
 import { CONNECTION_CONTEXT_FIELD_CATALOG, cloneConnectionContextPreferences, resolveConnectionContextValue } from '../data/connectionContextFields.js'
 import { CONNECTION_CONTEXT_ICONS } from '../data/connectionContextIcons.js'
 
@@ -49,7 +49,6 @@ export default {
   data() {
     return {
       preferences: cloneConnectionContextPreferences(),
-      preferenceRevision: 0,
     }
   },
 
@@ -70,22 +69,24 @@ export default {
   },
 
   mounted() {
+    this.unsubscribePreferences = subscribeTerminalContextPreferences(this.setPreferences)
     this.reloadPreferences()
+  },
+
+  beforeUnmount() {
+    this.unsubscribePreferences?.()
   },
 
   methods: {
     setPreferences(value) {
-      this.preferenceRevision += 1
       this.preferences = cloneConnectionContextPreferences(value)
     },
 
     async reloadPreferences() {
-      const revision = this.preferenceRevision
       try {
-        const preferences = await loadTerminalContextPreferences()
-        if (revision === this.preferenceRevision) this.setPreferences(preferences)
+        await loadTerminalContextPreferences()
       } catch (_error) {
-        if (revision === this.preferenceRevision) this.setPreferences({ field_ids: [] })
+        // Keep the last successfully saved state when a refresh fails.
       }
     },
   },

@@ -52,10 +52,6 @@ class Server:
         except Exception:
             raise Exception('Not a valid selection')
 
-    def kill_connection_by_client_id(self, client_id):
-        session = self.get_target_connection_by_client_id(client_id)
-        return session.request_disconnect()
-
     # ------------------ runtime delegates ------------------ #
     def serve(self):
         """

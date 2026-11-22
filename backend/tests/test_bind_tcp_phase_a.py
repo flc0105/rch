@@ -302,7 +302,8 @@ def test_real_client_execution_over_bind_socket_and_session_reconnect(monkeypatc
     thread = threading.Thread(target=client_loop, daemon=True)
     thread.start()
     try:
-        assert _wait_for(lambda: fake.connection_lifecycle._bind_listener is not None)
+        assert _wait_for(lambda: fake.connection_lifecycle._bind_listener is not None
+                         and fake.connection_lifecycle._bind_listener._socket is not None)
         first = connector.connect('127.0.0.1', port)
         first.transport.send({'type': 'heartbeat', 'id': 100, 'ts': 'now'})
         assert _wait_for(lambda: any(item.get('type') == 'heartbeat_ack' for item in first.received))
@@ -389,3 +390,87 @@ def test_bind_loss_releases_old_socket_before_reverse_backoff(monkeypatch):
     Client._recover_from_connection_error(fake, OSError('closed'))
     fake.connection_lifecycle.reset_connection.assert_called_once_with()
     fake.connect.assert_called_once_with()
+
+
+def test_client_wait_survives_bind_initial_handshake_error_and_toolbar_disconnect(monkeypatch, bind_server):
+    """Exercise the real Client wait/recovery path, not a substitute receive loop."""
+    from types import MethodType
+    from client.app.client import Client
+    from client.connection import lifecycle as client_lifecycle
+    from client.connection.server_connection import ServerConnection
+
+    server, connector, port, _api = bind_server
+    features = resolve_features('linux', overrides={
+        'watchdog': False, 'pty': False, 'screen_view': False, 'clipboard': False,
+    })
+    client = SimpleNamespace(
+        client_id=str(uuid.uuid4()), features=features, watchdog_manager=None,
+        process_recovery_watchdog_manager=None,
+        receiver_worker=ClientReceiverWorker(), recovery_source='', info=None,
+        RECONNECT_INTERVAL=0.01, local_ipc=None,
+    )
+    client.server = ServerConnection(features=features)
+    client.server.client_id = client.client_id
+    client.connection_lifecycle = ClientConnectionLifecycle(client)
+    monkeypatch.setattr(client_lifecycle, 'RUNTIME_CONFIG', _config(port))
+    monkeypatch.setattr(client_lifecycle, 'ClientInfoBuilder', lambda **kwargs: SimpleNamespace(
+        build=lambda: {'type': 'info', 'id': client.client_id, 'hostname': 'test', 'cwd': '.'},
+    ))
+    client._recover_from_connection_error = MethodType(Client._recover_from_connection_error, client)
+    client._wait_for_commands = MethodType(Client._wait_for_commands, client)
+    original_connect = MethodType(Client.connect, client)
+    startup_calls = []
+
+    def connect():
+        startup_calls.append(True)
+        if len(startup_calls) == 1:
+            raise OSError('simulated initial handshake loss')
+        return original_connect()
+
+    client.connect = connect
+    stop = threading.Event()
+    actual_recv_command = ServerConnection.recv_command
+
+    def recv_command(connection, timeout=None):
+        if stop.is_set():
+            raise SystemExit()
+        return actual_recv_command(connection, timeout=timeout)
+
+    monkeypatch.setattr(ServerConnection, 'recv_command', recv_command)
+    errors = []
+
+    def run_client():
+        try:
+            Client.connect_initial(client)
+            Client.wait(client)
+        except BaseException as exc:
+            errors.append(exc)
+        finally:
+            client.connection_lifecycle.close_current_connection()
+            client.connection_lifecycle.close_bind_listener()
+
+    thread = threading.Thread(target=run_client, daemon=True)
+    thread.start()
+    try:
+        assert _wait_for(lambda: client.connection_lifecycle._bind_listener is not None
+                         and client.connection_lifecycle._bind_listener._socket is not None)
+        first = connector.connect('127.0.0.1', port)
+        assert first.session_info.client_id == client.client_id
+        assert len(startup_calls) >= 2
+        assert connector.disconnect(client.client_id) == client.client_id
+        assert _wait_for(lambda: first not in server.connections)
+        assert thread.is_alive(), repr(errors)
+        assert client.connection_lifecycle._bind_listener._socket.getsockname()[1] == port
+        # Reconnect immediately, before Client's receive loop necessarily
+        # releases its old session. The Server's bounded retry bridges that gap.
+        second = connector.connect('127.0.0.1', port)
+        assert second.session_info.client_id == client.client_id
+        assert second is not first
+        stop.set()
+        assert _wait_for(lambda: not thread.is_alive(), timeout=5)
+        assert not errors, repr(errors)
+    finally:
+        stop.set()
+        client.connection_lifecycle.close_current_connection()
+        client.connection_lifecycle.close_bind_listener()
+        thread.join(timeout=3)

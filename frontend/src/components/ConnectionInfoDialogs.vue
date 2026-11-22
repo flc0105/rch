@@ -658,6 +658,7 @@ export default {
         { label: 'Task', value: this.foregroundTask?.state || 'Idle' },
         { label: 'Hostname', value: conn.hostname || '-' },
         { label: 'Address', value: conn.addr || '-', mono: true },
+        { label: 'Connection Direction', value: conn.connection_direction === 'bind' ? 'Bind' : 'Reverse' },
         { label: 'Client ID', value: conn.client_id || '-', mono: true },
         { label: 'OS Type', value: conn.os_type },
         { label: 'Platform', value: conn.os_full || '-' },

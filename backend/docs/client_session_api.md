@@ -2,6 +2,8 @@
 
 每次 Client 连接注册后，Server 生成一枚随机 **Client Session Token**，通过当前 RCH Socket 交付给 Client。Command、ACMD、Script、Job 和 SDK 在同一连接期间使用这枚 Token 访问 Server 的 Client API；断线撤销、重连轮换。它不写入 `baseinfo`、日志、持久化文件或数据库。
 
+Python Client 的 Server API 请求集中经 `client/http/client_api.py`，有效 Server Web origin 由 `client/http/server_endpoint.py` 提供。Reverse 使用 Profile 中的 Web 地址；Bind 使用本次 Session 注册时 Server 下发的公告地址。所有 HTTP API 仍依照当前 Client Session Token 校验，不因连接方向改变权限。
+
 ## HTTP 请求
 
 ```http

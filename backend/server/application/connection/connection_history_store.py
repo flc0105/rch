@@ -9,7 +9,7 @@ class ConnectionHistoryStore:
 
     SNAPSHOT_FIELDS = (
         'hostname', 'addr',
-        'listener_id', 'listener_name', 'listener_protocol', 'listener_port',
+        'listener_id', 'listener_name', 'listener_protocol', 'listener_port', 'connection_direction',
         'os_name', 'os_ver', 'integrity',
         'build_version', 'python_ver', 'process_id', 'launch_command',
         'launch_mode', 'launch_source', 'username', 'process_name',
@@ -17,7 +17,7 @@ class ConnectionHistoryStore:
 
     # Only fields consumed by Connection History are exposed in the session VO.
     SESSION_VIEW_FIELDS = (
-        'addr', 'listener_name', 'os_name', 'os_ver', 'integrity',
+        'addr', 'listener_name', 'connection_direction', 'os_name', 'os_ver', 'integrity',
         'build_version', 'process_id', 'launch_mode', 'launch_source',
         'username', 'process_name',
     )

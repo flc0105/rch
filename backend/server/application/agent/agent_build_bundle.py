@@ -19,7 +19,8 @@ class BundleBuilder:
               web_port: int, build_id: str, build_version: str,
               target_os: str, target_arch: str,
               server_web_scheme: str = 'http', server_web_host: str = '',
-              listener_protocol: str = 'tcp', tls_fingerprint: str = '') -> dict:
+              listener_protocol: str = 'tcp', tls_fingerprint: str = '',
+              connection_mode: str = 'reverse', bind_host: str = '0.0.0.0', bind_port: int = 9443) -> dict:
         # Bundle is platform-independent; target_os and target_arch are only for
         # the common builder dispatch interface.
         staging_dir = os.path.join(work_dir, 'bundle')
@@ -35,6 +36,9 @@ class BundleBuilder:
             server_web_host,
             listener_protocol,
             tls_fingerprint,
+            connection_mode,
+            bind_host,
+            bind_port,
         )
         bundle_name = bundle_archive_name(build_id)
         bundle_path = os.path.join(work_dir, bundle_name)

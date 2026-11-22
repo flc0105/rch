@@ -209,6 +209,8 @@
 | `notification_preferences` | `enabled`（全局通知投递开关）、`events`（各事件投递开关）及偏好对象中的结构标识 | Notification Settings、桌面通知投递控制 |
 | `terminal_context_preferences` | `field_ids`（Terminal 下方显示的同步 Basic Info 字段，按用户选择顺序排列） | Settings → Connection Context、Terminal 输入栏下方的连接标签 |
 
+连接上下文字段与工具栏 Action 的完整目录均由前端统一管理；Server 只对设置对象结构和字段 ID 格式进行校验并持久化，不另行维护一份可选项名单。浏览器内的偏好更新通过统一状态入口同步给 Settings、Toolbar 与 Terminal Connection Context。
+
 这里的设置由 Server 共享，不按 `machine_id` 建独立行。`toolbox_shortcuts` 是快捷入口引用，并不保存 Script 正文或 Alias 定义。`notifications` 保存的是**实际通知历史**，`notification_preferences` 仅决定通知投递偏好；详见 [Toolbox](toolbar_toolbox.md) 和 [SSE Notifications](sse_notifications.md)。浏览器自己的临时选中状态或交互状态，不一定存入 `rch.db`。
 
 ## Remote Files 与 External Tools

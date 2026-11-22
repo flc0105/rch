@@ -40,29 +40,28 @@ test('Connect dialog passes a typed address and port to the connection API', asy
   })
   const dialogObject = { ...component.data(), $emit: (...args) => events.push(args) }
   dialogObject.visible = true
-  dialogObject.form = { host: ' 192.168.1.25 ', port: '9443' }
+  dialogObject.form = { host: ' 192.168.1.25 ', port: '9443', serverWebBaseUrl: 'http://lan-server:8085' }
   await component.methods.connect.call(dialogObject)
-  assert.deepEqual(Array.from(sent[0]), ['192.168.1.25', 9443])
+  assert.deepEqual(Array.from(sent[0]), ['192.168.1.25', 9443, 'http://lan-server:8085'])
   assert.equal(dialogObject.visible, false)
   assert.equal(dialogObject.connecting, false)
   assert.deepEqual(Array.from(events[0]), ['connected', 'new-client'])
 })
 
-test('Bind device Disconnect uses session disconnect, Reverse keeps existing behavior', async () => {
+test('Device Disconnect always uses the one Server session endpoint', async () => {
   const source = sidebar.match(/<script>([\s\S]*?)<\/script>/)?.[1]
   assert.ok(source)
   const calls = []
   const start = source.indexOf('async disconnectConnection(item) {')
   const end = source.indexOf('async removeConnectionPermanently(', start)
-  assert.ok(start >= 0 && end > start)
   const disconnect = vm.runInNewContext(`({${source.slice(start, end)}}).disconnectConnection`, {
-    disconnectBindClient: async id => calls.push(['bind', id]),
-    killConnectionApi: async id => calls.push(['reverse', id]),
+    disconnectConnectionApi: async id => { calls.push(id); return { mode: id === 'bind-id' ? 'bind' : 'reverse' } },
     ElMessage: { success() {}, error(e) { throw e }, warning() {} },
     ElMessageBox: { confirm: async () => {} },
   })
   const instance = { formatDeviceName: () => 'device', getConnectionDisplayState: () => 'online' }
-  await disconnect.call(instance, {client_id: 'bind-id', listener_protocol: 'bind_tcp'})
-  await disconnect.call(instance, {client_id: 'reverse-id', listener_protocol: 'tcp'})
-  assert.deepEqual(calls.map(entry => Array.from(entry)), [['bind', 'bind-id'], ['reverse', 'reverse-id']])
+  await disconnect.call(instance, {client_id: 'bind-id', listener_protocol: 'tcp'})
+  await disconnect.call(instance, {client_id: 'reverse-id', listener_protocol: 'bind_tcp'})
+  assert.deepEqual(calls, ['bind-id', 'reverse-id'])
+  assert.match(api, /export function disconnectConnection\(clientId\)/)
 })

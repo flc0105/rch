@@ -225,10 +225,6 @@ export default {
 
   methods: {
 
-    setConnectionContextPreferences(preferences) {
-      this.$refs.terminalConnectionContextRef?.setPreferences(preferences)
-    },
-
     async sendCommand() {
   const command = String(this.commandText || '').trim()
 

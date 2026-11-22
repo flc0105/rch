@@ -7,7 +7,6 @@ from client.runtime.temp_workspace import make_client_temp_dir, cleanup_temp_pat
 from client.runtime.user_identity import get_macos_console_user_identity
 from pathlib import Path
 
-import requests
 from PIL import Image
 
 from client.clipboard.adapters.ios import iOSClipboardAdapter
@@ -325,18 +324,9 @@ class ClipboardManager:
             ),
         }
 
-        with open(path, 'rb') as file_obj:
-            response = requests.post(
-                self.client_api.build_file_upload_url(),
-                files={
-                    'file': (
-                        filename,
-                        file_obj,
-                    ),
-                },
-                data=form,
-                timeout=(15, 60 * 60),
-            )
+        response = self.client_api.upload_file_source(
+            path, filename=filename, form_data=form, timeout=(15, 60 * 60),
+        )
 
         payload = self.client_api.parse_json_response(
             response

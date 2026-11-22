@@ -1,5 +1,11 @@
 # Server Runtime 目录
 
+### Bind Web URL 公告
+
+在 Server 的环境中设置 `RCH_WEB_ADVERTISED_URL`（例如 `http://192.168.1.10:8085`），用于为主动连接的 Bind Client 公告默认 Server Web API origin。未设置时使用本次 Web 管理请求的 origin 作为默认值。设备栏 More → Connect to Client 自动填入该地址，可在连接前覆盖本次会话的公告值。重连后会再次获取 Server 设置；Reverse Client 保持构建时所配置的 Web URL。
+
+Client 使用 Socket 连接注册阶段接收 `session_config`，独立的 HTTP 请求仍走 Web 服务。若 Client 无法访问该公告地址，需调整 Server 公告值或提供可达的代理/VPN 地址，并重新连接。
+
 ## 根目录和配置
 
 Server 所有主要运行时持久数据共用 `backend/server/config/config.py` 中的 **`SERVER_RUNTIME_DIR`**：
@@ -85,7 +91,7 @@ curl -fsS -X POST 'http://127.0.0.1:8085/api/server/restart' \
 
 ## Bind TCP 主动连接
 
-Python Client 采用 Bind TCP 时在本机监听，Server 从设备栏主动发起连接，使用普通 TCP。连接后仍由 Client 首先发送 `info`，其余命令、PTY、心跳和文件控制沿用原有 Socket Session。
+Python Client 采用 Bind TCP 时在本机监听，Server 从设备栏主动发起连接，使用普通 TCP。Agent Build 支持 Python Source Bundle 选择 Reverse / Bind；Bind 需填写 Client 本机监听 IP 和端口，无参数启动生成的 Bundle 时使用构建时选择的模式。One-liners 同样支持这两种构建模式；Bind 只需 Server Web IP/Port（用于 Bootstrap 和 HTTP 请求）及 Client Listen IP/Port，不填写 Server Socket IP/Port。连接后仍由 Client 首先发送 `info`，其余命令、PTY、心跳和文件控制沿用原有 Socket Session。
 
 在 **Client 的 `backend/` 目录**启动：
 

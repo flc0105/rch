@@ -193,7 +193,7 @@ Server 收到连接注册时，先记录最近设备并登记连接历史，然�
 | `PATCH /api/machines/{machine_id}/device-group` | 设置 / 清除机器的分组归属（Body 含 `group_id`） |
 | `GET /api/machines/{machine_id}/connection-history` | 查询某台机器的历史 Client 会话及统计 |
 | `GET /api/machines/{machine_id}/connection-history/{client_id}/commands` | 分页查询某次 Client 身份关联的命令 |
-| `POST /api/connections/{client_id}/kill` | 结束指定连接 |
+| `POST /api/connections/{client_id}/disconnect` | 断开当前 Session；Bind 保持 Client 监听，Reverse 结束 Client 实例 |
 | `DELETE /api/connections/{client_id}` | 移除指定连接/最近设备，可在请求 Body 提供 `machine_id` |
 
 例如，为某台设备设置别名与整机隐藏：

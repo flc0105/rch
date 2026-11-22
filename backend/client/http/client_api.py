@@ -3,7 +3,7 @@ from urllib.parse import quote
 
 import requests
 
-from client.config.config import FILE_TRANSFER_BASE_URL, UPLOAD_BASE_URL
+from client.http.server_endpoint import get_server_base_url, is_bind_endpoint_mode
 from client.http.session_auth import get_token
 from core.protocol.client_api_auth import CLIENT_SESSION_TOKEN_HEADER
 
@@ -46,8 +46,16 @@ class ClientApiClient:
     DEFAULT_TIMEOUT = 30
 
     def __init__(self, base_url: str = '', file_transfer_base_url: str = ''):
-        self.base_url = (base_url or UPLOAD_BASE_URL).rstrip('/')
-        self.file_transfer_base_url = (file_transfer_base_url or FILE_TRANSFER_BASE_URL).rstrip('/')
+        self._base_url_override = str(base_url or '').rstrip('/')
+        self._file_transfer_override = str(file_transfer_base_url or '').rstrip('/')
+
+    @property
+    def base_url(self) -> str:
+        return self._base_url_override or get_server_base_url()
+
+    @property
+    def file_transfer_base_url(self) -> str:
+        return self._file_transfer_override or self.base_url
 
     def build_url(self, path_or_url: str) -> str:
         value = str(path_or_url or '').strip()
@@ -58,7 +66,15 @@ class ClientApiClient:
         return self.base_url + '/' + value.lstrip('/')
 
     def normalize_server_url(self, path_or_url: str) -> str:
-        return self.build_url(path_or_url)
+        # Explicitly server-owned URLs may be absolute in API payloads. A Bind
+        # connection uses the announced origin, preserving the resource path.
+        from urllib.parse import urlsplit
+        value = str(path_or_url or '').strip()
+        if value.startswith(('http://', 'https://')):
+            if is_bind_endpoint_mode() and not self._base_url_override:
+                parsed = urlsplit(value)
+                return self.base_url + (parsed.path or '/') + (('?' + parsed.query) if parsed.query else '')
+        return self.build_url(value)
 
     def build_file_transfer_url(self, path_or_url: str) -> str:
         value = str(path_or_url or '').strip()
@@ -69,7 +85,13 @@ class ClientApiClient:
         return self.file_transfer_base_url + '/' + value.lstrip('/')
 
     def normalize_file_transfer_url(self, path_or_url: str) -> str:
-        return self.build_file_transfer_url(path_or_url)
+        value = str(path_or_url or '').strip()
+        if value.startswith(('http://', 'https://')):
+            if self._file_transfer_override:
+                return value
+            # File URLs supplied to this API are Server-owned Transfer resources.
+            return self.normalize_server_url(value)
+        return self.build_file_transfer_url(value)
 
     def _should_attach_session_token(self, url: str) -> bool:
         base_url = (self.base_url or '').rstrip('/')
@@ -175,6 +197,36 @@ class ClientApiClient:
         if not isinstance(payload, dict):
             return None
         return payload.get('data')
+
+    def control_url(self, client_id: str) -> str:
+        return self.build_url(f'/api/connections/{quote(str(client_id), safe="")}/control')
+
+    def control_ack_url(self, client_id: str) -> str:
+        return self.control_url(client_id) + '/ack'
+
+    def request_interaction(self, payload: dict, *, timeout=30, headers=None):
+        return self.post_data('/api/interactions/client/request', json=payload, timeout=timeout, headers=headers)
+
+    def list_artifacts(self, params: dict, *, timeout=15):
+        return self.get_data('/api/artifacts', params=params, timeout=timeout)
+
+    def get_pinned_paths(self, client_id: str, *, timeout=15):
+        return self.get_data(f'/api/connections/{quote(str(client_id), safe="")}/pinned_paths', timeout=timeout)
+
+    def list_external_tools(self, params: dict, *, timeout=15):
+        return self.get_data('/api/external-tools/catalog', params=params, timeout=timeout)
+
+    def download_script(self, script_name: str, *, timeout=30):
+        return self.download_text('/api/scripts/download', params={'name': script_name}, timeout=timeout)
+
+    def list_keychains(self, *, params=None, timeout=15):
+        return self.get_data('/api/keychains', params=params, timeout=timeout)
+
+    def resolve_keychain(self, payload: dict, *, timeout=15):
+        return self.post_data('/api/keychains/resolve', json=payload, timeout=timeout)
+
+    def create_keychain(self, payload: dict, *, timeout=15):
+        return self.post_data('/api/keychains', json=payload, timeout=timeout)
 
     def list_jobs(self, *, timeout=10) -> list:
         data = self.get_data('/api/jobs/list', timeout=timeout)
@@ -305,6 +357,7 @@ class ClientApiClient:
         *,
         filename: str = '',
         form_data: dict | None = None,
+        upload_url: str = '',
         timeout=30,
     ):
         close_after = False
@@ -323,7 +376,7 @@ class ClientApiClient:
             except Exception:
                 pass
 
-            url = self.build_file_upload_url()
+            url = self.normalize_file_transfer_url(upload_url) if upload_url else self.build_file_upload_url()
             return requests.post(
                 url,
                 files={

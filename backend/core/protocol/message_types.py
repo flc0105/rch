@@ -2,6 +2,7 @@ MSG_TYPE_RESULT = 'result'
 MSG_TYPE_SESSION_END = 'session_end'
 MSG_TYPE_SESSION_END_ACK = 'session_end_ack'
 MSG_TYPE_CLIENT_SESSION_TOKEN = 'client_session_token'
+MSG_TYPE_SESSION_CONFIG = 'session_config'
 
 MSG_TYPE_COMMAND = 'command'
 MSG_TYPE_ACMD = 'acmd'

@@ -16,7 +16,14 @@
       </div>
 
       <div class="one-liners-config-row">
-        <label v-if="listeners.length" class="one-liners-config-field">
+        <label class="one-liners-config-field">
+          <span>Connection</span>
+          <el-radio-group v-model="connectionMode" size="small">
+            <el-radio label="reverse">Reverse</el-radio>
+            <el-radio label="bind">Bind</el-radio>
+          </el-radio-group>
+        </label>
+        <label v-if="connectionMode === 'reverse' && listeners.length" class="one-liners-config-field">
           <span>Listener</span>
           <el-select v-model="selectedListenerId" size="small" style="width: 100%" @change="onListenerChange">
             <el-option v-for="listener in listeners" :key="listener.id" :value="listener.id"
@@ -25,7 +32,7 @@
         </label>
 
         <label class="one-liners-config-field">
-          <span>Server IP</span>
+          <span>{{ connectionMode === 'bind' ? 'Bootstrap Web IP' : 'Server IP' }}</span>
           <el-input
             v-model="serverForm.serverHost"
             size="small"
@@ -33,18 +40,26 @@
           />
         </label>
 
-        <label class="one-liners-config-field">
+        <label v-if="connectionMode === 'reverse'" class="one-liners-config-field">
           <span>Port</span>
           <el-input v-model="serverForm.serverPort" size="small" placeholder="9999" />
         </label>
 
         <label class="one-liners-config-field">
-          <span>Web port</span>
+          <span>{{ connectionMode === 'bind' ? 'Bootstrap Web Port' : 'Web port' }}</span>
           <el-input
             v-model="serverForm.webPort"
             size="small"
             placeholder="8085"
           />
+        </label>
+        <label v-if="connectionMode === 'bind'" class="one-liners-config-field">
+          <span>Client Listen IP</span>
+          <el-input v-model="bindHost" size="small" placeholder="0.0.0.0" />
+        </label>
+        <label v-if="connectionMode === 'bind'" class="one-liners-config-field">
+          <span>Client Listen Port</span>
+          <el-input v-model="bindPort" size="small" placeholder="9443" />
         </label>
       </div>
 
@@ -109,6 +124,9 @@ export default {
       oneLinerOverrides: {},
       listeners: [],
       selectedListenerId: '',
+      connectionMode: 'reverse',
+      bindHost: '0.0.0.0',
+      bindPort: '9443',
       serverForm: this.getDefaultServerForm(),
     }
   },
@@ -135,6 +153,9 @@ export default {
       this.oneLinerOverrides = {}
       this.listeners = []
       this.selectedListenerId = ''
+      this.connectionMode = 'reverse'
+      this.bindHost = '0.0.0.0'
+      this.bindPort = '9443'
       this.serverForm = this.getDefaultServerForm()
       this.visible = true
       await this.loadServerPlatform()
@@ -204,22 +225,30 @@ export default {
     renderOneLinerCode(code) {
       const listener = this.listeners.find(item => item.id === this.selectedListenerId)
       // Keep the original command exactly as before when using the default TCP listener.
-      const listenerId = listener?.id && listener.id !== 'tcp-default' && /^[A-Za-z0-9_-]+$/.test(listener.id)
+      const listenerId = this.connectionMode === 'reverse' && listener?.id && listener.id !== 'tcp-default' && /^[A-Za-z0-9_-]+$/.test(listener.id)
         ? listener.id : ''
+      const payload = this.connectionMode === 'bind'
+        ? { web_host: String(this.serverForm.serverHost || '').trim(),
+            web_port: Number(this.serverForm.webPort), connection_mode: 'bind',
+            bind_host: String(this.bindHost || '').trim(), bind_port: Number(this.bindPort) }
+        : { server_host: String(this.serverForm.serverHost || '').trim(),
+            server_port: Number(this.serverForm.serverPort), web_port: Number(this.serverForm.webPort),
+            ...(listenerId ? { listener_id: listenerId } : {}), connection_mode: 'reverse' }
+      const pythonValue = value => typeof value === 'number' ? String(value)
+        : `'${String(value).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`
+      const pythonPayload = `{${Object.entries(payload).map(([key, value]) => `'${key}':${pythonValue(value)}`).join(',')}}`
       const replacements = {
         server_host: String(this.serverForm.serverHost || '').trim(),
-        server_port: String(this.serverForm.serverPort || '').trim(),
         web_port: String(this.serverForm.webPort || '').trim(),
-        listener_payload_python: listenerId ? `,'listener_id':'${listenerId}'` : '',
-        listener_payload_ps1: listenerId ? ',`"listener_id`":`"' + listenerId + '`"' : '',
+        bootstrap_payload_python: pythonPayload,
+        bootstrap_payload_ps1: JSON.stringify(payload).replace(/"/g, '`"'),
       }
 
       return String(code || '')
         .replace(/{{\s*server_host\s*}}/g, replacements.server_host)
-        .replace(/{{\s*server_port\s*}}/g, replacements.server_port)
         .replace(/{{\s*web_port\s*}}/g, replacements.web_port)
-        .replace(/{{\s*listener_payload_python\s*}}/g, replacements.listener_payload_python)
-        .replace(/{{\s*listener_payload_ps1\s*}}/g, replacements.listener_payload_ps1)
+        .replace(/{{\s*bootstrap_payload_python\s*}}/g, replacements.bootstrap_payload_python)
+        .replace(/{{\s*bootstrap_payload_ps1\s*}}/g, replacements.bootstrap_payload_ps1)
         .trim()
     },
 
@@ -311,7 +340,7 @@ export default {
 .one-liners-config-row {
   flex: 0 0 auto;
   display: grid;
-  grid-template-columns: minmax(0, 1.25fr) repeat(3, minmax(90px, 0.75fr));
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 10px;
   padding: 10px 12px;
   border: 1px solid rgba(148, 163, 184, 0.18);

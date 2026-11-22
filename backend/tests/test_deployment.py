@@ -1,6 +1,5 @@
 """Client bundles, update transport and operational recovery."""
 
-import ast
 import os
 import tempfile
 import zipfile
@@ -42,13 +41,12 @@ def test_explicit_bundle_generates_valid_source_zip():
         assert result['builder'] == 'python'
         with zipfile.ZipFile(result['file_path']) as z:
             assert 'client/config/config.py' in z.namelist()
-            config = ast.parse(z.read('client/config/config.py').decode())
-            assignments = {
-                node.targets[0].id: node.value
-                for node in config.body
-                if isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Name)
-            }
-            assert ast.literal_eval(assignments['SERVER_WEB_PORT']) == 8085
+            config = z.read('client/config/config.py').decode()
+            assert 'original' in config  # staging retains the source config loader
+            import json
+            settings = json.loads(z.read('client/config/profiles/agent.json'))
+            assert settings['server_web_port'] == 8085
+            assert settings['connection_mode'] == 'reverse'
             assert 'rchclient.py' in z.namelist()
             assert all(not n.startswith('server/') for n in z.namelist())
 

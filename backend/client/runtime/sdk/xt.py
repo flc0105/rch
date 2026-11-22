@@ -124,10 +124,7 @@ def _load_client_catalog() -> dict:
         # Script SDK 运行在当前 client 内部，不能再请求 server 向当前 client 下发
         # external_tool_install_statuses 命令，否则会因为当前 run_script 正在执行而触发 busy。
         # 这里仅读取服务端 catalog 元数据，安装状态由当前进程本地 external_tool_service 计算。
-        data = ClientApiClient().get_data(
-            '/api/external-tools/catalog',
-            timeout=30,
-        )
+        data = ClientApiClient().list_external_tools({}, timeout=30)
     except ImportError as exc:
         raise ScriptSdkExternalToolError('client.http.client_api is required to load external tool catalog') from exc
     except ClientApiError as exc:

@@ -1,9 +1,6 @@
 import builtins
-from urllib.parse import quote
 
 from client.runtime.sdk import context
-
-
 
 from client.runtime.script_errors import ScriptUserError
 
@@ -28,8 +25,8 @@ def _request_workspace() -> dict:
     try:
         from client.http.client_api import ClientApiClient, ClientApiError
 
-        client_id = quote(_current_client_id(), safe='')
-        data = ClientApiClient().get_data(f'/api/connections/{client_id}/pinned_paths', timeout=15)
+        client_id = _current_client_id()
+        data = ClientApiClient().get_pinned_paths(client_id, timeout=15)
     except ImportError as exc:
         raise ScriptSdkWorkspaceError('client.http.client_api is required to read workspace') from exc
     except ClientApiError as exc:

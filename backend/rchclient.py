@@ -94,7 +94,7 @@ def main():
     client = None
     try:
         client = Client(SERVER_ADDR, process_recovery_watchdog_manager=process_recovery_watchdog)
-        client.connect()
+        client.connect_initial()
         _write_update_ready_marker(update_ready_file, client)
         if update_ready_file:
             threading.Thread(

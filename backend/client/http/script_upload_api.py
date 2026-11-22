@@ -99,7 +99,7 @@ def upload_file(
 
     注意：
     - file_source 可以是本地路径，也可以是 BytesIO / file-like 对象
-    - script 不需要自己拼 UPLOAD_BASE_URL
+    - Script 通过 ClientApiClient 使用统一 Server Web 地址
     - artifact extra 里只会放 script_name
     """
     if file_source is None:

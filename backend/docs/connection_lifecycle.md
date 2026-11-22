@@ -4,11 +4,19 @@ RCH 使用持续存在的 TCP Client Session 承载命令与运行时消息，�
 
 Server 负责建立和移除会话、发送心跳、计算 RTT、维护设备快照与连接历史；Python / Go Client 负责连接、回复和重新拨号；Web 通过 API 与 WebSocket 接收会话信息，再根据当前时间更新设备展示状态。下面按照这一条链路说明各部分怎样协作，以及需要调整时应修改什么。
 
+### Connection Direction 与 Bind 的 Web API 地址
+
+Connection Info 的 Base Info 和 Settings → Connection Context 可显示 **Connection Direction**，其 `reverse` / `bind` 值由 Server 的真实会话接入路径确定，Reverse 保留原有 Socket 和 Web 地址。
+
+Bind Client 仅在本机监听，不预置 Server Web 地址。Server 完成 `info` 注册并发送 `client_session_token` 后，在发布上线事件之前下发一次 `session_config.server_web_base_url`。此值来自 Server 设置 `RCH_WEB_ADVERTISED_URL`，未设置时默认采用管理员当前访问 Web 管理界面的 HTTP origin。Connections → More → Connect to Client 自动加载默认值，并允许为本次连接单独覆盖。每次断开并重连时重新获取 URL；同一次会话内不进行热切换。公告地址必须是从 Client 端可达的 HTTP(S) origin，地址发现不改变两端网络可达性。
+
+Client 的 Server Web API 统一由 `client/http/client_api.py` 提供方法，`client/http/server_endpoint.py` 根据本次会话解析 Base URL。独立的 Script、Job、Watchdog 进程通过原子更新的本机运行态快照读取同一地址；Client 断开连接后撤销本次快照。该地址不写回持久的 Agent Profile，也不修改 Reverse 的既有配置。
+
 ## Python Client Bind TCP
 
-Python Client 默认 `connection_mode=reverse`，向 Server 的 TCP/TLS Listener 拨号。选择 `--profile bind` 时改用 `connection_mode=bind`：Client 在配置的 `bind_host:bind_port` 监听，Server 从设备栏 **More → Connect to Client** 填写目标地址和端口主动连接。默认 profile 监听 `0.0.0.0:9443`，本轮使用普通 TCP。
+源码 Client 默认 `connection_mode=reverse`；构建后的 Bundle 无参数启动使用构建时选定的 Reverse 或 Bind 默认配置。也可在启动时使用 `--connection-mode bind` / `--connection-mode reverse` 覆盖默认模式，或用 `--profile bind` 选择源码 Profile。Bind 模式：Client 在配置的 `bind_host:bind_port` 监听，Server 从设备栏 **More → Connect to Client** 填写目标地址和端口主动连接。默认 profile 监听 `0.0.0.0:9443`，本轮使用普通 TCP。
 
-TCP 接通后由 Client 发出第一条 `info`，复用原 RCH 帧、会话、心跳、命令、PTY 和 Transfer 控制。Client 监听 Socket 属于进程；每次接入 Socket 属于一个会话。单实例同时保留一条会话，断线后释放占用并继续监听，Server 通过设备栏再次连接即可使用同一个 Client PID 和 ID。设备菜单的 Bind **Disconnect** 关闭会话，不结束 Client 进程。`pause_connection` 暂停接入，本地 Resume 恢复监听。
+TCP 接通后由 Client 发出第一条 `info`，复用原 RCH 帧、会话、心跳、命令、PTY 和 Transfer 控制。Client 监听 Socket 属于进程；每次接入 Socket 属于一个会话。单实例同时保留一条会话，断线后释放占用并继续监听，Server 通过设备栏再次连接即可使用同一个 Client PID 和 ID。Server 主动断开后立即再次连接同一目标时，会短暂重试以等待旧会话释放。设备菜单和 Terminal Toolbar 的 **Disconnect** 使用同一连接管理 API；Server 根据当前活动 Session 选择处理方式：Bind 关闭会话并保留监听进程，Reverse 沿用原有的 Session 结束控制。`pause_connection` 暂停接入，本地 Resume 恢复监听。
 
 固定监听端口的更新、克隆和重启实例命令暂时采用手工交接，防止新旧进程同时监听同一地址。部署与操作见 [Server Runtime — Bind TCP](server_runtime.md#bind-tcp-主动连接)。
 
@@ -143,11 +151,11 @@ Web 不是单纯显示最后收到的一份 `connection_state`。它在本地以
 
 Terminal 输入栏下方可以显示一行连接上下文标签，用于快速查看当前设备的状态与基础信息。通过 **Settings → Connection Context** 搜索并选择 Basic Info 字段，调整展示顺序后保存；字段选择是 Server 全局偏好，对当前实例管理的所有设备生效。未选择字段时不显示标签行。
 
-标签值从当前连接快照读取，并复用 Connection Info 的状态、最近响应时间、RTT、时间和启动模式格式化规则。可选字段包括 Status、Hostname、Address、Client ID、OS 信息、Manufacturer、Model、Integrity、Build Version、Client Revision、Machine ID、Fingerprint Basis、Last Seen、Connected At、Disconnected At、RTT、Working Directory、PID、Process Name、Launch Command、Launch Mode、Client Log、Username 和 Python Version。连接切换后，标签内容随当前连接更新。
+标签值从当前连接快照读取，Connection Direction 显示 Bind / Reverse，并复用 Connection Info 的状态、最近响应时间、RTT、时间和启动模式格式化规则。可选字段包括 Status、Hostname、Address、Client ID、OS 信息、Manufacturer、Model、Integrity、Build Version、Client Revision、Machine ID、Fingerprint Basis、Last Seen、Connected At、Disconnected At、RTT、Working Directory、PID、Process Name、Launch Command、Launch Mode、Client Log、Username 和 Python Version。连接切换后，标签内容随当前连接更新。
 
 可选 **Task** 显示当前 Client 前台执行状态：`Idle`、`Running`、`Cancelling`。该状态来自 Server 的执行槽，浏览器通过 WebSocket 事件更新，并在首次订阅、重新连接及切换设备时读取权威快照，因此重开标签页或刷新后仍可恢复；Basic Info 的 Task 字段采用相同状态。Terminal 在打开页面、刷新或首次选择某 Client 时，若首次权威快照发现既有任务，则以输出警告行显示一次 `[ Details ]` 链接；后续任务状态仍实时更新，但不再重复插入警告。该提示只存在于当前页面的临时通知状态，不作为历史命令输出存储；Terminal 历史恢复不会重新带回已结束任务的提示。详情展示执行信息和适用的取消操作。
 
-字段选择保存在 `settings` 表的 `terminal_context_preferences` 命名空间中，字段 ID 按用户选择顺序保存。`GET /api/terminal/context-preferences` 读取当前选择，`PUT /api/terminal/context-preferences` 保存选择，数据结构为 `{"field_ids": ["integrity", "pid"]}`。该偏好只决定显示哪些信息，不改变 Client 上报的数据或连接生命周期状态。
+字段选择保存在 `settings` 表的 `terminal_context_preferences` 命名空间中，字段 ID 按用户选择顺序保存。可选字段由前端统一目录定义，Server 负责字段 ID 格式校验与持久化，不维护第二份字段名单。`GET /api/terminal/context-preferences` 读取当前选择，`PUT /api/terminal/context-preferences` 保存选择，数据结构为 `{"field_ids": ["integrity", "pid"]}`。该偏好只决定显示哪些信息，不改变 Client 上报的数据或连接生命周期状态。
 
 ## 连接丢失后的清理、重连和历史留存
 
@@ -155,7 +163,7 @@ Server 的 Session 收包循环在捕获 Socket 错误时进入会话关闭处�
 
 这是一组**连接关闭的副作用**，不是“达到 Stale 阈值”会执行的操作。如果只是心跳不新鲜而 Socket 未报告断开，不能假定所有相关任务都已经完成清理。
 
-Python Client 在连接丢失时会停止接收 Worker、对旧 Socket 执行 `shutdown` 并关闭它，处理相关后台任务并重建连接运行态，然后重新拨号、握手、启动接收 Worker。默认失败重试间隔为 **5 秒**；如果重新握手失败，也会继续尝试。同一个 Python Client 进程使用自己的 `client_id` 重新连接；重启或另开 Client 进程则有新的实例身份。Go Client 也会在 TCP 拨号失败后等待约 5 秒再次尝试，并在接收连接发生错误后重建 Session。
+Python Client 在连接丢失时会停止接收 Worker、对旧 Socket 执行 `shutdown` 并关闭它，处理相关后台任务并重建连接运行态，然后重新拨号、握手、启动接收 Worker。默认失败重试间隔为 **5 秒**；如果重新握手失败，也会继续尝试。Bind 首次接入握手的短暂失败也使用同一恢复流程，并继续监听原端口。同一个 Python Client 进程使用自己的 `client_id` 重新连接；重启或另开 Client 进程则有新的实例身份。Go Client 也会在 TCP 拨号失败后等待约 5 秒再次尝试，并在接收连接发生错误后重建 Session。
 
 ### Python Client 半开 TCP 自愈
 

@@ -1,35 +1,11 @@
+import re
+
 from server.application.preferences.settings_store import SettingsStore
 
 
-DEFAULT_TOOLBAR_PREFERENCES = {
-    'toolbar': [
-        'remote-files', 'artifacts', 'info', 'scripts', 'history', 'pty', 'screen-view', 'clipboard',
-    ],
-    'more': [
-        'external-tools', 'jobs', 'agents', 'processes', 'keychains', 'one-liners', 'quick-actions',
-    ],
-    'quick_actions_pinned': [],
-    'toolbox_shortcuts': [],
-}
-
-_ALLOWED_ACTION_IDS = tuple(DEFAULT_TOOLBAR_PREFERENCES['toolbar'] + DEFAULT_TOOLBAR_PREFERENCES['more'])
-
-
-_TOOLBOX_ICONS = frozenset({
-    'file-code', 'terminal', 'zap', 'rocket', 'play', 'activity', 'shield-check',
-    'folder-open', 'monitor', 'wrench', 'calendar-clock', 'book-open', 'code-2',
-    'archive', 'clipboard', 'scroll-text',
-    'star', 'heart', 'check-circle', 'circle-alert', 'bell', 'bookmark', 'flag',
-    'folder', 'folder-code', 'file-text', 'file-json', 'files', 'braces', 'bug',
-    'git-branch', 'git-merge', 'git-pull-request', 'git-commit', 'box', 'boxes',
-    'cpu', 'hard-drive', 'cloud', 'cloud-upload', 'cloud-download', 'download', 'upload',
-    'settings', 'sliders-horizontal', 'database-backup', 'shield', 'lock', 'key-round',
-    'refresh-ccw', 'repeat', 'timer', 'clock', 'calendar', 'list-checks', 'list-todo',
-    'chart-no-axes-column', 'chart-line', 'eye', 'search', 'filter', 'link', 'globe-2',
-    'network', 'wifi', 'send', 'mail', 'message-square', 'image', 'camera',
-    'video', 'music', 'headphones', 'pencil', 'pen-line', 'trash-2', 'copy',
-    'scissors', 'save', 'printer', 'power', 'plug', 'lightbulb', 'sun', 'moon',
-})
+# Toolbar action and icon catalogs are defined by the frontend. This store owns
+# persistence and structure only; no second list of UI actions is kept here.
+_PREFERENCE_ID_PATTERN = re.compile(r'[a-z][a-z0-9_-]{0,63}\Z')
 
 
 class ToolbarPreferenceStore:
@@ -52,9 +28,9 @@ class ToolbarPreferenceStore:
             return []
         result = []
         seen = set()
-        for item in value:
+        for item in value[:128]:
             action_id = str(item or '').strip()
-            if action_id not in _ALLOWED_ACTION_IDS or action_id in seen:
+            if not _PREFERENCE_ID_PATTERN.fullmatch(action_id) or action_id in seen:
                 continue
             seen.add(action_id)
             result.append(action_id)
@@ -92,7 +68,7 @@ class ToolbarPreferenceStore:
             kind = str(raw.get('kind') or '').strip()
             icon = str(raw.get('icon') or '').strip()
             label = str(raw.get('label') or '').strip()[:64]
-            if icon not in _TOOLBOX_ICONS:
+            if not _PREFERENCE_ID_PATTERN.fullmatch(icon):
                 continue
             if kind == 'script':
                 name = str(raw.get('script_name') or '').strip()
@@ -121,15 +97,11 @@ class ToolbarPreferenceStore:
         source = payload if isinstance(payload, dict) else {}
         toolbar = self._normalize_list(source.get('toolbar'))
         more = self._normalize_list(source.get('more'))
-        used = set(toolbar + more)
-        for action_id in _ALLOWED_ACTION_IDS:
-            if action_id in used:
-                continue
-            if action_id in DEFAULT_TOOLBAR_PREFERENCES['toolbar']:
-                toolbar.append(action_id)
-            else:
-                more.append(action_id)
-            used.add(action_id)
+        # Keep one placement per action; frontend owns which actions exist and
+        # supplies default placement for additions to its catalog.
+        toolbar = toolbar[:64]
+        toolbar_set = set(toolbar)
+        more = [action_id for action_id in more if action_id not in toolbar_set][:64]
         return {
             'toolbar': toolbar,
             'more': more,

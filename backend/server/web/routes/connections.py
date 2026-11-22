@@ -13,18 +13,27 @@ def create_connections_blueprint(server_instance):
     def get_connections():
         return responder.ok(connection_api.get_connections_payload())
 
+    @blueprint.get('/api/connections/bind/settings')
+    def get_bind_settings():
+        from server.application.connection.bind_web_endpoint import default_bind_web_url
+        return responder.ok({'server_web_base_url': default_bind_web_url(request.host_url)})
+
     @blueprint.post('/api/connections/bind/connect')
     def connect_bind_client():
         def _execute():
             body = request.get_json(silent=True) or {}
-            return connection_api.connect_bind_client(body.get('host'), body.get('port'))
+            from server.application.connection.bind_web_endpoint import default_bind_web_url
+            announced = body.get('server_web_base_url') or default_bind_web_url(request.host_url)
+            return connection_api.connect_bind_client(
+                body.get('host'), body.get('port'), announced,
+            )
 
         return responder.json_endpoint(_execute, default_error_status=400)
 
     @blueprint.post('/api/connections/<client_id>/disconnect')
-    def disconnect_bind_client(client_id):
+    def disconnect_connection(client_id):
         return responder.json_endpoint(
-            lambda: connection_api.disconnect_bind_client(client_id),
+            lambda: connection_api.disconnect_connection(client_id),
             default_error_status=400,
         )
 
@@ -113,14 +122,6 @@ def create_connections_blueprint(server_instance):
             )
 
         return responder.json_endpoint(_execute, default_error_status=400)
-
-    @blueprint.post('/api/connections/<client_id>/kill')
-    def kill_connection(client_id):
-        def _execute():
-            server_instance.kill_connection_by_client_id(client_id)
-            return None
-
-        return responder.json_endpoint(_execute, default_error_status=500)
 
     @blueprint.patch('/api/connections/device-view-prefs')
     def update_connection_device_view_prefs():

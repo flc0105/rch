@@ -22,7 +22,7 @@ Revision 对指定的 Client 源码文件计算指纹，覆盖范围见上文；
 
 ### 构建时注入与源码启动
 
-生成 Python Bundle 时，Server 将目标 Socket 地址、Web 地址及端口、`build_version`、Revision 和文件指纹写入 Bundle 内的 Client 配置。计算 Revision 的依据是 **Server 原始 Client 源码**，不是把构建后注入的不同连接参数再重新算作代码变化。Bundle 随后压缩并交付，Client 在握手时读取这些值。
+生成 Python Bundle 时，Server 将目标 Socket 地址、Web 地址及端口、连接模式、Bind 监听接口和端口、`build_version`、Revision 和文件指纹写入 `client/config/profiles/agent.json`，保留源码配置解析器以支持参数覆盖。计算 Revision 的依据是 **Server 原始 Client 源码**，不是把构建后注入的不同连接参数再重新算作代码变化。Bundle 随后压缩并交付，Client 在握手时读取这些值。
 
 在源码/IDE 环境中直接运行 Client，配置 Profile 通常给出 `build_version=dev`，没有预先注入的 `CLIENT_SOURCE_REVISION`。这种情况下 Client 首次构造握手信息时在本地计算源码指纹，并在当前进程内缓存。**编辑本地源码后，已经运行的进程不会自动重新计算指纹或热加载代码**；应重新启动对应源码进程以重新生成握手信息。
 

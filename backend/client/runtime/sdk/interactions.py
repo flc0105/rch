@@ -16,9 +16,8 @@ def _request(kind, message, *, title='', timeout=90, placeholder='', options=Non
     if context.get_command_id() is None:
         raise ScriptSdkInteractionError('Interaction requires a running Client script command')
     timeout = max(1, min(int(timeout), 180))
-    data = ClientApiClient().post_data(
-        '/api/interactions/client/request',
-        json={'kind': kind, 'title': str(title), 'message': str(message),
+    data = ClientApiClient().request_interaction(
+        {'kind': kind, 'title': str(title), 'message': str(message),
               'command_id': context.get_command_id(),
               'placeholder': str(placeholder), 'timeout_seconds': timeout,
               'options': options if options is not None else [], 'preview': preview},

@@ -206,7 +206,7 @@
       <el-button
         size="small"
         class="tool-btn tool-btn-danger"
-        @click="killConnection"
+        @click="disconnectConnection"
         :disabled="deviceActionDisabled"
       >
         Disconnect
@@ -254,8 +254,8 @@
 <script>
 import { ElMessage, ElMessageBox } from 'element-plus'
 import ToolboxDialog from './ToolboxDialog.vue'
-import { killConnection as killConnectionApi } from '../api/connectionsApi.js'
-import { loadToolbarPreferences, saveToolbarPreferences } from '../api/toolbarPreferencesApi.js'
+import { disconnectConnection as disconnectConnectionApi } from '../api/connectionsApi.js'
+import { loadToolbarPreferences, saveToolbarPreferences, subscribeToolbarPreferences } from '../api/toolbarPreferencesApi.js'
 import { listQuickActions } from '../api/quickActionsApi.js'
 import { getScriptCatalog } from '../api/scriptLibraryApi.js'
 import {
@@ -417,7 +417,14 @@ export default {
   },
 
   mounted() {
+    this.unsubscribeToolbarPreferences = subscribeToolbarPreferences(value => {
+      this.toolbarPreferences = this.normalizePreferences(value)
+    })
     this.loadManagedToolbar()
+  },
+
+  beforeUnmount() {
+    this.unsubscribeToolbarPreferences?.()
   },
 
   methods: {
@@ -473,7 +480,7 @@ export default {
     },
     async loadManagedToolbar() {
       try {
-        this.toolbarPreferences = this.normalizePreferences(await loadToolbarPreferences())
+        await loadToolbarPreferences()
       } catch (e) {
         this.toolbarPreferences = this.clonePreferences(DEFAULT_TOOLBAR_PREFERENCES)
         ElMessage.warning(e.message || 'Failed to load toolbar preferences; using defaults')
@@ -524,7 +531,7 @@ export default {
       const platformLabels = { common: 'Common', win: 'Windows', mac: 'macOS', linux: 'Linux', ios: 'iOS' }
       return `${item.alias} · ${platformLabels[item.platform] || item.platform}`
     },
-    async killConnection() {
+    async disconnectConnection() {
       if (!this.selectedId) {
         ElMessage.warning('Please select a device')
         return
@@ -542,9 +549,8 @@ export default {
             },
         )
 
-        await killConnectionApi(this.selectedId)
-
-        ElMessage.success('Disconnect command sent')
+        const result = await disconnectConnectionApi(this.selectedId)
+        ElMessage.success(result?.mode === 'bind' ? 'Disconnected' : 'Disconnect command sent')
       } catch (e) {
         if (e === 'cancel' || e === 'close' || e?.message === 'cancel') {
           return

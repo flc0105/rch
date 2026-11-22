@@ -2,6 +2,7 @@ import os
 import hashlib
 
 from core.agent_build_contract import AgentBuilderKind
+from server.config.config import SOCKET_PORT, WEB_PORT
 from flask import Blueprint, send_file
 
 from server.web.api_response import WebApiResponder
@@ -38,14 +39,26 @@ def create_agent_blueprint(server_instance):
                 raise ValueError('builder is required')
             target_arch = (payload.get('target_arch') or '').strip()
             server_web_scheme = (payload.get('server_web_scheme') or 'http').strip() or 'http'
-            server_web_host = (payload.get('server_web_host') or server_host).strip() or server_host
             source = (payload.get('source') or 'manual').strip() or 'manual'
+            connection_mode = str(payload.get('connection_mode') or 'reverse').strip().lower()
+            server_web_host = str(payload.get('server_web_host') or (server_host if connection_mode == 'reverse' else '')).strip()
+            bind_host = str(payload.get('bind_host') or '0.0.0.0').strip()
+            try:
+                bind_port = int(payload.get('bind_port', 9443))
+            except (TypeError, ValueError):
+                raise ValueError('bind_port must be integer')
 
-            if not server_host:
+            if connection_mode == 'bind':
+                # Bind Bundle has no Server endpoint; only the session supplies one.
+                server_host = ''
+                server_port = SOCKET_PORT
+                server_web_host = ''
+                web_port = WEB_PORT
+            elif not server_host:
                 raise ValueError('server_host is required')
-            if not server_port:
+            elif not server_port:
                 raise ValueError('server_port is required')
-            if not web_port:
+            if connection_mode != 'bind' and not web_port:
                 raise ValueError('web_port is required')
 
             try:
@@ -64,6 +77,10 @@ def create_agent_blueprint(server_instance):
             listener_protocol = 'tcp'
             tls_fingerprint = ''
             listener_name = ''
+            if source == 'update' and connection_mode == 'bind':
+                raise ValueError('Bind update requires manual port handoff')
+            if connection_mode == 'bind' and listener_id:
+                raise ValueError('Bind Agent does not use a Server listener')
             if source == 'update':
                 settings = server_instance.listener_manager.update_build_settings(
                     str(payload.get('server_transport') or 'tcp').strip(),
@@ -95,6 +112,7 @@ def create_agent_blueprint(server_instance):
                 tls_fingerprint=tls_fingerprint,
                 listener_id=listener_id,
                 listener_name=listener_name,
+                connection_mode=connection_mode, bind_host=bind_host, bind_port=bind_port,
             )
             result['download_url'] = f'/api/agent/download/{result["file_name"]}'
             if builder == AgentBuilderKind.PYTHON.value:

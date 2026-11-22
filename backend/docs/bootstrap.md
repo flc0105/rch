@@ -2,6 +2,8 @@
 
 本篇统一介绍 One-liners、Python / PowerShell Bootstrap、Go Loader 和 iOS 上的首次部署。它们使用不同的引导入口，但目标都是从 Server 获取 Python Source Bundle，校验、安装 Release，再启动 RCH Client。**首次部署不同于 Client 在线后的自更新**；后续更新和版本交接参见 [Client Update](client_update.md)。
 
+**Agent Builder 构建 Bind Python Bundle** 只需要 Client Listen IP/Port；无需填写 Server Socket 或 Web 地址。Bind Agent 无参数启动后等待 Server 从设备栏 More → Connect to Client 接入，接收本次会话的 Server Web API 地址。One-liner 的 Web IP/Port 是首次安装所需的下载地址，与最终 Bundle 的运行时设置相互独立。Reverse Bundle 的地址配置保持不变。
+
 ## 选择合适的启动方式
 
 | 目标环境 | 推荐入口 | 运行特点 |
@@ -19,7 +21,7 @@
 
 ```text
 Banner → Utilities → One-liners
-  └─ 填写 Server IP / Socket port / Web port
+  └─ 选择 Reverse（Server Socket / Web 地址）或 Bind（Client Listen / Bootstrap 下载地址）
        └─ 替换模板变量、编辑或复制命令
             ↓ 在需要部署 Client 的设备上运行
 目标设备的 Python / PowerShell
@@ -44,19 +46,13 @@ Go Loader 的独立流程为 `Agent Builder → Go (Loader) 构建 → 下载可
 
 | 设置 | 作用 | 默认来源 |
 |---|---|---|
-| Server IP | 目标设备访问 Server 的地址 | 当前浏览器页面的主机名 |
-| Server port | 新 Client 连接 Server 的 Socket 端口 | Server 配置，无法读取时回退为 `9999` |
-| Web port | 获取 Bootstrap、构建 Bundle 和下载文件使用的 HTTP 端口 | Server 配置，无法读取时回退为 `8085` |
+| Connection | Reverse 由 Client 连接 Server；Bind 由 Server 连接 Client | `Reverse` |
+| Server IP / Server Web IP | Reverse 为 Server Socket 主机（也用作 Web 主机），Bind 仅用于首次下载安装 Bootstrap/Bundle | 当前浏览器页面的主机名 |
+| Listener / Port | Reverse 使用的 Server Socket 监听器和端口；Bind 不需要 | Server Listener 配置 |
+| Client Listen IP / Port | Bind Agent 本机的监听接口和端口，仅 Bind 显示 | `0.0.0.0` / `9443` |
+| Web port | Reverse 获取 Bootstrap/Bundle 和运行期 HTTP 的端口；Bind 仅用于首次下载安装 | Server 配置，无法读取时回退为 `8085` |
 
-打开对话框时，页面会请求 `GET /api/agent/platform` 读取 Server 当前配置的 Socket/Web 端口。用户可以手动修改这三个字段，用于跨网段、代理或端口映射场景。**Server IP 应填写目标设备实际能够访问的地址**，不必与浏览器当前地址相同。
-
-模板只识别三个占位符：
-
-```text
-{{server_host}}
-{{server_port}}
-{{web_port}}
-```
+这些控件统一位于同一个配置 Card 中。打开对话框时通过 `GET /api/agent/platform` 读取默认端口；Bind 的 Bootstrap Web IP 只用于目标设备首次下载安装；上线后的 Web 地址由 Server 在连接时公告。Bind One-liner 请求只提交 `web_host`、`web_port`、`connection_mode`、`bind_host` 和 `bind_port`，不提交 Server Socket 地址和端口；Reverse 继续提交 Server Socket 主机/端口与可选 Listener。页面替换模板中对应的 Web URL 和模式参数后生成命令。
 
 页面将占位符替换成输入框中的当前值，再展示可复制的完整命令。每个命令区域都可直接编辑；编辑完成并失去焦点后，页面保存该次打开期间的文本覆盖值。点击 **Copy** 复制当前显示内容，不会替用户在远程设备上执行。重新打开对话框会清除临时编辑，重新从内置模板和当前 Server 默认值生成命令。
 
@@ -114,24 +110,26 @@ Loader 启动后会先报告设备 OS、架构、主机名和网络地址，再�
 
 ## 四、Bootstrap API 与构建请求
 
-One-liners 请求 Server 生成对应平台的 Bootstrap 脚本，再由脚本构建和安装完整 Client Bundle。脚本生成接口如下：
+One-liners 请求 Server 生成对应平台的 Bootstrap 脚本，再由脚本构建和安装完整 Client Bundle。Connection 选择 Reverse / Bind：Reverse 采用 Server Listener；Bind 提交仅用于初次下载的 Server Web 地址和 Client 本机监听接口、端口。Bootstrap 仍无参数启动 `rchclient.py`，模式由下载的 Bundle 内 `client/config/profiles/agent.json` 决定；运行时可显式使用 `--connection-mode bind|reverse` 覆盖。Bind 当前使用普通 TCP，支持 Python Bundle。脚本生成接口如下：
 
 | 方法 | API | 返回内容 |
 |---|---|---|
 | `POST` | `/api/agent/bootstrap` | 依据参数生成的 Python `bootstrap.py` |
 | `POST` | `/api/agent/bootstrap/ps1` | 依据参数生成的 Windows `bootstrap.ps1` |
 
-请求体示例：
+Reverse 请求体示例：
 
 ```json
-{
-  "server_host": "192.0.2.10",
-  "server_port": 9999,
-  "web_port": 8085
-}
+{"server_host":"192.0.2.10","server_port":9999,"web_port":8085,"connection_mode":"reverse"}
 ```
 
-`server_host` 是 Client 将来连接的 Server 地址，`server_port` 是 Socket 端口，`web_port` 是 Bootstrap 请求 API 和下载文件的 HTTP 端口。Python 生成入口还允许提供 `web_host` 和 `web_scheme`，默认分别沿用 `server_host` 与 `http`；当前工具栏模板只暴露前三项，PowerShell 生成路径使用 HTTP 和同一主机地址。
+Bind Bootstrap 请求体示例（Server 主动连接 Client；首次安装通过 Server Web 下载 Bundle）：
+
+```json
+{"web_host":"192.0.2.10","web_port":8085,"connection_mode":"bind","bind_host":"0.0.0.0","bind_port":9443}
+```
+
+Reverse 的 `server_host`、`server_port` 指向 Server Socket；Bind 的 `web_host`、`web_port` 仅用于 Bootstrap 下载，`bind_host`、`bind_port` 供 Client 本地监听。Python 生成入口可指定 `web_scheme`（默认 `http`）；PowerShell 生成路径使用 HTTP。Bind Bundle 只持久化本机监听配置；Server Web 地址由建立连接后的 Server 公告。需要手动改为 Reverse 时，应使用配置了 Reverse Server Socket 地址的 Profile。
 
 Server 会检查必要地址和端口，并要求 Web 端口处于 `1` 至 `65534` 的有效范围。生成的脚本先写到 Server 临时文件，再作为下载响应返回；正常响应关闭后会尝试清理该临时文件。实际安装和建立连接发生在目标设备执行返回的 Bootstrap 脚本之后。
 
@@ -142,7 +140,7 @@ POST /api/agent/build
 Content-Type: application/json
 ```
 
-并在请求中指定 `builder: "python"`、`target_os: ""`，以及 Server 地址、Socket/Web 端口和 `source: "bootstrap"` 等参数。Server 构建 Python Source Bundle 后，返回构建版本、产物文件名、下载地址及该 Bundle 的 SHA-256。Bootstrap 随后通过 `/api/agent/download/{filename}` 下载该 ZIP。
+并在请求中指定 `builder: "python"`、`target_os: ""`、`source: "bootstrap"`。Reverse 提交 Socket/Web 地址；Bind 只提交监听配置和连接模式，Bootstrap 自己的下载地址不会写进最终 Agent。Server 构建 Python Source Bundle 后，返回构建版本、产物文件名、下载地址及该 Bundle 的 SHA-256。Bootstrap 随后通过 `/api/agent/download/{filename}` 下载该 ZIP。
 
 Go Loader 的首次构建同样使用 `POST /api/agent/build`，但请求 `builder: "go_loader"` 并提供目标 OS 和架构；目标设备运行 Loader 后，它会另行发送 `builder: "python"` 的构建请求。Go Loader 并不把它自己的二进制作为最终 Python Client，也不依赖目标设备安装 Go。
 
@@ -235,7 +233,7 @@ Python One-liner 会从 `POST /api/agent/bootstrap` 获取通用脚本，再直�
 
 ## 七、网络、日志与日常诊断
 
-默认监听端口为 Socket `9999`、Web `8085`，独立文件传输端口固定为 **Web port + 1**（默认 `8086`）。One-liners 只需要填写前两个对应的服务端口，即 Socket 和 Web；文件传输端口不能在该表单中单独设置。跨网络做端口映射时，除确保 Socket 与 Web 可达外，还应按 Client 文件传输功能要求转发紧邻 Web 的文件端口。
+Reverse 默认 Server Socket 端口为 `9999`；Bind 默认 Client 监听端口为 `9443`；两种模式的 Server Web 端口默认 `8085`，文件传输端口为 **Web port + 1**（默认 `8086`）。One-liners 分模式填写对应 Socket 地址/端口和 Web 地址/端口。跨网络时确保所选模式的主连接和 Client 访问 Server Web/文件传输端口的路径均可用。
 
 Go Loader 的进度会通过 `POST /api/agent/loader/report` 写入 Server 小时分段的 `go_loader_YYYYMMDD-HH.log`，本机另可查看系统临时目录的 `go_loader_debug.log`。常见阶段包括 `START`、`PYTHON_OK` / `PYTHON_ERR`、`WORKDIR_OK`、`BUILD_OK`、`DOWNLOAD_OK`、`EXTRACT_OK`、`LAUNCH_OK`，错误阶段也会标记对应失败。报告接口接收日志文本，默认允许匿名访问，因此也需要部署在可信网络范围内；日志并不提供可信的 Client 上线证明。
 

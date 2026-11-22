@@ -107,5 +107,7 @@ else:
     DOCUMENT_ROOTS = _DEFAULT_DOCUMENT_ROOTS
 WEB_HTTP_UPLOAD_MAX_BYTES = 10 * 1024 * 1024 * 1024  # 10GB
 WEB_PUBLIC_BASE_URL = f'http://127.0.0.1:{WEB_PORT}'
+# Advertised to Bind Clients; if unset, use the host used to reach the Web UI.
+WEB_ADVERTISED_BASE_URL = os.getenv('RCH_WEB_ADVERTISED_URL', '').strip()
 
 HEARTBEAT_INTERVAL_SECONDS = 30

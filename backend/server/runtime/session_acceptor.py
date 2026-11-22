@@ -15,7 +15,7 @@ class SessionAcceptor:
     def __init__(self, server):
         self.server = server
 
-    def accept_session(self, raw_sock, addr, *, listener_id='', listener_name='', listener_port=None, protocol='tcp', strict_registration=False, raise_on_error=False):
+    def accept_session(self, raw_sock, addr, *, listener_id='', listener_name='', listener_port=None, protocol='tcp', strict_registration=False, raise_on_error=False, initialize_session=None):
         try:
             info, transport = self._receive_client_info(raw_sock, addr)
             if not isinstance(info, dict) or info.get('type') != 'info':
@@ -31,7 +31,7 @@ class SessionAcceptor:
             session = self._register_connection(transport, addr, info,
                                                 listener_id=listener_id,
                                                 listener_name=listener_name, listener_port=listener_port,
-                                                protocol=protocol, strict_registration=strict_registration)
+                                                protocol=protocol, strict_registration=strict_registration, initialize_session=initialize_session)
             self._start_connection_handler(session)
             return session
         except Exception as exc:
@@ -58,13 +58,15 @@ class SessionAcceptor:
         """
         return {**{'addr': f'{addr[0]}:{addr[1]}'}, **info}
 
-    def _register_connection(self, transport: ClientTransport, addr, info: dict, *, listener_id='', listener_name='', listener_port=None, protocol='tcp', strict_registration=False):
+    def _register_connection(self, transport: ClientTransport, addr, info: dict, *, listener_id='', listener_name='', listener_port=None, protocol='tcp', strict_registration=False, initialize_session=None):
         session = self.server.web_service.connection_api.create_web_connection(transport, addr, info)
         session.listener_id = listener_id
         session.listener_name = listener_name
         session.listener_port = listener_port
         session.listener_protocol = protocol
         session.exclusive_registration = strict_registration
+        if initialize_session is not None:
+            initialize_session(session)
         if strict_registration:
             if not self.server.connections.add_if_absent(session):
                 raise ValueError('Client ID already has an active session')

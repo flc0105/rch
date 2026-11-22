@@ -63,7 +63,9 @@ class ServerConnection(RCHSocket):
         self.is_connected = False
         self.client_session_token = ''
         from client.http.session_auth import clear_token
+        from client.http.server_endpoint import clear_session_base_url
         clear_token()
+        clear_session_base_url()
 
     def reset_runtime_state(self):
         try:

@@ -54,7 +54,8 @@ class RemoteControlWatchdogMonitor:
 
 
     def _build_poll_url(self) -> str:
-        return f'{self.base_url}/api/connections/{self.client_id}/control'
+        from client.http.client_api import ClientApiClient
+        return ClientApiClient(base_url=self.base_url).control_url(self.client_id)
 
 
     def _log_http_debug(self, message: str):
@@ -113,8 +114,9 @@ class RemoteControlWatchdogMonitor:
         if not command_id:
             return
         body = json.dumps({'command_id': command_id, 'status': status, 'detail': detail}).encode('utf-8')
+        from client.http.client_api import ClientApiClient
         request = urllib.request.Request(
-            self._build_poll_url() + '/ack', data=body, method='POST',
+            ClientApiClient(base_url=self.base_url).control_ack_url(self.client_id), data=body, method='POST',
             headers={'Content-Type': 'application/json'},
         )
         with urllib.request.urlopen(request, timeout=5):
@@ -125,9 +127,10 @@ class RemoteControlWatchdogMonitor:
             return
         self._next_poll_at = now + self.poll_interval
 
-        poll_url = self._build_poll_url()
-        self._log_http_debug(f'http control poll request: client_id={self.client_id}, url={poll_url}')
+        poll_url = ''
         try:
+            poll_url = self._build_poll_url()
+            self._log_http_debug(f'http control poll request: client_id={self.client_id}, url={poll_url}')
             payload = self._fetch_command()
             command = str(payload.get('command') or '').lower()
             if command:

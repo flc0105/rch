@@ -1,13 +1,9 @@
-import { apiData, jsonRequestOptions } from './http.js'
+import { createPreferenceState } from './preferenceState.js'
 
-export function loadToolbarPreferences() {
-  return apiData('/api/toolbar/preferences', {}, {})
-}
+const state = createPreferenceState('/api/toolbar/preferences', {
+  toolbar: [], more: [], quick_actions_pinned: [], toolbox_shortcuts: [],
+})
 
-export function saveToolbarPreferences(payload = {}) {
-  return apiData(
-    '/api/toolbar/preferences',
-    jsonRequestOptions('PUT', payload),
-    {},
-  )
-}
+export const loadToolbarPreferences = () => state.load()
+export const saveToolbarPreferences = (payload = {}) => state.save(payload)
+export const subscribeToolbarPreferences = (subscriber) => state.subscribe(subscriber)

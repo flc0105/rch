@@ -22,12 +22,11 @@ class CommandInteractions:
             raise CommandInteractionError('An active Client command connection is required for interaction')
         timeout = max(1, min(int(timeout), 180))
         self.owner._checkpoint(fallback_timeout=240)
-        result = ClientApiClient().post_data(
-            '/api/interactions/client/request', timeout=timeout + 15,
-            headers={CLIENT_SESSION_TOKEN_HEADER: token},
-            json={'command_id': command_id, 'kind': kind, 'title': title, 'message': message,
+        result = ClientApiClient().request_interaction(
+            {'command_id': command_id, 'kind': kind, 'title': title, 'message': message,
                   'options': options if options is not None else [],
                   'preview': preview, 'timeout_seconds': timeout},
+            timeout=timeout + 15, headers={CLIENT_SESSION_TOKEN_HEADER: token},
         )
         self.owner._checkpoint(fallback_timeout=240)
         if not isinstance(result, dict):

@@ -3,7 +3,9 @@ import os
 import platform
 import subprocess
 from core.client_revision import CLIENT_BUNDLE_SOURCE_PATHS
-from server.application.agent.agent_build_utils import copy_source_paths, inject_python_client_config
+from server.application.agent.agent_build_utils import (
+    BUNDLED_AGENT_PROFILE_RELATIVE, copy_source_paths, inject_python_client_config,
+)
 from core.utils.logger import logger
 
 
@@ -26,7 +28,9 @@ class PyInstallerBuilder:
     def _build_with_pyinstaller(self, work_dir: str, server_host: str, server_port: int,
                                 web_port: int, target_os: str,
                                 build_id: str = '', build_version: str = 'dev', server_web_scheme: str = 'http',
-                                server_web_host: str = '') -> dict:
+                                server_web_host: str = '', listener_protocol: str = 'tcp',
+                                tls_fingerprint: str = '', connection_mode: str = 'reverse',
+                                bind_host: str = '0.0.0.0', bind_port: int = 9443) -> dict:
         current_target = self._get_current_pyinstaller_target()
         if current_target != target_os:
             current_label = self._describe_target(current_target)
@@ -46,6 +50,7 @@ class PyInstallerBuilder:
             build_version,
             server_web_scheme,
             server_web_host,
+            listener_protocol, tls_fingerprint, connection_mode, bind_host, bind_port,
         )
 
         if target_os == 'win':
@@ -60,9 +65,14 @@ class PyInstallerBuilder:
         result['target_os'] = target_os
         return result
 
+    def _agent_profile_data_arg(self, client_dir: str) -> str:
+        source = os.path.join(client_dir, *BUNDLED_AGENT_PROFILE_RELATIVE.split('/'))
+        return f'{source}{os.pathsep}{os.path.dirname(BUNDLED_AGENT_PROFILE_RELATIVE)}'
+
     def _build_macos(self, client_dir: str, build_id: str = '', build_version: str = 'dev') -> dict:
         cmd = ['pyinstaller', '-F', '-w', 'rchclient.py',
-               '--collect-submodules', 'client.commands']
+               '--collect-submodules', 'client.commands',
+               '--add-data', self._agent_profile_data_arg(client_dir)]
         result = subprocess.run(cmd, cwd=client_dir, capture_output=True, text=True)
         if result.returncode != 0:
             raise RuntimeError(f'PyInstaller failed: {result.stderr}')
@@ -74,7 +84,8 @@ class PyInstallerBuilder:
 
     def _build_windows(self, client_dir: str, build_id: str = '', build_version: str = 'dev') -> dict:
         cmd = ['pyinstaller', '-F', '-w', 'rchclient.py',
-               '--collect-submodules', 'client.commands']
+               '--collect-submodules', 'client.commands',
+               '--add-data', self._agent_profile_data_arg(client_dir)]
         result = subprocess.run(cmd, cwd=client_dir, capture_output=True, text=True, shell=True)
         if result.returncode != 0:
             raise RuntimeError(f'PyInstaller failed: {result.stderr}')
@@ -85,7 +96,8 @@ class PyInstallerBuilder:
 
     def _build_linux(self, client_dir: str, build_id: str = '', build_version: str = 'dev') -> dict:
         cmd = ['pyinstaller', '-F', '-w', 'rchclient.py',
-               '--collect-submodules', 'client.commands']
+               '--collect-submodules', 'client.commands',
+               '--add-data', self._agent_profile_data_arg(client_dir)]
         result = subprocess.run(cmd, cwd=client_dir, capture_output=True, text=True)
         if result.returncode != 0:
             raise RuntimeError(f'PyInstaller failed: {result.stderr}')

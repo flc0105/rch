@@ -2,7 +2,7 @@
 
 import os
 from client.config import runtime_config
-from client.config.config import UPLOAD_BASE_URL
+from client.http.client_api import ClientApiClient
 from client.runtime.temp_workspace import get_temp_category_dir
 from client.watchdog.watchdog_paths import get_existing_watchdog_log_path
 
@@ -17,6 +17,10 @@ def _existing_heartbeat_path(client_id):
 
 def inactive_watchdog_worker_status(client_id):
     client_id = str(client_id or '').strip()
+    try:
+        control_url = ClientApiClient().control_url(client_id)
+    except RuntimeError:
+        control_url = ''
     return {
         'client': {
             'id': client_id, 'pid': os.getpid(), 'suppressed': False,
@@ -24,7 +28,7 @@ def inactive_watchdog_worker_status(client_id):
         'remote_control_watchdog': {
             'enabled': bool(runtime_config.REMOTE_CONTROL_WATCHDOG_ENABLED),
             'worker_pid': None, 'worker_alive': False,
-            'control_url': f'{UPLOAD_BASE_URL}/api/connections/{client_id}/control',
+            'control_url': control_url,
             'interval_seconds': runtime_config.REMOTE_CONTROL_WATCHDOG_INTERVAL_SECONDS,
             'log_path': get_existing_watchdog_log_path('client_remote_control_watchdog.log'),
         },

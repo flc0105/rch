@@ -270,47 +270,11 @@ def is_process_alive(pid: int) -> bool:
 
 
 def upload_file_via_http(file_source=None, filename=None, upload_url=None, category='', client_id=None):
-    import os
-    import requests
+    from client.http.client_api import ClientApiClient
 
-    form_data = {
-        'artifact_type': 'saved',
-        'category': category,
-        'client_id': client_id,
-    }
-
-    close_after = False
-
-    if isinstance(file_source, str):
-        file_obj = open(file_source, 'rb')
-        close_after = True
-        upload_name = filename or os.path.basename(file_source)
-    else:
-        file_obj = file_source
-        upload_name = filename or getattr(file_obj, 'name', None) or 'upload.bin'
-
-    try:
-        try:
-            file_obj.seek(0)
-        except Exception:
-            pass
-
-        files = {
-            'file': (upload_name, file_obj)
-        }
-
-        response = requests.post(
-            upload_url,
-            files=files,
-            data=form_data,
-            timeout=30,
-        )
-
-        return response
-
-    finally:
-        if close_after:
-            try:
-                file_obj.close()
-            except Exception:
-                pass
+    return ClientApiClient().upload_file_source(
+        file_source,
+        filename=filename or '',
+        form_data={'artifact_type': 'saved', 'category': category, 'client_id': client_id},
+        upload_url=upload_url,
+    )

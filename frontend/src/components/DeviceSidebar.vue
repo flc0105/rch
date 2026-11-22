@@ -300,8 +300,7 @@
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ClockAlert, ShieldPlus } from '@lucide/vue'
 import {
-  killConnection as killConnectionApi,
-  disconnectBindClient,
+  disconnectConnection as disconnectConnectionApi,
   removeConnection as removeConnectionApi,
   sendCommand as sendCommandApi,
 } from '../api/connectionsApi.js'
@@ -770,13 +769,8 @@ async disconnectConnection(item) {
       },
     )
 
-    if (item.listener_protocol === 'bind_tcp') {
-      await disconnectBindClient(clientId)
-      ElMessage.success('Disconnected')
-    } else {
-      await killConnectionApi(clientId)
-      ElMessage.success('Disconnect request sent')
-    }
+    const result = await disconnectConnectionApi(clientId)
+    ElMessage.success(result?.mode === 'bind' ? 'Disconnected' : 'Disconnect request sent')
   } catch (e) {
     if (e === 'cancel' || e === 'close' || e?.message === 'cancel') {
       return

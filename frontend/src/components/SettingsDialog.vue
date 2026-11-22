@@ -275,7 +275,7 @@ import { getAuthorizationInfo } from '../api/authApi.js'
 export default {
   name: 'SettingsDialog',
 
-  emits: ['toolbar-saved', 'notification-saved', 'connection-context-saved'],
+  emits: ['notification-saved'],
 
   data() {
     return {
@@ -457,7 +457,6 @@ export default {
           await saveToolbarPreferences(payload),
         )
         this.toolbarDraft = cloneToolbarPreferences(saved)
-        this.$emit('toolbar-saved', saved)
         ElMessage.success('Toolbar settings updated')
       } catch (e) {
         ElMessage.error(e.message || 'Failed to save toolbar settings')
@@ -536,7 +535,6 @@ export default {
           normalizeConnectionContextPreferences(await saveTerminalContextPreferences(this.connectionContextDraft)),
         )
         this.connectionContextDraft = saved
-        this.$emit('connection-context-saved', saved)
         ElMessage.success('Connection context settings updated')
       } catch (e) {
         ElMessage.error(e.message || 'Failed to save connection context settings')

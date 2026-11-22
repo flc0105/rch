@@ -144,11 +144,7 @@ def _list_keychain_items(*, scope: str = MACHINE_SCOPE) -> builtins.list[dict]:
     try:
         from client.http.client_api import ClientApiClient, ClientApiError
 
-        data = ClientApiClient().get_data(
-            '/api/keychains',
-            params={'machine_id': machine_id},
-            timeout=15,
-        )
+        data = ClientApiClient().list_keychains(params={'machine_id': machine_id}, timeout=15)
     except ImportError as exc:
         raise KeychainError('client.http.client_api is required to list keychains') from exc
     except ClientApiError as exc:
@@ -189,7 +185,7 @@ def _request_keychain_item(name: str, *, kind: str = '', scope: str = MACHINE_SC
     try:
         from client.http.client_api import ClientApiClient, ClientApiError
 
-        data = ClientApiClient().post_data('/api/keychains/resolve', json=payload, timeout=15)
+        data = ClientApiClient().resolve_keychain(payload, timeout=15)
     except ImportError as exc:
         raise KeychainError('client.http.client_api is required to resolve keychains') from exc
     except ClientApiError as exc:
@@ -216,7 +212,7 @@ def _create_keychain_item(payload: dict) -> dict:
     try:
         from client.http.client_api import ClientApiClient, ClientApiError
 
-        data = ClientApiClient().post_data('/api/keychains', json=payload, timeout=15)
+        data = ClientApiClient().create_keychain(payload, timeout=15)
     except ImportError as exc:
         raise KeychainError('client.http.client_api is required to create keychains') from exc
     except ClientApiError as exc:

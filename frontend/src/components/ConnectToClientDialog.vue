@@ -7,6 +7,9 @@
       <el-form-item label="Port">
         <el-input v-model.number="form.port" type="number" min="1" max="65535" />
       </el-form-item>
+      <el-form-item label="Server Web URL">
+        <el-input v-model="form.serverWebBaseUrl" placeholder="http://server:8085" autocomplete="off" />
+      </el-form-item>
     </el-form>
     <template #footer>
       <el-button @click="visible = false">Cancel</el-button>
@@ -17,16 +20,24 @@
 
 <script>
 import { ElMessage } from 'element-plus'
-import { connectToClient } from '../api/connectionsApi.js'
+import { connectToClient, getBindConnectionSettings } from '../api/connectionsApi.js'
 
 export default {
   name: 'ConnectToClientDialog',
   emits: ['connected'],
   data() {
-    return { visible: false, connecting: false, form: { host: '', port: 9443 } }
+    return { visible: false, connecting: false, form: { host: '', port: 9443, serverWebBaseUrl: '' } }
   },
   methods: {
-    open() { this.visible = true },
+    async open() {
+      this.visible = true
+      try {
+        const settings = await getBindConnectionSettings()
+        this.form.serverWebBaseUrl = String(settings.server_web_base_url || '')
+      } catch (error) {
+        ElMessage.error(error.message || 'Unable to load Server Web URL')
+      }
+    },
     async connect() {
       const host = this.form.host.trim()
       const port = Number(this.form.port)
@@ -34,9 +45,14 @@ export default {
         ElMessage.warning('Enter a Client address and valid port')
         return
       }
+      const serverWebBaseUrl = this.form.serverWebBaseUrl.trim()
+      if (!/^https?:\/\/[^/\s]+\/?$/.test(serverWebBaseUrl)) {
+        ElMessage.warning('Enter a valid Server Web URL')
+        return
+      }
       this.connecting = true
       try {
-        const result = await connectToClient(host, port)
+        const result = await connectToClient(host, port, serverWebBaseUrl)
         this.visible = false
         ElMessage.success('Client connected')
         this.$emit('connected', result.client_id)
