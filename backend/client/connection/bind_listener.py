@@ -42,9 +42,14 @@ class BindListener:
                 return
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             try:
-                # Never use SO_REUSEADDR to share a port with a second process.
+                # POSIX: reclaim the same address after an old TCP session enters
+                # TIME_WAIT. SO_REUSEADDR does not allow two active TCP listeners
+                # on the same address (that would require SO_REUSEPORT).
+                # Windows: keep exclusive bind semantics, never use SO_REUSEADDR.
                 if hasattr(socket, 'SO_EXCLUSIVEADDRUSE'):
                     sock.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+                else:
+                    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                 sock.bind(self.address)
                 sock.listen(1)
                 sock.settimeout(0.25)
@@ -58,6 +63,8 @@ class BindListener:
                                             name='RCHBindTcpListener')
             self._thread.start()
         logger.info('Bind TCP listening on %s:%s', *self.address)
+        from client.update.signals import report_ready
+        report_ready('', 'bind')
 
     def _accept_loop(self, listener_socket):
         while not self._stop.is_set():

@@ -77,11 +77,9 @@ def create_agent_blueprint(server_instance):
             listener_protocol = 'tcp'
             tls_fingerprint = ''
             listener_name = ''
-            if source == 'update' and connection_mode == 'bind':
-                raise ValueError('Bind update requires manual port handoff')
             if connection_mode == 'bind' and listener_id:
                 raise ValueError('Bind Agent does not use a Server listener')
-            if source == 'update':
+            if source == 'update' and connection_mode == 'reverse':
                 settings = server_instance.listener_manager.update_build_settings(
                     str(payload.get('server_transport') or 'tcp').strip(),
                     str(payload.get('server_tls_fingerprint') or '').strip().lower(),

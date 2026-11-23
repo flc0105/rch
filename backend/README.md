@@ -1371,7 +1371,7 @@ help
 
 - `watchdog` displays the flat guard/watchdog runtime status; use `watchdog --json` for flat JSON.
 - `update` builds/downloads/extracts/starts the newest bundle.
-- `update --keep-old` leaves the current Client alive after the new Client successfully starts.
+- `update --keep-old` keeps the old ordinary Reverse Client after the new Client registers with Server.
 - `clean` previews selectable Client residue and obsolete Release cleanup; `clean --no-confirm` runs without Interaction Broker.
 - `set` reads/writes Client runtime configuration overrides.
 - `help` is generated from the actual exported command manifest.
@@ -1907,36 +1907,11 @@ The details dialog can show:
 
 ## Safe Client update handoff
 
-The current `update` path is more conservative than simply starting a new PID and killing the old process immediately.
+`update` builds, verifies (SHA-256), and publishes an immutable Python Source Bundle. On macOS, Linux and Windows, ordinary Reverse Clients start the candidate while the old process remains online; the old process exits after the candidate receives a Server Session Token and passes the PID/Revision/liveness check. `update --keep-old` retains the old ordinary Reverse process.
 
-Default flow:
+Ordinary Bind Clients send the preparation result to Server, then end the old session and process after the command finishes. A short-lived local handoff starts the replacement only after the old listener is released. Readiness is acknowledged after `listen()` succeeds; operators reconnect manually from Server. Candidate and rollback startup output is saved in the handoff log, and rollback is only reported successful after the previous Client listens again. macOS launchd jobs use a stable Launcher entry and a job-specific Release pointer, preserving service ownership and other plist settings. iOS/Pythonista installs the Release and presents its entry path for manual startup. systemd and Windows-managed services are not yet automatically handed off.
 
-```text
-request bundle
-download ZIP
-safe extract
-launch new Client
-wait for new Client handshake/ready marker
-verify new process remains alive
-only then exit old Client
-```
-
-If the new Client fails before the handoff is considered healthy:
-
-- the old connection stays alive
-- startup stderr/error text is returned when available
-
-Conservative mode:
-
-```text
-update --keep-old
-```
-
-starts the new Client but keeps the old Client alive as well.
-
-This matters because multiple Client instances on one machine are a supported operational case.
-
-iOS retains its existing update/restart behavior rather than forcing the desktop handoff model onto Pythonista/iOS.
+The Update readiness channel is local and authenticated; it does not change normal Client/Server connection behavior.
 
 ---
 
@@ -2687,7 +2662,7 @@ Existing releases are not renamed or removed during installation.
 
 The Client source requires **Python 3.10 or newer**. On Windows the bootstrap prefers an existing suitable embedded runtime, then suitable local Python; if neither is available it requests the Windows Embed archive using the detected platform/architecture. The published `python-embed` package is currently **Windows amd64 / Python 3.13.13 only**; Windows 7 and unsupported architectures cannot use it. On macOS the bootstrap uses local Python only and never downloads Embed. Launching the Client is detached (Windows also hides its window). Bootstrap initialization still uses the Web port; Client file transfer is separate.
 
-Both generated Python and Windows PowerShell bootstraps print each stage to the console: runtime source (cached Embed, local Python, or Embed download), build request/version, Bundle download and checksum, extraction/replacement directory, and detached launch. An existing Python Client's `update` command keeps its original extraction and handoff behavior; only its ZIP archive location is `~/client_bundle/downloads/` (sibling of `releases/`). The Bundle ZIP residue cleanup also targets that downloads directory without touching cached Python Embed packages.
+Both generated Python and Windows PowerShell bootstraps print each stage to the console: runtime source (cached Embed, local Python, or Embed download), build request/version, Bundle download and checksum, extraction/replacement directory, and detached launch. Python Client `update` uses the same Release root and downloads temporary ZIPs under `~/client_bundle/downloads/` (sibling of `releases/`), validating SHA-256 before publishing. The Bundle ZIP residue cleanup also targets that downloads directory without touching cached Python Embed packages.
 
 
 

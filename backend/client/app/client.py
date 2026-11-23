@@ -56,14 +56,17 @@ class Client:
         log_runtime_config_overrides_if_any()
 
         self.server = self.connection_lifecycle.create_connection()
-        if self.watchdog_manager is not None:
+        from client.update.signals import is_update_candidate, set_client_watchdog_manager
+        set_client_watchdog_manager(self.watchdog_manager)
+        if self.watchdog_manager is not None and not is_update_candidate():
             self.watchdog_manager.start()
 
     def connect(self):
         """
         建立连接并完成握手
         """
-        if self.watchdog_manager is not None:
+        from client.update.signals import is_update_candidate
+        if self.watchdog_manager is not None and not is_update_candidate():
             self.watchdog_manager.start()
         self.connection_lifecycle.connect_socket()
         self.connection_lifecycle.handshake()
@@ -76,6 +79,9 @@ class Client:
         except OSError as error:
             if not self.connection_lifecycle.is_bind_mode:
                 raise
+            from client.update.signals import is_update_candidate
+            if is_update_candidate() and self.connection_lifecycle._bind_listener is None:
+                raise  # Update candidate failed to acquire its required listening port.
             self._recover_from_connection_error(error)
 
     def _recover_from_connection_error(self, error):

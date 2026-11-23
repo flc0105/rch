@@ -183,6 +183,12 @@ launchd Client 的 Watchdog Worker 保持停止，`client.suppressed=true`；模
 
 Web 的 **info → Watchdog** 会显示当前生命周期由 LaunchAgent 或 LaunchDaemon 管理。`watchdog` Feature 为 `true`，相关实现已加载；三个模式的 `set` 开关可以保存配置，Worker/Supervisor 当前不会启动。HTTP Control 的三个按钮保持显示，托管期间不可执行。详细状态字段见 [Watchdog](watchdog.md)。
 
+### Update 的固定启动入口
+
+当当前 Client 被验证为某个正在运行的 LaunchAgent / LaunchDaemon 时，`update` 不会另外启动一个普通 Detached Client。首次更新由该 job 自己进行一次启动入口迁移：保留 plist 的其他配置，把 `ProgramArguments` 改为共享 Bundle 根目录下的 `launchd_launcher.py` 和该服务专属的版本指向文件。后续更新只调整该服务的版本指向，不再重写 plist。交接会通过原 job 重启新版：Reverse 以收到 Server Session Token 验收，Bind 以成功 `listen()` 验收，随后由操作者在 Server 手动重连。失败时恢复此前的版本指向与服务入口。
+
+首次迁移必须具有该服务的 plist 修改权限（系统 LaunchDaemon、全局 LaunchAgent 需要 root）。在停止旧服务前进行权限预检。普通 Terminal / IDE / Detached 的更新不使用固定 Launcher。此流程的 macOS 实机验收仍以服务状态、日志与人工 Server 重连为准。
+
 ## 9. 状态检查
 
 Manager 的 `status` 输出至少包括：

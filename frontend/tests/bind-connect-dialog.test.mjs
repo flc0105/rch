@@ -65,3 +65,31 @@ test('Device Disconnect always uses the one Server session endpoint', async () =
   assert.deepEqual(calls, ['bind-id', 'reverse-id'])
   assert.match(api, /export function disconnectConnection\(clientId\)/)
 })
+
+test('Connect dialog distinguishes an existing Bind session from a new connection', async () => {
+  const source = dialog.match(/<script>([\s\S]*?)<\/script>/)?.[1]
+  assert.ok(source)
+  const toasts = []
+  const events = []
+  let existing = true
+  const component = vm.runInNewContext(`(${source.replace(/^import .*$/gm, '').replace('export default', '')})`, {
+    connectToClient: async () => ({ client_id: 'same-id', status: existing ? 'already_connected' : 'connected' }),
+    ElMessage: {
+      info: value => toasts.push(['info', value]),
+      success: value => toasts.push(['success', value]),
+      error(error) { throw error },
+      warning(message) { throw Error(message) },
+    },
+  })
+  const instance = { ...component.data(), $emit: (...args) => events.push(args) }
+  instance.visible = true
+  instance.form = { host: '127.0.0.1', port: 9443, serverWebBaseUrl: 'http://localhost:8085' }
+  await component.methods.connect.call(instance)
+  assert.deepEqual(toasts, [['info', 'Client already connected']])
+  assert.deepEqual(events, [])
+  existing = false
+  instance.visible = true
+  await component.methods.connect.call(instance)
+  assert.deepEqual(toasts.at(-1), ['success', 'Client connected'])
+  assert.deepEqual(Array.from(events[0]), ['connected', 'same-id'])
+})

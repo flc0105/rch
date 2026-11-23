@@ -54,8 +54,12 @@ export default {
       try {
         const result = await connectToClient(host, port, serverWebBaseUrl)
         this.visible = false
-        ElMessage.success('Client connected')
-        this.$emit('connected', result.client_id)
+        if (result.status === 'already_connected') {
+          ElMessage.info('Client already connected')
+        } else {
+          ElMessage.success('Client connected')
+          this.$emit('connected', result.client_id)
+        }
       } catch (error) {
         ElMessage.error(error.message || 'Unable to connect to Client')
       } finally {

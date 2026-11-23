@@ -9,35 +9,10 @@ from functools import lru_cache
 def _verified_launchd_job_for_pid(pid: int):
     """Identify a running launchd *job*, not a process merely adopted by launchd.
 
-    `launchctl list` supplies a running job's label and PID in the current
-    bootstrap domain. Verify the exact job with `launchctl print` in an
-    explicit domain; an anonymous job or a PID in another job is not proof.
+    `launchctl list` and `launchctl procinfo` identify possible jobs; the
+    exact PID, running state and type must match `launchctl print`.
     """
     if sys.platform != 'darwin':
-        return None
-
-    try:
-        listed = subprocess.run(
-            ['/bin/launchctl', 'list'], capture_output=True, text=True,
-            timeout=2, check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    if listed.returncode != 0:
-        return None
-
-    labels = []
-    for line in listed.stdout.splitlines():
-        fields = line.split(None, 2)
-        if len(fields) != 3 or fields[0] != str(pid):
-            continue
-        label = fields[2].strip()
-        # launchd also tracks adopted/anonymous processes. Only named jobs count.
-        if not label or 'anonymous' in label.lower() or '/' in label:
-            continue
-        labels.append(label)
-
-    if not labels:
         return None
 
     try:
@@ -45,26 +20,87 @@ def _verified_launchd_job_for_pid(pid: int):
     except (AttributeError, OSError):
         return None
 
-    for label in labels:
-        for domain, expected_type, mode, source in (
-            (f'gui/{uid}', 'LaunchAgent', 'user_service', 'launchagent'),
-            (f'user/{uid}', 'LaunchAgent', 'user_service', 'launchagent'),
-            ('system', 'LaunchDaemon', 'system_service', 'launchdaemon'),
-        ):
-            try:
-                detail = subprocess.run(
-                    ['/bin/launchctl', 'print', f'{domain}/{label}'],
-                    capture_output=True, text=True, timeout=2, check=False,
-                )
-            except (OSError, subprocess.TimeoutExpired):
+    candidates = []
+    try:
+        listed = subprocess.run(
+            ['/bin/launchctl', 'list'], capture_output=True, text=True,
+            timeout=2, check=False,
+        )
+        if listed.returncode == 0:
+            for line in listed.stdout.splitlines():
+                fields = line.split(None, 2)
+                if len(fields) != 3 or fields[0] != str(pid):
+                    continue
+                label = fields[2].strip()
+                if label and 'anonymous' not in label.lower() and '/' not in label:
+                    candidates.extend((domain, label) for domain in
+                                      (f'gui/{uid}', f'user/{uid}', 'system'))
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+
+    # A daemon can live in the system domain while the caller's launchctl
+    # list shows only a user domain. procinfo names the exact responsible job.
+    try:
+        info = subprocess.run(
+            ['/bin/launchctl', 'procinfo', str(pid)],
+            capture_output=True, text=True, timeout=2, check=False,
+        )
+        if info.stdout:
+            for domain, label in re.findall(
+                r'^\s*(system|gui/\d+|user/\d+)/([A-Za-z0-9._-]+)\s*=\s*\{',
+                info.stdout, re.M,
+            ):
+                candidates.insert(0, (domain, label))
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+
+    seen = set()
+    for domain, label in candidates:
+        if (domain, label) in seen:
+            continue
+        seen.add((domain, label))
+        if domain == 'system':
+            expected_type, mode, source = 'LaunchDaemon', 'system_service', 'launchdaemon'
+        else:
+            expected_type, mode, source = 'LaunchAgent', 'user_service', 'launchagent'
+        if domain.startswith(('gui/', 'user/')) and domain.split('/', 1)[1] != str(uid):
+            continue
+        try:
+            detail = subprocess.run(
+                ['/bin/launchctl', 'print', f'{domain}/{label}'],
+                capture_output=True, text=True, timeout=2, check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        if detail.returncode != 0:
+            continue
+        output = detail.stdout
+        if (re.search(r'^[ \t]*pid[ \t]*=[ \t]*' + re.escape(str(pid)) + r'[ \t]*$', output, re.M)
+                and re.search(r'^[ \t]*state[ \t]*=[ \t]*running[ \t]*$', output, re.M | re.I)
+                and re.search(r'^[ \t]*type[ \t]*=[ \t]*' + expected_type + r'[ \t]*$', output, re.M | re.I)):
+            if source == 'launchdaemon':
+                plist_path = f'/Library/LaunchDaemons/{label}.plist'
+                scope = 'system'
+            else:
+                from client.runtime.user_identity import get_posix_user_identity
+                home = get_posix_user_identity(uid).home
+                user_path = os.path.join(home, 'Library', 'LaunchAgents', f'{label}.plist')
+                global_path = f'/Library/LaunchAgents/{label}.plist'
+                if os.path.isfile(user_path):
+                    plist_path, scope = user_path, 'user'
+                elif os.path.isfile(global_path):
+                    plist_path, scope = global_path, 'global'
+                else:
+                    continue
+            if not os.path.isfile(plist_path):
                 continue
-            if detail.returncode != 0:
-                continue
-            output = detail.stdout
-            if (re.search(r'^[ \t]*pid[ \t]*=[ \t]*' + re.escape(str(pid)) + r'[ \t]*$', output, re.M)
-                    and re.search(r'^[ \t]*state[ \t]*=[ \t]*running[ \t]*$', output, re.M | re.I)
-                    and re.search(r'^[ \t]*type[ \t]*=[ \t]*' + expected_type + r'[ \t]*$', output, re.M | re.I)):
-                return {'mode': mode, 'source': source}
+            return {
+                'mode': mode, 'source': source,
+                'service_label': label, 'service_domain': domain,
+                'service_target': f'{domain}/{label}',
+                'service_uid': uid, 'service_scope': scope,
+                'service_plist': plist_path,
+            }
     return None
 
 

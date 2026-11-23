@@ -31,6 +31,10 @@ class BindConnector:
         return session if session is not None and session in self.server.connections else None
 
     def connect(self, host, port, *, server_web_base_url=''):
+        session, _ = self.connect_with_status(host, port, server_web_base_url=server_web_base_url)
+        return session
+
+    def connect_with_status(self, host, port, *, server_web_base_url=''):
         host, port = self._endpoint(host, port)
         announced_url = validate_web_origin(server_web_base_url) if server_web_base_url else ''
         endpoint = (host.lower(), port)
@@ -39,7 +43,7 @@ class BindConnector:
                 raise RuntimeError('Connection already in progress')
             active = self._current_session(endpoint)
             if active is not None:
-                return active
+                return active, True
             self._inflight.add(endpoint)
             deadline = self._reconnect_until.pop(endpoint, 0)
         try:
@@ -58,7 +62,7 @@ class BindConnector:
                     )
                     with self._lock:
                         self._sessions[endpoint] = session
-                    return session
+                    return session, False
                 except OSError:
                     if sock is not None:
                         sock.close()

@@ -14,7 +14,7 @@ Client 的 Server Web API 统一由 `client/http/client_api.py` 提供方法，`
 
 ## Python Client Bind TCP
 
-源码 Client 默认 `connection_mode=reverse`；构建后的 Bundle 无参数启动使用构建时选定的 Reverse 或 Bind 默认配置。也可在启动时使用 `--connection-mode bind` / `--connection-mode reverse` 覆盖默认模式，或用 `--profile bind` 选择源码 Profile。Bind 模式：Client 在配置的 `bind_host:bind_port` 监听，Server 从设备栏 **More → Connect to Client** 填写目标地址和端口主动连接。默认 profile 监听 `0.0.0.0:9443`，本轮使用普通 TCP。
+源码 Client 默认 `connection_mode=reverse`；构建后的 Bundle 无参数启动使用构建时选定的 Reverse 或 Bind 默认配置。也可在启动时使用 `--connection-mode bind` / `--connection-mode reverse` 覆盖默认模式，或用 `--profile bind` 选择源码 Profile。Bind 模式：Client 在配置的 `bind_host:bind_port` 监听，Server 从设备栏 **More → Connect to Client** 填写目标地址和端口主动连接。默认 profile 监听 `0.0.0.0:9443`，本轮使用普通 TCP。 同一 Host/Port 已存在活动 Bind 会话时，Connect API 返回 `already_connected` 和原 Client ID，前端提示 `Client already connected`，不会额外发起连接；首次连接成功时返回 `connected`。
 
 TCP 接通后由 Client 发出第一条 `info`，复用原 RCH 帧、会话、心跳、命令、PTY 和 Transfer 控制。Client 监听 Socket 属于进程；每次接入 Socket 属于一个会话。单实例同时保留一条会话，断线后释放占用并继续监听，Server 通过设备栏再次连接即可使用同一个 Client PID 和 ID。Server 主动断开前为当前 Session 记录 `server_requested_disconnect`，随后关闭会话 Socket；Connection History 将本次主动断开归类为 Server requested disconnect。Server 主动断开后立即再次连接同一目标时，会短暂重试以等待旧会话释放。设备菜单和 Terminal Toolbar 的 **Disconnect** 使用同一连接管理 API；Server 根据当前活动 Session 选择处理方式：Bind 关闭会话并保留监听进程，Reverse 沿用原有的 Session 结束控制。`pause_connection` 暂停接入，本地 Resume 恢复监听。
 

@@ -47,6 +47,9 @@ class ClientInboundMessageDispatcher:
             self.connection.client_session_token = str(data.get('token') or '')
             from client.http.session_auth import set_token
             set_token(self.connection.client_session_token)
+            if self.connection.client_session_token:
+                from client.update.signals import report_ready
+                report_ready(self.connection.client_id, 'reverse')
             return None
 
         if message_type == MSG_TYPE_SESSION_CONFIG:

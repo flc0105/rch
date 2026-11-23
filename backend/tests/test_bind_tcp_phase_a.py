@@ -83,6 +83,39 @@ def test_bind_socket_occupancy_pause_resume_and_port_conflict():
         listener.close()
 
 
+def test_bind_restarts_immediately_after_a_recent_tcp_session():
+    """A replaced Bind process must not wait for a closed session's TIME_WAIT."""
+    port = _available_port()
+    first = BindListener(_config(port))
+    first.start()
+    try:
+        # The listener must still be exclusive while the old Client is alive.
+        with pytest.raises(OSError):
+            BindListener(_config(port)).start()
+        peer = socket.create_connection(('127.0.0.1', port), timeout=2)
+        accepted = first.accept()
+        try:
+            peer.sendall(b'probe')
+            assert accepted.recv(5) == b'probe'
+            # Old Bind actively closes its session before process replacement;
+            # this puts the server-side 4-tuple into TIME_WAIT on POSIX.
+            accepted.shutdown(socket.SHUT_RDWR)
+        finally:
+            accepted.close()
+            peer.close()
+            first.release_session()
+    finally:
+        first.close()
+
+    successor = BindListener(_config(port))
+    try:
+        successor.start()
+        with socket.create_connection(('127.0.0.1', port), timeout=2):
+            pass
+    finally:
+        successor.close()
+
+
 class _Session:
     def __init__(self, transport, info):
         self.transport = transport
@@ -478,3 +511,22 @@ def test_client_wait_survives_bind_initial_handshake_error_and_toolbar_disconnec
         client.connection_lifecycle.close_current_connection()
         client.connection_lifecycle.close_bind_listener()
         thread.join(timeout=3)
+
+
+def test_duplicate_bind_connect_reports_existing_session_without_new_dial(bind_server):
+    from server.application.web.connection_api import WebConnectionApi
+
+    server, connector, port, registry = bind_server
+    listener, accepted, thread = _connect_info(port)
+    web_api = WebConnectionApi(None, bind_connector=connector)
+    try:
+        first = web_api.connect_bind_client('127.0.0.1', port)
+        again = web_api.connect_bind_client('127.0.0.1', port)
+        assert first == {'client_id': again['client_id'], 'status': 'connected'}
+        assert again['status'] == 'already_connected'
+        assert len(registry.registered) == 1
+        assert len(server.connections) == 1
+    finally:
+        if accepted:
+            accepted[0].close()
+        listener.close()

@@ -187,7 +187,7 @@ def _resolve_python_command_for_source_bundle() -> list[str]:
     return candidates[0]
 
 
-def spawn_detached_python_script(script_path: str, cwd: str = '', args=None, stderr_path: str = ''):
+def spawn_detached_python_script(script_path: str, cwd: str = '', args=None, stderr_path: str = '', env_overrides=None, output_path: str = ''):
     script_path = os.path.abspath(script_path)
     launch_cwd = os.path.abspath(cwd) if cwd else os.path.dirname(script_path)
     command = _resolve_python_command_for_source_bundle() + [script_path]
@@ -196,16 +196,20 @@ def spawn_detached_python_script(script_path: str, cwd: str = '', args=None, std
         command.extend(str(item) for item in args)
 
     stderr_file = None
-    if stderr_path:
-        stderr_file = open(os.path.abspath(stderr_path), 'ab')
+    if output_path or stderr_path:
+        stderr_file = open(os.path.abspath(output_path or stderr_path), 'ab')
 
     from client.watchdog.watchdog_environment import without_process_recovery_watchdog_environment
 
+    launch_env = without_process_recovery_watchdog_environment()
+    if env_overrides:
+        launch_env.update(env_overrides)
+
     popen_kwargs = {
         'cwd': launch_cwd,
-        'env': without_process_recovery_watchdog_environment(),
+        'env': launch_env,
         'stdin': subprocess.DEVNULL,
-        'stdout': subprocess.DEVNULL,
+        'stdout': stderr_file if output_path else subprocess.DEVNULL,
         'stderr': stderr_file or subprocess.DEVNULL,
         'close_fds': True,
         'shell': False,

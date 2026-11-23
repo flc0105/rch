@@ -15,8 +15,11 @@ class WebConnectionApi:
         self.bind_connector = bind_connector
 
     def connect_bind_client(self, host: str, port: int, server_web_base_url: str = ''):
-        session = self.bind_connector.connect(host, port, server_web_base_url=server_web_base_url)
-        return {'client_id': session.session_info.client_id}
+        session, reused = self.bind_connector.connect_with_status(
+            host, port, server_web_base_url=server_web_base_url,
+        )
+        return {'client_id': session.session_info.client_id,
+                'status': 'already_connected' if reused else 'connected'}
 
     def disconnect_connection(self, client_id: str):
         return self.connection_service.disconnect_connection(client_id, self.bind_connector)
