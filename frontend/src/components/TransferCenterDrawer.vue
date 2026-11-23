@@ -16,23 +16,6 @@
         </div>
 
         <div class="transfer-center-header-actions">
-          <el-select
-            class="transfer-machine-filter"
-            size="small"
-            :model-value="machineId"
-            filterable
-            clearable
-            placeholder="All Machines"
-            aria-label="Filter transfers by Machine ID"
-            @change="$emit('filter-machine', $event || '')"
-          >
-            <el-option
-              v-for="machine in machineOptions"
-              :key="machine.machine_id"
-              :value="machine.machine_id"
-              :label="machine.label"
-            />
-          </el-select>
           <button
             class="transfer-center-close"
             type="button"
@@ -107,10 +90,29 @@
         </article>
       </section>
 
-      <section v-if="recentTransfers.length" class="transfer-center-section transfer-center-recent">
+      <section v-if="recentTransfers.length || machineId" class="transfer-center-section transfer-center-recent">
         <div class="transfer-center-section-heading">
           <div class="transfer-center-section-title">Recent</div>
-          <button class="transfer-text-action" type="button" @click="clearRecent">Clear Recent</button>
+          <div class="transfer-center-recent-tools">
+            <el-select
+              class="transfer-machine-filter"
+              size="small"
+              :model-value="machineId"
+              filterable
+              clearable
+              placeholder="All Machines"
+              aria-label="Filter transfers by Machine ID"
+              @change="$emit('filter-machine', $event || '')"
+            >
+              <el-option
+                v-for="machine in machineOptions"
+                :key="machine.machine_id"
+                :value="machine.machine_id"
+                :label="machine.label"
+              />
+            </el-select>
+            <button class="transfer-text-action" type="button" :disabled="recentTotal === 0" @click="clearRecent">Clear Recent</button>
+          </div>
         </div>
 
         <article
@@ -342,9 +344,13 @@ export default {
     },
 
     async clearRecent() {
+      const selectedMachineId = this.machineId
+      const label = this.machineOptions.find(item => item.machine_id === selectedMachineId)?.label || 'the selected machine'
       try {
         await ElMessageBox.confirm(
-          'Clear all recent transfer records?',
+          selectedMachineId
+            ? `Clear recent transfer records for ${label}?`
+            : 'Clear all recent transfer records?',
           'Clear Recent Transfers',
           { type: 'warning' },
         )
@@ -353,7 +359,7 @@ export default {
       }
 
       try {
-        await clearRecentTransfers(this.tabId)
+        await clearRecentTransfers(this.tabId, selectedMachineId)
         this.$emit('transfers-changed')
       } catch (e) {
         ElMessage.error(e.message || 'Failed to clear recent transfers')
@@ -447,7 +453,7 @@ export default {
   flex-shrink: 0;
 }
 
-/* Match the compact selector in Notification Center; no separate filter strip. */
+/* Match Notification Center's compact filter; keep it beside Clear Recent. */
 .transfer-machine-filter {
   width: 148px;
   height: 24px;
@@ -526,6 +532,13 @@ export default {
 
 .transfer-center-section-heading .transfer-center-section-title {
   margin: 0;
+}
+
+.transfer-center-recent-tools {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
 }
 
 .transfer-card-actions {

@@ -194,9 +194,9 @@ class WebTransferApi:
             raise ValueError('transfer not found')
         return {'transfer_id': str(transfer_id or '').strip(), 'deleted': True}
 
-    def clear_recent_transfers(self, *, tab_id: str = ''):
+    def clear_recent_transfers(self, *, tab_id: str = '', machine_id: str = ''):
         removed = self.transfer_service.clear_recent_transfers(
-            tab_id=str(tab_id or '').strip(),
+            tab_id=str(tab_id or '').strip(), machine_id=str(machine_id or '').strip(),
         )
         return {'removed': removed}
 

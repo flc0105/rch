@@ -52,7 +52,9 @@ def create_transfers_blueprint(server_instance):
     @blueprint.delete('/api/transfers/recent')
     def clear_recent_transfers():
         return responder.json_endpoint(
-            lambda: transfer_api.clear_recent_transfers(tab_id=get_optional_tab_id()),
+            lambda: transfer_api.clear_recent_transfers(
+                tab_id=get_optional_tab_id(), machine_id=request.args.get('machine_id', '').strip(),
+            ),
             default_error_status=500,
         )
 

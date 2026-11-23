@@ -163,8 +163,11 @@ export async function deleteRecentTransfer(transferId, tabId = '') {
   return parseApiResponse(res, 'Failed to delete transfer')
 }
 
-export async function clearRecentTransfers(tabId = '') {
-  const res = await fetch('/api/transfers/recent', {
+export async function clearRecentTransfers(tabId = '', machineId = '') {
+  const query = new URLSearchParams()
+  if (machineId) query.set('machine_id', machineId)
+  const url = query.size ? `/api/transfers/recent?${query}` : '/api/transfers/recent'
+  const res = await fetch(url, {
     method: 'DELETE',
     headers: buildTabHeaders(tabId),
   })

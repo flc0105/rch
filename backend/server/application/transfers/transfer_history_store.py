@@ -116,7 +116,8 @@ class TransferHistoryStore:
                 WHERE transfer_id = ? AND state != 'running' ''', (transfer_id,))
             return result.rowcount > 0
 
-    def clear_recent(self) -> int:
+    def clear_recent(self, machine_id: str = '') -> int:
+        where, params = self._recent_where(str(machine_id or '').strip())
         with self.database.transaction() as conn:
-            result = conn.execute("DELETE FROM transfer_records WHERE state != 'running'")
+            result = conn.execute(f'DELETE FROM transfer_records WHERE {where}', params)
             return result.rowcount

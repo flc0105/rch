@@ -6,13 +6,13 @@ const read = name => readFileSync(new URL(name, import.meta.url), 'utf8')
 const transfer = read('../src/components/TransferCenterDrawer.vue')
 const notifications = read('../src/components/NotificationCenterDrawer.vue')
 
-test('Machine filter sits in the Transfer header, not a large full-width toolbar', () => {
-  const header = transfer.match(/<div class="transfer-center-header">([\s\S]*?)<\/div>\s*<\/div>\s*<section/)?.[1]
-  assert.ok(header, 'header encloses controls before first section')
-  assert.match(header, /class="transfer-center-header-actions"/)
-  assert.match(header, /class="transfer-machine-filter"/)
-  assert.match(header, /class="transfer-center-close"/)
-  assert.doesNotMatch(transfer, /<div class="transfer-machine-filter">/)
+test('Machine filter sits beside Clear Recent, not in the title header or a large full-width toolbar', () => {
+  const header = transfer.split('<div class="transfer-center-header">')[1].split('<section')[0]
+  const recentHeading = transfer.split('<div class="transfer-center-section-heading">')[1].split('</div>\n\n        <article')[0]
+  assert.doesNotMatch(header, /class="transfer-machine-filter"/)
+  assert.match(recentHeading, /class="transfer-center-recent-tools"/)
+  assert.match(recentHeading, /class="transfer-machine-filter"/)
+  assert.match(recentHeading, /Clear Recent/)
   assert.doesNotMatch(transfer, /\.transfer-machine-filter \.el-select\s*\{\s*width:\s*100%/)
 })
 

@@ -404,14 +404,15 @@ class TransferService:
                 self._changed.notify_all()
             return removed
 
-    def clear_recent_transfers(self, *, tab_id: str = '') -> int:
+    def clear_recent_transfers(self, *, tab_id: str = '', machine_id: str = '') -> int:
         with self._changed:
-            removed = self.history.clear_recent()
-            for transfer_id, item in list(self._items.items()):
-                if item.get('state') in self.TERMINAL_STATES:
-                    self._items.pop(transfer_id, None)
-            self._recent_ids.clear()
+            removed = self.history.clear_recent(machine_id=machine_id)
             if removed:
+                # Keep cached terminal transfers from other machines intact.
+                for transfer_id, item in list(self._items.items()):
+                    if item.get('state') in self.TERMINAL_STATES and self.history.get(transfer_id) is None:
+                        self._items.pop(transfer_id, None)
+                self._recent_ids = [tid for tid in self._recent_ids if tid in self._items]
                 self._changed.notify_all()
             return removed
 
