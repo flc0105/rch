@@ -15,25 +15,16 @@
             <el-table-column label="Bind" min-width="165" show-overflow-tooltip>
               <template #default="{ row }"><span class="listener-bind">{{ row.host || '0.0.0.0' }}:{{ row.port }}</span></template>
             </el-table-column>
-            <el-table-column label="TLS Fingerprint" min-width="240">
-              <template #default="{ row }">
-                <div v-if="row.tls_fingerprint" class="listener-fingerprint">
-                  <code class="listener-fingerprint-value" :title="row.tls_fingerprint">{{ row.tls_fingerprint }}</code>
-                  <el-button size="small" text @click="copyFingerprint(row.tls_fingerprint)">Copy</el-button>
-                </div>
-                <span v-else-if="row.fingerprint_error" :title="row.fingerprint_error">Unavailable</span>
-                <span v-else>—</span>
-              </template>
-            </el-table-column>
             <el-table-column label="Status" width="120">
               <template #default="{ row }"><el-tag :type="row.status === 'listening' ? 'success' : (row.status === 'error' ? 'danger' : 'info')" size="small" :title="row.last_error || ''">{{ row.status }}</el-tag></template>
             </el-table-column>
             <el-table-column label="Devices" prop="connections" width="80" align="center" />
-            <el-table-column label="Actions" width="164" align="center">
+            <el-table-column label="Actions" width="275" align="center">
               <template #default="{ row }">
                 <div class="listener-actions">
                   <el-button size="small" plain @click="toggle(row)">{{ row.status === 'listening' ? 'Stop' : 'Start' }}</el-button>
                   <el-button size="small" type="danger" plain :disabled="row.id === 'tcp-default'" @click="remove(row)">Delete</el-button>
+                  <el-button v-if="row.protocol === 'tls_tcp'" size="small" plain @click="showCertificate(row)">Certificate</el-button>
                 </div>
               </template>
             </el-table-column>
@@ -47,19 +38,23 @@
               <el-tag :type="row.status === 'listening' ? 'success' : (row.status === 'error' ? 'danger' : 'info')" size="small" :title="row.last_error || ''">{{ row.status }}</el-tag>
             </div>
             <div class="listener-manager-mobile-meta">{{ row.protocol_label }} · {{ row.host || '0.0.0.0' }}:{{ row.port }} · {{ row.connections }} devices</div>
-            <div v-if="row.tls_fingerprint" class="listener-fingerprint listener-fingerprint-mobile">
-              <span>TLS Fingerprint</span>
-              <code class="listener-fingerprint-value" :title="row.tls_fingerprint">{{ row.tls_fingerprint }}</code>
-              <el-button size="small" text @click="copyFingerprint(row.tls_fingerprint)">Copy</el-button>
-            </div>
-            <div v-else-if="row.fingerprint_error" class="listener-manager-mobile-meta" :title="row.fingerprint_error">TLS Fingerprint unavailable</div>
             <div class="listener-actions">
               <el-button size="small" plain @click="toggle(row)">{{ row.status === 'listening' ? 'Stop' : 'Start' }}</el-button>
               <el-button size="small" type="danger" plain :disabled="row.id === 'tcp-default'" @click="remove(row)">Delete</el-button>
+              <el-button v-if="row.protocol === 'tls_tcp'" size="small" plain @click="showCertificate(row)">Certificate</el-button>
             </div>
           </div>
         </div>
       </div>
+    </el-dialog>
+    <el-dialog v-model="certificateVisible" title="TLS Certificate" width="520px" append-to-body class="listener-certificate-dialog">
+      <div class="listener-certificate-label">SHA-256 fingerprint</div>
+      <code v-if="selectedCertificate?.tls_fingerprint" class="listener-certificate-value">{{ selectedCertificate.tls_fingerprint }}</code>
+      <p v-else class="listener-certificate-error">{{ selectedCertificate?.fingerprint_error || 'Fingerprint unavailable' }}</p>
+      <template #footer>
+        <el-button @click="certificateVisible = false">Close</el-button>
+        <el-button v-if="selectedCertificate?.tls_fingerprint" type="primary" @click="copyFingerprint(selectedCertificate.tls_fingerprint)">Copy</el-button>
+      </template>
     </el-dialog>
     <AddListenerDialog ref="addDialog" :protocols="protocols" @created="load" />
 </template>
@@ -72,7 +67,7 @@ import AddListenerDialog from './AddListenerDialog.vue'
 export default {
   name: 'ListenerManagerDialog',
   components: { AddListenerDialog },
-  data() { return { visible: false, loading: false, listeners: [], protocols: [] } },
+  data() { return { visible: false, loading: false, listeners: [], protocols: [], certificateVisible: false, selectedCertificate: null } },
   methods: {
     async open() { this.visible = true; await this.load() },
     async copyFingerprint(value) {
@@ -83,6 +78,7 @@ export default {
         ElMessage.warning('Select the fingerprint to copy')
       }
     },
+    showCertificate(row) { this.selectedCertificate = row; this.certificateVisible = true },
     openAdd() { this.$refs.addDialog.open() },
     async requestResponse(request) {
       const response = await request
@@ -129,14 +125,13 @@ export default {
 .listener-manager-dialog .el-table { width: 100%; }
 .listener-manager-dialog .el-table .cell { padding: 0 8px; }
 .listener-bind { white-space: nowrap; }
-.listener-fingerprint { display: flex; align-items: center; min-width: 0; gap: 6px; }
-.listener-fingerprint-value { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; user-select: text; font-size: 11px; }
-.listener-fingerprint-mobile { flex-wrap: wrap; margin: 9px 0; }
-.listener-fingerprint-mobile span { width: 100%; font-size: 12px; color: var(--el-text-color-secondary); }
-.listener-fingerprint-mobile .listener-fingerprint-value { flex: 1 1 100%; overflow-wrap: anywhere; white-space: normal; }
+.listener-certificate-dialog.el-dialog { max-width: calc(100vw - 32px); }
+.listener-certificate-label { margin-bottom: 10px; color: var(--el-text-color-secondary); font-size: 13px; }
+.listener-certificate-value { display: block; padding: 12px; border-radius: 8px; background: var(--el-fill-color-light); overflow-wrap: anywhere; user-select: text; font-size: 13px; line-height: 1.7; }
+.listener-certificate-error { overflow-wrap: anywhere; }
 .listener-actions { display: flex; justify-content: center; align-items: center; gap: 7px; white-space: nowrap; }
 .listener-actions .el-button + .el-button { margin-left: 0; }
-.listener-actions .el-button { width: 58px; min-width: 58px; padding-left: 6px; padding-right: 6px; }
+.listener-actions .el-button { min-width: 58px; padding-left: 10px; padding-right: 10px; }
 .listener-manager-mobile-list { display: none; }
 @media (max-width: 960px) {
   .listener-manager-dialog.el-dialog {
@@ -154,7 +149,7 @@ export default {
   .listener-manager-mobile-card { border: 1px solid var(--el-border-color-light); border-radius: 10px; padding: 12px; }
   .listener-manager-mobile-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
   .listener-manager-mobile-meta { margin: 9px 0; font-size: 12px; color: var(--el-text-color-secondary); overflow-wrap: anywhere; }
-  .listener-manager-mobile-card .listener-actions { justify-content: flex-start; }
+  .listener-manager-mobile-card .listener-actions { justify-content: flex-start; flex-wrap: wrap; }
   .listener-manager-empty { padding: 16px; text-align: center; color: var(--el-text-color-secondary); }
 }
 </style>

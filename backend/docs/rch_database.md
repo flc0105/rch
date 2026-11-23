@@ -236,7 +236,7 @@
 | `context_json` | 通知关联的业务上下文。 |
 | `actions_json` | 通知可呈现的操作项描述及目标信息。 |
 
-此表保存 **Server 级**通知历史，通知上下文可以在 `context_json` 携带设备信息；表中没有 `machine_id` 列。通知历史由 Server 持久保存，关闭弹出提醒只调整通知呈现偏好。Server 启动清理可能清理启动前已有通知，见 [Cleanup](cleanup.md)。
+此表保存 **Server 级**通知历史，通知上下文可以在 `context_json` 携带设备信息；表中没有 `machine_id` 列。通知历史由 Server 持久保存，关闭弹出提醒只调整通知呈现偏好。Server 启动清理保留通知，只有用户通过 Notification Center 删除或清空记录，见 [Cleanup](cleanup.md)。
 
 ### `settings` — 多种全局偏好共用的 JSON 容器
 

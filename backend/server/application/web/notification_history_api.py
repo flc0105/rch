@@ -5,8 +5,13 @@ class WebNotificationHistoryApi:
         self.history_store = history_store
         self.event_bus = event_bus
 
-    def get_history(self):
-        return self.history_store.get_history()
+    def get_history(self, *, limit: int = 20, offset: int = 0,
+                    notification_type: str = ''):
+        if notification_type and notification_type not in {'success', 'info', 'warning', 'error'}:
+            raise ValueError('Invalid notification type')
+        return self.history_store.get_history(
+            limit=limit, offset=offset, notification_type=notification_type,
+        )
 
     def get_notifications_after(self, notification_id: str):
         return self.history_store.get_notifications_after(notification_id)

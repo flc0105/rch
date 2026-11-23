@@ -13,12 +13,13 @@ async function parseApiResponse(res, fallbackMessage) {
   return json.data || {}
 }
 
-export async function loadTransfers(tabId = '') {
+export async function loadTransfers(tabId = '', { limit = 20, offset = 0, machineId = '' } = {}) {
   const headers = {}
   const normalizedTabId = String(tabId || '').trim()
   if (normalizedTabId) headers['X-Tab-Id'] = normalizedTabId
-
-  const res = await fetch('/api/transfers', { headers })
+  const query = new URLSearchParams({ limit: String(limit), offset: String(offset) })
+  if (machineId) query.set('machine_id', machineId)
+  const res = await fetch(`/api/transfers?${query}`, { headers })
   return parseApiResponse(res, 'Failed to load transfers')
 }
 

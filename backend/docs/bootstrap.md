@@ -117,10 +117,10 @@ One-liners 请求 Server 生成对应平台的 Bootstrap 脚本，再由脚本�
 | `POST` | `/api/agent/bootstrap` | 依据参数生成的 Python `bootstrap.py` |
 | `POST` | `/api/agent/bootstrap/ps1` | 依据参数生成的 Windows `bootstrap.ps1` |
 
-Reverse 请求体示例：
+Reverse 请求体示例（`connection_mode` 可省略；显式填写 `reverse` 与省略行为相同，只有 `bind` 切换连接方式）：
 
 ```json
-{"server_host":"192.0.2.10","server_port":9999,"web_port":8085,"connection_mode":"reverse"}
+{"server_host":"192.0.2.10","server_port":9999,"web_port":8085}
 ```
 
 Bind Bootstrap 请求体示例（Server 主动连接 Client；首次安装通过 Server Web 下载 Bundle）：

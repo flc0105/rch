@@ -15,14 +15,33 @@
           </div>
         </div>
 
-        <button
-          class="transfer-center-close"
-          type="button"
-          title="Close"
-          @click="visible = false"
-        >
-          <el-icon><Close /></el-icon>
-        </button>
+        <div class="transfer-center-header-actions">
+          <el-select
+            class="transfer-machine-filter"
+            size="small"
+            :model-value="machineId"
+            filterable
+            clearable
+            placeholder="All Machines"
+            aria-label="Filter transfers by Machine ID"
+            @change="$emit('filter-machine', $event || '')"
+          >
+            <el-option
+              v-for="machine in machineOptions"
+              :key="machine.machine_id"
+              :value="machine.machine_id"
+              :label="machine.label"
+            />
+          </el-select>
+          <button
+            class="transfer-center-close"
+            type="button"
+            title="Close"
+            @click="visible = false"
+          >
+            <el-icon><Close /></el-icon>
+          </button>
+        </div>
       </div>
 
       <section v-if="activeTransfers.length" class="transfer-center-section">
@@ -133,11 +152,12 @@
             </el-dropdown>
           </div>
         </article>
-        <div v-if="remainingRecentCount > 0" class="transfer-center-more-row">
-          <button class="transfer-text-action" type="button" @click="showMoreRecent">
-            Show more ({{ remainingRecentCount }} remaining)
-          </button>
-        </div>
+        <HistoryLoadMore
+          v-if="remainingRecentCount > 0"
+          :remaining="remainingRecentCount"
+          :loading="loadingMore"
+          @load-more="$emit('load-more')"
+        />
       </section>
 
       <div v-if="!activeTransfers.length && !recentTransfers.length" class="transfer-center-empty">
@@ -173,6 +193,7 @@
 
 <script>
 import { formatBytesHuman, formatDateTimeLocal } from '../utils/formatters.js'
+import HistoryLoadMore from './HistoryLoadMore.vue'
 import { canUseTransferArtifact, transferArtifactDownloadUrl, transferDisplayName } from '../utils/transferCenter.js'
 import {
   CircleCheckFilled,
@@ -187,10 +208,9 @@ import {
   deleteRecentTransfer,
 } from '../api/transferApi.js'
 
-const RECENT_RENDER_BATCH_SIZE = 100
-
 export default {
   components: {
+    HistoryLoadMore,
     CircleCheckFilled,
     CircleCloseFilled,
     Close,
@@ -202,52 +222,64 @@ export default {
       type: Array,
       default: () => [],
     },
-    tabId: {
-      type: String,
-      default: '',
-    },
+    tabId: { type: String, default: '' },
+    machines: { type: Array, default: () => [] },
+    machineAliasMap: { type: Object, default: () => ({}) },
+    machineId: { type: String, default: '' },
+    recentTotal: { type: Number, default: 0 },
+    loadingMore: { type: Boolean, default: false },
   },
 
-  emits: ['transfers-changed', 'preview-artifact'],
+  emits: ['transfers-changed', 'preview-artifact', 'load-more', 'filter-machine'],
 
   data() {
     return {
       visible: false,
       infoVisible: false,
       infoTransfer: null,
-      recentRenderLimit: RECENT_RENDER_BATCH_SIZE,
     }
   },
 
   computed: {
     activeTransfers() {
-      return (this.transfers || []).filter(item => item?.state === 'running')
+      const active = (this.transfers || []).filter(item => item?.state === 'running')
+      if (!this.machineId) return active
+      const allowedIds = new Set((this.machines || [])
+        .filter(device => device?.machine_id === this.machineId)
+        .map(device => device.client_id))
+      return active.filter(item => allowedIds.has(item.client_id))
     },
 
-    recentTransferCount() {
-      return (this.transfers || [])
-        .filter(item => item?.state && item.state !== 'running').length
+    machineOptions() {
+      const machines = new Map()
+      for (const item of this.machines || []) {
+        const id = String(item?.machine_id || '').trim()
+        if (!id) continue
+        const alias = String(this.machineAliasMap?.[id] || '').trim()
+        const hostname = String(item?.hostname || '').trim()
+        const existing = machines.get(id)
+        // Keep the best known label if multiple sessions belong to one machine.
+        const label = alias || hostname || existing?.label || 'Unknown device'
+        machines.set(id, { machine_id: id, label })
+      }
+      if (this.machineId && !machines.has(this.machineId)) {
+        machines.set(this.machineId, { machine_id: this.machineId, label: 'Unknown device' })
+      }
+      return Array.from(machines.values()).sort((a, b) => a.label.localeCompare(b.label))
     },
 
     recentTransfers() {
-      return (this.transfers || [])
-        .filter(item => item?.state && item.state !== 'running')
-        .slice(0, this.recentRenderLimit)
+      return (this.transfers || []).filter(item => item?.state && item.state !== 'running')
     },
 
     remainingRecentCount() {
-      return Math.max(0, this.recentTransferCount - this.recentTransfers.length)
+      return Math.max(0, this.recentTotal - this.recentTransfers.length)
     },
   },
 
   methods: {
     open() {
-      this.recentRenderLimit = RECENT_RENDER_BATCH_SIZE
       this.visible = true
-    },
-
-    showMoreRecent() {
-      this.recentRenderLimit += RECENT_RENDER_BATCH_SIZE
     },
 
     displayName(transfer) {
@@ -408,6 +440,32 @@ export default {
 </script>
 
 <style scoped>
+.transfer-center-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+/* Match the compact selector in Notification Center; no separate filter strip. */
+.transfer-machine-filter {
+  width: 148px;
+  height: 24px;
+  font-size: 11px;
+}
+
+.transfer-machine-filter :deep(.el-select__wrapper) {
+  min-height: 24px;
+  height: 24px;
+  padding: 0 6px;
+  border-radius: 6px;
+  font-size: 11px;
+}
+
+@media (max-width: 380px) {
+  .transfer-machine-filter { width: 124px; }
+  .transfer-center-header-actions { gap: 6px; }
+}
 .transfer-center-shell {
   min-height: 100%;
   display: flex;
@@ -417,9 +475,9 @@ export default {
 
 .transfer-center-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 10px;
   padding: 18px 18px 14px;
   border-bottom: 1px solid var(--line);
 }
@@ -681,10 +739,4 @@ export default {
 <style>
 .transfer-info .el-descriptions__content { overflow-wrap: anywhere; }
 .transfer-info-path { overflow-wrap: anywhere; white-space: pre-wrap; }
-
-.transfer-center-more-row {
-  display: flex;
-  justify-content: center;
-  padding: 12px 0 4px;
-}
 </style>

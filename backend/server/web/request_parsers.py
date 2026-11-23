@@ -85,3 +85,16 @@ def parse_paging_args(default_page=1, default_page_size=100):
         'page_size': page_size,
         'show_hidden': show_hidden_raw in ('1', 'true', 'yes', 'on'),
     }
+
+
+def get_pagination(default_limit: int = 20, max_limit: int = 100) -> tuple[int, int]:
+    """Validate bounded SQL page size and non-negative offset at the web boundary."""
+    from flask import request
+    try:
+        limit = int(request.args.get('limit', default_limit))
+        offset = int(request.args.get('offset', 0))
+    except (TypeError, ValueError) as exc:
+        raise ValueError('Invalid pagination parameters') from exc
+    if not 1 <= limit <= max_limit or offset < 0:
+        raise ValueError('Invalid pagination parameters')
+    return limit, offset

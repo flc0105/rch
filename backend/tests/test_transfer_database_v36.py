@@ -64,12 +64,14 @@ def test_no_recent_cap_and_only_manual_clear(setup):
     for i in range(120):
         item = make_transfer(transfers, filename=f'file-{i}.txt')
         transfers.complete_transfer(item['transfer_id'])
-    assert len(transfers.list_transfers()['recent']) == 120
+    assert len(transfers.list_transfers()['recent']) == 20
+    assert transfers.list_transfers()['recent_total'] == 120
+    assert len(transfers.list_transfers(limit=20, offset=100)['recent']) == 20
     reloaded = TransferService(Events(), db)
-    assert len(reloaded.list_transfers('another-tab')['recent']) == 120
+    assert reloaded.list_transfers('another-tab')['recent_total'] == 120
     first = reloaded.list_transfers()['recent'][0]['transfer_id']
     assert reloaded.delete_recent_transfer(first, tab_id='different-tab') is True
-    assert len(reloaded.list_transfers()['recent']) == 119
+    assert reloaded.list_transfers()['recent_total'] == 119
     assert reloaded.clear_recent_transfers(tab_id='different-tab') == 119
     assert reloaded.list_transfers()['recent'] == []
     assert reloaded.clear_recent_transfers() == 0

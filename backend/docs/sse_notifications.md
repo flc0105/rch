@@ -129,7 +129,7 @@ WebEventBus 发布时生成一份临时事件对象：
 
 三个 ID 要分开理解：`data.event_id` 是 Client 的 Device Event ID；`event_id` 是 Server 的总线事件 ID；`id` 是通知历史自身的记录 ID。Notification Center 根据总线 `event_id` 去重，不是简单地根据业务 `kind` 或通知文字去重。
 
-通知保存在 Server 的 `runtime/rch.db` 中的 `notifications` 表，包含 `context_json`、`actions_json` 等字段。写入历史时还会规范化标题、消息长度和通知类型。读取历史按展示时间倒序返回，供 Notification Center 展示。
+通知保存在 Server 的 `runtime/rch.db` 中的 `notifications` 表，包含 `context_json`、`actions_json` 等字段。写入历史时还会规范化标题、消息长度和通知类型。读取历史按展示时间倒序使用 `LIMIT/OFFSET` 分页（默认每次 20 条），同时返回全部历史 `total_count` 和类型筛选后的 `filtered_count`；Server 启动清理不删除 Notification Center 的记录，只有用户手动删除或清空。
 
 ### 可见历史的变化事件
 
@@ -230,7 +230,7 @@ Notification Preferences 存在 Server 的 `runtime/rch.db` 中，通过 `settin
 |---|---|---|
 | `GET` | `/api/notifications/preferences` | 读取通知偏好 |
 | `PUT` | `/api/notifications/preferences` | 保存全局开关与分类偏好 |
-| `GET` | `/api/notifications/history` | 取得完整 Notification Center 历史 |
+| `GET` | `/api/notifications/history?limit=20&offset=0&type=error` | 取得分页通知，`type` 可选，返回全部数量及筛选后的数量 |
 | `DELETE` | `/api/notifications/history/{notification_id}` | 删除指定通知 |
 | `DELETE` | `/api/notifications/history` | 清空通知历史；传入 `?type=success`（也支持 `info`、`warning`、`error`） 时只清理对应类型 |
 | WebSocket | `ws://<host>:8086/ws/notifications` | 订阅持久通知（支持 `last_event_id` 游标） |
@@ -245,7 +245,7 @@ curl -sS "$SERVER_URL/api/notifications/history" \
   -H "Authorization: Bearer $API_TOKEN"
 ```
 
-返回格式为标准 API 响应，其中 `data.notifications` 是保存的通知数组。该接口读取的历史与实时 Toast 偏好不同，即使某种 Toast 被关闭，已经持久化的对应记录仍可出现。
+返回格式为标准 API 响应，其中 `data.notifications` 为当前页、`data.total_count` 为全部通知数量、`data.filtered_count` 为筛选后数量。该接口读取的历史与实时 Toast 偏好不同，即使某种 Toast 被关闭，已经持久化的对应记录仍可出现。
 
 更新偏好可使用 `PUT`：
 

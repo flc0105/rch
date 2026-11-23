@@ -61,10 +61,11 @@ test('App restores browser preference and persists changes via existing layout h
 
 test('Quick Actions uses one responsive Element Plus search input with unchanged filtering', () => {
   assert.equal((quickActions.match(/v-model="searchText"/g) || []).length, 1)
-  assert.match(quickActions, /<el-input\s+v-model="searchText"\s+clearable\s+class="quick-actions-search"/)
+  assert.match(quickActions, /<el-input\s+v-model="searchText"\s+size="small"\s+clearable\s+class="quick-actions-search"/)
   assert.doesNotMatch(quickActions, /<input\s+v-model="searchText"/)
-  assert.match(quickActions, /class="quick-actions-search"\s+size="small"/)
-  assert.match(quickActions, /<el-select v-model="filterPlatform" size="small"/)
+  assert.match(quickActions, /v-model="searchText"\s+size="small"/)
+  assert.match(quickActions, /<el-select v-model="filterPlatform" size="small" class="platform-filter"/)
+  assert.match(quickActions, /min-height: 32px;/)
   assert.doesNotMatch(quickActions, /quick-actions-search :deep\(\.el-input__inner\) \{ font-size: 16px;/)
   assert.match(quickActions, /\.quick-actions-search \{ flex: 0 0 auto; width: 100%; min-width: 0; \}/)
   assert.match(quickActions, /\$\{item\.alias \|\| ''\} \$\{item\.command \|\| ''\}/)

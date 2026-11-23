@@ -23,7 +23,16 @@ export default {
             sseDisconnected: false,
             sseNotificationPreferences: cloneSseNotificationPreferences(DEFAULT_SSE_NOTIFICATION_PREFERENCES),
             sseNotificationHistory: [],
+            sseNotificationTotal: 0,
+            sseNotificationFilteredTotal: 0,
+            sseNotificationTypeFilter: 'all',
+            sseNotificationLoading: false,
+            sseNotificationPageRequest: 0,
             transferItems: [],
+            transferHistoryTotal: 0,
+            transferMachineId: '',
+            transferHistoryLoading: false,
+            transferPageRequest: 0,
         }
     },
 
@@ -43,85 +52,82 @@ export default {
             this.sseNotificationPreferences = normalizeSseNotificationPreferences(preferences);
         },
 
-        async loadSseNotificationHistory() {
+        async loadSseNotificationHistory({ append = false } = {}) {
+            const requestId = ++this.sseNotificationPageRequest;
+            const type = this.sseNotificationTypeFilter || 'all';
+            const offset = append ? this.sseNotificationHistory.length : 0;
+            this.sseNotificationLoading = true;
             try {
-                const history = await loadNotificationHistory();
-                const notifications = Array.isArray(history?.notifications) ? history.notifications : [];
-                this.sseNotificationHistory = notifications;
+                const history = await loadNotificationHistory({ limit: 20, offset, type });
+                if (requestId !== this.sseNotificationPageRequest) return;
+                const page = Array.isArray(history?.notifications) ? history.notifications : [];
+                const previous = append ? this.sseNotificationHistory : [];
+                const seen = new Set(previous.map(item => item.id));
+                this.sseNotificationHistory = [...previous, ...page.filter(item => !seen.has(item.id))];
+                this.sseNotificationTotal = Number(history?.total_count) || 0;
+                this.sseNotificationFilteredTotal = Number(history?.filtered_count) || 0;
             } catch (e) {
                 console.warn('Failed to load notification history', e);
+            } finally {
+                if (requestId === this.sseNotificationPageRequest) this.sseNotificationLoading = false;
             }
         },
 
-        async loadTransferItems() {
+        setSseNotificationFilter(type) {
+            this.sseNotificationTypeFilter = type;
+            return this.loadSseNotificationHistory();
+        },
+
+        async loadTransferItems({ append = false } = {}) {
+            const requestId = ++this.transferPageRequest;
+            const previous = append ? (this.transferItems || []).filter(item => item?.state !== 'running') : [];
+            this.transferHistoryLoading = true;
             try {
-                const payload = await loadTransfers(this.ensureTabId());
-                this.transferItems = Array.isArray(payload?.items) ? payload.items : [];
+                const payload = await loadTransfers(this.ensureTabId(), {
+                    limit: 20, offset: previous.length, machineId: this.transferMachineId,
+                });
+                if (requestId !== this.transferPageRequest) return;
+                const page = Array.isArray(payload?.recent) ? payload.recent : [];
+                const seen = new Set(previous.map(item => item.transfer_id));
+                const recent = [...previous, ...page.filter(item => !seen.has(item.transfer_id))];
+                const active = Array.isArray(payload?.active) ? payload.active : [];
+                this.transferItems = [...active, ...recent];
+                this.transferHistoryTotal = Number(payload?.recent_total) || 0;
             } catch (e) {
                 console.warn('Failed to load transfers', e);
+            } finally {
+                if (requestId === this.transferPageRequest) this.transferHistoryLoading = false;
             }
+        },
+
+        setTransferMachineFilter(machineId) {
+            this.transferMachineId = String(machineId || '').trim();
+            return this.loadTransferItems();
         },
 
         upsertTransferItem(transfer) {
             if (!transfer || typeof transfer !== 'object' || !transfer.transfer_id) return;
-
-            const existing = Array.isArray(this.transferItems)
-                ? this.transferItems.filter(item => item?.transfer_id !== transfer.transfer_id)
-                : [];
-            this.transferItems = [transfer, ...existing];
-        },
-
-        upsertSseNotificationHistory(notification) {
-            if (!notification || typeof notification !== 'object' || !notification.id) return;
-
-            const existing = Array.isArray(this.sseNotificationHistory)
-                ? this.sseNotificationHistory.filter(item => item?.id !== notification.id)
-                : [];
-
-            this.sseNotificationHistory = [notification, ...existing];
-        },
-
-        removeSseNotificationHistory(notificationId) {
-            const normalizedId = String(notificationId || '').trim();
-            if (!normalizedId) return;
-
-            this.sseNotificationHistory = (this.sseNotificationHistory || []).filter(
-                item => String(item?.id || '') !== normalizedId,
-            );
-        },
-
-        clearSseNotificationHistory() {
-            this.sseNotificationHistory = [];
+            const matchesMachine = !this.transferMachineId || (this.connections || []).some(item =>
+                item?.machine_id === this.transferMachineId && item?.client_id === transfer.client_id);
+            const current = Array.isArray(this.transferItems) ? this.transferItems : [];
+            const wasRecent = current.some(item => item?.transfer_id === transfer.transfer_id && item?.state !== 'running');
+            const previous = current.filter(item => item?.transfer_id !== transfer.transfer_id);
+            const active = previous.filter(item => item?.state === 'running');
+            const recent = previous.filter(item => item?.state !== 'running');
+            const isActive = transfer.state === 'running';
+            if (isActive) active.unshift(transfer);
+            else if (matchesMachine) recent.unshift(transfer);
+            if (!isActive && !wasRecent && matchesMachine) this.transferHistoryTotal += 1;
+            // Realtime SSE items are bounded to the already requested SQL pages.
+            const displayedPageSize = Math.max(20, current.filter(item => item?.state !== 'running').length);
+            this.transferItems = [...active, ...recent.slice(0, displayedPageSize)];
         },
 
         applySseNotificationCenterUpdate(payload = {}) {
             const action = String(payload.action || '').trim().toLowerCase();
-
-            if (action === 'added') {
-                this.upsertSseNotificationHistory(payload.notification);
-                return;
-            }
-
-            if (action === 'deleted') {
-                this.removeSseNotificationHistory(payload.id);
-                return;
-            }
-
-            if (action === 'cleared') {
-                this.clearSseNotificationHistory();
-                return;
-            }
-
-            if (action === 'pruned') {
-                const removedIds = new Set(
-                    (Array.isArray(payload.ids) ? payload.ids : [])
-                        .map(value => String(value || '').trim())
-                        .filter(Boolean),
-                );
-                if (!removedIds.size) return;
-                this.sseNotificationHistory = (this.sseNotificationHistory || []).filter(
-                    item => !removedIds.has(String(item?.id || '').trim()),
-                );
+            if (['added', 'deleted', 'cleared', 'pruned'].includes(action)) {
+                // The database is the source of truth for both count and current page.
+                void this.loadSseNotificationHistory();
             }
         },
 

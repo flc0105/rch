@@ -233,7 +233,7 @@ export default {
             bind_host: String(this.bindHost || '').trim(), bind_port: Number(this.bindPort) }
         : { server_host: String(this.serverForm.serverHost || '').trim(),
             server_port: Number(this.serverForm.serverPort), web_port: Number(this.serverForm.webPort),
-            ...(listenerId ? { listener_id: listenerId } : {}), connection_mode: 'reverse' }
+            ...(listenerId ? { listener_id: listenerId } : {}) }
       const pythonValue = value => typeof value === 'number' ? String(value)
         : `'${String(value).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`
       const pythonPayload = `{${Object.entries(payload).map(([key, value]) => `'${key}':${pythonValue(value)}`).join(',')}}`

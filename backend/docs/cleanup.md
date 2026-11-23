@@ -14,20 +14,19 @@ RCH 有两种作用范围不同的清理机制：**Server Cleanup** 负责 Serve
 
 | 项目 | 清理内容 | 边界 |
 | --- | --- | --- |
-| `notifications` | 启动时已经保存的 Notification Center 通知记录 | 按启动快照中的通知 ID 删除；启动后新通知不属于该快照 |
 | `agent_build_temp` | Server 主机系统临时目录中属于 Agent 构建的临时工作目录 | 仅处理符合 Agent 构建临时目录范围的候选项，不等于删除所有 Agent |
 | `agent_transient_outputs` | 由 Update、Bootstrap 生成的临时 Agent 输出及相关元数据 | **不针对普通的用户构建产物**；只清理已登记、来源符合条件的输出 |
 | `preview_cache` | Server 侧的文件预览缓存 | 不等于清空 Artifact 正式文件或 Shared Files |
 | `upload_tmp` | Server 侧上传暂存目录中的启动前残留 | 不等于清空已保存的正式上传文件 |
 | `cleanup_logs` | 之前清理产生的报告文件 | 只处理先前的清理报告；本次新生成的报告会保留 |
 
-Server Cleanup 处理上表的 Server 启动清理候选项，其中包括启动前的通知记录。**Quick History、Activity Center、Pinned Commands、设备身份、管理员凭据及其余 `rch.db` 数据保留。**Client 设备上的临时文件由后面的 `clean` 命令管理。需要留存通知时，应在 Server 重启前导出。
+Server Cleanup 只处理上表的 Server 启动候选项。**Notification Center、Quick History、Activity Center、Pinned Commands、设备身份、管理员凭据及其余 `rch.db` 数据均保留。**通知历史仅通过 Notification Center 手动删除或清空。Client 设备上的临时文件由后面的 `clean` 命令管理。
 
 清理项目和启动延迟由 Server 的清理配置决定；更改配置后在下次 Server 启动时生效。
 
 ### 完成通知与清理报告
 
-每次执行会汇总清理文件数、目录数、通知等记录数、估算释放空间和错误数，并尝试在以下位置写入独立报告：
+每次执行会汇总清理文件数、目录数、记录数、估算释放空间和错误数，并尝试在以下位置写入独立报告：
 
 ```text
 <Server Runtime>/cleanup_logs/server_cleanup_<运行编号>.log
@@ -47,8 +46,8 @@ ls -lt backend/runtime/cleanup_logs/
 
 ### 使用注意
 
-- **清理会永久移除目标**。预览缓存可重新生成，但已清理的通知、临时构建文件和上传暂存内容不承诺恢复。
-- Server Cleanup **没有交互式逐项确认**。需要保留启动前通知、暂存文件或诊断报告时，应在启动前另行复制；不要指望启动后再从清理目录找回。
+- **清理会永久移除目标**。预览缓存可重新生成，但已清理的临时构建文件和上传暂存内容不承诺恢复。
+- Server Cleanup **没有交互式逐项确认**。需要保留暂存文件或诊断报告时，应在启动前另行复制；通知历史不会被启动清理。
 - 候选范围来自启动时快照，但不意味着所有候选在清理执行前都不会发生变化。涉及正在上传或构建的任务时，应避免与 Server 重启及自动清理交叠。
 - 完成通知显示本次清理的项目统计；Server 磁盘占用应另通过文件系统检查。
 
@@ -120,7 +119,7 @@ Client 文件日志的保存位置见 [Server / Client Logging](logging.md)；Bu
 
 | 需求 | 应使用 |
 | --- | --- |
-| Server 重启后清理旧通知、预览缓存、上传中转、构建临时数据 | **Server Cleanup**：启动时自动执行，不使用 Client `clean` |
+| Server 重启后清理预览缓存、上传中转、构建临时数据 | **Server Cleanup**：启动时自动执行，不使用 Client `clean` |
 | 清理某台 Client 的临时文件、残留日志或不再需要的 Bundle Releases | **Client `clean`**：在目标 Client 命令入口运行，并核对预览 |
 | 查看 Server 上一轮自动清理做了什么 | Server Runtime 下的 `cleanup_logs/`，或完成通知中的 **View Cleanup Log** |
 | 清理 Server 的正式历史、账号、正式文件或 Client 上的用户数据 | **以上两种机制均不适用**；不要把它们当作通用删除入口 |

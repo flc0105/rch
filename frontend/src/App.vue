@@ -494,7 +494,12 @@
   <NotificationCenterDrawer
     ref="notificationCenterDrawerRef"
     :notifications="sseNotificationHistory"
-    @notification-deleted="removeSseNotificationHistory"
+    :total-count="sseNotificationTotal"
+    :filtered-count="sseNotificationFilteredTotal"
+    :loading="sseNotificationLoading"
+    @filter-changed="setSseNotificationFilter"
+    @load-more="loadSseNotificationHistory({ append: true })"
+    @notification-deleted="loadSseNotificationHistory"
     @notifications-cleared="loadSseNotificationHistory"
     @notification-action="handleNotificationCenterAction"
   />
@@ -503,6 +508,13 @@
     ref="transferCenterDrawerRef"
     :transfers="transferItems"
     :tab-id="tabId"
+    :machines="connections"
+    :machine-alias-map="machineAliasMap"
+    :machine-id="transferMachineId"
+    :recent-total="transferHistoryTotal"
+    :loading-more="transferHistoryLoading"
+    @filter-machine="setTransferMachineFilter"
+    @load-more="loadTransferItems({ append: true })"
     @transfers-changed="loadTransferItems"
     @preview-artifact="previewArtifact"
   />
@@ -1269,9 +1281,9 @@ export default {
       void this.loadTransferItems()
     },
 
-    async openNotificationCenter() {
-      await this.loadSseNotificationHistory()
-      return this.$refs.notificationCenterDrawerRef?.open()
+    openNotificationCenter() {
+      this.$refs.notificationCenterDrawerRef?.open()
+      void this.loadSseNotificationHistory()
     },
 
     refreshToolbarPreferences() {

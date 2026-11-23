@@ -80,11 +80,28 @@ class TransferHistoryStore:
         })
         return item
 
-    def list_recent(self) -> list[dict]:
-        rows = self.database.connection().execute('''
-            SELECT * FROM transfer_records WHERE state != 'running'
-            ORDER BY started_at DESC, transfer_id DESC
-        ''').fetchall()
+    @staticmethod
+    def _recent_where(machine_id: str) -> tuple[str, tuple]:
+        where = "state != 'running'"
+        if machine_id:
+            where += (' AND EXISTS (SELECT 1 FROM connection_sessions cs '
+                      'WHERE cs.client_id = transfer_records.client_id AND cs.machine_id = ?)')
+        return where, (machine_id,) if machine_id else ()
+
+    def count_recent(self, machine_id: str = '') -> int:
+        where, params = self._recent_where(machine_id)
+        row = self.database.connection().execute(
+            f'SELECT COUNT(*) FROM transfer_records WHERE {where}', params,
+        ).fetchone()
+        return int(row[0])
+
+    def list_recent(self, *, limit: int = 20, offset: int = 0, machine_id: str = '') -> list[dict]:
+        where, params = self._recent_where(machine_id)
+        rows = self.database.connection().execute(
+            f'SELECT * FROM transfer_records WHERE {where} '
+            'ORDER BY started_at DESC, transfer_id DESC LIMIT ? OFFSET ?',
+            (*params, limit, offset),
+        ).fetchall()
         return [self._public_row(row) for row in rows]
 
     def get(self, transfer_id: str) -> dict | None:

@@ -2,7 +2,7 @@ from flask import Blueprint, request
 
 from server.web.api_response import WebApiResponder
 from server.web.operation_id import get_optional_operation_id
-from server.web.request_parsers import get_json_payload, get_optional_tab_id
+from server.web.request_parsers import get_json_payload, get_optional_tab_id, get_pagination
 
 
 def create_transfers_blueprint(server_instance):
@@ -12,10 +12,14 @@ def create_transfers_blueprint(server_instance):
 
     @blueprint.get('/api/transfers')
     def list_transfers():
-        return responder.json_endpoint(
-            lambda: transfer_api.list_transfers(tab_id=get_optional_tab_id()),
-            default_error_status=500,
-        )
+        def _execute():
+            limit, offset = get_pagination()
+            return transfer_api.list_transfers(
+                tab_id=get_optional_tab_id(), machine_id=request.args.get('machine_id', '').strip(),
+                limit=limit, offset=offset,
+            )
+
+        return responder.json_endpoint(_execute, default_error_status=500)
 
     @blueprint.post('/api/transfers/browser-upload')
     def create_browser_upload_transfer():

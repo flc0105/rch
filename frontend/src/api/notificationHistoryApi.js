@@ -1,9 +1,10 @@
 import { apiData } from './http.js'
 
-export function loadNotificationHistory() {
-  return apiData('/api/notifications/history', {}, {
-    version: 1,
-    notifications: [],
+export function loadNotificationHistory({ limit = 20, offset = 0, type = 'all' } = {}) {
+  const query = new URLSearchParams({ limit: String(limit), offset: String(offset) })
+  if (type !== 'all') query.set('type', type)
+  return apiData(`/api/notifications/history?${query}`, {}, {
+    version: 1, notifications: [], total_count: 0, filtered_count: 0,
   })
 }
 

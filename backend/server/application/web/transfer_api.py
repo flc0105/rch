@@ -13,8 +13,11 @@ class WebTransferApi:
         self._browser_upload_grants = {}
         self._browser_upload_cancel_events = {}
 
-    def list_transfers(self, tab_id: str = ''):
-        return self.transfer_service.list_transfers(tab_id=tab_id)
+    def list_transfers(self, tab_id: str = '', *, limit: int = 20, offset: int = 0,
+                       machine_id: str = ''):
+        return self.transfer_service.list_transfers(
+            tab_id=tab_id, limit=limit, offset=offset, machine_id=machine_id,
+        )
 
     def create_browser_upload_transfer(
         self,

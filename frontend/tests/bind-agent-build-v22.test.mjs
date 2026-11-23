@@ -52,7 +52,7 @@ test('One-liners emit matching Bind/Reverse bootstrap request fields for Python 
     assert.ok(!bind.includes('{{'))
     obj.connectionMode = 'reverse'
     const reverse = cmp.methods.renderOneLinerCode.call(obj, item.code)
-    assert.match(reverse, /reverse/)
+    assert.doesNotMatch(reverse, /connection_mode/)
     assert.match(reverse, /server_port/)
     assert.match(reverse, /server_host/)
     assert.doesNotMatch(reverse, /bind_host/)

@@ -32,27 +32,17 @@ test('opening Transfer Center does not wait for an unresolved network request', 
   assert.doesNotMatch(app, /openTransferCenter\(\)\s*\{\s*await/)
 })
 
-test('Transfer Center renders recent rows in bounded batches, never deletes or truncates stored data', () => {
-  assert.match(drawer, /RECENT_RENDER_BATCH_SIZE = 100/)
-  assert.match(drawer, /Show more \(\{\{ remainingRecentCount \}\} remaining\)/)
-  const records = Array.from({length: 301}, (_, i) => ({ transfer_id: `${i}`, state: 'completed' }))
-  const ctx = { transfers: records, recentRenderLimit: 100 }
+test('Transfer Center loads historical batches from SQL instead of local slicing', () => {
+  assert.doesNotMatch(drawer, /RECENT_RENDER_BATCH_SIZE|recentRenderLimit|slice\(0, this\.recentRenderLimit\)/)
+  assert.match(drawer, /<HistoryLoadMore[\s\S]*?@load-more="\$emit\('load-more'\)"/)
+  const records = Array.from({length: 20}, (_, i) => ({ transfer_id: `${i}`, state: 'completed' }))
   const recent = computedMethod(drawer, 'recentTransfers')
   const remaining = computedMethod(drawer, 'remainingRecentCount')
-  const count = computedMethod(drawer, 'recentTransferCount')
-  const more = optionMethod(drawer, 'showMoreRecent')
-  ctx.recentTransferCount = count.call(ctx)
+  const ctx = { transfers: records, recentTotal: 301 }
   ctx.recentTransfers = recent.call(ctx)
-  assert.equal(ctx.recentTransfers.length, 100)
-  assert.equal(remaining.call(ctx), 201)
-  more.call(ctx)
-  ctx.recentTransfers = recent.call(ctx)
-  assert.equal(ctx.recentTransfers.length, 200)
-  more.call(ctx)
-  more.call(ctx)
-  assert.equal(recent.call(ctx).length, 301)
-  assert.equal(records.length, 301)
-  assert.equal(records[300].transfer_id, '300')
+  assert.equal(ctx.recentTransfers.length, 20)
+  assert.equal(remaining.call(ctx), 281)
+  assert.equal(records.length, 20)
 })
 
 test('mobile transfer Toast uses native 14px typography and wraps the entire filename', () => {

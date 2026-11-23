@@ -1,6 +1,6 @@
 <template>
-  <el-dialog v-model="visible" title="Connect to Client" width="480px" class="fixed-dialog bind-connect-dialog" append-to-body>
-    <el-form :model="form" label-width="80px" @submit.prevent="connect">
+  <el-dialog v-model="visible" title="Connect to Client" width="560px" class="fixed-dialog bind-connect-dialog" append-to-body>
+    <el-form :model="form" label-position="top" class="bind-connect-form" @submit.prevent="connect">
       <el-form-item label="Host">
         <el-input v-model="form.host" placeholder="Client IP or hostname" autocomplete="off" />
       </el-form-item>
@@ -67,7 +67,11 @@ export default {
 </script>
 
 <style>
+.bind-connect-dialog .bind-connect-form { padding: 8px 4px 4px; }
+.bind-connect-dialog .bind-connect-form .el-form-item { margin-bottom: 16px; }
+.bind-connect-dialog .bind-connect-form .el-form-item__label { height: auto; line-height: 20px; margin-bottom: 4px; padding: 0; }
 .bind-connect-dialog.el-dialog { max-width: calc(100vw - 32px); }
+.bind-connect-dialog .el-form-item__label { white-space: nowrap; }
 @media (max-width: 960px) {
   .bind-connect-dialog.el-dialog {
     width: 100vw !important;

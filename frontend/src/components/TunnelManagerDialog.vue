@@ -1,6 +1,7 @@
 <template>
-  <el-dialog v-model="visible" title="Tunnel Manager" width="880px" top="6vh" class="tunnel-manager-dialog" append-to-body @closed="onClosed">
-    <div class="tunnel-manager-toolbar">
+  <el-dialog v-model="visible" title="Tunnel Manager" width="880px" top="6vh" class="fixed-dialog tunnel-manager-dialog" append-to-body @closed="onClosed">
+    <div class="tunnel-manager-content">
+      <div class="tunnel-manager-toolbar">
       <el-select v-model="targetId" filterable placeholder="Select Client" class="tunnel-target" @change="refresh">
         <el-option v-for="device in deviceOptions" :key="device.value" :label="device.label" :value="device.value" />
       </el-select>
@@ -8,8 +9,7 @@
       <el-button :loading="loading" @click="refresh">Refresh</el-button>
       <el-button type="primary" :disabled="!targetId || busy" @click="openCreate">New Tunnel</el-button>
     </div>
-    <div class="tunnel-summary">
-      <el-tag :type="snapshot.connected ? 'success' : 'info'" size="small">{{ snapshot.connected ? 'Connected' : 'Disconnected' }}</el-tag>
+    <div v-if="snapshot.streams || snapshot.last_error" class="tunnel-summary">
       <span v-if="snapshot.streams">Active streams: {{ snapshot.streams }}</span>
       <span v-if="snapshot.last_error" class="tunnel-last-error">{{ snapshot.last_error }}</span>
     </div>
@@ -44,6 +44,7 @@
         </div>
       </div>
       <el-empty v-if="!loading && !filteredInstances.length" :description="query ? 'No matching tunnels' : 'No tunnel instances'" />
+    </div>
     </div>
   </el-dialog>
 
@@ -213,12 +214,13 @@ export default {
 </script>
 
 <style scoped>
+.tunnel-manager-content { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .tunnel-manager-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
 .tunnel-target { width: 210px; max-width: 100%; }
 .tunnel-search { flex: 1 1 150px; min-width: 130px; }
 .tunnel-summary { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; font-size: 12px; color: var(--el-text-color-secondary); }
 .tunnel-last-error { color: var(--el-color-danger); overflow-wrap: anywhere; }
-.tunnel-instance-list { min-height: 140px; max-height: min(57vh, 550px); overflow: auto; }
+.tunnel-instance-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
 .tunnel-instance-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 14px 6px; border-bottom: 1px solid var(--el-border-color-lighter); }
 .tunnel-instance-body { min-width: 0; flex: 1 1 280px; }
 .tunnel-instance-title { display: flex; align-items: center; gap: 9px; margin-bottom: 7px; }
@@ -229,12 +231,30 @@ export default {
 .tunnel-form-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 14px; }
 .tunnel-form-note { color: var(--el-color-warning); font-size: 12px; }
 @media (max-width: 640px) {
-  :global(.tunnel-manager-dialog.el-dialog) { width: 100vw !important; max-width: 100vw !important; height: 100dvh; margin: 0 !important; border-radius: 0; }
-  :global(.tunnel-manager-dialog .el-dialog__body) { max-height: calc(100dvh - 85px); overflow-y: auto; }
   :global(.tunnel-edit-dialog.el-dialog) { width: calc(100vw - 16px) !important; max-width: calc(100vw - 16px); }
   .tunnel-manager-toolbar > * { flex: 1 1 100%; }
   .tunnel-target { width: 100%; }
   .tunnel-form-grid { grid-template-columns: 1fr; }
   .tunnel-instance-actions { width: 100%; }
+}
+</style>
+
+<style>
+.tunnel-manager-dialog.el-dialog {
+  width: 880px;
+  max-width: calc(100vw - 32px);
+  height: min(660px, 88dvh);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.tunnel-manager-dialog .el-dialog__header { flex: 0 0 auto; }
+.tunnel-manager-dialog .el-dialog__body { flex: 1 1 auto; min-height: 0; overflow: hidden; }
+@media (max-width: 640px) {
+  .tunnel-manager-dialog.el-dialog {
+    width: 100vw !important; max-width: 100vw !important;
+    height: 100dvh !important; margin: 0 !important; border-radius: 0;
+  }
+  .tunnel-manager-dialog .el-dialog__body { max-height: none !important; overflow: hidden !important; }
 }
 </style>

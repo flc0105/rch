@@ -1,6 +1,7 @@
 from flask import Blueprint, request
 
 from server.web.api_response import WebApiResponder
+from server.web.request_parsers import get_pagination
 
 
 def create_notification_history_blueprint(server_instance):
@@ -10,10 +11,14 @@ def create_notification_history_blueprint(server_instance):
 
     @blueprint.get('/api/notifications/history')
     def get_notification_history():
-        return responder.json_endpoint(
-            notification_api.get_history,
-            default_error_status=500,
-        )
+        def _execute():
+            limit, offset = get_pagination()
+            return notification_api.get_history(
+                notification_type=request.args.get('type', '').strip().lower(),
+                limit=limit, offset=offset,
+            )
+
+        return responder.json_endpoint(_execute, default_error_status=500)
 
     @blueprint.delete('/api/notifications/history/<notification_id>')
     def delete_notification_history(notification_id):

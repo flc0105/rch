@@ -63,7 +63,8 @@ test('Manager operates by instance ID, refreshes after actions and cleans pollin
 test('mobile Tunnel Manager fits viewport and copy works without secure clipboard API', () => {
   const dialog = read('components/TunnelManagerDialog.vue')
   assert.match(dialog, /width: 100vw !important/)
-  assert.match(dialog, /max-height: calc\(100dvh - 85px\)/)
+  assert.match(dialog, /height: 100dvh !important/ )
+  assert.match(dialog, /\.tunnel-instance-list \{ flex: 1 1 auto; min-height: 0; overflow-y: auto;/)
   assert.match(dialog, /copyTextFallback\(address\)/)
   assert.match(dialog, /const clientId = this\.targetId/)
 })

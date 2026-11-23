@@ -23,15 +23,15 @@
 
           <el-input
             v-model="searchText"
+            size="small"
             clearable
             class="quick-actions-search"
-            size="small"
             aria-label="Filter alias or command"
             placeholder="Filter alias or command"
           />
         </div>
 
-        <el-button type="primary" size="small" @click="openCreateDialog">
+        <el-button type="primary" size="small" class="quick-actions-new-button" @click="openCreateDialog">
           New Action
         </el-button>
       </div>
@@ -910,27 +910,42 @@ export default {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
   margin-bottom: 12px;
 }
 
 .quick-actions-toolbar-left {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
   flex: 1 1 auto;
 }
 
 .platform-filter {
-  flex: 0 0 145px;
-  width: 145px;
+  flex: 0 0 170px;
+  width: 170px;
 }
 
 .quick-actions-search {
   flex: 1 1 auto;
   min-width: 180px;
   max-width: none;
+}
+
+/* Use the same Element Plus small typography and 32px toolbar height as Remote Files. */
+.platform-filter :deep(.el-select__wrapper),
+.quick-actions-search :deep(.el-input__wrapper) {
+  min-height: 32px;
+  height: 32px;
+  border-radius: 10px;
+}
+.quick-actions-new-button {
+  height: 32px;
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 10px;
+  flex: 0 0 auto;
 }
 
 .quick-actions-table-shell {

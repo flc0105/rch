@@ -88,13 +88,24 @@ class NotificationHistoryStore:
             'actions': json_loads_typed(row['actions_json'], []),
         }
 
-    def get_history(self) -> dict:
+    def get_history(self, *, limit: int = 20, offset: int = 0,
+                    notification_type: str = '') -> dict:
+        where = 'WHERE type = ?' if notification_type else ''
+        params = (notification_type,) if notification_type else ()
         with self._lock:
-            rows = self.database.connection().execute(
-                'SELECT * FROM notifications ORDER BY shown_at_ms DESC, id DESC'
+            conn = self.database.connection()
+            total = int(conn.execute('SELECT COUNT(*) FROM notifications').fetchone()[0])
+            filtered_total = (int(conn.execute(
+                'SELECT COUNT(*) FROM notifications WHERE type = ?', params,
+            ).fetchone()[0]) if notification_type else total)
+            rows = conn.execute(
+                f'SELECT * FROM notifications {where} '
+                'ORDER BY shown_at_ms DESC, id DESC LIMIT ? OFFSET ?',
+                (*params, limit, offset),
             ).fetchall()
             return {
-                'version': self.VERSION,
+                'version': self.VERSION, 'total_count': total,
+                'filtered_count': filtered_total,
                 'notifications': [self._row_to_notification(row) for row in rows],
             }
 

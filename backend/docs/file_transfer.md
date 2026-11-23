@@ -63,7 +63,7 @@ Remote Files 上传到设备
 
 | 服务 | 接口 | 用途 |
 | --- | --- | --- |
-| 8085 | `GET /api/transfers` | 查询 Active / Recent |
+| 8085 | `GET /api/transfers?limit=20&offset=0&machine_id=...` | 查询 Active 和 SQL 分页 Recent；`machine_id` 可选，通过会话历史匹配；返回 `recent_total` |
 | 8085 | `POST /api/transfers/browser-upload` | 创建浏览器上传任务并返回 Token、8085 同源目标地址 |
 | 8085 | `POST /api/transfers/{transfer_id}/cancel` | 请求取消 |
 | 8085 | `PATCH /api/transfers/{transfer_id}/browser-upload` | 浏览器阶段异常或进度更新 |
@@ -189,7 +189,7 @@ Server 根据收到的进度字节数计算完成比例，对速率采用平滑�
 
 传输完成通知默认提供 Open Transfers；当方向是 `client_to_server`、状态 `completed` 且关联了 `artifact_id` 时，还提供 Open Artifacts 与 Download（到浏览器）。它们分别打开现有 Artifact Dialog、调用现有下载地址，不新增 Transfer 任务；其他方向、取消、失败或未产生 Artifact 的通知保持原来的操作。通知的显示仍受 SSE 通知偏好控制。
 
-`GET /api/transfers` 提供初始状态，之后由 SSE 维持当前标签页的实时进度。Transfer Center 分为 **Active** 和 **Recent**：Active 显示文件名、方向、当前阶段、进度条、字节数、速度、ETA 和 Cancel；Recent 保存全部已完成、失败、取消或重启中断的传输，不做固定条数裁剪。列表仅显示文件名、方向和状态；每条的 More 菜单提供 Info（文件大小、完成时间、源与目标路径、错误及 Artifact 引用）和 Delete。成功的 `client_to_server` 传输若有 `artifact_id`，还提供 Preview 和 Download（浏览器下载），与传输完成 SSE 通知使用相同的资格条件；反方向上传不提供这两个操作。Clear Recent 手动清空记录。前台受管理传输的 `Upload started` / `Download started` 等小 Toast 提供 `Open Transfers` 链接，直接打开现有 Transfer Center；这与 SSE 生命周期通知的按钮无关。Remote Files / Remote File Picker 的 `Upload started` 在浏览器向 Server 开始发送文件时出现，不再等待 Server 暂存完成；下载提示时机保持不变。
+`GET /api/transfers?limit=20&offset=0` 从 SQLite 每次只查询 20 条历史，返回 `recent_total`；后续使用 `offset=20/40/...` 加载更多，绝不是返回全量后在浏览器截取。可附加 `machine_id` 按连接历史关联的机器筛选。Active 仍来自内存并遵守当前标签页隔离，之后由 SSE 维持实时进度。Transfer Center 分为 **Active** 和 **Recent**：Active 显示文件名、方向、当前阶段、进度条、字节数、速度、ETA 和 Cancel；Recent 保存全部已完成、失败、取消或重启中断的传输，不做固定条数裁剪。列表仅显示文件名、方向和状态；每条的 More 菜单提供 Info（文件大小、完成时间、源与目标路径、错误及 Artifact 引用）和 Delete。成功的 `client_to_server` 传输若有 `artifact_id`，还提供 Preview 和 Download（浏览器下载），与传输完成 SSE 通知使用相同的资格条件；反方向上传不提供这两个操作。Clear Recent 手动清空记录。前台受管理传输的 `Upload started` / `Download started` 等小 Toast 提供 `Open Transfers` 链接，直接打开现有 Transfer Center；这与 SSE 生命周期通知的按钮无关。Remote Files / Remote File Picker 的 `Upload started` 在浏览器向 Server 开始发送文件时出现，不再等待 Server 暂存完成；下载提示时机保持不变。
 
 当 `progress_supported=false`，或者缺少有效 `total_bytes` 时，界面显示不确定进度而不是假造一个百分比。例如 Legacy 上传可能正在正常运行但无法报告逐块上传字节；目录打包也可能尚未知道最终 ZIP 大小。此时应查看任务状态与已传输字节，而非依靠百分比判断。
 

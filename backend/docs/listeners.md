@@ -12,7 +12,7 @@ Select **Build Agent → Bundle → Listener** to embed the selected listener's 
 
 ## TLS certificate pinning
 
-When a TLS/TCP listener is created or its fingerprint is first requested, the Server uses the `openssl` executable to generate a self-signed certificate and private key under `runtime/listener_tls/<id>.crt` and `<id>.key`. The private key stays on the Server. The Bundle includes only the SHA-256 fingerprint of the public certificate. The Listener Manager displays the full fingerprint with a Copy control, including for stopped TLS listeners. Plain TCP listeners have no certificate fingerprint.
+When a TLS/TCP listener is created or its fingerprint is first requested, the Server uses the `openssl` executable to generate a self-signed certificate and private key under `runtime/listener_tls/<id>.crt` and `<id>.key`. The private key stays on the Server. The Bundle includes only the SHA-256 fingerprint of the public certificate. The Listener Manager keeps the main table compact: TLS listeners offer a Certificate action that opens a dialog with the full fingerprint and a Copy control, including for stopped TLS listeners. Plain TCP listeners have no certificate fingerprint.
 
 On connecting, the Python Bundle establishes TLS 1.2+ and compares the peer's certificate fingerprint with the embedded value **before** sending its `info` handshake. Certificate mismatches fail connection and retry. There is no fallback from TLS to plaintext. Certificates are reused across Server restarts; regenerating a certificate requires rebuilding the corresponding Bundles. Back up the private key and certificate together if moving Server runtime data.
 

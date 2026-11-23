@@ -51,7 +51,7 @@ test('show offline devices defaults on; hiding offline preserves stale/online an
 })
 
 test('mobile Quick Actions uses the same Element Plus search input as desktop', () => {
-  assert.match(actions, /<el-input\s+v-model="searchText"\s+clearable\s+class="quick-actions-search"/)
+  assert.match(actions, /<el-input\s+v-model="searchText"\s+size="small"\s+clearable\s+class="quick-actions-search"/)
   assert.doesNotMatch(actions, /<input\s+v-model="searchText"/)
   assert.match(actions, /\.quick-actions-search \{ flex: 0 0 auto; width: 100%; min-width: 0; \}/)
   assert.match(actions, /const keyword = String\(this\.searchText \|\| ''\)/)
@@ -66,9 +66,10 @@ test('Direction formatting and history Details use the existing persisted direct
   assert.match(history, /formatConnectionDirection\(scope\.row\.connection_direction\)/)
 })
 
-test('listener manager shows complete TLS fingerprint with copy, also on mobile', () => {
-  assert.match(listeners, /TLS Fingerprint/)
-  assert.match(listeners, /row\.tls_fingerprint/)
+test('listener manager opens the TLS fingerprint in a separate certificate dialog from both lists', () => {
+  assert.doesNotMatch(listeners, /<el-table-column label="TLS Fingerprint"/)
+  assert.equal((listeners.match(/@click="showCertificate\(row\)"/g) || []).length, 2)
+  assert.match(listeners, /selectedCertificate\?\.tls_fingerprint/)
   assert.match(listeners, /navigator\.clipboard\.writeText\(value\)/)
-  assert.match(listeners, /listener-fingerprint-mobile/)
+  assert.match(listeners, /class="listener-certificate-dialog"/)
 })

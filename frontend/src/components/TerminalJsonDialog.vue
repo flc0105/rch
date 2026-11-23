@@ -10,49 +10,22 @@
     <div class="terminal-json-wrap">
       <div class="terminal-json-toolbar">
         <div class="terminal-json-toolbar-left">
-          <el-button
-            size="small"
-            @click="copyTerminalJsonRaw"
-          >
-            Copy Raw
-          </el-button>
-
-
-
-          <el-button
-            v-if="canRunAgain"
-            size="small"
-            :loading="refreshRunning"
-            :disabled="!!actionRun"
-            @click="runAgain"
-          >
-            Run Again
-          </el-button>
-
-          <el-button
-            v-if="hasTerminalJsonRenderView"
-            size="small"
-            @click="toggleTerminalJsonViewMode"
-          >
-            {{ isTerminalJsonRawView ? 'Render View' : 'Raw View' }}
-          </el-button>
-
-                  <el-button
-            v-if="displayMode === 'table' && !isTerminalJsonRawView"
-            size="small"
-            @click="tableViewMode = tableViewMode === 'card' ? 'table' : 'card'"
-          >
-            {{ tableViewMode === 'card' ? 'Table View' : 'Card View' }}
-          </el-button>
-
-          <el-button
-            size="small"
-            type="primary"
-            :loading="savingJsonArtifact"
-            @click="saveTerminalJsonToArtifact"
-          >
-            Save to Artifact
-          </el-button>
+          <el-button size="small" @click="copyTerminalJsonRaw">Copy</el-button>
+          <el-button v-if="canRunAgain" size="small" :loading="refreshRunning" :disabled="!!actionRun" @click="runAgain">Run Again</el-button>
+          <el-dropdown trigger="click" @command="handleToolbarCommand">
+            <el-button size="small" :loading="savingJsonArtifact">More</el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="save-artifact" :disabled="savingJsonArtifact">Save to Artifact</el-dropdown-item>
+                <el-dropdown-item v-if="hasTerminalJsonRenderView" command="toggle-raw">
+                  {{ isTerminalJsonRawView ? 'Render View' : 'Raw View' }}
+                </el-dropdown-item>
+                <el-dropdown-item v-if="displayMode === 'table' && !isTerminalJsonRawView" command="toggle-card">
+                  {{ tableViewMode === 'card' ? 'Table View' : 'Card View' }}
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
         </div>
 
         <div class="terminal-json-toolbar-right">
@@ -508,7 +481,17 @@ export default {
     },
 
     cardTitle(row, index) {
-      return (this.resultView.titleField && row?.[this.resultView.titleField]) || `Record ${index + 1}`
+      const field = this.resultView.titleField
+      const value = field ? row?.[field] : null
+      return value !== null && value !== undefined && String(value) !== '' ? value : `#${index}`
+    },
+
+    handleToolbarCommand(command) {
+      if (command === 'save-artifact') return this.saveTerminalJsonToArtifact()
+      if (command === 'toggle-raw' && this.hasTerminalJsonRenderView) return this.toggleTerminalJsonViewMode()
+      if (command === 'toggle-card' && this.displayMode === 'table' && !this.isTerminalJsonRawView) {
+        this.tableViewMode = this.tableViewMode === 'card' ? 'table' : 'card'
+      }
     },
 
     createResultActionRunId() {
@@ -1041,11 +1024,14 @@ export default {
 
 
 /* Cards and expanded rows display detail fields from the same raw JSON. */
-.terminal-json-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 270px), 1fr)); gap: 12px; }
-.terminal-json-card { min-width: 0; }
-.terminal-json-card-field { display: grid; grid-template-columns: minmax(85px, 34%) minmax(0, 1fr); gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line, #ebeef5); }
+.terminal-json-cards { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+.terminal-json-card { min-width: 0; border-radius: 10px; }
+.terminal-json-card :deep(.el-card__header) { padding: 12px 16px; background: var(--el-fill-color-lighter); border-bottom: 1px solid var(--el-border-color-light); }
+.terminal-json-card :deep(.el-card__body) { padding: 10px 16px 14px; }
+.terminal-json-card-field { display: grid; grid-template-columns: minmax(100px, 28%) minmax(0, 1fr); gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--el-border-color-lighter); }
+.terminal-json-card-field:last-child { border-bottom: 0; }
 .terminal-json-card-field > span { min-width: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
-.terminal-json-card-field > span:first-child { color: var(--el-text-color-secondary, #606266); }
+.terminal-json-card-field > span:first-child { color: var(--el-text-color-secondary, #606266); font-size: 13px; }
 .terminal-json-details { margin: 10px 0; }
 .terminal-json-details summary { cursor: pointer; }
 .terminal-json-expanded { padding: 8px 20px; }

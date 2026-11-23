@@ -25,7 +25,7 @@
 
       <div class="notification-center-toolbar">
         <span class="notification-center-count">
-          {{ notifications.length }} {{ notifications.length === 1 ? 'notification' : 'notifications' }}
+          {{ totalCount }} {{ totalCount === 1 ? 'notification' : 'notifications' }}
         </span>
 
         <div class="notification-center-toolbar-actions">
@@ -45,7 +45,7 @@
           <button
             class="notification-center-clear"
             type="button"
-            :disabled="filteredNotifications.length === 0 || clearing"
+            :disabled="filteredCount === 0 || clearing"
             @click="clearAll"
           >
             {{ clearLabel }}
@@ -119,13 +119,20 @@
         </article>
       </div>
 
-      <div v-else class="notification-center-empty">
+      <HistoryLoadMore
+        v-if="filteredNotifications.length < filteredCount"
+        :remaining="filteredCount - filteredNotifications.length"
+        :loading="loading"
+        @load-more="$emit('load-more')"
+      />
+
+      <div v-else-if="!filteredNotifications.length" class="notification-center-empty">
         <el-icon class="notification-center-empty-icon"><Bell /></el-icon>
         <div class="notification-center-empty-title">
-          {{ notifications.length ? 'No matching notifications' : 'No notifications' }}
+          {{ totalCount ? 'No matching notifications' : 'No notifications' }}
         </div>
         <div class="notification-center-empty-text">
-          {{ notifications.length
+          {{ totalCount
             ? 'Try another notification type.'
             : 'SSE notifications you receive will appear here.' }}
         </div>
@@ -136,6 +143,7 @@
 
 <script>
 import { formatDateTimeLocal } from '../utils/formatters.js'
+import HistoryLoadMore from './HistoryLoadMore.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Bell,
@@ -153,6 +161,7 @@ import {
 
 export default {
   components: {
+    HistoryLoadMore,
     Bell,
     CircleCheckFilled,
     CircleCloseFilled,
@@ -163,16 +172,18 @@ export default {
   },
 
   props: {
-    notifications: {
-      type: Array,
-      default: () => [],
-    },
+    notifications: { type: Array, default: () => [] },
+    totalCount: { type: Number, default: 0 },
+    filteredCount: { type: Number, default: 0 },
+    loading: { type: Boolean, default: false },
   },
 
   emits: [
     'notification-deleted',
     'notifications-cleared',
     'notification-action',
+    'filter-changed',
+    'load-more',
   ],
 
   data() {
@@ -192,9 +203,8 @@ export default {
     },
 
     filteredNotifications() {
-      const notifications = Array.isArray(this.notifications) ? this.notifications : []
-      if (this.typeFilter === 'all') return notifications
-      return notifications.filter(notification => this.normalizeType(notification?.type) === this.typeFilter)
+      // The database already applies the requested filter and LIMIT/OFFSET.
+      return Array.isArray(this.notifications) ? this.notifications : []
     },
 
     clearLabel() {
@@ -205,6 +215,9 @@ export default {
   },
 
   watch: {
+    typeFilter(value) {
+      this.$emit('filter-changed', value)
+    },
     visible(value) {
       if (value) {
         this.currentTime = new Date()
@@ -268,7 +281,7 @@ export default {
     },
 
     async clearAll() {
-      if (!this.filteredNotifications.length || this.clearing) return
+      if (!this.filteredCount || this.clearing) return
 
       const selectedType = this.typeFilter
       const label = this.clearLabel
@@ -406,6 +419,7 @@ export default {
   cursor: default;
   opacity: 0.42;
 }
+
 
 .notification-center-list {
   display: flex;
@@ -580,7 +594,8 @@ export default {
     padding-right: 16px;
   }
 
-  .notification-center-list {
+  
+.notification-center-list {
     padding-left: 10px;
     padding-right: 10px;
   }

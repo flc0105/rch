@@ -415,16 +415,20 @@ class TransferService:
                 self._changed.notify_all()
             return removed
 
-    def list_transfers(self, tab_id: str = '') -> dict:
+    def list_transfers(self, tab_id: str = '', *, limit: int = 20, offset: int = 0,
+                       machine_id: str = '') -> dict:
         normalized_tab_id = str(tab_id or '').strip()
+        machine_id = str(machine_id or '').strip()
         with self._lock:
             active = [self._public_item(item) for item in self._items.values()
                       if item.get('state') == 'running' and
                       (not normalized_tab_id or item.get('tab_id') == normalized_tab_id)]
-            # History is shared across browser tabs; tab IDs only scope live SSE.
-            recent = self.history.list_recent()
+            # Keep browser-tab scoping for live transfers, not durable history.
+            recent = self.history.list_recent(limit=limit, offset=offset, machine_id=machine_id)
+            recent_total = self.history.count_recent(machine_id)
         active.sort(key=lambda item: item.get('started_at') or '', reverse=True)
-        return {'active': active, 'recent': recent, 'items': active + recent}
+        return {'active': active, 'recent': recent, 'recent_total': recent_total,
+                'items': active + recent}
 
     def _apply_patch(self, item: dict, patch: dict):
         previous_bytes = self._normalize_int(item.get('transferred_bytes')) or 0
