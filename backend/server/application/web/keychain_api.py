@@ -7,7 +7,7 @@ class WebKeychainApi:
     Web 凭证管理子外观。
 
     说明：
-    - 凭证只保存在服务端 runtime/keychains JSON 中
+    - 凭证保存在服务端 rch.db，Secret 使用本地密钥可逆加密
     - 不向 client 下发任何指令，也不依赖 client 执行
     - 列表默认不返回 secret_value，查看 / 编辑时才读取明文
     """

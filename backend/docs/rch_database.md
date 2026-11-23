@@ -14,7 +14,7 @@
 - **`*_json`**：SQLite `TEXT` 中存放的 JSON 对象或数组。它们不是另一张可独立更新的关系表；同一业务的固定列通常是筛选、排序或标识所需字段，JSON 保存扩展的业务内容或快照。
 - **布尔量**：SQLite 没有独立的布尔列类型，这里通常以整数 `0/1` 保存；展示时由 Server 转成 `false/true`。
 
-正常启动、完成 History 模块初始化后，当前结构共有 **18 张应用表**（不计 SQLite 自己的 `sqlite_sequence` 等内部对象）。其中 `activity_records` 由 History 模块创建；单独初始化 SQLite 数据库、却没有启动 History 时，可能只能看到另外 17 张表。空表是正常情况，不代表对应功能没有实现。
+正常启动、完成 History 模块初始化后，当前结构共有 **20 张应用表**（不计 SQLite 自己的 `sqlite_sequence` 等内部对象）。其中 `activity_records` 由 History 模块创建，`keychain_entries` 由 Keychains 模块创建，`transfer_records` 由 Transfer 模块创建；单独初始化 SQLite 数据库、却没有启动这些模块时，可能只能看到核心 17 张表。空表是正常情况，不代表对应功能没有实现。
 
 ## 业务功能与数据表速查
 
@@ -26,15 +26,60 @@
 | History → Quick History | `command_recents`、`pinned_commands` | 最近手动命令、调用次数和独立的固定项 |
 | History → Activity Center、连接历史中的操作摘要 | `activity_records` | 已记录的操作种类、状态、入参摘要、结果与文件引用 |
 | Notification Center | `notifications` | 已保存的通知列表及可用操作 |
+| Transfer Center | `transfer_records` | 所有保留的文件传输起始与完成事实，手动删除 |
 | Notification Settings、Toolbar Settings、Toolbox | `settings` | 不同命名空间的全局设置 JSON |
 | Remote Files → Pinned Paths | `pinned_paths` | 每台设备收藏的路径名称和路径文本 |
 | External Tools → 参数预设 | `external_tool_presets` | 按工具保存的命名参数预设 |
+| Keychains → Logins / Secrets | `keychain_entries` | Machine / Shared 的凭据元数据与可逆密文 |
 | Background Jobs | `background_jobs`、`background_job_messages`、`background_job_files` | Job 实例状态、输出消息、生成文件的引用 |
 | Artifact Manager → Saved / Shared Files | `artifact_entries`、`artifact_folders` | 文件索引、九种 Saved 分类及 Shared 逻辑目录；文件字节保留在磁盘 |
 | Agent Outputs | `agent_outputs` | 构建记录、构建时 Listener 快照、平台与连接信息；二进制构建产物保留在磁盘 |
 | **旧执行记录结构** | `command_executions` | 当前仍可能存在，但**不是现行 Activity Center 的读取来源** |
 
 以下每组“字段”列举的均为实际数据库列。**主键（PK）**决定记录唯一性；“引用”是业务关联，不一定存在数据库外键约束。
+
+## Transfer Center 传输历史表
+
+### `transfer_records` — 文件传输记录
+
+由 Transfer 模块在 `rch.db` 中建立。每次创建传输时记录一次开始状态，结束时记录一次终态；实时速度/ETA、临时任务参数不写入此表。Server 重新启动时仍标为 `running` 的行会被置为 `interrupted` 并填写完成时间。只通过 Transfer Center 的 Delete / Clear Recent 删除记录，不因为超过固定条数而自动删减；清理记录不删除 Artifact 文件。
+
+| 字段 | 用途 |
+| --- | --- |
+| `transfer_id` | 唯一传输 ID，主键 |
+| `client_id`、`hostname` | 发起操作关联的 Client 实例与设备名称 |
+| `direction` | `client_to_server` 或 `server_to_client` 等实际传输方向 |
+| `filename` | 文件名称（UI 列表只显示 basename） |
+| `source_path`、`destination_path` | 源/目的路径，在 Info 查看 |
+| `state`、`stage` | 传输终态或尚未结束的启动状态与阶段 |
+| `total_bytes`、`transferred_bytes` | 文件大小及最终完成字节，单位 byte |
+| `artifact_id` | 可选的服务器 Artifact 引用，供预览/浏览器下载 |
+| `error` | 错误摘要（如果失败或被中断） |
+| `started_at`、`completed_at` | 开始与结束时间文本，未完成时 `completed_at` 为空 |
+
+浏览器标签页 ID 不作为历史可见性范围；它只用于实时运行状态和通知定向。查看历史仍由 Web API 现有认证保护。
+
+## Keychains 凭据表
+
+### `keychain_entries` — Login / Secret
+
+由 Keychains 管理模块在 `rch.db` 中创建。按 `cred_id` 唯一；同一 `machine_id` 下的 `name` 不区分大小写唯一。
+
+| 字段 | 用途 |
+| --- | --- |
+| `cred_id` | 凭据 ID（主键），编辑或移动机器时保持不变 |
+| `machine_id` | 设备指纹；`__shared__` 表示 Shared |
+| `hostname` | 主机显示名快照；不用于鉴权 |
+| `kind` | `login` 或 `secret` |
+| `name` | 凭据名称；同范围不可重复（忽略大小写） |
+| `username` | Login 的用户名；Secret 为空 |
+| `secret_ciphertext` | Python 标准库实现的可逆遮蔽与 HMAC 完整性校验；不存原始明文 Secret/Password |
+| `site` | Login 的站点；Secret 为空 |
+| `note` | 凭据备注 |
+| `created_at` | 创建时间（文本） |
+| `updated_at` | 最后编辑时间（文本） |
+
+`keychains.key` 位于数据库同目录，由 Server 本地生成，需和 SQLite 数据库一起备份；丢失后不能恢复原凭据明文。列表只返回掩码，详情/SDK Resolve 解密后返回明文。完整使用边界见 [Keychains](keychains.md)。
 
 ## 设备、连接与分组
 
@@ -376,7 +421,7 @@ sqlite3 runtime/rch.db '.backup /path/to/backup/rch.db'
 sqlite3 -readonly runtime/rch.db 'PRAGMA integrity_check;'
 ```
 
-确保备份目标目录预先存在且可写；第二条正常应返回 `ok`。如果没有安装 sqlite3 CLI，可以使用支持 SQLite 在线备份的数据库管理工具。需要完整恢复 RCH 时，还应另行备份 `auth.json`、Artifact 实体、Documents、Keychains、Agent 构建产物等文件；仅恢复 `rch.db` **无法找回这些文件**。
+确保备份目标目录预先存在且可写；第二条正常应返回 `ok`。如果没有安装 sqlite3 CLI，可以使用支持 SQLite 在线备份的数据库管理工具。需要完整恢复 RCH 时，还应另行备份 `auth.json`、Artifact 实体、Documents、Keychains、Agent 构建产物等文件；仅恢复 `rch.db` **无法找回这些文件**；尤其 Keychains 还必须保留同目录的 `keychains.key` 才能解密。
 
 ### 常见误解与数据保护
 

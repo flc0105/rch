@@ -36,7 +36,7 @@
           <div class="transfer-card-head">
             <div class="transfer-direction">{{ directionSymbol(transfer) }}</div>
             <div class="transfer-card-main">
-              <div class="transfer-card-title">{{ transfer.filename || 'File transfer' }}</div>
+              <div class="transfer-card-title">{{ displayName(transfer) }}</div>
               <div class="transfer-card-meta">{{ transferSubtitle(transfer) }}</div>
             </div>
             <div class="transfer-card-percent">
@@ -101,33 +101,43 @@
         >
           <div
             class="transfer-recent-icon"
-            :class="transfer.state === 'failed' ? 'is-failed' : (transfer.state === 'cancelled' ? 'is-cancelled' : 'is-completed')"
+            :class="transfer.state === 'failed' ? 'is-failed' : (['cancelled', 'interrupted'].includes(transfer.state) ? 'is-cancelled' : 'is-completed')"
           >
             <el-icon>
-              <CircleCloseFilled v-if="transfer.state === 'failed' || transfer.state === 'cancelled'" />
+              <CircleCloseFilled v-if="['failed', 'cancelled', 'interrupted'].includes(transfer.state)" />
               <CircleCheckFilled v-else />
             </el-icon>
           </div>
 
           <div class="transfer-recent-main">
-            <div class="transfer-recent-title">{{ transfer.filename || 'File transfer' }}</div>
-            <div class="transfer-recent-meta">
-              {{ transfer.state === 'failed' ? (transfer.error || 'Transfer failed') : transferSubtitle(transfer) }}
-            </div>
+            <div class="transfer-recent-title">{{ displayName(transfer) }}</div>
+            <div class="transfer-recent-meta">{{ transferSubtitle(transfer) }}</div>
           </div>
 
           <div class="transfer-recent-actions">
             <div class="transfer-recent-state">{{ recentStateLabel(transfer) }}</div>
-            <button
-              class="transfer-text-action"
-              type="button"
-              title="Delete transfer record"
-              @click="deleteRecent(transfer)"
-            >
-              Delete
-            </button>
+            <el-dropdown trigger="click" @command="command => handleRecentAction(command, transfer)">
+              <button class="transfer-more-action" type="button" title="More" aria-label="More transfer actions">
+                <el-icon><MoreFilled /></el-icon>
+              </button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="info">Info</el-dropdown-item>
+                  <template v-if="canUseArtifact(transfer)">
+                    <el-dropdown-item command="preview">Preview</el-dropdown-item>
+                    <el-dropdown-item command="download">Download</el-dropdown-item>
+                  </template>
+                  <el-dropdown-item command="delete" divided>Delete</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </div>
         </article>
+        <div v-if="remainingRecentCount > 0" class="transfer-center-more-row">
+          <button class="transfer-text-action" type="button" @click="showMoreRecent">
+            Show more ({{ remainingRecentCount }} remaining)
+          </button>
+        </div>
       </section>
 
       <div v-if="!activeTransfers.length && !recentTransfers.length" class="transfer-center-empty">
@@ -139,14 +149,36 @@
       </div>
     </div>
   </el-drawer>
+
+  <el-dialog v-model="infoVisible" title="Transfer Info" width="min(540px, 94vw)" append-to-body>
+    <el-descriptions v-if="infoTransfer" :column="1" border size="small" class="transfer-info">
+      <el-descriptions-item label="File">{{ displayName(infoTransfer) }}</el-descriptions-item>
+      <el-descriptions-item label="Direction">{{ transferSubtitle(infoTransfer) }}</el-descriptions-item>
+      <el-descriptions-item label="Status">{{ recentStateLabel(infoTransfer) }}</el-descriptions-item>
+      <el-descriptions-item label="Size">{{ formatInfoBytes(infoTransfer.total_bytes) }}</el-descriptions-item>
+      <el-descriptions-item label="Transferred">{{ formatInfoBytes(infoTransfer.transferred_bytes) }}</el-descriptions-item>
+      <el-descriptions-item label="Started">{{ formatDate(infoTransfer.started_at) }}</el-descriptions-item>
+      <el-descriptions-item label="Finished">{{ formatDate(infoTransfer.completed_at) }}</el-descriptions-item>
+      <el-descriptions-item v-if="infoTransfer.source_path" label="Source Path">
+        <span class="transfer-info-path">{{ infoTransfer.source_path }}</span>
+      </el-descriptions-item>
+      <el-descriptions-item v-if="infoTransfer.destination_path" label="Destination Path">
+        <span class="transfer-info-path">{{ infoTransfer.destination_path }}</span>
+      </el-descriptions-item>
+      <el-descriptions-item v-if="infoTransfer.error" label="Error">{{ infoTransfer.error }}</el-descriptions-item>
+      <el-descriptions-item v-if="infoTransfer.artifact_id" label="Artifact ID">{{ infoTransfer.artifact_id }}</el-descriptions-item>
+    </el-descriptions>
+  </el-dialog>
 </template>
 
 <script>
-import { formatBytesHuman } from '../utils/formatters.js'
+import { formatBytesHuman, formatDateTimeLocal } from '../utils/formatters.js'
+import { canUseTransferArtifact, transferArtifactDownloadUrl, transferDisplayName } from '../utils/transferCenter.js'
 import {
   CircleCheckFilled,
   CircleCloseFilled,
   Close,
+  MoreFilled,
 } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -155,11 +187,14 @@ import {
   deleteRecentTransfer,
 } from '../api/transferApi.js'
 
+const RECENT_RENDER_BATCH_SIZE = 100
+
 export default {
   components: {
     CircleCheckFilled,
     CircleCloseFilled,
     Close,
+    MoreFilled,
   },
 
   props: {
@@ -173,11 +208,14 @@ export default {
     },
   },
 
-  emits: ['transfers-changed'],
+  emits: ['transfers-changed', 'preview-artifact'],
 
   data() {
     return {
       visible: false,
+      infoVisible: false,
+      infoTransfer: null,
+      recentRenderLimit: RECENT_RENDER_BATCH_SIZE,
     }
   },
 
@@ -186,16 +224,68 @@ export default {
       return (this.transfers || []).filter(item => item?.state === 'running')
     },
 
+    recentTransferCount() {
+      return (this.transfers || [])
+        .filter(item => item?.state && item.state !== 'running').length
+    },
+
     recentTransfers() {
       return (this.transfers || [])
         .filter(item => item?.state && item.state !== 'running')
-        .slice(0, 50)
+        .slice(0, this.recentRenderLimit)
+    },
+
+    remainingRecentCount() {
+      return Math.max(0, this.recentTransferCount - this.recentTransfers.length)
     },
   },
 
   methods: {
     open() {
+      this.recentRenderLimit = RECENT_RENDER_BATCH_SIZE
       this.visible = true
+    },
+
+    showMoreRecent() {
+      this.recentRenderLimit += RECENT_RENDER_BATCH_SIZE
+    },
+
+    displayName(transfer) {
+      return transferDisplayName(transfer)
+    },
+
+    canUseArtifact(transfer) {
+      return canUseTransferArtifact(transfer)
+    },
+
+    handleRecentAction(command, transfer) {
+      if (command === 'info') {
+        this.infoTransfer = transfer
+        this.infoVisible = true
+      } else if (command === 'delete') {
+        return this.deleteRecent(transfer)
+      } else if (this.canUseArtifact(transfer)) {
+        if (command === 'preview') {
+          this.$emit('preview-artifact', { artifact_id: transfer.artifact_id, filename: transfer.filename })
+        } else if (command === 'download') {
+          const link = document.createElement('a')
+          link.href = transferArtifactDownloadUrl(transfer)
+          link.target = '_blank'
+          link.rel = 'noopener noreferrer'
+          document.body.appendChild(link)
+          link.click()
+          link.remove()
+        }
+      }
+    },
+
+    formatDate(value) {
+      return value ? formatDateTimeLocal(value) : '—'
+    },
+
+    formatInfoBytes(value) {
+      if (value == null || value === '') return '—'
+      return formatBytesHuman(value, { precision: 'adaptive', maxUnit: 'TB', invalid: '—', nonPositiveAsZero: true })
     },
 
     async cancelActiveTransfer(transfer) {
@@ -241,6 +331,7 @@ export default {
     recentStateLabel(transfer) {
       if (transfer?.state === 'failed') return 'Failed'
       if (transfer?.state === 'cancelled') return 'Cancelled'
+      if (transfer?.state === 'interrupted') return 'Interrupted'
       return 'Completed'
     },
 
@@ -273,9 +364,7 @@ export default {
         return `Browser → Server · for ${device}`
       }
       if (transfer?.direction === 'server_to_client') {
-        return transfer.destination_path
-          ? `Server → ${device} · ${transfer.destination_path}`
-          : `Server → ${device}`
+        return `Server → ${device}`
       }
       return `${device} → Server`
     },
@@ -407,6 +496,19 @@ export default {
   opacity: 0.65;
 }
 
+.transfer-more-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  min-height: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.transfer-more-action:hover { background: var(--bg-card); color: var(--text); }
 .transfer-recent-actions {
   display: flex;
   flex-direction: column;
@@ -573,5 +675,16 @@ export default {
   .transfer-center-drawer.el-drawer {
     width: min(94vw, 430px) !important;
   }
+}
+</style>
+
+<style>
+.transfer-info .el-descriptions__content { overflow-wrap: anywhere; }
+.transfer-info-path { overflow-wrap: anywhere; white-space: pre-wrap; }
+
+.transfer-center-more-row {
+  display: flex;
+  justify-content: center;
+  padding: 12px 0 4px;
 }
 </style>

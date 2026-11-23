@@ -853,6 +853,7 @@ import { copyTextFallback } from '../utils/clipboard.js'
 import { listRemoteDirectory, getRemoteSystemPaths, pasteRemoteFiles, createRemoteZip, extractRemoteZip, makeRemoteDirectory, renameRemoteFile, downloadRemoteFile, downloadRemoteZip, deleteRemoteEntries } from '../api/remoteFilesApi.js'
 import { listRemotePinnedPaths, saveRemotePinnedPath, deleteRemotePinnedPath } from '../api/remotePinsApi.js'
 import {ElMessage, ElMessageBox} from 'element-plus'
+import { OPEN_TRANSFER_CENTER_KEY, showTransferStartedToast } from '../utils/transferStartedToast.js'
 import { createTerminalOperation, operationHeaders } from '../utils/terminalOperation.js'
 import { formatTerminalCommandFinishedLine } from '../composables/terminalMarkers.js'
 import { MoreFilled } from '@element-plus/icons-vue'
@@ -871,6 +872,7 @@ export default {
     MoreFilled,
   },
 
+  inject: { openTransferCenterFromToast: { from: OPEN_TRANSFER_CENTER_KEY, default: null } },
   props: {
     selectedId: {type: String, default: ''},
     // formatBytes: {type: Function, required: true},
@@ -1238,6 +1240,7 @@ export default {
         const result = await uploadRemoteFileToClient({
           file, clientId, destinationPath: targetPath, conflictPolicy,
           headers: operationHeaders(operation, {...this.getTabScopedHeaders(), 'X-RCH-Origin': 'web_ui', 'X-RCH-Feature': 'remote_files'}),
+          onStarted: () => showTransferStartedToast(`Upload started: ${file.name}`, this.openTransferCenterFromToast),
         })
         const taskId = result.task_id
 
@@ -1248,8 +1251,15 @@ export default {
           path: targetPath || '',
         })
 
-        ElMessage.success(`Upload started: ${file.name}`)
       } catch (e) {
+        if (e?.name === 'AbortError' && operation) {
+          this.$emit('append-output', clientId, `[Upload cancelled] ${file.name}`, 'info', {
+            operation_id: operation.operation_id,
+            event_type: 'completed', execution_status: 'cancelled', execution_success: false,
+          })
+          ElMessage.info('Upload cancelled')
+          return
+        }
         const failedDuringPreflight = !operation
         const title = `[Remote Upload] ${file.name} -> ${targetPath}`
         if (failedDuringPreflight) {
@@ -1988,10 +1998,7 @@ export default {
       }
 
       try {
-        ElMessage.success({
-          message: `Download started: ${row.name || 'file'}`,
-          duration: 1800,
-        })
+        showTransferStartedToast(`Download started: ${row.name || 'file'}`, this.openTransferCenterFromToast)
 
         const res = await downloadRemoteFile(clientId, row.path, this.getTabScopedHeaders())
         const json = await res.json()
@@ -2036,10 +2043,7 @@ export default {
       this.remoteZipDownloading = true
 
       try {
-        ElMessage.success({
-          message: `Download started: ${paths.length} selected item(s)`,
-          duration: 1800,
-        })
+        showTransferStartedToast(`Download started: ${paths.length} selected item(s)`, this.openTransferCenterFromToast)
 
         const res = await downloadRemoteZip(clientId, paths, this.getTabScopedHeaders())
 

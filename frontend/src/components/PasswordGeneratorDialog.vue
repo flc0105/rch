@@ -128,6 +128,19 @@ Generates a 20-character, Apple-style password with CVC syllable chunks, two hyp
           Close
         </el-button>
         <el-button
+          v-if="allowApply"
+          type="primary"
+          plain
+          :disabled="!generatedPassword"
+          @click="applyGeneratedPassword(false)"
+        >Use Password</el-button>
+        <el-button
+          v-if="allowApply"
+          type="primary"
+          :disabled="!generatedPassword"
+          @click="applyGeneratedPassword(true)"
+        >Use & Save</el-button>
+        <el-button
           type="primary"
           @click="generatePassword"
         >
@@ -151,6 +164,8 @@ const APPLE_STYLE_DIGIT_POSITIONS = [5, 6, 11, 12, 17]
 
 export default {
   name: 'PasswordGeneratorDialog',
+  props: { allowApply: { type: Boolean, default: false } },
+  emits: ['apply', 'apply-save'],
 
   data() {
     return {
@@ -175,6 +190,12 @@ export default {
 
     handleClosed() {
       this.generatedPassword = ''
+    },
+
+    applyGeneratedPassword(save) {
+      if (!this.allowApply || !this.generatedPassword) return
+      this.$emit(save ? 'apply-save' : 'apply', this.generatedPassword)
+      this.visible = false
     },
 
     setGeneratorMode(mode) {
@@ -449,6 +470,7 @@ generateAppleStylePassword() {
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 10px;
 }
 
@@ -461,6 +483,9 @@ generateAppleStylePassword() {
 }
 
 @media (max-width: 640px) {
+  .password-generator-footer :deep(.el-button) {
+    flex: 1 1 calc(50% - 10px);
+  }
   .password-result-row,
   .password-option-grid {
     grid-template-columns: 1fr;

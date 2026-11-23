@@ -215,6 +215,7 @@
 <script>
 import { listRemoteDirectory, getRemoteSystemPaths } from '../api/remoteFilesApi.js'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { OPEN_TRANSFER_CENTER_KEY, showTransferStartedToast } from '../utils/transferStartedToast.js'
 import { createTerminalOperation, operationHeaders } from '../utils/terminalOperation.js'
 import { formatTerminalCommandFinishedLine } from '../composables/terminalMarkers.js'
 import { formatBytes as formatBytesValue } from '../utils/formatters.js'
@@ -224,6 +225,7 @@ import { prepareUploadConflict } from '../utils/remoteFileConflicts.js'
 export default {
   name: 'RemoteFilePicker',
 
+  inject: { openTransferCenterFromToast: { from: OPEN_TRANSFER_CENTER_KEY, default: null } },
   props: {
     visible: {
       type: Boolean,
@@ -558,6 +560,7 @@ export default {
         const result = await uploadRemoteFileToClient({
           file, clientId, destinationPath, conflictPolicy,
           headers: operationHeaders(operation, {...this.buildRequestHeaders(), 'X-RCH-Origin': 'web_ui', 'X-RCH-Feature': 'remote_file_picker'}),
+          onStarted: () => showTransferStartedToast(`Upload started: ${file.name}`, this.openTransferCenterFromToast),
         })
         const taskId = result.task_id
         this.$emit('set-active-task', clientId, taskId || '', '', '', operation.operation_id)
@@ -567,8 +570,15 @@ export default {
           clientId: this.selectedId,
           path: this.remoteFilesCurrentPath || '',
         })
-        ElMessage.success(`Upload started: ${file.name}`)
       } catch (e) {
+        if (e?.name === 'AbortError' && operation) {
+          this.$emit('append-output', clientId, `[Upload cancelled] ${file.name}`, 'info', {
+            operation_id: operation.operation_id,
+            event_type: 'completed', execution_status: 'cancelled', execution_success: false,
+          })
+          ElMessage.info('Upload cancelled')
+          return
+        }
         const failedDuringPreflight = !operation
         const title = `[Remote Upload] ${file.name} -> ${destinationPath}`
         if (failedDuringPreflight) {

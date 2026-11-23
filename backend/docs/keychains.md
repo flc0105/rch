@@ -33,43 +33,17 @@ Server Keychains
 - SDK 默认使用当前 Client 本地身份的 `machine_id`；`scope='shared'` 才会转向共享范围。当前 SDK 不会自动先查 Machine、找不到再查 Shared。两种范围的同名凭据由 `scope` 显式区分。
 - Web 机器列表综合正在连接的 Machine 与**已经有凭据的** Machine，另外总是包含 Shared。因此设备断开后，只要存在凭据，依然可以在 Keychains 中找到该设备范围。
 
-Machine ID 来源于机器指纹；系统升级、改主机名等操作可能导致它改变。**旧凭据不会自动归到新 Fingerprint**：原来的 `machine_id` 对应的 JSON 文件仍在 Server，新客户端按当前机器身份查找时可能看不到。可通过 Web 编辑凭据，把 `Host Scope` 改到新的机器范围；不要把 `hostname` 当成持久身份。
+Machine ID 来源于机器指纹；系统升级、改主机名等操作可能导致它改变。**旧凭据不会自动归到新 Fingerprint**：原来的 `machine_id` 对应的数据库记录仍在 Server，新客户端按当前机器身份查找时可能看不到。可通过 Web 编辑凭据，把 `Host Scope` 改到新的机器范围；不要把 `hostname` 当成持久身份。
 
-## 二、Server 存储：JSON 而非系统密码保险库
+## 二、Server 存储：SQLite + 轻量可逆保护
 
-存储根目录由 `KEYCHAINS_ROOT_DIR` 指定，默认位于项目固定的 **`backend/runtime/keychains`**（Server 可通过 `RCH_SERVER_RUNTIME_DIR` 指定其他根目录）；每个机器范围对应一个经过安全文件名处理的 `<machine_id>.json`，Shared 对应 `__shared__.json`。这一目录由 Server 创建，**不是** Client 各自维护的密码文件，也不在普通 `rch.db` 数据表中。
+Keychains 结构化记录保存在 Server 的 `SERVER_RUNTIME_DIR/rch.db` 里，独立使用 `keychain_entries` 表。凭据按 `machine_id`（以及 Shared 的 `__shared__`）隔离；跨机器移动在一条数据库事务中完成，名称在同一机器范围内不区分大小写唯一。普通列表不解密秘密值，只有详情读取、更新或 SDK Resolve 需要解密。
 
-单个存储文件的概念结构如下（示例值均为虚构）：
+`secret_value` **不以明文存入数据库**。`secret_ciphertext` 使用 Python 标准库的随机 nonce、HMAC-SHA256 生成的字节流遮蔽和校验标签，属于轻量可逆保护，不依赖第三方密码库，也不等同于经过审计的标准加密算法。服务器首次保存新凭据时，在与 `rch.db` 相同目录生成 `keychains.key`，仅供 Server 本地读取；**可恢复备份需要同时保留 `rch.db` 和 `keychains.key`**，只备份数据库无法解密密码。管理员在 Web 点击 Show/View、Script 请求单条详情时仍能获得明文，沿用既有 API 权限控制；Web 与 Client 请求明文详情时，响应中会包含原始 Secret。
 
-```json
-{
-  "machine_id": "__shared__",
-  "items": [
-    {
-      "cred_id": "generated-by-server",
-      "machine_id": "__shared__",
-      "hostname": "Shared",
-      "kind": "login",
-      "name": "example-login",
-      "username": "demo-user",
-      "secret_value": "example-password",
-      "site": "https://example.invalid",
-      "note": "demonstration only",
-      "created_at": "2026-10-17 12:00:00",
-      "updated_at": "2026-10-17 12:00:00"
-    }
-  ]
-}
-```
+这一方案不需要用户配置主密码，也不引入密钥轮换/托管体系；它阻止单独查看数据库文件时直接读出 Secret，**不能防护同时拿到数据库和密钥文件的攻击者**。不要把 `keychains.key` 提交到源码或公开分享。若密钥文件损坏、遗失，Server 会报明确错误，不会静默创建新密钥覆盖已有数据。备份时要暂停写入或使用 SQLite 在线备份，并保存同一运行目录的密钥文件。
 
-`KeychainStore` 使用进程内 `RLock` 串行化自身读写；写入会先通过 `tempfile.mkstemp()` 生成临时文件、写入 JSON，再用 `os.replace()` 替换目标，降低单文件中途写入导致损坏的风险。**这里的 Secret 明文存在于 JSON 的 `secret_value` 中，并没有独立的加密层**。目录、文件权限、Server 运行账户、备份位置和 Web/API 访问控制才是当前实现的重要保护边界。
-
-有几个值得开发维护时注意的限制：
-
-- 无法读取或解析的 JSON 在 `_read_payload()` 中返回空列表；不是一个向用户显式暴露的“凭据损坏”状态。不要在文件损坏后未经备份直接通过界面重建并覆盖。
-- 删除条目会重写该机器的 JSON 列表；若需要安全擦除和备份清理，应按存储介质及备份策略单独处理。
-- 同机器范围编辑可原子替换单个文件；把条目移动到**另一台机器**时，会先写旧范围、再写新范围，**两文件之间没有数据库事务保证**。跨范围移动中断时需要检查双方是否一致。
-- 值归一化会去除前后空格；即使从 HTTP 传入字符串，不能保证保留所有原始文本字节。
+数据库字段详解见 [rch.db 数据库详解](rch_database.md)。
 
 ## 三、Web Keychains 的完整操作
 
@@ -93,7 +67,7 @@ Keychains 在 Web 的 `KeychainManagerDialog` 中管理；其 API 由 Server 本
 
 新建时先选择 Host Scope，再选择 Login 或 Secret。Login 填名称、用户名、密码，可选 Site/Note；Secret 填名称、Value，可选 Note。表单做非空检查；Server 会进一步规范化与校验。保存成功后刷新列表。删除前弹出确认，再发 DELETE；删除不会自动撤销已经被脚本取走、复制或发送出去的秘密。
 
-如果编辑时改变 Host Scope，`cred_id` 保持相同，但是实际所在 JSON 文件会迁移；因此其他脚本必须使用新的 `scope` 或 `machine_id` 才能继续按名称找到它。
+如果编辑时改变 Host Scope，`cred_id` 保持相同，但是数据库中凭据的 `machine_id` 会原子更新；因此其他脚本必须使用新的 `scope` 或 `machine_id` 才能继续按名称找到它。
 
 ### 运行参数中的 Keychain Picker
 
@@ -103,7 +77,7 @@ Script、Background Job 和 External Tool 的共享参数表单支持在 `passwo
 
 ## 四、Password Generator 与 Keychains 的关系
 
-密码生成器从 Keychains 弹出，但属于**纯前端辅助工具**。生成后只在弹窗里展示，提供复制和重新生成，**不会自动保存为 Credential，更不会自动填入正在编辑的条目**。
+密码生成器是 Keychains 的**纯前端辅助工具**，可以从工具栏独立打开以复制密码，也可以从正在新建或编辑的 Login/Secret 表单打开。编辑时生成器显示 **Use Password**（填入当前 Credential，待用户检查后按 Save）与 **Use & Save**（填入并使用现有表单校验及保存 API 立即保存）。表单缺少必要字段时仍提示校验错误，不会越过已有凭据规则；独立打开生成器时只提供复制。
 
 它有两种模式：
 
@@ -192,17 +166,17 @@ Client 可以完整读取、创建、更新、删除属于自己机器和 Server
 
 | 情况 | 首先检查 |
 | --- | --- |
-| Web 看不到某台机器的凭据 | Host Scope 过滤是否选错、该机器当前 `machine_id` 是否变化、对应 JSON 文件是否存在 |
+| Web 看不到某台机器的凭据 | Host Scope 过滤是否选错、该机器当前 `machine_id` 是否变化、数据库是否有该 Machine ID 记录 |
 | 同名创建失败 | 相同 Machine/Shared 范围下是否已有同名项（大小写不敏感，Login 与 Secret 共用名称空间） |
 | Script `get_secret` 报 Not Found | 当前 Machine ID 与创建时是否一致；是否应显式使用 `scope='shared'`；名字及类型是否匹配 |
 | Client Script 报 `Authentication required` | Client 是否连接、Client API Token 是否有效、HTTP 路径是否列入白名单 |
 | 调用列表成功但不能取明文 | 列表不含 `secret_value`；使用详情或 Resolve 获取明文 |
 | 在 UI 中点 Hide 之后仍担心泄漏 | Hide 只影响展示缓存；此前写入剪贴板、脚本变量或网络传输的值不由 Hide 收回 |
-| 更换设备或重装系统后凭据消失 | 检查旧 Machine ID 的 Server JSON，必要时通过管理端迁移范围；不要尝试按 `client_id` 查找 |
-| 创建成功但备份里找不到记录 | 凭据文件存在于 Server `runtime/keychains/`，不是 Client 本地和 `rch.db` |
-| Password Generator 结果没有进入 Keychains | 生成器是独立助手，必须手动复制并在新建/编辑表单保存 |
+| 更换设备或重装系统后凭据消失 | 在 Keychains 的机器范围中查找旧 Machine ID，必要时通过管理端迁移范围；不要尝试按 `client_id` 查找 |
+| 创建成功但备份里找不到记录 | 凭据记录在 Server `runtime/rch.db`，还需一同备份 `runtime/keychains.key` |
+| Password Generator 结果没有进入 Keychains | 从 Credential 编辑表单打开生成器，选 Use Password 或 Use & Save；从工具栏独立打开时只有复制 |
 
-从安全角度，务必把 Server Keychains 目录、Server 登录态、API Token、脚本代码、日志和系统剪贴板视作同一条风险链。Web 列表掩码、`SecretValue` 掩码与 Client Token 认证各有用途，但**并不构成对存储明文、浏览器明文以及具备对应路由权限的脚本读取行为的端到端保密保证**。
+从安全角度，务必把 Server Keychains 的数据库和密钥文件、Server 登录态、API Token、脚本代码、日志和系统剪贴板视作同一条风险链。Web 列表掩码、`SecretValue` 掩码与 Client Token 认证各有用途，但**并不构成对密钥文件泄漏、浏览器明文以及具备对应路由权限的脚本读取行为的端到端保密保证**。
 
 ## 实现边界与相关模块
 

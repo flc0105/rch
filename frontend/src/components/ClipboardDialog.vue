@@ -194,6 +194,7 @@
 <script>
 import { formatBytesHuman } from '../utils/formatters.js'
 import { ElMessage } from 'element-plus'
+import { OPEN_TRANSFER_CENTER_KEY, showTransferStartedToast } from '../utils/transferStartedToast.js'
 import { Loading } from '@element-plus/icons-vue'
 import RemoteZipPeekDialog from './RemoteZipPeekDialog.vue'
 import {
@@ -210,6 +211,7 @@ import {
 export default {
   name: 'ClipboardDialog',
   components: { Loading, RemoteZipPeekDialog },
+  inject: { openTransferCenterFromToast: { from: OPEN_TRANSFER_CENTER_KEY, default: null } },
   props: {
     selectedId: { type: [String, Number], default: '' },
     currentConnection: { type: Object, default: null },
@@ -374,10 +376,7 @@ export default {
 
       this.remoteDownloadingPaths[path] = true
       try {
-        ElMessage.success({
-          message: `Download started: ${file?.name || path.split(/[\\/]/).pop() || 'file'}`,
-          duration: 1800,
-        })
+        showTransferStartedToast(`Download started: ${file?.name || path.split(/[\\/]/).pop() || 'file'}`, this.openTransferCenterFromToast)
         const headers = typeof this.getTabScopedHeaders === 'function'
           ? this.getTabScopedHeaders()
           : {}
@@ -410,10 +409,7 @@ export default {
 
       this.remoteDownloadAllLoading = true
       try {
-        ElMessage.success({
-          message: `Preparing ZIP download: ${files.length} clipboard items`,
-          duration: 1800,
-        })
+        showTransferStartedToast(`Preparing ZIP download: ${files.length} clipboard items`, this.openTransferCenterFromToast)
         const headers = typeof this.getTabScopedHeaders === 'function'
           ? this.getTabScopedHeaders()
           : {}

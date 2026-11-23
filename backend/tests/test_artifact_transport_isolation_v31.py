@@ -9,6 +9,7 @@ from core.protocol.message_types import MSG_TYPE_TRANSFER_UPDATE
 from server.application.history.lifecycle_adapter import LifecycleAdapter
 from server.application.transfers.transfer_service import TransferService
 from server.connection.client_session import ClientSession
+from server.persistence.rch_database import RchDatabase
 
 
 class _Coordinator:
@@ -40,12 +41,12 @@ class _EventBus:
 
 
 @pytest.mark.parametrize('missing,expected_status', [(True, 'error'), (False, 'success')])
-def test_completed_transfer_activity_missing_artifact_stays_nonfatal(missing, expected_status):
+def test_completed_transfer_activity_missing_artifact_stays_nonfatal(missing, expected_status, tmp_path):
     """Wrong Server Web URL yields a real ID on the wrong server, unknown here."""
     catalog = _Catalog(missing=missing)
     coordinator = _Coordinator(catalog)
     adapter = LifecycleAdapter(coordinator)
-    transfers = TransferService(_EventBus())
+    transfers = TransferService(_EventBus(), RchDatabase(str(tmp_path / 'rch.db')))
     transfers.lifecycle_adapter = adapter
     session = object()
     transfer = transfers.create_transfer(client_id='linux-client', direction='client_to_server',
@@ -128,7 +129,7 @@ def test_client_read_error_still_propagates():
         connection.recv_message()
 
 
-def test_two_misdirected_upload_completions_preserve_real_main_tcp_socket():
+def test_two_misdirected_upload_completions_preserve_real_main_tcp_socket(tmp_path):
     """RCH frames stay usable despite two Artifact IDs from a different Web Server."""
     import threading
     from core.protocol.rchsocket import RCHSocket
@@ -144,7 +145,7 @@ def test_two_misdirected_upload_completions_preserve_real_main_tcp_socket():
         catalog = _Catalog(missing=True)
         coordinator = _Coordinator(catalog)
         adapter = LifecycleAdapter(coordinator)
-        transfers = TransferService(_EventBus())
+        transfers = TransferService(_EventBus(), RchDatabase(str(tmp_path / 'rch.db')))
         transfers.lifecycle_adapter = adapter
         session = ClientSession(transport, {'id': 'linux-client'})
         ids = []
@@ -186,11 +187,11 @@ def test_two_misdirected_upload_completions_preserve_real_main_tcp_socket():
     assert str(closed[0]) == 'Connection closed'
 
 
-def test_two_preview_requests_with_unknown_artifacts_fail_only_at_http_boundary():
+def test_two_preview_requests_with_unknown_artifacts_fail_only_at_http_boundary(tmp_path):
     """Preview never turns a missing Mac Artifact into a Client socket failure."""
     from server.application.artifact.remote_file_service import WebRemoteFileService
 
-    transfers = TransferService(_EventBus())
+    transfers = TransferService(_EventBus(), RchDatabase(str(tmp_path / 'rch.db')))
     requested = []
 
     class _Session:

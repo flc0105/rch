@@ -11,7 +11,7 @@
     <div class="fixed-dialog-body quick-actions-body">
       <div class="quick-actions-toolbar">
         <div class="quick-actions-toolbar-left">
-          <el-select v-model="filterPlatform" class="platform-filter" :disabled="loading">
+          <el-select v-model="filterPlatform" size="small" class="platform-filter" :disabled="loading">
             <el-option label="Current" value="current" />
             <el-option
               v-for="platform in supportedPlatforms"
@@ -25,12 +25,13 @@
             v-model="searchText"
             clearable
             class="quick-actions-search"
+            size="small"
             aria-label="Filter alias or command"
             placeholder="Filter alias or command"
           />
         </div>
 
-        <el-button type="primary" @click="openCreateDialog">
+        <el-button type="primary" size="small" @click="openCreateDialog">
           New Action
         </el-button>
       </div>
@@ -1113,7 +1114,6 @@ export default {
   .quick-actions-toolbar-left { width: 100%; flex: 1 1 100%; min-width: 0; flex-direction: column; align-items: stretch; gap: 8px; }
   .platform-filter { flex: 0 0 auto; width: 100%; }
   .quick-actions-search { flex: 0 0 auto; width: 100%; min-width: 0; }
-  .quick-actions-search :deep(.el-input__inner) { font-size: 16px; }
   .quick-actions-toolbar > .el-button { margin-left: auto; }
   .quick-actions-table-shell { display: none; }
   .quick-actions-mobile-list { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; padding: 2px 3px 12px; }

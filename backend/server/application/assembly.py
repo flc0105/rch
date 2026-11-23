@@ -106,7 +106,7 @@ class ServerApplicationAssembly:
         )
         self.task_store = WebTaskStore()
         self.interaction_broker = InteractionBroker(self.event_bus, self.task_store)
-        self.transfer_service = TransferService(self.event_bus)
+        self.transfer_service = TransferService(self.event_bus, self.server.database)
         self.transfer_service.lifecycle_adapter = self.server.lifecycle_adapter
         self.server.lifecycle_adapter.bind_transfer_service(self.transfer_service)
 
@@ -193,7 +193,7 @@ class ServerApplicationAssembly:
             self.background_job_service, job_bindings())
 
         self.pinned_path_store = PinnedPathStore(self.server.database)
-        self.keychain_store = KeychainStore()
+        self.keychain_store = KeychainStore(self.server.database)
         self.document_library_service = DocumentLibraryService(DOCUMENT_ROOTS, WEB_PREVIEW_TEXT_MAX_BYTES)
         self.agent_builder = AgentBuilder()
         self.agent_output_registry = AgentOutputRegistry(self.agent_builder.output_dir, self.server.database)

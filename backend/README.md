@@ -2367,7 +2367,8 @@ The project includes a dedicated Keychain Manager, not just ad-hoc credential fi
 Store:
 
 ```text
-runtime/keychains/
+runtime/rch.db  (keychain_entries)
+runtime/keychains.key  (restore key; back up with database)
 ```
 
 Scopes:
@@ -2698,11 +2699,11 @@ Current Server runtime state includes at least:
 
 ```text
 runtime/rch.db
-runtime/keychains/
+runtime/keychains.key
 runtime/web_files/
 ```
 
-`runtime/rch.db` currently owns command executions/recents/pins, connection history, recent devices and hidden state, device groups, pinned remote paths, Notification Center history, Server UI preferences, and External Tool parameter presets. Keychains and file-oriented artifacts remain filesystem-backed.
+`runtime/rch.db` owns command executions/recents/pins, connection history, recent devices and hidden state, device groups, pinned remote paths, Notification Center history, Server UI preferences, External Tool presets, and encrypted Keychains records. The reversible Keychains key is stored in `runtime/keychains.key`; Artifact file contents remain filesystem-backed.
 
 Important ownership:
 

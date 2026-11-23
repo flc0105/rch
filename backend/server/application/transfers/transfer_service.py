@@ -1,28 +1,29 @@
 import threading
 import time
 import uuid
+
+from server.application.transfers.transfer_history_store import TransferHistoryStore
 from datetime import datetime
 
 
 class TransferService:
     """
-    Server 内存态文件传输状态中心。
-
-    只记录实际传输生命周期，不持久化到 runtime JSON。
-    Client -> Server 与 Server -> Client 共用同一份状态模型，并通过 SSE
-    定向同步给发起传输的浏览器 tab。
+    Active transfers stay in memory for progress and cancellation. Durable
+    transfer facts live in rch.db; only start and terminal changes write SQLite.
+    SSE remains scoped to the initiating browser tab.
     """
 
-    MAX_RECENT_COMPLETED = 50
-    TERMINAL_STATES = {'completed', 'failed', 'cancelled'}
+    TERMINAL_STATES = {'completed', 'failed', 'cancelled', 'interrupted'}
+    MEMORY_RECENT_CACHE_SIZE = 128
 
-    def __init__(self, event_bus):
+    def __init__(self, event_bus, database):
         self.event_bus = event_bus
         self._lock = threading.RLock()
         self._changed = threading.Condition(self._lock)
         self._items = {}
         self._recent_ids = []
         self.lifecycle_adapter = None
+        self.history = TransferHistoryStore(database)
 
     def create_transfer(
         self,
@@ -73,6 +74,7 @@ class TransferService:
         self._refresh_derived_fields(item)
 
         with self._changed:
+            self.history.record_started(item)
             self._items[transfer_id] = item
             self._changed.notify_all()
 
@@ -114,11 +116,19 @@ class TransferService:
                 return self._public_item(item)
 
             previous_state = str(item.get('state') or '').strip().lower()
+            original = dict(item)
             self._apply_patch(item, patch)
             self._refresh_derived_fields(item)
+            next_state = str(item.get('state') or '').strip().lower()
+            if next_state in self.TERMINAL_STATES:
+                try:
+                    self.history.record_terminal(item)
+                except Exception:
+                    item.clear()
+                    item.update(original)
+                    raise
             self._remember_if_terminal(item)
             snapshot = self._public_item(item)
-            next_state = str(item.get('state') or '').strip().lower()
             lifecycle = ''
             if previous_state not in self.TERMINAL_STATES and next_state in self.TERMINAL_STATES:
                 lifecycle = 'error' if next_state == 'failed' else 'stopped'
@@ -327,8 +337,8 @@ class TransferService:
         with self._lock:
             item = self._items.get(normalized_id)
             if not item:
-                return None
-            if normalized_tab_id and item.get('tab_id') and item.get('tab_id') != normalized_tab_id:
+                return self.history.get(normalized_id)
+            if item.get('state') not in self.TERMINAL_STATES and normalized_tab_id and item.get('tab_id') and item.get('tab_id') != normalized_tab_id:
                 return None
             return self._public_item(item)
 
@@ -349,7 +359,7 @@ class TransferService:
             while True:
                 item = self._items.get(normalized_id)
                 if not item:
-                    return None
+                    return self.history.get(normalized_id)
                 if item.get('state') in self.TERMINAL_STATES:
                     return self._public_item(item)
 
@@ -380,59 +390,41 @@ class TransferService:
 
     def delete_recent_transfer(self, transfer_id: str, *, tab_id: str = '') -> bool:
         normalized_id = str(transfer_id or '').strip()
-        normalized_tab_id = str(tab_id or '').strip()
         if not normalized_id:
             return False
-
         with self._changed:
             item = self._items.get(normalized_id)
-            if not item:
-                return False
-            if normalized_tab_id and item.get('tab_id') and item.get('tab_id') != normalized_tab_id:
-                return False
-            if item.get('state') not in self.TERMINAL_STATES:
+            if item and item.get('state') not in self.TERMINAL_STATES:
                 raise ValueError('active transfer cannot be deleted; cancel it first')
-
-            self._items.pop(normalized_id, None)
-            if normalized_id in self._recent_ids:
-                self._recent_ids.remove(normalized_id)
-            self._changed.notify_all()
-            return True
+            removed = self.history.delete(normalized_id)
+            if removed:
+                self._items.pop(normalized_id, None)
+                if normalized_id in self._recent_ids:
+                    self._recent_ids.remove(normalized_id)
+                self._changed.notify_all()
+            return removed
 
     def clear_recent_transfers(self, *, tab_id: str = '') -> int:
-        normalized_tab_id = str(tab_id or '').strip()
-        removed = 0
         with self._changed:
+            removed = self.history.clear_recent()
             for transfer_id, item in list(self._items.items()):
-                if item.get('state') not in self.TERMINAL_STATES:
-                    continue
-                if normalized_tab_id and item.get('tab_id') and item.get('tab_id') != normalized_tab_id:
-                    continue
-                self._items.pop(transfer_id, None)
-                if transfer_id in self._recent_ids:
-                    self._recent_ids.remove(transfer_id)
-                removed += 1
+                if item.get('state') in self.TERMINAL_STATES:
+                    self._items.pop(transfer_id, None)
+            self._recent_ids.clear()
             if removed:
                 self._changed.notify_all()
-        return removed
+            return removed
 
     def list_transfers(self, tab_id: str = '') -> dict:
         normalized_tab_id = str(tab_id or '').strip()
         with self._lock:
-            items = [
-                self._public_item(item)
-                for item in self._items.values()
-                if not normalized_tab_id or str(item.get('tab_id') or '').strip() == normalized_tab_id
-            ]
-
-        items.sort(key=lambda item: item.get('started_at') or '', reverse=True)
-        active = [item for item in items if item.get('state') == 'running']
-        recent = [item for item in items if item.get('state') != 'running']
-        return {
-            'active': active,
-            'recent': recent[:self.MAX_RECENT_COMPLETED],
-            'items': active + recent[:self.MAX_RECENT_COMPLETED],
-        }
+            active = [self._public_item(item) for item in self._items.values()
+                      if item.get('state') == 'running' and
+                      (not normalized_tab_id or item.get('tab_id') == normalized_tab_id)]
+            # History is shared across browser tabs; tab IDs only scope live SSE.
+            recent = self.history.list_recent()
+        active.sort(key=lambda item: item.get('started_at') or '', reverse=True)
+        return {'active': active, 'recent': recent, 'items': active + recent}
 
     def _apply_patch(self, item: dict, patch: dict):
         previous_bytes = self._normalize_int(item.get('transferred_bytes')) or 0
@@ -479,7 +471,7 @@ class TransferService:
 
         item['updated_at'] = datetime.now().isoformat()
 
-        if item.get('state') in ('completed', 'failed', 'cancelled') and not item.get('completed_at'):
+        if item.get('state') in self.TERMINAL_STATES and not item.get('completed_at'):
             item['completed_at'] = item['updated_at']
             item['speed_bytes_per_sec'] = 0
             item['eta_seconds'] = 0 if item.get('state') == 'completed' else None
@@ -508,17 +500,14 @@ class TransferService:
     def _remember_if_terminal(self, item: dict):
         if item.get('state') not in self.TERMINAL_STATES:
             return
-
         transfer_id = item.get('transfer_id')
         if transfer_id in self._recent_ids:
             self._recent_ids.remove(transfer_id)
         self._recent_ids.insert(0, transfer_id)
-
-        while len(self._recent_ids) > self.MAX_RECENT_COMPLETED:
+        # Bounded *RAM cache* only; the persisted record is never pruned.
+        while len(self._recent_ids) > self.MEMORY_RECENT_CACHE_SIZE:
             stale_id = self._recent_ids.pop()
-            stale_item = self._items.get(stale_id)
-            if stale_item and stale_item.get('state') != 'running':
-                self._items.pop(stale_id, None)
+            self._items.pop(stale_id, None)
 
     def _publish(self, item: dict):
         target_tab_id = str(item.get('tab_id') or '').strip()

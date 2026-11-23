@@ -504,6 +504,7 @@
     :transfers="transferItems"
     :tab-id="tabId"
     @transfers-changed="loadTransferItems"
+    @preview-artifact="previewArtifact"
   />
 
   <el-dialog
@@ -632,6 +633,7 @@ import { changeAdminPassword, getAuthorizationInfo, getAuthSession, resetAdminAp
 import { loadLayoutPreferences, saveLayoutPreferences } from './utils/layoutPreferences.js'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { markRaw } from 'vue'
+import { OPEN_TRANSFER_CENTER_KEY } from './utils/transferStartedToast.js'
 import { scheduleIdleWarmup } from './utils/idleWarmup.js'
 import { getConnectionTask } from './api/connectionsApi.js'
 import { cancelTask } from './api/tasksApi.js'
@@ -688,6 +690,10 @@ const hoverWarmupTargets = {
 }
 
 export default {
+  provide() {
+    return { [OPEN_TRANSFER_CENTER_KEY]: () => this.openTransferCenter() }
+  },
+
   components: {
     TransferCenterDrawer,
     NotificationCenterDrawer,
@@ -1256,9 +1262,11 @@ export default {
       return this.$refs.settingsDialogRef?.open()
     },
 
-    async openTransferCenter() {
-      await this.loadTransferItems()
-      return this.$refs.transferCenterDrawerRef?.open()
+    openTransferCenter() {
+      // Open immediately; waiting for the entire persisted transfer history
+      // made this control appear unresponsive on slower connections.
+      this.$refs.transferCenterDrawerRef?.open()
+      void this.loadTransferItems()
     },
 
     async openNotificationCenter() {
@@ -1825,6 +1833,42 @@ export default {
     padding-left: 8px;
     padding-right: 8px;
   }
+}
+
+
+</style>
+<style>
+/* Message is teleported to body; scope only our transfer-created toasts.
+   Preserve the native Element Plus Message layout and allow its content to wrap. */
+.el-message.rch-transfer-started-toast {
+  min-width: 0;
+  width: fit-content;
+  max-width: calc(100vw - 24px);
+}
+
+.el-message.rch-transfer-started-toast .el-message__content {
+  min-width: 0;
+  font-size: 14px;
+  line-height: 1.4;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+.rch-transfer-started-toast .rch-transfer-started-open {
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.rch-transfer-started-toast .rch-transfer-started-open:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
 }
 </style>
 <style scoped>

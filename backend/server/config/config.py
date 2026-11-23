@@ -88,7 +88,6 @@ COMMAND_HISTORY_MAX_RESULT_FIELD_BYTES = 256 * 1024
 # Execution history 不做条数 / 时间裁剪。
 # Quick History 仅保留最近 100 个 unique command；Pinned 独立永久保存。
 # 单条 execution 最多保存 64KiB 输出文本和 256 段记录，避免极碎 chunk 的 metadata 膨胀。
-KEYCHAINS_ROOT_DIR = os.path.join(SERVER_RUNTIME_DIR, 'keychains')
 
 # ------------------ web files ------------------ #
 WEB_FILES_ROOT_DIR = os.path.join(SERVER_RUNTIME_DIR, 'web_files')

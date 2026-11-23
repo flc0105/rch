@@ -35,7 +35,7 @@ RCH_SERVER_RUNTIME_DIR=/data/rch-runtime python backend/run_web.py
 | `SERVER_RUNTIME_DIR/auth.json` | 管理员凭据和 Web Session 密钥 |
 | `SERVER_RUNTIME_DIR/rch.db` | 统一 SQLite：历史、通知、Artifact 和 Agent Outputs 元数据 |
 | `SERVER_RUNTIME_DIR/web_files/` | Artifact / Shared Files / 上传存储 |
-| `SERVER_RUNTIME_DIR/keychains/` | Server 凭据相关文件 |
+| `SERVER_RUNTIME_DIR/keychains.key` | 解密 Keychains 数据库密文所需的本地密钥；须和 `rch.db` 一起备份 |
 | `SERVER_RUNTIME_DIR/cleanup_logs/` | 清理日志 |
 | `SERVER_RUNTIME_DIR/server.log`、`server.log.1` ～ `.5` | `run_web.py` 的 Server 日志及自动轮转备份 |
 | `SERVER_RUNTIME_DIR/logs/` | Go Loader 上报日志 |

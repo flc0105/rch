@@ -546,3 +546,13 @@ the log reader exits and the daemon instance continues running.
 ## XT 列表的终端布局
 
 `xt exec list`、`xt package list`、`xt module list` 和 `xt instance list` 默认每行输出一个标识。Instance 使用 `module_id/instance_id` 区分不同模块的同名实例。`--format table` 显示原完整表格，`--format records` 显示纵向记录，`--format table` 显示横向表格，`--format json` / `--json` 输出原有结构化字段与布尔值。所有列表共用现有 Server Builtin Spec 和 Core Renderer，平台过滤、安装状态与生命周期不改变。
+
+## 可选的专用 TCP Port Tunnel
+
+Catalog 中的 `Dedicated TCP Port Tunnel` 是独立可安装的 Python 包，提供 `rch-port-tunnel.hub` 和 `rch-port-tunnel.agent` 两个 Daemon Module。两个模块运行同一份程序，均在各自的目标 Client 上由 External Tool 的 `client_python` Launcher 执行；不调用 RCH 内置 `tunnel` 命令，也不借用 RCH 主 Socket。
+
+使用时选择一台 Agent 能主动连到的机器运行 **Hub**，先在 Hub Module 填写 Channel Bind Address / Dedicated Channel Port、Shared Secret、Expose Listening Port On（`hub` 或 `agent`）、Forward Listen Address / Port、Target Host / Port，再在另一台机器运行 **Agent**，填写 Hub Channel Address、相同的 Channel Port 与 Shared Secret。`Expose on` 只指定实际开放映射入口的机器；`Target Host` 则相对于另一端解释。若两端都受 RCH 管理，可以分别在对应设备的 External Tool Manager 中安装、启动、查看日志和停止。如果 Hub 位于 RCH Server 所在机器，该机器也需有能够被 RCH 管理的 Client，才能通过 External Tools 在本机启动 Hub；否则可以把 ZIP 解包后直接用 Python 运行。
+
+专用通道默认仅监听 `127.0.0.1:9444`；跨机器使用时，需要在 Hub 上配置可被 Agent 访问的监听地址，并确保网络、防火墙和端口转发允许 Agent 主动拨入。同一个包可以在不同机器上运行不同角色；每对独立映射应使用互不冲突的通道监听端口和实例名称。停止模块会终止其守护进程、断开对应活动 TCP 流。Agent 在 Hub 暂时不可达时会重试连接。
+
+**安全边界：** 此工具发送的是明文 TCP 字节，Token 用于连接鉴权，**不提供 TLS 加密**。共享 Token 会出现在进程启动命令参数中；不要在不受信任的主机上使用，公网使用前应通过 VPN、加密代理等方式保护通道，并限制 Hub 通道端口的来源。与 RCH 内置 Tunnel 的共享端口方案不同，专用端口需要额外的网络可达条件。

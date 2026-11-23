@@ -306,6 +306,7 @@
               maxlength="4096"
               placeholder="Password"
             />
+            <el-button type="primary" link size="small" @click="openPasswordGeneratorDialog">Generate Password</el-button>
           </el-form-item>
 
           <el-form-item label="Site Optional">
@@ -326,6 +327,7 @@
               maxlength="65536"
               placeholder="Secret value"
             />
+            <el-button type="primary" link size="small" @click="openPasswordGeneratorDialog">Generate Value</el-button>
           </el-form-item>
         </template>
 
@@ -479,7 +481,12 @@
       </template>
     </el-dialog>
 
-    <PasswordGeneratorDialog ref="passwordGeneratorDialogRef" />
+    <PasswordGeneratorDialog
+      ref="passwordGeneratorDialogRef"
+      :allow-apply="editorVisible"
+      @apply="applyGeneratedPassword"
+      @apply-save="saveGeneratedPassword"
+    />
   </el-dialog>
 </template>
 
@@ -824,6 +831,17 @@ export default {
 
     openPasswordGeneratorDialog() {
       this.$refs.passwordGeneratorDialogRef?.open()
+    },
+
+    applyGeneratedPassword(password) {
+      if (!this.editorVisible || !password) return
+      this.form.secret_value = password
+    },
+
+    async saveGeneratedPassword(password) {
+      if (!this.editorVisible || !password) return
+      this.form.secret_value = password
+      await this.saveCredential()
     },
 
     async openEditDialog(row) {

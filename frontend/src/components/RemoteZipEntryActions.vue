@@ -11,6 +11,7 @@
 
 <script>
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { OPEN_TRANSFER_CENTER_KEY, showTransferStartedToast } from '../utils/transferStartedToast.js'
 import RemoteFilePicker from './RemoteFilePicker.vue'
 import { downloadRemoteZipEntry, extractRemoteZip } from '../api/remoteFilesApi.js'
 import { prepareExtractConflict } from '../utils/remoteFileConflicts.js'
@@ -18,6 +19,7 @@ import { prepareExtractConflict } from '../utils/remoteFileConflicts.js'
 export default {
   name: 'RemoteZipEntryActions',
   components: { RemoteFilePicker },
+  inject: { openTransferCenterFromToast: { from: OPEN_TRANSFER_CENTER_KEY, default: null } },
   props: {
     selectedId: { type: String, default: '' },
     archivePath: { type: String, default: '' },
@@ -47,7 +49,7 @@ export default {
       if (!clientId || !archivePath || !entry?.path || entry.is_dir || this.downloading) return
       this.downloading = true
       try {
-        ElMessage.success({ message: `Download started: ${entry.name || 'file'}`, duration: 1800 })
+        showTransferStartedToast(`Download started: ${entry.name || 'file'}`, this.openTransferCenterFromToast)
         const response = await downloadRemoteZipEntry(clientId, archivePath, entry.entry_name || entry.path)
         const json = await response.json()
         if (!response.ok || json.code !== 0) throw new Error(json.message || 'ZIP entry download failed')

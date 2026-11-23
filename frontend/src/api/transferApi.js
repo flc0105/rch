@@ -1,3 +1,6 @@
+// Only browser-to-Server uploads have an active XHR in this tab.
+const activeBrowserUploads = new Map()
+
 function normalizeHeaders(headers = {}) {
   return {...(headers || {})}
 }
@@ -43,7 +46,7 @@ export function buildBrowserUploadContentUrl(transfer = {}) {
 }
 
 // Shared browser -> Server -> Client upload path used by both remote file dialogs.
-export async function uploadRemoteFileToClient({file, clientId, destinationPath, conflictPolicy = null, headers = {}}) {
+export async function uploadRemoteFileToClient({file, clientId, destinationPath, conflictPolicy = null, headers = {}, onStarted = null}) {
   const transfer = await createBrowserUploadTransfer({
     client_id: clientId,
     filename: file.name,
@@ -52,6 +55,7 @@ export async function uploadRemoteFileToClient({file, clientId, destinationPath,
     ...(conflictPolicy !== null ? { conflict_policy: conflictPolicy } : {}),
   }, headers)
   const transferId = String(transfer?.transfer_id || '').trim()
+  let uploadXhr = null
 
   try {
     if (!transferId) throw new Error('Failed to initialize upload transfer')
@@ -61,6 +65,8 @@ export async function uploadRemoteFileToClient({file, clientId, destinationPath,
     const url = buildBrowserUploadContentUrl(transfer)
     const response = await new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest()
+      uploadXhr = xhr
+      activeBrowserUploads.set(transferId, xhr)
       xhr.open('POST', url, true)
       xhr.setRequestHeader('Content-Type', 'application/octet-stream')
       xhr.setRequestHeader('X-RCH-Transfer-Token', token)
@@ -79,18 +85,30 @@ export async function uploadRemoteFileToClient({file, clientId, destinationPath,
         resolve(json)
       })
       xhr.addEventListener('error', () => reject(new Error('Browser upload connection failed')))
-      xhr.addEventListener('abort', () => reject(new Error('Browser upload was cancelled')))
+      xhr.addEventListener('abort', () => {
+        const error = new Error('Browser upload was cancelled')
+        error.name = 'AbortError'
+        reject(error)
+      })
       xhr.send(file)
+      // Notify when the browser starts sending bytes, not after its upload finishes.
+      if (typeof onStarted === 'function') {
+        try { onStarted({ transferId }) } catch (error) { console.warn('Upload notification failed', error) }
+      }
     })
     return response.data || {}
   } catch (error) {
-    if (transferId) {
+    if (transferId && error?.name !== 'AbortError') {
       updateBrowserUploadTransfer(transferId, {
         state: 'failed',
         error: error.message || 'Browser upload failed',
       }, headers).catch(() => {})
     }
     throw error
+  } finally {
+    if (activeBrowserUploads.get(transferId) === uploadXhr) {
+      activeBrowserUploads.delete(transferId)
+    }
   }
 }
 
@@ -126,7 +144,11 @@ export async function cancelTransfer(transferId, tabId = '') {
     method: 'POST',
     headers: buildTabHeaders(tabId),
   })
-  return parseApiResponse(res, 'Failed to cancel transfer')
+  const result = await parseApiResponse(res, 'Failed to cancel transfer')
+  // The Server has accepted cancellation; also stop this tab's browser upload
+  // so the caller's pending promise can settle and its Upload button unlocks.
+  activeBrowserUploads.get(normalizedTransferId)?.abort()
+  return result
 }
 
 export async function deleteRecentTransfer(transferId, tabId = '') {

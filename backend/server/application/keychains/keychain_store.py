@@ -1,41 +1,122 @@
-import json
+"""Database-backed Keychains with standard-library reversible secret masking."""
+import base64
+import binascii
+import hmac
 import os
-import tempfile
+import secrets
 import threading
 import uuid
 from datetime import datetime
-
-from core.utils.files import secure_filename
-from server.config.config import KEYCHAINS_ROOT_DIR
+from pathlib import Path
 
 
 class KeychainStore:
-    """
-    服务端凭证 JSON 存储。
+    """Persist credentials in rch.db without storing secret plaintext.
 
-    职责：
-    - 按 machine_id 保存凭证列表
-    - 提供凭证创建 / 更新 / 删除 / 查看
-    - 列表接口默认隐藏 secret_value，查看时再返回明文
+    Back up the Server-local keychains.key together with rch.db to restore secrets.
+    This lightweight masking is not a substitute for a vetted encryption cipher.
     """
 
     SHARED_MACHINE_ID = '__shared__'
     SHARED_HOSTNAME = 'Shared'
     TIME_FORMAT = '%Y-%m-%d %H:%M:%S'
-
     KIND_LOGIN = 'login'
     KIND_SECRET = 'secret'
-
     MAX_TEXT_CHARS = 4096
     MAX_SECRET_CHARS = 256 * 1024
 
-    def __init__(self):
-        self.root_dir = KEYCHAINS_ROOT_DIR
+    def __init__(self, database, *, key_file_path=None):
+        self.database = database
         self._lock = threading.RLock()
-        self._prepare_dirs()
+        self._key_path = Path(key_file_path) if key_file_path is not None else Path(self.database.db_path).with_name('keychains.key')
+        self._key = None
+        with self.database.transaction() as conn:
+            conn.execute('''CREATE TABLE IF NOT EXISTS keychain_entries (
+                cred_id TEXT PRIMARY KEY,
+                machine_id TEXT NOT NULL,
+                hostname TEXT NOT NULL,
+                kind TEXT NOT NULL CHECK(kind IN ('login', 'secret')),
+                name TEXT NOT NULL,
+                username TEXT NOT NULL DEFAULT '',
+                secret_ciphertext TEXT NOT NULL,
+                site TEXT NOT NULL DEFAULT '',
+                note TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )''')
+            conn.execute('''CREATE UNIQUE INDEX IF NOT EXISTS uq_keychain_machine_name
+                ON keychain_entries(machine_id, name COLLATE NOCASE)''')
+            has_data = conn.execute('SELECT 1 FROM keychain_entries LIMIT 1').fetchone() is not None
+        if has_data:
+            # Never silently generate a replacement key for an existing encrypted DB.
+            self._get_key(allow_create=False)
 
-    def _prepare_dirs(self):
-        os.makedirs(self.root_dir, exist_ok=True)
+    # Fresh nonce and authentication tag per value; no third-party dependency.
+    _NONCE_SIZE = 16
+    _TAG_SIZE = 32
+
+    def _get_key(self, *, allow_create=True):
+        if self._key is not None:
+            return self._key
+        if not self._key_path.is_file():
+            if not allow_create:
+                raise RuntimeError('Keychains encryption key is missing; restore keychains.key alongside rch.db')
+            self._key_path.parent.mkdir(parents=True, exist_ok=True)
+            key = base64.urlsafe_b64encode(secrets.token_bytes(32))
+            try:
+                fd = os.open(self._key_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            except FileExistsError:
+                pass
+            else:
+                with os.fdopen(fd, 'wb') as stream:
+                    stream.write(key)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+        try:
+            encoded = self._key_path.read_bytes().strip()
+            key = base64.b64decode(encoded, altchars=b'-_', validate=True)
+            if len(key) != 32:
+                raise ValueError('expected a 32-byte key')
+            self._key = key
+        except (OSError, ValueError, binascii.Error) as exc:
+            raise RuntimeError('Keychains encryption key is unreadable or invalid') from exc
+        return self._key
+
+    @staticmethod
+    def _mask(data: bytes, key: bytes, nonce: bytes) -> bytes:
+        # HMAC counter stream with a random nonce per value; symmetric to undo.
+        stream_key = hmac.digest(key, b'keychain-enc', 'sha256')
+        output = bytearray(len(data))
+        for offset in range(0, len(data), 32):
+            block = hmac.digest(stream_key, nonce + (offset // 32).to_bytes(4, 'big'), 'sha256')
+            chunk = data[offset:offset + 32]
+            for index, byte in enumerate(chunk):
+                output[offset + index] = byte ^ block[index]
+        return bytes(output)
+
+    def _encrypt(self, value: str) -> str:
+        key = self._get_key()
+        nonce = secrets.token_bytes(self._NONCE_SIZE)
+        encrypted = self._mask(value.encode('utf-8'), key, nonce)
+        mac_key = hmac.digest(key, b'keychain-mac', 'sha256')
+        tag = hmac.digest(mac_key, nonce + encrypted, 'sha256')
+        return base64.urlsafe_b64encode(nonce + tag + encrypted).decode('ascii')
+
+    def _decrypt(self, token: str) -> str:
+        try:
+            key = self._get_key(allow_create=False)
+            raw = base64.b64decode(token, altchars=b'-_', validate=True)
+            if len(raw) < self._NONCE_SIZE + self._TAG_SIZE:
+                raise ValueError('token too short')
+            nonce = raw[:self._NONCE_SIZE]
+            tag = raw[self._NONCE_SIZE:self._NONCE_SIZE + self._TAG_SIZE]
+            encrypted = raw[self._NONCE_SIZE + self._TAG_SIZE:]
+            mac_key = hmac.digest(key, b'keychain-mac', 'sha256')
+            if not hmac.compare_digest(tag, hmac.digest(mac_key, nonce + encrypted, 'sha256')):
+                raise ValueError('token authentication failed')
+            return self._mask(encrypted, key, nonce).decode('utf-8')
+        except (UnicodeError, ValueError, binascii.Error) as exc:
+            raise RuntimeError('Keychains secret cannot be decrypted; restore the matching keychains.key') from exc
 
     def _now_text(self) -> str:
         return datetime.now().strftime(self.TIME_FORMAT)
@@ -56,14 +137,6 @@ class KeychainStore:
         if normalized_machine_id == self.SHARED_MACHINE_ID:
             return self.SHARED_HOSTNAME
         return self._safe_text(hostname) or 'Unknown'
-
-    def _normalize_file_stem(self, machine_id: str) -> str:
-        safe_name = secure_filename(self._normalize_machine_id(machine_id))
-        return safe_name or self.SHARED_MACHINE_ID
-
-    def _get_file_path(self, machine_id: str) -> str:
-        normalized = self._normalize_file_stem(machine_id)
-        return os.path.join(self.root_dir, f'{normalized}.json')
 
     def _normalize_kind(self, value: str) -> str:
         kind = self._safe_text(value).lower()
@@ -128,266 +201,165 @@ class KeychainStore:
             'updated_at': updated_at,
         }
 
-    def _read_payload(self, machine_id: str) -> list[dict]:
-        file_path = self._get_file_path(machine_id)
-        if not os.path.isfile(file_path):
-            return []
 
-        try:
-            with open(file_path, 'r', encoding='utf-8') as file_obj:
-                payload = json.load(file_obj)
-        except Exception:
-            return []
+    @staticmethod
+    def _row_to_fields(row) -> dict:
+        item = dict(row)
+        if item['kind'] == 'secret':
+            item.pop('username', None)
+            item.pop('site', None)
+        return item
 
-        if isinstance(payload, dict):
-            items = payload.get('items') or []
-            payload_machine_id = payload.get('machine_id') or machine_id
+    def _item_from_row(self, row, *, reveal=True) -> dict:
+        item = self._row_to_fields(row)
+        ciphertext = item.pop('secret_ciphertext')
+        if reveal:
+            item['secret_value'] = self._decrypt(ciphertext)
         else:
-            items = payload
-            payload_machine_id = machine_id
+            item['has_secret'] = bool(ciphertext)
+            item['secret_placeholder'] = '••••••••'
+        return item
 
-        if not isinstance(items, list):
-            return []
-
-        normalized_items = []
-        for item in items:
-            normalized = self._normalize_entry(item, default_machine_id=payload_machine_id)
-            if normalized:
-                normalized_items.append(normalized)
-        return normalized_items
-
-    def _write_payload(self, machine_id: str, items: list[dict]):
-        normalized_machine_id = self._normalize_machine_id(machine_id)
-        file_path = self._get_file_path(normalized_machine_id)
-        os.makedirs(os.path.dirname(file_path), exist_ok=True)
-
-        payload = {
-            'machine_id': normalized_machine_id,
-            'items': items,
-        }
-
-        fd, temp_path = tempfile.mkstemp(
-            prefix='keychains_',
-            suffix='.tmp',
-            dir=os.path.dirname(file_path),
-        )
-        try:
-            with os.fdopen(fd, 'w', encoding='utf-8') as file_obj:
-                json.dump(payload, file_obj, ensure_ascii=False, indent=2)
-            os.replace(temp_path, file_path)
-        finally:
-            try:
-                if os.path.exists(temp_path):
-                    os.remove(temp_path)
-            except Exception:
-                pass
-
-    def _list_payload_files(self) -> list[str]:
-        if not os.path.isdir(self.root_dir):
-            return []
-
-        file_paths = []
-        for name in os.listdir(self.root_dir):
-            if not name.endswith('.json'):
-                continue
-            file_path = os.path.join(self.root_dir, name)
-            if os.path.isfile(file_path):
-                file_paths.append(file_path)
-        return file_paths
-
-    def _read_machine_id_from_file(self, file_path: str) -> str:
-        try:
-            with open(file_path, 'r', encoding='utf-8') as file_obj:
-                payload = json.load(file_obj)
-            if isinstance(payload, dict):
-                machine_id = self._safe_text(payload.get('machine_id'))
-                if machine_id:
-                    return machine_id
-        except Exception:
-            pass
-
-        return os.path.splitext(os.path.basename(file_path))[0]
-
-    def _read_all_items_unlocked(self) -> list[dict]:
-        items = []
-        for file_path in self._list_payload_files():
-            machine_id = self._read_machine_id_from_file(file_path)
-            items.extend(self._read_payload(machine_id))
-        return items
-
-    def _find_item_unlocked(self, cred_id: str) -> tuple[str, dict | None, list[dict]]:
-        cred_id_text = self._safe_text(cred_id)
-        if not cred_id_text:
-            return '', None, []
-
-        for file_path in self._list_payload_files():
-            machine_id = self._read_machine_id_from_file(file_path)
-            items = self._read_payload(machine_id)
-            for item in items:
-                if item.get('cred_id') == cred_id_text:
-                    return machine_id, item, items
-        return '', None, []
-
-    def _ensure_unique_name(self, items: list[dict], name: str, skip_cred_id: str = ''):
-        normalized_name = self._safe_text(name).lower()
-        skip_id = self._safe_text(skip_cred_id)
-        for item in items:
-            if skip_id and item.get('cred_id') == skip_id:
-                continue
-            if self._safe_text(item.get('name')).lower() == normalized_name:
-                raise ValueError(f'Credential already exists: {name}')
-
-    def _to_public_item(self, item: dict) -> dict:
+    @staticmethod
+    def _to_public_item(item: dict) -> dict:
         result = dict(item)
         secret_value = result.pop('secret_value', '')
-        result['has_secret'] = bool(secret_value)
+        ciphertext = result.pop('secret_ciphertext', '')
+        result['has_secret'] = bool(secret_value or ciphertext or result.get('has_secret'))
         result['secret_placeholder'] = '••••••••'
         return result
 
     def public_item(self, item: dict) -> dict:
         return self._to_public_item(item)
 
+    @staticmethod
+    def _entry_values(item: dict, ciphertext: str) -> tuple:
+        return (
+            item['cred_id'], item['machine_id'], item['hostname'], item['kind'], item['name'],
+            item.get('username', ''), ciphertext, item.get('site', ''), item.get('note', ''),
+            item['created_at'], item['updated_at'],
+        )
+
+    def _ensure_unique_name(self, conn, machine_id: str, name: str, skip_cred_id: str = ''):
+        normalized_name = self._safe_text(name).lower()
+        for row in conn.execute('SELECT cred_id, name FROM keychain_entries WHERE machine_id = ?', (machine_id,)):
+            if skip_cred_id and row['cred_id'] == skip_cred_id:
+                continue
+            if self._safe_text(row['name']).lower() == normalized_name:
+                raise ValueError(f'Credential already exists: {name}')
+
     def list_items(self, machine_id: str = '', reveal: bool = False) -> list[dict]:
         machine_id_text = self._safe_text(machine_id)
         with self._lock:
             if machine_id_text:
-                items = self._read_payload(machine_id_text)
+                rows = self.database.connection().execute(
+                    'SELECT * FROM keychain_entries WHERE machine_id = ?', (machine_id_text,)
+                ).fetchall()
             else:
-                items = self._read_all_items_unlocked()
-
-        items = sorted(
+                rows = self.database.connection().execute('SELECT * FROM keychain_entries').fetchall()
+            items = [self._item_from_row(row, reveal=reveal) for row in rows]
+        return sorted(
             items,
             key=lambda item: (item.get('updated_at') or item.get('created_at') or '', item.get('name') or ''),
             reverse=True,
         )
-        if reveal:
-            return [dict(item) for item in items]
-        return [self._to_public_item(item) for item in items]
 
     def list_stored_machines(self) -> list[dict]:
-        machines = {}
         with self._lock:
-            all_items = self._read_all_items_unlocked()
-
-        for item in all_items:
-            machine_id = self._normalize_machine_id(item.get('machine_id'))
-            machines[machine_id] = {
-                'machine_id': machine_id,
-                'hostname': self._normalize_hostname(machine_id, item.get('hostname')),
-            }
-
-        return sorted(
-            machines.values(),
-            key=lambda item: (item.get('machine_id') != self.SHARED_MACHINE_ID, item.get('hostname') or ''),
-        )
+            rows = self.database.connection().execute(
+                'SELECT machine_id, hostname FROM keychain_entries ORDER BY updated_at'
+            ).fetchall()
+        machines = {}
+        for row in rows:
+            mid = self._normalize_machine_id(row['machine_id'])
+            machines[mid] = {'machine_id': mid, 'hostname': self._normalize_hostname(mid, row['hostname'])}
+        return sorted(machines.values(), key=lambda item: (
+            item['machine_id'] != self.SHARED_MACHINE_ID, item.get('hostname') or ''))
 
     def get_item_by_name(self, machine_id: str, name: str, kind: str = '', reveal: bool = True) -> dict:
-        normalized_machine_id = self._normalize_machine_id(machine_id)
-        normalized_name = self._safe_text(name).lower()
-        normalized_kind = self._safe_text(kind).lower()
-
-        if not normalized_name:
+        mid = self._normalize_machine_id(machine_id)
+        wanted_name = self._safe_text(name).lower()
+        wanted_kind = self._safe_text(kind).lower()
+        if not wanted_name:
             raise ValueError('credential name is required')
-        if normalized_kind and normalized_kind not in {self.KIND_LOGIN, self.KIND_SECRET}:
+        if wanted_kind and wanted_kind not in {self.KIND_LOGIN, self.KIND_SECRET}:
             raise ValueError('kind must be login or secret')
-
         with self._lock:
-            items = self._read_payload(normalized_machine_id)
-
-        for item in items:
-            item_name = self._safe_text(item.get('name')).lower()
-            item_kind = self._safe_text(item.get('kind')).lower()
-            if item_name != normalized_name:
-                continue
-            if normalized_kind and item_kind != normalized_kind:
-                continue
-            return dict(item) if reveal else self._to_public_item(item)
-
+            rows = self.database.connection().execute(
+                'SELECT * FROM keychain_entries WHERE machine_id = ?', (mid,)
+            ).fetchall()
+            for row in rows:
+                if self._safe_text(row['name']).lower() != wanted_name:
+                    continue
+                if wanted_kind and row['kind'] != wanted_kind:
+                    continue
+                return self._item_from_row(row, reveal=reveal)
         raise FileNotFoundError(f'Credential not found: {name}')
 
     def get_item(self, cred_id: str, reveal: bool = True) -> dict:
         with self._lock:
-            _, item, _ = self._find_item_unlocked(cred_id)
-
-        if item is None:
-            raise FileNotFoundError('Credential not found')
-        return dict(item) if reveal else self._to_public_item(item)
+            row = self.database.connection().execute(
+                'SELECT * FROM keychain_entries WHERE cred_id = ?', (self._safe_text(cred_id),)
+            ).fetchone()
+            if row is not None:
+                return self._item_from_row(row, reveal=reveal)
+        raise FileNotFoundError('Credential not found')
 
     def create_item(self, payload: dict) -> dict:
         if not isinstance(payload, dict):
             raise ValueError('payload is required')
-
-        now_text = self._now_text()
+        now = self._now_text()
         item = dict(payload)
-        item['cred_id'] = uuid.uuid4().hex
-        item['created_at'] = now_text
-        item['updated_at'] = now_text
-        normalized_item = self._normalize_entry(item)
-        if normalized_item is None:
+        item.update(cred_id=uuid.uuid4().hex, created_at=now, updated_at=now)
+        normalized = self._normalize_entry(item)
+        if normalized is None:
             raise ValueError('Invalid credential payload')
-
-        if not normalized_item.get('secret_value'):
+        if not normalized.get('secret_value'):
             raise ValueError('secret value is required')
-
-        machine_id = normalized_item.get('machine_id') or self.SHARED_MACHINE_ID
-        with self._lock:
-            items = self._read_payload(machine_id)
-            self._ensure_unique_name(items, normalized_item.get('name') or '')
-            items.append(normalized_item)
-            self._write_payload(machine_id, items)
-        return dict(normalized_item)
+        with self._lock, self.database.transaction() as conn:
+            self._ensure_unique_name(conn, normalized['machine_id'], normalized['name'])
+            ciphertext = self._encrypt(normalized['secret_value'])
+            conn.execute('''INSERT INTO keychain_entries (
+                cred_id, machine_id, hostname, kind, name, username, secret_ciphertext,
+                site, note, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', self._entry_values(normalized, ciphertext))
+        return dict(normalized)
 
     def update_item(self, cred_id: str, payload: dict) -> dict:
         if not isinstance(payload, dict):
             raise ValueError('payload is required')
-
-        with self._lock:
-            old_machine_id, old_item, old_items = self._find_item_unlocked(cred_id)
-            if old_item is None:
+        cid = self._safe_text(cred_id)
+        with self._lock, self.database.transaction() as conn:
+            row = conn.execute('SELECT * FROM keychain_entries WHERE cred_id = ?', (cid,)).fetchone()
+            if row is None:
                 raise FileNotFoundError('Credential not found')
-
-            now_text = self._now_text()
-            merged = dict(old_item)
+            original = self._item_from_row(row)
+            merged = dict(original)
             merged.update(payload)
-            merged['cred_id'] = old_item.get('cred_id')
-            merged['created_at'] = old_item.get('created_at') or now_text
-            merged['updated_at'] = now_text
-
-            if 'secret_value' not in payload and 'password' not in payload and 'value' not in payload:
-                merged['secret_value'] = old_item.get('secret_value') or ''
-
-            normalized_item = self._normalize_entry(merged, default_machine_id=old_machine_id)
-            if normalized_item is None:
+            merged['cred_id'] = original['cred_id']
+            merged['created_at'] = original['created_at']
+            merged['updated_at'] = self._now_text()
+            if not any(key in payload for key in ('secret_value', 'password', 'value')):
+                merged['secret_value'] = original['secret_value']
+            normalized = self._normalize_entry(merged, default_machine_id=original['machine_id'])
+            if normalized is None:
                 raise ValueError('Invalid credential payload')
-            if not normalized_item.get('secret_value'):
+            if not normalized.get('secret_value'):
                 raise ValueError('secret value is required')
-
-            new_machine_id = normalized_item.get('machine_id') or self.SHARED_MACHINE_ID
-            if self._normalize_machine_id(old_machine_id) == self._normalize_machine_id(new_machine_id):
-                self._ensure_unique_name(old_items, normalized_item.get('name') or '', skip_cred_id=cred_id)
-                updated_items = []
-                for item in old_items:
-                    if item.get('cred_id') == cred_id:
-                        updated_items.append(normalized_item)
-                    else:
-                        updated_items.append(item)
-                self._write_payload(new_machine_id, updated_items)
-            else:
-                new_items = self._read_payload(new_machine_id)
-                self._ensure_unique_name(new_items, normalized_item.get('name') or '')
-                old_items = [item for item in old_items if item.get('cred_id') != cred_id]
-                new_items.append(normalized_item)
-                self._write_payload(old_machine_id, old_items)
-                self._write_payload(new_machine_id, new_items)
-
-        return dict(normalized_item)
+            self._ensure_unique_name(conn, normalized['machine_id'], normalized['name'], skip_cred_id=cid)
+            ciphertext = self._encrypt(normalized['secret_value'])
+            conn.execute('''UPDATE keychain_entries SET
+                machine_id=?, hostname=?, kind=?, name=?, username=?, secret_ciphertext=?,
+                site=?, note=?, created_at=?, updated_at=? WHERE cred_id=?''',
+                self._entry_values(normalized, ciphertext)[1:] + (cid,))
+        return dict(normalized)
 
     def delete_item(self, cred_id: str) -> dict:
-        with self._lock:
-            machine_id, item, items = self._find_item_unlocked(cred_id)
-            if item is None:
+        cid = self._safe_text(cred_id)
+        with self._lock, self.database.transaction() as conn:
+            row = conn.execute('SELECT * FROM keychain_entries WHERE cred_id = ?', (cid,)).fetchone()
+            if row is None:
                 raise FileNotFoundError('Credential not found')
-
-            kept_items = [current for current in items if current.get('cred_id') != cred_id]
-            self._write_payload(machine_id, kept_items)
-        return dict(item)
+            item = self._item_from_row(row)
+            conn.execute('DELETE FROM keychain_entries WHERE cred_id = ?', (cid,))
+        return item

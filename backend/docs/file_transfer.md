@@ -145,7 +145,7 @@ Client → Server 的路径也有 `preparing`、`staging`（上送文件字节�
 
 ## Transfer Activity 与进度职责
 
-Transfer Center 管理内存中的实时速度、进度、取消和最近任务；Activity Center 只为用户明确发起的上传/下载维护一条持久执行事实。Remote Browser / Remote File Picker 上传和 Remote Browser / Clipboard 下载均以真实 `transfer_id` 关联 Activity。Browser→Server 上传完成只是中间阶段；只有 Server→Client 写盘完成才将 Activity 标记成功。进度变化不重复写 Activity；失败、取消和重启后中断分别使用现有 `error`、`cancelled` 和 `interrupted` 状态。
+Transfer Center 在内存中管理实时速度、进度和取消，并将传输起始与终态事实保存到 Server 的 `rch.db`；Activity Center 只为用户明确发起的上传/下载维护一条持久执行事实。Remote Browser / Remote File Picker 上传和 Remote Browser / Clipboard 下载均以真实 `transfer_id` 关联 Activity。Browser→Server 上传完成只是中间阶段；只有 Server→Client 写盘完成才将 Activity 标记成功。进度变化不重复写 Activity；失败、取消和重启后中断分别使用现有 `error`、`cancelled` 和 `interrupted` 状态。
 
 终端 Server Builtin `upload` 在受管理 Transfer 创建时认领其原始历史 ID，不把 Transfer 内部请求或临时 URL 当作用户命令；终端 Client `download` 与 `screenshot` 一样保留普通 Command Activity，Artifact 继续沿用既有命令通道关联；不会额外创建 Transfer Activity 或虚构 `transfer_id`。预览、后台 Job/Script 中转和已生成 Artifact 的本地浏览器下载不自动进入 Transfer Activity。
 
@@ -187,13 +187,15 @@ Python Client 的受管理任务在 HTTP Worker 内调用进度回调，并通�
 
 Server 根据收到的进度字节数计算完成比例，对速率采用平滑计算，并在可用时推算 ETA；因此百分比是该阶段工作进度，而不是端到端文件完整性校验。进度上报通常做约 250 毫秒节流，完成点仍会被单独报告。发布 `transfer_updated` WebSocket 后，Web 订阅者刷新 Transfer Center；`file_transfer_lifecycle` 则提供开始、结束和失败等生命周期通知，二者服务不同目的。
 
-`GET /api/transfers` 提供初始状态，之后由 WebSocket 维持实时更新。Web 的 Transfer Center 分为 **Active** 和 **Recent**：Active 显示文件、方向、当前阶段、进度条、已完成字节、速度、ETA 和 Cancel；Recent 显示已完成、失败或取消的任务，并允许删除记录或清空最近记录。
+传输完成通知默认提供 Open Transfers；当方向是 `client_to_server`、状态 `completed` 且关联了 `artifact_id` 时，还提供 Open Artifacts 与 Download（到浏览器）。它们分别打开现有 Artifact Dialog、调用现有下载地址，不新增 Transfer 任务；其他方向、取消、失败或未产生 Artifact 的通知保持原来的操作。通知的显示仍受 SSE 通知偏好控制。
+
+`GET /api/transfers` 提供初始状态，之后由 SSE 维持当前标签页的实时进度。Transfer Center 分为 **Active** 和 **Recent**：Active 显示文件名、方向、当前阶段、进度条、字节数、速度、ETA 和 Cancel；Recent 保存全部已完成、失败、取消或重启中断的传输，不做固定条数裁剪。列表仅显示文件名、方向和状态；每条的 More 菜单提供 Info（文件大小、完成时间、源与目标路径、错误及 Artifact 引用）和 Delete。成功的 `client_to_server` 传输若有 `artifact_id`，还提供 Preview 和 Download（浏览器下载），与传输完成 SSE 通知使用相同的资格条件；反方向上传不提供这两个操作。Clear Recent 手动清空记录。前台受管理传输的 `Upload started` / `Download started` 等小 Toast 提供 `Open Transfers` 链接，直接打开现有 Transfer Center；这与 SSE 生命周期通知的按钮无关。Remote Files / Remote File Picker 的 `Upload started` 在浏览器向 Server 开始发送文件时出现，不再等待 Server 暂存完成；下载提示时机保持不变。
 
 当 `progress_supported=false`，或者缺少有效 `total_bytes` 时，界面显示不确定进度而不是假造一个百分比。例如 Legacy 上传可能正在正常运行但无法报告逐块上传字节；目录打包也可能尚未知道最终 ZIP 大小。此时应查看任务状态与已传输字节，而非依靠百分比判断。
 
 ### 任务记录与 Artifact 的不同生命周期
 
-当前 `TransferService` 使用 Server 内存字典管理 Active/Recent，不将传输记录持久化到 SQLite。终态记录最多保留最近 **50 条**，Server 重启不会从数据库恢复原 Transfer Center 列表。
+Transfer Center 使用 `rch.db` 的 `transfer_records` 保存简要历史事实：创建时插入起始状态，结束时更新最终状态、路径、大小、实际字节、时间、错误及 Artifact ID。中途进度、速度、ETA、取消控制和临时 `metadata` 仍只在内存中；不对每个进度分片写 SQLite。重启后，未完成的旧记录标为 `interrupted` 并记录结束时间；历史记录可在新浏览器标签页查看，但活动进度及 SSE 仍按原 `tab_id` 隔离。只有用户通过 Delete/Clear Recent 手动移除记录；删除记录不影响 Artifact 或目标文件。
 
 Artifact 文件及其注册记录是另一条存储生命周期。清理最近 Transfer 只清理进度记录，**不自动删除已生成的 Artifact，也不会删除目标设备上的文件**。同样，直接在浏览器下载 Artifact 并不自动创建一条新的 Transfer 记录。
 
@@ -203,7 +205,7 @@ Artifact 文件及其注册记录是另一条存储生命周期。清理最近 T
 
 Cancel 由 Web 请求发往 8085 的 `POST /api/transfers/{transfer_id}/cancel`。Server 首先核对任务仍为 Active，以及当前的 `cancel_supported`。如果任务已结束或策略明确不支持取消，请求会被拒绝；不能把按钮点击当作最终取消确认。
 
-对浏览器上传到 Server 的第一段，Server 设置对应的取消事件，并将 Transfer 标为取消；8085 分块接收循环会检查该事件，停止后清理临时文件和上传运行状态。此时不需要向目标 Client 发送取消指令，因为 Client 尚未开始下载。
+对浏览器上传到 Server 的第一段，Server 设置对应的取消事件，并将 Transfer 标为取消；8085 分块接收循环会检查该事件，停止后清理临时文件和上传运行状态。Server 接受取消后，发起上传的同一浏览器标签页还会中止对应的独立 XHR，使等待上传结果的界面及时恢复按钮，并保留取消终态（不再补报上传失败）。此时不需要向目标 Client 发送取消指令，因为 Client 尚未开始下载。
 
 对 Client 正在执行的文件传输，Server 通过 Socket 下发 `transfer_cancel`；`ClientTransferManager` 向 Worker 的独立执行上下文请求取消。Cancelable 策略通过取消检查和资源清理尝试中断 HTTP 请求，**实际 Worker 报告 `cancelled` 才代表运行端处理完取消**。Server 可以先显示 `cancelling` 阶段；这不等于任务已经结束。
 
@@ -211,7 +213,7 @@ Cancel 由 Web 请求发往 8085 的 `POST /api/transfers/{transfer_id}/cancel`�
 
 ### 任务接口及通道保护
 
-Web 端的 `tab_id` 用于把 Transfer 关联到发起的浏览器标签，并使 `transfer_updated` 等 WebSocket 消息可以按标签定向发送。它不是文件传输身份认证的替代品。Web 的控制 API 应由基础 Web 认证与授权层保护。
+Web 端的 `tab_id` 用于把正在运行的 Transfer 关联到发起的浏览器标签，并使 `transfer_updated` 等 SSE 消息可以按标签定向发送；已结束的持久历史在同一登录 Server 下跨标签页可见。它不是文件传输身份认证的替代品。Web 的控制 API 应由基础 Web 认证与授权层保护。
 
 文件传输 HTTP 接口直接运行在 8085。浏览器原始文件上传通过创建任务时签发的一次性随机 Token 授权，并在 `X-RCH-Transfer-Token` 中提交；Client Artifact 上传及暂存文件下载继续使用既有权限与传输校验机制。默认 8086 仅接受 WebSocket 连接，需向浏览器开放；Client 文件流量无需连接 8086。
 
@@ -229,7 +231,7 @@ Web 端的 `tab_id` 用于把 Transfer 关联到发起的浏览器标签，并�
 | 点击 Cancel 后尚未完全停止 | 取消请求与 Worker 最终退出不同步，等待 `cancelled` 或最终错误状态 |
 | Transfer 百分比从头开始 | Browser 上传结束后进入 Client 下载，进度按新阶段重置 |
 | ZIP 创建阶段没有进度百分比 | 压缩还在准备最终文件，总长度暂不可用 |
-| Transfer Center 记录消失 | Recent 有 50 条限制且仅存内存；清理或 Server 重启不影响已保存 Artifact |
+| Transfer Center 记录消失 | 检查是否被手动删除或清空；传输历史持久化在 `rch.db`，Server 重启不应删除记录，也不影响已保存 Artifact |
 | 某次 Script、Clipboard 或 Web 下载没有 Transfer 记录 | 并非所有文件 HTTP 请求都会建立 `transfer_id` |
 
 需要把性能调优、文件传输管理和文件资产管理作为三个独立问题看待。直接 Flask/Werkzeug 的分块数据通道避开 ASGI/WSGI 桥接；`cancelable` 改变 Python Client 的字节处理和中断能力；Transfer Center 提供可观察性与控制；Artifact 负责文件保存、预览和后续下载。**没有任何一层能够单独替代另外三层。**

@@ -222,6 +222,14 @@ class NotificationEventProjector:
             'stage': stage,
         }
         actions = [{'id': 'open-transfers', 'type': 'open_transfers', 'label': 'Open Transfers', 'url': ''}]
+        artifact_id = str(payload.get('artifact_id') or '').strip()
+        if lifecycle == 'stopped' and state == 'completed' and direction == 'client_to_server' and artifact_id:
+            context['artifact_id'] = artifact_id
+            actions.extend([
+                {'id': 'open-artifacts', 'type': 'open_artifacts', 'label': 'Open Artifacts', 'url': ''},
+                {'id': 'download', 'type': 'artifact_download', 'label': 'Download',
+                 'url': f'/api/artifacts/{artifact_id}/download'},
+            ])
         if lifecycle == 'started':
             return self._notification('file_transfer_started', 'File Transfer Started', f'{filename} · {route}', 'info', context, actions)
         if lifecycle == 'stopped':
