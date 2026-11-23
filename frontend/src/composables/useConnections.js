@@ -164,15 +164,22 @@ export default {
         },
 
         isConnectionInSelectedDeviceGroup(item) {
+            if (this.selectedDeviceGroupId === null) {
+                return !this.getMachineDeviceGroupId(item?.machine_id)
+            }
             const selectedGroupId = this.normalizeDeviceGroupId(this.selectedDeviceGroupId)
             if (!selectedGroupId) return true
             return this.getMachineDeviceGroupId(item?.machine_id) === selectedGroupId
         },
 
         setSelectedDeviceGroup(groupId) {
-            const normalizedGroupId = this.normalizeDeviceGroupId(groupId)
-            const exists = !normalizedGroupId || (this.deviceGroups || []).some(item => item.group_id === normalizedGroupId)
-            this.selectedDeviceGroupId = exists ? normalizedGroupId : ''
+            if (groupId === null) {
+                this.selectedDeviceGroupId = null
+            } else {
+                const normalizedGroupId = this.normalizeDeviceGroupId(groupId)
+                const exists = !normalizedGroupId || (this.deviceGroups || []).some(item => item.group_id === normalizedGroupId)
+                this.selectedDeviceGroupId = exists ? normalizedGroupId : ''
+            }
             this.ensureSelectedConnectionVisible()
         },
 
@@ -1188,6 +1195,7 @@ export default {
 
         deviceGroupMachineCounts() {
             const allMachineKeys = new Set()
+            const ungroupedMachineKeys = new Set()
             const groupMachineKeys = {}
 
             ;(this.connections || []).concat((this.savedBindTargets || []).map(target => ({
@@ -1201,9 +1209,15 @@ export default {
 
                 allMachineKeys.add(deviceKey)
 
-                if (!machineKey) return
+                if (!machineKey) {
+                    ungroupedMachineKeys.add(deviceKey)
+                    return
+                }
                 const groupId = this.getMachineDeviceGroupId(machineKey)
-                if (!groupId) return
+                if (!groupId) {
+                    ungroupedMachineKeys.add(deviceKey)
+                    return
+                }
 
                 if (!groupMachineKeys[groupId]) {
                     groupMachineKeys[groupId] = new Set()
@@ -1213,6 +1227,7 @@ export default {
 
             const counts = {
                 __all__: allMachineKeys.size,
+                ungrouped: ungroupedMachineKeys.size,
             }
 
             ;(this.deviceGroups || []).forEach(group => {

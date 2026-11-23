@@ -5,7 +5,8 @@
         class="device-group-switcher"
         trigger="click"
         placement="bottom-start"
-        @command="handleGroupFilterCommand"
+        :hide-on-click="false"
+        @command="handleDeviceFilterCommand"
       >
 <!--        <button-->
 <!--          type="button"-->
@@ -25,36 +26,76 @@
   @click="closeDeviceContextMenu"
 >
   <span class="device-group-switcher-name">{{ selectedGroupLabel }}</span>
+  <span v-if="activeFacetFilterCount" class="device-filter-active-count">{{ activeFacetFilterCount }}</span>
   <span class="device-group-switcher-chevron" aria-hidden="true"></span>
 </button>
 
         <template #dropdown>
-          <el-dropdown-menu>
-            <el-dropdown-item command="__all_devices__">
+          <el-dropdown-menu class="device-filter-dropdown">
+            <el-dropdown-item disabled class="device-filter-section-heading">Group</el-dropdown-item>
+            <el-dropdown-item :command="{ category: 'group', value: '' }">
               <span class="device-group-dropdown-item">
-                <span
-                  class="device-group-dropdown-check"
-                  :class="{ visible: !selectedGroupId }"
-                >✓</span>
+                <span class="device-group-dropdown-check" :class="{ visible: selectedGroupId === '' }">✓</span>
                 <span class="device-group-dropdown-name">All Devices</span>
                 <span class="device-group-dropdown-count">{{ getDeviceGroupCount('') }}</span>
               </span>
             </el-dropdown-item>
-
+            <el-dropdown-item :command="{ category: 'group', value: null }">
+              <span class="device-group-dropdown-item">
+                <span class="device-group-dropdown-check" :class="{ visible: selectedGroupId === null }">✓</span>
+                <span class="device-group-dropdown-name">Ungrouped</span>
+                <span class="device-group-dropdown-count">{{ getDeviceGroupCount(null) }}</span>
+              </span>
+            </el-dropdown-item>
             <el-dropdown-item
               v-for="group in deviceGroups"
               :key="group.group_id"
-              :command="group.group_id"
+              :command="{ category: 'group', value: group.group_id }"
             >
               <span class="device-group-dropdown-item">
-                <span
-                  class="device-group-dropdown-check"
-                  :class="{ visible: selectedGroupId === group.group_id }"
-                >✓</span>
+                <span class="device-group-dropdown-check" :class="{ visible: selectedGroupId === group.group_id }">✓</span>
                 <span class="device-group-dropdown-name">{{ group.name }}</span>
                 <span class="device-group-dropdown-count">{{ getDeviceGroupCount(group.group_id) }}</span>
               </span>
             </el-dropdown-item>
+
+            <el-dropdown-item divided disabled class="device-filter-section-heading">Direction</el-dropdown-item>
+            <el-dropdown-item
+              v-for="option in directionOptions"
+              :key="option.value"
+              :command="{ category: 'direction', value: option.value }"
+            >
+              <span class="device-group-dropdown-item">
+                <span class="device-group-dropdown-check" :class="{ visible: selectedDirection === option.value }">✓</span>
+                <span class="device-group-dropdown-name">{{ option.label }}</span>
+              </span>
+            </el-dropdown-item>
+
+            <el-dropdown-item divided disabled class="device-filter-section-heading">Listener</el-dropdown-item>
+            <el-dropdown-item :command="{ category: 'listener', value: '' }">
+              <span class="device-group-dropdown-item">
+                <span class="device-group-dropdown-check" :class="{ visible: selectedListenerId === '' }">✓</span>
+                <span class="device-group-dropdown-name">All Listeners</span>
+              </span>
+            </el-dropdown-item>
+            <el-dropdown-item :command="{ category: 'listener', value: null }">
+              <span class="device-group-dropdown-item">
+                <span class="device-group-dropdown-check" :class="{ visible: selectedListenerId === null }">✓</span>
+                <span class="device-group-dropdown-name">No Listener</span>
+              </span>
+            </el-dropdown-item>
+            <el-dropdown-item
+              v-for="listener in availableListeners"
+              :key="listener.id"
+              :command="{ category: 'listener', value: listener.id }"
+              :title="listener.name"
+            >
+              <span class="device-group-dropdown-item">
+                <span class="device-group-dropdown-check" :class="{ visible: selectedListenerId === listener.id }">✓</span>
+                <span class="device-group-dropdown-name">{{ listener.name }}</span>
+              </span>
+            </el-dropdown-item>
+            <el-dropdown-item divided :command="{ category: 'clear' }">Clear filters</el-dropdown-item>
           </el-dropdown-menu>
         </template>
       </el-dropdown>
@@ -111,12 +152,12 @@
     </div>
 
     <div class="sidebar-body">
-      <div v-if="connections.length === 0" class="empty-state">
+      <div v-if="filteredConnections.length === 0" class="empty-state">
         No visible devices
       </div>
 
       <div
-        v-for="item in connections"
+        v-for="item in filteredConnections"
         :key="item.sidebar_key || item.client_id"
         class="device-item"
         :class="{
@@ -422,6 +463,8 @@ export default {
 
   data() {
     return {
+      selectedDirection: '',
+      selectedListenerId: '',
       contextMenuVisible: false,
       contextMenuClientId: '',
       contextMenuItem: null,
@@ -443,6 +486,38 @@ export default {
   },
 
 computed: {
+  directionOptions() {
+    return [
+      { value: '', label: 'All directions' },
+      { value: 'reverse', label: 'Reverse' },
+      { value: 'bind', label: 'Bind' },
+    ]
+  },
+
+  availableListeners() {
+    const listeners = new Map()
+    ;(this.connections || []).forEach(item => {
+      const id = String(item?.listener_id || '').trim()
+      if (!id) return
+      const name = String(item?.listener_name || '').trim() || id
+      if (!listeners.has(id)) listeners.set(id, { id, name })
+    })
+    return Array.from(listeners.values()).sort((a, b) => a.name.localeCompare(b.name))
+  },
+
+  filteredConnections() {
+    return (this.connections || []).filter(item => {
+      if (this.selectedDirection && item?.connection_direction !== this.selectedDirection) return false
+      const listenerId = String(item?.listener_id || '').trim()
+      if (this.selectedListenerId === null) return !listenerId
+      return !this.selectedListenerId || listenerId === this.selectedListenerId
+    })
+  },
+
+  activeFacetFilterCount() {
+    return Number(Boolean(this.selectedDirection)) + Number(this.selectedListenerId !== '')
+  },
+
   contextMenuStyle() {
     return {
       left: `${this.contextMenuX}px`,
@@ -473,6 +548,7 @@ computed: {
   },
 
   selectedGroupLabel() {
+    if (this.selectedGroupId === null) return 'Ungrouped'
     if (!this.selectedGroupId) return 'All Devices'
 
     const group = (this.deviceGroups || []).find(item => {
@@ -530,14 +606,23 @@ computed: {
       }
     },
 
-    handleGroupFilterCommand(command) {
+    handleDeviceFilterCommand(command) {
       this.closeDeviceContextMenu()
-      const groupId = command === '__all_devices__' ? '' : String(command || '').trim()
-      this.$emit('group-filter-change', groupId)
+      if (command?.category === 'group') {
+        this.$emit('group-filter-change', command.value)
+      } else if (command?.category === 'direction') {
+        this.selectedDirection = command.value
+      } else if (command?.category === 'listener') {
+        this.selectedListenerId = command.value
+      } else if (command?.category === 'clear') {
+        this.selectedDirection = ''
+        this.selectedListenerId = ''
+        this.$emit('group-filter-change', '')
+      }
     },
 
     getDeviceGroupCount(groupId) {
-      const key = String(groupId || '').trim() || '__all__'
+      const key = groupId === null ? 'ungrouped' : String(groupId || '').trim() || '__all__'
       const count = Number(this.deviceGroupCounts?.[key] || 0)
       return Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0
     },
@@ -1090,6 +1175,23 @@ async removeConnectionPermanently(item) {
   border-bottom: 1.5px solid var(--muted-2);
   transform: rotate(45deg);
   flex-shrink: 0;
+}
+
+.device-filter-dropdown {
+  max-height: min(68vh, 480px);
+  overflow-y: auto;
+}
+
+.device-filter-section-heading {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--el-text-color-secondary);
+}
+
+.device-filter-active-count {
+  color: var(--muted-2);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
 }
 
 .device-group-dropdown-item {

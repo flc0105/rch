@@ -20,7 +20,7 @@ test('Device More emits Connect to Client and App opens the dialog', () => {
   assert.match(sidebar, /<el-dropdown-item command="connect-to-client">Connect to Client<\/el-dropdown-item>/)
   assert.match(app, /@connect-to-client="\$refs\.connectToClientDialogRef\?\.open\(\)"/)
   assert.match(app, /<ConnectToClientDialog ref="connectToClientDialogRef" @connected="handleBindClientConnected"/)
-  const handle = method(sidebar, 'handleToolbarCommand', '    handleGroupFilterCommand(')
+  const handle = method(sidebar, 'handleToolbarCommand', '    handleDeviceFilterCommand(')
   const events = []
   handle.call({ $emit: (...args) => events.push([...args]) }, 'connect-to-client')
   assert.equal(events.length, 1)

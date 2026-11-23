@@ -179,6 +179,12 @@ Server 收到连接注册时，先记录最近设备并登记连接历史，然�
 
 如果要真正清除所有与某机器身份有关的历史信息，不能把界面上的 Remove 当成完整数据清除流程。
 
+### Device Bar 组合筛选
+
+Device Bar 的 **All Devices** 入口可同时设置机器分组、连接方向（Reverse / Bind）和 Server Listener。三项条件相互独立，最终列表只显示同时满足所有已选条件的条目；清除筛选可恢复完整列表。分组包含全部设备、用户创建的组与未分组设备；Listener 包含全部、无 Listener 和已知的具体 Listener。具体 Listener 根据 `listener_id` 判断，而不是按显示名称匹配。保存的 Bind 连接目标没有 Server Listener，因此属于“无 Listener”。
+
+筛选只影响设备侧边栏展示，不更改已保存的 Bind 目标、Reverse 最近设备记录、机器分组归属或当前 Session；右键连接、离线历史等操作仍按对应条目已有的能力执行。
+
 ## 6. API、管理入口与数据关联
 
 通过已认证的 Web API 可以读取连接列表、历史与分组，更新设备视图偏好。常用路径及作用如下：
