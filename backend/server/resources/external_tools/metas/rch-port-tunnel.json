@@ -1,0 +1,239 @@
+{
+  "id": "rch-port-tunnel",
+  "name": "rch-port-tunnel",
+  "display_name": "Dedicated TCP Port Tunnel",
+  "description": "Optional standalone TCP forwarding tool with a dedicated authenticated channel. One Python program, Hub + Agent daemon roles. Separate from RCH Tunnel and its main Socket.",
+  "version": "1.0.0",
+  "category": "network",
+  "tags": [
+    "tcp",
+    "tunnel",
+    "port-forward",
+    "daemon",
+    "python"
+  ],
+  "platform_packages": {
+    "common-all": {
+      "platform": "*",
+      "arch": "all",
+      "filename": "rch-port-tunnel-v1.0.0-common-all.zip",
+      "download_url": "/api/external-tools/packages/rch-port-tunnel-v1.0.0-common-all.zip",
+      "root": "",
+      "notes": "Requires the target RCH Client Python (3.9+). This dedicated TCP channel is unencrypted; put it behind trusted networking or an encrypted overlay."
+    }
+  },
+  "binaries": {
+    "port-tunnel": {
+      "paths": {
+        "common-all": "port_tunnel.py"
+      },
+      "launcher": {
+        "type": "client_python",
+        "prefix_args": [
+          "-u"
+        ]
+      }
+    }
+  },
+  "install": {
+    "install_dir": "{{external_tools_root}}/{{package_id}}/{{version}}/{{package_key}}"
+  },
+  "modules": [
+    {
+      "id": "hub",
+      "name": "port-tunnel-hub",
+      "display_name": "Dedicated TCP Tunnel Hub",
+      "description": "Accepts a dedicated TCP channel; configure whether Hub or Agent exposes the local listen port. Run one Hub and one Agent per mapping.",
+      "execution": "daemon",
+      "binary": "port-tunnel",
+      "params": [
+        {
+          "name": "instance_name",
+          "label": "Instance Name",
+          "type": "string",
+          "required": true,
+          "default": "tunnel-hub-9444"
+        },
+        {
+          "name": "channel_host",
+          "label": "Channel Bind Address",
+          "type": "string",
+          "required": true,
+          "default": "127.0.0.1",
+          "description": "Use 0.0.0.0 only if the Agent must reach this machine over the network; protect the channel."
+        },
+        {
+          "name": "channel_port",
+          "label": "Dedicated Channel Port",
+          "type": "integer",
+          "required": true,
+          "default": 9444,
+          "min": 1,
+          "max": 65535,
+          "description": "The same TCP port on both modules. Must be reachable from Agent to Hub."
+        },
+        {
+          "name": "expose_on",
+          "label": "Expose Listening Port On",
+          "type": "select",
+          "required": true,
+          "default": "agent",
+          "options": [
+            "agent",
+            "hub"
+          ],
+          "description": "Which machine will open the forwarded listen port. Does not change channel dialing."
+        },
+        {
+          "name": "listen_host",
+          "label": "Forward Listen Address",
+          "type": "string",
+          "required": true,
+          "default": "127.0.0.1",
+          "description": "On the selected exposed machine, local bind address."
+        },
+        {
+          "name": "listen_port",
+          "label": "Forward Listen Port",
+          "type": "integer",
+          "required": true,
+          "default": 18085,
+          "min": 1,
+          "max": 65535
+        },
+        {
+          "name": "target_host",
+          "label": "Target Host",
+          "type": "string",
+          "required": true,
+          "default": "127.0.0.1",
+          "description": "Resolved on the opposite machine from the exposed listening port."
+        },
+        {
+          "name": "target_port",
+          "label": "Target Port",
+          "type": "integer",
+          "required": true,
+          "default": 8085,
+          "min": 1,
+          "max": 65535
+        },
+        {
+          "name": "token",
+          "label": "Shared Secret",
+          "type": "password",
+          "required": true,
+          "description": "Enter exactly the same secret (32–128 characters) on both modules. Stored in launch command arguments; avoid shared machines."
+        }
+      ],
+      "runtime": {
+        "cwd": "{{install_dir}}/{{package_root}}",
+        "stdout": "{{instance_runtime_dir}}/stdout.log",
+        "stderr": "stdout",
+        "pid_file": "{{instance_runtime_dir}}/tool.pid",
+        "state_file": "{{instance_runtime_dir}}/state.json",
+        "argv": [
+          "{{bin_port_tunnel}}",
+          "hub",
+          "--channel-host",
+          "{{channel_host}}",
+          "--channel-port",
+          "{{channel_port}}",
+          "--expose-on",
+          "{{expose_on}}",
+          "--listen-host",
+          "{{listen_host}}",
+          "--listen-port",
+          "{{listen_port}}",
+          "--target-host",
+          "{{target_host}}",
+          "--target-port",
+          "{{target_port}}",
+          "--token",
+          "{{token}}"
+        ]
+      },
+      "lifecycle": {
+        "stop": {
+          "type": "signal",
+          "signal": "TERM",
+          "timeout_sec": 5,
+          "kill_after_timeout": true
+        },
+        "status": {
+          "type": "pid_file"
+        }
+      }
+    },
+    {
+      "id": "agent",
+      "name": "port-tunnel-agent",
+      "display_name": "Dedicated TCP Tunnel Agent",
+      "description": "Dials the Hub from this Client. Uses the Hub mapping configuration; may expose the forwarded port locally.",
+      "execution": "daemon",
+      "binary": "port-tunnel",
+      "params": [
+        {
+          "name": "instance_name",
+          "label": "Instance Name",
+          "type": "string",
+          "required": true,
+          "default": "tunnel-agent-9444"
+        },
+        {
+          "name": "hub_host",
+          "label": "Hub Channel Address",
+          "type": "string",
+          "required": true,
+          "default": "127.0.0.1",
+          "description": "Network-reachable address of the Hub channel (not the RCH Server Web URL)."
+        },
+        {
+          "name": "channel_port",
+          "label": "Dedicated Channel Port",
+          "type": "integer",
+          "required": true,
+          "default": 9444,
+          "min": 1,
+          "max": 65535,
+          "description": "The same TCP port on both modules. Must be reachable from Agent to Hub."
+        },
+        {
+          "name": "token",
+          "label": "Shared Secret",
+          "type": "password",
+          "required": true,
+          "description": "Enter exactly the same secret (32–128 characters) on both modules. Stored in launch command arguments; avoid shared machines."
+        }
+      ],
+      "runtime": {
+        "cwd": "{{install_dir}}/{{package_root}}",
+        "stdout": "{{instance_runtime_dir}}/stdout.log",
+        "stderr": "stdout",
+        "pid_file": "{{instance_runtime_dir}}/tool.pid",
+        "state_file": "{{instance_runtime_dir}}/state.json",
+        "argv": [
+          "{{bin_port_tunnel}}",
+          "agent",
+          "--hub-host",
+          "{{hub_host}}",
+          "--channel-port",
+          "{{channel_port}}",
+          "--token",
+          "{{token}}"
+        ]
+      },
+      "lifecycle": {
+        "stop": {
+          "type": "signal",
+          "signal": "TERM",
+          "timeout_sec": 5,
+          "kill_after_timeout": true
+        },
+        "status": {
+          "type": "pid_file"
+        }
+      }
+    }
+  ]
+}
