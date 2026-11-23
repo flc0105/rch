@@ -18,7 +18,7 @@ Client 的 Server Web API 统一由 `client/http/client_api.py` 提供方法，`
 
 TCP 接通后由 Client 发出第一条 `info`，复用原 RCH 帧、会话、心跳、命令、PTY 和 Transfer 控制。Client 监听 Socket 属于进程；每次接入 Socket 属于一个会话。单实例同时保留一条会话，断线后释放占用并继续监听，Server 通过设备栏再次连接即可使用同一个 Client PID 和 ID。Server 主动断开前为当前 Session 记录 `server_requested_disconnect`，随后关闭会话 Socket；Connection History 将本次主动断开归类为 Server requested disconnect。Server 主动断开后立即再次连接同一目标时，会短暂重试以等待旧会话释放。设备菜单和 Terminal Toolbar 的 **Disconnect** 使用同一连接管理 API；Server 根据当前活动 Session 选择处理方式：Bind 关闭会话并保留监听进程，Reverse 沿用原有的 Session 结束控制。`pause_connection` 暂停接入，本地 Resume 恢复监听。
 
-固定监听端口的更新、克隆和重启实例命令暂时采用手工交接，防止新旧进程同时监听同一地址。部署与操作见 [Server Runtime — Bind TCP](server_runtime.md#bind-tcp-主动连接)。
+监听端口暂时被占用时，Client 按现有连接恢复间隔重试创建监听 Socket；端口释放后恢复监听，无需重新启动进程。固定监听端口的更新、克隆和重启实例命令仍应避免两个活跃监听器同时占用同一地址。部署与操作见 [Server Runtime — Bind TCP](server_runtime.md#bind-tcp-主动连接)。
 
 ## Python Client 的主动连接暂停
 

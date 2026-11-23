@@ -99,8 +99,9 @@ class ClientConnectionLifecycle:
         if mode == 'bind':
             if self._bind_listener is None:
                 from client.connection.bind_listener import BindListener
-                self._bind_listener = BindListener(RUNTIME_CONFIG)
-                self._bind_listener.start()
+                listener = BindListener(RUNTIME_CONFIG)
+                listener.start()
+                self._bind_listener = listener
             self.client.server.adopt_socket(self._bind_listener.accept())
             return
         if mode != 'reverse':

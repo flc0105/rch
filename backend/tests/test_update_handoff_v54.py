@@ -408,3 +408,70 @@ def test_bind_handoff_reaps_zombie_old_process(monkeypatch):
     monkeypatch.setattr(psutil, 'Process', lambda pid: SimpleNamespace(status=lambda: psutil.STATUS_ZOMBIE))
     assert not handoff._still_running(54321)
     handoff.wait_for_old_process(54321, timeout=.01)
+
+
+def test_update_accepts_renamed_python_bundle_from_builder_metadata(tmp_path, monkeypatch):
+    """Artifact identity comes from the canonical builder, not its filename."""
+    import hashlib
+    import shutil
+    import zipfile
+    from core.agent_build_contract import AgentBuilderKind
+
+    source_zip = tmp_path / 'source.zip'
+    with zipfile.ZipFile(source_zip, 'w') as archive:
+        archive.writestr('rchclient.py', 'print("source bundle")\n')
+    digest = hashlib.sha256(source_zip.read_bytes()).hexdigest()
+    releases = tmp_path / 'releases'
+    downloads = tmp_path / 'downloads'
+    releases.mkdir()
+    downloads.mkdir()
+    monkeypatch.setattr(preparation, 'get_client_bundle_release_dir', lambda: str(releases))
+    monkeypatch.setattr(preparation, 'get_client_bundle_download_dir', lambda: str(downloads))
+
+    def download(_url, target, **_kwargs):
+        shutil.copyfile(source_zip, target)
+
+    command = SimpleNamespace(
+        client_api=SimpleNamespace(
+            build_agent_bundle=lambda *_args, **_kwargs: {
+                'builder': AgentBuilderKind.PYTHON.value,
+                'file_name': 'custom-source-release.zip',
+                'download_url': 'https://example.test/download',
+                'sha256': digest,
+            },
+            download_file=download,
+        ),
+        emit_progress=lambda *_args, **_kwargs: None,
+        _checkpoint=lambda: None,
+    )
+    installed = preparation.UpdatePreparation(command).run()
+    assert Path(installed).read_text() == 'print("source bundle")\n'
+    assert Path(installed).parent.name == 'custom-source-release'
+    assert list(downloads.iterdir()) == []
+
+
+@pytest.mark.parametrize('builder,filename', [
+    ('go', 'arbitrary.zip'),
+    ('invalid-builder', 'arbitrary.zip'),
+    (None, 'arbitrary.zip'),
+    ('python', '../outside.zip'),
+    ('python', r'folder\\outside.zip'),
+    ('python', '.hidden.zip'),
+    ('python', '..'),
+])
+def test_update_rejects_wrong_builder_or_unsafe_output_path(tmp_path, monkeypatch, builder, filename):
+    from core.agent_build_contract import AgentBuilderKind
+    monkeypatch.setattr(preparation, 'get_client_bundle_release_dir', lambda: str(tmp_path))
+    def not_download(*_args, **_kwargs):
+        raise AssertionError('Invalid metadata must be rejected before any download')
+    cmd = SimpleNamespace(
+        client_api=SimpleNamespace(
+            build_agent_bundle=lambda *_args, **_kwargs: {
+                'builder': builder, 'file_name': filename, 'download_url': '/agent.zip',
+            },
+            download_file=not_download,
+        ),
+        emit_progress=lambda *_args, **_kwargs: None,
+    )
+    with pytest.raises(ValueError):
+        preparation.UpdatePreparation(cmd).run()

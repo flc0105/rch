@@ -55,7 +55,7 @@ Content-Type: application/json
 Reverse Update 的构建请求携带当前 Client 的传输类型和 TLS 证书指纹，由 Server 选择并验证匹配的 Listener；Bind Update 则携带当前 `connection_mode`、`bind_host` 和 `bind_port`，构建保持相同监听配置的 Source Bundle。两种模式都复用 Server Agent Builder，不增加 Server 主动拨号逻辑。
 Server 在临时工作目录复制 Bundle 所需源码，注入 Client 配置后打包，再把构建结果复制到 `SERVER_RUNTIME_DIR/agent_output/`（默认 `backend/runtime/agent_output/`）。构建元数据保存在 Server 的 `runtime/rch.db` 的 `agent_outputs` 表中，包括构建时间、Build Version、Builder、Listener ID、构建时名称快照、系统和架构、连接参数及请求来源等信息。文件大小根据磁盘实体计算。构建成功会发布 `agent_build_lifecycle` 事件（`completed`），失败则发布 `error`。
 
-`POST /api/agent/build` 的 Bundle 响应提供 `file_name`、`build_version`、`download_url` 以及服务端对实际 ZIP 计算的 `sha256`。产物下载通过 **Web/API 端口**上的 `GET /api/agent/download/{filename}` 完成，不经过文件传输专线的 8086。构建产物可以通过 `/api/agent/outputs` 查看，并通过相应删除接口移除；删除某个 Server 构建产物，不会卸载已安装在远程设备上的 Release。
+`POST /api/agent/build` 的 Bundle 响应提供 `builder`、`file_name`、`build_version`、`download_url` 以及服务端对实际 ZIP 计算的 `sha256`。Client 按构建元数据中的 Builder 类型确认下载的是 Python Source Bundle，文件名只作安全路径校验；下载内容仍需通过 SHA-256 与安全解压校验。产物下载通过 **Web/API 端口**上的 `GET /api/agent/download/{filename}` 完成，不经过文件传输专线的 8086。构建产物可以通过 `/api/agent/outputs` 查看，并通过相应删除接口移除；删除某个 Server 构建产物，不会卸载已安装在远程设备上的 Release。
 
 这里的产物元数据与 Client 运行时的源码指纹不是同一份数据：构建记录用 Build Version 和文件名定位下载物，Revision 会被注入 Python Bundle 并随 Client 握手报告。即使 Server 不主动构建新产物，也能用当前磁盘的源码 Revision 判断已连接 Client 是否落后。
 

@@ -2,7 +2,6 @@
 
 import hashlib
 import os
-import re
 import shutil
 import tempfile
 
@@ -93,9 +92,15 @@ class UpdatePreparation:
         cmd.emit_progress('Bundle building completed', level='success')
         releases = get_client_bundle_release_dir()
         filename = str(meta.get('file_name') or '')
-        if (not re.fullmatch(r'rchclient_python_[0-9]{8}_[0-9]{6}_[0-9a-fA-F]{8}\.zip', filename)
-                or os.path.basename(filename) != filename):
-            raise ValueError('Unexpected Client update bundle filename')
+        try:
+            builder = AgentBuilderKind(meta.get('builder'))
+        except (TypeError, ValueError) as exc:
+            raise ValueError('Unexpected Client update bundle builder') from exc
+        if builder is not AgentBuilderKind.PYTHON:
+            raise ValueError('Update requires a Python source bundle')
+        if (not filename or filename in ('.', '..') or filename.startswith('.')
+                or os.path.basename(filename) != filename or '\\' in filename):
+            raise ValueError('Unsafe Client update bundle filename')
         archive_path = os.path.join(get_client_bundle_download_dir(), filename)
         candidate_dir = build_bundle_extract_dir(releases, filename)
         cmd.emit_progress(f'Bundle downloading: {filename}', level='info')
