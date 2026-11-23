@@ -18,6 +18,36 @@ def create_connections_blueprint(server_instance):
         from server.application.connection.bind_web_endpoint import default_bind_web_url
         return responder.ok({'server_web_base_url': default_bind_web_url(request.host_url)})
 
+    @blueprint.get('/api/connections/bind/targets')
+    def list_saved_bind_targets():
+        return responder.ok(connection_api.list_saved_bind_targets())
+
+    @blueprint.post('/api/connections/bind/targets')
+    def save_bind_target():
+        def _execute():
+            body = request.get_json(silent=True) or {}
+            return connection_api.save_bind_target(
+                body.get('host'), body.get('port'), body.get('server_web_base_url'),
+                name=body.get('name') or '',
+            )
+        return responder.json_endpoint(_execute, default_error_status=400)
+
+    @blueprint.patch('/api/connections/bind/targets/<target_id>')
+    def edit_bind_target(target_id):
+        def _execute():
+            body = request.get_json(silent=True) or {}
+            return connection_api.save_bind_target(
+                body.get('host'), body.get('port'), body.get('server_web_base_url'),
+                name=body.get('name') or '', target_id=target_id,
+            )
+        return responder.json_endpoint(_execute, default_error_status=400)
+
+    @blueprint.delete('/api/connections/bind/targets/<target_id>')
+    def remove_bind_target(target_id):
+        return responder.json_endpoint(
+            lambda: connection_api.remove_bind_target(target_id), default_error_status=400,
+        )
+
     @blueprint.post('/api/connections/bind/connect')
     def connect_bind_client():
         def _execute():
@@ -25,7 +55,7 @@ def create_connections_blueprint(server_instance):
             from server.application.connection.bind_web_endpoint import default_bind_web_url
             announced = body.get('server_web_base_url') or default_bind_web_url(request.host_url)
             return connection_api.connect_bind_client(
-                body.get('host'), body.get('port'), announced,
+                body.get('host'), body.get('port'), announced, name=body.get('name') or '',
             )
 
         return responder.json_endpoint(_execute, default_error_status=400)

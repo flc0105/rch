@@ -104,6 +104,9 @@
         @toggle-machine-hidden="toggleMachineHiddenFromSidebar"
         @group-filter-change="setSelectedDeviceGroup"
         @connect-to-client="$refs.connectToClientDialogRef?.open()"
+        @connect-saved-target="connectSavedBindTarget"
+        @edit-saved-target="$refs.connectToClientDialogRef?.open($event)"
+        @saved-target-removed="loadConnections"
         @manage-groups="openDeviceGroupManagerDialog"
         @reorder-devices="$refs.deviceOrderDialogRef?.open()"
         @assign-machine-group="assignMachineGroupFromSidebar"
@@ -407,7 +410,7 @@
   />
 
   <ListenerManagerDialog ref="listenerManagerDialogRef" />
-  <ConnectToClientDialog ref="connectToClientDialogRef" @connected="handleBindClientConnected" />
+  <ConnectToClientDialog ref="connectToClientDialogRef" @connected="handleBindClientConnected" @saved="loadConnections" />
 
   <AgentBuilderDialog
     ref="agentBuilderDialogRef"
@@ -1259,6 +1262,22 @@ export default {
 
     handleScriptCommandComplete(payload = {}) {
       return this.$refs.scriptLibraryDialogRef?.handleCommandComplete(payload) === true
+    },
+
+    async connectSavedBindTarget(target) {
+      if (!target) return
+      const { connectToClient } = await import('./api/connectionsApi.js')
+      try {
+        const result = await connectToClient(target.host, target.port, target.server_web_base_url)
+        if (result.status === 'already_connected') {
+          ElMessage.info('Client already connected')
+        } else {
+          ElMessage.success('Client connected')
+        }
+        await this.handleBindClientConnected(result.client_id)
+      } catch (error) {
+        ElMessage.error(error.message || 'Unable to connect to Client')
+      }
     },
 
     async handleBindClientConnected(clientId) {

@@ -144,6 +144,7 @@ class WebConnectionService:
             'listener_port': getattr(session, 'listener_port', None),
             'listener_protocol': getattr(session, 'listener_protocol', 'tcp'),
             'connection_direction': 'bind' if getattr(session, 'listener_protocol', '') == 'bind_tcp' else 'reverse',
+            'bind_target_id': getattr(session, 'saved_bind_target_id', ''),
             'hostname': info.hostname,
             'machine_id': info.machine_id,
             # 'machine_id_version': info.machine_id_version,
@@ -189,6 +190,8 @@ class WebConnectionService:
             return
 
         for item in active_connections:
+            if item.get('connection_direction') == 'bind':
+                continue
             machine_id = str(item.get('machine_id') or '').strip()
             if not machine_id:
                 continue
@@ -201,11 +204,14 @@ class WebConnectionService:
         active_machine_ids = {
             self._machine_key(item.get('machine_id'))
             for item in active_connections
-            if str(item.get('machine_id') or '').strip()
+            if item.get('connection_direction') != 'bind'
+            and str(item.get('machine_id') or '').strip()
         }
 
         results = []
         for item in self.recent_device_store.list_recent_devices():
+            if item.get('connection_direction') == 'bind' or item.get('listener_protocol') == 'bind_tcp':
+                continue
             machine_key = self._machine_key(item.get('machine_id'))
             if not machine_key:
                 continue
@@ -563,7 +569,7 @@ class WebConnectionService:
     def handle_connection_registered(self, session: ClientSession):
         session.services.heartbeat_service.mark_connected()
         payload = self.serialize_connection(session)
-        if self.recent_device_store:
+        if self.recent_device_store and payload['connection_direction'] == 'reverse':
             self.recent_device_store.upsert_from_connection(payload)
         if self.connection_history_store:
             self.connection_history_store.record_connected(payload)
@@ -594,7 +600,7 @@ class WebConnectionService:
     def handle_connection_closed(self, session: ClientSession):
         session.services.heartbeat_service.mark_disconnected()
         payload = self.serialize_connection(session)
-        if self.recent_device_store:
+        if self.recent_device_store and payload['connection_direction'] == 'reverse':
             self.recent_device_store.upsert_from_connection(payload)
             self.recent_device_store.mark_offline(
                 machine_id=payload.get('machine_id') or '',

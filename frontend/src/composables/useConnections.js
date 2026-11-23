@@ -1,5 +1,5 @@
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getConnectionRevisionStatus, listConnections, updateConnectionDeviceViewPrefs } from '../api/connectionsApi.js'
+import { getConnectionRevisionStatus, listConnections, listSavedBindTargets, updateConnectionDeviceViewPrefs } from '../api/connectionsApi.js'
 import { assignMachineDeviceGroup, listDeviceGroups } from '../api/deviceGroupsApi.js'
 
 const LAST_SELECTED_MACHINE_STORAGE_KEY = 'rch:last_selected_machine_id'
@@ -21,6 +21,7 @@ export default {
     data() {
         return {
             connections: [],
+            savedBindTargets: [],
             selectedId: '',
             showHiddenDevices: false,
             showOfflineDevices: true,
@@ -341,11 +342,12 @@ export default {
             const hiddenByClient = this.isClientIdHidden(item?.client_id)
             const hiddenByMachine = this.isMachineIdHidden(item?.machine_id)
 
+            const connectionName = String(item?.saved_bind_target?.name || '').trim()
             return {
                 ...item,
                 device_alias: alias,
                 machine_alias: alias,
-                device_display_name: alias || String(item?.hostname || '').trim() || 'Unknown Host',
+                device_display_name: connectionName || alias || String(item?.hostname || '').trim() || 'Unknown Host',
                 device_hidden: hiddenByClient || hiddenByMachine,
                 device_hidden_by_client: hiddenByClient,
                 device_hidden_by_machine: hiddenByMachine,
@@ -587,6 +589,7 @@ export default {
 
             this.filterLocallyRemovedConnections(items).forEach((item) => {
                 if (!item || !item.client_id) return
+                if (item.connection_direction === 'bind' && this.getConnectionDisplayState(item) === 'offline') return
 
                 const key = item.client_id
                 const existing = grouped.get(key)
@@ -629,7 +632,7 @@ export default {
 
                 if (state !== 'offline') {
                     activeItems.push(item)
-                    if (machineId) activeMachineIds.add(machineId)
+                    if (machineId && item.connection_direction !== 'bind') activeMachineIds.add(machineId)
                     return
                 }
 
@@ -656,6 +659,7 @@ export default {
 
         async loadConnections() {
             try {
+                this.savedBindTargets = await listSavedBindTargets()
                 const fetchedConnections = this.filterLocallyRemovedConnections(await listConnections())
                 this.mergeDeviceViewPrefsFromConnections(fetchedConnections)
 
@@ -1102,6 +1106,7 @@ export default {
         selectConnection(clientId) {
             this.selectedId = clientId
             const selected = this.connections.find(item => item.client_id === clientId)
+                || this.deviceSidebarConnections.find(item => item.client_id === clientId)
             this.rememberSelectedConnection(selected)
             this.ensureOutputBucket(clientId)
             this.refreshClientRevisionStatus(selected)
@@ -1146,7 +1151,33 @@ export default {
         },
 
         deviceSidebarConnections() {
-            const decorated = (this.connections || []).map(item => this.decorateConnectionForDeviceView(item))
+            const targets = this.savedBindTargets || []
+            const targetById = new Map(targets.map(target => [target.target_id, target]))
+            const sessions = (this.connections || []).map(item => {
+                const target = targetById.get(item.bind_target_id)
+                return this.decorateConnectionForDeviceView(target ? {
+                    ...item, saved_bind_target: target, bind_target_id: target.target_id,
+                } : item)
+            })
+            const onlineTargetIds = new Set(sessions.filter(item =>
+                item.connection_direction === 'bind' && this.getConnectionDisplayState(item) !== 'offline'
+            ).map(item => item.bind_target_id).filter(Boolean))
+            const offlineTargets = targets.filter(target => !onlineTargetIds.has(target.target_id)).map(target => ({
+                ...this.decorateConnectionForDeviceView({
+                    client_id: target.last_client_id || '', sidebar_key: `bind:${target.target_id}`,
+                    bind_target_id: target.target_id, saved_bind_target: target,
+                    connection_direction: 'bind', listener_protocol: 'bind_tcp',
+                    connection_state: 'offline',
+                    addr: `${target.host}:${target.port}`,
+                    hostname: target.hostname || target.host,
+                    machine_id: target.machine_id || '',
+                    os_type: target.os_type || '', os_ver: target.os_ver || '',
+                    integrity: target.integrity || '',
+                    last_seen_at: target.last_seen_at || '',
+                    disconnected_at: target.last_seen_at || '',
+                }),
+            }))
+            const decorated = sessions.concat(offlineTargets)
             const grouped = decorated.filter(item => this.isConnectionInSelectedDeviceGroup(item))
             const visible = grouped.filter(item =>
                 (this.showHiddenDevices || !item.device_hidden)
@@ -1159,7 +1190,10 @@ export default {
             const allMachineKeys = new Set()
             const groupMachineKeys = {}
 
-            ;(this.connections || []).forEach(item => {
+            ;(this.connections || []).concat((this.savedBindTargets || []).map(target => ({
+                machine_id: target.machine_id,
+                client_id: `bind:${target.target_id}`,
+            }))).forEach(item => {
                 const machineKey = this.normalizeMachineGroupKey(item?.machine_id)
                 const fallbackClientId = this.normalizeClientId(item?.client_id)
                 const deviceKey = machineKey || (fallbackClientId ? `client:${fallbackClientId}` : '')
@@ -1191,7 +1225,9 @@ export default {
         },
 
         currentConnection() {
-            return this.connections.find(item => item.client_id === this.selectedId) || null
+            return this.connections.find(item => item.client_id === this.selectedId)
+                || this.deviceSidebarConnections.find(item => item.client_id && item.client_id === this.selectedId)
+                || null
         },
 
         onlineConnectionsCount() {

@@ -1,6 +1,9 @@
 <template>
   <el-dialog v-model="visible" title="Connect to Client" width="560px" class="fixed-dialog bind-connect-dialog" append-to-body>
     <el-form :model="form" label-position="top" class="bind-connect-form" @submit.prevent="connect">
+      <el-form-item label="Connection name (optional)">
+        <el-input v-model="form.name" placeholder="Name this connection" autocomplete="off" />
+      </el-form-item>
       <el-form-item label="Host">
         <el-input v-model="form.host" placeholder="Client IP or hostname" autocomplete="off" />
       </el-form-item>
@@ -13,6 +16,7 @@
     </el-form>
     <template #footer>
       <el-button @click="visible = false">Cancel</el-button>
+      <el-button :loading="connecting" @click="save">Save</el-button>
       <el-button type="primary" :loading="connecting" @click="connect">Connect</el-button>
     </template>
   </el-dialog>
@@ -20,22 +24,60 @@
 
 <script>
 import { ElMessage } from 'element-plus'
-import { connectToClient, getBindConnectionSettings } from '../api/connectionsApi.js'
+import { connectToClient, getBindConnectionSettings, saveBindTarget } from '../api/connectionsApi.js'
 
 export default {
   name: 'ConnectToClientDialog',
-  emits: ['connected'],
+  emits: ['connected', 'saved'],
   data() {
-    return { visible: false, connecting: false, form: { host: '', port: 9443, serverWebBaseUrl: '' } }
+    return { visible: false, connecting: false, targetId: '', form: { host: '', port: 9443, serverWebBaseUrl: '', name: '' } }
   },
   methods: {
-    async open() {
+    async open(target = null) {
       this.visible = true
+      this.targetId = String(target?.target_id || '')
+      this.form = {
+        host: String(target?.host || ''),
+        port: Number(target?.port || 9443),
+        serverWebBaseUrl: String(target?.server_web_base_url || ''),
+        name: String(target?.name || ''),
+      }
+      if (target) return
       try {
         const settings = await getBindConnectionSettings()
         this.form.serverWebBaseUrl = String(settings.server_web_base_url || '')
       } catch (error) {
         ElMessage.error(error.message || 'Unable to load Server Web URL')
+      }
+    },
+    getValidatedFields() {
+      const host = this.form.host.trim()
+      const port = Number(this.form.port)
+      if (!host || !Number.isInteger(port) || port < 1 || port > 65535) {
+        ElMessage.warning('Enter a Client address and valid port')
+        return null
+      }
+      const serverWebBaseUrl = this.form.serverWebBaseUrl.trim()
+      if (!/^https?:\/\/[^/\s]+\/?$/.test(serverWebBaseUrl)) {
+        ElMessage.warning('Enter a valid Server Web URL')
+        return null
+      }
+      return { host, port, serverWebBaseUrl }
+    },
+    async save() {
+      const values = this.getValidatedFields()
+      if (!values) return
+      this.connecting = true
+      try {
+        await saveBindTarget(values.host, values.port, values.serverWebBaseUrl,
+          this.form.name.trim(), this.targetId)
+        this.visible = false
+        ElMessage.success('Connection saved')
+        this.$emit('saved')
+      } catch (error) {
+        ElMessage.error(error.message || 'Unable to save connection')
+      } finally {
+        this.connecting = false
       }
     },
     async connect() {
@@ -52,7 +94,7 @@ export default {
       }
       this.connecting = true
       try {
-        const result = await connectToClient(host, port, serverWebBaseUrl)
+        const result = await connectToClient(host, port, serverWebBaseUrl, this.form.name?.trim() || '')
         this.visible = false
         if (result.status === 'already_connected') {
           ElMessage.info('Client already connected')

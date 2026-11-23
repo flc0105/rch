@@ -900,6 +900,17 @@ Examples include:
 - loader logs
 - recent devices cache
 
+### Saved Bind connection targets
+
+Bind endpoints are stored in `runtime/rch.db` as individual `saved_bind_targets` rows rather than a Settings JSON namespace. The Device Bar keeps each Host/Port target available for manual reconnection after its Client disconnects; Reverse retains the existing machine-based offline history. Existing canonical SQLite databases gain the new table transactionally without altering other tables. To run an explicit backup-first upgrade with Server stopped:
+
+```bash
+cd backend
+python3 -m server.persistence.migrate_saved_bind_targets runtime/rch.db
+```
+
+Use the configured Runtime DB path when `RCH_SERVER_RUNTIME_DIR` differs from the default. The migration refuses to overwrite its backup.
+
 ### Recent devices cache
 
 Recent-device state is stored in `runtime/rch.db` (`recent_devices`).

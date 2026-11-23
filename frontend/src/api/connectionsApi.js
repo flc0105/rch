@@ -4,13 +4,30 @@ export function listConnections() {
   return apiData('/api/connections', {}, [])
 }
 
+export function listSavedBindTargets() {
+  return apiData('/api/connections/bind/targets', {}, [])
+}
+
+export function saveBindTarget(host, port, serverWebBaseUrl, name = '', targetId = '') {
+  const path = targetId
+    ? `/api/connections/bind/targets/${encodeURIComponent(targetId)}`
+    : '/api/connections/bind/targets'
+  return apiData(path, jsonRequestOptions(targetId ? 'PATCH' : 'POST', {
+    host, port, server_web_base_url: serverWebBaseUrl, name,
+  }), {})
+}
+
+export function removeSavedBindTarget(targetId) {
+  return apiData(`/api/connections/bind/targets/${encodeURIComponent(targetId)}`, { method: 'DELETE' }, {})
+}
+
 export function getBindConnectionSettings() {
   return apiData('/api/connections/bind/settings', {}, {})
 }
 
-export function connectToClient(host, port, serverWebBaseUrl) {
+export function connectToClient(host, port, serverWebBaseUrl, name = '') {
   return apiData('/api/connections/bind/connect', jsonRequestOptions('POST', {
-    host, port, server_web_base_url: serverWebBaseUrl,
+    host, port, server_web_base_url: serverWebBaseUrl, name,
   }), {})
 }
 

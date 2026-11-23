@@ -14,6 +14,7 @@ from server.application.connection.connection_history_store import ConnectionHis
 from server.application.connection.connection_service import WebConnectionService
 from server.application.connection.recent_device_store import RecentDeviceStore
 from server.application.connection.device_group_store import DeviceGroupStore
+from server.application.connection.saved_bind_target_store import SavedBindTargetStore
 from server.application.execution.remote_execution_service import RemoteExecutionService
 from server.application.device_events.device_event_service import DeviceEventService
 from server.application.external_tools.external_tool_catalog_service import ExternalToolCatalogService
@@ -137,6 +138,7 @@ class ServerApplicationAssembly:
 
         self.recent_device_store = RecentDeviceStore(self.server.database)
         self.device_group_store = DeviceGroupStore(self.server.database)
+        self.saved_bind_target_store = SavedBindTargetStore(self.server.database)
         self.toolbar_preference_store = ToolbarPreferenceStore(self.server.database)
         self.notification_preference_store = NotificationPreferenceStore(self.server.database)
         self.terminal_context_preference_store = TerminalContextPreferenceStore(self.server.database)
@@ -209,6 +211,7 @@ class ServerApplicationAssembly:
             connection_service=self.connection_service,
             device_group_store=self.device_group_store,
             bind_connector=self.server.bind_connector,
+            saved_bind_target_store=self.saved_bind_target_store,
         )
 
         self.toolbar_preferences_api = WebToolbarPreferencesApi(

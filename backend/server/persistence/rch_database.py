@@ -4,6 +4,24 @@ import threading
 from contextlib import contextmanager
 
 
+SAVED_BIND_TARGETS_SCHEMA = """CREATE TABLE saved_bind_targets (
+                target_id TEXT PRIMARY KEY,
+                host TEXT NOT NULL COLLATE NOCASE,
+                port INTEGER NOT NULL CHECK(port BETWEEN 1 AND 65535),
+                server_web_base_url TEXT NOT NULL,
+                name TEXT NOT NULL DEFAULT '',
+                machine_id TEXT NOT NULL DEFAULT '',
+                hostname TEXT NOT NULL DEFAULT '',
+                os_type TEXT NOT NULL DEFAULT '',
+                os_ver TEXT NOT NULL DEFAULT '',
+                integrity TEXT NOT NULL DEFAULT '',
+                last_seen_at TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT '',
+                updated_at TEXT NOT NULL DEFAULT '',
+                last_client_id TEXT NOT NULL DEFAULT '',
+                UNIQUE(host, port)
+            )"""
+
 # Canonical persisted schema. Database initialization never rewrites existing records.
 FINAL_SCHEMA_STATEMENTS = (
     'CREATE TABLE "background_job_files" (\n                association_id INTEGER PRIMARY KEY AUTOINCREMENT,\n                job_id TEXT NOT NULL,\n                artifact_id TEXT NOT NULL,\n                linked_at TEXT NOT NULL DEFAULT \'\', snapshot TEXT NOT NULL DEFAULT \'{}\',\n                FOREIGN KEY(job_id) REFERENCES "background_jobs"(job_id) ON DELETE CASCADE,\n                UNIQUE(job_id, artifact_id)\n            )',
@@ -19,6 +37,7 @@ FINAL_SCHEMA_STATEMENTS = (
     "CREATE TABLE pinned_commands (\n                machine_id TEXT NOT NULL,\n                command TEXT NOT NULL,\n                pinned_at TEXT NOT NULL,\n                pin_order INTEGER NOT NULL DEFAULT 0,\n                snapshot_json TEXT NOT NULL DEFAULT '{}',\n                PRIMARY KEY(machine_id, command)\n            )",
     "CREATE TABLE pinned_paths (\n                machine_id TEXT NOT NULL,\n                display_name TEXT NOT NULL,\n                path TEXT NOT NULL,\n                created_at TEXT NOT NULL DEFAULT '',\n                updated_at TEXT NOT NULL DEFAULT '',\n                PRIMARY KEY(machine_id, display_name)\n            )",
     "CREATE TABLE recent_devices (\n                machine_key TEXT PRIMARY KEY,\n                machine_id TEXT NOT NULL,\n                client_id TEXT NOT NULL DEFAULT '',\n                machine_order INTEGER NOT NULL DEFAULT 0,\n                connection_state TEXT NOT NULL DEFAULT 'offline',\n                last_seen_at TEXT NOT NULL DEFAULT '',\n                recent_updated_at TEXT NOT NULL DEFAULT '',\n                machine_alias TEXT NOT NULL DEFAULT '',\n                device_hidden_by_machine INTEGER NOT NULL DEFAULT 0,\n                hidden_client_ids_json TEXT NOT NULL DEFAULT '{}',\n                snapshot_json TEXT NOT NULL DEFAULT '{}'\n            )",
+    SAVED_BIND_TARGETS_SCHEMA,
     'CREATE TABLE settings (\n                namespace TEXT PRIMARY KEY,\n                value_json TEXT NOT NULL,\n                updated_at_ms INTEGER NOT NULL DEFAULT 0\n            )',
     """CREATE TABLE artifact_folders (
                     folder_id TEXT PRIMARY KEY,
@@ -192,6 +211,14 @@ class RchDatabase:
                                 "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
                             )
                         }
+                        # Add only the new business table, without rewriting existing records.
+                        if 'saved_bind_targets' not in existing_tables:
+                            conn.execute(SAVED_BIND_TARGETS_SCHEMA)
+                            existing_tables.add('saved_bind_targets')
+                        elif 'last_client_id' not in {
+                            row[1] for row in conn.execute('PRAGMA table_info(saved_bind_targets)')
+                        }:
+                            conn.execute("ALTER TABLE saved_bind_targets ADD COLUMN last_client_id TEXT NOT NULL DEFAULT ''")
                         for table_name in expected_tables:
                             if table_name not in existing_tables or (
                                 self._schema_structure(conn, table_name) !=

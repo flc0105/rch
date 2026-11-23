@@ -8,6 +8,7 @@ RCH 同时需要识别**一台设备**和**设备上运行的一条 Client 连�
 | --- | --- | --- | --- |
 | `machine_id` | Python Client 采集七项机器特征，规范化后对固定字符串计算 SHA-256 | 特征不变时可跨进程重启复现 | 最近设备缓存、设备别名、分组成员、历史查询等 |
 | `client_id` | Python Client 初始化对象时调用 `uuid.uuid4()` | 同一个 Client 对象断线重连时不变，重新创建对象时通常改变 | 活动 Socket 会话、发送命令、取消或关闭指定连接 |
+| `target_id` | Server 保存 Bind 连接目标时生成的唯一 ID | 用户删除保存目标前持续存在 | 区分同一机器不同 Host/Port 的可重连目标，不代表 Client 实例 |
 | `machine_id_short` | `machine_id[:24]` | 随 `machine_id` 变化 | 本地身份载荷中的短显示值；不是另一种身份 |
 | `group_id` | Server 创建设备分组时生成 UUID 十六进制值 | 分组存在期间稳定 | 标识用户自定义的设备分组，不代表设备 |
 

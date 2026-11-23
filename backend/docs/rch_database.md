@@ -14,13 +14,14 @@
 - **`*_json`**：SQLite `TEXT` 中存放的 JSON 对象或数组。它们不是另一张可独立更新的关系表；同一业务的固定列通常是筛选、排序或标识所需字段，JSON 保存扩展的业务内容或快照。
 - **布尔量**：SQLite 没有独立的布尔列类型，这里通常以整数 `0/1` 保存；展示时由 Server 转成 `false/true`。
 
-正常启动、完成 History 模块初始化后，当前结构共有 **20 张应用表**（不计 SQLite 自己的 `sqlite_sequence` 等内部对象）。其中 `activity_records` 由 History 模块创建，`keychain_entries` 由 Keychains 模块创建，`transfer_records` 由 Transfer 模块创建；单独初始化 SQLite 数据库、却没有启动这些模块时，可能只能看到核心 17 张表。空表是正常情况，不代表对应功能没有实现。
+正常启动、完成 History 模块初始化后，当前结构共有 **21 张应用表**（不计 SQLite 自己的 `sqlite_sequence` 等内部对象）。其中 `activity_records` 由 History 模块创建，`keychain_entries` 由 Keychains 模块创建，`transfer_records` 由 Transfer 模块创建；单独初始化 SQLite 数据库、却没有启动这些模块时，可能只能看到核心 18 张表。空表是正常情况，不代表对应功能没有实现。
 
 ## 业务功能与数据表速查
 
 | 前台功能或管理场景 | 主要数据表 | 保存的内容和作用域 |
 | --- | --- | --- |
-| Connections、Recently Seen、设备名称/排序/隐藏 | `recent_devices` | 每台设备最近一次汇总状态及视图偏好，按机器归属 |
+| Connections、Recently Seen、设备名称/排序/隐藏 | `recent_devices` | Reverse 设备最近一次汇总状态及视图偏好，按机器归属 |
+| Connections → Saved Bind Connections | `saved_bind_targets` | 每个 Host + Port 独立的持久拨号目标，可再次手动连接 |
 | Machine Connection History、连接详情 | `connection_sessions` | 连接的上线、下线、持续时间及当时的设备快照 |
 | Device Groups | `device_groups`、`device_group_members` | 分组名称与设备所属分组 |
 | History → Quick History | `command_recents`、`pinned_commands` | 最近手动命令、调用次数和独立的固定项 |
@@ -37,6 +38,31 @@
 | **旧执行记录结构** | `command_executions` | 当前仍可能存在，但**不是现行 Activity Center 的读取来源** |
 
 以下每组“字段”列举的均为实际数据库列。**主键（PK）**决定记录唯一性；“引用”是业务关联，不一定存在数据库外键约束。
+
+## Saved Bind Targets — 持久连接目标
+
+### `saved_bind_targets`
+
+Bind 连接在 Server 手动连接成功后按 Host/Port 保存一条记录，也允许先保存、随后手动 Connect。不同端口即使属于同一个 `machine_id` 也不会合并；离线后目标继续保留，供设备栏重新连接。Reverse 的离线历史仍使用 `recent_devices`，Bind 不写入该表的最近设备快照。
+
+| 字段 | 用途 |
+| --- | --- |
+| `target_id` | 目标的稳定主键，独立于 `machine_id`、`client_id` |
+| `host`、`port` | 连接的目标地址和端口，两者组合唯一（Host 不区分大小写） |
+| `server_web_base_url` | Bind 连接时提供给 Client 的 Server Web origin |
+| `name` | 用户保存的目标显示名，设备栏优先于机器别名和主机名显示 |
+| `last_client_id` | 最近一次成功连接的 Client ID，离线时可选中原会话并查看历史 |
+| `machine_id`、`hostname`、`os_type`、`os_ver`、`integrity` | 最近一次连接成功后的设备信息快照；首次保存时可为空 |
+| `last_seen_at`、`created_at`、`updated_at` | 连接成功时间、创建时间及最近修改时间 |
+
+Schema 初始化在现有规范数据库中事务化补齐该表或其新增的 `last_client_id` 列，保留已保存的连接目标和其他业务记录，不创建独立版本管理字段。可以在停止 Server 后显式运行带备份的迁移命令：
+
+```bash
+cd backend
+python3 -m server.persistence.migrate_saved_bind_targets runtime/rch.db
+```
+
+命令会在同目录建立 `rch.db.before-bind-targets.bak`（文件存在时拒绝覆盖），使用 SQLite Backup API 保存 WAL 一致性快照，然后验证 Schema 和数据库完整性。若自定义了 `RCH_SERVER_RUNTIME_DIR`，应改为该目录中的实际 `rch.db`。不需要把保存目标塞进 `settings` 命名空间。
 
 ## Transfer Center 传输历史表
 

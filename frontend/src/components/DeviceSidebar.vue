@@ -59,6 +59,16 @@
         </template>
       </el-dropdown>
 
+      <div class="device-toolbar-actions">
+        <el-button
+          class="device-toolbar-connect-btn"
+          text
+          title="Connect to Client"
+          aria-label="Connect to Client"
+          @click="handleToolbarCommand('connect-to-client')"
+        >
+          <CirclePlus :size="17" :stroke-width="1.5" />
+        </el-button>
       <el-dropdown
         trigger="click"
         placement="bottom-end"
@@ -97,6 +107,7 @@
           </el-dropdown-menu>
         </template>
       </el-dropdown>
+      </div>
     </div>
 
     <div class="sidebar-body">
@@ -106,12 +117,12 @@
 
       <div
         v-for="item in connections"
-        :key="item.client_id"
+        :key="item.sidebar_key || item.client_id"
         class="device-item"
         :class="{
-          active: selectedId === item.client_id,
+          active: Boolean(item.client_id) && selectedId === item.client_id,
           'device-item-hidden': item.device_hidden,
-          'context-active': contextMenuClientId === item.client_id,
+          'context-active': contextMenuClientId === (item.sidebar_key || item.client_id),
         }"
         @click="handleDeviceClick(item, $event)"
         @contextmenu.prevent.stop="openDeviceContextMenu($event, item)"
@@ -126,10 +137,17 @@
               <div class="device-name">
                 {{ formatDeviceName(item) }}
               </div>
-              <el-tag v-if="item.listener_name" size="small" type="info" effect="plain" class="device-listener-tag"
-                      :title="`${(item.listener_protocol || 'tcp').replaceAll('_', '/').toUpperCase()} · ${item.listener_name}`">
-                {{ item.listener_name }}
+              <el-tag v-if="item.connection_direction === 'bind' || item.listener_name"
+                      size="small" type="info" effect="plain" class="device-listener-tag"
+                      :class="{ 'device-listener-tag-bind': item.connection_direction === 'bind' }"
+                      :title="item.connection_direction === 'bind' ? 'Bind' : `${(item.listener_protocol || 'tcp').replaceAll('_', '/').toUpperCase()} · ${item.listener_name}`">
+                {{ item.connection_direction === 'bind' ? 'Bind' : item.listener_name }}
               </el-tag>
+              <el-tooltip v-if="isTlsConnection(item)" content="TLS encrypted" placement="top">
+                <span class="device-indicator-tooltip" aria-label="TLS encrypted">
+                  <LockKeyhole class="device-locked-indicator" :size="13" />
+                </span>
+              </el-tooltip>
               <el-tooltip
                 v-if="getConnectionDisplayState(item) === 'online' && item.client_revision_state === 'outdated'"
                 content="Outdated"
@@ -150,7 +168,7 @@
               </el-tooltip>
             </div>
             <div class="device-os">
-              {{ formatOsLabel(item.os_type, item.os_ver) }}
+              {{ formatOsLabel(item.os_type) }}
             </div>
           </div>
 
@@ -161,7 +179,7 @@
         </div>
 
         <div class="device-ip">
-          {{ formatAddress(item.addr) }}
+          {{ formatAddress(item.addr, item) }}
         </div>
 
         <div class="device-status-row">
@@ -185,9 +203,20 @@
         @click.stop
         @contextmenu.prevent.stop
       >
+        <template v-if="contextMenuItem?.saved_bind_target">
+          <button v-if="getConnectionDisplayState(contextMenuItem) === 'offline'"
+            type="button" class="device-context-menu-item"
+            @click="triggerDeviceContextCommand('connect-saved')">Connect</button>
+          <button type="button" class="device-context-menu-item"
+            @click="triggerDeviceContextCommand('edit-saved')">Edit connection</button>
+          <button type="button" class="device-context-menu-item is-danger"
+            @click="triggerDeviceContextCommand('remove-saved')">Remove saved connection</button>
+          <div class="device-context-menu-separator"></div>
+        </template>
         <button
           type="button"
           class="device-context-menu-item"
+          :disabled="!contextMenuItem?.machine_id"
           @click="triggerDeviceContextCommand('rename-machine')"
         >
           Set alias
@@ -301,10 +330,11 @@
 <script>
 
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ClockAlert, ShieldPlus } from '@lucide/vue'
+import { CirclePlus, ClockAlert, LockKeyhole, ShieldPlus } from '@lucide/vue'
 import {
   disconnectConnection as disconnectConnectionApi,
   removeConnection as removeConnectionApi,
+  removeSavedBindTarget,
   sendCommand as sendCommandApi,
 } from '../api/connectionsApi.js'
 
@@ -312,7 +342,9 @@ export default {
   name: 'DeviceSidebar',
 
   components: {
+    CirclePlus,
     ClockAlert,
+    LockKeyhole,
     ShieldPlus,
   },
 
@@ -370,6 +402,9 @@ export default {
   emits: [
     'refresh',
     'connect-to-client',
+    'connect-saved-target',
+    'edit-saved-target',
+    'saved-target-removed',
     'select',
     'toggle-hidden-devices',
     'toggle-offline-devices',
@@ -536,7 +571,11 @@ computed: {
       }
 
       this.closeDeviceContextMenu()
-      this.$emit('select', item.client_id)
+      if (item.client_id) {
+        this.$emit('select', item.client_id)
+      } else if (item.saved_bind_target) {
+        ElMessage.info('Connect first')
+      }
     },
 
     openDeviceContextMenu(event, item) {
@@ -561,7 +600,7 @@ computed: {
 
       this.contextMenuItem = item
       this.contextGroupMenuVisible = false
-      this.contextMenuClientId = String(item?.client_id || '')
+      this.contextMenuClientId = String(item?.sidebar_key || item?.client_id || '')
       this.contextMenuX = x
       this.contextMenuY = y
       this.contextMenuVisible = true
@@ -690,6 +729,26 @@ async triggerDeviceContextCommand(command) {
   if (!item) return
 
   this.closeDeviceContextMenu()
+
+  if (command === 'connect-saved') {
+    this.$emit('connect-saved-target', item.saved_bind_target)
+    return
+  }
+  if (command === 'edit-saved') {
+    this.$emit('edit-saved-target', item.saved_bind_target)
+    return
+  }
+  if (command === 'remove-saved') {
+    try {
+      await ElMessageBox.confirm('Remove this saved connection?', 'Remove saved connection', { type: 'warning' })
+      await removeSavedBindTarget(item.bind_target_id)
+      this.$emit('saved-target-removed')
+      ElMessage.success('Saved connection removed')
+    } catch (error) {
+      if (error !== 'cancel' && error !== 'close') ElMessage.error(error.message || 'Unable to remove saved connection')
+    }
+    return
+  }
 
   if (command === 'rename-machine') {
     this.$emit('rename-machine', item)
@@ -923,12 +982,20 @@ async removeConnectionPermanently(item) {
       return `${diffDay}d ago`
     },
 
-    formatOsLabel(osType, osVer) {
-      const type = osType || 'Unknown'
-      return osVer ? `${type}` : type
+    formatOsLabel(osType) {
+      const type = String(osType || '').trim()
+      return type && type.toLowerCase() !== 'unknown' ? type : '-'
     },
 
-    formatAddress(addr) {
+    isTlsConnection(item) {
+      return item?.listener_protocol === 'tls_tcp'
+    },
+
+    formatAddress(addr, item = null) {
+      if (item?.saved_bind_target) {
+        const { host, port } = item.saved_bind_target
+        return `${host}:${port}`
+      }
       if (!addr) return '-'
       const raw = String(addr)
       const parts = raw.split(':')
@@ -960,7 +1027,7 @@ async removeConnectionPermanently(item) {
 
 .device-group-switcher {
   min-width: 0;
-  max-width: calc(100% - 38px);
+  max-width: calc(100% - 68px);
 }
 
 .device-group-switcher-trigger {
@@ -1057,6 +1124,14 @@ async removeConnectionPermanently(item) {
   font-variant-numeric: tabular-nums;
 }
 
+.device-toolbar-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 2px;
+}
+
+.device-toolbar-connect-btn,
 .device-toolbar-more-btn {
   min-width: 28px;
   width: 28px;
@@ -1065,6 +1140,8 @@ async removeConnectionPermanently(item) {
   color: var(--muted);
 }
 
+.device-toolbar-connect-btn:hover,
+.device-toolbar-connect-btn:focus,
 .device-toolbar-more-btn:hover,
 .device-toolbar-more-btn:focus {
   color: var(--text);
@@ -1079,6 +1156,27 @@ async removeConnectionPermanently(item) {
   padding: 12px;
   overflow-y: auto;
   min-height: 0;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.35) transparent;
+}
+
+.sidebar-body::-webkit-scrollbar {
+  width: 8px;
+}
+
+.sidebar-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sidebar-body::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.38);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.sidebar-body::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.58);
 }
 
 /* ========== 设备列表 ========== */
@@ -1159,7 +1257,8 @@ async removeConnectionPermanently(item) {
 }
 
 .device-update-indicator,
-.device-elevated-indicator {
+.device-elevated-indicator,
+.device-locked-indicator {
   flex: 0 0 auto;
   color: var(--muted-2);
   opacity: 0.65;
@@ -1231,6 +1330,10 @@ async removeConnectionPermanently(item) {
   border-radius: 4px;
 }
 .device-listener-tag :deep(.el-tag__content) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.device-listener-tag-bind {
+  border-color: var(--el-color-primary-light-5);
+  color: var(--el-color-primary);
+}
 </style>
 
 <style>

@@ -1,9 +1,9 @@
 
 {
   "server_host": "127.0.0.1",
-  "server_port": 9443,
+  "server_port": 9998,
   "server_transport": "tls_tcp",
-  "server_tls_fingerprint": "e85c8eff93159aade7c25faf001e9f582911087859af263aea86f4b06798cdab",
+  "server_tls_fingerprint": "d57a780a842bcb6f4922bc5d1e574f09dc17539686acb2c828304b11a669478e",
   "server_web_scheme": "http",
   "server_web_host": "127.0.0.1",
   "server_web_port": 8085

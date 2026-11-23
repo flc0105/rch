@@ -9,17 +9,34 @@ class WebConnectionApi:
     - 暴露 machine 级设备分组管理能力
     """
 
-    def __init__(self, connection_service, device_group_store=None, bind_connector=None):
+    def __init__(self, connection_service, device_group_store=None, bind_connector=None, saved_bind_target_store=None):
         self.connection_service = connection_service
         self.device_group_store = device_group_store
         self.bind_connector = bind_connector
+        self.saved_bind_target_store = saved_bind_target_store
 
-    def connect_bind_client(self, host: str, port: int, server_web_base_url: str = ''):
+    def connect_bind_client(self, host: str, port: int, server_web_base_url: str = '', name: str = ''):
         session, reused = self.bind_connector.connect_with_status(
             host, port, server_web_base_url=server_web_base_url,
         )
+        target = self.saved_bind_target_store.save(
+            host, port, server_web_base_url, name=name, session=session,
+        )
+        session.saved_bind_target_id = target['target_id']
         return {'client_id': session.session_info.client_id,
+                'target_id': target['target_id'],
                 'status': 'already_connected' if reused else 'connected'}
+
+    def list_saved_bind_targets(self):
+        return self.saved_bind_target_store.list_targets()
+
+    def save_bind_target(self, host, port, server_web_base_url, name='', target_id=''):
+        return self.saved_bind_target_store.save(
+            host, port, server_web_base_url, name=name, target_id=target_id,
+        )
+
+    def remove_bind_target(self, target_id):
+        return self.saved_bind_target_store.remove(target_id)
 
     def disconnect_connection(self, client_id: str):
         return self.connection_service.disconnect_connection(client_id, self.bind_connector)

@@ -34,7 +34,7 @@ test('Bind Connect loads Server advertised default and sends per-connection over
   obj.form.port = 9443
   obj.form.serverWebBaseUrl = 'https://vpn-server.example:443'
   await cmp.methods.connect.call(obj)
-  assert.deepEqual(Array.from(sent[0]), ['public-client', 9443, 'https://vpn-server.example:443'])
+  assert.deepEqual(Array.from(sent[0]), ['public-client', 9443, 'https://vpn-server.example:443', ''])
   assert.equal(obj.visible, false)
   assert.deepEqual(Array.from(emitted[0]), ['connected', 'new-client'])
 })

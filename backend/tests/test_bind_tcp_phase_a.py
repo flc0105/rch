@@ -119,7 +119,9 @@ def test_bind_restarts_immediately_after_a_recent_tcp_session():
 class _Session:
     def __init__(self, transport, info):
         self.transport = transport
-        self.session_info = SimpleNamespace(client_id=info['id'])
+        self.session_info = SimpleNamespace(client_id=info['id'], machine_id=info.get('machine_id', ''),
+                                            hostname=info.get('hostname', ''), os_type=info.get('os_type', ''),
+                                            os_ver=info.get('os_ver', ''), integrity=info.get('integrity', ''))
         self.address = transport.address
         self.context = SimpleNamespace(transport_failure=None, client_session_token_service=None, server_disconnect_request=None)
         self.runtime = SimpleNamespace(pending_results=SimpleNamespace(close=lambda: None))
@@ -513,16 +515,23 @@ def test_client_wait_survives_bind_initial_handshake_error_and_toolbar_disconnec
         thread.join(timeout=3)
 
 
-def test_duplicate_bind_connect_reports_existing_session_without_new_dial(bind_server):
+def test_duplicate_bind_connect_reports_existing_session_without_new_dial(bind_server, tmp_path):
     from server.application.web.connection_api import WebConnectionApi
+    from server.application.connection.saved_bind_target_store import SavedBindTargetStore
+    from server.persistence.rch_database import RchDatabase
 
     server, connector, port, registry = bind_server
     listener, accepted, thread = _connect_info(port)
-    web_api = WebConnectionApi(None, bind_connector=connector)
+    database = RchDatabase(str(tmp_path / 'rch.db'))
+    web_api = WebConnectionApi(None, bind_connector=connector,
+                               saved_bind_target_store=SavedBindTargetStore(database))
     try:
-        first = web_api.connect_bind_client('127.0.0.1', port)
-        again = web_api.connect_bind_client('127.0.0.1', port)
-        assert first == {'client_id': again['client_id'], 'status': 'connected'}
+        first = web_api.connect_bind_client('127.0.0.1', port, 'http://localhost:8085')
+        again = web_api.connect_bind_client('127.0.0.1', port, 'http://localhost:8085')
+        assert first['client_id'] == again['client_id']
+        assert first['status'] == 'connected'
+        assert first['target_id'] == again['target_id']
+        assert len(web_api.list_saved_bind_targets()) == 1
         assert again['status'] == 'already_connected'
         assert len(registry.registered) == 1
         assert len(server.connections) == 1
@@ -530,6 +539,7 @@ def test_duplicate_bind_connect_reports_existing_session_without_new_dial(bind_s
         if accepted:
             accepted[0].close()
         listener.close()
+        database.close_thread_connection()
 
 
 def test_bind_recovers_listening_after_initial_port_conflict(monkeypatch):
