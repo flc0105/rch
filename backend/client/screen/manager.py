@@ -1,4 +1,5 @@
 import base64
+from collections import deque
 import threading
 import time
 
@@ -36,6 +37,7 @@ class ScreenViewManager:
     MIN_QUALITY = SCREEN_MIN_QUALITY
     MAX_QUALITY = SCREEN_MAX_QUALITY
     INPUT_BUTTONS = {'left', 'middle', 'right'}
+    MAX_PENDING_INPUT_EVENTS = 128
 
     def __init__(self, connection):
         self.connection = connection
@@ -73,6 +75,8 @@ class ScreenViewManager:
             'pressed_keys': set(),
             'pressed_buttons': set(),
             'pyautogui_failsafe': None,
+            'input_condition': threading.Condition(),
+            'input_events': deque(),
         }
 
         worker = threading.Thread(
@@ -82,6 +86,13 @@ class ScreenViewManager:
             name=f'screen-view-{session_id[:8]}',
         )
         item['thread'] = worker
+        input_worker = threading.Thread(
+            target=self._input_loop,
+            args=(item,),
+            daemon=True,
+            name=f'screen-input-{session_id[:8]}',
+        )
+        item['input_worker'] = input_worker
 
         with self._lock:
             self._sessions[session_id] = item
@@ -94,6 +105,7 @@ class ScreenViewManager:
             'frame_strategy': item['frame_strategy_name'],
         })
         worker.start()
+        input_worker.start()
         return True
 
     def update_session(self, screen_session_id: str, fps=None, quality=None):
@@ -117,7 +129,9 @@ class ScreenViewManager:
             item['notify_on_close'] = bool(notify)
             item['stop_event'].set()
 
-        self._release_session_inputs(item, restore_control=True)
+        with item['input_condition']:
+            item['input_events'].clear()
+            item['input_condition'].notify_all()
         return True
 
     def close_all_sessions(self, notify: bool = True):
@@ -130,7 +144,7 @@ class ScreenViewManager:
         session_id = str(screen_session_id or '').strip()
         with self._lock:
             item = self._sessions.get(session_id)
-        if not item:
+        if not item or item['stop_event'].is_set():
             return False
 
         payload = event if isinstance(event, dict) else {}
@@ -138,15 +152,64 @@ class ScreenViewManager:
         if not action:
             return False
 
-        try:
-            with self._input_lock:
-                self._apply_input_event(item, action, payload)
-            return True
-        except Exception as e:
-            logger.warning(f'Screen control input failed: {e}', exc_info=True)
-            self._release_session_inputs(item, restore_control=True)
-            self._send_input_error(session_id, str(e or 'Screen control input failed'))
+        # Keep OS input calls (including first-time PyAutoGUI initialization)
+        # off the main TCP receive thread. Mouse moves may be skipped, but
+        # button/key events must preserve their original order.
+        overflow = False
+        with item['input_condition']:
+            if item['stop_event'].is_set():
+                return False
+            pending = item['input_events']
+            if action in ('release_all', 'control_off'):
+                pending.clear()
+            elif action == 'mouse_move' and pending and pending[-1][0] == 'mouse_move':
+                pending[-1] = (action, dict(payload))
+                return True
+            elif len(pending) >= self.MAX_PENDING_INPUT_EVENTS:
+                # Retire stale pointer moves first without reordering actions.
+                for index, (queued_action, _) in enumerate(pending):
+                    if queued_action == 'mouse_move':
+                        del pending[index]
+                        break
+                else:
+                    # A saturated queue of key/button events cannot safely
+                    # drop a release event. End control and release inputs.
+                    pending.clear()
+                    pending.append(('release_all', {}))
+                    overflow = True
+            if not overflow:
+                pending.append((action, dict(payload)))
+            item['input_condition'].notify()
+
+        if overflow:
+            self._send_input_error(session_id, 'Screen input queue is full')
             return False
+        return True
+
+    def _input_loop(self, item: dict):
+        session_id = item['screen_session_id']
+        condition = item['input_condition']
+        try:
+            while True:
+                with condition:
+                    condition.wait_for(lambda: item['stop_event'].is_set() or item['input_events'])
+                    if item['stop_event'].is_set():
+                        break
+                    action, payload = item['input_events'].popleft()
+
+                try:
+                    with self._input_lock:
+                        if item['stop_event'].is_set():
+                            break
+                        self._apply_input_event(item, action, payload)
+                except Exception as e:
+                    logger.warning(f'Screen control input failed: {e}', exc_info=True)
+                    with condition:
+                        item['input_events'].clear()
+                    self._release_session_inputs(item, restore_control=True)
+                    self._send_input_error(session_id, str(e or 'Screen control input failed'))
+        finally:
+            self._release_session_inputs(item, restore_control=True)
 
     def _capture_loop(self, screen_session_id: str):
         failed = False
@@ -222,7 +285,10 @@ class ScreenViewManager:
                     notify = bool(item.get('notify_on_close'))
 
             if item:
-                self._release_session_inputs(item, restore_control=True)
+                item['stop_event'].set()
+                with item['input_condition']:
+                    item['input_events'].clear()
+                    item['input_condition'].notify_all()
 
             if notify and not failed:
                 try:

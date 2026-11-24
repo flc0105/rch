@@ -10,7 +10,11 @@ export default {
     return {
       baseCanvas: null,
       baseSeq: 0,
-      renderQueue: Promise.resolve(),
+      renderedSeq: 0,
+      pendingKeyframe: null,
+      pendingDelta: null,
+      decodingBaseSeq: 0,
+      renderTask: null,
       renderGeneration: 0,
     }
   },
@@ -23,7 +27,11 @@ export default {
     reset() {
       this.renderGeneration += 1
       this.baseSeq = 0
-      this.renderQueue = Promise.resolve()
+      this.renderedSeq = 0
+      this.pendingKeyframe = null
+      this.pendingDelta = null
+      this.decodingBaseSeq = 0
+      this.renderTask = null
 
       const canvas = this.$refs.canvas
       if (canvas) {
@@ -37,24 +45,72 @@ export default {
     },
 
     applyFrame(frame = {}) {
-      const generation = this.renderGeneration
-      this.renderQueue = this.renderQueue
-        .then(() => this.renderFrame(frame, generation))
-        .catch(() => false)
-      return this.renderQueue
+      const frameType = String(frame.frame_type || '').trim().toLowerCase()
+      const seq = Number(frame.seq || 0)
+      if (!seq || !frame.frame) return Promise.resolve(false)
+
+      if (frameType === 'keyframe') {
+        if (seq <= Math.max(this.baseSeq, this.decodingBaseSeq) ||
+            (this.pendingKeyframe && seq <= Number(this.pendingKeyframe.seq))) {
+          return Promise.resolve(false)
+        }
+        this.pendingKeyframe = frame
+        this.pendingDelta = null
+      } else if (frameType === 'delta') {
+        const expectedBase = Number(this.pendingKeyframe?.seq || this.decodingBaseSeq || this.baseSeq)
+        if (!expectedBase || Number(frame.base_seq || 0) !== expectedBase || seq <= this.renderedSeq) {
+          return Promise.resolve(false)
+        }
+        if (this.pendingDelta && seq <= Number(this.pendingDelta.seq || 0)) return Promise.resolve(false)
+        // Every Delta is independently relative to its Keyframe. Keep only
+        // the freshest patch instead of decoding old frames in a FIFO queue.
+        this.pendingDelta = frame
+      } else {
+        return Promise.resolve(false)
+      }
+
+      if (!this.renderTask) this.startRenderTask()
+      return this.renderTask
     },
 
-    async renderFrame(frame, generation) {
-      if (generation !== this.renderGeneration) return false
+    startRenderTask() {
+      const generation = this.renderGeneration
+      const task = this.drainFrames(generation)
+      this.renderTask = task
+      void task.finally(() => {
+        if (this.renderTask !== task) return
+        this.renderTask = null
+        // A frame may arrive between drain completion and its cleanup.
+        if (generation === this.renderGeneration && (this.pendingKeyframe || this.pendingDelta)) {
+          this.startRenderTask()
+        }
+      })
+    },
 
-      const frameType = String(frame.frame_type || '').trim().toLowerCase()
-      if (frameType === 'keyframe') {
-        return this.renderKeyframe(frame, generation)
+    async drainFrames(generation) {
+      let renderedAny = false
+      while (generation === this.renderGeneration && (this.pendingKeyframe || this.pendingDelta)) {
+        const frame = this.pendingKeyframe || this.pendingDelta
+        const isKeyframe = frame.frame_type === 'keyframe'
+        if (isKeyframe) {
+          this.pendingKeyframe = null
+          this.decodingBaseSeq = Number(frame.seq)
+        } else {
+          this.pendingDelta = null
+        }
+
+        try {
+          const rendered = isKeyframe
+            ? await this.renderKeyframe(frame, generation)
+            : await this.renderDelta(frame, generation)
+          renderedAny = rendered || renderedAny
+        } catch (_) {
+          // A failed JPEG should not prevent the next valid frame from rendering.
+        }
+        if (generation !== this.renderGeneration) break
+        if (isKeyframe) this.decodingBaseSeq = 0
       }
-      if (frameType === 'delta') {
-        return this.renderDelta(frame, generation)
-      }
-      return false
+      return renderedAny
     },
 
     async renderKeyframe(frame, generation) {
@@ -64,11 +120,11 @@ export default {
       if (!width || !height || !seq || !frame.frame) return false
 
       const image = await this.decodeJpeg(frame.frame)
-      if (generation !== this.renderGeneration) return false
+      if (generation !== this.renderGeneration ||
+          (this.pendingKeyframe && Number(this.pendingKeyframe.seq) > seq)) return false
 
       const canvas = this.$refs.canvas
       if (!canvas || !this.baseCanvas) return false
-
       canvas.width = width
       canvas.height = height
       this.baseCanvas.width = width
@@ -83,6 +139,7 @@ export default {
       context.clearRect(0, 0, width, height)
       context.drawImage(this.baseCanvas, 0, 0)
       this.baseSeq = seq
+      this.renderedSeq = seq
       return true
     },
 
@@ -97,7 +154,9 @@ export default {
       if (!frame.frame) return false
 
       const image = await this.decodeJpeg(frame.frame)
-      if (generation !== this.renderGeneration || baseSeq !== this.baseSeq) return false
+      if (generation !== this.renderGeneration || baseSeq !== this.baseSeq ||
+          this.pendingKeyframe ||
+          (this.pendingDelta && Number(this.pendingDelta.seq) > Number(frame.seq))) return false
 
       const patchX = Number(frame.patch_x || 0)
       const patchY = Number(frame.patch_y || 0)
@@ -108,10 +167,11 @@ export default {
       const context = canvas.getContext('2d')
       if (!context) return false
 
-      // 每个 Delta 都从固定 Keyframe 重建，确保中间 Delta 被丢弃也不会污染当前画面。
+      // Every Delta is relative to the fixed Keyframe, not the previous Delta.
       context.clearRect(0, 0, width, height)
       context.drawImage(this.baseCanvas, 0, 0)
       context.drawImage(image, patchX, patchY, patchWidth, patchHeight)
+      this.renderedSeq = Number(frame.seq)
       return true
     },
 

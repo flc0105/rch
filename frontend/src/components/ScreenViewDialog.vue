@@ -230,6 +230,7 @@ export default {
       screenError: '',
       frameStrategy: '',
       frameReady: false,
+      frameEpoch: 0,
       frameSrc: '',
       frameSeq: 0,
       frameWidth: 0,
@@ -389,6 +390,7 @@ export default {
       this.screenError = ''
       this.screenStatus = 'opening'
       this.frameStrategy = ''
+      this.frameEpoch += 1
       this.frameReady = false
       this.frameSrc = ''
       this.frameSeq = 0
@@ -400,6 +402,7 @@ export default {
       this.screenWsReady = false
       this.removeControlSafetyListeners()
       this.clearPointerMoveTimer()
+      this.lastPointerMoveSentAt = 0
       this.stopFallbackPolling()
       this.closeScreenSocket()
       this.$refs.deltaRenderer?.reset?.()
@@ -668,6 +671,7 @@ export default {
       } catch (_) {
         // Pointer capture is best-effort and does not affect screen viewing.
       }
+      this.flushPointerMove()
       this.sendScreenInput({
         action: 'mouse_down',
         button,
@@ -682,6 +686,7 @@ export default {
       const button = this.normalizePointerButton(event.button)
       if (point && button) {
         event.preventDefault()
+        this.flushPointerMove()
         this.sendScreenInput({
           action: 'mouse_up',
           button,
@@ -711,6 +716,7 @@ export default {
       const rawDelta = Number(event.deltaY || 0)
       if (!rawDelta) return
       const magnitude = Math.max(1, Math.min(5, Math.round(Math.abs(rawDelta) / 100) || 1))
+      this.flushPointerMove()
       this.sendScreenInput({
         action: 'mouse_wheel',
         x: point.x,
@@ -909,7 +915,7 @@ export default {
       this.pendingPointerMove = point
       const now = performance.now()
       const elapsed = now - Number(this.lastPointerMoveSentAt || 0)
-      const interval = 33
+      const interval = 16
       if (elapsed >= interval) {
         this.flushPointerMove()
         return
@@ -925,6 +931,7 @@ export default {
       if (!this.controlEnabled || !this.pendingPointerMove) return
       const point = this.pendingPointerMove
       this.pendingPointerMove = null
+      this.clearPointerMoveTimer()
       this.lastPointerMoveSentAt = performance.now()
       this.sendScreenInput({ action: 'mouse_move', x: point.x, y: point.y })
     },
@@ -952,6 +959,7 @@ export default {
         }
 
         ws.onmessage = (event) => {
+          if (this.screenWs !== ws) return
           let payload = null
           try {
             payload = JSON.parse(event.data || '{}')
@@ -962,17 +970,17 @@ export default {
         }
 
         ws.onerror = () => {
-          if (this.screenWs === ws) this.screenWsReady = false
+          if (this.screenWs !== ws) return
+          this.screenWsReady = false
           this.disableControl(false)
           if (this.userClosing) return
           this.startFallbackPolling()
         }
 
         ws.onclose = () => {
-          if (this.screenWs === ws) {
-            this.screenWs = null
-            this.screenWsReady = false
-          }
+          if (this.screenWs !== ws) return
+          this.screenWs = null
+          this.screenWsReady = false
           this.disableControl(false)
           if (!this.userClosing && this.visible && !['closed', 'error'].includes(this.screenStatus)) {
             this.startFallbackPolling()
@@ -1037,11 +1045,13 @@ export default {
 
       if (strategy === 'keyframe_delta') {
         this.frameSrc = ''
+        const epoch = this.frameEpoch
         this.$nextTick(() => {
+          if (epoch !== this.frameEpoch) return
           const renderResult = this.$refs.deltaRenderer?.applyFrame?.(frame)
           if (renderResult && typeof renderResult.then === 'function') {
             renderResult.then(rendered => {
-              if (rendered) this.frameReady = true
+              if (rendered && epoch === this.frameEpoch) this.frameReady = true
             })
           }
         })
@@ -1073,7 +1083,9 @@ export default {
           return
         }
         try {
-          const payload = await screenViewApi.pollScreenView(this.screenSessionId, this.frameSeq)
+          const sessionId = this.screenSessionId
+          const payload = await screenViewApi.pollScreenView(sessionId, this.frameSeq)
+          if (sessionId !== this.screenSessionId || this.userClosing || this.screenWsReady) return
           if (Array.isArray(payload.frames) && payload.frames.length) {
             this.applyScreenPayload({ type: 'frames', ...payload })
           } else if (payload.status) {
@@ -1129,6 +1141,7 @@ export default {
       this.screenStatus = 'idle'
       this.screenError = ''
       this.frameStrategy = ''
+      this.frameEpoch += 1
       this.frameReady = false
       this.frameSrc = ''
       this.frameSeq = 0
