@@ -165,19 +165,19 @@ Server 收到连接注册时，先记录最近设备并登记连接历史，然�
 
 ### 忘记设备与关闭连接
 
-下面三个动作不同：
+设备栏右键菜单区分连接与实例：
 
 | 用户操作 | 实现边界 |
 | --- | --- |
 | 隐藏连接或机器 | 修改设备视图偏好；不主动关闭 Socket |
-| Duplicate Connection | 向选中的在线 `client_id` 执行 `spawn_instance`，保留当前 Client，同时启动同一机器上的新 Client 实例 |
-| Restart Connection | 向选中的在线 `client_id` 执行 `relaunch_instance`；确认后启动替代 Client，并结束当前 Client |
-| Kill Connection / Disconnect | 向指定 `client_id` 的在线会话发起关闭控制；不是删除设备历史 |
-| Remove Connection / Forget | 按指定 Client/Machine 身份移除 Recent Devices 记录；如果目标仍在线，还会尝试结束会话并发布移除事件 |
+| Duplicate Instance | Reverse 在线时启动额外 Client 实例，保留当前实例 |
+| Restart Instance | Reverse 在线时确认并启动替代实例，结束当前实例 |
+| Reconnect | Bind 在线时关闭旧会话并重新拨号至原地址，保留 Client 进程 |
+| Disconnect | Bind 在线时只关闭当前 Socket 会话，保留监听进程 |
+| Kill Instance | Bind / Reverse 在线时通过独立 Session 控制终止 Client 实例 |
+| Remove Connection | 仅离线时可用；Bind 删除指定保存地址，Reverse 删除 Recent Devices 对应记录 |
 
-“忘记”不是全库级级联删除。当前 `remove_connection()` 删除的是匹配的最近设备缓存，**没有在同一操作中删除 `device_group_members`、`connection_sessions` 或执行历史**。为了避免已经发出的离线更新立刻重新插回刚删除的缓存，Recent Device Store 还维护进程内的 `_forgotten_machine_keys` 集合；同一机器之后再次出现非离线连接更新时，会解除该临时屏蔽并重新记录。
-
-如果要真正清除所有与某机器身份有关的历史信息，不能把界面上的 Remove 当成完整数据清除流程。
+Remove Connection 不结束进程，也不级联删除设备分组、Connection History、Activity、Artifact 或 Transfer 历史。Reverse 的最近设备记录移除后，再次收到该机器的新在线连接时会重新显示。Bind 保存地址删除后可通过 Connect to Client 重新建立并保存目标。服务端拒绝删除活动会话或正在拨号的 Bind 保存目标。
 
 ### Device Bar 组合筛选
 

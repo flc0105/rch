@@ -249,11 +249,10 @@
         <template v-if="contextMenuItem?.saved_bind_target">
           <button v-if="getConnectionDisplayState(contextMenuItem) === 'offline'"
             type="button" class="device-context-menu-item"
+            :disabled="!!lifecyclePending[contextMenuItem.client_id]"
             @click="triggerDeviceContextCommand('connect-saved')">Connect</button>
           <button type="button" class="device-context-menu-item"
             @click="triggerDeviceContextCommand('edit-saved')">Edit connection</button>
-          <button type="button" class="device-context-menu-item is-danger"
-            @click="triggerDeviceContextCommand('remove-saved')">Remove saved connection</button>
           <div class="device-context-menu-separator"></div>
         </template>
         <button
@@ -331,25 +330,38 @@
 
         <button
           type="button"
+          v-if="!isContextBind"
           class="device-context-menu-item"
           :disabled="!canRunContextConnectionCommand"
-          @click="triggerDeviceContextCommand('duplicate-connection')"
+          @click="triggerDeviceContextCommand('duplicate-instance')"
         >
-          Duplicate connection
+          Duplicate Instance
         </button>
 
         <button
           type="button"
-          class="device-context-menu-item is-danger"
+          v-if="!isContextBind"
+          class="device-context-menu-item"
           :disabled="!canRunContextConnectionCommand"
-          @click="triggerDeviceContextCommand('restart-connection')"
+          @click="triggerDeviceContextCommand('restart-instance')"
         >
-          Restart connection
+          Restart Instance
         </button>
 
         <button
+          v-if="isContextBind"
           type="button"
-          class="device-context-menu-item is-danger"
+          class="device-context-menu-item"
+          :disabled="!canRunContextConnectionCommand"
+          @click="triggerDeviceContextCommand('reconnect')"
+        >
+          Reconnect
+        </button>
+
+        <button
+          v-if="isContextBind"
+          type="button"
+          class="device-context-menu-item"
           :disabled="!canDisconnectContextConnection"
           @click="triggerDeviceContextCommand('disconnect')"
         >
@@ -359,10 +371,19 @@
         <button
           type="button"
           class="device-context-menu-item is-danger"
+          :disabled="!canRunContextConnectionCommand"
+          @click="triggerDeviceContextCommand('kill-instance')"
+        >
+          Kill Instance
+        </button>
+
+        <button
+          type="button"
+          class="device-context-menu-item is-danger"
           :disabled="!canRemoveContextConnection"
           @click="triggerDeviceContextCommand('remove-connection')"
         >
-          Remove connection
+          Remove Connection
         </button>
 
       </div>
@@ -376,6 +397,8 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { CirclePlus, ClockAlert, LockKeyhole, ShieldPlus } from '@lucide/vue'
 import {
   disconnectConnection as disconnectConnectionApi,
+  killInstance as killInstanceApi,
+  reconnectConnection as reconnectConnectionApi,
   removeConnection as removeConnectionApi,
   removeSavedBindTarget,
   sendCommand as sendCommandApi,
@@ -448,6 +471,7 @@ export default {
     'connect-saved-target',
     'edit-saved-target',
     'saved-target-removed',
+    'connection-reconnected',
     'select',
     'toggle-hidden-devices',
     'toggle-offline-devices',
@@ -460,7 +484,6 @@ export default {
     'rename-machine',
     'open-connection-history',
     'connection-removed',
-    'connection-remove-failed',
   ],
 
   data() {
@@ -470,6 +493,7 @@ export default {
       contextMenuVisible: false,
       contextMenuClientId: '',
       contextMenuItem: null,
+      lifecyclePending: {},
       contextMenuX: 0,
       contextMenuY: 0,
       contextGroupMenuVisible: false,
@@ -527,12 +551,16 @@ computed: {
     }
   },
 
+  isContextBind() {
+    return this.contextMenuItem?.connection_direction === 'bind'
+  },
+
   canRunContextConnectionCommand() {
     if (!this.contextMenuItem || !this.contextMenuItem.client_id) {
       return false
     }
 
-    return this.getConnectionDisplayState(this.contextMenuItem) !== 'offline'
+    return !this.lifecyclePending[this.contextMenuItem.client_id] && this.getConnectionDisplayState(this.contextMenuItem) !== 'offline'
   },
 
   canDisconnectContextConnection() {
@@ -540,7 +568,10 @@ computed: {
   },
 
   canRemoveContextConnection() {
-    return Boolean(this.contextMenuItem && this.contextMenuItem.client_id)
+    const item = this.contextMenuItem
+    return Boolean(item && !this.lifecyclePending[item.client_id]
+      && this.getConnectionDisplayState(item) === 'offline'
+      && (this.isContextBind ? item.bind_target_id : item.client_id))
   },
 
   contextMachineGroupId() {
@@ -836,18 +867,6 @@ async triggerDeviceContextCommand(command) {
     this.$emit('edit-saved-target', item.saved_bind_target)
     return
   }
-  if (command === 'remove-saved') {
-    try {
-      await ElMessageBox.confirm('Remove this saved connection?', 'Remove saved connection', { type: 'warning' })
-      await removeSavedBindTarget(item.bind_target_id)
-      this.$emit('saved-target-removed')
-      ElMessage.success('Saved connection removed')
-    } catch (error) {
-      if (error !== 'cancel' && error !== 'close') ElMessage.error(error.message || 'Unable to remove saved connection')
-    }
-    return
-  }
-
   if (command === 'rename-machine') {
     this.$emit('rename-machine', item)
     return
@@ -868,18 +887,18 @@ async triggerDeviceContextCommand(command) {
     return
   }
 
-  if (command === 'duplicate-connection') {
-    await this.runConnectionSessionCommand(item, 'spawn_instance', 'Duplicate connection command submitted')
+  if (command === 'duplicate-instance') {
+    await this.runConnectionSessionCommand(item, 'spawn_instance', 'Duplicate instance command submitted')
     return
   }
 
-  if (command === 'restart-connection') {
+  if (command === 'restart-instance') {
     await this.runConnectionSessionCommand(item, 'relaunch_instance', 'Restart command submitted')
     return
   }
 
-  if (command === 'disconnect') {
-    await this.disconnectConnection(item)
+  if (command === 'reconnect' || command === 'kill-instance' || command === 'disconnect') {
+    await this.runLifecycleAction(item, command)
     return
   }
 
@@ -912,92 +931,61 @@ async runConnectionSessionCommand(item, command, successMessage) {
   }
 },
 
-async disconnectConnection(item) {
+async runLifecycleAction(item, action) {
   const clientId = String(item?.client_id || '').trim()
-
-  if (!clientId) {
-    ElMessage.warning('Invalid connection')
-    return
+  if (!clientId || this.lifecyclePending[clientId] || this.getConnectionDisplayState(item) === 'offline') return
+  const actions = {
+    reconnect: { label: 'Reconnect', api: reconnectConnectionApi, success: 'Reconnected' },
+    disconnect: { label: 'Disconnect', api: disconnectConnectionApi, success: 'Disconnected' },
+    'kill-instance': { label: 'Kill Instance', api: killInstanceApi, success: 'Kill instance request sent' },
   }
-
-  if (this.getConnectionDisplayState(item) === 'offline') {
-    ElMessage.warning('This connection is already offline')
-    return
-  }
-
-  const deviceName = this.formatDeviceName(item)
-
+  const selected = actions[action]
+  if (!selected) return
+  this.lifecyclePending[clientId] = true
   try {
     await ElMessageBox.confirm(
-      `Disconnect "${deviceName}"?`,
-      'Disconnect Connection',
-      {
-        type: 'warning',
-        confirmButtonText: 'Disconnect',
-        cancelButtonText: 'Cancel',
-        confirmButtonClass: 'el-button--danger',
-      },
+      `${selected.label} "${this.formatDeviceName(item)}"?`, selected.label,
+      { type: 'warning', confirmButtonText: selected.label, cancelButtonText: 'Cancel',
+        ...(action === 'kill-instance' ? { confirmButtonClass: 'el-button--danger' } : {}) },
     )
-
-    const result = await disconnectConnectionApi(clientId)
-    ElMessage.success(result?.mode === 'bind' ? 'Disconnected' : 'Disconnect request sent')
+    const result = await selected.api(clientId)
+    ElMessage.success(selected.success)
+    if (action === 'reconnect') this.$emit('connection-reconnected', result.client_id)
+    else this.$emit('refresh')
   } catch (e) {
-    if (e === 'cancel' || e === 'close' || e?.message === 'cancel') {
-      return
-    }
-
-    ElMessage.error(e.message || 'Failed to disconnect connection')
+    if (e === 'cancel' || e === 'close' || e?.message === 'cancel') return
+    ElMessage.error(e.message || `Failed to ${selected.label.toLowerCase()}`)
+    this.$emit('refresh')
+  } finally {
+    delete this.lifecyclePending[clientId]
   }
 },
 
 async removeConnectionPermanently(item) {
   const clientId = String(item?.client_id || '').trim()
-
-  if (!clientId) {
-    ElMessage.warning('Invalid connection')
-    return
-  }
-
   const machineId = String(item?.machine_id || '').trim()
+  const isBind = item?.connection_direction === 'bind'
+  const key = isBind ? item.bind_target_id : clientId
+  if (!key || this.getConnectionDisplayState(item) !== 'offline' || this.lifecyclePending[clientId]) return
   const deviceName = this.formatDeviceName(item)
-  const isOffline = this.getConnectionDisplayState(item) === 'offline'
-
   try {
     await ElMessageBox.confirm(
-      isOffline
-        ? `Remove "${deviceName}" from recent devices?`
-        : `Remove "${deviceName}"? The session will be disconnected and the connection will be removed from recent devices.`,
+      isBind ? `Remove the saved address for "${deviceName}"?` : `Remove "${deviceName}" from recent devices?`,
       'Remove Connection',
-      {
-        type: 'warning',
-        confirmButtonText: 'Remove Connection',
-        cancelButtonText: 'Cancel',
-        confirmButtonClass: 'el-button--danger',
-      },
+      { type: 'warning', confirmButtonText: 'Remove Connection', cancelButtonText: 'Cancel',
+        confirmButtonClass: 'el-button--danger' },
     )
-
-    const removedPayload = {
-      client_id: clientId,
-      machine_id: machineId,
+    if (isBind) {
+      await removeSavedBindTarget(key)
+      this.$emit('saved-target-removed')
+    } else {
+      await removeConnectionApi(clientId, { machine_id: machineId })
+      this.$emit('connection-removed', { client_id: clientId, machine_id: machineId })
     }
-
-    // Optimistically remove it from the sidebar immediately after confirmation.
-    // loadConnections/upsertConnection will also suppress it while the backend delete is in flight.
-    this.$emit('connection-removed', removedPayload)
-
-    await removeConnectionApi(clientId, { machine_id: machineId })
-
     ElMessage.success('Connection removed')
   } catch (e) {
-    if (e === 'cancel' || e === 'close' || e?.message === 'cancel') {
-      return
-    }
-
-    this.$emit('connection-remove-failed', {
-      client_id: clientId,
-      machine_id: machineId,
-    })
-
+    if (e === 'cancel' || e === 'close' || e?.message === 'cancel') return
+    this.$emit('refresh')
     ElMessage.error(e.message || 'Failed to remove connection')
   }
 },

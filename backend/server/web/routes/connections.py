@@ -67,6 +67,18 @@ def create_connections_blueprint(server_instance):
             default_error_status=400,
         )
 
+    @blueprint.post('/api/connections/<client_id>/kill-instance')
+    def kill_instance(client_id):
+        return responder.json_endpoint(
+            lambda: connection_api.kill_instance(client_id), default_error_status=400,
+        )
+
+    @blueprint.post('/api/connections/<client_id>/reconnect')
+    def reconnect_connection(client_id):
+        return responder.json_endpoint(
+            lambda: connection_api.reconnect_connection(client_id), default_error_status=400,
+        )
+
     @blueprint.get('/api/connections/<client_id>/task')
     def get_connection_task(client_id):
         return responder.json_endpoint(

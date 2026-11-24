@@ -1,4 +1,5 @@
 """Loopback Bind TCP A-stage tests using real TCP, without Web/UI dependencies."""
+import os
 import json
 import socket
 import threading
@@ -350,17 +351,24 @@ def test_real_client_execution_over_bind_socket_and_session_reconnect(monkeypatc
         assert _wait_for(lambda: any(item.get('type') == 'result' and item.get('id') == 101
                                      for item in first.received), timeout=5)
         assert not errors, repr(errors)
-        assert connector.disconnect(fake.client_id) == fake.client_id
-        assert _wait_for(lambda: first not in server.connections)
-        assert _wait_for(lambda: fake.connection_lifecycle._bind_listener is not None
-                         and not fake.connection_lifecycle._bind_listener._occupied)
-        second = connector.connect('127.0.0.1', port)
+        first.saved_bind_target_id = 'saved-target'
+        original_listener = fake.connection_lifecycle._bind_listener
+        second = connector.reconnect(fake.client_id)
+        assert first not in server.connections
+        assert fake.connection_lifecycle._bind_listener is original_listener
+        assert second.saved_bind_target_id == 'saved-target'
+        assert first.context.server_disconnect_request['command'] == 'disconnect'
         assert second is not first
         assert second.session_info.client_id == fake.client_id
         second.transport.send({'type': 'command', 'id': 102, 'text': 'getpid'})
         assert _wait_for(lambda: any(item.get('type') == 'result' and item.get('id') == 102
                                      for item in second.received), timeout=5)
         assert not errors, repr(errors)
+        original_pid = next(item['message'] for item in first.received
+                            if item.get('type') == 'result' and item.get('id') == 101)
+        reconnected_pid = next(item['message'] for item in second.received
+                               if item.get('type') == 'result' and item.get('id') == 102)
+        assert original_pid == reconnected_pid == str(os.getpid())
         connector.disconnect(fake.client_id)
     finally:
         stopped.set()

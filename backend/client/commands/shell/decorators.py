@@ -1,5 +1,7 @@
 """Registration metadata for ordinary Client shell-like commands."""
 
+from functools import wraps
+
 from core.command_completion.models import CompletionSpec
 from core.platform.normalization import normalize_platform_alias
 
@@ -47,3 +49,16 @@ def supports_shell_platform(handler, platform):
     """Return whether an exported Shell command is enabled on this Client."""
     supported = getattr(handler, 'command_platforms', None)
     return supported is None or normalize_platform_alias(platform) in supported
+
+
+def reverse_only(message):
+    """Reject instance operations unsupported by a fixed-port Bind listener before confirmation."""
+    def decorate(handler):
+        @wraps(handler)
+        def guarded(self, *args, **kwargs):
+            from client.config.config import RUNTIME_CONFIG
+            if RUNTIME_CONFIG.get('connection_mode') == 'bind':
+                return 0, message
+            return handler(self, *args, **kwargs)
+        return guarded
+    return decorate

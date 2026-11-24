@@ -107,13 +107,13 @@
         @connect-saved-target="connectSavedBindTarget"
         @edit-saved-target="$refs.connectToClientDialogRef?.open($event)"
         @saved-target-removed="loadConnections"
+        @connection-reconnected="handleBindClientConnected"
         @manage-groups="openDeviceGroupManagerDialog"
         @reorder-devices="$refs.deviceOrderDialogRef?.open()"
         @assign-machine-group="assignMachineGroupFromSidebar"
         @rename-machine="renameMachineFromSidebar"
         @open-connection-history="openMachineConnectionHistory"
         @connection-removed="forgetConnectionFromDeviceView"
-        @connection-remove-failed="restoreConnectionFromDeviceView"
       />
 
       <main class="main panel">

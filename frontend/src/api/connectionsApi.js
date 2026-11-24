@@ -35,6 +35,14 @@ export function disconnectConnection(clientId) {
   return apiData(`/api/connections/${encodeURIComponent(clientId)}/disconnect`, jsonRequestOptions('POST'), {})
 }
 
+export function killInstance(clientId) {
+  return apiData(`/api/connections/${encodeURIComponent(clientId)}/kill-instance`, jsonRequestOptions('POST'), {})
+}
+
+export function reconnectConnection(clientId) {
+  return apiData(`/api/connections/${encodeURIComponent(clientId)}/reconnect`, jsonRequestOptions('POST'), {})
+}
+
 export function reorderOnlineDevices(machineIds) {
   return apiFetch('/api/machines/order', jsonRequestOptions('PATCH', { machine_ids: machineIds }))
 }

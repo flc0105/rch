@@ -278,6 +278,32 @@ class WebConnectionService:
         session.request_disconnect()
         return {'client_id': client_id, 'mode': 'reverse'}
 
+    def kill_instance(self, client_id: str):
+        session = self.server.get_target_connection_by_client_id(client_id)
+        session.request_disconnect()
+        return {'client_id': client_id}
+
+    def reconnect_connection(self, client_id: str, bind_connector):
+        session = self.server.get_target_connection_by_client_id(client_id)
+        if getattr(session, 'listener_protocol', '') != 'bind_tcp':
+            raise ValueError('Reconnect is only available for Bind connections')
+        replacement = bind_connector.reconnect(client_id)
+        return {'client_id': replacement.session_info.client_id,
+                'target_id': getattr(replacement, 'saved_bind_target_id', ''),
+                'status': 'connected'}
+
+    def remove_saved_connection(self, target_id, saved_store, bind_connector):
+        target = next((item for item in saved_store.list_targets()
+                       if item['target_id'] == target_id), None)
+        if target is None:
+            raise ValueError('Saved connection not found')
+        def remove():
+            if any(getattr(session, 'saved_bind_target_id', '') == target_id
+                   for session in self.server.connections.all()):
+                raise ValueError('Disconnect the connection before removing it')
+            return saved_store.remove(target_id)
+        return bind_connector.run_if_offline(target['host'], target['port'], remove, target_id=target_id)
+
     def get_system_paths(self, client_id: str):
         session = self.server.get_target_connection_by_client_id(str(client_id or '').strip())
         return session.session_info.system_paths
@@ -410,70 +436,42 @@ class WebConnectionService:
     def remove_connection(self, client_id: str, machine_id: str = '') -> dict:
         target_client_id = str(client_id or '').strip()
         target_machine_id = str(machine_id or '').strip()
-
         if not target_client_id:
             raise ValueError('Invalid client id')
 
-        session = None
-        was_online = False
-
-        try:
-            session = self.server.connections.get_by_client_id(target_client_id)
-            was_online = True
-        except Exception:
-            session = None
-
-        if session is not None:
-            try:
-                payload = self.serialize_connection(session)
-                target_machine_id = target_machine_id or str(payload.get('machine_id') or '').strip()
-            except Exception:
-                pass
-
-        recent_result = {
-            'removed_count': 0,
-            'removed_keys': [],
-        }
-
         if self.recent_device_store:
-            recent_result = self.recent_device_store.remove_by_identity(
-                client_id=target_client_id,
-                machine_id=target_machine_id,
+            record = next((item for item in self.recent_device_store.list_recent_devices()
+                           if str(item.get('client_id') or '') == target_client_id), None)
+            if record:
+                recorded_machine_id = str(record.get('machine_id') or '')
+                if target_machine_id and self._machine_key(target_machine_id) != self._machine_key(recorded_machine_id):
+                    raise ValueError('Connection identity does not match')
+                target_machine_id = recorded_machine_id
+
+        def remove():
+            if not self.recent_device_store:
+                return {'removed_count': 0, 'removed_keys': []}
+            return self.recent_device_store.remove_by_identity(
+                client_id=target_client_id, machine_id=target_machine_id,
             )
 
-        if session is not None:
-            try:
-                session.request_disconnect()
-            except Exception:
-                pass
+        # An offline Reverse row represents a machine's most recent session.
+        # Guard both identities; a newer live Reverse session must not be forgotten.
+        def matches(session):
+            info = session.session_info
+            return (str(info.client_id) == target_client_id or
+                    (getattr(session, 'listener_protocol', '') != 'bind_tcp'
+                     and bool(target_machine_id)
+                     and self._machine_key(info.machine_id) == self._machine_key(target_machine_id)))
 
-            try:
-                session.close()
-            except Exception:
-                pass
-
-            try:
-                self.server.connections.remove(session)
-            except Exception:
-                pass
-
-            try:
-                self.event_bus.publish('connection_removed', {
-                    'client_id': target_client_id,
-                    'machine_id': target_machine_id,
-                    'time': datetime.now().isoformat(),
-                })
-            except Exception:
-                pass
-
+        recent_result = self.server.connections.run_if_no_matching(matches, remove)
         return {
             'client_id': target_client_id,
             'machine_id': target_machine_id,
-            'was_online': was_online,
+            'was_online': False,
             'recent_removed_count': recent_result.get('removed_count', 0),
             'recent_removed_keys': recent_result.get('removed_keys', []),
         }
-
 
     def update_connection_device_view_prefs(self, client_id: str = '', machine_id: str = '', patch: dict = None) -> dict:
         if not self.recent_device_store:

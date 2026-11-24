@@ -42,6 +42,13 @@ class ConnectionManager:
             callback()
             return True
 
+    def run_if_no_matching(self, predicate, callback):
+        """Serialize offline-record removal with active-session registration."""
+        with self._lock:
+            if any(predicate(session) for session in self.all()):
+                raise ValueError('Disconnect the connection before removing it')
+            return callback()
+
     def remove(self, conn):
         with self._lock:
             client_id = getattr(getattr(conn, 'session_info', None), 'client_id', '')

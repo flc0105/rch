@@ -36,10 +36,18 @@ class WebConnectionApi:
         )
 
     def remove_bind_target(self, target_id):
-        return self.saved_bind_target_store.remove(target_id)
+        return self.connection_service.remove_saved_connection(
+            target_id, self.saved_bind_target_store, self.bind_connector,
+        )
 
     def disconnect_connection(self, client_id: str):
         return self.connection_service.disconnect_connection(client_id, self.bind_connector)
+
+    def kill_instance(self, client_id: str):
+        return self.connection_service.kill_instance(client_id)
+
+    def reconnect_connection(self, client_id: str):
+        return self.connection_service.reconnect_connection(client_id, self.bind_connector)
 
     def get_connections_payload(self):
         return self.connection_service.get_connections_payload()

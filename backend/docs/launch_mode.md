@@ -177,7 +177,7 @@ IDE (PyCharm)
 
 ### 7.4 Detached
 
-最直接的项目内测试是对现有在线 Client 使用 **Duplicate connection** 或 **Restart connection**。新进程预期：
+最直接的项目内测试是对现有在线 Reverse Client 使用 **Duplicate Instance** 或 **Restart Instance**。新进程预期：
 
 ```text
 Detached (new session)
@@ -371,7 +371,7 @@ PyCharm 内置 Terminal 中手动运行则应显示 Terminal，而不是 IDE。
 
 ### 9.5 Detached
 
-使用 RCH **Duplicate connection / Restart connection** 创建新 Client，预期：
+使用 RCH Reverse 设备菜单的 **Duplicate Instance / Restart Instance** 创建新 Client，预期：
 
 ```text
 Detached (detached process)

@@ -107,7 +107,7 @@ python rchclient.py --profile bind
 python run_web.py
 ```
 
-浏览器打开 RCH → 左侧设备栏右上角 **More → Connect to Client** → 填写 Client IP 和端口 → **Connect**。连接成功后自动显示并选中该 Client；重复连接同一地址会复用仍然在线的会话。设备菜单 **Disconnect** 会关闭当前 Bind Session，Client 进程保留监听，可重新从 More 连接。
+浏览器打开 RCH → 左侧设备栏右上角 **More → Connect to Client** → 填写 Client IP 和端口 → **Connect**。连接成功后自动显示并选中该 Client；重复连接同一地址会复用仍然在线的会话。设备菜单 **Disconnect** 会关闭当前 Bind Session，Client 进程保留监听；**Reconnect** 直接关闭并重建当前会话。离线保存目标可通过 **Connect** 恢复连接，或使用 **Remove Connection** 删除该保存地址。
 
 同一个 Client 实例最多保持一条活动 Server Session。`pause_connection` 暂停接入，恢复后可重新主动连接。固定端口的 `update`、`spawn_instance`、`spawn_elevated_instance`、`relaunch_instance` 继续采用手工进程交接，避免同一端口冲突。Reverse TCP/TLS 仍是默认启动模式。
 

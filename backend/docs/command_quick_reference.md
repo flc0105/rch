@@ -134,9 +134,9 @@ Web Remote Files 的一次性文件管理 RPC 使用 `control(domain=remote_file
 | 命令 | 作用 | 注意 |
 |---|---|---|
 | `kill_instance` | 结束当前 Client 会话 / 实例 | 会使当前连接断开 |
-| `relaunch_instance` | 重新启动 Client 并尝试重新连接 | 依赖平台可以实际创建/交接新进程 |
+| `relaunch_instance` | 重新启动 Reverse Client 并尝试重新连接 | Bind 使用设备菜单 Reconnect；依赖平台支持进程交接 |
 | `reexec_instance` | 用当前程序替换进程并重启（macOS/Linux） | 属于影响连接的管理操作；Windows 不提供 |
-| `spawn_instance` | 启动额外的 Client 实例 | 可能形成多个连接及多实例资源占用 |
+| `spawn_instance` | 启动额外的 Reverse Client 实例 | Bind 不支持复制实例 |
 | `keyboard_send` | 向目标设备发送模拟键盘输入 | 依赖系统自动化权限及活动桌面会话 |
 
 Process UI 通过 Device Monitor 查询进程、应用和详情，通过 `control/process/kill` 终止进程。终端中需要**按条件查看或终止进程**时，优先使用下文 `acmd ps` / `acmd kill`，其中 `acmd kill` 提供目标选择和执行前预览。强制结束进程前应先确认设备、PID 及操作影响。

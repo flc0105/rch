@@ -243,19 +243,22 @@ export default {
         },
 
         isConnectionLocallyRemoved(item) {
-            if (!item) return false
-
+            if (!item || item.connection_direction === 'bind') return false
             const clientId = this.getConnectionClientId(item)
+            const machineId = this.getConnectionMachineId(item)
+            if (this.getConnectionDisplayState(item) !== 'offline') {
+                if (this.locallyRemovedConnections?.clientIds?.[clientId]
+                    || this.locallyRemovedConnections?.offlineMachineIds?.[machineId]) {
+                    this.clearConnectionLocallyRemoved(item)
+                }
+                return false
+            }
+
             if (clientId && this.locallyRemovedConnections?.clientIds?.[clientId]) {
                 return true
             }
 
-            const machineId = this.getConnectionMachineId(item)
-            if (
-                machineId &&
-                this.locallyRemovedConnections?.offlineMachineIds?.[machineId] &&
-                this.getConnectionDisplayState(item) === 'offline'
-            ) {
+            if (machineId && this.locallyRemovedConnections?.offlineMachineIds?.[machineId]) {
                 return true
             }
 
@@ -875,11 +878,6 @@ export default {
             }
 
             this.ensureSelectedConnectionVisible()
-        },
-
-        async restoreConnectionFromDeviceView(payload = {}) {
-            this.clearConnectionLocallyRemoved(payload)
-            await this.loadConnections()
         },
 
         getConnectionActivityTimeMs(item) {
