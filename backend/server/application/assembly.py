@@ -197,6 +197,8 @@ class ServerApplicationAssembly:
             remote_execution_service=self.remote_execution_service,
             job_catalog_service=self.job_catalog_service,
             server=self.server,
+            recent_device_store=self.recent_device_store,
+            connection_history_store=self.connection_history_store,
         )
         self.background_job_service = self.server.command_adapter.instrument(
             self.background_job_service, job_bindings())

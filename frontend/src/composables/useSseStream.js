@@ -466,6 +466,8 @@ export default {
                                 await this.$refs.backgroundJobsDialogRef?.refreshRemoteFilePickerDirectory(refreshPath);
                             } else if (pendingRefresh.source === 'external_tool_remote_file_picker') {
                                 await this.$refs.externalToolManagerDialogRef?.loadRemoteFilePickerDirectory(refreshPath);
+                            } else if (pendingRefresh.source === 'remote_files_destination_picker') {
+                                await this.$refs.remoteFilesDialogRef?.refreshDestinationPickerDirectory(refreshClientId, refreshPath);
                             } else if (pendingRefresh.source === 'remote_file_picker') {
                                 await this.$refs.scriptLibraryDialogRef?.refreshRemoteFilePickerDirectory(refreshPath);
                             } else if (this.remoteFilesDialogVisible) {

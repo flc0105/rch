@@ -1,7 +1,8 @@
 import os
 import sqlite3
 import threading
-from contextlib import contextmanager
+from itertools import count
+from contextlib import closing, contextmanager
 
 
 SAVED_BIND_TARGETS_SCHEMA = """CREATE TABLE saved_bind_targets (
@@ -21,6 +22,75 @@ SAVED_BIND_TARGETS_SCHEMA = """CREATE TABLE saved_bind_targets (
                 last_client_id TEXT NOT NULL DEFAULT '',
                 UNIQUE(host, port)
             )"""
+
+# Canonical domain tables that can also be initialized idempotently in an
+# existing database. Schema ownership belongs exclusively to persistence.
+ADDITIONAL_SCHEMA_STATEMENTS = (
+    """CREATE TABLE IF NOT EXISTS activity_records (
+                activity_id TEXT PRIMARY KEY,
+                machine_id TEXT NOT NULL,
+                client_id TEXT NOT NULL DEFAULT '',
+                kind TEXT NOT NULL,
+                action TEXT NOT NULL,
+                origin TEXT NOT NULL,
+                presentation TEXT NOT NULL,
+                status TEXT NOT NULL,
+                invocation_json TEXT NOT NULL,
+                resolved_json TEXT NOT NULL,
+                result_json TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                started_at TEXT,
+                started_at_ms INTEGER NOT NULL,
+                finished_at TEXT,
+                references_json TEXT NOT NULL DEFAULT '[]',
+                summary TEXT NOT NULL DEFAULT '',
+                result_message_bytes INTEGER NOT NULL DEFAULT 0,
+                result_data_bytes INTEGER NOT NULL DEFAULT 0,
+                result_omitted INTEGER NOT NULL DEFAULT 0,
+                result_summary TEXT NOT NULL DEFAULT ''
+            )""",
+    """CREATE INDEX IF NOT EXISTS idx_activity_machine_time
+                ON activity_records(machine_id, started_at_ms DESC, activity_id DESC)""",
+    """CREATE INDEX IF NOT EXISTS idx_activity_machine_status
+                ON activity_records(machine_id, status, started_at_ms DESC)""",
+    """CREATE INDEX IF NOT EXISTS idx_activity_machine_kind
+                ON activity_records(machine_id, kind, started_at_ms DESC)""",
+    """CREATE INDEX IF NOT EXISTS idx_activity_client_time
+                ON activity_records(machine_id, client_id, started_at_ms DESC)""",
+    """CREATE TABLE IF NOT EXISTS keychain_entries (
+                cred_id TEXT PRIMARY KEY,
+                machine_id TEXT NOT NULL,
+                hostname TEXT NOT NULL,
+                kind TEXT NOT NULL CHECK(kind IN ('login', 'secret')),
+                name TEXT NOT NULL,
+                username TEXT NOT NULL DEFAULT '',
+                secret_ciphertext TEXT NOT NULL,
+                site TEXT NOT NULL DEFAULT '',
+                note TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )""",
+    """CREATE UNIQUE INDEX IF NOT EXISTS uq_keychain_machine_name
+                ON keychain_entries(machine_id, name COLLATE NOCASE)""",
+    """CREATE TABLE IF NOT EXISTS transfer_records (
+                transfer_id TEXT PRIMARY KEY,
+                client_id TEXT NOT NULL DEFAULT '',
+                hostname TEXT NOT NULL DEFAULT '',
+                direction TEXT NOT NULL,
+                filename TEXT NOT NULL DEFAULT '',
+                source_path TEXT NOT NULL DEFAULT '',
+                destination_path TEXT NOT NULL DEFAULT '',
+                state TEXT NOT NULL,
+                stage TEXT NOT NULL DEFAULT '',
+                total_bytes INTEGER,
+                transferred_bytes INTEGER NOT NULL DEFAULT 0,
+                artifact_id TEXT NOT NULL DEFAULT '',
+                error TEXT NOT NULL DEFAULT '',
+                started_at TEXT NOT NULL,
+                completed_at TEXT NOT NULL DEFAULT ''
+            )""",
+    """CREATE INDEX IF NOT EXISTS idx_transfer_records_time ON transfer_records(started_at DESC, transfer_id DESC)""",
+)
 
 # Canonical persisted schema. Database initialization never rewrites existing records.
 FINAL_SCHEMA_STATEMENTS = (
@@ -102,7 +172,7 @@ FINAL_SCHEMA_STATEMENTS = (
     'CREATE INDEX idx_pinned_commands_machine_order ON pinned_commands(machine_id, pin_order ASC)',
     'CREATE INDEX idx_pinned_paths_machine_name ON pinned_paths(machine_id, display_name COLLATE NOCASE)',
     'CREATE INDEX idx_recent_devices_last_seen ON recent_devices(last_seen_at DESC, recent_updated_at DESC)',
- )
+ ) + ADDITIONAL_SCHEMA_STATEMENTS
 
 
 class RchDatabase:
@@ -113,6 +183,7 @@ class RchDatabase:
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
         self._local = threading.local()
         self._schema_lock = threading.RLock()
+        self._savepoints = count()
         self._initialize_schema()
 
     def _new_connection(self) -> sqlite3.Connection:
@@ -143,17 +214,65 @@ class RchDatabase:
         finally:
             self._local.connection = None
 
+    def execute(self, sql: str, params=()) -> sqlite3.Cursor:
+        """Execute parameterized SQL on the current thread's connection."""
+        return self.connection().execute(sql, params)
+
+    def fetch_one(self, sql: str, params=()) -> sqlite3.Row | None:
+        return self.execute(sql, params).fetchone()
+
+    def fetch_all(self, sql: str, params=()) -> list[sqlite3.Row]:
+        return self.execute(sql, params).fetchall()
+
     @contextmanager
     def transaction(self):
+        """Own the outer write transaction, or a nested savepoint on the same connection.
+
+        Nested success never commits the outer transaction. Nested failure rolls
+        back only its own work and propagates the exception to the caller.
+        """
         conn = self.connection()
+        if getattr(self._local, 'read_snapshot', False):
+            raise RuntimeError('Cannot start a write transaction inside a read snapshot')
+        if conn.in_transaction:
+            name = f'rch_sp_{next(self._savepoints)}'
+            conn.execute(f'SAVEPOINT {name}')
+            try:
+                yield conn
+                conn.execute(f'RELEASE SAVEPOINT {name}')
+            except BaseException:
+                if conn.in_transaction:
+                    conn.execute(f'ROLLBACK TO SAVEPOINT {name}')
+                    conn.execute(f'RELEASE SAVEPOINT {name}')
+                raise
+            return
         conn.execute('BEGIN IMMEDIATE')
         try:
             yield conn
-        except Exception:
+            conn.commit()
+        except BaseException:
             conn.rollback()
             raise
-        else:
-            conn.commit()
+
+    @contextmanager
+    def read_snapshot(self):
+        """Keep related queries on one consistent SQLite snapshot without a write lock."""
+        conn = self.connection()
+        if conn.in_transaction:
+            yield conn
+            return
+        previous_query_only = conn.execute('PRAGMA query_only').fetchone()[0]
+        conn.execute('PRAGMA query_only = ON')
+        try:
+            conn.execute('BEGIN')
+            self._local.read_snapshot = True
+            try:
+                yield conn
+            finally:
+                conn.rollback()
+        finally:
+            self._local.read_snapshot = False
+            conn.execute(f'PRAGMA query_only = {int(previous_query_only)}')
 
     def integrity_check(self) -> str:
         row = self.connection().execute('PRAGMA integrity_check').fetchone()
@@ -170,25 +289,59 @@ class RchDatabase:
 
     @staticmethod
     def _schema_structure(conn, table_name):
-        """Compare durable columns, foreign keys and indexes, without SQL formatting noise."""
+        """Describe named fields and indexes, independent of physical column order."""
         quoted = '"' + table_name.replace('"', '""') + '"'
-        columns = tuple(tuple(row[1:]) for row in conn.execute(f'PRAGMA table_info({quoted})'))
+        columns = {
+            row[1]: (row[2].upper(), *row[3:])
+            for row in conn.execute(f'PRAGMA table_info({quoted})')
+        }
         foreign_keys = tuple(tuple(row[1:]) for row in conn.execute(f'PRAGMA foreign_key_list({quoted})'))
-        indexes = []
+        indexes = set()
         for index in conn.execute(f'PRAGMA index_list({quoted})'):
             index_name, unique, origin, partial = index[1:5]
             escaped_name = '"' + index_name.replace('"', '""') + '"'
-            definition = tuple(tuple(row[1:]) for row in conn.execute(f'PRAGMA index_xinfo({escaped_name})'))
-            indexes.append((index_name if origin == 'c' else origin,
-                            unique, origin, partial, definition))
-        return columns, foreign_keys, tuple(sorted(indexes, key=str))
+            # The cid is a physical position, not part of a named index key.
+            # Keep negative ids (rowid/expression) and the ordering of key terms.
+            definition = tuple(
+                (row[1] if row[1] < 0 else row[2], *row[2:])
+                for row in conn.execute(f'PRAGMA index_xinfo({escaped_name})')
+            )
+            indexes.add((index_name if origin == 'c' else origin,
+                         unique, origin, partial, definition))
+        return columns, foreign_keys, indexes
+
+    @classmethod
+    def _schema_differences(cls, conn, reference, table_name):
+        actual_columns, actual_fks, actual_indexes = cls._schema_structure(conn, table_name)
+        expected_columns, expected_fks, expected_indexes = cls._schema_structure(reference, table_name)
+        differences = []
+        missing = expected_columns.keys() - actual_columns.keys()
+        extra = actual_columns.keys() - expected_columns.keys()
+        changed = {name for name in expected_columns.keys() & actual_columns.keys()
+                   if expected_columns[name] != actual_columns[name]}
+        for label, names in (('missing columns', missing), ('unexpected columns', extra),
+                             ('changed column definitions', changed)):
+            if names:
+                differences.append(f'{label}: {", ".join(sorted(names))}')
+        if actual_fks != expected_fks:
+            differences.append('foreign key definitions differ')
+        missing_indexes = expected_indexes - actual_indexes
+        if missing_indexes:
+            differences.append('missing or changed indexes: ' + ', '.join(
+                sorted(index[0] for index in missing_indexes)))
+        # Additional ordinary indexes do not change the data contract. Additional
+        # unique indexes/constraints can reject otherwise valid Store writes.
+        unexpected_constraints = {index for index in actual_indexes - expected_indexes if index[1]}
+        if unexpected_constraints:
+            differences.append('unexpected unique indexes: ' + ', '.join(
+                sorted(index[0] for index in unexpected_constraints)))
+        return differences
 
     def _initialize_schema(self):
         with self._schema_lock:
             conn = self.connection()
             conn.execute('PRAGMA journal_mode = WAL')
-            conn.execute('BEGIN IMMEDIATE')
-            try:
+            with self.transaction():
                 existing_tables = {
                     row[0] for row in conn.execute(
                         "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
@@ -203,7 +356,7 @@ class RchDatabase:
                     for statement in FINAL_SCHEMA_STATEMENTS:
                         conn.execute(statement)
                 else:
-                    with sqlite3.connect(':memory:') as reference:
+                    with closing(sqlite3.connect(':memory:')) as reference:
                         for statement in FINAL_SCHEMA_STATEMENTS:
                             reference.execute(statement)
                         expected_tables = {
@@ -219,16 +372,17 @@ class RchDatabase:
                             row[1] for row in conn.execute('PRAGMA table_info(saved_bind_targets)')
                         }:
                             conn.execute("ALTER TABLE saved_bind_targets ADD COLUMN last_client_id TEXT NOT NULL DEFAULT ''")
-                        for table_name in expected_tables:
-                            if table_name not in existing_tables or (
-                                self._schema_structure(conn, table_name) !=
-                                self._schema_structure(reference, table_name)
-                            ):
+                        # Initialize the same canonical tables/indexes for all startup paths.
+                        for statement in ADDITIONAL_SCHEMA_STATEMENTS:
+                            conn.execute(statement)
+                        existing_tables.update(row[0] for row in conn.execute(
+                            "SELECT name FROM sqlite_master WHERE type='table'"))
+                        for table_name in sorted(expected_tables):
+                            differences = (['missing table'] if table_name not in existing_tables else
+                                           self._schema_differences(conn, reference, table_name))
+                            if differences:
                                 raise RuntimeError(
-                                    f'rch.db has incompatible schema for {table_name}; '
+                                    f'rch.db has incompatible schema for {table_name} '
+                                    f'({"; ".join(differences)}); '
                                     'back up the database and update it outside Server'
                                 )
-                conn.commit()
-            except Exception:
-                conn.rollback()
-                raise

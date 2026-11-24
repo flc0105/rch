@@ -2,7 +2,9 @@ async function callInteractionApi(url, options = {}) {
     const response = await fetch(url, { credentials: 'same-origin', ...options });
     const body = await response.json();
     if (!response.ok || body.code !== 0) {
-        throw new Error(body.message || `Interaction request failed (${response.status})`);
+        const error = new Error(body.message || `Interaction request failed (${response.status})`);
+        error.status = response.status;
+        throw error;
     }
     return body.data || {};
 }

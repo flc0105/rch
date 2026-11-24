@@ -4,6 +4,10 @@ import time
 import uuid
 
 
+class InteractionNotPendingError(ValueError):
+    """The request is no longer answerable."""
+
+
 class InteractionBroker:
     def __init__(self, event_bus, task_store):
         self.event_bus = event_bus
@@ -127,7 +131,8 @@ class InteractionBroker:
     def pending(self, tab_id):
         with self._lock:
             return [self._public(item) for item in self._pending.values()
-                    if item['tab_id'] == str(tab_id or '').strip() and not item['event'].is_set()]
+                    if item['tab_id'] == str(tab_id or '').strip() and item['status'] == 'pending'
+                    and not item['event'].is_set() and time.monotonic() < item['deadline']]
 
     def request(self, *, task_id, client_id, tab_id, kind, message, title='',
                 timeout_seconds=90, placeholder='', options=None, preview=None, is_active=None):
@@ -190,12 +195,12 @@ class InteractionBroker:
         with self._lock:
             item = self._pending.get(str(interaction_id or '').strip())
             if item is None or item['status'] != 'pending' or item['event'].is_set():
-                raise ValueError('Interaction not pending or already answered')
+                raise InteractionNotPendingError('Interaction not pending or already answered')
             if time.monotonic() >= item.get('deadline', 0):
-                raise ValueError('Interaction approval deadline has passed')
+                raise InteractionNotPendingError('Interaction approval deadline has passed')
             task = self.task_store.get_task(item['task_id'])
             if not task or task.get('status') != 'running':
-                raise ValueError('Interaction task is no longer running')
+                raise InteractionNotPendingError('Interaction task is no longer running')
             if approved:
                 if item['kind'] in ('input', 'secret', 'select'):
                     if not isinstance(value, str) or len(value) > 4096:

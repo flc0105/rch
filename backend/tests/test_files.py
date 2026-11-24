@@ -388,3 +388,69 @@ def test_file_shred_overwrites_exact_requested_passes_and_removes_only_target(tm
     assert execute(host, 'acmd file_shred sample.txt --passes 2')[0] == 1
     assert recorded == [bytes(3), bytes([255]) * 3]
     assert not sample.exists()
+
+
+@pytest.mark.parametrize('host_type', ['mac', 'win', 'ios'])
+def test_clipboard_clear_reuses_native_commit_and_rejects_text(host_type, tmp_path):
+    host = make_host(host_type)
+    adapter = Mock()
+    clipboard_manager(host, tmp_path, adapter)
+    assert execute(host, 'acmd clipboard_write --clear hello')[0] == 0
+    assert execute(host, 'acmd clipboard_write --clear --text "hello"')[0] == 0
+    adapter.clear.assert_not_called()
+    assert execute(host, 'acmd clipboard_write --clear') == (1, 'Clipboard cleared')
+    adapter.clear.assert_called_once_with()
+    adapter.set_text.assert_not_called()
+    adapter.clear.side_effect = OSError('Clipboard unavailable')
+    status, message = execute(host, 'acmd clipboard_write --clear')
+    assert status == 0 and 'Clipboard unavailable' in message
+
+
+def test_native_clipboard_clear_adapters(monkeypatch):
+    from client.clipboard.adapters.windows import WindowsClipboardAdapter
+    from client.clipboard.adapters.macos import MacOSClipboardAdapter
+    from client.clipboard.adapters.ios import iOSClipboardAdapter
+    from client.clipboard.adapters.unsupported import UnsupportedClipboardAdapter
+    native = Mock()
+    win = WindowsClipboardAdapter()
+    monkeypatch.setattr(win, '_imports', lambda: (Mock(), native, Mock(), Mock()))
+    win.clear()
+    native.EmptyClipboard.assert_called_once_with()
+    native.CloseClipboard.assert_called_once_with()
+    native.SetClipboardText.assert_not_called()
+    pasteboard = Mock()
+    mac = MacOSClipboardAdapter()
+    monkeypatch.setattr(mac, '_imports', lambda: (SimpleNamespace(generalPasteboard=lambda: pasteboard), None, None, None, None, None, None))
+    mac.clear()
+    pasteboard.clearContents.assert_called_once_with()
+    pasteboard.setString_forType_.assert_not_called()
+    ios_board = Mock()
+    monkeypatch.setitem(sys.modules, 'objc_util', SimpleNamespace(ObjCClass=lambda name: SimpleNamespace(generalPasteboard=lambda: ios_board), ns=lambda x: x, on_main_thread=lambda f: f))
+    iOSClipboardAdapter().clear()
+    ios_board.setItems_.assert_called_once_with([])
+    with pytest.raises(RuntimeError, match='not supported'):
+        UnsupportedClipboardAdapter('linux').clear()
+
+
+def test_direct_folder_creation_and_copy_move_reuse_existing_operations(tmp_path):
+    from client.runtime.filesystem.file_system_service import FileSystemService
+    from client.runtime.filesystem.path_resolver import PathResolver
+    service = FileSystemService(PathResolver())
+    source, dest = tmp_path / 'source', tmp_path / 'new folder'
+    service.create_directory(str(source))
+    service.create_directory(str(dest))
+    with pytest.raises(FileExistsError):
+        service.create_directory(str(dest))
+    file = source / 'a.txt'; file.write_text('original')
+    assert service.paste_paths([str(file)], str(dest), 'copy', policies=['stop']).succeeded == 1
+    assert file.read_text() == (dest / file.name).read_text()
+    assert service.paste_paths([str(file)], str(dest), 'move', inspect=True)['conflicts']
+    assert service.paste_paths([str(file)], str(dest), 'move', policies=['stop']).failed == 1
+    assert file.exists()
+    assert service.paste_paths([str(file)], str(dest), 'move', policies=['replace']).succeeded == 1
+    assert not file.exists()
+    folder = source / 'nested'; folder.mkdir(); (folder / 'b.txt').write_text('nested')
+    assert service.paste_paths([str(folder)], str(dest), 'copy', policies=['stop']).succeeded == 1
+    assert (dest / 'nested' / 'b.txt').read_text() == 'nested'
+    assert service.paste_paths([str(source)], str(folder), 'move', policies=['replace']).failed == 1
+    assert source.exists()

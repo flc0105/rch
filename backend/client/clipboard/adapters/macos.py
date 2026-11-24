@@ -103,6 +103,10 @@ class MacOSClipboardAdapter:
 
         return {'kind': 'empty'}
 
+    def clear(self):
+        NSPasteboard, *_ = self._imports()
+        NSPasteboard.generalPasteboard().clearContents()
+
     def set_text(self, text: str):
         NSPasteboard, _, NSPasteboardTypeString, _, _, _, _ = self._imports()
         pasteboard = NSPasteboard.generalPasteboard()

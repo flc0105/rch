@@ -30,7 +30,7 @@ class PinnedCommandStore:
         return copied
 
     def get_items(self, machine_id: str) -> list:
-        rows = self.database.connection().execute(
+        rows = self.database.fetch_all(
             '''
             SELECT command, pinned_at, pin_order, snapshot_json
             FROM pinned_commands
@@ -38,7 +38,7 @@ class PinnedCommandStore:
             ORDER BY pin_order ASC, pinned_at ASC, command ASC
             ''',
             (str(machine_id or '').strip() or 'unknown_machine',),
-        ).fetchall()
+        )
         return [
             {
                 'command': row['command'],
@@ -58,49 +58,48 @@ class PinnedCommandStore:
         if not command_text:
             return False
 
-        conn = self.database.connection()
-        existing = conn.execute(
-            'SELECT command, snapshot_json FROM pinned_commands WHERE machine_id = ? AND command = ?',
-            (machine_id_text, command_text),
-        ).fetchone()
-
-        if not bool(is_pinned):
-            if existing is None:
-                return False
-            conn.execute(
-                'DELETE FROM pinned_commands WHERE machine_id = ? AND command = ?',
+        with self.database.transaction() as conn:
+            existing = conn.execute(
+                'SELECT command, snapshot_json FROM pinned_commands WHERE machine_id = ? AND command = ?',
                 (machine_id_text, command_text),
-            )
-            self._normalize_orders(machine_id_text)
-            return True
-
-        snapshot = self._sanitize_snapshot(seed_entry, command_text)
-        if existing is None:
-            row = conn.execute(
-                'SELECT COALESCE(MAX(pin_order), 0) FROM pinned_commands WHERE machine_id = ?',
-                (machine_id_text,),
             ).fetchone()
-            next_order = int(row[0] if row else 0) + 1
-            conn.execute(
-                '''
-                INSERT INTO pinned_commands(machine_id, command, pinned_at, pin_order, snapshot_json)
-                VALUES (?, ?, ?, ?, ?)
-                ''',
-                (machine_id_text, command_text, self._now_text(), next_order, compact_json_dumps(snapshot or {})),
-            )
-            return True
 
-        current_snapshot = json_loads_dict(existing['snapshot_json'])
-        if snapshot and snapshot != current_snapshot:
-            conn.execute(
-                'UPDATE pinned_commands SET snapshot_json = ? WHERE machine_id = ? AND command = ?',
-                (compact_json_dumps(snapshot or {}), machine_id_text, command_text),
-            )
-            return True
-        return False
+            if not bool(is_pinned):
+                if existing is None:
+                    return False
+                conn.execute(
+                    'DELETE FROM pinned_commands WHERE machine_id = ? AND command = ?',
+                    (machine_id_text, command_text),
+                )
+                self._normalize_orders(conn, machine_id_text)
+                return True
 
-    def _normalize_orders(self, machine_id: str):
-        conn = self.database.connection()
+            snapshot = self._sanitize_snapshot(seed_entry, command_text)
+            if existing is None:
+                row = conn.execute(
+                    'SELECT COALESCE(MAX(pin_order), 0) FROM pinned_commands WHERE machine_id = ?',
+                    (machine_id_text,),
+                ).fetchone()
+                next_order = int(row[0] if row else 0) + 1
+                conn.execute(
+                    '''
+                    INSERT INTO pinned_commands(machine_id, command, pinned_at, pin_order, snapshot_json)
+                    VALUES (?, ?, ?, ?, ?)
+                    ''',
+                    (machine_id_text, command_text, self._now_text(), next_order, compact_json_dumps(snapshot or {})),
+                )
+                return True
+
+            current_snapshot = json_loads_dict(existing['snapshot_json'])
+            if snapshot and snapshot != current_snapshot:
+                conn.execute(
+                    'UPDATE pinned_commands SET snapshot_json = ? WHERE machine_id = ? AND command = ?',
+                    (compact_json_dumps(snapshot or {}), machine_id_text, command_text),
+                )
+                return True
+            return False
+
+    def _normalize_orders(self, conn, machine_id: str):
         rows = conn.execute(
             '''SELECT command FROM pinned_commands WHERE machine_id = ?
                ORDER BY pin_order ASC, pinned_at ASC, command ASC''',
@@ -121,17 +120,17 @@ class PinnedCommandStore:
         if direction_text not in ('up', 'down'):
             raise ValueError('direction must be up or down')
 
-        items = self.get_items(machine_id_text)
-        current_index = next((i for i, item in enumerate(items) if item['command'] == command_text), -1)
-        if current_index < 0:
-            raise ValueError('Only pinned commands can be moved')
-
-        target_index = current_index - 1 if direction_text == 'up' else current_index + 1
-        if target_index < 0 or target_index >= len(items):
-            return False
-
-        items[current_index], items[target_index] = items[target_index], items[current_index]
         with self.database.transaction() as conn:
+            items = self.get_items(machine_id_text)
+            current_index = next((i for i, item in enumerate(items) if item['command'] == command_text), -1)
+            if current_index < 0:
+                raise ValueError('Only pinned commands can be moved')
+
+            target_index = current_index - 1 if direction_text == 'up' else current_index + 1
+            if target_index < 0 or target_index >= len(items):
+                return False
+
+            items[current_index], items[target_index] = items[target_index], items[current_index]
             for index, item in enumerate(items, start=1):
                 conn.execute(
                     'UPDATE pinned_commands SET pin_order = ? WHERE machine_id = ? AND command = ?',

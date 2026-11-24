@@ -24,12 +24,13 @@ CLIPBOARD_READ_SPEC = ArgumentCommandSpec(
 
 CLIPBOARD_WRITE_SPEC = ArgumentCommandSpec(
     name='clipboard_write',
-    description='Write clipboard text',
+    description='Write clipboard text or clear the clipboard',
     options=[
         ArgumentOptionSpec('text', 'str', help_text='Text to write. Quote multi-word values after --text.'),
+        ArgumentOptionSpec('clear', 'flag', default=False, help_text='Clear all clipboard contents'),
         ArgumentOptionSpec('help', 'flag', default=False, help_text='Show this help message'),
     ],
-    examples=['acmd clipboard_write hello world', 'acmd clipboard_write --text "hello world"'],
+    examples=['acmd clipboard_write hello world', 'acmd clipboard_write --text "hello world"', 'acmd clipboard_write --clear'],
 )
 
 
@@ -107,6 +108,9 @@ def clipboard_read(self, args_dict):
 def clipboard_write(self, args_dict):
     text = args_dict['text']
     words = args_dict.get('_args') or []
+    clear = args_dict['clear']
+    if clear and (text is not None or words):
+        return 0, '--clear cannot be combined with text.'
     if text is not None and words:
         return 0, 'Quote the complete value after --text, or use only positional text.'
     if text is None:
@@ -117,9 +121,10 @@ def clipboard_write(self, args_dict):
     if manager is None:
         return 0, 'Clipboard disabled on Client'
     try:
-        status, result = manager.execute(self, ClipboardAction.SET, {'kind': 'text', 'text': text})
+        payload = {'kind': 'empty'} if clear else {'kind': 'text', 'text': text}
+        status, result = manager.execute(self, ClipboardAction.SET, payload)
         if status:
-            return 1, 'Clipboard updated'
+            return 1, 'Clipboard cleared' if clear else 'Clipboard updated'
         return 0, f"Failed to write clipboard: {result['message']}"
     except (CommandCancelledError, CommandTimeoutError):
         raise

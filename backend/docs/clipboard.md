@@ -23,6 +23,8 @@ Get 包含查询支持能力与读取当前内容两种请求；Send 则按 `kin
 
 一次读取返回的是当前识别到的**一种**剪贴板内容，而不是把操作系统所支持的全部格式同时导出。打开 Clipboard 默认进入 Get 并读取内容；Toolbar 上的 Clipboard 悬浮菜单可直接选择 **Get** 或 **Send**，进入对应标签页。Clipboard 位于 More 时仍使用普通入口。点击 Refresh 或重新切回 Get 会重新读取。
 
+Python Client 的 `acmd clipboard_write --clear` 使用原生剪贴板清空操作，移除当前文本、图片及文件引用。`--clear` 不可与 `--text` 或位置文本参数同时使用；操作与其它剪贴板读写共用互斥及提交逻辑。支持 Windows、macOS 和 Pythonista iOS；清空文件引用不会删除原始文件。
+
 ## 读取并还原远端内容
 
 ### 文本和图像采集

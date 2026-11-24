@@ -1,4 +1,3 @@
-import threading
 from datetime import datetime
 
 
@@ -9,7 +8,6 @@ class PinnedPathStore:
 
     def __init__(self, database):
         self.database = database
-        self._lock = threading.RLock()
 
     @staticmethod
     def _normalize_machine_id(machine_id: str) -> str:
@@ -29,17 +27,16 @@ class PinnedPathStore:
 
     def list_items(self, machine_id: str) -> list[dict]:
         machine_id_text = self._normalize_machine_id(machine_id)
-        with self._lock:
-            rows = self.database.connection().execute(
-                '''
-                SELECT display_name, path, created_at, updated_at
-                FROM pinned_paths
-                WHERE machine_id = ?
-                ORDER BY display_name COLLATE NOCASE ASC
-                ''',
-                (machine_id_text,),
-            ).fetchall()
-            return [self._row_to_item(row) for row in rows]
+        rows = self.database.fetch_all(
+            '''
+            SELECT display_name, path, created_at, updated_at
+            FROM pinned_paths
+            WHERE machine_id = ?
+            ORDER BY display_name COLLATE NOCASE ASC
+            ''',
+            (machine_id_text,),
+        )
+        return [self._row_to_item(row) for row in rows]
 
     def save_item(self, machine_id: str, display_name: str, path: str) -> dict:
         machine_id_text = self._normalize_machine_id(machine_id)
@@ -50,7 +47,7 @@ class PinnedPathStore:
         if not path_text:
             raise ValueError('path is required')
 
-        with self._lock, self.database.transaction() as conn:
+        with self.database.transaction() as conn:
             row = conn.execute(
                 'SELECT created_at FROM pinned_paths WHERE machine_id = ? AND display_name = ?',
                 (machine_id_text, display_name_text),
@@ -86,7 +83,7 @@ class PinnedPathStore:
         if not path_text:
             raise ValueError('path is required')
 
-        with self._lock, self.database.transaction() as conn:
+        with self.database.transaction() as conn:
             current = conn.execute(
                 'SELECT * FROM pinned_paths WHERE machine_id = ? AND display_name = ?',
                 (machine_id_text, original_name),
@@ -120,7 +117,7 @@ class PinnedPathStore:
         if not display_name_text:
             raise ValueError('display_name is required')
 
-        with self._lock, self.database.transaction() as conn:
+        with self.database.transaction() as conn:
             row = conn.execute(
                 'SELECT * FROM pinned_paths WHERE machine_id = ? AND display_name = ?',
                 (machine_id_text, display_name_text),
@@ -138,9 +135,8 @@ class PinnedPathStore:
         display_name_text = str(display_name or '').strip()
         if not display_name_text:
             return None
-        with self._lock:
-            row = self.database.connection().execute(
-                'SELECT * FROM pinned_paths WHERE machine_id = ? AND display_name = ?',
-                (machine_id_text, display_name_text),
-            ).fetchone()
-            return self._row_to_item(row) if row is not None else None
+        row = self.database.fetch_one(
+            'SELECT * FROM pinned_paths WHERE machine_id = ? AND display_name = ?',
+            (machine_id_text, display_name_text),
+        )
+        return self._row_to_item(row) if row is not None else None

@@ -1,4 +1,3 @@
-import json
 from core.protocol.control import ControlDomain, JobAction, ExecutionPolicy, execution_policy
 import threading
 from datetime import datetime
@@ -24,12 +23,15 @@ class BackgroundJobService:
 
     LIFECYCLE_STATES = {'running', 'stopped', 'error'}
 
-    def __init__(self, event_bus, job_store, remote_execution_service, job_catalog_service, server=None):
+    def __init__(self, event_bus, job_store, remote_execution_service, job_catalog_service, server=None, *,
+                 recent_device_store, connection_history_store):
         self.event_bus = event_bus
         self.job_store = job_store
         self.remote_execution_service = remote_execution_service
         self.job_catalog_service = job_catalog_service
         self.server = server
+        self.recent_device_store = recent_device_store
+        self.connection_history_store = connection_history_store
         self._lifecycle_event_keys = set()
         self._lifecycle_lock = threading.RLock()
 
@@ -155,41 +157,10 @@ class BackgroundJobService:
         # For historical/offline views, resolve the durable machine identity
         # from SQLite instead of treating client_id as a permanent owner.
         try:
-            conn = self.job_store.database.connection()
-            row = conn.execute(
-                'SELECT machine_id, snapshot_json FROM recent_devices WHERE client_id = ? LIMIT 1',
-                (client_id_text,),
-            ).fetchone()
-            if row is not None and str(row['machine_id'] or '').strip():
-                hostname = ''
-                addr = ''
-                try:
-                    snapshot = json.loads(str(row['snapshot_json'] or '{}'))
-                    if isinstance(snapshot, dict):
-                        hostname = str(snapshot.get('hostname') or '').strip()
-                        addr = str(snapshot.get('addr') or '').strip()
-                except Exception:
-                    pass
-                return str(row['machine_id'] or '').strip(), hostname, addr
-
-            row = conn.execute(
-                'SELECT machine_id, snapshot '
-                'FROM connection_sessions '
-                'WHERE client_id = ? '
-                'ORDER BY connected_at_ms DESC LIMIT 1',
-                (client_id_text,),
-            ).fetchone()
-            if row is not None and str(row['machine_id'] or '').strip():
-                hostname = ''
-                addr = ''
-                try:
-                    snapshot = json.loads(str(row['snapshot'] or '{}'))
-                    if isinstance(snapshot, dict):
-                        hostname = str(snapshot.get('hostname') or '').strip()
-                        addr = str(snapshot.get('addr') or '').strip()
-                except Exception:
-                    pass
-                return str(row['machine_id'] or '').strip(), hostname, addr
+            for store in (self.recent_device_store, self.connection_history_store):
+                identity = store.get_identity_by_client_id(client_id_text)
+                if identity[0]:
+                    return identity
         except Exception:
             pass
 

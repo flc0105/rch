@@ -240,7 +240,7 @@ ACMD 统一使用 `acmd <name> ...` 前缀，使用独立的命令注册表、�
 | **Windows / macOS / Linux / iOS** | `acmd file_shred` | 覆写并删除普通文件，`--passes` 默认 3，闪存等设备仍可能保留旧数据 |
 | **Windows / macOS / Linux / iOS** | `acmd download` | 上传单个 Client 文件到 Artifacts。接受位置路径或 `--path`，可用 `--name` 指定保存名 |
 | **Windows / macOS / Linux / iOS** | `acmd wait_pid` / `acmd tcp_check` | 等待指定 PID 退出／从目标 Client 检查指定 TCP 端口，主机默认 localhost |
-| **Windows / macOS / iOS** | `acmd clipboard_read` / `acmd clipboard_write` | 读写文本。读取时可用 `--download` 将图片或文件保存到 Artifacts，文件剪贴板在 Windows 和 macOS 可用 |
+| **Windows / macOS / iOS** | `acmd clipboard_read` / `acmd clipboard_write` | 读写文本；`acmd clipboard_write --clear` 清空当前剪贴板，不与文本参数混用。读取时可用 `--download` 将图片或文件保存到 Artifacts，文件剪贴板在 Windows 和 macOS 可用 |
 | **iOS** | `acmd alert` / `acmd tree` / `acmd head` / `acmd tail` | Pythonista 提示框、目录树和文本文件读取。目录树可用 `--dirs-only` / `-d` 只显示目录 |
 
 示例（只展示语法，不表示允许随意操作目标设备）：

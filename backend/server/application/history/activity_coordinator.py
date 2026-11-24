@@ -35,7 +35,7 @@ class ActivityCoordinator:
                 'summary': operation.display_summary(),
                 'references': previous['references'] if previous else [],
                 'artifacts': previous['artifacts'] if previous else [],
-                'created_at': previous['created_at'] if previous else self.history_store._now_iso(),
+                'created_at': previous['created_at'] if previous else self.history_store.now_iso(),
             }
         return activity_id
 

@@ -1,4 +1,3 @@
-import threading
 from datetime import datetime
 
 from core.utils.json_utils import json_dumps_or_default, json_loads_or_default
@@ -20,7 +19,6 @@ class BackgroundJobStore:
 
     def __init__(self, database):
         self.database = database
-        self._lock = threading.RLock()
         self.artifact_service = None
         self.view_service = BackgroundJobViewService(self)
         self.mark_active_jobs_interrupted()
@@ -84,7 +82,7 @@ class BackgroundJobStore:
             return 0
 
         updated = 0
-        with self._lock, self.database.transaction() as conn:
+        with self.database.transaction() as conn:
             rows = conn.execute(
                 '''
                 SELECT f.association_id, f.artifact_id,
@@ -202,7 +200,7 @@ class BackgroundJobStore:
 
     def mark_active_jobs_interrupted(self):
         now = self._now_iso()
-        with self._lock, self.database.transaction() as conn:
+        with self.database.transaction() as conn:
             conn.execute(
                 '''
                 UPDATE background_jobs
@@ -214,7 +212,7 @@ class BackgroundJobStore:
             )
 
     def apply_status_report(self, payload: dict) -> dict:
-        with self._lock, self.database.transaction() as conn:
+        with self.database.transaction() as conn:
             job = self._ensure_job(conn, payload)
             state = str(payload.get('state') or '').strip() or str(job.get('state') or 'unknown')
             event_time = str(payload.get('time') or self._now_iso())
@@ -241,7 +239,7 @@ class BackgroundJobStore:
             )
 
     def append_message_report(self, payload: dict) -> dict:
-        with self._lock, self.database.transaction() as conn:
+        with self.database.transaction() as conn:
             job = self._ensure_job(conn, payload)
             event_time = str(payload.get('time') or self._now_iso())
             output = OutputRecordBase(
@@ -283,7 +281,7 @@ class BackgroundJobStore:
         if not ids:
             return {}
         rows = []
-        with self._lock:
+        with self.database.read_snapshot():
             # Artifact lists are unpaginated; chunk IDs below SQLite's variable limit.
             for offset in range(0, len(ids), 400):
                 batch = ids[offset:offset + 400]
@@ -308,7 +306,7 @@ class BackgroundJobStore:
         artifact_id = str(artifact.get('artifact_id') or '').strip()
         if not job_id or not artifact_id:
             raise ValueError('job_id and artifact_id are required')
-        with self._lock, self.database.transaction() as conn:
+        with self.database.transaction() as conn:
             row = conn.execute('SELECT * FROM background_jobs WHERE job_id=?', (job_id,)).fetchone()
             if row is None:
                 raise ValueError('Background job not found')
@@ -319,7 +317,7 @@ class BackgroundJobStore:
                 (job_id, artifact_id, self._now_iso(), snapshot))
 
     def append_file_report(self, payload: dict) -> dict:
-        with self._lock, self.database.transaction() as conn:
+        with self.database.transaction() as conn:
             job = self._ensure_job(conn, payload)
             file_info = payload.get('file') or {}
             if not isinstance(file_info, dict):
@@ -389,30 +387,31 @@ class BackgroundJobStore:
         return [self._row_to_job(row) for row in rows]
 
     def get_raw_job(self, job_id: str, machine_id: str = '', client_id: str = '') -> dict | None:
-        row = self._select_job_row(job_id, machine_id=machine_id, client_id=client_id)
-        job = self._row_to_job(row)
-        if job is None:
-            return None
+        with self.database.read_snapshot():
+            row = self._select_job_row(job_id, machine_id=machine_id, client_id=client_id)
+            job = self._row_to_job(row)
+            if job is None:
+                return None
 
-        conn = self.database.connection()
-        message_rows = conn.execute(
-            '''
-            SELECT message_id, status, text, eof, created_at
-            FROM background_job_messages
-            WHERE job_id = ?
-            ORDER BY message_id ASC
-            ''',
-            (job['job_id'],),
-        ).fetchall()
-        file_rows = conn.execute(
-            '''
-            SELECT association_id, artifact_id, linked_at, snapshot
-            FROM background_job_files
-            WHERE job_id = ?
-            ORDER BY association_id ASC
-            ''',
-            (job['job_id'],),
-        ).fetchall()
+            conn = self.database.connection()
+            message_rows = conn.execute(
+                '''
+                SELECT message_id, status, text, eof, created_at
+                FROM background_job_messages
+                WHERE job_id = ?
+                ORDER BY message_id ASC
+                ''',
+                (job['job_id'],),
+            ).fetchall()
+            file_rows = conn.execute(
+                '''
+                SELECT association_id, artifact_id, linked_at, snapshot
+                FROM background_job_files
+                WHERE job_id = ?
+                ORDER BY association_id ASC
+                ''',
+                (job['job_id'],),
+            ).fetchall()
 
         job['messages'] = [
             OutputRecordBase(
@@ -436,7 +435,7 @@ class BackgroundJobStore:
         return job
 
     def delete_job(self, job_id: str, machine_id: str = '', client_id: str = '') -> dict | None:
-        with self._lock, self.database.transaction() as conn:
+        with self.database.transaction() as conn:
             row = None
             job_id_text = str(job_id or '').strip()
             machine_id_text = str(machine_id or '').strip()

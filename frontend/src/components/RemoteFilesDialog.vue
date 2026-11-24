@@ -487,6 +487,8 @@
                         <el-dropdown-item command="rename">Rename</el-dropdown-item>
                         <el-dropdown-item command="copy">Copy</el-dropdown-item>
                         <el-dropdown-item command="cut">Cut</el-dropdown-item>
+                        <el-dropdown-item command="copy_to">Copy To</el-dropdown-item>
+                        <el-dropdown-item command="move_to">Move To</el-dropdown-item>
                         <el-dropdown-item command="copy_path">Copy Path</el-dropdown-item>
                         <el-dropdown-item v-if="row.is_dir" command="set_cwd">Set as CWD</el-dropdown-item>
                         <el-dropdown-item v-if="row.is_dir" command="open_pty">Open PTY Here</el-dropdown-item>
@@ -701,6 +703,8 @@
                               <el-dropdown-item command="rename">Rename</el-dropdown-item>
                               <el-dropdown-item command="copy">Copy</el-dropdown-item>
                               <el-dropdown-item command="cut">Cut</el-dropdown-item>
+                              <el-dropdown-item command="copy_to">Copy To</el-dropdown-item>
+                              <el-dropdown-item command="move_to">Move To</el-dropdown-item>
                               <el-dropdown-item command="copy_path">Copy Path</el-dropdown-item>
                               <el-dropdown-item v-if="row.is_dir" command="set_cwd">Set as CWD</el-dropdown-item>
                         <el-dropdown-item v-if="row.is_dir" command="open_pty">Open PTY Here</el-dropdown-item>
@@ -768,6 +772,8 @@
                         <el-dropdown-item v-if="!row.is_parent_entry" command="rename" divided>Rename</el-dropdown-item>
                         <el-dropdown-item v-if="!row.is_parent_entry" command="copy">Copy</el-dropdown-item>
                         <el-dropdown-item v-if="!row.is_parent_entry" command="cut">Cut</el-dropdown-item>
+                        <el-dropdown-item v-if="!row.is_parent_entry" command="copy_to">Copy To</el-dropdown-item>
+                        <el-dropdown-item v-if="!row.is_parent_entry" command="move_to">Move To</el-dropdown-item>
                         <el-dropdown-item v-if="!row.is_parent_entry" command="copy_path">Copy Path</el-dropdown-item>
                         <el-dropdown-item v-if="row.is_dir && !row.is_parent_entry" command="set_cwd">Set as CWD</el-dropdown-item>
                         <el-dropdown-item v-if="row.is_dir && !row.is_parent_entry" command="open_pty">Open PTY Here</el-dropdown-item>
@@ -837,6 +843,19 @@
   </el-dialog>
 
 
+  <RemoteFilePicker
+      ref="destinationPickerRef"
+      v-model:visible="destinationPickerVisible"
+      :selected-id="remoteFilesClientId"
+      :initial-path="destinationPickerInitialPath"
+      selection-mode="folder"
+      append-to-body
+      :get-tab-scoped-headers="getTabScopedHeaders"
+      @select="handleDestinationSelected"
+      @append-output="(...args) => $emit('append-output', ...args)"
+      @set-active-task="(...args) => $emit('set-active-task', ...args)"
+      @upload-started="handleDestinationPickerUploadStarted"
+  />
   <RemotePinsDialog
       v-model="pinManagerVisible"
       :selected-id="remoteFilesClientId"
@@ -850,7 +869,7 @@
 
 <script>
 import { copyTextFallback } from '../utils/clipboard.js'
-import { listRemoteDirectory, getRemoteSystemPaths, pasteRemoteFiles, createRemoteZip, extractRemoteZip, makeRemoteDirectory, renameRemoteFile, downloadRemoteFile, downloadRemoteZip, deleteRemoteEntries } from '../api/remoteFilesApi.js'
+import { listRemoteDirectory, getRemoteSystemPaths, pasteRemoteFiles, createRemoteZip, extractRemoteZip, renameRemoteFile, downloadRemoteFile, downloadRemoteZip, deleteRemoteEntries } from '../api/remoteFilesApi.js'
 import { listRemotePinnedPaths, saveRemotePinnedPath, deleteRemotePinnedPath } from '../api/remotePinsApi.js'
 import {ElMessage, ElMessageBox} from 'element-plus'
 import { OPEN_TRANSFER_CENTER_KEY, showTransferStartedToast } from '../utils/transferStartedToast.js'
@@ -858,6 +877,8 @@ import { createTerminalOperation, operationHeaders } from '../utils/terminalOper
 import { formatTerminalCommandFinishedLine } from '../composables/terminalMarkers.js'
 import { MoreFilled } from '@element-plus/icons-vue'
 import RemotePinsDialog from './RemotePinsDialog.vue'
+import RemoteFilePicker from './RemoteFilePicker.vue'
+import { promptCreateRemoteFolder } from '../utils/remoteFolderCreation.js'
 import { formatBytes as formatBytesValue } from '../utils/formatters.js'
 import { uploadRemoteFileToClient } from '../api/transferApi.js'
 import { preparePasteConflicts, prepareExtractConflict, prepareUploadConflict } from '../utils/remoteFileConflicts.js'
@@ -869,6 +890,7 @@ export default {
 
   components: {
     RemotePinsDialog,
+    RemoteFilePicker,
     MoreFilled,
   },
 
@@ -927,6 +949,9 @@ export default {
       remotePinnedJumpItems: [],
       remotePinnedJumpLoading: false,
 
+      destinationPickerVisible: false,
+      destinationPickerInitialPath: '',
+      destinationRequest: null,
       remoteClipboardPaths: [],
       remoteClipboardMode: '',
       remoteClipboardSourcePath: '',
@@ -936,6 +961,9 @@ export default {
   },
 
   watch: {
+    destinationPickerVisible(value) {
+      if (!value) this.destinationRequest = null
+    },
     pinManagerVisible(value) {
       if (!value && !this.visible) {
         this.remoteFilesContextSeq += 1
@@ -1175,6 +1203,8 @@ export default {
       }
 
       this.abortRemoteDirectoryRequest()
+      this.destinationPickerVisible = false
+      this.destinationRequest = null
       this.remoteFilesContextSeq += 1
       this.remoteFilesClientId = clientId
       this.visible = true
@@ -1555,57 +1585,77 @@ export default {
       this.remoteClipboardSourcePath = ''
     },
 
+    openDestinationPicker(row, operation) {
+      const context = this.captureRemoteFilesContext()
+      if (!this.isRemoteFilesContextActive(context) || !row?.path || row.is_parent_entry) return
+      this.destinationRequest = { context, paths: [row.path], operation }
+      this.destinationPickerInitialPath = this.remoteFilesCurrentPath
+      this.destinationPickerVisible = true
+    },
+
+    handleDestinationPickerUploadStarted(payload) {
+      this.$emit('upload-started', { ...payload, source: 'remote_files_destination_picker' })
+    },
+
+    async refreshDestinationPickerDirectory(clientId, path) {
+      if (String(clientId) !== this.remoteFilesClientId) return
+      const picker = this.$refs.destinationPickerRef
+      if (this.destinationPickerVisible && picker?.remoteFilesCurrentPath === path) await picker.refreshRemoteDirectory()
+      if (this.visible && this.remoteFilesCurrentPath === path) await this.refreshRemoteDirectory()
+    },
+
+    async handleDestinationSelected(destinationDir) {
+      const pending = this.destinationRequest
+      this.destinationRequest = null
+      if (!pending || !destinationDir || !this.isRemoteFilesContextActive(pending.context)) return
+      await this.executeRemotePaste(pending.context, {
+        paths: pending.paths, destination_dir: destinationDir, operation: pending.operation,
+      })
+    },
+
     async pasteRemoteClipboard() {
       const context = this.captureRemoteFilesContext()
-      const clientId = context.clientId
-      if (!clientId) {
+      if (!context.clientId) {
         ElMessage.warning('Please select a device')
         return
       }
-
       if (!this.remoteFilesCurrentPath) {
         ElMessage.warning('Current directory is empty')
         return
       }
-
       const paths = [...this.remoteClipboardPaths]
-
-      if (!paths.length || !this.remoteClipboardMode) {
+      const operation = this.remoteClipboardMode
+      if (!paths.length || !operation) {
         ElMessage.warning('Clipboard is empty')
         return
       }
+      const result = await this.executeRemotePaste(context, { paths, destination_dir: this.remoteFilesCurrentPath, operation })
+      if (result && operation === 'move' && result.failed === 0 && this.isRemoteFilesContextActive(context) &&
+          this.remoteClipboardMode === operation && JSON.stringify(this.remoteClipboardPaths) === JSON.stringify(paths)) {
+        this.clearRemoteClipboard()
+      }
+    },
 
+    async executeRemotePaste(context, request) {
+      const { paths, operation } = request
       try {
-        const request = { paths, destination_dir: this.remoteFilesCurrentPath, operation: this.remoteClipboardMode }
-        const conflicts = await preparePasteConflicts(clientId, request)
-        if (conflicts === false || !this.isRemoteFilesContextActive(context)) return
-        const res = await pasteRemoteFiles(clientId, { ...request, ...(conflicts || {}) })
-
+        const conflicts = await preparePasteConflicts(context.clientId, request)
+        if (conflicts === false || !this.isRemoteFilesContextActive(context)) return null
+        const res = await pasteRemoteFiles(context.clientId, { ...request, ...(conflicts || {}) })
         const json = await res.json()
-
-        if (!this.isRemoteFilesContextActive(context)) return
-        if (!res.ok || json.code !== 0) {
-          throw new Error(json.message || 'Paste failed')
-        }
-
-        const actionText = this.remoteClipboardMode === 'move' ? 'Moved' : 'Copied'
+        if (!this.isRemoteFilesContextActive(context)) return null
+        if (!res.ok || json.code !== 0) throw new Error(json.message || 'Paste failed')
+        const actionText = operation === 'move' ? 'Moved' : 'Copied'
         const message = json.data?.message || `${actionText} ${paths.length} item(s)`
-
         const failed = Number(json.data?.failed || 0)
         if (failed > 0) ElMessage.warning(`${actionText} ${json.data?.succeeded || 0} of ${paths.length} item(s). ${failed} failed.`)
         else ElMessage.success(`${actionText} ${paths.length} item(s)`)
         await this.refreshRemoteDirectory()
-
-        if (this.remoteClipboardMode === 'move' && failed === 0) {
-          this.clearRemoteClipboard()
-        }
-
-        if (message && !message.startsWith(`${actionText} ${paths.length} item(s)`)) {
-          ElMessage.info(message)
-        }
+        if (message && !message.startsWith(`${actionText} ${paths.length} item(s)`)) ElMessage.info(message)
+        return { failed }
       } catch (e) {
-        if (!this.isRemoteFilesContextActive(context)) return
-        ElMessage.error(e.message || 'Paste failed')
+        if (this.isRemoteFilesContextActive(context)) ElMessage.error(e.message || 'Paste failed')
+        return null
       }
     },
 
@@ -1726,6 +1776,11 @@ export default {
 
       if (command === 'rename') {
         this.renameRemoteEntry(row)
+        return
+      }
+
+      if (command === 'copy_to' || command === 'move_to') {
+        this.openDestinationPicker(row, command === 'move_to' ? 'move' : 'copy')
         return
       }
 
@@ -1891,50 +1946,23 @@ export default {
 
     async createRemoteDirectory() {
       const context = this.captureRemoteFilesContext()
-      const clientId = context.clientId
-      if (!clientId) {
+      if (!context.clientId) {
         ElMessage.warning('Please select a device')
         return
       }
-
-      if (!this.remoteFilesCurrentPath) {
+      const parentPath = this.remoteFilesCurrentPath
+      if (!parentPath) {
         ElMessage.warning('Current directory is empty')
         return
       }
-
+      const isActive = () => this.isRemoteFilesContextActive(context) && this.remoteFilesCurrentPath === parentPath
       try {
-        const {value} = await ElMessageBox.prompt(
-            'Enter the new folder name',
-            'Create Directory',
-            {
-              confirmButtonText: 'Create',
-              cancelButtonText: 'Cancel',
-              inputPattern: /.+/,
-              inputErrorMessage: 'Folder name is required',
-            }
-        )
-
-        const folderName = String(value || '').trim()
-        if (!folderName || !this.isRemoteFilesContextActive(context)) return
-
-        const base = this.remoteFilesCurrentPath.replace(/[\\/]+$/, '')
-        const separator = base.includes('\\') ? '\\' : '/'
-        const fullPath = `${base}${base ? separator : ''}${folderName}`
-
-        const res = await makeRemoteDirectory(clientId, fullPath)
-
-        const json = await res.json()
-
-        if (!this.isRemoteFilesContextActive(context)) return
-        if (!res.ok || json.code !== 0) {
-          throw new Error(json.message || 'Create directory failed')
+        if (await promptCreateRemoteFolder(context.clientId, parentPath, isActive)) {
+          ElMessage.success('Directory created')
+          await this.refreshRemoteDirectory()
         }
-
-        ElMessage.success('Directory created')
-        await this.refreshRemoteDirectory()
       } catch (e) {
-        if (!this.isRemoteFilesContextActive(context)) return
-        if (this.isDialogCancel(e)) return
+        if (!isActive() || this.isDialogCancel(e)) return
         ElMessage.error(e.message || 'Create directory failed')
       }
     },
@@ -2547,6 +2575,8 @@ export default {
       this.remotePinnedJumpItems = []
       this.remotePinnedJumpLoading = false
       this.pinManagerVisible = false
+      this.destinationPickerVisible = false
+      this.destinationRequest = null
       this.clearRemoteClipboard()
       this.clearTableSelection()
     },

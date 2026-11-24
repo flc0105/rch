@@ -1,5 +1,4 @@
 """Regression coverage for Bind disconnect and server preference roundtrips."""
-import sqlite3
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -11,23 +10,14 @@ from server.application.connection.connection_service import WebConnectionServic
 from client.app.client import Client
 
 
-class _Database:
-    def __init__(self):
-        self.db = sqlite3.connect(':memory:')
-        self.db.row_factory = sqlite3.Row
-        self.db.execute('''CREATE TABLE settings (
-            namespace TEXT PRIMARY KEY, value_json TEXT NOT NULL,
-            updated_at_ms INTEGER NOT NULL)''')
-
-    def connection(self):
-        return self.db
+from server.persistence.rch_database import RchDatabase
 
 
 @pytest.fixture
-def database():
-    db = _Database()
+def database(tmp_path):
+    db = RchDatabase(str(tmp_path / 'rch.db'))
     yield db
-    db.db.close()
+    db.close_thread_connection()
 
 
 def test_connection_direction_is_preserved_through_database_roundtrip(database):

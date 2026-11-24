@@ -1,5 +1,4 @@
 """Activity Center storage; Quick History uses its own writer and lifecycle."""
-import threading
 import time
 from datetime import datetime, timezone
 
@@ -13,59 +12,23 @@ from server.application.history.quick_history import QuickHistoryStore
 class CommandHistoryStore:
     def __init__(self, database):
         self.database = database
-        self._lock = threading.RLock()
         self.artifact_service = None
-        self.pinned_store = PinnedCommandStore(database, self._now_iso)
-        self.quick_store = QuickHistoryStore(self)
+        self.pinned_store = PinnedCommandStore(database, self.now_iso)
+        self.quick_store = QuickHistoryStore(database, self.machine_id_for_connection, self.now_iso, self.now_ms)
         self.write_service = HistoryWriteService(self)
         self.view_service = HistoryViewService(self)
-        with self._lock, self.database.transaction() as conn:
-            conn.execute('''CREATE TABLE IF NOT EXISTS activity_records (
-                activity_id TEXT PRIMARY KEY,
-                machine_id TEXT NOT NULL,
-                client_id TEXT NOT NULL DEFAULT '',
-                kind TEXT NOT NULL,
-                action TEXT NOT NULL,
-                origin TEXT NOT NULL,
-                presentation TEXT NOT NULL,
-                status TEXT NOT NULL,
-                invocation_json TEXT NOT NULL,
-                resolved_json TEXT NOT NULL,
-                result_json TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                started_at TEXT,
-                started_at_ms INTEGER NOT NULL,
-                finished_at TEXT,
-                references_json TEXT NOT NULL DEFAULT '[]',
-                summary TEXT NOT NULL DEFAULT '',
-                result_message_bytes INTEGER NOT NULL DEFAULT 0,
-                result_data_bytes INTEGER NOT NULL DEFAULT 0,
-                result_omitted INTEGER NOT NULL DEFAULT 0,
-                result_summary TEXT NOT NULL DEFAULT ''
-            )''')
-            columns = {row[1] for row in conn.execute('PRAGMA table_info(activity_records)')}
-            if not {'result_message_bytes', 'result_data_bytes', 'result_omitted', 'result_summary'} <= columns:
-                raise RuntimeError('rch.db requires the one-time Client Result migration before starting Server')
-            conn.execute('''CREATE INDEX IF NOT EXISTS idx_activity_machine_time
-                ON activity_records(machine_id, started_at_ms DESC, activity_id DESC)''')
-            conn.execute('''CREATE INDEX IF NOT EXISTS idx_activity_machine_status
-                ON activity_records(machine_id, status, started_at_ms DESC)''')
-            conn.execute('''CREATE INDEX IF NOT EXISTS idx_activity_machine_kind
-                ON activity_records(machine_id, kind, started_at_ms DESC)''')
-            conn.execute('''CREATE INDEX IF NOT EXISTS idx_activity_client_time
-                ON activity_records(machine_id, client_id, started_at_ms DESC)''')
         self.write_service.interrupt_orphaned_activities()
 
     @staticmethod
-    def _now_iso():
+    def now_iso():
         return datetime.now(timezone.utc).astimezone().isoformat()
 
     @staticmethod
-    def _now_ms():
+    def now_ms():
         return int(time.time() * 1000)
 
     @staticmethod
-    def _get_machine_id_from_conn(conn):
+    def machine_id_for_connection(conn):
         info = getattr(conn, 'session_info', None)
         return getattr(info, 'machine_id', '') or 'unknown_machine'
 
@@ -91,16 +54,16 @@ class CommandHistoryStore:
             'summary': row['summary'],
         }
 
-    def _get_entry(self, machine_id, activity_id):
-        row = self.database.connection().execute(
+    def get_entry(self, machine_id, activity_id):
+        row = self.database.fetch_one(
             'SELECT * FROM activity_records WHERE machine_id = ? AND activity_id = ?',
             (machine_id, activity_id),
-        ).fetchone()
+        )
         return self._row_to_entry(row)
 
-    def _insert_entry(self, entry):
-        started_ms = self._now_ms()
-        self.database.connection().execute('''
+    def insert_entry(self, entry):
+        started_ms = self.now_ms()
+        self.database.execute('''
             INSERT INTO activity_records (
                 activity_id, machine_id, client_id, kind, action, origin, presentation,
                 status, invocation_json, resolved_json, result_json,
@@ -115,8 +78,8 @@ class CommandHistoryStore:
             compact_json_dumps(entry['references']), entry['summary'],
         ))
 
-    def _update_entry(self, entry):
-        self.database.connection().execute('''
+    def update_entry(self, entry):
+        self.database.execute('''
             UPDATE activity_records SET status = ?, references_json = ?,
             finished_at = ? WHERE machine_id = ? AND activity_id = ?
         ''', (
@@ -124,7 +87,7 @@ class CommandHistoryStore:
             compact_json_dumps(entry['references']), entry['finished_at'], entry['machine_id'], entry['activity_id'],
         ))
 
-    def _list_execution_rows(self, machine_id, *, limit=None, cursor=None, query='', client_id='', kind='', errors=False):
+    def list_execution_rows(self, machine_id, *, limit=None, cursor=None, query='', client_id='', kind='', errors=False):
         clauses, params = self._activity_filters(machine_id, query=query, client_id=client_id, kind=kind, errors=errors)
         if cursor is not None:
             cursor_ms, cursor_id = cursor
@@ -141,7 +104,7 @@ class CommandHistoryStore:
         if limit is not None:
             sql += ' LIMIT ?'
             params.append(int(limit))
-        return self.database.connection().execute(sql, tuple(params)).fetchall()
+        return [dict(row) for row in self.database.fetch_all(sql, tuple(params))]
 
     def _activity_filters(self, machine_id, *, query='', client_id='', kind='', errors=False):
         clauses = ['machine_id = ?']
@@ -164,9 +127,65 @@ class CommandHistoryStore:
 
     def count_activities(self, machine_id, *, query='', client_id='', kind='', errors=False):
         clauses, params = self._activity_filters(machine_id, query=query, client_id=client_id, kind=kind, errors=errors)
-        row = self.database.connection().execute(
-            f"SELECT COUNT(*) FROM activity_records WHERE {' AND '.join(clauses)}", tuple(params)).fetchone()
+        row = self.database.fetch_one(
+            f"SELECT COUNT(*) FROM activity_records WHERE {' AND '.join(clauses)}", tuple(params))
         return int(row[0] if row else 0)
+
+    def transaction(self):
+        return self.database.transaction()
+
+    def read_snapshot(self):
+        return self.database.read_snapshot()
+
+    def interrupt_active(self, finished_at):
+        self.database.execute(
+            "UPDATE activity_records SET status = 'interrupted', finished_at = ? "
+            "WHERE status IN ('running', 'cancelling')", (finished_at,))
+
+    def get_active_result_stats(self, machine_id, activity_id):
+        row = self.database.fetch_one(
+            "SELECT result_message_bytes, result_data_bytes, result_omitted, result_summary "
+            "FROM activity_records WHERE machine_id = ? AND activity_id = ? "
+            "AND status IN ('running', 'cancelling')", (machine_id, activity_id))
+        return dict(row) if row is not None else None
+
+    def append_result(self, machine_id, activity_id, result, recorded_at, *,
+                      message_bytes, data_bytes, omitted, summary):
+        self.database.execute(
+            "UPDATE activity_records SET result_json = "
+            "json_insert(result_json, '$.result[#]', json(?), '$.recorded_at[#]', ?), "
+            "result_message_bytes = ?, result_data_bytes = ?, result_omitted = ?, result_summary = ? "
+            "WHERE machine_id = ? AND activity_id = ?",
+            (compact_json_dumps(result), recorded_at, message_bytes, data_bytes,
+             int(omitted), summary, machine_id, activity_id))
+
+    def delete_activities(self, machine_id, *, query='', kind='', errors=False):
+        clauses, params = self._activity_filters(machine_id, query=query, kind=kind, errors=errors)
+        with self.transaction():
+            return self.database.execute(
+                f"DELETE FROM activity_records WHERE {' AND '.join(clauses)}", tuple(params)).rowcount
+
+    def delete_activity(self, machine_id, activity_id):
+        with self.transaction():
+            return self.database.execute(
+                'DELETE FROM activity_records WHERE machine_id = ? AND activity_id = ?',
+                (machine_id, activity_id)).rowcount > 0
+
+    def count_by_client_ids(self, machine_id, client_ids):
+        if not client_ids:
+            return {}
+        placeholders = ', '.join('?' for _ in client_ids)
+        rows = self.database.fetch_all(
+            f"SELECT client_id, COUNT(*) AS command_count FROM activity_records "
+            f"WHERE machine_id = ? AND client_id IN ({placeholders}) GROUP BY client_id",
+            (machine_id, *client_ids))
+        return {row['client_id']: int(row['command_count']) for row in rows}
+
+    def connection_totals(self, machine_id):
+        row = self.database.fetch_one(
+            "SELECT COUNT(*) AS total, SUM(CASE WHEN client_id = '' THEN 1 ELSE 0 END) AS unassigned "
+            "FROM activity_records WHERE machine_id = ?", (machine_id,))
+        return {'total': int(row['total'] or 0), 'unassigned': int(row['unassigned'] or 0)}
 
     def append_file_for_connection(self, conn, entry_id, artifact):
         return self.write_service.append_file_for_connection(conn, entry_id, artifact)

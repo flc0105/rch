@@ -114,6 +114,7 @@
 </template>
 
 <script>
+import { ElMessage } from 'element-plus'
 import { answerInteraction, listPendingInteractions } from '../api/interactionApi.js'
 
 export default {
@@ -162,7 +163,9 @@ export default {
     },
     resolved(payload) {
       if (!payload?.interaction_id) return
+      const wasCurrent = this.current?.interaction_id === payload.interaction_id
       this.queue = this.queue.filter(item => item.interaction_id !== payload.interaction_id)
+      if (!wasCurrent) return
       this.inputValue = ''
       this.selectedValue = ''
       this.errorText = ''
@@ -172,8 +175,17 @@ export default {
     async reloadPending(tabId) {
       if (!tabId) return
       try {
+        const before = new Set(this.queue.filter(item => item.tab_id === tabId).map(item => item.interaction_id))
         const items = await listPendingInteractions(tabId)
-        for (const item of items) this.enqueue(item)
+        const pending = new Set(items.map(item => item.interaction_id))
+        for (const id of before) {
+          if (!pending.has(id)) this.resolved({ interaction_id: id })
+        }
+        for (const item of items) {
+          // Do not resurrect an interaction resolved while the snapshot was loading.
+          if (before.has(item.interaction_id) && !this.queue.some(queued => queued.interaction_id === item.interaction_id)) continue
+          this.enqueue(item)
+        }
       } catch (error) {
         console.warn('Unable to load pending interactions', error)
       }
@@ -196,7 +208,12 @@ export default {
         })
         this.resolved(request)
       } catch (error) {
-        this.errorText = error?.message || 'Unable to submit interaction response'
+        if (error?.status === 409) {
+          this.resolved(request)
+          ElMessage.warning(error.message || 'Interaction is no longer pending')
+        } else if (this.current?.interaction_id === request.interaction_id) {
+          this.errorText = error?.message || 'Unable to submit interaction response'
+        }
       } finally {
         this.submitting = false
       }

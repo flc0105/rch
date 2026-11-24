@@ -19,6 +19,17 @@ class RecentDeviceStore:
         self._lock = threading.RLock()
         self._forgotten_machine_keys = set()
 
+    def get_identity_by_client_id(self, client_id: str) -> tuple[str, str, str]:
+        row = self.database.fetch_one(
+            'SELECT machine_id, snapshot_json FROM recent_devices WHERE client_id = ? LIMIT 1',
+            (client_id,))
+        if row is None:
+            return '', '', ''
+        snapshot = json_loads_dict(row['snapshot_json'])
+        return (str(row['machine_id'] or '').strip(),
+                str(snapshot.get('hostname') or '').strip(),
+                str(snapshot.get('addr') or '').strip())
+
     def _normalize_machine_id_key(self, machine_id: str) -> str:
         value = str(machine_id or '').strip()
         return value.lower()

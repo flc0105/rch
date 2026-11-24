@@ -56,6 +56,15 @@ class iOSClipboardAdapter:
             return {'kind': 'text', 'text': str(text)}
         return {'kind': 'empty'}
 
+    def clear(self):
+        from objc_util import ObjCClass, ns, on_main_thread
+
+        @on_main_thread
+        def clear_pasteboard():
+            ObjCClass('UIPasteboard').generalPasteboard().setItems_(ns([]))
+
+        clear_pasteboard()
+
     def set_text(self, text: str):
         clipboard = self._clipboard_module()
         set_text = getattr(clipboard, 'set', None)

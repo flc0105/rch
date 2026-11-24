@@ -73,6 +73,10 @@
             Upload
           </el-button>
 
+          <el-button size="small" :loading="remoteCreatingFolder" :disabled="!remoteFilesCurrentPath || remoteFilesLoading" @click="createRemoteFolder">
+            New Folder
+          </el-button>
+
           <input
             ref="remoteUploadInputRef"
             type="file"
@@ -221,6 +225,7 @@ import { formatTerminalCommandFinishedLine } from '../composables/terminalMarker
 import { formatBytes as formatBytesValue } from '../utils/formatters.js'
 import { uploadRemoteFileToClient } from '../api/transferApi.js'
 import { prepareUploadConflict } from '../utils/remoteFileConflicts.js'
+import { promptCreateRemoteFolder } from '../utils/remoteFolderCreation.js'
 
 export default {
   name: 'RemoteFilePicker',
@@ -283,6 +288,9 @@ export default {
       quickJumpLoading: false,
       quickJumpPaths: {},
       remoteUploadLoading: false,
+      remoteCreatingFolder: false,
+      pickerContextSeq: 0,
+      pickerDirectorySeq: 0,
     }
   },
 
@@ -357,20 +365,31 @@ export default {
     },
 
     async openPicker() {
+      this.pickerContextSeq += 1
+      this.remoteCreatingFolder = false
       if (!this.selectedId) {
         ElMessage.warning('Please select a device')
         this.closePicker()
         return
       }
 
+      const initialPath = this.initialPath || this.remoteFilesCurrentPath || ''
       this.remoteSelectedPaths = []
+      this.remoteFilesCurrentPath = ''
+      this.remoteFilesParentPath = ''
+      this.remoteFilesEntries = []
+      this.remoteFilesTotal = 0
+      this.remoteFilesTotalPages = 1
+      this.quickJumpPaths = {}
       await Promise.all([
         this.loadQuickJumpPaths(),
-        this.loadRemoteDirectory(this.initialPath || this.remoteFilesCurrentPath || '', 1),
+        this.loadRemoteDirectory(initialPath, 1),
       ])
     },
 
     resetPicker() {
+      this.pickerContextSeq += 1
+      this.remoteCreatingFolder = false
       this.remoteFilesLoading = false
       this.remoteFilesCurrentPath = ''
       this.remoteFilesParentPath = ''
@@ -383,13 +402,18 @@ export default {
     },
 
     async loadRemoteDirectory(path = '', page = 1) {
-      if (!this.selectedId) return
+      if (!this.visible || !this.selectedId) return
+      const clientId = this.selectedId
+      const contextSeq = this.pickerContextSeq
+      const requestSeq = ++this.pickerDirectorySeq
+      const isActive = () => this.visible && this.selectedId === clientId && this.pickerContextSeq === contextSeq && this.pickerDirectorySeq === requestSeq
 
       this.remoteFilesLoading = true
 
       try {
-        const res = await listRemoteDirectory(this.selectedId, { path, page, pageSize: this.remoteFilesPageSize, showHidden: false })
+        const res = await listRemoteDirectory(clientId, { path, page, pageSize: this.remoteFilesPageSize, showHidden: false })
         const json = await res.json()
+        if (!isActive()) return
 
         if (!res.ok || json.code !== 0) {
           throw new Error(json.message || 'Failed to load remote directory')
@@ -408,9 +432,28 @@ export default {
         this.remoteSelectedPaths = []
         this.clearTableSelection()
       } catch (e) {
-        ElMessage.error(e.message || 'Failed to load remote directory')
+        if (isActive()) ElMessage.error(e.message || 'Failed to load remote directory')
       } finally {
-        this.remoteFilesLoading = false
+        if (isActive()) this.remoteFilesLoading = false
+      }
+    },
+
+    async createRemoteFolder() {
+      if (!this.visible || !this.selectedId || !this.remoteFilesCurrentPath || this.remoteFilesLoading || this.remoteCreatingFolder) return
+      const clientId = this.selectedId
+      const parentPath = this.remoteFilesCurrentPath
+      const seq = this.pickerContextSeq
+      const isActive = () => this.visible && this.pickerContextSeq === seq && this.selectedId === clientId && this.remoteFilesCurrentPath === parentPath && !this.remoteFilesLoading
+      this.remoteCreatingFolder = true
+      try {
+        if (await promptCreateRemoteFolder(clientId, parentPath, isActive)) {
+          ElMessage.success('Directory created')
+          await this.refreshRemoteDirectory()
+        }
+      } catch (error) {
+        if (isActive() && error !== 'cancel' && error !== 'close') ElMessage.error(error.message || 'Create directory failed')
+      } finally {
+        if (this.pickerContextSeq === seq) this.remoteCreatingFolder = false
       }
     },
 
@@ -567,8 +610,8 @@ export default {
         this.$emit('upload-started', {
           source: 'remote_file_picker',
           taskId: taskId || '',
-          clientId: this.selectedId,
-          path: this.remoteFilesCurrentPath || '',
+          clientId,
+          path: destinationPath,
         })
       } catch (e) {
         if (e?.name === 'AbortError' && operation) {
@@ -600,21 +643,24 @@ export default {
     },
 
     async loadQuickJumpPaths() {
-      if (!this.selectedId) return
+      if (!this.visible || !this.selectedId) return
+      const clientId = this.selectedId
+      const seq = this.pickerContextSeq
+      const isActive = () => this.visible && this.selectedId === clientId && this.pickerContextSeq === seq
 
       this.quickJumpLoading = true
 
       try {
-        const res = await getRemoteSystemPaths(this.selectedId)
+        const res = await getRemoteSystemPaths(clientId)
         const json = await res.json()
 
-        if (res.ok && json.code === 0 && json.data) {
+        if (isActive() && res.ok && json.code === 0 && json.data) {
           this.quickJumpPaths = json.data
         }
       } catch (e) {
         console.error('Failed to load system paths:', e)
       } finally {
-        this.quickJumpLoading = false
+        if (isActive()) this.quickJumpLoading = false
       }
     },
 
@@ -782,6 +828,7 @@ export default {
 
 .remote-file-picker-toolbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
 }

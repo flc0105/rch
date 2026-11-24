@@ -11,6 +11,7 @@ Recording rules live here (not scattered through execution, Activity, or UI):
   Pins remain independent even after Recent is cleared or an Activity deleted.
 """
 import re
+import threading
 
 from core.utils.json_utils import compact_json_dumps, json_loads_typed
 from server.application.history.history_record_policy import CommandHistoryRecordPolicy
@@ -53,55 +54,57 @@ class QuickHistoryRecordPolicy:
 class QuickHistoryStore:
     """Owns Quick Recent writes and short-lived execution tracking, not Activity IDs."""
 
-    def __init__(self, store):
-        self.store = store
+    def __init__(self, database, machine_id_for_connection, now_iso, now_ms):
+        self.database = database
+        self.machine_id_for_connection = machine_id_for_connection
+        self.now_iso = now_iso
+        self.now_ms = now_ms
         self._pending = {}
+        self._pending_lock = threading.RLock()
 
     def begin(self, submission_id, conn, command):
-        with self.store._lock:
+        with self._pending_lock:
             self._pending[submission_id] = (
-                self.store._get_machine_id_from_conn(conn), str(command).strip())
+                self.machine_id_for_connection(conn), str(command).strip())
 
     def discard(self, submission_id):
-        with self.store._lock:
+        with self._pending_lock:
             self._pending.pop(submission_id, None)
 
     def finish(self, submission_id, status):
-        with self.store._lock:
+        with self._pending_lock:
             submitted = self._pending.pop(submission_id, None)
-            if submitted is None or status not in QUICK_FINAL_STATUSES:
-                return
-            machine_id, command = submitted
-            when = self.store._now_iso()
-            timestamp_ms = self.store._now_ms()
-            snapshot = {'command': command, 'raw_command': command, 'status': status,
-                        'created_at': when, 'finished_at': when, 'files': []}
-            with self.store.database.transaction():
-                conn = self.store.database.connection()
-                conn.execute('''
-                    INSERT INTO command_recents (
-                        machine_id, command, last_used_at, last_used_at_ms,
-                        use_count, snapshot_json
-                    ) VALUES (?, ?, ?, ?, 1, ?)
-                    ON CONFLICT(machine_id, command) DO UPDATE SET
-                        last_used_at = excluded.last_used_at,
-                        last_used_at_ms = excluded.last_used_at_ms,
-                        use_count = command_recents.use_count + 1,
-                        snapshot_json = excluded.snapshot_json
-                ''', (machine_id, command, when, timestamp_ms, compact_json_dumps(snapshot)))
-                conn.execute('''
-                    DELETE FROM command_recents WHERE rowid IN (
-                        SELECT rowid FROM command_recents WHERE machine_id = ?
-                        ORDER BY last_used_at_ms DESC, command DESC LIMIT -1 OFFSET ?
-                    )
-                ''', (machine_id, COMMAND_HISTORY_RECENT_LIMIT))
+        if submitted is None or status not in QUICK_FINAL_STATUSES:
+            return
+        machine_id, command = submitted
+        when = self.now_iso()
+        timestamp_ms = self.now_ms()
+        snapshot = {'command': command, 'raw_command': command, 'status': status,
+                    'created_at': when, 'finished_at': when, 'files': []}
+        with self.database.transaction() as conn:
+            conn.execute('''
+                INSERT INTO command_recents (
+                    machine_id, command, last_used_at, last_used_at_ms,
+                    use_count, snapshot_json
+                ) VALUES (?, ?, ?, ?, 1, ?)
+                ON CONFLICT(machine_id, command) DO UPDATE SET
+                    last_used_at = excluded.last_used_at,
+                    last_used_at_ms = excluded.last_used_at_ms,
+                    use_count = command_recents.use_count + 1,
+                    snapshot_json = excluded.snapshot_json
+            ''', (machine_id, command, when, timestamp_ms, compact_json_dumps(snapshot)))
+            conn.execute('''
+                DELETE FROM command_recents WHERE rowid IN (
+                    SELECT rowid FROM command_recents WHERE machine_id = ?
+                    ORDER BY last_used_at_ms DESC, command DESC LIMIT -1 OFFSET ?
+                )
+            ''', (machine_id, COMMAND_HISTORY_RECENT_LIMIT))
 
     def clear(self, machine_id, *, query=''):
         query = str(query or '').strip()
-        with self.store._lock, self.store.database.transaction():
+        with self.database.transaction() as conn:
             if query:
                 # Match the UI's case-insensitive substring search, including Unicode text.
-                conn = self.store.database.connection()
                 commands = [row[0] for row in conn.execute(
                     'SELECT command FROM command_recents WHERE machine_id = ?', (machine_id,))
                     if query.lower() in row[0].lower()]
@@ -109,15 +112,24 @@ class QuickHistoryStore:
                     'DELETE FROM command_recents WHERE machine_id = ? AND command = ?',
                     ((machine_id, command) for command in commands))
             else:
-                self.store.database.connection().execute(
+                conn.execute(
                     'DELETE FROM command_recents WHERE machine_id = ?', (machine_id,))
             # Do not clear the user's independent pinned_commands collection.
 
+    def get_recent(self, machine_id, command):
+        row = self.database.fetch_one(
+            'SELECT snapshot_json, last_used_at, use_count FROM command_recents WHERE machine_id = ? AND command = ?',
+            (machine_id, command))
+        if row is None:
+            return None
+        return {'snapshot': json_loads_typed(row['snapshot_json'], {}),
+                'last_used_at': row['last_used_at'], 'use_count': int(row['use_count'])}
+
     def list_recents(self, machine_id):
-        rows = self.store.database.connection().execute('''
+        rows = self.database.fetch_all('''
             SELECT command, last_used_at, use_count, snapshot_json FROM command_recents
             WHERE machine_id = ? ORDER BY last_used_at_ms DESC, command DESC LIMIT ?
-        ''', (machine_id, COMMAND_HISTORY_RECENT_LIMIT)).fetchall()
+        ''', (machine_id, COMMAND_HISTORY_RECENT_LIMIT))
         result = []
         for row in rows:
             snapshot = json_loads_typed(row['snapshot_json'], {})

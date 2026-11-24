@@ -2,6 +2,7 @@
 from flask import Blueprint, g, request
 
 from server.web.api_response import WebApiResponder
+from server.application.execution.interaction_broker import InteractionNotPendingError
 
 
 def create_interaction_blueprint(server_instance):
@@ -19,10 +20,13 @@ def create_interaction_blueprint(server_instance):
 
     @bp.post('/api/interactions/<interaction_id>/answer')
     def answer(interaction_id):
-        def work():
+        try:
             body = request.get_json(silent=True) or {}
-            return broker.answer(interaction_id, approved=body.get('approved') is True, value=body.get('value'))
-        return responder.json_endpoint(work)
+            return responder.ok(broker.answer(interaction_id, approved=body.get('approved') is True, value=body.get('value')))
+        except InteractionNotPendingError as exc:
+            return responder.fail(exc, 409)
+        except Exception as exc:
+            return responder.map_common_error(exc)
 
     @bp.post('/api/interactions/client/request')
     def client_request():

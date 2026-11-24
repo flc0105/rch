@@ -172,6 +172,10 @@ class WindowsClipboardAdapter:
         finally:
             win32clipboard.CloseClipboard()
 
+    def clear(self):
+        with self._open_clipboard_for_write():
+            pass
+
     def set_text(self, text: str):
         with self._open_clipboard_for_write() as (win32clipboard, win32con):
             win32clipboard.SetClipboardText(

@@ -14,7 +14,15 @@
 - **`*_json`**：SQLite `TEXT` 中存放的 JSON 对象或数组。它们不是另一张可独立更新的关系表；同一业务的固定列通常是筛选、排序或标识所需字段，JSON 保存扩展的业务内容或快照。
 - **布尔量**：SQLite 没有独立的布尔列类型，这里通常以整数 `0/1` 保存；展示时由 Server 转成 `false/true`。
 
-正常启动、完成 History 模块初始化后，当前结构共有 **21 张应用表**（不计 SQLite 自己的 `sqlite_sequence` 等内部对象）。其中 `activity_records` 由 History 模块创建，`keychain_entries` 由 Keychains 模块创建，`transfer_records` 由 Transfer 模块创建；单独初始化 SQLite 数据库、却没有启动这些模块时，可能只能看到核心 18 张表。空表是正常情况，不代表对应功能没有实现。
+`RchDatabase` 在启动任何业务模块之前统一创建并验证 **21 张应用表及其索引**（不计 SQLite 自己的 `sqlite_sequence` 等内部对象）。DDL 与 Schema 校验集中在 `server/persistence/`；Activity、Keychains、Transfer 等业务模块使用已初始化的表，负责各自的数据读写及运行状态恢复。空表是正常情况。
+
+## 持久化层与事务约定
+
+Server 使用 API / Service / Store（或 Catalog）分层。API 负责请求和响应，Service 负责业务规则、跨域协调、事件与业务事务；Store 负责所属表的参数化 SQL、筛选条件、记录映射。Activity 查询、更新和清理由 History Store 管理，Quick Recent 和 Pinned Commands 由各自 Store 管理。Background Jobs 通过设备及连接历史 Store 查询历史身份，不直接访问其他领域的表。
+
+数据库基础设施维护每线程一条 SQLite 连接，启用 WAL、外键检查和 5 秒 busy timeout。单语句操作可使用共享执行和查询接口；多语句写入通过同一线程的事务连接执行。外层写事务使用 `BEGIN IMMEDIATE`，嵌套写事务使用 SAVEPOINT：内层成功只释放保存点，由外层统一提交；内层异常回滚本次保存点并向调用者传播，外层异常撤销尚未提交的全部写入。列表和统计需要一致视图时使用只读快照，复用已有事务或创建 WAL 读取快照。
+
+跨 Store 组合事务应限于纯数据库操作，例如 Settings、Pinned Paths、Pinned Commands 的批量写入。事务内不等待 Client、传输文件或发送事件；外层提交成功后再执行相关事件和外部副作用。持有业务状态或文件系统锁的操作仍由所属服务管理，不应从数据库写事务内部反向获取这些锁。避免手动提交共享连接、嵌套关闭连接或跨线程传递事务连接。
 
 ## 业务功能与数据表速查
 
@@ -68,7 +76,7 @@ python3 -m server.persistence.migrate_saved_bind_targets runtime/rch.db
 
 ### `transfer_records` — 文件传输记录
 
-由 Transfer 模块在 `rch.db` 中建立。每次创建传输时记录一次开始状态，结束时记录一次终态；实时速度/ETA、临时任务参数不写入此表。Server 重新启动时仍标为 `running` 的行会被置为 `interrupted` 并填写完成时间。只通过 Transfer Center 的 Delete / Clear Recent 删除记录，不因为超过固定条数而自动删减；清理记录不删除 Artifact 文件。
+由基础 Schema 统一初始化。每次创建传输时记录一次开始状态，结束时记录一次终态；实时速度/ETA、临时任务参数不写入此表。Server 重新启动时仍标为 `running` 的行会被置为 `interrupted` 并填写完成时间。只通过 Transfer Center 的 Delete / Clear Recent 删除记录，不因为超过固定条数而自动删减；清理记录不删除 Artifact 文件。
 
 | 字段 | 用途 |
 | --- | --- |
@@ -89,7 +97,7 @@ python3 -m server.persistence.migrate_saved_bind_targets runtime/rch.db
 
 ### `keychain_entries` — Login / Secret
 
-由 Keychains 管理模块在 `rch.db` 中创建。按 `cred_id` 唯一；同一 `machine_id` 下的 `name` 不区分大小写唯一。
+由基础 Schema 统一初始化。按 `cred_id` 唯一；同一 `machine_id` 下的 `name` 不区分大小写唯一。
 
 | 字段 | 用途 |
 | --- | --- |
@@ -423,7 +431,7 @@ Server 全局
 
 ## 查看、校验与备份
 
-RCH 直接使用固定的最终表结构初始化空数据库，包含 Artifact 与 Agent Outputs 的三张业务表。对于已经存在的 `rch.db`，启动时会检查新表及原表结构，**不会自动补表、搬迁旧数据库或进行 Schema 迁移**。旧结构不匹配时拒绝启动。采用全新 Schema 前应先停止 Server 并备份 Runtime；需要保留旧数据的部署必须在系统外另行制定离线数据处理方案。
+RCH 直接使用固定的最终表结构初始化空数据库，包含 Artifact 与 Agent Outputs 的三张业务表。对于已经存在的 `rch.db`，启动时统一检查表的字段定义、外键与必需索引，补齐基础初始化所需的缺失业务表及索引。字段按名称检查，不依赖物理排列顺序；额外的普通查询索引不影响校验。字段、主键、外键或必需索引等真正不匹配时拒绝启动并报告差异。除已明确规定的保存连接初始化外，不自动重建表或搬迁已有业务数据。采用全新 Schema 前应先停止 Server 并备份 Runtime；需要保留旧数据的部署必须在系统外另行制定离线数据处理方案。
 
 ### 只读查看
 
@@ -460,6 +468,6 @@ sqlite3 -readonly runtime/rch.db 'PRAGMA integrity_check;'
 | Notifications 被清空，通知开关仍保留 | `notifications` 与 `settings.notification_preferences` 相互独立。 |
 | 删除 Job 的文件关联后磁盘空间没有变化 | `background_job_files` 存的是 Artifact 引用，不是 Artifact 实体文件。 |
 | 按机器删除一条记录，其他表的数据还在 | 大部分跨表机器关联不是数据库级联外键，必须按相应业务清理规则操作。 |
-| 新数据库里找不到 `activity_records` | 该表是在 History 模块初始化时创建，单独创建基础 SQLite 文件不一定包含它。 |
+| 新数据库里找不到 `activity_records` | 该表由基础数据库初始化统一创建；若仍缺失，应检查数据库是否为 Server 实际使用的文件及初始化是否成功。 |
 
 数据库里可能包含命令文本、传输路径、Job 参数、连接快照以及通知上下文，**应按敏感运行数据保护**。不要把完整 `rch.db`、SQL 导出或包含真实凭据的查询结果直接发到公开渠道。清理范围和自动清理行为详见 [Cleanup](cleanup.md)；相关日志不在这张数据库中，见 [Logging](logging.md)。

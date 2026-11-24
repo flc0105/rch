@@ -5,7 +5,6 @@ from server.models.artifact import ArtifactReference
 from core.protocol.message_types import MSG_TYPE_RESULT
 from core.protocol.references import ReferenceType, entity_reference
 from core.utils.command_output import ResultEventType
-from core.utils.json_utils import compact_json_dumps
 from server.config.config import COMMAND_HISTORY_MAX_RESULT_FIELD_BYTES
 
 
@@ -19,10 +18,10 @@ class HistoryWriteService:
 
     def create_activity_for_dispatch(self, conn, activity_id, activity):
         info = getattr(conn, 'session_info', None)
-        when = self.store._now_iso()
+        when = self.store.now_iso()
         entry = {
             'activity_id': activity_id,
-            'machine_id': self.store._get_machine_id_from_conn(conn),
+            'machine_id': self.store.machine_id_for_connection(conn),
             'client_id': getattr(info, 'client_id', '') or '',
             'kind': activity['kind'], 'action': activity['action'],
             'origin': activity['origin'], 'presentation': activity['presentation'],
@@ -32,18 +31,14 @@ class HistoryWriteService:
             'created_at': activity.get('created_at') or when,
             'started_at': when, 'finished_at': None, 'references': list(activity.get('references', [])),
         }
-        with self.store._lock, self.store.database.transaction():
-            self.store._insert_entry(entry)
+        with self.store.transaction():
+            self.store.insert_entry(entry)
         return activity_id
 
     def interrupt_orphaned_activities(self):
         """Finish Activity records left active by a previous Server process."""
-        with self.store._lock, self.store.database.transaction() as database:
-            database.execute(
-                "UPDATE activity_records SET status = 'interrupted', finished_at = ? "
-                "WHERE status IN ('running', 'cancelling')",
-                (self.store._now_iso(),),
-            )
+        with self.store.transaction():
+            self.store.interrupt_active(self.store.now_iso())
 
     @staticmethod
     def _size_within(parts, remaining):
@@ -60,14 +55,9 @@ class HistoryWriteService:
         if (conn is None or not entry_id or event.get('type') != MSG_TYPE_RESULT
                 or event.get('event_type') not in ResultEventType._value2member_map_):
             return
-        machine_id = self.store._get_machine_id_from_conn(conn)
-        with self.store._lock, self.store.database.transaction() as database:
-            row = database.execute(
-                "SELECT result_message_bytes, result_data_bytes, result_omitted, result_summary "
-                "FROM activity_records WHERE machine_id = ? AND activity_id = ? "
-                "AND status IN ('running', 'cancelling')",
-                (machine_id, entry_id),
-            ).fetchone()
+        machine_id = self.store.machine_id_for_connection(conn)
+        with self.store.transaction():
+            row = self.store.get_active_result_stats(machine_id, entry_id)
             if row is None:
                 return
 
@@ -98,20 +88,16 @@ class HistoryWriteService:
                 text = result.get('message', '').strip()
                 summary = text if text and len(text) <= 256 and '\n' not in text and '\r' not in text else ''
             # Append the packet and its Server history time at the same array index.
-            database.execute(
-                "UPDATE activity_records SET result_json = "
-                "json_insert(result_json, '$.result[#]', json(?), '$.recorded_at[#]', ?), "
-                "result_message_bytes = ?, result_data_bytes = ?, result_omitted = ?, result_summary = ? "
-                "WHERE machine_id = ? AND activity_id = ?",
-                (compact_json_dumps(result), self.store._now_iso(), message_bytes, data_bytes,
-                 int(omitted), summary, machine_id, entry_id),
-            )
+            self.store.append_result(
+                machine_id, entry_id, result, self.store.now_iso(),
+                message_bytes=message_bytes, data_bytes=data_bytes,
+                omitted=omitted, summary=summary)
 
     def append_file_for_connection(self, conn, entry_id, file_info):
         if conn is None or not entry_id or not isinstance(file_info, dict):
             return
-        with self.store._lock, self.store.database.transaction():
-            entry = self.store._get_entry(self.store._get_machine_id_from_conn(conn), entry_id)
+        with self.store.transaction():
+            entry = self.store.get_entry(self.store.machine_id_for_connection(conn), entry_id)
             if entry is None:
                 return
             snapshot = ArtifactReference.from_dict(file_info).to_dict()
@@ -119,7 +105,7 @@ class HistoryWriteService:
                 return
             ref = {**entity_reference(ReferenceType.ARTIFACT, snapshot['artifact_id']), 'snapshot': snapshot}
             self._add_reference(entry, ref)
-            self.store._update_entry(entry)
+            self.store.update_entry(entry)
 
     @staticmethod
     def _add_reference(entry, reference):
@@ -134,8 +120,8 @@ class HistoryWriteService:
     def add_references(self, conn, entry_id, references):
         if not conn or not entry_id or not isinstance(references, list):
             return
-        with self.store._lock, self.store.database.transaction():
-            entry = self.store._get_entry(self.store._get_machine_id_from_conn(conn), entry_id)
+        with self.store.transaction():
+            entry = self.store.get_entry(self.store.machine_id_for_connection(conn), entry_id)
             if entry is None:
                 return
             for reference in references:
@@ -146,25 +132,25 @@ class HistoryWriteService:
                 except ValueError:
                     continue
                 self._add_reference(entry, ref)
-            self.store._update_entry(entry)
+            self.store.update_entry(entry)
 
     def update_entry_status_for_connection(self, conn, entry_id, status, cwd_end=''):
         if conn is None or not entry_id:
             return
-        with self.store._lock, self.store.database.transaction():
-            entry = self.store._get_entry(self.store._get_machine_id_from_conn(conn), entry_id)
+        with self.store.transaction():
+            entry = self.store.get_entry(self.store.machine_id_for_connection(conn), entry_id)
             if entry is None:
                 return
             if entry['status'] in {'success', 'partial', 'error', 'cancelled', 'interrupted', 'timed_out', 'stopped'}:
                 return
             entry['status'] = status
             if status in {'success', 'partial', 'error', 'cancelled', 'interrupted', 'timed_out', 'stopped'}:
-                entry['finished_at'] = self.store._now_iso()
-            self.store._update_entry(entry)
+                entry['finished_at'] = self.store.now_iso()
+            self.store.update_entry(entry)
 
     def clear_history_for_connection(self, conn):
         if conn is not None:
-            self.clear_history_by_machine_id(self.store._get_machine_id_from_conn(conn))
+            self.clear_history_by_machine_id(self.store.machine_id_for_connection(conn))
 
     def clear_history_by_machine_id(self, machine_id, *, query=''):
         machine_id = self._machine_id(machine_id)
@@ -176,40 +162,30 @@ class HistoryWriteService:
     def set_command_pinned_for_connection(self, conn, command, is_pinned):
         if conn is None:
             return False
-        return self.set_command_pinned_by_machine_id(self.store._get_machine_id_from_conn(conn), command, is_pinned)
+        return self.set_command_pinned_by_machine_id(self.store.machine_id_for_connection(conn), command, is_pinned)
 
     def set_command_pinned_by_machine_id(self, machine_id, command, is_pinned):
         command = str(command or '').strip()
         if not command:
             return False
         machine_id = self._machine_id(machine_id)
-        with self.store._lock:
-            return self.store.pinned_store.set_command_pinned(machine_id, command, bool(is_pinned))
+        return self.store.pinned_store.set_command_pinned(machine_id, command, bool(is_pinned))
 
     def move_pinned_command_by_machine_id(self, machine_id, command, direction):
         return self.store.pinned_store.move_pinned_command(self._machine_id(machine_id), command, direction)
 
     def clear_execution_history_by_machine_id(self, machine_id, *, query='', kind='', errors=False):
         machine_id = self._machine_id(machine_id)
-        # Reuse the same filters as Activity Center's list/count queries.
-        clauses, params = self.store._activity_filters(machine_id, query=query, kind=kind, errors=errors)
-        with self.store._lock, self.store.database.transaction():
-            cursor = self.store.database.connection().execute(
-                f"DELETE FROM activity_records WHERE {' AND '.join(clauses)}", tuple(params))
-            return cursor.rowcount
+        return self.store.delete_activities(machine_id, query=query, kind=kind, errors=errors)
 
     def delete_execution_entry_for_connection(self, conn, entry_id):
         if conn is None:
             return False
-        return self.delete_execution_entry_by_machine_id(self.store._get_machine_id_from_conn(conn), entry_id)
+        return self.delete_execution_entry_by_machine_id(self.store.machine_id_for_connection(conn), entry_id)
 
     def delete_execution_entry_by_machine_id(self, machine_id, entry_id):
         machine_id, entry_id = self._machine_id(machine_id), str(entry_id or '').strip()
         if not entry_id:
             return False
-        with self.store._lock, self.store.database.transaction():
-            cursor = self.store.database.connection().execute(
-                'DELETE FROM activity_records WHERE machine_id = ? AND activity_id = ?',
-                (machine_id, entry_id))
-            # Deleting an Activity must not mutate Quick History or Pins.
-            return cursor.rowcount > 0
+        # Deleting an Activity must not mutate Quick History or Pins.
+        return self.store.delete_activity(machine_id, entry_id)

@@ -30,23 +30,7 @@ class KeychainStore:
         self._lock = threading.RLock()
         self._key_path = Path(key_file_path) if key_file_path is not None else Path(self.database.db_path).with_name('keychains.key')
         self._key = None
-        with self.database.transaction() as conn:
-            conn.execute('''CREATE TABLE IF NOT EXISTS keychain_entries (
-                cred_id TEXT PRIMARY KEY,
-                machine_id TEXT NOT NULL,
-                hostname TEXT NOT NULL,
-                kind TEXT NOT NULL CHECK(kind IN ('login', 'secret')),
-                name TEXT NOT NULL,
-                username TEXT NOT NULL DEFAULT '',
-                secret_ciphertext TEXT NOT NULL,
-                site TEXT NOT NULL DEFAULT '',
-                note TEXT NOT NULL DEFAULT '',
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            )''')
-            conn.execute('''CREATE UNIQUE INDEX IF NOT EXISTS uq_keychain_machine_name
-                ON keychain_entries(machine_id, name COLLATE NOCASE)''')
-            has_data = conn.execute('SELECT 1 FROM keychain_entries LIMIT 1').fetchone() is not None
+        has_data = self.database.fetch_one('SELECT 1 FROM keychain_entries LIMIT 1') is not None
         if has_data:
             # Never silently generate a replacement key for an existing encrypted DB.
             self._get_key(allow_create=False)

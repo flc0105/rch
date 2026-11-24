@@ -125,7 +125,11 @@ class ClipboardManager:
                 normalized.get('kind') or ''
             ).strip().lower()
 
-            if kind == 'text':
+            if kind == 'empty':
+                commit()
+                self.adapter.clear()
+
+            elif kind == 'text':
                 commit()
                 self.adapter.set_text(
                     str(normalized.get('text') or '')

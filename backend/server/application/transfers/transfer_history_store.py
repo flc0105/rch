@@ -13,25 +13,6 @@ class TransferHistoryStore:
     def __init__(self, database):
         self.database = database
         with self.database.transaction() as conn:
-            conn.execute('''CREATE TABLE IF NOT EXISTS transfer_records (
-                transfer_id TEXT PRIMARY KEY,
-                client_id TEXT NOT NULL DEFAULT '',
-                hostname TEXT NOT NULL DEFAULT '',
-                direction TEXT NOT NULL,
-                filename TEXT NOT NULL DEFAULT '',
-                source_path TEXT NOT NULL DEFAULT '',
-                destination_path TEXT NOT NULL DEFAULT '',
-                state TEXT NOT NULL,
-                stage TEXT NOT NULL DEFAULT '',
-                total_bytes INTEGER,
-                transferred_bytes INTEGER NOT NULL DEFAULT 0,
-                artifact_id TEXT NOT NULL DEFAULT '',
-                error TEXT NOT NULL DEFAULT '',
-                started_at TEXT NOT NULL,
-                completed_at TEXT NOT NULL DEFAULT ''
-            )''')
-            conn.execute('CREATE INDEX IF NOT EXISTS idx_transfer_records_time '
-                         'ON transfer_records(started_at DESC, transfer_id DESC)')
             # A Server restart cannot resume existing TCP/file-transfer operations.
             now = datetime.now().isoformat()
             conn.execute('''UPDATE transfer_records

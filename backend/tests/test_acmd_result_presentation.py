@@ -324,7 +324,7 @@ def test_actual_activity_detail_api_projects_output_without_touching_result_json
                'recorded_at': ['2026-11-21T00:00:00+08:00'], 'references': []}
     before = deepcopy(history)
     reader = module.HistoryViewService(SimpleNamespace(
-        _get_entry=lambda *_: deepcopy(history), artifact_service=None))
+        get_entry=lambda *_: deepcopy(history), artifact_service=None))
     item = reader.get_execution_entry('machine', 'id')
     assert item['result'] == before['result']
     assert item['recorded_at'] == before['recorded_at']
@@ -412,11 +412,8 @@ def test_python_packages_modes_use_result_local_format_capabilities():
 
 
 def test_history_write_keeps_data_on_result_scoped_format_error(tmp_path):
-    import importlib.util
     import sys
-    import threading
     import types
-    from pathlib import Path
 
     from client.commands.acmd.standalone.python_packages import python_packages
     from server.persistence.rch_database import RchDatabase
@@ -427,30 +424,23 @@ def test_history_write_keeps_data_on_result_scoped_format_error(tmp_path):
                                        'args': {'import': 'json', 'f': 'table'}})
     wire = result_wire_event(102, status, result)
 
-    # Load the real history writer without the optional Flask/Werkzeug Server bootstrap.
+    # Exercise the actual Store and schema without bootstrapping Web auth.
     config = types.ModuleType('server.config.config')
     config.COMMAND_HISTORY_MAX_RESULT_FIELD_BYTES = 256 * 1024
-    path = Path(__file__).parents[1] / 'server/application/history/history_write_service.py'
-    spec = importlib.util.spec_from_file_location('_isolated_acmd_history_writer', path)
-    module = importlib.util.module_from_spec(spec)
+    config.COMMAND_HISTORY_PAGE_SIZE = 50
+    config.COMMAND_HISTORY_MAX_PAGE_SIZE = 200
+    config.COMMAND_HISTORY_RECENT_LIMIT = 100
     with patch.dict(sys.modules, {'server.config.config': config}):
-        spec.loader.exec_module(module)
+        from server.application.history.history_store import CommandHistoryStore
 
     db = RchDatabase(str(tmp_path / 'rch.db'))
-    with db.transaction() as conn:
-        conn.execute('''CREATE TABLE activity_records (
-            machine_id TEXT, activity_id TEXT, status TEXT,
-            result_json TEXT, result_message_bytes INTEGER, result_data_bytes INTEGER,
-            result_omitted INTEGER, result_summary TEXT)''')
-        conn.execute('INSERT INTO activity_records VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-                     ('machine', 'entry', 'running', '{"result": []}', 0, 0, 0, ''))
-    store = SimpleNamespace(
-        database=db, _lock=threading.RLock(),
-        _get_machine_id_from_conn=lambda conn: 'machine',
-        _now_iso=lambda: '2026-11-21T00:00:00+08:00',
-    )
-    module.HistoryWriteService(store).append_client_result(
-        SimpleNamespace(), 'entry', wire)
+    store = CommandHistoryStore(db)
+    connection = SimpleNamespace(session_info=SimpleNamespace(machine_id='machine', client_id='client'))
+    store.write_service.create_activity_for_dispatch(connection, 'entry', {
+        'kind': 'command', 'action': 'invoke', 'origin': 'web', 'presentation': 'none',
+        'invocation': {}, 'resolved': {}, 'summary': 'test',
+    })
+    store.write_service.append_client_result(connection, 'entry', wire)
     row = db.connection().execute('SELECT * FROM activity_records').fetchone()
     saved = json.loads(row['result_json'])['result'][0]
     assert saved == wire

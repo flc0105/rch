@@ -1,4 +1,3 @@
-import threading
 from datetime import datetime, timezone
 
 
@@ -24,7 +23,17 @@ class ConnectionHistoryStore:
 
     def __init__(self, database):
         self.database = database
-        self._lock = threading.RLock()
+
+    def get_identity_by_client_id(self, client_id: str) -> tuple[str, str, str]:
+        row = self.database.fetch_one(
+            'SELECT machine_id, snapshot FROM connection_sessions WHERE client_id = ? '
+            'ORDER BY connected_at_ms DESC LIMIT 1', (client_id,))
+        if row is None:
+            return '', '', ''
+        snapshot = json_loads_dict(row['snapshot'])
+        return (str(row['machine_id'] or '').strip(),
+                str(snapshot.get('hostname') or '').strip(),
+                str(snapshot.get('addr') or '').strip())
 
     @staticmethod
     def _now_iso() -> str:
@@ -120,7 +129,7 @@ class ConnectionHistoryStore:
         )
 
     def record_connected(self, connection: dict):
-        with self._lock, self.database.transaction() as conn:
+        with self.database.transaction() as conn:
             self._record_connected_tx(conn, connection)
 
     def record_heartbeat(self, connection: dict):
@@ -129,7 +138,7 @@ class ConnectionHistoryStore:
         if not machine_id or not client_id:
             return
 
-        with self._lock, self.database.transaction() as conn:
+        with self.database.transaction() as conn:
             row = conn.execute(
                 'SELECT * FROM connection_sessions WHERE machine_id = ? AND client_id = ?',
                 (machine_id, client_id),
@@ -157,7 +166,7 @@ class ConnectionHistoryStore:
             return
         active_ids = {str(value or '').strip() for value in active_client_ids or set() if str(value or '').strip()}
 
-        with self._lock, self.database.transaction() as conn:
+        with self.database.transaction() as conn:
             rows = conn.execute(
                 "SELECT * FROM connection_sessions WHERE machine_id = ? AND disconnected_at = ''",
                 (machine_id_text,),
@@ -183,7 +192,7 @@ class ConnectionHistoryStore:
 
         disconnected_at = str(connection.get('disconnected_at') or self._now_iso()).strip()
         reason = str(termination_reason or '').strip() or 'unexpected_disconnect'
-        with self._lock, self.database.transaction() as conn:
+        with self.database.transaction() as conn:
             row = conn.execute(
                 'SELECT * FROM connection_sessions WHERE machine_id = ? AND client_id = ?',
                 (machine_id, client_id),
@@ -243,7 +252,7 @@ class ConnectionHistoryStore:
                 'filter_options': {'integrity': [], 'launch_mode': [], 'termination_reason': []},
             }
 
-        with self._lock:
+        with self.database.read_snapshot():
             conn = self.database.connection()
             # One aggregate row retains the existing toolbar statistics. Only the
             # requested page of session snapshots is fetched or deserialized.

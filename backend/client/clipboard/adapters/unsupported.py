@@ -8,6 +8,9 @@ class UnsupportedClipboardAdapter:
     def get_snapshot(self) -> dict:
         raise RuntimeError(f'Clipboard is not supported on {self.platform_name}')
 
+    def clear(self):
+        raise RuntimeError(f'Clipboard is not supported on {self.platform_name}')
+
     def set_text(self, text: str):
         raise RuntimeError(f'Clipboard is not supported on {self.platform_name}')
 
