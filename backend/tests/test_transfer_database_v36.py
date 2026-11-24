@@ -138,3 +138,53 @@ def test_cold_database_reopen_accepts_transfer_table_and_recovers_history(tmp_pa
     assert second.get_transfer(pending['transfer_id'])['state'] == 'interrupted'
     assert len(second.list_transfers()['recent']) == 2
     reopened.close_thread_connection()
+
+
+@pytest.mark.parametrize('stage,managed,expected', [
+    ('uploading_to_server', False, 'cancelled'),
+    ('preparing', False, 'cancelled'),
+    ('preparing', True, 'running'),
+    ('transferring', True, 'running'),
+])
+def test_browser_cancel_respects_dispatch_boundary(setup, stage, managed, expected):
+    from types import SimpleNamespace
+    from server.application.web.transfer_api import WebTransferApi
+    _, service, _ = setup
+    messages = []
+    api = WebTransferApi(service, SimpleNamespace(get_target_connection_by_client_id=lambda _: SimpleNamespace(send=messages.append)))
+    item = api.create_browser_upload_transfer(client_id='test', filename='test.bin', total_bytes=10, tab_id='tab')
+    transfer = item['transfer_id']
+    service.update_transfer(transfer, stage=stage, metadata={
+        'browser_stage': stage == 'uploading_to_server',
+        **({'transport': 'client_transfer_manager'} if managed else {}),
+    })
+    result = api.cancel_transfer(transfer, tab_id='tab')
+    assert result['state'] == expected
+    if expected == 'cancelled':
+        assert not messages and api.is_browser_upload_cancel_requested(transfer)
+    else:
+        assert result['stage'] == 'cancelling'
+        assert api.cancel_transfer(transfer, tab_id='tab')['state'] == 'running'
+        assert len(messages) == 2 and all(message['transfer_id'] == transfer for message in messages)
+        service.complete_transfer(transfer)
+        assert service.get_transfer(transfer)['state'] == 'completed'
+
+
+def test_cancel_dispatch_can_be_retried_after_send_failure(setup):
+    from types import SimpleNamespace
+    from server.application.web.transfer_api import WebTransferApi
+    _, service, _ = setup
+    item = make_transfer(service)
+    transfer = item['transfer_id']
+    messages = []
+    def send(message):
+        messages.append(message)
+        if len(messages) == 1:
+            raise OSError('injected main-channel send failure')
+    api = WebTransferApi(service, SimpleNamespace(get_target_connection_by_client_id=lambda _: SimpleNamespace(send=send)))
+    with pytest.raises(OSError, match='main-channel send failure'):
+        api.cancel_transfer(transfer, tab_id='old-tab')
+    assert api.cancel_transfer(transfer, tab_id='old-tab')['stage'] == 'cancelling'
+    assert len(messages) == 2
+    service.cancel_transfer(transfer)
+    assert service.get_transfer(transfer)['state'] == 'cancelled'

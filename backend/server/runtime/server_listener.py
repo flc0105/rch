@@ -6,6 +6,7 @@ import threading
 import time
 
 from core.protocol.rchsocket import RCHSocket
+from core.protocol.file_stream import DATA_GREETING
 from core.utils.logger import logger
 from server.runtime.session_acceptor import SessionAcceptor
 
@@ -74,9 +75,27 @@ class ServerListener(SessionAcceptor):
         if handler is not None:
             handler.dispatch_server(self, raw_sock, addr)
             return None
-        return self.accept_session(raw_sock, addr, listener_id=self.listener_id,
-                                   listener_name=self.name, listener_port=self.address[1],
-                                   protocol=self.protocol)
+        try:
+            packet, transport = self._receive_client_info(raw_sock, addr)
+            return self.route_accepted_connection(raw_sock, addr, packet, transport)
+        except Exception as exc:
+            raw_sock.close()
+            logger.error('Failed client handshake from %s: %s', addr, exc)
+            return None
+
+    def route_accepted_connection(self, raw_sock, addr, packet, transport):
+        if isinstance(packet, dict) and packet.get('type') == DATA_GREETING:
+            web = getattr(self.server, 'web_service', None)
+            service = getattr(getattr(web, 'transfer_api', None), 'transfer_service', None)
+            handler = getattr(service, 'tcp_transport', None)
+            if handler is not None:
+                handler.accept_reverse(raw_sock, packet, self)
+            else:
+                raw_sock.close()
+            return None
+        return self.accept_session(raw_sock, addr, initial_handshake=(packet, transport),
+                                   listener_id=self.listener_id, listener_name=self.name,
+                                   listener_port=self.address[1], protocol=self.protocol)
 
     def serve(self, already_bound=False):
         if not already_bound:

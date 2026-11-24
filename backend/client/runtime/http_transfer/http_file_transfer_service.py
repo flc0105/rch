@@ -9,6 +9,7 @@ from client.runtime.http_transfer.strategies.factory import build_http_transfer_
 from client.http.client_api import ClientApiClient
 from core.protocol.message_types import MSG_TYPE_TRANSFER_UPDATE
 from core.utils.formatting import format_bytes
+from core.transfer_settings import FileTransferMode
 
 
 class HttpFileTransferService:
@@ -23,14 +24,21 @@ class HttpFileTransferService:
 
     PROGRESS_REPORT_INTERVAL_SECONDS = 0.25
 
-    def __init__(self, owner, archive_service=None, client_api=None):
+    def __init__(self, owner, archive_service=None, client_api=None, *, transfer_mode=None, tcp_transport=None):
         self.owner = owner
         self.archive_service = archive_service
         self.client_api = client_api or getattr(owner, 'client_api', None) or ClientApiClient()
+        self._transfer_mode = transfer_mode
+        self._tcp_transport = tcp_transport
+        self._fixed_strategy = (tcp_transport or build_http_transfer_strategy(owner, transfer_mode)
+                                if transfer_mode is not None else None)
 
     def get_transfer_strategy(self):
-        transfer_mode = runtime_config.HTTP_TRANSFER_MODE
-        return build_http_transfer_strategy(self.owner, transfer_mode)
+        return self._fixed_strategy or build_http_transfer_strategy(self.owner, runtime_config.FILE_TRANSFER_MODE)
+
+    @property
+    def is_tcp_streaming(self):
+        return self._tcp_transport is not None
 
     def build_http_upload_form_data(
         self,
@@ -188,7 +196,7 @@ class HttpFileTransferService:
         file_size = os.path.getsize(file_path)
         filename = upload_name or os.path.basename(file_path)
         strategy = self.get_transfer_strategy()
-        progress_supported = strategy.get_mode_name() != 'legacy'
+        progress_supported = strategy.get_mode_name() != FileTransferMode.HTTP_SIMPLE.value
 
         if not transfer_id:
             self.owner.emit_progress(self.build_http_upload_start_message(filename, file_size), level='info')
@@ -215,14 +223,6 @@ class HttpFileTransferService:
                 progress_supported=progress_supported,
             )
 
-        upload_url = self.client_api.build_file_upload_url()
-        form_data = self.build_http_upload_form_data(
-            artifact_type=artifact_type,
-            category=category,
-            folder=folder,
-            extra=extra,
-            transfer_buffer_size=strategy.get_buffer_size(),
-        )
         progress_callback = (
             self._build_progress_callback(transfer_id, 'staging', filename)
             if transfer_id and progress_supported
@@ -230,11 +230,28 @@ class HttpFileTransferService:
         )
 
         try:
-            upload_options = {'progress_callback': progress_callback}
-            if upload_name:
-                upload_options['filename'] = filename
-            response = strategy.upload_file(file_path, upload_url, form_data, **upload_options)
-            response.raise_for_status()
+            if self.is_tcp_streaming:
+                if not transfer_id or folder:
+                    raise ValueError('TCP streaming requires a managed file transfer')
+                payload = self._tcp_transport.upload(
+                    file_path, filename=filename, artifact_type=artifact_type,
+                    category=category, extra=extra, progress_callback=progress_callback,
+                )
+            else:
+                upload_url = self.client_api.build_file_upload_url()
+                form_data = self.build_http_upload_form_data(
+                    artifact_type=artifact_type,
+                    category=category,
+                    folder=folder,
+                    extra=extra,
+                    transfer_buffer_size=strategy.get_buffer_size(),
+                )
+                upload_options = {'progress_callback': progress_callback}
+                if upload_name:
+                    upload_options['filename'] = filename
+                response = strategy.upload_file(file_path, upload_url, form_data, **upload_options)
+                response.raise_for_status()
+                payload = self.parse_http_upload_response(response)
 
             if transfer_id:
                 self._send_transfer_update(
@@ -247,7 +264,6 @@ class HttpFileTransferService:
                     progress_supported=progress_supported,
                 )
 
-            payload = self.parse_http_upload_response(response)
             data = payload.get('data') if isinstance(payload, dict) and isinstance(payload.get('data'), dict) else {}
             artifact_id = str(data.get('artifact_id') or '').strip()
             if transfer_id:
@@ -319,7 +335,7 @@ class HttpFileTransferService:
                 temp_archive_path,
                 artifact_type=artifact_type,
                 category=category,
-            folder=folder,
+                folder=folder,
                 extra=extra,
                 transfer_id=transfer_id,
                 send_preparing=False,
@@ -339,6 +355,10 @@ class HttpFileTransferService:
                     shutil.rmtree(temp_archive_dir, ignore_errors=True)
 
     def download_file_from_http(self, url: str, target_path: str, *, transfer_id: str = '', commit=None, display_filename: str = ''):
+        return self.download_file_to_path(url, target_path, transfer_id=transfer_id,
+                                          commit=commit, display_filename=display_filename)
+
+    def download_file_to_path(self, url: str, target_path: str, *, transfer_id: str = '', commit=None, display_filename: str = ''):
         strategy = self.get_transfer_strategy()
         filename = display_filename or os.path.basename(target_path)
         progress_callback = self._build_progress_callback(
@@ -361,13 +381,17 @@ class HttpFileTransferService:
             )
 
         try:
-            result = strategy.download_file(
-                self.client_api.normalize_file_transfer_url(url),
-                target_path,
-                progress_callback=progress_callback,
-            )
-            if commit is not None:
-                target_path = commit(target_path)
+            if self.is_tcp_streaming:
+                target_path = self._tcp_transport.download(target_path, progress_callback=progress_callback, commit=commit)
+                result = target_path
+            else:
+                result = strategy.download_file(
+                    self.client_api.normalize_file_transfer_url(url),
+                    target_path,
+                    progress_callback=progress_callback,
+                )
+                if commit is not None:
+                    target_path = commit(target_path)
             if not transfer_id:
                 self.owner.emit_progress(f'Download completed: {filename}', level='success')
             else:

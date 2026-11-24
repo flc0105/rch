@@ -75,13 +75,13 @@ class HttpTransferStrategy:
     def configure_context_for_upload(self):
         self.owner._set_cancel_policy(
             mode='cooperative' if self.is_cancel_supported() else 'none',
-            message='Current HTTP transfer mode is legacy; upload cancellation is not supported',
+            message='Current file transfer mode is http_simple; upload cancellation is not supported',
         )
 
     def configure_context_for_download(self):
         self.owner._set_cancel_policy(
             mode='cooperative' if self.is_cancel_supported() else 'none',
-            message='Current HTTP transfer mode is legacy; download cancellation is not supported',
+            message='Current file transfer mode is http_simple; download cancellation is not supported',
         )
 
     def get_buffer_size(self) -> int:
@@ -132,16 +132,8 @@ class HttpTransferStrategy:
 
 
 def normalize_http_transfer_mode(mode: str = '') -> str:
-    normalized = str(mode or '').strip().lower()
-
-    if normalized in ('legacy', 'cancelable'):
-        return normalized
-
-    normalized_default = str(
-        runtime_config.HTTP_TRANSFER_MODE or ''
-    ).strip().lower()
-
-    if normalized_default in ('legacy', 'cancelable'):
-        return normalized_default
-
-    return 'cancelable'
+    # Ordinary commands and SDK calls remain HTTP even in tcp_streaming mode.
+    selected = mode or runtime_config.FILE_TRANSFER_MODE
+    if selected == transfer_settings.FileTransferMode.HTTP_SIMPLE.value:
+        return transfer_settings.FileTransferMode.HTTP_SIMPLE.value
+    return transfer_settings.FileTransferMode.HTTP_STREAMING.value

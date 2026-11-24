@@ -1,3 +1,4 @@
+from core.transfer_settings import FileTransferMode
 """Native Client interaction registrations."""
 
 import os
@@ -87,7 +88,7 @@ def clipboard_read(self, args_dict):
         if not files:
             return 0, 'No clipboard files are available'
         transfer = self.http_file_transfer_service
-        if runtime_config.HTTP_TRANSFER_MODE == 'legacy':
+        if runtime_config.FILE_TRANSFER_MODE == FileTransferMode.HTTP_SIMPLE.value:
             self._set_cancel_policy('none')
         extra = {'saved_from': 'clipboard'}
         if len(files) == 1 and not files[0]['is_directory']:

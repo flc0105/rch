@@ -1,3 +1,4 @@
+from core.transfer_settings import FileTransferMode
 import os
 import uuid
 
@@ -144,7 +145,7 @@ class CancelableMultipartUploadStream:
 
 
 class CancelableHttpTransferStrategy(HttpTransferStrategy):
-    MODE_NAME = 'cancelable'
+    MODE_NAME = FileTransferMode.HTTP_STREAMING.value
 
     def is_cancel_supported(self) -> bool:
         return True

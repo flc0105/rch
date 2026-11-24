@@ -178,7 +178,7 @@ class WebConnectionService:
             'client_log_path': info.get_extra('client_log_path') or '',
             'username': info.get_extra('username'),
             'process_name': info.get_extra('process_name'),
-            'http_transfer_mode': info.get_extra('http_transfer_mode'),
+            'file_transfer_mode': info.get_extra('file_transfer_mode'),
             'script_default_execution_mode': info.get_extra('script_default_execution_mode'),
             'script_default_output_mode': info.get_extra('script_default_output_mode'),
             'variable_manifest': list(info.get_extra('variable_manifest') or []),
@@ -259,7 +259,7 @@ class WebConnectionService:
                 'launch_source': item.get('launch_source') or '',
                 'username': item.get('username') or '',
                 'process_name': item.get('process_name') or '',
-                'http_transfer_mode': item.get('http_transfer_mode') or '',
+                'file_transfer_mode': item.get('file_transfer_mode') or '',
                 'script_default_execution_mode': item.get('script_default_execution_mode') or '',
                 'script_default_output_mode': item.get('script_default_output_mode') or '',
                 'recent_cached': True,
@@ -562,7 +562,7 @@ class WebConnectionService:
 
         transfer_service = self.server.web_service.transfer_api.transfer_service
         session.context.on_transfer_update = (
-            lambda data: transfer_service.handle_client_update(session.session_info.client_id, data)
+            lambda data: transfer_service.handle_client_update(session.session_info.client_id, data, session=session)
         )
         return session
 
@@ -577,6 +577,7 @@ class WebConnectionService:
         # online; commands do not need individual Interaction grants.
         if self.client_session_token_service is not None:
             token = self.client_session_token_service.issue(session)
+            session.context.client_session_token = token
             from core.protocol.message_types import MSG_TYPE_CLIENT_SESSION_TOKEN
             session.send({'type': MSG_TYPE_CLIENT_SESSION_TOKEN, 'token': token})
         if (getattr(session, 'listener_protocol', '') == 'bind_tcp'
@@ -588,16 +589,25 @@ class WebConnectionService:
             })
         self.publish_connection_online(session)
 
-    def handle_replaced_connection_closed(self, session: ClientSession):
-        """Retire only the old session; Client-ID keyed services belong to its replacement."""
-        session.services.heartbeat_service.mark_disconnected()
+    def _close_transfer_data(self, session):
         if self.client_session_token_service is not None:
             self.client_session_token_service.revoke(session)
+        api = getattr(self.server.web_service, 'transfer_api', None)
+        transport = getattr(getattr(api, 'transfer_service', None), 'tcp_transport', None)
+        if transport is not None:
+            transport.close_session(session)
+        session.context.client_session_token = ''
+
+    def handle_replaced_connection_closed(self, session: ClientSession):
+        """Retire only the old session; Client-ID keyed services belong to its replacement."""
+        self._close_transfer_data(session)
+        session.services.heartbeat_service.mark_disconnected()
         lifecycle = getattr(self.server, 'lifecycle_adapter', None)
         if lifecycle is not None:
             lifecycle.disconnected(session)
 
     def handle_connection_closed(self, session: ClientSession):
+        self._close_transfer_data(session)
         session.services.heartbeat_service.mark_disconnected()
         payload = self.serialize_connection(session)
         if self.recent_device_store and payload['connection_direction'] == 'reverse':
@@ -628,12 +638,6 @@ class WebConnectionService:
             self.connection_history_store.record_disconnected(
                 payload, termination_reason=reason, details=detail
             )
-        try:
-            if self.client_session_token_service is not None:
-                self.client_session_token_service.revoke(session)
-                
-        except Exception:
-            pass
         try:
             self.server.web_service.terminal_api.pty_session_service.handle_client_disconnected(
                 session.session_info.client_id

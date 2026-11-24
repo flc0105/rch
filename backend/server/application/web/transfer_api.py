@@ -148,31 +148,16 @@ class WebTransferApi:
     def cancel_transfer(self, transfer_id: str, *, tab_id: str = ''):
         normalized_id = str(transfer_id or '').strip()
         normalized_tab_id = str(tab_id or '').strip()
-        current = self.transfer_service.get_transfer(normalized_id, tab_id=normalized_tab_id)
-        if not current:
-            raise ValueError('transfer not found')
-        if current.get('state') != 'running':
-            raise ValueError('transfer is no longer active')
-        if current.get('cancel_supported') is False:
-            raise ValueError('current transfer mode does not support cancellation')
-
-        stage = str(current.get('stage') or '').strip().lower()
-        self.transfer_service.mark_cancelling(normalized_id, tab_id=normalized_tab_id)
-
-        metadata = current.get('metadata') if isinstance(current.get('metadata'), dict) else {}
-        is_browser_upload = metadata.get('source') == 'remote_file_upload'
-
-        if stage == 'uploading_to_server':
-            with self._browser_upload_grant_lock:
-                event = self._browser_upload_cancel_events.get(normalized_id)
-                if event is not None:
-                    event.set()
-            cancelled = self.transfer_service.cancel_transfer(normalized_id, tab_id=normalized_tab_id)
-            return cancelled or current
-
-        if is_browser_upload and stage in ('preparing', 'cancelling'):
-            cancelled = self.transfer_service.cancel_transfer(normalized_id, tab_id=normalized_tab_id)
-            return cancelled or current
+        current, dispatch = self.transfer_service.request_cancellation(
+            normalized_id, tab_id=normalized_tab_id,
+        )
+        if not dispatch:
+            if current['state'] == 'cancelled':
+                with self._browser_upload_grant_lock:
+                    event = self._browser_upload_cancel_events.get(normalized_id)
+                    if event is not None:
+                        event.set()
+            return current
 
         if self.server is None:
             raise RuntimeError('server is not available for transfer cancellation')

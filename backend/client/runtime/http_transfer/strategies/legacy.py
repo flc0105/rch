@@ -1,3 +1,4 @@
+from core.transfer_settings import FileTransferMode
 import os
 
 import requests
@@ -6,7 +7,7 @@ from client.runtime.http_transfer.strategies.base import HttpTransferStrategy
 
 
 class LegacyHttpTransferStrategy(HttpTransferStrategy):
-    MODE_NAME = 'legacy'
+    MODE_NAME = FileTransferMode.HTTP_SIMPLE.value
     # Requests connect/read I/O timeouts; the read timeout resets as data arrives.
     _NETWORK_TIMEOUT = (15, 120)
 
@@ -14,9 +15,9 @@ class LegacyHttpTransferStrategy(HttpTransferStrategy):
         file_size = os.path.getsize(file_path)
         if file_size > 1024 * 1024 * 1024:
             raise ValueError(
-                'Legacy HTTP upload is limited to 1 GB.\n'
-                'Legacy HTTP upload buffers the full multipart body in memory.\n'
-                'Use cancelable transfer mode for large files.'
+                'http_simple upload is limited to 1 GB.\n'
+                'http_simple upload buffers the full multipart body in memory.\n'
+                'Use http_streaming transfer mode for large files.'
             )
 
         self.configure_context_for_upload()

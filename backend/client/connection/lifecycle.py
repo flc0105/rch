@@ -103,6 +103,7 @@ class ClientConnectionLifecycle:
                 listener.start()
                 self._bind_listener = listener
             self.client.server.adopt_socket(self._bind_listener.accept())
+            self.client.server.bind_listener = self._bind_listener
             return
         if mode != 'reverse':
             raise ValueError('connection_mode must be reverse or bind')

@@ -11,6 +11,9 @@ from client.runtime.http_transfer.http_file_transfer_service import HttpFileTran
 from client.runtime.execution.context import CommandCancelledError, ExecutionContext
 from client.http.client_api import ClientApiClient
 from core.protocol.message_types import MSG_TYPE_TRANSFER_UPDATE
+from core.transfer_settings import FileTransferMode
+from client.config import runtime_config
+from client.transfers.tcp_transport import TcpFileTransferTransport
 
 
 class _TransferTaskOwner(ExecutionRuntimeMixin):
@@ -121,7 +124,13 @@ class ClientTransferManager:
             context = ExecutionContext(command_id=0, timeout=None)
             owner = _TransferTaskOwner(self.connection, context)
             # Configure cancellation before publishing the task to the inbound router.
-            strategy = HttpFileTransferService(owner).get_transfer_strategy()
+            mode = runtime_config.FILE_TRANSFER_MODE
+            tcp_transport = (TcpFileTransferTransport(owner, normalized_id)
+                             if mode == FileTransferMode.TCP_STREAMING.value else None)
+            service = HttpFileTransferService(owner, archive_service=owner.archive_service,
+                                              client_api=owner.client_api, transfer_mode=mode,
+                                              tcp_transport=tcp_transport)
+            strategy = service.get_transfer_strategy()
             if normalized_operation == self.OP_SERVER_TO_CLIENT_FILE:
                 strategy.configure_context_for_download()
             else:
@@ -132,6 +141,7 @@ class ClientTransferManager:
                 'payload': prepared_payload,
                 'context': context,
                 'owner': owner,
+                'service': service,
             }
             worker = threading.Thread(
                 target=self._run_transfer,
@@ -195,11 +205,7 @@ class ClientTransferManager:
         payload = item['payload']
         owner = item['owner']
         context = item['context']
-        service = HttpFileTransferService(
-            owner,
-            archive_service=owner.archive_service,
-            client_api=owner.client_api,
-        )
+        service = item['service']
 
         try:
             strategy = service.get_transfer_strategy()
@@ -207,6 +213,7 @@ class ClientTransferManager:
                 transfer_id,
                 state='running',
                 cancel_supported=bool(strategy.is_cancel_supported()),
+                metadata={'file_transfer_mode': strategy.get_mode_name()},
             )
 
             if operation == self.OP_CLIENT_TO_SERVER_FILE:
@@ -307,11 +314,11 @@ class ClientTransferManager:
         save_dir = str(payload.get('save_dir') or '').strip()
         conflict_policy = payload.get('conflict_policy')
 
-        if not url:
-            if not relative_url:
-                raise ValueError('url or relative_url is required')
-            url = owner.client_api.normalize_file_transfer_url(relative_url)
-        else:
+        if not service.is_tcp_streaming:
+            if not url:
+                if not relative_url:
+                    raise ValueError('url or relative_url is required')
+                url = relative_url
             url = owner.client_api.normalize_file_transfer_url(url)
 
         if not filename:
@@ -330,7 +337,7 @@ class ClientTransferManager:
         try:
             fd, staged = tempfile.mkstemp(prefix='.rch-upload-', dir=target_dir)
             os.close(fd)
-            service.download_file_from_http(
+            service.download_file_to_path(
                 url, staged, transfer_id=transfer_id, commit=commit, display_filename=os.path.basename(filename),
             )
         finally:

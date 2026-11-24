@@ -1,12 +1,12 @@
 # File Transfer
 
-RCH 将传输任务控制与文件字节处理分开。普通 Web/API 请求通过基础 HTTP 服务传递操作和元数据；大文件请求体由直接运行的 Flask/Werkzeug HTTP 服务处理；Python Client 的 HTTP Strategy 决定上传和下载如何分块、怎样报告字节进度以及是否能够响应取消。只有绑定了 Transfer 身份的操作才进入受管理的进度生命周期。
+RCH 将传输任务控制与文件字节处理分开。普通 Web/API 请求通过基础 HTTP 服务传递操作和元数据；大文件请求体由直接运行的 Flask/Werkzeug HTTP 服务处理；Python Client 的 File Transfer Mode 决定上传和下载如何分块、怎样报告字节进度以及是否能够响应取消。只有绑定了 Transfer 身份的操作才进入受管理的进度生命周期。
 
 因此，传输链路上的“使用哪个端口”“采用哪个客户端策略”“Transfer Center 是否显示进度”是三个独立问题。浏览器向远程设备上传时还会经历 Server 暂存和 Client 拉取两个阶段，进度与取消状态必须按实际阶段解释。
 
 ## 文件数据与控制消息的完整链路
 
-Server 默认提供三种网络入口：Socket 端口 `9999` 用于 Client 命令和心跳；HTTP 端口 `8085` 直接由 Flask/Werkzeug 处理 Web、API 和全部文件传输；WebSocket 端口 `8086` 处理 PTY、Screen 和浏览器实时通知。WS 端口是 `RCH_WEB_PORT + 1`，文件传输只使用 Web HTTP 端口。
+Server 默认提供三种网络入口：Socket 端口 `9999` 用于 Client 命令和心跳；HTTP 端口 `8085` 直接由 Flask/Werkzeug 处理 Web、API 和 HTTP 文件传输；WebSocket 端口 `8086` 处理 PTY、Screen 和浏览器实时通知。WS 端口是 `RCH_WEB_PORT + 1`，文件传输不使用 WS 端口；受管理的 TCP 模式复用主会话监听端口。
 
 文件数据在项目中有几条主要路径：
 
@@ -14,19 +14,19 @@ Server 默认提供三种网络入口：Socket 端口 `9999` 用于 Client 命�
 远程文件下载 / 预览 / 打包下载
     Browser --控制请求: 8085--> Server
     Server  --transfer_start: Socket--> Client
-    Client  --文件 POST: 8085--> Server Artifact
+    Client  --HTTP POST 或独立 TCP--> Server Artifact
     Server  --API 响应 / 后续浏览器下载: 8085--> Browser
 
 Remote Files 上传到设备
     Browser --创建 Transfer: 8085--> Server
     Browser --原始文件 POST: 8085--> Server 临时文件
     Server  --transfer_start: Socket--> Client
-    Client  --暂存文件 GET: 8085--> Client 目标目录
+    Server  --HTTP GET 响应或独立 TCP--> Client 目标目录
 
 已有 Artifact / Server 暂存文件下发
     Browser --控制请求: 8085--> Server
     Server  --transfer_start: Socket--> Client
-    Client  --文件 GET: 8085--> Client 目标目录
+    Server  --HTTP GET 响应或独立 TCP--> Client 目标目录
 ```
 
 以上三条是受管理的典型流向。它们之外还有 Client 命令主动上传、Script / Job Artifact 上传、剪贴板和截图上传，以及浏览器直接下载 Artifact 等路径。**方向、传输端口、使用的客户端策略、是否创建 Transfer，必须分别判断**；不能因为都叫“上传”就推断它们走相同的执行链。
@@ -37,7 +37,7 @@ Remote Files 上传到设备
 
 ### 直接流式处理
 
-`8085` 由 Flask/Werkzeug 直接提供，不经过 FastAPI、Uvicorn 或 ASGI/WSGI 桥接。文件上传、暂存下载、Artifact 下载与普通 Web API 都在这条原生 HTTP 通道上。浏览器原始上传按 `DEFAULT_HTTP_TRANSFER_BUFFER_SIZE` 分块读取 `request.stream`、直接写入暂存文件；普通文件接口沿用现有 Client HTTP Strategy 和分块下载实现。
+`8085` 由 Flask/Werkzeug 直接提供，不经过 FastAPI、Uvicorn 或 ASGI/WSGI 桥接。HTTP 文件上传、暂存下载、Artifact 下载与普通 Web API 都在这条原生 HTTP 通道上。浏览器原始上传按 `DEFAULT_HTTP_TRANSFER_BUFFER_SIZE` 分块读取 `request.stream`、直接写入暂存文件；普通文件接口沿用现有 Client HTTP Strategy 和分块下载实现。
 
 `8086` 专用于 WebSocket，文件内容不经过该端口。两个服务共享 RCH Server 的业务对象，但有独立监听与连接资源；并发大文件任务的实际性能需要通过同环境吞吐和 API 延迟测试验收。
 
@@ -48,16 +48,16 @@ Remote Files 上传到设备
 | 场景 | 8085 负责 | 文件字节实际走向 | Transfer Center |
 | --- | --- | --- | --- |
 | Remote Files 浏览、搜索、创建/删除/重命名、文本读取与保存 | 业务 API、命令调度和结构化内容 | 不走独立大文件 HTTP 搬运 | 不为这些操作自动创建 Transfer |
-| Remote Files 下载单文件、下载 ZIP、生成预览 | 提交、等待和返回业务结果 | Python Client → 8085 → Server Artifact | 创建并追踪 |
-| Remote Files 上传文件到设备 | 创建任务、获得 Token、提交后续任务 | Browser → 8085 暂存；Client 从 8085 拉取 | 两阶段共享一条记录 |
-| 已有 Artifact / Server 文件发送给 Client | 任务控制、元数据 | Client 从 8085 获取文件 | 受管理的下发操作可追踪 |
+| Remote Files 下载单文件、下载 ZIP、生成预览 | 提交、等待和返回业务结果 | Python Client → HTTP 或独立 TCP → Server Artifact | 创建并追踪 |
+| Remote Files 上传文件到设备 | 创建任务、获得 Token、提交后续任务 | Browser → 8085 暂存；Server 经 HTTP 或独立 TCP 下发 | 两阶段共享一条记录 |
+| 已有 Artifact / Server 文件发送给 Client | 任务控制、元数据 | Server 经 HTTP 或独立 TCP 下发 | 受管理的下发操作可追踪 |
 | 浏览器下载 Artifact、访问 Raw / Preview | Artifact 查询与 HTTP 文件响应 | Server → Browser 经 8085 | 该次浏览器下载不自动创建新 Transfer |
 | 普通 Python Client 终端文件命令 | 原有命令 Socket 链路 | 传输服务 URL 通常指向 8085 | 只有显式绑定 `transfer_id` 时才有独立追踪 |
 | Script SDK / Background Job 通用 Artifact 上传 | 上报、记录及文件关联 | 通用 Python API 的文件上传 URL 指向 8085 | 不会仅因使用 8085 就自动进入 Transfer Center |
 | Python Client 剪贴板文件上报 | 控制与业务状态 | 上传 URL 指向 8085 | 不自动创建 Transfer |
 | Web ScreenView 截图、浏览器上传 Artifact 或剪贴板内容 | Web 文件/业务 API | 仍可使用 8085 的上传入口 | 不自动创建 Transfer |
 
-这里要特别区分两点。首先，Remote Files 里浏览器上传使用的是 **`POST /api/transfers/browser-upload` 创建任务（8085）+ 8085 的原始 HTTP Body 上传**，不是旧 Web multipart 文件上传入口。其次，Script / Job 通用上传即便走 8085，其 `requests files=...` 方式仍可能使用 multipart 缓存；**文件处理策略不是 `cancelable` 策略的同义词**。
+这里要特别区分两点。首先，Remote Files 里浏览器上传使用的是 **`POST /api/transfers/browser-upload` 创建任务（8085）+ 8085 的原始 HTTP Body 上传**，不是旧 Web multipart 文件上传入口。其次，Script / Job 通用上传即便走 8085，其 `requests files=...` 方式仍可能使用 multipart 缓存；**文件处理策略不是 `http_streaming` 策略的同义词**。
 
 常用的路由边界如下：
 
@@ -78,27 +78,29 @@ Remote Files 上传到设备
 
 ## 客户端的字节处理机制
 
-`HTTP_TRANSFER_MODE` 是 Python Client 的运行时配置，当前源码默认值为 `cancelable`；运行时配置可以覆盖默认值。代码中的正式拼写是 **`cancelable`**，不是 `cancellable`。策略由 HTTP File Transfer Service 选择，负责改变**上传/下载的客户端数据处理方式**，只决定 Client 数据处理与取消策略，不改变 Server HTTP 路由。
+`FILE_TRANSFER_MODE` 是 Python Client 的运行时配置，默认 `http_streaming`。受管理的 Transfer 在启动时固定模式；运行中的配置变更只影响新任务。
 
-| 行为 | `legacy` | `cancelable` |
-| --- | --- | --- |
-| 上传请求体 | `requests.post(files=..., data=...)` | 自定义 multipart 流，逐块读取文件 |
-| 大文件上传内存 | multipart 构造可能缓存完整请求体 | 不要求将完整文件加载进内存 |
-| 上传字节进度 | 不提供逐块进度回调 | 提供逐块进度回调 |
-| 下载 | `stream=True`、`iter_content()` 写盘 | 流式下载并检查取消 |
-| 下载进度 | 支持按收到的字节更新 | 支持按收到的字节更新 |
-| 运行中取消 | 不支持 | 通过执行上下文协作取消并清理网络资源 |
-| 适用场景 | 兼容和实现简单 | 尤其适合大文件上传及需要取消的任务 |
+| 行为 | `http_simple` | `http_streaming` | `tcp_streaming` |
+| --- | --- | --- | --- |
+| 文件字节承载 | HTTP multipart / 下载 | HTTP 流式 multipart / 下载 | 独立 TCP 数据连接 |
+| 上传逐块进度 | 不支持 | 支持 | 支持 |
+| 下载逐块进度 | 支持 | 支持 | 支持 |
+| 运行中取消 | 不支持 | 协作取消 | 协作取消并关闭数据连接 |
+| 上传大小限制 | Client 1 GiB 保护 | Server HTTP 请求上限 | Server 文件字节上限 |
+
+TCP 模式仅作用于 Remote Files 和其他明确进入受管理 Transfer 的 Server 与 Python Client 间文件搬运，包括文件、ZIP、预览和文件下发。浏览器上传暂存、Artifact 下载仍使用原 HTTP 接口。普通终端、Script SDK、Job 及任意 URL HTTP 下载不改为 TCP；选择 `tcp_streaming` 时，这些 HTTP 调用仍使用 HTTP 流式策略。Go Client 保持现有 HTTP 实现。
+
+每个 TCP 任务使用一条独立数据 Socket，Bind 由 Server 拨入 Client 的原监听端口，Reverse TCP/TLS 由 Client 连接原 Server 监听端口，TLS 保留现有验证方式。数据连接使用现有 Session Token 与 Transfer ID 关联，不建立第二个 Client Session。主连接继续承载控制与进度。接收端按声明长度流式落盘并检查 SHA-256，成功提交文件或 Artifact 后才确认完成；取消、失败或断线清理未提交的临时文件。TCP 流不在任务中途回退为 HTTP。
 
 ### 兼容模式的上传缓存边界
 
-Legacy 上传使用 `requests` 的标准 multipart `files=...`。由于该路径可能在内存中缓存完整 multipart Body，代码明确拒绝**文件大小超过 1 GiB** 的 Legacy 上传，并提示切换 `cancelable`。该限制是 Client 策略上的保护，不是 8085 服务的全局上限。
+HTTP Simple 上传使用 `requests` 的标准 multipart `files=...`。由于该路径可能在内存中缓存完整 multipart Body，代码明确拒绝**文件大小超过 1 GiB** 的 HTTP Simple 上传，并提示切换 `http_streaming`。该限制是 Client 策略上的保护，不是 8085 服务的全局上限。
 
-Legacy 下载使用 `stream=True` 和 `iter_content()`，一边收取数据块一边写到目标文件，所以没有等价的 1 GiB 下载限制。它可以上报下载字节进度，但不会提供正在执行的可靠取消支持。
+HTTP Simple 下载使用 `stream=True` 和 `iter_content()`，一边收取数据块一边写到目标文件，所以没有等价的 1 GiB 下载限制。它可以上报下载字节进度，但不会提供正在执行的可靠取消支持。
 
 ### 流式读写与协作取消
 
-Cancelable 上传构造 multipart 的头部、文件内容及尾部，在 `read()` 中分段返回；每次读取文件会检查执行上下文的取消状态并调用进度回调。上传 Session 和流对象都注册了取消/清理处理器。下载同样以块为单位读取，在接收和写入过程中检查取消请求。
+HTTP Streaming 上传构造 multipart 的头部、文件内容及尾部，在 `read()` 中分段返回；每次读取文件会检查执行上下文的取消状态并调用进度回调。上传 Session 和流对象都注册了取消/清理处理器。下载同样以块为单位读取，在接收和写入过程中检查取消请求。
 
 这使大文件上传不必把文件整体读入 Python 内存，并能根据已读取的文件字节提供进度；上传回调反映的是 Client 侧读取和交付给 HTTP 请求流的字节，不是远端持久化写盘后的逐块确认。不过，“收到取消请求”“网络连接关闭”“远程写入终止”和“任务最终变为 `cancelled`”仍是不同时间点。阻塞在底层网络 I/O 时，不应承诺 Cancel 按钮能够瞬间终止操作。
 
@@ -108,10 +110,10 @@ Cancelable 上传构造 multipart 的头部、文件内容及尾部，在 `read(
 
 | 配置 | 当前默认值及意义 |
 | --- | --- |
-| `HTTP_TRANSFER_MODE` | `cancelable`；可选 `legacy` / `cancelable` |
+| `FILE_TRANSFER_MODE` | `http_streaming`；可选 `http_simple` / `http_streaming` / `tcp_streaming` |
 | `HTTP_TRANSFER_BUFFER_SIZE` | 1 MiB，允许 64 KiB 至 16 MiB |
 
-Legacy HTTP 上传与下载使用内部固定的 Requests 网络超时：连接等待 15 秒、单次网络读取等待 120 秒（接收到数据后重新计时），不暴露运行时配置。Cancelable 保持原有请求行为，通过执行上下文协作取消。Server 的通用 HTTP 上传请求体上限为 10 GiB；这个服务端上限与 Legacy 的 1 GiB 客户端保护相互独立。
+HTTP Simple 上传与下载使用内部固定的 Requests 网络超时：连接等待 15 秒、单次网络读取等待 120 秒（接收到数据后重新计时），不暴露运行时配置。HTTP Streaming 保持原有请求行为，通过执行上下文协作取消。Server 的通用 HTTP 上传请求体上限为 10 GiB；这个服务端上限与 HTTP Simple 的 1 GiB 客户端保护相互独立。
 
 ## 上传、下发及中转阶段
 
@@ -153,7 +155,7 @@ Transfer Center 在内存中管理实时速度、进度和取消，并将传输�
 
 ### 传输记录的字段和阶段
 
-Transfer 是由 Server `TransferService` 管理的一份状态记录，不是新 HTTP 协议，也不承载文件字节。受管理任务创建时得到唯一 `transfer_id`；上传、下载、暂停取消的相关业务逻辑围绕这个 ID 更新状态。实际文件字节仍由各自的 HTTP 请求传输。
+Transfer 是由 Server `TransferService` 管理的一份状态记录，不是新 HTTP 协议，也不承载文件字节。受管理任务创建时得到唯一 `transfer_id`；上传、下载、暂停取消的相关业务逻辑围绕这个 ID 更新状态。实际文件字节由所选 HTTP 模式或独立 TCP 数据连接传输。
 
 记录包含设备标识、方向、文件名、源和目的路径、浏览器 `tab_id`、`state`、`stage`、文件大小、已完成字节、进度支持标志、取消支持标志、速率、ETA、关联 Artifact、错误信息和时间戳。典型记录可以简化为：
 
@@ -191,7 +193,7 @@ Server 根据收到的进度字节数计算完成比例，对速率采用平滑�
 
 `GET /api/transfers?limit=20&offset=0` 从 SQLite 每次只查询 20 条历史，返回 `recent_total`；后续使用 `offset=20/40/...` 加载更多，绝不是返回全量后在浏览器截取。可附加 `machine_id` 按连接历史关联的机器筛选。Active 仍来自内存并遵守当前标签页隔离，之后由 SSE 维持实时进度。Transfer Center 分为 **Active** 和 **Recent**：Active 显示文件名、方向、当前阶段、进度条、字节数、速度、ETA 和 Cancel；Recent 保存全部已完成、失败、取消或重启中断的传输，不做固定条数裁剪。列表仅显示文件名、方向和状态；每条的 More 菜单提供 Info（文件大小、完成时间、源与目标路径、错误及 Artifact 引用）和 Delete。成功的 `client_to_server` 传输若有 `artifact_id`，还提供 Preview 和 Download（浏览器下载），与传输完成 SSE 通知使用相同的资格条件；反方向上传不提供这两个操作。Clear Recent 默认手动清空全部历史；选择 Machine Filter 时只清理该设备关联会话的终态记录，其他设备及活动传输不受影响。前台受管理传输的 `Upload started` / `Download started` 等小 Toast 提供 `Open Transfers` 链接，直接打开现有 Transfer Center；这与 SSE 生命周期通知的按钮无关。Remote Files / Remote File Picker 的 `Upload started` 在浏览器向 Server 开始发送文件时出现，不再等待 Server 暂存完成；下载提示时机保持不变。
 
-当 `progress_supported=false`，或者缺少有效 `total_bytes` 时，界面显示不确定进度而不是假造一个百分比。例如 Legacy 上传可能正在正常运行但无法报告逐块上传字节；目录打包也可能尚未知道最终 ZIP 大小。此时应查看任务状态与已传输字节，而非依靠百分比判断。
+当 `progress_supported=false`，或者缺少有效 `total_bytes` 时，界面显示不确定进度而不是假造一个百分比。例如 HTTP Simple 上传可能正在正常运行但无法报告逐块上传字节；目录打包也可能尚未知道最终 ZIP 大小。此时应查看任务状态与已传输字节，而非依靠百分比判断。
 
 ### 任务记录与 Artifact 的不同生命周期
 
@@ -207,9 +209,11 @@ Cancel 由 Web 请求发往 8085 的 `POST /api/transfers/{transfer_id}/cancel`�
 
 对浏览器上传到 Server 的第一段，Server 设置对应的取消事件，并将 Transfer 标为取消；8085 分块接收循环会检查该事件，停止后清理临时文件和上传运行状态。Server 接受取消后，发起上传的同一浏览器标签页还会中止对应的独立 XHR，使等待上传结果的界面及时恢复按钮，并保留取消终态（不再补报上传失败）。此时不需要向目标 Client 发送取消指令，因为 Client 尚未开始下载。
 
-对 Client 正在执行的文件传输，Server 通过 Socket 下发 `transfer_cancel`；`ClientTransferManager` 向 Worker 的独立执行上下文请求取消。Cancelable 策略通过取消检查和资源清理尝试中断 HTTP 请求，**实际 Worker 报告 `cancelled` 才代表运行端处理完取消**。Server 可以先显示 `cancelling` 阶段；这不等于任务已经结束。
+对 Client 正在执行的文件传输，Server 通过 Socket 下发 `transfer_cancel`；`ClientTransferManager` 向 Worker 的独立执行上下文请求取消。HTTP Streaming 通过取消检查和资源清理尝试中断 HTTP 请求，Worker 报告 `cancelled` 表示运行端处理完取消。Server 可以先显示 `cancelling` 阶段。
 
-同一条浏览器两阶段任务在不同阶段可拥有不同能力：第一段由 Server 上传循环提供取消，第二段则取决于 Client 当前选择的 `legacy` 或 `cancelable`。Client 启动后会用实际策略更新 `cancel_supported`；Legacy 模式下通常会关闭第二阶段的 Cancel。终态后的删除、Clear Recent 和取消正在运行的传输是三种不同操作。
+TCP 模式收到取消请求后，由 Client 的取消上下文中断数据连接；Server 等待主通道终态，重复取消请求不会提前结束任务。若取消发生在 Server 接收文件的最终登记之前，Server 停止提交并清理暂存文件；已进入不可逆提交的任务以实际提交结果为准。若 Artifact 已登记而 Transfer 终态持久化失败，Server 尝试撤销本次新建的 Artifact，不发布成功创建事件。
+
+同一条浏览器两阶段任务在不同阶段可拥有不同能力：第一段由 Server 上传循环提供取消，第二段则取决于 Client 当前选择的 `http_simple`、`http_streaming` 或 `tcp_streaming`。Client 启动后会用实际策略更新 `cancel_supported`；HTTP Simple 模式下通常会关闭第二阶段的 Cancel。终态后的删除、Clear Recent 和取消正在运行的传输是三种不同操作。
 
 ### 任务接口及通道保护
 
@@ -219,14 +223,14 @@ Web 端的 `tab_id` 用于把正在运行的 Transfer 关联到发起的浏览�
 
 ### 部署与异常定位
 
-**正常的大文件 Remote Files 上传**，优先确保浏览器到 Server 8085 以及目标 Client 到 Server 8085 双向可达；浏览器端上传成功只代表第一阶段暂存完成，仍需观察后续 Client 下载阶段。若文件很大且需要实时上传字节进度或可取消性，应检查 Client 的 `HTTP_TRANSFER_MODE` 是否设置为 `cancelable`。`legacy` 不提供流式上传和取消能力。
+**正常的大文件 Remote Files 上传**，优先确保浏览器到 Server 8085 以及HTTP 模式下目标 Client 到 Server 8085 可达；TCP 模式下原 TCP/TLS 监听端口可达；浏览器端上传成功只代表第一阶段暂存完成，仍需观察后续 Client 下载阶段。若文件很大且需要实时上传字节进度或可取消性，应检查 Client 的 `FILE_TRANSFER_MODE` 是否设置为 `http_streaming` 或 `tcp_streaming`。`http_simple` 不提供流式上传和取消能力。
 
 | 现象 | 核查重点 |
 | --- | --- |
 | 页面及目录列表正常，但文件上传失败 | 检查 HTTP 上传路径、大小限制、一次性 Grant、Server 暂存目录权限与 Client 所用的 8085 Base URL |
 | Browser 上传成功，但文件没出现在设备上 | 继续检查 Transfer 的 `preparing` / `transferring` 阶段、Client 连接、目标目录与磁盘权限 |
-| 大于 1 GiB 的 Client 上传被拒绝 | 检查 Legacy 的客户端保护；这不表示 Server 只有 1 GiB 容量 |
-| 上传没有百分比，下载却能显示 | Legacy 上传无逐块进度；Legacy 下载使用流式接收可回报进度 |
+| 大于 1 GiB 的 Client 上传被拒绝 | 检查 HTTP Simple 的客户端保护；这不表示 Server 只有 1 GiB 容量 |
+| 上传没有百分比，下载却能显示 | HTTP Simple 上传无逐块进度；HTTP Simple 下载使用流式接收可回报进度 |
 | Cancel 不可点击 | 任务当前阶段可能声明 `cancel_supported=false`；检查 Client 策略和具体阶段 |
 | 点击 Cancel 后尚未完全停止 | 取消请求与 Worker 最终退出不同步，等待 `cancelled` 或最终错误状态 |
 | Transfer 百分比从头开始 | Browser 上传结束后进入 Client 下载，进度按新阶段重置 |
@@ -234,10 +238,10 @@ Web 端的 `tab_id` 用于把正在运行的 Transfer 关联到发起的浏览�
 | Transfer Center 记录消失 | 检查是否被手动删除或清空；传输历史持久化在 `rch.db`，Server 重启不应删除记录，也不影响已保存 Artifact |
 | 某次 Script、Clipboard 或 Web 下载没有 Transfer 记录 | 并非所有文件 HTTP 请求都会建立 `transfer_id` |
 
-需要把性能调优、文件传输管理和文件资产管理作为三个独立问题看待。直接 Flask/Werkzeug 的分块数据通道避开 ASGI/WSGI 桥接；`cancelable` 改变 Python Client 的字节处理和中断能力；Transfer Center 提供可观察性与控制；Artifact 负责文件保存、预览和后续下载。**没有任何一层能够单独替代另外三层。**
+需要把性能调优、文件传输管理和文件资产管理作为三个独立问题看待。直接 Flask/Werkzeug 的分块数据通道避开 ASGI/WSGI 桥接；`http_streaming` 改变 Python Client 的字节处理和中断能力；Transfer Center 提供可观察性与控制；Artifact 负责文件保存、预览和后续下载。**没有任何一层能够单独替代另外三层。**
 
 远程文件浏览、编辑和路径管理的业务细节见 `remote_files.md`；Artifact 的生成与展示则遵循各自功能模块的文档。这里专注文件字节传输、进度及取消，不把每个历史命令或已有模块列成清单。
 
 ### `acmd download`
 
-`download <file>` 是 Client 的终端文件上传（设备到 Server Artifact），不是 Remote Files 的文件浏览命令。无参数立即返回 `Usage: download <file>`，不会把空路径解析成当前工作目录；目录输入仍返回明确的 `Not a file` 错误。该命令执行过程中发送的正常 Socket 结果应与已登记的命令 ID 关联，不得因为极快返回而意外显示成 `[Background]`。是否能取消正在进行的 HTTP 字节传输仍取决于 `HTTP_TRANSFER_MODE`；不能将普通任务的取消能力等同于传输取消。
+`download <file>` 是 Client 的终端文件上传（设备到 Server Artifact），不是 Remote Files 的文件浏览命令。无参数立即返回 `Usage: download <file>`，不会把空路径解析成当前工作目录；目录输入仍返回明确的 `Not a file` 错误。该命令执行过程中发送的正常 Socket 结果应与已登记的命令 ID 关联，不得因为极快返回而意外显示成 `[Background]`。是否能取消正在进行的 HTTP 字节传输仍取决于 `FILE_TRANSFER_MODE`；不能将普通任务的取消能力等同于传输取消。

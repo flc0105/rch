@@ -87,7 +87,7 @@ class ClientInfoBuilder:
             'cwd': os.getcwd(),
             'python_ver': platform.python_version(),
 
-            'http_transfer_mode': runtime_config.HTTP_TRANSFER_MODE,
+            'file_transfer_mode': runtime_config.FILE_TRANSFER_MODE,
             'script_default_execution_mode': runtime_config.SCRIPT_DEFAULT_EXECUTION_MODE,
             'script_default_output_mode': runtime_config.SCRIPT_DEFAULT_OUTPUT_MODE,
 

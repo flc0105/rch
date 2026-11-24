@@ -1,3 +1,4 @@
+from server.config.config import WEB_HTTP_UPLOAD_MAX_BYTES
 from server.application.agent.agent_bootstrap_script_service import AgentBootstrapScriptService
 from server.application.agent.agent_builder import AgentBuilder
 from server.application.agent.agent_output_registry import AgentOutputRegistry
@@ -42,6 +43,7 @@ from server.application.screen.screen_view_session_service import ScreenViewSess
 from server.application.clipboard.clipboard_session_service import ClipboardSessionService
 from server.application.monitor.device_monitor_session_service import DeviceMonitorSessionService
 from server.application.transfers.transfer_service import TransferService
+from server.application.transfers.tcp_transport import TcpTransferTransport
 from server.application.web.agent_api import WebAgentApi
 from server.application.web.artifact_api import WebArtifactApi
 from server.application.web.command_catalog_api import WebCommandCatalogApi
@@ -117,6 +119,10 @@ class ServerApplicationAssembly:
             self.artifact_service, self.server.get_target_connection_by_client_id)
         self.file_service = self.artifact_service
         self.client_session_token_service = ClientSessionTokenService()
+        self.transfer_service.tcp_transport = TcpTransferTransport(
+            self.transfer_service, self.artifact_service, self.client_session_token_service, self.event_bus,
+            max_upload_bytes=WEB_HTTP_UPLOAD_MAX_BYTES,
+        )
 
         self.remote_execution_service = RemoteExecutionService(
             self.server,

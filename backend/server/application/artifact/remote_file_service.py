@@ -160,7 +160,7 @@ class WebRemoteFileService:
 
         artifact = self.artifact_service.get_artifact_by_id(artifact_id)
         if not isinstance(artifact, dict) or not artifact.get('artifact_id'):
-            raise RuntimeError('Artifact was not found after HTTP upload completed')
+            raise RuntimeError('Artifact was not found after file transfer completed')
         return terminal, artifact
 
     @staticmethod

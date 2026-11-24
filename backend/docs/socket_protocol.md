@@ -2,7 +2,7 @@
 
 RCH 的 Client 与 Server 通过一条持续存在的 TCP 连接交换控制消息。连接建立后先传输 `info` 握手；之后远程命令、只读补全查询、取消、心跳、PTY、屏幕画面、剪贴板、设备监控及传输任务的控制信息，都复用这条连接上的 JSON 消息协议。Server 将 Client 发送的消息分派到正在等待的命令或特定会话服务，Web 再通过 HTTP API 与 SSE 使用这些能力。
 
-**Socket 消息、Web Task、SSE 事件是三层不同概念。** Socket 协议解决 Server 与 Client 之间如何封包、收发和识别消息；Web Task 管理由浏览器发起的一次执行；SSE 把结果推送给浏览器。文件传输的实际字节内容还有独立的 HTTP 传输路径，不经这条 JSON Socket 连续搬运。
+**Socket 消息、Web Task、SSE 事件是三层不同概念。** Socket 协议解决 Server 与 Client 之间如何封包、收发和识别消息；Web Task 管理由浏览器发起的一次执行；SSE 把结果推送给浏览器。文件传输的实际字节内容还有独立的 HTTP 或 TCP 数据连接，不经这条 JSON Socket 连续搬运。
 
 Bind TCP 改变拨号方向：Python Client 在配置的地址监听，Server 通过设备栏 More 的主动连接操作向目标 IP 和端口建立 TCP 连接，首条应用消息仍是 **Client 发出的 `info`**。Server 调用现有 `SessionAcceptor.accept_session()`，继续使用原帧格式与结果事件。当前 Bind 使用普通 TCP。Server 完成会话注册后先发送原有 `client_session_token`，然后向 Bind Client 发送一次 `session_config`（`server_web_base_url`），随后发布上线事件。Reverse 只接收原有 Session Token，不改变 Web URL。Bind Client 将该 URL 作为当前会话的 Web API origin，断开时失效；新连接重新获得公告。
 
@@ -223,7 +223,10 @@ PTY 输入和窗口尺寸调整用独立消息控制，其 `pty_output.data` 在
 
 ### Monitor、Clipboard 与 Transfer
 
-Device Monitor 通过 `monitor_open/config/close` 控制订阅，Client 按频道发送 `monitor_snapshot`，随附 `seq`、`channel`、`collected_at`。Clipboard 的显式读写使用 `control/clipboard/get|set` 和对应请求 ID 的 Result；Transfer 则用 `transfer_start/cancel/update` 维护任务进度、错误和终态。尤其要区分：**文件上传/下载的实际内容传输走独立 HTTP File Transfer 服务**，Socket 主要协调执行和反馈 `transfer_update`，不是在这里追加一个二进制 `file`/`rdy` 流。参见 [Device Monitor](device_monitor.md)、[Clipboard](clipboard.md)、[File Transfer](file_transfer.md)。
+Device Monitor 通过 `monitor_open/config/close` 控制订阅，Client 按频道发送 `monitor_snapshot`，随附 `seq`、`channel`、`collected_at`。Clipboard 的显式读写使用 `control/clipboard/get|set` 和对应请求 ID 的 Result；Transfer 则用 `transfer_start/cancel/update` 维护任务进度、错误和终态。尤其要区分：**文件上传/下载的实际内容走独立 HTTP 或 TCP 数据连接**，Socket 主要协调执行和反馈 `transfer_update`，不是在这里追加一个二进制 `file`/`rdy` 流。参见 [Device Monitor](device_monitor.md)、[Clipboard](clipboard.md)、[File Transfer](file_transfer.md)。
+
+受管理的 TCP 文件任务通过 `transfer_update.metadata.file_transfer_mode` 确认实际模式。Bind 任务准备好接入辅助连接时，通过 `transfer_update.data_ready` 通知 Server；Reverse 由 Client 主动建立辅助连接。辅助 Socket 的首帧为 `transfer_data`，包含 `transfer_id` 与当前 Session Token；经原监听入口分流后不登记为主会话。后续控制帧采用网络字节序四字节长度与 JSON，文件内容按声明长度发送原始字节，随后发送 SHA-256 校验信息，接收端完成提交后确认。进度、取消及任务终态仍使用原主连接。
+
 
 ## 6. 消息从业务服务到浏览器的边界
 

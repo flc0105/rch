@@ -39,7 +39,7 @@ RCH 为每台 Client 提供一套可以在线查询和调整的运行配置。�
 
 ```text
 set
-set HTTP_TRANSFER_MODE cancelable
+set FILE_TRANSFER_MODE http_streaming
 set SCRIPT_DEFAULT_EXECUTION_MODE subprocess_pipe
 set --reset SCRIPT_DEFAULT_EXECUTION_MODE
 ```
@@ -57,20 +57,21 @@ set --reset SCRIPT_DEFAULT_EXECUTION_MODE
 
 这里的 Strategy 指**运行方式的选择**。当前常用的三个策略项分别控制 HTTP 文件传输、Python 执行与 Screen View 帧编码；它们相互独立，不是全局统一的“性能模式”。
 
-### 2.1 HTTP 文件传输 — `HTTP_TRANSFER_MODE`
+### 2.1 文件传输 — `FILE_TRANSFER_MODE`
 
-默认：**`cancelable`**
+默认：**`http_streaming`**
 
 | 选项 | 特点 | 更适合的情况 |
 |---|---|---|
-| `legacy` | 使用较传统的 HTTP 文件上传/下载方式。上传的 multipart 内容可能被整体缓存在内存中；运行中取消不受支持 | 小文件、需要传统传输方式的任务 |
-| `cancelable` | 流式传输，按块处理文件，支持进度回报与协作取消；大文件上传不必整体装入内存 | 大文件、弱网、需要观察传输进度或中途取消的任务 |
+| `http_simple` | 使用较传统的 HTTP 文件上传/下载方式。上传的 multipart 内容可能被整体缓存在内存中；运行中取消不受支持 | 小文件、需要传统传输方式的任务 |
+| `http_streaming` | 流式传输，按块处理文件，支持进度回报与协作取消；大文件上传不必整体装入内存 | 大文件、弱网、需要观察传输进度或中途取消的任务 |
+| `tcp_streaming` | 受管理的 Server ↔ Python Client 文件搬运使用独立 TCP 数据连接，支持流式读写、进度和取消 | Remote Files 等 Transfer 任务；浏览器和普通 HTTP 调用仍走 HTTP |
 
 ```text
-set HTTP_TRANSFER_MODE cancelable
+set FILE_TRANSFER_MODE http_streaming
 ```
 
-`legacy` 上传对**超过 1 GiB** 的文件有保护性限制。涉及较大文件时，更建议选择 `cancelable`。但协作取消不等于在任何网络阻塞点都能瞬间结束任务。
+`http_simple` 上传对**超过 1 GiB** 的文件有保护性限制。涉及较大文件时，更建议选择 `http_streaming`。但协作取消不等于在任何网络阻塞点都能瞬间结束任务。
 
 **注意：**这个选项决定的是 **Client 如何处理 HTTP 文件数据**，不决定 Server 使用哪个端口，也不会让所有 HTTP 请求都自动支持取消。浏览器上传、Client 上传、Artifact 下载和 Transfer Center 的进度跟踪仍有各自的实际执行路径。
 
@@ -163,7 +164,7 @@ Watchdog 的三个 `*_WATCHDOG_ENABLED` 配置仍可通过 `set` 热切换；加
 ### 大文件传输：减少内存压力并允许取消
 
 ```text
-set HTTP_TRANSFER_MODE cancelable
+set FILE_TRANSFER_MODE http_streaming
 ```
 
 先只切换模式，确认上传下载、进度和取消行为符合预期；不必一开始就更改缓冲区和超时。
@@ -197,7 +198,7 @@ set --reset SCREEN_FRAME_STRATEGY
 恢复设置时，优先只重置具体项目：
 
 ```text
-set --reset HTTP_TRANSFER_MODE
+set --reset FILE_TRANSFER_MODE
 set --reset SCRIPT_DEFAULT_EXECUTION_MODE
 set --reset SCREEN_FRAME_STRATEGY
 ```
@@ -219,7 +220,7 @@ set --reset-all
 | `COMMAND_DEFAULT_TIMEOUT`（只读） | `set --all` 确认默认是 `None`；运行带独立超时的 Shell/Stream 命令，确认其仍使用专用设置。普通 `set KEY value` 不开放此项。 |
 | `COMMAND_DEFAULT_SHELL_TIMEOUT` | `set COMMAND_DEFAULT_SHELL_TIMEOUT 2`；执行一个约 4 秒的 Shell 命令，确认发生超时；再执行一个短命令确认正常。重置为 30 秒后重复长命令应可完成。具体终止时间依进程和平台而定。 |
 | `COMMAND_DEFAULT_STREAM_TIMEOUT` | `set COMMAND_DEFAULT_STREAM_TIMEOUT 2`；运行持续输出、超过 2 秒的 `shell_stream` 或流式脚本，确认流被超时终止；重置后同一任务正常结束。 |
-| `HTTP_TRANSFER_MODE` | `set HTTP_TRANSFER_MODE legacy`；启动新的 Remote Files 上传/下载任务，检查传输成功且 Legacy 阶段不支持协作取消。`set --reset HTTP_TRANSFER_MODE` 后新任务应使用默认 `cancelable`，显示进度并允许取消。不要用已开始的传输验证策略切换。 |
+| `FILE_TRANSFER_MODE` | `set FILE_TRANSFER_MODE http_simple`；启动新的 Remote Files 上传/下载任务，检查传输成功且 HTTP Simple 阶段不支持协作取消。`set --reset FILE_TRANSFER_MODE` 后新任务应使用默认 `http_streaming`，显示进度并允许取消。不要用已开始的传输验证策略切换。 |
 | `HTTP_TRANSFER_BUFFER_SIZE` | `set HTTP_TRANSFER_BUFFER_SIZE 65536`；新建一次数十 MiB 的上传/下载并核对内容完整、进度正常；检查新传输策略的读取块大小为 65536 字节（开发测试或调试日志）。重置后应恢复 1048576 字节。 |
 | `PREVIEW_IMAGE_COMPRESS_ENABLED` | `set PREVIEW_IMAGE_COMPRESS_ENABLED true`；通过 Remote File Browser 分别预览一张 JPG 和一张 PNG，核对画面正常、上传的是压缩预览，且 PNG 预览会转换为 JPEG；设为 `false` 后重新预览，比较传输后的文件类型/大小。其他文件下载不应变化。 |
 | `PREVIEW_IMAGE_COMPRESS_QUALITY` | 先启用图片压缩，再 `set PREVIEW_IMAGE_COMPRESS_QUALITY 40`；对同一张 JPG 或 PNG 新建预览，与改成 `90` 后的预览比较 JPEG 预览文件大小和画质；同一个数值同时控制两种来源图片。最后依次重置这两个设置。图片复杂度会影响差异。 |

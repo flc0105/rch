@@ -4,6 +4,7 @@ import uuid
 
 from server.application.transfers.transfer_history_store import TransferHistoryStore
 from datetime import datetime
+from core.transfer_settings import FileTransferMode
 
 
 class TransferService:
@@ -23,6 +24,7 @@ class TransferService:
         self._items = {}
         self._recent_ids = []
         self.lifecycle_adapter = None
+        self.tcp_transport = None
         self.history = TransferHistoryStore(database)
 
     def create_transfer(
@@ -117,6 +119,10 @@ class TransferService:
 
             previous_state = str(item.get('state') or '').strip().lower()
             original = dict(item)
+            if (item['stage'] == 'cancelling'
+                    and item['metadata'].get('file_transfer_mode') == FileTransferMode.TCP_STREAMING.value
+                    and patch.get('state') not in self.TERMINAL_STATES):
+                patch.pop('stage', None)
             self._apply_patch(item, patch)
             self._refresh_derived_fields(item)
             next_state = str(item.get('state') or '').strip().lower()
@@ -249,7 +255,40 @@ class TransferService:
         self._publish(item)
         return snapshot
 
-    def handle_client_update(self, client_id: str, payload: dict):
+    def wait_for_tcp_transfer(self, transfer_id, client_id, timeout=5):
+        deadline = time.monotonic() + timeout
+        with self._changed:
+            while True:
+                item = self._items.get(transfer_id)
+                if not item or item['client_id'] != client_id or item['state'] != 'running':
+                    return None
+                metadata = item['metadata']
+                if metadata.get('transport') != 'client_transfer_manager' or metadata.get('browser_stage'):
+                    return None
+                mode = metadata.get('file_transfer_mode')
+                if mode == FileTransferMode.TCP_STREAMING.value:
+                    return self._public_item(item)
+                if mode or time.monotonic() >= deadline:
+                    return None
+                self._changed.wait(max(0, deadline - time.monotonic()))
+
+    def commit_tcp_artifact(self, transfer_id, client_id, filename, size, commit):
+        # Serialize the final registration with cancel/disconnect and terminal updates.
+        with self._changed:
+            item = self._items.get(transfer_id)
+            if not item or item['client_id'] != client_id or item['state'] != 'running':
+                raise RuntimeError('File transfer is no longer active')
+            if item['stage'] == 'cancelling':
+                # Server owns this commit. Cancellation won before registration.
+                self.cancel_transfer(transfer_id)
+                raise RuntimeError('File transfer cancelled')
+            artifact = commit()
+            self.update_transfer(transfer_id, client_id=client_id, state='completed', stage='completed',
+                                 artifact_id=artifact['artifact_id'], filename=filename,
+                                 transferred_bytes=size, total_bytes=size, error='')
+            return artifact
+
+    def handle_client_update(self, client_id: str, payload: dict, *, session=None):
         if not isinstance(payload, dict):
             return None
         transfer_id = str(payload.get('transfer_id') or '').strip()
@@ -270,7 +309,12 @@ class TransferService:
             'metadata',
         }
         patch = {key: payload.get(key) for key in allowed if key in payload}
-        return self.update_transfer(transfer_id, client_id=client_id, **patch)
+        updated = self.update_transfer(transfer_id, client_id=client_id, **patch)
+        if (payload.get('data_ready') is True and session is not None and self.tcp_transport is not None
+                and updated and updated['state'] == 'running'
+                and updated['metadata'].get('file_transfer_mode') == FileTransferMode.TCP_STREAMING.value):
+            self.tcp_transport.start_bind(session, transfer_id)
+        return updated
 
     def fail_transfer(self, transfer_id: str, error: str, *, client_id: str = ''):
         return self.update_transfer(
@@ -371,6 +415,30 @@ class TransferService:
                 if remaining <= 0:
                     return self._public_item(item)
                 self._changed.wait(remaining)
+
+    def request_cancellation(self, transfer_id: str, *, tab_id: str = '') -> tuple[dict, bool]:
+        """Atomically decide whether cancellation is local or needs Client dispatch."""
+        with self._lock:
+            current = self.get_transfer(transfer_id, tab_id=tab_id)
+            if not current:
+                raise ValueError('transfer not found')
+            if current['state'] != 'running':
+                raise ValueError('transfer is no longer active')
+            if current.get('cancel_supported') is False:
+                raise ValueError('current transfer mode does not support cancellation')
+            stage = current['stage']
+            if stage == 'cancelling':
+                # A retry may be needed if the earlier main-channel send failed.
+                # The Client's cancellation context is idempotent.
+                return current, True
+            metadata = current['metadata']
+            # Browser staging ends when the managed Client transfer is dispatched.
+            if stage == 'uploading_to_server' or (
+                stage == 'preparing' and metadata.get('source') == 'remote_file_upload'
+                and metadata.get('transport') != 'client_transfer_manager'
+            ):
+                return self.cancel_transfer(transfer_id, tab_id=tab_id), False
+            return self.mark_cancelling(transfer_id, tab_id=tab_id), True
 
     def mark_cancelling(self, transfer_id: str, *, tab_id: str = '') -> dict | None:
         return self.update_transfer(

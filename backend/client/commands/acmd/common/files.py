@@ -1,3 +1,4 @@
+from core.transfer_settings import FileTransferMode
 """Common file commands available on every Python Client."""
 import fnmatch
 import http.client
@@ -115,10 +116,10 @@ def download(self, args_dict, payload=None):
     try:
         self._set_cancel_policy('cooperative')
         self._checkpoint()
-        if runtime_config.HTTP_TRANSFER_MODE == 'legacy':
+        if runtime_config.FILE_TRANSFER_MODE == FileTransferMode.HTTP_SIMPLE.value:
             self._set_cancel_policy(
                 mode='none',
-                message='Current HTTP transfer mode is legacy; download cancellation is not supported')
+                message='Current file transfer mode is http_simple; download cancellation is not supported')
         file_path = self.path_resolver.require_existing_file(filename)
         source_command = (payload or {}).get('raw') or f'acmd download {filename}'
         return self.http_file_transfer_service.upload_single_file_to_server_result(

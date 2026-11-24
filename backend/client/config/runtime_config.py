@@ -1,12 +1,13 @@
 """
-命令运行时与 HTTP 传输相关配置。
+命令运行时与文件传输相关配置。
 
 说明：
 - 不改动原有 client.config.config
-- 将 HTTP 传输模式与 buffer 配置集中到这里
-- HTTP_TRANSFER_MODE:
-  - legacy: 保留原版 requests files=... / iter_content() 行为，不支持取消
-  - cancelable: 使用可取消并支持实时进度的流式实现
+- 将文件传输模式与 buffer 配置集中到这里
+- FILE_TRANSFER_MODE:
+  - http_simple: 保留原版 requests files=... / iter_content() 行为，不支持取消
+  - http_streaming: 使用可取消并支持实时进度的流式实现
+  - tcp_streaming: 独立 TCP 文件数据连接（受管理 Transfer）
 - SCREEN_FRAME_STRATEGY:
   - full_jpeg: 保留原有整屏 JPEG Screen View
   - keyframe_delta: 使用 Keyframe + 自包含差分帧
@@ -24,11 +25,11 @@ COMMAND_DEFAULT_SHELL_TIMEOUT = 30
 COMMAND_DEFAULT_STREAM_TIMEOUT = 300
 SCRIPT_DEFAULT_TIMEOUT = 300
 
-# ------------------ http transfer strategy ------------------ #
-HTTP_TRANSFER_MODE = 'cancelable'
+# ------------------ file transfer mode ------------------ #
+FILE_TRANSFER_MODE = transfer_settings.FileTransferMode.HTTP_STREAMING.value
 
 # ------------------ http file transfer ------------------ #
-# 所有 HTTP 文件传输统一使用同一个 buffer。
+# HTTP 文件传输及 Client TCP 流式传输共用 buffer 设置。
 HTTP_TRANSFER_BUFFER_SIZE = transfer_settings.DEFAULT_HTTP_TRANSFER_BUFFER_SIZE
 
 # ------------------ preview image compression ------------------ #
@@ -97,11 +98,11 @@ _RUNTIME_CONFIG_META = {
         'desc': 'Script default output mode.',
         'choices': ['collect', 'stream'],
     },
-    'HTTP_TRANSFER_MODE': {
+    'FILE_TRANSFER_MODE': {
         'group': 'transfer',
         'expose': True,
-        'desc': 'HTTP transfer implementation mode: legacy or cancelable.',
-        'choices': ['legacy', 'cancelable'],
+        'desc': 'File transfer mode.',
+        'choices': [mode.value for mode in transfer_settings.FileTransferMode],
     },
     'HTTP_TRANSFER_BUFFER_SIZE': {
         'group': 'transfer',

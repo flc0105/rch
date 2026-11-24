@@ -13,6 +13,7 @@ import threading
 
 from core.protocol.rchsocket import RCHSocket
 from tunnel.transport import close_socket
+from core.protocol.auxiliary import receive_greeting
 
 HELLO_TYPE = 'rch_tunnel'
 _MAX_HELLO = 4096
@@ -120,11 +121,7 @@ class SharedPortHandler:
             if isinstance(packet, dict) and packet.get('type') == HELLO_TYPE:
                 self._route(conn, packet)
                 return
-            listener.accept_session(conn, addr, initial_handshake=(packet, transport),
-                                    listener_id=listener.listener_id,
-                                    listener_name=listener.name,
-                                    listener_port=listener.address[1],
-                                    protocol=listener.protocol)
+            listener.route_accepted_connection(conn, addr, packet, transport)
         except (OSError, ValueError, TypeError, ConnectionError):
             close_socket(conn)
 
@@ -142,7 +139,10 @@ class SharedPortHandler:
             if not readable:
                 listener._offer_session(conn)
                 return
-            packet = receive_hello(conn)
-            self._route(conn, packet)
+            packet = receive_greeting(conn)
+            if packet.get('type') == HELLO_TYPE:
+                self._route(conn, packet)
+            else:
+                listener.route_auxiliary_connection(conn, packet)
         except (OSError, ValueError, TypeError, ConnectionError):
             close_socket(conn)

@@ -6,6 +6,11 @@ One session at a time is admitted, with reconnection after it ends.
 import queue
 import socket
 import threading
+from contextlib import contextmanager
+
+from client.connection.file_connection_slot import FileConnectionSlot
+from core.protocol.auxiliary import close_socket, receive_greeting
+from core.protocol.file_stream import DATA_GREETING
 
 from core.utils.logger import logger
 
@@ -35,6 +40,8 @@ class BindListener:
         self._thread = None
         self._stop = threading.Event()
         self._tunnel_handler = None
+        self._file_slots = {}
+        self._file_handshakes = threading.BoundedSemaphore(32)
 
     def start(self):
         with self._lock:
@@ -80,7 +87,12 @@ class BindListener:
             if handler is not None:
                 handler.dispatch_bind(self, conn)
                 continue
-            self._offer_session(conn)
+            with self._lock:
+                has_file_slots = self._occupied and bool(self._file_slots)
+            if has_file_slots:
+                self._dispatch_file_connection(conn)
+            else:
+                self._offer_session(conn)
 
     def _offer_session(self, conn):
         with self._lock:
@@ -92,11 +104,73 @@ class BindListener:
         if not allowed:
             conn.close()
 
-    def set_tunnel_handler(self, handler):
-        """No Tunnel handler or socket classification before first mapping starts."""
+    def _sync_backlog(self):
         if self._socket is not None:
-            self._socket.listen(64 if handler is not None else 1)
-        self._tunnel_handler = handler
+            self._socket.listen(64 if self._tunnel_handler is not None or self._file_slots else 1)
+
+    def set_tunnel_handler(self, handler):
+        """Keep normal Bind admission unchanged when no auxiliary connection is expected."""
+        with self._lock:
+            self._tunnel_handler = handler
+            self._sync_backlog()
+
+    @contextmanager
+    def expect_file_connection(self, transfer_id, token):
+        slot = FileConnectionSlot(token)
+        with self._lock:
+            if not self._occupied or not self._accepting or self._stop.is_set():
+                raise ConnectionError('Bind session is not active')
+            if transfer_id in self._file_slots or len(self._file_slots) >= 32:
+                raise RuntimeError('Too many pending file connections or duplicate transfer')
+            self._file_slots[transfer_id] = slot
+            self._sync_backlog()
+        try:
+            yield slot
+        finally:
+            with self._lock:
+                if self._file_slots.get(transfer_id) is slot:
+                    self._file_slots.pop(transfer_id, None)
+                    self._sync_backlog()
+            slot.close()
+
+    def route_auxiliary_connection(self, conn, packet):
+        if packet.get('type') != DATA_GREETING:
+            raise ValueError('Unknown auxiliary connection')
+        self.accept_file_connection(conn, packet)
+
+    def accept_file_connection(self, conn, packet):
+        """Called by the same-port greeting router; the slot owns accepted sockets."""
+        with self._lock:
+            slot = self._file_slots.get(packet.get('transfer_id')) if self._occupied else None
+            if slot is not None and slot.offer(conn, packet.get('token')):
+                return
+        close_socket(conn)
+
+    def _dispatch_file_connection(self, conn):
+        if not self._file_handshakes.acquire(blocking=False):
+            close_socket(conn)
+            return
+        def run():
+            try:
+                packet = receive_greeting(conn)
+                self.route_auxiliary_connection(conn, packet)
+            except (OSError, ValueError, TypeError, ConnectionError):
+                close_socket(conn)
+            finally:
+                self._file_handshakes.release()
+        try:
+            threading.Thread(target=run, daemon=True, name='FileDataHandshake').start()
+        except Exception:
+            self._file_handshakes.release()
+            close_socket(conn)
+            raise
+
+    def _clear_file_slots(self):
+        slots = list(self._file_slots.values())
+        self._file_slots.clear()
+        self._sync_backlog()
+        for slot in slots:
+            slot.close()
 
     def accept(self):
         while not self._stop.is_set():
@@ -126,10 +200,12 @@ class BindListener:
                         break
                     pending.close()
                 self._occupied = False
+                self._clear_file_slots()
 
     def release_session(self):
         with self._lock:
             self._occupied = False
+            self._clear_file_slots()
 
     def close(self):
         global _active_listener

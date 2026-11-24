@@ -383,8 +383,8 @@ Examples:
 
 - normal streaming subprocess commands can be cancelled
 - Python execution in `inproc` mode cannot be force-killed like a subprocess
-- HTTP transfer in `legacy` mode does not support cancellation
-- HTTP transfer in `cancelable` mode does support timeout/cancel-aware streaming
+- HTTP transfer in `http_simple` mode does not support cancellation
+- HTTP transfer in `http_streaming` mode does support timeout/cancel-aware streaming
 
 So the accurate mental model is **best-effort cancellation with explicit per-command/per-strategy policy**, not “everything is always interruptible”.
 
@@ -429,23 +429,9 @@ So the important limitation is:
 
 This is especially important when choosing between quick command execution and reusable script-library execution.
 
-### HTTP transfer modes
+### File transfer modes
 
-HTTP transfer currently supports two strategies:
-
-#### `legacy`
-
-- keeps the simpler `requests files=...` upload / `iter_content()` download behavior
-- is compatible with the older implementation path
-- does **not** support cancellation during upload/download
-
-#### `cancelable`
-
-- uses an interruptible streaming implementation
-- supports timeout-aware and cancellation-aware upload/download
-- integrates with command context and cleanup handlers
-
-The active transfer mode is reported by the client handshake and affects what the server/UI can truthfully claim about cancel support.
+Python Client supports `http_simple`, `http_streaming` (default), and `tcp_streaming`. Managed transfers snapshot the selected mode at task start. TCP streaming uses a separate data socket on the existing Bind or Reverse TCP/TLS listener, with progress and cancellation on the existing Transfer lifecycle. Browser-to-Server upload and Artifact download remain HTTP. Ordinary command, Script and Job HTTP operations remain HTTP; when TCP streaming is selected they use HTTP streaming. Go Client retains its existing HTTP behavior.
 
 ---
 
@@ -991,7 +977,7 @@ That keeps iteration fast, but some subsystems still need convergence and cleanu
 A few subtle implementation notes are worth calling out explicitly:
 
 - command cancellation support depends on the command/strategy being used
-- HTTP transfer cancel support depends on whether transfer mode is `legacy` or `cancelable`
+- HTTP transfer cancel support depends on whether transfer mode is `http_simple` or a streaming mode
 - Python execution semantics differ between `inproc` and `subprocess_pipe`
 - true streaming Python execution currently exists at the command level (`pyexec_stream`) rather than the reusable script-library path
 - server built-ins, aliases, client manifests, and history shortcuts all participate in the final terminal UX together
@@ -2001,7 +1987,7 @@ Current transfer capabilities include:
 - transfer IDs
 - running state
 - progress bytes/percentage
-- cancel support on the cancelable path
+- cancel support on the streaming paths
 - recent transfers
 - Transfer Center drawer
 - transfer SSE events
@@ -2009,40 +1995,14 @@ Current transfer capabilities include:
 
 ### Transfer modes
 
-```text
-legacy
-cancelable
-```
-
-`legacy` is intentionally retained as a simple compatibility path.
-
-#### Legacy upload
-
-Legacy upload uses `requests` multipart `files=...`, which buffers the multipart body in memory.
-
-Current protection:
-
-```text
-Legacy upload > 1 GB -> rejected
-```
-
-with guidance to use cancelable mode for large files.
-
-#### Legacy download
-
-Legacy download uses:
-
-```text
-stream=True
-iter_content(...)
-```
-
-so it does not use the same 1 GB upload restriction.
+- `http_simple`: standard Requests multipart upload, with a 1 GiB client-side upload guard; streaming HTTP download; no running cancellation.
+- `http_streaming`: streaming HTTP upload/download with progress and cooperative cancellation (default).
+- `tcp_streaming`: independent TCP data socket for managed Server–Python Client transfers, including Bind and Reverse TCP/TLS. Browser HTTP routes remain unchanged.
 
 ### Runtime knobs
 
 ```text
-HTTP_TRANSFER_MODE
+FILE_TRANSFER_MODE
 HTTP_TRANSFER_BUFFER_SIZE
 ```
 

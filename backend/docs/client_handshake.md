@@ -30,7 +30,7 @@ Python Client 的握手不只是操作系统名称。`ClientInfoBuilder.build()`
 | 系统和硬件 | `os_type`、`os_alias`、`os_full`、`os_name`、`os_ver`、`arch`、`manufacturer`、`model`、`chassis_type` | 展示平台、架构和机箱分类等设备资料，供 UI 判断或呈现 |
 | 进程与权限 | `process_id`、`launch_command`、`launch_mode`、`launch_source`、`username`、`process_name`、`integrity`、`cwd`、`python_ver` | 说明 Client 进程当时如何运行、具有何种权限及初始工作目录 |
 | 构建与源码身份 | `build_version`、`client_revision`、`client_revision_files` | 标记构建产物，比较 Client 与 Server 的源码内容 |
-| 运行能力与配置快照 | `http_transfer_mode`、`script_default_execution_mode`、`script_default_output_mode` | 表示 Client 握手时采用的传输与执行模式；Watchdog 运行状态通过 `watchdog --json` 实时读取 |
+| 运行能力与配置快照 | `file_transfer_mode`、`script_default_execution_mode`、`script_default_output_mode` | 表示 Client 握手时采用的传输与执行模式；Watchdog 运行状态通过 `watchdog --json` 实时读取 |
 | 提示与路径 | `command_manifest`、`variable_manifest`、`system_paths` | 提供命令候选、变量提示和 Client 端已知路径 |
 
 `id` 是每个 Python `Client` 对象初始化时创建的 UUID v4；它代表 Client 进程实例，不是主机名或 `machine_id`。同一个对象因网络异常重连会继续使用原 `client_id`，进程重新启动则通常产生新值。`machine_id` 来自规范化机器特征的 SHA-256 指纹，特征不变时可以跨进程重启复现；它不会随着 `client_id` 每次重建而重新随机分配。`chassis_type` 按设备固件和系统可提供的机箱信息分类（如 `laptop`、`desktop`、`server`、`phone`、`tablet`）；没有有效类型时使用 `unknown`。Linux 读取 DMI `chassis_type`，其中 `1`（Other）为 `unknown`，不依据发行版或云厂商名称猜测类型。Windows 采用原有脚本验证过的 `Win32_SystemEnclosure` 机箱编码检测，PowerShell 读取限时 3 秒；macOS 优先读取 `hw.model`，无法判定时限时查询 `system_profiler`。结果在 Client 进程内缓存，重连无需重复探测；不参与 `machine_id` 指纹。完整的字段采集、指纹算法与设备库存归属见 [Device Identity & Inventory](./device_identity.md)。

@@ -30,6 +30,7 @@ class ClientSessionContext:
         self.command_dispatch_adapter = None
         self.artifact_service = None
         self.client_session_token_service = None
+        self.client_session_token = ""
         self.on_unexpected_message = None
         self.on_heartbeat_updated = None
         self.on_pty_opened = None

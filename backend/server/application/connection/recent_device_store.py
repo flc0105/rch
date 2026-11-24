@@ -254,7 +254,7 @@ class RecentDeviceStore:
                 'launch_source': connection_payload.get('launch_source') or '',
                 'username': connection_payload.get('username') or previous.get('username') or '',
                 'process_name': connection_payload.get('process_name') or previous.get('process_name') or '',
-                'http_transfer_mode': connection_payload.get('http_transfer_mode') or previous.get('http_transfer_mode') or '',
+                'file_transfer_mode': connection_payload.get('file_transfer_mode') or previous.get('file_transfer_mode') or '',
                 'script_default_execution_mode': connection_payload.get('script_default_execution_mode') or previous.get('script_default_execution_mode') or '',
                 'script_default_output_mode': connection_payload.get('script_default_output_mode') or previous.get('script_default_output_mode') or '',
                 'connected_at': str(connection_payload.get('connected_at') or previous.get('connected_at') or ''),
