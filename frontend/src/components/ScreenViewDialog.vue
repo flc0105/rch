@@ -119,6 +119,7 @@
             <template #dropdown>
               <el-dropdown-menu>
                 <el-dropdown-item command="screenshot" :disabled="!frameReady">Screenshot</el-dropdown-item>
+                <el-dropdown-item command="performance">{{ performanceVisible ? 'Hide Performance Stats' : 'Performance Stats' }}</el-dropdown-item>
                 <el-dropdown-item command="restart" :disabled="loading">Restart</el-dropdown-item>
                 <el-dropdown-item v-if="!standalone" command="open-new-tab">Open in New Tab</el-dropdown-item>
               </el-dropdown-menu>
@@ -175,12 +176,37 @@
         <FullJpegScreenRenderer
           v-if="frameStrategy === 'full_jpeg' && frameSrc"
           :src="frameSrc"
+          :seq="frameSeq"
+          :key="frameEpoch"
+          @rendered="recordRenderedFrame"
         />
 
         <KeyframeDeltaScreenRenderer
           v-show="frameStrategy === 'keyframe_delta'"
           ref="deltaRenderer"
+          @rendered="recordRenderedFrame"
         />
+
+        <div v-if="performanceVisible && !screenInterrupted" class="screen-view-performance" aria-label="Performance Stats">
+          <div class="screen-view-performance-title">Performance Stats</div>
+          <div class="screen-view-performance-grid">
+            <span>Target FPS</span><strong>{{ fps }}</strong>
+            <span>Capture FPS</span><strong>{{ formatPerformance(clientPerformance.capture_fps) }}</strong>
+            <span>Send FPS</span><strong>{{ formatPerformance(clientPerformance.send_fps) }}</strong>
+            <span>Receive FPS</span><strong>{{ formatPerformance(browserPerformance.receiveFps) }}</strong>
+            <span>Render FPS</span><strong>{{ formatPerformance(browserPerformance.renderFps) }}</strong>
+            <span>Capture</span><strong>{{ formatPerformance(clientPerformance.capture_ms, ' ms') }}</strong>
+            <span>Encode</span><strong>{{ formatPerformance(clientPerformance.encode_ms, ' ms') }}</strong>
+            <span>Send</span><strong>{{ formatPerformance(clientPerformance.send_ms, ' ms') }}</strong>
+            <span>Decode &amp; render</span><strong>{{ formatPerformance(browserPerformance.renderMs, ' ms') }}</strong>
+            <span>Input queue</span><strong>{{ formatPerformance(clientPerformance.input_queue_ms, ' ms') }}</strong>
+            <span>Skipped frames</span><strong>{{ browserPerformance.skipped ?? '—' }}</strong>
+            <span>Resolution</span><strong>{{ frameWidth && frameHeight ? `${frameWidth} × ${frameHeight}` : '—' }}</strong>
+            <span>Strategy</span><strong>{{ displayFrameStrategy || '—' }}</strong>
+            <span>Transport</span><strong>{{ screenWsReady ? 'WebSocket' : 'HTTP polling' }}</strong>
+          </div>
+          <div class="screen-view-performance-note">Static desktops send fewer frames. Client averages use the latest completed sample.</div>
+        </div>
 
         <div v-if="frameReady && screenInterrupted" class="screen-view-interruption" role="alert">
           <div class="screen-view-interruption-panel">
@@ -266,6 +292,12 @@ export default {
       frameWidth: 0,
       frameHeight: 0,
       frameBytes: 0,
+      performanceVisible: false,
+      performanceTimer: null,
+      clientPerformance: {},
+      browserPerformance: {},
+      performanceWindow: null,
+      lastRenderedSeq: 0,
       controlEnabled: false,
       controlError: '',
       dismissedControlError: '',
@@ -382,6 +414,7 @@ export default {
   },
 
   beforeUnmount() {
+    this.stopPerformanceTimer()
     this.removeControlSafetyListeners()
     this.clearPointerMoveTimer()
     this.stopFallbackPolling()
@@ -438,6 +471,7 @@ export default {
       this.frameWidth = 0
       this.frameHeight = 0
       this.frameBytes = 0
+      this.resetPerformance()
       this.controlEnabled = this.screenInputSupported
       this.controlError = ''
       this.dismissedControlError = ''
@@ -517,6 +551,12 @@ export default {
 
 
     async handleMoreCommand(command) {
+  if (command === 'performance') {
+    this.performanceVisible = !this.performanceVisible
+    if (this.performanceVisible) this.startPerformanceTimer()
+    else this.stopPerformanceTimer()
+    return
+  }
   if (command === 'open-new-tab') {
     this.openInNewTab()
     return
@@ -1071,6 +1111,7 @@ export default {
       }
 
       if (type === 'frames') {
+        if (payload.performance && typeof payload.performance === 'object') this.clientPerformance = payload.performance
         this.screenStatus = payload.status || 'open'
         this.screenError = payload.error || ''
         this.frameSeq = Number(payload.seq || this.frameSeq || 0)
@@ -1078,6 +1119,7 @@ export default {
         this.frameHeight = Number(payload.height || 0)
         this.frameBytes = Number(payload.frame_bytes || 0)
         const frames = Array.isArray(payload.frames) ? payload.frames : []
+        if (this.performanceWindow) this.performanceWindow.received += frames.length
         frames.forEach(frame => this.applyFramePacket(frame))
         return
       }
@@ -1099,7 +1141,6 @@ export default {
       if (strategy === 'full_jpeg') {
         if (!frame.frame) return
         this.frameSrc = `data:image/jpeg;base64,${frame.frame}`
-        this.frameReady = true
         return
       }
 
@@ -1108,13 +1149,61 @@ export default {
         const epoch = this.frameEpoch
         this.$nextTick(() => {
           if (epoch !== this.frameEpoch) return
-          const renderResult = this.$refs.deltaRenderer?.applyFrame?.(frame)
-          if (renderResult && typeof renderResult.then === 'function') {
-            renderResult.then(rendered => {
-              if (rendered && epoch === this.frameEpoch) this.frameReady = true
-            })
-          }
+          // The renderer emits once per completed frame. Do not attach one
+          // Promise handler per incoming frame to a potentially long drain.
+          this.$refs.deltaRenderer?.applyFrame?.(frame)
         })
+      }
+    },
+
+    formatPerformance(value, suffix = '') {
+      return typeof value === 'number' && Number.isFinite(value) ? `${value.toFixed(1)}${suffix}` : '—'
+    },
+
+    startPerformanceTimer() {
+      this.stopPerformanceTimer()
+      this.performanceWindow = { started: performance.now(), received: 0, rendered: 0, duration: 0, samples: 0, skipped: 0 }
+      this.performanceTimer = window.setInterval(() => {
+        const sample = this.performanceWindow
+        if (!sample) return
+        const now = performance.now()
+        const seconds = Math.max(0.001, (now - sample.started) / 1000)
+        this.browserPerformance = {
+          receiveFps: sample.received / seconds,
+          renderFps: sample.rendered / seconds,
+          renderMs: sample.samples ? sample.duration / sample.samples : null,
+          skipped: sample.skipped,
+        }
+        this.performanceWindow = { started: now, received: 0, rendered: 0, duration: 0, samples: 0, skipped: 0 }
+      }, 1000)
+    },
+
+    stopPerformanceTimer() {
+      if (this.performanceTimer !== null) window.clearInterval(this.performanceTimer)
+      this.performanceTimer = null
+      this.performanceWindow = null
+    },
+
+    resetPerformance() {
+      this.stopPerformanceTimer()
+      this.clientPerformance = {}
+      this.browserPerformance = {}
+      this.lastRenderedSeq = 0
+      if (this.performanceVisible && this.visible && !this.userClosing) this.startPerformanceTimer()
+    },
+
+    recordRenderedFrame({ seq, duration }) {
+      if (this.screenEnded || seq <= this.lastRenderedSeq) return
+      this.frameReady = true
+      const previous = this.lastRenderedSeq
+      this.lastRenderedSeq = seq
+      const sample = this.performanceWindow
+      if (!sample) return
+      sample.rendered += 1
+      if (previous) sample.skipped += Math.max(0, seq - previous - 1)
+      if (typeof duration === 'number' && Number.isFinite(duration)) {
+        sample.duration += duration
+        sample.samples += 1
       }
     },
 
@@ -1194,6 +1283,7 @@ export default {
     },
 
     handleDialogClose() {
+      this.stopPerformanceTimer()
       this.userClosing = true
       this.closeRemoteSession(false, true)
     },
@@ -1215,6 +1305,8 @@ export default {
       this.frameWidth = 0
       this.frameHeight = 0
       this.frameBytes = 0
+      this.performanceVisible = false
+      this.resetPerformance()
       this.controlEnabled = false
       this.controlError = ''
       this.dismissedControlError = ''
@@ -1238,6 +1330,28 @@ export default {
 </script>
 
 <style scoped>
+.screen-view-performance {
+  position: absolute;
+  left: 12px;
+  top: 12px;
+  z-index: 2;
+  width: 246px;
+  max-width: calc(100% - 24px);
+  box-sizing: border-box;
+  padding: 12px 14px;
+  border: 1px solid #475569;
+  border-radius: 9px;
+  background: rgba(15, 23, 42, .94);
+  color: #e2e8f0;
+  font: 12px/1.45 system-ui, sans-serif;
+  pointer-events: none;
+}
+.screen-view-performance-title { font-size: 14px; font-weight: 650; margin-bottom: 8px; }
+.screen-view-performance-grid { display: grid; grid-template-columns: 1fr auto; gap: 3px 12px; }
+.screen-view-performance-grid span { color: #94a3b8; }
+.screen-view-performance-grid strong { font-variant-numeric: tabular-nums; text-align: right; font-weight: 550; }
+.screen-view-performance-note { color: #94a3b8; font-size: 11px; margin-top: 8px; }
+
 .screen-view-dialog-header {
   width: 100%;
   display: flex;

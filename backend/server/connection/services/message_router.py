@@ -100,6 +100,7 @@ class ServerInboundMessageRouter(BaseMessageRouter):
                 data.get('patch_y') or 0,
                 data.get('patch_width') or 0,
                 data.get('patch_height') or 0,
+                data.get('performance'),
             )
 
     def handle_screen_closed_message(self, data: dict) -> None:

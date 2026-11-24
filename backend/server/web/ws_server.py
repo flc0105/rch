@@ -172,17 +172,39 @@ def create_ws_handler(server_instance, flask_app):
         sender_task: Optional[asyncio.Task] = None
         receiver_task: Optional[asyncio.Task] = None
         closed_sent = False
+        loop = asyncio.get_running_loop()
+        updated = asyncio.Event()
+
+        def wakeup():
+            try:
+                loop.call_soon_threadsafe(updated.set)
+            except RuntimeError:
+                # The WS loop can close while a Client message is in flight.
+                pass
+
+        screen_service.subscribe_updates(screen_session_id, wakeup)
 
         async def sender_loop():
             nonlocal closed_sent
             after_seq = 0
+            last_status = None
             while True:
+                # Clear before reading the snapshot, so concurrent updates cannot be lost.
+                updated.clear()
                 payload = screen_service.get_updates(screen_session_id, after_seq=after_seq)
                 status = payload.get('status') or ''
                 error = payload.get('error') or ''
                 seq = int(payload.get('seq') or after_seq or 0)
                 frames = payload.get('frames') if isinstance(payload.get('frames'), list) else []
 
+                status_fields = {
+                    'status': status, 'error': error,
+                    'frame_strategy': payload.get('frame_strategy') or '',
+                    'control_enabled': bool(payload.get('control_enabled')),
+                    'control_error': payload.get('control_error') or '',
+                    'fps': payload.get('fps') or SCREEN_DEFAULT_FPS,
+                    'quality': payload.get('quality') or 60,
+                }
                 if seq > after_seq and frames:
                     after_seq = seq
                     await websocket.send_text(json.dumps({
@@ -196,11 +218,16 @@ def create_ws_handler(server_instance, flask_app):
                         'height': payload.get('height') or 0,
                         'frame_bytes': payload.get('frame_bytes') or 0,
                         'captured_at': payload.get('captured_at') or 0,
+                        'performance': payload.get('performance') or {},
                         'fps': payload.get('fps') or SCREEN_DEFAULT_FPS,
                         'quality': payload.get('quality') or 60,
                         'control_enabled': bool(payload.get('control_enabled')),
                         'control_error': payload.get('control_error') or '',
                     }, ensure_ascii=False))
+
+                elif status_fields != last_status and status not in ('closed', 'error'):
+                    await websocket.send_text(json.dumps({'type': 'status', 'seq': seq, **status_fields}, ensure_ascii=False))
+                last_status = status_fields
 
                 if status in ('closed', 'error'):
                     if not closed_sent:
@@ -216,7 +243,7 @@ def create_ws_handler(server_instance, flask_app):
                         closed_sent = True
                     break
 
-                await asyncio.sleep(0.03)
+                await updated.wait()
 
         async def receiver_loop():
             while True:
@@ -228,23 +255,23 @@ def create_ws_handler(server_instance, flask_app):
 
                 msg_type = str(message.get('type') or '').strip().lower()
                 if msg_type == 'config':
-                    screen_view_api.update_screen_view(
+                    await asyncio.to_thread(screen_view_api.update_screen_view,
                         screen_session_id,
                         fps=message.get('fps'),
                         quality=message.get('quality'),
                     )
                 elif msg_type == 'control':
-                    screen_view_api.set_screen_control(
+                    await asyncio.to_thread(screen_view_api.set_screen_control,
                         screen_session_id,
                         bool(message.get('enabled')),
                     )
                 elif msg_type == 'input':
-                    screen_view_api.send_screen_input(
+                    await asyncio.to_thread(screen_view_api.send_screen_input,
                         screen_session_id,
                         message.get('event') if isinstance(message.get('event'), dict) else {},
                     )
                 elif msg_type == 'close':
-                    screen_view_api.close_screen_view(screen_session_id, user_initiated=True)
+                    await asyncio.to_thread(screen_view_api.close_screen_view, screen_session_id, user_initiated=True)
                     break
 
         try:
@@ -266,12 +293,12 @@ def create_ws_handler(server_instance, flask_app):
                     raise exc
         except ConnectionClosed:
             try:
-                screen_view_api.close_screen_view(screen_session_id, user_initiated=False)
+                await asyncio.to_thread(screen_view_api.close_screen_view, screen_session_id, user_initiated=False)
             except Exception:
                 pass
         except Exception:
             try:
-                screen_view_api.close_screen_view(screen_session_id, user_initiated=False)
+                await asyncio.to_thread(screen_view_api.close_screen_view, screen_session_id, user_initiated=False)
             except Exception:
                 pass
             try:
@@ -279,11 +306,12 @@ def create_ws_handler(server_instance, flask_app):
             except Exception:
                 pass
         finally:
+            screen_service.unsubscribe_updates(screen_session_id, wakeup)
             for task in (sender_task, receiver_task):
                 if task and not task.done():
                     task.cancel()
             try:
-                screen_view_api.close_screen_view(screen_session_id, user_initiated=False)
+                await asyncio.to_thread(screen_view_api.close_screen_view, screen_session_id, user_initiated=False)
             except Exception:
                 pass
 

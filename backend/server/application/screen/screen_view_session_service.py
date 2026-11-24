@@ -40,6 +40,26 @@ class ScreenViewSessionService:
         self.event_bus = event_bus
         self._lock = threading.RLock()
         self._sessions = {}
+        self._update_listeners = {}
+
+    def subscribe_updates(self, screen_session_id: str, listener):
+        """Register a nonblocking wakeup callback before reading the snapshot."""
+        with self._lock:
+            self._get_required(screen_session_id)
+            self._update_listeners.setdefault(screen_session_id, set()).add(listener)
+
+    def unsubscribe_updates(self, screen_session_id: str, listener):
+        with self._lock:
+            listeners = self._update_listeners.get(screen_session_id)
+            if listeners is not None:
+                listeners.discard(listener)
+                if not listeners:
+                    self._update_listeners.pop(screen_session_id, None)
+
+    def _notify_updates(self, item):
+        # Called under the session lock; listeners only schedule a wakeup.
+        for listener in self._update_listeners.get(item['screen_session_id'], ()):
+            listener()
 
     def create_session(self, client_id: str, fps: int = SCREEN_DEFAULT_FPS, quality: int = 60) -> dict:
         client_id = str(client_id or '').strip()
@@ -64,6 +84,7 @@ class ScreenViewSessionService:
             'height': 0,
             'frame_bytes': 0,
             'captured_at': 0,
+            'performance': {},
             'error': '',
             'control_enabled': SCREEN_DEFAULT_CONTROL_ENABLED,
             'control_error': '',
@@ -95,6 +116,7 @@ class ScreenViewSessionService:
                 item['status'] = 'error'
                 item['error'] = str(e)
                 item['closed_at'] = time.time()
+                self._notify_updates(item)
                 if not item.get('close_notified'):
                     item['close_notified'] = True
                     event_item = dict(item)
@@ -120,6 +142,7 @@ class ScreenViewSessionService:
         with self._lock:
             item['fps'] = next_fps
             item['quality'] = next_quality
+            self._notify_updates(item)
 
         session = self.server.get_target_connection_by_client_id(item['client_id'])
         session.send({
@@ -134,8 +157,11 @@ class ScreenViewSessionService:
         item = self._get_required(screen_session_id)
         next_enabled = bool(enabled)
         with self._lock:
+            if item['status'] in ('closing', 'closed', 'error'):
+                return {'ok': False, 'control_enabled': False}
             item['control_enabled'] = next_enabled
             item['control_error'] = ''
+            self._notify_updates(item)
 
         event = {'action': 'prepare' if next_enabled else 'control_off'}
         self._send_input_event(item, event)
@@ -144,7 +170,7 @@ class ScreenViewSessionService:
     def send_input(self, screen_session_id: str, event: dict) -> dict:
         item = self._get_required(screen_session_id)
         with self._lock:
-            if not item.get('control_enabled'):
+            if item['status'] in ('closing', 'closed', 'error') or not item.get('control_enabled'):
                 return {'ok': False, 'control_enabled': False}
 
         normalized = self._normalize_input_event(event)
@@ -158,6 +184,7 @@ class ScreenViewSessionService:
                 return {'ok': True}
             item['control_enabled'] = False
             item['status'] = 'closing'
+            self._notify_updates(item)
         try:
             session = self.server.get_target_connection_by_client_id(item['client_id'])
             session.send({
@@ -183,6 +210,7 @@ class ScreenViewSessionService:
                 'height': int(item.get('height') or 0),
                 'frame_bytes': int(item.get('frame_bytes') or 0),
                 'captured_at': item.get('captured_at') or 0,
+                'performance': dict(item.get('performance') or {}),
                 'fps': int(item.get('fps') or SCREEN_DEFAULT_FPS),
                 'quality': int(item.get('quality') or 60),
                 'error': item.get('error') or '',
@@ -209,6 +237,7 @@ class ScreenViewSessionService:
             if not item.get('open_notified'):
                 item['open_notified'] = True
                 event_item = dict(item)
+            self._notify_updates(item)
 
         if control_item:
             self._send_input_event(control_item, {'action': 'prepare'})
@@ -231,6 +260,7 @@ class ScreenViewSessionService:
         patch_y=0,
         patch_width=0,
         patch_height=0,
+        performance=None,
     ):
         if not data:
             return
@@ -283,6 +313,9 @@ class ScreenViewSessionService:
             item['height'] = packet['height']
             item['frame_bytes'] = packet['frame_bytes']
             item['captured_at'] = packet['captured_at']
+            if isinstance(performance, dict):
+                item['performance'] = dict(performance)
+            self._notify_updates(item)
 
     def handle_client_closed(self, screen_session_id: str):
         event_item = None
@@ -296,6 +329,7 @@ class ScreenViewSessionService:
             if item.get('open_notified') and not item.get('close_notified'):
                 item['close_notified'] = True
                 event_item = dict(item)
+            self._notify_updates(item)
 
         if event_item:
             self._publish_screen_lifecycle_event(event_item, state='closed')
@@ -313,6 +347,7 @@ class ScreenViewSessionService:
             if not item.get('close_notified'):
                 item['close_notified'] = True
                 event_item = dict(item)
+            self._notify_updates(item)
 
         if event_item:
             self._publish_screen_lifecycle_event(event_item, state='error')
@@ -324,6 +359,7 @@ class ScreenViewSessionService:
                 return
             item['control_enabled'] = False
             item['control_error'] = str(message or 'Screen control input failed')
+            self._notify_updates(item)
 
     def handle_client_disconnected(self, client_id: str):
         client_id = str(client_id or '').strip()
@@ -342,6 +378,7 @@ class ScreenViewSessionService:
                 if item.get('open_notified') and not item.get('close_notified'):
                     item['close_notified'] = True
                     event_items.append(dict(item))
+                self._notify_updates(item)
 
         for event_item in event_items:
             self._publish_screen_lifecycle_event(event_item, state='closed')

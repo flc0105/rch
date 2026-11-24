@@ -23,16 +23,23 @@ class KeyframeDeltaFrameStrategy(ScreenFrameStrategy):
         self._base_seq = 0
         self._base_image = None
         self._base_created_at = 0.0
+        self._last_bbox = None
+        self._last_patch = None
+        self._quality = None
 
     def encode(self, image, quality: int):
         image = self._prepare_rgb(image)
         now = time.monotonic()
 
-        if self._should_emit_keyframe(image, now):
+        if self._should_emit_keyframe(image, now) or quality != self._quality:
             return self._encode_keyframe(image, quality, now)
 
         bbox = ImageChops.difference(self._base_image, image).getbbox()
         if bbox is None:
+            # A previous patch must be explicitly removed when the desktop
+            # returns to the base, even if intermediate frames were skipped.
+            if self._last_bbox is not None:
+                return self._encode_keyframe(image, quality, now)
             return None
 
         left, top, right, bottom = bbox
@@ -49,10 +56,16 @@ class KeyframeDeltaFrameStrategy(ScreenFrameStrategy):
         if patch_area / full_area >= self.FULL_FRAME_AREA_RATIO:
             return self._encode_keyframe(image, quality, now)
 
-        # patch = image.crop(bbox)
+        # Outside the bounding box both images equal the fixed base. Compare
+        # only the cropped patch when its bounds match; avoid a second full
+        # desktop scan or storing another full-sized screenshot.
         patch = image.crop((left, top, right, bottom))
+        if bbox == self._last_bbox and ImageChops.difference(self._last_patch, patch).getbbox() is None:
+            return None
         frame_bytes = self._encode_jpeg(patch, quality)
         self._seq += 1
+        self._last_bbox = bbox
+        self._last_patch = patch
 
         return {
             'strategy': self.name,
@@ -80,6 +93,9 @@ class KeyframeDeltaFrameStrategy(ScreenFrameStrategy):
         self._seq += 1
         self._base_seq = self._seq
         self._base_image = image.copy()
+        self._last_bbox = None
+        self._last_patch = None
+        self._quality = quality
         self._base_created_at = now
 
         return {

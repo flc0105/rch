@@ -25,7 +25,7 @@ Client（远程设备）
 2. Server 分配独立的 `screen_session_id`，生成 WebSocket 访问令牌，将状态设为 `opening`，并向目标 Client 发送 `screen_open`。
 3. Client 建立屏幕采集线程，回复 `screen_opened`，随后按指定 FPS 周期采集屏幕并发送 `screen_frame`。Windows Client 在启动后会后台预加载截图与已启用输入能力所需的 Python 模块；Screen View 打开时优先完成第一张画面，之后再执行首次输入准备，以降低两套初始化互相抢占造成的首帧等待。
 4. Server 将收到的画面保存为该会话的最新帧。浏览器优先通过 WebSocket 接收、解码和显示；必要时改为 HTTP 轮询。
-5. 用户操作预览区域时，浏览器通过 WebSocket 发送输入事件，Server 再经 Client 消息通道转发给被控设备。
+5. 用户操作预览区域时，浏览器通过 WebSocket 发送输入事件，Server 再经 Client 消息通道按顺序转发给被控设备；同步发送在 WebSocket 事件循环之外执行。
 6. 关闭窗口、重启预览或 Client 断开连接时，会话进入关闭流程，并释放采集与输入控制状态。
 
 采集、画面传输和输入控制各有独立职责：**预览与远程控制分别申请权限**。例如，系统允许截图却不允许注入鼠标键盘时，预览仍可能正常，但 Control 会收到错误并被关闭。
@@ -49,10 +49,10 @@ Client 优先调用 Pillow ImageGrab 截图，出现异常时再尝试使用 PyA
 `keyframe_delta` 使用固定 Keyframe（关键帧）和变化区域 Delta（差分帧）减少数据量：
 
 1. 首帧始终是完整 Keyframe，记录作为比较基准的画面。
-2. 后续截图与**当前 Keyframe** 比较，计算发生变化的矩形区域。
+2. 后续截图与**当前 Keyframe** 比较，计算变化矩形；当矩形与上一张 Delta 的范围一致且区域内容未变化时，跳过重复编码。
 3. 变化矩形向四周扩展最多 8 像素，裁剪该区域并编码为 JPEG Patch；浏览器将其绘制到与 Keyframe 对应的画布位置。
-4. 当扩展后的变化面积达到整屏面积的 **50%**、距离上次 Keyframe 已经过 **2 秒**，或屏幕分辨率改变时，直接发送新的完整 Keyframe。
-5. 如果画面相对 Keyframe 没有变化，则本次编码返回空结果，不发送图像帧。
+4. 当扩展后的变化面积达到整屏面积的 **50%**、距离上次 Keyframe 已经过 **2 秒**，屏幕分辨率或 Quality 改变时，直接发送新的完整 Keyframe。
+5. 如果变化后的画面恰好恢复到 Keyframe，立即发送新的完整 Keyframe，以清除浏览器原有 Patch。静止画面仍按关键帧周期刷新。
 
 **Delta 帧统一相对于最近的固定 Keyframe 编码。** 因此，同一 Keyframe 之间的中间差分帧可以被跳过。浏览器只要拥有当前基准关键帧和与之匹配的最新 Delta，就可以重建当前画面。
 
@@ -83,13 +83,14 @@ Client 发送的帧包含会话 ID、编码策略、帧类型、序列号、基�
 | `patch_x` / `patch_y` | 变化区域在整屏画面中的左上角位置 |
 | `patch_width` / `patch_height` | 变化区域的尺寸，完整帧则等于整屏尺寸 |
 | `data` | Client 消息中的 Base64 JPEG 内容 |
-| `bytes` / `captured_at` | JPEG 大小 / 采集时间 |
+| `bytes` / `captured_at` | JPEG 大小 / 截图完成时间 |
+| `performance` | Client 最近完成的采集、编码、发送和输入队列统计 |
 
 Server 对外提供的帧对象将 Base64 图像放在 `frame` 字段，并以 `seq`、`base_seq` 等字段标识重建关系。它会检查序列号、画面尺寸、Patch 边界，以及 Delta 是否引用当前有效的 Keyframe；不符合要求的帧不会更新当前画面。
 
-WebSocket 发送循环约每 **30 毫秒**查询一次会话的最新状态，只向浏览器发送需要更新的帧。它不承诺将每次采集到的历史画面逐帧送达，优先保证实时画面能够追上最新状态。
+WebSocket 发送循环由新帧或会话状态变化唤醒，只向浏览器发送需要更新的帧；Control 权限错误、配置及会话结束状态可独立于图像帧送达。它不承诺将每次采集到的历史画面逐帧送达，优先保证实时画面能够追上最新状态。
 
-浏览器的 Delta 渲染器保留尚未解码的最新 Keyframe 和与之匹配的最新 Delta，旧的待解码差分帧会被新帧替换。解码过程中如有更新的 Keyframe 或 Delta 到达，已过时的解码结果不会覆盖较新的画面；Restart 或关闭重开后会清空旧会话的渲染任务。这样画面跟随最新状态，而不是在浏览器积压旧 JPEG。
+浏览器的 Delta 渲染器保留尚未解码的最新 Keyframe 和与之匹配的最新 Delta，旧的待解码差分帧会被新帧替换。有效且尚未显示的解码结果可先绘制，再处理最新待解码帧；旧基准的 Delta 不会覆盖较新的画面。每次绘制 Delta 只恢复上一块 Patch 区域，再绘制新 Patch。Full JPEG 同样保留至多一张正在加载的图像和一张最新待处理图像。Restart 或关闭重开后会清空旧会话的渲染任务。这样画面跟随最新状态，而不是在浏览器积压旧 JPEG。
 
 浏览器无法建立 WebSocket 时，会尝试每 **250 毫秒**通过 HTTP 轮询获取最新帧和状态。这个回退路径可以继续用于画面查看，但现有实时鼠标键盘控制依赖 WebSocket，因此轮询模式不能作为完整远程控制通道使用。 Dialog 和 New Tab 在连接中断且仍保留最后一帧时，会在画面上显示中断提示并压暗背景，明确当前画面不是实时预览；如果轮询恢复新的画面，临时提示自动消失。会话已关闭或失败时，提示持续显示，使用 More → Restart 重新建立会话。
 
@@ -209,7 +210,7 @@ WebSocket 地址采用：
 | `input` | `{"type":"input","event":{"action":"mouse_move","x":0.5,"y":0.5}}` | 转发一次远程输入事件 |
 | `close` | `{"type":"close"}` | 请求关闭当前会话 |
 
-Server 发送的消息以 `frames` 和 `status` 为主。`frames` 包含状态、最新序列号、`frames` 数组、尺寸、字节数、策略和 Control 状态；`status` 用于结束或错误等状态变化。`poll` 返回的字段内容相近，但由 HTTP 请求按 `after_seq` 拉取。普通 HTTP 配置接口目前仅处理 FPS 和 Quality，不作为鼠标键盘事件入口。
+Server 发送的消息以 `frames` 和 `status` 为主。`frames` 包含状态、最新序列号、`frames` 数组、尺寸、字节数、策略和 Control 状态；`status` 用于打开、配置、Control 权限及结束等独立状态变化。`poll` 返回的字段内容相近，但由 HTTP 请求按 `after_seq` 拉取。普通 HTTP 配置接口目前仅处理 FPS 和 Quality，不作为鼠标键盘事件入口。
 
 会话状态及其含义：
 
@@ -224,6 +225,10 @@ Server 发送的消息以 `frames` 和 `status` 为主。`frames` 包含状态�
 关闭窗口时，浏览器会尝试关闭远程会话。WebSocket 断开也会触发 Server 的关闭处理；Client 断线时，Server 会将该 Client 尚未结束的屏幕会话标为 `closed`，并停止允许远程输入。Server 通过生命周期事件发布启动、关闭和错误通知，供 SSE/通知中心使用。
 
 结束及错误会话的状态会在 Server 内存中保留一段时间。**超过 300 秒的旧记录是在创建新会话时顺带清理**，不是独立计时器每隔 300 秒执行清理；因此某些旧记录可能存留更久。
+
+## 性能统计
+
+在 Dialog 或 New Tab 的 **More → Performance Stats** 中可显示或隐藏实时统计。Target FPS 为设定值，Capture FPS 为实际采集频率，Send FPS 为 Client 图像发送频率；Receive FPS 与 Render FPS 分别是浏览器收到与完成加载/绘制的图像数量（不是显示器刷新率）。Capture、Encode、Send 和 Input queue 是 Client 使用单调时钟计算的最近完成采样窗口平均耗时，经后续图像帧送达；无输入或尚无采样时显示 `—`。Decode & render 是浏览器本地加载/解码绘制阶段平均耗时，Skipped frames 是相邻已渲染序列之间跳过的帧数，按浏览器采样窗口统计。静止桌面的发送和渲染 FPS 可以低于采集 FPS；这些统计用于定位各阶段开销，不将跨机器时钟相减作为端到端延迟。
 
 ## 权限、延迟与可用性边界
 

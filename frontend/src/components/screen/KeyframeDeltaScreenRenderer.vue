@@ -5,12 +5,14 @@
 <script>
 export default {
   name: 'KeyframeDeltaScreenRenderer',
+  emits: ['rendered'],
 
   data() {
     return {
       baseCanvas: null,
       baseSeq: 0,
       renderedSeq: 0,
+      previousPatch: null,
       pendingKeyframe: null,
       pendingDelta: null,
       decodingBaseSeq: 0,
@@ -28,6 +30,7 @@ export default {
       this.renderGeneration += 1
       this.baseSeq = 0
       this.renderedSeq = 0
+      this.previousPatch = null
       this.pendingKeyframe = null
       this.pendingDelta = null
       this.decodingBaseSeq = 0
@@ -119,16 +122,16 @@ export default {
       const seq = Number(frame.seq || 0)
       if (!width || !height || !seq || !frame.frame) return false
 
+      const started = typeof performance !== 'undefined' ? performance.now() : 0
       const image = await this.decodeJpeg(frame.frame)
-      if (generation !== this.renderGeneration ||
-          (this.pendingKeyframe && Number(this.pendingKeyframe.seq) > seq)) return false
+      if (generation !== this.renderGeneration || seq <= this.renderedSeq) return false
 
       const canvas = this.$refs.canvas
       if (!canvas || !this.baseCanvas) return false
-      canvas.width = width
-      canvas.height = height
-      this.baseCanvas.width = width
-      this.baseCanvas.height = height
+      if (canvas.width !== width) canvas.width = width
+      if (canvas.height !== height) canvas.height = height
+      if (this.baseCanvas.width !== width) this.baseCanvas.width = width
+      if (this.baseCanvas.height !== height) this.baseCanvas.height = height
 
       const baseContext = this.baseCanvas.getContext('2d')
       const context = canvas.getContext('2d')
@@ -139,7 +142,9 @@ export default {
       context.clearRect(0, 0, width, height)
       context.drawImage(this.baseCanvas, 0, 0)
       this.baseSeq = seq
+      this.previousPatch = null
       this.renderedSeq = seq
+      this.reportRendered(seq, started)
       return true
     },
 
@@ -153,10 +158,10 @@ export default {
       if (baseSeq !== this.baseSeq || width !== canvas.width || height !== canvas.height) return false
       if (!frame.frame) return false
 
+      const started = typeof performance !== 'undefined' ? performance.now() : 0
       const image = await this.decodeJpeg(frame.frame)
       if (generation !== this.renderGeneration || baseSeq !== this.baseSeq ||
-          this.pendingKeyframe ||
-          (this.pendingDelta && Number(this.pendingDelta.seq) > Number(frame.seq))) return false
+          this.pendingKeyframe || Number(frame.seq) <= this.renderedSeq) return false
 
       const patchX = Number(frame.patch_x || 0)
       const patchY = Number(frame.patch_y || 0)
@@ -168,11 +173,24 @@ export default {
       if (!context) return false
 
       // Every Delta is relative to the fixed Keyframe, not the previous Delta.
-      context.clearRect(0, 0, width, height)
-      context.drawImage(this.baseCanvas, 0, 0)
+      // Restore only the previous patch rectangle from the base, then draw
+      // the new self-contained patch. Unchanged pixels already match the base.
+      if (this.previousPatch) {
+        const { x, y, w, h } = this.previousPatch
+        context.drawImage(this.baseCanvas, x, y, w, h, x, y, w, h)
+      }
       context.drawImage(image, patchX, patchY, patchWidth, patchHeight)
+      this.previousPatch = { x: patchX, y: patchY, w: patchWidth, h: patchHeight }
       this.renderedSeq = Number(frame.seq)
+      this.reportRendered(this.renderedSeq, started)
       return true
+    },
+
+    reportRendered(seq, started) {
+      this.$emit?.('rendered', {
+        seq,
+        duration: typeof performance !== 'undefined' ? performance.now() - started : null,
+      })
     },
 
     decodeJpeg(base64Data) {

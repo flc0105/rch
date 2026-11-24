@@ -100,6 +100,8 @@ class ScreenViewManager:
             'pyautogui_failsafe': None,
             'input_condition': threading.Condition(),
             'input_events': deque(),
+            'input_wait_total': 0.0,
+            'input_wait_count': 0,
             'first_frame_sent': threading.Event(),
             'opened_at_monotonic': time.monotonic(),
         }
@@ -188,11 +190,11 @@ class ScreenViewManager:
             if action in ('release_all', 'control_off'):
                 pending.clear()
             elif action == 'mouse_move' and pending and pending[-1][0] == 'mouse_move':
-                pending[-1] = (action, dict(payload))
+                pending[-1] = (action, dict(payload), time.monotonic())
                 return True
             elif len(pending) >= self.MAX_PENDING_INPUT_EVENTS:
                 # Retire stale pointer moves first without reordering actions.
-                for index, (queued_action, _) in enumerate(pending):
+                for index, (queued_action, _, _) in enumerate(pending):
                     if queued_action == 'mouse_move':
                         del pending[index]
                         break
@@ -200,10 +202,10 @@ class ScreenViewManager:
                     # A saturated queue of key/button events cannot safely
                     # drop a release event. End control and release inputs.
                     pending.clear()
-                    pending.append(('release_all', {}))
+                    pending.append(('release_all', {}, time.monotonic()))
                     overflow = True
             if not overflow:
-                pending.append((action, dict(payload)))
+                pending.append((action, dict(payload), time.monotonic()))
             item['input_condition'].notify()
 
         if overflow:
@@ -220,7 +222,9 @@ class ScreenViewManager:
                     condition.wait_for(lambda: item['stop_event'].is_set() or item['input_events'])
                     if item['stop_event'].is_set():
                         break
-                    action, payload = item['input_events'].popleft()
+                    action, payload, enqueued_at = item['input_events'].popleft()
+                    item['input_wait_total'] += time.monotonic() - enqueued_at
+                    item['input_wait_count'] += 1
 
                 # Windows first-use imports and privilege checks must not
                 # contend with the very first screenshot/encoder initialization.
@@ -246,6 +250,9 @@ class ScreenViewManager:
 
     def _capture_loop(self, screen_session_id: str):
         failed = False
+        stats_started = time.monotonic()
+        captures = sends = capture_total = encode_total = send_total = 0
+        performance = {}
         try:
             while True:
                 with self._lock:
@@ -263,8 +270,12 @@ class ScreenViewManager:
                 started_at = time.monotonic()
                 image = self._capture_image()
                 captured_at = time.monotonic()
+                captured_wall = time.time()
                 frame = frame_strategy.encode(image, quality)
                 encoded_at = time.monotonic()
+                captures += 1
+                capture_total += captured_at - started_at
+                encode_total += encoded_at - captured_at
                 origin_x, origin_y = self._capture_origin(image)
                 width = int(image.width)
                 height = int(image.height)
@@ -294,11 +305,14 @@ class ScreenViewManager:
                         'patch_width': int(frame['patch_width']),
                         'patch_height': int(frame['patch_height']),
                         'bytes': len(frame_bytes),
-                        'captured_at': time.time(),
+                        'captured_at': captured_wall,
+                        'performance': performance,
                     })
+                    sent_at = time.monotonic()
+                    sends += 1
+                    send_total += sent_at - encoded_at
                     if not item['first_frame_sent'].is_set():
                         item['first_frame_sent'].set()
-                        sent_at = time.monotonic()
                         logger.info(
                             'Screen View first frame sent: platform=%s session=%s '
                             'startup=%.0fms capture=%.0fms encode=%.0fms send=%.0fms',
@@ -309,7 +323,25 @@ class ScreenViewManager:
                             (sent_at - encoded_at) * 1000,
                         )
 
-                elapsed = time.monotonic() - started_at
+                now = time.monotonic()
+                window = now - stats_started
+                if window >= 1.0:
+                    with item['input_condition']:
+                        input_count = item['input_wait_count']
+                        input_wait = item['input_wait_total']
+                        item['input_wait_count'] = 0
+                        item['input_wait_total'] = 0.0
+                    performance = {
+                        'input_queue_ms': round(input_wait * 1000 / input_count, 1) if input_count else None,
+                        'capture_fps': round(captures / window, 1),
+                        'send_fps': round(sends / window, 1),
+                        'capture_ms': round(capture_total * 1000 / captures, 1),
+                        'encode_ms': round(encode_total * 1000 / captures, 1),
+                        'send_ms': round(send_total * 1000 / sends, 1) if sends else None,
+                    }
+                    stats_started = now
+                    captures = sends = capture_total = encode_total = send_total = 0
+                elapsed = now - started_at
                 delay = max(0.0, (1.0 / max(1, fps)) - elapsed)
                 if stop_event.wait(delay):
                     break
