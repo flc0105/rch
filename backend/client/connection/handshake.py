@@ -12,6 +12,7 @@ from core.device.local_identity import get_local_identity
 from core.device.chassis_type import get_chassis_type
 from client.runtime.client_util import check_privilege, get_executable_path, get_system_paths
 from client.runtime.launch_context import detect_launch_context
+from client.runtime.filesystem.path_resolver import recover_current_directory, reported_current_directory
 
 
 _CLIENT_REVISION_MANIFEST = None
@@ -47,6 +48,7 @@ class ClientInfoBuilder:
         """
         构造客户端基础信息
         """
+        recover_current_directory()
         identity = get_local_identity()
         process_info = self._build_process_info(identity.os_alias)
         launch_context = self._get_launch_context(identity.os_alias)
@@ -84,7 +86,7 @@ class ClientInfoBuilder:
             'username': process_info['username'],
             'process_name': process_info['process_name'],
             'integrity': check_privilege(),
-            'cwd': os.getcwd(),
+            'cwd': reported_current_directory(),
             'python_ver': platform.python_version(),
 
             'file_transfer_mode': runtime_config.FILE_TRANSFER_MODE,

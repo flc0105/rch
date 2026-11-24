@@ -1,6 +1,6 @@
-import os
 import time
 
+from client.runtime.filesystem.path_resolver import reported_current_directory
 from core.protocol.message_router_base import BaseMessageRouter
 from core.protocol.screen import SCREEN_DEFAULT_FPS
 from core.protocol.message_types import (
@@ -74,7 +74,7 @@ class ClientInboundMessageRouter(BaseMessageRouter):
                 'target_id': target_command_id,
                 'accepted': True,
                 'state': state,
-                'cwd': os.getcwd(),
+                'cwd': reported_current_directory(),
                 'client_ts': time.time(),
             })
 
@@ -93,7 +93,7 @@ class ClientInboundMessageRouter(BaseMessageRouter):
             'accepted': accepted,
             'state': cancel_result.get('state', 'rejected'),
             'message': message,
-            'cwd': os.getcwd(),
+            'cwd': reported_current_directory(),
             'client_ts': time.time(),
         })
         return None
@@ -104,7 +104,7 @@ class ClientInboundMessageRouter(BaseMessageRouter):
             'id': data.get('id'),
             'server_ts': data.get('ts'),
             'client_ts': time.time(),
-            'cwd': os.getcwd(),
+            'cwd': reported_current_directory(),
         })
         return None
 

@@ -34,6 +34,12 @@ Server HTTP Control 已支持向原 `client_id` 投递 `resume`：独立 Watchdo
 
 Python Client 的主连接因 Socket 关闭、传输错误或接收超时而意外中断时，先等待 `RECONNECT_INTERVAL_SECONDS`（默认 5 秒），再清理旧连接并重新拨号。后续拨号或握手失败仍按该间隔继续重试；这样端口可建立 TCP 连接、但对方拒绝应用协议（例如明文 TCP 误连 TLS Listener）时也不会高速反复拨号。手动 `pause_connection` 不自动重连。
 
+### Client 工作目录失效
+
+Python Client 的工作目录属于进程状态。如果当前目录被命令、Remote Files 或其他本机进程删除，Client 在前台执行边界（包括空闲等待）及握手前检查该目录，并依次尝试切换到用户 Home、系统临时目录。成功恢复后，命令结果或后续心跳会同步实际工作目录；原命令的成功或失败仍按实际执行结果报告。
+
+结果、流式输出、Heartbeat ACK 和 Cancel ACK 读取工作目录时使用容错方式；短暂无法取得目录时传递空字符串，Server 保留上一份已知目录。收包及独立任务的状态回报不主动切换进程工作目录。工作目录读取失败本身不触发连接恢复；若没有可用的回退目录，依赖该目录的文件操作仍可能失败，可通过绝对路径 `cd` 到有效目录恢复。主动 Disconnect、Kill Instance、Pause 及真实传输异常继续遵循原连接生命周期。
+
 ## 从握手到活动会话
 
 Client 连接 Server 的 TCP Socket（默认端口 `9999`），建立传输后发送包含 `client_id`、设备标识、系统信息、工作目录及命令能力的握手信息。Server 接收该信息，创建 `ClientSession`，并以 `client_id` 登记在活动连接管理器中。`client_id` 表示一次 Client 实例身份；`machine_id` 用于将不同实例关联到同一台设备，不能用两者互相替代。

@@ -1,6 +1,37 @@
 import os
+import tempfile
 
 from core.protocol.structured_arg_codec import StructuredArgCodec
+from core.utils.logger import logger
+
+
+def reported_current_directory() -> str:
+    """Read CWD for protocol metadata without changing process state."""
+    try:
+        return os.getcwd()
+    except OSError:
+        return ''
+
+
+def recover_current_directory() -> str:
+    """Restore an invalid process CWD at a foreground execution boundary."""
+    cwd = reported_current_directory()
+    if cwd:
+        return cwd
+
+    for resolve in (lambda: os.path.expanduser('~'), tempfile.gettempdir):
+        try:
+            candidate = resolve()
+            if not os.path.isabs(candidate):
+                continue
+            os.chdir(candidate)
+            cwd = reported_current_directory()
+            if cwd:
+                logger.warning('Current working directory unavailable; changed to %s', cwd)
+                return cwd
+        except OSError:
+            continue
+    return ''
 
 
 class PathResolver:

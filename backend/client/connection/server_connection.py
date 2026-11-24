@@ -1,4 +1,3 @@
-import os
 import queue
 import threading
 import uuid
@@ -6,6 +5,7 @@ import uuid
 from client.connection.message_dispatcher import ClientInboundMessageDispatcher
 from client.connection.message_router import ClientInboundMessageRouter
 from client.app.runtime import ClientRuntime
+from client.runtime.filesystem.path_resolver import reported_current_directory, recover_current_directory
 from core.protocol.message_types import MSG_TYPE_SESSION_END
 from core.protocol.rchsocket import RCHSocket
 from core.utils.logger import logger
@@ -118,12 +118,12 @@ class ServerConnection(RCHSocket):
     def send_event(self, request_id: int, event: dict):
         """Send a typed Result event without legacy numeric status or EOF."""
         from core.protocol.result_envelope import build_result_wire_event
-        self.send(build_result_wire_event(request_id, event, cwd=os.getcwd()))
+        self.send(build_result_wire_event(request_id, event, cwd=reported_current_directory()))
 
     def send_result(self, id: int, status: int, result, eof: int = 1, *, event_type=None):
         from core.protocol.result_envelope import result_wire_event
         packet = result_wire_event(id, status, result, final=bool(eof),
-                                   cwd=os.getcwd(), event_type=event_type)
+                                   cwd=reported_current_directory(), event_type=event_type)
         logger.debug(packet)
         self.send(packet)
 
@@ -146,10 +146,17 @@ class ServerConnection(RCHSocket):
             self.send_result(*result)
 
     def recv_command(self, timeout: float | None = None):
-        data = self.pending_message_queue.get(timeout=timeout)
+        try:
+            data = self.pending_message_queue.get(timeout=timeout)
+        except queue.Empty:
+            recover_current_directory()
+            raise
 
         try:
+            recover_current_directory()
             return self.message_router.dispatch(data)
         except Exception as e:
             logger.error(e, exc_info=True)
             return data.get('id'), 0, f'{e}\n'
+        finally:
+            recover_current_directory()

@@ -94,6 +94,8 @@ Alias 的模板参数、平台覆盖与安全边界见 [Aliases / Quick Actions]
 | `pyexec <code>` | 在 Client Python 环境执行代码并汇总输出 | 执行模式依赖 Python Runtime 配置 |
 | `pyexec_stream <code>` | 执行 Python 代码并推送中间输出 | 按当前 Python 执行模式流式输出 |
 
+如果 Python Client 的当前目录已被删除或不可访问，前台命令边界会尝试恢复到用户 Home 或系统临时目录，结果和心跳将同步恢复后的目录。后续相对路径操作以实际恢复的目录为准。
+
 `getinfo` 输出按系统、硬件、用户、进程、账户／设备信息和 RCH Build 顺序排列。默认模式显示轻量字段；`getinfo --all` 或 `getinfo -a` 在相应位置插入 `os_build`、`os_product`、`gpu_models`、`launch_command`、`system_boot_time`、`process_start_time` 等诊断字段，其他字段相对顺序不变。`--json` 可与 `--all` / `-a` 组合，返回与文本相同的字段次序；没有选中的字段不采集、不返回。公共字段包括 `kernel`（Windows 展示 `Windows NT` 及其版本号）、`rch_build_ver`、`rch_build_revision`（复用 Client 握手值）。
 
 `cpu_model` 在两种模式都展示：Windows 从本机处理器注册表读取商品名称，macOS 从 `sysctl` 获取，Linux 读取 `/proc/cpuinfo`，iOS 根据设备硬件标识从本地 Apple 芯片映射表获取商品名称，未知芯片保留 `null`。
