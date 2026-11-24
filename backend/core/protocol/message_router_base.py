@@ -35,6 +35,7 @@ from core.protocol.message_types import (
     MSG_TYPE_TRANSFER_START,
     MSG_TYPE_TRANSFER_CANCEL,
     MSG_TYPE_TRANSFER_UPDATE,
+    MSG_TYPE_TRANSFER_REGISTER,
 )
 
 
@@ -154,6 +155,9 @@ class BaseMessageRouter:
         if message_type == MSG_TYPE_TRANSFER_CANCEL:
             return self.handle_transfer_cancel_message(data)
 
+        if message_type == MSG_TYPE_TRANSFER_REGISTER:
+            return self.handle_transfer_register_message(data)
+
         if message_type == MSG_TYPE_TRANSFER_UPDATE:
             return self.handle_transfer_update_message(data)
 
@@ -263,6 +267,9 @@ class BaseMessageRouter:
         return None
 
     def handle_transfer_cancel_message(self, data: dict):
+        return None
+
+    def handle_transfer_register_message(self, data: dict):
         return None
 
     def handle_transfer_update_message(self, data: dict):

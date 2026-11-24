@@ -1,6 +1,5 @@
 from contextlib import contextmanager
 from core.utils.artifact_naming import build_artifact_filename
-import json
 import os
 import uuid
 from client.runtime.temp_workspace import make_client_temp_dir, cleanup_temp_path, get_temp_category_dir
@@ -13,7 +12,6 @@ from client.clipboard.adapters.ios import iOSClipboardAdapter
 from client.clipboard.adapters.macos import MacOSClipboardAdapter
 from client.clipboard.adapters.unsupported import UnsupportedClipboardAdapter
 from client.clipboard.adapters.windows import WindowsClipboardAdapter
-from client.http.client_api import ClientApiClient
 from core.device.local_identity import get_local_identity
 from threading import RLock
 from client.runtime.execution.context import CommandCancelledError, CommandTimeoutError
@@ -31,7 +29,6 @@ class ClipboardManager:
     def __init__(self, connection):
         self.connection = connection
         self._operation_lock = _CLIPBOARD_LOCK
-        self.client_api = ClientApiClient()
         self._os_alias = get_local_identity().os_alias
         self._macos_console_identity = self._get_macos_console_identity()
         # macOS may run as root while its clipboard consumes paths as the GUI user.
@@ -74,7 +71,7 @@ class ClipboardManager:
     def execute(self, scope, action, payload):
         with self.operation(scope._checkpoint):
             if action == ClipboardAction.GET:
-                status, content = self.get_clipboard(payload.get('mode', 'content'), checkpoint=scope._checkpoint)
+                status, content = self.get_clipboard(payload.get('mode', 'content'), checkpoint=scope._checkpoint, scope=scope)
                 scope._checkpoint()
                 return (status, ResultEnvelope(
                     status='success' if status == 1 else 'error',
@@ -88,14 +85,14 @@ class ClipboardManager:
                     scope._set_cancel_policy('none')
                     scope._checkpoint()
                 status, content = self.set_clipboard(uuid.uuid4().hex, payload, checkpoint=scope._checkpoint,
-                                                      before_commit=before_commit)
+                                                      before_commit=before_commit, scope=scope)
                 return status, ResultEnvelope(
                     status='success' if status == 1 else 'error',
                     message='Target clipboard updated' if status == 1 else str(content),
                 ).as_payload()
             return 0, 'Unsupported Clipboard action'
 
-    def get_clipboard(self, mode: str = 'content', checkpoint=lambda: None, *, snapshot=None):
+    def get_clipboard(self, mode: str = 'content', checkpoint=lambda: None, *, snapshot=None, scope):
         try:
             if str(mode or '').strip().lower() == 'capabilities':
                 payload = {'capabilities': self.get_capabilities()}
@@ -103,13 +100,15 @@ class ClipboardManager:
                 if snapshot is None:
                     snapshot = self.adapter.get_snapshot()
                 checkpoint()
-                payload = self._materialize_snapshot(snapshot, checkpoint=checkpoint)
+                payload = self._materialize_snapshot(snapshot, checkpoint=checkpoint, scope=scope)
 
             return 1, payload
+        except (CommandCancelledError, CommandTimeoutError):
+            raise
         except Exception as e:
             return 0, str(e)
 
-    def set_clipboard(self, request_id: str, payload: dict, checkpoint=lambda: None, before_commit=None):
+    def set_clipboard(self, request_id: str, payload: dict, checkpoint=lambda: None, before_commit=None, *, scope):
         request_id = str(request_id or '').strip()
         if not request_id:
             return
@@ -140,7 +139,7 @@ class ClipboardManager:
                 )
                 paths = self._download_staged_items(
                     request_id,
-                    items, checkpoint=checkpoint,
+                    items, checkpoint=checkpoint, scope=scope,
                 )
 
                 if not paths:
@@ -163,7 +162,7 @@ class ClipboardManager:
                 paths = self._download_staged_items(
                     request_id,
                     items,
-                    roots=roots, checkpoint=checkpoint,
+                    roots=roots, checkpoint=checkpoint, scope=scope,
                 )
 
                 if not paths:
@@ -188,7 +187,7 @@ class ClipboardManager:
             if not committed:
                 cleanup_temp_path(os.path.join(self.staging_dir, self._safe_component(request_id)))
 
-    def _materialize_snapshot(self, snapshot: dict, checkpoint=lambda: None) -> dict:
+    def _materialize_snapshot(self, snapshot: dict, checkpoint=lambda: None, *, scope) -> dict:
         kind = str(
             (snapshot or {}).get('kind') or 'empty'
         ).strip().lower()
@@ -217,7 +216,7 @@ class ClipboardManager:
                 raw,
                 filename=build_artifact_filename('clipboard', 'png'),
                 category='clipboard',
-                extra={'saved_from': 'clipboard'},
+                extra={'saved_from': 'clipboard'}, scope=scope,
             )
 
             return {
@@ -272,6 +271,7 @@ class ClipboardManager:
         filename: str,
         category: str,
         extra: dict,
+        scope,
     ) -> dict:
         temp_dir = make_client_temp_dir(
             'clipboard_temp',
@@ -287,67 +287,17 @@ class ClipboardManager:
             with open(path, 'wb') as file_obj:
                 file_obj.write(data)
 
-            return self._upload_file_artifact(
-                path,
-                filename=filename,
-                category=category,
-                extra=extra,
+            artifact = {}
+            scope.http_file_transfer_service.upload_single_file_to_server_result(
+                path, category=category, extra=extra, upload_name=filename,
+                managed=True, artifact_callback=artifact.update,
             )
+            if not artifact.get('artifact_id'):
+                raise RuntimeError('Clipboard artifact upload did not return artifact metadata')
+            return artifact
 
         finally:
             cleanup_temp_path(temp_dir)
-
-    def _upload_file_artifact(
-        self,
-        path: str,
-        *,
-        filename: str,
-        category: str,
-        extra: dict,
-    ) -> dict:
-        client_id = str(
-            getattr(
-                self.connection,
-                'client_id',
-                '',
-            )
-            or ''
-        )
-
-        form = {
-            'artifact_type': 'saved',
-            'category': category,
-            'client_id': client_id,
-            'extra': json.dumps(
-                extra or {},
-                ensure_ascii=False,
-            ),
-        }
-
-        response = self.client_api.upload_file_source(
-            path, filename=filename, form_data=form, timeout=(15, 60 * 60),
-        )
-
-        payload = self.client_api.parse_json_response(
-            response
-        )
-
-        data = (
-            payload.get('data')
-            if isinstance(payload, dict)
-            else None
-        )
-
-        if (
-            not isinstance(data, dict)
-            or not data.get('artifact_id')
-        ):
-            raise RuntimeError(
-                'Clipboard artifact upload did not '
-                'return artifact metadata'
-            )
-
-        return data
 
     def _download_staged_items(
         self,
@@ -356,6 +306,7 @@ class ClipboardManager:
         *,
         roots: list[str] | None = None,
         checkpoint=lambda: None,
+        scope,
     ) -> list[str]:
         request_dir = os.path.join(
             self.staging_dir,
@@ -400,11 +351,7 @@ class ClipboardManager:
                 self._ensure_staging_directory(
                     os.path.dirname(target_path)
                 )
-                self.client_api.download_file(
-                    url,
-                    target_path,
-                    timeout=(15, 60), checkpoint=checkpoint,
-                )
+                self._download_staged_file(url, target_path, checkpoint=checkpoint, scope=scope)
 
                 # Client 可能由 root 启动，文件最终要交给 GUI 用户读取。
                 self._prepare_staged_path_for_console_user(
@@ -466,11 +413,7 @@ class ClipboardManager:
                 name,
             )
 
-            self.client_api.download_file(
-                url,
-                target_path,
-                timeout=(15, 60), checkpoint=checkpoint,
-            )
+            self._download_staged_file(url, target_path, checkpoint=checkpoint, scope=scope)
 
             # Client 可能由 root 启动，文件最终要交给 GUI 用户读取。
             self._prepare_staged_path_for_console_user(
@@ -480,6 +423,13 @@ class ClipboardManager:
             paths.append(target_path)
 
         return paths
+
+    def _download_staged_file(self, url, target_path, *, checkpoint, scope):
+        checkpoint()
+        manager = scope.socket.runtime.transfer_manager
+        with manager.inline_transfer(scope, direction='server_to_client',
+                                     filename=os.path.basename(target_path), source_url=url) as (tid, service):
+            service.download_file_to_path(url, target_path, transfer_id=tid)
 
     def _get_macos_console_identity(self):
         if self._os_alias != 'mac':

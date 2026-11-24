@@ -73,7 +73,7 @@ def clipboard_read(self, args_dict):
             heading = f'Clipboard contains {len(names)} file or folder item(s)'
             return 1, '\n'.join([heading, *names])
 
-        status, content = manager.get_clipboard(snapshot=snapshot, checkpoint=self._checkpoint)
+        status, content = manager.get_clipboard(snapshot=snapshot, checkpoint=self._checkpoint, scope=self)
         self._checkpoint()
         if not status:
             return 0, f'Failed to read clipboard: {content}'
@@ -93,10 +93,10 @@ def clipboard_read(self, args_dict):
         extra = {'saved_from': 'clipboard'}
         if len(files) == 1 and not files[0]['is_directory']:
             return transfer.upload_single_file_to_server_result(
-                files[0]['path'], category='clipboard', extra=extra,
+                files[0]['path'], category='clipboard', extra=extra, managed=True,
             )
         return transfer.upload_paths_as_zip_to_server_result(
-            [file['path'] for file in files], category='clipboard', extra=extra,
+            [file['path'] for file in files], category='clipboard', extra=extra, managed=True,
         )
     except (CommandCancelledError, CommandTimeoutError):
         raise

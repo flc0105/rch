@@ -88,7 +88,7 @@ Remote Files 上传到设备
 | 运行中取消 | 不支持 | 协作取消 | 协作取消并关闭数据连接 |
 | 上传大小限制 | Client 1 GiB 保护 | Server HTTP 请求上限 | Server 文件字节上限 |
 
-TCP 模式仅作用于 Remote Files 和其他明确进入受管理 Transfer 的 Server 与 Python Client 间文件搬运，包括文件、ZIP、预览和文件下发。浏览器上传暂存、Artifact 下载仍使用原 HTTP 接口。普通终端、Script SDK、Job 及任意 URL HTTP 下载不改为 TCP；选择 `tcp_streaming` 时，这些 HTTP 调用仍使用 HTTP 流式策略。Go Client 保持现有 HTTP 实现。
+TCP 模式仅作用于 Remote Files 和其他明确进入受管理 Transfer 的 Server 与 Python Client 间文件搬运，包括文件、ZIP、预览和文件下发。浏览器上传暂存、Artifact 下载仍使用原 HTTP 接口。内置 `acmd download`、`acmd clipboard_read --download`、`screenshot`、`webcam_snap`，以及 Clipboard 图片 Get 和已暂存图片/文件 Send 同样进入受管理 Transfer。Script SDK、Job 及任意 URL HTTP 下载不改为 TCP；选择 `tcp_streaming` 时，原策略控制的 HTTP 调用仍使用 HTTP 流式策略。Go Client 保持现有 HTTP 实现。
 
 每个 TCP 任务使用一条独立数据 Socket，Bind 由 Server 拨入 Client 的原监听端口，Reverse TCP/TLS 由 Client 连接原 Server 监听端口，TLS 保留现有验证方式。数据连接使用现有 Session Token 与 Transfer ID 关联，不建立第二个 Client Session。主连接继续承载控制与进度。接收端按声明长度流式落盘并检查 SHA-256，成功提交文件或 Artifact 后才确认完成；取消、失败或断线清理未提交的临时文件。TCP 流不在任务中途回退为 HTTP。
 
@@ -121,7 +121,7 @@ HTTP Simple 上传与下载使用内部固定的 Requests 网络超时：连接�
 
 Web 远程文件下载、预览、压缩下载和受管理的下发任务通过 Socket 发送 `transfer_start`，由 Client 的独立 `ClientTransferManager` 启动 Worker。该 Worker 具有独立执行上下文、HTTP 策略和取消处理，不绑定普通 `command_id`，因此**不需要占用 Shell-like 命令的前台执行槽直到文件传完**。Server 根据 `transfer_id` 等待任务最终状态，而不是从终端输出文本中猜测上传是否成功或解析 Artifact ID。
 
-与此相对，既有终端文件命令仍遵循自己的命令执行与输出机制，虽然也可以复用相同的 HTTP 传输服务。普通 Client API、Script 和 Job 的上传则有自己的执行入口：并非所有文件操作都会通过 `ClientTransferManager`。
+内置文件命令和 Clipboard Control 在原执行上下文内通过 `transfer_register` 登记文件传输，Server 确认请求仍有效后才允许搬运文件。它们不另开一个命令 Worker，保留命令输出、Activity 和原有剪贴板操作的生命周期。Transfer Center 记录每次文件搬运；取消该传输会请求取消所属命令或 Control。Clipboard Send 多文件逐项传输，全部成功后才进行原生剪贴板写入；单文件传输完成不代表整个剪贴板操作已完成。普通 Client API、Script 和 Job 的上传仍有自己的执行入口。
 
 ### 浏览器到远程设备的两段搬运
 
@@ -185,7 +185,7 @@ Web Remote Upload 的终端块由前台显示 `[Remote Upload]` 起始标题和�
 
 ### 从 HTTP / Socket 到 WebSocket 的进度传播
 
-Python Client 的受管理任务在 HTTP Worker 内调用进度回调，并通过**Socket 的 `transfer_update` 消息**回报 Server；状态信息不混在命令 stdout/stderr 中。对于 Browser → Server 第一段，进度由 8085 的文件接收循环直接更新 Server 的 `TransferService`，不经过 Client Socket。
+Python Client 的受管理任务在独立 Worker 或当前命令/Control 内调用进度回调，并通过**Socket 的 `transfer_update` 消息**回报 Server；状态信息不混在命令 stdout/stderr 中。对于 Browser → Server 第一段，进度由 8085 的文件接收循环直接更新 Server 的 `TransferService`，不经过 Client Socket。
 
 Server 根据收到的进度字节数计算完成比例，对速率采用平滑计算，并在可用时推算 ETA；因此百分比是该阶段工作进度，而不是端到端文件完整性校验。进度上报通常做约 250 毫秒节流，完成点仍会被单独报告。发布 `transfer_updated` WebSocket 后，Web 订阅者刷新 Transfer Center；`file_transfer_lifecycle` 则提供开始、结束和失败等生命周期通知，二者服务不同目的。
 
@@ -209,7 +209,7 @@ Cancel 由 Web 请求发往 8085 的 `POST /api/transfers/{transfer_id}/cancel`�
 
 对浏览器上传到 Server 的第一段，Server 设置对应的取消事件，并将 Transfer 标为取消；8085 分块接收循环会检查该事件，停止后清理临时文件和上传运行状态。Server 接受取消后，发起上传的同一浏览器标签页还会中止对应的独立 XHR，使等待上传结果的界面及时恢复按钮，并保留取消终态（不再补报上传失败）。此时不需要向目标 Client 发送取消指令，因为 Client 尚未开始下载。
 
-对 Client 正在执行的文件传输，Server 通过 Socket 下发 `transfer_cancel`；`ClientTransferManager` 向 Worker 的独立执行上下文请求取消。HTTP Streaming 通过取消检查和资源清理尝试中断 HTTP 请求，Worker 报告 `cancelled` 表示运行端处理完取消。Server 可以先显示 `cancelling` 阶段。
+对 Client 正在执行的文件传输，Server 通过 Socket 下发 `transfer_cancel`；`ClientTransferManager` 向 Worker 的独立执行上下文或内置命令/Clipboard 的现有执行上下文请求取消。HTTP Streaming 通过取消检查和资源清理尝试中断 HTTP 请求，Worker 报告 `cancelled` 表示运行端处理完取消。Server 可以先显示 `cancelling` 阶段。
 
 TCP 模式收到取消请求后，由 Client 的取消上下文中断数据连接；Server 等待主通道终态，重复取消请求不会提前结束任务。若取消发生在 Server 接收文件的最终登记之前，Server 停止提交并清理暂存文件；已进入不可逆提交的任务以实际提交结果为准。若 Artifact 已登记而 Transfer 终态持久化失败，Server 尝试撤销本次新建的 Artifact，不发布成功创建事件。
 
@@ -236,7 +236,7 @@ Web 端的 `tab_id` 用于把正在运行的 Transfer 关联到发起的浏览�
 | Transfer 百分比从头开始 | Browser 上传结束后进入 Client 下载，进度按新阶段重置 |
 | ZIP 创建阶段没有进度百分比 | 压缩还在准备最终文件，总长度暂不可用 |
 | Transfer Center 记录消失 | 检查是否被手动删除或清空；传输历史持久化在 `rch.db`，Server 重启不应删除记录，也不影响已保存 Artifact |
-| 某次 Script、Clipboard 或 Web 下载没有 Transfer 记录 | 并非所有文件 HTTP 请求都会建立 `transfer_id` |
+| 某次 Script、纯文本 Clipboard 或浏览器 Artifact 下载没有 Transfer 记录 | 并非所有文件 HTTP 请求都会建立 `transfer_id` |
 
 需要把性能调优、文件传输管理和文件资产管理作为三个独立问题看待。直接 Flask/Werkzeug 的分块数据通道避开 ASGI/WSGI 桥接；`http_streaming` 改变 Python Client 的字节处理和中断能力；Transfer Center 提供可观察性与控制；Artifact 负责文件保存、预览和后续下载。**没有任何一层能够单独替代另外三层。**
 

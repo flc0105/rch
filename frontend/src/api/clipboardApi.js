@@ -8,8 +8,8 @@ export function getClipboardCapabilities(clientId) {
   return apiData(connectionPath(clientId, 'capabilities'), {}, {})
 }
 
-export function getRemoteClipboard(clientId) {
-  return apiData(connectionPath(clientId, 'get'), { method: 'POST' }, {})
+export function getRemoteClipboard(clientId, headers = {}) {
+  return apiData(connectionPath(clientId, 'get'), { method: 'POST', headers }, {})
 }
 
 export function setRemoteClipboardText(clientId, text) {
@@ -20,21 +20,21 @@ export function setRemoteClipboardText(clientId, text) {
   )
 }
 
-export function setRemoteClipboardImage(clientId, file) {
+export function setRemoteClipboardImage(clientId, file, headers = {}) {
   const form = new FormData()
   form.append('file', file, file?.name || 'clipboard.png')
-  return apiData(connectionPath(clientId, 'set-image'), { method: 'POST', body: form }, {})
+  return apiData(connectionPath(clientId, 'set-image'), { method: 'POST', body: form, headers }, {})
 }
 
-export function setRemoteClipboardArtifactFile(clientId, artifactId) {
+export function setRemoteClipboardArtifactFile(clientId, artifactId, headers = {}) {
   return apiData(
     connectionPath(clientId, 'set-artifact-file'),
-    jsonRequestOptions('POST', { artifact_id: artifactId }),
+    jsonRequestOptions('POST', { artifact_id: artifactId }, headers),
     {},
   )
 }
 
-export function setRemoteClipboardFiles(clientId, items = []) {
+export function setRemoteClipboardFiles(clientId, items = [], headers = {}) {
   const form = new FormData()
   const uploads = []
   const entries = []
@@ -73,7 +73,7 @@ export function setRemoteClipboardFiles(clientId, items = []) {
 
   uploads.forEach((file) => form.append('files', file, file?.name || 'clipboard_file'))
   form.append('manifest', JSON.stringify({ roots, entries }))
-  return apiData(connectionPath(clientId, 'set-files'), { method: 'POST', body: form }, {})
+  return apiData(connectionPath(clientId, 'set-files'), { method: 'POST', body: form, headers }, {})
 }
 
 export function downloadRemoteClipboardFile(clientId, path, headers = {}) {

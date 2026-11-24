@@ -45,3 +45,5 @@ MSG_TYPE_MONITOR_CLOSED = 'monitor_closed'
 MSG_TYPE_TRANSFER_START = 'transfer_start'
 MSG_TYPE_TRANSFER_CANCEL = 'transfer_cancel'
 MSG_TYPE_TRANSFER_UPDATE = 'transfer_update'
+
+MSG_TYPE_TRANSFER_REGISTER = 'transfer_register'

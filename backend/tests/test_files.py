@@ -154,7 +154,7 @@ def test_download_uses_existing_upload_and_optional_artifact_name(tmp_path, monk
 
     assert execute(host, 'acmd download "report #1.zip" --name "renamed file.zip"') == (1, '')
     transfer.upload_single_file_to_server_result.assert_called_once_with(
-        str(path), category='downloads', upload_name='renamed file.zip',
+        str(path), category='downloads', upload_name='renamed file.zip', managed=True,
         extra={'saved_from': 'client_command', 'source_command': 'acmd download "report #1.zip" --name "renamed file.zip"'},
     )
     assert execute(host, 'acmd download --path "report #1.zip"')[0] == 1
@@ -226,13 +226,13 @@ def test_clipboard_acmd_reuses_desktop_snapshot_and_artifact_flows(host_type, tm
     transfer.upload_single_file_to_server_result.assert_not_called()
     assert execute(host, 'acmd clipboard_read --download') == (1, '')
     transfer.upload_single_file_to_server_result.assert_called_once_with(
-        str(item), category='clipboard', extra={'saved_from': 'clipboard'},
+        str(item), category='clipboard', extra={'saved_from': 'clipboard'}, managed=True,
     )
     for paths in ([str(folder)], [str(item), str(folder)]):
         adapter.get_snapshot.return_value['paths'] = paths
         assert execute(host, 'acmd clipboard_read --download') == (1, '')
         transfer.upload_paths_as_zip_to_server_result.assert_called_with(
-            paths, category='clipboard', extra={'saved_from': 'clipboard'},
+            paths, category='clipboard', extra={'saved_from': 'clipboard'}, managed=True,
         )
 
 

@@ -1122,7 +1122,7 @@ export default {
       }
 
       try {
-        await setRemoteClipboardArtifactFile(clientId, row.artifact_id)
+        await setRemoteClipboardArtifactFile(clientId, row.artifact_id, this.buildJsonHeaders())
         ElMessage.success(`Sent to clipboard: ${this.formatArtifactName(row)}`)
       } catch (e) {
         ElMessage.error(e.message || 'Failed to send file to target clipboard')

@@ -49,6 +49,7 @@ class ClientSessionContext:
         self.on_monitor_error = None
         self.on_monitor_closed = None
         self.on_transfer_update = None
+        self.on_transfer_register = None
 
         self.connected_at = ''
         self.disconnected_at = ''

@@ -81,7 +81,7 @@ class ClientSessionCommandChannel:
         )
         # Register before sending: a very fast Client (e.g. invalid download)
         # can reply before the caller starts iterating wait_for_result().
-        pending = self.session.runtime.pending_results.register(data['id'])
+        pending = self.session.runtime.pending_results.register(data['id'], request=data)
         if link_foreground_cancel:
             # This nested Control belongs to a Server-owned foreground generator.
             self.session.runtime.bind_foreground_command_id(data['id'])

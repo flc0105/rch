@@ -12,8 +12,8 @@ class WebClipboardApi:
         payload = self.clipboard_session_service.get_capabilities(client_id)
         return payload.get('capabilities') if isinstance(payload.get('capabilities'), dict) else {}
 
-    def get_clipboard(self, client_id: str) -> dict:
-        return self.clipboard_session_service.get_clipboard(client_id)
+    def get_clipboard(self, client_id: str, *, tab_id='') -> dict:
+        return self.clipboard_session_service.get_clipboard(client_id, tab_id=tab_id)
 
     def set_text(self, client_id: str, text: str) -> dict:
         content = str(text or '')
@@ -27,7 +27,7 @@ class WebClipboardApi:
             },
         )
 
-    def set_image(self, client_id: str, upload) -> dict:
+    def set_image(self, client_id: str, upload, *, tab_id='') -> dict:
         temp_paths = []
         try:
             item, temp_path = self._stage_upload(upload)
@@ -35,7 +35,7 @@ class WebClipboardApi:
             return self.clipboard_session_service.set_clipboard(
                 client_id,
                 {'kind': 'image', 'items': [item]},
-                action='set_image',
+                action='set_image', tab_id=tab_id,
                 arguments={
                     'filename': str(item.get('name') or '')[:160],
                     'mime_type': mimetypes.guess_type(str(item.get('name') or ''))[0] or 'application/octet-stream',
@@ -45,7 +45,7 @@ class WebClipboardApi:
         finally:
             self._cleanup_temp_paths(temp_paths)
 
-    def set_files(self, client_id: str, uploads: list, manifest_text: str) -> dict:
+    def set_files(self, client_id: str, uploads: list, manifest_text: str, *, tab_id='') -> dict:
         try:
             manifest = json.loads(str(manifest_text or ''))
         except Exception as e:
@@ -112,11 +112,11 @@ class WebClipboardApi:
             if not normalized_roots:
                 raise ValueError('clipboard file roots are empty')
 
-            return self._set_files_payload(client_id, items, normalized_roots, action='set_files')
+            return self._set_files_payload(client_id, items, normalized_roots, action='set_files', tab_id=tab_id)
         finally:
             self._cleanup_temp_paths(temp_paths)
 
-    def set_artifact_file(self, client_id: str, artifact_id: str) -> dict:
+    def set_artifact_file(self, client_id: str, artifact_id: str, *, tab_id='') -> dict:
         normalized_artifact_id = str(artifact_id or '').strip()
         if not normalized_artifact_id:
             raise ValueError('artifact_id is required')
@@ -151,12 +151,12 @@ class WebClipboardApi:
                     'url': relative_url,
                 }],
                 [display_name],
-                action='set_artifact_file', artifact_id=normalized_artifact_id,
+                action='set_artifact_file', artifact_id=normalized_artifact_id, tab_id=tab_id,
             )
         finally:
             self._cleanup_temp_paths(temp_paths)
 
-    def _set_files_payload(self, client_id: str, items: list, roots: list, *, action: str, artifact_id='') -> dict:
+    def _set_files_payload(self, client_id: str, items: list, roots: list, *, action: str, artifact_id='', tab_id='') -> dict:
         arguments = {
             'count': len(roots),
             'names': [str(name).replace('\\', '/').split('/')[-1][:160] for name in roots[:20]],
@@ -171,7 +171,7 @@ class WebClipboardApi:
                 'items': items,
                 'roots': roots,
             },
-            action=action, arguments=arguments,
+            action=action, arguments=arguments, tab_id=tab_id,
         )
 
     def _stage_upload(self, upload) -> tuple[dict, str]:

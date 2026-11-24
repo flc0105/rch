@@ -20,6 +20,7 @@ from core.protocol.message_types import (
     MSG_TYPE_MONITOR_ERROR,
     MSG_TYPE_MONITOR_CLOSED,
     MSG_TYPE_TRANSFER_UPDATE,
+    MSG_TYPE_TRANSFER_REGISTER,
 )
 
 
@@ -48,6 +49,7 @@ class ServerInboundMessageDispatcher:
         MSG_TYPE_MONITOR_ERROR,
         MSG_TYPE_MONITOR_CLOSED,
         MSG_TYPE_TRANSFER_UPDATE,
+        MSG_TYPE_TRANSFER_REGISTER,
     }
 
     def __init__(self, session):

@@ -9,15 +9,20 @@ class PendingResults:
         self._items = {}
         self._closed = False
 
-    def register(self, request_id):
+    def register(self, request_id, request=None):
         with self._lock:
             if self._closed:
                 raise ConnectionError('Client disconnected')
             if request_id in self._items:
                 raise ValueError('Duplicate pending request ID')
             result_queue = queue.Queue()
-            self._items[request_id] = [result_queue, False]
+            self._items[request_id] = [result_queue, False, request]
             return result_queue
+
+    def get_request(self, request_id):
+        with self._lock:
+            item = self._items.get(request_id)
+            return item[2] if item is not None and not item[1] else None
 
     def deliver(self, request_id, event, before_enqueue=None):
         """Enqueue an original Result event; completed closes this request once."""
@@ -41,7 +46,7 @@ class PendingResults:
     def close(self):
         with self._lock:
             self._closed = True
-            for result_queue, finished in self._items.values():
+            for result_queue, finished, _request in self._items.values():
                 if not finished:
                     # Wake local waiters without adding a fabricated Client packet.
                     result_queue.put(None)

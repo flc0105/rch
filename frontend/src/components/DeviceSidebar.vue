@@ -1544,6 +1544,7 @@ body.device-touch-callout-guard * {
 
 .device-context-menu-item:disabled {
   background-color: transparent;
+  opacity: 0.65;
   color: var(--el-text-color-disabled);
   cursor: not-allowed;
 }
@@ -1598,12 +1599,12 @@ body.device-touch-callout-guard * {
   font-weight: 700;
 }
 
-.device-context-menu-item.is-danger {
+.device-context-menu-item.is-danger:not(:disabled) {
   color: #be123c;
 }
 
-.device-context-menu-item.is-danger:hover,
-.device-context-menu-item.is-danger:focus {
+.device-context-menu-item.is-danger:not(:disabled):hover,
+.device-context-menu-item.is-danger:not(:disabled):focus {
   background-color: #fff1f2;
   color: #be123c;
 }

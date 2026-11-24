@@ -2,6 +2,7 @@ import os
 import subprocess
 
 from client.commands.shell.decorators import shell_command
+from client.runtime.execution.context import CommandCancelledError, CommandTimeoutError
 from client.runtime.temp_workspace import make_client_temp_file, cleanup_temp_path
 from core.utils.artifact_naming import build_artifact_filename
 from core.utils.formatting import get_size
@@ -37,7 +38,7 @@ def webcam_snap(self):
         if os.path.getsize(temp_file) > 0:
             status, message = self.http_file_transfer_service.upload_single_file_to_server_result(
                 temp_file,
-                category='webcam',
+                category='webcam', managed=True,
                 upload_name=build_artifact_filename('webcam', 'jpg'),
                 extra={'saved_from': 'client_command', 'source_command': 'webcam_snap'},
             )
@@ -47,6 +48,8 @@ def webcam_snap(self):
             return 1, f'Webcam photo captured ({file_size})'
 
         return 0, 'Failed to capture webcam photo'
+    except (CommandCancelledError, CommandTimeoutError):
+        raise
     except Exception as e:
         return 0, f'Webcam capture failed: {e}'
     finally:

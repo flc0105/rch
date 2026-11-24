@@ -1,3 +1,4 @@
+from server.application.transfers.inline_registration import register_inline_transfer
 from datetime import datetime
 import time
 
@@ -561,6 +562,9 @@ class WebConnectionService:
         session.context.on_monitor_closed = monitor_service.handle_client_closed
 
         transfer_service = self.server.web_service.transfer_api.transfer_service
+        session.context.on_transfer_register = (
+            lambda data: register_inline_transfer(transfer_service, self.artifact_service, session, data)
+        )
         session.context.on_transfer_update = (
             lambda data: transfer_service.handle_client_update(session.session_info.client_id, data, session=session)
         )

@@ -40,8 +40,11 @@ class TransferService:
         stage: str = 'preparing',
         metadata: dict | None = None,
         total_bytes=None,
+        transfer_id=None,
+        cancel_supported=True,
+        progress_supported=True,
     ) -> dict:
-        transfer_id = uuid.uuid4().hex
+        transfer_id = transfer_id or uuid.uuid4().hex
         now_iso = datetime.now().isoformat()
         now_mono = time.monotonic()
 
@@ -61,8 +64,8 @@ class TransferService:
             'percent': None,
             'speed_bytes_per_sec': 0,
             'eta_seconds': None,
-            'progress_supported': True,
-            'cancel_supported': True,
+            'progress_supported': bool(progress_supported),
+            'cancel_supported': bool(cancel_supported),
             'artifact_id': '',
             'error': '',
             'metadata': dict(metadata or {}),

@@ -160,6 +160,11 @@ class ServerInboundMessageRouter(BaseMessageRouter):
         callback = self.connection.context.on_monitor_closed
         if callable(callback):
             callback(data.get('monitor_session_id') or '')
+    def handle_transfer_register_message(self, data: dict) -> None:
+        callback = self.connection.context.on_transfer_register
+        if callable(callback):
+            callback(data)
+
     def handle_transfer_update_message(self, data: dict) -> None:
         callback = self.connection.context.on_transfer_update
         if callable(callback):

@@ -289,7 +289,7 @@ export default {
       this.loading = true
       this.resetRemotePayload()
       try {
-        const payload = await getRemoteClipboard(this.selectedId)
+        const payload = await getRemoteClipboard(this.selectedId, this.getTabScopedHeaders?.() || {})
         this.remoteKind = String(payload.kind || 'empty')
         if (this.remoteKind === 'text') {
           this.remoteText = String(payload.text || '')
@@ -313,9 +313,9 @@ export default {
       try {
         if (this.sendFiles.length) {
           if (this.sendPayloadKind === 'image') {
-            await setRemoteClipboardImage(this.selectedId, this.sendFiles[0].file)
+            await setRemoteClipboardImage(this.selectedId, this.sendFiles[0].file, this.getTabScopedHeaders?.() || {})
           } else {
-            await setRemoteClipboardFiles(this.selectedId, this.sendFiles)
+            await setRemoteClipboardFiles(this.selectedId, this.sendFiles, this.getTabScopedHeaders?.() || {})
           }
         } else {
           await setRemoteClipboardText(this.selectedId, this.sendText)

@@ -1,6 +1,9 @@
 import os
 import tempfile
 import threading
+import time
+import uuid
+from contextlib import contextmanager
 
 from client.runtime.execution.scope import ExecutionRuntimeMixin
 from client.runtime.filesystem.archive_service import ArchiveService
@@ -10,7 +13,7 @@ from client.runtime.filesystem.preview_image_service import PreviewImageService
 from client.runtime.http_transfer.http_file_transfer_service import HttpFileTransferService
 from client.runtime.execution.context import CommandCancelledError, ExecutionContext
 from client.http.client_api import ClientApiClient
-from core.protocol.message_types import MSG_TYPE_TRANSFER_UPDATE
+from core.protocol.message_types import MSG_TYPE_TRANSFER_UPDATE, MSG_TYPE_TRANSFER_REGISTER
 from core.transfer_settings import FileTransferMode
 from client.config import runtime_config
 from client.transfers.tcp_transport import TcpFileTransferTransport
@@ -91,6 +94,60 @@ class ClientTransferManager:
         self._lock = threading.RLock()
         self._tasks = {}
 
+    def handle_registration(self, data):
+        with self._lock:
+            item = self._tasks.get(data.get('transfer_id'))
+            if item is not None and 'registration' in item:
+                item['reply'] = data
+                item['registration'].set()
+
+    @contextmanager
+    def inline_transfer(self, owner, *, direction, filename, source_path='', source_url='', total_bytes=None):
+        """Run file I/O inside an existing command or Control's execution scope."""
+        transfer_id = uuid.uuid4().hex
+        context = owner.execution_context
+        original_policy = context.get_cancel_policy()
+        mode = runtime_config.FILE_TRANSFER_MODE
+        transport = TcpFileTransferTransport(owner, transfer_id) if mode == FileTransferMode.TCP_STREAMING.value else None
+        service = HttpFileTransferService(owner, archive_service=owner.archive_service,
+                                          client_api=owner.client_api, transfer_mode=mode,
+                                          tcp_transport=transport)
+        strategy = service.get_transfer_strategy()
+        if direction == 'server_to_client':
+            strategy.configure_context_for_download()
+        else:
+            strategy.configure_context_for_upload()
+        item = {'context': context, 'registration': threading.Event(), 'transfer_id': transfer_id}
+        with self._lock:
+            self._tasks[transfer_id] = item
+        try:
+            owner._checkpoint()
+            self.connection.send({'type': MSG_TYPE_TRANSFER_REGISTER, 'transfer_id': transfer_id,
+                                  'command_id': owner.command_id, 'direction': direction,
+                                  'filename': filename, 'source_path': str(source_path),
+                                  'source_url': source_url, 'total_bytes': total_bytes,
+                                  'file_transfer_mode': mode})
+            deadline = time.monotonic() + 15
+            while not item['registration'].wait(0.1):
+                owner._checkpoint()
+                if time.monotonic() >= deadline:
+                    raise TimeoutError('Timed out registering file transfer')
+            reply = item['reply']
+            if reply.get('accepted') is not True:
+                raise RuntimeError(reply.get('error') or 'File transfer registration rejected')
+            owner._checkpoint()
+            yield transfer_id, service
+        except CommandCancelledError:
+            self._send_update(transfer_id, state='cancelled', stage='cancelled', error='')
+            raise
+        except Exception as exc:
+            self._send_update(transfer_id, state='failed', stage='failed', error=str(exc))
+            raise
+        finally:
+            with self._lock:
+                self._tasks.pop(transfer_id, None)
+            context.set_cancel_policy(original_policy['mode'], original_policy['message'])
+
     def start_transfer(self, transfer_id: str, operation: str, payload=None):
         normalized_id = str(transfer_id or '').strip()
         normalized_operation = str(operation or '').strip()
@@ -108,7 +165,7 @@ class ClientTransferManager:
 
         with self._lock:
             existing = self._tasks.get(normalized_id)
-            if existing and existing.get('worker') and existing['worker'].is_alive():
+            if existing:
                 return
 
             prepared_payload = dict(payload or {})

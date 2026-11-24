@@ -30,6 +30,12 @@ from server.application.transfers.transfer_service import TransferService
 from server.application.web.transfer_api import WebTransferApi
 from server.persistence.rch_database import RchDatabase
 from server.runtime.server_listener import ServerListener
+from server.connection.runtime.pending_results import PendingResults
+from server.application.transfers.inline_registration import register_inline_transfer
+from client.runtime.execution.scope import ExecutionScope
+from client.runtime.execution.context import ExecutionContext
+from unittest.mock import Mock
+from pathlib import Path
 from tunnel.ingress import SharedPortHandler
 
 
@@ -46,12 +52,12 @@ class CatalogArtifacts:
         return {'artifact_id': artifact_id, 'file_path': str(path), 'machine_id': machine_id}
 
     def register_existing_artifact(self, *, artifact_type, category, hostname, machine_id,
-                                   original_name, file_path, artifact_id, client_id, addr, extra):
+                                   original_name, file_path, artifact_id, client_id, addr, extra, source_command_id=None):
         return self.catalog.save({'artifact_id': artifact_id, 'artifact_type': artifact_type,
                                   'machine_id': machine_id, 'original_name': original_name,
                                   'saved_path': file_path, 'size': os.path.getsize(file_path),
                                   'saved_at': datetime.now().isoformat(), 'client_id': client_id,
-                                  'extra': extra, **({'category': category} if artifact_type == 'saved' else {})})
+                                  'extra': extra, 'source_command_id': source_command_id, **({'category': category} if artifact_type == 'saved' else {})})
 
     def get_artifact_by_id(self, artifact_id):
         return self.catalog.get(artifact_id)
@@ -154,6 +160,11 @@ def environment(request, monkeypatch, tmp_path):
         listener.set_tunnel_handler(SharedPortHandler())
     server_main.socket.settimeout(None)
     manager = ClientTransferManager(client)
+    session.runtime = SimpleNamespace(pending_results=PendingResults())
+    session.get_foreground_task = lambda: {}
+    session.send = server_main.send
+    client.runtime = SimpleNamespace(transfer_manager=manager)
+    client.send_event = lambda command_id, event: client.send({"type": "result", "id": command_id, "event": event})
 
     def handle_updates():
         try:
@@ -161,6 +172,8 @@ def environment(request, monkeypatch, tmp_path):
                 data = server_main.recv()
                 if data['type'] == 'transfer_update':
                     transfers.handle_client_update('client-1', data, session=session)
+                elif data['type'] == 'transfer_register':
+                    register_inline_transfer(transfers, artifacts, session, data)
                 else:
                     main_received.append(data)
         except OSError:
@@ -170,6 +183,18 @@ def environment(request, monkeypatch, tmp_path):
 
     receiver = threading.Thread(target=handle_updates, daemon=True)
     receiver.start()
+    def handle_client():
+        try:
+            while True:
+                data = client.recv()
+                if data["type"] == "transfer_register":
+                    manager.handle_registration(data)
+                elif data["type"] == "transfer_cancel":
+                    manager.cancel_transfer(data["transfer_id"])
+        except OSError:
+            pass
+    client_receiver = threading.Thread(target=handle_client, daemon=True)
+    client_receiver.start()
     env = SimpleNamespace(transfers=transfers, artifacts=artifacts, events=events, manager=manager,
                           session=session, client=client, tcp=tcp, main_received=main_received,
                           listener=listener, token=token, mode=mode, port=listener_port)
@@ -181,6 +206,7 @@ def environment(request, monkeypatch, tmp_path):
         close_socket(client.socket)
         close_socket(server_main.socket)
         receiver.join(3)
+        client_receiver.join(3)
         if is_bind:
             listener.close()
         else:
@@ -593,3 +619,241 @@ def test_cancel_terminal_can_follow_closed_data_socket(environment, tmp_path, mo
     assert not terminal(env, transfer, 'cancelled')['error']
     wait_until(lambda: not env.tcp._active)
     assert not list(tmp_path.rglob('.rch-transfer-*'))
+
+
+def inline_owner(env, request_type='acmd', **request):
+    command_id = 123
+    env.session.runtime.pending_results.register(command_id, request={
+        'type': request_type, 'id': command_id, 'extra': {'tab_id': 'inline-tab'}, **request})
+    return ExecutionScope(env.client, ExecutionContext(command_id=command_id))
+
+
+def assert_inline_artifact(env, expected):
+    def history():
+        return env.transfers.list_transfers()['recent']
+    wait_until(lambda: bool(history()))
+    item = env.transfers.get_transfer(history()[0]['transfer_id'])
+    assert item['state'] == 'completed', item
+    assert item['metadata']['file_transfer_mode'] == 'tcp_streaming'
+    assert item['metadata']['source_command_id'] == 123
+    artifact = env.artifacts.get_artifact_by_id(item['artifact_id'])
+    assert Path(env.artifacts.get_artifact_file_path(item['artifact_id'])).read_bytes() == expected
+    assert str(artifact['source_command_id']) == '123'
+    return artifact
+
+
+def test_inline_download(environment, tmp_path):
+    from client.commands.acmd.common.files import download
+    env = environment
+    owner = inline_owner(env)
+    source = tmp_path / 'source.bin'
+    source.write_bytes(b'inline-download')
+    assert download(owner, {'path': str(source), 'name': 'renamed.bin'}) == (1, '')
+    assert assert_inline_artifact(env, b'inline-download')['original_name'] == 'renamed.bin'
+    assert not env.manager._tasks
+
+
+def test_inline_clipboard_staged_file(environment, tmp_path):
+    from client.clipboard.manager import ClipboardManager
+    from core.protocol.control import ClipboardAction, ControlDomain
+    env = environment
+    source = tmp_path / 'source.bin'
+    source.write_bytes(b'clipboard-file')
+    url = '/api/upload-tmp/staged-id/file.bin'
+    payload = {'kind': 'files', 'items': [{'type': 'directory', 'path': 'group'},
+               {'type': 'file', 'path': 'group/file.bin', 'name': 'file.bin', 'url': url}], 'roots': ['group']}
+    owner = inline_owner(env, 'control', domain=ControlDomain.CLIPBOARD, action=ClipboardAction.SET, payload=payload)
+    env.artifacts.get_upload_temp_file_path = lambda temp_id, name: str(source)
+    clipboard = ClipboardManager.__new__(ClipboardManager)
+    clipboard._operation_lock = threading.RLock()
+    clipboard.staging_dir = str(tmp_path / 'clipboard')
+    clipboard.adapter = Mock()
+    clipboard._os_alias = 'linux'
+    clipboard._macos_console_identity = None
+    status, result = clipboard.execute(owner, ClipboardAction.SET, payload)
+    assert status == 1, result
+    paths = clipboard.adapter.set_files.call_args.args[0]
+    assert len(paths) == 1 and (Path(paths[0]) / 'file.bin').read_bytes() == b'clipboard-file'
+    wait_until(lambda: bool(env.transfers.list_transfers()['recent']))
+    item = env.transfers.get_transfer(env.transfers.list_transfers()['recent'][0]['transfer_id'])
+    assert item['state'] == 'completed', item
+    assert item['metadata']['file_transfer_mode'] == 'tcp_streaming'
+    assert not env.manager._tasks
+
+
+def test_inline_clipboard_image(environment, tmp_path):
+    from client.clipboard.manager import ClipboardManager
+    from core.protocol.control import ClipboardAction, ControlDomain
+    from PIL import Image
+    from io import BytesIO
+    env = environment
+    image = BytesIO()
+    Image.new('RGB', (2, 2), 'blue').save(image, format='PNG')
+    owner = inline_owner(env, 'control', domain=ControlDomain.CLIPBOARD, action=ClipboardAction.GET, payload={})
+    clipboard = ClipboardManager.__new__(ClipboardManager)
+    clipboard._operation_lock = threading.RLock()
+    clipboard.adapter = Mock()
+    clipboard.adapter.get_snapshot.return_value = {'kind': 'image', 'data': image.getvalue(), 'format': 'png'}
+    status, result = clipboard.execute(owner, ClipboardAction.GET, {})
+    assert status == 1, result
+    artifact = assert_inline_artifact(env, image.getvalue())
+    assert result['data']['artifact']['artifact_id'] == artifact['artifact_id']
+
+
+def test_inline_clipboard_reject_unstaged(environment, tmp_path):
+    from core.protocol.control import ClipboardAction, ControlDomain
+    env = environment
+    owner = inline_owner(env, 'control', domain=ControlDomain.CLIPBOARD, action=ClipboardAction.SET,
+                         payload={'items': [{'url': '/api/upload-tmp/allowed/file.bin'}]})
+    env.artifacts.get_upload_temp_file_path = Mock(side_effect=AssertionError('must not access unlisted file'))
+    with pytest.raises(RuntimeError, match='not staged'):
+        with env.manager.inline_transfer(owner, direction='server_to_client', filename='file.bin',
+                                         source_url='/api/upload-tmp/unlisted/file.bin'):
+            pytest.fail('unexpected registration success')
+    assert not env.manager._tasks
+    env.artifacts.get_upload_temp_file_path.assert_not_called()
+    assert not env.transfers.list_transfers()['items']
+
+
+@pytest.mark.parametrize('mode', ['http_simple', 'http_streaming'])
+def test_inline_http_modes(environment, tmp_path, monkeypatch, mode):
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from email.parser import BytesParser
+    from email.policy import default
+    from client.http.client_api import ClientApiClient
+    from client.commands.acmd.common.files import download
+    import json
+    env = environment
+    data = b'local HTTP inline test\0' * 100
+    uploads = []
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+        def do_POST(self):
+            raw = self.rfile.read(int(self.headers['Content-Length']))
+            msg = BytesParser(policy=default).parsebytes(b'Content-Type: '+self.headers['Content-Type'].encode()+b'\r\n\r\n'+raw)
+            uploads.append(next(part.get_payload(decode=True) for part in msg.iter_parts() if part.get_param('name', header='Content-Disposition') == 'file'))
+            body = json.dumps({'code':0, 'data':{'artifact_id':'test-http-artifact','original_name':'test.bin'}}).encode()
+            self.send_response(200)
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+    server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        monkeypatch.setattr(runtime_config, 'FILE_TRANSFER_MODE', mode)
+        owner = inline_owner(env)
+        owner._client_api = ClientApiClient(base_url=f'http://127.0.0.1:{server.server_port}')
+        source = tmp_path/'test.bin'
+        source.write_bytes(data)
+        assert download(owner, {'path':str(source), 'name':''}) == (1, '')
+        assert uploads == [data]
+        wait_until(lambda: bool(env.transfers.list_transfers()['recent']))
+        item = env.transfers.get_transfer(env.transfers.list_transfers()['recent'][0]['transfer_id'])
+        assert item['state'] == 'completed', item
+        assert item['metadata']['file_transfer_mode'] == mode
+        assert item['artifact_id'] == 'test-http-artifact'
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(3)
+
+
+@pytest.mark.parametrize('command', ['screenshot', 'webcam_snap'])
+def test_inline_media_command(environment, monkeypatch, command):
+    # Capture is isolated from the real desktop; bytes are synthetic test data.
+    import importlib
+    env = environment
+    owner = inline_owner(env, 'command')
+    if command == 'screenshot':
+        module = importlib.import_module('client.commands.shell.standalone.screenshot')
+        owner.command_platform = 'win'
+        monkeypatch.setattr(module, '_capture_win', lambda _owner, path: Path(path).write_bytes(b'test-media'))
+    else:
+        module = importlib.import_module('client.commands.shell.platform.mac')
+        def run(args, **kwargs):
+            if args[0] == 'imagesnap':
+                Path(args[-1]).write_bytes(b'test-media')
+            return SimpleNamespace(returncode=0)
+        monkeypatch.setattr(module.subprocess, 'run', run)
+    assert getattr(module, command)(owner)[0] == 1
+    assert_inline_artifact(env, b'test-media')
+
+
+def test_inline_cancel_from_transfer_center(environment, tmp_path, monkeypatch):
+    from client.transfers import tcp_transport as client_transport
+    from client.commands.acmd.common.files import download
+    from client.runtime.execution.context import CommandCancelledError
+    env = environment
+    source = tmp_path/'source.bin'
+    source.write_bytes(b'inline cancel')
+    owner = inline_owner(env)
+    entered, release = threading.Event(), threading.Event()
+    original = client_transport.send_file
+    def paused(*args, **kwargs):
+        entered.set()
+        assert release.wait(5)
+        return original(*args, **kwargs)
+    monkeypatch.setattr(client_transport, 'send_file', paused)
+    errors = []
+    def run():
+        try:
+            download(owner, {'path':str(source), 'name':''})
+        except BaseException as exc:
+            errors.append(exc)
+    worker = threading.Thread(target=run, daemon=True)
+    worker.start()
+    try:
+        assert entered.wait(5)
+        item = env.transfers.list_transfers(tab_id='inline-tab')['active'][0]
+        assert not env.transfers.list_transfers(tab_id='other-tab')['active']
+        api = WebTransferApi(env.transfers, SimpleNamespace(get_target_connection_by_client_id=lambda _:env.session))
+        api.cancel_transfer(item['transfer_id'], tab_id='inline-tab')
+        wait_until(owner.execution_context.is_cancel_requested)
+    finally:
+        release.set()
+        worker.join(5)
+    assert not worker.is_alive()
+    assert len(errors) == 1 and isinstance(errors[0], CommandCancelledError), errors
+    terminal(env, item['transfer_id'], 'cancelled')
+    assert not list(env.artifacts.root.rglob('*.*'))
+
+
+def test_inline_artifact_send_to_clipboard(environment, tmp_path):
+    from client.clipboard.manager import ClipboardManager
+    from core.protocol.control import ClipboardAction, ControlDomain
+    from server.application.web.clipboard_api import WebClipboardApi
+    env = environment
+    shared = tmp_path / 'shared.bin'
+    shared.write_bytes(b'shared artifact')
+    staged = tmp_path / 'staged.bin'
+    url = '/api/upload-tmp/staged-id/staged.bin'
+    clipboard = ClipboardManager.__new__(ClipboardManager)
+    clipboard._operation_lock = threading.RLock()
+    clipboard.staging_dir = str(tmp_path / 'clipboard')
+    clipboard.adapter = Mock()
+    clipboard._os_alias = 'linux'
+    clipboard._macos_console_identity = None
+    artifacts = env.artifacts
+    artifacts.get_artifact_by_id = lambda _id: {'artifact_type':'shared', 'original_name':'shared.bin'}
+    artifacts.get_artifact_file_path = lambda _id: str(shared)
+    def stage_local_file(path, name):
+        staged.write_bytes(Path(path).read_bytes())
+        return str(staged), staged.name
+    artifacts.stage_local_file = stage_local_file
+    artifacts.build_upload_temp_download_relative_url = lambda _path: url
+    artifacts.get_upload_temp_file_path = lambda _id, _name: str(staged)
+    artifacts.cleanup_upload_temp_file = lambda path: Path(path).unlink()
+    def set_clipboard(client_id, payload, *, action, arguments, tab_id):
+        assert action == 'set_artifact_file' and tab_id == 'inline-tab'
+        owner = inline_owner(env, 'control', domain=ControlDomain.CLIPBOARD, action=ClipboardAction.SET, payload=payload)
+        status, result = clipboard.execute(owner, ClipboardAction.SET, payload)
+        assert status == 1, result
+        return result
+    api = WebClipboardApi(SimpleNamespace(get_capabilities=lambda _: {'capabilities':{'files':True}}, set_clipboard=set_clipboard), artifacts)
+    api.set_artifact_file('client-1', 'shared-artifact', tab_id='inline-tab')
+    assert not staged.exists() and shared.read_bytes() == b'shared artifact'
+    assert Path(clipboard.adapter.set_files.call_args.args[0][0]).read_bytes() == b'shared artifact'
+    wait_until(lambda: bool(env.transfers.list_transfers()['recent']))
+    assert env.transfers.list_transfers()['recent'][0]['state'] == 'completed'

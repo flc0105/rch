@@ -222,6 +222,10 @@ class ClientInboundMessageRouter(BaseMessageRouter):
         )
         return None
 
+    def handle_transfer_register_message(self, data: dict):
+        self.connection.runtime.transfer_manager.handle_registration(data)
+        return None
+
     def handle_transfer_start_message(self, data: dict):
         self.connection.runtime.transfer_manager.start_transfer(
             data.get('transfer_id') or '',

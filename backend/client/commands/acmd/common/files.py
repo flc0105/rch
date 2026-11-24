@@ -125,7 +125,7 @@ def download(self, args_dict, payload=None):
         return self.http_file_transfer_service.upload_single_file_to_server_result(
             file_path,
             category='downloads',
-            upload_name=name,
+            upload_name=name, managed=True,
             extra={'saved_from': 'client_command', 'source_command': source_command},
         )
     except (CommandCancelledError, CommandTimeoutError):

@@ -192,7 +192,22 @@ class HttpFileTransferService:
         upload_name: str = '',
         transfer_id: str = '',
         send_preparing: bool = True,
+        managed: bool = False,
+        artifact_callback=None,
     ):
+        if managed and not transfer_id:
+            filename = upload_name or os.path.basename(file_path)
+            self.owner.emit_progress(self.build_http_upload_start_message(filename, os.path.getsize(file_path)), level='info')
+            manager = self.owner.socket.runtime.transfer_manager
+            with manager.inline_transfer(self.owner, direction='client_to_server', filename=filename,
+                                         source_path=file_path, total_bytes=os.path.getsize(file_path)) as (tid, service):
+                status, message = service.upload_single_file_to_server_result(
+                    file_path, artifact_type=artifact_type, category=category, folder=folder,
+                    extra=extra, upload_name=upload_name, transfer_id=tid, artifact_callback=artifact_callback)
+            if status:
+                self.owner.emit_progress(message, level='success')
+                return 1, ''
+            return status, message
         file_size = os.path.getsize(file_path)
         filename = upload_name or os.path.basename(file_path)
         strategy = self.get_transfer_strategy()
@@ -266,6 +281,8 @@ class HttpFileTransferService:
 
             data = payload.get('data') if isinstance(payload, dict) and isinstance(payload.get('data'), dict) else {}
             artifact_id = str(data.get('artifact_id') or '').strip()
+            if artifact_callback is not None:
+                artifact_callback(data)
             if transfer_id:
                 self._send_transfer_update(
                     transfer_id,
@@ -310,7 +327,19 @@ class HttpFileTransferService:
         folder: str = '',
         extra: dict | None = None,
         transfer_id: str = '',
+        managed: bool = False,
     ):
+        if managed and not transfer_id:
+            manager = self.owner.socket.runtime.transfer_manager
+            with manager.inline_transfer(self.owner, direction='client_to_server',
+                                         filename=archive_name or f'{len(resolved_paths)} items.zip') as (tid, service):
+                status, message = service.upload_paths_as_zip_to_server_result(
+                    resolved_paths, archive_name=archive_name, artifact_type=artifact_type,
+                    category=category, folder=folder, extra=extra, transfer_id=tid)
+            if status:
+                self.owner.emit_progress(message, level='success')
+                return 1, ''
+            return status, message
         if self.archive_service is None:
             raise RuntimeError('archive_service is required')
 

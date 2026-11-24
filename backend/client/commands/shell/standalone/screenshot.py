@@ -44,12 +44,12 @@ def screenshot(self):
         self.emit_progress('Screenshot captured successfully', level='success')
         return self.http_file_transfer_service.upload_single_file_to_server_result(
             screenshot_path,
-            category='screenshots',
+            category='screenshots', managed=True,
             upload_name=build_artifact_filename('screenshot', 'png'),
             extra={'saved_from': 'client_command', 'source_command': 'screenshot'},
         )
     except CommandCancelledError:
-        return 0, 'Screenshot command cancelled'
+        raise
     except (CommandTimeoutError, subprocess.TimeoutExpired):
         return 0, 'Screenshot capture timed out and was terminated'
     except Exception as exc:

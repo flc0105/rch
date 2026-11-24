@@ -218,6 +218,10 @@ class LifecycleAdapter:
                         self.coordinator.history_store.append_file_for_connection(conn, entry_id, artifact)
         self.coordinator.finish(conn, entry_id, status == 'success', status=status)
 
+    def bind_transfer_artifact(self, conn, artifact, command_id):
+        if command_id is not None:
+            self.coordinator.bind_uploaded_artifact(conn, command_id, artifact)
+
     def instrument_artifacts(self, service, connection_lookup):
         """Bind registered Client file references to their dispatched command Activity."""
         import functools

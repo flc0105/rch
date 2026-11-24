@@ -207,7 +207,7 @@ PTY、Screen、Monitor 等业务并不借用前台命令的 `command_id` 来标�
 | Screen | `screen_open`、`screen_config`、`screen_close`、`screen_input` | `screen_opened`、`screen_frame`、`screen_closed`、`screen_error`、`screen_input_error` | `screen_session_id` |
 | Clipboard | `control/clipboard/get`、`control/clipboard/set` | `result` | `id` |
 | Monitor | `monitor_open`、`monitor_config`、`monitor_close` | `monitor_opened`、`monitor_snapshot`、`monitor_error`、`monitor_closed` | `monitor_session_id` |
-| Transfer | `transfer_start`、`transfer_cancel` | `transfer_update` | `transfer_id` |
+| Transfer | `transfer_start`、`transfer_cancel`、`transfer_register` 确认 | `transfer_update`、`transfer_register` 请求 | `transfer_id` |
 
 这些族的共同特点是：**各消息有其业务相关的 ID，不能用 Socket `id` 或 Web `task_id` 一概替代**。它们以 JSON Dictionary 为承载，但字段约束、资源回收和前端订阅策略分别由对应业务服务定义；协议层不会自动发现全部会话，也不会替每个会话设置统一的超时或持久化历史。
 
@@ -224,6 +224,8 @@ PTY 输入和窗口尺寸调整用独立消息控制，其 `pty_output.data` 在
 ### Monitor、Clipboard 与 Transfer
 
 Device Monitor 通过 `monitor_open/config/close` 控制订阅，Client 按频道发送 `monitor_snapshot`，随附 `seq`、`channel`、`collected_at`。Clipboard 的显式读写使用 `control/clipboard/get|set` 和对应请求 ID 的 Result；Transfer 则用 `transfer_start/cancel/update` 维护任务进度、错误和终态。尤其要区分：**文件上传/下载的实际内容走独立 HTTP 或 TCP 数据连接**，Socket 主要协调执行和反馈 `transfer_update`，不是在这里追加一个二进制 `file`/`rdy` 流。参见 [Device Monitor](device_monitor.md)、[Clipboard](clipboard.md)、[File Transfer](file_transfer.md)。
+
+内置命令或 Clipboard Control 需要搬运文件时，可使用 `transfer_register` 携带当前请求 ID、Transfer ID、方向、文件名及所选模式，在同一主连接上获得确认。Server 只允许当前活动请求登记；Clipboard 下发的来源必须是该请求已暂存的文件。登记后继续使用现有 Transfer 进度和取消消息，不新增文件 Worker。
 
 受管理的 TCP 文件任务通过 `transfer_update.metadata.file_transfer_mode` 确认实际模式。Bind 任务准备好接入辅助连接时，通过 `transfer_update.data_ready` 通知 Server；Reverse 由 Client 主动建立辅助连接。辅助 Socket 的首帧为 `transfer_data`，包含 `transfer_id` 与当前 Session Token；经原监听入口分流后不登记为主会话。后续控制帧采用网络字节序四字节长度与 JSON，文件内容按声明长度发送原始字节，随后发送 SHA-256 校验信息，接收端完成提交后确认。进度、取消及任务终态仍使用原主连接。
 

@@ -16,12 +16,13 @@ from server.application.artifact.artifact_events import publish_artifact_created
 
 
 class TcpTransferTransport:
-    def __init__(self, transfers, artifacts, tokens, event_bus, *, max_upload_bytes=None):
+    def __init__(self, transfers, artifacts, tokens, event_bus, *, max_upload_bytes=None, on_artifact_committed=None):
         self.transfers = transfers
         self.artifacts = artifacts
         self.tokens = tokens
         self.event_bus = event_bus
         self.max_upload_bytes = max_upload_bytes
+        self.on_artifact_committed = on_artifact_committed
         self._lock = threading.RLock()
         self._active = {}  # transfer_id -> (session, socket)
 
@@ -170,6 +171,8 @@ class TcpTransferTransport:
         if artifact_type == ArtifactType.PREVIEW and category:
             raise ValueError('Only Saved Files can have category')
         info = session.session_info
+        item = self.transfers.get_transfer(transfer_id) or {}
+        command_id = (item.get('metadata') or {}).get('source_command_id')
         allocated = self.artifacts.allocate_artifact_path(artifact_type.value, info.machine_id, filename)
         path = allocated['file_path']
         fd, staged = tempfile.mkstemp(prefix='.rch-transfer-', dir=os.path.dirname(path))
@@ -188,6 +191,7 @@ class TcpTransferTransport:
                     hostname=info.hostname, machine_id=allocated['machine_id'],
                     original_name=filename, file_path=path, artifact_id=allocated['artifact_id'],
                     client_id=info.client_id, addr=info.addr, extra=extra,
+                    **({'source_command_id': command_id} if command_id is not None else {}),
                 )
                 registered = True
                 return artifact
@@ -210,8 +214,13 @@ class TcpTransferTransport:
                 publish_artifact_created(self.event_bus, artifact)
             except Exception:
                 logger.exception('Unable to publish TCP artifact creation')
-            send_control(sock, {'ok': True, 'data': {'artifact_id': artifact['artifact_id'],
-                                                    'original_name': filename}})
+            if self.on_artifact_committed is not None:
+                try:
+                    self.on_artifact_committed(session, artifact, command_id)
+                except Exception:
+                    logger.exception('Unable to publish TCP artifact commit')
+            # Return the same public metadata needed by Clipboard image previews.
+            send_control(sock, {'ok': True, 'data': artifact})
         finally:
             if os.path.exists(staged):
                 os.unlink(staged)

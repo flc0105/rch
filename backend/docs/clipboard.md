@@ -17,7 +17,7 @@ Client（远程设备）
   读取或写入系统剪贴板、处理图片、下载暂存文件、恢复目录树
 ```
 
-用户操作使用 `control/clipboard/get` 或 `control/clipboard/set`，请求由统一的 Control ID 关联，注册为 Independent 执行策略，不占用前台执行槽。Client 通过现有 Result 帧返回状态和结构化数据，`event_type=completed` 表示操作结束；Server 将结果分发给对应 HTTP 请求。ClipboardManager 对同一剪贴板的操作串行处理，图片和文件仍使用现有 HTTP 搬运能力。
+用户操作使用 `control/clipboard/get` 或 `control/clipboard/set`，请求由统一的 Control ID 关联，注册为 Independent 执行策略，不占用前台执行槽。Client 通过现有 Result 帧返回状态和结构化数据，`event_type=completed` 表示操作结束；Server 将结果分发给对应 HTTP 请求。ClipboardManager 对同一剪贴板的操作串行处理，图片和文件的 Server ↔ Python Client 搬运使用当前 File Transfer Mode，并进入 Transfer Center；文本与文件列表仍使用原 Control。Send 多文件逐项搬运，全部成功后才写入原生剪贴板；取消会停止当前 Clipboard 操作并清理未提交暂存文件。Browser ↔ Server 仍使用 HTTP。
 
 Get 包含查询支持能力与读取当前内容两种请求；Send 则按 `kind` 区分 `text`、`image`、`files`。这些操作不经普通前台命令槽，也不要求建立专用 WebSocket 会话，但**仍依赖目标 Client 在线和现有消息连接可用**。请求默认最长等待 **3600 秒**；若目标 Client 断线，Server 会使相关待处理请求以断线错误结束。
 

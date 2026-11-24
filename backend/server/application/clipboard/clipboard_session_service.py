@@ -11,22 +11,22 @@ class ClipboardSessionService:
     def get_capabilities(self, client_id: str) -> dict:
         return self._request(client_id, ClipboardAction.GET, {'mode': 'capabilities'})
 
-    def get_clipboard(self, client_id: str) -> dict:
-        return self._request(client_id, ClipboardAction.GET, {'mode': 'content'})
+    def get_clipboard(self, client_id: str, *, tab_id='') -> dict:
+        return self._request(client_id, ClipboardAction.GET, {'mode': 'content'}, tab_id=tab_id)
 
-    def set_clipboard(self, client_id: str, payload: dict, *, action: str, arguments=None) -> dict:
+    def set_clipboard(self, client_id: str, payload: dict, *, action: str, arguments=None, tab_id='') -> dict:
         if not isinstance(payload, dict):
             raise ValueError('clipboard payload is required')
-        return self._request(client_id, ClipboardAction.SET, payload)
+        return self._request(client_id, ClipboardAction.SET, payload, tab_id=tab_id)
 
-    def _request(self, client_id, action, payload):
+    def _request(self, client_id, action, payload, *, tab_id=''):
         client_id = str(client_id or '').strip()
         if not client_id:
             raise ValueError('client_id is required')
         session = self.server.get_target_connection_by_client_id(client_id)
         rows = session.send_command('', type=MSG_TYPE_CONTROL, domain=ControlDomain.CLIPBOARD,
                                     action=action, payload=payload,
-                                    extra={'timeout': self.REQUEST_TIMEOUT_SECONDS})
+                                    extra={'timeout': self.REQUEST_TIMEOUT_SECONDS, 'tab_id': tab_id})
         status, result = 0, None
         for status, result in rows:
             pass
