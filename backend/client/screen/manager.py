@@ -46,6 +46,29 @@ class ScreenViewManager:
         self._input_lock = threading.RLock()
         self._sessions = {}
         self._windows_input_guard = None
+        if self._os_alias == 'win':
+            # Warm up import-only Windows screen dependencies while the Client is
+            # idle, rather than competing with the first Screen View frame.
+            threading.Thread(
+                target=self._preload_windows_screen_modules,
+                daemon=True,
+                name='screen-windows-preload',
+            ).start()
+
+    @staticmethod
+    def _preload_windows_screen_modules():
+        started = time.monotonic()
+        try:
+            from PIL import ImageGrab  # noqa: F401
+            from client.config.feature_config import resolve_features
+            if resolve_features('win')['screen_input']:
+                import pyautogui  # noqa: F401
+            logger.info('Windows Screen View modules preloaded in %.0fms',
+                        (time.monotonic() - started) * 1000)
+        except Exception as e:
+            # Optional input dependencies may be unavailable; the real
+            # capture/input path will report any error when invoked.
+            logger.debug(f'Windows Screen View module preload unavailable: {e}')
 
     def open_session(self, screen_session_id: str, fps: int = SCREEN_DEFAULT_FPS, quality: int = 60):
         session_id = str(screen_session_id or '').strip()
@@ -77,6 +100,8 @@ class ScreenViewManager:
             'pyautogui_failsafe': None,
             'input_condition': threading.Condition(),
             'input_events': deque(),
+            'first_frame_sent': threading.Event(),
+            'opened_at_monotonic': time.monotonic(),
         }
 
         worker = threading.Thread(
@@ -197,6 +222,14 @@ class ScreenViewManager:
                         break
                     action, payload = item['input_events'].popleft()
 
+                # Windows first-use imports and privilege checks must not
+                # contend with the very first screenshot/encoder initialization.
+                # Preserve input ordering while giving the first frame priority.
+                if self._os_alias == 'win' and action == 'prepare':
+                    while not item['first_frame_sent'].wait(0.05):
+                        if item['stop_event'].is_set():
+                            return
+
                 try:
                     with self._input_lock:
                         if item['stop_event'].is_set():
@@ -229,7 +262,9 @@ class ScreenViewManager:
 
                 started_at = time.monotonic()
                 image = self._capture_image()
+                captured_at = time.monotonic()
                 frame = frame_strategy.encode(image, quality)
+                encoded_at = time.monotonic()
                 origin_x, origin_y = self._capture_origin(image)
                 width = int(image.width)
                 height = int(image.height)
@@ -261,6 +296,18 @@ class ScreenViewManager:
                         'bytes': len(frame_bytes),
                         'captured_at': time.time(),
                     })
+                    if not item['first_frame_sent'].is_set():
+                        item['first_frame_sent'].set()
+                        sent_at = time.monotonic()
+                        logger.info(
+                            'Screen View first frame sent: platform=%s session=%s '
+                            'startup=%.0fms capture=%.0fms encode=%.0fms send=%.0fms',
+                            self._os_alias, screen_session_id,
+                            (sent_at - item['opened_at_monotonic']) * 1000,
+                            (captured_at - started_at) * 1000,
+                            (encoded_at - captured_at) * 1000,
+                            (sent_at - encoded_at) * 1000,
+                        )
 
                 elapsed = time.monotonic() - started_at
                 delay = max(0.0, (1.0 / max(1, fps)) - elapsed)

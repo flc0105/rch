@@ -130,13 +130,31 @@
       </div>
 
       <el-alert
-        v-if="controlError"
+        v-if="controlError && !standalone"
         :title="controlError"
         type="warning"
         show-icon
         closable
         @close="controlError = ''"
       />
+
+      <div
+        v-if="standalone && controlError && controlError !== dismissedControlError && !screenInterrupted"
+        class="screen-view-tab-control-warning"
+        role="alert"
+      >
+        <el-icon class="screen-view-tab-warning-icon"><WarningFilled /></el-icon>
+        <div class="screen-view-tab-warning-content">
+          <div class="screen-view-tab-warning-title">Control paused</div>
+          <div class="screen-view-tab-warning-text">{{ controlError }}</div>
+        </div>
+        <button
+          type="button"
+          class="screen-view-tab-warning-close"
+          aria-label="Dismiss control warning"
+          @click="dismissedControlError = controlError"
+        ><el-icon><Close /></el-icon></button>
+      </div>
 
       <div
         ref="screenCanvas"
@@ -164,9 +182,19 @@
           ref="deltaRenderer"
         />
 
-        <div v-if="!frameReady && screenError" class="screen-view-empty screen-view-error">
+        <div v-if="frameReady && screenInterrupted" class="screen-view-interruption" role="alert">
+          <div class="screen-view-interruption-panel">
+            <div class="screen-view-interruption-icon"><el-icon><WarningFilled /></el-icon></div>
+            <div class="screen-view-interruption-title">{{ screenEnded ? 'Screen connection ended' : 'Screen connection interrupted' }}</div>
+            <div class="screen-view-interruption-text">Showing the last received frame. Remote control is unavailable.</div>
+            <div v-if="screenError" class="screen-view-interruption-detail">{{ screenError }}</div>
+            <div class="screen-view-interruption-hint">{{ screenEnded ? 'Use More → Restart to reconnect.' : 'Checking for screen updates…' }}</div>
+          </div>
+        </div>
+
+        <div v-if="!frameReady && (screenError || screenEnded)" class="screen-view-empty screen-view-error">
           <div class="screen-view-empty-title">Screen preview unavailable</div>
-          <div class="screen-view-empty-text">{{ screenError }}</div>
+          <div class="screen-view-empty-text">{{ screenError || 'Screen session ended' }}</div>
           <div class="screen-view-empty-hint">
             The client may need OS screen-recording permission or an active desktop session.
           </div>
@@ -184,7 +212,7 @@
 
 <script>
 import { ElMessage } from 'element-plus'
-import { Close, FullScreen } from '@element-plus/icons-vue'
+import { Close, FullScreen, WarningFilled } from '@element-plus/icons-vue'
 import * as screenViewApi from '../api/screenViewApi.js'
 import { formatDateTimeLocal } from '../utils/formatters.js'
 import { webSocketUrl } from '../api/streamApi.js'
@@ -196,6 +224,7 @@ export default {
   components: {
     Close,
     FullScreen,
+    WarningFilled,
     FullJpegScreenRenderer,
     KeyframeDeltaScreenRenderer,
   },
@@ -226,6 +255,7 @@ export default {
       screenWs: null,
       screenWsPath: '',
       screenWsReady: false,
+      screenStreamInterrupted: false,
       screenStatus: 'idle',
       screenError: '',
       frameStrategy: '',
@@ -238,6 +268,7 @@ export default {
       frameBytes: 0,
       controlEnabled: false,
       controlError: '',
+      dismissedControlError: '',
       pendingPointerMove: null,
       pointerMoveTimer: null,
       lastPointerMoveSentAt: 0,
@@ -291,11 +322,20 @@ export default {
       return this.currentConnection?.feature_manifest?.clipboard !== false
     },
 
+    screenEnded() {
+      return ['closed', 'error'].includes(this.screenStatus)
+    },
+
+    screenInterrupted() {
+      return this.screenEnded || this.screenStreamInterrupted
+    },
+
     controlAvailable() {
       return this.screenInputSupported && !!(
         this.screenSessionId &&
         this.screenWsReady &&
         this.screenStatus === 'open' &&
+        !this.screenInterrupted &&
         this.frameReady
       )
     },
@@ -389,6 +429,7 @@ export default {
       this.userClosing = false
       this.screenError = ''
       this.screenStatus = 'opening'
+      this.screenStreamInterrupted = false
       this.frameStrategy = ''
       this.frameEpoch += 1
       this.frameReady = false
@@ -399,6 +440,7 @@ export default {
       this.frameBytes = 0
       this.controlEnabled = this.screenInputSupported
       this.controlError = ''
+      this.dismissedControlError = ''
       this.screenWsReady = false
       this.removeControlSafetyListeners()
       this.clearPointerMoveTimer()
@@ -569,6 +611,7 @@ export default {
       }
 
       this.controlError = ''
+      this.dismissedControlError = ''
       if (!this.sendScreenWsMessage({ type: 'control', enabled: true })) {
         this.controlEnabled = false
         ElMessage.warning('Screen control connection is unavailable')
@@ -596,7 +639,7 @@ export default {
     applyControlPayload(payload = {}) {
       if (Object.prototype.hasOwnProperty.call(payload, 'control_enabled')) {
         const nextEnabled = !!payload.control_enabled
-        if (nextEnabled && this.screenInputSupported) {
+        if (nextEnabled && this.screenInputSupported && this.screenWsReady && !this.screenInterrupted) {
           this.controlEnabled = true
           this.installControlSafetyListeners()
         } else if (this.controlEnabled) {
@@ -607,8 +650,9 @@ export default {
       const error = String(payload.control_error || '').trim()
       if (!error || error === this.controlError) return
       this.controlError = error
+      this.dismissedControlError = ''
       this.disableControl(false)
-      ElMessage.error(error)
+      if (!this.standalone) ElMessage.error(error)
     },
 
     sendScreenWsMessage(payload) {
@@ -944,7 +988,7 @@ export default {
 
     openScreenSocket() {
       if (!this.screenWsPath || !this.screenSessionId) {
-        this.startFallbackPolling()
+        this.handleScreenSocketLoss()
         return
       }
 
@@ -955,11 +999,15 @@ export default {
         this.screenWs = ws
 
         ws.onopen = () => {
-          if (this.screenWs === ws) this.screenWsReady = true
+          if (this.screenWs === ws) {
+            this.screenWsReady = true
+            this.stopFallbackPolling()
+          }
         }
 
         ws.onmessage = (event) => {
           if (this.screenWs !== ws) return
+          if (this.userClosing || !this.screenSessionId) return
           let payload = null
           try {
             payload = JSON.parse(event.data || '{}')
@@ -971,24 +1019,25 @@ export default {
 
         ws.onerror = () => {
           if (this.screenWs !== ws) return
-          this.screenWsReady = false
-          this.disableControl(false)
-          if (this.userClosing) return
-          this.startFallbackPolling()
+          this.handleScreenSocketLoss()
         }
 
         ws.onclose = () => {
           if (this.screenWs !== ws) return
           this.screenWs = null
-          this.screenWsReady = false
-          this.disableControl(false)
-          if (!this.userClosing && this.visible && !['closed', 'error'].includes(this.screenStatus)) {
-            this.startFallbackPolling()
-          }
+          this.handleScreenSocketLoss()
         }
       } catch (_) {
-        this.startFallbackPolling()
+        this.handleScreenSocketLoss()
       }
+    },
+
+    handleScreenSocketLoss() {
+      this.screenWsReady = false
+      this.disableControl(false)
+      if (this.userClosing || !this.visible || !this.screenSessionId || this.screenEnded) return
+      this.screenStreamInterrupted = true
+      this.startFallbackPolling()
     },
 
     closeScreenSocket() {
@@ -1005,6 +1054,17 @@ export default {
 
     applyScreenPayload(payload = {}) {
       const type = String(payload.type || '').trim().toLowerCase()
+      if (this.screenEnded) return
+      if (['closed', 'error'].includes(payload.status)) {
+        this.screenStatus = payload.status
+        this.screenError = payload.error || ''
+        this.disableControl(false)
+        this.stopFallbackPolling()
+        return
+      }
+      if (type === 'frames' && Array.isArray(payload.frames) && payload.frames.length && Number(payload.seq) > this.frameSeq) {
+        this.screenStreamInterrupted = false
+      }
       this.applyControlPayload(payload)
       if (payload.frame_strategy) {
         this.frameStrategy = String(payload.frame_strategy || '').trim().toLowerCase()
@@ -1076,25 +1136,31 @@ export default {
     },
 
     startFallbackPolling() {
-      if (!this.screenSessionId || this.fallbackPollTimer) return
+      if (!this.screenSessionId || this.fallbackPollTimer || this.screenEnded) return
+      let polling = false
       const poll = async () => {
         if (!this.visible || !this.screenSessionId || this.userClosing) {
           this.stopFallbackPolling()
           return
         }
+        if (polling) return
+        polling = true
+        const sessionId = this.screenSessionId
+        const timer = this.fallbackPollTimer
         try {
-          const sessionId = this.screenSessionId
           const payload = await screenViewApi.pollScreenView(sessionId, this.frameSeq)
           if (sessionId !== this.screenSessionId || this.userClosing || this.screenWsReady) return
+          if (timer !== this.fallbackPollTimer || this.screenEnded) return
           if (Array.isArray(payload.frames) && payload.frames.length) {
             this.applyScreenPayload({ type: 'frames', ...payload })
           } else if (payload.status) {
             this.applyScreenPayload({ type: 'status', ...payload })
           }
         } catch (e) {
-          this.screenStatus = 'error'
-          this.screenError = e?.message || 'Screen view polling failed'
-          this.stopFallbackPolling()
+          if (sessionId !== this.screenSessionId || this.userClosing || this.screenWsReady || timer !== this.fallbackPollTimer) return
+          this.applyScreenPayload({ type: 'status', status: 'error', error: e?.message || 'Screen view polling failed' })
+        } finally {
+          polling = false
         }
       }
       this.fallbackPollTimer = window.setInterval(poll, 250)
@@ -1139,6 +1205,7 @@ export default {
       this.screenWsPath = ''
       this.screenWsReady = false
       this.screenStatus = 'idle'
+      this.screenStreamInterrupted = false
       this.screenError = ''
       this.frameStrategy = ''
       this.frameEpoch += 1
@@ -1150,6 +1217,7 @@ export default {
       this.frameBytes = 0
       this.controlEnabled = false
       this.controlError = ''
+      this.dismissedControlError = ''
       this.removeControlSafetyListeners()
       this.clearPointerMoveTimer()
       this.targetClientId = ''
@@ -1331,6 +1399,90 @@ export default {
   color: #fca5a5;
 }
 
+/* Standalone warnings float over the preview without changing its dimensions. */
+.screen-view-tab-control-warning {
+  position: absolute;
+  z-index: 3;
+  top: 20px;
+  right: 20px;
+  width: min(420px, calc(100% - 40px));
+  box-sizing: border-box;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid rgba(251, 191, 36, 0.4);
+  border-radius: 12px;
+  background: rgba(20, 25, 37, 0.96);
+  color: #f8fafc;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.3);
+}
+
+.screen-view-tab-warning-icon {
+  flex: 0 0 auto;
+  color: #fbbf24;
+  font-size: 20px;
+  margin-top: 1px;
+}
+
+.screen-view-tab-warning-content { flex: 1; min-width: 0; }
+.screen-view-tab-warning-title { font-size: 13px; font-weight: 650; color: #fde68a; }
+.screen-view-tab-warning-text { margin-top: 4px; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; color: #e2e8f0; }
+.screen-view-tab-warning-close {
+  flex: 0 0 auto;
+  display: inline-flex;
+  padding: 4px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #cbd5e1;
+  cursor: pointer;
+}
+.screen-view-tab-warning-close:hover,
+.screen-view-tab-warning-close:focus-visible { background: #334155; color: white; }
+
+/* Keep the last frame visible as context, but unmistakably inactive. */
+.screen-view-interruption {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(2, 6, 23, 0.60);
+  cursor: default;
+}
+.screen-view-interruption-panel {
+  box-sizing: border-box;
+  width: min(100%, 400px);
+  padding: 24px;
+  border: 1px solid rgba(248, 113, 113, 0.45);
+  border-radius: 14px;
+  background: #111827;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.36);
+  text-align: center;
+  color: #f8fafc;
+}
+.screen-view-interruption-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: rgba(248, 113, 113, 0.14);
+  color: #fca5a5;
+  font-size: 23px;
+}
+.screen-view-interruption-title { margin-top: 12px; font-size: 17px; font-weight: 650; }
+.screen-view-interruption-text,
+.screen-view-interruption-detail,
+.screen-view-interruption-hint { margin-top: 8px; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.screen-view-interruption-text { color: #e2e8f0; }
+.screen-view-interruption-detail { color: #fca5a5; }
+.screen-view-interruption-hint { color: #94a3b8; }
+
 @media (max-width: 760px) {
   .screen-view-toolbar,
   .screen-view-toolbar-left,
@@ -1461,12 +1613,5 @@ export default {
 /* The standalone viewport has no control-focus frame; dialog styling stays unchanged. */
 .screen-view-dialog.screen-view-dialog-standalone .screen-view-canvas-control {
   outline: none;
-}
-.screen-view-dialog.screen-view-dialog-standalone .el-alert {
-  position: absolute;
-  top: 80px;
-  left: 12px;
-  right: 12px;
-  z-index: 3;
 }
 </style>
