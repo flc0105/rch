@@ -49,7 +49,7 @@ test('online Bind target is shown as its live session, not an extra offline copy
   assert.equal(entries[0].saved_bind_target.target_id, 'a')
 })
 
-test('Device Bar retains Connect shortcut and original Listener tag with Bind border accent', () => {
+test('Device Bar retains Connect shortcut and original Reverse Listener tag with Lucide direction icons', () => {
   assert.match(sidebar, /class="device-toolbar-connect-btn"/)
   assert.match(sidebar, /<CirclePlus :size="17"/)
   assert.match(sidebar, /connect-saved-target/)
@@ -57,10 +57,11 @@ test('Device Bar retains Connect shortcut and original Listener tag with Bind bo
   assert.match(sidebar, /removeSavedBindTarget/)
   assert.match(sidebar, /class="device-listener-tag"/)
   assert.match(sidebar, /size="small" type="info" effect="plain"/)
-  assert.match(sidebar, /item\.connection_direction === 'bind' \? 'Bind' : item\.listener_name/)
-  assert.match(sidebar, /device-listener-tag-bind/)
-  assert.match(sidebar, /border-color: var\(--el-color-primary-light-5\)/)
-  assert.match(sidebar, /\.device-listener-tag-bind\s*\{[^}]*color:\s*var\(--el-color-primary\)/)
+  assert.match(sidebar, /<Icon :icon-node="getDirectionIconNode\(item\)" :size="13" :stroke-width="1\.7"/)
+  assert.match(sidebar, /item\.connection_direction !== 'bind' && item\.listener_name/)
+  assert.doesNotMatch(sidebar, /device-listener-tag-bind/)
+  assert.match(sidebar, /Bind · Server → Client/)
+  assert.match(sidebar, /Reverse · Client → Server/)
   assert.match(sidebar, /<LockKeyhole class="device-locked-indicator"/)
   assert.doesNotMatch(sidebar, /device-transport-meta|device-ip-separator|getDirectionProtocolLabel/)
   assert.match(dialog, /@click="save">Save/)
@@ -164,7 +165,7 @@ test('Bind without a historical Client ID prompts Connect instead of opening mac
     .replace('export default', 'const component =') + '\ncomponent'
   const context = {
     ElMessage: { info: message => notifications.push(message) },
-    CirclePlus: {}, ClockAlert: {}, LockKeyhole: {}, ShieldPlus: {},
+    Icon: {}, CirclePlus: {}, ClockAlert: {}, LockKeyhole: {}, ShieldPlus: {},
   }
   const sidebarComponent = vm.runInNewContext(javascript, context)
   const events = []

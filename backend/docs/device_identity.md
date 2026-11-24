@@ -185,6 +185,8 @@ Device Bar 的 **All Devices** 入口可同时设置机器分组、连接方向�
 
 筛选只影响设备侧边栏展示，不更改已保存的 Bind 目标、Reverse 最近设备记录、机器分组归属或当前 Session；右键连接、离线历史等操作仍按对应条目已有的能力执行。
 
+列表使用同一组 Lucide 风格方向图标标识连接模式：Reverse 箭头从设备向外，Bind 箭头指向设备；图标提示方向并与 Listener Name、TLS、Outdated、Elevated 状态独立显示。Bind 保存目标不再显示独立的 Bind 文字标签，Reverse 仍显示 Listener Name 标签。All Devices 筛选菜单采用轻量滚动条，重新打开时从列表顶部开始。
+
 ## 6. API、管理入口与数据关联
 
 通过已认证的 Web API 可以读取连接列表、历史与分组，更新设备视图偏好。常用路径及作用如下：

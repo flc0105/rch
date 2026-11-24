@@ -6,6 +6,8 @@
         trigger="click"
         placement="bottom-start"
         :hide-on-click="false"
+        popper-class="device-filter-popper"
+        @visible-change="handleDeviceFilterVisibility"
         @command="handleDeviceFilterCommand"
       >
 <!--        <button-->
@@ -174,7 +176,7 @@
       >
         <div class="device-item-top">
           <div class="device-text">
-            <div class="device-name-row">
+         <div class="device-name-row">
               <div class="device-name">
                 {{ formatDeviceName(item) }}
               </div>
@@ -580,6 +582,17 @@ computed: {
   },
 
   methods: {
+    handleDeviceFilterVisibility(visible) {
+      if (!visible) return
+      this.$nextTick(() => {
+        const popper = document.querySelector('.device-filter-popper')
+        if (!popper) return
+        popper.querySelectorAll('.device-filter-dropdown, .el-scrollbar__wrap').forEach(element => {
+          element.scrollTop = 0
+        })
+      })
+    },
+
     handleToolbarCommand(command) {
       if (command === 'connect-to-client') {
         this.$emit('connect-to-client')
@@ -1358,6 +1371,11 @@ async removeConnectionPermanently(item) {
   flex: 0 0 auto;
 }
 
+.device-direction-indicator {
+  color: #24A4FA;
+  flex: 0 0 auto;
+}
+
 .device-update-indicator,
 .device-elevated-indicator,
 .device-locked-indicator {
@@ -1439,6 +1457,41 @@ async removeConnectionPermanently(item) {
 </style>
 
 <style>
+/* All Devices is teleported by Element Plus; scope the scrollbar to its popper. */
+.device-filter-popper .device-filter-dropdown,
+.device-filter-popper .el-scrollbar__wrap {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.35) transparent;
+}
+
+.device-filter-popper .device-filter-dropdown::-webkit-scrollbar,
+.device-filter-popper .el-scrollbar__wrap::-webkit-scrollbar {
+  width: 8px;
+}
+
+.device-filter-popper .device-filter-dropdown::-webkit-scrollbar-track,
+.device-filter-popper .el-scrollbar__wrap::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.device-filter-popper .device-filter-dropdown::-webkit-scrollbar-thumb,
+.device-filter-popper .el-scrollbar__wrap::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.35);
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+}
+
+.device-filter-popper .device-filter-dropdown::-webkit-scrollbar-thumb:hover,
+.device-filter-popper .el-scrollbar__wrap::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.55);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.device-filter-popper .el-scrollbar__bar.is-vertical { width: 6px; }
+.device-filter-popper .el-scrollbar__thumb { background-color: rgba(148, 163, 184, 0.38); }
+
 body.device-touch-callout-guard,
 body.device-touch-callout-guard * {
   -webkit-touch-callout: none !important;
