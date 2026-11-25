@@ -1,6 +1,7 @@
 package executor
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -99,5 +100,28 @@ func TestCommandManifestCarriesMinimalCompletionSpec(t *testing.T) {
 	}
 	if _, exists := byName["command_completions"]; exists {
 		t.Fatal("legacy command_completions pseudo command remains in manifest")
+	}
+}
+
+func TestCommandCompletionFiltersPrefixBeforeResultLimit(t *testing.T) {
+	s := testFileSession(t)
+	for i := 0; i < 70; i++ {
+		name := fmt.Sprintf("aaa-%03d.txt", i)
+		if err := os.WriteFile(filepath.Join(s.Cwd, name), []byte(""), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(s.Cwd, "rchclient_go_loader.zip"), []byte("ok"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	result, err := CompleteCommandCompletion(s, map[string]interface{}{
+		"raw_input": "download rchc", "cursor_position": len("download rchc"), "max_results": float64(50),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	items := result["items"].([]interface{})
+	if len(items) != 1 || items[0].(map[string]interface{})["candidatePath"] != "rchclient_go_loader.zip" {
+		t.Fatalf("prefix filtering after truncation: %#v", items)
 	}
 }

@@ -457,6 +457,7 @@ export default {
         'external-tools': 'external_tool',
         processes: 'process_monitor',
         'log-viewer': 'log_viewer',
+        tunnels: 'tunnel',
       }
       const feature = featureByAction[actionId]
       // Older connections without a manifest retain their existing actions.

@@ -79,10 +79,16 @@ class BindConnector:
                 with self._lock:
                     self._sessions[endpoint] = session
                 return session
-            except OSError:
+            except OSError as exc:
                 if sock is not None:
                     sock.close()
                 if time.monotonic() >= deadline:
+                    if transport == 'tcp' and (
+                        isinstance(exc, TimeoutError) or str(exc) in ('Connection closed', 'Connection aborted')
+                    ):
+                        raise ConnectionError(
+                            'Bind TCP handshake failed; check Transport (the Client may require mTLS/TCP)'
+                        ) from exc
                     raise
                 time.sleep(0.05)
             except Exception:
@@ -142,7 +148,7 @@ class BindConnector:
             removed = [endpoint for endpoint, active in self._sessions.items() if active is session]
             for endpoint in removed:
                 del self._sessions[endpoint]
-                self._reconnect_until[endpoint] = time.monotonic() + 2.0
+                self._reconnect_until[endpoint] = time.monotonic() + 10.0
         self._close_session(session)
         return client_id
 

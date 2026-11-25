@@ -65,3 +65,31 @@ test('quoted marker preserves surrounding quotes and does not duplicate them', (
     assert.equal(item.name, expected)
   }
 })
+
+test('explicit path prefix is sent to Client before result limit and cached separately', () => {
+  const { ctx } = setup('allow_exec @@rchc'.length)
+  const query = build(ctx, 'allow_exec @@rchc')
+  assert.equal(query.requestInput, 'download rchc')
+  assert.equal(query.cursorPosition, 'download rchc'.length)
+  assert.equal(query.pathPrefix, 'rchc')
+  const shorter = build(setup('allow_exec @@rch'.length).ctx, 'allow_exec @@rch')
+  assert.equal(shorter.requestInput, 'download rch')
+  assert.notEqual(query.cacheKey, shorter.cacheKey)
+  const nested = build(setup('allow_exec @@dir/rchc'.length).ctx, 'allow_exec @@dir/rchc')
+  assert.equal(nested.requestInput, 'download dir/rchc')
+})
+
+test('path completion keeps the filename fragment in request after entering a subdirectory', () => {
+  const { ctx } = setup('allow_exec @@dir/rchc'.length)
+  ctx.explicitPathContinuation = {
+    before: 'allow_exec ', after: '', path: 'dir', encodedPath: 'dir', quote: '', serverPath: false,
+  }
+  const query = ctx.parseContinuedExplicitPathCompletionQuery('allow_exec dir/rchc', 'allow_exec dir/rchc'.length)
+  assert.equal(query.requestInput, 'download dir/rchc')
+})
+
+test('regular path completion preserves partial name for a bounded Client response', () => {
+  const { ctx } = setup(0)
+  const query = ctx.buildFileSystemCommandCompletionQuery('download', 'download rchc', 'rchc')
+  assert.equal(query.requestInput, 'download rchc')
+})

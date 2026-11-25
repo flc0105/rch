@@ -47,4 +47,5 @@ def resolve_features(os_alias=None, overrides=None):
         defaults['watchdog'] = False
         defaults['external_tool'] = False
         defaults['process_monitor'] = False
+    defaults['tunnel'] = False
     return defaults

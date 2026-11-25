@@ -97,6 +97,7 @@ func CompleteCommandCompletion(session *Session, payload map[string]interface{})
 	}
 	pathValue = strings.ReplaceAll(pathValue, `\"`, `"`)
 	lookup, candidatePrefix := completionPathParts(pathValue)
+	namePrefix := strings.TrimPrefix(pathValue, candidatePrefix)
 	directory, err := remoteExisting(session, lookup, true)
 	if err != nil {
 		return map[string]interface{}{"items": []interface{}{}}, nil
@@ -107,6 +108,9 @@ func CompleteCommandCompletion(session *Session, payload map[string]interface{})
 	}
 	items := make([]map[string]interface{}, 0, len(entries))
 	for _, entry := range entries {
+		if !strings.HasPrefix(entry.Name(), namePrefix) {
+			continue
+		}
 		info, err := entry.Info()
 		if err != nil {
 			continue

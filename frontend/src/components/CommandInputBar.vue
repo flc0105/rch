@@ -577,7 +577,6 @@ export default {
       // The filesystem provider must receive the actual path, not its shell encoding.
       const pathPrefix = activeMarker.quote === '"' && !/^win/i.test(String(this.currentConnection?.os_type || ''))
         ? rawPathPrefix.replace(/\\(["\\$`])/g, '$1') : rawPathPrefix
-      const pathParts = this.splitFileSystemCandidatePath(pathPrefix)
       return {
         explicitPath: true,
         rawText,
@@ -586,11 +585,11 @@ export default {
         replaceEnd,
         pathPrefix,
         quote: activeMarker.quote,
-        requestInput: `download ${pathParts.candidatePrefix}`,
-        cursorPosition: `download ${pathParts.candidatePrefix}`.length,
+        requestInput: `download ${pathPrefix}`,
+        cursorPosition: `download ${pathPrefix}`.length,
         completionSpec: { provider: 'filesystem', kinds: ['file', 'directory'] },
         requiresRemoteClient: true,
-        cacheKey: this.buildCommandCompletionCandidateCacheKey('explicit_path', pathParts.lookupPath),
+        cacheKey: this.buildCommandCompletionCandidateCacheKey('explicit_path', pathPrefix),
       }
     },
 
@@ -611,7 +610,6 @@ export default {
       const decodedSuffix = lastDirectory.quote === '"' && !/^win/i.test(String(this.currentConnection?.os_type || ''))
         ? typedSuffix.replace(/\\(["\\$`])/g, '$1') : typedSuffix
       const pathPrefix = lastDirectory.path + decodedSuffix
-      const pathParts = this.splitFileSystemCandidatePath(pathPrefix)
       return {
         explicitPath: true,
         rawText,
@@ -622,11 +620,11 @@ export default {
         quote: lastDirectory.quote,
         serverPath: lastDirectory.serverPath === true,
         serverPathCommand: lastDirectory.serverPathCommand,
-        requestInput: lastDirectory.serverPath ? `${lastDirectory.serverPathCommand} ${pathPrefix}` : `download ${pathParts.candidatePrefix}`,
-        cursorPosition: lastDirectory.serverPath ? `${lastDirectory.serverPathCommand} ${pathPrefix}`.length : `download ${pathParts.candidatePrefix}`.length,
+        requestInput: lastDirectory.serverPath ? `${lastDirectory.serverPathCommand} ${pathPrefix}` : `download ${pathPrefix}`,
+        cursorPosition: lastDirectory.serverPath ? `${lastDirectory.serverPathCommand} ${pathPrefix}`.length : `download ${pathPrefix}`.length,
         completionSpec: lastDirectory.serverPath ? null : { provider: 'filesystem', kinds: ['file', 'directory'] },
         requiresRemoteClient: !lastDirectory.serverPath,
-        cacheKey: this.buildCommandCompletionCandidateCacheKey(lastDirectory.serverPath ? `server_explicit_path:${lastDirectory.serverPathCommand}` : 'explicit_path', lastDirectory.serverPath ? pathPrefix : pathParts.lookupPath),
+        cacheKey: this.buildCommandCompletionCandidateCacheKey(lastDirectory.serverPath ? `server_explicit_path:${lastDirectory.serverPathCommand}` : 'explicit_path', pathPrefix),
       }
     },
 
@@ -944,12 +942,9 @@ export default {
     },
 
     buildFileSystemCommandCompletionQuery(commandName, rawText, argumentText, rule = null) {
-      const pathParts = this.splitFileSystemCandidatePath(argumentText)
       const proxyCommand = String(rule?.proxyCommand || commandName || '').trim().toLowerCase()
       const commandPrefix = String(rule?.commandPrefix || commandName || '').trim().toLowerCase()
-      const serverPath = rule?.serverPath === true
-      const prefix = serverPath ? argumentText : pathParts.candidatePrefix
-      const requestInput = `${proxyCommand} ${prefix}`
+      const requestInput = `${proxyCommand} ${argumentText}`
 
       return {
         rawText,
@@ -958,7 +953,7 @@ export default {
         cursorPosition: requestInput.length,
         argumentMode: 'tail',
         requiresRemoteClient: false,
-        cacheKey: this.buildCommandCompletionCandidateCacheKey(commandPrefix, serverPath ? argumentText : pathParts.lookupPath),
+        cacheKey: this.buildCommandCompletionCandidateCacheKey(commandPrefix, argumentText),
       }
     },
 

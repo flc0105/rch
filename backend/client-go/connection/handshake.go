@@ -14,7 +14,7 @@ import (
 
 var unsupportedFeatures = []string{
 	"external_tool", "process_monitor", "pty", "screen_view", "screen_input",
-	"clipboard", "watchdog", "jobs", "log_viewer", "device_monitor",
+	"clipboard", "watchdog", "jobs", "log_viewer", "device_monitor", "tunnel",
 }
 
 func featureManifest() map[string]bool {

@@ -86,7 +86,7 @@ func TestHandshakeFieldsAndCapabilities(t *testing.T) {
 		if !features["remote_files"] {
 			t.Error("remote_files must be enabled for basic file management")
 		}
-		for _, disabled := range []string{"log_viewer", "device_monitor"} {
+		for _, disabled := range []string{"log_viewer", "device_monitor", "tunnel"} {
 			if enabled, present := features[disabled]; !present || enabled {
 				t.Errorf("%s must be explicitly disabled in Go handshake", disabled)
 			}
