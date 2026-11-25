@@ -27,6 +27,14 @@ class WebConnectionApi:
                 'target_id': target['target_id'],
                 'status': 'already_connected' if reused else 'connected'}
 
+    def list_bind_discovery_interfaces(self):
+        from server.application.connection.bind_discovery import list_interfaces
+        return {'interfaces': list_interfaces()}
+
+    def discover_bind_clients(self, interface_address):
+        from server.application.connection.bind_discovery import scan
+        return {'devices': scan(str(interface_address or '').strip())}
+
     def list_saved_bind_targets(self):
         return self.saved_bind_target_store.list_targets()
 

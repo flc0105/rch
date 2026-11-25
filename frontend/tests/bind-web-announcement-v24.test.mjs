@@ -23,6 +23,7 @@ test('Bind Connect loads Server advertised default and sends per-connection over
   const sent = []
   const cmp = getDialogComponent({
     getBindConnectionSettings: async () => ({ server_web_base_url: 'http://server:8085' }),
+    getBindDiscoveryInterfaces: async () => ({ interfaces: [] }),
     connectToClient: async (...args) => { sent.push(args); return { client_id: 'new-client' } },
     ElMessage: { success() {}, error(e) { throw new Error(e) }, warning(msg) { throw new Error(msg) } },
   })

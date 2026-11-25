@@ -4,6 +4,15 @@ export function listConnections() {
   return apiData('/api/connections', {}, [])
 }
 
+export function getBindDiscoveryInterfaces() {
+  return apiData('/api/connections/bind/discovery/interfaces', {}, { interfaces: [] })
+}
+
+export function discoverBindClients(interfaceAddress) {
+  return apiData('/api/connections/bind/discovery',
+    jsonRequestOptions('POST', { interface: interfaceAddress }), { devices: [] })
+}
+
 export function listSavedBindTargets() {
   return apiData('/api/connections/bind/targets', {}, [])
 }

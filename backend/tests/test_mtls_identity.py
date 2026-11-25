@@ -210,10 +210,19 @@ def test_install_command_writes_all_identity_materials_without_download(tmp_path
 
     store, issued, config = provisioned
     command = store.install_command(issued['id'])
-    assert command.startswith('python3 -c ')
+    assert command.startswith('python3 -c "')
+    assert command.endswith('"')
+    # Windows CMD uses double quotes for grouping; this Python payload has no
+    # inner double quotes, percent expansion, or shell control characters.
+    import ast
+    script = command[len('python3 -c "'):-1]
+    ast.parse(script)
+    assert subprocess.list2cmdline(['python3', '-c', script]) == command
+    assert len(command) < 8191
+    assert not any(char in script for char in '"%!^&|<>')
     assert 'api/identities' not in command
     assert 'client.key' in command and 'server-ca.crt' in command
-    home = tmp_path / 'client-home'
+    home = tmp_path / '方良辰'  # Verify a non-ASCII Windows-style home name.
     home.mkdir()
     import os
     env = {**os.environ, 'HOME': str(home)}

@@ -47,6 +47,8 @@ class BindListener:
         self._tunnel_handler = None
         self._file_slots = {}
         self._file_handshakes = threading.BoundedSemaphore(32)
+        self._discovery = None
+        self.discovery_enabled = bool(config.get('bind_discovery_enabled', True))
 
     def start(self):
         with self._lock:
@@ -74,6 +76,14 @@ class BindListener:
             self._thread = threading.Thread(target=self._accept_loop, args=(sock,), daemon=True,
                                             name='RCHBindTcpListener')
             self._thread.start()
+            if self.discovery_enabled and self.host not in ('127.0.0.1', 'localhost', '::1'):
+                from client.connection.bind_discovery import BindDiscoveryResponder
+                responder = BindDiscoveryResponder(self)
+                try:
+                    responder.start()
+                    self._discovery = responder
+                except Exception as exc:
+                    logger.warning('Bind discovery unavailable: %s', exc)
         logger.info('Bind TCP listening on %s:%s', *self.address)
         from client.update.signals import report_ready
         report_ready('', 'bind')
@@ -107,6 +117,10 @@ class BindListener:
                 self._dispatch_file_connection(conn)
             else:
                 self._offer_session(conn)
+
+    def available_for_discovery(self):
+        with self._lock:
+            return self._accepting and not self._occupied and not self._stop.is_set()
 
     def _offer_session(self, conn):
         with self._lock:
@@ -227,6 +241,9 @@ class BindListener:
             _active_listener = None
         self._tunnel_handler = None
         self._stop.set()
+        if self._discovery is not None:
+            self._discovery.close()
+            self._discovery = None
         self.set_accepting(False)
         with self._lock:
             sock, self._socket = self._socket, None

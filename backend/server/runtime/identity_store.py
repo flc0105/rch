@@ -8,7 +8,6 @@ import hashlib
 import io
 import json
 import os
-import shlex
 import secrets
 import ssl
 import subprocess
@@ -194,7 +193,7 @@ class IdentityStore:
             return buffer
 
     def install_command(self, identity_id):
-        """POSIX one-liner containing the three PEM files; intended for administrator copy."""
+        """Copyable Python one-liner for CMD, PowerShell and POSIX shells."""
         archive = self.download(identity_id)
         with zipfile.ZipFile(archive) as bundle:
             files = {name: base64.b64encode(bundle.read(name)).decode('ascii')
@@ -206,7 +205,10 @@ class IdentityStore:
         commands += [f"(d/{name!r}).write_bytes(base64.b64decode({encoded!r}))"
                      for name, encoded in files.items()]
         commands += ["os.chmod(d/'client.key',0o600)", "print('Client identity installed:',d)"]
-        return 'python3 -c ' + shlex.quote('; '.join(commands))
+        # The generated code only uses single-quoted Python literals and Base64.
+        # A double-quoted -c argument also works in Windows CMD/PowerShell;
+        # POSIX shlex.quote() does not (CMD passes its single quotes literally).
+        return 'python3 -c "' + '; '.join(commands) + '"'
 
     @staticmethod
     def send_rejection(sock, error):
