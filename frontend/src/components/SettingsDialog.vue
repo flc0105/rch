@@ -192,33 +192,59 @@
       </el-tab-pane>
 
       <el-tab-pane label="Identities" name="identities">
-        <div v-loading="identitiesLoading" class="settings-tab-scroll">
-          <section class="settings-section">
-            <div class="settings-section-title">Server Identity</div>
-            <div class="settings-note">Application-local mTLS trust material. Provision Client files before connecting; plain TCP requires no identity.</div>
-            <div class="server-maintenance-row">
-              <span>{{ identities.initialized ? 'Server identity initialized' : 'Server identity not initialized' }}</span>
+        <div v-loading="identitiesLoading" class="settings-tab-scroll identity-settings">
+          <section class="identity-panel identity-server">
+            <div class="identity-icon" aria-hidden="true">
+              <el-icon :size="20"><Lock /></el-icon>
+            </div>
+            <div class="identity-server-copy">
+              <div class="identity-heading">Server Identity</div>
+              <div class="settings-note identity-description">Application-local mTLS trust material. Provision Client files before connecting; plain TCP requires no identity.</div>
+            </div>
+            <div class="identity-server-controls">
+              <span class="identity-server-state" :class="{ 'is-ready': identities.initialized }">
+                <span class="identity-status-dot" aria-hidden="true"></span>
+                {{ identities.initialized ? 'Server identity initialized' : 'Server identity not initialized' }}
+              </span>
               <el-button v-if="!identities.initialized" :loading="identityBusy" @click="initializeIdentity">Initialize</el-button>
             </div>
           </section>
-          <section v-if="identities.initialized" class="settings-section">
-            <div class="settings-section-title">Client Identities</div>
-            <div class="settings-note">Download and securely install client.crt, client.key and server-ca.crt in ~/client_bundle/identity/ (iOS: ~/Documents/client_bundle/identity/). On Linux/macOS, set client.key permissions to 0600 after extraction. Protect the private key; revoked identities cannot open new sessions.</div>
-            <div class="server-maintenance-row" style="gap:8px; flex-wrap:wrap">
-              <el-input v-model="newIdentityName" maxlength="80" placeholder="Installation identity name" style="max-width:250px" />
-              <el-input-number v-model="newIdentityDays" :min="1" :max="825" :step="1" aria-label="Certificate validity days" />
-              <span class="settings-note">days</span>
+
+          <section v-if="identities.initialized" class="identity-panel identity-clients">
+            <div class="identity-clients-header">
+              <div class="identity-heading">Client Identities</div>
+              <div class="settings-note identity-description">Download and securely install client.crt, client.key and server-ca.crt in ~/client_bundle/identity/ (iOS: ~/Documents/client_bundle/identity/). On Linux/macOS, set client.key permissions to 0600 after extraction. Protect the private key; revoked identities cannot open new sessions.</div>
+            </div>
+            <div class="identity-create">
+              <div class="identity-create-fields">
+                <el-input v-model="newIdentityName" maxlength="80" placeholder="Installation identity name" class="identity-name-input" />
+                <div class="identity-validity">
+                  <el-input-number v-model="newIdentityDays" :min="1" :max="825" :step="1" aria-label="Certificate validity days" />
+                  <span class="settings-note">days</span>
+                </div>
+              </div>
               <el-button type="primary" :loading="identityBusy" @click="createIdentity">Create</el-button>
             </div>
-            <div v-for="item in identities.clients" :key="item.id" class="server-maintenance-row" style="gap:10px; flex-wrap:wrap">
-              <div>
-                <div class="server-maintenance-title">{{ item.name }}</div>
-                <div class="settings-note">Expires {{ formatDateTimeLocal(item.expires_at) }} · {{ item.revoked ? 'Revoked' : 'Active' }}</div>
-              </div>
-              <div style="display:flex; gap:8px">
-                <el-button size="small" :disabled="item.revoked" @click="downloadIdentity(item.id)">Download</el-button>
-                <el-button size="small" :disabled="item.revoked || identityBusy" @click="copyIdentityCommand(item.id)">Copy Command</el-button>
-                <el-button size="small" type="danger" plain :disabled="item.revoked || identityBusy" @click="revokeIdentity(item)">Revoke</el-button>
+            <div class="identity-list" role="list">
+              <div v-for="item in identities.clients" :key="item.id" class="identity-item" role="listitem">
+                <div class="identity-item-main">
+                  <span class="identity-item-icon" aria-hidden="true"><el-icon :size="17"><Key /></el-icon></span>
+                  <div class="identity-item-info">
+                    <div class="identity-item-title">
+                      <span class="identity-item-name">{{ item.name }}</span>
+                      <span class="identity-state" :class="item.revoked ? 'is-revoked' : 'is-active'">
+                        <span class="identity-status-dot" aria-hidden="true"></span>
+                        {{ item.revoked ? 'Revoked' : 'Active' }}
+                      </span>
+                    </div>
+                    <div class="identity-expiry">Expires {{ formatDateTimeLocal(item.expires_at) }}</div>
+                  </div>
+                </div>
+                <div class="identity-actions">
+                  <el-button size="small" :disabled="item.revoked" @click="downloadIdentity(item.id)">Download</el-button>
+                  <el-button size="small" type="primary" plain :disabled="item.revoked || identityBusy" @click="copyIdentityCommand(item.id)">Copy Command</el-button>
+                  <el-button size="small" type="danger" plain :disabled="item.revoked || identityBusy" @click="revokeIdentity(item)">Revoke</el-button>
+                </div>
               </div>
             </div>
           </section>
@@ -271,6 +297,7 @@
 
 <script>
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Key, Lock } from '@element-plus/icons-vue'
 import {
   loadToolbarPreferences,
   saveToolbarPreferences,
@@ -311,6 +338,7 @@ import { formatDateTimeLocal } from '../utils/formatters.js'
 
 export default {
   name: 'SettingsDialog',
+  components: { Key, Lock },
 
   emits: ['notification-saved'],
 
@@ -683,6 +711,271 @@ export default {
 </script>
 
 <style scoped>
+/* Identity management keeps its own visual hierarchy without changing other Settings tabs. */
+.identity-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 4px 3px 12px 0;
+}
+
+.identity-panel {
+  flex: 0 0 auto;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 12px;
+  background: var(--el-bg-color);
+}
+
+.identity-heading {
+  color: var(--el-text-color-primary);
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+.identity-description {
+  margin: 7px 0 0;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.identity-server {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  padding: 20px;
+  background: linear-gradient(115deg, var(--el-color-primary-light-9), var(--el-bg-color) 64%);
+}
+
+.identity-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: var(--el-color-primary-light-8);
+  color: var(--el-color-primary);
+}
+
+.identity-server-copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.identity-server-controls {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 9px;
+}
+
+.identity-server-state,
+.identity-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  width: fit-content;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 99px;
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-secondary);
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.identity-server-state {
+  padding: 8px 10px;
+}
+
+.identity-state {
+  padding: 6px 9px;
+}
+
+.identity-server-state.is-ready,
+.identity-state.is-active {
+  border-color: var(--el-color-success-light-8);
+  background: var(--el-color-success-light-9);
+  color: var(--el-color-success-dark-2);
+}
+
+.identity-status-dot {
+  flex: 0 0 6px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.identity-clients-header {
+  padding: 20px 20px 16px;
+}
+
+.identity-create {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 15px 20px;
+  border-top: 1px solid var(--el-border-color-extra-light);
+  border-bottom: 1px solid var(--el-border-color-extra-light);
+  background: var(--el-fill-color-extra-light);
+}
+
+.identity-create-fields {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  gap: 12px;
+  min-width: 0;
+}
+
+.identity-name-input {
+  width: 260px;
+  max-width: 100%;
+}
+
+.identity-validity {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.identity-validity :deep(.el-input-number) {
+  width: 136px;
+}
+
+.identity-validity .settings-note {
+  margin: 0;
+}
+
+.identity-create > :deep(.el-button) {
+  min-width: 88px;
+}
+
+.identity-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 84px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--el-border-color-extra-light);
+  transition: background-color 0.15s ease;
+}
+
+.identity-item:last-child {
+  border-bottom: 0;
+}
+
+.identity-item:hover {
+  background: var(--el-fill-color-extra-light);
+}
+
+.identity-item-main {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 12px;
+}
+
+.identity-item-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 36px;
+  height: 36px;
+  border: 1px solid var(--el-border-color-extra-light);
+  border-radius: 10px;
+  color: var(--el-text-color-regular);
+  background: var(--el-fill-color-light);
+}
+
+.identity-item-info {
+  min-width: 0;
+}
+
+.identity-item-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.identity-item-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--el-text-color-primary);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.identity-expiry {
+  margin-top: 6px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.identity-actions {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
+.identity-actions :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+
+@media (max-width: 760px) {
+  .identity-server {
+    flex-wrap: wrap;
+  }
+
+  .identity-server-controls {
+    flex-basis: 100%;
+    flex-direction: row;
+    justify-content: flex-start;
+    align-items: center;
+    padding-left: 57px;
+  }
+
+  .identity-create,
+  .identity-item {
+    flex-wrap: wrap;
+  }
+
+  .identity-create-fields,
+  .identity-actions {
+    flex-wrap: wrap;
+  }
+
+  .identity-actions {
+    padding-left: 48px;
+  }
+}
+
+@media (max-width: 480px) {
+  .identity-server-controls,
+  .identity-actions {
+    padding-left: 0;
+  }
+
+  .identity-name-input {
+    width: 100%;
+  }
+
+  .identity-create > :deep(.el-button) {
+    width: 100%;
+  }
+}
+
 .settings-note {
   margin-bottom: 14px;
   color: var(--el-text-color-secondary);
