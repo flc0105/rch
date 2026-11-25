@@ -15,12 +15,12 @@ class WebConnectionApi:
         self.bind_connector = bind_connector
         self.saved_bind_target_store = saved_bind_target_store
 
-    def connect_bind_client(self, host: str, port: int, server_web_base_url: str = '', name: str = ''):
+    def connect_bind_client(self, host: str, port: int, server_web_base_url: str = '', name: str = '', transport: str = 'tcp'):
         session, reused = self.bind_connector.connect_with_status(
-            host, port, server_web_base_url=server_web_base_url,
+            host, port, server_web_base_url=server_web_base_url, transport=transport,
         )
         target = self.saved_bind_target_store.save(
-            host, port, server_web_base_url, name=name, session=session,
+            host, port, server_web_base_url, name=name, session=session, transport=transport,
         )
         session.saved_bind_target_id = target['target_id']
         return {'client_id': session.session_info.client_id,
@@ -30,9 +30,9 @@ class WebConnectionApi:
     def list_saved_bind_targets(self):
         return self.saved_bind_target_store.list_targets()
 
-    def save_bind_target(self, host, port, server_web_base_url, name='', target_id=''):
+    def save_bind_target(self, host, port, server_web_base_url, name='', target_id='', transport='tcp'):
         return self.saved_bind_target_store.save(
-            host, port, server_web_base_url, name=name, target_id=target_id,
+            host, port, server_web_base_url, name=name, target_id=target_id, transport=transport,
         )
 
     def remove_bind_target(self, target_id):

@@ -1,4 +1,4 @@
-"""Connection recovery, TLS handshake and session isolation."""
+"""Connection recovery, mTLS handshake and session isolation."""
 
 import hashlib
 import socket
@@ -11,7 +11,7 @@ from unittest.mock import Mock
 import pytest
 
 from client.connection.receiver_worker import ClientReceiverWorker
-from client.connection.transport_connectors import PinnedTlsConnector
+from client.connection.transport_connectors import MtlsConnector
 from core.protocol.rchsocket import RCHSocket
 from server.application.connection.connection_service import WebConnectionService
 from server.application.connection.recent_device_store import RecentDeviceStore
@@ -116,30 +116,32 @@ def test_real_heartbeat_resets_receive_idle_deadline():
         server_sock.close()
 
 
-@pytest.mark.parametrize('trusted', [True, False])
-def test_tls_connector_checks_peer_pin_before_replacing_socket(monkeypatch, trusted):
-    certificate = b'test certificate bytes'
-    socket_under_test = object()
+def test_mtls_connector_requires_context_and_wraps_before_rch(monkeypatch):
+    from client.connection import transport_connectors as module
+    socket_under_test = Mock()
     wrapped = Mock()
-    wrapped.getpeercert.return_value = certificate
     context = Mock()
     context.wrap_socket.return_value = wrapped
-    monkeypatch.setattr(ssl, 'SSLContext', lambda *_: context)
+    create = Mock(return_value=context)
+    monkeypatch.setattr(module, 'create_context', create)
     connection = SimpleNamespace(socket=socket_under_test, connect=Mock(return_value=True))
-    fingerprint = hashlib.sha256(certificate if trusted else b'different certificate').hexdigest()
-    config = {'server_tls_fingerprint': fingerprint}
-    connector = PinnedTlsConnector()
+    connector = MtlsConnector()
+    assert connector.connect(connection, ('rch.example', 9999), {'identity_dir': '/identity'})
+    assert connection.socket is wrapped
+    create.assert_called_once_with({'identity_dir': '/identity'}, server_side=False)
+    context.wrap_socket.assert_called_once_with(socket_under_test, server_hostname=None)
 
-    if trusted:
-        assert connector.connect(connection, ('rch.example', 9999), config)
-        assert connection.socket is wrapped
-        wrapped.close.assert_not_called()
-    else:
-        with pytest.raises(ssl.SSLError):
-            connector.connect(connection, ('rch.example', 9999), config)
-        assert connection.socket is socket_under_test
-        wrapped.close.assert_called_once_with()
-    context.wrap_socket.assert_called_once_with(socket_under_test, server_hostname='rch.example')
+
+def test_mtls_connector_fails_closed_on_handshake_error(monkeypatch):
+    from client.connection import transport_connectors as module
+    context = Mock()
+    context.wrap_socket.side_effect = ssl.SSLError('untrusted server')
+    monkeypatch.setattr(module, 'create_context', lambda *_args, **_kwargs: context)
+    raw = Mock()
+    connection = SimpleNamespace(socket=raw, connect=Mock(return_value=True))
+    with pytest.raises(ssl.SSLError, match='untrusted server'):
+        MtlsConnector().connect(connection, ('rch.example', 9999), {})
+    raw.close.assert_called_once()
 
 
 def test_handshake_frame_rejects_oversized_length():

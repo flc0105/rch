@@ -31,7 +31,7 @@ test('two offline Bind endpoints on the same machine remain independent of Rever
   ]
   const entries = sidebarEntries([
     { client_id: 'reverse-recent', connection_direction: 'reverse',
-      machine_id: 'machine-1', connection_state: 'offline', listener_protocol: 'tls_tcp' },
+      machine_id: 'machine-1', connection_state: 'offline', listener_protocol: 'mtls_tcp' },
   ], targets)
   assert.deepEqual(entries.map(x => x.sidebar_key || x.client_id),
     ['bind:a', 'bind:b', 'reverse-recent'])

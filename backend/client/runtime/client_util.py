@@ -149,6 +149,11 @@ def get_client_bundle_release_dir() -> str:
         return ensure_directory(os.path.join(str(Path.home()), 'Documents', 'client_bundle', 'releases'))
 
 
+def get_client_bundle_identity_dir() -> str:
+    """Persistent installation identity, separate from versioned releases."""
+    return os.path.join(os.path.dirname(get_client_bundle_release_dir()), 'identity')
+
+
 def get_client_bundle_download_dir() -> str:
     return ensure_directory(os.path.join(os.path.dirname(get_client_bundle_release_dir()), 'downloads'))
 

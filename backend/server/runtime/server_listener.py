@@ -16,7 +16,7 @@ class ServerListener(SessionAcceptor):
         errno.EBADF, errno.EINVAL, getattr(errno, 'ENOTSOCK', 88), 10038,
     }
 
-    def __init__(self, server, config: dict, ssl_context=None):
+    def __init__(self, server, config: dict, ssl_context=None, verify_peer=None):
         super().__init__(server)
         self.config = dict(config)
         self.listener_id = self.config.get('id', 'tcp-default')
@@ -25,6 +25,7 @@ class ServerListener(SessionAcceptor):
         self.address = (self.config['host'], int(self.config['port']))
         self.socket = RCHSocket()
         self.ssl_context = ssl_context
+        self.verify_peer = verify_peer
         self._tunnel_handler = None
         self._stop_event = threading.Event()
         self._thread = None
@@ -67,8 +68,12 @@ class ServerListener(SessionAcceptor):
             try:
                 raw_sock.settimeout(5)
                 raw_sock = self.ssl_context.wrap_socket(raw_sock, server_side=True)
+                if self.verify_peer is not None:
+                    self.verify_peer(raw_sock.getpeercert(binary_form=True))
+                # A handshake deadline must not become the application's read timeout.
+                raw_sock.settimeout(None)
             except (OSError, ssl.SSLError) as exc:
-                logger.warning('TLS handshake failed on %s from %s: %s', self.listener_id, addr, exc)
+                logger.warning('mTLS handshake or identity verification failed on %s from %s: %s', self.listener_id, addr, exc)
                 raw_sock.close()
                 return None
         handler = self._tunnel_handler

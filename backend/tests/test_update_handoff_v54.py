@@ -27,13 +27,12 @@ def test_build_request_includes_real_bind_settings(monkeypatch):
     assert payload['bind_port'] == 9443
     assert 'server_tls_fingerprint' not in payload
     monkeypatch.setattr(preparation, 'RUNTIME_CONFIG', {
-        'connection_mode': 'reverse', 'server_transport': 'tls_tcp',
-        'server_tls_fingerprint': 'f' * 64,
+        'connection_mode': 'reverse', 'server_transport': 'mtls_tcp',
     })
     reverse = preparation.build_request()
     assert reverse['connection_mode'] == 'reverse'
-    assert reverse['server_transport'] == 'tls_tcp'
-    assert reverse['server_tls_fingerprint'] == 'f' * 64
+    assert reverse['server_transport'] == 'mtls_tcp'
+    assert 'server_tls_fingerprint' not in reverse
 
 
 def test_options_and_managed_restrictions(monkeypatch):

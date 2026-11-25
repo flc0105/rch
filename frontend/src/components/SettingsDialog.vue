@@ -191,6 +191,39 @@
         </div>
       </el-tab-pane>
 
+      <el-tab-pane label="Identities" name="identities">
+        <div v-loading="identitiesLoading" class="settings-tab-scroll">
+          <section class="settings-section">
+            <div class="settings-section-title">Server Identity</div>
+            <div class="settings-note">Application-local mTLS trust material. Provision Client files before connecting; plain TCP requires no identity.</div>
+            <div class="server-maintenance-row">
+              <span>{{ identities.initialized ? 'Server identity initialized' : 'Server identity not initialized' }}</span>
+              <el-button v-if="!identities.initialized" :loading="identityBusy" @click="initializeIdentity">Initialize</el-button>
+            </div>
+          </section>
+          <section v-if="identities.initialized" class="settings-section">
+            <div class="settings-section-title">Client Identities</div>
+            <div class="settings-note">Download and securely install client.crt, client.key and server-ca.crt in ~/client_bundle/identity/ (iOS: ~/Documents/client_bundle/identity/). On Linux/macOS, set client.key permissions to 0600 after extraction. Protect the private key; revoked identities cannot open new sessions.</div>
+            <div class="server-maintenance-row" style="gap:8px; flex-wrap:wrap">
+              <el-input v-model="newIdentityName" maxlength="80" placeholder="Installation identity name" style="max-width:250px" />
+              <el-input-number v-model="newIdentityDays" :min="1" :max="825" :step="1" aria-label="Certificate validity days" />
+              <span class="settings-note">days</span>
+              <el-button type="primary" :loading="identityBusy" @click="createIdentity">Create</el-button>
+            </div>
+            <div v-for="item in identities.clients" :key="item.id" class="server-maintenance-row" style="gap:10px; flex-wrap:wrap">
+              <div>
+                <div class="server-maintenance-title">{{ item.name }}</div>
+                <div class="settings-note">Expires {{ formatDateTimeLocal(item.expires_at) }} · {{ item.revoked ? 'Revoked' : 'Active' }}</div>
+              </div>
+              <div style="display:flex; gap:8px">
+                <el-button size="small" :disabled="item.revoked" @click="downloadIdentity(item.id)">Download</el-button>
+                <el-button size="small" type="danger" plain :disabled="item.revoked || identityBusy" @click="revokeIdentity(item)">Revoke</el-button>
+              </div>
+            </div>
+          </section>
+        </div>
+      </el-tab-pane>
+
       <el-tab-pane label="Server" name="server">
         <div class="settings-tab-scroll">
           <section class="settings-section">
@@ -216,7 +249,7 @@
     </el-tabs>
 
     <template #footer>
-      <div v-if="activeTab !== 'server'" class="settings-footer">
+      <div v-if="activeTab !== 'server' && activeTab !== 'identities'" class="settings-footer">
         <el-button :disabled="activeLoading || activeSaving" @click="resetActiveDefaults">
           Reset Default
         </el-button>
@@ -271,6 +304,8 @@ import { CONNECTION_CONTEXT_ICONS } from '../data/connectionContextIcons.js'
 import { loadRemoteFileConflictPreferences, saveRemoteFileConflictPreferences } from '../api/remoteFileConflictPreferencesApi.js'
 import { getServerMaintenance, performServerMaintenance } from '../api/serverMaintenanceApi.js'
 import { getAuthorizationInfo } from '../api/authApi.js'
+import { getIdentities, initializeIdentities, issueClientIdentity, revokeClientIdentity, downloadClientIdentity } from '../api/identitiesApi.js'
+import { formatDateTimeLocal } from '../utils/formatters.js'
 
 export default {
   name: 'SettingsDialog',
@@ -281,6 +316,8 @@ export default {
     return {
       visible: false,
       activeTab: 'toolbar',
+      identities: { initialized: false, clients: [] },
+      identitiesLoading: false, identityBusy: false, newIdentityName: '', newIdentityDays: 365,
       maintenanceAction: '',
       maintenanceStatus: '',
       remoteFileConflictLoading: false,
@@ -333,6 +370,43 @@ export default {
   },
 
   methods: {
+    formatDateTimeLocal,
+    async loadIdentities() {
+      this.identitiesLoading = true
+      try { this.identities = await getIdentities() }
+      catch (error) { ElMessage.error(error.message) }
+      finally { this.identitiesLoading = false }
+    },
+    async initializeIdentity() {
+      this.identityBusy = true
+      try { await initializeIdentities(); await this.loadIdentities(); ElMessage.success('Server identity initialized') }
+      catch (error) { ElMessage.error(error.message) }
+      finally { this.identityBusy = false }
+    },
+    async createIdentity() {
+      if (!this.newIdentityName.trim()) return ElMessage.warning('Enter an identity name')
+      this.identityBusy = true
+      try {
+        const identity = await issueClientIdentity(this.newIdentityName.trim(), this.newIdentityDays)
+        this.newIdentityName = ''
+        await this.loadIdentities()
+        await downloadClientIdentity(identity.id)
+        ElMessage.success('Client identity created. Store the downloaded private key securely.')
+      } catch (error) { ElMessage.error(error.message) }
+      finally { this.identityBusy = false }
+    },
+    async downloadIdentity(id) {
+      try { await downloadClientIdentity(id) }
+      catch (error) { ElMessage.error(error.message) }
+    },
+    async revokeIdentity(identity) {
+      try { await ElMessageBox.confirm(`Revoke identity "${identity.name}"? All its new mTLS connections will be rejected.`, 'Revoke identity', { type: 'warning' }) }
+      catch { return }
+      this.identityBusy = true
+      try { await revokeClientIdentity(identity.id); await this.loadIdentities(); ElMessage.success('Identity revoked') }
+      catch (error) { ElMessage.error(error.message) }
+      finally { this.identityBusy = false }
+    },
     async confirmServerMaintenance(action) {
       if (this.maintenanceAction) return
       const restart = action === 'restart'
@@ -389,9 +463,10 @@ export default {
     },
     async open(tab = 'toolbar') {
       this.visible = true
-      this.activeTab = ['notifications', 'connection-context', 'remote-files', 'server'].includes(tab) ? tab : 'toolbar'
+      this.activeTab = ['notifications', 'connection-context', 'remote-files', 'server', 'identities'].includes(tab) ? tab : 'toolbar'
 
       await Promise.all([
+        this.loadIdentities(),
         this.loadToolbarSettings(),
         this.loadNotificationSettings(),
         this.loadConnectionContextSettings(),

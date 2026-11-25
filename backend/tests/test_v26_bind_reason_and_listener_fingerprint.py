@@ -1,4 +1,4 @@
-"""Intentional Bind termination and existing TLS certificate fingerprint listing."""
+"""Intentional Bind termination and mTLS listener identity configuration."""
 import hashlib
 import importlib.util
 import shutil
@@ -35,36 +35,22 @@ def test_bind_disconnect_records_intent_before_closing_socket():
     assert ('127.0.0.1', 9443) not in connector._sessions
 
 
-def test_listener_list_exposes_same_cert_fingerprint_used_by_agent_build(tmp_path):
+def test_mtls_listener_lists_without_legacy_fingerprint(tmp_path):
     if not shutil.which('openssl'):
         pytest.skip('openssl is unavailable')
     server = SimpleNamespace(address=('127.0.0.1', 19989), connections=SimpleNamespace(all=lambda: []))
-    # Isolate the runtime module from optional Web auth dependencies (werkzeug)
-    # and exercise the real ListenerManager/list implementation.
-    from types import ModuleType
-    fake_config = ModuleType('server.config.config')
-    fake_config.SERVER_RUNTIME_DIR = str(tmp_path)
-    fake_config.WEB_PORT = 8085
-    fake_config.WEB_WS_PORT = 8086
-    path = Path(__file__).resolve().parents[1] / 'server' / 'runtime' / 'listener_manager.py'
-    spec = importlib.util.spec_from_file_location('listener_manager_v26_test', path)
-    module = importlib.util.module_from_spec(spec)
-    with patch.dict(sys.modules, {'server.config.config': fake_config}):
-        spec.loader.exec_module(module)
-    manager = module.ListenerManager(server, config_path=str(tmp_path / 'listeners.json'))
-    listener = manager.create({'name': 'Local TLS', 'protocol': 'tls_tcp',
+    from server.runtime.listener_manager import ListenerManager
+    manager = ListenerManager(server, config_path=str(tmp_path / 'listeners.json'))
+    manager.identities.initialize()
+    listener = manager.create({'name': 'Local mTLS', 'protocol': 'mtls_tcp',
                                'host': '127.0.0.1', 'port': 19990})
     rows = manager.list()
-    tls = next(row for row in rows if row['id'] == listener['id'])
-    fingerprint = tls['tls_fingerprint']
-    assert len(fingerprint) == 64
-    assert not tls['fingerprint_error']
-    assert manager.certificate_fingerprint(listener['id']) == fingerprint
-    cert_path = tmp_path / 'listener_tls' / (listener['id'] + '.crt')
-    pem = cert_path.read_text()
-    assert hashlib.sha256(ssl.PEM_cert_to_DER_cert(pem)).hexdigest() == fingerprint
-    assert next(row for row in manager.list() if row['id'] == listener['id'])['tls_fingerprint'] == fingerprint
-    assert next(row for row in rows if row['id'] == 'tcp-default')['tls_fingerprint'] == ''
+    mtls = next(row for row in rows if row['id'] == listener['id'])
+    assert mtls['protocol_label'] == 'mTLS/TCP'
+    assert 'tls_fingerprint' not in mtls
+    assert manager.build_settings(listener['id'], 19990, 'python')['listener_protocol'] == 'mtls_tcp'
+    with pytest.raises(ValueError, match='Unsupported listener protocol'):
+        manager.create({'name': 'Old TLS', 'protocol': 'tls_tcp', 'host': '127.0.0.1', 'port': 19991})
 
 
 def test_intentional_bind_close_overrides_transport_eof_in_history(monkeypatch):

@@ -40,9 +40,9 @@ test('Connect dialog passes a typed address and port to the connection API', asy
   })
   const dialogObject = { ...component.data(), $emit: (...args) => events.push(args) }
   dialogObject.visible = true
-  dialogObject.form = { host: ' 192.168.1.25 ', port: '9443', serverWebBaseUrl: 'http://lan-server:8085' }
+  dialogObject.form = { host: ' 192.168.1.25 ', port: '9443', serverWebBaseUrl: 'http://lan-server:8085', transport: 'mtls_tcp' }
   await component.methods.connect.call(dialogObject)
-  assert.deepEqual(Array.from(sent[0]), ['192.168.1.25', 9443, 'http://lan-server:8085', ''])
+  assert.deepEqual(Array.from(sent[0]), ['192.168.1.25', 9443, 'http://lan-server:8085', '', 'mtls_tcp'])
   assert.equal(dialogObject.visible, false)
   assert.equal(dialogObject.connecting, false)
   assert.deepEqual(Array.from(events[0]), ['connected', 'new-client'])

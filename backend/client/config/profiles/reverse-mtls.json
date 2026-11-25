@@ -1,0 +1,10 @@
+
+{
+  "server_host": "127.0.0.1",
+  "server_port": 19444,
+  "server_transport": "mtls_tcp",
+  "identity_dir": "",
+  "server_web_scheme": "http",
+  "server_web_host": "127.0.0.1",
+  "server_web_port": 8085
+}

@@ -4,7 +4,7 @@
     <div class="fixed-dialog-body listener-add-body">
       <el-form :model="form" label-width="120px" class="listener-add-form" @submit.prevent="create">
         <el-form-item label="Name">
-          <el-input v-model="form.name" maxlength="60" placeholder="e.g. Public TLS" />
+          <el-input v-model="form.name" maxlength="60" placeholder="e.g. Secure Listener" />
         </el-form-item>
         <el-form-item label="Protocol">
           <el-select v-model="form.protocol" style="width:100%">

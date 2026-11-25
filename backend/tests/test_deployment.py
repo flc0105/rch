@@ -51,13 +51,12 @@ def test_explicit_bundle_generates_valid_source_zip():
             assert all(not n.startswith('server/') for n in z.namelist())
 
 
-def test_update_payload_preserves_pinned_tls(monkeypatch):
-    fp = 'a' * 64
-    monkeypatch.setattr(update_ops, 'RUNTIME_CONFIG', {'server_transport': 'tls_tcp', 'server_tls_fingerprint': fp})
+def test_update_payload_preserves_mtls_transport_without_secrets(monkeypatch):
+    monkeypatch.setattr(update_ops, 'RUNTIME_CONFIG', {'server_transport': 'mtls_tcp'})
     data = update_ops._build_update_request_payload()
     assert data['source'] == 'update'
-    assert data['server_transport'] == 'tls_tcp'
-    assert data['server_tls_fingerprint'] == fp
+    assert data['server_transport'] == 'mtls_tcp'
+    assert 'server_tls_fingerprint' not in data
 
 
 def test_update_preserves_existing_release_and_discards_failed_staging(tmp_path):

@@ -36,7 +36,7 @@ def session(client_id, machine_id='machine', protocol='tcp', target_id=''):
                            request_disconnect=Mock(), close=Mock())
 
 
-@pytest.mark.parametrize('protocol', ['tcp', 'tls_tcp', 'bind_tcp'])
+@pytest.mark.parametrize('protocol', ['tcp', 'mtls_tcp', 'bind_tcp'])
 def test_kill_instance_uses_existing_session_control(environment, protocol):
     _, connections, connector, _, _, api = environment
     active = session('client', protocol=protocol)

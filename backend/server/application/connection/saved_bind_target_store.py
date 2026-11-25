@@ -21,8 +21,10 @@ class SavedBindTargetStore:
             ).fetchall()
             return [dict(row) for row in rows]
 
-    def save(self, host, port, server_web_base_url, *, name='', session=None, target_id=''):
+    def save(self, host, port, server_web_base_url, *, name='', session=None, target_id='', transport='tcp'):
         host, port = BindConnector._endpoint(host, port)
+        if transport not in ('tcp', 'mtls_tcp'):
+            raise ValueError('Unknown Bind transport')
         url = validate_web_origin(server_web_base_url)
         if not url:
             raise ValueError('Server Web URL is required')
@@ -47,14 +49,14 @@ class SavedBindTargetStore:
             final_name = name if existing is not None or selected is None or name else selected['name']
             if selected is None:
                 conn.execute('''INSERT INTO saved_bind_targets
-                    (target_id, host, port, server_web_base_url, name, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)''',
-                    (identifier, host, port, url, final_name, now, now))
+                    (target_id, host, port, server_web_base_url, name, transport, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
+                    (identifier, host, port, url, final_name, transport, now, now))
             else:
                 conn.execute('''UPDATE saved_bind_targets
-                    SET host=?, port=?, server_web_base_url=?, name=?, updated_at=?
+                    SET host=?, port=?, server_web_base_url=?, name=?, transport=?, updated_at=?
                     WHERE target_id=?''',
-                    (host, port, url, final_name, now, identifier))
+                    (host, port, url, final_name, transport, now, identifier))
             if session is not None:
                 info = session.session_info
                 conn.execute('''UPDATE saved_bind_targets SET

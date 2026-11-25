@@ -21,14 +21,13 @@ class ClientGoBuilder:
 
     def _inject_go_config(self, client_dir: str, server_host: str, server_port: int, web_port: int,
                           build_version: str, server_web_scheme: str = 'http', server_web_host: str = '',
-                          listener_protocol: str = 'tcp', tls_fingerprint: str = ''):
+                          listener_protocol: str = 'tcp'):
         config_path = os.path.join(client_dir, 'client-go', 'config', 'config.go')
         server_web_host = (server_web_host or server_host).strip() or server_host
         template = f'''package config
 
 var SERVER_ADDR = {json.dumps(f"{server_host}:{server_port}")}
 var SERVER_TRANSPORT = {json.dumps(listener_protocol)}
-var SERVER_TLS_FINGERPRINT = {json.dumps(tls_fingerprint)}
 var SERVER_WEB_SCHEME = "{server_web_scheme}"
 var SERVER_WEB_HOST = "{server_web_host}"
 var SERVER_WEB_PORT = {web_port}
@@ -43,7 +42,7 @@ var CLIENT_BUILD_VERSION = "{build_version}"
                        web_port: int, target_os: str, target_arch: str,
                        build_id: str = '', build_version: str = 'dev', server_web_scheme: str = 'http',
                        server_web_host: str = '', listener_protocol: str = 'tcp',
-                       tls_fingerprint: str = '') -> dict:
+                       ) -> dict:
         go_project_dir = os.path.join(self.source_dir, 'client-go')
         if not os.path.isdir(go_project_dir):
             raise FileNotFoundError('client-go directory not found')
@@ -60,7 +59,6 @@ var CLIENT_BUILD_VERSION = "{build_version}"
             server_web_scheme,
             server_web_host,
             listener_protocol,
-            tls_fingerprint,
         )
 
         go_target = self.GO_TARGET_MAP[target_os]

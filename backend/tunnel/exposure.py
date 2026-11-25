@@ -36,7 +36,14 @@ class ServerChannels:
         endpoint_address = getattr(conn, 'bind_dial_endpoint', None)
         if endpoint_address is not None:
             def dial():
-                return socket.create_connection(endpoint_address, timeout=8)
+                sock = socket.create_connection(endpoint_address, timeout=8)
+                if getattr(conn, 'bind_transport', 'tcp') == 'mtls_tcp':
+                    try:
+                        sock = self.server.listener_manager.identities.wrap_outbound_socket(sock)
+                    except Exception:
+                        sock.close()
+                        raise
+                return sock
             endpoint = ActiveTunnel(token, dial, client_id)
             return {'role': 'active', 'token': token, 'endpoint': endpoint, 'mappings': {}}
 
@@ -45,7 +52,7 @@ class ServerChannels:
         listener = manager.running_listener(listener_id) if manager is not None else None
         if listener is None:
             raise ValueError('Original RCH listening endpoint is unavailable')
-        if listener.protocol not in ('tcp', 'tls_tcp'):
+        if listener.protocol not in ('tcp', 'mtls_tcp'):
             raise ValueError('Tunnel requires an RCH TCP listener')
         endpoint = PassiveTunnel(token)
         handler = listener._tunnel_handler

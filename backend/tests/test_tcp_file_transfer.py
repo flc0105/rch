@@ -1,10 +1,9 @@
 """Managed file streams over actual TCP sockets, without a second ClientSession."""
-import hashlib
 import os
 import socket
 import sqlite3
-import ssl
 import subprocess
+import shutil
 import threading
 import time
 import zipfile
@@ -30,6 +29,7 @@ from server.application.transfers.transfer_service import TransferService
 from server.application.web.transfer_api import WebTransferApi
 from server.persistence.rch_database import RchDatabase
 from server.runtime.server_listener import ServerListener
+from server.runtime.identity_store import IdentityStore
 from server.connection.runtime.pending_results import PendingResults
 from server.application.transfers.inline_registration import register_inline_transfer
 from client.runtime.execution.scope import ExecutionScope
@@ -91,11 +91,11 @@ def wait_until(predicate, timeout=6):
         time.sleep(0.01)
 
 
-@pytest.fixture(params=['bind', 'reverse', 'tls', 'bind-tunnel', 'reverse-tunnel'])
+@pytest.fixture(params=['bind', 'reverse', 'mtls', 'bind-mtls', 'bind-tunnel', 'reverse-tunnel'])
 def environment(request, monkeypatch, tmp_path):
     mode = request.param
     is_bind = mode.startswith('bind')
-    proto = 'bind_tcp' if is_bind else 'tls_tcp' if mode == 'tls' else 'tcp'
+    proto = 'bind_tcp' if is_bind else 'mtls_tcp' if mode == 'mtls' else 'tcp'
     events = Events()
     db = RchDatabase(str(tmp_path / 'rch.db'))
     artifacts = CatalogArtifacts(db, tmp_path / 'web' / 'artifacts')
@@ -103,6 +103,21 @@ def environment(request, monkeypatch, tmp_path):
     transfers = TransferService(events, db)
     tcp = server_transport.TcpTransferTransport(transfers, artifacts, tokens, events)
     transfers.tcp_transport = tcp
+    store = None
+    if mode in ('mtls', 'bind-mtls'):
+        if shutil.which('openssl') is None:
+            pytest.skip('OpenSSL is required for the mTLS test')
+        store = IdentityStore(tmp_path / 'identities')
+        store.initialize()
+        issued = store.create_client('file transfer Client')
+        install = tmp_path / 'installed'
+        install.mkdir()
+        with zipfile.ZipFile(store.download(issued['id'])) as archive:
+            archive.extractall(install)
+        if os.name == 'posix':
+            (install / 'client.key').chmod(0o600)
+        monkeypatch.setitem(RUNTIME_CONFIG, 'identity_dir', str(install))
+        tcp.identity_store = store
     server = SimpleNamespace(web_service=SimpleNamespace(transfer_api=SimpleNamespace(transfer_service=transfers)))
     session = SimpleNamespace(session_info=SimpleNamespace(client_id='client-1', machine_id='machine-1',
                                                            hostname='localhost', addr='127.0.0.1'),
@@ -118,31 +133,28 @@ def environment(request, monkeypatch, tmp_path):
     server_main = RCHSocket()
     server_main.socket.close()
     monkeypatch.setattr(runtime_config, 'FILE_TRANSFER_MODE', FileTransferMode.TCP_STREAMING.value)
-    monkeypatch.setitem(RUNTIME_CONFIG, 'server_transport', 'tcp' if is_bind else proto)
+    transport = 'mtls_tcp' if mode == 'bind-mtls' else 'tcp' if is_bind else proto
+    monkeypatch.setitem(RUNTIME_CONFIG, 'server_transport', transport)
     if is_bind:
-        listener = BindListener({'connection_mode': 'bind', 'bind_host': '127.0.0.1', 'bind_port': listener_port})
+        listener = BindListener({'connection_mode': 'bind', 'bind_host': '127.0.0.1',
+                                 'bind_port': listener_port, 'server_transport': transport,
+                                 'identity_dir': RUNTIME_CONFIG.get('identity_dir', '')})
         listener.start()
         session.bind_dial_endpoint = ('127.0.0.1', listener_port)
+        session.bind_transport = transport
         server_main.socket = socket.create_connection(session.bind_dial_endpoint, timeout=5)
+        if store:
+            server_main.socket = store.context(server_side=False).wrap_socket(server_main.socket, server_hostname=None)
+            store.verify_client(server_main.socket.getpeercert(binary_form=True))
         client.socket.close()
         client.socket = listener.accept()
         client.bind_listener = listener
     else:
-        ctx = None
-        if mode == 'tls':
-            import shutil
-            if not shutil.which('openssl'):
-                pytest.skip('OpenSSL is required for the TLS test')
-            cert, key = tmp_path / 'cert.pem', tmp_path / 'key.pem'
-            subprocess.run(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1',
-                            '-subj', '/CN=localhost', '-keyout', str(key), '-out', str(cert)],
-                           check=True, capture_output=True)
-            ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-            ctx.load_cert_chain(str(cert), str(key))
-            fingerprint = hashlib.sha256(ssl.PEM_cert_to_DER_cert(cert.read_text())).hexdigest()
-            monkeypatch.setitem(RUNTIME_CONFIG, 'server_tls_fingerprint', fingerprint)
+        ctx = store.context(server_side=True) if store else None
         listener = ServerListener(server, {'host': '127.0.0.1', 'port': listener_port,
-                                           'id': 'test', 'protocol': proto}, ssl_context=ctx)
+                                           'id': 'test', 'protocol': proto},
+                                  ssl_context=ctx,
+                                  verify_peer=store.verify_client if store else None)
 
         def register_main(sock, addr, *, initial_handshake, **kwargs):
             assert initial_handshake[0]['type'] == 'info'

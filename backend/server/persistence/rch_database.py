@@ -10,6 +10,7 @@ SAVED_BIND_TARGETS_SCHEMA = """CREATE TABLE saved_bind_targets (
                 host TEXT NOT NULL COLLATE NOCASE,
                 port INTEGER NOT NULL CHECK(port BETWEEN 1 AND 65535),
                 server_web_base_url TEXT NOT NULL,
+                transport TEXT NOT NULL DEFAULT 'tcp' CHECK(transport IN ('tcp', 'mtls_tcp')),
                 name TEXT NOT NULL DEFAULT '',
                 machine_id TEXT NOT NULL DEFAULT '',
                 hostname TEXT NOT NULL DEFAULT '',

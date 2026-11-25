@@ -31,12 +31,14 @@ class BindConnector:
         session = self._sessions.get(endpoint)
         return session if session is not None and session in self.server.connections else None
 
-    def connect(self, host, port, *, server_web_base_url=''):
-        session, _ = self.connect_with_status(host, port, server_web_base_url=server_web_base_url)
+    def connect(self, host, port, *, server_web_base_url='', transport='tcp'):
+        session, _ = self.connect_with_status(host, port, server_web_base_url=server_web_base_url, transport=transport)
         return session
 
-    def connect_with_status(self, host, port, *, server_web_base_url=''):
+    def connect_with_status(self, host, port, *, server_web_base_url='', transport='tcp'):
         host, port = self._endpoint(host, port)
+        if transport not in ('tcp', 'mtls_tcp'):
+            raise ValueError('Unknown Bind transport')
         announced_url = validate_web_origin(server_web_base_url) if server_web_base_url else ''
         endpoint = (host.lower(), port)
         with self._lock:
@@ -44,16 +46,18 @@ class BindConnector:
                 raise RuntimeError('Connection already in progress')
             active = self._current_session(endpoint)
             if active is not None:
+                if getattr(active, 'bind_transport', 'tcp') != transport:
+                    raise ValueError('Connected Bind transport does not match request')
                 return active, True
             self._inflight.add(endpoint)
             deadline = self._reconnect_until.pop(endpoint, 0)
         try:
-            return self._dial(host, port, announced_url, deadline), False
+            return self._dial(host, port, announced_url, deadline, transport=transport), False
         finally:
             with self._lock:
                 self._inflight.discard(endpoint)
 
-    def _dial(self, host, port, announced_url, deadline, *, target_id=''):
+    def _dial(self, host, port, announced_url, deadline, *, target_id='', transport='tcp'):
         endpoint = (host.lower(), port)
         # The Client may still be releasing the previous accepted session
         # when the operator immediately clicks Connect again. Wait briefly
@@ -62,11 +66,14 @@ class BindConnector:
             sock = None
             try:
                 sock = socket.create_connection((host, port), timeout=5)
+                if transport == 'mtls_tcp':
+                    sock = self.server.listener_manager.identities.wrap_outbound_socket(sock)
                 session = self._acceptor.accept_session(
                     sock, sock.getpeername(), protocol='bind_tcp',
                     strict_registration=True, raise_on_error=True,
                     initialize_session=lambda session: (setattr(session, 'server_web_base_url', announced_url),
                                                         setattr(session, 'bind_dial_endpoint', (host, port)),
+                                                        setattr(session, 'bind_transport', transport),
                                                         setattr(session, 'saved_bind_target_id', target_id)),
                 )
                 with self._lock:
@@ -104,6 +111,7 @@ class BindConnector:
                 raise RuntimeError('Connection already in progress')
             announced_url = session.server_web_base_url
             target_id = getattr(session, 'saved_bind_target_id', '')
+            transport = getattr(session, 'bind_transport', 'tcp')
             self._inflight.add(endpoint)
             if target_id:
                 self._reconnecting_targets.add(target_id)
@@ -117,7 +125,7 @@ class BindConnector:
                     raise RuntimeError('Previous connection is still closing; try Connect again')
                 time.sleep(0.05)
             return self._dial(host, port, announced_url, time.monotonic() + 2.0,
-                              target_id=target_id)
+                              target_id=target_id, transport=transport)
         finally:
             with self._lock:
                 self._inflight.discard(endpoint)

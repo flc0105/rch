@@ -270,35 +270,37 @@ def test_bind_normal_session_is_not_tunnel_after_enable_or_disable(environment, 
     assert env.listener._tunnel_handler is None
 
 
-def test_tls_shared_listener_and_pinned_client_socket(tmp_path, target, monkeypatch):
-    """Extra Tunnel Sockets honor the same TLS certificate pin as the RCH session."""
-    import hashlib
+def test_mtls_shared_listener_and_revoked_client_socket(tmp_path, target, monkeypatch):
+    """Independent Tunnel sockets must authenticate before the greeting, including after revoke."""
+    import os
     import shutil
-    import ssl
-    import subprocess
+    import zipfile
+    from server.runtime.identity_store import IdentityStore
     if shutil.which('openssl') is None:
-        pytest.skip('openssl executable not available for test certificate')
-    pem = tmp_path / 'cert.pem'
-    key = tmp_path / 'key.pem'
-    subprocess.run(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes',
-                    '-days', '1', '-subj', '/CN=localhost', '-keyout', str(key),
-                    '-out', str(pem)], check=True, capture_output=True)
-    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-    context.load_cert_chain(str(pem), str(key))
-    fingerprint = hashlib.sha256(ssl.PEM_cert_to_DER_cert(pem.read_text())).hexdigest()
+        pytest.skip('OpenSSL is required for the mTLS tunnel test')
+    store = IdentityStore(tmp_path / 'identities')
+    store.initialize()
+    issued = store.create_client('tunnel Client')
+    install = tmp_path / 'client-identity'
+    install.mkdir()
+    with zipfile.ZipFile(store.download(issued['id'])) as bundle:
+        bundle.extractall(install)
+    if os.name == 'posix':
+        (install / 'client.key').chmod(0o600)
     port = unused_port()
     listener = ServerListener(object(), {'host': '127.0.0.1', 'port': port,
-                                         'id': 'tls-test', 'protocol': 'tls_tcp'}, ssl_context=context)
+                                         'id': 'mtls-test', 'protocol': 'mtls_tcp'},
+                              ssl_context=store.context(server_side=True), verify_peer=store.verify_client)
     listener.start()
     monkeypatch.setitem(RUNTIME_CONFIG, 'server_host', '127.0.0.1')
     monkeypatch.setitem(RUNTIME_CONFIG, 'server_port', port)
-    monkeypatch.setitem(RUNTIME_CONFIG, 'server_transport', 'tls_tcp')
-    monkeypatch.setitem(RUNTIME_CONFIG, 'server_tls_fingerprint', fingerprint)
+    monkeypatch.setitem(RUNTIME_CONFIG, 'server_transport', 'mtls_tcp')
+    monkeypatch.setitem(RUNTIME_CONFIG, 'identity_dir', str(install))
     client_adapter._runtime = None
-    session = SimpleNamespace(listener_id='tls-test', listener_protocol='tls_tcp',
+    session = SimpleNamespace(listener_id='mtls-test', listener_protocol='mtls_tcp',
                               session_info=SimpleNamespace(client_id=CLIENT_ID))
     manager = SimpleNamespace(running_listener=lambda name: listener)
-    server = SimpleNamespace(database=RchDatabase(str(tmp_path / 'tls.sqlite')),
+    server = SimpleNamespace(database=RchDatabase(str(tmp_path / 'mtls.sqlite')),
                              get_target_connection_by_client_id=lambda _: session,
                              listener_manager=manager)
     service = TunnelInstanceService(server)
@@ -311,11 +313,11 @@ def test_tls_shared_listener_and_pinned_client_socket(tmp_path, target, monkeypa
         front = unused_port()
         service.create(CLIENT_ID, 'secure', mapping('client', front, target))
         assert service.start(CLIENT_ID, 'secure', Remote())['status'] == 'running'
-        assert urlopen(f'http://127.0.0.1:{front}/tls').read() == b'RCH:/tls'
+        assert urlopen(f'http://127.0.0.1:{front}/mtls').read() == b'RCH:/mtls'
         service.stop(CLIENT_ID, 'secure', Remote())
         assert listener._tunnel_handler is None
-        monkeypatch.setitem(RUNTIME_CONFIG, 'server_tls_fingerprint', '0' * 64)
-        with pytest.raises(RuntimeError, match='certificate fingerprint mismatch'):
+        store.revoke(issued['id'])
+        with pytest.raises((RuntimeError, OSError, ConnectionError, TimeoutError)):
             service.start(CLIENT_ID, 'secure', Remote())
         assert listener._tunnel_handler is None
         assert service.status(CLIENT_ID, 'secure')['status'] == 'stopped'

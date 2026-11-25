@@ -121,6 +121,7 @@ class ServerApplicationAssembly:
         self.client_session_token_service = ClientSessionTokenService()
         self.transfer_service.tcp_transport = TcpTransferTransport(
             self.transfer_service, self.artifact_service, self.client_session_token_service, self.event_bus,
+            identity_store=self.server.listener_manager.identities,
             max_upload_bytes=WEB_HTTP_UPLOAD_MAX_BYTES,
             on_artifact_committed=self.server.lifecycle_adapter.bind_transfer_artifact,
         )

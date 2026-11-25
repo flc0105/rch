@@ -1074,7 +1074,7 @@ async removeConnectionPermanently(item) {
     },
 
     isTlsConnection(item) {
-      return item?.listener_protocol === 'tls_tcp'
+      return item?.listener_protocol === 'mtls_tcp' || item?.saved_bind_target?.transport === 'mtls_tcp'
     },
 
     formatAddress(addr, item = null) {

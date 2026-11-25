@@ -33,11 +33,11 @@ def build_request(runtime_config=None):
         'connection_mode': mode,
     }
     if mode == 'bind':
-        payload.update(bind_host=runtime_config['bind_host'], bind_port=runtime_config['bind_port'])
+        payload.update(bind_host=runtime_config['bind_host'], bind_port=runtime_config['bind_port'],
+                       server_transport=str(runtime_config.get('server_transport') or 'tcp'))
     else:
         payload.update(
             server_transport=str(runtime_config.get('server_transport') or 'tcp'),
-            server_tls_fingerprint=str(runtime_config.get('server_tls_fingerprint') or ''),
         )
     return payload
 

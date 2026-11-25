@@ -36,12 +36,13 @@ class Server:
         self.command_adapter.bind_lifecycle_adapter(self.lifecycle_adapter)
 
         self.bind_connector = BindConnector(self)
+        # mTLS identity authority is needed while the Web application is assembled.
+        self.listener_manager = ListenerManager(self)
 
         # composition root:
         # 由 Server 负责触发应用层装配，再拿到 Facade。
         self.web_service = ServerWebService.from_server(self)
 
-        self.listener_manager = ListenerManager(self)
         self.heartbeat_runner = ServerHeartbeatRunner(self)
         self.command_shell = ServerCommandShell(self)
 

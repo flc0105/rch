@@ -14,8 +14,8 @@ class Connector:
             os_type='macOS', os_ver='13', integrity='User',
         ))
 
-    def connect_with_status(self, host, port, *, server_web_base_url=''):
-        self.calls.append(('connect', host, port, server_web_base_url))
+    def connect_with_status(self, host, port, *, server_web_base_url='', transport='tcp'):
+        self.calls.append(('connect', host, port, server_web_base_url, transport))
         return self.session, len(self.calls) > 1
 
     def disconnect(self, client_id):
@@ -38,8 +38,8 @@ def test_bind_web_api_delegates_and_persists_target_without_duplicates(tmp_path)
         assert len(api.list_saved_bind_targets()) == 1
         assert api.list_saved_bind_targets()[0]['machine_id'] == 'same-machine'
         assert connector.calls == [
-            ('connect', '192.168.1.25', 9443, 'http://server.test:8085'),
-            ('connect', '192.168.1.25', 9443, 'http://server.test:8085'),
+            ('connect', '192.168.1.25', 9443, 'http://server.test:8085', 'tcp'),
+            ('connect', '192.168.1.25', 9443, 'http://server.test:8085', 'tcp'),
         ]
     finally:
         database.close_thread_connection()

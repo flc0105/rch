@@ -39,7 +39,6 @@ class WebAgentApi:
         server_web_host: str = '',
         source: str = 'manual',
         listener_protocol: str = 'tcp',
-        tls_fingerprint: str = '',
         listener_id: str = '',
         listener_name: str = '',
         connection_mode: str = 'reverse',
@@ -63,7 +62,6 @@ class WebAgentApi:
                 server_web_scheme=server_web_scheme,
                 server_web_host=server_web_host,
                 listener_protocol=listener_protocol,
-                tls_fingerprint=tls_fingerprint,
                 listener_id=listener_id,
                 connection_mode=connection_mode, bind_host=bind_host, bind_port=bind_port,
             )

@@ -52,6 +52,13 @@
           />
         </el-form-item>
 
+        <el-form-item v-if="agentForm.connection_mode === 'bind'" label="Transport">
+          <el-select v-model="agentForm.server_transport" style="width:100%">
+            <el-option label="TCP" value="tcp" />
+            <el-option label="mTLS/TCP" value="mtls_tcp" />
+          </el-select>
+        </el-form-item>
+
         <el-form-item v-if="agentForm.connection_mode === 'bind'" label="Listen IP" required>
           <el-input v-model="agentForm.bind_host" placeholder="0.0.0.0" />
         </el-form-item>
@@ -166,6 +173,7 @@ export default {
         connection_mode: 'reverse',
         bind_host: '0.0.0.0',
         bind_port: 9443,
+        server_transport: 'tcp',
         web_port: 0,
         target_os: 'mac',
         builder: '',

@@ -29,7 +29,7 @@ class PyInstallerBuilder:
                                 web_port: int, target_os: str,
                                 build_id: str = '', build_version: str = 'dev', server_web_scheme: str = 'http',
                                 server_web_host: str = '', listener_protocol: str = 'tcp',
-                                tls_fingerprint: str = '', connection_mode: str = 'reverse',
+                                connection_mode: str = 'reverse',
                                 bind_host: str = '0.0.0.0', bind_port: int = 9443) -> dict:
         current_target = self._get_current_pyinstaller_target()
         if current_target != target_os:
@@ -50,7 +50,7 @@ class PyInstallerBuilder:
             build_version,
             server_web_scheme,
             server_web_host,
-            listener_protocol, tls_fingerprint, connection_mode, bind_host, bind_port,
+            listener_protocol, connection_mode, bind_host, bind_port,
         )
 
         if target_os == 'win':

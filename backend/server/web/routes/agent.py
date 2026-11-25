@@ -75,26 +75,25 @@ def create_agent_blueprint(server_instance):
 
             listener_id = str(payload.get('listener_id') or '').strip()
             listener_protocol = 'tcp'
-            tls_fingerprint = ''
             listener_name = ''
+            if connection_mode == 'bind':
+                listener_protocol = str(payload.get('server_transport') or 'tcp').strip()
+                server_instance.listener_manager.validate_transport_build(listener_protocol, builder)
             if connection_mode == 'bind' and listener_id:
                 raise ValueError('Bind Agent does not use a Server listener')
             if source == 'update' and connection_mode == 'reverse':
                 settings = server_instance.listener_manager.update_build_settings(
                     str(payload.get('server_transport') or 'tcp').strip(),
-                    str(payload.get('server_tls_fingerprint') or '').strip().lower(),
                     builder,
                     listener_id,
                 )
                 listener_id = settings['listener_id']
                 listener_name = settings['listener_name']
                 listener_protocol = settings['listener_protocol']
-                tls_fingerprint = settings['tls_fingerprint']
             elif listener_id:
                 settings = server_instance.listener_manager.build_settings(listener_id, server_port, builder)
                 listener_name = server_instance.listener_manager.get(listener_id)['name']
                 listener_protocol = settings['listener_protocol']
-                tls_fingerprint = settings['tls_fingerprint']
 
             result = agent_api.build_agent(
                 server_host,
@@ -107,7 +106,6 @@ def create_agent_blueprint(server_instance):
                 server_web_host,
                 source,
                 listener_protocol=listener_protocol,
-                tls_fingerprint=tls_fingerprint,
                 listener_id=listener_id,
                 listener_name=listener_name,
                 connection_mode=connection_mode, bind_host=bind_host, bind_port=bind_port,

@@ -16,11 +16,12 @@ from server.application.artifact.artifact_events import publish_artifact_created
 
 
 class TcpTransferTransport:
-    def __init__(self, transfers, artifacts, tokens, event_bus, *, max_upload_bytes=None, on_artifact_committed=None):
+    def __init__(self, transfers, artifacts, tokens, event_bus, *, identity_store=None, max_upload_bytes=None, on_artifact_committed=None):
         self.transfers = transfers
         self.artifacts = artifacts
         self.tokens = tokens
         self.event_bus = event_bus
+        self.identity_store = identity_store
         self.max_upload_bytes = max_upload_bytes
         self.on_artifact_committed = on_artifact_committed
         self._lock = threading.RLock()
@@ -115,6 +116,10 @@ class TcpTransferTransport:
             if dial:
                 sock.settimeout(5)
                 sock.connect(session.bind_dial_endpoint)
+                if getattr(session, 'bind_transport', 'tcp') == 'mtls_tcp':
+                    sock = self.identity_store.wrap_outbound_socket(sock)
+                    with self._lock:
+                        self._active[transfer_id] = (session, sock)
                 send_greeting(sock, {'type': DATA_GREETING, 'transfer_id': transfer_id, 'token': token})
             sock.settimeout(IO_TIMEOUT)
             self._checkpoint(transfer_id, session, token)

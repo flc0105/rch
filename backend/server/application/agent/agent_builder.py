@@ -54,7 +54,7 @@ class AgentBuilder:
                     web_port: int, target_os: str = 'mac',
                     builder: str = '', target_arch: str = '',
                     server_web_scheme: str = 'http', server_web_host: str = '',
-                    listener_protocol: str = 'tcp', tls_fingerprint: str = '',
+                    listener_protocol: str = 'tcp',
                     listener_id: str = '', connection_mode: str = 'reverse',
                     bind_host: str = '0.0.0.0', bind_port: int = 9443) -> dict:
         builder = (builder or '').strip().lower()
@@ -76,10 +76,10 @@ class AgentBuilder:
             bind_host = bind_host.strip()
             if type(bind_port) is not int or not 1 <= bind_port <= 65535:
                 raise ValueError('bind_port must be between 1 and 65535')
-            if listener_protocol != 'tcp':
-                raise ValueError('Bind mode uses plain TCP in this release')
+            if listener_protocol not in ('tcp', 'mtls_tcp'):
+                raise ValueError('Bind mode requires TCP or mTLS')
         else:
-            get_listener_protocol(listener_protocol).validate_build(builder, tls_fingerprint)
+            get_listener_protocol(listener_protocol).validate_build(builder)
 
         if builder not in self.SUPPORTED_BUILDERS:
             raise ValueError(f'Unsupported builder: {builder}')
@@ -104,7 +104,6 @@ class AgentBuilder:
             )
             if builder in (AgentBuilderKind.PYTHON.value, AgentBuilderKind.GO.value):
                 common_args['listener_protocol'] = listener_protocol
-                common_args['tls_fingerprint'] = tls_fingerprint
             if builder == AgentBuilderKind.PYTHON.value:
                 common_args.update(connection_mode=connection_mode, bind_host=bind_host, bind_port=bind_port)
             if builder == AgentBuilderKind.GO_LOADER.value:

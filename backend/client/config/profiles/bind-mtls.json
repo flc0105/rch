@@ -1,0 +1,7 @@
+{
+  "connection_mode": "bind",
+  "server_transport": "mtls_tcp",
+  "bind_host": "0.0.0.0",
+  "bind_port": 9443,
+  "identity_dir": ""
+}

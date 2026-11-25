@@ -66,10 +66,8 @@ test('Direction formatting and history Details use the existing persisted direct
   assert.match(history, /formatConnectionDirection\(scope\.row\.connection_direction\)/)
 })
 
-test('listener manager opens the TLS fingerprint in a separate certificate dialog from both lists', () => {
+test('listener manager removes legacy TLS pinning UI', () => {
   assert.doesNotMatch(listeners, /<el-table-column label="TLS Fingerprint"/)
-  assert.equal((listeners.match(/@click="showCertificate\(row\)"/g) || []).length, 2)
-  assert.match(listeners, /selectedCertificate\?\.tls_fingerprint/)
-  assert.match(listeners, /navigator\.clipboard\.writeText\(value\)/)
-  assert.match(listeners, /class="listener-certificate-dialog"/)
+  assert.doesNotMatch(listeners, /showCertificate/)
+  assert.doesNotMatch(listeners, /tls_fingerprint/)
 })

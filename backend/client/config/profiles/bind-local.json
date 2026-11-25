@@ -1,9 +1,0 @@
-{
-  "connection_mode": "bind",
-  "bind_host": "127.0.0.1",
-  "bind_port": 9443,
-  "bind_plaintext_test_only": true,
-  "server_web_scheme": "http",
-  "server_web_host": "127.0.0.1",
-  "server_web_port": 8085
-}

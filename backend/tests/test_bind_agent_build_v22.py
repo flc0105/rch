@@ -57,19 +57,20 @@ def test_bundle_default_mode_and_manual_override(tmp_path, mode):
     assert 'connection-mode must be bind or reverse' in invalid.stderr
 
 
-def test_reverse_tls_bundle_keeps_existing_transport_settings(tmp_path):
+def test_reverse_mtls_bundle_keeps_identity_separate_from_build(tmp_path):
     builder = BundleBuilder(str(ROOT))
     result = builder.build(
         work_dir=str(tmp_path), server_host='192.168.1.10', server_port=9443,
-        web_port=8085, build_id='test-tls', build_version='test-tls',
+        web_port=8085, build_id='test-mtls', build_version='test-mtls',
         target_os='mac', target_arch='arm64', connection_mode='reverse',
-        listener_protocol='tls_tcp', tls_fingerprint='a' * 64,
+        listener_protocol='mtls_tcp',
     )
     with zipfile.ZipFile(result['file_path']) as archive:
         settings = json.loads(archive.read('client/config/profiles/agent.json'))
     assert settings['connection_mode'] == 'reverse'
-    assert settings['server_transport'] == 'tls_tcp'
-    assert settings['server_tls_fingerprint'] == 'a' * 64
+    assert settings['server_transport'] == 'mtls_tcp'
+    assert 'server_tls_fingerprint' not in settings
+    assert 'client.key' not in archive.namelist()
 
 
 def test_bootstrap_passes_mode_to_build_request_and_starts_without_flags():

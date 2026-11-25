@@ -28,7 +28,7 @@ def create_connections_blueprint(server_instance):
             body = request.get_json(silent=True) or {}
             return connection_api.save_bind_target(
                 body.get('host'), body.get('port'), body.get('server_web_base_url'),
-                name=body.get('name') or '',
+                name=body.get('name') or '', transport=body.get('transport') or 'tcp',
             )
         return responder.json_endpoint(_execute, default_error_status=400)
 
@@ -38,7 +38,7 @@ def create_connections_blueprint(server_instance):
             body = request.get_json(silent=True) or {}
             return connection_api.save_bind_target(
                 body.get('host'), body.get('port'), body.get('server_web_base_url'),
-                name=body.get('name') or '', target_id=target_id,
+                name=body.get('name') or '', transport=body.get('transport') or 'tcp', target_id=target_id,
             )
         return responder.json_endpoint(_execute, default_error_status=400)
 
@@ -56,6 +56,7 @@ def create_connections_blueprint(server_instance):
             announced = body.get('server_web_base_url') or default_bind_web_url(request.host_url)
             return connection_api.connect_bind_client(
                 body.get('host'), body.get('port'), announced, name=body.get('name') or '',
+                transport=body.get('transport') or 'tcp',
             )
 
         return responder.json_endpoint(_execute, default_error_status=400)

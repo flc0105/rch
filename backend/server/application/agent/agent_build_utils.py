@@ -38,13 +38,12 @@ def copy_source_paths(source_dir: str, relative_paths, dst: str):
 
 def inject_python_client_config(source_dir: str, client_dir: str, server_host: str, server_port: int, web_port: int,
                    build_version: str, server_web_scheme: str = 'http', server_web_host: str = '',
-                   listener_protocol: str = 'tcp', tls_fingerprint: str = '',
+                   listener_protocol: str = 'tcp',
                    connection_mode: str = 'reverse', bind_host: str = '0.0.0.0', bind_port: int = 9443):
     """Stage built-agent defaults without replacing the source configuration loader."""
     revision_manifest = build_client_revision_manifest(source_dir)
     profile = {
         'server_transport': listener_protocol,
-        'server_tls_fingerprint': tls_fingerprint,
         **({
             'server_host': server_host,
             'server_port': server_port,

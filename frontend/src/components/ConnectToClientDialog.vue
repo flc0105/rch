@@ -10,6 +10,12 @@
       <el-form-item label="Port">
         <el-input v-model.number="form.port" type="number" min="1" max="65535" />
       </el-form-item>
+      <el-form-item label="Transport">
+        <el-select v-model="form.transport" style="width:100%">
+          <el-option label="TCP" value="tcp" />
+          <el-option label="mTLS/TCP" value="mtls_tcp" />
+        </el-select>
+      </el-form-item>
       <el-form-item label="Server Web URL">
         <el-input v-model="form.serverWebBaseUrl" placeholder="http://server:8085" autocomplete="off" />
       </el-form-item>
@@ -30,7 +36,7 @@ export default {
   name: 'ConnectToClientDialog',
   emits: ['connected', 'saved'],
   data() {
-    return { visible: false, connecting: false, targetId: '', form: { host: '', port: 9443, serverWebBaseUrl: '', name: '' } }
+    return { visible: false, connecting: false, targetId: '', form: { host: '', port: 9443, serverWebBaseUrl: '', name: '', transport: 'tcp' } }
   },
   methods: {
     async open(target = null) {
@@ -41,6 +47,7 @@ export default {
         port: Number(target?.port || 9443),
         serverWebBaseUrl: String(target?.server_web_base_url || ''),
         name: String(target?.name || ''),
+        transport: String(target?.transport || 'tcp'),
       }
       if (target) return
       try {
@@ -70,7 +77,7 @@ export default {
       this.connecting = true
       try {
         await saveBindTarget(values.host, values.port, values.serverWebBaseUrl,
-          this.form.name.trim(), this.targetId)
+          this.form.name.trim(), this.targetId, this.form.transport)
         this.visible = false
         ElMessage.success('Connection saved')
         this.$emit('saved')
@@ -94,7 +101,7 @@ export default {
       }
       this.connecting = true
       try {
-        const result = await connectToClient(host, port, serverWebBaseUrl, this.form.name?.trim() || '')
+        const result = await connectToClient(host, port, serverWebBaseUrl, this.form.name?.trim() || '', this.form.transport)
         this.visible = false
         if (result.status === 'already_connected') {
           ElMessage.info('Client already connected')

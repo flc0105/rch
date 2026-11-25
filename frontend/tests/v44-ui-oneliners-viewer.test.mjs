@@ -21,7 +21,7 @@ test('connect form keeps Server Web URL label on a single line', () => {
   assert.match(connect, /\.bind-connect-dialog \.el-form-item__label \{ white-space: nowrap; \}/)
 })
 
-test('reverse One-liner omits mode but Bind includes it, keeping TLS listener selection', () => {
+test('reverse One-liner omits mode but Bind includes it, keeping mTLS listener selection', () => {
   const cmp = component(oneliner)
   const ctx = { selectedListenerId: 'tcp-default', listeners: [{ id: 'tcp-default' }, { id: 'tls1' }],
     serverForm: { serverHost: '192.0.2.2', serverPort: '9999', webPort: '8085' },
@@ -38,14 +38,12 @@ test('reverse One-liner omits mode but Bind includes it, keeping TLS listener se
   assert.doesNotMatch(bind, /server_port/)
 })
 
-test('certificate action is available only for TLS listeners, without fingerprint table column', () => {
+test('mTLS listener manager has no legacy certificate pinning action', () => {
   assert.doesNotMatch(listener, /<el-table-column label="TLS Fingerprint"/)
-  assert.equal((listener.match(/v-if="row.protocol === 'tls_tcp'"/g) || []).length, 2)
+  assert.doesNotMatch(listener, /showCertificate|certificateVisible|tls_fingerprint|row.protocol === 'tls_tcp'/)
   const cmp = component(listener, { AddListenerDialog: {} })
-  const instance = cmp.data()
-  cmp.methods.showCertificate.call(instance, { tls_fingerprint: 'abc123' })
-  assert.equal(instance.certificateVisible, true)
-  assert.equal(instance.selectedCertificate.tls_fingerprint, 'abc123')
+  assert.deepEqual(Array.from(cmp.data().listeners), [])
+  assert.match(listener, /row.protocol_label/)
 })
 
 test('Quick Actions toolbar matches Remote Files small control typography and 32px height', () => {

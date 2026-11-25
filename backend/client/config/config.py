@@ -14,7 +14,7 @@ DEFAULT_CONFIG = {
     'connection_mode': 'reverse',
     'bind_host': '127.0.0.1',
     'bind_port': 9443,
-    'server_tls_fingerprint': '',
+    'identity_dir': '',
     'server_web_scheme': 'http',
     'server_web_host': '127.0.0.1',
     'server_web_port': 8085,

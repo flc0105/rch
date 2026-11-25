@@ -24,7 +24,6 @@
                 <div class="listener-actions">
                   <el-button size="small" plain @click="toggle(row)">{{ row.status === 'listening' ? 'Stop' : 'Start' }}</el-button>
                   <el-button size="small" type="danger" plain :disabled="row.id === 'tcp-default'" @click="remove(row)">Delete</el-button>
-                  <el-button v-if="row.protocol === 'tls_tcp'" size="small" plain @click="showCertificate(row)">Certificate</el-button>
                 </div>
               </template>
             </el-table-column>
@@ -41,20 +40,10 @@
             <div class="listener-actions">
               <el-button size="small" plain @click="toggle(row)">{{ row.status === 'listening' ? 'Stop' : 'Start' }}</el-button>
               <el-button size="small" type="danger" plain :disabled="row.id === 'tcp-default'" @click="remove(row)">Delete</el-button>
-              <el-button v-if="row.protocol === 'tls_tcp'" size="small" plain @click="showCertificate(row)">Certificate</el-button>
             </div>
           </div>
         </div>
       </div>
-    </el-dialog>
-    <el-dialog v-model="certificateVisible" title="TLS Certificate" width="520px" append-to-body class="listener-certificate-dialog">
-      <div class="listener-certificate-label">SHA-256 fingerprint</div>
-      <code v-if="selectedCertificate?.tls_fingerprint" class="listener-certificate-value">{{ selectedCertificate.tls_fingerprint }}</code>
-      <p v-else class="listener-certificate-error">{{ selectedCertificate?.fingerprint_error || 'Fingerprint unavailable' }}</p>
-      <template #footer>
-        <el-button @click="certificateVisible = false">Close</el-button>
-        <el-button v-if="selectedCertificate?.tls_fingerprint" type="primary" @click="copyFingerprint(selectedCertificate.tls_fingerprint)">Copy</el-button>
-      </template>
     </el-dialog>
     <AddListenerDialog ref="addDialog" :protocols="protocols" @created="load" />
 </template>
@@ -67,18 +56,9 @@ import AddListenerDialog from './AddListenerDialog.vue'
 export default {
   name: 'ListenerManagerDialog',
   components: { AddListenerDialog },
-  data() { return { visible: false, loading: false, listeners: [], protocols: [], certificateVisible: false, selectedCertificate: null } },
+  data() { return { visible: false, loading: false, listeners: [], protocols: [] } },
   methods: {
     async open() { this.visible = true; await this.load() },
-    async copyFingerprint(value) {
-      try {
-        await navigator.clipboard.writeText(value)
-        ElMessage.success('Fingerprint copied')
-      } catch {
-        ElMessage.warning('Select the fingerprint to copy')
-      }
-    },
-    showCertificate(row) { this.selectedCertificate = row; this.certificateVisible = true },
     openAdd() { this.$refs.addDialog.open() },
     async requestResponse(request) {
       const response = await request
@@ -125,10 +105,6 @@ export default {
 .listener-manager-dialog .el-table { width: 100%; }
 .listener-manager-dialog .el-table .cell { padding: 0 8px; }
 .listener-bind { white-space: nowrap; }
-.listener-certificate-dialog.el-dialog { max-width: calc(100vw - 32px); }
-.listener-certificate-label { margin-bottom: 10px; color: var(--el-text-color-secondary); font-size: 13px; }
-.listener-certificate-value { display: block; padding: 12px; border-radius: 8px; background: var(--el-fill-color-light); overflow-wrap: anywhere; user-select: text; font-size: 13px; line-height: 1.7; }
-.listener-certificate-error { overflow-wrap: anywhere; }
 .listener-actions { display: flex; justify-content: center; align-items: center; gap: 7px; white-space: nowrap; }
 .listener-actions .el-button + .el-button { margin-left: 0; }
 .listener-actions .el-button { min-width: 58px; padding-left: 10px; padding-right: 10px; }

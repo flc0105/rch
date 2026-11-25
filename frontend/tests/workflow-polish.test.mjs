@@ -23,10 +23,10 @@ test('manual input and Save keep the typed endpoint', async () => {
   })
   const o = instance(c, {$emit: (...args) => events.push(args)})
   o.visible = true
-  o.form = {host:' example.test ',port:'9555',name:' Test ',serverWebBaseUrl:'http://localhost:8085'}
+  o.form = {host:' example.test ',port:'9555',name:' Test ',serverWebBaseUrl:'http://localhost:8085',transport:'tcp'}
   o.targetId = 'saved-target'
   await o.save()
-  assert.deepEqual(calls,[['example.test',9555,'http://localhost:8085','Test','saved-target']])
+  assert.deepEqual(calls,[['example.test',9555,'http://localhost:8085','Test','saved-target','tcp']])
   assert.deepEqual(events,[['saved']]); assert.equal(o.visible,false)
   o.form.port = '65536'
   await o.save()

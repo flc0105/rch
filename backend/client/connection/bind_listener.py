@@ -9,6 +9,7 @@ import threading
 from contextlib import contextmanager
 
 from client.connection.file_connection_slot import FileConnectionSlot
+from client.connection.mtls import create_context
 from core.protocol.auxiliary import close_socket, receive_greeting
 from core.protocol.file_stream import DATA_GREETING
 
@@ -32,6 +33,10 @@ class BindListener:
         if type(port) is not int or not 1 <= port <= 65535:
             raise ValueError('bind_port must be an integer between 1 and 65535')
         self.address = (self.host, port)
+        self.transport = str(config.get('server_transport') or 'tcp')
+        if self.transport not in ('tcp', 'mtls_tcp'):
+            raise ValueError('Unknown Bind transport')
+        self.ssl_context = create_context(config, server_side=True) if self.transport == 'mtls_tcp' else None
         self._lock = threading.Lock()
         self._accepting = True
         self._occupied = False
@@ -83,6 +88,15 @@ class BindListener:
                 if not self._stop.is_set():
                     logger.exception('Bind TCP listener stopped unexpectedly')
                 break
+            if self.ssl_context is not None:
+                try:
+                    conn.settimeout(5)
+                    conn = self.ssl_context.wrap_socket(conn, server_side=True)
+                    conn.settimeout(None)
+                except Exception as exc:
+                    logger.warning('Bind mTLS handshake failed from %s: %s', peer, exc)
+                    conn.close()
+                    continue
             handler = self._tunnel_handler
             if handler is not None:
                 handler.dispatch_bind(self, conn)
