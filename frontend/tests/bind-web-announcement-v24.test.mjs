@@ -23,7 +23,6 @@ test('Bind Connect loads Server advertised default and sends per-connection over
   const sent = []
   const cmp = getDialogComponent({
     getBindConnectionSettings: async () => ({ server_web_base_url: 'http://server:8085' }),
-    getBindDiscoveryInterfaces: async () => ({ interfaces: [] }),
     connectToClient: async (...args) => { sent.push(args); return { client_id: 'new-client' } },
     ElMessage: { success() {}, error(e) { throw new Error(e) }, warning(msg) { throw new Error(msg) } },
   })
@@ -40,9 +39,9 @@ test('Bind Connect loads Server advertised default and sends per-connection over
   assert.deepEqual(Array.from(emitted[0]), ['connected', 'new-client'])
 })
 
-test('Bind Agent Builder hides Web inputs, Reverse keeps them', () => {
-  assert.match(build, /v-if="agentForm.connection_mode !== 'bind'" label="Server IP"/)
-  assert.match(build, /v-if="agentForm.connection_mode !== 'bind'" label="Web Port"/)
+test('Bind Python and Go Client hide Web inputs; Go Loader needs a download endpoint', () => {
+  assert.match(build, /v-if="agentForm.connection_mode !== 'bind' \|\| isGoLoaderBuilder" label="Server IP"/)
+  assert.match(build, /v-if="agentForm.connection_mode !== 'bind' \|\| isGoLoaderBuilder" label="Web Port"/)
   assert.match(build, /delete payload.server_web_host/)
   assert.match(build, /delete payload.web_port/)
   assert.match(build, /v-if="agentForm.connection_mode === 'bind'" label="Listen Port"/)

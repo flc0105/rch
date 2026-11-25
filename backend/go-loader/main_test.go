@@ -82,3 +82,44 @@ func TestBundleBuildPayloadListenerSelection(t *testing.T) {
 		t.Fatal("existing bundle fields changed")
 	}
 }
+
+func TestLoaderBuildPayloadFourModes(t *testing.T) {
+	for _, mode := range []string{"reverse", "bind"} {
+		for _, transport := range []string{"tcp", "mtls_tcp"} {
+			t.Run(mode+"/"+transport, func(t *testing.T) {
+				payload := bundleBuildPayloadFor(mode, transport, "0.0.0.0", 19445, "listener-abc")
+				if payload["builder"] != "python" {
+					t.Fatal("Go loader must build Python Client")
+				}
+				if mode == "reverse" {
+					if payload["listener_id"] != "listener-abc" {
+						t.Fatal("Reverse lost Listener ID")
+					}
+					if _, ok := payload["server_transport"]; ok {
+						t.Fatal("Reverse sent redundant transport")
+					}
+					if _, ok := payload["bind_port"]; ok {
+						t.Fatal("Reverse sent Bind parameters")
+					}
+				} else {
+					if payload["bind_host"] != "0.0.0.0" || payload["bind_port"] != 19445 {
+						t.Fatal("Bind endpoint missing")
+					}
+					if _, ok := payload["listener_id"]; ok {
+						t.Fatal("Bind sent Listener ID")
+					}
+					if _, ok := payload["server_host"]; ok {
+						t.Fatal("Bind sent Server socket host")
+					}
+					_, sent := payload["server_transport"]
+					if sent != (transport == "mtls_tcp") {
+						t.Fatalf("incorrect transport field: %#v", payload)
+					}
+					if transport == "mtls_tcp" && payload["server_transport"] != "mtls_tcp" {
+						t.Fatal("wrong mTLS transport")
+					}
+				}
+			})
+		}
+	}
+}

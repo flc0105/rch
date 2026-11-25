@@ -18,18 +18,6 @@ def create_connections_blueprint(server_instance):
         from server.application.connection.bind_web_endpoint import default_bind_web_url
         return responder.ok({'server_web_base_url': default_bind_web_url(request.host_url)})
 
-    @blueprint.get('/api/connections/bind/discovery/interfaces')
-    def get_bind_discovery_interfaces():
-        return responder.json_endpoint(connection_api.list_bind_discovery_interfaces)
-
-    @blueprint.post('/api/connections/bind/discovery')
-    def discover_bind_clients():
-        body = request.get_json(silent=True) or {}
-        return responder.json_endpoint(
-            lambda: connection_api.discover_bind_clients(body.get('interface')),
-            default_error_status=400,
-        )
-
     @blueprint.get('/api/connections/bind/targets')
     def list_saved_bind_targets():
         return responder.ok(connection_api.list_saved_bind_targets())

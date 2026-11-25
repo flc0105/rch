@@ -470,19 +470,32 @@ func resolveWorkDir() (string, error) {
 }
 
 func bundleBuildPayload(listenerID string) map[string]any {
+	return bundleBuildPayloadFor(config.ConnectionMode, config.ServerTransport, config.BindHost, config.BindPort, listenerID)
+}
+
+func bundleBuildPayloadFor(mode, transport, bindHost string, bindPort int, listenerID string) map[string]any {
 	payload := map[string]any{
-		"server_host":       config.ServerSocketHost,
-		"server_port":       config.ServerSocketPort,
-		"web_port":          config.ServerWebPort,
-		"server_web_scheme": config.ServerWebScheme,
-		"server_web_host":   config.ServerWebHost,
-		"builder":           "python",
-		"target_os":         "",
-		"target_arch":       "",
-		"source":            "loader",
+		"builder":     "python",
+		"target_os":   "",
+		"target_arch": "",
+		"source":      "loader",
 	}
-	if listenerID != "" {
-		payload["listener_id"] = listenerID
+	if mode == "bind" {
+		payload["connection_mode"] = "bind"
+		payload["bind_host"] = bindHost
+		payload["bind_port"] = bindPort
+		if transport != "tcp" {
+			payload["server_transport"] = transport
+		}
+	} else {
+		payload["server_host"] = config.ServerSocketHost
+		payload["server_port"] = config.ServerSocketPort
+		payload["web_port"] = config.ServerWebPort
+		payload["server_web_scheme"] = config.ServerWebScheme
+		payload["server_web_host"] = config.ServerWebHost
+		if listenerID != "" {
+			payload["listener_id"] = listenerID
+		}
 	}
 	return payload
 }

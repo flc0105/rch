@@ -31,10 +31,8 @@ class MtlsTcpListenerProtocol(TcpListenerProtocol):
     name = 'mtls_tcp'
     label = 'mTLS/TCP'
     build_label = 'mTLS/TCP'
-    # Go binary mTLS is not supported until its transport uses local identities.
-    supported_builders = (AgentBuilderKind.PYTHON.value, AgentBuilderKind.GO_LOADER.value)
     notice = 'Initialize Server identity and provision the Client identity before connecting.'
-    builder_warning = 'mTLS requires a Python Client with installed Identity files.'
+    builder_warning = 'mTLS requires installed Client Identity files.'
 
     def create_listener(self, server, config, identity_store):
         from server.runtime.server_listener import ServerListener

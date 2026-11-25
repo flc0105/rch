@@ -1,8 +1,12 @@
 package executor
 
 import (
+	"client-go/config"
 	"context"
+	"fmt"
+	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -25,6 +29,9 @@ type Session struct {
 	cwdMu                sync.RWMutex
 	independent          map[int]*independentExecution
 	executionClosed      bool
+	webMu                sync.RWMutex
+	webBaseURL           string
+	webEndpointRequired  bool
 }
 
 func NewSession(sock *protocol.RATSocket, clientID string) *Session {
@@ -47,6 +54,44 @@ func NewSession(sock *protocol.RATSocket, clientID string) *Session {
 	}
 	session.controlHandlers = newControlHandlers()
 	return session
+}
+
+// RequireSessionWebEndpoint makes Bind wait for the Server's session_config.
+// Reverse keeps its build-time Web endpoint.
+func (s *Session) RequireSessionWebEndpoint() {
+	s.webMu.Lock()
+	defer s.webMu.Unlock()
+	s.webEndpointRequired = true
+	s.webBaseURL = ""
+}
+
+func (s *Session) SetServerWebBaseURL(raw string) error {
+	endpoint, err := url.Parse(raw)
+	if err != nil || endpoint == nil || (endpoint.Scheme != "http" && endpoint.Scheme != "https") ||
+		endpoint.Hostname() == "" || endpoint.User != nil || endpoint.Path != "" ||
+		endpoint.RawQuery != "" || endpoint.Fragment != "" || strings.TrimSpace(raw) != raw {
+		return fmt.Errorf("invalid Server Web URL")
+	}
+	if port := endpoint.Port(); port != "" {
+		value, err := strconv.Atoi(port)
+		if err != nil || value < 1 || value > 65535 {
+			return fmt.Errorf("invalid Server Web URL port")
+		}
+	}
+	s.webMu.Lock()
+	defer s.webMu.Unlock()
+	s.webBaseURL = strings.TrimRight(raw, "/")
+	s.webEndpointRequired = true
+	return nil
+}
+
+func (s *Session) ServerWebBaseURL() string {
+	s.webMu.RLock()
+	defer s.webMu.RUnlock()
+	if s.webEndpointRequired {
+		return s.webBaseURL
+	}
+	return config.UPLOAD_BASE_URL
 }
 
 // Shell commands are the only cancellable execution mode in the minimal Go Client.

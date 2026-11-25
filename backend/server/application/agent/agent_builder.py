@@ -69,8 +69,6 @@ class AgentBuilder:
         if connection_mode not in ('reverse', 'bind'):
             raise ValueError('connection_mode must be reverse or bind')
         if connection_mode == 'bind':
-            if builder != AgentBuilderKind.PYTHON.value:
-                raise ValueError('Bind mode supports Python Agent only')
             if not isinstance(bind_host, str) or not bind_host.strip():
                 raise ValueError('bind_host is required')
             bind_host = bind_host.strip()
@@ -102,9 +100,8 @@ class AgentBuilder:
                 server_web_scheme=server_web_scheme,
                 server_web_host=server_web_host,
             )
-            if builder in (AgentBuilderKind.PYTHON.value, AgentBuilderKind.GO.value):
+            if builder in (AgentBuilderKind.PYTHON.value, AgentBuilderKind.GO.value, AgentBuilderKind.GO_LOADER.value):
                 common_args['listener_protocol'] = listener_protocol
-            if builder == AgentBuilderKind.PYTHON.value:
                 common_args.update(connection_mode=connection_mode, bind_host=bind_host, bind_port=bind_port)
             if builder == AgentBuilderKind.GO_LOADER.value:
                 common_args['listener_id'] = listener_id

@@ -15,15 +15,18 @@
         </div>
       </div>
 
-      <div class="one-liners-config-row">
-        <label class="one-liners-config-field">
+      <div
+        class="one-liners-config-row"
+        :class="connectionMode === 'bind' ? 'config-bind' : listeners.length ? 'config-reverse' : 'config-reverse-manual'"
+      >
+        <label class="one-liners-config-field config-connection">
           <span>Connection</span>
           <el-radio-group v-model="connectionMode" size="small">
             <el-radio label="reverse">Reverse</el-radio>
             <el-radio label="bind">Bind</el-radio>
           </el-radio-group>
         </label>
-        <label v-if="connectionMode === 'reverse' && listeners.length" class="one-liners-config-field">
+        <label v-if="connectionMode === 'reverse' && listeners.length" class="one-liners-config-field config-listener">
           <span>Listener</span>
           <el-select v-model="selectedListenerId" size="small" style="width: 100%" @change="onListenerChange">
             <el-option v-for="listener in listeners" :key="listener.id" :value="listener.id"
@@ -31,8 +34,8 @@
           </el-select>
         </label>
 
-        <label class="one-liners-config-field">
-          <span>{{ connectionMode === 'bind' ? 'Bootstrap Web IP' : 'Server IP' }}</span>
+        <label class="one-liners-config-field config-server-host">
+          <span>Server IP</span>
           <el-input
             v-model="serverForm.serverHost"
             size="small"
@@ -40,32 +43,32 @@
           />
         </label>
 
-        <label v-if="connectionMode === 'reverse'" class="one-liners-config-field">
+        <label v-if="connectionMode === 'reverse'" class="one-liners-config-field config-server-port">
           <span>Port</span>
           <el-input v-model="serverForm.serverPort" size="small" placeholder="9999" />
         </label>
 
-        <label class="one-liners-config-field">
-          <span>{{ connectionMode === 'bind' ? 'Bootstrap Web Port' : 'Web port' }}</span>
+        <label class="one-liners-config-field config-web-port">
+          <span>Web Port</span>
           <el-input
             v-model="serverForm.webPort"
             size="small"
             placeholder="8085"
           />
         </label>
-        <label v-if="connectionMode === 'bind'" class="one-liners-config-field">
+        <label v-if="connectionMode === 'bind'" class="one-liners-config-field config-transport">
           <span>Transport</span>
           <el-select v-model="bindTransport" size="small" style="width: 100%">
             <el-option label="TCP" value="tcp" />
             <el-option label="mTLS/TCP" value="mtls_tcp" />
           </el-select>
         </label>
-        <label v-if="connectionMode === 'bind'" class="one-liners-config-field">
-          <span>Client Listen IP</span>
+        <label v-if="connectionMode === 'bind'" class="one-liners-config-field config-bind-host">
+          <span>Listen IP</span>
           <el-input v-model="bindHost" size="small" placeholder="0.0.0.0" />
         </label>
-        <label v-if="connectionMode === 'bind'" class="one-liners-config-field">
-          <span>Client Listen Port</span>
+        <label v-if="connectionMode === 'bind'" class="one-liners-config-field config-bind-port">
+          <span>Listen Port</span>
           <el-input v-model="bindPort" size="small" placeholder="9443" />
         </label>
       </div>
@@ -323,6 +326,7 @@ export default {
 <style scoped>
 .one-liners-body {
   gap: 12px;
+  container-type: inline-size;
 }
 
 .one-liners-intro {
@@ -350,12 +354,113 @@ export default {
 .one-liners-config-row {
   flex: 0 0 auto;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 10px;
+  gap: 8px;
   padding: 10px 12px;
+  align-items: end;
   border: 1px solid rgba(148, 163, 184, 0.18);
   border-radius: 14px;
   background: rgba(248, 250, 252, 0.95);
+}
+
+/* Explicit tracks keep short port inputs compact and give addresses room. */
+.one-liners-config-row.config-bind {
+  grid-template-columns: minmax(132px, 1.1fr) minmax(118px, 1.3fr) minmax(108px, .8fr) minmax(100px, .9fr) minmax(110px, 1.25fr) minmax(104px, .8fr);
+  grid-template-areas: "connection server-host web-port transport bind-host bind-port";
+}
+
+.one-liners-config-row.config-reverse {
+  grid-template-columns: minmax(132px, 1.1fr) minmax(180px, 1.8fr) minmax(126px, 1.3fr) minmax(64px, .6fr) minmax(68px, .6fr);
+  grid-template-areas: "connection listener server-host server-port web-port";
+}
+
+.one-liners-config-row.config-reverse-manual {
+  grid-template-columns: minmax(132px, 1fr) minmax(126px, 2fr) minmax(64px, .65fr) minmax(68px, .65fr);
+  grid-template-areas: "connection server-host server-port web-port";
+}
+
+.config-connection { grid-area: connection; }
+.config-listener { grid-area: listener; }
+.config-server-host { grid-area: server-host; }
+.config-server-port { grid-area: server-port; }
+.config-web-port { grid-area: web-port; }
+.config-transport { grid-area: transport; }
+.config-bind-host { grid-area: bind-host; }
+.config-bind-port { grid-area: bind-port; }
+
+.config-connection :deep(.el-radio-group) {
+  flex-wrap: nowrap;
+  gap: 10px;
+}
+
+.config-connection :deep(.el-radio) {
+  margin-right: 0;
+}
+
+.config-connection :deep(.el-radio__label) {
+  padding-left: 5px;
+}
+
+@container (max-width: 760px) {
+  .one-liners-config-row.config-bind {
+    grid-template-columns: minmax(132px, 1fr) minmax(0, 1.4fr) minmax(108px, .85fr);
+    grid-template-areas:
+      "connection server-host web-port"
+      "transport bind-host bind-port";
+  }
+
+  .one-liners-config-row.config-reverse {
+    grid-template-columns: minmax(132px, 1fr) minmax(0, 1.4fr) minmax(68px, .85fr);
+    grid-template-areas:
+      "connection listener listener"
+      "server-host server-port web-port";
+  }
+
+  .one-liners-config-row.config-reverse-manual {
+    grid-template-columns: minmax(132px, 1fr) minmax(0, 1.4fr);
+    grid-template-areas:
+      "connection server-host"
+      "server-port web-port";
+  }
+}
+
+@container (max-width: 440px) {
+  .one-liners-config-row.config-bind {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-areas:
+      "connection server-host"
+      "web-port transport"
+      "bind-host bind-port";
+  }
+
+  .one-liners-config-row.config-reverse {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-areas:
+      "connection connection"
+      "listener listener"
+      "server-host server-host"
+      "server-port web-port";
+  }
+
+  .one-liners-config-row.config-reverse-manual {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container (max-width: 320px) {
+  .one-liners-config-row.config-bind {
+    grid-template-areas:
+      "connection connection"
+      "server-host web-port"
+      "transport transport"
+      "bind-host bind-port";
+  }
+
+  .one-liners-config-row.config-reverse-manual {
+    grid-template-areas:
+      "connection connection"
+      "server-host server-host"
+      "server-port web-port";
+  }
 }
 
 .one-liners-config-field {
@@ -434,10 +539,6 @@ export default {
 }
 
 @media (max-width: 720px) {
-  .one-liners-config-row {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
   .one-liner-code-row {
     grid-template-columns: minmax(0, 1fr);
   }

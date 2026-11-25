@@ -49,11 +49,18 @@ def create_agent_blueprint(server_instance):
                 raise ValueError('bind_port must be integer')
 
             if connection_mode == 'bind':
-                # Bind Bundle has no Server endpoint; only the session supplies one.
+                # Bind Clients do not have a Server socket endpoint.
                 server_host = ''
                 server_port = SOCKET_PORT
-                server_web_host = ''
-                web_port = WEB_PORT
+                if builder == AgentBuilderKind.GO_LOADER.value:
+                    server_web_host = str(payload.get('server_web_host') or '').strip()
+                    if not server_web_host:
+                        raise ValueError('Go Loader Bind requires Server Web IP')
+                    if not web_port:
+                        raise ValueError('Go Loader Bind requires Web Port')
+                else:
+                    server_web_host = ''
+                    web_port = WEB_PORT
             elif not server_host:
                 raise ValueError('server_host is required')
             elif not server_port:

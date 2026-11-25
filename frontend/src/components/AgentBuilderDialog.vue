@@ -17,7 +17,7 @@
           class="agent-builder-form"
           @submit.prevent="buildAgent"
       >
-        <el-form-item v-if="isPythonBuilder" label="Connection">
+        <el-form-item label="Connection">
           <el-radio-group v-model="agentForm.connection_mode" class="agent-builder-radio-group">
             <el-radio label="reverse">Reverse</el-radio>
             <el-radio label="bind">Bind</el-radio>
@@ -30,13 +30,7 @@
           </el-select>
         </el-form-item>
 
-        <el-form-item v-if="agentForm.connection_mode !== 'bind' && selectedListener" label="Protocol">
-          <el-tag :type="selectedListener.supported_builders ? 'success' : 'info'">
-            {{ selectedListener.protocol_build_label }}
-          </el-tag>
-        </el-form-item>
-
-        <el-form-item v-if="agentForm.connection_mode !== 'bind'" label="Server IP" required>
+        <el-form-item v-if="agentForm.connection_mode !== 'bind' || isGoLoaderBuilder" label="Server IP" required>
           <el-input
               v-model="agentForm.server_host"
               placeholder="e.g., 192.168.1.100"
@@ -67,7 +61,7 @@
           <el-input v-model.number="agentForm.bind_port" type="number" placeholder="9443" />
         </el-form-item>
 
-        <el-form-item v-if="agentForm.connection_mode !== 'bind'" label="Web Port" required>
+        <el-form-item v-if="agentForm.connection_mode !== 'bind' || isGoLoaderBuilder" label="Web Port" required>
           <el-input
               v-model.number="agentForm.web_port"
               type="number"
@@ -183,7 +177,6 @@ export default {
   },
 
   computed: {
-    selectedListener() { return this.listeners.find(item => item.id === this.agentForm.listener_id) },
     compatibleListeners() {
       return this.listeners.filter(item => item.supported_builders === null || item.supported_builders?.includes(this.agentForm.builder))
     },
@@ -208,6 +201,10 @@ export default {
 
     isPythonBuilder() {
       return this.agentForm.builder === AGENT_BUILDER.PYTHON
+    },
+
+    isGoLoaderBuilder() {
+      return this.agentForm.builder === AGENT_BUILDER.GO_LOADER
     },
 
     isAgentTargetOsDisabled() {
@@ -336,7 +333,6 @@ export default {
         return
       }
 
-      this.agentForm.connection_mode = 'reverse'
       this.agentForm.target_arch = this.getDefaultAgentTargetArch(this.agentForm.target_os)
     },
 
@@ -353,9 +349,11 @@ export default {
       if (bind) {
         delete payload.server_host
         delete payload.server_port
-        delete payload.server_web_scheme
-        delete payload.server_web_host
-        delete payload.web_port
+        if (this.agentForm.builder !== AGENT_BUILDER.GO_LOADER) {
+          delete payload.server_web_scheme
+          delete payload.server_web_host
+          delete payload.web_port
+        }
       }
 
       if (this.agentForm.builder === AGENT_BUILDER.PYTHON) {
@@ -370,7 +368,7 @@ export default {
       if (this.agentBuilding) return
       if (!this.supportedBuilders.includes(this.agentForm.builder)) return
 
-      if (this.agentForm.connection_mode !== 'bind' && !this.agentForm.server_host) {
+      if ((this.agentForm.connection_mode !== 'bind' || this.agentForm.builder === AGENT_BUILDER.GO_LOADER) && !this.agentForm.server_host) {
         ElMessage.warning('Please enter server IP')
         return
       }
@@ -393,7 +391,7 @@ export default {
         ElMessage.warning('Enter a valid Client listen IP and port')
         return
       }
-      if (this.agentForm.connection_mode !== 'bind' && !this.agentForm.web_port) {
+      if ((this.agentForm.connection_mode !== 'bind' || this.agentForm.builder === AGENT_BUILDER.GO_LOADER) && !this.agentForm.web_port) {
         ElMessage.warning('Please enter web port')
         return
       }

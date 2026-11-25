@@ -12,7 +12,7 @@ Server 使用独立的 `server-ca.crt` / `server-ca.key` 签发 Server Identity�
 2. 在 **Client Identities** 输入安装范围的识别名称和有效期（默认 365 天），点击 **Create**。Web 会下载仅包含 `client.crt`、`client.key`、`server-ca.crt` 的独立 ZIP。务必通过受保护的管理员渠道交付，不能放入公开构建包、匿名 Bootstrap、普通更新包或共享仓库。
 3. 管理员也可在身份记录的 **Download** 旁点击 **Copy Command**，将含三份 PEM 内容的安装命令复制到 macOS/Linux Shell 或 Windows CMD/PowerShell 执行，直接生成持久 Identity 文件。该命令携带 Client 私钥明文内容（以 Base64 编码），应按私钥凭据处理终端历史和粘贴记录。
 4. 使用 ZIP 安装时，在 Client **持久 Identity 目录** 放置上述三份文件，名称必须完全一致。桌面默认 `~/client_bundle/identity/`；iOS / Pythonista 默认 `~/Documents/client_bundle/identity/`。可在 Client 配置中使用绝对路径 `identity_dir` 覆盖。无需导入操作系统的全局证书库。Linux/macOS 解压后运行 `chmod 600 ~/client_bundle/identity/client.key`，目录权限建议 0700。Windows 应仅允许运行 Client 的账户及必要管理员读取私钥（NTFS ACL）。
-5. 在 Reverse 的 Listener 配置选择 **mTLS/TCP**，构建对应 Python Client，或在 Bind 的 Agent 构建页、**One-liners** 及 **Connect to Client** 页面选择 **mTLS/TCP**。确保双方选择同一传输方式。Reverse Bootstrap 通过 Listener ID 确定协议；Bind Bootstrap 默认 TCP 省略传输字段，使用 mTLS 时显式指定 `mtls_tcp`。Bind 由 Server 拨号到 Client 的监听 IP/端口；Reverse 由 Client 拨号到 Server 的监听地址。
+5. 在 Reverse 的 Listener 配置选择 **mTLS/TCP**，构建对应 Python / Go Client 或 Go Loader，或在 Bind 的 Agent 构建页、**One-liners** 及 **Connect to Client** 页面选择 **mTLS/TCP**。确保双方选择同一传输方式。Reverse Bootstrap 通过 Listener ID 确定协议；Bind Bootstrap 默认 TCP 省略传输字段，使用 mTLS 时显式指定 `mtls_tcp`。Bind 由 Server 拨号到 Client 的监听 IP/端口；Reverse 由 Client 拨号到 Server 的监听地址。
 6. 同一安装下的不同 Release 复用固定 Identity 目录。正常源码 Bundle、升级包只包含应用代码和选择的传输模式，不包含私钥。HTTP 管理与软件下载接口不受 mTLS Socket 替代。
 
 ## 常见失败与运维
@@ -27,4 +27,4 @@ Server 使用独立的 `server-ca.crt` / `server-ca.key` 签发 Server Identity�
 
 ## 实现限制
 
-本版本不支持设备数量上限、自动预注册、匿名签发、自动续签/系统 CA 导入或 Windows ACL 的自动管理。现有活跃会话在撤销前完成的握手不会被强制终止；需要新的立即断开机制必须另行设计。Go 原生 Client 没有提供 mTLS 实现：mTLS Listener 不允许构建 Go 原生 Agent，Go Loader 仅用于加载 Python Client，仍需先安装对应 Identity；iOS TLS 环境尚未实机验证。
+本版本不支持设备数量上限、自动预注册、匿名签发、自动续签/系统 CA 导入或 Windows ACL 的自动管理。现有活跃会话在撤销前完成的握手不会被强制终止；需要新的立即断开机制必须另行设计。Go 原生 Client 通过 Go TLS 标准库读取与 Python 相同的三份 Identity 文件；Reverse 和 Bind 均支持 `tcp` / `mtls_tcp`。Go Loader 通过 Web API 构建并运行 Python Client，本身不建立 RCH Socket 连接；Bind Loader 必须设置可达的 Server Web IP/Port。Go Client 仍沿用自身现有的功能清单（不提供 Python 的全部辅助连接功能）。iOS TLS 环境尚未实机验证。

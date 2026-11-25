@@ -12,8 +12,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"client-go/config"
 )
 
 func (s *Session) uploadSingleFileToServerResult(filePath string, category string) (int, string) {
@@ -35,7 +33,7 @@ func (s *Session) uploadSingleFileToServerResult(filePath string, category strin
 }
 
 func (s *Session) uploadFileToServer(filePath string, category string) (map[string]interface{}, error) {
-	url := strings.TrimRight(config.UPLOAD_BASE_URL, "/") + "/api/files/upload"
+	url := strings.TrimRight(s.ServerWebBaseURL(), "/") + "/api/files/upload"
 
 	file, err := os.Open(filePath)
 	if err != nil {

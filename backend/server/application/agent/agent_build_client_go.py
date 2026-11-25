@@ -21,19 +21,23 @@ class ClientGoBuilder:
 
     def _inject_go_config(self, client_dir: str, server_host: str, server_port: int, web_port: int,
                           build_version: str, server_web_scheme: str = 'http', server_web_host: str = '',
-                          listener_protocol: str = 'tcp'):
+                          listener_protocol: str = 'tcp', connection_mode: str = 'reverse',
+                          bind_host: str = '0.0.0.0', bind_port: int = 9443):
         config_path = os.path.join(client_dir, 'client-go', 'config', 'config.go')
         server_web_host = (server_web_host or server_host).strip() or server_host
         template = f'''package config
 
 var SERVER_ADDR = {json.dumps(f"{server_host}:{server_port}")}
 var SERVER_TRANSPORT = {json.dumps(listener_protocol)}
-var SERVER_WEB_SCHEME = "{server_web_scheme}"
-var SERVER_WEB_HOST = "{server_web_host}"
+var CONNECTION_MODE = {json.dumps(connection_mode)}
+var BIND_HOST = {json.dumps(bind_host)}
+var BIND_PORT = {bind_port}
+var IDENTITY_DIR = ""
+var SERVER_WEB_SCHEME = {json.dumps(server_web_scheme)}
+var SERVER_WEB_HOST = {json.dumps(server_web_host)}
 var SERVER_WEB_PORT = {web_port}
-var UPLOAD_BASE_URL = SERVER_WEB_SCHEME + "://" + SERVER_WEB_HOST + ":" + "{web_port}"
-var FILE_TRANSFER_BASE_URL = UPLOAD_BASE_URL
-var CLIENT_BUILD_VERSION = "{build_version}"
+var UPLOAD_BASE_URL = SERVER_WEB_SCHEME + "://" + SERVER_WEB_HOST + ":" + {json.dumps(str(web_port))}
+var CLIENT_BUILD_VERSION = {json.dumps(build_version)}
 '''
         with open(config_path, 'w', encoding='utf-8') as f:
             f.write(template)
@@ -42,6 +46,7 @@ var CLIENT_BUILD_VERSION = "{build_version}"
                        web_port: int, target_os: str, target_arch: str,
                        build_id: str = '', build_version: str = 'dev', server_web_scheme: str = 'http',
                        server_web_host: str = '', listener_protocol: str = 'tcp',
+                       connection_mode: str = 'reverse', bind_host: str = '0.0.0.0', bind_port: int = 9443,
                        ) -> dict:
         go_project_dir = os.path.join(self.source_dir, 'client-go')
         if not os.path.isdir(go_project_dir):
@@ -59,6 +64,9 @@ var CLIENT_BUILD_VERSION = "{build_version}"
             server_web_scheme,
             server_web_host,
             listener_protocol,
+            connection_mode,
+            bind_host,
+            bind_port,
         )
 
         go_target = self.GO_TARGET_MAP[target_os]

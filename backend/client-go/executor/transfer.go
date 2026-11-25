@@ -15,8 +15,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"client-go/config"
 )
 
 // Transfers are independent of the foreground command slot. The Server owns
@@ -244,8 +242,8 @@ func pathsForTransfer(s *Session, raw interface{}) ([]string, error) {
 
 // This is a trusted endpoint explicitly configured by Agent Builder. Caller-
 // provided absolute URLs cannot redirect a transfer to an arbitrary origin.
-func transferURL(relative string) (string, error) {
-	base, err := url.Parse(strings.TrimRight(config.UPLOAD_BASE_URL, "/") + "/")
+func (s *Session) transferURL(relative string) (string, error) {
+	base, err := url.Parse(strings.TrimRight(s.ServerWebBaseURL(), "/") + "/")
 	if err != nil || (base.Scheme != "http" && base.Scheme != "https") || base.Host == "" {
 		return "", errors.New("invalid Server Web URL")
 	}
@@ -291,7 +289,7 @@ func (s *Session) uploadTransferFile(ctx context.Context, id, filePath, filename
 	if err != nil {
 		return err
 	}
-	uploadURL, err := transferURL("/api/files/upload")
+	uploadURL, err := s.transferURL("/api/files/upload")
 	if err != nil {
 		return err
 	}
@@ -397,7 +395,7 @@ func (s *Session) downloadTransferFile(ctx context.Context, id string, payload m
 	if relative == "" {
 		return errors.New("relative_url is required")
 	}
-	downloadURL, err := transferURL(relative)
+	downloadURL, err := s.transferURL(relative)
 	if err != nil {
 		return err
 	}

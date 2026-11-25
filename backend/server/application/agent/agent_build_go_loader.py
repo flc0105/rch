@@ -1,5 +1,6 @@
 """Optional Go Loader builder; independently removable from Client-Go."""
 import os
+import json
 from core.utils.logger import logger
 from core.agent_build_contract import AgentBuilderKind, agent_output_filename
 from server.application.agent.agent_go_build_runner import GO_TARGET_MAP as SHARED_GO_TARGET_MAP, run_go_build
@@ -20,18 +21,23 @@ class GoLoaderBuilder:
 
     def _inject_go_loader_config(self, client_dir: str, server_host: str, server_port: int, web_port: int,
                                  build_version: str, server_web_scheme: str = 'http', server_web_host: str = '',
-                                 listener_id: str = ''):
+                                 listener_id: str = '', listener_protocol: str = 'tcp',
+                                 connection_mode: str = 'reverse', bind_host: str = '0.0.0.0', bind_port: int = 9443):
         config_path = os.path.join(client_dir, 'go-loader', 'config', 'config.go')
         server_web_host = (server_web_host or server_host).strip() or server_host
         template = f'''package config
 
-const ServerSocketHost = "{server_host}"
+const ServerSocketHost = {json.dumps(server_host)}
 const ServerSocketPort = {server_port}
-const ServerListenerID = "{listener_id}"
-const ServerWebScheme = "{server_web_scheme}"
-const ServerWebHost = "{server_web_host}"
+const ServerListenerID = {json.dumps(listener_id)}
+const ConnectionMode = {json.dumps(connection_mode)}
+const BindHost = {json.dumps(bind_host)}
+const BindPort = {bind_port}
+const ServerTransport = {json.dumps(listener_protocol)}
+const ServerWebScheme = {json.dumps(server_web_scheme)}
+const ServerWebHost = {json.dumps(server_web_host)}
 const ServerWebPort = {web_port}
-const LoaderBuildVersion = "{build_version}"
+const LoaderBuildVersion = {json.dumps(build_version)}
 const BundleBaseDirName = "client_bundle"
 const BundleBuildAPIPath = "/api/agent/build"
 const BundleReportAPIPath = "/api/agent/loader/report"
@@ -42,7 +48,9 @@ const BundleReportAPIPath = "/api/agent/loader/report"
     def _build_with_go_loader(self, work_dir: str, server_host: str, server_port: int,
                               web_port: int, target_os: str, target_arch: str,
                               build_id: str = '', build_version: str = 'dev', server_web_scheme: str = 'http',
-                              server_web_host: str = '', listener_id: str = '') -> dict:
+                              server_web_host: str = '', listener_id: str = '',
+                              listener_protocol: str = 'tcp', connection_mode: str = 'reverse',
+                              bind_host: str = '0.0.0.0', bind_port: int = 9443) -> dict:
         go_project_dir = os.path.join(self.source_dir, 'go-loader')
         if not os.path.isdir(go_project_dir):
             raise FileNotFoundError('go-loader directory not found')
@@ -59,6 +67,10 @@ const BundleReportAPIPath = "/api/agent/loader/report"
             server_web_scheme,
             server_web_host,
             listener_id,
+            listener_protocol,
+            connection_mode,
+            bind_host,
+            bind_port,
         )
 
         go_target = self.GO_TARGET_MAP[target_os]
