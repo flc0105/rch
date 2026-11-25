@@ -22,6 +22,7 @@ test('Build Agent submits a Bind default with Client listen IP/port and no Liste
   assert.equal(bind.listener_id, '')
   assert.equal(bind.bind_host, '0.0.0.0')
   assert.equal(bind.bind_port, 9443)
+  assert.equal(bind.server_transport, 'tcp')
   assert.ok(!Object.hasOwn(bind, 'server_web_host'))
   assert.ok(!Object.hasOwn(bind, 'server_web_scheme'))
   assert.ok(!Object.hasOwn(bind, 'web_port'))
@@ -31,6 +32,7 @@ test('Build Agent submits a Bind default with Client listen IP/port and no Liste
   assert.equal(cmp.methods.buildAgentPayload.call(instance).listener_id, 'tcp-default')
   assert.equal(cmp.methods.buildAgentPayload.call(instance).server_host, '192.168.1.10')
   assert.equal(cmp.methods.buildAgentPayload.call(instance).server_port, 9999)
+  assert.ok(!Object.hasOwn(cmp.methods.buildAgentPayload.call(instance), 'server_transport'))
   assert.match(read('../src/components/AgentBuilderDialog.vue'), /v-if="agentForm.connection_mode === 'bind'" label="Listen Port"/)
   assert.match(read('../src/components/AgentBuilderDialog.vue'), /v-if="agentForm.connection_mode !== 'bind'" label="Server IP"/)
 })
@@ -40,11 +42,13 @@ test('One-liners emit matching Bind/Reverse bootstrap request fields for Python 
   const cmp = component('../src/components/OneLinersDialog.vue', {})
   const obj = { selectedListenerId: 'tcp-default', listeners: [{ id: 'tcp-default', port: 9999 }],
     serverForm: { serverHost: '192.168.1.10', serverPort: '9999', webPort: '8085' },
-    connectionMode: 'bind', bindHost: '0.0.0.0', bindPort: '9443' }
+    connectionMode: 'bind', bindHost: '0.0.0.0', bindPort: '9443', bindTransport: 'mtls_tcp' }
   for (const item of terminalOneLiners) {
     const bind = cmp.methods.renderOneLinerCode.call(obj, item.code)
     assert.match(bind, /connection_mode/)
     assert.match(bind, /bind_host/)
+    assert.match(bind, /server_transport/)
+    assert.match(bind, /mtls_tcp/)
     assert.match(bind, /web_host/)
     assert.match(bind, /9443/)
     assert.doesNotMatch(bind, /['"` ]server_port['"` ]*:/)
@@ -56,6 +60,7 @@ test('One-liners emit matching Bind/Reverse bootstrap request fields for Python 
     assert.match(reverse, /server_port/)
     assert.match(reverse, /server_host/)
     assert.doesNotMatch(reverse, /bind_host/)
+    assert.doesNotMatch(reverse, /server_transport/)
     assert.ok(!reverse.includes('{{'))
     obj.connectionMode = 'bind'
   }
@@ -76,6 +81,26 @@ test('One-liners mode and Bind inputs stay within the existing configuration car
     assert.ok(controls.includes(label), label)
   }
   assert.ok(controls.includes('Bootstrap Web IP'))
+  assert.ok(controls.includes('Transport'))
+  assert.match(controls, /v-model="bindTransport"/)
+  assert.match(controls, /value="mtls_tcp"/)
   assert.doesNotMatch(source, /one-liners-mode-row/)
   assert.match(source, /grid-template-columns: repeat\(auto-fit, minmax\(140px, 1fr\)\)/)
+})
+
+
+test('Bind One-liner defaults to TCP and Reverse mTLS keeps listener ID only', () => {
+  const cmp = component('../src/components/OneLinersDialog.vue', { terminalOneLiners: [] })
+  const defaults = cmp.data.call({ getDefaultServerForm: () => ({ serverHost: '192.0.2.2', serverPort: '9999', webPort: '8085' }) })
+  assert.equal(defaults.bindTransport, 'tcp')
+  const ctx = { selectedListenerId: 'mtls-1', listeners: [{ id: 'mtls-1', protocol: 'mtls_tcp', port: 19998 }],
+    serverForm: { serverHost: '192.0.2.2', serverPort: '19998', webPort: '8085' },
+    connectionMode: 'bind', bindHost: '0.0.0.0', bindPort: '9443', bindTransport: defaults.bindTransport }
+  const bind = cmp.methods.renderOneLinerCode.call(ctx, 'json={{bootstrap_payload_python}}')
+  assert.doesNotMatch(bind, /server_transport/)
+  assert.doesNotMatch(bind, /listener_id/)
+  ctx.connectionMode = 'reverse'
+  const reverse = cmp.methods.renderOneLinerCode.call(ctx, 'json={{bootstrap_payload_python}}')
+  assert.match(reverse, /'listener_id':'mtls-1'/)
+  assert.doesNotMatch(reverse, /server_transport/)
 })

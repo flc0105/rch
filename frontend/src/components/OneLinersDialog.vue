@@ -54,6 +54,13 @@
           />
         </label>
         <label v-if="connectionMode === 'bind'" class="one-liners-config-field">
+          <span>Transport</span>
+          <el-select v-model="bindTransport" size="small" style="width: 100%">
+            <el-option label="TCP" value="tcp" />
+            <el-option label="mTLS/TCP" value="mtls_tcp" />
+          </el-select>
+        </label>
+        <label v-if="connectionMode === 'bind'" class="one-liners-config-field">
           <span>Client Listen IP</span>
           <el-input v-model="bindHost" size="small" placeholder="0.0.0.0" />
         </label>
@@ -127,6 +134,7 @@ export default {
       connectionMode: 'reverse',
       bindHost: '0.0.0.0',
       bindPort: '9443',
+      bindTransport: 'tcp',
       serverForm: this.getDefaultServerForm(),
     }
   },
@@ -156,6 +164,7 @@ export default {
       this.connectionMode = 'reverse'
       this.bindHost = '0.0.0.0'
       this.bindPort = '9443'
+      this.bindTransport = 'tcp'
       this.serverForm = this.getDefaultServerForm()
       this.visible = true
       await this.loadServerPlatform()
@@ -230,7 +239,8 @@ export default {
       const payload = this.connectionMode === 'bind'
         ? { web_host: String(this.serverForm.serverHost || '').trim(),
             web_port: Number(this.serverForm.webPort), connection_mode: 'bind',
-            bind_host: String(this.bindHost || '').trim(), bind_port: Number(this.bindPort) }
+            bind_host: String(this.bindHost || '').trim(), bind_port: Number(this.bindPort),
+            ...(this.bindTransport === 'mtls_tcp' ? { server_transport: 'mtls_tcp' } : {}) }
         : { server_host: String(this.serverForm.serverHost || '').trim(),
             server_port: Number(this.serverForm.serverPort), web_port: Number(this.serverForm.webPort),
             ...(listenerId ? { listener_id: listenerId } : {}) }

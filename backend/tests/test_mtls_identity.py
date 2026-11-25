@@ -201,3 +201,96 @@ def test_untrusted_identity_cannot_join_session(provisioned, tmp_path, reverse):
     result = _pair_handshake(trusted_store, {'identity_dir': str(client_dir)}, reverse=reverse)
     assert result.get('received') != b'OK'
     assert 'server_error' in result or 'client_error' in result
+
+
+def test_install_command_writes_all_identity_materials_without_download(tmp_path, provisioned):
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    store, issued, config = provisioned
+    command = store.install_command(issued['id'])
+    assert command.startswith('python3 -c ')
+    assert 'api/identities' not in command
+    assert 'client.key' in command and 'server-ca.crt' in command
+    home = tmp_path / 'client-home'
+    home.mkdir()
+    import os
+    env = {**os.environ, 'HOME': str(home)}
+    proc = subprocess.run(command, shell=True, capture_output=True, text=True, env=env)
+    assert proc.returncode == 0, proc.stderr
+    installed = home / 'client_bundle' / 'identity'
+    with zipfile.ZipFile(store.download(issued['id'])) as archive:
+        for name in ('client.crt', 'client.key', 'server-ca.crt'):
+            assert (installed / name).read_bytes() == archive.read(name)
+    if os.name == 'posix':
+        assert stat.S_IMODE((installed / 'client.key').stat().st_mode) == 0o600
+        assert stat.S_IMODE(installed.stat().st_mode) == 0o700
+    store.revoke(issued['id'])
+    with pytest.raises(ValueError, match='revoked'):
+        store.install_command(issued['id'])
+
+
+def test_revoked_rejection_is_received_by_client_on_reverse(provisioned):
+    from types import SimpleNamespace
+    from client.connection.server_connection import ServerConnection
+    from core.protocol.rchsocket import RCHSocket
+    from server.runtime.server_listener import ServerListener
+
+    store, issued, config = provisioned
+    store.revoke(issued['id'])
+    listener = ServerListener(SimpleNamespace(),
+                              {'id':'test-mtls','name':'test-mtls','host':'127.0.0.1','port':0,
+                               'protocol':'mtls_tcp'}, ssl_context=store.context(server_side=True),
+                              verify_peer=store.verify_client)
+    listener._bind_server_socket()
+    host, port = listener.socket.socket.getsockname()
+    errors=[]
+    def serve_one():
+        try:listener._accept_connection()
+        except Exception as exc:errors.append(exc)
+    t=threading.Thread(target=serve_one)
+    t.start()
+    try:
+        with socket.create_connection((host,port),timeout=5) as raw:
+            with create_context(config,server_side=False).wrap_socket(raw,server_hostname=None) as secured:
+                framed=RCHSocket()
+                framed.socket.close()
+                framed.socket=secured
+                payload=framed.recv()
+                with pytest.raises(ConnectionError, match='Client mTLS identity not authorized or revoked'):
+                    ServerConnection.recv_message(SimpleNamespace(recv=lambda: payload))
+                assert payload['type']=='connection_rejected'
+    finally:
+        listener.socket.close()
+        t.join(timeout=10)
+    assert not t.is_alive()
+    assert not errors
+
+
+def test_revoked_rejection_is_received_by_client_on_bind(provisioned):
+    from types import SimpleNamespace
+    from core.protocol.rchsocket import RCHSocket
+    from client.connection.server_connection import ServerConnection
+    store,issued,config=provisioned
+    store.revoke(issued['id'])
+    outbound,inbound=socket.socketpair()
+    captured=[]
+    def server_side():
+        try:store.wrap_outbound_socket(outbound)
+        except ssl.SSLError as exc:captured.append(str(exc))
+    t=threading.Thread(target=server_side)
+    t.start()
+    try:
+        with create_context(config,server_side=True).wrap_socket(inbound,server_side=True) as secured:
+            framed=RCHSocket()
+            framed.socket.close()
+            framed.socket=secured
+            payload=framed.recv()
+            with pytest.raises(ConnectionError,match='not authorized or revoked'):
+                ServerConnection.recv_message(SimpleNamespace(recv=lambda: payload))
+    finally:
+        inbound.close()
+        outbound.close()
+        t.join(timeout=10)
+    assert captured==['Client mTLS identity not authorized or revoked']

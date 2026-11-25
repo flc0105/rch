@@ -217,6 +217,7 @@
               </div>
               <div style="display:flex; gap:8px">
                 <el-button size="small" :disabled="item.revoked" @click="downloadIdentity(item.id)">Download</el-button>
+                <el-button size="small" :disabled="item.revoked || identityBusy" @click="copyIdentityCommand(item.id)">Copy Command</el-button>
                 <el-button size="small" type="danger" plain :disabled="item.revoked || identityBusy" @click="revokeIdentity(item)">Revoke</el-button>
               </div>
             </div>
@@ -304,7 +305,8 @@ import { CONNECTION_CONTEXT_ICONS } from '../data/connectionContextIcons.js'
 import { loadRemoteFileConflictPreferences, saveRemoteFileConflictPreferences } from '../api/remoteFileConflictPreferencesApi.js'
 import { getServerMaintenance, performServerMaintenance } from '../api/serverMaintenanceApi.js'
 import { getAuthorizationInfo } from '../api/authApi.js'
-import { getIdentities, initializeIdentities, issueClientIdentity, revokeClientIdentity, downloadClientIdentity } from '../api/identitiesApi.js'
+import { getIdentities, initializeIdentities, issueClientIdentity, revokeClientIdentity, downloadClientIdentity, clientIdentityInstallCommand } from '../api/identitiesApi.js'
+import { copyTextFallback } from '../utils/clipboard.js'
 import { formatDateTimeLocal } from '../utils/formatters.js'
 
 export default {
@@ -398,6 +400,16 @@ export default {
     async downloadIdentity(id) {
       try { await downloadClientIdentity(id) }
       catch (error) { ElMessage.error(error.message) }
+    },
+    async copyIdentityCommand(id) {
+      try {
+        const { command } = await clientIdentityInstallCommand(id)
+        if (navigator.clipboard?.writeText) {
+          try { await navigator.clipboard.writeText(command) }
+          catch { copyTextFallback(command) }
+        } else copyTextFallback(command)
+        ElMessage.success('Identity install command copied')
+      } catch (error) { ElMessage.error(error.message) }
     },
     async revokeIdentity(identity) {
       try { await ElMessageBox.confirm(`Revoke identity "${identity.name}"? All its new mTLS connections will be rejected.`, 'Revoke identity', { type: 'warning' }) }

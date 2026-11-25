@@ -26,6 +26,8 @@ class Client:
         self.client_id = str(uuid.uuid4())
         self.server = None
         self.info = None
+        self._reconnect_delay = min(self.RECONNECT_INTERVAL, 30)
+        self._bind_immediate_retry_used = False
         self.process_recovery_watchdog_manager = process_recovery_watchdog_manager
         self.recovery_source = consume_recovery_source()
 
@@ -88,16 +90,25 @@ class Client:
         """
         连接异常后的恢复逻辑
         """
-        logger.error(error, exc_info=True)
+        if getattr(getattr(self, 'server', None), 'client_session_token', ''):
+            self._reconnect_delay = min(self.RECONNECT_INTERVAL, 30)
+            self._bind_immediate_retry_used = False
+        logger.warning('Connection lost: %s', error)
         first_attempt = True
         while True:
             if self.connection_lifecycle.is_paused is True:
                 return
-            # Bind waits for a Server dial; release the old session immediately
-            # so an operator can reconnect without the reverse-mode backoff.
-            # Subsequent failed attempts remain throttled.
-            if not (first_attempt and self.connection_lifecycle.is_bind_mode):
-                time.sleep(self.RECONNECT_INTERVAL)
+            # An established Bind session may release and reaccept immediately once.
+            # Repeated unadmitted sessions (including revoked identities) back off.
+            immediate = (first_attempt and self.connection_lifecycle.is_bind_mode
+                         and not getattr(self, '_bind_immediate_retry_used', False))
+            if immediate:
+                self._bind_immediate_retry_used = True
+            else:
+                delay = min(getattr(self, '_reconnect_delay', self.RECONNECT_INTERVAL), 30)
+                logger.warning('Reconnecting in %gs after: %s', delay, error)
+                time.sleep(delay)
+                self._reconnect_delay = min(max(delay * 2, min(self.RECONNECT_INTERVAL, 30)), 30)
             first_attempt = False
             if self.connection_lifecycle.is_paused is True:
                 return
@@ -106,7 +117,8 @@ class Client:
                 self.connect()
                 return
             except Exception as reconnect_error:
-                logger.error('Client reconnection failed: %s', reconnect_error, exc_info=True)
+                error = reconnect_error
+                logger.warning('Client reconnection failed: %s', reconnect_error)
 
     def wait(self):
         try:

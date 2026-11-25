@@ -19,6 +19,7 @@ class AgentBootstrapScriptService:
         web_host = (payload.get('web_host') or server_host).strip() or server_host
         web_scheme = (payload.get('web_scheme') or 'http').strip() or 'http'
         listener_id = str(payload.get('listener_id') or '').strip()
+        server_transport = str(payload.get('server_transport') or 'tcp').strip()
         connection_mode = str(payload.get('connection_mode') or 'reverse').strip().lower()
         bind_host = str(payload.get('bind_host') or '0.0.0.0').strip()
         try:
@@ -67,6 +68,7 @@ class AgentBootstrapScriptService:
             'connection_mode': connection_mode,
             'bind_host': bind_host,
             'bind_port': bind_port,
+            **({'server_transport': server_transport} if connection_mode == 'bind' and server_transport != 'tcp' else {}),
         }
 
     def generate_python_script(self, payload: dict) -> str:
@@ -79,6 +81,7 @@ class AgentBootstrapScriptService:
             params['web_scheme'],
             params['listener_id'],
             params['connection_mode'], params['bind_host'], params['bind_port'],
+            params.get('server_transport', 'tcp'),
         )
 
     def generate_powershell_script(self, payload: dict) -> str:
@@ -89,10 +92,11 @@ class AgentBootstrapScriptService:
             params['web_port'],
             params['listener_id'],
             params['connection_mode'], params['bind_host'], params['bind_port'],
+            params.get('server_transport', 'tcp'),
         )
 
     def _generate_python_script(self, server_host, server_port, web_host, web_port, web_scheme='http', listener_id='',
-                                connection_mode='reverse', bind_host='0.0.0.0', bind_port=9443):
+                                connection_mode='reverse', bind_host='0.0.0.0', bind_port=9443, server_transport='tcp'):
         import json
         script = _PYTHON_BOOTSTRAP
         for key, value in {
@@ -105,12 +109,13 @@ class AgentBootstrapScriptService:
             '@CONNECTION_MODE@': json.dumps(connection_mode),
             '@BIND_HOST@': json.dumps(bind_host),
             '@BIND_PORT@': str(bind_port),
+            '@SERVER_TRANSPORT@': json.dumps(server_transport),
         }.items():
             script = script.replace(key, value)
         return script
 
     def _generate_powershell_script(self, server_host, server_port, web_port, listener_id='',
-                                    connection_mode='reverse', bind_host='0.0.0.0', bind_port=9443):
+                                    connection_mode='reverse', bind_host='0.0.0.0', bind_port=9443, server_transport='tcp'):
         import json
         script = _POWERSHELL_BOOTSTRAP
         for key, value in {
@@ -121,6 +126,7 @@ class AgentBootstrapScriptService:
             '@CONNECTION_MODE@': json.dumps(connection_mode),
             '@BIND_HOST@': json.dumps(bind_host),
             '@BIND_PORT@': str(bind_port),
+            '@SERVER_TRANSPORT@': json.dumps(server_transport),
         }.items():
             script = script.replace(key, value)
         return script
@@ -153,6 +159,7 @@ LISTENER_ID = @LISTENER_ID@
 CONNECTION_MODE = @CONNECTION_MODE@
 BIND_HOST = @BIND_HOST@
 BIND_PORT = @BIND_PORT@
+SERVER_TRANSPORT = @SERVER_TRANSPORT@
 BASE_URL = f"{WEB_SCHEME}://{WEB_HOST}:{WEB_PORT}"
 MIN_PYTHON = (3, 10)
 
@@ -323,6 +330,8 @@ def build_bundle():
     }
     if CONNECTION_MODE == 'bind':
         payload.update(bind_host=BIND_HOST, bind_port=BIND_PORT)
+        if SERVER_TRANSPORT != 'tcp':
+            payload['server_transport'] = SERVER_TRANSPORT
     else:
         payload.update(
             server_web_scheme=WEB_SCHEME, server_web_host=WEB_HOST, web_port=WEB_PORT,
@@ -416,6 +425,7 @@ $listenerId=@LISTENER_ID@
 $connectionMode=@CONNECTION_MODE@
 $bindHost=@BIND_HOST@
 $bindPort=@BIND_PORT@
+$serverTransport=@SERVER_TRANSPORT@
 $bundleDir = Join-Path $env:USERPROFILE 'client_bundle'
 $runtimeDir = Join-Path $bundleDir 'runtimes\python-embed'
 $downloadsDir = Join-Path $bundleDir 'downloads'
@@ -523,6 +533,7 @@ $body = @{
 if ($connectionMode -eq 'bind') {
     $body['bind_host'] = $bindHost
     $body['bind_port'] = $bindPort
+    if ($serverTransport -ne 'tcp') { $body['server_transport'] = $serverTransport }
 } else {
     $body['web_port'] = $webPort
     $body['server_web_scheme'] = 'http'

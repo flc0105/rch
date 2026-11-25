@@ -132,7 +132,7 @@ _RUNTIME_CONFIG_META = {
     'RECONNECT_INTERVAL_SECONDS': {
         'group': 'connection',
         'expose': True,
-        'desc': 'Reconnect interval after client connection loss.',
+        'desc': 'Initial reconnect delay in seconds; exponential backoff capped at 30 seconds.',
     },
     'SERVER_INBOUND_TIMEOUT_SECONDS': {
         'group': 'connection',

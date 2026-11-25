@@ -10,9 +10,10 @@ Server 使用独立的 `server-ca.crt` / `server-ca.key` 签发 Server Identity�
 
 1. 在 Server Web 的 **Settings → Identities** 中点击 **Initialize**。Server 的信任材料保存在 `RCH_SERVER_RUNTIME_DIR/identities/`，默认即 `<project>/backend/runtime/identities/`。此操作只可初始化一次，不会覆盖现有信任根。需要系统安装 `openssl` 命令供签发使用；Socket 握手本身由 Python `ssl` 完成。
 2. 在 **Client Identities** 输入安装范围的识别名称和有效期（默认 365 天），点击 **Create**。Web 会下载仅包含 `client.crt`、`client.key`、`server-ca.crt` 的独立 ZIP。务必通过受保护的管理员渠道交付，不能放入公开构建包、匿名 Bootstrap、普通更新包或共享仓库。
-3. 在 Client **持久 Identity 目录** 放置上述三份文件，名称必须完全一致。桌面默认 `~/client_bundle/identity/`；iOS / Pythonista 默认 `~/Documents/client_bundle/identity/`。可在 Client 配置中使用绝对路径 `identity_dir` 覆盖。无需导入操作系统的全局证书库。Linux/macOS 解压后运行 `chmod 600 ~/client_bundle/identity/client.key`，目录权限建议 0700。Windows 应仅允许运行 Client 的账户及必要管理员读取私钥（NTFS ACL）。
-4. 在 Reverse 的 Listener 配置选择 **mTLS/TCP**，构建对应 Python Client，或在 Bind 的 Agent 构建页及 **Connect to Client** 页面选择 **mTLS/TCP**。确保双方选择同一传输方式。Bind 由 Server 拨号到 Client 的监听 IP/端口；Reverse 由 Client 拨号到 Server 的监听地址。
-5. 同一安装下的不同 Release 复用固定 Identity 目录。正常源码 Bundle、升级包只包含应用代码和选择的传输模式，不包含私钥。HTTP 管理与软件下载接口不受 mTLS Socket 替代。
+3. 管理员也可在身份记录的 **Download** 旁点击 **Copy Command**，将含三份 PEM 内容的安装命令复制到 macOS/Linux Client 终端执行，直接生成持久 Identity 文件。该命令携带 Client 私钥明文内容（以 Base64 编码），应按私钥凭据处理终端历史和粘贴记录。
+4. 使用 ZIP 安装时，在 Client **持久 Identity 目录** 放置上述三份文件，名称必须完全一致。桌面默认 `~/client_bundle/identity/`；iOS / Pythonista 默认 `~/Documents/client_bundle/identity/`。可在 Client 配置中使用绝对路径 `identity_dir` 覆盖。无需导入操作系统的全局证书库。Linux/macOS 解压后运行 `chmod 600 ~/client_bundle/identity/client.key`，目录权限建议 0700。Windows 应仅允许运行 Client 的账户及必要管理员读取私钥（NTFS ACL）。
+5. 在 Reverse 的 Listener 配置选择 **mTLS/TCP**，构建对应 Python Client，或在 Bind 的 Agent 构建页、**One-liners** 及 **Connect to Client** 页面选择 **mTLS/TCP**。确保双方选择同一传输方式。Reverse Bootstrap 通过 Listener ID 确定协议；Bind Bootstrap 默认 TCP 省略传输字段，使用 mTLS 时显式指定 `mtls_tcp`。Bind 由 Server 拨号到 Client 的监听 IP/端口；Reverse 由 Client 拨号到 Server 的监听地址。
+6. 同一安装下的不同 Release 复用固定 Identity 目录。正常源码 Bundle、升级包只包含应用代码和选择的传输模式，不包含私钥。HTTP 管理与软件下载接口不受 mTLS Socket 替代。
 
 ## 常见失败与运维
 
@@ -20,6 +21,7 @@ Server 使用独立的 `server-ca.crt` / `server-ca.key` 签发 Server Identity�
 - **Server 尚未初始化**：mTLS Listener 无法启动，或构建 mTLS Agent 被拒绝；独立的 TCP Listener 仍可使用。
 - **撤销**：在 Identities 中点击对应 Client 的 **Revoke**。同一个 Client Identity 的**后续主会话、文件数据和隧道连接**会被拒绝；既有已连接会话不被立即踢下线。按需手动断开旧会话。撤销是不可逆操作，重新授权需签发新身份并安全分发。
 - **到期 / 轮换**：客户端证书到期前签发并安装新的 Client Identity，再撤销旧身份；服务器 TLS 身份默认 365 天，需在到期前维护/更新身份文件并重启相关 mTLS Listener 以加载新证书。目前不提供自动证书续签或 Server 轮换 UI；切勿直接删除整个 Identity 根目录，否则此前发出的 Client 安装材料不再匹配新信任根。
+- **重连**：Client 在网络失败或身份被拒绝后从 5 秒开始退避（5、10、20、30 秒），上限 30 秒；认证被拒绝的原因在 Client 日志中显示。
 - **配置校验**：Listener 配置只接受 `tcp` 和 `mtls_tcp`。无效协议会拒绝加载原配置，配置文件不会被自动改写。Client 选择 mTLS 时需要预先安装有效身份。
 - **私钥备份**：Server Identity 目录包含两套 CA 私钥和 Client 私钥，必须严格访问控制、离线加密备份。下载 ZIP、Client 的 Identity 目录和浏览器下载缓存均按敏感凭据处理。
 

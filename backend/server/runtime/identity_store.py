@@ -3,10 +3,12 @@
 Server and Client identities are issued by different private trust roots so that
 presenting a valid Client certificate can never confer the Server's role.
 """
+import base64
 import hashlib
 import io
 import json
 import os
+import shlex
 import secrets
 import ssl
 import subprocess
@@ -15,6 +17,9 @@ import threading
 import uuid
 import zipfile
 from datetime import datetime, timezone
+
+from core.protocol.message_types import MSG_TYPE_CONNECTION_REJECTED
+from core.protocol.rchsocket import RCHSocket
 
 
 class IdentityStore:
@@ -188,23 +193,50 @@ class IdentityStore:
             buffer.seek(0)
             return buffer
 
+    def install_command(self, identity_id):
+        """POSIX one-liner containing the three PEM files; intended for administrator copy."""
+        archive = self.download(identity_id)
+        with zipfile.ZipFile(archive) as bundle:
+            files = {name: base64.b64encode(bundle.read(name)).decode('ascii')
+                     for name in ('client.crt', 'client.key', 'server-ca.crt')}
+        # Python is already required for the Python Client. Run the entire install
+        # under a private umask; keep identity material separate from the release.
+        commands = ['import base64,os,pathlib', 'os.umask(0o077)',
+                    "d=pathlib.Path.home()/'client_bundle'/'identity'", 'd.mkdir(parents=True,exist_ok=True)']
+        commands += [f"(d/{name!r}).write_bytes(base64.b64decode({encoded!r}))"
+                     for name, encoded in files.items()]
+        commands += ["os.chmod(d/'client.key',0o600)", "print('Client identity installed:',d)"]
+        return 'python3 -c ' + shlex.quote('; '.join(commands))
+
+    @staticmethod
+    def send_rejection(sock, error):
+        try:
+            message = str(error.args[-1]) if getattr(error, 'args', ()) else str(error)
+            RCHSocket.send_frame(sock, {'type': MSG_TYPE_CONNECTION_REJECTED, 'message': message})
+        except OSError:
+            pass  # TLS has already closed or refused the authenticated message.
+
     def verify_client(self, peer_certificate):
         if not peer_certificate:
-            raise ssl.SSLError('Missing Client mTLS certificate')
+            raise ssl.SSLError(1, 'Missing Client mTLS certificate')
         digest = hashlib.sha256(peer_certificate).hexdigest()
         with self._lock:
             records = self._read()
             if not any(not row['revoked'] and secrets.compare_digest(row['fingerprint'], digest)
                        and datetime.fromisoformat(row['expires_at']) > datetime.now(timezone.utc)
                        for row in records.values()):
-                raise ssl.SSLError('Client mTLS identity not authorized or revoked')
+                raise ssl.SSLError(1, 'Client mTLS identity not authorized or revoked')
 
     def wrap_outbound_socket(self, sock):
         """Authenticate a Server-initiated Bind/data/tunnel connection."""
         wrapped = None
         try:
             wrapped = self.context(server_side=False).wrap_socket(sock, server_hostname=None)
-            self.verify_client(wrapped.getpeercert(binary_form=True))
+            try:
+                self.verify_client(wrapped.getpeercert(binary_form=True))
+            except ssl.SSLError as exc:
+                self.send_rejection(wrapped, exc)
+                raise
             # The connection timeout is for dialing/handshake, not for idle sessions.
             wrapped.settimeout(None)
             return wrapped

@@ -9,6 +9,7 @@ from core.protocol.rchsocket import RCHSocket
 from core.protocol.file_stream import DATA_GREETING
 from core.utils.logger import logger
 from server.runtime.session_acceptor import SessionAcceptor
+from server.runtime.identity_store import IdentityStore
 
 
 class ServerListener(SessionAcceptor):
@@ -69,7 +70,11 @@ class ServerListener(SessionAcceptor):
                 raw_sock.settimeout(5)
                 raw_sock = self.ssl_context.wrap_socket(raw_sock, server_side=True)
                 if self.verify_peer is not None:
-                    self.verify_peer(raw_sock.getpeercert(binary_form=True))
+                    try:
+                        self.verify_peer(raw_sock.getpeercert(binary_form=True))
+                    except ssl.SSLError as exc:
+                        IdentityStore.send_rejection(raw_sock, exc)
+                        raise
                 # A handshake deadline must not become the application's read timeout.
                 raw_sock.settimeout(None)
             except (OSError, ssl.SSLError) as exc:

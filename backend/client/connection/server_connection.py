@@ -6,7 +6,7 @@ from client.connection.message_dispatcher import ClientInboundMessageDispatcher
 from client.connection.message_router import ClientInboundMessageRouter
 from client.app.runtime import ClientRuntime
 from client.runtime.filesystem.path_resolver import reported_current_directory, recover_current_directory
-from core.protocol.message_types import MSG_TYPE_SESSION_END
+from core.protocol.message_types import MSG_TYPE_CONNECTION_REJECTED, MSG_TYPE_SESSION_END
 from core.protocol.rchsocket import RCHSocket
 from core.utils.logger import logger
 
@@ -136,6 +136,8 @@ class ServerConnection(RCHSocket):
 
     def recv_message(self):
         data = self.recv()
+        if isinstance(data, dict) and data.get('type') == MSG_TYPE_CONNECTION_REJECTED:
+            raise ConnectionError(str(data.get('message') or 'Server rejected this connection'))
         try:
             result = self.handle_received_message(data)
         except Exception:

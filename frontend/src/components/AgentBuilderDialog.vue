@@ -349,6 +349,7 @@ export default {
         server_web_host: this.agentForm.server_host,
         listener_id: bind ? '' : this.agentForm.listener_id,
       }
+      if (!bind) delete payload.server_transport
       if (bind) {
         delete payload.server_host
         delete payload.server_port

@@ -80,10 +80,12 @@ def test_bootstrap_passes_mode_to_build_request_and_starts_without_flags():
     python = service.generate_python_script(data)
     powershell = service.generate_powershell_script(data)
     assert 'CONNECTION_MODE = "bind"' in python
+    assert 'SERVER_TRANSPORT = "tcp"' in python
     assert "'connection_mode': CONNECTION_MODE" in python
     assert 'subprocess.Popen([str(python), str(script)], **kwargs)' in python
     assert '$connectionMode="bind"' in powershell
     assert 'connection_mode=$connectionMode' in powershell
+    assert '$serverTransport="tcp"' in powershell
     assert 'ArgumentList @($script)' in powershell or '$script' in powershell
     with pytest.raises(ValueError, match='connection_mode'):
         service.normalize_bootstrap_payload({**data, 'connection_mode': 'invalid'})
@@ -125,7 +127,7 @@ def test_bind_bootstrap_requires_only_web_address_and_client_listen_settings():
                    bind_host='0.0.0.0', bind_port=9443)
     normalized = service.normalize_bootstrap_payload(payload)
     assert normalized['web_host'] == '192.168.1.50'
-    assert normalized['web_host'] == '192.168.1.50'  # Bootstrap download endpoint only.
+    assert 'server_transport' not in normalized  # Default TCP is implicit.
     python_script = service.generate_python_script(payload)
     powershell = service.generate_powershell_script(payload)
     compile(python_script, 'bootstrap_bind.py', 'exec')
@@ -135,6 +137,7 @@ def test_bind_bootstrap_requires_only_web_address_and_client_listen_settings():
     assert "server_host=SERVER_HOST, server_port=SERVER_PORT" in python_script
     assert "if ($connectionMode -eq 'bind')" in powershell
     assert "$body['bind_host'] = $bindHost" in powershell
+    assert "$body['server_transport'] = $serverTransport" in powershell
     assert "$body['server_host'] = $ip" in powershell
     with pytest.raises(ValueError, match='web_host is required'):
         service.normalize_bootstrap_payload({**payload, 'web_host': ''})
@@ -149,8 +152,9 @@ def test_generated_python_bootstrap_sends_mode_specific_build_payloads():
                        bind_host='0.0.0.0', bind_port=9443)
         if mode == 'bind':
             request['web_host'] = '192.168.1.50'
+            request['server_transport'] = 'mtls_tcp'
         else:
-            request.update(server_host='192.168.1.50', server_port=9999)
+            request.update(server_host='192.168.1.50', server_port=9999, listener_id='listener-mtls')
         source = service.generate_python_script(request)
         scope = {'__name__': 'generated_bootstrap_test'}
         exec(compile(source, 'generated_bootstrap.py', 'exec'), scope)
@@ -168,9 +172,58 @@ def test_generated_python_bootstrap_sends_mode_specific_build_payloads():
             assert not any(key in build for key in ('server_web_host', 'server_web_scheme', 'web_port'))
             assert build['bind_host'] == '0.0.0.0'
             assert build['bind_port'] == 9443
+            assert build['server_transport'] == 'mtls_tcp'
+            assert 'listener_id' not in build
             assert 'server_host' not in build and 'server_port' not in build
         else:
             assert build['server_web_host'] == '192.168.1.50'
             assert build['server_host'] == '192.168.1.50'
             assert build['server_port'] == 9999
+            assert build['listener_id'] == 'listener-mtls'
+            assert 'server_transport' not in build
             assert 'bind_host' not in build and 'bind_port' not in build
+
+
+@pytest.mark.parametrize('transport', ['tcp', 'mtls_tcp'])
+def test_bind_bootstrap_protocol_is_forwarded_in_both_generated_scripts(transport):
+    service = AgentBootstrapScriptService()
+    request = dict(web_host='192.168.1.50', web_port=8085, connection_mode='bind',
+                   bind_host='0.0.0.0', bind_port=9443, server_transport=transport)
+    normalized = service.normalize_bootstrap_payload(request)
+    assert ('server_transport' in normalized) == (transport == 'mtls_tcp')
+    python_script = service.generate_python_script(request)
+    powershell_script = service.generate_powershell_script(request)
+    assert f'SERVER_TRANSPORT = "{transport}"' in python_script
+    assert f'$serverTransport="{transport}"' in powershell_script
+    assert "if ($serverTransport -ne 'tcp') { $body['server_transport'] = $serverTransport }" in powershell_script
+    assert "$body['listener_id'] = $listenerId" in powershell_script  # Reverse only.
+    scope = {'__name__': 'generated_bootstrap_test'}
+    exec(compile(python_script, 'generated_bootstrap.py', 'exec'), scope)
+    captured = []
+    scope['request_bytes'] = lambda url, body: (captured.append((url, body)) or
+        json.dumps({'code': 0, 'data': {'file_name': 'test.zip', 'build_version': 'test'}}).encode())
+    scope['log'] = lambda message: None
+    scope['build_bundle']()
+    assert captured[0][1].get('server_transport', 'tcp') == transport
+    assert ('server_transport' in captured[0][1]) == (transport == 'mtls_tcp')
+    assert 'listener_id' not in captured[0][1]
+
+
+def test_reverse_bootstrap_only_sends_listener_identity_for_protocol_selection():
+    service = AgentBootstrapScriptService()
+    request = dict(connection_mode='reverse', server_host='192.168.1.50',
+                   server_port=19998, web_port=8085, listener_id='mtls-listener')
+    assert 'server_transport' not in service.normalize_bootstrap_payload(request)
+    source = service.generate_python_script(request)
+    scope = {'__name__': 'generated_bootstrap_test'}
+    exec(compile(source, 'generated_bootstrap.py', 'exec'), scope)
+    captured = []
+    scope['request_bytes'] = lambda url, body: (captured.append(body) or
+        json.dumps({'code': 0, 'data': {'file_name': 'test.zip', 'build_version': 'test'}}).encode())
+    scope['log'] = lambda message: None
+    scope['build_bundle']()
+    assert captured[0]['listener_id'] == 'mtls-listener'
+    assert 'server_transport' not in captured[0]
+    powershell = service.generate_powershell_script(request)
+    assert 'if ($listenerId) { $body[\'listener_id\'] = $listenerId }' in powershell
+    assert "if ($serverTransport -ne 'tcp') { $body['server_transport'] = $serverTransport }" in powershell

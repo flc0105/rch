@@ -111,15 +111,18 @@ class ClientConnectionLifecycle:
         connector = get_connector(protocol)
         connector.validate(RUNTIME_CONFIG)
         logger.info('Connecting to %s via %s', self.client.address, protocol)
+        retry_delay = min(self.client.RECONNECT_INTERVAL, 30)
         while True:
             try:
                 if connector.connect(self.client.server, self.client.address, RUNTIME_CONFIG):
                     return
+                logger.warning('Connection attempt failed: destination unavailable')
             except OSError as exc:
                 logger.warning('Connection attempt failed: %s', exc)
             self.client.server.close()
-            time.sleep(self.client.RECONNECT_INTERVAL)
-            print('Attempting to reconnect...')
+            logger.info('Retrying connection in %gs', retry_delay)
+            time.sleep(retry_delay)
+            retry_delay = min(max(retry_delay * 2, min(self.client.RECONNECT_INTERVAL, 30)), 30)
             self.client.server = self.create_connection()
 
     def handshake(self):

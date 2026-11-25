@@ -8,6 +8,9 @@ export function issueClientIdentity(name, days) {
 export function revokeClientIdentity(id) {
   return apiData(`/api/identities/clients/${encodeURIComponent(id)}/revoke`, { method: 'POST' }, {})
 }
+export function clientIdentityInstallCommand(id) {
+  return apiData(`/api/identities/clients/${encodeURIComponent(id)}/install-command`, { cache: 'no-store' }, {})
+}
 export async function downloadClientIdentity(id) {
   const response = await fetch(`/api/identities/clients/${encodeURIComponent(id)}/download`, { cache: 'no-store' })
   if (!response.ok) {

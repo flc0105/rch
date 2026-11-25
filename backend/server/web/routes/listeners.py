@@ -49,6 +49,13 @@ def create_listener_blueprint(server_instance):
     def revoke_client_identity(identity_id):
         return responder.json_endpoint(lambda: manager.identities.revoke(identity_id))
 
+    @blueprint.get('/api/identities/clients/<identity_id>/install-command')
+    def client_identity_install_command(identity_id):
+        result, status = responder.json_endpoint(
+            lambda: {'command': manager.identities.install_command(identity_id)})
+        result.headers['Cache-Control'] = 'no-store'
+        return result, status
+
     @blueprint.get('/api/identities/clients/<identity_id>/download')
     def download_client_identity(identity_id):
         # Never bundle identity secrets into public Agent or Bootstrap artifacts.

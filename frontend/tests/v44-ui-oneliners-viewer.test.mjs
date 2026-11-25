@@ -25,7 +25,7 @@ test('reverse One-liner omits mode but Bind includes it, keeping mTLS listener s
   const cmp = component(oneliner)
   const ctx = { selectedListenerId: 'tcp-default', listeners: [{ id: 'tcp-default' }, { id: 'tls1' }],
     serverForm: { serverHost: '192.0.2.2', serverPort: '9999', webPort: '8085' },
-    connectionMode: 'reverse', bindHost: '0.0.0.0', bindPort: '9443' }
+    connectionMode: 'reverse', bindHost: '0.0.0.0', bindPort: '9443', bindTransport: 'mtls_tcp' }
   const code = `json={{bootstrap_payload_python}}`
   const reverse = cmp.methods.renderOneLinerCode.call(ctx, code)
   assert.doesNotMatch(reverse, /connection_mode/)
@@ -35,6 +35,7 @@ test('reverse One-liner omits mode but Bind includes it, keeping mTLS listener s
   ctx.connectionMode = 'bind'
   const bind = cmp.methods.renderOneLinerCode.call(ctx, code)
   assert.match(bind, /connection_mode.*bind/)
+  assert.match(bind, /server_transport.*mtls_tcp/)
   assert.doesNotMatch(bind, /server_port/)
 })
 

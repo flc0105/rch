@@ -8,7 +8,7 @@ test('Settings contains explicit Identity initialization, issuance, download and
   const view = source('../src/components/SettingsDialog.vue')
   const api = source('../src/api/identitiesApi.js')
   assert.match(view, /label="Identities" name="identities"/)
-  for (const name of ['initializeIdentity', 'createIdentity', 'downloadIdentity', 'revokeIdentity']) {
+  for (const name of ['initializeIdentity', 'createIdentity', 'downloadIdentity', 'copyIdentityCommand', 'revokeIdentity']) {
     assert.match(view, new RegExp(`${name}\\(`))
   }
   for (const path of ['api/identities', 'api/identities/initialize', 'api/identities/clients']) {
@@ -16,6 +16,9 @@ test('Settings contains explicit Identity initialization, issuance, download and
   }
   assert.match(view, /client\.key permissions to 0600/)
   assert.match(view, /identity created/i)
+  assert.match(view, /Copy Command<\/el-button>/)
+  assert.match(api, /install-command/)
+  assert.match(view, /copyTextFallback/)
 })
 
 test('Build and Bind connection dialogs expose distinct TCP and mTLS options', () => {

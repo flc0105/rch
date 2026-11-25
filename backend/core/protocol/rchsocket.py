@@ -35,6 +35,12 @@ class RCHSocket:
         with self._send_lock:
             self._send_packet(encoded)
 
+    @classmethod
+    def send_frame(cls, sock, data: dict) -> None:
+        encoded = json.dumps(data).encode()
+        sock.sendall(struct.pack(cls.HEADER_FORMAT, len(encoded)))
+        sock.sendall(encoded)
+
     def recv(self, max_bytes=None) -> dict:
         data = self._recv_packet(max_bytes=max_bytes)
         return json.loads(data.decode())
